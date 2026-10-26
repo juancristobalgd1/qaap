@@ -73,12 +73,18 @@ export async function syncTranscriptPreviewFromConversationExtracted(ctx: Mobile
             || ctx.host.transcriptPreviewRequestPending;
         if (ctx.host.executionSurfaceTabsUi.activeExecutionTab(project) !== 'preview'
             && !ctx.host.transcriptPreviewRequestPending
+            && !ctx.host.transcriptPreviewRequestRunning
             && !awaitingPreview) {
             return;
         }
         const latestProject = await ctx.refreshTranscriptPreviewProject(project, summary);
         if (ctx.resolveTranscriptPreviewUrl(latestProject, conv) || conv.status !== 'streaming') {
+            const releasedRequestFlags = ctx.host.transcriptPreviewRequestPending || ctx.host.transcriptPreviewRequestRunning;
             ctx.host.transcriptPreviewRequestPending = false;
+            ctx.host.transcriptPreviewRequestRunning = false;
+            if (releasedRequestFlags) {
+                ctx.host.transcriptStickyComposerUi?.refreshComposerActivityStack?.();
+            }
         }
         if (ctx.host.executionSurfaceTabsUi.activeExecutionTab(project) === 'preview'
             && (ctx.matchesActivePreviewSummary(summary) || ctx.host.projectDetailSurfaceTargets)) {

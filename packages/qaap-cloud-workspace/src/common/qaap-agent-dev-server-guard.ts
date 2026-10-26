@@ -52,13 +52,30 @@ export function isLongLivedDevServerShellCommand(command: string | undefined): b
         && (PACKAGE_MANAGER_DEV_RE.test(segment) || FRAMEWORK_BIN_RE.test(segment)));
 }
 
+/** Options for the dev-server deny message. */
+export interface DevServerShellDenyOptions {
+    /**
+     * Port of the live preview claim Qaap already holds for this project (the registry's reserved
+     * port, not a port the agent guesses from `.qaap/preview.json` or prose). When known, the
+     * agent is told where the app really runs instead of being asked to invent a port.
+     */
+    readonly reservedPort?: number;
+}
+
 /** Deny guidance sent back to the agent so it self-corrects instead of retrying. */
-export function buildDevServerShellDenyMessage(): string {
-    return 'Blocked by Qaap: do not start dev servers from shell tools — they time out after ~30s and kill the live preview. '
-        + 'Qaap runs the dev server in a dedicated terminal with hot reload. '
+export function buildDevServerShellDenyMessage(options: DevServerShellDenyOptions = {}): string {
+    const reservedPort = options.reservedPort;
+    const head = 'Blocked by Qaap: do not start dev servers from shell tools — they time out after ~30s and kill the live preview. ';
+    const serverLine = reservedPort !== undefined
+        ? `Qaap's preview owns this project's dev server, reserved on port ${reservedPort} (see the Preview tab). Do not start another server, and do not report any other port: `
+            + `when you describe the app, say that it is served by Qaap's Preview on port ${reservedPort}. `
+        : 'Qaap runs the dev server in a dedicated terminal with hot reload. '
+            + 'Do not guess a port: the Preview tab reports the real one. ';
+    return head
+        + serverLine
         + 'Run only one-shot commands (install, build, typecheck, test). '
-        + 'When the app is ready to preview, reply stating the expected local port (e.g. 5173) and confirm dependencies are installed; '
-        + 'Qaap starts the server only from a detected entry point or .qaap/preview.json; if none exists, report that instead of promising a preview.';
+        + 'Confirm dependencies are installed; Qaap starts the server only from a detected entry point or .qaap/preview.json, '
+        + 'so if none exists, report that instead of promising a preview.';
 }
 
 /**
@@ -66,10 +83,11 @@ export function buildDevServerShellDenyMessage(): string {
  * launching a long-lived dev server; `undefined` means the request should proceed
  * through the normal approval flow.
  */
-export function findQaiqDevServerGuardDenial(request: QaapQaiqPendingControlRequest): string | undefined {
+export function findQaiqDevServerGuardDenial(request: QaapQaiqPendingControlRequest,
+    options: DevServerShellDenyOptions = {}): string | undefined {
     if (!isShellToolName(request.toolName)) {
         return undefined;
     }
     const command = typeof request.toolInput?.command === 'string' ? request.toolInput.command : undefined;
-    return isLongLivedDevServerShellCommand(command) ? buildDevServerShellDenyMessage() : undefined;
+    return isLongLivedDevServerShellCommand(command) ? buildDevServerShellDenyMessage(options) : undefined;
 }

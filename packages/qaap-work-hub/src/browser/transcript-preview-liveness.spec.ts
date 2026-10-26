@@ -114,4 +114,12 @@ describe('isStalledPreviewAgentFallback', () => {
     it('leaves a request alone when the user stopped the preview', () => {
         expect(isStalledPreviewAgentFallback({ ...waiting, suppressedByUser: true })).to.equal(false);
     });
+
+    it('releases a Running-only request: the caller passes pending || running as stillPending', () => {
+        // Pending can be cleared by the sync path while Running is still set; the watchdog caller
+        // must therefore count either flag, or the "Starting preview" chip never releases.
+        const pending = false;
+        const running = true;
+        expect(isStalledPreviewAgentFallback({ ...waiting, stillPending: pending || running })).to.equal(true);
+    });
 });

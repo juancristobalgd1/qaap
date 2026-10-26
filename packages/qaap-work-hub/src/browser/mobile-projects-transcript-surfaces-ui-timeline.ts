@@ -112,6 +112,14 @@ export async function tryMountVerifiedTranscriptPreviewExtracted(ctx: MobileProj
             && ctx.host.transcriptEmbeddedPreview?.root.isConnected === true
             && host.contains(ctx.host.transcriptEmbeddedPreview.root)
             && !ctx.host.transcriptEmbeddedPreview.root.classList.contains('theia-mod-empty-preview')) {
+            // The bootstrap mounted this preview before the agent request finished: release the
+            // request flags here too, or the "Starting preview" chip stays on over a live app.
+            const releasedRequestFlags = ctx.host.transcriptPreviewRequestPending || ctx.host.transcriptPreviewRequestRunning;
+            ctx.host.transcriptPreviewRequestPending = false;
+            ctx.host.transcriptPreviewRequestRunning = false;
+            if (releasedRequestFlags) {
+                ctx.host.transcriptStickyComposerUi?.refreshComposerActivityStack?.();
+            }
             return;
         }
 

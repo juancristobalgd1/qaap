@@ -626,7 +626,9 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                         ...(autoDecision.reason ? { autoApprovalReason: autoDecision.reason } : {}),
                     });
                     if (autoAction !== 'queue') {
-                        const devServerDenial = findQaiqDevServerGuardDenial(event.request);
+                        const devServerDenial = findQaiqDevServerGuardDenial(event.request, {
+                            reservedPort: ctx.reservedDevPreviewPort?.(task),
+                        });
                         const destructiveDenial = findQaiqDestructiveCommandGuardDenial(event.request, task.cwd);
                         const denyMessage = devServerDenial
                             ?? destructiveDenial
