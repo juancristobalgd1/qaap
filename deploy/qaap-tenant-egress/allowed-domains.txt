@@ -22,3 +22,47 @@
 .cursor.com
 .nousresearch.com
 accounts.google.com
+# Package registries and toolchains beyond npm
+.npmjs.com
+.yarnpkg.com
+.nodejs.org
+.jsr.io
+.deno.land
+.bun.sh
+.pypi.org
+.pythonhosted.org
+.crates.io
+.rust-lang.org
+.golang.org
+.go.dev
+.rubygems.org
+.playwright.dev
+playwright.azureedge.net
+# Front-end CDNs and assets
+.jsdelivr.net
+.unpkg.com
+.esm.sh
+cdnjs.cloudflare.com
+.gstatic.com
+.unsplash.com
+.gpteng.co
+# Backend services common in generated apps
+.supabase.co
+.supabase.com
+.firebaseio.com
+.firebaseapp.com
+.firebasestorage.app
+.convex.cloud
+.clerk.com
+.clerk.accounts.dev
+.auth0.com
+.neon.tech
+.upstash.io
+.stripe.com
+.resend.com
+.sentry.io
+.posthog.com
+.algolia.net
+.algolia.io
+.mapbox.com
+.cloudinary.com
