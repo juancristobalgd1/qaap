@@ -282,6 +282,12 @@ export function buildChildEnvExtracted(ctx: QaapAgentTaskRunnerContext, task: Qa
             if (env.IS_SANDBOX === undefined) {
                 env.IS_SANDBOX = '1';
             }
+            // QAIQ retries a 429 up to 10 times with backoff by default. A daily free-tier cap (OpenRouter
+            // `free-models-per-day`) is not transient: those 10 retries stalled a turn for 3–6 minutes before
+            // it failed. Three retries still ride out a real burst. An operator override wins.
+            if (env.OPENCLAUDE_MAX_RETRIES === undefined) {
+                env.OPENCLAUDE_MAX_RETRIES = '3';
+            }
         }
         // OpenCode allows every tool by default; gate it explicitly unless the run is meant to be
         // ungated (security: "Request approval" must never execute shell commands silently).

@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { listStaticNativeAgentModels } from '../common/qaap-agent-native-model-catalog';
-import { clearNativeAgentModelCache, listNativeAgentModels, prepareNativeAgentModels } from './qaap-agent-native-models';
+import { clearNativeAgentModelCache, listNativeAgentModels, parseCodexModelsCache, prepareNativeAgentModels } from './qaap-agent-native-models';
 
 describe('qaap-agent-native-models', () => {
     let sandbox: string;
@@ -47,5 +47,59 @@ describe('qaap-agent-native-models', () => {
     it('falls back to the curated catalog when the CLI is missing', async () => {
         process.env.PATH = sandbox;
         expect(await prepareNativeAgentModels('cursor')).to.deep.equal(listStaticNativeAgentModels('cursor'));
+    });
+
+    describe('Codex account catalog (models_cache.json)', () => {
+        const freeAccountCache = JSON.stringify({
+            fetched_at: '2026-10-26T00:00:00Z',
+            etag: 'W/"abc"',
+            client_version: '0.144.5',
+            models: [
+                { slug: 'gpt-reserve', display_name: 'Reserve', visibility: 'list' },
+                { slug: 'gpt-5.6-terra', display_name: 'GPT-5.6 Terra', visibility: 'list' },
+                { slug: 'gpt-5.6-luna', display_name: 'GPT-5.6 Luna', visibility: 'list' },
+                { slug: 'codex-auto-review', display_name: 'Auto review', visibility: 'hide' },
+            ],
+        });
+
+        it('keeps only the curated Codex entries the account lists, in curated order', () => {
+            const models = parseCodexModelsCache(freeAccountCache);
+            expect(models.map(model => model.modelId)).to.deep.equal(['gpt-5.6-terra', 'gpt-5.6-luna']);
+            expect(models).to.deep.equal(listStaticNativeAgentModels('codex').filter(model => model.modelId !== 'gpt-5.6-sol' && model.modelId !== 'gpt-5.5'));
+        });
+
+        it('returns no entries when the account lists none of the curated models', () => {
+            expect(parseCodexModelsCache(JSON.stringify({ models: [{ slug: 'gpt-reserve' }] }))).to.deep.equal([]);
+        });
+
+        it('returns no entries for a garbage, empty or differently shaped cache', () => {
+            expect(parseCodexModelsCache('<html>not json</html>')).to.deep.equal([]);
+            expect(parseCodexModelsCache('')).to.deep.equal([]);
+            expect(parseCodexModelsCache(undefined)).to.deep.equal([]);
+            expect(parseCodexModelsCache('null')).to.deep.equal([]);
+            expect(parseCodexModelsCache(JSON.stringify({ models: 'gpt-5.6-sol' }))).to.deep.equal([]);
+        });
+
+        it('reads the cache from the Codex home and falls back to the full curated list when the cache is missing', async () => {
+            const codexHome = path.join(sandbox, 'codex-home');
+            fs.mkdirSync(codexHome);
+            const originalCodexHome = process.env.CODEX_HOME;
+            process.env.CODEX_HOME = codexHome;
+            try {
+                // Cache missing: discovery yields nothing, the picker keeps the full curated list.
+                expect(await prepareNativeAgentModels('codex')).to.deep.equal(listStaticNativeAgentModels('codex'));
+                clearNativeAgentModelCache();
+                fs.writeFileSync(path.join(codexHome, 'models_cache.json'), freeAccountCache);
+                const discovered = await prepareNativeAgentModels('codex');
+                expect(discovered.map(model => model.modelId)).to.deep.equal(['gpt-5.6-terra', 'gpt-5.6-luna']);
+                expect(listNativeAgentModels('codex').map(model => model.modelId)).to.deep.equal(['gpt-5.6-terra', 'gpt-5.6-luna']);
+            } finally {
+                if (originalCodexHome === undefined) {
+                    delete process.env.CODEX_HOME;
+                } else {
+                    process.env.CODEX_HOME = originalCodexHome;
+                }
+            }
+        });
     });
 });

@@ -136,6 +136,18 @@ export const MODEL_UNAVAILABLE_LOG = [
     resultEnvelope(true, 'There\'s an issue with the selected model (deepseek/deepseek-v4-flash:free). It may not exist or you may not have access to it. Run --model to pick a different model.'),
 ].join('\n');
 
+/** Codex CLI on a ChatGPT Free account: the plan's usage cap, with the retry time the CLI prints. */
+export const CODEX_USAGE_LIMIT_LOG = [
+    SYSTEM_INIT,
+    resultEnvelope(true, 'You\'ve hit your usage limit. Upgrade to Plus to continue using Codex (https://chatgpt.com/explore/plus), or try again at Nov 19th, 2026 12:56 AM.'),
+].join('\n');
+
+/** Codex CLI on a ChatGPT account: a model the plan cannot run (the server lists the models per account). */
+export const CODEX_MODEL_NOT_SUPPORTED_LOG = [
+    SYSTEM_INIT,
+    resultEnvelope(true, '{"error":{"message":"The \'gpt-5.6-sol\' model is not supported when using Codex with a ChatGPT account.","code":"model_not_found"}}'),
+].join('\n');
+
 /** The task runner's idle timer killed a run that stopped producing output. */
 export const RUNNER_IDLE_TIMEOUT_LOG = [
     SYSTEM_INIT,

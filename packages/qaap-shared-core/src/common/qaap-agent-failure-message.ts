@@ -52,6 +52,9 @@ const QUOTA_PATTERNS: readonly RegExp[] = [
     // OpenCode free tier: "AI_APICallError: Free usage limit reached. Subscribe to ... to keep going".
     /\busage\s+limit\s+reached\b/i,
     /\bfree\s+usage\s+limit\b/i,
+    // Codex CLI on a ChatGPT plan: "You've hit your usage limit. Upgrade to Plus to continue ..., or try again at Nov 19th, 2026 12:56 AM."
+    /\bhit\s+your\s+usage\s+limit\b/i,
+    /\busage\s+limit\b[^\n]{0,160}\btry\s+again\s+at\b/i,
 ];
 
 const RATE_LIMIT_PATTERNS: readonly RegExp[] = [
@@ -76,6 +79,9 @@ const MODEL_UNAVAILABLE_PATTERNS: readonly RegExp[] = [
     /\bno\s+such\s+model\b/i,
     /\bunknown\s+model\b/i,
     /\bmodel\s+not\s+supported\b/i,
+    // Codex CLI on a ChatGPT account: "The 'gpt-5.6-sol' model is not supported when using Codex with a ChatGPT account."
+    /'[^']+'\s+model\s+is\s+not\s+supported\b/i,
+    /\bmodel\s+is\s+not\s+supported\s+when\s+using\s+codex\b/i,
 ];
 
 const TOOL_UNSUPPORTED_PATTERNS: readonly RegExp[] = [

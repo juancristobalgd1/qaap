@@ -12,6 +12,7 @@ import {
     ensureStoredAgentModel,
     fetchAgentModelsForAgent,
     filterQaapComposerAgents,
+    isSameAgentModel,
     isTheiaCoderAgent,
     pickDefaultAgentModel,
     readStoredAgent,
@@ -181,7 +182,10 @@ export class MobileProjectsStickyComposerAgentsUi {
             return undefined;
         }
         const existing = readStoredAgentModel(cwd, agentId);
-        if (existing) {
+        // A stored selection is kept only when the catalog lists it. Without a preferred catalog the live one
+        // is fetched below, so a model the account can no longer run (e.g. Codex `gpt-5.6-sol` on a Free plan)
+        // is replaced by ensureStoredAgentModel instead of being sent again.
+        if (existing && (preferredModels ?? []).some(model => isSameAgentModel(existing, model))) {
             return existing;
         }
         let catalog = preferredModels ?? [];

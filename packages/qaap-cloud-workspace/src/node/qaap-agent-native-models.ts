@@ -4,6 +4,8 @@
 // *****************************************************************************
 
 import { execFile } from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
 import type { QaapQaiqModelOption } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 import {
@@ -92,6 +94,8 @@ async function discoverNativeAgentModels(agentId: string): Promise<QaapQaiqModel
     switch (agentId) {
         case 'opencode':
             return discoverFromCommand('opencode', ['models'], agentId);
+        case 'codex':
+            return discoverCodexAccountModels();
         case 'cursor':
             // Cursor Agent exposes the account-scoped catalog through both the modern
             // `agent models` command and the backwards-compatible `cursor-agent` alias.
@@ -103,6 +107,70 @@ async function discoverNativeAgentModels(agentId: string): Promise<QaapQaiqModel
             }
         default:
             return [];
+    }
+}
+
+/** File the Codex CLI keeps in its home: the model slugs the signed-in account may run (server-side list). */
+export const CODEX_MODELS_CACHE_FILE = 'models_cache.json';
+
+/**
+ * Codex home the agent CLI reads. Codex honours `CODEX_HOME`; otherwise it is `.codex` under the agent
+ * HOME, which is the shared agent home when no tenant is in scope (the picker has no working directory).
+ */
+export function resolveCodexAgentHome(env: NodeJS.ProcessEnv = process.env): string {
+    const explicit = env.CODEX_HOME?.trim();
+    if (explicit) {
+        return explicit;
+    }
+    return path.join(env.QAAP_AGENT_HOME?.trim() || '/home/qaap-agent', '.codex');
+}
+
+/**
+ * The curated Codex entries whose ids the account's `models_cache.json` lists, in curated order and with
+ * curated labels. A missing, unreadable or unparsable cache, or one with no curated overlap, yields `[]`;
+ * the caller then keeps the full curated list.
+ */
+export function parseCodexModelsCache(text: string | undefined): QaapQaiqModelOption[] {
+    const slugs = readCodexCacheSlugs(text);
+    if (slugs.size === 0) {
+        return [];
+    }
+    return listStaticNativeAgentModels('codex').filter(model => slugs.has(model.modelId));
+}
+
+function readCodexCacheSlugs(text: string | undefined): Set<string> {
+    const slugs = new Set<string>();
+    if (!text?.trim()) {
+        return slugs;
+    }
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(text);
+    } catch {
+        return slugs;
+    }
+    const models = typeof parsed === 'object' && parsed !== null ? (parsed as { models?: unknown }).models : undefined;
+    if (!Array.isArray(models)) {
+        return slugs;
+    }
+    for (const entry of models as unknown[]) {
+        const slug = typeof entry === 'object' && entry !== null ? (entry as { slug?: unknown }).slug : undefined;
+        if (typeof slug === 'string' && slug.trim()) {
+            slugs.add(slug.trim());
+        }
+    }
+    return slugs;
+}
+
+/**
+ * Reads the account's Codex model list. Plain file read: the cache is written by the Codex CLI into the agent
+ * home, and the picker runs in the backend process (the same process the other native discoveries use).
+ */
+async function discoverCodexAccountModels(codexHome: string = resolveCodexAgentHome()): Promise<QaapQaiqModelOption[]> {
+    try {
+        return parseCodexModelsCache(await fs.promises.readFile(path.join(codexHome, CODEX_MODELS_CACHE_FILE), 'utf8'));
+    } catch {
+        return [];
     }
 }
 
