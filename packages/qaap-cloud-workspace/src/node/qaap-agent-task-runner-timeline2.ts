@@ -25,6 +25,7 @@ import {
 } from '../common/qaap-qaiq-stdio-approvals';
 import { findQaiqDestructiveCommandGuardDenial } from '../common/qaap-agent-destructive-command-guard';
 import { findQaiqDevServerGuardDenial } from '../common/qaap-agent-dev-server-guard';
+import { buildLivePreviewPortHint } from '../common/qaap-agent-live-preview-port';
 import {
     buildQaiqAutoDeniedToolMessage,
     buildQaiqQueuedApprovalTimeoutMessage,
@@ -385,13 +386,15 @@ export async function spawnProcessWhenReadyExtracted(ctx: QaapAgentTaskRunnerCon
                 ctx.recordTaskLatencyMark(task.id, 'build_agent_command_start');
                 const autoApprove = task.autoApprove !== false;
                 const agentModel = ctx.resolveAgentModelForRequest(request, prompt, task.ownerLogin);
+                // Every agent CLI gets its own preview port in the preamble (not the one in .qaap/preview.json).
+                const livePreviewPortHint = buildLivePreviewPortHint(ctx.reservedDevPreviewPort?.(task));
                 const { command, stdinPrompt, stdinPromptMode, agentId, promptTempDir } = ctx.buildAgentCommand(
                     prompt,
                     request.agent,
                     autoApprove,
                     agentModel,
                     task.cwd,
-                    request.contextPreamble,
+                    [request.contextPreamble?.trim(), livePreviewPortHint].filter(Boolean).join('\n\n'),
                     request.interactionModeId,
                     request.approvalPolicyId,
                     request.toolApprovalRules,
