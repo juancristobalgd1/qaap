@@ -517,6 +517,8 @@ else
 fi
 # Safety net (a no-op when the pre-switch seed succeeded): seed through the new container.
 preload_tenant_image
+# Opt-in tenant egress proxy: a no-op unless QAAP_TENANT_EGRESS_PROXY_IMAGE is set in the deploy environment.
+build_tenant_egress_proxy_image "" "$REPO_DIR/deploy/qaap-tenant-egress"
 refresh_caddy
 docker compose ps
 

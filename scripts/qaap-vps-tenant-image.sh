@@ -199,3 +199,36 @@ preload_tenant_image() {
     echo "[qaap-vps-update] preloading tenant image into rootless Docker: $tenant_image"
     docker exec "$container_id" docker pull "$tenant_image"
 }
+
+# Builds the tenant egress Squid proxy (deploy/qaap-tenant-egress) into the rootless tenant daemon,
+# tagged QAAP_TENANT_EGRESS_PROXY_IMAGE, which the orchestrator then starts on demand. Does nothing
+# when that variable is empty or blank: tenant egress stays direct. Args (all optional): the Theia
+# container to build through (default: the running theia service container) and the build context
+# (default: none, so the caller must pass the repository's deploy/qaap-tenant-egress).
+build_tenant_egress_proxy_image() {
+    local image="${QAAP_TENANT_EGRESS_PROXY_IMAGE:-}" container_id="${1:-}" context="${2:-}" socket
+    image="${image//[[:space:]]/}"
+    if [[ -z "$image" ]]; then
+        return 0
+    fi
+    if [[ -z "$container_id" ]]; then
+        container_id="$(docker compose ps -q --status running theia | tr -d '\r' | sed -n '1p')"
+    fi
+    if [[ -z "$container_id" ]]; then
+        echo '[qaap-vps-update] no Theia container available to build the tenant egress proxy' >&2
+        return 1
+    fi
+    if [[ -z "$context" || ! -f "$context/Dockerfile" ]]; then
+        echo "[qaap-vps-update] tenant egress proxy build context has no Dockerfile: ${context:-empty}" >&2
+        return 1
+    fi
+
+    socket="$(tenant_docker_socket_on_host "$container_id" || true)"
+    if [[ -n "$socket" && -S "$socket" && -w "$socket" ]]; then
+        echo "[qaap-vps-update] building tenant egress proxy $image into rootless Docker (host client)"
+        docker -H "unix://$socket" build -t "$image" "$context"
+    else
+        echo "[qaap-vps-update] rootless socket not reachable from the host; building tenant egress proxy $image inside Theia"
+        tar -C "$context" -c . | docker exec -i "$container_id" docker build -t "$image" -
+    fi
+}
