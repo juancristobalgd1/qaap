@@ -9,7 +9,7 @@ import type { OutgoingHttpHeaders } from 'http';
 import { FileUri } from '@theia/core/lib/common/file-uri';
 import * as net from 'net';
 import * as path from 'path';
-import { QaapDevPreviewEndpoint } from './qaap-dev-preview-endpoint';
+import { QaapDevPreviewEndpoint, canonicalizeQaapPreviewRoot } from './qaap-dev-preview-endpoint';
 import type { QaapGithubAuthContext, QaapGithubAuthGuard } from './qaap-github-auth-guard';
 import type { QaapDevPreviewPortRegistry } from './qaap-dev-preview-port-registry';
 import type { QaapDevPreviewRecord } from './qaap-dev-preview-port-registry';
@@ -762,6 +762,10 @@ describe('QaapDevPreviewEndpoint', () => {
 
         describe('a port held by this backend\'s own sandbox forwarder', () => {
             const sandboxRoot = '/workspace/repos/users/alice/site';
+            // The allocator passes the claim's canonical fs path (`C:\workspace\...` on Windows).
+            const sandboxRoots = [sandboxRoot, canonicalizeQaapPreviewRoot(FileUri.fsPath(`file://${sandboxRoot}`))];
+            const isInsideSandbox = (root: string | undefined): boolean => root !== undefined
+                && sandboxRoots.some(base => root === base || root.startsWith(`${base}/`) || root.startsWith(`${base}${path.sep}`));
             let forwarder: net.Server;
             let forwardedPort: number;
             let forwardOwner: string | undefined;
@@ -784,7 +788,7 @@ describe('QaapDevPreviewEndpoint', () => {
                 (ep as unknown as { forwardedPorts: unknown }).forwardedPorts = {
                     ownerOf: (port: number, root?: string) => {
                         askedRoots.push(root);
-                        return port === forwardedPort && root?.startsWith(sandboxRoot) ? forwardOwner : undefined;
+                        return port === forwardedPort && isInsideSandbox(root) ? forwardOwner : undefined;
                     },
                     releasePreviewPort: (port: number, owner: string) => { released.push([port, owner]); },
                 };
@@ -830,7 +834,7 @@ describe('QaapDevPreviewEndpoint', () => {
                 await alice.exposeHandleClaim(claimReq(forwardedPort, identity, root), aliceRes);
                 expect(aliceRes.record.code).to.equal(200);
                 expect((aliceRes.record.body as { port: number }).port).to.equal(forwardedPort);
-                expect(askedRoots).to.include(sandboxRoot);
+                expect(askedRoots.some(isInsideSandbox)).to.equal(true);
 
                 const bobRoot = 'file:///workspace/repos/users/bob/site';
                 const bob = withForwarder(new ClaimTestEndpoint());
