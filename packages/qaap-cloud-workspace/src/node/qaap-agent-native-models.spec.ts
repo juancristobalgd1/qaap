@@ -8,7 +8,14 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { listStaticNativeAgentModels } from '../common/qaap-agent-native-model-catalog';
-import { clearNativeAgentModelCache, listNativeAgentModels, parseCodexModelsCache, prepareNativeAgentModels } from './qaap-agent-native-models';
+import {
+    clearNativeAgentModelCache,
+    discoverCodexAccountModels,
+    listNativeAgentModels,
+    parseCodexModelsCache,
+    prepareNativeAgentModels,
+    resolveCodexAgentHome,
+} from './qaap-agent-native-models';
 
 describe('qaap-agent-native-models', () => {
     let sandbox: string;
@@ -100,6 +107,52 @@ describe('qaap-agent-native-models', () => {
                     process.env.CODEX_HOME = originalCodexHome;
                 }
             }
+        });
+
+        it('resolves the Codex home: CODEX_HOME, then the tenant agent storage home, then the agent HOME', () => {
+            expect(resolveCodexAgentHome({ CODEX_HOME: '/custom/codex' })).to.equal('/custom/codex');
+            expect(resolveCodexAgentHome({})).to.equal('/home/theia/.qaap/.qaap-agent-storage/home/.codex');
+            expect(resolveCodexAgentHome({ QAAP_TENANT_AGENT_STORAGE_ROOT: '/data/agent-storage' }))
+                .to.equal('/data/agent-storage/home/.codex');
+            // Storage disabled: the agent HOME is used, `/home/qaap-agent` unless QAAP_AGENT_HOME says otherwise.
+            expect(resolveCodexAgentHome({ QAAP_TENANT_AGENT_STORAGE_ROOT: 'off' })).to.equal(path.join('/home/qaap-agent', '.codex'));
+            expect(resolveCodexAgentHome({ QAAP_TENANT_AGENT_STORAGE_ROOT: 'off', QAAP_AGENT_HOME: '/srv/agent' }))
+                .to.equal(path.join('/srv/agent', '.codex'));
+        });
+
+        it('reads the cache as the configured agent uid/gid when the backend is root', async () => {
+            const seen: { file: string; identity: unknown }[] = [];
+            const reader = async (file: string, identity: unknown): Promise<string> => {
+                seen.push({ file, identity });
+                return freeAccountCache;
+            };
+            const env = { QAAP_TENANT_AGENT_STORAGE_ROOT: '/data/agent-storage', QAAP_AGENT_UID: '1001', QAAP_AGENT_GID: '1001' };
+            const models = await discoverCodexAccountModels(env, true, reader);
+            expect(models.map(model => model.modelId)).to.deep.equal(['gpt-5.6-terra', 'gpt-5.6-luna']);
+            expect(seen).to.deep.equal([{
+                file: path.join('/data/agent-storage/home/.codex', 'models_cache.json'),
+                identity: { uid: 1001, gid: 1001 },
+            }]);
+        });
+
+        it('reads the cache as the backend when it is not root, or no agent identity is configured', async () => {
+            const identities: unknown[] = [];
+            const reader = async (_file: string, identity: unknown): Promise<string> => {
+                identities.push(identity);
+                return freeAccountCache;
+            };
+            await discoverCodexAccountModels({ QAAP_AGENT_UID: '1001' }, false, reader);
+            await discoverCodexAccountModels({}, true, reader);
+            // uid 0 is never used as the agent identity.
+            await discoverCodexAccountModels({ QAAP_AGENT_UID: '0' }, true, reader);
+            expect(identities).to.deep.equal([undefined, undefined, undefined]);
+        });
+
+        it('falls back to the curated list when the cache cannot be read', async () => {
+            const failing = async (): Promise<string> => {
+                throw new Error('EACCES: permission denied');
+            };
+            expect(await discoverCodexAccountModels({}, true, failing)).to.deep.equal([]);
         });
     });
 });

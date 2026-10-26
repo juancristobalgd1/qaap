@@ -8,6 +8,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { QaapQaiqModelOption } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
+import { resolveAgentSpawnIdentity } from './qaap-agent-spawn-identity';
+import { QaapTenantAgentStorageEnv } from './qaap-tenant-agent-storage-env';
+import { resolveTrustedSystemExecutable } from './qaap-trusted-executable';
 import {
     agentUsesNativeModelCatalog,
     listStaticNativeAgentModels,
@@ -113,14 +116,25 @@ async function discoverNativeAgentModels(agentId: string): Promise<QaapQaiqModel
 /** File the Codex CLI keeps in its home: the model slugs the signed-in account may run (server-side list). */
 export const CODEX_MODELS_CACHE_FILE = 'models_cache.json';
 
+/** Uid/gid the agent CLI runs as; the backend reads the cache as this identity when it is root. */
+export interface CodexCacheIdentity {
+    readonly uid: number;
+    readonly gid?: number;
+}
+
 /**
- * Codex home the agent CLI reads. Codex honours `CODEX_HOME`; otherwise it is `.codex` under the agent
- * HOME, which is the shared agent home when no tenant is in scope (the picker has no working directory).
+ * Codex home the agent CLI reads. Codex honours `CODEX_HOME`; otherwise it is `.codex` under the tenant
+ * agent storage home (`<storage root>/home`, the HOME the agent's sign-in lives in) when that storage is
+ * enabled; otherwise under the agent HOME (`QAAP_AGENT_HOME`, default `/home/qaap-agent`).
  */
 export function resolveCodexAgentHome(env: NodeJS.ProcessEnv = process.env): string {
     const explicit = env.CODEX_HOME?.trim();
     if (explicit) {
         return explicit;
+    }
+    const storageRoot = QaapTenantAgentStorageEnv.resolveRoot(env, QaapTenantAgentStorageEnv.defaultTenantBackendRoot(env));
+    if (storageRoot) {
+        return path.posix.join(QaapTenantAgentStorageEnv.homeDir(storageRoot), '.codex');
     }
     return path.join(env.QAAP_AGENT_HOME?.trim() || '/home/qaap-agent', '.codex');
 }
@@ -162,13 +176,54 @@ function readCodexCacheSlugs(text: string | undefined): Set<string> {
     return slugs;
 }
 
+/** Reads one file; with an identity, as that uid/gid (the backend is root, the cache is owned by the agent). */
+export type CodexCacheFileReader = (file: string, identity: CodexCacheIdentity | undefined) => Promise<string>;
+
 /**
- * Reads the account's Codex model list. Plain file read: the cache is written by the Codex CLI into the agent
- * home, and the picker runs in the backend process (the same process the other native discoveries use).
+ * Default reader. A root backend cannot read the agent-owned cache directly (its capabilities drop
+ * DAC_OVERRIDE), so with an agent identity the file is read by `cat` running as that identity.
  */
-async function discoverCodexAccountModels(codexHome: string = resolveCodexAgentHome()): Promise<QaapQaiqModelOption[]> {
+export function readCodexCacheFile(file: string, identity: CodexCacheIdentity | undefined): Promise<string> {
+    if (!identity) {
+        return fs.promises.readFile(file, 'utf8');
+    }
+    const cat = resolveTrustedSystemExecutable('cat');
+    if (!cat) {
+        return Promise.reject(new Error('cat is not available to read the Codex models cache'));
+    }
+    return new Promise<string>((resolve, reject) => {
+        execFile(cat, [file], {
+            encoding: 'utf8',
+            uid: identity.uid,
+            gid: identity.gid,
+            timeout: 5000,
+            maxBuffer: 2 * 1024 * 1024,
+        }, (error, stdout) => {
+            if (error) {
+                reject(error);
+                return;
+            }
+            resolve(String(stdout ?? ''));
+        });
+    });
+}
+
+/**
+ * Reads the account's Codex model list from the Codex home the agent uses. The identity is the configured
+ * agent uid/gid when the backend is root (uid 0 is never used for the agent). Any failure yields `[]`.
+ */
+export async function discoverCodexAccountModels(
+    env: NodeJS.ProcessEnv = process.env,
+    isRoot: boolean = typeof process.getuid === 'function' && process.getuid() === 0,
+    reader: CodexCacheFileReader = readCodexCacheFile,
+): Promise<QaapQaiqModelOption[]> {
+    const file = path.join(resolveCodexAgentHome(env), CODEX_MODELS_CACHE_FILE);
+    const identity = resolveAgentSpawnIdentity(env, isRoot);
+    const agentIdentity: CodexCacheIdentity | undefined = identity.uid !== undefined && identity.uid > 0
+        ? { uid: identity.uid, gid: identity.gid }
+        : undefined;
     try {
-        return parseCodexModelsCache(await fs.promises.readFile(path.join(codexHome, CODEX_MODELS_CACHE_FILE), 'utf8'));
+        return parseCodexModelsCache(await reader(file, agentIdentity));
     } catch {
         return [];
     }
