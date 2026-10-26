@@ -173,7 +173,7 @@ async function handleDevRunFailure(ctx: QaapProjectBootstrapServiceContext, mess
         if (canAutoRetry && descriptor) {
             ctx.previewAutoRetryAttempts++;
             ctx.cleanupDevTerminal();
-            ctx.releaseActivePreview();
+            ctx.releaseActivePreview('failDevRun.autoRetry');
             ctx._previewReadiness = 'starting';
             ctx._previewWaitTimedOut = false;
             ctx._error = nls.localize(
@@ -238,7 +238,7 @@ async function handleDevRunFailure(ctx: QaapProjectBootstrapServiceContext, mess
                             ? formatQaapPreviewBuildRequiredMessage(!!buildTarget?.buildAndStartCommand)
                             : extractTerminalFailureLine(failureOutput, ctx.toUserFacingDevError(message));
         ctx._error = ctx.enrichDevRunError(diagnosedError);
-        ctx.releaseActivePreview();
+        ctx.releaseActivePreview('failDevRun');
         ctx.setPhase('run-failed');
 }
 
@@ -590,6 +590,7 @@ export function watchAttachedDevTerminalExtracted(ctx: QaapProjectBootstrapServi
                     event.code,
                     ctx.readTerminalTail(terminal) || ctx.devOutputTail,
                     ctx.activePreviewClaim?.port ?? plan.expectedPort,
+                    event.signal,
                 );
                 void ctx.failDevRun(exit.message, plan, runId, { exitedWithoutListening: exit.exitedWithoutListening });
             }

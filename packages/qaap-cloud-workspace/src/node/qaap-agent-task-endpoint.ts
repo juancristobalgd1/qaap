@@ -718,6 +718,9 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 // of it. Coerced strictly: anything other than a literal `true` leaves the turn
                 // unrestricted rather than guessing from a truthy value.
                 readOnlyWorkspace: body.readOnlyWorkspace === true ? true : undefined,
+                // Server-only: decided from the conversation's worktree (buildTaskCreateRequest). A client
+                // must never claim its own worktree to skip the shared-working-tree queue, so it is never read here.
+                ownWorkingTree: undefined,
             };
             // A failed write blocks every new task until something persists again. Retry once here
             // so a transient failure (for example a temp-file collision) clears on the next user

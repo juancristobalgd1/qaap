@@ -77,7 +77,8 @@ describe('QaapAgentTaskRunner per-repository concurrency cap', () => {
     it('does not queue by repository when the cap is unset', () => {
         delete process.env[MAX_CONCURRENT_AGENTS_PER_REPO_ENV];
         const { runner } = createFixture();
-        const states = [1, 2, 3, 4].map(() => runner.create({ prompt: 'work', cwd: '/repo-a' }, 'alice').state);
+        // Distinct owners: same-owner shared-tree tasks queue regardless of the cap (see the shared working tree spec).
+        const states = ['alice', 'bob', 'carol', 'dave'].map(owner => runner.create({ prompt: 'work', cwd: '/repo-a' }, owner).state);
         expect(states).to.deep.equal(['running', 'running', 'running', 'running']);
     });
 

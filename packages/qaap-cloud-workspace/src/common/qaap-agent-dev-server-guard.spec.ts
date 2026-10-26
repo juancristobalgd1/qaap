@@ -46,6 +46,57 @@ describe('qaap-agent-dev-server-guard', () => {
         }
     });
 
+    it('blocks the Qaap restart/start scripts by any path and dev scripts invoked by other package managers', () => {
+        const blocked = [
+            'node scripts/qaap-restart-browser.mjs',
+            './scripts/qaap-restart-browser.mjs --build',
+            'node /abs/repo/scripts/qaap-restart-browser.mjs',
+            'node scripts/qaap-start-browser.mjs',
+            'npm run start:browser',
+            'npm run start:browser-only',
+            'npm run qaap:local:browser:restart',
+            'npx start:browser',
+            'pnpm start:browser',
+            'yarn start:electron',
+            'npm --prefix examples/browser run start:browser',
+            'npm run build:browser && npm run start:browser',
+            'pnpm build && pnpm dev',
+        ];
+        for (const command of blocked) {
+            expect(isLongLivedDevServerShellCommand(command), command).to.equal(true);
+        }
+    });
+
+    it('blocks detached server launches (nohup, setsid, disown, subshell background)', () => {
+        const blocked = [
+            'setsid node server.js --serve',
+            'node app.js dev & disown',
+            '(npm run dev) &',
+            '( vite preview ) &',
+            'nohup node server.js start > /tmp/s.log 2>&1 &',
+        ];
+        for (const command of blocked) {
+            expect(isLongLivedDevServerShellCommand(command), command).to.equal(true);
+        }
+    });
+
+    it('allows the verification and one-shot commands that must keep working', () => {
+        const allowed = [
+            'npm run compile',
+            'npm test',
+            'node scripts/qaap-drift-check.js',
+            'node scripts/qaap-package-graph-check.js',
+            'npm run build:browser',
+            'npm run build:browser && npm run lint',
+            'tail -f /tmp/build.log &',
+            'nohup tail -f /tmp/build.log &',
+            'cat scripts/qaap-restart-browser.mjs',
+        ];
+        for (const command of allowed) {
+            expect(isLongLivedDevServerShellCommand(command), command).to.equal(false);
+        }
+    });
+
     it('denies shell control requests launching dev servers, with actionable guidance', () => {
         const denial = findQaiqDevServerGuardDenial({
             requestId: 'r1',

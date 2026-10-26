@@ -92,7 +92,8 @@ describe('QaapAgentTaskRunner concurrency quota', () => {
             spawnProcessWhenReady: async () => { spawned++; },
         });
 
-        const request = { prompt: 'do work', cwd: '/repo' };
+        // Own worktree: these fixtures exercise the global/per-user caps, not the shared-tree queue.
+        const request = { prompt: 'do work', cwd: '/repo', ownWorkingTree: true };
         const first = runner.create(request);
         const second = runner.create(request);
         const third = runner.create(request);
@@ -169,7 +170,8 @@ describe('QaapAgentTaskRunner concurrency quota', () => {
             spawnProcessWhenReady: async () => undefined,
         });
 
-        const request = { prompt: 'do work', cwd: '/repo' };
+        // Own worktree: these fixtures exercise the global/per-user caps, not the shared-tree queue.
+        const request = { prompt: 'do work', cwd: '/repo', ownWorkingTree: true };
         const a1 = runner.create(request, 'alice');
         const a2 = runner.create(request, 'alice');
         const a3 = runner.create(request, 'alice');
@@ -210,7 +212,8 @@ describe('QaapAgentTaskRunner concurrency quota', () => {
             },
         });
 
-        const request = { prompt: 'do work', cwd: '/repo' };
+        // Own worktree: these fixtures exercise the global/per-user caps, not the shared-tree queue.
+        const request = { prompt: 'do work', cwd: '/repo', ownWorkingTree: true };
         expect(runner.create(request, 'alice').state).to.equal('running');
         expect(runner.create(request, 'alice').state).to.equal('running');
         expect(runner.create(request, 'alice').state).to.equal('running');
@@ -243,7 +246,8 @@ describe('QaapAgentTaskRunner concurrency quota', () => {
             },
         });
 
-        const request = { prompt: 'do work', cwd: '/repo' };
+        // Own worktree: these fixtures exercise the global/per-user caps, not the shared-tree queue.
+        const request = { prompt: 'do work', cwd: '/repo', ownWorkingTree: true };
         expect(runner.create(request, 'Alice').state).to.equal('running');
         expect(runner.create(request, 'alice').state).to.equal('running');
         expect(runner.create(request, 'ALICE').state).to.equal('queued');
