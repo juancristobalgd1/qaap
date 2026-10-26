@@ -70,7 +70,9 @@ function pickExactRootPort(claims: readonly QaapAgentPreviewClaimCandidate[], ta
  */
 export function buildLivePreviewPortHint(port: number | undefined): string {
     const preferredPortNote = 'The port in .qaap/preview.json is only the preferred port; never report it as the app\'s address.';
+    const supervisionNote = 'Qaap already starts and supervises the dev server; never run dev/start/serve/preview commands yourself';
     return port === undefined
-        ? `${preferredPortNote} Refer the user to the Preview tab for the live address.`
-        : `Qaap's live preview for this project runs on port ${port} (see the Preview tab). ${preferredPortNote}`;
+        ? `${preferredPortNote} Refer the user to the Preview tab for the live address. ${supervisionNote}.`
+        : `Qaap's live preview for this project runs on port ${port} (see the Preview tab). ${preferredPortNote} `
+            + `${supervisionNote}; verify with a one-shot HTTP check (e.g. curl) against the live port instead.`;
 }
