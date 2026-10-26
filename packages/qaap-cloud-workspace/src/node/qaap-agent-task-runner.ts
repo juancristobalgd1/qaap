@@ -52,6 +52,7 @@ import { type QaapQaiqPendingControlRequest } from '../common/qaap-qaiq-stdio-ap
 import { type QaapEmptyAgentTurnResult } from '../common/qaap-agent-empty-turn';
 import { type QaapQaiqModelBinding } from '../common/qaap-qaiq-model-binding';
 import { type QaapNativeModelRoutingTable } from '../common/qaap-agent-native-model-routing';
+import { pickReservedDevPreviewPort } from '../common/qaap-agent-live-preview-port';
 import { QaapWebPushService } from './qaap-web-push-service';
 import { QaapBillingStore } from './qaap-billing-store';
 import { QaapWorkflowRoutingPolicy } from '../common/qaap-workflow-routing';
@@ -1153,15 +1154,21 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     }
 
     /**
-     * The port of the single live preview claim the task owner holds under the task's cwd. Several
-     * claims under one root are ambiguous (sections share it), so no port is returned then.
+     * The port of the live preview claim that belongs to this task: the claim of its Work Hub section
+     * (via `conversationIdForTask`), else the claim rooted exactly at its cwd. See
+     * {@link pickReservedDevPreviewPort} for the order and why no "most recent" fallback exists.
      */
     public reservedDevPreviewPort(task: QaapAgentTask): number | undefined {
         if (!task.ownerLogin || !this.previewPortRegistry) {
             return undefined;
         }
-        const claims = this.previewPortRegistry.listForOwnerUnderRoot(task.ownerLogin, task.cwd);
-        return claims.length === 1 ? claims[0].port : undefined;
+        const cwd = path.resolve(task.cwd);
+        const claims = this.previewPortRegistry.listForOwnerUnderRoot(task.ownerLogin, cwd).map(record => ({
+            port: record.port,
+            root: path.resolve(record.root),
+            conversationId: 'conversationId' in record ? record.conversationId : undefined,
+        }));
+        return pickReservedDevPreviewPort(claims, cwd, this.conversationIdForTask?.(task.id));
     }
 
     /** Env-only fallback when no model alias or provider list is configured yet. */
