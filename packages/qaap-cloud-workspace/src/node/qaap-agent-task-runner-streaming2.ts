@@ -1,6 +1,7 @@
 import { AGENT_STOP_GRACE_TIMEOUT_MS, SHELL_AGENT_ID, QAIQ_AGENT_ID, REPO_MAP_CACHE_TTL_MS, REPO_MAP_MAX_CHARS, USER_REQUEST_MAX_CHARS } from './qaap-agent-task-runner-constants';
 import type { QaapAgentCommandBuildResult, QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { QaapAgentQueuePolicy } from './qaap-agent-queue-policy';
+import { sharedWorkingTreeBusyExtracted } from './qaap-agent-task-runner-render2';
 import { QaapAgentStorageUnavailableError } from './qaap-agent-storage-unavailable-error';
 // Extracted from qaap-agent-task-runner.ts
 
@@ -188,10 +189,15 @@ export function createExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCr
             : resolveAgentAutoApprove(
                 request.autoApprove ?? (parentTask?.autoApprove !== false ? undefined : false),
             );
+        // A task without its own worktree edits the repository's shared working tree: while the same owner has
+        // another such task running in this cwd it queues (visible as `queued`) instead of racing on the same files.
+        const sharedWorkingTree = request.ownWorkingTree !== true;
+        const sharedWorkingTreeQueued = sharedWorkingTree && sharedWorkingTreeBusyExtracted(ctx, ownerLogin, cwd);
         const atCapacity = ctx.isDrainingForDeploy?.() === true
             || ctx.countRunningTasks() >= ctx.maxConcurrentAgents()
             || ctx.ownerAtConcurrencyCap(ownerLogin)
-            || ctx.repoAtConcurrencyCap(cwd);
+            || ctx.repoAtConcurrencyCap(cwd)
+            || sharedWorkingTreeQueued;
         if (atCapacity) {
             new QaapAgentQueuePolicy().assertCapacity(ctx.tasks.values(), ownerLogin);
         }
@@ -224,6 +230,7 @@ export function createExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCr
                 ? { userRequest: (request.userQuery?.trim() || prompt).slice(0, USER_REQUEST_MAX_CHARS) }
                 : {}),
             ...(clientRequestId ? { clientRequestId } : {}),
+            sharedWorkingTree,
             ...(request.resumedFromTaskId ? { resumedFromTaskId: request.resumedFromTaskId } : {}),
             ...(request.fallbackFromTaskId ? { fallbackFromTaskId: request.fallbackFromTaskId } : {}),
             ...(request.latencyMarks ? { latencyMarks: request.latencyMarks } : {}),

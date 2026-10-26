@@ -117,10 +117,21 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
      * `clientRequestId`, we return the already-created conversation instead of making another. Bounded
      * to the newest {@link CLIENT_REQUEST_DEDUP_MAX} entries so it can never grow without limit.
      */
-    protected readonly clientRequestDedup = new Map<string, string>();
+    protected readonly clientRequestDedup = new Map<string, { conversationId: string; at: number }>();
     /** Dedup keys whose create is in progress (reserved before the first await) to block a concurrent fan-out. */
     protected readonly clientRequestInFlight = new Set<string>();
     protected static readonly CLIENT_REQUEST_DEDUP_MAX = 512;
+    /** A remembered `clientRequestId` short-circuits retries only within this window (ten minutes). */
+    protected static readonly CLIENT_REQUEST_DEDUP_TTL_MS = 10 * 60 * 1000;
+    /**
+     * Text window: `${owner}\0${cwd}\0${message}` → the create that claimed that text, with a promise that settles
+     * to its conversation (or `undefined` if it failed). A double-click submits two creates with DIFFERENT
+     * clientRequestIds, so the id key alone cannot catch it; a same-text create inside the window awaits the
+     * first one and returns its conversation instead of starting a second agent on the same working tree.
+     */
+    protected readonly recentTextCreates = new Map<string, { at: number; settled: Promise<{ id: string } | undefined> }>();
+    protected static readonly TEXT_DEDUP_WINDOW_MS = 5_000;
+    protected static readonly TEXT_DEDUP_MAX = 512;
     /** HTTP 409 body of a merge-back refused because another thread runs in the target working tree. */
     static readonly MERGE_BUSY: QaapApplyConversationWorktreeResponse = {
         ok: false,
@@ -613,7 +624,10 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             : undefined;
         const dedupKey = clientRequestId ? `${ownerLogin ?? '_'}:${clientRequestId}` : undefined;
         if (dedupKey) {
-            const priorId = this.clientRequestDedup.get(dedupKey);
+            const remembered = this.clientRequestDedup.get(dedupKey);
+            const priorId = remembered && this.now() - remembered.at <= QaapAgentConversationEndpoint.CLIENT_REQUEST_DEDUP_TTL_MS
+                ? remembered.conversationId
+                : undefined;
             const prior = priorId ? this.store.get(priorId) : undefined;
             if (prior) {
                 res.status(201).json(prior);
@@ -630,7 +644,23 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             this.clientRequestInFlight.add(dedupKey);
         }
         let claimedRepo: string | undefined;
+        let settleText: ((conv: { id: string } | undefined) => void) | undefined;
         try {
+            const textKey = typeof body.message === 'string' && body.message.trim()
+                ? `${ownerLogin ?? '_'}\u0000${resolvedCwd.cwd}\u0000${body.message.trim()}`
+                : undefined;
+            if (textKey) {
+                const recent = this.recentTextCreates.get(textKey);
+                if (recent && this.now() - recent.at <= QaapAgentConversationEndpoint.TEXT_DEDUP_WINDOW_MS) {
+                    const first = await recent.settled;
+                    const reused = first ? this.store.get(first.id) : undefined;
+                    if (reused) {
+                        res.status(201).json(reused);
+                        return;
+                    }
+                }
+                settleText = this.reserveTextCreate(textKey);
+            }
             // Isolated threads run in their own git worktree, grouped under the originating
             // repository via parallelBaseCwd (see QaapAgentConversationIsolation).
             let cwd = resolvedCwd.cwd;
@@ -692,10 +722,13 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             if (dedupKey) {
                 this.rememberClientRequest(dedupKey, conv.id);
             }
+            settleText?.(conv);
             res.status(201).json(conv);
         } catch (error) {
             res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
         } finally {
+            // No-op when the create succeeded; releases any waiter of a failed create so it can retry.
+            settleText?.(undefined);
             if (dedupKey) {
                 this.clientRequestInFlight.delete(dedupKey);
             }
@@ -764,7 +797,8 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
 
     /** Record a client request → conversation mapping, evicting the oldest entry past the cap. */
     protected rememberClientRequest(dedupKey: string, conversationId: string): void {
-        this.clientRequestDedup.set(dedupKey, conversationId);
+        this.clientRequestDedup.delete(dedupKey);
+        this.clientRequestDedup.set(dedupKey, { conversationId, at: this.now() });
         while (this.clientRequestDedup.size > QaapAgentConversationEndpoint.CLIENT_REQUEST_DEDUP_MAX) {
             const oldest = this.clientRequestDedup.keys().next().value;
             if (oldest === undefined) {
@@ -772,6 +806,32 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             }
             this.clientRequestDedup.delete(oldest);
         }
+    }
+
+    /** Wall clock for the dedup windows; overridable in tests. */
+    protected now(): number {
+        return Date.now();
+    }
+
+    /**
+     * Claims the text window for a create about to run: a later same-text create within the window awaits this
+     * one. Returns the resolver that settles the claim with the created conversation, or `undefined` on failure.
+     */
+    protected reserveTextCreate(textKey: string): (conv: { id: string } | undefined) => void {
+        let resolve: (conv: { id: string } | undefined) => void = () => undefined;
+        const settled = new Promise<{ id: string } | undefined>(done => {
+            resolve = done;
+        });
+        this.recentTextCreates.delete(textKey);
+        this.recentTextCreates.set(textKey, { at: this.now(), settled });
+        while (this.recentTextCreates.size > QaapAgentConversationEndpoint.TEXT_DEDUP_MAX) {
+            const oldest = this.recentTextCreates.keys().next().value;
+            if (oldest === undefined) {
+                break;
+            }
+            this.recentTextCreates.delete(oldest);
+        }
+        return resolve;
     }
 
     /**

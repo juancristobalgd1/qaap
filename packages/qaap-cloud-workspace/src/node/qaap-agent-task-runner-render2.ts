@@ -564,6 +564,27 @@ export function reorderQueuedTaskExtracted(
         return ctx.tasks.get(id);
 }
 
+/**
+ * True when another shared-working-tree task of the same owner runs (or is still stopping) in the same cwd.
+ * Tasks with their own worktree never count, and neither do other owners or repositories.
+ */
+export function sharedWorkingTreeBusyExtracted(ctx: QaapAgentTaskRunnerContext, ownerLogin: string | undefined, cwd: string, exceptId?: string): boolean {
+        const repoKey = repoConcurrencyKey(cwd);
+        const ownerKey = queueOwnerKey(ownerLogin);
+        for (const task of ctx.tasks.values()) {
+            if (task.id === exceptId || task.sharedWorkingTree !== true) {
+                continue;
+            }
+            if (queueOwnerKey(task.ownerLogin) !== ownerKey || repoConcurrencyKey(task.cwd) !== repoKey) {
+                continue;
+            }
+            if (task.state === 'running' || ctx.stoppingTaskIds?.has(task.id)) {
+                return true;
+            }
+        }
+        return false;
+}
+
 export function drainQueuedTasksExtracted(ctx: QaapAgentTaskRunnerContext): void {
         if (ctx.recoveryState === 'loading' || ctx.recoveryState === 'failed' || ctx.storageWriteFailed
             || ctx.isDrainingForDeploy?.() === true) {
@@ -572,10 +593,12 @@ export function drainQueuedTasksExtracted(ctx: QaapAgentTaskRunnerContext): void
         while (ctx.countRunningTasks() < ctx.maxConcurrentAgents()) {
             // Skip queued tasks whose owner or repository is already at its cap so one busy user or
             // repo can't block everyone behind them in the FIFO queue — promote the next eligible task.
+            // A shared-working-tree task also waits while its owner has another one running in that cwd.
             const next = [...ctx.tasks.values()]
                 .filter(task => task.state === 'queued'
                     && !ctx.ownerAtConcurrencyCap(task.ownerLogin)
-                    && !ctx.repoAtConcurrencyCap(task.cwd))
+                    && !ctx.repoAtConcurrencyCap(task.cwd)
+                    && !(task.sharedWorkingTree === true && sharedWorkingTreeBusyExtracted(ctx, task.ownerLogin, task.cwd, task.id)))
                 .sort(compareQueuedTasks)[0];
             if (!next) {
                 return;

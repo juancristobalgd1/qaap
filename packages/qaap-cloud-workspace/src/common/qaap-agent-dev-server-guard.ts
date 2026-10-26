@@ -20,6 +20,19 @@ const PACKAGE_MANAGER_DEV_RE = /\b(?:pnpm|npm|yarn|bun)\s+(?:run\s+)?(?:dev|star
 const FRAMEWORK_BIN_RE = /(?:^|&&|\|\||;|\(\s*|\b(?:nohup|exec)\s+)\s*(?:npx\s+|bunx\s+)?(?:vite|next|nuxt|astro|remix|webpack-dev-server|react-scripts)\b/i;
 /** One-shot subcommands that look like dev tooling but exit on their own. */
 const ONE_SHOT_RE = /(?:\b(?:build|export|test|lint|typecheck|info|telemetry)\b|--version|--help)/i;
+/** Qaap npm scripts that start a browser/electron dev server, whatever package manager or prefix invokes them. */
+const QAAP_DEV_SCRIPT_RE = /\b(?:npm|pnpm|yarn|bun|npx|bunx)\b[^&|;\n]*?\b(?:qaap:local:browser[\w:-]*|start:browser[\w:-]*|start:electron)\b/i;
+/** Execution of the Qaap browser restart/start scripts by any path (`node …/qaap-restart-browser.mjs`, `./…`, `sh …`). */
+const QAAP_RESTART_SCRIPT_RE = /(?:\b(?:node|bun|sh|bash|zsh|exec|source)\s+|(?:^|[\s;&|(])\.\/)[^&|;\n]*\bqaap-(?:restart|start)-browser(?:\.mjs|\.js)?\b/i;
+/** Detached launches: `nohup`, `setsid`, `disown`, or a single trailing/inline `&` (not `&&`, `>&`, `&>`). */
+const DETACHED_LAUNCH_RE = /\b(?:nohup|setsid|disown)\b|(?<![>&])&(?![&>])/;
+/** Server-ish words that make a detached launch a dev/serve process. */
+const SERVER_WORD_RE = /\b(?:dev|start|serve|preview)\b|\b(?:vite|next|nuxt|astro|remix|webpack-dev-server|react-scripts)\b/i;
+
+/** Splits a shell command into simple segments at `&&`, `||`, `;`, `|`, newlines and single `&`. */
+function splitShellSegments(text: string): string[] {
+    return text.split(/&&|\|\||;|\||\n|(?<![>&])&(?![&>])/).map(segment => segment.trim()).filter(segment => segment.length > 0);
+}
 
 /** True for shell commands that start a long-lived dev server (background variants included). */
 export function isLongLivedDevServerShellCommand(command: string | undefined): boolean {
@@ -27,10 +40,16 @@ export function isLongLivedDevServerShellCommand(command: string | undefined): b
     if (!text) {
         return false;
     }
-    if (ONE_SHOT_RE.test(text)) {
-        return false;
+    // Script/launcher invocations are never exempt: a one-shot word elsewhere in the command must not hide them.
+    if (QAAP_DEV_SCRIPT_RE.test(text) || QAAP_RESTART_SCRIPT_RE.test(text)) {
+        return true;
     }
-    return PACKAGE_MANAGER_DEV_RE.test(text) || FRAMEWORK_BIN_RE.test(text);
+    if (DETACHED_LAUNCH_RE.test(text) && SERVER_WORD_RE.test(text)) {
+        return true;
+    }
+    // Evaluate each segment so `pnpm build && pnpm dev` is not exempted by the one-shot word of its first part.
+    return splitShellSegments(text).some(segment => !ONE_SHOT_RE.test(segment)
+        && (PACKAGE_MANAGER_DEV_RE.test(segment) || FRAMEWORK_BIN_RE.test(segment)));
 }
 
 /** Deny guidance sent back to the agent so it self-corrects instead of retrying. */

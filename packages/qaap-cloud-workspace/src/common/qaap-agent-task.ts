@@ -106,6 +106,11 @@ export interface QaapAgentTask {
     readonly ownerLogin?: string;
     /** Client-generated idempotency key for the create request that produced this task. */
     readonly clientRequestId?: string;
+    /**
+     * True when the task runs in the repository's shared working tree (no worktree of its own). Two active shared
+     * tasks of the same owner in the same cwd would edit the same files, so the later one queues until the first ends.
+     */
+    readonly sharedWorkingTree?: boolean;
     /** Id of the interrupted task this execution is continuing, when applicable. */
     readonly resumedFromTaskId?: string;
     /**
@@ -252,6 +257,8 @@ export namespace QaapAgentTaskKind {
 export interface QaapCreateAgentTaskRequest {
     /** Reused by a client retry so a slow POST cannot start the same task twice. */
     readonly clientRequestId?: string;
+    /** True when the task runs in its own git worktree. Omitted or false means the shared working tree of `cwd`. */
+    readonly ownWorkingTree?: boolean;
     /** Internal durable marker used to make Continue idempotent across backend restarts. */
     readonly resumedFromTaskId?: string;
     /**
