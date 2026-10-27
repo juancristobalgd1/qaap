@@ -15,6 +15,7 @@ import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobi
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import { QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY } from './mobile-work-hub-sessions-sidebar';
 import { createQaapViewModeSwitch } from './qaap-workbench-account-menu';
+import { QAAP_NEW_TASK_ICON_CLASS } from './qaap-new-task-icon';
 import type { QaapSegmentedFieldController } from '@theia/qaap-shared-core/lib/browser/qaap-mobile-form-ui';
 import type { MobileViewToggleId } from '@theia/qaap-shared-core/lib/common/qaap-mobile-work-surface-preference';
 /** Panel surface for DOM shell construction and sheet gestures. */
@@ -288,9 +289,9 @@ export class MobileProjectsPanelChromeUi {
         this.host.headerNewChatBtn.className = 'theia-workbench-nav-btn theia-mobile-projects-new-chat-btn';
         this.host.headerNewChatBtn.hidden = true;
         this.host.headerNewChatBtn.setAttribute('aria-hidden', 'true');
-        this.host.headerNewChatBtn.title = nls.localize('qaap/sessionsSidebar/newChat', 'New agent');
+        this.host.headerNewChatBtn.title = nls.localize('qaap/sessionsSidebar/newTask', 'New task');
         this.host.headerNewChatBtn.setAttribute('aria-label', this.host.headerNewChatBtn.title);
-        this.host.headerNewChatBtn.innerHTML = '<span class="codicon codicon-add" aria-hidden="true"></span>';
+        this.host.headerNewChatBtn.innerHTML = `<span class="${QAAP_NEW_TASK_ICON_CLASS}" aria-hidden="true"></span>`;
         this.host.headerNewChatBtn.addEventListener('click', event => {
             event.preventDefault();
             event.stopPropagation();
@@ -365,7 +366,7 @@ export class MobileProjectsPanelChromeUi {
         this.host.newFabBtn.className = 'theia-mobile-projects-fab';
         this.host.newFabBtn.title = nls.localize('qaap/mobileProjects/new', 'New');
         this.host.newFabBtn.setAttribute('aria-label', nls.localize('qaap/mobileProjects/new', 'New'));
-        this.host.newFabBtn.innerHTML = '<span class="codicon codicon-add" aria-hidden="true"></span>';
+        this.host.newFabBtn.innerHTML = `<span class="${QAAP_NEW_TASK_ICON_CLASS}" aria-hidden="true"></span>`;
         this.host.newFabBtn.hidden = true;
         this.host.newFabBtn.addEventListener('click', () => { void this.host.onNewClick(); });
 

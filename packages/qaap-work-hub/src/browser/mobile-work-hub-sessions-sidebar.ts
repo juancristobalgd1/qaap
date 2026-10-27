@@ -17,6 +17,7 @@ import { setQaapClientErrorBuild } from '@theia/qaap-shared-core/lib/common/qaap
 import { fetchQaapAuthConfig, qaapAuthenticatedFetchInit } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import { ensurePullRequestsSurfaceCss } from './ensure-pull-requests-surface-css';
 import { TASK_TITLE_OVERFLOW_CLASS } from './mobile-projects-task-title-marquee';
+import { QAAP_NEW_TASK_ICON_CLASS } from './qaap-new-task-icon';
 
 export const QAAP_MOBILE_SESSIONS_SIDEBAR_BODY_CLASS = 'theia-mobile-mod-sessions-sidebar-open';
 
@@ -314,8 +315,8 @@ export class MobileWorkHubSessionsSidebar {
         this.nav.setAttribute('aria-label', nls.localize('qaap/sessionsSidebar/navLabel', 'Sidebar shortcuts'));
         this.nav.append(
             this.createNavButton(
-                'codicon-add',
-                nls.localize('qaap/sessionsSidebar/newChat', 'New agent'),
+                QAAP_NEW_TASK_ICON_CLASS,
+                nls.localize('qaap/sessionsSidebar/newTask', 'New task'),
                 () => {
                     this.hideForMobileOverlay();
                     this.delegate.onNewChat();
@@ -1101,7 +1102,7 @@ export class MobileWorkHubSessionsSidebar {
         btn.type = 'button';
         btn.className = 'theia-mobile-work-hub-sessions-sidebar-nav-item';
         const icon = document.createElement('span');
-        icon.className = `codicon ${iconClass}`;
+        icon.className = iconClass.startsWith('codicon-') ? `codicon ${iconClass}` : iconClass;
         icon.setAttribute('aria-hidden', 'true');
         btn.append(icon, document.createTextNode(label));
         if (onClick) {

@@ -139,7 +139,7 @@ export function createSessionsSidebarNewAgentControlExtracted(ctx: MobileProject
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'theia-mobile-work-hub-sessions-sidebar-project-new-agent';
-    const newAgentLabel = nls.localize('qaap/sessionsSidebar/newChat', 'New agent');
+    const newAgentLabel = nls.localize('qaap/sessionsSidebar/newTask', 'New task');
     btn.setAttribute('aria-label', newAgentLabel);
     btn.title = newAgentLabel;
     const icon = document.createElement('span');

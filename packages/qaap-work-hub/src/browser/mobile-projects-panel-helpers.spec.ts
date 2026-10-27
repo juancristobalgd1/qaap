@@ -37,7 +37,7 @@ describe('renderHeaderOverflowMenuItems', () => {
 
         const items = Array.from(menu.querySelectorAll<HTMLButtonElement>('.qaap-work-hub-toolbar-menu-item'));
         expect(items.map(item => item.textContent?.trim())).to.include.members([
-            'New Chat',
+            'New task',
             'Show Chats',
             'Copy full conversation',
             'AI Settings',
