@@ -461,6 +461,12 @@
   overflow: auto;
 }
 
+/* A sticky child sticks inside the scroller's padding box: drop the bottom
+   padding so the comment footer sits flush and nothing scrolls under it. */
+.theia-mod-pull-request-detail .theia-mobile-projects-scroll {
+  padding-bottom: 0;
+}
+
 .theia-mod-pull-request-detail .theia-mobile-projects-subtitle,
 .theia-mod-pull-request-detail .theia-mobile-projects-filters-host,
 .theia-mod-pull-request-detail .theia-mobile-projects-sticky-composer,
@@ -840,7 +846,7 @@
   align-items: flex-end;
   gap: 9px;
   margin: 8px 0 0;
-  padding: 10px 2px max(10px, env(safe-area-inset-bottom, 0px));
+  padding: 10px 2px calc(10px + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid color-mix(in srgb, var(--theia-foreground) 10%, transparent);
   background: var(--theia-editor-background, #1b1b1b);
   box-shadow: 0 -8px 20px color-mix(in srgb, var(--theia-editor-background, #1b1b1b) 72%, transparent);
