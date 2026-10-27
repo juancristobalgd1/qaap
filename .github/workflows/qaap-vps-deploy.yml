@@ -50,7 +50,7 @@ env:
 jobs:
   resolve_source:
     name: Resolve release commit once
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     if: github.repository == 'juancristobalgd1/qaap'
     outputs:
@@ -70,7 +70,9 @@ jobs:
   # and build:browser. The deploy job depends on this, so a red gate blocks the VPS deploy.
   gate:
     name: Pre-deploy smoke gate
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest became 26.04 (Oct 2026), where `playwright install chromium` is unsupported
+    # and the smoke gate failed every deploy.
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     needs: resolve_source
     if: github.repository == 'juancristobalgd1/qaap' && github.event.inputs.skip_gate != 'true'
@@ -202,7 +204,7 @@ jobs:
 
   publish_image:
     name: Publish immutable GHCR image
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     # Build the image while the gate runs: the gate takes ~4 min and the build ~17 min, so waiting
     # for the gate first only adds latency. The deploy job still requires the gate, so a failed gate
@@ -304,7 +306,7 @@ jobs:
 
   verify_image:
     name: Verify exact candidate image
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: publish_image
     if: always() && needs.publish_image.result == 'success'
@@ -341,7 +343,7 @@ jobs:
 
   deploy:
     name: Deploy to VPS
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     needs: [gate, publish_image, verify_image]
     # Deploy when the gate passed, or when it was intentionally skipped via workflow_dispatch.
