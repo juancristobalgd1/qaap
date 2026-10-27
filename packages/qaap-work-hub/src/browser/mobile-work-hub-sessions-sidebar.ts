@@ -100,6 +100,8 @@ export interface MobileWorkHubSettingsSidebarSection {
     readonly id: string;
     readonly label: string;
     readonly icon: string;
+    /** Heading of the nav group this section opens; sections without one continue the previous group. */
+    readonly group?: string;
 }
 
 export interface MobileWorkHubSettingsSidebarOptions {
@@ -686,7 +688,9 @@ export class MobileWorkHubSessionsSidebar {
         }
         this.settingsSearchInput.value = options.searchValue?.() ?? '';
         this.settingsSearchInput.readOnly = options.searchReadOnly?.() === true;
-        this.settingsNav.replaceChildren(...options.sections.map(section => {
+        // Grouped sections carry their own headings, so the generic "Settings" label would repeat the header.
+        this.settingsSectionLabel.hidden = options.sections.some(section => section.group);
+        this.settingsNav.replaceChildren(...options.sections.flatMap(section => {
             const item = document.createElement('button');
             item.type = 'button';
             item.className = 'theia-mobile-work-hub-settings-nav-item';
@@ -701,7 +705,14 @@ export class MobileWorkHubSessionsSidebar {
                 options.onSectionSelected(section.id);
                 this.hideForMobileOverlay();
             });
-            return item;
+            if (!section.group) {
+                return [item];
+            }
+            const heading = document.createElement('div');
+            heading.className = 'theia-mobile-work-hub-settings-group-label';
+            heading.setAttribute('role', 'presentation');
+            heading.textContent = section.group;
+            return [heading, item];
         }));
     }
 

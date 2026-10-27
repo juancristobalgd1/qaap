@@ -597,6 +597,11 @@ body[data-theia-theme-mode="dark"] .theia-mobile-work-hub-sessions-sidebar {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Already inside Settings: the footer gear would only reopen the current view. */
+.theia-mobile-work-hub-sessions-sidebar.theia-mod-settings .theia-mobile-work-hub-sessions-sidebar-settings-button {
+  display: none;
+}
+
 .theia-mobile-work-hub-sessions-sidebar-settings-button:hover,
 .theia-mobile-work-hub-sessions-sidebar-settings-button:focus-visible {
   background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
@@ -1035,8 +1040,8 @@ body[data-theia-theme-mode="dark"] .theia-mobile-work-hub-sessions-sidebar {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  gap: 10px;
-  padding: 0 10px 16px;
+  gap: 6px;
+  padding: 2px 10px 12px;
   overflow: hidden;
 }
 
