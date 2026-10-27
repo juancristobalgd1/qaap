@@ -35,7 +35,7 @@ concurrency:
 jobs:
   build:
     name: Build staging image
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     if: github.repository == 'juancristobalgd1/qaap' && inputs.action == 'build'
     permissions:
@@ -123,7 +123,7 @@ jobs:
   stage:
     needs: build
     name: Staging ${{ inputs.action == 'build' && 'deploy' || inputs.action }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     # Secrets and SSH only from the trusted workflow on master: a dispatch from another
     # branch runs that branch's copy of this file, so it may build but never stage.
