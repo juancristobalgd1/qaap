@@ -414,7 +414,8 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
                 onSelect: () => activateAgentPickerDirectSelection({
                     agentId,
                     cwd: options.cwd,
-                    cachedModels: chrome.modelsByAgent.get(agentId),
+                    // The row already resolved its stored model from `entry.models` for its label.
+                    cachedModels: chrome.modelsByAgent.get(agentId) ?? entry.models,
                     onSelectDirect: model => model
                         ? options.onSelectAgent(agentId, model)
                         : options.onSelectAgent(agentId),
