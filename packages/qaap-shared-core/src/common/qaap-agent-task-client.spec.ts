@@ -18,26 +18,24 @@ describe('qaap-agent-task-client', () => {
         expect(resolveQaapAgentMentionToken('QAIQ')).to.equal('qaiq');
     });
 
-    it('normalizeBackendAgentId recognizes expanded built-in coding agents', () => {
+    it('normalizeBackendAgentId recognizes the registered coding agents', () => {
         expect(normalizeBackendAgentId('qaiq')).to.equal('qaiq');
         expect(normalizeBackendAgentId('opencode')).to.equal('opencode');
-        expect(normalizeBackendAgentId('hermes')).to.equal('hermes');
-        expect(normalizeBackendAgentId('openclaw')).to.equal('openclaw');
-        expect(normalizeBackendAgentId('cursor')).to.equal('cursor');
-        expect(normalizeBackendAgentId('cursor-agent')).to.equal('cursor');
-        expect(normalizeBackendAgentId('antigravity')).to.equal('antigravity');
-        expect(normalizeBackendAgentId('gemini')).to.equal('antigravity');
-        expect(normalizeBackendAgentId('copilot')).to.equal('copilot');
-        expect(normalizeBackendAgentId('qwen')).to.equal('qwen');
-        expect(normalizeBackendAgentId('kimi')).to.equal('kimi');
-        expect(normalizeBackendAgentId('openclaude')).to.equal('openclaude');
+        expect(normalizeBackendAgentId('pi')).to.equal('pi');
+        expect(normalizeBackendAgentId('codex')).to.equal('codex');
         expect(normalizeBackendAgentId('claude')).to.equal('claude');
+    });
+
+    it('normalizeBackendAgentId no longer recognizes retired agents', () => {
+        for (const id of ['hermes', 'openclaw', 'cursor', 'cursor-agent', 'antigravity', 'gemini', 'copilot', 'qwen', 'kimi', 'openclaude', 'grok']) {
+            expect(normalizeBackendAgentId(id), id).to.equal(undefined);
+        }
     });
 
     it('extractBackendAgentMention prefers the last recognized @agent', () => {
         expect(extractBackendAgentMention('@codex hola @qaiq adiós')).to.equal(QAIQ_AGENT_ID);
         expect(extractBackendAgentMention('@opencode revisa la app')).to.equal('opencode');
-        expect(extractBackendAgentMention('@cursor-agent fix tests')).to.equal('cursor');
+        expect(extractBackendAgentMention('@pi fix tests')).to.equal('pi');
     });
 
     it('normalizes OpenCode diagnostics to friendly fallback model names', () => {
@@ -120,20 +118,20 @@ describe('qaap-agent-task-client', () => {
         expect(agents.find(agent => agent.id === 'qaiq')?.available).to.equal(true);
     });
 
-    it('listQaapComposerPickerAgents lists every defined harness under the default preference', () => {
-        const detected = ['qaiq', 'antigravity', 'claude', 'codex', 'openclaude', 'opencode']
-            .map(id => ({ id, label: id, available: true }));
+    it('listQaapComposerPickerAgents lists exactly qaiq, claude, codex, opencode and pi by default', () => {
+        const detected = ['qaiq', 'claude'].map(id => ({ id, label: id, available: true }));
         const agents = listQaapComposerPickerAgents(detected, [...QAAP_DEFAULT_DISABLED_HARNESS_IDS]);
+        expect(agents.map(agent => agent.id).sort()).to.deep.equal(['claude', 'codex', 'opencode', 'pi', 'qaiq']);
         expect(agents.map(agent => agent.id).sort()).to.deep.equal(QAAP_HARNESS_DEFINITIONS.map(harness => harness.id).sort());
-        for (const id of ['grok', 'copilot', 'cursor', 'hermes']) {
+        for (const id of ['codex', 'opencode', 'pi']) {
             expect(agents.find(agent => agent.id === id)?.available, id).to.equal(false);
         }
     });
 
-    it('listQaapComposerPickerAgents keeps hosted-restricted Cursor listed but not selectable', () => {
-        rememberQaapHostedRuntime(true);
-        const agents = listQaapComposerPickerAgents([{ id: 'cursor', label: 'Cursor Agent', available: true }]);
-        expect(agents.find(agent => agent.id === 'cursor')?.available).to.equal(false);
+    it('reconcileSelectedAgent falls back to QAIQ when the stored agent is a retired harness', () => {
+        const agents = ['qaiq', 'codex'].map(id => ({ id, label: id, available: true }));
+        expect(reconcileSelectedAgent('kimi', agents, undefined, undefined)).to.equal('qaiq');
+        expect(reconcileSelectedAgent('cursor', agents, 'hermes', undefined)).to.equal('qaiq');
     });
 
     it('listQaapComposerPickerAgents honors harnesses disabled in AI Configuration', () => {

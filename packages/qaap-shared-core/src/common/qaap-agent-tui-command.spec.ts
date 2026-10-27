@@ -14,7 +14,8 @@ describe('resolveInteractiveAgentCliBin', () => {
         expect(resolveInteractiveAgentCliBin('openclaude')).to.equal('openclaude');
         expect(resolveInteractiveAgentCliBin('codex')).to.equal('codex');
         expect(resolveInteractiveAgentCliBin('claude')).to.equal('claude');
-        expect(resolveInteractiveAgentCliBin('grok')).to.equal('grok');
+        expect(resolveInteractiveAgentCliBin('pi')).to.equal('pi');
+        expect(resolveInteractiveAgentCliBin('grok')).to.equal(undefined);
         expect(resolveInteractiveAgentCliBin('antigravity')).to.equal('agy');
         expect(resolveInteractiveAgentCliBin('gemini')).to.equal('agy');
         expect(resolveInteractiveAgentCliBin('opencode')).to.equal('opencode');
@@ -65,6 +66,13 @@ describe('resolveInteractiveAgentLoginCommand', () => {
     });
 });
 
+describe('resolveAgentConnectionFlow for Pi', () => {
+    it('has no scripted login: the user runs `pi` and `/login` in the tenant terminal', () => {
+        expect(resolveInteractiveAgentLoginCommand('pi')).to.equal(undefined);
+        expect(resolveAgentConnectionFlow('pi')).to.deep.equal({ kind: 'tenant-terminal', command: 'pi' });
+    });
+});
+
 describe('resolveAgentConnectionFlow', () => {
     afterEach(() => {
         rememberQaapHostedRuntime(false);
@@ -74,16 +82,8 @@ describe('resolveAgentConnectionFlow', () => {
         qaiq: 'settings-api-key',
         codex: 'cli-login',
         claude: 'cli-login',
-        openclaude: 'cli-login',
-        grok: 'cli-login',
         opencode: 'cli-login',
-        hermes: 'cli-login',
-        openclaw: 'tenant-terminal',
-        cursor: 'cli-login',
-        antigravity: 'cli-login',
-        copilot: 'cli-login',
-        qwen: 'tenant-terminal',
-        kimi: 'tenant-terminal',
+        pi: 'tenant-terminal',
     };
 
     for (const harness of QAAP_HARNESS_DEFINITIONS) {

@@ -127,6 +127,13 @@ export const TRACKED_AGENT_CLIS: readonly TrackedAgentCli[] = [
         expectedVersionEnv: 'OPENCODE_CLI_VERSION',
     },
     {
+        id: 'pi',
+        label: 'Pi',
+        bins: ['pi'],
+        npmPackage: '@earendil-works/pi-coding-agent',
+        expectedVersionEnv: 'PI_CLI_VERSION',
+    },
+    {
         id: 'copilot',
         label: 'Copilot CLI',
         bins: ['copilot'],

@@ -365,6 +365,9 @@ export function inferAgentIdFromCommand(command: string): string {
     if (bin === 'qwen') {
         return 'qwen';
     }
+    if (bin === 'pi') {
+        return 'pi';
+    }
     if (bin === 'kimi') {
         return 'kimi';
     }

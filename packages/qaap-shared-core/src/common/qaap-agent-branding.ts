@@ -160,6 +160,9 @@ const SVG_SHELL = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" r
 
 const SVG_CODER = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" role="img" aria-hidden="true"><rect width="24" height="24" rx="6" fill="#3A2614"/><path fill="#E58E40" d="M12 4.5 8.5 12 12 14.5 15.5 12Zm0 9 2.5 4.5L12 19l-2.5-1Z"/></svg>';
 
+/** Pi (pi.dev) coding agent: white pi glyph on a dark tile. */
+const SVG_PI = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" role="img" aria-hidden="true"><rect width="24" height="24" rx="6" fill="#111827"/><path fill="#fff" d="M5.5 7.2h13v1.9h-2.2v7.5c0 .7.3 1 1 1h.9v1.8h-1.4c-1.9 0-2.9-.9-2.9-2.7V9.1h-3.4c-.1 3.4-.5 6.2-1.3 8.4-.3.9-.8 1.5-1.6 1.5-.7 0-1.2-.5-1.2-1.2 0-.5.3-.9.7-1.3.9-.9 1.3-2.8 1.4-5.4H7.4V9.1H5.5z"/></svg>';
+
 const SVG_KIMI = '<svg viewBox="0 0 512 512" fill-rule="evenodd" clip-rule="evenodd" stroke-linejoin="round" stroke-miterlimit="2" xmlns="http://www.w3.org/2000/svg" role="img" aria-hidden="true"><path d="M503 114.333v280c0 60.711-49.29 110-110 110H113c-60.711 0-110-49.289-110-110v-280c0-60.71 49.289-110 110-110h280c60.71 0 110 49.29 110 110z"/><path d="M342.065 189.759c1.886-2.42 3.541-4.63 5.289-6.77.81-1.007.74-1.771-.046-2.824-7.58-9.965-8.298-21.028-3.935-32.254 3.275-8.448 10.52-12.406 19.373-13.25 5.52-.521 10.936.046 15.959 2.73 6.596 3.53 10.438 8.912 11.688 16.341.995 5.926.81 11.712-.868 17.452-2.974 10.161-10.277 15.427-20.287 16.758-8.31 1.11-16.734 1.25-25.113 1.817-.648.046-1.308 0-2.06 0z" fill="#027aff"/><path d="M321.512 144.254h-50.064l-39.637 90.384h-56.036v-89.99H131v232.868h44.787v-98.103h78.973c13.598 0 26.015-7.927 31.744-20.252v118.355h44.787v-98.103c0-23.342-18.239-42.97-41.523-44.671v-.116h-24.593a45.577 45.577 0 0026.884-24.534l29.453-65.838z" fill="#fff"/></svg>';
 
 /** Official Grok Build mark — see {@link GROK_BRAND_SVG_LIGHT}. */
@@ -206,6 +209,7 @@ const AGENT_BRAND_FACTORIES: Record<string, () => QaapAgentBrand> = {
         svgDark: SVG_COPILOT_DARK,
     }),
     qwen: () => ({ id: 'qwen', label: 'Qwen Code', tone: 'dark', svg: SVG_QWEN }),
+    pi: () => ({ id: 'pi', label: 'Pi', tone: 'dark', svg: SVG_PI }),
     kimi: () => ({ id: 'kimi', label: 'Kimi CLI', tone: 'brand', svg: SVG_KIMI }),
     [SHELL_AGENT_ID]: () => ({ id: SHELL_AGENT_ID, label: 'Shell', tone: 'brand', svg: SVG_SHELL }),
     coder: () => ({ id: 'coder', label: 'Coder', tone: 'brand', svg: SVG_CODER }),

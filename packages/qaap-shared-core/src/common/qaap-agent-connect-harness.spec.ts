@@ -120,16 +120,8 @@ const EXPECTED_CONNECT_PATHS: Readonly<Record<string, QaapAgentConnectionFlow['k
     qaiq: 'settings-api-key',
     codex: 'cli-login',
     claude: 'cli-login',
-    openclaude: 'cli-login',
-    grok: 'cli-login',
     opencode: 'cli-login',
-    hermes: 'cli-login',
-    openclaw: 'tenant-terminal',
-    cursor: 'cli-login',
-    antigravity: 'cli-login',
-    copilot: 'cli-login',
-    qwen: 'tenant-terminal',
-    kimi: 'tenant-terminal',
+    pi: 'tenant-terminal',
 };
 
 describe('harness connect paths', () => {

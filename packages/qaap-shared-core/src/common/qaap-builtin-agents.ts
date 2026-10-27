@@ -23,9 +23,19 @@ export interface QaapBuiltinAgentDefinition {
 export const QAAP_BUILTIN_AGENT_DEFINITIONS: readonly QaapBuiltinAgentDefinition[] = [
     { id: 'codex', label: 'Codex', bin: 'codex', template: 'codex exec --json -c check_for_update_on_startup=false {model_flags} {prompt}' },
     { id: 'claude', label: 'Claude Code', bin: 'claude', template: 'claude --print --output-format stream-json --verbose --include-partial-messages {model_flags} -p {prompt}' },
+    { id: 'opencode', label: 'OpenCode', bin: 'opencode', template: 'opencode run --format json --print-logs --log-level ERROR --dangerously-skip-permissions {model_flags} {prompt}' },
+    { id: 'pi', label: 'Pi', bin: 'pi', template: 'pi -p --approve {model_flags} {prompt}' },
+];
+
+/**
+ * Agent CLIs that are no longer offered as Work Hub harnesses. They are intentionally NOT registered
+ * anywhere (task-runner auto-detection, Settings → Harness list, composer picker): to re-enable one, move
+ * its entry back into {@link QAAP_BUILTIN_AGENT_DEFINITIONS}. Removing them from the registry (instead of
+ * disabling them by default) keeps the picker and the backend runner in agreement.
+ */
+export const QAAP_RETIRED_AGENT_DEFINITIONS: readonly QaapBuiltinAgentDefinition[] = [
     { id: 'openclaude', label: 'OpenClaude', bin: 'openclaude', template: 'openclaude --print --output-format stream-json --verbose --include-partial-messages {qaiq_flags} {prompt}' },
     { id: 'grok', label: 'Grok Build', bin: 'grok', template: 'grok --always-approve {model_flags} -p {prompt}' },
-    { id: 'opencode', label: 'OpenCode', bin: 'opencode', template: 'opencode run --format json --print-logs --log-level ERROR --dangerously-skip-permissions {model_flags} {prompt}' },
     // `--model` is a top-level Hermes flag (`hermes --model <slug> chat`). Putting it after
     // `chat` is accepted by argparse, but a stale ~/.hermes/config.yaml still supplies the
     // main/auxiliary model when `{model_flags}` is empty — including dead OpenRouter `:free`
@@ -111,20 +121,22 @@ export function resolveQaapCodexTemplate(helpText: string): string {
         : 'codex -q --json -c check_for_update_on_startup=false {model_flags} {prompt}';
 }
 
-/** Mention / storage alias for {@link QAAP_BUILTIN_AGENT_DEFINITIONS} ids. */
+const QAAP_BUILTIN_AGENT_ALIASES: Readonly<Record<string, string>> = {
+    'cursor-agent': 'cursor',
+    'gemini': 'antigravity',
+    'grok-build': 'grok',
+    'grok-cli': 'grok',
+};
+
+/**
+ * Mention / storage alias for {@link QAAP_BUILTIN_AGENT_DEFINITIONS} ids. Retired CLIs
+ * ({@link QAAP_RETIRED_AGENT_DEFINITIONS}) and their aliases resolve to `undefined`.
+ */
 export function resolveQaapBuiltinAgentMentionId(token: string): string | undefined {
     const normalized = token.trim().toLowerCase();
     if (!normalized) {
         return undefined;
     }
-    if (normalized === 'cursor-agent') {
-        return 'cursor';
-    }
-    if (normalized === 'gemini') {
-        return 'antigravity';
-    }
-    if (normalized === 'grok-build' || normalized === 'grok-cli') {
-        return 'grok';
-    }
-    return QAAP_BUILTIN_AGENT_IDS.has(normalized) ? normalized : undefined;
+    const id = QAAP_BUILTIN_AGENT_ALIASES[normalized] ?? normalized;
+    return QAAP_BUILTIN_AGENT_IDS.has(id) ? id : undefined;
 }

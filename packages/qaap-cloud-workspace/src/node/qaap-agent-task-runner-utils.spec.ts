@@ -43,6 +43,15 @@ describe('harness connection state', () => {
         { id: 'qaiq', key: 'ai-features.openAiOfficial.openAiApiKey' },
     ];
 
+    it('Pi receives its prompt on stdin and is classified from `pi auth check` output', () => {
+        expect(resolveAgentPromptTransport('pi', { bin: 'pi' })).to.deep.equal({ kind: 'plain-stdin', placeholder: 'omit' });
+        expect(classifyAgentConnectionProbe('pi', 1, '{"status":"not_ready","provider":"anthropic","reason":"credentials_not_configured"}', false))
+            .to.equal('disconnected');
+        expect(classifyAgentConnectionProbe('pi', 1, 'not_ready', false)).to.equal('disconnected');
+        expect(classifyAgentConnectionProbe('pi', 0, '{"status":"ready","provider":"anthropic"}', false)).to.equal('connected');
+        expect(classifyAgentConnectionProbe('pi', 0, 'something else', false)).to.equal('unknown');
+    });
+
     it('never reports a sign-in harness connected because of a Settings API key', () => {
         for (const id of ['openclaude', 'hermes', 'antigravity', 'gemini']) {
             expect(hasAgentSettingsCredentials(id, () => 'tenant-api-key'), id).to.equal(undefined);

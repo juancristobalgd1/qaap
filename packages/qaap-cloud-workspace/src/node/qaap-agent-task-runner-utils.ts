@@ -185,7 +185,7 @@ export type QaapAgentPromptTransport =
     | { readonly kind: 'plain-stdin'; readonly placeholder: QaapAgentPromptPlaceholder }
     | { readonly kind: 'prompt-file'; readonly flag: '--prompt-file' };
 
-const STDIN_OMIT_IDS = new Set(['cursor', 'claude', 'qaiq', 'openclaude', 'opencode', 'qwen']);
+const STDIN_OMIT_IDS = new Set(['cursor', 'claude', 'qaiq', 'openclaude', 'opencode', 'qwen', 'pi']);
 const STDIN_OMIT_FLAG_IDS = new Set(['copilot']);
 const STDIN_DASH_IDS = new Set(['codex', 'kimi', 'goose', 'hermes', 'openclaw']);
 

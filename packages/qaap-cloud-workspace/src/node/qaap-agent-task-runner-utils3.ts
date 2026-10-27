@@ -313,6 +313,15 @@ export function classifyAgentConnectionProbe(
     if (agentId.trim().toLowerCase() === 'codex' && /logged in using an api key/.test(sample)) {
         return 'disconnected';
     }
+    // `pi auth check --provider <p> [--json]` → `{"status":"not_ready","reason":"credentials_not_configured"}` / `not_ready`.
+    if (agentId.trim().toLowerCase() === 'pi') {
+        if (/credentials_not_configured|\bnot_ready\b/.test(sample)) {
+            return 'disconnected';
+        }
+        if (status === 0 && /\"status\"\s*:\s*\"ready\"|^\s*ready\s*$/m.test(sample)) {
+            return 'connected';
+        }
+    }
     if (/\"(?:authenticated|isloggedin|loggedin)\"\s*:\s*false/.test(sample)
         || /not logged in|not authenticated|logged out|no active login|no credentials|no providers configured|not connected|no authentication information found|sign in required/.test(sample)) {
         return 'disconnected';
