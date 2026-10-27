@@ -19,6 +19,14 @@ describe('resolveWorkingPillDisplayCount', () => {
         expect(resolveWorkingPillDisplayCount(base)).to.equal(0);
     });
 
+    it('hides a lone working task, which its transcript already shows', () => {
+        expect(resolveWorkingPillDisplayCount({ ...base, liveCount: 1 })).to.equal(0);
+    });
+
+    it('keeps a lone task visible while its expand is being read', () => {
+        expect(resolveWorkingPillDisplayCount({ ...base, liveCount: 1, reading: true })).to.equal(1);
+    });
+
     it('shows the scoped live count', () => {
         expect(resolveWorkingPillDisplayCount({ ...base, liveCount: 2 })).to.equal(2);
     });
