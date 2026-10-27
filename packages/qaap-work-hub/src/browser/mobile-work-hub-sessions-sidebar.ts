@@ -159,7 +159,18 @@ export class MobileWorkHubSessionsSidebar {
         });
     };
     protected readonly onOutsideClick = (event: MouseEvent): void => {
-        if (!this.visible || !this.root.classList.contains('theia-mod-embedded') || this.sidebarMode === 'settings') {
+        if (!this.visible || !this.root.classList.contains('theia-mod-embedded')) {
+            return;
+        }
+        // The click that opened the sidebar is still bubbling to `document` when show() registers
+        // this listener; it predates the open, so it must not count as an outside click.
+        if (event.timeStamp < this.shownAt) {
+            return;
+        }
+        // Settings stays docked beside its content on wide layouts; only the overlay drawer
+        // (narrow viewports, IDE chat sidebar) dismisses on an outside click.
+        const settings = this.sidebarMode === 'settings';
+        if (settings && shouldKeepSessionsSidebarOpenAfterNavigation()) {
             return;
         }
         // The composed path is fixed when the event is dispatched. A control pressed inside the
@@ -169,12 +180,19 @@ export class MobileWorkHubSessionsSidebar {
         if (!(event.target instanceof Node) || path.includes(this.root)) {
             return;
         }
-        if (path.some(node => node instanceof Element && node.matches('.theia-qaap-account-menu, .theia-mobile-work-hub-preferences'))) {
+        // In Settings mode the preferences page is the content behind the drawer, so a click on it
+        // collapses the drawer (hide() routes to the sheet's onClose) — except the control that opened it.
+        const keepOpenSelector = settings
+            ? '.theia-qaap-account-menu, .theia-mobile-work-hub-settings-sidebar-toggle-open'
+            : '.theia-qaap-account-menu, .theia-mobile-work-hub-preferences';
+        if (path.some(node => node instanceof Element && node.matches(keepOpenSelector))) {
             return;
         }
         this.hide();
     };
     protected projectsHeadingRaf = 0;
+    /** `performance.now()` when the sidebar last opened; see `onOutsideClick`. */
+    protected shownAt = 0;
     protected dismissHint: HTMLElement | undefined;
     protected resizeDispose: Disposable = Disposable.NULL;
     protected refreshListRaf = 0;
@@ -436,6 +454,7 @@ export class MobileWorkHubSessionsSidebar {
             this.showSessionsModeWithoutRefresh();
         }
         this.visible = true;
+        this.shownAt = performance.now();
         clearDesktopSessionsSidebarCollapsed(this.delegate.storageScope?.());
         this.root.hidden = false;
         this.root.setAttribute('aria-hidden', 'false');
