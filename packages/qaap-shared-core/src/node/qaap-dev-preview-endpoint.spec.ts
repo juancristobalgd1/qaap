@@ -1491,7 +1491,7 @@ describe('QaapDevPreviewEndpoint', () => {
             expect(registry.records()).to.have.length(1);
         });
 
-        it('does not supersede another conversation preview of the same project', async () => {
+        it('shares the live dev server of another conversation on the same root instead of spawning a second', async () => {
             const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
             const registry = new Registry();
             const ep = new ClaimTestEndpoint();
@@ -1506,6 +1506,14 @@ describe('QaapDevPreviewEndpoint', () => {
                 processId: 'process-section-a',
                 conversationId: 'section-a',
             }, root), firstRes);
+            const first = firstRes.record.body as { previewId: string; port: number };
+            ep.listeningPorts.add(first.port);
+            const allocatePreviewPort = ep.allocatePreviewPort.bind(ep);
+            let allocations = 0;
+            ep.allocatePreviewPort = (...args: Parameters<typeof allocatePreviewPort>) => {
+                allocations += 1;
+                return allocatePreviewPort(...args);
+            };
             await ep.exposeHandleClaim(claimReq(5173, {
                 workspaceId: root,
                 projectId: 'vamello',
@@ -1513,10 +1521,44 @@ describe('QaapDevPreviewEndpoint', () => {
                 conversationId: 'section-b',
             }, root), secondRes);
 
-            const first = firstRes.record.body as { previewId: string };
-            const second = secondRes.record.body as { previewId: string };
+            const second = secondRes.record.body as { previewId: string; port: number };
+            expect(secondRes.record.code).to.equal(200);
+            expect(second.previewId).to.equal(first.previewId);
+            expect(second.port).to.equal(first.port);
+            expect(allocations).to.equal(0);
             expect(registry.get(first.previewId)).not.to.equal(undefined);
-            expect(registry.get(second.previewId)).not.to.equal(undefined);
+            expect(registry.records()).to.have.length(1);
+        });
+
+        it('gives another root of the same project its own dev server while a sibling root is live', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const registry = new Registry();
+            const ep = new ClaimTestEndpoint();
+            ep.setClaimFakes('alice', registry);
+            const root = 'file:///workspace/alice/vamello';
+            const worktreeRoot = 'file:///workspace/alice/vamello-worktree';
+            const firstRes = makeRes();
+            const worktreeRes = makeRes();
+
+            await ep.exposeHandleClaim(claimReq(5173, {
+                workspaceId: root,
+                projectId: 'vamello',
+                processId: 'process-section-a',
+                conversationId: 'section-a',
+            }, root), firstRes);
+            const first = firstRes.record.body as { previewId: string; port: number };
+            ep.listeningPorts.add(first.port);
+            await ep.exposeHandleClaim(claimReq(5173, {
+                workspaceId: worktreeRoot,
+                projectId: 'vamello-worktree',
+                processId: 'process-section-b',
+                conversationId: 'section-b',
+            }, worktreeRoot), worktreeRes);
+
+            const worktree = worktreeRes.record.body as { previewId: string; port: number };
+            expect(worktree.previewId).to.not.equal(first.previewId);
+            expect(worktree.port).to.not.equal(first.port);
+            expect(registry.get(first.previewId)).not.to.equal(undefined);
             expect(registry.records()).to.have.length(2);
         });
 
@@ -2030,6 +2072,22 @@ describe('QaapDevPreviewEndpoint', () => {
             expect(scoped.record.body?.previewId).to.equal(sectionA.previewId);
             expect(scoped.record.body?.conversationId).to.equal('conversation-a');
             expect(scoped.record.body?.previewUrl).to.contain(`/qaap-preview/${sectionA.previewId}`);
+        });
+
+        it('falls back to the live claim of a sibling section when the asked section has none', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const registry = new Registry();
+            const sectionA = registerProcessPreview(registry, 'run-a', 4177, 'alice', 'conversation-a');
+
+            const ep = new CurrentTestEndpoint();
+            ep.setCurrentFakes('alice', registry);
+            const fallback = makeJsonRes();
+            await ep.exposeHandleCurrent(currentReqForConversation('conversation-b', projectRoot), fallback);
+
+            expect(fallback.record.code).to.equal(200);
+            expect(fallback.record.body?.ready).to.equal(true);
+            expect(fallback.record.body?.previewId).to.equal(sectionA.previewId);
+            expect(fallback.record.body?.conversationId).to.equal('conversation-a');
         });
     });
 

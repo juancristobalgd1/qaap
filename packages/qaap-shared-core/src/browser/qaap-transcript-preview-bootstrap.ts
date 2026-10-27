@@ -232,8 +232,9 @@ async function ensureTranscriptDevPreviewExtracted(
         );
         if (current?.ready && current.previewUrl) {
             // Transcript text and a previously persisted preview URL can point at a superseded
-            // port after an agent restart. Reuse this section's authoritative live claim before
-            // probing stale transcript hints or spawning another dev server.
+            // port after an agent restart. Reuse the authoritative live claim of this section, or of a
+            // sibling section on the same root (one shared dev server), before probing stale transcript
+            // hints or spawning another dev server.
             bootstrap.adoptSupersedingPreviewClaim(current);
             return normalizePreviewUrlForSameOrigin(current.previewUrl);
         }

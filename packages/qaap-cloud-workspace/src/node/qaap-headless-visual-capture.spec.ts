@@ -207,19 +207,19 @@ describe('QaapHeadlessVisualCaptureService preview port reservation', () => {
         expect(started).to.deep.equal([]);
     });
 
-    it('never accepts an answering port owned by another conversation or another root', async () => {
-        registerSibling('thread-a', worktreeRoot, 5173);
-        registerSibling('thread-b', mainRoot, 5174);
+    it('reuses a sibling conversation preview of the same root but never a port of another root', async () => {
+        registerSibling('thread-a', worktreeRoot, 5173); // same root: the project's shared dev server
+        registerSibling('thread-b', mainRoot, 5174); // another root: never captured
         listening.add(5175); // unregistered listener: ownership is never inferred from liveness
         const service = makeService();
 
-        const preview = await service.reserveScriptPreview(conversation('thread-b', worktreeRoot), viteApp(worktreeRoot));
+        const preview = await service.reserveScriptPreview(conversation('thread-c', worktreeRoot), viteApp(worktreeRoot));
         const ready = await service.ensureScriptServer(viteApp(worktreeRoot), preview);
 
-        expect(preview?.registeredByCapture).to.equal(true);
-        expect(preview?.record.port).to.equal(5176);
-        expect(started).to.deep.equal([5176]);
-        expect(ready).to.deep.include({ ok: true, port: 5176 });
+        expect(preview?.registeredByCapture).to.equal(false);
+        expect(preview?.record.port).to.equal(5173);
+        expect(started).to.deep.equal([]);
+        expect(ready).to.deep.include({ ok: true, port: 5173 });
     });
 });
 

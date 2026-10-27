@@ -758,8 +758,8 @@ export class QaapHeadlessVisualCaptureService {
 
     /**
      * The preview a script app is captured on. Worktree threads share the framework port with
-     * their sibling threads, so a port that merely answers HTTP proves nothing: reuse only this
-     * conversation's live preview of the same root (the thread's own dev server), otherwise reserve
+     * their sibling threads, so a port that merely answers HTTP proves nothing: reuse only a live
+     * preview registered for the same root (this thread's own first, else the project's shared one), otherwise reserve
      * a fresh port through the claim endpoint's allocator. Undefined when no safe port is free.
      */
     protected async reserveScriptPreview(
@@ -789,19 +789,25 @@ export class QaapHeadlessVisualCaptureService {
         return record && { identity, ownerLogin, record, registeredByCapture: true };
     }
 
-    /** Most recently touched live process preview of this owner + conversation + canonical root. */
+    /**
+     * Most recently touched live process preview of this owner + canonical root: this conversation's
+     * own record first, then a sibling conversation's, since a project shares one dev server.
+     */
     protected async findLiveConversationPreview(
         conversationId: string,
         ownerLogin: string,
         root: string,
     ): Promise<(QaapDevPreviewRecord & QaapProcessPreviewIdentity) | undefined> {
         const conversation = normalizeQaapPreviewConversationId(conversationId);
-        const candidates = this.previewRegistry.records()
+        const sameRoot = this.previewRegistry.records()
             .filter((record): record is QaapDevPreviewRecord & QaapProcessPreviewIdentity => record.ownerLogin === ownerLogin
                 && record.root === root
-                && isQaapProcessPreviewIdentity(record)
-                && normalizeQaapPreviewConversationId(record.conversationId) === conversation)
+                && isQaapProcessPreviewIdentity(record))
             .sort((left, right) => right.touchedAt - left.touchedAt);
+        const candidates = [
+            ...sameRoot.filter(record => normalizeQaapPreviewConversationId(record.conversationId) === conversation),
+            ...sameRoot.filter(record => normalizeQaapPreviewConversationId(record.conversationId) !== conversation),
+        ];
         for (const record of candidates) {
             if (!this.previewEndpoint.isPreviewProcessDead(record)
                 && await this.previewEndpoint.probeLocalDevServer(record.port, ownerLogin)) {

@@ -510,6 +510,33 @@ export async function handleProcessClaimExtracted(ctx: QaapDevPreviewEndpointCon
         ctx.portRegistry.releasePreview(record.previewId, owner);
     }
 
+    // One dev server per project working copy, shared by every conversation of the owner: a live
+    // record of ANOTHER section on the same canonical root is handed back instead of spawning a
+    // second server. Other roots (worktrees, sandboxes) never match and keep their own server.
+    const sharedRootRecords = ctx.portRegistry.records()
+        .filter(record => record.ownerLogin === owner
+            && isQaapProcessPreviewIdentity(record)
+            && record.root === canonicalRoot)
+        .sort((left, right) => right.touchedAt - left.touchedAt);
+    for (const record of sharedRootRecords) {
+        if (!ctx.isPreviewProcessDead(record) && await ctx.probeLocalDevServer(record.port)) {
+            console.info('[qaap-preview] sharing live project preview of another conversation', {
+                previewId: record.previewId,
+                ownerLogin: owner,
+                projectId: canonicalProjectId,
+                conversationId,
+                siblingConversationId: normalizeQaapPreviewConversationId(record.conversationId),
+                port: record.port,
+            });
+            res.status(200).json({
+                previewId: record.previewId,
+                previewUrl: ctx.buildIdentityPreviewUrl(req, record),
+                port: record.port,
+            });
+            return;
+        }
+    }
+
     ctx.supersedeConversationPreviews({
         previewId: identity.previewId,
         workspaceId: canonicalProjectId,
