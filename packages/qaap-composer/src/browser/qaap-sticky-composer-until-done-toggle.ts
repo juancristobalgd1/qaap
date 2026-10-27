@@ -13,6 +13,8 @@ export interface StickyComposerUntilDoneToggleOptions {
     /** Tooltip when the toggle cannot be used (manual approval, Plan mode); disables it. */
     readonly disabledReason?: string;
     readonly onToggle: (checked: boolean) => void;
+    /** When set, a disabled row offers to fix its cause (e.g. open the approval picker). */
+    readonly onResolveDisabled?: () => void;
 }
 
 /**
@@ -73,6 +75,7 @@ export function createStickyComposerUntilDoneSheetOption(
     onDidToggle: () => void,
 ): HTMLButtonElement {
     const disabled = !!options.disabledReason;
+    const resolvable = disabled && !!options.onResolveDisabled;
     const checked = isStickyComposerUntilDoneActive(options);
     const btn = document.createElement('button');
     btn.type = 'button';
@@ -80,8 +83,9 @@ export function createStickyComposerUntilDoneSheetOption(
     btn.setAttribute('role', 'menuitemcheckbox');
     btn.setAttribute('aria-checked', String(checked));
     btn.classList.toggle('theia-mod-selected', checked);
-    btn.classList.toggle('theia-mod-disabled', disabled);
-    if (disabled) {
+    btn.classList.toggle('theia-mod-disabled', disabled && !resolvable);
+    btn.classList.toggle('theia-mod-resolvable', resolvable);
+    if (disabled && !resolvable) {
         btn.setAttribute('aria-disabled', 'true');
     }
     btn.title = disabled
@@ -97,22 +101,29 @@ export function createStickyComposerUntilDoneSheetOption(
     label.className = 'theia-mobile-sticky-composer-sheet-option-label';
     label.textContent = nls.localize('theia/qaap/goalLoop/untilDone', 'Goal');
     content.append(icon, label);
-    if (disabled) {
-        // Touch has no tooltips: spell out why the toggle is unavailable.
-        const hint = document.createElement('span');
-        hint.className = `${UNTIL_DONE_TOGGLE_CLASS}-option-hint`;
-        hint.textContent = options.disabledReason!;
-        content.append(hint);
-    }
     if (checked) {
         const check = document.createElement('span');
         check.className = 'codicon codicon-check theia-mobile-sticky-composer-sheet-option-check';
         check.setAttribute('aria-hidden', 'true');
         content.append(check);
     }
+    // Touch has no tooltips: always say what Goal does, or why it is unavailable and how to fix it.
+    const hint = document.createElement('span');
+    hint.className = `${UNTIL_DONE_TOGGLE_CLASS}-option-hint`;
+    hint.textContent = !disabled
+        ? nls.localize('theia/qaap/goalLoop/untilDoneDescription', 'Keeps working and verifying until the goal is met')
+        : resolvable
+            ? nls.localize('theia/qaap/goalLoop/requiresAutoApproveAction', '{0} · Change approvals', options.disabledReason!)
+            : options.disabledReason!;
+    content.append(hint);
     btn.append(content);
     btn.addEventListener('click', event => {
         event.stopPropagation();
+        if (resolvable) {
+            onDidToggle();
+            options.onResolveDisabled!();
+            return;
+        }
         if (disabled) {
             return;
         }
