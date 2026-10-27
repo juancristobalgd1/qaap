@@ -184,7 +184,7 @@ export async function reconcileSupersededPreviewClaimExtracted(ctx: QaapProjectB
         if (!workspaceRoot) {
             return false;
         }
-        // Scope to this session's section so it never adopts another section's live claim.
+        // Prefer this session's section; the project's shared dev server of the same root may be a sibling's.
         const current = await fetchQaapCurrentDevPreview([
             ctx.previewProjectId(workspaceRoot),
             ctx.activeProjectId,

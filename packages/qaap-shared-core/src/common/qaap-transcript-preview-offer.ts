@@ -251,9 +251,9 @@ function previewRootKey(root: string): string {
 
 /**
  * Whether a probed port may be adopted as this thread's preview. A port Qaap never claimed (an
- * external server started outside Qaap) stays adoptable; a claimed port only by the section that
- * claimed it or, for a claim without a section, by a thread previewing the same root. Sibling
- * threads of one repository run their own servers and must never mount each other's.
+ * external server started outside Qaap) stays adoptable; a claimed port by the section that
+ * claimed it, or by any thread previewing the same root: a project has one shared dev server, so
+ * a sibling thread of the same root reuses it. Claims of another root are never mounted.
  */
 export function transcriptPreviewProbeBelongsToScope(
     probe: Pick<TranscriptPreviewPortProbeResult, 'previewId' | 'conversationId' | 'root'>,
@@ -263,7 +263,8 @@ export function transcriptPreviewProbeBelongsToScope(
         return true;
     }
     if (probe.conversationId && scope.conversationId) {
-        return probe.conversationId === scope.conversationId;
+        return probe.conversationId === scope.conversationId
+            || (!!probe.root && !!scope.root && previewRootKey(probe.root) === previewRootKey(scope.root));
     }
     return !probe.root || !scope.root || previewRootKey(probe.root) === previewRootKey(scope.root);
 }

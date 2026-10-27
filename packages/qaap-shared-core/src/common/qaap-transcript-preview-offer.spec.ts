@@ -67,15 +67,15 @@ describe('transcript preview port ownership', () => {
         ...claims[port],
     }));
 
-    it('does not adopt the port another conversation claimed', async () => {
+    it('adopts the port a sibling conversation claimed on the same root, since the project shares one dev server', async () => {
         expect(await sweep(previewRequest, {
             5173: { previewId: 'p-sibling', conversationId: 'conv-sibling', root: '/repo' },
-        })).to.equal(undefined);
+        })).to.equal(url(5173));
     });
 
-    it('skips a sibling claim and adopts its own claim further down the sweep', async () => {
+    it('skips a sibling claim of another root and adopts its own claim further down the sweep', async () => {
         expect(await sweep(previewRequest, {
-            5173: { previewId: 'p-sibling', conversationId: 'conv-sibling', root: '/repo' },
+            5173: { previewId: 'p-sibling', conversationId: 'conv-sibling', root: '/other-repo' },
             5174: { previewId: 'p-own', conversationId: 'conv-1', root: '/repo' },
         })).to.equal(url(5174));
     });
