@@ -6,6 +6,7 @@
 import type { QaapQaiqModelOption } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { appendLlmProviderIcon } from '@theia/qaap-shared-core/lib/common/qaap-llm-provider-branding';
 import { formatQaiqModelProviderLabel } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
+import { ensureStoredAgentModel, isSameAgentModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
 import { resolveUnavailableModelTitle } from './qaap-agent-ui';
 
 export interface QaapAgentPickerSearchEntry {
@@ -148,6 +149,33 @@ export function createAgentPickerInlineModelButton(options: {
     return button;
 }
 
+/**
+ * Main-area tap on a model-capable row: selects the agent directly (the sheet closes) with the model
+ * `ensureStoredAgentModel` resolves: the stored selection, else its fallback. That resolution needs the
+ * catalog, so it only runs when the models are already cached. Otherwise the agent is selected with no
+ * explicit model (the CLI default) and the tap never waits on a model probe.
+ */
+export function activateAgentPickerDirectSelection(options: {
+    readonly agentId: string;
+    readonly cwd: string | undefined;
+    readonly cachedModels: readonly QaapQaiqModelOption[] | undefined;
+    readonly onSelectDirect: (model: QaapQaiqModelOption | undefined) => void;
+}): void {
+    const models = options.cachedModels ?? [];
+    const resolved = models.length > 0
+        ? ensureStoredAgentModel(options.cwd, options.agentId, models)
+        : undefined;
+    const model = resolved
+        ? models.find(candidate => isSameAgentModel(resolved, candidate))
+        : undefined;
+    options.onSelectDirect(model);
+}
+
+/**
+ * Opens the model submenu of a model-capable agent. The trailing chevron of its split row calls this;
+ * the main area of the row selects the agent directly (see `activateAgentPickerDirectSelection`).
+ * Agents without models are selected directly here.
+ */
 export async function activateAgentPickerEntry(options: {
     readonly agentId: string;
     readonly supportsModels: boolean;
@@ -168,8 +196,9 @@ export async function activateAgentPickerEntry(options: {
         models = await options.loadModels();
         options.onModelsResolved(models);
     }
-    // Model-capable agents always drill into the model submenu; an empty catalog is
-    // shown there instead of treating the tap as a final agent selection (which closes the sheet).
+    // Only the chevron of a model-capable row reaches this point. The submenu is opened even when the
+    // refreshed catalog is empty: showing it there is safer than treating the tap as a final agent
+    // selection (which closes the sheet).
     options.onShowModels();
     return 'models';
 }

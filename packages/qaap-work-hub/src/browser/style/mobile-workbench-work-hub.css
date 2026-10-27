@@ -7749,6 +7749,42 @@ body.theia-mobile-mod-keyboard-open .theia-mobile-sticky-composer-sheet-panel {
   background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
 }
 
+/* Model-capable agent row: the main area selects the agent, the trailing chevron opens its model submenu. */
+.theia-qaap-agent-sheet-split {
+  min-height: 44px;
+}
+
+.theia-qaap-agent-sheet-split-chevron {
+  display: flex;
+  flex: 0 0 44px;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--theia-foreground);
+  cursor: pointer;
+}
+
+.theia-qaap-agent-sheet-split-chevron:hover {
+  background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+}
+
+.theia-qaap-agent-sheet-split-chevron:focus-visible {
+  outline: 2px solid var(--q-accent, var(--qaap-accent, #E58E40));
+  outline-offset: -2px;
+}
+
+.theia-qaap-agent-sheet-split-chevron .theia-mobile-sticky-composer-sheet-option-chevron {
+  margin-left: 0;
+}
+
 .theia-qaap-agent-sheet-inline-action {
   flex: 0 0 auto;
   min-height: 28px;

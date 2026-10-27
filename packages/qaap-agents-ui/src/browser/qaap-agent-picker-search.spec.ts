@@ -6,9 +6,10 @@
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 
 import { expect } from 'chai';
-import { activateAgentPickerEntry, buildAgentPickerSearchResults, createAgentPickerInlineModelButton, modelMatchesAgentPickerQuery, type QaapAgentPickerSearchEntry } from './qaap-agent-picker-search';
+import { activateAgentPickerDirectSelection, activateAgentPickerEntry, buildAgentPickerSearchResults, createAgentPickerInlineModelButton, modelMatchesAgentPickerQuery, type QaapAgentPickerSearchEntry } from './qaap-agent-picker-search';
 import {
     createAgentSheetOptionButton,
+    createAgentSheetSplitOptionRow,
     createApprovalPolicySheetOptionButton,
     createModeSheetOptionButton,
     createUnavailableAgentSheetOption,
@@ -234,6 +235,68 @@ describe('qaap-agent-picker-search', () => {
             expect(selected.querySelector('.theia-qaap-agent-sheet-option-description')?.textContent)
                 .to.equal('Qaap hosted coding agent');
             expect(unselected.querySelector('.codicon-check')).to.equal(null);
+        });
+
+        it('main-area selection resolves the model from a cached catalog', () => {
+            const stored = entries[0].models[0];
+            const selected: Array<QaapQaiqModelOption | undefined> = [];
+            activateAgentPickerDirectSelection({
+                agentId: 'qaiq',
+                cwd: '/repo/direct-selection',
+                cachedModels: [stored],
+                onSelectDirect: model => selected.push(model),
+            });
+            expect(selected).to.have.length(1);
+            expect(selected[0]?.modelId).to.equal(stored.modelId);
+        });
+
+        it('main-area selection passes no model when the catalog is not loaded yet', () => {
+            const selected: Array<QaapQaiqModelOption | undefined> = [];
+            activateAgentPickerDirectSelection({
+                agentId: 'codex',
+                cwd: '/repo',
+                cachedModels: undefined,
+                onSelectDirect: model => selected.push(model),
+            });
+            expect(selected).to.deep.equal([undefined]);
+        });
+
+        it('splits a model-capable row: the main area selects, the chevron opens models', () => {
+            const calls: string[] = [];
+            const row = createAgentSheetSplitOptionRow({
+                agentId: 'codex',
+                label: 'Codex',
+                agentLabel: 'Codex',
+                description: resolveAgentPickerDescription('codex', 'Codex'),
+                onSelect: () => calls.push('select'),
+                onShowModels: () => calls.push('models'),
+            });
+            const main = row.querySelector<HTMLButtonElement>('.theia-qaap-agent-sheet-split-main');
+            const chevron = row.querySelector<HTMLButtonElement>('.theia-qaap-agent-sheet-split-chevron');
+
+            expect(main).to.not.equal(null);
+            expect(chevron?.tagName).to.equal('BUTTON');
+            expect(chevron?.getAttribute('type')).to.equal('button');
+            // Sibling controls, never nested interactive elements.
+            expect(main?.contains(chevron ?? null)).to.equal(false);
+            expect(chevron?.parentElement).to.equal(row);
+
+            main?.click();
+            expect(calls).to.deep.equal(['select']);
+            chevron?.click();
+            expect(calls).to.deep.equal(['select', 'models']);
+        });
+
+        it('labels the chevron with the agent name, not the model', () => {
+            const row = createAgentSheetSplitOptionRow({
+                agentId: 'codex',
+                label: 'Codex · GPT 5.4',
+                agentLabel: 'Codex',
+                onSelect: () => undefined,
+                onShowModels: () => undefined,
+            });
+            expect(row.querySelector('.theia-qaap-agent-sheet-split-chevron')?.getAttribute('aria-label'))
+                .to.equal('Choose model for Codex');
         });
 
         it('shows a connection action beside the agent description', () => {

@@ -264,6 +264,56 @@ export function createAgentSheetOptionButton(options: {
     return btn;
 }
 
+/**
+ * Bottom-sheet row for a model-capable agent, split into two sibling controls: the main area selects the
+ * agent (with its default model) and the trailing chevron button opens the model submenu. They are siblings
+ * rather than nested because interactive elements cannot be nested. Styled by `.theia-qaap-agent-sheet-split`
+ * in the Work Hub stylesheet.
+ */
+export function createAgentSheetSplitOptionRow(options: {
+    readonly agentId: string;
+    readonly label: string;
+    readonly agentLabel: string;
+    readonly description?: string;
+    readonly selected?: boolean;
+    readonly onSelect: () => void;
+    readonly onShowModels: () => void;
+}): HTMLDivElement {
+    const row = document.createElement('div');
+    row.className = 'theia-qaap-agent-sheet-row theia-qaap-agent-sheet-split';
+
+    const main = createAgentSheetOptionButton({
+        agentId: options.agentId,
+        label: options.label,
+        description: options.description,
+        selected: options.selected,
+        onSelect: options.onSelect,
+    });
+    main.classList.add('theia-qaap-agent-sheet-split-main');
+
+    const chevronButton = document.createElement('button');
+    chevronButton.type = 'button';
+    chevronButton.className = 'theia-qaap-agent-sheet-split-chevron';
+    const chooseModelLabel = nls.localize(
+        'qaap/mobileProjects/stickyComposerPickModelForAgent',
+        'Choose model for {0}',
+        options.agentLabel,
+    );
+    chevronButton.setAttribute('aria-label', chooseModelLabel);
+    chevronButton.title = chooseModelLabel;
+    const chevron = document.createElement('span');
+    chevron.className = 'codicon codicon-chevron-right theia-mobile-sticky-composer-sheet-option-chevron';
+    chevron.setAttribute('aria-hidden', 'true');
+    chevronButton.append(chevron);
+    chevronButton.addEventListener('click', event => {
+        event.stopPropagation();
+        options.onShowModels();
+    });
+
+    row.append(main, chevronButton);
+    return row;
+}
+
 /** Dimmed picker row for a known harness that is not connected or detected on the workspace. */
 export function createUnavailableAgentSheetOption(options: {
     readonly agentId: string;
