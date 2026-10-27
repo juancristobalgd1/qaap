@@ -21,6 +21,7 @@ import {
     summarizeCollapsedAgentFailure,
 } from './qaap-agent-failure-message';
 import { rememberQaapHostedRuntime } from './qaap-hosted-agent-auth-policy';
+import { CODEX_MODEL_NOT_SUPPORTED_LOG, CODEX_USAGE_LIMIT_LOG } from './test/qaap-agent-failure-log-fixtures';
 
 describe('qaap-agent-failure-message', () => {
     it('asks a sign-in harness to sign in when its provider rejects an API key; QAIQ keeps the Settings copy', () => {
@@ -89,6 +90,20 @@ describe('qaap-agent-failure-message', () => {
             .to.equal('cli_missing');
         expect(detectAgentFailureKind('Cannot find the qaiq executable'))
             .to.equal('cli_missing');
+    });
+
+    it('classifies the Codex ChatGPT-plan usage limit as quota and keeps its retry time', () => {
+        const line = 'You\'ve hit your usage limit. Upgrade to Plus to continue using Codex (https://chatgpt.com/explore/plus), or try again at Nov 19th, 2026 12:56 AM.';
+        expect(detectAgentFailureKind(line)).to.equal('quota');
+        expect(detectAgentFailureKind(CODEX_USAGE_LIMIT_LOG)).to.equal('quota');
+        expect(resolveAgentTurnFailureMessage(CODEX_USAGE_LIMIT_LOG, { state: 'failed', agentId: 'codex' }))
+            .to.match(/try again at Nov 19th, 2026 12:56 AM/);
+    });
+
+    it('classifies the Codex unsupported-model 404 as model_unavailable', () => {
+        const line = '{"error":{"message":"The \'gpt-5.6-sol\' model is not supported when using Codex with a ChatGPT account.","code":"model_not_found"}}';
+        expect(detectAgentFailureKind(line)).to.equal('model_unavailable');
+        expect(detectAgentFailureKind(CODEX_MODEL_NOT_SUPPORTED_LOG)).to.equal('model_unavailable');
     });
 
     it('detectAgentFailureKind classifies the OpenCode free usage limit as quota', () => {

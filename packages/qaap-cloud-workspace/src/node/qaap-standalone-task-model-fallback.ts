@@ -5,7 +5,7 @@
 
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
 import { QaapPlanLimit } from '@theia/qaap-adapters/lib/common/qaap-plan-limit';
-import { detectAgentFailureKind, type QaapAgentFailureKind } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
+import { detectAgentFailureKind } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 import { parseAgentLogForTranscript } from '@theia/qaap-shared-core/lib/common/qaap-cli-transcript-stream';
 import {
     isQaapAgentTaskFinished,
@@ -16,6 +16,7 @@ import {
 } from '../common/qaap-agent-task';
 import {
     MAX_AGENT_MODEL_FALLBACK_ATTEMPTS,
+    AGENT_ACCOUNT_LEVEL_FAILURE_KINDS,
     agentModelKey,
     agentTurnHasRetryableEmptyOutput,
     agentTurnHasRetryableModelFailure,
@@ -32,21 +33,6 @@ interface QaapStandaloneTaskOrigin {
     readonly request: QaapCreateAgentTaskRequest;
     readonly ownerLogin: string | undefined;
 }
-
-/**
- * Failure kinds that belong to the user's account rather than to the model: every model of the
- * agent runs on the same key and the same plan, so a fallback would fail the same way. The
- * conversation path reads these from the provider preflight verdict and the quota dialog; a
- * standalone task has neither, so its log is checked as well.
- */
-const ACCOUNT_LEVEL_FAILURE_KINDS: ReadonlySet<QaapAgentFailureKind> = new Set<QaapAgentFailureKind>([
-    'auth',
-    'quota',
-    'provider_key_rejected',
-    'provider_credits',
-    'provider_free_limit',
-    'cli_missing',
-]);
 
 /**
  * Model fallback for STANDALONE agent tasks (`POST /qaap/api/agent-tasks`: the post-deploy smoke, the
@@ -184,7 +170,7 @@ export class QaapStandaloneTaskModelFallback {
             return false;
         }
         const kind = detectAgentFailureKind(log);
-        if (kind && ACCOUNT_LEVEL_FAILURE_KINDS.has(kind)) {
+        if (kind && AGENT_ACCOUNT_LEVEL_FAILURE_KINDS.has(kind)) {
             return false;
         }
         if (this.hasPreSpawnFailure(log)) {

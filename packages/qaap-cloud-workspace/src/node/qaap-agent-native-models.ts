@@ -4,8 +4,13 @@
 // *****************************************************************************
 
 import { execFile } from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
 import type { QaapQaiqModelOption } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
+import { resolveAgentSpawnIdentity } from './qaap-agent-spawn-identity';
+import { QaapTenantAgentStorageEnv } from './qaap-tenant-agent-storage-env';
+import { resolveTrustedSystemExecutable } from './qaap-trusted-executable';
 import {
     agentUsesNativeModelCatalog,
     listStaticNativeAgentModels,
@@ -92,6 +97,8 @@ async function discoverNativeAgentModels(agentId: string): Promise<QaapQaiqModel
     switch (agentId) {
         case 'opencode':
             return discoverFromCommand('opencode', ['models'], agentId);
+        case 'codex':
+            return discoverCodexAccountModels();
         case 'cursor':
             // Cursor Agent exposes the account-scoped catalog through both the modern
             // `agent models` command and the backwards-compatible `cursor-agent` alias.
@@ -103,6 +110,122 @@ async function discoverNativeAgentModels(agentId: string): Promise<QaapQaiqModel
             }
         default:
             return [];
+    }
+}
+
+/** File the Codex CLI keeps in its home: the model slugs the signed-in account may run (server-side list). */
+export const CODEX_MODELS_CACHE_FILE = 'models_cache.json';
+
+/** Uid/gid the agent CLI runs as; the backend reads the cache as this identity when it is root. */
+export interface CodexCacheIdentity {
+    readonly uid: number;
+    readonly gid?: number;
+}
+
+/**
+ * Codex home the agent CLI reads. Codex honours `CODEX_HOME`; otherwise it is `.codex` under the tenant
+ * agent storage home (`<storage root>/home`, the HOME the agent's sign-in lives in) when that storage is
+ * enabled; otherwise under the agent HOME (`QAAP_AGENT_HOME`, default `/home/qaap-agent`).
+ */
+export function resolveCodexAgentHome(env: NodeJS.ProcessEnv = process.env): string {
+    const explicit = env.CODEX_HOME?.trim();
+    if (explicit) {
+        return explicit;
+    }
+    const storageRoot = QaapTenantAgentStorageEnv.resolveRoot(env, QaapTenantAgentStorageEnv.defaultTenantBackendRoot(env));
+    if (storageRoot) {
+        return path.posix.join(QaapTenantAgentStorageEnv.homeDir(storageRoot), '.codex');
+    }
+    return path.join(env.QAAP_AGENT_HOME?.trim() || '/home/qaap-agent', '.codex');
+}
+
+/**
+ * The curated Codex entries whose ids the account's `models_cache.json` lists, in curated order and with
+ * curated labels. A missing, unreadable or unparsable cache, or one with no curated overlap, yields `[]`;
+ * the caller then keeps the full curated list.
+ */
+export function parseCodexModelsCache(text: string | undefined): QaapQaiqModelOption[] {
+    const slugs = readCodexCacheSlugs(text);
+    if (slugs.size === 0) {
+        return [];
+    }
+    return listStaticNativeAgentModels('codex').filter(model => slugs.has(model.modelId));
+}
+
+function readCodexCacheSlugs(text: string | undefined): Set<string> {
+    const slugs = new Set<string>();
+    if (!text?.trim()) {
+        return slugs;
+    }
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(text);
+    } catch {
+        return slugs;
+    }
+    const models = typeof parsed === 'object' && parsed !== null ? (parsed as { models?: unknown }).models : undefined;
+    if (!Array.isArray(models)) {
+        return slugs;
+    }
+    for (const entry of models as unknown[]) {
+        const slug = typeof entry === 'object' && entry !== null ? (entry as { slug?: unknown }).slug : undefined;
+        if (typeof slug === 'string' && slug.trim()) {
+            slugs.add(slug.trim());
+        }
+    }
+    return slugs;
+}
+
+/** Reads one file; with an identity, as that uid/gid (the backend is root, the cache is owned by the agent). */
+export type CodexCacheFileReader = (file: string, identity: CodexCacheIdentity | undefined) => Promise<string>;
+
+/**
+ * Default reader. A root backend cannot read the agent-owned cache directly (its capabilities drop
+ * DAC_OVERRIDE), so with an agent identity the file is read by `cat` running as that identity.
+ */
+export function readCodexCacheFile(file: string, identity: CodexCacheIdentity | undefined): Promise<string> {
+    if (!identity) {
+        return fs.promises.readFile(file, 'utf8');
+    }
+    const cat = resolveTrustedSystemExecutable('cat');
+    if (!cat) {
+        return Promise.reject(new Error('cat is not available to read the Codex models cache'));
+    }
+    return new Promise<string>((resolve, reject) => {
+        execFile(cat, [file], {
+            encoding: 'utf8',
+            uid: identity.uid,
+            gid: identity.gid,
+            timeout: 5000,
+            maxBuffer: 2 * 1024 * 1024,
+        }, (error, stdout) => {
+            if (error) {
+                reject(error);
+                return;
+            }
+            resolve(String(stdout ?? ''));
+        });
+    });
+}
+
+/**
+ * Reads the account's Codex model list from the Codex home the agent uses. The identity is the configured
+ * agent uid/gid when the backend is root (uid 0 is never used for the agent). Any failure yields `[]`.
+ */
+export async function discoverCodexAccountModels(
+    env: NodeJS.ProcessEnv = process.env,
+    isRoot: boolean = typeof process.getuid === 'function' && process.getuid() === 0,
+    reader: CodexCacheFileReader = readCodexCacheFile,
+): Promise<QaapQaiqModelOption[]> {
+    const file = path.join(resolveCodexAgentHome(env), CODEX_MODELS_CACHE_FILE);
+    const identity = resolveAgentSpawnIdentity(env, isRoot);
+    const agentIdentity: CodexCacheIdentity | undefined = identity.uid !== undefined && identity.uid > 0
+        ? { uid: identity.uid, gid: identity.gid }
+        : undefined;
+    try {
+        return parseCodexModelsCache(await reader(file, agentIdentity));
+    } catch {
+        return [];
     }
 }
 

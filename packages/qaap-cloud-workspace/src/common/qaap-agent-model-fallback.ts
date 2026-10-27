@@ -15,7 +15,7 @@ import {
     findQaiqByokProvider,
     type QaapQaiqByokProviderDescriptor,
 } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
-import { detectAgentFailureKind } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
+import { detectAgentFailureKind, type QaapAgentFailureKind } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 import {
     agentTurnLooksLikeToolCallEmittedAsText,
     looksLikeToolCallJsonText,
@@ -24,6 +24,20 @@ import {
 
 /** Max alternate models to try after the first pick fails (inclusive of the original). */
 export const MAX_AGENT_MODEL_FALLBACK_ATTEMPTS = 4;
+
+/**
+ * Failure kinds that belong to the user's account rather than to the model: every model of the
+ * agent runs on the same key and the same plan, so a fallback would fail the same way. Shared by
+ * the conversation path ({@link agentTurnQualifiesForModelFallback}) and the standalone task path.
+ */
+export const AGENT_ACCOUNT_LEVEL_FAILURE_KINDS: ReadonlySet<QaapAgentFailureKind> = new Set<QaapAgentFailureKind>([
+    'auth',
+    'quota',
+    'provider_key_rejected',
+    'provider_credits',
+    'provider_free_limit',
+    'cli_missing',
+]);
 
 export function agentModelKey(model: QaapCreateAgentTaskQaiqModel | undefined): string | undefined {
     const modelId = model?.modelId?.trim();
@@ -261,7 +275,7 @@ export function agentTurnMayFallBackToAnotherModel(
  *   rejected or out of credits: every model of the agent runs on the same key;
  * - a tool-support failure qualifies in any state (it also arrives on clean exits);
  * - otherwise only a `failed` turn with no usable output or a `model_unavailable` classification.
- *   Quota is deliberately neither (see {@link agentTurnHasRetryableQuotaFailure}); an `interrupted`
+ *   Account-level kinds (see {@link AGENT_ACCOUNT_LEVEL_FAILURE_KINDS}) are deliberately neither; an `interrupted`
  *   turn went quiet rather than failing, so the user gets Continue instead of a silent model swap.
  */
 export function agentTurnQualifiesForModelFallback(
@@ -278,8 +292,10 @@ export function agentTurnQualifiesForModelFallback(
     if (task.state !== 'failed') {
         return false;
     }
-    // A quota failure with no output is still quota: switching model silently would spend another key.
-    if (agentMessage && detectAgentFailureKind(collectAgentMessageDetails(agentMessage)) === 'quota') {
+    // An account-level failure (quota, a usage cap, a key the provider refuses) repeats on every model
+    // of the chain: switching model silently would spend or retry on the same account.
+    const failureKind = agentMessage ? detectAgentFailureKind(collectAgentMessageDetails(agentMessage)) : undefined;
+    if (failureKind && AGENT_ACCOUNT_LEVEL_FAILURE_KINDS.has(failureKind)) {
         return false;
     }
     return agentTurnHasRetryableEmptyOutput(agentMessage) || agentTurnHasRetryableModelFailure(agentMessage);
