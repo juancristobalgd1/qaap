@@ -17,7 +17,7 @@ describe('tenant egress proxy deployment policy', () => {
         for (const domain of [
             '.npmjs.org', '.github.com', '.githubusercontent.com', '.openai.com', '.anthropic.com',
             '.googleapis.com', '.openrouter.ai', '.huggingface.co', '.nvidia.com', '.deepseek.com',
-            '.groq.com', '.mistral.ai', '.pypi.org', '.supabase.co',
+            '.groq.com', '.mistral.ai', '.pypi.org', '.supabase.co', '.opencode.ai', '.open-vsx.org',
         ]) {
             expect(allowedDomains.split(/\s+/)).to.include(domain);
         }
