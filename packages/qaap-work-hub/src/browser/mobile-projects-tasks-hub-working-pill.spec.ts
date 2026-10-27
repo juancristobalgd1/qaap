@@ -262,7 +262,7 @@ describe('MobileProjectsTasksHubUi — working pill', () => {
         expect(panel).to.not.equal(null);
         expect(document.querySelector('.qaap-sticky-composer-sheet-popover.theia-mod-working-agents')).to.equal(null);
         expect(panel?.textContent).to.contain('2 Working');
-        expect(panel?.textContent).to.contain('Stop All');
+        expect(panel?.querySelector('.qaap-working-agents-popover-stop-all')?.getAttribute('title')).to.equal('Stop All');
         expect(panel?.textContent).to.contain('Working pill agents popover');
         expect(panel?.textContent).to.contain('Building Working popover');
     });
