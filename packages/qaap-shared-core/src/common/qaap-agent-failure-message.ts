@@ -232,7 +232,8 @@ const PROVIDER_FREE_LIMIT_PATTERNS: readonly RegExp[] = [
 ];
 
 const PROVIDER_LABELS: ReadonlyArray<readonly [RegExp, string]> = [
-    [/\bopen\s?router\b/i, 'OpenRouter'],
+    // Not `\b` at the end: OpenRouter's daily free-tier 429 only names it as `"limit_source":"openrouter_free_tier_daily"`.
+    [/\bopen\s?router(?![a-z0-9])/i, 'OpenRouter'],
     [/\bhugging\s?face\b/i, 'Hugging Face'],
     [/\bnvidia\b(?!\/)/i, 'NVIDIA'],
     [/\banthropic\b/i, 'Anthropic'],

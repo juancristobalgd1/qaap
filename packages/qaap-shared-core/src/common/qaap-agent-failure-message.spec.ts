@@ -410,6 +410,15 @@ describe('BYOK provider key failures', () => {
         expect(describeAgentTurnFailure(message)?.kind).to.equal('usage_limit');
     });
 
+    it('names OpenRouter when the free-tier 429 only says so in limit_source (production QAIQ log)', () => {
+        const log = 'API Error: 429 {"error":{"message":"Rate limit exceeded: free-models-per-day. ","code":429,'
+            + '"metadata":{"headers":{"X-RateLimit-Limit":"50","X-RateLimit-Remaining":"0"},'
+            + '"limit_source":"openrouter_free_tier_daily","remedy_hint":"Wait for the daily reset or purchase credits"}}}';
+        expect(detectAgentFailureProviderLabel(log)).to.equal('OpenRouter');
+        expect(resolveAgentTurnFailureMessage(log, { state: 'failed', agentId: 'qaiq' }))
+            .to.match(/^OpenRouter free-model limit reached\. Wait for the daily reset, add credits with OpenRouter/);
+    });
+
     it('classifies the OpenRouter data-policy 404 and an out-of-credits 402', () => {
         const policy = 'API Error: 404 {"error":{"message":"No endpoints found matching your data policy (Free model publication). '
             + 'Configure: https://openrouter.ai/settings/privacy","code":404}}';
