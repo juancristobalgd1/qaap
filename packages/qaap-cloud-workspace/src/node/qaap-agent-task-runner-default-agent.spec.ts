@@ -343,7 +343,7 @@ describe('defaultAgentExtracted fallbacks past the preferred agents', () => {
     });
 });
 
-describe('defaultAgentFreshExtracted with grok and a pending vs failed probe', () => {
+describe('defaultAgentFreshExtracted with pi and a pending vs failed probe', () => {
     const saved = process.env.QAAP_DEFAULT_AGENT;
     beforeEach(() => { delete process.env.QAAP_DEFAULT_AGENT; });
     afterEach(() => {
@@ -356,13 +356,13 @@ describe('defaultAgentFreshExtracted with grok and a pending vs failed probe', (
 
     /**
      * `claude`'s probe either never settles (`pending`) or rejects (`failed`); as in the runner, a failed
-     * probe makes the agent count as disconnected for default selection. grok has no auth signal.
+     * probe makes the agent count as disconnected for default selection. pi has no auth signal.
      */
     function pickFreshWithGrok(probe: 'pending' | 'failed'): Promise<string> {
         const failed = new Set<string>();
         const [ctx, , usable] = pickDefaultArgs({
-            detected: ['grok', 'claude', 'opencode'],
-            states: { grok: 'unknown', claude: 'unknown', opencode: 'unknown' },
+            detected: ['pi', 'claude', 'opencode'],
+            states: { pi: 'unknown', claude: 'unknown', opencode: 'unknown' },
         });
         const enabled = (id: string): boolean => !failed.has(id) || usable(id);
         const refresh = (id: string): Promise<unknown> | undefined => {
@@ -375,14 +375,14 @@ describe('defaultAgentFreshExtracted with grok and a pending vs failed probe', (
             failed.add(id);
             return Promise.reject(new Error('probe crashed'));
         };
-        return defaultAgentFreshExtracted(ctx, enabled, usable, refresh, 30, id => id !== 'grok');
+        return defaultAgentFreshExtracted(ctx, enabled, usable, refresh, 30, id => id !== 'pi');
     }
 
     it('keeps the agent whose probe is still pending', async () => {
         expect(await pickFreshWithGrok('pending')).to.equal('claude');
     });
 
-    it('never grok once the probe failed; with no QAIQ detected the remaining fallbacks (shell) apply', async () => {
+    it('never pi once the probe failed; with no QAIQ detected the remaining fallbacks (shell) apply', async () => {
         expect(await pickFreshWithGrok('failed')).to.equal('shell');
     });
 });
@@ -404,12 +404,12 @@ describe('QaapAgentTaskRunner.defaultAgentFresh with failing auth probes (real r
         }
     });
 
-    /** Detects grok, claude and opencode. `probeClaude` answers claude's probe (opencode's resolves `unknown`); omit it to run the real probe. */
+    /** Detects pi, claude and opencode. `probeClaude` answers claude's probe (opencode's resolves `unknown`); omit it to run the real probe. */
     function runnerWithProbe(probeClaude?: () => Promise<ConnectionState>): QaapAgentTaskRunner {
         const runner = Object.create(QaapAgentTaskRunner.prototype) as QaapAgentTaskRunner;
         Object.assign(runner, {
             detectedAgents: new Map<string, AgentCandidate>(
-                ['grok', 'claude', 'opencode'].map(id => [id, { id, label: id, bin: id, template: `${id} {prompt}` }]),
+                ['pi', 'claude', 'opencode'].map(id => [id, { id, label: id, bin: id, template: `${id} {prompt}` }]),
             ),
             agentConnectionStates: new Map(),
             agentConnectionProbes: new Map(),

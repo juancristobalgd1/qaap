@@ -3,6 +3,12 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+/**
+ * A single working task is already visible in its transcript, so the pill only appears once
+ * two or more tasks/subagents work in the pill's scope (several tasks, or a task plus subagents).
+ */
+export const MIN_WORKING_PILL_LIVE_COUNT = 2;
+
 /** Inputs that decide what a single "N Working" pill displays. */
 export interface WorkingPillDisplayCountInput {
     /** Live working agents in the pill's scope (global hub, or one conversation section). */
@@ -18,7 +24,8 @@ export interface WorkingPillDisplayCountInput {
 }
 
 /**
- * Count rendered by one Working pill; `0` hides it. While the user is reading the expand,
+ * Count rendered by one Working pill; `0` hides it, and so does a lone working task
+ * (see {@link MIN_WORKING_PILL_LIVE_COUNT}). While the user is reading the expand,
  * the pill is kept alive with at least `1` so summary/settled ticks never collapse it.
  */
 export function resolveWorkingPillDisplayCount(input: WorkingPillDisplayCountInput): number {
@@ -27,7 +34,7 @@ export function resolveWorkingPillDisplayCount(input: WorkingPillDisplayCountInp
     }
     const live = input.suppressedAfterStopAll ? 0 : Math.max(0, input.liveCount);
     const reading = input.reading && !input.suppressedAfterStopAll;
-    if (live <= 0 && !reading) {
+    if (live < MIN_WORKING_PILL_LIVE_COUNT && !reading) {
         return 0;
     }
     if (!input.surfaceMounted && !reading) {

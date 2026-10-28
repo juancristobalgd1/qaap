@@ -99,6 +99,31 @@ describe('task title marquee', () => {
         expect(viewport.classList.contains(TASK_TITLE_OVERFLOW_CLASS)).to.equal(true);
         expect(viewport.style.getPropertyValue('--qaap-task-title-overflow')).to.equal('26px');
     });
+    it('never scrolls a short title that fills its full-width block', () => {
+        const viewport = document.createElement('span');
+        const text = createTaskTitleText('Fix bug');
+        viewport.append(text);
+        viewport.style.setProperty('--qaap-task-title-hover-reserve', '36px');
+        document.body.append(viewport);
+        // The block text element is as wide as the row, so scrollWidth reports the row width.
+        Object.defineProperty(viewport, 'clientWidth', { configurable: true, value: 200 });
+        Object.defineProperty(text, 'clientWidth', { configurable: true, value: 200 });
+        Object.defineProperty(text, 'scrollWidth', { configurable: true, value: 200 });
+        const createRange = document.createRange;
+        document.createRange = () => ({
+            selectNodeContents: () => undefined,
+            getBoundingClientRect: () => ({ width: 48 }),
+            detach: () => undefined,
+        }) as unknown as Range;
+        try {
+            refreshTaskTitleMarquee(viewport, { interacting: true });
+        } finally {
+            document.createRange = createRange;
+        }
+
+        expect(viewport.classList.contains(TASK_TITLE_OVERFLOW_CLASS)).to.equal(false);
+        viewport.remove();
+    });
     it('keeps the hover reserve when the title changes while its row is in use', () => {
         const row = document.createElement('div');
         row.className = 'theia-mobile-projects-task-row';

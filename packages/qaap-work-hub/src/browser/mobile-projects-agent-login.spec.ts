@@ -113,7 +113,7 @@ describe('Work Hub harness connection actions', () => {
         });
     }
 
-    for (const agentId of ['openclaude', 'hermes', 'antigravity']) {
+    for (const agentId of ['codex', 'claude']) {
         it(`never offers an API key for ${agentId}: Connect is a sign-in, not a Settings link`, async () => {
             const openedSettings: string[] = [];
 
@@ -133,9 +133,7 @@ describe('Work Hub harness connection actions', () => {
     }
 
     for (const { agentId, command } of [
-        { agentId: 'openclaw', command: 'openclaw onboard' },
-        { agentId: 'qwen', command: 'qwen' },
-        { agentId: 'kimi', command: 'kimi' },
+        { agentId: 'pi', command: 'pi' },
     ]) {
         it(`opens the dialog with the exact tenant-terminal command for ${agentId} immediately`, () => {
             openAgentSignInTerminalExtracted(createWorkspacelessContext(), agentId);

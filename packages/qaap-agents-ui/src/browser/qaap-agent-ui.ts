@@ -65,6 +65,8 @@ export function resolveAgentPickerDescription(agentId: string, fallbackLabel: st
             return nls.localize('qaap/agentPicker/descriptionCodex', 'OpenAI coding agent');
         case 'claude':
             return nls.localize('qaap/agentPicker/descriptionClaude', 'Anthropic coding agent');
+        case 'pi':
+            return nls.localize('qaap/agentPicker/descriptionPi', 'Minimal terminal coding agent');
         case 'copilot':
             return nls.localize('qaap/agentPicker/descriptionCopilot', 'GitHub coding agent');
         case 'cursor':

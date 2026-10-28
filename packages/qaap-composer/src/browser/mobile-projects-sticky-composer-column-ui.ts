@@ -268,8 +268,18 @@ export class MobileProjectsStickyComposerColumnUi {
                 modeBtn.setAttribute('aria-label', modeBtn.title);
             }
             const modeButton = modeBtn;
+            // Goal is blocked by manual approval: let its row open the approval picker instead
+            // of being a dead end ("Requires auto-approve").
+            const approvalAnchor = approvalBtn;
+            const sheetUntilDone: StickyComposerUntilDoneToggleOptions | undefined = untilDone
+                && untilDone.disabledReason
+                && options.approvalPolicyId === 'request-approval'
+                && approvalAnchor
+                && options.onOpenApprovalPolicySheet
+                ? { ...untilDone, onResolveDisabled: () => options.onOpenApprovalPolicySheet!(approvalAnchor) }
+                : untilDone;
             bindStickyComposerControlClick(modeBtn, ev => {
-                this.openComposerControlSheet(ev, input, () => options.onOpenModeSheet!(modeButton, untilDone));
+                this.openComposerControlSheet(ev, input, () => options.onOpenModeSheet!(modeButton, sheetUntilDone));
             });
         }
 

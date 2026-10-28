@@ -18,10 +18,9 @@ describe('qaap-builtin-agents', () => {
             .to.equal('codex -q --json -c check_for_update_on_startup=false {model_flags} {prompt}');
     });
 
-    it('pins Hermes model flags before chat and ignores a stale user config.yaml', () => {
-        const hermes = QAAP_BUILTIN_AGENT_DEFINITIONS.find(definition => definition.id === 'hermes');
-        expect(hermes?.template).to.equal(
-            'hermes --yolo --ignore-user-config --provider nous {model_flags} chat -Q -q {prompt}',
-        );
+    it('registers Pi (and not the retired Hermes) as a built-in agent', () => {
+        const pi = QAAP_BUILTIN_AGENT_DEFINITIONS.find(definition => definition.id === 'pi');
+        expect(pi?.template).to.equal('pi -p --approve {model_flags} {prompt}');
+        expect(QAAP_BUILTIN_AGENT_DEFINITIONS.find(definition => definition.id === 'hermes')).to.equal(undefined);
     });
 });

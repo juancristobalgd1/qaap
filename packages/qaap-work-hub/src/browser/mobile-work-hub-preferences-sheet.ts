@@ -73,6 +73,8 @@ interface WorkHubSettingsSection {
     readonly label: string;
     readonly icon: string;
     readonly query: string;
+    /** Heading of the nav group this section opens; sections without one continue the previous group. */
+    readonly group?: string;
 }
 
 /**
@@ -81,17 +83,38 @@ interface WorkHubSettingsSection {
  * existing preferences widget so values, scopes and persistence stay intact.
  */
 const WORK_HUB_SETTINGS_SECTIONS: readonly WorkHubSettingsSection[] = [
-    { id: 'general', label: nls.localize('qaap/workHubSettings/general', 'General'), icon: 'settings-gear', query: '' },
-    { id: 'profile', label: nls.localize('qaap/workHubSettings/profile', 'Profile'), icon: 'account', query: '' },
+    {
+        id: 'general', label: nls.localize('qaap/workHubSettings/general', 'General'), icon: 'settings-gear', query: '',
+        group: nls.localize('qaap/workHubSettings/groupApp', 'App'),
+    },
     { id: 'appearance', label: nls.localize('qaap/workHubSettings/appearance', 'Appearance'), icon: 'symbol-color', query: 'workbench' },
-    { id: 'plan-usage', label: nls.localize('qaap/workHubSettings/planUsage', 'Plan & Usage'), icon: 'credit-card', query: '' },
-    { id: 'agents', label: nls.localize('qaap/workHubSettings/agents', 'Harness'), icon: 'hubot', query: 'Agents' },
+    { id: 'worktrees', label: nls.localize('qaap/workHubSettings/worktrees', 'Worktrees'), icon: 'repo', query: '' },
+    {
+        id: 'agents', label: nls.localize('qaap/workHubSettings/agents', 'Harness'), icon: 'hubot', query: 'Agents',
+        group: nls.localize('qaap/workHubSettings/groupAgents', 'Agents'),
+    },
+    { id: 'models', label: nls.localize('qaap/workHubSettings/models', 'BYOK'), icon: 'key', query: 'ai-features' },
     { id: 'mcp', label: nls.localize('qaap/workHubSettings/mcp', 'MCP'), icon: 'plug', query: 'MCP' },
     { id: 'skills', label: nls.localize('qaap/workHubSettings/skills', 'Skills'), icon: 'lightbulb', query: 'Skills' },
-    { id: 'models', label: nls.localize('qaap/workHubSettings/models', 'BYOK'), icon: 'symbol-method', query: 'ai-features' },
-    { id: 'worktrees', label: nls.localize('qaap/workHubSettings/worktrees', 'Worktrees'), icon: 'repo', query: '' },
-    { id: 'docs', label: nls.localize('qaap/workHubSettings/docs', 'Docs'), icon: 'book', query: '' },
+    {
+        id: 'profile', label: nls.localize('qaap/workHubSettings/profile', 'Profile'), icon: 'account', query: '',
+        group: nls.localize('qaap/workHubSettings/groupAccount', 'Account'),
+    },
+    { id: 'plan-usage', label: nls.localize('qaap/workHubSettings/planUsage', 'Plan & Usage'), icon: 'credit-card', query: '' },
+    {
+        id: 'docs', label: nls.localize('qaap/workHubSettings/docs', 'Docs'), icon: 'book', query: '',
+        group: nls.localize('qaap/workHubSettings/groupHelp', 'Help'),
+    },
 ];
+
+/** Small heading that opens a group of Settings nav items (the Work Hub sidebar renders the same markup). */
+function createWorkHubSettingsGroupLabel(label: string): HTMLElement {
+    const heading = document.createElement('div');
+    heading.className = 'theia-mobile-work-hub-settings-group-label';
+    heading.setAttribute('role', 'presentation');
+    heading.textContent = label;
+    return heading;
+}
 
 export function isWorkHubAiFeaturesPreferencesQuery(query?: string): boolean {
     return typeof query === 'string' && query.trim().toLowerCase() === WORK_HUB_AI_FEATURES_PREFERENCES_QUERY;
@@ -307,7 +330,11 @@ export class MobileWorkHubPreferencesSheet {
         settingsNav.className = 'theia-mobile-work-hub-settings-nav';
         settingsNav.setAttribute('aria-label', nls.localize('qaap/workHubSettings/navigationLabel', 'Work Hub settings sections'));
         this.settingsNav = settingsNav;
+        settingsSectionLabel.hidden = true;
         for (const section of WORK_HUB_SETTINGS_SECTIONS) {
+            if (section.group) {
+                settingsNav.append(createWorkHubSettingsGroupLabel(section.group));
+            }
             const item = document.createElement('button');
             item.type = 'button';
             item.className = 'theia-mobile-work-hub-settings-nav-item';

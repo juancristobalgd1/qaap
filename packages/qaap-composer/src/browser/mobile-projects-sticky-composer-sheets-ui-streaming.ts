@@ -277,7 +277,7 @@ export function createModeSheetOptionExtracted(ctx: MobileProjectsStickyComposer
     modeId: string,
     selectedModeId: string | undefined,
     onSelect: (modeId: string) => void,): HTMLElement {
-    return createModeSheetOptionButton({
+    const button = createModeSheetOptionButton({
         modeId,
         label,
         selected: selectedModeId === modeId,
@@ -285,6 +285,26 @@ export function createModeSheetOptionExtracted(ctx: MobileProjectsStickyComposer
             onSelect(modeId);
         },
     });
+    const description = resolveComposerModeDescription(modeId);
+    if (description) {
+        const descriptionEl = document.createElement('span');
+        descriptionEl.className = 'theia-mobile-sticky-composer-sheet-option-description';
+        descriptionEl.textContent = description;
+        button.querySelector('.theia-mobile-sticky-composer-sheet-option-content')?.append(descriptionEl);
+    }
+    return button;
+}
+
+/** One-line explanation under the Build / Plan rows of the Mode sheet. */
+function resolveComposerModeDescription(modeId: string): string | undefined {
+    switch (modeId) {
+        case 'agent':
+            return nls.localize('qaap/mobileProjects/modeBuildDescription', 'Edits files and runs commands');
+        case 'plan':
+            return nls.localize('qaap/mobileProjects/modePlanDescription', 'Reads and proposes a plan, no edits');
+        default:
+            return undefined;
+    }
 }
 
 export async function resolveModelsForAgentPickerExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext, agentId: string): Promise<QaapQaiqModelOption[]> {

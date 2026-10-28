@@ -60,14 +60,14 @@ describe('QaapAgentTaskRunner harness status catalog', () => {
             lastTurns: {
                 get: (login: string | undefined, agentId: string) => {
                     lookups.push([login, agentId]);
-                    return agentId === 'copilot' ? { outcome: 'failed', kind: 'auth', at: 5, taskId: 't9' } : undefined;
+                    return agentId === 'pi' ? { outcome: 'failed', kind: 'auth', at: 5, taskId: 't9' } : undefined;
                 },
             },
         });
 
         const statuses = runner.listHarnessStatuses('alice', () => true);
 
-        expect(statuses.find(status => status.id === 'copilot')?.lastTurn).to.deep.equal({ outcome: 'failed', kind: 'auth', at: 5, taskId: 't9' });
+        expect(statuses.find(status => status.id === 'pi')?.lastTurn).to.deep.equal({ outcome: 'failed', kind: 'auth', at: 5, taskId: 't9' });
         expect(statuses.find(status => status.id === 'codex')).to.not.have.property('lastTurn');
         expect(lookups.every(([login]) => login === 'alice')).to.equal(true);
     });

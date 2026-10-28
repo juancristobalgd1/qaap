@@ -1150,7 +1150,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
                     { id: 'qaiq', label: 'QAIQ', available: true },
                     { id: 'claude', label: 'Claude Code', available: true },
                     { id: 'codex', label: 'Codex', available: true },
-                    { id: 'grok', label: 'Grok Build', available: true },
+                    { id: 'pi', label: 'Pi', available: true },
                 ]),
                 resolveStickyComposerPinnedAgentId: () => 'qaiq',
             } as unknown as MobileProjectsExecutionSurfaceTabsHost['stickyComposerAgentsUi'],
@@ -1170,7 +1170,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
         expect(menu!.textContent).to.not.include('Open a project to launch an agent.');
         const labels = Array.from(menu!.querySelectorAll('.theia-mobile-transcript-tab-icon-select-option-label'))
             .map(node => node.textContent);
-        expect(labels).to.include.members(['QAIQ', 'Claude Code', 'Codex', 'Grok Build']);
+        expect(labels).to.include.members(['QAIQ', 'Claude Code', 'Codex', 'Pi']);
         tuiHost.remove();
         ui.closeExecutionTabOverflowMenu();
     });

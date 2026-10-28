@@ -345,12 +345,13 @@ describe('QaapAgentCliUpdateService', () => {
     it('reports harnesses without an installable package honestly instead of as unknown', async () => {
         process.env.QAAP_AGENT_CLI_UPDATE_CHECK = '1';
         const service = new NpmUpdateResultProbe();
-        const result = await service.installUpdate('grok', { home: '/home/qaap-tenants/alice', uid: 1001, gid: 1001 });
+        const result = await service.installUpdate('qaiq', { home: '/home/qaap-tenants/alice', uid: 1001, gid: 1001 });
         expect(result.ok).to.equal(false);
-        expect(result.message).to.match(/no installable package/i);
+        expect(result.message).to.match(/not updated in-place/i);
         expect(result.message).not.to.match(/unknown agent cli/i);
-        expect(service.hasInstallablePackage('grok')).to.equal(false);
+        expect(service.hasInstallablePackage('qaiq')).to.equal(false);
         expect(service.hasInstallablePackage('codex')).to.equal(true);
+        expect(service.hasInstallablePackage('pi')).to.equal(true);
     });
 
     posixIt('refuses a non-persistent /tmp prefix in production even when HOME is a tmpfs', async () => {
