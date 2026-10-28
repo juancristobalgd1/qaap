@@ -27,6 +27,8 @@ export interface StickyComposerChangedFileView {
 export interface TranscriptExecutionSurfaceTabsApi {
     activeExecutionTab(project?: MobileProjectEntry): ExecutionSurfaceTabId;
     executionSurfaceTabForProject(project: MobileProjectEntry): ExecutionSurfaceTabId;
+    /** `true` while the conversation stays on screen (Chat selected, or views docked beside it). */
+    isChatSurfaceVisible?(project: MobileProjectEntry): boolean;
     setExecutionSurfaceTab(project: MobileProjectEntry, tab: ExecutionSurfaceTabId): void;
     syncExecutionSurfaceChrome(project: MobileProjectEntry): void;
     selectTranscriptTab(tab: ExecutionSurfaceTabId, project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): void;
