@@ -19,8 +19,27 @@ import type { MobileProjectsTranscriptSurfacesUi } from './mobile-projects-trans
 import { activateExecutionSurfaceTabExtracted, appendExecutionSurfaceTabStripToTitleRowExtracted, centerExecutionSurfaceActiveControlExtracted, closeExecutionSurfaceSidebarExtracted, directChildWithClassExtracted, dismissExecutionSurfaceSidebarExtracted, mountExecutionSurfaceTabContentExtracted, mountTranscriptExecutionHeaderExtracted, navigateExecutionSurfaceBackExtracted, openExecutionSurfaceSidebarExtracted, openExecutionSurfaceSidebarWhenReadyExtracted, cancelExecutionSurfaceSidebarOpenRetryExtracted, type ExecutionSurfaceSidebarOpenRetry, rebuildExecutionSurfaceTabStripsExtracted, refreshExecutionSurfaceTabStripStateExtracted, replaceExecutionSurfaceTabStripExtracted, resolveExecutionSurfaceProjectExtracted, resolveExecutionSurfaceTabStripHostExtracted, restoreActiveExecutionSurfaceExtracted, scheduleExecutionSurfaceFrameExtracted, showOnlyExecutionSurfaceTabExtracted, syncConnectedTranscriptSurfaceHostsExtracted, syncExecutionSurfaceChromeExtracted, syncExecutionSurfaceChromeInHostExtracted, syncHeaderExecutionTabStripExtracted, syncProjectDetailTabStripExtracted, syncSurfaceHostsFromContainerExtracted } from './mobile-projects-execution-surface-tabs-ui-render';
 import { applyExecutionSurfaceIconSelectDisplayExtracted, buildExecutionViewTabStripExtracted, buildTranscriptTabStripExtracted, createExecutionSurfaceIconSelectExtracted, createTerminalAgentTuiSelectExtracted, executionSurfaceTabSpecsExtracted, executionTabOverflowMenuMinTopExtracted, openExecutionTabOverflowMenuExtracted, resolveExecutionTabOverflowMenuPortalExtracted, resolveTerminalAgentTuiActiveAgentIdExtracted, syncTerminalAgentTuiTriggerExtracted, syncTerminalAgentTuiTriggersInStripExtracted } from './mobile-projects-execution-surface-tabs-ui-streaming';
 import { closeExecutionTabOverflowMenuExtracted, mountTranscriptSurfaceTabExtracted, positionExecutionTabOverflowMenuExtracted } from './mobile-projects-execution-surface-tabs-ui-timeline';
+import { recordUserPreviewSurfaceChoiceExtracted } from './mobile-projects-execution-surface-tabs-ui-streaming';
+import { isQaapWorkHubAuxPanelLayout, QaapWorkHubAuxPanel } from './qaap-work-hub-aux-panel';
+import type { QaapWorkHubAuxPanelSurfaceKind } from './qaap-work-hub-aux-panel-model';
 
 type TranscriptTab = ExecutionSurfaceTabId;
+
+/**
+ * The desktop right panel is one per page, but the page can hold several Work Hub
+ * panels (the Work Hub itself and the chat view embedded for the IDE). They share
+ * the panel; the one the user acts on (or the one on screen) drives its views.
+ */
+const workHubAuxPanelUis = new Set<MobileProjectsExecutionSurfaceTabsUi>();
+let workHubAuxPanel: QaapWorkHubAuxPanel | undefined;
+let workHubAuxPanelOwner: MobileProjectsExecutionSurfaceTabsUi | undefined;
+
+function resolveWorkHubAuxPanelOwner(): MobileProjectsExecutionSurfaceTabsUi | undefined {
+    if (workHubAuxPanelOwner?.isRenderedOnScreen()) {
+        return workHubAuxPanelOwner;
+    }
+    return [...workHubAuxPanelUis].find(ui => ui.isRenderedOnScreen()) ?? workHubAuxPanelOwner;
+}
 
 /** Panel surface for execution-surface tab strips, overflow menu, and tab navigation. */
 export interface MobileProjectsExecutionSurfaceTabsHost {
@@ -147,6 +166,14 @@ export class MobileProjectsExecutionSurfaceTabsUi {
         return this.host.executionSurfaceTabByProjectId.get(project.id) ?? 'messages';
     }
 
+    /**
+     * `true` while the conversation stays on screen: Chat is selected, or the desktop
+     * Work Hub docks the views in the right panel beside it.
+     */
+    isChatSurfaceVisible(project: MobileProjectEntry): boolean {
+        return this.executionSurfaceTabForProject(project) === 'messages' || !!this.resolveWorkHubAuxPanel();
+    }
+
     setExecutionSurfaceTab(project: MobileProjectEntry, tab: TranscriptTab): void {
         this.host.executionSurfaceTabByProjectId.set(project.id, tab);
         this.syncExecutionSurfaceChrome(project);
@@ -213,6 +240,91 @@ export class MobileProjectsExecutionSurfaceTabsUi {
 
     dispose(): void {
         this.cancelExecutionSurfaceSidebarOpenRetry();
+        workHubAuxPanelUis.delete(this);
+        if (workHubAuxPanelOwner === this) {
+            workHubAuxPanelOwner = undefined;
+        }
+        if (!workHubAuxPanelUis.size) {
+            workHubAuxPanel?.dispose();
+            workHubAuxPanel = undefined;
+        }
+    }
+
+    /**
+     * The desktop Work Hub right panel, or `undefined` on mobile and in the IDE
+     * chat, where the chevron keeps opening the views menu and the full-screen drawer.
+     */
+    resolveWorkHubAuxPanel(): QaapWorkHubAuxPanel | undefined {
+        if (!isQaapWorkHubAuxPanelLayout()) {
+            return undefined;
+        }
+        workHubAuxPanelUis.add(this);
+        workHubAuxPanelOwner ??= this;
+        if (!workHubAuxPanel) {
+            workHubAuxPanel = new QaapWorkHubAuxPanel({
+                canShowSurfaces: () => !!resolveWorkHubAuxPanelOwner()?.resolveWorkHubAuxPanelTarget(),
+                showSurface: kind => resolveWorkHubAuxPanelOwner()?.showWorkHubAuxPanelSurface(kind),
+                releaseSurface: userClosed => resolveWorkHubAuxPanelOwner()?.releaseWorkHubAuxPanelSurface(userClosed),
+            });
+        }
+        return workHubAuxPanel;
+    }
+
+    /** Make this UI the one whose task the shared right panel shows, e.g. after the user acted on it. */
+    claimWorkHubAuxPanel(): QaapWorkHubAuxPanel | undefined {
+        const panel = this.resolveWorkHubAuxPanel();
+        if (panel) {
+            workHubAuxPanelOwner = this;
+        }
+        return panel;
+    }
+
+    /** `true` when this UI's Work Hub root is laid out (not a hidden twin). */
+    isRenderedOnScreen(): boolean {
+        const root = this.host.root;
+        return root.isConnected && root.getClientRects().length > 0;
+    }
+
+    /** @internal The task the shared right panel mounts views for. */
+    resolveWorkHubAuxPanelTarget(): {
+        project: MobileProjectEntry;
+        summary: QaapAgentConversationSummaryDTO;
+        origin: 'transcript' | 'project-detail';
+    } | undefined {
+        const sidebar = this.host.executionSurfaceSidebar;
+        const project = sidebar?.project ?? this.host.transcriptOpenProject ?? this.resolveExecutionSurfaceProject();
+        if (!project) {
+            return undefined;
+        }
+        const summary = sidebar?.summary
+            ?? this.host.transcriptOpenSummary
+            ?? (this.host.agentsHubShellActive ? this.host.resolveAgentsHubShellSummary(project) : undefined);
+        return summary ? { project, summary, origin: sidebar?.origin ?? 'transcript' } : undefined;
+    }
+
+    /** @internal */
+    showWorkHubAuxPanelSurface(kind: QaapWorkHubAuxPanelSurfaceKind): void {
+        const target = this.resolveWorkHubAuxPanelTarget();
+        if (!target) {
+            return;
+        }
+        recordUserPreviewSurfaceChoiceExtracted(this, kind);
+        this.activateExecutionSurfaceTab(kind, target.project, target.summary, target.origin);
+    }
+
+    /** @internal */
+    releaseWorkHubAuxPanelSurface(userClosed: boolean): void {
+        if (userClosed) {
+            this.closeExecutionSurfaceSidebar();
+            return;
+        }
+        const target = this.resolveWorkHubAuxPanelTarget();
+        if (target) {
+            // Back to Chat, so a header rebuild does not re-dock the view under the launcher.
+            this.activateExecutionSurfaceTab('messages', target.project, target.summary, target.origin);
+        } else {
+            this.dismissExecutionSurfaceSidebar();
+        }
     }
 
     closeExecutionSurfaceSidebar(): void {
@@ -274,6 +386,10 @@ export class MobileProjectsExecutionSurfaceTabsUi {
     }
 
     resolveExecutionSurfaceIconSelectDisplayTab(activeTab: TranscriptTab): TranscriptTab {
+        if (this.resolveWorkHubAuxPanel()) {
+            // The chevron toggles the right panel; the views live there, the chip stays on Chat.
+            return 'messages';
+        }
         // 'review' (Changes) is now merged into the 'files' tab — display as 'files'.
         return activeTab === 'review' ? 'files' : activeTab;
     }

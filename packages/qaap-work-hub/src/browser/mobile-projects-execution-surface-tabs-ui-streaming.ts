@@ -22,6 +22,7 @@ import { peekPreferDesktopIde } from '@theia/qaap-shared-core/lib/browser/mobile
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { clearQaapPreviewDismissedByUser, markQaapPreviewDismissedByUser } from '@theia/qaap-shared-core/lib/browser/qaap-preview-user-dismissal';
 import { executionSurfacePreviewDirectory } from './mobile-projects-execution-surface-tabs-ui-render';
+import type { QaapWorkHubAuxPanel } from './qaap-work-hub-aux-panel';
 
 export function applyExecutionSurfaceIconSelectDisplayExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, strip: HTMLElement, activeTab: TranscriptTab): void {
     const selectBtn = queryExecutionSurfaceViewSelect(strip);
@@ -41,6 +42,7 @@ export function applyExecutionSurfaceIconSelectDisplayExtracted(ctx: MobileProje
     selectBtn.classList.toggle('theia-mobile-transcript-tab-icon-select-chat', spec.id === 'messages');
     selectBtn.title = spec.label;
     selectBtn.setAttribute('aria-label', `${spec.label}, ${nls.localize('qaap/mobileProjects/tabOverflow', 'Change view')}`);
+    applyWorkHubAuxPanelTriggerChrome(ctx, selectBtn);
     const iconUnchanged = isExecutionSurfaceIconElement(symbol, spec.icon);
     if (!iconUnchanged) {
         symbol.replaceWith(createExecutionSurfaceIconElement(spec.icon, 'theia-mobile-transcript-tab-icon-select-symbol'));
@@ -53,6 +55,21 @@ export function applyExecutionSurfaceIconSelectDisplayExtracted(ctx: MobileProje
         const tabId = item.dataset.tab as TranscriptTab | undefined;
         item.classList.toggle('theia-mod-active', tabId === activeTab);
     }
+}
+
+/** On the desktop Work Hub the view chevron is the right panel's toggle, not a menu button. */
+function applyWorkHubAuxPanelTriggerChrome(ctx: MobileProjectsExecutionSurfaceTabsUiContext, trigger: HTMLElement): QaapWorkHubAuxPanel | undefined {
+    const auxPanel = ctx.resolveWorkHubAuxPanel();
+    if (auxPanel) {
+        trigger.setAttribute('aria-haspopup', 'false');
+        trigger.setAttribute('aria-expanded', String(auxPanel.isOpen));
+        trigger.title = nls.localize('qaap/workHubAuxPanel/toggle', 'Toggle views panel');
+        trigger.setAttribute('aria-label', trigger.title);
+    } else {
+        // The window may have left the desktop layout since the strip was built.
+        trigger.setAttribute('aria-haspopup', 'menu');
+    }
+    return auxPanel;
 }
 
 export function buildTranscriptTabStripExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): HTMLElement {
@@ -343,6 +360,14 @@ export function createExecutionSurfaceIconSelectExtracted(ctx: MobileProjectsExe
     trigger.append(triggerLabel, chevron);
     trigger.addEventListener('click', event => {
         event.stopPropagation();
+        // Desktop Work Hub: the chevron toggles the docked right panel instead of the menu.
+        const auxPanel = ctx.claimWorkHubAuxPanel();
+        if (auxPanel) {
+            ctx.closeExecutionTabOverflowMenu();
+            auxPanel.toggle();
+            trigger.setAttribute('aria-expanded', String(auxPanel.isOpen));
+            return;
+        }
         if (ctx.host.executionTabOverflowMenu?.classList.contains('theia-mod-open')) {
             ctx.closeExecutionTabOverflowMenu();
             return;
@@ -376,6 +401,17 @@ export function createExecutionSurfaceIconSelectExtracted(ctx: MobileProjectsExe
     }
 
     wrap.append(trigger, menu);
+    const auxPanel = applyWorkHubAuxPanelTriggerChrome(ctx, trigger);
+    if (auxPanel) {
+        // A rebuilt header means a task (re)opened: let the panel bring its view back.
+        // Only the Work Hub on screen drives it, never a hidden twin.
+        ctx.scheduleExecutionSurfaceFrame(() => {
+            if (ctx.isRenderedOnScreen()) {
+                ctx.claimWorkHubAuxPanel();
+                auxPanel.syncWithOpenTask();
+            }
+        });
+    }
     return wrap;
 }
 

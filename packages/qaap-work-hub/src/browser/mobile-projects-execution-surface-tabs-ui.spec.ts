@@ -19,6 +19,7 @@ import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mob
 import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { clearPreferDesktopIde, markPreferDesktopIde } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 import { clearQaapPreviewDismissedByUser, isQaapPreviewDismissedByUser } from '@theia/qaap-shared-core/lib/browser/qaap-preview-user-dismissal';
+import { QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY } from './mobile-work-hub-sessions-sidebar';
 import {
     clearPendingTranscriptFilesViewMode,
     readPendingTranscriptFilesViewMode,
@@ -1315,6 +1316,93 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
 
             expect(opens()).to.equal(1);
             expect(ui.executionSurfaceSidebarOpenRetry).to.equal(undefined);
+        });
+    });
+
+    describe('desktop Work Hub right panel', () => {
+        let originalMatchMedia: typeof window.matchMedia | undefined;
+
+        beforeEach(() => {
+            originalMatchMedia = window.matchMedia;
+            window.matchMedia = ((query: string) => ({
+                matches: query === QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY,
+                media: query,
+                addEventListener: () => undefined,
+                removeEventListener: () => undefined,
+            })) as unknown as typeof window.matchMedia;
+        });
+
+        afterEach(() => {
+            window.matchMedia = originalMatchMedia!;
+            document.body.classList.remove('qaap-mod-work-hub-aux-panel-open', 'qaap-mod-work-hub-aux-panel-maximized');
+            document.querySelectorAll('.qaap-work-hub-aux-panel, .theia-mobile-execution-surface-sidebar, .theia-mobile-execution-surface-sidebar-backdrop')
+                .forEach(element => element.remove());
+        });
+
+        it('toggles the right panel from the chevron instead of opening the views menu', () => {
+            const ui = createUi(createHost());
+            const strip = ui.buildExecutionViewTabStrip('messages', () => undefined);
+            const trigger = strip.querySelector<HTMLButtonElement>('.theia-mobile-transcript-tab-icon-select')!;
+
+            trigger.click();
+            expect(ui.resolveWorkHubAuxPanel()?.isOpen).to.equal(true);
+            expect(trigger.getAttribute('aria-expanded')).to.equal('true');
+            expect(strip.querySelector<HTMLElement>('.theia-mobile-transcript-tab-icon-select-menu')!.hidden).to.equal(true);
+
+            trigger.click();
+            expect(ui.resolveWorkHubAuxPanel()?.isOpen).to.equal(false);
+        });
+
+        it('shares one right panel between the Work Hub instances of a page', () => {
+            const first = createUi(createHost());
+            const second = createUi(createHost());
+            const panel = first.resolveWorkHubAuxPanel();
+            expect(panel).to.not.equal(undefined);
+            expect(second.claimWorkHubAuxPanel()).to.equal(panel);
+            first.dispose();
+            expect(second.resolveWorkHubAuxPanel()).to.equal(panel);
+        });
+
+        it('keeps the views menu in the IDE chat', () => {
+            markPreferDesktopIde();
+            const host = createHost();
+            const ui = createUi(host);
+            expect(ui.resolveWorkHubAuxPanel()).to.equal(undefined);
+            const strip = ui.buildExecutionViewTabStrip('messages', () => undefined);
+            strip.querySelector<HTMLButtonElement>('.theia-mobile-transcript-tab-icon-select')!.click();
+            expect(host.executionTabOverflowMenu?.classList.contains('theia-mod-open')).to.equal(true);
+            ui.closeExecutionTabOverflowMenu();
+        });
+
+        it('docks the surface in the panel without a drawer backdrop and hands it back on dismiss', () => {
+            const project = { id: 'p-docked', name: 'Docked' } as MobileProjectEntry;
+            const summary = { id: 'conv-docked' } as MobileProjectsExecutionSurfaceTabsHost['transcriptOpenSummary'];
+            const root = document.createElement('div');
+            const terminalHost = document.createElement('div');
+            terminalHost.className = 'theia-mobile-transcript-terminal';
+            root.append(terminalHost);
+            document.body.append(root);
+            try {
+                const host = createHost({ root, transcriptTerminalHost: terminalHost });
+                const ui = createUi(host);
+
+                ui.openExecutionSurfaceSidebar('terminal', project, summary!, 'transcript');
+
+                const sidebar = host.executionSurfaceSidebar!.element;
+                expect(sidebar.classList.contains('qaap-mod-docked')).to.equal(true);
+                expect(sidebar.closest('.qaap-work-hub-aux-panel')).to.not.equal(null);
+                expect(sidebar.hasAttribute('aria-modal')).to.equal(false);
+                expect(document.querySelector('.theia-mobile-execution-surface-sidebar-backdrop')).to.equal(null);
+                expect(terminalHost.closest('.qaap-work-hub-aux-panel')).to.not.equal(null);
+                expect(ui.resolveWorkHubAuxPanel()!.model.activeTab?.kind).to.equal('terminal');
+
+                ui.dismissExecutionSurfaceSidebar();
+                expect(terminalHost.parentElement).to.equal(root);
+                expect(sidebar.isConnected).to.equal(false);
+                expect(ui.resolveWorkHubAuxPanel()!.isOpen).to.equal(true);
+            } finally {
+                root.remove();
+            }
         });
     });
 });

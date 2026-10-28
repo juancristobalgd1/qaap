@@ -585,6 +585,9 @@ export function openExecutionSurfaceSidebarExtracted(ctx: MobileProjectsExecutio
         restoreExecutionSurfaceSidebarPreviewHeaderMountExtracted(previous);
         restoreExecutionSurfaceSidebarPreviewHeaderExtracted(previous);
         restoreExecutionSurfaceSidebarToolbarHostExtracted(previous);
+        if (previous.element.classList.contains('qaap-mod-docked')) {
+            ctx.resolveWorkHubAuxPanel()?.undockSurface(previous.element);
+        }
         previous.element.remove();
         previous.backdrop.remove();
         if (previous.closeTimer) {
@@ -681,9 +684,18 @@ export function openExecutionSurfaceSidebarExtracted(ctx: MobileProjectsExecutio
         })()
         : undefined;
 
-    // Mount at the document level so the fixed drawer can cover the Work Hub
-    // sessions sidebar as well as the Agents content area.
-    document.body.append(backdrop, sidebar);
+    // Desktop Work Hub docks the surface in the right panel beside the chat.
+    // Elsewhere, mount at the document level so the fixed drawer can cover the
+    // Work Hub sessions sidebar as well as the Agents content area.
+    sidebar.classList.add('qaap-mod-docked');
+    sidebar.removeAttribute('aria-modal');
+    sidebar.setAttribute('role', 'region');
+    if (!ctx.claimWorkHubAuxPanel()?.dockSurface(activeSurface, sidebar)) {
+        sidebar.classList.remove('qaap-mod-docked');
+        sidebar.setAttribute('role', 'dialog');
+        sidebar.setAttribute('aria-modal', 'true');
+        document.body.append(backdrop, sidebar);
+    }
     const state = {
         element: sidebar,
         backdrop,
@@ -743,6 +755,17 @@ export function dismissExecutionSurfaceSidebarExtracted(ctx: MobileProjectsExecu
     restoreExecutionSurfaceSidebarPreviewHeaderExtracted(sidebar);
     restoreExecutionSurfaceSidebarToolbarHostExtracted(sidebar);
     ctx.host.executionSurfaceSidebar = undefined;
+    if (sidebar.element.classList.contains('qaap-mod-docked')) {
+        // No drawer animation for the docked panel; hand its slot back at once.
+        const auxPanel = ctx.resolveWorkHubAuxPanel();
+        if (auxPanel) {
+            auxPanel.undockSurface(sidebar.element);
+        } else {
+            sidebar.element.remove();
+        }
+        sidebar.backdrop.remove();
+        return;
+    }
     sidebar.backdrop.classList.remove('theia-mod-open');
     sidebar.backdrop.classList.add('theia-mod-closing');
     sidebar.element.classList.remove('theia-mod-open');
