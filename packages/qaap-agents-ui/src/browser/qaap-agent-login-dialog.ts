@@ -10,6 +10,12 @@ import {
     localizeAgentSettingsApiKeyLoginMessage,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
 import {
+    QAAP_AGENT_LOGIN_CALLBACK_CHANNEL,
+    type QaapAgentLoginCallbackMessage,
+    resolveQaapAgentLoginRedirectUrl,
+    rewriteQaapAgentLoginCallbackUrl,
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-login-callback';
+import {
     QAAP_AGENT_LOGIN_CHALLENGE_TIMEOUT_MS,
     QAAP_AGENT_LOGIN_PREPARE_TIMEOUT_MS,
     type QaapAgentLoginFlowState,
@@ -218,6 +224,41 @@ export function createQaapAgentLoginDialog(
         body.append(message);
     };
 
+    // Hosted workspaces: the CLI's 127.0.0.1 callback is unreachable from the user's browser, so the
+    // sign-in page returns to the Qaap callback page, which broadcasts the redirect back here.
+    let callbackChannel: BroadcastChannel | undefined;
+    let pendingCallback: { readonly nonce: string; readonly loopbackCallback: string } | undefined;
+    const onCallbackMessage = (event: MessageEvent<QaapAgentLoginCallbackMessage>): void => {
+        const message = event.data;
+        if (disposed || !pendingCallback || !message || message.nonce !== pendingCallback.nonce || typeof message.search !== 'string') {
+            return;
+        }
+        const redirect = resolveQaapAgentLoginRedirectUrl(pendingCallback.loopbackCallback, message.search);
+        if (redirect && options.onSubmitCode) {
+            pendingCallback = undefined;
+            options.onSubmitCode(redirect);
+        }
+    };
+    const resolveSignInUrl = (challenge: QaapAgentAuthLoginChallenge, url: string): string => {
+        const acceptsRedirect = challenge.acceptsRedirectUrl || options.agentId === 'pi';
+        if (!acceptsRedirect || !options.onSubmitCode || typeof BroadcastChannel === 'undefined') {
+            return url;
+        }
+        const nonce = pendingCallback?.nonce ?? (typeof crypto.randomUUID === 'function'
+            ? crypto.randomUUID()
+            : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`);
+        const rewrite = rewriteQaapAgentLoginCallbackUrl(url, window.location.origin, nonce);
+        if (!rewrite) {
+            return url;
+        }
+        pendingCallback = { nonce, loopbackCallback: rewrite.loopbackCallback };
+        if (!callbackChannel) {
+            callbackChannel = new BroadcastChannel(QAAP_AGENT_LOGIN_CALLBACK_CHANNEL);
+            callbackChannel.addEventListener('message', onCallbackMessage);
+        }
+        return rewrite.url;
+    };
+
     const renderChallenge = (challenge: QaapAgentAuthLoginChallenge, submitted: boolean): void => {
         let step = 0;
         const nextStep = (text: string) => createStep(String(++step), text);
@@ -236,7 +277,7 @@ export function createQaapAgentLoginDialog(
             );
             const url = challenge.url;
             openButton.addEventListener('click', () => {
-                window.open(url, '_blank', 'noopener,noreferrer');
+                window.open(resolveSignInUrl(challenge, url), '_blank', 'noopener,noreferrer');
             });
             open.body.append(openButton);
             body.append(open.root);
@@ -456,6 +497,8 @@ export function createQaapAgentLoginDialog(
         disposed = true;
         closeButton.removeEventListener('click', close);
         cancelButton.removeEventListener('click', close);
+        callbackChannel?.close();
+        callbackChannel = undefined;
         root.remove();
     };
 

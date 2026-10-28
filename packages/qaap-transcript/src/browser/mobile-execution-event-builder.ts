@@ -62,10 +62,11 @@ export function buildMobileExecutionEvents(segments: readonly QaapAgentMessageSe
         const descriptor = describeMobileTool(segment);
         const lastEvent = events[events.length - 1];
 
-        // Merge into last event if no new narrative and same kind.
-        // Keep command groups separate so their stable tool ids survive stream updates.
-        const canMergeKind = descriptor.kind !== 'run' && descriptor.kind !== 'verification';
-        if (lastEvent && pendingNarrative.length === 0 && lastEvent.kind === descriptor.kind && canMergeKind) {
+        // Merge into last event if no new narrative and same kind: back-to-back commands
+        // collapse into one "Run N commands" row. The event id stays keyed by the lead tool,
+        // so appending a command patches the group in place; a streaming command whose kind
+        // flips (run → verification) splits off and falls back to a rebuild once.
+        if (lastEvent && pendingNarrative.length === 0 && lastEvent.kind === descriptor.kind) {
             lastEvent.tools.push(toMobileTool(segment, i, descriptor));
             updateMobileEventState(lastEvent);
             continue;

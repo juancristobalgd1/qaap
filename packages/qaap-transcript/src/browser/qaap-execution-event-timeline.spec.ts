@@ -37,14 +37,30 @@ describe('qaap-execution-event-timeline', () => {
             expect(timeline.events[1]?.id).to.equal('m-event-tool-3');
         });
 
-        it('does not merge consecutive run/verification tools (avoids kind-flip rebuilds)', () => {
+        it('merges back-to-back commands into one group keyed by the lead tool', () => {
             const timeline = buildMobileExecutionEvents([
                 toolSegment('Bash', 'tool-1', JSON.stringify({ command: 'npm run build' })),
                 toolSegment('Bash', 'tool-2', JSON.stringify({ command: 'npm run test' })),
+                toolSegment('Grep', 'tool-3', '{}'),
+                toolSegment('Grep', 'tool-4', '{}'),
+                toolSegment('Bash', 'tool-5', JSON.stringify({ command: 'ls' })),
+                toolSegment('Bash', 'tool-6', JSON.stringify({ command: 'pwd' })),
+                toolSegment('Bash', 'tool-7', JSON.stringify({ command: 'git status' })),
             ]);
-            expect(timeline.events).to.have.length(2);
-            expect(timeline.events[0]?.id).to.equal('m-event-tool-1');
-            expect(timeline.events[1]?.id).to.equal('m-event-tool-2');
+            expect(timeline.events.map(event => [event.id, event.kind, event.tools.length])).to.deep.equal([
+                ['m-event-tool-1', 'run', 2],
+                ['m-event-tool-3', 'explore', 2],
+                ['m-event-tool-5', 'run', 3],
+            ]);
+        });
+
+        it('keeps commands separated by agent narrative in separate groups', () => {
+            const timeline = buildMobileExecutionEvents([
+                toolSegment('Bash', 'tool-1', JSON.stringify({ command: 'npm run build' })),
+                textSegment('Build passed, now testing.'),
+                toolSegment('Bash', 'tool-2', JSON.stringify({ command: 'npm run test' })),
+            ]);
+            expect(timeline.events.map(event => event.id)).to.deep.equal(['m-event-tool-1', 'm-event-tool-2']);
         });
 
         it('uses agent text as the event narrative', () => {
@@ -96,16 +112,10 @@ describe('qaap-execution-event-timeline', () => {
                 toolSegment('vitest', 'tool-3', JSON.stringify({ command: 'vitest' })),
             ]);
 
-            // Keep one event per command tool so stable ids survive stream updates.
-            expect(timeline.events).to.have.length(3);
+            expect(timeline.events).to.have.length(1);
             expect(timeline.events[0]?.kind).to.equal('run');
-            expect(timeline.events[1]?.kind).to.equal('run');
-            expect(timeline.events[2]?.kind).to.equal('run');
-            expect(timeline.events[0]?.tools[0]?.isVerification).to.equal(false);
-            expect(timeline.events[1]?.tools[0]?.isVerification).to.equal(false);
-            expect(timeline.events[2]?.tools[0]?.isVerification).to.equal(false);
             expect(timeline.events[0]?.id).to.equal('m-event-tool-1');
-            expect(timeline.events[1]?.id).to.equal('m-event-tool-2');
+            expect(timeline.events[0]?.tools.map(tool => tool.isVerification)).to.deep.equal([false, false, false]);
         });
 
         it('captures trailing text as closing narrative', () => {
