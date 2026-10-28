@@ -69,19 +69,30 @@ export async function ensureTranscriptTerminalTabExtracted(ctx: MobileProjectsTr
     ctx.ensureTranscriptTerminalChrome(host, workspaceKey, cwd, services, project, summary);
     let state = ctx.host.transcriptTerminalSlidesByWorkspace.get(workspaceKey);
     if (!state) {
-        state = { surfaces: [], activeIndex: 0 };
-        ctx.host.transcriptTerminalSlidesByWorkspace.set(workspaceKey, state);
-        await ctx.restoreTranscriptTerminalSlides(workspaceKey, cwd, services);
-        state = ctx.host.transcriptTerminalSlidesByWorkspace.get(workspaceKey);
-    }
-    if (!state) {
-        state = { surfaces: [], activeIndex: 0 };
+        state = { surfaces: [], activeIndex: 0, restorePending: true };
         ctx.host.transcriptTerminalSlidesByWorkspace.set(workspaceKey, state);
     }
-    if (state.surfaces.length === 0 && !state.suppressAutoCreate) {
-        await ctx.createTranscriptTerminalSlide(workspaceKey, cwd, services, project, summary);
-        state = ctx.host.transcriptTerminalSlidesByWorkspace.get(workspaceKey);
+    // Concurrent mounts of the same workspace (tab activation, the prepared-cwd retry,
+    // a docked panel re-request) share one restore/auto-create. Otherwise a second mount
+    // sees the still-empty list while the first awaits the restore, creates a shell, and
+    // the restore then adds the persisted ones too: one extra terminal per page load.
+    if (!state.ensuring) {
+        const target = state;
+        target.ensuring = (async () => {
+            if (target.restorePending) {
+                target.restorePending = false;
+                await ctx.restoreTranscriptTerminalSlides(workspaceKey, cwd, services);
+            }
+            const current = ctx.host.transcriptTerminalSlidesByWorkspace.get(workspaceKey);
+            if (current && current.surfaces.length === 0 && !current.suppressAutoCreate) {
+                await ctx.createTranscriptTerminalSlide(workspaceKey, cwd, services, project, summary);
+            }
+        })().finally(() => {
+            target.ensuring = undefined;
+        });
     }
+    await state.ensuring;
+    state = ctx.host.transcriptTerminalSlidesByWorkspace.get(workspaceKey);
     if (state && state.surfaces.length > 0) {
         ctx.renderTranscriptTerminalSlides(workspaceKey);
     }
