@@ -32,6 +32,9 @@ export interface QaapWorkHubAuxPanelHost {
     releaseSurface(userClosed: boolean): void;
 }
 
+/** Marks the chat-header buttons that open and close the panel. */
+export const QAAP_WORK_HUB_AUX_PANEL_TOGGLE_CLASS = 'qaap-mod-aux-panel-toggle';
+
 /** `true` where the chevron opens the docked right panel instead of the views menu. */
 export function isQaapWorkHubAuxPanelLayout(): boolean {
     return typeof document !== 'undefined'
@@ -256,15 +259,9 @@ export class QaapWorkHubAuxPanel {
         if (!isQaapWorkHubAuxPanelLayout()) {
             return;
         }
-        this.attach();
-        this.model.open = true;
-        this.element.hidden = false;
-        document.body.classList.add('qaap-mod-work-hub-aux-panel-open');
-        this.applyWidth(this.model.width);
-        this.applyMaximized();
+        this.reveal();
         this.restoredTabId = undefined;
         this.activateTab(this.model.ensureTab());
-        this.notifyLayout();
     }
 
     hide(): void {
@@ -292,13 +289,7 @@ export class QaapWorkHubAuxPanel {
         const tab = this.model.openView(surface);
         this.restoredTabId = tab.id;
         if (!this.isOpen) {
-            this.attach();
-            this.model.open = true;
-            this.element.hidden = false;
-            document.body.classList.add('qaap-mod-work-hub-aux-panel-open');
-            this.applyWidth(this.model.width);
-            this.applyMaximized();
-            this.notifyLayout();
+            this.reveal();
         }
         this.surfaceSlot.replaceChildren(element);
         this.render();
@@ -363,10 +354,33 @@ export class QaapWorkHubAuxPanel {
         }
     }
 
+    protected reveal(): void {
+        this.attach();
+        this.model.open = true;
+        this.element.hidden = false;
+        document.body.classList.add('qaap-mod-work-hub-aux-panel-open');
+        this.applyWidth(this.model.width);
+        this.applyMaximized();
+        this.syncToggleButtons();
+        this.notifyLayout();
+    }
+
     protected collapse(): void {
         this.element.hidden = true;
         document.body.classList.remove('qaap-mod-work-hub-aux-panel-open', 'qaap-mod-work-hub-aux-panel-maximized');
+        this.syncToggleButtons();
         this.notifyLayout();
+    }
+
+    /**
+     * The panel also opens (a surface docks) and closes (last tab closed, layout
+     * change) without a header rebuild, so push the state to every toggle.
+     */
+    protected syncToggleButtons(): void {
+        const expanded = String(this.isOpen);
+        for (const toggle of Array.from(document.querySelectorAll(`.${QAAP_WORK_HUB_AUX_PANEL_TOGGLE_CLASS}`))) {
+            toggle.setAttribute('aria-expanded', expanded);
+        }
     }
 
     protected activateTab(tab: QaapWorkHubAuxPanelTab): void {

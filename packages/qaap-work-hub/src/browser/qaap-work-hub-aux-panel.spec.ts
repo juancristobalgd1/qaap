@@ -13,7 +13,7 @@ import { expect } from 'chai';
 import { clearPreferDesktopIde, markPreferDesktopIde } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 import { QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY } from './mobile-work-hub-sessions-sidebar';
 import { QAAP_WORK_HUB_AUX_PANEL_STORAGE_KEY, type QaapWorkHubAuxPanelStorage, type QaapWorkHubAuxPanelSurfaceKind } from './qaap-work-hub-aux-panel-model';
-import { isQaapWorkHubAuxPanelLayout, QaapWorkHubAuxPanel, type QaapWorkHubAuxPanelHost } from './qaap-work-hub-aux-panel';
+import { isQaapWorkHubAuxPanelLayout, QAAP_WORK_HUB_AUX_PANEL_TOGGLE_CLASS, QaapWorkHubAuxPanel, type QaapWorkHubAuxPanelHost } from './qaap-work-hub-aux-panel';
 
 disableImportJSDOM();
 
@@ -253,6 +253,46 @@ describe('qaap-work-hub-aux-panel', () => {
         expect(panel.model.width).to.equal(before + 16);
         expect(document.documentElement.style.getPropertyValue('--qaap-work-hub-aux-panel-width')).to.equal(`${before + 16}px`);
         expect(JSON.parse(storage.entries.get(QAAP_WORK_HUB_AUX_PANEL_STORAGE_KEY)!).width).to.equal(before + 16);
+    });
+
+    it('re-fits its width when the sessions sidebar takes room, without forgetting the chosen width', () => {
+        const storage = memoryStorage();
+        const { panel } = createHarness({ storage });
+        panel.show();
+        const handle = panel.element.querySelector<HTMLElement>('.qaap-work-hub-aux-panel-resize-handle')!;
+        for (let i = 0; i < 5; i++) {
+            handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+        }
+        const chosen = panel.model.width;
+        const width = (): string => document.documentElement.style.getPropertyValue('--qaap-work-hub-aux-panel-width');
+        expect(width()).to.equal(`${chosen}px`);
+
+        const sidebar = document.createElement('aside');
+        sidebar.className = 'theia-mobile-work-hub-sessions-sidebar theia-mod-visible';
+        sidebar.getBoundingClientRect = () => ({ width: window.innerWidth - 400 } as DOMRect);
+        document.body.append(sidebar);
+        window.dispatchEvent(new window.Event('resize'));
+        // 400px left: the chat keeps its minimum, the panel takes the rest (never under its minimum).
+        expect(width()).to.equal('320px');
+
+        sidebar.remove();
+        window.dispatchEvent(new window.Event('resize'));
+        expect(width()).to.equal(`${chosen}px`);
+        expect(JSON.parse(storage.entries.get(QAAP_WORK_HUB_AUX_PANEL_STORAGE_KEY)!).width).to.equal(chosen);
+    });
+
+    it('keeps the chat-header toggles\' aria-expanded in sync however the panel opens or closes', () => {
+        const toggle = document.createElement('button');
+        toggle.className = QAAP_WORK_HUB_AUX_PANEL_TOGGLE_CLASS;
+        document.body.append(toggle);
+        const { panel } = createHarness();
+
+        panel.dockSurface('terminal', document.createElement('section'));
+        expect(toggle.getAttribute('aria-expanded')).to.equal('true');
+
+        panel.element.querySelector<HTMLButtonElement>('.qaap-work-hub-aux-panel-tab-close')!.click();
+        expect(panel.isOpen).to.equal(false);
+        expect(toggle.getAttribute('aria-expanded')).to.equal('false');
     });
 
     it('restores the open panel and its active view after a reload', () => {

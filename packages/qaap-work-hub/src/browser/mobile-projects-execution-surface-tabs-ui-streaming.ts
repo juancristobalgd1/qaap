@@ -22,7 +22,7 @@ import { peekPreferDesktopIde } from '@theia/qaap-shared-core/lib/browser/mobile
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { clearQaapPreviewDismissedByUser, markQaapPreviewDismissedByUser } from '@theia/qaap-shared-core/lib/browser/qaap-preview-user-dismissal';
 import { executionSurfacePreviewDirectory } from './mobile-projects-execution-surface-tabs-ui-render';
-import type { QaapWorkHubAuxPanel } from './qaap-work-hub-aux-panel';
+import { QAAP_WORK_HUB_AUX_PANEL_TOGGLE_CLASS, type QaapWorkHubAuxPanel } from './qaap-work-hub-aux-panel';
 
 export function applyExecutionSurfaceIconSelectDisplayExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, strip: HTMLElement, activeTab: TranscriptTab): void {
     const selectBtn = queryExecutionSurfaceViewSelect(strip);
@@ -64,7 +64,7 @@ const RIGHT_PANEL_GLYPH_PATH = 'M3.5 2.5h9a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1
 /** On the desktop Work Hub the view chevron is the right panel's toggle, not a menu button. */
 function applyWorkHubAuxPanelTriggerChrome(ctx: MobileProjectsExecutionSurfaceTabsUiContext, trigger: HTMLElement): QaapWorkHubAuxPanel | undefined {
     const auxPanel = ctx.resolveWorkHubAuxPanel();
-    trigger.classList.toggle('qaap-mod-aux-panel-toggle', !!auxPanel);
+    trigger.classList.toggle(QAAP_WORK_HUB_AUX_PANEL_TOGGLE_CLASS, !!auxPanel);
     if (auxPanel) {
         trigger.setAttribute('aria-haspopup', 'false');
         trigger.setAttribute('aria-expanded', String(auxPanel.isOpen));
