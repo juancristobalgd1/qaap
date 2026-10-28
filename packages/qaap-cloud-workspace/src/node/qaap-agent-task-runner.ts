@@ -46,6 +46,7 @@ import {
 import { isQaapProductionRuntime } from './qaap-agent-spawn-identity';
 import { QAAP_AGENT_CLI_CONTAINER_ISOLATION_REFUSAL, type QaapAgentCliInstallTarget } from './qaap-agent-cli-update-service';
 import { QaapAgentHookService } from './qaap-agent-hook-service';
+import { invalidateNativeAgentModels } from './qaap-agent-native-models';
 import { fireStopAgentHook } from './qaap-agent-task-runner-hooks';
 import { type QaapAgentReadOnlyEnforcement, } from '../common/qaap-agent-readonly-workspace';
 import { type QaapQaiqPendingControlRequest } from '../common/qaap-qaiq-stdio-approvals';
@@ -755,7 +756,13 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
                 // pre-Connect answer overwrite the cache of the probe that replaced it.
                 if (this.agentConnectionProbes.get(cacheKey) === probe) {
                     this.agentConnectionProbes.delete(cacheKey);
+                    const previous = this.agentConnectionStates.get(cacheKey)?.state;
                     this.agentConnectionStates.set(cacheKey, { state, at: Date.now(), probeFailed });
+                    if (state === 'connected' && previous !== 'connected') {
+                        // A fresh sign-in unlocks the account's models (Pi `/login`, Cursor): the
+                        // catalog discovered while signed out is stale.
+                        invalidateNativeAgentModels(normalized);
+                    }
                 }
                 return state;
             });

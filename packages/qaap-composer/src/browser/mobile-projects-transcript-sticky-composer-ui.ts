@@ -215,6 +215,13 @@ export class MobileProjectsTranscriptStickyComposerUi {
     public verifiedComposerPreview: { readonly projectId: string; readonly url: string; readonly candidate?: string; readonly verifiedAt?: number } | undefined;
     /** @internal When the agent turn currently in progress was first observed working (ms epoch). */
     public composerAgentWorkingSince: number | undefined;
+    /** @internal When the last observed agent turn stopped working (ms epoch); cleared while one runs. */
+    public composerAgentTurnEndedAt: number | undefined;
+    /**
+     * @internal "View Preview" needs a verification taken at/after this time (ms epoch): the running
+     * turn's start, or the end of a cancelled/failed turn whose earlier verification may be stale.
+     */
+    public composerPreviewFreshAfter: number | undefined;
     /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
     public composerPreviewProbeInFlight: Promise<void> | undefined;
     /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */

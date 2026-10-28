@@ -7,6 +7,7 @@ import { confirmVerifyCommitReadiness } from '@theia/qaap-diff-review/lib/browse
 import { ensureTranscriptDevPreview } from '@theia/qaap-shared-core/lib/browser/qaap-transcript-preview-bootstrap';
 import { ConfirmDialog } from '@theia/core/lib/browser';
 import {
+    isLastTurnCancelled,
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
@@ -198,9 +199,22 @@ export function buildTranscriptComposerActivityOptionsExtracted(ctx: MobileProje
     const agentWorking = ctx.isTranscriptStickyComposerAgentWorking();
     if (agentWorking) {
         ctx.composerAgentWorkingSince ??= Date.now();
+        ctx.composerAgentTurnEndedAt = undefined;
     } else {
+        if (ctx.composerAgentWorkingSince !== undefined) {
+            // The turn just ended: whatever the preview did meanwhile (crashed, was stopped with the
+            // turn), re-verify now instead of trusting the probe cached while it ran.
+            ctx.composerAgentTurnEndedAt = Date.now();
+            ctx.composerPreviewLastCheckedAt = 0;
+            ctx.composerPreviewNextProbeAt = 0;
+        }
         ctx.composerAgentWorkingSince = undefined;
     }
+    // After a cancelled or failed turn only a verification taken once it ended may offer the preview.
+    const turnEndedBadly = !agentWorking && !!conv && (conv.status === 'failed' || isLastTurnCancelled(conv));
+    ctx.composerPreviewFreshAfter = agentWorking
+        ? ctx.composerAgentWorkingSince
+        : turnEndedBadly ? (ctx.composerAgentTurnEndedAt ?? conv?.updatedAt) : undefined;
     // Everything below is gated on the agent having actually edited files in THIS conversation.
     // A fresh/idle conversation has no activity and no git snapshot, so the whole row stays gone.
     const hasFileActivity = ctx.hasComposerFileActivity(conv);
@@ -220,6 +234,7 @@ export function buildTranscriptComposerActivityOptionsExtracted(ctx: MobileProje
         previewVerified: !!verifiedPreviewUrl,
         agentWorking,
         agentWorkingSince: ctx.composerAgentWorkingSince,
+        requireVerifiedAfter: ctx.composerPreviewFreshAfter,
         verifiedAt: ctx.verifiedComposerPreview?.verifiedAt,
     });
     return {

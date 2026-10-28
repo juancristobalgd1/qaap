@@ -301,7 +301,10 @@ function restoreExecutionSurfaceSidebarToolbarHostExtracted(sidebar: MobileProje
         return;
     }
     const placeholder = sidebar.toolbarPlaceholder as Comment | undefined;
-    if (placeholder?.isConnected) {
+    // The placeholder lives inside the surface host, which is restored (or detached when its
+    // inline slot is gone) before this runs. Put the toolbar back into that host either way:
+    // dropping it here leaves the next drawer for the same host with an empty header.
+    if (placeholder?.parentNode) {
         placeholder.replaceWith(host);
     } else {
         host.remove();
@@ -532,7 +535,9 @@ export function openExecutionSurfaceSidebarWhenReadyExtracted(ctx: MobileProject
             // On a retry: the user went back to Chat, or another project took over the transcript.
             || (attempts > 0 && (ctx.executionSurfaceTabForProject(project) === 'messages'
                 || (!!ctx.host.transcriptOpenProject && ctx.host.transcriptOpenProject.id !== project.id)));
-        if (surfaceGone || ctx.host.executionSurfaceSidebar?.element?.isConnected || attempts >= 100) {
+        // Only a drawer already showing this surface satisfies the request; a drawer open on
+        // another surface (Terminal while Browser was asked for) must still be replaced.
+        if (surfaceGone || executionSurfaceSidebarShowsSurfaceExtracted(ctx, tab) || attempts >= 100) {
             ctx.executionSurfaceSidebarOpenRetry = undefined;
             return;
         }
@@ -550,6 +555,18 @@ export function openExecutionSurfaceSidebarWhenReadyExtracted(ctx: MobileProject
         retry.clear = () => win.clearTimeout(timer);
     };
     attemptOpen();
+}
+
+/** True when the connected drawer already hosts `tab`'s live surface. */
+function executionSurfaceSidebarShowsSurfaceExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, tab: TranscriptTab): boolean {
+    const activeSurface = tab === 'review' ? 'files' : tab;
+    const sidebar = ctx.host.executionSurfaceSidebar;
+    const activeHost = sidebar?.activeHost;
+    return activeSurface !== 'messages'
+        && !!sidebar?.element?.isConnected
+        && sidebar.activeTab === activeSurface
+        && !!activeHost
+        && sidebar.element.contains(activeHost);
 }
 
 /** Pending retry armed by {@link openExecutionSurfaceSidebarWhenReadyExtracted}. */
@@ -932,13 +949,19 @@ export function showOnlyExecutionSurfaceTabExtracted(ctx: MobileProjectsExecutio
             ctx.host.stickyComposerHost.classList.add('theia-mod-show-quick-actions');
         }
     }
-    ctx.host.agentsHubInlineExecutionRoot?.setAttribute('data-active-surface', activeSurface);
-    ctx.host.transcriptSheet?.querySelector('.theia-mobile-agent-log-sheet')?.setAttribute('data-active-surface', activeSurface);
-    ctx.host.root.querySelector('.theia-mobile-projects-detail-surfaces-body')?.setAttribute('data-active-surface', activeSurface);
+    // When the drawer already hosts this surface, its host has left the inline shell and the
+    // drawer will not be reopened (which is what normally resets the column to 'messages').
+    // Selecting the surface's inline layout here would hide the transcript and leave an empty
+    // column beside the drawer, so keep the conversation selected instead.
+    const drawerShowsSurface = executionSurfaceSidebarShowsSurfaceExtracted(ctx, activeSurface);
+    const inlineSurface = drawerShowsSurface ? 'messages' : activeSurface;
+    ctx.host.agentsHubInlineExecutionRoot?.setAttribute('data-active-surface', inlineSurface);
+    ctx.host.transcriptSheet?.querySelector('.theia-mobile-agent-log-sheet')?.setAttribute('data-active-surface', inlineSurface);
+    ctx.host.root.querySelector('.theia-mobile-projects-detail-surfaces-body')?.setAttribute('data-active-surface', inlineSurface);
     if (activeSurface !== 'preview') {
         ctx.host.transcriptSurfacesUi.suspendTranscriptPreviewIframe();
     }
-    if (activeSurface !== 'messages' && !ctx.host.executionSurfaceSidebar?.element?.isConnected) {
+    if (activeSurface !== 'messages' && !drawerShowsSurface) {
         const project = ctx.host.transcriptOpenProject
             ?? ctx.resolveExecutionSurfaceProject()
             ?? ctx.host.projectNavigationUi?.resolveSelectedProject?.();

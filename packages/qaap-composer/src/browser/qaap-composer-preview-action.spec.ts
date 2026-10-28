@@ -61,6 +61,15 @@ describe('qaap-composer-preview-action', () => {
         })).to.deep.equal({ showStarting: false, showViewPreview: true });
     });
 
+    it('after a cancelled or failed turn, needs a verification taken once it ended', () => {
+        expect(resolveComposerPreviewChipVisibility({
+            previewStarting: false, previewVerified: true, requireVerifiedAfter: 2_000, verifiedAt: 1_000,
+        })).to.deep.equal({ showStarting: false, showViewPreview: false });
+        expect(resolveComposerPreviewChipVisibility({
+            previewStarting: false, previewVerified: true, requireVerifiedAfter: 2_000, verifiedAt: 2_500,
+        })).to.deep.equal({ showStarting: false, showViewPreview: true });
+    });
+
     it('offers View Preview only once the probe verified the server answers', () => {
         expect(resolveComposerPreviewChipVisibility({ previewStarting: false, previewVerified: true }))
             .to.deep.equal({ showStarting: false, showViewPreview: true });
@@ -303,6 +312,16 @@ describe('qaap-composer-preview-action', () => {
             expect(resolveComposerPreviewCandidate({ ...idle, fallbackPreviewUrls: ['not a preview', `${ORIGIN}/qaap-dev/5173/`] }, ORIGIN))
                 .to.equal(`${ORIGIN}/qaap-dev/5173/`);
             expect(resolveComposerPreviewCandidate({ ...idle, fallbackPreviewUrls: [] }, ORIGIN)).to.equal(undefined);
+        });
+
+        it('offers no stale fallback once this project\'s own Run failed', () => {
+            const fallbackPreviewUrls = [`${ORIGIN}/qaap-dev/5173/`];
+            const failed: ComposerPreviewRuntime = { ...idle, bootstrapRoot: '/workspace/project-a', fallbackPreviewUrls };
+            expect(resolveComposerPreviewCandidate({ ...failed, phase: 'run-failed' }, ORIGIN)).to.equal(undefined);
+            expect(resolveComposerPreviewCandidate({ ...failed, phase: 'install-failed' }, ORIGIN)).to.equal(undefined);
+            // Another project's failed Run does not hide this project's agent-started server.
+            expect(resolveComposerPreviewCandidate({ ...failed, phase: 'run-failed', bootstrapRoot: '/workspace/other' }, ORIGIN))
+                .to.equal(fallbackPreviewUrls[0]);
         });
 
         it('still prefers the running Run-flow URL over any fallback', () => {

@@ -465,6 +465,30 @@ describe('QaapProjectBootstrapService dev run guards', () => {
             expect(single.previewAutoRetryAttempts).to.equal(0);
         });
 
+        it('installs missing dev dependencies once per root instead of failing the preview', async () => {
+            let installs = 0;
+            const make = (roots: Set<string>) => failingRunContext({
+                _descriptor: { name: 'app', nodeModulesPresent: true, installCommand: 'npm install', rootUri: { toString: () => 'file:///ws/app' } },
+                devOutputTail: 'sh: vite: not found\n',
+                devFailureAutoInstalledRoots: roots,
+                runInstall: async () => { installs++; },
+                enrichDevRunError: (message: string) => message,
+                toUserFacingDevError: (message: string) => message,
+            }).ctx;
+            const roots = new Set<string>();
+            const first = make(roots);
+            await activity.failDevRunExtracted(first, 'Dev server exited with code 127.', PLAN, 7);
+            expect(installs).to.equal(1);
+            expect(first._error).to.equal(undefined);
+
+            // The same root failing again after that install reports the error instead of looping.
+            const second = make(roots);
+            await activity.failDevRunExtracted(second, 'Dev server exited with code 127.', PLAN, 7);
+            expect(installs).to.equal(1);
+            expect(second._phase).to.equal('run-failed');
+            expect(second._needsInstall).to.equal(true);
+        });
+
         it('handles a later failure of the same run once the first one settled', async () => {
             const { ctx } = failingRunContext();
             await activity.failDevRunExtracted(ctx, 'Dev server exited with code 1.', PLAN, 7);

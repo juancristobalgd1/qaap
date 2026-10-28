@@ -220,6 +220,19 @@ async function handleDevRunFailure(ctx: QaapProjectBootstrapServiceContext, mess
         // message then carries the only copy of the output, so diagnose it instead of quoting it raw.
         const failureOutput = ctx.devOutputTail || message;
         ctx._needsInstall = terminalOutputNeedsInstall(failureOutput);
+        const autoInstallRoot = ctx._needsInstall && descriptor?.installCommand ? descriptor.rootUri.toString() : undefined;
+        if (autoInstallRoot && !ctx.devFailureAutoInstalledRoots.has(autoInstallRoot)) {
+            // Missing (dev) dependencies are fixed by the install Qaap would offer next anyway; its
+            // command already forces NODE_ENV=development, and a good install chains the dev server.
+            // Once per root, so a dependency the install cannot provide still surfaces the error.
+            ctx.devFailureAutoInstalledRoots.add(autoInstallRoot);
+            ctx.releaseActivePreview('failDevRun.autoInstall');
+            ctx.cleanupDevTerminal();
+            ctx._error = undefined;
+            ctx._phase = 'run-failed';
+            await ctx.runInstall();
+            return;
+        }
         const diagnosedError = nextLock
             ? extractTerminalFailureLine(ctx.devOutputTail, ctx.toUserFacingDevError(message))
             : portConflict && conflictPort && !recoveryCommand

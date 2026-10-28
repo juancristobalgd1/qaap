@@ -416,6 +416,8 @@ export class QaapProjectBootstrapService {
     public portRecoveryFrom: number | undefined;
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
     public previewAutoRetryAttempts = 0;
+    /** @internal Roots whose dev run already triggered one automatic install this session (no install loops). */
+    public readonly devFailureAutoInstalledRoots = new Set<string>();
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
     public previewAutoRetryTimer: number | undefined;
     /**

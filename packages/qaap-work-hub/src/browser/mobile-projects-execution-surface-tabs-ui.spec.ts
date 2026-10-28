@@ -492,6 +492,76 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
         }
     });
 
+    it('keeps the transcript visible when Preview is selected again while its drawer is open', () => {
+        const project = { id: 'p-preview-reselect', name: 'Preview reselect' } as MobileProjectEntry;
+        const summary = { id: 'conv-preview-reselect' } as MobileProjectsExecutionSurfaceTabsHost['transcriptOpenSummary'];
+        const root = document.createElement('div');
+        const executionRoot = document.createElement('div');
+        executionRoot.className = 'theia-mobile-agents-hub-inline-execution';
+        const transcriptRoot = document.createElement('div');
+        transcriptRoot.className = 'theia-mobile-agents-hub-inline-transcript';
+        const previewHost = document.createElement('div');
+        previewHost.className = 'theia-mobile-transcript-preview';
+        previewHost.append(document.createElement('iframe'));
+        executionRoot.append(transcriptRoot, previewHost);
+        root.append(executionRoot);
+        document.body.append(root);
+        try {
+            const host = createHost({
+                root,
+                agentsHubInlineExecutionRoot: executionRoot,
+                transcriptPreviewHost: previewHost,
+                transcriptOpenProject: project,
+                transcriptOpenSummary: summary,
+            });
+            const ui = createUi(host);
+            ui.openExecutionSurfaceSidebar('preview', project, summary!, 'transcript');
+            const drawer = host.executionSurfaceSidebar!.element;
+            expect(executionRoot.getAttribute('data-active-surface')).to.equal('messages');
+
+            // "View Preview" pill / transcript link while the drawer already shows Preview.
+            ui.showOnlyExecutionSurfaceTab('preview');
+
+            expect(executionRoot.getAttribute('data-active-surface')).to.equal('messages');
+            expect(transcriptRoot.hidden).to.equal(false);
+            expect(host.executionSurfaceSidebar!.element).to.equal(drawer);
+            expect(drawer.contains(previewHost)).to.equal(true);
+        } finally {
+            root.remove();
+            document.querySelectorAll('.theia-mobile-execution-surface-sidebar, .theia-mobile-execution-surface-sidebar-backdrop').forEach(element => element.remove());
+        }
+    });
+
+    it('keeps the Preview toolbar when the drawer is reopened after its inline slot was re-rendered', () => {
+        const project = { id: 'p-preview-reopen', name: 'Preview reopen' } as MobileProjectEntry;
+        const summary = { id: 'conv-preview-reopen' } as MobileProjectsExecutionSurfaceTabsHost['transcriptOpenSummary'];
+        const root = document.createElement('div');
+        const slot = document.createElement('div');
+        const previewHost = document.createElement('div');
+        previewHost.className = 'theia-mobile-transcript-preview';
+        const toolbar = document.createElement('div');
+        toolbar.className = 'qaap-agent-preview-embedded-toolbar';
+        previewHost.append(toolbar);
+        slot.append(previewHost);
+        root.append(slot);
+        document.body.append(root);
+        try {
+            const host = createHost({ root, transcriptPreviewHost: previewHost });
+            const ui = createUi(host);
+            ui.openExecutionSurfaceSidebar('preview', project, summary!, 'transcript');
+            // A shell re-render drops the inline slot that held the host placeholder.
+            slot.remove();
+
+            ui.openExecutionSurfaceSidebar('preview', project, summary!, 'transcript');
+
+            const header = host.executionSurfaceSidebar!.element.querySelector('.theia-mobile-execution-surface-sidebar-header');
+            expect(toolbar.parentElement).to.equal(header);
+        } finally {
+            root.remove();
+            document.querySelectorAll('.theia-mobile-execution-surface-sidebar, .theia-mobile-execution-surface-sidebar-backdrop').forEach(element => element.remove());
+        }
+    });
+
     it('remembers a user close of the Preview drawer until the user picks Preview again', () => {
         const project = { id: 'p-preview-closed', name: 'Preview closed' } as MobileProjectEntry;
         const summary = { id: 'conv-preview-closed', cwd: '/srv/fallback' } as MobileProjectsExecutionSurfaceTabsHost['transcriptOpenSummary'];
