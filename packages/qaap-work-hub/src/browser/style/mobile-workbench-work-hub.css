@@ -14345,6 +14345,11 @@ body.theia-mod-work-hub-settings-resizing * {
   border-top: 1px solid color-mix(in srgb, var(--theia-foreground) 12%, transparent);
 }
 
+.theia-mobile-agent-login-dialog-status[hidden] {
+  /* `display: flex` above would otherwise override the hidden attribute and keep a stuck spinner. */
+  display: none;
+}
+
 .theia-mobile-agent-login-dialog-status.theia-mod-success {
   color: var(--theia-testing-iconPassed, #89d185);
 }

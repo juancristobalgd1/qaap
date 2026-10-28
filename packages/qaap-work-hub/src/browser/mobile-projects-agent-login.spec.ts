@@ -11,6 +11,7 @@ const disableImportJSDOM = enableJSDOM();
 
 import { expect } from 'chai';
 import { QAAP_AI_FEATURES_SETTINGS_QUERY } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileProjectsPanelContext } from './mobile-projects-panel-context';
 import { openAgentSignInTerminalExtracted } from './mobile-projects-panel-timeline';
 import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
@@ -150,6 +151,30 @@ describe('Work Hub harness connection actions', () => {
             expect(harnessStatusRequests, 'no hidden login is prepared').to.deep.equal([]);
         });
     }
+
+    it('offers Open terminal for a tenant-terminal harness when a project is open and runs its CLI', () => {
+        const launches: Array<{ projectId: string; agentId: string; options: unknown }> = [];
+        const ctx = {
+            transcriptController: { state: {} },
+            transcriptSurfacesUi: {
+                launchAgentTuiInTranscriptTerminal: (project: { id: string }, _summary: unknown, agentId: string, options: unknown): Promise<void> => {
+                    launches.push({ projectId: project.id, agentId, options });
+                    return Promise.resolve();
+                },
+            },
+            projectsService: { getProjectCwd: () => '/workspace/demo' },
+        } as unknown as MobileProjectsPanelContext;
+
+        openAgentSignInTerminalExtracted(ctx, 'pi', { id: 'demo', name: 'demo' } as unknown as MobileProjectEntry);
+
+        const shown = readConnectDialog();
+        expect(shown.spinnerVisible).to.equal(false);
+        expect(shown.actions.map(button => button.textContent)).to.deep.equal(['Open terminal']);
+
+        shown.actions[0].click();
+        expect(launches).to.deep.equal([{ projectId: 'demo', agentId: 'pi', options: { command: 'pi' } }]);
+        expect(connectDialogs(), 'the dialog closes once the terminal opens').to.have.length(0);
+    });
 
     it('opens the OpenCode dialog at once and, without a project, says what is missing instead of spinning', async () => {
         // OpenCode has a verified headless login (`opencode auth login -p openai …`), so it takes the

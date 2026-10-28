@@ -350,6 +350,34 @@ export async function openAgentLoginDialogInBackground(
         }
     };
 
+    /**
+     * Tenant-terminal harnesses sign in interactively (Pi: type `/login` inside the TUI), so the
+     * user gets a visible workspace terminal running the CLI. The dialog closes; the connection
+     * state is refreshed by the agent picker's own refresh once they come back.
+     */
+    const openVisibleTerminal = async (command: string): Promise<void> => {
+        if (!project) {
+            return;
+        }
+        const terminalSummary = summary ?? {
+            id: `qaap-agent-login:${project.id}:${agentId}`,
+            source: 'qaap-agent',
+            cwd: ctx.projectsService?.getProjectCwd?.(project) ?? ctx.preparedCwdByProjectId?.get?.(project.id) ?? '',
+            agentId,
+            title: nls.localize('qaap/agentLogin/connectTitle', 'Connect {0}', agentLabel),
+            status: 'idle',
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            messageCount: 0,
+        } satisfies QaapAgentConversationSummaryDTO;
+        close();
+        try {
+            await ctx.transcriptSurfacesUi.launchAgentTuiInTranscriptTerminal(project, terminalSummary, agentId, { command });
+        } catch (error) {
+            console.warn('[qaap] Could not open the sign-in terminal:', error);
+        }
+    };
+
     const dialog = createQaapAgentLoginDialog({
         agentId,
         agentLabel,
@@ -367,6 +395,9 @@ export async function openAgentLoginDialogInBackground(
             }
         },
         onInstall: () => void install(),
+        onOpenTerminal: connectionFlow.kind === 'tenant-terminal' && project && typeof ctx.transcriptSurfacesUi?.launchAgentTuiInTranscriptTerminal === 'function'
+            ? () => void openVisibleTerminal(connectionFlow.command)
+            : undefined,
         onOpenSettings: () => {
             void ctx.openPreferencesSheet?.(QAAP_AI_FEATURES_SETTINGS_QUERY);
             close();

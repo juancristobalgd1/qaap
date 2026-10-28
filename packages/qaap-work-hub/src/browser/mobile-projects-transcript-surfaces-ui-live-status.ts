@@ -217,10 +217,10 @@ export function showTranscriptTerminalErrorExtracted(ctx: MobileProjectsTranscri
 export async function launchAgentTuiInTranscriptTerminalExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,
     agentId: string,
-    options?: { readonly login?: boolean },): Promise<void> {
-    const command = options?.login
+    options?: { readonly login?: boolean; readonly command?: string },): Promise<void> {
+    const command = options?.command?.trim() || (options?.login
         ? resolveInteractiveAgentLoginCommand(agentId)
-        : resolveInteractiveAgentCliBin(agentId);
+        : resolveInteractiveAgentCliBin(agentId));
     if (!command) {
         return;
     }

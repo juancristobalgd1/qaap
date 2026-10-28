@@ -31,6 +31,8 @@ export interface QaapAgentLoginDialogOptions {
     readonly onRetry?: () => void;
     readonly onInstall?: () => void;
     readonly onOpenSettings?: () => void;
+    /** Manual-instructions state: opens a visible workspace terminal running the harness CLI. */
+    readonly onOpenTerminal?: () => void;
 }
 
 function createIcon(className: string): HTMLElement {
@@ -346,6 +348,13 @@ export function createQaapAgentLoginDialog(
                 break;
             case 'manual':
                 renderMessage(state.message);
+                if (options.onOpenTerminal) {
+                    actions.append(createButton(
+                        'theia-button main theia-mobile-agent-login-dialog-primary',
+                        nls.localize('qaap/mobileProjects/agentLoginDialogOpenTerminal', 'Open terminal'),
+                        options.onOpenTerminal,
+                    ));
+                }
                 setStatus('none');
                 cancelButton.textContent = nls.localize('qaap/mobileProjects/agentLoginDialogClose', 'Close');
                 break;
