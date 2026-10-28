@@ -84,6 +84,12 @@ export function buildTranscriptTabStripExtracted(ctx: MobileProjectsExecutionSur
     );
 }
 
+/**
+ * The header views picker (double chevron). Note for future changes: in the classic
+ * IDE this picker is intentionally hidden (CSS in mobile-workbench-base.css, pinned by
+ * qaap-ide-chat-panel-css.spec.ts) because the IDE has its own Browser, Explorer and
+ * terminal views; do not re-show it there.
+ */
 export function buildExecutionViewTabStripExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, activeTab: TranscriptTab,
     onSelect: (tab: TranscriptTab) => void,): HTMLElement {
     const strip = document.createElement('div');

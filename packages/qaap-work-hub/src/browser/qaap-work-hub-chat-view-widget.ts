@@ -336,6 +336,12 @@ export class QaapWorkHubChatViewWidget extends ChatViewWidget {
                 this.appearanceModeService,
                 this.themeService,
                 () => this.openWorkHubBillingSheet(),
+                // In the classic IDE this chat view is the right side panel: Settings opens
+                // inside it (settings nav in the panel's own sessions sidebar) instead of as a
+                // full-window overlay over the editors. Elsewhere it keeps the overlay.
+                () => this.resolveIdeSettingsPanel()
+                    ?.node.querySelector<HTMLElement>(':scope > .theia-mobile-projects-scroll') ?? this.resolveIdeSettingsPanel()?.node,
+                () => this.resolveIdeSettingsPanel()?.sessionsSidebarUi.ensureWorkHubSessionsSidebar(),
             );
             document.body.appendChild(this.preferencesSheet.node);
             this.toDispose.push(Disposable.create(() => {
@@ -345,6 +351,12 @@ export class QaapWorkHubChatViewWidget extends ChatViewWidget {
             }));
         }
         await this.preferencesSheet.show(query);
+    }
+
+    /** The Work Hub panel that hosts Settings inline, i.e. this view docked in the classic IDE. */
+    protected resolveIdeSettingsPanel(): MobileProjectsPanel | undefined {
+        const panel = this.workHubPanel;
+        return panel?.node.isConnected && document.body.classList.contains('theia-mobile-mod-desktop-ide') ? panel : undefined;
     }
 
     protected async openWorkHubBillingSheet(): Promise<void> {
