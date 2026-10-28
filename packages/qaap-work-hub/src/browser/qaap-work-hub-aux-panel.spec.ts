@@ -79,7 +79,7 @@ describe('qaap-work-hub-aux-panel', () => {
                 docked = document.createElement('section');
                 docked.className = 'fake-surface';
                 docked.dataset.kind = kind;
-                panel.dockSurface(kind === 'review' ? 'files' : kind, docked);
+                panel.dockSurface(kind, docked);
             },
             releaseSurface: userClosed => {
                 released.push(userClosed);
@@ -121,7 +121,7 @@ describe('qaap-work-hub-aux-panel', () => {
         expect(document.body.classList.contains('qaap-mod-work-hub-aux-panel-open')).to.equal(true);
         expect(tabKinds(panel)).to.deep.equal(['launcher']);
         const names = Array.from(panel.element.querySelectorAll('.qaap-work-hub-aux-panel-launcher-name')).map(name => name.textContent);
-        expect(names).to.deep.equal(['Browser', 'Files', 'Terminal', 'Review']);
+        expect(names).to.deep.equal(['Browser', 'Files', 'Terminal']);
 
         panel.toggle();
         expect(panel.isOpen).to.equal(false);
@@ -162,12 +162,20 @@ describe('qaap-work-hub-aux-panel', () => {
         expect(panel.element.querySelector('.fake-surface')?.getAttribute('data-kind')).to.equal('preview');
     });
 
-    it('keeps Review distinct from Files although both use the Files surface', () => {
-        const { panel, shown } = createHarness();
+    it('has no standalone Review view: Changes is the Files view\'s mode', () => {
+        const { panel } = createHarness();
         panel.show();
-        launcherOpen(panel, 'review').click();
-        expect(shown).to.deep.equal(['review']);
-        expect(tabKinds(panel)).to.deep.equal(['review']);
+        expect(panel.element.querySelector('.qaap-work-hub-aux-panel-launcher-item[data-kind="review"]')).to.equal(null);
+        // A Changes request from the composer arrives as the Files surface.
+        panel.dockSurface('files', document.createElement('section'));
+        expect(tabKinds(panel)).to.deep.equal(['files']);
+    });
+
+    it('opens the tab menu from a double-chevron button', () => {
+        const { panel } = createHarness();
+        panel.show();
+        const menuButton = panel.element.querySelector<HTMLButtonElement>('.qaap-work-hub-aux-panel-menu-button')!;
+        expect(menuButton.querySelector('.qaap-work-hub-aux-panel-double-chevron path')?.getAttribute('d')).to.equal('M3 4.5 8 9.5l5-5 M3 8 8 13l5-5');
     });
 
     it('adopts a surface opened elsewhere (e.g. a preview that became ready)', () => {

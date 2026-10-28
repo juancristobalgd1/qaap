@@ -19,8 +19,8 @@ import {
     type QaapWorkHubAuxPanelViewKind,
 } from './qaap-work-hub-aux-panel-model';
 
-/** The execution surface (live widget host) a panel view is backed by. */
-export type QaapWorkHubAuxPanelSurface = 'preview' | 'files' | 'terminal';
+/** The execution surface (live widget host) a panel view is backed by: one per view. */
+export type QaapWorkHubAuxPanelSurface = QaapWorkHubAuxPanelSurfaceKind;
 
 /** What the panel needs from the Work Hub execution surfaces. */
 export interface QaapWorkHubAuxPanelHost {
@@ -41,10 +41,6 @@ export function isQaapWorkHubAuxPanelLayout(): boolean {
         && !document.body.classList.contains('theia-mobile-mod-desktop-ide');
 }
 
-export function qaapWorkHubAuxPanelSurfaceOf(kind: QaapWorkHubAuxPanelSurfaceKind): QaapWorkHubAuxPanelSurface {
-    return kind === 'review' ? 'files' : kind;
-}
-
 interface ViewSpec {
     label: string;
     description: string;
@@ -62,7 +58,7 @@ function viewSpec(kind: QaapWorkHubAuxPanelViewKind): ViewSpec {
         case 'files':
             return {
                 label: nls.localizeByDefault('Files'),
-                description: nls.localize('qaap/workHubAuxPanel/filesDescription', 'Browse and open the project files.'),
+                description: nls.localize('qaap/workHubAuxPanel/filesDescription', 'Browse the project files and review changes.'),
                 icon: 'codicon-files',
             };
         case 'terminal':
@@ -70,12 +66,6 @@ function viewSpec(kind: QaapWorkHubAuxPanelViewKind): ViewSpec {
                 label: nls.localizeByDefault('Terminal'),
                 description: nls.localize('qaap/workHubAuxPanel/terminalDescription', 'Run commands and view output.'),
                 icon: 'codicon-terminal',
-            };
-        case 'review':
-            return {
-                label: nls.localizeByDefault('Review'),
-                description: nls.localize('qaap/workHubAuxPanel/reviewDescription', 'Review code changes and diffs.'),
-                icon: 'codicon-diff',
             };
         default:
             return {
@@ -97,6 +87,19 @@ function codiconButton(className: string, icon: string, label: string): HTMLButt
     glyph.setAttribute('aria-hidden', 'true');
     button.append(glyph);
     return button;
+}
+
+/** The double chevron of the mobile views menu, so both "views" pickers share one glyph. */
+function createDoubleChevronGlyph(): SVGSVGElement {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'qaap-work-hub-aux-panel-double-chevron');
+    svg.setAttribute('viewBox', '0 0 16 16');
+    svg.setAttribute('focusable', 'false');
+    svg.setAttribute('aria-hidden', 'true');
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', 'M3 4.5 8 9.5l5-5 M3 8 8 13l5-5');
+    svg.append(path);
+    return svg;
 }
 
 function formatClosedAgo(closedAt: number, now: number): string {
@@ -138,8 +141,6 @@ export class QaapWorkHubAuxPanel {
 
     protected dockedElement: HTMLElement | undefined;
     protected dockedSurface: QaapWorkHubAuxPanelSurface | undefined;
-    /** The view the panel asked the host for; disambiguates Files vs Review (same surface). */
-    protected requestedKind: QaapWorkHubAuxPanelSurfaceKind | undefined;
     /** Tab id whose surface was already re-requested, so header rebuilds cannot loop. */
     protected restoredTabId: string | undefined;
     /** Set while the panel itself swaps or closes the docked surface. */
@@ -168,6 +169,7 @@ export class QaapWorkHubAuxPanel {
         bar.className = 'qaap-work-hub-aux-panel-tabbar';
         const tabsLabel = nls.localize('qaap/workHubAuxPanel/tabs', 'Tabs');
         this.menuButton = codiconButton('qaap-work-hub-aux-panel-action qaap-work-hub-aux-panel-menu-button', 'codicon-chevron-down', tabsLabel);
+        this.menuButton.replaceChildren(createDoubleChevronGlyph());
         this.menuButton.setAttribute('aria-haspopup', 'menu');
         this.menuButton.setAttribute('aria-expanded', 'false');
         this.menuButton.addEventListener('click', event => {
@@ -287,17 +289,12 @@ export class QaapWorkHubAuxPanel {
         if (!isQaapWorkHubAuxPanelLayout()) {
             return false;
         }
-        const requested = this.requestedKind && qaapWorkHubAuxPanelSurfaceOf(this.requestedKind) === surface ? this.requestedKind : undefined;
-        const active = this.model.activeTab;
-        const kind: QaapWorkHubAuxPanelSurfaceKind = requested
-            ?? (surface === 'files' && active?.kind === 'review' ? 'review' : surface);
-        this.requestedKind = undefined;
         if (this.dockedElement && this.dockedElement !== element) {
             this.dockedElement.remove();
         }
         this.dockedElement = element;
         this.dockedSurface = surface;
-        const tab = this.model.openView(kind);
+        const tab = this.model.openView(surface);
         this.restoredTabId = tab.id;
         if (!this.isOpen) {
             this.attach();
@@ -382,7 +379,7 @@ export class QaapWorkHubAuxPanel {
         this.closeMenu();
         if (tab.kind === 'launcher') {
             this.releaseDocked(false);
-        } else if (!this.dockedSurface || this.dockedSurface !== qaapWorkHubAuxPanelSurfaceOf(tab.kind) || tab.kind === 'review' || tab.kind === 'files') {
+        } else if (this.dockedSurface !== tab.kind) {
             this.restoredTabId = tab.id;
             this.requestSurface(tab.kind);
         }
@@ -411,10 +408,9 @@ export class QaapWorkHubAuxPanel {
             this.render();
             return;
         }
-        if (this.dockedSurface && this.dockedSurface !== qaapWorkHubAuxPanelSurfaceOf(kind)) {
+        if (this.dockedSurface && this.dockedSurface !== kind) {
             this.releaseDocked(false);
         }
-        this.requestedKind = kind;
         this.host.showSurface(kind);
     }
 

@@ -96,7 +96,7 @@ describe('qaap-work-hub-aux-panel-model', () => {
     it('caps the recently closed list', () => {
         const model = new QaapWorkHubAuxPanelModel();
         for (let i = 0; i < QAAP_WORK_HUB_AUX_PANEL_RECENT_LIMIT + 4; i++) {
-            const kind = (['preview', 'files', 'terminal', 'review'] as const)[i % 4];
+            const kind = (['preview', 'files', 'terminal'] as const)[i % 3];
             model.closeTab(model.openView(kind).id);
         }
         expect(model.recentlyClosed.length).to.be.at.most(QAAP_WORK_HUB_AUX_PANEL_RECENT_LIMIT);
@@ -106,7 +106,7 @@ describe('qaap-work-hub-aux-panel-model', () => {
         const model = new QaapWorkHubAuxPanelModel();
         model.openView('preview');
         model.closeTab(model.openView('terminal').id);
-        const labels: Record<string, string> = { preview: 'Browser', terminal: 'Terminal', launcher: 'New tab', files: 'Files', review: 'Review' };
+        const labels: Record<string, string> = { preview: 'Browser', terminal: 'Terminal', launcher: 'New tab', files: 'Files' };
         const result = model.search('  TERM ', kind => labels[kind]);
         expect(result.open).to.deep.equal([]);
         expect(result.recentlyClosed.map(entry => entry.kind)).to.deep.equal(['terminal']);
@@ -146,7 +146,8 @@ describe('qaap-work-hub-aux-panel-model', () => {
 
         model.restore({
             open: true,
-            tabs: ['preview', 'bogus' as 'preview', 'preview', 'files'],
+            // 'review' was a standalone view in early builds; it is the Files view's mode now.
+            tabs: ['preview', 'bogus' as 'preview', 'review' as 'preview', 'preview', 'files'],
             activeIndex: 9,
             width: Number.NaN,
             recentlyClosed: [{ kind: 'launcher' as 'files', closedAt: 1 }, { kind: 'terminal', closedAt: 2 }],

@@ -159,6 +159,17 @@ body.qaap-mod-work-hub-aux-panel-maximized .qaap-work-hub-aux-panel-resize-handl
   cursor: pointer;
 }
 
+.qaap-work-hub-aux-panel-double-chevron {
+  display: block;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .qaap-work-hub-aux-panel-tab-close {
   width: 20px;
   height: 20px;
