@@ -119,7 +119,7 @@ function formatClosedAgo(closedAt: number, now: number): string {
 /**
  * Desktop Work Hub right panel: a third column beside the sessions sidebar and
  * the chat, with its own tab bar, a "New tab" launcher, a searchable tab menu,
- * a resize handle and maximize/close controls. The views themselves are the
+ * a resize handle and a maximize control (the chat-header toggle closes it). The views themselves are the
  * existing execution surfaces, docked here by the execution-surface tabs UI.
  */
 export class QaapWorkHubAuxPanel {
@@ -190,13 +190,8 @@ export class QaapWorkHubAuxPanel {
         spacer.className = 'qaap-work-hub-aux-panel-spacer';
         this.maximizeButton = codiconButton('qaap-work-hub-aux-panel-action qaap-work-hub-aux-panel-maximize', 'codicon-screen-full', '');
         this.maximizeButton.addEventListener('click', () => this.setMaximized(!this.model.maximized));
-        const closeButton = codiconButton(
-            'qaap-work-hub-aux-panel-action qaap-work-hub-aux-panel-close',
-            'codicon-layout-sidebar-right-off',
-            nls.localize('qaap/workHubAuxPanel/close', 'Close views panel'),
-        );
-        closeButton.addEventListener('click', () => this.hide());
-        bar.append(this.menuButton, this.tabStrip, addButton, spacer, this.maximizeButton, closeButton);
+        // No close button here: the chat-header toggle opens and closes the panel.
+        bar.append(this.menuButton, this.tabStrip, addButton, spacer, this.maximizeButton);
 
         const body = document.createElement('div');
         body.className = 'qaap-work-hub-aux-panel-body';

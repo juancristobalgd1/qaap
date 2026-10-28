@@ -284,7 +284,8 @@ describe('qaap-work-hub-aux-panel', () => {
         const { panel, released } = createHarness();
         panel.show();
         launcherOpen(panel, 'preview').click();
-        panel.element.querySelector<HTMLButtonElement>('.qaap-work-hub-aux-panel-close')!.click();
+        expect(panel.element.querySelector('.qaap-work-hub-aux-panel-close')).to.equal(null);
+        panel.toggle();
         expect(released).to.deep.equal([true]);
         expect(panel.isOpen).to.equal(false);
         expect(panel.element.querySelector('.fake-surface')).to.equal(null);
