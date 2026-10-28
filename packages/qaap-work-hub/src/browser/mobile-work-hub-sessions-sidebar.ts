@@ -131,6 +131,9 @@ export class MobileWorkHubSessionsSidebar {
     protected readonly leftEdgeZone: HTMLElement;
     protected readonly closeBtn: HTMLButtonElement;
     protected readonly searchBtn: HTMLButtonElement;
+    /** Settings mode: reveals the settings search field, which stays hidden until asked for. */
+    protected readonly settingsSearchBtn: HTMLButtonElement;
+    protected readonly settingsSearchField: HTMLElement;
     protected readonly pullRequestSearchBtn: HTMLButtonElement;
     protected readonly backBtn: HTMLButtonElement;
     protected readonly brand: HTMLElement;
@@ -280,7 +283,15 @@ export class MobileWorkHubSessionsSidebar {
         this.pullRequestSearchBtn.setAttribute('aria-expanded', 'false');
         this.pullRequestSearchBtn.hidden = true;
         this.pullRequestSearchBtn.addEventListener('click', () => this.delegate.onPullRequestSearch?.(this.pullRequestSearchBtn));
-        head.append(this.backBtn, this.brand, this.searchBtn, this.pullRequestSearchBtn, this.closeBtn);
+        this.settingsSearchBtn = document.createElement('button');
+        this.settingsSearchBtn.type = 'button';
+        this.settingsSearchBtn.className = 'theia-mobile-work-hub-sessions-sidebar-search theia-mobile-work-hub-sessions-sidebar-settings-search-toggle codicon codicon-search';
+        this.settingsSearchBtn.title = nls.localize('qaap/workHubSettings/searchLabel', 'Search settings');
+        this.settingsSearchBtn.setAttribute('aria-label', this.settingsSearchBtn.title);
+        this.settingsSearchBtn.setAttribute('aria-expanded', 'false');
+        this.settingsSearchBtn.hidden = true;
+        this.settingsSearchBtn.addEventListener('click', () => this.toggleSettingsSearch());
+        head.append(this.backBtn, this.brand, this.searchBtn, this.pullRequestSearchBtn, this.settingsSearchBtn, this.closeBtn);
 
         const footer = document.createElement('footer');
         footer.className = 'theia-mobile-work-hub-sessions-sidebar-foot';
@@ -335,6 +346,8 @@ export class MobileWorkHubSessionsSidebar {
         this.settingsHost.hidden = true;
         const settingsSearch = document.createElement('label');
         settingsSearch.className = 'theia-mobile-work-hub-settings-search';
+        settingsSearch.hidden = true;
+        this.settingsSearchField = settingsSearch;
         const settingsSearchIcon = document.createElement('span');
         settingsSearchIcon.className = 'codicon codicon-search';
         settingsSearchIcon.setAttribute('aria-hidden', 'true');
@@ -345,6 +358,12 @@ export class MobileWorkHubSessionsSidebar {
         this.settingsSearchInput.addEventListener('input', () => {
             this.settingsOptions?.onSearch(this.settingsSearchInput.value);
             this.renderSettingsSidebar();
+        });
+        this.settingsSearchInput.addEventListener('keydown', event => {
+            if (event.key === 'Escape') {
+                event.stopPropagation();
+                this.setSettingsSearchOpen(false);
+            }
         });
         settingsSearch.append(settingsSearchIcon, this.settingsSearchInput);
         this.settingsSectionLabel = document.createElement('div');
@@ -621,6 +640,7 @@ export class MobileWorkHubSessionsSidebar {
         this.root.setAttribute('aria-label', nls.localize('qaap/sessionsSidebar/label', 'Sessions and projects'));
         this.backBtn.hidden = true;
         this.searchBtn.hidden = false;
+        this.settingsSearchBtn.hidden = true;
         this.pullRequestSearchBtn.hidden = true;
         this.nav.hidden = false;
         this.settingsHost.hidden = true;
@@ -639,6 +659,7 @@ export class MobileWorkHubSessionsSidebar {
         this.root.setAttribute('aria-label', nls.localize('qaap/pullRequests/sidebarLabel', 'Pull requests'));
         this.backBtn.hidden = false;
         this.searchBtn.hidden = true;
+        this.settingsSearchBtn.hidden = true;
         this.pullRequestSearchBtn.hidden = false;
         this.nav.hidden = true;
         this.settingsHost.hidden = true;
@@ -653,6 +674,7 @@ export class MobileWorkHubSessionsSidebar {
         this.root.setAttribute('aria-label', nls.localize('qaap/workHubSettings/label', 'Settings'));
         this.backBtn.hidden = false;
         this.searchBtn.hidden = true;
+        this.settingsSearchBtn.hidden = false;
         this.pullRequestSearchBtn.hidden = true;
         this.nav.hidden = true;
         this.settingsHost.hidden = false;
@@ -660,6 +682,27 @@ export class MobileWorkHubSessionsSidebar {
         this.delegate.onPullRequestSearchClose?.();
         this.brand.textContent = nls.localize('qaap/workHubSettings/title', 'Settings');
         this.renderSettingsSidebar();
+    }
+
+    protected toggleSettingsSearch(): void {
+        this.setSettingsSearchOpen(this.settingsSearchField.hidden);
+    }
+
+    /** Shows and focuses the settings search field, or hides it and clears any query. */
+    protected setSettingsSearchOpen(open: boolean): void {
+        this.settingsSearchField.hidden = !open;
+        this.settingsSearchBtn.setAttribute('aria-expanded', String(open));
+        this.settingsSearchBtn.classList.toggle('theia-mod-active', open);
+        if (open) {
+            this.settingsSearchInput.focus();
+            return;
+        }
+        if (this.settingsSearchInput.value && !this.settingsSearchInput.readOnly) {
+            this.settingsSearchInput.value = '';
+            this.settingsOptions?.onSearch('');
+            this.renderSettingsSidebar();
+        }
+        this.settingsSearchBtn.focus();
     }
 
     /**
@@ -687,6 +730,11 @@ export class MobileWorkHubSessionsSidebar {
             return;
         }
         this.settingsSearchInput.value = options.searchValue?.() ?? '';
+        // An active query keeps the field visible; otherwise it waits behind the header search button.
+        if (this.settingsSearchInput.value) {
+            this.settingsSearchField.hidden = false;
+            this.settingsSearchBtn.setAttribute('aria-expanded', 'true');
+        }
         this.settingsSearchInput.readOnly = options.searchReadOnly?.() === true;
         // Grouped sections carry their own headings, so the generic "Settings" label would repeat the header.
         this.settingsSectionLabel.hidden = options.sections.some(section => section.group);
