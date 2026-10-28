@@ -6,6 +6,7 @@ import {
     agentUsesSettingsModelCatalog,
     isSameAgentModel,
     OPENCODE_AGENT_ID,
+    PI_AGENT_ID,
     readStoredAgentModel,
     type QaapQaiqModelOption,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
@@ -113,6 +114,9 @@ export function appendAgentModelPickerListExtracted(ctx: MobileProjectsStickyCom
                 models: providerModels,
                 paid: false,
             }));
+        // Pi's `/login` can add providers at any time, so its first group always offers Sign in.
+        const isPi = agentId.trim().toLowerCase() === PI_AGENT_ID;
+        let piSignInShown = false;
         for (const pickerSection of sections) {
             const { vendor, models: providerModels, paid } = pickerSection;
             const section = document.createElement('div');
@@ -133,7 +137,9 @@ export function appendAgentModelPickerListExtracted(ctx: MobileProjectsStickyCom
                 : formatQaiqModelProviderLabel(vendor);
             label.append(labelText);
             // One sign-in action per locked group, in its header; locked rows reuse it below.
-            if (paid && onSignIn && providerModels.some(model => model.available === false)) {
+            const showPiSignIn: boolean = isPi && !!onSignIn && !piSignInShown;
+            piSignInShown = piSignInShown || showPiSignIn;
+            if (onSignIn && (showPiSignIn || (paid && providerModels.some(model => model.available === false)))) {
                 const signIn = document.createElement('button');
                 signIn.type = 'button';
                 signIn.className = 'theia-qaap-agent-sheet-connect';
@@ -141,7 +147,7 @@ export function appendAgentModelPickerListExtracted(ctx: MobileProjectsStickyCom
                 signIn.addEventListener('click', event => {
                     event.preventDefault();
                     event.stopPropagation();
-                    onSignIn();
+                    onSignIn?.();
                 });
                 label.append(signIn);
             }

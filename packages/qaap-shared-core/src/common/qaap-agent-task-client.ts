@@ -39,6 +39,7 @@ export const THEIA_CODER_AGENT_ID = 'Coder';
 export const QAIQ_AGENT_ID = 'qaiq';
 export const OPENCLAUDE_AGENT_ID = 'openclaude';
 export const OPENCODE_AGENT_ID = 'opencode';
+export const PI_AGENT_ID = 'pi';
 
 /** Legacy product default — still used for QAIQ-specific parsing and explicit QAIQ pins. */
 export const QAAP_PRIMARY_AGENT_ID = QAIQ_AGENT_ID;

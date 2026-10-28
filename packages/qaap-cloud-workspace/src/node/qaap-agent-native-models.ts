@@ -97,6 +97,10 @@ async function discoverNativeAgentModels(agentId: string): Promise<QaapQaiqModel
     switch (agentId) {
         case 'opencode':
             return discoverFromCommand('opencode', ['models'], agentId);
+        case 'pi':
+            // `pi --list-models` prints a `provider model context ...` table of every model the
+            // CLI can reach with its configured providers.
+            return discoverFromCommand('pi', ['--list-models'], agentId);
         case 'codex':
             return discoverCodexAccountModels();
         case 'cursor':

@@ -7,7 +7,7 @@ import { expect } from 'chai';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { listStaticNativeAgentModels } from '../common/qaap-agent-native-model-catalog';
+import { listStaticNativeAgentModels, parseNativeModelLines } from '../common/qaap-agent-native-model-catalog';
 import {
     clearNativeAgentModelCache,
     discoverCodexAccountModels,
@@ -154,5 +154,34 @@ describe('qaap-agent-native-models', () => {
             };
             expect(await discoverCodexAccountModels({}, true, failing)).to.deep.equal([]);
         });
+    });
+    it('parses the `pi --list-models` table into provider/model ids grouped by provider', () => {
+        const table = [
+            'provider    model                              context  max-out  thinking  images',
+            'openrouter  ~anthropic/claude-sonnet-latest    1M       128K     yes       yes   ',
+            '',
+            'openrouter  aion-labs/aion-2.0                 131.1K   32.8K    yes       no    ',
+            'anthropic   claude-opus-4-8                    1M       128K     yes       yes',
+            'openrouter  ~anthropic/claude-sonnet-latest    1M       128K     yes       yes',
+            'not a model row',
+        ];
+        const models = parseNativeModelLines('pi', table);
+        expect(models.map(model => model.modelId)).to.deep.equal([
+            'openrouter/~anthropic/claude-sonnet-latest',
+            'openrouter/aion-labs/aion-2.0',
+            'anthropic/claude-opus-4-8',
+        ]);
+        expect(models.map(model => model.label)).to.deep.equal([
+            'anthropic/claude-sonnet-latest',
+            'aion-labs/aion-2.0',
+            'claude-opus-4-8',
+        ]);
+        expect(models.map(model => model.vendor)).to.deep.equal(['openrouter', 'openrouter', 'anthropic']);
+    });
+
+    it('keeps a non-empty static Pi fallback with provider-qualified ids', () => {
+        const models = listStaticNativeAgentModels('pi');
+        expect(models.length).to.be.greaterThan(0);
+        expect(models.every(model => model.modelId.startsWith('openrouter/') && model.vendor === 'openrouter')).to.equal(true);
     });
 });

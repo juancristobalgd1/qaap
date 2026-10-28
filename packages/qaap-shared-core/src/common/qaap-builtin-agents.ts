@@ -88,6 +88,7 @@ export const NATIVE_MODEL_PICKER_AGENT_IDS = new Set([
     'openclaude',
     'grok',
     'opencode',
+    'pi',
     'hermes',
     'qwen',
     'copilot',
