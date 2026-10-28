@@ -5,6 +5,7 @@
 
 import {
     extractAgentAuthLoginChallenge,
+    isAgentLoginFailureOutput,
     isAgentLoginSuccessOutput,
     type QaapAgentAuthLoginChallenge,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
@@ -29,6 +30,34 @@ export const QAAP_AGENT_LOGIN_PREPARE_TIMEOUT_MS = 15_000;
 export const QAAP_AGENT_LOGIN_INSTALL_TIMEOUT_MS = 150_000;
 const OUTPUT_LIMIT = 16_000;
 const TAIL_LINES = 8;
+/** Raw output kept to find OSC-8 hyperlinks split across terminal chunks. */
+const RAW_HYPERLINK_WINDOW = 4_096;
+const MAX_HYPERLINK_TARGETS = 16;
+const OSC8_HYPERLINK_RE = /\x1B\]8;[^;\x07\x1B]*;([^\x07\x1B]+)(?:\x07|\x1B\\)/g;
+
+/** Terminal output as text: CSI/OSC escape sequences and carriage returns removed. */
+export function stripAgentLoginTerminalControlSequences(value: string): string {
+    return value
+        .replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, '')
+        .replace(/\x1B\][^\x07]*(?:\x07|\x1B\\)/g, '')
+        .replace(/\r/g, '');
+}
+
+/**
+ * Targets of OSC-8 hyperlinks (`ESC ] 8 ; params ; URI BEL`) in raw terminal output. A TUI that
+ * wraps a long sign-in URL across rows (Pi) still writes the whole URL as each row's link target,
+ * so this is the only copy that survives a narrow terminal intact.
+ */
+export function extractAgentLoginHyperlinkTargets(raw: string): string[] {
+    const targets: string[] = [];
+    for (const match of raw.matchAll(OSC8_HYPERLINK_RE)) {
+        const target = match[1].trim();
+        if (target && !targets.includes(target)) {
+            targets.push(target);
+        }
+    }
+    return targets;
+}
 
 export type QaapAgentLoginFailureReason =
     | 'timeout'
@@ -40,7 +69,9 @@ export type QaapAgentLoginFailureReason =
     /** The hidden workspace terminal could not be created (`message` carries the cause). */
     | 'terminal-unavailable'
     | 'unavailable'
-    | 'install-failed';
+    | 'install-failed'
+    /** The CLI reported that the sign-in failed but kept running (Pi: `Failed to login to …`). */
+    | 'rejected';
 
 /**
  * Interactive first-run questions known to hold a sign-in link back. Each harness's Connect
@@ -95,11 +126,18 @@ export type QaapAgentLoginFlowState =
         readonly message?: string;
         /** The interactive question the CLI stopped at (`waiting-for-input`). */
         readonly prompt?: string;
+        /** The link deadline that elapsed (`timeout`), when it is not the default one. */
+        readonly timeoutMs?: number;
     };
 
 export interface QaapAgentLoginFlowOptions {
     readonly agentId: string;
     readonly onDidChange: (state: QaapAgentLoginFlowState) => void;
+    /**
+     * Link deadline, default {@link QAAP_AGENT_LOGIN_CHALLENGE_TIMEOUT_MS}. A driven TUI login
+     * (Pi) needs longer: the CLI starts first, then the dialog types its way to the link.
+     */
+    readonly challengeTimeoutMs?: number;
 }
 
 /** Last meaningful terminal lines, without the wrapper command echo or the exit marker. */
@@ -119,6 +157,8 @@ export class QaapAgentLoginFlow {
 
     protected current: QaapAgentLoginFlowState = { phase: 'preparing' };
     protected output = '';
+    protected rawTail = '';
+    protected hyperlinkTargets: string[] = [];
     protected blockingPrompt: { readonly line: string; readonly since: number } | undefined;
 
     constructor(protected readonly options: QaapAgentLoginFlowOptions) { }
@@ -135,8 +175,7 @@ export class QaapAgentLoginFlow {
 
     /** Back to the initial spinner for a Retry (status is re-checked before the CLI runs again). */
     restart(now: number): void {
-        this.output = '';
-        this.blockingPrompt = undefined;
+        this.resetOutput();
         this.set({ phase: 'preparing', startedAt: now });
     }
 
@@ -162,8 +201,7 @@ export class QaapAgentLoginFlow {
 
     /** The login command was sent to the terminal; the watchdog starts now. */
     commandStarted(now: number): void {
-        this.output = '';
-        this.blockingPrompt = undefined;
+        this.resetOutput();
         this.set({ phase: 'waiting', startedAt: now });
     }
 
@@ -174,6 +212,24 @@ export class QaapAgentLoginFlow {
     /** The hidden terminal failed to start; `detail` is the underlying error, shown to the user. */
     terminalUnavailable(detail?: string): void {
         this.set({ phase: 'failed', reason: 'terminal-unavailable', tail: detail ? [detail] : [] });
+    }
+
+    /**
+     * Raw terminal output (with escape sequences): OSC-8 hyperlink targets are kept aside so a
+     * sign-in URL the TUI wrapped across rows is still found whole, then the text is appended.
+     */
+    appendRawOutput(raw: string, now = Date.now()): void {
+        if (!this.isRunning()) {
+            return;
+        }
+        const combined = `${this.rawTail}${raw}`;
+        this.rawTail = combined.slice(-RAW_HYPERLINK_WINDOW);
+        for (const target of extractAgentLoginHyperlinkTargets(combined)) {
+            if (!this.hyperlinkTargets.includes(target)) {
+                this.hyperlinkTargets = [...this.hyperlinkTargets, target].slice(-MAX_HYPERLINK_TARGETS);
+            }
+        }
+        this.appendOutput(stripAgentLoginTerminalControlSequences(raw), now);
     }
 
     appendOutput(chunk: string, now = Date.now()): void {
@@ -191,10 +247,16 @@ export class QaapAgentLoginFlow {
             this.connected();
             return;
         }
+        if (isAgentLoginFailureOutput(visible)) {
+            this.set({ phase: 'failed', reason: 'rejected', tail: resolveAgentLoginOutputTail(this.output) });
+            return;
+        }
         if (this.current.phase === 'code-submitted') {
             return;
         }
-        const challenge = extractAgentAuthLoginChallenge(visible, { preferMode: 'session', agentId: this.options.agentId });
+        // Whole hyperlink targets first: a wrapped plain-text copy of the same URL is truncated.
+        const sample = this.hyperlinkTargets.length ? `${this.hyperlinkTargets.join('\n')}\n${visible}` : visible;
+        const challenge = extractAgentAuthLoginChallenge(sample, { preferMode: 'session', agentId: this.options.agentId });
         // A bare mode (e.g. the echoed `--device-auth` flag) is not something the user can act on.
         if (!challenge || (!challenge.url && !challenge.userCode)) {
             if (this.current.phase === 'waiting') {
@@ -250,10 +312,16 @@ export class QaapAgentLoginFlow {
             this.installFailed();
             return;
         }
-        const timedOut = (state.phase === 'waiting' && now - state.startedAt >= QAAP_AGENT_LOGIN_CHALLENGE_TIMEOUT_MS)
+        const challengeTimeoutMs = this.options.challengeTimeoutMs ?? QAAP_AGENT_LOGIN_CHALLENGE_TIMEOUT_MS;
+        const timedOut = (state.phase === 'waiting' && now - state.startedAt >= challengeTimeoutMs)
             || (state.phase === 'code-submitted' && now - state.submittedAt >= QAAP_AGENT_LOGIN_CODE_TIMEOUT_MS);
         if (timedOut) {
-            this.set({ phase: 'failed', reason: 'timeout', tail: resolveAgentLoginOutputTail(this.output) });
+            this.set({
+                phase: 'failed',
+                reason: 'timeout',
+                tail: resolveAgentLoginOutputTail(this.output),
+                ...(state.phase === 'waiting' && this.options.challengeTimeoutMs !== undefined ? { timeoutMs: challengeTimeoutMs } : {}),
+            });
         }
     }
 
@@ -261,6 +329,13 @@ export class QaapAgentLoginFlow {
         if (this.current.phase !== 'connected') {
             this.set({ phase: 'connected' });
         }
+    }
+
+    protected resetOutput(): void {
+        this.output = '';
+        this.rawTail = '';
+        this.hyperlinkTargets = [];
+        this.blockingPrompt = undefined;
     }
 
     protected isRunning(): boolean {
@@ -276,5 +351,6 @@ export class QaapAgentLoginFlow {
 
 function sameChallenge(left: QaapAgentAuthLoginChallenge, right: QaapAgentAuthLoginChallenge): boolean {
     return left.url === right.url && left.userCode === right.userCode
-        && left.mode === right.mode && !!left.codeEntry === !!right.codeEntry;
+        && left.mode === right.mode && !!left.codeEntry === !!right.codeEntry
+        && !!left.acceptsRedirectUrl === !!right.acceptsRedirectUrl;
 }

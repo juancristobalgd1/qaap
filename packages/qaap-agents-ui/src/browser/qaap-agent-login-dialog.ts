@@ -31,6 +31,13 @@ export interface QaapAgentLoginDialogOptions {
     readonly onRetry?: () => void;
     readonly onInstall?: () => void;
     readonly onOpenSettings?: () => void;
+    /**
+     * Opens a visible workspace terminal running the harness CLI: the primary action of the
+     * manual-instructions state, and a fallback next to an in-dialog sign-in (Pi).
+     */
+    readonly onOpenTerminal?: () => void;
+    /** Tooltip of the fallback "Open terminal" action (what to type once it opens). */
+    readonly openTerminalHint?: string;
 }
 
 function createIcon(className: string): HTMLElement {
@@ -77,7 +84,13 @@ function localizeFailure(state: Extract<QaapAgentLoginFlowState, { phase: 'faile
                 'qaap/mobileProjects/agentLoginDialogTimedOut',
                 '{0} did not show a sign-in link within {1} seconds. Its last output is below.',
                 agentLabel,
-                String(Math.round(QAAP_AGENT_LOGIN_CHALLENGE_TIMEOUT_MS / 1000)),
+                String(Math.round((state.timeoutMs ?? QAAP_AGENT_LOGIN_CHALLENGE_TIMEOUT_MS) / 1000)),
+            );
+        case 'rejected':
+            return nls.localize(
+                'qaap/mobileProjects/agentLoginDialogRejected',
+                '{0} could not complete the sign-in. Its last output is below.',
+                agentLabel,
             );
         case 'waiting-for-input':
             return nls.localize(
@@ -255,10 +268,25 @@ export function createQaapAgentLoginDialog(
             body.append(copy.root);
         }
         if (challenge.codeEntry) {
-            const paste = nextStep(nls.localize(
-                'qaap/mobileProjects/agentLoginDialogStepPaste',
-                'Paste the code the sign-in page shows you',
-            ));
+            const acceptsRedirectUrl = !!challenge.acceptsRedirectUrl;
+            const paste = nextStep(acceptsRedirectUrl
+                ? nls.localize(
+                    'qaap/mobileProjects/agentLoginDialogStepPasteRedirect',
+                    'If the page does not connect by itself, paste its address (the redirect URL) or the code it shows',
+                )
+                : nls.localize(
+                    'qaap/mobileProjects/agentLoginDialogStepPaste',
+                    'Paste the code the sign-in page shows you',
+                ));
+            if (acceptsRedirectUrl) {
+                const hint = document.createElement('p');
+                hint.className = 'theia-mobile-agent-login-dialog-step-hint';
+                hint.textContent = nls.localize(
+                    'qaap/mobileProjects/agentLoginDialogRedirectHint',
+                    'After you approve, the browser opens a 127.0.0.1 page. When it fails to load, copy the full address from the address bar.',
+                );
+                paste.body.append(hint);
+            }
             const form = document.createElement('form');
             form.className = 'theia-mobile-agent-login-dialog-code-form';
             const input = document.createElement('input');
@@ -267,13 +295,17 @@ export function createQaapAgentLoginDialog(
             input.autocomplete = 'off';
             input.spellcheck = false;
             input.setAttribute('autocapitalize', 'off');
-            input.setAttribute('aria-label', nls.localize('qaap/mobileProjects/agentLoginDialogCodeInput', 'Authorization code'));
+            input.setAttribute('aria-label', acceptsRedirectUrl
+                ? nls.localize('qaap/mobileProjects/agentLoginDialogRedirectInput', 'Redirect URL or code')
+                : nls.localize('qaap/mobileProjects/agentLoginDialogCodeInput', 'Authorization code'));
             input.placeholder = input.getAttribute('aria-label') ?? '';
             input.disabled = submitted;
             const submit = document.createElement('button');
             submit.type = 'submit';
             submit.className = 'theia-button main theia-mobile-agent-login-dialog-code-submit';
-            submit.textContent = nls.localize('qaap/mobileProjects/agentLoginDialogSubmitCode', 'Submit code');
+            submit.textContent = acceptsRedirectUrl
+                ? nls.localize('qaap/mobileProjects/agentLoginDialogSubmit', 'Submit')
+                : nls.localize('qaap/mobileProjects/agentLoginDialogSubmitCode', 'Submit code');
             submit.disabled = submitted;
             form.addEventListener('submit', event => {
                 event.preventDefault();
@@ -291,6 +323,22 @@ export function createQaapAgentLoginDialog(
                 'Sign in and finish the verification in the browser.',
             )).root);
         }
+    };
+
+    /** "Open terminal" next to an in-dialog sign-in: the manual route stays one click away. */
+    const appendOpenTerminalFallback = (): void => {
+        if (!options.onOpenTerminal) {
+            return;
+        }
+        const button = createButton(
+            'theia-button secondary theia-mobile-agent-login-dialog-secondary',
+            nls.localize('qaap/mobileProjects/agentLoginDialogOpenTerminal', 'Open terminal'),
+            options.onOpenTerminal,
+        );
+        if (options.openTerminalHint) {
+            button.title = options.openTerminalHint;
+        }
+        actions.append(button);
     };
 
     const render = (state: QaapAgentLoginFlowState): void => {
@@ -312,6 +360,7 @@ export function createQaapAgentLoginDialog(
                 break;
             case 'waiting':
                 setStatus('busy', nls.localize('qaap/mobileProjects/agentLoginDialogWaiting', 'Waiting for {0}', agentLabel));
+                appendOpenTerminalFallback();
                 break;
             case 'installing':
                 setStatus('busy', nls.localize('qaap/mobileProjects/agentLoginDialogInstalling', 'Installing {0}…', agentLabel));
@@ -346,16 +395,25 @@ export function createQaapAgentLoginDialog(
                 break;
             case 'manual':
                 renderMessage(state.message);
+                if (options.onOpenTerminal) {
+                    actions.append(createButton(
+                        'theia-button main theia-mobile-agent-login-dialog-primary',
+                        nls.localize('qaap/mobileProjects/agentLoginDialogOpenTerminal', 'Open terminal'),
+                        options.onOpenTerminal,
+                    ));
+                }
                 setStatus('none');
                 cancelButton.textContent = nls.localize('qaap/mobileProjects/agentLoginDialogClose', 'Close');
                 break;
             case 'challenge':
                 renderChallenge(state.challenge, false);
                 setStatus('busy', nls.localize('qaap/mobileProjects/agentLoginDialogWaiting', 'Waiting for {0}', agentLabel));
+                appendOpenTerminalFallback();
                 break;
             case 'code-submitted':
                 renderChallenge(state.challenge, true);
                 setStatus('busy', nls.localize('qaap/mobileProjects/agentLoginDialogVerifyingCode', 'Verifying the code with {0}…', agentLabel));
+                appendOpenTerminalFallback();
                 break;
             case 'connected':
                 setStatus('success', nls.localize('qaap/mobileProjects/agentLoginDialogConnected', '{0} connected', agentLabel));
@@ -381,6 +439,9 @@ export function createQaapAgentLoginDialog(
                         nls.localize('qaap/mobileProjects/agentLoginDialogRetry', 'Retry'),
                         options.onRetry,
                     ));
+                }
+                if (state.reason !== 'install-failed') {
+                    appendOpenTerminalFallback();
                 }
                 cancelButton.textContent = nls.localize('qaap/mobileProjects/agentLoginDialogClose', 'Close');
                 break;

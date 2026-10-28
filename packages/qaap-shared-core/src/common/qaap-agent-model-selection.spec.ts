@@ -52,6 +52,8 @@ describe('qaap-agent-model-selection', () => {
         expect(agentUsesNativeModelCatalog('goose')).to.be.false;
         expect(agentUsesNativeModelCatalog('hermes')).to.be.true;
         expect(agentSupportsModelPicker('hermes')).to.be.true;
+        expect(agentUsesNativeModelCatalog('pi')).to.be.true;
+        expect(agentSupportsModelPicker('pi')).to.be.true;
         expect(agentUsesNativeModelCatalog(QAIQ_AGENT_ID)).to.be.false;
         expect(agentUsesNativeModelCatalog(OPENCLAUDE_AGENT_ID)).to.be.true;
         expect(agentUsesNativeModelCatalog('cursor')).to.be.true;

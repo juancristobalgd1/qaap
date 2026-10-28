@@ -70,6 +70,47 @@ export function listStaticAntigravityModels(agentId: string): QaapQaiqModelOptio
     return ANTIGRAVITY_API_MODELS.map(entry => nativeOption(id, entry.label, entry.label, entry.provider));
 }
 
+/** One Pi catalog entry: id `provider/model` (what `pi --model` takes), grouped by provider, label without the leading `~`. */
+function piOption(provider: string, model: string): QaapQaiqModelOption {
+    return {
+        provider: 'openai',
+        vendor: provider,
+        modelId: `${provider}/${model}`,
+        label: model.replace(/^~/, ''),
+    };
+}
+
+const PI_PROVIDER_PATTERN = /^[a-z0-9][a-z0-9._-]*$/i;
+const PI_MODEL_PATTERN = /^~?[a-z0-9][a-z0-9._:~@+/-]*$/i;
+
+/**
+ * Parses the whitespace table printed by `pi --list-models` (`provider model context max-out thinking images`).
+ * The header, blank lines and anything that is not a provider + model pair are ignored.
+ */
+export function parsePiModelLines(lines: readonly string[]): QaapQaiqModelOption[] {
+    const deduped = new Map<string, QaapQaiqModelOption>();
+    for (const raw of lines) {
+        const columns = raw.trim().split(/\s+/);
+        const [provider, model, context] = columns;
+        // Data rows carry a context-window column such as `1M` or `131.1K`; prose lines do not.
+        if (columns.length < 3 || !/^\d[\d.]*[KMGB]?$/i.test(context)) {
+            continue;
+        }
+        if (provider.toLowerCase() === 'provider' && model.toLowerCase() === 'model') {
+            continue;
+        }
+        if (!PI_PROVIDER_PATTERN.test(provider) || !PI_MODEL_PATTERN.test(model)) {
+            continue;
+        }
+        const option = piOption(provider, model);
+        const key = option.modelId.toLowerCase();
+        if (!deduped.has(key)) {
+            deduped.set(key, option);
+        }
+    }
+    return [...deduped.values()];
+}
+
 /** Curated fallback when a CLI is missing on the VPS or its list command fails. */
 export function listStaticNativeAgentModels(agentId: string): QaapQaiqModelOption[] {
     const id = agentId.trim().toLowerCase();
@@ -123,6 +164,16 @@ export function listStaticNativeAgentModels(agentId: string): QaapQaiqModelOptio
                 ...OPENCODE_FREE_MODEL_OPTIONS.map(model => nativeOption(id, model.modelId, model.label)),
                 ...OPENCODE_PAID_MODEL_OPTIONS.map(model => nativeOption(id, model.modelId, model.label)),
             ];
+        case 'pi':
+            // Cold-cache fallback; `pi --list-models` replaces it. Ids are `provider/model`.
+            return [
+                piOption('openrouter', '~anthropic/claude-sonnet-latest'),
+                piOption('openrouter', '~anthropic/claude-opus-latest'),
+                piOption('openrouter', '~anthropic/claude-haiku-latest'),
+                piOption('openrouter', '~openai/gpt-mini-latest'),
+                piOption('openrouter', '~google/gemini-pro-latest'),
+                piOption('openrouter', '~deepseek/deepseek-pro-latest'),
+            ];
         case 'grok':
             return [
                 nativeOption(id, 'grok-4.5', 'Grok 4.5'),
@@ -145,6 +196,9 @@ export function listStaticNativeAgentModels(agentId: string): QaapQaiqModelOptio
 
 export function parseNativeModelLines(agentId: string, lines: readonly string[]): QaapQaiqModelOption[] {
     const normalizedAgentId = agentId.trim().toLowerCase();
+    if (normalizedAgentId === 'pi') {
+        return parsePiModelLines(lines);
+    }
     const deduped = new Map<string, QaapQaiqModelOption>();
     for (const raw of lines) {
         const line = raw.trim();

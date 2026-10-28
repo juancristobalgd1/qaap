@@ -649,7 +649,7 @@ export class MobileProjectsTranscriptSurfacesUi {
         showTranscriptTerminalErrorExtracted(this, host, services, error);
     }
 
-    async launchAgentTuiInTranscriptTerminal(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, agentId: string, options?: { readonly login?: boolean },): Promise<void> {
+    async launchAgentTuiInTranscriptTerminal(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, agentId: string, options?: { readonly login?: boolean; readonly command?: string },): Promise<void> {
         return launchAgentTuiInTranscriptTerminalExtracted(this, project, summary, agentId, options);
     }
 

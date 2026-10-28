@@ -5,7 +5,13 @@
 
 import { expect } from 'chai';
 import { QAAP_HARNESS_DEFINITIONS } from './qaap-builtin-agents';
-import { resolveAgentConnectionFlow, resolveInteractiveAgentCliBin, resolveInteractiveAgentLoginCommand } from './qaap-agent-tui-command';
+import {
+    QAAP_PI_TUI_LOGIN_COMMAND,
+    resolveAgentConnectionFlow,
+    resolveInteractiveAgentCliBin,
+    resolveInteractiveAgentLoginCommand,
+    resolvePiTuiLoginInput,
+} from './qaap-agent-tui-command';
 import { rememberQaapHostedRuntime } from './qaap-hosted-agent-auth-policy';
 
 describe('resolveInteractiveAgentCliBin', () => {
@@ -67,9 +73,35 @@ describe('resolveInteractiveAgentLoginCommand', () => {
 });
 
 describe('resolveAgentConnectionFlow for Pi', () => {
-    it('has no scripted login: the user runs `pi` and `/login` in the tenant terminal', () => {
+    it('has no login subcommand: the dialog drives the TUI `/login` in the hidden terminal', () => {
         expect(resolveInteractiveAgentLoginCommand('pi')).to.equal(undefined);
-        expect(resolveAgentConnectionFlow('pi')).to.deep.equal({ kind: 'tenant-terminal', command: 'pi' });
+        expect(resolveAgentConnectionFlow('pi')).to.deep.equal({
+            kind: 'tui-login',
+            command: 'pi --tui-mode regular --no-session --no-approve',
+            provider: 'openrouter',
+            input: resolvePiTuiLoginInput('openrouter'),
+            fallbackCommand: 'pi',
+            followUp: '/login',
+        });
+        expect(QAAP_PI_TUI_LOGIN_COMMAND).to.equal('pi --tui-mode regular --no-session --no-approve');
+    });
+
+    it('types `/login <provider>` once Pi is ready, then Enter through the autocomplete and the method picker', () => {
+        const steps = resolvePiTuiLoginInput('openrouter');
+        expect(steps.map(step => step.text)).to.deep.equal(['/login openrouter', '\r', '\r', '\r']);
+        expect(new RegExp(steps[0].waitFor!, 'i').test('π  v1.4.0')).to.equal(true);
+        expect(new RegExp(steps[0].waitFor!, 'i').test('pi --tui-mode regular --no-session --no-approve'), 'never the shell echo').to.equal(false);
+        expect(steps[0].fallbackMs).to.be.a('number');
+        expect(new RegExp(steps[3].waitFor!, 'i').test('Select authentication method for OpenRouter:')).to.equal(true);
+        expect(steps[2].skipWhen).to.equal(steps[3].waitFor);
+    });
+
+    it('signs in to a named provider, and never types an unsafe provider id', () => {
+        const anthropic = resolveAgentConnectionFlow('pi', { provider: 'Anthropic' });
+        expect(anthropic.kind === 'tui-login' && anthropic.provider).to.equal('anthropic');
+        expect(anthropic.kind === 'tui-login' && anthropic.input[0].text).to.equal('/login anthropic');
+        const injected = resolveAgentConnectionFlow('pi', { provider: 'openrouter\r/quit' });
+        expect(injected.kind === 'tui-login' && injected.provider).to.equal('openrouter');
     });
 });
 
@@ -83,7 +115,7 @@ describe('resolveAgentConnectionFlow', () => {
         codex: 'cli-login',
         claude: 'cli-login',
         opencode: 'cli-login',
-        pi: 'tenant-terminal',
+        pi: 'tui-login',
     };
 
     for (const harness of QAAP_HARNESS_DEFINITIONS) {

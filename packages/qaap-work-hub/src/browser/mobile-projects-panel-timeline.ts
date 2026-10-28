@@ -287,7 +287,9 @@ export function openAgentSignInTerminalExtracted(ctx: MobileProjectsPanelContext
     if (!resolvedAgentId) {
         return;
     }
-    if (resolveAgentConnectionFlow(resolvedAgentId).kind !== 'cli-login') {
+    const connectionKind = resolveAgentConnectionFlow(resolvedAgentId).kind;
+    // Pi's `/login` runs in the same hidden terminal as a CLI login (`tui-login`).
+    if (connectionKind !== 'cli-login' && connectionKind !== 'tui-login') {
         // Settings, tenant-terminal and policy routes need no workspace: the dialog shows the
         // action or instructions immediately instead of a spinner.
         void openAgentLoginDialogInBackground(ctx, project, summary, resolvedAgentId);
