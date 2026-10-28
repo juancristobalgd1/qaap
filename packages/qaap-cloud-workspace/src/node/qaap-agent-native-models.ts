@@ -18,6 +18,22 @@ import {
 } from '../common/qaap-agent-native-model-catalog';
 
 const cache = new Map<string, QaapQaiqModelOption[]>();
+/**
+ * When a cached catalog is only the curated fallback because the CLI discovery found nothing (CLI
+ * signed out, not on PATH yet): such entries expire so a later sign-in shows the real catalog.
+ */
+const fallbackCachedAt = new Map<string, number>();
+export const NATIVE_MODEL_FALLBACK_RETRY_MS = 60_000;
+
+function cachedNativeModels(agentId: string): QaapQaiqModelOption[] | undefined {
+    const at = fallbackCachedAt.get(agentId);
+    if (at !== undefined && Date.now() - at >= NATIVE_MODEL_FALLBACK_RETRY_MS) {
+        cache.delete(agentId);
+        fallbackCachedAt.delete(agentId);
+        return undefined;
+    }
+    return cache.get(agentId);
+}
 /** In-flight CLI discoveries; the event loop is shared with every other request, so never spawn synchronously. */
 const discoveries = new Map<string, Promise<QaapQaiqModelOption[]>>();
 
@@ -26,7 +42,7 @@ export function listNativeAgentModels(agentId: string | undefined): QaapQaiqMode
     if (!normalized || NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS.has(normalized)) {
         return [];
     }
-    const cached = cache.get(normalized);
+    const cached = cachedNativeModels(normalized);
     if (cached) {
         return cached;
     }
@@ -62,7 +78,7 @@ export function prepareNativeAgentModels(agentId: string | undefined): Promise<Q
     if (!normalized) {
         return Promise.resolve([]);
     }
-    const cached = cache.get(normalized);
+    const cached = cachedNativeModels(normalized);
     if (cached) {
         return Promise.resolve(cached);
     }
@@ -81,6 +97,11 @@ export function prepareNativeAgentModels(agentId: string | undefined): Promise<Q
             if (discoveries.get(normalized) === discovery) {
                 discoveries.delete(normalized);
                 cache.set(normalized, models);
+                if (discovered.length > 0) {
+                    fallbackCachedAt.delete(normalized);
+                } else {
+                    fallbackCachedAt.set(normalized, Date.now());
+                }
             }
             return models;
         });
@@ -91,6 +112,15 @@ export function prepareNativeAgentModels(agentId: string | undefined): Promise<Q
 export function clearNativeAgentModelCache(): void {
     cache.clear();
     discoveries.clear();
+    fallbackCachedAt.clear();
+}
+
+/** Forget one agent's catalog, e.g. after it signed in: its CLI can now list the account's models. */
+export function invalidateNativeAgentModels(agentId: string): void {
+    const normalized = agentId.trim().toLowerCase();
+    cache.delete(normalized);
+    discoveries.delete(normalized);
+    fallbackCachedAt.delete(normalized);
 }
 
 async function discoverNativeAgentModels(agentId: string): Promise<QaapQaiqModelOption[]> {

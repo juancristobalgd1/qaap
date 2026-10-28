@@ -100,6 +100,7 @@ export type QaapProjectBootstrapServiceContextMember =
     | 'portRecoveryFrom'
     | 'previewAutoOpenGate'
     | 'previewAutoRetryAttempts'
+    | 'devFailureAutoInstalledRoots'
     | 'previewAutoRetryTimer'
     | 'previewClaimByConversation'
     | 'previewPortClaimService'

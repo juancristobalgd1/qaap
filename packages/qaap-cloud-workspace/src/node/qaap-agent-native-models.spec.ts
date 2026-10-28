@@ -11,6 +11,7 @@ import { listStaticNativeAgentModels, parseNativeModelLines } from '../common/qa
 import {
     clearNativeAgentModelCache,
     discoverCodexAccountModels,
+    invalidateNativeAgentModels,
     listNativeAgentModels,
     parseCodexModelsCache,
     prepareNativeAgentModels,
@@ -54,6 +55,21 @@ describe('qaap-agent-native-models', () => {
     it('falls back to the curated catalog when the CLI is missing', async () => {
         process.env.PATH = sandbox;
         expect(await prepareNativeAgentModels('cursor')).to.deep.equal(listStaticNativeAgentModels('cursor'));
+    });
+
+    it('rediscovers once the CLI signs in instead of keeping the signed-out fallback', async function (): Promise<void> {
+        if (process.platform === 'win32') {
+            this.skip();
+        }
+        // Signed out (here: not installed yet): the curated fallback answers.
+        process.env.PATH = sandbox;
+        expect(await prepareNativeAgentModels('cursor')).to.deep.equal(listStaticNativeAgentModels('cursor'));
+
+        // The sign-in invalidates the agent's catalog, so the next request asks the CLI again.
+        fs.writeFileSync(path.join(sandbox, 'cursor-agent'), '#!/bin/sh\necho auto\necho cursor-private-model\n', { mode: 0o755 });
+        invalidateNativeAgentModels('cursor');
+        const discovered = await prepareNativeAgentModels('cursor');
+        expect(discovered.map(model => model.modelId)).to.deep.equal(['auto', 'cursor-private-model']);
     });
 
     describe('Codex account catalog (models_cache.json)', () => {

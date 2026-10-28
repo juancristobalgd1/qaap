@@ -13,6 +13,7 @@ import {
     ensureStoredAgentModel,
     isSameAgentModel,
     isStickyComposerAgentSelected,
+    PI_AGENT_ID,
     readStoredAgentModel,
     type QaapAgentTaskAgentOption,
     type QaapQaiqModelOption,
@@ -247,6 +248,10 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
             void ctx.renderComposerAgentPicker(chrome, { ...options, view: 'agents', modelPickerAgentId: undefined });
         };
         const filteredModels = (pickerModels ?? []).filter(model => modelMatchesAgentPickerQuery(model, chrome.searchInput.value));
+        // A signed-in Pi already reaches OpenRouter (the provider its Sign in drives): offering it again
+        // reads as "signed out" and its `/login` shows no link, so the dialog only times out.
+        const modelAgent = options.agents.find(agent => agent.id === modelAgentId);
+        const signedInPi = modelAgentId.trim().toLowerCase() === PI_AGENT_ID && modelAgent?.connectionState === 'connected';
         const modelContent = document.createElement('div');
         ctx.appendAgentModelPickerList(
             modelContent,
@@ -263,7 +268,7 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
             options.onOpenAiFeaturesSettings
                 ? () => options.onOpenAiFeaturesSettings?.(modelAgentId)
                 : undefined,
-            options.onProactiveLogin
+            options.onProactiveLogin && !signedInPi
                 ? () => options.onProactiveLogin?.(modelAgentId, options.project)
                 : undefined,
         );

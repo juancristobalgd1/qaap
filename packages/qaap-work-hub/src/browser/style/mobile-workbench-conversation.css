@@ -1940,7 +1940,8 @@ button.theia-mobile-transcript-team-row:focus-visible {
 }
 
 .theia-mobile-transcript-terminal-switcher {
-  flex: 1 1 auto;
+  /* Shrink to the tabs so the trailing `+` follows the last tab. */
+  flex: 0 1 auto;
   min-width: 0;
   height: var(--theia-mobile-transcript-terminal-control-size);
   display: flex;

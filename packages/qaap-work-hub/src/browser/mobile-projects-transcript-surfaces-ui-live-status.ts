@@ -129,7 +129,8 @@ export function ensureTranscriptTerminalChromeExtracted(ctx: MobileProjectsTrans
     addBtn.addEventListener('click', () => {
         void ctx.createTranscriptTerminalSlide(workspaceKey, cwd, services, project, summary, true);
     });
-    toolbar.append(addBtn, switcher);
+    // `+` sits right after the last terminal tab, like a browser's new-tab button.
+    toolbar.append(switcher, addBtn);
 
     // Agent TUI selector — lives in the terminal toolbar, right-aligned after the switcher.
     const tuiSelect = ctx.host.executionSurfaceTabsUi.createTerminalAgentTuiSelect();

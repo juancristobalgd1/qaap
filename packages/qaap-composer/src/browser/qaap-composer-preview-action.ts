@@ -107,6 +107,13 @@ export function resolveComposerPreviewCandidate(runtime: ComposerPreviewRuntime,
         && resolveComposerPreviewTarget(runtime.previewUrl, origin) !== undefined) {
         return runtime.previewUrl;
     }
+    if ((runtime.phase === 'run-failed' || runtime.phase === 'install-failed')
+        && runtime.projectCwd && runtime.bootstrapRoot
+        && normalizePath(runtime.projectCwd) === normalizePath(runtime.bootstrapRoot)) {
+        // This project's own Run just failed: a URL adopted or announced before it is stale, and
+        // offering it shows "View Preview" for an app that is not up.
+        return undefined;
+    }
     for (const fallback of runtime.fallbackPreviewUrls ?? []) {
         if (fallback && resolveComposerPreviewTarget(fallback, origin) !== undefined) {
             return fallback;
@@ -240,6 +247,11 @@ export interface ComposerPreviewChipInput {
     readonly agentWorkingSince?: number;
     /** When the probe last verified the preview URL (ms epoch). */
     readonly verifiedAt?: number;
+    /**
+     * Without a turn in progress: only a verification taken at/after this time counts (set after a
+     * cancelled or failed turn, whose earlier verification may name a server that died with it).
+     */
+    readonly requireVerifiedAfter?: number;
 }
 
 /** Which preview chip the composer may show. "View Preview" only for a verified, settled preview. */
@@ -265,6 +277,10 @@ export function resolveComposerPreviewChipVisibility(input: ComposerPreviewChipI
         const fresh = input.agentWorkingSince !== undefined
             && input.verifiedAt !== undefined
             && input.verifiedAt >= input.agentWorkingSince;
+        return { showStarting: false, showViewPreview: fresh };
+    }
+    if (input.requireVerifiedAfter !== undefined) {
+        const fresh = input.verifiedAt !== undefined && input.verifiedAt >= input.requireVerifiedAfter;
         return { showStarting: false, showViewPreview: fresh };
     }
     return { showStarting: false, showViewPreview: true };
