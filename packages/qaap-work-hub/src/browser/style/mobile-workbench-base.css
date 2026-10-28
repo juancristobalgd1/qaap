@@ -307,6 +307,23 @@ body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-
   display: none !important;
 }
 
+/* Classic IDE (desktop): the Work Hub chat docks in Theia's right side panel, so
+ * its tab leads that panel's tab bar (it is registered first), left of Outline and
+ * Memory Inspector. Mobile keeps the rule above. */
+body.theia-mobile-mod-desktop-ide .lm-TabBar.theia-app-right.theia-app-sides #shell-tab-chat-view-widget {
+  display: flex !important;
+}
+
+/* DO NOT REMOVE — classic IDE: the Work Hub chat in the right side panel has no
+ * views picker (the double chevron listing Browser, Files and Terminal). The IDE
+ * already provides those views natively (mini-browser, Explorer, bottom-panel
+ * terminals), so the picker would duplicate them. Guarded by
+ * qaap-ide-chat-panel-css.spec.ts. Work Hub (desktop right panel) and mobile
+ * keep the picker. */
+body.theia-mobile-mod-desktop-ide .qaap-work-hub-chat-view-widget .theia-mobile-projects-header-execution-tabs {
+  display: none !important;
+}
+
 body.theia-mod-mobile-ai-chat-fullwidth .lm-TabBar.theia-app-right.theia-app-sides {
   display: none !important;
   pointer-events: none !important;

@@ -644,6 +644,10 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
 
     protected updateAiChatSwitchVisual(): void {
         const narrow = shouldShowMobileIdeHeaderViews();
+        // Desktop IDE: the chat is the right side panel, so the button reads as a
+        // right-panel toggle; the mobile header and bottom bar keep the chat glyph.
+        this.aiChatBtn.classList.toggle('codicon-layout-sidebar-right', !narrow);
+        this.aiChatBtn.classList.toggle('codicon-comment-discussion', narrow);
         if (!narrow) {
             this.aiChatBtn.classList.remove('theia-mod-toggled');
             this.aiChatBtn.title = nls.localize('theia/core/workbenchBar/openAiChat', 'Open AI Chat');
