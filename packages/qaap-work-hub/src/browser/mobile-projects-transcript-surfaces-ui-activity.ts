@@ -119,6 +119,7 @@ export function updateTranscriptPreviewReadyOverlayExtracted(ctx: MobileProjects
         return;
     }
     let ready = overlay.querySelector('.theia-mobile-transcript-preview-ready') as HTMLElement | null;
+    overlay.classList.add('theia-mod-status');
     if (!ready) {
         ready = document.createElement('div');
         ready.className = 'theia-mobile-transcript-preview-ready';

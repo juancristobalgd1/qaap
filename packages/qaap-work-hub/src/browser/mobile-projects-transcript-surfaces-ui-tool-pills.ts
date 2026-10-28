@@ -356,7 +356,7 @@ export function annotateEmptyPreviewWhenNotRunnableExtracted(ctx: MobileProjects
         }
         frameSlot.querySelector('.theia-mobile-transcript-preview-empty-overlay')?.remove();
         const overlay = document.createElement('div');
-        overlay.className = 'theia-mobile-transcript-preview-empty-overlay';
+        overlay.className = 'theia-mobile-transcript-preview-empty-overlay theia-mod-status';
         const wrap = document.createElement('div');
         wrap.className = 'theia-mobile-transcript-preview-empty';
         const note = document.createElement('div');
