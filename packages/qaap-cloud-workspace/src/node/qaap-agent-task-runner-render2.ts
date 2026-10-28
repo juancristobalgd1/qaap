@@ -3,6 +3,7 @@ import {
     QAIQ_AGENT_ID, SHELL_AGENT_ID, TOKEN_PATH, TOKENS_PATH, type AgentCandidate, type PersistedAgentTaskIndex,
 } from './qaap-agent-task-runner-constants';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
+import { QAAP_BUILTIN_AGENT_IDS } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 // Extracted from qaap-agent-task-runner.ts
 
 import { execFile } from 'child_process';
@@ -187,8 +188,13 @@ export function detectAgentsExtracted(ctx: QaapAgentTaskRunnerContext): void {
                 ctx.detectedAgents.set(candidate.id, candidate);
             }
         }
-        ctx.detectAntigravityAgent();
-        ctx.detectCursorAgent();
+        // Their dedicated detectors bypass AGENT_CANDIDATES; retired harnesses stay unregistered.
+        if (QAAP_BUILTIN_AGENT_IDS.has('antigravity')) {
+            ctx.detectAntigravityAgent();
+        }
+        if (QAAP_BUILTIN_AGENT_IDS.has('cursor')) {
+            ctx.detectCursorAgent();
+        }
         ctx.detectCodexAgent();
         ctx.detectQaiqAgent();
         for (const candidate of ctx.readCustomAgents()) {
