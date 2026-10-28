@@ -3,9 +3,10 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { injectable } from '@theia/core/shared/inversify';
+import { inject, injectable } from '@theia/core/shared/inversify';
 import { Application, Request, Response } from '@theia/core/shared/express';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
+import { QaapGithubAuthGuard } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
 import {
     QAAP_AGENT_LOGIN_CALLBACK_CHANNEL,
     QAAP_AGENT_LOGIN_CALLBACK_PATH,
@@ -15,16 +16,25 @@ import {
 /**
  * Landing page for a bridged agent sign-in redirect (see `qaap-agent-login-callback.ts`). It holds
  * no state and no secret: the page broadcasts its own query to the login dialog of the same
- * origin, which forwards it to the CLI waiting in the workspace terminal.
+ * origin, which forwards it to the CLI waiting in the workspace terminal. The provider's redirect
+ * is a top-level GET, so the `SameSite=Lax` session cookie is attached and the route stays
+ * signed-in only.
  */
 @injectable()
 export class QaapAgentLoginCallbackEndpoint implements BackendApplicationContribution {
+
+    @inject(QaapGithubAuthGuard)
+    protected readonly auth: QaapGithubAuthGuard;
 
     configure(app: Application): void {
         app.get(`${QAAP_AGENT_LOGIN_CALLBACK_PATH}/:nonce`, (req, res) => this.handle(req, res));
     }
 
     protected handle(req: Request, res: Response): void {
+        if (this.auth.authenticate(req).kind === 'unauthorized') {
+            res.status(401).type('text').send('Sign in to Qaap, then paste this page address into the sign-in dialog.');
+            return;
+        }
         const nonce = req.params.nonce;
         if (!isQaapAgentLoginCallbackNonce(nonce)) {
             res.status(404).end();
