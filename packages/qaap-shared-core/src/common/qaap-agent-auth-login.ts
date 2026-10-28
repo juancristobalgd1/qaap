@@ -421,7 +421,16 @@ export function localizeAddApiKeyInSettingsCta(): string {
 }
 
 /** Clear instructions for CLIs whose authentication needs interactive input in the tenant terminal. */
-export function localizeAgentTenantTerminalLoginMessage(agentLabel: string, command: string): string {
+export function localizeAgentTenantTerminalLoginMessage(agentLabel: string, command: string, followUp?: string): string {
+    if (followUp) {
+        return nls.localize(
+            'qaap/agentLogin/tenantTerminalInstructionsFollowUp',
+            'To connect {0}, open a terminal for this workspace, run `{1}` and type `{2}`. Finish the sign-in there, then return to Work Hub and refresh the agent list.',
+            agentLabel,
+            command,
+            followUp,
+        );
+    }
     return nls.localize(
         'qaap/agentLogin/tenantTerminalInstructions',
         'To connect {0}, open a terminal for this workspace and run `{1}`. Finish the CLI sign-in or API-key setup there, then return to Work Hub and refresh the agent list.',

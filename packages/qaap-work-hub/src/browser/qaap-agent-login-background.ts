@@ -391,7 +391,7 @@ export async function openAgentLoginDialogInBackground(
             await startSettingsApiKey();
             return;
         case 'tenant-terminal':
-            flow.showManualInstructions(localizeAgentTenantTerminalLoginMessage(agentLabel, connectionFlow.command));
+            flow.showManualInstructions(localizeAgentTenantTerminalLoginMessage(agentLabel, connectionFlow.command, connectionFlow.followUp));
             return;
         case 'hosted-restricted':
             flow.showManualInstructions(localizeHostedLocalhostOAuthAgentMessage(agentId));

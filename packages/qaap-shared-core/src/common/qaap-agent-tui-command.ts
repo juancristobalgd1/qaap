@@ -38,7 +38,8 @@ export function resolveInteractiveAgentCliBin(agentId: string | undefined): stri
 export type QaapAgentConnectionFlow =
     | { readonly kind: 'cli-login'; readonly command: string }
     | { readonly kind: 'settings-api-key'; readonly settingsQuery: string }
-    | { readonly kind: 'tenant-terminal'; readonly command: string }
+    /** `followUp`: what to type inside the CLI once it starts (e.g. Pi's `/login`). */
+    | { readonly kind: 'tenant-terminal'; readonly command: string; readonly followUp?: string }
     | { readonly kind: 'hosted-restricted' }
     | { readonly kind: 'unsupported' };
 
@@ -72,6 +73,9 @@ export function resolveAgentConnectionFlow(agentId: string | undefined): QaapAge
         : normalized === 'openclaw'
             ? 'openclaw onboard'
             : bin;
+    if (normalized === 'pi') {
+        return { kind: 'tenant-terminal', command: tenantCommand, followUp: '/login' };
+    }
     return { kind: 'tenant-terminal', command: tenantCommand };
 }
 

@@ -69,7 +69,7 @@ describe('resolveInteractiveAgentLoginCommand', () => {
 describe('resolveAgentConnectionFlow for Pi', () => {
     it('has no scripted login: the user runs `pi` and `/login` in the tenant terminal', () => {
         expect(resolveInteractiveAgentLoginCommand('pi')).to.equal(undefined);
-        expect(resolveAgentConnectionFlow('pi')).to.deep.equal({ kind: 'tenant-terminal', command: 'pi' });
+        expect(resolveAgentConnectionFlow('pi')).to.deep.equal({ kind: 'tenant-terminal', command: 'pi', followUp: '/login' });
     });
 });
 

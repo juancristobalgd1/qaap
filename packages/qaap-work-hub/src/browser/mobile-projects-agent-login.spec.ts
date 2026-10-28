@@ -141,6 +141,7 @@ describe('Work Hub harness connection actions', () => {
             const shown = readConnectDialog();
             expect(shown.spinnerVisible).to.equal(false);
             expect(shown.message).to.include(`\`${command}\``);
+            expect(shown.message, 'Pi signs in from inside its TUI').to.include('`/login`');
             expect(shown.message).to.match(/terminal.*workspace/i);
             expect(shown.message).to.include('refresh the agent list');
             // Instructions only: nothing in the dialog pretends to sign in for the user.
