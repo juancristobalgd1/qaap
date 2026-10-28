@@ -134,6 +134,8 @@ export class MobileWorkHubSessionsSidebar {
     /** Settings mode: reveals the settings search field, which stays hidden until asked for. */
     protected readonly settingsSearchBtn: HTMLButtonElement;
     protected readonly settingsSearchField: HTMLElement;
+    /** The visible query came from the user (not a section's own query), so closing clears it. */
+    protected settingsSearchTyped = false;
     protected readonly pullRequestSearchBtn: HTMLButtonElement;
     protected readonly backBtn: HTMLButtonElement;
     protected readonly brand: HTMLElement;
@@ -356,6 +358,7 @@ export class MobileWorkHubSessionsSidebar {
         this.settingsSearchInput.placeholder = nls.localize('qaap/workHubSettings/searchPlaceholder', 'Search settings');
         this.settingsSearchInput.setAttribute('aria-label', nls.localize('qaap/workHubSettings/searchLabel', 'Search settings'));
         this.settingsSearchInput.addEventListener('input', () => {
+            this.settingsSearchTyped = true;
             this.settingsOptions?.onSearch(this.settingsSearchInput.value);
             this.renderSettingsSidebar();
         });
@@ -697,11 +700,12 @@ export class MobileWorkHubSessionsSidebar {
             this.settingsSearchInput.focus();
             return;
         }
-        if (this.settingsSearchInput.value && !this.settingsSearchInput.readOnly) {
+        if (this.settingsSearchTyped && this.settingsSearchInput.value && !this.settingsSearchInput.readOnly) {
             this.settingsSearchInput.value = '';
             this.settingsOptions?.onSearch('');
             this.renderSettingsSidebar();
         }
+        this.settingsSearchTyped = false;
         this.settingsSearchBtn.focus();
     }
 
@@ -729,12 +733,9 @@ export class MobileWorkHubSessionsSidebar {
             this.settingsNav.replaceChildren();
             return;
         }
+        // Sections fill this input with their own internal query (e.g. "MCP"); that must not open
+        // the field — only the header search button does.
         this.settingsSearchInput.value = options.searchValue?.() ?? '';
-        // An active query keeps the field visible; otherwise it waits behind the header search button.
-        if (this.settingsSearchInput.value) {
-            this.settingsSearchField.hidden = false;
-            this.settingsSearchBtn.setAttribute('aria-expanded', 'true');
-        }
         this.settingsSearchInput.readOnly = options.searchReadOnly?.() === true;
         // Grouped sections carry their own headings, so the generic "Settings" label would repeat the header.
         this.settingsSectionLabel.hidden = options.sections.some(section => section.group);
