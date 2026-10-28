@@ -2637,7 +2637,11 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
   padding: 0 8px;
   border: 1px solid color-mix(in srgb, var(--theia-errorForeground, var(--theia-editorError-foreground)) 45%, transparent);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--theia-errorForeground, var(--theia-editorError-foreground)) 10%, transparent);
+  /* The tint is layered over an opaque base: on hover the chip sits on top of the task title,
+     which must not show through it. */
+  background:
+    linear-gradient(color-mix(in srgb, var(--theia-errorForeground, var(--theia-editorError-foreground)) 14%, transparent), color-mix(in srgb, var(--theia-errorForeground, var(--theia-editorError-foreground)) 14%, transparent)),
+    var(--theia-sideBar-background, var(--theia-editor-background));
   color: var(--theia-errorForeground, var(--theia-editorError-foreground));
   font-family: var(--theia-ui-font-family, sans-serif);
   font-size: 11px;
@@ -2652,7 +2656,9 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
 /* An interrupted turn did not fail: its work is kept, so Continue reads neutral, not red. */
 .theia-mobile-projects-failed-run-chip[data-qaap-failed-run-action="continue"] {
   border-color: color-mix(in srgb, var(--theia-foreground) 22%, transparent);
-  background: color-mix(in srgb, var(--theia-foreground) 7%, transparent);
+  background:
+    linear-gradient(color-mix(in srgb, var(--theia-foreground) 9%, transparent), color-mix(in srgb, var(--theia-foreground) 9%, transparent)),
+    var(--theia-sideBar-background, var(--theia-editor-background));
   color: var(--theia-foreground);
 }
 
@@ -2662,7 +2668,9 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
 
 .theia-mobile-projects-failed-run-chip:hover,
 .theia-mobile-projects-failed-run-chip:focus-visible {
-  background: color-mix(in srgb, currentColor 18%, transparent);
+  background:
+    linear-gradient(color-mix(in srgb, currentColor 22%, transparent), color-mix(in srgb, currentColor 22%, transparent)),
+    var(--theia-sideBar-background, var(--theia-editor-background));
 }
 
 .theia-mobile-projects-failed-run-chip:focus-visible {

@@ -28,6 +28,7 @@ import { QaapAgentApprovalEndpoint } from './qaap-agent-approval-endpoint';
 import { QaapAgentApprovalStore } from './qaap-agent-approval-store';
 import { QaapAgentHookConfigLoader } from './qaap-agent-hook-config-loader';
 import { QaapAgentHookEndpoint } from './qaap-agent-hook-endpoint';
+import { QaapAgentLoginCallbackEndpoint } from './qaap-agent-login-callback-endpoint';
 import { QaapAgentHookProcessRunner } from './qaap-agent-hook-process-runner';
 import { QaapAgentHookService } from './qaap-agent-hook-service';
 import { QaapAgentHookTrustStore } from './qaap-agent-hook-trust-store';
@@ -383,6 +384,8 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapAgentHookService).toSelf().inSingletonScope();
     bind(QaapAgentHookEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapAgentHookEndpoint);
+    bind(QaapAgentLoginCallbackEndpoint).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapAgentLoginCallbackEndpoint);
     bind(QaapAgentPostToolUseHookBridge).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapAgentPostToolUseHookBridge);
     bind(QaapWorkHubRoutineStore).toSelf().inSingletonScope();
