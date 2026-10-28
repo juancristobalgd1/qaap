@@ -1628,6 +1628,13 @@ button.theia-mobile-transcript-team-row:focus-visible {
   pointer-events: auto;
 }
 
+/* An empty preview's frame is a blank white page in every theme. Behind a status
+ * message (starting, stopped, no runnable app, server reachable) paint the theme
+ * background instead, so the borderless message below reads in light and dark. */
+.theia-mobile-transcript-preview-empty-overlay.theia-mod-status {
+  background: var(--theia-editor-background);
+}
+
 .theia-mobile-transcript-preview-launch-overlay {
   position: absolute;
   inset: 0;
@@ -1703,10 +1710,9 @@ button.theia-mobile-transcript-team-row:focus-visible {
   gap: 10px;
   max-width: min(320px, 88vw);
   margin-top: 20px;
-  padding: 14px 16px;
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--theia-successBackground, #2ea043) 18%, var(--theia-editor-background));
-  border: 1px solid color-mix(in srgb, var(--theia-successBackground, #2ea043) 45%, transparent);
+  padding: 0 16px;
+  border: 0;
+  background: transparent;
   text-align: center;
 }
 
@@ -1723,19 +1729,28 @@ button.theia-mobile-transcript-team-row:focus-visible {
 }
 
 .theia-mobile-transcript-preview-ready-open {
-  min-height: 40px;
-  padding: 0 16px;
-  border: none;
+  min-height: 32px;
+  margin-top: 2px;
+  padding: 0 14px;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 14%, transparent);
   border-radius: 999px;
-  background: var(--theia-button-background);
-  color: var(--theia-button-foreground);
+  background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+  color: var(--theia-foreground);
+  font: inherit;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
 }
 
 .theia-mobile-transcript-preview-ready-open:hover,
 .theia-mobile-transcript-preview-ready-open:focus-visible {
-  background: var(--theia-button-hoverBackground);
+  background: color-mix(in srgb, var(--theia-foreground) 14%, transparent);
+  outline: none;
+}
+
+.theia-mobile-transcript-preview-ready-open:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 
 .theia-mobile-transcript-preview-empty {

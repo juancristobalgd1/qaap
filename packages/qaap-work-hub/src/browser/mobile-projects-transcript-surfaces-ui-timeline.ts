@@ -566,7 +566,7 @@ function showTranscriptPreviewStatusOverlay(ctx: MobileProjectsTranscriptSurface
             ?? root;
         frameSlot.querySelector('.theia-mobile-transcript-preview-empty-overlay')?.remove();
         const overlay = document.createElement('div');
-        overlay.className = `theia-mobile-transcript-preview-empty-overlay theia-mod-preview-${kind}`;
+        overlay.className = `theia-mobile-transcript-preview-empty-overlay theia-mod-status theia-mod-preview-${kind}`;
         const wrap = document.createElement('div');
         wrap.className = 'theia-mobile-transcript-preview-empty';
         const note = document.createElement('div');
