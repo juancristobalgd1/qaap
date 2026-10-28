@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { createWorkHubMoreActionsIcon } from '@theia/qaap-adapters/lib/browser/qaap-lucide-icons';
+import { createWorkHubAddActionsIcon } from '@theia/qaap-adapters/lib/browser/qaap-lucide-icons';
 import { nls } from '@theia/core/lib/common/nls';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import {
@@ -302,11 +302,11 @@ export class MobileProjectsPanelChromeUi {
         this.host.headerOverflowMenuBtn.className = 'theia-workbench-nav-btn qaap-work-hub-toolbar-menu-button';
         this.host.headerOverflowMenuBtn.hidden = true;
         this.host.headerOverflowMenuBtn.setAttribute('aria-hidden', 'true');
-        this.host.headerOverflowMenuBtn.title = nls.localize('qaap/workHubToolbar/moreActions', 'More actions');
+        this.host.headerOverflowMenuBtn.title = nls.localize('qaap/workHubToolbar/newTaskAndMore', 'New task and more');
         this.host.headerOverflowMenuBtn.setAttribute('aria-label', this.host.headerOverflowMenuBtn.title);
         this.host.headerOverflowMenuBtn.setAttribute('aria-haspopup', 'menu');
         this.host.headerOverflowMenuBtn.setAttribute('aria-expanded', 'false');
-        this.host.headerOverflowMenuBtn.append(createWorkHubMoreActionsIcon());
+        this.host.headerOverflowMenuBtn.append(createWorkHubAddActionsIcon());
         this.host.headerOverflowMenuBtn.addEventListener('click', event => this.host.onHeaderOverflowMenuClick(event));
 
         this.host.searchToggleBtn = document.createElement('button');
@@ -321,12 +321,13 @@ export class MobileProjectsPanelChromeUi {
             this.host.workHubSearchUi.openWorkHubSearchQuickPick();
         });
 
+        // The "+" menu sits before the surface picker (Chat ▾), matching the IDE chat header.
         this.host.headerExecutionCluster.append(
+            this.host.headerOverflowMenuBtn,
             this.host.headerExecutionTabsHost,
             this.host.headerPreviewRunHost,
             this.host.headerViewModeSwitchHost,
             this.host.headerFilesMoreHost,
-            this.host.headerOverflowMenuBtn,
         );
         actions.append(
             this.host.headerIdeViewPickerHost,

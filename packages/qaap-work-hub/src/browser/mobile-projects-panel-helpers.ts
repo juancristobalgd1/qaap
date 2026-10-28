@@ -106,7 +106,6 @@ export interface RenderHeaderOverflowMenuItemsDeps {
     closeHeaderOverflowMenu(): void;
     openHeaderNewChat(): void;
     isHeaderNewChatVisible(): boolean;
-    openWorkHubSessionsSidebar(): void;
     copyActiveConversationToClipboard(): Promise<void>;
     isCopyConversationEnabled(): boolean;
     openAiConfigurationSheet?: () => void;
@@ -152,11 +151,6 @@ export function renderHeaderOverflowMenuItems(
         QAAP_NEW_TASK_ICON_CLASS,
         () => deps.openHeaderNewChat(),
         deps.isHeaderNewChatVisible(),
-    );
-    appendItem(
-        nls.localize('qaap/workHubToolbar/showChats', 'Show Chats'),
-        'codicon-history',
-        () => deps.openWorkHubSessionsSidebar(),
     );
     appendItem(
         nls.localize('qaap/workHubToolbar/copyConversation', 'Copy full conversation'),
