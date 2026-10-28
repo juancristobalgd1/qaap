@@ -285,6 +285,12 @@ export function resolveAgentConnectionProbeArgs(agentId: string): readonly strin
  */
 export const GEMINI_CLI_CONNECTION_PROBE_SCRIPT = 'test -s "$HOME/.gemini/oauth_creds.json" && echo "logged in" || echo "not logged in"';
 
+/**
+ * Pi has no provider-agnostic status command (`pi auth check` needs `--provider`). `/login` and
+ * API-key logins both store an entry with a `"type"` in `~/.pi/agent/auth.json` (`{}` when empty).
+ */
+export const PI_CONNECTION_PROBE_SCRIPT = 'f="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/auth.json"; grep -q \'"type"\' "$f" 2>/dev/null && echo "logged in" || echo "not logged in"';
+
 /** Executable + argv that report one harness's sign-in state, for the executable it runs as. */
 export function resolveAgentConnectionProbe(agentId: string, bin: string): { readonly file: string; readonly args: readonly string[] } | undefined {
     const normalized = agentId.trim().toLowerCase();
@@ -292,6 +298,9 @@ export function resolveAgentConnectionProbe(agentId: string, bin: string): { rea
         // The community `antigravity`/`ag` CLI talks to a running Antigravity desktop app and has
         // no sign-in of its own; only the Gemini CLI fallback can be signed in on a server.
         return path.basename(bin) === 'gemini' ? { file: 'sh', args: ['-c', GEMINI_CLI_CONNECTION_PROBE_SCRIPT] } : undefined;
+    }
+    if (normalized === 'pi') {
+        return { file: 'sh', args: ['-c', PI_CONNECTION_PROBE_SCRIPT] };
     }
     const args = resolveAgentConnectionProbeArgs(normalized);
     return args ? { file: bin, args } : undefined;
@@ -312,15 +321,6 @@ export function classifyAgentConnectionProbe(
     // sign-in (only QAIQ uses API keys), so an API-key login needs the sign-in flow.
     if (agentId.trim().toLowerCase() === 'codex' && /logged in using an api key/.test(sample)) {
         return 'disconnected';
-    }
-    // `pi auth check --provider <p> [--json]` → `{"status":"not_ready","reason":"credentials_not_configured"}` / `not_ready`.
-    if (agentId.trim().toLowerCase() === 'pi') {
-        if (/credentials_not_configured|\bnot_ready\b/.test(sample)) {
-            return 'disconnected';
-        }
-        if (status === 0 && /\"status\"\s*:\s*\"ready\"|^\s*ready\s*$/m.test(sample)) {
-            return 'connected';
-        }
     }
     if (/\"(?:authenticated|isloggedin|loggedin)\"\s*:\s*false/.test(sample)
         || /not logged in|not authenticated|logged out|no active login|no credentials|no providers configured|not connected|no authentication information found|sign in required/.test(sample)) {

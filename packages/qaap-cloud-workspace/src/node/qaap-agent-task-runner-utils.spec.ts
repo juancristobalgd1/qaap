@@ -43,13 +43,24 @@ describe('harness connection state', () => {
         { id: 'qaiq', key: 'ai-features.openAiOfficial.openAiApiKey' },
     ];
 
-    it('Pi receives its prompt on stdin and is classified from `pi auth check` output', () => {
+    it('Pi receives its prompt on stdin and reports sign-in from its auth.json', () => {
         expect(resolveAgentPromptTransport('pi', { bin: 'pi' })).to.deep.equal({ kind: 'plain-stdin', placeholder: 'omit' });
-        expect(classifyAgentConnectionProbe('pi', 1, '{"status":"not_ready","provider":"anthropic","reason":"credentials_not_configured"}', false))
-            .to.equal('disconnected');
-        expect(classifyAgentConnectionProbe('pi', 1, 'not_ready', false)).to.equal('disconnected');
-        expect(classifyAgentConnectionProbe('pi', 0, '{"status":"ready","provider":"anthropic"}', false)).to.equal('connected');
-        expect(classifyAgentConnectionProbe('pi', 0, 'something else', false)).to.equal('unknown');
+        const probe = resolveAgentConnectionProbe('pi', '/usr/local/bin/pi');
+        expect(probe?.file).to.equal('sh');
+        const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-pi-auth-'));
+        try {
+            const run = (): string => execFileSync(probe!.file, [...probe!.args], {
+                encoding: 'utf8',
+                env: { ...process.env, PI_CODING_AGENT_DIR: agentDir },
+            });
+            expect(classifyAgentConnectionProbe('pi', 0, run(), false)).to.equal('disconnected');
+            fs.writeFileSync(path.join(agentDir, 'auth.json'), '{}');
+            expect(classifyAgentConnectionProbe('pi', 0, run(), false)).to.equal('disconnected');
+            fs.writeFileSync(path.join(agentDir, 'auth.json'), '{"openrouter":{"type":"oauth"}}');
+            expect(classifyAgentConnectionProbe('pi', 0, run(), false)).to.equal('connected');
+        } finally {
+            fs.rmSync(agentDir, { recursive: true, force: true });
+        }
     });
 
     it('never reports a sign-in harness connected because of a Settings API key', () => {
