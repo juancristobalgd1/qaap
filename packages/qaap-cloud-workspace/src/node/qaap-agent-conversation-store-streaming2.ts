@@ -296,6 +296,13 @@ export async function continueVisualRepairLoopExtracted(ctx: QaapAgentConversati
             // autonomous repair over their newer intent.
             return conv;
         }
+        if ((conv.pendingUserMessages?.length ?? 0) > 0) {
+            // Same rule for a follow-up still waiting in the queue (its drain waits a coalesce
+            // window): repairing first parked the user's message behind a hidden autonomous run,
+            // which the user then stopped believing it was their own turn. Let their message go.
+            ctx.drainPendingMessages(conversationId);
+            return conv;
+        }
         const attempt = attempts + 1;
         const turnAgentId = sourceUserMessage.turnAgentId ?? conv.agentId;
         ctx.recordLoopSpawn(rootUserMessageId);

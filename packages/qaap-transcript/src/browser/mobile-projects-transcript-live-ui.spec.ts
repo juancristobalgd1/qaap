@@ -423,6 +423,9 @@ describe('MobileProjectsTranscriptLiveUi', () => {
         } as unknown as MobileProjectsTranscriptLiveHost['executionSurfaceTabsUi'];
         host.beginTranscriptDevPreviewRequest = () => {
             beginPreviewCalls += 1;
+            // Like the real begin: both flags go up.
+            host.transcriptPreviewRequestPending = true;
+            host.transcriptPreviewRequestRunning = true;
         };
         const conv = {
             id: 'conv-preview',
@@ -446,6 +449,8 @@ describe('MobileProjectsTranscriptLiveUi', () => {
         );
 
         expect(host.transcriptPreviewRequestPending).to.equal(true);
+        // Only waits on the agent: not owned by a Qaap launch, so the settle can relaunch/clear it.
+        expect(host.transcriptPreviewRequestRunning).to.equal(false);
         expect(beginPreviewCalls).to.equal(1);
         expect(setExecutionSurfaceTabCalls).to.not.include('preview');
         expect(showOnlyExecutionSurfaceTabCalls).to.not.include('preview');
@@ -656,8 +661,10 @@ describe('MobileProjectsTranscriptLiveUi', () => {
             pending: boolean;
             running?: boolean;
             suppressed?: boolean;
+            status?: QaapAgentConversationDTO['status'];
+            bootstrapPhase?: string;
             onRequest?: (host: MobileProjectsTranscriptLiveHost) => void;
-        }): { liveUi: MobileProjectsTranscriptLiveUi; host: MobileProjectsTranscriptLiveHost; requests: Array<{ allowAgentFallback?: boolean }> } {
+        }): { liveUi: MobileProjectsTranscriptLiveUi; host: MobileProjectsTranscriptLiveHost; requests: Array<{ allowAgentFallback?: boolean }>; composerRefreshes: () => number } {
             const chatHost = document.createElement('div');
             const composerHost = document.createElement('div');
             document.body.append(chatHost, composerHost);
@@ -665,7 +672,14 @@ describe('MobileProjectsTranscriptLiveUi', () => {
             host.transcriptOpenSummaryId = summary.id;
             host.transcriptOpenProject = project;
             host.transcriptOpenSummary = summary;
-            host.transcriptLastConv = settledConv;
+            host.transcriptLastConv = options.status ? { ...settledConv, status: options.status } : settledConv;
+            let composerRefreshCount = 0;
+            host.transcriptStickyComposerUi = {
+                refreshComposerActivityStack: () => { composerRefreshCount += 1; },
+            } as unknown as MobileProjectsTranscriptLiveHost['transcriptStickyComposerUi'];
+            host.transcriptHeaderUi = {
+                refreshTranscriptExecutionChrome: () => undefined,
+            } as unknown as MobileProjectsTranscriptLiveHost['transcriptHeaderUi'];
             host.transcriptPreviewRequestPending = options.pending;
             host.transcriptPreviewRequestRunning = options.running ?? false;
             host.transcriptPreviewSuppressedByUser = options.suppressed ?? false;
@@ -676,7 +690,11 @@ describe('MobileProjectsTranscriptLiveUi', () => {
             };
             const liveUi = new MobileProjectsTranscriptLiveUi(host);
             (liveUi as unknown as { refreshTranscriptPreviewOffer: () => Promise<void> }).refreshTranscriptPreviewOffer = async () => undefined;
-            return { liveUi, host, requests };
+            if (options.bootstrapPhase) {
+                // After construction: only the settle decision reads the phase.
+                host.projectBootstrap = { phase: options.bootstrapPhase } as unknown as MobileProjectsTranscriptLiveHost['projectBootstrap'];
+            }
+            return { liveUi, host, requests, composerRefreshes: () => composerRefreshCount };
         }
 
         it('relaunches the detection once when the agent fallback turn settles without a URL', async () => {
@@ -709,12 +727,51 @@ describe('MobileProjectsTranscriptLiveUi', () => {
             expect(fixture.requests).to.deep.equal([]);
         });
 
-        it('does not relaunch after the user stopped the preview', async () => {
+        it('does not relaunch after the user stopped the preview, and releases the chip', async () => {
             const fixture = settleFixture({ pending: true, suppressed: true });
 
             await fixture.liveUi.finalizeTranscriptDevPreviewAfterSettle();
 
             expect(fixture.requests).to.deep.equal([]);
+            expect(fixture.host.transcriptPreviewRequestPending).to.equal(false);
+        });
+
+        it('clears a chat preview request when the turn failed instead of spinning forever', async () => {
+            const fixture = settleFixture({ pending: true, status: 'failed' });
+
+            await fixture.liveUi.finalizeTranscriptDevPreviewAfterSettle();
+
+            expect(fixture.requests).to.deep.equal([]);
+            expect(fixture.host.transcriptPreviewRequestPending).to.equal(false);
+            expect(fixture.host.transcriptPreviewRequestRunning).to.equal(false);
+            expect(fixture.composerRefreshes()).to.equal(1);
+        });
+
+        it('clears an agent-fallback request (pending + running) when its turn failed', async () => {
+            const fixture = settleFixture({ pending: true, running: true, status: 'failed', bootstrapPhase: 'ready-to-run' });
+
+            await fixture.liveUi.finalizeTranscriptDevPreviewAfterSettle();
+
+            expect(fixture.host.transcriptPreviewRequestPending).to.equal(false);
+            expect(fixture.host.transcriptPreviewRequestRunning).to.equal(false);
+        });
+
+        it('keeps the chip after a failed turn while the bootstrap is actively starting the app', async () => {
+            const fixture = settleFixture({ pending: true, running: true, status: 'failed', bootstrapPhase: 'starting' });
+
+            await fixture.liveUi.finalizeTranscriptDevPreviewAfterSettle();
+
+            expect(fixture.host.transcriptPreviewRequestPending).to.equal(true);
+            expect(fixture.host.transcriptPreviewRequestRunning).to.equal(true);
+        });
+
+        it('does not act on a visual settle while the backend turn is still streaming', async () => {
+            const fixture = settleFixture({ pending: true, status: 'streaming' });
+
+            await fixture.liveUi.finalizeTranscriptDevPreviewAfterSettle();
+
+            expect(fixture.requests).to.deep.equal([]);
+            expect(fixture.host.transcriptPreviewRequestPending).to.equal(true);
         });
     });
 });

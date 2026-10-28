@@ -84,6 +84,71 @@ const MODEL_UNAVAILABLE_PATTERNS: readonly RegExp[] = [
     /\bmodel\s+is\s+not\s+supported\s+when\s+using\s+codex\b/i,
 ];
 
+/**
+ * The provider no longer serves the model at all (retired, end of life, or an OpenAI-compatible
+ * endpoint answering 404/410 for it). Unlike a key or credits problem this repeats on every retry
+ * of the same model, so it reads as `model_unavailable` (which also lets the turn fall back to the
+ * next curated model) with copy that tells the user to choose another model.
+ */
+const MODEL_RETIRED_PATTERNS: readonly RegExp[] = [
+    // NVIDIA NIM: `API Error: 410 {"status":410,"title":"Gone","detail":"… has reached its end of life …"}`.
+    /\breached\s+(?:its|the)\s+end[\s-]of[\s-]life\b/i,
+    /\bAPI\s+Error:\s*410\b/i,
+    /\bmodel\b[^\n]{0,160}\b(?:has\s+been|was|is)\s+(?:retired|decommissioned|discontinued)\b/i,
+    // Also our own persisted copy ({@link localizeRetiredModelMessage}), so it reclassifies the same.
+    /\bmodel\b[^\n]{0,160}\bis\s+no\s+longer\s+(?:available|supported|served)\b/i,
+    // QAIQ on an OpenAI-compatible endpoint that does not serve the model:
+    // "Provider endpoint at integrate.api.nvidia.com returned 404. Verify OPENAI_BASE_URL is correct…"
+    /\bprovider\s+endpoint\s+at\s+\S+\s+returned\s+(?:404|410)\b/i,
+];
+
+/** Words that a model-id capture must never be ("This model has reached its end of life"). */
+const RETIRED_MODEL_NON_IDS = new Set(['model', 'this', 'that', 'it', 'the', 'selected', 'requested']);
+
+const RETIRED_MODEL_ID_PATTERNS: readonly RegExp[] = [
+    // model 'vendor/id', model "id", model `id` (JSON-escaped quotes included).
+    /\bmodel\s*[:=]?\s*\\?["'`]([^"'`\\\s]{2,})\\?["'`]/i,
+    // 'vendor/id' has reached its end of life / is no longer available / has been retired.
+    /\\?["'`]([^"'`\\\s]{2,})\\?["'`]\s+(?:model\s+)?(?:has\s+reached|is\s+no\s+longer|has\s+been\s+(?:retired|decommissioned|discontinued))\b/i,
+    // Unquoted: "Model nvidia/llama-3.3-nemotron-super-49b-v1 has reached its end of life".
+    /\bmodel\s+([\w.-]+(?:\/[\w.:-]+)+)/i,
+    /\b([\w.-]+(?:\/[\w.:-]+)*)\s+(?:model\s+)?has\s+reached\s+(?:its|the)\s+end[\s-]of[\s-]life\b/i,
+];
+
+/** True when `text` reports that the provider no longer serves the model (retired / 404 / 410). */
+export function isRetiredModelFailureText(text: string | undefined): boolean {
+    return !!text && matchesAny(text, MODEL_RETIRED_PATTERNS);
+}
+
+/** Model id named by a retired-model failure, when the provider's text names one. */
+export function extractRetiredModelId(text: string | undefined): string | undefined {
+    if (!text) {
+        return undefined;
+    }
+    for (const pattern of RETIRED_MODEL_ID_PATTERNS) {
+        const candidate = pattern.exec(text)?.[1]?.trim().replace(/[.,;:]+$/, '');
+        if (candidate && !RETIRED_MODEL_NON_IDS.has(candidate.toLowerCase())) {
+            return candidate;
+        }
+    }
+    return extractSelectedModelAccessFailure(text);
+}
+
+/** The model is gone at its provider: retrying the same model cannot help, choosing another can. */
+export function localizeRetiredModelMessage(model?: string): string {
+    const name = model?.trim();
+    return name
+        ? nls.localize(
+            'qaap/agentFailure/modelRetired',
+            'The model {0} is no longer available from its provider. Choose another model.',
+            name,
+        )
+        : nls.localize(
+            'qaap/agentFailure/modelRetiredUnnamed',
+            'This model is no longer available from its provider. Choose another model.',
+        );
+}
+
 const TOOL_UNSUPPORTED_PATTERNS: readonly RegExp[] = [
     // OpenRouter 404 when `tools` is sent to a model without a tool-capable endpoint.
     /\bno\s+endpoints\s+found\s+that\s+support\s+tool\s+use\b/i,
@@ -617,6 +682,11 @@ function classifyAgentFailureEvidence(evidence: AgentFailureEvidence): QaapAgent
     if (matchesAny(sample, CLI_MISSING_PATTERNS)) {
         return 'cli_missing';
     }
+    // A retired model (410 / end of life / endpoint 404) is definitive: no key, credit or
+    // rate-limit reading applies, and it must reach the model fallback, not an endless Retry.
+    if (matchesAny(sample, MODEL_RETIRED_PATTERNS)) {
+        return 'model_unavailable';
+    }
     // Before quota/rate limit/model: an OpenRouter "free-models-per-day" 429 or a rejected key
     // behind QAIQ's "issue with the selected model" is the user's key, not the model or Qaap.
     const providerKind = classifyProviderKeyEvidence(sample, agentFailureEnvelopeText(evidence));
@@ -929,6 +999,10 @@ export function formatStoredAgentFailureMessage(error: string | undefined): stri
     }
     const kind = detectAgentFailureKind(trimmed);
     if (kind === 'model_unavailable') {
+        // A raw `API Error: 410 {…end of life…}` persisted verbatim reads as product copy.
+        if (isRetiredModelFailureText(trimmed)) {
+            return localizeRetiredModelMessage(extractRetiredModelId(trimmed));
+        }
         const model = extractSelectedModelAccessFailure(trimmed);
         if (model) {
             return localizeProviderModelAccessMessage(model);
@@ -1075,6 +1149,10 @@ export function resolveAgentTurnFailureMessage(
         return localizeAgentFailureMessage(kind);
     }
     if (kind === 'model_unavailable') {
+        const evidenceText = agentFailureEvidenceText(evidence);
+        if (isRetiredModelFailureText(evidenceText)) {
+            return localizeRetiredModelMessage(extractRetiredModelId(evidenceText));
+        }
         // "Issue with the selected model (X)" is the provider refusing X, most often over the key:
         // say so and name the model instead of the generic "model unavailable".
         const model = extractSelectedModelAccessFailure(agentFailureEvidenceText(evidence));

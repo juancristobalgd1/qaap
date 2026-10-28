@@ -23,7 +23,7 @@ import {
     shouldReportTranscriptPreviewBootstrapFailure,
     toTranscriptPreviewBootstrapSnapshot,
 } from '../common/qaap-transcript-preview-bootstrap-failure';
-import { agentActivityField, reportPreviewBootstrapFailure } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { agentActivityField, isLastTurnCancelled, reportPreviewBootstrapFailure } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { agentMessageHasVisualVerificationMarker } from '@theia/qaap-shared-core/lib/common/qaap-visual-verification';
 import { normalizePreviewUrlForSameOrigin } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
 import { ensureTranscriptDevPreview } from '@theia/qaap-shared-core/lib/browser/qaap-transcript-preview-bootstrap';
@@ -33,7 +33,7 @@ import {
 } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
 import { isTranscriptDocumentVisible } from '../common/qaap-transcript-document-visibility';
 import { scheduleTranscriptIdleWork } from '../common/qaap-transcript-idle-scheduler';
-import { isTranscriptAgentExecutionBusy, resolveTranscriptEffectiveStatus, isConversationTurnVisuallySettled } from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
+import { isTranscriptAgentExecutionBusy, resolveTranscriptEffectiveStatus, isConversationTurnVisuallySettled, resolveQaapSettledPreviewRequestAction } from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { TRANSCRIPT_COMPOSER_ACTIVITY_DEBOUNCE_MS } from './mobile-projects-transcript-live-ui';
@@ -325,8 +325,9 @@ export async function openReadyTranscriptPreviewUrlExtracted(ctx: MobileProjects
  * bootstrap, none leaves the chip on "Run app" / "No start command found". Turn end is the trigger
  * because the Work Hub has no watcher on workspace files. Every branch of the request that does not
  * wait on a running process clears `transcriptPreviewRequestPending`, so one settle relaunches at
- * most once. A request already running, or a user Stop (`transcriptPreviewSuppressedByUser`), is
- * left alone.
+ * most once. A request already running (owned by a Qaap launch or the agent-fallback watchdog) is
+ * left alone; after a failed/cancelled turn or a user Stop the request is cleared instead, unless a
+ * bootstrap is actively starting the app. See {@link resolveQaapSettledPreviewRequestAction}.
  */
 export function relaunchPendingTranscriptPreviewAfterSettleExtracted(ctx: MobileProjectsTranscriptLiveUiContext): void {
     const project = ctx.host.transcriptOpenProject;
@@ -335,11 +336,28 @@ export function relaunchPendingTranscriptPreviewAfterSettleExtracted(ctx: Mobile
     if (!project || !summary || !conv || summary.id !== conv.id) {
         return;
     }
-    if (!ctx.host.transcriptPreviewRequestPending || ctx.host.transcriptPreviewRequestRunning
-        || ctx.host.transcriptPreviewSuppressedByUser || !ctx.host.requestTranscriptPreview) {
+    const action = resolveQaapSettledPreviewRequestAction({
+        requestPending: ctx.host.transcriptPreviewRequestPending,
+        requestRunning: ctx.host.transcriptPreviewRequestRunning,
+        bootstrapPhase: ctx.host.projectBootstrap?.phase,
+        previewUrl: project.previewUrl,
+        conversationStatus: conv.status,
+        turnEndedBadly: conv.status === 'failed' || isLastTurnCancelled(conv),
+        suppressedByUser: !!ctx.host.transcriptPreviewSuppressedByUser,
+        canRelaunch: !!ctx.host.requestTranscriptPreview,
+    });
+    if (action === 'relaunch' && ctx.host.requestTranscriptPreview) {
+        void ctx.host.requestTranscriptPreview(project, summary, { allowAgentFallback: false });
         return;
     }
-    void ctx.host.requestTranscriptPreview(project, summary, { allowAgentFallback: false });
+    if (action === 'clear') {
+        // The turn ended (failed, cancelled, or no launcher) and nothing will resolve the request:
+        // without this the "Starting preview…" chip spins forever (QA: >4 min after the turn).
+        ctx.host.transcriptPreviewRequestPending = false;
+        ctx.host.transcriptPreviewRequestRunning = false;
+        ctx.host.transcriptStickyComposerUi.refreshComposerActivityStack();
+        ctx.host.transcriptHeaderUi.refreshTranscriptExecutionChrome();
+    }
 }
 
 export async function finalizeTranscriptDevPreviewAfterSettleExtracted(ctx: MobileProjectsTranscriptLiveUiContext): Promise<void> {
@@ -383,6 +401,9 @@ export function onTranscriptUserMessageSubmittedExtracted(ctx: MobileProjectsTra
     if (messageRequestsDevPreview(content) && project && summary && !ctx.host.transcriptPreviewSuppressedByUser) {
         ctx.host.transcriptPreviewRequestPending = true;
         ctx.host.beginTranscriptDevPreviewRequest(project, summary);
+        // A chat request only waits on the agent turn; no Qaap launch runs it. `Running` would mark
+        // it as owned by a launch, so the settle relaunch/clear never fired and the chip stuck.
+        ctx.host.transcriptPreviewRequestRunning = false;
     }
     if (!ctx.host.transcriptPreviewSuppressedByUser) {
         ctx.ensureTranscriptDevPreviewWatch(conv, { restartPreviewPoll: true });

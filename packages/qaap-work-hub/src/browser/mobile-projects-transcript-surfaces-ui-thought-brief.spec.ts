@@ -19,6 +19,12 @@ disableJSDOM();
 
 describe('syncTranscriptPreviewFromConversationExtracted — request chip flags', () => {
 
+    // The function reads `window.location` when it runs, not only at import: the module-scope
+    // jsdom above is already torn down by then (these specs threw `window is not defined`).
+    let disableSuiteJSDOM: (() => void) | undefined;
+    before(() => { disableSuiteJSDOM = enableJSDOM(); });
+    after(() => { disableSuiteJSDOM?.(); });
+
     const project = { id: 'project-1' } as unknown as MobileProjectEntry;
     const summary = { id: 'conversation-1' } as unknown as QaapAgentConversationSummaryDTO;
     const streamingConversation = { id: 'conversation-1', status: 'streaming', messages: [] } as unknown as QaapAgentConversationDTO;
