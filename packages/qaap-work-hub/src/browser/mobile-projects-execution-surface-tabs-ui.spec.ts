@@ -1344,7 +1344,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
             const strip = ui.buildExecutionViewTabStrip('messages', () => undefined);
             const trigger = strip.querySelector<HTMLButtonElement>('.theia-mobile-transcript-tab-icon-select')!;
             expect(trigger.classList.contains('qaap-mod-aux-panel-toggle')).to.equal(true);
-            expect(trigger.querySelector('.theia-mobile-transcript-tab-icon-select-double-chevron path')?.getAttribute('d')).to.match(/v11$/);
+            expect(trigger.querySelector('.theia-mobile-transcript-tab-icon-select-double-chevron .qaap-glyph-right-panel')).to.not.equal(null);
 
             trigger.click();
             expect(ui.resolveWorkHubAuxPanel()?.isOpen).to.equal(true);

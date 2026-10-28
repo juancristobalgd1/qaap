@@ -11,8 +11,22 @@
   display: none !important;
 }
 
+/* The chat-header view trigger draws the double chevron (views menu) by
+ * default and the right-panel glyph only in the desktop layout below. */
+.theia-mobile-transcript-tab-icon-select-double-chevron .qaap-glyph-right-panel {
+  display: none;
+}
+
 /* Keep in sync with QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY. */
 @media (min-width: 768px) and (pointer: fine) {
+  body:not(.theia-mobile-mod-desktop-ide) .qaap-mod-aux-panel-toggle .qaap-glyph-view-menu {
+    display: none;
+  }
+
+  body:not(.theia-mobile-mod-desktop-ide) .qaap-mod-aux-panel-toggle .qaap-glyph-right-panel {
+    display: inline;
+  }
+
   body.qaap-mod-work-hub-aux-panel-open:not(.theia-mobile-mod-desktop-ide) {
     grid-template-columns: auto minmax(0, 1fr) auto;
   }

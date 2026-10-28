@@ -64,8 +64,6 @@ const RIGHT_PANEL_GLYPH_PATH = 'M3.5 2.5h9a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1
 /** On the desktop Work Hub the view chevron is the right panel's toggle, not a menu button. */
 function applyWorkHubAuxPanelTriggerChrome(ctx: MobileProjectsExecutionSurfaceTabsUiContext, trigger: HTMLElement): QaapWorkHubAuxPanel | undefined {
     const auxPanel = ctx.resolveWorkHubAuxPanel();
-    trigger.querySelector('.theia-mobile-transcript-tab-icon-select-double-chevron path')
-        ?.setAttribute('d', auxPanel ? RIGHT_PANEL_GLYPH_PATH : VIEW_MENU_GLYPH_PATH);
     trigger.classList.toggle('qaap-mod-aux-panel-toggle', !!auxPanel);
     if (auxPanel) {
         trigger.setAttribute('aria-haspopup', 'false');
@@ -360,9 +358,15 @@ export function createExecutionSurfaceIconSelectExtracted(ctx: MobileProjectsExe
     const chevronIcon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     chevronIcon.setAttribute('viewBox', '0 0 16 16');
     chevronIcon.setAttribute('focusable', 'false');
+    // Both glyphs are drawn; CSS picks the panel one only while the desktop layout
+    // applies, so crossing the mobile breakpoint swaps it back without a rebuild.
     const chevronPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    chevronPath.setAttribute('class', 'qaap-glyph-view-menu');
     chevronPath.setAttribute('d', VIEW_MENU_GLYPH_PATH);
-    chevronIcon.append(chevronPath);
+    const panelPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    panelPath.setAttribute('class', 'qaap-glyph-right-panel');
+    panelPath.setAttribute('d', RIGHT_PANEL_GLYPH_PATH);
+    chevronIcon.append(chevronPath, panelPath);
     chevron.append(chevronIcon);
     trigger.append(triggerLabel, chevron);
     trigger.addEventListener('click', event => {
