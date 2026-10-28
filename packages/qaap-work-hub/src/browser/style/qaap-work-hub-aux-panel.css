@@ -269,28 +269,29 @@ body.qaap-mod-work-hub-aux-panel-maximized .qaap-work-hub-aux-panel-resize-handl
   display: none;
 }
 
+/* Launcher scale matches the Work Hub sidebar rows (13px names, 12px meta). */
 .qaap-work-hub-aux-panel-launcher {
-  padding: 28px 24px;
+  padding: 18px 12px;
 }
 
 .qaap-work-hub-aux-panel-launcher-title {
-  margin: 0 0 20px;
-  font-size: 20px;
+  margin: 0 8px 12px;
+  font-size: 15px;
   font-weight: 600;
 }
 
 .qaap-work-hub-aux-panel-launcher-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
 .qaap-work-hub-aux-panel-launcher-item {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 10px;
-  border-radius: 12px;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 9px;
 }
 
 .qaap-work-hub-aux-panel-launcher-item:hover {
@@ -302,15 +303,15 @@ body.qaap-mod-work-hub-aux-panel-maximized .qaap-work-hub-aux-panel-resize-handl
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 11px;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
   background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
   color: var(--theia-foreground);
 }
 
 .qaap-work-hub-aux-panel-launcher-icon > .codicon[class*='codicon-'] {
-  font-size: 20px;
+  font-size: 16px;
   line-height: 1;
 }
 
@@ -318,33 +319,33 @@ body.qaap-mod-work-hub-aux-panel-maximized .qaap-work-hub-aux-panel-resize-handl
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   min-width: 0;
 }
 
 .qaap-work-hub-aux-panel-launcher-name {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
 }
 
 .qaap-work-hub-aux-panel-launcher-description {
   overflow: hidden;
   color: var(--theia-descriptionForeground);
-  font-size: 12.5px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .qaap-work-hub-aux-panel-launcher-open {
   flex: 0 0 auto;
-  height: 28px;
-  padding: 0 14px;
+  height: 24px;
+  padding: 0 10px;
   border: 0;
   border-radius: 999px;
   background: var(--theia-button-secondaryBackground, color-mix(in srgb, var(--theia-foreground) 10%, transparent));
   color: var(--theia-button-secondaryForeground, var(--theia-foreground));
   font: inherit;
-  font-size: 13px;
+  font-size: 12px;
   cursor: pointer;
 }
 
