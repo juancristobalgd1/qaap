@@ -14297,6 +14297,13 @@ body.theia-mod-work-hub-settings-resizing * {
   line-height: 1.45;
 }
 
+.theia-mobile-agent-login-dialog-step-hint {
+  margin: 0 0 8px;
+  color: var(--theia-descriptionForeground);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .theia-mobile-agent-login-dialog-code-row {
   display: flex;
   align-items: center;
@@ -14392,7 +14399,8 @@ body.theia-mod-work-hub-settings-resizing * {
   gap: 8px;
 }
 
-.theia-mobile-agent-login-dialog-primary {
+.theia-mobile-agent-login-dialog-primary,
+.theia-mobile-agent-login-dialog-secondary {
   min-height: 34px;
   margin: 0;
 }

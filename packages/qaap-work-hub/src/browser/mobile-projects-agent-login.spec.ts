@@ -133,26 +133,22 @@ describe('Work Hub harness connection actions', () => {
         });
     }
 
-    for (const { agentId, command } of [
-        { agentId: 'pi', command: 'pi' },
-    ]) {
-        it(`opens the dialog with the exact tenant-terminal command for ${agentId} immediately`, () => {
-            openAgentSignInTerminalExtracted(createWorkspacelessContext(), agentId);
+    it('signs Pi in inside the dialog: without a project it says what is missing instead of sending the user to a terminal', async () => {
+        openAgentSignInTerminalExtracted(createWorkspacelessContext(), 'pi');
 
-            const shown = readConnectDialog();
-            expect(shown.spinnerVisible).to.equal(false);
-            expect(shown.message).to.include(`\`${command}\``);
-            expect(shown.message, 'Pi signs in from inside its TUI').to.include('`/login`');
-            expect(shown.message).to.match(/terminal.*workspace/i);
-            expect(shown.message).to.include('refresh the agent list');
-            // Instructions only: nothing in the dialog pretends to sign in for the user.
-            expect(shown.actions).to.have.length(0);
-            expect(shown.dismissLabel).to.equal('Close');
-            expect(harnessStatusRequests, 'no hidden login is prepared').to.deep.equal([]);
-        });
-    }
+        const shown = readConnectDialog();
+        expect(shown.title).to.equal('Connect Pi');
+        expect(shown.spinnerVisible, 'the hidden `/login` route checks the harness first').to.equal(true);
 
-    it('offers Open terminal for a tenant-terminal harness when a project is open and runs its CLI', () => {
+        await new Promise(resolve => setTimeout(resolve, 0));
+        const settled = readConnectDialog();
+        expect(settled.spinnerVisible).to.equal(false);
+        expect(document.querySelector('.theia-mobile-agent-login-dialog-status')?.textContent)
+            .to.equal('Open a project first: Pi signs in from a terminal in that workspace.');
+        expect(settled.actions.map(button => button.textContent), 'no terminal without a workspace').to.not.include('Open terminal');
+    });
+
+    it('keeps Open terminal as the Pi fallback when the in-dialog sign-in cannot run, and runs `pi` there', async () => {
         const launches: Array<{ projectId: string; agentId: string; options: unknown }> = [];
         const ctx = {
             transcriptController: { state: {} },
@@ -163,15 +159,21 @@ describe('Work Hub harness connection actions', () => {
                 },
             },
             projectsService: { getProjectCwd: () => '/workspace/demo' },
+            preparedCwdByProjectId: new Map<string, string>(),
         } as unknown as MobileProjectsPanelContext;
 
         openAgentSignInTerminalExtracted(ctx, 'pi', { id: 'demo', name: 'demo' } as unknown as MobileProjectEntry);
+        expect(readConnectDialog().spinnerVisible).to.equal(true);
 
-        const shown = readConnectDialog();
-        expect(shown.spinnerVisible).to.equal(false);
-        expect(shown.actions.map(button => button.textContent)).to.deep.equal(['Open terminal']);
+        // This context has no terminal services, so the hidden sign-in terminal cannot start.
+        for (let index = 0; index < 5 && readConnectDialog().spinnerVisible; index++) {
+            await new Promise(resolve => setTimeout(resolve, 0));
+        }
+        const failed = readConnectDialog();
+        expect(failed.spinnerVisible).to.equal(false);
+        expect(failed.actions.map(button => button.textContent)).to.deep.equal(['Retry', 'Open terminal']);
 
-        shown.actions[0].click();
+        failed.actions[1].click();
         expect(launches).to.deep.equal([{ projectId: 'demo', agentId: 'pi', options: { command: 'pi' } }]);
         expect(connectDialogs(), 'the dialog closes once the terminal opens').to.have.length(0);
     });
