@@ -57,9 +57,16 @@ export function applyExecutionSurfaceIconSelectDisplayExtracted(ctx: MobileProje
     }
 }
 
+/** Stroke paths in the trigger's 16px glyph: the views-menu chevrons and the desktop right-panel toggle. */
+const VIEW_MENU_GLYPH_PATH = 'M3 4.5 8 9.5l5-5 M3 8 8 13l5-5';
+const RIGHT_PANEL_GLYPH_PATH = 'M3.5 2.5h9a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 12V4a1.5 1.5 0 0 1 1.5-1.5Z M10 2.5v11';
+
 /** On the desktop Work Hub the view chevron is the right panel's toggle, not a menu button. */
 function applyWorkHubAuxPanelTriggerChrome(ctx: MobileProjectsExecutionSurfaceTabsUiContext, trigger: HTMLElement): QaapWorkHubAuxPanel | undefined {
     const auxPanel = ctx.resolveWorkHubAuxPanel();
+    trigger.querySelector('.theia-mobile-transcript-tab-icon-select-double-chevron path')
+        ?.setAttribute('d', auxPanel ? RIGHT_PANEL_GLYPH_PATH : VIEW_MENU_GLYPH_PATH);
+    trigger.classList.toggle('qaap-mod-aux-panel-toggle', !!auxPanel);
     if (auxPanel) {
         trigger.setAttribute('aria-haspopup', 'false');
         trigger.setAttribute('aria-expanded', String(auxPanel.isOpen));
@@ -354,7 +361,7 @@ export function createExecutionSurfaceIconSelectExtracted(ctx: MobileProjectsExe
     chevronIcon.setAttribute('viewBox', '0 0 16 16');
     chevronIcon.setAttribute('focusable', 'false');
     const chevronPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    chevronPath.setAttribute('d', 'M3 4.5 8 9.5l5-5 M3 8 8 13l5-5');
+    chevronPath.setAttribute('d', VIEW_MENU_GLYPH_PATH);
     chevronIcon.append(chevronPath);
     chevron.append(chevronIcon);
     trigger.append(triggerLabel, chevron);

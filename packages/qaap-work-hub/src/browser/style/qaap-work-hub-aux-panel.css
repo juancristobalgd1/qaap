@@ -282,7 +282,11 @@ body.qaap-mod-work-hub-aux-panel-maximized .qaap-work-hub-aux-panel-resize-handl
   border-radius: 11px;
   background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
   color: var(--theia-foreground);
-  font-size: 20px !important;
+}
+
+.qaap-work-hub-aux-panel-launcher-icon > .codicon[class*='codicon-'] {
+  font-size: 20px;
+  line-height: 1;
 }
 
 .qaap-work-hub-aux-panel-launcher-text {

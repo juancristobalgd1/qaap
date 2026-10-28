@@ -509,9 +509,13 @@ export class QaapWorkHubAuxPanel {
             row.className = 'qaap-work-hub-aux-panel-launcher-item';
             row.dataset.kind = kind;
             row.setAttribute('role', 'listitem');
+            // The tile centers the glyph; the codicon itself keeps its own inline box.
             const icon = document.createElement('span');
-            icon.className = `qaap-work-hub-aux-panel-launcher-icon codicon ${spec.icon}`;
+            icon.className = 'qaap-work-hub-aux-panel-launcher-icon';
             icon.setAttribute('aria-hidden', 'true');
+            const glyph = document.createElement('span');
+            glyph.className = `codicon ${spec.icon}`;
+            icon.append(glyph);
             const text = document.createElement('div');
             text.className = 'qaap-work-hub-aux-panel-launcher-text';
             const name = document.createElement('span');
