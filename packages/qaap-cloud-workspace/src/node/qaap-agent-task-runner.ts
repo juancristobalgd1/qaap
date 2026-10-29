@@ -46,6 +46,8 @@ import {
 import { isQaapProductionRuntime } from './qaap-agent-spawn-identity';
 import { QAAP_AGENT_CLI_CONTAINER_ISOLATION_REFUSAL, type QaapAgentCliInstallTarget } from './qaap-agent-cli-update-service';
 import { QaapAgentHookService } from './qaap-agent-hook-service';
+import { QaapProjectFolderTrustStore, resolveProjectFolderTrustRoot } from './qaap-project-folder-trust-store';
+import { QaapHostedWorktreeRegistry } from '@theia/qaap-shared-core/lib/node/qaap-hosted-worktree-registry';
 import { invalidateNativeAgentModels, prepareNativeAgentModels, type NativeModelDiscoverySpawner } from './qaap-agent-native-models';
 import { fireStopAgentHook } from './qaap-agent-task-runner-hooks';
 import { type QaapAgentReadOnlyEnforcement, } from '../common/qaap-agent-readonly-workspace';
@@ -224,6 +226,14 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     /** Live preview claims: the authoritative port Qaap reserved for a project (see reservedDevPreviewPort). */
     @inject(QaapDevPreviewPortRegistry) @optional()
     protected readonly previewPortRegistry: QaapDevPreviewPortRegistry | undefined;
+
+    /** Per-project "trust the files in this folder" decision, filled into `{trust_flags}`. */
+    @inject(QaapProjectFolderTrustStore) @optional()
+    protected readonly projectFolderTrust: QaapProjectFolderTrustStore | undefined;
+
+    /** Maps a backend-created task worktree to its project root for the trust lookup. */
+    @inject(QaapHostedWorktreeRegistry) @optional()
+    protected readonly hostedWorktrees: QaapHostedWorktreeRegistry | undefined;
 
     /** Each user's last turn per agent, shown in the harness settings (see listHarnessStatuses). */
     @inject(QaapAgentLastTurnStore) @optional()
@@ -1161,8 +1171,20 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public buildTemplateVars(agentId: string, agentModel?: QaapCreateAgentTaskQaiqModel, interaction?: QaapQaiqInteractionFlagOptions,
-        ownerLogin?: string): Record<string, string> {
-        return buildTemplateVarsExtracted(this, agentId, agentModel, interaction, ownerLogin);
+        ownerLogin?: string, cwd?: string): Record<string, string> {
+        return buildTemplateVarsExtracted(this, agentId, agentModel, interaction, ownerLogin, cwd);
+    }
+
+    /**
+     * @internal Used by the extracted qaap-agent-task-runner-* modules. Resolves a task worktree to its project
+     * root first. Missing store, unresolvable root or missing decision = untrusted.
+     */
+    public isProjectFolderTrusted(ownerLogin: string | undefined, cwd: string): boolean {
+        if (!this.projectFolderTrust) {
+            return false;
+        }
+        const root = resolveProjectFolderTrustRoot(this.hostedWorktrees, ownerLogin, cwd);
+        return root !== undefined && this.projectFolderTrust.isTrusted(ownerLogin, root);
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */

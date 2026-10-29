@@ -35,7 +35,7 @@ describe('Qaap built-in agent command templates', () => {
         const pi = QAAP_BUILTIN_AGENT_DEFINITIONS.find(agent => agent.id === 'pi');
         expect(pi?.bin).to.equal('pi');
         expect(pi?.label).to.equal('Pi');
-        expect(pi?.template).to.equal('pi -p --approve {model_flags} {prompt}');
+        expect(pi?.template).to.equal('pi -p {trust_flags} {model_flags} {prompt}');
     });
 
     it('keeps retired CLIs out of the registry and the mention resolver', () => {

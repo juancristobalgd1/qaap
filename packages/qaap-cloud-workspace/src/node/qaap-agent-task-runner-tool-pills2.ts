@@ -642,7 +642,7 @@ export async function improveComposerPromptExtracted(ctx: QaapAgentTaskRunnerCon
         const vars = ctx.buildTemplateVars(agentId, agentModel, {
             autoApprove: true,
             approvalPolicyId: 'approve-for-me',
-        }, options.ownerLogin);
+        }, options.ownerLogin, options.cwd?.trim() || undefined);
         const template = detected.template
             .replace(/--output-format\s+\S+/g, '')
             .replace(/--include-partial-messages/g, '')
@@ -734,7 +734,7 @@ export async function runReadOnlyOneShotPromptExtracted(ctx: QaapAgentTaskRunner
             autoApprove: true,
             approvalPolicyId: 'approve-for-me',
             interactionModeId: 'plan',
-        }, options.ownerLogin);
+        }, options.ownerLogin, options.cwd);
         const template = detected.template
             .replace(/--output-format\s+\S+/g, '')
             .replace(/--include-partial-messages/g, '')
