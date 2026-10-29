@@ -6,12 +6,16 @@
 import { expect } from 'chai';
 import * as fs from 'fs';
 import { pathToFileURL } from 'url';
+import { QAAP_OPENCODE_GATE_PROBE } from './qaap-tool-gate-opencode-probe';
 import { resolveQaapHarnessCapabilities } from '@theia/qaap-shared-core/lib/common/qaap-harness-capabilities';
 import {
     applyOpencodeGateEnv,
     buildOpencodeGateConfigContent,
-    dropOpencodeAskPermissions,
+    opencodeGatePluginSeeded,
+    resolveOpencodeArmTimeoutMs,
     resolveQaapToolGateOpencodePluginPath,
+    splitOpencodeAskPermissions,
+    startOpencodeArmWatch,
     usesOpencodeGatePlugin,
 } from './qaap-tool-gate-opencode-adapter';
 
@@ -50,37 +54,86 @@ describe('qaap-tool-gate-opencode-adapter', () => {
     describe('applyOpencodeGateEnv', () => {
         it('references the plugin through OPENCODE_CONFIG_CONTENT', () => {
             const env = gateEnv();
-            applyOpencodeGateEnv(env, true);
+            applyOpencodeGateEnv(env, true, true);
             expect(JSON.parse(env.OPENCODE_CONFIG_CONTENT as string)).to.deep.equal({ plugin: [pluginUrl()] });
         });
 
         it('does not touch an env without gate credentials', () => {
             const env: NodeJS.ProcessEnv = { OPENCODE_PERMISSION: '{"bash":"ask"}' };
-            applyOpencodeGateEnv(env, false);
+            applyOpencodeGateEnv(env, false, true);
             expect(env).to.deep.equal({ OPENCODE_PERMISSION: '{"bash":"ask"}' });
         });
 
         it('trusted folder keeps project config on', () => {
             const env = gateEnv();
-            applyOpencodeGateEnv(env, true);
+            applyOpencodeGateEnv(env, true, true);
             expect(env.OPENCODE_DISABLE_PROJECT_CONFIG).to.equal(undefined);
         });
 
         it('untrusted folder switches project config off', () => {
             const env = gateEnv();
-            applyOpencodeGateEnv(env, false);
+            applyOpencodeGateEnv(env, false, true);
             expect(env.OPENCODE_DISABLE_PROJECT_CONFIG).to.equal('1');
             expect(env.OPENCODE_DISABLE_EXTERNAL_SKILLS).to.equal('1');
             expect(env.OPENCODE_DISABLE_CLAUDE_CODE).to.equal('1');
         });
 
-        it('replaces ask rules (which reject headless) and keeps deny rules', () => {
-            const ask = gateEnv({ OPENCODE_PERMISSION: '{"edit":"ask","bash":"ask","webfetch":"ask"}' });
-            applyOpencodeGateEnv(ask, true);
-            expect(ask.OPENCODE_PERMISSION).to.equal(undefined);
-            const readOnly = gateEnv({ OPENCODE_PERMISSION: '{"*":"deny","read":"allow"}' });
-            applyOpencodeGateEnv(readOnly, true);
-            expect(JSON.parse(readOnly.OPENCODE_PERMISSION as string)).to.deep.equal({ '*': 'deny', read: 'allow' });
+        it('moves ask rules into the inline config (fail-closed baseline) and keeps other rules in the env', () => {
+            const env = gateEnv({ OPENCODE_PERMISSION: '{"edit":"ask","bash":"ask","webfetch":"ask","lsp":"deny"}' });
+            applyOpencodeGateEnv(env, true, true);
+            expect(JSON.parse(env.OPENCODE_CONFIG_CONTENT as string).permission).to.deep.equal({ edit: 'ask', bash: 'ask', webfetch: 'ask' });
+            expect(JSON.parse(env.OPENCODE_PERMISSION as string)).to.deep.equal({ lsp: 'deny' });
+            const onlyAsk = gateEnv({ OPENCODE_PERMISSION: '{"bash":"ask"}' });
+            applyOpencodeGateEnv(onlyAsk, true, true);
+            expect(onlyAsk.OPENCODE_PERMISSION).to.equal(undefined);
+        });
+
+        it('probe failed or missing: wires nothing and keeps the ask rules that refuse gated tools', () => {
+            for (const probeOk of [false, undefined]) {
+                const env = gateEnv({ OPENCODE_PERMISSION: '{"edit":"ask","bash":"ask"}' });
+                const before = { ...env };
+                QAAP_OPENCODE_GATE_PROBE.record(undefined);
+                if (probeOk === undefined) {
+                    applyOpencodeGateEnv(env, false);
+                } else {
+                    applyOpencodeGateEnv(env, false, probeOk);
+                }
+                expect(env).to.deep.equal(before);
+                expect(opencodeGatePluginSeeded(env)).to.equal(false);
+            }
+        });
+
+        it('uses the recorded probe verdict by default', () => {
+            QAAP_OPENCODE_GATE_PROBE.record({ ok: true, reason: 'ok', key: 'k' });
+            const env = gateEnv({ OPENCODE_PERMISSION: '{"bash":"ask"}' });
+            applyOpencodeGateEnv(env, true);
+            expect(opencodeGatePluginSeeded(env)).to.equal(true);
+            QAAP_OPENCODE_GATE_PROBE.record(undefined);
+        });
+    });
+
+    describe('arm watch', () => {
+        it('cancels a run whose plugin never armed', async () => {
+            let cancelled = 0;
+            startOpencodeArmWatch({ isArmed: () => false, isRunning: () => true, onTimeout: () => { cancelled++; }, timeoutMs: 20 });
+            await new Promise(resolve => setTimeout(resolve, 60));
+            expect(cancelled).to.equal(1);
+        });
+
+        it('leaves an armed, finished or stopped run alone', async () => {
+            let cancelled = 0;
+            const onTimeout = (): void => { cancelled++; };
+            startOpencodeArmWatch({ isArmed: () => true, isRunning: () => true, onTimeout, timeoutMs: 20 });
+            startOpencodeArmWatch({ isArmed: () => false, isRunning: () => false, onTimeout, timeoutMs: 20 });
+            startOpencodeArmWatch({ isArmed: () => false, isRunning: () => true, onTimeout, timeoutMs: 20 })();
+            await new Promise(resolve => setTimeout(resolve, 60));
+            expect(cancelled).to.equal(0);
+        });
+
+        it('reads the timeout from QAAP_GATE_ARM_TIMEOUT_SEC with a 20 s default', () => {
+            expect(resolveOpencodeArmTimeoutMs({})).to.equal(20_000);
+            expect(resolveOpencodeArmTimeoutMs({ QAAP_GATE_ARM_TIMEOUT_SEC: '5' })).to.equal(5000);
+            expect(resolveOpencodeArmTimeoutMs({ QAAP_GATE_ARM_TIMEOUT_SEC: 'x' })).to.equal(20_000);
         });
     });
 
@@ -96,10 +149,11 @@ describe('qaap-tool-gate-opencode-adapter', () => {
         });
     });
 
-    describe('dropOpencodeAskPermissions', () => {
-        it('returns undefined for empty or all-ask permissions', () => {
-            expect(dropOpencodeAskPermissions(undefined)).to.equal(undefined);
-            expect(dropOpencodeAskPermissions('{"edit":"ask"}')).to.equal(undefined);
+    describe('splitOpencodeAskPermissions', () => {
+        it('returns nothing for empty permissions and keeps unparseable ones untouched', () => {
+            expect(splitOpencodeAskPermissions(undefined)).to.deep.equal({ ask: {}, rest: undefined });
+            expect(splitOpencodeAskPermissions('{"edit":"ask"}')).to.deep.equal({ ask: { edit: 'ask' }, rest: undefined });
+            expect(splitOpencodeAskPermissions('nope').rest).to.equal('nope');
         });
     });
 });

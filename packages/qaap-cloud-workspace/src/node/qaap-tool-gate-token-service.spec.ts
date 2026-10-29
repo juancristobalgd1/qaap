@@ -73,4 +73,19 @@ describe('QaapToolGateTokenService', () => {
         const token = service.issue('task-1', 'alice', '/w');
         expect(service.storedKeys()).to.not.include(token);
     });
+
+    it('tracks armed tasks, forgets them on revoke and on a re-issued token', () => {
+        const service = new ClockedTokenService();
+        service.issue('task-1', 'alice', '/w');
+        expect(service.isArmed('task-1')).to.equal(false);
+        service.markArmed('task-1');
+        expect(service.isArmed('task-1')).to.equal(true);
+        service.issue('task-1', 'alice', '/w');
+        expect(service.isArmed('task-1')).to.equal(false);
+        service.markArmed('task-1');
+        service.revoke('task-1');
+        expect(service.isArmed('task-1')).to.equal(false);
+        service.markArmed('unknown');
+        expect(service.isArmed('unknown')).to.equal(false);
+    });
 });

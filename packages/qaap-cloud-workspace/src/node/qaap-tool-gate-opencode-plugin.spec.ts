@@ -4,7 +4,10 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import * as fs from 'fs';
 import * as http from 'http';
+import * as os from 'os';
+import * as path from 'path';
 import type { AddressInfo } from 'net';
 import { QAAP_TOOL_GATE_TOKEN_HEADER } from '@theia/qaap-shared-core/lib/common/qaap-tool-gate-protocol';
 import { resolveQaapToolGateOpencodePluginPath } from './qaap-tool-gate-opencode-adapter';
@@ -12,10 +15,12 @@ import { resolveQaapToolGateOpencodePluginPath } from './qaap-tool-gate-opencode
 type Env = Record<string, string | undefined>;
 type Options = { retries?: number; marginMs?: number };
 interface Hooks {
+    config(config: { permission?: Record<string, unknown> }): Promise<void>;
     'tool.execute.before'(input: Record<string, unknown>, output: { args: Record<string, unknown> }): Promise<void>;
     'permission.ask'(input: Record<string, unknown>, output: { status: string }): Promise<void>;
 }
 interface OpencodePlugin {
+    armGate(env?: Env, fetchImpl?: typeof fetch, options?: Options): Promise<boolean>;
     createHooks(cwd: string | undefined, env?: Env, fetchImpl?: typeof fetch, options?: Options): Hooks;
     default: { id: string; server(ctx: { directory: string }): Promise<Hooks> };
 }
@@ -80,7 +85,7 @@ describe('qaap-tool-gate-opencode.mjs', () => {
     it('exports a server plugin that returns both hooks for the project directory', async () => {
         expect(plugin.default.id).to.equal('qaap-tool-gate');
         const built = await plugin.default.server({ directory: '/w' });
-        expect(Object.keys(built)).to.have.members(['tool.execute.before', 'permission.ask']);
+        expect(Object.keys(built)).to.have.members(['config', 'tool.execute.before', 'permission.ask']);
     });
 
     it('lets the call through on allow and sends the token, tool name, input, cwd and call id', async () => {
@@ -156,6 +161,57 @@ describe('qaap-tool-gate-opencode.mjs', () => {
     it('throws instead of crashing on a malformed event', async () => {
         const h = plugin.createHooks(undefined, env({ QAAP_GATE_URL: undefined }));
         await rejection(h['tool.execute.before'](undefined as never, undefined as never));
+    });
+
+    describe('arming (fail-closed baseline)', () => {
+        const armPath = (): http.RequestListener => (req, res) => {
+            seen.push({ token: req.headers[QAAP_TOOL_GATE_TOKEN_HEADER] as string | undefined, body: { url: req.url } });
+            res.end('{}');
+        };
+
+        it('lifts the ask rules only after the gate acknowledged /arm, keeping other rules', async () => {
+            server.removeAllListeners('request');
+            server.on('request', armPath());
+            const config = { permission: { edit: 'ask', bash: 'ask', lsp: 'deny', read: 'allow' } as Record<string, unknown> };
+            await hooks().config(config);
+            expect(config.permission).to.deep.equal({ lsp: 'deny', read: 'allow' });
+            expect(seen[0]).to.deep.equal({ token: 'tok', body: { url: '/gate/arm' } });
+        });
+
+        it('keeps every ask rule when the gate cannot be reached, answers an error or has no credentials', async () => {
+            for (const makeHooks of [
+                () => hooks(env({ QAAP_GATE_URL: 'http://127.0.0.1:1/gate' }), { retries: 0 }),
+                () => hooks(env({ QAAP_GATE_TOKEN: undefined })),
+            ]) {
+                const config = { permission: { edit: 'ask', bash: 'ask' } as Record<string, unknown> };
+                await makeHooks().config(config);
+                expect(config.permission).to.deep.equal({ edit: 'ask', bash: 'ask' });
+            }
+            server.removeAllListeners('request');
+            server.on('request', (_req, res) => { res.statusCode = 401; res.end('{}'); });
+            const config = { permission: { edit: 'ask' } as Record<string, unknown> };
+            await hooks().config(config);
+            expect(config.permission).to.deep.equal({ edit: 'ask' });
+        });
+
+        it('armGate is true only on a 2xx', async () => {
+            server.removeAllListeners('request');
+            server.on('request', armPath());
+            expect(await plugin.armGate(env(), fetch)).to.equal(true);
+            expect(await plugin.armGate(env({ QAAP_GATE_TOKEN: undefined }), fetch)).to.equal(false);
+        });
+
+        it('probe mode records config and tool calls, never reaches the gate and blocks the tool', async () => {
+            const file = path.join(os.tmpdir(), `qaap-probe-${process.pid}-${Date.now()}.log`);
+            const probing = plugin.createHooks('/w', env({ QAAP_GATE_PROBE_FILE: file }), fetch, { retries: 0 });
+            const config = { permission: { edit: 'ask' } as Record<string, unknown> };
+            await probing.config(config);
+            expect(await rejection(callBefore(probing))).to.contain('probe');
+            expect(fs.readFileSync(file, 'utf8').split('\n')).to.include.members(['config', 'before:bash']);
+            expect(config.permission).to.deep.equal({ edit: 'ask' });
+            expect(seen).to.have.length(0);
+            fs.rmSync(file);
+        });
     });
 
     describe('permission.ask', () => {

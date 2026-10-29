@@ -37,6 +37,9 @@ class TestableGateEndpoint extends QaapToolGateEndpoint {
     healthForTest(req: Request, res: Response): void {
         this.handleHealth(req, res);
     }
+    armForTest(req: Request, res: Response): void {
+        this.handleArm(req, res);
+    }
     protected override resolveCapabilities(): QaapHarnessCapabilities {
         return {
             agentId: 'test', gate: 'hook', canAsk: this.askTtlSec > 0, askTtlSec: this.askTtlSec,
@@ -158,6 +161,19 @@ describe('QaapToolGateEndpoint', () => {
             const ok = fakeRes();
             endpoint.healthForTest(fakeReq({ [QAAP_TOOL_GATE_TOKEN_HEADER]: token }), ok);
             expect(ok.statusCode).to.equal(200);
+        });
+    });
+
+    describe('arm', () => {
+        it('marks the task armed only for a live token', () => {
+            const denied = fakeRes();
+            endpoint.armForTest(fakeReq({ [QAAP_TOOL_GATE_TOKEN_HEADER]: 'nope' }), denied);
+            expect(denied.statusCode).to.equal(401);
+            expect(tokens.isArmed('task-1')).to.equal(false);
+            const ok = fakeRes();
+            endpoint.armForTest(fakeReq({ [QAAP_TOOL_GATE_TOKEN_HEADER]: token }), ok);
+            expect(ok.statusCode).to.equal(200);
+            expect(tokens.isArmed('task-1')).to.equal(true);
         });
     });
 

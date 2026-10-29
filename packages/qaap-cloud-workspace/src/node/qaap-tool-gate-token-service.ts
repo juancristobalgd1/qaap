@@ -41,6 +41,8 @@ export class QaapToolGateTokenService {
 
     protected readonly grants = new Map<string, StoredGrant>();
     protected readonly tokenHashByTask = new Map<string, string>();
+    /** Tasks whose harness plugin reported in (`/arm`): the gate is really in the loop for them. */
+    protected readonly armedTasks = new Set<string>();
 
     /** Issue (or replace) the token for a task. Returns the secret exactly once. */
     issue(taskId: string, owner: string | undefined, workspace: string): string {
@@ -83,8 +85,20 @@ export class QaapToolGateTokenService {
         return { taskId: grant.taskId, owner: grant.owner, workspace: grant.workspace, ...(grant.oneShot ? { oneShot: grant.oneShot } : {}) };
     }
 
+    /** The harness plugin loaded and is about to route tool calls through the gate. */
+    markArmed(taskId: string): void {
+        if (this.tokenHashByTask.has(taskId)) {
+            this.armedTasks.add(taskId);
+        }
+    }
+
+    isArmed(taskId: string): boolean {
+        return this.armedTasks.has(taskId);
+    }
+
     /** Called when the task completes, fails or is cancelled. Idempotent. */
     revoke(taskId: string): void {
+        this.armedTasks.delete(taskId);
         const hash = this.tokenHashByTask.get(taskId);
         if (hash) {
             this.grants.delete(hash);

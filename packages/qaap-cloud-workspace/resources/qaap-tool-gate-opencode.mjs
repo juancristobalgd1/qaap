@@ -4,6 +4,8 @@
 // Fail closed: anything other than a well-formed `allow` from the gate stops the call.
 // Keep the semantics in step with qaap-tool-gate-pi.mjs and QaapToolGateClient (src/common/qaap-tool-gate-client.ts).
 
+import { appendFileSync } from 'node:fs';
+
 const TOKEN_HEADER = 'x-qaap-gate-token';
 const TIMEOUT_MARGIN_MS = 15000;
 const BACKOFF_MS = [200, 800];
@@ -71,6 +73,31 @@ export async function askGate(request, env = process.env, fetchImpl = globalThis
     return deny(`The Qaap safety gate is unreachable (${lastError}).`);
 }
 
+/**
+ * Tells the gate that this plugin is loaded (`POST <gate>/arm`). Returns true only on a 2xx answer.
+ * Connection errors are retried a few times; anything else counts as "not armed".
+ */
+export async function armGate(env = process.env, fetchImpl = globalThis.fetch, options = {}) {
+    const base = env.QAAP_GATE_URL;
+    const token = env.QAAP_GATE_TOKEN;
+    if (!base || !token || typeof fetchImpl !== 'function') {
+        return false;
+    }
+    const url = `${base.replace(/\/+$/, '')}/arm`;
+    const retries = options.retries ?? 2;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+        try {
+            const response = await fetchImpl(url, { method: 'POST', headers: { [TOKEN_HEADER]: token }, signal: AbortSignal.timeout(5000) });
+            return response.ok;
+        } catch {
+            if (attempt < retries) {
+                await new Promise(resolve => setTimeout(resolve, BACKOFF_MS[Math.min(attempt, BACKOFF_MS.length - 1)]));
+            }
+        }
+    }
+    return false;
+}
+
 function gateRequest(rawToolName, input, cwd, callId) {
     return {
         agentId: 'opencode',
@@ -100,8 +127,31 @@ export function createHooks(cwd, env = process.env, fetchImpl = globalThis.fetch
         }
         approved.set(String(callId), true);
     };
+    const probeFile = env.QAAP_GATE_PROBE_FILE;
+    const probe = line => appendFileSync(probeFile, `${line}\n`);
     return {
+        // Fail-closed baseline: Qaap puts its `ask` rules in the inline config, and headless OpenCode
+        // rejects every `ask`. Only a plugin that really reached the gate removes them, so a plugin that
+        // fails to load (or an OpenCode without this hook) leaves every gated tool refused, never open.
+        config: async config => {
+            if (probeFile) {
+                probe('config');
+                return;
+            }
+            if (!(await armGate(env, fetchImpl, options)) || !config || typeof config.permission !== 'object' || config.permission === null) {
+                return;
+            }
+            for (const [key, action] of Object.entries(config.permission)) {
+                if (action === 'ask') {
+                    delete config.permission[key];
+                }
+            }
+        },
         'tool.execute.before': async (input, output) => {
+            if (probeFile) {
+                probe(`before:${String(input?.tool ?? '')}`);
+                throw new Error('Qaap gate probe: tool blocked on purpose.');
+            }
             let decision;
             try {
                 decision = await askGate(gateRequest(input?.tool, output?.args, cwd, input?.callID), env, fetchImpl, options);
@@ -142,3 +192,4 @@ export default {
     id: 'qaap-tool-gate',
     server: async ctx => createHooks(ctx?.directory),
 };
+

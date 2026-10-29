@@ -1897,6 +1897,11 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         }
     }
 
+    /** @internal Whether the harness plugin of a task reported in through the gate's `/arm`. */
+    isToolGateArmed(taskId: string): boolean {
+        return this.toolGateTokens?.isArmed(taskId) ?? false;
+    }
+
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public finishTask(id: string, state: QaapAgentTaskState, exitCode: number | undefined): QaapAgentTask | undefined {
         const previousState = this.tasks.get(id)?.state;

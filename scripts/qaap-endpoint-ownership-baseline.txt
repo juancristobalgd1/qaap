@@ -56,6 +56,10 @@ packages/qaap-cloud-workspace/src/node/qaap-tool-gate-endpoint.ts :: POST `${QAA
 # Task, owner and workspace come from the server-side grant, never from the body; the request cwd
 # must lie inside the grant's workspace. No user session exists in the agent process by design.
 
+packages/qaap-cloud-workspace/src/node/qaap-tool-gate-endpoint.ts :: POST `${QAAP_TOOL_GATE_API_PATH}/arm`
+# Same gate-token authentication as /evaluate (requireGrant answers 401 without a live token). The harness
+# plugin reports that it loaded; the only effect is marking that task armed so the runner does not cancel it.
+
 packages/qaap-cloud-workspace/src/node/qaap-tool-gate-endpoint.ts :: GET `${QAAP_TOOL_GATE_API_PATH}/health`
 # Same gate-token authentication as /evaluate (requireGrant answers 401 without a live token). It
 # discloses nothing beyond {ok:true} and is used only by the adapter's preflight with its own token.

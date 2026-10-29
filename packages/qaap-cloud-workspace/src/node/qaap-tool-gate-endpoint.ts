@@ -50,6 +50,9 @@ export class QaapToolGateEndpoint implements BackendApplicationContribution {
         app.get(`${QAAP_TOOL_GATE_API_PATH}/health`, (req, res) => {
             this.handleHealth(req, res);
         });
+        app.post(`${QAAP_TOOL_GATE_API_PATH}/arm`, (req, res) => {
+            this.handleArm(req, res);
+        });
         app.post(`${QAAP_TOOL_GATE_API_PATH}/evaluate`, (req, res) => {
             void this.handleEvaluate(req, res);
         });
@@ -59,6 +62,17 @@ export class QaapToolGateEndpoint implements BackendApplicationContribution {
         if (!this.requireGrant(req, res)) {
             return;
         }
+        res.set('Cache-Control', 'no-store');
+        res.json({ ok: true });
+    }
+
+    /** A harness plugin reports that it loaded: the runner cancels the task if this never arrives. */
+    protected handleArm(req: Request, res: Response): void {
+        const grant = this.requireGrant(req, res);
+        if (!grant) {
+            return;
+        }
+        this.tokens.markArmed(grant.taskId);
         res.set('Cache-Control', 'no-store');
         res.json({ ok: true });
     }

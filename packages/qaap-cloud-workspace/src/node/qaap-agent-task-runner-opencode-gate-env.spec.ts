@@ -6,6 +6,7 @@
 import { expect } from 'chai';
 import type { QaapAgentTask } from '../common/qaap-agent-task';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
+import { QAAP_OPENCODE_GATE_PROBE } from './qaap-tool-gate-opencode-probe';
 import { QaapToolGateTokenService } from './qaap-tool-gate-token-service';
 
 const task = (agentId: string): QaapAgentTask => ({ id: 'task-1', cwd: '/w', ownerLogin: 'alice', command: 'x', agentId }) as unknown as QaapAgentTask;
@@ -26,6 +27,17 @@ const seedOneShot = (runner: QaapAgentTaskRunner, env: NodeJS.ProcessEnv, agentI
 
 describe('OpenCode tool gate wiring in the task runner', () => {
 
+    beforeEach(() => QAAP_OPENCODE_GATE_PROBE.record({ ok: true, reason: 'ok', key: 'k' }));
+    afterEach(() => QAAP_OPENCODE_GATE_PROBE.record(undefined));
+
+    it('does not wire the plugin and keeps the ask rules when the probe failed', () => {
+        QAAP_OPENCODE_GATE_PROBE.record({ ok: false, reason: 'no hook', key: 'k' });
+        const env: NodeJS.ProcessEnv = { OPENCODE_PERMISSION: '{"edit":"ask","bash":"ask"}' };
+        seed(fakeRunner(true), env, 'opencode');
+        expect(env.OPENCODE_CONFIG_CONTENT).to.equal(undefined);
+        expect(env.OPENCODE_PERMISSION).to.equal('{"edit":"ask","bash":"ask"}');
+    });
+
     it('seeds the plugin config together with the gate credentials for an OpenCode harness', () => {
         const env: NodeJS.ProcessEnv = {};
         seed(fakeRunner(true), env, 'opencode');
@@ -40,10 +52,11 @@ describe('OpenCode tool gate wiring in the task runner', () => {
         expect(env.OPENCODE_DISABLE_PROJECT_CONFIG).to.equal('1');
     });
 
-    it('replaces the built-in ask rules, which headless OpenCode would reject', () => {
+    it('moves the built-in ask rules into the inline config for the plugin to lift once armed', () => {
         const env: NodeJS.ProcessEnv = { OPENCODE_PERMISSION: '{"edit":"ask","bash":"ask"}' };
         seed(fakeRunner(true), env, 'opencode');
         expect(env.OPENCODE_PERMISSION).to.equal(undefined);
+        expect(JSON.parse(env.OPENCODE_CONFIG_CONTENT as string).permission).to.deep.equal({ edit: 'ask', bash: 'ask' });
     });
 
     it('seeds nothing without a gate (the ask rules stay as the fail-closed fallback)', () => {
