@@ -45,6 +45,7 @@ import { QaapWidgetStylesheetContribution } from '@theia/qaap-product-theme/lib/
 import { QaapLazySurfaceStylesheetsPreload } from './qaap-lazy-surface-stylesheets-preload';
 import { PreferenceContribution } from '@theia/core/lib/common/preferences/preference-schema';
 import { QaapChatPreferencesContribution } from '@theia/qaap-shared-core/lib/browser/qaap-chat-preferences-contribution';
+import { QaapPiProviderPreferencesSchema } from '@theia/qaap-shared-core/lib/common/qaap-pi-provider-preferences';
 import { WidgetFactory } from '@theia/core/lib/browser/widget-manager';
 import { SCM_WIDGET_FACTORY_ID } from '@theia/scm/lib/browser/scm-contribution';
 import { ScmContribution } from '@theia/scm/lib/browser/scm-contribution';
@@ -303,6 +304,7 @@ export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync
     bind(FrontendApplicationContribution).toService(QaapChatInputProductContribution);
     bind(QaapChatPreferencesContribution).toSelf().inSingletonScope();
     bind(PreferenceContribution).toService(QaapChatPreferencesContribution);
+    bind(PreferenceContribution).toConstantValue({ schema: QaapPiProviderPreferencesSchema });
     bind(MobileConnectionStatusContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(MobileConnectionStatusContribution);
     bind(MobileChatSessionRestoreContribution).toSelf().inSingletonScope();

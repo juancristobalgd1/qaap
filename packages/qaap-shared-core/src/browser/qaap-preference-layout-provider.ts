@@ -92,6 +92,11 @@ export class QaapPreferenceLayoutProvider extends PreferenceLayoutProvider {
                 settings: ['ai-features.ollama.*', 'ai-features.ollama'],
             },
             {
+                id: 'ai-features.pi',
+                label: nls.localize('theia/qaap/preferences/ai-features/pi', 'Pi providers'),
+                settings: ['ai-features.pi.*'],
+            },
+            {
                 id: 'ai-features.routing',
                 label: nls.localize('qaap/preferences/ai-features/routing', 'Model routing & behavior'),
                 settings: [

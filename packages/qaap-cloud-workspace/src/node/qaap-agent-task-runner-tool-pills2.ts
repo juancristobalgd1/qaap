@@ -20,6 +20,7 @@ import {
     COMPOSER_PROMPT_IMPROVE_SERVER_TIMEOUT_MS,
 } from '@theia/qaap-composer/lib/common/qaap-composer-prompt-improve';
 import { QaapAgentCommandTimeoutError, resolveTaskHarnessId, stripSignInOnlyAgentApiKeyEnv } from './qaap-agent-task-runner-utils3';
+import { QaapPiProviders } from '@theia/qaap-shared-core/lib/common/qaap-pi-provider-registry';
 import {
     isQaapAgentTaskFinished,
     type QaapCreateAgentTaskQaiqModel,
@@ -244,6 +245,10 @@ export function buildChildEnvExtracted(ctx: QaapAgentTaskRunnerContext, task: Qa
         // are the sole source. Without this, User B's agent would inherit User
         // A's keys (or operator-level keys) from the shared backend process.
         ctx.stripSharedProviderEnv(env, task.ownerLogin);
+        // Pi runs on the owner's Settings keys (one variable per provider), never on inherited ones.
+        if (resolveTaskHarnessId(task.agentId, task.command) === 'pi') {
+            QaapPiProviders.applyEnv(env, ctx.preferenceReaderForOwner(task.ownerLogin));
+        }
         // QAIQ and OpenClaude share the hosted protocol, but OpenClaude must not inherit QAIQ's
         // Settings → AI Features credentials/base URL as an implicit model selection. Explicit
         // OpenClaude picks still receive their own binding below.

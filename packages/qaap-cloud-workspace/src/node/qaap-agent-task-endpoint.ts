@@ -406,6 +406,9 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         // useful during that window instead of turning a valid native harness into `models: []`.
         // Give a cold CLI model discovery (`cursor-agent models`) a moment; past the budget the
         // curated catalog answers and the discovered one is cached for the next request.
+        if (agent === 'pi') {
+            this.runner.syncPiCredentialCatalog(login);
+        }
         await this.withinBudget(prepareNativeAgentModels(agent, {
             ownerLogin: login,
             spawner: this.runner.nativeModelDiscoverySpawner(login),
