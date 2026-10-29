@@ -43,6 +43,8 @@ export class QaapToolGateTokenService {
     protected readonly tokenHashByTask = new Map<string, string>();
     /** Tasks whose harness plugin reported in (`/arm`): the gate is really in the loop for them. */
     protected readonly armedTasks = new Set<string>();
+    /** SHA-256 of the one-time nonce `/arm` requires, per task. Removed when used or when the task is revoked. */
+    protected readonly armNonceHashByTask = new Map<string, string>();
 
     /** Issue (or replace) the token for a task. Returns the secret exactly once. */
     issue(taskId: string, owner: string | undefined, workspace: string): string {
@@ -85,11 +87,29 @@ export class QaapToolGateTokenService {
         return { taskId: grant.taskId, owner: grant.owner, workspace: grant.workspace, ...(grant.oneShot ? { oneShot: grant.oneShot } : {}) };
     }
 
-    /** The harness plugin loaded and is about to route tool calls through the gate. */
-    markArmed(taskId: string): void {
-        if (this.tokenHashByTask.has(taskId)) {
-            this.armedTasks.add(taskId);
+    /**
+     * Issues the one-time nonce that `/arm` demands next to the token. The agent inherits the token, so the
+     * token alone must not be able to claim "the plugin is running": the plugin takes the nonce from its env
+     * and removes it from `process.env` on load, so tool subprocesses do not see it.
+     */
+    issueArmNonce(taskId: string): string | undefined {
+        if (!this.tokenHashByTask.has(taskId)) {
+            return undefined;
         }
+        const nonce = randomBytes(16).toString('hex');
+        this.armNonceHashByTask.set(taskId, this.hash(nonce));
+        return nonce;
+    }
+
+    /** Marks the task armed if `nonce` is the live one-time nonce. A nonce works once. */
+    arm(taskId: string, nonce: string | undefined): boolean {
+        const expected = this.armNonceHashByTask.get(taskId);
+        if (!nonce || !expected || !this.tokenHashByTask.has(taskId) || this.hash(nonce) !== expected) {
+            return false;
+        }
+        this.armNonceHashByTask.delete(taskId);
+        this.armedTasks.add(taskId);
+        return true;
     }
 
     isArmed(taskId: string): boolean {
@@ -99,6 +119,7 @@ export class QaapToolGateTokenService {
     /** Called when the task completes, fails or is cancelled. Idempotent. */
     revoke(taskId: string): void {
         this.armedTasks.delete(taskId);
+        this.armNonceHashByTask.delete(taskId);
         const hash = this.tokenHashByTask.get(taskId);
         if (hash) {
             this.grants.delete(hash);

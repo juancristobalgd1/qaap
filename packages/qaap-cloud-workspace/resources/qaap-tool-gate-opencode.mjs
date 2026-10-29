@@ -7,6 +7,7 @@
 import { appendFileSync } from 'node:fs';
 
 const TOKEN_HEADER = 'x-qaap-gate-token';
+const ARM_NONCE_HEADER = 'x-qaap-gate-arm-nonce';
 const TIMEOUT_MARGIN_MS = 15000;
 const BACKOFF_MS = [200, 800];
 const DEFAULT_ASK_TTL_SEC = 600;
@@ -80,14 +81,15 @@ export async function askGate(request, env = process.env, fetchImpl = globalThis
 export async function armGate(env = process.env, fetchImpl = globalThis.fetch, options = {}) {
     const base = env.QAAP_GATE_URL;
     const token = env.QAAP_GATE_TOKEN;
-    if (!base || !token || typeof fetchImpl !== 'function') {
+    const nonce = options.armNonce;
+    if (!base || !token || !nonce || typeof fetchImpl !== 'function') {
         return false;
     }
     const url = `${base.replace(/\/+$/, '')}/arm`;
     const retries = options.retries ?? 2;
     for (let attempt = 0; attempt <= retries; attempt++) {
         try {
-            const response = await fetchImpl(url, { method: 'POST', headers: { [TOKEN_HEADER]: token }, signal: AbortSignal.timeout(5000) });
+            const response = await fetchImpl(url, { method: 'POST', headers: { [TOKEN_HEADER]: token, [ARM_NONCE_HEADER]: nonce }, signal: AbortSignal.timeout(5000) });
             return response.ok;
         } catch {
             if (attempt < retries) {
@@ -117,6 +119,9 @@ function gateRequest(rawToolName, input, cwd, callId) {
  * from the gate, so a headless run never auto-rejects an action the gate approved.
  */
 export function createHooks(cwd, env = process.env, fetchImpl = globalThis.fetch, options = {}) {
+    // One-time arm nonce: taken out of the environment right away so the tools OpenCode spawns never inherit it.
+    const armNonce = env.QAAP_GATE_ARM_NONCE;
+    delete env.QAAP_GATE_ARM_NONCE;
     const approved = new Map();
     const remember = callId => {
         if (!callId) {
@@ -138,7 +143,7 @@ export function createHooks(cwd, env = process.env, fetchImpl = globalThis.fetch
                 probe('config');
                 return;
             }
-            if (!(await armGate(env, fetchImpl, options)) || !config || typeof config.permission !== 'object' || config.permission === null) {
+            if (!(await armGate(env, fetchImpl, { ...options, armNonce })) || !config || typeof config.permission !== 'object' || config.permission === null) {
                 return;
             }
             for (const [key, action] of Object.entries(config.permission)) {

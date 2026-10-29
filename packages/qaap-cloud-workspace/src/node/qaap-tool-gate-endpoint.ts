@@ -9,6 +9,7 @@ import { BackendApplicationContribution } from '@theia/core/lib/node';
 import { nls } from '@theia/core/lib/common/nls';
 import {
     QAAP_TOOL_GATE_API_PATH,
+    QAAP_TOOL_GATE_ARM_NONCE_HEADER,
     QAAP_TOOL_GATE_TOKEN_HEADER,
     type QaapToolGateDecision,
     type QaapToolGateRequest,
@@ -72,8 +73,13 @@ export class QaapToolGateEndpoint implements BackendApplicationContribution {
         if (!grant) {
             return;
         }
-        this.tokens.markArmed(grant.taskId);
         res.set('Cache-Control', 'no-store');
+        // The token is inherited by everything the agent runs; only the plugin holds the one-time nonce.
+        const nonce = req.header(QAAP_TOOL_GATE_ARM_NONCE_HEADER);
+        if (!this.tokens.arm(grant.taskId, nonce)) {
+            res.status(403).json({ ok: false });
+            return;
+        }
         res.json({ ok: true });
     }
 

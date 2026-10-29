@@ -490,7 +490,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             if (usesOpencodeGatePlugin(ctx.resolveTaskAgentId(task))) {
                 // Prove once per OpenCode version that the gate plugin loads and sees tool calls. Without the
                 // proof the plugin is not wired and OpenCode's own `ask` rules keep refusing gated tools.
-                const probe = await QAAP_OPENCODE_GATE_PROBE.ensure(resolveQaapToolGateOpencodePluginPath(), childEnv);
+                const probe = await QAAP_OPENCODE_GATE_PROBE.ensure(resolveQaapToolGateOpencodePluginPath(), childEnv, 'opencode', ctx.resolveAgentSpawnIdentity(task.cwd));
                 if (!probe.ok) {
                     logStream.write(`\n[qaap] OpenCode tool gate unavailable: ${probe.reason} Gated actions (edits, shell, network) are refused for this run.\n`);
                 }

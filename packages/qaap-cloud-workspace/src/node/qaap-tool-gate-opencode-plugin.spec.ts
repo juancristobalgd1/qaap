@@ -9,11 +9,11 @@ import * as http from 'http';
 import * as os from 'os';
 import * as path from 'path';
 import type { AddressInfo } from 'net';
-import { QAAP_TOOL_GATE_TOKEN_HEADER } from '@theia/qaap-shared-core/lib/common/qaap-tool-gate-protocol';
+import { QAAP_TOOL_GATE_ARM_NONCE_HEADER, QAAP_TOOL_GATE_TOKEN_HEADER } from '@theia/qaap-shared-core/lib/common/qaap-tool-gate-protocol';
 import { resolveQaapToolGateOpencodePluginPath } from './qaap-tool-gate-opencode-adapter';
 
 type Env = Record<string, string | undefined>;
-type Options = { retries?: number; marginMs?: number };
+type Options = { retries?: number; marginMs?: number; armNonce?: string };
 interface Hooks {
     config(config: { permission?: Record<string, unknown> }): Promise<void>;
     'tool.execute.before'(input: Record<string, unknown>, output: { args: Record<string, unknown> }): Promise<void>;
@@ -165,23 +165,33 @@ describe('qaap-tool-gate-opencode.mjs', () => {
 
     describe('arming (fail-closed baseline)', () => {
         const armPath = (): http.RequestListener => (req, res) => {
-            seen.push({ token: req.headers[QAAP_TOOL_GATE_TOKEN_HEADER] as string | undefined, body: { url: req.url } });
+            seen.push({
+                token: req.headers[QAAP_TOOL_GATE_TOKEN_HEADER] as string | undefined,
+                body: { url: req.url, nonce: req.headers[QAAP_TOOL_GATE_ARM_NONCE_HEADER] },
+            });
             res.end('{}');
         };
+        const armed = (extra: Env = {}): Env => env({ QAAP_GATE_ARM_NONCE: 'nonce-1', ...extra });
 
         it('lifts the ask rules only after the gate acknowledged /arm, keeping other rules', async () => {
             server.removeAllListeners('request');
             server.on('request', armPath());
             const config = { permission: { edit: 'ask', bash: 'ask', lsp: 'deny', read: 'allow' } as Record<string, unknown> };
-            await hooks().config(config);
+            await hooks(armed()).config(config);
             expect(config.permission).to.deep.equal({ lsp: 'deny', read: 'allow' });
-            expect(seen[0]).to.deep.equal({ token: 'tok', body: { url: '/gate/arm' } });
+            expect(seen[0]).to.deep.equal({ token: 'tok', body: { url: '/gate/arm', nonce: 'nonce-1' } });
         });
 
-        it('keeps every ask rule when the gate cannot be reached, answers an error or has no credentials', async () => {
+        it('removes the arm nonce from the environment on load, so the tools it spawns never inherit it', () => {
+            const environment = armed();
+            hooks(environment);
+            expect(environment.QAAP_GATE_ARM_NONCE).to.equal(undefined);
+        });
+
+        it('keeps every ask rule when the gate cannot be reached, answers an error, has no credentials or no nonce', async () => {
             for (const makeHooks of [
-                () => hooks(env({ QAAP_GATE_URL: 'http://127.0.0.1:1/gate' }), { retries: 0 }),
-                () => hooks(env({ QAAP_GATE_TOKEN: undefined })),
+                () => hooks(armed({ QAAP_GATE_URL: 'http://127.0.0.1:1/gate' }), { retries: 0 }),
+                () => hooks(armed({ QAAP_GATE_TOKEN: undefined })),
             ]) {
                 const config = { permission: { edit: 'ask', bash: 'ask' } as Record<string, unknown> };
                 await makeHooks().config(config);
@@ -190,27 +200,37 @@ describe('qaap-tool-gate-opencode.mjs', () => {
             server.removeAllListeners('request');
             server.on('request', (_req, res) => { res.statusCode = 401; res.end('{}'); });
             const config = { permission: { edit: 'ask' } as Record<string, unknown> };
-            await hooks().config(config);
+            await hooks(armed()).config(config);
             expect(config.permission).to.deep.equal({ edit: 'ask' });
+            // Without the nonce the plugin never even asks the gate to arm.
+            seen = [];
+            const unnonced = { permission: { edit: 'ask' } as Record<string, unknown> };
+            await hooks(env()).config(unnonced);
+            expect(unnonced.permission).to.deep.equal({ edit: 'ask' });
+            expect(seen).to.have.length(0);
         });
 
-        it('armGate is true only on a 2xx', async () => {
+        it('armGate is true only on a 2xx, and only with a nonce', async () => {
             server.removeAllListeners('request');
             server.on('request', armPath());
-            expect(await plugin.armGate(env(), fetch)).to.equal(true);
-            expect(await plugin.armGate(env({ QAAP_GATE_TOKEN: undefined }), fetch)).to.equal(false);
+            expect(await plugin.armGate(env(), fetch, { armNonce: 'nonce-1' })).to.equal(true);
+            expect(await plugin.armGate(env({ QAAP_GATE_TOKEN: undefined }), fetch, { armNonce: 'nonce-1' })).to.equal(false);
+            expect(await plugin.armGate(env(), fetch)).to.equal(false);
+            expect(seen).to.have.length(1);
         });
 
         it('probe mode records config and tool calls, never reaches the gate and blocks the tool', async () => {
-            const file = path.join(os.tmpdir(), `qaap-probe-${process.pid}-${Date.now()}.log`);
-            const probing = plugin.createHooks('/w', env({ QAAP_GATE_PROBE_FILE: file }), fetch, { retries: 0 });
+            // A fresh mkdtemp directory, never a predictable file name in the shared temp dir.
+            const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-probe-'));
+            const file = path.join(dir, 'probe.log');
+            const probing = plugin.createHooks('/w', armed({ QAAP_GATE_PROBE_FILE: file }), fetch, { retries: 0 });
             const config = { permission: { edit: 'ask' } as Record<string, unknown> };
             await probing.config(config);
             expect(await rejection(callBefore(probing))).to.contain('probe');
             expect(fs.readFileSync(file, 'utf8').split('\n')).to.include.members(['config', 'before:bash']);
             expect(config.permission).to.deep.equal({ edit: 'ask' });
             expect(seen).to.have.length(0);
-            fs.rmSync(file);
+            fs.rmSync(dir, { recursive: true, force: true });
         });
     });
 

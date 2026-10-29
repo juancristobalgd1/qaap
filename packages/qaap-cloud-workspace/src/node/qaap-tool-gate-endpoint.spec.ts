@@ -11,6 +11,7 @@ import * as path from 'path';
 import type { Request, Response } from '@theia/core/shared/express';
 import { QaapGithubAuthGuard } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
 import {
+    QAAP_TOOL_GATE_ARM_NONCE_HEADER,
     QAAP_TOOL_GATE_TOKEN_HEADER,
     type QaapToolGateDecision,
 } from '@theia/qaap-shared-core/lib/common/qaap-tool-gate-protocol';
@@ -166,14 +167,51 @@ describe('QaapToolGateEndpoint', () => {
 
     describe('arm', () => {
         it('marks the task armed only for a live token', () => {
+            const nonce = tokens.issueArmNonce('task-1');
             const denied = fakeRes();
-            endpoint.armForTest(fakeReq({ [QAAP_TOOL_GATE_TOKEN_HEADER]: 'nope' }), denied);
+            endpoint.armForTest(fakeReq({ [QAAP_TOOL_GATE_TOKEN_HEADER]: 'nope', [QAAP_TOOL_GATE_ARM_NONCE_HEADER]: nonce ?? '' }), denied);
             expect(denied.statusCode).to.equal(401);
             expect(tokens.isArmed('task-1')).to.equal(false);
             const ok = fakeRes();
-            endpoint.armForTest(fakeReq({ [QAAP_TOOL_GATE_TOKEN_HEADER]: token }), ok);
+            endpoint.armForTest(fakeReq({ [QAAP_TOOL_GATE_TOKEN_HEADER]: token, [QAAP_TOOL_GATE_ARM_NONCE_HEADER]: nonce ?? '' }), ok);
             expect(ok.statusCode).to.equal(200);
             expect(tokens.isArmed('task-1')).to.equal(true);
+        });
+
+        it('arms with the one-time nonce, and a reused nonce is refused with 403', () => {
+            const nonce = tokens.issueArmNonce('task-1');
+            const first = fakeRes();
+            endpoint.armForTest(fakeReq({ [QAAP_TOOL_GATE_TOKEN_HEADER]: token, [QAAP_TOOL_GATE_ARM_NONCE_HEADER]: nonce ?? '' }), first);
+            expect(first.statusCode).to.equal(200);
+            tokens.revoke('task-1');
+            token = tokens.issue('task-1', 'alice', WORKSPACE);
+            const reused = fakeRes();
+            endpoint.armForTest(fakeReq({ [QAAP_TOOL_GATE_TOKEN_HEADER]: token, [QAAP_TOOL_GATE_ARM_NONCE_HEADER]: nonce ?? '' }), reused);
+            expect(reused.statusCode).to.equal(403);
+            expect(tokens.isArmed('task-1')).to.equal(false);
+        });
+
+        it('refuses a token without the nonce, or with a wrong one, and does not arm', () => {
+            tokens.issueArmNonce('task-1');
+            const candidates: Record<string, string>[] = [
+                { [QAAP_TOOL_GATE_TOKEN_HEADER]: token },
+                { [QAAP_TOOL_GATE_TOKEN_HEADER]: token, [QAAP_TOOL_GATE_ARM_NONCE_HEADER]: 'f'.repeat(32) },
+            ];
+            for (const headers of candidates) {
+                const res = fakeRes();
+                endpoint.armForTest(fakeReq(headers), res);
+                expect(res.statusCode).to.equal(403);
+                expect(tokens.isArmed('task-1')).to.equal(false);
+            }
+        });
+
+        it('a revoked task stops arming: the token no longer resolves', () => {
+            const nonce = tokens.issueArmNonce('task-1');
+            tokens.revoke('task-1');
+            const res = fakeRes();
+            endpoint.armForTest(fakeReq({ [QAAP_TOOL_GATE_TOKEN_HEADER]: token, [QAAP_TOOL_GATE_ARM_NONCE_HEADER]: nonce ?? '' }), res);
+            expect(res.statusCode).to.equal(401);
+            expect(tokens.isArmed('task-1')).to.equal(false);
         });
     });
 

@@ -5,8 +5,23 @@
 
 import { expect } from 'chai';
 import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { QaapOpencodeGateProbe, type QaapOpencodeGateProbeVerdict } from './qaap-tool-gate-opencode-probe';
 import { resolveQaapToolGateOpencodePluginPath } from './qaap-tool-gate-opencode-adapter';
+
+/** Exposes the protected sandbox and env helpers of the probe to the tests. */
+class SandboxProbe extends QaapOpencodeGateProbe {
+    sandbox(): { base: string; agentDir: string } {
+        return this.createSandbox(undefined);
+    }
+    remove(sandbox: { base: string; agentDir: string }): Promise<void> {
+        return this.removeSandbox(sandbox, undefined);
+    }
+    env(parent: NodeJS.ProcessEnv, agentDir: string): NodeJS.ProcessEnv {
+        return this.buildProbeEnv(parent, agentDir, '/plugin/qaap-tool-gate-opencode.mjs', path.join(agentDir, 'probe.log'), 4321);
+    }
+}
 
 class StubbedProbe extends QaapOpencodeGateProbe {
     runs = 0;
@@ -66,6 +81,38 @@ describe('QaapOpencodeGateProbe', () => {
         const verdict = await throwing.ensure(plugin);
         expect(verdict.ok).to.equal(false);
         expect(verdict.reason).to.contain('boom');
+    });
+
+    it('the probe env inherits only PATH from the parent, never secrets or gate credentials', () => {
+        const probe = new SandboxProbe();
+        const parent: NodeJS.ProcessEnv = {
+            PATH: '/usr/bin:/bin', HOME: '/home/agent', SECRET_API_KEY: 'sk-live', QAAP_GATE_TOKEN: 'tok', QAAP_GATE_ARM_NONCE: 'nonce', GITHUB_TOKEN: 'ghp',
+        };
+        const env = probe.env(parent, '/sandbox/agent');
+        expect(env.PATH).to.equal('/usr/bin:/bin');
+        for (const key of ['SECRET_API_KEY', 'QAAP_GATE_TOKEN', 'QAAP_GATE_ARM_NONCE', 'GITHUB_TOKEN']) {
+            expect(env).to.not.have.property(key);
+        }
+        expect(env.HOME).to.equal('/sandbox/agent');
+        expect(env.TMPDIR).to.equal('/sandbox/agent');
+    });
+
+    it('creates a fresh private mkdtemp sandbox per probe and removes it afterwards', async () => {
+        const probe = new SandboxProbe();
+        const first = probe.sandbox();
+        const second = probe.sandbox();
+        try {
+            expect(path.dirname(first.base)).to.equal(os.tmpdir());
+            expect(path.basename(first.base)).to.match(/^qaap-oc-probe-.{6,}$/);
+            expect(first.base).to.not.equal(second.base);
+            expect(fs.statSync(first.base).mode & 0o077).to.equal(0);
+            expect(fs.statSync(first.agentDir).isDirectory()).to.equal(true);
+        } finally {
+            await probe.remove(first);
+            await probe.remove(second);
+        }
+        expect(fs.existsSync(first.base)).to.equal(false);
+        expect(fs.existsSync(second.base)).to.equal(false);
     });
 
     it('the plugin file the probe loads exists', () => {

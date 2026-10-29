@@ -74,18 +74,53 @@ describe('QaapToolGateTokenService', () => {
         expect(service.storedKeys()).to.not.include(token);
     });
 
-    it('tracks armed tasks, forgets them on revoke and on a re-issued token', () => {
+    it('arms a task only with the one-time nonce issued for it', () => {
         const service = new ClockedTokenService();
         service.issue('task-1', 'alice', '/w');
         expect(service.isArmed('task-1')).to.equal(false);
-        service.markArmed('task-1');
+        const nonce = service.issueArmNonce('task-1');
+        expect(nonce).to.match(/^[0-9a-f]{32}$/);
+        expect(service.arm('task-1', undefined)).to.equal(false);
+        expect(service.arm('task-1', 'wrong')).to.equal(false);
+        expect(service.isArmed('task-1')).to.equal(false);
+        expect(service.arm('task-1', nonce)).to.equal(true);
         expect(service.isArmed('task-1')).to.equal(true);
+    });
+
+    it('accepts a nonce once: a reused nonce does not arm again', () => {
+        const service = new ClockedTokenService();
+        service.issue('task-1', 'alice', '/w');
+        const nonce = service.issueArmNonce('task-1');
+        expect(service.arm('task-1', nonce)).to.equal(true);
+        service.revoke('task-1');
+        service.issue('task-1', 'alice', '/w');
+        expect(service.arm('task-1', nonce)).to.equal(false);
+        expect(service.isArmed('task-1')).to.equal(false);
+    });
+
+    it('issues no nonce without a live token, and never arms an unknown task', () => {
+        const service = new ClockedTokenService();
+        expect(service.issueArmNonce('task-1')).to.equal(undefined);
+        expect(service.arm('task-1', 'anything')).to.equal(false);
+        expect(service.isArmed('task-1')).to.equal(false);
+    });
+
+    it('a revoke clears the armed state and the pending nonce', () => {
+        const service = new ClockedTokenService();
+        service.issue('task-1', 'alice', '/w');
+        const nonce = service.issueArmNonce('task-1');
+        service.revoke('task-1');
+        expect(service.arm('task-1', nonce)).to.equal(false);
+        expect(service.isArmed('task-1')).to.equal(false);
+    });
+
+    it('re-issuing the token drops the armed state and the old nonce', () => {
+        const service = new ClockedTokenService();
+        service.issue('task-1', 'alice', '/w');
+        const nonce = service.issueArmNonce('task-1');
+        expect(service.arm('task-1', nonce)).to.equal(true);
         service.issue('task-1', 'alice', '/w');
         expect(service.isArmed('task-1')).to.equal(false);
-        service.markArmed('task-1');
-        service.revoke('task-1');
-        expect(service.isArmed('task-1')).to.equal(false);
-        service.markArmed('unknown');
-        expect(service.isArmed('unknown')).to.equal(false);
+        expect(service.arm('task-1', nonce)).to.equal(false);
     });
 });
