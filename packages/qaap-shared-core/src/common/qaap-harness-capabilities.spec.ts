@@ -63,8 +63,16 @@ describe('qaap-harness-capabilities', () => {
         expect(pi.trustedFolderArgs).to.deep.equal(['--approve']);
     });
 
+    it('lets Codex ask before changes through a PreToolUse hook, below the hook timeout', () => {
+        const codex = registry.get('codex');
+        expect(codex).to.include({ gate: 'hook', canAsk: true, shellGuard: 'gate', usage: 'codex', costSource: 'price-table' });
+        // Spike: a hook may block for at least 120 s; the ask window is the whole TTL and must stay below 900 s.
+        expect(codex.askTtlSec).to.be.within(120, 840);
+        expect(codex.untrustedFolderArgs).to.deep.equal([]);
+    });
+
     it('keeps every other builtin harness unable to ask, with no ask window', () => {
-        for (const definition of QAAP_BUILTIN_AGENT_DEFINITIONS.filter(candidate => !['pi', 'qaiq'].includes(candidate.id))) {
+        for (const definition of QAAP_BUILTIN_AGENT_DEFINITIONS.filter(candidate => !['pi', 'qaiq', 'codex'].includes(candidate.id))) {
             const capabilities = registry.get(definition.id);
             expect(capabilities.canAsk, definition.id).to.equal(false);
             expect(capabilities.askTtlSec, definition.id).to.equal(0);
