@@ -166,6 +166,8 @@ import { QaapNavigatorTabBarDecorator } from '@theia/qaap-shared-core/lib/browse
 import { createQaapFileNavigatorWidget } from '@theia/qaap-shared-core/lib/browser/qaap-navigator-widget-factory';
 import { PreferenceLayoutProvider } from '@theia/preferences/lib/browser/util/preference-layout';
 import { QaapPreferenceLayoutProvider } from '@theia/qaap-shared-core/lib/browser/qaap-preference-layout-provider';
+import { PreferenceTreeLabelProvider } from '@theia/preferences/lib/browser/util/preference-tree-label-provider';
+import { QaapPreferenceTreeLabelProvider } from '@theia/qaap-shared-core/lib/browser/qaap-preference-tree-label-provider';
 import { decorateQaapTenantAiUserPreferenceProvider } from '@theia/qaap-shared-core/lib/browser/qaap-tenant-ai-user-preference-provider';
 /**
  * Work Hub composition root, mobile-safe half (part of the `bundle-mobile` entry). It includes the
@@ -192,6 +194,9 @@ export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync
     rebind(QuickCommandService).to(QaapQuickCommandService).inSingletonScope();
     // AI Features Settings: prioritize Qaap BYOK providers; omit Theia leftover groups.
     rebind(PreferenceLayoutProvider).to(QaapPreferenceLayoutProvider).inSingletonScope();
+    // Pi API-key prefs read "DeepSeek API key" rather than the id-derived label. Upstream binds
+    // LabelProviderContribution to this service, so rebinding it covers both injection paths.
+    rebind(PreferenceTreeLabelProvider).to(QaapPreferenceTreeLabelProvider).inSingletonScope();
     rebind(ChatViewTreeWidget).toDynamicValue(ctx =>
         createQaapChatViewTreeWidget(ctx.container)
     );
