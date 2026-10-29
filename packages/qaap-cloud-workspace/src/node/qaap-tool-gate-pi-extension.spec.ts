@@ -5,6 +5,7 @@
 
 import { expect } from 'chai';
 import * as http from 'http';
+import { pathToFileURL } from 'url';
 import type { AddressInfo } from 'net';
 import { QAAP_TOOL_GATE_TOKEN_HEADER } from '@theia/qaap-shared-core/lib/common/qaap-tool-gate-protocol';
 import { resolveQaapToolGatePiExtensionPath } from './qaap-tool-gate-pi-adapter';
@@ -31,7 +32,7 @@ describe('qaap-tool-gate-pi.mjs', () => {
     let ext: PiExtension;
 
     before(async () => {
-        ext = await importModule(`file://${resolveQaapToolGatePiExtensionPath()}`);
+        ext = await importModule(pathToFileURL(resolveQaapToolGatePiExtensionPath()).href);
     });
 
     beforeEach(async () => {
