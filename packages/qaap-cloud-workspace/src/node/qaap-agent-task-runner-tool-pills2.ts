@@ -686,7 +686,9 @@ export async function improveComposerPromptExtracted(ctx: QaapAgentTaskRunnerCon
             ...(agentModel ? { agentModel, qaiqModel: agentModel } : {}),
         };
         const improveEnv = ctx.buildChildEnv(task);
-        const releaseGate = ctx.applyOneShotToolGateEnv(improveEnv, task);
+        // Never a grant without a real folder: the backend's own cwd is not the user's workspace. Without
+        // gate env Pi blocks its tools, which improving a prompt does not use.
+        const releaseGate = options.cwd?.trim() ? ctx.applyOneShotToolGateEnv(improveEnv, task) : () => undefined;
         try {
             return await ctx.runOneShotCommand(
                 command,

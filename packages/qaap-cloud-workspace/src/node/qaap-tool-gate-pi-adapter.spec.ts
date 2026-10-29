@@ -77,6 +77,11 @@ describe('Pi tool gate adapter', () => {
         expect(other.QAAP_GATE_TOKEN).to.equal(undefined);
     });
 
+    it('never issues a one-shot grant for improve-prompt without a cwd', () => {
+        const source = fs.readFileSync(path.resolve(__dirname, '..', '..', 'src', 'node', 'qaap-agent-task-runner-tool-pills2.ts'), 'utf8');
+        expect(source).to.contain('options.cwd?.trim() ? ctx.applyOneShotToolGateEnv(improveEnv, task) : () => undefined');
+    });
+
     it('releases the one-shot grant in a finally block in both one-shot runners', () => {
         const source = fs.readFileSync(path.resolve(__dirname, '..', '..', 'src', 'node', 'qaap-agent-task-runner-tool-pills2.ts'), 'utf8');
         expect(source.match(/applyOneShotToolGateEnv\(/g)).to.have.length(2);
