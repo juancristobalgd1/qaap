@@ -420,6 +420,8 @@ export interface ReviewSuccessfulAgentTaskDeps {
     buildChildEnv(task: QaapAgentTask): NodeJS.ProcessEnv;
     hasEditedFilesForVerification(task: QaapAgentTask, env: NodeJS.ProcessEnv): Promise<boolean>;
     runGenericCommand(command: string, cwd: string, env: NodeJS.ProcessEnv, taskId: string, timeoutMs: number, options: { readonly header?: string; readonly streamOutput?: boolean; readonly maxCaptureChars?: number; readonly stdinPrompt?: string; readonly ownerLogin?: string }): Promise<QaapGenericCommandResult>;
+    /** Read-only one-shot gate grant for a reviewer harness; returns the function that revokes it. */
+    applyOneShotToolGateEnv?(env: NodeJS.ProcessEnv, task: Pick<QaapAgentTask, 'ownerLogin' | 'cwd' | 'agentId' | 'command'>): () => void;
     changedSensitiveFiles(task: QaapAgentTask): string[];
     resolveReviewerCandidates(task: QaapAgentTask): string[];
     buildAgentCommand(prompt: string, agentId: string | undefined, autoApprove: boolean, agentModel?: QaapCreateAgentTaskQaiqModel, cwd?: string, contextPreamble?: string, interactionModeId?: string, approvalPolicyId?: string): { command: string; stdinPrompt?: string; stdinPromptMode?: QaapAgentStdinPromptMode; agentId: string };
@@ -507,11 +509,20 @@ export async function reviewSuccessfulAgentTask(
             continue;
         }
         ranAnyReviewer = true;
-        const result = await deps.runGenericCommand(command, task.cwd, env, task.id, QAAP_AGENT_REVIEW_WALL_CLOCK_MS, {
-            header: `\n[qaap] High-risk change — starting independent ${reviewerId} review.\n`,
-            streamOutput: true,
-            ...(stdinPromptMode === 'plain' && stdinPrompt !== undefined ? { stdinPrompt } : {}),
-        });
+        // The reviewer is a separate harness run: it gets its own read-only one-shot grant on a COPY of the
+        // env (the git commands above keep the plain env), revoked as soon as the reviewer ends.
+        const reviewerEnv: NodeJS.ProcessEnv = { ...env };
+        const releaseGate = deps.applyOneShotToolGateEnv?.(reviewerEnv, { ...task, agentId: reviewerId, command }) ?? (() => undefined);
+        let result: QaapGenericCommandResult;
+        try {
+            result = await deps.runGenericCommand(command, task.cwd, reviewerEnv, task.id, QAAP_AGENT_REVIEW_WALL_CLOCK_MS, {
+                header: `\n[qaap] High-risk change — starting independent ${reviewerId} review.\n`,
+                streamOutput: true,
+                ...(stdinPromptMode === 'plain' && stdinPrompt !== undefined ? { stdinPrompt } : {}),
+            });
+        } finally {
+            releaseGate();
+        }
         const verdict = parseAgentReviewVerdict(`${result.stdout}\n${result.stderr}`);
         if (verdict) {
             deps.agentHealth?.noteSuccess(reviewerId);

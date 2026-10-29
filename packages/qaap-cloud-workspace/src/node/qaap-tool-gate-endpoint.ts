@@ -69,9 +69,13 @@ export class QaapToolGateEndpoint implements BackendApplicationContribution {
             return;
         }
         res.set('Cache-Control', 'no-store');
-        const task = await this.runner.detail(grant.taskId);
+        // A one-shot grant has no task behind it: it is read-only, valid until its process ends.
+        const task = grant.oneShot
+            ? { autoApprove: true, readOnlyWorkspace: true, state: 'running' as const }
+            : await this.runner.detail(grant.taskId);
         if (!task || task.state !== 'running') {
             this.tokens.revoke(grant.taskId);
+            this.callTimes.delete(grant.taskId);
             this.unauthorized(res);
             return;
         }
@@ -86,7 +90,7 @@ export class QaapToolGateEndpoint implements BackendApplicationContribution {
         }
         // The agent, tool kind, owner and task all come from the server side: a harness can lie
         // about `toolKind` (for example "read") to dodge an ask, so it is recomputed here.
-        const agentId = this.runner.resolveTaskAgentId(task);
+        const agentId = grant.oneShot ? grant.oneShot.agentId : this.runner.resolveTaskAgentId(task as Parameters<QaapAgentTaskRunner['resolveTaskAgentId']>[0]);
         const caps = this.resolveCapabilities(agentId);
         const input = body.input && typeof body.input === 'object' && !Array.isArray(body.input)
             ? body.input as Record<string, unknown>
@@ -112,13 +116,43 @@ export class QaapToolGateEndpoint implements BackendApplicationContribution {
             workspace: grant.workspace,
             autoApprove: task.autoApprove,
             readOnlyWorkspace: !!task.readOnlyWorkspace,
-            askTtlSec: caps.canAsk ? caps.askTtlSec : 0,
+            strictReadOnly: !!grant.oneShot,
+            checkGitExecConfig: cwd => this.runner.checkGitExecConfig(cwd),
+            checkPathsInsideCwd: (cwd, paths) => this.runner.checkShellPathsInsideCwd(cwd, paths),
+            askTtlSec: caps.canAsk && !grant.oneShot ? caps.askTtlSec : 0,
             ask: (pending, ttlMs, signal) => this.asks.count(grant.taskId) >= QAAP_TOOL_GATE_MAX_PENDING_ASKS
                 ? Promise.resolve('cancelled')
                 : this.asks.ask(grant.taskId, pending, ttlMs, signal),
         }, abort.signal);
+        this.audit(grant, agentId, request, decision);
         if (!res.writableEnded && !res.destroyed) {
             res.json({ decision });
+        }
+    }
+
+    /**
+     * Audit record of the decision with the input that actually runs. Pi's own JSONL keeps the ORIGINAL
+     * arguments even when the gate rewrites them, so the final (updated) input is logged here.
+     */
+    protected audit(grant: QaapToolGateTokenGrant, agentId: string, request: QaapToolGateRequest, decision: QaapToolGateDecision): void {
+        try {
+            const finalInput = decision.kind === 'allow' && decision.updatedInput ? decision.updatedInput : request.input;
+            const command = typeof finalInput.command === 'string'
+                ? finalInput.command
+                : JSON.stringify(finalInput).slice(0, 2000);
+            this.runner.observability?.recordAgentToolCommand({
+                taskId: grant.taskId,
+                tenantLogin: grant.owner,
+                agentId,
+                requestId: `gate-${request.harnessCallId ?? grant.taskId}`,
+                toolUseId: request.harnessCallId,
+                toolName: request.rawToolName,
+                command,
+                decision: decision.kind === 'allow' ? 'approve' : 'reject',
+                ...(decision.kind === 'allow' && decision.updatedInput ? { autoApprovalReason: 'input-rewritten' } : {}),
+            });
+        } catch {
+            // Auditing must never change the decision.
         }
     }
 
@@ -146,6 +180,12 @@ export class QaapToolGateEndpoint implements BackendApplicationContribution {
 
     protected rateLimited(taskId: string): boolean {
         const now = Date.now();
+        // Drop the buckets of tasks that went quiet (finished or revoked), so the map cannot grow forever.
+        for (const [id, times] of this.callTimes) {
+            if (id !== taskId && !times.some(time => now - time < 60_000)) {
+                this.callTimes.delete(id);
+            }
+        }
         const recent = (this.callTimes.get(taskId) ?? []).filter(time => now - time < 60_000);
         recent.push(now);
         this.callTimes.set(taskId, recent);

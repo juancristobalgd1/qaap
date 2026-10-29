@@ -36,6 +36,8 @@ import { QaapAgentLoginCallbackEndpoint } from './qaap-agent-login-callback-endp
 import { QaapAgentHookProcessRunner } from './qaap-agent-hook-process-runner';
 import { QaapAgentHookService } from './qaap-agent-hook-service';
 import { QaapAgentHookTrustStore } from './qaap-agent-hook-trust-store';
+import { QaapProjectFolderTrustEndpoint } from './qaap-project-folder-trust-endpoint';
+import { QaapProjectFolderTrustStore } from './qaap-project-folder-trust-store';
 import { QaapAgentPostToolUseHookBridge } from './qaap-agent-post-tool-use-hook-bridge';
 import { QaapAgentConversationEndpoint } from './qaap-agent-conversation-endpoint';
 import { QaapConversationReadMarkEndpoint } from './qaap-conversation-read-mark-endpoint';
@@ -393,6 +395,10 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapAgentHookService).toSelf().inSingletonScope();
     bind(QaapAgentHookEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapAgentHookEndpoint);
+    // Per-project "Do you trust the files in this folder?" decision feeding the {trust_flags} template variable.
+    bind(QaapProjectFolderTrustStore).toSelf().inSingletonScope();
+    bind(QaapProjectFolderTrustEndpoint).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapProjectFolderTrustEndpoint);
     bind(QaapAgentLoginCallbackEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapAgentLoginCallbackEndpoint);
     bind(QaapAgentPostToolUseHookBridge).toSelf().inSingletonScope();

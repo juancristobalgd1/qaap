@@ -1356,6 +1356,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     protected async selectSessionsSidebarProject(project: MobileProjectEntry): Promise<void> {
+        this.projectsService.askFolderTrustIfUndecided(project);
         const context = this.resolveAgentsHubShellProject()
             ?? this.transcriptController.state.transcriptOpenProject
             ?? this.projects.find(entry => entry.isCurrent)

@@ -224,7 +224,9 @@ export interface QaapAgentTaskRunnerContext {
     extractLastAgentMentionToken(prompt: string): string | undefined;
     stripLeadingAgentMention(prompt: string): string;
     buildTemplateVars(agentId: string, agentModel?: QaapCreateAgentTaskQaiqModel, interaction?: QaapQaiqInteractionFlagOptions,
-        ownerLogin?: string): Record<string, string>;
+        ownerLogin?: string, cwd?: string): Record<string, string>;
+    /** Whether the owner chose "Trust folder" for this project folder (undecided = false). */
+    isProjectFolderTrusted(ownerLogin: string | undefined, cwd: string): boolean;
     resolveQaiqProviderFlags(ownerLogin?: string): string;
     resolveQaapQaiqBinding(ownerLogin?: string): QaapQaiqModelBinding | undefined;
     resolveAgentBindingForTask(task: QaapAgentTask): QaapQaiqModelBinding | undefined;
@@ -352,6 +354,11 @@ export interface QaapAgentTaskRunnerContext {
     applyNvidiaOpenAiCompatEnv(env: NodeJS.ProcessEnv): void;
     applyHuggingfaceOpenAiCompatEnv(env: NodeJS.ProcessEnv): void;
     applyHelperEnv(env: NodeJS.ProcessEnv, ownerLogin?: string, parentTaskId?: string, autoApprove?: boolean): boolean;
+    /**
+     * Seeds the gate env of a one-shot agent call (prompt improve, goal-loop evaluator) with an ephemeral
+     * read-only grant. Returns the function that revokes it; call it when the process ends.
+     */
+    applyOneShotToolGateEnv(env: NodeJS.ProcessEnv, task: Pick<QaapAgentTask, 'ownerLogin' | 'cwd' | 'agentId' | 'command'>): () => void;
     /** Seeds `QAAP_GATE_URL` / `QAAP_GATE_TOKEN` for harnesses that reach the tool gate over HTTP. */
     applyToolGateEnv(env: NodeJS.ProcessEnv, task: Pick<QaapAgentTask, 'id' | 'ownerLogin' | 'cwd' | 'agentId' | 'command'>): void;
 }

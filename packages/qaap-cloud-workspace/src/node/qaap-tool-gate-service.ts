@@ -68,6 +68,15 @@ export interface QaapToolGateEvaluationEnv {
     /** Task `autoApprove`: `false` is request-approval, anything else auto-approves what the guards allow. */
     readonly autoApprove: boolean | undefined;
     readonly readOnlyWorkspace: boolean;
+    /** One-shot grants: only read tools and read-only shell commands pass; every other tool kind is denied. */
+    readonly strictReadOnly?: boolean;
+    /**
+     * Same runtime checks QAIQ requires before it trusts the read-only shell classifier: a reason when
+     * git could run a program from config (fsmonitor, pager, textconv...), and when a path argument leaves
+     * `cwd` once symlinks are resolved. Absent checks mean "not verified", i.e. NOT read-only.
+     */
+    readonly checkGitExecConfig?: (cwd: string) => string | undefined;
+    readonly checkPathsInsideCwd?: (cwd: string, paths: readonly string[]) => string | undefined;
     /** Max seconds one ask may block (capability registry); capped at {@link QAAP_TOOL_GATE_MAX_ASK_TTL_SEC}. 0 = cannot ask. */
     readonly askTtlSec: number;
     /** Raises an approval card (same cards as QAIQ) and waits for the human. */
@@ -164,10 +173,17 @@ export class QaapToolGateService {
             toolName: isShell ? 'Bash' : req.rawToolName,
             toolInput: req.input,
         };
+        if (env.strictReadOnly && req.toolKind !== 'read' && !isShell) {
+            return {
+                kind: 'deny',
+                source: 'read-only',
+                reason: nls.localize('theia/qaap-cloud-workspace/toolGateStrictReadOnly', 'This call may only read the workspace; this tool was blocked.'),
+            };
+        }
         if (env.readOnlyWorkspace) {
             const command = typeof req.input.command === 'string' ? req.input.command : undefined;
             const writes = req.toolKind === 'edit' || req.toolKind === 'write'
-                || (isShell && !QaapBashReadOnlyClassifier.classifyCommand(command, { cwd: req.cwd }).readOnly);
+                || (isShell && !this.isVerifiedReadOnlyShell(command, req.cwd, env));
             if (writes) {
                 return {
                     kind: 'deny',
@@ -220,6 +236,31 @@ export class QaapToolGateService {
             source: 'policy',
             reason: nls.localize('theia/qaap-cloud-workspace/toolGateCancelled', 'The task ended before this tool call was approved.'),
         };
+    }
+
+    /** Read-only per the classifier AND the git-config and path-containment checks, exactly like QAIQ. */
+    protected isVerifiedReadOnlyShell(command: string | undefined, cwd: string, env: QaapToolGateEvaluationEnv): boolean {
+        const verdict = QaapBashReadOnlyClassifier.classifyCommand(command, { cwd });
+        if (!verdict.readOnly) {
+            return false;
+        }
+        try {
+            if (verdict.commands?.includes('git')) {
+                const gitRisk = env.checkGitExecConfig ? env.checkGitExecConfig(cwd) : 'git config not verified';
+                if (gitRisk) {
+                    return false;
+                }
+            }
+            if (verdict.paths?.length) {
+                const pathRisk = env.checkPathsInsideCwd ? env.checkPathsInsideCwd(cwd, verdict.paths) : 'paths not verified';
+                if (pathRisk) {
+                    return false;
+                }
+            }
+        } catch {
+            return false;
+        }
+        return true;
     }
 
     protected isInsideWorkspace(cwd: string, workspace: string): boolean {
