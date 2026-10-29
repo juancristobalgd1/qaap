@@ -11,6 +11,13 @@ import { DEFAULT_QAAP_CODEX_GATE_OVERLAY_BUILDER, QaapCodexGateOverlayBuilder, u
 
 describe('QaapCodexGateOverlayBuilder', () => {
 
+    // The builder checks POSIX mode bits and uids (0600/0711, root uid drop); these have no win32 equivalent and the builder fails closed there.
+    before(function (): void {
+        if (process.platform === 'win32') {
+            this.skip();
+        }
+    });
+
     let tmp: string;
     let sourceHome: string;
     let root: string;

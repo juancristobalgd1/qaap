@@ -25,7 +25,9 @@ import { QaapToolGateTokenService } from './qaap-tool-gate-token-service';
 
 const WORKSPACE = process.cwd();
 // Isolated from the developer's own git config (lfs filters, fsmonitor...) so the checks are deterministic.
-const isolatedGitEnv = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
+const emptyGitConfig = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-gate-gitcfg-')), 'config');
+fs.writeFileSync(emptyGitConfig, '');
+const isolatedGitEnv = { ...process.env, GIT_CONFIG_GLOBAL: emptyGitConfig, GIT_CONFIG_NOSYSTEM: '1' };
 const gitChecker = new QaapGitExecConfigChecker((cwd, args) => spawnSync('git', [...args], { cwd, encoding: 'utf8', env: isolatedGitEnv }), os.tmpdir());
 const TMP_ROOT = fs.realpathSync(os.tmpdir());
 
