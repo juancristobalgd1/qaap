@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { inject, injectable } from '@theia/core/shared/inversify';
+import { inject, injectable, optional } from '@theia/core/shared/inversify';
 import {
     QaapGithubAuthGuard,
     type QaapGithubAuthContext,
@@ -17,6 +17,7 @@ import {
 } from '../common/qaap-agent-approval';
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
+import { QaapToolGateAskBroker } from './qaap-tool-gate-ask-broker';
 
 interface ParsedApprovalId {
     readonly conversationId: string;
@@ -37,6 +38,10 @@ export class QaapAgentApprovalStore {
 
     @inject(QaapGithubAuthGuard)
     protected readonly auth: QaapGithubAuthGuard;
+
+    /** Asks raised by harness adapters over the HTTP tool gate; they use the same cards as QAIQ. */
+    @inject(QaapToolGateAskBroker) @optional()
+    protected readonly gateAsks: QaapToolGateAskBroker | undefined;
 
     async list(ctx: QaapGithubAuthContext, cwd: string | undefined): Promise<QaapAgentApprovalRequest[]> {
         await this.conversationStore.whenReady();
@@ -61,6 +66,12 @@ export class QaapAgentApprovalStore {
                 // QAIQ stdio tasks pause on explicit control requests; legacy stdin
                 // tasks accept y/n lines for segment- or log-detected prompts; tasks
                 // without an interactive stdin have nothing to approve.
+                if (taskId && this.gateAsks) {
+                    for (const pending of this.gateAsks.list(taskId)) {
+                        const item = buildControlRequestApproval(conv, taskId, pending);
+                        byId.set(item.id, item);
+                    }
+                }
                 const channel = taskId ? this.taskRunner.getApprovalChannel(taskId) : 'none';
                 if (channel === 'stdin') {
                     for (const item of extractPendingToolApprovals(conv, taskId)) {
@@ -112,7 +123,8 @@ export class QaapAgentApprovalStore {
         if (!task || task.state !== 'running') {
             return { ok: false, error: 'Task is not running.' };
         }
-        const sent = this.taskRunner.respondToApprovalPrompt(taskId, action, parsed.toolUseId);
+        const sent = this.gateAsks?.respond(taskId, action, parsed.toolUseId)
+            || this.taskRunner.respondToApprovalPrompt(taskId, action, parsed.toolUseId);
         if (!sent) {
             return {
                 ok: false,

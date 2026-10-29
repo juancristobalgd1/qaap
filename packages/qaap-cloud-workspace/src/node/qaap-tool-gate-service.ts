@@ -3,7 +3,18 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import * as fs from 'fs';
+import * as path from 'path';
+import { randomUUID } from 'crypto';
 import { injectable } from '@theia/core/shared/inversify';
+import { nls } from '@theia/core/lib/common/nls';
+import { QaapBashReadOnlyClassifier } from '@theia/qaap-shared-core/lib/common/qaap-bash-readonly-classifier';
+import {
+    QAAP_TOOL_GATE_MAX_ASK_TTL_SEC,
+    type QaapToolGateDecision,
+    type QaapToolGateRequest,
+} from '@theia/qaap-shared-core/lib/common/qaap-tool-gate-protocol';
+import type { QaapToolGateAskOutcome } from './qaap-tool-gate-ask-broker';
 import { findQaiqDestructiveCommandGuardDenial } from '../common/qaap-agent-destructive-command-guard';
 import { findQaiqDevServerGuardDenial } from '../common/qaap-agent-dev-server-guard';
 import {
@@ -46,6 +57,21 @@ export interface QaapQaiqToolGateOutcome {
     readonly observabilityDecision: 'approve' | 'reject' | 'queue';
     /** True when a queued request must get the unattended-run grace timeout (auto-approve runs only). */
     readonly scheduleQueueTimeout: boolean;
+}
+
+/** What {@link QaapToolGateService.evaluate} needs to know about the task a gate token belongs to. */
+export interface QaapToolGateEvaluationEnv {
+    readonly taskId: string;
+    readonly owner: string | undefined;
+    /** Workspace the task runs in; the request cwd must lie inside it. */
+    readonly workspace: string;
+    /** Task `autoApprove`: `false` is request-approval, anything else auto-approves what the guards allow. */
+    readonly autoApprove: boolean | undefined;
+    readonly readOnlyWorkspace: boolean;
+    /** Max seconds one ask may block (capability registry); capped at {@link QAAP_TOOL_GATE_MAX_ASK_TTL_SEC}. 0 = cannot ask. */
+    readonly askTtlSec: number;
+    /** Raises an approval card (same cards as QAIQ) and waits for the human. */
+    readonly ask: (request: QaapQaiqPendingControlRequest, ttlMs: number, signal?: AbortSignal) => Promise<QaapToolGateAskOutcome>;
 }
 
 /**
@@ -93,6 +119,122 @@ export class QaapToolGateService {
             observabilityDecision: action === 'allow' ? 'approve' : action === 'deny' ? 'reject' : 'queue',
             scheduleQueueTimeout: action === 'queue' && autoApprove !== false,
         };
+    }
+
+    protected readonly inflight = new Map<string, Promise<QaapToolGateDecision>>();
+
+    /**
+     * Decision for one tool call made by an external harness (HTTP gate). The task, owner and workspace
+     * come from `env` (derived from the gate token), never from `req`. Order: workspace containment,
+     * read-only policy, destructive guard, dev-server guard, then the approval policy. A repeated
+     * `(taskId, harnessCallId)` while one is pending shares the pending answer. Any internal error is a deny.
+     */
+    async evaluate(req: QaapToolGateRequest, env: QaapToolGateEvaluationEnv, signal?: AbortSignal): Promise<QaapToolGateDecision> {
+        const key = req.harnessCallId ? `${env.taskId}:${req.harnessCallId}` : undefined;
+        const existing = key ? this.inflight.get(key) : undefined;
+        if (existing) {
+            return existing;
+        }
+        const run = this.decide(req, env, signal).catch((): QaapToolGateDecision => ({
+            kind: 'deny',
+            source: 'gate-error',
+            retryable: true,
+            reason: nls.localize('theia/qaap-cloud-workspace/toolGateError', 'The Qaap safety gate failed to evaluate this tool call; it was blocked.'),
+        }));
+        if (key) {
+            this.inflight.set(key, run);
+            void run.finally(() => this.inflight.delete(key));
+        }
+        return run;
+    }
+
+    protected async decide(req: QaapToolGateRequest, env: QaapToolGateEvaluationEnv, signal?: AbortSignal): Promise<QaapToolGateDecision> {
+        if (!this.isInsideWorkspace(req.cwd, env.workspace)) {
+            return {
+                kind: 'deny',
+                source: 'policy',
+                reason: nls.localize('theia/qaap-cloud-workspace/toolGateOutsideWorkspace', 'The tool call targets a directory outside the task workspace.'),
+            };
+        }
+        const isShell = req.toolKind === 'shell';
+        // Guards key on the QAIQ shell tool name; the adapter already normalized the kind.
+        const request: QaapQaiqPendingControlRequest = {
+            requestId: `gate-${req.harnessCallId ?? randomUUID()}`,
+            toolUseId: req.harnessCallId,
+            toolName: isShell ? 'Bash' : req.rawToolName,
+            toolInput: req.input,
+        };
+        if (env.readOnlyWorkspace) {
+            const command = typeof req.input.command === 'string' ? req.input.command : undefined;
+            const writes = req.toolKind === 'edit' || req.toolKind === 'write'
+                || (isShell && !QaapBashReadOnlyClassifier.classifyCommand(command, { cwd: req.cwd }).readOnly);
+            if (writes) {
+                return {
+                    kind: 'deny',
+                    source: 'read-only',
+                    reason: nls.localize('theia/qaap-cloud-workspace/toolGateReadOnly', 'This task is read-only; it may not modify the workspace.'),
+                };
+            }
+        }
+        const destructive = findQaiqDestructiveCommandGuardDenial(request, req.cwd);
+        if (destructive) {
+            return { kind: 'deny', source: 'destructive-guard', reason: destructive };
+        }
+        const devServer = findQaiqDevServerGuardDenial(request);
+        if (devServer) {
+            return { kind: 'deny', source: 'dev-server-guard', reason: devServer };
+        }
+        if (env.autoApprove !== false || req.toolKind === 'read') {
+            return { kind: 'allow', source: 'policy' };
+        }
+        const ttlSec = Math.min(env.askTtlSec, QAAP_TOOL_GATE_MAX_ASK_TTL_SEC);
+        if (!(ttlSec > 0)) {
+            return {
+                kind: 'deny',
+                source: 'policy',
+                reason: nls.localize('theia/qaap-cloud-workspace/toolGateCannotAsk',
+                    'This agent cannot ask for approval, so the tool call was blocked.'),
+            };
+        }
+        const outcome = await env.ask(request, ttlSec * 1000, signal);
+        if (outcome === 'approve') {
+            return { kind: 'allow', source: 'user' };
+        }
+        if (outcome === 'reject') {
+            return {
+                kind: 'deny',
+                source: 'user',
+                reason: nls.localize('theia/qaap-cloud-workspace/toolGateRejected', 'The user rejected this tool call.'),
+            };
+        }
+        if (outcome === 'ttl') {
+            return {
+                kind: 'deny',
+                source: 'ttl',
+                retryable: true,
+                reason: nls.localize('theia/qaap-cloud-workspace/toolGateExpired', 'Approval timed out; ask the user again.'),
+            };
+        }
+        return {
+            kind: 'deny',
+            source: 'policy',
+            reason: nls.localize('theia/qaap-cloud-workspace/toolGateCancelled', 'The task ended before this tool call was approved.'),
+        };
+    }
+
+    protected isInsideWorkspace(cwd: string, workspace: string): boolean {
+        if (typeof cwd !== 'string' || !cwd || !path.isAbsolute(cwd)) {
+            return false;
+        }
+        const real = (value: string): string => {
+            try {
+                return fs.realpathSync(value);
+            } catch {
+                return path.resolve(value);
+            }
+        };
+        const relative = path.relative(real(workspace), real(cwd));
+        return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
     }
 
     /**

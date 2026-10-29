@@ -301,6 +301,7 @@ export function buildChildEnvExtracted(ctx: QaapAgentTaskRunnerContext, task: Qa
             env.OPENCODE_PERMISSION = opencodePermission;
         }
         ctx.applyHelperEnv(env, task.ownerLogin, task.id, task.autoApprove);
+        ctx.applyToolGateEnv(env, task);
         // Last: no inherited (operator / tenant) key may bypass a harness's own sign-in.
         stripSignInOnlyAgentApiKeyEnv(env, resolveTaskHarnessId(task.agentId, task.command));
         return env;
