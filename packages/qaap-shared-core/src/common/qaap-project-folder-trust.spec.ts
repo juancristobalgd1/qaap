@@ -24,7 +24,7 @@ describe('qaap project folder trust', () => {
         });
 
         it('drops repo settings for Claude Code only in an untrusted folder', () => {
-            expect(resolveAgentProjectTrustFlags('claude', false)).to.equal('--setting-sources user');
+            expect(resolveAgentProjectTrustFlags('claude', false)).to.equal('--setting-sources user --strict-mcp-config');
             expect(resolveAgentProjectTrustFlags('claude', true)).to.equal('');
             const claude = QAAP_BUILTIN_AGENT_DEFINITIONS.find(definition => definition.id === 'claude');
             expect(claude?.template).to.contain('{trust_flags}');

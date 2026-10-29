@@ -66,7 +66,13 @@ describe('Claude Code behind the stdio tool gate: command', () => {
         expect(built.command).to.contain('--permission-mode default');
         const allowed = /--allowed-tools (\S+)/.exec(built.command)![1].split(',');
         expect(allowed).not.to.include('Bash');
-        expect(/--tools (\S+)/.exec(built.command)![1].split(',')).to.include('Bash');
+        expect(built.command).to.contain('--tools default');
+    });
+
+    it('keeps subagents and skills available: no --disallowed-tools and no narrowed --tools list', () => {
+        const command = buildClaude('approve-for-me').command;
+        expect(command).not.to.contain('--disallowed-tools');
+        expect(/--tools (\S+)/.exec(command)![1]).to.equal('default');
     });
 
     it('keeps request-approval on the default permission mode', () => {
@@ -84,9 +90,10 @@ describe('Claude Code behind the stdio tool gate: command', () => {
     });
 
     it('drops project and local settings in an untrusted folder, and loads the normal ones in a trusted one', () => {
-        expect(buildClaude('approve-for-me', false).command).to.contain('--setting-sources user');
-        expect(buildClaude('request-approval', false).command).to.contain('--setting-sources user');
+        expect(buildClaude('approve-for-me', false).command).to.contain('--setting-sources user --strict-mcp-config');
+        expect(buildClaude('request-approval', false).command).to.contain('--setting-sources user --strict-mcp-config');
         expect(buildClaude('approve-for-me', true).command).not.to.contain('--setting-sources');
+        expect(buildClaude('approve-for-me', true).command).not.to.contain('--strict-mcp-config');
         expect(resolveQaapHarnessCapabilities('claude').trustedFolderArgs).to.deep.equal([]);
     });
 });

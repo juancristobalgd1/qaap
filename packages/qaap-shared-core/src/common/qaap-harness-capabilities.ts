@@ -120,7 +120,8 @@ const QAAP_HARNESS_CAPABILITY_ENTRIES: readonly QaapHarnessCapabilities[] = [
     // Claude Code speaks the same stream-json control protocol as QAIQ (a fork of it): with
     // `--permission-prompt-tool stdio` every `can_use_tool` request reaches the in-process gate and a pending
     // ask has no timeout. Untrusted folders load user settings only, so a repo's own hooks and
-    // `permissions.allow` rules cannot ungate or reroute tools (a hook deny still beats allow anyway).
+    // `permissions.allow` rules cannot ungate or reroute tools (a hook deny still beats allow anyway). `--setting-sources`
+    // does not cover `.mcp.json`; `--strict-mcp-config` does, so a repo MCP server never starts in an untrusted folder.
     {
         ...createDefaultHarnessCapabilities('claude'),
         gate: 'native-stdio',
@@ -128,7 +129,7 @@ const QAAP_HARNESS_CAPABILITY_ENTRIES: readonly QaapHarnessCapabilities[] = [
         askTtlSec: STDIO_ASK_TTL_SEC,
         whenAskUnsupported: 'refuses',
         shellGuard: 'gate',
-        untrustedFolderArgs: ['--setting-sources', 'user'],
+        untrustedFolderArgs: ['--setting-sources', 'user', '--strict-mcp-config'],
         usage: 'claude',
         costSource: 'reported',
     },

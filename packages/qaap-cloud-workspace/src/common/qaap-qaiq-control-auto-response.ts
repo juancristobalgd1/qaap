@@ -7,7 +7,7 @@ import { QaapBashReadOnlyClassifier } from '@theia/qaap-shared-core/lib/common/q
 import { findQaiqDestructiveCommandGuardDenial } from './qaap-agent-destructive-command-guard';
 import { findQaiqDevServerGuardDenial } from './qaap-agent-dev-server-guard';
 import { buildSubagentDeniedMessage, extractRequestedSubagentType, isBlockedHeadlessTool } from './qaap-agent-subagent-policy';
-import { parseQaiqCoreTools } from './qaap-qaiq-tool-policy';
+import { commandUsesDefaultToolSet, parseQaiqCoreTools } from './qaap-qaiq-tool-policy';
 import type { QaapQaiqPendingControlRequest } from './qaap-qaiq-stdio-approvals';
 
 const VERIFICATION_SUBAGENT_TYPE = 'verification';
@@ -230,6 +230,10 @@ function resolvePresetAutoAction(
     // subagent must continue immediately instead of entering an approval queue the default UI
     // does not surface.
     if ((isShellTool(toolName) || toolName === 'Agent') && coreTools?.has(toolName)) {
+        return 'allow';
+    }
+    // Claude Code: `--tools default` keeps every built-in tool and only records that the preset allows shell.
+    if (isShellTool(toolName) && commandUsesDefaultToolSet(command)) {
         return 'allow';
     }
     const allowedTools = parseAllowedTools(command);

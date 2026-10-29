@@ -59,7 +59,7 @@ describe('qaap-harness-capabilities', () => {
         const claude = registry.get('claude');
         expect(claude).to.include({ gate: 'native-stdio', canAsk: true, shellGuard: 'gate', usage: 'claude', costSource: 'reported' });
         expect(claude.askTtlSec).to.be.greaterThan(0);
-        expect(claude.untrustedFolderArgs).to.deep.equal(['--setting-sources', 'user']);
+        expect(claude.untrustedFolderArgs).to.deep.equal(['--setting-sources', 'user', '--strict-mcp-config']);
         expect(claude.trustedFolderArgs).to.deep.equal([]);
     });
 

@@ -231,7 +231,7 @@ function applyQaiqApprovalFlags(
 }
 
 /**
- * Claude Code behind the stdio gate: QAIQ's flag set (QAIQ is a Claude Code fork, the flags are the same).
+ * Claude Code behind the stdio gate: QAIQ's permission flags (QAIQ is a Claude Code fork, the flags are the same).
  * Never a bypass flag, whatever the network rule says: bypass mode would skip `can_use_tool` entirely.
  */
 function applyGatedClaudeApprovalFlags(
@@ -244,7 +244,11 @@ function applyGatedClaudeApprovalFlags(
     const withPolicy = policyId === 'approve-for-me' && rules
         ? injectAfterPattern(withoutLegacy, claude, formatQaiqApproveForMeFlags(rules))
         : injectAfterPattern(withoutLegacy, claude, '--permission-mode default');
-    return ensureQaiqCoreTools(ensureQaiqBlockedHeadlessTools(withPolicy, claude), policyId, rules, claude);
+    // Unlike QAIQ, Claude keeps its whole tool set (subagents, skills): the CLI sends a subagent's own tool calls
+    // through the same permission prompt tool, so they still reach the gate (checked against claude 2.1.312).
+    // `--tools default` only tells the preset that shell is allowed once the guards pass.
+    const shellAllowed = policyId === 'approve-for-me' && rules?.shell !== false;
+    return shellAllowed ? injectAfterPattern(withPolicy, claude, '--tools default') : withPolicy;
 }
 
 function ensureQaiqCoreTools(
