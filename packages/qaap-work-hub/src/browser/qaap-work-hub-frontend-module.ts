@@ -45,6 +45,7 @@ import { QaapWidgetStylesheetContribution } from '@theia/qaap-product-theme/lib/
 import { QaapLazySurfaceStylesheetsPreload } from './qaap-lazy-surface-stylesheets-preload';
 import { PreferenceContribution } from '@theia/core/lib/common/preferences/preference-schema';
 import { QaapChatPreferencesContribution } from '@theia/qaap-shared-core/lib/browser/qaap-chat-preferences-contribution';
+import { QaapPiProviderPreferencesSchema } from '@theia/qaap-shared-core/lib/common/qaap-pi-provider-preferences';
 import { WidgetFactory } from '@theia/core/lib/browser/widget-manager';
 import { SCM_WIDGET_FACTORY_ID } from '@theia/scm/lib/browser/scm-contribution';
 import { ScmContribution } from '@theia/scm/lib/browser/scm-contribution';
@@ -165,6 +166,8 @@ import { QaapNavigatorTabBarDecorator } from '@theia/qaap-shared-core/lib/browse
 import { createQaapFileNavigatorWidget } from '@theia/qaap-shared-core/lib/browser/qaap-navigator-widget-factory';
 import { PreferenceLayoutProvider } from '@theia/preferences/lib/browser/util/preference-layout';
 import { QaapPreferenceLayoutProvider } from '@theia/qaap-shared-core/lib/browser/qaap-preference-layout-provider';
+import { PreferenceTreeLabelProvider } from '@theia/preferences/lib/browser/util/preference-tree-label-provider';
+import { QaapPreferenceTreeLabelProvider } from '@theia/qaap-shared-core/lib/browser/qaap-preference-tree-label-provider';
 import { decorateQaapTenantAiUserPreferenceProvider } from '@theia/qaap-shared-core/lib/browser/qaap-tenant-ai-user-preference-provider';
 /**
  * Work Hub composition root, mobile-safe half (part of the `bundle-mobile` entry). It includes the
@@ -191,6 +194,9 @@ export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync
     rebind(QuickCommandService).to(QaapQuickCommandService).inSingletonScope();
     // AI Features Settings: prioritize Qaap BYOK providers; omit Theia leftover groups.
     rebind(PreferenceLayoutProvider).to(QaapPreferenceLayoutProvider).inSingletonScope();
+    // Pi API-key prefs read "DeepSeek API key" rather than the id-derived label. Upstream binds
+    // LabelProviderContribution to this service, so rebinding it covers both injection paths.
+    rebind(PreferenceTreeLabelProvider).to(QaapPreferenceTreeLabelProvider).inSingletonScope();
     rebind(ChatViewTreeWidget).toDynamicValue(ctx =>
         createQaapChatViewTreeWidget(ctx.container)
     );
@@ -303,6 +309,7 @@ export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync
     bind(FrontendApplicationContribution).toService(QaapChatInputProductContribution);
     bind(QaapChatPreferencesContribution).toSelf().inSingletonScope();
     bind(PreferenceContribution).toService(QaapChatPreferencesContribution);
+    bind(PreferenceContribution).toConstantValue({ schema: QaapPiProviderPreferencesSchema });
     bind(MobileConnectionStatusContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(MobileConnectionStatusContribution);
     bind(MobileChatSessionRestoreContribution).toSelf().inSingletonScope();

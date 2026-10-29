@@ -224,4 +224,61 @@ describe('QaapAgentTaskRunner provider credential isolation (QAIQ end to end)', 
             delete process.env.OPENAI_BASE_URL;
         }
     });
+
+    describe('Pi provider keys', () => {
+        const PI_KEY_PREF = 'ai-features.pi.deepseekApiKey';
+
+        function piRunner(settings: Record<string, unknown>): QaapAgentTaskRunner {
+            const runner = createRunner();
+            Object.assign(runner, {
+                detectedAgents: new Map([['pi', { id: 'pi', label: 'Pi', bin: 'pi' }]]),
+                readUserSettingsFromDisk: (login?: string) => login === 'alice' ? { ...settings } : {},
+            });
+            return runner;
+        }
+
+        function buildEnv(runner: QaapAgentTaskRunner, agentId: string, ownerLogin: string | undefined): NodeJS.ProcessEnv {
+            const task = {
+                id: `task-${agentId}`,
+                title: `${agentId} task`,
+                agentId,
+                command: `${agentId} -p hola`,
+                cwd: '/repo',
+                state: 'running',
+                createdAt: 0,
+                ...(ownerLogin ? { ownerLogin } : {}),
+            } as QaapAgentTask;
+            return (runner as unknown as { buildChildEnv(task: QaapAgentTask): NodeJS.ProcessEnv }).buildChildEnv(task);
+        }
+
+        it('a Pi task gets the key of its owner\'s Settings provider, and never another user\'s', () => {
+            process.env.QAAP_CLOUD_MODE = 'docker';
+            const runner = piRunner({ ...ALICE_SETTINGS, [PI_KEY_PREF]: 'sk-alice-deepseek' });
+            expect(buildEnv(runner, 'pi', 'alice').DEEPSEEK_API_KEY).to.equal('sk-alice-deepseek');
+            expect(buildEnv(runner, 'pi', 'bob').DEEPSEEK_API_KEY).to.equal(undefined);
+        });
+
+        it('a Pi task does not receive the operator\'s inherited provider keys', () => {
+            process.env.QAAP_CLOUD_MODE = 'docker';
+            const env = buildEnv(piRunner({ ...ALICE_SETTINGS }), 'pi', 'alice');
+            expect(leakedValues(env, Object.values(OPERATOR_ENV))).to.deep.equal([]);
+        });
+
+        it('a QAIQ task never gets a Pi-only provider key, even when the owner has one', () => {
+            process.env.QAAP_CLOUD_MODE = 'docker';
+            const env = buildEnv(piRunner({ ...ALICE_SETTINGS, [PI_KEY_PREF]: 'sk-alice-deepseek' }), 'qaiq', 'alice');
+            expect(env.DEEPSEEK_API_KEY).to.equal(undefined);
+            expect(leakedValues(env, ['sk-alice-deepseek'])).to.deep.equal([]);
+        });
+
+        it('agentAuthSources: Pi is connected with a Settings key, and undefined without one (never false)', () => {
+            process.env.QAAP_CLOUD_MODE = 'docker';
+            const runner = piRunner({ ...ALICE_SETTINGS, [PI_KEY_PREF]: 'sk-alice-deepseek' });
+            const settingsConnected = (ownerLogin: string | undefined): boolean | undefined =>
+                (runner as unknown as { agentAuthSources(agentId: string, owner?: string): { settingsConnected: boolean | undefined } | undefined })
+                    .agentAuthSources('pi', ownerLogin)?.settingsConnected;
+            expect(settingsConnected('alice')).to.equal(true);
+            expect(settingsConnected('bob')).to.equal(undefined);
+        });
+    });
 });

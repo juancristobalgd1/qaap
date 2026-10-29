@@ -35,6 +35,7 @@ import type { QaapTurnLatencyMark } from '@theia/qaap-shared-core/lib/common/qaa
 import { QaapDevPreviewPortRegistry } from '@theia/qaap-shared-core/lib/node/qaap-dev-preview-port-registry';
 import { type QaapQaiqInteractionFlagOptions } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-interaction-flags';
 import type { QaapPreferenceReader } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
+import { QaapPiProviders } from '@theia/qaap-shared-core/lib/common/qaap-pi-provider-registry';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 import { QaapTaskSandboxService } from './qaap-task-sandbox';
 import {
@@ -328,6 +329,8 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     }
     /** Agent bins probed once per backend process (`qaiq --version`, etc.). */
     protected readonly probedAgentBins = new Set<string>();
+    /** Pi provider ids with a Settings key, per owner (`''` for the backend itself): a change drops Pi's cached models. */
+    protected readonly piCredentialCatalogByOwner = new Map<string, string>();
     /**
      * Short-lived, per-tenant auth probe cache; Connect invalidates it through refreshAgentCatalog.
      * `probeFailed` marks a probe that errored instead of answering: the UI still shows `unknown`,
@@ -843,7 +846,12 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         const owner = ownerLogin?.trim();
         return (bin, args) => {
             if (!owner) {
-                return { file: bin, args };
+                if (bin !== 'pi') {
+                    return { file: bin, args };
+                }
+                const piEnv: NodeJS.ProcessEnv = { ...process.env };
+                QaapPiProviders.applyEnv(piEnv, this.preferenceReaderForOwner(undefined));
+                return { file: bin, args, env: piEnv };
             }
             const tenantCwd = resolveUserReposRoot(resolveQaapReposRoot(), owner);
             if (process.env.QAAP_CLOUD_MODE === 'docker' && !fs.existsSync(tenantCwd)) {
@@ -854,9 +862,28 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             if (canExposeAgentCliBinToChild(prefix, () => this.isTenantPrivilegeDropActive(tenantCwd))) {
                 prependAgentCliBinToPath(env, prefix);
             }
+            if (bin === 'pi') {
+                // Same isolation as the task env: the owner's keys only, never the operator's inherited ones.
+                this.stripSharedProviderEnv(env, owner);
+                QaapPiProviders.applyEnv(env, this.preferenceReaderForOwner(owner));
+            }
             const wrapped = this.tenantSpawn.wrapArgvForTenant(tenantCwd, bin, [...args]);
             return { file: wrapped.file, args: wrapped.args, cwd: tenantCwd, env };
         };
+    }
+
+    /**
+     * Pi lists the models of every provider whose key is set, so a changed key set drops Pi's cached
+     * model list for this owner. The first observation only records the set.
+     */
+    syncPiCredentialCatalog(ownerLogin?: string): void {
+        const key = ownerLogin?.trim() ?? '';
+        const current = QaapPiProviders.configuredProviders(this.preferenceReaderForOwner(ownerLogin)).join(',');
+        const previous = this.piCredentialCatalogByOwner.get(key);
+        this.piCredentialCatalogByOwner.set(key, current);
+        if (previous !== undefined && previous !== current) {
+            invalidateNativeAgentModels('pi', ownerLogin);
+        }
     }
 
     warmForCwd(cwd: string): QaapAgentWarmResult {
@@ -917,9 +944,19 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
                 // QAIQ is ready only when the provider its turns route to has a key for this owner (an
                 // OpenAI key does not run an OpenRouter model): the same check that gates its spawn.
                 ? !checkQaiqProviderCredentialForOwnerExtracted(this, ownerLogin)
-                : hasAgentSettingsCredentialsHelper(normalized, key => this.preferenceReaderForOwner(ownerLogin)(key)),
+                : normalized === 'pi'
+                    ? this.piSettingsConnected(ownerLogin)
+                    : hasAgentSettingsCredentialsHelper(normalized, key => this.preferenceReaderForOwner(ownerLogin)(key)),
             probeBin: resolveAgentConnectionProbeHelper(normalized, bin) ? bin : undefined,
         };
+    }
+
+    /**
+     * Pi is connected through a Settings key of any provider, or not known from Settings at all. Never
+     * `false`: a `/login` sign-in must still be found by the auth probe.
+     */
+    protected piSettingsConnected(ownerLogin?: string): true | undefined {
+        return QaapPiProviders.configuredProviders(this.preferenceReaderForOwner(ownerLogin)).length > 0 ? true : undefined;
     }
 
     /**

@@ -6,6 +6,8 @@
 import { ContainerModule } from '@theia/core/shared/inversify';
 import { bindRootContributionProvider } from '@theia/core/lib/common/contribution-provider';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
+import { PreferenceContribution } from '@theia/core/lib/common/preferences/preference-schema';
+import { QaapPiProviderPreferencesSchema } from '../common/qaap-pi-provider-preferences';
 import { QaapClientErrorEndpoint } from './qaap-client-error-endpoint';
 import { QaapFrameCheckEndpoint } from './qaap-frame-check-endpoint';
 import { QaapApiRateLimitContribution } from './qaap-api-rate-limit';
@@ -68,4 +70,6 @@ export default new ContainerModule(bind => {
     bind(BackendApplicationContribution).toService(QaapApiRateLimitContribution);
     bind(QaapClientErrorEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapClientErrorEndpoint);
+    // Pi provider keys: the backend reads them through the schema defaults of per-user settings.
+    bind(PreferenceContribution).toConstantValue({ schema: QaapPiProviderPreferencesSchema });
 });

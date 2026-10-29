@@ -10,6 +10,7 @@ import {
 } from '@theia/qaap-ai-openrouter/lib/common/openrouter-models';
 import { NVIDIA_DEFAULT_BASE_URL, NVIDIA_FREE_MODELS } from '@theia/qaap-ai-nvidia/lib/common/nvidia-models';
 import type { QaapQaiqModelOption } from './qaap-agent-task-client';
+import { QaapPiProviders } from './qaap-pi-provider-registry';
 
 export type QaapQaiqProviderId = QaapQaiqModelOption['provider'];
 
@@ -229,6 +230,10 @@ export function listQaapAiSettingsPrefKeys(): string[] {
         }
     }
     for (const pref of EXTRA_AI_SETTINGS_PREF_KEYS) {
+        keys.add(pref);
+    }
+    // Pi provider keys: per user like every other provider key (never the shared User scope).
+    for (const pref of QaapPiProviders.newPrefIds()) {
         keys.add(pref);
     }
     return [...keys];
