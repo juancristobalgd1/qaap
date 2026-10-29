@@ -1843,6 +1843,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         }
         env.QAAP_GATE_URL = `${new URL(this.helperApiUrl).origin}${QAAP_TOOL_GATE_API_PATH}`;
         env.QAAP_GATE_TOKEN = this.toolGateTokens.issue(task.id, task.ownerLogin, task.cwd);
+        env.QAAP_GATE_ASK_TTL_SEC = String(resolveQaapHarnessCapabilities(this.resolveTaskAgentId(task as QaapAgentTask)).askTtlSec);
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
