@@ -471,7 +471,7 @@ export class MobileProjectsConversationActionsUi {
             // Roll back on failure.
             this.host.conversations?.recordSnapshot(summary);
             this.refreshConversationLists();
-            void reportQaapClientError(error, 'onArchiveConversation');
+            reportQaapClientError('onArchiveConversation', error);
             this.host.messageService?.error(nls.localize(
                 'qaap/mobileProjects/archiveTaskFailed',
                 'Could not archive: {0}',

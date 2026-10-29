@@ -95,7 +95,9 @@ export class QaapLoginContribution implements FrontendApplicationContribution {
                     writeQaapAuthSession('gitlab', placeholderQaapAuthUser('gitlab'));
                 }
             } else {
-                await syncQaapAuthSessionFromServer();
+                // A timed-out session read rejects with AbortError; this runs unawaited at startup
+                // (`void`), so keep the current local session instead of leaking an unhandled rejection.
+                await syncQaapAuthSessionFromServer().catch(() => false);
             }
         }
         if (readQaapSignedIn()) {
