@@ -631,7 +631,7 @@ export async function improveComposerPromptExtracted(ctx: QaapAgentTaskRunnerCon
         const improveText = buildImproveComposerPromptRequest(trimmed);
         const agentId = ctx.resolveAgentId(improveText, options.agentId, options.ownerLogin);
         // The composer may still hold another agent's pick; the agent's own default beats a foreign model.
-        const agentModel = options.agentModel && agentModelFitsAgent(agentId, options.agentModel, () => listNativeAgentModels(agentId))
+        const agentModel = options.agentModel && agentModelFitsAgent(agentId, options.agentModel, () => listNativeAgentModels(agentId, options.ownerLogin))
             ? options.agentModel
             : undefined;
         ctx.assertQaiqConfigured(agentId, options.ownerLogin, agentModel);

@@ -714,7 +714,7 @@ export function listModelsForAgentExtracted(
         if (!normalized || agentUsesSettingsModelCatalog(normalized)) {
             return [];
         }
-        const models = listNativeAgentModels(normalized);
+        const models = listNativeAgentModels(normalized, ownerLogin);
         const owner = ownerLogin?.trim();
         if (!owner) {
             return models;
