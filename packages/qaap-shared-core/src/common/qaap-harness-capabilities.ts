@@ -35,6 +35,8 @@ export interface QaapHarnessCapabilities {
     untrustedFolderArgs: string[];
     /** Flags used when the folder is trusted. */
     trustedFolderArgs: string[];
+    /** Env vars that make the harness ignore repo config (plugins, agents, MCP, instructions) when the folder is untrusted. */
+    untrustedFolderEnv?: Readonly<Record<string, string>>;
     /** Which usage parser reads this harness's output; `none` when no parser is wired. */
     usage: 'qaiq' | 'claude' | 'codex' | 'opencode' | 'pi-json' | 'none';
     costSource: QaapCostSource;
@@ -121,7 +123,25 @@ const QAAP_HARNESS_CAPABILITY_ENTRIES: readonly QaapHarnessCapabilities[] = [
     // so gated actions are refused rather than run.
     { ...createDefaultHarnessCapabilities('claude'), whenAskUnsupported: 'refuses', usage: 'claude' },
     { ...createDefaultHarnessCapabilities('codex'), whenAskUnsupported: 'refuses', usage: 'codex' },
-    { ...createDefaultHarnessCapabilities('opencode'), whenAskUnsupported: 'refuses', usage: 'opencode' },
+    // OpenCode: Qaap's plugin (`OPENCODE_CONFIG_CONTENT`) awaits the HTTP gate in `tool.execute.before`, so the
+    // gate can ask for as long as an ask lives. Untrusted folders set `OPENCODE_DISABLE_PROJECT_CONFIG`, which
+    // stops project plugins, MCP servers, agents, commands and AGENTS.md from loading (verified on 1.19.5).
+    // Cost: step_finish carries tokens (and a catalog `cost`); Qaap prices tokens from its own table.
+    {
+        ...createDefaultHarnessCapabilities('opencode'),
+        gate: 'plugin',
+        canAsk: true,
+        askTtlSec: STDIO_ASK_TTL_SEC,
+        whenAskUnsupported: 'refuses',
+        shellGuard: 'gate',
+        untrustedFolderEnv: {
+            OPENCODE_DISABLE_PROJECT_CONFIG: '1',
+            OPENCODE_DISABLE_EXTERNAL_SKILLS: '1',
+            OPENCODE_DISABLE_CLAUDE_CODE: '1',
+        },
+        usage: 'opencode',
+        costSource: 'price-table',
+    },
     // Pi has no permission system of its own; Qaap's `-e` extension routes every tool_call through the
     // HTTP gate, which can block for as long as an ask lives (spike: no handler timeout up to 900 s).
     // Folder trust picks `--approve` / `--no-approve`: untrusted folders skip project extensions.

@@ -63,8 +63,15 @@ describe('qaap-harness-capabilities', () => {
         expect(pi.trustedFolderArgs).to.deep.equal(['--approve']);
     });
 
+    it('lets OpenCode ask before changes through the gate plugin, and ignore repo config in untrusted folders', () => {
+        const opencode = registry.get('opencode');
+        expect(opencode).to.include({ gate: 'plugin', canAsk: true, shellGuard: 'gate', usage: 'opencode', costSource: 'price-table' });
+        expect(opencode.askTtlSec).to.be.greaterThan(0);
+        expect(opencode.untrustedFolderEnv).to.include({ OPENCODE_DISABLE_PROJECT_CONFIG: '1' });
+    });
+
     it('keeps every other builtin harness unable to ask, with no ask window', () => {
-        for (const definition of QAAP_BUILTIN_AGENT_DEFINITIONS.filter(candidate => !['pi', 'qaiq'].includes(candidate.id))) {
+        for (const definition of QAAP_BUILTIN_AGENT_DEFINITIONS.filter(candidate => !['pi', 'qaiq', 'opencode'].includes(candidate.id))) {
             const capabilities = registry.get(definition.id);
             expect(capabilities.canAsk, definition.id).to.equal(false);
             expect(capabilities.askTtlSec, definition.id).to.equal(0);
