@@ -8055,14 +8055,19 @@ body.theia-mobile-mod-keyboard-open .theia-mobile-sticky-composer-sheet-panel {
   padding: 2px 4px;
 }
 
+/*
+ * The loaded agent / model list keeps no height floor: header + search never shrink, so a floor
+ * larger than what the capped panel had left pushed the list's end under the panel's
+ * `overflow: hidden` and the last models (Pi lists dozens) could not be scrolled into view on
+ * short windows. The list is the only scroll host; the skeleton above keeps the loading height.
+ */
 .theia-mobile-sticky-composer-sheet.theia-mod-agent .theia-mobile-sticky-composer-sheet-list,
 .qaap-sticky-composer-sheet-popover.theia-mod-agent-picker .theia-mobile-sticky-composer-sheet-list {
-  min-height: min(276px, 48vh);
+  min-height: 0;
 }
 
-/* Keyboard open: allow the agent list to shrink so header + search stay usable. */
-body.theia-mobile-mod-keyboard-open .theia-qaap-agent-sheet-skeleton,
-body.theia-mobile-mod-keyboard-open .theia-mobile-sticky-composer-sheet.theia-mod-agent .theia-mobile-sticky-composer-sheet-list {
+/* Keyboard open: allow the skeleton to shrink so header + search stay usable. */
+body.theia-mobile-mod-keyboard-open .theia-qaap-agent-sheet-skeleton {
   min-height: 0;
 }
 

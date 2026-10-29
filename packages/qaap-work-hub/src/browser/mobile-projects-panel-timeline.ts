@@ -326,6 +326,9 @@ export function openAgentSignInTerminalExtracted(ctx: MobileProjectsPanelContext
                 return false;
             }
             const refreshed = await ctx.stickyComposerAgentsUi?.refreshStickyComposerAgents?.(project, { forceRefresh: true });
+            // An open conversation draws its composer from its own catalog; the forced probe above
+            // already refreshed the backend state, so a plain reload is enough here.
+            await ctx.transcriptComposerUi?.refreshTranscriptComposerAgents?.(project);
             ctx.stickyComposerRenderUi?.renderStickyComposer?.();
             return refreshed === true && ctx.stickyComposerAgentsUi?.isAgentConnected?.(resolvedAgentId) === true;
         },
