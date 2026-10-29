@@ -178,6 +178,20 @@ describe('QaapToolGateEndpoint', () => {
         });
     });
 
+    describe('rate-limit bookkeeping', () => {
+        it('prunes the buckets of tasks that went quiet and of a task that is no longer running', async () => {
+            const callTimes = (endpoint as unknown as { callTimes: Map<string, number[]> }).callTimes;
+            callTimes.set('old-task', [Date.now() - 120_000]);
+            task.autoApprove = true;
+            await call({ [QAAP_TOOL_GATE_TOKEN_HEADER]: token });
+            expect(callTimes.has('old-task')).to.equal(false);
+            expect(callTimes.has('task-1')).to.equal(true);
+            taskState = 'completed';
+            await call({ [QAAP_TOOL_GATE_TOKEN_HEADER]: token });
+            expect(callTimes.has('task-1')).to.equal(false);
+        });
+    });
+
     describe('decisions', () => {
         it('derives task, owner and workspace from the token, never from the body', async () => {
             let seen: { taskId?: string; owner?: string; workspace?: string } | undefined;

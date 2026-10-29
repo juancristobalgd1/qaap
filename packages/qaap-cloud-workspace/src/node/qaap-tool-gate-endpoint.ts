@@ -72,6 +72,7 @@ export class QaapToolGateEndpoint implements BackendApplicationContribution {
         const task = await this.runner.detail(grant.taskId);
         if (!task || task.state !== 'running') {
             this.tokens.revoke(grant.taskId);
+            this.callTimes.delete(grant.taskId);
             this.unauthorized(res);
             return;
         }
@@ -146,6 +147,12 @@ export class QaapToolGateEndpoint implements BackendApplicationContribution {
 
     protected rateLimited(taskId: string): boolean {
         const now = Date.now();
+        // Drop the buckets of tasks that went quiet (finished or revoked), so the map cannot grow forever.
+        for (const [id, times] of this.callTimes) {
+            if (id !== taskId && !times.some(time => now - time < 60_000)) {
+                this.callTimes.delete(id);
+            }
+        }
         const recent = (this.callTimes.get(taskId) ?? []).filter(time => now - time < 60_000);
         recent.push(now);
         this.callTimes.set(taskId, recent);
