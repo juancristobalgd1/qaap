@@ -232,11 +232,13 @@ export class QaapToolGateService {
                 outcome = {};
             }
             if (outcome.decision !== 'deny' && outcome.updatedInput) {
-                const rewrittenDenial = denialFor(outcome.updatedInput);
+                const rewrittenDenial = denialFor({ ...req.input, ...outcome.updatedInput });
                 if (rewrittenDenial) {
                     return rewrittenDenial;
                 }
-                updatedInput = outcome.updatedInput;
+                // Hooks may return a partial input; clients replace the whole input, so the merge on top of the
+                // original happens here and the gate only ever returns the COMPLETE input.
+                updatedInput = { ...req.input, ...outcome.updatedInput };
                 input = updatedInput;
             }
             if (outcome.decision === 'deny') {

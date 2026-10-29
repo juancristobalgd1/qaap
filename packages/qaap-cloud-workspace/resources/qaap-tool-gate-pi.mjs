@@ -79,7 +79,9 @@ export async function askGate(request, env = process.env, fetchImpl = globalThis
         return { kind: 'deny', source: 'gate-error', retryable: true, reason };
     };
     if (!base || !token || typeof fetchImpl !== 'function') {
-        return deny('The Qaap safety gate is not configured for this task.');
+        // No gate was configured for this run (for example prompt improvement without a folder): the call
+        // is still blocked, but this is not the gate failing, so it never counts toward stopping the run.
+        return { kind: 'deny', source: 'gate-error', retryable: true, reason: 'The Qaap safety gate is not configured for this task.' };
     }
     const ttlSec = Number(env.QAAP_GATE_ASK_TTL_SEC) > 0 ? Number(env.QAAP_GATE_ASK_TTL_SEC) : DEFAULT_ASK_TTL_SEC;
     const url = `${base.replace(/\/+$/, '')}/evaluate`;

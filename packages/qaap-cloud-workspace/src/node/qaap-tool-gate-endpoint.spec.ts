@@ -500,6 +500,12 @@ describe('QaapToolGateEndpoint', () => {
             expect(audits[0]).to.include({ command: 'echo safe', autoApprovalReason: 'input-rewritten' });
         });
 
+        it('always returns the COMPLETE input: a partial hook rewrite is merged on top of the original', async () => {
+            hookResults['ws-hook'] = { exitCode: 0, stdout: JSON.stringify({ hookSpecificOutput: { permissionDecision: 'allow', updatedInput: { command: 'echo safe' } } }), stderr: '', timedOut: false };
+            const decision = decisionOf(await call(gateHeaders(), { input: { command: 'echo original', timeout: 5, cwd: 'sub' } }));
+            expect(decision).to.deep.equal({ kind: 'allow', source: 'hook', updatedInput: { command: 'echo safe', timeout: 5, cwd: 'sub' } });
+        });
+
         it('re-runs the guards on a rewritten input: a hook cannot smuggle a destructive command', async () => {
             hookResults['ws-hook'] = { exitCode: 0, stdout: JSON.stringify({ hookSpecificOutput: { permissionDecision: 'allow', updatedInput: { command: 'git push --force origin main' } } }), stderr: '', timedOut: false };
             expect(decisionOf(await call(gateHeaders()))).to.include({ kind: 'deny', source: 'destructive-guard' });

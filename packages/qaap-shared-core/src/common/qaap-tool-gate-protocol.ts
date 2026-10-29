@@ -27,6 +27,10 @@ export type QaapToolGateSource =
     'read-only' | 'destructive-guard' | 'dev-server-guard' | 'hook' | 'policy' | 'user' | 'ttl' | 'gate-error';
 
 export type QaapToolGateDecision =
+    /**
+     * `updatedInput`, when present, is the COMPLETE tool input to run (hook rewrites are merged on top of the
+     * original by the server). Clients replace the whole input with it and never merge it themselves.
+     */
     | { kind: 'allow'; updatedInput?: Record<string, unknown>; source: QaapToolGateSource }
     | { kind: 'deny'; reason: string; source: QaapToolGateSource; retryable?: boolean };
 

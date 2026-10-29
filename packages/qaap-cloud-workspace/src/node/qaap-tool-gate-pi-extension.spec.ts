@@ -156,31 +156,52 @@ describe('qaap-tool-gate-pi.mjs', () => {
     });
 
     describe('consecutive gate failures', () => {
-        const failing = (): Promise<{ block?: boolean } | undefined> => run(event(), env({ QAAP_GATE_TOKEN: undefined }));
+        const serverDown = (): void => {
+            reply = (_b, res) => { res.statusCode = 503; res.end('{}'); };
+        };
+        const serverUp = (): void => {
+            reply = (_b, res) => res.end(JSON.stringify({ decision: { kind: 'allow', source: 'policy' } }));
+        };
+        const callWith = (opts: { retries: number; marginMs: number; onUnavailable: (n: number) => void }): Promise<{ block?: boolean } | undefined> =>
+            ext.handleToolCall(event(), { cwd: '/w' }, env(), fetch, opts);
 
         it('stops the run on the third consecutive failure, not before', async () => {
             const stops: number[] = [];
             const opts = { retries: 0, marginMs: 200, onUnavailable: (n: number) => stops.push(n) };
-            for (let index = 0; index < 2; index++) {
-                await ext.handleToolCall(event(), { cwd: '/w' }, env({ QAAP_GATE_TOKEN: undefined }), fetch, opts);
-            }
+            serverDown();
+            await callWith(opts);
+            await callWith(opts);
             expect(stops).to.deep.equal([]);
-            await ext.handleToolCall(event(), { cwd: '/w' }, env({ QAAP_GATE_TOKEN: undefined }), fetch, opts);
+            await callWith(opts);
             expect(stops).to.deep.equal([3]);
         });
 
         it('two failures then a success reset the count, and the failures are reported with the next request', async () => {
             const stops: number[] = [];
             const opts = { retries: 0, marginMs: 200, onUnavailable: (n: number) => stops.push(n) };
-            await failing();
-            await failing();
-            await ext.handleToolCall(event(), { cwd: '/w' }, env(), fetch, opts);
-            expect(seen[0].headers['x-qaap-gate-client-errors']).to.equal('2');
-            await ext.handleToolCall(event(), { cwd: '/w' }, env({ QAAP_GATE_TOKEN: undefined }), fetch, opts);
-            await ext.handleToolCall(event(), { cwd: '/w' }, env({ QAAP_GATE_TOKEN: undefined }), fetch, opts);
+            serverDown();
+            await callWith(opts);
+            await callWith(opts);
+            serverUp();
+            await callWith(opts);
+            expect(seen[2].headers['x-qaap-gate-client-errors']).to.equal('2');
+            serverDown();
+            await callWith(opts);
+            await callWith(opts);
             expect(stops).to.deep.equal([]);
-            await ext.handleToolCall(event(), { cwd: '/w' }, env(), fetch, opts);
-            expect(seen[1].headers['x-qaap-gate-client-errors']).to.equal('2');
+            serverUp();
+            await callWith(opts);
+            expect(seen[5].headers['x-qaap-gate-client-errors']).to.equal('2');
+        });
+
+        it('a missing gate configuration blocks the call but never counts toward stopping the run', async () => {
+            const stops: number[] = [];
+            const opts = { retries: 0, marginMs: 200, onUnavailable: (n: number) => stops.push(n) };
+            for (let index = 0; index < 5; index++) {
+                const result = await ext.handleToolCall(event(), { cwd: '/w' }, env({ QAAP_GATE_URL: undefined, QAAP_GATE_TOKEN: undefined }), fetch, opts);
+                expect(result?.block).to.equal(true);
+            }
+            expect(stops).to.deep.equal([]);
         });
 
         it('a deny from the gate is an answer, not a failure', async () => {
