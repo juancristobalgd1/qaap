@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { execFile, spawn } from 'child_process';
+import { execFile, spawn, spawnSync } from 'child_process';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -103,8 +103,13 @@ export class QaapCodexGateOverlayBuilder {
                 return;
             }
             disposed = true;
-            this.writeBackRefreshedAuth(taskDir, codexHome, overlayAuth, sourceAuth, initialAuth, expectedUid);
-            QaapCodexGateOverlayBuilder.removeTree(taskDir);
+            if (drop) {
+                // The overlay and the owner's home belong to the agent uid: root never walks them by path.
+                this.finishAsAgent(drop, taskDir, overlayAuth, sourceAuth, initialAuth?.text);
+            } else {
+                this.writeBackRefreshedAuth(taskDir, codexHome, overlayAuth, sourceAuth, initialAuth, expectedUid);
+                this.removeTaskTree(taskDir);
+            }
         };
         try {
             // The owner's files are read as the owner would: a link to a root-only file is refused.
@@ -326,7 +331,7 @@ export class QaapCodexGateOverlayBuilder {
                 return this.processBase;
             } catch (error) {
                 console.warn('[qaap-codex-gate] the overlay base failed verification; creating a new one');
-                QaapCodexGateOverlayBuilder.removeTree(this.processBase);
+                this.removeBase(this.processBase);
                 this.processBase = undefined;
             }
         }
@@ -334,7 +339,7 @@ export class QaapCodexGateOverlayBuilder {
         fs.chmodSync(base, drop ? 0o711 : 0o700);
         this.verifyBase(base, drop);
         this.processBase = base;
-        process.once('exit', () => QaapCodexGateOverlayBuilder.removeTree(base));
+        process.once('exit', () => this.removeBase(base));
         return base;
     }
 
@@ -350,7 +355,7 @@ export class QaapCodexGateOverlayBuilder {
                 const stat = fs.lstatSync(dir);
                 if (stat.isDirectory() && (uid === undefined || stat.uid === uid) && dir !== this.processBase
                     && Date.now() - stat.mtimeMs > STALE_OVERLAY_MAX_AGE_MS) {
-                    QaapCodexGateOverlayBuilder.removeTree(dir);
+                    this.removeBase(dir);
                 }
             }
         } catch {
@@ -426,14 +431,99 @@ export class QaapCodexGateOverlayBuilder {
         }
     }
 
-    /** Deletes without following links (rmSync unlinks a link instead of entering it). */
-    protected static removeTree(dir: string): void {
+    /**
+     * Script run AS THE AGENT'S UID (never as root) to finish a task: write a refreshed login back
+     * (compare-and-swap) and empty the task directory. Whatever links the agent planted can then only
+     * reach what the agent could already reach, because root never walks agent-owned trees by path.
+     */
+    protected static readonly AGENT_FINISH_SCRIPT = [
+        "const fs=require('fs'),path=require('path');",
+        "const i=JSON.parse(fs.readFileSync(0,'utf8'));",
+        'try{if(typeof i.initial==="string"){const cur=fs.readFileSync(i.overlayAuth,"utf8");if(cur!==i.initial){JSON.parse(cur);',
+        'const target=fs.realpathSync(i.sourceAuth);if(fs.readFileSync(target,"utf8")===i.initial){',
+        'const tmp=target+"."+process.pid+".tmp";const fd=fs.openSync(tmp,"wx",0o600);fs.writeSync(fd,cur);fs.closeSync(fd);fs.renameSync(tmp,target);}}}}',
+        'catch(e){process.stderr.write("login write-back skipped\\n");}',
+        'let failed=false;',
+        'for(const e of fs.readdirSync(i.taskDir)){try{fs.rmSync(path.join(i.taskDir,e),{recursive:true,force:true});}catch(e2){failed=true;}}',
+        'process.exit(failed?1:0);',
+    ].join('');
+
+    /** Runs {@link AGENT_FINISH_SCRIPT} as `owner`. Returns false on any failure. Overridable for tests. */
+    protected runAsOwner(owner: { uid: number; gid: number }, input: object): boolean {
+        const result = spawnSync(process.execPath, ['-e', QaapCodexGateOverlayBuilder.AGENT_FINISH_SCRIPT], {
+            uid: owner.uid, gid: owner.gid, cwd: '/', input: JSON.stringify(input), timeout: 30000,
+            env: { PATH: process.env.PATH ?? '/usr/bin:/bin' }, stdio: ['pipe', 'ignore', 'ignore'],
+        });
+        return result.status === 0;
+    }
+
+    protected finishAsAgent(owner: { uid: number; gid?: number }, taskDir: string, overlayAuth: string, sourceAuth: string, initial: string | undefined): void {
         try {
-            if (fs.lstatSync(dir).isDirectory()) {
-                fs.rmSync(dir, { recursive: true, force: true });
+            if (this.treeOwner(fs.lstatSync(taskDir)).uid === QaapCodexGateOverlayBuilder.currentUid()) {
+                // Never handed over (the build failed before the agent could touch it): root's own tree.
+                this.removeTaskTree(taskDir);
+                return;
             }
         } catch {
-            // already gone
+            return;
+        }
+        const ok = this.runAsOwner({ uid: owner.uid, gid: owner.gid ?? owner.uid }, { taskDir, overlayAuth, sourceAuth, initial: initial ?? null });
+        if (!ok) {
+            console.warn('[qaap-codex-gate] could not finish the Codex overlay as the agent; it is left for the sweep and no login was written by root');
+            return;
+        }
+        // Empty and owned by the agent but inside our private base: rmdir is the only call root makes.
+        try {
+            fs.rmdirSync(taskDir);
+        } catch {
+            // not empty (a background agent process): the sweep retries
+        }
+    }
+
+    /** Owner of an entry, overridable for tests that cannot chown. */
+    protected treeOwner(stat: fs.Stats): { uid: number; gid: number } {
+        return { uid: stat.uid, gid: stat.gid };
+    }
+
+    /**
+     * Removes one task directory without root ever recursing into a tree another uid controls: a tree owned
+     * by another uid is emptied by a child running as that uid, then rmdir'd. Trees owned by this process
+     * (dev, or root's own half-built overlays that no agent ever touched) are removed directly.
+     */
+    protected removeTaskTree(dir: string): void {
+        try {
+            const stat = fs.lstatSync(dir);
+            if (!stat.isDirectory()) {
+                fs.unlinkSync(dir);
+                return;
+            }
+            const owner = this.treeOwner(stat);
+            if (owner.uid === QaapCodexGateOverlayBuilder.currentUid()) {
+                fs.rmSync(dir, { recursive: true, force: true });
+                return;
+            }
+            if (this.runAsOwner(owner, { taskDir: dir, initial: null })) {
+                fs.rmdirSync(dir);
+            }
+        } catch {
+            // already gone, or left for the next sweep
+        }
+    }
+
+    /** Removes a base: a link is only unlinked; each task directory goes through {@link removeTaskTree}. */
+    protected removeBase(base: string): void {
+        try {
+            const stat = fs.lstatSync(base);
+            if (!stat.isDirectory()) {
+                fs.unlinkSync(base);
+                return;
+            }
+            for (const entry of fs.readdirSync(base)) {
+                this.removeTaskTree(path.join(base, entry));
+            }
+            fs.rmdirSync(base);
+        } catch {
+            // already gone, or non-empty: the next sweep retries
         }
     }
 
@@ -456,7 +546,7 @@ export class QaapCodexGateOverlayBuilder {
                 const dir = path.join(root, entry);
                 const stat = fs.lstatSync(dir);
                 if (stat.isDirectory() && Date.now() - stat.mtimeMs > STALE_OVERLAY_MAX_AGE_MS) {
-                    QaapCodexGateOverlayBuilder.removeTree(dir);
+                    this.removeTaskTree(dir);
                 }
             }
         } catch {

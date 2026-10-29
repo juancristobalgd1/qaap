@@ -158,15 +158,26 @@ describe('QaapCodexGateOverlayBuilder', () => {
 
         class RecordingBuilder extends QaapCodexGateOverlayBuilder {
             readonly handedOver: Array<{ target: string; uid: number; gid: number }> = [];
+            readonly ran: Array<{ owner: { uid: number; gid: number }; input: Record<string, any> }> = [];
+            childOk = true;
+            // Pretend the agent owns the trees (this test cannot chown): root must then go through the child.
+            foreignOwner: { uid: number; gid: number } | undefined = { uid: agentUid, gid: 7 };
             probedAs: unknown = 'not-called';
-            constructor() {
+            constructor(status: 'trusted' | 'untrusted' = 'trusted') {
                 super(async (_home, _cwd, _env, identity) => {
                     this.probedAs = identity;
-                    return 'trusted';
+                    return status;
                 });
             }
             protected override handOver(_fd: number, target: string, owner: { uid: number; gid?: number }): void {
                 this.handedOver.push({ target, uid: owner.uid, gid: owner.gid ?? owner.uid });
+            }
+            protected override runAsOwner(owner: { uid: number; gid: number }, input: object): boolean {
+                this.ran.push({ owner, input: input as Record<string, any> });
+                return this.childOk;
+            }
+            protected override treeOwner(stat: fs.Stats): { uid: number; gid: number } {
+                return this.foreignOwner ?? super.treeOwner(stat);
             }
             skipReachability = true;
             protected override assertReachable(base: string): void {
@@ -192,6 +203,77 @@ describe('QaapCodexGateOverlayBuilder', () => {
             // The base stays private to the backend: 0711, never chowned.
             expect(fs.statSync(root).mode & 0o777).to.equal(0o711);
             overlay.dispose();
+        });
+
+        it('finishes as the agent uid: root neither writes the login back nor walks the overlay by path', async () => {
+            const builder = new RecordingBuilder();
+            const overlay = await builder.create(options({ agentIdentity: { uid: agentUid, gid: 7 } }));
+            const taskDir = path.dirname(overlay.codexHome);
+            overlay.dispose();
+            expect(builder.ran).to.have.length(1);
+            expect(builder.ran[0].owner).to.deep.equal({ uid: agentUid, gid: 7 });
+            expect(builder.ran[0].input).to.include({ taskDir, overlayAuth: path.join(overlay.codexHome, 'auth.json') });
+            // The mocked child did nothing, and root left the agent-owned tree alone.
+            expect(fs.existsSync(path.join(overlay.codexHome, 'hooks.json'))).to.equal(true);
+            expect(fs.readFileSync(path.join(sourceHome, 'auth.json'), 'utf8')).to.equal('{"tokens":{"refresh_token":"r1"}}');
+        });
+
+        it('does nothing as root when the child fails', async () => {
+            const builder = new RecordingBuilder();
+            builder.childOk = false;
+            const overlay = await builder.create(options({ agentIdentity: { uid: agentUid, gid: 7 } }));
+            overlay.dispose();
+            expect(builder.ran).to.have.length(1);
+            expect(fs.existsSync(path.join(overlay.codexHome, 'hooks.json'))).to.equal(true);
+            expect(fs.readFileSync(path.join(sourceHome, 'auth.json'), 'utf8')).to.equal('{"tokens":{"refresh_token":"r1"}}');
+        });
+
+        it('cleans up a root-owned half-built overlay directly (no child)', async () => {
+            const failing = new RecordingBuilder('untrusted');
+            // The probe fails after the handover, but the dir is still root's: treeOwner reports root.
+            failing.foreignOwner = undefined;
+            let error: Error | undefined;
+            try {
+                await failing.create(options({ agentIdentity: { uid: agentUid } }));
+            } catch (caught) {
+                error = caught as Error;
+            }
+            expect(error).to.not.equal(undefined);
+            expect(failing.ran).to.deep.equal([]);
+            expect(fs.readdirSync(root)).to.deep.equal([]);
+        });
+
+        it('sweeps old agent-owned task dirs through a child, not by walking them as root', () => {
+            fs.mkdirSync(root, { mode: 0o711 });
+            const stale = path.join(root, 'old-task');
+            fs.mkdirSync(path.join(stale, 'codex-home'), { recursive: true });
+            const builder = new RecordingBuilder();
+            (builder as any).removeBase(root);
+            expect(builder.ran).to.have.length(1);
+            expect(builder.ran[0].input).to.deep.equal({ taskDir: stale, initial: null });
+            expect(fs.existsSync(path.join(stale, 'codex-home'))).to.equal(true);
+        });
+
+        it('the agent-side script writes the refreshed login back (CAS) and empties the task dir', () => {
+            class Real extends QaapCodexGateOverlayBuilder {
+                run(input: object): boolean {
+                    return this.runAsOwner({ uid: process.getuid!(), gid: process.getgid!() }, input);
+                }
+            }
+            const taskDir = path.join(tmp, 'agent-task');
+            fs.mkdirSync(path.join(taskDir, 'codex-home'), { recursive: true });
+            const overlayAuth = path.join(taskDir, 'codex-home', 'auth.json');
+            const sourceAuth = path.join(sourceHome, 'auth.json');
+            const initial = fs.readFileSync(sourceAuth, 'utf8');
+            fs.writeFileSync(overlayAuth, '{"tokens":{"refresh_token":"r9"}}');
+            expect(new Real(async () => 'trusted').run({ taskDir, overlayAuth, sourceAuth, initial })).to.equal(true);
+            expect(fs.readFileSync(sourceAuth, 'utf8')).to.equal('{"tokens":{"refresh_token":"r9"}}');
+            expect(fs.readdirSync(taskDir)).to.deep.equal([]);
+            // CAS: the source changed, so the refreshed copy is dropped
+            fs.mkdirSync(path.join(taskDir, 'codex-home'));
+            fs.writeFileSync(overlayAuth, '{"tokens":{"refresh_token":"r10"}}');
+            expect(new Real(async () => 'trusted').run({ taskDir, overlayAuth, sourceAuth, initial })).to.equal(true);
+            expect(fs.readFileSync(sourceAuth, 'utf8')).to.equal('{"tokens":{"refresh_token":"r9"}}');
         });
 
         it('refuses a base that is a symlink planted by the agent and chowns nothing', async () => {
