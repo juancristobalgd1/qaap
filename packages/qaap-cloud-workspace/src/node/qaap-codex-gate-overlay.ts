@@ -18,6 +18,15 @@ export const QAAP_TOOL_GATE_CODEX_HOOK_FILE = 'qaap-tool-gate-codex-hook.mjs';
 const HOOK_TIMEOUT_MARGIN_SEC = 60;
 const STALE_OVERLAY_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const HOOK_KEY_SUFFIX = 'pre_tool_use:0:0';
+const MAX_SECRET_FILE_BYTES = 1024 * 1024;
+// O_NOFOLLOW does not exist on Windows (where tenant privilege drops do not apply either).
+const NOFOLLOW = fs.constants.O_NOFOLLOW ?? 0;
+
+interface SafeRead {
+    readonly text: string;
+    readonly uid: number;
+    readonly gid: number;
+}
 
 /** Absolute path of the Codex gate hook, resolved from the compiled module location at spawn time. */
 export function resolveQaapToolGateCodexHookPath(): string {
@@ -75,50 +84,51 @@ export class QaapCodexGateOverlayBuilder {
 
     async create(options: QaapCodexGateOverlayOptions, env: NodeJS.ProcessEnv = process.env): Promise<QaapCodexGateOverlay> {
         const drop = this.resolveDrop(options.agentIdentity);
-        const root = options.overlayRoot ?? QaapCodexGateOverlayBuilder.defaultRoot(drop?.uid);
-        this.sweepStale(root);
-        fs.mkdirSync(root, { recursive: true, mode: 0o700 });
         // Codex keys hook trust by the CANONICAL hooks.json path (macOS /var -> /private/var): a symlinked
         // path would leave the hook untrusted, and an untrusted hook is skipped silently.
-        const taskDir = path.join(fs.realpathSync(root), QaapCodexGateOverlayBuilder.safeSegment(options.taskId));
+        const base = QaapCodexGateOverlayBuilder.canonical(
+            this.ensureBase(options.overlayRoot ?? QaapCodexGateOverlayBuilder.defaultRoot(drop), drop));
+        this.sweepStale(base);
+        // Root-owned 0700 until everything is written, so the agent cannot plant links while root builds.
+        const taskDir = fs.mkdtempSync(path.join(base, `${QaapCodexGateOverlayBuilder.safeSegment(options.taskId)}-`));
         const codexHome = path.join(taskDir, 'codex-home');
-        fs.rmSync(taskDir, { recursive: true, force: true });
-        fs.mkdirSync(codexHome, { recursive: true, mode: 0o700 });
+        fs.mkdirSync(codexHome, { mode: 0o700 });
         const overlayAuth = path.join(codexHome, 'auth.json');
         const sourceAuth = path.join(options.sourceCodexHome, 'auth.json');
-        let initialAuth: string | undefined;
-        let sourceOwner: { uid: number; gid: number } | undefined;
+        const expectedUid = drop ? drop.uid : QaapCodexGateOverlayBuilder.currentUid();
+        let initialAuth: SafeRead | undefined;
         let disposed = false;
         const dispose = (): void => {
             if (disposed) {
                 return;
             }
             disposed = true;
-            this.writeBackRefreshedAuth(overlayAuth, sourceAuth, initialAuth, sourceOwner);
-            fs.rmSync(taskDir, { recursive: true, force: true });
+            this.writeBackRefreshedAuth(taskDir, codexHome, overlayAuth, sourceAuth, initialAuth, expectedUid);
+            QaapCodexGateOverlayBuilder.removeTree(taskDir);
         };
         try {
-            if (fs.existsSync(sourceAuth)) {
-                initialAuth = fs.readFileSync(sourceAuth, 'utf8');
-                const stat = fs.statSync(sourceAuth);
-                sourceOwner = { uid: stat.uid, gid: stat.gid };
-                fs.writeFileSync(overlayAuth, initialAuth, { mode: 0o600 });
+            // The owner's files are read as the owner would: a link to a root-only file is refused.
+            initialAuth = QaapCodexGateOverlayBuilder.readRegularFile(sourceAuth, true, drop?.uid);
+            if (initialAuth) {
+                this.writeOwnedFile(overlayAuth, initialAuth.text, drop);
             }
             const hooksPath = path.join(codexHome, 'hooks.json');
             const hookCommand = this.hookCommand(options);
             const timeoutSec = Math.max(1, Math.round(options.askTtlSec)) + HOOK_TIMEOUT_MARGIN_SEC;
-            fs.writeFileSync(hooksPath, QaapCodexGateOverlayBuilder.renderHooksJson(hookCommand, timeoutSec), { mode: 0o600 });
+            this.writeOwnedFile(hooksPath, QaapCodexGateOverlayBuilder.renderHooksJson(hookCommand, timeoutSec), drop);
             const trustedHash = QaapCodexGateOverlayBuilder.hookHash(hookCommand, timeoutSec);
-            const sourceConfig = QaapCodexGateOverlayBuilder.readIfExists(path.join(options.sourceCodexHome, 'config.toml'));
-            fs.writeFileSync(path.join(codexHome, 'config.toml'), QaapCodexGateOverlayBuilder.renderConfigToml({
+            const sourceConfig = QaapCodexGateOverlayBuilder.readRegularFile(path.join(options.sourceCodexHome, 'config.toml'), true, drop?.uid)?.text;
+            this.writeOwnedFile(path.join(codexHome, 'config.toml'), QaapCodexGateOverlayBuilder.renderConfigToml({
                 cwd: QaapCodexGateOverlayBuilder.canonical(options.cwd),
                 folderTrusted: options.folderTrusted,
                 hookStateKey: `${hooksPath}:${HOOK_KEY_SUFFIX}`,
                 trustedHash,
                 sourceConfig,
-            }), { mode: 0o600 });
+            }), drop);
             if (drop) {
-                this.chownTree(path.dirname(taskDir), taskDir, drop);
+                // Only these two directories and the files above are ever handed over; never the base.
+                this.handOverDirectory(codexHome, drop);
+                this.handOverDirectory(taskDir, drop);
             }
             await this.verifyOnce(codexHome, options.cwd, env, drop);
         } catch (error) {
@@ -144,23 +154,31 @@ export class QaapCodexGateOverlayBuilder {
         return { uid: identity.uid, gid: identity.gid };
     }
 
-    /** Hands the overlay root and everything under the task dir to the agent. Overridable for tests. */
-    protected chownTree(root: string, taskDir: string, owner: { uid: number; gid?: number }): void {
-        const gid = owner.gid ?? owner.uid;
-        const visit = (target: string): void => {
-            this.chown(target, owner.uid, gid);
-            if (fs.lstatSync(target).isDirectory()) {
-                for (const entry of fs.readdirSync(target)) {
-                    visit(path.join(target, entry));
-                }
+    /** Creates a file root owns exclusively (O_EXCL|O_NOFOLLOW) and, with a drop, hands it to the agent by fd. */
+    protected writeOwnedFile(file: string, text: string, owner: { uid: number; gid?: number } | undefined): void {
+        const fd = fs.openSync(file, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | NOFOLLOW, 0o600);
+        try {
+            fs.writeSync(fd, text);
+            if (owner) {
+                this.handOver(fd, file, owner);
             }
-        };
-        this.chown(root, owner.uid, gid);
-        visit(taskDir);
+        } finally {
+            fs.closeSync(fd);
+        }
     }
 
-    protected chown(target: string, uid: number, gid: number): void {
-        fs.chownSync(target, uid, gid);
+    protected handOverDirectory(dir: string, owner: { uid: number; gid?: number }): void {
+        const fd = fs.openSync(dir, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | NOFOLLOW);
+        try {
+            this.handOver(fd, dir, owner);
+        } finally {
+            fs.closeSync(fd);
+        }
+    }
+
+    /** The only place that chowns: by file descriptor, so a link can never redirect it. Overridable for tests. */
+    protected handOver(fd: number, _target: string, owner: { uid: number; gid?: number }): void {
+        fs.fchownSync(fd, owner.uid, owner.gid ?? owner.uid);
     }
 
     protected async verifyOnce(codexHome: string, cwd: string, env: NodeJS.ProcessEnv, identity?: { uid: number; gid?: number }): Promise<void> {
@@ -177,30 +195,43 @@ export class QaapCodexGateOverlayBuilder {
 
     /**
      * Rewrites an `auth.json` Codex refreshed during the task back to the owner's home (refresh tokens
-     * rotate). Compare-and-swap: only while the owner's file is still what we copied; otherwise another
-     * task or a new sign-in won and is left alone.
+     * rotate). Compare-and-swap: only while the owner's file is still what we copied. The overlay is
+     * agent-controlled, so root reads it only as a regular, single-link file owned by the agent
+     * (O_NOFOLLOW); a link to a root-only file is therefore never read, let alone copied.
      */
-    protected writeBackRefreshedAuth(overlayAuth: string, sourceAuth: string, initialAuth: string | undefined,
-        owner: { uid: number; gid: number } | undefined): void {
+    protected writeBackRefreshedAuth(taskDir: string, codexHome: string, overlayAuth: string, sourceAuth: string,
+        initial: SafeRead | undefined, expectedUid: number | undefined): void {
         try {
-            if (initialAuth === undefined || !fs.existsSync(overlayAuth)) {
+            if (!initial) {
                 return;
             }
-            const current = fs.readFileSync(overlayAuth, 'utf8');
-            if (current === initialAuth) {
+            for (const dir of [taskDir, codexHome]) {
+                if (!fs.lstatSync(dir).isDirectory()) {
+                    console.warn('[qaap-codex-gate] overlay layout was tampered with; not writing the Codex login back');
+                    return;
+                }
+            }
+            const refreshed = QaapCodexGateOverlayBuilder.readRegularFile(overlayAuth, false, expectedUid);
+            if (!refreshed || refreshed.text === initial.text) {
                 return;
             }
-            JSON.parse(current);
-            if (!fs.existsSync(sourceAuth) || fs.readFileSync(sourceAuth, 'utf8') !== initialAuth) {
+            JSON.parse(refreshed.text);
+            const target = fs.realpathSync(sourceAuth);
+            if (QaapCodexGateOverlayBuilder.readRegularFile(target, false, undefined)?.text !== initial.text) {
                 console.warn('[qaap-codex-gate] the Codex login changed during the task; not overwriting it with the refreshed copy');
                 return;
             }
-            const temp = `${sourceAuth}.${process.pid}.${Date.now()}.tmp`;
-            fs.writeFileSync(temp, current, { mode: 0o600 });
-            if (owner && typeof process.getuid === 'function' && process.getuid() === 0) {
-                this.chown(temp, owner.uid, owner.gid);
+            const temp = `${target}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
+            const fd = fs.openSync(temp, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | NOFOLLOW, 0o600);
+            try {
+                fs.writeSync(fd, refreshed.text);
+                if (QaapCodexGateOverlayBuilder.currentUid() === 0) {
+                    this.handOver(fd, temp, { uid: initial.uid, gid: initial.gid });
+                }
+            } finally {
+                fs.closeSync(fd);
             }
-            fs.renameSync(temp, sourceAuth);
+            fs.renameSync(temp, target);
         } catch (error) {
             console.warn('[qaap-codex-gate] could not write the refreshed Codex login back', error instanceof Error ? error.message : String(error));
         }
@@ -270,10 +301,86 @@ export class QaapCodexGateOverlayBuilder {
         return kept.join('\n').trim();
     }
 
-    /** One root per OS identity the agent runs as: other tenants' uids cannot enter it (0700, owned by the agent). */
-    static defaultRoot(agentUid?: number): string {
-        const uid = agentUid ?? (typeof process.getuid === 'function' ? process.getuid() : 'user');
-        return path.join(os.tmpdir(), `qaap-codex-gate-${uid}`);
+    /** Where overlays live: root-private state when dropping to an agent uid, the OS temp dir otherwise. */
+    static defaultRoot(drop?: { uid: number }): string {
+        if (drop) {
+            return process.env.QAAP_CODEX_GATE_DIR?.trim() || path.join(os.homedir(), '.qaap', 'codex-gate');
+        }
+        return path.join(os.tmpdir(), `qaap-codex-gate-${QaapCodexGateOverlayBuilder.currentUid() ?? 'user'}`);
+    }
+
+    protected static currentUid(): number | undefined {
+        return typeof process.getuid === 'function' ? process.getuid() : undefined;
+    }
+
+    /**
+     * The base directory is created and owned by this process (root when dropping) and is never chowned.
+     * With a drop it is 0711: the agent can traverse to its own task directory but cannot create, rename
+     * or list anything in it. A pre-existing link, foreign owner or writable base is refused.
+     */
+    protected ensureBase(base: string, drop: { uid: number } | undefined): string {
+        fs.mkdirSync(base, { recursive: true, mode: drop ? 0o711 : 0o700 });
+        const stat = fs.lstatSync(base);
+        const uid = QaapCodexGateOverlayBuilder.currentUid();
+        if (!stat.isDirectory() || (uid !== undefined && stat.uid !== uid)) {
+            throw new Error(`Refusing to use ${base} for Codex overlays: it is not a real directory owned by the backend.`);
+        }
+        const forbidden = drop ? 0o022 : 0o077;
+        if ((stat.mode & forbidden) !== 0 || (drop && (stat.mode & 0o001) === 0)) {
+            throw new Error(`Refusing to use ${base} for Codex overlays: its mode is ${(stat.mode & 0o777).toString(8)}.`);
+        }
+        if (drop) {
+            this.assertReachable(base);
+        }
+        return base;
+    }
+
+    /** The agent uid must be able to traverse every ancestor of the base; fail with a clear message otherwise. */
+    protected assertReachable(base: string): void {
+        for (let dir = path.dirname(fs.realpathSync(base)); dir !== path.dirname(dir); dir = path.dirname(dir)) {
+            if ((fs.statSync(dir).mode & 0o001) === 0) {
+                throw new Error(`Codex cannot reach ${base}: ${dir} is not searchable by other users (set QAAP_CODEX_GATE_DIR).`);
+            }
+        }
+    }
+
+    /** Reads a regular, single-link file without following a final link (or after resolving it, for the owner's files). */
+    static readRegularFile(file: string, resolveLink: boolean, requiredUid: number | undefined): SafeRead | undefined {
+        let target = file;
+        if (resolveLink) {
+            try {
+                target = fs.realpathSync(file);
+            } catch {
+                return undefined;
+            }
+        }
+        let fd: number;
+        try {
+            fd = fs.openSync(target, fs.constants.O_RDONLY | NOFOLLOW);
+        } catch {
+            return undefined;
+        }
+        try {
+            const stat = fs.fstatSync(fd);
+            if (!stat.isFile() || stat.nlink !== 1 || stat.size > MAX_SECRET_FILE_BYTES || (requiredUid !== undefined && stat.uid !== requiredUid)) {
+                console.warn('[qaap-codex-gate] refusing to read an unexpected file (link, hardlink or foreign owner)');
+                return undefined;
+            }
+            return { text: fs.readFileSync(fd, 'utf8'), uid: stat.uid, gid: stat.gid };
+        } finally {
+            fs.closeSync(fd);
+        }
+    }
+
+    /** Deletes without following links (rmSync unlinks a link instead of entering it). */
+    protected static removeTree(dir: string): void {
+        try {
+            if (fs.lstatSync(dir).isDirectory()) {
+                fs.rmSync(dir, { recursive: true, force: true });
+            }
+        } catch {
+            // already gone
+        }
     }
 
     protected static canonical(target: string): string {
@@ -288,21 +395,14 @@ export class QaapCodexGateOverlayBuilder {
         return value.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 80) || 'task';
     }
 
-    protected static readIfExists(file: string): string | undefined {
-        try {
-            return fs.readFileSync(file, 'utf8');
-        } catch {
-            return undefined;
-        }
-    }
-
     /** Crash leftovers: overlays hold a copy of the login, so they must not linger. */
     protected sweepStale(root: string): void {
         try {
             for (const entry of fs.readdirSync(root)) {
                 const dir = path.join(root, entry);
-                if (Date.now() - fs.statSync(dir).mtimeMs > STALE_OVERLAY_MAX_AGE_MS) {
-                    fs.rmSync(dir, { recursive: true, force: true });
+                const stat = fs.lstatSync(dir);
+                if (stat.isDirectory() && Date.now() - stat.mtimeMs > STALE_OVERLAY_MAX_AGE_MS) {
+                    QaapCodexGateOverlayBuilder.removeTree(dir);
                 }
             }
         } catch {

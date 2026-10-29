@@ -53,7 +53,8 @@ describe('QaapCodexGateOverlayBuilder', () => {
     it('writes auth.json (0600), hooks.json with the gate hook and a config with the trusted hash', async () => {
         const overlay = await trusted.create(options());
         // Canonical path: Codex keys hook trust by it (macOS tmp is a symlink).
-        expect(overlay.codexHome).to.equal(path.join(fs.realpathSync(root), 'task-1', 'codex-home'));
+        expect(path.dirname(path.dirname(overlay.codexHome))).to.equal(fs.realpathSync(root));
+        expect(path.basename(path.dirname(overlay.codexHome))).to.match(/^task-1-/);
         expect(fs.readFileSync(path.join(overlay.codexHome, 'auth.json'), 'utf8')).to.equal('{"tokens":{"refresh_token":"r1"}}');
         expect(fs.statSync(path.join(overlay.codexHome, 'auth.json')).mode & 0o777).to.equal(0o600);
         const hooks = JSON.parse(fs.readFileSync(path.join(overlay.codexHome, 'hooks.json'), 'utf8'));
@@ -120,7 +121,7 @@ describe('QaapCodexGateOverlayBuilder', () => {
         const overlay = await trusted.create(options());
         overlay.dispose();
         overlay.dispose();
-        expect(fs.existsSync(path.join(root, 'task-1'))).to.equal(false);
+        expect(fs.readdirSync(root)).to.deep.equal([]);
         expect(fs.readFileSync(path.join(sourceHome, 'auth.json'), 'utf8')).to.equal('{"tokens":{"refresh_token":"r1"}}');
     });
 
@@ -156,7 +157,7 @@ describe('QaapCodexGateOverlayBuilder', () => {
         const agentUid = (process.getuid?.() ?? 0) + 4242;
 
         class RecordingBuilder extends QaapCodexGateOverlayBuilder {
-            readonly chowns: Array<{ target: string; uid: number; gid: number }> = [];
+            readonly handedOver: Array<{ target: string; uid: number; gid: number }> = [];
             probedAs: unknown = 'not-called';
             constructor() {
                 super(async (_home, _cwd, _env, identity) => {
@@ -164,34 +165,116 @@ describe('QaapCodexGateOverlayBuilder', () => {
                     return 'trusted';
                 });
             }
-            protected override chown(target: string, uid: number, gid: number): void {
-                this.chowns.push({ target, uid, gid });
+            protected override handOver(_fd: number, target: string, owner: { uid: number; gid?: number }): void {
+                this.handedOver.push({ target, uid: owner.uid, gid: owner.gid ?? owner.uid });
+            }
+            protected override assertReachable(): void {
+                // the test tmp dir is private to the developer
             }
         }
 
-        it('hands the overlay to the agent uid/gid and probes trust as that same identity', async () => {
+        it('hands over only the task dir, codex-home and the files root created, never the base', async () => {
             const builder = new RecordingBuilder();
-            const overlay = await builder.create(options({ agentIdentity: { uid: agentUid, gid: 7 }, overlayRoot: undefined }));
-            expect(overlay.codexHome).to.contain(`qaap-codex-gate-${agentUid}`);
-            const owned = builder.chowns.map(entry => entry.target);
-            for (const target of [path.dirname(path.dirname(overlay.codexHome)), overlay.codexHome,
-                path.join(overlay.codexHome, 'auth.json'), path.join(overlay.codexHome, 'hooks.json'), path.join(overlay.codexHome, 'config.toml')]) {
-                expect(owned, target).to.include(target);
-            }
-            expect(builder.chowns.every(entry => entry.uid === agentUid && entry.gid === 7)).to.equal(true);
+            const overlay = await builder.create(options({ agentIdentity: { uid: agentUid, gid: 7 } }));
+            const taskDir = path.dirname(overlay.codexHome);
+            expect(builder.handedOver.map(entry => entry.target).sort()).to.deep.equal([
+                taskDir, overlay.codexHome,
+                path.join(overlay.codexHome, 'config.toml'), path.join(overlay.codexHome, 'hooks.json'),
+                // no auth.json: the test's source login belongs to this uid, not to the simulated agent uid,
+                // so the drop path refuses to copy it (covered by the readRegularFile owner test below)
+            ].sort());
+            expect(builder.handedOver.every(entry => entry.uid === agentUid && entry.gid === 7)).to.equal(true);
             expect(builder.probedAs).to.deep.equal({ uid: agentUid, gid: 7 });
+            // The base stays private to the backend: 0711, never chowned.
+            expect(fs.statSync(root).mode & 0o777).to.equal(0o711);
             overlay.dispose();
-            fs.rmSync(path.dirname(path.dirname(overlay.codexHome)), { recursive: true, force: true });
+        });
+
+        it('refuses a base that is a symlink planted by the agent and chowns nothing', async () => {
+            const secretDir = path.join(tmp, 'backend-private');
+            fs.mkdirSync(secretDir);
+            const planted = path.join(tmp, 'planted');
+            fs.symlinkSync(secretDir, planted);
+            const builder = new RecordingBuilder();
+            let error: Error | undefined;
+            try {
+                await builder.create(options({ agentIdentity: { uid: agentUid }, overlayRoot: planted }));
+            } catch (caught) {
+                error = caught as Error;
+            }
+            expect(error?.message).to.contain('not a real directory');
+            expect(builder.handedOver).to.deep.equal([]);
+            expect(fs.readdirSync(secretDir)).to.deep.equal([]);
+        });
+
+        it('refuses a base the agent could write to', async () => {
+            fs.mkdirSync(root, { mode: 0o755 });
+            fs.chmodSync(root, 0o777);
+            let error: Error | undefined;
+            try {
+                await new RecordingBuilder().create(options({ agentIdentity: { uid: agentUid } }));
+            } catch (caught) {
+                error = caught as Error;
+            }
+            expect(error?.message).to.contain('its mode is 777');
         });
 
         it('keeps the current behaviour without a drop (same uid or no identity)', async () => {
             for (const agentIdentity of [undefined, {}, { uid: process.getuid?.() }]) {
                 const builder = new RecordingBuilder();
                 const overlay = await builder.create(options({ agentIdentity }));
-                expect(builder.chowns, JSON.stringify(agentIdentity)).to.deep.equal([]);
+                expect(builder.handedOver, JSON.stringify(agentIdentity)).to.deep.equal([]);
                 expect(builder.probedAs).to.equal(undefined);
                 overlay.dispose();
             }
+        });
+    });
+
+    describe('write-back against a hostile overlay', () => {
+        const secret = '{"legacy":"root-only-secret"}';
+
+        it('does not read or copy a symlink swapped in for auth.json', async () => {
+            const rootOnly = path.join(tmp, 'root-only.json');
+            fs.writeFileSync(rootOnly, secret);
+            const overlay = await trusted.create(options());
+            fs.rmSync(path.join(overlay.codexHome, 'auth.json'));
+            fs.symlinkSync(rootOnly, path.join(overlay.codexHome, 'auth.json'));
+            overlay.dispose();
+            expect(fs.readFileSync(path.join(sourceHome, 'auth.json'), 'utf8')).to.equal('{"tokens":{"refresh_token":"r1"}}');
+        });
+
+        it('does not copy a hardlinked auth.json', async () => {
+            const rootOnly = path.join(tmp, 'root-only.json');
+            fs.writeFileSync(rootOnly, secret);
+            const overlay = await trusted.create(options());
+            fs.rmSync(path.join(overlay.codexHome, 'auth.json'));
+            fs.linkSync(rootOnly, path.join(overlay.codexHome, 'auth.json'));
+            overlay.dispose();
+            expect(fs.readFileSync(path.join(sourceHome, 'auth.json'), 'utf8')).to.equal('{"tokens":{"refresh_token":"r1"}}');
+            expect(fs.readFileSync(rootOnly, 'utf8')).to.equal(secret);
+        });
+
+        it('does not write back when codex-home itself was swapped for a link', async () => {
+            const elsewhere = path.join(tmp, 'elsewhere');
+            fs.mkdirSync(elsewhere);
+            fs.writeFileSync(path.join(elsewhere, 'auth.json'), '{"tokens":{"refresh_token":"evil"}}');
+            const overlay = await trusted.create(options());
+            fs.rmSync(overlay.codexHome, { recursive: true });
+            fs.symlinkSync(elsewhere, overlay.codexHome);
+            overlay.dispose();
+            expect(fs.readFileSync(path.join(sourceHome, 'auth.json'), 'utf8')).to.equal('{"tokens":{"refresh_token":"r1"}}');
+            expect(fs.readFileSync(path.join(elsewhere, 'auth.json'), 'utf8')).to.contain('evil');
+        });
+
+        it('refuses to copy an owner login that is a link to a file of another owner (drop)', () => {
+            const rootOnly = path.join(tmp, 'root-only.json');
+            fs.writeFileSync(rootOnly, secret);
+            const link = path.join(tmp, 'link-auth.json');
+            fs.symlinkSync(rootOnly, link);
+            const otherUid = (process.getuid?.() ?? 0) + 1;
+            expect(QaapCodexGateOverlayBuilder.readRegularFile(link, true, otherUid)).to.equal(undefined);
+            expect(QaapCodexGateOverlayBuilder.readRegularFile(link, false, undefined)).to.equal(undefined);
+            expect(QaapCodexGateOverlayBuilder.readRegularFile(link, true, process.getuid?.())?.text).to.equal(secret);
         });
     });
 
@@ -214,7 +297,7 @@ describe('QaapCodexGateOverlayBuilder', () => {
                 error = caught as Error;
             }
             expect(error?.message, status).to.contain('does not trust the Qaap safety hook');
-            expect(fs.existsSync(path.join(root, 'task-1')), status).to.equal(false);
+            expect(fs.readdirSync(root), status).to.deep.equal([]);
         }
     });
 
@@ -230,6 +313,7 @@ describe('QaapCodexGateOverlayBuilder', () => {
     });
 
     it('sweeps overlays left by a crashed backend', async () => {
+        fs.mkdirSync(root, { mode: 0o700 });
         const stale = path.join(root, 'old-task');
         fs.mkdirSync(path.join(stale, 'codex-home'), { recursive: true });
         const old = new Date(Date.now() - 48 * 3600 * 1000);
