@@ -225,6 +225,13 @@ export function spawnAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, comm
 
 export function buildChildEnvExtracted(ctx: QaapAgentTaskRunnerContext, task: QaapAgentTask): NodeJS.ProcessEnv {
         const env: NodeJS.ProcessEnv = { ...process.env };
+        // Gate credentials are seeded only in the harness spawn (see spawnProcessExtracted); a child that
+        // runs repo code (verification scripts, git) must never inherit one, even from the backend env.
+        for (const key of Object.keys(env)) {
+            if (key.startsWith('QAAP_GATE_')) {
+                delete env[key];
+            }
+        }
         env.PWD = task.cwd;
         // When an agent is dropped to a non-root uid, its inherited HOME may point at root's
         // /root, which it cannot write. In Docker mode the overlay deliberately points inside the
@@ -301,7 +308,6 @@ export function buildChildEnvExtracted(ctx: QaapAgentTaskRunnerContext, task: Qa
             env.OPENCODE_PERMISSION = opencodePermission;
         }
         ctx.applyHelperEnv(env, task.ownerLogin, task.id, task.autoApprove);
-        ctx.applyToolGateEnv(env, task);
         // Last: no inherited (operator / tenant) key may bypass a harness's own sign-in.
         stripSignInOnlyAgentApiKeyEnv(env, resolveTaskHarnessId(task.agentId, task.command));
         return env;

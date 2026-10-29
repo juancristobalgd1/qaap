@@ -475,6 +475,8 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             ctx.recordTaskLatencyMark(task.id, 'spawn_start');
             ctx.observability?.recordAgentCommandStarted(task, 'agent-cli');
             childEnv = ctx.buildChildEnv(task);
+            // Only the harness process gets gate credentials: issuing a token revokes the previous one.
+            ctx.applyToolGateEnv(childEnv, task);
             if (task.agentId?.trim().toLowerCase() === 'opencode') {
                 // A run killed mid-snapshot leaves index.lock in the tenant's persistent data dir,
                 // and every later OpenCode run then fails to create its snapshot lock.
