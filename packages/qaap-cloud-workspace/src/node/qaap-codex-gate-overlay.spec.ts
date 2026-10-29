@@ -168,8 +168,12 @@ describe('QaapCodexGateOverlayBuilder', () => {
             protected override handOver(_fd: number, target: string, owner: { uid: number; gid?: number }): void {
                 this.handedOver.push({ target, uid: owner.uid, gid: owner.gid ?? owner.uid });
             }
-            protected override assertReachable(): void {
+            skipReachability = true;
+            protected override assertReachable(base: string): void {
                 // the test tmp dir is private to the developer
+                if (!this.skipReachability) {
+                    super.assertReachable(base);
+                }
             }
         }
 
@@ -205,6 +209,25 @@ describe('QaapCodexGateOverlayBuilder', () => {
             expect(error?.message).to.contain('not a real directory');
             expect(builder.handedOver).to.deep.equal([]);
             expect(fs.readdirSync(secretDir)).to.deep.equal([]);
+        });
+
+        it('fails with a clear error when an ancestor of the base is not searchable by the agent', async () => {
+            const closed = path.join(tmp, 'closed');
+            fs.mkdirSync(closed, { mode: 0o700 });
+            fs.chmodSync(closed, 0o710);
+            const strict = new RecordingBuilder();
+            strict.skipReachability = false;
+            let error: Error | undefined;
+            try {
+                await strict.create(options({ agentIdentity: { uid: agentUid }, overlayRoot: path.join(closed, 'overlays') }));
+            } catch (caught) {
+                error = caught as Error;
+            }
+            expect(error?.message).to.contain('not searchable by other users').and.to.contain('QAAP_CODEX_GATE_DIR');
+        });
+
+        it('defaults the drop base next to, not inside, ~/.qaap', () => {
+            expect(QaapCodexGateOverlayBuilder.defaultRoot({ uid: agentUid })).to.equal(path.join(os.homedir(), '.qaap-codex-gate'));
         });
 
         it('refuses a base the agent could write to', async () => {

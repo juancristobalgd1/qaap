@@ -301,10 +301,13 @@ export class QaapCodexGateOverlayBuilder {
         return kept.join('\n').trim();
     }
 
-    /** Where overlays live: root-private state when dropping to an agent uid, the OS temp dir otherwise. */
+    /**
+     * Where overlays live: with a drop, a sibling of ~/.qaap (that one is 0710 root:root in tenant backends, so the
+     * agent uid cannot traverse it) that root creates 0711; the OS temp dir otherwise.
+     */
     static defaultRoot(drop?: { uid: number }): string {
         if (drop) {
-            return process.env.QAAP_CODEX_GATE_DIR?.trim() || path.join(os.homedir(), '.qaap', 'codex-gate');
+            return process.env.QAAP_CODEX_GATE_DIR?.trim() || path.join(os.homedir(), '.qaap-codex-gate');
         }
         return path.join(os.tmpdir(), `qaap-codex-gate-${QaapCodexGateOverlayBuilder.currentUid() ?? 'user'}`);
     }
