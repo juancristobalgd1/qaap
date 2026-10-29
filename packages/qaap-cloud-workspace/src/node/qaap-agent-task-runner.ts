@@ -177,6 +177,8 @@ import {
     resolveAgentAccess,
     type QaapAgentConnectionSnapshot,
 } from './qaap-agent-access';
+import { childProcessEnv } from './qaap-child-process-env';
+import { qaapGitReadEnv } from './qaap-child-process-env';
 
 /** How long a CLI auth probe answer is considered current before it is re-probed in the background. */
 export const QAAP_AGENT_CONNECTION_STATE_TTL_MS = 15_000;
@@ -802,7 +804,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         if (!owner) {
             return probeAgentConnectionStateHelper(agentId, probe.file, {
                 args: probe.args,
-                env: stripSignInOnlyAgentApiKeyEnv({ ...process.env }, agentId),
+                env: stripSignInOnlyAgentApiKeyEnv(childProcessEnv(), agentId),
             });
         }
 
@@ -814,10 +816,10 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         try {
             const wrapped = this.tenantSpawn.wrapArgvForTenant(tenantCwd, probe.file, [...probe.args]);
             // An inherited OPENAI_API_KEY makes `codex login status` report the key, not the sign-in.
-            const env = stripSignInOnlyAgentApiKeyEnv({
+            const env = stripSignInOnlyAgentApiKeyEnv(childProcessEnv({
                 ...process.env,
                 ...this.tenantSpawn.tenantHomeEnvOverlay(tenantCwd),
-            }, agentId);
+            }), agentId);
             const prefix = this.resolveAgentCliPrefix(tenantCwd);
             if (canExposeAgentCliBinToChild(prefix, () => this.isTenantPrivilegeDropActive(tenantCwd))) {
                 prependAgentCliBinToPath(env, prefix);
@@ -842,14 +844,15 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     nativeModelDiscoverySpawner(ownerLogin?: string): NativeModelDiscoverySpawner {
         const owner = ownerLogin?.trim();
         return (bin, args) => {
+            // Always an explicit stripped env: a child that gets no env inherits every backend secret.
             if (!owner) {
-                return { file: bin, args };
+                return { file: bin, args, env: childProcessEnv() };
             }
             const tenantCwd = resolveUserReposRoot(resolveQaapReposRoot(), owner);
             if (process.env.QAAP_CLOUD_MODE === 'docker' && !fs.existsSync(tenantCwd)) {
                 return undefined;
             }
-            const env: NodeJS.ProcessEnv = { ...process.env, ...this.tenantSpawn.tenantHomeEnvOverlay(tenantCwd) };
+            const env: NodeJS.ProcessEnv = childProcessEnv({ ...process.env, ...this.tenantSpawn.tenantHomeEnvOverlay(tenantCwd) });
             const prefix = this.resolveAgentCliPrefix(tenantCwd);
             if (canExposeAgentCliBinToChild(prefix, () => this.isTenantPrivilegeDropActive(tenantCwd))) {
                 prependAgentCliBinToPath(env, prefix);
@@ -1682,6 +1685,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             encoding: 'utf8',
             timeout: 4000,
             maxBuffer,
+            env: qaapGitReadEnv(),
             stdio: ['ignore', 'pipe', 'pipe'],
         });
     }

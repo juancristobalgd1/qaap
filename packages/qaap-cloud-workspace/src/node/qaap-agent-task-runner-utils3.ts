@@ -43,6 +43,7 @@ import {
     type QaapAgentStdinPromptMode,
 } from './qaap-agent-task-runner-utils';
 import { extractImprovedComposerPromptFromAgentStdout } from '@theia/qaap-composer/lib/common/qaap-composer-prompt-improve';
+import { childProcessEnv } from './qaap-child-process-env';
 
 const AGENT_CANDIDATES: readonly AgentCandidate[] = QAAP_BUILTIN_AGENT_DEFINITIONS;
 const QAAP_AGENT_RETRIEVAL_ENABLED = !/^(0|false|off)$/i.test(process.env.QAAP_AGENT_RETRIEVAL?.trim() ?? '');
@@ -370,7 +371,7 @@ export function probeAgentConnectionState(
         try {
             execFile(options?.file ?? bin, [...args], {
                 cwd: options?.cwd,
-                env: options?.env,
+                env: childProcessEnv(options?.env),
                 encoding: 'utf8',
                 timeout: QAAP_AGENT_CONNECTION_PROBE_TIMEOUT_MS,
                 windowsHide: true,

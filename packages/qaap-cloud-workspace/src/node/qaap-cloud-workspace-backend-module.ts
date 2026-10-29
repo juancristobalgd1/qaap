@@ -4,6 +4,8 @@
 // *****************************************************************************
 
 import { ContainerModule } from '@theia/core/shared/inversify';
+import { EnvironmentUtils } from '@theia/core/lib/node/environment-utils';
+import { QaapBackendEnvironmentUtils } from './qaap-backend-env-utils';
 import { bindRootContributionProvider } from '@theia/core';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
 import { MessagingListenerContribution } from '@theia/core/lib/node/messaging/messaging-listeners';
@@ -153,6 +155,8 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     // NodeFileUploadService is unauthenticated and lets absolute paths through its traversal check.
     bind(QaapNodeFileUploadService).toSelf().inSingletonScope();
     rebind(NodeFileUploadService).toService(QaapNodeFileUploadService);
+    // Terminals merge the full process.env into user shells; drop backend-only secrets from every merge.
+    rebind(EnvironmentUtils).to(QaapBackendEnvironmentUtils).inSingletonScope();
     bind(QaapWebsocketAuthRegistry).toSelf().inSingletonScope();
     bind(QaapTerminalOwnership).toSelf().inSingletonScope();
     bind(QaapTerminalCwdGuard).toSelf().inSingletonScope();

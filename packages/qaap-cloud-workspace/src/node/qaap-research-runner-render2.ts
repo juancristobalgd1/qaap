@@ -380,8 +380,8 @@ export function synthesizeFallbackProposalExtracted(ctx: QaapResearchRunnerConte
 }
 
 export function roundDiffStatExtracted(ctx: QaapResearchRunnerContext, cwd: string): string {
-        return ctx.runGit(cwd, ['diff', '--stat', '--', '.', LEDGER_PATHSPEC_EXCLUDE]).stdout
-            || ctx.runGit(cwd, ['diff', '--cached', '--stat', '--', '.', LEDGER_PATHSPEC_EXCLUDE]).stdout
+        return ctx.runGit(cwd, ['diff', '--no-ext-diff', '--no-textconv', '--stat', '--', '.', LEDGER_PATHSPEC_EXCLUDE]).stdout
+            || ctx.runGit(cwd, ['diff', '--cached', '--no-ext-diff', '--no-textconv', '--stat', '--', '.', LEDGER_PATHSPEC_EXCLUDE]).stdout
             || '';
 }
 

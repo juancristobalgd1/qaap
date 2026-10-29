@@ -32,6 +32,7 @@ import { QaapTaskSandbox, QaapTaskSandboxService } from './qaap-task-sandbox';
 import { QaapTenantAgentStorageEnv } from './qaap-tenant-agent-storage-env';
 import { QaapTenantPersistentHome, type QaapTenantPersistentHomeAccessGrant, type QaapTenantPersistentHomeOwner } from './qaap-tenant-persistent-home';
 import { findExecutableOnPath, readEnvPath, resolveTrustedExecutable, resolveTrustedSystemExecutable } from './qaap-trusted-executable';
+import { childProcessEnv } from './qaap-child-process-env';
 
 /** How the spawned process's stdio streams are wired. */
 export type QaapSpawnStdio = ('pipe' | 'ignore')[];
@@ -651,8 +652,11 @@ export class QaapTenantSpawnService {
 
     /** The single `child_process.spawn` seam — overridable in tests to capture argv without executing. */
     protected launchProcess(file: string, args: string[], options: object): ChildProcess {
-        const spawnOptions = options as Parameters<typeof spawn>[2];
-        return spawn(this.resolveLaunchFile(file, spawnOptions), args, spawnOptions);
+        // Chokepoint: whatever env a caller passes (or omits, which would inherit everything), the child never
+        // receives backend-only secrets, so a future caller cannot leak them by omission.
+        const requested = options as NonNullable<Parameters<typeof spawn>[2]>;
+        const spawnOptions = { ...requested, env: childProcessEnv(requested.env ?? process.env) } as Parameters<typeof spawn>[2];
+        return spawn(this.resolveLaunchFile(file, spawnOptions as { env?: NodeJS.ProcessEnv; shell?: boolean | string }), args, spawnOptions);
     }
 
     /**

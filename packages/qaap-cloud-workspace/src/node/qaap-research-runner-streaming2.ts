@@ -17,7 +17,7 @@ import { isQaapHostedEnvironment } from '@theia/qaap-adapters/lib/common/qaap-ho
 import { COMMAND_FAILURE_OUTPUT_TAIL_CHARS, GIT_COMMAND_TIMEOUT_MS, LEDGER_PATHSPEC_EXCLUDE, MAX_RUN_RESUME_ATTEMPTS, RESEARCH_COMMAND_CAPTURE_MAX_CHARS } from './qaap-research-runner';
 import { resolveResearchMeasureTimeoutMs } from './qaap-research-runner';
 import { parseResearchMetricFromStdout } from './qaap-research-runner';
-import { childProcessEnv } from './qaap-child-process-env';
+import { childProcessEnv, qaapGitReadEnv } from './qaap-child-process-env';
 
 export async function finishAsNoopExtracted(ctx: QaapResearchRunnerContext, goal: ResearchGoal, record: ResearchExperimentRecord): Promise<void> {
         const finished: ResearchExperimentRecord = {
@@ -366,6 +366,7 @@ export function runGitExtracted(ctx: QaapResearchRunnerContext, cwd: string, arg
             }
             const result = spawnSync('git', ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', ...args], {
                 cwd,
+                env: qaapGitReadEnv(),
                 encoding: 'utf8',
                 timeout: GIT_COMMAND_TIMEOUT_MS,
             });
