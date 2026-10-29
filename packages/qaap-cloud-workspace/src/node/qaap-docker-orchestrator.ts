@@ -26,6 +26,7 @@ import {
     resolveQaapDockerLogConfig,
     isQaapHostedRuntime,
     resolveQaapDockerNodes,
+    resolveQaapHostedTenantContainerUser,
     type QaapDockerNodeConfig,
 } from './qaap-docker-control-plane';
 import { QAAP_TENANT_PUSH_OUTBOX_PATH, QAAP_TENANT_RUNTIME_API_PATH, type QaapTenantBackendUpdateStatus } from '../common/qaap-cloud-api-types';
@@ -1017,6 +1018,16 @@ export class QaapDockerOrchestrator {
     }
 
     /**
+     * A tenant backend created as container uid 0 (always the case when hosted) must drop every agent
+     * to `QAAP_AGENT_UID`; the flag makes it refuse to spawn agents if it ever finds itself non-root
+     * (stale or tampered container), instead of running them under its own uid. A local, non-rootless
+     * backend keeps its non-root container uid and inherits that identity, as before.
+     */
+    protected tenantBackendAgentDropEnv(): string[] {
+        return this.getTenantContainerUser().startsWith('0:') ? ['QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP=1'] : [];
+    }
+
+    /**
      * Limits enforced by the tenant backend itself: abuse limits (per-login API rate limit, live
      * previews per owner) and the agent-concurrency guardrails. Authenticated traffic and agent
      * processes run there, so the control plane's values, including the documented `0` switch-off,
@@ -1404,6 +1415,7 @@ export class QaapDockerOrchestrator {
                 'QAAP_AGENT_UID_PER_USER=0',
                 'QAAP_AGENT_UID=1001',
                 'QAAP_AGENT_GID=1001',
+                ...this.tenantBackendAgentDropEnv(),
                 `QAAP_REPOS_ROOT=${TENANT_BACKEND_REPOS_ROOT}`,
                 `QAAP_TENANT_CONFIG_ROOT=${TENANT_BACKEND_QAAP_HOME_MOUNT}`,
                 'QAAP_TENANT_BACKEND_MODE=1',
@@ -2018,6 +2030,7 @@ export class QaapDockerOrchestrator {
             'QAAP_AGENT_UID_PER_USER=0',
             'QAAP_AGENT_UID=1001',
             'QAAP_AGENT_GID=1001',
+            ...this.tenantBackendAgentDropEnv(),
             `QAAP_REPOS_ROOT=${TENANT_BACKEND_REPOS_ROOT}`,
             `QAAP_TENANT_CONFIG_ROOT=${TENANT_BACKEND_QAAP_HOME_MOUNT}`,
             'QAAP_TENANT_BACKEND_MODE=1',
@@ -2557,6 +2570,12 @@ export class QaapDockerOrchestrator {
     }
 
     protected getTenantContainerUser(): string {
+        if (isQaapHostedRuntime(process.env)) {
+            // Fail closed: hosted daemons are verified rootless, and the tenant backend must run as
+            // that rootless uid 0 so every agent is dropped to the separate QAAP_AGENT_UID. Any other
+            // configured uid/gid throws (hosted startup refuses it too: assertQaapHostedTenantIsolation).
+            return resolveQaapHostedTenantContainerUser(process.env);
+        }
         const rootlessDocker = /^(1|true)$/i.test(process.env.QAAP_DOCKER_ROOTLESS?.trim() ?? '');
         const configuredUid = Number.parseInt(process.env.QAAP_TENANT_CONTAINER_UID?.trim() ?? '', 10);
         // Root inside a rootless daemon maps to the unprivileged host account that owns the

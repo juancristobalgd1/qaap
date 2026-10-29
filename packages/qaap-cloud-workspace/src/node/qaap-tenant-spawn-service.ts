@@ -122,9 +122,11 @@ export class QaapTenantSpawnService {
     /**
      * Whether this backend is already running inside a dedicated tenant worker. Worker containers
      * are the isolation boundary, so their configured container uid must not be treated as a host
-     * uid to drop to. In particular, rootless Docker maps container uid 0 to the daemon owner and
-     * the worker deliberately drops all capabilities; calling setpriv there cannot change uid and
-     * fails with `setresuid: Operation not permitted`.
+     * uid to drop to. In rootless Docker the worker runs as container uid 0 and keeps only the
+     * SETUID/SETGID capabilities, which is exactly what `setpriv` needs to drop each agent child to
+     * `QAAP_AGENT_UID`. A worker that runs as a non-root uid cannot drop anything and would share its
+     * uid (and `/proc/<pid>/environ`) with the agents, so hosted workers refuse that setup
+     * (`QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP`).
      */
     protected isTenantBackendMode(): boolean {
         return /^(1|true)$/i.test(process.env.QAAP_TENANT_BACKEND_MODE?.trim() ?? '');
@@ -396,10 +398,17 @@ export class QaapTenantSpawnService {
     resolveSpawnIdentity(cwd: string): { uid?: number; gid?: number } {
         cwd = this.canonicalizeCwd(cwd);
         if (this.isTenantBackendMode()) {
-            // The backend container is isolated to one login. If it already runs as a normal
-            // container uid, inherit that non-root identity; rootless Docker starts it as uid 0
-            // inside its user namespace, where the explicit agent uid drop is required.
+            // The backend container is isolated to one login. Rootless Docker starts it as uid 0
+            // inside its user namespace, where the explicit agent uid drop is required. A non-root
+            // backend inherits its own identity only for local development; hosted workers set
+            // QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP=1 and refuse it below.
             if (!this.isBackendRoot()) {
+                if (/^(1|true)$/i.test(process.env.QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP?.trim() ?? '')) {
+                    throw new Error(
+                        'Refusing to spawn a tenant agent under the tenant backend\'s own uid: '
+                        + 'container must run as rootless uid 0 (QAAP_TENANT_CONTAINER_UID=0).'
+                    );
+                }
                 return {};
             }
             const identity = resolveAgentSpawnIdentityFromEnv(process.env, this.isBackendRoot());

@@ -22,6 +22,11 @@ if [[ "$1 $2 $3 $5 $6" == 'compose exec -T node -e' ]]; then
     exec node -e "$@"
 fi
 case "$*" in
+    *'docker exec --user 1001:1001'*) printf '%b' "${TEST_PROBE_OUTPUT-PROBE:uid:1001\nPROBE:backend-procs:1\nPROBE:done\n}" ;;
+    *'docker top'*) printf '%b' "${TEST_TOP_OUTPUT-PID UID COMMAND\n1 1000 docker-init\n2 1000 node\n3 101001 claude\n}" ;;
+    *'docker ps --filter'*) printf '%b' "${TEST_RUNNING_BACKENDS-qaap-backend-aaaaaaaaaaaa
+qaap-backend-bbbbbbbbbbbb
+}" ;;
     *'docker ps -a'*tenant-backend*) printf '%b' "${TEST_TENANT_BACKENDS-alice qaap-backend-aaaaaaaaaaaa
 bob qaap-backend-bbbbbbbbbbbb
 }" ;;
@@ -71,8 +76,11 @@ const variant = process.argv[2];
 const backend = (login, hash) => ({
     Name: `/qaap-backend-${hash}`,
     Config: {
-        User: '1000:1000',
-        Env: ['QAAP_TENANT_BACKEND_MODE=1', `QAAP_TENANT_BACKEND_SECRET=secret-${login}`, `QAAP_TENANT_LOGIN=${login}`],
+        User: '0:0',
+        Env: [
+            'QAAP_TENANT_BACKEND_MODE=1', `QAAP_TENANT_BACKEND_SECRET=secret-${login}`, `QAAP_TENANT_LOGIN=${login}`,
+            'QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP=1', 'QAAP_AGENT_UID=1001',
+        ],
         Labels: { 'com.qaap.managed': 'true', 'com.qaap.tenant-backend': 'true', 'com.qaap.tenant-login': login },
     },
     HostConfig: {
@@ -88,7 +96,8 @@ const backend = (login, hash) => ({
     ],
 });
 const [a, b] = [backend('alice', 'aaaaaaaaaaaa'), backend('bob', 'bbbbbbbbbbbb')];
-if (variant === 'root') { b.Config.User = '0:0'; }
+if (variant === 'uid1000') { b.Config.User = '1000:1000'; }
+if (variant === 'noflag') { b.Config.Env = b.Config.Env.filter(entry => !entry.startsWith('QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP=')); }
 if (variant === 'privileged') { b.HostConfig.Privileged = true; }
 if (variant === 'shared') { b.Mounts[0].Source = '/srv/repos/users/alice'; }
 if (variant === 'secret') { a.Config.Env.push('QAAP_TENANT_BACKEND_MASTER_SECRET=x'); }
@@ -139,11 +148,39 @@ export TEST_TENANT_BACKENDS=''
 expect_status 1 qaap-vps-launch-gate.sh
 unset TEST_TENANT_BACKENDS
 # Container uid 0 is accepted only when the daemon reports rootless (it maps to the daemon owner).
-write_inspect root
+write_inspect good
 expect_status 0 qaap-vps-launch-gate.sh
 export TEST_DAEMON_SECURITY='["name=seccomp,profile=builtin"]'
 expect_status 1 qaap-vps-launch-gate.sh
 unset TEST_DAEMON_SECURITY
+# A shared backend/agent uid (1000 on rootless) or a missing REQUIRE_AGENT_DROP flag blocks the release.
+for variant in uid1000 noflag; do
+    write_inspect "$variant"
+    expect_status 1 qaap-vps-launch-gate.sh
+done
+# Runtime probe: a LEAK line from the agent-uid probe, or an agent CLI sharing the backend uid, fails.
+write_inspect good
+expect_status 0 qaap-vps-launch-gate.sh
+grep -q 'agent uid 1001 cannot read backend secrets' "$TEST_ROOT/output" || { cat "$TEST_ROOT/output"; echo 'expected probe evidence' >&2; exit 1; }
+export TEST_PROBE_OUTPUT='LEAK:environ:1\n'
+expect_status 1 qaap-vps-launch-gate.sh
+grep -q 'LEAK:environ:1' "$TEST_ROOT/output" || { cat "$TEST_ROOT/output"; echo 'expected LEAK in output' >&2; exit 1; }
+unset TEST_PROBE_OUTPUT
+export TEST_TOP_OUTPUT='PID UID COMMAND\n1 1000 docker-init\n2 1000 node\n3 1000 claude\n'
+expect_status 1 qaap-vps-launch-gate.sh
+unset TEST_TOP_OUTPUT
+# Fail closed: an exec failure (no answer), a wrong probe uid, a probe that never found the backend
+# process, or no running backend at all blocks the release instead of passing silently.
+for probe in '' 'PROBE:uid:0\nPROBE:backend-procs:1\nPROBE:done\n' 'PROBE:uid:1001\nPROBE:backend-procs:0\nPROBE:done\n' 'PROBE:uid:1001\nPROBE:backend-procs:1\n'; do
+    export TEST_PROBE_OUTPUT="$probe"
+    expect_status 1 qaap-vps-launch-gate.sh
+    grep -q 'probe inconclusive' "$TEST_ROOT/output" || { cat "$TEST_ROOT/output"; echo 'expected inconclusive probe' >&2; exit 1; }
+done
+unset TEST_PROBE_OUTPUT
+export TEST_RUNNING_BACKENDS=''
+expect_status 1 qaap-vps-launch-gate.sh
+grep -q 'no running tenant backend to probe' "$TEST_ROOT/output" || { cat "$TEST_ROOT/output"; echo 'expected missing probe target' >&2; exit 1; }
+unset TEST_RUNNING_BACKENDS
 for variant in shared secret socket privileged; do
     write_inspect "$variant"
     expect_status 1 qaap-vps-launch-gate.sh
@@ -154,4 +191,4 @@ export TEST_AUTH_CONFIG='{"ok":true,"ready":true,"skipAuth":false,"oauthConfigur
 expect_status 1 qaap-verify-launch-readiness.sh
 export TEST_AUTH_CONFIG='{"ok":true,"ready":true,"skipAuth":false,"oauthConfigured":true,"githubOAuth":true,"productionRuntime":true,"agentUidPerUser":true,"backendIsolationReady":true,"backendIsolationMode":"per-tenant","build":"abcdef123456","betaAccessRequired":true,"betaAccessConfigured":true}'
 expect_status 0 qaap-verify-launch-readiness.sh
-echo 'PASS: missing tenants, failed isolation, per-tenant backend evidence/isolation, successful isolation, missing preview domain, operator-only allowlist, missing invitations, configured invitations'
+echo 'PASS: missing tenants, uid/flag/LEAK/inconclusive probes, failed isolation, per-tenant backend evidence/isolation, successful isolation, missing preview domain, operator-only allowlist, missing invitations, configured invitations'

@@ -11,14 +11,18 @@ const path = require('node:path');
 
 const script = path.join(__dirname, 'qaap-tenant-backend-isolation-check.js');
 
-function backend(login, secret, capAdd) {
+function backend(login, secret, capAdd, options = {}) {
     const seg = login.toLowerCase();
     return {
         Name: `/qaap-backend-${seg}`,
         Config: {
-            User: '0:0',
+            User: options.user ?? '0:0',
             Labels: { 'com.qaap.managed': 'true', 'com.qaap.tenant-backend': 'true', 'com.qaap.tenant-login': login },
-            Env: [`QAAP_TENANT_LOGIN=${login}`, 'QAAP_TENANT_BACKEND_MODE=1', `QAAP_TENANT_BACKEND_SECRET=${secret}`],
+            Env: [
+                `QAAP_TENANT_LOGIN=${login}`, 'QAAP_TENANT_BACKEND_MODE=1', `QAAP_TENANT_BACKEND_SECRET=${secret}`,
+                ...(options.requireDrop === false ? [] : ['QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP=1']),
+                'QAAP_AGENT_UID=1001',
+            ],
         },
         HostConfig: {
             CapDrop: ['ALL'], CapAdd: capAdd, SecurityOpt: ['no-new-privileges:true'], ReadonlyRootfs: true,
@@ -59,4 +63,26 @@ test('still blocks a backend that does not drop ALL', () => {
     const result = spawnSync(process.execPath, [script, 'alice', 'bob', 'rootless'], { input, encoding: 'utf8' });
     assert.strictEqual(result.status, 1);
     assert.match(result.stderr, /capabilities not fully dropped/);
+});
+
+function runWith(options) {
+    const input = JSON.stringify([backend('alice', 'a-secret', [], options), backend('bob', 'b-secret', [])]);
+    return spawnSync(process.execPath, [script, 'alice', 'bob', 'rootless'], { input, encoding: 'utf8' });
+}
+
+test('accepts uid 0 on a rootless daemon with the agent-drop flag', () => {
+    const result = runWith({ user: '0:0' });
+    assert.strictEqual(result.status, 0, result.stdout + result.stderr);
+});
+
+test('fails a rootless backend that runs as uid 1000 (shared backend/agent uid)', () => {
+    const result = runWith({ user: '1000:1000' });
+    assert.strictEqual(result.status, 1);
+    assert.match(result.stderr, /shared backend\/agent uid/);
+});
+
+test('fails a backend without QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP=1', () => {
+    const result = runWith({ requireDrop: false });
+    assert.strictEqual(result.status, 1);
+    assert.match(result.stderr, /REQUIRE_AGENT_DROP=1 missing/);
 });

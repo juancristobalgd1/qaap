@@ -127,5 +127,37 @@ describe('qaap-docker-control-plane', () => {
             QAAP_CLOUD_MODE: 'docker',
             DOCKER_HOST: 'unix:///run/user/1000/docker.sock',
         })).to.not.throw();
+        expect(() => assertQaapHostedTenantIsolation({
+            NODE_ENV: 'production',
+            QAAP_CLOUD_MODE: 'docker',
+            DOCKER_HOST: 'unix:///run/user/1000/docker.sock',
+            QAAP_DOCKER_ROOTLESS: '1',
+            QAAP_TENANT_CONTAINER_UID: '0',
+            QAAP_TENANT_CONTAINER_GID: '0',
+        })).to.not.throw();
+    });
+
+    it('refuses hosted startup when tenant containers would not run as rootless uid 0 (shared backend/agent uid)', () => {
+        for (const [name, value] of [
+            ['QAAP_TENANT_CONTAINER_UID', '1000'],
+            ['QAAP_TENANT_CONTAINER_GID', '1000'],
+            ['QAAP_TENANT_CONTAINER_UID', 'theia'],
+        ]) {
+            expect(() => assertQaapHostedTenantIsolation({
+                NODE_ENV: 'production',
+                QAAP_CLOUD_MODE: 'docker',
+                DOCKER_HOST: 'unix:///run/user/1000/docker.sock',
+                QAAP_DOCKER_ROOTLESS: '1',
+                [name]: value,
+            }), `${name}=${value}`).to.throw(new RegExp(`${name}=${value}.*rootless uid 0`));
+        }
+    });
+
+    it('does not constrain the tenant container uid outside hosted mode', () => {
+        expect(() => assertQaapHostedTenantIsolation({
+            NODE_ENV: 'development',
+            QAAP_CLOUD_MODE: 'local',
+            QAAP_TENANT_CONTAINER_UID: '1000',
+        })).to.not.throw();
     });
 });

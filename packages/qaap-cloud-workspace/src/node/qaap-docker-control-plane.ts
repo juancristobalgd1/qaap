@@ -272,4 +272,27 @@ export function assertQaapHostedTenantIsolation(
         );
     }
     assertQaapDockerControlPlane(env);
+    resolveQaapHostedTenantContainerUser(env);
+}
+
+/**
+ * Container `User` of hosted tenant workers and backends. A hosted control plane only talks to
+ * rootless daemons ({@link evaluateQaapDockerControlPlane} plus the orchestrator's per-node
+ * `docker info` check), where container uid 0 maps to the unprivileged daemon owner. The tenant
+ * backend must run as that uid 0: it is the only identity that can `setpriv`-drop every agent to the
+ * separate `QAAP_AGENT_UID`. A non-zero container uid would run the agents under the backend's own
+ * uid, which can read `/proc/<backend>/environ` (tenant HMAC secret, provider keys). An unset or
+ * blank uid/gid means 0; any other value refuses hosted startup.
+ */
+export function resolveQaapHostedTenantContainerUser(env: NodeJS.ProcessEnv = process.env): string {
+    for (const name of ['QAAP_TENANT_CONTAINER_UID', 'QAAP_TENANT_CONTAINER_GID']) {
+        const value = env[name]?.trim();
+        if (value && value !== '0') {
+            throw new Error(
+                `Refusing hosted Qaap startup with ${name}=${value}: hosted tenant containers must run as rootless uid 0 `
+                + 'so every agent is dropped to the separate QAAP_AGENT_UID. Set QAAP_TENANT_CONTAINER_UID=0 and QAAP_TENANT_CONTAINER_GID=0.',
+            );
+        }
+    }
+    return '0:0';
 }
