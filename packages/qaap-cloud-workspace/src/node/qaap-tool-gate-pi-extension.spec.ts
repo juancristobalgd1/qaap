@@ -11,9 +11,12 @@ import { resolveQaapToolGatePiExtensionPath } from './qaap-tool-gate-pi-adapter'
 
 interface PiExtension {
     handleToolCall(event: Record<string, unknown>, ctx: { cwd: string }, env: Record<string, string | undefined>,
-        fetchImpl?: typeof fetch, options?: { retries?: number; marginMs?: number }): Promise<{ block?: boolean; reason?: string } | undefined>;
+        fetchImpl?: typeof fetch, options?: { retries?: number; marginMs?: number; onUnavailable?: (failures: number) => void }): Promise<{ block?: boolean; reason?: string } | undefined>;
+    resetGateFailures(): void;
     default(pi: { on(name: string, handler: unknown): void }): void;
 }
+
+const onUnavailable = (): void => undefined;
 
 // The extension is plain ESM; TypeScript would turn a literal import() into require().
 // eslint-disable-next-line no-new-func
@@ -23,7 +26,7 @@ describe('qaap-tool-gate-pi.mjs', () => {
 
     let server: http.Server;
     let url: string;
-    let seen: Array<{ token: string | undefined; body: Record<string, unknown> }>;
+    let seen: Array<{ token: string | undefined; headers: http.IncomingHttpHeaders; body: Record<string, unknown> }>;
     let reply: (body: Record<string, unknown>, res: http.ServerResponse) => void;
     let ext: PiExtension;
 
@@ -32,6 +35,7 @@ describe('qaap-tool-gate-pi.mjs', () => {
     });
 
     beforeEach(async () => {
+        ext.resetGateFailures();
         seen = [];
         reply = (_body, res) => {
             res.end(JSON.stringify({ decision: { kind: 'allow', source: 'policy' } }));
@@ -41,7 +45,7 @@ describe('qaap-tool-gate-pi.mjs', () => {
             req.on('data', chunk => chunks.push(chunk));
             req.on('end', () => {
                 const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-                seen.push({ token: req.headers[QAAP_TOOL_GATE_TOKEN_HEADER] as string | undefined, body });
+                seen.push({ token: req.headers[QAAP_TOOL_GATE_TOKEN_HEADER] as string | undefined, headers: req.headers, body });
                 if (req.url !== '/gate/evaluate') {
                     res.statusCode = 404;
                     res.end('{}');
@@ -62,7 +66,7 @@ describe('qaap-tool-gate-pi.mjs', () => {
         ({ QAAP_GATE_URL: url, QAAP_GATE_TOKEN: 'tok', QAAP_GATE_ASK_TTL_SEC: '1', ...extra });
     const event = (input: Record<string, unknown> = { command: 'ls' }): Record<string, unknown> =>
         ({ type: 'tool_call', toolName: 'bash', toolCallId: 'call-1', input });
-    const run = (e: Record<string, unknown>, environment = env(), options: { retries?: number; marginMs?: number } = { retries: 0, marginMs: 200 }):
+    const run = (e: Record<string, unknown>, environment = env(), options: { retries?: number; marginMs?: number; onUnavailable?: (failures: number) => void } = { retries: 0, marginMs: 200, onUnavailable }):
         ReturnType<PiExtension['handleToolCall']> => ext.handleToolCall(e, { cwd: '/w' }, environment, fetch, options);
 
     it('registers a tool_call handler', () => {
@@ -107,7 +111,7 @@ describe('qaap-tool-gate-pi.mjs', () => {
 
     it('blocks (and does not retry) when the gate stalls past the ask window', async () => {
         reply = () => { /* never answers */ };
-        const result = await run(event(), env({ QAAP_GATE_ASK_TTL_SEC: '0.05' }), { retries: 2, marginMs: 100 });
+        const result = await run(event(), env({ QAAP_GATE_ASK_TTL_SEC: '0.05' }), { retries: 2, marginMs: 100, onUnavailable });
         expect(result?.block).to.equal(true);
         expect(seen).to.have.length(1);
     });
@@ -119,7 +123,7 @@ describe('qaap-tool-gate-pi.mjs', () => {
         await new Promise<void>(resolve => dead.close(() => resolve()));
         let attempts = 0;
         const counting = ((input: string, init: RequestInit) => { attempts++; return fetch(input, init); }) as typeof fetch;
-        const result = await ext.handleToolCall(event(), { cwd: '/w' }, env({ QAAP_GATE_URL: `http://127.0.0.1:${port}/gate` }), counting, { retries: 1, marginMs: 200 });
+        const result = await ext.handleToolCall(event(), { cwd: '/w' }, env({ QAAP_GATE_URL: `http://127.0.0.1:${port}/gate` }), counting, { retries: 1, marginMs: 200, onUnavailable });
         expect(result?.block).to.equal(true);
         expect(attempts).to.equal(2);
     });
@@ -140,7 +144,7 @@ describe('qaap-tool-gate-pi.mjs', () => {
         ]) {
             seen = [];
             reply = (_b, res) => respond(res);
-            expect((await run(event(), env(), { retries: 2, marginMs: 200 }))?.block).to.equal(true);
+            expect((await run(event(), env(), { retries: 2, marginMs: 200, onUnavailable }))?.block).to.equal(true);
             expect(seen).to.have.length(1);
         }
     });
@@ -149,5 +153,44 @@ describe('qaap-tool-gate-pi.mjs', () => {
         const result = await ext.handleToolCall(undefined as unknown as Record<string, unknown>, undefined as unknown as { cwd: string },
             env({ QAAP_GATE_URL: undefined }));
         expect(result?.block).to.equal(true);
+    });
+
+    describe('consecutive gate failures', () => {
+        const failing = (): Promise<{ block?: boolean } | undefined> => run(event(), env({ QAAP_GATE_TOKEN: undefined }));
+
+        it('stops the run on the third consecutive failure, not before', async () => {
+            const stops: number[] = [];
+            const opts = { retries: 0, marginMs: 200, onUnavailable: (n: number) => stops.push(n) };
+            for (let index = 0; index < 2; index++) {
+                await ext.handleToolCall(event(), { cwd: '/w' }, env({ QAAP_GATE_TOKEN: undefined }), fetch, opts);
+            }
+            expect(stops).to.deep.equal([]);
+            await ext.handleToolCall(event(), { cwd: '/w' }, env({ QAAP_GATE_TOKEN: undefined }), fetch, opts);
+            expect(stops).to.deep.equal([3]);
+        });
+
+        it('two failures then a success reset the count, and the failures are reported with the next request', async () => {
+            const stops: number[] = [];
+            const opts = { retries: 0, marginMs: 200, onUnavailable: (n: number) => stops.push(n) };
+            await failing();
+            await failing();
+            await ext.handleToolCall(event(), { cwd: '/w' }, env(), fetch, opts);
+            expect(seen[0].headers['x-qaap-gate-client-errors']).to.equal('2');
+            await ext.handleToolCall(event(), { cwd: '/w' }, env({ QAAP_GATE_TOKEN: undefined }), fetch, opts);
+            await ext.handleToolCall(event(), { cwd: '/w' }, env({ QAAP_GATE_TOKEN: undefined }), fetch, opts);
+            expect(stops).to.deep.equal([]);
+            await ext.handleToolCall(event(), { cwd: '/w' }, env(), fetch, opts);
+            expect(seen[1].headers['x-qaap-gate-client-errors']).to.equal('2');
+        });
+
+        it('a deny from the gate is an answer, not a failure', async () => {
+            const stops: number[] = [];
+            const opts = { retries: 0, marginMs: 200, onUnavailable: (n: number) => stops.push(n) };
+            reply = (_b, res) => res.end(JSON.stringify({ decision: { kind: 'deny', source: 'user', reason: 'no' } }));
+            for (let index = 0; index < 5; index++) {
+                await ext.handleToolCall(event(), { cwd: '/w' }, env(), fetch, opts);
+            }
+            expect(stops).to.deep.equal([]);
+        });
     });
 });

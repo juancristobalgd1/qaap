@@ -36,3 +36,10 @@ export const QAAP_TOOL_GATE_API_PATH = '/qaap/api/tool-gate';
 export const QAAP_TOOL_GATE_TOKEN_HEADER = 'x-qaap-gate-token';
 /** Longest a single ask may wait for a human before it is denied. */
 export const QAAP_TOOL_GATE_MAX_ASK_TTL_SEC = 600;
+/**
+ * Header a gate client sends with the number of CONSECUTIVE transport failures it saw (unreachable, timeout,
+ * 5xx, unusable answer) since its last well-formed answer. The server cannot see those itself.
+ */
+export const QAAP_TOOL_GATE_CLIENT_ERRORS_HEADER = 'x-qaap-gate-client-errors';
+/** After this many consecutive gate errors the task is stopped instead of denying tool after tool. */
+export const QAAP_TOOL_GATE_MAX_CONSECUTIVE_ERRORS = 3;
