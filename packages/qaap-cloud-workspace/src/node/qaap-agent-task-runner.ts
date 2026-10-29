@@ -1860,6 +1860,23 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    applyOneShotToolGateEnv(env: NodeJS.ProcessEnv, task: Pick<QaapAgentTask, 'ownerLogin' | 'cwd' | 'agentId' | 'command'>): () => void {
+        if (!this.toolGateTokens || !this.helperApiUrl) {
+            return () => undefined;
+        }
+        const agentId = this.resolveTaskAgentId(task as QaapAgentTask);
+        const transport = resolveQaapHarnessCapabilities(agentId).gate;
+        if (transport !== 'hook' && transport !== 'plugin' && transport !== 'extension') {
+            return () => undefined;
+        }
+        const grant = this.toolGateTokens.issueOneShot(agentId, task.ownerLogin, task.cwd);
+        env.QAAP_GATE_URL = `${new URL(this.helperApiUrl).origin}${QAAP_TOOL_GATE_API_PATH}`;
+        env.QAAP_GATE_TOKEN = grant.token;
+        env.QAAP_GATE_ASK_TTL_SEC = '0';
+        return grant.release;
+    }
+
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     applyToolGateEnv(env: NodeJS.ProcessEnv, task: Pick<QaapAgentTask, 'id' | 'ownerLogin' | 'cwd' | 'agentId' | 'command'>): void {
         if (!this.toolGateTokens || !this.helperApiUrl) {
             return;

@@ -12,6 +12,7 @@ import { resolveAgentProjectTrustFlags } from '@theia/qaap-shared-core/lib/commo
 import { parseAgentLogForTranscript, createAgentStreamAccumulator } from '@theia/qaap-shared-core/lib/common/qaap-cli-transcript-stream';
 import { resolveQaapToolGatePiExtensionPath, usesToolGateExtension } from './qaap-tool-gate-pi-adapter';
 import { applyTemplate } from './qaap-agent-task-runner-utils';
+import { QaapToolGateTokenService } from './qaap-tool-gate-token-service';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { buildTemplateVarsExtracted } from './qaap-agent-task-runner-streaming2';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
@@ -58,6 +59,29 @@ describe('Pi tool gate adapter', () => {
             hostedWorktrees: { resolve: () => undefined },
         });
         expect(runner.isProjectFolderTrusted('alice', '/w/repo')).to.equal(false);
+    });
+
+    it('seeds an ephemeral read-only grant for Pi one-shots and revokes it on release; other harnesses get none', () => {
+        const tokens = new QaapToolGateTokenService();
+        const runner = Object.create(QaapAgentTaskRunner.prototype) as QaapAgentTaskRunner;
+        Object.assign(runner, { toolGateTokens: tokens, helperApiUrl: 'http://127.0.0.1:3000/qaap/api/agent-tasks' });
+        const env: NodeJS.ProcessEnv = {};
+        const release = runner.applyOneShotToolGateEnv(env, { ownerLogin: 'alice', cwd: '/w', agentId: 'pi', command: 'pi' });
+        expect(env.QAAP_GATE_URL).to.equal('http://127.0.0.1:3000/qaap/api/tool-gate');
+        expect(env.QAAP_GATE_ASK_TTL_SEC).to.equal('0');
+        expect(tokens.resolve(env.QAAP_GATE_TOKEN)?.oneShot).to.deep.equal({ agentId: 'pi' });
+        release();
+        expect(tokens.resolve(env.QAAP_GATE_TOKEN)).to.equal(undefined);
+        const other: NodeJS.ProcessEnv = {};
+        runner.applyOneShotToolGateEnv(other, { ownerLogin: 'alice', cwd: '/w', agentId: 'qaiq', command: 'qaiq' })();
+        expect(other.QAAP_GATE_TOKEN).to.equal(undefined);
+    });
+
+    it('releases the one-shot grant in a finally block in both one-shot runners', () => {
+        const source = fs.readFileSync(path.resolve(__dirname, '..', '..', 'src', 'node', 'qaap-agent-task-runner-tool-pills2.ts'), 'utf8');
+        expect(source.match(/applyOneShotToolGateEnv\(/g)).to.have.length(2);
+        expect(source.match(/releaseGate\(\);/g)).to.have.length(2);
+        expect(source).to.not.match(/ctx\.applyToolGateEnv\(/);
     });
 
     it('resolves trust flags from the registry lists (one source of truth)', () => {

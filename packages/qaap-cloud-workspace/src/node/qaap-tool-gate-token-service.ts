@@ -15,10 +15,17 @@ export interface QaapToolGateTokenGrant {
      * paths inside the tool input (file arguments, shell words) is future work.
      */
     readonly workspace: string;
+    /**
+     * Set for the grant of a one-shot agent call (prompt improve, goal-loop evaluator): it has no running
+     * task behind it, is read-only, and lives only as long as its process.
+     */
+    readonly oneShot?: { readonly agentId: string };
 }
 
 /** Hard ceiling on a token's life even if the task end is never reported. */
 export const QAAP_TOOL_GATE_TOKEN_MAX_AGE_MS = 12 * 60 * 60 * 1000;
+/** Hard ceiling for a one-shot grant, which should be revoked with its process long before this. */
+export const QAAP_TOOL_GATE_ONE_SHOT_MAX_AGE_MS = 30 * 60 * 1000;
 
 interface StoredGrant extends QaapToolGateTokenGrant {
     readonly expiresAt: number;
@@ -45,6 +52,19 @@ export class QaapToolGateTokenService {
         return token;
     }
 
+    /**
+     * Ephemeral read-only grant for a one-shot agent call that is not a task. Returns the secret and a
+     * `release` that revokes it (call it when the process ends); it also expires after 30 minutes.
+     */
+    issueOneShot(agentId: string, owner: string | undefined, workspace: string): { readonly token: string; readonly release: () => void } {
+        const taskId = `one-shot:${randomBytes(8).toString('hex')}`;
+        const token = randomBytes(32).toString('hex');
+        const hash = this.hash(token);
+        this.grants.set(hash, { taskId, owner, workspace, oneShot: { agentId }, expiresAt: this.now() + QAAP_TOOL_GATE_ONE_SHOT_MAX_AGE_MS });
+        this.tokenHashByTask.set(taskId, hash);
+        return { token, release: () => this.revoke(taskId) };
+    }
+
     /** The grant behind a presented token, or `undefined` when unknown, revoked or expired. */
     resolve(token: string | undefined): QaapToolGateTokenGrant | undefined {
         if (!token) {
@@ -60,7 +80,7 @@ export class QaapToolGateTokenService {
             this.tokenHashByTask.delete(grant.taskId);
             return undefined;
         }
-        return { taskId: grant.taskId, owner: grant.owner, workspace: grant.workspace };
+        return { taskId: grant.taskId, owner: grant.owner, workspace: grant.workspace, ...(grant.oneShot ? { oneShot: grant.oneShot } : {}) };
     }
 
     /** Called when the task completes, fails or is cancelled. Idempotent. */

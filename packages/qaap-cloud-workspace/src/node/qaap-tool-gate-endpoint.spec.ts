@@ -178,6 +178,80 @@ describe('QaapToolGateEndpoint', () => {
         });
     });
 
+    describe('one-shot grants (goal-loop evaluator, prompt improve)', () => {
+        let oneShot: { token: string; release: () => void };
+
+        beforeEach(() => {
+            // No running task backs a one-shot: the runner must not be consulted.
+            (endpoint as unknown as { runner: Record<string, unknown> }).runner.detail = async () => undefined;
+            oneShot = tokens.issueOneShot('pi', 'alice', WORKSPACE);
+        });
+
+        const callOneShot = (body: Record<string, unknown>): Promise<Response & FakeResponse> =>
+            call({ [QAAP_TOOL_GATE_TOKEN_HEADER]: oneShot.token }, { harnessCallId: `os-${Math.random()}`, ...body });
+
+        it('lets the evaluator read the workspace and run read-only commands without a running task', async () => {
+            for (const body of [
+                { rawToolName: 'read', input: { path: 'a.ts' } },
+                { rawToolName: 'grep', input: { pattern: 'x' } },
+                { rawToolName: 'bash', input: { command: 'git status' } },
+            ]) {
+                const res = await callOneShot(body);
+                expect(res.statusCode, JSON.stringify(body)).to.equal(200);
+                expect(decisionOf(res).kind, JSON.stringify(body)).to.equal('allow');
+            }
+            expect(asks.count(oneShot.token)).to.equal(0);
+        });
+
+        it('cannot write, edit, run destructive or mutating commands, or use other tools', async () => {
+            for (const body of [
+                { rawToolName: 'write', input: { path: 'a.ts', content: 'x' } },
+                { rawToolName: 'edit', input: { path: 'a.ts' } },
+                { rawToolName: 'bash', input: { command: 'touch pwned' } },
+                { rawToolName: 'bash', input: { command: 'git push --force origin main' } },
+                { rawToolName: 'bash', input: { command: 'rm -rf /' } },
+                { rawToolName: 'mcp__server__tool', input: {} },
+                { rawToolName: 'webfetch', input: { url: 'http://x' } },
+                { rawToolName: 'some_new_tool', input: {} },
+            ]) {
+                const decision = decisionOf(await callOneShot(body));
+                expect(decision.kind, JSON.stringify(body)).to.equal('deny');
+            }
+            expect(asks.count('one-shot')).to.equal(0);
+        });
+
+        it('never asks a human: a would-be ask is a deny', async () => {
+            expect(decisionOf(await callOneShot({ rawToolName: 'bash', input: { command: 'make' } })).kind).to.equal('deny');
+        });
+
+        it('stays inside the workspace', async () => {
+            expect(decisionOf(await callOneShot({ cwd: '/' })).kind).to.equal('deny');
+        });
+
+        it('is revoked when its process ends', async () => {
+            oneShot.release();
+            expect((await callOneShot({ rawToolName: 'read', input: {} })).statusCode).to.equal(401);
+        });
+
+        it('gets 401 once the grant has expired', async () => {
+            class Expired extends QaapToolGateTokenService {
+                protected override now(): number {
+                    return Date.now() + 31 * 60 * 1000;
+                }
+            }
+            const expired = new Expired();
+            (expired as unknown as { grants: Map<string, unknown> }).grants = (tokens as unknown as { grants: Map<string, unknown> }).grants;
+            (endpoint as unknown as { tokens: QaapToolGateTokenService }).tokens = expired;
+            expect((await callOneShot({ rawToolName: 'read', input: {} })).statusCode).to.equal(401);
+        });
+
+        it('does not revoke or replace a live task token', async () => {
+            const taskToken = token;
+            tokens.issueOneShot('pi', 'alice', WORKSPACE).release();
+            expect(tokens.resolve(taskToken)?.taskId).to.equal('task-1');
+        });
+    });
+
     describe('rate-limit bookkeeping', () => {
         it('prunes the buckets of tasks that went quiet and of a task that is no longer running', async () => {
             const callTimes = (endpoint as unknown as { callTimes: Map<string, number[]> }).callTimes;

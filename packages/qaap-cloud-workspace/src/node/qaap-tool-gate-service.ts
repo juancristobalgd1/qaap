@@ -68,6 +68,8 @@ export interface QaapToolGateEvaluationEnv {
     /** Task `autoApprove`: `false` is request-approval, anything else auto-approves what the guards allow. */
     readonly autoApprove: boolean | undefined;
     readonly readOnlyWorkspace: boolean;
+    /** One-shot grants: only read tools and read-only shell commands pass; every other tool kind is denied. */
+    readonly strictReadOnly?: boolean;
     /** Max seconds one ask may block (capability registry); capped at {@link QAAP_TOOL_GATE_MAX_ASK_TTL_SEC}. 0 = cannot ask. */
     readonly askTtlSec: number;
     /** Raises an approval card (same cards as QAIQ) and waits for the human. */
@@ -164,6 +166,13 @@ export class QaapToolGateService {
             toolName: isShell ? 'Bash' : req.rawToolName,
             toolInput: req.input,
         };
+        if (env.strictReadOnly && req.toolKind !== 'read' && !isShell) {
+            return {
+                kind: 'deny',
+                source: 'read-only',
+                reason: nls.localize('theia/qaap-cloud-workspace/toolGateStrictReadOnly', 'This call may only read the workspace; this tool was blocked.'),
+            };
+        }
         if (env.readOnlyWorkspace) {
             const command = typeof req.input.command === 'string' ? req.input.command : undefined;
             const writes = req.toolKind === 'edit' || req.toolKind === 'write'

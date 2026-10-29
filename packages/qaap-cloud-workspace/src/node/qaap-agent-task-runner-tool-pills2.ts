@@ -685,11 +685,13 @@ export async function improveComposerPromptExtracted(ctx: QaapAgentTaskRunnerCon
             ...(options.ownerLogin ? { ownerLogin: options.ownerLogin } : {}),
             ...(agentModel ? { agentModel, qaiqModel: agentModel } : {}),
         };
+        const improveEnv = ctx.buildChildEnv(task);
+        const releaseGate = ctx.applyOneShotToolGateEnv(improveEnv, task);
         try {
             return await ctx.runOneShotCommand(
                 command,
                 cwd,
-                ctx.buildChildEnv(task),
+                improveEnv,
                 agentId,
                 COMPOSER_PROMPT_IMPROVE_SERVER_TIMEOUT_MS,
                 transported.stdinPrompt,
@@ -700,6 +702,8 @@ export async function improveComposerPromptExtracted(ctx: QaapAgentTaskRunnerCon
                 throw new ComposerPromptImproveTimeoutError();
             }
             throw error;
+        } finally {
+            releaseGate();
         }
 }
 
@@ -768,13 +772,19 @@ export async function runReadOnlyOneShotPromptExtracted(ctx: QaapAgentTaskRunner
             ...(options.ownerLogin ? { ownerLogin: options.ownerLogin } : {}),
             ...(agentModel ? { agentModel, qaiqModel: agentModel } : {}),
         };
-        return ctx.runOneShotCommand(
-            command,
-            options.cwd,
-            ctx.buildChildEnv(task),
-            agentId,
-            options.timeoutMs,
-            transported.stdinPrompt,
-            transported.promptTempDir,
-        );
+        const evaluatorEnv = ctx.buildChildEnv(task);
+        const releaseGate = ctx.applyOneShotToolGateEnv(evaluatorEnv, task);
+        try {
+            return await ctx.runOneShotCommand(
+                command,
+                options.cwd,
+                evaluatorEnv,
+                agentId,
+                options.timeoutMs,
+                transported.stdinPrompt,
+                transported.promptTempDir,
+            );
+        } finally {
+            releaseGate();
+        }
 }

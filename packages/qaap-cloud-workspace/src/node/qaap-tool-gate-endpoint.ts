@@ -69,7 +69,10 @@ export class QaapToolGateEndpoint implements BackendApplicationContribution {
             return;
         }
         res.set('Cache-Control', 'no-store');
-        const task = await this.runner.detail(grant.taskId);
+        // A one-shot grant has no task behind it: it is read-only, valid until its process ends.
+        const task = grant.oneShot
+            ? { autoApprove: true, readOnlyWorkspace: true, state: 'running' as const }
+            : await this.runner.detail(grant.taskId);
         if (!task || task.state !== 'running') {
             this.tokens.revoke(grant.taskId);
             this.callTimes.delete(grant.taskId);
@@ -87,7 +90,7 @@ export class QaapToolGateEndpoint implements BackendApplicationContribution {
         }
         // The agent, tool kind, owner and task all come from the server side: a harness can lie
         // about `toolKind` (for example "read") to dodge an ask, so it is recomputed here.
-        const agentId = this.runner.resolveTaskAgentId(task);
+        const agentId = grant.oneShot ? grant.oneShot.agentId : this.runner.resolveTaskAgentId(task as Parameters<QaapAgentTaskRunner['resolveTaskAgentId']>[0]);
         const caps = this.resolveCapabilities(agentId);
         const input = body.input && typeof body.input === 'object' && !Array.isArray(body.input)
             ? body.input as Record<string, unknown>
@@ -113,7 +116,8 @@ export class QaapToolGateEndpoint implements BackendApplicationContribution {
             workspace: grant.workspace,
             autoApprove: task.autoApprove,
             readOnlyWorkspace: !!task.readOnlyWorkspace,
-            askTtlSec: caps.canAsk ? caps.askTtlSec : 0,
+            strictReadOnly: !!grant.oneShot,
+            askTtlSec: caps.canAsk && !grant.oneShot ? caps.askTtlSec : 0,
             ask: (pending, ttlMs, signal) => this.asks.count(grant.taskId) >= QAAP_TOOL_GATE_MAX_PENDING_ASKS
                 ? Promise.resolve('cancelled')
                 : this.asks.ask(grant.taskId, pending, ttlMs, signal),
