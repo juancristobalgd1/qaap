@@ -36,7 +36,7 @@ import type { QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/commo
 
 import { finalizeUnfinishedAgentToolSegments } from '../common/qaap-agent-transcript-segment-finalize';
 
-import { hasActiveTaskForUserMessage as hasActiveTaskForUserMessageHelper } from './qaap-agent-conversation-store-helpers';
+import { appendCancelledTurnPlaceholder, hasActiveTaskForUserMessage as hasActiveTaskForUserMessageHelper } from './qaap-agent-conversation-store-helpers';
 
 import { allocateQaapWorktreeOrdinal } from './qaap-worktree-ordinal-allocator';
 import {
@@ -988,10 +988,19 @@ export function cancelExtracted(ctx: QaapAgentConversationStoreContext, id: stri
     if (agentMessageIds.length === 0 && fallbackAgentMessageId) {
         agentMessageIds.push(fallbackAgentMessageId);
     }
-    let next = conv;
+    // Re-read: `taskRunner.cancel` fires the task event synchronously, and its outcome handler may
+    // already have written this conversation (both edits below are idempotent on top of it).
+    let next = ctx.conversations.get(id) ?? conv;
     for (const messageId of agentMessageIds) {
         next = ctx.appendRunCancelledTrace(next, messageId, 'Turn cancelled.');
         next = ctx.finalizeStreamingAgentMessage(next, messageId, 'Turn cancelled.');
+    }
+    // Stopped before the agent wrote anything: give the cancelled turn its "Turn cancelled." row.
+    let cancelledPlaceholder: QaapAgentMessage | undefined;
+    if (agentMessageIds.length === 0 && activeRefs.length > 0) {
+        const placed = appendCancelledTurnPlaceholder(next, activeRefs[activeRefs.length - 1].ref?.userMessageId, 'Turn cancelled.');
+        next = placed.conv;
+        cancelledPlaceholder = placed.message;
     }
     next = { ...next, status: 'idle', updatedAt: Date.now() };
     // Composer Stop ends an "Until done" goal loop too, whatever phase it is in (a loop that
@@ -1002,6 +1011,9 @@ export function cancelExtracted(ctx: QaapAgentConversationStoreContext, id: stri
     ctx.conversations.set(id, next);
     for (const messageId of agentMessageIds) {
         ctx.publishFinalizedAgentMessage(id, next, messageId);
+    }
+    if (cancelledPlaceholder) {
+        ctx.fire({ type: 'message', conversationId: id, cwd: next.cwd, message: cancelledPlaceholder });
     }
     if (goalLoopCancelled) {
         ctx.fire({ type: 'goal_loop', conversationId: id, cwd: next.cwd, goalLoop: next.goalLoop });

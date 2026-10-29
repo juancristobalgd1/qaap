@@ -263,3 +263,48 @@ export function resolveQaapTurnStopPreviewRequestAction(input: QaapTurnStopPrevi
     }
     return 'clear';
 }
+
+/** What the end of an agent turn does to a preview request still showing "Starting preview…". */
+export type QaapSettledPreviewRequestAction =
+    /** No preview request is pending or running. */
+    | 'none'
+    /** The turn has not really ended, or a Qaap launch / agent-fallback watchdog owns the request. */
+    | 'keep'
+    /** Nothing will ever resolve the request: drop it so the chip falls back to "Run app". */
+    | 'clear'
+    /** The request only waited on the agent: run Qaap's own launch once (it ends ready or failed). */
+    | 'relaunch';
+
+export interface QaapSettledPreviewRequestInput extends QaapTurnStopPreviewRequestInput {
+    /** Backend status of the conversation whose turn just settled (a visual settle stays `streaming`). */
+    readonly conversationStatus: string | undefined;
+    /** The settled turn failed or was cancelled. */
+    readonly turnEndedBadly: boolean;
+    /** The user stopped the preview (Stop latch); it is never relaunched behind their back. */
+    readonly suppressedByUser: boolean;
+    /** A Qaap launcher is available to start the app without another agent turn. */
+    readonly canRelaunch: boolean;
+}
+
+/**
+ * Every preview request must end in a ready preview, "Run app" or a reported failure, never an
+ * endless "Starting preview…". A chat request ("start the app") only waits on the agent turn
+ * (`requestPending` without `requestRunning`); when that turn ends nothing else resolves it, so it
+ * is either handed to Qaap's own launch (which clears the flags when it finishes) or cleared. A
+ * failed/cancelled turn never relaunches; only a bootstrap actively starting the app keeps the chip.
+ */
+export function resolveQaapSettledPreviewRequestAction(input: QaapSettledPreviewRequestInput): QaapSettledPreviewRequestAction {
+    if (!input.requestPending && !input.requestRunning) {
+        return 'none';
+    }
+    if (input.conversationStatus === 'streaming') {
+        return 'keep';
+    }
+    if (input.turnEndedBadly || input.suppressedByUser) {
+        return resolveQaapTurnStopPreviewRequestAction(input) === 'keep' ? 'keep' : 'clear';
+    }
+    if (input.requestRunning) {
+        return 'keep';
+    }
+    return input.canRelaunch ? 'relaunch' : 'clear';
+}

@@ -331,6 +331,8 @@ export class MobileProjectsTranscriptComposerUi {
                 onSelectAgent: (agentId, model) => {
                     this.host.transcriptComposerPinnedAgentId = agentId;
                     this.host.transcriptComposerPrefsConvId = summary.id;
+                    // Close before any model probe: a row tap must not leave the sheet open while the catalog loads.
+                    this.closeAllComposerSheets();
                     void (async (): Promise<void> => {
                         let resolvedModel: QaapCreateAgentTaskQaiqModel | undefined = model
                             ? { provider: model.provider, vendor: model.vendor, modelId: model.modelId }
@@ -350,7 +352,6 @@ export class MobileProjectsTranscriptComposerUi {
                             writeStoredComposerMode(cwd, this.host.transcriptComposerModeId);
                         }
                         this.host.transcriptStickyComposerUi.schedulePersistTranscriptComposerPrefs(project, summary);
-                        this.closeAllComposerSheets();
                         this.host.transcriptStickyComposerUi.remountTranscriptStickyComposer();
                         options?.onSelectionApplied?.();
                     })();

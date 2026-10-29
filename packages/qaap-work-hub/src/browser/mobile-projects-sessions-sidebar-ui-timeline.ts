@@ -110,6 +110,7 @@ export function createSessionsSidebarProjectRowHeadExtracted(ctx: MobileProjects
     const name = document.createElement('span');
     name.className = 'theia-mobile-work-hub-sessions-sidebar-project-name';
     name.textContent = project.name;
+    name.title = project.name;
     head.append(folder, name);
     // Native button activation maps Enter and Space to this click, so keyboard users get the same toggle.
     head.addEventListener('click', toggleFromControl);

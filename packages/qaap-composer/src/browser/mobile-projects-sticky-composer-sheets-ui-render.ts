@@ -253,8 +253,6 @@ export function openStickyComposerAgentSheetExtracted(ctx: MobileProjectsStickyC
                             writeStoredAgent(cwd, agentId);
                             if (model) {
                                 writeStoredAgentModel(cwd, agentId, model);
-                            } else {
-                                await ctx.host.stickyComposerAgentsUi.ensureStickyComposerAgentModel(agentId, cwd);
                             }
                         }
                         const modes = resolveStickyComposerModes(agentId, ctx.host.chatAgentService);
@@ -262,7 +260,11 @@ export function openStickyComposerAgentSheetExtracted(ctx: MobileProjectsStickyC
                         if (cwd && ctx.host.stickyComposerModeId) {
                             writeStoredComposerMode(cwd, ctx.host.stickyComposerModeId);
                         }
+                        // Close before any model probe: a row tap must not leave the sheet open while the catalog loads.
                         ctx.closeAllComposerSheets();
+                        if (cwd && !model) {
+                            await ctx.host.stickyComposerAgentsUi.ensureStickyComposerAgentModel(agentId, cwd);
+                        }
                         ctx.host.stickyComposerRenderUi.renderStickyComposer();
                     })();
                 },

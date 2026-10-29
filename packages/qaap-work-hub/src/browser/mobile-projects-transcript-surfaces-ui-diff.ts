@@ -74,32 +74,54 @@ export async function requestTranscriptPreviewExtracted(ctx: MobileProjectsTrans
                 revealPreviewTab();
             }
             ctx.updateTranscriptPreviewRunButtonState();
-            await bootstrap.refreshFromProjectRoot(projectRoot, project.id);
-            const detected = bootstrap.getStateSnapshot();
-            if (detected.descriptor && detected.descriptor.apps.length > 1 && !detected.selectedApp) {
-                const selectedApp = await ctx.pickTranscriptPreviewApp(detected.descriptor.apps);
-                if (launchGeneration !== ctx.previewLaunchGeneration || ctx.host.transcriptPreviewSuppressedByUser) {
-                    return;
+            let detected: ReturnType<typeof bootstrap.getStateSnapshot>;
+            let readyUrl: string | undefined;
+            try {
+                await bootstrap.refreshFromProjectRoot(projectRoot, project.id);
+                detected = bootstrap.getStateSnapshot();
+                if (detected.descriptor && detected.descriptor.apps.length > 1 && !detected.selectedApp) {
+                    const selectedApp = await ctx.pickTranscriptPreviewApp(detected.descriptor.apps);
+                    if (launchGeneration !== ctx.previewLaunchGeneration || ctx.host.transcriptPreviewSuppressedByUser) {
+                        return;
+                    }
+                    if (!selectedApp) {
+                        ctx.host.transcriptPreviewRequestRunning = false;
+                        ctx.host.transcriptPreviewRequestPending = false;
+                        ctx.syncHeaderPreviewRunButton(project, summary);
+                        refreshPreviewComposer();
+                        MobileSnackbar.dismiss();
+                        return;
+                    }
+                    await bootstrap.selectMonorepoApp(selectedApp, { conversationId: summary.id });
                 }
-                if (!selectedApp) {
+                readyUrl = await ensureTranscriptDevPreview(bootstrap, {
+                    conversationId: summary.id,
+                    projectId: project.id,
+                    // `refreshFromProjectRoot` above already selected the authoritative Work Hub
+                    // project. Refreshing again after an app choice discards the live transition and
+                    // can restart the same app twice; wait on the current managed launch instead.
+                    skipConversationPortProbe: true,
+                });
+            } catch (error) {
+                // A throwing detection/launch must still resolve the chip: "Starting preview…"
+                // otherwise stays up with nothing left to clear it.
+                if (launchGeneration === ctx.previewLaunchGeneration) {
                     ctx.host.transcriptPreviewRequestRunning = false;
                     ctx.host.transcriptPreviewRequestPending = false;
                     ctx.syncHeaderPreviewRunButton(project, summary);
                     refreshPreviewComposer();
-                    MobileSnackbar.dismiss();
-                    return;
+                    MobileSnackbar.show(error instanceof Error ? error.message : String(error), { kind: 'warning' });
                 }
-                await bootstrap.selectMonorepoApp(selectedApp, { conversationId: summary.id });
+                return;
             }
-            const readyUrl = await ensureTranscriptDevPreview(bootstrap, {
-                conversationId: summary.id,
-                projectId: project.id,
-                // `refreshFromProjectRoot` above already selected the authoritative Work Hub
-                // project. Refreshing again after an app choice discards the live transition and
-                // can restart the same app twice; wait on the current managed launch instead.
-                skipConversationPortProbe: true,
-            });
-            if (launchGeneration !== ctx.previewLaunchGeneration || ctx.host.transcriptPreviewSuppressedByUser) {
+            if (launchGeneration !== ctx.previewLaunchGeneration) {
+                return;
+            }
+            if (ctx.host.transcriptPreviewSuppressedByUser) {
+                // Stopped while launching: release the request this launch still owns.
+                ctx.host.transcriptPreviewRequestRunning = false;
+                ctx.host.transcriptPreviewRequestPending = false;
+                refreshPreviewComposer();
                 return;
             }
             if (readyUrl) {

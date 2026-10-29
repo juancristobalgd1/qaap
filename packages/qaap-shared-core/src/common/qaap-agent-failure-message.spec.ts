@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import {
     describeAgentTurnFailure,
     detectAgentFailureKind,
+    extractRetiredModelId,
     detectAgentFailureProviderLabel,
     extractAgentLogFailureHint,
     formatProviderPreflightNote,
@@ -16,12 +17,18 @@ import {
     localizeAgentFailureShortReason,
     localizeGenericAgentFailureMessage,
     localizeMissingCodingAgentMessage,
+    localizeRetiredModelMessage,
     resolveAgentTurnFailureMessage,
     resolveAgentTurnFailureTechnicalContent,
     summarizeCollapsedAgentFailure,
 } from './qaap-agent-failure-message';
 import { rememberQaapHostedRuntime } from './qaap-hosted-agent-auth-policy';
-import { CODEX_MODEL_NOT_SUPPORTED_LOG, CODEX_USAGE_LIMIT_LOG } from './test/qaap-agent-failure-log-fixtures';
+import {
+    CODEX_MODEL_NOT_SUPPORTED_LOG,
+    CODEX_USAGE_LIMIT_LOG,
+    NVIDIA_MODEL_END_OF_LIFE_LOG,
+    PROVIDER_ENDPOINT_404_LOG,
+} from './test/qaap-agent-failure-log-fixtures';
 
 describe('qaap-agent-failure-message', () => {
     it('asks a sign-in harness to sign in when its provider rejects an API key; QAIQ keeps the Settings copy', () => {
@@ -434,5 +441,53 @@ describe('BYOK provider key failures', () => {
         expect(formatStoredAgentFailureMessage(stored)).to.equal(stored);
         expect(detectAgentFailureProviderLabel(stored)).to.equal('OpenRouter');
         expect(localizeAgentFailureMessage('provider_key_rejected')).to.equal('Your provider key was rejected. Update it in Settings → BYOK, then retry.');
+    });
+});
+
+describe('retired model failures', () => {
+    const MODEL = 'nvidia/llama-3.3-nemotron-super-49b-v1';
+
+    it('turns a raw NVIDIA 410 end-of-life error into a model-retired message naming the model', () => {
+        expect(detectAgentFailureKind(NVIDIA_MODEL_END_OF_LIFE_LOG)).to.equal('model_unavailable');
+        const message = resolveAgentTurnFailureMessage(NVIDIA_MODEL_END_OF_LIFE_LOG, { state: 'failed', agentId: 'qaiq' });
+        expect(message).to.equal(localizeRetiredModelMessage(MODEL));
+        expect(message).to.include('no longer available from its provider');
+        expect(message).not.to.include('{"status"');
+    });
+
+    it('classifies the provider-endpoint 404 as a model the provider no longer serves', () => {
+        expect(detectAgentFailureKind(PROVIDER_ENDPOINT_404_LOG)).to.equal('model_unavailable');
+        const message = resolveAgentTurnFailureMessage(PROVIDER_ENDPOINT_404_LOG, { state: 'failed', agentId: 'qaiq' });
+        expect(message).to.equal(localizeRetiredModelMessage());
+        expect(message).to.include('Choose another model');
+    });
+
+    it('formats a persisted raw 410 error and labels it "Model unavailable"', () => {
+        const persisted = `API Error: 410 {"status":410,"detail":"Model ${MODEL} has reached its end of life."}`;
+        expect(formatStoredAgentFailureMessage(persisted)).to.equal(localizeRetiredModelMessage(MODEL));
+        const reason = describeAgentTurnFailure(persisted);
+        expect(reason?.kind).to.equal('model');
+        expect(reason?.label).to.equal('Model unavailable');
+    });
+
+    it('keeps reading its own persisted copy as a model failure', () => {
+        const stored = localizeRetiredModelMessage(MODEL);
+        expect(detectAgentFailureKind(stored)).to.equal('model_unavailable');
+        expect(formatStoredAgentFailureMessage(stored)).to.equal(stored);
+        expect(describeAgentTurnFailure(stored)?.kind).to.equal('model');
+    });
+
+    it('extracts the model id from quoted, unquoted and JSON-escaped provider texts', () => {
+        expect(extractRetiredModelId(`The model '${MODEL}' has reached its end of life`)).to.equal(MODEL);
+        expect(extractRetiredModelId(`Model ${MODEL} has reached its end of life.`)).to.equal(MODEL);
+        expect(extractRetiredModelId(`{"detail":"model \\"${MODEL}\\" is no longer available"}`)).to.equal(MODEL);
+        expect(extractRetiredModelId('This model has reached its end of life.')).to.equal(undefined);
+    });
+
+    it('does not mistake unrelated 404s, deprecation warnings or other model errors for a retired model', () => {
+        expect(detectAgentFailureKind('npm warn deprecated inflight@1.0.6: This module is not supported')).to.equal(undefined);
+        expect(detectAgentFailureKind('Error: Request failed with status code 404')).to.not.equal('model_unavailable');
+        const selected = 'There\'s an issue with the selected model (deepseek/deepseek-v4-flash:free). It may not exist or you may not have access to it.';
+        expect(resolveAgentTurnFailureMessage(selected, { state: 'failed' })).to.include('The model provider refused');
     });
 });

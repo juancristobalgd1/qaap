@@ -173,6 +173,21 @@ describe('qaap-agent-model-fallback', () => {
         expect(agentTurnHasRetryableModelFailure(undefined)).to.be.false;
     });
 
+    it('falls back from a model its provider retired (410 end of life, endpoint 404)', () => {
+        const endOfLife = 'API Error: 410 {"status":410,"title":"Gone","detail":"Model nvidia/llama-3.3-nemotron-super-49b-v1 has reached its end of life."}';
+        const endpoint404 = 'Provider endpoint at integrate.api.nvidia.com returned 404. Verify OPENAI_BASE_URL is correct.';
+        expect(agentTurnHasRetryableModelFailure({ content: endOfLife })).to.be.true;
+        expect(agentTurnHasRetryableModelFailure({ content: endpoint404 })).to.be.true;
+        expect(agentTurnQualifiesForModelFallback('qaiq', { state: 'failed' }, { content: endOfLife })).to.be.true;
+        const next = resolveNextFallbackAgentModel(
+            'qaiq',
+            { provider: 'openai', vendor: 'nvidia', modelId: 'nvidia/llama-3.3-nemotron-super-49b-v1' },
+            new Set(['nvidia/nvidia/llama-3.3-nemotron-super-49b-v1']),
+        );
+        expect(next?.vendor).to.equal('nvidia');
+        expect(next?.modelId).to.not.equal('nvidia/llama-3.3-nemotron-super-49b-v1');
+    });
+
     describe('agentTurnQualifiesForModelFallback (shared by conversation turns and standalone tasks)', () => {
         const deadModel = { content: "There's an issue with the selected model (tencent/hy3:free). It may not exist or you may not have access to it." };
 

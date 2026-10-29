@@ -241,15 +241,18 @@ export function buildAgentSearchHygienePromptBlock(): string {
 export function buildAgentDefaultWorkflowPromptBlock(options: QaapAgentDefaultWorkflowOptions = {}): string {
     const gitAvailable = options.gitAvailable !== false;
     const gitLine = gitAvailable
-        ? 'Use the current repository context, inspect git status before changing files, and create or use an appropriate branch for the task.'
+        ? 'Use the current repository context and inspect git status before changing files. Stay on the current branch.'
         : 'This workspace may not be a git repository yet — skip branch, PR, and git-history steps; implement the requested change directly in the workspace.';
     return [
         DEFAULT_WORKFLOW_MARKER,
-        'For coding tasks, work toward a reviewable pull request by default unless the user asks for a different outcome.',
+        // Commits belong to the user: Qaap shows the turn's diff with "Approve & Commit", and the
+        // Task→PR service builds pull requests from turn checkpoints with the owner's token. An agent
+        // that commits on its own empties the review panel and bypasses that approval.
+        'For coding tasks, leave your changes uncommitted in the working tree: Qaap shows them to the user for review, and the user approves and commits them.',
         gitLine,
         'Start every task by using Read, Glob, or Grep on the repository — never end a turn with only planning/thinking text.',
         'Implement the change, run the most relevant verification you can find, and summarize the result with changed files and test status.',
-        'When GitHub credentials and remotes are available, push the branch and open or update a PR. Otherwise leave the branch PR-ready and state the exact next command or blocker.',
+        'Do not run git commit, create or switch branches (git checkout -b, git switch -c), push, or open a pull request unless the user explicitly asked for that in this conversation.',
         'Do not merge, delete branches, or rewrite shared history unless the user explicitly asks.',
     ].join('\n');
 }
