@@ -26,7 +26,8 @@ export type QaapAgentFailureKind =
     | 'provider_key_rejected'
     | 'provider_credits'
     | 'provider_data_policy'
-    | 'provider_free_limit';
+    | 'provider_free_limit'
+    | 'provider_rejected';
 
 /** What the runner's provider preflight learned about a BYOK key after an ambiguous CLI error. */
 export type QaapProviderKeyVerdict = 'key_rejected' | 'no_credits' | 'free_model_refused';
@@ -296,6 +297,23 @@ const PROVIDER_FREE_LIMIT_PATTERNS: readonly RegExp[] = [
     /\bfree-model\s+limit\s+reached\b/i,
 ];
 
+/**
+ * The provider answered the request itself with an error ("Provider returned error", OpenRouter's
+ * wrapper for an upstream host's 4xx/5xx). Neither the user's key nor the model's name is at fault
+ * here, so the card says the provider rejected the request and offers another model.
+ */
+const PROVIDER_REJECTED_TEXT = /\bprovider\s+returned\s+error\b/i;
+const PROVIDER_REJECTED_JSON_CODE = /\\?"code\\?"\s*:\s*[45]\d\d\b/;
+const PROVIDER_NAME_FIELD = /\\?"provider_name\\?"\s*:\s*\\?"([^"\\]+)\\?"/;
+/** Statuses owned by other classes: the user's key or sign-in (401/403) and the rate limit (429). */
+const PROVIDER_REJECTED_EXCLUDED_PATTERNS: readonly RegExp[] = [
+    // As a status only (`"code":401`, `status 403`, a leading `429:`), never any number in the body.
+    /\\?"(?:code|status)\\?"\s*:\s*(?:401|403|429)\b/i,
+    /\b(?:status|http)\s*(?:code\s*)?:?\s*(?:401|403|429)\b/i,
+    /^\s*(?:401|403|429)\s*[:\s]/,
+    /\bno\s+api\s+key\s+found\b/i,
+];
+
 const PROVIDER_LABELS: ReadonlyArray<readonly [RegExp, string]> = [
     // Not `\b` at the end: OpenRouter's daily free-tier 429 only names it as `"limit_source":"openrouter_free_tier_daily"`.
     [/\bopen\s?router(?![a-z0-9])/i, 'OpenRouter'],
@@ -314,6 +332,21 @@ export function detectAgentFailureProviderLabel(log: string | undefined): string
         return preflight[1];
     }
     return PROVIDER_LABELS.find(([pattern]) => pattern.test(sample))?.[1];
+}
+
+/** Provider named by an OpenRouter-style body (`"provider_name":"AtlasCloud"`), as the provider reported it. */
+export function extractAgentFailureProviderName(text: string | undefined): string | undefined {
+    return PROVIDER_NAME_FIELD.exec(text ?? '')?.[1]?.trim() || undefined;
+}
+
+/** A provider error for the request itself: not the user's key, a sign-in, or a rate limit. */
+function isProviderRejectedText(sample: string): boolean {
+    const providerError = PROVIDER_REJECTED_TEXT.test(sample)
+        || (PROVIDER_NAME_FIELD.test(sample) && PROVIDER_REJECTED_JSON_CODE.test(sample));
+    return providerError
+        && !matchesAny(sample, PROVIDER_REJECTED_EXCLUDED_PATTERNS)
+        && !matchesAny(sample, AUTH_PATTERNS)
+        && !matchesAny(sample, AUTH_ENVELOPE_ONLY_PATTERNS);
 }
 
 function classifyProviderKeyEvidence(sample: string, envelope: string): QaapAgentFailureKind | undefined {
@@ -706,6 +739,11 @@ function classifyAgentFailureEvidence(evidence: AgentFailureEvidence): QaapAgent
     if (matchesAny(sample, MODEL_UNAVAILABLE_PATTERNS)) {
         return 'model_unavailable';
     }
+    // After quota, rate limit and model_unavailable (an explicit "model not found" keeps the model
+    // fallback), and never for a key or sign-in problem (see isProviderRejectedText).
+    if (isProviderRejectedText(sample)) {
+        return 'provider_rejected';
+    }
     if (matchesAny(sample, AUTH_PATTERNS) || matchesAny(agentFailureEnvelopeText(evidence), AUTH_ENVELOPE_ONLY_PATTERNS)) {
         return 'auth';
     }
@@ -745,6 +783,8 @@ export function localizeAgentFailureMessage(kind: QaapAgentFailureKind, provider
                 '{0} free-model limit reached. Wait for the daily reset, add credits with {0}, or pick another model.',
                 provider,
             );
+        case 'provider_rejected':
+            return localizeProviderRejectedMessage(providerLabel);
         case 'quota':
             return nls.localize(
                 'qaap/agentFailure/quotaReached',
@@ -783,6 +823,24 @@ export function localizeAgentFailureMessage(kind: QaapAgentFailureKind, provider
             return localizeMissingCodingAgentMessage();
     }
 }
+
+/** The provider rejected this request; {@link providerLabel} names it when the error body did. */
+export function localizeProviderRejectedMessage(providerLabel?: string): string {
+    const provider = providerLabel?.trim();
+    return provider
+        ? nls.localize(
+            'qaap/agentFailure/providerRejectedNamed',
+            '{0} rejected this request. The model may be unavailable or not support this agent\'s tools. Pick another model and retry.',
+            provider,
+        )
+        : nls.localize(
+            'qaap/agentFailure/providerRejected',
+            'The model\'s provider rejected this request. The model may be unavailable or not support this agent\'s tools. Pick another model and retry.',
+        );
+}
+
+/** Persisted (English, backend-locale) forms of {@link localizeProviderRejectedMessage}. */
+const STORED_PROVIDER_REJECTED = /rejected this request\. The model may be unavailable or not support this agent's tools\. Pick another model and retry\.$/;
 
 /** Shown when Work Hub would otherwise run a natural-language prompt as a raw Shell command. */
 export function localizeMissingCodingAgentMessage(): string {
@@ -1008,6 +1066,9 @@ export function formatStoredAgentFailureMessage(error: string | undefined): stri
             return localizeProviderModelAccessMessage(model);
         }
     }
+    if (kind === 'provider_rejected') {
+        return localizeProviderRejectedMessage(extractAgentFailureProviderName(trimmed));
+    }
     if (kind) {
         return localizeAgentFailureMessage(kind, detectAgentFailureProviderLabel(trimmed));
     }
@@ -1160,6 +1221,9 @@ export function resolveAgentTurnFailureMessage(
             return localizeProviderModelAccessMessage(model);
         }
     }
+    if (kind === 'provider_rejected') {
+        return localizeProviderRejectedMessage(extractAgentFailureProviderName(agentFailureEvidenceText(evidence)));
+    }
     if (kind) {
         return localizeAgentFailureMessage(kind);
     }
@@ -1248,7 +1312,9 @@ export type QaapAgentFailureReasonKind =
     /** The provider rejected access to the model (key, credits or provider privacy settings). */
     | 'model_access'
     | 'provider_key'
-    | 'provider_policy';
+    | 'provider_policy'
+    /** The provider rejected this request (its own error, not the key or the model's name). */
+    | 'provider_rejected';
 
 export interface QaapAgentFailureReason {
     readonly kind: QaapAgentFailureReasonKind;
@@ -1287,6 +1353,9 @@ function classifyStoredAgentFailure(error: string): QaapAgentFailureReasonKind {
     if (STORED_PROVIDER_KEY_MISSING.test(error)) {
         return 'api_key';
     }
+    if (STORED_PROVIDER_REJECTED.test(error)) {
+        return 'provider_rejected';
+    }
     // The raw CLI 404 only when nothing more specific (a provider key/credits/policy check) explains it.
     if (STORED_MODEL_ACCESS_DENIED.test(error)
         || (extractSelectedModelAccessFailure(error) && detectAgentFailureKind(error) === 'model_unavailable')) {
@@ -1304,6 +1373,8 @@ function classifyStoredAgentFailure(error: string): QaapAgentFailureReasonKind {
             return 'provider_key';
         case 'provider_data_policy':
             return 'provider_policy';
+        case 'provider_rejected':
+            return 'provider_rejected';
         case 'model_unavailable':
         case 'tool_unsupported':
             return 'model';
@@ -1346,6 +1417,8 @@ function localizeAgentFailureReasonLabel(kind: QaapAgentFailureReasonKind, optio
             return nls.localize('qaap/agentFailure/reasonProviderKey', 'API key rejected');
         case 'provider_policy':
             return nls.localize('qaap/agentFailure/reasonProviderPolicy', 'Blocked by provider settings');
+        case 'provider_rejected':
+            return nls.localize('qaap/agentFailure/reasonProviderRejected', 'Model provider rejected the request');
         case 'stopped':
         default:
             return nls.localize('qaap/agentFailure/reasonStopped', 'The agent stopped unexpectedly');

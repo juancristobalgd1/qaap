@@ -491,3 +491,58 @@ describe('retired model failures', () => {
         expect(resolveAgentTurnFailureMessage(selected, { state: 'failed' })).to.include('The model provider refused');
     });
 });
+
+describe('provider rejected requests', () => {
+    // Pi on OpenRouter, model `dots-studio/dots-3-note-preview:free`: the upstream host answered 400.
+    const ATLAS_CLOUD_LOG = String.raw`400: {"message":"Provider returned error","code":400,"metadata":{"raw":"{\"code\":400,\"msg\":\"bad request\",\"request_id\":\"0cc3197a-0afa-4e0e-ba9b-e52c50c5a9d5\"}","provider_name":"AtlasCloud","is_byok":false}}{"code":400,"msg":"bad request","request_id":"0cc3197a-0afa-4e0e-ba9b-e52c50c5a9d5"}`;
+
+    it('classifies the OpenRouter 400 wrapper as a rejected request and names the provider', () => {
+        expect(detectAgentFailureKind(ATLAS_CLOUD_LOG)).to.equal('provider_rejected');
+        expect(resolveAgentTurnFailureMessage(ATLAS_CLOUD_LOG, { state: 'failed', agentId: 'pi' }))
+            .to.equal('AtlasCloud rejected this request. The model may be unavailable or not support this agent\'s tools. Pick another model and retry.');
+    });
+
+    it('leaves a provider wrapper around a 401 status to the key / sign-in classes', () => {
+        const log = '{"message":"Provider returned error","code":400,"metadata":{"raw":"{\\"code\\":401}","provider_name":"AtlasCloud"}}';
+        expect(detectAgentFailureKind(log)).to.not.equal('provider_rejected');
+    });
+
+    it('keeps the hint without a provider name when the body has none', () => {
+        const log = 'Provider returned error';
+        expect(detectAgentFailureKind(log)).to.equal('provider_rejected');
+        expect(resolveAgentTurnFailureMessage(log, { state: 'failed', agentId: 'pi' }))
+            .to.equal('The model\'s provider rejected this request. The model may be unavailable or not support this agent\'s tools. Pick another model and retry.');
+    });
+
+    it('reads the reason as its own class, not the raw body or the generic stop', () => {
+        const message = resolveAgentTurnFailureMessage(ATLAS_CLOUD_LOG, { state: 'failed', agentId: 'pi' });
+        expect(describeAgentTurnFailure(message)?.kind).to.equal('provider_rejected');
+        expect(describeAgentTurnFailure(message)?.label).to.equal('Model provider rejected the request');
+        expect(describeAgentTurnFailure(ATLAS_CLOUD_LOG)?.kind).to.equal('provider_rejected');
+    });
+
+    it('keeps the localized copy stable across a reload', () => {
+        const message = resolveAgentTurnFailureMessage(ATLAS_CLOUD_LOG, { state: 'failed', agentId: 'pi' });
+        expect(formatStoredAgentFailureMessage(message)).to.equal(message);
+    });
+
+    it('does not take a 401, a 403 or a missing-key error for a provider rejection', () => {
+        expect(detectAgentFailureKind('Provider returned error {"code":401,"provider_name":"AtlasCloud"}'))
+            .not.to.equal('provider_rejected');
+        expect(detectAgentFailureKind('Provider returned error {"code":403,"provider_name":"AtlasCloud"}'))
+            .not.to.equal('provider_rejected');
+        expect(detectAgentFailureKind('401 Unauthorized')).not.to.equal('provider_rejected');
+        expect(detectAgentFailureKind('No API key found for openrouter')).not.to.equal('provider_rejected');
+        expect(detectAgentFailureKind('Provider returned error: invalid api key')).not.to.equal('provider_rejected');
+    });
+
+    it('keeps the existing rate-limit class for a 429 provider wrapper', () => {
+        const log = 'Provider returned error {"code":429,"provider_name":"AtlasCloud"}';
+        expect(detectAgentFailureKind(log)).to.equal('rate_limit');
+    });
+
+    it('keeps an explicit model-not-found on the model fallback path', () => {
+        expect(detectAgentFailureKind('Provider returned error: model_not_found: kimi-k2.6'))
+            .to.equal('model_unavailable');
+    });
+});
