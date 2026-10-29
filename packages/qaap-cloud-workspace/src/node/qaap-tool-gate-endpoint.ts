@@ -117,6 +117,8 @@ export class QaapToolGateEndpoint implements BackendApplicationContribution {
             autoApprove: task.autoApprove,
             readOnlyWorkspace: !!task.readOnlyWorkspace,
             strictReadOnly: !!grant.oneShot,
+            checkGitExecConfig: cwd => this.runner.checkGitExecConfig(cwd),
+            checkPathsInsideCwd: (cwd, paths) => this.runner.checkShellPathsInsideCwd(cwd, paths),
             askTtlSec: caps.canAsk && !grant.oneShot ? caps.askTtlSec : 0,
             ask: (pending, ttlMs, signal) => this.asks.count(grant.taskId) >= QAAP_TOOL_GATE_MAX_PENDING_ASKS
                 ? Promise.resolve('cancelled')

@@ -4,6 +4,10 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import { spawnSync } from 'child_process';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import type { Request, Response } from '@theia/core/shared/express';
 import { QaapGithubAuthGuard } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
 import {
@@ -12,12 +16,18 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-tool-gate-protocol';
 import { mapQaapToolKind, type QaapHarnessCapabilities } from '@theia/qaap-shared-core/lib/common/qaap-harness-capabilities';
 import { QaapAgentApprovalEndpoint } from './qaap-agent-approval-endpoint';
+import { QaapGitExecConfigChecker } from './qaap-git-exec-config-checker';
+import { QaapShellPathContainmentChecker } from './qaap-shell-path-containment-checker';
 import { QaapToolGateAskBroker } from './qaap-tool-gate-ask-broker';
 import { QaapToolGateEndpoint } from './qaap-tool-gate-endpoint';
 import { QaapToolGateService } from './qaap-tool-gate-service';
 import { QaapToolGateTokenService } from './qaap-tool-gate-token-service';
 
 const WORKSPACE = process.cwd();
+// Isolated from the developer's own git config (lfs filters, fsmonitor...) so the checks are deterministic.
+const isolatedGitEnv = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
+const gitChecker = new QaapGitExecConfigChecker((cwd, args) => spawnSync('git', [...args], { cwd, encoding: 'utf8', env: isolatedGitEnv }), os.tmpdir());
+const TMP_ROOT = fs.realpathSync(os.tmpdir());
 
 class TestableGateEndpoint extends QaapToolGateEndpoint {
     askTtlSec = 0.05;
@@ -86,6 +96,8 @@ describe('QaapToolGateEndpoint', () => {
             runner: {
                 detail: async () => ({ ...task, state: taskState }),
                 resolveTaskAgentId: () => 'pi',
+                checkGitExecConfig: (cwd: string) => cwd.startsWith(TMP_ROOT) ? gitChecker.check(cwd) : undefined,
+                checkShellPathsInsideCwd: (cwd: string, paths: readonly string[]) => new QaapShellPathContainmentChecker().check(cwd, paths),
             },
         });
         token = tokens.issue('task-1', 'alice', WORKSPACE);
@@ -243,6 +255,42 @@ describe('QaapToolGateEndpoint', () => {
             (expired as unknown as { grants: Map<string, unknown> }).grants = (tokens as unknown as { grants: Map<string, unknown> }).grants;
             (endpoint as unknown as { tokens: QaapToolGateTokenService }).tokens = expired;
             expect((await callOneShot({ rawToolName: 'read', input: {} })).statusCode).to.equal(401);
+        });
+
+        describe('runtime checks on read-only shell commands', () => {
+            let repo: string;
+            beforeEach(() => {
+                repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-gate-readonly-')));
+                spawnSync('git', ['init', '-q'], { cwd: repo });
+                oneShot = tokens.issueOneShot('pi', 'alice', repo);
+            });
+            afterEach(() => fs.rmSync(repo, { recursive: true, force: true }));
+
+            it('allows git status in a clean repo', async () => {
+                const res = await callOneShot({ cwd: repo, rawToolName: 'bash', input: { command: 'git status' } });
+                expect(decisionOf(res).kind).to.equal('allow');
+            });
+
+            it('denies git status when .git/config can make git run a program (core.fsmonitor)', async () => {
+                fs.appendFileSync(path.join(repo, '.git', 'config'), '[core]\n\tfsmonitor = /tmp/evil.sh\n');
+                const res = await callOneShot({ cwd: repo, rawToolName: 'bash', input: { command: 'git status' } });
+                expect(decisionOf(res).kind).to.equal('deny');
+            });
+
+            it('denies reading a path outside the cwd, allows one inside', async () => {
+                fs.writeFileSync(path.join(repo, 'a.txt'), 'hi');
+                expect(decisionOf(await callOneShot({ cwd: repo, rawToolName: 'bash', input: { command: 'cat a.txt' } })).kind).to.equal('allow');
+                expect(decisionOf(await callOneShot({ cwd: repo, rawToolName: 'bash', input: { command: 'cat /etc/passwd' } })).kind).to.equal('deny');
+            });
+
+            it('is also enforced for read-only tasks, and unverified (no checks) means not read-only', async () => {
+                const service = new QaapToolGateService();
+                const base = { taskId: 't', owner: 'alice', workspace: repo, autoApprove: true, readOnlyWorkspace: true, askTtlSec: 0, ask: async () => 'cancelled' as const };
+                const request = { agentId: 'pi', toolKind: 'shell' as const, rawToolName: 'bash', input: { command: 'git status' }, cwd: repo };
+                expect((await service.evaluate(request, base)).kind).to.equal('deny');
+                expect((await service.evaluate(request, { ...base, checkGitExecConfig: () => undefined, checkPathsInsideCwd: () => undefined })).kind).to.equal('allow');
+                expect((await service.evaluate(request, { ...base, checkGitExecConfig: () => 'core.fsmonitor', checkPathsInsideCwd: () => undefined })).kind).to.equal('deny');
+            });
         });
 
         it('does not revoke or replace a live task token', async () => {
