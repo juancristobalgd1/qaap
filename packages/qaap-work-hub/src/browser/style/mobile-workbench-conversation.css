@@ -12180,6 +12180,11 @@ body.theia-mobile-mod-has-transcript-overlay.theia-mobile-mod-has-transcript-ove
   color: inherit;
 }
 
+.theia-qaap-approval-policy-sheet-option.theia-qaap-approval-policy-sheet-option-disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
 .theia-qaap-tool-approval-rules-list {
   border-top: 1px solid var(--theia-widget-border, rgba(128, 128, 128, 0.35));
   padding-top: 8px;

@@ -496,6 +496,7 @@ export class MobileProjectsStickyComposerRenderUi {
                 ? anchor => {
                     this.host.stickyComposerSheetsUi.openStickyComposerApprovalPolicySheet(
                         project,
+                        this.host.stickyComposerAgentsUi.resolveStickyComposerPinnedAgentId(project),
                         this.host.stickyComposerAgentsUi.resolveStickyComposerAgentLabel(project),
                         anchor,
                     );

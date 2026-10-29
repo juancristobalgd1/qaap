@@ -209,6 +209,7 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: MobilePro
                 ctx.host.transcriptComposerUi.openTranscriptComposerApprovalPolicySheet(
                     project,
                     summary,
+                    ctx.host.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(project, summary),
                     ctx.host.transcriptComposerUi.resolveTranscriptComposerAgentLabel(
                         ctx.host.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(project, summary),
                     ),

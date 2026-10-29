@@ -11,6 +11,7 @@ const disableImportJSDOM = enableJSDOM();
 
 import { expect } from 'chai';
 import {
+    createApprovalPolicySheetOptionButton,
     createModeSheetOptionButton,
     populateAgentToolbarButton,
     populateApprovalPolicyToolbarButton,
@@ -95,5 +96,29 @@ describe('qaap-agent-ui', () => {
         expect(button.querySelector('.theia-mobile-projects-sticky-composer-approval-policy-label')?.textContent)
             .to.equal(policy.label);
         expect(button.querySelector('.codicon-chevron-down')).to.exist;
+    });
+
+    it('createApprovalPolicySheetOptionButton disables Ask before changes with the harness reason', () => {
+        const reason = 'Shell can\'t ask before changes yet; it runs in Autonomous mode.';
+        let selectCount = 0;
+        const onSelect = (): void => { selectCount++; };
+        const disabled = createApprovalPolicySheetOptionButton({
+            policy: resolveAgentApprovalPolicyOption('request-approval'),
+            disabledReason: reason,
+            onSelect,
+        });
+        expect(disabled.disabled).to.equal(true);
+        expect(disabled.getAttribute('aria-disabled')).to.equal('true');
+        expect(disabled.querySelector('.theia-qaap-approval-policy-sheet-description')?.textContent).to.equal(reason);
+        disabled.click();
+        expect(selectCount).to.equal(0);
+
+        const enabled = createApprovalPolicySheetOptionButton({
+            policy: resolveAgentApprovalPolicyOption('request-approval'),
+            onSelect,
+        });
+        expect(enabled.disabled).to.equal(false);
+        expect(enabled.querySelector('.theia-qaap-approval-policy-sheet-description')?.textContent)
+            .to.equal(resolveAgentApprovalPolicyOption('request-approval').description);
     });
 });

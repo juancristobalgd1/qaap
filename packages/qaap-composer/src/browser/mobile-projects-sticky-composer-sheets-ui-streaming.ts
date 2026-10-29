@@ -14,6 +14,7 @@ import {
     type QaapAgentApprovalPolicyId,
 } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import { createApprovalPolicySheetOptionButton, createModeSheetOptionButton } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
+import { resolveQaapHarnessCapabilities } from '@theia/qaap-shared-core/lib/common/qaap-harness-capabilities';
 import { qaiqModelSupportsToolCalls } from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-support';
 import {
     filterQaiqModelsWithConfiguredCredentials,
@@ -125,10 +126,12 @@ export function openStickyComposerModeSheetExtracted(ctx: MobileProjectsStickyCo
 }
 
 export function openStickyComposerApprovalPolicySheetExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext, project: MobileProjectEntry,
+    agentId: string,
     agentLabel: string,
     anchor?: HTMLElement,): void {
     const cwd = ctx.host.projectsService.getProjectCwd(project) ?? ctx.host.preparedCwdByProjectId.get(project.id);
     ctx.openApprovalPolicySheet({
+        agentId,
         agentLabel,
         cwd,
         anchor,
@@ -193,6 +196,8 @@ export function mountApprovalPolicySheetPresentationExtracted(ctx: MobileProject
 }
 
 export function openApprovalPolicySheetExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext, options: {
+    /** Harness id; decides whether "Ask before changes" can be offered. */
+    readonly agentId: string;
     readonly agentLabel: string;
     readonly cwd: string | undefined;
     readonly selectedId: QaapAgentApprovalPolicyId;
@@ -245,10 +250,18 @@ export function openApprovalPolicySheetExtracted(ctx: MobileProjectsStickyCompos
         }
     };
     const policyButtons: HTMLButtonElement[] = [];
+    const requestApprovalDisabledReason = resolveQaapHarnessCapabilities(options.agentId).canAsk
+        ? undefined
+        : nls.localize(
+            'qaap/mobileProjects/approvalPolicyRequestUnsupported',
+            '{0} can\'t ask before changes yet; it runs in Autonomous mode.',
+            options.agentLabel,
+        );
     for (const policy of QAAP_AGENT_APPROVAL_POLICIES) {
         const button = createApprovalPolicySheetOptionButton({
             policy,
             selected: policy.id === selectedId,
+            disabledReason: policy.id === 'request-approval' ? requestApprovalDisabledReason : undefined,
             onSelect: () => {
                 selectedId = policy.id;
                 for (const entry of policyButtons) {
