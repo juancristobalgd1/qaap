@@ -10,7 +10,10 @@ import { injectable } from '@theia/core/shared/inversify';
 export interface QaapToolGateTokenGrant {
     readonly taskId: string;
     readonly owner: string | undefined;
-    /** Workspace the task runs in; tool calls must target a path inside it. */
+    /**
+     * Workspace the task runs in. The gate checks only that the request `cwd` lies inside it; validating
+     * paths inside the tool input (file arguments, shell words) is future work.
+     */
     readonly workspace: string;
 }
 
