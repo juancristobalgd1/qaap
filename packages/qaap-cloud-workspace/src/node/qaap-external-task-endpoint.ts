@@ -26,7 +26,8 @@ const REPOSITORY_SEGMENT = /^[A-Za-z0-9_.-]{1,100}$/;
  * HTTP side of external tasks (doc/qaap-external-task-inputs.md):
  * - the per-repository opt-in, set only by the signed-in user in the app (never from GitHub);
  * - `POST /intake`, the control plane's signed hand-off to a tenant backend.
- * Every route answers 404 while `QAAP_EXTERNAL_TASKS_GITHUB` is off.
+ * Every route answers 404 while `QAAP_EXTERNAL_TASKS_GITHUB` is off, except the opt-in list,
+ * which answers `{ available: false }` so the Work Hub's load-time probe stays quiet.
  */
 @injectable()
 export class QaapExternalTaskEndpoint implements BackendApplicationContribution {
@@ -64,6 +65,12 @@ export class QaapExternalTaskEndpoint implements BackendApplicationContribution 
     }
 
     protected handleListOptIns(req: Request, res: Response): void {
+        // The Work Hub probes this on every load; answer "off" with 200 rather than 404 so a
+        // disabled feature does not log a failed request in the browser console.
+        if (!isQaapExternalTasksGithubEnabled()) {
+            res.json({ available: false, repositories: [] });
+            return;
+        }
         const login = this.requireUser(req, res);
         if (!login) {
             return;

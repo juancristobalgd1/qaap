@@ -630,15 +630,25 @@ export async function warmAgentRunner(cwd: string): Promise<QaapAgentWarmResult 
     }
 }
 
+/** Upper bound for one agent model catalog request, so a hung probe rejects instead of leaving the picker loading. */
+export const AGENT_MODELS_REQUEST_TIMEOUT_MS = 15000;
+
 export async function fetchAgentModelsForAgent(agentId: string): Promise<QaapQaiqModelOption[]> {
-    const response = await fetch(
-        `${QAAP_AGENT_TASK_API_PATH}/agent-models?agent=${encodeURIComponent(agentId)}`,
-        { credentials: 'include', cache: 'no-store' },
-    );
-    if (!response.ok) {
-        throw new Error(response.statusText);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), AGENT_MODELS_REQUEST_TIMEOUT_MS);
+    let body: { models?: QaapQaiqModelOption[] };
+    try {
+        const response = await fetch(
+            `${QAAP_AGENT_TASK_API_PATH}/agent-models?agent=${encodeURIComponent(agentId)}`,
+            { credentials: 'include', cache: 'no-store', signal: controller.signal },
+        );
+        if (!response.ok) {
+            throw new Error(response.statusText);
+        }
+        body = await response.json() as { models?: QaapQaiqModelOption[] };
+    } finally {
+        clearTimeout(timer);
     }
-    const body = await response.json() as { models?: QaapQaiqModelOption[] };
     const models = body.models ?? [];
     // Do not let a CLI diagnostic become a selectable model if an older backend or a
     // proxy still returns OpenCode stderr as line-oriented catalog data.

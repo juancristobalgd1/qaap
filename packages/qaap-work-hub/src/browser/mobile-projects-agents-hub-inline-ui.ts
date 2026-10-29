@@ -131,6 +131,8 @@ export class MobileProjectsAgentsHubInlineUi {
     protected agentsHubExecutionHeaderProjectId: string | undefined;
     /** Last streaming conversation the hub shell rendered — kept on screen if its run is cancelled. */
     protected lastShellStreamingConversationId: string | undefined;
+    /** Runs that were live when the user tapped "New task": the idle shell must not adopt them again. */
+    protected readonly dismissedShellConversationIds = new Set<string>();
 
     shouldPreserveAgentsHubInlineTranscriptShell(): boolean {
         return this.host.hubView === 'tasks'
@@ -234,7 +236,9 @@ export class MobileProjectsAgentsHubInlineUi {
         }
         const conversations = this.host.conversationsForProject(project);
         const active = conversations
-            .find(summary => summary.status === 'streaming' && !isAgentsHubIdleConversationSummary(summary));
+            .find(summary => summary.status === 'streaming'
+                && !isAgentsHubIdleConversationSummary(summary)
+                && !this.dismissedShellConversationIds.has(summary.id));
         if (active) {
             this.lastShellStreamingConversationId = active.id;
             return active;
@@ -739,6 +743,14 @@ export class MobileProjectsAgentsHubInlineUi {
      */
     resetAgentsHubIdleTranscriptShell(project: MobileProjectEntry): void {
         this.lastShellStreamingConversationId = undefined;
+        // "New task" starts clean: runs still streaming in this project stay in the sidebar
+        // but no longer take over the shell; a run started from the new shell is adopted.
+        this.dismissedShellConversationIds.clear();
+        for (const summary of this.host.conversationsForProject(project)) {
+            if (summary.status === 'streaming') {
+                this.dismissedShellConversationIds.add(summary.id);
+            }
+        }
         this.host.transcriptLiveUi.stopTranscriptLiveWatch();
         this.host.transcriptLastConv = undefined;
         this.host.transcriptLastFingerprint = undefined;

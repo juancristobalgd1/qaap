@@ -643,6 +643,7 @@ export function createSessionsSidebarPinnedProjectGroupExtracted(ctx: MobileProj
         const name = document.createElement('span');
         name.className = 'theia-mobile-work-hub-sessions-sidebar-pinned-project-name';
         name.textContent = project.name;
+        name.title = project.name;
         projectHead.append(folder, name);
         const taskList = document.createElement('div');
         taskList.className = 'theia-mobile-projects-chats-list theia-mod-sessions-sidebar-pinned-tasks';

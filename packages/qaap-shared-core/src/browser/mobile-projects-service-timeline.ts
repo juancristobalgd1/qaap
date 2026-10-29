@@ -241,7 +241,8 @@ export async function loadSessionMapExtracted(ctx: MobileProjectsServiceContext)
         const config = await fetchQaapAuthConfig().catch(() => ({ skipAuth: false, githubOAuth: false }));
         if (!config.skipAuth) {
             if (readQaapSignedIn()) {
-                await syncQaapAuthSessionFromServer();
+                // A timed-out session read rejects with AbortError: keep the local session.
+                await syncQaapAuthSessionFromServer().catch(() => false);
             }
             if (!readQaapSignedIn()) {
                 return local;

@@ -5,6 +5,10 @@
 
 import { expect } from 'chai';
 import {
+    QaapTranscriptMarkdownWorkerClient,
+    resolveTranscriptMarkdownWorkerUrl,
+} from './qaap-transcript-markdown-worker-client';
+import {
     shouldApplyTranscriptMarkdownWorkerResult,
     type TranscriptMarkdownWorkerRequest,
     type TranscriptMarkdownWorkerResponse,
@@ -67,7 +71,6 @@ describe('qaap-transcript-markdown-worker-client', () => {
         runtime.location = { href: 'http://localhost/' };
 
         try {
-            const { QaapTranscriptMarkdownWorkerClient } = await import('./qaap-transcript-markdown-worker-client');
             QaapTranscriptMarkdownWorkerClient.resetForTests();
             const client = QaapTranscriptMarkdownWorkerClient.get();
             const host = {} as HTMLElement;
@@ -104,7 +107,6 @@ describe('qaap-transcript-markdown-worker-client', () => {
             });
             expect(applied).to.deep.equal(['<p>second</p>']);
         } finally {
-            const { QaapTranscriptMarkdownWorkerClient } = await import('./qaap-transcript-markdown-worker-client');
             QaapTranscriptMarkdownWorkerClient.resetForTests();
             if (previousWorker) {
                 runtime.Worker = previousWorker;
@@ -127,7 +129,6 @@ describe('qaap-transcript-markdown-worker-client', () => {
         const previousLocation = runtime.location;
         runtime.Worker = TestWorker as unknown as typeof Worker;
         runtime.location = { href: 'http://localhost/' };
-        const { QaapTranscriptMarkdownWorkerClient } = await import('./qaap-transcript-markdown-worker-client');
         try {
             QaapTranscriptMarkdownWorkerClient.resetForTests();
             const client = QaapTranscriptMarkdownWorkerClient.get();
@@ -183,7 +184,6 @@ describe('qaap-transcript-markdown-worker-client', () => {
         const previousLocation = runtime.location;
         runtime.Worker = TestWorker as unknown as typeof Worker;
         runtime.location = { href: 'http://localhost/' };
-        const { QaapTranscriptMarkdownWorkerClient } = await import('./qaap-transcript-markdown-worker-client');
         try {
             QaapTranscriptMarkdownWorkerClient.resetForTests();
             const client = QaapTranscriptMarkdownWorkerClient.get();
@@ -210,5 +210,86 @@ describe('qaap-transcript-markdown-worker-client', () => {
                 delete runtime.location;
             }
         }
+    });
+
+    describe('worker script location and failure handling', () => {
+        const runtime = globalThis as unknown as {
+            Worker?: typeof Worker;
+            location?: { href: string };
+        };
+
+        function installTestWorker(href: string): () => void {
+            const previousWorker = runtime.Worker;
+            const previousLocation = runtime.location;
+            runtime.Worker = TestWorker as unknown as typeof Worker;
+            runtime.location = { href };
+            return () => {
+                if (previousWorker) {
+                    runtime.Worker = previousWorker;
+                } else {
+                    delete runtime.Worker;
+                }
+                if (previousLocation) {
+                    runtime.location = previousLocation;
+                } else {
+                    delete runtime.location;
+                }
+            };
+        }
+
+        it('resolves the worker beside the bundle instead of the current route', async () => {
+            expect(resolveTranscriptMarkdownWorkerUrl('http://localhost:3000/', 'http://localhost:3000/deep/route/here').href)
+                .to.equal('http://localhost:3000/qaap-transcript-markdown-worker.js');
+            expect(resolveTranscriptMarkdownWorkerUrl('/frontend/', 'http://localhost:3000/deep/route/here').href)
+                .to.equal('http://localhost:3000/frontend/qaap-transcript-markdown-worker.js');
+        });
+
+        it('falls back to the page base when no bundle public path is known', async () => {
+            expect(resolveTranscriptMarkdownWorkerUrl(undefined, 'http://localhost:3000/').href)
+                .to.equal('http://localhost:3000/qaap-transcript-markdown-worker.js');
+        });
+
+        it('settles a parse on the main thread when the worker never answers', async () => {
+            const restore = installTestWorker('http://localhost/');
+            try {
+                QaapTranscriptMarkdownWorkerClient.resetForTests();
+                QaapTranscriptMarkdownWorkerClient.setResponseTimeoutForTests(5);
+                const client = QaapTranscriptMarkdownWorkerClient.get();
+                const applied: string[] = [];
+                const fallbacks: string[] = [];
+
+                client.requestParse({} as HTMLElement, '**late**', (_target, html) => applied.push(html), (_target, content) => fallbacks.push(content));
+                await new Promise(resolve => setTimeout(resolve, 40));
+
+                expect(fallbacks).to.deep.equal(['**late**']);
+                expect(applied).to.deep.equal([]);
+
+                // A late answer for the timed-out request is ignored; the worker stays usable for other hosts.
+                const late = TestWorker.latest!.posted[0];
+                TestWorker.latest!.emit({ type: 'result', requestId: late.requestId, generation: late.generation, html: '<p>late</p>', cleanLength: 8 });
+                expect(applied).to.deep.equal([]);
+                client.requestParse({} as HTMLElement, 'next', (_target, html) => applied.push(html), () => undefined);
+                expect(TestWorker.latest!.posted.length).to.equal(2);
+            } finally {
+                QaapTranscriptMarkdownWorkerClient.resetForTests();
+                restore();
+            }
+        });
+
+        it('runs every pending fallback even when one of them throws', async () => {
+            const restore = installTestWorker('http://localhost/');
+            try {
+                QaapTranscriptMarkdownWorkerClient.resetForTests();
+                const client = QaapTranscriptMarkdownWorkerClient.get();
+                const fallbacks: string[] = [];
+                client.requestParse({} as HTMLElement, 'first', () => undefined, () => { throw new Error('boom'); });
+                client.requestParse({} as HTMLElement, 'second', () => undefined, (_target, content) => fallbacks.push(content));
+                TestWorker.latest!.onerror?.();
+                expect(fallbacks).to.deep.equal(['second']);
+            } finally {
+                QaapTranscriptMarkdownWorkerClient.resetForTests();
+                restore();
+            }
+        });
     });
 });

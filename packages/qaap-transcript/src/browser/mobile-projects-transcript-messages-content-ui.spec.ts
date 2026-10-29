@@ -30,6 +30,7 @@ import {
     transcriptContentNeedsStreamingMarkdown,
 } from './mobile-projects-transcript-messages-content-ui';
 import { QaapTranscriptMarkdownWorkerClient } from './qaap-transcript-markdown-worker-client';
+import { registerDeferredTranscriptMarkdown } from './qaap-transcript-row-defer';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
@@ -368,5 +369,52 @@ describe('MobileProjectsTranscriptMessagesContentUi', () => {
         } finally {
             snackbar.show = originalShow;
         }
+    });
+
+    it('settleTranscriptStreamingContent ends streamed markdown as rendered HTML, not plain text', () => {
+        const row = document.createElement('div');
+        const host = document.createElement('div');
+        host.className = 'theia-mod-streaming-plain-text';
+        host.textContent = 'Use **bold** here';
+        row.append(host);
+        const ui = new MobileProjectsTranscriptMessagesContentUi({
+            transcriptMarkdownIt: markdownit(),
+        } as never);
+        const client = QaapTranscriptMarkdownWorkerClient.get();
+        (client as unknown as { requestParse: unknown }).requestParse = (
+            target: HTMLElement,
+            content: string,
+            _apply: unknown,
+            fallbackSync: (target: HTMLElement, content: string) => void,
+        ) => fallbackSync(target, content);
+
+        ui.settleTranscriptStreamingContent(row);
+
+        expect(host.querySelector('strong')?.textContent).to.equal('bold');
+        expect(host.textContent).to.not.contain('**');
+    });
+
+    it('settleTranscriptStreamingContent hydrates deferred markdown excerpts it finds', () => {
+        const row = document.createElement('div');
+        const host = document.createElement('div');
+        host.className = 'theia-mod-markdown theia-mod-deferred-markdown';
+        host.textContent = 'Excerpt with **bold**';
+        row.append(host);
+        registerDeferredTranscriptMarkdown({ host, content: 'Excerpt with **bold**' });
+        const ui = new MobileProjectsTranscriptMessagesContentUi({
+            transcriptMarkdownIt: markdownit(),
+        } as never);
+        const client = QaapTranscriptMarkdownWorkerClient.get();
+        (client as unknown as { requestParse: unknown }).requestParse = (
+            target: HTMLElement,
+            content: string,
+            _apply: unknown,
+            fallbackSync: (target: HTMLElement, content: string) => void,
+        ) => fallbackSync(target, content);
+
+        ui.settleTranscriptStreamingContent(row);
+
+        expect(host.querySelector('strong')?.textContent).to.equal('bold');
+        expect(host.hasAttribute('data-transcript-defer-pending')).to.equal(false);
     });
 });

@@ -47,13 +47,53 @@ interface PendingStreamRequest {
 
 type PendingRequest = PendingParseRequest | PendingStreamRequest;
 
+/**
+ * Upper bound on one worker round-trip. A worker that loads but never answers (a crashed
+ * `onmessage`, a stalled thread) must not leave settled text as raw markdown: after this
+ * long the request falls back to the main-thread parser.
+ */
+export const TRANSCRIPT_MARKDOWN_WORKER_RESPONSE_TIMEOUT_MS = 4000;
+
+const TRANSCRIPT_MARKDOWN_WORKER_SCRIPT = './qaap-transcript-markdown-worker.js';
+
+/**
+ * Bundler output name of the markdown worker. Webpack emits it beside `bundle.js`, so resolve it
+ * against the bundle's public path (the frontend output directory), not against whatever page URL
+ * the app is currently showing: a deep route such as `/some/path` would otherwise request
+ * `/some/path/qaap-transcript-markdown-worker.js` and 404.
+ */
+declare const __webpack_public_path__: string | undefined;
+
+function readBundlePublicPath(): string | undefined {
+    return typeof __webpack_public_path__ === 'string' && __webpack_public_path__ ? __webpack_public_path__ : undefined;
+}
+
+function readPageBase(): string {
+    return typeof document !== 'undefined' && document.baseURI ? document.baseURI : location.href;
+}
+
+/**
+ * Absolute URL of the markdown worker script. Parameters default to the running bundle and page;
+ * they are explicit so unit tests can pin the resolution rules.
+ */
+export function resolveTranscriptMarkdownWorkerUrl(
+    bundlePublicPath: string | undefined = readBundlePublicPath(),
+    pageBase: string = readPageBase(),
+): URL {
+    const base = bundlePublicPath ? new URL(bundlePublicPath, pageBase).href : pageBase;
+    return new URL(TRANSCRIPT_MARKDOWN_WORKER_SCRIPT, base);
+}
+
 export class QaapTranscriptMarkdownWorkerClient {
     protected static instance: QaapTranscriptMarkdownWorkerClient | undefined;
+    protected static responseTimeoutMs = TRANSCRIPT_MARKDOWN_WORKER_RESPONSE_TIMEOUT_MS;
 
     protected worker: Worker | undefined;
     protected workerFailed = false;
     protected nextRequestId = 0;
     protected nextStreamId = 0;
+    /** Per in-flight request watchdog; cleared on any response, failure or dispose. */
+    protected readonly responseTimers = new Map<number, ReturnType<typeof setTimeout>>();
     protected readonly hostGenerations = new WeakMap<HTMLElement, number>();
     /** Generation of the last result painted per host; stream results only ever move forward. */
     protected readonly appliedGenerations = new WeakMap<HTMLElement, number>();
@@ -76,6 +116,12 @@ export class QaapTranscriptMarkdownWorkerClient {
     static resetForTests(): void {
         QaapTranscriptMarkdownWorkerClient.instance?.dispose();
         QaapTranscriptMarkdownWorkerClient.instance = undefined;
+        QaapTranscriptMarkdownWorkerClient.responseTimeoutMs = TRANSCRIPT_MARKDOWN_WORKER_RESPONSE_TIMEOUT_MS;
+    }
+
+    /** Visible for unit tests: shorten the watchdog so timeout fallbacks run without real waits. */
+    static setResponseTimeoutForTests(ms: number): void {
+        QaapTranscriptMarkdownWorkerClient.responseTimeoutMs = ms;
     }
 
     requestParse(
@@ -161,6 +207,7 @@ export class QaapTranscriptMarkdownWorkerClient {
         const requestId = ++this.nextRequestId;
         this.pendingRequests.set(requestId, pending);
         this.inFlightRequestIds.set(host, requestId);
+        this.armResponseTimer(requestId);
         const request: TranscriptMarkdownWorkerRequest = pending.kind === 'parse'
             ? {
                 type: 'parse',
@@ -196,12 +243,55 @@ export class QaapTranscriptMarkdownWorkerClient {
         return id;
     }
 
+    protected armResponseTimer(requestId: number): void {
+        const timeoutMs = QaapTranscriptMarkdownWorkerClient.responseTimeoutMs;
+        if (typeof setTimeout !== 'function') {
+            return;
+        }
+        this.responseTimers.set(requestId, setTimeout(() => this.handleResponseTimeout(requestId), timeoutMs));
+    }
+
+    protected clearResponseTimer(requestId: number): void {
+        const timer = this.responseTimers.get(requestId);
+        if (timer !== undefined) {
+            clearTimeout(timer);
+            this.responseTimers.delete(requestId);
+        }
+    }
+
+    /** A worker that never answers: settle this host on the main thread and keep the worker for others. */
+    protected handleResponseTimeout(requestId: number): void {
+        this.responseTimers.delete(requestId);
+        const pending = this.pendingRequests.get(requestId);
+        if (!pending) {
+            return;
+        }
+        this.pendingRequests.delete(requestId);
+        this.inFlightRequestIds.delete(pending.host);
+        recordTranscriptRenderMetric('markdown_worker_timeout');
+        try {
+            if (shouldApplyTranscriptMarkdownWorkerResult(this.hostGenerations.get(pending.host), pending.generation)) {
+                this.applyFallback(pending);
+            }
+        } finally {
+            this.dispatchLatestRequest(pending.host);
+        }
+    }
+
+    protected applyFallback(request: PendingRequest): void {
+        if (request.kind === 'parse') {
+            request.fallbackSync(request.host, request.content);
+        } else {
+            request.fallbackPlainText(request.host, request.content);
+        }
+    }
+
     protected ensureWorker(): Worker | undefined {
         if (this.worker) {
             return this.worker;
         }
         try {
-            this.worker = new Worker(new URL('./qaap-transcript-markdown-worker.js', location.href));
+            this.worker = new Worker(resolveTranscriptMarkdownWorkerUrl());
             this.worker.onmessage = (event: MessageEvent<TranscriptMarkdownWorkerResponse>) => {
                 this.handleWorkerMessage(event.data);
             };
@@ -224,6 +314,7 @@ export class QaapTranscriptMarkdownWorkerClient {
             return;
         }
         this.pendingRequests.delete(message.requestId);
+        this.clearResponseTimer(message.requestId);
         this.inFlightRequestIds.delete(pending.host);
         try {
             if (!this.shouldApplyResult(pending, message.generation)) {
@@ -303,10 +394,11 @@ export class QaapTranscriptMarkdownWorkerClient {
             if (!shouldApplyTranscriptMarkdownWorkerResult(this.hostGenerations.get(request.host), request.generation)) {
                 continue;
             }
-            if (request.kind === 'parse') {
-                request.fallbackSync(request.host, request.content);
-            } else {
-                request.fallbackPlainText(request.host, request.content);
+            // One failing fallback must not strand the hosts queued after it as raw markdown.
+            try {
+                this.applyFallback(request);
+            } catch (error) {
+                console.error('[qaap-transcript] markdown fallback failed', error);
             }
         }
     }
@@ -314,6 +406,10 @@ export class QaapTranscriptMarkdownWorkerClient {
     protected disposeWorkerOnly(): void {
         this.worker?.terminate();
         this.worker = undefined;
+        for (const timer of this.responseTimers.values()) {
+            clearTimeout(timer);
+        }
+        this.responseTimers.clear();
         this.pendingRequests.clear();
         this.latestRequests.clear();
         this.inFlightRequestIds.clear();

@@ -5643,6 +5643,31 @@ body.qaap-theme-light .qaap-working-agents-popover-row-status.theia-mod-shimmer 
   padding-bottom: 2px;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
+  transition: mask-image 160ms ease-out;
+}
+
+/* Edge fades show that the chip row scrolls sideways. The classes are set from
+   renderContextChipRow only while content is hidden past that edge. The mask
+   uses alpha only (#000 is the opaque stop, as in qaap-chat-scroll-edges.css). */
+.theia-mobile-projects-sticky-composer-context-chips.theia-mod-overflow-end {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent 100%);
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent 100%);
+}
+
+.theia-mobile-projects-sticky-composer-context-chips.theia-mod-overflow-start {
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, #000 28px);
+  mask-image: linear-gradient(to right, transparent 0%, #000 28px);
+}
+
+.theia-mobile-projects-sticky-composer-context-chips.theia-mod-overflow-start.theia-mod-overflow-end {
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, #000 28px, #000 calc(100% - 28px), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0%, #000 28px, #000 calc(100% - 28px), transparent 100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theia-mobile-projects-sticky-composer-context-chips {
+    transition: none;
+  }
 }
 
 .theia-mobile-projects-sticky-composer-context-files {

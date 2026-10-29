@@ -645,7 +645,8 @@ export class MobileOpenRepositoryDialog {
         this.renderConnectedStatus();
         this.renderList();
         if (readQaapSignedIn()) {
-            await syncQaapAuthSessionFromServer();
+            // A timed-out session read must not leave the list stuck in its loading state.
+            await syncQaapAuthSessionFromServer().catch(() => false);
             this.renderConnectedStatus();
         }
         try {
