@@ -146,7 +146,7 @@ describe('qaap-pi-json-stream', () => {
             expect(resolvePiJsonStreamAccumulator('Hello from Pi\n')).to.equal(undefined);
             expect(resolvePiJsonStreamAccumulator('')).to.equal(undefined);
             expect(resolvePiJsonStreamAccumulator('\n   \n')).to.equal(undefined);
-            expect(createAgentStreamAccumulator('pi')).to.equal(undefined);
+            expect(createAgentStreamAccumulator('pi')).to.be.instanceOf(QaapPiStreamAccumulator);
         });
 
         it('does not treat a JSON record that is not the session header as Pi JSON output', () => {
