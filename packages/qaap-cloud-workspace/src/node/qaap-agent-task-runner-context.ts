@@ -352,4 +352,6 @@ export interface QaapAgentTaskRunnerContext {
     applyNvidiaOpenAiCompatEnv(env: NodeJS.ProcessEnv): void;
     applyHuggingfaceOpenAiCompatEnv(env: NodeJS.ProcessEnv): void;
     applyHelperEnv(env: NodeJS.ProcessEnv, ownerLogin?: string, parentTaskId?: string, autoApprove?: boolean): boolean;
+    /** Seeds `QAAP_GATE_URL` / `QAAP_GATE_TOKEN` for harnesses that reach the tool gate over HTTP. */
+    applyToolGateEnv(env: NodeJS.ProcessEnv, task: Pick<QaapAgentTask, 'id' | 'ownerLogin' | 'cwd' | 'agentId' | 'command'>): void;
 }
