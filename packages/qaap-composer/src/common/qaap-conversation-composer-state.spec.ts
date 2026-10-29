@@ -199,9 +199,10 @@ describe('qaap-conversation-composer-state', () => {
     });
 
     it('formatComposerRunPermissionsLabel shows the effective mode for a harness that cannot ask', () => {
-        const autonomous = formatComposerRunPermissionsLabel('Build', 'request-approval', 'pi');
+        const autonomous = formatComposerRunPermissionsLabel('Build', 'request-approval', 'my-custom-agent');
         expect(autonomous).to.equal(`Build · ${resolveAgentApprovalPolicyOption('approve-for-me').label}`);
         expect(formatComposerRunPermissionsLabel('Build', 'request-approval', 'qaiq')).to.equal('Build · Ask before changes');
+        expect(formatComposerRunPermissionsLabel('Build', 'request-approval', 'pi')).to.equal('Build · Ask before changes');
         expect(formatComposerRunPermissionsLabel('Build', 'request-approval', 'codex')).to.equal('Build · Ask before changes');
     });
 

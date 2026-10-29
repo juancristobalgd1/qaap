@@ -278,6 +278,18 @@ describe('QaapToolGateEndpoint', () => {
             expect(lastKind).to.equal('deny');
         });
 
+        it('audits the FINAL (rewritten) input, not the original', async () => {
+            task.autoApprove = true;
+            const audits: Array<Record<string, unknown>> = [];
+            (endpoint as unknown as { runner: Record<string, unknown> }).runner.observability = { recordAgentToolCommand: (a: Record<string, unknown>) => audits.push(a) };
+            (endpoint as unknown as { gate: unknown }).gate = {
+                evaluate: async (): Promise<QaapToolGateDecision> => ({ kind: 'allow', source: 'hook', updatedInput: { command: 'echo safe' } }),
+            };
+            await call({ [QAAP_TOOL_GATE_TOKEN_HEADER]: token }, { input: { command: 'echo original' } });
+            expect(audits).to.have.length(1);
+            expect(audits[0]).to.include({ command: 'echo safe', decision: 'approve', autoApprovalReason: 'input-rewritten', taskId: 'task-1' });
+        });
+
         it('rejects a malformed body', async () => {
             const res = fakeRes();
             await endpoint.evaluateForTest(fakeReq({ [QAAP_TOOL_GATE_TOKEN_HEADER]: token }, { cwd: 3 }), res);

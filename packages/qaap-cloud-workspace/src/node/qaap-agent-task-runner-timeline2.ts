@@ -1,3 +1,4 @@
+import { usesToolGateExtension } from './qaap-tool-gate-pi-adapter';
 import { IDLE_TASK_TIMEOUT_MS, QAAP_AGENT_VERIFY_ENABLED, QUEUED_APPROVAL_GRACE_TIMEOUT_MS, USER_REQUEST_MAX_CHARS } from './qaap-agent-task-runner-constants';
 import { QaapQaiqProviderKeyMissingError } from './qaap-qaiq-provider-preflight';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
@@ -453,7 +454,10 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
         const stdinPrompt = typeof stdinPromptEntry === 'string'
             ? { text: stdinPromptEntry, mode: 'qaiq-stdio' }
             : stdinPromptEntry;
-        const stdinInteractive = task.autoApprove === false || stdinPrompt !== undefined;
+        // Harnesses gated through an HTTP extension (Pi) ask over the gate, not over stdin: a piped stdin
+        // makes Pi block waiting for input, so they keep a closed stdin even under request-approval.
+        const stdinInteractive = (task.autoApprove === false && !usesToolGateExtension(ctx.resolveTaskAgentId(task)))
+            || stdinPrompt !== undefined;
         const agentModel = resolveTaskAgentModel(task);
         // A shared Theia backend must never rewrite one global CLI settings file while another
         // tenant is spawning. Hosted workers own their HOME; until the worker itself applies a

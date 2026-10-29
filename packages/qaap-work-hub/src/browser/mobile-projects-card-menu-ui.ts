@@ -169,6 +169,7 @@ export class MobileProjectsCardMenuUi {
         });
 
         this.appendGithubIssueTasksItem(menu, project);
+        this.appendProjectFolderTrustItem(menu, project);
 
         if (project.isCurrent) {
             this.appendCardMenuItem(menu, {
@@ -499,6 +500,45 @@ export class MobileProjectsCardMenuUi {
                     'Off: issues of {0} never start tasks. Turning it on also allows Qaap to open pull requests there.', github.fullName),
             onSelect: () => { void this.toggleGithubIssueTasks(github.owner, github.name, !enabled); },
         });
+    }
+
+    /** "Trust folder" / "Stop trusting folder" for the project's folder, once the folder is known. */
+    protected appendProjectFolderTrustItem(menu: HTMLElement, project: MobileProjectEntry): void {
+        const cwd = this.host.projectsService.getProjectCwd(project);
+        if (!cwd) {
+            return;
+        }
+        const trusted = this.host.projectsService.folderTrust.isTrusted(cwd);
+        this.appendCardMenuItem(menu, {
+            label: trusted
+                ? nls.localize('qaap/mobileProjects/stopTrustingFolder', 'Stop trusting folder')
+                : nls.localize('qaap/mobileProjects/trustFolder', 'Trust folder'),
+            iconClass: trusted ? 'codicon-workspace-untrusted' : 'codicon-workspace-trusted',
+            title: trusted
+                ? nls.localize('qaap/mobileProjects/stopTrustingFolderTitle', 'Agents stop loading this repository\'s own agent settings, extensions and MCP servers.')
+                : nls.localize('qaap/mobileProjects/trustFolderTitle', 'Agents may load this repository\'s own agent settings, extensions and MCP servers.'),
+            onSelect: () => { void this.toggleProjectFolderTrust(cwd); },
+        });
+    }
+
+    /** Flips the decision against a fresh server read, so a stale cache cannot invert the user's choice. */
+    protected async toggleProjectFolderTrust(cwd: string): Promise<void> {
+        this.closeCardMenu();
+        const folderTrust = this.host.projectsService.folderTrust;
+        try {
+            const status = await folderTrust.client.load(cwd);
+            if (!status) {
+                throw new Error(nls.localize('qaap/mobileProjects/folderTrustReadFailed', 'the current setting could not be read'));
+            }
+            const trusted = await folderTrust.setTrusted(cwd, !status.trusted);
+            MobileSnackbar.show(trusted
+                ? nls.localize('qaap/mobileProjects/folderTrusted', 'This folder is trusted. Agents may load its own settings.')
+                : nls.localize('qaap/mobileProjects/folderNotTrusted', 'This folder is not trusted. Agents ignore its own settings.'),
+            { kind: 'success', duration: 2600 });
+        } catch (error) {
+            MobileSnackbar.show(nls.localize('qaap/mobileProjects/folderTrustFailed', 'Could not change folder trust: {0}',
+                error instanceof Error ? error.message : String(error)), { kind: 'warning', duration: 4000 });
+        }
     }
 
     protected async toggleGithubIssueTasks(owner: string, repo: string, enabled: boolean): Promise<void> {

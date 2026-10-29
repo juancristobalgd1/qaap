@@ -24,7 +24,7 @@ export const QAAP_BUILTIN_AGENT_DEFINITIONS: readonly QaapBuiltinAgentDefinition
     { id: 'codex', label: 'Codex', bin: 'codex', template: 'codex exec --json -c check_for_update_on_startup=false {model_flags} {prompt}' },
     { id: 'claude', label: 'Claude Code', bin: 'claude', template: 'claude --print --output-format stream-json --verbose --include-partial-messages {model_flags} -p {prompt}' },
     { id: 'opencode', label: 'OpenCode', bin: 'opencode', template: 'opencode run --format json --print-logs --log-level ERROR --dangerously-skip-permissions {model_flags} {prompt}' },
-    { id: 'pi', label: 'Pi', bin: 'pi', template: 'pi -p --approve {model_flags} {prompt}' },
+    { id: 'pi', label: 'Pi', bin: 'pi', template: 'pi --mode json -p --no-session -e {gate_ext} {trust_flags} {model_flags} {prompt}' },
 ];
 
 /**

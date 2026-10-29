@@ -47,7 +47,7 @@ const STDIO_ASK_TTL_SEC = 600;
 const SHELL_TOOL_NAMES = new Set(['bash', 'shell', 'run_shell_command', 'exec_command', 'execute_command', 'command', 'terminal']);
 const EDIT_TOOL_NAMES = new Set(['edit', 'multiedit', 'multi_edit', 'str_replace', 'str_replace_editor', 'apply_patch', 'patch', 'replace']);
 const WRITE_TOOL_NAMES = new Set(['write', 'write_file', 'create_file']);
-const READ_TOOL_NAMES = new Set(['read', 'read_file', 'glob', 'grep', 'ls', 'list_directory', 'search']);
+const READ_TOOL_NAMES = new Set(['read', 'read_file', 'glob', 'grep', 'find', 'ls', 'list_directory', 'search']);
 const WEB_TOOL_NAMES = new Set(['webfetch', 'web_fetch', 'websearch', 'web_search', 'fetch']);
 
 /**
@@ -122,8 +122,21 @@ const QAAP_HARNESS_CAPABILITY_ENTRIES: readonly QaapHarnessCapabilities[] = [
     { ...createDefaultHarnessCapabilities('claude'), whenAskUnsupported: 'refuses', usage: 'claude' },
     { ...createDefaultHarnessCapabilities('codex'), whenAskUnsupported: 'refuses', usage: 'codex' },
     { ...createDefaultHarnessCapabilities('opencode'), whenAskUnsupported: 'refuses', usage: 'opencode' },
-    // Pi has no permission system, so under request-approval it runs every tool.
-    { ...createDefaultHarnessCapabilities('pi'), whenAskUnsupported: 'runs-unchecked' },
+    // Pi has no permission system of its own; Qaap's `-e` extension routes every tool_call through the
+    // HTTP gate, which can block for as long as an ask lives (spike: no handler timeout up to 900 s).
+    // Folder trust picks `--approve` / `--no-approve`: untrusted folders skip project extensions.
+    {
+        ...createDefaultHarnessCapabilities('pi'),
+        gate: 'extension',
+        canAsk: true,
+        askTtlSec: STDIO_ASK_TTL_SEC,
+        whenAskUnsupported: 'refuses',
+        shellGuard: 'gate',
+        untrustedFolderArgs: ['--no-approve'],
+        trustedFolderArgs: ['--approve'],
+        usage: 'pi-json',
+        costSource: 'reported',
+    },
 ];
 
 /**
