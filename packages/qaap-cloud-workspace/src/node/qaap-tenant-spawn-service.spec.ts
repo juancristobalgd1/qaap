@@ -530,6 +530,40 @@ describe('QaapTenantSpawnService.spawnArgvPrepared', () => {
         expect(svc.launches[0].args).to.deep.equal(['run', 'dev']);
     });
 
+    it('refuses a non-root tenant backend when QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP is set', () => {
+        process.env.QAAP_TENANT_BACKEND_MODE = '1';
+        process.env.QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP = '1';
+        try {
+            const svc = new TestTenantSpawnService();
+            svc.backendRoot = false;
+            expect(() => svc.resolveSpawnIdentity(tenantCwd)).to.throw(/own uid.*QAAP_TENANT_CONTAINER_UID=0/);
+        } finally {
+            delete process.env.QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP;
+        }
+    });
+
+    it('keeps the inherited identity for a non-root tenant backend without the agent-drop flag', () => {
+        process.env.QAAP_TENANT_BACKEND_MODE = '1';
+        delete process.env.QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP;
+        const svc = new TestTenantSpawnService();
+        svc.backendRoot = false;
+        expect(svc.resolveSpawnIdentity(tenantCwd)).to.deep.equal({});
+    });
+
+    it('drops to the agent uid for a root tenant backend with the agent-drop flag', () => {
+        process.env.QAAP_TENANT_BACKEND_MODE = '1';
+        process.env.QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP = '1';
+        process.env.QAAP_AGENT_UID = '1001';
+        process.env.QAAP_AGENT_GID = '1001';
+        try {
+            const svc = new TestTenantSpawnService();
+            svc.backendRoot = true;
+            expect(svc.resolveSpawnIdentity(tenantCwd)).to.deep.equal({ uid: 1001, gid: 1001 });
+        } finally {
+            delete process.env.QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP;
+        }
+    });
+
     it('fails closed instead of spawning without limits in production host mode', () => {
         process.env.NODE_ENV = 'production';
         const svc = new TestTenantSpawnService();

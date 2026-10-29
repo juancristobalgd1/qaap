@@ -165,6 +165,35 @@ if [[ "$BACKEND_ISOLATION_MODE" == "per-tenant" && "$BACKEND_PER_TENANT" =~ ^(1|
         else
             bad "backend-per-tenant isolation failed for ${LOGIN_A} / ${LOGIN_B} — release blocked"
         fi
+        # Runtime probe (read-only): prove the AGENT identity (uid 1001) cannot read the backend's
+        # secrets, instead of trusting the static config. Fail closed: the probe must report that it ran
+        # as uid 1001, found the backend process and finished; an exec failure or an empty answer blocks.
+        # `mai[n]` keeps the probe's own `sh -c` command line from matching itself.
+        PROBE_SCRIPT='echo "PROBE:uid:$(id -u)"; n=0; for d in /proc/[0-9]*; do p="${d#/proc/}"; [ "$p" = "$$" ] && continue; if tr "\0" " " < "$d/cmdline" 2>/dev/null | grep -q "src-gen/backend/mai[n][.]js"; then n=$((n+1)); cat "$d/environ" >/dev/null 2>&1 && echo "LEAK:environ:$p"; elif [ "$p" = 1 ]; then cat "$d/environ" >/dev/null 2>&1 && echo "LEAK:environ:$p"; fi; done; echo "PROBE:backend-procs:$n"; ls /home/theia/.qaap >/dev/null 2>&1 && echo LEAK:config; cat /home/theia/.qaap/tenant.sqlite >/dev/null 2>&1 && echo LEAK:sqlite; echo PROBE:done'
+        RUNNING_BACKENDS="$(dexec 'docker ps --filter label=com.qaap.managed=true --filter label=com.qaap.tenant-backend=true --format "{{.Names}}"' || true)"
+        PROBED=0
+        while read -r backend_name; do
+            [[ "$backend_name" =~ ^qaap-backend-[0-9a-f]{12}$ ]] || continue
+            PROBED=$((PROBED + 1))
+            PROBE_OUT="$(dexec "docker exec --user 1001:1001 '${backend_name}' sh -c '${PROBE_SCRIPT}'" 2>/dev/null || true)"
+            # `docker top` needs the pid column; the first row is the container init, which shares the
+            # backend's (host-mapped) uid. A named agent CLI running under that uid shares it with the backend.
+            TOP_OUT="$(dexec "docker top '${backend_name}' -eo pid,uid,comm" 2>/dev/null || true)"
+            TOP_LEAKS="$(printf '%s\n' "$TOP_OUT" | awk 'NR==2 { backend_uid=$2 } NR>2 && $2==backend_uid && $3 ~ /^(pi|qaiq|claude|codex|opencode)$/ { print "LEAK:agent-uid:" $3 ":" $1 }')"
+            LEAKS="$(printf '%s\n%s\n' "$PROBE_OUT" "$TOP_LEAKS" | grep 'LEAK:' | tr '\n' ' ' || true)"
+            if [[ -n "$LEAKS" ]]; then
+                bad "agent uid can read backend secrets or shares the backend uid in ${backend_name} (${LEAKS% }) — release blocked"
+            elif ! grep -qx 'PROBE:uid:1001' <<< "$PROBE_OUT" \
+                || ! grep -qx 'PROBE:done' <<< "$PROBE_OUT" \
+                || ! grep -qE '^PROBE:backend-procs:[1-9][0-9]*$' <<< "$PROBE_OUT"; then
+                bad "agent-uid probe inconclusive in ${backend_name} (exec failed, wrong uid or backend process not found) — release blocked"
+            else
+                ok "agent uid 1001 cannot read backend secrets in ${backend_name}"
+            fi
+        done <<< "$RUNNING_BACKENDS"
+        if [[ "$PROBED" -eq 0 ]]; then
+            bad "no running tenant backend to probe as agent uid 1001 — wake a tenant (open its Work Hub) and re-run"
+        fi
     else
         bad "only ${TENANT_COUNT} tenant backend(s): exercise two disposable invited accounts (agent + New Worktree + parallel) before release"
     fi

@@ -41,6 +41,7 @@ interface QaapDockerOrchestratorTestAccess {
     backendContainerNameForTenant(ownerLogin?: string): string;
     backendIngressNetworkNameForTenant(ownerLogin?: string): string;
     getTenantContainerUser(): string;
+    tenantBackendAgentDropEnv(): string[];
     getTenantImage(): string;
     getTenantMemoryLimit(): number;
     getTenantCpuLimit(): number;
@@ -987,6 +988,74 @@ describe('QaapDockerOrchestrator', () => {
             expect(options.HostConfig?.CapAdd).to.deep.equal(['SETUID', 'SETGID']);
             expect(options.HostConfig?.RestartPolicy).to.deep.equal({ Name: 'on-failure', MaximumRetryCount: 3 });
             expect(options.Env).to.include.members(['QAAP_AGENT_UID=1001', 'QAAP_AGENT_GID=1001']);
+            expect(options.Env).to.include('QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP=1');
+        });
+    });
+
+    describe('getTenantContainerUser', () => {
+
+        it('defaults a hosted rootless runtime to uid 0 when the uid is unset', () => {
+            process.env.QAAP_CLOUD_MODE = 'docker';
+            process.env.QAAP_DOCKER_ROOTLESS = '1';
+            delete process.env.QAAP_TENANT_CONTAINER_UID;
+            delete process.env.QAAP_TENANT_CONTAINER_GID;
+            expect(access(new QaapDockerOrchestrator()).getTenantContainerUser()).to.equal('0:0');
+        });
+
+        it('keeps uid 0 for a hosted rootless runtime configured with 0:0', () => {
+            process.env.QAAP_CLOUD_MODE = 'docker';
+            process.env.QAAP_DOCKER_ROOTLESS = '1';
+            process.env.QAAP_TENANT_CONTAINER_UID = '0';
+            process.env.QAAP_TENANT_CONTAINER_GID = '0';
+            expect(access(new QaapDockerOrchestrator()).getTenantContainerUser()).to.equal('0:0');
+        });
+
+        it('refuses a non-zero uid for a hosted rootless runtime (shared backend/agent uid)', () => {
+            process.env.QAAP_CLOUD_MODE = 'docker';
+            process.env.QAAP_DOCKER_ROOTLESS = '1';
+            process.env.QAAP_TENANT_CONTAINER_UID = '1000';
+            expect(() => access(new QaapDockerOrchestrator()).getTenantContainerUser())
+                .to.throw(/QAAP_TENANT_CONTAINER_UID=1000.*rootless uid 0/);
+        });
+
+        it('refuses a non-zero gid or a non-numeric uid for a hosted runtime', () => {
+            process.env.QAAP_CLOUD_MODE = 'docker';
+            process.env.QAAP_TENANT_CONTAINER_UID = '0';
+            process.env.QAAP_TENANT_CONTAINER_GID = '1000';
+            expect(() => access(new QaapDockerOrchestrator()).getTenantContainerUser()).to.throw(/QAAP_TENANT_CONTAINER_GID=1000/);
+            process.env.QAAP_TENANT_CONTAINER_GID = '0';
+            process.env.QAAP_TENANT_CONTAINER_UID = 'theia';
+            expect(() => access(new QaapDockerOrchestrator()).getTenantContainerUser()).to.throw(/QAAP_TENANT_CONTAINER_UID=theia/);
+        });
+
+        it('uses uid 0 for every hosted runtime, whatever QAAP_DOCKER_ROOTLESS says (the daemon is verified rootless)', () => {
+            process.env.QAAP_CLOUD_MODE = 'docker';
+            process.env.QAAP_DOCKER_ROOTLESS = '0';
+            process.env.QAAP_TENANT_CONTAINER_UID = ' ';
+            delete process.env.QAAP_TENANT_CONTAINER_GID;
+            expect(access(new QaapDockerOrchestrator()).getTenantContainerUser()).to.equal('0:0');
+        });
+
+        it('keeps uid 1000 and no agent-drop flag outside a hosted runtime (local development)', () => {
+            process.env.NODE_ENV = 'development';
+            process.env.QAAP_CLOUD_MODE = 'local';
+            delete process.env.QAAP_DOCKER_ROOTLESS;
+            delete process.env.QAAP_TENANT_CONTAINER_UID;
+            delete process.env.QAAP_TENANT_CONTAINER_GID;
+            const orchestrator = access(new QaapDockerOrchestrator());
+            expect(orchestrator.getTenantContainerUser()).to.equal('1000:1000');
+            expect(orchestrator.tenantBackendAgentDropEnv()).to.deep.equal([]);
+        });
+
+        it('keeps local rootless uid 0 opt-in with the agent-drop flag', () => {
+            process.env.NODE_ENV = 'development';
+            process.env.QAAP_CLOUD_MODE = 'local';
+            process.env.QAAP_DOCKER_ROOTLESS = '1';
+            process.env.QAAP_TENANT_CONTAINER_UID = '0';
+            process.env.QAAP_TENANT_CONTAINER_GID = '0';
+            const orchestrator = access(new QaapDockerOrchestrator());
+            expect(orchestrator.getTenantContainerUser()).to.equal('0:0');
+            expect(orchestrator.tenantBackendAgentDropEnv()).to.deep.equal(['QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP=1']);
         });
     });
 
