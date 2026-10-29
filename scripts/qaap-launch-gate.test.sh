@@ -75,6 +75,7 @@ write_inspect() { # $1=variant
 const variant = process.argv[2];
 const backend = (login, hash) => ({
     Name: `/qaap-backend-${hash}`,
+    State: { Running: true },
     Config: {
         User: '0:0',
         Env: [
@@ -99,6 +100,12 @@ const [a, b] = [backend('alice', 'aaaaaaaaaaaa'), backend('bob', 'bbbbbbbbbbbb')
 if (variant === 'uid1000') { b.Config.User = '1000:1000'; }
 if (variant === 'noflag') { b.Config.Env = b.Config.Env.filter(entry => !entry.startsWith('QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP=')); }
 if (variant === 'privileged') { b.HostConfig.Privileged = true; }
+// Idle-stopped backend from the previous release: no agent-drop flag, recreated on its next wake.
+if (variant === 'stopped-noflag' || variant === 'stopped-privileged') {
+    b.State.Running = false;
+    b.Config.Env = b.Config.Env.filter(entry => !entry.startsWith('QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP='));
+}
+if (variant === 'stopped-privileged') { b.HostConfig.Privileged = true; }
 if (variant === 'shared') { b.Mounts[0].Source = '/srv/repos/users/alice'; }
 if (variant === 'secret') { a.Config.Env.push('QAAP_TENANT_BACKEND_MASTER_SECRET=x'); }
 if (variant === 'socket') { a.Mounts[4] = { Source: '/run/user/1000/docker.sock', Destination: '/home/theia/.theia', RW: true }; }
@@ -158,6 +165,14 @@ for variant in uid1000 noflag; do
     write_inspect "$variant"
     expect_status 1 qaap-vps-launch-gate.sh
 done
+# A STOPPED backend with uid/flag drift does not block (the wake recreates it) but is reported;
+# any other contract break on it still blocks.
+write_inspect stopped-noflag
+expect_status 0 qaap-vps-launch-gate.sh
+grep -q 'INFO backend qaap-backend-bbbbbbbbbbbb (bob) is stopped and will be recreated on next wake' "$TEST_ROOT/output" \
+    || { cat "$TEST_ROOT/output"; echo 'expected stopped-backend INFO' >&2; exit 1; }
+write_inspect stopped-privileged
+expect_status 1 qaap-vps-launch-gate.sh
 # Runtime probe: a LEAK line from the agent-uid probe, or an agent CLI sharing the backend uid, fails.
 write_inspect good
 expect_status 0 qaap-vps-launch-gate.sh
@@ -191,4 +206,4 @@ export TEST_AUTH_CONFIG='{"ok":true,"ready":true,"skipAuth":false,"oauthConfigur
 expect_status 1 qaap-verify-launch-readiness.sh
 export TEST_AUTH_CONFIG='{"ok":true,"ready":true,"skipAuth":false,"oauthConfigured":true,"githubOAuth":true,"productionRuntime":true,"agentUidPerUser":true,"backendIsolationReady":true,"backendIsolationMode":"per-tenant","build":"abcdef123456","betaAccessRequired":true,"betaAccessConfigured":true}'
 expect_status 0 qaap-verify-launch-readiness.sh
-echo 'PASS: missing tenants, uid/flag/LEAK/inconclusive probes, failed isolation, per-tenant backend evidence/isolation, successful isolation, missing preview domain, operator-only allowlist, missing invitations, configured invitations'
+echo 'PASS: missing tenants, uid/flag/LEAK/inconclusive probes, stopped-backend drift, failed isolation, per-tenant backend evidence/isolation, successful isolation, missing preview domain, operator-only allowlist, missing invitations, configured invitations'
