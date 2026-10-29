@@ -51,6 +51,7 @@ import {
     resolveAgentAutoApprove,
 } from '../common/qaap-agent-auto-approve';
 import { formatModelFlagsForAgent } from '../common/qaap-agent-model-flags';
+import { QAAP_PROJECT_TRUST_FLAGS_TEMPLATE_VAR, resolveAgentProjectTrustFlags } from '@theia/qaap-shared-core/lib/common/qaap-project-folder-trust';
 import {
     bindingFromQaiqModelSelection,
     formatQaiqProviderFlags,
@@ -435,14 +436,14 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
             : undefined));
         const usesOffArgvPrompt = promptTransport.kind !== 'argv';
         if (detected) {
-            const vars = ctx.buildTemplateVars(id, agentModel, interaction, ownerLogin);
+            const vars = ctx.buildTemplateVars(id, agentModel, interaction, ownerLogin, resolvedCwd);
             command = useStdioApprovals
                 ? ctx.applyTemplateWithoutPrompt(detected.template, vars)
                 : usesOffArgvPrompt
                     ? applyTemplateForPromptTransportHelper(detected.template, promptTransport, vars)
                     : ctx.applyTemplate(detected.template, agentPrompt, vars);
         } else if (envTemplate) {
-            const vars = ctx.buildTemplateVars(id, agentModel, interaction, ownerLogin);
+            const vars = ctx.buildTemplateVars(id, agentModel, interaction, ownerLogin, resolvedCwd);
             command = useStdioApprovals || usesOffArgvPrompt
                 ? applyTemplateForPromptTransportHelper(envTemplate, useStdioApprovals
                     ? { kind: 'plain-stdin', placeholder: 'omit' }
@@ -614,8 +615,12 @@ export function stripLeadingAgentMentionExtracted(ctx: QaapAgentTaskRunnerContex
 export function buildTemplateVarsExtracted(ctx: QaapAgentTaskRunnerContext, agentId: string,
         agentModel?: QaapCreateAgentTaskQaiqModel,
         interaction?: QaapQaiqInteractionFlagOptions,
-        ownerLogin?: string,): Record<string, string> {
-        const empty = { qaiq_flags: '', model_flags: '' };
+        ownerLogin?: string,
+        cwd?: string,): Record<string, string> {
+        // Always present, even for an unknown project: a `{trust_flags}` placeholder must never reach argv.
+        // No cwd (e.g. prompt improvement without a folder) counts as untrusted.
+        const trustFlags = resolveAgentProjectTrustFlags(agentId, cwd ? ctx.isProjectFolderTrusted(ownerLogin, cwd) : false);
+        const empty = { qaiq_flags: '', model_flags: '', [QAAP_PROJECT_TRUST_FLAGS_TEMPLATE_VAR]: trustFlags };
         // QAIQ and OpenClaude share the stream-json/approval protocol, but only QAIQ owns the
         // Settings → AI Features model catalog. Reusing isQaiqAgent here would make OpenClaude
         // silently inherit QAIQ's configured model whenever no explicit OpenClaude model was sent.
@@ -631,12 +636,16 @@ export function buildTemplateVarsExtracted(ctx: QaapAgentTaskRunnerContext, agen
             const binding = ctx.normalizeAgentBinding(bindingFromQaiqModelSelection(agentModel), ownerLogin);
             const flags = formatModelFlagsForAgent(agentId, binding);
             if (isQaiqAgent(agentId)) {
-                return { qaiq_flags: joinQaiqFlags(qaiqInteractionFlags, flags), model_flags: '' };
+                return { qaiq_flags: joinQaiqFlags(qaiqInteractionFlags, flags), model_flags: '', [QAAP_PROJECT_TRUST_FLAGS_TEMPLATE_VAR]: trustFlags };
             }
-            return { qaiq_flags: '', model_flags: flags };
+            return { qaiq_flags: '', model_flags: flags, [QAAP_PROJECT_TRUST_FLAGS_TEMPLATE_VAR]: trustFlags };
         }
         if (usesQaiqSettingsCatalog) {
-            return { qaiq_flags: joinQaiqFlags(qaiqInteractionFlags, ctx.resolveQaiqProviderFlags(ownerLogin)), model_flags: '' };
+            return {
+                qaiq_flags: joinQaiqFlags(qaiqInteractionFlags, ctx.resolveQaiqProviderFlags(ownerLogin)),
+                model_flags: '',
+                [QAAP_PROJECT_TRUST_FLAGS_TEMPLATE_VAR]: trustFlags,
+            };
         }
         return empty;
 }
