@@ -26,6 +26,7 @@ import {
 import { QaapNodeFileUploadService } from './qaap-node-file-upload-service';
 import { QaapAgentApprovalEndpoint } from './qaap-agent-approval-endpoint';
 import { QaapAgentApprovalStore } from './qaap-agent-approval-store';
+import { QaapToolGateService } from './qaap-tool-gate-service';
 import { QaapAgentHookConfigLoader } from './qaap-agent-hook-config-loader';
 import { QaapAgentHookEndpoint } from './qaap-agent-hook-endpoint';
 import { QaapAgentLoginCallbackEndpoint } from './qaap-agent-login-callback-endpoint';
@@ -375,6 +376,7 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapConversationReadMarkEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapConversationReadMarkEndpoint);
     bind(QaapAgentApprovalStore).toSelf().inSingletonScope();
+    bind(QaapToolGateService).toSelf().inSingletonScope();
     bind(QaapAgentApprovalEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapAgentApprovalEndpoint);
     // Qaap-level agent lifecycle hooks + workspace trust review (doc/qaap-agent-hooks.md).

@@ -46,6 +46,7 @@ import {
 import { isQaapProductionRuntime } from './qaap-agent-spawn-identity';
 import { QAAP_AGENT_CLI_CONTAINER_ISOLATION_REFUSAL, type QaapAgentCliInstallTarget } from './qaap-agent-cli-update-service';
 import { QaapAgentHookService } from './qaap-agent-hook-service';
+import { QaapToolGateService } from './qaap-tool-gate-service';
 import { invalidateNativeAgentModels, prepareNativeAgentModels, type NativeModelDiscoverySpawner } from './qaap-agent-native-models';
 import { fireStopAgentHook } from './qaap-agent-task-runner-hooks';
 import { type QaapAgentReadOnlyEnforcement, } from '../common/qaap-agent-readonly-workspace';
@@ -1558,6 +1559,11 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     @inject(QaapAgentHookService) @optional()
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public readonly agentHooks: QaapAgentHookService | undefined;
+
+    /** Single decision point for tool calls (doc: qaap-tool-gate-design.md); optional for bare test harnesses. */
+    @inject(QaapToolGateService) @optional()
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readonly toolGate: QaapToolGateService | undefined;
 
     /** @see QaapTenantSpawnService.enforceIsolationPolicy — throws to fail the spawn when refused. */
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
