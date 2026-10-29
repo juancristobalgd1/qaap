@@ -117,8 +117,35 @@ export class QaapToolGateEndpoint implements BackendApplicationContribution {
                 ? Promise.resolve('cancelled')
                 : this.asks.ask(grant.taskId, pending, ttlMs, signal),
         }, abort.signal);
+        this.audit(grant, agentId, request, decision);
         if (!res.writableEnded && !res.destroyed) {
             res.json({ decision });
+        }
+    }
+
+    /**
+     * Audit record of the decision with the input that actually runs. Pi's own JSONL keeps the ORIGINAL
+     * arguments even when the gate rewrites them, so the final (updated) input is logged here.
+     */
+    protected audit(grant: QaapToolGateTokenGrant, agentId: string, request: QaapToolGateRequest, decision: QaapToolGateDecision): void {
+        try {
+            const finalInput = decision.kind === 'allow' && decision.updatedInput ? decision.updatedInput : request.input;
+            const command = typeof finalInput.command === 'string'
+                ? finalInput.command
+                : JSON.stringify(finalInput).slice(0, 2000);
+            this.runner.observability?.recordAgentToolCommand({
+                taskId: grant.taskId,
+                tenantLogin: grant.owner,
+                agentId,
+                requestId: `gate-${request.harnessCallId ?? grant.taskId}`,
+                toolUseId: request.harnessCallId,
+                toolName: request.rawToolName,
+                command,
+                decision: decision.kind === 'allow' ? 'approve' : 'reject',
+                ...(decision.kind === 'allow' && decision.updatedInput ? { autoApprovalReason: 'input-rewritten' } : {}),
+            });
+        } catch {
+            // Auditing must never change the decision.
         }
     }
 
