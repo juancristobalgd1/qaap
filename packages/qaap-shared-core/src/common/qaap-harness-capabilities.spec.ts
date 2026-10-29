@@ -55,6 +55,14 @@ describe('qaap-harness-capabilities', () => {
         }
     });
 
+    it('lets Claude Code ask before changes over stdio and drops repo settings in untrusted folders', () => {
+        const claude = registry.get('claude');
+        expect(claude).to.include({ gate: 'native-stdio', canAsk: true, shellGuard: 'gate', usage: 'claude', costSource: 'reported' });
+        expect(claude.askTtlSec).to.be.greaterThan(0);
+        expect(claude.untrustedFolderArgs).to.deep.equal(['--setting-sources', 'user']);
+        expect(claude.trustedFolderArgs).to.deep.equal([]);
+    });
+
     it('lets Pi ask before changes through the gate extension', () => {
         const pi = registry.get('pi');
         expect(pi).to.include({ gate: 'extension', canAsk: true, shellGuard: 'gate', usage: 'pi-json', costSource: 'reported' });
@@ -64,7 +72,7 @@ describe('qaap-harness-capabilities', () => {
     });
 
     it('keeps every other builtin harness unable to ask, with no ask window', () => {
-        for (const definition of QAAP_BUILTIN_AGENT_DEFINITIONS.filter(candidate => !['pi', 'qaiq'].includes(candidate.id))) {
+        for (const definition of QAAP_BUILTIN_AGENT_DEFINITIONS.filter(candidate => !['pi', 'qaiq', 'claude'].includes(candidate.id))) {
             const capabilities = registry.get(definition.id);
             expect(capabilities.canAsk, definition.id).to.equal(false);
             expect(capabilities.askTtlSec, definition.id).to.equal(0);

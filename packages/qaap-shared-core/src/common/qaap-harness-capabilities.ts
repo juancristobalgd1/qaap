@@ -117,9 +117,23 @@ const QAAP_HARNESS_CAPABILITY_ENTRIES: readonly QaapHarnessCapabilities[] = [
         shellGuard: 'gate',
         usage: 'claude',
     },
-    // Without a gate, claude, codex and opencode have their skip flags stripped under request-approval,
+    // Claude Code speaks the same stream-json control protocol as QAIQ (a fork of it): with
+    // `--permission-prompt-tool stdio` every `can_use_tool` request reaches the in-process gate and a pending
+    // ask has no timeout. Untrusted folders load user settings only, so a repo's own hooks and
+    // `permissions.allow` rules cannot ungate or reroute tools (a hook deny still beats allow anyway).
+    {
+        ...createDefaultHarnessCapabilities('claude'),
+        gate: 'native-stdio',
+        canAsk: true,
+        askTtlSec: STDIO_ASK_TTL_SEC,
+        whenAskUnsupported: 'refuses',
+        shellGuard: 'gate',
+        untrustedFolderArgs: ['--setting-sources', 'user'],
+        usage: 'claude',
+        costSource: 'reported',
+    },
+    // Without a gate, codex and opencode have their skip flags stripped under request-approval,
     // so gated actions are refused rather than run.
-    { ...createDefaultHarnessCapabilities('claude'), whenAskUnsupported: 'refuses', usage: 'claude' },
     { ...createDefaultHarnessCapabilities('codex'), whenAskUnsupported: 'refuses', usage: 'codex' },
     { ...createDefaultHarnessCapabilities('opencode'), whenAskUnsupported: 'refuses', usage: 'opencode' },
     // Pi has no permission system of its own; Qaap's `-e` extension routes every tool_call through the
