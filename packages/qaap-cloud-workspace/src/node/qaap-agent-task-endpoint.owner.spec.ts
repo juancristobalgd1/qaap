@@ -56,6 +56,8 @@ describe('QaapAgentTaskEndpoint passes the caller to owner-scoped runner calls',
                 defaultAgent: record('defaultAgent', 'qaiq'),
                 listQaiqModels: record('listQaiqModels', []),
                 listModelsForAgent: record('listModelsForAgent', [{ modelId: 'm' }]),
+                // Pi lists its models from the caller's sign-in, so the picker discovers as the caller.
+                nativeModelDiscoverySpawner: record('nativeModelDiscoverySpawner', () => undefined),
                 retry: record('retry', task),
                 resume: record('resume', task),
                 create: record('create', task),
@@ -114,6 +116,7 @@ describe('QaapAgentTaskEndpoint passes the caller to owner-scoped runner calls',
         await call(`POST ${QAAP_AGENT_TASK_API_PATH}/improve-prompt`, { body: { prompt: 'hola', agentId: 'qaiq', cwd: '/repo' } });
 
         expect(ownerArgs('listModelsForAgent')).to.deep.equal([['codex', LOGIN]]);
+        expect(ownerArgs('nativeModelDiscoverySpawner')).to.deep.equal([[LOGIN]]);
         expect(ownerArgs('retry')).to.deep.equal([['t1', LOGIN]]);
         expect(ownerArgs('resume')).to.deep.equal([['t1', LOGIN]]);
         expect(ownerArgs('create').map(args => args[1])).to.deep.equal([LOGIN]);

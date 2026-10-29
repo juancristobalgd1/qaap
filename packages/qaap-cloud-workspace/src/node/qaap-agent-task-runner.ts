@@ -46,7 +46,7 @@ import {
 import { isQaapProductionRuntime } from './qaap-agent-spawn-identity';
 import { QAAP_AGENT_CLI_CONTAINER_ISOLATION_REFUSAL, type QaapAgentCliInstallTarget } from './qaap-agent-cli-update-service';
 import { QaapAgentHookService } from './qaap-agent-hook-service';
-import { invalidateNativeAgentModels } from './qaap-agent-native-models';
+import { invalidateNativeAgentModels, prepareNativeAgentModels, type NativeModelDiscoverySpawner } from './qaap-agent-native-models';
 import { fireStopAgentHook } from './qaap-agent-task-runner-hooks';
 import { type QaapAgentReadOnlyEnforcement, } from '../common/qaap-agent-readonly-workspace';
 import { type QaapQaiqPendingControlRequest } from '../common/qaap-qaiq-stdio-approvals';
@@ -760,8 +760,13 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
                     this.agentConnectionStates.set(cacheKey, { state, at: Date.now(), probeFailed });
                     if (state === 'connected' && previous !== 'connected') {
                         // A fresh sign-in unlocks the account's models (Pi `/login`, Cursor): the
-                        // catalog discovered while signed out is stale.
-                        invalidateNativeAgentModels(normalized);
+                        // catalog discovered while signed out is stale. Rediscover right away so the
+                        // picker the user comes back to already lists the signed-in providers.
+                        invalidateNativeAgentModels(normalized, ownerLogin);
+                        void prepareNativeAgentModels(normalized, {
+                            ownerLogin,
+                            spawner: this.nativeModelDiscoverySpawner(ownerLogin),
+                        });
                     }
                 }
                 return state;
@@ -827,6 +832,31 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             console.warn(`[qaap] Unable to probe ${agentId} for tenant ${safeUserIdSegment(owner)}:`, error);
             throw error;
         }
+    }
+
+    /**
+     * Runs a CLI model listing where the owner's auth probe runs (tenant cwd, HOME and CLI bin), so
+     * an account-scoped catalog such as `pi --list-models` sees the owner's sign-in. Without an owner
+     * it is the backend's own environment; undefined while a docker tenant has no workspace yet.
+     */
+    nativeModelDiscoverySpawner(ownerLogin?: string): NativeModelDiscoverySpawner {
+        const owner = ownerLogin?.trim();
+        return (bin, args) => {
+            if (!owner) {
+                return { file: bin, args };
+            }
+            const tenantCwd = resolveUserReposRoot(resolveQaapReposRoot(), owner);
+            if (process.env.QAAP_CLOUD_MODE === 'docker' && !fs.existsSync(tenantCwd)) {
+                return undefined;
+            }
+            const env: NodeJS.ProcessEnv = { ...process.env, ...this.tenantSpawn.tenantHomeEnvOverlay(tenantCwd) };
+            const prefix = this.resolveAgentCliPrefix(tenantCwd);
+            if (canExposeAgentCliBinToChild(prefix, () => this.isTenantPrivilegeDropActive(tenantCwd))) {
+                prependAgentCliBinToPath(env, prefix);
+            }
+            const wrapped = this.tenantSpawn.wrapArgvForTenant(tenantCwd, bin, [...args]);
+            return { file: wrapped.file, args: wrapped.args, cwd: tenantCwd, env };
+        };
     }
 
     warmForCwd(cwd: string): QaapAgentWarmResult {

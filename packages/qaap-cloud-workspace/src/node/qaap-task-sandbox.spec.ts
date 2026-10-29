@@ -133,6 +133,7 @@ describe('QaapTaskSandboxService', function (): void {
         git(repo, 'worktree', 'add', '-q', '-b', 'qaap/worktree/b', worktreeB);
         home = path.join(scratch, 'home');
         fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+        fs.mkdirSync(path.join(home, '.pi', 'agent'), { recursive: true });
     });
 
     after(() => {
@@ -192,6 +193,8 @@ describe('QaapTaskSandboxService', function (): void {
         // Neither the other worktree nor the main checkout is mounted.
         expect(binds.some(bind => bind.startsWith(worktreeB) || bind.startsWith(`${repo}:`))).to.equal(false);
         expect(binds).to.include(`${path.join(home, '.claude')}:/tmp/qaap-home/.claude:rw`);
+        // Pi keeps its `/login` providers in ~/.pi/agent/auth.json; without it every Pi task says "No API key".
+        expect(binds).to.include(`${path.join(home, '.pi')}:/tmp/qaap-home/.pi:rw`);
         expect(run).to.include.members(['--init', '--read-only']);
         expect(run.join(' ')).to.contain('--cap-drop ALL').and.to.contain('--security-opt no-new-privileges:true')
             .and.to.contain('--user 20001:20002').and.to.contain('--network bridge');

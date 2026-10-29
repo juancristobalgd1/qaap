@@ -37,12 +37,42 @@ function cachedNativeModels(agentId: string): QaapQaiqModelOption[] | undefined 
 /** In-flight CLI discoveries; the event loop is shared with every other request, so never spawn synchronously. */
 const discoveries = new Map<string, Promise<QaapQaiqModelOption[]>>();
 
-export function listNativeAgentModels(agentId: string | undefined): QaapQaiqModelOption[] {
+/** How one CLI model listing runs: the argv, plus the cwd/env of the tenant that owns the sign-in. */
+export interface NativeModelDiscoverySpawn {
+    readonly file: string;
+    readonly args: readonly string[];
+    readonly cwd?: string;
+    readonly env?: NodeJS.ProcessEnv;
+}
+
+/** Wraps a model-listing command so it runs where the agent does; undefined when it cannot run there yet. */
+export type NativeModelDiscoverySpawner = (bin: string, args: readonly string[]) => NativeModelDiscoverySpawn | undefined;
+
+export interface NativeModelDiscoveryOptions {
+    readonly ownerLogin?: string;
+    readonly spawner?: NativeModelDiscoverySpawner;
+}
+
+/**
+ * Agents whose model listing answers from the sign-in in their HOME (`pi --list-models` only shows
+ * the providers in `~/.pi/agent/auth.json`). Run in the backend's own HOME they see no sign-in, so
+ * they are discovered per owner through the owner's spawner and never from the shared cold path.
+ */
+const ACCOUNT_SCOPED_DISCOVERY_AGENT_IDS: ReadonlySet<string> = new Set(['pi']);
+
+function nativeModelCacheKey(agentId: string, ownerLogin: string | undefined): string {
+    if (!ACCOUNT_SCOPED_DISCOVERY_AGENT_IDS.has(agentId)) {
+        return agentId;
+    }
+    return `${agentId}:${ownerLogin?.trim().toLowerCase() ?? ''}`;
+}
+
+export function listNativeAgentModels(agentId: string | undefined, ownerLogin?: string): QaapQaiqModelOption[] {
     const normalized = agentId?.trim().toLowerCase();
     if (!normalized || NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS.has(normalized)) {
         return [];
     }
-    const cached = cachedNativeModels(normalized);
+    const cached = cachedNativeModels(nativeModelCacheKey(normalized, ownerLogin));
     if (cached) {
         return cached;
     }
@@ -64,6 +94,10 @@ export function listNativeAgentModels(agentId: string | undefined): QaapQaiqMode
         cache.set(normalized, models);
         return models;
     }
+    if (ACCOUNT_SCOPED_DISCOVERY_AGENT_IDS.has(normalized)) {
+        // Only the picker endpoint knows how to run the CLI in the owner's HOME.
+        return listStaticNativeAgentModels(normalized);
+    }
     // Cold cache: answer with the curated catalog now and let the CLI discovery replace it.
     void prepareNativeAgentModels(normalized);
     return listStaticNativeAgentModels(normalized);
@@ -73,39 +107,46 @@ export function listNativeAgentModels(agentId: string | undefined): QaapQaiqMode
  * Resolve once the agent's native catalog is cached (CLI discovery, else the curated list). Callers
  * that can wait a little, like the picker endpoint, race this against a budget.
  */
-export function prepareNativeAgentModels(agentId: string | undefined): Promise<QaapQaiqModelOption[]> {
+export function prepareNativeAgentModels(
+    agentId: string | undefined,
+    options: NativeModelDiscoveryOptions = {},
+): Promise<QaapQaiqModelOption[]> {
     const normalized = agentId?.trim().toLowerCase();
     if (!normalized) {
         return Promise.resolve([]);
     }
-    const cached = cachedNativeModels(normalized);
+    const key = nativeModelCacheKey(normalized, options.ownerLogin);
+    const cached = cachedNativeModels(key);
     if (cached) {
         return Promise.resolve(cached);
     }
     if (!agentUsesNativeModelCatalog(normalized) || normalized === 'opencode'
         || NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS.has(normalized)) {
-        return Promise.resolve(listNativeAgentModels(normalized));
+        return Promise.resolve(listNativeAgentModels(normalized, options.ownerLogin));
     }
-    const inFlight = discoveries.get(normalized);
+    if (ACCOUNT_SCOPED_DISCOVERY_AGENT_IDS.has(normalized) && !options.spawner) {
+        return Promise.resolve(listStaticNativeAgentModels(normalized));
+    }
+    const inFlight = discoveries.get(key);
     if (inFlight) {
         return inFlight;
     }
-    const discovery = discoverNativeAgentModels(normalized)
+    const discovery = discoverNativeAgentModels(normalized, options.spawner)
         .catch((): QaapQaiqModelOption[] => [])
         .then(discovered => {
             const models = discovered.length > 0 ? discovered : listStaticNativeAgentModels(normalized);
-            if (discoveries.get(normalized) === discovery) {
-                discoveries.delete(normalized);
-                cache.set(normalized, models);
+            if (discoveries.get(key) === discovery) {
+                discoveries.delete(key);
+                cache.set(key, models);
                 if (discovered.length > 0) {
-                    fallbackCachedAt.delete(normalized);
+                    fallbackCachedAt.delete(key);
                 } else {
-                    fallbackCachedAt.set(normalized, Date.now());
+                    fallbackCachedAt.set(key, Date.now());
                 }
             }
             return models;
         });
-    discoveries.set(normalized, discovery);
+    discoveries.set(key, discovery);
     return discovery;
 }
 
@@ -115,22 +156,31 @@ export function clearNativeAgentModelCache(): void {
     fallbackCachedAt.clear();
 }
 
-/** Forget one agent's catalog, e.g. after it signed in: its CLI can now list the account's models. */
-export function invalidateNativeAgentModels(agentId: string): void {
+/**
+ * Forget one agent's catalog, e.g. after it signed in: its CLI can now list the account's models.
+ * Without an owner every owner's entry for that agent goes.
+ */
+export function invalidateNativeAgentModels(agentId: string, ownerLogin?: string): void {
     const normalized = agentId.trim().toLowerCase();
-    cache.delete(normalized);
-    discoveries.delete(normalized);
-    fallbackCachedAt.delete(normalized);
+    const keys = ACCOUNT_SCOPED_DISCOVERY_AGENT_IDS.has(normalized) && ownerLogin === undefined
+        ? [...new Set([...cache.keys(), ...discoveries.keys(), ...fallbackCachedAt.keys()])]
+            .filter(key => key.startsWith(`${normalized}:`))
+        : [nativeModelCacheKey(normalized, ownerLogin)];
+    for (const key of keys) {
+        cache.delete(key);
+        discoveries.delete(key);
+        fallbackCachedAt.delete(key);
+    }
 }
 
-async function discoverNativeAgentModels(agentId: string): Promise<QaapQaiqModelOption[]> {
+async function discoverNativeAgentModels(agentId: string, spawner?: NativeModelDiscoverySpawner): Promise<QaapQaiqModelOption[]> {
     switch (agentId) {
         case 'opencode':
             return discoverFromCommand('opencode', ['models'], agentId);
         case 'pi':
             // `pi --list-models` prints a `provider model context ...` table of every model the
             // CLI can reach with its configured providers.
-            return discoverFromCommand('pi', ['--list-models'], agentId);
+            return discoverFromCommand('pi', ['--list-models'], agentId, spawner);
         case 'codex':
             return discoverCodexAccountModels();
         case 'cursor':
@@ -263,18 +313,32 @@ export async function discoverCodexAccountModels(
     }
 }
 
-function discoverFromCommand(bin: string, args: string[], agentId: string): Promise<QaapQaiqModelOption[]> {
+function discoverFromCommand(
+    bin: string,
+    args: string[],
+    agentId: string,
+    spawner?: NativeModelDiscoverySpawner,
+): Promise<QaapQaiqModelOption[]> {
     return new Promise<QaapQaiqModelOption[]>(resolve => {
         try {
+            const spawn = spawner ? spawner(bin, args) : undefined;
+            if (spawner && !spawn) {
+                resolve([]);
+                return;
+            }
             // npm-installed CLIs are `.cmd` shims on Windows and cannot be spawned by
             // their extensionless name from Node without a shell. Use the same
             // Windows-safe resolution as the CLI installer so native model discovery
             // does not silently fall back to a partial static catalog.
-            const executable = process.platform === 'win32' ? `${bin}.cmd` : bin;
-            execFile(executable, args, {
+            const unwrapped = (spawn?.file ?? bin) === bin;
+            const windowsShim = unwrapped && process.platform === 'win32';
+            const executable = windowsShim ? `${bin}.cmd` : spawn?.file ?? bin;
+            execFile(executable, spawn ? [...spawn.args] : args, {
                 encoding: 'utf8',
                 timeout: 15_000,
-                shell: process.platform === 'win32',
+                shell: windowsShim,
+                ...(spawn?.cwd ? { cwd: spawn.cwd } : {}),
+                ...(spawn?.env ? { env: spawn.env } : {}),
             }, (error, stdout) => {
                 // stderr is diagnostic output, never a model catalog. OpenCode can emit a
                 // multiline EROFS/permission error there; treating those lines as models made

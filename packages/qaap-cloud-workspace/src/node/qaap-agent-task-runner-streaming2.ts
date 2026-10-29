@@ -92,7 +92,7 @@ export function resolveAgentModelForRequestExtracted(ctx: QaapAgentTaskRunnerCon
             readPref,
             agentId,
             {
-                listNativeModels: id => listNativeAgentModels(id),
+                listNativeModels: id => listNativeAgentModels(id, ownerLogin),
                 nativeTable: ctx.nativeModelRoutingTable(),
             },
         );
@@ -627,7 +627,7 @@ export function buildTemplateVarsExtracted(ctx: QaapAgentTaskRunnerContext, agen
         // Last gate before argv: callers that hand a model straight in (prompt improve, reviewer)
         // skip the request resolution, and a foreign model here is `--model <id>` → model_not_found.
         if (agentModel?.provider && agentModel.modelId?.trim()
-            && agentModelFitsAgent(agentId, agentModel, () => listNativeAgentModels(agentId))) {
+            && agentModelFitsAgent(agentId, agentModel, () => listNativeAgentModels(agentId, ownerLogin))) {
             const binding = ctx.normalizeAgentBinding(bindingFromQaiqModelSelection(agentModel), ownerLogin);
             const flags = formatModelFlagsForAgent(agentId, binding);
             if (isQaiqAgent(agentId)) {

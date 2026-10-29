@@ -322,16 +322,19 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
                         chrome.modelLoadFailedByAgent.delete(entry.id);
                     }
                 }
+                if (chrome.sheet.dataset.agentPickerRenderGeneration === String(renderGeneration)) {
+                    chrome.modelsByAgent.set(entry.id, models);
+                }
             } else {
+                // Not remembered: once the agent signs in (Pi `/login`) its models must be fetched,
+                // and a cached `[]` made the drill-down skip that fetch.
                 models = [];
             }
         }
-        if (chrome.sheet.dataset.agentPickerRenderGeneration === String(renderGeneration)) {
-            chrome.modelsByAgent.set(entry.id, models);
-        }
         (entry as { models: readonly QaapQaiqModelOption[] }).models = models;
     })).then(() => undefined);
-    const modelListsPending = agentEntries.some(entry => agentSupportsModelPicker(entry.id) && !chrome.modelsByAgent.has(entry.id));
+    const modelListsPending = agentEntries.some(entry => entry.available !== false
+        && agentSupportsModelPicker(entry.id) && !chrome.modelsByAgent.has(entry.id));
     if (modelListsPending) {
         // The rows are usable without the model lists (those only label the stored model and open the
         // drill-down), so the list paints now and repaints once they arrive. Holding the whole picker on

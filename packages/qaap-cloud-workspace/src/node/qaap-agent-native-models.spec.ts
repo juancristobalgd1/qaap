@@ -195,6 +195,69 @@ describe('qaap-agent-native-models', () => {
         expect(models.map(model => model.vendor)).to.deep.equal(['openrouter', 'openrouter', 'anthropic']);
     });
 
+    describe('Pi account-scoped catalog', () => {
+        const piTable = (provider: string, model: string): string =>
+            `#!/bin/sh\necho "provider  model  context  max-out  thinking  images"\necho "${provider}  ${model}  200K  64K  yes  yes"\n`;
+
+        it('never lists Pi from the backend HOME: without the owner spawner the curated catalog answers uncached', async function (): Promise<void> {
+            if (process.platform === 'win32') {
+                this.skip();
+            }
+            fs.writeFileSync(path.join(sandbox, 'pi'), piTable('anthropic', 'backend-home-model'), { mode: 0o755 });
+            process.env.PATH = `${sandbox}${path.delimiter}${originalPath ?? ''}`;
+
+            expect(listNativeAgentModels('pi', 'alice')).to.deep.equal(listStaticNativeAgentModels('pi'));
+            expect(await prepareNativeAgentModels('pi', { ownerLogin: 'alice' })).to.deep.equal(listStaticNativeAgentModels('pi'));
+        });
+
+        it('lists Pi models where the owner signed in and keeps one catalog per owner', async function (): Promise<void> {
+            if (process.platform === 'win32') {
+                this.skip();
+            }
+            const aliceBin = path.join(sandbox, 'alice-pi');
+            const bobBin = path.join(sandbox, 'bob-pi');
+            fs.writeFileSync(aliceBin, piTable('anthropic', 'claude-opus-4-8'), { mode: 0o755 });
+            fs.writeFileSync(bobBin, piTable('openai-codex', 'gpt-5.6-sol'), { mode: 0o755 });
+            const spawned: Array<{ bin: string; args: readonly string[] }> = [];
+            const spawnerFor = (file: string) => (bin: string, args: readonly string[]) => {
+                spawned.push({ bin, args });
+                return { file, args, cwd: sandbox };
+            };
+
+            const alice = await prepareNativeAgentModels('pi', { ownerLogin: 'alice', spawner: spawnerFor(aliceBin) });
+            const bob = await prepareNativeAgentModels('pi', { ownerLogin: 'bob', spawner: spawnerFor(bobBin) });
+
+            expect(alice.map(model => model.modelId)).to.deep.equal(['anthropic/claude-opus-4-8']);
+            expect(bob.map(model => model.modelId)).to.deep.equal(['openai-codex/gpt-5.6-sol']);
+            expect(listNativeAgentModels('pi', 'Alice').map(model => model.modelId)).to.deep.equal(['anthropic/claude-opus-4-8']);
+            expect(spawned).to.deep.equal([{ bin: 'pi', args: ['--list-models'] }, { bin: 'pi', args: ['--list-models'] }]);
+        });
+
+        it('falls back to the curated catalog when the owner tenant cannot run the listing yet', async () => {
+            const models = await prepareNativeAgentModels('pi', { ownerLogin: 'alice', spawner: () => undefined });
+            expect(models).to.deep.equal(listStaticNativeAgentModels('pi'));
+        });
+
+        it('rediscovers every owner after invalidation without an owner, and one owner with it', async function (): Promise<void> {
+            if (process.platform === 'win32') {
+                this.skip();
+            }
+            const bin = path.join(sandbox, 'pi-owner');
+            fs.writeFileSync(bin, piTable('anthropic', 'first-model'), { mode: 0o755 });
+            const spawner = () => ({ file: bin, args: [] as string[] });
+            await prepareNativeAgentModels('pi', { ownerLogin: 'alice', spawner });
+            await prepareNativeAgentModels('pi', { ownerLogin: 'bob', spawner });
+
+            fs.writeFileSync(bin, piTable('anthropic', 'second-model'), { mode: 0o755 });
+            invalidateNativeAgentModels('pi', 'alice');
+            expect((await prepareNativeAgentModels('pi', { ownerLogin: 'alice', spawner }))[0].modelId).to.equal('anthropic/second-model');
+            expect(listNativeAgentModels('pi', 'bob')[0].modelId).to.equal('anthropic/first-model');
+
+            invalidateNativeAgentModels('pi');
+            expect(listNativeAgentModels('pi', 'bob')).to.deep.equal(listStaticNativeAgentModels('pi'));
+        });
+    });
+
     it('keeps a non-empty static Pi fallback with provider-qualified ids', () => {
         const models = listStaticNativeAgentModels('pi');
         expect(models.length).to.be.greaterThan(0);

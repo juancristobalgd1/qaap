@@ -48,6 +48,7 @@ import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects
 import type { MobileProjectsStickyComposerSheetsUi } from './mobile-projects-sticky-composer-sheets-ui';
 import type { StickyComposerUntilDoneToggleOptions } from './qaap-sticky-composer-until-done-toggle';
 import { writeComposerAgentCatalogSession } from './composer-agent-catalog-session-cache';
+import { composerAgentCatalogSignature } from './mobile-projects-sticky-composer-agents-ui';
 
 export interface ComposerAgentPickerChrome {
     readonly sheet: HTMLElement;
@@ -86,7 +87,7 @@ export interface MobileProjectsTranscriptComposerHost {
     stickyComposerAgentsUi: import('./mobile-projects-sticky-composer-agents-ui').MobileProjectsStickyComposerAgentsUi;
     stickyComposerWorkspaceUi: import('./mobile-projects-sticky-composer-workspace-ui').MobileProjectsStickyComposerWorkspaceUi;
 
-    loadBackendAgentSnapshot(): Promise<{
+    loadBackendAgentSnapshot(options?: { readonly forceRefresh?: boolean }): Promise<{
         agents: QaapAgentTaskAgentOption[];
         qaiqModels: QaapQaiqModelOption[];
         defaultAgent?: string;
@@ -186,13 +187,13 @@ export class MobileProjectsTranscriptComposerUi {
         return readStoredAgentModel(cwd, agentId);
     }
 
-    async refreshTranscriptComposerAgents(project: MobileProjectEntry): Promise<boolean> {
+    async refreshTranscriptComposerAgents(project: MobileProjectEntry, options?: { readonly forceRefresh?: boolean }): Promise<boolean> {
         this.host.activeTasks?.start();
         const cwd = this.host.projectsService.getProjectCwd(project)
             ?? this.host.transcriptComposerSummary?.cwd
             ?? this.host.preparedCwdByProjectId.get(project.id);
         try {
-            const snapshot = await this.host.loadBackendAgentSnapshot();
+            const snapshot = await this.host.loadBackendAgentSnapshot(options);
             let pickerAgents = this.host.stickyComposerAgentsUi.getComposerAgentPickerAgents(snapshot.agents);
             let filteredAgents = this.host.stickyComposerAgentsUi.filterSelectableComposerAgents(pickerAgents);
             // Same rule as the sticky composer: the 3 s wait only covers a page whose live stream has not reported agents yet.
@@ -210,6 +211,9 @@ export class MobileProjectsTranscriptComposerUi {
                     ]);
                 }
             }
+            // The chip's sign-in cue is built with the column: a sign-in alone must remount it too.
+            const catalogChanged = composerAgentCatalogSignature(this.host.transcriptComposerBackendAgents)
+                !== composerAgentCatalogSignature(pickerAgents);
             this.host.transcriptComposerBackendAgents = pickerAgents;
             writeComposerAgentCatalogSession(pickerAgents);
             this.host.transcriptComposerQaiqModels = snapshot.qaiqModels;
@@ -233,7 +237,7 @@ export class MobileProjectsTranscriptComposerUi {
             if (selection && selection.agentId !== resolved && cwd) {
                 writeStoredAgent(cwd, selection.agentId);
             }
-            if (agentChanged || modelBefore?.modelId !== modelAfter?.modelId) {
+            if (agentChanged || catalogChanged || modelBefore?.modelId !== modelAfter?.modelId) {
                 this.host.transcriptComposerPinnedAgentId = effectiveResolved;
                 this.host.transcriptComposerAgentModel = modelAfter;
                 this.host.transcriptStickyComposerUi.remountTranscriptStickyComposer();

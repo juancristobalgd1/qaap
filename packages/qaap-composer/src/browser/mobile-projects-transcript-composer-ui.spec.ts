@@ -73,3 +73,60 @@ describe('MobileProjectsTranscriptComposerUi agent label', () => {
             .to.equal('@shell');
     });
 });
+
+describe('MobileProjectsTranscriptComposerUi catalog refresh', () => {
+
+    useSuiteJSDOM();
+
+    const project = { id: 'project', name: 'Project' } as MobileProjectEntry;
+    const pi = (connectionState: QaapAgentTaskAgentOption['connectionState']): QaapAgentTaskAgentOption =>
+        ({ id: 'pi', label: 'Pi', available: true, connectionState });
+
+    function createUi(snapshotAgents: () => QaapAgentTaskAgentOption[], loads: Array<unknown>, remounts: { count: number }): {
+        readonly ui: MobileProjectsTranscriptComposerUi;
+        readonly host: { transcriptComposerBackendAgents: QaapAgentTaskAgentOption[] };
+    } {
+        const host = {
+            transcriptComposerPinnedAgentId: 'pi',
+            transcriptComposerBackendAgents: [] as QaapAgentTaskAgentOption[],
+            transcriptComposerSummary: undefined,
+            preparedCwdByProjectId: new Map<string, string>(),
+            projectsService: { getProjectCwd: () => '/workspace/project' },
+            loadBackendAgentSnapshot: async (options?: unknown) => {
+                loads.push(options);
+                return { agents: snapshotAgents(), qaiqModels: [], defaultAgent: 'pi' };
+            },
+            activeTasks: { start: () => undefined, getAgents: () => [] },
+            stickyComposerAgentsUi: {
+                getComposerAgentPickerAgents: (agents: QaapAgentTaskAgentOption[]) => agents,
+                filterSelectableComposerAgents: (agents: QaapAgentTaskAgentOption[]) => agents.filter(a => a.available),
+                reconcileStickyComposerPinnedAgent: (pinned: string | undefined) => pinned,
+                ensureStickyComposerAgentSelection: async (agentId: string | undefined) => (agentId ? { agentId } : undefined),
+            },
+            transcriptStickyComposerUi: { remountTranscriptStickyComposer: () => { remounts.count++; } },
+        };
+        return { ui: new MobileProjectsTranscriptComposerUi(host as unknown as MobileProjectsTranscriptComposerHost), host };
+    }
+
+    beforeEach(() => {
+        window.localStorage.clear();
+        window.sessionStorage.clear();
+    });
+
+    it('remounts the composer when only the agent sign-in changed, so the chip drops its sign-in cue', async () => {
+        let state: QaapAgentTaskAgentOption['connectionState'] = 'disconnected';
+        const loads: unknown[] = [];
+        const remounts = { count: 0 };
+        const { ui } = createUi(() => [pi(state)], loads, remounts);
+
+        await ui.refreshTranscriptComposerAgents(project);
+        const afterFirstLoad = remounts.count;
+        await ui.refreshTranscriptComposerAgents(project);
+        expect(remounts.count).to.equal(afterFirstLoad, 'an unchanged catalog must not remount');
+
+        state = 'connected';
+        await ui.refreshTranscriptComposerAgents(project, { forceRefresh: true });
+        expect(remounts.count).to.equal(afterFirstLoad + 1);
+        expect(loads[loads.length - 1]).to.deep.equal({ forceRefresh: true });
+    });
+});
