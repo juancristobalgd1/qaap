@@ -226,8 +226,81 @@ describe('QaapCodexGateOverlayBuilder', () => {
             expect(error?.message).to.contain('not searchable by other users').and.to.contain('QAAP_CODEX_GATE_DIR');
         });
 
-        it('defaults the drop base next to, not inside, ~/.qaap', () => {
-            expect(QaapCodexGateOverlayBuilder.defaultRoot({ uid: agentUid })).to.equal(path.join(os.homedir(), '.qaap-codex-gate'));
+        describe('default base in the OS temp dir (read-only tenant rootfs)', () => {
+            let savedTmp: string | undefined;
+            let tmpRoot: string;
+            beforeEach(() => {
+                savedTmp = process.env.TMPDIR;
+                tmpRoot = fs.realpathSync(fs.mkdtempSync(path.join(tmp, 'os-tmp-')));
+                process.env.TMPDIR = tmpRoot;
+            });
+            afterEach(() => {
+                if (savedTmp === undefined) {
+                    delete process.env.TMPDIR;
+                } else {
+                    process.env.TMPDIR = savedTmp;
+                }
+            });
+            const create = (builder: RecordingBuilder, taskId = 'task-1'): ReturnType<RecordingBuilder['create']> =>
+                builder.create(options({ taskId, overlayRoot: undefined, agentIdentity: { uid: agentUid } }));
+
+            it('creates a random 0711 base owned by this process and reuses it', async () => {
+                const builder = new RecordingBuilder();
+                const first = await create(builder, 'a');
+                const base = path.dirname(path.dirname(first.codexHome));
+                expect(path.dirname(base)).to.equal(tmpRoot);
+                expect(path.basename(base)).to.match(/^qaap-codex-gate-[A-Za-z0-9]{6}$/);
+                const stat = fs.lstatSync(base);
+                expect(stat.mode & 0o777).to.equal(0o711);
+                expect(stat.uid).to.equal(process.getuid?.());
+                const second = await create(builder, 'b');
+                expect(path.dirname(path.dirname(second.codexHome))).to.equal(base);
+                expect(builder.handedOver.some(entry => entry.target === base)).to.equal(false);
+                first.dispose();
+                second.dispose();
+                const other = await create(new RecordingBuilder(), 'c');
+                expect(path.dirname(path.dirname(other.codexHome))).to.not.equal(base);
+                other.dispose();
+            });
+
+            it('creates a new base when the old one was swapped for a link', async () => {
+                const builder = new RecordingBuilder();
+                const first = await create(builder, 'a');
+                first.dispose();
+                const base = path.dirname(path.dirname(first.codexHome));
+                const victim = path.join(tmp, 'victim');
+                fs.mkdirSync(victim);
+                fs.rmSync(base, { recursive: true });
+                fs.symlinkSync(victim, base);
+                const second = await create(builder, 'b');
+                const newBase = path.dirname(path.dirname(second.codexHome));
+                expect(newBase).to.not.equal(base);
+                expect(fs.readdirSync(victim)).to.deep.equal([]);
+                second.dispose();
+            });
+
+            it('sweeps only old real directories of its own, never links or files', async () => {
+                const old = new Date(Date.now() - 48 * 3600 * 1000);
+                const staleDir = path.join(tmpRoot, 'qaap-codex-gate-STALE1');
+                fs.mkdirSync(staleDir);
+                fs.utimesSync(staleDir, old, old);
+                const freshDir = path.join(tmpRoot, 'qaap-codex-gate-FRESH1');
+                fs.mkdirSync(freshDir);
+                const target = path.join(tmp, 'sweep-target');
+                fs.mkdirSync(target);
+                fs.writeFileSync(path.join(target, 'keep.txt'), 'x');
+                fs.utimesSync(target, old, old);
+                fs.symlinkSync(target, path.join(tmpRoot, 'qaap-codex-gate-LINK01'));
+                fs.writeFileSync(path.join(tmpRoot, 'qaap-codex-gate-FILE01'), 'x');
+                fs.writeFileSync(path.join(tmpRoot, 'unrelated'), 'x');
+                (await create(new RecordingBuilder())).dispose();
+                expect(fs.existsSync(staleDir)).to.equal(false);
+                expect(fs.existsSync(freshDir)).to.equal(true);
+                expect(fs.readFileSync(path.join(target, 'keep.txt'), 'utf8')).to.equal('x');
+                expect(fs.lstatSync(path.join(tmpRoot, 'qaap-codex-gate-LINK01')).isSymbolicLink()).to.equal(true);
+                expect(fs.existsSync(path.join(tmpRoot, 'qaap-codex-gate-FILE01'))).to.equal(true);
+                expect(fs.existsSync(path.join(tmpRoot, 'unrelated'))).to.equal(true);
+            });
         });
 
         it('refuses a base the agent could write to', async () => {

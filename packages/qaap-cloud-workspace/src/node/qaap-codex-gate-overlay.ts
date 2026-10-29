@@ -18,6 +18,7 @@ export const QAAP_TOOL_GATE_CODEX_HOOK_FILE = 'qaap-tool-gate-codex-hook.mjs';
 const HOOK_TIMEOUT_MARGIN_SEC = 60;
 const STALE_OVERLAY_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const HOOK_KEY_SUFFIX = 'pre_tool_use:0:0';
+const BASE_PREFIX = 'qaap-codex-gate-';
 const MAX_SECRET_FILE_BYTES = 1024 * 1024;
 // O_NOFOLLOW does not exist on Windows (where tenant privilege drops do not apply either).
 const NOFOLLOW = fs.constants.O_NOFOLLOW ?? 0;
@@ -86,8 +87,7 @@ export class QaapCodexGateOverlayBuilder {
         const drop = this.resolveDrop(options.agentIdentity);
         // Codex keys hook trust by the CANONICAL hooks.json path (macOS /var -> /private/var): a symlinked
         // path would leave the hook untrusted, and an untrusted hook is skipped silently.
-        const base = QaapCodexGateOverlayBuilder.canonical(
-            this.ensureBase(options.overlayRoot ?? QaapCodexGateOverlayBuilder.defaultRoot(drop), drop));
+        const base = QaapCodexGateOverlayBuilder.canonical(this.resolveBase(options.overlayRoot, drop));
         this.sweepStale(base);
         // Root-owned 0700 until everything is written, so the agent cannot plant links while root builds.
         const taskDir = fs.mkdtempSync(path.join(base, `${QaapCodexGateOverlayBuilder.safeSegment(options.taskId)}-`));
@@ -301,15 +301,61 @@ export class QaapCodexGateOverlayBuilder {
         return kept.join('\n').trim();
     }
 
+    protected processBase: string | undefined;
+    protected sweptBases = false;
+
     /**
-     * Where overlays live: with a drop, a sibling of ~/.qaap (that one is 0710 root:root in tenant backends, so the
-     * agent uid cannot traverse it) that root creates 0711; the OS temp dir otherwise.
+     * Where overlays live. An explicit root (option or `QAAP_CODEX_GATE_DIR`) gets the usual checks. Otherwise
+     * the base is an UNPREDICTABLE directory this process creates in the OS temp dir (the only place a
+     * read-only tenant backend can write that the agent can also traverse): mkdtemp makes the name random,
+     * so the agent cannot pre-plant a link there. It is re-verified (lstat) on every use and recreated if
+     * it was tampered with.
      */
-    static defaultRoot(drop?: { uid: number }): string {
-        if (drop) {
-            return process.env.QAAP_CODEX_GATE_DIR?.trim() || path.join(os.homedir(), '.qaap-codex-gate');
+    protected resolveBase(explicit: string | undefined, drop: { uid: number } | undefined): string {
+        const configured = explicit ?? (process.env.QAAP_CODEX_GATE_DIR?.trim() || undefined);
+        if (configured) {
+            return this.ensureBase(configured, drop);
         }
-        return path.join(os.tmpdir(), `qaap-codex-gate-${QaapCodexGateOverlayBuilder.currentUid() ?? 'user'}`);
+        if (!this.sweptBases) {
+            this.sweptBases = true;
+            this.sweepOldBases(os.tmpdir());
+        }
+        if (this.processBase) {
+            try {
+                this.verifyBase(this.processBase, drop);
+                return this.processBase;
+            } catch (error) {
+                console.warn('[qaap-codex-gate] the overlay base failed verification; creating a new one');
+                QaapCodexGateOverlayBuilder.removeTree(this.processBase);
+                this.processBase = undefined;
+            }
+        }
+        const base = fs.mkdtempSync(path.join(os.tmpdir(), BASE_PREFIX));
+        fs.chmodSync(base, drop ? 0o711 : 0o700);
+        this.verifyBase(base, drop);
+        this.processBase = base;
+        process.once('exit', () => QaapCodexGateOverlayBuilder.removeTree(base));
+        return base;
+    }
+
+    /** Old bases of crashed backends: real directories owned by us, idle for a day, never links. */
+    protected sweepOldBases(tmpRoot: string): void {
+        try {
+            const uid = QaapCodexGateOverlayBuilder.currentUid();
+            for (const entry of fs.readdirSync(tmpRoot)) {
+                if (!entry.startsWith(BASE_PREFIX)) {
+                    continue;
+                }
+                const dir = path.join(tmpRoot, entry);
+                const stat = fs.lstatSync(dir);
+                if (stat.isDirectory() && (uid === undefined || stat.uid === uid) && dir !== this.processBase
+                    && Date.now() - stat.mtimeMs > STALE_OVERLAY_MAX_AGE_MS) {
+                    QaapCodexGateOverlayBuilder.removeTree(dir);
+                }
+            }
+        } catch {
+            // nothing to sweep
+        }
     }
 
     protected static currentUid(): number | undefined {
@@ -323,6 +369,11 @@ export class QaapCodexGateOverlayBuilder {
      */
     protected ensureBase(base: string, drop: { uid: number } | undefined): string {
         fs.mkdirSync(base, { recursive: true, mode: drop ? 0o711 : 0o700 });
+        return this.verifyBase(base, drop);
+    }
+
+    /** lstat checks: a real directory, owned by this process, not writable by others (searchable by the agent with a drop). */
+    protected verifyBase(base: string, drop: { uid: number } | undefined): string {
         const stat = fs.lstatSync(base);
         const uid = QaapCodexGateOverlayBuilder.currentUid();
         if (!stat.isDirectory() || (uid !== undefined && stat.uid !== uid)) {
