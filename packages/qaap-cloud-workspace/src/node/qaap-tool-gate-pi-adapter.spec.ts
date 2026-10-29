@@ -11,7 +11,7 @@ import { resolveQaapHarnessCapabilities } from '@theia/qaap-shared-core/lib/comm
 import { resolveAgentProjectTrustFlags } from '@theia/qaap-shared-core/lib/common/qaap-project-folder-trust';
 import { parseAgentLogForTranscript, createAgentStreamAccumulator } from '@theia/qaap-shared-core/lib/common/qaap-cli-transcript-stream';
 import { resolveQaapToolGatePiExtensionPath, usesToolGateExtension } from './qaap-tool-gate-pi-adapter';
-import { applyTemplate } from './qaap-agent-task-runner-utils';
+import { applyTemplate, quoteShellArg } from './qaap-agent-task-runner-utils';
 import { QaapToolGateTokenService } from './qaap-tool-gate-token-service';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { buildTemplateVarsExtracted } from './qaap-agent-task-runner-streaming2';
@@ -37,14 +37,14 @@ describe('Pi tool gate adapter', () => {
     it('builds `pi --mode json -p --no-session -ne -e <abs> --no-approve …` for an untrusted folder', () => {
         const command = applyTemplate(piTemplate(), 'fix it', templateVarsFor('pi', false));
         expect(command).to.contain('pi --mode json -p --no-session -ne -e ');
-        expect(command).to.contain(`'${resolveQaapToolGatePiExtensionPath()}'`);
+        expect(command).to.contain(`-e ${quoteShellArg(resolveQaapToolGatePiExtensionPath())} `);
         expect(command).to.contain(' --no-approve ');
         expect(command).to.not.match(/(^|\s)--approve(\s|$)/);
         expect(command.endsWith('\'fix it\'')).to.equal(true);
     });
 
     it('a trusted project gives Pi --approve plus -e gate_ext; an untrusted one --no-approve plus -e gate_ext', () => {
-        const ext = `-e '${resolveQaapToolGatePiExtensionPath()}'`;
+        const ext = `-e ${quoteShellArg(resolveQaapToolGatePiExtensionPath())}`;
         const trusted = applyTemplate(piTemplate(), 'x', templateVarsFor('pi', true));
         const untrusted = applyTemplate(piTemplate(), 'x', templateVarsFor('pi', false));
         expect(trusted).to.contain(`${ext} --approve `);
@@ -111,7 +111,7 @@ describe('Pi tool gate adapter', () => {
     it('always disables extension discovery (-ne), trusted or not, while the explicit gate -e still loads', () => {
         for (const trusted of [true, false]) {
             const command = applyTemplate(piTemplate(), 'x', templateVarsFor('pi', trusted));
-            expect(command, String(trusted)).to.match(/ --no-session -ne -e '/);
+            expect(command, String(trusted)).to.contain(` --no-session -ne -e ${quoteShellArg(resolveQaapToolGatePiExtensionPath())} `);
         }
     });
 

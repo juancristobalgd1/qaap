@@ -138,11 +138,16 @@ async function runFakeClaude(
     updatedInputFor?: (tool: string) => Record<string, unknown> | undefined,
 ): Promise<{ decisions: Array<Record<string, unknown>>; asked: string[] }> {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-fake-claude-'));
+    // The child keeps `dir` as its cwd; on Windows rmdir fails (EBUSY/EPERM) until it has exited.
+    let childExited: Promise<void> = Promise.resolve();
+    let killChild: () => void = () => undefined;
     try {
         const script = path.join(dir, 'fake-claude.js');
         fs.writeFileSync(script, FAKE_CLAUDE);
         const gate = new QaapToolGateService();
         const child = spawn(process.execPath, [script], { cwd: dir, env: { ...process.env, FAKE_CALLS: JSON.stringify(calls) }, stdio: ['pipe', 'pipe', 'inherit'] });
+        childExited = new Promise<void>(resolve => child.once('exit', () => resolve()));
+        killChild = () => { child.kill(); };
         const asked: string[] = [];
         let buffer = '';
         const decisions = await new Promise<Array<Record<string, unknown>>>((resolve, reject) => {
@@ -181,7 +186,9 @@ async function runFakeClaude(
         });
         return { decisions, asked };
     } finally {
-        fs.rmSync(dir, { recursive: true, force: true });
+        killChild();
+        await childExited;
+        fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     }
 }
 
