@@ -5,7 +5,7 @@
 
 import { hashString, isTheiaCoderAgent } from './qaap-agent-task-client';
 import { nls } from '@theia/core/lib/common/nls';
-import { resolveQaapHarnessCapabilities } from './qaap-harness-capabilities';
+import { resolveQaapHarnessCapabilities, type QaapWhenAskUnsupported } from './qaap-harness-capabilities';
 
 const SELECTED_APPROVAL_POLICY_STORAGE_KEY = 'qaap.mobile.projects.agentApprovalPolicy';
 const LEGACY_APPROVAL_POLICY_STORAGE_KEY = 'qaap.mobile.projects.codexApprovalPolicy';
@@ -111,42 +111,60 @@ export function reconcileAgentApprovalPolicyId(
 }
 
 /**
- * True when the stored preset is "Ask before changes" but the harness cannot block for an ask. Such a
- * harness effectively runs in Autonomous mode. This is display-only: the stored preset and the backend
- * request are not changed.
+ * How a harness that cannot ask behaves under "Ask before changes", or `undefined` when no downgrade or
+ * warning applies (the harness can ask, the preset is not Ask before changes, or no harness is known).
+ * Display-only: the stored preset and the backend request are not changed.
  */
+export function resolveApprovalPolicyUnsupportedMode(
+    policyId: QaapAgentApprovalPolicyId | undefined,
+    agentId: string | undefined,
+): QaapWhenAskUnsupported | undefined {
+    // Without a harness there is nothing to describe: the stored preset stays as it is.
+    if (policyId !== 'request-approval' || !agentId?.trim()) {
+        return undefined;
+    }
+    const capabilities = resolveQaapHarnessCapabilities(agentId);
+    return capabilities.canAsk ? undefined : capabilities.whenAskUnsupported;
+}
+
+/** True when the harness cannot ask before changes but the stored preset is Ask before changes. */
 export function isApprovalPolicyUnsupportedByAgent(
     policyId: QaapAgentApprovalPolicyId | undefined,
     agentId: string | undefined,
 ): boolean {
-    // Without a harness there is nothing to downgrade: the stored preset stays as it is.
-    if (!agentId?.trim()) {
-        return false;
-    }
-    return policyId === 'request-approval' && !resolveQaapHarnessCapabilities(agentId).canAsk;
+    return resolveApprovalPolicyUnsupportedMode(policyId, agentId) !== undefined;
 }
 
-/** Preset the user sees for a harness: the stored preset, or Autonomous mode where the harness cannot ask. */
+/**
+ * Preset the user sees for a harness. Only a harness that runs every action unchecked is shown as
+ * Autonomous mode; a harness that refuses gated actions keeps Ask before changes.
+ */
 export function resolveEffectiveAgentApprovalPolicyId(
     policyId: QaapAgentApprovalPolicyId | undefined,
     agentId: string | undefined,
 ): QaapAgentApprovalPolicyId | undefined {
-    return isApprovalPolicyUnsupportedByAgent(policyId, agentId) ? 'approve-for-me' : policyId;
+    return resolveApprovalPolicyUnsupportedMode(policyId, agentId) === 'runs-unchecked' ? 'approve-for-me' : policyId;
 }
 
-/** Tooltip and warning text shown beside the effective preset when the harness cannot ask. */
-export function resolveApprovalPolicyUnsupportedText(agentLabel: string): string {
-    return nls.localize(
-        'qaap/mobileProjects/approvalPolicyRequestUnsupportedShort',
-        '{0} can\'t ask before changes yet.',
-        agentLabel,
-    );
+/** Tooltip and warning text for a harness that cannot ask, by what it does instead. */
+export function resolveApprovalPolicyUnsupportedText(agentLabel: string, mode: QaapWhenAskUnsupported): string {
+    return mode === 'runs-unchecked'
+        ? nls.localize(
+            'qaap/mobileProjects/approvalPolicyUnsupportedRunsUnchecked',
+            '{0} can\'t ask before changes yet; it runs every action without asking.',
+            agentLabel,
+        )
+        : nls.localize(
+            'qaap/mobileProjects/approvalPolicyUnsupportedRefuses',
+            '{0} can\'t ask you yet; actions that need approval are refused.',
+            agentLabel,
+        );
 }
 
 /** Toolbar chip for the approval picker: the effective preset, plus a warning when the stored one differs. */
 export interface QaapApprovalPolicyToolbarDisplay {
     readonly policy: QaapAgentApprovalPolicyOption;
-    /** Set when the stored preset is not what the harness runs; the chip shows this as its tooltip. */
+    /** Set when the harness cannot ask; the chip shows this as its warning tooltip. */
     readonly unsupportedText?: string;
 }
 
@@ -156,10 +174,11 @@ export function resolveApprovalPolicyToolbarDisplay(
 ): QaapApprovalPolicyToolbarDisplay {
     const effectiveId = resolveEffectiveAgentApprovalPolicyId(storedPolicyId, agent?.id);
     const policy = resolveAgentApprovalPolicyOption(effectiveId);
-    if (!agent || !isApprovalPolicyUnsupportedByAgent(storedPolicyId, agent.id)) {
+    const mode = resolveApprovalPolicyUnsupportedMode(storedPolicyId, agent?.id);
+    if (!agent || mode === undefined) {
         return { policy };
     }
-    return { policy, unsupportedText: resolveApprovalPolicyUnsupportedText(agent.label) };
+    return { policy, unsupportedText: resolveApprovalPolicyUnsupportedText(agent.label, mode) };
 }
 
 export function resolveAgentApprovalPolicyOption(

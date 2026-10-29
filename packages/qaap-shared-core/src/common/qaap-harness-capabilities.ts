@@ -8,6 +8,12 @@ import type { QaapToolKind } from './qaap-tool-gate-protocol';
 /** How a harness reports tool calls to the Qaap tool gate. `none` means no gate runs for it. */
 export type QaapGateTransport = 'native-stdio' | 'hook' | 'plugin' | 'extension' | 'none';
 
+/**
+ * What the backend really does under "Ask before changes" for a harness that cannot ask:
+ * `runs-unchecked` (no permission system; every action runs) or `refuses` (gated actions are refused).
+ */
+export type QaapWhenAskUnsupported = 'runs-unchecked' | 'refuses';
+
 /** Where the cost of a turn comes from. `none` when Qaap cannot show a cost for the harness. */
 export type QaapCostSource = 'reported' | 'price-table' | 'estimate' | 'none';
 
@@ -20,6 +26,8 @@ export interface QaapHarnessCapabilities {
     gate: QaapGateTransport;
     /** True only if the gate can block for at least {@link askTtlSec}. */
     canAsk: boolean;
+    /** Behaviour under request-approval when {@link canAsk} is false. Unknown ids assume the worst. */
+    whenAskUnsupported: QaapWhenAskUnsupported;
     /** Max time a single ask may block (harness limit minus margin). 0 when {@link canAsk} is false. */
     askTtlSec: number;
     shellGuard: 'gate' | 'shell-shim' | 'none';
@@ -76,6 +84,7 @@ function createDefaultHarnessCapabilities(agentId: string): QaapHarnessCapabilit
         gate: 'none',
         canAsk: false,
         askTtlSec: 0,
+        whenAskUnsupported: 'runs-unchecked',
         shellGuard: 'none',
         untrustedFolderArgs: [],
         trustedFolderArgs: [],
@@ -95,6 +104,7 @@ const QAAP_HARNESS_CAPABILITY_ENTRIES: readonly QaapHarnessCapabilities[] = [
         gate: 'native-stdio',
         canAsk: true,
         askTtlSec: STDIO_ASK_TTL_SEC,
+        whenAskUnsupported: 'refuses',
         shellGuard: 'gate',
         usage: 'qaiq',
     },
@@ -103,13 +113,17 @@ const QAAP_HARNESS_CAPABILITY_ENTRIES: readonly QaapHarnessCapabilities[] = [
         gate: 'native-stdio',
         canAsk: true,
         askTtlSec: STDIO_ASK_TTL_SEC,
+        whenAskUnsupported: 'refuses',
         shellGuard: 'gate',
         usage: 'claude',
     },
-    { ...createDefaultHarnessCapabilities('claude'), usage: 'claude' },
-    { ...createDefaultHarnessCapabilities('codex'), usage: 'codex' },
-    { ...createDefaultHarnessCapabilities('opencode'), usage: 'opencode' },
-    { ...createDefaultHarnessCapabilities('pi') },
+    // Without a gate, claude, codex and opencode have their skip flags stripped under request-approval,
+    // so gated actions are refused rather than run.
+    { ...createDefaultHarnessCapabilities('claude'), whenAskUnsupported: 'refuses', usage: 'claude' },
+    { ...createDefaultHarnessCapabilities('codex'), whenAskUnsupported: 'refuses', usage: 'codex' },
+    { ...createDefaultHarnessCapabilities('opencode'), whenAskUnsupported: 'refuses', usage: 'opencode' },
+    // Pi has no permission system, so under request-approval it runs every tool.
+    { ...createDefaultHarnessCapabilities('pi'), whenAskUnsupported: 'runs-unchecked' },
 ];
 
 /**

@@ -10,12 +10,13 @@ import {
 import {
     QAAP_AGENT_APPROVAL_POLICIES,
     reconcileAgentApprovalPolicyId,
+    resolveApprovalPolicyUnsupportedMode,
+    resolveApprovalPolicyUnsupportedText,
     resolveEffectiveAgentApprovalPolicyId,
     writeStoredAgentApprovalPolicy,
     type QaapAgentApprovalPolicyId,
 } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import { createApprovalPolicySheetOptionButton, createModeSheetOptionButton } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
-import { resolveQaapHarnessCapabilities } from '@theia/qaap-shared-core/lib/common/qaap-harness-capabilities';
 import { qaiqModelSupportsToolCalls } from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-support';
 import {
     filterQaiqModelsWithConfiguredCredentials,
@@ -252,13 +253,11 @@ export function openApprovalPolicySheetExtracted(ctx: MobileProjectsStickyCompos
         }
     };
     const policyButtons: HTMLButtonElement[] = [];
-    const requestApprovalDisabledReason = resolveQaapHarnessCapabilities(options.agentId).canAsk
-        ? undefined
-        : nls.localize(
-            'qaap/mobileProjects/approvalPolicyRequestUnsupported',
-            '{0} can\'t ask before changes yet; it runs in Autonomous mode.',
-            options.agentLabel,
-        );
+    // Only a harness that runs every action unchecked disables the Ask row; a harness that refuses
+    // gated actions keeps it selectable.
+    const requestApprovalDisabledReason = resolveApprovalPolicyUnsupportedMode('request-approval', options.agentId) === 'runs-unchecked'
+        ? resolveApprovalPolicyUnsupportedText(options.agentLabel, 'runs-unchecked')
+        : undefined;
     for (const policy of QAAP_AGENT_APPROVAL_POLICIES) {
         const button = createApprovalPolicySheetOptionButton({
             policy,

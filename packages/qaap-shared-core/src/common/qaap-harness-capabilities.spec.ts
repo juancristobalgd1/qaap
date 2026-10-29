@@ -45,6 +45,16 @@ describe('qaap-harness-capabilities', () => {
         }
     });
 
+    it('records what each builtin does under request-approval when it cannot ask', () => {
+        for (const id of ['qaiq', 'openclaude', 'claude', 'codex', 'opencode']) {
+            expect(registry.get(id).whenAskUnsupported, id).to.equal('refuses');
+        }
+        expect(registry.get('pi').whenAskUnsupported).to.equal('runs-unchecked');
+        for (const definition of QAAP_BUILTIN_AGENT_DEFINITIONS) {
+            expect(registry.get(definition.id).whenAskUnsupported, definition.id).to.be.oneOf(['refuses', 'runs-unchecked']);
+        }
+    });
+
     it('keeps every other builtin harness unable to ask, with no ask window', () => {
         for (const definition of QAAP_BUILTIN_AGENT_DEFINITIONS) {
             const capabilities = registry.get(definition.id);
@@ -61,6 +71,7 @@ describe('qaap-harness-capabilities', () => {
             expect(capabilities.canAsk).to.equal(false);
             expect(capabilities.usage).to.equal('none');
             expect(capabilities.costSource).to.equal('none');
+            expect(capabilities.whenAskUnsupported).to.equal('runs-unchecked');
         }
         expect(resolveQaapHarnessCapabilities(undefined).canAsk).to.equal(false);
     });

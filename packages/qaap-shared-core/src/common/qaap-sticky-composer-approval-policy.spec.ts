@@ -6,6 +6,7 @@
 import { expect } from 'chai';
 import {
     isApprovalPolicyUnsupportedByAgent,
+    resolveApprovalPolicyUnsupportedMode,
     QAAP_AGENT_APPROVAL_POLICIES,
     resolveAgentApprovalPolicyOption,
     resolveApprovalPolicyToolbarDisplay,
@@ -46,15 +47,28 @@ describe('qaap-sticky-composer-approval-policy', () => {
         }
     });
 
-    it('shows Autonomous mode for a harness that cannot ask when the stored preset is Ask before changes', () => {
+    it('shows Autonomous mode only for a harness that runs every action unchecked (pi)', () => {
         expect(resolveEffectiveAgentApprovalPolicyId('request-approval', 'pi')).to.equal('approve-for-me');
-        expect(resolveEffectiveAgentApprovalPolicyId('request-approval', 'codex')).to.equal('approve-for-me');
+        expect(resolveApprovalPolicyUnsupportedMode('request-approval', 'pi')).to.equal('runs-unchecked');
         expect(isApprovalPolicyUnsupportedByAgent('request-approval', 'pi')).to.equal(true);
+    });
+
+    it('keeps Ask before changes for a harness that refuses gated actions (claude, codex, opencode)', () => {
+        for (const id of ['claude', 'codex', 'opencode']) {
+            expect(resolveEffectiveAgentApprovalPolicyId('request-approval', id), id).to.equal('request-approval');
+            expect(resolveApprovalPolicyUnsupportedMode('request-approval', id), id).to.equal('refuses');
+        }
+    });
+
+    it('treats an unknown harness as runs-unchecked', () => {
+        expect(resolveApprovalPolicyUnsupportedMode('request-approval', 'my-custom-agent')).to.equal('runs-unchecked');
+        expect(resolveEffectiveAgentApprovalPolicyId('request-approval', 'my-custom-agent')).to.equal('approve-for-me');
     });
 
     it('keeps the stored preset for QAIQ and OpenClaude, which can ask', () => {
         expect(resolveEffectiveAgentApprovalPolicyId('request-approval', 'qaiq')).to.equal('request-approval');
         expect(resolveEffectiveAgentApprovalPolicyId('request-approval', 'openclaude')).to.equal('request-approval');
+        expect(resolveApprovalPolicyUnsupportedMode('request-approval', 'qaiq')).to.equal(undefined);
         expect(isApprovalPolicyUnsupportedByAgent('request-approval', 'qaiq')).to.equal(false);
     });
 
@@ -64,15 +78,19 @@ describe('qaap-sticky-composer-approval-policy', () => {
         expect(resolveEffectiveAgentApprovalPolicyId(undefined, 'pi')).to.equal(undefined);
     });
 
-    it('toolbar chip shows Autonomous mode with a warning for pi and a stored Ask before changes', () => {
+    it('toolbar chip for pi shows Autonomous mode with the runs-unchecked warning', () => {
         const display = resolveApprovalPolicyToolbarDisplay('request-approval', { id: 'pi', label: 'Pi' });
         expect(display.policy.id).to.equal('approve-for-me');
-        expect(display.policy.label).to.equal(resolveAgentApprovalPolicyOption('approve-for-me').label);
-        expect(display.policy.label).to.not.equal(resolveAgentApprovalPolicyOption('request-approval').label);
-        expect(display.unsupportedText).to.equal('Pi can\'t ask before changes yet.');
+        expect(display.unsupportedText).to.equal('Pi can\'t ask before changes yet; it runs every action without asking.');
     });
 
-    it('toolbar chip keeps Ask before changes with no warning for QAIQ', () => {
+    it('toolbar chip for claude keeps Ask before changes with the refuses warning', () => {
+        const display = resolveApprovalPolicyToolbarDisplay('request-approval', { id: 'claude', label: 'Claude Code' });
+        expect(display.policy.id).to.equal('request-approval');
+        expect(display.unsupportedText).to.equal('Claude Code can\'t ask you yet; actions that need approval are refused.');
+    });
+
+    it('toolbar chip for QAIQ keeps Ask before changes with no warning', () => {
         const display = resolveApprovalPolicyToolbarDisplay('request-approval', { id: 'qaiq', label: 'QAIQ' });
         expect(display.policy.id).to.equal('request-approval');
         expect(display.unsupportedText).to.equal(undefined);

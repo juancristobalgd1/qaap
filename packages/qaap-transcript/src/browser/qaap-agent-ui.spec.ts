@@ -99,7 +99,7 @@ describe('qaap-agent-ui', () => {
     });
 
     it('createApprovalPolicySheetOptionButton disables Ask before changes with the harness reason', () => {
-        const reason = 'Shell can\'t ask before changes yet; it runs in Autonomous mode.';
+        const reason = 'Shell can\'t ask before changes yet; it runs every action without asking.';
         let selectCount = 0;
         const onSelect = (): void => { selectCount++; };
         const disabled = createApprovalPolicySheetOptionButton({
@@ -131,7 +131,7 @@ describe('qaap-agent-ui', () => {
                 onSelect: () => undefined,
             });
         // Pi cannot ask: the Ask row is disabled and unchecked; the Autonomous row carries the check.
-        const askRow = row('request-approval', false, 'Pi can\'t ask before changes yet; it runs in Autonomous mode.');
+        const askRow = row('request-approval', false, 'Pi can\'t ask before changes yet; it runs every action without asking.');
         const autonomousRow = row('approve-for-me', true);
         expect(askRow.querySelector('.codicon-check')).to.equal(null);
         expect(askRow.disabled).to.equal(true);

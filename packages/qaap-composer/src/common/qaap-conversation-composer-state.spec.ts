@@ -202,6 +202,7 @@ describe('qaap-conversation-composer-state', () => {
         const autonomous = formatComposerRunPermissionsLabel('Build', 'request-approval', 'pi');
         expect(autonomous).to.equal(`Build · ${resolveAgentApprovalPolicyOption('approve-for-me').label}`);
         expect(formatComposerRunPermissionsLabel('Build', 'request-approval', 'qaiq')).to.equal('Build · Ask before changes');
+        expect(formatComposerRunPermissionsLabel('Build', 'request-approval', 'codex')).to.equal('Build · Ask before changes');
     });
 
     it('buildRuntimeComposerPersistPatch prefers explicit runtime model', () => {
