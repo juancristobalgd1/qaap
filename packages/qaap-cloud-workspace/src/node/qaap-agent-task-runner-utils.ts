@@ -141,6 +141,8 @@ export function applyTemplateVars(template: string, vars: Record<string, string>
     for (const [key, value] of Object.entries(vars)) {
         resolved = resolved.split(`{${key}}`).join(value.trim());
     }
+    // `{trust_flags}` is always filled by buildTemplateVars; drop it if a caller passed vars without it.
+    resolved = resolved.split('{trust_flags}').join('');
     return resolved.replace(/\s+/g, ' ').trim();
 }
 

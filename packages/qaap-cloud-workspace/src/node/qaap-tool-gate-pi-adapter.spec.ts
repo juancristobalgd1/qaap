@@ -8,9 +8,18 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { QAAP_BUILTIN_AGENT_DEFINITIONS } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 import { resolveQaapHarnessCapabilities } from '@theia/qaap-shared-core/lib/common/qaap-harness-capabilities';
+import { resolveAgentProjectTrustFlags } from '@theia/qaap-shared-core/lib/common/qaap-project-folder-trust';
 import { parseAgentLogForTranscript, createAgentStreamAccumulator } from '@theia/qaap-shared-core/lib/common/qaap-cli-transcript-stream';
-import { buildPiGateTemplateVars, resolveQaapToolGatePiExtensionPath, usesToolGateExtension } from './qaap-tool-gate-pi-adapter';
+import { resolveQaapToolGatePiExtensionPath, usesToolGateExtension } from './qaap-tool-gate-pi-adapter';
 import { applyTemplate } from './qaap-agent-task-runner-utils';
+import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
+import { buildTemplateVarsExtracted } from './qaap-agent-task-runner-streaming2';
+import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
+
+const templateVarsFor = (agentId: string, trusted: boolean): Record<string, string> => buildTemplateVarsExtracted({
+    isProjectFolderTrusted: () => trusted,
+    resolveQaiqProviderFlags: () => '',
+} as unknown as QaapAgentTaskRunnerContext, agentId, undefined, undefined, 'alice', '/w/repo');
 
 const piTemplate = (): string => QAAP_BUILTIN_AGENT_DEFINITIONS.find(agent => agent.id === 'pi')!.template;
 
@@ -25,7 +34,7 @@ describe('Pi tool gate adapter', () => {
     });
 
     it('builds `pi --mode json -p --no-session -e <abs> --no-approve …` for an untrusted folder', () => {
-        const command = applyTemplate(piTemplate(), 'fix it', buildPiGateTemplateVars());
+        const command = applyTemplate(piTemplate(), 'fix it', templateVarsFor('pi', false));
         expect(command).to.contain('pi --mode json -p --no-session -e ');
         expect(command).to.contain(`'${resolveQaapToolGatePiExtensionPath()}'`);
         expect(command).to.contain(' --no-approve ');
@@ -33,8 +42,39 @@ describe('Pi tool gate adapter', () => {
         expect(command.endsWith('\'fix it\'')).to.equal(true);
     });
 
+    it('a trusted project gives Pi --approve plus -e gate_ext; an untrusted one --no-approve plus -e gate_ext', () => {
+        const ext = `-e '${resolveQaapToolGatePiExtensionPath()}'`;
+        const trusted = applyTemplate(piTemplate(), 'x', templateVarsFor('pi', true));
+        const untrusted = applyTemplate(piTemplate(), 'x', templateVarsFor('pi', false));
+        expect(trusted).to.contain(`${ext} --approve `);
+        expect(untrusted).to.contain(`${ext} --no-approve `);
+        expect(trusted).to.not.contain('--no-approve');
+    });
+
+    it('a failing trust store makes the project untrusted instead of failing the spawn', () => {
+        const runner = Object.create(QaapAgentTaskRunner.prototype) as QaapAgentTaskRunner;
+        Object.assign(runner, {
+            projectFolderTrust: { isTrusted: () => { throw new Error('store unreadable'); } },
+            hostedWorktrees: { resolve: () => undefined },
+        });
+        expect(runner.isProjectFolderTrusted('alice', '/w/repo')).to.equal(false);
+    });
+
+    it('resolves trust flags from the registry lists (one source of truth)', () => {
+        expect(resolveAgentProjectTrustFlags('pi', true)).to.equal(resolveQaapHarnessCapabilities('pi').trustedFolderArgs.join(' '));
+        expect(resolveAgentProjectTrustFlags('pi', false)).to.equal(resolveQaapHarnessCapabilities('pi').untrustedFolderArgs.join(' '));
+    });
+
+    it('leaves other harnesses without trust flags and without a gate extension', () => {
+        expect(resolveAgentProjectTrustFlags('pi', false)).to.equal('--no-approve');
+        expect(templateVarsFor('codex', true).trust_flags).to.equal('');
+        expect(templateVarsFor('qaiq', false).trust_flags).to.equal('');
+        expect(templateVarsFor('pi', true).gate_ext).to.contain('qaap-tool-gate-pi.mjs');
+        expect(templateVarsFor('codex', true).gate_ext).to.equal(undefined);
+    });
+
     it('uses --approve only for a trusted folder', () => {
-        const command = applyTemplate(piTemplate(), 'x', buildPiGateTemplateVars(true));
+        const command = applyTemplate(piTemplate(), 'x', templateVarsFor('pi', true));
         expect(command).to.match(/(^|\s)--approve(\s|$)/);
         expect(command).to.not.contain('--no-approve');
     });

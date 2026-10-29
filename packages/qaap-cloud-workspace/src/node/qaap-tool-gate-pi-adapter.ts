@@ -16,18 +16,11 @@ export function resolveQaapToolGatePiExtensionPath(): string {
 }
 
 /**
- * Template variables of the Pi command (`{gate_ext}` and `{trust_flags}`).
- *
- * Folder trust is not modelled yet, so every folder is untrusted: `--no-approve` keeps Pi from loading
- * project-local extensions, settings and MCP config. A trusted folder maps to the registry's
- * `trustedFolderArgs`; never an unconditional `--approve`.
+ * Template variable `{gate_ext}` of the Pi command. `{trust_flags}` is NOT set here: it comes from the
+ * per-project folder trust decision (see `resolveAgentProjectTrustFlags`), the single source of truth.
  */
-export function buildPiGateTemplateVars(folderTrusted: boolean = false): Record<string, string> {
-    const caps = resolveQaapHarnessCapabilities('pi');
-    return {
-        gate_ext: quoteShellArg(resolveQaapToolGatePiExtensionPath()),
-        trust_flags: (folderTrusted ? caps.trustedFolderArgs : caps.untrustedFolderArgs).join(' '),
-    };
+export function buildPiGateTemplateVars(): Record<string, string> {
+    return { gate_ext: quoteShellArg(resolveQaapToolGatePiExtensionPath()) };
 }
 
 /** True for harnesses whose tool calls reach the gate through an in-process extension (Pi today). */

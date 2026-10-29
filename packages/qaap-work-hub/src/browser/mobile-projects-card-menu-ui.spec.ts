@@ -53,7 +53,7 @@ describe('MobileProjectsCardMenuUi.buildProjectOptionsMenu', () => {
             dispatchEvent: () => false,
         } as MediaQueryList);
         const host = {
-            projectsService: { canRemove: () => true },
+            projectsService: { canRemove: () => true, getProjectCwd: () => undefined },
             conversationIndexUi: {
                 conversationsForProject: () => [],
                 countFailedTasks: () => 0,
@@ -105,7 +105,7 @@ describe('MobileProjectsCardMenuUi project Open project item', () => {
         const selected: string[] = [];
         let hidOverlay = false;
         const host = {
-            projectsService: { canRemove: () => true },
+            projectsService: { canRemove: () => true, getProjectCwd: () => undefined },
             conversationIndexUi: {
                 conversationsForProject: () => [],
                 countFailedTasks: () => 0,
