@@ -24,8 +24,9 @@ fi
 case "$*" in
     *'docker exec --user 1001:1001'*) printf '%b' "${TEST_PROBE_OUTPUT-PROBE:uid:1001\nPROBE:backend-procs:1\nPROBE:done\n}" ;;
     *'docker top'*) printf '%b' "${TEST_TOP_OUTPUT-PID UID COMMAND\n1 1000 docker-init\n2 1000 node\n3 101001 claude\n}" ;;
-    *'docker ps --filter'*) printf '%b' "${TEST_RUNNING_BACKENDS-qaap-backend-aaaaaaaaaaaa
-qaap-backend-bbbbbbbbbbbb
+    *'docker unpause'*) echo "$*" >> "$TEST_UNPAUSE_LOG"; exit "${TEST_UNPAUSE_EXIT:-0}" ;;
+    *'docker ps --filter'*) printf '%b' "${TEST_RUNNING_BACKENDS-qaap-backend-aaaaaaaaaaaa running
+qaap-backend-bbbbbbbbbbbb running
 }" ;;
     *'docker ps -a'*tenant-backend*) printf '%b' "${TEST_TENANT_BACKENDS-alice qaap-backend-aaaaaaaaaaaa
 bob qaap-backend-bbbbbbbbbbbb
@@ -106,6 +107,11 @@ if (variant === 'stopped-noflag' || variant === 'stopped-privileged') {
     b.Config.Env = b.Config.Env.filter(entry => !entry.startsWith('QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP='));
 }
 if (variant === 'stopped-privileged') { b.HostConfig.Privileged = true; }
+if (variant === 'paused-noflag' || variant === 'paused-privileged') {
+    b.State.Paused = true;
+    b.Config.Env = b.Config.Env.filter(entry => !entry.startsWith('QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP='));
+}
+if (variant === 'paused-privileged') { b.HostConfig.Privileged = true; }
 if (variant === 'shared') { b.Mounts[0].Source = '/srv/repos/users/alice'; }
 if (variant === 'secret') { a.Config.Env.push('QAAP_TENANT_BACKEND_MASTER_SECRET=x'); }
 if (variant === 'socket') { a.Mounts[4] = { Source: '/run/user/1000/docker.sock', Destination: '/home/theia/.theia', RW: true }; }
@@ -173,6 +179,14 @@ grep -q 'INFO backend qaap-backend-bbbbbbbbbbbb (bob) is stopped and will be rec
     || { cat "$TEST_ROOT/output"; echo 'expected stopped-backend INFO' >&2; exit 1; }
 write_inspect stopped-privileged
 expect_status 1 qaap-vps-launch-gate.sh
+# Same for a reaper-paused backend: uid/flag drift is INFO, any other break blocks.
+write_inspect paused-noflag
+expect_status 0 qaap-vps-launch-gate.sh
+grep -q 'INFO backend qaap-backend-bbbbbbbbbbbb (bob) is paused; revalidated on next wake' "$TEST_ROOT/output" \
+    || { cat "$TEST_ROOT/output"; echo 'expected paused-backend INFO' >&2; exit 1; }
+write_inspect paused-privileged
+expect_status 1 qaap-vps-launch-gate.sh
+write_inspect good
 # Runtime probe: a LEAK line from the agent-uid probe, or an agent CLI sharing the backend uid, fails.
 write_inspect good
 expect_status 0 qaap-vps-launch-gate.sh
@@ -192,9 +206,33 @@ for probe in '' 'PROBE:uid:0\nPROBE:backend-procs:1\nPROBE:done\n' 'PROBE:uid:10
     grep -q 'probe inconclusive' "$TEST_ROOT/output" || { cat "$TEST_ROOT/output"; echo 'expected inconclusive probe' >&2; exit 1; }
 done
 unset TEST_PROBE_OUTPUT
-export TEST_RUNNING_BACKENDS=''
+export TEST_UNPAUSE_LOG="$TEST_ROOT/unpaused"
+# Only paused backends: one is unpaused (and left running), then really probed; paused ones are never exec'd.
+rm -f "$TEST_ROOT/unpaused"
+export TEST_RUNNING_BACKENDS='qaap-backend-aaaaaaaaaaaa paused\nqaap-backend-bbbbbbbbbbbb paused\n'
+expect_status 0 qaap-vps-launch-gate.sh
+grep -q 'unpaused qaap-backend-aaaaaaaaaaaa to probe it' "$TEST_ROOT/output" || { cat "$TEST_ROOT/output"; echo 'expected unpause INFO' >&2; exit 1; }
+grep -q 'agent uid 1001 cannot read backend secrets in qaap-backend-aaaaaaaaaaaa' "$TEST_ROOT/output" || { cat "$TEST_ROOT/output"; echo 'expected probe after unpause' >&2; exit 1; }
+[[ "$(wc -l < "$TEST_ROOT/unpaused")" -eq 1 ]] || { cat "$TEST_ROOT/unpaused"; echo 'expected exactly one unpause' >&2; exit 1; }
+grep -q "unpause 'qaap-backend-aaaaaaaaaaaa'" "$TEST_ROOT/unpaused" || { cat "$TEST_ROOT/unpaused"; echo 'wrong unpause target' >&2; exit 1; }
+# ...and the unpaused one still fails closed on an inconclusive probe or a failed unpause.
+export TEST_PROBE_OUTPUT=''
 expect_status 1 qaap-vps-launch-gate.sh
-grep -q 'no running tenant backend to probe' "$TEST_ROOT/output" || { cat "$TEST_ROOT/output"; echo 'expected missing probe target' >&2; exit 1; }
+unset TEST_PROBE_OUTPUT
+export TEST_UNPAUSE_EXIT=1
+expect_status 1 qaap-vps-launch-gate.sh
+grep -q 'could not unpause qaap-backend-aaaaaaaaaaaa' "$TEST_ROOT/output" || { cat "$TEST_ROOT/output"; echo 'expected unpause failure' >&2; exit 1; }
+unset TEST_UNPAUSE_EXIT
+# A running backend is preferred: no unpause at all.
+rm -f "$TEST_ROOT/unpaused"
+export TEST_RUNNING_BACKENDS='qaap-backend-aaaaaaaaaaaa paused\nqaap-backend-bbbbbbbbbbbb running\n'
+expect_status 0 qaap-vps-launch-gate.sh
+[[ ! -e "$TEST_ROOT/unpaused" ]] || { cat "$TEST_ROOT/unpaused"; echo 'must not unpause when a running backend exists' >&2; exit 1; }
+# No running or paused backend: explicit SKIP, never an OK for the probe (S1 carries the guarantee).
+export TEST_RUNNING_BACKENDS=''
+expect_status 0 qaap-vps-launch-gate.sh
+grep -q 'SKIP agent-uid runtime probe' "$TEST_ROOT/output" || { cat "$TEST_ROOT/output"; echo 'expected explicit SKIP' >&2; exit 1; }
+grep -q 'agent uid 1001 cannot read' "$TEST_ROOT/output" && { cat "$TEST_ROOT/output"; echo 'SKIP must not report a probe OK' >&2; exit 1; }
 unset TEST_RUNNING_BACKENDS
 for variant in shared secret socket privileged; do
     write_inspect "$variant"
@@ -206,4 +244,4 @@ export TEST_AUTH_CONFIG='{"ok":true,"ready":true,"skipAuth":false,"oauthConfigur
 expect_status 1 qaap-verify-launch-readiness.sh
 export TEST_AUTH_CONFIG='{"ok":true,"ready":true,"skipAuth":false,"oauthConfigured":true,"githubOAuth":true,"productionRuntime":true,"agentUidPerUser":true,"backendIsolationReady":true,"backendIsolationMode":"per-tenant","build":"abcdef123456","betaAccessRequired":true,"betaAccessConfigured":true}'
 expect_status 0 qaap-verify-launch-readiness.sh
-echo 'PASS: missing tenants, uid/flag/LEAK/inconclusive probes, stopped-backend drift, failed isolation, per-tenant backend evidence/isolation, successful isolation, missing preview domain, operator-only allowlist, missing invitations, configured invitations'
+echo 'PASS: missing tenants, uid/flag/LEAK/inconclusive probes, stopped/paused-backend drift, paused-only/none probe targets, failed isolation, per-tenant backend evidence/isolation, successful isolation, missing preview domain, operator-only allowlist, missing invitations, configured invitations'

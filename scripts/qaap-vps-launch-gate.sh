@@ -165,16 +165,38 @@ if [[ "$BACKEND_ISOLATION_MODE" == "per-tenant" && "$BACKEND_PER_TENANT" =~ ^(1|
         else
             bad "backend-per-tenant isolation failed for ${LOGIN_A} / ${LOGIN_B} — release blocked"
         fi
-        # Runtime probe (read-only): prove the AGENT identity (uid 1001) cannot read the backend's
+        # Runtime probe (read-only, except unpausing one idle backend below): prove the AGENT identity (uid 1001) cannot read the backend's
         # secrets, instead of trusting the static config. Fail closed: the probe must report that it ran
         # as uid 1001, found the backend process and finished; an exec failure or an empty answer blocks.
         # `mai[n]` keeps the probe's own `sh -c` command line from matching itself.
         PROBE_SCRIPT='echo "PROBE:uid:$(id -u)"; n=0; for d in /proc/[0-9]*; do p="${d#/proc/}"; [ "$p" = "$$" ] && continue; if tr "\0" " " < "$d/cmdline" 2>/dev/null | grep -q "src-gen/backend/mai[n][.]js"; then n=$((n+1)); cat "$d/environ" >/dev/null 2>&1 && echo "LEAK:environ:$p"; elif [ "$p" = 1 ]; then cat "$d/environ" >/dev/null 2>&1 && echo "LEAK:environ:$p"; fi; done; echo "PROBE:backend-procs:$n"; ls /home/theia/.qaap >/dev/null 2>&1 && echo LEAK:config; cat /home/theia/.qaap/tenant.sqlite >/dev/null 2>&1 && echo LEAK:sqlite; echo PROBE:done'
-        RUNNING_BACKENDS="$(dexec 'docker ps --filter label=com.qaap.managed=true --filter label=com.qaap.tenant-backend=true --format "{{.Names}}"' || true)"
-        PROBED=0
-        while read -r backend_name; do
+        # Probe targets: every running, unpaused backend. The reaper pauses idle backends and a paused
+        # container cannot be exec'd, so when only paused ones exist ONE is unpaused and probed (a real
+        # docker exec in its own context, not a weaker sidecar). It is deliberately NOT re-paused: a
+        # tenant request may wake it in that window, and freezing a backend the orchestrator just handed
+        # out would hang that tenant; an idle running backend is only memory until the reaper's idle
+        # stop. With no running or paused backend nothing can be probed: SKIP (never an OK), and the
+        # guarantee rests on S1 (hosted startup and every wake refuse a non-uid-0 tenant backend).
+        BACKEND_STATES="$(dexec 'docker ps --filter label=com.qaap.managed=true --filter label=com.qaap.tenant-backend=true --format "{{.Names}} {{.State}}"' || true)"
+        PROBE_TARGETS=()
+        PAUSED_TARGET=''
+        while read -r backend_name backend_state _; do
             [[ "$backend_name" =~ ^qaap-backend-[0-9a-f]{12}$ ]] || continue
-            PROBED=$((PROBED + 1))
+            if [[ "$backend_state" == running ]]; then
+                PROBE_TARGETS+=("$backend_name")
+            elif [[ "$backend_state" == paused && -z "$PAUSED_TARGET" ]]; then
+                PAUSED_TARGET="$backend_name"
+            fi
+        done <<< "$BACKEND_STATES"
+        if [[ "${#PROBE_TARGETS[@]}" -eq 0 && -n "$PAUSED_TARGET" ]]; then
+            if dexec "docker unpause '${PAUSED_TARGET}'" >/dev/null 2>&1; then
+                echo "  INFO only paused tenant backends: unpaused ${PAUSED_TARGET} to probe it (left running; the reaper re-pauses or stops it when idle)"
+                PROBE_TARGETS+=("$PAUSED_TARGET")
+            else
+                bad "could not unpause ${PAUSED_TARGET} to probe it as agent uid 1001 — release blocked"
+            fi
+        fi
+        for backend_name in "${PROBE_TARGETS[@]}"; do
             PROBE_OUT="$(dexec "docker exec --user 1001:1001 '${backend_name}' sh -c '${PROBE_SCRIPT}'" 2>/dev/null || true)"
             # `docker top` needs the pid column; the first row is the container init, which shares the
             # backend's (host-mapped) uid. A named agent CLI running under that uid shares it with the backend.
@@ -190,9 +212,9 @@ if [[ "$BACKEND_ISOLATION_MODE" == "per-tenant" && "$BACKEND_PER_TENANT" =~ ^(1|
             else
                 ok "agent uid 1001 cannot read backend secrets in ${backend_name}"
             fi
-        done <<< "$RUNNING_BACKENDS"
-        if [[ "$PROBED" -eq 0 ]]; then
-            bad "no running tenant backend to probe as agent uid 1001 — wake a tenant (open its Work Hub) and re-run"
+        done
+        if [[ "${#PROBE_TARGETS[@]}" -eq 0 && -z "$PAUSED_TARGET" ]]; then
+            echo "  SKIP agent-uid runtime probe: no running or paused tenant backend (stopped ones are recreated and re-checked by S1 on wake)"
         fi
     else
         bad "only ${TENANT_COUNT} tenant backend(s): exercise two disposable invited accounts (agent + New Worktree + parallel) before release"

@@ -92,10 +92,12 @@ function checkBackend(container, login) {
         problems.push(`runs as root on a daemon not verified as rootless (User='${user}')`);
     }
     // The uid/agent-drop contract is enforced again on every wake: createOrValidateTenantBackend
-    // recreates (never just starts) a stopped backend whose user, env or image drifted. A stopped
-    // backend therefore cannot run with a stale contract, so its drift is reported, not blocking.
-    // Anything not explicitly stopped (running, paused, or no State in the inspect) stays fail-closed.
+    // recreates (never just starts) a stopped backend whose user, env or image drifted, and a paused
+    // (reaper-frozen, so not executing) backend is unpaused and revalidated the same way before it
+    // serves. Neither can run with a stale contract, so their drift is reported, not blocking.
+    // Anything else (running, or no State in the inspect) stays fail-closed.
     const stopped = container.State?.Running === false;
+    const paused = container.State?.Paused === true;
     const uidDrift = [];
     const rootUser = /^(0|root)(:(0|root))?$/.test(user);
     if (rootlessDaemon && user && !rootUser) {
@@ -111,6 +113,8 @@ function checkBackend(container, login) {
     }
     if (stopped && uidDrift.length) {
         info(`${label} is stopped and will be recreated on next wake: ${uidDrift.join('; ')}`);
+    } else if (paused && uidDrift.length) {
+        info(`${label} is paused; revalidated on next wake: ${uidDrift.join('; ')}`);
     } else {
         problems.push(...uidDrift);
     }
