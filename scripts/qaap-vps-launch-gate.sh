@@ -185,7 +185,16 @@ if [[ "$BACKEND_ISOLATION_MODE" == "per-tenant" && "$BACKEND_PER_TENANT" =~ ^(1|
             if [[ "$backend_state" == running ]]; then
                 PROBE_TARGETS+=("$backend_name")
             elif [[ "$backend_state" == paused && -z "$PAUSED_TARGET" ]]; then
-                PAUSED_TARGET="$backend_name"
+                # Only a paused backend WITHOUT uid/agent-drop drift is a valid stand-in: a drifted one
+                # (e.g. User=1000) is recreated on wake anyway, and probing it would prove nothing.
+                PAUSED_CONTRACT="$(dexec "docker inspect --format '{{.Config.User}} {{range .Config.Env}}{{if eq . \"QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP=1\"}}DROP {{end}}{{if eq . \"QAAP_AGENT_UID=1001\"}}AGENT {{end}}{{end}}' '${backend_name}'" 2>/dev/null || true)"
+                if [[ "$PAUSED_CONTRACT" =~ ^(0|root)(:(0|root))?\  && "$PAUSED_CONTRACT" == *DROP* && "$PAUSED_CONTRACT" == *AGENT* ]]; then
+                    PAUSED_TARGET="$backend_name"
+                else
+                    echo "  INFO paused ${backend_name} has uid/agent-drop drift (revalidated on next wake); not used as probe target"
+                fi
+            elif [[ "$backend_state" == restarting ]]; then
+                echo "  INFO ${backend_name} is restarting; not probed (re-run the gate once it is up)"
             fi
         done <<< "$BACKEND_STATES"
         if [[ "${#PROBE_TARGETS[@]}" -eq 0 && -n "$PAUSED_TARGET" ]]; then

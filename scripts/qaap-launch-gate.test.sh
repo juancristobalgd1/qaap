@@ -31,6 +31,7 @@ qaap-backend-bbbbbbbbbbbb running
     *'docker ps -a'*tenant-backend*) printf '%b' "${TEST_TENANT_BACKENDS-alice qaap-backend-aaaaaaaaaaaa
 bob qaap-backend-bbbbbbbbbbbb
 }" ;;
+    *'docker inspect --format'*) printf '%s' "${TEST_PAUSED_CONTRACT-0:0 DROP AGENT }" ;;
     *'docker inspect'*) cat "$TEST_INSPECT_FILE" ;;
     *'docker info'*SecurityOptions*) printf '%s' "${TEST_DAEMON_SECURITY-[\"name=seccomp,profile=builtin\",\"name=rootless\"]}" ;;
     *' sh -c id') echo 'uid=1000(theia)' ;;
@@ -223,6 +224,23 @@ export TEST_UNPAUSE_EXIT=1
 expect_status 1 qaap-vps-launch-gate.sh
 grep -q 'could not unpause qaap-backend-aaaaaaaaaaaa' "$TEST_ROOT/output" || { cat "$TEST_ROOT/output"; echo 'expected unpause failure' >&2; exit 1; }
 unset TEST_UNPAUSE_EXIT
+# Paused backends with uid/flag drift are never a probe stand-in: none unpaused, explicit SKIP.
+rm -f "$TEST_ROOT/unpaused"
+for contract in '1000:1000 DROP AGENT ' '0:0 AGENT ' '0:0 DROP ' ''; do
+    export TEST_PAUSED_CONTRACT="$contract"
+    expect_status 0 qaap-vps-launch-gate.sh
+    grep -q 'has uid/agent-drop drift' "$TEST_ROOT/output" || { cat "$TEST_ROOT/output"; echo 'expected drift INFO' >&2; exit 1; }
+    grep -q 'SKIP agent-uid runtime probe' "$TEST_ROOT/output" || { cat "$TEST_ROOT/output"; echo 'expected SKIP' >&2; exit 1; }
+    grep -q 'agent uid 1001 cannot read' "$TEST_ROOT/output" && { cat "$TEST_ROOT/output"; echo 'drifted paused backend must not yield a probe OK' >&2; exit 1; }
+    [[ ! -e "$TEST_ROOT/unpaused" ]] || { cat "$TEST_ROOT/unpaused"; echo 'must not unpause a drifted backend' >&2; exit 1; }
+done
+unset TEST_PAUSED_CONTRACT
+# A restarting backend is reported, not silently skipped.
+export TEST_RUNNING_BACKENDS='qaap-backend-aaaaaaaaaaaa restarting\n'
+expect_status 0 qaap-vps-launch-gate.sh
+grep -q 'qaap-backend-aaaaaaaaaaaa is restarting; not probed' "$TEST_ROOT/output" || { cat "$TEST_ROOT/output"; echo 'expected restarting INFO' >&2; exit 1; }
+grep -q 'SKIP agent-uid runtime probe' "$TEST_ROOT/output" || { cat "$TEST_ROOT/output"; echo 'expected SKIP' >&2; exit 1; }
+export TEST_RUNNING_BACKENDS='qaap-backend-aaaaaaaaaaaa paused\nqaap-backend-bbbbbbbbbbbb running\n'
 # A running backend is preferred: no unpause at all.
 rm -f "$TEST_ROOT/unpaused"
 export TEST_RUNNING_BACKENDS='qaap-backend-aaaaaaaaaaaa paused\nqaap-backend-bbbbbbbbbbbb running\n'
@@ -244,4 +262,4 @@ export TEST_AUTH_CONFIG='{"ok":true,"ready":true,"skipAuth":false,"oauthConfigur
 expect_status 1 qaap-verify-launch-readiness.sh
 export TEST_AUTH_CONFIG='{"ok":true,"ready":true,"skipAuth":false,"oauthConfigured":true,"githubOAuth":true,"productionRuntime":true,"agentUidPerUser":true,"backendIsolationReady":true,"backendIsolationMode":"per-tenant","build":"abcdef123456","betaAccessRequired":true,"betaAccessConfigured":true}'
 expect_status 0 qaap-verify-launch-readiness.sh
-echo 'PASS: missing tenants, uid/flag/LEAK/inconclusive probes, stopped/paused-backend drift, paused-only/none probe targets, failed isolation, per-tenant backend evidence/isolation, successful isolation, missing preview domain, operator-only allowlist, missing invitations, configured invitations'
+echo 'PASS: missing tenants, uid/flag/LEAK/inconclusive probes, stopped/paused-backend drift, paused-only/drifted-paused/restarting/none probe targets, failed isolation, per-tenant backend evidence/isolation, successful isolation, missing preview domain, operator-only allowlist, missing invitations, configured invitations'
