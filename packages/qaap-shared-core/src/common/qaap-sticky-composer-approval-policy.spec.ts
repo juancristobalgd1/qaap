@@ -47,10 +47,16 @@ describe('qaap-sticky-composer-approval-policy', () => {
         }
     });
 
-    it('shows Autonomous mode only for a harness that runs every action unchecked (pi)', () => {
-        expect(resolveEffectiveAgentApprovalPolicyId('request-approval', 'pi')).to.equal('approve-for-me');
-        expect(resolveApprovalPolicyUnsupportedMode('request-approval', 'pi')).to.equal('runs-unchecked');
-        expect(isApprovalPolicyUnsupportedByAgent('request-approval', 'pi')).to.equal(true);
+    it('shows Autonomous mode only for a harness that runs every action unchecked (custom agents)', () => {
+        expect(resolveEffectiveAgentApprovalPolicyId('request-approval', 'my-custom-agent')).to.equal('approve-for-me');
+        expect(resolveApprovalPolicyUnsupportedMode('request-approval', 'my-custom-agent')).to.equal('runs-unchecked');
+        expect(isApprovalPolicyUnsupportedByAgent('request-approval', 'my-custom-agent')).to.equal(true);
+    });
+
+    it('keeps Ask before changes for Pi, which asks through the gate extension', () => {
+        expect(resolveEffectiveAgentApprovalPolicyId('request-approval', 'pi')).to.equal('request-approval');
+        expect(resolveApprovalPolicyUnsupportedMode('request-approval', 'pi')).to.equal(undefined);
+        expect(isApprovalPolicyUnsupportedByAgent('request-approval', 'pi')).to.equal(false);
     });
 
     it('keeps Ask before changes for a harness that refuses gated actions (claude, codex, opencode)', () => {
@@ -78,10 +84,16 @@ describe('qaap-sticky-composer-approval-policy', () => {
         expect(resolveEffectiveAgentApprovalPolicyId(undefined, 'pi')).to.equal(undefined);
     });
 
-    it('toolbar chip for pi shows Autonomous mode with the runs-unchecked warning', () => {
-        const display = resolveApprovalPolicyToolbarDisplay('request-approval', { id: 'pi', label: 'Pi' });
+    it('toolbar chip for a custom agent shows Autonomous mode with the runs-unchecked warning', () => {
+        const display = resolveApprovalPolicyToolbarDisplay('request-approval', { id: 'my-custom-agent', label: 'Custom' });
         expect(display.policy.id).to.equal('approve-for-me');
-        expect(display.unsupportedText).to.equal('Pi can\'t ask before changes yet; it runs every action without asking.');
+        expect(display.unsupportedText).to.equal('Custom can\'t ask before changes yet; it runs every action without asking.');
+    });
+
+    it('toolbar chip for pi keeps Ask before changes with no warning', () => {
+        const display = resolveApprovalPolicyToolbarDisplay('request-approval', { id: 'pi', label: 'Pi' });
+        expect(display.policy.id).to.equal('request-approval');
+        expect(display.unsupportedText).to.equal(undefined);
     });
 
     it('toolbar chip for claude keeps Ask before changes with the refuses warning', () => {
