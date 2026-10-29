@@ -224,7 +224,9 @@ export interface QaapAgentTaskRunnerContext {
     extractLastAgentMentionToken(prompt: string): string | undefined;
     stripLeadingAgentMention(prompt: string): string;
     buildTemplateVars(agentId: string, agentModel?: QaapCreateAgentTaskQaiqModel, interaction?: QaapQaiqInteractionFlagOptions,
-        ownerLogin?: string): Record<string, string>;
+        ownerLogin?: string, cwd?: string): Record<string, string>;
+    /** Whether the owner chose "Trust folder" for this project folder (undecided = false). */
+    isProjectFolderTrusted(ownerLogin: string | undefined, cwd: string): boolean;
     resolveQaiqProviderFlags(ownerLogin?: string): string;
     resolveQaapQaiqBinding(ownerLogin?: string): QaapQaiqModelBinding | undefined;
     resolveAgentBindingForTask(task: QaapAgentTask): QaapQaiqModelBinding | undefined;

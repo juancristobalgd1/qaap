@@ -62,7 +62,7 @@ export interface QaapAgentToolCommandAudit {
     readonly command?: string;
     readonly decision: 'approve' | 'reject' | 'queue';
     /** Set when Qaap answered without a prompt for a specific reason (e.g. a provably read-only shell command). */
-    readonly autoApprovalReason?: 'read-only-shell';
+    readonly autoApprovalReason?: 'read-only-shell' | 'input-rewritten';
 }
 
 /**

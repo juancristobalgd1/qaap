@@ -26,10 +26,12 @@ describe('QAIQ/OpenClaude model routing', () => {
         expect(buildTemplateVarsExtracted(ctx as unknown as QaapAgentTaskRunnerContext, 'openclaude')).to.deep.equal({
             qaiq_flags: '',
             model_flags: '',
+            trust_flags: '',
         });
         expect(buildTemplateVarsExtracted(ctx as unknown as QaapAgentTaskRunnerContext, 'qaiq')).to.deep.equal({
             qaiq_flags: '--dangerously-skip-permissions --provider openai --model qaiq/custom-model',
             model_flags: '',
+            trust_flags: '',
         });
     });
 

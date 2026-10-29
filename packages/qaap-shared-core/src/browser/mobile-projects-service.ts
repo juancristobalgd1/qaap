@@ -29,6 +29,7 @@ import {
 } from './mobile-projects-types';
 import { normalizeWorkHubViewId } from '../common/qaap-work-hub-surfaces';
 import { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
+import { MobileProjectFolderTrust } from './mobile-projects-folder-trust';
 import {
     MOBILE_PROJECTS_CUSTOM_PROJECTS_BASE,
     MOBILE_PROJECTS_DISPLAY_NAMES_BASE,
@@ -160,8 +161,16 @@ export class MobileProjectsService {
     }
 
     /** Register a finished import as a project; `open` also switches the workspace (page reload). */
-    finishGithubRepositoryImport(result: QaapGithubOpenRepositoryResponse, open: boolean): Promise<MobileProjectEntry[] | undefined> {
-        return finishGithubRepositoryImportExtracted(this, result, open);
+    async finishGithubRepositoryImport(result: QaapGithubOpenRepositoryResponse, open: boolean): Promise<MobileProjectEntry[] | undefined> {
+        const projects = await finishGithubRepositoryImportExtracted(this, result, open);
+        // `open` reloads the page, and the reloaded page asks through loadProjects. Otherwise ask now.
+        if (!open) {
+            const cwd = this.cwdFromFileUri(new URI(result.workspaceUri));
+            if (cwd) {
+                void this.folderTrust.askIfUndecided(cwd, result.repository.fullName);
+            }
+        }
+        return projects;
     }
 
     /** Keep showing progress of an import whose dialog was closed, and list the project when done. */
@@ -337,7 +346,24 @@ export class MobileProjectsService {
     }
 
     async loadProjects(): Promise<MobileProjectEntry[]> {
-        return this.withoutPendingRemovals(await loadProjectsExtracted(this));
+        const projects = this.withoutPendingRemovals(await loadProjectsExtracted(this));
+        // The current project is the one the Work Hub is working in; a reload after "Open" lands here too.
+        for (const project of projects) {
+            if (project.isCurrent) {
+                this.askFolderTrustIfUndecided(project);
+            }
+        }
+        return projects;
+    }
+
+    /** "Do you trust the files in this folder?" for the project's folder, when no decision exists yet. */
+    readonly folderTrust = new MobileProjectFolderTrust();
+
+    askFolderTrustIfUndecided(project: MobileProjectEntry): void {
+        const cwd = this.getProjectCwd(project);
+        if (cwd) {
+            void this.folderTrust.askIfUndecided(cwd, project.name);
+        }
     }
 
     /** @internal Used by the extracted mobile-projects-service-* modules. */
