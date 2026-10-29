@@ -43,6 +43,7 @@ const ALLOWED_BACKEND_CAPS = new Set(['SETUID', 'SETGID']);
 
 let failures = 0;
 const ok = message => console.log(`  OK   ${message}`);
+const info = message => console.log(`  INFO ${message}`);
 const bad = message => {
     console.error(`  FAIL ${message}`);
     failures++;
@@ -90,17 +91,32 @@ function checkBackend(container, login) {
     if (!user || (/^(0|root)(:|$)/.test(user) && !rootlessDaemon)) {
         problems.push(`runs as root on a daemon not verified as rootless (User='${user}')`);
     }
+    // The uid/agent-drop contract is enforced again on every wake: createOrValidateTenantBackend
+    // recreates (never just starts) a stopped backend whose user, env or image drifted, and a paused
+    // (reaper-frozen, so not executing) backend is unpaused and revalidated the same way before it
+    // serves. Neither can run with a stale contract, so their drift is reported, not blocking.
+    // Anything else (running, or no State in the inspect) stays fail-closed.
+    const stopped = container.State?.Running === false;
+    const paused = container.State?.Paused === true;
+    const uidDrift = [];
     const rootUser = /^(0|root)(:(0|root))?$/.test(user);
     if (rootlessDaemon && user && !rootUser) {
-        problems.push(`shared backend/agent uid: rootless tenants must run as uid 0 so agents can be dropped (User='${user}')`);
+        uidDrift.push(`shared backend/agent uid: rootless tenants must run as uid 0 so agents can be dropped (User='${user}')`);
     }
     if (!/^(1|true)$/i.test(String(env.get('QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP') ?? ''))) {
-        problems.push('QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP=1 missing (a shared backend/agent uid would not be refused)');
+        uidDrift.push('QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP=1 missing (a shared backend/agent uid would not be refused)');
     }
     const agentUid = String(env.get('QAAP_AGENT_UID') ?? '').trim();
     const containerUid = user.split(':')[0];
     if (!/^\d+$/.test(agentUid) || Number(agentUid) === 0 || agentUid === containerUid) {
-        problems.push(`QAAP_AGENT_UID='${agentUid}' must be a non-zero uid different from the backend uid`);
+        uidDrift.push(`QAAP_AGENT_UID='${agentUid}' must be a non-zero uid different from the backend uid`);
+    }
+    if (stopped && uidDrift.length) {
+        info(`${label} is stopped and will be recreated on next wake: ${uidDrift.join('; ')}`);
+    } else if (paused && uidDrift.length) {
+        info(`${label} is paused; revalidated on next wake: ${uidDrift.join('; ')}`);
+    } else {
+        problems.push(...uidDrift);
     }
     if (hostConfig.Privileged === true) {
         problems.push('privileged');

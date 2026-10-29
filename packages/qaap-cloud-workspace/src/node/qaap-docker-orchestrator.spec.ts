@@ -990,6 +990,58 @@ describe('QaapDockerOrchestrator', () => {
             expect(options.Env).to.include.members(['QAAP_AGENT_UID=1001', 'QAAP_AGENT_GID=1001']);
             expect(options.Env).to.include('QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP=1');
         });
+
+        it('recreates (never just starts) a stopped backend whose env, user or image drifted', async () => {
+            const specRoot = path.join(os.tmpdir(), 'qaap-orchestrator-spec-stopped-drift');
+            process.env.QAAP_REPOS_ROOT = path.join(specRoot, 'repos');
+            process.env.QAAP_TENANT_NETWORK_MODE = 'isolated-bridge';
+            process.env.QAAP_TENANT_CONFIG_ROOT = path.join(specRoot, 'config');
+            process.env.QAAP_TENANT_BACKEND_MASTER_SECRET = 'x'.repeat(32);
+            process.env.QAAP_DOCKER_PUBLISH_HOST_IP = '127.0.0.1';
+            process.env.QAAP_DOCKER_ROOTLESS = '1';
+            process.env.QAAP_TENANT_CONTAINER_UID = '0';
+            process.env.QAAP_TENANT_CONTAINER_GID = '0';
+            delete process.env.QAAP_BACKEND_PER_TENANT;
+            delete process.env.QAAP_TENANT_EGRESS_PROXY_IMAGE;
+            delete process.env.QAAP_DOCKER_NODES;
+            const fakeDocker = createFakeTenantBackendDocker();
+            const orchestrator = access(new QaapDockerOrchestrator());
+            orchestrator.docker = fakeDocker.docker;
+            orchestrator.getDocker = async () => fakeDocker.docker;
+            orchestrator.waitForTenantBackendReady = async () => undefined;
+            const root = path.join(specRoot, 'repos', 'users', 'alice');
+            const backends = (): typeof fakeDocker.created => fakeDocker.created.filter(container => container.name.startsWith('qaap-backend-'));
+            const latest = (): FakeBackendContainerInfo => backends()[backends().length - 1].info;
+            await orchestrator.createOrValidateTenantBackend('alice', root);
+            expect(backends()).to.have.length(1);
+
+            // Baseline: an idle-stopped backend that still matches the contract is only started.
+            latest().State.Running = false;
+            await orchestrator.createOrValidateTenantBackend('alice', root);
+            expect(backends()).to.have.length(1);
+            expect(latest().State.Running).to.equal(true);
+
+            const drifts: Array<[string, (info: FakeBackendContainerInfo) => void]> = [
+                ['missing agent-drop flag', info => {
+                    info.Config.Env = (info.Config.Env as string[]).filter(entry => !entry.startsWith('QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP='));
+                }],
+                ['non-root user', info => { info.Config.User = '1000:1000'; }],
+                ['stale image', info => { info.Image = 'sha256:previous-release'; }],
+            ];
+            for (const [label, drift] of drifts) {
+                const before = backends().length;
+                const stale = latest();
+                stale.State.Running = false;
+                drift(stale);
+                await orchestrator.createOrValidateTenantBackend('alice', root);
+                expect(backends(), label).to.have.length(before + 1);
+                const fresh = latest();
+                expect(fresh, label).to.not.equal(stale);
+                expect(fresh.Config.User, label).to.equal('0:0');
+                expect(fresh.Config.Env, label).to.include('QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP=1');
+                expect(fresh.Image, label).to.equal('sha256:tenant-image');
+            }
+        });
     });
 
     describe('getTenantContainerUser', () => {

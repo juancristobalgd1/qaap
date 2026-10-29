@@ -15,6 +15,7 @@ function backend(login, secret, capAdd, options = {}) {
     const seg = login.toLowerCase();
     return {
         Name: `/qaap-backend-${seg}`,
+        ...(options.running === undefined ? {} : { State: { Running: options.running, Paused: options.paused === true } }),
         Config: {
             User: options.user ?? '0:0',
             Labels: { 'com.qaap.managed': 'true', 'com.qaap.tenant-backend': 'true', 'com.qaap.tenant-login': login },
@@ -26,6 +27,7 @@ function backend(login, secret, capAdd, options = {}) {
         },
         HostConfig: {
             CapDrop: ['ALL'], CapAdd: capAdd, SecurityOpt: ['no-new-privileges:true'], ReadonlyRootfs: true,
+            Privileged: options.privileged === true,
             NetworkMode: `qaap-tenant-${seg}`,
         },
         Mounts: [
@@ -85,4 +87,34 @@ test('fails a backend without QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP=1', () => {
     const result = runWith({ requireDrop: false });
     assert.strictEqual(result.status, 1);
     assert.match(result.stderr, /REQUIRE_AGENT_DROP=1 missing/);
+});
+
+test('reports, but does not block on, uid/flag drift of a stopped backend (recreated on next wake)', () => {
+    const result = runWith({ running: false, requireDrop: false, user: '1000:1000' });
+    assert.strictEqual(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stdout, /INFO backend qaap-backend-alice \(alice\) is stopped and will be recreated on next wake: .*REQUIRE_AGENT_DROP=1 missing/);
+});
+
+test('still blocks uid/flag drift of a running backend', () => {
+    const result = runWith({ running: true, requireDrop: false });
+    assert.strictEqual(result.status, 1);
+    assert.match(result.stderr, /REQUIRE_AGENT_DROP=1 missing/);
+});
+
+test('still blocks a stopped backend that breaks another part of the contract', () => {
+    const result = runWith({ running: false, requireDrop: false, privileged: true });
+    assert.strictEqual(result.status, 1);
+    assert.match(result.stderr, /privileged/);
+});
+
+test('reports, but does not block on, uid/flag drift of a paused backend (revalidated on next wake)', () => {
+    const result = runWith({ running: true, paused: true, requireDrop: false });
+    assert.strictEqual(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stdout, /INFO backend qaap-backend-alice \(alice\) is paused; revalidated on next wake: .*REQUIRE_AGENT_DROP=1 missing/);
+});
+
+test('still blocks a paused backend that breaks another part of the contract', () => {
+    const result = runWith({ running: true, paused: true, requireDrop: false, privileged: true });
+    assert.strictEqual(result.status, 1);
+    assert.match(result.stderr, /privileged/);
 });
