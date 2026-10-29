@@ -14,7 +14,7 @@ import {
 import type { StickyComposerSlashSection } from '../common/qaap-sticky-composer-slash-menu';
 import { attachStickyComposerSyntaxHighlight } from '../common/qaap-sticky-composer-syntax-highlight';
 import {
-    resolveAgentApprovalPolicyOption,
+    resolveApprovalPolicyToolbarDisplay,
     type QaapAgentApprovalPolicyId,
 } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import { formatQaiqModelSelectionLabel } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
@@ -103,6 +103,8 @@ export class MobileProjectsStickyComposerColumnUi {
         /** Opens the Mode sheet; `untilDone` adds the goal-loop toggle to it when available. */
         onOpenModeSheet?: (anchor: HTMLButtonElement, untilDone?: StickyComposerUntilDoneToggleOptions) => void;
         approvalPolicyId?: QaapAgentApprovalPolicyId;
+        /** Harness the approval preset applies to; a harness that cannot ask shows its effective mode. */
+        approvalAgent?: { readonly id: string; readonly label: string };
         onOpenApprovalPolicySheet?: (anchor: HTMLButtonElement) => void;
         /** "Until done" goal-loop toggle; VPS agent (task) surface only. */
         untilDone?: StickyComposerUntilDoneToggleOptions;
@@ -185,18 +187,26 @@ export class MobileProjectsStickyComposerColumnUi {
         let approvalBtn: HTMLButtonElement | undefined;
         let bindApprovalPolicyClick: (() => void) | undefined;
         if (options.approvalPolicyId && options.onOpenApprovalPolicySheet) {
-            const approvalPolicy = resolveAgentApprovalPolicyOption(options.approvalPolicyId);
+            const display = resolveApprovalPolicyToolbarDisplay(options.approvalPolicyId, options.approvalAgent);
             approvalBtn = document.createElement('button');
             approvalBtn.type = 'button';
             approvalBtn.className = 'theia-mobile-projects-sticky-composer-approval-policy';
-            approvalBtn.title = nls.localize(
+            const approvalTitle = nls.localize(
                 'qaap/mobileProjects/stickyComposerApprovalPolicy',
                 'Approval policy: {0}',
-                approvalPolicy.label,
+                display.policy.label,
             );
+            approvalBtn.title = display.unsupportedText ? `${approvalTitle}. ${display.unsupportedText}` : approvalTitle;
             approvalBtn.setAttribute('aria-label', approvalBtn.title);
             approvalBtn.setAttribute('aria-haspopup', 'dialog');
-            populateApprovalPolicyToolbarButton(approvalBtn, approvalPolicy);
+            populateApprovalPolicyToolbarButton(approvalBtn, display.policy);
+            if (display.unsupportedText) {
+                approvalBtn.classList.add('theia-mobile-projects-sticky-composer-approval-policy-unsupported');
+                const warning = document.createElement('span');
+                warning.className = 'codicon codicon-warning theia-mobile-projects-sticky-composer-approval-policy-warning';
+                warning.setAttribute('aria-hidden', 'true');
+                approvalBtn.append(warning);
+            }
             const approvalButton = approvalBtn;
             bindApprovalPolicyClick = () => {
                 bindStickyComposerControlClick(approvalButton, ev => {

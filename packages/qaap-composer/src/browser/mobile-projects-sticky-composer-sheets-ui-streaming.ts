@@ -10,6 +10,7 @@ import {
 import {
     QAAP_AGENT_APPROVAL_POLICIES,
     reconcileAgentApprovalPolicyId,
+    resolveEffectiveAgentApprovalPolicyId,
     writeStoredAgentApprovalPolicy,
     type QaapAgentApprovalPolicyId,
 } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
@@ -242,7 +243,8 @@ export function openApprovalPolicySheetExtracted(ctx: MobileProjectsStickyCompos
 
     const list = document.createElement('div');
     list.className = 'theia-mobile-sticky-composer-sheet-list theia-qaap-approval-policy-sheet-list';
-    let selectedId = options.selectedId;
+    // The checkmark follows the effective preset: a harness that cannot ask shows Autonomous mode checked.
+    let selectedId = resolveEffectiveAgentApprovalPolicyId(options.selectedId, options.agentId) ?? options.selectedId;
     let mountedRoot: HTMLElement | undefined;
     const syncPopover = (): void => {
         if (mountedRoot) {

@@ -19,6 +19,7 @@ import {
     readStoredAgentApprovalPolicy,
     reconcileAgentApprovalPolicyId,
     resolveAgentApprovalPolicyOption,
+    resolveEffectiveAgentApprovalPolicyId,
     type QaapAgentApprovalPolicyId,
 } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import {
@@ -81,8 +82,10 @@ export function resolveApprovalPolicyFromConversation(
 export function formatComposerRunPermissionsLabel(
     modeLabel: string | undefined,
     approvalPolicyId: QaapAgentApprovalPolicyId,
+    agentId?: string,
 ): string {
-    const policyLabel = resolveAgentApprovalPolicyOption(approvalPolicyId).label;
+    const effectivePolicyId = resolveEffectiveAgentApprovalPolicyId(approvalPolicyId, agentId) ?? approvalPolicyId;
+    const policyLabel = resolveAgentApprovalPolicyOption(effectivePolicyId).label;
     const mode = modeLabel?.trim();
     return mode
         ? nls.localize('qaap/mobileProjects/runPermissionsLine', '{0} · {1}', mode, policyLabel)

@@ -121,4 +121,30 @@ describe('qaap-agent-ui', () => {
         expect(enabled.querySelector('.theia-qaap-approval-policy-sheet-description')?.textContent)
             .to.equal(resolveAgentApprovalPolicyOption('request-approval').description);
     });
+
+    it('createApprovalPolicySheetOptionButton shows a checkmark only on the effective row', () => {
+        const row = (policyId: 'request-approval' | 'approve-for-me', selected: boolean, disabledReason?: string): HTMLButtonElement =>
+            createApprovalPolicySheetOptionButton({
+                policy: resolveAgentApprovalPolicyOption(policyId),
+                selected,
+                disabledReason,
+                onSelect: () => undefined,
+            });
+        // Pi cannot ask: the Ask row is disabled and unchecked; the Autonomous row carries the check.
+        const askRow = row('request-approval', false, 'Pi can\'t ask before changes yet; it runs in Autonomous mode.');
+        const autonomousRow = row('approve-for-me', true);
+        expect(askRow.querySelector('.codicon-check')).to.equal(null);
+        expect(askRow.disabled).to.equal(true);
+        expect(autonomousRow.querySelector('.codicon-check')).to.exist;
+    });
+
+    it('createApprovalPolicySheetOptionButton keeps Ask before changes checked and enabled for QAIQ', () => {
+        const askRow = createApprovalPolicySheetOptionButton({
+            policy: resolveAgentApprovalPolicyOption('request-approval'),
+            selected: true,
+            onSelect: () => undefined,
+        });
+        expect(askRow.disabled).to.equal(false);
+        expect(askRow.querySelector('.codicon-check')).to.exist;
+    });
 });

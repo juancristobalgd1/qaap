@@ -5,6 +5,7 @@
 
 import { hashString, isTheiaCoderAgent } from './qaap-agent-task-client';
 import { nls } from '@theia/core/lib/common/nls';
+import { resolveQaapHarnessCapabilities } from './qaap-harness-capabilities';
 
 const SELECTED_APPROVAL_POLICY_STORAGE_KEY = 'qaap.mobile.projects.agentApprovalPolicy';
 const LEGACY_APPROVAL_POLICY_STORAGE_KEY = 'qaap.mobile.projects.codexApprovalPolicy';
@@ -107,6 +108,58 @@ export function reconcileAgentApprovalPolicyId(
         return stored;
     }
     return DEFAULT_AGENT_APPROVAL_POLICY_ID;
+}
+
+/**
+ * True when the stored preset is "Ask before changes" but the harness cannot block for an ask. Such a
+ * harness effectively runs in Autonomous mode. This is display-only: the stored preset and the backend
+ * request are not changed.
+ */
+export function isApprovalPolicyUnsupportedByAgent(
+    policyId: QaapAgentApprovalPolicyId | undefined,
+    agentId: string | undefined,
+): boolean {
+    // Without a harness there is nothing to downgrade: the stored preset stays as it is.
+    if (!agentId?.trim()) {
+        return false;
+    }
+    return policyId === 'request-approval' && !resolveQaapHarnessCapabilities(agentId).canAsk;
+}
+
+/** Preset the user sees for a harness: the stored preset, or Autonomous mode where the harness cannot ask. */
+export function resolveEffectiveAgentApprovalPolicyId(
+    policyId: QaapAgentApprovalPolicyId | undefined,
+    agentId: string | undefined,
+): QaapAgentApprovalPolicyId | undefined {
+    return isApprovalPolicyUnsupportedByAgent(policyId, agentId) ? 'approve-for-me' : policyId;
+}
+
+/** Tooltip and warning text shown beside the effective preset when the harness cannot ask. */
+export function resolveApprovalPolicyUnsupportedText(agentLabel: string): string {
+    return nls.localize(
+        'qaap/mobileProjects/approvalPolicyRequestUnsupportedShort',
+        '{0} can\'t ask before changes yet.',
+        agentLabel,
+    );
+}
+
+/** Toolbar chip for the approval picker: the effective preset, plus a warning when the stored one differs. */
+export interface QaapApprovalPolicyToolbarDisplay {
+    readonly policy: QaapAgentApprovalPolicyOption;
+    /** Set when the stored preset is not what the harness runs; the chip shows this as its tooltip. */
+    readonly unsupportedText?: string;
+}
+
+export function resolveApprovalPolicyToolbarDisplay(
+    storedPolicyId: QaapAgentApprovalPolicyId,
+    agent: { readonly id: string; readonly label: string } | undefined,
+): QaapApprovalPolicyToolbarDisplay {
+    const effectiveId = resolveEffectiveAgentApprovalPolicyId(storedPolicyId, agent?.id);
+    const policy = resolveAgentApprovalPolicyOption(effectiveId);
+    if (!agent || !isApprovalPolicyUnsupportedByAgent(storedPolicyId, agent.id)) {
+        return { policy };
+    }
+    return { policy, unsupportedText: resolveApprovalPolicyUnsupportedText(agent.label) };
 }
 
 export function resolveAgentApprovalPolicyOption(

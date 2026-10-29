@@ -492,6 +492,12 @@ export class MobileProjectsStickyComposerRenderUi {
                 ? (anchor, untilDone) => { this.host.stickyComposerSheetsUi.openStickyComposerModeSheet(project, modes, anchor, untilDone); }
                 : undefined,
             approvalPolicyId: showApprovalPolicy ? this.host.stickyComposerApprovalPolicyId : undefined,
+            approvalAgent: showApprovalPolicy
+                ? {
+                    id: this.host.stickyComposerAgentsUi.resolveStickyComposerPinnedAgentId(project),
+                    label: this.host.stickyComposerAgentsUi.resolveStickyComposerAgentLabel(project),
+                }
+                : undefined,
             onOpenApprovalPolicySheet: showApprovalPolicy
                 ? anchor => {
                     this.host.stickyComposerSheetsUi.openStickyComposerApprovalPolicySheet(
