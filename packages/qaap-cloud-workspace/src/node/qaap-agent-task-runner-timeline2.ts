@@ -494,6 +494,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                     folderTrusted: ctx.isProjectFolderTrusted(task.ownerLogin, task.cwd),
                     sourceCodexHome: resolveCodexAgentHome(childEnv),
                     askTtlSec: Number(childEnv.QAAP_GATE_ASK_TTL_SEC) || 0,
+                    agentIdentity: ctx.resolveAgentSpawnIdentity(task.cwd),
                 }, childEnv);
                 childEnv.CODEX_HOME = codexGateOverlay.codexHome;
             }

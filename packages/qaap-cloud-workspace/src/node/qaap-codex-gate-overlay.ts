@@ -33,6 +33,12 @@ export interface QaapCodexGateOverlayOptions {
     /** The Codex home the owner signed in to (`auth.json`, `config.toml`). Read only. */
     readonly sourceCodexHome: string;
     readonly askTtlSec: number;
+    /**
+     * The OS identity Codex runs as (`setpriv` drop in tenant mode). When it differs from this process,
+     * the overlay is created owned by it and the trust probe runs as it: a 0700 root-owned home would be
+     * unreadable to Codex and every task would fail.
+     */
+    readonly agentIdentity?: { readonly uid?: number; readonly gid?: number };
     /** Where overlays live. Defaults to a private directory under the OS temp dir. */
     readonly overlayRoot?: string;
     readonly nodeBin?: string;
@@ -47,7 +53,7 @@ export interface QaapCodexGateOverlay {
 }
 
 /** Checks that Codex really considers the generated hook trusted. Injectable so tests need no Codex binary. */
-export type QaapCodexHookTrustProbe = (codexHome: string, cwd: string, env: NodeJS.ProcessEnv) => Promise<'trusted' | 'untrusted' | 'missing'>;
+export type QaapCodexHookTrustProbe = (codexHome: string, cwd: string, env: NodeJS.ProcessEnv, identity?: { uid: number; gid?: number }) => Promise<'trusted' | 'untrusted' | 'missing'>;
 
 /**
  * Builds the per-task `CODEX_HOME` that routes every Codex tool call through the Qaap gate.
@@ -68,7 +74,8 @@ export class QaapCodexGateOverlayBuilder {
     constructor(protected readonly probe: QaapCodexHookTrustProbe = QaapCodexGateOverlayBuilder.probeWithAppServer) { }
 
     async create(options: QaapCodexGateOverlayOptions, env: NodeJS.ProcessEnv = process.env): Promise<QaapCodexGateOverlay> {
-        const root = options.overlayRoot ?? QaapCodexGateOverlayBuilder.defaultRoot();
+        const drop = this.resolveDrop(options.agentIdentity);
+        const root = options.overlayRoot ?? QaapCodexGateOverlayBuilder.defaultRoot(drop?.uid);
         this.sweepStale(root);
         fs.mkdirSync(root, { recursive: true, mode: 0o700 });
         // Codex keys hook trust by the CANONICAL hooks.json path (macOS /var -> /private/var): a symlinked
@@ -80,18 +87,21 @@ export class QaapCodexGateOverlayBuilder {
         const overlayAuth = path.join(codexHome, 'auth.json');
         const sourceAuth = path.join(options.sourceCodexHome, 'auth.json');
         let initialAuth: string | undefined;
+        let sourceOwner: { uid: number; gid: number } | undefined;
         let disposed = false;
         const dispose = (): void => {
             if (disposed) {
                 return;
             }
             disposed = true;
-            QaapCodexGateOverlayBuilder.writeBackRefreshedAuth(overlayAuth, sourceAuth, initialAuth);
+            this.writeBackRefreshedAuth(overlayAuth, sourceAuth, initialAuth, sourceOwner);
             fs.rmSync(taskDir, { recursive: true, force: true });
         };
         try {
             if (fs.existsSync(sourceAuth)) {
                 initialAuth = fs.readFileSync(sourceAuth, 'utf8');
+                const stat = fs.statSync(sourceAuth);
+                sourceOwner = { uid: stat.uid, gid: stat.gid };
                 fs.writeFileSync(overlayAuth, initialAuth, { mode: 0o600 });
             }
             const hooksPath = path.join(codexHome, 'hooks.json');
@@ -101,13 +111,16 @@ export class QaapCodexGateOverlayBuilder {
             const trustedHash = QaapCodexGateOverlayBuilder.hookHash(hookCommand, timeoutSec);
             const sourceConfig = QaapCodexGateOverlayBuilder.readIfExists(path.join(options.sourceCodexHome, 'config.toml'));
             fs.writeFileSync(path.join(codexHome, 'config.toml'), QaapCodexGateOverlayBuilder.renderConfigToml({
-                cwd: options.cwd,
+                cwd: QaapCodexGateOverlayBuilder.canonical(options.cwd),
                 folderTrusted: options.folderTrusted,
                 hookStateKey: `${hooksPath}:${HOOK_KEY_SUFFIX}`,
                 trustedHash,
                 sourceConfig,
             }), { mode: 0o600 });
-            await this.verifyOnce(codexHome, options.cwd, env);
+            if (drop) {
+                this.chownTree(path.dirname(taskDir), taskDir, drop);
+            }
+            await this.verifyOnce(codexHome, options.cwd, env, drop);
         } catch (error) {
             dispose();
             throw error;
@@ -122,20 +135,53 @@ export class QaapCodexGateOverlayBuilder {
         return `${node} ${hook} --dialect codex || exit 2`;
     }
 
-    protected async verifyOnce(codexHome: string, cwd: string, env: NodeJS.ProcessEnv): Promise<void> {
+    /** The identity to drop to, only when it really differs from this process (root backend, agent uid). */
+    protected resolveDrop(identity: QaapCodexGateOverlayOptions['agentIdentity']): { uid: number; gid?: number } | undefined {
+        const current = typeof process.getuid === 'function' ? process.getuid() : undefined;
+        if (identity?.uid === undefined || identity.uid === current) {
+            return undefined;
+        }
+        return { uid: identity.uid, gid: identity.gid };
+    }
+
+    /** Hands the overlay root and everything under the task dir to the agent. Overridable for tests. */
+    protected chownTree(root: string, taskDir: string, owner: { uid: number; gid?: number }): void {
+        const gid = owner.gid ?? owner.uid;
+        const visit = (target: string): void => {
+            this.chown(target, owner.uid, gid);
+            if (fs.lstatSync(target).isDirectory()) {
+                for (const entry of fs.readdirSync(target)) {
+                    visit(path.join(target, entry));
+                }
+            }
+        };
+        this.chown(root, owner.uid, gid);
+        visit(taskDir);
+    }
+
+    protected chown(target: string, uid: number, gid: number): void {
+        fs.chownSync(target, uid, gid);
+    }
+
+    protected async verifyOnce(codexHome: string, cwd: string, env: NodeJS.ProcessEnv, identity?: { uid: number; gid?: number }): Promise<void> {
         const version = await QaapCodexGateOverlayBuilder.codexVersion(env);
         if (this.verifiedVersions.has(version)) {
             return;
         }
-        const status = await this.probe(codexHome, cwd, env);
+        const status = await this.probe(codexHome, cwd, env, identity);
         if (status !== 'trusted') {
             throw new Error(`Codex does not trust the Qaap safety hook (${status}, codex ${version}); refusing to run Codex without the gate.`);
         }
         this.verifiedVersions.add(version);
     }
 
-    /** Rewrites an `auth.json` Codex refreshed during the task back to the owner's home (refresh tokens rotate). */
-    static writeBackRefreshedAuth(overlayAuth: string, sourceAuth: string, initialAuth: string | undefined): void {
+    /**
+     * Rewrites an `auth.json` Codex refreshed during the task back to the owner's home (refresh tokens
+     * rotate). Compare-and-swap: only while the owner's file is still what we copied; otherwise another
+     * task or a new sign-in won and is left alone.
+     */
+    protected writeBackRefreshedAuth(overlayAuth: string, sourceAuth: string, initialAuth: string | undefined,
+        owner: { uid: number; gid: number } | undefined): void {
         try {
             if (initialAuth === undefined || !fs.existsSync(overlayAuth)) {
                 return;
@@ -145,8 +191,15 @@ export class QaapCodexGateOverlayBuilder {
                 return;
             }
             JSON.parse(current);
+            if (!fs.existsSync(sourceAuth) || fs.readFileSync(sourceAuth, 'utf8') !== initialAuth) {
+                console.warn('[qaap-codex-gate] the Codex login changed during the task; not overwriting it with the refreshed copy');
+                return;
+            }
             const temp = `${sourceAuth}.${process.pid}.${Date.now()}.tmp`;
             fs.writeFileSync(temp, current, { mode: 0o600 });
+            if (owner && typeof process.getuid === 'function' && process.getuid() === 0) {
+                this.chown(temp, owner.uid, owner.gid);
+            }
             fs.renameSync(temp, sourceAuth);
         } catch (error) {
             console.warn('[qaap-codex-gate] could not write the refreshed Codex login back', error instanceof Error ? error.message : String(error));
@@ -217,8 +270,18 @@ export class QaapCodexGateOverlayBuilder {
         return kept.join('\n').trim();
     }
 
-    static defaultRoot(): string {
-        return path.join(os.tmpdir(), `qaap-codex-gate-${typeof process.getuid === 'function' ? process.getuid() : 'user'}`);
+    /** One root per OS identity the agent runs as: other tenants' uids cannot enter it (0700, owned by the agent). */
+    static defaultRoot(agentUid?: number): string {
+        const uid = agentUid ?? (typeof process.getuid === 'function' ? process.getuid() : 'user');
+        return path.join(os.tmpdir(), `qaap-codex-gate-${uid}`);
+    }
+
+    protected static canonical(target: string): string {
+        try {
+            return fs.realpathSync(target);
+        } catch {
+            return target;
+        }
     }
 
     protected static safeSegment(value: string): string {
@@ -254,9 +317,10 @@ export class QaapCodexGateOverlayBuilder {
     }
 
     /** Asks a real `codex app-server` (`hooks/list`) whether it trusts the hook in this overlay. */
-    static probeWithAppServer(codexHome: string, cwd: string, env: NodeJS.ProcessEnv): Promise<'trusted' | 'untrusted' | 'missing'> {
+    static probeWithAppServer(codexHome: string, cwd: string, env: NodeJS.ProcessEnv, identity?: { uid: number; gid?: number }): Promise<'trusted' | 'untrusted' | 'missing'> {
         return new Promise((resolve, reject) => {
-            const child = spawn('codex', ['app-server'], { cwd, env: { ...env, CODEX_HOME: codexHome }, stdio: ['pipe', 'pipe', 'ignore'] });
+            const child = spawn('codex', ['app-server'], { cwd, env: { ...env, CODEX_HOME: codexHome }, stdio: ['pipe', 'pipe', 'ignore'],
+                ...(identity ? { uid: identity.uid, gid: identity.gid ?? identity.uid } : {}) });
             let buffer = '';
             let done = false;
             const finish = (error: Error | undefined, status?: 'trusted' | 'untrusted' | 'missing'): void => {

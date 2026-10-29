@@ -132,6 +132,69 @@ describe('QaapCodexGateOverlayBuilder', () => {
         expect(fs.statSync(path.join(sourceHome, 'auth.json')).mode & 0o777).to.equal(0o600);
     });
 
+    it('does not overwrite a login that changed during the task (compare-and-swap)', async () => {
+        const overlay = await trusted.create(options());
+        fs.writeFileSync(path.join(overlay.codexHome, 'auth.json'), '{"tokens":{"refresh_token":"r2"}}');
+        fs.writeFileSync(path.join(sourceHome, 'auth.json'), '{"tokens":{"refresh_token":"newer-login"}}');
+        overlay.dispose();
+        expect(fs.readFileSync(path.join(sourceHome, 'auth.json'), 'utf8')).to.equal('{"tokens":{"refresh_token":"newer-login"}}');
+    });
+
+    it('writes the [projects] key with the canonical cwd (symlinked tmp, /var -> /private/var)', async () => {
+        const real = path.join(tmp, 'real-project');
+        const link = path.join(tmp, 'link-project');
+        fs.mkdirSync(real);
+        fs.symlinkSync(real, link);
+        const overlay = await trusted.create(options({ cwd: link, folderTrusted: false }));
+        const config = fs.readFileSync(path.join(overlay.codexHome, 'config.toml'), 'utf8');
+        expect(config).to.contain(`[projects.${JSON.stringify(fs.realpathSync(real))}]`);
+        expect(config).to.not.contain(JSON.stringify(link));
+        overlay.dispose();
+    });
+
+    describe('with a uid drop (root backend, Codex runs as the agent uid)', () => {
+        const agentUid = (process.getuid?.() ?? 0) + 4242;
+
+        class RecordingBuilder extends QaapCodexGateOverlayBuilder {
+            readonly chowns: Array<{ target: string; uid: number; gid: number }> = [];
+            probedAs: unknown = 'not-called';
+            constructor() {
+                super(async (_home, _cwd, _env, identity) => {
+                    this.probedAs = identity;
+                    return 'trusted';
+                });
+            }
+            protected override chown(target: string, uid: number, gid: number): void {
+                this.chowns.push({ target, uid, gid });
+            }
+        }
+
+        it('hands the overlay to the agent uid/gid and probes trust as that same identity', async () => {
+            const builder = new RecordingBuilder();
+            const overlay = await builder.create(options({ agentIdentity: { uid: agentUid, gid: 7 }, overlayRoot: undefined }));
+            expect(overlay.codexHome).to.contain(`qaap-codex-gate-${agentUid}`);
+            const owned = builder.chowns.map(entry => entry.target);
+            for (const target of [path.dirname(path.dirname(overlay.codexHome)), overlay.codexHome,
+                path.join(overlay.codexHome, 'auth.json'), path.join(overlay.codexHome, 'hooks.json'), path.join(overlay.codexHome, 'config.toml')]) {
+                expect(owned, target).to.include(target);
+            }
+            expect(builder.chowns.every(entry => entry.uid === agentUid && entry.gid === 7)).to.equal(true);
+            expect(builder.probedAs).to.deep.equal({ uid: agentUid, gid: 7 });
+            overlay.dispose();
+            fs.rmSync(path.dirname(path.dirname(overlay.codexHome)), { recursive: true, force: true });
+        });
+
+        it('keeps the current behaviour without a drop (same uid or no identity)', async () => {
+            for (const agentIdentity of [undefined, {}, { uid: process.getuid?.() }]) {
+                const builder = new RecordingBuilder();
+                const overlay = await builder.create(options({ agentIdentity }));
+                expect(builder.chowns, JSON.stringify(agentIdentity)).to.deep.equal([]);
+                expect(builder.probedAs).to.equal(undefined);
+                overlay.dispose();
+            }
+        });
+    });
+
     it('works without a login or config in the source home (API key auth)', async () => {
         fs.rmSync(path.join(sourceHome, 'auth.json'));
         fs.rmSync(path.join(sourceHome, 'config.toml'));
