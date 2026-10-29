@@ -185,6 +185,35 @@ async function runFakeClaude(
     }
 }
 
+describe('Claude Code behind the stdio tool gate: subagents and skills', () => {
+
+    const gate = new QaapToolGateService();
+    const call = (toolName: string, toolInput: Record<string, unknown>, allowSubagentTools: boolean): string => {
+        const command = buildClaude('approve-for-me').command;
+        return gate.evaluateQaiqControlRequest({
+            command, autoApprove: true, cwd: process.cwd(),
+            request: { requestId: 'r', toolName, toolInput },
+            options: { allowSubagentTools },
+        }).action;
+    };
+
+    it('Claude: Task, Skill and non-verification subagents follow the normal policy instead of the QAIQ deny', () => {
+        expect(call('Task', { subagent_type: 'general-purpose' }, true)).to.equal('allow');
+        expect(call('Skill', { skill: 'anything' }, true)).to.equal('allow');
+        expect(call('Agent', { subagent_type: 'general-purpose' }, true)).to.equal('allow');
+    });
+
+    it('QAIQ: the same calls stay denied', () => {
+        expect(call('Task', { subagent_type: 'general-purpose' }, false)).to.equal('deny');
+        expect(call('Skill', { skill: 'anything' }, false)).to.equal('deny');
+        expect(call('Agent', { subagent_type: 'general-purpose' }, false)).to.equal('deny');
+    });
+
+    it('Claude: a destructive command run by a subagent is still guarded', () => {
+        expect(call('Bash', { command: 'git push --force origin main' }, true)).to.equal('queue');
+    });
+});
+
 describe('Claude Code behind the stdio tool gate: decisions over a fake CLI', () => {
 
     const approveForMe = (): string => buildClaude('approve-for-me').command;
