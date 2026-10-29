@@ -44,6 +44,7 @@ import type { QaapBillingStore } from './qaap-billing-store';
 import type { QaapAgentHealthTracker } from './qaap-agent-health';
 import type { QaapObservability } from './qaap-observability';
 import type { QaapAgentHookService } from './qaap-agent-hook-service';
+import type { QaapToolGateService } from './qaap-tool-gate-service';
 import type { QaapAgentStdinPrompt } from './qaap-agent-task-runner-utils';
 import type { AgentCandidate, QaapGenericCommandResult } from './qaap-agent-task-runner-constants';
 import type { QaapAgentTaskCancelOptions, QaapAgentTaskPauseCause } from './qaap-agent-task-runner-streaming2';
@@ -91,6 +92,8 @@ export interface QaapAgentTaskRunnerContext {
     readonly tenantSpawn: QaapTenantSpawnService;
     /** Qaap-level lifecycle hooks; optional so bare test harnesses keep the old behaviour. */
     readonly agentHooks?: QaapAgentHookService;
+    /** Decides QAIQ stdio tool calls; absent in bare test harnesses (the default instance is used). */
+    readonly toolGate?: QaapToolGateService;
 
     // ─── State maps / sets / scalars ────────────────────────────────────────
     readonly tasks: Map<string, QaapAgentTask>;
@@ -351,4 +354,11 @@ export interface QaapAgentTaskRunnerContext {
     applyNvidiaOpenAiCompatEnv(env: NodeJS.ProcessEnv): void;
     applyHuggingfaceOpenAiCompatEnv(env: NodeJS.ProcessEnv): void;
     applyHelperEnv(env: NodeJS.ProcessEnv, ownerLogin?: string, parentTaskId?: string, autoApprove?: boolean): boolean;
+    /**
+     * Seeds the gate env of a one-shot agent call (prompt improve, goal-loop evaluator) with an ephemeral
+     * read-only grant. Returns the function that revokes it; call it when the process ends.
+     */
+    applyOneShotToolGateEnv(env: NodeJS.ProcessEnv, task: Pick<QaapAgentTask, 'ownerLogin' | 'cwd' | 'agentId' | 'command'>): () => void;
+    /** Seeds `QAAP_GATE_URL` / `QAAP_GATE_TOKEN` for harnesses that reach the tool gate over HTTP. */
+    applyToolGateEnv(env: NodeJS.ProcessEnv, task: Pick<QaapAgentTask, 'id' | 'ownerLogin' | 'cwd' | 'agentId' | 'command'>): void;
 }

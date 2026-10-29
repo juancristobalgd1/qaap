@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { resolveQaapHarnessCapabilities } from './qaap-harness-capabilities';
 import { QaapUserFacingErrors } from '@theia/qaap-adapters/lib/common/qaap-user-facing-error';
 
 /**
@@ -24,18 +25,14 @@ export interface QaapProjectFolderTrustStatus {
 }
 
 /**
- * Per-harness CLI flags for the project-trust decision, filled into `{trust_flags}`.
- * Only Pi is mapped so far: its `--approve` makes it load the repository's own `.pi/` settings, MCP
- * servers and extensions without asking, so an untrusted folder gets `--no-approve`. Every other
- * harness returns `''` until its own trust switch is mapped here; add the case when it is verified.
+ * Per-harness CLI flags for the project-trust decision, filled into `{trust_flags}`. The trust decision
+ * only picks WHICH list applies; the flags themselves live in the harness capability registry
+ * (`trustedFolderArgs` / `untrustedFolderArgs`), so there is one source of truth. Harnesses without
+ * a mapped trust switch have empty lists and get `''`. Callers pass `trusted: false` for any failed lookup.
  */
 export function resolveAgentProjectTrustFlags(agentId: string | undefined, trusted: boolean): string {
-    switch (agentId?.trim().toLowerCase()) {
-        case 'pi':
-            return trusted ? '--approve' : '--no-approve';
-        default:
-            return '';
-    }
+    const capabilities = resolveQaapHarnessCapabilities(agentId);
+    return (trusted ? capabilities.trustedFolderArgs : capabilities.untrustedFolderArgs).join(' ');
 }
 
 /**

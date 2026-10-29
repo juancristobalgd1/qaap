@@ -13,7 +13,8 @@ import { QAAP_BUILTIN_AGENT_DEFINITIONS } from '@theia/qaap-shared-core/lib/comm
 import type { QaapHostedWorktreeRegistry } from '@theia/qaap-shared-core/lib/node/qaap-hosted-worktree-registry';
 import { buildTemplateVarsExtracted } from './qaap-agent-task-runner-streaming2';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
-import { applyTemplate } from './qaap-agent-task-runner-utils';
+import { resolveQaapToolGatePiExtensionPath } from './qaap-tool-gate-pi-adapter';
+import { applyTemplate, quoteShellArg } from './qaap-agent-task-runner-utils';
 import { QaapProjectFolderTrustStore, resolveProjectFolderTrustRoot } from './qaap-project-folder-trust-store';
 
 class TestProjectFolderTrustStore extends QaapProjectFolderTrustStore {
@@ -33,6 +34,7 @@ function contextTrusting(trustedCwds: readonly string[]): QaapAgentTaskRunnerCon
     } as unknown as QaapAgentTaskRunnerContext;
 }
 
+const extFlag = quoteShellArg(resolveQaapToolGatePiExtensionPath());
 const piTemplate = QAAP_BUILTIN_AGENT_DEFINITIONS.find(definition => definition.id === 'pi')?.template ?? '';
 
 describe('qaap agent task runner project folder trust', () => {
@@ -40,13 +42,13 @@ describe('qaap agent task runner project folder trust', () => {
     it('passes --approve to Pi for a trusted project folder', () => {
         const vars = buildTemplateVarsExtracted(contextTrusting(['/owned/alice/app']), 'pi', undefined, undefined, 'alice', '/owned/alice/app');
         expect(vars.trust_flags).to.equal('--approve');
-        expect(applyTemplate(piTemplate, 'hi', vars)).to.equal('pi -p --approve \'hi\'');
+        expect(applyTemplate(piTemplate, 'hi', vars)).to.equal(`pi --mode json -p --no-session -ne -e ${extFlag} --approve 'hi'`);
     });
 
     it('passes --no-approve to Pi while the folder is undecided or untrusted', () => {
         const vars = buildTemplateVarsExtracted(contextTrusting([]), 'pi', undefined, undefined, 'alice', '/owned/alice/app');
         expect(vars.trust_flags).to.equal('--no-approve');
-        expect(applyTemplate(piTemplate, 'hi', vars)).to.equal('pi -p --no-approve \'hi\'');
+        expect(applyTemplate(piTemplate, 'hi', vars)).to.equal(`pi --mode json -p --no-session -ne -e ${extFlag} --no-approve 'hi'`);
     });
 
     it('treats a missing project folder as untrusted', () => {

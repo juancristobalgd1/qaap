@@ -46,6 +46,11 @@ import {
 import { isQaapProductionRuntime } from './qaap-agent-spawn-identity';
 import { QAAP_AGENT_CLI_CONTAINER_ISOLATION_REFUSAL, type QaapAgentCliInstallTarget } from './qaap-agent-cli-update-service';
 import { QaapAgentHookService } from './qaap-agent-hook-service';
+import { QaapToolGateService } from './qaap-tool-gate-service';
+import { QaapToolGateTokenService } from './qaap-tool-gate-token-service';
+import { QaapToolGateAskBroker } from './qaap-tool-gate-ask-broker';
+import { QAAP_TOOL_GATE_API_PATH } from '@theia/qaap-shared-core/lib/common/qaap-tool-gate-protocol';
+import { resolveQaapHarnessCapabilities } from '@theia/qaap-shared-core/lib/common/qaap-harness-capabilities';
 import { QaapProjectFolderTrustStore, resolveProjectFolderTrustRoot } from './qaap-project-folder-trust-store';
 import { QaapHostedWorktreeRegistry } from '@theia/qaap-shared-core/lib/node/qaap-hosted-worktree-registry';
 import { invalidateNativeAgentModels, prepareNativeAgentModels, type NativeModelDiscoverySpawner } from './qaap-agent-native-models';
@@ -1183,8 +1188,13 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         if (!this.projectFolderTrust) {
             return false;
         }
-        const root = resolveProjectFolderTrustRoot(this.hostedWorktrees, ownerLogin, cwd);
-        return root !== undefined && this.projectFolderTrust.isTrusted(ownerLogin, root);
+        try {
+            const root = resolveProjectFolderTrustRoot(this.hostedWorktrees, ownerLogin, cwd);
+            return root !== undefined && this.projectFolderTrust.isTrusted(ownerLogin, root);
+        } catch {
+            // Any failed lookup (store unreadable, bad path) is untrusted, never a spawn error or a trust.
+            return false;
+        }
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
@@ -1581,6 +1591,19 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public readonly agentHooks: QaapAgentHookService | undefined;
 
+    /** Single decision point for tool calls (doc: qaap-tool-gate-design.md); optional for bare test harnesses. */
+    @inject(QaapToolGateService) @optional()
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readonly toolGate: QaapToolGateService | undefined;
+
+    /** Per-task credentials for the HTTP tool gate; optional for bare test harnesses. */
+    @inject(QaapToolGateTokenService) @optional()
+    public readonly toolGateTokens: QaapToolGateTokenService | undefined;
+
+    /** Pending gate asks, denied when their task ends; optional for bare test harnesses. */
+    @inject(QaapToolGateAskBroker) @optional()
+    public readonly toolGateAsks: QaapToolGateAskBroker | undefined;
+
     /** @see QaapTenantSpawnService.enforceIsolationPolicy — throws to fail the spawn when refused. */
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public enforceAgentIsolationPolicy(): void {
@@ -1837,9 +1860,43 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    applyOneShotToolGateEnv(env: NodeJS.ProcessEnv, task: Pick<QaapAgentTask, 'ownerLogin' | 'cwd' | 'agentId' | 'command'>): () => void {
+        if (!this.toolGateTokens || !this.helperApiUrl) {
+            return () => undefined;
+        }
+        const agentId = this.resolveTaskAgentId(task as QaapAgentTask);
+        const transport = resolveQaapHarnessCapabilities(agentId).gate;
+        if (transport !== 'hook' && transport !== 'plugin' && transport !== 'extension') {
+            return () => undefined;
+        }
+        const grant = this.toolGateTokens.issueOneShot(agentId, task.ownerLogin, task.cwd);
+        env.QAAP_GATE_URL = `${new URL(this.helperApiUrl).origin}${QAAP_TOOL_GATE_API_PATH}`;
+        env.QAAP_GATE_TOKEN = grant.token;
+        env.QAAP_GATE_ASK_TTL_SEC = '0';
+        return grant.release;
+    }
+
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    applyToolGateEnv(env: NodeJS.ProcessEnv, task: Pick<QaapAgentTask, 'id' | 'ownerLogin' | 'cwd' | 'agentId' | 'command'>): void {
+        if (!this.toolGateTokens || !this.helperApiUrl) {
+            return;
+        }
+        const transport = resolveQaapHarnessCapabilities(this.resolveTaskAgentId(task as QaapAgentTask)).gate;
+        if (transport !== 'hook' && transport !== 'plugin' && transport !== 'extension') {
+            return;
+        }
+        env.QAAP_GATE_URL = `${new URL(this.helperApiUrl).origin}${QAAP_TOOL_GATE_API_PATH}`;
+        env.QAAP_GATE_TOKEN = this.toolGateTokens.issue(task.id, task.ownerLogin, task.cwd);
+        env.QAAP_GATE_ASK_TTL_SEC = String(resolveQaapHarnessCapabilities(this.resolveTaskAgentId(task as QaapAgentTask)).askTtlSec);
+    }
+
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public finishTask(id: string, state: QaapAgentTaskState, exitCode: number | undefined): QaapAgentTask | undefined {
         const previousState = this.tasks.get(id)?.state;
         const task = finishTaskExtracted(this, id, state, exitCode);
+        // The gate token dies with the task, and anything still waiting on a human is denied.
+        this.toolGateTokens?.revoke(id);
+        this.toolGateAsks?.cancelTask(id);
         this.releaseTenantOperation(id);
         this.taskSandbox?.release(id);
         if (task) {

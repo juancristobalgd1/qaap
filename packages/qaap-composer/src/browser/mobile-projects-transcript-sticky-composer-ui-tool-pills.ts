@@ -204,11 +204,20 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: MobilePro
             ? (anchor, untilDone) => { ctx.host.transcriptComposerUi.openTranscriptComposerModeSheet(project, summary, modes, anchor, untilDone); }
             : undefined,
         approvalPolicyId: showApprovalPolicy ? ctx.host.transcriptComposerApprovalPolicyId : undefined,
+        approvalAgent: showApprovalPolicy
+            ? {
+                id: ctx.host.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(project, summary),
+                label: ctx.host.transcriptComposerUi.resolveTranscriptComposerAgentLabel(
+                    ctx.host.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(project, summary),
+                ),
+            }
+            : undefined,
         onOpenApprovalPolicySheet: showApprovalPolicy
             ? anchor => {
                 ctx.host.transcriptComposerUi.openTranscriptComposerApprovalPolicySheet(
                     project,
                     summary,
+                    ctx.host.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(project, summary),
                     ctx.host.transcriptComposerUi.resolveTranscriptComposerAgentLabel(
                         ctx.host.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(project, summary),
                     ),
@@ -255,7 +264,7 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: MobilePro
                 });
                 const modeId = conv?.interactionModeId ?? summary.interactionModeId ?? ctx.host.transcriptComposerModeId;
                 const modeLabel = modes.length > 1 ? resolveComposerModeLabel(modes, modeId) : undefined;
-                return formatComposerRunPermissionsLabel(modeLabel, policyId);
+                return formatComposerRunPermissionsLabel(modeLabel, policyId, conv?.agentId ?? summary.agentId);
             }
             : undefined,
         isAgentBeamIdle: () => ctx.isTranscriptStickyComposerAgentBeamIdle(),

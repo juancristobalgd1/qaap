@@ -10,6 +10,9 @@ import {
 import {
     QAAP_AGENT_APPROVAL_POLICIES,
     reconcileAgentApprovalPolicyId,
+    resolveApprovalPolicyUnsupportedMode,
+    resolveApprovalPolicyUnsupportedText,
+    resolveEffectiveAgentApprovalPolicyId,
     writeStoredAgentApprovalPolicy,
     type QaapAgentApprovalPolicyId,
 } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
@@ -125,10 +128,12 @@ export function openStickyComposerModeSheetExtracted(ctx: MobileProjectsStickyCo
 }
 
 export function openStickyComposerApprovalPolicySheetExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext, project: MobileProjectEntry,
+    agentId: string,
     agentLabel: string,
     anchor?: HTMLElement,): void {
     const cwd = ctx.host.projectsService.getProjectCwd(project) ?? ctx.host.preparedCwdByProjectId.get(project.id);
     ctx.openApprovalPolicySheet({
+        agentId,
         agentLabel,
         cwd,
         anchor,
@@ -193,6 +198,8 @@ export function mountApprovalPolicySheetPresentationExtracted(ctx: MobileProject
 }
 
 export function openApprovalPolicySheetExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext, options: {
+    /** Harness id; decides whether "Ask before changes" can be offered. */
+    readonly agentId: string;
     readonly agentLabel: string;
     readonly cwd: string | undefined;
     readonly selectedId: QaapAgentApprovalPolicyId;
@@ -237,7 +244,8 @@ export function openApprovalPolicySheetExtracted(ctx: MobileProjectsStickyCompos
 
     const list = document.createElement('div');
     list.className = 'theia-mobile-sticky-composer-sheet-list theia-qaap-approval-policy-sheet-list';
-    let selectedId = options.selectedId;
+    // The checkmark follows the effective preset: a harness that cannot ask shows Autonomous mode checked.
+    let selectedId = resolveEffectiveAgentApprovalPolicyId(options.selectedId, options.agentId) ?? options.selectedId;
     let mountedRoot: HTMLElement | undefined;
     const syncPopover = (): void => {
         if (mountedRoot) {
@@ -245,10 +253,16 @@ export function openApprovalPolicySheetExtracted(ctx: MobileProjectsStickyCompos
         }
     };
     const policyButtons: HTMLButtonElement[] = [];
+    // Only a harness that runs every action unchecked disables the Ask row; a harness that refuses
+    // gated actions keeps it selectable.
+    const requestApprovalDisabledReason = resolveApprovalPolicyUnsupportedMode('request-approval', options.agentId) === 'runs-unchecked'
+        ? resolveApprovalPolicyUnsupportedText(options.agentLabel, 'runs-unchecked')
+        : undefined;
     for (const policy of QAAP_AGENT_APPROVAL_POLICIES) {
         const button = createApprovalPolicySheetOptionButton({
             policy,
             selected: policy.id === selectedId,
+            disabledReason: policy.id === 'request-approval' ? requestApprovalDisabledReason : undefined,
             onSelect: () => {
                 selectedId = policy.id;
                 for (const entry of policyButtons) {

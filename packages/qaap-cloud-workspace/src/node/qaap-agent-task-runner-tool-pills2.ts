@@ -225,6 +225,13 @@ export function spawnAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, comm
 
 export function buildChildEnvExtracted(ctx: QaapAgentTaskRunnerContext, task: QaapAgentTask): NodeJS.ProcessEnv {
         const env: NodeJS.ProcessEnv = { ...process.env };
+        // Gate credentials are seeded only in the harness spawn (see spawnProcessExtracted); a child that
+        // runs repo code (verification scripts, git) must never inherit one, even from the backend env.
+        for (const key of Object.keys(env)) {
+            if (key.startsWith('QAAP_GATE_')) {
+                delete env[key];
+            }
+        }
         env.PWD = task.cwd;
         // When an agent is dropped to a non-root uid, its inherited HOME may point at root's
         // /root, which it cannot write. In Docker mode the overlay deliberately points inside the
@@ -678,11 +685,15 @@ export async function improveComposerPromptExtracted(ctx: QaapAgentTaskRunnerCon
             ...(options.ownerLogin ? { ownerLogin: options.ownerLogin } : {}),
             ...(agentModel ? { agentModel, qaiqModel: agentModel } : {}),
         };
+        const improveEnv = ctx.buildChildEnv(task);
+        // Never a grant without a real folder: the backend's own cwd is not the user's workspace. Without
+        // gate env Pi blocks its tools, which improving a prompt does not use.
+        const releaseGate = options.cwd?.trim() ? ctx.applyOneShotToolGateEnv(improveEnv, task) : () => undefined;
         try {
             return await ctx.runOneShotCommand(
                 command,
                 cwd,
-                ctx.buildChildEnv(task),
+                improveEnv,
                 agentId,
                 COMPOSER_PROMPT_IMPROVE_SERVER_TIMEOUT_MS,
                 transported.stdinPrompt,
@@ -693,6 +704,8 @@ export async function improveComposerPromptExtracted(ctx: QaapAgentTaskRunnerCon
                 throw new ComposerPromptImproveTimeoutError();
             }
             throw error;
+        } finally {
+            releaseGate();
         }
 }
 
@@ -761,13 +774,19 @@ export async function runReadOnlyOneShotPromptExtracted(ctx: QaapAgentTaskRunner
             ...(options.ownerLogin ? { ownerLogin: options.ownerLogin } : {}),
             ...(agentModel ? { agentModel, qaiqModel: agentModel } : {}),
         };
-        return ctx.runOneShotCommand(
-            command,
-            options.cwd,
-            ctx.buildChildEnv(task),
-            agentId,
-            options.timeoutMs,
-            transported.stdinPrompt,
-            transported.promptTempDir,
-        );
+        const evaluatorEnv = ctx.buildChildEnv(task);
+        const releaseGate = ctx.applyOneShotToolGateEnv(evaluatorEnv, task);
+        try {
+            return await ctx.runOneShotCommand(
+                command,
+                options.cwd,
+                evaluatorEnv,
+                agentId,
+                options.timeoutMs,
+                transported.stdinPrompt,
+                transported.promptTempDir,
+            );
+        } finally {
+            releaseGate();
+        }
 }

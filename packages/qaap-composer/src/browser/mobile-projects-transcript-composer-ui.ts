@@ -256,11 +256,13 @@ export class MobileProjectsTranscriptComposerUi {
     openTranscriptComposerApprovalPolicySheet(
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
+        agentId: string,
         agentLabel: string,
         anchor?: HTMLElement,
     ): void {
         const cwd = this.host.projectsService.getProjectCwd(project) ?? summary.cwd;
         this.host.stickyComposerSheetsUi.openApprovalPolicySheet({
+            agentId,
             agentLabel,
             cwd,
             anchor,

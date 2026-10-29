@@ -482,6 +482,10 @@ export function isCodexAgent(agentId: string | undefined): boolean {
     return agentId?.trim().toLowerCase() === 'codex';
 }
 
+export function isPiAgent(agentId: string | undefined): boolean {
+    return agentId?.trim().toLowerCase() === 'pi';
+}
+
 export function isAntigravityAgent(agentId: string | undefined): boolean {
     const normalized = agentId?.trim().toLowerCase();
     return normalized === 'antigravity' || normalized === 'gemini';
@@ -493,6 +497,7 @@ export function usesStructuredAgentTranscript(agentId: string | undefined): bool
         || isOpencodeAgent(agentId)
         || isClaudeCodeAgent(agentId)
         || isCodexAgent(agentId)
+        || isPiAgent(agentId)
         || isAntigravityAgent(agentId);
 }
 

@@ -357,10 +357,14 @@ export function createUnavailableAgentSheetOption(options: {
     return row;
 }
 
-/** Agent approval policy row (icon + title + description + optional check). */
+/**
+ * Agent approval policy row (icon + title + description + optional check). A `disabledReason` makes the
+ * row unavailable and replaces its description with the reason.
+ */
 export function createApprovalPolicySheetOptionButton(options: {
     readonly policy: QaapAgentApprovalPolicyOption;
     readonly selected?: boolean;
+    readonly disabledReason?: string;
     readonly onSelect: () => void;
 }): HTMLButtonElement {
     const btn = document.createElement('button');
@@ -368,6 +372,11 @@ export function createApprovalPolicySheetOptionButton(options: {
     btn.className = 'theia-mobile-sticky-composer-sheet-option theia-qaap-approval-policy-sheet-option';
     if (options.selected) {
         btn.classList.add('theia-mod-selected');
+    }
+    if (options.disabledReason !== undefined) {
+        btn.disabled = true;
+        btn.setAttribute('aria-disabled', 'true');
+        btn.classList.add('theia-qaap-approval-policy-sheet-option-disabled');
     }
     const content = document.createElement('span');
     content.className = 'theia-mobile-sticky-composer-sheet-option-content theia-qaap-approval-policy-sheet-option-content';
@@ -387,7 +396,7 @@ export function createApprovalPolicySheetOptionButton(options: {
     labelEl.textContent = options.policy.label;
     const descriptionEl = document.createElement('span');
     descriptionEl.className = 'theia-qaap-approval-policy-sheet-description';
-    descriptionEl.textContent = options.policy.description;
+    descriptionEl.textContent = options.disabledReason ?? options.policy.description;
     text.append(labelEl, descriptionEl);
     content.append(text);
 

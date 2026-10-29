@@ -9,12 +9,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { QaapAgentTask, QaapAgentTaskState } from '../common/qaap-agent-task';
-import { findQaiqDestructiveCommandGuardDenial } from '../common/qaap-agent-destructive-command-guard';
-import { findQaiqDevServerGuardDenial } from '../common/qaap-agent-dev-server-guard';
-import { resolveQaiqControlRequestAutoAction } from '../common/qaap-qaiq-control-auto-response';
 import { buildQaiqControlResponseLine, type QaapQaiqPendingControlRequest } from '../common/qaap-qaiq-stdio-approvals';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import type { QaapAgentHookRunContext } from './qaap-agent-hook-service';
+import { DEFAULT_QAAP_TOOL_GATE_SERVICE } from './qaap-tool-gate-service';
 
 export function agentHookContextForTask(ctx: QaapAgentTaskRunnerContext, task: QaapAgentTask): QaapAgentHookRunContext {
     return {
@@ -139,9 +137,8 @@ export function createQaiqPreToolUseHookGate(
                 }
                 // A hook may approve, but never past a Qaap deny rule (core `--tools` allowlist, dev-server
                 // guard): those requests fall through to the normal path, which rejects them with its message.
-                const qaapDenies = resolveQaiqControlRequestAutoAction(task.command ?? '', task.autoApprove, request) === 'deny';
-                if (result.decision === 'allow' && !qaapDenies
-                    && !findQaiqDevServerGuardDenial(request) && !findQaiqDestructiveCommandGuardDenial(request, task.cwd)) {
+                if (result.decision === 'allow' && !(ctx.toolGate ?? DEFAULT_QAAP_TOOL_GATE_SERVICE)
+                    .isHookAllowBlocked(task.command, task.autoApprove, request, task.cwd)) {
                     record(request, 'approve');
                     respond(request, 'approve');
                     return;

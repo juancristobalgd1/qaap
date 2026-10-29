@@ -11,6 +11,7 @@ const disableImportJSDOM = enableJSDOM();
 
 import { expect } from 'chai';
 import {
+    createApprovalPolicySheetOptionButton,
     createModeSheetOptionButton,
     populateAgentToolbarButton,
     populateApprovalPolicyToolbarButton,
@@ -95,5 +96,55 @@ describe('qaap-agent-ui', () => {
         expect(button.querySelector('.theia-mobile-projects-sticky-composer-approval-policy-label')?.textContent)
             .to.equal(policy.label);
         expect(button.querySelector('.codicon-chevron-down')).to.exist;
+    });
+
+    it('createApprovalPolicySheetOptionButton disables Ask before changes with the harness reason', () => {
+        const reason = 'Shell can\'t ask before changes yet; it runs every action without asking.';
+        let selectCount = 0;
+        const onSelect = (): void => { selectCount++; };
+        const disabled = createApprovalPolicySheetOptionButton({
+            policy: resolveAgentApprovalPolicyOption('request-approval'),
+            disabledReason: reason,
+            onSelect,
+        });
+        expect(disabled.disabled).to.equal(true);
+        expect(disabled.getAttribute('aria-disabled')).to.equal('true');
+        expect(disabled.querySelector('.theia-qaap-approval-policy-sheet-description')?.textContent).to.equal(reason);
+        disabled.click();
+        expect(selectCount).to.equal(0);
+
+        const enabled = createApprovalPolicySheetOptionButton({
+            policy: resolveAgentApprovalPolicyOption('request-approval'),
+            onSelect,
+        });
+        expect(enabled.disabled).to.equal(false);
+        expect(enabled.querySelector('.theia-qaap-approval-policy-sheet-description')?.textContent)
+            .to.equal(resolveAgentApprovalPolicyOption('request-approval').description);
+    });
+
+    it('createApprovalPolicySheetOptionButton shows a checkmark only on the effective row', () => {
+        const row = (policyId: 'request-approval' | 'approve-for-me', selected: boolean, disabledReason?: string): HTMLButtonElement =>
+            createApprovalPolicySheetOptionButton({
+                policy: resolveAgentApprovalPolicyOption(policyId),
+                selected,
+                disabledReason,
+                onSelect: () => undefined,
+            });
+        // Pi cannot ask: the Ask row is disabled and unchecked; the Autonomous row carries the check.
+        const askRow = row('request-approval', false, 'Pi can\'t ask before changes yet; it runs every action without asking.');
+        const autonomousRow = row('approve-for-me', true);
+        expect(askRow.querySelector('.codicon-check')).to.equal(null);
+        expect(askRow.disabled).to.equal(true);
+        expect(autonomousRow.querySelector('.codicon-check')).to.exist;
+    });
+
+    it('createApprovalPolicySheetOptionButton keeps Ask before changes checked and enabled for QAIQ', () => {
+        const askRow = createApprovalPolicySheetOptionButton({
+            policy: resolveAgentApprovalPolicyOption('request-approval'),
+            selected: true,
+            onSelect: () => undefined,
+        });
+        expect(askRow.disabled).to.equal(false);
+        expect(askRow.querySelector('.codicon-check')).to.exist;
     });
 });

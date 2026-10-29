@@ -1,3 +1,4 @@
+import { buildPiGateTemplateVars } from './qaap-tool-gate-pi-adapter';
 import { AGENT_STOP_GRACE_TIMEOUT_MS, SHELL_AGENT_ID, QAIQ_AGENT_ID, REPO_MAP_CACHE_TTL_MS, REPO_MAP_MAX_CHARS, USER_REQUEST_MAX_CHARS } from './qaap-agent-task-runner-constants';
 import type { QaapAgentCommandBuildResult, QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { QaapAgentQueuePolicy } from './qaap-agent-queue-policy';
@@ -613,6 +614,15 @@ export function stripLeadingAgentMentionExtracted(ctx: QaapAgentTaskRunnerContex
 }
 
 export function buildTemplateVarsExtracted(ctx: QaapAgentTaskRunnerContext, agentId: string,
+        agentModel?: QaapCreateAgentTaskQaiqModel,
+        interaction?: QaapQaiqInteractionFlagOptions,
+        ownerLogin?: string,
+        cwd?: string,): Record<string, string> {
+        const vars = buildBaseTemplateVars(ctx, agentId, agentModel, interaction, ownerLogin, cwd);
+        return agentId.trim().toLowerCase() === 'pi' ? { ...vars, ...buildPiGateTemplateVars() } : vars;
+}
+
+function buildBaseTemplateVars(ctx: QaapAgentTaskRunnerContext, agentId: string,
         agentModel?: QaapCreateAgentTaskQaiqModel,
         interaction?: QaapQaiqInteractionFlagOptions,
         ownerLogin?: string,

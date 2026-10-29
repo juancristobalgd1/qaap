@@ -8,7 +8,7 @@ import type { QaapAgentConversationDTO, QaapAgentConversationSummaryDTO } from '
 import { conversationToSummary } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { applyConversationComposerPrefs, applyProjectComposerDefaults, buildRuntimeComposerPersistPatch, extractConversationComposerPrefs, extractConversationComposerPrefsFromSummary, formatComposerRunPermissionsLabel, formatConversationExecutionSessionMeta, readConversationComposerDraft, readProjectComposerDefaults, writeConversationComposerDraft } from './qaap-conversation-composer-state';
 import { writeStoredAgentModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
-import { readStoredAgentApprovalPolicy, writeStoredAgentApprovalPolicy } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
+import { readStoredAgentApprovalPolicy, resolveAgentApprovalPolicyOption, writeStoredAgentApprovalPolicy } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import { QAAP_BACKEND_INTERACTION_MODES, reconcileComposerModeId, writeStoredComposerMode } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-mode';
 
 const baseConv = (): QaapAgentConversationDTO => ({
@@ -196,6 +196,14 @@ describe('qaap-conversation-composer-state', () => {
     it('formatComposerRunPermissionsLabel joins mode and policy', () => {
         expect(formatComposerRunPermissionsLabel('Build', 'request-approval')).to.equal('Build · Ask before changes');
         expect(formatComposerRunPermissionsLabel(undefined, 'full-access')).to.equal('Full access');
+    });
+
+    it('formatComposerRunPermissionsLabel shows the effective mode for a harness that cannot ask', () => {
+        const autonomous = formatComposerRunPermissionsLabel('Build', 'request-approval', 'my-custom-agent');
+        expect(autonomous).to.equal(`Build · ${resolveAgentApprovalPolicyOption('approve-for-me').label}`);
+        expect(formatComposerRunPermissionsLabel('Build', 'request-approval', 'qaiq')).to.equal('Build · Ask before changes');
+        expect(formatComposerRunPermissionsLabel('Build', 'request-approval', 'pi')).to.equal('Build · Ask before changes');
+        expect(formatComposerRunPermissionsLabel('Build', 'request-approval', 'codex')).to.equal('Build · Ask before changes');
     });
 
     it('buildRuntimeComposerPersistPatch prefers explicit runtime model', () => {
