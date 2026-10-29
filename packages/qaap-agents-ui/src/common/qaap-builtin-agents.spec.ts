@@ -20,7 +20,7 @@ describe('qaap-builtin-agents', () => {
 
     it('registers Pi (and not the retired Hermes) as a built-in agent', () => {
         const pi = QAAP_BUILTIN_AGENT_DEFINITIONS.find(definition => definition.id === 'pi');
-        expect(pi?.template).to.equal('pi --mode json -p --no-session -e {gate_ext} {trust_flags} {model_flags} {prompt}');
+        expect(pi?.template).to.equal('pi --mode json -p --no-session -ne -e {gate_ext} {trust_flags} {model_flags} {prompt}');
         expect(QAAP_BUILTIN_AGENT_DEFINITIONS.find(definition => definition.id === 'hermes')).to.equal(undefined);
     });
 });

@@ -33,9 +33,9 @@ describe('Pi tool gate adapter', () => {
         expect(source).to.not.match(/require\(/);
     });
 
-    it('builds `pi --mode json -p --no-session -e <abs> --no-approve …` for an untrusted folder', () => {
+    it('builds `pi --mode json -p --no-session -ne -e <abs> --no-approve …` for an untrusted folder', () => {
         const command = applyTemplate(piTemplate(), 'fix it', templateVarsFor('pi', false));
-        expect(command).to.contain('pi --mode json -p --no-session -e ');
+        expect(command).to.contain('pi --mode json -p --no-session -ne -e ');
         expect(command).to.contain(`'${resolveQaapToolGatePiExtensionPath()}'`);
         expect(command).to.contain(' --no-approve ');
         expect(command).to.not.match(/(^|\s)--approve(\s|$)/);
@@ -77,6 +77,13 @@ describe('Pi tool gate adapter', () => {
         const command = applyTemplate(piTemplate(), 'x', templateVarsFor('pi', true));
         expect(command).to.match(/(^|\s)--approve(\s|$)/);
         expect(command).to.not.contain('--no-approve');
+    });
+
+    it('always disables extension discovery (-ne), trusted or not, while the explicit gate -e still loads', () => {
+        for (const trusted of [true, false]) {
+            const command = applyTemplate(piTemplate(), 'x', templateVarsFor('pi', trusted));
+            expect(command, String(trusted)).to.match(/ --no-session -ne -e '/);
+        }
     });
 
     it('has no unconditional --approve in the builtin template', () => {

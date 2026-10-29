@@ -42,13 +42,13 @@ describe('qaap agent task runner project folder trust', () => {
     it('passes --approve to Pi for a trusted project folder', () => {
         const vars = buildTemplateVarsExtracted(contextTrusting(['/owned/alice/app']), 'pi', undefined, undefined, 'alice', '/owned/alice/app');
         expect(vars.trust_flags).to.equal('--approve');
-        expect(applyTemplate(piTemplate, 'hi', vars)).to.equal(`pi --mode json -p --no-session -e ${extFlag} --approve 'hi'`);
+        expect(applyTemplate(piTemplate, 'hi', vars)).to.equal(`pi --mode json -p --no-session -ne -e ${extFlag} --approve 'hi'`);
     });
 
     it('passes --no-approve to Pi while the folder is undecided or untrusted', () => {
         const vars = buildTemplateVarsExtracted(contextTrusting([]), 'pi', undefined, undefined, 'alice', '/owned/alice/app');
         expect(vars.trust_flags).to.equal('--no-approve');
-        expect(applyTemplate(piTemplate, 'hi', vars)).to.equal(`pi --mode json -p --no-session -e ${extFlag} --no-approve 'hi'`);
+        expect(applyTemplate(piTemplate, 'hi', vars)).to.equal(`pi --mode json -p --no-session -ne -e ${extFlag} --no-approve 'hi'`);
     });
 
     it('treats a missing project folder as untrusted', () => {
