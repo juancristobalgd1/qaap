@@ -7,8 +7,10 @@ import { expect } from 'chai';
 import { spawnSync } from 'child_process';
 import * as http from 'http';
 import type { AddressInfo } from 'net';
+import { pathToFileURL } from 'url';
 import { QAAP_TOOL_GATE_TOKEN_HEADER } from '@theia/qaap-shared-core/lib/common/qaap-tool-gate-protocol';
 import { resolveQaapToolGateCodexHookPath } from './qaap-codex-gate-overlay';
+import { resolveQaapToolGatePiExtensionPath } from './qaap-tool-gate-pi-adapter';
 
 interface HookResult {
     exitCode: number;
@@ -37,12 +39,16 @@ describe('qaap-tool-gate-codex-hook.mjs', () => {
     let seen: Array<{ token: string | undefined; body: Record<string, any> }>;
     let reply: (body: Record<string, any>, res: http.ServerResponse) => void;
     let hook: CodexHook;
+    // The hook shares the gate module (qaap-tool-gate-pi.mjs) with the Pi extension, so its consecutive-failure counter is module state.
+    let gate: { resetGateFailures(): void };
 
     before(async () => {
         hook = await importModule(`file://${resolveQaapToolGateCodexHookPath()}`);
+        gate = await importModule(pathToFileURL(resolveQaapToolGatePiExtensionPath()).href) as unknown as { resetGateFailures(): void };
     });
 
     beforeEach(async () => {
+        gate.resetGateFailures();
         seen = [];
         reply = (_body, res) => {
             res.end(JSON.stringify({ decision: { kind: 'allow', source: 'policy' } }));

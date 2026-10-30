@@ -7,7 +7,7 @@ import { QaapBashReadOnlyClassifier } from '@theia/qaap-shared-core/lib/common/q
 import { findQaiqDestructiveCommandGuardDenial } from './qaap-agent-destructive-command-guard';
 import { findQaiqDevServerGuardDenial } from './qaap-agent-dev-server-guard';
 import { buildSubagentDeniedMessage, extractRequestedSubagentType, isBlockedHeadlessTool } from './qaap-agent-subagent-policy';
-import { parseQaiqCoreTools } from './qaap-qaiq-tool-policy';
+import { commandUsesDefaultToolSet, parseQaiqCoreTools } from './qaap-qaiq-tool-policy';
 import type { QaapQaiqPendingControlRequest } from './qaap-qaiq-stdio-approvals';
 
 const VERIFICATION_SUBAGENT_TYPE = 'verification';
@@ -52,6 +52,11 @@ export interface QaapQaiqControlAutoOptions {
      * to the preset rules.
      */
     readonly checkPathsInsideCwd?: (paths: readonly string[]) => string | undefined;
+    /**
+     * Claude Code keeps its subagents and skills (QAIQ's single-conversation policy does not apply). The runner
+     * sets it from the harness id; the tools those subagents run still reach this gate on their own.
+     */
+    readonly allowSubagentTools?: boolean;
 }
 
 const NETWORK_TOOL_NAMES = new Set(['WebSearch', 'WebFetch', 'Fetch']);
@@ -115,7 +120,7 @@ export function resolveQaiqControlRequestAutoDecision(
         return { action: 'allow', reason: 'read-only-shell', detail: readOnly.detail };
     }
     return {
-        action: resolvePresetAutoAction(command, autoApprove, request, options.cwd),
+        action: resolvePresetAutoAction(command, autoApprove, request, options.cwd, options.allowSubagentTools),
         ...(readOnly ? { readOnlyBlockedReason: readOnly.detail } : {}),
     };
 }
@@ -192,6 +197,7 @@ function resolvePresetAutoAction(
     autoApprove: boolean | undefined,
     request: QaapQaiqPendingControlRequest,
     cwd: string | undefined,
+    allowSubagentTools = false,
 ): QaapQaiqControlAutoAction {
     if (autoApprove === false) {
         return 'queue';
@@ -207,11 +213,11 @@ function resolvePresetAutoAction(
     }
     const toolName = request.toolName?.trim() ?? '';
     // Headless-blocked tools bypass useful stdio control once running — deny even in bypassPermissions.
-    if (toolName && isBlockedHeadlessTool(toolName)) {
+    if (toolName && !allowSubagentTools && isBlockedHeadlessTool(toolName)) {
         return 'deny';
     }
     // Agent is allowed only for subagent_type="verification"; all other subagent types are denied.
-    if (toolName && isNonVerificationAgentCall(toolName, request)) {
+    if (toolName && !allowSubagentTools && isNonVerificationAgentCall(toolName, request)) {
         return 'deny';
     }
     const coreTools = parseQaiqCoreTools(command);
@@ -230,6 +236,14 @@ function resolvePresetAutoAction(
     // subagent must continue immediately instead of entering an approval queue the default UI
     // does not surface.
     if ((isShellTool(toolName) || toolName === 'Agent') && coreTools?.has(toolName)) {
+        return 'allow';
+    }
+    // Claude Code delegates freely; what its subagents run reaches this gate as ordinary tool calls.
+    if (allowSubagentTools && (toolName === 'Agent' || toolName === 'Task' || toolName === 'Skill')) {
+        return 'allow';
+    }
+    // Claude Code: `--tools default` keeps every built-in tool and only records that the preset allows shell.
+    if (isShellTool(toolName) && commandUsesDefaultToolSet(command)) {
         return 'allow';
     }
     const allowedTools = parseAllowedTools(command);
