@@ -64,7 +64,11 @@ describe('Pi tool gate adapter', () => {
     it('seeds an ephemeral read-only grant for Pi one-shots and revokes it on release; other harnesses get none', () => {
         const tokens = new QaapToolGateTokenService();
         const runner = Object.create(QaapAgentTaskRunner.prototype) as QaapAgentTaskRunner;
-        Object.assign(runner, { toolGateTokens: tokens, helperApiUrl: 'http://127.0.0.1:3000/qaap/api/agent-tasks' });
+        Object.assign(runner, {
+            toolGateTokens: tokens,
+            helperApiUrl: 'http://127.0.0.1:3000/qaap/api/agent-tasks',
+            tenantSpawn: { agentSandboxFor: () => undefined },
+        });
         const env: NodeJS.ProcessEnv = {};
         const release = runner.applyOneShotToolGateEnv(env, { ownerLogin: 'alice', cwd: '/w', agentId: 'pi', command: 'pi' });
         expect(env.QAAP_GATE_URL).to.equal('http://127.0.0.1:3000/qaap/api/tool-gate');

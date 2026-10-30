@@ -505,7 +505,7 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
                         seeded[key] = value;
                     }
                 }
-                if (taskRunner.applyHelperEnv(seeded)) {
+                if (taskRunner.applyHelperEnv(seeded, undefined, undefined, undefined, cwd)) {
                     options.env = {
                         ...(options.env ?? {}),
                         PATH: seeded.PATH ?? null,

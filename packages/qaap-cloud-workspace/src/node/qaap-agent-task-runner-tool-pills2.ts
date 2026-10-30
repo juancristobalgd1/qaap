@@ -20,8 +20,10 @@ import {
     COMPOSER_PROMPT_IMPROVE_SERVER_TIMEOUT_MS,
 } from '@theia/qaap-composer/lib/common/qaap-composer-prompt-improve';
 import { QaapAgentCommandTimeoutError, resolveTaskHarnessId, stripSignInOnlyAgentApiKeyEnv } from './qaap-agent-task-runner-utils3';
+import type { QaapTaskSandbox } from './qaap-task-sandbox';
 import {
     isQaapAgentTaskFinished,
+    QAAP_AGENT_TASK_API_PATH,
     type QaapCreateAgentTaskQaiqModel,
     type QaapAgentTask,
     type QaapAgentTaskKind,
@@ -307,7 +309,7 @@ export function buildChildEnvExtracted(ctx: QaapAgentTaskRunnerContext, task: Qa
         if (opencodePermission) {
             env.OPENCODE_PERMISSION = opencodePermission;
         }
-        ctx.applyHelperEnv(env, task.ownerLogin, task.id, task.autoApprove);
+        ctx.applyHelperEnv(env, task.ownerLogin, task.id, task.autoApprove, task.cwd);
         // Last: no inherited (operator / tenant) key may bypass a harness's own sign-in.
         stripSignInOnlyAgentApiKeyEnv(env, resolveTaskHarnessId(task.agentId, task.command));
         return env;
@@ -375,14 +377,57 @@ export function applyProviderPreferenceEnvExtracted(ctx: QaapAgentTaskRunnerCont
         ctx.applyOpenRouterOpenAiCompatEnv(env);
 }
 
-export function applyHelperEnvExtracted(ctx: QaapAgentTaskRunnerContext, env: NodeJS.ProcessEnv, ownerLogin?: string, parentTaskId?: string, autoApprove?: boolean): boolean {
+/**
+ * The origin (`scheme://host:port`) an agent process uses to reach this backend's tool gate and helper
+ * API. Loopback when the process runs on the backend itself. In a task sandbox loopback is the sandbox,
+ * so the backend's address on the sandbox's network is used instead (the broker resolves it). Undefined
+ * when that address is unknown: the caller then sends no URL and the gate fails closed.
+ */
+export function agentReachableOriginFor(helperApiUrl: string, sandbox: QaapTaskSandbox | undefined): string | undefined {
+    const helper = new URL(helperApiUrl);
+    if (!sandbox) {
+        return helper.origin;
+    }
+    if (!sandbox.backendHost) {
+        return undefined;
+    }
+    const host = sandbox.backendHost.includes(':') ? `[${sandbox.backendHost}]` : sandbox.backendHost;
+    return `http://${host}:${helper.port}`;
+}
+
+/**
+ * Adds the host of a non-loopback origin to NO_PROXY/no_proxy of an agent child env. Per-spawn env is
+ * what the sandbox exec server applies on top of its own, so the value is fresh for every spawn. The
+ * base list matches the sandbox's egress default, so the proxy's own exclusions survive.
+ */
+export function addAgentReachableNoProxy(env: NodeJS.ProcessEnv, origin: string): void {
+    const host = new URL(origin).hostname.replace(/^\[|\]$/g, '');
+    if (host === '127.0.0.1') {
+        return;
+    }
+    const base = env.NO_PROXY ?? env.no_proxy ?? 'localhost,127.0.0.1,::1';
+    const entries = base.split(',').map(entry => entry.trim()).filter(Boolean);
+    if (!entries.includes(host)) {
+        entries.push(host);
+    }
+    env.NO_PROXY = entries.join(',');
+    env.no_proxy = env.NO_PROXY;
+}
+
+export function applyHelperEnvExtracted(ctx: QaapAgentTaskRunnerContext, env: NodeJS.ProcessEnv, ownerLogin?: string, parentTaskId?: string, autoApprove?: boolean, cwd?: string): boolean {
         if (!ctx.helperApiUrl) {
+            return false;
+        }
+        const origin = ctx.resolveAgentReachableOrigin(cwd);
+        if (!origin) {
+            // Sandboxed without a reachable backend address: no helper URL, so no helper token either.
             return false;
         }
         // Seed the token bound to this task's owner so a spawned agent can only fan out
         // sub-tasks as its own user (the endpoint resolves the owner from the token).
         env.QAAP_TASK_TOKEN = ctx.helperTokenForOwner(ownerLogin);
-        env.QAAP_TASK_API_URL = ctx.helperApiUrl;
+        env.QAAP_TASK_API_URL = `${origin}${QAAP_AGENT_TASK_API_PATH}`;
+        addAgentReachableNoProxy(env, origin);
         if (parentTaskId) {
             env.QAAP_TASK_PARENT_ID = parentTaskId;
         }

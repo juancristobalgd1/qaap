@@ -648,6 +648,14 @@ export class QaapTenantSpawnService {
     }
 
     /**
+     * @internal The task sandbox a harness started at `cwd` runs in, if any. Used by the agent runner to
+     * pick the address its gate and helper URLs must use (see `resolveAgentReachableOrigin`).
+     */
+    agentSandboxFor(cwd: string): QaapTaskSandbox | undefined {
+        return this.taskSandboxFor(cwd);
+    }
+
+    /**
      * The live per-task sandbox (QAAP_TASK_SANDBOX, doc/qaap-task-sandbox.md) that owns `cwd`, if any:
      * direct mode, or broker mode inside a per-tenant backend. A control plane in container-per-tenant
      * mode (QAAP_CLOUD_MODE=docker) keeps the tenant worker as the boundary.

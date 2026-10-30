@@ -394,9 +394,17 @@ describe('QaapTaskSandboxBroker (control plane)', () => {
         }
         fs.symlinkSync('/etc', path.join(hostRoot, 'worktrees', 'alice', 'escape'));
         docker = new FakeDocker();
+        // The tenant backend sits on the tenant network and on the direct-egress network.
+        docker.containers.set('qaap-backend-alice', {
+            labels: {}, env: [], running: true, image: 'qaap-theia:test',
+            networks: { 'qaap-tenant-net-alice': '172.24.0.50', 'qaap-tenant-egress-alice': '172.25.0.50' },
+        });
         broker = new QaapTaskSandboxBroker();
         const orchestrator = {
             taskSandboxPlacement: async (tenant: string) => placementFor(tenant),
+            getTenantBackendTarget: (tenant: string) => tenant === 'alice'
+                ? { containerId: 'qaap-backend-alice', containerName: 'qaap-backend-alice', host: '127.0.0.1', port: 4873, tenantLogin: 'alice' }
+                : undefined,
             isBackendPerTenantEnabled: () => true,
             getTenantBackendAssertionSecret: () => SECRET,
             getTenantBackendConnectionToken: () => undefined,
@@ -482,6 +490,19 @@ describe('QaapTaskSandboxBroker (control plane)', () => {
         const recreated = await restarted.create('alice', args);
         expect(recreated.created).to.equal(true);
         expect(recreated.token).to.not.equal(sandbox.token);
+    });
+
+    it('hands the sandbox the backend address on the tenant network, never the egress one', async () => {
+        const sandbox = await broker.create('alice', { root: '/tmp/qaap-worktrees/alice/repo-1' });
+        expect(sandbox.backendHost).to.equal('172.24.0.50');
+        // Reuse of a running sandbox still reports the current backend address.
+        expect((await broker.create('alice', { root: '/tmp/qaap-worktrees/alice/repo-1' })).backendHost).to.equal('172.24.0.50');
+    });
+
+    it('omits backendHost when the backend has no address on the tenant network, or is unknown', async () => {
+        docker.containers.get('qaap-backend-alice')!.networks = { 'qaap-tenant-egress-alice': '172.25.0.50' };
+        expect((await broker.create('alice', { root: '/tmp/qaap-worktrees/alice/repo-1' })).backendHost).to.equal(undefined);
+        expect((await broker.create('bob', { root: '/tmp/qaap-worktrees/bob/repo-1' })).backendHost).to.equal(undefined);
     });
 
     it('returns the internal-network address of the exec server, and the name only without an egress network', async () => {

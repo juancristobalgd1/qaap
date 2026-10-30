@@ -353,7 +353,13 @@ export interface QaapAgentTaskRunnerContext {
     applyOpenRouterOpenAiCompatEnv(env: NodeJS.ProcessEnv): void;
     applyNvidiaOpenAiCompatEnv(env: NodeJS.ProcessEnv): void;
     applyHuggingfaceOpenAiCompatEnv(env: NodeJS.ProcessEnv): void;
-    applyHelperEnv(env: NodeJS.ProcessEnv, ownerLogin?: string, parentTaskId?: string, autoApprove?: boolean): boolean;
+    /** `cwd` picks the address a task sandbox can reach the backend on; without it the process is taken as local. */
+    applyHelperEnv(env: NodeJS.ProcessEnv, ownerLogin?: string, parentTaskId?: string, autoApprove?: boolean, cwd?: string): boolean;
+    /**
+     * @internal Origin an agent process started at `cwd` uses for this backend's tool gate and helper API:
+     * loopback, or the backend's address on its task sandbox's network. Undefined: fail closed, send no URL.
+     */
+    resolveAgentReachableOrigin(cwd: string | undefined): string | undefined;
     /**
      * Seeds the gate env of a one-shot agent call (prompt improve, goal-loop evaluator) with an ephemeral
      * read-only grant. Returns the function that revokes it; call it when the process ends.

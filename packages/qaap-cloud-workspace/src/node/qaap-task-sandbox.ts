@@ -150,6 +150,11 @@ export interface QaapTaskSandbox {
     readonly remoteEnv: Readonly<Record<string, string>>;
     /** Broker mode: the sandbox's exec server on the tenant network and its per-sandbox token. */
     readonly exec?: { readonly host: string; readonly port: number; readonly token: string };
+    /**
+     * Broker mode: the tenant backend's address on the sandbox's network. Agent processes in the
+     * sandbox reach the tool gate and the helper API here. Absent: they must not be given a URL.
+     */
+    readonly backendHost?: string;
 }
 
 /** Why a forwarder exists: an expected preview port, the terminal port watcher, or a direct call. */
@@ -914,6 +919,7 @@ export class QaapTaskSandboxService implements BackendApplicationContribution, Q
             forwardPorts: devcontainer?.forwardPorts ?? [],
             remoteEnv: devcontainer?.remoteEnv ?? {},
             exec: { host: created.host, port: created.port, token: created.token },
+            backendHost: created.backendHost,
         };
         const entry = this.newEntry(sandbox, options.ownerLogin);
         this.entries.set(root, entry);
