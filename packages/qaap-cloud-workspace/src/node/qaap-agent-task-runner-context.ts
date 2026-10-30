@@ -366,5 +366,6 @@ export interface QaapAgentTaskRunnerContext {
      */
     applyOneShotToolGateEnv(env: NodeJS.ProcessEnv, task: Pick<QaapAgentTask, 'ownerLogin' | 'cwd' | 'agentId' | 'command'>): () => void;
     /** Seeds `QAAP_GATE_URL` / `QAAP_GATE_TOKEN` for harnesses that reach the tool gate over HTTP. */
+    isToolGateArmed(taskId: string): boolean;
     applyToolGateEnv(env: NodeJS.ProcessEnv, task: Pick<QaapAgentTask, 'id' | 'ownerLogin' | 'cwd' | 'agentId' | 'command'>): void;
 }

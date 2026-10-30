@@ -65,13 +65,6 @@ describe('qaap-sticky-composer-approval-policy', () => {
         expect(isApprovalPolicyUnsupportedByAgent('request-approval', 'claude')).to.equal(false);
     });
 
-    it('keeps Ask before changes for a harness that refuses gated actions (opencode)', () => {
-        for (const id of ['opencode']) {
-            expect(resolveEffectiveAgentApprovalPolicyId('request-approval', id), id).to.equal('request-approval');
-            expect(resolveApprovalPolicyUnsupportedMode('request-approval', id), id).to.equal('refuses');
-        }
-    });
-
     it('keeps Ask before changes for Codex without a warning: its PreToolUse hook can ask', () => {
         expect(resolveEffectiveAgentApprovalPolicyId('request-approval', 'codex')).to.equal('request-approval');
         expect(resolveApprovalPolicyUnsupportedMode('request-approval', 'codex')).to.equal(undefined);

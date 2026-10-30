@@ -1,4 +1,12 @@
 import { usesToolGateExtension } from './qaap-tool-gate-pi-adapter';
+import { QAAP_OPENCODE_GATE_PROBE } from './qaap-tool-gate-opencode-probe';
+import {
+    opencodeGatePluginSeeded,
+    resolveOpencodeArmTimeoutMs,
+    resolveQaapToolGateOpencodePluginPath,
+    startOpencodeArmWatch,
+    usesOpencodeGatePlugin,
+} from './qaap-tool-gate-opencode-adapter';
 import { DEFAULT_QAAP_CODEX_GATE_OVERLAY_BUILDER, usesCodexToolGateHook, type QaapCodexGateOverlay } from './qaap-codex-gate-overlay';
 import { resolveCodexAgentHome } from './qaap-agent-native-models';
 import { IDLE_TASK_TIMEOUT_MS, QAAP_AGENT_VERIFY_ENABLED, QUEUED_APPROVAL_GRACE_TIMEOUT_MS, USER_REQUEST_MAX_CHARS } from './qaap-agent-task-runner-constants';
@@ -484,6 +492,14 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             ctx.recordTaskLatencyMark(task.id, 'spawn_start');
             ctx.observability?.recordAgentCommandStarted(task, 'agent-cli');
             childEnv = ctx.buildChildEnv(task);
+            if (usesOpencodeGatePlugin(ctx.resolveTaskAgentId(task))) {
+                // Prove once per OpenCode version that the gate plugin loads and sees tool calls. Without the
+                // proof the plugin is not wired and OpenCode's own `ask` rules keep refusing gated tools.
+                const probe = await QAAP_OPENCODE_GATE_PROBE.ensure(resolveQaapToolGateOpencodePluginPath(), childEnv, 'opencode', ctx.resolveAgentSpawnIdentity(task.cwd));
+                if (!probe.ok) {
+                    logStream.write(`\n[qaap] OpenCode tool gate unavailable: ${probe.reason} Gated actions (edits, shell, network) are refused for this run.\n`);
+                }
+            }
             // Only the harness process gets gate credentials: issuing a token revokes the previous one.
             ctx.applyToolGateEnv(childEnv, task);
             if (childEnv.QAAP_GATE_TOKEN && usesCodexToolGateHook(ctx.resolveTaskAgentId(task))) {
@@ -741,6 +757,26 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                 ctx.killAgentProcessTree(child);
             }
         });
+        // The gate plugin reports in at startup (`/arm`). The inline `ask` baseline keeps every gated tool
+        // refused until then, so a plugin that never arms cannot let anything through: fail the task loudly.
+        if (childEnv && opencodeGatePluginSeeded(childEnv)) {
+            const stopArmWatch = startOpencodeArmWatch({
+                isArmed: () => ctx.isToolGateArmed(task.id),
+                isRunning: () => ctx.tasks.get(task.id)?.state === 'running',
+                timeoutMs: resolveOpencodeArmTimeoutMs(childEnv),
+                onTimeout: () => {
+                    logStream.write('\n[qaap] OpenCode tool gate plugin did not start; cancelling the run (nothing was allowed without the gate).\n', () => {
+                        if (ctx.tasks.get(task.id)?.state !== 'running') {
+                            return;
+                        }
+                        clearIdleTimer();
+                        ctx.killAgentProcessTree(child);
+                        ctx.finishTask(task.id, 'failed', 1);
+                    });
+                },
+            });
+            child.once('exit', stopArmWatch);
+        }
         child.on('error', error => {
             logStream.write(`\n[qaap] process error: ${error.message}\n`);
         });

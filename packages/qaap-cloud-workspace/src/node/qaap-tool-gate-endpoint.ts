@@ -9,6 +9,7 @@ import { BackendApplicationContribution } from '@theia/core/lib/node';
 import { nls } from '@theia/core/lib/common/nls';
 import {
     QAAP_TOOL_GATE_API_PATH,
+    QAAP_TOOL_GATE_ARM_NONCE_HEADER,
     QAAP_TOOL_GATE_CLIENT_ERRORS_HEADER,
     QAAP_TOOL_GATE_MAX_CONSECUTIVE_ERRORS,
     QAAP_TOOL_GATE_TOKEN_HEADER,
@@ -56,6 +57,9 @@ export class QaapToolGateEndpoint implements BackendApplicationContribution {
         app.get(`${QAAP_TOOL_GATE_API_PATH}/health`, (req, res) => {
             this.handleHealth(req, res);
         });
+        app.post(`${QAAP_TOOL_GATE_API_PATH}/arm`, (req, res) => {
+            this.handleArm(req, res);
+        });
         app.post(`${QAAP_TOOL_GATE_API_PATH}/evaluate`, (req, res) => {
             this.handleEvaluate(req, res).catch(() => {
                 // An internal failure is a 5xx the client counts as a gate error (fail closed on its side).
@@ -71,6 +75,22 @@ export class QaapToolGateEndpoint implements BackendApplicationContribution {
             return;
         }
         res.set('Cache-Control', 'no-store');
+        res.json({ ok: true });
+    }
+
+    /** A harness plugin reports that it loaded: the runner cancels the task if this never arrives. */
+    protected handleArm(req: Request, res: Response): void {
+        const grant = this.requireGrant(req, res);
+        if (!grant) {
+            return;
+        }
+        res.set('Cache-Control', 'no-store');
+        // The token is inherited by everything the agent runs; only the plugin holds the one-time nonce.
+        const nonce = req.header(QAAP_TOOL_GATE_ARM_NONCE_HEADER);
+        if (!this.tokens.arm(grant.taskId, nonce)) {
+            res.status(403).json({ ok: false });
+            return;
+        }
         res.json({ ok: true });
     }
 

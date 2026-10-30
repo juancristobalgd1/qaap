@@ -49,6 +49,7 @@ import { QaapAgentHookService } from './qaap-agent-hook-service';
 import { QaapToolGateService } from './qaap-tool-gate-service';
 import { QaapToolGateTokenService } from './qaap-tool-gate-token-service';
 import { QaapToolGateAskBroker } from './qaap-tool-gate-ask-broker';
+import { applyOpencodeGateEnv, opencodeGatePluginSeeded, usesOpencodeGatePlugin } from './qaap-tool-gate-opencode-adapter';
 import { QAAP_TOOL_GATE_API_PATH } from '@theia/qaap-shared-core/lib/common/qaap-tool-gate-protocol';
 import { resolveQaapHarnessCapabilities } from '@theia/qaap-shared-core/lib/common/qaap-harness-capabilities';
 import { QaapProjectFolderTrustStore, resolveProjectFolderTrustRoot } from './qaap-project-folder-trust-store';
@@ -1896,6 +1897,9 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         addAgentReachableNoProxy(env, origin);
         env.QAAP_GATE_TOKEN = grant.token;
         env.QAAP_GATE_ASK_TTL_SEC = '0';
+        if (usesOpencodeGatePlugin(agentId)) {
+            applyOpencodeGateEnv(env, this.isProjectFolderTrusted(task.ownerLogin, task.cwd));
+        }
         return grant.release;
     }
 
@@ -1917,6 +1921,18 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         addAgentReachableNoProxy(env, origin);
         env.QAAP_GATE_TOKEN = this.toolGateTokens.issue(task.id, task.ownerLogin, task.cwd);
         env.QAAP_GATE_ASK_TTL_SEC = String(resolveQaapHarnessCapabilities(this.resolveTaskAgentId(task as QaapAgentTask)).askTtlSec);
+        if (usesOpencodeGatePlugin(this.resolveTaskAgentId(task as QaapAgentTask))) {
+            applyOpencodeGateEnv(env, this.isProjectFolderTrusted(task.ownerLogin, task.cwd));
+            const nonce = opencodeGatePluginSeeded(env) ? this.toolGateTokens.issueArmNonce(task.id) : undefined;
+            if (nonce) {
+                env.QAAP_GATE_ARM_NONCE = nonce;
+            }
+        }
+    }
+
+    /** @internal Whether the harness plugin of a task reported in through the gate's `/arm`. */
+    isToolGateArmed(taskId: string): boolean {
+        return this.toolGateTokens?.isArmed(taskId) ?? false;
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */

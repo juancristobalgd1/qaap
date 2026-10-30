@@ -38,6 +38,9 @@ export type QaapToolGateDecision =
 export const QAAP_TOOL_GATE_API_PATH = '/qaap/api/tool-gate';
 /** The only credential the gate accepts. It authenticates no other route. */
 export const QAAP_TOOL_GATE_TOKEN_HEADER = 'x-qaap-gate-token';
+
+/** Header carrying the one-time nonce that `/arm` requires (held only by a harness plugin, never by its tools). */
+export const QAAP_TOOL_GATE_ARM_NONCE_HEADER = 'x-qaap-gate-arm-nonce';
 /** Longest a single ask may wait for a human before it is denied. */
 export const QAAP_TOOL_GATE_MAX_ASK_TTL_SEC = 600;
 /**
