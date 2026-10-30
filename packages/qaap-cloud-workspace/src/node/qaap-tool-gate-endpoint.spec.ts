@@ -11,11 +11,14 @@ import * as path from 'path';
 import type { Request, Response } from '@theia/core/shared/express';
 import { QaapGithubAuthGuard } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
 import {
+    QAAP_TOOL_GATE_CLIENT_ERRORS_HEADER,
     QAAP_TOOL_GATE_TOKEN_HEADER,
     type QaapToolGateDecision,
 } from '@theia/qaap-shared-core/lib/common/qaap-tool-gate-protocol';
 import { mapQaapToolKind, type QaapHarnessCapabilities } from '@theia/qaap-shared-core/lib/common/qaap-harness-capabilities';
 import { QaapAgentApprovalEndpoint } from './qaap-agent-approval-endpoint';
+import { Emitter } from '@theia/core/lib/common/event';
+import { QaapAgentHookService } from './qaap-agent-hook-service';
 import { QaapGitExecConfigChecker } from './qaap-git-exec-config-checker';
 import { QaapShellPathContainmentChecker } from './qaap-shell-path-containment-checker';
 import { QaapToolGateAskBroker } from './qaap-tool-gate-ask-broker';
@@ -25,7 +28,9 @@ import { QaapToolGateTokenService } from './qaap-tool-gate-token-service';
 
 const WORKSPACE = process.cwd();
 // Isolated from the developer's own git config (lfs filters, fsmonitor...) so the checks are deterministic.
-const isolatedGitEnv = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
+const emptyGitConfig = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-gate-gitcfg-')), 'config');
+fs.writeFileSync(emptyGitConfig, '');
+const isolatedGitEnv = { ...process.env, GIT_CONFIG_GLOBAL: emptyGitConfig, GIT_CONFIG_NOSYSTEM: '1' };
 const gitChecker = new QaapGitExecConfigChecker((cwd, args) => spawnSync('git', [...args], { cwd, encoding: 'utf8', env: isolatedGitEnv }), os.tmpdir());
 const TMP_ROOT = fs.realpathSync(os.tmpdir());
 
@@ -80,12 +85,16 @@ describe('QaapToolGateEndpoint', () => {
     let token: string;
     let taskState: string;
     let task: Record<string, unknown>;
+    let outputs: Array<{ id: string; text: string }>;
+    let cancels: Array<{ id: string; options: unknown }>;
 
     beforeEach(() => {
         tokens = new QaapToolGateTokenService();
         asks = new QaapToolGateAskBroker();
         taskState = 'running';
-        task = { id: 'task-1', autoApprove: false, readOnlyWorkspace: false };
+        outputs = [];
+        cancels = [];
+        task = { id: 'task-1', autoApprove: false, readOnlyWorkspace: false, cwd: WORKSPACE, ownerLogin: 'alice' };
         endpoint = Object.create(TestableGateEndpoint.prototype) as TestableGateEndpoint;
         endpoint.askTtlSec = 0.05;
         Object.assign(endpoint, {
@@ -93,9 +102,12 @@ describe('QaapToolGateEndpoint', () => {
             asks,
             gate: new QaapToolGateService(),
             callTimes: new Map(),
+            gateErrors: new Map(),
             runner: {
                 detail: async () => ({ ...task, state: taskState }),
                 resolveTaskAgentId: () => 'pi',
+                appendAndFireOutput: (id: string, text: string) => outputs.push({ id, text }),
+                cancel: (id: string, options: unknown) => { cancels.push({ id, options }); return undefined; },
                 checkGitExecConfig: (cwd: string) => cwd.startsWith(TMP_ROOT) ? gitChecker.check(cwd) : undefined,
                 checkShellPathsInsideCwd: (cwd: string, paths: readonly string[]) => new QaapShellPathContainmentChecker().check(cwd, paths),
             },
@@ -416,6 +428,176 @@ describe('QaapToolGateEndpoint', () => {
             const res = fakeRes();
             await endpoint.evaluateForTest(fakeReq({ [QAAP_TOOL_GATE_TOKEN_HEADER]: token }, { cwd: 3 }), res);
             expect(res.statusCode).to.equal(400);
+        });
+    });
+
+    describe('PreToolUse hooks (pipeline step 4)', () => {
+        const gateHeaders = (): Record<string, string> => ({ [QAAP_TOOL_GATE_TOKEN_HEADER]: token });
+        let ran: string[];
+        let warnings: string[];
+        let hookResults: Record<string, { exitCode?: number; stdout: string; stderr: string; timedOut: boolean; error?: string }>;
+        let workspaceState: 'trusted' | 'pending' | undefined;
+
+        const decl = (command: string): Record<string, unknown> => ({ PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command, timeoutSec: 5 }] }] });
+
+        beforeEach(() => {
+            ran = [];
+            warnings = [];
+            hookResults = {};
+            workspaceState = 'trusted';
+            const service = Object.create(QaapAgentHookService.prototype) as QaapAgentHookService;
+            const emitter = new Emitter<{ message: string }>();
+            emitter.event(warning => warnings.push(warning.message));
+            Object.assign(service, {
+                loader: {
+                    loadUser: () => ({ declaration: {}, errors: [] }),
+                    loadWorkspace: () => ({ root: WORKSPACE, filePath: `${WORKSPACE}/.qaap/hooks.json`, declaration: decl('ws-hook'), digest: 'digest-1', errors: [] }),
+                },
+                trustStore: { decisionFor: () => workspaceState },
+                processRunner: {
+                    run: async (command: string) => {
+                        ran.push(command);
+                        return hookResults[command] ?? { exitCode: 0, stdout: '', stderr: '', timedOut: false };
+                    },
+                },
+                onDidWarnEmitter: emitter,
+                warnings: new Map(),
+                startedSessions: new Set(),
+                announcedPending: new Set(),
+                configCache: new Map(),
+                pendingWorkspaces: new Map(),
+            });
+            (endpoint as unknown as { runner: Record<string, unknown> }).runner.agentHooks = service;
+            task.autoApprove = true;
+        });
+
+        it('a hook deny blocks the call with the hook reason, even in full access', async () => {
+            hookResults['ws-hook'] = { exitCode: 2, stdout: '', stderr: 'no deploys here', timedOut: false };
+            const decision = decisionOf(await call(gateHeaders()));
+            expect(decision).to.include({ kind: 'deny', source: 'hook' });
+            expect(decision.kind === 'deny' && decision.reason).to.contain('no deploys here');
+        });
+
+        it('a hook ask raises a user card even when the policy would auto-approve; approve allows', async () => {
+            hookResults['ws-hook'] = { exitCode: 0, stdout: JSON.stringify({ hookSpecificOutput: { permissionDecision: 'ask' } }), stderr: '', timedOut: false };
+            endpoint.askTtlSec = 5;
+            const pending = call(gateHeaders());
+            await new Promise(resolve => setTimeout(resolve, 10));
+            expect(asks.count('task-1')).to.equal(1);
+            asks.respond('task-1', 'approve', 'c1');
+            expect(decisionOf(await pending).kind).to.equal('allow');
+        });
+
+        it('a hook ask that nobody answers is denied on TTL', async () => {
+            hookResults['ws-hook'] = { exitCode: 0, stdout: JSON.stringify({ hookSpecificOutput: { permissionDecision: 'ask' } }), stderr: '', timedOut: false };
+            expect(decisionOf(await call(gateHeaders()))).to.include({ kind: 'deny', source: 'ttl' });
+        });
+
+        it('returns the hook updatedInput to the client and audits the final input', async () => {
+            const audits: Array<Record<string, unknown>> = [];
+            (endpoint as unknown as { runner: Record<string, unknown> }).runner.observability = { recordAgentToolCommand: (a: Record<string, unknown>) => audits.push(a) };
+            hookResults['ws-hook'] = { exitCode: 0, stdout: JSON.stringify({ hookSpecificOutput: { permissionDecision: 'allow', updatedInput: { command: 'echo safe' } } }), stderr: '', timedOut: false };
+            const decision = decisionOf(await call(gateHeaders(), { input: { command: 'echo original' } }));
+            expect(decision).to.deep.equal({ kind: 'allow', source: 'hook', updatedInput: { command: 'echo safe' } });
+            expect(audits[0]).to.include({ command: 'echo safe', autoApprovalReason: 'input-rewritten' });
+        });
+
+        it('always returns the COMPLETE input: a partial hook rewrite is merged on top of the original', async () => {
+            hookResults['ws-hook'] = { exitCode: 0, stdout: JSON.stringify({ hookSpecificOutput: { permissionDecision: 'allow', updatedInput: { command: 'echo safe' } } }), stderr: '', timedOut: false };
+            const decision = decisionOf(await call(gateHeaders(), { input: { command: 'echo original', timeout: 5, cwd: 'sub' } }));
+            expect(decision).to.deep.equal({ kind: 'allow', source: 'hook', updatedInput: { command: 'echo safe', timeout: 5, cwd: 'sub' } });
+        });
+
+        it('re-runs the guards on a rewritten input: a hook cannot smuggle a destructive command', async () => {
+            hookResults['ws-hook'] = { exitCode: 0, stdout: JSON.stringify({ hookSpecificOutput: { permissionDecision: 'allow', updatedInput: { command: 'git push --force origin main' } } }), stderr: '', timedOut: false };
+            expect(decisionOf(await call(gateHeaders()))).to.include({ kind: 'deny', source: 'destructive-guard' });
+        });
+
+        it('a hook allow never passes the destructive guard that precedes it', async () => {
+            hookResults['ws-hook'] = { exitCode: 0, stdout: JSON.stringify({ hookSpecificOutput: { permissionDecision: 'allow' } }), stderr: '', timedOut: false };
+            expect(decisionOf(await call(gateHeaders(), { input: { command: 'rm -rf /' } })).kind).to.equal('deny');
+            expect(ran).to.deep.equal([]);
+        });
+
+        it('workspace hooks that are not trusted do not run', async () => {
+            workspaceState = undefined;
+            hookResults['ws-hook'] = { exitCode: 2, stdout: '', stderr: 'would block', timedOut: false };
+            expect(decisionOf(await call(gateHeaders())).kind).to.equal('allow');
+            expect(ran).to.deep.equal([]);
+        });
+
+        it('a failing hook does not block and is surfaced as a warning', async () => {
+            hookResults['ws-hook'] = { exitCode: 1, stdout: '', stderr: 'boom', timedOut: false };
+            expect(decisionOf(await call(gateHeaders())).kind).to.equal('allow');
+            expect(ran).to.deep.equal(['ws-hook']);
+            expect(warnings).to.have.length(1);
+            expect(warnings[0]).to.contain('boom');
+        });
+
+        it('one-shot grants never run hooks', async () => {
+            hookResults['ws-hook'] = { exitCode: 2, stdout: '', stderr: 'x', timedOut: false };
+            const oneShot = tokens.issueOneShot('pi', 'alice', WORKSPACE);
+            (endpoint as unknown as { runner: Record<string, unknown> }).runner.detail = async () => undefined;
+            const res = await call({ [QAAP_TOOL_GATE_TOKEN_HEADER]: oneShot.token }, { rawToolName: 'read', input: {} });
+            expect(decisionOf(res).kind).to.equal('allow');
+            expect(ran).to.deep.equal([]);
+        });
+    });
+
+    describe('consecutive gate errors (design section 6)', () => {
+        const gateHeaders = (extra: Record<string, string> = {}): Record<string, string> => ({ [QAAP_TOOL_GATE_TOKEN_HEADER]: token, ...extra });
+        let failNext: boolean;
+
+        beforeEach(() => {
+            failNext = true;
+            (endpoint as unknown as { gate: unknown }).gate = {
+                evaluate: async (): Promise<QaapToolGateDecision> => failNext
+                    ? { kind: 'deny', source: 'gate-error', retryable: true, reason: 'internal failure' }
+                    : { kind: 'deny', source: 'policy', reason: 'normal deny' },
+            };
+        });
+
+        it('cancels the task (interrupted, with a visible message) after 3 consecutive errors', async () => {
+            await call(gateHeaders());
+            await call(gateHeaders());
+            expect(cancels).to.have.length(0);
+            await call(gateHeaders());
+            expect(cancels).to.deep.equal([{ id: 'task-1', options: { interrupt: true } }]);
+            expect(outputs).to.have.length(1);
+            expect(outputs[0].text).to.contain('safety gate failed 3 times');
+        });
+
+        it('two errors followed by a success do not cancel, and the count restarts', async () => {
+            await call(gateHeaders());
+            await call(gateHeaders());
+            failNext = false;
+            await call(gateHeaders());
+            failNext = true;
+            await call(gateHeaders());
+            await call(gateHeaders());
+            expect(cancels).to.have.length(0);
+        });
+
+        it('a normal deny is an answer, not an error', async () => {
+            failNext = false;
+            for (let index = 0; index < 6; index++) {
+                await call(gateHeaders(), { harnessCallId: `d${index}` });
+            }
+            expect(cancels).to.have.length(0);
+        });
+
+        it('counts the transport failures the client reports with its next request', async () => {
+            failNext = false;
+            await call(gateHeaders({ [QAAP_TOOL_GATE_CLIENT_ERRORS_HEADER]: '2' }));
+            expect(cancels).to.have.length(0);
+            await call(gateHeaders({ [QAAP_TOOL_GATE_CLIENT_ERRORS_HEADER]: '3' }));
+            expect(cancels).to.have.length(1);
+        });
+
+        it('a gate error plus reported client errors adds up to the threshold', async () => {
+            await call(gateHeaders());
+            await call(gateHeaders({ [QAAP_TOOL_GATE_CLIENT_ERRORS_HEADER]: '1' }));
+            expect(cancels).to.have.length(1);
         });
     });
 });

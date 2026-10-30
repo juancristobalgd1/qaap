@@ -354,6 +354,8 @@ export interface QaapAgentHookInterpretation {
     readonly reason?: string;
     readonly additionalContext?: string;
     readonly permissionDecision?: QaapAgentHookPermissionDecision;
+    /** PreToolUse only: replacement tool input (`hookSpecificOutput.updatedInput`). Honoured by the HTTP tool gate. */
+    readonly updatedInput?: Record<string, unknown>;
 }
 
 function normalizePermissionDecision(value: unknown): QaapAgentHookPermissionDecision | undefined {
@@ -428,10 +430,12 @@ export function interpretQaapAgentHookResult(event: QaapAgentHookEventName, resu
         if (decision === 'deny') {
             return { outcome: 'block', permissionDecision: 'deny', reason: reason ?? 'Denied by hook.' };
         }
+        const updatedInput = isRecord(specific.updatedInput) ? specific.updatedInput : undefined;
         return {
             outcome: 'success',
             ...(decision ? { permissionDecision: decision } : {}),
             ...(reason ? { reason } : {}),
+            ...(updatedInput ? { updatedInput } : {}),
         };
     }
     if (event === 'UserPromptSubmit' && decision === 'deny') {

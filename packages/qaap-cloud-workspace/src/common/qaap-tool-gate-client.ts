@@ -4,6 +4,8 @@
 // *****************************************************************************
 
 import {
+    QAAP_TOOL_GATE_CLIENT_ERRORS_HEADER,
+    QAAP_TOOL_GATE_MAX_CONSECUTIVE_ERRORS,
     QAAP_TOOL_GATE_TOKEN_HEADER,
     type QaapToolGateDecision,
     type QaapToolGateRequest,
@@ -31,9 +33,30 @@ const BACKOFF_MS = [200, 800];
  */
 export class QaapToolGateClient {
 
+    /** Transport failures since the last well-formed answer; sent to the gate with the next request. */
+    protected failures = 0;
+
     constructor(protected readonly options: QaapToolGateClientOptions) { }
 
+    /** True once {@link QAAP_TOOL_GATE_MAX_CONSECUTIVE_ERRORS} calls in a row failed: the adapter should stop the run. */
+    get gateUnavailable(): boolean {
+        return this.failures >= QAAP_TOOL_GATE_MAX_CONSECUTIVE_ERRORS;
+    }
+
     async evaluate(request: QaapToolGateRequest): Promise<QaapToolGateDecision> {
+        const decision = await this.evaluateOnce(request);
+        if (this.lastFailed) {
+            this.failures++;
+        } else {
+            this.failures = 0;
+        }
+        return decision;
+    }
+
+    protected lastFailed = false;
+
+    protected async evaluateOnce(request: QaapToolGateRequest): Promise<QaapToolGateDecision> {
+        this.lastFailed = true;
         const { url, token } = this.options;
         if (!url || !token) {
             return this.deny('The Qaap safety gate is not configured for this task.');
@@ -42,7 +65,9 @@ export class QaapToolGateClient {
         let lastError = 'unreachable';
         for (let attempt = 0; attempt < attempts; attempt++) {
             try {
-                return await this.post(`${url.replace(/\/+$/, '')}/evaluate`, token, request);
+                const decision = await this.post(`${url.replace(/\/+$/, '')}/evaluate`, token, request);
+                this.lastFailed = false;
+                return decision;
             } catch (error) {
                 if (!(error instanceof QaapToolGateConnectionError)) {
                     return this.deny(`The Qaap safety gate returned an unusable answer (${error instanceof Error ? error.message : String(error)}).`);
@@ -62,7 +87,11 @@ export class QaapToolGateClient {
         try {
             response = await doFetch(url, {
                 method: 'POST',
-                headers: { 'content-type': 'application/json', [QAAP_TOOL_GATE_TOKEN_HEADER]: token },
+                headers: {
+                    'content-type': 'application/json',
+                    [QAAP_TOOL_GATE_TOKEN_HEADER]: token,
+                    ...(this.failures > 0 ? { [QAAP_TOOL_GATE_CLIENT_ERRORS_HEADER]: String(this.failures) } : {}),
+                },
                 body: JSON.stringify(request),
                 signal: AbortSignal.timeout(this.options.askTtlSec * 1000 + TIMEOUT_MARGIN_MS),
             });

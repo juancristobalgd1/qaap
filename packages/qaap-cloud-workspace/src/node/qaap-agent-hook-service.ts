@@ -40,6 +40,8 @@ export interface QaapAgentHookAggregateResult {
     readonly reason?: string;
     readonly additionalContext?: string;
     readonly permissionDecision?: QaapAgentHookPermissionDecision;
+    /** Shallow merge of the `updatedInput` of every hook that returned one, in selection order. */
+    readonly updatedInput?: Record<string, unknown>;
     readonly ranCount: number;
 }
 
@@ -313,6 +315,8 @@ export class QaapAgentHookService {
             : decisions.includes('ask') ? 'ask'
                 : decisions.includes('allow') ? 'allow'
                     : undefined;
+        const rewrites = results.map(result => result.updatedInput).filter((value): value is Record<string, unknown> => !!value);
+        const updatedInput = rewrites.length > 0 ? Object.assign({}, ...rewrites) as Record<string, unknown> : undefined;
         const allowReason = results.find(result => result.permissionDecision === permissionDecision && result.reason)?.reason;
         return {
             blocked: blockReasons.length > 0,
@@ -321,6 +325,7 @@ export class QaapAgentHookService {
                 : allowReason ? { reason: allowReason } : {}),
             ...(contexts.length > 0 ? { additionalContext: contexts.join('\n\n') } : {}),
             ...(permissionDecision ? { permissionDecision } : {}),
+            ...(updatedInput ? { updatedInput } : {}),
             ranCount: selected.length,
         };
     }
@@ -355,7 +360,7 @@ export class QaapAgentHookService {
         toolName: string,
         toolInput: Record<string, unknown> | undefined,
         toolUseId?: string,
-    ): Promise<{ readonly decision?: QaapAgentHookPermissionDecision; readonly reason?: string }> {
+    ): Promise<{ readonly decision?: QaapAgentHookPermissionDecision; readonly reason?: string; readonly updatedInput?: Record<string, unknown> }> {
         const result = await this.run(context, 'PreToolUse', {
             tool_name: toolName,
             tool_input: toolInput ?? {},
@@ -367,6 +372,7 @@ export class QaapAgentHookService {
         return {
             ...(result.permissionDecision ? { decision: result.permissionDecision } : {}),
             ...(result.reason ? { reason: result.reason } : {}),
+            ...(result.updatedInput ? { updatedInput: result.updatedInput } : {}),
         };
     }
 

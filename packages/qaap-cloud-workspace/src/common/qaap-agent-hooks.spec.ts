@@ -135,6 +135,13 @@ describe('qaap-agent-hooks', () => {
     });
 
     describe('interpretQaapAgentHookResult', () => {
+        it('reads a PreToolUse updatedInput object and ignores anything else', () => {
+            const ok = (stdout: string) => ({ exitCode: 0, stdout, stderr: '', timedOut: false });
+            expect(interpretQaapAgentHookResult('PreToolUse', ok('{"hookSpecificOutput":{"permissionDecision":"allow","updatedInput":{"command":"ls"}}}')))
+                .to.deep.equal({ outcome: 'success', permissionDecision: 'allow', updatedInput: { command: 'ls' } });
+            expect(interpretQaapAgentHookResult('PreToolUse', ok('{"hookSpecificOutput":{"updatedInput":"ls"}}'))).to.deep.equal({ outcome: 'success' });
+        });
+
         const ok = (stdout: string): { exitCode: number; stdout: string; stderr: string; timedOut: boolean } => ({ exitCode: 0, stdout, stderr: '', timedOut: false });
 
         it('exit 2 blocks with stderr; PreToolUse becomes deny', () => {
