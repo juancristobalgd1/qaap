@@ -46,6 +46,7 @@ import {
     type PostUserMessageInternalOptions,
 } from './qaap-agent-conversation-store-constants';
 import { capturePreTurnCheckpointGate, capturePreTurnCheckpointThenPrepare } from './qaap-agent-conversation-store-pre-turn-checkpoint';
+import { childProcessEnv } from './qaap-child-process-env';
 
 /**
  * MUTATING git under the tenant wrapper, run asynchronously so a turn settle / checkpoint never
@@ -60,7 +61,7 @@ export function mutatingGitExtracted(ctx: QaapAgentConversationStoreContext, cwd
             'git',
             ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', ...args],
         );
-        const runEnv = { ...(env ?? process.env), ...ctx.tenantSpawn.tenantHomeEnvOverlay(cwd) };
+        const runEnv = childProcessEnv({ ...(env ?? process.env), ...ctx.tenantSpawn.tenantHomeEnvOverlay(cwd) });
         return runGitAsync(wrapped.file, wrapped.args, { cwd, env: runEnv, timeoutMs, maxBuffer: 64 * 1024 * 1024 });
     } catch (error) {
         return Promise.resolve({ status: null, stdout: '', stderr: error instanceof Error ? error.message : String(error) });

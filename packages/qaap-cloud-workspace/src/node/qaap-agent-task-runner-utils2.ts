@@ -27,6 +27,7 @@ import { PreferenceScope } from '@theia/core/lib/common/preferences/preference-s
 import { resolveQaapAgentVerificationScripts } from './qaap-agent-verification';
 import { QAIQ_AGENT_ID } from './qaap-agent-task-runner';
 import type { AgentCandidate } from './qaap-agent-task-runner-types';
+import { qaapGitReadEnv } from './qaap-child-process-env';
 
 const safeGitReadArgs = (args: readonly string[]): string[] => [
     '-c', 'core.hooksPath=/dev/null',
@@ -40,7 +41,7 @@ export type QaapGitReadSync = (cwd: string, args: readonly string[], maxBuffer?:
 const localGitReadSync: QaapGitReadSync = (cwd, args, maxBuffer = WORKTREE_FINGERPRINT_MAX_BUFFER) => spawnSync(
     'git',
     safeGitReadArgs(args),
-    { cwd, encoding: 'utf8', timeout: 4000, maxBuffer },
+    { cwd, encoding: 'utf8', timeout: 4000, maxBuffer, env: qaapGitReadEnv() },
 );
 
 // ─── Constants (shared with the main class) ──────────────────────────────────
@@ -183,7 +184,7 @@ export function buildRecentlyChangedFiles(cwd: string, gitRead: QaapGitReadSync 
         return undefined;
     }
     const names = new Set<string>();
-    for (const args of [['diff', '--name-only', 'HEAD~5', '--'], ['status', '--porcelain', '--untracked-files=all']]) {
+    for (const args of [['diff', '--no-ext-diff', '--no-textconv', '--name-only', 'HEAD~5', '--'], ['status', '--porcelain', '--untracked-files=all']]) {
         try {
             const out = gitRead(cwd, args);
             if (out.status !== 0 || !out.stdout) {
@@ -287,7 +288,7 @@ export function captureWorktreeFingerprint(cwd: string, gitRead: QaapGitReadSync
             : undefined;
     };
     const head = runGit(['rev-parse', '--verify', 'HEAD']);
-    const diff = runGit(['diff', '--no-ext-diff', '--binary', 'HEAD', '--']);
+    const diff = runGit(['diff', '--no-ext-diff', '--no-textconv', '--binary', 'HEAD', '--']);
     const untracked = runGit(['ls-files', '--others', '--exclude-standard', '-z']);
     if (head === undefined || diff === undefined || untracked === undefined) {
         return undefined;

@@ -119,10 +119,37 @@ const QAAP_HARNESS_CAPABILITY_ENTRIES: readonly QaapHarnessCapabilities[] = [
         shellGuard: 'gate',
         usage: 'claude',
     },
-    // Without a gate, claude, codex and opencode have their skip flags stripped under request-approval,
-    // so gated actions are refused rather than run.
-    { ...createDefaultHarnessCapabilities('claude'), whenAskUnsupported: 'refuses', usage: 'claude' },
-    { ...createDefaultHarnessCapabilities('codex'), whenAskUnsupported: 'refuses', usage: 'codex' },
+    // Claude Code speaks the same stream-json control protocol as QAIQ (a fork of it): with
+    // `--permission-prompt-tool stdio` every `can_use_tool` request reaches the in-process gate and a pending
+    // ask has no timeout. Untrusted folders load user settings only, so a repo's own hooks and
+    // `permissions.allow` rules cannot ungate or reroute tools (a hook deny still beats allow anyway). `--setting-sources`
+    // does not cover `.mcp.json`; `--strict-mcp-config` does, so a repo MCP server never starts in an untrusted folder.
+    {
+        ...createDefaultHarnessCapabilities('claude'),
+        gate: 'native-stdio',
+        canAsk: true,
+        askTtlSec: STDIO_ASK_TTL_SEC,
+        whenAskUnsupported: 'refuses',
+        shellGuard: 'gate',
+        untrustedFolderArgs: ['--setting-sources', 'user', '--strict-mcp-config'],
+        usage: 'claude',
+        costSource: 'reported',
+    },
+    // Codex: a per-task CODEX_HOME overlay installs a PreToolUse hook that calls the HTTP gate. Spike on
+    // codex-cli 0.165: a hook may block for at least 150 s (the `timeout` is accepted up to 900 s) and the
+    // gate answers first (askTtlSec stays below the hook timeout, because a hook timeout fails OPEN).
+    // Folder trust is enforced in the overlay config (`[projects]` untrusted), not with CLI flags.
+    // Cost comes from the reported tokens through the price table; ChatGPT auth is a subscription.
+    {
+        ...createDefaultHarnessCapabilities('codex'),
+        gate: 'hook',
+        canAsk: true,
+        askTtlSec: STDIO_ASK_TTL_SEC,
+        whenAskUnsupported: 'refuses',
+        shellGuard: 'gate',
+        usage: 'codex',
+        costSource: 'price-table',
+    },
     // OpenCode: Qaap's plugin (`OPENCODE_CONFIG_CONTENT`) awaits the HTTP gate in `tool.execute.before`, so the
     // gate can ask for as long as an ask lives. Untrusted folders set `OPENCODE_DISABLE_PROJECT_CONFIG`, which
     // stops project plugins, MCP servers, agents, commands and AGENTS.md from loading (verified on 1.19.5).

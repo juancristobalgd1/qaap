@@ -52,6 +52,7 @@ import {
     resolveAgentAutoApprove,
 } from '../common/qaap-agent-auto-approve';
 import { formatModelFlagsForAgent } from '../common/qaap-agent-model-flags';
+import { resolveQaapHarnessCapabilities } from '@theia/qaap-shared-core/lib/common/qaap-harness-capabilities';
 import { QAAP_PROJECT_TRUST_FLAGS_TEMPLATE_VAR, resolveAgentProjectTrustFlags } from '@theia/qaap-shared-core/lib/common/qaap-project-folder-trust';
 import {
     bindingFromQaiqModelSelection,
@@ -429,7 +430,10 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
         const usesQaiqProtocol = !!detected
             ? id === QAIQ_AGENT_ID || detected.bin === 'qaiq' || detected.bin === 'openclaude'
             : !!envTemplate && ctx.isQaiqRunner(id, envTemplate);
-        const useStdioApprovals = usesQaiqProtocol
+        // Claude Code speaks the same control protocol (QAIQ is a fork of it); the capability registry says which
+        // harnesses take the stdio gate, so the flag set and the answer loop are shared with QAIQ.
+        const usesNativeStdioGate = !!detected && resolveQaapHarnessCapabilities(id).gate === 'native-stdio';
+        const useStdioApprovals = (usesQaiqProtocol || usesNativeStdioGate)
             && !readOnlyWorkspace
             && shouldUseQaiqStdioApprovals(approvalOptions);
         const promptTransport = resolveAgentPromptTransportHelper(id, detected ?? (envTemplate
@@ -459,7 +463,7 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
             promptTempDir = written.dir;
             command = `${command} ${promptTransport.flag} ${quoteShellArgHelper(written.file)}`;
         }
-        command = applyAgentApprovalPolicyToCommand(command, approvalOptions);
+        command = applyAgentApprovalPolicyToCommand(command, useStdioApprovals ? { ...approvalOptions, stdioGated: true } : approvalOptions);
         if (useStdioApprovals) {
             return {
                 command: `${command} ${QAIQ_STDIO_APPROVAL_FLAGS}`,

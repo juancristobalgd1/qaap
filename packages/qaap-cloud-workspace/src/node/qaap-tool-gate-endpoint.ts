@@ -10,12 +10,16 @@ import { nls } from '@theia/core/lib/common/nls';
 import {
     QAAP_TOOL_GATE_API_PATH,
     QAAP_TOOL_GATE_ARM_NONCE_HEADER,
+    QAAP_TOOL_GATE_CLIENT_ERRORS_HEADER,
+    QAAP_TOOL_GATE_MAX_CONSECUTIVE_ERRORS,
     QAAP_TOOL_GATE_TOKEN_HEADER,
     type QaapToolGateDecision,
     type QaapToolGateRequest,
 } from '@theia/qaap-shared-core/lib/common/qaap-tool-gate-protocol';
 import { resolveQaapHarnessCapabilities, type QaapHarnessCapabilities } from '@theia/qaap-shared-core/lib/common/qaap-harness-capabilities';
+import type { QaapAgentTask } from '../common/qaap-agent-task';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
+import { agentHookContextForTask } from './qaap-agent-task-runner-hooks';
 import { QaapToolGateAskBroker } from './qaap-tool-gate-ask-broker';
 import { QaapToolGateService } from './qaap-tool-gate-service';
 import { QaapToolGateTokenService, type QaapToolGateTokenGrant } from './qaap-tool-gate-token-service';
@@ -46,6 +50,8 @@ export class QaapToolGateEndpoint implements BackendApplicationContribution {
     protected readonly runner: QaapAgentTaskRunner;
 
     protected readonly callTimes = new Map<string, number[]>();
+    /** Consecutive gate-side failures per task (decisions with source `gate-error`); reset on any other answer. */
+    protected readonly gateErrors = new Map<string, number>();
 
     configure(app: Application): void {
         app.get(`${QAAP_TOOL_GATE_API_PATH}/health`, (req, res) => {
@@ -55,7 +61,12 @@ export class QaapToolGateEndpoint implements BackendApplicationContribution {
             this.handleArm(req, res);
         });
         app.post(`${QAAP_TOOL_GATE_API_PATH}/evaluate`, (req, res) => {
-            void this.handleEvaluate(req, res);
+            this.handleEvaluate(req, res).catch(() => {
+                // An internal failure is a 5xx the client counts as a gate error (fail closed on its side).
+                if (!res.headersSent) {
+                    res.status(500).json({ error: 'Tool gate failure' });
+                }
+            });
         });
     }
 
@@ -96,6 +107,7 @@ export class QaapToolGateEndpoint implements BackendApplicationContribution {
         if (!task || task.state !== 'running') {
             this.tokens.revoke(grant.taskId);
             this.callTimes.delete(grant.taskId);
+            this.gateErrors.delete(grant.taskId);
             this.unauthorized(res);
             return;
         }
@@ -137,6 +149,13 @@ export class QaapToolGateEndpoint implements BackendApplicationContribution {
             autoApprove: task.autoApprove,
             readOnlyWorkspace: !!task.readOnlyWorkspace,
             strictReadOnly: !!grant.oneShot,
+            hooks: grant.oneShot || !this.runner.agentHooks ? undefined : async (toolName, toolInput, toolUseId) => {
+                const hooks = this.runner.agentHooks!;
+                const hookContext = agentHookContextForTask(this.runner, task as unknown as QaapAgentTask);
+                return hooks.hasHooks(hookContext, 'PreToolUse', toolName)
+                    ? hooks.evaluatePreToolUse(hookContext, toolName, toolInput, toolUseId)
+                    : {};
+            },
             checkGitExecConfig: cwd => this.runner.checkGitExecConfig(cwd),
             checkPathsInsideCwd: (cwd, paths) => this.runner.checkShellPathsInsideCwd(cwd, paths),
             askTtlSec: caps.canAsk && !grant.oneShot ? caps.askTtlSec : 0,
@@ -145,9 +164,54 @@ export class QaapToolGateEndpoint implements BackendApplicationContribution {
                 : this.asks.ask(grant.taskId, pending, ttlMs, signal),
         }, abort.signal);
         this.audit(grant, agentId, request, decision);
+        if (!grant.oneShot) {
+            this.trackGateHealth(grant, agentId, decision, this.reportedClientErrors(req));
+        }
         if (!res.writableEnded && !res.destroyed) {
             res.json({ decision });
         }
+    }
+
+    protected reportedClientErrors(req: Request): number {
+        const value = Number.parseInt(req.header(QAAP_TOOL_GATE_CLIENT_ERRORS_HEADER) ?? '', 10);
+        return Number.isFinite(value) && value > 0 ? Math.min(value, 100) : 0;
+    }
+
+    /**
+     * Section 6 of the design: after {@link QAAP_TOOL_GATE_MAX_CONSECUTIVE_ERRORS} consecutive gate errors the
+     * task is stopped (interrupted, so the user can Continue) instead of denying every tool. A gate error is a
+     * `gate-error` decision made here, plus the transport failures the client reports with its next request.
+     * A normal deny (policy, guard, hook, user, ttl) is an answer, not an error, and resets the counter.
+     */
+    protected trackGateHealth(grant: QaapToolGateTokenGrant, agentId: string, decision: QaapToolGateDecision, clientErrors: number): void {
+        const previous = this.gateErrors.get(grant.taskId) ?? 0;
+        const failed = decision.kind === 'deny' && decision.source === 'gate-error';
+        const consecutive = (failed ? previous + 1 : 0) + clientErrors;
+        if (failed) {
+            this.gateErrors.set(grant.taskId, previous + 1);
+        } else {
+            this.gateErrors.delete(grant.taskId);
+        }
+        if (consecutive < QAAP_TOOL_GATE_MAX_CONSECUTIVE_ERRORS) {
+            return;
+        }
+        this.gateErrors.delete(grant.taskId);
+        const message = nls.localize('theia/qaap-cloud-workspace/toolGateUnavailable',
+            'The Qaap safety gate failed {0} times in a row, so the run was stopped. Continue the task to retry.', consecutive);
+        try {
+            this.runner.appendAndFireOutput(grant.taskId, `\n[qaap] ${message}\n`);
+            this.runner.observability?.recordAgentToolCommand({
+                taskId: grant.taskId,
+                tenantLogin: grant.owner,
+                agentId,
+                toolName: 'qaap-tool-gate',
+                command: `gate unavailable: ${consecutive} consecutive errors`,
+                decision: 'reject',
+            });
+        } catch {
+            // Reporting must not stop the cancel below.
+        }
+        this.runner.cancel(grant.taskId, { interrupt: true });
     }
 
     /**

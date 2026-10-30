@@ -59,11 +59,15 @@ describe('qaap-sticky-composer-approval-policy', () => {
         expect(isApprovalPolicyUnsupportedByAgent('request-approval', 'pi')).to.equal(false);
     });
 
-    it('keeps Ask before changes for a harness that refuses gated actions (claude, codex, opencode)', () => {
-        for (const id of ['claude', 'codex', 'opencode']) {
-            expect(resolveEffectiveAgentApprovalPolicyId('request-approval', id), id).to.equal('request-approval');
-            expect(resolveApprovalPolicyUnsupportedMode('request-approval', id), id).to.equal('refuses');
-        }
+    it('keeps Ask before changes for Claude Code, which asks over the stdio gate', () => {
+        expect(resolveEffectiveAgentApprovalPolicyId('request-approval', 'claude')).to.equal('request-approval');
+        expect(resolveApprovalPolicyUnsupportedMode('request-approval', 'claude')).to.equal(undefined);
+        expect(isApprovalPolicyUnsupportedByAgent('request-approval', 'claude')).to.equal(false);
+    });
+
+    it('keeps Ask before changes for Codex without a warning: its PreToolUse hook can ask', () => {
+        expect(resolveEffectiveAgentApprovalPolicyId('request-approval', 'codex')).to.equal('request-approval');
+        expect(resolveApprovalPolicyUnsupportedMode('request-approval', 'codex')).to.equal(undefined);
     });
 
     it('treats an unknown harness as runs-unchecked', () => {
@@ -96,10 +100,10 @@ describe('qaap-sticky-composer-approval-policy', () => {
         expect(display.unsupportedText).to.equal(undefined);
     });
 
-    it('toolbar chip for claude keeps Ask before changes with the refuses warning', () => {
+    it('toolbar chip for claude keeps Ask before changes with no warning', () => {
         const display = resolveApprovalPolicyToolbarDisplay('request-approval', { id: 'claude', label: 'Claude Code' });
         expect(display.policy.id).to.equal('request-approval');
-        expect(display.unsupportedText).to.equal('Claude Code can\'t ask you yet; actions that need approval are refused.');
+        expect(display.unsupportedText).to.equal(undefined);
     });
 
     it('toolbar chip for QAIQ keeps Ask before changes with no warning', () => {

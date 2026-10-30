@@ -59,6 +59,13 @@ export interface QaapQaiqToolGateOutcome {
     readonly scheduleQueueTimeout: boolean;
 }
 
+/** What the PreToolUse hooks decided for one tool call (see `QaapAgentHookService.evaluatePreToolUse`). */
+export interface QaapToolGateHookOutcome {
+    readonly decision?: 'allow' | 'deny' | 'ask';
+    readonly reason?: string;
+    readonly updatedInput?: Record<string, unknown>;
+}
+
 /** What {@link QaapToolGateService.evaluate} needs to know about the task a gate token belongs to. */
 export interface QaapToolGateEvaluationEnv {
     readonly taskId: string;
@@ -70,6 +77,8 @@ export interface QaapToolGateEvaluationEnv {
     readonly readOnlyWorkspace: boolean;
     /** One-shot grants: only read tools and read-only shell commands pass; every other tool kind is denied. */
     readonly strictReadOnly?: boolean;
+    /** PreToolUse hooks for this task's workspace; absent for one-shot grants. */
+    readonly hooks?: (toolName: string, input: Record<string, unknown>, toolUseId: string | undefined) => Promise<QaapToolGateHookOutcome>;
     /**
      * Same runtime checks QAIQ requires before it trusts the read-only shell classifier: a reason when
      * git could run a program from config (fsmonitor, pager, textconv...), and when a path argument leaves
@@ -167,41 +176,86 @@ export class QaapToolGateService {
         }
         const isShell = req.toolKind === 'shell';
         // Guards key on the QAIQ shell tool name; the adapter already normalized the kind.
-        const request: QaapQaiqPendingControlRequest = {
+        const toolName = isShell ? 'Bash' : req.rawToolName;
+        const requestFor = (toolInput: Record<string, unknown>): QaapQaiqPendingControlRequest => ({
             requestId: `gate-${req.harnessCallId ?? randomUUID()}`,
             toolUseId: req.harnessCallId,
-            toolName: isShell ? 'Bash' : req.rawToolName,
-            toolInput: req.input,
-        };
-        if (env.strictReadOnly && req.toolKind !== 'read' && !isShell) {
-            return {
-                kind: 'deny',
-                source: 'read-only',
-                reason: nls.localize('theia/qaap-cloud-workspace/toolGateStrictReadOnly', 'This call may only read the workspace; this tool was blocked.'),
-            };
-        }
-        if (env.readOnlyWorkspace) {
-            const command = typeof req.input.command === 'string' ? req.input.command : undefined;
-            const writes = req.toolKind === 'edit' || req.toolKind === 'write'
-                || (isShell && !this.isVerifiedReadOnlyShell(command, req.cwd, env));
-            if (writes) {
+            toolName,
+            toolInput,
+        });
+        // Steps 1-3 (read-only, destructive guard, dev-server guard) run in every mode, and again on any
+        // input a hook rewrites, so a hook can never smuggle a guarded command past them.
+        const denialFor = (toolInput: Record<string, unknown>): QaapToolGateDecision | undefined => {
+            if (env.strictReadOnly && req.toolKind !== 'read' && !isShell) {
                 return {
                     kind: 'deny',
                     source: 'read-only',
-                    reason: nls.localize('theia/qaap-cloud-workspace/toolGateReadOnly', 'This task is read-only; it may not modify the workspace.'),
+                    reason: nls.localize('theia/qaap-cloud-workspace/toolGateStrictReadOnly', 'This call may only read the workspace; this tool was blocked.'),
                 };
             }
+            if (env.readOnlyWorkspace) {
+                const command = typeof toolInput.command === 'string' ? toolInput.command : undefined;
+                const writes = req.toolKind === 'edit' || req.toolKind === 'write'
+                    || (isShell && !this.isVerifiedReadOnlyShell(command, req.cwd, env));
+                if (writes) {
+                    return {
+                        kind: 'deny',
+                        source: 'read-only',
+                        reason: nls.localize('theia/qaap-cloud-workspace/toolGateReadOnly', 'This task is read-only; it may not modify the workspace.'),
+                    };
+                }
+            }
+            const guarded = requestFor(toolInput);
+            const destructive = findQaiqDestructiveCommandGuardDenial(guarded, req.cwd);
+            if (destructive) {
+                return { kind: 'deny', source: 'destructive-guard', reason: destructive };
+            }
+            const devServer = findQaiqDevServerGuardDenial(guarded);
+            return devServer ? { kind: 'deny', source: 'dev-server-guard', reason: devServer } : undefined;
+        };
+        const firstDenial = denialFor(req.input);
+        if (firstDenial) {
+            return firstDenial;
         }
-        const destructive = findQaiqDestructiveCommandGuardDenial(request, req.cwd);
-        if (destructive) {
-            return { kind: 'deny', source: 'destructive-guard', reason: destructive };
+        // Step 4: user / workspace PreToolUse hooks (digest-trusted by the hook service, so an untrusted
+        // workspace's hooks never run). Same semantics as QAIQ: deny rejects, allow approves (only past the
+        // guards above), ask forces a user card, no decision falls through to the approval policy, and a
+        // hook that fails never blocks (the hook service surfaces it as a warning).
+        let input = req.input;
+        let updatedInput: Record<string, unknown> | undefined;
+        let forceAsk = false;
+        if (env.hooks) {
+            let outcome: QaapToolGateHookOutcome = {};
+            try {
+                outcome = await env.hooks(toolName, req.input, req.harnessCallId);
+            } catch {
+                outcome = {};
+            }
+            if (outcome.decision !== 'deny' && outcome.updatedInput) {
+                const rewrittenDenial = denialFor({ ...req.input, ...outcome.updatedInput });
+                if (rewrittenDenial) {
+                    return rewrittenDenial;
+                }
+                // Hooks may return a partial input; clients replace the whole input, so the merge on top of the
+                // original happens here and the gate only ever returns the COMPLETE input.
+                updatedInput = { ...req.input, ...outcome.updatedInput };
+                input = updatedInput;
+            }
+            if (outcome.decision === 'deny') {
+                return {
+                    kind: 'deny',
+                    source: 'hook',
+                    reason: nls.localize('theia/qaap-cloud-workspace/toolGateHookDenied', 'Blocked by a PreToolUse hook: {0}', outcome.reason ?? 'Denied by a PreToolUse hook.'),
+                };
+            }
+            if (outcome.decision === 'allow') {
+                return { kind: 'allow', source: 'hook', ...(updatedInput ? { updatedInput } : {}) };
+            }
+            forceAsk = outcome.decision === 'ask';
         }
-        const devServer = findQaiqDevServerGuardDenial(request);
-        if (devServer) {
-            return { kind: 'deny', source: 'dev-server-guard', reason: devServer };
-        }
-        if (env.autoApprove !== false || req.toolKind === 'read') {
-            return { kind: 'allow', source: 'policy' };
+        const request = requestFor(input);
+        if (!forceAsk && (env.autoApprove !== false || req.toolKind === 'read')) {
+            return { kind: 'allow', source: 'policy', ...(updatedInput ? { updatedInput } : {}) };
         }
         const ttlSec = Math.min(env.askTtlSec, QAAP_TOOL_GATE_MAX_ASK_TTL_SEC);
         if (!(ttlSec > 0)) {
@@ -214,7 +268,7 @@ export class QaapToolGateService {
         }
         const outcome = await env.ask(request, ttlSec * 1000, signal);
         if (outcome === 'approve') {
-            return { kind: 'allow', source: 'user' };
+            return { kind: 'allow', source: 'user', ...(updatedInput ? { updatedInput } : {}) };
         }
         if (outcome === 'reject') {
             return {

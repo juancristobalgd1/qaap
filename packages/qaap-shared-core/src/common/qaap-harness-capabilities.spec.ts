@@ -46,13 +46,21 @@ describe('qaap-harness-capabilities', () => {
     });
 
     it('records what each builtin does under request-approval when it cannot ask', () => {
-        for (const id of ['qaiq', 'openclaude', 'claude', 'codex', 'opencode']) {
+        for (const id of ['qaiq', 'openclaude', 'opencode']) {
             expect(registry.get(id).whenAskUnsupported, id).to.equal('refuses');
         }
         expect(registry.get('my-custom-agent').whenAskUnsupported).to.equal('runs-unchecked');
         for (const definition of QAAP_BUILTIN_AGENT_DEFINITIONS) {
             expect(registry.get(definition.id).whenAskUnsupported, definition.id).to.be.oneOf(['refuses', 'runs-unchecked']);
         }
+    });
+
+    it('lets Claude Code ask before changes over stdio and drops repo settings in untrusted folders', () => {
+        const claude = registry.get('claude');
+        expect(claude).to.include({ gate: 'native-stdio', canAsk: true, shellGuard: 'gate', usage: 'claude', costSource: 'reported' });
+        expect(claude.askTtlSec).to.be.greaterThan(0);
+        expect(claude.untrustedFolderArgs).to.deep.equal(['--setting-sources', 'user', '--strict-mcp-config']);
+        expect(claude.trustedFolderArgs).to.deep.equal([]);
     });
 
     it('lets Pi ask before changes through the gate extension', () => {
@@ -63,6 +71,14 @@ describe('qaap-harness-capabilities', () => {
         expect(pi.trustedFolderArgs).to.deep.equal(['--approve']);
     });
 
+    it('lets Codex ask before changes through a PreToolUse hook, below the hook timeout', () => {
+        const codex = registry.get('codex');
+        expect(codex).to.include({ gate: 'hook', canAsk: true, shellGuard: 'gate', usage: 'codex', costSource: 'price-table' });
+        // Spike: a hook may block for at least 120 s; the ask window is the whole TTL and must stay below 900 s.
+        expect(codex.askTtlSec).to.be.within(120, 840);
+        expect(codex.untrustedFolderArgs).to.deep.equal([]);
+    });
+
     it('lets OpenCode ask before changes through the gate plugin, and ignore repo config in untrusted folders', () => {
         const opencode = registry.get('opencode');
         expect(opencode).to.include({ gate: 'plugin', canAsk: true, shellGuard: 'gate', usage: 'opencode', costSource: 'price-table' });
@@ -71,7 +87,7 @@ describe('qaap-harness-capabilities', () => {
     });
 
     it('keeps every other builtin harness unable to ask, with no ask window', () => {
-        for (const definition of QAAP_BUILTIN_AGENT_DEFINITIONS.filter(candidate => !['pi', 'qaiq', 'opencode'].includes(candidate.id))) {
+        for (const definition of QAAP_BUILTIN_AGENT_DEFINITIONS.filter(candidate => !['pi', 'qaiq', 'claude', 'codex', 'opencode'].includes(candidate.id))) {
             const capabilities = registry.get(definition.id);
             expect(capabilities.canAsk, definition.id).to.equal(false);
             expect(capabilities.askTtlSec, definition.id).to.equal(0);

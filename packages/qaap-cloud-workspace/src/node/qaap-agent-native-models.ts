@@ -16,6 +16,7 @@ import {
     listStaticNativeAgentModels,
     parseNativeModelLines,
 } from '../common/qaap-agent-native-model-catalog';
+import { childProcessEnv } from './qaap-child-process-env';
 
 const cache = new Map<string, QaapQaiqModelOption[]>();
 /**
@@ -277,6 +278,7 @@ export function readCodexCacheFile(file: string, identity: CodexCacheIdentity | 
     }
     return new Promise<string>((resolve, reject) => {
         execFile(cat, [file], {
+            env: childProcessEnv(),
             encoding: 'utf8',
             uid: identity.uid,
             gid: identity.gid,
@@ -338,7 +340,8 @@ function discoverFromCommand(
                 timeout: 15_000,
                 shell: windowsShim,
                 ...(spawn?.cwd ? { cwd: spawn.cwd } : {}),
-                ...(spawn?.env ? { env: spawn.env } : {}),
+                // Never inherit the backend env by omission; a spawner env is stripped too.
+                env: childProcessEnv(spawn?.env),
             }, (error, stdout) => {
                 // stderr is diagnostic output, never a model catalog. OpenCode can emit a
                 // multiline EROFS/permission error there; treating those lines as models made

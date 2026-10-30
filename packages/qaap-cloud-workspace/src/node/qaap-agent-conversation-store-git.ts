@@ -10,6 +10,7 @@ import { execFile, spawnSync, SpawnSyncReturns } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { parseGitNumstat } from './qaap-agent-conversation-store-constants';
+import { childProcessEnv, qaapGitReadEnv } from './qaap-child-process-env';
 
 const SAFE_GIT_CONFIG = ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false'] as const;
 
@@ -19,7 +20,7 @@ export type QaapGitReadSync = (cwd: string, args: readonly string[]) => SpawnSyn
 const localGitReadSync: QaapGitReadSync = (cwd, args) => spawnSync(
     'git',
     [...SAFE_GIT_CONFIG, ...args],
-    { cwd, encoding: 'utf8', timeout: 4000 },
+    { cwd, encoding: 'utf8', timeout: 4000, env: qaapGitReadEnv() },
 );
 
 /** Outcome of an async git child process; never rejects (spawn error, timeout or buffer overflow yield `status: null`). */
@@ -55,7 +56,8 @@ export function runGitAsync(file: string, args: readonly string[], options: Qaap
         try {
             execFile(file, [...args], {
                 cwd: options.cwd,
-                env: options.env,
+                // Never inherit the backend env by omission; an explicit env is stripped too.
+                env: options.env ? childProcessEnv(options.env) : qaapGitReadEnv(),
                 encoding: 'utf8',
                 timeout: options.timeoutMs,
                 killSignal: 'SIGKILL',

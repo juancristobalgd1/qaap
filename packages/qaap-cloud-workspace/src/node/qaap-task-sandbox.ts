@@ -20,6 +20,7 @@ import type { QaapTaskSandboxBrokerSandbox } from './qaap-task-sandbox-broker-pr
 import type { QaapSandboxExecClientRequest } from './qaap-task-sandbox-exec-client-main';
 import { encodeQaapSandboxFrame, parseQaapListeningPorts, QaapSandboxFrame, QaapSandboxFrameDecoder } from './qaap-task-sandbox-exec-protocol';
 import { QAAP_PERSISTENT_HOME_DIRECTORIES, QAAP_PERSISTENT_HOME_FILES } from './qaap-tenant-persistent-home';
+import { isQaapBackendOnlyEnvKey } from './qaap-child-process-env';
 
 /**
  * Per-task ephemeral sandbox (roadmap H2.2, design in doc/qaap-task-sandbox.md).
@@ -67,6 +68,11 @@ const EXEC_ENV_DENYLIST = new Set([
     'QAAP_TENANT_BACKEND_SECRET', 'NODE_OPTIONS_HOST', 'XPC_SERVICE_NAME', 'XPC_FLAGS', '__CF_USER_TEXT_ENCODING',
     'TERM_PROGRAM', 'TERM_SESSION_ID', 'SSH_AUTH_SOCK', 'SSH_AGENT_PID', 'COMMAND_MODE',
 ]);
+
+/** Host-describing variables and every backend-only secret (isQaapBackendOnlyEnvKey) never enter a sandbox exec. */
+function isExecEnvDenied(key: string): boolean {
+    return EXEC_ENV_DENYLIST.has(key) || isQaapBackendOnlyEnvKey(key);
+}
 
 /**
  * Runs `"$@"` in a new session inside the container and records its pid (= process-group id) so a
@@ -390,7 +396,7 @@ export class QaapTaskSandboxService implements BackendApplicationContribution, Q
     wrapExec(sandbox: QaapTaskSandbox, cwd: string, file: string, args: readonly string[], env: NodeJS.ProcessEnv | undefined, execId: string): { file: string; args: string[] } {
         const envArgs: string[] = [];
         for (const [key, value] of Object.entries({ ...sandbox.remoteEnv, ...env })) {
-            if (value === undefined || EXEC_ENV_DENYLIST.has(key) || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+            if (value === undefined || isExecEnvDenied(key) || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
                 continue;
             }
             envArgs.push('-e', key);
@@ -485,7 +491,7 @@ export class QaapTaskSandboxService implements BackendApplicationContribution, Q
         const execId = `t${process.pid}-${Date.now().toString(36)}-${(this.execCounter++).toString(36)}`;
         const envArgs: string[] = [];
         for (const [key, value] of Object.entries(environment ?? {})) {
-            if (value !== undefined && !EXEC_ENV_DENYLIST.has(key) && /^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+            if (value !== undefined && !isExecEnvDenied(key) && /^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
                 envArgs.push('-e', `${key}=${value}`);
             }
         }
@@ -996,7 +1002,7 @@ export class QaapTaskSandboxService implements BackendApplicationContribution, Q
     protected sandboxExecEnv(sandbox: QaapTaskSandbox, env: NodeJS.ProcessEnv | undefined): Record<string, string> {
         const result: Record<string, string> = {};
         for (const [key, value] of Object.entries(env ?? {})) {
-            if (value !== undefined && !EXEC_ENV_DENYLIST.has(key) && !key.startsWith('QAAP_SANDBOX_') && /^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+            if (value !== undefined && !isExecEnvDenied(key) && !key.startsWith('QAAP_SANDBOX_') && /^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
                 result[key] = value;
             }
         }
