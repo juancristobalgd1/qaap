@@ -152,6 +152,13 @@ describe('qaap-tool-gate-codex-hook.mjs', () => {
             expect(result.stderr).to.contain('not configured');
         });
 
+        it('exits 2 with a deny decision when no gate URL is set, without any request', () => {
+            const result = run({ QAAP_GATE_TOKEN: 'x' });
+            expect(result.status).to.equal(2);
+            expect(JSON.parse(result.stdout).hookSpecificOutput.permissionDecision).to.equal('deny');
+            expect(result.stderr).to.contain('not configured');
+        });
+
         it('exits 2 when the gate is down', () => {
             const result = run({ QAAP_GATE_URL: 'http://127.0.0.1:1/gate', QAAP_GATE_TOKEN: 'x' });
             expect(result.status).to.equal(2);

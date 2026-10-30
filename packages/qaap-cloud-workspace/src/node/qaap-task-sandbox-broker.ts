@@ -338,7 +338,24 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
         const containerEnv = this.validateContainerEnv(args?.devcontainer?.containerEnv);
         const requestedImage = this.validateImage(args?.devcontainer?.image);
         // Serialized per tenant: the limit check and the create must not interleave.
-        return this.withTenantLock(tenant, () => this.createLocked(tenant, started, placement, root, homeLinks, containerEnv, requestedImage));
+        const sandbox = await this.withTenantLock(tenant, () => this.createLocked(tenant, started, placement, root, homeLinks, containerEnv, requestedImage));
+        // Resolved on every create, reuse included, so a restarted backend gets its current address.
+        const backendHost = await this.backendHostFor(tenant, placement);
+        return backendHost ? { ...sandbox, backendHost } : sandbox;
+    }
+
+    /**
+     * The tenant backend's address on the tenant's INTERNAL network. Same reason as
+     * {@link execServerHost}: the name may resolve to the direct-egress address, where container
+     * traffic is dropped. Undefined when the backend is unknown or has no address there.
+     */
+    protected async backendHostFor(tenant: string, placement: QaapTaskSandboxPlacement): Promise<string | undefined> {
+        const target = this.orchestrator?.getTenantBackendTarget(tenant);
+        if (!target) {
+            return undefined;
+        }
+        const inspect = await placement.docker.getContainer(target.containerId).inspect().catch(() => undefined);
+        return inspect?.NetworkSettings?.Networks?.[placement.network]?.IPAddress?.trim() || undefined;
     }
 
     protected async createLocked(
