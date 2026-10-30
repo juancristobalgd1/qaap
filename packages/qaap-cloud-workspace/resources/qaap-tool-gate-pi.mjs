@@ -4,6 +4,10 @@
 // Keep the semantics in step with QaapToolGateClient (src/common/qaap-tool-gate-client.ts).
 
 const TOKEN_HEADER = 'x-qaap-gate-token';
+const CLIENT_ERRORS_HEADER = 'x-qaap-gate-client-errors';
+const MAX_CONSECUTIVE_ERRORS = 3;
+// Transport failures since the last well-formed answer; reported to the gate with the next request.
+let consecutiveFailures = 0;
 const TIMEOUT_MARGIN_MS = 15000;
 const BACKOFF_MS = [200, 800];
 const DEFAULT_ASK_TTL_SEC = 600;
@@ -19,7 +23,11 @@ async function post(url, token, body, timeoutMs, fetchImpl) {
     try {
         response = await fetchImpl(url, {
             method: 'POST',
-            headers: { 'content-type': 'application/json', [TOKEN_HEADER]: token },
+            headers: {
+                'content-type': 'application/json',
+                [TOKEN_HEADER]: token,
+                ...(consecutiveFailures > 0 ? { [CLIENT_ERRORS_HEADER]: String(consecutiveFailures) } : {}),
+            },
             body: JSON.stringify(body),
             signal: AbortSignal.timeout(timeoutMs),
         });
@@ -43,22 +51,46 @@ async function post(url, token, body, timeoutMs, fetchImpl) {
     throw new Error('malformed decision');
 }
 
-/** Ask the gate about one tool call. Never throws; returns a gate decision (deny on any failure). */
+/** Forget the transport failures counted so far (tests). */
+export function resetGateFailures() {
+    consecutiveFailures = 0;
+}
+
+function stopRun(failures) {
+    process.stderr.write(`\n[qaap] The Qaap safety gate failed ${failures} times in a row; stopping this run.\n`);
+    process.exit(1);
+}
+
+/**
+ * Ask the gate about one tool call. Never throws; returns a gate decision (deny on any failure).
+ * Transport failures are counted; after MAX_CONSECUTIVE_ERRORS in a row the run is stopped (the gate
+ * is down, so denying tool after tool would only burn tokens). A well-formed answer, even a deny, resets it.
+ */
 export async function askGate(request, env = process.env, fetchImpl = globalThis.fetch, options = {}) {
     const retries = options.retries ?? 2;
     const marginMs = options.marginMs ?? TIMEOUT_MARGIN_MS;
     const base = env.QAAP_GATE_URL;
     const token = env.QAAP_GATE_TOKEN;
-    const deny = reason => ({ kind: 'deny', source: 'gate-error', retryable: true, reason });
+    const deny = reason => {
+        consecutiveFailures++;
+        if (consecutiveFailures >= MAX_CONSECUTIVE_ERRORS) {
+            (options.onUnavailable ?? stopRun)(consecutiveFailures);
+        }
+        return { kind: 'deny', source: 'gate-error', retryable: true, reason };
+    };
     if (!base || !token || typeof fetchImpl !== 'function') {
-        return deny('The Qaap safety gate is not configured for this task.');
+        // No gate was configured for this run (for example prompt improvement without a folder): the call
+        // is still blocked, but this is not the gate failing, so it never counts toward stopping the run.
+        return { kind: 'deny', source: 'gate-error', retryable: true, reason: 'The Qaap safety gate is not configured for this task.' };
     }
     const ttlSec = Number(env.QAAP_GATE_ASK_TTL_SEC) > 0 ? Number(env.QAAP_GATE_ASK_TTL_SEC) : DEFAULT_ASK_TTL_SEC;
     const url = `${base.replace(/\/+$/, '')}/evaluate`;
     let lastError = 'unreachable';
     for (let attempt = 0; attempt <= retries; attempt++) {
         try {
-            return await post(url, token, request, ttlSec * 1000 + marginMs, fetchImpl);
+            const decision = await post(url, token, request, ttlSec * 1000 + marginMs, fetchImpl);
+            consecutiveFailures = 0;
+            return decision;
         } catch (error) {
             if (!(error instanceof ConnectionError)) {
                 return deny(`The Qaap safety gate returned an unusable answer (${error instanceof Error ? error.message : String(error)}).`);

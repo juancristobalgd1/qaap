@@ -36,6 +36,7 @@ import { QaapGithubAuthGuard, type QaapGithubAuthContext } from '@theia/qaap-sha
 import { QaapHostedGitPush, type QaapHostedGitPushRequest } from '@theia/qaap-shared-core/lib/node/qaap-hosted-git-push';
 import { QaapHostedWorktreeRegistry } from '@theia/qaap-shared-core/lib/node/qaap-hosted-worktree-registry';
 import { QaapHostedProjectResolver, type QaapHostedProject } from '@theia/qaap-shared-core/lib/node/qaap-hosted-project-resolver';
+import { qaapGitReadEnv } from '@theia/qaap-shared-core/lib/node/qaap-child-process-env';
 
 interface QaapHostedPushTarget {
     readonly branch: string;
@@ -769,11 +770,11 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
     /** Stats against the same final tree shown by /diff; fallback supports repositories without HEAD. */
     protected async combinedNumstat(root: string): Promise<Map<string, { adds: number; dels: number }>> {
         try {
-            return await this.numstat(root, ['diff', '--numstat', '-z', 'HEAD']);
+            return await this.numstat(root, ['diff', '--no-ext-diff', '--no-textconv', '--numstat', '-z', 'HEAD']);
         } catch {
             const [unstaged, staged] = await Promise.all([
-                this.numstat(root, ['diff', '--numstat', '-z']).catch(() => new Map()),
-                this.numstat(root, ['diff', '--cached', '--numstat', '-z']).catch(() => new Map()),
+                this.numstat(root, ['diff', '--no-ext-diff', '--no-textconv', '--numstat', '-z']).catch(() => new Map()),
+                this.numstat(root, ['diff', '--cached', '--no-ext-diff', '--no-textconv', '--numstat', '-z']).catch(() => new Map()),
             ]);
             for (const [file, value] of staged) {
                 const current = unstaged.get(file);
@@ -982,7 +983,7 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
             return this.gitInTenant(root, gitArgs);
         }
         return new Promise((resolve, reject) => {
-            execFile('git', gitArgs, { cwd: root, maxBuffer: GIT_MAX_BUFFER }, (error, stdout, stderr) => {
+            execFile('git', gitArgs, { cwd: root, maxBuffer: GIT_MAX_BUFFER, env: qaapGitReadEnv() }, (error, stdout, stderr) => {
                 if (error) {
                     reject(Object.assign(error, { stdout, stderr }));
                 } else {
@@ -999,7 +1000,7 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
             return this.gitInTenant(root, gitArgs, input);
         }
         return new Promise((resolve, reject) => {
-            const child = execFile('git', gitArgs, { cwd: root, maxBuffer: GIT_MAX_BUFFER }, (error, stdout, stderr) => {
+            const child = execFile('git', gitArgs, { cwd: root, maxBuffer: GIT_MAX_BUFFER, env: qaapGitReadEnv() }, (error, stdout, stderr) => {
                 if (error) {
                     reject(Object.assign(error, { stdout, stderr }));
                 } else {

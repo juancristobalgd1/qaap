@@ -38,6 +38,7 @@ import { listNativeAgentModels } from './qaap-agent-native-models';
 import { isHostedCodexEntitled, resolveAgentAccess } from './qaap-agent-access';
 import { listQaiqModelsFromPreferences } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
 import { resolveTrustedExecutable } from './qaap-trusted-executable';
+import { childProcessEnv } from './qaap-child-process-env';
 
 export function initExtracted(ctx: QaapAgentTaskRunnerContext): void {
         rememberQaapHostedRuntime(isQaapProductionRuntime(process.env));
@@ -225,7 +226,7 @@ export function logDetectedAgentsExtracted(
         // `qaiq --version` boots a Node CLI (2-3.5 s on a tenant), and spawnSync held the whole
         // backend startup for it just to print this line.
         try {
-            execFile(qaiq, ['--version'], { encoding: 'utf8', timeout: QAIQ_VERSION_PROBE_TIMEOUT_MS }, (_error, stdout, stderr) => {
+            execFile(qaiq, ['--version'], { encoding: 'utf8', timeout: QAIQ_VERSION_PROBE_TIMEOUT_MS, env: childProcessEnv() }, (_error, stdout, stderr) => {
                 const line = (stdout || stderr || '').trim().split('\n')[0];
                 if (line) {
                     console.log(`[qaap-agent-tasks] qaiq: ${line}`);

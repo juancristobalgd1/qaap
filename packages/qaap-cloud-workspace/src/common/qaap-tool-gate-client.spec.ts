@@ -71,4 +71,31 @@ describe('QaapToolGateClient (fail closed)', () => {
         })) as typeof fetch).evaluate(request);
         expect(decision).to.deep.equal({ kind: 'deny', source: 'user', reason: 'no' });
     });
+
+    it('reports consecutive transport failures with the next request, flags unavailability at 3, and resets on any answer', async () => {
+        const headers: Array<string | undefined> = [];
+        let mode: 'down' | 'ok' | 'deny' = 'down';
+        const gate = client((async (_url: string, init: RequestInit) => {
+            headers.push((init.headers as Record<string, string>)['x-qaap-gate-client-errors']);
+            if (mode === 'down') {
+                throw new TypeError('fetch failed');
+            }
+            return json(200, { decision: mode === 'ok' ? { kind: 'allow', source: 'policy' } : { kind: 'deny', source: 'user', reason: 'no' } });
+        }) as unknown as typeof fetch, { retries: 0 });
+        await gate.evaluate(request);
+        await gate.evaluate(request);
+        expect(gate.gateUnavailable).to.equal(false);
+        mode = 'ok';
+        await gate.evaluate(request);
+        expect(headers).to.deep.equal([undefined, '1', '2']);
+        expect(gate.gateUnavailable).to.equal(false);
+        mode = 'down';
+        await gate.evaluate(request);
+        await gate.evaluate(request);
+        await gate.evaluate(request);
+        expect(gate.gateUnavailable).to.equal(true);
+        mode = 'deny';
+        await gate.evaluate(request);
+        expect(gate.gateUnavailable).to.equal(false);
+    });
 });

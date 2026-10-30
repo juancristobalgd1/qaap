@@ -22,6 +22,7 @@ import type { QaapQaiqPendingControlRequest } from '../common/qaap-qaiq-stdio-ap
 import type { QaapAgentTask } from '../common/qaap-agent-task';
 import { diffSensitiveFiles, hashSensitiveFiles } from './qaap-sensitive-files';
 import { findExecutableOnPath, readEnvPath, resolveTrustedExecutable } from './qaap-trusted-executable';
+import { childProcessEnv } from './qaap-child-process-env';
 
 // ─── Constants (re-exported for the helpers) ─────────────────────────────────
 
@@ -51,6 +52,7 @@ export function readCodexHelp(env: NodeJS.ProcessEnv = process.env): string {
             timeout: 2_000,
             killSignal: 'SIGTERM',
             windowsHide: true,
+            env: childProcessEnv(env),
         });
         const topLevelHelp = `${topLevel.stdout || ''}\n${topLevel.stderr || ''}`;
         if (!/\bcodex\s+exec\b|^\s+exec\b/m.test(topLevelHelp)) {
@@ -61,6 +63,7 @@ export function readCodexHelp(env: NodeJS.ProcessEnv = process.env): string {
             timeout: 2_000,
             killSignal: 'SIGTERM',
             windowsHide: true,
+            env: childProcessEnv(env),
         });
         return `${topLevelHelp}\n${execCommand.stdout || ''}\n${execCommand.stderr || ''}`;
     } catch {
