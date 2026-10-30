@@ -753,6 +753,26 @@ export class QaapDockerOrchestrator {
         };
     }
 
+    /**
+     * Every Docker node that can run task sandboxes, with the tenant image they run. The broker
+     * populates each node's agent toolchain volume from it at boot, before any task needs it. A
+     * node that fails verification is left out: its first sandbox populates the volume as before.
+     */
+    async taskSandboxToolchainPlacements(): Promise<Array<{ readonly docker: Dockerode; readonly image: string; readonly nodeId: string }>> {
+        assertQaapDockerControlPlane(process.env);
+        const image = this.getTenantImage();
+        const nodes = await Promise.all(this.getDockerNodeClients().map(async node => {
+            try {
+                await this.verifyDockerNode(node);
+                return [{ docker: node.docker, image, nodeId: node.config.id }];
+            } catch (error) {
+                console.warn(`[qaap-docker] Docker node ${node.config.id} skipped for the toolchain prewarm: ${(error as Error).message}`);
+                return [];
+            }
+        }));
+        return nodes.flat();
+    }
+
     protected async getDocker(ownerLogin?: string): Promise<Dockerode> {
         assertQaapDockerControlPlane(process.env);
         const node = this.dockerNodeForTenant(ownerLogin);

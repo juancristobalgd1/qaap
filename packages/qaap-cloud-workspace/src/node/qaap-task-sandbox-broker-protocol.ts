@@ -24,7 +24,7 @@ export const QAAP_TASK_SANDBOX_LINK_HEADER = 'x-qaap-sandbox-link';
 const MAX_AGE_MS = 60_000;
 const MIN_SECRET_LENGTH = 32;
 
-export type QaapTaskSandboxBrokerOp = 'create' | 'destroy' | 'list';
+export type QaapTaskSandboxBrokerOp = 'create' | 'destroy' | 'list' | 'prepare';
 
 /** Fields of the repo's devcontainer that the broker honours (read by the tenant backend, validated by the broker). */
 export interface QaapTaskSandboxBrokerDevcontainer {
@@ -52,11 +52,24 @@ export interface QaapTaskSandboxBrokerSandbox {
     readonly startupMs: number;
     readonly created: boolean;
     /**
+     * How the broker served the create: `spare` adopted the tenant's ready sandbox, `cold` started a
+     * new one, `reused` returned the running sandbox of this root. Absent from older brokers.
+     */
+    readonly source?: 'spare' | 'cold' | 'reused';
+    /**
      * The tenant backend's address on the tenant INTERNAL network (where the sandbox also lives), so
      * the sandbox can reach the tool gate without going through loopback or the egress proxy. Absent
      * when the backend has no address there: callers must then fail closed, not fall back to loopback.
      */
     readonly backendHost?: string;
+}
+
+/**
+ * Sent by the tenant backend when its link comes up: the HOME links its next sandboxes will ask for,
+ * so the broker can keep one spare sandbox ready for them (doc/qaap-task-sandbox.md, "Spare sandbox").
+ */
+export interface QaapTaskSandboxBrokerPrepareArgs {
+    readonly homeLinks?: ReadonlyArray<{ readonly name: string; readonly target: string }>;
 }
 
 export interface QaapTaskSandboxBrokerDestroyArgs {
@@ -148,7 +161,7 @@ export namespace QaapTaskSandboxBrokerAuth {
         const candidate = request as Partial<QaapTaskSandboxBrokerRequest>;
         return candidate.type === 'request'
             && typeof candidate.id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(candidate.id)
-            && (candidate.op === 'create' || candidate.op === 'destroy' || candidate.op === 'list')
+            && (candidate.op === 'create' || candidate.op === 'destroy' || candidate.op === 'list' || candidate.op === 'prepare')
             && typeof candidate.issuedAt === 'number' && fresh(candidate.issuedAt, now)
             && typeof candidate.signature === 'string'
             && equal(candidate.signature, hmac(secret, requestInput(tenantLogin, candidate.id, candidate.issuedAt, candidate.op, candidate.args)));

@@ -14,6 +14,7 @@ import { QAAP_TENANT_RUNTIME_API_PATH } from '../common/qaap-cloud-api-types';
 import { resolveQaapDockerLogConfig } from './qaap-docker-control-plane';
 import { isInQaapDockerNamespace, qaapDockerName, qaapDockerNamespaceLabels } from './qaap-docker-namespace';
 import { QaapDockerOrchestrator, type QaapTaskSandboxPlacement, type QaapTenantBackendTarget } from './qaap-docker-orchestrator';
+import { QaapTenantRuntimeMetrics, type QaapTaskSandboxStartSource } from './qaap-tenant-runtime-metrics';
 import {
     QAAP_TASK_SANDBOX_LINK_HEADER,
     QAAP_TASK_SANDBOX_LINK_PATH,
@@ -22,6 +23,7 @@ import {
     type QaapTaskSandboxBrokerCreateArgs,
     type QaapTaskSandboxBrokerDestroyArgs,
     type QaapTaskSandboxBrokerListed,
+    type QaapTaskSandboxBrokerPrepareArgs,
     type QaapTaskSandboxBrokerReply,
     type QaapTaskSandboxBrokerRequest,
     type QaapTaskSandboxBrokerSandbox,
@@ -63,6 +65,18 @@ interface LinkHealth {
     failing?: string;
 }
 
+type HomeLinks = Array<{ name: string; target: string }>;
+
+/** The tenant's ready, unassigned sandbox (doc/qaap-task-sandbox.md, "Spare sandbox"). */
+interface SpareSandbox {
+    readonly name: string;
+    readonly token: string;
+    readonly image: string;
+    readonly toolchain: string;
+    /** The HOME links its exec server linked at start: only a create asking for the same ones adopts it. */
+    readonly homeLinksKey: string;
+}
+
 interface TenantPulls {
     active: number;
     readonly startedAt: number[];
@@ -72,7 +86,7 @@ interface TenantPulls {
  * Control-plane broker for task sandboxes in production (`QAAP_BACKEND_PER_TENANT=1`,
  * doc/qaap-task-sandbox.md). Tenant backends have no Docker socket; they ask this broker over a
  * link it opens to each of them (see `qaap-task-sandbox-broker-protocol.ts`). The broker accepts
- * only three operations, each scoped to the tenant whose link carried it:
+ * only these operations, each scoped to the tenant whose link carried it:
  *
  * - `create`: a worktree root that must lie strictly inside that tenant's own trees. The sandbox
  *   runs on the tenant's internal network with the tenant's fixed roots bound at the paths the
@@ -80,13 +94,23 @@ interface TenantPulls {
  *   the read-only toolchain volume as its entrypoint.
  * - `destroy` / `list`: only containers labelled with that tenant.
  *
+ * - `prepare`: the HOME links the tenant's next sandboxes will ask for, so one spare sandbox can
+ *   be kept ready for them.
+ *
  * The tenant cannot choose mounts, uid, network, capabilities or the entrypoint.
+ *
+ * Startup (doc/qaap-task-sandbox.md, "Startup budget"): `onStart` populates the toolchain volume of
+ * every Docker node before any task asks, and each tenant keeps one spare sandbox started in the
+ * background, which the next base-image create adopts by renaming it.
  */
 @injectable()
 export class QaapTaskSandboxBroker implements BackendApplicationContribution {
 
     @inject(QaapDockerOrchestrator) @optional()
     protected readonly orchestrator?: QaapDockerOrchestrator;
+
+    @inject(QaapTenantRuntimeMetrics) @optional()
+    protected readonly runtimeMetrics?: QaapTenantRuntimeMetrics;
 
     protected readonly links = new Map<string, BrokerLink>();
     protected readonly toolchains = new Map<string, Promise<string>>();
@@ -98,6 +122,14 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
     protected readonly tokens = new Map<string, string>();
     protected readonly tenantLocks = new Map<string, Promise<unknown>>();
     protected readonly tenantPulls = new Map<string, TenantPulls>();
+    protected readonly spares = new Map<string, SpareSandbox>();
+    /** Worktree roots of adopted spares: their label still names the spare's placeholder root. */
+    protected readonly adoptedRoots = new Map<string, string>();
+    /** Distinct key per Docker node client, so each node gets its own toolchain volume. */
+    protected readonly dockerKeys = new WeakMap<Dockerode, number>();
+    protected dockerKeyCount = 0;
+    /** The boot-time toolchain population of every node (resolved when all of them settled). */
+    toolchainPrewarm: Promise<void> | undefined;
     protected syncTimer: ReturnType<typeof setInterval> | undefined;
     protected sweepTimer: ReturnType<typeof setInterval> | undefined;
 
@@ -111,6 +143,7 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
         if (!this.isEnabled()) {
             return;
         }
+        this.toolchainPrewarm = this.prewarmToolchains();
         this.syncTimer = setInterval(() => this.syncLinks(), LINK_SYNC_MS);
         this.syncTimer.unref?.();
         const sweep = (): void => {
@@ -295,6 +328,10 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
         if (request.op === 'create') {
             return this.create(tenant, request.args as QaapTaskSandboxBrokerCreateArgs);
         }
+        if (request.op === 'prepare') {
+            await this.prepare(tenant, request.args as QaapTaskSandboxBrokerPrepareArgs);
+            return { ok: true };
+        }
         if (request.op === 'destroy') {
             await this.destroy(tenant, request.args as QaapTaskSandboxBrokerDestroyArgs);
             return { ok: true };
@@ -371,7 +408,8 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
             }
             const existingToken = this.tokens.get(name);
             if (existing.State?.Running && !existing.State.Paused && existingToken) {
-                return this.describe(name, root, existingToken, existing.Config?.Image ?? placement.image, placement, 0, false, existing);
+                this.runtimeMetrics?.recordTaskSandboxStart('reused', 0);
+                return this.describe(name, root, existingToken, existing.Config?.Image ?? placement.image, placement, 0, false, existing, 'reused');
             }
             // Stopped, paused, or created before this control plane started (its token is gone): recreate.
             await docker.getContainer(name).remove({ force: true });
@@ -385,6 +423,14 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
             console.warn(`[qaap-task-sandbox] devcontainer image ${requestedImage} not present; `
                 + `${refused ? `not pulling it (${refused})` : 'pulling it in the background'}, using the base image for now`);
         }
+        // Only a plain base-image sandbox is interchangeable: a devcontainer's env is set at create time.
+        if (image === placement.image && !Object.keys(containerEnv).length) {
+            const adopted = await this.adoptSpare(tenant, placement, name, root, toolchain, homeLinks);
+            this.scheduleSpare(tenant, homeLinks);
+            if (adopted) {
+                return this.started(tenant, root, this.describe(name, root, adopted.token, placement.image, placement, Date.now() - started, true, adopted.inspect, 'spare'));
+            }
+        }
         const token = crypto.randomBytes(32).toString('base64url');
         try {
             await this.runSandbox(placement, name, tenant, root, image, toolchain, token, homeLinks, containerEnv);
@@ -397,14 +443,123 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
             await docker.getContainer(name).remove({ force: true }).catch(() => undefined);
             await this.runSandbox(placement, name, tenant, root, placement.image, toolchain, token, homeLinks, containerEnv);
             this.tokens.set(name, token);
-            this.tenantsWithSandboxes.set(tenant, Date.now());
-            return this.describe(name, root, token, placement.image, placement, Date.now() - started, true, await this.inspect(docker, name));
+            return this.started(tenant, root, this.describe(name, root, token, placement.image, placement, Date.now() - started, true, await this.inspect(docker, name), 'cold'));
         }
         this.tokens.set(name, token);
+        return this.started(tenant, root, this.describe(name, root, token, image, placement, Date.now() - started, true, await this.inspect(docker, name), 'cold'));
+    }
+
+    protected started(tenant: string, root: string, sandbox: QaapTaskSandboxBrokerSandbox): QaapTaskSandboxBrokerSandbox {
         this.tenantsWithSandboxes.set(tenant, Date.now());
-        const sandbox = this.describe(name, root, token, image, placement, Date.now() - started, true, await this.inspect(docker, name));
-        console.info(`[qaap-task-sandbox] broker started ${name} for ${tenant} ${root} (image ${image}) in ${sandbox.startupMs} ms`);
+        const source = sandbox.source ?? 'cold';
+        this.runtimeMetrics?.recordTaskSandboxStart(source, sandbox.startupMs);
+        console.info(`[qaap-task-sandbox] broker ${source === 'spare' ? 'handed out the spare as' : 'started'} ${sandbox.name} `
+            + `for ${tenant} ${root} (image ${sandbox.image}) in ${sandbox.startupMs} ms`);
         return sandbox;
+    }
+
+    // ─── Spare sandbox ───────────────────────────────────────────────────────────────────────────
+
+    /** `prepare` from a tenant backend whose link came up: keep a spare ready for its HOME links. */
+    async prepare(tenant: string, args: QaapTaskSandboxBrokerPrepareArgs): Promise<void> {
+        const placement = await this.orchestrator!.taskSandboxPlacement(tenant);
+        this.scheduleSpare(tenant, this.validateHomeLinks(placement, args?.homeLinks));
+    }
+
+    /** Off with `QAAP_TASK_SANDBOX_SPARE=0`. */
+    protected isSpareEnabled(): boolean {
+        return !/^(0|false|off)$/i.test(process.env.QAAP_TASK_SANDBOX_SPARE?.trim() ?? '');
+    }
+
+    spareName(tenant: string): string {
+        const hash = crypto.createHash('sha256').update(`task-sandbox-spare\u0000${tenant}`).digest('hex').slice(0, 12);
+        return qaapDockerName(`qaap-task-spare-${hash}`);
+    }
+
+    /** Queue a spare refill behind the tenant's current operation (background: never awaited by a create). */
+    protected scheduleSpare(tenant: string, homeLinks: HomeLinks): void {
+        if (!this.isSpareEnabled()) {
+            return;
+        }
+        this.withTenantLock(tenant, () => this.ensureSpareLocked(tenant, homeLinks)).catch(error =>
+            console.warn(`[qaap-task-sandbox] could not prepare a spare sandbox for ${tenant}: ${(error as Error).message}`));
+    }
+
+    /**
+     * Start the tenant's spare if it has none fit for `homeLinks`. It is an ordinary broker sandbox
+     * (same mounts, uid, hardening and networks as {@link runSandbox} gives every sandbox of this
+     * tenant) that no task owns yet: the tenant's `list` does not show it, the per-tenant cap does
+     * not count it, and the orphan reaper removes it with the tenant's other sandboxes.
+     */
+    protected async ensureSpareLocked(tenant: string, homeLinks: HomeLinks): Promise<void> {
+        const placement = await this.orchestrator!.taskSandboxPlacement(tenant);
+        const docker = placement.docker;
+        const name = this.spareName(tenant);
+        const homeLinksKey = JSON.stringify(homeLinks);
+        const known = this.spares.get(tenant);
+        const existing = await this.inspect(docker, name);
+        if (known && known.homeLinksKey === homeLinksKey && known.image === placement.image && existing?.State?.Running && !existing.State.Paused) {
+            return;
+        }
+        if (existing) {
+            if (!this.ownedBy(existing, tenant)) {
+                throw new Error(`Sandbox ${name} is not owned by this tenant.`);
+            }
+            // Stale links or image, stopped, or left by a previous control plane (its token is gone).
+            await docker.getContainer(name).remove({ force: true });
+        }
+        this.spares.delete(tenant);
+        // At the cap no create can succeed anyway: a spare would only hold memory.
+        if ((await this.list(tenant)).filter(sandbox => !sandbox.archived).length >= this.positiveInt('QAAP_TASK_SANDBOX_MAX_PER_TENANT', 8)) {
+            return;
+        }
+        const started = Date.now();
+        const toolchain = await this.ensureToolchain(placement);
+        const token = crypto.randomBytes(32).toString('base64url');
+        const placeholderRoot = placement.roots.find(entry => entry.kind === 'repos')!.backendPath;
+        try {
+            await this.runSandbox(placement, name, tenant, placeholderRoot, placement.image, toolchain, token, homeLinks, {});
+        } catch (error) {
+            this.runtimeMetrics?.recordSpareSandbox(false, Date.now() - started);
+            await docker.getContainer(name).remove({ force: true }).catch(() => undefined);
+            throw error;
+        }
+        this.spares.set(tenant, { name, token, image: placement.image, toolchain, homeLinksKey });
+        this.tenantsWithSandboxes.set(tenant, Date.now());
+        this.runtimeMetrics?.recordSpareSandbox(true, Date.now() - started);
+        console.info(`[qaap-task-sandbox] broker prepared spare ${name} for ${tenant} in ${Date.now() - started} ms`);
+    }
+
+    /**
+     * Hand the tenant's spare out as `name`: rename it (a running container keeps its processes,
+     * addresses and exec token) and record `root`. Undefined when there is no spare fit for this
+     * create; a spare that is not running is removed so the refill starts a fresh one.
+     */
+    protected async adoptSpare(
+        tenant: string, placement: QaapTaskSandboxPlacement, name: string, root: string, toolchain: string, homeLinks: HomeLinks,
+    ): Promise<{ token: string; inspect: Dockerode.ContainerInspectInfo | undefined } | undefined> {
+        const spare = this.spares.get(tenant);
+        if (!spare || spare.homeLinksKey !== JSON.stringify(homeLinks) || spare.image !== placement.image || spare.toolchain !== toolchain) {
+            return undefined;
+        }
+        this.spares.delete(tenant);
+        const docker = placement.docker;
+        const inspect = await this.inspect(docker, spare.name).catch(() => undefined);
+        try {
+            if (!inspect || !this.ownedBy(inspect, tenant) || !inspect.State?.Running || inspect.State.Paused) {
+                throw new Error('the spare is not running');
+            }
+            await docker.getContainer(spare.name).rename({ name });
+        } catch (error) {
+            console.warn(`[qaap-task-sandbox] could not hand out spare ${spare.name} for ${tenant} (${(error as Error).message}); starting a new sandbox`);
+            if (inspect) {
+                await docker.getContainer(spare.name).remove({ force: true }).catch(() => undefined);
+            }
+            return undefined;
+        }
+        this.tokens.set(name, spare.token);
+        this.adoptedRoots.set(name, root);
+        return { token: spare.token, inspect: await this.inspect(docker, name) };
     }
 
     async destroy(tenant: string, args: QaapTaskSandboxBrokerDestroyArgs): Promise<void> {
@@ -419,6 +574,10 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
                 throw new Error(`Sandbox ${name} is not owned by this tenant.`);
             }
             this.tokens.delete(name);
+            this.adoptedRoots.delete(name);
+            if (name === this.spareName(tenant)) {
+                this.spares.delete(tenant);
+            }
             const container = placement.docker.getContainer(name);
             if (args.mode === 'archive' && this.archivedAt(name) === undefined) {
                 await container.stop({ t: 5 }).catch(() => undefined);
@@ -460,8 +619,10 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
         return next;
     }
 
-    async list(tenant: string): Promise<QaapTaskSandboxBrokerListed[]> {
+    /** The tenant's sandboxes; its spare only with `includeSpare` (no task owns it, so the tenant never sees it). */
+    async list(tenant: string, includeSpare = false): Promise<QaapTaskSandboxBrokerListed[]> {
         const placement = await this.orchestrator!.taskSandboxPlacement(tenant);
+        const spare = this.spareName(tenant);
         const containers = await placement.docker.listContainers({
             all: true,
             filters: { label: [`${QAAP_TASK_SANDBOX_BROKER_LABEL}=true`, `com.qaap.tenant-login=${tenant}`] },
@@ -471,17 +632,18 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
             const name = (container.Names?.[0] ?? '').replace(/^\//, '');
             return {
                 name,
-                root: container.Labels?.[WORKTREE_LABEL] ?? '',
+                root: this.adoptedRoots.get(name) ?? container.Labels?.[WORKTREE_LABEL] ?? '',
                 running: container.State === 'running',
                 archived: name.includes('-archived-'),
             };
-        });
+        }).filter(sandbox => includeSpare || sandbox.name !== spare);
     }
 
     async removeTenantSandboxes(tenant: string): Promise<number> {
         const placement = await this.orchestrator!.taskSandboxPlacement(tenant);
         let removed = 0;
-        for (const sandbox of await this.list(tenant)) {
+        this.spares.delete(tenant);
+        for (const sandbox of await this.list(tenant, true)) {
             if (!sandbox.archived) {
                 await placement.docker.getContainer(sandbox.name).remove({ force: true }).catch(() => undefined);
                 removed++;
@@ -655,9 +817,9 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
      * tenant image once per (image, server version). A sandbox image without a compatible libc
      * cannot run it and falls back to the base image.
      */
-    protected ensureToolchain(placement: QaapTaskSandboxPlacement): Promise<string> {
+    protected ensureToolchain(placement: Pick<QaapTaskSandboxPlacement, 'docker' | 'image'>): Promise<string> {
         const server = this.execServerSource();
-        const key = `${placement.image}\u0000${crypto.createHash('sha256').update(server).digest('hex')}`;
+        const key = `${this.dockerKey(placement.docker)}\u0000${placement.image}\u0000${crypto.createHash('sha256').update(server).digest('hex')}`;
         let job = this.toolchains.get(key);
         if (!job) {
             job = this.populateToolchain(placement, server).catch(error => {
@@ -669,7 +831,51 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
         return job;
     }
 
-    protected async populateToolchain(placement: QaapTaskSandboxPlacement, server: string): Promise<string> {
+    protected dockerKey(docker: Dockerode): number {
+        let key = this.dockerKeys.get(docker);
+        if (key === undefined) {
+            key = this.dockerKeys.set(docker, ++this.dockerKeyCount).get(docker)!;
+        }
+        return key;
+    }
+
+    /**
+     * Populate every node's toolchain volume at boot. Each deploy ships a new image, hence a new
+     * volume, and without this the first sandbox on each node after a deploy paid for copying node
+     * out of the tenant image (8 s in production on Oct 17 2026). Failures are logged and left to
+     * the first create, which retries.
+     */
+    protected async prewarmToolchains(): Promise<void> {
+        let targets: Awaited<ReturnType<QaapDockerOrchestrator['taskSandboxToolchainPlacements']>> = [];
+        try {
+            targets = await this.orchestrator?.taskSandboxToolchainPlacements() ?? [];
+        } catch (error) {
+            console.warn(`[qaap-task-sandbox] toolchain prewarm skipped: ${(error as Error).message}`);
+        }
+        await Promise.all(targets.map(async target => {
+            const started = Date.now();
+            try {
+                const volume = await this.ensureToolchain(target);
+                console.info(`[qaap-task-sandbox] agent toolchain ${volume} ready on node ${target.nodeId} in ${Date.now() - started} ms (boot prewarm)`);
+            } catch (error) {
+                console.warn(`[qaap-task-sandbox] toolchain prewarm on node ${target.nodeId} failed: ${(error as Error).message}`);
+            }
+        }));
+    }
+
+    protected async populateToolchain(placement: Pick<QaapTaskSandboxPlacement, 'docker' | 'image'>, server: string): Promise<string> {
+        const started = Date.now();
+        try {
+            const volume = await this.populateToolchainVolume(placement, server);
+            this.runtimeMetrics?.recordToolchainPopulation(true, Date.now() - started);
+            return volume;
+        } catch (error) {
+            this.runtimeMetrics?.recordToolchainPopulation(false, Date.now() - started);
+            throw error;
+        }
+    }
+
+    protected async populateToolchainVolume(placement: Pick<QaapTaskSandboxPlacement, 'docker' | 'image'>, server: string): Promise<string> {
         const docker = placement.docker;
         const imageId = (await docker.getImage(placement.image).inspect()).Id;
         const hash = crypto.createHash('sha256').update(`${imageId}\u0000${server}`).digest('hex').slice(0, 12);
@@ -795,10 +1001,10 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
 
     protected describe(
         name: string, root: string, token: string, image: string, placement: QaapTaskSandboxPlacement, startupMs: number, created: boolean,
-        inspect: Dockerode.ContainerInspectInfo | undefined,
+        inspect: Dockerode.ContainerInspectInfo | undefined, source: QaapTaskSandboxStartSource,
     ): QaapTaskSandboxBrokerSandbox {
         const host = this.execServerHost(name, placement, inspect);
-        return { name, root, host, port: QAAP_SANDBOX_EXEC_PORT, token, image, imageKind: image === placement.image ? 'base' : 'image', startupMs, created };
+        return { name, root, host, port: QAAP_SANDBOX_EXEC_PORT, token, image, imageKind: image === placement.image ? 'base' : 'image', startupMs, created, source };
     }
 
     /**

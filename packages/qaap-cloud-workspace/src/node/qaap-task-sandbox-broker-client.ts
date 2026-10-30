@@ -17,6 +17,7 @@ import {
     type QaapTaskSandboxBrokerDestroyArgs,
     type QaapTaskSandboxBrokerListed,
     type QaapTaskSandboxBrokerOp,
+    type QaapTaskSandboxBrokerPrepareArgs,
     type QaapTaskSandboxBrokerReply,
     type QaapTaskSandboxBrokerSandbox,
 } from './qaap-task-sandbox-broker-protocol';
@@ -43,6 +44,7 @@ export class QaapTaskSandboxBrokerClient implements BackendApplicationContributi
     protected link: Response | undefined;
     protected heartbeat: ReturnType<typeof setInterval> | undefined;
     protected readonly linkWaiters = new Set<() => void>();
+    protected readonly linkListeners = new Set<() => void>();
     protected readonly pending = new Map<string, PendingCall>();
 
     isEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -78,6 +80,17 @@ export class QaapTaskSandboxBrokerClient implements BackendApplicationContributi
 
     list(): Promise<QaapTaskSandboxBrokerListed[]> {
         return this.call('list', {}) as Promise<QaapTaskSandboxBrokerListed[]>;
+    }
+
+    /** Ask the broker to keep a spare sandbox ready for these HOME links (doc/qaap-task-sandbox.md, "Spare sandbox"). */
+    async prepare(args: QaapTaskSandboxBrokerPrepareArgs): Promise<void> {
+        await this.call('prepare', args);
+    }
+
+    /** Called each time the control plane (re)opens the link: after a deploy or a control-plane restart. */
+    onDidLink(listener: () => void): { dispose(): void } {
+        this.linkListeners.add(listener);
+        return { dispose: () => this.linkListeners.delete(listener) };
     }
 
     protected authorized(req: Request): boolean {
@@ -123,6 +136,9 @@ export class QaapTaskSandboxBrokerClient implements BackendApplicationContributi
         req.socket.on('close', drop);
         for (const waiter of [...this.linkWaiters]) {
             waiter();
+        }
+        for (const listener of [...this.linkListeners]) {
+            listener();
         }
     }
 

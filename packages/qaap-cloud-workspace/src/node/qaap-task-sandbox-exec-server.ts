@@ -14,7 +14,8 @@
  * output needs no `tslib` helper. Protocol: `qaap-task-sandbox-exec-protocol.ts` (same constants).
  *
  * Every request carries the per-sandbox token. The token arrives as the first line on stdin
- * (the broker writes it through `docker attach` and closes stdin), never through the environment:
+ * (the broker writes it through `docker attach` and closes stdin; see `readToken` for the attach
+ * body that can precede it), never through the environment:
  * an env var would stay readable in /proc/<pid>/environ of this process and of the init process,
  * and in `docker inspect`, for every command running as the same uid.
  * any process is started, so the commands this server runs never inherit it.
@@ -386,7 +387,10 @@ function readToken(timeoutMs: number): Promise<string> {
             clearTimeout(timer);
             process.stdin.removeAllListeners('data');
             process.stdin.destroy();
-            resolve(text.split('\n')[0].trim());
+            // The token is base64url, so the trailing run of those characters on the first line. Anything
+            // before it is the attach request's JSON body: docker-modem POSTs the attach options and,
+            // under load, the daemon hands those bytes to the hijacked stdin ahead of the token.
+            resolve(/[A-Za-z0-9_-]*$/.exec(text.split('\n')[0].trim())![0]);
         };
         const timer = setTimeout(done, timeoutMs);
         process.stdin.setEncoding('utf8');
