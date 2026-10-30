@@ -112,7 +112,7 @@ import { injectStdioUserMessageExtracted, type QaapStdioInjectHost } from './qaa
 import { buildAgentVerificationFixPromptExtracted, captureWorktreeBaselineExtracted, detectEmptyAgentTurnForTaskExtracted, finishSuccessfulTaskAfterVerificationExtracted, hasEditedFilesForVerificationExtracted, releaseVerificationPassExtracted, resolveReviewerCandidatesExtracted, restoreBaselineSensitiveFilesExtracted, reviewSuccessfulAgentTaskExtracted, runAgentVerificationFixTurnExtracted, runVerificationScriptsExtracted, verifySuccessfulAgentTaskExtracted } from './qaap-agent-task-runner-activity2';
 import type { QaapAgentClosingDiffSummary } from '../common/qaap-agent-closing-report';
 import { parseWorktreeStatusZ, type QaapWorktreeChange } from '../common/qaap-verification-scope';
-import { appendAndFireOutputExtracted, applyHelperEnvExtracted, applyOpenAiVendorCompatEnvExtracted, applyProviderPreferenceEnvExtracted, applyQaiqProviderEnvExtracted, buildChildEnvExtracted, finishTaskExtracted, fireOutputExtracted, improveComposerPromptExtracted, markTaskBlockedExtracted, recordTaskClosingDiffExtracted, runReadOnlyOneShotPromptExtracted, notifyCompletionExtracted, persistExtracted, readLogExtracted, runGenericCommandExtracted, spawnAgentCommandExtracted, summarizeVerificationFailureExtracted } from './qaap-agent-task-runner-tool-pills2';
+import { addAgentReachableNoProxy, agentReachableOriginFor, appendAndFireOutputExtracted, applyHelperEnvExtracted, applyOpenAiVendorCompatEnvExtracted, applyProviderPreferenceEnvExtracted, applyQaiqProviderEnvExtracted, buildChildEnvExtracted, finishTaskExtracted, fireOutputExtracted, improveComposerPromptExtracted, markTaskBlockedExtracted, recordTaskClosingDiffExtracted, runReadOnlyOneShotPromptExtracted, notifyCompletionExtracted, persistExtracted, readLogExtracted, runGenericCommandExtracted, spawnAgentCommandExtracted, summarizeVerificationFailureExtracted } from './qaap-agent-task-runner-tool-pills2';
 import { runOneShotCommandExtracted } from './qaap-agent-task-runner-live-status2';
 import {
     isQaapHarnessEnabled,
@@ -1832,8 +1832,21 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         applyHuggingfaceOpenAiCompatEnvHelper(env);
     }
 
-    applyHelperEnv(env: NodeJS.ProcessEnv, ownerLogin?: string, parentTaskId?: string, autoApprove?: boolean): boolean {
-        return applyHelperEnvExtracted(this, env, ownerLogin, parentTaskId, autoApprove);
+    applyHelperEnv(env: NodeJS.ProcessEnv, ownerLogin?: string, parentTaskId?: string, autoApprove?: boolean, cwd?: string): boolean {
+        return applyHelperEnvExtracted(this, env, ownerLogin, parentTaskId, autoApprove, cwd);
+    }
+
+    /**
+     * @internal Origin an agent process started at `cwd` uses for this backend's tool gate and helper API.
+     * Loopback, unless the process runs in a task sandbox: then the backend's address on the sandbox's
+     * network (loopback there is the sandbox itself). Undefined when that address is unknown.
+     */
+    public resolveAgentReachableOrigin(cwd: string | undefined): string | undefined {
+        if (!this.helperApiUrl) {
+            return undefined;
+        }
+        const sandbox = cwd ? this.tenantSpawn.agentSandboxFor(cwd) : undefined;
+        return agentReachableOriginFor(this.helperApiUrl, sandbox);
     }
 
     /** Reclassify a delivered task as `blocked`; `need` is what the agent asked the user for. */
@@ -1873,8 +1886,14 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         if (transport !== 'hook' && transport !== 'plugin' && transport !== 'extension') {
             return () => undefined;
         }
+        const origin = this.resolveAgentReachableOrigin(task.cwd);
+        if (!origin) {
+            // Sandboxed without a reachable backend address: no URL and no grant, so the gate fails closed.
+            return () => undefined;
+        }
         const grant = this.toolGateTokens.issueOneShot(agentId, task.ownerLogin, task.cwd);
-        env.QAAP_GATE_URL = `${new URL(this.helperApiUrl).origin}${QAAP_TOOL_GATE_API_PATH}`;
+        env.QAAP_GATE_URL = `${origin}${QAAP_TOOL_GATE_API_PATH}`;
+        addAgentReachableNoProxy(env, origin);
         env.QAAP_GATE_TOKEN = grant.token;
         env.QAAP_GATE_ASK_TTL_SEC = '0';
         return grant.release;
@@ -1889,7 +1908,13 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         if (transport !== 'hook' && transport !== 'plugin' && transport !== 'extension') {
             return;
         }
-        env.QAAP_GATE_URL = `${new URL(this.helperApiUrl).origin}${QAAP_TOOL_GATE_API_PATH}`;
+        const origin = this.resolveAgentReachableOrigin(task.cwd);
+        if (!origin) {
+            // Sandboxed without a reachable backend address: no URL and no token, so the gate fails closed.
+            return;
+        }
+        env.QAAP_GATE_URL = `${origin}${QAAP_TOOL_GATE_API_PATH}`;
+        addAgentReachableNoProxy(env, origin);
         env.QAAP_GATE_TOKEN = this.toolGateTokens.issue(task.id, task.ownerLogin, task.cwd);
         env.QAAP_GATE_ASK_TTL_SEC = String(resolveQaapHarnessCapabilities(this.resolveTaskAgentId(task as QaapAgentTask)).askTtlSec);
     }
