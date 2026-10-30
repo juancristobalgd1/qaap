@@ -97,7 +97,11 @@ describe('QaapOpencodeGateProbe', () => {
         expect(env.TMPDIR).to.equal('/sandbox/agent');
     });
 
-    it('creates a fresh private mkdtemp sandbox per probe and removes it afterwards', async () => {
+    it('creates a fresh private mkdtemp sandbox per probe and removes it afterwards', async function (): Promise<void> {
+        // The sandbox checks POSIX mode bits and owners; win32 has no equivalent and the probe fails closed there.
+        if (process.platform === 'win32') {
+            this.skip();
+        }
         const probe = new SandboxProbe();
         const first = probe.sandbox();
         const second = probe.sandbox();
