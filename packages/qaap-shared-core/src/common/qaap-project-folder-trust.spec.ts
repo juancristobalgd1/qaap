@@ -17,10 +17,17 @@ describe('qaap project folder trust', () => {
         });
 
         it('returns no flags for harnesses that have no trust mapping yet', () => {
-            for (const agentId of ['codex', 'claude', 'opencode', 'qaiq', 'cursor', undefined]) {
+            for (const agentId of ['codex', 'opencode', 'qaiq', 'cursor', undefined]) {
                 expect(resolveAgentProjectTrustFlags(agentId, true)).to.equal('');
                 expect(resolveAgentProjectTrustFlags(agentId, false)).to.equal('');
             }
+        });
+
+        it('drops repo settings for Claude Code only in an untrusted folder', () => {
+            expect(resolveAgentProjectTrustFlags('claude', false)).to.equal('--setting-sources user --strict-mcp-config');
+            expect(resolveAgentProjectTrustFlags('claude', true)).to.equal('');
+            const claude = QAAP_BUILTIN_AGENT_DEFINITIONS.find(definition => definition.id === 'claude');
+            expect(claude?.template).to.contain('{trust_flags}');
         });
 
         it('keeps the Pi built-in template free of a hard-coded --approve', () => {

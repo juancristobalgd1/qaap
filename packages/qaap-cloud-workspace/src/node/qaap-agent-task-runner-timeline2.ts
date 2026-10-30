@@ -626,6 +626,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                         cwd: task.cwd,
                         options: {
                             autoApproveReadOnlyShell: readAutoApproveReadOnlyShell(),
+                            allowSubagentTools: ctx.resolveTaskAgentId(task) === 'claude',
                             cwd: task.cwd,
                             checkGitExecConfig: () => ctx.checkGitExecConfig(task.cwd),
                             checkPathsInsideCwd: paths => ctx.checkShellPathsInsideCwd(task.cwd, paths),

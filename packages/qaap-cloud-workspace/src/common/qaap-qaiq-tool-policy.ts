@@ -126,9 +126,17 @@ export function formatQaiqCoreToolsFlag(options: QaapQaiqCoreToolsOptions = {}):
     return `--tools ${resolveQaiqCoreToolNames(options).join(',')}`;
 }
 
+/**
+ * True when the command asks for the CLI's whole built-in tool set (`--tools default`). Claude Code behind the
+ * stdio gate uses it as the "shell is allowed by the preset" signal without narrowing the tools it has.
+ */
+export function commandUsesDefaultToolSet(command: string): boolean {
+    return /(?:^|\s)--tools\s+default(?=\s|$)/.test(command);
+}
+
 export function parseQaiqCoreTools(command: string): Set<string> | undefined {
     const match = /--tools\s+([^\s-][^\s]*)/.exec(command);
-    if (!match?.[1]) {
+    if (!match?.[1] || match[1] === 'default') {
         return undefined;
     }
     return new Set(match[1].split(',').map(tool => tool.trim()).filter(Boolean));
