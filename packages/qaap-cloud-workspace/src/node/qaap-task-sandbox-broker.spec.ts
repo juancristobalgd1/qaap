@@ -196,6 +196,24 @@ describe('task sandbox exec server and local client (real processes)', function 
         expect(stderr).to.contain('without a token on stdin');
     });
 
+    it('finds its token behind the attach body that docker can leak onto stdin', async () => {
+        const leakedPort = await freePort();
+        const leaked = spawn(process.execPath, [path.join(__dirname, 'qaap-task-sandbox-exec-server.js')], {
+            env: { PATH: process.env.PATH, HOME: home, QAAP_SANDBOX_EXEC_PORT: String(leakedPort) },
+            stdio: ['pipe', 'pipe', 'pipe'],
+        });
+        try {
+            // What a container read under load: docker-modem's JSON attach body, then the token line.
+            leaked.stdin!.end(`{"stream":true,"stdin":true,"hijack":true}${TOKEN}\n`);
+            let stdout = '';
+            leaked.stdout!.on('data', chunk => stdout += chunk);
+            await waitFor(() => stdout.includes('QAAP_SANDBOX_EXEC_READY'));
+            expect(await queryLine(leakedPort, { token: TOKEN, op: 'ping' })).to.equal('{"ok":true}');
+        } finally {
+            leaked.kill();
+        }
+    });
+
     it('never passes the token to the commands it runs', async () => {
         const run = runClient('/bin/sh', ['-c', 'echo "token=[${QAAP_SANDBOX_EXEC_TOKEN:-}]"']);
         run.child.stdin!.end();

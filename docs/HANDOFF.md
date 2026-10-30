@@ -17,7 +17,7 @@ Ideas tomadas de tryboxi (warm pool, imágenes preparadas), aplicadas a los cont
 
 **Pendiente**
 - Medir en el VPS tras el deploy (`GET …/metrics` → `taskSandbox`, y el log `broker handed out the spare`); el «antes» de prod era 8,0 s el primer sandbox tras deploy.
-- Si reaparece la pérdida de conexión exec al crear un sandbox mientras otro sirve tráfico, investigar el `network connect` al bridge de egress con `enable_icc=false` (afectaría también a creates en frío, no solo a la reserva).
+- ~~Pérdida intermitente de la conexión exec~~: resuelta. No era la red: docker-modem envía las opciones del `attach` como body JSON y, con carga, el daemon las pasa al stdin del contenedor delante del token (`{"stream":true,…}<token>`), así que el exec server rechazaba su propio token (6 de 80 sandboxes en Docker Desktop; también pasaba en `master`, sin reserva). El exec server toma ahora la cola base64url de la primera línea. Un body vacío (`_body: {}`) no sirve: con stdin abierto Node no envía las cabeceras y el attach se cuelga.
 
 ## 2026-10-24 — VPS caído: backend de tenant se autoeliminaba y no se recuperaba
 

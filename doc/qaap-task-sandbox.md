@@ -368,7 +368,11 @@ random per-sandbox token. The token is never in the container's Env: an environm
 readable in `/proc/<pid>/environ` of the server and of the init process by every command running as
 the same uid, and in `docker inspect`. The container is created with stdin open once; the broker
 attaches, starts it, writes the token as one line and closes stdin, and the server refuses to start
-without it. The broker keeps tokens in memory only: after a control-plane restart, a `create` for a
+without it. The server takes the trailing base64url run of that first line as the token: docker-modem
+POSTs the attach options as a JSON body, and under load the daemon hands those bytes to the hijacked
+stdin ahead of the token (about 1 in 13 sandboxes on Docker Desktop), which used to make the server
+reject every request with its own token. An empty body is not an option: with stdin open, Node sends
+no request headers until something is written, so the attach never completes. The broker keeps tokens in memory only: after a control-plane restart, a `create` for a
 sandbox whose token it no longer knows recreates that sandbox (a live tenant backend keeps using
 the sandboxes it already holds, and a restarted one reaps them).
 If the sandbox image cannot run the toolchain's node (musl or no glibc), the exec server never
