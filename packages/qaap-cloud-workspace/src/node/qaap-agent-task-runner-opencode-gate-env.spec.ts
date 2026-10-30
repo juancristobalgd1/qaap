@@ -18,6 +18,8 @@ function fakeRunner(trusted: boolean, withGate = true): QaapAgentTaskRunner {
         helperApiUrl: withGate ? 'http://127.0.0.1:3000/qaap/api/helper' : undefined,
         resolveTaskAgentId: (t: QaapAgentTask) => t.agentId ?? 'qaiq',
         isProjectFolderTrusted: () => trusted,
+        // Not sandboxed: the gate stays on loopback.
+        resolveAgentReachableOrigin: () => withGate ? 'http://127.0.0.1:3000' : undefined,
     } as unknown as QaapAgentTaskRunner;
 }
 const seed = (runner: QaapAgentTaskRunner, env: NodeJS.ProcessEnv, agentId: string): void =>
