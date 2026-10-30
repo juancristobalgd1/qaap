@@ -350,7 +350,7 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
      * traffic is dropped. Undefined when the backend is unknown or has no address there.
      */
     protected async backendHostFor(tenant: string, placement: QaapTaskSandboxPlacement): Promise<string | undefined> {
-        const target = this.orchestrator!.getTenantBackendTarget(tenant);
+        const target = this.orchestrator?.getTenantBackendTarget(tenant);
         if (!target) {
             return undefined;
         }
