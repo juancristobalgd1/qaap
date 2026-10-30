@@ -27,7 +27,9 @@ import { collapseExactRepeatedText } from '@theia/qaap-shared-core/lib/common/qa
 import { prefersReducedMotion } from '@theia/qaap-transcript-overlay/lib/common/qaap-prefers-reduced-motion';
 import { nextStreamSmoothRevealLength } from '../common/qaap-transcript-stream-smooth';
 import {
+    hydrateDeferredTranscriptMarkdown,
     registerDeferredTranscriptMarkdown,
+    TRANSCRIPT_DEFER_PENDING_ATTR,
     type TranscriptDeferredMarkdownHydrate,
 } from './qaap-transcript-row-defer';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
@@ -575,6 +577,11 @@ export class MobileProjectsTranscriptMessagesContentUi {
             this.cancelStreamSmoothing(host);
             const content = pendingFullText ?? transcriptStreamSourceCache.get(host) ?? host.textContent ?? '';
             this.renderTranscriptMarkdown(host, content);
+        }
+        // Deferred rows still show a plain excerpt until the IntersectionObserver hydrates them. A
+        // settled row must end as rendered markdown, so hydrate its pending hosts now.
+        for (const host of root.querySelectorAll<HTMLElement>(`[${TRANSCRIPT_DEFER_PENDING_ATTR}="markdown"]`)) {
+            hydrateDeferredTranscriptMarkdown(host, (target, content) => this.renderTranscriptMarkdown(target, content));
         }
     }
 

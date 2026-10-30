@@ -229,7 +229,7 @@ export function syncComposerPreviewAvailabilityExtracted(ctx: MobileProjectsTran
             const next = probe.ready && stillCurrent
                 ? { projectId: project.id, url: probe.previewUrl, candidate, verifiedAt: Date.now() }
                 : undefined;
-            const turnSince = ctx.composerAgentWorkingSince;
+            const turnSince = ctx.composerPreviewFreshAfter ?? ctx.composerAgentWorkingSince;
             // A verification taken after the current turn began flips "View Preview" on even when
             // the URL is unchanged, so it must re-render.
             const becameFreshForTurn = !!next && turnSince !== undefined

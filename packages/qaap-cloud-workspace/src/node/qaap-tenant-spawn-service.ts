@@ -32,6 +32,7 @@ import { QaapTaskSandbox, QaapTaskSandboxService } from './qaap-task-sandbox';
 import { QaapTenantAgentStorageEnv } from './qaap-tenant-agent-storage-env';
 import { QAAP_TENANT_BACKEND_HOME, QaapTenantPersistentHome, type QaapTenantPersistentHomeAccessGrant, type QaapTenantPersistentHomeOwner } from './qaap-tenant-persistent-home';
 import { findExecutableOnPath, readEnvPath, resolveTrustedExecutable, resolveTrustedSystemExecutable } from './qaap-trusted-executable';
+import { childProcessEnv } from './qaap-child-process-env';
 
 /** How the spawned process's stdio streams are wired. */
 export type QaapSpawnStdio = ('pipe' | 'ignore')[];
@@ -121,9 +122,11 @@ export class QaapTenantSpawnService {
     /**
      * Whether this backend is already running inside a dedicated tenant worker. Worker containers
      * are the isolation boundary, so their configured container uid must not be treated as a host
-     * uid to drop to. In particular, rootless Docker maps container uid 0 to the daemon owner and
-     * the worker deliberately drops all capabilities; calling setpriv there cannot change uid and
-     * fails with `setresuid: Operation not permitted`.
+     * uid to drop to. In rootless Docker the worker runs as container uid 0 and keeps only the
+     * SETUID/SETGID capabilities, which is exactly what `setpriv` needs to drop each agent child to
+     * `QAAP_AGENT_UID`. A worker that runs as a non-root uid cannot drop anything and would share its
+     * uid (and `/proc/<pid>/environ`) with the agents, so hosted workers refuse that setup
+     * (`QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP`).
      */
     protected isTenantBackendMode(): boolean {
         return /^(1|true)$/i.test(process.env.QAAP_TENANT_BACKEND_MODE?.trim() ?? '');
@@ -395,10 +398,17 @@ export class QaapTenantSpawnService {
     resolveSpawnIdentity(cwd: string): { uid?: number; gid?: number } {
         cwd = this.canonicalizeCwd(cwd);
         if (this.isTenantBackendMode()) {
-            // The backend container is isolated to one login. If it already runs as a normal
-            // container uid, inherit that non-root identity; rootless Docker starts it as uid 0
-            // inside its user namespace, where the explicit agent uid drop is required.
+            // The backend container is isolated to one login. Rootless Docker starts it as uid 0
+            // inside its user namespace, where the explicit agent uid drop is required. A non-root
+            // backend inherits its own identity only for local development; hosted workers set
+            // QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP=1 and refuse it below.
             if (!this.isBackendRoot()) {
+                if (/^(1|true)$/i.test(process.env.QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP?.trim() ?? '')) {
+                    throw new Error(
+                        'Refusing to spawn a tenant agent under the tenant backend\'s own uid: '
+                        + 'container must run as rootless uid 0 (QAAP_TENANT_CONTAINER_UID=0).'
+                    );
+                }
                 return {};
             }
             const identity = resolveAgentSpawnIdentityFromEnv(process.env, this.isBackendRoot());
@@ -637,6 +647,14 @@ export class QaapTenantSpawnService {
     }
 
     /**
+     * @internal The task sandbox a harness started at `cwd` runs in, if any. Used by the agent runner to
+     * pick the address its gate and helper URLs must use (see `resolveAgentReachableOrigin`).
+     */
+    agentSandboxFor(cwd: string): QaapTaskSandbox | undefined {
+        return this.taskSandboxFor(cwd);
+    }
+
+    /**
      * The live per-task sandbox (QAAP_TASK_SANDBOX, doc/qaap-task-sandbox.md) that owns `cwd`, if any:
      * direct mode, or broker mode inside a per-tenant backend. A control plane in container-per-tenant
      * mode (QAAP_CLOUD_MODE=docker) keeps the tenant worker as the boundary.
@@ -650,8 +668,11 @@ export class QaapTenantSpawnService {
 
     /** The single `child_process.spawn` seam — overridable in tests to capture argv without executing. */
     protected launchProcess(file: string, args: string[], options: object): ChildProcess {
-        const spawnOptions = options as Parameters<typeof spawn>[2];
-        return spawn(this.resolveLaunchFile(file, spawnOptions), args, spawnOptions);
+        // Chokepoint: whatever env a caller passes (or omits, which would inherit everything), the child never
+        // receives backend-only secrets, so a future caller cannot leak them by omission.
+        const requested = options as NonNullable<Parameters<typeof spawn>[2]>;
+        const spawnOptions = { ...requested, env: childProcessEnv(requested.env ?? process.env) } as Parameters<typeof spawn>[2];
+        return spawn(this.resolveLaunchFile(file, spawnOptions as { env?: NodeJS.ProcessEnv; shell?: boolean | string }), args, spawnOptions);
     }
 
     /**

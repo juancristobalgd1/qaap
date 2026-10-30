@@ -109,7 +109,7 @@ export function registerCommandsExtracted(ctx: MobileOneColumnShellContributionC
     });
     registry.registerCommand({
         id: QAAP_WORK_HUB_NEW_AGENT_COMMAND,
-        label: nls.localize('qaap/sessionsSidebar/newChat', 'New agent'),
+        label: nls.localize('qaap/sessionsSidebar/newTask', 'New task'),
         category: 'Work Hub',
     }, {
         execute: () => ctx.projectsPanel?.startNewWorkHubAgent(),

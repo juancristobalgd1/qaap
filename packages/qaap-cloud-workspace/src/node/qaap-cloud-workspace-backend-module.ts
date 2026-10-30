@@ -4,6 +4,8 @@
 // *****************************************************************************
 
 import { ContainerModule } from '@theia/core/shared/inversify';
+import { EnvironmentUtils } from '@theia/core/lib/node/environment-utils';
+import { QaapBackendEnvironmentUtils } from './qaap-backend-env-utils';
 import { bindRootContributionProvider } from '@theia/core';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
 import { MessagingListenerContribution } from '@theia/core/lib/node/messaging/messaging-listeners';
@@ -26,11 +28,18 @@ import {
 import { QaapNodeFileUploadService } from './qaap-node-file-upload-service';
 import { QaapAgentApprovalEndpoint } from './qaap-agent-approval-endpoint';
 import { QaapAgentApprovalStore } from './qaap-agent-approval-store';
+import { QaapToolGateService } from './qaap-tool-gate-service';
+import { QaapToolGateTokenService } from './qaap-tool-gate-token-service';
+import { QaapToolGateAskBroker } from './qaap-tool-gate-ask-broker';
+import { QaapToolGateEndpoint } from './qaap-tool-gate-endpoint';
 import { QaapAgentHookConfigLoader } from './qaap-agent-hook-config-loader';
 import { QaapAgentHookEndpoint } from './qaap-agent-hook-endpoint';
+import { QaapAgentLoginCallbackEndpoint } from './qaap-agent-login-callback-endpoint';
 import { QaapAgentHookProcessRunner } from './qaap-agent-hook-process-runner';
 import { QaapAgentHookService } from './qaap-agent-hook-service';
 import { QaapAgentHookTrustStore } from './qaap-agent-hook-trust-store';
+import { QaapProjectFolderTrustEndpoint } from './qaap-project-folder-trust-endpoint';
+import { QaapProjectFolderTrustStore } from './qaap-project-folder-trust-store';
 import { QaapAgentPostToolUseHookBridge } from './qaap-agent-post-tool-use-hook-bridge';
 import { QaapAgentConversationEndpoint } from './qaap-agent-conversation-endpoint';
 import { QaapConversationReadMarkEndpoint } from './qaap-conversation-read-mark-endpoint';
@@ -59,6 +68,7 @@ import { QaapAgentCliUpdateService } from './qaap-agent-cli-update-service';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { QaapAgentStorageHealthCheck } from './qaap-agent-storage-health-check';
 import { QaapHealthCheckContribution } from '@theia/qaap-shared-core/lib/node/qaap-health-check-contribution';
+import { QaapDevPreviewForwardedPorts } from '@theia/qaap-shared-core/lib/node/qaap-dev-preview-forwarded-ports';
 import { QaapWorktreeGcContribution } from './qaap-worktree-gc';
 import { QaapTaskSandboxService } from './qaap-task-sandbox';
 import { QaapTaskSandboxBroker } from './qaap-task-sandbox-broker';
@@ -151,6 +161,8 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     // NodeFileUploadService is unauthenticated and lets absolute paths through its traversal check.
     bind(QaapNodeFileUploadService).toSelf().inSingletonScope();
     rebind(NodeFileUploadService).toService(QaapNodeFileUploadService);
+    // Terminals merge the full process.env into user shells; drop backend-only secrets from every merge.
+    rebind(EnvironmentUtils).to(QaapBackendEnvironmentUtils).inSingletonScope();
     bind(QaapWebsocketAuthRegistry).toSelf().inSingletonScope();
     bind(QaapTerminalOwnership).toSelf().inSingletonScope();
     bind(QaapTerminalCwdGuard).toSelf().inSingletonScope();
@@ -268,6 +280,8 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapDevcontainerResolver).toSelf().inSingletonScope();
     bind(QaapTaskSandboxService).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapTaskSandboxService);
+    // The dev-preview endpoint tells the owner's own sandbox forwarder from a foreign port holder.
+    bind(QaapDevPreviewForwardedPorts).toService(QaapTaskSandboxService);
     // Production path (doc/qaap-task-sandbox.md): the broker runs on the control plane, its client in tenant backends.
     bind(QaapTaskSandboxBroker).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapTaskSandboxBroker);
@@ -371,6 +385,11 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapConversationReadMarkEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapConversationReadMarkEndpoint);
     bind(QaapAgentApprovalStore).toSelf().inSingletonScope();
+    bind(QaapToolGateService).toSelf().inSingletonScope();
+    bind(QaapToolGateTokenService).toSelf().inSingletonScope();
+    bind(QaapToolGateAskBroker).toSelf().inSingletonScope();
+    bind(QaapToolGateEndpoint).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapToolGateEndpoint);
     bind(QaapAgentApprovalEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapAgentApprovalEndpoint);
     // Qaap-level agent lifecycle hooks + workspace trust review (doc/qaap-agent-hooks.md).
@@ -380,6 +399,12 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapAgentHookService).toSelf().inSingletonScope();
     bind(QaapAgentHookEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapAgentHookEndpoint);
+    // Per-project "Do you trust the files in this folder?" decision feeding the {trust_flags} template variable.
+    bind(QaapProjectFolderTrustStore).toSelf().inSingletonScope();
+    bind(QaapProjectFolderTrustEndpoint).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapProjectFolderTrustEndpoint);
+    bind(QaapAgentLoginCallbackEndpoint).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapAgentLoginCallbackEndpoint);
     bind(QaapAgentPostToolUseHookBridge).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapAgentPostToolUseHookBridge);
     bind(QaapWorkHubRoutineStore).toSelf().inSingletonScope();
@@ -480,7 +505,7 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
                         seeded[key] = value;
                     }
                 }
-                if (taskRunner.applyHelperEnv(seeded)) {
+                if (taskRunner.applyHelperEnv(seeded, undefined, undefined, undefined, cwd)) {
                     options.env = {
                         ...(options.env ?? {}),
                         PATH: seeded.PATH ?? null,

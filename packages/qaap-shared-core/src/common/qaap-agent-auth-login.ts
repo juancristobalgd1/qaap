@@ -27,6 +27,12 @@ export interface QaapAgentAuthLoginChallenge {
      * The dialog must offer an input whose value is written to the CLI's stdin.
      */
     readonly codeEntry?: boolean;
+    /**
+     * The paste-back prompt also takes the final redirect URL (Pi: `paste the authorization code
+     * / redirect URL here`): on a remote workspace the `127.0.0.1` callback page cannot load in
+     * the user's browser, so they copy its address instead.
+     */
+    readonly acceptsRedirectUrl?: boolean;
 }
 
 const AUTH_URL_RE = /https?:\/\/[^\s<>"'`)\]|,]+/gi;
@@ -62,6 +68,8 @@ const AUTH_URL_POLICIES: readonly AuthUrlPolicy[] = [
     // Grok 1.0.x `login --device-auth` prints `https://accounts.x.ai/oauth2/device?user_code=…`.
     { agents: ['grok'], hostname: 'accounts.x.ai', path: /^\/oauth2\/device(?:\/|$)/i },
     { agents: ['grok'], hostname: 'auth.x.ai', path: /^\/(?:auth|login|oauth|device|authorize)(?:\/|$)/i },
+    // Pi 1.4 `/login openrouter` prints `https://openrouter.ai/auth?callback_url=http%3A%2F%2F127.0.0.1…&code_challenge=…`.
+    { agents: ['pi'], hostname: 'openrouter.ai', path: /^\/auth\/?$/i },
     { agents: ['copilot'], hostname: 'login.microsoftonline.com', path: /^\/[^/]+\/oauth2\/(?:v2\.0\/)?authorize(?:\/|$)/i },
 ];
 
@@ -69,7 +77,12 @@ const AUTH_URL_POLICIES: readonly AuthUrlPolicy[] = [
 const CODE_ENTRY_PROMPT_PATTERNS: readonly RegExp[] = [
     /\bpaste\s+(?:the\s+)?(?:authorization\s+)?code\s+here\b/i,
     /\benter\s+the\s+authori[sz]ation\s+code\b/i,
+    // Pi: `Complete sign-in in your browser, or paste the authorization code / redirect URL here:`.
+    /\bpaste\s+(?:the\s+)?authori[sz]ation\s+code\s*\/\s*redirect\s+url\b/i,
 ];
+
+/** A paste-back prompt that also takes the browser's final redirect URL. */
+const REDIRECT_URL_ENTRY_PATTERN = /\bredirect\s+url\s+here\b/i;
 
 /**
  * Final lines of a successful CLI login. Only unambiguous past-tense confirmations: a prompt
@@ -81,6 +94,13 @@ const LOGIN_SUCCESS_PATTERNS: readonly RegExp[] = [
     /\b(?:logged|signed)\s+in\s+(?:successfully|as\s+\S+)/i,
     /\bauthentication\s+(?:successful|complete)\b/i,
     /\bauthenticated\s+as\s+\S+/i,
+    // Pi: `Logged in to OpenRouter` (never the `Log in to …` status shown while it waits).
+    /(?<!\bnot\s)\blogged\s+in\s+to\s+\w/i,
+];
+
+/** A CLI that reported the sign-in itself failed (Pi: `Failed to login to OpenRouter: …`). */
+const LOGIN_FAILURE_PATTERNS: readonly RegExp[] = [
+    /\bfailed\s+to\s+log\s?in\s+to\b/i,
 ];
 
 const SESSION_AUTH_PATTERNS: readonly RegExp[] = [
@@ -238,11 +258,13 @@ export function extractAgentAuthLoginChallenge(
     }
     const resolvedMode = mode ?? 'session';
     const codeEntry = matchesAny(sample, CODE_ENTRY_PROMPT_PATTERNS);
+    const acceptsRedirectUrl = codeEntry && REDIRECT_URL_ENTRY_PATTERN.test(sample);
     return {
         mode: resolvedMode,
         ...(urls[0] ? { url: urls[0] } : {}),
         ...(userCode ? { userCode } : {}),
         ...(codeEntry ? { codeEntry } : {}),
+        ...(acceptsRedirectUrl ? { acceptsRedirectUrl } : {}),
     };
 }
 
@@ -250,6 +272,12 @@ export function extractAgentAuthLoginChallenge(
 export function isAgentLoginSuccessOutput(output: string | undefined): boolean {
     const sample = (output ?? '').trim();
     return !!sample && matchesAny(sample, LOGIN_SUCCESS_PATTERNS);
+}
+
+/** True when the login CLI reported that the sign-in failed (it may keep running, like Pi's TUI). */
+export function isAgentLoginFailureOutput(output: string | undefined): boolean {
+    const sample = (output ?? '').trim();
+    return !!sample && matchesAny(sample, LOGIN_FAILURE_PATTERNS);
 }
 
 /** User-facing copy for auth failures — session login vs Settings API key. */
@@ -421,7 +449,16 @@ export function localizeAddApiKeyInSettingsCta(): string {
 }
 
 /** Clear instructions for CLIs whose authentication needs interactive input in the tenant terminal. */
-export function localizeAgentTenantTerminalLoginMessage(agentLabel: string, command: string): string {
+export function localizeAgentTenantTerminalLoginMessage(agentLabel: string, command: string, followUp?: string): string {
+    if (followUp) {
+        return nls.localize(
+            'qaap/agentLogin/tenantTerminalInstructionsFollowUp',
+            'To connect {0}, open a terminal for this workspace, run `{1}` and type `{2}`. Finish the sign-in there, then return to Work Hub and refresh the agent list.',
+            agentLabel,
+            command,
+            followUp,
+        );
+    }
     return nls.localize(
         'qaap/agentLogin/tenantTerminalInstructions',
         'To connect {0}, open a terminal for this workspace and run `{1}`. Finish the CLI sign-in or API-key setup there, then return to Work Hub and refresh the agent list.',

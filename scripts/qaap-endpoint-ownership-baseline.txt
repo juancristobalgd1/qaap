@@ -47,3 +47,19 @@ packages/qaap-cloud-workspace/src/node/qaap-tenant-runtime-endpoint.ts :: POST `
 # header matches the per-process token in a 0600 file only the backend user can read, so anything
 # through Caddy or the tenant proxy, and agents sharing the netns under their own uid, are refused. No user session exists in that context by design. Verified: public
 # GET /qaap/api/cloud/runtime/drain-status returns 404.
+
+packages/qaap-cloud-workspace/src/node/qaap-tool-gate-endpoint.ts :: POST `${QAAP_TOOL_GATE_API_PATH}/evaluate`
+# Harness-facing tool gate (Pi extension, future hooks). Authenticated by the per-task gate token in
+# `x-qaap-gate-token` (requireGrant -> QaapToolGateTokenService.resolve): random 32 bytes, in memory
+# only, revoked when the task ends, one-shot grants expire with their process. No session, API token
+# or x-qaap-task-token is accepted, and the gate token authenticates no other route (spec-tested).
+# Task, owner and workspace come from the server-side grant, never from the body; the request cwd
+# must lie inside the grant's workspace. No user session exists in the agent process by design.
+
+packages/qaap-cloud-workspace/src/node/qaap-tool-gate-endpoint.ts :: POST `${QAAP_TOOL_GATE_API_PATH}/arm`
+# Same gate-token authentication as /evaluate (requireGrant answers 401 without a live token). The harness
+# plugin reports that it loaded; the only effect is marking that task armed so the runner does not cancel it.
+
+packages/qaap-cloud-workspace/src/node/qaap-tool-gate-endpoint.ts :: GET `${QAAP_TOOL_GATE_API_PATH}/health`
+# Same gate-token authentication as /evaluate (requireGrant answers 401 without a live token). It
+# discloses nothing beyond {ok:true} and is used only by the adapter's preflight with its own token.

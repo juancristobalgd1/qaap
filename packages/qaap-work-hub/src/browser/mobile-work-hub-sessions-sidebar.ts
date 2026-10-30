@@ -17,6 +17,7 @@ import { setQaapClientErrorBuild } from '@theia/qaap-shared-core/lib/common/qaap
 import { fetchQaapAuthConfig, qaapAuthenticatedFetchInit } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import { ensurePullRequestsSurfaceCss } from './ensure-pull-requests-surface-css';
 import { TASK_TITLE_OVERFLOW_CLASS } from './mobile-projects-task-title-marquee';
+import { QAAP_NEW_TASK_ICON_CLASS } from './qaap-new-task-icon';
 
 export const QAAP_MOBILE_SESSIONS_SIDEBAR_BODY_CLASS = 'theia-mobile-mod-sessions-sidebar-open';
 
@@ -99,6 +100,8 @@ export interface MobileWorkHubSettingsSidebarSection {
     readonly id: string;
     readonly label: string;
     readonly icon: string;
+    /** Heading of the nav group this section opens; sections without one continue the previous group. */
+    readonly group?: string;
 }
 
 export interface MobileWorkHubSettingsSidebarOptions {
@@ -128,6 +131,11 @@ export class MobileWorkHubSessionsSidebar {
     protected readonly leftEdgeZone: HTMLElement;
     protected readonly closeBtn: HTMLButtonElement;
     protected readonly searchBtn: HTMLButtonElement;
+    /** Settings mode: reveals the settings search field, which stays hidden until asked for. */
+    protected readonly settingsSearchBtn: HTMLButtonElement;
+    protected readonly settingsSearchField: HTMLElement;
+    /** The visible query came from the user (not a section's own query), so closing clears it. */
+    protected settingsSearchTyped = false;
     protected readonly pullRequestSearchBtn: HTMLButtonElement;
     protected readonly backBtn: HTMLButtonElement;
     protected readonly brand: HTMLElement;
@@ -159,7 +167,18 @@ export class MobileWorkHubSessionsSidebar {
         });
     };
     protected readonly onOutsideClick = (event: MouseEvent): void => {
-        if (!this.visible || !this.root.classList.contains('theia-mod-embedded') || this.sidebarMode === 'settings') {
+        if (!this.visible || !this.root.classList.contains('theia-mod-embedded')) {
+            return;
+        }
+        // The click that opened the sidebar is still bubbling to `document` when show() registers
+        // this listener; it predates the open, so it must not count as an outside click.
+        if (event.timeStamp < this.shownAt) {
+            return;
+        }
+        // Settings stays docked beside its content on wide layouts; only the overlay drawer
+        // (narrow viewports, IDE chat sidebar) dismisses on an outside click.
+        const settings = this.sidebarMode === 'settings';
+        if (settings && shouldKeepSessionsSidebarOpenAfterNavigation()) {
             return;
         }
         // The composed path is fixed when the event is dispatched. A control pressed inside the
@@ -169,12 +188,19 @@ export class MobileWorkHubSessionsSidebar {
         if (!(event.target instanceof Node) || path.includes(this.root)) {
             return;
         }
-        if (path.some(node => node instanceof Element && node.matches('.theia-qaap-account-menu, .theia-mobile-work-hub-preferences'))) {
+        // In Settings mode the preferences page is the content behind the drawer, so a click on it
+        // collapses the drawer (hide() routes to the sheet's onClose) — except the control that opened it.
+        const keepOpenSelector = settings
+            ? '.theia-qaap-account-menu, .theia-mobile-work-hub-settings-sidebar-toggle-open'
+            : '.theia-qaap-account-menu, .theia-mobile-work-hub-preferences';
+        if (path.some(node => node instanceof Element && node.matches(keepOpenSelector))) {
             return;
         }
         this.hide();
     };
     protected projectsHeadingRaf = 0;
+    /** `performance.now()` when the sidebar last opened; see `onOutsideClick`. */
+    protected shownAt = 0;
     protected dismissHint: HTMLElement | undefined;
     protected resizeDispose: Disposable = Disposable.NULL;
     protected refreshListRaf = 0;
@@ -259,7 +285,15 @@ export class MobileWorkHubSessionsSidebar {
         this.pullRequestSearchBtn.setAttribute('aria-expanded', 'false');
         this.pullRequestSearchBtn.hidden = true;
         this.pullRequestSearchBtn.addEventListener('click', () => this.delegate.onPullRequestSearch?.(this.pullRequestSearchBtn));
-        head.append(this.backBtn, this.brand, this.searchBtn, this.pullRequestSearchBtn, this.closeBtn);
+        this.settingsSearchBtn = document.createElement('button');
+        this.settingsSearchBtn.type = 'button';
+        this.settingsSearchBtn.className = 'theia-mobile-work-hub-sessions-sidebar-search theia-mobile-work-hub-sessions-sidebar-settings-search-toggle codicon codicon-search';
+        this.settingsSearchBtn.title = nls.localize('qaap/workHubSettings/searchLabel', 'Search settings');
+        this.settingsSearchBtn.setAttribute('aria-label', this.settingsSearchBtn.title);
+        this.settingsSearchBtn.setAttribute('aria-expanded', 'false');
+        this.settingsSearchBtn.hidden = true;
+        this.settingsSearchBtn.addEventListener('click', () => this.toggleSettingsSearch());
+        head.append(this.backBtn, this.brand, this.searchBtn, this.pullRequestSearchBtn, this.settingsSearchBtn, this.closeBtn);
 
         const footer = document.createElement('footer');
         footer.className = 'theia-mobile-work-hub-sessions-sidebar-foot';
@@ -296,8 +330,8 @@ export class MobileWorkHubSessionsSidebar {
         this.nav.setAttribute('aria-label', nls.localize('qaap/sessionsSidebar/navLabel', 'Sidebar shortcuts'));
         this.nav.append(
             this.createNavButton(
-                'codicon-add',
-                nls.localize('qaap/sessionsSidebar/newChat', 'New agent'),
+                QAAP_NEW_TASK_ICON_CLASS,
+                nls.localize('qaap/sessionsSidebar/newTask', 'New task'),
                 () => {
                     this.hideForMobileOverlay();
                     this.delegate.onNewChat();
@@ -314,6 +348,8 @@ export class MobileWorkHubSessionsSidebar {
         this.settingsHost.hidden = true;
         const settingsSearch = document.createElement('label');
         settingsSearch.className = 'theia-mobile-work-hub-settings-search';
+        settingsSearch.hidden = true;
+        this.settingsSearchField = settingsSearch;
         const settingsSearchIcon = document.createElement('span');
         settingsSearchIcon.className = 'codicon codicon-search';
         settingsSearchIcon.setAttribute('aria-hidden', 'true');
@@ -322,8 +358,15 @@ export class MobileWorkHubSessionsSidebar {
         this.settingsSearchInput.placeholder = nls.localize('qaap/workHubSettings/searchPlaceholder', 'Search settings');
         this.settingsSearchInput.setAttribute('aria-label', nls.localize('qaap/workHubSettings/searchLabel', 'Search settings'));
         this.settingsSearchInput.addEventListener('input', () => {
+            this.settingsSearchTyped = true;
             this.settingsOptions?.onSearch(this.settingsSearchInput.value);
             this.renderSettingsSidebar();
+        });
+        this.settingsSearchInput.addEventListener('keydown', event => {
+            if (event.key === 'Escape') {
+                event.stopPropagation();
+                this.setSettingsSearchOpen(false);
+            }
         });
         settingsSearch.append(settingsSearchIcon, this.settingsSearchInput);
         this.settingsSectionLabel = document.createElement('div');
@@ -436,6 +479,7 @@ export class MobileWorkHubSessionsSidebar {
             this.showSessionsModeWithoutRefresh();
         }
         this.visible = true;
+        this.shownAt = performance.now();
         clearDesktopSessionsSidebarCollapsed(this.delegate.storageScope?.());
         this.root.hidden = false;
         this.root.setAttribute('aria-hidden', 'false');
@@ -599,6 +643,7 @@ export class MobileWorkHubSessionsSidebar {
         this.root.setAttribute('aria-label', nls.localize('qaap/sessionsSidebar/label', 'Sessions and projects'));
         this.backBtn.hidden = true;
         this.searchBtn.hidden = false;
+        this.settingsSearchBtn.hidden = true;
         this.pullRequestSearchBtn.hidden = true;
         this.nav.hidden = false;
         this.settingsHost.hidden = true;
@@ -617,6 +662,7 @@ export class MobileWorkHubSessionsSidebar {
         this.root.setAttribute('aria-label', nls.localize('qaap/pullRequests/sidebarLabel', 'Pull requests'));
         this.backBtn.hidden = false;
         this.searchBtn.hidden = true;
+        this.settingsSearchBtn.hidden = true;
         this.pullRequestSearchBtn.hidden = false;
         this.nav.hidden = true;
         this.settingsHost.hidden = true;
@@ -631,6 +677,7 @@ export class MobileWorkHubSessionsSidebar {
         this.root.setAttribute('aria-label', nls.localize('qaap/workHubSettings/label', 'Settings'));
         this.backBtn.hidden = false;
         this.searchBtn.hidden = true;
+        this.settingsSearchBtn.hidden = false;
         this.pullRequestSearchBtn.hidden = true;
         this.nav.hidden = true;
         this.settingsHost.hidden = false;
@@ -638,6 +685,28 @@ export class MobileWorkHubSessionsSidebar {
         this.delegate.onPullRequestSearchClose?.();
         this.brand.textContent = nls.localize('qaap/workHubSettings/title', 'Settings');
         this.renderSettingsSidebar();
+    }
+
+    protected toggleSettingsSearch(): void {
+        this.setSettingsSearchOpen(this.settingsSearchField.hidden);
+    }
+
+    /** Shows and focuses the settings search field, or hides it and clears any query. */
+    protected setSettingsSearchOpen(open: boolean): void {
+        this.settingsSearchField.hidden = !open;
+        this.settingsSearchBtn.setAttribute('aria-expanded', String(open));
+        this.settingsSearchBtn.classList.toggle('theia-mod-active', open);
+        if (open) {
+            this.settingsSearchInput.focus();
+            return;
+        }
+        if (this.settingsSearchTyped && this.settingsSearchInput.value && !this.settingsSearchInput.readOnly) {
+            this.settingsSearchInput.value = '';
+            this.settingsOptions?.onSearch('');
+            this.renderSettingsSidebar();
+        }
+        this.settingsSearchTyped = false;
+        this.settingsSearchBtn.focus();
     }
 
     /**
@@ -664,9 +733,13 @@ export class MobileWorkHubSessionsSidebar {
             this.settingsNav.replaceChildren();
             return;
         }
+        // Sections fill this input with their own internal query (e.g. "MCP"); that must not open
+        // the field — only the header search button does.
         this.settingsSearchInput.value = options.searchValue?.() ?? '';
         this.settingsSearchInput.readOnly = options.searchReadOnly?.() === true;
-        this.settingsNav.replaceChildren(...options.sections.map(section => {
+        // Grouped sections carry their own headings, so the generic "Settings" label would repeat the header.
+        this.settingsSectionLabel.hidden = options.sections.some(section => section.group);
+        this.settingsNav.replaceChildren(...options.sections.flatMap(section => {
             const item = document.createElement('button');
             item.type = 'button';
             item.className = 'theia-mobile-work-hub-settings-nav-item';
@@ -681,7 +754,14 @@ export class MobileWorkHubSessionsSidebar {
                 options.onSectionSelected(section.id);
                 this.hideForMobileOverlay();
             });
-            return item;
+            if (!section.group) {
+                return [item];
+            }
+            const heading = document.createElement('div');
+            heading.className = 'theia-mobile-work-hub-settings-group-label';
+            heading.setAttribute('role', 'presentation');
+            heading.textContent = section.group;
+            return [heading, item];
         }));
     }
 
@@ -1082,7 +1162,7 @@ export class MobileWorkHubSessionsSidebar {
         btn.type = 'button';
         btn.className = 'theia-mobile-work-hub-sessions-sidebar-nav-item';
         const icon = document.createElement('span');
-        icon.className = `codicon ${iconClass}`;
+        icon.className = iconClass.startsWith('codicon-') ? `codicon ${iconClass}` : iconClass;
         icon.setAttribute('aria-hidden', 'true');
         btn.append(icon, document.createTextNode(label));
         if (onClick) {

@@ -43,6 +43,26 @@ describe('harness connection state', () => {
         { id: 'qaiq', key: 'ai-features.openAiOfficial.openAiApiKey' },
     ];
 
+    it('Pi receives its prompt on stdin and reports sign-in from its auth.json', () => {
+        expect(resolveAgentPromptTransport('pi', { bin: 'pi' })).to.deep.equal({ kind: 'plain-stdin', placeholder: 'omit' });
+        const probe = resolveAgentConnectionProbe('pi', '/usr/local/bin/pi');
+        expect(probe?.file).to.equal('sh');
+        const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-pi-auth-'));
+        try {
+            const run = (): string => execFileSync(probe!.file, [...probe!.args], {
+                encoding: 'utf8',
+                env: { ...process.env, PI_CODING_AGENT_DIR: agentDir },
+            });
+            expect(classifyAgentConnectionProbe('pi', 0, run(), false)).to.equal('disconnected');
+            fs.writeFileSync(path.join(agentDir, 'auth.json'), '{}');
+            expect(classifyAgentConnectionProbe('pi', 0, run(), false)).to.equal('disconnected');
+            fs.writeFileSync(path.join(agentDir, 'auth.json'), '{"openrouter":{"type":"oauth"}}');
+            expect(classifyAgentConnectionProbe('pi', 0, run(), false)).to.equal('connected');
+        } finally {
+            fs.rmSync(agentDir, { recursive: true, force: true });
+        }
+    });
+
     it('never reports a sign-in harness connected because of a Settings API key', () => {
         for (const id of ['openclaude', 'hermes', 'antigravity', 'gemini']) {
             expect(hasAgentSettingsCredentials(id, () => 'tenant-api-key'), id).to.equal(undefined);

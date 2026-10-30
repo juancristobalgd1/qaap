@@ -44,6 +44,11 @@ export function resolveAgentLoginDialogSubtitle(agentId: string): string {
                 'qaap/mobileProjects/agentLoginDialogClaudeSubtitle',
                 'Sign in to Claude Code with your Claude account, then finish the browser authorization to connect it on this workspace.',
             );
+        case 'pi':
+            return nls.localize(
+                'qaap/mobileProjects/agentLoginDialogPiSubtitle',
+                'Sign in to Pi with your OpenRouter account, then finish the browser authorization to connect it on this workspace.',
+            );
         default:
             return nls.localize(
                 'qaap/mobileProjects/agentLoginDialogSubtitle',

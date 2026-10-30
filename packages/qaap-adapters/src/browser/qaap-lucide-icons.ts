@@ -29,6 +29,19 @@ function createLucideSvg(paths: string[]): SVGSVGElement {
     return svg;
 }
 
+/** lucide-plus (20px, 1.75 stroke) — Work Hub header menu whose first entry is "New task". */
+export function createWorkHubAddActionsIcon(): SVGSVGElement {
+    const svg = createLucideSvg([
+        'M5 12h14',
+        'M12 5v14',
+    ]);
+    svg.setAttribute('width', '20');
+    svg.setAttribute('height', '20');
+    svg.setAttribute('stroke-width', '1.75');
+    svg.classList.add('icon');
+    return svg;
+}
+
 /** lucide-arrow-up-right — open in new browser tab. */
 export function createLucideArrowUpRightIcon(): SVGSVGElement {
     return createLucideSvg([

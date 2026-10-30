@@ -7,7 +7,7 @@ import { expect } from 'chai';
 import * as fs from 'fs';
 import * as path from 'path';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
-import { createStickyComposerUntilDoneToggle } from './qaap-sticky-composer-until-done-toggle';
+import { createStickyComposerUntilDoneSheetOption, createStickyComposerUntilDoneToggle } from './qaap-sticky-composer-until-done-toggle';
 
 describe('sticky composer Until done toggle', () => {
     const css = fs.readFileSync(
@@ -61,6 +61,42 @@ describe('sticky composer Until done toggle', () => {
             expect(button.querySelector('.codicon-target')).to.not.equal(null);
             expect(button.querySelector('.codicon-sync')).to.equal(null);
             expect(button.querySelector('.theia-mobile-projects-sticky-composer-until-done-label')?.textContent).to.equal('Goal');
+        });
+
+        it('explains Goal in the Mode sheet when it can be used', () => {
+            const option = createStickyComposerUntilDoneSheetOption({ checked: false, onToggle: () => undefined }, () => undefined);
+            expect(option.querySelector('.theia-mobile-projects-sticky-composer-until-done-option-hint')?.textContent)
+                .to.equal('Keeps working and verifying until the goal is met');
+        });
+
+        it('turns a Goal row blocked by approvals into a shortcut to the approval picker', () => {
+            const calls: string[] = [];
+            const option = createStickyComposerUntilDoneSheetOption({
+                checked: false,
+                disabledReason: 'Requires auto-approve',
+                onToggle: () => calls.push('toggle'),
+                onResolveDisabled: () => calls.push('resolve'),
+            }, () => calls.push('close'));
+
+            option.click();
+            expect(option.classList.contains('theia-mod-resolvable')).to.equal(true);
+            expect(option.hasAttribute('aria-disabled')).to.equal(false);
+            expect(option.textContent).to.contain('Change approvals');
+            expect(calls).to.deep.equal(['close', 'resolve']);
+        });
+
+        it('keeps a blocked Goal row inert when nothing can fix it from the sheet', () => {
+            let toggled = false;
+            const option = createStickyComposerUntilDoneSheetOption({
+                checked: true,
+                disabledReason: 'Not available in Plan mode',
+                onToggle: () => toggled = true,
+            }, () => undefined);
+
+            option.click();
+            expect(option.getAttribute('aria-disabled')).to.equal('true');
+            expect(option.textContent).to.contain('Not available in Plan mode');
+            expect(toggled).to.equal(false);
         });
     });
 });

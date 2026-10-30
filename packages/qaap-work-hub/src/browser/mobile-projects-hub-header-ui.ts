@@ -457,14 +457,14 @@ export class MobileProjectsHubHeaderUi {
         if (!project) {
             return false;
         }
-        return this.host.executionSurfaceTabsUi.executionSurfaceTabForProject(project) === 'messages';
+        return this.host.executionSurfaceTabsUi.isChatSurfaceVisible(project);
     }
 
     resolveHeaderOverflowMenuVisible(): boolean {
         const project = this.resolveHeaderProject();
         return this.host.shouldUseAgentsHubLanding()
             && !!project
-            && this.host.executionSurfaceTabsUi.executionSurfaceTabForProject(project) === 'messages';
+            && this.host.executionSurfaceTabsUi.isChatSurfaceVisible(project);
     }
 
     protected resolveHeaderNewChatProject(): MobileProjectEntry | undefined {

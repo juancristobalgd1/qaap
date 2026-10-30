@@ -349,12 +349,54 @@ export interface QaapDevProcessExitReport {
     readonly exitedWithoutListening: boolean;
 }
 
+/** Signal names for the common numeric signals; other numbers are reported as `signal N`. */
+const DEV_PROCESS_SIGNAL_NAMES: Readonly<Record<number, string>> = {
+    2: 'SIGINT',
+    9: 'SIGKILL',
+    15: 'SIGTERM',
+};
+
+/**
+ * Human-readable name of a process signal, or `undefined` when the process did not die by a signal.
+ * Terminals report either a name (`'SIGTERM'`) or the numeric signal (`15`); node-pty reports
+ * `{ exitCode: 0, signal: 15 }` when the dev process is killed, which must not read as a clean exit.
+ */
+export function describeDevProcessSignal(signal: number | string | undefined): string | undefined {
+    if (signal === undefined || signal === '' || signal === 0 || signal === '0') {
+        return undefined;
+    }
+    if (typeof signal === 'string' && !/^\d+$/.test(signal.trim())) {
+        return signal.trim();
+    }
+    const numeric = typeof signal === 'number' ? signal : Number(String(signal).trim());
+    return DEV_PROCESS_SIGNAL_NAMES[numeric] ?? nls.localize('qaap/projectBootstrap/devSignalNumber', 'signal {0}', String(numeric));
+}
+
 /**
  * The failure to report when the dev process exits while the preview is still starting. A clean
  * exit is the silent case (a `theia start` that lost its port, a build-only script): name the port
- * it never listened on and quote its last lines instead of a generic "finished" message.
+ * it never listened on and quote its last lines instead of a generic "finished" message. A process
+ * killed by a signal is reported as stopped, not as a clean exit, even though its exit code is 0.
  */
-export function describeDevProcessExit(code: number | undefined, output: string, port?: number): QaapDevProcessExitReport {
+export function describeDevProcessExit(code: number | undefined, output: string, port?: number, signal?: number | string): QaapDevProcessExitReport {
+    const signalName = describeDevProcessSignal(signal);
+    if (signalName !== undefined) {
+        return {
+            message: port !== undefined
+                ? nls.localize(
+                    'qaap/projectBootstrap/devStoppedBySignalOnPort',
+                    'The dev server was stopped ({0}) before it listened on port {1}.',
+                    signalName,
+                    String(port),
+                )
+                : nls.localize(
+                    'qaap/projectBootstrap/devStoppedBySignal',
+                    'The dev server was stopped ({0}) before the preview server started listening.',
+                    signalName,
+                ),
+            exitedWithoutListening: false,
+        };
+    }
     if (code !== 0) {
         return {
             message: output || nls.localize(

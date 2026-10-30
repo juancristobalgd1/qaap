@@ -41,6 +41,7 @@ interface QaapDockerOrchestratorTestAccess {
     backendContainerNameForTenant(ownerLogin?: string): string;
     backendIngressNetworkNameForTenant(ownerLogin?: string): string;
     getTenantContainerUser(): string;
+    tenantBackendAgentDropEnv(): string[];
     getTenantImage(): string;
     getTenantMemoryLimit(): number;
     getTenantCpuLimit(): number;
@@ -50,6 +51,7 @@ interface QaapDockerOrchestratorTestAccess {
     tenantEgressProxyEnv(): Record<string, string>;
     tenantNetworkMatches(network: { Name?: string; Driver?: string; Internal?: boolean; Labels?: Record<string, string>; Options?: Record<string, string> }, networkName: string): boolean;
     tenantDirectEgressNetworkNameFor(ownerLogin?: string): string;
+    tenantDirectEgressNetworkFor(networkMode: string, ownerLogin?: string): string | undefined;
     tenantDirectEgressNetworkMatches(network: { Name?: string; Driver?: string; Internal?: boolean; Labels?: Record<string, string>; Options?: Record<string, string> }, networkName: string, ownerLogin: string): boolean;
     tenantEgressProxyNameFor(ownerLogin?: string): string;
     tenantEgressProxyMatches(inspect: Dockerode.ContainerInspectInfo, ownerLogin: string, tenantNetwork: string, image: string): boolean;
@@ -986,6 +988,126 @@ describe('QaapDockerOrchestrator', () => {
             expect(options.HostConfig?.CapAdd).to.deep.equal(['SETUID', 'SETGID']);
             expect(options.HostConfig?.RestartPolicy).to.deep.equal({ Name: 'on-failure', MaximumRetryCount: 3 });
             expect(options.Env).to.include.members(['QAAP_AGENT_UID=1001', 'QAAP_AGENT_GID=1001']);
+            expect(options.Env).to.include('QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP=1');
+        });
+
+        it('recreates (never just starts) a stopped backend whose env, user or image drifted', async () => {
+            const specRoot = path.join(os.tmpdir(), 'qaap-orchestrator-spec-stopped-drift');
+            process.env.QAAP_REPOS_ROOT = path.join(specRoot, 'repos');
+            process.env.QAAP_TENANT_NETWORK_MODE = 'isolated-bridge';
+            process.env.QAAP_TENANT_CONFIG_ROOT = path.join(specRoot, 'config');
+            process.env.QAAP_TENANT_BACKEND_MASTER_SECRET = 'x'.repeat(32);
+            process.env.QAAP_DOCKER_PUBLISH_HOST_IP = '127.0.0.1';
+            process.env.QAAP_DOCKER_ROOTLESS = '1';
+            process.env.QAAP_TENANT_CONTAINER_UID = '0';
+            process.env.QAAP_TENANT_CONTAINER_GID = '0';
+            delete process.env.QAAP_BACKEND_PER_TENANT;
+            delete process.env.QAAP_TENANT_EGRESS_PROXY_IMAGE;
+            delete process.env.QAAP_DOCKER_NODES;
+            const fakeDocker = createFakeTenantBackendDocker();
+            const orchestrator = access(new QaapDockerOrchestrator());
+            orchestrator.docker = fakeDocker.docker;
+            orchestrator.getDocker = async () => fakeDocker.docker;
+            orchestrator.waitForTenantBackendReady = async () => undefined;
+            const root = path.join(specRoot, 'repos', 'users', 'alice');
+            const backends = (): typeof fakeDocker.created => fakeDocker.created.filter(container => container.name.startsWith('qaap-backend-'));
+            const latest = (): FakeBackendContainerInfo => backends()[backends().length - 1].info;
+            await orchestrator.createOrValidateTenantBackend('alice', root);
+            expect(backends()).to.have.length(1);
+
+            // Baseline: an idle-stopped backend that still matches the contract is only started.
+            latest().State.Running = false;
+            await orchestrator.createOrValidateTenantBackend('alice', root);
+            expect(backends()).to.have.length(1);
+            expect(latest().State.Running).to.equal(true);
+
+            const drifts: Array<[string, (info: FakeBackendContainerInfo) => void]> = [
+                ['missing agent-drop flag', info => {
+                    info.Config.Env = (info.Config.Env as string[]).filter(entry => !entry.startsWith('QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP='));
+                }],
+                ['non-root user', info => { info.Config.User = '1000:1000'; }],
+                ['stale image', info => { info.Image = 'sha256:previous-release'; }],
+            ];
+            for (const [label, drift] of drifts) {
+                const before = backends().length;
+                const stale = latest();
+                stale.State.Running = false;
+                drift(stale);
+                await orchestrator.createOrValidateTenantBackend('alice', root);
+                expect(backends(), label).to.have.length(before + 1);
+                const fresh = latest();
+                expect(fresh, label).to.not.equal(stale);
+                expect(fresh.Config.User, label).to.equal('0:0');
+                expect(fresh.Config.Env, label).to.include('QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP=1');
+                expect(fresh.Image, label).to.equal('sha256:tenant-image');
+            }
+        });
+    });
+
+    describe('getTenantContainerUser', () => {
+
+        it('defaults a hosted rootless runtime to uid 0 when the uid is unset', () => {
+            process.env.QAAP_CLOUD_MODE = 'docker';
+            process.env.QAAP_DOCKER_ROOTLESS = '1';
+            delete process.env.QAAP_TENANT_CONTAINER_UID;
+            delete process.env.QAAP_TENANT_CONTAINER_GID;
+            expect(access(new QaapDockerOrchestrator()).getTenantContainerUser()).to.equal('0:0');
+        });
+
+        it('keeps uid 0 for a hosted rootless runtime configured with 0:0', () => {
+            process.env.QAAP_CLOUD_MODE = 'docker';
+            process.env.QAAP_DOCKER_ROOTLESS = '1';
+            process.env.QAAP_TENANT_CONTAINER_UID = '0';
+            process.env.QAAP_TENANT_CONTAINER_GID = '0';
+            expect(access(new QaapDockerOrchestrator()).getTenantContainerUser()).to.equal('0:0');
+        });
+
+        it('refuses a non-zero uid for a hosted rootless runtime (shared backend/agent uid)', () => {
+            process.env.QAAP_CLOUD_MODE = 'docker';
+            process.env.QAAP_DOCKER_ROOTLESS = '1';
+            process.env.QAAP_TENANT_CONTAINER_UID = '1000';
+            expect(() => access(new QaapDockerOrchestrator()).getTenantContainerUser())
+                .to.throw(/QAAP_TENANT_CONTAINER_UID=1000.*rootless uid 0/);
+        });
+
+        it('refuses a non-zero gid or a non-numeric uid for a hosted runtime', () => {
+            process.env.QAAP_CLOUD_MODE = 'docker';
+            process.env.QAAP_TENANT_CONTAINER_UID = '0';
+            process.env.QAAP_TENANT_CONTAINER_GID = '1000';
+            expect(() => access(new QaapDockerOrchestrator()).getTenantContainerUser()).to.throw(/QAAP_TENANT_CONTAINER_GID=1000/);
+            process.env.QAAP_TENANT_CONTAINER_GID = '0';
+            process.env.QAAP_TENANT_CONTAINER_UID = 'theia';
+            expect(() => access(new QaapDockerOrchestrator()).getTenantContainerUser()).to.throw(/QAAP_TENANT_CONTAINER_UID=theia/);
+        });
+
+        it('uses uid 0 for every hosted runtime, whatever QAAP_DOCKER_ROOTLESS says (the daemon is verified rootless)', () => {
+            process.env.QAAP_CLOUD_MODE = 'docker';
+            process.env.QAAP_DOCKER_ROOTLESS = '0';
+            process.env.QAAP_TENANT_CONTAINER_UID = ' ';
+            delete process.env.QAAP_TENANT_CONTAINER_GID;
+            expect(access(new QaapDockerOrchestrator()).getTenantContainerUser()).to.equal('0:0');
+        });
+
+        it('keeps uid 1000 and no agent-drop flag outside a hosted runtime (local development)', () => {
+            process.env.NODE_ENV = 'development';
+            process.env.QAAP_CLOUD_MODE = 'local';
+            delete process.env.QAAP_DOCKER_ROOTLESS;
+            delete process.env.QAAP_TENANT_CONTAINER_UID;
+            delete process.env.QAAP_TENANT_CONTAINER_GID;
+            const orchestrator = access(new QaapDockerOrchestrator());
+            expect(orchestrator.getTenantContainerUser()).to.equal('1000:1000');
+            expect(orchestrator.tenantBackendAgentDropEnv()).to.deep.equal([]);
+        });
+
+        it('keeps local rootless uid 0 opt-in with the agent-drop flag', () => {
+            process.env.NODE_ENV = 'development';
+            process.env.QAAP_CLOUD_MODE = 'local';
+            process.env.QAAP_DOCKER_ROOTLESS = '1';
+            process.env.QAAP_TENANT_CONTAINER_UID = '0';
+            process.env.QAAP_TENANT_CONTAINER_GID = '0';
+            const orchestrator = access(new QaapDockerOrchestrator());
+            expect(orchestrator.getTenantContainerUser()).to.equal('0:0');
+            expect(orchestrator.tenantBackendAgentDropEnv()).to.deep.equal(['QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP=1']);
         });
     });
 
@@ -1559,6 +1681,7 @@ describe('QaapDockerOrchestrator', () => {
             expect(orchestrator.tenantEgressProxyEnv()).to.deep.equal({});
             process.env.QAAP_TENANT_EGRESS_PROXY_IMAGE = 'qaap-tenant-egress:release';
             expect(orchestrator.tenantEgressProxyEnv()).to.deep.equal({
+                NODE_USE_ENV_PROXY: '1',
                 HTTP_PROXY: 'http://qaap-tenant-egress-proxy:3128',
                 HTTPS_PROXY: 'http://qaap-tenant-egress-proxy:3128',
                 http_proxy: 'http://qaap-tenant-egress-proxy:3128',
@@ -1566,6 +1689,17 @@ describe('QaapDockerOrchestrator', () => {
                 NO_PROXY: 'localhost,127.0.0.1,::1',
                 no_proxy: 'localhost,127.0.0.1,::1',
             });
+        });
+
+        it('treats an empty or blank proxy image as direct egress', () => {
+            const orchestrator = access(new QaapDockerOrchestrator());
+            for (const value of ['', '   ']) {
+                process.env.QAAP_TENANT_EGRESS_PROXY_IMAGE = value;
+                expect(orchestrator.tenantEgressProxyEnv()).to.deep.equal({});
+                expect(orchestrator.tenantDirectEgressNetworkFor('qaap-net-v3-alice', 'alice')).to.equal(orchestrator.tenantDirectEgressNetworkNameFor('alice'));
+            }
+            process.env.QAAP_TENANT_EGRESS_PROXY_IMAGE = 'qaap-tenant-egress:release';
+            expect(orchestrator.tenantDirectEgressNetworkFor('qaap-net-v3-alice', 'alice')).to.equal(undefined);
         });
 
         it('gives each tenant a separate proxy container and rejects shared proxy containers', async () => {

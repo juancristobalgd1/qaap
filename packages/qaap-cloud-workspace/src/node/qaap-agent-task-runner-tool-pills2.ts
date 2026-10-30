@@ -20,8 +20,10 @@ import {
     COMPOSER_PROMPT_IMPROVE_SERVER_TIMEOUT_MS,
 } from '@theia/qaap-composer/lib/common/qaap-composer-prompt-improve';
 import { QaapAgentCommandTimeoutError, resolveTaskHarnessId, stripSignInOnlyAgentApiKeyEnv } from './qaap-agent-task-runner-utils3';
+import type { QaapTaskSandbox } from './qaap-task-sandbox';
 import {
     isQaapAgentTaskFinished,
+    QAAP_AGENT_TASK_API_PATH,
     type QaapCreateAgentTaskQaiqModel,
     type QaapAgentTask,
     type QaapAgentTaskKind,
@@ -225,6 +227,13 @@ export function spawnAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, comm
 
 export function buildChildEnvExtracted(ctx: QaapAgentTaskRunnerContext, task: QaapAgentTask): NodeJS.ProcessEnv {
         const env: NodeJS.ProcessEnv = { ...process.env };
+        // Gate credentials are seeded only in the harness spawn (see spawnProcessExtracted); a child that
+        // runs repo code (verification scripts, git) must never inherit one, even from the backend env.
+        for (const key of Object.keys(env)) {
+            if (key.startsWith('QAAP_GATE_')) {
+                delete env[key];
+            }
+        }
         env.PWD = task.cwd;
         // When an agent is dropped to a non-root uid, its inherited HOME may point at root's
         // /root, which it cannot write. In Docker mode the overlay deliberately points inside the
@@ -282,6 +291,12 @@ export function buildChildEnvExtracted(ctx: QaapAgentTaskRunnerContext, task: Qa
             if (env.IS_SANDBOX === undefined) {
                 env.IS_SANDBOX = '1';
             }
+            // QAIQ retries a 429 up to 10 times with backoff by default. A daily free-tier cap (OpenRouter
+            // `free-models-per-day`) is not transient: those 10 retries stalled a turn for 3–6 minutes before
+            // it failed. Three retries still ride out a real burst. An operator override wins.
+            if (env.OPENCLAUDE_MAX_RETRIES === undefined) {
+                env.OPENCLAUDE_MAX_RETRIES = '3';
+            }
         }
         // OpenCode allows every tool by default; gate it explicitly unless the run is meant to be
         // ungated (security: "Request approval" must never execute shell commands silently).
@@ -294,7 +309,7 @@ export function buildChildEnvExtracted(ctx: QaapAgentTaskRunnerContext, task: Qa
         if (opencodePermission) {
             env.OPENCODE_PERMISSION = opencodePermission;
         }
-        ctx.applyHelperEnv(env, task.ownerLogin, task.id, task.autoApprove);
+        ctx.applyHelperEnv(env, task.ownerLogin, task.id, task.autoApprove, task.cwd);
         // Last: no inherited (operator / tenant) key may bypass a harness's own sign-in.
         stripSignInOnlyAgentApiKeyEnv(env, resolveTaskHarnessId(task.agentId, task.command));
         return env;
@@ -362,14 +377,57 @@ export function applyProviderPreferenceEnvExtracted(ctx: QaapAgentTaskRunnerCont
         ctx.applyOpenRouterOpenAiCompatEnv(env);
 }
 
-export function applyHelperEnvExtracted(ctx: QaapAgentTaskRunnerContext, env: NodeJS.ProcessEnv, ownerLogin?: string, parentTaskId?: string, autoApprove?: boolean): boolean {
+/**
+ * The origin (`scheme://host:port`) an agent process uses to reach this backend's tool gate and helper
+ * API. Loopback when the process runs on the backend itself. In a task sandbox loopback is the sandbox,
+ * so the backend's address on the sandbox's network is used instead (the broker resolves it). Undefined
+ * when that address is unknown: the caller then sends no URL and the gate fails closed.
+ */
+export function agentReachableOriginFor(helperApiUrl: string, sandbox: QaapTaskSandbox | undefined): string | undefined {
+    const helper = new URL(helperApiUrl);
+    if (!sandbox) {
+        return helper.origin;
+    }
+    if (!sandbox.backendHost) {
+        return undefined;
+    }
+    const host = sandbox.backendHost.includes(':') ? `[${sandbox.backendHost}]` : sandbox.backendHost;
+    return `http://${host}:${helper.port}`;
+}
+
+/**
+ * Adds the host of a non-loopback origin to NO_PROXY/no_proxy of an agent child env. Per-spawn env is
+ * what the sandbox exec server applies on top of its own, so the value is fresh for every spawn. The
+ * base list matches the sandbox's egress default, so the proxy's own exclusions survive.
+ */
+export function addAgentReachableNoProxy(env: NodeJS.ProcessEnv, origin: string): void {
+    const host = new URL(origin).hostname.replace(/^\[|\]$/g, '');
+    if (host === '127.0.0.1') {
+        return;
+    }
+    const base = env.NO_PROXY ?? env.no_proxy ?? 'localhost,127.0.0.1,::1';
+    const entries = base.split(',').map(entry => entry.trim()).filter(Boolean);
+    if (!entries.includes(host)) {
+        entries.push(host);
+    }
+    env.NO_PROXY = entries.join(',');
+    env.no_proxy = env.NO_PROXY;
+}
+
+export function applyHelperEnvExtracted(ctx: QaapAgentTaskRunnerContext, env: NodeJS.ProcessEnv, ownerLogin?: string, parentTaskId?: string, autoApprove?: boolean, cwd?: string): boolean {
         if (!ctx.helperApiUrl) {
+            return false;
+        }
+        const origin = ctx.resolveAgentReachableOrigin(cwd);
+        if (!origin) {
+            // Sandboxed without a reachable backend address: no helper URL, so no helper token either.
             return false;
         }
         // Seed the token bound to this task's owner so a spawned agent can only fan out
         // sub-tasks as its own user (the endpoint resolves the owner from the token).
         env.QAAP_TASK_TOKEN = ctx.helperTokenForOwner(ownerLogin);
-        env.QAAP_TASK_API_URL = ctx.helperApiUrl;
+        env.QAAP_TASK_API_URL = `${origin}${QAAP_AGENT_TASK_API_PATH}`;
+        addAgentReachableNoProxy(env, origin);
         if (parentTaskId) {
             env.QAAP_TASK_PARENT_ID = parentTaskId;
         }
@@ -625,7 +683,7 @@ export async function improveComposerPromptExtracted(ctx: QaapAgentTaskRunnerCon
         const improveText = buildImproveComposerPromptRequest(trimmed);
         const agentId = ctx.resolveAgentId(improveText, options.agentId, options.ownerLogin);
         // The composer may still hold another agent's pick; the agent's own default beats a foreign model.
-        const agentModel = options.agentModel && agentModelFitsAgent(agentId, options.agentModel, () => listNativeAgentModels(agentId))
+        const agentModel = options.agentModel && agentModelFitsAgent(agentId, options.agentModel, () => listNativeAgentModels(agentId, options.ownerLogin))
             ? options.agentModel
             : undefined;
         ctx.assertQaiqConfigured(agentId, options.ownerLogin, agentModel);
@@ -636,7 +694,7 @@ export async function improveComposerPromptExtracted(ctx: QaapAgentTaskRunnerCon
         const vars = ctx.buildTemplateVars(agentId, agentModel, {
             autoApprove: true,
             approvalPolicyId: 'approve-for-me',
-        }, options.ownerLogin);
+        }, options.ownerLogin, options.cwd?.trim() || undefined);
         const template = detected.template
             .replace(/--output-format\s+\S+/g, '')
             .replace(/--include-partial-messages/g, '')
@@ -672,11 +730,15 @@ export async function improveComposerPromptExtracted(ctx: QaapAgentTaskRunnerCon
             ...(options.ownerLogin ? { ownerLogin: options.ownerLogin } : {}),
             ...(agentModel ? { agentModel, qaiqModel: agentModel } : {}),
         };
+        const improveEnv = ctx.buildChildEnv(task);
+        // Never a grant without a real folder: the backend's own cwd is not the user's workspace. Without
+        // gate env Pi blocks its tools, which improving a prompt does not use.
+        const releaseGate = options.cwd?.trim() ? ctx.applyOneShotToolGateEnv(improveEnv, task) : () => undefined;
         try {
             return await ctx.runOneShotCommand(
                 command,
                 cwd,
-                ctx.buildChildEnv(task),
+                improveEnv,
                 agentId,
                 COMPOSER_PROMPT_IMPROVE_SERVER_TIMEOUT_MS,
                 transported.stdinPrompt,
@@ -687,6 +749,8 @@ export async function improveComposerPromptExtracted(ctx: QaapAgentTaskRunnerCon
                 throw new ComposerPromptImproveTimeoutError();
             }
             throw error;
+        } finally {
+            releaseGate();
         }
 }
 
@@ -728,7 +792,7 @@ export async function runReadOnlyOneShotPromptExtracted(ctx: QaapAgentTaskRunner
             autoApprove: true,
             approvalPolicyId: 'approve-for-me',
             interactionModeId: 'plan',
-        }, options.ownerLogin);
+        }, options.ownerLogin, options.cwd);
         const template = detected.template
             .replace(/--output-format\s+\S+/g, '')
             .replace(/--include-partial-messages/g, '')
@@ -755,13 +819,19 @@ export async function runReadOnlyOneShotPromptExtracted(ctx: QaapAgentTaskRunner
             ...(options.ownerLogin ? { ownerLogin: options.ownerLogin } : {}),
             ...(agentModel ? { agentModel, qaiqModel: agentModel } : {}),
         };
-        return ctx.runOneShotCommand(
-            command,
-            options.cwd,
-            ctx.buildChildEnv(task),
-            agentId,
-            options.timeoutMs,
-            transported.stdinPrompt,
-            transported.promptTempDir,
-        );
+        const evaluatorEnv = ctx.buildChildEnv(task);
+        const releaseGate = ctx.applyOneShotToolGateEnv(evaluatorEnv, task);
+        try {
+            return await ctx.runOneShotCommand(
+                command,
+                options.cwd,
+                evaluatorEnv,
+                agentId,
+                options.timeoutMs,
+                transported.stdinPrompt,
+                transported.promptTempDir,
+            );
+        } finally {
+            releaseGate();
+        }
 }

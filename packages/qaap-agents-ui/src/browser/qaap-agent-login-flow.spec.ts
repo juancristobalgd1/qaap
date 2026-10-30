@@ -14,6 +14,7 @@ import {
     QAAP_AGENT_LOGIN_INSTALL_TIMEOUT_MS,
     QAAP_AGENT_LOGIN_PREPARE_TIMEOUT_MS,
     QAAP_AGENT_LOGIN_PROMPT_GRACE_MS,
+    extractAgentLoginHyperlinkTargets,
     QaapAgentLoginFlow,
     type QaapAgentLoginFlowState,
 } from '../common/qaap-agent-login-flow';
@@ -61,7 +62,81 @@ function createFlow(agentId: string): { flow: QaapAgentLoginFlow; states: QaapAg
     return { flow, states };
 }
 
+const PI_AUTH_URL = 'https://openrouter.ai/auth?callback_url=http%3A%2F%2F127.0.0.1%3A41237%2Foauth%2Fcallback%2F3f9c2a1e-0d7b-4a52-9b8e-1c2d3e4f5a6b'
+    + '&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256';
+
+/**
+ * Pi 1.4 `/login openrouter` as the hidden 80-column terminal receives it: the URL row is an
+ * OSC-8 hyperlink that the TUI hard-wraps (each row repeats the full target), the click hint is a
+ * second link to the same URL, then the paste-back prompt.
+ */
+function piRawLoginOutput(): string {
+    const link = (target: string, text: string): string => `\x1b]8;;${target}\x07${text}\x1b]8;;\x07`;
+    const rows = PI_AUTH_URL.match(/.{1,78}/g)!;
+    return [
+        '\x1b[2K\x1b[1G Select authentication method for OpenRouter:',
+        ...rows.map(row => ` \x1b[38;5;75m${link(PI_AUTH_URL, row)}\x1b[39m`),
+        ` \x1b[2m${link(PI_AUTH_URL, 'Cmd+click to open')}\x1b[22m • ctrl+o to copy`,
+        '',
+        ' Complete sign-in in your browser. If the browser is on another machine, paste the final redirect URL here.',
+        '',
+        ' Complete sign-in in your browser, or paste the authorization code / redirect URL here:',
+        ' > ',
+        ' (esc to cancel)',
+    ].join('\r\n');
+}
+
 describe('QaapAgentLoginFlow', () => {
+
+    it('finds Pi\'s whole OpenRouter link from its OSC-8 hyperlinks although the TUI wrapped it', () => {
+        expect(extractAgentLoginHyperlinkTargets(piRawLoginOutput())).to.deep.equal([PI_AUTH_URL]);
+        const { flow } = createFlow('pi');
+        flow.restart(0);
+        flow.commandStarted(0);
+        const raw = piRawLoginOutput();
+        // Chunk boundaries fall inside escape sequences, as real PTY reads do.
+        for (let offset = 0; offset < raw.length; offset += 37) {
+            flow.appendRawOutput(raw.slice(offset, offset + 37));
+        }
+        const state = flow.state;
+        expect(state.phase).to.equal('challenge');
+        if (state.phase === 'challenge') {
+            expect(state.challenge.url).to.equal(PI_AUTH_URL);
+            expect(state.challenge.codeEntry).to.equal(true);
+            expect(state.challenge.acceptsRedirectUrl).to.equal(true);
+        }
+        flow.codeSubmitted(1_000);
+        flow.appendRawOutput('\r\n \x1b[32mLogged in to OpenRouter\x1b[39m\r\n');
+        expect(flow.state.phase).to.equal('connected');
+    });
+
+    it('fails a Pi sign-in the TUI rejected, with its output, although Pi keeps running', () => {
+        const { flow } = createFlow('pi');
+        flow.restart(0);
+        flow.commandStarted(0);
+        flow.appendRawOutput(piRawLoginOutput());
+        flow.codeSubmitted(1_000);
+        flow.appendRawOutput('\r\n Error: Failed to login to OpenRouter: invalid authorization code\r\n');
+        const state = flow.state;
+        expect(state.phase).to.equal('failed');
+        if (state.phase === 'failed') {
+            expect(state.reason).to.equal('rejected');
+            expect(state.tail.join('\n')).to.contain('invalid authorization code');
+        }
+    });
+
+    it('gives a driven TUI login its own link deadline and reports it', () => {
+        const states: QaapAgentLoginFlowState[] = [];
+        const flow = new QaapAgentLoginFlow({ agentId: 'pi', challengeTimeoutMs: 30_000, onDidChange: state => states.push(state) });
+        flow.restart(0);
+        flow.commandStarted(0);
+        flow.tick(QAAP_AGENT_LOGIN_CHALLENGE_TIMEOUT_MS);
+        expect(flow.state.phase).to.equal('waiting');
+        flow.tick(30_000);
+        const state = flow.state;
+        expect(state.phase === 'failed' && state.reason).to.equal('timeout');
+        expect(state.phase === 'failed' && state.timeoutMs).to.equal(30_000);
+    });
 
     it('shows the link and asks for the pasted code when the CLI prompts for it', () => {
         const { flow } = createFlow('claude');
@@ -218,6 +293,10 @@ describe('createQaapAgentLoginDialog', () => {
         dialog = createQaapAgentLoginDialog({ agentId: 'claude', agentLabel: 'Claude Code', onClose: () => undefined, ...handlers });
         return dialog;
     };
+    const openPi = (handlers: { onSubmitCode?: (code: string) => void; onRetry?: () => void; onOpenTerminal?: () => void } = {}) => {
+        dialog = createQaapAgentLoginDialog({ agentId: 'pi', agentLabel: 'Pi', onClose: () => undefined, openTerminalHint: 'run pi', ...handlers });
+        return dialog;
+    };
     const buttonLabels = (root: HTMLElement): string[] => Array.from(root.querySelectorAll('button')).map(button => button.textContent ?? '');
 
     it('renders the link and sends the pasted code', () => {
@@ -233,6 +312,47 @@ describe('createQaapAgentLoginDialog', () => {
         const view = controller.root.ownerDocument.defaultView!;
         controller.root.querySelector('form')!.dispatchEvent(new view.Event('submit', { cancelable: true }));
         expect(submitted).to.deep.equal(['abc#123']);
+    });
+
+    it('asks Pi users for the redirect URL or code and keeps Open terminal as a fallback', () => {
+        const submitted: string[] = [];
+        let terminals = 0;
+        const controller = openPi({ onSubmitCode: code => submitted.push(code), onOpenTerminal: () => terminals++ });
+        controller.render({ phase: 'waiting', startedAt: 0 });
+        expect(buttonLabels(controller.root).filter(label => label === 'Open terminal')).to.have.length(1);
+        controller.render({
+            phase: 'challenge',
+            challenge: { mode: 'session', url: 'https://openrouter.ai/auth?callback_url=x', codeEntry: true, acceptsRedirectUrl: true },
+        });
+        expect(controller.root.querySelector('.theia-mobile-agent-login-dialog-subtitle')?.textContent).to.contain('OpenRouter');
+        expect(controller.root.querySelector('.theia-mobile-agent-login-dialog-url')?.textContent).to.contain('Verification page');
+        expect(controller.root.textContent).to.contain('redirect URL');
+        expect(controller.root.querySelector('.theia-mobile-agent-login-dialog-step-hint')?.textContent).to.contain('127.0.0.1');
+        const input = controller.root.querySelector<HTMLInputElement>('.theia-mobile-agent-login-dialog-code-input')!;
+        expect(input.getAttribute('aria-label')).to.equal('Redirect URL or code');
+        input.value = ' http://127.0.0.1:41237/oauth/callback/abc?code=xyz ';
+        const view = controller.root.ownerDocument.defaultView!;
+        controller.root.querySelector('form')!.dispatchEvent(new view.Event('submit', { cancelable: true }));
+        expect(submitted).to.deep.equal(['http://127.0.0.1:41237/oauth/callback/abc?code=xyz']);
+        const fallback = Array.from(controller.root.querySelectorAll<HTMLButtonElement>('.theia-mobile-agent-login-dialog-secondary'));
+        expect(fallback.map(button => button.textContent)).to.deep.equal(['Open terminal']);
+        expect(fallback[0].title).to.equal('run pi');
+        fallback[0].click();
+        expect(terminals).to.equal(1);
+        controller.render({ phase: 'failed', reason: 'rejected', tail: ['Failed to login to OpenRouter: bad code'] });
+        expect(controller.root.querySelector('.theia-mobile-agent-login-dialog-status')?.textContent).to.contain('could not complete the sign-in');
+        expect(buttonLabels(controller.root)).to.include.members(['Open terminal']);
+    });
+
+    it('never shows a terminal fallback for a CLI login without one', () => {
+        const controller = open({ onSubmitCode: () => undefined });
+        controller.render({
+            phase: 'challenge',
+            challenge: { mode: 'session', url: 'https://claude.com/cai/oauth/authorize?code=true', codeEntry: true },
+        });
+        expect(buttonLabels(controller.root)).to.not.include('Open terminal');
+        expect(controller.root.querySelector<HTMLInputElement>('.theia-mobile-agent-login-dialog-code-input')!.getAttribute('aria-label'))
+            .to.equal('Authorization code');
     });
 
     it('offers the Settings button with no spinner', () => {

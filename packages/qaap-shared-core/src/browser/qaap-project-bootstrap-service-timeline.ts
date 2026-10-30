@@ -28,6 +28,7 @@ import {
     extractDevOutputProbePorts,
 } from './qaap-project-bootstrap-dev-errors';
 import { isLocalQaapPreviewOrigin, resolveDevPreviewPublicOrigin, type QaapDevPreviewProbeResponse } from '../common/qaap-dev-preview';
+import { readyTimeoutProbeAttempts } from '../common/qaap-preview-launch-plan';
 import {
     qaapPreviewProjectIdMatches,
 } from '../common/qaap-preview-identity';
@@ -227,8 +228,12 @@ export async function openPrimaryPreviewWhenReadyExtracted(ctx: QaapProjectBoots
         ctx._previewReadiness = 'waiting-for-server';
         ctx._previewWaitTimedOut = false;
         ctx.stateEmitter.fire(ctx.buildStateChange(ctx._phase));
+        const readyTimeoutMs = ctx._descriptor?.readyTimeoutMs;
+        const readyAttempts = readyTimeoutMs !== undefined
+            ? readyTimeoutProbeAttempts(readyTimeoutMs, DEV_PREVIEW_OPEN_PROBE_INTERVAL_MS)
+            : DEV_PREVIEW_OPEN_PROBE_ATTEMPTS;
         let ready = await waitForQaapDevPreviewPort(port, {
-            maxAttempts: DEV_PREVIEW_OPEN_PROBE_ATTEMPTS,
+            maxAttempts: readyAttempts,
             intervalMs: DEV_PREVIEW_OPEN_PROBE_INTERVAL_MS,
         });
         if (!ready) {
@@ -245,7 +250,8 @@ export async function openPrimaryPreviewWhenReadyExtracted(ctx: QaapProjectBoots
             ctx._previewWaitTimedOut = true;
             ctx._error = nls.localize(
                 'qaap/projectBootstrap/previewWaitTimedOut',
-                'The server has not answered after 30 seconds. Check the startup log, then retry.',
+                'The server has not answered after {0} seconds. Check the startup log, then retry.',
+                String(Math.round(((readyAttempts - 1) * DEV_PREVIEW_OPEN_PROBE_INTERVAL_MS) / 1000)),
             );
             ctx.stateEmitter.fire(ctx.buildStateChange(ctx._phase));
             return;
@@ -451,9 +457,19 @@ export function monitorPreviewProcessLifetimeExtracted(ctx: QaapProjectBootstrap
 }
 
 export function attachTerminalOsProcessIdExtracted(ctx: QaapProjectBootstrapServiceContext, terminal: TerminalWidget, previewId: string, port: number, cwd: URI): void {
-        void terminal.processId.then(pid => {
-            if (ctx.activePreviewClaim?.previewId === previewId) {
-                void ctx.reserveActivePreview(port, cwd, pid);
+        void terminal.processId.then(async pid => {
+            if (ctx.activePreviewClaim?.previewId !== previewId) {
+                return;
+            }
+            const claim = await ctx.reserveActivePreview(port, cwd, pid);
+            // The backend answers the re-claim with the identity it kept (it can rebind the port or
+            // reattach another record). Remember that answer, or the frontend keeps the URL it
+            // started with while the backend serves a different one.
+            const remembered = ctx.activePreviewClaim;
+            if (claim.kind === 'claimed' && claim.previewId && claim.previewUrl && claim.port !== undefined
+                && remembered?.previewId === previewId
+                && (claim.previewId !== remembered.previewId || claim.previewUrl !== remembered.previewUrl || claim.port !== remembered.port)) {
+                ctx.rememberActivePreviewClaim({ previewId: claim.previewId, previewUrl: claim.previewUrl, port: claim.port });
             }
         }).catch(() => undefined);
 }

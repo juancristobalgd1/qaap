@@ -40,15 +40,19 @@ describe('QaapAgentConversationEndpoint create idempotency', () => {
     function buildEndpoint(): {
         endpoint: QaapAgentConversationEndpoint;
         createCalls: number;
+        clock: { t: number };
         store: Map<string, unknown>;
         owners: Array<string | undefined>;
     } {
         const store = new Map<string, unknown>();
         const owners: Array<string | undefined> = [];
+        const clock = { t: 1_000_000 };
         let createCalls = 0;
         const endpoint = Object.create(QaapAgentConversationEndpoint.prototype) as QaapAgentConversationEndpoint;
         Object.assign(endpoint, {
-            clientRequestDedup: new Map<string, string>(),
+            now: () => clock.t,
+            clientRequestDedup: new Map<string, { conversationId: string; at: number }>(),
+            recentTextCreates: new Map(),
             clientRequestInFlight: new Set<string>(),
             repoClaims: new Map<string, number>(),
             store: {
@@ -73,6 +77,7 @@ describe('QaapAgentConversationEndpoint create idempotency', () => {
         });
         return {
             endpoint,
+            clock,
             get createCalls(): number { return createCalls; },
             store,
             owners,
@@ -116,14 +121,64 @@ describe('QaapAgentConversationEndpoint create idempotency', () => {
     it('creates a distinct conversation for a different clientRequestId', async () => {
         const h = buildEndpoint();
         await call(h.endpoint, { ...base, clientRequestId: 'req-A' }, fakeRes());
-        await call(h.endpoint, { ...base, clientRequestId: 'req-B' }, fakeRes());
+        await call(h.endpoint, { ...base, message: 'second message', clientRequestId: 'req-B' }, fakeRes());
         expect(h.createCalls).to.equal(2);
     });
 
-    it('does not dedup when no clientRequestId is sent (legacy clients unaffected)', async () => {
+    it('forgets a clientRequestId after the ten-minute window and creates again', async () => {
+        const h = buildEndpoint();
+        await call(h.endpoint, { ...base, clientRequestId: 'req-A' }, fakeRes());
+        h.clock.t += 10 * 60 * 1000 + 1;
+        const res = fakeRes();
+        await call(h.endpoint, { ...base, clientRequestId: 'req-A' }, res);
+        expect(h.createCalls).to.equal(2);
+        expect((res.body as { id: string }).id).to.equal('conv-2');
+    });
+
+    it('still returns the same conversation for a retry just inside the ten-minute window', async () => {
+        const h = buildEndpoint();
+        await call(h.endpoint, { ...base, clientRequestId: 'req-A' }, fakeRes());
+        h.clock.t += 10 * 60 * 1000 - 1;
+        await call(h.endpoint, { ...base, clientRequestId: 'req-A' }, fakeRes());
+        expect(h.createCalls).to.equal(1);
+    });
+
+    it('dedupes identical text for the same owner and cwd within 5s even without clientRequestId (double click)', async () => {
+        const h = buildEndpoint();
+        const res1 = fakeRes();
+        const res2 = fakeRes();
+        await call(h.endpoint, { ...base }, res1);
+        h.clock.t += 1_000;
+        await call(h.endpoint, { ...base }, res2);
+        expect(h.createCalls).to.equal(1);
+        expect((res2.body as { id: string }).id).to.equal('conv-1');
+        expect(res2.statusCode).to.equal(201);
+    });
+
+    it('dedupes a double click whose two submits carry DIFFERENT clientRequestIds', async () => {
+        const h = buildEndpoint();
+        const res1 = fakeRes();
+        const res2 = fakeRes();
+        // Both in flight before either resolves: the second must await the first, not start a second agent.
+        const p1 = call(h.endpoint, { ...base, clientRequestId: 'click-1' }, res1);
+        const p2 = call(h.endpoint, { ...base, clientRequestId: 'click-2' }, res2);
+        await Promise.all([p1, p2]);
+        expect(h.createCalls).to.equal(1);
+        expect((res2.body as { id: string }).id).to.equal('conv-1');
+    });
+
+    it('creates again for identical text once the five-second window has passed', async () => {
         const h = buildEndpoint();
         await call(h.endpoint, { ...base }, fakeRes());
+        h.clock.t += 5_001;
         await call(h.endpoint, { ...base }, fakeRes());
+        expect(h.createCalls).to.equal(2);
+    });
+
+    it('does not text-dedupe across owners or repositories', async () => {
+        const h = buildEndpoint();
+        await call(h.endpoint, { ...base }, fakeRes());
+        await call(h.endpoint, { ...base, cwd: '/workspace/repos/users/alice/o/other' }, fakeRes());
         expect(h.createCalls).to.equal(2);
     });
 
@@ -154,6 +209,7 @@ describe('QaapAgentConversationEndpoint create idempotency', () => {
 describe('QaapAgentConversationEndpoint create isolation', () => {
 
     const repo = '/workspace/repos/users/alice/o/r';
+    let uniqueMessageSeq = 0;
 
     interface CreatedConversation {
         id: string;
@@ -179,7 +235,8 @@ describe('QaapAgentConversationEndpoint create isolation', () => {
         let created = 0;
         const endpoint = Object.create(QaapAgentConversationEndpoint.prototype) as QaapAgentConversationEndpoint;
         Object.assign(endpoint, {
-            clientRequestDedup: new Map<string, string>(),
+            clientRequestDedup: new Map<string, { conversationId: string; at: number }>(),
+            recentTextCreates: new Map(),
             clientRequestInFlight: new Set<string>(),
             repoClaims: new Map<string, number>(),
             store: {
@@ -219,8 +276,10 @@ describe('QaapAgentConversationEndpoint create isolation', () => {
         body: Record<string, unknown>,
     ): Promise<{ status: number; conv: CreatedConversation }> {
         const res = fakeRes();
+        // Unique text per call: identical messages inside the 5s text window are deduped by design.
+        uniqueMessageSeq += 1;
         await (endpoint as unknown as { handleCreate(req: unknown, res: unknown): Promise<void> })
-            .handleCreate({ body: { cwd: repo, message: 'hi', ...body } }, res);
+            .handleCreate({ body: { cwd: repo, message: `hi ${uniqueMessageSeq}`, ...body } }, res);
         return { status: res.statusCode, conv: res.body as CreatedConversation };
     }
 
@@ -368,7 +427,8 @@ describe('QaapAgentConversationEndpoint same-conversation parallel delivery', ()
         const conversations = new Map<string, typeof parent>([['c1', parent]]);
         const endpoint = Object.create(QaapAgentConversationEndpoint.prototype) as QaapAgentConversationEndpoint;
         Object.assign(endpoint, {
-            clientRequestDedup: new Map<string, string>(),
+            clientRequestDedup: new Map<string, { conversationId: string; at: number }>(),
+            recentTextCreates: new Map(),
             clientRequestInFlight: new Set<string>(),
             store: {
                 taskRunner: { defaultAgentFresh: async () => 'opencode', defaultAgent: () => 'opencode' },
@@ -694,7 +754,8 @@ describe('QaapAgentConversationEndpoint project clone missing from disk', () => 
         const recoveredCwds: string[] = [];
         const endpoint = Object.create(QaapAgentConversationEndpoint.prototype) as QaapAgentConversationEndpoint;
         Object.assign(endpoint, {
-            clientRequestDedup: new Map<string, string>(),
+            clientRequestDedup: new Map<string, { conversationId: string; at: number }>(),
+            recentTextCreates: new Map(),
             clientRequestInFlight: new Set<string>(),
             repoClaims: new Map<string, number>(),
             store: {

@@ -152,3 +152,28 @@ describe('agent picker: OpenCode locked group helper', () => {
         expect(row?.disabled).to.equal(true);
     });
 });
+
+describe('agent picker: Pi sign-in', () => {
+    useSuiteJSDOM();
+
+    it('shows one Sign in action in the first group header and calls the handler', () => {
+        const list = document.createElement('div');
+        const models: QaapQaiqModelOption[] = [
+            { provider: 'openai', vendor: 'openrouter', modelId: 'openrouter/~anthropic/claude-sonnet-latest', label: 'anthropic/claude-sonnet-latest' },
+            { provider: 'openai', vendor: 'anthropic', modelId: 'anthropic/claude-opus-4-8', label: 'claude-opus-4-8' },
+        ];
+        const ctx = {
+            createAgentPickerNoResultsHint: () => document.createElement('p'),
+        } as unknown as MobileProjectsStickyComposerSheetsUiContext;
+        let signIns = 0;
+        appendAgentModelPickerListExtracted(ctx, list, 'pi', models, undefined, () => undefined,
+            false, undefined, undefined, () => { signIns++; });
+        const buttons = list.querySelectorAll<HTMLButtonElement>('.theia-qaap-agent-sheet-connect');
+        expect(buttons).to.have.length(1);
+        expect(buttons[0].textContent).to.equal('Sign in');
+        expect(buttons[0].closest('.theia-qaap-agent-sheet-provider-label')).to.not.equal(null);
+        expect(list.querySelectorAll('.theia-qaap-agent-sheet-provider')).to.have.length(2);
+        buttons[0].click();
+        expect(signIns).to.equal(1);
+    });
+});

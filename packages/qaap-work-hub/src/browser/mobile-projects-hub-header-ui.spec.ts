@@ -99,6 +99,7 @@ describe('MobileProjectsHubHeaderUi', () => {
             transcriptSheetUi: {} as MobileProjectsHubHeaderHost['transcriptSheetUi'],
             executionSurfaceTabsUi: {
                 executionSurfaceTabForProject: () => activeTab,
+                isChatSurfaceVisible: () => activeTab === 'messages',
             } as unknown as MobileProjectsHubHeaderHost['executionSurfaceTabsUi'],
             updateTasksAttentionChrome: () => undefined,
             scroll: document.createElement('div'),

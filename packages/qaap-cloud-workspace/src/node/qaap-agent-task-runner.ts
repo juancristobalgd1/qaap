@@ -32,6 +32,7 @@ import {
     isQaapAgentTaskFinished,
 } from '../common/qaap-agent-task';
 import type { QaapTurnLatencyMark } from '@theia/qaap-shared-core/lib/common/qaap-agent-stream-metrics';
+import { QaapDevPreviewPortRegistry } from '@theia/qaap-shared-core/lib/node/qaap-dev-preview-port-registry';
 import { type QaapQaiqInteractionFlagOptions } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-interaction-flags';
 import type { QaapPreferenceReader } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
@@ -45,12 +46,22 @@ import {
 import { isQaapProductionRuntime } from './qaap-agent-spawn-identity';
 import { QAAP_AGENT_CLI_CONTAINER_ISOLATION_REFUSAL, type QaapAgentCliInstallTarget } from './qaap-agent-cli-update-service';
 import { QaapAgentHookService } from './qaap-agent-hook-service';
+import { QaapToolGateService } from './qaap-tool-gate-service';
+import { QaapToolGateTokenService } from './qaap-tool-gate-token-service';
+import { QaapToolGateAskBroker } from './qaap-tool-gate-ask-broker';
+import { applyOpencodeGateEnv, opencodeGatePluginSeeded, usesOpencodeGatePlugin } from './qaap-tool-gate-opencode-adapter';
+import { QAAP_TOOL_GATE_API_PATH } from '@theia/qaap-shared-core/lib/common/qaap-tool-gate-protocol';
+import { resolveQaapHarnessCapabilities } from '@theia/qaap-shared-core/lib/common/qaap-harness-capabilities';
+import { QaapProjectFolderTrustStore, resolveProjectFolderTrustRoot } from './qaap-project-folder-trust-store';
+import { QaapHostedWorktreeRegistry } from '@theia/qaap-shared-core/lib/node/qaap-hosted-worktree-registry';
+import { invalidateNativeAgentModels, prepareNativeAgentModels, type NativeModelDiscoverySpawner } from './qaap-agent-native-models';
 import { fireStopAgentHook } from './qaap-agent-task-runner-hooks';
 import { type QaapAgentReadOnlyEnforcement, } from '../common/qaap-agent-readonly-workspace';
 import { type QaapQaiqPendingControlRequest } from '../common/qaap-qaiq-stdio-approvals';
 import { type QaapEmptyAgentTurnResult } from '../common/qaap-agent-empty-turn';
 import { type QaapQaiqModelBinding } from '../common/qaap-qaiq-model-binding';
 import { type QaapNativeModelRoutingTable } from '../common/qaap-agent-native-model-routing';
+import { pickReservedDevPreviewPort } from '../common/qaap-agent-live-preview-port';
 import { QaapWebPushService } from './qaap-web-push-service';
 import { QaapBillingStore } from './qaap-billing-store';
 import { QaapWorkflowRoutingPolicy } from '../common/qaap-workflow-routing';
@@ -102,7 +113,7 @@ import { injectStdioUserMessageExtracted, type QaapStdioInjectHost } from './qaa
 import { buildAgentVerificationFixPromptExtracted, captureWorktreeBaselineExtracted, detectEmptyAgentTurnForTaskExtracted, finishSuccessfulTaskAfterVerificationExtracted, hasEditedFilesForVerificationExtracted, releaseVerificationPassExtracted, resolveReviewerCandidatesExtracted, restoreBaselineSensitiveFilesExtracted, reviewSuccessfulAgentTaskExtracted, runAgentVerificationFixTurnExtracted, runVerificationScriptsExtracted, verifySuccessfulAgentTaskExtracted } from './qaap-agent-task-runner-activity2';
 import type { QaapAgentClosingDiffSummary } from '../common/qaap-agent-closing-report';
 import { parseWorktreeStatusZ, type QaapWorktreeChange } from '../common/qaap-verification-scope';
-import { appendAndFireOutputExtracted, applyHelperEnvExtracted, applyOpenAiVendorCompatEnvExtracted, applyProviderPreferenceEnvExtracted, applyQaiqProviderEnvExtracted, buildChildEnvExtracted, finishTaskExtracted, fireOutputExtracted, improveComposerPromptExtracted, markTaskBlockedExtracted, recordTaskClosingDiffExtracted, runReadOnlyOneShotPromptExtracted, notifyCompletionExtracted, persistExtracted, readLogExtracted, runGenericCommandExtracted, spawnAgentCommandExtracted, summarizeVerificationFailureExtracted } from './qaap-agent-task-runner-tool-pills2';
+import { addAgentReachableNoProxy, agentReachableOriginFor, appendAndFireOutputExtracted, applyHelperEnvExtracted, applyOpenAiVendorCompatEnvExtracted, applyProviderPreferenceEnvExtracted, applyQaiqProviderEnvExtracted, buildChildEnvExtracted, finishTaskExtracted, fireOutputExtracted, improveComposerPromptExtracted, markTaskBlockedExtracted, recordTaskClosingDiffExtracted, runReadOnlyOneShotPromptExtracted, notifyCompletionExtracted, persistExtracted, readLogExtracted, runGenericCommandExtracted, spawnAgentCommandExtracted, summarizeVerificationFailureExtracted } from './qaap-agent-task-runner-tool-pills2';
 import { runOneShotCommandExtracted } from './qaap-agent-task-runner-live-status2';
 import {
     isQaapHarnessEnabled,
@@ -174,6 +185,8 @@ import {
     resolveAgentAccess,
     type QaapAgentConnectionSnapshot,
 } from './qaap-agent-access';
+import { childProcessEnv } from './qaap-child-process-env';
+import { qaapGitReadEnv } from './qaap-child-process-env';
 
 /** How long a CLI auth probe answer is considered current before it is re-probed in the background. */
 export const QAAP_AGENT_CONNECTION_STATE_TTL_MS = 15_000;
@@ -217,6 +230,18 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
 
     @inject(QaapTenantActivityTracker) @optional()
     protected readonly tenantActivity: QaapTenantActivityTracker | undefined;
+
+    /** Live preview claims: the authoritative port Qaap reserved for a project (see reservedDevPreviewPort). */
+    @inject(QaapDevPreviewPortRegistry) @optional()
+    protected readonly previewPortRegistry: QaapDevPreviewPortRegistry | undefined;
+
+    /** Per-project "trust the files in this folder" decision, filled into `{trust_flags}`. */
+    @inject(QaapProjectFolderTrustStore) @optional()
+    protected readonly projectFolderTrust: QaapProjectFolderTrustStore | undefined;
+
+    /** Maps a backend-created task worktree to its project root for the trust lookup. */
+    @inject(QaapHostedWorktreeRegistry) @optional()
+    protected readonly hostedWorktrees: QaapHostedWorktreeRegistry | undefined;
 
     /** Each user's last turn per agent, shown in the harness settings (see listHarnessStatuses). */
     @inject(QaapAgentLastTurnStore) @optional()
@@ -749,7 +774,18 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
                 // pre-Connect answer overwrite the cache of the probe that replaced it.
                 if (this.agentConnectionProbes.get(cacheKey) === probe) {
                     this.agentConnectionProbes.delete(cacheKey);
+                    const previous = this.agentConnectionStates.get(cacheKey)?.state;
                     this.agentConnectionStates.set(cacheKey, { state, at: Date.now(), probeFailed });
+                    if (state === 'connected' && previous !== 'connected') {
+                        // A fresh sign-in unlocks the account's models (Pi `/login`, Cursor): the
+                        // catalog discovered while signed out is stale. Rediscover right away so the
+                        // picker the user comes back to already lists the signed-in providers.
+                        invalidateNativeAgentModels(normalized, ownerLogin);
+                        void prepareNativeAgentModels(normalized, {
+                            ownerLogin,
+                            spawner: this.nativeModelDiscoverySpawner(ownerLogin),
+                        });
+                    }
                 }
                 return state;
             });
@@ -784,7 +820,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         if (!owner) {
             return probeAgentConnectionStateHelper(agentId, probe.file, {
                 args: probe.args,
-                env: stripSignInOnlyAgentApiKeyEnv({ ...process.env }, agentId),
+                env: stripSignInOnlyAgentApiKeyEnv(childProcessEnv(), agentId),
             });
         }
 
@@ -796,10 +832,10 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         try {
             const wrapped = this.tenantSpawn.wrapArgvForTenant(tenantCwd, probe.file, [...probe.args]);
             // An inherited OPENAI_API_KEY makes `codex login status` report the key, not the sign-in.
-            const env = stripSignInOnlyAgentApiKeyEnv({
+            const env = stripSignInOnlyAgentApiKeyEnv(childProcessEnv({
                 ...process.env,
                 ...this.tenantSpawn.tenantHomeEnvOverlay(tenantCwd),
-            }, agentId);
+            }), agentId);
             const prefix = this.resolveAgentCliPrefix(tenantCwd);
             if (canExposeAgentCliBinToChild(prefix, () => this.isTenantPrivilegeDropActive(tenantCwd))) {
                 prependAgentCliBinToPath(env, prefix);
@@ -814,6 +850,32 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             console.warn(`[qaap] Unable to probe ${agentId} for tenant ${safeUserIdSegment(owner)}:`, error);
             throw error;
         }
+    }
+
+    /**
+     * Runs a CLI model listing where the owner's auth probe runs (tenant cwd, HOME and CLI bin), so
+     * an account-scoped catalog such as `pi --list-models` sees the owner's sign-in. Without an owner
+     * it is the backend's own environment; undefined while a docker tenant has no workspace yet.
+     */
+    nativeModelDiscoverySpawner(ownerLogin?: string): NativeModelDiscoverySpawner {
+        const owner = ownerLogin?.trim();
+        return (bin, args) => {
+            // Always an explicit stripped env: a child that gets no env inherits every backend secret.
+            if (!owner) {
+                return { file: bin, args, env: childProcessEnv() };
+            }
+            const tenantCwd = resolveUserReposRoot(resolveQaapReposRoot(), owner);
+            if (process.env.QAAP_CLOUD_MODE === 'docker' && !fs.existsSync(tenantCwd)) {
+                return undefined;
+            }
+            const env: NodeJS.ProcessEnv = childProcessEnv({ ...process.env, ...this.tenantSpawn.tenantHomeEnvOverlay(tenantCwd) });
+            const prefix = this.resolveAgentCliPrefix(tenantCwd);
+            if (canExposeAgentCliBinToChild(prefix, () => this.isTenantPrivilegeDropActive(tenantCwd))) {
+                prependAgentCliBinToPath(env, prefix);
+            }
+            const wrapped = this.tenantSpawn.wrapArgvForTenant(tenantCwd, bin, [...args]);
+            return { file: wrapped.file, args: wrapped.args, cwd: tenantCwd, env };
+        };
     }
 
     warmForCwd(cwd: string): QaapAgentWarmResult {
@@ -1118,8 +1180,25 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public buildTemplateVars(agentId: string, agentModel?: QaapCreateAgentTaskQaiqModel, interaction?: QaapQaiqInteractionFlagOptions,
-        ownerLogin?: string): Record<string, string> {
-        return buildTemplateVarsExtracted(this, agentId, agentModel, interaction, ownerLogin);
+        ownerLogin?: string, cwd?: string): Record<string, string> {
+        return buildTemplateVarsExtracted(this, agentId, agentModel, interaction, ownerLogin, cwd);
+    }
+
+    /**
+     * @internal Used by the extracted qaap-agent-task-runner-* modules. Resolves a task worktree to its project
+     * root first. Missing store, unresolvable root or missing decision = untrusted.
+     */
+    public isProjectFolderTrusted(ownerLogin: string | undefined, cwd: string): boolean {
+        if (!this.projectFolderTrust) {
+            return false;
+        }
+        try {
+            const root = resolveProjectFolderTrustRoot(this.hostedWorktrees, ownerLogin, cwd);
+            return root !== undefined && this.projectFolderTrust.isTrusted(ownerLogin, root);
+        } catch {
+            // Any failed lookup (store unreadable, bad path) is untrusted, never a spawn error or a trust.
+            return false;
+        }
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
@@ -1145,6 +1224,24 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public previewProviderEnv(ownerLogin?: string): NodeJS.ProcessEnv {
         return previewProviderEnvExtracted(this, ownerLogin);
+    }
+
+    /**
+     * The port of the live preview claim that belongs to this task: the claim of its Work Hub section
+     * (via `conversationIdForTask`), else the claim rooted exactly at its cwd. See
+     * {@link pickReservedDevPreviewPort} for the order and why no "most recent" fallback exists.
+     */
+    public reservedDevPreviewPort(task: QaapAgentTask): number | undefined {
+        if (!task.ownerLogin || !this.previewPortRegistry) {
+            return undefined;
+        }
+        const cwd = path.resolve(task.cwd);
+        const claims = this.previewPortRegistry.listForOwnerUnderRoot(task.ownerLogin, cwd).map(record => ({
+            port: record.port,
+            root: path.resolve(record.root),
+            conversationId: 'conversationId' in record ? record.conversationId : undefined,
+        }));
+        return pickReservedDevPreviewPort(claims, cwd, this.conversationIdForTask?.(task.id));
     }
 
     /** Env-only fallback when no model alias or provider list is configured yet. */
@@ -1498,6 +1595,19 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public readonly agentHooks: QaapAgentHookService | undefined;
 
+    /** Single decision point for tool calls (doc: qaap-tool-gate-design.md); optional for bare test harnesses. */
+    @inject(QaapToolGateService) @optional()
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readonly toolGate: QaapToolGateService | undefined;
+
+    /** Per-task credentials for the HTTP tool gate; optional for bare test harnesses. */
+    @inject(QaapToolGateTokenService) @optional()
+    public readonly toolGateTokens: QaapToolGateTokenService | undefined;
+
+    /** Pending gate asks, denied when their task ends; optional for bare test harnesses. */
+    @inject(QaapToolGateAskBroker) @optional()
+    public readonly toolGateAsks: QaapToolGateAskBroker | undefined;
+
     /** @see QaapTenantSpawnService.enforceIsolationPolicy — throws to fail the spawn when refused. */
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public enforceAgentIsolationPolicy(): void {
@@ -1621,6 +1731,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             encoding: 'utf8',
             timeout: 4000,
             maxBuffer,
+            env: qaapGitReadEnv(),
             stdio: ['ignore', 'pipe', 'pipe'],
         });
     }
@@ -1722,8 +1833,21 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         applyHuggingfaceOpenAiCompatEnvHelper(env);
     }
 
-    applyHelperEnv(env: NodeJS.ProcessEnv, ownerLogin?: string, parentTaskId?: string, autoApprove?: boolean): boolean {
-        return applyHelperEnvExtracted(this, env, ownerLogin, parentTaskId, autoApprove);
+    applyHelperEnv(env: NodeJS.ProcessEnv, ownerLogin?: string, parentTaskId?: string, autoApprove?: boolean, cwd?: string): boolean {
+        return applyHelperEnvExtracted(this, env, ownerLogin, parentTaskId, autoApprove, cwd);
+    }
+
+    /**
+     * @internal Origin an agent process started at `cwd` uses for this backend's tool gate and helper API.
+     * Loopback, unless the process runs in a task sandbox: then the backend's address on the sandbox's
+     * network (loopback there is the sandbox itself). Undefined when that address is unknown.
+     */
+    public resolveAgentReachableOrigin(cwd: string | undefined): string | undefined {
+        if (!this.helperApiUrl) {
+            return undefined;
+        }
+        const sandbox = cwd ? this.tenantSpawn.agentSandboxFor(cwd) : undefined;
+        return agentReachableOriginFor(this.helperApiUrl, sandbox);
     }
 
     /** Reclassify a delivered task as `blocked`; `need` is what the agent asked the user for. */
@@ -1754,9 +1878,70 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    applyOneShotToolGateEnv(env: NodeJS.ProcessEnv, task: Pick<QaapAgentTask, 'ownerLogin' | 'cwd' | 'agentId' | 'command'>): () => void {
+        if (!this.toolGateTokens || !this.helperApiUrl) {
+            return () => undefined;
+        }
+        const agentId = this.resolveTaskAgentId(task as QaapAgentTask);
+        const transport = resolveQaapHarnessCapabilities(agentId).gate;
+        if (transport !== 'hook' && transport !== 'plugin' && transport !== 'extension') {
+            return () => undefined;
+        }
+        const origin = this.resolveAgentReachableOrigin(task.cwd);
+        if (!origin) {
+            // Sandboxed without a reachable backend address: no URL and no grant, so the gate fails closed.
+            return () => undefined;
+        }
+        const grant = this.toolGateTokens.issueOneShot(agentId, task.ownerLogin, task.cwd);
+        env.QAAP_GATE_URL = `${origin}${QAAP_TOOL_GATE_API_PATH}`;
+        addAgentReachableNoProxy(env, origin);
+        env.QAAP_GATE_TOKEN = grant.token;
+        env.QAAP_GATE_ASK_TTL_SEC = '0';
+        if (usesOpencodeGatePlugin(agentId)) {
+            applyOpencodeGateEnv(env, this.isProjectFolderTrusted(task.ownerLogin, task.cwd));
+        }
+        return grant.release;
+    }
+
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    applyToolGateEnv(env: NodeJS.ProcessEnv, task: Pick<QaapAgentTask, 'id' | 'ownerLogin' | 'cwd' | 'agentId' | 'command'>): void {
+        if (!this.toolGateTokens || !this.helperApiUrl) {
+            return;
+        }
+        const transport = resolveQaapHarnessCapabilities(this.resolveTaskAgentId(task as QaapAgentTask)).gate;
+        if (transport !== 'hook' && transport !== 'plugin' && transport !== 'extension') {
+            return;
+        }
+        const origin = this.resolveAgentReachableOrigin(task.cwd);
+        if (!origin) {
+            // Sandboxed without a reachable backend address: no URL and no token, so the gate fails closed.
+            return;
+        }
+        env.QAAP_GATE_URL = `${origin}${QAAP_TOOL_GATE_API_PATH}`;
+        addAgentReachableNoProxy(env, origin);
+        env.QAAP_GATE_TOKEN = this.toolGateTokens.issue(task.id, task.ownerLogin, task.cwd);
+        env.QAAP_GATE_ASK_TTL_SEC = String(resolveQaapHarnessCapabilities(this.resolveTaskAgentId(task as QaapAgentTask)).askTtlSec);
+        if (usesOpencodeGatePlugin(this.resolveTaskAgentId(task as QaapAgentTask))) {
+            applyOpencodeGateEnv(env, this.isProjectFolderTrusted(task.ownerLogin, task.cwd));
+            const nonce = opencodeGatePluginSeeded(env) ? this.toolGateTokens.issueArmNonce(task.id) : undefined;
+            if (nonce) {
+                env.QAAP_GATE_ARM_NONCE = nonce;
+            }
+        }
+    }
+
+    /** @internal Whether the harness plugin of a task reported in through the gate's `/arm`. */
+    isToolGateArmed(taskId: string): boolean {
+        return this.toolGateTokens?.isArmed(taskId) ?? false;
+    }
+
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public finishTask(id: string, state: QaapAgentTaskState, exitCode: number | undefined): QaapAgentTask | undefined {
         const previousState = this.tasks.get(id)?.state;
         const task = finishTaskExtracted(this, id, state, exitCode);
+        // The gate token dies with the task, and anything still waiting on a human is denied.
+        this.toolGateTokens?.revoke(id);
+        this.toolGateAsks?.cancelTask(id);
         this.releaseTenantOperation(id);
         this.taskSandbox?.release(id);
         if (task) {

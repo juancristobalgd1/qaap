@@ -173,6 +173,21 @@ describe('qaap-agent-model-fallback', () => {
         expect(agentTurnHasRetryableModelFailure(undefined)).to.be.false;
     });
 
+    it('falls back from a model its provider retired (410 end of life, endpoint 404)', () => {
+        const endOfLife = 'API Error: 410 {"status":410,"title":"Gone","detail":"Model nvidia/llama-3.3-nemotron-super-49b-v1 has reached its end of life."}';
+        const endpoint404 = 'Provider endpoint at integrate.api.nvidia.com returned 404. Verify OPENAI_BASE_URL is correct.';
+        expect(agentTurnHasRetryableModelFailure({ content: endOfLife })).to.be.true;
+        expect(agentTurnHasRetryableModelFailure({ content: endpoint404 })).to.be.true;
+        expect(agentTurnQualifiesForModelFallback('qaiq', { state: 'failed' }, { content: endOfLife })).to.be.true;
+        const next = resolveNextFallbackAgentModel(
+            'qaiq',
+            { provider: 'openai', vendor: 'nvidia', modelId: 'nvidia/llama-3.3-nemotron-super-49b-v1' },
+            new Set(['nvidia/nvidia/llama-3.3-nemotron-super-49b-v1']),
+        );
+        expect(next?.vendor).to.equal('nvidia');
+        expect(next?.modelId).to.not.equal('nvidia/llama-3.3-nemotron-super-49b-v1');
+    });
+
     describe('agentTurnQualifiesForModelFallback (shared by conversation turns and standalone tasks)', () => {
         const deadModel = { content: "There's an issue with the selected model (tencent/hy3:free). It may not exist or you may not have access to it." };
 
@@ -191,6 +206,20 @@ describe('qaap-agent-model-fallback', () => {
             const quotaTurn = { content: 'ERROR message="stream error" small=false error.error="AI_APICallError: Free usage limit reached."' };
             expect(agentTurnQualifiesForModelFallback('opencode', { state: 'failed' }, undefined)).to.be.true;
             expect(agentTurnQualifiesForModelFallback('opencode', { state: 'failed' }, quotaTurn)).to.be.false;
+        });
+
+        it('does not fall back on an account-level limit: the free-model daily cap, out of credits, or the Codex plan usage cap', () => {
+            const freeLimitTurn = { content: 'API Error: 429 {"error":{"message":"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day","code":429}} openrouter' };
+            const creditsTurn = { content: 'API Error: 402 {"error":{"message":"Insufficient credits. Add more using https://openrouter.ai/settings/credits","code":402}}' };
+            const codexUsageTurn = { content: 'You\'ve hit your usage limit. Upgrade to Plus to continue using Codex (https://chatgpt.com/explore/plus), or try again at Nov 19th, 2026 12:56 AM.' };
+            expect(agentTurnQualifiesForModelFallback('qaiq', { state: 'failed' }, freeLimitTurn)).to.be.false;
+            expect(agentTurnQualifiesForModelFallback('qaiq', { state: 'failed' }, creditsTurn)).to.be.false;
+            expect(agentTurnQualifiesForModelFallback('codex', { state: 'failed' }, codexUsageTurn)).to.be.false;
+        });
+
+        it('still falls back when the model itself is unsupported by the account (Codex model_not_found)', () => {
+            const codexModelTurn = { content: '{"error":{"message":"The \'gpt-5.6-sol\' model is not supported when using Codex with a ChatGPT account.","code":"model_not_found"}}' };
+            expect(agentTurnQualifiesForModelFallback('codex', { state: 'failed' }, codexModelTurn)).to.be.true;
         });
 
         it('never qualifies when the key every model shares stopped the turn, or the agent has no chain', () => {

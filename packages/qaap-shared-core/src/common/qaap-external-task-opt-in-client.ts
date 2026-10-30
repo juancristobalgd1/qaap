@@ -10,7 +10,8 @@ export const QAAP_EXTERNAL_TASK_GITHUB_OPT_IN_PATH = '/qaap/api/external-tasks/g
 
 /**
  * The signed-in user's per-repository opt-in for tasks started from GitHub issues, as the Work Hub sees it.
- * `available` is false while the server has the feature off (404), and the menu then hides the toggle.
+ * `available` is false while the server has the feature off (`{ available: false }`, or 404 from older
+ * servers), and the menu then hides the toggle.
  */
 export class QaapExternalTaskOptInClient {
 
@@ -59,7 +60,11 @@ export class QaapExternalTaskOptInClient {
             this.featureAvailable = false;
             return;
         }
-        const body = await response.json() as { repositories?: { repository?: string }[] };
+        const body = await response.json() as { available?: boolean; repositories?: { repository?: string }[] };
+        if (body.available === false) {
+            this.featureAvailable = false;
+            return;
+        }
         this.repositories = new Set((body.repositories ?? []).map(entry => (entry.repository ?? '').toLowerCase()).filter(Boolean));
         this.featureAvailable = true;
     }

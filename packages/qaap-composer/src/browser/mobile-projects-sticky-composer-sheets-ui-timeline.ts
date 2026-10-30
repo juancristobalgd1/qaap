@@ -13,6 +13,7 @@ import {
     ensureStoredAgentModel,
     isSameAgentModel,
     isStickyComposerAgentSelected,
+    PI_AGENT_ID,
     readStoredAgentModel,
     type QaapAgentTaskAgentOption,
     type QaapQaiqModelOption,
@@ -20,6 +21,7 @@ import {
 import {
     createAgentBrandChip,
     createAgentSheetOptionButton,
+    createAgentSheetSplitOptionRow,
     createUnavailableAgentSheetOption,
     resolveAgentPickerDescription,
 } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
@@ -38,6 +40,7 @@ import {
 } from '@theia/qaap-transcript/lib/browser/qaap-sticky-composer-popover';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import {
+    activateAgentPickerDirectSelection,
     activateAgentPickerEntry,
     buildAgentPickerSearchResults,
     createAgentPickerInlineModelButton,
@@ -245,6 +248,10 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
             void ctx.renderComposerAgentPicker(chrome, { ...options, view: 'agents', modelPickerAgentId: undefined });
         };
         const filteredModels = (pickerModels ?? []).filter(model => modelMatchesAgentPickerQuery(model, chrome.searchInput.value));
+        // A signed-in Pi already reaches OpenRouter (the provider its Sign in drives): offering it again
+        // reads as "signed out" and its `/login` shows no link, so the dialog only times out.
+        const modelAgent = options.agents.find(agent => agent.id === modelAgentId);
+        const signedInPi = modelAgentId.trim().toLowerCase() === PI_AGENT_ID && modelAgent?.connectionState === 'connected';
         const modelContent = document.createElement('div');
         ctx.appendAgentModelPickerList(
             modelContent,
@@ -261,7 +268,7 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
             options.onOpenAiFeaturesSettings
                 ? () => options.onOpenAiFeaturesSettings?.(modelAgentId)
                 : undefined,
-            options.onProactiveLogin
+            options.onProactiveLogin && !signedInPi
                 ? () => options.onProactiveLogin?.(modelAgentId, options.project)
                 : undefined,
         );
@@ -315,16 +322,19 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
                         chrome.modelLoadFailedByAgent.delete(entry.id);
                     }
                 }
+                if (chrome.sheet.dataset.agentPickerRenderGeneration === String(renderGeneration)) {
+                    chrome.modelsByAgent.set(entry.id, models);
+                }
             } else {
+                // Not remembered: once the agent signs in (Pi `/login`) its models must be fetched,
+                // and a cached `[]` made the drill-down skip that fetch.
                 models = [];
             }
         }
-        if (chrome.sheet.dataset.agentPickerRenderGeneration === String(renderGeneration)) {
-            chrome.modelsByAgent.set(entry.id, models);
-        }
         (entry as { models: readonly QaapQaiqModelOption[] }).models = models;
     })).then(() => undefined);
-    const modelListsPending = agentEntries.some(entry => agentSupportsModelPicker(entry.id) && !chrome.modelsByAgent.has(entry.id));
+    const modelListsPending = agentEntries.some(entry => entry.available !== false
+        && agentSupportsModelPicker(entry.id) && !chrome.modelsByAgent.has(entry.id));
     if (modelListsPending) {
         // The rows are usable without the model lists (those only label the stored model and open the
         // drill-down), so the list paints now and repaints once they arrive. Holding the whole picker on
@@ -401,55 +411,75 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
         if (storedModel?.modelId && agentSelected) {
             displayLabel = `${label} · ${formatQaiqModelSelectionLabel(storedModel)}`;
         }
-        const primary = createAgentSheetOptionButton({
-            agentId,
-            label: displayLabel,
-            description: agentDescription,
-            selected: agentSelected,
-            submenuChevron: hasModels ? 'forward' : undefined,
-            onSelect: () => {
-                void activateAgentPickerEntry({
+        const row: HTMLElement = hasModels
+            ? createAgentSheetSplitOptionRow({
+                agentId,
+                label: displayLabel,
+                agentLabel: label,
+                description: agentDescription,
+                selected: agentSelected,
+                // The main area selects the agent with its stored or fallback model (no submenu).
+                onSelect: () => activateAgentPickerDirectSelection({
                     agentId,
-                    supportsModels: hasModels,
-                    cachedModels: chrome.modelsByAgent.get(agentId),
-                    loadModels: async () => {
-                        const resolved = await ctx.resolveModelsForAgentPickerSafe(agentId);
-                        if (resolved.loadFailed) {
-                            chrome.modelLoadFailedByAgent.set(agentId, true);
-                        } else {
-                            chrome.modelLoadFailedByAgent.delete(agentId);
-                        }
-                        return resolved.models;
-                    },
-                    onLoading: () => {
-                        // Invalidate any in-flight agents-list render so it cannot replace
-                        // this activation skeleton and race the drill-down navigation.
-                        chrome.sheet.dataset.agentPickerRenderGeneration = String(
-                            Number(chrome.sheet.dataset.agentPickerRenderGeneration ?? '0') + 1,
-                        );
-                        renderAgentPickerSkeleton(chrome.list, 5);
-                    },
-                    onModelsResolved: models => chrome.modelsByAgent.set(agentId, models),
-                    onShowModels: () => {
-                        if (chrome.searchInput.value
-                            && !(chrome.modelsByAgent.get(agentId) ?? [])
-                                .some(model => modelMatchesAgentPickerQuery(model, chrome.searchInput.value))) {
-                            chrome.searchInput.value = '';
-                        }
-                        void ctx.renderComposerAgentPicker(chrome, {
-                            ...options,
-                            view: 'models',
-                            modelPickerAgentId: agentId,
-                        });
-                    },
-                    onSelectDirect: () => options.onSelectAgent(agentId),
-                });
-            },
-        });
+                    cwd: options.cwd,
+                    // The row already resolved its stored model from `entry.models` for its label.
+                    cachedModels: chrome.modelsByAgent.get(agentId) ?? entry.models,
+                    onSelectDirect: model => model
+                        ? options.onSelectAgent(agentId, model)
+                        : options.onSelectAgent(agentId),
+                }),
+                // The trailing chevron opens the model submenu, loading the catalog first if needed.
+                onShowModels: () => {
+                    void activateAgentPickerEntry({
+                        agentId,
+                        supportsModels: hasModels,
+                        cachedModels: chrome.modelsByAgent.get(agentId),
+                        loadModels: async () => {
+                            const resolved = await ctx.resolveModelsForAgentPickerSafe(agentId);
+                            if (resolved.loadFailed) {
+                                chrome.modelLoadFailedByAgent.set(agentId, true);
+                            } else {
+                                chrome.modelLoadFailedByAgent.delete(agentId);
+                            }
+                            return resolved.models;
+                        },
+                        onLoading: () => {
+                            // Invalidate any in-flight agents-list render so it cannot replace
+                            // this activation skeleton and race the drill-down navigation.
+                            chrome.sheet.dataset.agentPickerRenderGeneration = String(
+                                Number(chrome.sheet.dataset.agentPickerRenderGeneration ?? '0') + 1,
+                            );
+                            renderAgentPickerSkeleton(chrome.list, 5);
+                        },
+                        onModelsResolved: models => chrome.modelsByAgent.set(agentId, models),
+                        onShowModels: () => {
+                            if (chrome.searchInput.value
+                                && !(chrome.modelsByAgent.get(agentId) ?? [])
+                                    .some(model => modelMatchesAgentPickerQuery(model, chrome.searchInput.value))) {
+                                chrome.searchInput.value = '';
+                            }
+                            void ctx.renderComposerAgentPicker(chrome, {
+                                ...options,
+                                view: 'models',
+                                modelPickerAgentId: agentId,
+                            });
+                        },
+                        // Only reached for model-capable agents, so this is never the direct branch.
+                        onSelectDirect: () => options.onSelectAgent(agentId),
+                    });
+                },
+            })
+            : createAgentSheetOptionButton({
+                agentId,
+                label: displayLabel,
+                description: agentDescription,
+                selected: agentSelected,
+                onSelect: () => options.onSelectAgent(agentId),
+            });
         // A detected/connected harness is ready to use, so keep its row clean. The
         // connect/configure action is rendered by the unavailable branch above only
         // when the backend reports that the harness still needs setup.
-        content.append(primary);
+        content.append(row);
     };
 
     for (const entry of searchResults.directAgents) {
@@ -512,8 +542,9 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
         content.append(hint);
     }
     replaceAgentPickerLoading(chrome.list, content);
+    // A split row's Enter target is its chevron (the model submenu), not its main area (direct selection).
     const resultButtons = chrome.list.querySelectorAll<HTMLElement>(
-        '.theia-qaap-agent-sheet-option, .theia-qaap-agent-sheet-inline-model',
+        '.theia-qaap-agent-sheet-option:not(.theia-qaap-agent-sheet-split-main), .theia-qaap-agent-sheet-split-chevron, .theia-qaap-agent-sheet-inline-model',
     );
     wireSearchKeyboard(resultButtons.length === 1 ? resultButtons[0] : undefined);
     window.requestAnimationFrame(() => ctx.syncAgentPickerPopoverPosition(chrome.sheet));

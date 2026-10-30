@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { createWorkHubMoreActionsIcon } from '@theia/qaap-adapters/lib/browser/qaap-lucide-icons';
+import { createWorkHubAddActionsIcon } from '@theia/qaap-adapters/lib/browser/qaap-lucide-icons';
 import { nls } from '@theia/core/lib/common/nls';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import {
@@ -15,6 +15,7 @@ import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobi
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import { QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY } from './mobile-work-hub-sessions-sidebar';
 import { createQaapViewModeSwitch } from './qaap-workbench-account-menu';
+import { QAAP_NEW_TASK_ICON_CLASS } from './qaap-new-task-icon';
 import type { QaapSegmentedFieldController } from '@theia/qaap-shared-core/lib/browser/qaap-mobile-form-ui';
 import type { MobileViewToggleId } from '@theia/qaap-shared-core/lib/common/qaap-mobile-work-surface-preference';
 /** Panel surface for DOM shell construction and sheet gestures. */
@@ -288,9 +289,9 @@ export class MobileProjectsPanelChromeUi {
         this.host.headerNewChatBtn.className = 'theia-workbench-nav-btn theia-mobile-projects-new-chat-btn';
         this.host.headerNewChatBtn.hidden = true;
         this.host.headerNewChatBtn.setAttribute('aria-hidden', 'true');
-        this.host.headerNewChatBtn.title = nls.localize('qaap/sessionsSidebar/newChat', 'New agent');
+        this.host.headerNewChatBtn.title = nls.localize('qaap/sessionsSidebar/newTask', 'New task');
         this.host.headerNewChatBtn.setAttribute('aria-label', this.host.headerNewChatBtn.title);
-        this.host.headerNewChatBtn.innerHTML = '<span class="codicon codicon-add" aria-hidden="true"></span>';
+        this.host.headerNewChatBtn.innerHTML = `<span class="${QAAP_NEW_TASK_ICON_CLASS}" aria-hidden="true"></span>`;
         this.host.headerNewChatBtn.addEventListener('click', event => {
             event.preventDefault();
             event.stopPropagation();
@@ -301,11 +302,11 @@ export class MobileProjectsPanelChromeUi {
         this.host.headerOverflowMenuBtn.className = 'theia-workbench-nav-btn qaap-work-hub-toolbar-menu-button';
         this.host.headerOverflowMenuBtn.hidden = true;
         this.host.headerOverflowMenuBtn.setAttribute('aria-hidden', 'true');
-        this.host.headerOverflowMenuBtn.title = nls.localize('qaap/workHubToolbar/moreActions', 'More actions');
+        this.host.headerOverflowMenuBtn.title = nls.localize('qaap/workHubToolbar/newTaskAndMore', 'New task and more');
         this.host.headerOverflowMenuBtn.setAttribute('aria-label', this.host.headerOverflowMenuBtn.title);
         this.host.headerOverflowMenuBtn.setAttribute('aria-haspopup', 'menu');
         this.host.headerOverflowMenuBtn.setAttribute('aria-expanded', 'false');
-        this.host.headerOverflowMenuBtn.append(createWorkHubMoreActionsIcon());
+        this.host.headerOverflowMenuBtn.append(createWorkHubAddActionsIcon());
         this.host.headerOverflowMenuBtn.addEventListener('click', event => this.host.onHeaderOverflowMenuClick(event));
 
         this.host.searchToggleBtn = document.createElement('button');
@@ -320,12 +321,13 @@ export class MobileProjectsPanelChromeUi {
             this.host.workHubSearchUi.openWorkHubSearchQuickPick();
         });
 
+        // The "+" menu sits before the surface picker (Chat ▾), matching the IDE chat header.
         this.host.headerExecutionCluster.append(
+            this.host.headerOverflowMenuBtn,
             this.host.headerExecutionTabsHost,
             this.host.headerPreviewRunHost,
             this.host.headerViewModeSwitchHost,
             this.host.headerFilesMoreHost,
-            this.host.headerOverflowMenuBtn,
         );
         actions.append(
             this.host.headerIdeViewPickerHost,
@@ -365,7 +367,7 @@ export class MobileProjectsPanelChromeUi {
         this.host.newFabBtn.className = 'theia-mobile-projects-fab';
         this.host.newFabBtn.title = nls.localize('qaap/mobileProjects/new', 'New');
         this.host.newFabBtn.setAttribute('aria-label', nls.localize('qaap/mobileProjects/new', 'New'));
-        this.host.newFabBtn.innerHTML = '<span class="codicon codicon-add" aria-hidden="true"></span>';
+        this.host.newFabBtn.innerHTML = `<span class="${QAAP_NEW_TASK_ICON_CLASS}" aria-hidden="true"></span>`;
         this.host.newFabBtn.hidden = true;
         this.host.newFabBtn.addEventListener('click', () => { void this.host.onNewClick(); });
 

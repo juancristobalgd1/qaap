@@ -205,8 +205,8 @@ export class MobileProjectsStickyComposerSheetsUi {
         openStickyComposerModeSheetExtracted(this, project, modes, anchor, untilDone);
     }
 
-    openStickyComposerApprovalPolicySheet(project: MobileProjectEntry, agentLabel: string, anchor?: HTMLElement,): void {
-        openStickyComposerApprovalPolicySheetExtracted(this, project, agentLabel, anchor);
+    openStickyComposerApprovalPolicySheet(project: MobileProjectEntry, agentId: string, agentLabel: string, anchor?: HTMLElement,): void {
+        openStickyComposerApprovalPolicySheetExtracted(this, project, agentId, agentLabel, anchor);
     }
     teardownApprovalPolicySheetPopover(): void {
         teardownApprovalPolicySheetPopoverExtracted(this);

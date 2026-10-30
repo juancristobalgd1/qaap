@@ -63,6 +63,10 @@ export interface TranscriptTerminalSliderState {
     surfaces: TranscriptTerminalSurface[];
     activeIndex: number;
     suppressAutoCreate?: boolean;
+    /** Set until the persisted terminals of a freshly loaded page have been restored. */
+    restorePending?: boolean;
+    /** The in-flight restore/auto-create, shared by concurrent mounts of the same workspace. */
+    ensuring?: Promise<void>;
 }
 
 export interface ConversationPreviewRuntimeState {
@@ -649,7 +653,7 @@ export class MobileProjectsTranscriptSurfacesUi {
         showTranscriptTerminalErrorExtracted(this, host, services, error);
     }
 
-    async launchAgentTuiInTranscriptTerminal(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, agentId: string, options?: { readonly login?: boolean },): Promise<void> {
+    async launchAgentTuiInTranscriptTerminal(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, agentId: string, options?: { readonly login?: boolean; readonly command?: string },): Promise<void> {
         return launchAgentTuiInTranscriptTerminalExtracted(this, project, summary, agentId, options);
     }
 

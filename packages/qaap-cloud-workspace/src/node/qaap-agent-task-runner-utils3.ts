@@ -43,6 +43,7 @@ import {
     type QaapAgentStdinPromptMode,
 } from './qaap-agent-task-runner-utils';
 import { extractImprovedComposerPromptFromAgentStdout } from '@theia/qaap-composer/lib/common/qaap-composer-prompt-improve';
+import { childProcessEnv } from './qaap-child-process-env';
 
 const AGENT_CANDIDATES: readonly AgentCandidate[] = QAAP_BUILTIN_AGENT_DEFINITIONS;
 const QAAP_AGENT_RETRIEVAL_ENABLED = !/^(0|false|off)$/i.test(process.env.QAAP_AGENT_RETRIEVAL?.trim() ?? '');
@@ -285,6 +286,12 @@ export function resolveAgentConnectionProbeArgs(agentId: string): readonly strin
  */
 export const GEMINI_CLI_CONNECTION_PROBE_SCRIPT = 'test -s "$HOME/.gemini/oauth_creds.json" && echo "logged in" || echo "not logged in"';
 
+/**
+ * Pi has no provider-agnostic status command (`pi auth check` needs `--provider`). `/login` and
+ * API-key logins both store an entry with a `"type"` in `~/.pi/agent/auth.json` (`{}` when empty).
+ */
+export const PI_CONNECTION_PROBE_SCRIPT = 'f="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/auth.json"; grep -q \'"type"\' "$f" 2>/dev/null && echo "logged in" || echo "not logged in"';
+
 /** Executable + argv that report one harness's sign-in state, for the executable it runs as. */
 export function resolveAgentConnectionProbe(agentId: string, bin: string): { readonly file: string; readonly args: readonly string[] } | undefined {
     const normalized = agentId.trim().toLowerCase();
@@ -292,6 +299,9 @@ export function resolveAgentConnectionProbe(agentId: string, bin: string): { rea
         // The community `antigravity`/`ag` CLI talks to a running Antigravity desktop app and has
         // no sign-in of its own; only the Gemini CLI fallback can be signed in on a server.
         return path.basename(bin) === 'gemini' ? { file: 'sh', args: ['-c', GEMINI_CLI_CONNECTION_PROBE_SCRIPT] } : undefined;
+    }
+    if (normalized === 'pi') {
+        return { file: 'sh', args: ['-c', PI_CONNECTION_PROBE_SCRIPT] };
     }
     const args = resolveAgentConnectionProbeArgs(normalized);
     return args ? { file: bin, args } : undefined;
@@ -361,7 +371,7 @@ export function probeAgentConnectionState(
         try {
             execFile(options?.file ?? bin, [...args], {
                 cwd: options?.cwd,
-                env: options?.env,
+                env: childProcessEnv(options?.env),
                 encoding: 'utf8',
                 timeout: QAAP_AGENT_CONNECTION_PROBE_TIMEOUT_MS,
                 windowsHide: true,
@@ -411,6 +421,8 @@ export interface ReviewSuccessfulAgentTaskDeps {
     buildChildEnv(task: QaapAgentTask): NodeJS.ProcessEnv;
     hasEditedFilesForVerification(task: QaapAgentTask, env: NodeJS.ProcessEnv): Promise<boolean>;
     runGenericCommand(command: string, cwd: string, env: NodeJS.ProcessEnv, taskId: string, timeoutMs: number, options: { readonly header?: string; readonly streamOutput?: boolean; readonly maxCaptureChars?: number; readonly stdinPrompt?: string; readonly ownerLogin?: string }): Promise<QaapGenericCommandResult>;
+    /** Read-only one-shot gate grant for a reviewer harness; returns the function that revokes it. */
+    applyOneShotToolGateEnv?(env: NodeJS.ProcessEnv, task: Pick<QaapAgentTask, 'ownerLogin' | 'cwd' | 'agentId' | 'command'>): () => void;
     changedSensitiveFiles(task: QaapAgentTask): string[];
     resolveReviewerCandidates(task: QaapAgentTask): string[];
     buildAgentCommand(prompt: string, agentId: string | undefined, autoApprove: boolean, agentModel?: QaapCreateAgentTaskQaiqModel, cwd?: string, contextPreamble?: string, interactionModeId?: string, approvalPolicyId?: string): { command: string; stdinPrompt?: string; stdinPromptMode?: QaapAgentStdinPromptMode; agentId: string };
@@ -498,11 +510,20 @@ export async function reviewSuccessfulAgentTask(
             continue;
         }
         ranAnyReviewer = true;
-        const result = await deps.runGenericCommand(command, task.cwd, env, task.id, QAAP_AGENT_REVIEW_WALL_CLOCK_MS, {
-            header: `\n[qaap] High-risk change — starting independent ${reviewerId} review.\n`,
-            streamOutput: true,
-            ...(stdinPromptMode === 'plain' && stdinPrompt !== undefined ? { stdinPrompt } : {}),
-        });
+        // The reviewer is a separate harness run: it gets its own read-only one-shot grant on a COPY of the
+        // env (the git commands above keep the plain env), revoked as soon as the reviewer ends.
+        const reviewerEnv: NodeJS.ProcessEnv = { ...env };
+        const releaseGate = deps.applyOneShotToolGateEnv?.(reviewerEnv, { ...task, agentId: reviewerId, command }) ?? (() => undefined);
+        let result: QaapGenericCommandResult;
+        try {
+            result = await deps.runGenericCommand(command, task.cwd, reviewerEnv, task.id, QAAP_AGENT_REVIEW_WALL_CLOCK_MS, {
+                header: `\n[qaap] High-risk change — starting independent ${reviewerId} review.\n`,
+                streamOutput: true,
+                ...(stdinPromptMode === 'plain' && stdinPrompt !== undefined ? { stdinPrompt } : {}),
+            });
+        } finally {
+            releaseGate();
+        }
         const verdict = parseAgentReviewVerdict(`${result.stdout}\n${result.stderr}`);
         if (verdict) {
             deps.agentHealth?.noteSuccess(reviewerId);

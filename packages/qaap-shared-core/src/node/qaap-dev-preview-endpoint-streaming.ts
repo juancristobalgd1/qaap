@@ -263,14 +263,17 @@ export async function handleCurrentProjectPreviewExtracted(ctx: QaapDevPreviewEn
         const conversationFilter = typeof req.query.conversationId === 'string'
             ? normalizeQaapPreviewConversationId(req.query.conversationId)
             : undefined;
-        const record = ctx.portRegistry.records()
+        const projectRecords = ctx.portRegistry.records()
             .filter(candidate => candidate.ownerLogin === login
                 && isQaapProcessPreviewIdentity(candidate)
                 && !ctx.isIdeListenPort(candidate.port)
-                && qaapPreviewProjectIdMatches(candidate.projectId, ...projectCandidates)
-                && (conversationFilter === undefined
-                    || normalizeQaapPreviewConversationId(candidate.conversationId) === conversationFilter))
-            .sort((left, right) => right.touchedAt - left.touchedAt || right.claimedAt - left.claimedAt)[0];
+                && qaapPreviewProjectIdMatches(candidate.projectId, ...projectCandidates))
+            .sort((left, right) => right.touchedAt - left.touchedAt || right.claimedAt - left.claimedAt);
+        // The project's one shared dev server may be claimed by a sibling conversation: when this
+        // conversation has no record of its own, fall back to the newest live record of the project.
+        const record = projectRecords.find(candidate => conversationFilter === undefined
+            || normalizeQaapPreviewConversationId(candidate.conversationId) === conversationFilter)
+            ?? projectRecords[0];
         if (!record) {
             // "No claim" is the normal answer for an idle project, polled on every liveness tick:
             // answer 200 with an empty claim (no `previewId`) instead of a 404 the browser logs

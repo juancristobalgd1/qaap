@@ -10,8 +10,11 @@ import * as path from 'path';
 import type { QaapAgentConversation, QaapAgentConversationEvent } from '../common/qaap-agent-conversation';
 import type { QaapAgentTask, QaapCreateAgentTaskRequest } from '../common/qaap-agent-task';
 import type { QaapAgentTaskRunner } from './qaap-agent-task-runner';
-import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
+import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
+
 import { QaapSqliteConnectionRegistry } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
+import { QAAP_COALESCE_WINDOW_MS } from './qaap-agent-conversation-store-constants';
+import { isLastTurnCancelled } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 
 class VisualEvidenceStoreHarness extends QaapAgentConversationStore {
     readonly createdTasks: { task: QaapAgentTask; request: QaapCreateAgentTaskRequest }[] = [];
@@ -366,6 +369,46 @@ describe('QaapAgentConversationStore visual verification', () => {
         expect(cancelled?.status).to.equal('idle');
         expect(store.createdTasks[0].task.state).to.equal('cancelled');
         expect(store.createdTasks).to.have.length(1);
+    });
+
+    it('lets a follow-up the user queued during the turn run before an automatic visual repair', async () => {
+        const current = store.get('conversation-1')!;
+        store.seed({
+            ...current,
+            pendingUserMessages: [{ id: 'queued-1', content: 'cambia el color del título a azul', createdAt: 3, clientMessageId: 'pending-user-1' }],
+        });
+        const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 16]);
+        await store.recordVisualVerification('conversation-1', {
+            status: 'failed', readiness: 'failed', summary: 'Blank.', issues: ['blank'],
+        }, png, 'agent-1');
+
+        expect(store.get('conversation-1')?.messages.some(message => message.visualRepairAttempt !== undefined)).to.equal(false);
+        await new Promise<void>(resolve => setTimeout(resolve, QAAP_COALESCE_WINDOW_MS + 10));
+        const drained = store.get('conversation-1');
+        expect(drained?.pendingUserMessages).to.equal(undefined);
+        expect(drained?.messages.filter(message => message.role === 'user').at(-1)?.content).to.equal('cambia el color del título a azul');
+        expect(store.createdTasks).to.have.length(1);
+    }).timeout(QAAP_COALESCE_WINDOW_MS + 3_000);
+
+    it('marks a turn stopped before any agent output as cancelled instead of leaving a bare user bubble', async () => {
+        const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 17]);
+        const repairing = await store.recordVisualVerification('conversation-1', {
+            status: 'failed', readiness: 'failed', summary: 'Blank.', issues: ['blank'],
+        }, png, 'agent-1');
+        const repairUser = repairing!.messages.at(-1)!;
+        expect(repairUser.role).to.equal('user');
+
+        const cancelled = store.cancel('conversation-1');
+        const last = cancelled?.messages.at(-1);
+        expect(cancelled?.status).to.equal('idle');
+        expect(last?.role).to.equal('agent');
+        expect(last?.runUserMessageId).to.equal(repairUser.id);
+        expect(last?.traceEvents?.map(event => event.type)).to.deep.equal(['run_cancelled']);
+        expect(isLastTurnCancelled(cancelled!)).to.equal(true);
+
+        // A second Stop on the now-idle conversation must not stack another marker row.
+        const again = store.cancel('conversation-1');
+        expect(again?.messages.filter(message => message.role === 'agent' && message.runUserMessageId === repairUser.id)).to.have.length(1);
     });
 
     it('fails closed after two durable visual repair attempts and never spawns a third', async () => {

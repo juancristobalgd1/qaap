@@ -1,6 +1,8 @@
+import { buildPiGateTemplateVars } from './qaap-tool-gate-pi-adapter';
 import { AGENT_STOP_GRACE_TIMEOUT_MS, SHELL_AGENT_ID, QAIQ_AGENT_ID, REPO_MAP_CACHE_TTL_MS, REPO_MAP_MAX_CHARS, USER_REQUEST_MAX_CHARS } from './qaap-agent-task-runner-constants';
 import type { QaapAgentCommandBuildResult, QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { QaapAgentQueuePolicy } from './qaap-agent-queue-policy';
+import { sharedWorkingTreeBusyExtracted } from './qaap-agent-task-runner-render2';
 import { QaapAgentStorageUnavailableError } from './qaap-agent-storage-unavailable-error';
 // Extracted from qaap-agent-task-runner.ts
 
@@ -50,6 +52,8 @@ import {
     resolveAgentAutoApprove,
 } from '../common/qaap-agent-auto-approve';
 import { formatModelFlagsForAgent } from '../common/qaap-agent-model-flags';
+import { resolveQaapHarnessCapabilities } from '@theia/qaap-shared-core/lib/common/qaap-harness-capabilities';
+import { QAAP_PROJECT_TRUST_FLAGS_TEMPLATE_VAR, resolveAgentProjectTrustFlags } from '@theia/qaap-shared-core/lib/common/qaap-project-folder-trust';
 import {
     bindingFromQaiqModelSelection,
     formatQaiqProviderFlags,
@@ -91,7 +95,7 @@ export function resolveAgentModelForRequestExtracted(ctx: QaapAgentTaskRunnerCon
             readPref,
             agentId,
             {
-                listNativeModels: id => listNativeAgentModels(id),
+                listNativeModels: id => listNativeAgentModels(id, ownerLogin),
                 nativeTable: ctx.nativeModelRoutingTable(),
             },
         );
@@ -188,10 +192,15 @@ export function createExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCr
             : resolveAgentAutoApprove(
                 request.autoApprove ?? (parentTask?.autoApprove !== false ? undefined : false),
             );
+        // A task without its own worktree edits the repository's shared working tree: while the same owner has
+        // another such task running in this cwd it queues (visible as `queued`) instead of racing on the same files.
+        const sharedWorkingTree = request.ownWorkingTree !== true;
+        const sharedWorkingTreeQueued = sharedWorkingTree && sharedWorkingTreeBusyExtracted(ctx, ownerLogin, cwd);
         const atCapacity = ctx.isDrainingForDeploy?.() === true
             || ctx.countRunningTasks() >= ctx.maxConcurrentAgents()
             || ctx.ownerAtConcurrencyCap(ownerLogin)
-            || ctx.repoAtConcurrencyCap(cwd);
+            || ctx.repoAtConcurrencyCap(cwd)
+            || sharedWorkingTreeQueued;
         if (atCapacity) {
             new QaapAgentQueuePolicy().assertCapacity(ctx.tasks.values(), ownerLogin);
         }
@@ -224,6 +233,7 @@ export function createExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCr
                 ? { userRequest: (request.userQuery?.trim() || prompt).slice(0, USER_REQUEST_MAX_CHARS) }
                 : {}),
             ...(clientRequestId ? { clientRequestId } : {}),
+            sharedWorkingTree,
             ...(request.resumedFromTaskId ? { resumedFromTaskId: request.resumedFromTaskId } : {}),
             ...(request.fallbackFromTaskId ? { fallbackFromTaskId: request.fallbackFromTaskId } : {}),
             ...(request.latencyMarks ? { latencyMarks: request.latencyMarks } : {}),
@@ -420,7 +430,10 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
         const usesQaiqProtocol = !!detected
             ? id === QAIQ_AGENT_ID || detected.bin === 'qaiq' || detected.bin === 'openclaude'
             : !!envTemplate && ctx.isQaiqRunner(id, envTemplate);
-        const useStdioApprovals = usesQaiqProtocol
+        // Claude Code speaks the same control protocol (QAIQ is a fork of it); the capability registry says which
+        // harnesses take the stdio gate, so the flag set and the answer loop are shared with QAIQ.
+        const usesNativeStdioGate = !!detected && resolveQaapHarnessCapabilities(id).gate === 'native-stdio';
+        const useStdioApprovals = (usesQaiqProtocol || usesNativeStdioGate)
             && !readOnlyWorkspace
             && shouldUseQaiqStdioApprovals(approvalOptions);
         const promptTransport = resolveAgentPromptTransportHelper(id, detected ?? (envTemplate
@@ -428,14 +441,14 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
             : undefined));
         const usesOffArgvPrompt = promptTransport.kind !== 'argv';
         if (detected) {
-            const vars = ctx.buildTemplateVars(id, agentModel, interaction, ownerLogin);
+            const vars = ctx.buildTemplateVars(id, agentModel, interaction, ownerLogin, resolvedCwd);
             command = useStdioApprovals
                 ? ctx.applyTemplateWithoutPrompt(detected.template, vars)
                 : usesOffArgvPrompt
                     ? applyTemplateForPromptTransportHelper(detected.template, promptTransport, vars)
                     : ctx.applyTemplate(detected.template, agentPrompt, vars);
         } else if (envTemplate) {
-            const vars = ctx.buildTemplateVars(id, agentModel, interaction, ownerLogin);
+            const vars = ctx.buildTemplateVars(id, agentModel, interaction, ownerLogin, resolvedCwd);
             command = useStdioApprovals || usesOffArgvPrompt
                 ? applyTemplateForPromptTransportHelper(envTemplate, useStdioApprovals
                     ? { kind: 'plain-stdin', placeholder: 'omit' }
@@ -450,7 +463,7 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
             promptTempDir = written.dir;
             command = `${command} ${promptTransport.flag} ${quoteShellArgHelper(written.file)}`;
         }
-        command = applyAgentApprovalPolicyToCommand(command, approvalOptions);
+        command = applyAgentApprovalPolicyToCommand(command, useStdioApprovals ? { ...approvalOptions, stdioGated: true } : approvalOptions);
         if (useStdioApprovals) {
             return {
                 command: `${command} ${QAIQ_STDIO_APPROVAL_FLAGS}`,
@@ -607,8 +620,21 @@ export function stripLeadingAgentMentionExtracted(ctx: QaapAgentTaskRunnerContex
 export function buildTemplateVarsExtracted(ctx: QaapAgentTaskRunnerContext, agentId: string,
         agentModel?: QaapCreateAgentTaskQaiqModel,
         interaction?: QaapQaiqInteractionFlagOptions,
-        ownerLogin?: string,): Record<string, string> {
-        const empty = { qaiq_flags: '', model_flags: '' };
+        ownerLogin?: string,
+        cwd?: string,): Record<string, string> {
+        const vars = buildBaseTemplateVars(ctx, agentId, agentModel, interaction, ownerLogin, cwd);
+        return agentId.trim().toLowerCase() === 'pi' ? { ...vars, ...buildPiGateTemplateVars() } : vars;
+}
+
+function buildBaseTemplateVars(ctx: QaapAgentTaskRunnerContext, agentId: string,
+        agentModel?: QaapCreateAgentTaskQaiqModel,
+        interaction?: QaapQaiqInteractionFlagOptions,
+        ownerLogin?: string,
+        cwd?: string,): Record<string, string> {
+        // Always present, even for an unknown project: a `{trust_flags}` placeholder must never reach argv.
+        // No cwd (e.g. prompt improvement without a folder) counts as untrusted.
+        const trustFlags = resolveAgentProjectTrustFlags(agentId, cwd ? ctx.isProjectFolderTrusted(ownerLogin, cwd) : false);
+        const empty = { qaiq_flags: '', model_flags: '', [QAAP_PROJECT_TRUST_FLAGS_TEMPLATE_VAR]: trustFlags };
         // QAIQ and OpenClaude share the stream-json/approval protocol, but only QAIQ owns the
         // Settings → AI Features model catalog. Reusing isQaiqAgent here would make OpenClaude
         // silently inherit QAIQ's configured model whenever no explicit OpenClaude model was sent.
@@ -620,16 +646,20 @@ export function buildTemplateVarsExtracted(ctx: QaapAgentTaskRunnerContext, agen
         // Last gate before argv: callers that hand a model straight in (prompt improve, reviewer)
         // skip the request resolution, and a foreign model here is `--model <id>` → model_not_found.
         if (agentModel?.provider && agentModel.modelId?.trim()
-            && agentModelFitsAgent(agentId, agentModel, () => listNativeAgentModels(agentId))) {
+            && agentModelFitsAgent(agentId, agentModel, () => listNativeAgentModels(agentId, ownerLogin))) {
             const binding = ctx.normalizeAgentBinding(bindingFromQaiqModelSelection(agentModel), ownerLogin);
             const flags = formatModelFlagsForAgent(agentId, binding);
             if (isQaiqAgent(agentId)) {
-                return { qaiq_flags: joinQaiqFlags(qaiqInteractionFlags, flags), model_flags: '' };
+                return { qaiq_flags: joinQaiqFlags(qaiqInteractionFlags, flags), model_flags: '', [QAAP_PROJECT_TRUST_FLAGS_TEMPLATE_VAR]: trustFlags };
             }
-            return { qaiq_flags: '', model_flags: flags };
+            return { qaiq_flags: '', model_flags: flags, [QAAP_PROJECT_TRUST_FLAGS_TEMPLATE_VAR]: trustFlags };
         }
         if (usesQaiqSettingsCatalog) {
-            return { qaiq_flags: joinQaiqFlags(qaiqInteractionFlags, ctx.resolveQaiqProviderFlags(ownerLogin)), model_flags: '' };
+            return {
+                qaiq_flags: joinQaiqFlags(qaiqInteractionFlags, ctx.resolveQaiqProviderFlags(ownerLogin)),
+                model_flags: '',
+                [QAAP_PROJECT_TRUST_FLAGS_TEMPLATE_VAR]: trustFlags,
+            };
         }
         return empty;
 }

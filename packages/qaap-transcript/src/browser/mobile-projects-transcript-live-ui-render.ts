@@ -110,6 +110,11 @@ export function applyOptimisticConversationCancelExtracted(ctx: MobileProjectsTr
         if (!conv || conv.id !== summary.id) {
             return;
         }
+        // A coalesced SSE snapshot built before the Stop still reads `streaming`: flushing it after
+        // this optimistic idle repainted the stopped turn as working ("Preparing the response…").
+        if (ctx.pendingSseRenderConv?.id === summary.id) {
+            ctx.pendingSseRenderConv = undefined;
+        }
         const optimistic: QaapAgentConversationDTO = {
             ...conv,
             status: 'idle',
@@ -127,6 +132,12 @@ export function applyOptimisticConversationCancelExtracted(ctx: MobileProjectsTr
         ctx.scheduleTranscriptComposerActivityRefresh(optimistic);
         ctx.host.transcriptHeaderUi.refreshTranscriptExecutionChrome();
         ctx.host.transcriptComposerSendRefresh?.();
+        // A Stop ends the turn like any settle: run the settled chrome, which also dispatches the
+        // composer's queued follow-ups. The live controller only does this on a streaming→idle
+        // transition of its own copy; when that copy was not `streaming` at Stop time nothing
+        // flushed, and the queue sat on "will send when the agent finishes" with the agent stopped.
+        // Idempotent with the controller's settle (the flush is guarded by its in-flight flag).
+        ctx.syncTranscriptConversationSettledChrome();
 }
 
 export function applyOptimisticStreamTimeoutRetryExtracted(ctx: MobileProjectsTranscriptLiveUiContext, summary: QaapAgentConversationSummaryDTO): void {

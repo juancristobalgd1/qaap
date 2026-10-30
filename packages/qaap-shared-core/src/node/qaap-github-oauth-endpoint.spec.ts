@@ -702,8 +702,10 @@ describe('QaapGithubOauthEndpoint GitHub credential transport', () => {
         // Windows spells the key `Path`; the copied env is a plain, case-sensitive object.
         const pathKey = Object.keys(calls[0].env ?? {}).find(key => key.toUpperCase() === 'PATH') ?? 'PATH';
         expect(calls[0].env?.[pathKey]).to.equal(process.env.PATH);
-        // Token-less reads keep inheriting process.env unchanged.
-        expect(calls[1].env).to.equal(undefined);
+        // Token-less reads get an explicit env without backend-only secrets (never an implicit inherit).
+        expect(calls[1].env).to.not.equal(undefined);
+        expect(calls[1].env?.GIT_CONFIG_COUNT).to.equal(undefined);
+        expect(calls[1].env).to.not.have.property('QAAP_SECRETS_KEYS');
     });
 
     it('appends the header after git env-config entries already present', () => {

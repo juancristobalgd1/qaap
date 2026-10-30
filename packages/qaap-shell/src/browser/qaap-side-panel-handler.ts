@@ -33,7 +33,12 @@ export class QaapSidePanelHandler extends SidePanelHandler {
     protected lastObservedHeight = -1;
 
     protected activityScrollHost!: Panel;
-    protected activityCloseButton!: QaapActivityBarCloseButton;
+    /**
+     * Left panel only: the right panel (Work Hub chat in the classic IDE) is opened and
+     * closed by the right-panel toggle in the workbench header, so a second close
+     * button there is redundant.
+     */
+    protected activityCloseButton: QaapActivityBarCloseButton | undefined;
 
     override create(side: 'left' | 'right', options: SidePanel.Options): void {
         this.side = side;
@@ -96,9 +101,11 @@ export class QaapSidePanelHandler extends SidePanelHandler {
         contentBox.addWidget(this.dockPanel);
         const contentPanel = new BoxPanel({ layout: contentBox });
 
-        this.activityCloseButton = new QaapActivityBarCloseButton(() => {
-            void this.collapse();
-        });
+        this.activityCloseButton = this.side === 'left'
+            ? new QaapActivityBarCloseButton(() => {
+                void this.collapse();
+            })
+            : undefined;
 
         const scrollLayout = new BoxLayout({ direction: 'left-to-right', spacing: 0 });
         BoxPanel.setStretch(this.tabBar, 1);
@@ -112,11 +119,13 @@ export class QaapSidePanelHandler extends SidePanelHandler {
         BoxPanel.setStretch(this.topMenu, 0);
         BoxPanel.setStretch(this.activityScrollHost, 1);
         BoxPanel.setStretch(this.bottomMenu, 0);
-        BoxPanel.setStretch(this.activityCloseButton, 0);
         activityRowLayout.addWidget(this.topMenu);
         activityRowLayout.addWidget(this.activityScrollHost);
         activityRowLayout.addWidget(this.bottomMenu);
-        activityRowLayout.addWidget(this.activityCloseButton);
+        if (this.activityCloseButton) {
+            BoxPanel.setStretch(this.activityCloseButton, 0);
+            activityRowLayout.addWidget(this.activityCloseButton);
+        }
 
         const activityBarRow = new BoxPanel({ layout: activityRowLayout });
         activityBarRow.addClass('theia-app-activity-bar-row');

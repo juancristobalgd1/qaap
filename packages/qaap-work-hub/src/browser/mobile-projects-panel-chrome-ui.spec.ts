@@ -109,8 +109,9 @@ describe('MobileProjectsPanelChromeUi header IDE/Agents switch', () => {
         expect(switchHost!.hidden).to.equal(false);
 
         const executionCluster = host.root.querySelector<HTMLElement>('.theia-mobile-projects-header-execution-cluster');
-        expect(executionCluster?.firstElementChild).to.equal(host.headerExecutionTabsHost);
-        expect(executionCluster?.lastElementChild).to.equal(host.headerOverflowMenuBtn);
+        // The "+" menu leads the cluster, just before the surface picker (Chat ▾).
+        expect(executionCluster?.firstElementChild).to.equal(host.headerOverflowMenuBtn);
+        expect(host.headerOverflowMenuBtn.nextElementSibling).to.equal(host.headerExecutionTabsHost);
         expect(executionCluster?.contains(host.headerNewChatBtn)).to.equal(false);
         chrome.dispose();
     });

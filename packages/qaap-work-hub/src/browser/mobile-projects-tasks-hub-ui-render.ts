@@ -13,7 +13,7 @@ import { bindStickyComposerControlClick } from '@theia/qaap-composer/lib/common/
 import { type WorkHubTeamMember } from '@theia/qaap-shared-core/lib/common/qaap-work-hub-team';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { syncStickyComposerWorkingPillInRoots } from '@theia/qaap-composer/lib/browser/qaap-sticky-composer-working-pill';
-import { resolveWorkingPillDisplayCount } from '../common/qaap-working-pill-count';
+import { MIN_WORKING_PILL_LIVE_COUNT, resolveWorkingPillDisplayCount } from '../common/qaap-working-pill-count';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import {
     closeWorkingAgentsPopover,
@@ -331,7 +331,7 @@ export function updateWorkingPillChromeExtracted(ctx: MobileProjectsTasksHubUiCo
         // often drops the working count to 0 (streaming → idle); only ✕ / Escape / Stop All
         // / pill toggle may close in that case. Empty/new chat surfaces always hide the pill.
         const activeLiveCount = suppressedAfterStopAll ? 0 : (sectionId !== undefined ? sectionCount : rawCount);
-        if (suppressForEmptyComposer || (activeLiveCount <= 0 && !reading)) {
+        if (suppressForEmptyComposer || (activeLiveCount < MIN_WORKING_PILL_LIVE_COUNT && !reading)) {
             closeWorkingAgentsPopover(true);
         }
         // Keep chrome alive while home/transcript composers exist, or while an expand session

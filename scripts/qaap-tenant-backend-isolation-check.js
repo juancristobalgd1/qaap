@@ -13,7 +13,10 @@
 // createOrValidateTenantBackend): Qaap-managed labels bound to the tenant login, non-root user, no
 // privileges/capabilities (beyond SETUID/SETGID for agent uid drop), read-only rootfs, no host namespaces, only the tenant's own five mounts
 // (never the Docker socket), no control-plane secrets in the environment, per-tenant HMAC secret,
-// and no storage or network shared between the two tenants.
+// and no storage or network shared between the two tenants. The backend and its agents must also never
+// share a uid: on a rootless daemon the backend runs as container uid 0 with
+// QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP=1 and every agent is setpriv-dropped to a distinct, non-zero
+// QAAP_AGENT_UID (tenants get QAAP_AGENT_UID_PER_USER=0; the single agent uid is QAAP_AGENT_UID).
 //
 //   docker inspect A B | node scripts/qaap-tenant-backend-isolation-check.js <login-A> <login-B> [rootless]
 //
@@ -34,12 +37,13 @@ const CONTROL_PLANE_ENV = [
 ];
 
 // The backend drops every capability and only re-adds SETUID/SETGID so it can spawn agent tasks as the
-// unprivileged per-user agent uid via setpriv (qaap-docker-orchestrator.ts, QAAP_AGENT_UID_PER_USER=1).
+// unprivileged agent uid (QAAP_AGENT_UID) via setpriv (qaap-docker-orchestrator.ts).
 // Combined with no-new-privileges, these cannot be used to regain privileges. Anything else fails.
 const ALLOWED_BACKEND_CAPS = new Set(['SETUID', 'SETGID']);
 
 let failures = 0;
 const ok = message => console.log(`  OK   ${message}`);
+const info = message => console.log(`  INFO ${message}`);
 const bad = message => {
     console.error(`  FAIL ${message}`);
     failures++;
@@ -86,6 +90,33 @@ function checkBackend(container, login) {
     }
     if (!user || (/^(0|root)(:|$)/.test(user) && !rootlessDaemon)) {
         problems.push(`runs as root on a daemon not verified as rootless (User='${user}')`);
+    }
+    // The uid/agent-drop contract is enforced again on every wake: createOrValidateTenantBackend
+    // recreates (never just starts) a stopped backend whose user, env or image drifted, and a paused
+    // (reaper-frozen, so not executing) backend is unpaused and revalidated the same way before it
+    // serves. Neither can run with a stale contract, so their drift is reported, not blocking.
+    // Anything else (running, or no State in the inspect) stays fail-closed.
+    const stopped = container.State?.Running === false;
+    const paused = container.State?.Paused === true;
+    const uidDrift = [];
+    const rootUser = /^(0|root)(:(0|root))?$/.test(user);
+    if (rootlessDaemon && user && !rootUser) {
+        uidDrift.push(`shared backend/agent uid: rootless tenants must run as uid 0 so agents can be dropped (User='${user}')`);
+    }
+    if (!/^(1|true)$/i.test(String(env.get('QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP') ?? ''))) {
+        uidDrift.push('QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP=1 missing (a shared backend/agent uid would not be refused)');
+    }
+    const agentUid = String(env.get('QAAP_AGENT_UID') ?? '').trim();
+    const containerUid = user.split(':')[0];
+    if (!/^\d+$/.test(agentUid) || Number(agentUid) === 0 || agentUid === containerUid) {
+        uidDrift.push(`QAAP_AGENT_UID='${agentUid}' must be a non-zero uid different from the backend uid`);
+    }
+    if (stopped && uidDrift.length) {
+        info(`${label} is stopped and will be recreated on next wake: ${uidDrift.join('; ')}`);
+    } else if (paused && uidDrift.length) {
+        info(`${label} is paused; revalidated on next wake: ${uidDrift.join('; ')}`);
+    } else {
+        problems.push(...uidDrift);
     }
     if (hostConfig.Privileged === true) {
         problems.push('privileged');

@@ -12,7 +12,9 @@ History: #112, #113 (Sep 25, 2026), #121, #122, #124, #125 (Sep 26, 2026). All w
   proxy is configured, Qaap also attaches a third, per-tenant non-internal bridge for direct
   outbound traffic. Direct egress is enabled only when `QAAP_TENANT_EGRESS_PROXY_IMAGE` is unset;
   when it is configured, containers stay on the internal bridge and use the proxy. Network mode
-  `none` disables tenant networking.
+  `none` disables tenant networking. An empty or blank `QAAP_TENANT_EGRESS_PROXY_IMAGE` counts as
+  unset (direct egress), since compose passes `${VAR:-}`. The proxy env includes
+  `NODE_USE_ENV_PROXY=1`, because Node 22.23 native fetch ignores `HTTP(S)_PROXY` without it.
 - **Docker daemon requirement:** configure `default-address-pools` with enough small subnets on
   every Docker daemon that runs tenant containers. For example, `[{"base":"10.200.0.0/16","size":24}]`.
   Each per-tenant bridge consumes an address pool; without an expanded pool, Docker may exhaust

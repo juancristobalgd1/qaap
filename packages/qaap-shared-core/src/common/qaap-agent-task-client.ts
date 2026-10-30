@@ -39,6 +39,7 @@ export const THEIA_CODER_AGENT_ID = 'Coder';
 export const QAIQ_AGENT_ID = 'qaiq';
 export const OPENCLAUDE_AGENT_ID = 'openclaude';
 export const OPENCODE_AGENT_ID = 'opencode';
+export const PI_AGENT_ID = 'pi';
 
 /** Legacy product default — still used for QAIQ-specific parsing and explicit QAIQ pins. */
 export const QAAP_PRIMARY_AGENT_ID = QAIQ_AGENT_ID;
@@ -481,6 +482,10 @@ export function isCodexAgent(agentId: string | undefined): boolean {
     return agentId?.trim().toLowerCase() === 'codex';
 }
 
+export function isPiAgent(agentId: string | undefined): boolean {
+    return agentId?.trim().toLowerCase() === 'pi';
+}
+
 export function isAntigravityAgent(agentId: string | undefined): boolean {
     const normalized = agentId?.trim().toLowerCase();
     return normalized === 'antigravity' || normalized === 'gemini';
@@ -492,6 +497,7 @@ export function usesStructuredAgentTranscript(agentId: string | undefined): bool
         || isOpencodeAgent(agentId)
         || isClaudeCodeAgent(agentId)
         || isCodexAgent(agentId)
+        || isPiAgent(agentId)
         || isAntigravityAgent(agentId);
 }
 
@@ -629,15 +635,25 @@ export async function warmAgentRunner(cwd: string): Promise<QaapAgentWarmResult 
     }
 }
 
+/** Upper bound for one agent model catalog request, so a hung probe rejects instead of leaving the picker loading. */
+export const AGENT_MODELS_REQUEST_TIMEOUT_MS = 15000;
+
 export async function fetchAgentModelsForAgent(agentId: string): Promise<QaapQaiqModelOption[]> {
-    const response = await fetch(
-        `${QAAP_AGENT_TASK_API_PATH}/agent-models?agent=${encodeURIComponent(agentId)}`,
-        { credentials: 'include', cache: 'no-store' },
-    );
-    if (!response.ok) {
-        throw new Error(response.statusText);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), AGENT_MODELS_REQUEST_TIMEOUT_MS);
+    let body: { models?: QaapQaiqModelOption[] };
+    try {
+        const response = await fetch(
+            `${QAAP_AGENT_TASK_API_PATH}/agent-models?agent=${encodeURIComponent(agentId)}`,
+            { credentials: 'include', cache: 'no-store', signal: controller.signal },
+        );
+        if (!response.ok) {
+            throw new Error(response.statusText);
+        }
+        body = await response.json() as { models?: QaapQaiqModelOption[] };
+    } finally {
+        clearTimeout(timer);
     }
-    const body = await response.json() as { models?: QaapQaiqModelOption[] };
     const models = body.models ?? [];
     // Do not let a CLI diagnostic become a selectable model if an older backend or a
     // proxy still returns OpenCode stderr as line-oriented catalog data.

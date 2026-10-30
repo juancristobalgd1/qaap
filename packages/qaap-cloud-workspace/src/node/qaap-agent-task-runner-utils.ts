@@ -22,6 +22,7 @@ import type { QaapQaiqPendingControlRequest } from '../common/qaap-qaiq-stdio-ap
 import type { QaapAgentTask } from '../common/qaap-agent-task';
 import { diffSensitiveFiles, hashSensitiveFiles } from './qaap-sensitive-files';
 import { findExecutableOnPath, readEnvPath, resolveTrustedExecutable } from './qaap-trusted-executable';
+import { childProcessEnv } from './qaap-child-process-env';
 
 // ─── Constants (re-exported for the helpers) ─────────────────────────────────
 
@@ -51,6 +52,7 @@ export function readCodexHelp(env: NodeJS.ProcessEnv = process.env): string {
             timeout: 2_000,
             killSignal: 'SIGTERM',
             windowsHide: true,
+            env: childProcessEnv(env),
         });
         const topLevelHelp = `${topLevel.stdout || ''}\n${topLevel.stderr || ''}`;
         if (!/\bcodex\s+exec\b|^\s+exec\b/m.test(topLevelHelp)) {
@@ -61,6 +63,7 @@ export function readCodexHelp(env: NodeJS.ProcessEnv = process.env): string {
             timeout: 2_000,
             killSignal: 'SIGTERM',
             windowsHide: true,
+            env: childProcessEnv(env),
         });
         return `${topLevelHelp}\n${execCommand.stdout || ''}\n${execCommand.stderr || ''}`;
     } catch {
@@ -141,6 +144,8 @@ export function applyTemplateVars(template: string, vars: Record<string, string>
     for (const [key, value] of Object.entries(vars)) {
         resolved = resolved.split(`{${key}}`).join(value.trim());
     }
+    // `{trust_flags}` is always filled by buildTemplateVars; drop it if a caller passed vars without it.
+    resolved = resolved.split('{trust_flags}').join('');
     return resolved.replace(/\s+/g, ' ').trim();
 }
 
@@ -185,7 +190,7 @@ export type QaapAgentPromptTransport =
     | { readonly kind: 'plain-stdin'; readonly placeholder: QaapAgentPromptPlaceholder }
     | { readonly kind: 'prompt-file'; readonly flag: '--prompt-file' };
 
-const STDIN_OMIT_IDS = new Set(['cursor', 'claude', 'qaiq', 'openclaude', 'opencode', 'qwen']);
+const STDIN_OMIT_IDS = new Set(['cursor', 'claude', 'qaiq', 'openclaude', 'opencode', 'qwen', 'pi']);
 const STDIN_OMIT_FLAG_IDS = new Set(['copilot']);
 const STDIN_DASH_IDS = new Set(['codex', 'kimi', 'goose', 'hermes', 'openclaw']);
 

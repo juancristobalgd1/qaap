@@ -4,7 +4,12 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { extractAgentAuthLoginChallenge, isAgentLoginSuccessOutput, type QaapAgentAuthLoginChallenge } from './qaap-agent-auth-login';
+import {
+    extractAgentAuthLoginChallenge,
+    isAgentLoginFailureOutput,
+    isAgentLoginSuccessOutput,
+    type QaapAgentAuthLoginChallenge,
+} from './qaap-agent-auth-login';
 import { QAAP_HARNESS_DEFINITIONS } from './qaap-builtin-agents';
 import {
     buildAgentLoginShellCommand,
@@ -82,6 +87,20 @@ const CAPTURED_LOGIN_OUTPUT: Readonly<Record<string, string>> = {
         'Paste code here if prompted >',
     ].join('\n'),
     // hermes-agent 0.19.0 — `hermes auth add nous --type oauth --no-browser`
+    // Pi 1.4.0 — `pi --tui-mode regular --no-session`, then `/login openrouter` and the default
+    // "Sign in with OpenRouter" method (escape sequences stripped; the 500-column PTY keeps the URL whole).
+    pi: [
+        'Select authentication method for OpenRouter:',
+        '→ Sign in with OpenRouter',
+        '  Sign in with an API key',
+        'https://openrouter.ai/auth?callback_url=http%3A%2F%2F127.0.0.1%3A41237%2Foauth%2Fcallback%2F3f9c2a1e-0d7b-4a52-9b8e-1c2d3e4f5a6b'
+        + '&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256',
+        'Cmd+click to open • ctrl+o to copy',
+        'Complete sign-in in your browser. If the browser is on another machine, paste the final redirect URL here.',
+        'Complete sign-in in your browser, or paste the authorization code / redirect URL here:',
+        '> ',
+        '(esc to cancel)',
+    ].join('\n'),
     hermes: [
         'Starting Hermes login via Nous Portal...',
         'Portal: https://portal.nousresearch.com',
@@ -101,6 +120,11 @@ const CAPTURED_LOGIN_OUTPUT: Readonly<Record<string, string>> = {
 
 /** What the dialog must offer for each captured output. */
 const EXPECTED_CHALLENGES: Readonly<Record<string, Omit<QaapAgentAuthLoginChallenge, 'mode'> & { readonly urlPrefix: string }>> = {
+    pi: {
+        urlPrefix: 'https://openrouter.ai/auth?callback_url=http%3A%2F%2F127.0.0.1%3A41237%2Foauth%2Fcallback%2F',
+        codeEntry: true,
+        acceptsRedirectUrl: true,
+    },
     codex: { urlPrefix: 'https://auth.openai.com/codex/device', userCode: 'CZ6N-DCWVI' },
     claude: { urlPrefix: 'https://claude.com/cai/oauth/authorize?code=true', codeEntry: true },
     grok: { urlPrefix: 'https://accounts.x.ai/oauth2/device?user_code=S3DF-WCAM', userCode: 'S3DF-WCAM' },
@@ -120,16 +144,8 @@ const EXPECTED_CONNECT_PATHS: Readonly<Record<string, QaapAgentConnectionFlow['k
     qaiq: 'settings-api-key',
     codex: 'cli-login',
     claude: 'cli-login',
-    openclaude: 'cli-login',
-    grok: 'cli-login',
     opencode: 'cli-login',
-    hermes: 'cli-login',
-    openclaw: 'tenant-terminal',
-    cursor: 'cli-login',
-    antigravity: 'cli-login',
-    copilot: 'cli-login',
-    qwen: 'tenant-terminal',
-    kimi: 'tenant-terminal',
+    pi: 'tui-login',
 };
 
 describe('harness connect paths', () => {
@@ -145,7 +161,8 @@ describe('harness connect paths', () => {
 
     it('backs every CLI login with real captured output that yields a link or a code', () => {
         for (const harness of QAAP_HARNESS_DEFINITIONS) {
-            if (resolveAgentConnectionFlow(harness.id).kind !== 'cli-login') {
+            const kind = resolveAgentConnectionFlow(harness.id).kind;
+            if (kind !== 'cli-login' && kind !== 'tui-login') {
                 continue;
             }
             const output = CAPTURED_LOGIN_OUTPUT[harness.id];
@@ -194,6 +211,7 @@ describe('harness login challenge parsing (captured output)', () => {
             expect(challenge?.url?.startsWith(expected.urlPrefix), `${agentId}: ${challenge?.url}`).to.equal(true);
             expect(challenge?.userCode).to.equal(expected.userCode);
             expect(!!challenge?.codeEntry, `${agentId} codeEntry`).to.equal(!!expected.codeEntry);
+            expect(!!challenge?.acceptsRedirectUrl, `${agentId} acceptsRedirectUrl`).to.equal(!!expected.acceptsRedirectUrl);
             expect(isAgentLoginSuccessOutput(CAPTURED_LOGIN_OUTPUT[agentId]), `${agentId} is not connected yet`).to.equal(false);
         });
     }
@@ -221,6 +239,20 @@ describe('harness login challenge parsing (captured output)', () => {
         expect(isAgentLoginSuccessOutput('Signed in as octocat')).to.equal(true);
         expect(isAgentLoginSuccessOutput('Waiting for authorization...')).to.equal(false);
         expect(isAgentLoginSuccessOutput('Not logged in. Please run /login')).to.equal(false);
+    });
+
+    it('recognizes Pi\'s login result lines, never its waiting status', () => {
+        expect(isAgentLoginSuccessOutput('Logged in to OpenRouter')).to.equal(true);
+        expect(isAgentLoginSuccessOutput('Logged in to OpenRouter, but local model state could not be synchronized: x')).to.equal(true);
+        expect(isAgentLoginSuccessOutput('Log in to OpenRouter')).to.equal(false);
+        expect(isAgentLoginSuccessOutput('You are not logged in to OpenRouter')).to.equal(false);
+        expect(isAgentLoginFailureOutput('Error: Failed to login to OpenRouter: invalid code')).to.equal(true);
+        expect(isAgentLoginFailureOutput(CAPTURED_LOGIN_OUTPUT.pi)).to.equal(false);
+    });
+
+    it('trusts the OpenRouter sign-in page for Pi only', () => {
+        expect(extractAgentAuthLoginChallenge(CAPTURED_LOGIN_OUTPUT.pi, { agentId: 'codex' })?.url).to.equal(undefined);
+        expect(extractAgentAuthLoginChallenge('https://openrouter.ai/settings/keys', { agentId: 'pi' })?.url).to.equal(undefined);
     });
 });
 

@@ -15,6 +15,8 @@ import {
     clearWorkingPillStopAllSuppression,
     closeWorkingAgentsPopover,
     flattenWorkingAgentsTree,
+    formatWorkingAgentElapsed,
+    resolveWorkingAgentVisualState,
     getWorkingAgentsDetailMemberId,
     isWorkingAgentsExpandPinnedOpen,
     isWorkingAgentsExpandSessionOpen,
@@ -244,6 +246,7 @@ describe('qaap-sticky-composer-working-agents-popover', () => {
         stopAll?.click();
         expect(stopped).to.equal(false);
         expect(stopAll?.textContent).to.equal('Confirm Stop All');
+        expect(stopAll?.classList.contains('theia-mod-confirm')).to.equal(true);
         stopAll?.click();
         expect(stopped).to.equal(true);
         panel.querySelector<HTMLButtonElement>('.qaap-working-agents-popover-close')?.click();
@@ -256,7 +259,10 @@ describe('qaap-sticky-composer-working-agents-popover', () => {
             .to.equal('Parent task');
         expect(rows[0].querySelectorAll('.qaap-working-loader-dot')).to.have.length(6);
         expect(rows[0].querySelector('.qaap-working-agents-popover-cloud')).to.equal(null);
-        expect(rows[0].querySelector('.qaap-working-agents-popover-row-stop')?.textContent).to.equal('Stop');
+        expect(rows[0].querySelector('.qaap-working-agents-popover-row-stop')?.getAttribute('title')).to.equal('Stop');
+        expect(rows[0].querySelector('.qaap-working-agents-popover-row-stop .codicon-debug-stop')).to.not.equal(null);
+        expect(rows[0].getAttribute('data-working-state')).to.equal('working');
+        expect(rows[0].querySelector('.qaap-working-agents-popover-row-elapsed')).to.not.equal(null);
         expect(rows[0].querySelector('.qaap-working-agents-popover-row-main')?.getAttribute('aria-label'))
             .to.contain('run parent');
         const childStatus = rows[1].querySelector('.qaap-working-agents-popover-row-status');
@@ -638,7 +644,7 @@ describe('qaap-sticky-composer-working-agents-popover', () => {
         expect(getWorkingAgentsDetailMemberId()).to.equal('agent-live');
         expect(detailMembers).to.deep.equal(['agent-live']);
         expect(document.querySelector('.qaap-working-agents-detail-body')?.textContent)
-            .to.equal('Working');
+            .to.contain('Working');
 
         feedVersion = 1;
         expect(refreshWorkingAgentsDetailActivityFeed()).to.equal(true);
@@ -704,7 +710,7 @@ describe('qaap-sticky-composer-working-agents-popover', () => {
         expect(document.querySelector('.qaap-sticky-composer-sheet-popover.theia-mod-working-agents')).to.equal(null);
         expect(anchor.getAttribute('aria-expanded')).to.equal('true');
         expect(clip?.textContent).to.contain('1 Working');
-        expect(clip?.textContent).to.contain('Stop All');
+        expect(clip?.querySelector('.qaap-working-agents-popover-stop-all')?.getAttribute('title')).to.equal('Stop All');
         expect(clip?.textContent).to.contain('Main');
         openWorkingAgentsPopover({
             anchor,
@@ -957,5 +963,26 @@ describe('qaap-sticky-composer-working-agents-popover', () => {
         expect(shellBefore?.classList.contains('theia-mod-expanded')).to.equal(true);
         expect(isWorkingAgentsPopoverOpen(anchor)).to.equal(true);
         expect(document.querySelector(`.${WORKING_EXPAND_CLIP_CLASS}.theia-mod-open`)).to.not.equal(null);
+    });
+});
+
+describe('working agents popover helpers', () => {
+    const base = {
+        id: 'm', kind: 'conversation', title: 'T', projectName: 'p', cwd: '/', agentId: 'qaiq',
+        state: 'running', childCount: 0, createdAt: 1_000, updatedAt: 1_000,
+    } as unknown as WorkHubTeamMember;
+
+    it('formats elapsed time compactly', () => {
+        expect(formatWorkingAgentElapsed(base, 13_000)).to.equal('12s');
+        expect(formatWorkingAgentElapsed(base, 1_000 + 3 * 60_000)).to.equal('3m');
+        expect(formatWorkingAgentElapsed(base, 1_000 + 65 * 60_000)).to.equal('1h 5m');
+        expect(formatWorkingAgentElapsed({ ...base, createdAt: 0 })).to.equal('');
+    });
+
+    it('maps states to visual buckets', () => {
+        expect(resolveWorkingAgentVisualState(base)).to.equal('working');
+        expect(resolveWorkingAgentVisualState({ ...base, state: 'blocked' })).to.equal('attention');
+        expect(resolveWorkingAgentVisualState({ ...base, state: 'failed' })).to.equal('failed');
+        expect(resolveWorkingAgentVisualState({ ...base, state: 'completed' })).to.equal('done');
     });
 });

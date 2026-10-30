@@ -765,6 +765,18 @@ export async function fetchConversationRewindPreview(
     return response.json() as Promise<QaapRewindPreviewDTO>;
 }
 
+/**
+ * Fresh idempotency key for one submit. Reuse the same key when retrying that submit so the server returns the
+ * conversation it already created instead of starting a second agent on the same working tree.
+ */
+export function createConversationRequestId(): string {
+    const crypto = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
+    if (typeof crypto?.randomUUID === 'function') {
+        return crypto.randomUUID();
+    }
+    return `qaap-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 export async function createConversation(
     body: QaapCreateConversationBody,
     signal?: AbortSignal,

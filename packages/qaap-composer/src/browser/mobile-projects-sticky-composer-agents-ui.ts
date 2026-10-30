@@ -12,6 +12,7 @@ import {
     ensureStoredAgentModel,
     fetchAgentModelsForAgent,
     filterQaapComposerAgents,
+    isSameAgentModel,
     isTheiaCoderAgent,
     pickDefaultAgentModel,
     readStoredAgent,
@@ -181,7 +182,10 @@ export class MobileProjectsStickyComposerAgentsUi {
             return undefined;
         }
         const existing = readStoredAgentModel(cwd, agentId);
-        if (existing) {
+        // A stored selection is kept only when the catalog lists it. Without a preferred catalog the live one
+        // is fetched below, so a model the account can no longer run (e.g. Codex `gpt-5.6-sol` on a Free plan)
+        // is replaced by ensureStoredAgentModel instead of being sent again.
+        if (existing && (preferredModels ?? []).some(model => isSameAgentModel(existing, model))) {
             return existing;
         }
         let catalog = preferredModels ?? [];
@@ -488,6 +492,7 @@ export class MobileProjectsStickyComposerAgentsUi {
 }
 
 /** Stable identity of what an agent picker row shows, used to skip no-op background repaints. */
-function composerAgentCatalogSignature(agents: readonly QaapAgentTaskAgentOption[]): string {
+/** What a picker shows of a catalog: a sign-in (or sign-out) changes it, so painted views must refresh. */
+export function composerAgentCatalogSignature(agents: readonly QaapAgentTaskAgentOption[]): string {
     return JSON.stringify(agents.map(agent => [agent.id, agent.label, agent.available, agent.connectionState, agent.accessState]));
 }

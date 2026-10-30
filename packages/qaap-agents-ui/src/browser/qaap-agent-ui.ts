@@ -65,6 +65,8 @@ export function resolveAgentPickerDescription(agentId: string, fallbackLabel: st
             return nls.localize('qaap/agentPicker/descriptionCodex', 'OpenAI coding agent');
         case 'claude':
             return nls.localize('qaap/agentPicker/descriptionClaude', 'Anthropic coding agent');
+        case 'pi':
+            return nls.localize('qaap/agentPicker/descriptionPi', 'Minimal terminal coding agent');
         case 'copilot':
             return nls.localize('qaap/agentPicker/descriptionCopilot', 'GitHub coding agent');
         case 'cursor':
@@ -264,6 +266,56 @@ export function createAgentSheetOptionButton(options: {
     return btn;
 }
 
+/**
+ * Bottom-sheet row for a model-capable agent, split into two sibling controls: the main area selects the
+ * agent (with its default model) and the trailing chevron button opens the model submenu. They are siblings
+ * rather than nested because interactive elements cannot be nested. Styled by `.theia-qaap-agent-sheet-split`
+ * in the Work Hub stylesheet.
+ */
+export function createAgentSheetSplitOptionRow(options: {
+    readonly agentId: string;
+    readonly label: string;
+    readonly agentLabel: string;
+    readonly description?: string;
+    readonly selected?: boolean;
+    readonly onSelect: () => void;
+    readonly onShowModels: () => void;
+}): HTMLDivElement {
+    const row = document.createElement('div');
+    row.className = 'theia-qaap-agent-sheet-row theia-qaap-agent-sheet-split';
+
+    const main = createAgentSheetOptionButton({
+        agentId: options.agentId,
+        label: options.label,
+        description: options.description,
+        selected: options.selected,
+        onSelect: options.onSelect,
+    });
+    main.classList.add('theia-qaap-agent-sheet-split-main');
+
+    const chevronButton = document.createElement('button');
+    chevronButton.type = 'button';
+    chevronButton.className = 'theia-qaap-agent-sheet-split-chevron';
+    const chooseModelLabel = nls.localize(
+        'qaap/mobileProjects/stickyComposerPickModelForAgent',
+        'Choose model for {0}',
+        options.agentLabel,
+    );
+    chevronButton.setAttribute('aria-label', chooseModelLabel);
+    chevronButton.title = chooseModelLabel;
+    const chevron = document.createElement('span');
+    chevron.className = 'codicon codicon-chevron-right theia-mobile-sticky-composer-sheet-option-chevron';
+    chevron.setAttribute('aria-hidden', 'true');
+    chevronButton.append(chevron);
+    chevronButton.addEventListener('click', event => {
+        event.stopPropagation();
+        options.onShowModels();
+    });
+
+    row.append(main, chevronButton);
+    return row;
+}
+
 /** Dimmed picker row for a known harness that is not connected or detected on the workspace. */
 export function createUnavailableAgentSheetOption(options: {
     readonly agentId: string;
@@ -305,10 +357,14 @@ export function createUnavailableAgentSheetOption(options: {
     return row;
 }
 
-/** Agent approval policy row (icon + title + description + optional check). */
+/**
+ * Agent approval policy row (icon + title + description + optional check). A `disabledReason` makes the
+ * row unavailable and replaces its description with the reason.
+ */
 export function createApprovalPolicySheetOptionButton(options: {
     readonly policy: QaapAgentApprovalPolicyOption;
     readonly selected?: boolean;
+    readonly disabledReason?: string;
     readonly onSelect: () => void;
 }): HTMLButtonElement {
     const btn = document.createElement('button');
@@ -316,6 +372,11 @@ export function createApprovalPolicySheetOptionButton(options: {
     btn.className = 'theia-mobile-sticky-composer-sheet-option theia-qaap-approval-policy-sheet-option';
     if (options.selected) {
         btn.classList.add('theia-mod-selected');
+    }
+    if (options.disabledReason !== undefined) {
+        btn.disabled = true;
+        btn.setAttribute('aria-disabled', 'true');
+        btn.classList.add('theia-qaap-approval-policy-sheet-option-disabled');
     }
     const content = document.createElement('span');
     content.className = 'theia-mobile-sticky-composer-sheet-option-content theia-qaap-approval-policy-sheet-option-content';
@@ -335,7 +396,7 @@ export function createApprovalPolicySheetOptionButton(options: {
     labelEl.textContent = options.policy.label;
     const descriptionEl = document.createElement('span');
     descriptionEl.className = 'theia-qaap-approval-policy-sheet-description';
-    descriptionEl.textContent = options.policy.description;
+    descriptionEl.textContent = options.disabledReason ?? options.policy.description;
     text.append(labelEl, descriptionEl);
     content.append(text);
 

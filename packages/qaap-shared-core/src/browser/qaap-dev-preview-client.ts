@@ -173,7 +173,9 @@ export async function fetchQaapCurrentDevPreview(
     }
     try {
         const projectQuery = candidates.map(value => `projectId=${encodeURIComponent(value)}`).join('&');
-        // Scope to this Work Hub section so it never adopts a sibling section's live claim.
+        // Prefer this Work Hub section's claim. The server falls back to the project's shared dev
+        // server (same root, sibling section) when this section has none, so a sibling claim is
+        // adopted only for the same root, never for another project or worktree.
         const conversationQuery = conversationId?.trim()
             ? `&conversationId=${encodeURIComponent(conversationId.trim())}`
             : '';

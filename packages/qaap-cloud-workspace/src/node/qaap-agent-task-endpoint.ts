@@ -406,12 +406,15 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         // useful during that window instead of turning a valid native harness into `models: []`.
         // Give a cold CLI model discovery (`cursor-agent models`) a moment; past the budget the
         // curated catalog answers and the discovered one is cached for the next request.
-        await this.withinBudget(prepareNativeAgentModels(agent), QAAP_NATIVE_MODEL_DISCOVERY_BUDGET_MS);
+        await this.withinBudget(prepareNativeAgentModels(agent, {
+            ownerLogin: login,
+            spawner: this.runner.nativeModelDiscoverySpawner(login),
+        }), QAAP_NATIVE_MODEL_DISCOVERY_BUDGET_MS);
         if (res.headersSent || res.writableEnded) {
             return;
         }
         const runnerModels = this.runner.listModelsForAgent(agent, login);
-        const nativeModels = listNativeAgentModels(agent);
+        const nativeModels = listNativeAgentModels(agent, login);
         const models = runnerModels.length > 0 ? runnerModels : nativeModels;
         res.setHeader('Cache-Control', 'no-store');
         res.json({ agent: requestedAgent, models });
@@ -610,6 +613,19 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         res.status(health.ready ? 200 : 503).json(health);
     }
 
+    /**
+     * Approval policy for a sub-task created through the helper token: never above the parent's.
+     * A parent that requires approval (or an unknown / foreign parent) yields `request-approval`;
+     * otherwise the child gets the default auto-approve level, never `full-access`.
+     */
+    protected inheritedHelperApproval(parentId: string | undefined, ownerLogin: string | undefined): Pick<QaapCreateAgentTaskRequest, 'autoApprove' | 'approvalPolicyId'> {
+        const parent = parentId ? this.runner.list().find(task => task.id === parentId) : undefined;
+        if (parent && parent.ownerLogin === ownerLogin && parent.autoApprove !== false) {
+            return { autoApprove: undefined, approvalPolicyId: undefined };
+        }
+        return { autoApprove: false, approvalPolicyId: 'request-approval' };
+    }
+
     protected async handleCreate(req: Request, res: Response): Promise<void> {
         const body = (req.body ?? {}) as Partial<QaapCreateAgentTaskRequest>;
         if (typeof body.cwd !== 'string' || (typeof body.command !== 'string' && typeof body.prompt !== 'string')) {
@@ -692,6 +708,13 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 // because the auth probes of a freshly started backend have not answered yet.
                 await this.runner.defaultAgentFresh(ownerLogin);
             }
+            // SEC: a sub-task created with the agent helper token runs model-controlled code; it must never
+            // choose a more permissive approval policy than its parent. The token maps to the owner only,
+            // so the body's autoApprove/approvalPolicyId are ignored and the policy is derived from the
+            // parent task (same owner) or, without one, the safest policy (request-approval).
+            const approval = helperOwner
+                ? this.inheritedHelperApproval(parentId, ownerLogin)
+                : { autoApprove: body.autoApprove, approvalPolicyId: body.approvalPolicyId };
             const request: QaapCreateAgentTaskRequest = {
                 clientRequestId: typeof body.clientRequestId === 'string' ? body.clientRequestId.trim() : undefined,
                 command: body.command,
@@ -703,9 +726,9 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 contextPreamble: body.contextPreamble,
                 title: body.title,
                 parentId,
-                autoApprove: body.autoApprove,
+                autoApprove: approval.autoApprove,
                 interactionModeId: body.interactionModeId,
-                approvalPolicyId: body.approvalPolicyId,
+                approvalPolicyId: approval.approvalPolicyId,
                 // Part of the request type, so a caller may legitimately send it; this handler
                 // builds its argument field by field and was dropping it on the floor, which made
                 // the hint look ineffective from outside the process. Validated rather than
@@ -718,6 +741,9 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 // of it. Coerced strictly: anything other than a literal `true` leaves the turn
                 // unrestricted rather than guessing from a truthy value.
                 readOnlyWorkspace: body.readOnlyWorkspace === true ? true : undefined,
+                // Server-only: decided from the conversation's worktree (buildTaskCreateRequest). A client
+                // must never claim its own worktree to skip the shared-working-tree queue, so it is never read here.
+                ownWorkingTree: undefined,
             };
             // A failed write blocks every new task until something persists again. Retry once here
             // so a transient failure (for example a temp-file collision) clears on the next user

@@ -181,7 +181,6 @@ export function renderHeaderOverflowMenuItemsExtracted(ctx: MobileProjectsPanelC
         closeHeaderOverflowMenu: () => ctx.closeHeaderOverflowMenu(),
         openHeaderNewChat: () => ctx.openHeaderNewChat(),
         isHeaderNewChatVisible: () => ctx.isHeaderNewChatVisible(),
-        openWorkHubSessionsSidebar: () => ctx.openWorkHubSessionsSidebar(),
         copyActiveConversationToClipboard: () => ctx.copyActiveConversationToClipboard(),
         isCopyConversationEnabled: () => ctx.isCopyConversationEnabled(),
         openAiConfigurationSheet: ctx.openAiConfigurationSheet,

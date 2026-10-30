@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import {
     describeAgentTurnFailure,
     detectAgentFailureKind,
+    extractRetiredModelId,
     detectAgentFailureProviderLabel,
     extractAgentLogFailureHint,
     formatProviderPreflightNote,
@@ -16,11 +17,18 @@ import {
     localizeAgentFailureShortReason,
     localizeGenericAgentFailureMessage,
     localizeMissingCodingAgentMessage,
+    localizeRetiredModelMessage,
     resolveAgentTurnFailureMessage,
     resolveAgentTurnFailureTechnicalContent,
     summarizeCollapsedAgentFailure,
 } from './qaap-agent-failure-message';
 import { rememberQaapHostedRuntime } from './qaap-hosted-agent-auth-policy';
+import {
+    CODEX_MODEL_NOT_SUPPORTED_LOG,
+    CODEX_USAGE_LIMIT_LOG,
+    NVIDIA_MODEL_END_OF_LIFE_LOG,
+    PROVIDER_ENDPOINT_404_LOG,
+} from './test/qaap-agent-failure-log-fixtures';
 
 describe('qaap-agent-failure-message', () => {
     it('asks a sign-in harness to sign in when its provider rejects an API key; QAIQ keeps the Settings copy', () => {
@@ -89,6 +97,20 @@ describe('qaap-agent-failure-message', () => {
             .to.equal('cli_missing');
         expect(detectAgentFailureKind('Cannot find the qaiq executable'))
             .to.equal('cli_missing');
+    });
+
+    it('classifies the Codex ChatGPT-plan usage limit as quota and keeps its retry time', () => {
+        const line = 'You\'ve hit your usage limit. Upgrade to Plus to continue using Codex (https://chatgpt.com/explore/plus), or try again at Nov 19th, 2026 12:56 AM.';
+        expect(detectAgentFailureKind(line)).to.equal('quota');
+        expect(detectAgentFailureKind(CODEX_USAGE_LIMIT_LOG)).to.equal('quota');
+        expect(resolveAgentTurnFailureMessage(CODEX_USAGE_LIMIT_LOG, { state: 'failed', agentId: 'codex' }))
+            .to.match(/try again at Nov 19th, 2026 12:56 AM/);
+    });
+
+    it('classifies the Codex unsupported-model 404 as model_unavailable', () => {
+        const line = '{"error":{"message":"The \'gpt-5.6-sol\' model is not supported when using Codex with a ChatGPT account.","code":"model_not_found"}}';
+        expect(detectAgentFailureKind(line)).to.equal('model_unavailable');
+        expect(detectAgentFailureKind(CODEX_MODEL_NOT_SUPPORTED_LOG)).to.equal('model_unavailable');
     });
 
     it('detectAgentFailureKind classifies the OpenCode free usage limit as quota', () => {
@@ -395,6 +417,15 @@ describe('BYOK provider key failures', () => {
         expect(describeAgentTurnFailure(message)?.kind).to.equal('usage_limit');
     });
 
+    it('names OpenRouter when the free-tier 429 only says so in limit_source (production QAIQ log)', () => {
+        const log = 'API Error: 429 {"error":{"message":"Rate limit exceeded: free-models-per-day. ","code":429,'
+            + '"metadata":{"headers":{"X-RateLimit-Limit":"50","X-RateLimit-Remaining":"0"},'
+            + '"limit_source":"openrouter_free_tier_daily","remedy_hint":"Wait for the daily reset or purchase credits"}}}';
+        expect(detectAgentFailureProviderLabel(log)).to.equal('OpenRouter');
+        expect(resolveAgentTurnFailureMessage(log, { state: 'failed', agentId: 'qaiq' }))
+            .to.match(/^OpenRouter free-model limit reached\. Wait for the daily reset, add credits with OpenRouter/);
+    });
+
     it('classifies the OpenRouter data-policy 404 and an out-of-credits 402', () => {
         const policy = 'API Error: 404 {"error":{"message":"No endpoints found matching your data policy (Free model publication). '
             + 'Configure: https://openrouter.ai/settings/privacy","code":404}}';
@@ -410,5 +441,108 @@ describe('BYOK provider key failures', () => {
         expect(formatStoredAgentFailureMessage(stored)).to.equal(stored);
         expect(detectAgentFailureProviderLabel(stored)).to.equal('OpenRouter');
         expect(localizeAgentFailureMessage('provider_key_rejected')).to.equal('Your provider key was rejected. Update it in Settings → BYOK, then retry.');
+    });
+});
+
+describe('retired model failures', () => {
+    const MODEL = 'nvidia/llama-3.3-nemotron-super-49b-v1';
+
+    it('turns a raw NVIDIA 410 end-of-life error into a model-retired message naming the model', () => {
+        expect(detectAgentFailureKind(NVIDIA_MODEL_END_OF_LIFE_LOG)).to.equal('model_unavailable');
+        const message = resolveAgentTurnFailureMessage(NVIDIA_MODEL_END_OF_LIFE_LOG, { state: 'failed', agentId: 'qaiq' });
+        expect(message).to.equal(localizeRetiredModelMessage(MODEL));
+        expect(message).to.include('no longer available from its provider');
+        expect(message).not.to.include('{"status"');
+    });
+
+    it('classifies the provider-endpoint 404 as a model the provider no longer serves', () => {
+        expect(detectAgentFailureKind(PROVIDER_ENDPOINT_404_LOG)).to.equal('model_unavailable');
+        const message = resolveAgentTurnFailureMessage(PROVIDER_ENDPOINT_404_LOG, { state: 'failed', agentId: 'qaiq' });
+        expect(message).to.equal(localizeRetiredModelMessage());
+        expect(message).to.include('Choose another model');
+    });
+
+    it('formats a persisted raw 410 error and labels it "Model unavailable"', () => {
+        const persisted = `API Error: 410 {"status":410,"detail":"Model ${MODEL} has reached its end of life."}`;
+        expect(formatStoredAgentFailureMessage(persisted)).to.equal(localizeRetiredModelMessage(MODEL));
+        const reason = describeAgentTurnFailure(persisted);
+        expect(reason?.kind).to.equal('model');
+        expect(reason?.label).to.equal('Model unavailable');
+    });
+
+    it('keeps reading its own persisted copy as a model failure', () => {
+        const stored = localizeRetiredModelMessage(MODEL);
+        expect(detectAgentFailureKind(stored)).to.equal('model_unavailable');
+        expect(formatStoredAgentFailureMessage(stored)).to.equal(stored);
+        expect(describeAgentTurnFailure(stored)?.kind).to.equal('model');
+    });
+
+    it('extracts the model id from quoted, unquoted and JSON-escaped provider texts', () => {
+        expect(extractRetiredModelId(`The model '${MODEL}' has reached its end of life`)).to.equal(MODEL);
+        expect(extractRetiredModelId(`Model ${MODEL} has reached its end of life.`)).to.equal(MODEL);
+        expect(extractRetiredModelId(`{"detail":"model \\"${MODEL}\\" is no longer available"}`)).to.equal(MODEL);
+        expect(extractRetiredModelId('This model has reached its end of life.')).to.equal(undefined);
+    });
+
+    it('does not mistake unrelated 404s, deprecation warnings or other model errors for a retired model', () => {
+        expect(detectAgentFailureKind('npm warn deprecated inflight@1.0.6: This module is not supported')).to.equal(undefined);
+        expect(detectAgentFailureKind('Error: Request failed with status code 404')).to.not.equal('model_unavailable');
+        const selected = 'There\'s an issue with the selected model (deepseek/deepseek-v4-flash:free). It may not exist or you may not have access to it.';
+        expect(resolveAgentTurnFailureMessage(selected, { state: 'failed' })).to.include('The model provider refused');
+    });
+});
+
+describe('provider rejected requests', () => {
+    // Pi on OpenRouter, model `dots-studio/dots-3-note-preview:free`: the upstream host answered 400.
+    const ATLAS_CLOUD_LOG = String.raw`400: {"message":"Provider returned error","code":400,"metadata":{"raw":"{\"code\":400,\"msg\":\"bad request\",\"request_id\":\"0cc3197a-0afa-4e0e-ba9b-e52c50c5a9d5\"}","provider_name":"AtlasCloud","is_byok":false}}{"code":400,"msg":"bad request","request_id":"0cc3197a-0afa-4e0e-ba9b-e52c50c5a9d5"}`;
+
+    it('classifies the OpenRouter 400 wrapper as a rejected request and names the provider', () => {
+        expect(detectAgentFailureKind(ATLAS_CLOUD_LOG)).to.equal('provider_rejected');
+        expect(resolveAgentTurnFailureMessage(ATLAS_CLOUD_LOG, { state: 'failed', agentId: 'pi' }))
+            .to.equal('AtlasCloud rejected this request. The model may be unavailable or not support this agent\'s tools. Pick another model and retry.');
+    });
+
+    it('leaves a provider wrapper around a 401 status to the key / sign-in classes', () => {
+        const log = '{"message":"Provider returned error","code":400,"metadata":{"raw":"{\\"code\\":401}","provider_name":"AtlasCloud"}}';
+        expect(detectAgentFailureKind(log)).to.not.equal('provider_rejected');
+    });
+
+    it('keeps the hint without a provider name when the body has none', () => {
+        const log = 'Provider returned error';
+        expect(detectAgentFailureKind(log)).to.equal('provider_rejected');
+        expect(resolveAgentTurnFailureMessage(log, { state: 'failed', agentId: 'pi' }))
+            .to.equal('The model\'s provider rejected this request. The model may be unavailable or not support this agent\'s tools. Pick another model and retry.');
+    });
+
+    it('reads the reason as its own class, not the raw body or the generic stop', () => {
+        const message = resolveAgentTurnFailureMessage(ATLAS_CLOUD_LOG, { state: 'failed', agentId: 'pi' });
+        expect(describeAgentTurnFailure(message)?.kind).to.equal('provider_rejected');
+        expect(describeAgentTurnFailure(message)?.label).to.equal('Model provider rejected the request');
+        expect(describeAgentTurnFailure(ATLAS_CLOUD_LOG)?.kind).to.equal('provider_rejected');
+    });
+
+    it('keeps the localized copy stable across a reload', () => {
+        const message = resolveAgentTurnFailureMessage(ATLAS_CLOUD_LOG, { state: 'failed', agentId: 'pi' });
+        expect(formatStoredAgentFailureMessage(message)).to.equal(message);
+    });
+
+    it('does not take a 401, a 403 or a missing-key error for a provider rejection', () => {
+        expect(detectAgentFailureKind('Provider returned error {"code":401,"provider_name":"AtlasCloud"}'))
+            .not.to.equal('provider_rejected');
+        expect(detectAgentFailureKind('Provider returned error {"code":403,"provider_name":"AtlasCloud"}'))
+            .not.to.equal('provider_rejected');
+        expect(detectAgentFailureKind('401 Unauthorized')).not.to.equal('provider_rejected');
+        expect(detectAgentFailureKind('No API key found for openrouter')).not.to.equal('provider_rejected');
+        expect(detectAgentFailureKind('Provider returned error: invalid api key')).not.to.equal('provider_rejected');
+    });
+
+    it('keeps the existing rate-limit class for a 429 provider wrapper', () => {
+        const log = 'Provider returned error {"code":429,"provider_name":"AtlasCloud"}';
+        expect(detectAgentFailureKind(log)).to.equal('rate_limit');
+    });
+
+    it('keeps an explicit model-not-found on the model fallback path', () => {
+        expect(detectAgentFailureKind('Provider returned error: model_not_found: kimi-k2.6'))
+            .to.equal('model_unavailable');
     });
 });

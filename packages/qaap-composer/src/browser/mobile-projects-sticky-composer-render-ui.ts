@@ -366,7 +366,7 @@ export class MobileProjectsStickyComposerRenderUi {
                 }
             }
             const showMessagesComposer = shellProject
-                ? this.host.executionSurfaceTabsUi.executionSurfaceTabForProject(shellProject) === 'messages'
+                ? this.isChatSurfaceVisible(shellProject)
                 : false;
             const showComposer = !!(shellProject && shellSummary && chatHost?.isConnected && showMessagesComposer);
             this.host.stickyComposerHost.hidden = !showComposer;
@@ -412,7 +412,7 @@ export class MobileProjectsStickyComposerRenderUi {
         const showReposComposer = surfaceEligible && !!project;
         const showSurface = showReposComposer;
         const showComposer = showSurface
-            && (!this.host.isProjectDetailView() || (project && this.host.executionSurfaceTabsUi.executionSurfaceTabForProject(project) === 'messages'));
+            && (!this.host.isProjectDetailView() || (!!project && this.isChatSurfaceVisible(project)));
         this.host.stickyComposerHost.hidden = !showComposer;
         this.host.root.classList.toggle('theia-mod-sticky-composer', showComposer);
         if (!showSurface || !project) {
@@ -492,10 +492,17 @@ export class MobileProjectsStickyComposerRenderUi {
                 ? (anchor, untilDone) => { this.host.stickyComposerSheetsUi.openStickyComposerModeSheet(project, modes, anchor, untilDone); }
                 : undefined,
             approvalPolicyId: showApprovalPolicy ? this.host.stickyComposerApprovalPolicyId : undefined,
+            approvalAgent: showApprovalPolicy
+                ? {
+                    id: this.host.stickyComposerAgentsUi.resolveStickyComposerPinnedAgentId(project),
+                    label: this.host.stickyComposerAgentsUi.resolveStickyComposerAgentLabel(project),
+                }
+                : undefined,
             onOpenApprovalPolicySheet: showApprovalPolicy
                 ? anchor => {
                     this.host.stickyComposerSheetsUi.openStickyComposerApprovalPolicySheet(
                         project,
+                        this.host.stickyComposerAgentsUi.resolveStickyComposerPinnedAgentId(project),
                         this.host.stickyComposerAgentsUi.resolveStickyComposerAgentLabel(project),
                         anchor,
                     );
@@ -709,6 +716,13 @@ export class MobileProjectsStickyComposerRenderUi {
         this.host.updateNewFabVisibility();
         window.requestAnimationFrame(() => this.host.composerHeaderUi.updateStickyComposerFabLift());
     }
+
+    /** The composer belongs to the conversation: keep it while the conversation is on screen. */
+    protected isChatSurfaceVisible(project: MobileProjectEntry): boolean {
+        const tabs = this.host.executionSurfaceTabsUi;
+        return tabs.isChatSurfaceVisible?.(project) ?? tabs.executionSurfaceTabForProject(project) === 'messages';
+    }
+
     /**
      * Cancels any pending sticky-composer focus re-checks scheduled by {@link scheduleStickyComposerFocusRetention}.
      * Called at the start of every render so a re-render (which rebuilds/removes the composer column) never

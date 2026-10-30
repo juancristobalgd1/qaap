@@ -109,6 +109,8 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
         const authChallenge = isQaiqKeyMissing ? { mode: 'api_key' as const } : sessionChallenge;
         const isQuotaFailure = !authChallenge && !planLimit && !isProviderKeyFailure && (failureKind === 'quota' || failureKind === 'rate_limit');
         const isCliMissing = !authChallenge && failureKind === 'cli_missing';
+        // The provider refused this request (its own error): not the key, not sign-in, not the model's name.
+        const isProviderRejected = !authChallenge && !planLimit && failureKind === 'provider_rejected';
         const details = document.createElement('details');
         details.className = 'theia-mobile-agent-shell-window theia-mod-failed theia-mod-turn-failure';
         if (authChallenge) {
@@ -120,6 +122,9 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
         if (isCliMissing) {
             details.classList.add('theia-mod-cli-missing');
         }
+        if (isProviderRejected) {
+            details.classList.add('theia-mod-provider-rejected');
+        }
         if (isProviderKeyFailure) {
             details.classList.add('theia-mod-provider-key');
         }
@@ -129,7 +134,7 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
         // Keep ordinary failures compact so a noisy backend error does not
         // dominate the transcript. Authentication, quota, and missing-CLI
         // failures expose their next-step guidance immediately.
-        details.open = !!authChallenge || isQuotaFailure || isCliMissing || isProviderKeyFailure || !!planLimit;
+        details.open = !!authChallenge || isQuotaFailure || isCliMissing || isProviderKeyFailure || isProviderRejected || !!planLimit;
 
         const summary = document.createElement('summary');
         summary.className = 'theia-mobile-agent-shell-head';
@@ -154,6 +159,8 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
             ? authTitle
             : isProviderKeyFailure
               ? (localizeAgentFailureShortReason(formatted) ?? nls.localize('qaap/agentFailure/reasonProviderKey', 'API key rejected'))
+              : isProviderRejected
+                ? nls.localize('qaap/mobileProjects/transcriptProviderRejected', 'The model\'s provider rejected the request')
               : planLimit
               ? nls.localize('qaap/mobileProjects/transcriptPlanLimitReached', 'Plan limit reached')
               : isQuotaFailure
@@ -169,7 +176,8 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
             toolLine.textContent = failedToolName;
             titleWrap.append(toolLine);
         }
-        if (!authChallenge && !isQuotaFailure && !isCliMissing && !isProviderKeyFailure && !planLimit) {
+        // The hint in the body already says what happened; the collapsed line would repeat the raw body.
+        if (!authChallenge && !isQuotaFailure && !isCliMissing && !isProviderKeyFailure && !isProviderRejected && !planLimit) {
             const reason = summarizeCollapsedAgentFailure({
                 formatted,
                 generic,

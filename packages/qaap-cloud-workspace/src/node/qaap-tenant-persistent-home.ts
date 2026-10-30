@@ -23,6 +23,7 @@ export const QAAP_PERSISTENT_HOME_DIRECTORIES: readonly string[] = [
     '.kimi',
     '.hermes',
     '.openclaude',
+    '.pi', // Pi: agent/auth.json (`/login` providers and API keys)
     '.qaiq',
     '.config', // gh, copilot and other XDG_CONFIG_HOME users
 ];

@@ -3,6 +3,7 @@ import type { MobileProjectsTranscriptSurfacesUiContext } from './mobile-project
 
 import { nls } from '@theia/core/lib/common/nls';
 import { normalizePreviewUrlForSameOrigin } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
+import { isQaapWorkHubAuxPanelLayout } from './qaap-work-hub-aux-panel';
 import {
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
@@ -119,6 +120,7 @@ export function updateTranscriptPreviewReadyOverlayExtracted(ctx: MobileProjects
         return;
     }
     let ready = overlay.querySelector('.theia-mobile-transcript-preview-ready') as HTMLElement | null;
+    overlay.classList.add('theia-mod-status');
     if (!ready) {
         ready = document.createElement('div');
         ready.className = 'theia-mobile-transcript-preview-ready';
@@ -182,6 +184,12 @@ export function syncHeaderPreviewRunButtonExtracted(ctx: MobileProjectsTranscrip
     // Staging + the composer Open preview pill stay on Chat; the header play control only
     // belongs on the Preview tab after an explicit user navigation (pill / link / tab).
     if (!onPreviewTab) {
+        return;
+    }
+    if (isQaapWorkHubAuxPanelLayout()) {
+        // Desktop Work Hub: the Browser view sits in the right panel with its own
+        // toolbar, so the chat-header play button would only duplicate it.
+        host.hidden = true;
         return;
     }
     let button = host.querySelector<HTMLButtonElement>('.theia-mobile-transcript-preview-run');

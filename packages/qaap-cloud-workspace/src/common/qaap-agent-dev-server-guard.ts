@@ -20,6 +20,19 @@ const PACKAGE_MANAGER_DEV_RE = /\b(?:pnpm|npm|yarn|bun)\s+(?:run\s+)?(?:dev|star
 const FRAMEWORK_BIN_RE = /(?:^|&&|\|\||;|\(\s*|\b(?:nohup|exec)\s+)\s*(?:npx\s+|bunx\s+)?(?:vite|next|nuxt|astro|remix|webpack-dev-server|react-scripts)\b/i;
 /** One-shot subcommands that look like dev tooling but exit on their own. */
 const ONE_SHOT_RE = /(?:\b(?:build|export|test|lint|typecheck|info|telemetry)\b|--version|--help)/i;
+/** Qaap npm scripts that start a browser/electron dev server, whatever package manager or prefix invokes them. */
+const QAAP_DEV_SCRIPT_RE = /\b(?:npm|pnpm|yarn|bun|npx|bunx)\b[^&|;\n]*?\b(?:qaap:local:browser[\w:-]*|start:browser[\w:-]*|start:electron)\b/i;
+/** Execution of the Qaap browser restart/start scripts by any path (`node …/qaap-restart-browser.mjs`, `./…`, `sh …`). */
+const QAAP_RESTART_SCRIPT_RE = /(?:\b(?:node|bun|sh|bash|zsh|exec|source)\s+|(?:^|[\s;&|(])\.\/)[^&|;\n]*\bqaap-(?:restart|start)-browser(?:\.mjs|\.js)?\b/i;
+/** Detached launches: `nohup`, `setsid`, `disown`, or a single trailing/inline `&` (not `&&`, `>&`, `&>`). */
+const DETACHED_LAUNCH_RE = /\b(?:nohup|setsid|disown)\b|(?<![>&])&(?![&>])/;
+/** Server-ish words that make a detached launch a dev/serve process. */
+const SERVER_WORD_RE = /\b(?:dev|start|serve|preview)\b|\b(?:vite|next|nuxt|astro|remix|webpack-dev-server|react-scripts)\b/i;
+
+/** Splits a shell command into simple segments at `&&`, `||`, `;`, `|`, newlines and single `&`. */
+function splitShellSegments(text: string): string[] {
+    return text.split(/&&|\|\||;|\||\n|(?<![>&])&(?![&>])/).map(segment => segment.trim()).filter(segment => segment.length > 0);
+}
 
 /** True for shell commands that start a long-lived dev server (background variants included). */
 export function isLongLivedDevServerShellCommand(command: string | undefined): boolean {
@@ -27,19 +40,61 @@ export function isLongLivedDevServerShellCommand(command: string | undefined): b
     if (!text) {
         return false;
     }
-    if (ONE_SHOT_RE.test(text)) {
-        return false;
+    // Script/launcher invocations are never exempt: a one-shot word elsewhere in the command must not hide them.
+    if (QAAP_DEV_SCRIPT_RE.test(text) || QAAP_RESTART_SCRIPT_RE.test(text)) {
+        return true;
     }
-    return PACKAGE_MANAGER_DEV_RE.test(text) || FRAMEWORK_BIN_RE.test(text);
+    if (DETACHED_LAUNCH_RE.test(text) && SERVER_WORD_RE.test(text)) {
+        return true;
+    }
+    // Evaluate each segment so `pnpm build && pnpm dev` is not exempted by the one-shot word of its first part.
+    return splitShellSegments(text).some(segment => !ONE_SHOT_RE.test(segment)
+        && (PACKAGE_MANAGER_DEV_RE.test(segment) || FRAMEWORK_BIN_RE.test(segment)));
+}
+
+/** Options for the dev-server deny message. */
+export interface DevServerShellDenyOptions {
+    /**
+     * Port of the live preview claim Qaap already holds for this project (the registry's reserved
+     * port, not a port the agent guesses from `.qaap/preview.json` or prose). When known, the
+     * agent is told where the app really runs instead of being asked to invent a port.
+     */
+    readonly reservedPort?: number;
+    /** Real state of the reserved port, measured by the backend just before the denial (see `probeReservedDevPreviewStatus`). */
+    readonly previewStatus?: DevServerPreviewStatus;
+}
+
+/** Health of the reserved preview port as measured by the backend. */
+export interface DevServerPreviewStatus {
+    /** `true` when any HTTP response came back from the reserved port. */
+    readonly answering: boolean;
+    /** Status code of that HTTP response, when `answering`. */
+    readonly httpStatus?: number;
 }
 
 /** Deny guidance sent back to the agent so it self-corrects instead of retrying. */
-export function buildDevServerShellDenyMessage(): string {
-    return 'Blocked by Qaap: do not start dev servers from shell tools — they time out after ~30s and kill the live preview. '
-        + 'Qaap runs the dev server in a dedicated terminal with hot reload. '
+export function buildDevServerShellDenyMessage(options: DevServerShellDenyOptions = {}): string {
+    const reservedPort = options.reservedPort;
+    const previewStatus = options.previewStatus;
+    const head = 'Blocked by Qaap: do not start dev servers from shell tools — they time out after ~30s and kill the live preview. ';
+    if (reservedPort !== undefined && previewStatus) {
+        const statusLine = previewStatus.answering
+            ? `Qaap's preview of this project is already running on port ${reservedPort} and answers HTTP ${previewStatus.httpStatus ?? 200}. `
+                + `Do not start another server and do not probe other ports; tell the user the app is live in the Preview tab (port ${reservedPort}).`
+            : `Qaap's preview of this project is reserved on port ${reservedPort} but is not answering yet; Qaap is starting it. `
+                + 'Do not start another server, and tell the user it is starting in the Preview tab.';
+        return head + statusLine + ' Run only one-shot commands (install, build, typecheck, test).';
+    }
+    const serverLine = reservedPort !== undefined
+        ? `Qaap's preview owns this project's dev server, reserved on port ${reservedPort} (see the Preview tab). Do not start another server, and do not report any other port: `
+            + `when you describe the app, say that it is served by Qaap's Preview on port ${reservedPort}. `
+        : 'Qaap runs the dev server in a dedicated terminal with hot reload. '
+            + 'Do not guess a port: the Preview tab reports the real one. ';
+    return head
+        + serverLine
         + 'Run only one-shot commands (install, build, typecheck, test). '
-        + 'When the app is ready to preview, reply stating the expected local port (e.g. 5173) and confirm dependencies are installed; '
-        + 'Qaap starts the server only from a detected entry point or .qaap/preview.json; if none exists, report that instead of promising a preview.';
+        + 'Confirm dependencies are installed; Qaap starts the server only from a detected entry point or .qaap/preview.json, '
+        + 'so if none exists, report that instead of promising a preview.';
 }
 
 /**
@@ -47,10 +102,11 @@ export function buildDevServerShellDenyMessage(): string {
  * launching a long-lived dev server; `undefined` means the request should proceed
  * through the normal approval flow.
  */
-export function findQaiqDevServerGuardDenial(request: QaapQaiqPendingControlRequest): string | undefined {
+export function findQaiqDevServerGuardDenial(request: QaapQaiqPendingControlRequest,
+    options: DevServerShellDenyOptions = {}): string | undefined {
     if (!isShellToolName(request.toolName)) {
         return undefined;
     }
     const command = typeof request.toolInput?.command === 'string' ? request.toolInput.command : undefined;
-    return isLongLivedDevServerShellCommand(command) ? buildDevServerShellDenyMessage() : undefined;
+    return isLongLivedDevServerShellCommand(command) ? buildDevServerShellDenyMessage(options) : undefined;
 }

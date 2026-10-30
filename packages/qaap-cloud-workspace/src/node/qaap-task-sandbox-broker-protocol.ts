@@ -56,6 +56,12 @@ export interface QaapTaskSandboxBrokerSandbox {
      * new one, `reused` returned the running sandbox of this root. Absent from older brokers.
      */
     readonly source?: 'spare' | 'cold' | 'reused';
+    /**
+     * The tenant backend's address on the tenant INTERNAL network (where the sandbox also lives), so
+     * the sandbox can reach the tool gate without going through loopback or the egress proxy. Absent
+     * when the backend has no address there: callers must then fail closed, not fall back to loopback.
+     */
+    readonly backendHost?: string;
 }
 
 /**

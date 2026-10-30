@@ -27,11 +27,21 @@ import {
 } from './qaap-agent-default-workflow';
 
 describe('buildAgentDefaultWorkflowPromptBlock', () => {
-    it('frames coding work toward PR by default', () => {
+    it('leaves changes uncommitted for the user to review and approve', () => {
         const block = buildAgentDefaultWorkflowPromptBlock();
-        expect(block).to.include('reviewable pull request');
-        expect(block).to.include('branch');
+        expect(block).to.include('leave your changes uncommitted');
+        expect(block).to.include('Stay on the current branch');
         expect(block).to.include('verification');
+    });
+
+    it('never tells the agent to commit, branch, push or open a pull request on its own', () => {
+        const block = buildAgentDefaultWorkflowPromptBlock();
+        expect(block).not.to.include('reviewable pull request');
+        expect(block).not.to.include('appropriate branch');
+        expect(block).not.to.include('push the branch');
+        expect(block).not.to.include('PR-ready');
+        expect(block).to.include('Do not run git commit');
+        expect(block).to.include('unless the user explicitly asked');
     });
 });
 

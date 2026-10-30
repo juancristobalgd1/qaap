@@ -174,7 +174,7 @@ describe('MobileProjectsTasksHubUi — working pill', () => {
 
     it('mounts the pill above the sticky composer card, not in the header', () => {
         const host = createHost({
-            running: 1,
+            running: 2,
             members: [{
                 id: 'm0',
                 kind: 'conversation',
@@ -189,13 +189,27 @@ describe('MobileProjectsTasksHubUi — working pill', () => {
                 conversationId: 'm0',
                 projectId: 'p1',
                 activityLabel: 'Working',
+            }, {
+                id: 'm1',
+                kind: 'conversation',
+                title: 'Second working agent',
+                projectName: 'Demo',
+                cwd: '/srv/demo',
+                agentId: 'qaiq',
+                state: 'streaming',
+                childCount: 0,
+                createdAt: 1,
+                updatedAt: 2,
+                conversationId: 'm1',
+                projectId: 'p1',
+                activityLabel: 'Working',
             }],
         });
         new MobileProjectsTasksHubUi(host).updateWorkingPillChrome();
         const wrap = host.stickyComposerHost.querySelector('.theia-mobile-projects-sticky-composer-inner');
         const pill = wrap?.querySelector('.theia-mobile-sticky-composer-working-pill');
         const card = wrap?.querySelector('.theia-mobile-projects-sticky-composer-card');
-        expect(pill?.textContent).to.contain('1 Working');
+        expect(pill?.textContent).to.contain('2 Working');
         expect(pill?.compareDocumentPosition(card!)).to.equal(Node.DOCUMENT_POSITION_FOLLOWING);
         expect(pill?.querySelector('.theia-mobile-projects-working-pill-icon.qaap-thinking-orb-indicator')).to.not.equal(null);
         expect(pill?.querySelector('.theia-mod-working-loader')).to.equal(null);
@@ -205,7 +219,7 @@ describe('MobileProjectsTasksHubUi — working pill', () => {
 
     it('expands the Working agents panel in place on pill click', () => {
         const host = createHost({
-            running: 1,
+            running: 2,
             members: [{
                 id: 'm0',
                 kind: 'conversation',
@@ -220,6 +234,20 @@ describe('MobileProjectsTasksHubUi — working pill', () => {
                 conversationId: 'm0',
                 projectId: 'p1',
                 activityLabel: 'Building Working popover',
+            }, {
+                id: 'm1',
+                kind: 'conversation',
+                title: 'Second popover agent',
+                projectName: 'Demo',
+                cwd: '/srv/demo',
+                agentId: 'qaiq',
+                state: 'streaming',
+                childCount: 0,
+                createdAt: 1,
+                updatedAt: 2,
+                conversationId: 'm1',
+                projectId: 'p1',
+                activityLabel: 'Working',
             }],
         });
         const ui = new MobileProjectsTasksHubUi(host);
@@ -233,14 +261,14 @@ describe('MobileProjectsTasksHubUi — working pill', () => {
         const panel = shell?.querySelector('.qaap-working-agents-expand-clip');
         expect(panel).to.not.equal(null);
         expect(document.querySelector('.qaap-sticky-composer-sheet-popover.theia-mod-working-agents')).to.equal(null);
-        expect(panel?.textContent).to.contain('1 Working');
-        expect(panel?.textContent).to.contain('Stop All');
+        expect(panel?.textContent).to.contain('2 Working');
+        expect(panel?.querySelector('.qaap-working-agents-popover-stop-all')?.getAttribute('title')).to.equal('Stop All');
         expect(panel?.textContent).to.contain('Working pill agents popover');
         expect(panel?.textContent).to.contain('Building Working popover');
     });
 
     it('places the Working control first in the Changes row when present', () => {
-        const host = createHost({ running: 1, withChangesRow: true });
+        const host = createHost({ running: 2, withChangesRow: true });
         new MobileProjectsTasksHubUi(host).updateWorkingPillChrome();
         const row = host.stickyComposerHost.querySelector('.theia-mobile-sticky-composer-changes-pill-row');
         expect(row?.firstElementChild?.classList.contains('theia-mobile-sticky-composer-working-control')).to.equal(true);
@@ -249,6 +277,12 @@ describe('MobileProjectsTasksHubUi — working pill', () => {
 
     it('hides the pill when no agents are working', () => {
         const host = createHost({ running: 0, streaming: 0 });
+        new MobileProjectsTasksHubUi(host).updateWorkingPillChrome();
+        expect(host.stickyComposerHost.querySelector('.theia-mobile-sticky-composer-working-pill')).to.equal(null);
+    });
+
+    it('hides the pill for a single working agent on the home hub', () => {
+        const host = createHost({ running: 1 });
         new MobileProjectsTasksHubUi(host).updateWorkingPillChrome();
         expect(host.stickyComposerHost.querySelector('.theia-mobile-sticky-composer-working-pill')).to.equal(null);
     });
@@ -332,9 +366,9 @@ describe('MobileProjectsTasksHubUi — working pill', () => {
 
     it('shows the Working pill on a non-empty open conversation', () => {
         const host = createHost({
-            running: 1,
+            running: 2,
             members: [{
-                id: 'm0',
+                id: 'conv-with-messages',
                 kind: 'conversation',
                 title: 'Active agent',
                 projectName: 'Demo',
@@ -344,7 +378,22 @@ describe('MobileProjectsTasksHubUi — working pill', () => {
                 childCount: 0,
                 createdAt: 1,
                 updatedAt: 2,
-                conversationId: 'm0',
+                conversationId: 'conv-with-messages',
+                projectId: 'p1',
+                activityLabel: 'Working',
+            }, {
+                id: 'conv-with-messages-sub',
+                kind: 'conversation',
+                title: 'Subagent of active agent',
+                projectName: 'Demo',
+                cwd: '/srv/demo',
+                agentId: 'qaiq',
+                state: 'streaming',
+                parentId: 'conv-with-messages',
+                childCount: 0,
+                createdAt: 1,
+                updatedAt: 2,
+                conversationId: 'conv-with-messages-sub',
                 projectId: 'p1',
                 activityLabel: 'Working',
             }],
@@ -366,7 +415,7 @@ describe('MobileProjectsTasksHubUi — working pill', () => {
     it('hides the Working pill after Stop All even if detail was open', async () => {
         const cancelledIds: string[] = [];
         const host = createHost({
-            running: 1,
+            running: 2,
             members: [{
                 id: 'm0',
                 kind: 'conversation',
@@ -375,6 +424,23 @@ describe('MobileProjectsTasksHubUi — working pill', () => {
                 cwd: '/srv/demo',
                 agentId: 'qaiq',
                 state: 'streaming',
+                childCount: 0,
+                createdAt: 1,
+                updatedAt: 2,
+                conversationId: 'm0',
+                projectId: 'p1',
+                activityLabel: 'Still working',
+            }, {
+                // Subagent of the open conversation; shares its conversationId so Stop All
+                // treats it as already cancelled by the composer Stop (no network cancel).
+                id: 'm0-sub',
+                kind: 'conversation',
+                title: 'Stop All subagent',
+                projectName: 'Demo',
+                cwd: '/srv/demo',
+                agentId: 'qaiq',
+                state: 'streaming',
+                parentId: 'm0',
                 childCount: 0,
                 createdAt: 1,
                 updatedAt: 2,
@@ -521,7 +587,7 @@ describe('MobileProjectsTasksHubUi — working pill', () => {
 
     it('does not auto-collapse Working detail when chrome reports 0 after summary idle', () => {
         const host = createHost({
-            running: 1,
+            running: 2,
             members: [{
                 id: 'm0',
                 kind: 'conversation',
@@ -536,6 +602,20 @@ describe('MobileProjectsTasksHubUi — working pill', () => {
                 conversationId: 'm0',
                 projectId: 'p1',
                 activityLabel: 'Writing resumen',
+            }, {
+                id: 'm1',
+                kind: 'conversation',
+                title: 'Second summary agent',
+                projectName: 'Demo',
+                cwd: '/srv/demo',
+                agentId: 'qaiq',
+                state: 'streaming',
+                childCount: 0,
+                createdAt: 1,
+                updatedAt: 2,
+                conversationId: 'm1',
+                projectId: 'p1',
+                activityLabel: 'Working',
             }],
         });
         host.transcriptComposerHost = host.stickyComposerHost;
@@ -614,7 +694,7 @@ describe('MobileProjectsTasksHubUi — working pill', () => {
 
     it('keeps Working expand open when chrome refresh is outside tasks-hub view', () => {
         const host = createHost({
-            running: 1,
+            running: 2,
             isTasksHubView: false,
             members: [{
                 id: 'm0',
@@ -630,6 +710,20 @@ describe('MobileProjectsTasksHubUi — working pill', () => {
                 conversationId: 'm0',
                 projectId: 'p1',
                 activityLabel: 'Still working',
+            }, {
+                id: 'm1',
+                kind: 'conversation',
+                title: 'Second transcript agent',
+                projectName: 'Demo',
+                cwd: '/srv/demo',
+                agentId: 'qaiq',
+                state: 'streaming',
+                childCount: 0,
+                createdAt: 1,
+                updatedAt: 2,
+                conversationId: 'm1',
+                projectId: 'p1',
+                activityLabel: 'Working',
             }],
         });
         // Simulate transcript overlay composer (not tasks hub list).
@@ -684,7 +778,7 @@ describe('MobileProjectsTasksHubUi — working pill', () => {
         /** Agents Hub shell: the conversation composer is mounted into the home sticky host. */
         function createShellHost(openConversationId: string): ReturnType<typeof createHost> {
             const host = createHost({
-                members: [member('a'), member('a-fork', 'a'), member('b'), member('c')],
+                members: [member('a'), member('a-fork', 'a'), member('b'), member('d', 'b'), member('c')],
             });
             host.transcriptComposerHost = host.stickyComposerHost;
             host.transcriptComposerSummary = summary(openConversationId);
@@ -720,7 +814,7 @@ describe('MobileProjectsTasksHubUi — working pill', () => {
             ui.updateWorkingPillChrome();
             expect(isWorkingAgentsExpandSessionOpen()).to.equal(false);
             const pill = host.stickyComposerHost.querySelector('.theia-mobile-sticky-composer-working-pill');
-            expect(pill?.textContent).to.contain('1 Working');
+            expect(pill?.textContent).to.contain('2 Working');
         });
 
         it('hides the pill when nothing in the open conversation is working', () => {

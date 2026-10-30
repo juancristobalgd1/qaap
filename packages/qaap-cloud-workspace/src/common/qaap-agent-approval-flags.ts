@@ -43,6 +43,12 @@ export interface QaapAgentApprovalFlagOptions {
      * See `qaap-agent-readonly-workspace.ts` for what each backend can actually enforce.
      */
     readonly readOnlyWorkspace?: boolean;
+    /**
+     * The turn runs behind the stdio control gate (`--permission-prompt-tool stdio`). Claude Code then gets the
+     * same flag set as QAIQ, so Bash and the unlisted tools reach the gate instead of being pre-approved by an
+     * `--allowed-tools Bash` rule (which would also skip the destructive-command guard).
+     */
+    readonly stdioGated?: boolean;
 }
 
 export function resolveEffectiveToolApprovalRules(
@@ -154,7 +160,9 @@ export function applyAgentApprovalPolicyToCommand(
         return applyQaiqApprovalFlags(command, options, policyId, rules);
     }
     if (effectiveId === 'claude') {
-        return applyClaudeApprovalFlags(command, policyId, rules);
+        return options.stdioGated && policyId !== 'full-access'
+            ? applyGatedClaudeApprovalFlags(command, policyId, rules)
+            : applyClaudeApprovalFlags(command, policyId, rules);
     }
     if (effectiveId === 'codex') {
         return applyCodexApprovalFlags(command, policyId, rules, options.codexSupportsApproveForMe);
@@ -222,10 +230,32 @@ function applyQaiqApprovalFlags(
     return ensureQaiqCoreTools(ensureQaiqBlockedHeadlessTools(next), policyId, rules);
 }
 
+/**
+ * Claude Code behind the stdio gate: QAIQ's permission flags (QAIQ is a Claude Code fork, the flags are the same).
+ * Never a bypass flag, whatever the network rule says: bypass mode would skip `can_use_tool` entirely.
+ */
+function applyGatedClaudeApprovalFlags(
+    command: string,
+    policyId: QaapAgentApprovalPolicyId,
+    rules: QaapAgentToolApprovalRules | undefined,
+): string {
+    const withoutLegacy = stripQaiqPermissionFlags(command);
+    const claude = /\bclaude\b/;
+    const withPolicy = policyId === 'approve-for-me' && rules
+        ? injectAfterPattern(withoutLegacy, claude, formatQaiqApproveForMeFlags(rules))
+        : injectAfterPattern(withoutLegacy, claude, '--permission-mode default');
+    // Unlike QAIQ, Claude keeps its whole tool set (subagents, skills): the CLI sends a subagent's own tool calls
+    // through the same permission prompt tool, so they still reach the gate (checked against claude 2.1.312).
+    // `--tools default` only tells the preset that shell is allowed once the guards pass.
+    const shellAllowed = policyId === 'approve-for-me' && rules?.shell !== false;
+    return shellAllowed ? injectAfterPattern(withPolicy, claude, '--tools default') : withPolicy;
+}
+
 function ensureQaiqCoreTools(
     command: string,
     policyId: QaapAgentApprovalPolicyId,
     rules: QaapAgentToolApprovalRules | undefined,
+    executable: RegExp = /\b(qaiq|openclaude)\b/,
 ): string {
     // Read-only web tools (WebSearch/WebFetch) are always in the allowlist now — no `network` gate.
     const shell = policyId !== 'request-approval' && rules?.shell !== false;
@@ -236,7 +266,7 @@ function ensureQaiqCoreTools(
         if (existing) {
             return unquoted.replace(existing[0], flag);
         }
-        return injectAfterPattern(unquoted, /\b(qaiq|openclaude)\b/, flag);
+        return injectAfterPattern(unquoted, executable, flag);
     });
 }
 
@@ -249,15 +279,15 @@ function formatQaiqApproveForMeFlags(_rules: QaapAgentToolApprovalRules): string
         + '--allowed-tools Read,Write,Edit,Grep,Glob,NotebookEdit,TodoWrite,WebFetch,WebSearch';
 }
 
-function ensureQaiqBlockedHeadlessTools(command: string): string {
-    return rewriteUnquotedShellText(command, mergeQaiqBlockedHeadlessTools);
+function ensureQaiqBlockedHeadlessTools(command: string, executable: RegExp = /\b(qaiq|openclaude)\b/): string {
+    return rewriteUnquotedShellText(command, unquoted => mergeQaiqBlockedHeadlessTools(unquoted, executable));
 }
 
-function mergeQaiqBlockedHeadlessTools(command: string): string {
+function mergeQaiqBlockedHeadlessTools(command: string, executable: RegExp): string {
     const required = QAAP_QAIQ_BLOCKED_HEADLESS_TOOLS.split(',');
     const match = /--disallowed-tools\s+([^\s-][^\s]*)/.exec(command);
     if (!match) {
-        return injectAfterPattern(command, /\b(qaiq|openclaude)\b/, `--disallowed-tools ${QAAP_QAIQ_BLOCKED_HEADLESS_TOOLS}`);
+        return injectAfterPattern(command, executable, `--disallowed-tools ${QAAP_QAIQ_BLOCKED_HEADLESS_TOOLS}`);
     }
     const existing = new Set(match[1].split(',').map(tool => tool.trim()).filter(Boolean));
     let changed = false;

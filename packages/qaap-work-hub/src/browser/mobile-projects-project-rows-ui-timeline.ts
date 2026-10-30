@@ -234,6 +234,7 @@ export function createTaskItemExtracted(ctx: MobileProjectsProjectRowsUiContext,
     taskTitleRow.className = 'theia-mobile-projects-task-title-row';
     const taskTitle = document.createElement('span');
     taskTitle.className = 'theia-mobile-projects-task-title';
+    taskTitle.title = task.title;
     taskTitle.append(createTaskTitleText(task.title));
     attachTaskTitleMarquee(row, taskTitle);
     const taskSince = document.createElement('span');

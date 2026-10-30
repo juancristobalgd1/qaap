@@ -26,7 +26,8 @@ export type QaapAgentFailureKind =
     | 'provider_key_rejected'
     | 'provider_credits'
     | 'provider_data_policy'
-    | 'provider_free_limit';
+    | 'provider_free_limit'
+    | 'provider_rejected';
 
 /** What the runner's provider preflight learned about a BYOK key after an ambiguous CLI error. */
 export type QaapProviderKeyVerdict = 'key_rejected' | 'no_credits' | 'free_model_refused';
@@ -52,6 +53,9 @@ const QUOTA_PATTERNS: readonly RegExp[] = [
     // OpenCode free tier: "AI_APICallError: Free usage limit reached. Subscribe to ... to keep going".
     /\busage\s+limit\s+reached\b/i,
     /\bfree\s+usage\s+limit\b/i,
+    // Codex CLI on a ChatGPT plan: "You've hit your usage limit. Upgrade to Plus to continue ..., or try again at Nov 19th, 2026 12:56 AM."
+    /\bhit\s+your\s+usage\s+limit\b/i,
+    /\busage\s+limit\b[^\n]{0,160}\btry\s+again\s+at\b/i,
 ];
 
 const RATE_LIMIT_PATTERNS: readonly RegExp[] = [
@@ -76,7 +80,75 @@ const MODEL_UNAVAILABLE_PATTERNS: readonly RegExp[] = [
     /\bno\s+such\s+model\b/i,
     /\bunknown\s+model\b/i,
     /\bmodel\s+not\s+supported\b/i,
+    // Codex CLI on a ChatGPT account: "The 'gpt-5.6-sol' model is not supported when using Codex with a ChatGPT account."
+    /'[^']+'\s+model\s+is\s+not\s+supported\b/i,
+    /\bmodel\s+is\s+not\s+supported\s+when\s+using\s+codex\b/i,
 ];
+
+/**
+ * The provider no longer serves the model at all (retired, end of life, or an OpenAI-compatible
+ * endpoint answering 404/410 for it). Unlike a key or credits problem this repeats on every retry
+ * of the same model, so it reads as `model_unavailable` (which also lets the turn fall back to the
+ * next curated model) with copy that tells the user to choose another model.
+ */
+const MODEL_RETIRED_PATTERNS: readonly RegExp[] = [
+    // NVIDIA NIM: `API Error: 410 {"status":410,"title":"Gone","detail":"… has reached its end of life …"}`.
+    /\breached\s+(?:its|the)\s+end[\s-]of[\s-]life\b/i,
+    /\bAPI\s+Error:\s*410\b/i,
+    /\bmodel\b[^\n]{0,160}\b(?:has\s+been|was|is)\s+(?:retired|decommissioned|discontinued)\b/i,
+    // Also our own persisted copy ({@link localizeRetiredModelMessage}), so it reclassifies the same.
+    /\bmodel\b[^\n]{0,160}\bis\s+no\s+longer\s+(?:available|supported|served)\b/i,
+    // QAIQ on an OpenAI-compatible endpoint that does not serve the model:
+    // "Provider endpoint at integrate.api.nvidia.com returned 404. Verify OPENAI_BASE_URL is correct…"
+    /\bprovider\s+endpoint\s+at\s+\S+\s+returned\s+(?:404|410)\b/i,
+];
+
+/** Words that a model-id capture must never be ("This model has reached its end of life"). */
+const RETIRED_MODEL_NON_IDS = new Set(['model', 'this', 'that', 'it', 'the', 'selected', 'requested']);
+
+const RETIRED_MODEL_ID_PATTERNS: readonly RegExp[] = [
+    // model 'vendor/id', model "id", model `id` (JSON-escaped quotes included).
+    /\bmodel\s*[:=]?\s*\\?["'`]([^"'`\\\s]{2,})\\?["'`]/i,
+    // 'vendor/id' has reached its end of life / is no longer available / has been retired.
+    /\\?["'`]([^"'`\\\s]{2,})\\?["'`]\s+(?:model\s+)?(?:has\s+reached|is\s+no\s+longer|has\s+been\s+(?:retired|decommissioned|discontinued))\b/i,
+    // Unquoted: "Model nvidia/llama-3.3-nemotron-super-49b-v1 has reached its end of life".
+    /\bmodel\s+([\w.-]+(?:\/[\w.:-]+)+)/i,
+    /\b([\w.-]+(?:\/[\w.:-]+)*)\s+(?:model\s+)?has\s+reached\s+(?:its|the)\s+end[\s-]of[\s-]life\b/i,
+];
+
+/** True when `text` reports that the provider no longer serves the model (retired / 404 / 410). */
+export function isRetiredModelFailureText(text: string | undefined): boolean {
+    return !!text && matchesAny(text, MODEL_RETIRED_PATTERNS);
+}
+
+/** Model id named by a retired-model failure, when the provider's text names one. */
+export function extractRetiredModelId(text: string | undefined): string | undefined {
+    if (!text) {
+        return undefined;
+    }
+    for (const pattern of RETIRED_MODEL_ID_PATTERNS) {
+        const candidate = pattern.exec(text)?.[1]?.trim().replace(/[.,;:]+$/, '');
+        if (candidate && !RETIRED_MODEL_NON_IDS.has(candidate.toLowerCase())) {
+            return candidate;
+        }
+    }
+    return extractSelectedModelAccessFailure(text);
+}
+
+/** The model is gone at its provider: retrying the same model cannot help, choosing another can. */
+export function localizeRetiredModelMessage(model?: string): string {
+    const name = model?.trim();
+    return name
+        ? nls.localize(
+            'qaap/agentFailure/modelRetired',
+            'The model {0} is no longer available from its provider. Choose another model.',
+            name,
+        )
+        : nls.localize(
+            'qaap/agentFailure/modelRetiredUnnamed',
+            'This model is no longer available from its provider. Choose another model.',
+        );
+}
 
 const TOOL_UNSUPPORTED_PATTERNS: readonly RegExp[] = [
     // OpenRouter 404 when `tools` is sent to a model without a tool-capable endpoint.
@@ -225,8 +297,26 @@ const PROVIDER_FREE_LIMIT_PATTERNS: readonly RegExp[] = [
     /\bfree-model\s+limit\s+reached\b/i,
 ];
 
+/**
+ * The provider answered the request itself with an error ("Provider returned error", OpenRouter's
+ * wrapper for an upstream host's 4xx/5xx). Neither the user's key nor the model's name is at fault
+ * here, so the card says the provider rejected the request and offers another model.
+ */
+const PROVIDER_REJECTED_TEXT = /\bprovider\s+returned\s+error\b/i;
+const PROVIDER_REJECTED_JSON_CODE = /\\?"code\\?"\s*:\s*[45]\d\d\b/;
+const PROVIDER_NAME_FIELD = /\\?"provider_name\\?"\s*:\s*\\?"([^"\\]+)\\?"/;
+/** Statuses owned by other classes: the user's key or sign-in (401/403) and the rate limit (429). */
+const PROVIDER_REJECTED_EXCLUDED_PATTERNS: readonly RegExp[] = [
+    // As a status only (`"code":401`, `status 403`, a leading `429:`), never any number in the body.
+    /\\?"(?:code|status)\\?"\s*:\s*(?:401|403|429)\b/i,
+    /\b(?:status|http)\s*(?:code\s*)?:?\s*(?:401|403|429)\b/i,
+    /^\s*(?:401|403|429)\s*[:\s]/,
+    /\bno\s+api\s+key\s+found\b/i,
+];
+
 const PROVIDER_LABELS: ReadonlyArray<readonly [RegExp, string]> = [
-    [/\bopen\s?router\b/i, 'OpenRouter'],
+    // Not `\b` at the end: OpenRouter's daily free-tier 429 only names it as `"limit_source":"openrouter_free_tier_daily"`.
+    [/\bopen\s?router(?![a-z0-9])/i, 'OpenRouter'],
     [/\bhugging\s?face\b/i, 'Hugging Face'],
     [/\bnvidia\b(?!\/)/i, 'NVIDIA'],
     [/\banthropic\b/i, 'Anthropic'],
@@ -242,6 +332,21 @@ export function detectAgentFailureProviderLabel(log: string | undefined): string
         return preflight[1];
     }
     return PROVIDER_LABELS.find(([pattern]) => pattern.test(sample))?.[1];
+}
+
+/** Provider named by an OpenRouter-style body (`"provider_name":"AtlasCloud"`), as the provider reported it. */
+export function extractAgentFailureProviderName(text: string | undefined): string | undefined {
+    return PROVIDER_NAME_FIELD.exec(text ?? '')?.[1]?.trim() || undefined;
+}
+
+/** A provider error for the request itself: not the user's key, a sign-in, or a rate limit. */
+function isProviderRejectedText(sample: string): boolean {
+    const providerError = PROVIDER_REJECTED_TEXT.test(sample)
+        || (PROVIDER_NAME_FIELD.test(sample) && PROVIDER_REJECTED_JSON_CODE.test(sample));
+    return providerError
+        && !matchesAny(sample, PROVIDER_REJECTED_EXCLUDED_PATTERNS)
+        && !matchesAny(sample, AUTH_PATTERNS)
+        && !matchesAny(sample, AUTH_ENVELOPE_ONLY_PATTERNS);
 }
 
 function classifyProviderKeyEvidence(sample: string, envelope: string): QaapAgentFailureKind | undefined {
@@ -610,6 +715,11 @@ function classifyAgentFailureEvidence(evidence: AgentFailureEvidence): QaapAgent
     if (matchesAny(sample, CLI_MISSING_PATTERNS)) {
         return 'cli_missing';
     }
+    // A retired model (410 / end of life / endpoint 404) is definitive: no key, credit or
+    // rate-limit reading applies, and it must reach the model fallback, not an endless Retry.
+    if (matchesAny(sample, MODEL_RETIRED_PATTERNS)) {
+        return 'model_unavailable';
+    }
     // Before quota/rate limit/model: an OpenRouter "free-models-per-day" 429 or a rejected key
     // behind QAIQ's "issue with the selected model" is the user's key, not the model or Qaap.
     const providerKind = classifyProviderKeyEvidence(sample, agentFailureEnvelopeText(evidence));
@@ -628,6 +738,11 @@ function classifyAgentFailureEvidence(evidence: AgentFailureEvidence): QaapAgent
     }
     if (matchesAny(sample, MODEL_UNAVAILABLE_PATTERNS)) {
         return 'model_unavailable';
+    }
+    // After quota, rate limit and model_unavailable (an explicit "model not found" keeps the model
+    // fallback), and never for a key or sign-in problem (see isProviderRejectedText).
+    if (isProviderRejectedText(sample)) {
+        return 'provider_rejected';
     }
     if (matchesAny(sample, AUTH_PATTERNS) || matchesAny(agentFailureEnvelopeText(evidence), AUTH_ENVELOPE_ONLY_PATTERNS)) {
         return 'auth';
@@ -668,6 +783,8 @@ export function localizeAgentFailureMessage(kind: QaapAgentFailureKind, provider
                 '{0} free-model limit reached. Wait for the daily reset, add credits with {0}, or pick another model.',
                 provider,
             );
+        case 'provider_rejected':
+            return localizeProviderRejectedMessage(providerLabel);
         case 'quota':
             return nls.localize(
                 'qaap/agentFailure/quotaReached',
@@ -706,6 +823,24 @@ export function localizeAgentFailureMessage(kind: QaapAgentFailureKind, provider
             return localizeMissingCodingAgentMessage();
     }
 }
+
+/** The provider rejected this request; {@link providerLabel} names it when the error body did. */
+export function localizeProviderRejectedMessage(providerLabel?: string): string {
+    const provider = providerLabel?.trim();
+    return provider
+        ? nls.localize(
+            'qaap/agentFailure/providerRejectedNamed',
+            '{0} rejected this request. The model may be unavailable or not support this agent\'s tools. Pick another model and retry.',
+            provider,
+        )
+        : nls.localize(
+            'qaap/agentFailure/providerRejected',
+            'The model\'s provider rejected this request. The model may be unavailable or not support this agent\'s tools. Pick another model and retry.',
+        );
+}
+
+/** Persisted (English, backend-locale) forms of {@link localizeProviderRejectedMessage}. */
+const STORED_PROVIDER_REJECTED = /rejected this request\. The model may be unavailable or not support this agent's tools\. Pick another model and retry\.$/;
 
 /** Shown when Work Hub would otherwise run a natural-language prompt as a raw Shell command. */
 export function localizeMissingCodingAgentMessage(): string {
@@ -922,10 +1057,17 @@ export function formatStoredAgentFailureMessage(error: string | undefined): stri
     }
     const kind = detectAgentFailureKind(trimmed);
     if (kind === 'model_unavailable') {
+        // A raw `API Error: 410 {…end of life…}` persisted verbatim reads as product copy.
+        if (isRetiredModelFailureText(trimmed)) {
+            return localizeRetiredModelMessage(extractRetiredModelId(trimmed));
+        }
         const model = extractSelectedModelAccessFailure(trimmed);
         if (model) {
             return localizeProviderModelAccessMessage(model);
         }
+    }
+    if (kind === 'provider_rejected') {
+        return localizeProviderRejectedMessage(extractAgentFailureProviderName(trimmed));
     }
     if (kind) {
         return localizeAgentFailureMessage(kind, detectAgentFailureProviderLabel(trimmed));
@@ -1068,12 +1210,19 @@ export function resolveAgentTurnFailureMessage(
         return localizeAgentFailureMessage(kind);
     }
     if (kind === 'model_unavailable') {
+        const evidenceText = agentFailureEvidenceText(evidence);
+        if (isRetiredModelFailureText(evidenceText)) {
+            return localizeRetiredModelMessage(extractRetiredModelId(evidenceText));
+        }
         // "Issue with the selected model (X)" is the provider refusing X, most often over the key:
         // say so and name the model instead of the generic "model unavailable".
         const model = extractSelectedModelAccessFailure(agentFailureEvidenceText(evidence));
         if (model) {
             return localizeProviderModelAccessMessage(model);
         }
+    }
+    if (kind === 'provider_rejected') {
+        return localizeProviderRejectedMessage(extractAgentFailureProviderName(agentFailureEvidenceText(evidence)));
     }
     if (kind) {
         return localizeAgentFailureMessage(kind);
@@ -1163,7 +1312,9 @@ export type QaapAgentFailureReasonKind =
     /** The provider rejected access to the model (key, credits or provider privacy settings). */
     | 'model_access'
     | 'provider_key'
-    | 'provider_policy';
+    | 'provider_policy'
+    /** The provider rejected this request (its own error, not the key or the model's name). */
+    | 'provider_rejected';
 
 export interface QaapAgentFailureReason {
     readonly kind: QaapAgentFailureReasonKind;
@@ -1202,6 +1353,9 @@ function classifyStoredAgentFailure(error: string): QaapAgentFailureReasonKind {
     if (STORED_PROVIDER_KEY_MISSING.test(error)) {
         return 'api_key';
     }
+    if (STORED_PROVIDER_REJECTED.test(error)) {
+        return 'provider_rejected';
+    }
     // The raw CLI 404 only when nothing more specific (a provider key/credits/policy check) explains it.
     if (STORED_MODEL_ACCESS_DENIED.test(error)
         || (extractSelectedModelAccessFailure(error) && detectAgentFailureKind(error) === 'model_unavailable')) {
@@ -1219,6 +1373,8 @@ function classifyStoredAgentFailure(error: string): QaapAgentFailureReasonKind {
             return 'provider_key';
         case 'provider_data_policy':
             return 'provider_policy';
+        case 'provider_rejected':
+            return 'provider_rejected';
         case 'model_unavailable':
         case 'tool_unsupported':
             return 'model';
@@ -1261,6 +1417,8 @@ function localizeAgentFailureReasonLabel(kind: QaapAgentFailureReasonKind, optio
             return nls.localize('qaap/agentFailure/reasonProviderKey', 'API key rejected');
         case 'provider_policy':
             return nls.localize('qaap/agentFailure/reasonProviderPolicy', 'Blocked by provider settings');
+        case 'provider_rejected':
+            return nls.localize('qaap/agentFailure/reasonProviderRejected', 'Model provider rejected the request');
         case 'stopped':
         default:
             return nls.localize('qaap/agentFailure/reasonStopped', 'The agent stopped unexpectedly');

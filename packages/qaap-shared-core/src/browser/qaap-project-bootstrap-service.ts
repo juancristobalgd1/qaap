@@ -367,12 +367,20 @@ export class QaapProjectBootstrapService {
     public readonly devTerminalByConversationId = new Map<string, {
         readonly terminal: TerminalWidget;
         readonly listener: Disposable;
+        /** Project root the terminal was started for; a workspace reset only disposes its own root. */
+        readonly rootKey: string | undefined;
     }>();
     /**
      * Conversation that owns {@link devTerminal}, when a dev run is in flight or attached.
      * @internal Used by the extracted qaap-project-bootstrap-service-* modules.
      */
     public devTerminalConversationId: string | undefined;
+    /**
+     * Identity (cwd + command) of the dev start currently booting, set while the phase is `starting`.
+     * A second request for the same start reuses it instead of releasing the live preview.
+     * @internal Used by the extracted qaap-project-bootstrap-service-* modules.
+     */
+    public devRunPlanKey: string | undefined;
     /**
      * Project selected in Work Hub; hosted `/workspace` is never a valid substitute.
      * @internal Used by the extracted qaap-project-bootstrap-service-* modules.
@@ -408,6 +416,8 @@ export class QaapProjectBootstrapService {
     public portRecoveryFrom: number | undefined;
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
     public previewAutoRetryAttempts = 0;
+    /** @internal Roots whose dev run already triggered one automatic install this session (no install loops). */
+    public readonly devFailureAutoInstalledRoots = new Set<string>();
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
     public previewAutoRetryTimer: number | undefined;
     /**
@@ -837,8 +847,8 @@ export class QaapProjectBootstrapService {
     }
 
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
-    public releaseActivePreview(): void {
-        releaseActivePreviewExtracted(this);
+    public releaseActivePreview(reason: string): void {
+        releaseActivePreviewExtracted(this, reason);
     }
 
     releasePreviewForConversation(conversationId: string | undefined): void {
@@ -846,8 +856,9 @@ export class QaapProjectBootstrapService {
     }
 
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
-    public registerDevTerminalForConversation(conversationId: string | undefined, terminal: TerminalWidget, listener: Disposable,): void {
-        registerDevTerminalForConversationExtracted(this, conversationId, terminal, listener);
+    public registerDevTerminalForConversation(conversationId: string | undefined, terminal: TerminalWidget, listener: Disposable,
+        rootKey?: string,): void {
+        registerDevTerminalForConversationExtracted(this, conversationId, terminal, listener, rootKey);
     }
 
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
@@ -856,8 +867,8 @@ export class QaapProjectBootstrapService {
     }
 
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
-    public resetBootstrapSessionForWorkspace(): void {
-        resetBootstrapSessionForWorkspaceExtracted(this);
+    public resetBootstrapSessionForWorkspace(reason: string, rootKey?: string): void {
+        resetBootstrapSessionForWorkspaceExtracted(this, reason, rootKey);
     }
 
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */

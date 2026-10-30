@@ -3,6 +3,7 @@ import {
     QAIQ_AGENT_ID, SHELL_AGENT_ID, TOKEN_PATH, TOKENS_PATH, type AgentCandidate, type PersistedAgentTaskIndex,
 } from './qaap-agent-task-runner-constants';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
+import { QAAP_BUILTIN_AGENT_IDS } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 // Extracted from qaap-agent-task-runner.ts
 
 import { execFile } from 'child_process';
@@ -37,6 +38,7 @@ import { listNativeAgentModels } from './qaap-agent-native-models';
 import { isHostedCodexEntitled, resolveAgentAccess } from './qaap-agent-access';
 import { listQaiqModelsFromPreferences } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
 import { resolveTrustedExecutable } from './qaap-trusted-executable';
+import { childProcessEnv } from './qaap-child-process-env';
 
 export function initExtracted(ctx: QaapAgentTaskRunnerContext): void {
         rememberQaapHostedRuntime(isQaapProductionRuntime(process.env));
@@ -187,8 +189,13 @@ export function detectAgentsExtracted(ctx: QaapAgentTaskRunnerContext): void {
                 ctx.detectedAgents.set(candidate.id, candidate);
             }
         }
-        ctx.detectAntigravityAgent();
-        ctx.detectCursorAgent();
+        // Their dedicated detectors bypass AGENT_CANDIDATES; retired harnesses stay unregistered.
+        if (QAAP_BUILTIN_AGENT_IDS.has('antigravity')) {
+            ctx.detectAntigravityAgent();
+        }
+        if (QAAP_BUILTIN_AGENT_IDS.has('cursor')) {
+            ctx.detectCursorAgent();
+        }
         ctx.detectCodexAgent();
         ctx.detectQaiqAgent();
         for (const candidate of ctx.readCustomAgents()) {
@@ -219,7 +226,7 @@ export function logDetectedAgentsExtracted(
         // `qaiq --version` boots a Node CLI (2-3.5 s on a tenant), and spawnSync held the whole
         // backend startup for it just to print this line.
         try {
-            execFile(qaiq, ['--version'], { encoding: 'utf8', timeout: QAIQ_VERSION_PROBE_TIMEOUT_MS }, (_error, stdout, stderr) => {
+            execFile(qaiq, ['--version'], { encoding: 'utf8', timeout: QAIQ_VERSION_PROBE_TIMEOUT_MS, env: childProcessEnv() }, (_error, stdout, stderr) => {
                 const line = (stdout || stderr || '').trim().split('\n')[0];
                 if (line) {
                     console.log(`[qaap-agent-tasks] qaiq: ${line}`);
@@ -564,6 +571,27 @@ export function reorderQueuedTaskExtracted(
         return ctx.tasks.get(id);
 }
 
+/**
+ * True when another shared-working-tree task of the same owner runs (or is still stopping) in the same cwd.
+ * Tasks with their own worktree never count, and neither do other owners or repositories.
+ */
+export function sharedWorkingTreeBusyExtracted(ctx: QaapAgentTaskRunnerContext, ownerLogin: string | undefined, cwd: string, exceptId?: string): boolean {
+        const repoKey = repoConcurrencyKey(cwd);
+        const ownerKey = queueOwnerKey(ownerLogin);
+        for (const task of ctx.tasks.values()) {
+            if (task.id === exceptId || task.sharedWorkingTree !== true) {
+                continue;
+            }
+            if (queueOwnerKey(task.ownerLogin) !== ownerKey || repoConcurrencyKey(task.cwd) !== repoKey) {
+                continue;
+            }
+            if (task.state === 'running' || ctx.stoppingTaskIds?.has(task.id)) {
+                return true;
+            }
+        }
+        return false;
+}
+
 export function drainQueuedTasksExtracted(ctx: QaapAgentTaskRunnerContext): void {
         if (ctx.recoveryState === 'loading' || ctx.recoveryState === 'failed' || ctx.storageWriteFailed
             || ctx.isDrainingForDeploy?.() === true) {
@@ -572,10 +600,12 @@ export function drainQueuedTasksExtracted(ctx: QaapAgentTaskRunnerContext): void
         while (ctx.countRunningTasks() < ctx.maxConcurrentAgents()) {
             // Skip queued tasks whose owner or repository is already at its cap so one busy user or
             // repo can't block everyone behind them in the FIFO queue — promote the next eligible task.
+            // A shared-working-tree task also waits while its owner has another one running in that cwd.
             const next = [...ctx.tasks.values()]
                 .filter(task => task.state === 'queued'
                     && !ctx.ownerAtConcurrencyCap(task.ownerLogin)
-                    && !ctx.repoAtConcurrencyCap(task.cwd))
+                    && !ctx.repoAtConcurrencyCap(task.cwd)
+                    && !(task.sharedWorkingTree === true && sharedWorkingTreeBusyExtracted(ctx, task.ownerLogin, task.cwd, task.id)))
                 .sort(compareQueuedTasks)[0];
             if (!next) {
                 return;
@@ -685,7 +715,7 @@ export function listModelsForAgentExtracted(
         if (!normalized || agentUsesSettingsModelCatalog(normalized)) {
             return [];
         }
-        const models = listNativeAgentModels(normalized);
+        const models = listNativeAgentModels(normalized, ownerLogin);
         const owner = ownerLogin?.trim();
         if (!owner) {
             return models;

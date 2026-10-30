@@ -116,6 +116,7 @@ import type { QaapRewindPreviewDTO, QaapRewindRestoreOptions } from '@theia/qaap
 import type { QaapAgentConversationStoreContext } from './qaap-agent-conversation-store-context';
 import { recordTaskPullRequestExtracted, type QaapTaskPullRequestRecordOptions } from './qaap-agent-conversation-store-task-pr';
 import type { QaapTaskPullRequest } from '@theia/qaap-shared-core/lib/common/qaap-task-pull-request';
+import { qaapGitReadEnv } from './qaap-child-process-env';
 
 /**
  * Persistent multi-turn conversations with the coding agent. Each user message spawns a one-shot
@@ -1012,6 +1013,7 @@ export class QaapAgentConversationStore implements QaapAgentConversationStoreCon
             encoding: 'utf8',
             timeout: 4000,
             maxBuffer: 64 * 1024 * 1024,
+            env: qaapGitReadEnv(),
             stdio: ['ignore', 'pipe', 'pipe'],
         });
     }

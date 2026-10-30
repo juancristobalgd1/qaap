@@ -105,6 +105,8 @@ export type MobileProjectsTranscriptStickyComposerUiContextMember =
     | 'undoAllComposerChangedFiles'
     | 'verifiedComposerPreview'
     | 'composerAgentWorkingSince'
+    | 'composerAgentTurnEndedAt'
+    | 'composerPreviewFreshAfter'
     | 'workHub';
 
 /**

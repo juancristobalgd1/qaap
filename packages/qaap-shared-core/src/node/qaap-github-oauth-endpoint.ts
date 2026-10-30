@@ -94,6 +94,7 @@ import {
     QaapGithubWorkspaceJobRegistry,
     type QaapGithubWorkspaceJobContext,
 } from './qaap-github-workspace-jobs';
+import { qaapGitReadEnv } from './qaap-child-process-env';
 
 const GITHUB_AUTHORIZE_URL = 'https://github.com/login/oauth/authorize';
 const GITHUB_OAUTH_SCOPE = 'read:user repo';
@@ -1995,8 +1996,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
 
     /**
      * Non-hosted git (local dev): same deadline semantics as the tenant worker path. `extraEnv`
-     * (credential env config) is layered over the inherited process env; when empty the child
-     * inherits `process.env` exactly as before.
+     * (credential env config) is layered over the process env minus backend-only secrets.
      */
     protected runLocalGit(
         cwd: string,
@@ -2014,9 +2014,8 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             return Promise.reject(this.gitTimeoutError());
         }
         return new Promise((resolve, reject) => {
-            const env = Object.keys(extraEnv).length > 0
-                ? { ...process.env, ...extraEnv }
-                : undefined;
+            // Always an explicit env without backend-only secrets (git may run repo-defined helpers).
+            const env = qaapGitReadEnv(process.env, Object.keys(extraEnv).length > 0 ? extraEnv : undefined);
             const child = this.spawnLocalGit(cwd, gitArgs, captureStdout, env);
             let stdout = '';
             let stderr = '';

@@ -1,0 +1,512 @@
+/* Desktop Work Hub right panel (`qaap-work-hub-aux-panel.ts`): a third grid
+ * column beside the sessions sidebar and the chat that hosts the execution
+ * surfaces (Browser, Files, Terminal, Review) in tabs. Mobile and the classic
+ * IDE never show it; they keep the views menu and the full-screen drawer. */
+
+.qaap-work-hub-aux-panel {
+  display: none;
+}
+
+.qaap-work-hub-aux-panel[hidden] {
+  display: none !important;
+}
+
+/* The chat-header view trigger draws the double chevron (views menu) by
+ * default and the right-panel glyph only in the desktop layout below. */
+.theia-mobile-transcript-tab-icon-select-double-chevron .qaap-glyph-right-panel {
+  display: none;
+}
+
+/* Keep in sync with QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY. */
+@media (min-width: 768px) and (pointer: fine) {
+  body:not(.theia-mobile-mod-desktop-ide) .qaap-mod-aux-panel-toggle .qaap-glyph-view-menu {
+    display: none;
+  }
+
+  body:not(.theia-mobile-mod-desktop-ide) .qaap-mod-aux-panel-toggle .qaap-glyph-right-panel {
+    display: inline;
+  }
+
+  body.qaap-mod-work-hub-aux-panel-open:not(.theia-mobile-mod-desktop-ide) {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  /* The Work Hub surface is viewport-anchored (see the desktop grid block in
+     qaap-work-hub-sessions-sidebar.css); stop it at the panel's left edge. The
+     doubled id outranks every `right: 0 !important` inset the Work Hub chrome
+     sets on that surface (sidebar open/closed, composer header, no bottom bar). */
+  body.qaap-mod-work-hub-aux-panel-open:not(.theia-mobile-mod-desktop-ide) #theia-app-shell#theia-app-shell .theia-mobile-projects {
+    right: var(--qaap-work-hub-aux-panel-width, 480px) !important;
+  }
+
+  body:not(.theia-mobile-mod-desktop-ide) > .qaap-work-hub-aux-panel:not([hidden]) {
+    box-sizing: border-box;
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    grid-column: 3;
+    grid-row: 1 / -1;
+    width: var(--qaap-work-hub-aux-panel-width, 480px);
+    min-width: 0;
+    min-height: 0;
+    height: 100dvh;
+    overflow: hidden;
+    border-left: 1px solid color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+    background: var(--theia-sideBar-background, var(--theia-editor-background));
+    color: var(--theia-foreground);
+    font-family: var(--theia-ui-font-family);
+  }
+
+  /* Maximized: the panel takes the chat column too, the sessions sidebar stays. */
+  body.qaap-mod-work-hub-aux-panel-maximized:not(.theia-mobile-mod-desktop-ide) > .qaap-work-hub-aux-panel:not([hidden]) {
+    grid-column: 2 / -1;
+    width: auto;
+    border-left: 0;
+  }
+
+  body.qaap-mod-work-hub-aux-panel-resizing,
+  body.qaap-mod-work-hub-aux-panel-resizing * {
+    cursor: col-resize !important;
+    user-select: none !important;
+  }
+
+  /* Iframes (Browser) swallow pointer moves mid-drag. */
+  body.qaap-mod-work-hub-aux-panel-resizing iframe {
+    pointer-events: none !important;
+  }
+}
+
+.qaap-work-hub-aux-panel-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  z-index: 4;
+  width: 7px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.qaap-work-hub-aux-panel-resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 1px;
+  background: transparent;
+  transition: background 120ms ease;
+}
+
+.qaap-work-hub-aux-panel-resize-handle:hover::after,
+.qaap-work-hub-aux-panel-resize-handle:focus-visible::after,
+body.qaap-mod-work-hub-aux-panel-resizing .qaap-work-hub-aux-panel-resize-handle::after {
+  background: var(--theia-focusBorder);
+}
+
+.qaap-work-hub-aux-panel-resize-handle:focus-visible {
+  outline: none;
+}
+
+body.qaap-mod-work-hub-aux-panel-maximized .qaap-work-hub-aux-panel-resize-handle {
+  display: none;
+}
+
+/* Tab bar ---------------------------------------------------------------- */
+
+.qaap-work-hub-aux-panel-tabbar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  min-height: 48px;
+  padding: 6px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+}
+
+.qaap-work-hub-aux-panel-tabs {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.qaap-work-hub-aux-panel-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.qaap-work-hub-aux-panel-spacer {
+  flex: 1 1 auto;
+}
+
+.qaap-work-hub-aux-panel-action,
+.qaap-work-hub-aux-panel-tab-close {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--theia-descriptionForeground);
+  cursor: pointer;
+}
+
+.qaap-work-hub-aux-panel-double-chevron {
+  display: block;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.qaap-work-hub-aux-panel-tab-close {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  font-size: 12px;
+}
+
+.qaap-work-hub-aux-panel-action:hover,
+.qaap-work-hub-aux-panel-action:focus-visible,
+.qaap-work-hub-aux-panel-action[aria-expanded='true'],
+.qaap-work-hub-aux-panel-tab-close:hover,
+.qaap-work-hub-aux-panel-tab-close:focus-visible {
+  background: var(--theia-toolbar-hoverBackground, color-mix(in srgb, var(--theia-foreground) 10%, transparent));
+  color: var(--theia-foreground);
+  outline: none;
+}
+
+.qaap-work-hub-aux-panel-tab {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  max-width: 200px;
+  height: 32px;
+  padding: 0 6px 0 2px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  color: var(--theia-descriptionForeground);
+}
+
+.qaap-work-hub-aux-panel-tab:hover {
+  background: color-mix(in srgb, var(--theia-foreground) 6%, transparent);
+}
+
+.qaap-work-hub-aux-panel-tab.theia-mod-active {
+  border-color: color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+  background: color-mix(in srgb, var(--theia-foreground) 9%, transparent);
+  color: var(--theia-foreground);
+}
+
+.qaap-work-hub-aux-panel-tab-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 100%;
+  padding: 0 4px 0 6px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.qaap-work-hub-aux-panel-tab-select:focus-visible {
+  outline: 1px solid var(--theia-focusBorder);
+  outline-offset: -1px;
+  border-radius: 6px;
+}
+
+.qaap-work-hub-aux-panel-tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Body ------------------------------------------------------------------- */
+
+.qaap-work-hub-aux-panel-body {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.qaap-work-hub-aux-panel-surface {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.qaap-work-hub-aux-panel-launcher,
+.qaap-work-hub-aux-panel-empty {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.qaap-work-hub-aux-panel-surface[hidden],
+.qaap-work-hub-aux-panel-launcher[hidden],
+.qaap-work-hub-aux-panel-empty[hidden] {
+  display: none;
+}
+
+/* Launcher scale matches the Work Hub sidebar rows (13px names, 12px meta). */
+.qaap-work-hub-aux-panel-launcher {
+  padding: 18px 12px;
+}
+
+.qaap-work-hub-aux-panel-launcher-title {
+  margin: 0 8px 12px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.qaap-work-hub-aux-panel-launcher-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.qaap-work-hub-aux-panel-launcher-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 9px;
+}
+
+.qaap-work-hub-aux-panel-launcher-item:hover {
+  background: color-mix(in srgb, var(--theia-foreground) 5%, transparent);
+}
+
+.qaap-work-hub-aux-panel-launcher-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+  color: var(--theia-foreground);
+}
+
+.qaap-work-hub-aux-panel-launcher-icon > .codicon[class*='codicon-'] {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.qaap-work-hub-aux-panel-launcher-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.qaap-work-hub-aux-panel-launcher-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.qaap-work-hub-aux-panel-launcher-description {
+  overflow: hidden;
+  color: var(--theia-descriptionForeground);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qaap-work-hub-aux-panel-launcher-open {
+  flex: 0 0 auto;
+  height: 24px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--theia-button-secondaryBackground, color-mix(in srgb, var(--theia-foreground) 10%, transparent));
+  color: var(--theia-button-secondaryForeground, var(--theia-foreground));
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.qaap-work-hub-aux-panel-launcher-open:hover:not(:disabled),
+.qaap-work-hub-aux-panel-launcher-open:focus-visible {
+  background: var(--theia-button-secondaryHoverBackground, color-mix(in srgb, var(--theia-foreground) 16%, transparent));
+  outline: none;
+}
+
+.qaap-work-hub-aux-panel-launcher-open:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.qaap-work-hub-aux-panel-hint {
+  margin: 16px 10px 0;
+  color: var(--theia-descriptionForeground);
+  font-size: 12.5px;
+}
+
+.qaap-work-hub-aux-panel-empty:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  color: var(--theia-descriptionForeground);
+}
+
+.qaap-work-hub-aux-panel-empty-icon {
+  font-size: 28px !important;
+}
+
+.qaap-work-hub-aux-panel-empty-title {
+  margin: 0;
+  color: var(--theia-foreground);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* Tabs menu -------------------------------------------------------------- */
+
+.qaap-work-hub-aux-panel-menu {
+  position: absolute;
+  top: 44px;
+  left: 8px;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  width: min(340px, calc(100% - 16px));
+  max-height: min(440px, calc(100% - 60px));
+  overflow: hidden;
+  border: 1px solid var(--theia-menu-border, color-mix(in srgb, var(--theia-foreground) 12%, transparent));
+  border-radius: 12px;
+  background: var(--theia-menu-background, var(--theia-editorWidget-background));
+  color: var(--theia-menu-foreground, var(--theia-foreground));
+  box-shadow: 0 12px 32px var(--theia-widget-shadow);
+}
+
+.qaap-work-hub-aux-panel-menu[hidden] {
+  display: none;
+}
+
+.qaap-work-hub-aux-panel-menu-search {
+  flex: 0 0 auto;
+  height: 40px;
+  margin: 0;
+  padding: 0 12px;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.qaap-work-hub-aux-panel-menu-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 4px;
+  overflow-y: auto;
+}
+
+.qaap-work-hub-aux-panel-menu-heading {
+  padding: 8px 8px 4px;
+  color: var(--theia-descriptionForeground);
+  font-size: 12px;
+}
+
+.qaap-work-hub-aux-panel-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.qaap-work-hub-aux-panel-menu-item:hover,
+.qaap-work-hub-aux-panel-menu-item:focus-visible,
+.qaap-work-hub-aux-panel-menu-item.theia-mod-active {
+  background: var(--theia-menu-selectionBackground, color-mix(in srgb, var(--theia-foreground) 9%, transparent));
+  color: var(--theia-menu-selectionForeground, inherit);
+  outline: none;
+}
+
+.qaap-work-hub-aux-panel-menu-item-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qaap-work-hub-aux-panel-menu-item-meta {
+  flex: 0 0 auto;
+  color: var(--theia-descriptionForeground);
+  font-size: 12px;
+}
+
+.qaap-work-hub-aux-panel-menu-empty {
+  padding: 12px 8px;
+  color: var(--theia-descriptionForeground);
+  font-size: 13px;
+}
+
+/* Docked execution surface ----------------------------------------------- */
+
+/* The surface "sidebar" built for the mobile drawer is docked as-is: its header
+ * keeps the promoted Preview/Terminal/Files controls; the panel owns closing. */
+.theia-mobile-execution-surface-sidebar.qaap-mod-docked {
+  position: relative;
+  inset: auto;
+  z-index: auto;
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: none;
+  height: auto;
+  min-height: 0;
+  box-shadow: none;
+  transform: none;
+  transition: none;
+  pointer-events: auto;
+}
+
+.theia-mobile-execution-surface-sidebar.qaap-mod-docked .theia-mobile-execution-surface-sidebar-header {
+  padding-top: 4px;
+}
+
+.theia-mobile-execution-surface-sidebar.qaap-mod-docked .theia-mobile-execution-surface-sidebar-close,
+.theia-mobile-execution-surface-sidebar.qaap-mod-docked .theia-mobile-execution-surface-sidebar-header-divider {
+  display: none;
+}

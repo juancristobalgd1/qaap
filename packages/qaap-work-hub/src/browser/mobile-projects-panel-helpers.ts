@@ -7,6 +7,7 @@
 // These functions accept instance fields as parameters (dependency injection).
 
 import { nls } from '@theia/core/lib/common/nls';
+import { QAAP_NEW_TASK_ICON_CLASS } from './qaap-new-task-icon';
 import type { AIVariableResolutionRequest } from '@theia/ai-core';
 import { URI } from '@theia/core/lib/common/uri';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
@@ -105,7 +106,6 @@ export interface RenderHeaderOverflowMenuItemsDeps {
     closeHeaderOverflowMenu(): void;
     openHeaderNewChat(): void;
     isHeaderNewChatVisible(): boolean;
-    openWorkHubSessionsSidebar(): void;
     copyActiveConversationToClipboard(): Promise<void>;
     isCopyConversationEnabled(): boolean;
     openAiConfigurationSheet?: () => void;
@@ -130,7 +130,7 @@ export function renderHeaderOverflowMenuItems(
         item.disabled = !enabled;
         item.setAttribute('aria-disabled', String(!enabled));
         const iconEl = document.createElement('span');
-        iconEl.className = `codicon ${icon}`;
+        iconEl.className = icon.startsWith('codicon-') ? `codicon ${icon}` : icon;
         iconEl.setAttribute('aria-hidden', 'true');
         const labelEl = document.createElement('span');
         labelEl.textContent = label;
@@ -147,15 +147,10 @@ export function renderHeaderOverflowMenuItems(
         menu.append(item);
     };
     appendItem(
-        nls.localize('qaap/workHubToolbar/newChat', 'New Chat'),
-        'codicon-add',
+        nls.localize('qaap/workHubToolbar/newTask', 'New task'),
+        QAAP_NEW_TASK_ICON_CLASS,
         () => deps.openHeaderNewChat(),
         deps.isHeaderNewChatVisible(),
-    );
-    appendItem(
-        nls.localize('qaap/workHubToolbar/showChats', 'Show Chats'),
-        'codicon-history',
-        () => deps.openWorkHubSessionsSidebar(),
     );
     appendItem(
         nls.localize('qaap/workHubToolbar/copyConversation', 'Copy full conversation'),

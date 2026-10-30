@@ -30,7 +30,7 @@ export function refreshTaskTitleMarquee(titleViewport: HTMLElement, options?: { 
     const reserve = options?.interacting && view
         ? parseFloat(view.getComputedStyle(titleViewport).getPropertyValue('--qaap-task-title-hover-reserve')) || 0
         : 0;
-    const overflow = Math.max(0, titleText.scrollWidth - titleViewport.clientWidth + reserve);
+    const overflow = Math.max(0, measureTaskTitleTextWidth(titleText) - titleViewport.clientWidth + reserve);
     if (overflow > 1) {
         titleViewport.classList.add(TASK_TITLE_OVERFLOW_CLASS);
         titleViewport.style.setProperty('--qaap-task-title-overflow', `${Math.ceil(overflow)}px`);
@@ -38,6 +38,28 @@ export function refreshTaskTitleMarquee(titleViewport: HTMLElement, options?: { 
         titleViewport.classList.remove(TASK_TITLE_OVERFLOW_CLASS);
         titleViewport.style.removeProperty('--qaap-task-title-overflow');
     }
+}
+
+/**
+ * Width of the title's glyphs. The text element is a full-width block, so `scrollWidth` reports
+ * the row width for a short title; adding the hover reserve to that made every short title
+ * scroll. Only a clipped title reports its real width there, so measure the glyphs otherwise.
+ */
+function measureTaskTitleTextWidth(titleText: HTMLElement): number {
+    const scrollWidth = titleText.scrollWidth;
+    if (scrollWidth > titleText.clientWidth + 1) {
+        return scrollWidth;
+    }
+    const range = titleText.ownerDocument.createRange?.();
+    if (range && typeof range.getBoundingClientRect === 'function') {
+        range.selectNodeContents(titleText);
+        const width = range.getBoundingClientRect().width;
+        range.detach();
+        if (width > 0) {
+            return width;
+        }
+    }
+    return scrollWidth;
 }
 
 /** Installs the hover/focus measurement used by the sidebar's title marquee. */

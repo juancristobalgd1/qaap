@@ -205,6 +205,7 @@ export async function reviewSuccessfulAgentTaskExtracted(ctx: QaapAgentTaskRunne
             buildChildEnv: t => ctx.buildChildEnv(t),
             hasEditedFilesForVerification: (t, e) => ctx.hasEditedFilesForVerification(t, e),
             runGenericCommand: (c, cwd, e, id, t, o) => ctx.runGenericCommand(c, cwd, e, id, t, o),
+            applyOneShotToolGateEnv: (e, t) => ctx.applyOneShotToolGateEnv(e, t),
             changedSensitiveFiles: t => ctx.changedSensitiveFiles(t),
             resolveReviewerCandidates: t => ctx.resolveReviewerCandidates(t),
             buildAgentCommand: (p, a, ap, m, cwd, cp, im, pol) => ctx.buildAgentCommand(p, a, ap, m, cwd, cp, im, pol),
@@ -375,7 +376,11 @@ export async function runAgentVerificationFixTurnExtracted(ctx: QaapAgentTaskRun
             ctx.appendAndFireOutput(task.id, `\n[qaap] Skipping self-verification fix turn: ${message}\n`);
             return undefined;
         }
-        return ctx.runGenericCommand(command, task.cwd, env, task.id, remaining, {
+        // The fix turn is the task's own harness, so it gets the task's gate token on a COPY of the env:
+        // the verification scripts that share `env` (npm run, git) must never see it.
+        const fixEnv: NodeJS.ProcessEnv = { ...env };
+        ctx.applyToolGateEnv(fixEnv, task);
+        return ctx.runGenericCommand(command, task.cwd, fixEnv, task.id, remaining, {
             header: `\n[qaap] Verification failed. Starting ${agentId} fix attempt ${attempt}/${QAAP_AGENT_VERIFY_MAX_ATTEMPTS}.\n`,
             streamOutput: true,
             ...(stdinPromptMode === 'plain' && stdinPrompt !== undefined ? { stdinPrompt } : {}),

@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import { ChildProcess, execFileSync } from 'child_process';
 import { EventEmitter } from 'events';
 import * as fs from 'fs';
+import * as net from 'net';
 import * as os from 'os';
 import * as path from 'path';
 import { QaapDevcontainerResolver } from './qaap-devcontainer-config';
@@ -132,6 +133,7 @@ describe('QaapTaskSandboxService', function (): void {
         git(repo, 'worktree', 'add', '-q', '-b', 'qaap/worktree/b', worktreeB);
         home = path.join(scratch, 'home');
         fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+        fs.mkdirSync(path.join(home, '.pi', 'agent'), { recursive: true });
     });
 
     after(() => {
@@ -191,6 +193,8 @@ describe('QaapTaskSandboxService', function (): void {
         // Neither the other worktree nor the main checkout is mounted.
         expect(binds.some(bind => bind.startsWith(worktreeB) || bind.startsWith(`${repo}:`))).to.equal(false);
         expect(binds).to.include(`${path.join(home, '.claude')}:/tmp/qaap-home/.claude:rw`);
+        // Pi keeps its `/login` providers in ~/.pi/agent/auth.json; without it every Pi task says "No API key".
+        expect(binds).to.include(`${path.join(home, '.pi')}:/tmp/qaap-home/.pi:rw`);
         expect(run).to.include.members(['--init', '--read-only']);
         expect(run.join(' ')).to.contain('--cap-drop ALL').and.to.contain('--security-opt no-new-privileges:true')
             .and.to.contain('--user 20001:20002').and.to.contain('--network bridge');
@@ -366,6 +370,162 @@ describe('QaapTaskSandboxService', function (): void {
         service.spawnInSandbox(sandbox, 'npm', ['run', 'dev'], { cwd: worktreeA, env: { PORT: '4873', QAAP_PREVIEW_PORT: '5180' }, stdio: ['ignore', 'pipe', 'pipe'] }, launch);
         expect(forwarded).to.deep.equal([5180]);
         await service.end(sandbox.root);
+    });
+
+    describe('forwarded port ownership (QaapDevPreviewForwardedPorts)', () => {
+        afterEach(() => setEnv({ QAAP_TENANT_BACKEND_MODE: undefined, QAAP_TENANT_LOGIN: undefined }));
+
+        it('names the login the sandbox was created for, scoped to its own worktree', async () => {
+            setEnv({ QAAP_TENANT_BACKEND_MODE: undefined, QAAP_TENANT_LOGIN: undefined });
+            const service = new FakeDockerSandboxService();
+            const sandbox = await service.acquire({ taskId: 't1', cwd: worktreeA, ownerLogin: 'Alice' });
+            const port = await service.forwardPort(sandbox, 5180);
+            try {
+                expect(service.ownerOf(port)).to.equal('alice');
+                expect(service.ownerOf(port, path.join(worktreeA, 'web'))).to.equal('alice');
+                expect(service.ownerOf(port, worktreeB)).to.equal(undefined);
+                expect(service.ownerOf(port + 1 === 65536 ? port - 1 : port + 1)).to.equal(undefined);
+            } finally {
+                await service.end(sandbox.root);
+            }
+            expect(service.ownerOf(port)).to.equal(undefined);
+        });
+
+        it('has no owner for a sandbox created without a login on a shared backend', async () => {
+            setEnv({ QAAP_TENANT_BACKEND_MODE: undefined, QAAP_TENANT_LOGIN: undefined });
+            const service = new FakeDockerSandboxService();
+            const sandbox = await service.acquire({ taskId: 't1', cwd: worktreeA });
+            const port = await service.forwardPort(sandbox, 5180);
+            try {
+                expect(service.ownerOf(port, worktreeA)).to.equal(undefined);
+            } finally {
+                await service.end(sandbox.root);
+            }
+        });
+
+        it('serves the pinned tenant in a tenant backend, and nobody when the sandbox names someone else', async () => {
+            const service = new FakeDockerSandboxService();
+            const unnamed = await service.acquire({ taskId: 't1', cwd: worktreeA });
+            const foreign = await service.acquire({ taskId: 't2', cwd: worktreeB, ownerLogin: 'mallory' });
+            const unnamedPort = await service.forwardPort(unnamed, 5180);
+            const foreignPort = await service.forwardPort(foreign, 5181);
+            try {
+                setEnv({ QAAP_TENANT_BACKEND_MODE: '1', QAAP_TENANT_LOGIN: 'Alice' });
+                expect(service.ownerOf(unnamedPort, worktreeA)).to.equal('alice');
+                expect(service.ownerOf(foreignPort, worktreeB)).to.equal(undefined);
+                setEnv({ QAAP_TENANT_LOGIN: undefined });
+                expect(service.ownerOf(unnamedPort, worktreeA)).to.equal(undefined);
+            } finally {
+                setEnv({ QAAP_TENANT_BACKEND_MODE: undefined, QAAP_TENANT_LOGIN: undefined });
+                await service.end(unnamed.root);
+                await service.end(foreign.root);
+            }
+        });
+    });
+
+    describe('preview forwarder release (QaapDevPreviewForwardedPorts.releasePreviewPort)', () => {
+        const freePort = async (): Promise<number> => {
+            const probe = net.createServer();
+            await new Promise<void>(resolve => probe.listen(0, '127.0.0.1', () => resolve()));
+            const port = (probe.address() as net.AddressInfo).port;
+            await new Promise<void>(resolve => probe.close(() => resolve()));
+            return port;
+        };
+        const canBind = async (port: number): Promise<boolean> => {
+            const probe = net.createServer();
+            const bound = await new Promise<boolean>(resolve => {
+                probe.once('error', () => resolve(false));
+                probe.listen(port, '127.0.0.1', () => resolve(true));
+            });
+            if (bound) {
+                await new Promise<void>(resolve => probe.close(() => resolve()));
+            }
+            return bound;
+        };
+        const waitForForward = async (service: QaapTaskSandboxService, port: number): Promise<void> => {
+            for (let attempt = 0; attempt < 100 && service.ownerOf(port) === undefined; attempt++) {
+                await new Promise(resolve => setTimeout(resolve, 10));
+            }
+        };
+        const expectedPorts = (service: QaapTaskSandboxService, root: string): Map<number, Set<number>> =>
+            (service as unknown as { entries: Map<string, { expectedPorts: Map<number, Set<number>> }> }).entries.get(root)!.expectedPorts;
+
+        beforeEach(() => setEnv({ QAAP_TENANT_BACKEND_MODE: undefined, QAAP_TENANT_LOGIN: undefined, QAAP_TASK_SANDBOX_PORT_WATCH_MS: '600000' }));
+
+        it('closes the forwarder opened for its owner\'s preview and forgets the expected port', async () => {
+            const service = new FakeDockerSandboxService();
+            const sandbox = await service.acquire({ taskId: 't1', cwd: worktreeA, ownerLogin: 'alice' });
+            const port = await freePort();
+            try {
+                service.expectPreviewPort(sandbox, port);
+                await waitForForward(service, port);
+                expect(await canBind(port)).to.equal(false);
+
+                service.releasePreviewPort(port, 'Alice');
+
+                expect(service.ownerOf(port)).to.equal(undefined);
+                expect(expectedPorts(service, sandbox.root).has(port)).to.equal(false);
+                await new Promise(resolve => setTimeout(resolve, 20));
+                expect(await canBind(port)).to.equal(true);
+                // The next run of the preview on this port is forwarded again.
+                service.expectPreviewPort(sandbox, port);
+                await waitForForward(service, port);
+                expect(service.ownerOf(port)).to.equal('alice');
+            } finally {
+                await service.end(sandbox.root);
+            }
+        });
+
+        it('never closes it for another owner, or when the sandbox owner is unknown', async () => {
+            const service = new FakeDockerSandboxService();
+            const owned = await service.acquire({ taskId: 't1', cwd: worktreeA, ownerLogin: 'alice' });
+            const unowned = await service.acquire({ taskId: 't2', cwd: worktreeB });
+            const ownedPort = await freePort();
+            const unownedPort = await freePort();
+            try {
+                service.expectPreviewPort(owned, ownedPort);
+                service.expectPreviewPort(unowned, unownedPort);
+                await waitForForward(service, ownedPort);
+                for (let attempt = 0; attempt < 100 && await canBind(unownedPort); attempt++) {
+                    await new Promise(resolve => setTimeout(resolve, 10));
+                }
+
+                service.releasePreviewPort(ownedPort, 'bob');
+                service.releasePreviewPort(unownedPort, 'alice');
+                service.releasePreviewPort(unownedPort, '');
+
+                expect(service.ownerOf(ownedPort)).to.equal('alice');
+                expect(expectedPorts(service, owned.root).has(ownedPort)).to.equal(true);
+                expect(expectedPorts(service, unowned.root).has(unownedPort)).to.equal(true);
+                expect(await canBind(unownedPort)).to.equal(false);
+            } finally {
+                await service.end(owned.root);
+                await service.end(unowned.root);
+            }
+        });
+
+        it('keeps a forwarder the terminal port watcher or a direct forward also uses', async () => {
+            const service = new FakeDockerSandboxService();
+            const sandbox = await service.acquire({ taskId: 't1', cwd: worktreeA, ownerLogin: 'alice' });
+            const shared = await freePort();
+            const manual = await freePort();
+            try {
+                // A server started from the terminal was forwarded first; the preview then expects it.
+                await service.forwardPort(sandbox, shared, shared, 'watch');
+                service.expectPreviewPort(sandbox, shared);
+                service.releasePreviewPort(shared, 'alice');
+                expect(service.ownerOf(shared)).to.equal('alice');
+                expect(expectedPorts(service, sandbox.root).has(shared)).to.equal(false);
+                expect(await canBind(shared)).to.equal(false);
+
+                // A forward that never was a preview's is not the preview's to close.
+                await service.forwardPort(sandbox, manual, manual);
+                service.releasePreviewPort(manual, 'alice');
+                expect(service.ownerOf(manual)).to.equal('alice');
+            } finally {
+                await service.end(sandbox.root);
+            }
+        });
     });
 
     it('passes the devcontainer remoteEnv to exec by name, under the task\'s own variables', async () => {

@@ -25,7 +25,6 @@ describe('renderHeaderOverflowMenuItems', () => {
             closeHeaderOverflowMenu: () => undefined,
             openHeaderNewChat: () => undefined,
             isHeaderNewChatVisible: () => true,
-            openWorkHubSessionsSidebar: () => undefined,
             copyActiveConversationToClipboard: async () => undefined,
             isCopyConversationEnabled: () => false,
             openAiConfigurationSheet: () => undefined,
@@ -37,8 +36,7 @@ describe('renderHeaderOverflowMenuItems', () => {
 
         const items = Array.from(menu.querySelectorAll<HTMLButtonElement>('.qaap-work-hub-toolbar-menu-item'));
         expect(items.map(item => item.textContent?.trim())).to.include.members([
-            'New Chat',
-            'Show Chats',
+            'New task',
             'Copy full conversation',
             'AI Settings',
         ]);

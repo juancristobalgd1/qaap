@@ -183,7 +183,8 @@ Reglas del aviso:
 ## Opt-in
 
 - API (con sesión):
-  - `GET /qaap/api/external-tasks/github/opt-in` lista los repos activados;
+  - `GET /qaap/api/external-tasks/github/opt-in` lista los repos activados (con el flag apagado responde
+    `200 { available: false }` en vez de 404, para no ensuciar la consola en cada carga);
   - `PUT /qaap/api/external-tasks/github/opt-in/:owner/:repo` activa un repo;
   - `DELETE /qaap/api/external-tasks/github/opt-in/:owner/:repo` lo desactiva.
 - UI: menú del proyecto en la Work Hub → "Start tasks from GitHub issues". Solo aparece en proyectos de

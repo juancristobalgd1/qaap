@@ -86,17 +86,18 @@ export function buildQaiqStdioPromptLine(prompt: string): string {
 
 /**
  * NDJSON `control_response` line answering a pending `can_use_tool` request.
- * An empty `updatedInput` tells QAIQ to run the tool with its original input.
+ * An empty `updatedInput` tells the CLI to run the tool with its original input (QAIQ and Claude Code 2.1.x
+ * both do); a non-empty `options.updatedInput` replaces the whole input, e.g. a gate rewrite.
  */
 export function buildQaiqControlResponseLine(
     pending: QaapQaiqPendingControlRequest,
     action: 'approve' | 'reject',
-    options: { readonly denyMessage?: string } = {},
+    options: { readonly denyMessage?: string; readonly updatedInput?: Record<string, unknown> } = {},
 ): string {
     const response = action === 'approve'
         ? {
             behavior: 'allow',
-            updatedInput: {},
+            updatedInput: options.updatedInput ?? {},
             ...(pending.toolUseId ? { toolUseID: pending.toolUseId } : {}),
         }
         : {

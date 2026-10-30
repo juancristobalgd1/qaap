@@ -27,6 +27,8 @@ describe('qaap-agent-branding', () => {
         expect(resolveAgentBrand('antigravity')?.tone).to.equal('light');
         expect(resolveAgentBrand('codex')?.tone).to.equal('dark');
         expect(resolveAgentBrand('qwen')?.label).to.equal('Qwen Code');
+        expect(resolveAgentBrand('pi')?.label).to.equal('Pi');
+        expect(resolveAgentBrand('pi')?.svg).to.include('<svg');
         expect(resolveAgentBrand(OPENCLAUDE_AGENT_ID)?.label).to.equal('OpenClaude');
     });
 
@@ -101,7 +103,7 @@ describe('qaap-agent-branding', () => {
     it('every built-in brand mark uses a distinct svg', () => {
         const ids = [
             QAIQ_AGENT_ID, OPENCLAUDE_AGENT_ID, 'codex', 'claude', 'grok', 'opencode', 'goose', 'hermes',
-            'openclaw', 'cursor', 'antigravity', 'copilot', 'qwen', 'kimi', 'coder',
+            'openclaw', 'cursor', 'antigravity', 'copilot', 'qwen', 'kimi', 'pi', 'coder',
         ];
         const seen = new Map<string, string>();
         for (const id of ids) {

@@ -472,7 +472,8 @@ function createWorkingAgentsRowStopButton(
     const stopBtn = document.createElement('button');
     stopBtn.type = 'button';
     stopBtn.className = 'qaap-working-agents-popover-stop-one qaap-working-agents-popover-row-stop';
-    stopBtn.textContent = nls.localize('qaap/workHubChrome/workingStop', 'Stop');
+    stopBtn.innerHTML = '<span class="codicon codicon-debug-stop" aria-hidden="true"></span>';
+    stopBtn.title = nls.localize('qaap/workHubChrome/workingStop', 'Stop');
     stopBtn.setAttribute('aria-label', nls.localize(
         'qaap/workHubChrome/workingStopAgent',
         'Stop {0}',
@@ -527,7 +528,14 @@ export function renderWorkingAgentsPopoverPanel(options: {
     const stopAll = document.createElement('button');
     stopAll.type = 'button';
     stopAll.className = 'qaap-working-agents-popover-stop-all';
-    stopAll.textContent = nls.localize('qaap/workHubChrome/workingStopAll', 'Stop All');
+    const applyStopAllIdle = (): void => {
+        const label = nls.localize('qaap/workHubChrome/workingStopAll', 'Stop All');
+        stopAll.classList.remove('theia-mod-confirm');
+        stopAll.innerHTML = '<span class="codicon codicon-debug-stop" aria-hidden="true"></span>';
+        stopAll.title = label;
+        stopAll.setAttribute('aria-label', label);
+    };
+    applyStopAllIdle();
     let stopAllConfirmationPending = false;
     let stopAllConfirmationTimer: number | undefined;
     stopAll.addEventListener('click', event => {
@@ -535,10 +543,12 @@ export function renderWorkingAgentsPopoverPanel(options: {
         event.stopPropagation();
         if (options.entries.length > 1 && !stopAllConfirmationPending) {
             stopAllConfirmationPending = true;
+            stopAll.classList.add('theia-mod-confirm');
             stopAll.textContent = nls.localize(
                 'qaap/workHubChrome/workingStopAllConfirm',
                 'Confirm Stop All',
             );
+            stopAll.title = stopAll.textContent;
             stopAll.setAttribute('aria-label', nls.localize(
                 'qaap/workHubChrome/workingStopAllConfirmAria',
                 'Confirm stopping {0} agents',
@@ -549,8 +559,7 @@ export function renderWorkingAgentsPopoverPanel(options: {
             }
             stopAllConfirmationTimer = window.setTimeout(() => {
                 stopAllConfirmationPending = false;
-                stopAll.textContent = nls.localize('qaap/workHubChrome/workingStopAll', 'Stop All');
-                stopAll.removeAttribute('aria-label');
+                applyStopAllIdle();
             }, 5_000);
             return;
         }
@@ -572,8 +581,7 @@ export function renderWorkingAgentsPopoverPanel(options: {
                 }
                 stopAll.disabled = false;
                 stopAll.removeAttribute('aria-busy');
-                stopAll.textContent = nls.localize('qaap/workHubChrome/workingStopAll', 'Stop All');
-                stopAll.removeAttribute('aria-label');
+                applyStopAllIdle();
             }
         })();
     });
@@ -671,6 +679,23 @@ export function renderWorkingAgentsDetailPanel(options: {
         body.append(parentLine);
     }
 
+    const heading = document.createElement('div');
+    heading.className = 'qaap-working-agents-detail-heading';
+    heading.dataset.workingState = resolveWorkingAgentVisualState(options.member);
+    const headingTitle = document.createElement('div');
+    headingTitle.className = 'qaap-working-agents-detail-heading-title';
+    headingTitle.textContent = formatWorkingAgentTaskTitle(options.member);
+    const headingMeta = document.createElement('div');
+    headingMeta.className = 'qaap-working-agents-detail-heading-meta';
+    const metaParts = [
+        resolveAgentDisplayLabel(options.member.agentId),
+        resolveWorkingAgentStatusLabel(options.member),
+        formatWorkingAgentElapsed(options.member),
+    ].filter(part => part.length > 0);
+    headingMeta.textContent = metaParts.join(' \u00b7 ');
+    heading.append(headingTitle, headingMeta);
+    body.append(heading);
+
     const feed = options.activityFeed ?? {
         items: [],
         liveLabel: resolveWorkingAgentStatusLabel(options.member),
@@ -734,6 +759,7 @@ function renderWorkingAgentsPopoverRow(
     row.classList.toggle('theia-mod-child', entry.depth > 0);
     row.setAttribute('role', 'listitem');
     row.dataset.memberId = entry.member.id;
+    row.dataset.workingState = resolveWorkingAgentVisualState(entry.member);
     if (entry.depth > 0) {
         row.style.setProperty('--qaap-working-agents-depth', String(Math.min(entry.depth, 3)));
     }
@@ -760,7 +786,13 @@ function renderWorkingAgentsPopoverRow(
     const main = document.createElement('button');
     main.type = 'button';
     main.className = 'qaap-working-agents-popover-row-main';
-    main.append(icon, title, status);
+    const text = document.createElement('span');
+    text.className = 'qaap-working-agents-popover-row-text';
+    text.append(title, status);
+    const elapsed = document.createElement('span');
+    elapsed.className = 'qaap-working-agents-popover-row-elapsed';
+    elapsed.textContent = formatWorkingAgentElapsed(entry.member);
+    main.append(icon, text, elapsed);
     main.setAttribute('aria-label', nls.localize(
         'qaap/workHubChrome/workingAgentRowAria',
         '{0}, {1}',
@@ -842,6 +874,40 @@ function renderWorkingAgentProgressTrack(member: WorkHubTeamMember): HTMLElement
         track.append(seg);
     }
     return track;
+}
+
+/** Visual state bucket for row/detail chrome: working, attention, failed or done. */
+export function resolveWorkingAgentVisualState(member: WorkHubTeamMember): 'working' | 'attention' | 'failed' | 'done' {
+    if (isWorkingAgentStatusLive(member)) {
+        return 'working';
+    }
+    if (member.state === 'blocked' || member.state === 'waiting' || member.state === 'waiting_approval' || member.state === 'needs_input') {
+        return 'attention';
+    }
+    if (member.state === 'failed' || member.state === 'interrupted') {
+        return 'failed';
+    }
+    return 'done';
+}
+
+/** Compact elapsed time since the member started ("12s", "3m", "1h 5m"); empty when unknown. */
+export function formatWorkingAgentElapsed(member: WorkHubTeamMember, now: number = Date.now()): string {
+    if (!member.createdAt || member.createdAt <= 0) {
+        return '';
+    }
+    const seconds = Math.max(0, Math.floor((now - member.createdAt) / 1000));
+    if (seconds < 60) {
+        return `${seconds}s`;
+    }
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) {
+        return `${minutes}m`;
+    }
+    const hours = Math.floor(minutes / 60);
+    if (hours >= 100) {
+        return '';
+    }
+    return `${hours}h ${minutes % 60}m`;
 }
 
 function formatWorkingAgentTaskTitle(member: WorkHubTeamMember): string {

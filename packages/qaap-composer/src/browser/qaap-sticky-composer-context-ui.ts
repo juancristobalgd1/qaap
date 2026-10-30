@@ -7,6 +7,7 @@
 import { AIVariableResolutionRequest } from '@theia/ai-core';
 import { ImageContextVariable } from '@theia/ai-chat/lib/common/image-context-variable';
 import { nls } from '@theia/core/lib/common/nls';
+import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import type { LabelProvider } from '@theia/core/lib/browser';
 import { installMobileHorizontalTouchScroll } from '@theia/qaap-mobile-shell/lib/browser/mobile-horizontal-touch-scroll';
 import { isImageAttachmentFileName } from '../common/qaap-sticky-composer-attachment-utils';
@@ -524,7 +525,57 @@ function renderContextChipRow(
     }
 
     installMobileHorizontalTouchScroll(chips);
+    installChipRowOverflowEdges(chips);
     return chips;
+}
+
+/**
+ * Toggles `theia-mod-overflow-start` / `theia-mod-overflow-end` on a horizontally scrolling chip row
+ * while content is hidden past that edge, so CSS can fade the edge. The classes are removed once the
+ * row fits or is scrolled to that end. Observers are disposed when the row leaves the document.
+ */
+function installChipRowOverflowEdges(row: HTMLElement): Disposable {
+    const view = row.ownerDocument.defaultView;
+    const toDispose = new DisposableCollection();
+    let wasConnected = false;
+    const update = (): void => {
+        if (!row.isConnected) {
+            // Not attached yet: wait. Attached and then removed: release the observers.
+            if (wasConnected) {
+                toDispose.dispose();
+            }
+            return;
+        }
+        wasConnected = true;
+        const maxScroll = Math.max(0, row.scrollWidth - row.clientWidth);
+        const overflowing = maxScroll > 1;
+        row.classList.toggle('theia-mod-overflow-start', overflowing && row.scrollLeft > 1);
+        row.classList.toggle('theia-mod-overflow-end', overflowing && row.scrollLeft < maxScroll - 1);
+    };
+    row.addEventListener('scroll', update, { passive: true });
+    toDispose.push(Disposable.create(() => {
+        row.removeEventListener('scroll', update);
+        row.classList.remove('theia-mod-overflow-start', 'theia-mod-overflow-end');
+    }));
+    if (view?.ResizeObserver) {
+        const resizeObserver = new view.ResizeObserver(update);
+        resizeObserver.observe(row);
+        toDispose.push(Disposable.create(() => resizeObserver.disconnect()));
+    }
+    if (view?.MutationObserver) {
+        // Adding or removing chips changes scrollWidth without resizing the row itself.
+        const mutationObserver = new view.MutationObserver(update);
+        mutationObserver.observe(row, { childList: true, subtree: true, characterData: true });
+        toDispose.push(Disposable.create(() => mutationObserver.disconnect()));
+    }
+    // The row is usually not laid out yet at install time, so measure once after the current task.
+    const initialTimer = view?.setTimeout(update, 0);
+    toDispose.push(Disposable.create(() => {
+        if (initialTimer !== undefined) {
+            view?.clearTimeout(initialTimer);
+        }
+    }));
+    return toDispose;
 }
 
 export function renderStickyComposerContextStrip(options: {

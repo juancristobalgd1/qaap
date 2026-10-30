@@ -455,6 +455,20 @@ export async function handleProcessClaimExtracted(ctx: QaapDevPreviewEndpointCon
                     return;
                 }
             }
+            if (isPidAttachReclaimInStartGrace(ctx, existing, preferredPort, osProcessId)) {
+                // The terminal reports the pid of the shell it just started for THIS reservation
+                // (attachTerminalOsProcessId): its dev server is still booting. Terminating and
+                // reallocating here killed the server the claim was made for and moved the preview
+                // to the next port with a new label (a sandbox forwarder still holds the old port).
+                ctx.portRegistry.attachProcess(existing.previewId, owner, osProcessId);
+                const attached = ctx.portRegistry.getForOwner(existing.previewId, owner) ?? existing;
+                res.status(200).json({
+                    previewId: attached.previewId,
+                    previewUrl: ctx.buildIdentityPreviewUrl(req, attached),
+                    port: attached.port,
+                });
+                return;
+            }
             // Same identity re-claimed while its dev server is not answering yet: the link the user
             // already holds must keep resolving once the server is up, so keep the access token.
             ctx.terminatePreviewProcess(existing);
@@ -496,6 +510,33 @@ export async function handleProcessClaimExtracted(ctx: QaapDevPreviewEndpointCon
         ctx.portRegistry.releasePreview(record.previewId, owner);
     }
 
+    // One dev server per project working copy, shared by every conversation of the owner: a live
+    // record of ANOTHER section on the same canonical root is handed back instead of spawning a
+    // second server. Other roots (worktrees, sandboxes) never match and keep their own server.
+    const sharedRootRecords = ctx.portRegistry.records()
+        .filter(record => record.ownerLogin === owner
+            && isQaapProcessPreviewIdentity(record)
+            && record.root === canonicalRoot)
+        .sort((left, right) => right.touchedAt - left.touchedAt);
+    for (const record of sharedRootRecords) {
+        if (!ctx.isPreviewProcessDead(record) && await ctx.probeLocalDevServer(record.port)) {
+            console.info('[qaap-preview] sharing live project preview of another conversation', {
+                previewId: record.previewId,
+                ownerLogin: owner,
+                projectId: canonicalProjectId,
+                conversationId,
+                siblingConversationId: normalizeQaapPreviewConversationId(record.conversationId),
+                port: record.port,
+            });
+            res.status(200).json({
+                previewId: record.previewId,
+                previewUrl: ctx.buildIdentityPreviewUrl(req, record),
+                port: record.port,
+            });
+            return;
+        }
+    }
+
     ctx.supersedeConversationPreviews({
         previewId: identity.previewId,
         workspaceId: canonicalProjectId,
@@ -526,6 +567,26 @@ export async function handleProcessClaimExtracted(ctx: QaapDevPreviewEndpointCon
         previewUrl: ctx.buildIdentityPreviewUrl(req, allocated),
         port: allocated.port,
     });
+}
+
+/**
+ * A re-claim that only reports the pid of the process started for a reservation still inside its
+ * start grace: same identity and root (the caller checked both, scoped to the authenticated owner),
+ * the same port, a live pid and no different pid recorded before. The pid is trusted as far as
+ * any claim of this owner is; it is never verified against the sandbox process tree.
+ */
+function isPidAttachReclaimInStartGrace(
+    ctx: QaapDevPreviewEndpointContext,
+    existing: QaapDevPreviewRecord,
+    preferredPort: number,
+    osProcessId: number | undefined,
+): osProcessId is number {
+    return osProcessId !== undefined
+        && existing.adopted !== true
+        && preferredPort === existing.port
+        && Date.now() - existing.claimedAt < PREVIEW_RESERVATION_START_GRACE_MS
+        && (existing.osProcessId === undefined || existing.osProcessId === osProcessId)
+        && !ctx.isPreviewProcessDead({ osProcessId, port: existing.port, ownerLogin: existing.ownerLogin });
 }
 
 function isSameOrInsideQaapPreviewRoot(candidate: string, root: string): boolean {
@@ -634,8 +695,10 @@ export async function allocatePreviewPortExtracted(
                 if (ctx.portRegistry.isOwnerAtPreviewLimit(owner, registration.previewId)) {
                     return undefined; // a concurrent claim reached the per-owner cap during the probes
                 }
-                const adopted = ctx.portRegistry.register({ ...registration, port }, {
+                // The claim's pid (the terminal that asked) did not start this listener: never inherit it.
+                const adopted = ctx.portRegistry.register({ ...registration, osProcessId: undefined, port }, {
                     claimedAt: Date.now() - PREVIEW_RESERVATION_START_GRACE_MS,
+                    adopted: true,
                 });
                 if (adopted) {
                     console.info('[qaap-preview] adopted listener explicitly claimed by its owner', {
@@ -649,7 +712,7 @@ export async function allocatePreviewPortExtracted(
             }
             continue;
         }
-        if (!await ctx.isPortBindable(port, owner)) {
+        if (!await ctx.isPortBindable(port, owner, registration.root)) {
             // Something holds the port without answering HTTP (a Theia/Node backend still booting,
             // the host IDE on a non-default port). Handing it out makes the dev server die on bind.
             continue;

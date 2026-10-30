@@ -17,6 +17,8 @@ export type QaapAgentMessageSegment =
         readonly args: string;
         readonly finished: boolean;
         readonly result?: string;
+        /** True when the tool call finished with an error; `result` then carries the error text. */
+        readonly error?: boolean;
         readonly parentToolUseId?: string;
     };
 

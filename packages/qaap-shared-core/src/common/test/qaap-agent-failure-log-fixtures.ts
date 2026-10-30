@@ -136,6 +136,30 @@ export const MODEL_UNAVAILABLE_LOG = [
     resultEnvelope(true, 'There\'s an issue with the selected model (deepseek/deepseek-v4-flash:free). It may not exist or you may not have access to it. Run --model to pick a different model.'),
 ].join('\n');
 
+/** QAIQ on NVIDIA NIM after the provider retired the model: HTTP 410 with an end-of-life detail. */
+export const NVIDIA_MODEL_END_OF_LIFE_LOG = [
+    SYSTEM_INIT,
+    resultEnvelope(true, 'API Error: 410 {"status":410,"title":"Gone","detail":"The model \'nvidia/llama-3.3-nemotron-super-49b-v1\' has reached its end of life and is no longer available."}'),
+].join('\n');
+
+/** QAIQ when its OpenAI-compatible endpoint answers 404 for the model (it no longer serves it). */
+export const PROVIDER_ENDPOINT_404_LOG = [
+    SYSTEM_INIT,
+    resultEnvelope(true, 'Provider endpoint at integrate.api.nvidia.com returned 404. Verify OPENAI_BASE_URL is correct and the model is served there.'),
+].join('\n');
+
+/** Codex CLI on a ChatGPT Free account: the plan's usage cap, with the retry time the CLI prints. */
+export const CODEX_USAGE_LIMIT_LOG = [
+    SYSTEM_INIT,
+    resultEnvelope(true, 'You\'ve hit your usage limit. Upgrade to Plus to continue using Codex (https://chatgpt.com/explore/plus), or try again at Nov 19th, 2026 12:56 AM.'),
+].join('\n');
+
+/** Codex CLI on a ChatGPT account: a model the plan cannot run (the server lists the models per account). */
+export const CODEX_MODEL_NOT_SUPPORTED_LOG = [
+    SYSTEM_INIT,
+    resultEnvelope(true, '{"error":{"message":"The \'gpt-5.6-sol\' model is not supported when using Codex with a ChatGPT account.","code":"model_not_found"}}'),
+].join('\n');
+
 /** The task runner's idle timer killed a run that stopped producing output. */
 export const RUNNER_IDLE_TIMEOUT_LOG = [
     SYSTEM_INIT,

@@ -37,6 +37,7 @@ services:
         ANTIGRAVITY_CLI_VERSION: ${ANTIGRAVITY_CLI_VERSION:-0.1.1}
         GEMINI_CLI_VERSION: ${GEMINI_CLI_VERSION:-0.62.0}
         OPENCODE_CLI_VERSION: ${OPENCODE_CLI_VERSION:-1.18.28}
+        PI_CLI_VERSION: ${PI_CLI_VERSION:-1.4.0}
     ports:
       # Not world-reachable. Public traffic should hit Caddy on :443.
       - "127.0.0.1:${THEIA_PORT:-4873}:${THEIA_PORT:-4873}"
@@ -123,6 +124,7 @@ services:
       CODEX_CLI_VERSION: ${CODEX_CLI_VERSION:-}
       CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-}
       OPENCODE_CLI_VERSION: ${OPENCODE_CLI_VERSION:-}
+      PI_CLI_VERSION: ${PI_CLI_VERSION:-}
       ANTIGRAVITY_CLI_VERSION: ${ANTIGRAVITY_CLI_VERSION:-}
       GEMINI_CLI_VERSION: ${GEMINI_CLI_VERSION:-}
       QAAP_QAIQ_MIN_VERSION: ${QAAP_QAIQ_MIN_VERSION:-}
@@ -228,14 +230,19 @@ services:
       # keeps them in HOME).
       QAAP_TENANT_TMPFS_SIZE: ${QAAP_TENANT_TMPFS_SIZE:-512m}
       QAAP_TENANT_AGENT_STORAGE_ROOT: ${QAAP_TENANT_AGENT_STORAGE_ROOT:-}
-      QAAP_TENANT_CONTAINER_UID: ${QAAP_TENANT_CONTAINER_UID:-1000}
-      QAAP_TENANT_CONTAINER_GID: ${QAAP_TENANT_CONTAINER_GID:-1000}
+      # Tenant container uid/gid. Hosted runs (always a verified rootless daemon) require 0:0 so the
+      # tenant backend can setpriv-drop every agent to QAAP_AGENT_UID; any other value refuses startup.
+      # Only local, non-hosted runs honour another value (uid 0 there also needs QAAP_DOCKER_ROOTLESS=1).
+      QAAP_TENANT_CONTAINER_UID: ${QAAP_TENANT_CONTAINER_UID:-0}
+      QAAP_TENANT_CONTAINER_GID: ${QAAP_TENANT_CONTAINER_GID:-0}
       # Set only when DOCKER_HOST points at a rootless daemon. Container uid 0 then maps to the
       # unprivileged host account owning the persistent bind mounts, allowing shared 0700 state.
       QAAP_DOCKER_ROOTLESS: ${QAAP_DOCKER_ROOTLESS:-0}
       # Never use Docker's shared default bridge for untrusted tenant workers. Each tenant gets an
       # internal bridge; backend-per-tenant mode publishes only through its hardened ingress relay.
       QAAP_TENANT_NETWORK_MODE: ${QAAP_TENANT_NETWORK_MODE:-isolated-bridge}
+      # Empty (default) = direct tenant egress. Set to qaap-tenant-egress:current to route tenant egress through the Squid allowlist proxy.
+      QAAP_TENANT_EGRESS_PROXY_IMAGE: ${QAAP_TENANT_EGRESS_PROXY_IMAGE:-}
       # Billing / Stripe Checkout (Pro €29, Team €79). Without these, Work Hub Billing shows
       # stripeEnabled=false and POST /qaap/api/billing/checkout returns 503.
       # Public origin for Checkout success/cancel URLs (prefer the Caddy HTTPS host).

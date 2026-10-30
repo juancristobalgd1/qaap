@@ -130,6 +130,34 @@ export function appendRunCancelledTrace(
 }
 
 /**
+ * A Stop that lands before the agent produced any output leaves the cancelled user turn without
+ * an agent row to carry the `run_cancelled` marker, so the transcript showed a bare user bubble
+ * with no "Turn cancelled." state. Append an empty agent row carrying it — the shape a cancelled
+ * streaming reply ends up with — when the conversation still ends on that user turn.
+ */
+export function appendCancelledTurnPlaceholder(
+    conv: QaapAgentConversation,
+    userMessageId: string | undefined,
+    reason: string,
+    now: number = Date.now(),
+): { readonly conv: QaapAgentConversation; readonly message?: QaapAgentMessage } {
+    const last = conv.messages[conv.messages.length - 1];
+    if (!userMessageId || last?.role !== 'user' || last.id !== userMessageId) {
+        return { conv };
+    }
+    const placeholder: QaapAgentMessage = {
+        id: randomUUID(),
+        role: 'agent',
+        content: '',
+        createdAt: now,
+        runUserMessageId: userMessageId,
+        runFinishedAt: now,
+    };
+    const message = appendTraceRunCancelledEvent(placeholder, { reason, at: now }) as QaapAgentMessage;
+    return { conv: { ...conv, messages: [...conv.messages, message] }, message };
+}
+
+/**
  * Returns what the agent said it needs when its final message ends with the blocked-signal
  * sentinel (see {@code buildAgentBlockedSignalPromptBlock}), or {@code undefined} otherwise.
  * Checks the streaming agent message when its id is known, else the last agent message; for
@@ -511,6 +539,12 @@ export function maybeAutoContinueIncompleteTurn(
             message.role === 'agent' && message.runUserMessageId === userMessageId
         );
     if (!userMessage || !agentMessage || agentMessage.role !== 'agent' || conv.status !== 'idle') {
+        return;
+    }
+    // A follow-up the user queued while this turn ran is newer intent: posting an autonomous
+    // "keep going" turn here would start before the queue drain (it waits a coalesce window) and
+    // park the user's message behind a run they never asked for.
+    if ((conv.pendingUserMessages?.length ?? 0) > 0) {
         return;
     }
     // A greeting or thanks is complete by definition: never re-prompt it as an unfinished task.

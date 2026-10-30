@@ -16,7 +16,8 @@ export const NVIDIA_DEFAULT_BASE_URL = 'https://integrate.api.nvidia.com/v1';
  * tell at a glance which models cost nothing to try.
  */
 export const NVIDIA_FREE_MODELS: readonly string[] = [
-    'nvidia/llama-3.3-nemotron-super-49b-v1',
+    // `nvidia/llama-3.3-nemotron-super-49b-v1` was the head (QAIQ's NVIDIA default) until NIM
+    // retired it (Oct 2026: HTTP 410 "has reached its end of life"); every default turn failed.
     'meta/llama-3.3-70b-instruct',
     // Replaces qwen/qwen2.5-coder-32b-instruct (NIM EOL 2026-05-12).
     'qwen/qwen3-coder-480b-a35b-instruct',

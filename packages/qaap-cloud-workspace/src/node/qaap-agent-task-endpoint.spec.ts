@@ -411,6 +411,33 @@ describe('QaapAgentTaskEndpoint standalone model fallback', () => {
         expect(status).to.equal(201);
         expect(tracked).to.deep.equal([{ taskId: 'task-1', prompt: 'Reply with OK', readOnlyWorkspace: true, ownerLogin: 'alice' }]);
     });
+
+    it('never lets a client body claim its own worktree, so a shared-tree task still queues', async () => {
+        const endpoint = Object.create(TestableTaskEndpoint.prototype) as TestableTaskEndpoint;
+        const created: Array<{ ownWorkingTree?: boolean }> = [];
+        Object.assign(endpoint, {
+            auth: {
+                authenticate: () => ({ kind: 'authenticated', userLogin: 'alice' }),
+                resolveOwnedRepositoryCwd: () => ({ kind: 'ok', cwd: '/repo' })
+            },
+            runner: {
+                defaultAgentFresh: async () => 'qaiq',
+                storageHealth: () => ({ ready: true, recovery: 'ready', writeFailed: false }),
+                create: (request: { ownWorkingTree?: boolean }) => {
+                    created.push({ ownWorkingTree: request.ownWorkingTree });
+                    return { id: `task-${created.length}`, cwd: '/repo', state: 'running' };
+                },
+            },
+            modelFallback: { track: () => undefined },
+        });
+        const response = { status: () => response, json: () => response };
+
+        await endpoint.createForTest({
+            body: { cwd: '/repo', prompt: 'levanta la app', ownWorkingTree: true }, header: () => undefined
+        } as unknown as Request, response as unknown as Response);
+
+        expect(created).to.deep.equal([{ ownWorkingTree: undefined }]);
+    });
 });
 
 describe('QaapAgentTaskEndpoint CLI install', () => {

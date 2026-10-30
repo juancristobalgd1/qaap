@@ -4,12 +4,14 @@
 // *****************************************************************************
 
 import { QaapCodexStreamAccumulator } from './qaap-codex-stream';
+import { QaapPiStreamAccumulator } from './qaap-pi-json-stream';
 import { parseOpencodeFormattedLog, QaapOpencodeStreamAccumulator } from './qaap-opencode-stream';
 import {
     isAntigravityAgent,
     isClaudeCodeAgent,
     isCodexAgent,
     isOpencodeAgent,
+    isPiAgent,
     isQaiqAgent,
 } from './qaap-agent-task-client';
 import {
@@ -30,6 +32,7 @@ export {
     isAntigravityAgent,
     isClaudeCodeAgent,
     isCodexAgent,
+    isPiAgent,
     usesStructuredAgentTranscript,
 } from './qaap-agent-task-client';
 
@@ -57,6 +60,9 @@ export function createAgentStreamAccumulator(agentId: string | undefined): QaapA
     }
     if (isCodexAgent(agentId)) {
         return new QaapCodexStreamAccumulator();
+    }
+    if (isPiAgent(agentId)) {
+        return new QaapPiStreamAccumulator();
     }
     return undefined;
 }
@@ -91,6 +97,17 @@ export function parseAgentLogForTranscript(
             return {
                 content: acc.getDisplayText() || log.trim(),
                 segments,
+                traceEvents: [...acc.getTraceEvents()],
+            };
+        }
+    }
+    if (isPiAgent(agentId)) {
+        const acc = new QaapPiStreamAccumulator();
+        acc.push(log);
+        if (acc.consumedJsonEvents()) {
+            return {
+                content: acc.getDisplayText() || log.trim(),
+                segments: [...acc.getSegments()],
                 traceEvents: [...acc.getTraceEvents()],
             };
         }
