@@ -120,7 +120,21 @@ const QAAP_HARNESS_CAPABILITY_ENTRIES: readonly QaapHarnessCapabilities[] = [
     // Without a gate, claude, codex and opencode have their skip flags stripped under request-approval,
     // so gated actions are refused rather than run.
     { ...createDefaultHarnessCapabilities('claude'), whenAskUnsupported: 'refuses', usage: 'claude' },
-    { ...createDefaultHarnessCapabilities('codex'), whenAskUnsupported: 'refuses', usage: 'codex' },
+    // Codex: a per-task CODEX_HOME overlay installs a PreToolUse hook that calls the HTTP gate. Spike on
+    // codex-cli 0.165: a hook may block for at least 150 s (the `timeout` is accepted up to 900 s) and the
+    // gate answers first (askTtlSec stays below the hook timeout, because a hook timeout fails OPEN).
+    // Folder trust is enforced in the overlay config (`[projects]` untrusted), not with CLI flags.
+    // Cost comes from the reported tokens through the price table; ChatGPT auth is a subscription.
+    {
+        ...createDefaultHarnessCapabilities('codex'),
+        gate: 'hook',
+        canAsk: true,
+        askTtlSec: STDIO_ASK_TTL_SEC,
+        whenAskUnsupported: 'refuses',
+        shellGuard: 'gate',
+        usage: 'codex',
+        costSource: 'price-table',
+    },
     { ...createDefaultHarnessCapabilities('opencode'), whenAskUnsupported: 'refuses', usage: 'opencode' },
     // Pi has no permission system of its own; Qaap's `-e` extension routes every tool_call through the
     // HTTP gate, which can block for as long as an ask lives (spike: no handler timeout up to 900 s).

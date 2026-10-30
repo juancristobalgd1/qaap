@@ -1,4 +1,6 @@
 import { usesToolGateExtension } from './qaap-tool-gate-pi-adapter';
+import { DEFAULT_QAAP_CODEX_GATE_OVERLAY_BUILDER, usesCodexToolGateHook, type QaapCodexGateOverlay } from './qaap-codex-gate-overlay';
+import { resolveCodexAgentHome } from './qaap-agent-native-models';
 import { IDLE_TASK_TIMEOUT_MS, QAAP_AGENT_VERIFY_ENABLED, QUEUED_APPROVAL_GRACE_TIMEOUT_MS, USER_REQUEST_MAX_CHARS } from './qaap-agent-task-runner-constants';
 import { QaapQaiqProviderKeyMissingError } from './qaap-qaiq-provider-preflight';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
@@ -456,7 +458,9 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             : stdinPromptEntry;
         // Harnesses gated through an HTTP extension (Pi) ask over the gate, not over stdin: a piped stdin
         // makes Pi block waiting for input, so they keep a closed stdin even under request-approval.
-        const stdinInteractive = (task.autoApprove === false && !usesToolGateExtension(ctx.resolveTaskAgentId(task)))
+        const stdinInteractive = (task.autoApprove === false && !usesToolGateExtension(ctx.resolveTaskAgentId(task))
+            // Codex asks over its PreToolUse hook too; a piped stdin would make `codex exec` wait for EOF.
+            && !usesCodexToolGateHook(ctx.resolveTaskAgentId(task)))
             || stdinPrompt !== undefined;
         const agentModel = resolveTaskAgentModel(task);
         // A shared Theia backend must never rewrite one global CLI settings file while another
@@ -472,6 +476,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
         };
         let child: ChildProcess;
         let childEnv: NodeJS.ProcessEnv | undefined;
+        let codexGateOverlay: QaapCodexGateOverlay | undefined;
         try {
             ctx.enforceAgentIsolationPolicy();
             await ctx.ensureAgentCwdOwnershipAsync(task.cwd);
@@ -481,6 +486,18 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             childEnv = ctx.buildChildEnv(task);
             // Only the harness process gets gate credentials: issuing a token revokes the previous one.
             ctx.applyToolGateEnv(childEnv, task);
+            if (childEnv.QAAP_GATE_TOKEN && usesCodexToolGateHook(ctx.resolveTaskAgentId(task))) {
+                // Fails closed: if the overlay cannot be built or Codex does not trust its hook, nothing runs.
+                codexGateOverlay = await DEFAULT_QAAP_CODEX_GATE_OVERLAY_BUILDER.create({
+                    taskId: task.id,
+                    cwd: task.cwd,
+                    folderTrusted: ctx.isProjectFolderTrusted(task.ownerLogin, task.cwd),
+                    sourceCodexHome: resolveCodexAgentHome(childEnv),
+                    askTtlSec: Number(childEnv.QAAP_GATE_ASK_TTL_SEC) || 0,
+                    agentIdentity: ctx.resolveAgentSpawnIdentity(task.cwd),
+                }, childEnv);
+                childEnv.CODEX_HOME = codexGateOverlay.codexHome;
+            }
             if (task.agentId?.trim().toLowerCase() === 'opencode') {
                 // A run killed mid-snapshot leaves index.lock in the tenant's persistent data dir,
                 // and every later OpenCode run then fails to create its snapshot lock.
@@ -498,6 +515,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             ctx.recordTaskLatencyMark(task.id, 'spawn_end');
         } catch (error) {
             finishAntigravitySettings();
+            codexGateOverlay?.dispose();
             ctx.stdinPrompts.delete(task.id);
             removeAgentPromptTempDirHelper(ctx.promptTempDirs.get(task.id));
             ctx.promptTempDirs.delete(task.id);
@@ -730,6 +748,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             clearChangeScopeWatch();
             clearIdleTimer();
             finishAntigravitySettings();
+            codexGateOverlay?.dispose();
             logStream.end();
             ctx.processes.delete(task.id);
             ctx.deletedTaskIds.delete(task.id);
