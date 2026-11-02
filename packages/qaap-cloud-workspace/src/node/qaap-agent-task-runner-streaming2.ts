@@ -40,7 +40,7 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-interaction-flags';
 import type { QaapAgentApprovalPolicyId } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model-catalog';
-import { canEnforceReadOnlyWorkspace } from '../common/qaap-agent-readonly-workspace';
+import { canEnforceReadOnlyWorkspace, withPiPlanModeInstruction } from '../common/qaap-agent-readonly-workspace';
 import { listNativeAgentModels } from './qaap-agent-native-models';
 import {
     applyAgentApprovalPolicyToCommand,
@@ -365,7 +365,7 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
         readOnlyWorkspace?: boolean,
         ownerLogin?: string,): QaapAgentCommandBuildResult {
         const id = ctx.resolveAgentId(prompt, agentId, ownerLogin);
-        const runnerPrompt = ctx.stripLeadingAgentMention(prompt);
+        const runnerPrompt = withPiPlanModeInstruction(ctx.stripLeadingAgentMention(prompt), id, interactionModeId);
         if (id === SHELL_AGENT_ID) {
             return { command: runnerPrompt, agentId: id };
         }
