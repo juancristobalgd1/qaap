@@ -16,6 +16,7 @@ import {
     QAAP_AGENT_LOGIN_PROMPT_GRACE_MS,
     extractAgentLoginHyperlinkTargets,
     QaapAgentLoginFlow,
+    stripAgentLoginTerminalControlSequences,
     type QaapAgentLoginFlowState,
 } from '../common/qaap-agent-login-flow';
 import { createQaapAgentLoginDialog, type QaapAgentLoginDialogController } from './qaap-agent-login-dialog';
@@ -87,6 +88,11 @@ function piRawLoginOutput(): string {
 }
 
 describe('QaapAgentLoginFlow', () => {
+
+    it('strips an ST-terminated OSC-8 link without swallowing the text between two links', () => {
+        expect(stripAgentLoginTerminalControlSequences('\x1b]8;;https://a.test\x1b\\Open\x1b]8;;\x1b\\ then paste the code'))
+            .to.equal('Open then paste the code');
+    });
 
     it('finds Pi\'s whole OpenRouter link from its OSC-8 hyperlinks although the TUI wrapped it', () => {
         expect(extractAgentLoginHyperlinkTargets(piRawLoginOutput())).to.deep.equal([PI_AUTH_URL]);

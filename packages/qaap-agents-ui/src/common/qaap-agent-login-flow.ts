@@ -39,7 +39,7 @@ const OSC8_HYPERLINK_RE = /\x1B\]8;[^;\x07\x1B]*;([^\x07\x1B]+)(?:\x07|\x1B\\)/g
 export function stripAgentLoginTerminalControlSequences(value: string): string {
     return value
         .replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, '')
-        .replace(/\x1B\][^\x07]*(?:\x07|\x1B\\)/g, '')
+        .replace(/\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)/g, '')
         .replace(/\r/g, '');
 }
 
