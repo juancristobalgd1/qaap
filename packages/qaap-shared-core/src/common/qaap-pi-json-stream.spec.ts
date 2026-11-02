@@ -163,3 +163,38 @@ describe('qaap-pi-json-stream', () => {
         });
     });
 });
+
+describe('qaap-pi-json-stream reported cost', () => {
+    const messageEnd = (input: number, cost: number | undefined): string => JSON.stringify({
+        type: 'message_end',
+        message: {
+            role: 'assistant',
+            content: [{ type: 'text', text: 'done' }],
+            stopReason: 'stop',
+            usage: { input, output: 5, cacheRead: 0, cacheWrite: 0, ...(cost !== undefined ? { cost: { total: cost } } : {}) },
+        },
+    });
+    const context = { taskId: 't1', turnId: 'u1', agentId: 'pi' };
+
+    it('turns Pi-reported cost into a reported usage event summed over the run', () => {
+        const stream = new QaapPiStreamAccumulator();
+        // Two turns: Pi's usage is cumulative within a turn, so each turn keeps its last value.
+        stream.push(`${messageEnd(10, 0.001)}\n${JSON.stringify({ type: 'turn_end' })}\n${messageEnd(20, 0.0025)}\n`);
+        const event = stream.getUsageEvent(context);
+        expect(event).to.deep.include({
+            taskId: 't1',
+            agentId: 'pi',
+            inputTokens: 30,
+            outputTokens: 10,
+            costSource: 'reported',
+            cumulative: true,
+        });
+        expect(event?.costUsd).to.be.closeTo(0.0035, 1e-9);
+    });
+
+    it('reports no usage event when Pi gave no cost, never a derived price', () => {
+        const stream = new QaapPiStreamAccumulator();
+        stream.push(`${messageEnd(10, undefined)}\n`);
+        expect(stream.getUsageEvent(context)).to.equal(undefined);
+    });
+});
