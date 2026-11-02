@@ -93,6 +93,44 @@ describe('qaap-agent-model-fallback', () => {
         })).to.be.false;
     });
 
+    it('treats a turn that only printed its provider error as having no output', () => {
+        const providerError = '\n\n**Error:** {"message":"Provider returned error","code":503}';
+        expect(agentTurnHasRetryableEmptyOutput({
+            segments: [{ type: 'text', content: providerError }],
+        })).to.be.true;
+        expect(agentTurnHasRetryableEmptyOutput({ content: providerError })).to.be.true;
+        expect(agentTurnHasRetryableEmptyOutput({
+            segments: [{ type: 'text', content: `Partial answer${providerError}` }],
+        })).to.be.false;
+        expect(agentTurnQualifiesForModelFallback('pi', { state: 'failed' }, {
+            segments: [{ type: 'text', content: providerError }],
+        })).to.be.true;
+    });
+
+    it('builds the Pi chain from the owner discovered models, without the failed one, capped at four', () => {
+        const failed = { provider: 'openai' as const, vendor: 'openrouter', modelId: 'recursive/flint-v1.0:free' };
+        const discovered = ['recursive/flint-v1.0:free', 'deepseek/a:free', 'qwen/b:free', 'z-ai/c:free', 'mistral/d:free']
+            .map(modelId => ({ provider: 'openai' as const, vendor: 'openrouter', modelId }));
+        const chain = buildAgentModelFallbackChain('pi', failed, discovered);
+        expect(chain.map(agentModelKey)).to.deep.equal([
+            'openrouter/recursive/flint-v1.0:free',
+            'openrouter/deepseek/a:free',
+            'openrouter/qwen/b:free',
+            'openrouter/z-ai/c:free',
+        ]);
+        // The caller records the failed model as tried, so the next pick is the first untried discovered one.
+        expect(resolveNextFallbackAgentModel('pi', failed, new Set(['openrouter/recursive/flint-v1.0:free', 'openrouter/deepseek/a:free']), discovered)?.modelId)
+            .to.equal('qwen/b:free');
+    });
+
+    it('falls back to the curated Pi list when the owner has no discovered models', () => {
+        const failed = { provider: 'openai' as const, vendor: 'openrouter', modelId: '~anthropic/claude-sonnet-latest' };
+        const withoutDiscovery = buildAgentModelFallbackChain('pi', failed, []);
+        expect(withoutDiscovery.length).to.be.greaterThan(1);
+        expect(withoutDiscovery[0]).to.deep.equal(failed);
+        expect(buildAgentModelFallbackChain('pi', failed)).to.deep.equal(withoutDiscovery);
+    });
+
     it('retries explicit credit exhaustion even when the provider returned text', () => {
         expect(agentTurnHasRetryableQuotaFailure({
             content: 'Free credits for this model are exhausted.',

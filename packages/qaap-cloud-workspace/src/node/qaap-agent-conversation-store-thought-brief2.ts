@@ -1,4 +1,5 @@
 // Extracted from qaap-agent-conversation-store.ts
+import { discoveredFallbackModels } from './qaap-agent-model-fallback-candidates';
 import { localizeAgentTurnRestartInterruptedMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 import type { QaapAgentConversationStoreContext } from './qaap-agent-conversation-store-context';
 
@@ -185,7 +186,7 @@ export async function maybeRetryTurnWithFallbackModelViaGraphExtracted(ctx: Qaap
         if (currentKey) {
             tried.add(currentKey);
         }
-        const nextModel = resolveNextFallbackAgentModel(turnAgentId, currentModel, tried);
+        const nextModel = resolveNextFallbackAgentModel(turnAgentId, currentModel, tried, discoveredFallbackModels(turnAgentId, conv.ownerLogin));
         if (!nextModel) {
             ctx.modelFallbackTriedByUserMessage.delete(loopBudgetKey);
             return false;
