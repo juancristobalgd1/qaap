@@ -10,47 +10,19 @@ export const PI_OPENROUTER_PROVIDER_ID = 'openrouter';
 /** The model a Pi turn runs when the owner chose none: the head of QAIQ's OpenRouter free default list. */
 export const PI_DEFAULT_OPENROUTER_MODEL_ID = OPENROUTER_DEFAULT_FREE_MODELS[0];
 
-export interface PiOwnerDefaultModelInput {
-    /** The owner's Pi `settings.json`, when it exists. */
-    readonly settingsJson?: string;
-    /** The owner's Pi `auth.json`, when it exists. */
-    readonly authJson?: string;
-    /** `OPENROUTER_API_KEY` is set for the Pi child (Pi reads it without `auth.json`). */
-    readonly openRouterKeyInEnv: boolean;
-}
-
-function parseJsonObject(text: string | undefined): Record<string, unknown> | undefined {
-    if (!text?.trim()) {
-        return undefined;
-    }
-    try {
-        const parsed: unknown = JSON.parse(text);
-        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : undefined;
-    } catch {
-        return undefined;
-    }
-}
-
-/** Pi's own precedence: an explicit `--model` beats `settings.json`, so a pinned owner default must be kept. */
-function settingsPinsModel(settingsJson: string | undefined): boolean {
-    const settings = parseJsonObject(settingsJson);
-    return ['defaultModel', 'defaultProvider'].some(key => typeof settings?.[key] === 'string' && (settings[key] as string).trim() !== '');
-}
-
-function authHasProvider(authJson: string | undefined, provider: string): boolean {
-    return Object.prototype.hasOwnProperty.call(parseJsonObject(authJson) ?? {}, provider);
-}
-
 /**
- * The `--model` flag for a Pi turn that names no model: OpenRouter's default free model when the owner's
- * Pi has no pinned default and can reach OpenRouter. Empty otherwise, so Pi keeps its own choice.
+ * A POSIX shell substitution for the `{model_flags}` of a Pi turn without a chosen model. It runs INSIDE
+ * the Pi child's command, so it reads the Pi agent directory of the HOME that child really uses (the task
+ * sandbox's `/tmp/qaap-home`, a tenant HOME, or the backend's own HOME), never the backend's HOME.
+ *
+ * It prints `--model openrouter/<head of the free default list>` unless either
+ * - the agent directory's `settings.json` pins a `defaultModel` or `defaultProvider` (Pi's own
+ *   precedence puts `--model` above settings, so adding it would override the owner's pin), or
+ * - the child cannot reach OpenRouter (no `OPENROUTER_API_KEY` and no `openrouter` entry in `auth.json`).
  */
-export function resolvePiDefaultModelFlag(input: PiOwnerDefaultModelInput): string {
-    if (settingsPinsModel(input.settingsJson)) {
-        return '';
-    }
-    if (!input.openRouterKeyInEnv && !authHasProvider(input.authJson, PI_OPENROUTER_PROVIDER_ID)) {
-        return '';
-    }
-    return `--model ${PI_OPENROUTER_PROVIDER_ID}/${PI_DEFAULT_OPENROUTER_MODEL_ID}`;
+export function buildPiDefaultModelFlagShell(): string {
+    const model = `${PI_OPENROUTER_PROVIDER_ID}/${PI_DEFAULT_OPENROUTER_MODEL_ID}`;
+    const pinned = '\'"(defaultModel|defaultProvider)"[[:space:]]*:[[:space:]]*"[^"]\'';
+    const noOpenRouter = '[ -z "$OPENROUTER_API_KEY" ] && ! grep -qs \'"openrouter"[[:space:]]*:\' "$d/auth.json"';
+    return `$(d="\${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"; if grep -qsE ${pinned} "$d/settings.json" || { ${noOpenRouter}; }; then :; else printf '%s' '--model ${model}'; fi)`;
 }

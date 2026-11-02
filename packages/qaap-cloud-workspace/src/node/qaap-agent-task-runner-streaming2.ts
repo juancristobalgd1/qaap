@@ -1,5 +1,5 @@
 import { buildPiGateTemplateVars } from './qaap-tool-gate-pi-adapter';
-import { readPiDefaultModelFlag } from './qaap-pi-default-model';
+import { buildPiDefaultModelFlagShell } from '@theia/qaap-shared-core/lib/common/qaap-pi-default-model';
 import { AGENT_STOP_GRACE_TIMEOUT_MS, SHELL_AGENT_ID, QAIQ_AGENT_ID, REPO_MAP_CACHE_TTL_MS, REPO_MAP_MAX_CHARS, USER_REQUEST_MAX_CHARS } from './qaap-agent-task-runner-constants';
 import type { QaapAgentCommandBuildResult, QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { QaapAgentQueuePolicy } from './qaap-agent-queue-policy';
@@ -627,9 +627,9 @@ export function buildTemplateVarsExtracted(ctx: QaapAgentTaskRunnerContext, agen
         if (agentId.trim().toLowerCase() !== 'pi') {
             return vars;
         }
-        // No model chosen: Pi would pick its own (often a down free model). The product default applies
-        // unless the owner's Pi settings pin a default, which Pi itself would then honour.
-        const modelFlags = vars.model_flags || readPiDefaultModelFlag();
+        // No model chosen: Pi would pick its own (often a down free model). The product default is resolved by
+        // the shell inside the Pi child, so it sees that child's HOME and pins (see buildPiDefaultModelFlagShell).
+        const modelFlags = vars.model_flags || buildPiDefaultModelFlagShell();
         return { ...vars, model_flags: modelFlags, ...buildPiGateTemplateVars() };
 }
 
