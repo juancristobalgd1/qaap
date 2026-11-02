@@ -3,16 +3,16 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import * as path from 'path';
 import { resolveQaapHarnessCapabilities } from '@theia/qaap-shared-core/lib/common/qaap-harness-capabilities';
 import { quoteShellArg } from './qaap-agent-task-runner-utils';
+import { resolveQaapCloudWorkspaceResource } from './qaap-cloud-workspace-resource';
 
 /** File name of the standalone Pi extension shipped in this package's `resources/`. */
 export const QAAP_TOOL_GATE_PI_EXTENSION_FILE = 'qaap-tool-gate-pi.mjs';
 
 /** Absolute path of the Pi gate extension, resolved from the compiled module location at spawn time. */
 export function resolveQaapToolGatePiExtensionPath(): string {
-    return path.resolve(__dirname, '..', '..', 'resources', QAAP_TOOL_GATE_PI_EXTENSION_FILE);
+    return resolveQaapCloudWorkspaceResource(QAAP_TOOL_GATE_PI_EXTENSION_FILE);
 }
 
 /**
