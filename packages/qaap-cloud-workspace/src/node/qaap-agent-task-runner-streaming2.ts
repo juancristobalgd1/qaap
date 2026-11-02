@@ -1,4 +1,5 @@
 import { buildPiGateTemplateVars } from './qaap-tool-gate-pi-adapter';
+import { readPiDefaultModelFlag } from './qaap-pi-default-model';
 import { AGENT_STOP_GRACE_TIMEOUT_MS, SHELL_AGENT_ID, QAIQ_AGENT_ID, REPO_MAP_CACHE_TTL_MS, REPO_MAP_MAX_CHARS, USER_REQUEST_MAX_CHARS } from './qaap-agent-task-runner-constants';
 import type { QaapAgentCommandBuildResult, QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { QaapAgentQueuePolicy } from './qaap-agent-queue-policy';
@@ -623,7 +624,13 @@ export function buildTemplateVarsExtracted(ctx: QaapAgentTaskRunnerContext, agen
         ownerLogin?: string,
         cwd?: string,): Record<string, string> {
         const vars = buildBaseTemplateVars(ctx, agentId, agentModel, interaction, ownerLogin, cwd);
-        return agentId.trim().toLowerCase() === 'pi' ? { ...vars, ...buildPiGateTemplateVars() } : vars;
+        if (agentId.trim().toLowerCase() !== 'pi') {
+            return vars;
+        }
+        // No model chosen: Pi would pick its own (often a down free model). The product default applies
+        // unless the owner's Pi settings pin a default, which Pi itself would then honour.
+        const modelFlags = vars.model_flags || readPiDefaultModelFlag();
+        return { ...vars, model_flags: modelFlags, ...buildPiGateTemplateVars() };
 }
 
 function buildBaseTemplateVars(ctx: QaapAgentTaskRunnerContext, agentId: string,
