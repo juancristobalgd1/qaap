@@ -298,6 +298,40 @@ const PROVIDER_FREE_LIMIT_PATTERNS: readonly RegExp[] = [
 ];
 
 /**
+ * A transient upstream outage: the provider has no capacity behind the model right now, or a gateway
+ * answered 502/503/504/529. The same model usually serves the next request, but the turn cannot finish
+ * here, so it reads as `model_unavailable` and the next model of the chain takes over (see
+ * {@link isTransientUpstreamFailureText}). Account-level statuses are never transient.
+ */
+const TRANSIENT_UPSTREAM_PATTERNS: readonly RegExp[] = [
+    // OpenRouter and its hosts: `{"error":"no upstreams available"}` behind "Provider returned error".
+    /\bno\s+upstreams?\s+(?:are\s+)?available\b/i,
+    /\b(?:model|provider|server|service|api)\s+(?:is\s+)?overloaded\b/i,
+    /\boverloaded_error\b/i,
+    /\bservice\s+(?:is\s+)?temporarily\s+unavailable\b/i,
+    /\bbad\s+gateway\b/i,
+    /\bgateway\s+time-?out\b/i,
+    // A status number on an HTTP/API error line: "503:", "API Error: 529", "status code 502", `"code":504`.
+    /(?:\bstatus(?:\s+code)?\s*:?\s*|\bhttp\s*(?:\/\d(?:\.\d)?\s+)?|\bapi\s+error\s*:\s*|\\?"(?:code|status)\\?"\s*:\s*)(?:502|503|504|529)\b/i,
+    /^\s*(?:502|503|504|529)\s*:/m,
+];
+
+/** A 5xx code inside a provider error envelope (`"code":503`, `"provider_name":...`). */
+const TRANSIENT_PROVIDER_CODE = /\\?"code\\?"\s*:\s*(?:502|503|504|529)\b/;
+
+/** True when the text reports a transient upstream outage (502/503/504/529, "no upstreams available"). */
+function isTransientUpstreamFailureText(sample: string): boolean {
+    if (matchesAny(sample, PROVIDER_REJECTED_EXCLUDED_PATTERNS) || matchesAny(sample, AUTH_PATTERNS)
+        || matchesAny(sample, AUTH_ENVELOPE_ONLY_PATTERNS)) {
+        return false;
+    }
+    if (matchesAny(sample, TRANSIENT_UPSTREAM_PATTERNS)) {
+        return true;
+    }
+    return TRANSIENT_PROVIDER_CODE.test(sample) && (PROVIDER_REJECTED_TEXT.test(sample) || PROVIDER_NAME_FIELD.test(sample));
+}
+
+/**
  * The provider answered the request itself with an error ("Provider returned error", OpenRouter's
  * wrapper for an upstream host's 4xx/5xx). Neither the user's key nor the model's name is at fault
  * here, so the card says the provider rejected the request and offers another model.
@@ -737,6 +771,11 @@ function classifyAgentFailureEvidence(evidence: AgentFailureEvidence): QaapAgent
         return 'tool_unsupported';
     }
     if (matchesAny(sample, MODEL_UNAVAILABLE_PATTERNS)) {
+        return 'model_unavailable';
+    }
+    // A 502/503/504/529 or "no upstreams available" is transient: the next model of the chain can finish
+    // the turn, while the user's key and plan are fine. Account-level statuses never reach this line.
+    if (isTransientUpstreamFailureText(sample)) {
         return 'model_unavailable';
     }
     // After quota, rate limit and model_unavailable (an explicit "model not found" keeps the model

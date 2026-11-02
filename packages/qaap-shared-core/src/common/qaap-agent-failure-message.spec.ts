@@ -545,4 +545,47 @@ describe('provider rejected requests', () => {
         expect(detectAgentFailureKind('Provider returned error: model_not_found: kimi-k2.6'))
             .to.equal('model_unavailable');
     });
+
+    it('reads the OpenRouter 503 "no upstreams available" as a transient model failure', () => {
+        // The status line Pi prints for the failed request, then OpenRouter's body.
+        const log = '503 {"message":"Provider returned error","code":503,"metadata":{"raw":"{\\"error\\":\\"no upstreams available\\"}","provider_name":"Recursive","is_byok":false}}';
+        expect(detectAgentFailureKind(log)).to.equal('model_unavailable');
+        expect(detectAgentFailureKind('API Error: 503 {"error":"no upstreams available"}')).to.equal('model_unavailable');
+    });
+
+    it('reads a bare 502, 503, 504 or 529 status as a transient model failure', () => {
+        for (const log of [
+            '502: Bad Gateway',
+            '503: upstream unavailable',
+            'API Error: 504 Gateway Timeout',
+            'API Error: 529 {"type":"error","error":{"type":"overloaded_error"}}',
+            'HTTP/1.1 503 Service Unavailable',
+            'status code 502 from the upstream host',
+            'Provider returned error {"code":504,"provider_name":"AtlasCloud"}',
+        ]) {
+            expect(detectAgentFailureKind(log), log).to.equal('model_unavailable');
+        }
+    });
+
+    it('reads overloaded and temporarily-unavailable provider text as transient', () => {
+        expect(detectAgentFailureKind('The model is overloaded. Please try again later.')).to.equal('model_unavailable');
+        expect(detectAgentFailureKind('The service is temporarily unavailable')).to.equal('model_unavailable');
+    });
+
+    it('keeps account-level statuses out of the transient class', () => {
+        for (const log of [
+            'Provider returned error {"code":401,"provider_name":"AtlasCloud"}',
+            'Provider returned error {"code":403,"provider_name":"AtlasCloud"}',
+            'Provider returned error {"code":429,"provider_name":"AtlasCloud"}',
+            'HTTP 402 insufficient credits',
+            '401 Unauthorized',
+        ]) {
+            expect(detectAgentFailureKind(log), log).not.to.equal('model_unavailable');
+        }
+        expect(detectAgentFailureKind('Provider returned error {"code":429,"provider_name":"AtlasCloud"}')).to.equal('rate_limit');
+    });
+
+    it('keeps a 400 provider rejection as provider_rejected, not transient', () => {
+        expect(detectAgentFailureKind(ATLAS_CLOUD_LOG)).to.equal('provider_rejected');
+    });
 });
