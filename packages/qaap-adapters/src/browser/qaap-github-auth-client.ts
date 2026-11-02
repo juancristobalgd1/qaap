@@ -35,6 +35,7 @@ import {
     type QaapProjectSessionSummary,
 } from '../common/qaap-github-api-types';
 import { rememberQaapHostedRuntime } from '../common/qaap-hosted-runtime';
+import { rememberQaapDefaultAgentIdConfig } from '../common/qaap-default-agent-config';
 import { fetchQaapGetWithTransientRetry } from '../common/qaap-transient-get';
 import { takeQaapBootPrefetch } from './qaap-boot-prefetch';
 import { nls } from '@theia/core/lib/common/nls';
@@ -178,6 +179,9 @@ async function requestQaapAuthConfig(): Promise<{ config: QaapAuthConfigResponse
     const config = await response.json() as QaapAuthConfigResponse;
     if (typeof config.productionRuntime === 'boolean') {
         rememberQaapHostedRuntime(config.productionRuntime);
+    }
+    if (typeof config.defaultAgentId === 'string') {
+        rememberQaapDefaultAgentIdConfig(config.defaultAgentId);
     }
     return { config, cacheable: true };
 }

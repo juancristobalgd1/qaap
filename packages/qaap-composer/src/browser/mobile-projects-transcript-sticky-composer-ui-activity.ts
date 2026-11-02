@@ -12,9 +12,7 @@ import {
     type QaapMessageDeliveryMode,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 
-import {
-    QAAP_COMPOSER_DEFAULT_AGENT_ID,
-} from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { getQaapDefaultAgentId } from '@theia/qaap-shared-core/lib/common/qaap-default-agent-id';
 import { isTranscriptSummaryAgentWorking } from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
 import {
     applyConversationComposerPrefs,
@@ -310,7 +308,7 @@ export function applyTranscriptComposerPrefsExtracted(ctx: MobileProjectsTranscr
 }
 
 export function resetToProjectComposerDefaultsExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, project: MobileProjectEntry,
-    defaultAgentId: string = QAAP_COMPOSER_DEFAULT_AGENT_ID,): void {
+    defaultAgentId: string = getQaapDefaultAgentId(),): void {
     const cwd = ctx.host.projectsService.getProjectCwd(project);
     const runtime = applyProjectComposerDefaults(cwd, defaultAgentId);
     ctx.host.transcriptComposerPrefsConvId = undefined;
