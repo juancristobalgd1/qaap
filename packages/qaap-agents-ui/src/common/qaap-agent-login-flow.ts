@@ -205,6 +205,16 @@ export class QaapAgentLoginFlow {
         this.set({ phase: 'manual', message });
     }
 
+    /**
+     * The input driver typed the login keystrokes again: the CLI only became ready now, so the link
+     * deadline counts from this moment instead of the command start.
+     */
+    restartWaitingDeadline(now: number): void {
+        if (this.current.phase === 'waiting') {
+            this.set({ phase: 'waiting', startedAt: now });
+        }
+    }
+
     /** The login command was sent to the terminal; the watchdog starts now. */
     commandStarted(now: number): void {
         this.resetOutput();

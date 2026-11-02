@@ -18,6 +18,8 @@ export interface QaapAgentLoginInputDriverOptions {
     /** Writes keystrokes to the CLI's stdin. */
     readonly send: (text: string) => void;
     readonly now: number;
+    /** The sequence was typed again because the CLI showed its ready pattern only after a fallback send. */
+    readonly onRestart?: (now: number) => void;
 }
 
 /**
@@ -32,6 +34,11 @@ export class QaapAgentLoginInputDriver {
     protected stepStartedAt: number;
     protected lastOutputAt: number | undefined;
     protected matchedAt: number | undefined;
+    /** A `waitFor` step sent without its pattern: the CLI may not have been ready for it. */
+    protected fallbackIndex: number | undefined;
+    /** Output printed since that fallback send. */
+    protected sinceFallback = '';
+    protected restartCount = 0;
     protected stopped = false;
     protected readonly patterns = new Map<string, RegExp>();
 
@@ -59,11 +66,20 @@ export class QaapAgentLoginInputDriver {
             return;
         }
         this.buffer = `${this.buffer}${text}`.slice(-BUFFER_LIMIT);
+        if (this.fallbackIndex !== undefined) {
+            this.sinceFallback = `${this.sinceFallback}${text}`.slice(-BUFFER_LIMIT);
+        }
         this.lastOutputAt = now;
+    }
+
+    /** How many times the sequence was typed again (at most once). */
+    get restarts(): number {
+        return this.restartCount;
     }
 
     /** Types the next step when it is due; at most one step per tick so the CLI can redraw. */
     tick(now: number): void {
+        this.restartIfReady(now);
         while (!this.done) {
             const step = this.options.steps[this.index];
             if (step.skipWhen && this.pattern(step.skipWhen).test(this.buffer)) {
@@ -76,6 +92,10 @@ export class QaapAgentLoginInputDriver {
             if (!this.isDue(step, now)) {
                 return;
             }
+            if (step.waitFor && this.matchedAt === undefined && this.restartCount === 0) {
+                this.fallbackIndex = this.index;
+                this.sinceFallback = '';
+            }
             // Reset before sending: a terminal may echo the keystrokes synchronously.
             this.index++;
             this.buffer = '';
@@ -85,6 +105,33 @@ export class QaapAgentLoginInputDriver {
             this.options.send(step.text);
             return;
         }
+    }
+
+    /**
+     * A `waitFor` step sent by fallback may have reached a CLI that had not started yet (keys typed
+     * before its TUI owns stdin are lost). If its pattern shows up in the output printed after that
+     * send, the sequence is typed again from that step, once; the host re-anchors its deadline.
+     */
+    protected restartIfReady(now: number): void {
+        if (this.restartCount > 0 || this.fallbackIndex === undefined) {
+            return;
+        }
+        const step = this.options.steps[this.fallbackIndex];
+        if (!step.waitFor || !this.pattern(step.waitFor).test(this.sinceFallback)) {
+            return;
+        }
+        this.restartCount++;
+        const resetText = step.resetText;
+        this.index = this.fallbackIndex;
+        this.fallbackIndex = undefined;
+        this.buffer = this.sinceFallback;
+        this.sinceFallback = '';
+        this.stepStartedAt = now;
+        this.matchedAt = now;
+        if (resetText) {
+            this.options.send(resetText);
+        }
+        this.options.onRestart?.(now);
     }
 
     protected isDue(step: QaapAgentLoginInputStep, now: number): boolean {

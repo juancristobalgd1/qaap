@@ -48,6 +48,8 @@ export interface QaapAgentLoginInputStep {
     readonly fallbackMs?: number;
     /** Skipped when the output since the previous step already matches this pattern. */
     readonly skipWhen?: string;
+    /** With `waitFor`: written once before a restart types the sequence again (clears what a stale keystroke left). */
+    readonly resetText?: string;
 }
 
 /** Provider Pi signs in to when the Connect action does not name one. */
@@ -65,8 +67,12 @@ export const QAAP_PI_TUI_LOGIN_COMMAND = 'pi --tui-mode regular --no-session --n
  * target, which the dialog collects whatever the wrapping.
  */
 export const QAAP_PI_TUI_LOGIN_ENV: Readonly<Record<string, string>> = { PI_HYPERLINKS: '1' };
-/** Pi's startup header (version, `/ commands` hint, onboarding line): the editor takes input. */
-const PI_READY_PATTERN = '\\bv\\d+\\.\\d+\\.\\d+\\b|\\bcommands\\b|Pi can explain';
+/**
+ * The TUI is drawn and owns stdin: its startup header (version, `/ commands` hint, onboarding line),
+ * the editor's horizontal rules (a quiet `quietStartup` header still draws them) or the no-models
+ * warning. Matched only against output printed after the login command was sent.
+ */
+const PI_READY_PATTERN = '\\bv\\d+\\.\\d+\\.\\d+\\b|\\bcommands\\b|Pi can explain|No models available|─{20,}';
 /** `Select authentication method for OpenRouter:` (Sign in with OpenRouter / with an API key). */
 const PI_AUTH_METHOD_PICKER_PATTERN = 'Select authentication method';
 /** Pi provider ids are plain slugs; anything else must never be typed into the TUI. */
@@ -80,7 +86,9 @@ const PI_PROVIDER_ID_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/i;
  */
 export function resolvePiTuiLoginInput(provider: string): readonly QaapAgentLoginInputStep[] {
     return [
-        { text: `/login ${provider}`, waitFor: PI_READY_PATTERN, fallbackMs: 8_000 },
+        // One Ctrl-C closes a provider selector a stale Enter opened and clears a stale editor line
+        // (a second one within 500 ms would exit Pi, so the reset is a single key).
+        { text: `/login ${provider}`, waitFor: PI_READY_PATTERN, fallbackMs: 8_000, resetText: '\x03' },
         { text: '\r' },
         { text: '\r', skipWhen: PI_AUTH_METHOD_PICKER_PATTERN },
         { text: '\r', waitFor: PI_AUTH_METHOD_PICKER_PATTERN },

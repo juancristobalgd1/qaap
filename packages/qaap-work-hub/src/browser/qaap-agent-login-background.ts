@@ -278,6 +278,7 @@ export async function openAgentLoginDialogInBackground(
                     driverSurface.terminal.sendText(text);
                 }
             },
+            onRestart: now => flow.restartWaitingDeadline(now),
         });
         inputDriver = driver;
         inputDriverHandle = window.setInterval(() => {
