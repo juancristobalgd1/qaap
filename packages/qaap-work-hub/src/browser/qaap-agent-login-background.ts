@@ -110,11 +110,15 @@ export async function openAgentLoginDialogInBackground(
     const agentLabel = resolveAgentDisplayLabel(agentId);
     const connectionFlow = resolveAgentConnectionFlow(agentId);
     /** Command run in the hidden terminal, and the keystrokes that drive it (TUI logins). */
-    const hiddenLogin: { readonly command: string; readonly input?: readonly QaapAgentLoginInputStep[] } | undefined =
+    const hiddenLogin: {
+        readonly command: string;
+        readonly input?: readonly QaapAgentLoginInputStep[];
+        readonly env?: Readonly<Record<string, string>>;
+    } | undefined =
         connectionFlow.kind === 'cli-login'
             ? { command: connectionFlow.command }
             : connectionFlow.kind === 'tui-login'
-                ? { command: connectionFlow.command, input: connectionFlow.input }
+                ? { command: connectionFlow.command, input: connectionFlow.input, env: connectionFlow.env }
                 : undefined;
 
     let staging: HTMLElement | undefined;
@@ -363,6 +367,7 @@ export async function openAgentLoginDialogInBackground(
             surface.terminal.sendText(`${buildAgentLoginShellCommand(command, {
                 cliBinDirectory: status?.cliBinDirectory,
                 platform: runtimePlatform(),
+                env: hiddenLogin?.env,
             })}\r`);
             if (input?.length) {
                 startInputDriver(input, currentAttempt);

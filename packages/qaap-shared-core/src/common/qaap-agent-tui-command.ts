@@ -59,6 +59,12 @@ export const QAAP_PI_DEFAULT_LOGIN_PROVIDER = 'openrouter';
  * without asking, so nothing but the login dialog can take the keystrokes.
  */
 export const QAAP_PI_TUI_LOGIN_COMMAND = 'pi --tui-mode regular --no-session --no-approve';
+/**
+ * The hidden terminal has no TERM_PROGRAM, so Pi defaults to plain `text (url)` output, which the
+ * 80-column TUI wraps mid-URL. `PI_HYPERLINKS=1` makes Pi emit the whole sign-in URL as an OSC-8
+ * target, which the dialog collects whatever the wrapping.
+ */
+export const QAAP_PI_TUI_LOGIN_ENV: Readonly<Record<string, string>> = { PI_HYPERLINKS: '1' };
 /** Pi's startup header (version, `/ commands` hint, onboarding line): the editor takes input. */
 const PI_READY_PATTERN = '\\bv\\d+\\.\\d+\\.\\d+\\b|\\bcommands\\b|Pi can explain';
 /** `Select authentication method for OpenRouter:` (Sign in with OpenRouter / with an API key). */
@@ -96,6 +102,8 @@ export type QaapAgentConnectionFlow =
         readonly input: readonly QaapAgentLoginInputStep[];
         readonly fallbackCommand: string;
         readonly followUp: string;
+        /** Environment for the login command only (Pi: `PI_HYPERLINKS=1`). */
+        readonly env: Readonly<Record<string, string>>;
     }
     | { readonly kind: 'settings-api-key'; readonly settingsQuery: string }
     /** `followUp`: what to type inside the CLI once it starts (e.g. Pi's `/login`). */
@@ -149,6 +157,7 @@ export function resolveAgentConnectionFlow(
             input: resolvePiTuiLoginInput(provider),
             fallbackCommand: tenantCommand,
             followUp: '/login',
+            env: QAAP_PI_TUI_LOGIN_ENV,
         };
     }
     return { kind: 'tenant-terminal', command: tenantCommand };
