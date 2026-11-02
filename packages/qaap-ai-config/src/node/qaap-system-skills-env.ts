@@ -6,6 +6,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { findQaapPackageFile } from '@theia/qaap-shared-core/lib/node/qaap-package-file';
 import { DEFAULT_QAAP_SYSTEM_SKILLS_DIR, QAAP_SYSTEM_SKILLS_DIR_ENV } from '../common/qaap-system-skills';
 
 /** Resolve the bundled system-skills directory when the env var is unset (local dev). */
@@ -24,7 +25,8 @@ export function resolveBundledQaapSystemSkillsDir(): string | undefined {
             return candidate;
         }
     }
-    return undefined;
+    // Installed-package layout (a bundled backend whose folders differ from the source tree).
+    return findQaapPackageFile('@theia/qaap-product', 'resources/qaap-system-skills', { startDirectory: __dirname });
 }
 
 /** Ensures `process.env.QAAP_SYSTEM_SKILLS_DIR` is set before the frontend scans skills. */

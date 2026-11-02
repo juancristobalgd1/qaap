@@ -3,12 +3,12 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import * as fs from 'fs';
 import * as path from 'path';
+import { resolveQaapPackageFile } from '@theia/qaap-shared-core/lib/node/qaap-package-file';
 
 /** Package-relative folder holding the files this package ships to harnesses (`resources/`). */
 const RESOURCES_DIRECTORY = 'resources';
-const PACKAGE_SEGMENTS = ['@theia', 'qaap-cloud-workspace'];
+const PACKAGE_NAME = '@theia/qaap-cloud-workspace';
 
 /**
  * Absolute path of a file this package ships in `resources/` (the Pi gate extension, the Codex hook,
@@ -24,21 +24,8 @@ const PACKAGE_SEGMENTS = ['@theia', 'qaap-cloud-workspace'];
  * bundler rewrites it.
  */
 export function resolveQaapCloudWorkspaceResource(file: string, startDirectory: string = __dirname): string {
-    const direct = path.resolve(startDirectory, '..', '..', RESOURCES_DIRECTORY, file);
-    if (fs.existsSync(direct)) {
-        return direct;
-    }
-    const packageRelative = path.join('node_modules', ...PACKAGE_SEGMENTS, RESOURCES_DIRECTORY, file);
-    let directory = startDirectory;
-    for (;;) {
-        const candidate = path.join(directory, packageRelative);
-        if (fs.existsSync(candidate)) {
-            return candidate;
-        }
-        const parent = path.dirname(directory);
-        if (parent === directory) {
-            return direct;
-        }
-        directory = parent;
-    }
+    return resolveQaapPackageFile(PACKAGE_NAME, `${RESOURCES_DIRECTORY}/${file}`, {
+        startDirectory,
+        directCandidate: path.resolve(startDirectory, '..', '..', RESOURCES_DIRECTORY, file),
+    });
 }
