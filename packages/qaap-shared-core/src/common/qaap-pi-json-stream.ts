@@ -317,9 +317,7 @@ export class QaapPiStreamAccumulator implements QaapAgentStreamAccumulator {
                 this.upsertTool(block.id, normalizeQaiqToolName(block.name ?? 'tool'), stringifyArgs(block.arguments));
             }
         });
-        if (message.stopReason === 'error' && message.errorMessage?.trim()) {
-            this.appendText(`\n\n**Error:** ${message.errorMessage.trim()}`);
-        }
+        // A provider error is not transcript text: the turn's failure card shows it, classified, from the log.
         this.consumeUsage(message.usage);
     }
 

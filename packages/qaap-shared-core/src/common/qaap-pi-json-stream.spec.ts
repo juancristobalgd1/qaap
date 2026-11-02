@@ -198,3 +198,19 @@ describe('qaap-pi-json-stream reported cost', () => {
         expect(stream.getUsageEvent(context)).to.equal(undefined);
     });
 });
+
+describe('qaap-pi-json-stream provider error replay', () => {
+    const SHARED_POOL_BODY = '429: {"message":"Provider returned error","code":429,"metadata":{"raw":"google/gemma-4-26b-a4b-it:free is temporarily rate-limited upstream.","provider_name":"Google AI Studio","limit_source":"upstream_provider_shared_pool"}}';
+
+    it('keeps the raw provider JSON out of the transcript text', () => {
+        const log = [
+            JSON.stringify({ type: 'session', id: 's' }),
+            JSON.stringify({ type: 'message_end', message: { role: 'assistant', content: [], stopReason: 'error', errorMessage: SHARED_POOL_BODY } }),
+        ].join('\n');
+        const stream = new QaapPiStreamAccumulator();
+        stream.push(`${log}\n`);
+        expect(stream.getDisplayText()).to.equal('');
+        expect(stream.getSegments().some(segment => segment.type === 'text' && segment.content.includes('"code"'))).to.equal(false);
+    });
+});
+

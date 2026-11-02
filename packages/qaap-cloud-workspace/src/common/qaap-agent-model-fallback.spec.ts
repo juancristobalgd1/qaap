@@ -267,4 +267,11 @@ describe('qaap-agent-model-fallback', () => {
             expect(agentTurnQualifiesForModelFallback('shell', { state: 'failed' }, undefined)).to.be.false;
         });
     });
+
+    it('falls back to another model for a shared-pool 429, but not for the account credits or key limit', () => {
+        const sharedPool = '429: {"message":"Provider returned error","code":429,"metadata":{"raw":"google/gemma-4-26b-a4b-it:free is temporarily rate-limited upstream.","limit_source":"upstream_provider_shared_pool"}}';
+        expect(agentTurnQualifiesForModelFallback('pi', { state: 'failed' }, { segments: [{ type: 'text', content: sharedPool }] })).to.be.true;
+        expect(agentTurnQualifiesForModelFallback('pi', { state: 'failed' }, { content: '402 Payment Required: insufficient credits' })).to.be.false;
+        expect(agentTurnQualifiesForModelFallback('pi', { state: 'failed' }, { content: '429: rate limit exceeded for your API key' })).to.be.false;
+    });
 });
