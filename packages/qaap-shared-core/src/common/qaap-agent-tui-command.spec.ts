@@ -82,8 +82,15 @@ describe('resolveAgentConnectionFlow for Pi', () => {
             input: resolvePiTuiLoginInput('openrouter'),
             fallbackCommand: 'pi',
             followUp: '/login',
+            env: { PI_HYPERLINKS: '1' },
         });
         expect(QAAP_PI_TUI_LOGIN_COMMAND).to.equal('pi --tui-mode regular --no-session --no-approve');
+    });
+
+    it('asks Pi for OSC-8 hyperlinks in its login only, never in other harnesses', () => {
+        expect(resolveAgentConnectionFlow('pi')).to.include({ kind: 'tui-login' });
+        expect(resolveAgentConnectionFlow('codex')).to.deep.equal({ kind: 'cli-login', command: 'codex login --device-auth' });
+        expect(resolveAgentConnectionFlow('codex')).to.not.have.property('env');
     });
 
     it('types `/login <provider>` once Pi is ready, then Enter through the autocomplete and the method picker', () => {

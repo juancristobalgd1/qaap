@@ -48,6 +48,36 @@ describe('qaap-agent-auth-login', () => {
         expect(challenge?.mode).to.equal('session');
     });
 
+    it('extracts the whole Pi URL from OSC-8 targets with BEL or ST terminators', () => {
+        const url = 'https://openrouter.ai/auth?callback_url=http%3A%2F%2F127.0.0.1%3A41237%2Fcallback&code_challenge=abc_DEF-123';
+        const bel = `\x1b[38;5;75m\x1b]8;;${url}\x07Sign in\x1b]8;;\x07`;
+        const st = `\x1b]8;;${url}\x1b\\Sign in\x1b]8;;\x1b\\`;
+        for (const log of [bel, st]) {
+            expect(extractAgentAuthLoginChallenge(log, { agentId: 'pi' })?.url).to.equal(url);
+        }
+    });
+
+    it('takes a URL from visible text inside a box gutter without the box-drawing characters', () => {
+        const log = '│ https://openrouter.ai/auth?callback_url=http%3A%2F%2F127.0.0.1%3A41237&code_challenge=abc│';
+        expect(extractAgentAuthLoginChallenge(log, { agentId: 'pi' })?.url)
+            .to.equal('https://openrouter.ai/auth?callback_url=http%3A%2F%2F127.0.0.1%3A41237&code_challenge=abc');
+    });
+
+    it('joins a URL that a TUI cut across two boxed rows', () => {
+        const log = [
+            '│ https://openrouter.ai/auth?callback_url=http%3A%2F%2F127.0.0.1%3A41237│',
+            '│ %2Fcallback&code_challenge=abc                                     │',
+        ].join('\n');
+        expect(extractAgentAuthLoginChallenge(log, { agentId: 'pi' })?.url)
+            .to.equal('https://openrouter.ai/auth?callback_url=http%3A%2F%2F127.0.0.1%3A41237%2Fcallback&code_challenge=abc');
+    });
+
+    it('does not join prose that follows a URL row', () => {
+        const log = 'https://openrouter.ai/auth?callback_url=abc\nPaste the code here';
+        expect(extractAgentAuthLoginChallenge(log, { agentId: 'pi' })?.url)
+            .to.equal('https://openrouter.ai/auth?callback_url=abc');
+    });
+
     it('rejects deceptive, insecure, and unrelated login-looking URLs', () => {
         const samples = [
             'Open http://auth.openai.com/codex/device to sign in',

@@ -24,6 +24,8 @@ export const QAAP_AGENT_LOGIN_CHALLENGE_TIMEOUT_MS = 15_000;
 export const QAAP_AGENT_LOGIN_PROMPT_GRACE_MS = 2_000;
 /** After the user pastes a code back, the CLI gets this long to report success. */
 export const QAAP_AGENT_LOGIN_CODE_TIMEOUT_MS = 45_000;
+/** A sign-in link is shown but not yet confirmed: the user gets this long to finish it in the browser. */
+export const QAAP_AGENT_LOGIN_SIGN_IN_TIMEOUT_MS = 5 * 60_000;
 /** Status check, workspace and hidden terminal must be ready within this window. */
 export const QAAP_AGENT_LOGIN_PREPARE_TIMEOUT_MS = 15_000;
 /** The server caps npm at 120 s; past this the install request itself is stuck. */
@@ -39,7 +41,7 @@ const OSC8_HYPERLINK_RE = /\x1B\]8;[^;\x07\x1B]*;([^\x07\x1B]+)(?:\x07|\x1B\\)/g
 export function stripAgentLoginTerminalControlSequences(value: string): string {
     return value
         .replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, '')
-        .replace(/\x1B\][^\x07]*(?:\x07|\x1B\\)/g, '')
+        .replace(/\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)/g, '')
         .replace(/\r/g, '');
 }
 
@@ -71,7 +73,9 @@ export type QaapAgentLoginFailureReason =
     | 'unavailable'
     | 'install-failed'
     /** The CLI reported that the sign-in failed but kept running (Pi: `Failed to login to …`). */
-    | 'rejected';
+    | 'rejected'
+    /** A sign-in link was shown but the sign-in did not complete within the sign-in deadline. */
+    | 'sign-in-expired';
 
 /**
  * Interactive first-run questions known to hold a sign-in link back. Each harness's Connect
@@ -160,6 +164,8 @@ export class QaapAgentLoginFlow {
     protected rawTail = '';
     protected hyperlinkTargets: string[] = [];
     protected blockingPrompt: { readonly line: string; readonly since: number } | undefined;
+    /** When the first sign-in link appeared; the sign-in deadline runs from here. */
+    protected challengeSince: number | undefined;
 
     constructor(protected readonly options: QaapAgentLoginFlowOptions) { }
 
@@ -197,6 +203,16 @@ export class QaapAgentLoginFlow {
 
     showManualInstructions(message: string): void {
         this.set({ phase: 'manual', message });
+    }
+
+    /**
+     * The input driver typed the login keystrokes again: the CLI only became ready now, so the link
+     * deadline counts from this moment instead of the command start.
+     */
+    restartWaitingDeadline(now: number): void {
+        if (this.current.phase === 'waiting') {
+            this.set({ phase: 'waiting', startedAt: now });
+        }
     }
 
     /** The login command was sent to the terminal; the watchdog starts now. */
@@ -270,6 +286,9 @@ export class QaapAgentLoginFlow {
         if (this.current.phase === 'challenge' && sameChallenge(this.current.challenge, challenge)) {
             return;
         }
+        if (this.challengeSince === undefined) {
+            this.challengeSince = now;
+        }
         this.set({ phase: 'challenge', challenge });
     }
 
@@ -312,6 +331,10 @@ export class QaapAgentLoginFlow {
             this.installFailed();
             return;
         }
+        if (state.phase === 'challenge' && this.challengeSince !== undefined && now - this.challengeSince >= QAAP_AGENT_LOGIN_SIGN_IN_TIMEOUT_MS) {
+            this.set({ phase: 'failed', reason: 'sign-in-expired', tail: resolveAgentLoginOutputTail(this.output) });
+            return;
+        }
         const challengeTimeoutMs = this.options.challengeTimeoutMs ?? QAAP_AGENT_LOGIN_CHALLENGE_TIMEOUT_MS;
         const timedOut = (state.phase === 'waiting' && now - state.startedAt >= challengeTimeoutMs)
             || (state.phase === 'code-submitted' && now - state.submittedAt >= QAAP_AGENT_LOGIN_CODE_TIMEOUT_MS);
@@ -336,6 +359,7 @@ export class QaapAgentLoginFlow {
         this.rawTail = '';
         this.hyperlinkTargets = [];
         this.blockingPrompt = undefined;
+        this.challengeSince = undefined;
     }
 
     protected isRunning(): boolean {

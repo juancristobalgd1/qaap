@@ -18,6 +18,8 @@ export interface QaapAgentLoginShellOptions {
     /** Per-user harness install directory (`harness-status.cliBinDirectory`), prepended to PATH. */
     readonly cliBinDirectory?: string;
     readonly platform?: string;
+    /** Environment variables exported for this login command only (names are fixed by the caller). */
+    readonly env?: Readonly<Record<string, string>>;
 }
 
 function quotePosix(value: string): string {
@@ -35,12 +37,15 @@ function quotePowerShell(value: string): string {
  */
 export function buildAgentLoginShellCommand(command: string, options: QaapAgentLoginShellOptions = {}): string {
     const binDirectory = options.cliBinDirectory?.trim();
+    const envEntries = Object.entries(options.env ?? {});
     if (options.platform === 'win32') {
         const powerShellPathSetup = binDirectory ? `$env:PATH = ${quotePowerShell(binDirectory)} + ';' + $env:PATH; ` : '';
-        return `${powerShellPathSetup}${command}; echo "${QAAP_AGENT_LOGIN_EXIT_TOKEN}:$LASTEXITCODE"`;
+        const powerShellEnvSetup = envEntries.map(([name, value]) => `$env:${name} = ${quotePowerShell(value)}; `).join('');
+        return `${powerShellPathSetup}${powerShellEnvSetup}${command}; echo "${QAAP_AGENT_LOGIN_EXIT_TOKEN}:$LASTEXITCODE"`;
     }
     const pathSetup = binDirectory ? `PATH=${quotePosix(binDirectory)}:"$PATH"; export PATH; ` : '';
-    return `stty cols ${LOGIN_TERMINAL_COLUMNS} rows ${LOGIN_TERMINAL_ROWS} 2>/dev/null; ${pathSetup}${command}; echo "${QAAP_AGENT_LOGIN_EXIT_TOKEN}:$?"`;
+    const envSetup = envEntries.map(([name, value]) => `export ${name}=${quotePosix(value)}; `).join('');
+    return `stty cols ${LOGIN_TERMINAL_COLUMNS} rows ${LOGIN_TERMINAL_ROWS} 2>/dev/null; ${pathSetup}${envSetup}${command}; echo "${QAAP_AGENT_LOGIN_EXIT_TOKEN}:$?"`;
 }
 
 /** Exit code of the wrapped login command, once it has ended. */

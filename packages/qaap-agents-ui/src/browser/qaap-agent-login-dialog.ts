@@ -18,6 +18,7 @@ import {
 import {
     QAAP_AGENT_LOGIN_CHALLENGE_TIMEOUT_MS,
     QAAP_AGENT_LOGIN_PREPARE_TIMEOUT_MS,
+    QAAP_AGENT_LOGIN_SIGN_IN_TIMEOUT_MS,
     type QaapAgentLoginFlowState,
 } from '../common/qaap-agent-login-flow';
 import { resolveAgentLoginDialogSubtitle } from './qaap-agent-login-instructions';
@@ -91,6 +92,13 @@ function localizeFailure(state: Extract<QaapAgentLoginFlowState, { phase: 'faile
                 '{0} did not show a sign-in link within {1} seconds. Its last output is below.',
                 agentLabel,
                 String(Math.round((state.timeoutMs ?? QAAP_AGENT_LOGIN_CHALLENGE_TIMEOUT_MS) / 1000)),
+            );
+        case 'sign-in-expired':
+            return nls.localize(
+                'qaap/mobileProjects/agentLoginDialogSignInExpired',
+                'The {0} sign-in did not complete within {1} minutes. Retry the sign-in, or add an API key in Settings instead.',
+                agentLabel,
+                String(Math.round(QAAP_AGENT_LOGIN_SIGN_IN_TIMEOUT_MS / 60_000)),
             );
         case 'rejected':
             return nls.localize(
