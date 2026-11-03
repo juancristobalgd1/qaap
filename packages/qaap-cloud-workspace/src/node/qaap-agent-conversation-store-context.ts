@@ -167,6 +167,7 @@ export interface QaapAgentConversationStoreContext {
     continueVisualRepairLoop(
         conversationId: string,
         sourceAgentMessageId: string,
+        options?: { readonly propose?: boolean },
     ): Promise<QaapAgentConversation | undefined>;
     sweepUnreferencedVisualEvidence(conversationId: string): Promise<void>;
 

@@ -20,7 +20,7 @@ import { QAAP_VISUAL_REPAIR_REQUIRED_MARKER, agentMessageHasVisualVerificationMa
 
 import { resolveVisualEvidenceTarget as resolveVisualEvidenceTargetHelper, resolveVisualRepairSourceUserMessage as resolveVisualRepairSourceUserMessageHelper } from './qaap-agent-conversation-store-visual';
 
-import { MAX_VISUAL_REPAIR_ATTEMPTS } from './qaap-agent-conversation-store-constants';
+import { MAX_VISUAL_REPAIR_ATTEMPTS, QAAP_VISUAL_REPAIR_AUTO_START } from './qaap-agent-conversation-store-constants';
 
 export function cancelRunExtracted(ctx: QaapAgentConversationStoreContext, id: string, userMessageId: string): QaapAgentConversation | undefined {
         const conv = ctx.conversations.get(id);
@@ -244,7 +244,8 @@ export async function failVisualRepairLoopExtracted(ctx: QaapAgentConversationSt
 }
 
 export async function continueVisualRepairLoopExtracted(ctx: QaapAgentConversationStoreContext, conversationId: string,
-        sourceAgentMessageId: string, ): Promise<QaapAgentConversation | undefined> {
+        sourceAgentMessageId: string,
+        options?: { readonly propose?: boolean }, ): Promise<QaapAgentConversation | undefined> {
         let conv = ctx.conversations.get(conversationId);
         if (!conv || conv.status === 'failed' || conv.paused) {
             return conv;
@@ -263,6 +264,26 @@ export async function continueVisualRepairLoopExtracted(ctx: QaapAgentConversati
         const sourceUserMessage = ctx.resolveVisualRepairSourceUserMessage(conv, target);
         if (!sourceUserMessage) {
             return conv;
+        }
+        if (options?.propose && !QAAP_VISUAL_REPAIR_AUTO_START) {
+            // The user decides: record the offer on the evidence message and start nothing. Accepting
+            // it later goes through startVisualRepairProposal, which runs the same loop below.
+            if (target.visualRepairProposedAt !== undefined) {
+                return conv;
+            }
+            const proposedAt = Date.now();
+            const proposed: QaapAgentConversation = {
+                ...conv,
+                updatedAt: proposedAt,
+                messages: conv.messages.map(message => message.id === target.id && message.role === 'agent'
+                    ? { ...message, visualRepairProposedAt: proposedAt }
+                    : message),
+            };
+            ctx.conversations.set(conversationId, proposed);
+            ctx.publishFinalizedAgentMessage(conversationId, proposed, target.id, sourceUserMessage.turnAgentId);
+            ctx.fire({ type: 'updated', conversation: toConversationSummary(proposed) });
+            await ctx.persist();
+            return proposed;
         }
         const rootUserMessageId = sourceUserMessage.visualRepairRootMessageId
             ?? sourceUserMessage.autoContinueRootMessageId
@@ -327,6 +348,21 @@ export async function continueVisualRepairLoopExtracted(ctx: QaapAgentConversati
         return next;
 }
 
+/**
+ * The user accepted a repair proposal ("Fix with agent"). Only an evidence message that carries an
+ * open proposal can start a repair, so a stale or forged id cannot spawn one. `undefined` when the
+ * message has no open proposal.
+ */
+export async function startVisualRepairProposalExtracted(ctx: QaapAgentConversationStoreContext, conversationId: string,
+        sourceAgentMessageId: string, ): Promise<QaapAgentConversation | undefined> {
+        const conv = ctx.conversations.get(conversationId);
+        const target = conv?.messages.find(message => message.id === sourceAgentMessageId && message.role === 'agent');
+        if (!conv || !target || target.visualRepairProposedAt === undefined) {
+            return undefined;
+        }
+        return ctx.continueVisualRepairLoop(conversationId, sourceAgentMessageId);
+}
+
 export async function recordVisualVerificationExtracted(ctx: QaapAgentConversationStoreContext, conversationId: string,
         result: QaapPreviewVisualValidationResult,
         png: Buffer,
@@ -356,7 +392,7 @@ export async function recordVisualVerificationExtracted(ctx: QaapAgentConversati
                 + `/visual-verifications/${encodeURIComponent(evidenceId)}`;
             const next = ctx.attachVisualVerificationBlock(conv, target, buildQaapVisualVerificationMarkdown(imageUrl, result, previewUrl));
             return result.status === 'failed'
-                ? await ctx.continueVisualRepairLoop(conversationId, target.id)
+                ? await ctx.continueVisualRepairLoop(conversationId, target.id, { propose: true })
                 : next;
         } finally {
             ctx.visualVerificationInFlight.delete(conversationId);
@@ -389,7 +425,7 @@ export async function recordVisualVerificationVideoExtracted(ctx: QaapAgentConve
             const next = ctx.attachVisualVerificationBlock(conv, target, buildQaapVisualVideoMarkdown(videoUrl, steps, previewUrl));
             void ctx.sweepUnreferencedVisualEvidence(conversationId).catch(() => undefined);
             return steps.some(step => step.result.status === 'failed')
-                ? await ctx.continueVisualRepairLoop(conversationId, target.id)
+                ? await ctx.continueVisualRepairLoop(conversationId, target.id, { propose: true })
                 : next;
         } finally {
             ctx.visualVerificationInFlight.delete(conversationId);

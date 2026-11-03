@@ -327,6 +327,7 @@ export async function restoreFromDiskExtracted(ctx: QaapAgentConversationStoreCo
             async conv => {
                 const last = conv.messages[conv.messages.length - 1];
                 if (conv.status !== 'idle' || last?.role !== 'agent'
+                    || last.visualRepairProposedAt !== undefined
                     || !last.content.includes(QAAP_VISUAL_REPAIR_REQUIRED_MARKER)) {
                     return false;
                 }

@@ -89,6 +89,11 @@ export const TURN_WATCHDOG_SWEEP_MS = 60 * 1000;
  * auto-re-prompting the agent to "keep going" after a turn — the agent then does only what the
  * user asked and stops. Default on (preserves the auto-continue / scaffold-to-preview behavior).
  */
+/**
+ * A failed visual check offers a repair as a proposal the user accepts. `QAAP_VISUAL_REPAIR_AUTO=1`
+ * restores the automatic repair turn for unattended runs (benchmarks, CI scripts) that have no UI.
+ */
+export const QAAP_VISUAL_REPAIR_AUTO_START = /^(1|true|on)$/i.test(process.env.QAAP_VISUAL_REPAIR_AUTO?.trim() ?? '');
 export const QAAP_AGENT_AUTO_CONTINUE_ENABLED = !/^(0|false|off)$/i.test(process.env.QAAP_AGENT_AUTO_CONTINUE?.trim() ?? '');
 
 /**

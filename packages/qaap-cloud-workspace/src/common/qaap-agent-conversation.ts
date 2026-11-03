@@ -152,6 +152,12 @@ export interface QaapAgentMessage {
     /** Agent evidence message whose failed render caused this repair turn. */
     readonly visualRepairSourceAgentMessageId?: string;
     /**
+     * Set on an agent evidence message whose failed render is offered as a repair proposal. The
+     * repair turn starts only when the user accepts it (see startVisualRepairProposal); absent when
+     * the repair was started automatically (QAAP_VISUAL_REPAIR_AUTO).
+     */
+    readonly visualRepairProposedAt?: number;
+    /**
      * How many times this turn has been auto-resumed after a backend restart (OOM/redeploy). Held
      * on the root user message and persisted so the ceiling survives further restarts: a turn whose
      * own work is what saturated memory cannot loop restart→resume→OOM forever. See

@@ -200,6 +200,10 @@ export interface QaapAgentMessageDTO {
     readonly id: string;
     readonly role: 'user' | 'agent';
     readonly content: string;
+    /** Backend-generated visual repair turn: the agent evidence message it re-runs. Never shown as a user bubble. */
+    readonly visualRepairSourceAgentMessageId?: string;
+    /** Agent evidence message carrying a pending "Fix with agent" repair proposal. */
+    readonly visualRepairProposedAt?: number;
     /** Correlates a persisted user row with the client-only optimistic row it confirms. */
     readonly clientMessageId?: string;
     /** Structured Codex/Cursor-style execution trace. Preferred over parsing content. */
@@ -1097,6 +1101,20 @@ export async function fetchGoalLoopStatus(id: string): Promise<QaapGoalLoopRespo
  * Stops ONE run of a multitasking session (the turn started by `userMessageId`), leaving its
  * peers working. Always HTTP: the WebSocket cancel channel is session-wide by construction.
  */
+/** "Fix with agent": starts the repair turn for an evidence message that carries an open proposal. */
+export async function startConversationVisualRepair(id: string, sourceAgentMessageId: string): Promise<QaapAgentConversationDTO> {
+    const response = await fetch(`${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(id)}/visual-repair`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourceAgentMessageId }),
+    });
+    if (!response.ok) {
+        throw new Error(response.statusText);
+    }
+    return response.json() as Promise<QaapAgentConversationDTO>;
+}
+
 export async function cancelConversationRun(id: string, userMessageId: string): Promise<void> {
     const response = await fetch(`${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(id)}/cancel`, {
         method: 'POST',
