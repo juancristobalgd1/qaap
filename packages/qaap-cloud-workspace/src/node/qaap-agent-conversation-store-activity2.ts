@@ -33,7 +33,10 @@ import { resolveStructuredParsedTraceEvents as resolveStructuredParsedTraceEvent
 import { agentVisibleLog, applyAccumulatorStructuredOutput as applyAccumulatorStructuredOutputHelper } from './qaap-agent-conversation-store-helpers';
 
 import { type QaapConversationTaskRef } from './qaap-agent-conversation-store-constants';
-import { publishDiscardCheckpointAfterExit } from './qaap-agent-conversation-store-pre-turn-checkpoint';
+import { findPreTurnCheckpoint, publishDiscardCheckpointAfterExit } from './qaap-agent-conversation-store-pre-turn-checkpoint';
+import { cwdIsGitRepository, localGitRead } from './qaap-agent-conversation-store-git';
+import { snapshotWorktreeTreeForStore } from './qaap-agent-conversation-store-thought-brief2';
+import { computeTreeDiff } from '@theia/qaap-shared-core/lib/node/qaap-git-tree-diff';
 
 export function applyAccumulatorStructuredOutputExtracted(ctx: QaapAgentConversationStoreContext, taskId: string,
     ref: QaapConversationTaskRef,
@@ -92,14 +95,21 @@ export function resolveStructuredParsedTraceEventsExtracted(ctx: QaapAgentConver
 interface QaapTurnGitState {
     readonly gitStats?: { added: number; removed: number; files?: number };
     readonly checkpoint?: QaapConversationCheckpoint;
+    /**
+     * `true` when the turn had no pre-turn snapshot and the stats came from the legacy
+     * `startSha..HEAD` + `HEAD` diff, which counts pre-existing dirt and misses untracked files.
+     */
+    readonly baselineApproximate?: boolean;
 }
 
 /**
- * Same git sequence as before (numstat diff, then the throwaway-index checkpoint), but async and
- * serialized per repository so two settles (peer runs) or a concurrent rewind never interleave.
- * Failures are non-fatal: a turn without stats/checkpoint still settles.
+ * Turn diff against the pre-turn snapshot (the worktree as it was before the agent spawned), so
+ * pre-existing dirt and untracked files are measured correctly. Without that snapshot the legacy
+ * `startSha` diff is used and the state is flagged `baselineApproximate`. Runs serialized per
+ * repository so two settles (peer runs) or a concurrent rewind never interleave. Failures are
+ * non-fatal: a turn without stats/checkpoint still settles.
  */
-async function captureTurnGitState(ctx: QaapAgentConversationStoreContext, conversationId: string,
+export async function captureTurnGitState(ctx: QaapAgentConversationStoreContext, conversationId: string,
     userMessageId: string, startSha: string | undefined): Promise<QaapTurnGitState | undefined> {
     const conv = ctx.conversations.get(conversationId);
     if (!conv) {
@@ -110,9 +120,19 @@ async function captureTurnGitState(ctx: QaapAgentConversationStoreContext, conve
     const label = userMessage ? ctx.checkpointLabel(userMessage.content ?? '') : 'Turn';
     try {
         return await ctx.runSerializedGit(cwd, async () => {
+            const baseline = findPreTurnCheckpoint(conv, userMessageId);
+            if (baseline?.commit) {
+                const treeId = await snapshotWorktreeTreeForStore(ctx, cwd);
+                const diff = treeId ? await computeTreeDiff(cwd, baseline.commit, treeId, localGitRead) : undefined;
+                if (diff) {
+                    const gitStats = diff.files.length > 0 ? { added: diff.added, removed: diff.removed, files: diff.files.length } : undefined;
+                    const checkpoint = await ctx.captureCheckpoint(cwd, conversationId, userMessageId, label, gitStats);
+                    return { gitStats, checkpoint };
+                }
+            }
             const gitStats = await ctx.computeGitDiffStats(cwd, startSha);
             const checkpoint = await ctx.captureCheckpoint(cwd, conversationId, userMessageId, label, gitStats);
-            return { gitStats, checkpoint };
+            return { gitStats, checkpoint, baselineApproximate: cwdIsGitRepository(cwd) || undefined };
         });
     } catch {
         return undefined;
@@ -448,6 +468,9 @@ export async function applyTaskOutcomeExtracted(ctx: QaapAgentConversationStoreC
     const gitStats = turnGit?.gitStats;
     if (gitStats) {
         withReply = { ...withReply, gitDiffAdded: gitStats.added, gitDiffRemoved: gitStats.removed };
+    }
+    if (turnGit?.baselineApproximate) {
+        withReply = { ...withReply, gitDiffBaselineApproximate: true };
     }
     const checkpoint = turnGit?.checkpoint;
     if (checkpoint) {

@@ -319,6 +319,11 @@ export interface QaapAgentConversation {
      */
     readonly gitDiffAdded?: number;
     readonly gitDiffRemoved?: number;
+    /**
+     * `true` when the turn's diff was measured without a pre-turn snapshot, so pre-existing dirt may
+     * be counted and untracked files may be missed. Omitted when the diff used the snapshot baseline.
+     */
+    readonly gitDiffBaselineApproximate?: boolean;
     /** When set, this thread is tied to a GitHub pull request (Work Hub inbox). */
     readonly linkedPullRequest?: QaapLinkedPullRequest;
     /** Pull request the backend opened for this task with its evidence (`QaapTaskPullRequestService`). */
@@ -420,6 +425,11 @@ export interface QaapAgentConversationSummary {
     readonly activityLabel?: string;
     readonly linesAdded?: number;
     readonly linesRemoved?: number;
+    /**
+     * Git commit of the task baseline: the pre-turn snapshot of the conversation's first user message.
+     * The changes panel diffs the current worktree against it. Omitted when no such snapshot exists.
+     */
+    readonly baselineCommit?: string;
     /** Epoch ms when the current turn started (last user message). */
     readonly turnStartedAt?: number;
     readonly turnProgressCurrent?: number;
@@ -499,6 +509,11 @@ export interface QaapCreateAgentConversationRequest {
     readonly parallelBaseCwd?: string;
     /** Defaults to `'auto'`. The server auto-isolated the thread when it was not `'worktree'` yet the result has a {@link worktreeBranch}. */
     readonly isolation?: QaapAgentConversationIsolation;
+    /**
+     * `true` lets a task share a working tree that already has uncommitted changes. Without it the
+     * server answers 409 `dirty_workspace` for a shared-tree create in a dirty repository.
+     */
+    readonly acceptDirty?: boolean;
     /**
      * @deprecated Legacy alias of {@link isolation}, used only when it is absent:
      * `true` → `'worktree'`, `false` → `'none'`.
@@ -696,10 +711,29 @@ export function conversationNeedsVisualVerificationEvidence(conv: QaapAgentConve
     return conversationLikelyNeedsVisualVerification(conv);
 }
 
+/**
+ * Newest pre-turn checkpoint captured for `userMessageId`. Shared by the node-side turn settle and
+ * the summary, so both pick the same baseline.
+ */
+export function findPreTurnCheckpoint(
+    conv: Pick<QaapAgentConversation, 'checkpoints'>,
+    userMessageId: string,
+): QaapConversationCheckpoint | undefined {
+    return [...(conv.checkpoints ?? [])].reverse()
+        .find(checkpoint => checkpoint.kind === 'pre-turn' && checkpoint.messageId === userMessageId && !!checkpoint.commit);
+}
+
+/** Task baseline commit: the pre-turn snapshot of the conversation's first user message, if any. */
+export function resolveBaselineCommit(conv: Pick<QaapAgentConversation, 'checkpoints' | 'messages'>): string | undefined {
+    const firstUser = conv.messages.find(message => message.role === 'user');
+    return firstUser ? findPreTurnCheckpoint(conv, firstUser.id)?.commit : undefined;
+}
+
 export function toConversationSummary(conv: QaapAgentConversation): QaapAgentConversationSummary {
     const last = conv.messages[conv.messages.length - 1];
     const lastTurn = [...conv.messages].reverse().find(message => message.role === 'user' && (message.turnAgentId || message.turnAgentModel));
     const status = resolveEffectiveConversationStatus(conv);
+    const baselineCommit = resolveBaselineCommit(conv);
     const base: QaapAgentConversationSummary = {
         id: conv.id,
         cwd: conv.cwd,
@@ -755,6 +789,7 @@ export function toConversationSummary(conv: QaapAgentConversation): QaapAgentCon
         hasGitOperation,
         ...(conv.gitDiffAdded !== undefined ? { linesAdded: conv.gitDiffAdded } : {}),
         ...(conv.gitDiffRemoved !== undefined ? { linesRemoved: conv.gitDiffRemoved } : {}),
+        ...(baselineCommit ? { baselineCommit } : {}),
         ...(conv.contextUsage ? { contextUsage: conv.contextUsage } : {}),
         ...(conv.contextWindowSize ? { contextWindowSize: conv.contextWindowSize } : {}),
         ...(conv.contextUsageEstimated ? { contextUsageEstimated: true } : {}),
