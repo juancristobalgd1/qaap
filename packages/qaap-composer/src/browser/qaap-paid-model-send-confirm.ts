@@ -11,7 +11,10 @@ import {
     ensureStoredAgentModel,
     isFreeAgentModel,
     isStoredAgentModelUsable,
-    readStoredAgentModel,
+    pickDefaultAgentModel,
+    readStoredAgentModelSelection,
+    seedStoredAgentModelDefault,
+    staticFreeSendDefault,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
 import {
     fetchAgentModelsForAgent,
@@ -61,11 +64,6 @@ interface SendCatalogCacheEntry {
 }
 const sendCatalogCache = new Map<string, SendCatalogCacheEntry>();
 
-/** Outcome of resolving the model for a send. `ok: false` means the send must be blocked until the user picks one. */
-export type QaapSendModelResolution =
-    | { readonly ok: true; readonly model: QaapCreateAgentTaskQaiqModel | undefined }
-    | { readonly ok: false };
-
 /** Session cache of the last catalog seen per agent, so a send does not re-fetch the catalog every time. */
 function cachedSendCatalog(agentId: string): readonly QaapQaiqModelOption[] | undefined {
     const entry = sendCatalogCache.get(agentId.trim().toLowerCase());
@@ -75,7 +73,10 @@ function cachedSendCatalog(agentId: string): readonly QaapQaiqModelOption[] | un
     return entry.models;
 }
 
-/** Fetches the agent catalog with a short bound; undefined when it is slow or unavailable. The late result still warms the cache. */
+/**
+ * Fetches the agent catalog with a short bound. Resolves `undefined` when the catalog is unavailable (slow or
+ * failed) and the loaded list otherwise (possibly empty). The late result still warms the cache.
+ */
 async function fetchSendCatalog(agentId: string): Promise<readonly QaapQaiqModelOption[] | undefined> {
     const key = agentId.trim().toLowerCase();
     const request = fetchAgentModelsForAgent(agentId).then(models => {
@@ -94,11 +95,30 @@ async function fetchSendCatalog(agentId: string): Promise<readonly QaapQaiqModel
 }
 
 /**
- * The model a send will carry, resolved the way the composer resolves it, and validated against the live catalog:
- * the explicit pick, else the stored selection (dropped when the live catalog no longer lists it), else the free
- * default seeded from the catalog. A picker agent with no resolvable model is blocked (`ok: false`), so a send never
- * goes out on the CLI's own default. The paid-send gate checks the returned model, so a seeded default is confirmed too.
- * `preloadedCatalog` is the catalog the composer already holds; without it the session cache or a bounded fetch is used.
+ * Warms the send catalog for an agent (composer mount, agent change) so the first send usually finds it cached.
+ * Fire-and-forget; resolves once the warm-up attempt settles.
+ */
+export function prewarmSendCatalog(agentId: string | undefined): Promise<void> {
+    if (!agentId || !agentSupportsModelPicker(agentId) || cachedSendCatalog(agentId)) {
+        return Promise.resolve();
+    }
+    return fetchSendCatalog(agentId).then(() => undefined);
+}
+
+/** Outcome of resolving the model for a send. `ok: false` means the send must be blocked until the user picks one. */
+export type QaapSendModelResolution =
+    | { readonly ok: true; readonly model: QaapCreateAgentTaskQaiqModel | undefined }
+    | { readonly ok: false };
+
+/**
+ * The model a send will carry, resolved the way the composer resolves it and validated against the live catalog:
+ * - the explicit pick;
+ * - else the stored selection: a user's pick is dropped (blocked) when the live catalog no longer lists it, while an
+ *   auto-seeded default is replaced by the live free default;
+ * - else the free default seeded from the catalog. When the catalog is unavailable (slow or failed) the static free
+ *   default of the harness is used and stored as an auto default; a catalog that loaded but has no free model blocks.
+ * A picker agent with no resolvable model is blocked (`ok: false`), so a send never goes out on the CLI default.
+ * `preloadedCatalog` is a catalog the caller already holds; otherwise the session cache, then a bounded fetch, is used.
  */
 export async function resolveSendAgentModel(
     agentId: string | undefined,
@@ -112,20 +132,36 @@ export async function resolveSendAgentModel(
     if (explicitModel && isStoredAgentModelUsable(explicitModel)) {
         return { ok: true, model: explicitModel };
     }
-    const stored = readStoredAgentModel(cwd, agentId);
-    if (stored) {
+    const record = readStoredAgentModelSelection(cwd, agentId);
+    if (record) {
         const live = preloadedCatalog?.length ? preloadedCatalog : cachedSendCatalog(agentId);
         // Without a live catalog the stored pick cannot be checked; it is sent as before.
-        if (!live?.length || live.some(model => isSameAgentModel(stored, model))) {
-            return { ok: true, model: stored };
+        if (!live?.length || live.some(model => isSameAgentModel(record.model, model))) {
+            return { ok: true, model: record.model };
         }
-        return { ok: false };
-    }
-    if (!cwd) {
-        return { ok: false };
+        if (record.userChosen) {
+            return { ok: false };
+        }
+        const healed = ensureStoredAgentModel(cwd, agentId, live);
+        return healed ? { ok: true, model: healed } : { ok: false };
     }
     const live = preloadedCatalog?.length ? preloadedCatalog : cachedSendCatalog(agentId) ?? await fetchSendCatalog(agentId);
-    const picked = ensureStoredAgentModel(cwd, agentId, live ?? []);
+    if (live === undefined) {
+        // Catalog unavailable (timeout or error): the harness's static free default, never a paid one.
+        const fallback = staticFreeSendDefault(agentId);
+        if (!fallback || !isStoredAgentModelUsable(fallback)) {
+            return { ok: false };
+        }
+        if (cwd) {
+            seedStoredAgentModelDefault(cwd, agentId, fallback);
+        }
+        return { ok: true, model: fallback };
+    }
+    if (!cwd) {
+        const picked = pickDefaultAgentModel(live);
+        return picked ? { ok: true, model: { provider: picked.provider, vendor: picked.vendor, modelId: picked.modelId } } : { ok: false };
+    }
+    const picked = ensureStoredAgentModel(cwd, agentId, live);
     return picked ? { ok: true, model: picked } : { ok: false };
 }
 

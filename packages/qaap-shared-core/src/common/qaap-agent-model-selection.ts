@@ -10,6 +10,7 @@ import {
     hashString,
     isTheiaCoderAgent,
     migrateLegacyBackendAgentId,
+    PI_AGENT_ID,
     QAIQ_AGENT_ID,
     SELECTED_QAIQ_MODEL_STORAGE_KEY,
     SHELL_AGENT_ID,
@@ -17,6 +18,7 @@ import {
     type QaapQaiqModelOption,
 } from './qaap-agent-task-client';
 import { qaiqModelSupportsToolCalls } from './qaap-agent-tool-support';
+import { PI_DEFAULT_OPENROUTER_MODEL_ID, PI_OPENROUTER_PROVIDER_ID } from './qaap-pi-default-model';
 import { isOpenCodeFreeModelId, OPENCODE_FREE_MODEL_OPTIONS } from './qaap-opencode-model-catalog';
 
 export type QaapAgentModelSelection = QaapCreateAgentTaskQaiqModel;
@@ -186,6 +188,42 @@ export function isStoredAgentModelUsable(model: QaapAgentModelSelection | undefi
 
 export function readStoredAgentModel(cwd: string | undefined, agentId: string | undefined): QaapAgentModelSelection | undefined {
     return readStoredAgentModelRecord(cwd, agentId)?.model;
+}
+
+/** The stored selection plus whether the user chose it (an auto-seeded default is not a user choice). */
+export function readStoredAgentModelSelection(
+    cwd: string | undefined,
+    agentId: string | undefined,
+): { readonly model: QaapAgentModelSelection; readonly userChosen: boolean } | undefined {
+    return readStoredAgentModelRecord(cwd, agentId);
+}
+
+/** Stores an auto-seeded default (not a user choice), so a later live catalog can replace it. */
+export function seedStoredAgentModelDefault(
+    cwd: string | undefined,
+    agentId: string,
+    model: QaapAgentModelSelection | QaapQaiqModelOption,
+): void {
+    persistStoredAgentModel(cwd, agentId, model, false);
+}
+
+/**
+ * Last-resort free default for the first send when the live catalog cannot be read in time: QAIQ and Pi use the
+ * OpenRouter free default, OpenCode its first free model. Never a paid model. Undefined for other harnesses.
+ */
+export function staticFreeSendDefault(agentId: string | undefined): QaapQaiqModelOption | undefined {
+    const normalized = agentId?.trim().toLowerCase();
+    if (normalized === QAIQ_AGENT_ID) {
+        return { provider: 'openai', vendor: 'openrouter', modelId: OPENROUTER_DEFAULT_FREE_MODELS[0], label: OPENROUTER_DEFAULT_FREE_MODELS[0] };
+    }
+    if (normalized === PI_AGENT_ID) {
+        const modelId = `${PI_OPENROUTER_PROVIDER_ID}/${PI_DEFAULT_OPENROUTER_MODEL_ID}`;
+        return { provider: 'openai', vendor: PI_OPENROUTER_PROVIDER_ID, modelId, label: PI_DEFAULT_OPENROUTER_MODEL_ID };
+    }
+    if (normalized === 'opencode') {
+        return OPENCODE_FREE_MODEL_OPTIONS[0];
+    }
+    return undefined;
 }
 
 function readStoredAgentModelRecord(cwd: string | undefined, agentId: string | undefined): StoredAgentModelRecord | undefined {

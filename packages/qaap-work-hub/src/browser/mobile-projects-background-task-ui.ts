@@ -238,7 +238,20 @@ export class MobileProjectsBackgroundTaskUi {
         const projectCwd = this.host.projectsService.getProjectCwd(project);
         // One routing decision per submit: the agent that routes the turn is the agent the paid gate checks
         // and the agent the send carries. Without a prepared repo cwd it is resolved later, inside the send.
-        const resolvedAgentId = projectCwd ? await this.routeSubmitAgent(projectCwd, draft, options.selectedAgentId) : undefined;
+        let resolvedAgentId: string | undefined;
+        if (projectCwd) {
+            try {
+                resolvedAgentId = await this.routeSubmitAgent(projectCwd, draft, options.selectedAgentId);
+            } catch (error) {
+                // Routing failed: abort rather than gate and send with different agents. The draft is restored by the caller.
+                const reason = error instanceof Error ? error.message : String(error);
+                MobileSnackbar.show(
+                    nls.localize('qaap/mobileProjects/routingFailed', 'Could not choose an agent for this task: {0}', reason),
+                    { kind: 'warning' },
+                );
+                return undefined;
+            }
+        }
         const modelResolution = await resolveSendAgentModel(
             resolvedAgentId ?? options.selectedAgentId ?? getQaapDefaultAgentId(),
             projectCwd,
@@ -260,17 +273,13 @@ export class MobileProjectsBackgroundTaskUi {
         }
     }
 
-    /** Routing agent for a submit, bounded; undefined when routing fails so the send reports the error as before. */
-    protected async routeSubmitAgent(cwd: string, draft: string, selectedAgentId: string | undefined): Promise<string | undefined> {
-        try {
-            return await this.boundedSubmitStage(
-                this.selectBackendConversationAgent(cwd, draft, selectedAgentId),
-                20_000,
-                'selecting the agent',
-            );
-        } catch {
-            return undefined;
-        }
+    /** Routing agent for a submit, bounded. Rejects when routing fails; the caller aborts the submit. */
+    protected routeSubmitAgent(cwd: string, draft: string, selectedAgentId: string | undefined): Promise<string> {
+        return this.boundedSubmitStage(
+            this.selectBackendConversationAgent(cwd, draft, selectedAgentId),
+            20_000,
+            'selecting the agent',
+        );
     }
 
     protected async submitBackgroundAgentTaskInner(

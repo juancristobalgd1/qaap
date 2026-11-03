@@ -283,6 +283,21 @@ describe('MobileProjectsBackgroundTaskUi', () => {
             return { ui, innerCalls };
         }
 
+        it('aborts the submit when routing fails: no gate and no send with a different agent', async () => {
+            const { ui, innerCalls } = uiWithInner();
+            ui['routeSubmitAgent'] = async (): Promise<string> => {
+                throw new Error('catalog warming');
+            };
+            let gated = 0;
+            ui['confirmPaidSend'] = async (): Promise<boolean> => {
+                gated++;
+                return true;
+            };
+            expect(await ui.submitBackgroundAgentTask(project, 'build it', { agentModel: paidModel })).to.be.undefined;
+            expect(gated).to.equal(0);
+            expect(innerCalls).to.be.empty;
+        });
+
         it('routes once: the gate and the send carry the same routing agent', async () => {
             const { ui } = uiWithInner();
             let gatedAgent: string | undefined;

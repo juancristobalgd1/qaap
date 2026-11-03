@@ -12,9 +12,11 @@ const disableImportJSDOM = enableJSDOM();
 import { expect } from 'chai';
 import { hashString } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { writeStoredAgentModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
+import { readStoredAgentModelSelection } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
 import {
     confirmPaidModelSend,
     hasConfirmedPaidSendForProject,
+    prewarmSendCatalog,
     resolveSendAgentModel,
     warnChooseSendModel,
 } from './qaap-paid-model-send-confirm';
@@ -100,6 +102,44 @@ describe('paid model send confirmation', () => {
         const effective = await resolveSendAgentModel('opencode', seededCwd);
         expect(effective.ok && effective.model?.modelId).to.equal('opencode/minimax-m3');
         expect(window.sessionStorage.getItem(`qaap.paidModelSendConfirmed.${hashString(seededCwd)}`)).to.be.null;
+    });
+
+    it('a cold first send with a slow catalog uses the static free default, stored as an auto default', async function (): Promise<void> {
+        this.timeout(5000);
+        const coldCwd = '/repo/cold-first-send';
+        const originalFetch = globalThis.fetch;
+        globalThis.fetch = (() => new Promise(() => undefined)) as unknown as typeof fetch;
+        try {
+            const resolved = await resolveSendAgentModel('opencode', coldCwd);
+            expect(resolved.ok && resolved.model?.modelId).to.equal('opencode/beam-free');
+            expect(readStoredAgentModelSelection(coldCwd, 'opencode')?.userChosen).to.be.false;
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+    });
+
+    it('a catalog that loaded with only paid models blocks even when a static default exists', async () => {
+        const paidOnly = [openCodePaid, { provider: 'openai' as const, vendor: 'opencode', modelId: 'opencode/gpt-5', label: 'GPT-5' }];
+        expect(await resolveSendAgentModel('opencode', '/repo/loaded-paid-only', undefined, paidOnly)).to.deep.equal({ ok: false });
+    });
+
+    it('prewarming the send catalog caches it, so a later send does not need the network', async () => {
+        const warmCwd = '/repo/prewarm';
+        const originalFetch = globalThis.fetch;
+        let calls = 0;
+        globalThis.fetch = (async () => {
+            calls++;
+            return { ok: true, json: async () => ({ models: [{ provider: 'openai', vendor: 'qwen', modelId: 'google/gemma-4-31b-it:free', label: 'Gemma' }] }) };
+        }) as unknown as typeof fetch;
+        try {
+            await prewarmSendCatalog('qwen');
+            globalThis.fetch = (() => { throw new Error('offline'); }) as unknown as typeof fetch;
+            const resolved = await resolveSendAgentModel('qwen', warmCwd);
+            expect(resolved.ok && resolved.model?.modelId).to.equal('google/gemma-4-31b-it:free');
+            expect(calls).to.equal(1);
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
     });
 
     it('warns and opens the model picker when a send is held for a model choice', () => {
