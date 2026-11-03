@@ -9,6 +9,7 @@ const disableImportJSDOM = enableJSDOM();
 
 import { expect } from 'chai';
 import { hasPreferencesContent, isPreferencesFilterApplied } from './mobile-work-hub-preferences-filter';
+import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 disableImportJSDOM();
 
@@ -32,6 +33,8 @@ function renderPreferences(ids: string[], hiddenIds: string[] = []): HTMLElement
 }
 
 describe('mobile-work-hub-preferences-filter', () => {
+
+    useSuiteJSDOM();
 
     describe('hasPreferencesContent', () => {
         it('is true when any preference or category is rendered', () => {
