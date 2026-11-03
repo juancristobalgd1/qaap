@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import * as fs from 'fs';
 import * as path from 'path';
 import { createAgentStreamAccumulator } from './qaap-cli-transcript-stream';
+import { stripQaapControlMarkersForDisplay } from './qaap-agent-message-content';
 import {
     isPiJsonSessionHeaderLine,
     QaapPiStreamAccumulator,
@@ -211,6 +212,24 @@ describe('qaap-pi-json-stream provider error replay', () => {
         stream.push(`${log}\n`);
         expect(stream.getDisplayText()).to.equal('');
         expect(stream.getSegments().some(segment => segment.type === 'text' && segment.content.includes('"code"'))).to.equal(false);
+    });
+});
+
+describe('qaap-pi-json-stream blocked sentinel replay', () => {
+    it('shows the blocked question without the @@QAAP:BLOCKED@@ marker, in Pi text segments', () => {
+        const text = "I'm blocked only on your input: what task would you like me to work on? @@QAAP:BLOCKED@@ What change or task should I perform on the esor-vite project?";
+        const log = [
+            JSON.stringify({ type: 'session', id: 's' }),
+            JSON.stringify({ type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text }], stopReason: 'stop' } }),
+        ].join('\n');
+        const stream = new QaapPiStreamAccumulator();
+        stream.push(`${log}\n`);
+        const shown = stream.getSegments()
+            .filter(segment => segment.type === 'text')
+            .map(segment => stripQaapControlMarkersForDisplay(segment.content))
+            .join('\n');
+        expect(shown).to.not.include('@@QAAP');
+        expect(shown).to.include('What change or task should I perform on the esor-vite project?');
     });
 });
 

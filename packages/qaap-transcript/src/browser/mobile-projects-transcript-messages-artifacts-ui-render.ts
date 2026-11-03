@@ -1,6 +1,7 @@
 import type { MobileClosingNarrativeAction } from './mobile-projects-transcript-messages-artifacts-ui';
 import type { MobileProjectsTranscriptMessagesArtifactsUiContext } from './mobile-projects-transcript-messages-artifacts-ui-context';
 import { resolveAgentMessageTiming } from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
+import { stripQaapControlMarkersForDisplay } from '@theia/qaap-shared-core/lib/common/qaap-agent-message-content';
 import { MOBILE_CLOSING_TEXT_ERROR_PREFIX } from './mobile-projects-transcript-messages-artifacts-ui-constants';
 // Extracted from mobile-projects-transcript-messages-artifacts-ui.ts
 
@@ -126,8 +127,10 @@ export function createTranscriptAgentSegmentsRowExtracted(ctx: MobileProjectsTra
             }
             for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex++) {
                 const segment = segments[segmentIndex];
-                if (segment.type === 'text' && (segment.content?.trim() ?? '').length > 0) {
-                    const textBlock = ctx.toolUi.createTranscriptSegmentDetails(segment, {
+                // Protocol sentinels (@@QAAP:BLOCKED@@, @@QAAP:VERDICT@@) are machine markers, never transcript text.
+                const visibleText = segment.type === 'text' ? stripQaapControlMarkersForDisplay(segment.content ?? '') : '';
+                if (segment.type === 'text' && visibleText.length > 0) {
+                    const textBlock = ctx.toolUi.createTranscriptSegmentDetails({ ...segment, content: visibleText }, {
                         defer,
                         streaming: options?.streaming,
                     });
