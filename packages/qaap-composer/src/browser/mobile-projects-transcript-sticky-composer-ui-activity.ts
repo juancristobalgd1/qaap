@@ -170,23 +170,21 @@ export async function mirrorFollowUpToServerQueueExtracted(
         if (!submitted) {
             return false;
         }
+        // The server accepted the follow-up, so it is synced even when the matching pending row is not
+        // visible locally yet; the row id is only attached when it is found.
         const conv = ctx.host.transcriptLastConv;
-        if (!conv || conv.id !== summary.id) {
-            return true;
-        }
-        const pending = [...(conv.pendingUserMessages ?? [])]
-            .reverse()
-            .find(item => item.content === entry.draft || item.content?.endsWith(entry.draft));
-        if (!pending) {
-            return true;
-        }
+        const pending = conv && conv.id === summary.id
+            ? [...(conv.pendingUserMessages ?? [])]
+                .reverse()
+                .find(item => item.content === entry.draft || item.content?.endsWith(entry.draft))
+            : undefined;
         const queue = ctx.host.transcriptFollowUpQueue.peek(summary.id);
         for (let index = queue.length - 1; index >= 0; index -= 1) {
             const current = queue[index];
-            if (current.draft === entry.draft && !current.serverPendingId) {
+            if (current.draft === entry.draft && !current.serverSynced) {
                 ctx.host.transcriptFollowUpQueue.replaceAt(summary.id, index, {
                     ...current,
-                    serverPendingId: pending.id,
+                    ...(pending ? { serverPendingId: pending.id } : {}),
                     serverSynced: true,
                 });
                 ctx.syncTranscriptQueuedFollowUpBubbles?.(summary);

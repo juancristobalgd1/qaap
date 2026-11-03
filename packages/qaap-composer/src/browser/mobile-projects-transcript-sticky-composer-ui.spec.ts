@@ -687,4 +687,80 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
         expect(host.transcriptComposerContext).to.deep.equal([contextEntry]);
         expect(errors[0]).to.contain('network offline');
     });
+
+    it('a flush after a Stop submits nothing and leaves the paused queue in place', async () => {
+        const queue = new TranscriptFollowUpQueue();
+        queue.enqueue('c1', { draft: 'queued before stop' } as Parameters<TranscriptFollowUpQueue['enqueue']>[1]);
+        const submits: string[] = [];
+        const ctx = {
+            host: {
+                transcriptFollowUpQueue: queue,
+                transcriptLastConv: undefined,
+                transcriptFollowUpFlushInFlight: false,
+            },
+            isTranscriptFollowUpReady: () => true,
+            refreshComposerActivityStack: () => { },
+            submitQueuedFollowUpEntry: async (_project: unknown, _summary: unknown, entry: { draft: string }) => {
+                submits.push(entry.draft);
+            },
+        };
+
+        await timelineModule.flushTranscriptFollowUpQueueExtracted(
+            ctx as unknown as MobileProjectsTranscriptStickyComposerUiContext,
+            project,
+            { ...summary, lastTurnCancelled: true } as QaapAgentConversationSummaryDTO,
+        );
+
+        expect(submits).to.deep.equal([]);
+        expect(queue.size('c1')).to.equal(1);
+    });
+
+    it('a follow-up the server accepted is synced even without a matching pending row, so a flush resends nothing', async () => {
+        const activityModule: typeof import('./mobile-projects-transcript-sticky-composer-ui-activity') = require('./mobile-projects-transcript-sticky-composer-ui-activity');
+        const queue = new TranscriptFollowUpQueue();
+        queue.enqueue('c1', { draft: 'mirrored draft' } as Parameters<TranscriptFollowUpQueue['enqueue']>[1]);
+        const mirrorCtx = {
+            host: {
+                transcriptFollowUpQueue: queue,
+                transcriptLastConv: { id: 'c1', pendingUserMessages: [] },
+                transcriptComposerAgentModel: undefined,
+                submitTranscriptViaBackendConversation: async () => true,
+            },
+            syncTranscriptQueuedFollowUpBubbles: () => { },
+            refreshComposerActivityStack: () => { },
+        };
+
+        const mirrored = await activityModule.mirrorFollowUpToServerQueueExtracted(
+            mirrorCtx as unknown as MobileProjectsTranscriptStickyComposerUiContext,
+            project,
+            summary,
+            queue.peek('c1')[0],
+        );
+
+        expect(mirrored).to.equal(true);
+        expect(queue.peek('c1')[0].serverSynced).to.equal(true);
+        expect(queue.peek('c1')[0].serverPendingId).to.be.undefined;
+
+        const submits: string[] = [];
+        const flushCtx = {
+            host: {
+                transcriptFollowUpQueue: queue,
+                transcriptLastConv: undefined,
+                transcriptFollowUpFlushInFlight: false,
+            },
+            isTranscriptFollowUpReady: () => true,
+            refreshComposerActivityStack: () => { },
+            submitQueuedFollowUpEntry: async (_project: unknown, _summary: unknown, entry: { draft: string }) => {
+                submits.push(entry.draft);
+            },
+        };
+        await timelineModule.flushTranscriptFollowUpQueueExtracted(
+            flushCtx as unknown as MobileProjectsTranscriptStickyComposerUiContext,
+            project,
+            summary,
+        );
+
+        expect(submits).to.deep.equal([]);
+        expect(queue.size('c1')).to.equal(0);
+    });
 });

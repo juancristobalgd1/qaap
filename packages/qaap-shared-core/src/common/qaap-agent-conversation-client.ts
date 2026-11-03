@@ -317,6 +317,8 @@ export interface QaapAgentConversationDTO {
     readonly contextCompaction?: QaapContextCompactionDTO;
     /** User messages queued for the next agent turn (delivery mode 'queue'). */
     readonly pendingUserMessages?: QaapPendingUserMessageDTO[];
+    /** Set when the user stops a turn while messages are queued; automatic drain is suspended until the user sends or discards them. */
+    readonly pendingUserMessagesPaused?: boolean;
     /** "Until done" goal loop driving this conversation (kept after it ends). */
     readonly goalLoop?: QaapAgentGoalLoopStateDTO;
     /** Live phase of the in-flight turn (automatic verification). Only meaningful while streaming. */

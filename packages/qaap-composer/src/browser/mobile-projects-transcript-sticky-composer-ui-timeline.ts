@@ -3,6 +3,7 @@ import type { MobileProjectsTranscriptStickyComposerUiContext } from './mobile-p
 
 import {
     conversationToSummary,
+    isLastTurnCancelled,
     recordConversationGitAction,
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
@@ -370,6 +371,11 @@ export function isTranscriptFollowUpReadyExtracted(ctx: MobileProjectsTranscript
 export async function flushTranscriptFollowUpQueueExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,): Promise<void> {
     if (!ctx.isTranscriptFollowUpReady(summary)) {
+        return;
+    }
+    // A Stop pauses the queued follow-ups: nothing is auto-delivered until the user sends or discards them.
+    const lastConv = ctx.host.transcriptLastConv?.id === summary.id ? ctx.host.transcriptLastConv : undefined;
+    if (summary.lastTurnCancelled === true || (lastConv && (isLastTurnCancelled(lastConv) || lastConv.pendingUserMessagesPaused))) {
         return;
     }
     // Drop leading entries already mirrored to the server — the backend drain owns them.
