@@ -20,6 +20,8 @@ import { QaapSkillsPreferenceContribution } from './qaap-skills-preferences';
 import { QaapHarnessPreferenceContribution } from './qaap-harness-preferences';
 import { QaapAgentApprovalPreferenceContribution } from './qaap-agent-approval-preferences';
 import { QaapHarnessConfigurationWidget } from './qaap-harness-configuration-widget';
+import { QaapMcpFrontendApplicationContribution } from './qaap-mcp-frontend-application-contribution';
+import { McpFrontendApplicationContribution } from '@theia/ai-mcp/lib/browser/mcp-frontend-application-contribution';
 
 import { CodexChatAgent } from '@theia/ai-codex/lib/browser/codex-chat-agent';
 import { QaapCodexChatAgent } from './qaap-codex-chat-agent';
@@ -45,6 +47,10 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
 
     bind(QaapIncrementalStreamParsingContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapIncrementalStreamParsingContribution);
+
+    // Failed MCP autostarts are remembered per session instead of re-launched on every agent start.
+    bind(QaapMcpFrontendApplicationContribution).toSelf().inSingletonScope();
+    rebind(McpFrontendApplicationContribution).toService(QaapMcpFrontendApplicationContribution);
 
     bind(QaapCodexChatAgent).toSelf().inSingletonScope();
     rebind(CodexChatAgent).toService(QaapCodexChatAgent);
