@@ -197,6 +197,28 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
         expect(host.transcriptComposerQueueExpanded).to.equal(true);
     });
 
+    it('says the queue is paused when the conversation has paused pending messages', () => {
+        const probe = createProbe({ agentWorking: false });
+        const host = (probe.ui as unknown as {
+            host: { transcriptLastConv: unknown };
+        }).host;
+        host.transcriptLastConv = { id: summary.id, pendingUserMessagesPaused: true };
+
+        expect(probe.ui.enqueueTranscriptFollowUp(summary.id, { draft: 'paused follow-up' })).to.equal(true);
+        expect(document.body.textContent).to.contain('1 message(s) queued — paused, send or discard');
+    });
+
+    it('keeps the will-send-later message when the queue is not paused', () => {
+        const probe = createProbe({ agentWorking: true });
+        const host = (probe.ui as unknown as {
+            host: { transcriptLastConv: unknown };
+        }).host;
+        host.transcriptLastConv = { id: summary.id, pendingUserMessagesPaused: false };
+
+        expect(probe.ui.enqueueTranscriptFollowUp(summary.id, { draft: 'running follow-up' })).to.equal(true);
+        expect(document.body.textContent).to.contain('will send when the agent finishes');
+    });
+
     it('resets the expanded state after the last queued message is gone', () => {
         const root = document.createElement('div');
         const wrap = document.createElement('div');
