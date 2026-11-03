@@ -207,9 +207,11 @@ describe('qaap-agent-model-selection', () => {
 
     it('isFreeAgentModel recognizes OpenCode free models (Beam Free) and keeps paid ones paid', () => {
         expect(isFreeAgentModel({ vendor: 'opencode', modelId: 'opencode/beam-free', label: 'Beam Free' })).to.be.true;
-        expect(isFreeAgentModel({ modelId: 'opencode/beam-free' })).to.be.true;
+        // The OpenCode rule needs the vendor too: a bare `opencode/` id without it is not a free marker.
+        expect(isFreeAgentModel({ modelId: 'opencode/beam-free' })).to.be.false;
         expect(isFreeAgentModel({ vendor: 'opencode', modelId: 'opencode/big-pickle' })).to.be.true;
         expect(isFreeAgentModel({ vendor: 'opencode', modelId: 'opencode/new-model', label: 'New Model Free' })).to.be.true;
+        expect(isFreeAgentModel({ vendor: 'opencode', modelId: 'anthropic/x', label: 'X Free' })).to.be.false;
         expect(isFreeAgentModel({ vendor: 'opencode', modelId: 'opencode/minimax-m3', label: 'MiniMax-M3' })).to.be.false;
         expect(isFreeAgentModel({ vendor: 'opencode', modelId: 'opencode/gpt-5', label: 'GPT-5' })).to.be.false;
         // A " Free" label on a non-OpenCode model is not a provider free marker.

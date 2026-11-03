@@ -15,7 +15,8 @@ import { writeStoredAgentModel } from '@theia/qaap-shared-core/lib/common/qaap-a
 import {
     confirmPaidModelSend,
     hasConfirmedPaidSendForProject,
-    resolveEffectiveSendAgentModel,
+    resolveSendAgentModel,
+    warnChooseSendModel,
 } from './qaap-paid-model-send-confirm';
 import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
@@ -50,22 +51,43 @@ describe('paid model send confirmation', () => {
 
     it('a send carries the explicit pick first, then the stored selection', async () => {
         const storedCwd = '/repo/send-stored';
-        expect(await resolveEffectiveSendAgentModel('opencode', storedCwd, openCodePaid)).to.deep.equal(openCodePaid);
+        const explicit = await resolveSendAgentModel('opencode', storedCwd, openCodePaid, [openCodePaid]);
+        expect(explicit).to.deep.equal({ ok: true, model: openCodePaid });
         writeStoredAgentModel(storedCwd, 'opencode', beamFree);
-        expect((await resolveEffectiveSendAgentModel('opencode', storedCwd))?.modelId).to.equal('opencode/beam-free');
+        const stored = await resolveSendAgentModel('opencode', storedCwd, undefined, [beamFree]);
+        expect(stored.ok && stored.model?.modelId).to.equal('opencode/beam-free');
     });
 
-    it('a catalog with only paid models gives the send no model, so no paid default is sent unconfirmed', async () => {
+    it('fails closed when a picker agent has only paid models: no send without a chosen model', async () => {
         const originalFetch = globalThis.fetch;
         globalThis.fetch = (async () => ({
             ok: true,
             json: async () => ({ models: [{ provider: 'openai', vendor: 'grok', modelId: 'grok-paid', label: 'Grok Paid' }] }),
         })) as unknown as typeof fetch;
         try {
-            expect(await resolveEffectiveSendAgentModel('grok', '/repo/paid-only-send')).to.be.undefined;
+            expect(await resolveSendAgentModel('grok', '/repo/paid-only-send')).to.deep.equal({ ok: false });
         } finally {
             globalThis.fetch = originalFetch;
         }
+    });
+
+    it('fails closed when the catalog lookup exceeds the send timeout', async function (): Promise<void> {
+        this.timeout(5000);
+        const originalFetch = globalThis.fetch;
+        globalThis.fetch = (() => new Promise(() => undefined)) as unknown as typeof fetch;
+        try {
+            const started = Date.now();
+            expect(await resolveSendAgentModel('hermes', '/repo/hung-catalog')).to.deep.equal({ ok: false });
+            expect(Date.now() - started).to.be.lessThan(4000);
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+    });
+
+    it('blocks a stored pick that the live catalog no longer lists', async () => {
+        const staleCwd = '/repo/stale-pick';
+        writeStoredAgentModel(staleCwd, 'opencode', beamFree);
+        expect(await resolveSendAgentModel('opencode', staleCwd, undefined, [openCodePaid])).to.deep.equal({ ok: false });
     });
 
     it('a seeded paid default is the effective send model, so the gate sees it and must confirm', async () => {
@@ -75,9 +97,15 @@ describe('paid model send confirmation', () => {
             `qaap.agentTasks.selectedAgentModel.${hashString(seededCwd)}.opencode`,
             JSON.stringify({ provider: 'openai', vendor: 'opencode', modelId: 'opencode/minimax-m3' }),
         );
-        const effective = await resolveEffectiveSendAgentModel('opencode', seededCwd);
-        expect(effective?.modelId).to.equal('opencode/minimax-m3');
+        const effective = await resolveSendAgentModel('opencode', seededCwd);
+        expect(effective.ok && effective.model?.modelId).to.equal('opencode/minimax-m3');
         expect(window.sessionStorage.getItem(`qaap.paidModelSendConfirmed.${hashString(seededCwd)}`)).to.be.null;
+    });
+
+    it('warns and opens the model picker when a send is held for a model choice', () => {
+        let opened = 0;
+        warnChooseSendModel('OpenCode', () => { opened++; });
+        expect(opened).to.equal(1);
     });
 
     it('passes a paid model through once this project was confirmed in this session', async () => {

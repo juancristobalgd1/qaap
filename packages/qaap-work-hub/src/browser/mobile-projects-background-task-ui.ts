@@ -41,7 +41,7 @@ import { applyBackendInteractionModeToPrompt } from '@theia/qaap-shared-core/lib
 import { reconcileAgentApprovalPolicyId, type QaapAgentApprovalPolicyId } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import { reconcileAgentToolApprovalRules } from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-approval-rules';
 import { getQaapDefaultAgentId } from '@theia/qaap-shared-core/lib/common/qaap-default-agent-id';
-import { confirmPaidModelSend, resolveEffectiveSendAgentModel } from '@theia/qaap-composer/lib/browser/qaap-paid-model-send-confirm';
+import { confirmPaidModelSend, resolveSendAgentModel, warnChooseSendModel } from '@theia/qaap-composer/lib/browser/qaap-paid-model-send-confirm';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
@@ -213,6 +213,8 @@ export class MobileProjectsBackgroundTaskUi {
             openConversation?: boolean;
             forceVps?: boolean;
             selectedAgentId?: string;
+            /** Routing agent already chosen by submitBackgroundAgentTask (one decision per submit). */
+            resolvedAgentId?: string;
             modeId?: string;
             autoApprove?: boolean;
             approvalPolicyId?: string;
@@ -234,19 +236,40 @@ export class MobileProjectsBackgroundTaskUi {
         // A paid model asks once per project per browser session before a new task starts; cancelling
         // reports no created conversation, so the caller restores the draft.
         const projectCwd = this.host.projectsService.getProjectCwd(project);
-        const gateAgentModel = await resolveEffectiveSendAgentModel(
-            options.selectedAgentId ?? getQaapDefaultAgentId(),
+        // One routing decision per submit: the agent that routes the turn is the agent the paid gate checks
+        // and the agent the send carries. Without a prepared repo cwd it is resolved later, inside the send.
+        const resolvedAgentId = projectCwd ? await this.routeSubmitAgent(projectCwd, draft, options.selectedAgentId) : undefined;
+        const modelResolution = await resolveSendAgentModel(
+            resolvedAgentId ?? options.selectedAgentId ?? getQaapDefaultAgentId(),
             projectCwd,
             options.agentModel,
         );
-        if (!await this.confirmPaidSend(projectCwd ?? project.id, gateAgentModel)) {
+        if (!modelResolution.ok) {
+            // Fail closed: a picker agent with no chosen model is not sent on the CLI default.
+            warnChooseSendModel(resolvedAgentId ?? options.selectedAgentId ?? getQaapDefaultAgentId());
+            return undefined;
+        }
+        if (!await this.confirmPaidSend(projectCwd ?? project.id, modelResolution.model)) {
             return undefined;
         }
         this.backgroundSubmitInFlightByProjectId.add(project.id);
         try {
-            return await this.submitBackgroundAgentTaskInner(project, draft, options);
+            return await this.submitBackgroundAgentTaskInner(project, draft, { ...options, resolvedAgentId });
         } finally {
             this.backgroundSubmitInFlightByProjectId.delete(project.id);
+        }
+    }
+
+    /** Routing agent for a submit, bounded; undefined when routing fails so the send reports the error as before. */
+    protected async routeSubmitAgent(cwd: string, draft: string, selectedAgentId: string | undefined): Promise<string | undefined> {
+        try {
+            return await this.boundedSubmitStage(
+                this.selectBackendConversationAgent(cwd, draft, selectedAgentId),
+                20_000,
+                'selecting the agent',
+            );
+        } catch {
+            return undefined;
         }
     }
 
@@ -257,6 +280,8 @@ export class MobileProjectsBackgroundTaskUi {
             openConversation?: boolean;
             forceVps?: boolean;
             selectedAgentId?: string;
+            /** Routing agent already chosen by submitBackgroundAgentTask (one decision per submit). */
+            resolvedAgentId?: string;
             modeId?: string;
             autoApprove?: boolean;
             approvalPolicyId?: string;
@@ -320,6 +345,8 @@ export class MobileProjectsBackgroundTaskUi {
         options: {
             forceVps?: boolean;
             selectedAgentId?: string;
+            /** Routing agent already chosen by submitBackgroundAgentTask (one decision per submit). */
+            resolvedAgentId?: string;
             modeId?: string;
             autoApprove?: boolean;
             approvalPolicyId?: string;
@@ -333,7 +360,7 @@ export class MobileProjectsBackgroundTaskUi {
             untilDone?: boolean;
         },
     ): Promise<QaapProjectChatSessionCreated> {
-        const agent = await this.boundedSubmitStage(
+        const agent = options.resolvedAgentId ?? await this.boundedSubmitStage(
             this.selectBackendConversationAgent(cwd, draft, options.selectedAgentId),
             20_000,
             'selecting the agent',

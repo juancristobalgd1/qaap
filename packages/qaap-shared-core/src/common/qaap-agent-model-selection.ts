@@ -53,14 +53,17 @@ function isOpenCodeFreeModel(model: AgentModelFreeMetadata | undefined): boolean
     if (!modelId) {
         return false;
     }
+    // Both conditions must hold: a `Free` label on another provider's model (e.g. `anthropic/x`) is not a free marker.
     const vendor = model?.vendor?.trim().toLowerCase();
-    if (vendor !== OPENCODE_VENDOR && !modelId.toLowerCase().startsWith(`${OPENCODE_VENDOR}/`)) {
+    if (vendor !== OPENCODE_VENDOR || !modelId.toLowerCase().startsWith(`${OPENCODE_VENDOR}/`)) {
         return false;
     }
+    // Primary signal: the zero-cost OpenCode catalog (generated from `opencode models --verbose`).
     const lowerId = modelId.toLowerCase();
     if (isOpenCodeFreeModelId(lowerId) || OPENCODE_FREE_MODEL_OPTIONS.some(option => option.modelId.toLowerCase() === lowerId)) {
         return true;
     }
+    // Last resort: the catalog label ends in " Free" (e.g. "Beam Free").
     return / free$/i.test(model?.label?.trim() ?? '');
 }
 
