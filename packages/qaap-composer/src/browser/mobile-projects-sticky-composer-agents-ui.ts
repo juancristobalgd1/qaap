@@ -34,6 +34,7 @@ import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/
 import type { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
 import type { ComposerAgentPickerChrome } from './mobile-projects-sticky-composer-sheets-ui';
 import { renderAgentPickerLoadError, renderAgentPickerSkeleton } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-picker-loading';
+import { prewarmSendCatalog } from './qaap-paid-model-send-confirm';
 import { readComposerAgentCatalogSession, writeComposerAgentCatalogSession } from './composer-agent-catalog-session-cache';
 
 /** Minimum gap between agent catalog reloads for the same cwd when a catalog is already loaded. */
@@ -181,6 +182,8 @@ export class MobileProjectsStickyComposerAgentsUi {
         if (!agentSupportsModelPicker(agentId)) {
             return undefined;
         }
+        // Warm the send catalog on mount and agent change, so the first send rarely waits on it.
+        void prewarmSendCatalog(agentId);
         const existing = readStoredAgentModel(cwd, agentId);
         // A stored selection is kept only when the catalog lists it. Without a preferred catalog the live one
         // is fetched below, so a model the account can no longer run (e.g. Codex `gpt-5.6-sol` on a Free plan)

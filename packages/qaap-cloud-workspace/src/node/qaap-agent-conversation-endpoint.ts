@@ -880,6 +880,7 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
         const clientMessageId = /^[A-Za-z0-9._:-]{1,160}$/.test(rawClientMessageId)
             ? rawClientMessageId
             : undefined;
+        const queueOnly = body.queueOnly === true;
         try {
             const autoApprove = typeof body.autoApprove === 'boolean' ? body.autoApprove : undefined;
             const interactionModeId = typeof body.interactionModeId === 'string' ? body.interactionModeId.trim() : undefined;
@@ -905,7 +906,9 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
                 approvalPolicyId,
                 toolApprovalRules,
                 sanitizeLatencyMarks(body.latencyMarks),
-                clientMessageId ? { clientMessageId } : undefined,
+                clientMessageId || queueOnly
+                    ? { ...(clientMessageId ? { clientMessageId } : {}), ...(queueOnly ? { queueOnly: true } : {}) }
+                    : undefined,
                 deliveryMode,
             );
             res.status(202).json(conv);

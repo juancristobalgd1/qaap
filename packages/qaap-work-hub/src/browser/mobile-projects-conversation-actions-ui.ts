@@ -27,6 +27,8 @@ import { resolveStoredAgentModelForSubmit } from '@theia/qaap-shared-core/lib/co
 import { reportQaapClientError } from '@theia/qaap-shared-core/lib/common/qaap-client-error-report';
 import { buildAutoApprovePatch } from '../common/mobile-projects-auto-approve-patch';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
+import { isAgentsHubIdleConversationSummary } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
+import { requestStopNewTaskStartup } from '../common/qaap-new-task-startup';
 import type { MobileProjectsConversationFlags } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-flags';
 import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
 import type { MobileProjectsTranscriptLiveUi } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-live-ui';
@@ -303,6 +305,13 @@ export class MobileProjectsConversationActionsUi {
         summary: QaapAgentConversationSummaryDTO,
     ): void {
         this.host.cardMenuUi.closeCardMenu();
+
+        if (isAgentsHubIdleConversationSummary(summary) && requestStopNewTaskStartup(project.id)) {
+            // The task is still being created, so there is no conversation id to cancel yet (the
+            // placeholder id is never on the server). The submit cancels the created conversation
+            // and restores the draft once creation returns.
+            return;
+        }
 
         if (summary.source !== 'theia-chat') {
             // Send the cancel BEFORE the optimistic idle below: that snapshot settles the open

@@ -349,6 +349,8 @@ export interface QaapAgentConversation {
      * a single agent turn to save tokens. See {@link QaapPendingUserMessage}.
      */
     readonly pendingUserMessages?: ReadonlyArray<QaapPendingUserMessage>;
+    /** Set when the user stops a turn while messages are queued; automatic drain is suspended until the user sends or discards them. */
+    readonly pendingUserMessagesPaused?: boolean;
     /** "Until done" goal loop driving this conversation (kept after it ends for the UI). */
     readonly goalLoop?: QaapAgentGoalLoopState;
     /** Live phase of the in-flight turn (automatic verification). Only meaningful while streaming. */
@@ -531,6 +533,8 @@ export interface QaapPostAgentMessageRequest {
     readonly content: string;
     /** ID of the optimistic user row that this request confirms. */
     readonly clientMessageId?: string;
+    /** Mirror of a follow-up queued on the client: never starts a turn on a stopped conversation. */
+    readonly queueOnly?: boolean;
     /** When set, overrides the conversation's stored agent for this turn (and updates it). */
     readonly agent?: string;
     readonly agentModel?: QaapCreateAgentTaskQaiqModel;

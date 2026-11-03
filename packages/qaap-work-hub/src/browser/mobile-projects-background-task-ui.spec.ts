@@ -10,10 +10,12 @@ import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 const disableImportJSDOM = enableJSDOM();
 
 import { expect } from 'chai';
+import { writeStoredAgentModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
 import { MobileProjectsBackgroundTaskUi } from './mobile-projects-background-task-ui';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { localizeMissingQaiqMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
+import { requestStopNewTaskStartup } from '../common/qaap-new-task-startup';
 
 disableImportJSDOM();
 
@@ -274,6 +276,7 @@ describe('MobileProjectsBackgroundTaskUi', () => {
                 seedTranscriptOptimisticSubmit: () => undefined,
                 syncWorkHubProjectSkillRoots: () => undefined,
             });
+            ui['routeSubmitAgent'] = async (): Promise<string> => 'codex';
             const innerCalls: number[] = [];
             ui['submitBackgroundAgentTaskInner'] = async (): Promise<undefined> => {
                 innerCalls.push(1);
@@ -281,6 +284,53 @@ describe('MobileProjectsBackgroundTaskUi', () => {
             };
             return { ui, innerCalls };
         }
+
+        it('aborts the submit when routing fails: no gate and no send with a different agent', async () => {
+            const { ui, innerCalls } = uiWithInner();
+            ui['routeSubmitAgent'] = async (): Promise<string> => {
+                throw new Error('catalog warming');
+            };
+            let gated = 0;
+            ui['confirmPaidSend'] = async (): Promise<boolean> => {
+                gated++;
+                return true;
+            };
+            expect(await ui.submitBackgroundAgentTask(project, 'build it', { agentModel: paidModel })).to.be.undefined;
+            expect(gated).to.equal(0);
+            expect(innerCalls).to.be.empty;
+        });
+
+        it('routes once: the gate and the send carry the same routing agent', async () => {
+            const { ui } = uiWithInner();
+            let gatedAgent: string | undefined;
+            let sentOptions: { resolvedAgentId?: string } | undefined;
+            ui['routeSubmitAgent'] = async (): Promise<string> => 'codex';
+            ui['confirmPaidSend'] = async (_cwd: string, model: unknown): Promise<boolean> => {
+                gatedAgent = (model as { vendor?: string } | undefined)?.vendor;
+                return true;
+            };
+            ui['submitBackgroundAgentTaskInner'] = async (_p: unknown, _d: unknown, options: { resolvedAgentId?: string }): Promise<undefined> => {
+                sentOptions = options;
+                return undefined;
+            };
+            await ui.submitBackgroundAgentTask(project, 'build it', { agentModel: paidModel });
+            expect(sentOptions?.resolvedAgentId).to.equal('codex');
+            expect(gatedAgent).to.equal(paidModel.vendor);
+        });
+
+        it('blocks the send when a picker agent has no chosen model (fail closed)', async () => {
+            const { ui, innerCalls } = uiWithInner();
+            ui['routeSubmitAgent'] = async (): Promise<string> => 'grok';
+            let gated = 0;
+            ui['confirmPaidSend'] = async (): Promise<boolean> => {
+                gated++;
+                return true;
+            };
+            // No stored model and no catalog reachable: nothing can be sent without a choice.
+            expect(await ui.submitBackgroundAgentTask(project, 'build it')).to.be.undefined;
+            expect(innerCalls).to.be.empty;
+            expect(gated).to.equal(0);
+        });
 
         it('does not start a task with a paid model the user declines', async () => {
             const { ui, innerCalls } = uiWithInner();
@@ -307,6 +357,144 @@ describe('MobileProjectsBackgroundTaskUi', () => {
             expect(innerCalls).to.have.length(1);
             // The gate is consulted, but the real confirmation passes free models without a dialog.
             expect(asked).to.equal(1);
+        });
+    });
+    describe('stop during new-task creation', () => {
+        const project = { id: 'p1', name: 'app' } as unknown as MobileProjectEntry;
+
+        interface StopHarness {
+            ui: MobileProjectsBackgroundTaskUi;
+            cancelled: string[];
+            archived: string[];
+            opened: string[];
+            seeded: string[];
+            rolledBack: number[];
+            warnings: string[];
+            errors: string[];
+        }
+
+        function uiCreating(options: {
+            onCreate?: () => void;
+            cancel?: () => Promise<void>;
+            conversation?: () => Promise<{ messages: Array<{ role: 'user' | 'agent'; content: string; segments?: unknown[]; traceEvents?: unknown[] }> }>;
+        } = {}): StopHarness {
+            const harness: StopHarness = { ui: undefined as never, cancelled: [], archived: [], opened: [], seeded: [], rolledBack: [], warnings: [], errors: [] };
+            const ui = new MobileProjectsBackgroundTaskUi({
+                projects: [],
+                preparedCwdByProjectId: new Map(),
+                justAddedTaskId: undefined,
+                agentsHubShellActive: false,
+                projectsService: { getProjectCwd: () => '/repo/app' } as never,
+                delegate: {},
+                transcriptSheetUi: { openTranscriptSheet: async (_p: unknown, summary: { id: string }) => { harness.opened.push(summary.id); } } as never,
+                transcriptLiveUi: {} as never,
+                shouldUseAgentsHubLanding: () => false,
+                renderSubtitle: () => undefined,
+                renderList: () => undefined,
+                seedTranscriptOptimisticSubmit: (summary: { id: string }) => { harness.seeded.push(summary.id); },
+                syncWorkHubProjectSkillRoots: () => undefined,
+                rollbackTranscriptOptimisticSubmit: () => { harness.rolledBack.push(1); },
+                messageService: {
+                    warn: (message: string) => { harness.warnings.push(message); },
+                    error: (message: string) => { harness.errors.push(message); },
+                } as never,
+            });
+            ui['confirmPaidSend'] = async (): Promise<boolean> => true;
+            // Routing and the model are resolved before the gate: stub routing and store a free pick so no network runs.
+            ui['routeSubmitAgent'] = async (): Promise<string> => 'codex';
+            writeStoredAgentModel('/repo/app', 'codex', { provider: 'openai', vendor: 'codex', modelId: 'gpt-mini:free' });
+            ui['ensureInlineComposerCwd'] = async (): Promise<string> => '/repo/app';
+            ui['createProjectChatSession'] = async () => {
+                options.onCreate?.();
+                return { summary: { id: 'task-new', cwd: '/repo/app' }, outbound: 'build it' } as never;
+            };
+            ui['requestConversationCancel'] = async (id: string): Promise<void> => {
+                harness.cancelled.push(id);
+                await options.cancel?.();
+            };
+            ui['loadConversation'] = async () => (options.conversation
+                ? options.conversation()
+                : { messages: [{ role: 'user', content: 'build it' }] }) as never;
+            ui['archiveConversation'] = async (id: string): Promise<void> => { harness.archived.push(id); };
+            harness.ui = ui;
+            return harness;
+        }
+
+        const stop = (): void => { requestStopNewTaskStartup('p1'); };
+
+        it('archives a stopped task that produced no output, restores the draft and reports none', async () => {
+            const h = uiCreating({ onCreate: stop });
+            expect(await h.ui.submitBackgroundAgentTask(project, 'build it', {})).to.be.undefined;
+            expect(h.cancelled).to.deep.equal(['task-new']);
+            expect(h.archived).to.deep.equal(['task-new']);
+            expect(h.rolledBack).to.have.length(1);
+            expect(h.warnings).to.have.length(1);
+            expect(h.opened).to.be.empty;
+            expect(h.seeded).to.be.empty;
+        });
+
+        it('keeps a stopped task that produced agent output open as stopped and never restores', async () => {
+            const h = uiCreating({
+                onCreate: stop,
+                conversation: async () => ({ messages: [
+                    { role: 'user', content: 'build it' },
+                    { role: 'agent', content: '', segments: [{ kind: 'tool' }] },
+                ] }),
+            });
+            const result = await h.ui.submitBackgroundAgentTask(project, 'build it', {});
+            expect(result?.id).to.equal('task-new');
+            expect(h.archived).to.be.empty;
+            expect(h.opened).to.deep.equal(['task-new']);
+            expect(h.rolledBack).to.be.empty;
+            expect(h.warnings).to.be.empty;
+        });
+
+        it('keeps the task open and reports the error when the cancel does not reach the server', async () => {
+            const h = uiCreating({ onCreate: stop, cancel: async () => { throw new Error('network down'); } });
+            const result = await h.ui.submitBackgroundAgentTask(project, 'build it', {});
+            expect(result?.id).to.equal('task-new');
+            expect(h.errors).to.have.length(1);
+            expect(h.opened).to.deep.equal(['task-new']);
+            expect(h.archived).to.be.empty;
+            expect(h.rolledBack).to.be.empty;
+            expect(h.warnings).to.be.empty;
+        });
+
+        it('keeps the task when its state cannot be read after the cancel (never restores blindly)', async () => {
+            const h = uiCreating({ onCreate: stop, conversation: async () => { throw new Error('unreachable'); } });
+            const result = await h.ui.submitBackgroundAgentTask(project, 'build it', {});
+            expect(result?.id).to.equal('task-new');
+            expect(h.archived).to.be.empty;
+            expect(h.opened).to.deep.equal(['task-new']);
+            expect(h.rolledBack).to.be.empty;
+        });
+
+        it('ignores a second submit for the same project while the first is still being confirmed', async () => {
+            const h = uiCreating();
+            let confirmations = 0;
+            let release: (value: boolean) => void = () => undefined;
+            h.ui['confirmPaidSend'] = (): Promise<boolean> => {
+                confirmations++;
+                return new Promise<boolean>(resolve => { release = resolve; });
+            };
+            const first = h.ui.submitBackgroundAgentTask(project, 'first', { openConversation: false });
+            // Let the first submit reach the payment gate (routing and model resolution come first).
+            await new Promise(resolve => setTimeout(resolve, 0));
+            const second = await h.ui.submitBackgroundAgentTask(project, 'second', { openConversation: false });
+            expect(second).to.be.undefined;
+            expect(confirmations).to.equal(1);
+            release(true);
+            expect((await first)?.id).to.equal('task-new');
+            // The first creation has ended: no startup is left in flight for the project.
+            expect(requestStopNewTaskStartup('p1')).to.equal(false);
+        });
+
+        it('starts the task normally when nothing was stopped', async () => {
+            const h = uiCreating();
+            const created = await h.ui.submitBackgroundAgentTask(project, 'build it', { openConversation: false });
+            expect(created?.id).to.equal('task-new');
+            expect(h.cancelled).to.be.empty;
+            expect(h.archived).to.be.empty;
         });
     });
 });

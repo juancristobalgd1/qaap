@@ -85,7 +85,7 @@ class TestConversationStore extends QaapAgentConversationStore {
     }
 
     /** Drives the task-outcome path directly (normally invoked by the task runner's events). */
-    async settleRun(conversationId: string, userMessageId: string, taskId: string): Promise<void> {
+    async settleRun(conversationId: string, userMessageId: string, taskId: string, state: 'completed' | 'cancelled' = 'completed'): Promise<void> {
         const ref = (this as unknown as {
             taskToConversation: Map<string, {
                 conversationId: string;
@@ -101,7 +101,7 @@ class TestConversationStore extends QaapAgentConversationStore {
         };
         await (this as unknown as {
             applyTaskOutcome: (r: unknown, t: QaapAgentTask) => Promise<void>;
-        }).applyTaskOutcome(ref, { id: taskId, state: 'completed' } as QaapAgentTask);
+        }).applyTaskOutcome(ref, { id: taskId, state } as QaapAgentTask);
     }
 
     appendPeerMessage(conversationId: string, content: string): void {
@@ -380,6 +380,125 @@ describe('QaapAgentConversationStore delivery mode: queue (default)', function (
         expect(store.get('c1')!.pendingUserMessages).to.be.undefined;
         expect(store.get('c1')!.messages.filter(m => m.role === 'user').map(m => m.content))
             .to.include('queued after failure');
+    });
+
+    it('Stop pauses the queued follow-ups: nothing is auto-delivered after a cancel', async () => {
+        const { store, runner } = createStore();
+        const conv1 = store.postUserMessage('c1', 'first');
+        const firstUserMessageId = conv1.messages.find(m => m.role === 'user')!.id;
+        store.postUserMessage('c1', 'queued');
+
+        store.cancel('c1');
+        await store.settleRun('c1', firstUserMessageId, 'task-1', 'cancelled');
+        await waitForPendingDrain();
+
+        expect(runner.createdIds).to.deep.equal(['task-1']);
+        expect(store.get('c1')!.pendingUserMessages).to.have.length(1);
+        expect(store.get('c1')!.pendingUserMessagesPaused).to.equal(true);
+
+        // A second Stop with nothing running must not release the paused queue either.
+        store.cancel('c1');
+        await waitForPendingDrain();
+        expect(runner.createdIds).to.deep.equal(['task-1']);
+        expect(store.get('c1')!.pendingUserMessages).to.have.length(1);
+    });
+
+    it('an explicit send of a paused follow-up delivers it once and clears the pause', async () => {
+        const { store, runner } = createStore();
+        const conv1 = store.postUserMessage('c1', 'first');
+        const firstUserMessageId = conv1.messages.find(m => m.role === 'user')!.id;
+        store.postUserMessage('c1', 'queued');
+        store.cancel('c1');
+        await store.settleRun('c1', firstUserMessageId, 'task-1', 'cancelled');
+        const queuedId = store.get('c1')!.pendingUserMessages![0].id;
+
+        store.dispatchQueuedMessage('c1', queuedId, 'queue');
+
+        expect(runner.createdIds).to.deep.equal(['task-1', 'task-2']);
+        expect(store.get('c1')!.pendingUserMessages).to.be.undefined;
+        expect(store.get('c1')!.pendingUserMessagesPaused).to.be.undefined;
+
+        // Dispatching the same id again is a no-op.
+        store.dispatchQueuedMessage('c1', queuedId, 'queue');
+        expect(runner.createdIds).to.deep.equal(['task-1', 'task-2']);
+    });
+
+    it('a re-sent paused follow-up with the same clientMessageId creates no new task', async () => {
+        const { store, runner } = createStore();
+        const internal = { clientMessageId: 'pending-user-456' };
+        const conv1 = store.postUserMessage('c1', 'first');
+        const firstUserMessageId = conv1.messages.find(m => m.role === 'user')!.id;
+        store.postUserMessage(
+            'c1', 'queued', undefined, undefined, undefined, undefined, undefined, undefined, undefined, internal,
+        );
+        store.cancel('c1');
+        await store.settleRun('c1', firstUserMessageId, 'task-1', 'cancelled');
+        await waitForPendingDrain();
+
+        const resent = store.postUserMessage(
+            'c1', 'queued', undefined, undefined, undefined, undefined, undefined, undefined, undefined, internal,
+        );
+        await waitForPendingDrain();
+
+        expect(runner.createdIds).to.deep.equal(['task-1']);
+        expect(resent.pendingUserMessages).to.have.length(1);
+        expect(resent.pendingUserMessages![0].clientMessageId).to.equal('pending-user-456');
+    });
+
+    it('a late queueOnly mirror after Stop stays queued and paused, and a repeat does not duplicate it', async () => {
+        const { store, runner } = createStore();
+        const conv1 = store.postUserMessage('c1', 'first');
+        const firstUserMessageId = conv1.messages.find(m => m.role === 'user')!.id;
+        store.cancel('c1');
+        await store.settleRun('c1', firstUserMessageId, 'task-1', 'cancelled');
+        const internal = { clientMessageId: 'pending-user-late-1', queueOnly: true };
+
+        store.postUserMessage(
+            'c1', 'late follow-up', undefined, undefined, undefined, undefined, undefined, undefined, undefined, internal, 'queue',
+        );
+        await waitForPendingDrain();
+
+        expect(runner.createdIds).to.deep.equal(['task-1']);
+        expect(store.get('c1')!.pendingUserMessages).to.have.length(1);
+        expect(store.get('c1')!.pendingUserMessagesPaused).to.equal(true);
+
+        store.postUserMessage(
+            'c1', 'late follow-up', undefined, undefined, undefined, undefined, undefined, undefined, undefined, internal, 'queue',
+        );
+        await waitForPendingDrain();
+
+        expect(runner.createdIds).to.deep.equal(['task-1']);
+        expect(store.get('c1')!.pendingUserMessages).to.have.length(1);
+    });
+
+    it('a queueOnly post on an idle conversation that was not stopped still starts a turn', async () => {
+        const { store, runner } = createStore();
+        const conv1 = store.postUserMessage('c1', 'first');
+        const firstUserMessageId = conv1.messages.find(m => m.role === 'user')!.id;
+        await store.settleRun('c1', firstUserMessageId, 'task-1');
+
+        store.postUserMessage(
+            'c1', 'follow-up', undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+            { clientMessageId: 'pending-user-ok-1', queueOnly: true }, 'queue',
+        );
+
+        expect(runner.createdIds).to.deep.equal(['task-1', 'task-2']);
+        expect(store.get('c1')!.pendingUserMessages).to.be.undefined;
+    });
+
+    it('a queue post whose clientMessageId already started a turn is deduplicated', () => {
+        const { store, runner } = createStore();
+        const internal = { clientMessageId: 'pending-user-started-1' };
+        store.postUserMessage(
+            'c1', 'first', undefined, undefined, undefined, undefined, undefined, undefined, undefined, internal,
+        );
+
+        const repost = store.postUserMessage(
+            'c1', 'first', undefined, undefined, undefined, undefined, undefined, undefined, undefined, internal, 'queue',
+        );
+
+        expect(runner.createdIds).to.deep.equal(['task-1']);
+        expect(repost.pendingUserMessages).to.be.undefined;
     });
 });
 

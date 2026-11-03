@@ -31,8 +31,9 @@ import {
 import {
     reconcileAgentToolApprovalRules,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-approval-rules';
-import { isAgentsHubIdleConversationSummary } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
+import { buildAgentsHubIdleConversationSummary, isAgentsHubIdleConversationSummary } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
 import { isComposerDraftRestored, resolveComposerRestoredDraftKey } from '../common/qaap-composer-restored-draft';
+import { resolveComposerSubmitTarget } from '../common/qaap-composer-submit-target';
 import { writeProjectComposerDraft } from '../common/qaap-project-composer-draft';
 import {
     formatComposerRunPermissionsLabel,
@@ -148,6 +149,16 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: MobilePro
             if (fresh && fresh.id !== project.id) {
                 submitProject = fresh;
                 submitSummary = ctx.workHub.resolveShellSummary(fresh) ?? summary;
+            }
+        } else {
+            // Route by the composer's LIVE target, not only the mount closure: a cleared target
+            // ("New task") starts a new task, and a target moved to another summary (isolated
+            // parallel child, adopted task) receives the prompt.
+            const target = resolveComposerSubmitTarget(summary, ctx.host.transcriptComposerSummary);
+            if (target === 'newTask') {
+                submitSummary = buildAgentsHubIdleConversationSummary(cwd ?? '');
+            } else if (target === 'live' && ctx.host.transcriptComposerSummary) {
+                submitSummary = ctx.host.transcriptComposerSummary;
             }
         }
         void ctx.submitTranscriptComposerDraft(draft, submitProject, submitSummary, chatHost, {

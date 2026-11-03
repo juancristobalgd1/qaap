@@ -14,6 +14,7 @@ import { isGoalLoopActive } from '../common/qaap-agent-goal-loop';
 import { QAAP_DEFAULT_DELIVERY_MODE, QaapAgentConversation, QaapAgentConversationStatus, QaapAgentConversationSummary, QaapAgentMessage, QaapCreateAgentConversationRequest, QaapLinkConversationsByBranchRequest, QaapMessageDeliveryMode, QaapPendingUserMessage, toConversationSummary } from '../common/qaap-agent-conversation';
 
 import { agentSupportsModelPicker, QAIQ_AGENT_ID, SHELL_AGENT_ID } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { isLastTurnCancelled } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 
 import { DEFAULT_QAAP_CONTEXT_WINDOW } from '@theia/qaap-shared-core/lib/common/qaap-agent-context-usage';
 
@@ -311,7 +312,7 @@ export function enqueuePendingMessageExtracted(
  */
 export function drainPendingMessagesExtracted(ctx: QaapAgentConversationStoreContext, conversationId: string): void {
     const conv = ctx.conversations.get(conversationId) as QaapAgentConversation | undefined;
-    if (!conv?.pendingUserMessages?.length) {
+    if (!conv?.pendingUserMessages?.length || conv.pendingUserMessagesPaused) {
         return;
     }
     // Only drain when the conversation can accept a new turn — 'idle' or 'failed'. If another
@@ -342,7 +343,7 @@ export function drainPendingMessagesExtracted(ctx: QaapAgentConversationStoreCon
 /** Immediate drain — bypasses the coalesce window. Used after the timer fires. */
 function drainPendingMessagesNow(ctx: QaapAgentConversationStoreContext, conversationId: string): void {
     const conv = ctx.conversations.get(conversationId) as QaapAgentConversation | undefined;
-    if (!conv?.pendingUserMessages?.length) {
+    if (!conv?.pendingUserMessages?.length || conv.pendingUserMessagesPaused) {
         return;
     }
     if (conv.status !== 'idle' && conv.status !== 'failed') {
@@ -463,6 +464,7 @@ export function cancelQueuedMessageExtracted(ctx: QaapAgentConversationStoreCont
     const next: QaapAgentConversation = {
         ...conv,
         pendingUserMessages: filtered.length > 0 ? filtered : undefined,
+        pendingUserMessagesPaused: filtered.length > 0 ? conv.pendingUserMessagesPaused : undefined,
         updatedAt: Date.now(),
     };
     ctx.conversations.set(conversationId, next);
@@ -486,7 +488,7 @@ export function cancelQueuedMessageExtracted(ctx: QaapAgentConversationStoreCont
  */
 export function maybeDrainAtToolRoundBoundaryExtracted(ctx: QaapAgentConversationStoreContext, conversationId: string): void {
     const conv = ctx.conversations.get(conversationId) as QaapAgentConversation | undefined;
-    if (!conv?.pendingUserMessages?.length) {
+    if (!conv?.pendingUserMessages?.length || conv.pendingUserMessagesPaused) {
         return;
     }
     if (conv.status !== 'streaming') {
@@ -560,12 +562,14 @@ export function dispatchQueuedMessageExtracted(ctx: QaapAgentConversationStoreCo
     const cleared: QaapAgentConversation = {
         ...conv,
         pendingUserMessages: filtered.length > 0 ? filtered : undefined,
+        pendingUserMessagesPaused: filtered.length > 0 ? conv.pendingUserMessagesPaused : undefined,
         updatedAt: Date.now(),
     };
     ctx.conversations.set(conversationId, cleared);
     ctx.fire({ type: 'updated', conversation: toConversationSummary(cleared) });
     void ctx.persist();
-    // Re-post the message with the requested delivery mode.
+    // Re-post the message with the requested delivery mode. An explicit dispatch is not blocked
+    // by the Stop pause (postUserMessage does not go through the drain guards).
     return ctx.postUserMessage(
         conversationId,
         pending.content,
@@ -607,6 +611,32 @@ export function postUserMessageExtracted(ctx: QaapAgentConversationStoreContext,
         if (alreadyAccepted) {
             return conv;
         }
+    }
+    if (internal?.queueOnly && conv.status !== 'streaming' && (isLastTurnCancelled(conv) || conv.pendingUserMessagesPaused)) {
+        // A late mirror of a follow-up queued on the client, arriving after Stop: keep it queued and
+        // paused instead of starting a turn on a stopped conversation.
+        const turnAgentId = ctx.resolveTurnAgent(conv, content, agentOverride);
+        const sealedTurnModel = agentModelOverride && agentSupportsModelPicker(turnAgentId)
+            ? agentModelOverride
+            : undefined;
+        const queued = ctx.enqueuePendingMessage(
+            conv,
+            {
+                id: randomUUID(),
+                role: 'user',
+                content,
+                createdAt: Date.now(),
+                ...(internal.clientMessageId ? { clientMessageId: internal.clientMessageId } : {}),
+            },
+            turnAgentId,
+            sealedTurnModel,
+            internal.clientMessageId,
+        );
+        const paused: QaapAgentConversation = { ...queued, pendingUserMessagesPaused: true };
+        ctx.conversations.set(id, paused);
+        ctx.fire({ type: 'updated', conversation: toConversationSummary(paused) });
+        void ctx.persist();
+        return paused;
     }
     if (conv.status === 'streaming') {
         const activeTaskIds = ctx.getActiveTaskIdsForConversation(id);
@@ -1009,6 +1039,15 @@ export function cancelExtracted(ctx: QaapAgentConversationStoreContext, id: stri
     const withLoopCancelled = ctx.cancelGoalLoopOnConversation(next, 'Stopped by the user.');
     const goalLoopCancelled = withLoopCancelled !== next;
     next = withLoopCancelled;
+    // Stop pauses queued follow-ups instead of delivering them; an armed coalesce drain is disarmed.
+    if (next.pendingUserMessages?.length) {
+        next = { ...next, pendingUserMessagesPaused: true };
+    }
+    const armedDrainTimer = ctx.drainTimers?.get(id);
+    if (armedDrainTimer !== undefined) {
+        clearTimeout(armedDrainTimer);
+        ctx.drainTimers.delete(id);
+    }
     ctx.conversations.set(id, next);
     for (const messageId of agentMessageIds) {
         ctx.publishFinalizedAgentMessage(id, next, messageId);

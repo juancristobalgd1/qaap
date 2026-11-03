@@ -10,7 +10,6 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-hosted-agent-auth-policy';
 import {
     agentSupportsModelPicker,
-    ensureStoredAgentModel,
     isSameAgentModel,
     isStickyComposerAgentSelected,
     PI_AGENT_ID,
@@ -18,6 +17,7 @@ import {
     type QaapAgentTaskAgentOption,
     type QaapQaiqModelOption,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { seedDisplayedAgentModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
 import {
     createAgentBrandChip,
     createAgentSheetOptionButton,
@@ -258,7 +258,7 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
             return;
         }
         const storedModel = options.cwd
-            ? ensureStoredAgentModel(options.cwd, modelAgentId, pickerModels ?? [])
+            ? seedDisplayedAgentModel(options.cwd, modelAgentId, pickerModels ?? [])
             : undefined;
         chrome.header.classList.add('theia-mod-drilldown');
         chrome.backBtn.hidden = false;
@@ -430,7 +430,7 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
         const hasModels = agentSupportsModelPicker(agentId);
         const agentSelected = isStickyComposerAgentSelected(agentId, options.selectedAgentId, options.cwd);
         const storedModel = options.cwd
-            ? ensureStoredAgentModel(options.cwd, agentId, entry.models)
+            ? seedDisplayedAgentModel(options.cwd, agentId, entry.models)
             : undefined;
         let displayLabel = label;
         if (storedModel?.modelId && agentSelected) {

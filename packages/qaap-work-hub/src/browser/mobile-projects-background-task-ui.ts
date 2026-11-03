@@ -13,11 +13,14 @@ import {
     createConversation,
     deleteConversation,
     getConversation,
+    updateConversation,
     startGoalLoop,
     type QaapAgentConversationDTO,
     type QaapAgentConversationIsolation,
     type QaapAgentConversationSummaryDTO,
+    cancelConversation,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { beginNewTaskStartup, conversationHasAgentOutput, endNewTaskStartup, QaapNewTaskStartup, resolveNewTaskStartupOutcome } from '../common/qaap-new-task-startup';
 import type { QaapTranscriptUserImagePreview } from '@theia/qaap-shared-core/lib/common/qaap-transcript-user-image-preview';
 import { messageRequestsDevPreview } from '@theia/qaap-shared-core/lib/common/qaap-transcript-preview-offer';
 import {
@@ -40,9 +43,8 @@ import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qa
 import { applyBackendInteractionModeToPrompt } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-mode';
 import { reconcileAgentApprovalPolicyId, type QaapAgentApprovalPolicyId } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import { reconcileAgentToolApprovalRules } from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-approval-rules';
-import { resolveStoredAgentModelForSubmit } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
 import { getQaapDefaultAgentId } from '@theia/qaap-shared-core/lib/common/qaap-default-agent-id';
-import { confirmPaidModelSend } from '@theia/qaap-composer/lib/browser/qaap-paid-model-send-confirm';
+import { confirmPaidModelSend, resolveSendAgentModel, warnChooseSendModel } from '@theia/qaap-composer/lib/browser/qaap-paid-model-send-confirm';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
@@ -214,6 +216,8 @@ export class MobileProjectsBackgroundTaskUi {
             openConversation?: boolean;
             forceVps?: boolean;
             selectedAgentId?: string;
+            /** Routing agent already chosen by submitBackgroundAgentTask (one decision per submit). */
+            resolvedAgentId?: string;
             modeId?: string;
             autoApprove?: boolean;
             approvalPolicyId?: string;
@@ -232,20 +236,57 @@ export class MobileProjectsBackgroundTaskUi {
         if (this.backgroundSubmitInFlightByProjectId.has(project.id)) {
             return undefined;
         }
-        // A paid model asks once per project per browser session before a new task starts; cancelling
-        // reports no created conversation, so the caller restores the draft.
-        const projectCwd = this.host.projectsService.getProjectCwd(project);
-        const gateAgentModel = options.agentModel
-            ?? resolveStoredAgentModelForSubmit(options.selectedAgentId ?? getQaapDefaultAgentId(), projectCwd);
-        if (!await this.confirmPaidSend(projectCwd ?? project.id, gateAgentModel)) {
-            return undefined;
-        }
+        // Claim the project before any await: a second submit during the paid-send confirmation must
+        // be ignored, not start a second creation that overwrites this one's startup record.
         this.backgroundSubmitInFlightByProjectId.add(project.id);
+        const startup = beginNewTaskStartup(project.id);
         try {
-            return await this.submitBackgroundAgentTaskInner(project, draft, options);
+            // A paid model asks once per project per browser session before a new task starts; cancelling
+            // reports no created conversation, so the caller restores the draft.
+            const projectCwd = this.host.projectsService.getProjectCwd(project);
+            // One routing decision per submit: the agent that routes the turn is the agent the paid gate checks
+            // and the agent the send carries. Without a prepared repo cwd it is resolved later, inside the send.
+            let resolvedAgentId: string | undefined;
+            if (projectCwd) {
+                try {
+                    resolvedAgentId = await this.routeSubmitAgent(projectCwd, draft, options.selectedAgentId);
+                } catch (error) {
+                    // Routing failed: abort rather than gate and send with different agents. The draft is restored by the caller.
+                    const reason = error instanceof Error ? error.message : String(error);
+                    MobileSnackbar.show(
+                        nls.localize('qaap/mobileProjects/routingFailed', 'Could not choose an agent for this task: {0}', reason),
+                        { kind: 'warning' },
+                    );
+                    return undefined;
+                }
+            }
+            const modelResolution = await resolveSendAgentModel(
+                resolvedAgentId ?? options.selectedAgentId ?? getQaapDefaultAgentId(),
+                projectCwd,
+                options.agentModel,
+            );
+            if (!modelResolution.ok) {
+                // Fail closed: a picker agent with no chosen model is not sent on the CLI default.
+                warnChooseSendModel(resolvedAgentId ?? options.selectedAgentId ?? getQaapDefaultAgentId());
+                return undefined;
+            }
+            if (!await this.confirmPaidSend(projectCwd ?? project.id, modelResolution.model)) {
+                return undefined;
+            }
+            return await this.submitBackgroundAgentTaskInner(project, draft, { ...options, resolvedAgentId }, startup);
         } finally {
+            endNewTaskStartup(startup);
             this.backgroundSubmitInFlightByProjectId.delete(project.id);
         }
+    }
+
+    /** Routing agent for a submit, bounded. Rejects when routing fails; the caller aborts the submit. */
+    protected routeSubmitAgent(cwd: string, draft: string, selectedAgentId: string | undefined): Promise<string> {
+        return this.boundedSubmitStage(
+            this.selectBackendConversationAgent(cwd, draft, selectedAgentId),
+            20_000,
+            'selecting the agent',
+        );
     }
 
     protected async submitBackgroundAgentTaskInner(
@@ -255,6 +296,8 @@ export class MobileProjectsBackgroundTaskUi {
             openConversation?: boolean;
             forceVps?: boolean;
             selectedAgentId?: string;
+            /** Routing agent already chosen by submitBackgroundAgentTask (one decision per submit). */
+            resolvedAgentId?: string;
             modeId?: string;
             autoApprove?: boolean;
             approvalPolicyId?: string;
@@ -269,6 +312,7 @@ export class MobileProjectsBackgroundTaskUi {
             /** Create without a message, then start an "Until done" goal loop with the draft. */
             untilDone?: boolean;
         } = {},
+        startup: QaapNewTaskStartup,
     ): Promise<QaapAgentConversationSummaryDTO | undefined> {
         try {
             const cwd = await this.ensureInlineComposerCwd(project);
@@ -279,6 +323,11 @@ export class MobileProjectsBackgroundTaskUi {
                 return undefined;
             }
             const { summary, outbound } = await this.createProjectChatSession(project, cwd, draft, options);
+            if (resolveNewTaskStartupOutcome(startup, summary) === 'cancelAndRestore') {
+                // Stop arrived while the task was being created. The create already carries the first
+                // message, so the turn may be running: cancel it, then decide from what it produced.
+                return this.cancelStoppedNewTask(project, summary);
+            }
             this.host.seedTranscriptOptimisticSubmit(summary, outbound, options.selectedAgentId, options.imagePreviews);
             const wantsDevPreview = messageRequestsDevPreview(draft);
             if (wantsDevPreview || (options.openConversation ?? true)) {
@@ -311,6 +360,64 @@ export class MobileProjectsBackgroundTaskUi {
             return undefined;
         }
     }
+    /**
+     * Resolves a new task whose creation was stopped. Returns the task when it stays open (the
+     * prompt counts as sent: the composer commits it), or `undefined` when the task was archived
+     * before any output (the composer restores the draft as not sent).
+     */
+    protected async cancelStoppedNewTask(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+    ): Promise<QaapAgentConversationSummaryDTO | undefined> {
+        try {
+            await this.requestConversationCancel(summary.id);
+        } catch (error) {
+            // The stop did not reach the server, so the turn may still run: keep the task open and
+            // do not restore the prompt, which may already be delivered.
+            reportQaapClientError('new-task-stop', error);
+            const detail = error instanceof Error ? error.message : String(error);
+            this.host.messageService?.error(nls.localize('qaap/mobileProjects/cancelTaskFailed', 'Could not cancel run: {0}', detail));
+            await this.host.transcriptSheetUi.openTranscriptSheet(project, summary);
+            return summary;
+        }
+        let hasOutput = true;
+        try {
+            hasOutput = conversationHasAgentOutput(await this.loadConversation(summary.id));
+        } catch (error) {
+            // Unknown: keep the task rather than restoring a prompt that may have been delivered.
+            reportQaapClientError('new-task-stop', error);
+        }
+        if (hasOutput) {
+            // The turn produced output before the stop: it is a stopped task, not a discarded send.
+            await this.host.transcriptSheetUi.openTranscriptSheet(project, summary);
+            return summary;
+        }
+        try {
+            await this.archiveConversation(summary.id);
+        } catch (error) {
+            reportQaapClientError('new-task-stop', error);
+        }
+        this.host.rollbackTranscriptOptimisticSubmit?.();
+        this.host.messageService?.warn(nls.localize(
+            'qaap/mobileProjects/stopBeforeTaskStartedRestored',
+            'Stopped before the task started. Your draft was restored.',
+        ));
+        return undefined;
+    }
+
+    /** Seams over the conversation client so the stop outcome can be exercised without a backend. */
+    protected requestConversationCancel(id: string): Promise<void> {
+        return cancelConversation(id);
+    }
+
+    protected loadConversation(id: string): Promise<QaapAgentConversationDTO> {
+        return getConversation(id);
+    }
+
+    protected async archiveConversation(id: string): Promise<void> {
+        await updateConversation(id, { archived: true });
+    }
+
     async createProjectChatSession(
         project: MobileProjectEntry,
         cwd: string,
@@ -318,6 +425,8 @@ export class MobileProjectsBackgroundTaskUi {
         options: {
             forceVps?: boolean;
             selectedAgentId?: string;
+            /** Routing agent already chosen by submitBackgroundAgentTask (one decision per submit). */
+            resolvedAgentId?: string;
             modeId?: string;
             autoApprove?: boolean;
             approvalPolicyId?: string;
@@ -331,7 +440,7 @@ export class MobileProjectsBackgroundTaskUi {
             untilDone?: boolean;
         },
     ): Promise<QaapProjectChatSessionCreated> {
-        const agent = await this.boundedSubmitStage(
+        const agent = options.resolvedAgentId ?? await this.boundedSubmitStage(
             this.selectBackendConversationAgent(cwd, draft, options.selectedAgentId),
             20_000,
             'selecting the agent',
