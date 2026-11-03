@@ -130,7 +130,7 @@ export async function submitTranscriptComposerDraftExtracted(ctx: MobileProjects
         // Fail closed: no model chosen for a picker agent, so nothing is sent on the CLI default.
         restoreComposerSubmission();
         ctx.remountTranscriptStickyComposer();
-        warnChooseSendModel(selectedAgentId ?? '');
+        warnChooseSendModel(selectedAgentId ?? '', () => ctx.host.transcriptComposerUi.openTranscriptComposerAgentSheet(project, summary));
         return;
     }
     const sendModel = modelResolution.model;

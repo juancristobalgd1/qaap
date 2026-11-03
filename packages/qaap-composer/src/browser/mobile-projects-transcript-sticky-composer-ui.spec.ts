@@ -410,6 +410,56 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
         expect(optimisticRenders).to.deep.equal([]);
     });
 
+    it('opens the agent sheet when no send model can be resolved', async () => {
+        const paidModelModule = require('./qaap-paid-model-send-confirm');
+        const originalResolve = paidModelModule.resolveSendAgentModel;
+        const openedSheets: unknown[][] = [];
+        paidModelModule.resolveSendAgentModel = async () => ({ ok: false });
+        try {
+            const host = {
+                transcriptComposerContext: [],
+                transcriptComposerDraft: 'needs a model',
+                transcriptComposerDraftPersistTimer: undefined,
+                transcriptComposerModeId: undefined,
+                transcriptComposerApprovalPolicyId: undefined,
+                transcriptComposerAgentModel: undefined,
+                transcriptComposerHost: undefined,
+                transcriptComposerSendRefresh: undefined,
+                transcriptComposerUi: {
+                    openTranscriptComposerAgentSheet: (...args: unknown[]) => { openedSheets.push(args); },
+                },
+                resolveAttachmentPreview: () => undefined,
+                messageService: { warn: () => undefined, error: () => undefined },
+                submitTranscriptViaBackendConversation: async () => true,
+            };
+            const ui = Object.create(
+                composerModule.MobileProjectsTranscriptStickyComposerUi.prototype,
+            ) as MobileProjectsTranscriptStickyComposerUi;
+            const seam = ui as unknown as Record<string, any>;
+            seam.host = host;
+            seam.isTranscriptStickyComposerAgentWorking = () => false;
+            seam.remountTranscriptStickyComposer = () => undefined;
+
+            await liveStatusModule.submitTranscriptComposerDraftExtracted(
+                seam as unknown as MobileProjectsTranscriptStickyComposerUiContext,
+                'needs a model',
+                project,
+                { ...summary, status: 'idle' },
+                document.createElement('div'),
+                {
+                    resolvedPinnedId: 'qaiq',
+                    showApprovalPolicy: false,
+                    isLegacyTheiaChat: false,
+                },
+            );
+
+            expect(openedSheets).to.have.lengthOf(1);
+            expect(openedSheets[0][0]).to.equal(project);
+        } finally {
+            paidModelModule.resolveSendAgentModel = originalResolve;
+        }
+    });
+
     it('restores an idle prompt when background task startup is rejected', async () => {
         const submitted: string[] = [];
         const isolations: unknown[] = [];
