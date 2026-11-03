@@ -233,3 +233,20 @@ describe('qaap-pi-json-stream blocked sentinel replay', () => {
     });
 });
 
+describe('qaap-pi-json-stream provider retry replay', () => {
+    it('reports the provider retry Pi is waiting out, and clears it when the retry ends', () => {
+        const lines = [
+            JSON.stringify({ type: 'session', id: 's' }),
+            JSON.stringify({ type: 'auto_retry_start', attempt: 1, maxAttempts: 3, delayMs: 2000, errorMessage: '429 rate limited' }),
+        ];
+        const stream = new QaapPiStreamAccumulator();
+        stream.push(`${lines.join('\n')}\n`);
+        expect(stream.getProviderRetry()).to.deep.equal({ attempt: 1, maxAttempts: 3, delayMs: 2000 });
+        // The retry does not add transcript text: the user only sees the status line.
+        expect(stream.getSegments()).to.be.empty;
+        stream.push(`${JSON.stringify({ type: 'auto_retry_start', attempt: 2, maxAttempts: 3, delayMs: 4000, errorMessage: '429' })}\n`);
+        expect(stream.getProviderRetry()?.attempt).to.equal(2);
+        stream.push(`${JSON.stringify({ type: 'auto_retry_end', success: true, attempt: 2 })}\n`);
+        expect(stream.getProviderRetry()).to.be.undefined;
+    });
+});

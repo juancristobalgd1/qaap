@@ -22,6 +22,7 @@ import { resolveTranscriptEffectiveStatus } from './qaap-transcript-turn-status'
 import type { QaapTranscriptTraceEventDTO } from './qaap-transcript-trace-model';
 import type { QaapTranscriptUserImagePreview } from './qaap-transcript-user-image-preview';
 import type { QaapTurnLatencyMark } from './qaap-agent-stream-metrics';
+import type { QaapProviderRetryStatus } from './qaap-pi-json-stream';
 import { normalizeQaapVisualPreviewUrl, type QaapPreviewVisualValidationResult } from './qaap-visual-verification';
 import type { ComposerGitActionDisplayMetadata } from './qaap-composer-git-action-display';
 import type { QaapRewindPreviewDTO, QaapRewindRestoreOptions } from './qaap-conversation-rewind-preview';
@@ -153,6 +154,8 @@ export interface QaapAgentConversationSummaryDTO {
     readonly goalLoopStopReason?: string;
     /** Live phase of the in-flight turn (automatic verification); present only while streaming. */
     readonly turnPhase?: QaapAgentConversationTurnPhaseDTO;
+    /** Provider retry Pi is waiting out in the in-flight turn; present only while streaming. */
+    readonly providerRetry?: QaapProviderRetryStatus;
     /** Pre-turn checkpoint of the last cancelled turn, published once its agent process exited. */
     readonly discardCheckpointId?: string;
 }
@@ -314,6 +317,8 @@ export interface QaapAgentConversationDTO {
     readonly goalLoop?: QaapAgentGoalLoopStateDTO;
     /** Live phase of the in-flight turn (automatic verification). Only meaningful while streaming. */
     readonly turnPhase?: QaapAgentConversationTurnPhaseDTO;
+    /** Provider retry Pi is waiting out in the in-flight turn. Only meaningful while streaming. */
+    readonly providerRetry?: QaapProviderRetryStatus;
     /** Pre-turn checkpoint of the last cancelled turn, published once its agent process exited. */
     readonly discardCheckpointId?: string;
 }
@@ -628,6 +633,7 @@ export function conversationToSummary(conv: QaapAgentConversationDTO): QaapAgent
             ...(conv.goalLoop.stopReason ? { goalLoopStopReason: conv.goalLoop.stopReason } : {}),
         } : {}),
         ...(conv.turnPhase && status === 'streaming' ? { turnPhase: conv.turnPhase } : {}),
+        ...(conv.providerRetry && status === 'streaming' ? { providerRetry: conv.providerRetry } : {}),
         ...(conv.discardCheckpointId ? { discardCheckpointId: conv.discardCheckpointId } : {}),
     };
 }

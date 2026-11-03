@@ -6,6 +6,7 @@
 import { expect } from 'chai';
 import {
     resolveTranscriptStreamHealth,
+    TRANSCRIPT_FIRST_OUTPUT_SLOW_HINT_MS,
     shouldAutoRetryTranscriptFirstOutput,
     TRANSCRIPT_FIRST_OUTPUT_AUTO_RETRY_MS,
     TRANSCRIPT_SSE_STALE_MS,
@@ -143,5 +144,26 @@ describe('qaap-transcript-stream-health', () => {
 
     it('keeps the automatic first-output retry later than the visible 90s timeout', () => {
         expect(TRANSCRIPT_FIRST_OUTPUT_AUTO_RETRY_MS).to.be.greaterThan(TRANSCRIPT_STREAM_FIRST_OUTPUT_TIMEOUT_MS);
+    });
+});
+
+describe('qaap-transcript-stream-health slow first output (fake clock)', () => {
+    const base = { streaming: true, lastProgressAtMs: 1_000, lastTransportEventAtMs: 1_000, segments: [] };
+
+    it('stays quiet before the slow-start budget, then flags it without timing the turn out', () => {
+        const before = resolveTranscriptStreamHealth({ ...base, now: 1_000 + TRANSCRIPT_FIRST_OUTPUT_SLOW_HINT_MS - 1 });
+        expect(before.slowFirstOutput).to.be.false;
+        const at = resolveTranscriptStreamHealth({ ...base, now: 1_000 + TRANSCRIPT_FIRST_OUTPUT_SLOW_HINT_MS });
+        expect(at.slowFirstOutput).to.be.true;
+        expect(at.timedOut).to.be.false;
+    });
+
+    it('does not flag a slow start once the agent has produced output', () => {
+        const withText = resolveTranscriptStreamHealth({
+            ...base,
+            segments: [{ type: 'text', content: 'hi' }],
+            now: 1_000 + TRANSCRIPT_FIRST_OUTPUT_SLOW_HINT_MS * 2,
+        });
+        expect(withText.slowFirstOutput).to.be.false;
     });
 });

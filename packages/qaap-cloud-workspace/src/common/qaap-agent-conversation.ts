@@ -5,6 +5,7 @@
 
 import type { QaapAgentClosingReport } from './qaap-agent-closing-report';
 import type { QaapExternalTaskOrigin } from './qaap-external-task';
+import type { QaapProviderRetryStatus } from '@theia/qaap-shared-core/lib/common/qaap-pi-json-stream';
 import { buildConversationListMetrics } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-list-metrics';
 import { agentActivityField, excerptConversationMessageError, isLastTurnCancelled } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type { QaapAgentConversationIsolation, QaapAgentModelFallbackReason } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
@@ -346,6 +347,8 @@ export interface QaapAgentConversation {
     readonly goalLoop?: QaapAgentGoalLoopState;
     /** Live phase of the in-flight turn (automatic verification). Only meaningful while streaming. */
     readonly turnPhase?: QaapAgentConversationTurnPhase;
+    /** Provider retry Pi reports while it waits out a saturated or rate-limited model. Only while streaming. */
+    readonly providerRetry?: QaapProviderRetryStatus;
     /**
      * Pre-turn checkpoint of the most recent CANCELLED turn, published once that turn's agent
      * process has exited, so the UI can offer "Discard changes". Cleared by the next turn.
@@ -450,6 +453,8 @@ export interface QaapAgentConversationSummary {
     readonly goalLoopStopReason?: string;
     /** Live phase of the in-flight turn (automatic verification); present only while streaming. */
     readonly turnPhase?: QaapAgentConversationTurnPhase;
+    /** Provider retry Pi is waiting out; present only while streaming. */
+    readonly providerRetry?: QaapProviderRetryStatus;
     /** See {@link QaapAgentConversation.discardCheckpointId}. */
     readonly discardCheckpointId?: string;
 }
@@ -754,6 +759,7 @@ export function toConversationSummary(conv: QaapAgentConversation): QaapAgentCon
             : {}),
         ...(conversationNeedsVisualVerificationEvidence(conv) ? { visualVerificationPending: true } : {}),
         ...(conv.turnPhase && status === 'streaming' ? { turnPhase: conv.turnPhase } : {}),
+        ...(conv.providerRetry && status === 'streaming' ? { providerRetry: conv.providerRetry } : {}),
         ...(conv.discardCheckpointId ? { discardCheckpointId: conv.discardCheckpointId } : {}),
     };
 }

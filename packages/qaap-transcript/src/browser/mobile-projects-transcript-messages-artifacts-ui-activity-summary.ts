@@ -11,6 +11,7 @@ import {
     resolveTranscriptEffectiveStatus,
 } from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
 import { resolveTranscriptStreamingActivityFromSegments } from '../common/qaap-transcript-streaming-activity';
+import { resolveTranscriptStreamHealth } from '../common/qaap-transcript-stream-health';
 import {
     resolveTranscriptActivityTimelineSummaryText,
 } from '../common/qaap-transcript-activity-timeline-summary';
@@ -314,12 +315,23 @@ export function resolveTranscriptStreamDurationLabelExtracted(ctx: MobileProject
 export function resolveTranscriptStreamingActivityExtracted(ctx: MobileProjectsTranscriptMessagesArtifactsUiContext, conv: QaapAgentConversationDTO,
         options?: { readonly stalled?: boolean; readonly timedOut?: boolean },): { kind: string; title: string; detail: string } {
         const segments = [...resolveTranscriptStreamingAgentSegments(conv)] as QaapAgentMessageSegmentDTO[];
+        const streaming = resolveTranscriptEffectiveStatus(conv) === 'streaming';
+        const slowFirstOutput = streaming && resolveTranscriptStreamHealth({
+            streaming,
+            lastProgressAtMs: ctx.host.transcriptLastStreamProgressAt,
+            turnStartedAtMs: resolveTranscriptTurnStartMs(conv.messages),
+            lastTransportEventAtMs: ctx.host.transcriptLastTransportEventAt,
+            segments,
+            verifying: conv.turnPhase?.kind === 'verifying',
+        }).slowFirstOutput;
         return resolveTranscriptStreamingActivityFromSegments(segments, {
             stalled: options?.stalled,
             timedOut: options?.timedOut,
             stallTitle: ctx.resolveTranscriptStreamStallLabel(),
             localizeToolTitle: label => ctx.host.projectRowsUi.localizeActivityLabel(label),
             turnPhase: conv.turnPhase,
+            providerRetry: streaming ? conv.providerRetry : undefined,
+            slowFirstOutput,
         });
 }
 
