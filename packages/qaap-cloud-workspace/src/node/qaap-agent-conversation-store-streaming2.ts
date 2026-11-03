@@ -20,7 +20,7 @@ import { QAAP_VISUAL_REPAIR_REQUIRED_MARKER, agentMessageHasVisualVerificationMa
 
 import { resolveVisualEvidenceTarget as resolveVisualEvidenceTargetHelper, resolveVisualRepairSourceUserMessage as resolveVisualRepairSourceUserMessageHelper } from './qaap-agent-conversation-store-visual';
 
-import { MAX_VISUAL_REPAIR_ATTEMPTS, QAAP_VISUAL_REPAIR_AUTO_START } from './qaap-agent-conversation-store-constants';
+import { isVisualRepairAutoStartEnabled, MAX_VISUAL_REPAIR_ATTEMPTS } from './qaap-agent-conversation-store-constants';
 
 export function cancelRunExtracted(ctx: QaapAgentConversationStoreContext, id: string, userMessageId: string): QaapAgentConversation | undefined {
         const conv = ctx.conversations.get(id);
@@ -265,7 +265,7 @@ export async function continueVisualRepairLoopExtracted(ctx: QaapAgentConversati
         if (!sourceUserMessage) {
             return conv;
         }
-        if (options?.propose && !QAAP_VISUAL_REPAIR_AUTO_START) {
+        if (options?.propose && !isVisualRepairAutoStartEnabled()) {
             // The user decides: record the offer on the evidence message and start nothing. Accepting
             // it later goes through startVisualRepairProposal, which runs the same loop below.
             if (target.visualRepairProposedAt !== undefined) {

@@ -93,7 +93,9 @@ export const TURN_WATCHDOG_SWEEP_MS = 60 * 1000;
  * A failed visual check offers a repair as a proposal the user accepts. `QAAP_VISUAL_REPAIR_AUTO=1`
  * restores the automatic repair turn for unattended runs (benchmarks, CI scripts) that have no UI.
  */
-export const QAAP_VISUAL_REPAIR_AUTO_START = /^(1|true|on)$/i.test(process.env.QAAP_VISUAL_REPAIR_AUTO?.trim() ?? '');
+export function isVisualRepairAutoStartEnabled(): boolean {
+    return /^(1|true|on)$/i.test(process.env.QAAP_VISUAL_REPAIR_AUTO?.trim() ?? '');
+}
 export const QAAP_AGENT_AUTO_CONTINUE_ENABLED = !/^(0|false|off)$/i.test(process.env.QAAP_AGENT_AUTO_CONTINUE?.trim() ?? '');
 
 /**

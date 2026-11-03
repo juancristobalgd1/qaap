@@ -102,6 +102,18 @@ class VisualEvidenceStoreHarness extends QaapAgentConversationStore {
 }
 
 describe('QaapAgentConversationStore visual verification', () => {
+    // These cases cover the automatic repair loop; a failed render is a proposal unless this is set.
+    const previousAutoRepair = process.env.QAAP_VISUAL_REPAIR_AUTO;
+    before(() => {
+        process.env.QAAP_VISUAL_REPAIR_AUTO = '1';
+    });
+    after(() => {
+        if (previousAutoRepair === undefined) {
+            delete process.env.QAAP_VISUAL_REPAIR_AUTO;
+        } else {
+            process.env.QAAP_VISUAL_REPAIR_AUTO = previousAutoRepair;
+        }
+    });
     let root: string;
     let store: VisualEvidenceStoreHarness;
 
