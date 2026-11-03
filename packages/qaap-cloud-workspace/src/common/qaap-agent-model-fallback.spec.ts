@@ -123,12 +123,37 @@ describe('qaap-agent-model-fallback', () => {
             .to.equal('qwen/b:free');
     });
 
-    it('falls back to the curated Pi list when the owner has no discovered models', () => {
-        const failed = { provider: 'openai' as const, vendor: 'openrouter', modelId: '~anthropic/claude-sonnet-latest' };
-        const withoutDiscovery = buildAgentModelFallbackChain('pi', failed, []);
-        expect(withoutDiscovery.length).to.be.greaterThan(1);
-        expect(withoutDiscovery[0]).to.deep.equal(failed);
-        expect(buildAgentModelFallbackChain('pi', failed)).to.deep.equal(withoutDiscovery);
+    it('never falls back from a paid model, and never picks a paid fallback target', () => {
+        const paid = { provider: 'openai' as const, vendor: 'openrouter', modelId: '~anthropic/claude-fable-latest' };
+        const discovered = [
+            { provider: 'openai' as const, vendor: 'openrouter', modelId: '~anthropic/claude-sonnet-latest' },
+            { provider: 'openai' as const, vendor: 'openrouter', modelId: 'google/gemma-4-26b-a4b-it:free' },
+        ];
+        expect(buildAgentModelFallbackChain('pi', paid, discovered).map(agentModelKey)).to.deep.equal([agentModelKey(paid)]);
+        expect(resolveNextFallbackAgentModel('pi', paid, new Set([agentModelKey(paid)!]), discovered)).to.equal(undefined);
+        expect(buildAgentModelFallbackChain('pi', paid).map(agentModelKey)).to.deep.equal([agentModelKey(paid)]);
+    });
+
+    it('a free model falls back to free discovered models only, never to a paid one', () => {
+        const free = { provider: 'openai' as const, vendor: 'openrouter', modelId: 'google/gemma-4-26b-a4b-it:free' };
+        const discovered = [
+            { provider: 'openai' as const, vendor: 'openrouter', modelId: '~anthropic/claude-fable-latest' },
+            { provider: 'openai' as const, vendor: 'openrouter', modelId: 'poolside/laguna-s-2.1:free' },
+            { provider: 'openai' as const, vendor: 'openrouter', modelId: 'cohere/north-mini-code:free' },
+        ];
+        const chain = buildAgentModelFallbackChain('pi', free, discovered).map(agentModelKey);
+        expect(chain).to.deep.equal([
+            'openrouter/google/gemma-4-26b-a4b-it:free',
+            'openrouter/poolside/laguna-s-2.1:free',
+            'openrouter/cohere/north-mini-code:free',
+        ]);
+    });
+
+    it('a free model with only paid candidates has no fallback', () => {
+        const free = { provider: 'openai' as const, vendor: 'openrouter', modelId: 'google/gemma-4-26b-a4b-it:free' };
+        const paidOnly = [{ provider: 'openai' as const, vendor: 'openrouter', modelId: '~anthropic/claude-sonnet-latest' }];
+        expect(buildAgentModelFallbackChain('pi', free, paidOnly).map(agentModelKey)).to.deep.equal([agentModelKey(free)]);
+        expect(resolveNextFallbackAgentModel('pi', free, new Set([agentModelKey(free)!]), paidOnly)).to.equal(undefined);
     });
 
     it('retries explicit credit exhaustion even when the provider returned text', () => {
@@ -217,13 +242,19 @@ describe('qaap-agent-model-fallback', () => {
         expect(agentTurnHasRetryableModelFailure({ content: endOfLife })).to.be.true;
         expect(agentTurnHasRetryableModelFailure({ content: endpoint404 })).to.be.true;
         expect(agentTurnQualifiesForModelFallback('qaiq', { state: 'failed' }, { content: endOfLife })).to.be.true;
-        const next = resolveNextFallbackAgentModel(
+        // A NIM model without the free slug is paid by the policy: its retired-model failure has no fallback.
+        expect(resolveNextFallbackAgentModel(
             'qaiq',
             { provider: 'openai', vendor: 'nvidia', modelId: 'nvidia/llama-3.3-nemotron-super-49b-v1' },
             new Set(['nvidia/nvidia/llama-3.3-nemotron-super-49b-v1']),
+        )).to.equal(undefined);
+        const next = resolveNextFallbackAgentModel(
+            'qaiq',
+            { provider: 'openai', vendor: 'openrouter', modelId: 'nvidia/llama-3.3-nemotron-super-49b-v1:free' },
+            new Set(['openrouter/nvidia/llama-3.3-nemotron-super-49b-v1:free']),
         );
-        expect(next?.vendor).to.equal('nvidia');
-        expect(next?.modelId).to.not.equal('nvidia/llama-3.3-nemotron-super-49b-v1');
+        expect(next).to.not.equal(undefined);
+        expect(next?.modelId.endsWith(':free')).to.equal(true);
     });
 
     describe('agentTurnQualifiesForModelFallback (shared by conversation turns and standalone tasks)', () => {
