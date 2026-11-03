@@ -117,7 +117,7 @@ export async function submitTranscriptComposerDraftExtracted(ctx: MobileProjects
         ctx.host.transcriptComposerDraft = '';
     };
     // A paid model asks once per project per browser session before anything is sent; cancelling keeps the draft.
-    const sendCwd = ctx.host.projectsService.getProjectCwd(project) ?? summary.cwd;
+    const sendCwd = summary.cwd;
     const sendModel = ctx.host.transcriptComposerAgentModel ?? resolveStoredAgentModelForSubmit(selectedAgentId, sendCwd);
     if (!await confirmPaidModelSend(sendCwd, sendModel)) {
         restoreComposerSubmission();
