@@ -6,7 +6,7 @@
 import { expect } from 'chai';
 import type { QaapAgentConversationDTO, QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { conversationToSummary } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
-import { applyConversationComposerPrefs, applyProjectComposerDefaults, buildRuntimeComposerPersistPatch, buildUpdateConversationComposerPatch, extractConversationComposerPrefs, extractConversationComposerPrefsFromSummary, formatComposerRunPermissionsLabel, formatConversationExecutionSessionMeta, readConversationComposerDraft, readProjectComposerDefaults, writeConversationComposerDraft } from './qaap-conversation-composer-state';
+import { applyConversationComposerPrefs, applyProjectComposerDefaults, buildRuntimeComposerPersistPatch, buildUpdateConversationComposerPatch, extractConversationComposerPrefs, extractConversationComposerPrefsFromSummary, resolveApprovalPolicyFromConversation, formatComposerRunPermissionsLabel, formatConversationExecutionSessionMeta, readConversationComposerDraft, readProjectComposerDefaults, writeConversationComposerDraft } from './qaap-conversation-composer-state';
 import { writeStoredAgentModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { readStoredAgentApprovalPolicy, resolveAgentApprovalPolicyOption, writeStoredAgentApprovalPolicy } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import { QAAP_BACKEND_INTERACTION_MODES, reconcileComposerModeId, writeStoredComposerMode } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-mode';
@@ -237,5 +237,15 @@ describe('qaap-conversation-composer-state', () => {
     it('a chip change to Ask persists request-approval and switch off', () => {
         expect(buildUpdateConversationComposerPatch({ approvalPolicyId: 'request-approval' }))
             .to.deep.equal({ approvalPolicyId: 'request-approval', autoApprove: false });
+    });
+
+    it('a switch that is off beats a stored approve-for-me (legacy conversations)', () => {
+        expect(resolveApprovalPolicyFromConversation({ approvalPolicyId: 'approve-for-me', autoApprove: false }))
+            .to.equal('request-approval');
+    });
+
+    it('a stored approve-for-me with no switch state stays approve-for-me', () => {
+        expect(resolveApprovalPolicyFromConversation({ approvalPolicyId: 'approve-for-me', autoApprove: undefined }))
+            .to.equal('approve-for-me');
     });
 });

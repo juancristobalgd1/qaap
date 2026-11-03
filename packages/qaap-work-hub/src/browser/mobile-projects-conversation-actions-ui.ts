@@ -25,6 +25,7 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { resolveStoredAgentModelForSubmit } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
 import { reportQaapClientError } from '@theia/qaap-shared-core/lib/common/qaap-client-error-report';
+import { buildAutoApprovePatch } from '../common/mobile-projects-auto-approve-patch';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import type { MobileProjectsConversationFlags } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-flags';
 import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
@@ -234,8 +235,8 @@ export class MobileProjectsConversationActionsUi {
         this.host.transcriptAutoApproveBusy = true;
         try {
             // The switch and the approval policy are one setting: the conversation stores both, and the open chip follows.
-            const approvalPolicyId = autoApprove ? 'approve-for-me' : 'request-approval';
-            const full = await updateConversation(summary.id, { autoApprove, approvalPolicyId });
+            const { autoApprove: patchAutoApprove, approvalPolicyId } = buildAutoApprovePatch(autoApprove);
+            const full = await updateConversation(summary.id, { autoApprove: patchAutoApprove, approvalPolicyId });
             const next = conversationToSummary(full);
             this.host.conversations?.recordSnapshot(next);
             this.host.syncOpenTranscriptApprovalPolicy(summary.id, approvalPolicyId);
