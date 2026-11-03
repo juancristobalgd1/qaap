@@ -104,6 +104,8 @@ export function buildWorkingAgentDetailActivityFeed(
     options?: {
         readonly streaming?: boolean;
         readonly activityLabelFallback?: string;
+        /** Provider retry Pi is waiting out, so the live label says the model is busy. */
+        readonly providerRetry?: { readonly attempt: number; readonly maxAttempts: number };
     },
 ): WorkingAgentDetailActivityFeed {
     const streaming = !!options?.streaming;
@@ -137,6 +139,7 @@ export function buildWorkingAgentDetailActivityFeed(
     if (streaming) {
         const live = resolveTranscriptStreamingActivityFromSegments(segments, {
             localizeToolTitle: label => localizeWorkingDetailActivityLabel(label),
+            providerRetry: options?.providerRetry,
         });
         liveLabel = live.title;
         liveDetail = live.detail;
@@ -197,6 +200,7 @@ export function resolveWorkingAgentDetailActivityFeedFromConversation(
         return buildWorkingAgentDetailActivityFeed(segments, {
             streaming,
             activityLabelFallback: resolveMeaningfulActivityLabel(member),
+            providerRetry: document?.status === 'streaming' ? document.providerRetry : undefined,
         });
     }
     return buildWorkingAgentDetailActivityFallback(member);
