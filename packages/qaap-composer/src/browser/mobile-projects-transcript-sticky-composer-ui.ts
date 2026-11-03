@@ -18,7 +18,7 @@ import {
 import { type ComposerGitActionDisplayMetadata } from '@theia/qaap-shared-core/lib/common/qaap-composer-git-action-display';
 import { type QaapAgentTaskAgentOption } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { getQaapDefaultAgentId } from '@theia/qaap-shared-core/lib/common/qaap-default-agent-id';
-import { mergePendingUserMessagesWithLocalQueue } from '@theia/qaap-shared-core/lib/common/qaap-pending-user-messages-merge';
+import { mergePendingUserMessagesWithLocalQueue, resolveQueuedFollowUpBaseConversation } from '@theia/qaap-shared-core/lib/common/qaap-pending-user-messages-merge';
 import type { MobileComposerAttachHandlers } from './qaap-mobile-composer-device-attach';
 import {
     extractConversationComposerPrefs,
@@ -537,17 +537,19 @@ export class MobileProjectsTranscriptStickyComposerUi {
         const chatHost = this.host.resolveActiveTranscriptChatHost() ?? this.host.transcriptChatHost;
         // Legacy DOM cleanup (old in-scroller queued bubbles).
         syncTranscriptQueuedBubbles(chatHost, this.host.transcriptFollowUpQueue.peek(summary.id));
-        const cached = this.host.transcriptLastConv;
-        if (!chatHost?.isConnected || !cached || cached.id !== summary.id) {
+        if (!chatHost?.isConnected) {
             return;
         }
+        // No snapshot yet (the turn is still starting) must not hide a queued follow-up: paint it
+        // over the summary so the user's message appears at once, as it does on the instant path.
+        const base = resolveQueuedFollowUpBaseConversation(this.host.transcriptLastConv, summary);
         const pendingUserMessages = mergePendingUserMessagesWithLocalQueue(
-            cached.pendingUserMessages,
+            base.pendingUserMessages,
             this.host.transcriptFollowUpQueue.peek(summary.id),
         );
-        const next = { ...cached, pendingUserMessages };
+        const next = { ...base, pendingUserMessages };
         // Avoid a no-op full re-render when the merge did not change ids/content.
-        const prevKey = (cached.pendingUserMessages ?? []).map(item => `${item.id}:${item.content}`).join('|');
+        const prevKey = (base.pendingUserMessages ?? []).map(item => `${item.id}:${item.content}`).join('|');
         const nextKey = pendingUserMessages.map(item => `${item.id}:${item.content}`).join('|');
         if (prevKey === nextKey) {
             return;
