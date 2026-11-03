@@ -758,6 +758,10 @@ export class MobileProjectsAgentsHubInlineUi {
         this.host.transcriptLastSseDeltaAt = undefined;
         this.host.transcriptOpenSummaryId = undefined;
         this.host.transcriptOpenSummary = undefined;
+        // The composer must not keep targeting the previous task: a remount or submit before the
+        // idle shell re-mounts would otherwise post the new prompt into that old conversation.
+        this.host.transcriptComposerSummary = undefined;
+        this.host.transcriptComposerMountKey = undefined;
         this.host.transcriptConversationCache.delete(QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID);
         this.host.transcriptUi.disposeList();
         const chatHost = this.host.agentsHubInlineChatHost;
