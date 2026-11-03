@@ -73,7 +73,10 @@ export class QaapAgentApprovalStore {
                     }
                 }
                 const channel = taskId ? this.taskRunner.getApprovalChannel(taskId) : 'none';
-                if (channel === 'stdin') {
+                // A transcript segment left unfinished by a turn that already ended is an orphan: list it only
+                // while its task still runs, so a card never outlives the task that could answer it.
+                const taskRunning = taskId ? (await this.taskRunner.detail(taskId))?.state === 'running' : false;
+                if (channel === 'stdin' && taskRunning) {
                     for (const item of extractPendingToolApprovals(conv, taskId)) {
                         byId.set(item.id, item);
                     }
@@ -117,11 +120,11 @@ export class QaapAgentApprovalStore {
         }
         const taskId = parsed.taskId ?? this.conversationStore.getActiveTaskIdForConversation(parsed.conversationId);
         if (!taskId) {
-            return { ok: false, error: 'No active task for this approval.' };
+            return { ok: false, expired: true, error: 'Approval expired.' };
         }
         const task = await this.taskRunner.detail(taskId);
         if (!task || task.state !== 'running') {
-            return { ok: false, error: 'Task is not running.' };
+            return { ok: false, expired: true, error: 'Approval expired.' };
         }
         const sent = this.gateAsks?.respond(taskId, action, parsed.toolUseId)
             || this.taskRunner.respondToApprovalPrompt(taskId, action, parsed.toolUseId);
