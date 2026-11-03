@@ -102,6 +102,7 @@ describe('MobileProjectsTranscriptComposerUi catalog refresh', () => {
                 filterSelectableComposerAgents: (agents: QaapAgentTaskAgentOption[]) => agents.filter(a => a.available),
                 reconcileStickyComposerPinnedAgent: (pinned: string | undefined) => pinned,
                 ensureStickyComposerAgentSelection: async (agentId: string | undefined) => (agentId ? { agentId } : undefined),
+                waitForSelectableActiveTaskAgents: async () => undefined,
             },
             transcriptStickyComposerUi: { remountTranscriptStickyComposer: () => { remounts.count++; } },
         };
@@ -128,5 +129,14 @@ describe('MobileProjectsTranscriptComposerUi catalog refresh', () => {
         await ui.refreshTranscriptComposerAgents(project, { forceRefresh: true });
         expect(remounts.count).to.equal(afterFirstLoad + 1);
         expect(loads[loads.length - 1]).to.deep.equal({ forceRefresh: true });
+    });
+
+    it('loads the catalog once for repeated composer mounts inside the throttle window', async () => {
+        const loads: unknown[] = [];
+        const { ui } = createUi(() => [], loads, { count: 0 });
+        for (let mount = 0; mount < 5; mount++) {
+            await ui.ensureComposerAgentCatalog(project);
+        }
+        expect(loads).to.have.length(1);
     });
 });
