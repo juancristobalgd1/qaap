@@ -16,6 +16,7 @@ import {
     type QaapCreateAgentTaskQaiqModel,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { resolveStoredAgentModelForSubmit } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
+import { confirmPaidModelSend } from '@theia/qaap-composer/lib/browser/qaap-paid-model-send-confirm';
 import type {
     QaapAttachComposerContextArgs,
     QaapWorkHubPickAgentAndSubmitPromptOptions,
@@ -148,6 +149,10 @@ export class QaapWorkHubComposerPromptService {
         }
         const agent = options.agentId ?? readStoredAgent(cwd) ?? getQaapDefaultAgentId();
         const agentModel = options.agentModel ?? resolveStoredAgentModelForSubmit(agent, cwd);
+        // A paid model asks once per project per browser session before the first prompt is sent.
+        if (!await confirmPaidModelSend(cwd, agentModel)) {
+            return;
+        }
         const retry = this.pendingSubmit?.prompt === prompt && this.pendingSubmit.cwd === cwd ? this.pendingSubmit : undefined;
         const clientRequestId = retry?.clientRequestId ?? createConversationRequestId();
         this.pendingSubmit = { prompt, cwd, clientRequestId };
