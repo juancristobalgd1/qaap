@@ -134,6 +134,8 @@ export interface PostUserMessageInternalOptions {
     readonly autoContinueRootMessageId?: string;
     /** Correlates a browser optimistic row with the persisted user message. */
     readonly clientMessageId?: string;
+    /** Set by the client mirror of a queued follow-up: never starts a turn on a stopped conversation. */
+    readonly queueOnly?: boolean;
     /** Durable visual repair identity; all three fields are written before its task id is sealed. */
     readonly visualRepair?: {
         readonly rootUserMessageId: string;

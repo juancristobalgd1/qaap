@@ -11,6 +11,7 @@ import {
     shouldShowTranscriptEmptyQuickActions,
 } from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
 import { syncTranscriptComposerQuickActions } from './qaap-transcript-composer-quick-actions';
+import { createTranscriptQueuedMessageRowsExtracted } from './mobile-projects-transcript-messages-render-ui-render';
 import {
     appendBeforeTranscriptLiveStatus,
     detachTranscriptLiveStatusFromScroller,
@@ -166,13 +167,16 @@ export function renderTranscriptMessagesExtracted(ctx: MobileProjectsTranscriptM
             // paying the O(messages × segments) full fingerprint. A background host re-running on
             // another conversation's ~8/s SSE ticks now does a string compare instead of a full hash.
             const lastSettledMessage = conv.messages[conv.messages.length - 1];
-            const cheapKey = `${conv.id}|${conv.updatedAt}|${conv.messages.length}|${lastSettledMessage?.content?.length ?? 0}|${conv.contextCompaction?.status ?? ''}:${conv.contextCompaction?.completedAt ?? ''}:${conv.contextCompaction?.compactedMessageCount ?? 0}`;
+            // The queued rows are footer rows outside the message fingerprint, so the queue (ids and
+            // paused flag) is part of both keys: a queue change must repaint even when the messages are identical.
+            const queueKey = `${(conv.pendingUserMessages ?? []).map(p => p.id).join(',')}:${conv.pendingUserMessagesPaused ? 1 : 0}`;
+            const cheapKey = `${conv.id}|${conv.updatedAt}|${conv.messages.length}|${lastSettledMessage?.content?.length ?? 0}|${conv.contextCompaction?.status ?? ''}:${conv.contextCompaction?.completedAt ?? ''}:${conv.contextCompaction?.compactedMessageCount ?? 0}|${queueKey}`;
             if (settledHost.childElementCount > 0 && settledHost.dataset.qaapSettledCheapKey === cheapKey) {
                 recordTranscriptRenderMetric('render_skip_unchanged_settled');
                 ctx.clearTranscriptEmptyQuickActions(settledHost, conv);
                 return;
             }
-            const settledKey = `${conv.id} ${buildConversationTranscriptFingerprint(conv)}`;
+            const settledKey = `${conv.id} ${buildConversationTranscriptFingerprint(conv)}|${queueKey}`;
             if (settledHost.childElementCount > 0 && settledHost.dataset.qaapSettledRenderKey === settledKey) {
                 recordTranscriptRenderMetric('render_skip_unchanged_settled');
                 settledHost.dataset.qaapSettledCheapKey = cheapKey;
@@ -358,6 +362,12 @@ export function renderTranscriptMessagesExtracted(ctx: MobileProjectsTranscriptM
             }
         } else if (runningCompaction) {
             appendBeforeTranscriptLiveStatus(messageHost, runningCompaction);
+        }
+        // Queued follow-ups are footer rows with no TRANSCRIPT_MESSAGE_ID_ATTR, so keyed reuse never
+        // touches them. Drop any already on this host first so a re-render cannot stack duplicates.
+        messageHost.querySelectorAll(':scope > .theia-mobile-agent-transcript-queued-message').forEach(row => row.remove());
+        for (const queuedRow of createTranscriptQueuedMessageRowsExtracted(ctx, conv)) {
+            appendBeforeTranscriptLiveStatus(messageHost, queuedRow);
         }
         // Reattach the same live-status node (orb/shimmer intact) then sync via hold rules.
         if (preservedLiveStatus) {

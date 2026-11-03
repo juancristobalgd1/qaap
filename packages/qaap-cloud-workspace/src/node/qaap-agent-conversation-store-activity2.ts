@@ -201,10 +201,14 @@ export async function applyTaskOutcomeExtracted(ctx: QaapAgentConversationStoreC
             ? withUsageBaseline
             : ctx.appendRunCancelledTrace(withUsageBaseline, agentMessageId, cancelledReason);
         const finalized = ctx.finalizeStreamingAgentMessage(withCancelledTrace, agentMessageId, cancelledReason);
+        // Stop pauses any queued follow-ups (delivery mode 'queue'): they are neither auto-delivered
+        // nor drained here; the user sends or discards them explicitly.
+        const pauseQueue = task.state === 'cancelled' && !!finalized.pendingUserMessages?.length;
         const next: QaapAgentConversation = {
             ...finalized,
             status: ctx.settleStatusForRun(conversationId, task.id, 'idle'),
             updatedAt: Date.now(),
+            ...(pauseQueue ? { pendingUserMessagesPaused: true } : {}),
         };
         ctx.publishFinalizedAgentMessage(conversationId, next, agentMessageId, turnAgentId);
         // Do not auto-synthesize after a cancelled leader — that would spawn a new turn
@@ -213,9 +217,8 @@ export async function applyTaskOutcomeExtracted(ctx: QaapAgentConversationStoreC
         ctx.fire({ type: 'updated', conversation: toConversationSummary(next) });
         ctx.flushPersist();
         ctx.pendingTeamSynthesisForLeader.delete(task.id);
-        // Drain any user messages that were queued (delivery mode 'queue') while the agent
-        // was running. The cancelled turn settled to 'idle', so the queue can now flush.
-        if (next.status === 'idle') {
+        // Watchdog stops still drain: the cancelled-turn queue pause above applies only to user Stop.
+        if (next.status === 'idle' && task.state !== 'cancelled') {
             ctx.drainPendingMessages(conversationId);
         }
         ctx.notifyGoalLoopTurnSettled({ conversationId, userMessageId, task, outcome: 'cancelled' });

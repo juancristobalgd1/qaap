@@ -151,6 +151,7 @@ export async function submitTranscriptComposerDraftExtracted(ctx: MobileProjects
             forceDeliveryMode: options.forceDeliveryMode,
         });
         const entry: TranscriptFollowUpEntry = {
+            clientMessageId: `pending-user-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
             draft,
             selectedAgentId,
             modeId,

@@ -52,6 +52,7 @@ export async function startPeerRunOrQueueExtracted(ctx: MobileProjectsTranscript
             const submitted = await ctx.host.submitTranscriptViaBackendConversation(project, summary, entry.draft, {
                 parallel: true,
                 deliveryMode,
+                clientMessageId: entry.clientMessageId,
                 selectedAgentId: entry.selectedAgentId,
                 modeId: entry.modeId,
                 autoApprove: entry.autoApprove,
@@ -89,6 +90,7 @@ export async function startPeerRunOrQueueExtracted(ctx: MobileProjectsTranscript
             variables: entry.variables,
             imagePreviews: entry.imagePreviews,
             deliveryMode,
+            clientMessageId: entry.clientMessageId,
         });
         if (!submitted) {
             // Another POST for this conversation was still open (rapid-fire sends): the
@@ -166,27 +168,27 @@ export async function mirrorFollowUpToServerQueueExtracted(
             variables: entry.variables,
             imagePreviews: entry.imagePreviews,
             deliveryMode: 'queue',
+            clientMessageId: entry.clientMessageId,
+            queueOnly: true,
         });
         if (!submitted) {
             return false;
         }
+        // The server accepted the follow-up, so it is synced even when the matching pending row is not
+        // visible locally yet; the row id is only attached when it is found.
         const conv = ctx.host.transcriptLastConv;
-        if (!conv || conv.id !== summary.id) {
-            return true;
-        }
-        const pending = [...(conv.pendingUserMessages ?? [])]
-            .reverse()
-            .find(item => item.content === entry.draft || item.content?.endsWith(entry.draft));
-        if (!pending) {
-            return true;
-        }
+        const pendingRows = conv && conv.id === summary.id ? [...(conv.pendingUserMessages ?? [])].reverse() : [];
+        const pending = (entry.clientMessageId
+            ? pendingRows.find(item => item.clientMessageId === entry.clientMessageId)
+            : undefined)
+            ?? pendingRows.find(item => item.content === entry.draft || item.content?.endsWith(entry.draft));
         const queue = ctx.host.transcriptFollowUpQueue.peek(summary.id);
         for (let index = queue.length - 1; index >= 0; index -= 1) {
             const current = queue[index];
-            if (current.draft === entry.draft && !current.serverPendingId) {
+            if (current.draft === entry.draft && !current.serverSynced) {
                 ctx.host.transcriptFollowUpQueue.replaceAt(summary.id, index, {
                     ...current,
-                    serverPendingId: pending.id,
+                    ...(pending ? { serverPendingId: pending.id } : {}),
                     serverSynced: true,
                 });
                 ctx.syncTranscriptQueuedFollowUpBubbles?.(summary);
@@ -217,6 +219,7 @@ export async function submitQueuedFollowUpEntryExtracted(ctx: MobileProjectsTran
             imagePreviews: entry.imagePreviews,
             ...(options.parallel ? { parallel: true } : {}),
             ...(options.deliveryMode ? { deliveryMode: options.deliveryMode } : {}),
+            clientMessageId: entry.clientMessageId,
         });
     } catch (error) {
         ctx.host.transcriptFollowUpQueue.unshift(summary.id, entry);

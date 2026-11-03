@@ -317,6 +317,8 @@ export interface QaapAgentConversationDTO {
     readonly contextCompaction?: QaapContextCompactionDTO;
     /** User messages queued for the next agent turn (delivery mode 'queue'). */
     readonly pendingUserMessages?: QaapPendingUserMessageDTO[];
+    /** Set when the user stops a turn while messages are queued; automatic drain is suspended until the user sends or discards them. */
+    readonly pendingUserMessagesPaused?: boolean;
     /** "Until done" goal loop driving this conversation (kept after it ends). */
     readonly goalLoop?: QaapAgentGoalLoopStateDTO;
     /** Live phase of the in-flight turn (automatic verification). Only meaningful while streaming. */
@@ -810,6 +812,8 @@ export interface QaapPostConversationMessageOptions {
     readonly autoApprove?: boolean;
     /** ID of the optimistic user row that this request confirms. */
     readonly clientMessageId?: string;
+    /** Mirror of a follow-up queued on the client: never starts a turn on a stopped conversation. */
+    readonly queueOnly?: boolean;
     readonly interactionModeId?: string;
     readonly approvalPolicyId?: string;
     readonly toolApprovalRules?: import('./qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules;
@@ -840,6 +844,7 @@ export async function postConversationMessage(
             agentModel,
             qaiqModel: agentModel,
             clientMessageId: options.clientMessageId,
+            ...(options.queueOnly ? { queueOnly: true } : {}),
             interactionModeId: options.interactionModeId,
             approvalPolicyId: options.approvalPolicyId,
             toolApprovalRules: options.toolApprovalRules,

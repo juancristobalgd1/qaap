@@ -240,6 +240,10 @@ export class MobileProjectsTranscriptSubmitUi {
              * When `parallel` is true, this is set to 'parallel' for backward compatibility.
              */
             deliveryMode?: QaapMessageDeliveryMode;
+            /** Stable id for the POST (a queued follow-up keeps the same id across retries). */
+            clientMessageId?: string;
+            /** Mirror of a follow-up queued on the client: never starts a turn on a stopped conversation. */
+            queueOnly?: boolean;
             /** Start an "Until done" goal loop (draft = goal + first prompt) instead of one turn. */
             untilDone?: boolean;
         } = {},
@@ -294,6 +298,10 @@ export class MobileProjectsTranscriptSubmitUi {
             parallel?: boolean;
             /** Delivery mode: 'queue', 'parallel', or 'interrupt'. */
             deliveryMode?: QaapMessageDeliveryMode;
+            /** Stable id for the POST (see {@link QaapPendingUserMessageDTO.clientMessageId}); a generated id when absent. */
+            clientMessageId?: string;
+            /** Mirror of a follow-up queued on the client: never starts a turn on a stopped conversation. */
+            queueOnly?: boolean;
             untilDone?: boolean;
         } = {},
         submitAt = Date.now(),
@@ -371,7 +379,7 @@ export class MobileProjectsTranscriptSubmitUi {
         ) ?? expandedContent;
         const outbound = applyBackendInteractionModeToPrompt(withAttachments, options.modeId);
         const pendingUserMessage = {
-            id: `pending-user-${Date.now()}`,
+            id: options.clientMessageId ?? `pending-user-${Date.now()}`,
             role: 'user' as const,
             content: outbound,
             createdAt: Date.now(),
@@ -449,6 +457,7 @@ export class MobileProjectsTranscriptSubmitUi {
                 agent,
                 agentModel,
                 clientMessageId: pendingUserMessage.id,
+                queueOnly: options.queueOnly,
                 autoApprove: options.autoApprove,
                 interactionModeId: options.modeId,
                 approvalPolicyId: options.approvalPolicyId
