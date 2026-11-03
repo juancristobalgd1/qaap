@@ -840,6 +840,9 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
         expect(postOptions).to.have.length(2);
         expect(postOptions[0].clientMessageId).to.equal('pending-user-stable-1');
         expect(postOptions[1].clientMessageId).to.equal('pending-user-stable-1');
+        // The mirror is marked queueOnly; the flush (a normal queued send) is not.
+        expect(postOptions[0].queueOnly).to.equal(true);
+        expect(postOptions[1].queueOnly).to.be.undefined;
     });
 
     it('send now dispatches the server row found by clientMessageId when the entry has no serverPendingId', async () => {

@@ -14,6 +14,7 @@ import { isGoalLoopActive } from '../common/qaap-agent-goal-loop';
 import { QAAP_DEFAULT_DELIVERY_MODE, QaapAgentConversation, QaapAgentConversationStatus, QaapAgentConversationSummary, QaapAgentMessage, QaapCreateAgentConversationRequest, QaapLinkConversationsByBranchRequest, QaapMessageDeliveryMode, QaapPendingUserMessage, toConversationSummary } from '../common/qaap-agent-conversation';
 
 import { agentSupportsModelPicker, QAIQ_AGENT_ID, SHELL_AGENT_ID } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { isLastTurnCancelled } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 
 import { DEFAULT_QAAP_CONTEXT_WINDOW } from '@theia/qaap-shared-core/lib/common/qaap-agent-context-usage';
 
@@ -610,6 +611,32 @@ export function postUserMessageExtracted(ctx: QaapAgentConversationStoreContext,
         if (alreadyAccepted) {
             return conv;
         }
+    }
+    if (internal?.queueOnly && conv.status !== 'streaming' && (isLastTurnCancelled(conv) || conv.pendingUserMessagesPaused)) {
+        // A late mirror of a follow-up queued on the client, arriving after Stop: keep it queued and
+        // paused instead of starting a turn on a stopped conversation.
+        const turnAgentId = ctx.resolveTurnAgent(conv, content, agentOverride);
+        const sealedTurnModel = agentModelOverride && agentSupportsModelPicker(turnAgentId)
+            ? agentModelOverride
+            : undefined;
+        const queued = ctx.enqueuePendingMessage(
+            conv,
+            {
+                id: randomUUID(),
+                role: 'user',
+                content,
+                createdAt: Date.now(),
+                ...(internal.clientMessageId ? { clientMessageId: internal.clientMessageId } : {}),
+            },
+            turnAgentId,
+            sealedTurnModel,
+            internal.clientMessageId,
+        );
+        const paused: QaapAgentConversation = { ...queued, pendingUserMessagesPaused: true };
+        ctx.conversations.set(id, paused);
+        ctx.fire({ type: 'updated', conversation: toConversationSummary(paused) });
+        void ctx.persist();
+        return paused;
     }
     if (conv.status === 'streaming') {
         const activeTaskIds = ctx.getActiveTaskIdsForConversation(id);

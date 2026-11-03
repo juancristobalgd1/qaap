@@ -445,6 +445,47 @@ describe('QaapAgentConversationStore delivery mode: queue (default)', function (
         expect(resent.pendingUserMessages![0].clientMessageId).to.equal('pending-user-456');
     });
 
+    it('a late queueOnly mirror after Stop stays queued and paused, and a repeat does not duplicate it', async () => {
+        const { store, runner } = createStore();
+        const conv1 = store.postUserMessage('c1', 'first');
+        const firstUserMessageId = conv1.messages.find(m => m.role === 'user')!.id;
+        store.cancel('c1');
+        await store.settleRun('c1', firstUserMessageId, 'task-1', 'cancelled');
+        const internal = { clientMessageId: 'pending-user-late-1', queueOnly: true };
+
+        store.postUserMessage(
+            'c1', 'late follow-up', undefined, undefined, undefined, undefined, undefined, undefined, undefined, internal, 'queue',
+        );
+        await waitForPendingDrain();
+
+        expect(runner.createdIds).to.deep.equal(['task-1']);
+        expect(store.get('c1')!.pendingUserMessages).to.have.length(1);
+        expect(store.get('c1')!.pendingUserMessagesPaused).to.equal(true);
+
+        store.postUserMessage(
+            'c1', 'late follow-up', undefined, undefined, undefined, undefined, undefined, undefined, undefined, internal, 'queue',
+        );
+        await waitForPendingDrain();
+
+        expect(runner.createdIds).to.deep.equal(['task-1']);
+        expect(store.get('c1')!.pendingUserMessages).to.have.length(1);
+    });
+
+    it('a queueOnly post on an idle conversation that was not stopped still starts a turn', async () => {
+        const { store, runner } = createStore();
+        const conv1 = store.postUserMessage('c1', 'first');
+        const firstUserMessageId = conv1.messages.find(m => m.role === 'user')!.id;
+        await store.settleRun('c1', firstUserMessageId, 'task-1');
+
+        store.postUserMessage(
+            'c1', 'follow-up', undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+            { clientMessageId: 'pending-user-ok-1', queueOnly: true }, 'queue',
+        );
+
+        expect(runner.createdIds).to.deep.equal(['task-1', 'task-2']);
+        expect(store.get('c1')!.pendingUserMessages).to.be.undefined;
+    });
+
     it('a queue post whose clientMessageId already started a turn is deduplicated', () => {
         const { store, runner } = createStore();
         const internal = { clientMessageId: 'pending-user-started-1' };

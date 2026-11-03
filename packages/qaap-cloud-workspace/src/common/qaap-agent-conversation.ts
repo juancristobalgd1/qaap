@@ -533,6 +533,8 @@ export interface QaapPostAgentMessageRequest {
     readonly content: string;
     /** ID of the optimistic user row that this request confirms. */
     readonly clientMessageId?: string;
+    /** Mirror of a follow-up queued on the client: never starts a turn on a stopped conversation. */
+    readonly queueOnly?: boolean;
     /** When set, overrides the conversation's stored agent for this turn (and updates it). */
     readonly agent?: string;
     readonly agentModel?: QaapCreateAgentTaskQaiqModel;

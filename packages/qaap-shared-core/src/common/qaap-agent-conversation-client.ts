@@ -812,6 +812,8 @@ export interface QaapPostConversationMessageOptions {
     readonly autoApprove?: boolean;
     /** ID of the optimistic user row that this request confirms. */
     readonly clientMessageId?: string;
+    /** Mirror of a follow-up queued on the client: never starts a turn on a stopped conversation. */
+    readonly queueOnly?: boolean;
     readonly interactionModeId?: string;
     readonly approvalPolicyId?: string;
     readonly toolApprovalRules?: import('./qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules;
@@ -842,6 +844,7 @@ export async function postConversationMessage(
             agentModel,
             qaiqModel: agentModel,
             clientMessageId: options.clientMessageId,
+            ...(options.queueOnly ? { queueOnly: true } : {}),
             interactionModeId: options.interactionModeId,
             approvalPolicyId: options.approvalPolicyId,
             toolApprovalRules: options.toolApprovalRules,

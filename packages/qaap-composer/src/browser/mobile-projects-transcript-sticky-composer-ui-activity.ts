@@ -169,6 +169,7 @@ export async function mirrorFollowUpToServerQueueExtracted(
             imagePreviews: entry.imagePreviews,
             deliveryMode: 'queue',
             clientMessageId: entry.clientMessageId,
+            queueOnly: true,
         });
         if (!submitted) {
             return false;

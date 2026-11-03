@@ -242,6 +242,8 @@ export class MobileProjectsTranscriptSubmitUi {
             deliveryMode?: QaapMessageDeliveryMode;
             /** Stable id for the POST (a queued follow-up keeps the same id across retries). */
             clientMessageId?: string;
+            /** Mirror of a follow-up queued on the client: never starts a turn on a stopped conversation. */
+            queueOnly?: boolean;
             /** Start an "Until done" goal loop (draft = goal + first prompt) instead of one turn. */
             untilDone?: boolean;
         } = {},
@@ -298,6 +300,8 @@ export class MobileProjectsTranscriptSubmitUi {
             deliveryMode?: QaapMessageDeliveryMode;
             /** Stable id for the POST (see {@link QaapPendingUserMessageDTO.clientMessageId}); a generated id when absent. */
             clientMessageId?: string;
+            /** Mirror of a follow-up queued on the client: never starts a turn on a stopped conversation. */
+            queueOnly?: boolean;
             untilDone?: boolean;
         } = {},
         submitAt = Date.now(),
@@ -453,6 +457,7 @@ export class MobileProjectsTranscriptSubmitUi {
                 agent,
                 agentModel,
                 clientMessageId: pendingUserMessage.id,
+                queueOnly: options.queueOnly,
                 autoApprove: options.autoApprove,
                 interactionModeId: options.modeId,
                 approvalPolicyId: options.approvalPolicyId
