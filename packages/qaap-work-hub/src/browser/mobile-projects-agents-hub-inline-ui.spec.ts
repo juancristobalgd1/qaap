@@ -839,4 +839,43 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
         expect(host.transcriptConversationCache.has('__qaap_agents_hub_idle__')).to.equal(false);
         expect(rendered).to.equal(true);
     });
+
+    it('resetAgentsHubIdleTranscriptShell drops the previous task as the composer target', () => {
+        const project = { id: 'proj-1', name: 'notes-dev' } as MobileProjectEntry;
+        const previousTask = {
+            id: 'task-previous',
+            cwd: '/workspace',
+            agentId: 'codex',
+            title: 'Write a 300-line JavaScript file',
+            status: 'settled',
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            messageCount: 2,
+        } as QaapAgentConversationSummaryDTO;
+        const host = createHost({
+            agentsHubShellActive: false,
+            transcriptOpenSummaryId: 'task-previous',
+            transcriptOpenSummary: previousTask,
+            transcriptComposerSummary: previousTask,
+            transcriptComposerMountKey: 'proj-1|task-previous',
+            projectsService: {
+                getProjectCwd: () => '/workspace',
+            } as unknown as MobileProjectsAgentsHubInlineHost['projectsService'],
+            transcriptLiveUi: {
+                clearTranscriptSemanticProgressClock: () => undefined,
+                stopTranscriptLiveWatch: () => undefined,
+                peekCachedOpenTranscript: () => undefined,
+                applyCachedTranscriptOnOpen: () => false,
+                isTrustedOpenTranscriptCache: () => false,
+            } as unknown as MobileProjectsAgentsHubInlineHost['transcriptLiveUi'],
+            transcriptUi: {
+                disposeList: () => undefined,
+            } as unknown as MobileProjectsAgentsHubInlineHost['transcriptUi'],
+        });
+        const ui = new MobileProjectsAgentsHubInlineUi(host);
+        ui.resetAgentsHubIdleTranscriptShell(project);
+        expect(host.transcriptOpenSummaryId).to.equal(undefined);
+        expect(host.transcriptComposerSummary).to.equal(undefined);
+        expect(host.transcriptComposerMountKey).to.equal(undefined);
+    });
 });

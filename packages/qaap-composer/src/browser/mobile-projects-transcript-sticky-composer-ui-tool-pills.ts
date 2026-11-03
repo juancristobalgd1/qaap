@@ -31,8 +31,9 @@ import {
 import {
     reconcileAgentToolApprovalRules,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-approval-rules';
-import { isAgentsHubIdleConversationSummary } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
+import { buildAgentsHubIdleConversationSummary, isAgentsHubIdleConversationSummary } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
 import { isComposerDraftRestored, resolveComposerRestoredDraftKey } from '../common/qaap-composer-restored-draft';
+import { isStaleComposerConversationTarget } from '../common/qaap-composer-stale-target';
 import { writeProjectComposerDraft } from '../common/qaap-project-composer-draft';
 import {
     formatComposerRunPermissionsLabel,
@@ -149,6 +150,10 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: MobilePro
                 submitProject = fresh;
                 submitSummary = ctx.workHub.resolveShellSummary(fresh) ?? summary;
             }
+        } else if (isStaleComposerConversationTarget(ctx.host.transcriptOpenSummary, summary)) {
+            // A follow-up only goes to a task that is open in the transcript. A composer still
+            // holding a previous task (e.g. after "New task") starts a new task instead.
+            submitSummary = buildAgentsHubIdleConversationSummary(cwd ?? '');
         }
         void ctx.submitTranscriptComposerDraft(draft, submitProject, submitSummary, chatHost, {
             resolvedPinnedId: ctx.host.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(submitProject, submitSummary),
