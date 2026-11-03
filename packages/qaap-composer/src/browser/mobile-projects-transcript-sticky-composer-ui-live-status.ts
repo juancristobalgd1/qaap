@@ -30,8 +30,7 @@ import { isAgentsHubIdleConversationSummary } from '@theia/qaap-shared-core/lib/
 import { writeProjectComposerDraft } from '../common/qaap-project-composer-draft';
 import { clearComposerDraftRestored, markComposerDraftRestored, resolveComposerRestoredDraftKey } from '../common/qaap-composer-restored-draft';
 import { collectComposerImagePreviews } from './qaap-sticky-composer-context-ui';
-import { confirmPaidModelSend } from './qaap-paid-model-send-confirm';
-import { resolveStoredAgentModelForSubmit } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
+import { confirmPaidModelSend, resolveSendAgentModel, warnChooseSendModel } from './qaap-paid-model-send-confirm';
 import {
     composerContextRequests,
     disposeComposerContextEntries,
@@ -122,7 +121,19 @@ export async function submitTranscriptComposerDraftExtracted(ctx: MobileProjects
     };
     // A paid model asks once per project per browser session before anything is sent; cancelling keeps the draft.
     const sendCwd = summary.cwd;
-    const sendModel = ctx.host.transcriptComposerAgentModel ?? resolveStoredAgentModelForSubmit(selectedAgentId, sendCwd);
+    const modelResolution = await resolveSendAgentModel(
+        selectedAgentId,
+        sendCwd,
+        ctx.host.transcriptComposerAgentModel,
+    );
+    if (!modelResolution.ok) {
+        // Fail closed: no model chosen for a picker agent, so nothing is sent on the CLI default.
+        restoreComposerSubmission();
+        ctx.remountTranscriptStickyComposer();
+        warnChooseSendModel(selectedAgentId ?? '');
+        return;
+    }
+    const sendModel = modelResolution.model;
     if (!await confirmPaidModelSend(sendCwd, sendModel)) {
         restoreComposerSubmission();
         ctx.remountTranscriptStickyComposer();

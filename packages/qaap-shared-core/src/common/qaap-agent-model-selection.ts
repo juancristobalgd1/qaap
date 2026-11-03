@@ -10,6 +10,7 @@ import {
     hashString,
     isTheiaCoderAgent,
     migrateLegacyBackendAgentId,
+    PI_AGENT_ID,
     QAIQ_AGENT_ID,
     SELECTED_QAIQ_MODEL_STORAGE_KEY,
     SHELL_AGENT_ID,
@@ -17,6 +18,8 @@ import {
     type QaapQaiqModelOption,
 } from './qaap-agent-task-client';
 import { qaiqModelSupportsToolCalls } from './qaap-agent-tool-support';
+import { PI_DEFAULT_OPENROUTER_MODEL_ID, PI_OPENROUTER_PROVIDER_ID } from './qaap-pi-default-model';
+import { isOpenCodeFreeModelId, OPENCODE_FREE_MODEL_OPTIONS } from './qaap-opencode-model-catalog';
 
 export type QaapAgentModelSelection = QaapCreateAgentTaskQaiqModel;
 
@@ -24,14 +27,46 @@ const AGENT_MODEL_STORAGE_PREFIX = 'qaap.agentTasks.selectedAgentModel';
 
 /** OpenRouter's free-tier slug suffix. The catalogs carry no price, so the slug is the free marker. */
 const FREE_MODEL_SLUG_SUFFIX = ':free';
+const OPENCODE_VENDOR = 'opencode';
+
+/** Catalog fields that can mark a model free. Only `modelId` is required; the others sharpen OpenCode detection. */
+export interface AgentModelFreeMetadata {
+    readonly modelId?: string;
+    readonly vendor?: string;
+    readonly label?: string;
+}
 
 /**
- * True for a free model: an OpenRouter free-tier slug (`:free`, or the `/free` router). Every other model
- * is treated as paid. Shared by the composer (Paid badge, send confirmation) and the agent fallback chain.
+ * True for a free model. Every other model is treated as paid, so the lock fails closed. Free markers:
+ * an OpenRouter free-tier slug (`:free`, or the `/free` router), and an OpenCode model whose catalog entry is
+ * free (zero cost in `opencode models --verbose`, mirrored in `OPENCODE_FREE_MODEL_OPTIONS`; ids ending `-free`,
+ * or a label ending in " Free"). Shared by the composer (Paid badge, send confirmation) and the fallback chain.
  */
-export function isFreeAgentModel(model: { readonly modelId?: string } | undefined): boolean {
+export function isFreeAgentModel(model: AgentModelFreeMetadata | undefined): boolean {
     const modelId = model?.modelId?.trim().toLowerCase() ?? '';
-    return modelId.endsWith(FREE_MODEL_SLUG_SUFFIX) || modelId.endsWith('/free');
+    if (modelId.endsWith(FREE_MODEL_SLUG_SUFFIX) || modelId.endsWith('/free')) {
+        return true;
+    }
+    return isOpenCodeFreeModel(model);
+}
+
+function isOpenCodeFreeModel(model: AgentModelFreeMetadata | undefined): boolean {
+    const modelId = model?.modelId?.trim() ?? '';
+    if (!modelId) {
+        return false;
+    }
+    // Both conditions must hold: a `Free` label on another provider's model (e.g. `anthropic/x`) is not a free marker.
+    const vendor = model?.vendor?.trim().toLowerCase();
+    if (vendor !== OPENCODE_VENDOR || !modelId.toLowerCase().startsWith(`${OPENCODE_VENDOR}/`)) {
+        return false;
+    }
+    // Primary signal: the zero-cost OpenCode catalog (generated from `opencode models --verbose`).
+    const lowerId = modelId.toLowerCase();
+    if (isOpenCodeFreeModelId(lowerId) || OPENCODE_FREE_MODEL_OPTIONS.some(option => option.modelId.toLowerCase() === lowerId)) {
+        return true;
+    }
+    // Last resort: the catalog label ends in " Free" (e.g. "Beam Free").
+    return / free$/i.test(model?.label?.trim() ?? '');
 }
 
 /** Stored pick plus whether the user chose it (a default seeded by the picker is not a user choice). */
@@ -155,6 +190,42 @@ export function readStoredAgentModel(cwd: string | undefined, agentId: string | 
     return readStoredAgentModelRecord(cwd, agentId)?.model;
 }
 
+/** The stored selection plus whether the user chose it (an auto-seeded default is not a user choice). */
+export function readStoredAgentModelSelection(
+    cwd: string | undefined,
+    agentId: string | undefined,
+): { readonly model: QaapAgentModelSelection; readonly userChosen: boolean } | undefined {
+    return readStoredAgentModelRecord(cwd, agentId);
+}
+
+/** Stores an auto-seeded default (not a user choice), so a later live catalog can replace it. */
+export function seedStoredAgentModelDefault(
+    cwd: string | undefined,
+    agentId: string,
+    model: QaapAgentModelSelection | QaapQaiqModelOption,
+): void {
+    persistStoredAgentModel(cwd, agentId, model, false);
+}
+
+/**
+ * Last-resort free default for the first send when the live catalog cannot be read in time: QAIQ and Pi use the
+ * OpenRouter free default, OpenCode its first free model. Never a paid model. Undefined for other harnesses.
+ */
+export function staticFreeSendDefault(agentId: string | undefined): QaapQaiqModelOption | undefined {
+    const normalized = agentId?.trim().toLowerCase();
+    if (normalized === QAIQ_AGENT_ID) {
+        return { provider: 'openai', vendor: 'openrouter', modelId: OPENROUTER_DEFAULT_FREE_MODELS[0], label: OPENROUTER_DEFAULT_FREE_MODELS[0] };
+    }
+    if (normalized === PI_AGENT_ID) {
+        const modelId = `${PI_OPENROUTER_PROVIDER_ID}/${PI_DEFAULT_OPENROUTER_MODEL_ID}`;
+        return { provider: 'openai', vendor: PI_OPENROUTER_PROVIDER_ID, modelId, label: PI_DEFAULT_OPENROUTER_MODEL_ID };
+    }
+    if (normalized === 'opencode') {
+        return OPENCODE_FREE_MODEL_OPTIONS[0];
+    }
+    return undefined;
+}
+
 function readStoredAgentModelRecord(cwd: string | undefined, agentId: string | undefined): StoredAgentModelRecord | undefined {
     if (!cwd || !agentId || !agentSupportsModelPicker(agentId)) {
         return undefined;
@@ -275,23 +346,51 @@ export function resolveStoredAgentModelForSubmit(
 }
 
 /**
- * First catalog entry that is still usable as a composer default. Entries the account cannot run
- * (`available === false`, e.g. `unavailableReason: 'plan'` on Starter) are skipped so a new user is
- * never defaulted to a model the first send would reject.
+ * Composer default: the QAIQ/Pi default free model first, then any other free model. Never a paid model:
+ * a catalog without a usable free entry yields `undefined`, so the caller moves on to another harness or
+ * leaves the choice to the user. Entries the account cannot run (`available === false`, e.g.
+ * `unavailableReason: 'plan'`) are skipped as well.
  */
 export function pickDefaultAgentModel(
     models: readonly QaapQaiqModelOption[],
 ): QaapQaiqModelOption | undefined {
-    const usable = models.filter(model => model.available !== false && isStoredAgentModelUsable({
+    const usableFree = models.filter(model => model.available !== false && isFreeAgentModel(model) && isStoredAgentModelUsable({
         provider: model.provider,
         vendor: model.vendor,
         modelId: model.modelId,
     }));
-    // A new project never starts on a paid model by accident: the QAIQ/Pi default free model first,
-    // then any other free model. Paid models are picked only when the catalog offers no free one.
-    return usable.find(model => model.modelId === OPENROUTER_DEFAULT_FREE_MODELS[0])
-        ?? usable.find(model => isFreeAgentModel(model))
-        ?? usable[0];
+    return usableFree.find(model => model.modelId === OPENROUTER_DEFAULT_FREE_MODELS[0])
+        ?? usableFree[0];
+}
+
+/**
+ * Read-only-for-the-user seam for render paths (picker views, row labels). Keeps any valid stored selection
+ * exactly as it is, even when the catalog no longer lists it, and seeds the free default only when nothing is
+ * stored. Navigating the picker therefore never swaps a choice; explicit picks go through
+ * `writeStoredAgentModel`, and the catalog healing stays in `ensureStoredAgentModel`.
+ */
+export function seedDisplayedAgentModel(
+    cwd: string | undefined,
+    agentId: string | undefined,
+    models: readonly QaapQaiqModelOption[],
+): QaapAgentModelSelection | undefined {
+    if (!cwd || !agentId || !agentSupportsModelPicker(agentId)) {
+        return undefined;
+    }
+    const existing = readStoredAgentModelRecord(cwd, agentId);
+    if (existing) {
+        return existing.model;
+    }
+    const picked = pickDefaultAgentModel(models);
+    if (!picked) {
+        return undefined;
+    }
+    persistStoredAgentModel(cwd, agentId, picked, false);
+    return {
+        provider: picked.provider,
+        vendor: picked.vendor,
+        modelId: picked.modelId,
+    };
 }
 
 /**

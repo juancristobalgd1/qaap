@@ -58,7 +58,7 @@ describe('agent picker: split model row', () => {
         { id: 'shell', label: 'Shell', available: true, connectionState: 'connected', accessState: 'hosted' },
     ] as unknown as QaapAgentTaskAgentOption[];
 
-    function render(modelsByAgent: Map<string, QaapQaiqModelOption[]> = new Map()): {
+    function render(modelsByAgent: Map<string, QaapQaiqModelOption[]> = new Map(), cwd = '/repo/split-row'): {
         target: ComposerAgentPickerChrome;
         selected: Array<{ agentId: string; model?: QaapQaiqModelOption }>;
         modelViews: string[];
@@ -80,7 +80,7 @@ describe('agent picker: split model row', () => {
         const target = chrome(modelsByAgent);
         void renderComposerAgentPickerExtracted(ctx, target, {
             view: 'agents',
-            cwd: '/repo/split-row',
+            cwd,
             agents,
             selectedAgentId: undefined,
             includeCoder: false,
@@ -114,13 +114,15 @@ describe('agent picker: split model row', () => {
         expect(modelViews).to.be.empty;
     });
 
-    it('main-area click passes the resolved default model when the catalog is already cached', async () => {
-        const { target, selected } = render(new Map([['codex', [codexModel]]]));
+    it('main-area click passes no default when the cached catalog has only paid models', async () => {
+        // Composer defaults are free-only: a paid-only catalog yields no model, never a paid default.
+        // A cwd of its own: earlier tests write user picks for the shared cwd.
+        const { target, selected } = render(new Map([['codex', [codexModel]]]), '/repo/split-row-paid-only');
         await flush();
         target.list.querySelector<HTMLButtonElement>('.theia-qaap-agent-sheet-split-main')!.click();
         expect(selected).to.have.length(1);
         expect(selected[0].agentId).to.equal('codex');
-        expect(selected[0].model?.modelId).to.equal('gpt-5.4');
+        expect(selected[0].model).to.equal(undefined);
     });
 
     it('chevron click opens the model submenu without selecting the agent', async () => {

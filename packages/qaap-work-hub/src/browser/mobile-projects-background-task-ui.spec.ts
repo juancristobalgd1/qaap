@@ -274,6 +274,7 @@ describe('MobileProjectsBackgroundTaskUi', () => {
                 seedTranscriptOptimisticSubmit: () => undefined,
                 syncWorkHubProjectSkillRoots: () => undefined,
             });
+            ui['routeSubmitAgent'] = async (): Promise<string> => 'codex';
             const innerCalls: number[] = [];
             ui['submitBackgroundAgentTaskInner'] = async (): Promise<undefined> => {
                 innerCalls.push(1);
@@ -281,6 +282,53 @@ describe('MobileProjectsBackgroundTaskUi', () => {
             };
             return { ui, innerCalls };
         }
+
+        it('aborts the submit when routing fails: no gate and no send with a different agent', async () => {
+            const { ui, innerCalls } = uiWithInner();
+            ui['routeSubmitAgent'] = async (): Promise<string> => {
+                throw new Error('catalog warming');
+            };
+            let gated = 0;
+            ui['confirmPaidSend'] = async (): Promise<boolean> => {
+                gated++;
+                return true;
+            };
+            expect(await ui.submitBackgroundAgentTask(project, 'build it', { agentModel: paidModel })).to.be.undefined;
+            expect(gated).to.equal(0);
+            expect(innerCalls).to.be.empty;
+        });
+
+        it('routes once: the gate and the send carry the same routing agent', async () => {
+            const { ui } = uiWithInner();
+            let gatedAgent: string | undefined;
+            let sentOptions: { resolvedAgentId?: string } | undefined;
+            ui['routeSubmitAgent'] = async (): Promise<string> => 'codex';
+            ui['confirmPaidSend'] = async (_cwd: string, model: unknown): Promise<boolean> => {
+                gatedAgent = (model as { vendor?: string } | undefined)?.vendor;
+                return true;
+            };
+            ui['submitBackgroundAgentTaskInner'] = async (_p: unknown, _d: unknown, options: { resolvedAgentId?: string }): Promise<undefined> => {
+                sentOptions = options;
+                return undefined;
+            };
+            await ui.submitBackgroundAgentTask(project, 'build it', { agentModel: paidModel });
+            expect(sentOptions?.resolvedAgentId).to.equal('codex');
+            expect(gatedAgent).to.equal(paidModel.vendor);
+        });
+
+        it('blocks the send when a picker agent has no chosen model (fail closed)', async () => {
+            const { ui, innerCalls } = uiWithInner();
+            ui['routeSubmitAgent'] = async (): Promise<string> => 'grok';
+            let gated = 0;
+            ui['confirmPaidSend'] = async (): Promise<boolean> => {
+                gated++;
+                return true;
+            };
+            // No stored model and no catalog reachable: nothing can be sent without a choice.
+            expect(await ui.submitBackgroundAgentTask(project, 'build it')).to.be.undefined;
+            expect(innerCalls).to.be.empty;
+            expect(gated).to.equal(0);
+        });
 
         it('does not start a task with a paid model the user declines', async () => {
             const { ui, innerCalls } = uiWithInner();
