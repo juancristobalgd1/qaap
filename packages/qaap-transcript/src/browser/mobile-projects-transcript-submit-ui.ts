@@ -193,19 +193,19 @@ export class MobileProjectsTranscriptSubmitUi {
      */
 
     /**
-     * A conversation whose Auto-approve switch is off keeps asking on follow-ups: the composer chip (default
-     * approve-for-me) must not silently turn it back on. The switch is the user's explicit choice for that conversation.
+     * The composer chip is the single source of truth for a follow-up's approval policy. The chip is synced
+     * with the conversation when it changes (chip sheet and Auto-approve switch), so it already carries the
+     * switch state. A conversation with no explicit chip value falls back to its switch.
      */
     protected resolveFollowUpApproval(summary: QaapAgentConversationSummaryDTO,
         options: { readonly autoApprove?: boolean; readonly approvalPolicyId?: string }): { autoApprove: boolean | undefined; approvalPolicyId: string } {
         const current = this.host.conversations?.findSummaryById(summary.id)?.autoApprove ?? summary.autoApprove;
-        if (current === false) {
-            return { autoApprove: false, approvalPolicyId: 'request-approval' };
-        }
+        const explicit = options.approvalPolicyId ?? this.host.transcriptComposerApprovalPolicyId;
+        const approvalPolicyId = explicit
+            ?? (current === false ? 'request-approval' : reconcileAgentApprovalPolicyId(undefined, summary.cwd));
         return {
-            autoApprove: options.autoApprove,
-            approvalPolicyId: options.approvalPolicyId
-                ?? reconcileAgentApprovalPolicyId(this.host.transcriptComposerApprovalPolicyId, summary.cwd),
+            autoApprove: approvalPolicyId === 'request-approval' ? false : options.autoApprove,
+            approvalPolicyId,
         };
     }
 

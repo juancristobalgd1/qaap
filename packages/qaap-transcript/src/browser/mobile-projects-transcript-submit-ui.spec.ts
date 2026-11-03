@@ -7,8 +7,8 @@ import { expect } from 'chai';
 import { MobileProjectsTranscriptSubmitUi } from './mobile-projects-transcript-submit-ui';
 
 /**
- * A conversation whose Auto-approve switch is off must keep asking on follow-ups, even when the composer
- * chip says approve-for-me (its default). Otherwise the next message silently turns Autonomous mode back on.
+ * The composer chip is the single source of truth for a follow-up's approval policy. The chip is synced with the
+ * conversation (sheet and Auto-approve switch), so a follow-up takes the chip, and the switch state is only a fallback.
  */
 describe('mobile-projects-transcript-submit-ui follow-up approval', () => {
 
@@ -18,7 +18,7 @@ describe('mobile-projects-transcript-submit-ui follow-up approval', () => {
     const resolve = (
         summary: { id: string; cwd: string; autoApprove?: boolean },
         options: { autoApprove?: boolean; approvalPolicyId?: string },
-        chip: string | undefined = 'approve-for-me',
+        chip: string | undefined,
     ): { autoApprove: boolean | undefined; approvalPolicyId: string } => {
         const host = {
             conversations: { findSummaryById: () => summary },
@@ -30,25 +30,28 @@ describe('mobile-projects-transcript-submit-ui follow-up approval', () => {
         }).resolveFollowUpApproval(summary, options);
     };
 
-    it('a follow-up after the switch was turned off sends autoApprove false and request-approval', () => {
-        const result = resolve(summaryWith(false), { autoApprove: true, approvalPolicyId: 'approve-for-me' });
+    it('(a) switch turned off: the synced chip sends request-approval and autoApprove false', () => {
+        const result = resolve(summaryWith(false), { autoApprove: true, approvalPolicyId: 'request-approval' }, 'request-approval');
         expect(result).to.deep.equal({ autoApprove: false, approvalPolicyId: 'request-approval' });
     });
 
-    it('the switch is read from the live summary, not a stale copy', () => {
-        const result = resolve(summaryWith(undefined), { autoApprove: undefined, approvalPolicyId: 'request-approval' });
-        expect(result.approvalPolicyId).to.equal('request-approval');
-        expect(result.autoApprove).to.equal(undefined);
+    it('(b) last turn was Ask, user switches the chip to Autonomous: follow-up is approve-for-me, autoApprove true', () => {
+        const result = resolve(summaryWith(false), { autoApprove: true, approvalPolicyId: 'approve-for-me' }, 'approve-for-me');
+        expect(result).to.deep.equal({ autoApprove: true, approvalPolicyId: 'approve-for-me' });
     });
 
-    it('a switch that is on keeps the composer choice', () => {
-        const result = resolve(summaryWith(true), { autoApprove: true, approvalPolicyId: 'full-access' });
+    it('a full-access chip keeps the composer autoApprove', () => {
+        const result = resolve(summaryWith(true), { autoApprove: true, approvalPolicyId: 'full-access' }, 'full-access');
         expect(result).to.deep.equal({ autoApprove: true, approvalPolicyId: 'full-access' });
     });
 
-    it('without a switch state or chip the composer default applies', () => {
+    it('without a chip value the conversation switch decides: off means request-approval', () => {
+        const result = resolve(summaryWith(false), { autoApprove: true }, undefined);
+        expect(result).to.deep.equal({ autoApprove: false, approvalPolicyId: 'request-approval' });
+    });
+
+    it('without a chip value or switch state the default is approve-for-me', () => {
         const result = resolve(summaryWith(undefined), { autoApprove: true }, undefined);
-        expect(result.approvalPolicyId).to.equal('approve-for-me');
-        expect(result.autoApprove).to.equal(true);
+        expect(result).to.deep.equal({ autoApprove: true, approvalPolicyId: 'approve-for-me' });
     });
 });
