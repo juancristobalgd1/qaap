@@ -73,12 +73,14 @@ export class QaapAgentApprovalStore {
                     }
                 }
                 const channel = taskId ? this.taskRunner.getApprovalChannel(taskId) : 'none';
-                // A transcript segment left unfinished by a turn that already ended is an orphan: list it only
-                // while its task still runs, so a card never outlives the task that could answer it.
-                const taskRunning = taskId ? (await this.taskRunner.detail(taskId))?.state === 'running' : false;
-                if (channel === 'stdin' && taskRunning) {
-                    for (const item of extractPendingToolApprovals(conv, taskId)) {
-                        byId.set(item.id, item);
+                if (taskId && channel === 'stdin') {
+                    // A transcript segment left unfinished by a turn that already ended is an orphan: list it only
+                    // while its task still runs, so a card never outlives the task that could answer it.
+                    const taskRunning = (await this.taskRunner.detail(taskId))?.state === 'running';
+                    if (taskRunning) {
+                        for (const item of extractPendingToolApprovals(conv, taskId)) {
+                            byId.set(item.id, item);
+                        }
                     }
                 }
                 if (taskId && channel === 'qaiq-stdio') {

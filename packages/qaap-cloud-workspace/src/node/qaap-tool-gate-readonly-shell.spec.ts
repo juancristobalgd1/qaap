@@ -78,7 +78,9 @@ describe('qaap-tool-gate-service read-only shell auto-approval', () => {
         'sh -c \'ls\'',
         'curl x',
         'ls; rm a',
+        'ls && rm a',
         '$(rm a)',
+        'echo $(rm a)',
     ];
     for (const command of askingCommands) {
         it(`does not auto-approve \`${command}\` under request-approval`, async () => {
@@ -90,6 +92,20 @@ describe('qaap-tool-gate-service read-only shell auto-approval', () => {
 
     it('still asks for a read-only command when a PreToolUse hook asks', async () => {
         const hooks = async (): Promise<QaapToolGateHookOutcome> => ({ decision: 'ask' });
+        await evaluate('ls', envFor({ hooks }));
+        expect(asks).to.equal(1);
+    });
+
+    it('classifies the command a hook rewrites to, not the original read-only one', async () => {
+        const hooks = async (): Promise<QaapToolGateHookOutcome> => ({ updatedInput: { command: 'rm -rf x' } });
+        const decision = await evaluate('ls', envFor({ hooks }));
+        // Not auto-approved on the rewritten input: it goes to a card (rejected here), so never an allow.
+        expect(asks, 'rewritten command must be asked, not allowed').to.equal(1);
+        expect(decision.kind).to.equal('deny');
+    });
+
+    it('asks when a hook rewrites a read-only command into one that must be approved', async () => {
+        const hooks = async (): Promise<QaapToolGateHookOutcome> => ({ updatedInput: { command: 'cat README.md > out.txt' } });
         await evaluate('ls', envFor({ hooks }));
         expect(asks).to.equal(1);
     });

@@ -191,6 +191,24 @@ export class MobileProjectsTranscriptSubmitUi {
      * Optimistic paint for deliveryMode `queue`: append a footer "Queued" row without treating
      * the follow-up as the live user turn (keeps the streaming activity under the active turn).
      */
+
+    /**
+     * A conversation whose Auto-approve switch is off keeps asking on follow-ups: the composer chip (default
+     * approve-for-me) must not silently turn it back on. The switch is the user's explicit choice for that conversation.
+     */
+    protected resolveFollowUpApproval(summary: QaapAgentConversationSummaryDTO,
+        options: { readonly autoApprove?: boolean; readonly approvalPolicyId?: string }): { autoApprove: boolean | undefined; approvalPolicyId: string } {
+        const current = this.host.conversations?.findSummaryById(summary.id)?.autoApprove ?? summary.autoApprove;
+        if (current === false) {
+            return { autoApprove: false, approvalPolicyId: 'request-approval' };
+        }
+        return {
+            autoApprove: options.autoApprove,
+            approvalPolicyId: options.approvalPolicyId
+                ?? reconcileAgentApprovalPolicyId(this.host.transcriptComposerApprovalPolicyId, summary.cwd),
+        };
+    }
+
     protected renderInstantQueuedPendingOptimistic(
         summary: QaapAgentConversationSummaryDTO,
         pending: QaapPendingUserMessageDTO,
@@ -443,19 +461,18 @@ export class MobileProjectsTranscriptSubmitUi {
         try {
             const agentModel = options.agentModel ?? this.resolveTranscriptSubmitAgentModel(agent, summary);
             this.host.conversations?.recordSubmitLatencyMark(summary.id, 'post_message_start');
+            const followUp = this.resolveFollowUpApproval(summary, options);
             const updated = options.untilDone
                 ? await this.startGoalLoopFromComposer(summary.id, base, content, outbound)
                 : await postConversationMessage(summary.id, outbound, {
                 agent,
                 agentModel,
                 clientMessageId: pendingUserMessage.id,
-                autoApprove: options.autoApprove,
+                autoApprove: followUp.autoApprove,
                 interactionModeId: options.modeId,
-                approvalPolicyId: options.approvalPolicyId
-                    ?? reconcileAgentApprovalPolicyId(this.host.transcriptComposerApprovalPolicyId, summary.cwd),
+                approvalPolicyId: followUp.approvalPolicyId,
                 toolApprovalRules: reconcileAgentToolApprovalRules(
-                    (options.approvalPolicyId as QaapAgentApprovalPolicyId | undefined)
-                    ?? reconcileAgentApprovalPolicyId(this.host.transcriptComposerApprovalPolicyId, summary.cwd),
+                    followUp.approvalPolicyId as QaapAgentApprovalPolicyId,
                     summary.cwd,
                     this.host.transcriptComposerToolApprovalRules,
                 ),
