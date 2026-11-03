@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { isExcludedOpenRouterModelSlug } from '@theia/qaap-ai-openrouter/lib/common/openrouter-models';
+import { isExcludedOpenRouterModelSlug, OPENROUTER_DEFAULT_FREE_MODELS } from '@theia/qaap-ai-openrouter/lib/common/openrouter-models';
 import { qaapUserScopedStorageKey } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS, NATIVE_MODEL_PICKER_AGENT_IDS } from './qaap-builtin-agents';
 import {
@@ -21,6 +21,24 @@ import { qaiqModelSupportsToolCalls } from './qaap-agent-tool-support';
 export type QaapAgentModelSelection = QaapCreateAgentTaskQaiqModel;
 
 const AGENT_MODEL_STORAGE_PREFIX = 'qaap.agentTasks.selectedAgentModel';
+
+/** OpenRouter's free-tier slug suffix. The catalogs carry no price, so the slug is the free marker. */
+const FREE_MODEL_SLUG_SUFFIX = ':free';
+
+/**
+ * True for a free model: an OpenRouter free-tier slug (`:free`, or the `/free` router). Every other model
+ * is treated as paid. Shared by the composer (Paid badge, send confirmation) and the agent fallback chain.
+ */
+export function isFreeAgentModel(model: { readonly modelId?: string } | undefined): boolean {
+    const modelId = model?.modelId?.trim().toLowerCase() ?? '';
+    return modelId.endsWith(FREE_MODEL_SLUG_SUFFIX) || modelId.endsWith('/free');
+}
+
+/** Stored pick plus whether the user chose it (a default seeded by the picker is not a user choice). */
+interface StoredAgentModelRecord {
+    readonly model: QaapAgentModelSelection;
+    readonly userChosen: boolean;
+}
 
 /** QAIQ uses the OpenRouter/NVIDIA/etc. lists from Settings → AI Features. */
 // Keep these literals here: qaap-agent-task-client re-exports this module, so reading its
@@ -96,12 +114,12 @@ function resolveAgentModelStorageLogin(): string | undefined {
     return undefined;
 }
 
-function parseStoredModel(raw: string | null | undefined): QaapAgentModelSelection | undefined {
+function parseStoredModel(raw: string | null | undefined): StoredAgentModelRecord | undefined {
     if (!raw) {
         return undefined;
     }
     try {
-        const parsed = JSON.parse(raw) as Partial<QaapAgentModelSelection>;
+        const parsed = JSON.parse(raw) as Partial<QaapAgentModelSelection> & { userChosen?: unknown };
         if (!parsed || typeof parsed.provider !== 'string' || typeof parsed.modelId !== 'string') {
             return undefined;
         }
@@ -110,7 +128,7 @@ function parseStoredModel(raw: string | null | undefined): QaapAgentModelSelecti
             vendor: typeof parsed.vendor === 'string' ? parsed.vendor : 'unknown',
             modelId: parsed.modelId,
         };
-        return isStoredAgentModelUsable(model) ? model : undefined;
+        return isStoredAgentModelUsable(model) ? { model, userChosen: parsed.userChosen === true } : undefined;
     } catch {
         return undefined;
     }
@@ -134,6 +152,10 @@ export function isStoredAgentModelUsable(model: QaapAgentModelSelection | undefi
 }
 
 export function readStoredAgentModel(cwd: string | undefined, agentId: string | undefined): QaapAgentModelSelection | undefined {
+    return readStoredAgentModelRecord(cwd, agentId)?.model;
+}
+
+function readStoredAgentModelRecord(cwd: string | undefined, agentId: string | undefined): StoredAgentModelRecord | undefined {
     if (!cwd || !agentId || !agentSupportsModelPicker(agentId)) {
         return undefined;
     }
@@ -157,7 +179,7 @@ export function readStoredAgentModel(cwd: string | undefined, agentId: string | 
     }
 }
 
-function readLegacyQaiqModel(cwd: string): QaapAgentModelSelection | undefined {
+function readLegacyQaiqModel(cwd: string): StoredAgentModelRecord | undefined {
     const login = resolveAgentModelStorageLogin();
     const scopedKey = qaapUserScopedStorageKey(`${SELECTED_QAIQ_MODEL_STORAGE_KEY}.${hashString(cwd)}`, login);
     const scopedRaw = window.localStorage.getItem(scopedKey);
@@ -177,19 +199,30 @@ function readLegacyQaiqModel(cwd: string): QaapAgentModelSelection | undefined {
     return model;
 }
 
+/** Persists a model the user picked for this project (an explicit choice, never a seeded default). */
 export function writeStoredAgentModel(
     cwd: string | undefined,
     agentId: string,
     model: QaapAgentModelSelection | QaapQaiqModelOption,
 ): void {
+    persistStoredAgentModel(cwd, agentId, model, true);
+}
+
+function persistStoredAgentModel(
+    cwd: string | undefined,
+    agentId: string,
+    model: QaapAgentModelSelection | QaapQaiqModelOption,
+    userChosen: boolean,
+): void {
     if (!cwd || !agentSupportsModelPicker(agentId)) {
         return;
     }
     const agent = migrateLegacyBackendAgentId(agentId) ?? agentId;
-    const payload: QaapAgentModelSelection = {
+    const payload: QaapAgentModelSelection & { userChosen?: true } = {
         provider: model.provider,
         vendor: model.vendor,
         modelId: model.modelId,
+        ...(userChosen ? { userChosen: true as const } : {}),
     };
     try {
         const serialized = JSON.stringify(payload);
@@ -249,20 +282,16 @@ export function resolveStoredAgentModelForSubmit(
 export function pickDefaultAgentModel(
     models: readonly QaapQaiqModelOption[],
 ): QaapQaiqModelOption | undefined {
-    for (const model of models) {
-        if (model.available === false) {
-            continue;
-        }
-        const candidate: QaapAgentModelSelection = {
-            provider: model.provider,
-            vendor: model.vendor,
-            modelId: model.modelId,
-        };
-        if (isStoredAgentModelUsable(candidate)) {
-            return model;
-        }
-    }
-    return undefined;
+    const usable = models.filter(model => model.available !== false && isStoredAgentModelUsable({
+        provider: model.provider,
+        vendor: model.vendor,
+        modelId: model.modelId,
+    }));
+    // A new project never starts on a paid model by accident: the QAIQ/Pi default free model first,
+    // then any other free model. Paid models are picked only when the catalog offers no free one.
+    return usable.find(model => model.modelId === OPENROUTER_DEFAULT_FREE_MODELS[0])
+        ?? usable.find(model => isFreeAgentModel(model))
+        ?? usable[0];
 }
 
 /**
@@ -279,15 +308,19 @@ export function ensureStoredAgentModel(
     if (!cwd || !agentId || !agentSupportsModelPicker(agentId)) {
         return undefined;
     }
-    const existing = readStoredAgentModel(cwd, agentId);
-    if (existing && (models.length === 0 || models.some(model => isSameAgentModel(existing, model)))) {
-        return existing;
-    }
+    const existing = readStoredAgentModelRecord(cwd, agentId);
     const picked = pickDefaultAgentModel(models);
+    if (existing && (models.length === 0 || models.some(model => isSameAgentModel(existing.model, model)))) {
+        // A paid default the user never chose (seeded before free-first defaults) yields to a free model.
+        const yieldsToFree = !existing.userChosen && !isFreeAgentModel(existing.model) && isFreeAgentModel(picked);
+        if (!yieldsToFree) {
+            return existing.model;
+        }
+    }
     if (!picked) {
         return undefined;
     }
-    writeStoredAgentModel(cwd, agentId, picked);
+    persistStoredAgentModel(cwd, agentId, picked, false);
     return {
         provider: picked.provider,
         vendor: picked.vendor,
