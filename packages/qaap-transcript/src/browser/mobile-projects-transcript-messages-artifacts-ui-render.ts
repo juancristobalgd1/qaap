@@ -45,6 +45,7 @@ import {
     collectMobileClosingNarrativeTextsBefore as collectMobileClosingNarrativeTextsBeforeHelper,
 } from './mobile-projects-transcript-messages-artifacts-helpers';
 import { resolveTranscriptDiscardCheckpointId, resolveTranscriptTurnRetryAttempt } from '../common/qaap-transcript-turn-recovery';
+import { createMobileStoppedTurnLineElement } from './mobile-stopped-turn-line';
 
 export function removeTranscriptLiveStatusWithOrbExtracted(ctx: MobileProjectsTranscriptMessagesArtifactsUiContext, root: ParentNode): void {
         removeTranscriptLiveStatusElement(root, {
@@ -137,6 +138,11 @@ export function createTranscriptAgentSegmentsRowExtracted(ctx: MobileProjectsTra
                     textBlock.setAttribute(TRANSCRIPT_SEGMENT_INDEX_ATTR, String(segmentIndex));
                     body.append(textBlock);
                 }
+            }
+            // A Stop on a turn without tool calls has no process accordion to say so: show the
+            // stopped closing state under whatever partial answer streamed.
+            if (ctx.isAgentMessageCancelled(options?.message ?? ctx.resolveLastAgentMessage(conv))) {
+                body.append(createMobileStoppedTurnLineElement());
             }
         }
 

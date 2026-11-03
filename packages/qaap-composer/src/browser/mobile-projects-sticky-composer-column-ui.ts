@@ -133,6 +133,8 @@ export class MobileProjectsStickyComposerColumnUi {
         onSendControlMounted?: (refresh: () => void) => void;
         onImprovePrompt?: (context: import('./qaap-composer-prompt-improve-handler').StickyComposerImprovePromptContext) => void;
         inputPlaceholder?: string;
+        /** Label above the input for a draft that was restored, not sent (see qaap-composer-restored-draft). */
+        draftHint?: string;
         getMentionOptions?: () => readonly StickyComposerTokenOption[];
         getVariableOptions?: () => readonly StickyComposerTokenOption[];
         getSkillOptions?: () => readonly StickyComposerTokenOption[];
@@ -640,6 +642,13 @@ export class MobileProjectsStickyComposerColumnUi {
         const borderBeamBloom = document.createElement('div');
         borderBeamBloom.className = 'qaap-border-beam-bloom';
         borderBeamBloom.setAttribute('aria-hidden', 'true');
+        if (options.draftHint) {
+            const draftHint = document.createElement('p');
+            draftHint.className = 'theia-mobile-projects-sticky-composer-surface-hint theia-mobile-projects-sticky-composer-draft-hint';
+            draftHint.setAttribute('role', 'note');
+            draftHint.textContent = options.draftHint;
+            inputPanel.prepend(draftHint);
+        }
         inputPanel.append(inputBody, runPermissions, controlsRow, borderBeamBloom);
         stage.append(inputPanel, toolbar);
 
