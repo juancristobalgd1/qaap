@@ -16,7 +16,7 @@ import {
     type QaapMessageDeliveryMode,
     type QaapPendingUserMessageDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
-import { mergePendingUserMessagesWithLocalQueue } from '@theia/qaap-shared-core/lib/common/qaap-pending-user-messages-merge';
+import { mergePendingUserMessagesWithLocalQueue, resolveQueuedFollowUpBaseConversation } from '@theia/qaap-shared-core/lib/common/qaap-pending-user-messages-merge';
 import {
     resolveAgentModelForSubmit,
     resolveExplicitAgentForSubmit,
@@ -165,16 +165,7 @@ export class MobileProjectsTranscriptSubmitUi {
         if (!chatHost) {
             return undefined;
         }
-        const baseConv: QaapAgentConversationDTO = cached?.id === summary.id ? cached : {
-            id: summary.id,
-            cwd: summary.cwd,
-            agentId: summary.agentId,
-            title: summary.title,
-            status: summary.status,
-            createdAt: summary.createdAt,
-            updatedAt: Date.now(),
-            messages: [],
-        };
+        const baseConv: QaapAgentConversationDTO = resolveQueuedFollowUpBaseConversation(cached, summary);
         const pending = imagePreviews?.length
             ? { ...pendingUserMessage, optimisticImagePreviews: imagePreviews }
             : pendingUserMessage;
@@ -209,16 +200,7 @@ export class MobileProjectsTranscriptSubmitUi {
         if (!chatHost) {
             return undefined;
         }
-        const baseConv: QaapAgentConversationDTO = cached?.id === summary.id ? cached : {
-            id: summary.id,
-            cwd: summary.cwd,
-            agentId: summary.agentId,
-            title: summary.title,
-            status: summary.status,
-            createdAt: summary.createdAt,
-            updatedAt: Date.now(),
-            messages: [],
-        };
+        const baseConv: QaapAgentConversationDTO = resolveQueuedFollowUpBaseConversation(cached, summary);
         const pendingUserMessages = [
             ...(baseConv.pendingUserMessages ?? []).filter(item =>
                 item.id !== pending.id

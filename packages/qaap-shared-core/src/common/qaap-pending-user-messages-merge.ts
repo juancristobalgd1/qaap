@@ -5,7 +5,31 @@
 // *****************************************************************************
 
 import type { TranscriptFollowUpEntry } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-follow-up-queue';
-import type { QaapPendingUserMessageDTO } from './qaap-agent-conversation-client';
+import type { QaapAgentConversationDTO, QaapAgentConversationSummaryDTO, QaapPendingUserMessageDTO } from './qaap-agent-conversation-client';
+
+/**
+ * Conversation the queued follow-ups are painted into. While the turn is still starting the
+ * transcript may not hold this conversation yet (no cached snapshot, or another one is open); the
+ * follow-up must still show at once, so it is painted over an empty copy of the summary.
+ */
+export function resolveQueuedFollowUpBaseConversation(
+    cached: QaapAgentConversationDTO | undefined,
+    summary: QaapAgentConversationSummaryDTO,
+): QaapAgentConversationDTO {
+    if (cached?.id === summary.id) {
+        return cached;
+    }
+    return {
+        id: summary.id,
+        cwd: summary.cwd,
+        agentId: summary.agentId,
+        title: summary.title,
+        status: summary.status,
+        createdAt: summary.createdAt,
+        updatedAt: Date.now(),
+        messages: [],
+    };
+}
 
 /**
  * Merge durable server `pendingUserMessages` with the local composer follow-up queue so every

@@ -256,6 +256,26 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             }
             void this.handlePostVisualVerification(req, res);
         });
+        app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/visual-repair`, (req, res) => {
+            if (!this.getConversationIfOwned(req, res, req.params.id)) {
+                return;
+            }
+            const body = (req.body ?? {}) as { sourceAgentMessageId?: unknown };
+            const sourceAgentMessageId = typeof body.sourceAgentMessageId === 'string' ? body.sourceAgentMessageId.trim() : '';
+            if (!sourceAgentMessageId) {
+                res.status(400).json({ error: 'sourceAgentMessageId is required.' });
+                return;
+            }
+            void this.store.startVisualRepairProposal(req.params.id, sourceAgentMessageId).then(conv => {
+                if (!conv) {
+                    res.status(409).json({ error: 'No open repair proposal on that message.' });
+                    return;
+                }
+                res.json(conv);
+            }, (error: unknown) => {
+                res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+            });
+        });
         app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/visual-verification-failures`, (req, res) => {
             if (!this.getConversationIfOwned(req, res, req.params.id)) {
                 return;

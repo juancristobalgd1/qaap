@@ -28,6 +28,7 @@ import {
 } from '@theia/qaap-transcript-overlay/lib/browser/qaap-composer-delivery-mode';
 import { isAgentsHubIdleConversationSummary } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
 import { writeProjectComposerDraft } from '../common/qaap-project-composer-draft';
+import { clearComposerDraftRestored, markComposerDraftRestored, resolveComposerRestoredDraftKey } from '../common/qaap-composer-restored-draft';
 import { collectComposerImagePreviews } from './qaap-sticky-composer-context-ui';
 import { confirmPaidModelSend } from './qaap-paid-model-send-confirm';
 import { resolveStoredAgentModelForSubmit } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
@@ -87,7 +88,9 @@ export async function submitTranscriptComposerDraftExtracted(ctx: MobileProjects
     const commitComposerSubmission = (): void => {
         disposeComposerContextEntries(contextSnapshot);
     };
+    const restoredDraftKey = resolveComposerRestoredDraftKey(project.id, summary.id, isAgentsHubIdleConversationSummary(summary));
     const restoreComposerSubmission = (): void => {
+        markComposerDraftRestored(restoredDraftKey);
         const existingIds = new Set(ctx.host.transcriptComposerContext.map(entry => entry.id));
         ctx.host.transcriptComposerContext = [
             ...contextSnapshot.filter(entry => !existingIds.has(entry.id)),
@@ -104,6 +107,7 @@ export async function submitTranscriptComposerDraftExtracted(ctx: MobileProjects
         }
     };
     const clearComposerDraft = (): void => {
+        clearComposerDraftRestored(restoredDraftKey);
         if (ctx.host.transcriptComposerDraftPersistTimer !== undefined) {
             window.clearTimeout(ctx.host.transcriptComposerDraftPersistTimer);
             ctx.host.transcriptComposerDraftPersistTimer = undefined;

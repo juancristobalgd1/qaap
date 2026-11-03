@@ -105,7 +105,7 @@ export {
     parseGitNumstat,
 } from './qaap-agent-conversation-store-constants';
 import { cancelExtracted, cancelQueuedMessageExtracted, createExtracted, dispatchQueuedMessageExtracted, drainPendingMessagesExtracted, enqueuePendingMessageExtracted, getActiveTaskIdForConversationExtracted, getActiveTaskIdsForConversationExtracted, getExtracted, hasActiveTaskForUserMessageExtracted, hasOtherActiveTaskForConversationExtracted, initExtracted, interruptConversationRunsExtracted, linkConversationsToPullRequestExtracted, listExtracted, maybeDrainAtToolRoundBoundaryExtracted, mutatingGitExtracted, postUserMessageExtracted, retryExtracted, settleStatusForRunExtracted, type QaapConversationRetryOptions } from './qaap-agent-conversation-store-render2';
-import { attachVisualVerificationBlockExtracted, cancelRunExtracted, continueVisualRepairLoopExtracted, deleteExtracted, failVisualRepairLoopExtracted, forkExtracted, recordVisualVerificationExtracted, recordVisualVerificationVideoExtracted, resolveVisualEvidenceTargetExtracted, resolveVisualRepairSourceUserMessageExtracted, updateExtracted } from './qaap-agent-conversation-store-streaming2';
+import { attachVisualVerificationBlockExtracted, cancelRunExtracted, continueVisualRepairLoopExtracted, startVisualRepairProposalExtracted, deleteExtracted, failVisualRepairLoopExtracted, forkExtracted, recordVisualVerificationExtracted, recordVisualVerificationVideoExtracted, resolveVisualEvidenceTargetExtracted, resolveVisualRepairSourceUserMessageExtracted, updateExtracted } from './qaap-agent-conversation-store-streaming2';
 import { applyAgUiTaskOutputExtracted, applyTaskOutputExtracted, deliverSubtaskMailboxExtracted, findConversationIdForLeaderTaskExtracted, finishLeaderTurnAndMaybeSynthesizeExtracted, maybeTriggerTeamSynthesisExtracted, onTaskChangedExtracted, parseStructuredLogExtracted, readVisualVerificationExtracted, recordGitActionExtracted, recordSubmitLatencyMarksExtracted, recordTaskLatencyMarksExtracted, recordVisualVerificationFailureExtracted, recordVisualVerificationFlowExtracted, resolveLeaderTaskIdExtracted } from './qaap-agent-conversation-store-timeline2';
 import { applyAccumulatorStructuredOutputExtracted, applyTaskOutcomeExtracted, backfillAgentMessageFromStructuredLogExtracted, maybeRetryTurnWithFallbackExtracted, resolveStructuredParsedTraceEventsExtracted } from './qaap-agent-conversation-store-activity2';
 import { appendAgentReplyExtracted, appendCheckpointTraceExtracted, appendClosingReportTraceExtracted, appendRunCancelledTraceExtracted, buildTaskCreateRequestExtracted, clearRunActiveExtracted, detectAgentBlockedNeedExtracted, extractAgentMentionFromUserMessageExtracted, failTurnBeforeSpawnExtracted, finalizeStreamingAgentMessageExtracted, markTurnFailedExtracted, maybeAutoContinueIncompleteTurnExtracted, maybeRetryTurnWithFallbackModelExtracted, postAutoContinueMessageExtracted, prepareContextCompactionForTurnExtracted, publishFinalizedAgentMessageExtracted, reportPreviewBootstrapFailureExtracted, resolveTurnAgentExtracted, stripLeadingAgentMentionExtracted } from './qaap-agent-conversation-store-tool-pills2';
@@ -393,8 +393,13 @@ export class QaapAgentConversationStore implements QaapAgentConversationStoreCon
     }
 
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
-    public async continueVisualRepairLoop(conversationId: string, sourceAgentMessageId: string, ): Promise<QaapAgentConversation | undefined> {
-        return continueVisualRepairLoopExtracted(this, conversationId, sourceAgentMessageId);
+    public async continueVisualRepairLoop(conversationId: string, sourceAgentMessageId: string, options?: { readonly propose?: boolean }, ): Promise<QaapAgentConversation | undefined> {
+        return continueVisualRepairLoopExtracted(this, conversationId, sourceAgentMessageId, options);
+    }
+
+    /** The user accepted the "Fix with agent" proposal on an evidence message. */
+    async startVisualRepairProposal(conversationId: string, sourceAgentMessageId: string): Promise<QaapAgentConversation | undefined> {
+        return startVisualRepairProposalExtracted(this, conversationId, sourceAgentMessageId);
     }
 
     async recordVisualVerification(conversationId: string, result: QaapPreviewVisualValidationResult, png: Buffer, targetAgentMessageId?: string, previewUrl?: string, ): Promise<QaapAgentConversation | undefined> {

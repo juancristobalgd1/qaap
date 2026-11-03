@@ -4264,3 +4264,40 @@ details > summary:focus-visible,
     background: transparent !important;
   }
 }
+
+/* Stopped turn without a process accordion (no tool calls): quiet closing line, same tokens as the accordion. */
+.theia-mobile-stopped-turn-line {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 6px 0 2px;
+    font-size: 12px;
+    color: var(--theia-descriptionForeground);
+}
+
+.theia-mobile-stopped-turn-line .theia-mobile-stopped-turn-line-icon {
+    font-size: 14px;
+}
+
+/* "Fix with agent" proposal after a failed visual check: a bordered notice under the transcript. */
+.theia-mobile-visual-repair-proposal {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    margin: 8px 0;
+    padding: 8px 10px;
+    border: 1px solid var(--theia-editorWidget-border);
+    border-radius: 6px;
+    font-size: 13px;
+    color: var(--theia-foreground);
+}
+
+.theia-mobile-visual-repair-proposal-text {
+    flex: 1 1 200px;
+}
+
+.theia-mobile-visual-repair-proposal-actions {
+    display: flex;
+    gap: 6px;
+}

@@ -3,6 +3,8 @@ import type { MobileProjectsTranscriptMessagesRenderUi } from './mobile-projects
 // Extracted from mobile-projects-transcript-messages-render-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
+import { createMobileVisualRepairProposalElement } from './mobile-visual-repair-proposal';
+import { isVisualRepairInstructionMessage, resolveVisualRepairProposalMessage } from '../common/qaap-visual-repair-proposal';
 import { normalizeAgentMessageContentForDisplay } from '@theia/qaap-shared-core/lib/common/qaap-agent-message-content';
 import { parseAgentLogForTranscript } from '@theia/qaap-shared-core/lib/common/qaap-cli-transcript-stream';
 import { dedupeAgentMessageTextSegments } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-stream';
@@ -185,7 +187,13 @@ export function createTranscriptMessageRowAtIndexExtracted(ctx: MobileProjectsTr
         && isTranscriptAgentTailStreaming(normalized);
     let row: HTMLElement;
     const agentSegments = ctx.resolveTranscriptAgentSegments(normalized, msg);
-    if (msg.role === 'user') {
+    if (isVisualRepairInstructionMessage(msg)) {
+        // The repair instruction the backend wrote for an accepted proposal: kept in the list for
+        // index stability, never drawn as a user bubble.
+        row = document.createElement('div');
+        row.className = 'theia-mobile-visual-repair-instruction';
+        row.hidden = true;
+    } else if (msg.role === 'user') {
         row = ctx.userUi.createTranscriptUserMessageRow(msg, normalized, { deferHeavyContent });
     } else if (agentSegments && agentSegments.length > 0) {
         row = ctx.artifactsUi.createTranscriptAgentSegmentsRow(agentSegments, msg.error, normalized, {
@@ -282,6 +290,11 @@ export function buildTranscriptVirtualFooterExtracted(ctx: MobileProjectsTranscr
                 footers.push(queuedRow);
             }
         }
+    }
+    const repairProposal = resolveVisualRepairProposalMessage(conv);
+    const repairProposalRow = repairProposal ? createMobileVisualRepairProposalElement(conv, repairProposal) : undefined;
+    if (repairProposalRow) {
+        footers.push(repairProposalRow);
     }
     return footers;
 }
