@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { CONVERSATION_TRANSCRIPT_HEADER } from './qaap-agent-conversation-prompt';
+
 /** Marker of the minimal preamble used for conversational turns; keeps the prompt builder idempotent. */
 export const QAAP_CONVERSATIONAL_TURN_MARKER = '[QAAP conversational turn]';
 
@@ -59,10 +61,21 @@ export function isConversationalOnlyMessage(text: string | undefined): boolean {
  * classify as small talk. A prompt extended by hooks or context is therefore never conversational.
  */
 export function isConversationalTurn(prompt: string | undefined, userQuery?: string): boolean {
+    // A follow-up's prompt is the product's transcript wrapper around the user's message. The wrapper is
+    // not a hook or context extension, so the user's own message decides ("hi" after earlier turns).
+    if (userQuery !== undefined && isConversationalOnlyMessage(userQuery) && isTranscriptWrappedPrompt(prompt, userQuery)) {
+        return true;
+    }
     if (!isConversationalOnlyMessage(prompt)) {
         return false;
     }
     return userQuery === undefined || isConversationalOnlyMessage(userQuery);
+}
+
+/** True when `prompt` is the transcript wrapper that {@link buildConversationAgentPrompt} builds for `userQuery`. */
+export function isTranscriptWrappedPrompt(prompt: string | undefined, userQuery: string): boolean {
+    return !!prompt && prompt.includes(CONVERSATION_TRANSCRIPT_HEADER)
+        && prompt.trimEnd().endsWith(`USER: ${userQuery.trim()}`);
 }
 
 /** Task-level flag set when a turn is conversational, read by the post-turn verification gate. */
