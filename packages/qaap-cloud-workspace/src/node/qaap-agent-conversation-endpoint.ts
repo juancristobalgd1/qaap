@@ -47,6 +47,7 @@ import { parseRewindRestoreOptions } from '@theia/qaap-shared-core/lib/common/qa
 import { QaapRewindConfirmationRequiredError } from './qaap-agent-conversation-rewind-preview-git';
 import { QaapBillingStore } from './qaap-billing-store';
 import { QaapConversationWorktreeService } from './qaap-conversation-worktree';
+import { readDirtyWorkspace, resolveTaskIsolationMode } from './qaap-task-workspace-dirty';
 import { QaapAgentGoalLoopError, QaapAgentGoalLoopRunner } from './qaap-agent-goal-loop-runner';
 import type { QaapAgentGoalLoopResponse, QaapStartAgentGoalLoopRequest } from '../common/qaap-agent-goal-loop';
 import {
@@ -686,8 +687,26 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             let cwd = resolvedCwd.cwd;
             let baseCwd: string | undefined;
             let worktreeBranch: string | undefined;
-            const isolation = this.resolveIsolation(body);
             const repoKey = this.repoKey(cwd);
+            let isolation = this.resolveIsolation(body);
+            const isolationMode = resolveTaskIsolationMode();
+            if (isolation === 'auto' && isolationMode === 'worktree') {
+                isolation = 'worktree';
+            }
+            // A task that would share the working tree must not silently mix into uncommitted changes
+            // the user made outside it: ask first (409 `dirty_workspace`), unless the client accepts the
+            // dirt. `QAAP_TASK_ISOLATION=dirty` isolates an 'auto' task instead of asking.
+            if (isolation !== 'worktree' && !(isolation === 'auto' && this.repoHasActiveThread(repoKey, ownerLogin))) {
+                const dirty = await readDirtyWorkspace(cwd);
+                if (dirty) {
+                    if (isolation === 'auto' && isolationMode === 'dirty') {
+                        isolation = 'worktree';
+                    } else if (body.acceptDirty !== true) {
+                        res.status(409).json({ code: 'dirty_workspace', files: dirty.files, total: dirty.total });
+                        return;
+                    }
+                }
+            }
             if (isolation === 'worktree' || (isolation === 'auto' && this.repoHasActiveThread(repoKey, ownerLogin))) {
                 try {
                     const worktree = await this.worktrees.create(cwd, ownerLogin);
