@@ -31,7 +31,7 @@ export type QaapToolGateDecision =
      * `updatedInput`, when present, is the COMPLETE tool input to run (hook rewrites are merged on top of the
      * original by the server). Clients replace the whole input with it and never merge it themselves.
      */
-    | { kind: 'allow'; updatedInput?: Record<string, unknown>; source: QaapToolGateSource }
+    | { kind: 'allow'; updatedInput?: Record<string, unknown>; source: QaapToolGateSource; reason?: 'read-only-shell' }
     | { kind: 'deny'; reason: string; source: QaapToolGateSource; retryable?: boolean };
 
 /** Route prefix of the harness-facing gate; served next to the `qaap-task` helper route. */
