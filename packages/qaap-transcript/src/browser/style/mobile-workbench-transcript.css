@@ -4070,6 +4070,12 @@ body.theia-dark .theia-mobile-agent-web-search,
   opacity: 0.8;
 }
 
+.theia-mobile-agent-transcript-queued-paused-hint {
+  font-size: 11px;
+  color: var(--theia-descriptionForeground, var(--theia-foreground));
+  white-space: nowrap;
+}
+
 .theia-mobile-agent-transcript-queued-actions {
   display: inline-flex;
   align-items: center;

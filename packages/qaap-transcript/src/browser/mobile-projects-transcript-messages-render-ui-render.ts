@@ -283,14 +283,7 @@ export function buildTranscriptVirtualFooterExtracted(ctx: MobileProjectsTranscr
     // Render queued user messages (delivery mode 'queue') as visual rows below the streaming
     // footer. Each row shows the message content with a "Queued" badge and action buttons:
     // cancel (remove from queue) and send now (dispatch as parallel peer run).
-    if (conv.pendingUserMessages?.length) {
-        for (const pending of conv.pendingUserMessages) {
-            const queuedRow = createTranscriptQueuedMessageRow(ctx, conv, pending);
-            if (queuedRow) {
-                footers.push(queuedRow);
-            }
-        }
-    }
+    footers.push(...createTranscriptQueuedMessageRowsExtracted(ctx, conv));
     const repairProposal = resolveVisualRepairProposalMessage(conv);
     const repairProposalRow = repairProposal ? createMobileVisualRepairProposalElement(conv, repairProposal) : undefined;
     if (repairProposalRow) {
@@ -336,6 +329,14 @@ function createTranscriptQueuedMessageRow(
     badgeLabel.textContent = nls.localize('qaap/mobileProjects/queuedBadge', 'Queued');
     badge.append(badgeIcon, badgeLabel);
     header.append(badge);
+    if (conv.pendingUserMessagesPaused) {
+        // A Stop paused the queue: say why nothing is sending, and what the user can do about it.
+        wrap.classList.add('theia-mod-paused');
+        const pausedHint = document.createElement('span');
+        pausedHint.className = 'theia-mobile-agent-transcript-queued-paused-hint';
+        pausedHint.textContent = nls.localize('qaap/mobileProjects/queuedPausedHint', 'Paused — send or discard');
+        header.append(pausedHint);
+    }
 
     // Action buttons
     const actions = document.createElement('div');
@@ -390,6 +391,14 @@ function createTranscriptQueuedMessageRow(
     wrap.append(contentRow);
 
     return wrap;
+}
+
+/**
+ * The queued (delivery mode `'queue'`) rows of a conversation, one per pending message, in queue
+ * order. Shared by the virtual footer and the plain render path so both paint the same rows.
+ */
+export function createTranscriptQueuedMessageRowsExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, conv: QaapAgentConversationDTO): HTMLElement[] {
+    return (conv.pendingUserMessages ?? []).map(pending => createTranscriptQueuedMessageRow(ctx, conv, pending));
 }
 
 export function createTranscriptContextCompactionRowExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, conv: QaapAgentConversationDTO): HTMLElement | undefined {
