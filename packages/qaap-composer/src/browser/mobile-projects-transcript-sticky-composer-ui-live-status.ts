@@ -29,6 +29,8 @@ import {
 import { isAgentsHubIdleConversationSummary } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
 import { writeProjectComposerDraft } from '../common/qaap-project-composer-draft';
 import { collectComposerImagePreviews } from './qaap-sticky-composer-context-ui';
+import { confirmPaidModelSend } from './qaap-paid-model-send-confirm';
+import { resolveStoredAgentModelForSubmit } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
 import {
     composerContextRequests,
     disposeComposerContextEntries,
@@ -114,6 +116,14 @@ export async function submitTranscriptComposerDraftExtracted(ctx: MobileProjects
         }
         ctx.host.transcriptComposerDraft = '';
     };
+    // A paid model asks once per project per browser session before anything is sent; cancelling keeps the draft.
+    const sendCwd = ctx.host.projectsService.getProjectCwd(project) ?? summary.cwd;
+    const sendModel = ctx.host.transcriptComposerAgentModel ?? resolveStoredAgentModelForSubmit(selectedAgentId, sendCwd);
+    if (!await confirmPaidModelSend(sendCwd, sendModel)) {
+        restoreComposerSubmission();
+        ctx.remountTranscriptStickyComposer();
+        return;
+    }
     if ((ctx.isTranscriptStickyComposerAgentWorking() || summary.status === 'streaming' || summary.status === 'settled') && !isAgentsHubIdleConversationSummary(summary)) {
         // Busy follow-up: Queue stays in the composer popover (Edit / Send now / wait).
         // Parallel / Interrupt bypass that UI and POST immediately. Queue is also mirrored
