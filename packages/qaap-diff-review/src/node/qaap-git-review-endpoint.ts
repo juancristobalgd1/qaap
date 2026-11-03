@@ -37,6 +37,7 @@ import { QaapHostedGitPush, type QaapHostedGitPushRequest } from '@theia/qaap-sh
 import { QaapHostedWorktreeRegistry } from '@theia/qaap-shared-core/lib/node/qaap-hosted-worktree-registry';
 import { QaapHostedProjectResolver, type QaapHostedProject } from '@theia/qaap-shared-core/lib/node/qaap-hosted-project-resolver';
 import { qaapGitReadEnv } from '@theia/qaap-shared-core/lib/node/qaap-child-process-env';
+import { computeTreeDiff, snapshotWorktreeTree, type QaapTreeGitResult } from '@theia/qaap-shared-core/lib/node/qaap-git-tree-diff';
 
 interface QaapHostedPushTarget {
     readonly branch: string;
@@ -75,6 +76,9 @@ interface QaapGitChangedFilesSnapshot {
  * repository's own `diff.<driver>.textconv` from running a command while a review diff renders.
  */
 const PATCH_SAFETY_FLAGS = ['--no-ext-diff', '--no-textconv', '--no-color'] as const;
+
+/** A full SHA-1 commit id, the only accepted form of the `/changes` `baseCommit` parameter. */
+const BASE_COMMIT_PATTERN = /^[0-9a-f]{40}$/;
 
 class QaapGitDiffTooLargeError extends Error {
     constructor(readonly size: number) {
@@ -194,9 +198,18 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
         if (!root) {
             return;
         }
+        const rawBaseCommit = req.query.baseCommit;
+        let baseCommit: string | undefined;
+        if (rawBaseCommit !== undefined) {
+            if (typeof rawBaseCommit !== 'string' || !BASE_COMMIT_PATTERN.test(rawBaseCommit) || !(await this.commitExists(root, rawBaseCommit))) {
+                res.status(400).json({ error: 'Missing or invalid "baseCommit" query parameter.' });
+                return;
+            }
+            baseCommit = rawBaseCommit;
+        }
         try {
             const [files, branch, prReadiness] = await Promise.all([
-                this.collectChangedFiles(root),
+                baseCommit ? this.collectChangedFilesSinceBaseline(root, baseCommit) : this.collectChangedFiles(root),
                 this.readCurrentBranch(root),
                 this.readPrReadiness(root),
             ]);
@@ -689,6 +702,67 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
         return matches;
     }
 
+    /** True when `sha` names an existing commit in the repository (never throws). */
+    protected async commitExists(root: string, sha: string): Promise<boolean> {
+        return this.git(root, ['cat-file', '-e', `${sha}^{commit}`]).then(() => true, () => false);
+    }
+
+    /**
+     * Changed files between the task baseline commit and the current worktree, so pre-existing dirt
+     * is excluded and untracked files are included. The worktree is snapshotted through a throwaway
+     * index kept inside the repository's git directory; the real index is never touched.
+     */
+    protected async collectChangedFilesSinceBaseline(root: string, baseCommit: string): Promise<QaapGitChangedFile[]> {
+        const gitDir = (await this.git(root, ['rev-parse', '--absolute-git-dir'])).trim();
+        const tree = await snapshotWorktreeTree(root, (cwd, args, env) => this.gitWithIndexFile(cwd, args, env), gitDir);
+        if (!tree) {
+            throw new Error('Could not snapshot the worktree for the task baseline.');
+        }
+        const diff = await computeTreeDiff(root, baseCommit, tree, (cwd, args) => this.gitResult(cwd, args));
+        if (!diff) {
+            throw new Error('Could not diff the worktree against the task baseline.');
+        }
+        return diff.files.map(file => ({
+            path: file.path,
+            ...(file.oldPath ? { oldPath: file.oldPath } : {}),
+            status: file.status,
+            adds: file.added,
+            dels: file.removed,
+            staged: false,
+        }));
+    }
+
+    /** Runs a hardened git command and reports its exit status instead of rejecting. */
+    protected async gitResult(root: string, args: readonly string[]): Promise<QaapTreeGitResult> {
+        try {
+            return { status: 0, stdout: await this.git(root, [...args]) };
+        } catch (error) {
+            const code = (error as { code?: unknown }).code;
+            return { status: typeof code === 'number' ? code : 1, stdout: '' };
+        }
+    }
+
+    /** Runs a hardened git command with `GIT_INDEX_FILE` pointed at a throwaway index; never rejects. */
+    protected async gitWithIndexFile(root: string, args: string[], env: NodeJS.ProcessEnv): Promise<QaapTreeGitResult> {
+        const gitArgs = this.hardenedGitArgs(args);
+        const indexEnv: NodeJS.ProcessEnv = { GIT_INDEX_FILE: env.GIT_INDEX_FILE };
+        const run = isQaapHostedEnvironment()
+            ? this.gitInTenant(root, gitArgs, undefined, indexEnv)
+            : new Promise<string>((resolve, reject) => {
+                execFile('git', gitArgs, { cwd: root, maxBuffer: GIT_MAX_BUFFER, env: { ...qaapGitReadEnv(), ...indexEnv } }, (error, stdout) => {
+                    if (error) {
+                        reject(error);
+                    } else {
+                        resolve(stdout);
+                    }
+                });
+            });
+        return run.then(stdout => ({ status: 0, stdout }), (error: unknown) => {
+            const code = (error as { code?: unknown }).code;
+            return { status: typeof code === 'number' ? code : 1, stdout: '' };
+        });
+    }
+
     protected async collectChangedFiles(root: string): Promise<QaapGitChangedFile[]> {
         const status = await this.git(root, ['status', '--porcelain=v1', '-z', '--untracked-files=all']);
         const counts = await this.combinedNumstat(root);
@@ -1026,7 +1100,7 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
     }
 
     /** Run git inside the authenticated tenant worker, never as the shared backend uid. */
-    protected async gitInTenant(root: string, args: readonly string[], input?: string): Promise<string> {
+    protected async gitInTenant(root: string, args: readonly string[], input?: string, extraEnv?: NodeJS.ProcessEnv): Promise<string> {
         if (!this.tenantProcess) {
             throw new Error('Hosted git execution is unavailable: the tenant worker is not bound.');
         }
@@ -1042,7 +1116,7 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
         }
         const child = await this.tenantProcess.spawnArgvPreparedAsync('git', args, {
             cwd: root,
-            env: this.tenantProcess.resolveProcessEnv(root, baseEnv),
+            env: this.tenantProcess.resolveProcessEnv(root, { ...baseEnv, ...extraEnv }),
             stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
             detached: true,
         });

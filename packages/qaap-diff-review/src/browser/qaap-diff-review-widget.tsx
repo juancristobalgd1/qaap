@@ -81,6 +81,11 @@ export interface QaapDiffReviewRepositoryContext {
     rootFsPath: string;
     /** When false, accept/reject actions are disabled (workspace must be open for git commands). */
     isActiveWorkspace: boolean;
+    /**
+     * Task baseline commit of the conversation this view belongs to. When set, the changed-file list is
+     * measured against it (pre-existing dirt and other tasks' edits are excluded). Omitted for global views.
+     */
+    baselineCommit?: string;
 }
 
 /**
@@ -380,8 +385,10 @@ export class QaapDiffReviewWidget extends ReactWidget {
         this.loadingChanges = true;
         this.update();
         try {
+            const baseCommit = this.repositoryContext?.baselineCommit;
+            const baseQuery = baseCommit ? `&baseCommit=${encodeURIComponent(baseCommit)}` : '';
             const response = await fetch(
-                `${QAAP_GIT_REVIEW_API_PATH}/changes?root=${encodeURIComponent(requestRoot)}`,
+                `${QAAP_GIT_REVIEW_API_PATH}/changes?root=${encodeURIComponent(requestRoot)}${baseQuery}`,
                 { credentials: 'include' },
             );
             if (!response.ok) {
