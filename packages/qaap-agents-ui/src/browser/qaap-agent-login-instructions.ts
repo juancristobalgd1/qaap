@@ -32,7 +32,10 @@ export function resolveAgentPickerConnectionDescription(
     }
 }
 
-export function resolveAgentLoginDialogSubtitle(agentId: string): string {
+/**
+ * @param providerName the account provider Pi signs in to (its picker name); Pi only.
+ */
+export function resolveAgentLoginDialogSubtitle(agentId: string, providerName?: string): string {
     switch (agentId.trim().toLowerCase()) {
         case 'codex':
             return nls.localize(
@@ -46,8 +49,9 @@ export function resolveAgentLoginDialogSubtitle(agentId: string): string {
             );
         case 'pi':
             return nls.localize(
-                'qaap/mobileProjects/agentLoginDialogPiSubtitle',
-                'Sign in to Pi with your OpenRouter account, then finish the browser authorization to connect it on this workspace.',
+                'qaap/mobileProjects/agentLoginDialogPiProviderSubtitle',
+                'Sign in to Pi with your {0} account, then finish the browser authorization to connect it on this workspace.',
+                providerName ?? 'OpenRouter',
             );
         default:
             return nls.localize(
