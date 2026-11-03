@@ -225,6 +225,13 @@ describe('buildAgentHonestReportingPromptBlock', () => {
         expect(block).to.include('cite the evidence');
         expect(block).to.include('exact command you ran');
     });
+
+    it('requires disclosing overwrites and asking before replacing an unmentioned existing file', () => {
+        const block = buildAgentHonestReportingPromptBlock();
+        expect(block).to.include('Overwrites and deletions');
+        expect(block).to.include('name the file and what was removed');
+        expect(block).to.include('Ask the user before doing so');
+    });
 });
 
 describe('buildAgentCommunicationPromptBlock', () => {
