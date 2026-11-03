@@ -4,15 +4,18 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import { OPENROUTER_DEFAULT_FREE_MODELS } from '@theia/qaap-ai-openrouter/lib/common/openrouter-models';
 import {
     agentSupportsModelPicker,
     agentUsesNativeModelCatalog,
     agentUsesSettingsModelCatalog,
     ensureStoredAgentModel,
+    isFreeAgentModel,
     isStoredAgentModelUsable,
     pickDefaultAgentModel,
     readStoredAgentModel,
     resolveAgentModelForSubmit,
+    scopedAgentModelStorageKey,
     setAgentModelStorageUserLogin,
     writeStoredAgentModel,
 } from './qaap-agent-model-selection';
@@ -161,6 +164,34 @@ describe('qaap-agent-model-selection', () => {
             { ...base, modelId: 'gpt-mini', label: 'GPT Mini', available: true },
         ]);
         expect(resolved?.modelId).to.equal('gpt-pro');
+    });
+
+    it('pickDefaultAgentModel prefers the QAIQ default free model over a paid entry listed first', () => {
+        const paid = { provider: 'openai' as const, vendor: 'openrouter', modelId: 'anthropic/claude-haiku-4.5', label: 'Claude Haiku' };
+        const free = { provider: 'openai' as const, vendor: 'openrouter', modelId: OPENROUTER_DEFAULT_FREE_MODELS[0], label: 'Nemotron Ultra' };
+        expect(pickDefaultAgentModel([paid, free])?.modelId).to.equal(OPENROUTER_DEFAULT_FREE_MODELS[0]);
+        expect(pickDefaultAgentModel([paid, { ...free, modelId: 'google/gemma-4-31b-it:free' }])?.modelId)
+            .to.equal('google/gemma-4-31b-it:free');
+        expect(isFreeAgentModel({ modelId: 'x/y:free' })).to.be.true;
+        expect(isFreeAgentModel({ modelId: 'openai/gpt-5' })).to.be.false;
+    });
+
+    it('ensureStoredAgentModel seeds a free model for a project with no explicit choice', () => {
+        const paid = { provider: 'openai' as const, vendor: 'openrouter', modelId: 'openai/gpt-5', label: 'GPT-5' };
+        const free = { provider: 'openai' as const, vendor: 'openrouter', modelId: OPENROUTER_DEFAULT_FREE_MODELS[0], label: 'Nemotron Ultra' };
+        const seeded = ensureStoredAgentModel('/repo-free', QAIQ_AGENT_ID, [paid, free]);
+        expect(seeded?.modelId).to.equal(OPENROUTER_DEFAULT_FREE_MODELS[0]);
+    });
+
+    it('a paid default the user never chose yields to a free model; a user-chosen paid model is kept', () => {
+        const cwd = '/repo-legacy';
+        const paid = { provider: 'openai' as const, vendor: 'openrouter', modelId: 'openai/gpt-5', label: 'GPT-5' };
+        const free = { provider: 'openai' as const, vendor: 'openrouter', modelId: OPENROUTER_DEFAULT_FREE_MODELS[0], label: 'Nemotron Ultra' };
+        // Seeded by an older build: no userChosen marker.
+        storage.set(scopedAgentModelStorageKey(cwd, QAIQ_AGENT_ID), JSON.stringify({ provider: paid.provider, vendor: paid.vendor, modelId: paid.modelId }));
+        expect(ensureStoredAgentModel(cwd, QAIQ_AGENT_ID, [paid, free])?.modelId).to.equal(OPENROUTER_DEFAULT_FREE_MODELS[0]);
+        writeStoredAgentModel(cwd, QAIQ_AGENT_ID, paid);
+        expect(ensureStoredAgentModel(cwd, QAIQ_AGENT_ID, [paid, free])?.modelId).to.equal('openai/gpt-5');
     });
 
     it('scopes stored model picks per authenticated user', () => {

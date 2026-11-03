@@ -189,7 +189,12 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
     const rerender = (): void => {
         void ctx.renderComposerAgentPicker(chrome, options);
     };
-    const wireSearchKeyboard = (onlyResult?: HTMLElement): void => {
+    /**
+     * Enter acts only on a result the user navigated to with the arrow keys (the focused one, which is
+     * a native button activation). With nothing navigated to, Enter closes the picker and keeps the
+     * current selection. Escape closes it from the search box or any result.
+     */
+    const wireSearchKeyboard = (results: readonly HTMLElement[] = []): void => {
         chrome.searchInput.oninput = rerender;
         chrome.searchInput.onkeydown = event => {
             if (event.key === 'Escape') {
@@ -201,11 +206,31 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
                 } else {
                     chrome.onClose();
                 }
-            } else if (event.key === 'Enter' && onlyResult) {
+            } else if (event.key === 'ArrowDown' && results.length > 0) {
                 event.preventDefault();
-                onlyResult.click();
+                results[0].focus();
+            } else if (event.key === 'Enter') {
+                event.preventDefault();
+                chrome.onClose();
             }
         };
+        results.forEach((result, index) => {
+            result.addEventListener('keydown', event => {
+                if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                    event.preventDefault();
+                    const next = event.key === 'ArrowDown' ? results[index + 1] : results[index - 1];
+                    if (next) {
+                        next.focus();
+                    } else if (event.key === 'ArrowUp') {
+                        chrome.searchInput.focus();
+                    }
+                } else if (event.key === 'Escape') {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    chrome.onClose();
+                }
+            });
+        });
     };
     if (chrome.searchInput.dataset.initialFocusApplied !== 'true') {
         chrome.searchInput.dataset.initialFocusApplied = 'true';
@@ -278,7 +303,7 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
             replaceAgentPickerLoading(chrome.list, ...Array.from(modelContent.childNodes));
         }
         const modelButtons = chrome.list.querySelectorAll<HTMLElement>('.theia-mobile-sticky-composer-sheet-option');
-        wireSearchKeyboard(modelButtons.length === 1 ? modelButtons[0] : undefined);
+        wireSearchKeyboard(Array.from(modelButtons));
         window.requestAnimationFrame(() => ctx.syncAgentPickerPopoverPosition(chrome.sheet));
         return;
     }
@@ -546,6 +571,6 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
     const resultButtons = chrome.list.querySelectorAll<HTMLElement>(
         '.theia-qaap-agent-sheet-option:not(.theia-qaap-agent-sheet-split-main), .theia-qaap-agent-sheet-split-chevron, .theia-qaap-agent-sheet-inline-model',
     );
-    wireSearchKeyboard(resultButtons.length === 1 ? resultButtons[0] : undefined);
+    wireSearchKeyboard(Array.from(resultButtons));
     window.requestAnimationFrame(() => ctx.syncAgentPickerPopoverPosition(chrome.sheet));
 }

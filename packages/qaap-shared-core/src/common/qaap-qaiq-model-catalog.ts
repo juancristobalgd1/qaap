@@ -173,11 +173,16 @@ export function formatQaiqModelIdShortLabel(modelId: string): string {
  * label), and only then the short slug.
  */
 export function formatQaiqModelDisplayLabel(model: { readonly modelId: string; readonly label?: string }): string {
-    const label = model.label?.trim();
-    if (label) {
-        return label;
-    }
     const modelId = model.modelId.trim();
+    const label = model.label?.trim() || resolveKnownModelLabel(modelId);
+    // A catalog label often drops the OpenRouter `:free` marker (`Gemma 4 31B (free)`); a free slug keeps it.
+    if (/:free$/i.test(modelId) && !/free/i.test(label)) {
+        return `${label} :free`;
+    }
+    return label;
+}
+
+function resolveKnownModelLabel(modelId: string): string {
     const known = OPENCODE_FALLBACK_MODELS.find(candidate => candidate.modelId === modelId)
         ?? OPENCODE_PAID_MODEL_OPTIONS.find(candidate => candidate.modelId === modelId);
     return known?.label ?? formatQaiqModelIdShortLabel(modelId);

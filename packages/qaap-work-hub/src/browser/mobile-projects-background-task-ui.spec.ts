@@ -252,4 +252,61 @@ describe('MobileProjectsBackgroundTaskUi', () => {
         expect((await createSession('auto', undefined)).snackbar).to.equal(undefined);
         expect((await createSession('worktree', 'qaap/worktree/a')).snackbar).to.equal(undefined);
     });
+
+    describe('paid-send gate on a new task', () => {
+        const project = { id: 'p1', name: 'app' } as unknown as MobileProjectEntry;
+        const paidModel = { provider: 'openai' as const, vendor: 'openrouter', modelId: 'openai/gpt-5' };
+        const freeModel = { provider: 'openai' as const, vendor: 'openrouter', modelId: 'google/gemma-4-31b-it:free' };
+
+        function uiWithInner(): { ui: MobileProjectsBackgroundTaskUi; innerCalls: number[] } {
+            const ui = new MobileProjectsBackgroundTaskUi({
+                projects: [],
+                preparedCwdByProjectId: new Map(),
+                justAddedTaskId: undefined,
+                agentsHubShellActive: false,
+                projectsService: { getProjectCwd: () => '/repo/app' } as never,
+                delegate: {},
+                transcriptSheetUi: {} as never,
+                transcriptLiveUi: {} as never,
+                shouldUseAgentsHubLanding: () => false,
+                renderSubtitle: () => undefined,
+                renderList: () => undefined,
+                seedTranscriptOptimisticSubmit: () => undefined,
+                syncWorkHubProjectSkillRoots: () => undefined,
+            });
+            const innerCalls: number[] = [];
+            ui['submitBackgroundAgentTaskInner'] = async (): Promise<undefined> => {
+                innerCalls.push(1);
+                return undefined;
+            };
+            return { ui, innerCalls };
+        }
+
+        it('does not start a task with a paid model the user declines', async () => {
+            const { ui, innerCalls } = uiWithInner();
+            ui['confirmPaidSend'] = async (): Promise<boolean> => false;
+            expect(await ui.submitBackgroundAgentTask(project, 'build it', { agentModel: paidModel })).to.be.undefined;
+            expect(innerCalls).to.be.empty;
+        });
+
+        it('starts the task once the paid send is confirmed', async () => {
+            const { ui, innerCalls } = uiWithInner();
+            ui['confirmPaidSend'] = async (): Promise<boolean> => true;
+            await ui.submitBackgroundAgentTask(project, 'build it', { agentModel: paidModel });
+            expect(innerCalls).to.have.length(1);
+        });
+
+        it('consults the gate for a free model and still starts the task', async () => {
+            const { ui, innerCalls } = uiWithInner();
+            let asked = 0;
+            ui['confirmPaidSend'] = async (): Promise<boolean> => {
+                asked++;
+                return true;
+            };
+            await ui.submitBackgroundAgentTask(project, 'build it', { agentModel: freeModel });
+            expect(innerCalls).to.have.length(1);
+            // The gate is consulted, but the real confirmation passes free models without a dialog.
+            expect(asked).to.equal(1);
+        });
+    });
 });

@@ -5,7 +5,7 @@
 
 import type { QaapAgentTask, QaapCreateAgentTaskQaiqModel } from './qaap-agent-task';
 import type { QaapAgentModelFallbackReason } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
-import { agentSupportsModelPicker } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
+import { agentSupportsModelPicker, isFreeAgentModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
 import {
     agentUsesNativeModelCatalog,
     agentUsesSettingsModelCatalog,
@@ -69,17 +69,8 @@ function modelsFromByokDescriptor(descriptor: QaapQaiqByokProviderDescriptor): Q
     }));
 }
 
-/** OpenRouter's free-tier slug suffix. The catalogs carry no price, so the slug is the free marker. */
-const FREE_MODEL_SLUG_SUFFIX = ':free';
-
-/**
- * True for a free model: an OpenRouter free-tier slug (`:free`, or the `/free` router). Every other model
- * is treated as paid.
- */
-export function isFreeAgentModel(model: QaapCreateAgentTaskQaiqModel | undefined): boolean {
-    const modelId = model?.modelId?.trim().toLowerCase() ?? '';
-    return modelId.endsWith(FREE_MODEL_SLUG_SUFFIX) || modelId.endsWith('/free');
-}
+/** Free-model rule shared with the composer (Paid badge, paid-send confirmation); see the shared module. */
+export { isFreeAgentModel };
 
 /**
  * Ordered model candidates for one agent — current pick first, then fallbacks. Native catalogs prefer

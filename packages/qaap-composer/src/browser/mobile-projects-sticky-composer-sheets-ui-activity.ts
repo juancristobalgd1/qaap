@@ -2,6 +2,7 @@ import type { MobileProjectsStickyComposerSheetsUiContext } from './mobile-proje
 // Extracted from mobile-projects-sticky-composer-sheets-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
+import { isFreeAgentModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
 import {
     agentUsesSettingsModelCatalog,
     isSameAgentModel,
@@ -26,6 +27,7 @@ import {
 import { qaiqModelSupportsToolCalls } from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-support';
 import { formatQaiqModelProviderLabel } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 import {
+    formatQaiqModelDisplayLabel,
     groupQaiqModelsByProvider,
 } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
 
@@ -107,13 +109,13 @@ export function appendAgentModelPickerListExtracted(ctx: MobileProjectsStickyCom
             return;
         }
         const isOpenCode = agentId.trim().toLowerCase() === OPENCODE_AGENT_ID;
+        // Free models come first, then paid ones; each group keeps its provider header.
         const sections: readonly AgentModelPickerSection[] = isOpenCode
             ? splitOpenCodeModelSections(agentCapableModels)
-            : Array.from(groupQaiqModelsByProvider(agentCapableModels), ([vendor, providerModels]) => ({
-                vendor,
-                models: providerModels,
-                paid: false,
-            }));
+            : [
+                ...providerSections(agentCapableModels.filter(model => isFreeAgentModel(model))),
+                ...providerSections(agentCapableModels.filter(model => !isFreeAgentModel(model))),
+            ];
         // Pi's `/login` can add providers at any time, so its first group always offers Sign in.
         const isPi = agentId.trim().toLowerCase() === PI_AGENT_ID;
         let piSignInShown = false;
@@ -158,8 +160,10 @@ export function appendAgentModelPickerListExtracted(ctx: MobileProjectsStickyCom
                 const lockedSignIn = isOpenCode && model.available === false && model.unavailableReason === 'not-connected'
                     ? onSignIn
                     : undefined;
+                // OpenCode's paid group already carries a "Paid" header, so only other paid rows get the badge.
+                const paidBadge = !isOpenCode && model.available !== false && !isFreeAgentModel(model);
                 section.append(createPickerSheetOptionButton({
-                    label: model.label || model.modelId,
+                    label: formatQaiqModelDisplayLabel({ modelId: model.modelId, label: model.label }),
                     llmVendor: model.vendor,
                     llmModelId: model.modelId,
                     selected: isSameAgentModel(storedModel, model),
@@ -173,7 +177,7 @@ export function appendAgentModelPickerListExtracted(ctx: MobileProjectsStickyCom
                         : undefined,
                     badgeLabel: model.available === false
                         ? nls.localize('qaap/mobileProjects/modelPickerLocked', 'Locked')
-                        : undefined,
+                        : (paidBadge ? nls.localize('qaap/agentPicker/paidModels', 'Paid') : undefined),
                     badgeWarning: model.available === false,
                     onLockedSelect: lockedSignIn,
                     onSelect: () => onSelect(model),
@@ -181,6 +185,15 @@ export function appendAgentModelPickerListExtracted(ctx: MobileProjectsStickyCom
             }
             list.append(section);
         }
+}
+
+/** One provider-headed group per vendor, in the order the models arrive. */
+function providerSections(models: readonly QaapQaiqModelOption[]): AgentModelPickerSection[] {
+    return Array.from(groupQaiqModelsByProvider(models), ([vendor, providerModels]) => ({
+        vendor,
+        models: providerModels,
+        paid: false,
+    }));
 }
 
 /** One picker group; `paid` marks the locked OpenCode group that carries the sign-in header action. */

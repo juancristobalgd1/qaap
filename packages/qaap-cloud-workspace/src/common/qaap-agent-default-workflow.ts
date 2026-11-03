@@ -325,6 +325,8 @@ export function buildAgentHonestReportingPromptBlock(): string {
         'A single passing check does not override multiple failing checks. If any check fails, the overall status is not "fixed" — it is "partially verified with remaining failures".',
         'Do not describe a fix as "minimal" or "surgical" if you changed more than one file for a single bug — state the actual number of files changed and why.',
         'For every claim you mark as verified, cite the evidence: the exact command you ran and its key output line.',
+        'Overwrites and deletions: if you replaced, rewrote, truncated, or deleted existing content in a file the task did not ask you to modify, say so explicitly in the final message — name the file and what was removed. Never describe a replacement as a creation.',
+        'Do not overwrite an existing file that the task did not mention. Ask the user before doing so instead of replacing it silently.',
     ].join('\n');
 }
 
