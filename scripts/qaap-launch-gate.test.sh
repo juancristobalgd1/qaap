@@ -122,7 +122,10 @@ NODE
 }
 write_inspect good
 export TEST_TENANTS=1
-expect_status 1 qaap-vps-launch-gate.sh
+expect_status 0 qaap-vps-launch-gate.sh
+grep -q 'WARN only 1 tenant(s)' "$TEST_ROOT/output" && grep -q 'warning: release not exercised with two tenants' "$TEST_ROOT/output" \
+    || { cat "$TEST_ROOT/output"; echo 'expected single-tenant warning' >&2; exit 1; }
+grep -Eq '^[0-9]+ passed, 0 failed, [0-9]+ warnings?$' "$TEST_ROOT/output" || { cat "$TEST_ROOT/output"; echo 'expected 0 failed in summary' >&2; exit 1; }
 export TEST_TENANTS=2 TEST_ISOLATION_EXIT=1
 expect_status 1 qaap-vps-launch-gate.sh
 export TEST_ISOLATION_EXIT=0
@@ -143,23 +146,26 @@ export TEST_BACKEND_SECRET_LEN=31
 expect_status 1 qaap-vps-launch-gate.sh
 
 # Backend-per-tenant mode: evidence is Qaap-managed tenant backend containers, not the host-mode
-# uid registry (which stays empty there). Fewer than two tenants and any isolation break still fail.
+# uid registry (which stays empty there). Fewer than two tenants is a warning; any isolation break still fails.
 export TEST_TENANTS=0 TEST_BACKEND_PER_TENANT=1 TEST_BACKEND_SECRET_LEN=32
 expect_status 0 qaap-vps-launch-gate.sh
 grep -q 'tenant backend containers: 2 (alice bob)' "$TEST_ROOT/output" || { cat "$TEST_ROOT/output"; echo 'expected backend evidence' >&2; exit 1; }
 grep -q 'uid registry' "$TEST_ROOT/output" && { cat "$TEST_ROOT/output"; echo 'per-tenant mode must not read the uid registry' >&2; exit 1; }
 export TEST_TENANT_BACKENDS='alice qaap-backend-aaaaaaaaaaaa
 '
-expect_status 1 qaap-vps-launch-gate.sh
-# Two containers of the same tenant, anonymous or malformed rows are not two tenants.
+expect_status 0 qaap-vps-launch-gate.sh
+grep -q 'WARN only 1 tenant backend(s)' "$TEST_ROOT/output" || { cat "$TEST_ROOT/output"; echo 'expected one-tenant warning' >&2; exit 1; }
+# Two containers of the same tenant, anonymous or malformed rows are not two tenants (warning, not a pass).
 export TEST_TENANT_BACKENDS='alice qaap-backend-aaaaaaaaaaaa
 alice qaap-backend-cccccccccccc
 __anonymous__ qaap-backend-dddddddddddd
 bob not-a-backend
 '
-expect_status 1 qaap-vps-launch-gate.sh
+expect_status 0 qaap-vps-launch-gate.sh
+grep -q 'tenant backend containers: 1 (alice)' "$TEST_ROOT/output" || { cat "$TEST_ROOT/output"; echo 'expected one distinct tenant' >&2; exit 1; }
 export TEST_TENANT_BACKENDS=''
-expect_status 1 qaap-vps-launch-gate.sh
+expect_status 0 qaap-vps-launch-gate.sh
+grep -q 'tenant backend containers: 0 (none)' "$TEST_ROOT/output" || { cat "$TEST_ROOT/output"; echo 'expected zero-tenant warning' >&2; exit 1; }
 unset TEST_TENANT_BACKENDS
 # Container uid 0 is accepted only when the daemon reports rootless (it maps to the daemon owner).
 write_inspect good
@@ -262,4 +268,4 @@ export TEST_AUTH_CONFIG='{"ok":true,"ready":true,"skipAuth":false,"oauthConfigur
 expect_status 1 qaap-verify-launch-readiness.sh
 export TEST_AUTH_CONFIG='{"ok":true,"ready":true,"skipAuth":false,"oauthConfigured":true,"githubOAuth":true,"productionRuntime":true,"agentUidPerUser":true,"backendIsolationReady":true,"backendIsolationMode":"per-tenant","build":"abcdef123456","betaAccessRequired":true,"betaAccessConfigured":true}'
 expect_status 0 qaap-verify-launch-readiness.sh
-echo 'PASS: missing tenants, uid/flag/LEAK/inconclusive probes, stopped/paused-backend drift, paused-only/drifted-paused/restarting/none probe targets, failed isolation, per-tenant backend evidence/isolation, successful isolation, missing preview domain, operator-only allowlist, missing invitations, configured invitations'
+echo 'PASS: fewer than two tenants (warning), missing tenants, uid/flag/LEAK/inconclusive probes, stopped/paused-backend drift, paused-only/drifted-paused/restarting/none probe targets, failed isolation, per-tenant backend evidence/isolation, successful isolation, missing preview domain, operator-only allowlist, missing invitations, configured invitations'

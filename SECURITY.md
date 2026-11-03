@@ -180,9 +180,15 @@ Current state of these paths:
 > and `scripts/qaap-verify-auth-api-gate.sh` against the live origin (the launch probe now also
 > requires `/legal/terms.html` and `/legal/privacy.html`). Every VPS
 > deploy now runs `scripts/qaap-vps-launch-gate.sh` (nightly backup cron + uid-per-user
-> verification). A failed check or fewer than two provisioned test tenants now
-> **blocks the beta release**. Provision two disposable invited GitHub accounts
-> and exercise agent + New Worktree before declaring the release ready.
+> verification). A failed check now **blocks the beta release**. Fewer than two
+> provisioned test tenants is a **warning**, not a failure: the gate prints
+> `WARN ... (warning: release not exercised with two tenants)`, counts it under
+> `N warning(s)` and still exits 0. This is the owner's decision for single-operator
+> deployments, which have only the operator's own account and cannot supply a second
+> tenant. Every other check (isolation, uid, probe, Docker, Stripe dev-checkout) still
+> fails the release. Before inviting other users, provision two disposable invited
+> GitHub accounts and exercise agent + New Worktree, then re-run the gate so the
+> warning disappears.
 > Tenant evidence depends on the mode: with backend-per-tenant (`QAAP_BACKEND_PER_TENANT=1`) the
 > gate counts distinct tenants with a Qaap-managed `qaap-backend-*` container in the tenant Docker
 > daemon and verifies two of them with `scripts/qaap-tenant-backend-isolation-check.js` (labels,
