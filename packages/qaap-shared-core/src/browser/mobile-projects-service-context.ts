@@ -58,6 +58,7 @@ export type MobileProjectsServiceContextMember =
     | 'readPinnedProjectIds'
     | 'recordProjectSession'
     | 'registerGithubWorkspaceProject'
+    | 'registerLocalWorkspaceProject'
     | 'relativeUpdatedAt'
     | 'repositoryImports'
     | 'resolveDisplayName'

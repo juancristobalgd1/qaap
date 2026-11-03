@@ -119,15 +119,16 @@ describe('MobileProjectsStickyComposerWorkspaceUi', () => {
 
         const labels = [...document.body.querySelectorAll<HTMLElement>('.theia-mobile-sticky-composer-sheet-option-label')]
             .map(label => label.textContent?.trim());
-        expect(labels.slice(0, 4)).to.deep.equal([
-            'Start new project',
+        expect(labels.slice(0, 5)).to.deep.equal([
+            'New local project',
+            'New GitHub repository',
             'Add repository',
             'Current',
             'Next',
         ]);
         const startNew = [...document.body.querySelectorAll<HTMLElement>('.theia-mobile-sticky-composer-sheet-option')]
-            .find(option => option.textContent?.includes('Start new project'));
-        expect(startNew?.querySelector('.codicon-repo')).to.not.equal(null);
+            .find(option => option.textContent?.includes('New GitHub repository'));
+        expect(startNew?.querySelector('.codicon-github')).to.not.equal(null);
     });
 
     it('opens the project menu as a top popover when anchored to the Work Hub header control', () => {

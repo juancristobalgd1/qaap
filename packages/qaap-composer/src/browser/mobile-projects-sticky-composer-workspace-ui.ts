@@ -369,11 +369,19 @@ export class MobileProjectsStickyComposerWorkspaceUi {
         actionsLabel.textContent = nls.localize('qaap/composerWorkspace/projectSheetActions', 'Add');
         list.append(actionsLabel);
         list.append(this.createComposerProjectSheetAction({
-            iconClass: 'codicon-repo',
-            label: nls.localize('qaap/mobileOpenRepo/startNewProject', 'Start new project'),
+            iconClass: 'codicon-new-folder',
+            label: nls.localize('qaap/newProject/menuLocal', 'New local project'),
             onSelect: () => {
                 this.host.stickyComposerSheetsUi.closeStickyComposerSheets();
-                void this.onCreateNewProjectFromSheet();
+                void this.onCreateNewProjectFromSheet('local');
+            },
+        }));
+        list.append(this.createComposerProjectSheetAction({
+            iconClass: 'codicon-github',
+            label: nls.localize('qaap/newProject/menuGithub', 'New GitHub repository'),
+            onSelect: () => {
+                this.host.stickyComposerSheetsUi.closeStickyComposerSheets();
+                void this.onCreateNewProjectFromSheet('github');
             },
         }));
         list.append(this.createComposerProjectSheetAction({
@@ -529,9 +537,11 @@ export class MobileProjectsStickyComposerWorkspaceUi {
         btn.addEventListener('click', () => options.onSelect());
         return btn;
     }
-    async onCreateNewProjectFromSheet(): Promise<void> {
+    async onCreateNewProjectFromSheet(kind: 'local' | 'github' = 'github'): Promise<void> {
         const previousIds = new Set(this.host.projects.map(entry => entry.id));
-        const nextProjects = await this.host.projectsService.createGithubProject();
+        const nextProjects = kind === 'local'
+            ? await this.host.projectsService.createLocalProject()
+            : await this.host.projectsService.createGithubProject();
         if (!nextProjects) {
             return;
         }

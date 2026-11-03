@@ -6,6 +6,7 @@ import { SingleTextInputDialog } from '@theia/core/lib/browser/dialogs';
 import { nls } from '@theia/core/lib/common/nls';
 import {
     createQaapGithubRepository,
+    createQaapLocalProject,
     openQaapGithubRepository,
 } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import type { QaapGithubOpenRepositoryResponse, QaapGithubRepositorySummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
@@ -31,6 +32,7 @@ import { setLocalProjectRemoved } from './mobile-projects-session-cache';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import { QaapWorkspaceService } from './qaap-workspace-service';
 import { readQaapAuthUser } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
+import { QaapNewProjectDialog } from './qaap-new-project-dialog';
 import { parseQaapWorkspaceRepoRoot, safeUserIdSegment } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import {
     mobileProjectsUserStorageKey,
@@ -367,21 +369,10 @@ export async function openGithubProjectExtracted(ctx: MobileProjectsServiceConte
 }
 
 export async function createGithubProjectExtracted(ctx: MobileProjectsServiceContext): Promise<MobileProjectEntry[] | undefined> {
-        const dialog = new SingleTextInputDialog({
-            title: nls.localize('qaap/mobileProjects/createGithubRepo', 'Create GitHub repository'),
-            placeholder: nls.localize('qaap/mobileProjects/createGithubRepoPlaceholder', 'repository-name'),
-            validate: (value, mode) => {
-                const name = value.trim();
-                if (mode !== 'preview' && !name) {
-                    return nls.localize('qaap/mobileProjects/createGithubRepoRequired', 'Enter a repository name');
-                }
-                if (name && (!/^[A-Za-z0-9_.-]+$/.test(name) || name.startsWith('.'))) {
-                    return nls.localize('qaap/mobileProjects/createGithubRepoInvalid', 'Use letters, numbers, dashes, underscores, or dots');
-                }
-                return true;
-            },
-        });
-        const name = (await dialog.open())?.trim();
+        // The owner is the signed-in account (the API creates repositories for the token's user).
+        const owner = readQaapAuthUser()?.login;
+        const value = await new QaapNewProjectDialog({ kind: 'github', owner }).open();
+        const name = value?.name;
         if (!name) {
             return undefined;
         }
@@ -390,7 +381,7 @@ export async function createGithubProjectExtracted(ctx: MobileProjectsServiceCon
             { kind: 'loading' }
         );
         try {
-            const result = await createQaapGithubRepository({ name, private: true });
+            const result = await createQaapGithubRepository({ name, private: value.private });
             const workspaceUri = new URI(result.workspaceUri);
             ctx.registerGithubWorkspaceProject(result.repository, workspaceUri);
             if (!await ctx.openWorkspaceUri(workspaceUri)) {
@@ -405,6 +396,69 @@ export async function createGithubProjectExtracted(ctx: MobileProjectsServiceCon
             MobileSnackbar.dismiss();
             await ctx.messageService.error(err instanceof Error ? err.message : String(err));
             return undefined;
+        }
+}
+
+/** "New local project": a git folder on this workspace only; nothing is created on GitHub. */
+export async function createLocalProjectExtracted(ctx: MobileProjectsServiceContext): Promise<MobileProjectEntry[] | undefined> {
+        const value = await new QaapNewProjectDialog({ kind: 'local' }).open();
+        const name = value?.name;
+        if (!name) {
+            return undefined;
+        }
+        MobileSnackbar.show(
+            nls.localize('qaap/mobileProjects/creatingLocalProject', 'Creating {0}…', name),
+            { kind: 'loading' }
+        );
+        try {
+            const result = await createQaapLocalProject(name);
+            const workspaceUri = new URI(result.workspaceUri);
+            ctx.registerLocalWorkspaceProject(result.name, workspaceUri);
+            if (!await ctx.openWorkspaceUri(workspaceUri)) {
+                return ctx.loadProjects();
+            }
+            MobileSnackbar.show(
+                nls.localize('qaap/mobileProjects/localProjectCreated', 'Created {0}', result.name),
+                { kind: 'success', duration: 2400 }
+            );
+            return ctx.loadProjects();
+        } catch (err) {
+            MobileSnackbar.dismiss();
+            await ctx.messageService.error(err instanceof Error ? err.message : String(err));
+            return undefined;
+        }
+}
+
+export function registerLocalWorkspaceProjectExtracted(ctx: MobileProjectsServiceContext, name: string, uri: URI): void {
+        const custom = ctx.readCustomProjects();
+        const id = `custom:${uri.toString()}`;
+        const existing = custom.findIndex(project => project.id === id || project.uri === uri.toString());
+        const now = new Date().toISOString();
+        const entry: StoredMobileProject = {
+            id,
+            name,
+            color: mobileProjectColorForName(name),
+            branch: 'main',
+            status: 'idle',
+            task: nls.localize('qaap/mobileProjects/recentTask', 'Tap to open workspace'),
+            progress: 0,
+            agents: [],
+            lastActive: ctx.relativeUpdatedAt(now),
+            lastActiveAt: now,
+            tokens: '—',
+            cost: '—',
+            pinned: false,
+            uri: uri.toString(),
+        };
+        if (existing >= 0) {
+            custom[existing] = { ...custom[existing], ...entry, pinned: custom[existing].pinned };
+        } else {
+            custom.push(entry);
+        }
+        ctx.writeCustomProjects(custom);
+        const hiddenIds = ctx.readHiddenProjectIds();
+        if (hiddenIds.delete(id)) {
+            ctx.writeHiddenProjectIds(hiddenIds);
         }
 }
 
