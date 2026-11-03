@@ -1,4 +1,5 @@
 import { buildPiGateTemplateVars } from './qaap-tool-gate-pi-adapter';
+import { buildPiDefaultModelFlagShell } from '@theia/qaap-shared-core/lib/common/qaap-pi-default-model';
 import { AGENT_STOP_GRACE_TIMEOUT_MS, SHELL_AGENT_ID, QAIQ_AGENT_ID, REPO_MAP_CACHE_TTL_MS, REPO_MAP_MAX_CHARS, USER_REQUEST_MAX_CHARS } from './qaap-agent-task-runner-constants';
 import type { QaapAgentCommandBuildResult, QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { QaapAgentQueuePolicy } from './qaap-agent-queue-policy';
@@ -39,7 +40,7 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-interaction-flags';
 import type { QaapAgentApprovalPolicyId } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model-catalog';
-import { canEnforceReadOnlyWorkspace } from '../common/qaap-agent-readonly-workspace';
+import { canEnforceReadOnlyWorkspace, withPiPlanModeInstruction } from '../common/qaap-agent-readonly-workspace';
 import { listNativeAgentModels } from './qaap-agent-native-models';
 import {
     applyAgentApprovalPolicyToCommand,
@@ -364,7 +365,7 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
         readOnlyWorkspace?: boolean,
         ownerLogin?: string,): QaapAgentCommandBuildResult {
         const id = ctx.resolveAgentId(prompt, agentId, ownerLogin);
-        const runnerPrompt = ctx.stripLeadingAgentMention(prompt);
+        const runnerPrompt = withPiPlanModeInstruction(ctx.stripLeadingAgentMention(prompt), id, interactionModeId);
         if (id === SHELL_AGENT_ID) {
             return { command: runnerPrompt, agentId: id };
         }
@@ -623,7 +624,13 @@ export function buildTemplateVarsExtracted(ctx: QaapAgentTaskRunnerContext, agen
         ownerLogin?: string,
         cwd?: string,): Record<string, string> {
         const vars = buildBaseTemplateVars(ctx, agentId, agentModel, interaction, ownerLogin, cwd);
-        return agentId.trim().toLowerCase() === 'pi' ? { ...vars, ...buildPiGateTemplateVars() } : vars;
+        if (agentId.trim().toLowerCase() !== 'pi') {
+            return vars;
+        }
+        // No model chosen: Pi would pick its own (often a down free model). The product default is resolved by
+        // the shell inside the Pi child, so it sees that child's HOME and pins (see buildPiDefaultModelFlagShell).
+        const modelFlags = vars.model_flags || buildPiDefaultModelFlagShell();
+        return { ...vars, model_flags: modelFlags, ...buildPiGateTemplateVars() };
 }
 
 function buildBaseTemplateVars(ctx: QaapAgentTaskRunnerContext, agentId: string,

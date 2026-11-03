@@ -9,6 +9,7 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as http from 'http';
 import * as path from 'path';
+import { resolveQaapPackageFile } from '@theia/qaap-shared-core/lib/node/qaap-package-file';
 import type * as Dockerode from 'dockerode';
 import { QAAP_TENANT_RUNTIME_API_PATH } from '../common/qaap-cloud-api-types';
 import { resolveQaapDockerLogConfig } from './qaap-docker-control-plane';
@@ -714,7 +715,9 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
     }
 
     protected execServerSource(): string {
-        return fs.readFileSync(path.join(__dirname, EXEC_SERVER_FILE), 'utf8');
+        return fs.readFileSync(resolveQaapPackageFile('@theia/qaap-cloud-workspace', `lib/node/${EXEC_SERVER_FILE}`, {
+            directCandidate: path.join(__dirname, EXEC_SERVER_FILE),
+        }), 'utf8');
     }
 
     /**

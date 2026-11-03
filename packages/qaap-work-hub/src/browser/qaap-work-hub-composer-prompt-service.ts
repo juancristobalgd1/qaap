@@ -9,9 +9,9 @@ import { MessageService } from '@theia/core/lib/common/message-service';
 import { nls } from '@theia/core/lib/common/nls';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
+import { getQaapDefaultAgentId } from '@theia/qaap-shared-core/lib/common/qaap-default-agent-id';
 import { createConversation, createConversationRequestId } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
-    QAAP_COMPOSER_DEFAULT_AGENT_ID,
     readStoredAgent,
     type QaapCreateAgentTaskQaiqModel,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
@@ -146,7 +146,7 @@ export class QaapWorkHubComposerPromptService {
             ));
             return;
         }
-        const agent = options.agentId ?? readStoredAgent(cwd) ?? QAAP_COMPOSER_DEFAULT_AGENT_ID;
+        const agent = options.agentId ?? readStoredAgent(cwd) ?? getQaapDefaultAgentId();
         const agentModel = options.agentModel ?? resolveStoredAgentModelForSubmit(agent, cwd);
         const retry = this.pendingSubmit?.prompt === prompt && this.pendingSubmit.cwd === cwd ? this.pendingSubmit : undefined;
         const clientRequestId = retry?.clientRequestId ?? createConversationRequestId();

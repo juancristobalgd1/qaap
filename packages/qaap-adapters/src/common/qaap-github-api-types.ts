@@ -47,6 +47,8 @@ export interface QaapAuthConfigResponse {
      * agent logins such as Cursor Agent.
      */
     productionRuntime?: boolean;
+    /** The default agent id the backend uses for new composers and routines (`QAAP_DEFAULT_AGENT_ID`, else `qaiq`). */
+    defaultAgentId?: string;
 }
 
 /** Public process liveness. Secrets never belong here — keep in sync with `/auth/config`. */

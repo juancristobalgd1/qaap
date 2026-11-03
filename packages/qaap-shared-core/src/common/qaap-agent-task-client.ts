@@ -18,6 +18,7 @@ import {
 import { isQaapHarnessEnabled, readDisabledHarnessIds } from './qaap-harness-preferences';
 import { OPENCODE_FREE_MODEL_OPTIONS, OPENCODE_PAID_MODEL_OPTIONS } from './qaap-opencode-model-catalog';
 import { resolveStoredAgentModelForSubmit } from './qaap-agent-model-selection';
+import { getQaapDefaultAgentId } from './qaap-default-agent-id';
 
 export {
     agentSupportsModelPicker,
@@ -43,9 +44,6 @@ export const PI_AGENT_ID = 'pi';
 
 /** Legacy product default — still used for QAIQ-specific parsing and explicit QAIQ pins. */
 export const QAAP_PRIMARY_AGENT_ID = QAIQ_AGENT_ID;
-
-/** Composer / Work Hub default when no per-project agent is stored. */
-export const QAAP_COMPOSER_DEFAULT_AGENT_ID = QAIQ_AGENT_ID;
 
 /** @deprecated Kept for QAIQ-family protocol and transcript compatibility. */
 export const LEGACY_OPENCLAUDE_AGENT_ID = OPENCLAUDE_AGENT_ID;
@@ -302,15 +300,15 @@ export function reconcileSelectedAgent(
     if (stored && ids.has(stored)) {
         return stored;
     }
-    if (!normalizedCurrent && !stored && ids.has(QAAP_COMPOSER_DEFAULT_AGENT_ID)) {
-        return QAAP_COMPOSER_DEFAULT_AGENT_ID;
+    if (!normalizedCurrent && !stored && ids.has(getQaapDefaultAgentId())) {
+        return getQaapDefaultAgentId();
     }
     const normalizedDefault = migrateQaapProductAgentId(defaultAgent);
     if (normalizedDefault && ids.has(normalizedDefault)) {
         return normalizedDefault;
     }
-    if (ids.has(QAAP_COMPOSER_DEFAULT_AGENT_ID)) {
-        return QAAP_COMPOSER_DEFAULT_AGENT_ID;
+    if (ids.has(getQaapDefaultAgentId())) {
+        return getQaapDefaultAgentId();
     }
     if (ids.has(QAAP_PRIMARY_AGENT_ID)) {
         return QAAP_PRIMARY_AGENT_ID;
@@ -376,7 +374,7 @@ export function filterQaapComposerAgents(
 
 /**
  * Sticky/transcript composer agent picker — honors the current/stored choice, then defaults to
- * {@link QAAP_COMPOSER_DEFAULT_AGENT_ID} when available. Returns undefined when no coding CLI is installed
+ * {@link getQaapDefaultAgentId} when available. Returns undefined when no coding CLI is installed
  * (never invents Shell).
  */
 export function reconcileStickyComposerAgent(

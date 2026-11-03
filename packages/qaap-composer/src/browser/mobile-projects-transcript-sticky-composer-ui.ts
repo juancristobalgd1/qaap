@@ -16,10 +16,8 @@ import {
     type QaapMessageDeliveryMode,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { type ComposerGitActionDisplayMetadata } from '@theia/qaap-shared-core/lib/common/qaap-composer-git-action-display';
-import {
-    QAAP_COMPOSER_DEFAULT_AGENT_ID,
-    type QaapAgentTaskAgentOption,
-} from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { type QaapAgentTaskAgentOption } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { getQaapDefaultAgentId } from '@theia/qaap-shared-core/lib/common/qaap-default-agent-id';
 import { mergePendingUserMessagesWithLocalQueue } from '@theia/qaap-shared-core/lib/common/qaap-pending-user-messages-merge';
 import type { MobileComposerAttachHandlers } from './qaap-mobile-composer-device-attach';
 import {
@@ -630,7 +628,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
         applyTranscriptComposerPrefsExtracted(this, prefs, project, summary, conversationId);
     }
 
-    resetToProjectComposerDefaults(project: MobileProjectEntry, defaultAgentId: string = QAAP_COMPOSER_DEFAULT_AGENT_ID,): void {
+    resetToProjectComposerDefaults(project: MobileProjectEntry, defaultAgentId: string = getQaapDefaultAgentId(),): void {
         resetToProjectComposerDefaultsExtracted(this, project, defaultAgentId);
     }
 

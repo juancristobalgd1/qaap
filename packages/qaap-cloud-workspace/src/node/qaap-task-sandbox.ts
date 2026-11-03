@@ -11,6 +11,7 @@ import * as fs from 'fs';
 import * as net from 'net';
 import * as os from 'os';
 import * as path from 'path';
+import { resolveQaapPackageFile } from '@theia/qaap-shared-core/lib/node/qaap-package-file';
 import { QAAP_TENANT_LOGIN_ENV } from '@theia/qaap-adapters/lib/common/qaap-tenant-backend-auth';
 import { normalizeQaapForwardedPortOwner, type QaapDevPreviewForwardedPorts } from '@theia/qaap-shared-core/lib/node/qaap-dev-preview-forwarded-ports';
 import { QaapDevcontainerResolver, type QaapTaskSandboxImagePlan } from './qaap-devcontainer-config';
@@ -990,7 +991,10 @@ export class QaapTaskSandboxService implements BackendApplicationContribution, Q
         const dir = this.execRequestDir();
         const requestFile = path.join(dir, `${crypto.randomBytes(12).toString('hex')}.json`);
         fs.writeFileSync(requestFile, JSON.stringify(request), { mode: 0o600, flag: 'wx' });
-        return { file: process.execPath, args: [path.join(__dirname, 'qaap-task-sandbox-exec-client-main.js'), requestFile] };
+        const client = resolveQaapPackageFile('@theia/qaap-cloud-workspace', 'lib/node/qaap-task-sandbox-exec-client-main.js', {
+            directCandidate: path.join(__dirname, 'qaap-task-sandbox-exec-client-main.js'),
+        });
+        return { file: process.execPath, args: [client, requestFile] };
     }
 
     protected execRequestDir(): string {

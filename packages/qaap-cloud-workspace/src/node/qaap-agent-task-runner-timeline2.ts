@@ -16,6 +16,7 @@ import { awaitQaapAgentTaskSpawnGate } from './qaap-agent-task-spawn-gate';
 import { resolveAgentTaskBillingRejection } from './qaap-agent-task-billing-gate';
 import { finishTaskWithPauseCause } from './qaap-agent-task-runner-streaming2';
 import { createOpencodeFatalStderrWatcher } from './qaap-opencode-fatal-error';
+import { createPiProviderErrorWatcher } from './qaap-pi-provider-error-watcher';
 import { removeStaleOpencodeSnapshotLocks } from './qaap-opencode-snapshot-lock';
 // Extracted from qaap-agent-task-runner.ts
 
@@ -28,6 +29,7 @@ import {
     type QaapCreateAgentTaskRequest,
 } from '../common/qaap-agent-task';
 import { isQaapHostedEnvironment } from '@theia/qaap-adapters/lib/common/qaap-hosted-runtime';
+import { isPiAgent } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import {
     buildQaiqControlResponseLine,
     buildQaiqStdioPromptLine,
@@ -729,6 +731,8 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                 }
             }
         };
+        // Pi exits 0 after a provider error; its JSON stream is the only place the failure shows.
+        const piProviderErrorWatcher = isPiAgent(task.agentId) ? createPiProviderErrorWatcher() : undefined;
         child.stdout?.on('data', chunk => {
             if (isAgentProgressChunk(chunk)) {
                 bumpIdleTimer();
@@ -736,6 +740,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             ctx.recordTaskLatencyMark(task.id, 'first_stdout_chunk');
             logStream.write(chunk);
             ctx.fireOutput(task.id, chunk);
+            piProviderErrorWatcher?.push(Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk));
             if (ctx.qaiqStdioTasks.has(task.id)) {
                 scanStdioApprovalChunk(chunk);
             }
@@ -804,11 +809,15 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                 ctx.finishTask(task.id, 'completed_with_warnings', code ?? undefined);
                 return;
             }
-            if (code === 0 && QAAP_AGENT_VERIFY_ENABLED && !isConversationalTurnTask(ctx.tasks.get(task.id) ?? task)) {
+            // A Pi provider error is a failed turn even though the process exited 0.
+            const piProviderError = piProviderErrorWatcher?.finalError();
+            const turnFailed = code !== 0 || piProviderError !== undefined;
+            const settledExitCode = code === 0 && turnFailed ? 1 : code ?? undefined;
+            if (!turnFailed && QAAP_AGENT_VERIFY_ENABLED && !isConversationalTurnTask(ctx.tasks.get(task.id) ?? task)) {
                 void ctx.finishSuccessfulTaskAfterVerification(task, code ?? undefined);
                 return;
             }
-            if (code !== 0 && childEnv && canProbeProviderKey(childEnv, agentModel?.vendor, agentModel?.modelId)) {
+            if (turnFailed && childEnv && canProbeProviderKey(childEnv, agentModel?.vendor, agentModel?.modelId)) {
                 // QAIQ blames "the selected model" for any OpenRouter 4xx: ask OpenRouter about the
                 // BYOK key before settling, so the failure names the key instead of the model. A
                 // global cap keeps a stuck stream or probe from leaving the task `running`.
@@ -822,12 +831,12 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                     .finally(() => {
                         clearTimeout(capTimer);
                         if (ctx.tasks.get(task.id)?.state === 'running') {
-                            ctx.finishTask(task.id, 'failed', code ?? undefined);
+                            ctx.finishTask(task.id, 'failed', settledExitCode);
                         }
                     });
                 return;
             }
-            ctx.finishTask(task.id, code === 0 ? 'completed' : 'failed', code ?? undefined);
+            ctx.finishTask(task.id, turnFailed ? 'failed' : 'completed', settledExitCode);
         });
 }
 

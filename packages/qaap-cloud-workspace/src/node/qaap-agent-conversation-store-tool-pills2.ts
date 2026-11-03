@@ -1,4 +1,5 @@
 // Extracted from qaap-agent-conversation-store.ts
+import { discoveredFallbackModels } from './qaap-agent-model-fallback-candidates';
 import type { QaapAgentClosingReport } from '../common/qaap-agent-closing-report';
 import type { QaapAgentConversationStoreContext } from './qaap-agent-conversation-store-context';
 
@@ -54,7 +55,7 @@ export function maybeRetryTurnWithFallbackModelExtracted(ctx: QaapAgentConversat
         if (currentKey) {
             tried.add(currentKey);
         }
-        const nextModel = resolveNextFallbackAgentModel(turnAgentId, currentModel, tried);
+        const nextModel = resolveNextFallbackAgentModel(turnAgentId, currentModel, tried, discoveredFallbackModels(turnAgentId, conv.ownerLogin));
         if (!nextModel) {
             ctx.modelFallbackTriedByUserMessage.delete(loopBudgetKey);
             return false;

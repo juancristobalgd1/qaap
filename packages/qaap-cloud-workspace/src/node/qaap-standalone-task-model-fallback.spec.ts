@@ -276,7 +276,7 @@ describe('QaapStandaloneTaskModelFallback', () => {
     it('retries a plain-text turn whose CLI itself ends on an unavailable model', async () => {
         const runner = fakeRunner();
         const service = fallbackService(runner);
-        const first = createStandalone(runner, service, { ...REQUEST, agent: 'gemini' });
+        const first = createStandalone(runner, service);
 
         runner.finish(first.id, 'failed', 'Reading src/app.ts\nError: model not found: gemini-9-ultra\n');
 

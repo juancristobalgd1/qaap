@@ -69,10 +69,26 @@ function modelsFromByokDescriptor(descriptor: QaapQaiqByokProviderDescriptor): Q
     }));
 }
 
-/** Ordered model candidates for one agent — current pick first, then curated fallbacks. */
+/** OpenRouter's free-tier slug suffix. The catalogs carry no price, so the slug is the free marker. */
+const FREE_MODEL_SLUG_SUFFIX = ':free';
+
+/**
+ * True for a free model: an OpenRouter free-tier slug (`:free`, or the `/free` router). Every other model
+ * is treated as paid.
+ */
+export function isFreeAgentModel(model: QaapCreateAgentTaskQaiqModel | undefined): boolean {
+    const modelId = model?.modelId?.trim().toLowerCase() ?? '';
+    return modelId.endsWith(FREE_MODEL_SLUG_SUFFIX) || modelId.endsWith('/free');
+}
+
+/**
+ * Ordered model candidates for one agent — current pick first, then fallbacks. Native catalogs prefer
+ * the models the owner's CLI reports (`discoveredModels`, when there are any) over the curated list.
+ */
 export function buildAgentModelFallbackChain(
     agentId: string,
     current: QaapCreateAgentTaskQaiqModel | undefined,
+    discoveredModels?: readonly QaapCreateAgentTaskQaiqModel[],
 ): readonly QaapCreateAgentTaskQaiqModel[] {
     const normalized = agentId.trim().toLowerCase();
     let candidates: QaapCreateAgentTaskQaiqModel[] = [];
@@ -83,7 +99,9 @@ export function buildAgentModelFallbackChain(
             candidates = modelsFromByokDescriptor(descriptor);
         }
     } else if (agentUsesNativeModelCatalog(normalized)) {
-        candidates = listStaticNativeAgentModels(normalized).map(optionToAgentModel);
+        candidates = discoveredModels?.length
+            ? [...discoveredModels]
+            : listStaticNativeAgentModels(normalized).map(optionToAgentModel);
     }
     const chain: QaapCreateAgentTaskQaiqModel[] = [];
     const seen = new Set<string>();
@@ -96,9 +114,14 @@ export function buildAgentModelFallbackChain(
         chain.push(model);
     };
     push(current);
+    // Policy (every harness): an automatic fallback only moves a free model to another free model. A paid
+    // pick never falls back (its failure card is shown instead), and a paid model is never a fallback target.
+    if (current && !isFreeAgentModel(current)) {
+        return chain;
+    }
     for (const model of candidates) {
         // Confirmed tool-less models can never carry an agent turn — skip them as fallbacks.
-        if (qaiqModelSupportsToolCalls(model.modelId) === false) {
+        if (qaiqModelSupportsToolCalls(model.modelId) === false || !isFreeAgentModel(model)) {
             continue;
         }
         push(model);
@@ -111,8 +134,9 @@ export function resolveNextFallbackAgentModel(
     agentId: string,
     current: QaapCreateAgentTaskQaiqModel | undefined,
     triedModelKeys: ReadonlySet<string>,
+    discoveredModels?: readonly QaapCreateAgentTaskQaiqModel[],
 ): QaapCreateAgentTaskQaiqModel | undefined {
-    const chain = buildAgentModelFallbackChain(agentId, current);
+    const chain = buildAgentModelFallbackChain(agentId, current, discoveredModels);
     for (const model of chain) {
         const key = agentModelKey(model);
         if (key && !triedModelKeys.has(key)) {
@@ -122,7 +146,18 @@ export function resolveNextFallbackAgentModel(
     return undefined;
 }
 
-/** True when a failed turn produced no user-visible agent answer worth keeping. */
+/** The `**Error:** ...` notice the stream parsers append to a turn that ended with a provider error. */
+const PROVIDER_ERROR_NOTICE = /\n*\*\*Error:\*\*[\s\S]*$/;
+
+/** The text of a turn without its provider error notice: what the agent actually answered. */
+function withoutProviderErrorNotice(text: string | undefined): string {
+    return (text ?? '').replace(PROVIDER_ERROR_NOTICE, '').trim();
+}
+
+/**
+ * True when a failed turn produced no user-visible agent answer worth keeping. A provider error that the
+ * parser printed as its notice is not an answer: a turn that only carried the error has no output.
+ */
 export function agentTurnHasRetryableEmptyOutput(
     agentMessage: { readonly content?: string; readonly segments?: readonly { readonly type: string; readonly content?: string; readonly finished?: boolean }[] } | undefined,
 ): boolean {
@@ -131,14 +166,14 @@ export function agentTurnHasRetryableEmptyOutput(
     }
     if (agentMessage.segments?.length) {
         const hasText = agentMessage.segments.some(
-            segment => segment.type === 'text' && !!segment.content?.trim(),
+            segment => segment.type === 'text' && !!withoutProviderErrorNotice(segment.content),
         );
         const hasFinishedTool = agentMessage.segments.some(
             segment => segment.type === 'tool' && segment.finished,
         );
         return !hasText && !hasFinishedTool;
     }
-    return !agentMessage.content?.trim();
+    return !withoutProviderErrorNotice(agentMessage.content);
 }
 
 function collectAgentMessageDetails(agentMessage: {

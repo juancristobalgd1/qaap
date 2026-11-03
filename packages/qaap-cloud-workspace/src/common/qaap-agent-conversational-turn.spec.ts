@@ -11,6 +11,8 @@ import {
     isConversationalTurnTask,
     QAAP_CONVERSATIONAL_TURN_MARKER,
 } from './qaap-agent-conversational-turn';
+import { buildConversationAgentPrompt } from './qaap-agent-conversation-prompt';
+import { appendAgentDefaultWorkflowToPrompt } from './qaap-agent-default-workflow';
 
 describe('isConversationalOnlyMessage', () => {
 
@@ -98,3 +100,28 @@ describe('buildAgentConversationalTurnPromptBlock', () => {
         expect(block).not.to.contain('Repository');
     });
 });
+
+describe('isConversationalTurn for a follow-up with transcript history', () => {
+    const history = [
+        { id: 'u1', role: 'user' as const, content: 'Create a counter in src/app.ts', createdAt: 1 },
+        { id: 'a1', role: 'agent' as const, content: 'Done.', createdAt: 2 },
+    ];
+
+    it('treats "hi" after earlier turns as conversational: the user message decides, not the transcript wrapper', () => {
+        const wrapped = buildConversationAgentPrompt({ history, latestUserContent: 'hi' });
+        expect(isConversationalTurn(wrapped, 'hi')).to.equal(true);
+        const workflow = appendAgentDefaultWorkflowToPrompt(wrapped, 'pi', { userQuery: 'hi' });
+        expect(workflow).to.not.include('@@QAAP:BLOCKED@@');
+        expect(workflow).to.include('[QAAP conversational turn]');
+    });
+
+    it('keeps a real task after earlier turns a task', () => {
+        const wrapped = buildConversationAgentPrompt({ history, latestUserContent: 'fix the failing test in src/app.ts' });
+        expect(isConversationalTurn(wrapped, 'fix the failing test in src/app.ts')).to.equal(false);
+    });
+
+    it('does not treat a prompt extended by hooks or context as conversational', () => {
+        expect(isConversationalTurn('hi\n\nAdditional hook context: run the build first', 'hi')).to.equal(false);
+    });
+});
+

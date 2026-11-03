@@ -155,12 +155,64 @@ describe('turn-provenance sealing and fallback-model re-attribution (backend hal
             .to.deep.equal(pickedModel);
     });
 
+    it('does not retry a failed turn whose original model is paid (free-only fallback policy)', () => {
+        const store = new TestableQaapAgentConversationStore();
+        const paidModel: QaapCreateAgentTaskQaiqModel = {
+            provider: 'openai',
+            vendor: 'openrouter',
+            modelId: '~anthropic/claude-fable-latest',
+        };
+        const spawnedRequests: QaapCreateAgentTaskRequest[] = [];
+        installFakes(store, request => {
+            spawnedRequests.push(request);
+            return {
+                id: 'task-paid',
+                title: request.title ?? '',
+                command: request.command ?? '',
+                cwd: request.cwd,
+                state: 'running',
+                createdAt: 1,
+            };
+        });
+        const conversationId = 'conv-paid';
+        const userMessageId = 'user-paid';
+        const conv: QaapAgentConversation = {
+            id: conversationId,
+            cwd: '/repo',
+            agentId: QAIQ_AGENT_ID,
+            title: 'Paid turn',
+            status: 'streaming',
+            createdAt: 0,
+            updatedAt: 0,
+            agentModel: paidModel,
+            qaiqModel: paidModel,
+            messages: [
+                {
+                    id: userMessageId,
+                    role: 'user',
+                    content: 'Fix the flaky test',
+                    createdAt: 0,
+                    taskId: 'task-0',
+                    turnAgentId: QAIQ_AGENT_ID,
+                    turnAgentModel: paidModel,
+                },
+            ],
+        };
+        store.seed(conv);
+        const failedTask: QaapAgentTask = {
+            id: 'task-0', title: '', command: '', cwd: '/repo', state: 'failed', createdAt: 0,
+        };
+        const retried = store.retryWithFallbackModel(conversationId, userMessageId, undefined, failedTask, conv, undefined, QAIQ_AGENT_ID);
+        expect(retried, 'a paid original never falls back to another model').to.equal(false);
+        expect(spawnedRequests, 'no fallback re-spawn for a paid original').to.have.length(0);
+    });
+
     it('a turn retried on a fallback model is attributed to the model that ACTUALLY ran it, not the original pick', () => {
         const store = new TestableQaapAgentConversationStore();
         const originalModel: QaapCreateAgentTaskQaiqModel = {
             provider: 'openai',
             vendor: 'openrouter',
-            modelId: 'some-vendor/flaky-model',
+            modelId: 'some-vendor/flaky-model:free',
         };
         const spawnedRequests: QaapCreateAgentTaskRequest[] = [];
         installFakes(store, request => {
@@ -249,7 +301,7 @@ describe('turn-provenance sealing and fallback-model re-attribution (backend hal
         const originalModel: QaapCreateAgentTaskQaiqModel = {
             provider: 'openai',
             vendor: 'openrouter',
-            modelId: 'some-vendor/flaky-model',
+            modelId: 'some-vendor/flaky-model:free',
         };
         const spawnedRequests: QaapCreateAgentTaskRequest[] = [];
         installFakes(store, request => {

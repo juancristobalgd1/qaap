@@ -70,6 +70,7 @@ import {
     parseGithubPullRequestViewFilter,
 } from '@theia/qaap-adapters/lib/common/qaap-github-pull-request-search';
 import { readQaapGithubOAuthConfig } from './qaap-github-oauth-config';
+import { readBackendDefaultAgentId } from './qaap-default-agent-id';
 import { QaapGithubAuthGuard, type QaapGithubAuthContext } from './qaap-github-auth-guard';
 import { QaapApiTokenStore } from './qaap-api-token-store';
 import { QaapGithubSessionStore } from './qaap-github-session-store';
@@ -608,6 +609,8 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             githubOAuth: readiness.oauthConfigured,
             skipAuth: this.auth.isSkipAuthEnabled(),
             productionRuntime: readiness.productionRuntime,
+            // The default harness for new composers and routines (QAAP_DEFAULT_AGENT_ID, else qaiq).
+            defaultAgentId: readBackendDefaultAgentId(),
             oauthConfigured: readiness.oauthConfigured,
             agentUidPerUser: readiness.agentUidPerUser,
             backendIsolationMode: readiness.backendIsolationMode,

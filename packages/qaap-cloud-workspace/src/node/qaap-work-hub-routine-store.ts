@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { readBackendDefaultAgentId } from '@theia/qaap-shared-core/lib/node/qaap-default-agent-id';
 import { Emitter, Event } from '@theia/core/lib/common/event';
 import { injectable, postConstruct } from '@theia/core/shared/inversify';
 import { randomUUID } from 'crypto';
@@ -40,6 +41,8 @@ function defaultCwd(): string {
 
 function seedRoutines(cwd: string): QaapWorkHubRoutine[] {
     const now = Date.now();
+    // The seeded routines run on the configured default harness (QAAP_DEFAULT_AGENT_ID, else qaiq).
+    const defaultAgent = readBackendDefaultAgentId();
     const base = (partial: Omit<QaapWorkHubRoutine, 'createdAt' | 'updatedAt'>): QaapWorkHubRoutine => ({
         ...partial,
         createdAt: now,
@@ -51,7 +54,7 @@ function seedRoutines(cwd: string): QaapWorkHubRoutine[] {
             title: 'Summarize open PRs',
             prompt: 'List open pull requests for this repository and draft a short review comment for each that needs attention.',
             cwd,
-            agent: 'qaiq',
+            agent: defaultAgent,
             trigger: 'cron',
             intervalHours: 24,
             cronExpression: '0 8 * * 1-5',
@@ -64,7 +67,7 @@ function seedRoutines(cwd: string): QaapWorkHubRoutine[] {
             title: 'Fix failing CI',
             prompt: 'Read the latest failed GitHub Actions workflow log for this repo, propose a minimal fix, and run the relevant test command.',
             cwd,
-            agent: 'qaiq',
+            agent: defaultAgent,
             trigger: 'manual',
             intervalHours: 24,
             enabled: false,
@@ -74,7 +77,7 @@ function seedRoutines(cwd: string): QaapWorkHubRoutine[] {
             title: 'Daily drift check',
             prompt: 'Run the qaap drift check script and summarize files that differ from upstream outside packages/qaap-*.',
             cwd,
-            agent: 'qaiq',
+            agent: defaultAgent,
             trigger: 'cron',
             intervalHours: 24,
             cronExpression: '0 6 * * *',
@@ -87,7 +90,7 @@ function seedRoutines(cwd: string): QaapWorkHubRoutine[] {
             title: 'Weekly workspace backup',
             prompt: 'Archive ~/.qaap and the workspace git state; report archive path and size.',
             cwd,
-            agent: 'qaiq',
+            agent: defaultAgent,
             trigger: 'cron',
             intervalHours: 168,
             cronExpression: '0 3 * * 0',
@@ -100,7 +103,7 @@ function seedRoutines(cwd: string): QaapWorkHubRoutine[] {
             title: 'Nightly test sweep',
             prompt: 'Compile the monorepo and run package tests; report failures with file paths.',
             cwd,
-            agent: 'qaiq',
+            agent: defaultAgent,
             trigger: 'interval',
             intervalHours: 24,
             enabled: false,

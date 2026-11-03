@@ -38,6 +38,11 @@ export type QaapAgentReadOnlyEnforcement =
     | 'sandbox'
     /** The CLI is launched without write tools and without a shell. */
     | 'tool-deny'
+    /**
+     * Every tool call of the CLI is sent to the Qaap gate first (Pi's `-e` extension). The gate denies
+     * write and edit tools, and any shell command it cannot verify as read-only, when the task is read-only.
+     */
+    | 'gate'
     /** No verified mechanism — the turn is unrestricted and must be reported as such. */
     | 'none';
 
@@ -48,7 +53,21 @@ const ENFORCEMENT_BY_AGENT: Readonly<Record<string, QaapAgentReadOnlyEnforcement
     opencode: 'tool-deny',
     // Legacy binary name for the same CLI, still accepted by the runner's detection.
     openclaude: 'tool-deny',
+    pi: 'gate',
 };
+
+/** Plan-mode instruction for a Pi turn: the gate enforces the read-only part, this tells Pi what a plan is. */
+export const QAAP_PI_PLAN_MODE_INSTRUCTION = [
+    '[QAAP plan mode]',
+    'This turn is read-only. Explore with read, grep, find and ls. Do not write or edit files, and do not run shell commands that change anything.',
+    'Reply with the plan: what you will change, file by file, how you will verify it, and what you will not do. Keep it under 20 lines.',
+].join('\n');
+
+/** Prepends the plan-mode instruction to a Pi prompt in plan mode; every other turn is returned unchanged. */
+export function withPiPlanModeInstruction(prompt: string, agentId: string | undefined, interactionModeId: string | undefined): string {
+    const plan = interactionModeId?.trim().toLowerCase() === 'plan';
+    return plan && agentId?.trim().toLowerCase() === 'pi' ? `${QAAP_PI_PLAN_MODE_INSTRUCTION}\n\n${prompt}` : prompt;
+}
 
 /** Codex enforces read-only in the kernel sandbox; `never` keeps the headless run from stalling. */
 export const QAAP_READONLY_CODEX_FLAGS = '--sandbox read-only --ask-for-approval never';
@@ -96,6 +115,9 @@ export function formatReadOnlyFlagsForAgent(agentId: string | undefined): string
     switch (resolveAgentReadOnlyEnforcement(agentId)) {
         case 'sandbox':
             return QAAP_READONLY_CODEX_FLAGS;
+        case 'gate':
+            // No CLI flags: the gate that every call already passes through is the mechanism.
+            return '';
         case 'tool-deny':
             switch (agentId?.trim().toLowerCase()) {
                 case 'claude':
