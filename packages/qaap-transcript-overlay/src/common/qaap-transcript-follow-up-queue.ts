@@ -30,6 +30,11 @@ export interface TranscriptFollowUpEntry {
     readonly serverPendingId?: string;
     /** True once {@link serverPendingId} is confirmed — settle flush must not POST again. */
     readonly serverSynced?: boolean;
+    /**
+     * Stable id of this follow-up, sent as the server `clientMessageId` on every POST (mirror, flush,
+     * send now). Retries and re-posts of the same follow-up dedupe on it instead of creating a second row.
+     */
+    readonly clientMessageId?: string;
 }
 
 export const MAX_TRANSCRIPT_FOLLOW_UP_QUEUE = 5;

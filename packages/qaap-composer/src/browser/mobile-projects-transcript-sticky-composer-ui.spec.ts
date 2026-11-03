@@ -763,4 +763,122 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
         expect(submits).to.deep.equal([]);
         expect(queue.size('c1')).to.equal(0);
     });
+
+    it('a flush after a Stop is blocked by the store snapshot even when the summary has no lastTurnCancelled', async () => {
+        const queue = new TranscriptFollowUpQueue();
+        queue.enqueue('c1', { draft: 'queued before stop' } as Parameters<TranscriptFollowUpQueue['enqueue']>[1]);
+        const submits: string[] = [];
+        const ctx = {
+            host: {
+                transcriptFollowUpQueue: queue,
+                transcriptLastConv: { id: 'c1', status: 'idle', messages: [] },
+                transcriptFollowUpFlushInFlight: false,
+                conversations: {
+                    findSummaryById: () => ({ id: 'c1', lastTurnCancelled: true }),
+                },
+            },
+            isTranscriptFollowUpReady: () => true,
+            refreshComposerActivityStack: () => { },
+            submitQueuedFollowUpEntry: async (_project: unknown, _summary: unknown, entry: { draft: string }) => {
+                submits.push(entry.draft);
+            },
+        };
+
+        await timelineModule.flushTranscriptFollowUpQueueExtracted(
+            ctx as unknown as MobileProjectsTranscriptStickyComposerUiContext,
+            project,
+            summary,
+        );
+
+        expect(submits).to.deep.equal([]);
+        expect(queue.size('c1')).to.equal(1);
+    });
+
+    it('passes the entry clientMessageId to the mirror POST and to the queued submit', async () => {
+        const activityModule: typeof import('./mobile-projects-transcript-sticky-composer-ui-activity') = require('./mobile-projects-transcript-sticky-composer-ui-activity');
+        const queue = new TranscriptFollowUpQueue();
+        queue.enqueue('c1', { draft: 'stable id', clientMessageId: 'pending-user-stable-1' } as Parameters<TranscriptFollowUpQueue['enqueue']>[1]);
+        const postOptions: Record<string, unknown>[] = [];
+        const submitTranscriptViaBackendConversation = async (_p: unknown, _s: unknown, _d: unknown, opts: Record<string, unknown>) => {
+            postOptions.push(opts);
+            return true;
+        };
+        const mirrorCtx = {
+            host: {
+                transcriptFollowUpQueue: queue,
+                transcriptLastConv: undefined,
+                transcriptComposerAgentModel: undefined,
+                submitTranscriptViaBackendConversation,
+            },
+            syncTranscriptQueuedFollowUpBubbles: () => { },
+            refreshComposerActivityStack: () => { },
+        };
+        await activityModule.mirrorFollowUpToServerQueueExtracted(
+            mirrorCtx as unknown as MobileProjectsTranscriptStickyComposerUiContext,
+            project,
+            summary,
+            queue.peek('c1')[0],
+        );
+
+        const submitCtx = {
+            host: {
+                transcriptFollowUpQueue: queue,
+                transcriptComposerAgentModel: undefined,
+                transcriptFollowUpFlushInFlight: false,
+                submitTranscriptViaBackendConversation,
+            },
+            refreshComposerActivityStack: () => { },
+            remountTranscriptStickyComposer: () => { },
+        };
+        await activityModule.submitQueuedFollowUpEntryExtracted(
+            submitCtx as unknown as MobileProjectsTranscriptStickyComposerUiContext,
+            project,
+            summary,
+            { draft: 'stable id', clientMessageId: 'pending-user-stable-1' } as Parameters<TranscriptFollowUpQueue['enqueue']>[1],
+        );
+
+        expect(postOptions).to.have.length(2);
+        expect(postOptions[0].clientMessageId).to.equal('pending-user-stable-1');
+        expect(postOptions[1].clientMessageId).to.equal('pending-user-stable-1');
+    });
+
+    it('send now dispatches the server row found by clientMessageId when the entry has no serverPendingId', async () => {
+        const queue = new TranscriptFollowUpQueue();
+        queue.enqueue('c1', {
+            draft: 'mirror in flight',
+            clientMessageId: 'pending-user-cm-1',
+            serverSynced: true,
+        } as Parameters<TranscriptFollowUpQueue['enqueue']>[1]);
+        const dispatched: string[] = [];
+        const ctx = {
+            host: {
+                transcriptFollowUpQueue: queue,
+                transcriptComposerQueueExpanded: false,
+                transcriptLastConv: {
+                    id: 'c1',
+                    status: 'idle',
+                    messages: [],
+                    pendingUserMessages: [{ id: 'row-9', clientMessageId: 'pending-user-cm-1', content: 'mirror in flight' }],
+                },
+                transcriptMessagesUi: {
+                    dispatchQueuedMessage: async (_conversationId: string, pending: { id: string }) => {
+                        dispatched.push(pending.id);
+                    },
+                },
+            },
+            refreshComposerActivityStack: () => { },
+            isTranscriptStickyComposerAgentWorking: () => false,
+            submitQueuedFollowUpEntry: async () => { throw new Error('must not re-post'); },
+        };
+
+        await timelineModule.sendQueuedFollowUpNowExtracted(
+            ctx as unknown as MobileProjectsTranscriptStickyComposerUiContext,
+            project,
+            summary,
+            0,
+        );
+
+        expect(dispatched).to.deep.equal(['row-9']);
+        expect(queue.size('c1')).to.equal(0);
+    });
 });

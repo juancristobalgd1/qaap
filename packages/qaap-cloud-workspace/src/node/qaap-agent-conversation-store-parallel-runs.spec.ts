@@ -444,6 +444,21 @@ describe('QaapAgentConversationStore delivery mode: queue (default)', function (
         expect(resent.pendingUserMessages).to.have.length(1);
         expect(resent.pendingUserMessages![0].clientMessageId).to.equal('pending-user-456');
     });
+
+    it('a queue post whose clientMessageId already started a turn is deduplicated', () => {
+        const { store, runner } = createStore();
+        const internal = { clientMessageId: 'pending-user-started-1' };
+        store.postUserMessage(
+            'c1', 'first', undefined, undefined, undefined, undefined, undefined, undefined, undefined, internal,
+        );
+
+        const repost = store.postUserMessage(
+            'c1', 'first', undefined, undefined, undefined, undefined, undefined, undefined, undefined, internal, 'queue',
+        );
+
+        expect(runner.createdIds).to.deep.equal(['task-1']);
+        expect(repost.pendingUserMessages).to.be.undefined;
+    });
 });
 
 describe('QaapAgentConversationStore delivery mode: queue (tool-round inject)', () => {
