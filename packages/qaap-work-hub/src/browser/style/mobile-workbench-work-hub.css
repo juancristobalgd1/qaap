@@ -14281,6 +14281,15 @@ body.theia-mod-work-hub-settings-resizing * {
   line-height: 1.5;
 }
 
+.theia-mobile-agent-login-dialog-provider {
+  margin: 0 0 12px;
+}
+
+.theia-mobile-agent-login-dialog-provider-select {
+  width: 100%;
+  min-height: 40px;
+}
+
 .theia-mobile-agent-login-dialog-challenge {
   display: flex;
   flex-direction: column;

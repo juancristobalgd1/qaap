@@ -78,6 +78,12 @@ const AUTH_URL_POLICIES: readonly AuthUrlPolicy[] = [
     { agents: ['grok'], hostname: 'auth.x.ai', path: /^\/(?:auth|login|oauth|device|authorize)(?:\/|$)/i },
     // Pi 1.4 `/login openrouter` prints `https://openrouter.ai/auth?callback_url=http%3A%2F%2F127.0.0.1…&code_challenge=…`.
     { agents: ['pi'], hostname: 'openrouter.ai', path: /^\/auth\/?$/i },
+    // Pi `/login` providers (qaap-pi-login-providers.ts), each on its exact authorize / device page:
+    // Anthropic `claude.ai/oauth/authorize`, OpenAI ChatGPT `auth.openai.com/api/accounts/authorize`,
+    // GitHub Copilot device verification `github.com/login/device`.
+    { agents: ['pi'], hostname: 'claude.ai', path: /^\/oauth\/authorize(?:\/|$)/i },
+    { agents: ['pi'], hostname: 'auth.openai.com', path: /^\/api\/accounts\/authorize(?:\/|$)/i },
+    { agents: ['pi'], hostname: 'github.com', path: /^\/login\/device(?:\/|$)/i },
     { agents: ['copilot'], hostname: 'login.microsoftonline.com', path: /^\/[^/]+\/oauth2\/(?:v2\.0\/)?authorize(?:\/|$)/i },
 ];
 
@@ -87,6 +93,8 @@ const CODE_ENTRY_PROMPT_PATTERNS: readonly RegExp[] = [
     /\benter\s+the\s+authori[sz]ation\s+code\b/i,
     // Pi: `Complete sign-in in your browser, or paste the authorization code / redirect URL here:`.
     /\bpaste\s+(?:the\s+)?authori[sz]ation\s+code\s*\/\s*redirect\s+url\b/i,
+    // Pi OpenAI (ChatGPT): `Complete login in your browser, or paste the final redirect URL here:`.
+    /\bpaste\s+(?:the\s+)?(?:final\s+)?redirect\s+url\s+here\b/i,
 ];
 
 /** A paste-back prompt that also takes the browser's final redirect URL. */

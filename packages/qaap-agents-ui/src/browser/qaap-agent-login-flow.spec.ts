@@ -439,4 +439,62 @@ describe('createQaapAgentLoginDialog', () => {
         expect(controller.root.querySelector('.theia-mobile-agent-login-dialog-output')?.textContent).to.equal('Host is not attached.');
         expect(status()).to.not.contain('Secure sign-in is not available');
     });
+
+    describe('Pi sign-in provider picker', () => {
+        const providers = [
+            { id: 'openrouter', label: 'OpenRouter' },
+            { id: 'anthropic', label: 'Anthropic (Claude Pro/Max)' },
+            { id: 'github-copilot', label: 'GitHub Copilot' },
+        ];
+        const openWithProviders = (onSelect: (id: string) => void = () => undefined) => {
+            dialog = createQaapAgentLoginDialog({
+                agentId: 'pi',
+                agentLabel: 'Pi',
+                onClose: () => undefined,
+                loginProviders: { options: providers, selectedId: 'openrouter', onSelect },
+            });
+            return dialog;
+        };
+        const providerSelect = (root: HTMLElement): HTMLSelectElement => root.querySelector<HTMLSelectElement>('.theia-mobile-agent-login-dialog-provider-select')!;
+        const subtitle = (root: HTMLElement): string => root.querySelector('.theia-mobile-agent-login-dialog-subtitle')?.textContent ?? '';
+
+        it('lists the providers with OpenRouter selected and the subtitle naming it', () => {
+            const controller = openWithProviders();
+            const select = providerSelect(controller.root);
+            expect(Array.from(select.options).map(option => option.value)).to.deep.equal(['openrouter', 'anthropic', 'github-copilot']);
+            expect(select.value).to.equal('openrouter');
+            expect(subtitle(controller.root)).to.contain('Sign in to Pi with your OpenRouter account');
+        });
+
+        it('calls back with the picked provider and follows its name in the subtitle', () => {
+            const picked: string[] = [];
+            const controller = openWithProviders(id => picked.push(id));
+            const select = providerSelect(controller.root);
+            select.value = 'anthropic';
+            select.dispatchEvent(new window.Event('change'));
+            expect(picked).to.deep.equal(['anthropic']);
+            expect(subtitle(controller.root)).to.contain('Sign in to Pi with your Anthropic (Claude Pro/Max) account');
+        });
+
+        it('keeps the picker outside the challenge body, so a restart re-renders the steps only', () => {
+            const controller = openWithProviders();
+            controller.render({ phase: 'waiting', startedAt: 0 });
+            controller.render({ phase: 'challenge', challenge: { mode: 'session', url: 'https://github.com/login/device', userCode: 'ABCD-1234' } });
+            expect(providerSelect(controller.root)).to.not.equal(null);
+            expect(controller.root.querySelector('.theia-mobile-agent-login-dialog-challenge .theia-mobile-agent-login-dialog-provider-select')).to.equal(null);
+        });
+
+        it('shows a device code read-only with a copy button, without a paste field when none is asked', () => {
+            const controller = openWithProviders();
+            controller.render({ phase: 'challenge', challenge: { mode: 'session', url: 'https://github.com/login/device', userCode: 'ABCD-1234' } });
+            expect(controller.root.querySelector('.theia-mobile-agent-login-dialog-code-row code')?.textContent).to.equal('ABCD-1234');
+            expect(controller.root.querySelector('.theia-mobile-agent-login-dialog-copy')).to.not.equal(null);
+            expect(controller.root.querySelector('.theia-mobile-agent-login-dialog-code-input')).to.equal(null);
+        });
+
+        it('renders no provider picker for other harnesses', () => {
+            const controller = open();
+            expect(controller.root.querySelector('.theia-mobile-agent-login-dialog-provider-select')).to.equal(null);
+        });
+    });
 });
