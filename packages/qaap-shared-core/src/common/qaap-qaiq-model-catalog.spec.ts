@@ -6,6 +6,7 @@ import {
 } from './qaap-qaiq-byok-provider-registry';
 import {
     filterQaiqModelsWithConfiguredCredentials,
+    formatQaiqModelDisplayLabel,
     formatQaiqModelIdShortLabel,
     groupQaiqModelsByProvider,
     isQaiqByokLanguageModelId,
@@ -214,5 +215,13 @@ describe('listQaiqModelsFromPreferences', () => {
         ]);
         expect(grouped.get('openrouter')).to.have.length(1);
         expect(grouped.get('nvidia')).to.have.length(1);
+    });
+
+    it('keeps the :free marker on a free model label even when the catalog label drops it', () => {
+        expect(formatQaiqModelDisplayLabel({ modelId: 'google/gemma-4-31b-it:free', label: 'Gemma 4 31B' }))
+            .to.equal('Gemma 4 31B :free');
+        expect(formatQaiqModelDisplayLabel({ modelId: 'google/gemma-4-31b-it:free', label: 'Gemma 4 31B (free)' }))
+            .to.equal('Gemma 4 31B (free)');
+        expect(formatQaiqModelDisplayLabel({ modelId: 'openai/gpt-5', label: 'GPT-5' })).to.equal('GPT-5');
     });
 });
