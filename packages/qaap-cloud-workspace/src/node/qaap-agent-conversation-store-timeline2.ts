@@ -431,6 +431,7 @@ export function applyTaskOutputExtracted(ctx: QaapAgentConversationStoreContext,
             messages,
             ...(totalTokensFromContextUsage(conv.contextUsage) === 0 ? { contextUsageEstimated: true } : {}),
             contextWindowSize: conv.contextWindowSize ?? DEFAULT_QAAP_CONTEXT_WINDOW,
+            providerRetry: stream?.getProviderRetry?.(),
         };
         ctx.conversations.set(conv.id, next);
         ctx.fire({ type: 'updated', conversation: toConversationSummary(next) });

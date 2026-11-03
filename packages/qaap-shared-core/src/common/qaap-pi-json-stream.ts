@@ -54,6 +54,11 @@ interface PiJsonAssistantMessageEvent {
 
 interface PiJsonEvent {
     readonly type?: string;
+    readonly attempt?: number;
+    readonly maxAttempts?: number;
+    readonly delayMs?: number;
+    readonly errorMessage?: string;
+    readonly success?: boolean;
     readonly usage?: PiJsonUsage;
     readonly assistantMessageEvent?: PiJsonAssistantMessageEvent;
     readonly message?: PiJsonMessage;
@@ -63,6 +68,16 @@ interface PiJsonEvent {
     readonly partialResult?: unknown;
     readonly result?: unknown;
     readonly isError?: boolean;
+}
+
+/**
+ * Pi is retrying the provider after a retryable error (rate limit, saturated free pool). Set between
+ * `auto_retry_start` and `auto_retry_end`, so the transcript can say the model is busy instead of idle.
+ */
+export interface QaapProviderRetryStatus {
+    readonly attempt: number;
+    readonly maxAttempts: number;
+    readonly delayMs: number;
 }
 
 /** Identity of the usage event: the task, turn and agent the Pi run belongs to. */
@@ -96,6 +111,7 @@ export class QaapPiStreamAccumulator implements QaapAgentStreamAccumulator {
     protected sessionHeaderSeen = false;
     protected activeTurn: PiTurnUsage | undefined;
     protected readonly completedTurns: PiTurnUsage[] = [];
+    protected providerRetry: QaapProviderRetryStatus | undefined;
 
     push(chunk: string): readonly QaapAgentMessageSegment[] {
         if (!chunk) {
@@ -117,6 +133,11 @@ export class QaapPiStreamAccumulator implements QaapAgentStreamAccumulator {
     /** True once at least one JSON record was consumed. */
     consumedJsonEvents(): boolean {
         return this.jsonEvents > 0;
+    }
+
+    /** The provider retry Pi is waiting out now, or undefined when no automatic retry is in progress. */
+    getProviderRetry(): QaapProviderRetryStatus | undefined {
+        return this.providerRetry;
     }
 
     /** True once the session header record was seen. */
@@ -217,6 +238,16 @@ export class QaapPiStreamAccumulator implements QaapAgentStreamAccumulator {
                 return;
             case 'turn_start':
                 this.finishActiveTurn();
+                return;
+            case 'auto_retry_start':
+                this.providerRetry = {
+                    attempt: event.attempt ?? 1,
+                    maxAttempts: event.maxAttempts ?? event.attempt ?? 1,
+                    delayMs: event.delayMs ?? 0,
+                };
+                return;
+            case 'auto_retry_end':
+                this.providerRetry = undefined;
                 return;
             case 'turn_end':
                 this.consumeUsage(event.message?.usage);

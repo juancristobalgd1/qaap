@@ -219,4 +219,12 @@ describe('qaap-sticky-composer-working-detail-activity', () => {
         expect(feed?.thoughtText).to.contain('Brief plan');
         expect(feed?.exploredSummary).to.match(/Explored/);
     });
+
+    it('the working label says the provider is retrying while Pi waits out a busy model', () => {
+        const feed = buildWorkingAgentDetailActivityFeed([], {
+            streaming: true,
+            providerRetry: { attempt: 2, maxAttempts: 3 },
+        });
+        expect(feed.liveLabel).to.contain('retrying (2/3)');
+    });
 });

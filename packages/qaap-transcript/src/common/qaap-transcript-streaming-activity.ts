@@ -24,11 +24,30 @@ export function resolveTranscriptStreamingActivityFromSegments(
         readonly localizeToolTitle?: (label: string) => string;
         /** Live turn phase from the conversation; `'verifying'` wins over stall/timeout and segments. */
         readonly turnPhase?: QaapAgentConversationTurnPhaseDTO;
+        /** Pi is retrying the provider after a busy or rate-limited response. */
+        readonly providerRetry?: { readonly attempt: number; readonly maxAttempts: number };
+        /** No first output past the slow-start budget; status only, the turn keeps running. */
+        readonly slowFirstOutput?: boolean;
     },
 ): TranscriptStreamingActivityView {
     const verifying = resolveTranscriptVerifyingActivity(options?.turnPhase);
     if (verifying) {
         return verifying;
+    }
+    if (options?.providerRetry) {
+        return {
+            kind: 'retry',
+            title: nls.localize(
+                'qaap/mobileProjects/transcriptActivityProviderRetry',
+                'Provider busy — retrying ({0}/{1})…',
+                options.providerRetry.attempt,
+                options.providerRetry.maxAttempts,
+            ),
+            detail: nls.localize(
+                'qaap/mobileProjects/transcriptActivityProviderRetryDetail',
+                'The model is busy or rate limited. Pi retries automatically.',
+            ),
+        };
     }
     if (options?.timedOut) {
         return {
@@ -37,6 +56,16 @@ export function resolveTranscriptStreamingActivityFromSegments(
             detail: nls.localize(
                 'qaap/mobileProjects/transcriptStreamTimedOutDetail',
                 'Cancel or retry to continue.',
+            ),
+        };
+    }
+    if (options?.slowFirstOutput && segments.length === 0) {
+        return {
+            kind: 'slow-start',
+            title: nls.localize('qaap/mobileProjects/transcriptActivitySlowStart', 'The model hasn’t responded yet'),
+            detail: nls.localize(
+                'qaap/mobileProjects/transcriptActivitySlowStartDetail',
+                'You can keep waiting or stop and pick another model.',
             ),
         };
     }
