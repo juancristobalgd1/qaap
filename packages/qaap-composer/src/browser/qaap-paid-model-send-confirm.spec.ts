@@ -11,7 +11,12 @@ const disableImportJSDOM = enableJSDOM();
 
 import { expect } from 'chai';
 import { hashString } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
-import { confirmPaidModelSend, hasConfirmedPaidSendForProject } from './qaap-paid-model-send-confirm';
+import { writeStoredAgentModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
+import {
+    confirmPaidModelSend,
+    hasConfirmedPaidSendForProject,
+    resolveEffectiveSendAgentModel,
+} from './qaap-paid-model-send-confirm';
 import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 disableImportJSDOM();
@@ -28,13 +33,51 @@ describe('paid model send confirmation', () => {
     const freeModel = { provider: 'openai' as const, vendor: 'openrouter', modelId: 'google/gemma-4-31b-it:free' };
     const paidModel = { provider: 'openai' as const, vendor: 'openrouter', modelId: 'openai/gpt-5' };
 
+    const beamFree = { provider: 'openai' as const, vendor: 'opencode', modelId: 'opencode/beam-free', label: 'Beam Free' };
+    const openCodePaid = { provider: 'openai' as const, vendor: 'opencode', modelId: 'opencode/minimax-m3', label: 'MiniMax-M3' };
+
     beforeEach(() => {
         window.sessionStorage.clear();
+        window.localStorage.clear();
     });
 
     it('lets free models and a missing model through without a dialog', async () => {
         expect(await confirmPaidModelSend(cwd, freeModel)).to.be.true;
         expect(await confirmPaidModelSend(cwd, undefined)).to.be.true;
+        // OpenCode "Beam Free" is free by its catalog metadata, not by a `:free` suffix.
+        expect(await confirmPaidModelSend(cwd, beamFree)).to.be.true;
+    });
+
+    it('a send carries the explicit pick first, then the stored selection', async () => {
+        const storedCwd = '/repo/send-stored';
+        expect(await resolveEffectiveSendAgentModel('opencode', storedCwd, openCodePaid)).to.deep.equal(openCodePaid);
+        writeStoredAgentModel(storedCwd, 'opencode', beamFree);
+        expect((await resolveEffectiveSendAgentModel('opencode', storedCwd))?.modelId).to.equal('opencode/beam-free');
+    });
+
+    it('a catalog with only paid models gives the send no model, so no paid default is sent unconfirmed', async () => {
+        const originalFetch = globalThis.fetch;
+        globalThis.fetch = (async () => ({
+            ok: true,
+            json: async () => ({ models: [{ provider: 'openai', vendor: 'grok', modelId: 'grok-paid', label: 'Grok Paid' }] }),
+        })) as unknown as typeof fetch;
+        try {
+            expect(await resolveEffectiveSendAgentModel('grok', '/repo/paid-only-send')).to.be.undefined;
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+    });
+
+    it('a seeded paid default is the effective send model, so the gate sees it and must confirm', async () => {
+        const seededCwd = '/repo/seeded-paid';
+        // Seeded by an older build, never chosen by the user: the send resolves to it.
+        window.localStorage.setItem(
+            `qaap.agentTasks.selectedAgentModel.${hashString(seededCwd)}.opencode`,
+            JSON.stringify({ provider: 'openai', vendor: 'opencode', modelId: 'opencode/minimax-m3' }),
+        );
+        const effective = await resolveEffectiveSendAgentModel('opencode', seededCwd);
+        expect(effective?.modelId).to.equal('opencode/minimax-m3');
+        expect(window.sessionStorage.getItem(`qaap.paidModelSendConfirmed.${hashString(seededCwd)}`)).to.be.null;
     });
 
     it('passes a paid model through once this project was confirmed in this session', async () => {

@@ -237,17 +237,28 @@ describe('qaap-agent-picker-search', () => {
             expect(unselected.querySelector('.codicon-check')).to.equal(null);
         });
 
-        it('main-area selection resolves the model from a cached catalog', () => {
-            const stored = entries[0].models[0];
+        it('main-area selection resolves a free model from a cached catalog', () => {
+            const free: QaapQaiqModelOption = { provider: 'openai', vendor: 'opencode', modelId: 'opencode/beam-free', label: 'Beam Free' };
             const selected: Array<QaapQaiqModelOption | undefined> = [];
             activateAgentPickerDirectSelection({
-                agentId: 'qaiq',
+                agentId: 'opencode',
                 cwd: '/repo/direct-selection',
-                cachedModels: [stored],
+                cachedModels: [entries[0].models[0], free],
                 onSelectDirect: model => selected.push(model),
             });
             expect(selected).to.have.length(1);
-            expect(selected[0]?.modelId).to.equal(stored.modelId);
+            expect(selected[0]?.modelId).to.equal(free.modelId);
+        });
+
+        it('main-area selection passes no model when the cached catalog has only paid models', () => {
+            const selected: Array<QaapQaiqModelOption | undefined> = [];
+            activateAgentPickerDirectSelection({
+                agentId: 'qaiq',
+                cwd: '/repo/direct-selection-paid-only',
+                cachedModels: [entries[0].models[0]],
+                onSelectDirect: model => selected.push(model),
+            });
+            expect(selected).to.deep.equal([undefined]);
         });
 
         it('main-area selection passes no model when the catalog is not loaded yet', () => {

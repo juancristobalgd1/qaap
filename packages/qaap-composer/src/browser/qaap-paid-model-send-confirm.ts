@@ -5,8 +5,18 @@
 
 import { ConfirmDialog } from '@theia/core/lib/browser';
 import { nls } from '@theia/core/lib/common/nls';
-import { isFreeAgentModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
-import { hashString, type QaapCreateAgentTaskQaiqModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import {
+    agentSupportsModelPicker,
+    ensureStoredAgentModel,
+    isFreeAgentModel,
+    resolveStoredAgentModelForSubmit,
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
+import {
+    fetchAgentModelsForAgent,
+    hashString,
+    type QaapCreateAgentTaskQaiqModel,
+    type QaapQaiqModelOption,
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 
 const PAID_SEND_CONFIRMED_STORAGE_PREFIX = 'qaap.paidModelSendConfirmed';
 
@@ -36,6 +46,35 @@ function rememberPaidSendForProject(cwd: string | undefined): void {
     } catch {
         /* sessionStorage unavailable: the next send asks again */
     }
+}
+
+/**
+ * The model a send will carry, resolved the way the composer resolves it: the explicit pick, else the stored
+ * selection, else the free default seeded from the live catalog. The paid-send gate checks this value, so a
+ * default the user never picked is confirmed too. Returns undefined when the send carries no model.
+ */
+export async function resolveEffectiveSendAgentModel(
+    agentId: string | undefined,
+    cwd: string | undefined,
+    explicitModel?: QaapCreateAgentTaskQaiqModel,
+): Promise<QaapCreateAgentTaskQaiqModel | undefined> {
+    if (explicitModel) {
+        return explicitModel;
+    }
+    if (!agentId) {
+        return undefined;
+    }
+    const stored = resolveStoredAgentModelForSubmit(agentId, cwd);
+    if (stored || !cwd || !agentSupportsModelPicker(agentId)) {
+        return stored;
+    }
+    let catalog: QaapQaiqModelOption[] = [];
+    try {
+        catalog = await fetchAgentModelsForAgent(agentId);
+    } catch {
+        catalog = [];
+    }
+    return ensureStoredAgentModel(cwd, agentId, catalog);
 }
 
 /**

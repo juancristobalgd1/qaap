@@ -40,9 +40,8 @@ import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qa
 import { applyBackendInteractionModeToPrompt } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-mode';
 import { reconcileAgentApprovalPolicyId, type QaapAgentApprovalPolicyId } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import { reconcileAgentToolApprovalRules } from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-approval-rules';
-import { resolveStoredAgentModelForSubmit } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
 import { getQaapDefaultAgentId } from '@theia/qaap-shared-core/lib/common/qaap-default-agent-id';
-import { confirmPaidModelSend } from '@theia/qaap-composer/lib/browser/qaap-paid-model-send-confirm';
+import { confirmPaidModelSend, resolveEffectiveSendAgentModel } from '@theia/qaap-composer/lib/browser/qaap-paid-model-send-confirm';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
@@ -235,8 +234,11 @@ export class MobileProjectsBackgroundTaskUi {
         // A paid model asks once per project per browser session before a new task starts; cancelling
         // reports no created conversation, so the caller restores the draft.
         const projectCwd = this.host.projectsService.getProjectCwd(project);
-        const gateAgentModel = options.agentModel
-            ?? resolveStoredAgentModelForSubmit(options.selectedAgentId ?? getQaapDefaultAgentId(), projectCwd);
+        const gateAgentModel = await resolveEffectiveSendAgentModel(
+            options.selectedAgentId ?? getQaapDefaultAgentId(),
+            projectCwd,
+            options.agentModel,
+        );
         if (!await this.confirmPaidSend(projectCwd ?? project.id, gateAgentModel)) {
             return undefined;
         }
