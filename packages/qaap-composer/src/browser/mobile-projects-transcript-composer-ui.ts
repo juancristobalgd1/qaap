@@ -48,7 +48,7 @@ import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects
 import type { MobileProjectsStickyComposerSheetsUi } from './mobile-projects-sticky-composer-sheets-ui';
 import type { StickyComposerUntilDoneToggleOptions } from './qaap-sticky-composer-until-done-toggle';
 import { writeComposerAgentCatalogSession } from './composer-agent-catalog-session-cache';
-import { composerAgentCatalogSignature } from './mobile-projects-sticky-composer-agents-ui';
+import { composerAgentCatalogSignature, STICKY_CATALOG_REFRESH_MIN_INTERVAL_MS } from './mobile-projects-sticky-composer-agents-ui';
 
 export interface ComposerAgentPickerChrome {
     readonly sheet: HTMLElement;
@@ -98,7 +98,29 @@ export interface MobileProjectsTranscriptComposerHost {
 
 /** Transcript sticky-composer agent/mode/approval sheets and backend agent list refresh. */
 export class MobileProjectsTranscriptComposerUi {
+    /** Last catalog load started per cwd (empty key when no cwd is known). */
+    protected readonly lastCatalogLoadByCwd = new Map<string, number>();
+
     constructor(protected readonly host: MobileProjectsTranscriptComposerHost) { }
+
+    /**
+     * Idempotent catalog load for a composer mount: inside the throttle window for the same cwd it
+     * returns without a request, so remounts while the catalog is still empty do not refetch it.
+     */
+    async ensureComposerAgentCatalog(project: MobileProjectEntry): Promise<boolean> {
+        const cwdKey = this.resolveCatalogCwd(project) ?? '';
+        const lastAt = this.lastCatalogLoadByCwd.get(cwdKey);
+        if (lastAt !== undefined && Date.now() - lastAt < STICKY_CATALOG_REFRESH_MIN_INTERVAL_MS) {
+            return this.host.transcriptComposerBackendAgents.length > 0;
+        }
+        return this.refreshTranscriptComposerAgents(project);
+    }
+
+    protected resolveCatalogCwd(project: MobileProjectEntry): string | undefined {
+        return this.host.projectsService.getProjectCwd(project)
+            ?? this.host.transcriptComposerSummary?.cwd
+            ?? this.host.preparedCwdByProjectId.get(project.id);
+    }
 
     async ensureTranscriptComposerAgentsLoaded(
         project: MobileProjectEntry,
@@ -189,9 +211,8 @@ export class MobileProjectsTranscriptComposerUi {
 
     async refreshTranscriptComposerAgents(project: MobileProjectEntry, options?: { readonly forceRefresh?: boolean }): Promise<boolean> {
         this.host.activeTasks?.start();
-        const cwd = this.host.projectsService.getProjectCwd(project)
-            ?? this.host.transcriptComposerSummary?.cwd
-            ?? this.host.preparedCwdByProjectId.get(project.id);
+        const cwd = this.resolveCatalogCwd(project);
+        this.lastCatalogLoadByCwd.set(cwd ?? '', Date.now());
         try {
             const snapshot = await this.host.loadBackendAgentSnapshot(options);
             let pickerAgents = this.host.stickyComposerAgentsUi.getComposerAgentPickerAgents(snapshot.agents);

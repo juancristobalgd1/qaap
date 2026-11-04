@@ -379,9 +379,7 @@ export class MobileProjectsStickyComposerRenderUi {
                 if (!composerStable) {
                     parkWorkingControlFromAncestor(this.host.stickyComposerHost);
                     this.host.stickyComposerHost.replaceChildren();
-                    if (this.host.transcriptComposerBackendAgents.length === 0) {
-                        void this.host.transcriptComposerUi.refreshTranscriptComposerAgents(shellProject!);
-                    }
+                    void this.host.transcriptComposerUi.ensureComposerAgentCatalog(shellProject!);
                     this.host.transcriptStickyComposerUi.mountTranscriptStickyComposer(this.host.stickyComposerHost, shellProject!, shellSummary!, chatHost!);
                 } else {
                     this.host.transcriptComposerSendRefresh?.();

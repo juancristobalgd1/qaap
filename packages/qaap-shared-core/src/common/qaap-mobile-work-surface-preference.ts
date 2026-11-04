@@ -8,6 +8,9 @@ export type MobileViewToggleId = 'editor' | 'agent';
 
 export const QAAP_MOBILE_PREFER_DESKTOP_IDE_KEY = 'qaap.mobileProjects.preferDesktopIde';
 
+/** Window event dispatched once the user explicitly opens the classic IDE ({@link markPreferDesktopIde}). */
+export const QAAP_PREFER_DESKTOP_IDE_EVENT = 'qaap:prefer-desktop-ide';
+
 /** Kept for compatibility with builds that wrote this explicit IDE marker. */
 export const QAAP_MOBILE_EXPLICIT_DESKTOP_IDE_KEY = 'qaap.mobileProjects.explicitDesktopIde';
 

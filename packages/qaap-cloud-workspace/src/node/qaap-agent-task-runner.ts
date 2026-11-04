@@ -54,7 +54,7 @@ import { QAAP_TOOL_GATE_API_PATH } from '@theia/qaap-shared-core/lib/common/qaap
 import { resolveQaapHarnessCapabilities } from '@theia/qaap-shared-core/lib/common/qaap-harness-capabilities';
 import { QaapProjectFolderTrustStore, resolveProjectFolderTrustRoot } from './qaap-project-folder-trust-store';
 import { QaapHostedWorktreeRegistry } from '@theia/qaap-shared-core/lib/node/qaap-hosted-worktree-registry';
-import { invalidateNativeAgentModels, prepareNativeAgentModels, type NativeModelDiscoverySpawner } from './qaap-agent-native-models';
+import { clearNativeAgentModelCache, invalidateNativeAgentModels, prepareNativeAgentModels, type NativeModelDiscoverySpawner } from './qaap-agent-native-models';
 import { fireStopAgentHook } from './qaap-agent-task-runner-hooks';
 import { type QaapAgentReadOnlyEnforcement, } from '../common/qaap-agent-readonly-workspace';
 import { type QaapQaiqPendingControlRequest } from '../common/qaap-qaiq-stdio-approvals';
@@ -608,6 +608,8 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     refreshAgentCatalog(): void {
         this.agentConnectionStates.clear();
         this.agentConnectionProbes.clear();
+        // Harness settings or the CLI may have changed: the next model request runs discovery again.
+        clearNativeAgentModelCache();
         this.detectAgents();
     }
 

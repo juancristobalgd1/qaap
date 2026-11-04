@@ -13,6 +13,7 @@ import {
     discoverCodexAccountModels,
     invalidateNativeAgentModels,
     listNativeAgentModels,
+    NATIVE_MODEL_CACHE_TTL_MS,
     parseCodexModelsCache,
     prepareNativeAgentModels,
     resolveCodexAgentHome,
@@ -256,6 +257,42 @@ describe('qaap-agent-native-models', () => {
             invalidateNativeAgentModels('pi');
             expect(listNativeAgentModels('pi', 'bob')).to.deep.equal(listStaticNativeAgentModels('pi'));
         });
+    });
+
+    it('rediscovers an agent once its successful catalog is older than the TTL', async function (): Promise<void> {
+        if (process.platform === 'win32') {
+            this.skip();
+        }
+        const realNow = Date.now;
+        let now = realNow();
+        Date.now = () => now;
+        try {
+            const bin = path.join(sandbox, 'cursor-agent');
+            fs.writeFileSync(bin, '#!/bin/sh\necho auto\n', { mode: 0o755 });
+            process.env.PATH = `${sandbox}${path.delimiter}${originalPath ?? ''}`;
+            expect((await prepareNativeAgentModels('cursor')).map(model => model.modelId)).to.deep.equal(['auto']);
+
+            fs.writeFileSync(bin, '#!/bin/sh\necho fresh-model\n', { mode: 0o755 });
+            now += NATIVE_MODEL_CACHE_TTL_MS - 1;
+            expect((await prepareNativeAgentModels('cursor')).map(model => model.modelId)).to.deep.equal(['auto']);
+
+            now += 1;
+            expect((await prepareNativeAgentModels('cursor')).map(model => model.modelId)).to.deep.equal(['fresh-model']);
+        } finally {
+            Date.now = realNow;
+        }
+    });
+
+    it('shares one CLI discovery between concurrent requests for the same agent', async function (): Promise<void> {
+        if (process.platform === 'win32') {
+            this.skip();
+        }
+        fs.writeFileSync(path.join(sandbox, 'cursor-agent'), '#!/bin/sh\necho auto\n', { mode: 0o755 });
+        process.env.PATH = `${sandbox}${path.delimiter}${originalPath ?? ''}`;
+        const first = prepareNativeAgentModels('cursor');
+        const second = prepareNativeAgentModels('cursor');
+        expect(second).to.equal(first);
+        expect((await first).map(model => model.modelId)).to.deep.equal(['auto']);
     });
 
     it('keeps a non-empty static Pi fallback with provider-qualified ids', () => {

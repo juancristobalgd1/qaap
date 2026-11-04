@@ -19,6 +19,10 @@ import {
 import { childProcessEnv } from './qaap-child-process-env';
 
 const cache = new Map<string, QaapQaiqModelOption[]>();
+/** How long a successful CLI discovery is reused before the next request runs the CLI again. */
+export const NATIVE_MODEL_CACHE_TTL_MS = 10 * 60_000;
+/** When each successful CLI discovery was cached, so {@link NATIVE_MODEL_CACHE_TTL_MS} can expire it. */
+const discoveredCachedAt = new Map<string, number>();
 /**
  * When a cached catalog is only the curated fallback because the CLI discovery found nothing (CLI
  * signed out, not on PATH yet): such entries expire so a later sign-in shows the real catalog.
@@ -31,6 +35,12 @@ function cachedNativeModels(agentId: string): QaapQaiqModelOption[] | undefined 
     if (at !== undefined && Date.now() - at >= NATIVE_MODEL_FALLBACK_RETRY_MS) {
         cache.delete(agentId);
         fallbackCachedAt.delete(agentId);
+        return undefined;
+    }
+    const discoveredAt = discoveredCachedAt.get(agentId);
+    if (discoveredAt !== undefined && Date.now() - discoveredAt >= NATIVE_MODEL_CACHE_TTL_MS) {
+        cache.delete(agentId);
+        discoveredCachedAt.delete(agentId);
         return undefined;
     }
     return cache.get(agentId);
@@ -141,7 +151,9 @@ export function prepareNativeAgentModels(
                 cache.set(key, models);
                 if (discovered.length > 0) {
                     fallbackCachedAt.delete(key);
+                    discoveredCachedAt.set(key, Date.now());
                 } else {
+                    discoveredCachedAt.delete(key);
                     fallbackCachedAt.set(key, Date.now());
                 }
             }
@@ -155,6 +167,7 @@ export function clearNativeAgentModelCache(): void {
     cache.clear();
     discoveries.clear();
     fallbackCachedAt.clear();
+    discoveredCachedAt.clear();
 }
 
 /**
@@ -164,13 +177,14 @@ export function clearNativeAgentModelCache(): void {
 export function invalidateNativeAgentModels(agentId: string, ownerLogin?: string): void {
     const normalized = agentId.trim().toLowerCase();
     const keys = ACCOUNT_SCOPED_DISCOVERY_AGENT_IDS.has(normalized) && ownerLogin === undefined
-        ? [...new Set([...cache.keys(), ...discoveries.keys(), ...fallbackCachedAt.keys()])]
+        ? [...new Set([...cache.keys(), ...discoveries.keys(), ...fallbackCachedAt.keys(), ...discoveredCachedAt.keys()])]
             .filter(key => key.startsWith(`${normalized}:`))
         : [nativeModelCacheKey(normalized, ownerLogin)];
     for (const key of keys) {
         cache.delete(key);
         discoveries.delete(key);
         fallbackCachedAt.delete(key);
+        discoveredCachedAt.delete(key);
     }
 }
 

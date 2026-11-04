@@ -15,6 +15,7 @@ import {
     QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { resolveAgentConnectionFlow } from '@theia/qaap-shared-core/lib/common/qaap-agent-tui-command';
+import { invalidateAgentModelsCache, invalidateAgentTaskListAllCache } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { resolveAgentDisplayLabel } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { openAgentLoginDialogInBackground } from './qaap-agent-login-background';
 import { isConversationError } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-messages-artifacts-helpers';
@@ -325,6 +326,9 @@ export function openAgentSignInTerminalExtracted(ctx: MobileProjectsPanelContext
             if (!project) {
                 return false;
             }
+            // The sign-in changed the backend's agent state: drop the cached catalogs before reloading them.
+            invalidateAgentTaskListAllCache();
+            invalidateAgentModelsCache();
             const refreshed = await ctx.stickyComposerAgentsUi?.refreshStickyComposerAgents?.(project, { forceRefresh: true });
             // An open conversation draws its composer from its own catalog; the forced probe above
             // already refreshed the backend state, so a plain reload is enough here.

@@ -13,6 +13,7 @@ import {
     markPreferDesktopIde as markPreferDesktopIdePreference,
     peekPreferAgentsSurface,
     peekPreferDesktopIde,
+    QAAP_PREFER_DESKTOP_IDE_EVENT,
     shouldInstallWorkHubBootGuard,
 } from '../common/qaap-mobile-work-surface-preference';
 
@@ -114,6 +115,10 @@ export function markPreferDesktopIde(): void {
     }
     markPreferDesktopIdePreference();
     clearMobileWorkHubSurfaceChromeForDesktopIde();
+    // Lets deferred desktop layout (terminal, bottom panel) initialize now that the IDE is wanted.
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new window.CustomEvent(QAAP_PREFER_DESKTOP_IDE_EVENT));
+    }
 }
 
 function clearMobileWorkHubSurfaceChromeForDesktopIde(): void {
