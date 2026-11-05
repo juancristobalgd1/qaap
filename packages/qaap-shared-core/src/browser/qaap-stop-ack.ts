@@ -124,13 +124,23 @@ export class QaapStopAckTracker {
         );
         const settled = await Promise.race([answer, expiry]);
         clearTimeout(timer);
+        const isCurrent = (): boolean => this.blocks.get(conversationId)?.token === token;
         if (settled.outcome !== 'expired') {
+            // A Stop superseded by a newer one settles silently: only the current Stop may restore UI state.
+            const current = isCurrent();
             this.release(conversationId, token);
             this.markSettled(conversationId);
-            options.onSettled(settled.outcome, { error: settled.outcome === 'failed' ? settled.error : undefined, stillStreaming: false });
+            if (current) {
+                options.onSettled(settled.outcome, { error: settled.outcome === 'failed' ? settled.error : undefined, stillStreaming: false });
+            }
             return settled.outcome;
         }
         const stillStreaming = await probeStillStreaming(options.isStillStreaming, options.probeTimeoutMs);
+        if (!isCurrent()) {
+            // A newer Stop took the block while this one was expiring: its answer must not touch the UI.
+            void answer.then(late => options.onLateAnswer?.(late.outcome, late.outcome === 'failed' ? late.error : undefined));
+            return 'expired';
+        }
         if (stillStreaming) {
             this.markExpired(conversationId, token);
         } else {

@@ -164,4 +164,42 @@ describe('QaapStopAckTracker', () => {
         expect(aborted).to.equal(0);
         expect(tracker.isSendBlocked('c1')).to.equal(true);
     });
+
+    it('ignores onSettled of a Stop superseded by a newer one, for acknowledgements and expiries', async () => {
+        const tracker = new QaapStopAckTracker();
+        const first = deferred();
+        const firstSettled: QaapStopAckOutcome[] = [];
+        const firstDone = tracker.track('c1', first.promise, {
+            isStillStreaming: async () => true,
+            onSettled: outcome => firstSettled.push(outcome),
+            timeoutMs: 5,
+        });
+        expect(await firstDone).to.equal('expired');
+        const second = deferred();
+        const secondDone = tracker.track('c1', second.promise, { isStillStreaming: async () => true, onSettled: () => undefined });
+        second.resolve();
+        expect(await secondDone).to.equal('acknowledged');
+        expect(tracker.isSendBlocked('c1')).to.equal(false);
+
+        // The first request answers late, after the second Stop settled: no onSettled for it.
+        first.resolve();
+        await new Promise(resolve => setTimeout(resolve, 5));
+        expect(firstSettled).to.deep.equal(['expired']);
+    });
+
+    it('does not let a superseded Stop release the block of the newer one at acknowledgement', async () => {
+        const tracker = new QaapStopAckTracker();
+        const first = deferred();
+        const firstSettled: QaapStopAckOutcome[] = [];
+        const firstDone = tracker.track('c1', first.promise, { isStillStreaming: async () => true, onSettled: outcome => firstSettled.push(outcome), timeoutMs: 5 });
+        await firstDone;
+        const second = deferred();
+        const secondDone = tracker.track('c1', second.promise, { isStillStreaming: async () => true, onSettled: () => undefined });
+        first.resolve();
+        await new Promise(resolve => setTimeout(resolve, 5));
+        expect(tracker.isSendBlocked('c1')).to.equal(true);
+        second.resolve();
+        expect(await secondDone).to.equal('acknowledged');
+        expect(firstSettled).to.deep.equal(['expired']);
+    });
 });
