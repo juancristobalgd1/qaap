@@ -81,6 +81,12 @@ describe('QaapDesktopTerminalLayoutContribution', () => {
         expect(executed).to.deep.equal([]);
     });
 
+    it('does not open a terminal from a side-panel resize without an IDE preference', async () => {
+        await contribution.ensureDesktopTerminalNormal();
+        await settle();
+        expect(executed).to.deep.equal([]);
+    });
+
     it('runs the terminal setup once when the user first opens the IDE', async () => {
         window.dispatchEvent(new window.CustomEvent(QAAP_PREFER_DESKTOP_IDE_EVENT));
         await settle();

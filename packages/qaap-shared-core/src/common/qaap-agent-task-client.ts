@@ -632,7 +632,8 @@ async function requestAgentTaskListAll(forceRefresh: boolean): Promise<QaapAgent
         throw new Error(response.statusText);
     }
     const snapshot = parseAgentTaskListBody(await response.json());
-    if (generation === agentTaskListAllGeneration) {
+    // An empty agent list is never cached: it is usually a backend still starting, and the next call must ask again.
+    if (generation === agentTaskListAllGeneration && snapshot.agents.length > 0) {
         agentTaskListAllCache = { at: Date.now(), snapshot };
     }
     return snapshot;
@@ -708,7 +709,8 @@ export async function fetchAgentModelsForAgent(agentId: string): Promise<QaapQai
     return dedupeInFlight(agentModelsInFlight, agentId, async () => {
         const generation = agentModelsGeneration;
         const models = await requestAgentModelsForAgent(agentId);
-        if (generation === agentModelsGeneration) {
+        // Empty catalogs are not cached: a CLI that is still signing in must be asked again on the next call.
+        if (generation === agentModelsGeneration && models.length > 0) {
             agentModelsCache.set(agentId, { at: Date.now(), models });
         }
         return models;
