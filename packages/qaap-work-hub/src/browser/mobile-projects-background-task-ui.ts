@@ -388,11 +388,16 @@ export class MobileProjectsBackgroundTaskUi {
             if (!(error instanceof QaapDirtyWorkspaceError)) {
                 throw error;
             }
-            return retryAfterDirtyWorkspace(
+            const retried = await retryAfterDirtyWorkspace(
                 error,
                 retryOptions => this.createProjectChatSession(project, cwd, draft, { ...options, ...retryOptions }),
                 (files, total) => this.askDirtyWorkspaceChoice(files, total),
             );
+            if (!retried) {
+                // The server refused the create and the user cancelled: the pre-create optimistic paint goes.
+                this.host.rollbackTranscriptOptimisticSubmit?.();
+            }
+            return retried;
         }
     }
 

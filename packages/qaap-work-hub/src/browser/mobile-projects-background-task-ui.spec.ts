@@ -262,8 +262,10 @@ describe('MobileProjectsBackgroundTaskUi', () => {
             return response as unknown as Response;
         }
 
-        async function submitOnDirtyTree(choice: 'startClean' | 'continueHere' | undefined): Promise<{ bodies: Array<Record<string, unknown>>; result: unknown }> {
+        async function submitOnDirtyTree(choice: 'startClean' | 'continueHere' | undefined): Promise<{ bodies: Array<Record<string, unknown>>; result: unknown; rollbacks: number }> {
             const ui = withAgentSnapshot({ agents: [], agentConfigured: false, qaiqInstalled: false, qaiqModels: [] });
+            let rollbacks = 0;
+            (ui as unknown as { host: { rollbackTranscriptOptimisticSubmit?: () => void } }).host.rollbackTranscriptOptimisticSubmit = () => { rollbacks++; };
             const decision = ui as unknown as {
                 askDirtyWorkspaceChoice: (files: readonly string[], total: number) => Promise<'startClean' | 'continueHere' | undefined>;
                 createWithDirtyWorkspaceDecision: (project: MobileProjectEntry, cwd: string, draft: string, options: { selectedAgentId?: string }) => Promise<unknown>;
@@ -282,7 +284,7 @@ describe('MobileProjectsBackgroundTaskUi', () => {
             try {
                 const project = { id: 'p', name: 'repo' } as MobileProjectEntry;
                 const result = await decision.createWithDirtyWorkspaceDecision(project, '/repo', 'fix it', { selectedAgentId: '@shell' });
-                return { bodies, result };
+                return { bodies, result, rollbacks };
             } finally {
                 globalThis.fetch = originalFetch;
             }
@@ -305,9 +307,10 @@ describe('MobileProjectsBackgroundTaskUi', () => {
         });
 
         it('creates nothing and resolves undefined (draft restored by the caller) when the dialog is cancelled', async () => {
-            const { bodies, result } = await submitOnDirtyTree(undefined);
+            const { bodies, result, rollbacks } = await submitOnDirtyTree(undefined);
             expect(bodies).to.have.length(1);
             expect(result).to.equal(undefined);
+            expect(rollbacks).to.equal(1);
         });
     });
 
