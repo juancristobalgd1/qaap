@@ -173,7 +173,8 @@ export function killAgentProcessTreeExtracted(ctx: QaapAgentTaskRunnerContext, c
             return undefined;
         }
         // Timing evidence for a slow exit: the epoch each signal left, and the largest event-loop gap
-        // seen while the grace timer waited (a blocked loop delays the timer by the same amount).
+        // seen while the grace timer waited (a blocked loop delays the timer by the same amount). The
+        // sampler stops when the escalation fires, which is at most one grace period after the signal.
         const armedAt = Date.now();
         let lastTick = armedAt;
         let maxLoopGapMs = 0;
@@ -183,7 +184,6 @@ export function killAgentProcessTreeExtracted(ctx: QaapAgentTaskRunnerContext, c
             lastTick = now;
         }, LOOP_SAMPLER_INTERVAL_MS);
         loopSampler.unref?.();
-        child.once('exit', () => clearInterval(loopSampler));
         const sendSignal = (signal: NodeJS.Signals): void => {
             if (globalThis.process.platform === 'win32') {
                 spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
