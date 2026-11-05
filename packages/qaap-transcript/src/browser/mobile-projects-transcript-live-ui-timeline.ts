@@ -156,11 +156,6 @@ export function ensureTranscriptLiveControllerExtracted(ctx: MobileProjectsTrans
                 },
                 findSummaryById: id => ctx.host.conversations?.findSummaryById(id),
                 isStopPending: id => qaapStopAck.isStopOverlayActive(id),
-                onServerStatus: (id, status) => {
-                    if (status !== 'streaming') {
-                        qaapStopAck.reportServerIdle(id);
-                    }
-                },
                 refreshConversation: options => ctx.refreshOpenTranscriptConversation(options),
                 renderConversation: conv => {
                     if (conv.status === 'streaming' && TRANSCRIPT_SSE_COALESCE_RAF) {
