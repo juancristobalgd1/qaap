@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { execFileSync } from 'child_process';
+import { execFileSync, spawn } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -45,6 +45,14 @@ class BaselineGitReviewEndpoint extends QaapGitReviewEndpoint {
     protected override takeTaskSnapshot(root: string): Promise<string> {
         this.snapshotCount++;
         return super.takeTaskSnapshot(root);
+    }
+
+    gitInTenantForTest(root: string, args: readonly string[], timeoutMs: number): Promise<string> {
+        return this.gitInTenant(root, args, undefined, undefined, timeoutMs);
+    }
+
+    setTenantProcessForTest(tenantProcess: unknown): void {
+        (this as unknown as { tenantProcess: unknown }).tenantProcess = tenantProcess;
     }
 
     diffSinceBaselineForTest(root: string, file: string, baseCommit: string): Promise<string> {
@@ -250,7 +258,7 @@ describe('qaap-git-review-endpoint task baseline', function (): void {
         expect(patch).to.not.contain('deleted file');
     });
 
-    it('concurrent reads share one worktree snapshot, and a fresh read takes another', async () => {
+    it('concurrent reads join a running snapshot or repeat it once, and a write always takes its own', async () => {
         const baseCommit = await snapshotBaseline();
         const probe = new BaselineGitReviewEndpoint();
         const before = probe.snapshotCount;
@@ -259,9 +267,112 @@ describe('qaap-git-review-endpoint task baseline', function (): void {
             probe.changedForTest(repo, baseCommit, true),
             probe.changedForTest(repo, baseCommit, true),
         ]);
-        expect(probe.snapshotCount - before).to.equal(1);
+        // The first read starts a snapshot; the reads that arrived while it ran repeat it once and share that repeat.
+        expect(probe.snapshotCount - before).to.be.at.most(2);
+        const afterReads = probe.snapshotCount;
         await probe.changedForTest(repo, baseCommit, false);
-        expect(probe.snapshotCount - before).to.equal(2);
+        expect(probe.snapshotCount - afterReads).to.equal(1);
+    });
+
+    it('a read that arrives while a snapshot runs never returns a tree from before it arrived', async () => {
+        const baseCommit = await snapshotBaseline();
+        const probe = new BaselineGitReviewEndpoint();
+        const first = probe.changedForTest(repo, baseCommit, true);
+        // Edit after the first snapshot started, then read: the read must see the edit.
+        fs.writeFileSync(path.join(repo, 'late.txt'), 'written while a snapshot ran\n');
+        const second = await probe.changedForTest(repo, baseCommit, true);
+        await first;
+        expect(second.map(file => file.path)).to.include('late.txt');
+    });
+
+    it('discard and per-file diff use literal pathspecs: app/[id]/page.tsx never reaches app/i/page.tsx', async () => {
+        fs.mkdirSync(path.join(repo, 'app', '[id]'), { recursive: true });
+        fs.mkdirSync(path.join(repo, 'app', 'i'), { recursive: true });
+        fs.writeFileSync(path.join(repo, 'app', '[id]', 'page.tsx'), 'dynamic committed\n');
+        fs.writeFileSync(path.join(repo, 'app', 'i', 'page.tsx'), 'static committed\n');
+        git(['add', '-A']);
+        git(['commit', '-qm', 'routes']);
+        const baseCommit = await snapshotBaseline();
+        fs.writeFileSync(path.join(repo, 'app', '[id]', 'page.tsx'), 'dynamic task edit\n');
+        fs.writeFileSync(path.join(repo, 'app', 'i', 'page.tsx'), 'static task edit\n');
+        await endpoint.discardFileForTest(repo, 'app/[id]/page.tsx', baseCommit);
+        expect(fs.readFileSync(path.join(repo, 'app', '[id]', 'page.tsx'), 'utf8')).to.equal('dynamic committed\n');
+        expect(fs.readFileSync(path.join(repo, 'app', 'i', 'page.tsx'), 'utf8')).to.equal('static task edit\n');
+    });
+
+    it('the per-file diff and the task commit use literal pathspecs: a neighbour matched by the brackets is left alone', async () => {
+        fs.mkdirSync(path.join(repo, 'app', '[id]'), { recursive: true });
+        fs.mkdirSync(path.join(repo, 'app', 'i'), { recursive: true });
+        fs.writeFileSync(path.join(repo, 'app', '[id]', 'page.tsx'), 'dynamic committed\n');
+        fs.writeFileSync(path.join(repo, 'app', 'i', 'page.tsx'), 'static committed\n');
+        git(['add', '-A']);
+        git(['commit', '-qm', 'routes']);
+        // The user staged a change to the neighbour before the task started.
+        fs.writeFileSync(path.join(repo, 'app', 'i', 'page.tsx'), 'static staged before task\n');
+        git(['add', '--', 'app/i/page.tsx']);
+        const baseCommit = await snapshotBaseline();
+        fs.writeFileSync(path.join(repo, 'app', '[id]', 'page.tsx'), 'dynamic task edit\n');
+        const patch = await endpoint.diffSinceBaselineForTest(repo, 'app/[id]/page.tsx', baseCommit);
+        expect(patch).to.contain('dynamic task edit');
+        expect(patch).to.not.contain('static');
+        endpoint.repoRootForTest = repo;
+        const res = fakeRes();
+        await endpoint.commitForTest({ body: { action: 'commit', message: 'dynamic route', baseCommit } }, res);
+        expect(res.statusCode, JSON.stringify(res.body)).to.equal(200);
+        expect(git(['show', '--name-only', '--format=', 'HEAD']).split('\n').filter(Boolean)).to.deep.equal(['app/[id]/page.tsx']);
+        // A reset that matched the neighbour would have unstaged it.
+        expect(git(['diff', '--cached', '--name-only'])).to.equal('app/i/page.tsx');
+    });
+
+    it('discard refuses a nested repository (gitlink) instead of deleting it', async () => {
+        const baseCommit = await snapshotBaseline();
+        const nested = path.join(repo, 'vendor', 'sub');
+        fs.mkdirSync(nested, { recursive: true });
+        execFileSync('git', ['init', '-q'], { cwd: nested });
+        execFileSync('git', ['-c', 'user.email=spec@qaap.test', '-c', 'user.name=qaap spec', 'commit', '-q', '--allow-empty', '-m', 'nested'], { cwd: nested });
+        expect(await rejectsWith(endpoint.discardFileForTest(repo, 'vendor/sub', baseCommit))).to.equal(true);
+        expect(fs.existsSync(path.join(nested, '.git'))).to.equal(true);
+    });
+
+    it('commit with a baseline answers 200 with a warning when the real index cannot be reset, and keeps the commit', async () => {
+        const baseCommit = await snapshotBaseline();
+        fs.writeFileSync(path.join(repo, 'a.ts'), 'one\ntwo\n');
+        endpoint.repoRootForTest = repo;
+        // A stale index lock makes the post-commit reset of the real index fail; the commit itself does not need it.
+        fs.writeFileSync(path.join(repo, '.git', 'index.lock'), '');
+        const res = fakeRes();
+        try {
+            await endpoint.commitForTest({ body: { action: 'commit', message: 'task work', baseCommit } }, res);
+        } finally {
+            fs.rmSync(path.join(repo, '.git', 'index.lock'), { force: true });
+        }
+        expect(res.statusCode, JSON.stringify(res.body)).to.equal(200);
+        expect((res.body as { warning?: string }).warning).to.be.a('string');
+        expect(git(['show', '--name-only', '--format=', 'HEAD']).split('\n').filter(Boolean)).to.deep.equal(['a.ts']);
+    });
+
+    it('a refused task commit (409) creates no branch', async () => {
+        const baseCommit = await snapshotBaseline();
+        fs.writeFileSync(path.join(repo, 'README.md'), 'task edit on top of user dirt\n');
+        endpoint.repoRootForTest = repo;
+        const res = fakeRes();
+        await endpoint.commitForTest({ body: { action: 'create-branch-commit', message: 'task work', branchName: 'task-branch', baseCommit } }, res);
+        expect(res.statusCode).to.equal(409);
+        expect(git(['branch', '--list', 'task-branch'])).to.equal('');
+    });
+
+    it('a git call that times out kills its process group and rejects even if a descendant keeps the pipes open', async function (): Promise<void> {
+        this.timeout(15_000);
+        // The shell's child (a detached sleep) leaves the process group and holds stdout open, as a stray descendant would.
+        const script = "node -e \"require('child_process').spawn('sleep', ['8'], { detached: true, stdio: ['ignore', 1, 2] }).unref()\"";
+        endpoint.setTenantProcessForTest({
+            spawnArgvPreparedAsync: async (_file: string, _args: readonly string[], options: { cwd: string; env: NodeJS.ProcessEnv; stdio: string[]; detached?: boolean }) =>
+                spawn('sh', ['-c', script], { cwd: options.cwd, env: options.env, stdio: ['ignore', 'pipe', 'pipe'], detached: options.detached }),
+            resolveProcessEnv: (_cwd: string, base: NodeJS.ProcessEnv) => base,
+        });
+        const started = Date.now();
+        expect(await rejectsWith(endpoint.gitInTenantForTest(repo, ['status'], 200))).to.equal(true);
+        expect(Date.now() - started).to.be.below(9_000);
     });
 
     it('answers 400 for a baseCommit that is not a full commit id or does not exist', async () => {
