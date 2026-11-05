@@ -145,7 +145,8 @@ export interface MobileProjectsStickyComposerRenderHost extends ComposerSheetSlo
     resolveAgentsHubShellProject(): MobileProjectEntry | undefined;
     resolveAgentsHubShellSummary(project: MobileProjectEntry): QaapAgentConversationSummaryDTO | undefined;
     updateNewFabVisibility(): void;
-    submitBackgroundAgentTask(project: MobileProjectEntry, draft: string, options: Record<string, unknown>): Promise<void>;
+    /** Resolves the created task, or a falsy value when nothing was sent (the composer gives the draft back). */
+    submitBackgroundAgentTask(project: MobileProjectEntry, draft: string, options: Record<string, unknown>): Promise<unknown>;
     executionSurfaceTabsUi: import('@theia/qaap-transcript/lib/browser/qaap-transcript-host-contracts').TranscriptExecutionSurfaceTabsApi;
     transcriptComposerUi: MobileProjectsTranscriptComposerUi;
     transcriptStickyComposerUi: MobileProjectsTranscriptStickyComposerUi;
@@ -482,7 +483,7 @@ export class MobileProjectsStickyComposerRenderUi {
             getDraft: () => this.readStickyComposerDraft(project),
             setDraft: value => { this.writeStickyComposerDraft(project, value); },
             resolveAgentLabel: () => this.host.stickyComposerAgentsUi.resolveStickyComposerAgentLabel(project),
-            resolveAgentId: () => this.host.stickyComposerAgentsUi.resolveStickyComposerPinnedAgentId(project),
+            resolveAgentId: () => this.host.stickyComposerAgentsUi.resolveStickyComposerDisplayedAgentId(project),
             modes,
             resolveModeLabel: () => resolveComposerModeLabel(modes, this.host.stickyComposerModeId),
             resolveModeId: () => this.host.stickyComposerModeId,
@@ -539,9 +540,10 @@ export class MobileProjectsStickyComposerRenderUi {
                     this.host.stickyComposerContextUi.notifyPendingComposerAttachments();
                     return;
                 }
+                // The agent the chip shows is the agent the submit sends (an @mention in the draft still overrides it).
                 const resolvedPinnedId = isChatSurface
                     ? THEIA_CODER_AGENT_ID
-                    : this.host.stickyComposerAgentsUi.resolveStickyComposerPinnedAgentId(project);
+                    : this.host.stickyComposerAgentsUi.resolveStickyComposerDisplayedAgentId(project);
                 const selectedAgentId = isChatSurface
                     ? THEIA_CODER_AGENT_ID
                     : resolveExplicitAgentForSubmit(draft, {
@@ -573,14 +575,28 @@ export class MobileProjectsStickyComposerRenderUi {
                     toolApprovalRules: showApprovalPolicy
                         ? this.host.stickyComposerToolApprovalRules
                         : undefined,
-                    agentModel: readStoredAgentModel(cwd, selectedAgentId),
+                    // The model the chip shows for the chip's agent; an @mention of another agent sends that agent's stored pick.
+                    agentModel: selectedAgentId === resolvedPinnedId
+                        ? this.host.stickyComposerAgentsUi.resolveStickyComposerAgentModel(selectedAgentId, project, cwd)
+                        : readStoredAgentModel(cwd, selectedAgentId),
+                    agentModelAgentId: selectedAgentId,
+                    openModelPicker: () => { this.host.stickyComposerSheetsUi.openStickyComposerAgentSheet(project); },
                     untilDone: showApprovalPolicy && resolveComposerUntilDoneForSubmit({
                         cwd,
                         approvalPolicyId: this.host.stickyComposerApprovalPolicyId,
                         modeId,
                     }),
                 });
-                void done.finally(() => this.renderStickyComposer());
+                void done.then(started => {
+                    // Nothing was sent (not ready, model held, cancelled): give the prompt back unless the user typed anew.
+                    if (!started && !this.readStickyComposerDraft(project).trim()) {
+                        this.writeStickyComposerDraft(project, draft);
+                    }
+                }, () => {
+                    if (!this.readStickyComposerDraft(project).trim()) {
+                        this.writeStickyComposerDraft(project, draft);
+                    }
+                }).finally(() => this.renderStickyComposer());
             },
             onSubmitBlocked: () => {
                 if (this.host.stickyComposerContextUi.hasPendingComposerAttachments()) {

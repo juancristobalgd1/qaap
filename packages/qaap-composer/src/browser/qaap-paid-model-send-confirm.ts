@@ -8,6 +8,7 @@ import { nls } from '@theia/core/lib/common/nls';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import {
     agentSupportsModelPicker,
+    agentUsesSettingsModelCatalog,
     ensureStoredAgentModel,
     isFreeAgentModel,
     isStoredAgentModelUsable,
@@ -20,6 +21,7 @@ import {
     fetchAgentModelsForAgent,
     hashString,
     isSameAgentModel,
+    migrateLegacyBackendAgentId,
     type QaapCreateAgentTaskQaiqModel,
     type QaapQaiqModelOption,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
@@ -163,6 +165,38 @@ export async function resolveSendAgentModel(
     }
     const picked = ensureStoredAgentModel(cwd, agentId, live);
     return picked ? { ok: true, model: picked } : { ok: false };
+}
+
+function sameAgentId(left: string, right: string): boolean {
+    const normalize = (id: string): string => {
+        const bare = id.trim().replace(/^@/, '').toLowerCase();
+        return migrateLegacyBackendAgentId(bare)?.toLowerCase() ?? bare;
+    };
+    return normalize(left) === normalize(right);
+}
+
+/**
+ * True when `model` can be sent with `agentId`. A model resolved for another harness (`modelAgentId`) never
+ * belongs, nor does one the agent's loaded native catalog does not list. Without a model, or for an agent
+ * without a model picker (the model is dropped there), there is nothing to check.
+ */
+export function sendModelBelongsToAgent(
+    agentId: string | undefined,
+    model: QaapCreateAgentTaskQaiqModel | undefined,
+    modelAgentId?: string,
+): boolean {
+    if (!model || !agentId || !agentSupportsModelPicker(agentId)) {
+        return true;
+    }
+    if (modelAgentId?.trim() && !sameAgentId(modelAgentId, agentId)) {
+        return false;
+    }
+    // QAIQ reads its models from the Settings lists, which the native catalog does not mirror.
+    if (agentUsesSettingsModelCatalog(agentId)) {
+        return true;
+    }
+    const live = cachedSendCatalog(agentId);
+    return !live?.length || live.some(option => isSameAgentModel(model, option));
 }
 
 /** Tells the user a send was held because no model is chosen; the optional opener moves them to the model picker. */
