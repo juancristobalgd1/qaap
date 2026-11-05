@@ -1,3 +1,4 @@
+import { formatTaskStartLog } from './qaap-agent-conversation-persist-policy';
 import { usesToolGateExtension } from './qaap-tool-gate-pi-adapter';
 import { QAAP_OPENCODE_GATE_PROBE } from './qaap-tool-gate-opencode-probe';
 import {
@@ -460,6 +461,7 @@ export async function spawnProcessWhenReadyExtracted(ctx: QaapAgentTaskRunnerCon
 }
 
 export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, task: QaapAgentTask): Promise<void> {
+        console.warn(formatTaskStartLog('spawn', task.id)); // [qaap-task-start] every process start (create, drain, retry, resume)
         fs.mkdirSync(path.dirname(ctx.logPath(task.id)), { recursive: true });
         const logStream = fs.createWriteStream(ctx.logPath(task.id), { flags: 'w' });
         const stdinPromptEntry = ctx.stdinPrompts.get(task.id);

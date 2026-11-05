@@ -129,7 +129,6 @@ export function createExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCr
         const prompt = (request.prompt ?? '').trim();
         const rawCommand = (request.command ?? '').trim();
         const planMode = request.interactionModeId?.trim().toLowerCase() === 'plan';
-        console.warn(formatTaskStartLog('create', 'pending', request.clientRequestId)); // [qaap-task-start] origin of every create
         if (!prompt && !rawCommand) {
             throw new Error('A non-empty "command" or "prompt" is required.');
         }
@@ -186,6 +185,7 @@ export function createExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCr
         }
         assertAgentAllowedOnHostedRuntime(resolvedAgentId);
         const id = randomUUID();
+        console.warn(formatTaskStartLog('create', id, request.clientRequestId)); // [qaap-task-start] origin of every create
         const parentId = request.parentId && ctx.tasks.has(request.parentId) ? request.parentId : undefined;
         const parentTask = parentId ? ctx.tasks.get(parentId) : undefined;
         // "Request approval" is authoritative: a stale/omitted autoApprove must never turn it into

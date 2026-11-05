@@ -16,8 +16,8 @@ export const STREAMING_PERSIST_MAX_DELAY_MS = 30_000;
 
 /**
  * Each debounce waits this many times the duration of the last store write. The namespace rewrite
- * is synchronous, so waiting proportionally keeps it from holding the event loop more than ~5 % of
- * the time while a turn streams.
+ * is synchronous, so a longer write is followed by a longer pause. This shrinks the write frequency
+ * for large stores; it does not bound the share of time spent blocked (the 30 s cap is the only bound).
  */
 export const STREAMING_PERSIST_DELAY_PER_WRITE_MS_FACTOR = 20;
 
@@ -64,7 +64,7 @@ export const QAAP_LOOP_STALL_LOG_MS = 1000;
  * One-line `[qaap-task-start]` record when a task starts: where it came from and its ids. Never
  * carries the prompt, command, paths or any other user content.
  */
-export function formatTaskStartLog(origin: 'create' | 'drain', taskId: string, clientRequestId?: string): string {
+export function formatTaskStartLog(origin: 'create' | 'drain' | 'spawn', taskId: string, clientRequestId?: string): string {
     const request = clientRequestId ? ` clientRequestId=${clientRequestId}` : '';
     return `[qaap-task-start] origin=${origin} taskId=${taskId}${request}`;
 }

@@ -208,6 +208,8 @@ export function schedulePersistExtracted(ctx: QaapAgentConversationStoreContext)
     // Adaptive: the wait grows with the measured cost of the last synchronous store rewrite, so a
     // large store cannot starve the event loop while a turn streams. Turn-close, Stop and other
     // settle paths call flushPersistExtracted, which bypasses this delay.
+    // Deliberately ref'd (not unref'd): if the process exits while this timer is pending, the debounced
+    // write is lost. The timer must keep the event loop alive until the write has run.
     ctx.persistTimer = setTimeout(() => {
         ctx.persistTimer = undefined;
         void ctx.persist();
