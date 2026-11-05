@@ -18,6 +18,7 @@ import {
     hasConfirmedPaidSendForProject,
     prewarmSendCatalog,
     resolveSendAgentModel,
+    sendModelBelongsToAgent,
     warnChooseSendModel,
 } from './qaap-paid-model-send-confirm';
 import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
@@ -140,6 +141,30 @@ describe('paid model send confirmation', () => {
         } finally {
             globalThis.fetch = originalFetch;
         }
+    });
+
+    it('a model resolved for another harness does not belong to the routed agent', () => {
+        const cohere = { provider: 'openai' as const, vendor: 'openrouter', modelId: 'openrouter/cohere/north-mini-code:free' };
+        expect(sendModelBelongsToAgent('pi', cohere, 'pi')).to.be.true;
+        expect(sendModelBelongsToAgent('@Pi', cohere, 'pi')).to.be.true;
+        expect(sendModelBelongsToAgent('opencode', cohere, 'pi')).to.be.false;
+        expect(sendModelBelongsToAgent('pi', beamFree, 'opencode')).to.be.false;
+        // Nothing to check without a model, or for an agent that takes no model.
+        expect(sendModelBelongsToAgent('pi', undefined, 'opencode')).to.be.true;
+        expect(sendModelBelongsToAgent('shell', cohere, 'pi')).to.be.true;
+    });
+
+    it('a model the agent\'s loaded catalog does not list does not belong to it', async () => {
+        const nativeModel = { provider: 'openai' as const, vendor: 'openclaude', modelId: 'openclaude/coder-mini:free', label: 'Coder Mini' };
+        const originalFetch = globalThis.fetch;
+        globalThis.fetch = (async () => ({ ok: true, json: async () => ({ models: [nativeModel] }) })) as unknown as typeof fetch;
+        try {
+            await prewarmSendCatalog('openclaude');
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+        expect(sendModelBelongsToAgent('openclaude', nativeModel)).to.be.true;
+        expect(sendModelBelongsToAgent('openclaude', { provider: 'openai', vendor: 'openrouter', modelId: 'openrouter/cohere/north-mini-code:free' })).to.be.false;
     });
 
     it('warns and opens the model picker when a send is held for a model choice', () => {

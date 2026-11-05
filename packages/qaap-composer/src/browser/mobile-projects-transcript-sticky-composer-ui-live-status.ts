@@ -32,6 +32,7 @@ import { writeProjectComposerDraft } from '../common/qaap-project-composer-draft
 import { clearComposerDraftRestored, markComposerDraftRestored, resolveComposerRestoredDraftKey } from '../common/qaap-composer-restored-draft';
 import { collectComposerImagePreviews } from './qaap-sticky-composer-context-ui';
 import { confirmPaidModelSend, resolveSendAgentModel, warnChooseSendModel } from './qaap-paid-model-send-confirm';
+import { readStoredAgentModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
 import {
     composerContextRequests,
     disposeComposerContextEntries,
@@ -122,16 +123,26 @@ export async function submitTranscriptComposerDraftExtracted(ctx: MobileProjects
     };
     // A paid model asks once per project per browser session before anything is sent; cancelling keeps the draft.
     const sendCwd = summary.cwd;
+    const openModelPicker = (): void => { ctx.host.transcriptComposerUi.openTranscriptComposerAgentSheet(project, summary); };
+    // A new task carries the model the chip shows for the chip's agent (same resolution as the toolbar);
+    // an @mention of another agent carries that agent's stored pick, never the chip agent's model.
+    const isNewTask = isAgentsHubIdleConversationSummary(summary);
+    const chipCwd = isNewTask ? ctx.host.projectsService.getProjectCwd(project) ?? summary.cwd : undefined;
+    const newTaskAgentModel = !isNewTask
+        ? undefined
+        : selectedAgentId === options.resolvedPinnedId
+            ? ctx.host.transcriptComposerUi.resolveTranscriptComposerAgentModel(selectedAgentId, chipCwd)
+            : readStoredAgentModel(chipCwd, selectedAgentId);
     const modelResolution = await resolveSendAgentModel(
         selectedAgentId,
         sendCwd,
-        ctx.host.transcriptComposerAgentModel,
+        isNewTask ? newTaskAgentModel : ctx.host.transcriptComposerAgentModel,
     );
     if (!modelResolution.ok) {
         // Fail closed: no model chosen for a picker agent, so nothing is sent on the CLI default.
         restoreComposerSubmission();
         ctx.remountTranscriptStickyComposer();
-        warnChooseSendModel(selectedAgentId ?? '', () => ctx.host.transcriptComposerUi.openTranscriptComposerAgentSheet(project, summary));
+        warnChooseSendModel(selectedAgentId ?? '', openModelPicker);
         return;
     }
     const sendModel = modelResolution.model;
@@ -231,7 +242,9 @@ export async function submitTranscriptComposerDraftExtracted(ctx: MobileProjects
                     ctx.host.transcriptComposerApprovalPolicyId,
                     summary.cwd,
                 ),
-                agentModel: ctx.host.transcriptComposerAgentModel,
+                agentModel: newTaskAgentModel,
+                agentModelAgentId: selectedAgentId,
+                openModelPicker,
                 imagePreviews,
                 untilDone,
             });

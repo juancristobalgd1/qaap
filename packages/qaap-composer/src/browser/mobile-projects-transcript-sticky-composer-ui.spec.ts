@@ -474,6 +474,8 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
             transcriptComposerSendRefresh: undefined,
             resolveAttachmentPreview: undefined,
             messageService: { warn: () => undefined, error: () => undefined },
+            projectsService: { getProjectCwd: () => undefined },
+            transcriptComposerUi: { resolveTranscriptComposerAgentModel: () => undefined },
             submitBackgroundAgentTask: async (
                 _project: MobileProjectEntry,
                 draft: string,
@@ -513,6 +515,61 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
         // The default (local) destination leaves the worktree decision to the server.
         expect(isolations).to.deep.equal(['auto']);
         expect(host.transcriptComposerDraft).to.equal('start the task');
+    });
+
+    it('starts a new task with the chip agent and the chip model, naming the model\'s agent', async () => {
+        const cohere = { provider: 'openai' as const, vendor: 'openrouter', modelId: 'openrouter/cohere/north-mini-code:free' };
+        const sent: Record<string, unknown>[] = [];
+        const opened: unknown[][] = [];
+        const host = {
+            transcriptComposerContext: [],
+            transcriptComposerDraft: 'start the task',
+            transcriptComposerDraftPersistTimer: undefined,
+            transcriptComposerModeId: undefined,
+            transcriptComposerApprovalPolicyId: undefined,
+            // A stale in-memory pick of another harness must not ride along: the chip resolver decides.
+            transcriptComposerAgentModel: { provider: 'openai' as const, vendor: 'opencode', modelId: 'opencode/beam-free' },
+            transcriptComposerHost: undefined,
+            transcriptComposerSendRefresh: undefined,
+            resolveAttachmentPreview: undefined,
+            messageService: { warn: () => undefined, error: () => undefined },
+            projectsService: { getProjectCwd: () => undefined },
+            transcriptComposerUi: {
+                resolveTranscriptComposerAgentModel: (agentId: string) => agentId === 'pi' ? cohere : undefined,
+                openTranscriptComposerAgentSheet: (...args: unknown[]) => { opened.push(args); },
+            },
+            submitBackgroundAgentTask: async (_project: MobileProjectEntry, _draft: string, opts: Record<string, unknown>) => {
+                sent.push(opts);
+                return { id: 'task-new' };
+            },
+        };
+        const ui = Object.create(
+            composerModule.MobileProjectsTranscriptStickyComposerUi.prototype,
+        ) as MobileProjectsTranscriptStickyComposerUi;
+        const seam = ui as unknown as Record<string, any>;
+        seam.host = host;
+        seam.isTranscriptStickyComposerAgentWorking = () => false;
+        seam.resolveComposerTranscriptChatHost = () => undefined;
+        seam.workHub = { renderIdleSubmitOptimistic: () => undefined };
+        seam.host.stickyComposerWorkspaceUi = { resolveComposerWorkspaceDestination: () => 'local' };
+        seam.host.stickyComposerRenderUi = { renderStickyComposer: () => undefined };
+        seam.remountTranscriptStickyComposer = () => undefined;
+
+        await liveStatusModule.submitTranscriptComposerDraftExtracted(
+            seam as unknown as MobileProjectsTranscriptStickyComposerUiContext,
+            'start the task',
+            project,
+            { ...summary, id: QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID, status: 'idle' },
+            document.createElement('div'),
+            { resolvedPinnedId: 'pi', showApprovalPolicy: false, isLegacyTheiaChat: false },
+        );
+
+        expect(sent).to.have.length(1);
+        expect(sent[0].selectedAgentId).to.equal('pi');
+        expect(sent[0].agentModel).to.deep.equal(cohere);
+        expect(sent[0].agentModelAgentId).to.equal('pi');
+        (sent[0].openModelPicker as () => void)();
+        expect(opened).to.have.length(1);
     });
 
     interface BusySubmitOverrides {
