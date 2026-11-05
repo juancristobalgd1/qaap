@@ -1054,10 +1054,11 @@ export interface QaapConversationCancelError extends Error {
     readonly status?: number;
 }
 
-export async function cancelConversationHttp(id: string): Promise<QaapAgentConversationDTO | undefined> {
+export async function cancelConversationHttp(id: string, signal?: AbortSignal): Promise<QaapAgentConversationDTO | undefined> {
     const response = await fetch(`${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(id)}/cancel`, {
         method: 'POST',
         credentials: 'include',
+        signal,
     });
     if (!response.ok) {
         const error: QaapConversationCancelError = Object.assign(new Error(response.statusText), { status: response.status });
@@ -1074,17 +1075,20 @@ export async function cancelConversationHttp(id: string): Promise<QaapAgentConve
  * a 4xx is the server's answer and is not retried. The server cancel is idempotent, so a retry that
  * races a successful first attempt is harmless.
  */
-export async function cancelConversation(id: string): Promise<QaapAgentConversationDTO | undefined> {
+export async function cancelConversation(id: string, signal?: AbortSignal): Promise<QaapAgentConversationDTO | undefined> {
     console.warn(`[qaap-stop] client conv=${id} transport=http`);
     try {
-        return await cancelConversationHttp(id);
+        return await cancelConversationHttp(id, signal);
     } catch (error) {
         const status = (error as QaapConversationCancelError).status;
-        if (status !== undefined && status < 500) {
+        if ((status !== undefined && status < 500) || signal?.aborted) {
             throw error;
         }
         await new Promise<void>(resolve => setTimeout(resolve, QAAP_CANCEL_RETRY_DELAY_MS));
-        return cancelConversationHttp(id);
+        if (signal?.aborted) {
+            throw error;
+        }
+        return cancelConversationHttp(id, signal);
     }
 }
 

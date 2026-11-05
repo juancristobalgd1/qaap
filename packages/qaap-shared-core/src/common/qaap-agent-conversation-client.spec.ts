@@ -327,4 +327,15 @@ describe('cancelConversation always stops over HTTP', () => {
         expect(error).to.be.instanceOf(Error);
         expect(calls).to.have.length(1);
     });
+
+    it('passes the abort signal to the POST and does not retry once it is aborted', async function (): Promise<void> {
+        this.timeout(5_000);
+        script('network', 200);
+        const controller = new AbortController();
+        const pending = cancelConversation('conv-1', controller.signal).catch((e: Error) => e);
+        controller.abort();
+        const error = await pending;
+        expect(error).to.be.instanceOf(Error);
+        expect(calls).to.have.length(1);
+    });
 });

@@ -45,7 +45,7 @@ export function applyTranscriptSseRenderExtracted(ctx: MobileProjectsTranscriptL
     eventMessage: QaapAgentMessageDTO,): void {
     const chatHost = ctx.resolveActiveTranscriptChatHost();
     // While a Stop is unacknowledged a frame may still say `streaming`: keep the stopped state.
-    const next = qaapStopAck.isSendBlocked(incoming.id) ? overlayPendingStopOnConversation(incoming) : incoming;
+    const next = qaapStopAck.isStopOverlayActive(incoming.id) ? overlayPendingStopOnConversation(incoming) : incoming;
     const prevConv = ctx.host.transcriptLastConv;
     // Prefer the open summary's settled status so post-settle visual evidence rebuilds
     // the agent row (pending chip → img/video) instead of a streaming text patch.

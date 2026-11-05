@@ -307,6 +307,8 @@ export class MobileProjectsConversationActionsUi {
             this.host.transcriptComposerSendRefresh?.();
             return;
         }
+        // Expired or failed: the stopped-run overlay no longer applies, so re-read the server state.
+        this.host.transcriptLiveUi.refreshOpenTranscriptAfterStop();
         if (outcome === 'failed') {
             reportQaapClientError('conversation-cancel', detail.error);
             this.host.messageService?.error(nls.localize(
@@ -317,7 +319,7 @@ export class MobileProjectsConversationActionsUi {
         } else {
             this.host.messageService?.error(nls.localize(
                 'qaap/mobileProjects/cancelTaskNotConfirmed',
-                'The stop is not confirmed yet. Stop again to retry; Send unlocks when the run ends.'
+                'The stop is not confirmed yet. Stop again to retry. Send unlocks when the server reports the run ended.'
             ));
         }
         const latest = this.host.conversations?.findSummaryById(summary.id);
@@ -350,10 +352,12 @@ export class MobileProjectsConversationActionsUi {
             // (the transcript flipped back to working) and the queued follow-up raced the stop.
             // Tracked: Send for this conversation stays blocked until the server acknowledges the Stop.
             const stopId = summary.id;
-            void qaapStopAck.track(stopId, cancelConversation(stopId), {
+            const stopRequest = new AbortController();
+            void qaapStopAck.track(stopId, cancelConversation(stopId, stopRequest.signal), {
                 isStillStreaming: () => getConversation(stopId).then(conv => conv.status === 'streaming'),
                 onSettled: (outcome, detail) => this.onStopAckSettled(summary, outcome, detail),
                 onLateAnswer: () => this.host.transcriptComposerSendRefresh?.(),
+                abort: () => stopRequest.abort(),
             });
             this.host.transcriptComposerSendRefresh?.();
         }

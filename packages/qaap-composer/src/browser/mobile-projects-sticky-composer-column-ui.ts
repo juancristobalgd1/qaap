@@ -111,6 +111,8 @@ export class MobileProjectsStickyComposerColumnUi {
         canSubmit: boolean;
         /** True while a Stop for this conversation is unacknowledged: Send is disabled and reads "Stopping…". */
         isSubmitBlocked?: () => boolean;
+        /** True when a Stop expired while the server still streams: the Stop control is offered again. */
+        isStopRetryable?: () => boolean;
         isAgentWorking?: () => boolean;
         /**
          * Read-only "permissions in effect" line (e.g. `Build · Request approval`) shown while the
@@ -424,12 +426,14 @@ export class MobileProjectsStickyComposerColumnUi {
             inputPanel.classList.toggle('theia-mod-agent-working-idle', beamIdle);
             updateRunPermissions(working);
             const submitBlocked = options.isSubmitBlocked?.() ?? false;
-            const showStop = working && !has && !submitBlocked;
+            const stopRetryable = options.isStopRetryable?.() ?? false;
+            // Send waits for the Stop; the Stop control itself returns once that Stop has expired unconfirmed.
+            const showStop = working && !has && (!submitBlocked || stopRetryable);
             const sendLabel = options.sendLabel ?? nls.localize('qaap/mobileProjects/inlineStart', 'Start');
             const stopLabel = options.stopLabel ?? nls.localize('qaap/mobileProjects/cancelTaskRun', 'Cancel run');
             sendBtn.classList.toggle('theia-mod-stop', showStop);
             sendBtn.classList.toggle('theia-mod-ready', !showStop && has && options.canSubmit && !submitBlocked);
-            sendBtn.classList.toggle('theia-mod-stopping', submitBlocked);
+            sendBtn.classList.toggle('theia-mod-stopping', submitBlocked && !stopRetryable);
             const nextIcon: 'send' | 'stop' = showStop ? 'stop' : 'send';
             if (showStop) {
                 sendBtn.disabled = false;
@@ -441,7 +445,7 @@ export class MobileProjectsStickyComposerColumnUi {
                 }
             } else {
                 const stoppingLabel = nls.localize('qaap/mobileProjects/stopAckPending', 'Stopping…');
-                const idleLabel = submitBlocked ? stoppingLabel : sendLabel;
+                const idleLabel = submitBlocked && !stopRetryable ? stoppingLabel : sendLabel;
                 sendBtn.disabled = !has || !options.canSubmit || submitBlocked;
                 sendBtn.title = idleLabel;
                 sendBtn.setAttribute('aria-label', idleLabel);

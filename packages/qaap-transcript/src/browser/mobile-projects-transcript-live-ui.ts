@@ -505,6 +505,11 @@ export class MobileProjectsTranscriptLiveUi {
         return resolveOpenTranscriptConversationExtracted(this, summary);
     }
 
+    /** Re-reads the open conversation from the server (after a Stop expired or failed). */
+    refreshOpenTranscriptAfterStop(): void {
+        void this.refreshOpenTranscriptConversation({ forcePoll: true, bypassCache: true });
+    }
+
     async refreshOpenTranscriptConversation(options?: QaapTranscriptLiveRefreshOptions,): Promise<void> {
         return refreshOpenTranscriptConversationExtracted(this, options);
     }

@@ -111,4 +111,57 @@ describe('QaapStopAckTracker', () => {
         expect(tracker.settledSince('c2', before)).to.equal(false);
         expect(tracker.settledSince('c1', tracker.currentSequence())).to.equal(false);
     });
+
+    it('makes the Stop retryable after expiry while the server streams, and keeps Send blocked', async () => {
+        const tracker = new QaapStopAckTracker();
+        const request = deferred();
+        const settled: QaapStopAckOutcome[] = [];
+        const done = tracker.track('c1', request.promise, {
+            isStillStreaming: async () => true,
+            onSettled: outcome => settled.push(outcome),
+            timeoutMs: 5,
+        });
+
+        expect(await done).to.equal('expired');
+        expect(tracker.isSendBlocked('c1')).to.equal(true);
+        expect(tracker.isStopRetryable('c1')).to.equal(true);
+        expect(settled).to.deep.equal(['expired']);
+    });
+
+    it('aborts the pending Stop and releases Send when the server reports the run ended', async () => {
+        const tracker = new QaapStopAckTracker();
+        const request = deferred();
+        let aborted = 0;
+        const done = tracker.track('c1', request.promise, {
+            isStillStreaming: async () => true,
+            onSettled: () => undefined,
+            abort: () => { aborted += 1; },
+            timeoutMs: 5,
+        });
+        await done;
+
+        expect(tracker.reportServerIdle('c1')).to.equal(true);
+        expect(aborted).to.equal(1);
+        expect(tracker.isSendBlocked('c1')).to.equal(false);
+        expect(tracker.isStopRetryable('c1')).to.equal(false);
+        expect(tracker.reportServerIdle('c1')).to.equal(false);
+    });
+
+    it('keeps Send blocked when the expiry probe does not answer in time', async () => {
+        const tracker = new QaapStopAckTracker();
+        const request = deferred();
+        let aborted = 0;
+        const done = tracker.track('c1', request.promise, {
+            isStillStreaming: () => new Promise<boolean>(() => undefined),
+            onSettled: () => undefined,
+            abort: () => { aborted += 1; },
+            timeoutMs: 5,
+            probeTimeoutMs: 5,
+        });
+        const outcome = await done;
+
+        expect(outcome).to.equal('expired');
+        expect(aborted).to.equal(0);
+        expect(tracker.isSendBlocked('c1')).to.equal(true);
+    });
 });

@@ -164,10 +164,10 @@ export async function doRefreshOpenTranscriptConversationExtracted(ctx: MobilePr
             && !options?.forcePoll) {
             return;
         }
-        const cachedSnapshot = options?.forcePoll
+        const cachedSnapshot = options?.forcePoll && !options.bypassCache
             ? ctx.readCachedTranscriptConversation(activeSummary.id)
             : undefined;
-        const localSnapshot = cachedSnapshot && qaapStopAck.isSendBlocked(activeSummary.id)
+        const localSnapshot = cachedSnapshot && qaapStopAck.isStopOverlayActive(activeSummary.id)
             ? overlayPendingStopOnConversation(cachedSnapshot)
             : cachedSnapshot;
         if (localSnapshot && localSnapshot.messages.length > 0) {
@@ -192,7 +192,11 @@ export async function doRefreshOpenTranscriptConversationExtracted(ctx: MobilePr
             if (answered.status === 'streaming' && qaapStopAck.settledSince(answered.id, stopSequenceAtStart)) {
                 return;
             }
-            const full = qaapStopAck.isSendBlocked(answered.id) ? overlayPendingStopOnConversation(answered) : answered;
+            if (answered.status !== 'streaming') {
+                // The server reports the run ended: a Stop still pending cannot end a turn that is over.
+                qaapStopAck.reportServerIdle(answered.id);
+            }
+            const full = qaapStopAck.isStopOverlayActive(answered.id) ? overlayPendingStopOnConversation(answered) : answered;
             const fingerprint = ctx.conversationTranscriptFingerprint(full);
             const fingerprintUnchanged = fingerprint === ctx.host.transcriptLastFingerprint;
             const forceStatusSettle = options?.forceStatusSettle

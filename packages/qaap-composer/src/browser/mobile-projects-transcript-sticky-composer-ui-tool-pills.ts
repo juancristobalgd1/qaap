@@ -254,6 +254,7 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: MobilePro
             : undefined,
         canSubmit: true,
         isSubmitBlocked: () => qaapStopAck.isSendBlocked(ctx.host.transcriptLastConv?.id ?? summary.id),
+        isStopRetryable: () => qaapStopAck.isStopRetryable(ctx.host.transcriptLastConv?.id ?? summary.id),
         onImprovePrompt: ctx.host.composerPromptImprover
             ? createStickyComposerImprovePromptHandler({
                 improver: ctx.host.composerPromptImprover,
