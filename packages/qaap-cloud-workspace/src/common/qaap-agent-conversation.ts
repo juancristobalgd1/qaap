@@ -319,11 +319,6 @@ export interface QaapAgentConversation {
      */
     readonly gitDiffAdded?: number;
     readonly gitDiffRemoved?: number;
-    /**
-     * `true` when the turn's diff was measured without a pre-turn snapshot, so pre-existing dirt may
-     * be counted and untracked files may be missed. Omitted when the diff used the snapshot baseline.
-     */
-    readonly gitDiffBaselineApproximate?: boolean;
     /** When set, this thread is tied to a GitHub pull request (Work Hub inbox). */
     readonly linkedPullRequest?: QaapLinkedPullRequest;
     /** Pull request the backend opened for this task with its evidence (`QaapTaskPullRequestService`). */
@@ -425,11 +420,6 @@ export interface QaapAgentConversationSummary {
     readonly activityLabel?: string;
     readonly linesAdded?: number;
     readonly linesRemoved?: number;
-    /**
-     * `true` when the newest turn's line counts were measured without a pre-turn snapshot (they may
-     * include pre-existing dirt). Omitted otherwise.
-     */
-    readonly diffBaselineApproximate?: boolean;
     /**
      * Git commit of the task baseline: the pre-turn snapshot of the conversation's first user message.
      * The changes panel diffs the current worktree against it. Omitted when no such snapshot exists.
@@ -728,15 +718,19 @@ export function findPreTurnCheckpoint(
         .find(checkpoint => checkpoint.kind === 'pre-turn' && checkpoint.messageId === userMessageId && !!checkpoint.commit);
 }
 
-/** Task baseline commit: the pre-turn snapshot of the conversation's first user message, if any. */
+/**
+ * Task baseline commit: the first pre-turn snapshot of the conversation's first user message, if any.
+ * A retry or a rewind of that message adds later pre-turn snapshots for it; the task still starts at the
+ * first one, so the oldest wins. Checkpoints are kept in capture order.
+ */
 export function resolveBaselineCommit(conv: Pick<QaapAgentConversation, 'checkpoints' | 'messages'>): string | undefined {
     const firstUser = conv.messages.find(message => message.role === 'user');
-    return firstUser ? findPreTurnCheckpoint(conv, firstUser.id)?.commit : undefined;
-}
-
-/** Whether the newest turn's diff stats were measured without a pre-turn snapshot. */
-export function resolveDiffBaselineApproximate(conv: Pick<QaapAgentConversation, 'gitDiffBaselineApproximate'>): boolean {
-    return conv.gitDiffBaselineApproximate === true;
+    if (!firstUser) {
+        return undefined;
+    }
+    return (conv.checkpoints ?? [])
+        .find(checkpoint => checkpoint.kind === 'pre-turn' && checkpoint.messageId === firstUser.id && !!checkpoint.commit)
+        ?.commit;
 }
 
 export function toConversationSummary(conv: QaapAgentConversation): QaapAgentConversationSummary {
@@ -800,7 +794,6 @@ export function toConversationSummary(conv: QaapAgentConversation): QaapAgentCon
         ...(conv.gitDiffAdded !== undefined ? { linesAdded: conv.gitDiffAdded } : {}),
         ...(conv.gitDiffRemoved !== undefined ? { linesRemoved: conv.gitDiffRemoved } : {}),
         ...(baselineCommit ? { baselineCommit } : {}),
-        ...(resolveDiffBaselineApproximate(conv) ? { diffBaselineApproximate: true } : {}),
         ...(conv.contextUsage ? { contextUsage: conv.contextUsage } : {}),
         ...(conv.contextWindowSize ? { contextWindowSize: conv.contextWindowSize } : {}),
         ...(conv.contextUsageEstimated ? { contextUsageEstimated: true } : {}),

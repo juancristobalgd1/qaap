@@ -119,8 +119,6 @@ export interface QaapAgentConversationSummaryDTO {
     readonly linesRemoved?: number;
     /** Task baseline commit (pre-turn snapshot of the first user message); the changes panel diffs against it. */
     readonly baselineCommit?: string;
-    /** `true` when the newest turn's line counts may include pre-existing dirt (no pre-turn snapshot). */
-    readonly diffBaselineApproximate?: boolean;
     readonly turnStartedAt?: number;
     readonly turnProgressCurrent?: number;
     readonly turnProgressTotal?: number;

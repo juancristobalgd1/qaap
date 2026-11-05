@@ -488,9 +488,6 @@ export async function applyTaskOutcomeExtracted(ctx: QaapAgentConversationStoreC
     if (gitStats) {
         withReply = { ...withReply, gitDiffAdded: gitStats.added, gitDiffRemoved: gitStats.removed };
     }
-    if (turnGit?.baselineApproximate) {
-        withReply = { ...withReply, gitDiffBaselineApproximate: true };
-    }
     const checkpoint = turnGit?.checkpoint;
     if (checkpoint) {
         withReply = { ...withReply, checkpoints: [...(withReply.checkpoints ?? []), checkpoint] };
