@@ -999,6 +999,15 @@ export function cancelExtracted(ctx: QaapAgentConversationStoreContext, id: stri
     // finalized; the last-user-message fallback keeps pre-multitasking conversations working.
     const activeRefs = ctx.getActiveTaskIdsForConversation(id)
         .map(taskId => ({ taskId, ref: ctx.taskToConversation.get(taskId) }));
+    // Idempotent: a repeat Stop (the client retries, or the user taps twice) on a conversation with
+    // no live run changes nothing; no second "Turn cancelled." trace and no extra 'updated' event.
+    // An active goal loop still has to be stopped below, even with no live run. A queue that is not yet
+    // paused, or an armed coalesce drain, still needs the Stop below (pause the queue, disarm the drain).
+    const hasArmedDrain = ctx.drainTimers?.has(id) ?? false;
+    const hasUnpausedQueue = (conv.pendingUserMessages?.length ?? 0) > 0 && !conv.pendingUserMessagesPaused;
+    if (activeRefs.length === 0 && conv.status !== 'streaming' && !isGoalLoopActive(conv) && !hasArmedDrain && !hasUnpausedQueue) {
+        return conv;
+    }
     const lastUser = [...conv.messages].reverse().find(m => m.role === 'user' && m.taskId);
     const cancelTaskIds = activeRefs.length > 0
         ? activeRefs.map(entry => entry.taskId)

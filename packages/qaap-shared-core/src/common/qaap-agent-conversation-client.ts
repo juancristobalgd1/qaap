@@ -1046,24 +1046,46 @@ export async function forkConversation(id: string): Promise<QaapAgentConversatio
     return response.json() as Promise<QaapAgentConversationDTO>;
 }
 
-export async function cancelConversationHttp(id: string): Promise<void> {
+/** Delay before the single retry of a Stop that failed on the network or with a 5xx. */
+export const QAAP_CANCEL_RETRY_DELAY_MS = 1_500;
+
+/** A cancel the server answered with a non-2xx status; `status` is undefined when the request never got one. */
+export interface QaapConversationCancelError extends Error {
+    readonly status?: number;
+}
+
+export async function cancelConversationHttp(id: string): Promise<QaapAgentConversationDTO | undefined> {
     const response = await fetch(`${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(id)}/cancel`, {
         method: 'POST',
         credentials: 'include',
     });
     if (!response.ok) {
-        throw new Error(response.statusText);
+        const error: QaapConversationCancelError = Object.assign(new Error(response.statusText), { status: response.status });
+        throw error;
     }
+    // The answer carries the stopped conversation (with its "Turn cancelled." trace); an empty body is tolerated.
+    const text = await response.text();
+    return text ? JSON.parse(text) as QaapAgentConversationDTO : undefined;
 }
 
-/** Cancels via WebSocket when the live feed is connected; falls back to HTTP POST /cancel. */
-export async function cancelConversation(id: string): Promise<void> {
-    console.info(`[qaap-stop] client conv=${id} transport=${conversationLiveCancel ? 'ws' : 'http'}`);
-    if (conversationLiveCancel) {
-        await conversationLiveCancel(id);
-        return;
+/**
+ * Stops the running turn over HTTP, always (never the WebSocket op, which can be dropped with the
+ * socket). One retry after {@link QAAP_CANCEL_RETRY_DELAY_MS}, only for a network failure or a 5xx;
+ * a 4xx is the server's answer and is not retried. The server cancel is idempotent, so a retry that
+ * races a successful first attempt is harmless.
+ */
+export async function cancelConversation(id: string): Promise<QaapAgentConversationDTO | undefined> {
+    console.info(`[qaap-stop] client conv=${id} transport=http`);
+    try {
+        return await cancelConversationHttp(id);
+    } catch (error) {
+        const status = (error as QaapConversationCancelError).status;
+        if (status !== undefined && status < 500) {
+            throw error;
+        }
+        await new Promise<void>(resolve => setTimeout(resolve, QAAP_CANCEL_RETRY_DELAY_MS));
+        return cancelConversationHttp(id);
     }
-    await cancelConversationHttp(id);
 }
 
 async function readGoalLoopResponse(response: Response): Promise<QaapGoalLoopResponseDTO> {
