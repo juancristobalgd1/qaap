@@ -4,6 +4,7 @@ import type { MobileProjectsTranscriptStickyComposerUiContext } from './mobile-p
 
 import { nls } from '@theia/core/lib/common/nls';
 import {
+    isDirtyWorkspaceCancelled,
     isMaxConcurrentRunsError,
     type QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
@@ -303,6 +304,10 @@ export async function submitTranscriptComposerDraftExtracted(ctx: MobileProjects
         }
     } catch (error) {
         restoreComposerSubmission();
+        if (isDirtyWorkspaceCancelled(error)) {
+            // Cancelled on the dirty-workspace dialog: nothing was sent and the draft is back.
+            return;
+        }
         if (isMaxConcurrentRunsError(error)) {
             // The conversation already has the maximum number of concurrent agent runs.
             // Show a friendly message instead of a generic error — the user can wait for
