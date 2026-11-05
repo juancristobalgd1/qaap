@@ -1,4 +1,5 @@
 import { buildPiGateTemplateVars } from './qaap-tool-gate-pi-adapter';
+import { formatTaskStartLog } from './qaap-agent-conversation-persist-policy';
 import { buildPiDefaultModelFlagShell } from '@theia/qaap-shared-core/lib/common/qaap-pi-default-model';
 import { AGENT_STOP_GRACE_TIMEOUT_MS, SHELL_AGENT_ID, QAIQ_AGENT_ID, REPO_MAP_CACHE_TTL_MS, REPO_MAP_MAX_CHARS, USER_REQUEST_MAX_CHARS } from './qaap-agent-task-runner-constants';
 import type { QaapAgentCommandBuildResult, QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
@@ -128,6 +129,7 @@ export function createExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCr
         const prompt = (request.prompt ?? '').trim();
         const rawCommand = (request.command ?? '').trim();
         const planMode = request.interactionModeId?.trim().toLowerCase() === 'plan';
+        console.warn(formatTaskStartLog('create', 'pending', request.clientRequestId)); // [qaap-task-start] origin of every create
         if (!prompt && !rawCommand) {
             throw new Error('A non-empty "command" or "prompt" is required.');
         }

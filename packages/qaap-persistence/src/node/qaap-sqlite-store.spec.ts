@@ -45,6 +45,17 @@ describe('QaapSqliteStore', () => {
         database.close();
     });
 
+    it('reports the cost of a namespace rewrite without record content', () => {
+        const store = new QaapSqliteStore({ databasePath: path.join(directory, 'state.sqlite'), namespace: 'stats' });
+        const stats = store.replace([['a', { secret: 'PRIVATE TEXT' }], ['b', { secret: 'MORE' }]]);
+        expect(stats.namespace).to.equal('stats');
+        expect(stats.entries).to.equal(2);
+        expect(stats.chars).to.equal(JSON.stringify({ secret: 'PRIVATE TEXT' }).length + JSON.stringify({ secret: 'MORE' }).length);
+        expect(stats.stringifyMs).to.be.at.least(0);
+        expect(stats.totalMs).to.be.at.least(stats.stringifyMs);
+        expect(JSON.stringify(stats)).to.not.include('PRIVATE TEXT');
+    });
+
     it('imports a legacy JSON file once and keeps the source untouched', () => {
         const legacyPath = path.join(directory, 'legacy.json');
         const databasePath = path.join(directory, 'state.sqlite');

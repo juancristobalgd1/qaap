@@ -2,6 +2,7 @@ import {
     AGENT_CANDIDATES, CUSTOM_AGENTS_ENV, DEFAULT_AGENT_PREFERENCE, ENV_AGENT_ID, HELPER_BIN_DIR, HELPER_BIN_PATH, HELPER_CLI_SOURCE, INDEX_PATH,
     QAIQ_AGENT_ID, SHELL_AGENT_ID, TOKEN_PATH, TOKENS_PATH, type AgentCandidate, type PersistedAgentTaskIndex,
 } from './qaap-agent-task-runner-constants';
+import { formatTaskStartLog } from './qaap-agent-conversation-persist-policy';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { QAAP_BUILTIN_AGENT_IDS } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 // Extracted from qaap-agent-task-runner.ts
@@ -610,6 +611,7 @@ export function drainQueuedTasksExtracted(ctx: QaapAgentTaskRunnerContext): void
             if (!next) {
                 return;
             }
+            console.warn(formatTaskStartLog('drain', next.id)); // [qaap-task-start] origin of every queued start
             const request = ctx.queuedCreateRequests.get(next.id);
             if (!request) {
                 ctx.finishTask(next.id, 'failed', undefined);

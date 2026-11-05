@@ -91,6 +91,8 @@ export interface QaapAgentConversationStoreContext {
     /** Tasks the turn watchdog is stopping as `interrupted`; their settle keeps the watchdog's reason. */
     readonly turnWatchdogPausedTaskIds: Set<string>;
     persistFailureLoggedAtMs: number;
+    /** Duration of the last completed store write; drives the adaptive streaming persist debounce. */
+    lastPersistDurationMs: number | undefined;
     persistChain: Promise<void>;
 
     // ─── Persistence / lifecycle ────────────────────────────────────────────

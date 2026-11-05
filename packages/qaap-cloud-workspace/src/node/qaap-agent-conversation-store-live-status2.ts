@@ -37,7 +37,8 @@ import { QAAP_VISUAL_REPAIR_REQUIRED_MARKER } from '@theia/qaap-shared-core/lib/
 import { resolveRunAgentMessageId as resolveRunAgentMessageIdHelper, sweepZombieStreamingTurns as sweepZombieStreamingTurnsHelper, forceStopZombieTurn as forceStopZombieTurnHelper, fireAgentMessageWireUpdate as fireAgentMessageWireUpdateHelper } from './qaap-agent-conversation-store-helpers';
 
 import { backfillQaapWorktreeOrdinals, parseQaapWorktreeOrdinalHighWater, QAAP_WORKTREE_ORDINAL_HIGH_WATER_KEY } from './qaap-worktree-ordinal-allocator';
-import { STREAMING_PERSIST_DEBOUNCE_MS, TURN_WATCHDOG_SWEEP_MS, QAAP_AUTO_RESUME_TURNS_ENABLED, MAX_RESTART_RESUMES } from './qaap-agent-conversation-store-constants';
+import { resolveAdaptiveStreamingPersistDelayMs } from './qaap-agent-conversation-persist-policy';
+import { TURN_WATCHDOG_SWEEP_MS, QAAP_AUTO_RESUME_TURNS_ENABLED, MAX_RESTART_RESUMES } from './qaap-agent-conversation-store-constants';
 
 export function buildPromptExtracted(ctx: QaapAgentConversationStoreContext, conv: QaapAgentConversation, turnAgentId = conv.agentId): string {
     const lastUser = conv.messages[conv.messages.length - 1];
@@ -204,10 +205,13 @@ export function schedulePersistExtracted(ctx: QaapAgentConversationStoreContext)
     if (ctx.persistTimer !== undefined) {
         return;
     }
+    // Adaptive: the wait grows with the measured cost of the last synchronous store rewrite, so a
+    // large store cannot starve the event loop while a turn streams. Turn-close, Stop and other
+    // settle paths call flushPersistExtracted, which bypasses this delay.
     ctx.persistTimer = setTimeout(() => {
         ctx.persistTimer = undefined;
         void ctx.persist();
-    }, STREAMING_PERSIST_DEBOUNCE_MS);
+    }, resolveAdaptiveStreamingPersistDelayMs(ctx.lastPersistDurationMs));
 }
 
 export function flushPersistExtracted(ctx: QaapAgentConversationStoreContext): void {
