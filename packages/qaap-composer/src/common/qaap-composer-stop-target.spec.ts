@@ -23,6 +23,13 @@ describe('resolveComposerStopTarget', () => {
         expect(resolveComposerStopTarget(stale, 'conv-open', open)).to.equal(open);
     });
 
+    it('never redirects a placeholder closure (task being created) to the transcript shown before it', () => {
+        const placeholder = { id: '__qaap_agents_hub_idle__', title: 'New task' };
+        expect(resolveComposerStopTarget(placeholder, 'conv-old', stale, true)).to.equal(undefined);
+        expect(resolveComposerStopTarget(placeholder, undefined, undefined, true)).to.equal(placeholder);
+        expect(resolveComposerStopTarget(placeholder, placeholder.id, placeholder, true)).to.equal(placeholder);
+    });
+
     it('has no target when the open conversation cannot be resolved', () => {
         expect(resolveComposerStopTarget(stale, 'conv-open', undefined)).to.equal(undefined);
         expect(resolveComposerStopTarget(stale, 'conv-open', stale)).to.equal(undefined);

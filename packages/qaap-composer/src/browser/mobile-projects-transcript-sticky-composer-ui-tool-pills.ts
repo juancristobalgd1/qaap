@@ -3,6 +3,7 @@ import type { MobileProjectsTranscriptStickyComposerUiContext } from './mobile-p
 // Extracted from mobile-projects-transcript-sticky-composer-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
+import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import { resolveAgentDisplayLabel } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import {
     type QaapAgentConversationSummaryDTO,
@@ -299,8 +300,19 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: MobilePro
             }
             console.warn(`[qaap-stop] click origin=composer summary=${stopSummary.id} open=${ctx.host.transcriptLastConv?.id ?? '-'}`);
             // The open transcript decides the target: a closure captured before a conversation switch must not cancel the older one.
-            const target = resolveComposerStopTarget(stopSummary, ctx.host.transcriptLastConv?.id, ctx.host.transcriptOpenSummary);
+            const target = resolveComposerStopTarget(
+                stopSummary,
+                ctx.host.transcriptLastConv?.id,
+                ctx.host.transcriptOpenSummary,
+                isAgentsHubIdleConversationSummary(summary),
+            );
             if (!target) {
+                // Fail closed: no cancel is sent to a conversation the Stop does not belong to.
+                console.warn(`[qaap-stop] no target: closure=${summary.id} open=${ctx.host.transcriptLastConv?.id ?? '-'}`);
+                MobileSnackbar.show(nls.localize(
+                    'qaap/mobileProjects/stopNoTarget',
+                    'Stop is not available yet: the run it belongs to is still being created.'
+                ), { kind: 'warning', duration: 3200 });
                 return;
             }
             void ctx.host.onCancelConversation(stopProject, target);

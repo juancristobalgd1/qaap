@@ -13,7 +13,13 @@ export function resolveComposerStopTarget<T extends { readonly id: string }>(
     closureSummary: T,
     openConversationId: string | undefined,
     openSummary: T | undefined,
+    closureIsPlaceholder = false,
 ): T | undefined {
+    if (closureIsPlaceholder && openConversationId !== undefined && openConversationId !== closureSummary.id) {
+        // A placeholder closure means the task is still being created: the open transcript is the
+        // conversation shown before it, and a Stop must never cancel that older run.
+        return undefined;
+    }
     if (openConversationId === undefined || openConversationId === closureSummary.id) {
         return closureSummary;
     }
