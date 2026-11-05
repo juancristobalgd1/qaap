@@ -5,7 +5,7 @@
 
 import { expect } from 'chai';
 import type { QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
-import { applyOptimisticRunCancelToConversation } from './qaap-transcript-run-cancel';
+import { appendOptimisticStoppedTurnRow, applyOptimisticRunCancelToConversation } from './qaap-transcript-run-cancel';
 
 function conversationWithTwoRuns(): QaapAgentConversationDTO {
     return {
@@ -62,5 +62,20 @@ describe('applyOptimisticRunCancelToConversation', () => {
 
         expect(source.messages[1].runActive).to.equal(true);
         expect(source.messages[1].traceEvents).to.equal(undefined);
+    });
+
+    it('appends a stopped-turn row when the local copy has no agent row yet', () => {
+        const conv = { id: 'c1', cwd: '/tmp', agentId: 'pi', title: 'T', status: 'idle', createdAt: 1, updatedAt: 2,
+            messages: [{ id: 'user-1', role: 'user', content: 'hola', createdAt: 1 }] } as unknown as QaapAgentConversationDTO;
+        const stopped = appendOptimisticStoppedTurnRow(conv, 5);
+        expect(stopped.messages).to.have.length(2);
+        expect(stopped.messages[1].role).to.equal('agent');
+        expect(stopped.messages[1].traceEvents?.some(e => e.type === 'run_cancelled')).to.equal(true);
+    });
+
+    it('leaves a conversation unchanged when its last message is an agent row', () => {
+        const conv = { id: 'c1', cwd: '/tmp', agentId: 'pi', title: 'T', status: 'idle', createdAt: 1, updatedAt: 2,
+            messages: [{ id: 'user-1', role: 'user', content: 'hola', createdAt: 1 }, { id: 'agent-1', role: 'agent', content: 'ok', createdAt: 2 }] } as unknown as QaapAgentConversationDTO;
+        expect(appendOptimisticStoppedTurnRow(conv)).to.equal(conv);
     });
 });

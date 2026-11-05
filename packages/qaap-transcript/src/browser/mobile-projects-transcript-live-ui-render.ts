@@ -23,7 +23,7 @@ import {
     mergeConversationTranscriptFingerprint,
 } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
 import { isTranscriptDocumentVisible } from '../common/qaap-transcript-document-visibility';
-import { applyOptimisticRunCancelToConversation } from '../common/qaap-transcript-run-cancel';
+import { appendOptimisticStoppedTurnRow, applyOptimisticRunCancelToConversation } from '../common/qaap-transcript-run-cancel';
 import { resolveTranscriptStreamingCoalesceDelayMs } from '../common/qaap-transcript-streaming-coalesce';
 import {
     recordTranscriptRenderMetric,
@@ -108,6 +108,7 @@ function applyTurnStopPreviewRequestExtracted(ctx: MobileProjectsTranscriptLiveU
 export function applyOptimisticConversationCancelExtracted(ctx: MobileProjectsTranscriptLiveUiContext, summary: QaapAgentConversationSummaryDTO): void {
         applyTurnStopPreviewRequestExtracted(ctx, summary);
         const conv = ctx.host.transcriptLastConv;
+        console.warn(`[qaap-stop] optimistic conv=${summary.id} last=${conv?.id ?? '-'} lastStatus=${conv?.status ?? '-'} messages=${conv?.messages.length ?? 0} chatHost=${ctx.resolveActiveTranscriptChatHost() ? 'yes' : 'no'}`);
         if (!conv || conv.id !== summary.id) {
             return;
         }
@@ -118,7 +119,7 @@ export function applyOptimisticConversationCancelExtracted(ctx: MobileProjectsTr
         }
         // The stopped runs get their "Turn cancelled." row now; the server's answer replaces this snapshot.
         const optimistic: QaapAgentConversationDTO = {
-            ...applyOptimisticRunCancelToConversation(conv),
+            ...appendOptimisticStoppedTurnRow(applyOptimisticRunCancelToConversation(conv)),
             status: 'idle',
             updatedAt: Date.now(),
         };
