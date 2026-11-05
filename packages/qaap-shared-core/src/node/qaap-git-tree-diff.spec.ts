@@ -118,6 +118,25 @@ describe('qaap-git-tree-diff against a real repository', () => {
         expect(await resolveTemporaryIndexDir(os.tmpdir(), gitRead)).to.equal(undefined);
     });
 
+    it('a seeded index copy that git rejects is replaced by HEAD and the snapshot still succeeds', async () => {
+        const indexDir = path.join(root, '.git');
+        const corrupt = path.join(root, 'corrupt.index');
+        fs.writeFileSync(corrupt, 'not an index');
+        const tree = await snapshotWorktreeTree(root, gitWrite, indexDir, corrupt);
+        expect(tree).to.match(/^[0-9a-f]{40}$/);
+        expect(git(root, ['rev-parse', 'HEAD^{tree}']).stdout.trim()).to.not.equal(tree);
+        expect(fs.readdirSync(indexDir).filter(name => name.startsWith('qaap-ckpt-'))).to.deep.equal([]);
+    });
+
+    it('a seeded copy of the real index is read only: the real index file is unchanged', async () => {
+        fs.writeFileSync(path.join(root, 'hello.txt'), 'hi\n');
+        const indexFile = path.join(root, '.git', 'index');
+        const before = fs.readFileSync(indexFile);
+        const tree = await snapshotWorktreeTree(root, gitWrite, path.join(root, '.git'), indexFile);
+        expect(tree).to.match(/^[0-9a-f]{40}$/);
+        expect(fs.readFileSync(indexFile).equals(before)).to.equal(true);
+    });
+
     it('returns undefined when the baseline commit does not exist', async () => {
         const tree = await snapshotWorktreeTree(root, gitWrite, path.join(root, '.git'));
         expect(await computeTreeDiff(root, '0'.repeat(40), tree!, gitRead)).to.equal(undefined);

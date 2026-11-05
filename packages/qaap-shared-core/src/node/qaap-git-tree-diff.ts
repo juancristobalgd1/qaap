@@ -95,7 +95,14 @@ export async function snapshotWorktreeTree(cwd: string, git: QaapTreeGitWrite, i
         if (!seeded) {
             await git(cwd, ['read-tree', 'HEAD'], env);
         }
-        if ((await git(cwd, ['add', '-A'], env, QAAP_GIT_TREE_ADD_ALL_TIMEOUT_MS)).status !== 0) {
+        let added = await git(cwd, ['add', '-A'], env, QAAP_GIT_TREE_ADD_ALL_TIMEOUT_MS);
+        if (added.status !== 0 && seeded) {
+            // A copied index that does not fit this worktree: start again from HEAD before giving up.
+            await fs.promises.rm(tmpIndex, { force: true });
+            await git(cwd, ['read-tree', 'HEAD'], env);
+            added = await git(cwd, ['add', '-A'], env, QAAP_GIT_TREE_ADD_ALL_TIMEOUT_MS);
+        }
+        if (added.status !== 0) {
             return undefined;
         }
         const tree = await git(cwd, ['write-tree'], env);

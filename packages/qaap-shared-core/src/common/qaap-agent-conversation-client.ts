@@ -943,6 +943,11 @@ export class QaapDirtyWorkspaceCancelledError extends Error {
     }
 }
 
+/** True when a send failed only because the user cancelled the dirty-workspace dialog: silent, draft kept. */
+export function isDirtyWorkspaceCancelled(error: unknown): boolean {
+    return error instanceof QaapDirtyWorkspaceCancelledError;
+}
+
 /** The server's readable error (JSON `error` / `message` unwrapped), keeping status and code for the UI to branch on. */
 async function buildPostMessageError(response: Response): Promise<Error> {
     const error = await QaapUserFacingErrors.fromResponse(response);
