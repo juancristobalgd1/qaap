@@ -67,6 +67,7 @@ import { QaapBillingQuota } from '@theia/qaap-adapters/lib/common/qaap-billing-q
 import { QaapAgentCliUpdateService } from './qaap-agent-cli-update-service';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { QaapAgentStorageHealthCheck } from './qaap-agent-storage-health-check';
+import { QaapConversationStorageHealthCheck } from './qaap-conversation-storage-health-check';
 import { QaapHealthCheckContribution } from '@theia/qaap-shared-core/lib/node/qaap-health-check-contribution';
 import { QaapDevPreviewForwardedPorts } from '@theia/qaap-shared-core/lib/node/qaap-dev-preview-forwarded-ports';
 import { QaapWorktreeGcContribution } from './qaap-worktree-gc';
@@ -334,6 +335,8 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapAgentTaskRunner).toSelf().inSingletonScope();
     bind(QaapAgentStorageHealthCheck).toSelf().inSingletonScope();
     bind(QaapHealthCheckContribution).toService(QaapAgentStorageHealthCheck);
+    bind(QaapConversationStorageHealthCheck).toSelf().inSingletonScope();
+    bind(QaapHealthCheckContribution).toService(QaapConversationStorageHealthCheck);
     bind(QaapAgentCliUpdateService).toSelf().inSingletonScope();
     bind(QaapWorktreeGcContribution).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapWorktreeGcContribution);
@@ -348,6 +351,8 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapBillingEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapBillingEndpoint);
     bind(QaapAgentConversationStore).toSelf().inSingletonScope();
+    // onStop flushes pending conversation rows to SQLite and stops the sweep.
+    bind(BackendApplicationContribution).toService(QaapAgentConversationStore);
     // A removed clone's conversations, terminal sessions and recent workspaces must not list it again.
     bind(QaapRemovedRepositoryCleanup).toSelf().inSingletonScope();
     bind(QaapRepositoryRemovalContribution).toService(QaapRemovedRepositoryCleanup);

@@ -37,8 +37,9 @@ import { QAAP_VISUAL_REPAIR_REQUIRED_MARKER } from '@theia/qaap-shared-core/lib/
 
 import { resolveRunAgentMessageId as resolveRunAgentMessageIdHelper, sweepZombieStreamingTurns as sweepZombieStreamingTurnsHelper, forceStopZombieTurn as forceStopZombieTurnHelper, fireAgentMessageWireUpdate as fireAgentMessageWireUpdateHelper } from './qaap-agent-conversation-store-helpers';
 
-import { backfillQaapWorktreeOrdinals, parseQaapWorktreeOrdinalHighWater, QAAP_WORKTREE_ORDINAL_HIGH_WATER_KEY } from './qaap-worktree-ordinal-allocator';
+import { backfillQaapWorktreeOrdinals, parseQaapWorktreeOrdinalHighWater } from './qaap-worktree-ordinal-allocator';
 import { resolveAdaptiveStreamingPersistDelayMs } from './qaap-agent-conversation-persist-policy';
+import { QAAP_CONVERSATION_HIGH_WATER_ROW_KEY, loadConversationRows, startFullConversationSweep, syncConversationRowsWithLegacy } from './qaap-agent-conversation-store-rows';
 import { TURN_WATCHDOG_SWEEP_MS, QAAP_AUTO_RESUME_TURNS_ENABLED, MAX_RESTART_RESUMES } from './qaap-agent-conversation-store-constants';
 
 export function buildPromptExtracted(ctx: QaapAgentConversationStoreContext, conv: QaapAgentConversation, turnAgentId = conv.agentId): string {
@@ -277,15 +278,25 @@ export async function runQaapConversationRestoreStep<T extends { readonly id: st
 
 export async function restoreFromDiskExtracted(ctx: QaapAgentConversationStoreContext): Promise<void> {
     try {
-        const store = ctx.getSqliteStore();
+        const legacy = ctx.getSqliteStore();
         try {
-            store.migrateLegacy<QaapAgentConversation[]>(raw => [['conversations', JSON.parse(raw) as QaapAgentConversation[]]]);
+            legacy.migrateLegacy<QaapAgentConversation[]>(raw => [['conversations', JSON.parse(raw) as QaapAgentConversation[]]]);
         } catch {
             // A malformed legacy file must not hide valid SQLite state.
         }
-        const stored = store.get<QaapAgentConversation[]>('conversations') ?? [];
+        // First import of the legacy aggregate, or a merge when an earlier build wrote it after the
+        // mark (rollback). A throw lands in the catch below and keeps conversations unavailable, so
+        // v2 is never written without the legacy data.
+        const rows = ctx.getSqliteStoreV2();
+        const sync = syncConversationRowsWithLegacy(legacy, rows);
+        if (sync.kind !== 'none') {
+            console.info(`[qaap-conversation-store] legacy ${sync.kind}: ${sync.conversations} conversation(s) read, ${sync.written} row(s) written, `
+                + `${sync.durationMs} ms, WAL truncated: ${sync.walTruncated ?? 'not needed'}`);
+        }
+        const loadStartedAt = Date.now();
+        const loaded = loadConversationRows(rows);
         let anyChanged = false;
-        for (const conv of stored) {
+        for (const { conversation: conv, hash } of loaded) {
             // Leave a persisted 'streaming' status as-is here — sweepZombieStreamingTurns below
             // (run once every restart, after every conversation is loaded) force-stops any turn
             // that already exceeded the max duration with a proper failed/error trace. A restart
@@ -297,21 +308,34 @@ export async function restoreFromDiskExtracted(ctx: QaapAgentConversationStoreCo
             // read/spread fields structurally shared with the server QaapAgentConversation.
             const { conversation: backfilled, changed } = backfillConversationTraceEvents(conv as unknown as QaapAgentConversationDTO);
             const conversation = repairAttachmentPreambleTitle(backfilled as unknown as QaapAgentConversation);
-            ctx.conversations.set(conversation.id, conversation);
+            // Loaded without tracking: only the rows this restore actually changed are marked dirty.
+            ctx.conversations.load(conversation.id, conversation, hash);
             if (changed || conversation !== (backfilled as unknown as QaapAgentConversation)) {
                 anyChanged = true;
+                ctx.conversations.markDirty(conversation.id);
             }
         }
+        const storedHighWater = rows.get<unknown>(QAAP_CONVERSATION_HIGH_WATER_ROW_KEY);
         const highWater = ctx.worktreeOrdinalHighWater;
         if (highWater) {
-            for (const [key, value] of parseQaapWorktreeOrdinalHighWater(store.get(QAAP_WORKTREE_ORDINAL_HIGH_WATER_KEY))) {
+            for (const [key, value] of parseQaapWorktreeOrdinalHighWater(storedHighWater)) {
                 highWater.set(key, Math.max(value, highWater.get(key) ?? 0));
             }
         }
         // Freeze `<projectName>_<n>` labels of worktree conversations created before ordinals existed.
-        if (backfillQaapWorktreeOrdinals(ctx)) {
+        // Its `set` calls mark exactly the rows it changed.
+        const backfillChanged = backfillQaapWorktreeOrdinals(ctx);
+        if (backfillChanged) {
             anyChanged = true;
         }
+        // The high-water mark is written only when it differs from what is stored, so record the stored value.
+        ctx.persistedHighWaterJson = storedHighWater !== undefined && !backfillChanged && highWater && highWater.size > 0
+            ? JSON.stringify(Object.fromEntries(highWater))
+            : undefined;
+        // Writes stay disabled until this point: earlier writes could land before the migration.
+        ctx.conversationRowsReady = true;
+        startFullConversationSweep(ctx);
+        console.info(`[qaap-conversation-store] loaded ${loaded.length} conversation(s) in ${Date.now() - loadStartedAt} ms`);
         // The task runner restores its own index asynchronously and refuses `create` until it is
         // done. Resuming before that threw "storage unavailable", burned the resume budget and
         // left "The backend restarted…" on turns that could have continued on their own.
@@ -353,8 +377,17 @@ export async function restoreFromDiskExtracted(ctx: QaapAgentConversationStoreCo
         if (anyChanged || resumedAny || sweptAny || visualRepairResumedAny) {
             await ctx.persist();
         }
-    } catch {
-        /* no prior conversations */
+    } catch (error) {
+        if (!ctx.conversationRowsReady) {
+            // Writing now would overwrite stored conversations with an empty or partial map, so
+            // writes stay off. That must not look like an empty history: see `storageHealth`.
+            const message = error instanceof Error ? error.message : String(error);
+            ctx.conversationStorageFailure = message;
+            console.error('[qaap-conversation-store] restore failed; conversations are unavailable and nothing will be written '
+                + `until this is fixed and the backend restarts: ${message}`, error);
+        } else {
+            console.warn('[qaap-conversation-store] a post-restore step failed:', error);
+        }
     }
 }
 
