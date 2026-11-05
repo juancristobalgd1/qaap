@@ -1779,6 +1779,11 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public releaseTaskSandbox(taskId: string): void {
+        this.taskSandbox?.release(taskId);
+    }
+
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public buildChildEnv(task: QaapAgentTask): NodeJS.ProcessEnv {
         return buildChildEnvExtracted(this, task);
     }
