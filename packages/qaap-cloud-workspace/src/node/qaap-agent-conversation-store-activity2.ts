@@ -34,7 +34,7 @@ import { agentVisibleLog, applyAccumulatorStructuredOutput as applyAccumulatorSt
 
 import { type QaapConversationTaskRef } from './qaap-agent-conversation-store-constants';
 import { findPreTurnCheckpoint, publishDiscardCheckpointAfterExit } from './qaap-agent-conversation-store-pre-turn-checkpoint';
-import { cwdIsGitRepository, localGitRead } from './qaap-agent-conversation-store-git';
+import { cwdIsGitRepository } from './qaap-agent-conversation-store-git';
 import { snapshotWorktreeTreeForStore } from './qaap-agent-conversation-store-thought-brief2';
 import { computeTreeDiff } from '@theia/qaap-shared-core/lib/node/qaap-git-tree-diff';
 
@@ -123,10 +123,11 @@ export async function captureTurnGitState(ctx: QaapAgentConversationStoreContext
             const baseline = findPreTurnCheckpoint(conv, userMessageId);
             if (baseline?.commit) {
                 const treeId = await snapshotWorktreeTreeForStore(ctx, cwd);
-                const diff = treeId ? await computeTreeDiff(cwd, baseline.commit, treeId, localGitRead) : undefined;
-                if (diff) {
+                const diff = treeId ? await computeTreeDiff(cwd, baseline.commit, treeId, (gitCwd, args) => ctx.readGit(gitCwd, args)) : undefined;
+                if (diff && treeId) {
                     const gitStats = diff.files.length > 0 ? { added: diff.added, removed: diff.removed, files: diff.files.length } : undefined;
-                    const checkpoint = await ctx.captureCheckpoint(cwd, conversationId, userMessageId, label, gitStats);
+                    // Same tree as the diff above: the worktree is scanned once for this settle.
+                    const checkpoint = await ctx.captureCheckpoint(cwd, conversationId, userMessageId, label, gitStats, treeId);
                     return { gitStats, checkpoint };
                 }
             }

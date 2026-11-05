@@ -27,6 +27,10 @@ interface RecordedGitCall {
 
 function fakeCheckpointCtx(respond: (args: string[]) => QaapGitRunResult, calls: RecordedGitCall[]): QaapAgentConversationStoreContext {
     return {
+        // The snapshot index lives in the repository's git directory; this stub reports one.
+        readGit: async (_cwd: string, args: readonly string[]): Promise<QaapGitRunResult> => args.includes('--absolute-git-dir')
+            ? { status: 0, stdout: `${path.join(os.tmpdir(), 'qaap-fake-gitdir')}\n`, stderr: '' }
+            : { status: 1, stdout: '', stderr: 'unexpected read' },
         mutatingGit: async (_cwd: string, args: string[], env?: NodeJS.ProcessEnv, timeoutMs?: number): Promise<QaapGitRunResult> => {
             calls.push({ args, indexFile: env?.GIT_INDEX_FILE, timeoutMs });
             // Yield so a synchronous implementation could not pass by accident.

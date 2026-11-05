@@ -10,7 +10,7 @@ import * as os from 'os';
 import * as path from 'path';
 import type { QaapAgentConversation, QaapConversationCheckpoint } from '../common/qaap-agent-conversation';
 import { captureTurnGitState } from './qaap-agent-conversation-store-activity2';
-import { computeGitDiffStats } from './qaap-agent-conversation-store-git';
+import { computeGitDiffStats, localGitRead } from './qaap-agent-conversation-store-git';
 import type { QaapAgentConversationStoreContext } from './qaap-agent-conversation-store-context';
 
 function git(cwd: string, args: readonly string[], env?: NodeJS.ProcessEnv): { status: number | null; stdout: string; stderr: string } {
@@ -31,6 +31,7 @@ function buildContext(conv: QaapAgentConversation): { ctx: QaapAgentConversation
         checkpointLabel: (content: string) => content,
         runSerializedGit: <T>(_cwd: string, job: () => Promise<T>): Promise<T> => job(),
         mutatingGit: async (cwd: string, args: string[], env?: NodeJS.ProcessEnv) => git(cwd, args, env),
+        readGit: (cwd: string, args: readonly string[]) => localGitRead(cwd, args),
         computeGitDiffStats: (cwd: string, startSha?: string) => computeGitDiffStats(cwd, startSha),
         captureCheckpoint: async (cwd: string, conversationId: string, messageId: string, label: string, stats?: unknown): Promise<QaapConversationCheckpoint> => {
             captures.push({ messageId, label, stats });

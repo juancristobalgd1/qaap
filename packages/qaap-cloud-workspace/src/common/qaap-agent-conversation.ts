@@ -426,6 +426,11 @@ export interface QaapAgentConversationSummary {
     readonly linesAdded?: number;
     readonly linesRemoved?: number;
     /**
+     * `true` when the newest turn's line counts were measured without a pre-turn snapshot (they may
+     * include pre-existing dirt). Omitted otherwise.
+     */
+    readonly diffBaselineApproximate?: boolean;
+    /**
      * Git commit of the task baseline: the pre-turn snapshot of the conversation's first user message.
      * The changes panel diffs the current worktree against it. Omitted when no such snapshot exists.
      */
@@ -729,6 +734,11 @@ export function resolveBaselineCommit(conv: Pick<QaapAgentConversation, 'checkpo
     return firstUser ? findPreTurnCheckpoint(conv, firstUser.id)?.commit : undefined;
 }
 
+/** Whether the newest turn's diff stats were measured without a pre-turn snapshot. */
+export function resolveDiffBaselineApproximate(conv: Pick<QaapAgentConversation, 'gitDiffBaselineApproximate'>): boolean {
+    return conv.gitDiffBaselineApproximate === true;
+}
+
 export function toConversationSummary(conv: QaapAgentConversation): QaapAgentConversationSummary {
     const last = conv.messages[conv.messages.length - 1];
     const lastTurn = [...conv.messages].reverse().find(message => message.role === 'user' && (message.turnAgentId || message.turnAgentModel));
@@ -790,6 +800,7 @@ export function toConversationSummary(conv: QaapAgentConversation): QaapAgentCon
         ...(conv.gitDiffAdded !== undefined ? { linesAdded: conv.gitDiffAdded } : {}),
         ...(conv.gitDiffRemoved !== undefined ? { linesRemoved: conv.gitDiffRemoved } : {}),
         ...(baselineCommit ? { baselineCommit } : {}),
+        ...(resolveDiffBaselineApproximate(conv) ? { diffBaselineApproximate: true } : {}),
         ...(conv.contextUsage ? { contextUsage: conv.contextUsage } : {}),
         ...(conv.contextWindowSize ? { contextWindowSize: conv.contextWindowSize } : {}),
         ...(conv.contextUsageEstimated ? { contextUsageEstimated: true } : {}),

@@ -42,7 +42,7 @@ import { shouldRouteSubmitToTheiaCoder } from '@theia/qaap-shared-core/lib/commo
 import { reportQaapClientError } from '@theia/qaap-shared-core/lib/common/qaap-client-error-report';
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import { applyBackendInteractionModeToPrompt } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-mode';
-import { QaapDirtyWorkspaceDialog, type QaapDirtyWorkspaceChoice } from './mobile-projects-workspace-dirty-dialog';
+import { QaapDirtyWorkspaceDialog, retryAfterDirtyWorkspace, type QaapDirtyWorkspaceChoice } from './mobile-projects-workspace-dirty-dialog';
 import { reconcileAgentApprovalPolicyId, type QaapAgentApprovalPolicyId } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import { reconcileAgentToolApprovalRules } from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-approval-rules';
 import { getQaapDefaultAgentId } from '@theia/qaap-shared-core/lib/common/qaap-default-agent-id';
@@ -388,14 +388,11 @@ export class MobileProjectsBackgroundTaskUi {
             if (!(error instanceof QaapDirtyWorkspaceError)) {
                 throw error;
             }
-            const choice = await this.askDirtyWorkspaceChoice(error.files, error.total);
-            if (!choice) {
-                return undefined;
-            }
-            const retryOptions = choice === 'startClean'
-                ? { ...options, isolation: 'worktree' as const }
-                : { ...options, acceptDirty: true };
-            return this.createProjectChatSession(project, cwd, draft, retryOptions);
+            return retryAfterDirtyWorkspace(
+                error,
+                retryOptions => this.createProjectChatSession(project, cwd, draft, { ...options, ...retryOptions }),
+                (files, total) => this.askDirtyWorkspaceChoice(files, total),
+            );
         }
     }
 

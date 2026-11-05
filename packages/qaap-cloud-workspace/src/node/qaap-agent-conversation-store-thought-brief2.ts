@@ -15,7 +15,7 @@ import type { QaapWorkflowNodeOutcome } from '../common/qaap-workflow-ir';
 
 import { QaapPersistedWorkflowRun } from './qaap-workflow-run-store';
 
-import { snapshotWorktreeTree } from '@theia/qaap-shared-core/lib/node/qaap-git-tree-diff';
+import { resolveTemporaryIndexDir, snapshotWorktreeTree } from '@theia/qaap-shared-core/lib/node/qaap-git-tree-diff';
 import { QAAP_WORKTREE_ORDINAL_HIGH_WATER_KEY } from './qaap-worktree-ordinal-allocator';
 
 import type { QaapAgentTask } from '../common/qaap-agent-task';
@@ -377,17 +377,23 @@ export async function persistExtracted(ctx: QaapAgentConversationStoreContext): 
  * Snapshot the current worktree (tracked and untracked) into a git tree through the store's serialized
  * git seam. Single source of truth for pre-turn checkpoints, turn diffs and the changes panel baseline.
  */
-export function snapshotWorktreeTreeForStore(ctx: QaapAgentConversationStoreContext, cwd: string): Promise<string | undefined> {
-    return snapshotWorktreeTree(cwd, (gitCwd, args, env, timeoutMs) => ctx.mutatingGit(gitCwd, args, env, timeoutMs));
+export async function snapshotWorktreeTreeForStore(ctx: QaapAgentConversationStoreContext, cwd: string): Promise<string | undefined> {
+    // The throwaway index lives in the repository's git directory: the same tenant environment that runs
+    // git can remove it, and the real `.git/index` is never a candidate (see assertTemporaryIndexFile).
+    const indexDir = await resolveTemporaryIndexDir(cwd, (gitCwd, args) => ctx.readGit(gitCwd, args));
+    if (!indexDir) {
+        return undefined;
+    }
+    return snapshotWorktreeTree(cwd, (gitCwd, args, env, timeoutMs) => ctx.mutatingGit(gitCwd, args, env, timeoutMs), indexDir);
 }
 
 export async function captureCheckpointExtracted(ctx: QaapAgentConversationStoreContext, cwd: string,
         conversationId: string,
         messageId: string,
         label: string,
-        stats?: { added: number; removed: number }, ): Promise<QaapConversationCheckpoint | undefined> {
+        stats?: { added: number; removed: number }, reusedTreeId?: string, ): Promise<QaapConversationCheckpoint | undefined> {
         try {
-            const treeId = await snapshotWorktreeTreeForStore(ctx, cwd);
+            const treeId = reusedTreeId ?? await snapshotWorktreeTreeForStore(ctx, cwd);
             if (!treeId) {
                 return undefined;
             }

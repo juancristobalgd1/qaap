@@ -5,6 +5,7 @@
 
 import { AbstractDialog, DialogProps } from '@theia/core/lib/browser/dialogs';
 import { nls } from '@theia/core/lib/common/nls';
+import { QaapDirtyWorkspaceError, type QaapAgentConversationIsolation } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 
 /** What the user chose for a task that would share a dirty working tree. */
 export type QaapDirtyWorkspaceChoice = 'startClean' | 'continueHere';
@@ -17,7 +18,11 @@ const LISTED_PATH_LIMIT = 5;
  * action, or `undefined` when the user cancels (the close button or Escape), which cancels the submit.
  */
 export class QaapDirtyWorkspaceDialog extends AbstractDialog<QaapDirtyWorkspaceChoice | undefined> {
-    protected choice: QaapDirtyWorkspaceChoice | undefined;
+    /**
+     * Enter accepts the dialog and returns this choice. Start clean is the default, so Enter starts a clean
+     * worktree; Escape and the Cancel button close the dialog, which resolves `undefined`.
+     */
+    protected choice: QaapDirtyWorkspaceChoice | undefined = 'startClean';
 
     constructor(files: readonly string[], total: number) {
         super({
@@ -56,4 +61,29 @@ export class QaapDirtyWorkspaceDialog extends AbstractDialog<QaapDirtyWorkspaceC
         });
         return button;
     }
+}
+
+/** Shows the dirty-workspace dialog and resolves the user's choice, or `undefined` when cancelled. */
+export function openQaapDirtyWorkspaceDialog(files: readonly string[], total: number): Promise<QaapDirtyWorkspaceChoice | undefined> {
+    return new QaapDirtyWorkspaceDialog(files, total).open();
+}
+
+/** The create options a dirty-workspace choice retries with. */
+export type QaapDirtyWorkspaceRetryOptions = { readonly isolation?: QaapAgentConversationIsolation; readonly acceptDirty?: boolean };
+
+/**
+ * Handles a create refused with 409 `dirty_workspace`: asks the user, then retries once. "Start clean"
+ * retries in a worktree; "Continue here" retries sharing the tree. Resolves `undefined` when the user
+ * cancels, in which case nothing was created.
+ */
+export async function retryAfterDirtyWorkspace<T>(
+    error: QaapDirtyWorkspaceError,
+    retry: (options: QaapDirtyWorkspaceRetryOptions) => Promise<T>,
+    ask: (files: readonly string[], total: number) => Promise<QaapDirtyWorkspaceChoice | undefined> = openQaapDirtyWorkspaceDialog,
+): Promise<T | undefined> {
+    const choice = await ask(error.files, error.total);
+    if (!choice) {
+        return undefined;
+    }
+    return choice === 'startClean' ? retry({ isolation: 'worktree' }) : retry({ acceptDirty: true });
 }

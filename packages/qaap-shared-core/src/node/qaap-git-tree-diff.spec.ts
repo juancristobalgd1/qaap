@@ -9,9 +9,11 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import {
+    assertTemporaryIndexFile,
     computeTreeDiff,
     parseNameStatusZ,
     parseNumstatZ,
+    resolveTemporaryIndexDir,
     snapshotWorktreeTree,
     type QaapTreeGitResult,
 } from './qaap-git-tree-diff';
@@ -37,6 +39,18 @@ async function gitWrite(cwd: string, args: string[], env: NodeJS.ProcessEnv): Pr
     });
     return { status: result.status, stdout: result.stdout ?? '' };
 }
+
+describe('qaap-git-tree-diff index guard', () => {
+    it('accepts a throwaway index file', () => {
+        expect(assertTemporaryIndexFile(path.join('/tmp', 'repo', '.git', 'qaap-ckpt-1.index'), '/tmp/repo')).to.be.a('string');
+    });
+
+    it('refuses an unset index, the repository index and any file named index', () => {
+        expect(() => assertTemporaryIndexFile(undefined, '/tmp/repo')).to.throw(/without a temporary/);
+        expect(() => assertTemporaryIndexFile(path.join('/tmp', 'repo', '.git', 'index'), '/tmp/repo')).to.throw(/repository index/);
+        expect(() => assertTemporaryIndexFile(path.join('/elsewhere', 'index'), '/tmp/repo')).to.throw(/repository index/);
+    });
+});
 
 describe('qaap-git-tree-diff parsers', () => {
     it('parses numstat -z plain entries and rename entries keyed by the new path', () => {
@@ -97,6 +111,11 @@ describe('qaap-git-tree-diff against a real repository', () => {
         const baseCommit = git(root, ['-c', 'user.email=qaap@test', '-c', 'user.name=qaap', 'commit-tree', tree!, '-m', 'same']).stdout.trim();
         const diff = await computeTreeDiff(root, baseCommit, tree!, gitRead);
         expect(diff).to.deep.equal({ added: 0, removed: 0, files: [] });
+    });
+
+    it('resolves the index directory to the git directory, and to undefined outside a repository', async () => {
+        expect(await resolveTemporaryIndexDir(root, gitRead)).to.equal(path.join(root, '.git'));
+        expect(await resolveTemporaryIndexDir(os.tmpdir(), gitRead)).to.equal(undefined);
     });
 
     it('returns undefined when the baseline commit does not exist', async () => {

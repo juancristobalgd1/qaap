@@ -9,6 +9,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { QaapAgentConversationEndpoint } from './qaap-agent-conversation-endpoint';
+import { localGitRead } from './qaap-agent-conversation-store-git';
 
 interface FakeRes {
     statusCode: number;
@@ -37,9 +38,11 @@ describe('QaapAgentConversationEndpoint create on a dirty shared workspace', fun
     let created: number;
     let worktreeCreates: number;
 
-    const git = (args: string[], cwd: string = repo): string => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+    const git = (args: string[], cwd: string = repo): string => execFileSync(
+        'git', ['-c', 'core.autocrlf=false', '-c', 'core.hooksPath=/dev/null', ...args], { cwd, encoding: 'utf8' },
+    ).trim();
 
-    function build(): QaapAgentConversationEndpoint {
+    function build(options: { failGit?: boolean } = {}): QaapAgentConversationEndpoint {
         const conversations = new Map<string, Record<string, unknown>>();
         const endpoint = Object.create(QaapAgentConversationEndpoint.prototype) as QaapAgentConversationEndpoint;
         Object.assign(endpoint, {
@@ -52,6 +55,9 @@ describe('QaapAgentConversationEndpoint create on a dirty shared workspace', fun
                 conversations,
                 get: (id: string) => conversations.get(id),
                 getActiveTaskIdsForConversation: () => [],
+                readGit: (cwd: string, args: readonly string[]) => options.failGit
+                    ? Promise.resolve({ status: null, stdout: '', stderr: 'simulated failure', timedOut: true })
+                    : localGitRead(cwd, args),
                 create: (req: { cwd: string; message?: string }, ownerLogin?: string) => {
                     created += 1;
                     const conv = { ...req, id: `conv-${created}`, ownerLogin };
@@ -127,6 +133,13 @@ describe('QaapAgentConversationEndpoint create on a dirty shared workspace', fun
     it('creates the task in the shared tree when the client accepts the dirt', async () => {
         fs.writeFileSync(path.join(repo, 'README.md'), 'user edit\n');
         const res = await create(build(), { isolation: 'auto', acceptDirty: true });
+        expect(res.statusCode).to.equal(201);
+        expect(created).to.equal(1);
+    });
+
+    it('creates the task when the dirty check cannot run (unknown is not treated as dirty)', async () => {
+        fs.writeFileSync(path.join(repo, 'README.md'), 'user edit\n');
+        const res = await create(build({ failGit: true }), { isolation: 'auto' });
         expect(res.statusCode).to.equal(201);
         expect(created).to.equal(1);
     });

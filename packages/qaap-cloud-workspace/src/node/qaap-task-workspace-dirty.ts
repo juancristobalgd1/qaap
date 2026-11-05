@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { cwdIsGitRepository, runGitAsync } from './qaap-agent-conversation-store-git';
+import { cwdIsGitRepository, type QaapGitRead } from './qaap-agent-conversation-store-git';
 
 /** Paths listed in a `dirty_workspace` 409 response; the total is always reported in full. */
 export const QAAP_DIRTY_WORKSPACE_LISTED_FILES = 20;
@@ -18,6 +18,23 @@ export interface QaapDirtyWorkspace {
 }
 
 /**
+ * Outcome of the dirty check. `unknown` means git could not answer (timeout, error); callers must not
+ * treat it as dirty or clean without saying so.
+ */
+export type QaapDirtyWorkspaceCheck =
+    | { readonly kind: 'clean' }
+    | { readonly kind: 'dirty'; readonly files: readonly string[]; readonly total: number }
+    | { readonly kind: 'unknown'; readonly reason: string };
+
+/** Git flags for a read-only status that never takes optional locks, runs fsmonitor or hooks. */
+const DIRTY_CHECK_GIT_ARGS: readonly string[] = [
+    '-c', 'core.fsmonitor=false',
+    '-c', 'core.hooksPath=/dev/null',
+    '--no-optional-locks',
+    'status', '--porcelain=v1', '-z', '--untracked-files=all',
+];
+
+/**
  * Reads `QAAP_TASK_ISOLATION`. Unset or unknown values mean `auto`: the default that warns and asks
  * before a task shares a dirty tree.
  */
@@ -27,16 +44,25 @@ export function resolveTaskIsolationMode(env: NodeJS.ProcessEnv = process.env): 
 }
 
 /**
- * Uncommitted changes (tracked and untracked) in `cwd`, or `undefined` when the tree is clean, is not
- * a git repository, or git cannot be read. Never throws.
+ * Uncommitted changes (tracked and untracked) in `cwd` through the tenant-aware git seam. A directory
+ * that is not a git repository is `clean` (nothing to protect); a git failure or timeout is `unknown`.
+ * Never throws.
  */
-export async function readDirtyWorkspace(cwd: string): Promise<QaapDirtyWorkspace | undefined> {
+export async function readDirtyWorkspace(cwd: string, gitRead: QaapGitRead): Promise<QaapDirtyWorkspaceCheck> {
     if (!cwdIsGitRepository(cwd)) {
-        return undefined;
+        return { kind: 'clean' };
     }
-    const result = await runGitAsync('git', ['status', '--porcelain=v1', '-z', '--untracked-files=all'], { cwd, timeoutMs: 4000 });
+    let result;
+    try {
+        result = await gitRead(cwd, DIRTY_CHECK_GIT_ARGS);
+    } catch (error) {
+        return { kind: 'unknown', reason: error instanceof Error ? error.message : String(error) };
+    }
+    if (result.timedOut) {
+        return { kind: 'unknown', reason: 'git status timed out' };
+    }
     if (result.status !== 0) {
-        return undefined;
+        return { kind: 'unknown', reason: result.stderr.trim() || `git status exited with ${String(result.status)}` };
     }
     const entries = result.stdout.split('\0');
     const files: string[] = [];
@@ -55,5 +81,5 @@ export async function readDirtyWorkspace(cwd: string): Promise<QaapDirtyWorkspac
             index++;
         }
     }
-    return total > 0 ? { files, total } : undefined;
+    return total > 0 ? { kind: 'dirty', files, total } : { kind: 'clean' };
 }

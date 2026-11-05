@@ -5,8 +5,10 @@
 
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
+
+/** Read-only git seam for {@link resolveTemporaryIndexDir}; hosted callers route it through the tenant worker. */
+export type QaapTreeGitLookup = (cwd: string, args: readonly string[]) => Promise<QaapTreeGitResult>;
 
 /** Timeout for `git add -A` over a whole worktree; large repositories legitimately need longer. */
 export const QAAP_GIT_TREE_ADD_ALL_TIMEOUT_MS = 60_000;
@@ -43,15 +45,48 @@ export interface QaapTreeDiff {
 }
 
 /**
+ * Refuses an index file that is not a throwaway one: unset, or the repository's real index
+ * (`.git/index`, or any file named `index`). Throws before any git command runs.
+ */
+export function assertTemporaryIndexFile(indexFile: string | undefined, cwd: string): string {
+    if (!indexFile) {
+        throw new Error('Refusing to run a worktree snapshot without a temporary GIT_INDEX_FILE.');
+    }
+    const resolved = path.resolve(indexFile);
+    if (path.basename(resolved) === 'index' || resolved === path.resolve(cwd, '.git', 'index')) {
+        throw new Error('Refusing to run a worktree snapshot against the repository index.');
+    }
+    return resolved;
+}
+
+/**
+ * Absolute git directory of `cwd`, where throwaway snapshot indexes are kept. The `.git` directory is
+ * used directly when present (the common case); worktrees resolve through `git rev-parse`. `undefined`
+ * when `cwd` is not a repository.
+ */
+export async function resolveTemporaryIndexDir(cwd: string, gitRead: QaapTreeGitLookup): Promise<string | undefined> {
+    try {
+        if (fs.statSync(path.join(cwd, '.git')).isDirectory()) {
+            return path.join(cwd, '.git');
+        }
+    } catch {
+        // Not a plain repository directory; ask git below.
+    }
+    const result = await gitRead(cwd, ['rev-parse', '--absolute-git-dir']);
+    const dir = result.status === 0 ? result.stdout.trim() : '';
+    return dir || undefined;
+}
+
+/**
  * Write the current worktree (tracked and untracked, honouring ignore rules) into a git tree object
  * through a throwaway index, so the real `.git/index` is never touched. Returns the tree id, or
- * `undefined` when git fails. The temporary index is written under `indexDir` (defaults to the OS temp
- * directory; hosted callers pass the repository's git directory, which the tenant process can reach).
+ * `undefined` when git fails. The throwaway index lives under `indexDir` (the repository's git
+ * directory, see {@link resolveTemporaryIndexDir}) so the same environment that runs git can remove it.
  * The temporary index and its lock are always removed.
  */
-export async function snapshotWorktreeTree(cwd: string, git: QaapTreeGitWrite, indexDir: string = os.tmpdir()): Promise<string | undefined> {
+export async function snapshotWorktreeTree(cwd: string, git: QaapTreeGitWrite, indexDir: string): Promise<string | undefined> {
     const tmpIndex = path.join(indexDir, `qaap-ckpt-${randomUUID()}.index`);
-    const env = { ...process.env, GIT_INDEX_FILE: tmpIndex };
+    const env = { ...process.env, GIT_INDEX_FILE: assertTemporaryIndexFile(tmpIndex, cwd) };
     try {
         // Seed the throwaway index from HEAD when a commit exists (best-effort; empty repo is fine).
         await git(cwd, ['read-tree', 'HEAD'], env);

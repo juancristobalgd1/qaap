@@ -342,13 +342,19 @@ export interface QaapAgentConversationStoreContext {
     runSerializedGit<T>(cwd: string, job: () => Promise<T>): Promise<T>;
     captureGitSha(cwd: string): string | undefined;
     computeGitDiffStats(cwd: string, startSha?: string): Promise<{ added: number; removed: number; files?: number } | undefined>;
-    /** Not serialized by itself: callers wrap it (plus related git) in {@link runSerializedGit}. */
+    /** Read-only git through the tenant worker (same seam as the turn settle path). */
+    readGit(cwd: string, args: readonly string[]): Promise<QaapGitRunResult>;
+    /**
+     * Not serialized by itself: callers wrap it (plus related git) in {@link runSerializedGit}. `treeId`
+     * reuses a worktree snapshot the caller already took, so the worktree is scanned once per turn.
+     */
     captureCheckpoint(
         cwd: string,
         conversationId: string,
         messageId: string,
         label: string,
         stats?: { added: number; removed: number },
+        treeId?: string,
     ): Promise<QaapConversationCheckpoint | undefined>;
     /** Best-effort removal of a checkpoint ref that ended up not recorded on the conversation. */
     discardCheckpointRef(cwd: string, ref: string): Promise<void>;

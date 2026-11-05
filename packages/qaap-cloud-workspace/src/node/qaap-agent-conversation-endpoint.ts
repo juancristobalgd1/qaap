@@ -697,8 +697,11 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             // the user made outside it: ask first (409 `dirty_workspace`), unless the client accepts the
             // dirt. `QAAP_TASK_ISOLATION=dirty` isolates an 'auto' task instead of asking.
             if (isolation !== 'worktree' && !(isolation === 'auto' && this.repoHasActiveThread(repoKey, ownerLogin))) {
-                const dirty = await readDirtyWorkspace(cwd);
-                if (dirty) {
+                const dirty = await readDirtyWorkspace(cwd, (gitCwd, args) => this.store.readGit(gitCwd, args));
+                if (dirty.kind === 'unknown') {
+                    // git could not answer: proceed as before rather than blocking the user on a failed check.
+                    console.warn(`[qaap] dirty-workspace check failed for ${cwd}, creating the task without it: ${dirty.reason}`);
+                } else if (dirty.kind === 'dirty') {
                     if (isolation === 'auto' && isolationMode === 'dirty') {
                         isolation = 'worktree';
                     } else if (body.acceptDirty !== true) {
