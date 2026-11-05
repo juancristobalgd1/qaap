@@ -1006,6 +1006,7 @@ export function cancelExtracted(ctx: QaapAgentConversationStoreContext, id: stri
     const hasArmedDrain = ctx.drainTimers?.has(id) ?? false;
     const hasUnpausedQueue = (conv.pendingUserMessages?.length ?? 0) > 0 && !conv.pendingUserMessagesPaused;
     if (activeRefs.length === 0 && conv.status !== 'streaming' && !isGoalLoopActive(conv) && !hasArmedDrain && !hasUnpausedQueue) {
+        console.warn(`[qaap-stop] noop conv=${id} status=${conv.status} liveRuns=0 reason=no-live-run`);
         return conv;
     }
     const lastUser = [...conv.messages].reverse().find(m => m.role === 'user' && m.taskId);
