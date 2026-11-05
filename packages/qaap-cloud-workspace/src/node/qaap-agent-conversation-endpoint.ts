@@ -143,6 +143,15 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
     protected readonly repoClaims = new Map<string, number>();
 
     configure(app: Application): void {
+        // A failed restore must not look like an empty history or accept turns that would be lost.
+        app.use(QAAP_AGENT_CONVERSATION_API_PATH, (_req, res, next) => {
+            const failure = this.store.storageHealth().failure;
+            if (failure === undefined) {
+                next();
+                return;
+            }
+            res.status(503).json({ error: `Conversation storage is unavailable: ${failure}`, code: 'conversation-storage-unavailable' });
+        });
         // List for one cwd (or all).
         app.get(QAAP_AGENT_CONVERSATION_API_PATH, (req, res) => {
             const ctx = this.requireAuth(req, res);

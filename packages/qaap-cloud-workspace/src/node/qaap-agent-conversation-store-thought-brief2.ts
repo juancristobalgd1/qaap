@@ -1,6 +1,5 @@
 // Extracted from qaap-agent-conversation-store.ts
 import { formatSlowPersistWriteLog, QAAP_PERSIST_SLOW_WRITE_LOG_MS } from './qaap-agent-conversation-persist-policy';
-import type { QaapSqliteReplaceStats } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 import { ensureQaapLoopStallMonitor } from './qaap-loop-stall-monitor';
 import { logTurnCreatedExtracted } from './qaap-agent-turn-create-log';
 import { discoveredFallbackModels } from './qaap-agent-model-fallback-candidates';
@@ -20,7 +19,7 @@ import type { QaapWorkflowNodeOutcome } from '../common/qaap-workflow-ir';
 import { QaapPersistedWorkflowRun } from './qaap-workflow-run-store';
 
 import { resolveTemporaryIndexDir, snapshotWorktreeTree } from '@theia/qaap-shared-core/lib/node/qaap-git-tree-diff';
-import { QAAP_WORKTREE_ORDINAL_HIGH_WATER_KEY } from './qaap-worktree-ordinal-allocator';
+import { writePendingConversationRows } from './qaap-agent-conversation-store-rows';
 
 import type { QaapAgentTask } from '../common/qaap-agent-task';
 
@@ -360,13 +359,12 @@ export async function persistExtracted(ctx: QaapAgentConversationStoreContext): 
     ensureQaapLoopStallMonitor();
     ctx.persistChain = (ctx.persistChain ?? Promise.resolve()).catch(() => undefined).then(async () => {
         try {
-            // `replace` rewrites the whole namespace, so every persisted key must be listed here.
-            const entries: Array<[string, unknown]> = [['conversations', [...ctx.conversations.values()]]];
-            if (ctx.worktreeOrdinalHighWater?.size) {
-                entries.push([QAAP_WORKTREE_ORDINAL_HIGH_WATER_KEY, Object.fromEntries(ctx.worktreeOrdinalHighWater)]);
+            // Writes are skipped until the migration and load finished (see restoreFromDiskExtracted).
+            // Pending changes stay in the tracked map and are written by the next persist.
+            if (!ctx.conversationRowsReady) {
+                return;
             }
-            // Awaited so the write chain stays asynchronous: a later persist queues behind this one.
-            const stats: QaapSqliteReplaceStats | undefined = await ctx.getSqliteStore().replace(entries);
+            const stats = writePendingConversationRows(ctx);
             if (stats !== undefined) {
                 ctx.lastPersistDurationMs = stats.totalMs;
                 if (stats.totalMs >= QAAP_PERSIST_SLOW_WRITE_LOG_MS) {
@@ -374,9 +372,12 @@ export async function persistExtracted(ctx: QaapAgentConversationStoreContext): 
                 }
             }
             ctx.persistFailureLoggedAtMs = 0;
+            ctx.conversationWriteFailed = false;
         } catch (error) {
             // Best-effort persistence, but a swallowed error hides disk-full/corruption; surface it
-            // at most once a minute so the failure is visible without flooding the log.
+            // at most once a minute so the failure is visible without flooding the log, and on
+            // `/qaap/api/health` until a later write succeeds.
+            ctx.conversationWriteFailed = true;
             const now = Date.now();
             if (now - ctx.persistFailureLoggedAtMs > 60_000) {
                 ctx.persistFailureLoggedAtMs = now;

@@ -166,6 +166,9 @@ export function settleStatusForRunExtracted(ctx: QaapAgentConversationStoreConte
 }
 
 export function createExtracted(ctx: QaapAgentConversationStoreContext, request: QaapCreateAgentConversationRequest, ownerLogin?: string): QaapAgentConversation {
+    if (ctx.conversationStorageFailure !== undefined) {
+        throw new Error(`Conversation storage is unavailable: ${ctx.conversationStorageFailure}`);
+    }
     const cwd = path.resolve(request.cwd ?? '');
     if (!path.isAbsolute(cwd) || !ctx.isDirectory(cwd)) {
         throw new Error('A valid absolute "cwd" directory is required.');
