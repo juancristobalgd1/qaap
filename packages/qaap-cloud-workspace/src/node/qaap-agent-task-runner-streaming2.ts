@@ -1,4 +1,5 @@
 import { buildPiGateTemplateVars } from './qaap-tool-gate-pi-adapter';
+import { formatTaskStartLog } from './qaap-agent-conversation-persist-policy';
 import { buildPiDefaultModelFlagShell } from '@theia/qaap-shared-core/lib/common/qaap-pi-default-model';
 import { AGENT_STOP_GRACE_TIMEOUT_MS, SHELL_AGENT_ID, QAIQ_AGENT_ID, REPO_MAP_CACHE_TTL_MS, REPO_MAP_MAX_CHARS, USER_REQUEST_MAX_CHARS } from './qaap-agent-task-runner-constants';
 import type { QaapAgentCommandBuildResult, QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
@@ -184,6 +185,7 @@ export function createExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCr
         }
         assertAgentAllowedOnHostedRuntime(resolvedAgentId);
         const id = randomUUID();
+        console.warn(formatTaskStartLog('create', id, request.clientRequestId)); // [qaap-task-start] origin of every create
         const parentId = request.parentId && ctx.tasks.has(request.parentId) ? request.parentId : undefined;
         const parentTask = parentId ? ctx.tasks.get(parentId) : undefined;
         // "Request approval" is authoritative: a stale/omitted autoApprove must never turn it into

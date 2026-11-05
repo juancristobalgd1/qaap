@@ -212,6 +212,8 @@ export class QaapAgentConversationStore implements QaapAgentConversationStoreCon
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
     public persistTimer: ReturnType<typeof setTimeout> | undefined;
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public lastPersistDurationMs: number | undefined;
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
     public sqliteStore: QaapSqliteStore | undefined;
     /** Periodic sweep that pauses turns silent past `QAAP_TURN_IDLE_MINUTES` or running past `QAAP_MAX_TURN_MINUTES`. */
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */

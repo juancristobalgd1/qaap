@@ -17,6 +17,15 @@ export interface QaapSqliteStoreOptions {
 
 export type QaapSqliteEntry<T> = readonly [key: string, value: T];
 
+/** Cost of one namespace rewrite (see `QaapSqliteStore.replace`). Numbers and the namespace only. */
+export interface QaapSqliteReplaceStats {
+    readonly namespace: string;
+    readonly entries: number;
+    readonly chars: number;
+    readonly stringifyMs: number;
+    readonly totalMs: number;
+}
+
 /**
  * Ordered schema migrations; `PRAGMA user_version` records how many have been applied.
  * Append new steps, never edit or reorder existing ones. v1 uses `IF NOT EXISTS`, so databases
@@ -346,15 +355,33 @@ export class QaapSqliteStore {
         });
     }
 
-    replace<T>(entries: readonly QaapSqliteEntry<T>[]): void {
+    /**
+     * Rewrites the whole namespace in one synchronous transaction and reports what it cost. The
+     * stats let callers adapt their write cadence to the real duration; they carry no record content.
+     */
+    replace<T>(entries: readonly QaapSqliteEntry<T>[]): QaapSqliteReplaceStats {
+        const startedAt = performance.now();
+        let stringifyMs = 0;
+        let chars = 0;
         this.withConnectionTransaction(connection => {
             connection.prepare('DELETE FROM qaap_kv WHERE namespace = ?').run(this.namespace);
             const statement = connection.prepare(QAAP_SQLITE_UPSERT_SQL);
             const now = Date.now();
             for (const [key, value] of entries) {
-                statement.run(this.namespace, key, JSON.stringify(value), now);
+                const stringifyStartedAt = performance.now();
+                const json = JSON.stringify(value);
+                stringifyMs += performance.now() - stringifyStartedAt;
+                chars += json.length;
+                statement.run(this.namespace, key, json, now);
             }
         });
+        return {
+            namespace: this.namespace,
+            entries: entries.length,
+            chars,
+            stringifyMs,
+            totalMs: performance.now() - startedAt,
+        };
     }
 
     /**

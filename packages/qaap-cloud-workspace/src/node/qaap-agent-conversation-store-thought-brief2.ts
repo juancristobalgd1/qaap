@@ -1,4 +1,7 @@
 // Extracted from qaap-agent-conversation-store.ts
+import { formatSlowPersistWriteLog, QAAP_PERSIST_SLOW_WRITE_LOG_MS } from './qaap-agent-conversation-persist-policy';
+import type { QaapSqliteReplaceStats } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
+import { ensureQaapLoopStallMonitor } from './qaap-loop-stall-monitor';
 import { logTurnCreatedExtracted } from './qaap-agent-turn-create-log';
 import { discoveredFallbackModels } from './qaap-agent-model-fallback-candidates';
 import { localizeAgentTurnRestartInterruptedMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
@@ -354,6 +357,7 @@ export function interruptStreamingTurnForRestartExtracted(ctx: QaapAgentConversa
 }
 
 export async function persistExtracted(ctx: QaapAgentConversationStoreContext): Promise<void> {
+    ensureQaapLoopStallMonitor();
     ctx.persistChain = (ctx.persistChain ?? Promise.resolve()).catch(() => undefined).then(async () => {
         try {
             // `replace` rewrites the whole namespace, so every persisted key must be listed here.
@@ -361,7 +365,14 @@ export async function persistExtracted(ctx: QaapAgentConversationStoreContext): 
             if (ctx.worktreeOrdinalHighWater?.size) {
                 entries.push([QAAP_WORKTREE_ORDINAL_HIGH_WATER_KEY, Object.fromEntries(ctx.worktreeOrdinalHighWater)]);
             }
-            await ctx.getSqliteStore().replace(entries);
+            // Awaited so the write chain stays asynchronous: a later persist queues behind this one.
+            const stats: QaapSqliteReplaceStats | undefined = await ctx.getSqliteStore().replace(entries);
+            if (stats !== undefined) {
+                ctx.lastPersistDurationMs = stats.totalMs;
+                if (stats.totalMs >= QAAP_PERSIST_SLOW_WRITE_LOG_MS) {
+                    console.warn(formatSlowPersistWriteLog(stats));
+                }
+            }
             ctx.persistFailureLoggedAtMs = 0;
         } catch (error) {
             // Best-effort persistence, but a swallowed error hides disk-full/corruption; surface it
