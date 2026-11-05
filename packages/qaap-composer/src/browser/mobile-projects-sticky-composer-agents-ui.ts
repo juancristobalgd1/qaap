@@ -239,19 +239,29 @@ export class MobileProjectsStickyComposerAgentsUi {
             ...this.filterSelectableComposerAgents(agents).map(agent => agent.id),
         ];
         const seen = new Set<string>();
+        const candidates: string[] = [];
         for (const candidate of candidateIds) {
             const agentId = candidate?.trim();
             if (!agentId) {
                 continue;
             }
             const key = agentId.toLowerCase();
-            if (seen.has(key)) {
+            if (seen.has(key) || !agentSupportsModelPicker(agentId)) {
+                seen.add(key);
                 continue;
             }
             seen.add(key);
-            if (!agentSupportsModelPicker(agentId)) {
-                continue;
+            candidates.push(agentId);
+        }
+        // Start every harness's model catalog at once. The loop below consumes them in picker order, so the
+        // first usable harness still wins, but a slow or hung catalog no longer delays the ones behind it.
+        for (const agentId of candidates) {
+            if (agentId.toLowerCase() !== 'qaiq') {
+                void fetchAgentModelsForAgent(agentId).catch(() => undefined);
             }
+        }
+        for (const agentId of candidates) {
+            const key = agentId.toLowerCase();
             const model = await this.ensureStickyComposerAgentModel(
                 agentId,
                 cwd,

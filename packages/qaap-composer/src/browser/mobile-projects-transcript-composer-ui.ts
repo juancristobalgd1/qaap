@@ -96,24 +96,92 @@ export interface MobileProjectsTranscriptComposerHost {
     projectRowsUi: import('@theia/qaap-transcript/lib/browser/qaap-transcript-host-contracts').TranscriptProjectLabelsApi;
 }
 
+/**
+ * Delays before each retry of an empty or failed composer agent catalog load. Three retries follow the first
+ * attempt; once they are used up, the next composer mount starts a new series.
+ */
+export const COMPOSER_CATALOG_RETRY_DELAYS_MS: readonly number[] = [1_000, 2_000, 4_000];
+
+/** Per-cwd catalog load bookkeeping for {@link MobileProjectsTranscriptComposerUi.ensureComposerAgentCatalog}. */
+interface ComposerCatalogLoadState {
+    /** When the last load succeeded with a non-empty catalog; undefined after an empty or failed load. */
+    okAt?: number;
+    /** Retries already scheduled in the current series. */
+    attempts: number;
+    inFlight?: Promise<boolean>;
+    timer?: ReturnType<typeof setTimeout>;
+}
+
 /** Transcript sticky-composer agent/mode/approval sheets and backend agent list refresh. */
 export class MobileProjectsTranscriptComposerUi {
-    /** Last catalog load started per cwd (empty key when no cwd is known). */
-    protected readonly lastCatalogLoadByCwd = new Map<string, number>();
+    /** Load bookkeeping per cwd (empty key when no cwd is known). */
+    protected readonly composerCatalogLoads = new Map<string, ComposerCatalogLoadState>();
+
+    /** Overridable by specs so the retry series does not wait for real seconds. */
+    protected composerCatalogRetryDelaysMs: readonly number[] = COMPOSER_CATALOG_RETRY_DELAYS_MS;
 
     constructor(protected readonly host: MobileProjectsTranscriptComposerHost) { }
 
     /**
-     * Idempotent catalog load for a composer mount: inside the throttle window for the same cwd it
-     * returns without a request, so remounts while the catalog is still empty do not refetch it.
+     * Idempotent catalog load for a composer mount. A non-empty catalog that loaded successfully is not
+     * repeated inside {@link STICKY_CATALOG_REFRESH_MIN_INTERVAL_MS}. An empty or failed load is retried
+     * with backoff (1 s, 2 s, 4 s), and while a retry is scheduled or in flight no second request starts.
+     * Resolves true only when the catalog is non-empty.
      */
     async ensureComposerAgentCatalog(project: MobileProjectEntry): Promise<boolean> {
-        const cwdKey = this.resolveCatalogCwd(project) ?? '';
-        const lastAt = this.lastCatalogLoadByCwd.get(cwdKey);
-        if (lastAt !== undefined && Date.now() - lastAt < STICKY_CATALOG_REFRESH_MIN_INTERVAL_MS) {
-            return this.host.transcriptComposerBackendAgents.length > 0;
+        const state = this.getComposerCatalogLoadState(this.resolveCatalogCwd(project) ?? '');
+        const hasCatalog = this.host.transcriptComposerBackendAgents.length > 0;
+        if (hasCatalog && state.okAt !== undefined && Date.now() - state.okAt < STICKY_CATALOG_REFRESH_MIN_INTERVAL_MS) {
+            return true;
         }
-        return this.refreshTranscriptComposerAgents(project);
+        if (state.inFlight) {
+            return state.inFlight;
+        }
+        if (state.timer !== undefined) {
+            return hasCatalog;
+        }
+        return this.loadComposerAgentCatalog(project, state);
+    }
+
+    protected getComposerCatalogLoadState(key: string): ComposerCatalogLoadState {
+        let state = this.composerCatalogLoads.get(key);
+        if (!state) {
+            state = { attempts: 0 };
+            this.composerCatalogLoads.set(key, state);
+        }
+        return state;
+    }
+
+    protected loadComposerAgentCatalog(project: MobileProjectEntry, state: ComposerCatalogLoadState): Promise<boolean> {
+        const load = this.refreshTranscriptComposerAgents(project)
+            .then(loaded => loaded && this.host.transcriptComposerBackendAgents.length > 0, () => false)
+            .then(ok => {
+                state.inFlight = undefined;
+                if (ok) {
+                    state.okAt = Date.now();
+                    state.attempts = 0;
+                    return true;
+                }
+                state.okAt = undefined;
+                this.scheduleComposerAgentCatalogRetry(project, state);
+                return false;
+            });
+        state.inFlight = load;
+        return load;
+    }
+
+    protected scheduleComposerAgentCatalogRetry(project: MobileProjectEntry, state: ComposerCatalogLoadState): void {
+        const delay = this.composerCatalogRetryDelaysMs[state.attempts];
+        if (delay === undefined) {
+            // Retries used up: the next mount starts a new series.
+            state.attempts = 0;
+            return;
+        }
+        state.attempts++;
+        state.timer = setTimeout(() => {
+            state.timer = undefined;
+            void this.loadComposerAgentCatalog(project, state);
+        }, delay);
     }
 
     protected resolveCatalogCwd(project: MobileProjectEntry): string | undefined {
@@ -212,7 +280,6 @@ export class MobileProjectsTranscriptComposerUi {
     async refreshTranscriptComposerAgents(project: MobileProjectEntry, options?: { readonly forceRefresh?: boolean }): Promise<boolean> {
         this.host.activeTasks?.start();
         const cwd = this.resolveCatalogCwd(project);
-        this.lastCatalogLoadByCwd.set(cwd ?? '', Date.now());
         try {
             const snapshot = await this.host.loadBackendAgentSnapshot(options);
             let pickerAgents = this.host.stickyComposerAgentsUi.getComposerAgentPickerAgents(snapshot.agents);

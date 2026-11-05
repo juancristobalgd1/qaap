@@ -295,7 +295,10 @@ describe('qaap-agent-task-client request caches', () => {
         Date.now = () => now;
         realFetch = globalThis.fetch;
         requestUrls = [];
-        respond = () => new Response(JSON.stringify({ agents: [], models: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        respond = () => new Response(JSON.stringify({
+            agents: [{ id: 'pi', label: 'Pi', available: true }],
+            models: [{ provider: 'provider', vendor: 'vendor', modelId: 'model' }],
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } });
         globalThis.fetch = (async (input: RequestInfo | URL) => {
             requestUrls.push(String(input));
             return respond(requestUrls.length - 1);
@@ -385,6 +388,22 @@ describe('qaap-agent-task-client request caches', () => {
             failure = error;
         }
         expect(failure).to.be.instanceOf(Error);
+        await fetchAgentModelsForAgent('cursor');
+        expect(requestUrls).to.have.length(2);
+    });
+
+    it('never caches an empty agent task list, so the next call asks the backend again', async () => {
+        respond = () => new Response(JSON.stringify({ agents: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        const first = await fetchAgentTaskListAll();
+        const second = await fetchAgentTaskListAll();
+        expect(first.agents).to.deep.equal([]);
+        expect(second.agents).to.deep.equal([]);
+        expect(requestUrls).to.have.length(2);
+    });
+
+    it('never caches an empty agent model catalog, so the next call asks again', async () => {
+        respond = () => new Response(JSON.stringify({ models: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        await fetchAgentModelsForAgent('cursor');
         await fetchAgentModelsForAgent('cursor');
         expect(requestUrls).to.have.length(2);
     });

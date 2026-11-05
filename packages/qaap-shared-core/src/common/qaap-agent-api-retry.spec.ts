@@ -7,19 +7,22 @@ import { expect } from 'chai';
 import * as sinon from 'sinon';
 import { listAllConversationGroups } from './qaap-agent-conversation-client';
 import { fetchAgentApprovals } from './qaap-agent-approval-client';
-import { fetchAgentTaskListAll } from './qaap-agent-task-client';
+import { fetchAgentTaskListAll, invalidateAgentTaskListAllCache } from './qaap-agent-task-client';
 
 describe('Qaap agent GET APIs recover from transient gateway errors', () => {
     const originalFetch = globalThis.fetch;
     let clock: sinon.SinonFakeTimers;
 
     beforeEach(() => {
+        // Another spec may have cached the task list; start every run from a cold cache.
+        invalidateAgentTaskListAllCache();
         clock = sinon.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     });
 
     afterEach(() => {
         globalThis.fetch = originalFetch;
         clock.restore();
+        invalidateAgentTaskListAllCache();
     });
 
     it('retries task, approval, and conversation snapshots after a 502', async () => {
@@ -50,6 +53,12 @@ describe('Qaap agent GET APIs recover from transient gateway errors', () => {
         const conversations = listAllConversationGroups();
         await clock.tickAsync(700);
         expect(await conversations).to.deep.equal([]);
-        expect([...attempts.values()]).to.deep.equal([2, 2, 2]);
+        // Count by path, not insertion order, so a stray request from another spec cannot shift the result.
+        const attemptsFor = (path: string): number | undefined => [...attempts].find(([url]) => url.endsWith(path))?.[1];
+        expect({
+            tasks: attemptsFor('/agent-tasks/all'),
+            approvals: attemptsFor('/agent-approvals'),
+            conversations: attemptsFor('/agent-conversations/all'),
+        }, JSON.stringify([...attempts])).to.deep.equal({ tasks: 2, approvals: 2, conversations: 2 });
     });
 });
