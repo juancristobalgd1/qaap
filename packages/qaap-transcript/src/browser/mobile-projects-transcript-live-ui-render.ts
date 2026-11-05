@@ -23,6 +23,7 @@ import {
     mergeConversationTranscriptFingerprint,
 } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
 import { isTranscriptDocumentVisible } from '../common/qaap-transcript-document-visibility';
+import { applyOptimisticRunCancelToConversation } from '../common/qaap-transcript-run-cancel';
 import { resolveTranscriptStreamingCoalesceDelayMs } from '../common/qaap-transcript-streaming-coalesce';
 import {
     recordTranscriptRenderMetric,
@@ -115,13 +116,11 @@ export function applyOptimisticConversationCancelExtracted(ctx: MobileProjectsTr
         if (ctx.pendingSseRenderConv?.id === summary.id) {
             ctx.pendingSseRenderConv = undefined;
         }
+        // The stopped runs get their "Turn cancelled." row now; the server's answer replaces this snapshot.
         const optimistic: QaapAgentConversationDTO = {
-            ...conv,
+            ...applyOptimisticRunCancelToConversation(conv),
             status: 'idle',
             updatedAt: Date.now(),
-            messages: conv.messages.map(message => message.role === 'agent' && message.runActive
-                ? { ...message, runActive: undefined }
-                : message),
         };
         ctx.host.transcriptLastConv = optimistic;
         ctx.host.transcriptLastFingerprint = undefined;
@@ -138,6 +137,20 @@ export function applyOptimisticConversationCancelExtracted(ctx: MobileProjectsTr
         // flushed, and the queue sat on "will send when the agent finishes" with the agent stopped.
         // Idempotent with the controller's settle (the flush is guarded by its in-flight flag).
         ctx.syncTranscriptConversationSettledChrome();
+}
+
+export function applyOptimisticRunCancelExtracted(ctx: MobileProjectsTranscriptLiveUiContext, conversationId: string, messageId: string): void {
+        const conv = ctx.host.transcriptLastConv;
+        if (!conv || conv.id !== conversationId) {
+            return;
+        }
+        const optimistic = applyOptimisticRunCancelToConversation(conv, messageId);
+        ctx.host.transcriptLastConv = optimistic;
+        ctx.host.transcriptLastFingerprint = undefined;
+        const chatHost = ctx.resolveActiveTranscriptChatHost();
+        if (chatHost) {
+            ctx.host.transcriptMessagesUi.renderTranscriptMessages(chatHost, optimistic);
+        }
 }
 
 export function applyOptimisticStreamTimeoutRetryExtracted(ctx: MobileProjectsTranscriptLiveUiContext, summary: QaapAgentConversationSummaryDTO): void {
