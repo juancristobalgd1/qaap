@@ -46,6 +46,7 @@ function pauseHarness(): PauseHarness {
         webPush: { notify: async (payload: PushPayload) => { pushes.push(payload); } },
         killAgentProcessTree: () => undefined,
         drainQueuedTasks: () => undefined,
+        recordTaskLatencyMark: () => undefined,
         finishTask: (id: string, state: QaapAgentTaskState) => {
             const finished = { ...tasks.get(id)!, state, finishedAt: 2 };
             tasks.set(id, finished);

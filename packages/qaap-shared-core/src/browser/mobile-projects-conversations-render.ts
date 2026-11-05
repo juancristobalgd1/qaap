@@ -4,7 +4,7 @@ import type { MobileProjectsConversationsContext } from './mobile-projects-conve
 import URI from '@theia/core/lib/common/uri';
 import {
     QAAP_AGENT_CONVERSATION_WS_PATH,
-    cancelConversationHttp,
+    cancelConversation,
     getConversation,
     listAllConversationGroups,
     registerConversationLiveCancel,
@@ -325,15 +325,12 @@ export function emitConversationChangeExtracted(ctx: MobileProjectsConversations
 }
 
 export async function cancelConversationLiveExtracted(ctx: MobileProjectsConversationsContext, id: string): Promise<void> {
-        if (ctx.socket?.readyState === WebSocket.OPEN) {
-            ctx.socket.send(JSON.stringify({ op: 'cancel', conversationId: id }));
-            const existing = ctx.findSummaryById(id);
-            if (existing?.status === 'streaming') {
-                ctx.recordSnapshot({ ...existing, status: 'idle', updatedAt: Date.now() });
-            }
-            return;
+        // Optimistic: the Stop button shows idle at once; the HTTP cancel (with its retry) settles the server.
+        const existing = ctx.findSummaryById(id);
+        if (existing?.status === 'streaming') {
+            ctx.recordSnapshot({ ...existing, status: 'idle', updatedAt: Date.now() });
         }
-        await cancelConversationHttp(id);
+        await cancelConversation(id);
 }
 
 export function openWebSocketExtracted(ctx: MobileProjectsConversationsContext): void {

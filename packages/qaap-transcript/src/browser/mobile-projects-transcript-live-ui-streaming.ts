@@ -24,6 +24,8 @@ import {
     toTranscriptPreviewBootstrapSnapshot,
 } from '../common/qaap-transcript-preview-bootstrap-failure';
 import { agentActivityField, isLastTurnCancelled, reportPreviewBootstrapFailure } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { qaapStopAck } from '@theia/qaap-shared-core/lib/browser/qaap-stop-ack';
+import { overlayPendingStopOnConversation } from '../common/qaap-transcript-stop-overlay';
 import { agentMessageHasVisualVerificationMarker } from '@theia/qaap-shared-core/lib/common/qaap-visual-verification';
 import { normalizePreviewUrlForSameOrigin } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
 import { ensureTranscriptDevPreview } from '@theia/qaap-shared-core/lib/browser/qaap-transcript-preview-bootstrap';
@@ -39,9 +41,11 @@ import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mob
 import { TRANSCRIPT_COMPOSER_ACTIVITY_DEBOUNCE_MS } from './mobile-projects-transcript-live-ui';
 import { isQaapPreviewDismissedByUser, qaapProjectPreviewDirectory } from '@theia/qaap-shared-core/lib/browser/qaap-preview-user-dismissal';
 
-export function applyTranscriptSseRenderExtracted(ctx: MobileProjectsTranscriptLiveUiContext, next: QaapAgentConversationDTO,
+export function applyTranscriptSseRenderExtracted(ctx: MobileProjectsTranscriptLiveUiContext, incoming: QaapAgentConversationDTO,
     eventMessage: QaapAgentMessageDTO,): void {
     const chatHost = ctx.resolveActiveTranscriptChatHost();
+    // While a Stop is unacknowledged a frame may still say `streaming`: keep the stopped state.
+    const next = qaapStopAck.isStopOverlayActive(incoming.id) ? overlayPendingStopOnConversation(incoming) : incoming;
     const prevConv = ctx.host.transcriptLastConv;
     // Prefer the open summary's settled status so post-settle visual evidence rebuilds
     // the agent row (pending chip → img/video) instead of a streaming text patch.

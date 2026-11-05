@@ -14,7 +14,7 @@ import { QaapQaiqProviderKeyMissingError } from './qaap-qaiq-provider-preflight'
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { awaitQaapAgentTaskSpawnGate } from './qaap-agent-task-spawn-gate';
 import { resolveAgentTaskBillingRejection } from './qaap-agent-task-billing-gate';
-import { finishTaskWithPauseCause } from './qaap-agent-task-runner-streaming2';
+import { finishTaskWithPauseCause, logCancelExitExtracted } from './qaap-agent-task-runner-streaming2';
 import { createOpencodeFatalStderrWatcher } from './qaap-opencode-fatal-error';
 import { createPiProviderErrorWatcher } from './qaap-pi-provider-error-watcher';
 import { removeStaleOpencodeSnapshotLocks } from './qaap-opencode-snapshot-lock';
@@ -162,6 +162,9 @@ export function expireIdleAgentTask(
     return 'interrupted';
 }
 
+/** Period of the event-loop gap sampler used by the stop timing log. */
+const LOOP_SAMPLER_INTERVAL_MS = 100;
+
 export function killAgentProcessTreeExtracted(ctx: QaapAgentTaskRunnerContext, child: ChildProcess,
         options?: { readonly escalateAfterMs?: number; readonly onGracePeriodElapsed?: () => void },): NodeJS.Timeout | undefined {
         const pid = child.pid;
@@ -169,15 +172,35 @@ export function killAgentProcessTreeExtracted(ctx: QaapAgentTaskRunnerContext, c
             options?.onGracePeriodElapsed?.();
             return undefined;
         }
+        // Timing evidence for a slow exit: the epoch each signal left, and the largest event-loop gap
+        // seen while the grace timer waited (a blocked loop delays the timer by the same amount). The
+        // sampler stops when the escalation fires, which is at most one grace period after the signal.
+        const armedAt = Date.now();
+        let lastTick = armedAt;
+        let maxLoopGapMs = 0;
+        const loopSampler = setInterval(() => {
+            const now = Date.now();
+            maxLoopGapMs = Math.max(maxLoopGapMs, now - lastTick - LOOP_SAMPLER_INTERVAL_MS);
+            lastTick = now;
+        }, LOOP_SAMPLER_INTERVAL_MS);
+        loopSampler.unref?.();
         const sendSignal = (signal: NodeJS.Signals): void => {
             if (globalThis.process.platform === 'win32') {
                 spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
                 return;
             }
+            console.warn(`[qaap-stop] signal pid=${pid} target=group sig=${signal} epoch=${Date.now()}`);
             try {
                 globalThis.process.kill(-pid, signal);
                 return;
-            } catch { /* process group already gone; try the leader below */ }
+            } catch (error) {
+                // ESRCH: no such process group (already exited, or never became a group leader).
+                // Signal the leader directly so the stop still reaches the agent.
+                if ((error as NodeJS.ErrnoException).code === 'ESRCH') {
+                    console.warn(`[qaap-stop] process group ${pid} not found; signalling the leader with ${signal}`);
+                }
+            }
+            console.warn(`[qaap-stop] signal pid=${pid} target=leader sig=${signal} epoch=${Date.now()}`);
             try {
                 child.kill(signal);
             } catch { /* already gone */ }
@@ -185,6 +208,9 @@ export function killAgentProcessTreeExtracted(ctx: QaapAgentTaskRunnerContext, c
         sendSignal('SIGTERM');
         const escalateAfterMs = options?.escalateAfterMs ?? 5_000;
         const sendKill = (): void => {
+            const firedAt = Date.now();
+            clearInterval(loopSampler);
+            console.warn(`[qaap-stop] escalation-fired pid=${pid} armedAt=${armedAt} deadline=${armedAt + escalateAfterMs} fired=${firedAt} lagMs=${firedAt - armedAt - escalateAfterMs} maxLoopGapMs=${maxLoopGapMs}`);
             try {
                 sendSignal('SIGKILL');
             } finally {
@@ -195,6 +221,7 @@ export function killAgentProcessTreeExtracted(ctx: QaapAgentTaskRunnerContext, c
             sendKill();
             return undefined;
         }
+        console.warn(`[qaap-stop] escalation-armed pid=${pid} armedAt=${armedAt} graceMs=${escalateAfterMs}`);
         const escalation = setTimeout(sendKill, escalateAfterMs);
         escalation.unref?.();
         return escalation;
@@ -528,7 +555,8 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                 stdio: stdinInteractive ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe'],
                 // On Windows, cmd.exe can keep a detached child waiting after its stdin is closed.
                 // Plain Codex stdin prompts therefore need a non-detached shell process.
-                detached: stdinPrompt?.mode === 'plain' ? false : undefined,
+                // POSIX: the agent leads its own process group, so a Stop signals the whole tree with kill(-pid).
+                detached: globalThis.process.platform === 'win32' ? (stdinPrompt?.mode === 'plain' ? false : undefined) : true,
             });
             ctx.recordTaskLatencyMark(task.id, 'spawn_end');
         } catch (error) {
@@ -785,7 +813,11 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
         child.on('error', error => {
             logStream.write(`\n[qaap] process error: ${error.message}\n`);
         });
-        child.once('exit', () => reapAgentProcessGroupOnExitExtracted(ctx, task.id, child));
+        child.once('exit', () => {
+            ctx.recordTaskLatencyMark(task.id, 'process_exit');
+            logCancelExitExtracted(ctx, task.id);
+            reapAgentProcessGroupOnExitExtracted(ctx, task.id, child);
+        });
         child.on('close', code => {
             clearChangeScopeWatch();
             clearIdleTimer();

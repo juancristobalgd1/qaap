@@ -1,4 +1,5 @@
 // Extracted from qaap-agent-conversation-store.ts
+import { logTurnCreatedExtracted } from './qaap-agent-turn-create-log';
 import type { QaapAgentConversationStoreContext } from './qaap-agent-conversation-store-context';
 
 import { randomUUID } from 'crypto';
@@ -454,6 +455,7 @@ export async function maybeAutoResumeInterruptedTurnExtracted(ctx: QaapAgentConv
             ctx.buildTaskCreateRequest(resumeConv, turnAgentId, undefined, userMessageId),
             resumeConv.ownerLogin,
         );
+        logTurnCreatedExtracted('live-status2:resume', resumeConv.id, userMessageId, spawned.id);
     } catch {
         // cwd gone / runner refused: degrade to the manual "Retry to continue" flow. The counter
         // is already persisted, so this turn will not be retried automatically again.

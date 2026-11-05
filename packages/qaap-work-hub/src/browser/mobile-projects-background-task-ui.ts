@@ -407,7 +407,7 @@ export class MobileProjectsBackgroundTaskUi {
 
     /** Seams over the conversation client so the stop outcome can be exercised without a backend. */
     protected requestConversationCancel(id: string): Promise<void> {
-        return cancelConversation(id);
+        return cancelConversation(id).then(() => undefined);
     }
 
     protected loadConversation(id: string): Promise<QaapAgentConversationDTO> {
