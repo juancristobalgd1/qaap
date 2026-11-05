@@ -371,6 +371,14 @@ export function reapAgentProcessGroupOnExitExtracted(
     ctx.reapAgentProcessGroupAfterExit(child);
 }
 
+/** Thrown inside spawnProcessExtracted when Stop settled the task before its agent could spawn. */
+class QaapAgentSpawnSkippedError extends Error {
+    constructor() {
+        super('Stopped before the agent started');
+        this.name = 'QaapAgentSpawnSkippedError';
+    }
+}
+
 export async function spawnProcessWhenReadyExtracted(ctx: QaapAgentTaskRunnerContext, task: QaapAgentTask, request: QaapCreateAgentTaskRequest): Promise<void> {
         if (ctx.preferenceService) {
             await ctx.preferenceService.ready;
@@ -548,6 +556,11 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                 // and every later OpenCode run then fails to create its snapshot lock.
                 await removeStaleOpencodeSnapshotLocks(childEnv.XDG_DATA_HOME);
             }
+            // Every await above (cwd ownership, sandbox, OpenCode probe, lock cleanup, Codex overlay)
+            // is a window in which Stop can land. A task Stop already settled must not get a child.
+            if (ctx.tasks.get(task.id)?.state !== 'running') {
+                throw new QaapAgentSpawnSkippedError();
+            }
             // Pipes stay attached (no unref()), so logging and stdio approvals are unaffected.
             child = ctx.spawnAgentCommand(task.command, {
                 cwd: task.cwd,
@@ -565,6 +578,13 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             ctx.stdinPrompts.delete(task.id);
             removeAgentPromptTempDirHelper(ctx.promptTempDirs.get(task.id));
             ctx.promptTempDirs.delete(task.id);
+            if (error instanceof QaapAgentSpawnSkippedError) {
+                // Stop already settled this task as cancelled: release what the spawn path took, keep that state.
+                ctx.releaseTaskSandbox?.(task.id);
+                logStream.end('Stopped before the agent started.\n');
+                console.warn(`[qaap-stop] spawn-skipped task=${task.id} state=${ctx.tasks.get(task.id)?.state ?? 'missing'}`);
+                return;
+            }
             logStream.end(`Failed to start: ${error instanceof Error ? error.message : String(error)}\n`);
             ctx.finishTask(task.id, 'failed', undefined);
             return;
