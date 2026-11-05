@@ -109,6 +109,8 @@ export class MobileProjectsStickyComposerColumnUi {
         /** "Until done" goal-loop toggle; VPS agent (task) surface only. */
         untilDone?: StickyComposerUntilDoneToggleOptions;
         canSubmit: boolean;
+        /** True while a Stop for this conversation is unacknowledged: Send is disabled and reads "Stopping…". */
+        isSubmitBlocked?: () => boolean;
         isAgentWorking?: () => boolean;
         /**
          * Read-only "permissions in effect" line (e.g. `Build · Request approval`) shown while the
@@ -421,11 +423,13 @@ export class MobileProjectsStickyComposerColumnUi {
             inputPanel.classList.toggle('theia-mod-agent-working', working && !beamIdle);
             inputPanel.classList.toggle('theia-mod-agent-working-idle', beamIdle);
             updateRunPermissions(working);
-            const showStop = working && !has;
+            const submitBlocked = options.isSubmitBlocked?.() ?? false;
+            const showStop = working && !has && !submitBlocked;
             const sendLabel = options.sendLabel ?? nls.localize('qaap/mobileProjects/inlineStart', 'Start');
             const stopLabel = options.stopLabel ?? nls.localize('qaap/mobileProjects/cancelTaskRun', 'Cancel run');
             sendBtn.classList.toggle('theia-mod-stop', showStop);
-            sendBtn.classList.toggle('theia-mod-ready', !showStop && has && options.canSubmit);
+            sendBtn.classList.toggle('theia-mod-ready', !showStop && has && options.canSubmit && !submitBlocked);
+            sendBtn.classList.toggle('theia-mod-stopping', submitBlocked);
             const nextIcon: 'send' | 'stop' = showStop ? 'stop' : 'send';
             if (showStop) {
                 sendBtn.disabled = false;
@@ -436,9 +440,11 @@ export class MobileProjectsStickyComposerColumnUi {
                     lastSendIcon = nextIcon;
                 }
             } else {
-                sendBtn.disabled = !has || !options.canSubmit;
-                sendBtn.title = sendLabel;
-                sendBtn.setAttribute('aria-label', sendLabel);
+                const stoppingLabel = nls.localize('qaap/mobileProjects/stopAckPending', 'Stopping…');
+                const idleLabel = submitBlocked ? stoppingLabel : sendLabel;
+                sendBtn.disabled = !has || !options.canSubmit || submitBlocked;
+                sendBtn.title = idleLabel;
+                sendBtn.setAttribute('aria-label', idleLabel);
                 if (lastSendIcon !== nextIcon) {
                     sendBtn.replaceChildren(createStickyComposerSendIcon());
                     lastSendIcon = nextIcon;
@@ -529,7 +535,7 @@ export class MobileProjectsStickyComposerColumnUi {
         const dispatchSubmit = (handler: (draft: string) => void): void => {
             const draft = input.value.trim();
             const now = Date.now();
-            if (!draft || !options.canSubmit) {
+            if (!draft || !options.canSubmit || (options.isSubmitBlocked?.() ?? false)) {
                 if (!submitInFlight) {
                     options.onSubmitBlocked?.();
                 }

@@ -34,6 +34,8 @@ import {
 import { buildAgentsHubIdleConversationSummary, isAgentsHubIdleConversationSummary } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
 import { isComposerDraftRestored, resolveComposerRestoredDraftKey } from '../common/qaap-composer-restored-draft';
 import { resolveComposerSubmitTarget } from '../common/qaap-composer-submit-target';
+import { resolveComposerStopTarget } from '../common/qaap-composer-stop-target';
+import { qaapStopAck } from '@theia/qaap-shared-core/lib/browser/qaap-stop-ack';
 import { writeProjectComposerDraft } from '../common/qaap-project-composer-draft';
 import {
     formatComposerRunPermissionsLabel,
@@ -251,6 +253,7 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: MobilePro
             }
             : undefined,
         canSubmit: true,
+        isSubmitBlocked: () => qaapStopAck.isSendBlocked(ctx.host.transcriptLastConv?.id ?? summary.id),
         onImprovePrompt: ctx.host.composerPromptImprover
             ? createStickyComposerImprovePromptHandler({
                 improver: ctx.host.composerPromptImprover,
@@ -294,7 +297,12 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: MobilePro
                 stopSummary = ctx.workHub.resolveShellSummary(stopProject) ?? summary;
             }
             console.info(`[qaap-stop] click origin=composer summary=${stopSummary.id} open=${ctx.host.transcriptLastConv?.id ?? '-'}`);
-            void ctx.host.onCancelConversation(stopProject, stopSummary);
+            // The open transcript decides the target: a closure captured before a conversation switch must not cancel the older one.
+            const target = resolveComposerStopTarget(stopSummary, ctx.host.transcriptLastConv?.id, ctx.host.transcriptOpenSummary);
+            if (!target) {
+                return;
+            }
+            void ctx.host.onCancelConversation(stopProject, target);
         },
         onSendControlMounted: refresh => { ctx.host.transcriptComposerSendRefresh = refresh; },
         onAttach: anchor => { void ctx.onTranscriptComposerAttach(project, anchor); },

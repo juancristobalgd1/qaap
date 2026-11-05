@@ -25,6 +25,7 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { resolveStoredAgentModelForSubmit } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
 import { reportQaapClientError } from '@theia/qaap-shared-core/lib/common/qaap-client-error-report';
+import { qaapStopAck, type QaapStopAckOutcome } from '@theia/qaap-shared-core/lib/browser/qaap-stop-ack';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import { isAgentsHubIdleConversationSummary } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
 import { requestStopNewTaskStartup } from '../common/qaap-new-task-startup';
@@ -38,6 +39,8 @@ import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mob
 /** Panel surface for task card menu actions (rename, fork, pause, cancel, delete, …). */
 export interface MobileProjectsConversationActionsHost {
     messageService: MessageService | undefined;
+    /** Re-evaluates the composer Send control (blocked while a Stop is unacknowledged). */
+    transcriptComposerSendRefresh?: () => void;
     chatService: ChatService | undefined;
     conversationFlags: MobileProjectsConversationFlags | undefined;
     conversations: MobileProjectsConversations | undefined;
@@ -294,6 +297,38 @@ export class MobileProjectsConversationActionsUi {
         }
     }
 
+    /**
+     * Settles a Stop request: an acknowledgement only unblocks Send. A failure or an unconfirmed expiry
+     * restores the Stop state (the optimistic idle was not confirmed), with a visible error.
+     */
+    protected onStopAckSettled(summary: QaapAgentConversationSummaryDTO, outcome: QaapStopAckOutcome, error?: unknown): void {
+        if (outcome === 'acknowledged') {
+            this.host.transcriptComposerSendRefresh?.();
+            return;
+        }
+        if (outcome === 'failed') {
+            reportQaapClientError('conversation-cancel', error);
+            this.host.messageService?.error(nls.localize(
+                'qaap/mobileProjects/cancelTaskFailed',
+                'Could not cancel run: {0}',
+                QaapUserFacingErrors.toMessageAndLog(error)
+            ));
+        } else {
+            this.host.messageService?.error(nls.localize(
+                'qaap/mobileProjects/cancelTaskNotConfirmed',
+                'The stop is not confirmed yet. Stop again to retry; Send unlocks when the run ends.'
+            ));
+        }
+        const latest = this.host.conversations?.findSummaryById(summary.id);
+        if (latest?.status !== 'streaming' && outcome === 'expired') {
+            this.host.transcriptComposerSendRefresh?.();
+            return;
+        }
+        this.host.conversations?.recordSnapshot({ ...(latest ?? summary), status: 'streaming', updatedAt: Date.now() });
+        this.refreshConversationLists();
+        this.host.transcriptComposerSendRefresh?.();
+    }
+
     onCancelConversation(
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
@@ -312,14 +347,14 @@ export class MobileProjectsConversationActionsUi {
             // transcript, which immediately refetches the conversation and flushes the follow-up
             // queue. Issued first, the server could still answer "streaming" for the stopped run
             // (the transcript flipped back to working) and the queued follow-up raced the stop.
-            cancelConversation(summary.id).catch(err => {
-                reportQaapClientError('conversation-cancel', err);
-                this.host.messageService?.error(nls.localize(
-                    'qaap/mobileProjects/cancelTaskFailed',
-                    'Could not cancel run: {0}',
-                    QaapUserFacingErrors.toMessageAndLog(err)
-                ));
+            // Tracked: Send for this conversation stays blocked until the server acknowledges the Stop.
+            const stopId = summary.id;
+            void qaapStopAck.track(stopId, cancelConversation(stopId), {
+                isStillStreaming: () => this.host.conversations?.findSummaryById(stopId)?.status === 'streaming',
+                onSettled: (outcome, error) => this.onStopAckSettled(summary, outcome, error),
+                onLateAnswer: () => this.host.transcriptComposerSendRefresh?.(),
             });
+            this.host.transcriptComposerSendRefresh?.();
         }
         // Start from the store's latest summary: `summary` is often the composer's mount-time
         // closure, and spreading it with a fresh `updatedAt` overwrote newer list fields.
