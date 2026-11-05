@@ -162,6 +162,9 @@ export function expireIdleAgentTask(
     return 'interrupted';
 }
 
+/** Period of the event-loop gap sampler used by the stop timing log. */
+const LOOP_SAMPLER_INTERVAL_MS = 100;
+
 export function killAgentProcessTreeExtracted(ctx: QaapAgentTaskRunnerContext, child: ChildProcess,
         options?: { readonly escalateAfterMs?: number; readonly onGracePeriodElapsed?: () => void },): NodeJS.Timeout | undefined {
         const pid = child.pid;
@@ -169,11 +172,24 @@ export function killAgentProcessTreeExtracted(ctx: QaapAgentTaskRunnerContext, c
             options?.onGracePeriodElapsed?.();
             return undefined;
         }
+        // Timing evidence for a slow exit: the epoch each signal left, and the largest event-loop gap
+        // seen while the grace timer waited (a blocked loop delays the timer by the same amount).
+        const armedAt = Date.now();
+        let lastTick = armedAt;
+        let maxLoopGapMs = 0;
+        const loopSampler = setInterval(() => {
+            const now = Date.now();
+            maxLoopGapMs = Math.max(maxLoopGapMs, now - lastTick - LOOP_SAMPLER_INTERVAL_MS);
+            lastTick = now;
+        }, LOOP_SAMPLER_INTERVAL_MS);
+        loopSampler.unref?.();
+        child.once('exit', () => clearInterval(loopSampler));
         const sendSignal = (signal: NodeJS.Signals): void => {
             if (globalThis.process.platform === 'win32') {
                 spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
                 return;
             }
+            console.warn(`[qaap-stop] signal pid=${pid} target=group sig=${signal} epoch=${Date.now()}`);
             try {
                 globalThis.process.kill(-pid, signal);
                 return;
@@ -184,6 +200,7 @@ export function killAgentProcessTreeExtracted(ctx: QaapAgentTaskRunnerContext, c
                     console.warn(`[qaap-stop] process group ${pid} not found; signalling the leader with ${signal}`);
                 }
             }
+            console.warn(`[qaap-stop] signal pid=${pid} target=leader sig=${signal} epoch=${Date.now()}`);
             try {
                 child.kill(signal);
             } catch { /* already gone */ }
@@ -191,6 +208,9 @@ export function killAgentProcessTreeExtracted(ctx: QaapAgentTaskRunnerContext, c
         sendSignal('SIGTERM');
         const escalateAfterMs = options?.escalateAfterMs ?? 5_000;
         const sendKill = (): void => {
+            const firedAt = Date.now();
+            clearInterval(loopSampler);
+            console.warn(`[qaap-stop] escalation-fired pid=${pid} armedAt=${armedAt} deadline=${armedAt + escalateAfterMs} fired=${firedAt} lagMs=${firedAt - armedAt - escalateAfterMs} maxLoopGapMs=${maxLoopGapMs}`);
             try {
                 sendSignal('SIGKILL');
             } finally {
@@ -201,6 +221,7 @@ export function killAgentProcessTreeExtracted(ctx: QaapAgentTaskRunnerContext, c
             sendKill();
             return undefined;
         }
+        console.warn(`[qaap-stop] escalation-armed pid=${pid} armedAt=${armedAt} graceMs=${escalateAfterMs}`);
         const escalation = setTimeout(sendKill, escalateAfterMs);
         escalation.unref?.();
         return escalation;

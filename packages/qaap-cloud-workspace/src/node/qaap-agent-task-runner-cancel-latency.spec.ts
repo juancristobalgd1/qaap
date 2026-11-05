@@ -86,7 +86,12 @@ function createHarness(child: ChildProcess): Harness {
 describe('QaapAgentTaskRunner stop latency', () => {
     let clock: sinon.SinonFakeTimers;
     let processKill: sinon.SinonStub;
-    let consoleInfo: sinon.SinonStub;
+    let consoleWarn: sinon.SinonStub;
+
+    /** The `[qaap-stop] conv=` settle and exit lines; the signal and escalation timing lines are separate. */
+    const stopLines = (): string[] => consoleWarn.getCalls()
+        .map(call => String(call.args[0]))
+        .filter(line => /^\[qaap-stop\] conv=/.test(line));
 
     beforeEach(function (): void {
         if (globalThis.process.platform === 'win32') {
@@ -94,11 +99,11 @@ describe('QaapAgentTaskRunner stop latency', () => {
         }
         clock = sinon.useFakeTimers({ now: 1_000_000, toFake: ['setTimeout', 'clearTimeout', 'Date'] });
         processKill = sinon.stub(globalThis.process, 'kill').callsFake(() => true);
-        consoleInfo = sinon.stub(console, 'info');
+        consoleWarn = sinon.stub(console, 'warn');
     });
 
     afterEach(() => {
-        consoleInfo?.restore();
+        consoleWarn?.restore();
         processKill?.restore();
         clock?.restore();
     });
@@ -147,7 +152,21 @@ describe('QaapAgentTaskRunner stop latency', () => {
         cancelExtracted(harness.ctx, TASK_ID);
 
         expect(child.kill.calledWith('SIGTERM')).to.equal(true);
-        expect(consoleInfo.getCalls().some(call => /\[qaap-stop\] process group 51001 not found/.test(String(call.args[0])))).to.equal(true);
+        expect(consoleWarn.getCalls().some(call => /\[qaap-stop\] process group 51001 not found/.test(String(call.args[0])))).to.equal(true);
+    });
+
+    it('logs the epoch of each signal and how late the grace timer fired', () => {
+        const child = new FakeChild();
+        const harness = createHarness(child as unknown as ChildProcess);
+
+        cancelExtracted(harness.ctx, TASK_ID);
+        clock.tick(AGENT_STOP_GRACE_TIMEOUT_MS);
+
+        const lines = consoleWarn.getCalls().map(call => String(call.args[0]));
+        expect(lines.some(line => /signal pid=51001 target=group sig=SIGTERM epoch=1000000$/.test(line))).to.equal(true);
+        expect(lines.some(line => /signal pid=51001 target=group sig=SIGKILL epoch=1002000$/.test(line))).to.equal(true);
+        expect(lines.some(line => /escalation-armed pid=51001 armedAt=1000000 graceMs=2000$/.test(line))).to.equal(true);
+        expect(lines.some(line => /escalation-fired pid=51001 armedAt=1000000 deadline=1002000 fired=1002000 lagMs=0 maxLoopGapMs=\d+$/.test(line))).to.equal(true);
     });
 
     it('logs a settle line with exitMs pending, then an exit line once the child exits', () => {
@@ -155,12 +174,12 @@ describe('QaapAgentTaskRunner stop latency', () => {
         const harness = createHarness(child as unknown as ChildProcess);
 
         cancelExtracted(harness.ctx, TASK_ID);
-        expect(consoleInfo.firstCall.args[0]).to.match(/^\[qaap-stop\] conv=conv-1 task=task-cancel-1 settledMs=\d+ exitMs=pending$/);
+        expect(stopLines()[0]).to.match(/^\[qaap-stop\] conv=conv-1 task=task-cancel-1 settledMs=\d+ exitMs=pending$/);
 
         clock.tick(500);
         harness.ctx.recordTaskLatencyMark(TASK_ID, 'process_exit');
         logCancelExitExtracted(harness.ctx, TASK_ID);
-        expect(consoleInfo.secondCall.args[0]).to.equal('[qaap-stop] conv=conv-1 task=task-cancel-1 exitMs=500');
+        expect(stopLines()[1]).to.equal('[qaap-stop] conv=conv-1 task=task-cancel-1 exitMs=500');
     });
 
     it('treats a second cancel of a settled task as a no-op', () => {
@@ -174,7 +193,7 @@ describe('QaapAgentTaskRunner stop latency', () => {
         expect(second?.state).to.equal('cancelled');
         expect(harness.finishTaskCalls).to.deep.equal([TASK_ID]);
         expect(harness.tasks.get(TASK_ID)).to.equal(before);
-        expect(consoleInfo.callCount).to.equal(1);
+        expect(stopLines()).to.have.length(1);
     });
 
     it('uses a 2 s default grace and a 1 s floor for the stop grace timeout', () => {
