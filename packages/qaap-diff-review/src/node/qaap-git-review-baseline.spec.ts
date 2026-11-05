@@ -36,8 +36,34 @@ class BaselineGitReviewEndpoint extends QaapGitReviewEndpoint {
 
     repoRootForTest: string | undefined;
 
+    snapshotCount = 0;
+
+    changedForTest(root: string, baseCommit: string, reuseSnapshot: boolean): Promise<QaapGitChangedFile[]> {
+        return this.collectChangedFilesSinceBaseline(root, baseCommit, reuseSnapshot);
+    }
+
+    protected override takeTaskSnapshot(root: string): Promise<string> {
+        this.snapshotCount++;
+        return super.takeTaskSnapshot(root);
+    }
+
+    diffSinceBaselineForTest(root: string, file: string, baseCommit: string): Promise<string> {
+        return (this as unknown as { computeFileDiffSinceBaseline(r: string, f: string, b: string, s: undefined): Promise<string> })
+            .computeFileDiffSinceBaseline(root, file, baseCommit, undefined);
+    }
+
     handleChangesForTest(req: unknown, res: unknown): Promise<void> {
         return (this as unknown as { handleChanges(req: unknown, res: unknown): Promise<void> }).handleChanges(req, res);
+    }
+}
+
+/** True when `promise` rejects; the value is not needed by the caller. */
+async function rejectsWith(promise: Promise<unknown>): Promise<boolean> {
+    try {
+        await promise;
+        return false;
+    } catch {
+        return true;
     }
 }
 
@@ -145,6 +171,97 @@ describe('qaap-git-review-endpoint task baseline', function (): void {
         expect(committed).to.deep.equal(['a.ts', 'hello.txt']);
         // The pre-task edit is still uncommitted in the worktree.
         expect(git(['status', '--porcelain'])).to.contain('README.md');
+    });
+
+    it('discard fails without deleting anything when the baseline cannot be read', async () => {
+        await snapshotBaseline();
+        fs.writeFileSync(path.join(repo, 'hello.txt'), 'created by the task\n');
+        const missing = '1'.repeat(40);
+        expect(await rejectsWith(endpoint.discardFileForTest(repo, 'hello.txt', missing))).to.equal(true);
+        expect(fs.readFileSync(path.join(repo, 'hello.txt'), 'utf8')).to.equal('created by the task\n');
+    });
+
+    it('discard takes the file state from the task diff, so a change the agent already committed is still discarded', async () => {
+        const baseCommit = await snapshotBaseline();
+        fs.writeFileSync(path.join(repo, 'hello.txt'), 'created by the task\n');
+        git(['add', '--', 'hello.txt']);
+        git(['commit', '-qm', 'agent commit']);
+        await endpoint.discardFileForTest(repo, 'hello.txt', baseCommit);
+        expect(fs.existsSync(path.join(repo, 'hello.txt'))).to.equal(false);
+    });
+
+    it('discard refuses a file the task did not change, instead of answering ok silently', async () => {
+        const baseCommit = await snapshotBaseline();
+        expect(await rejectsWith(endpoint.discardFileForTest(repo, 'notes.txt', baseCommit))).to.equal(true);
+        expect(fs.readFileSync(path.join(repo, 'notes.txt'), 'utf8')).to.equal('untracked before task\n');
+    });
+
+    it('commit with a baseline succeeds when the task deleted a file that was never tracked', async () => {
+        const baseCommit = await snapshotBaseline();
+        fs.writeFileSync(path.join(repo, 'a.ts'), 'one\ntwo\n');
+        fs.rmSync(path.join(repo, 'notes.txt'));
+        endpoint.repoRootForTest = repo;
+        const res = fakeRes();
+        await endpoint.commitForTest({ body: { action: 'commit', message: 'task work', baseCommit } }, res);
+        expect(res.statusCode, JSON.stringify(res.body)).to.equal(200);
+        expect(git(['show', '--name-only', '--format=', 'HEAD']).split('\n').filter(Boolean)).to.deep.equal(['a.ts']);
+    });
+
+    it('commit with a baseline keeps what the user had already staged out of the task commit', async () => {
+        fs.writeFileSync(path.join(repo, 'staged.txt'), 'staged before the task\n');
+        git(['add', '--', 'staged.txt']);
+        const baseCommit = await snapshotBaseline();
+        fs.writeFileSync(path.join(repo, 'a.ts'), 'one\ntwo\n');
+        endpoint.repoRootForTest = repo;
+        const res = fakeRes();
+        await endpoint.commitForTest({ body: { action: 'commit', message: 'task work', baseCommit } }, res);
+        expect(res.statusCode, JSON.stringify(res.body)).to.equal(200);
+        expect(git(['show', '--name-only', '--format=', 'HEAD']).split('\n').filter(Boolean)).to.deep.equal(['a.ts']);
+        expect(git(['diff', '--cached', '--name-only'])).to.equal('staged.txt');
+    });
+
+    it('commit with a baseline refuses (409) a file whose pre-task dirt the task also changed, and makes no commit', async () => {
+        const baseCommit = await snapshotBaseline();
+        fs.writeFileSync(path.join(repo, 'README.md'), 'task edit on top of user dirt\n');
+        const head = git(['rev-parse', 'HEAD']);
+        endpoint.repoRootForTest = repo;
+        const res = fakeRes();
+        await endpoint.commitForTest({ body: { action: 'commit', message: 'task work', baseCommit } }, res);
+        expect(res.statusCode).to.equal(409);
+        expect(git(['rev-parse', 'HEAD'])).to.equal(head);
+    });
+
+    it('the per-file diff compares the baseline with the worktree: a file untracked before the task shows its task edit, not a deletion', async () => {
+        const baseCommit = await snapshotBaseline();
+        // notes.txt was untracked before the task; `git diff <commit> -- file` would read it as deleted.
+        fs.writeFileSync(path.join(repo, 'notes.txt'), 'changed by the task\n');
+        const patch = await endpoint.diffSinceBaselineForTest(repo, 'notes.txt', baseCommit);
+        expect(patch).to.contain('+changed by the task');
+        expect(patch).to.not.contain('deleted file');
+        // The baseline line is the removed side: the patch is against the baseline, not against HEAD.
+        expect(patch).to.contain('-untracked before task');
+    });
+
+    it('the per-file diff shows a task-created file as added', async () => {
+        const baseCommit = await snapshotBaseline();
+        fs.writeFileSync(path.join(repo, 'hello.txt'), 'hi\n');
+        const patch = await endpoint.diffSinceBaselineForTest(repo, 'hello.txt', baseCommit);
+        expect(patch).to.contain('+hi');
+        expect(patch).to.not.contain('deleted file');
+    });
+
+    it('concurrent reads share one worktree snapshot, and a fresh read takes another', async () => {
+        const baseCommit = await snapshotBaseline();
+        const probe = new BaselineGitReviewEndpoint();
+        const before = probe.snapshotCount;
+        await Promise.all([
+            probe.changedForTest(repo, baseCommit, true),
+            probe.changedForTest(repo, baseCommit, true),
+            probe.changedForTest(repo, baseCommit, true),
+        ]);
+        expect(probe.snapshotCount - before).to.equal(1);
+        await probe.changedForTest(repo, baseCommit, false);
+        expect(probe.snapshotCount - before).to.equal(2);
     });
 
     it('answers 400 for a baseCommit that is not a full commit id or does not exist', async () => {

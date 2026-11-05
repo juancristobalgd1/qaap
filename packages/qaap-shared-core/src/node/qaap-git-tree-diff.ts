@@ -82,14 +82,19 @@ export async function resolveTemporaryIndexDir(cwd: string, gitRead: QaapTreeGit
  * through a throwaway index, so the real `.git/index` is never touched. Returns the tree id, or
  * `undefined` when git fails. The throwaway index lives under `indexDir` (the repository's git
  * directory, see {@link resolveTemporaryIndexDir}) so the same environment that runs git can remove it.
- * The temporary index and its lock are always removed.
+ * `seedIndexFile` (the real `index` of that git directory) is only read, copied, never written.
+ * The temporary index and its lock are always removed, after git has exited.
  */
-export async function snapshotWorktreeTree(cwd: string, git: QaapTreeGitWrite, indexDir: string): Promise<string | undefined> {
+export async function snapshotWorktreeTree(cwd: string, git: QaapTreeGitWrite, indexDir: string, seedIndexFile?: string): Promise<string | undefined> {
     const tmpIndex = path.join(indexDir, `qaap-ckpt-${randomUUID()}.index`);
     const env = { ...process.env, GIT_INDEX_FILE: assertTemporaryIndexFile(tmpIndex, cwd) };
     try {
-        // Seed the throwaway index from HEAD when a commit exists (best-effort; empty repo is fine).
-        await git(cwd, ['read-tree', 'HEAD'], env);
+        // Seed from a copy of the real index when given: its stat cache lets `add -A` hash only what changed.
+        // Otherwise (or when the copy fails) seed from HEAD when a commit exists; an empty repo is fine.
+        const seeded = seedIndexFile !== undefined && await fs.promises.copyFile(seedIndexFile, tmpIndex).then(() => true, () => false);
+        if (!seeded) {
+            await git(cwd, ['read-tree', 'HEAD'], env);
+        }
         if ((await git(cwd, ['add', '-A'], env, QAAP_GIT_TREE_ADD_ALL_TIMEOUT_MS)).status !== 0) {
             return undefined;
         }
