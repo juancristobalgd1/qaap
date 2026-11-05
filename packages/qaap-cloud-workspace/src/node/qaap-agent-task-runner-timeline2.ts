@@ -526,6 +526,10 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             ctx.enforceAgentIsolationPolicy();
             await ctx.ensureAgentCwdOwnershipAsync(task.cwd);
             await ctx.acquireTaskSandbox?.(task);
+            // Bail out before recording a command start for a task Stop already settled.
+            if (ctx.tasks.get(task.id)?.state !== 'running') {
+                throw new QaapAgentSpawnSkippedError();
+            }
             ctx.recordTaskLatencyMark(task.id, 'spawn_start');
             ctx.observability?.recordAgentCommandStarted(task, 'agent-cli');
             childEnv = ctx.buildChildEnv(task);
@@ -578,7 +582,9 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             ctx.stdinPrompts.delete(task.id);
             removeAgentPromptTempDirHelper(ctx.promptTempDirs.get(task.id));
             ctx.promptTempDirs.delete(task.id);
-            if (error instanceof QaapAgentSpawnSkippedError) {
+            // A step that failed after Stop settled the task (e.g. the sandbox start aborted) is a
+            // skipped spawn too: finishing it as `failed` would overwrite `cancelled`.
+            if (error instanceof QaapAgentSpawnSkippedError || ctx.tasks.get(task.id)?.state !== 'running') {
                 // Stop already settled this task as cancelled: release what the spawn path took, keep that state.
                 ctx.releaseTaskSandbox?.(task.id);
                 logStream.end('Stopped before the agent started.\n');

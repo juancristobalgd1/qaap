@@ -12,18 +12,20 @@ import * as sinon from 'sinon';
 import type { QaapAgentTask } from '../common/qaap-agent-task';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { spawnProcessExtracted } from './qaap-agent-task-runner-timeline2';
+import { DEFAULT_QAAP_CODEX_GATE_OVERLAY_BUILDER } from './qaap-codex-gate-overlay';
+import { QAAP_OPENCODE_GATE_PROBE } from './qaap-tool-gate-opencode-probe';
 
 const TASK_ID = 'task-spawn-stop-1';
 
-function runningTask(): QaapAgentTask {
+function runningTask(agentId: string = 'qaiq'): QaapAgentTask {
     return {
         id: TASK_ID,
         title: 'edit files',
-        command: 'qaiq --prompt "do work"',
+        command: `${agentId} --prompt "do work"`,
         cwd: '/repo',
         state: 'running',
         createdAt: 0,
-        agentId: 'qaiq',
+        agentId,
         ownerLogin: 'alice',
     };
 }
@@ -44,8 +46,12 @@ interface SpawnHarness {
  * The slice of the task runner context that spawnProcessExtracted reads before the child exists.
  * `hook` runs inside one of the awaited steps, so a test can land a Stop exactly in that window.
  */
-function createSpawnHarness(logDir: string, hook?: { point: 'ensureAgentCwdOwnershipAsync' | 'acquireTaskSandbox'; run: () => void }): SpawnHarness {
-    const tasks = new Map<string, QaapAgentTask>([[TASK_ID, runningTask()]]);
+function createSpawnHarness(
+    logDir: string,
+    hook?: { point: 'ensureAgentCwdOwnershipAsync' | 'acquireTaskSandbox'; run: () => void; fail?: boolean },
+    agentId?: string,
+): SpawnHarness {
+    const tasks = new Map<string, QaapAgentTask>([[TASK_ID, runningTask(agentId)]]);
     const stdinPrompts = new Map<string, unknown>([[TASK_ID, 'prompt text']]);
     const promptTempDirs = new Map<string, string>();
     const spawnAgentCommand = sinon.spy((): ChildProcess => {
@@ -64,6 +70,9 @@ function createSpawnHarness(logDir: string, hook?: { point: 'ensureAgentCwdOwner
         }
         // Yield once so the stop lands while the step is in flight, as a real await would.
         await Promise.resolve();
+        if (hook?.point === point && hook.fail) {
+            throw new Error(`${point} aborted`);
+        }
     };
     const fields = {
         tasks,
@@ -82,7 +91,9 @@ function createSpawnHarness(logDir: string, hook?: { point: 'ensureAgentCwdOwner
         resolveAgentSpawnIdentity: (): undefined => undefined,
         isProjectFolderTrusted: (): boolean => true,
         buildChildEnv: (): NodeJS.ProcessEnv => ({}),
-        applyToolGateEnv: (): void => { /* no-op */ },
+        applyToolGateEnv: (env: NodeJS.ProcessEnv): void => {
+            env.QAAP_GATE_TOKEN = 'gate-token';
+        },
         spawnAgentCommand,
         finishTask,
         persist: (): Promise<void> => Promise.resolve(),
@@ -116,7 +127,8 @@ describe('QaapAgentTaskRunner spawn after Stop', () => {
     });
 
     afterEach(() => {
-        consoleWarn?.restore();
+        // Also restores the console.warn stub.
+        sinon.restore();
         fs.rmSync(logDir, { recursive: true, force: true });
     });
 
@@ -159,5 +171,54 @@ describe('QaapAgentTaskRunner spawn after Stop', () => {
 
         const skipped = consoleWarn.getCalls().map(call => String(call.args[0])).filter(line => line.startsWith('[qaap-stop] spawn-skipped'));
         expect(skipped).to.deep.equal([`[qaap-stop] spawn-skipped task=${TASK_ID} state=cancelled`]);
+    });
+
+    it('keeps the task cancelled when a startup step fails after Stop', async () => {
+        const harness = createSpawnHarness(logDir, { point: 'acquireTaskSandbox', run: () => harness.cancel(), fail: true });
+
+        await spawnProcessExtracted(harness.ctx, runningTask());
+
+        expect(harness.spawnAgentCommand.callCount).to.equal(0);
+        expect(harness.finishTask.called).to.equal(false);
+        expect(harness.tasks.get(TASK_ID)?.state).to.equal('cancelled');
+    });
+
+    it('still fails the task when a startup step fails without a Stop', async () => {
+        const harness = createSpawnHarness(logDir, { point: 'acquireTaskSandbox', run: () => undefined, fail: true });
+
+        await spawnProcessExtracted(harness.ctx, runningTask());
+
+        expect(harness.spawnAgentCommand.callCount).to.equal(0);
+        expect(harness.finishTask.calledOnceWith(TASK_ID, 'failed')).to.equal(true);
+    });
+
+    it('spawns nothing when Stop lands during the OpenCode gate probe', async () => {
+        const harness = createSpawnHarness(logDir, undefined, 'opencode');
+        sinon.stub(QAAP_OPENCODE_GATE_PROBE, 'ensure').callsFake(async () => {
+            harness.cancel();
+            return { ok: true } as Awaited<ReturnType<typeof QAAP_OPENCODE_GATE_PROBE.ensure>>;
+        });
+
+        await spawnProcessExtracted(harness.ctx, runningTask('opencode'));
+
+        expect(harness.spawnAgentCommand.callCount).to.equal(0);
+        expect(harness.finishTask.called).to.equal(false);
+        expect(harness.tasks.get(TASK_ID)?.state).to.equal('cancelled');
+    });
+
+    it('spawns nothing and disposes the Codex gate overlay when Stop lands while it is built', async () => {
+        const harness = createSpawnHarness(logDir, undefined, 'codex');
+        const dispose = sinon.spy();
+        sinon.stub(DEFAULT_QAAP_CODEX_GATE_OVERLAY_BUILDER, 'create').callsFake(async () => {
+            harness.cancel();
+            return { codexHome: path.join(logDir, 'codex-home'), dispose };
+        });
+
+        await spawnProcessExtracted(harness.ctx, runningTask('codex'));
+
+        expect(harness.spawnAgentCommand.callCount).to.equal(0);
+        expect(dispose.callCount).to.equal(1);
+        expect(harness.finishTask.called).to.equal(false);
+        expect(harness.tasks.get(TASK_ID)?.state).to.equal('cancelled');
     });
 });
