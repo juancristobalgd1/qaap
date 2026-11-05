@@ -1,4 +1,5 @@
 import type { MobileProjectsPanelContext } from './mobile-projects-panel-context';
+import { QaapDirtyWorkspaceCancelledError } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 // Extracted from mobile-projects-panel.ts
 
 import { nls } from '@theia/core/lib/common/nls';
@@ -115,7 +116,13 @@ export async function createProjectChatSessionExtracted(ctx: MobileProjectsPanel
         agentModel?: import('@theia/qaap-shared-core/lib/common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel;
         latencyMarks?: import('@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client').QaapPostConversationMessageOptions['latencyMarks'];
     },): Promise<import('@theia/qaap-transcript/lib/browser/qaap-transcript-host-contracts').QaapProjectChatSessionCreated> {
-    return ctx.backgroundTaskUi.createProjectChatSession(project, cwd, draft, options);
+    // A transcript "new task" shares the same dirty-tree decision as the New task panel. A cancel throws so the
+    // transcript keeps its draft and does not report a failure.
+    const created = await ctx.backgroundTaskUi.createWithDirtyWorkspaceDecision(project, cwd, draft, options);
+    if (!created) {
+        throw new QaapDirtyWorkspaceCancelledError();
+    }
+    return created;
 }
 
 export function seedTranscriptOptimisticSubmitExtracted(ctx: MobileProjectsPanelContext, summary: import('@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client').QaapAgentConversationSummaryDTO,

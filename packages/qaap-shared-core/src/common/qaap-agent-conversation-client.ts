@@ -932,6 +932,17 @@ export class QaapDirtyWorkspaceError extends QaapConversationMessageError {
     }
 }
 
+/**
+ * The user cancelled the dirty-workspace dialog: nothing was created. Callers keep the draft and must not
+ * report it as a failure.
+ */
+export class QaapDirtyWorkspaceCancelledError extends Error {
+    constructor() {
+        super('Task creation was cancelled on the dirty-workspace dialog.');
+        this.name = 'QaapDirtyWorkspaceCancelledError';
+    }
+}
+
 /** The server's readable error (JSON `error` / `message` unwrapped), keeping status and code for the UI to branch on. */
 async function buildPostMessageError(response: Response): Promise<Error> {
     const error = await QaapUserFacingErrors.fromResponse(response);

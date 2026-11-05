@@ -328,7 +328,7 @@ export class MobileProjectsBackgroundTaskUi {
                 this.host.rollbackTranscriptOptimisticSubmit?.();
                 return undefined;
             }
-            const created = await this.createWithDirtyWorkspaceDecision(project, cwd, draft, options);
+            const created = await this.createWithDirtyWorkspaceDecision(project, cwd, draft, options, startup);
             if (!created) {
                 // Cancelled on the dirty-workspace dialog: nothing was created, the caller restores the draft.
                 return undefined;
@@ -376,11 +376,12 @@ export class MobileProjectsBackgroundTaskUi {
      * `dirty_workspace` and the user decides: "Start clean" retries in a worktree, "Continue here" retries
      * sharing the tree, Cancel resolves `undefined` so the caller restores the draft as not sent.
      */
-    protected async createWithDirtyWorkspaceDecision(
+    async createWithDirtyWorkspaceDecision(
         project: MobileProjectEntry,
         cwd: string,
         draft: string,
         options: Parameters<MobileProjectsBackgroundTaskUi['createProjectChatSession']>[3],
+        startup?: QaapNewTaskStartup,
     ): Promise<QaapProjectChatSessionCreated | undefined> {
         try {
             return await this.createProjectChatSession(project, cwd, draft, options);
@@ -390,11 +391,17 @@ export class MobileProjectsBackgroundTaskUi {
             }
             const retried = await retryAfterDirtyWorkspace(
                 error,
-                retryOptions => this.createProjectChatSession(project, cwd, draft, { ...options, ...retryOptions }),
+                async retryOptions => {
+                    // Stop pressed while the dialog was open: the user asked for no task, so none is created.
+                    if (startup?.stopRequested) {
+                        return undefined;
+                    }
+                    return this.createProjectChatSession(project, cwd, draft, { ...options, ...retryOptions });
+                },
                 (files, total) => this.askDirtyWorkspaceChoice(files, total),
             );
             if (!retried) {
-                // The server refused the create and the user cancelled: the pre-create optimistic paint goes.
+                // The server refused the create and the user cancelled (or stopped): the pre-create optimistic paint goes.
                 this.host.rollbackTranscriptOptimisticSubmit?.();
             }
             return retried;

@@ -262,15 +262,21 @@ describe('MobileProjectsBackgroundTaskUi', () => {
             return response as unknown as Response;
         }
 
-        async function submitOnDirtyTree(choice: 'startClean' | 'continueHere' | undefined): Promise<{ bodies: Array<Record<string, unknown>>; result: unknown; rollbacks: number }> {
+        async function submitOnDirtyTree(choice: 'startClean' | 'continueHere' | undefined, stopWhileDialogOpen = false): Promise<{ bodies: Array<Record<string, unknown>>; result: unknown; rollbacks: number }> {
             const ui = withAgentSnapshot({ agents: [], agentConfigured: false, qaiqInstalled: false, qaiqModels: [] });
             let rollbacks = 0;
             (ui as unknown as { host: { rollbackTranscriptOptimisticSubmit?: () => void } }).host.rollbackTranscriptOptimisticSubmit = () => { rollbacks++; };
             const decision = ui as unknown as {
                 askDirtyWorkspaceChoice: (files: readonly string[], total: number) => Promise<'startClean' | 'continueHere' | undefined>;
-                createWithDirtyWorkspaceDecision: (project: MobileProjectEntry, cwd: string, draft: string, options: { selectedAgentId?: string }) => Promise<unknown>;
+                createWithDirtyWorkspaceDecision: (project: MobileProjectEntry, cwd: string, draft: string, options: { selectedAgentId?: string }, startup?: { projectId: string; stopRequested: boolean }) => Promise<unknown>;
             };
-            decision.askDirtyWorkspaceChoice = async () => choice;
+            const startup = { projectId: 'p', stopRequested: false };
+            decision.askDirtyWorkspaceChoice = async () => {
+                if (stopWhileDialogOpen) {
+                    startup.stopRequested = true;
+                }
+                return choice;
+            };
             const bodies: Array<Record<string, unknown>> = [];
             const originalFetch = globalThis.fetch;
             globalThis.fetch = (async (_input: unknown, init?: { body?: unknown }) => {
@@ -283,7 +289,7 @@ describe('MobileProjectsBackgroundTaskUi', () => {
             }) as unknown as typeof globalThis.fetch;
             try {
                 const project = { id: 'p', name: 'repo' } as MobileProjectEntry;
-                const result = await decision.createWithDirtyWorkspaceDecision(project, '/repo', 'fix it', { selectedAgentId: '@shell' });
+                const result = await decision.createWithDirtyWorkspaceDecision(project, '/repo', 'fix it', { selectedAgentId: '@shell' }, startup);
                 return { bodies, result, rollbacks };
             } finally {
                 globalThis.fetch = originalFetch;
@@ -304,6 +310,13 @@ describe('MobileProjectsBackgroundTaskUi', () => {
             expect(bodies[1].acceptDirty).to.equal(true);
             expect(bodies[1]).to.not.have.property('isolation');
             expect(result).to.not.equal(undefined);
+        });
+
+        it('creates no task when Stop is pressed while the dialog is open, even if the user then chooses Continue here', async () => {
+            const { bodies, result, rollbacks } = await submitOnDirtyTree('continueHere', true);
+            expect(bodies).to.have.length(1);
+            expect(result).to.equal(undefined);
+            expect(rollbacks).to.equal(1);
         });
 
         it('creates nothing and resolves undefined (draft restored by the caller) when the dialog is cancelled', async () => {
