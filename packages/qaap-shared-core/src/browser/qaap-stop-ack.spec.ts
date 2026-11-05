@@ -97,4 +97,18 @@ describe('QaapStopAckTracker', () => {
         expect(await retry).to.equal('acknowledged');
         expect(tracker.isSendBlocked('c1')).to.equal(false);
     });
+
+    it('reports a settle after a sequence marker so a GET started before the acknowledgement is recognised', async () => {
+        const tracker = new QaapStopAckTracker();
+        const request = deferred();
+        const before = tracker.currentSequence();
+        expect(tracker.settledSince('c1', before)).to.equal(false);
+        const done = tracker.track('c1', request.promise, { isStillStreaming: async () => true, onSettled: () => undefined });
+        request.resolve();
+        await done;
+
+        expect(tracker.settledSince('c1', before)).to.equal(true);
+        expect(tracker.settledSince('c2', before)).to.equal(false);
+        expect(tracker.settledSince('c1', tracker.currentSequence())).to.equal(false);
+    });
 });

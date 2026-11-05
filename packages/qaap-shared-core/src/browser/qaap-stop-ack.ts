@@ -44,10 +44,25 @@ export interface QaapStopAckOptions {
 export class QaapStopAckTracker {
 
     protected readonly blocks = new Map<string, number>();
+    /** Sequence number of the last Stop that settled (released its block or answered) per conversation. */
+    protected readonly settledSequence = new Map<string, number>();
     protected sequence = 0;
 
     isSendBlocked(conversationId: string): boolean {
         return this.blocks.has(conversationId);
+    }
+
+    /**
+     * Sequence marker to take before a GET starts. A GET whose answer arrives after
+     * {@link settledSince} is true for its conversation may predate the Stop's acknowledgement
+     * and must not repaint the run as working.
+     */
+    currentSequence(): number {
+        return this.sequence;
+    }
+
+    settledSince(conversationId: string, sequenceAtStart: number): boolean {
+        return (this.settledSequence.get(conversationId) ?? 0) > sequenceAtStart;
     }
 
     /** Tracks one Stop request. Resolves with the outcome after `onSettled` ran. */
@@ -66,19 +81,26 @@ export class QaapStopAckTracker {
         clearTimeout(timer);
         if (settled.outcome !== 'expired') {
             this.release(conversationId, token);
+            this.markSettled(conversationId);
             options.onSettled(settled.outcome, { error: settled.outcome === 'failed' ? settled.error : undefined, stillStreaming: false });
             return settled.outcome;
         }
         const stillStreaming = await options.isStillStreaming().catch(() => true);
         if (!stillStreaming) {
             this.release(conversationId, token);
+            this.markSettled(conversationId);
         }
         options.onSettled('expired', { stillStreaming });
         void answer.then(late => {
             this.release(conversationId, token);
+            this.markSettled(conversationId);
             options.onLateAnswer?.(late.outcome, late.outcome === 'failed' ? late.error : undefined);
         });
         return 'expired';
+    }
+
+    protected markSettled(conversationId: string): void {
+        this.settledSequence.set(conversationId, ++this.sequence);
     }
 
     protected release(conversationId: string, token: number): void {

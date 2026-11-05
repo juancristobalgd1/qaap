@@ -1,6 +1,7 @@
 import type { MobileProjectsTranscriptLiveUiContext } from './mobile-projects-transcript-live-ui-context';
 // Extracted from mobile-projects-transcript-live-ui.ts
 
+import { qaapStopAck } from '@theia/qaap-shared-core/lib/browser/qaap-stop-ack';
 import { Event as TheiaEvent } from '@theia/core/lib/common/event';
 import {
     type QaapAgentConversationDTO,
@@ -154,6 +155,7 @@ export function ensureTranscriptLiveControllerExtracted(ctx: MobileProjectsTrans
                     ctx.host.transcriptLastSseDeltaAt = at;
                 },
                 findSummaryById: id => ctx.host.conversations?.findSummaryById(id),
+                isStopPending: id => qaapStopAck.isSendBlocked(id),
                 refreshConversation: options => ctx.refreshOpenTranscriptConversation(options),
                 renderConversation: conv => {
                     if (conv.status === 'streaming' && TRANSCRIPT_SSE_COALESCE_RAF) {
