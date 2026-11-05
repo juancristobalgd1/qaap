@@ -37,6 +37,10 @@ describe('resolveBaselineCommit', () => {
         ]))).to.equal(first);
     });
 
+    it('a rewind undo point of the first message is never the baseline, even when it is the only checkpoint', () => {
+        expect(resolveBaselineCommit(conversation([checkpoint('undo-1', undefined, 'u1', 'e'.repeat(40))]))).to.equal(undefined);
+    });
+
     it('ignores non pre-turn checkpoints such as rewind undo points', () => {
         const pre = 'c'.repeat(40);
         expect(resolveBaselineCommit(conversation([
