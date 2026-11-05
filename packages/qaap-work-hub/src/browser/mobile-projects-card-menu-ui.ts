@@ -331,7 +331,7 @@ export class MobileProjectsCardMenuUi {
                 iconClass: 'codicon-debug-stop',
                 danger: true,
                 onSelect: () => {
-                    console.info(`[qaap-stop] click origin=card-menu summary=${summary.id}`);
+                    console.warn(`[qaap-stop] click origin=card-menu summary=${summary.id}`);
                     void this.host.onCancelConversation(project, summary);
                 },
             });

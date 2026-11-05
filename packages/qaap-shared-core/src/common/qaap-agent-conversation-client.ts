@@ -1075,7 +1075,7 @@ export async function cancelConversationHttp(id: string): Promise<QaapAgentConve
  * races a successful first attempt is harmless.
  */
 export async function cancelConversation(id: string): Promise<QaapAgentConversationDTO | undefined> {
-    console.info(`[qaap-stop] client conv=${id} transport=http`);
+    console.warn(`[qaap-stop] client conv=${id} transport=http`);
     try {
         return await cancelConversationHttp(id);
     } catch (error) {

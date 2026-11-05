@@ -219,7 +219,7 @@ export function cancelOpenTranscriptStreamExtracted(ctx: MobileProjectsPanelCont
         project = ctx.resolveAgentsHubShellProject();
         summary = project ? ctx.resolveAgentsHubShellSummary(project) : undefined;
     }
-    console.info(`[qaap-stop] click origin=transcript-open summary=${summary?.id ?? '-'} open=${ctx.transcriptController.state.transcriptOpenSummary?.id ?? '-'}`);
+    console.warn(`[qaap-stop] click origin=transcript-open summary=${summary?.id ?? '-'} open=${ctx.transcriptController.state.transcriptOpenSummary?.id ?? '-'}`);
     if (project && summary) {
         ctx.onCancelConversation(project, summary);
     }

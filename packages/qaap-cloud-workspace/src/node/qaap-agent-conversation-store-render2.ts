@@ -1070,7 +1070,7 @@ export function cancelExtracted(ctx: QaapAgentConversationStoreContext, id: stri
     if (goalLoopCancelled) {
         ctx.fire({ type: 'goal_loop', conversationId: id, cwd: next.cwd, goalLoop: next.goalLoop });
     }
-    console.info(`[qaap-stop] result conv=${id} active=${activeTaskCount} outcome=cancelled`);
+    console.warn(`[qaap-stop] result conv=${id} active=${activeTaskCount} outcome=cancelled`);
     ctx.fire({ type: 'updated', conversation: toConversationSummary(next) });
     void ctx.persist();
     return next;

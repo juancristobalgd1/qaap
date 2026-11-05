@@ -337,7 +337,7 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             if (!this.getConversationIfOwned(req, res, req.params.id)) {
                 return;
             }
-            console.info(`[qaap-stop] enter conv=${req.params.id} via=http`);
+            console.warn(`[qaap-stop] enter conv=${req.params.id} via=http`);
             // `userMessageId` narrows the cancel to ONE run of a multitasking session; without
             // it Stop stays session-wide (every live run), which is what the composer Stop does.
             const body = (req.body ?? {}) as { userMessageId?: unknown };
@@ -554,7 +554,7 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
                     }
                     if (parsed.op === 'cancel') {
                         const conv = this.store.get(parsed.conversationId);
-                        console.info(`[qaap-stop] enter conv=${parsed.conversationId} via=ws`);
+                        console.warn(`[qaap-stop] enter conv=${parsed.conversationId} via=ws`);
                         if (conv && this.auth.ownsWorkspacePath(ctx, conv.cwd)) {
                             this.store.cancel(parsed.conversationId);
                         }

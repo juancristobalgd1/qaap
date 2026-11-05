@@ -8,5 +8,5 @@
  * Identifiers only: never prompt text or other user content.
  */
 export function logTurnCreatedExtracted(origin: string, conversationId: string, userMessageId: string | undefined, taskId: string): void {
-    console.info(`[qaap-turn] create origin=${origin} conv=${conversationId} userMessage=${userMessageId ?? '-'} task=${taskId}`);
+    console.warn(`[qaap-turn] create origin=${origin} conv=${conversationId} userMessage=${userMessageId ?? '-'} task=${taskId}`);
 }

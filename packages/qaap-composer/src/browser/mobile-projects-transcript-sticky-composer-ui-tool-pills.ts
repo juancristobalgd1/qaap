@@ -296,7 +296,7 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: MobilePro
                 stopProject = ctx.workHub.resolveShellProject() ?? project;
                 stopSummary = ctx.workHub.resolveShellSummary(stopProject) ?? summary;
             }
-            console.info(`[qaap-stop] click origin=composer summary=${stopSummary.id} open=${ctx.host.transcriptLastConv?.id ?? '-'}`);
+            console.warn(`[qaap-stop] click origin=composer summary=${stopSummary.id} open=${ctx.host.transcriptLastConv?.id ?? '-'}`);
             // The open transcript decides the target: a closure captured before a conversation switch must not cancel the older one.
             const target = resolveComposerStopTarget(stopSummary, ctx.host.transcriptLastConv?.id, ctx.host.transcriptOpenSummary);
             if (!target) {

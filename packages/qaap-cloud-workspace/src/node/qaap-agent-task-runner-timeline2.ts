@@ -181,7 +181,7 @@ export function killAgentProcessTreeExtracted(ctx: QaapAgentTaskRunnerContext, c
                 // ESRCH: no such process group (already exited, or never became a group leader).
                 // Signal the leader directly so the stop still reaches the agent.
                 if ((error as NodeJS.ErrnoException).code === 'ESRCH') {
-                    console.info(`[qaap-stop] process group ${pid} not found; signalling the leader with ${signal}`);
+                    console.warn(`[qaap-stop] process group ${pid} not found; signalling the leader with ${signal}`);
                 }
             }
             try {

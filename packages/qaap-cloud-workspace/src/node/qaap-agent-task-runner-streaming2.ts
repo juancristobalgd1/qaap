@@ -785,7 +785,7 @@ export function finishTaskWithPauseCause(
  */
 function logCancelSettledExtracted(ctx: Pick<QaapAgentTaskRunnerContext, 'conversationIdForTask'>, taskId: string, settledMs: number, hasChild: boolean): void {
         const conversationId = ctx.conversationIdForTask?.(taskId) ?? '-';
-        console.info(`[qaap-stop] conv=${conversationId} task=${taskId} settledMs=${settledMs} exitMs=${hasChild ? 'pending' : 'none'}`);
+        console.warn(`[qaap-stop] conv=${conversationId} task=${taskId} settledMs=${settledMs} exitMs=${hasChild ? 'pending' : 'none'}`);
 }
 
 /** Logs `exitMs` (cancel to child exit) for a stopped task; called from the child's `exit` handler after `process_exit` is recorded. */
@@ -796,7 +796,7 @@ export function logCancelExitExtracted(ctx: Pick<QaapAgentTaskRunnerContext, 'ta
         }
         const exitedAt = ctx.tasks.get(taskId)?.latencyMarks?.process_exit ?? Date.now();
         const conversationId = ctx.conversationIdForTask?.(taskId) ?? '-';
-        console.info(`[qaap-stop] conv=${conversationId} task=${taskId} exitMs=${exitedAt - receivedAt}`);
+        console.warn(`[qaap-stop] conv=${conversationId} task=${taskId} exitMs=${exitedAt - receivedAt}`);
 }
 
 export function cancelExtracted(ctx: QaapAgentTaskRunnerContext, id: string, options?: QaapAgentTaskCancelOptions): QaapAgentTask | undefined {
