@@ -149,7 +149,6 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
     /** Task worktree snapshots per repository root (see `snapshotTaskTree`). */
     protected readonly taskSnapshots = new Map<string, QaapTaskSnapshot>();
 
-
     @inject(QaapGithubAuthGuard)
     protected readonly auth: QaapGithubAuthGuard;
 
