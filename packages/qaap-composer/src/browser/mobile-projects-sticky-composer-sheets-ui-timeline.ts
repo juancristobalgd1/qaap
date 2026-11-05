@@ -232,6 +232,30 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
             });
         });
     };
+    // Escape closes the picker wherever focus is inside it (the search field alone handled it before).
+    if (chrome.sheet.dataset.agentPickerEscapeWired !== 'true') {
+        chrome.sheet.dataset.agentPickerEscapeWired = 'true';
+        const escape = new AbortController();
+        document.addEventListener('keydown', (event: KeyboardEvent) => {
+            if (!chrome.sheet.isConnected) {
+                // Picker closed: stop listening and let the next render wire it again.
+                chrome.sheet.dataset.agentPickerEscapeWired = '';
+                escape.abort();
+                return;
+            }
+            if (event.key !== 'Escape') {
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            if (chrome.searchInput.value) {
+                chrome.searchInput.value = '';
+                rerender();
+            } else {
+                chrome.onClose();
+            }
+        }, { capture: true, signal: escape.signal });
+    }
     if (chrome.searchInput.dataset.initialFocusApplied !== 'true') {
         chrome.searchInput.dataset.initialFocusApplied = 'true';
         window.requestAnimationFrame(() => chrome.searchInput.focus({ preventScroll: true }));

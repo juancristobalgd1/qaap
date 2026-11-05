@@ -480,6 +480,19 @@ export async function createQaapGithubRepository(request: QaapGithubCreateReposi
     return response.json() as Promise<QaapGithubOpenRepositoryResponse>;
 }
 
+/** "New local project": a git folder under the caller's repos root. No GitHub call is made. */
+export async function createQaapLocalProject(name: string): Promise<{ name: string; workspaceUri: string }> {
+    const response = await fetchQaapOrTimeoutError(`${QAAP_GITHUB_API_PATH}/local-projects`, qaapAuthenticatedFetchInit({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+    }), QAAP_GITHUB_WORKSPACE_TIMEOUT_MS, () => nls.localize('qaap/localProject/timedOut', 'Creating the local project took too long. Try again.'));
+    if (!response.ok) {
+        throw await QaapUserFacingErrors.fromResponse(response, `Failed to create local project (${response.status})`);
+    }
+    return response.json() as Promise<{ name: string; workspaceUri: string }>;
+}
+
 export async function cloneQaapGithubRepository(repository: string): Promise<QaapGithubOpenRepositoryResponse> {
     const request: QaapGithubOpenRepositoryRequest = { repository };
     const cloneTimedOut = (): string => nls.localize(

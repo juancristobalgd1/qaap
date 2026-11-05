@@ -41,9 +41,19 @@ export class QaapProjectSwitcherService {
                 },
             },
             {
-                label: nls.localize('qaap/projectSwitcher/addNewProject', 'Add new project'),
-                description: nls.localize('qaap/projectSwitcher/addNewProjectDescription', 'Create a new private GitHub repository'),
+                label: nls.localize('qaap/newProject/menuLocal', 'New local project'),
+                description: nls.localize('qaap/projectSwitcher/newLocalProjectDescription', 'A folder on this workspace only'),
                 iconClasses: ['codicon', 'codicon-new-folder'],
+                alwaysShow: true,
+                // createLocalProject() already opens (and reloads into) the new workspace.
+                run: async () => {
+                    await this.projectsService.createLocalProject();
+                },
+            },
+            {
+                label: nls.localize('qaap/newProject/menuGithub', 'New GitHub repository'),
+                description: nls.localize('qaap/projectSwitcher/newGithubRepositoryDescription', 'Create a GitHub repository (private by default)'),
+                iconClasses: ['codicon', 'codicon-github'],
                 alwaysShow: true,
                 // createGithubProject() already opens (and reloads into) the new workspace.
                 run: async () => {

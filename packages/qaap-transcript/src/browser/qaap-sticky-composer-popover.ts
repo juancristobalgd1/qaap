@@ -403,9 +403,23 @@ export function mountStickyComposerBottomSheet(
     backdrop.addEventListener('click', options.onClose);
     sheet.append(backdrop, panel);
     const stopViewport = wireStickyComposerBottomSheetViewport(sheet);
+    // Escape closes the sheet like the popover variant does; the listener ends with the sheet.
+    const escape = new AbortController();
+    document.addEventListener('keydown', (event: KeyboardEvent) => {
+        if (event.key !== 'Escape' || !sheet.isConnected) {
+            if (!sheet.isConnected) {
+                escape.abort();
+            }
+            return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        options.onClose();
+    }, { capture: true, signal: escape.signal });
     const removeSheet = sheet.remove.bind(sheet);
     sheet.remove = (): void => {
         stopViewport();
+        escape.abort();
         removeSheet();
     };
     return sheet;
