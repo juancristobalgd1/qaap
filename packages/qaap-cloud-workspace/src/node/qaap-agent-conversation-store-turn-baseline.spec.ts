@@ -86,6 +86,37 @@ describe('captureTurnGitState baseline', function (): void {
         expect(state?.checkpoint).to.not.equal(undefined);
     });
 
+    it('measures the task against its first pre-turn snapshot, so a later turn still counts the earlier turn', async () => {
+        const snapshot = (kind: 'pre-turn', messageId: string, label: string): QaapConversationCheckpoint => {
+            const indexFile = path.join(repo, '.git', `turn-${messageId}.index`);
+            git(repo, ['add', '-A'], { GIT_INDEX_FILE: indexFile });
+            const tree = git(repo, ['write-tree'], { GIT_INDEX_FILE: indexFile }).stdout.trim();
+            const commit = git(repo, ['-c', 'user.email=spec@qaap.test', '-c', 'user.name=qaap', 'commit-tree', tree, '-m', label]).stdout.trim();
+            return { id: messageId, messageId, label, commit, ref: `refs/qaap/checkpoints/c1/${messageId}-1`, capturedAt: 1, kind };
+        };
+        // Turn 1 starts from the clean repository and edits hello.txt; turn 2 starts after that edit.
+        const first = snapshot('pre-turn', 'u1', 'Before turn 1');
+        fs.writeFileSync(path.join(repo, 'hello.txt'), 'hi\n');
+        const second = snapshot('pre-turn', 'u2', 'Before turn 2');
+        fs.writeFileSync(path.join(repo, 'a.ts'), 'one\ntwo\n');
+        const conv = {
+            id: 'c1', cwd: repo,
+            messages: [
+                { id: 'u1', role: 'user', content: 'first', createdAt: 1 },
+                { id: 'u2', role: 'user', content: 'second', createdAt: 2 },
+            ],
+            checkpoints: [first, second], createdAt: 1, updatedAt: 1, status: 'idle', title: 't', agentId: 'a',
+        } as unknown as QaapAgentConversation;
+        const { ctx } = buildContext(conv);
+
+        const state = await captureTurnGitState(ctx, 'c1', 'u2', git(repo, ['rev-parse', 'HEAD']).stdout.trim());
+
+        // The task (pill, Changes list) counts hello.txt from turn 1 as well; the turn counts only a.ts.
+        expect(state?.gitStats).to.deep.equal({ added: 2, removed: 0, files: 2 });
+        expect(state?.turnStats).to.deep.equal({ added: 1, removed: 0, files: 1 });
+        expect(state?.baselineApproximate).to.equal(undefined);
+    });
+
     it('falls back to the legacy diff and flags baselineApproximate when no pre-turn checkpoint exists', async () => {
         fs.writeFileSync(path.join(repo, 'README.md'), 'user edit before the turn\n');
         const { ctx } = buildContext(conversation([]));

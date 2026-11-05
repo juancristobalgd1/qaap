@@ -2,7 +2,7 @@
 import { buildAgentClosingReport, shouldSurfaceAgentClosingReport, type QaapAgentClosingDiffSummary, type QaapAgentClosingReport } from '../common/qaap-agent-closing-report';
 import type { QaapAgentConversationStoreContext } from './qaap-agent-conversation-store-context';
 
-import { QaapAgentConversation, QaapAgentMessage, QaapAgentTurnVerdict, QaapConversationCheckpoint, toConversationSummary } from '../common/qaap-agent-conversation';
+import { QaapAgentConversation, QaapAgentMessage, QaapAgentTurnVerdict, QaapConversationCheckpoint, resolveBaselineCommit, toConversationSummary } from '../common/qaap-agent-conversation';
 
 import { usesAgUiCliTranscriptStream, usesStructuredAgentTranscript } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 
@@ -93,13 +93,24 @@ export function resolveStructuredParsedTraceEventsExtracted(ctx: QaapAgentConver
 
 /** Diff stats + checkpoint captured for a delivered turn (git side of the settle). */
 interface QaapTurnGitState {
+    /**
+     * Task-level diff (task baseline to now): the pill, the Changes list and the Changes tab all read
+     * this one source, so a later turn of the same task still shows the task's earlier edits.
+     */
     readonly gitStats?: { added: number; removed: number; files?: number };
+    /** This turn's own diff (its pre-turn snapshot to now); feeds the turn's closing report only. */
+    readonly turnStats?: { added: number; removed: number; files?: number };
     readonly checkpoint?: QaapConversationCheckpoint;
     /**
      * `true` when the turn had no pre-turn snapshot and the stats came from the legacy
      * `startSha..HEAD` + `HEAD` diff, which counts pre-existing dirt and misses untracked files.
      */
     readonly baselineApproximate?: boolean;
+}
+
+/** Diff totals in the shape the store keeps; a clean tree is zeros, so a reverted task clears the pill. */
+function toDiffStats(diff: { readonly added: number; readonly removed: number; readonly files: readonly unknown[] }): { added: number; removed: number; files: number } {
+    return { added: diff.added, removed: diff.removed, files: diff.files.length };
 }
 
 /**
@@ -123,12 +134,19 @@ export async function captureTurnGitState(ctx: QaapAgentConversationStoreContext
             const baseline = findPreTurnCheckpoint(conv, userMessageId);
             if (baseline?.commit) {
                 const treeId = await snapshotWorktreeTreeForStore(ctx, cwd);
-                const diff = treeId ? await computeTreeDiff(cwd, baseline.commit, treeId, (gitCwd, args) => ctx.readGit(gitCwd, args)) : undefined;
-                if (diff && treeId) {
-                    const gitStats = diff.files.length > 0 ? { added: diff.added, removed: diff.removed, files: diff.files.length } : undefined;
-                    // Same tree as the diff above: the worktree is scanned once for this settle.
-                    const checkpoint = await ctx.captureCheckpoint(cwd, conversationId, userMessageId, label, gitStats, treeId);
-                    return { gitStats, checkpoint };
+                const readGit = (gitCwd: string, args: readonly string[]) => ctx.readGit(gitCwd, args);
+                const turnDiff = treeId ? await computeTreeDiff(cwd, baseline.commit, treeId, readGit) : undefined;
+                if (turnDiff && treeId) {
+                    const turnStats = toDiffStats(turnDiff);
+                    // The task baseline is the first user message's pre-turn snapshot; the first turn is its own baseline.
+                    const taskBaseline = resolveBaselineCommit(conv);
+                    const taskDiff = taskBaseline && taskBaseline !== baseline.commit
+                        ? await computeTreeDiff(cwd, taskBaseline, treeId, readGit)
+                        : turnDiff;
+                    const gitStats = taskDiff ? toDiffStats(taskDiff) : turnStats;
+                    // Same tree as the diffs above: the worktree is scanned once for this settle.
+                    const checkpoint = await ctx.captureCheckpoint(cwd, conversationId, userMessageId, label, turnStats, treeId);
+                    return { gitStats, turnStats, checkpoint };
                 }
             }
             const gitStats = await ctx.computeGitDiffStats(cwd, startSha);
@@ -485,7 +503,7 @@ export async function applyTaskOutcomeExtracted(ctx: QaapAgentConversationStoreC
     const blockedNeed = ctx.detectAgentBlockedNeed(withReply, agentMessageId);
     // A failed git side (turnGit undefined) leaves the diff unmeasured; no stats from a working git
     // side means the turn changed no line.
-    const closingDiff = turnGit ? turnGit.gitStats ?? { added: 0, removed: 0 } : undefined;
+    const closingDiff = turnGit ? turnGit.turnStats ?? turnGit.gitStats ?? { added: 0, removed: 0 } : undefined;
     const closingTask = recordClosingReportFacts(ctx, task.id, closingDiff, blockedNeed);
     // Fallback for a runner that kept no report (a test double): same fold, same inputs.
     const closingReport = closingTask?.closingReport ?? buildAgentClosingReport({
