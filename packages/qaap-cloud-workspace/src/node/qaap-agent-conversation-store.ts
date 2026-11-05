@@ -1001,7 +1001,7 @@ export class QaapAgentConversationStore implements QaapAgentConversationStoreCon
     }
 
     /** Async twin of {@link readGitSync} for the turn-settle path: same tenant worker, same 4s budget. */
-    protected readGit(cwd: string, args: readonly string[]): Promise<QaapGitRunResult> {
+    public readGit(cwd: string, args: readonly string[]): Promise<QaapGitRunResult> {
         try {
             const wrapped = this.tenantSpawn.wrapGitForTenant(cwd, args);
             return runGitAsync(wrapped.file, wrapped.args, { cwd, timeoutMs: 4000, maxBuffer: 64 * 1024 * 1024 });
@@ -1024,8 +1024,8 @@ export class QaapAgentConversationStore implements QaapAgentConversationStoreCon
     }
 
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
-    public captureCheckpoint(cwd: string, conversationId: string, messageId: string, label: string, stats?: { added: number; removed: number }, ): Promise<QaapConversationCheckpoint | undefined> {
-        return captureCheckpointExtracted(this, cwd, conversationId, messageId, label, stats);
+    public captureCheckpoint(cwd: string, conversationId: string, messageId: string, label: string, stats?: { added: number; removed: number }, treeId?: string, ): Promise<QaapConversationCheckpoint | undefined> {
+        return captureCheckpointExtracted(this, cwd, conversationId, messageId, label, stats, treeId);
     }
 
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */

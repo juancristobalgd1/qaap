@@ -81,7 +81,7 @@ export function runGitAsync(file: string, args: readonly string[], options: Qaap
     });
 }
 
-const localGitRead: QaapGitRead = (cwd, args) => runGitAsync('git', [...SAFE_GIT_CONFIG, ...args], { cwd, timeoutMs: 4000 });
+export const localGitRead: QaapGitRead = (cwd, args) => runGitAsync('git', [...SAFE_GIT_CONFIG, ...args], { cwd, timeoutMs: 4000 });
 
 /** True only when `cwd` itself is a git root/worktree — never walk to a parent repository. */
 export function cwdIsGitRepository(cwd: string): boolean {

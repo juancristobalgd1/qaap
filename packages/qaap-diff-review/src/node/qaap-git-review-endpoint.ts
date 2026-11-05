@@ -7,6 +7,7 @@ import { inject, injectable, optional } from '@theia/core/shared/inversify';
 import { Application, Request, Response } from '@theia/core/shared/express';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
 import { execFile } from 'child_process';
+import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import {
@@ -37,6 +38,14 @@ import { QaapHostedGitPush, type QaapHostedGitPushRequest } from '@theia/qaap-sh
 import { QaapHostedWorktreeRegistry } from '@theia/qaap-shared-core/lib/node/qaap-hosted-worktree-registry';
 import { QaapHostedProjectResolver, type QaapHostedProject } from '@theia/qaap-shared-core/lib/node/qaap-hosted-project-resolver';
 import { qaapGitReadEnv } from '@theia/qaap-shared-core/lib/node/qaap-child-process-env';
+import {
+    assertTemporaryIndexFile,
+    computeTreeDiff,
+    QAAP_GIT_TREE_ADD_ALL_TIMEOUT_MS,
+    resolveTemporaryIndexDir,
+    snapshotWorktreeTree,
+    type QaapTreeGitResult,
+} from '@theia/qaap-shared-core/lib/node/qaap-git-tree-diff';
 
 interface QaapHostedPushTarget {
     readonly branch: string;
@@ -49,6 +58,49 @@ interface QaapHostedPushTarget {
 /** Diffs can be large; allow up to 16 MB of git output. */
 const GIT_MAX_BUFFER = 16 * 1024 * 1024;
 const GIT_OPERATION_TIMEOUT_MS = 120_000;
+/** After a timed-out git is killed, how long its pipes may stay open before the caller gives up on them. */
+const GIT_KILL_GRACE_MS = 5_000;
+
+/** SIGKILL the process group of a child spawned with `detached: true` (pgid = pid); falls back to the child alone. */
+function killProcessGroup(child: { readonly pid?: number; kill(signal: NodeJS.Signals): boolean }): void {
+    if (child.pid !== undefined && process.platform !== 'win32') {
+        try {
+            process.kill(-child.pid, 'SIGKILL');
+            return;
+        } catch {
+            // The group is already gone; the child may still be alive on its own.
+        }
+    }
+    child.kill('SIGKILL');
+}
+/** A read of the task's changes may reuse a worktree snapshot taken this recently (the Changes list debounces). */
+const TASK_SNAPSHOT_REUSE_MS = 1000;
+
+/** A task commit refused because a file had uncommitted changes before the task started and the task changed it too. */
+class QaapGitBaselineConflictError extends Error {
+    constructor(readonly file: string) {
+        super(`"${file}" had uncommitted changes before this task started, and the task changed it too. Commit it manually: a task commit cannot take only the task's part of it.`);
+    }
+}
+
+interface QaapTaskSnapshot {
+    tree?: string;
+    /** When the latest snapshot started (not finished). */
+    startedAt: number;
+    inflight?: Promise<string>;
+}
+
+/** What a task commit will write, decided before the branch or the index changes. */
+interface QaapTaskCommitPlan {
+    readonly newTree: string;
+    readonly paths: readonly string[];
+    readonly headCommit?: string;
+}
+
+/** Git mode of a submodule / nested repository entry. */
+const GITLINK_MODE = '160000';
+
+const INDEX_RESET_WARNING = 'The commit was made, but the index could not be updated for the task\'s paths. Run "git reset -q -- <paths>" before committing again, or a new commit would revert them.';
 /** Keep one expanded file from monopolizing the review response/browser. */
 const FILE_DIFF_RESPONSE_LIMIT = 2 * 1024 * 1024;
 /** Reuse the authoritative `/changes` status for the immediately-following lazy diff requests. */
@@ -76,6 +128,9 @@ interface QaapGitChangedFilesSnapshot {
  */
 const PATCH_SAFETY_FLAGS = ['--no-ext-diff', '--no-textconv', '--no-color'] as const;
 
+/** A full SHA-1 commit id, the only accepted form of the `/changes` `baseCommit` parameter. */
+const BASE_COMMIT_PATTERN = /^[0-9a-f]{40}$/;
+
 class QaapGitDiffTooLargeError extends Error {
     constructor(readonly size: number) {
         super(`Text diff is too large to display (${size} bytes; limit ${FILE_DIFF_RESPONSE_LIMIT} bytes). Open the file in the editor.`);
@@ -91,6 +146,8 @@ const COMMIT_CONTEXT_DIFF_LIMIT = 24_000;
  */
 @injectable()
 export class QaapGitReviewEndpoint implements BackendApplicationContribution {
+    /** Task worktree snapshots per repository root (see `snapshotTaskTree`). */
+    protected readonly taskSnapshots = new Map<string, QaapTaskSnapshot>();
 
     @inject(QaapGithubAuthGuard)
     protected readonly auth: QaapGithubAuthGuard;
@@ -194,9 +251,13 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
         if (!root) {
             return;
         }
+        const baseCommit = await this.parseBaseCommit(root, req.query.baseCommit, res);
+        if (baseCommit === null) {
+            return;
+        }
         try {
             const [files, branch, prReadiness] = await Promise.all([
-                this.collectChangedFiles(root),
+                baseCommit ? this.collectChangedFilesSinceBaseline(root, baseCommit, true) : this.collectChangedFiles(root),
                 this.readCurrentBranch(root),
                 this.readPrReadiness(root),
             ]);
@@ -288,28 +349,71 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
             res.status(400).json({ error: 'Missing or invalid "file" in request body.' });
             return;
         }
+        const baseCommit = await this.parseBaseCommit(root, req.body?.baseCommit, res);
+        if (baseCommit === null) {
+            return;
+        }
         try {
-            await this.discardFile(root, file);
+            await this.discardFile(root, file, baseCommit);
             res.json({ ok: true });
         } catch (error) {
             res.status(500).json({ error: this.errorMessage(error) });
         }
     }
 
-    protected async discardFile(root: string, file: string): Promise<void> {
+    /**
+     * Discards one file's changes. Without a baseline it restores HEAD (and removes untracked files). With
+     * a task `baseCommit` it restores the file to its baseline content, so pre-task dirt is kept exactly as
+     * it was, and removes only files the task created (not present in the baseline).
+     */
+    protected async discardFile(root: string, file: string, baseCommit?: string): Promise<void> {
+        if (baseCommit) {
+            await this.discardFileToBaseline(root, file, baseCommit);
+            return;
+        }
         const status = await this.readFileStatus(root, file);
         if (status?.indexStatus === '?') {
             await fs.promises.rm(path.join(root, file), { recursive: true, force: true });
         } else if (status) {
             const paths = status.oldPath ? [file, status.oldPath] : [file];
             try {
-                await this.git(root, ['restore', '--source=HEAD', '--staged', '--worktree', '--', ...paths]);
+                await this.git(root, ['--literal-pathspecs', 'restore', '--source=HEAD', '--staged', '--worktree', '--', ...paths]);
             } catch {
                 // Unborn repository: a staged addition has no HEAD version to restore.
-                await this.git(root, ['rm', '--cached', '--ignore-unmatch', '--', ...paths]);
+                await this.git(root, ['--literal-pathspecs', 'rm', '--cached', '--ignore-unmatch', '--', ...paths]);
                 for (const candidate of paths) {
                     await fs.promises.rm(path.join(root, candidate), { recursive: true, force: true });
                 }
+            }
+        }
+    }
+
+    protected async discardFileToBaseline(root: string, file: string, baseCommit: string): Promise<void> {
+        // The task's own diff decides what to discard, so a change already committed by the agent still counts.
+        const tree = await this.snapshotTaskTree(root, false);
+        const changed = await this.diffTaskTree(root, baseCommit, tree);
+        const entry = changed.find(candidate => candidate.path === file || candidate.oldPath === file);
+        if (!entry) {
+            throw new Error('This file has no changes since the task started.');
+        }
+        const paths = entry.oldPath ? [entry.path, entry.oldPath] : [entry.path];
+        for (const candidate of paths) {
+            // A nested repository is a gitlink: removing it recursively would delete another repository.
+            const [baseline, current] = await Promise.all([
+                this.lsTreeEntry(root, baseCommit, candidate),
+                this.lsTreeEntry(root, tree, candidate),
+            ]);
+            if (baseline?.mode === GITLINK_MODE || current?.mode === GITLINK_MODE) {
+                throw new Error(`"${candidate}" is a nested repository; discard its changes inside it.`);
+            }
+        }
+        for (const candidate of paths) {
+            if (await this.existsAtCommit(root, baseCommit, candidate)) {
+                // Worktree only: the index is left as the user had it.
+                await this.git(root, ['--literal-pathspecs', 'restore', `--source=${baseCommit}`, '--worktree', '--', candidate]);
+            } else {
+                await this.git(root, ['--literal-pathspecs', 'rm', '--cached', '--ignore-unmatch', '--quiet', '--', candidate]);
+                await fs.promises.rm(path.join(root, candidate), { recursive: true, force: true });
             }
         }
     }
@@ -334,18 +438,37 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
             res.status(400).json({ error: 'Missing or invalid "branchName" for this action.' });
             return;
         }
+        const baseCommit = await this.parseBaseCommit(root, req.body?.baseCommit, res);
+        if (baseCommit === null) {
+            return;
+        }
         try {
+            // A task commit is checked before the branch is created, so a refusal (409) leaves nothing behind.
+            const plan = baseCommit ? await this.planTaskCommit(root, baseCommit) : undefined;
             await this.ensureGitIdentity(root);
             if (branchName) {
                 await this.git(root, ['checkout', '-b', branchName]);
             }
-            await this.git(root, ['add', '-A']);
-            await this.git(root, ['commit', '-m', message]);
+            let indexWarning: string | undefined;
+            if (plan) {
+                // Only the task's changes go in; pre-task dirt and what the user already staged stay out.
+                indexWarning = await this.writeTaskCommit(root, message, plan);
+            } else {
+                await this.git(root, ['add', '-A']);
+                await this.git(root, ['commit', '-m', message]);
+            }
             const stat = await this.readLastCommitStat(root);
             const pushedTo = this.shouldPush(action) ? await this.pushCurrentBranch(root, this.auth.authenticate(req)) : undefined;
-            res.json({ ok: true, action, branch: branchName ?? await this.readCurrentBranch(root), stat, ...(pushedTo ? { pushedTo } : {}) });
+            res.json({
+                ok: true,
+                action,
+                branch: branchName ?? await this.readCurrentBranch(root),
+                stat,
+                ...(pushedTo ? { pushedTo } : {}),
+                ...(indexWarning ? { warning: indexWarning } : {}),
+            });
         } catch (error) {
-            res.status(500).json({ error: this.errorMessage(error) });
+            res.status(error instanceof QaapGitBaselineConflictError ? 409 : 500).json({ error: this.errorMessage(error) });
         }
     }
 
@@ -552,9 +675,15 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
             res.status(400).json({ error: 'Missing or invalid "file" query parameter.' });
             return;
         }
+        const baseCommit = await this.parseBaseCommit(root, req.query.baseCommit, res);
+        if (baseCommit === null) {
+            return;
+        }
         try {
             const state = await this.resolveFileDiffState(root, file);
-            const patch = await this.computeFileDiff(root, file, state);
+            const patch = baseCommit
+                ? await this.computeFileDiffSinceBaseline(root, file, baseCommit, state)
+                : await this.computeFileDiff(root, file, state);
             const hunks = parseUnifiedDiff(patch);
             const binary = isBinaryGitPatch(patch);
             const metadataOnlyUntracked = !patch.trim() && await this.isMetadataOnlyUntrackedFile(root, file, state);
@@ -687,6 +816,286 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
             }
         }
         return matches;
+    }
+
+    /** True when `sha` names an existing commit in the repository (never throws). */
+    protected async commitExists(root: string, sha: string): Promise<boolean> {
+        return this.git(root, ['cat-file', '-e', `${sha}^{commit}`]).then(() => true, () => false);
+    }
+
+    /**
+     * Validates an optional task `baseCommit` (query or body). `undefined` when absent, the SHA when valid,
+     * `null` after answering 400 for a malformed or missing commit.
+     */
+    protected async parseBaseCommit(root: string, raw: unknown, res: Response): Promise<string | undefined | null> {
+        if (raw === undefined) {
+            return undefined;
+        }
+        if (typeof raw !== 'string' || !BASE_COMMIT_PATTERN.test(raw) || !(await this.commitExists(root, raw))) {
+            res.status(400).json({ error: 'Missing or invalid "baseCommit" parameter.' });
+            return null;
+        }
+        return raw;
+    }
+
+    /**
+     * True when `file` is in the baseline commit's tree (the baseline includes pre-task untracked files).
+     * Any git failure rejects: a failed lookup must never read as "not in the baseline" (callers delete).
+     */
+    protected async existsAtCommit(root: string, baseCommit: string, file: string): Promise<boolean> {
+        return await this.lsTreeEntry(root, baseCommit, file) !== undefined;
+    }
+
+    /** Mode and blob id of `file` in `treeish`, or `undefined` when absent. Rejects when git fails. */
+    protected async lsTreeEntry(root: string, treeish: string, file: string): Promise<{ readonly mode: string; readonly sha: string } | undefined> {
+        // `ls-tree` treats paths as patterns, so the exact path is picked out of the NUL-separated output.
+        const output = await this.git(root, ['ls-tree', '-z', treeish, '--', file]);
+        for (const record of output.split('\0')) {
+            const tab = record.indexOf('\t');
+            if (tab < 0 || record.slice(tab + 1) !== file) {
+                continue;
+            }
+            const [mode, , sha] = record.slice(0, tab).split(' ');
+            return { mode, sha };
+        }
+        return undefined;
+    }
+
+    /**
+     * Patch of one file against the task baseline: the baseline tree against a snapshot of the worktree.
+     * Pre-task dirt is not part of the patch, and a file the task created shows as added.
+     */
+    protected async computeFileDiffSinceBaseline(root: string, file: string, baseCommit: string, state: QaapGitFileDiffState | undefined): Promise<string> {
+        const tree = await this.snapshotTaskTree(root, false);
+        const pathspec = state?.oldPath && state.oldPath !== file ? [state.oldPath, file] : [file];
+        return this.enforceFileDiffLimit(await this.git(root, ['--literal-pathspecs', 'diff', ...PATCH_SAFETY_FLAGS, baseCommit, tree, '--', ...pathspec]));
+    }
+
+    /**
+     * Changed files between the task baseline commit and the current worktree, so pre-existing dirt
+     * is excluded and untracked files are included. `reuseSnapshot` lets a read reuse a snapshot taken
+     * moments ago; writes and per-file diffs always take a fresh one.
+     */
+    protected async collectChangedFilesSinceBaseline(root: string, baseCommit: string, reuseSnapshot = false): Promise<QaapGitChangedFile[]> {
+        return this.diffTaskTree(root, baseCommit, await this.snapshotTaskTree(root, reuseSnapshot));
+    }
+
+    /** Changed files between `baseCommit` and a worktree snapshot `tree`. */
+    protected async diffTaskTree(root: string, baseCommit: string, tree: string): Promise<QaapGitChangedFile[]> {
+        const diff = await computeTreeDiff(root, baseCommit, tree, (cwd, args) => this.gitResult(cwd, args));
+        if (!diff) {
+            throw new Error('Could not diff the worktree against the task baseline.');
+        }
+        return diff.files.map(file => ({
+            path: file.path,
+            ...(file.oldPath ? { oldPath: file.oldPath } : {}),
+            status: file.status,
+            adds: file.added,
+            dels: file.removed,
+            staged: false,
+        }));
+    }
+
+    /**
+     * Snapshot tree of the worktree, shared per repository. A read that finds a snapshot running joins it only
+     * when that snapshot started after the read arrived; otherwise it waits and takes one that did. A write never
+     * joins: it waits for the running snapshot and takes its own. A direct read may reuse a snapshot started
+     * within {@link TASK_SNAPSHOT_REUSE_MS}. Rejects when the snapshot fails.
+     */
+    protected async snapshotTaskTree(root: string, reuseSnapshot: boolean, requiredAfter?: number): Promise<string> {
+        const arrivedAt = requiredAfter ?? Date.now();
+        let entry = this.taskSnapshots.get(root);
+        if (!entry) {
+            entry = { startedAt: 0 };
+            this.taskSnapshots.set(root, entry);
+        }
+        const running = entry.inflight;
+        if (running) {
+            if (!reuseSnapshot) {
+                await running.catch(() => undefined);
+                return this.snapshotTaskTree(root, false, arrivedAt);
+            }
+            const joinedStartedAt = entry.startedAt;
+            const tree = await running;
+            if (joinedStartedAt >= arrivedAt) {
+                return tree;
+            }
+            return this.snapshotTaskTree(root, true, arrivedAt);
+        }
+        if (reuseSnapshot && requiredAfter === undefined && entry.tree !== undefined && Date.now() - entry.startedAt < TASK_SNAPSHOT_REUSE_MS) {
+            return entry.tree;
+        }
+        const current = entry;
+        current.startedAt = Date.now();
+        const snapshot: Promise<string> = this.takeTaskSnapshot(root)
+            .then(tree => {
+                current.tree = tree;
+                return tree;
+            })
+            .finally(() => {
+                if (current.inflight === snapshot) {
+                    current.inflight = undefined;
+                }
+            });
+        current.inflight = snapshot;
+        return snapshot;
+    }
+
+    /** One snapshot of the worktree through a throwaway index seeded from the real index (never written). */
+    protected async takeTaskSnapshot(root: string): Promise<string> {
+        const indexDir = await resolveTemporaryIndexDir(root, (cwd, args) => this.gitResult(cwd, args));
+        const tree = indexDir
+            ? await snapshotWorktreeTree(root, (cwd, args, env, timeoutMs) => this.gitWithIndexFile(cwd, args, env, timeoutMs), indexDir, path.join(indexDir, 'index'))
+            : undefined;
+        if (!tree) {
+            throw new Error('Could not snapshot the worktree for the task baseline.');
+        }
+        return tree;
+    }
+
+    /**
+     * Phase one of a task commit, and everything that can refuse it: the tree HEAD would have with only the
+     * task's paths applied. Touches only a throwaway index, so a refusal leaves the branch and index alone.
+     * Refuses (409) a file whose pre-task dirt the task also changed: its task part cannot be split out.
+     */
+    protected async planTaskCommit(root: string, baseCommit: string): Promise<QaapTaskCommitPlan> {
+        const tree = await this.snapshotTaskTree(root, false);
+        const changed = await this.diffTaskTree(root, baseCommit, tree);
+        const paths = [...new Set(changed.flatMap(entry => entry.oldPath ? [entry.path, entry.oldPath] : [entry.path]))];
+        if (paths.length === 0) {
+            throw new Error('Nothing to commit: the task has no changes since it started.');
+        }
+        const headCommit = await this.readHeadCommit(root);
+        for (const file of paths) {
+            const [baseEntry, headEntry, taskEntry] = await Promise.all([
+                this.lsTreeEntry(root, baseCommit, file),
+                headCommit ? this.lsTreeEntry(root, headCommit, file) : Promise.resolve(undefined),
+                this.lsTreeEntry(root, tree, file),
+            ]);
+            const sameAsHead = (a: { sha: string } | undefined, b: { sha: string } | undefined): boolean => a?.sha === b?.sha;
+            if (!sameAsHead(baseEntry, headEntry) && !sameAsHead(taskEntry, headEntry)) {
+                throw new QaapGitBaselineConflictError(file);
+            }
+        }
+        const gitDir = await resolveTemporaryIndexDir(root, (cwd, args) => this.gitResult(cwd, args));
+        if (!gitDir) {
+            throw new Error('Could not locate the repository git directory for the task commit.');
+        }
+        const indexFile = assertTemporaryIndexFile(path.join(gitDir, `qaap-commit-${randomUUID()}.index`), root);
+        const env: NodeJS.ProcessEnv = { GIT_INDEX_FILE: indexFile };
+        let newTree: string;
+        try {
+            if (headCommit) {
+                await this.mustRunWithIndex(root, ['read-tree', headCommit], env);
+            }
+            for (const file of paths) {
+                const entry = await this.lsTreeEntry(root, tree, file);
+                if (entry) {
+                    await this.mustRunWithIndex(root, ['update-index', '--add', '--cacheinfo', entry.mode, entry.sha, file], env);
+                } else {
+                    await this.mustRunWithIndex(root, ['update-index', '--force-remove', file], env);
+                }
+            }
+            newTree = (await this.mustRunWithIndex(root, ['write-tree'], env)).trim();
+        } finally {
+            await Promise.all([indexFile, `${indexFile}.lock`].map(file => fs.promises.rm(file, { force: true }).catch(() => undefined)));
+        }
+        const headTree = headCommit ? (await this.git(root, ['rev-parse', `${headCommit}^{tree}`])).trim() : undefined;
+        if (newTree === headTree) {
+            throw new Error('Nothing to commit: the task changes are already in HEAD.');
+        }
+        return { newTree, paths, headCommit };
+    }
+
+    /**
+     * Phase two: creates the commit from a plan and moves the branch. Returns a warning when the real index could
+     * not be brought in step for the committed paths; the commit itself is made and must not be reported as failed.
+     */
+    protected async writeTaskCommit(root: string, message: string, plan: QaapTaskCommitPlan): Promise<string | undefined> {
+        const commitArgs = ['commit-tree', plan.newTree, ...(plan.headCommit ? ['-p', plan.headCommit] : []), '-m', message];
+        const newCommit = (await this.git(root, commitArgs)).trim();
+        await this.git(root, plan.headCommit
+            ? ['update-ref', '-m', 'commit: task changes', 'HEAD', newCommit, plan.headCommit]
+            : ['update-ref', 'HEAD', newCommit]);
+        return this.resetCommittedPaths(root, plan.paths);
+    }
+
+    /**
+     * Brings the real index in step with the new HEAD for the committed paths only. Retries once; when it still
+     * fails, the commit stays and the caller gets a warning, because a later `git commit` would revert the task.
+     */
+    protected async resetCommittedPaths(root: string, paths: readonly string[]): Promise<string | undefined> {
+        const gitDir = await resolveTemporaryIndexDir(root, (cwd, args) => this.gitResult(cwd, args));
+        if (!gitDir) {
+            return INDEX_RESET_WARNING;
+        }
+        // A pathspec file, not arguments: a large task would overflow the argument list (E2BIG).
+        const listFile = path.join(gitDir, `qaap-reset-${randomUUID()}.paths`);
+        await fs.promises.writeFile(listFile, paths.map(file => `${file}\0`).join(''));
+        try {
+            for (let attempt = 0; attempt < 2; attempt++) {
+                try {
+                    await this.git(root, ['--literal-pathspecs', 'reset', '-q', `--pathspec-from-file=${listFile}`, '--pathspec-file-nul']);
+                    return undefined;
+                } catch {
+                    // Retry once below.
+                }
+            }
+            return INDEX_RESET_WARNING;
+        } finally {
+            await fs.promises.rm(listFile, { force: true }).catch(() => undefined);
+        }
+    }
+
+    /** HEAD commit id, or `undefined` in a repository without commits. */
+    protected async readHeadCommit(root: string): Promise<string | undefined> {
+        return this.git(root, ['rev-parse', '--verify', '-q', 'HEAD']).then(out => out.trim() || undefined, () => undefined);
+    }
+
+    /** Runs a git command against a throwaway index; rejects with its stderr when it fails. */
+    protected async mustRunWithIndex(root: string, args: string[], env: NodeJS.ProcessEnv): Promise<string> {
+        const result = await this.gitWithIndexFile(root, args, env);
+        if (result.status !== 0) {
+            throw new Error(`git ${args[0]} failed while building the task commit.`);
+        }
+        return result.stdout;
+    }
+
+    /** Runs a hardened git command and reports its exit status instead of rejecting. */
+    protected async gitResult(root: string, args: readonly string[]): Promise<QaapTreeGitResult> {
+        try {
+            return { status: 0, stdout: await this.git(root, [...args]) };
+        } catch (error) {
+            const code = (error as { code?: unknown }).code;
+            return { status: typeof code === 'number' ? code : 1, stdout: '' };
+        }
+    }
+
+    /**
+     * Runs a hardened git command with `GIT_INDEX_FILE` pointed at a throwaway index; never rejects.
+     * Refuses an unset index or the repository's real index. On timeout the child is killed and this
+     * resolves only after it has exited, so the caller may remove the index afterwards.
+     */
+    protected async gitWithIndexFile(root: string, args: string[], env: NodeJS.ProcessEnv, timeoutMs: number = QAAP_GIT_TREE_ADD_ALL_TIMEOUT_MS): Promise<QaapTreeGitResult> {
+        const indexFile = assertTemporaryIndexFile(env.GIT_INDEX_FILE, root);
+        const gitArgs = this.hardenedGitArgs(args);
+        const indexEnv: NodeJS.ProcessEnv = { GIT_INDEX_FILE: indexFile };
+        const run = isQaapHostedEnvironment()
+            ? this.gitInTenant(root, gitArgs, undefined, indexEnv, timeoutMs)
+            : new Promise<string>((resolve, reject) => {
+                // execFile kills with SIGKILL on timeout and calls back only after the child has exited.
+                execFile('git', gitArgs, { cwd: root, maxBuffer: GIT_MAX_BUFFER, timeout: timeoutMs, killSignal: 'SIGKILL', env: { ...qaapGitReadEnv(), ...indexEnv } }, (error, stdout) => {
+                    if (error) {
+                        reject(error);
+                    } else {
+                        resolve(stdout);
+                    }
+                });
+            });
+        return run.then(stdout => ({ status: 0, stdout }), (error: unknown) => {
+            const code = (error as { code?: unknown }).code;
+            return { status: typeof code === 'number' ? code : 1, stdout: '' };
+        });
     }
 
     protected async collectChangedFiles(root: string): Promise<QaapGitChangedFile[]> {
@@ -1026,7 +1435,7 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
     }
 
     /** Run git inside the authenticated tenant worker, never as the shared backend uid. */
-    protected async gitInTenant(root: string, args: readonly string[], input?: string): Promise<string> {
+    protected async gitInTenant(root: string, args: readonly string[], input?: string, extraEnv?: NodeJS.ProcessEnv, timeoutMs: number = GIT_OPERATION_TIMEOUT_MS): Promise<string> {
         if (!this.tenantProcess) {
             throw new Error('Hosted git execution is unavailable: the tenant worker is not bound.');
         }
@@ -1042,7 +1451,7 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
         }
         const child = await this.tenantProcess.spawnArgvPreparedAsync('git', args, {
             cwd: root,
-            env: this.tenantProcess.resolveProcessEnv(root, baseEnv),
+            env: this.tenantProcess.resolveProcessEnv(root, { ...baseEnv, ...extraEnv }),
             stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
             detached: true,
         });
@@ -1051,6 +1460,8 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
             let stderr = '';
             let settled = false;
             let timeout: ReturnType<typeof setTimeout> | undefined;
+            let grace: ReturnType<typeof setTimeout> | undefined;
+            let timedOut = false;
             const complete = (callback: () => void): void => {
                 if (settled) {
                     return;
@@ -1058,6 +1469,9 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
                 settled = true;
                 if (timeout) {
                     clearTimeout(timeout);
+                }
+                if (grace) {
+                    clearTimeout(grace);
                 }
                 callback();
             };
@@ -1080,7 +1494,9 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
             child.stderr?.on('data', chunk => collect('stderr', chunk));
             child.on('error', error => complete(() => reject(error)));
             child.on('close', code => complete(() => {
-                if (code === 0) {
+                if (timedOut) {
+                    reject(new Error(`Git operation timed out after ${Math.ceil(timeoutMs / 1000)} seconds.`));
+                } else if (code === 0) {
                     resolve(stdout);
                 } else {
                     reject(Object.assign(new Error(stderr.trim() || `git exited with status ${code}`), { stdout, stderr }));
@@ -1089,10 +1505,20 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
             if (input !== undefined) {
                 child.stdin?.end(input);
             }
+            // Timeout: kill the whole process group (the child is spawned detached, so its pgid is its pid), then
+            // reject once it has closed. A descendant that left the group can keep the pipes open, so after a
+            // grace period the streams are destroyed and the call rejects anyway: nothing may hang a caller
+            // (an in-flight snapshot would block every later read).
             timeout = setTimeout(() => {
-                child.kill();
-                complete(() => reject(new Error(`Git operation timed out after ${Math.ceil(GIT_OPERATION_TIMEOUT_MS / 1000)} seconds.`)));
-            }, GIT_OPERATION_TIMEOUT_MS);
+                timedOut = true;
+                killProcessGroup(child);
+                grace = setTimeout(() => {
+                    child.stdout?.destroy();
+                    child.stderr?.destroy();
+                    child.stdin?.destroy();
+                    complete(() => reject(new Error(`Git operation timed out after ${Math.ceil(timeoutMs / 1000)} seconds.`)));
+                }, GIT_KILL_GRACE_MS);
+            }, timeoutMs);
         });
     }
 

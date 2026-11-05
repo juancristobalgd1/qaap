@@ -11,6 +11,7 @@ import {
 import { normalizePreviewUrlForSameOrigin } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
 import { resolveTranscriptPreviewOpenUrl } from '@theia/qaap-transcript/lib/browser/qaap-transcript-preview-effective-url';
 import {
+    isDirtyWorkspaceCancelled,
     type QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { reconcileAgentApprovalPolicyId } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
@@ -104,6 +105,10 @@ export async function submitTranscriptReviewFeedbackExtracted(ctx: MobileProject
             });
             ctx.host.executionSurfaceTabsUi.selectTranscriptTab('messages', project, summary);
         } catch (error) {
+            if (isDirtyWorkspaceCancelled(error)) {
+                // Cancelled on the dirty-workspace dialog: nothing was sent, so there is nothing to report.
+                return;
+            }
             ctx.host.messageService?.error(error instanceof Error ? error.message : String(error));
         }
 }

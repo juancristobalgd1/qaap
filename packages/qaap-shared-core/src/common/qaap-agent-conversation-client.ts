@@ -117,6 +117,8 @@ export interface QaapAgentConversationSummaryDTO {
     readonly activityLabel?: string;
     readonly linesAdded?: number;
     readonly linesRemoved?: number;
+    /** Task baseline commit (pre-turn snapshot of the first user message); the changes panel diffs against it. */
+    readonly baselineCommit?: string;
     readonly turnStartedAt?: number;
     readonly turnProgressCurrent?: number;
     readonly turnProgressTotal?: number;
@@ -683,6 +685,11 @@ export interface QaapCreateConversationBody {
     readonly latencyMarks?: Partial<Record<QaapTurnLatencyMark, number>>;
     /** Defaults to `'auto'` on the server. */
     readonly isolation?: QaapAgentConversationIsolation;
+    /**
+     * `true` lets a task share a working tree that already has uncommitted changes. Without it the
+     * server answers 409 `dirty_workspace` for a shared-tree create in a dirty repository.
+     */
+    readonly acceptDirty?: boolean;
     /** `true` asks for an editable plan split into parallel subtasks; `false` never plans. Omitted: the server decides. */
     readonly fanOut?: boolean;
 }
@@ -801,7 +808,7 @@ export async function createConversation(
         signal,
     });
     if (!response.ok) {
-        throw await buildPostMessageError(response);
+        throw await buildCreateConversationError(response);
     }
     return response.json() as Promise<QaapAgentConversationDTO>;
 }
@@ -915,10 +922,49 @@ export class QaapConversationMessageError extends Error {
     }
 }
 
+/**
+ * A create refused because the shared working tree has uncommitted changes (409 `dirty_workspace`).
+ * `files` lists the first paths the server reported; `total` counts every changed path.
+ */
+export class QaapDirtyWorkspaceError extends QaapConversationMessageError {
+    constructor(message: string, readonly files: readonly string[], readonly total: number) {
+        super(message, 409, 'dirty_workspace');
+    }
+}
+
+/**
+ * The user cancelled the dirty-workspace dialog: nothing was created. Callers keep the draft and must not
+ * report it as a failure.
+ */
+export class QaapDirtyWorkspaceCancelledError extends Error {
+    constructor() {
+        super('Task creation was cancelled on the dirty-workspace dialog.');
+        this.name = 'QaapDirtyWorkspaceCancelledError';
+    }
+}
+
+/** True when a send failed only because the user cancelled the dirty-workspace dialog: silent, draft kept. */
+export function isDirtyWorkspaceCancelled(error: unknown): boolean {
+    return error instanceof QaapDirtyWorkspaceCancelledError;
+}
+
 /** The server's readable error (JSON `error` / `message` unwrapped), keeping status and code for the UI to branch on. */
 async function buildPostMessageError(response: Response): Promise<Error> {
     const error = await QaapUserFacingErrors.fromResponse(response);
     return new QaapConversationMessageError(error.message, response.status, error.code, error.details);
+}
+
+/** Like {@link buildPostMessageError}, but keeps the changed-path list of a `dirty_workspace` 409. */
+async function buildCreateConversationError(response: Response): Promise<Error> {
+    if (response.status === 409) {
+        const body = await response.clone().json().catch(() => undefined) as { code?: unknown; files?: unknown; total?: unknown } | undefined;
+        if (body?.code === 'dirty_workspace') {
+            const files = Array.isArray(body.files) ? body.files.filter((file): file is string => typeof file === 'string') : [];
+            const total = typeof body.total === 'number' ? body.total : files.length;
+            return new QaapDirtyWorkspaceError('The workspace has uncommitted changes.', files, total);
+        }
+    }
+    return buildPostMessageError(response);
 }
 
 /** True when the send failed only because the session already runs the maximum agents. */

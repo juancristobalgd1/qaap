@@ -19,6 +19,7 @@ import {
     type QaapAgentConversationIsolation,
     type QaapAgentConversationSummaryDTO,
     cancelConversation,
+    QaapDirtyWorkspaceError,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { beginNewTaskStartup, conversationHasAgentOutput, endNewTaskStartup, QaapNewTaskStartup, resolveNewTaskStartupOutcome } from '../common/qaap-new-task-startup';
 import type { QaapTranscriptUserImagePreview } from '@theia/qaap-shared-core/lib/common/qaap-transcript-user-image-preview';
@@ -41,6 +42,7 @@ import { shouldRouteSubmitToTheiaCoder } from '@theia/qaap-shared-core/lib/commo
 import { reportQaapClientError } from '@theia/qaap-shared-core/lib/common/qaap-client-error-report';
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import { applyBackendInteractionModeToPrompt } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-mode';
+import { QaapDirtyWorkspaceDialog, retryAfterDirtyWorkspace, type QaapDirtyWorkspaceChoice } from './mobile-projects-workspace-dirty-dialog';
 import { reconcileAgentApprovalPolicyId, type QaapAgentApprovalPolicyId } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import { reconcileAgentToolApprovalRules } from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-approval-rules';
 import { getQaapDefaultAgentId } from '@theia/qaap-shared-core/lib/common/qaap-default-agent-id';
@@ -227,6 +229,8 @@ export class MobileProjectsBackgroundTaskUi {
             variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>;
             /** Omitted → the server's `'auto'`: a worktree only when another thread is active on the repository. */
             isolation?: QaapAgentConversationIsolation;
+            /** The user chose "Continue here" on the dirty-workspace dialog: share the uncommitted tree. */
+            acceptDirty?: boolean;
             agentModel?: QaapCreateAgentTaskQaiqModel;
             imagePreviews?: readonly QaapTranscriptUserImagePreview[];
             /** Create without a message, then start an "Until done" goal loop with the draft. */
@@ -307,6 +311,8 @@ export class MobileProjectsBackgroundTaskUi {
             variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>;
             /** Omitted → the server's `'auto'`: a worktree only when another thread is active on the repository. */
             isolation?: QaapAgentConversationIsolation;
+            /** The user chose "Continue here" on the dirty-workspace dialog: share the uncommitted tree. */
+            acceptDirty?: boolean;
             agentModel?: QaapCreateAgentTaskQaiqModel;
             imagePreviews?: readonly QaapTranscriptUserImagePreview[];
             /** Create without a message, then start an "Until done" goal loop with the draft. */
@@ -322,7 +328,12 @@ export class MobileProjectsBackgroundTaskUi {
                 this.host.rollbackTranscriptOptimisticSubmit?.();
                 return undefined;
             }
-            const { summary, outbound } = await this.createProjectChatSession(project, cwd, draft, options);
+            const created = await this.createWithDirtyWorkspaceDecision(project, cwd, draft, options, startup);
+            if (!created) {
+                // Cancelled on the dirty-workspace dialog: nothing was created, the caller restores the draft.
+                return undefined;
+            }
+            const { summary, outbound } = created;
             if (resolveNewTaskStartupOutcome(startup, summary) === 'cancelAndRestore') {
                 // Stop arrived while the task was being created. The create already carries the first
                 // message, so the turn may be running: cancel it, then decide from what it produced.
@@ -360,6 +371,48 @@ export class MobileProjectsBackgroundTaskUi {
             return undefined;
         }
     }
+    /**
+     * Creates the task; when the shared working tree has uncommitted changes the server answers 409
+     * `dirty_workspace` and the user decides: "Start clean" retries in a worktree, "Continue here" retries
+     * sharing the tree, Cancel resolves `undefined` so the caller restores the draft as not sent.
+     */
+    async createWithDirtyWorkspaceDecision(
+        project: MobileProjectEntry,
+        cwd: string,
+        draft: string,
+        options: Parameters<MobileProjectsBackgroundTaskUi['createProjectChatSession']>[3],
+        startup?: QaapNewTaskStartup,
+    ): Promise<QaapProjectChatSessionCreated | undefined> {
+        try {
+            return await this.createProjectChatSession(project, cwd, draft, options);
+        } catch (error) {
+            if (!(error instanceof QaapDirtyWorkspaceError)) {
+                throw error;
+            }
+            const retried = await retryAfterDirtyWorkspace(
+                error,
+                async retryOptions => {
+                    // Stop pressed while the dialog was open: the user asked for no task, so none is created.
+                    if (startup?.stopRequested) {
+                        return undefined;
+                    }
+                    return this.createProjectChatSession(project, cwd, draft, { ...options, ...retryOptions });
+                },
+                (files, total) => this.askDirtyWorkspaceChoice(files, total),
+            );
+            if (!retried) {
+                // The server refused the create and the user cancelled (or stopped): the pre-create optimistic paint goes.
+                this.host.rollbackTranscriptOptimisticSubmit?.();
+            }
+            return retried;
+        }
+    }
+
+    /** Seam over the dirty-workspace dialog so the decision can be exercised without a DOM. */
+    protected askDirtyWorkspaceChoice(files: readonly string[], total: number): Promise<QaapDirtyWorkspaceChoice | undefined> {
+        return new QaapDirtyWorkspaceDialog(files, total).open();
+    }
+
     /**
      * Resolves a new task whose creation was stopped. Returns the task when it stays open (the
      * prompt counts as sent: the composer commits it), or `undefined` when the task was archived
@@ -435,6 +488,7 @@ export class MobileProjectsBackgroundTaskUi {
             genericCapabilitySelections?: GenericCapabilitySelections;
             variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>;
             isolation?: QaapAgentConversationIsolation;
+            acceptDirty?: boolean;
             agentModel?: QaapCreateAgentTaskQaiqModel;
             latencyMarks?: import('@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client').QaapPostConversationMessageOptions['latencyMarks'];
             untilDone?: boolean;
@@ -481,6 +535,7 @@ export class MobileProjectsBackgroundTaskUi {
             toolApprovalRules,
             latencyMarks: options.latencyMarks,
             ...(options.isolation ? { isolation: options.isolation } : {}),
+            ...(options.acceptDirty ? { acceptDirty: true } : {}),
             ...(contextPreamble ? { contextPreamble } : {}),
             ...(agentModel ? { agentModel, qaiqModel: agentModel } : {}),
             ...(options.autoApprove === false

@@ -27,6 +27,10 @@ interface RecordedGitCall {
 
 function fakeCheckpointCtx(respond: (args: string[]) => QaapGitRunResult, calls: RecordedGitCall[]): QaapAgentConversationStoreContext {
     return {
+        // The snapshot index lives in the repository's git directory; this stub reports one.
+        readGit: async (_cwd: string, args: readonly string[]): Promise<QaapGitRunResult> => args.includes('--absolute-git-dir')
+            ? { status: 0, stdout: `${path.join(os.tmpdir(), 'qaap-fake-gitdir')}\n`, stderr: '' }
+            : { status: 1, stdout: '', stderr: 'unexpected read' },
         mutatingGit: async (_cwd: string, args: string[], env?: NodeJS.ProcessEnv, timeoutMs?: number): Promise<QaapGitRunResult> => {
             calls.push({ args, indexFile: env?.GIT_INDEX_FILE, timeoutMs });
             // Yield so a synchronous implementation could not pass by accident.
@@ -163,8 +167,10 @@ describe('captureCheckpointExtracted (async)', () => {
         ]);
         const indexFile = calls[0].indexFile;
         expect(indexFile).to.be.a('string');
-        expect(calls.slice(0, 4).every(call => call.indexFile === indexFile)).to.equal(true);
-        // update-ref writes the real ref store, not the throwaway index.
+        expect(calls.slice(0, 3).every(call => call.indexFile === indexFile)).to.equal(true);
+        // commit-tree and update-ref never read the index, so they run without it (the snapshot helper
+        // removes the throwaway index once write-tree is done).
+        expect(calls[3].indexFile).to.equal(undefined);
         expect(calls[4].indexFile).to.equal(undefined);
         expect(calls[1].timeoutMs).to.equal(QAAP_GIT_ADD_ALL_TIMEOUT_MS);
         expect(calls[4].args[0]).to.equal('update-ref');
