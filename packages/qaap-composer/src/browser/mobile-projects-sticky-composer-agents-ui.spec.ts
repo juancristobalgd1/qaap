@@ -71,6 +71,20 @@ describe('MobileProjectsStickyComposerAgentsUi', () => {
         expect(ui.resolveStickyComposerPinnedAgentId(project)).to.equal('shell');
     });
 
+    it('submits the agent the chip shows even when the catalog would reconcile it to another one', () => {
+        // The catalog only lists Copilot, but the user pinned Pi: the chip names Pi, so the submit sends Pi.
+        const ui = new MobileProjectsStickyComposerAgentsUi(createHost('pi'));
+
+        expect(ui.resolveStickyComposerDisplayedAgentId(project)).to.equal('pi');
+        expect(ui.resolveStickyComposerAgentLabel(project)).to.equal('@pi');
+    });
+
+    it('falls back to the reconciled pinned agent when nothing is chosen', () => {
+        const ui = new MobileProjectsStickyComposerAgentsUi(createHost());
+
+        expect(ui.resolveStickyComposerDisplayedAgentId(project)).to.equal(ui.resolveStickyComposerPinnedAgentId(project));
+    });
+
     it('keeps a stored shell fallback actionable while the catalog is warming', () => {
         writeStoredAgent('/workspace/project', 'shell');
         const ui = new MobileProjectsStickyComposerAgentsUi(createHost());

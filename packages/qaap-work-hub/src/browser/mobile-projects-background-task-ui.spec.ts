@@ -569,4 +569,149 @@ describe('MobileProjectsBackgroundTaskUi', () => {
             expect(h.archived).to.be.empty;
         });
     });
+
+    describe('new task uses the composer chip agent and model', () => {
+        const project = { id: 'p-route', name: 'app', github: { owner: 'o', repo: 'app' } } as unknown as MobileProjectEntry;
+        const cohere = { provider: 'openai' as const, vendor: 'openrouter', modelId: 'openrouter/cohere/north-mini-code:free' };
+        const beamFree = { provider: 'openai' as const, vendor: 'opencode', modelId: 'opencode/beam-free' };
+
+        interface RoutingHarness {
+            ui: MobileProjectsBackgroundTaskUi;
+            bodies: Array<Record<string, unknown>>;
+            routed: string[];
+            prepared: number[];
+            rolledBack: number[];
+        }
+
+        /** A submit that runs the real routing and create against a stubbed POST; `projectCwd` undefined = repo not prepared yet. */
+        function uiRouting(options: { projectCwd?: string; prepare?: () => Promise<string | undefined> } = {}): RoutingHarness {
+            const harness: RoutingHarness = { ui: undefined as never, bodies: [], routed: [], prepared: [], rolledBack: [] };
+            const ui = new MobileProjectsBackgroundTaskUi({
+                projects: [],
+                preparedCwdByProjectId: new Map(),
+                justAddedTaskId: undefined,
+                agentsHubShellActive: false,
+                projectsService: { getProjectCwd: () => options.projectCwd } as never,
+                delegate: {},
+                transcriptSheetUi: { openTranscriptSheet: async () => undefined } as never,
+                transcriptLiveUi: {} as never,
+                shouldUseAgentsHubLanding: () => false,
+                renderSubtitle: () => undefined,
+                renderList: () => undefined,
+                seedTranscriptOptimisticSubmit: () => undefined,
+                syncWorkHubProjectSkillRoots: () => undefined,
+                rollbackTranscriptOptimisticSubmit: () => { harness.rolledBack.push(1); },
+            });
+            ui['confirmPaidSend'] = async (): Promise<boolean> => true;
+            ui['ensureInlineComposerCwd'] = async (): Promise<string | undefined> => {
+                harness.prepared.push(1);
+                return options.prepare ? options.prepare() : '/repo/app';
+            };
+            const realSelect = ui.selectBackendConversationAgent.bind(ui);
+            ui.selectBackendConversationAgent = async (cwd: string, prompt: string, selectedAgentId?: string): Promise<string> => {
+                const agent = await realSelect(cwd, prompt, selectedAgentId);
+                harness.routed.push(agent);
+                return agent;
+            };
+            ui.loadBackendAgentSnapshot = async () => ({
+                agents: [{ id: 'opencode', label: 'OpenCode', available: true }, { id: 'pi', label: 'Pi', available: true }],
+                defaultAgent: 'opencode',
+                agentConfigured: true,
+                qaiqInstalled: false,
+                qaiqModels: [],
+            });
+            harness.ui = ui;
+            return harness;
+        }
+
+        async function withCreateStub<T>(harness: RoutingHarness, run: () => Promise<T>): Promise<T> {
+            const originalFetch = globalThis.fetch;
+            globalThis.fetch = (async (input: unknown, init?: { body?: unknown }) => {
+                const body = JSON.parse(String(init?.body));
+                if (String(input).includes('client-errors')) {
+                    // The failure breadcrumb, not a create.
+                    return { ok: true, status: 204, json: async () => ({}) };
+                }
+                harness.bodies.push(body);
+                const conversation = { id: 'conv-route', cwd: body.cwd, agentId: body.agent, status: 'streaming', messages: [], createdAt: 1, updatedAt: 1 };
+                return { ok: true, status: 201, json: async () => conversation };
+            }) as unknown as typeof globalThis.fetch;
+            try {
+                return await run();
+            } finally {
+                globalThis.fetch = originalFetch;
+            }
+        }
+
+        beforeEach(() => {
+            window.localStorage.clear();
+            document.querySelectorAll('.theia-mobile-snackbar-message').forEach(node => node.remove());
+        });
+
+        it('creates the task with the chip agent (Pi) and the chip model, never the default harness', async () => {
+            const h = uiRouting({ projectCwd: '/repo/app' });
+            // Another harness's pick is stored for the project: it must not leak into the Pi send.
+            writeStoredAgentModel('/repo/app', 'opencode', beamFree);
+            const created = await withCreateStub(h, () => h.ui.submitBackgroundAgentTask(project, 'build it', {
+                openConversation: false,
+                selectedAgentId: 'pi',
+                agentModel: cohere,
+                agentModelAgentId: 'pi',
+            }));
+            expect(created?.id).to.equal('conv-route');
+            expect(h.bodies).to.have.length(1);
+            expect(h.bodies[0].agent).to.equal('pi');
+            expect(h.bodies[0].agentModel).to.deep.equal(cohere);
+            expect(h.routed).to.deep.equal(['pi']);
+        });
+
+        it('without a cwd prepares it first and routes exactly once', async () => {
+            const h = uiRouting({ projectCwd: undefined });
+            await withCreateStub(h, () => h.ui.submitBackgroundAgentTask(project, 'build it', {
+                openConversation: false,
+                selectedAgentId: 'pi',
+                agentModel: cohere,
+                agentModelAgentId: 'pi',
+            }));
+            expect(h.prepared).to.have.length(1);
+            expect(h.routed).to.deep.equal(['pi']);
+            expect(h.bodies).to.have.length(1);
+            expect(h.bodies[0].cwd).to.equal('/repo/app');
+            expect(h.bodies[0].agent).to.equal('pi');
+            expect(h.bodies[0].agentModel).to.deep.equal(cohere);
+        });
+
+        it('without a cwd that cannot be prepared sends nothing and says the project is being prepared', async () => {
+            const h = uiRouting({
+                projectCwd: undefined,
+                prepare: async () => { throw new Error('Timed out after 90s while preparing the repository.'); },
+            });
+            const created = await withCreateStub(h, () => h.ui.submitBackgroundAgentTask(project, 'build it', {
+                openConversation: false,
+                selectedAgentId: 'pi',
+                agentModel: cohere,
+            }));
+            expect(created).to.equal(undefined);
+            expect(h.routed).to.be.empty;
+            expect(h.bodies).to.be.empty;
+            expect(h.rolledBack).to.have.length(1);
+            expect(document.querySelector('.theia-mobile-snackbar-message')?.textContent).to.equal('Preparing the project…');
+        });
+
+        it('a model of another harness blocks the send and opens the model picker', async () => {
+            const h = uiRouting({ projectCwd: '/repo/app' });
+            let pickerOpened = 0;
+            const created = await withCreateStub(h, () => h.ui.submitBackgroundAgentTask(project, 'build it', {
+                openConversation: false,
+                selectedAgentId: 'pi',
+                agentModel: beamFree,
+                agentModelAgentId: 'opencode',
+                openModelPicker: () => { pickerOpened++; },
+            }));
+            expect(created).to.equal(undefined);
+            expect(h.bodies).to.be.empty;
+            expect(pickerOpened).to.equal(1);
+            expect(h.rolledBack).to.have.length(1);
+        });
+    });
 });
