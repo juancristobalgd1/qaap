@@ -232,6 +232,19 @@ describe('QaapAgentConversationStore in-session parallel runs', () => {
         expect(store.activeTaskIds('c1')).to.deep.equal([]);
     });
 
+    it('treats a repeat Stop on a conversation with no live run as a no-op', () => {
+        const { store, runner } = createStore();
+        const before = store.get('c1');
+
+        const first = store.cancel('c1');
+        const second = store.cancel('c1');
+
+        expect(runner.cancelledIds).to.deep.equal([]);
+        expect(first?.messages).to.deep.equal(before?.messages);
+        expect(second?.messages).to.deep.equal(before?.messages);
+        expect(second?.status).to.equal('idle');
+    });
+
 });
 
 // ─── Delivery mode: queue (default) ──────────────────────────────────────────

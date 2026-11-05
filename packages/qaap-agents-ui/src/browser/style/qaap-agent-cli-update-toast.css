@@ -44,7 +44,9 @@
         left: auto;
         right: 24px;
         transform: none;
-        bottom: calc(max(var(--theia-mobile-bottom-chrome-reserved, var(--theia-mobile-status-chrome-height, 34px)), var(--qaap-agent-cli-update-toast-composer-lift, 0px)) + var(--theia-mobile-keyboard-inset, 0px) + 16px);
+        /* Top-right, like the mobile drop-down, so the toast never covers the composer. */
+        top: 56px;
+        bottom: auto;
     }
 }
 

@@ -562,6 +562,8 @@ export function ensureTranscriptFilesTabExtracted(
                     rootUri,
                     rootFsPath: cwd,
                     isActiveWorkspace: project.isCurrent,
+                    // This Changes tab belongs to one conversation: measure it against that task's baseline.
+                    baselineCommit: summary.baselineCommit,
                 });
                 ctx.host.diffReviewWidget.setCommitReadinessProvider(
                     () => ({

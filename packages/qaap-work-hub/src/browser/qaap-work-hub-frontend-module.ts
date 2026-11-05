@@ -26,6 +26,7 @@ import '../../src/browser/style/qaap-project-bootstrap.css';
 import '@theia/qaap-agents-ui/src/browser/style/qaap-agent-cli-update-toast.css';
 import '@theia/qaap-composer/src/browser/style/qaap-chat-mic.css';
 import '@theia/qaap-composer/src/browser/style/qaap-composer-prompt-improve.css';
+import '@theia/qaap-composer/src/browser/style/qaap-composer-stop-ack.css';
 import '@theia/qaap-composer/src/browser/style/qaap-chat-select-dropdown.css';
 import '@theia/qaap-composer/src/browser/style/qaap-composer-goal-loop.css';
 import '../../src/browser/style/qaap-work-hub-sessions-sidebar.css';

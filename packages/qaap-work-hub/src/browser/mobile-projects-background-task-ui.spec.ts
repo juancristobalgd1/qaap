@@ -255,6 +255,78 @@ describe('MobileProjectsBackgroundTaskUi', () => {
         expect((await createSession('worktree', 'qaap/worktree/a')).snackbar).to.equal(undefined);
     });
 
+    describe('dirty shared workspace on a new task', () => {
+        function dirtyResponse(): Response {
+            const body = { code: 'dirty_workspace', files: ['README.md', 'hello.txt'], total: 2 };
+            const response = { ok: false, status: 409, statusText: 'Conflict', json: async () => body, clone: () => response };
+            return response as unknown as Response;
+        }
+
+        async function submitOnDirtyTree(choice: 'startClean' | 'continueHere' | undefined, stopWhileDialogOpen = false): Promise<{ bodies: Array<Record<string, unknown>>; result: unknown; rollbacks: number }> {
+            const ui = withAgentSnapshot({ agents: [], agentConfigured: false, qaiqInstalled: false, qaiqModels: [] });
+            let rollbacks = 0;
+            (ui as unknown as { host: { rollbackTranscriptOptimisticSubmit?: () => void } }).host.rollbackTranscriptOptimisticSubmit = () => { rollbacks++; };
+            const decision = ui as unknown as {
+                askDirtyWorkspaceChoice: (files: readonly string[], total: number) => Promise<'startClean' | 'continueHere' | undefined>;
+                createWithDirtyWorkspaceDecision: (project: MobileProjectEntry, cwd: string, draft: string, options: { selectedAgentId?: string }, startup?: { projectId: string; stopRequested: boolean }) => Promise<unknown>;
+            };
+            const startup = { projectId: 'p', stopRequested: false };
+            decision.askDirtyWorkspaceChoice = async () => {
+                if (stopWhileDialogOpen) {
+                    startup.stopRequested = true;
+                }
+                return choice;
+            };
+            const bodies: Array<Record<string, unknown>> = [];
+            const originalFetch = globalThis.fetch;
+            globalThis.fetch = (async (_input: unknown, init?: { body?: unknown }) => {
+                bodies.push(JSON.parse(String(init?.body)));
+                if (bodies.length === 1) {
+                    return dirtyResponse();
+                }
+                const conversation = { id: 'conv-1', cwd: '/repo', status: 'streaming', messages: [], createdAt: 1, updatedAt: 1 };
+                return { ok: true, status: 201, json: async () => conversation };
+            }) as unknown as typeof globalThis.fetch;
+            try {
+                const project = { id: 'p', name: 'repo' } as MobileProjectEntry;
+                const result = await decision.createWithDirtyWorkspaceDecision(project, '/repo', 'fix it', { selectedAgentId: '@shell' }, startup);
+                return { bodies, result, rollbacks };
+            } finally {
+                globalThis.fetch = originalFetch;
+            }
+        }
+
+        it('retries in a clean worktree when the user chooses Start clean', async () => {
+            const { bodies, result } = await submitOnDirtyTree('startClean');
+            expect(bodies).to.have.length(2);
+            expect(bodies[0]).to.not.have.property('acceptDirty');
+            expect(bodies[1].isolation).to.equal('worktree');
+            expect(result).to.not.equal(undefined);
+        });
+
+        it('retries sharing the tree with acceptDirty when the user chooses Continue here', async () => {
+            const { bodies, result } = await submitOnDirtyTree('continueHere');
+            expect(bodies).to.have.length(2);
+            expect(bodies[1].acceptDirty).to.equal(true);
+            expect(bodies[1]).to.not.have.property('isolation');
+            expect(result).to.not.equal(undefined);
+        });
+
+        it('creates no task when Stop is pressed while the dialog is open, even if the user then chooses Continue here', async () => {
+            const { bodies, result, rollbacks } = await submitOnDirtyTree('continueHere', true);
+            expect(bodies).to.have.length(1);
+            expect(result).to.equal(undefined);
+            expect(rollbacks).to.equal(1);
+        });
+
+        it('creates nothing and resolves undefined (draft restored by the caller) when the dialog is cancelled', async () => {
+            const { bodies, result, rollbacks } = await submitOnDirtyTree(undefined);
+            expect(bodies).to.have.length(1);
+            expect(result).to.equal(undefined);
+            expect(rollbacks).to.equal(1);
+        });
+    });
+
     describe('paid-send gate on a new task', () => {
         const project = { id: 'p1', name: 'app' } as unknown as MobileProjectEntry;
         const paidModel = { provider: 'openai' as const, vendor: 'openrouter', modelId: 'openai/gpt-5' };

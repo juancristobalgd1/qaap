@@ -2,6 +2,7 @@
 import { formatSlowPersistWriteLog, QAAP_PERSIST_SLOW_WRITE_LOG_MS } from './qaap-agent-conversation-persist-policy';
 import type { QaapSqliteReplaceStats } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 import { ensureQaapLoopStallMonitor } from './qaap-loop-stall-monitor';
+import { logTurnCreatedExtracted } from './qaap-agent-turn-create-log';
 import { discoveredFallbackModels } from './qaap-agent-model-fallback-candidates';
 import { localizeAgentTurnRestartInterruptedMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 import type { QaapAgentConversationStoreContext } from './qaap-agent-conversation-store-context';
@@ -10,9 +11,6 @@ import { nls } from '@theia/core/lib/common/nls';
 
 import { randomUUID } from 'crypto';
 
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
 import { QaapAgentConversation, QaapAgentMessage, QaapConversationCheckpoint, toConversationSummary } from '../common/qaap-agent-conversation';
 
 import { QAAP_CHAT_TURN_NODE, QAAP_CHAT_TURN_TRIED_MODELS_ARTIFACT, QAAP_CHAT_TURN_WORKFLOW_ID, buildChatTurnWorkflow, resolveChatTurnOutcome, resolveChatTurnRunBudget } from '../common/qaap-chat-turn-workflow';
@@ -21,7 +19,7 @@ import type { QaapWorkflowNodeOutcome } from '../common/qaap-workflow-ir';
 
 import { QaapPersistedWorkflowRun } from './qaap-workflow-run-store';
 
-import { QAAP_GIT_ADD_ALL_TIMEOUT_MS } from './qaap-agent-conversation-store-git';
+import { resolveTemporaryIndexDir, snapshotWorktreeTree } from '@theia/qaap-shared-core/lib/node/qaap-git-tree-diff';
 import { QAAP_WORKTREE_ORDINAL_HIGH_WATER_KEY } from './qaap-worktree-ordinal-allocator';
 
 import type { QaapAgentTask } from '../common/qaap-agent-task';
@@ -98,6 +96,7 @@ export async function resumeInterruptedTurnViaGraphExtracted(ctx: QaapAgentConve
                 ctx.buildTaskCreateRequest(resumeConv, turnAgentId, undefined, userMessageId),
                 resumeConv.ownerLogin,
             );
+            logTurnCreatedExtracted('thought-brief2:resume', resumeConv.id, userMessageId, spawned.id);
         } catch {
             // cwd gone / runner refused: settle the run's failure edge and degrade to the manual
             // "Retry to continue" flow. Ledger and projection both already persisted, so this
@@ -272,6 +271,7 @@ export async function maybeRetryTurnWithFallbackModelViaGraphExtracted(ctx: Qaap
                 ctx.buildTaskCreateRequest(retryConv, turnAgentId, undefined, userMessageId),
                 retryConv.ownerLogin,
             );
+            logTurnCreatedExtracted('thought-brief2:retry', retryConv.id, userMessageId, spawned.id);
         } catch {
             // Same degradation as the imperative branch (return false → the failure flow marks the
             // turn). Settle the run's failure edge so the ledger never waits on an unstarted node.
@@ -387,28 +387,33 @@ export async function persistExtracted(ctx: QaapAgentConversationStoreContext): 
     return ctx.persistChain;
 }
 
+/**
+ * Snapshot the current worktree (tracked and untracked) into a git tree through the store's serialized
+ * git seam. Single source of truth for pre-turn checkpoints, turn diffs and the changes panel baseline.
+ */
+export async function snapshotWorktreeTreeForStore(ctx: QaapAgentConversationStoreContext, cwd: string): Promise<string | undefined> {
+    // The throwaway index lives in the repository's git directory: the same tenant environment that runs
+    // git can remove it, and the real `.git/index` is never a candidate (see assertTemporaryIndexFile).
+    const indexDir = await resolveTemporaryIndexDir(cwd, (gitCwd, args) => ctx.readGit(gitCwd, args));
+    if (!indexDir) {
+        return undefined;
+    }
+    return snapshotWorktreeTree(cwd, (gitCwd, args, env, timeoutMs) => ctx.mutatingGit(gitCwd, args, env, timeoutMs), indexDir);
+}
+
 export async function captureCheckpointExtracted(ctx: QaapAgentConversationStoreContext, cwd: string,
         conversationId: string,
         messageId: string,
         label: string,
-        stats?: { added: number; removed: number }, ): Promise<QaapConversationCheckpoint | undefined> {
-        const tmpIndex = path.join(os.tmpdir(), `qaap-ckpt-${randomUUID()}.index`);
-        const env = { ...process.env, GIT_INDEX_FILE: tmpIndex };
+        stats?: { added: number; removed: number }, reusedTreeId?: string, ): Promise<QaapConversationCheckpoint | undefined> {
         try {
-            // Seed the throwaway index from HEAD when a commit exists (best-effort; empty repo is fine).
-            await ctx.mutatingGit(cwd, ['read-tree', 'HEAD'], env);
-            if ((await ctx.mutatingGit(cwd, ['add', '-A'], env, QAAP_GIT_ADD_ALL_TIMEOUT_MS)).status !== 0) {
-                return undefined;
-            }
-            const tree = await ctx.mutatingGit(cwd, ['write-tree'], env);
-            const treeId = tree.status === 0 ? tree.stdout.trim() : '';
+            const treeId = reusedTreeId ?? await snapshotWorktreeTreeForStore(ctx, cwd);
             if (!treeId) {
                 return undefined;
             }
             const commitRes = await ctx.mutatingGit(
                 cwd,
                 ['-c', 'user.email=qaap@local', '-c', 'user.name=qaap', 'commit-tree', treeId, '-m', `qaap checkpoint: ${label}`],
-                env,
             );
             const commit = commitRes.status === 0 ? commitRes.stdout.trim() : '';
             if (!commit) {
@@ -419,9 +424,6 @@ export async function captureCheckpointExtracted(ctx: QaapAgentConversationStore
             return { id: randomUUID(), messageId, label, commit, ref, capturedAt: Date.now(), added: stats?.added, removed: stats?.removed };
         } catch {
             return undefined;
-        } finally {
-            // A timed-out (SIGKILLed) git can leave the throwaway index lock behind; drop both.
-            await Promise.all([tmpIndex, `${tmpIndex}.lock`].map(file => fs.promises.rm(file, { force: true }).catch(() => undefined)));
         }
 }
 

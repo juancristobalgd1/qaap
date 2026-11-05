@@ -360,6 +360,8 @@ export function resolveRunStopHandlerExtracted(ctx: MobileProjectsTranscriptMess
             return () => ctx.host.cancelOpenTranscriptStream?.();
         }
         return () => {
+            // Optimistic: this run shows "Turn cancelled." at once; the backend answer settles it.
+            ctx.host.transcriptLiveUi.applyOptimisticRunCancel(conv.id, message.id);
             void cancelConversationRun(conv.id, userMessageId).catch(() => {
                 // Backend refused the targeted cancel — fall back to stopping the session.
                 ctx.host.cancelOpenTranscriptStream?.();
