@@ -131,12 +131,71 @@ describe('MobileProjectsTranscriptComposerUi catalog refresh', () => {
         expect(loads[loads.length - 1]).to.deep.equal({ forceRefresh: true });
     });
 
+    /** Waits until `predicate` holds, failing the spec after one second. */
+    async function waitUntil(predicate: () => boolean): Promise<void> {
+        for (let waited = 0; waited < 1000 && !predicate(); waited += 5) {
+            await new Promise(resolve => setTimeout(resolve, 5));
+        }
+        expect(predicate()).to.equal(true);
+    }
+
     it('loads the catalog once for repeated composer mounts inside the throttle window', async () => {
         const loads: unknown[] = [];
-        const { ui } = createUi(() => [], loads, { count: 0 });
+        const { ui } = createUi(() => [pi('connected')], loads, { count: 0 });
         for (let mount = 0; mount < 5; mount++) {
             await ui.ensureComposerAgentCatalog(project);
         }
         expect(loads).to.have.length(1);
+    });
+
+    it('retries an empty catalog load with backoff until the catalog is populated', async () => {
+        const loads: unknown[] = [];
+        const { ui, host } = createUi(() => (loads.length === 1 ? [] : [pi('connected')]), loads, { count: 0 });
+        (ui as unknown as { composerCatalogRetryDelaysMs: number[] }).composerCatalogRetryDelaysMs = [5, 10, 20];
+
+        expect(await ui.ensureComposerAgentCatalog(project)).to.equal(false);
+        // While the retry is scheduled, a remount neither fetches nor reports a catalog.
+        expect(await ui.ensureComposerAgentCatalog(project)).to.equal(false);
+        expect(loads).to.have.length(1);
+
+        await waitUntil(() => host.transcriptComposerBackendAgents.length > 0);
+        expect(loads).to.have.length(2);
+        expect(await ui.ensureComposerAgentCatalog(project)).to.equal(true);
+        expect(loads).to.have.length(2);
+    });
+
+    it('retries a failed catalog load with backoff, then succeeds', async () => {
+        const loads: unknown[] = [];
+        const { ui, host } = createUi(() => [pi('connected')], loads, { count: 0 });
+        const backend = host as unknown as { loadBackendAgentSnapshot: (options?: unknown) => Promise<unknown> };
+        backend.loadBackendAgentSnapshot = async (options?: unknown) => {
+            loads.push(options);
+            if (loads.length === 1) {
+                throw new Error('backend starting');
+            }
+            return { agents: [pi('connected')], qaiqModels: [], defaultAgent: 'pi' };
+        };
+        (ui as unknown as { composerCatalogRetryDelaysMs: number[] }).composerCatalogRetryDelaysMs = [5, 10, 20];
+
+        expect(await ui.ensureComposerAgentCatalog(project)).to.equal(false);
+        expect(loads).to.have.length(1);
+        await waitUntil(() => host.transcriptComposerBackendAgents.length > 0);
+        expect(loads).to.have.length(2);
+        expect(await ui.ensureComposerAgentCatalog(project)).to.equal(true);
+        expect(loads).to.have.length(2);
+    });
+
+    it('gives up after three retries and lets the next mount start a new series', async () => {
+        const loads: unknown[] = [];
+        const { ui } = createUi(() => [], loads, { count: 0 });
+        (ui as unknown as { composerCatalogRetryDelaysMs: number[] }).composerCatalogRetryDelaysMs = [1, 1, 1];
+
+        await ui.ensureComposerAgentCatalog(project);
+        await waitUntil(() => loads.length === 4);
+        await new Promise(resolve => setTimeout(resolve, 30));
+        expect(loads).to.have.length(4);
+
+        await ui.ensureComposerAgentCatalog(project);
+        expect(loads).to.have.length(5);
     });
 });

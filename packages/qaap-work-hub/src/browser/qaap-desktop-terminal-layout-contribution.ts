@@ -99,7 +99,8 @@ export class QaapDesktopTerminalLayoutContribution implements FrontendApplicatio
 
     /** Called from {@link MobileOneColumnShellContribution.ensureDesktopSidePanelSizes} after split restore. */
     async ensureDesktopTerminalNormal(): Promise<void> {
-        if (matchesMobileOneColumnLayout()) {
+        // Side-panel resizes call this too: without the classic IDE preference it must not open a terminal.
+        if (matchesMobileOneColumnLayout() || !peekPreferDesktopIde()) {
             return;
         }
         await this.preferenceService.ready;
