@@ -1058,6 +1058,7 @@ export async function cancelConversationHttp(id: string): Promise<void> {
 
 /** Cancels via WebSocket when the live feed is connected; falls back to HTTP POST /cancel. */
 export async function cancelConversation(id: string): Promise<void> {
+    console.info(`[qaap-stop] client conv=${id} transport=${conversationLiveCancel ? 'ws' : 'http'}`);
     if (conversationLiveCancel) {
         await conversationLiveCancel(id);
         return;

@@ -293,6 +293,7 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: MobilePro
                 stopProject = ctx.workHub.resolveShellProject() ?? project;
                 stopSummary = ctx.workHub.resolveShellSummary(stopProject) ?? summary;
             }
+            console.info(`[qaap-stop] click origin=composer summary=${stopSummary.id} open=${ctx.host.transcriptLastConv?.id ?? '-'}`);
             void ctx.host.onCancelConversation(stopProject, stopSummary);
         },
         onSendControlMounted: refresh => { ctx.host.transcriptComposerSendRefresh = refresh; },

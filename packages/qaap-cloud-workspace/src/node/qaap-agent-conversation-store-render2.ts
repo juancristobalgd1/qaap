@@ -1,4 +1,5 @@
 // Extracted from qaap-agent-conversation-store.ts
+import { logTurnCreatedExtracted } from './qaap-agent-turn-create-log';
 import type { QaapAgentConversationStoreContext } from './qaap-agent-conversation-store-context';
 
 import { randomUUID } from 'crypto';
@@ -821,6 +822,7 @@ export function postUserMessageExtracted(ctx: QaapAgentConversationStoreContext,
             next.ownerLogin,
             { spawnGate },
         );
+        logTurnCreatedExtracted('render2:send', next.id, userMessage.id, task.id);
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         return ctx.failTurnBeforeSpawn(id, next, userMessage.id, message);
@@ -986,6 +988,7 @@ export function nextRetryAttempt(message: Pick<QaapAgentMessage, 'retryAttempt'>
 }
 
 export function cancelExtracted(ctx: QaapAgentConversationStoreContext, id: string): QaapAgentConversation | undefined {
+    const activeTaskCount = ctx.getActiveTaskIdsForConversation(id).length;
     const conv = ctx.conversations.get(id);
     if (!conv) {
         return undefined;
@@ -1058,6 +1061,7 @@ export function cancelExtracted(ctx: QaapAgentConversationStoreContext, id: stri
     if (goalLoopCancelled) {
         ctx.fire({ type: 'goal_loop', conversationId: id, cwd: next.cwd, goalLoop: next.goalLoop });
     }
+    console.info(`[qaap-stop] result conv=${id} active=${activeTaskCount} outcome=cancelled`);
     ctx.fire({ type: 'updated', conversation: toConversationSummary(next) });
     void ctx.persist();
     return next;

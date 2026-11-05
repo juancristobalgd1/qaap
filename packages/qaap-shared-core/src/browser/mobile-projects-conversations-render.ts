@@ -325,6 +325,7 @@ export function emitConversationChangeExtracted(ctx: MobileProjectsConversations
 }
 
 export async function cancelConversationLiveExtracted(ctx: MobileProjectsConversationsContext, id: string): Promise<void> {
+        console.info(`[qaap-stop] client conv=${id} transport=ws readyState=${ctx.socket?.readyState ?? 'none'}`);
         if (ctx.socket?.readyState === WebSocket.OPEN) {
             ctx.socket.send(JSON.stringify({ op: 'cancel', conversationId: id }));
             const existing = ctx.findSummaryById(id);

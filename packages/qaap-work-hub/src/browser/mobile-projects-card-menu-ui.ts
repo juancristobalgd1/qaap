@@ -330,7 +330,10 @@ export class MobileProjectsCardMenuUi {
                 label: nls.localize('qaap/mobileProjects/cancelTaskRun', 'Cancel run'),
                 iconClass: 'codicon-debug-stop',
                 danger: true,
-                onSelect: () => { void this.host.onCancelConversation(project, summary); },
+                onSelect: () => {
+                    console.info(`[qaap-stop] click origin=card-menu summary=${summary.id}`);
+                    void this.host.onCancelConversation(project, summary);
+                },
             });
         }
 

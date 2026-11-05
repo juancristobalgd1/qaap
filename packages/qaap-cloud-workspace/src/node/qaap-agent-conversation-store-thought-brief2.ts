@@ -1,4 +1,5 @@
 // Extracted from qaap-agent-conversation-store.ts
+import { logTurnCreatedExtracted } from './qaap-agent-turn-create-log';
 import { discoveredFallbackModels } from './qaap-agent-model-fallback-candidates';
 import { localizeAgentTurnRestartInterruptedMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 import type { QaapAgentConversationStoreContext } from './qaap-agent-conversation-store-context';
@@ -95,6 +96,7 @@ export async function resumeInterruptedTurnViaGraphExtracted(ctx: QaapAgentConve
                 ctx.buildTaskCreateRequest(resumeConv, turnAgentId, undefined, userMessageId),
                 resumeConv.ownerLogin,
             );
+            logTurnCreatedExtracted('thought-brief2:resume', resumeConv.id, userMessageId, spawned.id);
         } catch {
             // cwd gone / runner refused: settle the run's failure edge and degrade to the manual
             // "Retry to continue" flow. Ledger and projection both already persisted, so this
@@ -269,6 +271,7 @@ export async function maybeRetryTurnWithFallbackModelViaGraphExtracted(ctx: Qaap
                 ctx.buildTaskCreateRequest(retryConv, turnAgentId, undefined, userMessageId),
                 retryConv.ownerLogin,
             );
+            logTurnCreatedExtracted('thought-brief2:retry', retryConv.id, userMessageId, spawned.id);
         } catch {
             // Same degradation as the imperative branch (return false → the failure flow marks the
             // turn). Settle the run's failure edge so the ledger never waits on an unstarted node.
