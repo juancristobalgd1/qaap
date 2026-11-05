@@ -597,7 +597,7 @@ export async function runOneShotCommand(
                 cwd,
                 env,
                 stdio: stdinPrompt === undefined ? ['ignore', 'pipe', 'pipe'] : ['pipe', 'pipe', 'pipe'],
-                ...(stdinPrompt === undefined ? {} : { detached: false }),
+                ...(stdinPrompt === undefined || process.platform !== 'win32' ? {} : { detached: false }),
             });
             if (stdinPrompt !== undefined) {
                 child.stdin?.end(stdinPrompt);

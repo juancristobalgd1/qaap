@@ -125,7 +125,7 @@ export async function runGenericCommandExtracted(ctx: QaapAgentTaskRunnerContext
                     cwd,
                     env,
                     stdio: options.stdinPrompt === undefined ? ['ignore', 'pipe', 'pipe'] : ['pipe', 'pipe', 'pipe'],
-                    detached: options.stdinPrompt === undefined ? undefined : false,
+                    detached: options.stdinPrompt === undefined || process.platform !== 'win32' ? undefined : false,
                 });
             } catch (error) {
                 stderr = error instanceof Error ? error.message : String(error);

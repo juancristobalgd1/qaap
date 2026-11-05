@@ -14,7 +14,7 @@ import { QaapQaiqProviderKeyMissingError } from './qaap-qaiq-provider-preflight'
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { awaitQaapAgentTaskSpawnGate } from './qaap-agent-task-spawn-gate';
 import { resolveAgentTaskBillingRejection } from './qaap-agent-task-billing-gate';
-import { finishTaskWithPauseCause } from './qaap-agent-task-runner-streaming2';
+import { finishTaskWithPauseCause, logCancelExitExtracted } from './qaap-agent-task-runner-streaming2';
 import { createOpencodeFatalStderrWatcher } from './qaap-opencode-fatal-error';
 import { createPiProviderErrorWatcher } from './qaap-pi-provider-error-watcher';
 import { removeStaleOpencodeSnapshotLocks } from './qaap-opencode-snapshot-lock';
@@ -177,7 +177,13 @@ export function killAgentProcessTreeExtracted(ctx: QaapAgentTaskRunnerContext, c
             try {
                 globalThis.process.kill(-pid, signal);
                 return;
-            } catch { /* process group already gone; try the leader below */ }
+            } catch (error) {
+                // ESRCH: no such process group (already exited, or never became a group leader).
+                // Signal the leader directly so the stop still reaches the agent.
+                if ((error as NodeJS.ErrnoException).code === 'ESRCH') {
+                    console.info(`[qaap-stop] process group ${pid} not found; signalling the leader with ${signal}`);
+                }
+            }
             try {
                 child.kill(signal);
             } catch { /* already gone */ }
@@ -528,7 +534,8 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                 stdio: stdinInteractive ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe'],
                 // On Windows, cmd.exe can keep a detached child waiting after its stdin is closed.
                 // Plain Codex stdin prompts therefore need a non-detached shell process.
-                detached: stdinPrompt?.mode === 'plain' ? false : undefined,
+                // POSIX: the agent leads its own process group, so a Stop signals the whole tree with kill(-pid).
+                detached: globalThis.process.platform === 'win32' ? (stdinPrompt?.mode === 'plain' ? false : undefined) : true,
             });
             ctx.recordTaskLatencyMark(task.id, 'spawn_end');
         } catch (error) {
@@ -785,7 +792,11 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
         child.on('error', error => {
             logStream.write(`\n[qaap] process error: ${error.message}\n`);
         });
-        child.once('exit', () => reapAgentProcessGroupOnExitExtracted(ctx, task.id, child));
+        child.once('exit', () => {
+            ctx.recordTaskLatencyMark(task.id, 'process_exit');
+            logCancelExitExtracted(ctx, task.id);
+            reapAgentProcessGroupOnExitExtracted(ctx, task.id, child);
+        });
         child.on('close', code => {
             clearChangeScopeWatch();
             clearIdleTimer();
