@@ -11,6 +11,7 @@ import { SingleTextInputDialog } from '@theia/core/lib/browser/dialogs';
 import { ChatRequestModel, ChatService, ChatSession } from '@theia/ai-chat';
 import {
     cancelConversation,
+    getConversation,
     conversationToSummary,
     deleteConversation,
     forkConversation,
@@ -25,7 +26,7 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { resolveStoredAgentModelForSubmit } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
 import { reportQaapClientError } from '@theia/qaap-shared-core/lib/common/qaap-client-error-report';
-import { qaapStopAck, type QaapStopAckOutcome } from '@theia/qaap-shared-core/lib/browser/qaap-stop-ack';
+import { qaapStopAck, type QaapStopAckDetail, type QaapStopAckOutcome } from '@theia/qaap-shared-core/lib/browser/qaap-stop-ack';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import { isAgentsHubIdleConversationSummary } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
 import { requestStopNewTaskStartup } from '../common/qaap-new-task-startup';
@@ -301,17 +302,17 @@ export class MobileProjectsConversationActionsUi {
      * Settles a Stop request: an acknowledgement only unblocks Send. A failure or an unconfirmed expiry
      * restores the Stop state (the optimistic idle was not confirmed), with a visible error.
      */
-    protected onStopAckSettled(summary: QaapAgentConversationSummaryDTO, outcome: QaapStopAckOutcome, error?: unknown): void {
+    protected onStopAckSettled(summary: QaapAgentConversationSummaryDTO, outcome: QaapStopAckOutcome, detail: QaapStopAckDetail): void {
         if (outcome === 'acknowledged') {
             this.host.transcriptComposerSendRefresh?.();
             return;
         }
         if (outcome === 'failed') {
-            reportQaapClientError('conversation-cancel', error);
+            reportQaapClientError('conversation-cancel', detail.error);
             this.host.messageService?.error(nls.localize(
                 'qaap/mobileProjects/cancelTaskFailed',
                 'Could not cancel run: {0}',
-                QaapUserFacingErrors.toMessageAndLog(error)
+                QaapUserFacingErrors.toMessageAndLog(detail.error)
             ));
         } else {
             this.host.messageService?.error(nls.localize(
@@ -320,7 +321,7 @@ export class MobileProjectsConversationActionsUi {
             ));
         }
         const latest = this.host.conversations?.findSummaryById(summary.id);
-        if (latest?.status !== 'streaming' && outcome === 'expired') {
+        if (outcome === 'expired' && !detail.stillStreaming) {
             this.host.transcriptComposerSendRefresh?.();
             return;
         }
@@ -350,8 +351,8 @@ export class MobileProjectsConversationActionsUi {
             // Tracked: Send for this conversation stays blocked until the server acknowledges the Stop.
             const stopId = summary.id;
             void qaapStopAck.track(stopId, cancelConversation(stopId), {
-                isStillStreaming: () => this.host.conversations?.findSummaryById(stopId)?.status === 'streaming',
-                onSettled: (outcome, error) => this.onStopAckSettled(summary, outcome, error),
+                isStillStreaming: () => getConversation(stopId).then(conv => conv.status === 'streaming'),
+                onSettled: (outcome, detail) => this.onStopAckSettled(summary, outcome, detail),
                 onLateAnswer: () => this.host.transcriptComposerSendRefresh?.(),
             });
             this.host.transcriptComposerSendRefresh?.();

@@ -11,11 +11,21 @@ export const QAAP_STOP_ACK_TIMEOUT_MS = 20_000;
 
 export type QaapStopAckOutcome = 'acknowledged' | 'failed' | 'expired';
 
+export interface QaapStopAckDetail {
+    /** Set for `failed`: the error the Stop request rejected with. */
+    readonly error?: unknown;
+    /** Set for `expired`: the server still reports the conversation as streaming (asked at expiry). */
+    readonly stillStreaming: boolean;
+}
+
 export interface QaapStopAckOptions {
-    /** Asked at expiry: a conversation that still streams keeps Send blocked, because its stale cancel is not settled. */
-    readonly isStillStreaming: () => boolean;
-    /** Called once per Stop with the settled outcome; `error` is set for `failed`. */
-    readonly onSettled: (outcome: QaapStopAckOutcome, error?: unknown) => void;
+    /**
+     * Asked once at expiry, from the server: the optimistic idle in the local store says nothing about
+     * whether the agent is still alive. Answer `true` when unknown, so Send stays blocked.
+     */
+    readonly isStillStreaming: () => Promise<boolean>;
+    /** Called once per Stop with the settled outcome. */
+    readonly onSettled: (outcome: QaapStopAckOutcome, detail: QaapStopAckDetail) => void;
     /** Called when a request that already expired finally answers. */
     readonly onLateAnswer?: (outcome: 'acknowledged' | 'failed', error?: unknown) => void;
     readonly timeoutMs?: number;
@@ -27,9 +37,9 @@ export interface QaapStopAckOptions {
  * could end the next turn the user just sent.
  *
  * Release rules: an acknowledgement or a failure releases Send. An expiry releases Send only when the
- * conversation no longer streams; otherwise Send stays blocked and the caller restores the Stop control,
- * so the user can retry the Stop (which tracks a new request). A late answer releases Send only if no
- * newer Stop has taken the block over.
+ * server no longer reports the conversation as streaming; otherwise Send stays blocked and the caller
+ * restores the Stop control, so the user can retry the Stop (which tracks a new request). A late answer
+ * releases Send only if no newer Stop has taken the block over.
  */
 export class QaapStopAckTracker {
 
@@ -56,13 +66,14 @@ export class QaapStopAckTracker {
         clearTimeout(timer);
         if (settled.outcome !== 'expired') {
             this.release(conversationId, token);
-            options.onSettled(settled.outcome, settled.outcome === 'failed' ? settled.error : undefined);
+            options.onSettled(settled.outcome, { error: settled.outcome === 'failed' ? settled.error : undefined, stillStreaming: false });
             return settled.outcome;
         }
-        if (!options.isStillStreaming()) {
+        const stillStreaming = await options.isStillStreaming().catch(() => true);
+        if (!stillStreaming) {
             this.release(conversationId, token);
         }
-        options.onSettled('expired');
+        options.onSettled('expired', { stillStreaming });
         void answer.then(late => {
             this.release(conversationId, token);
             options.onLateAnswer?.(late.outcome, late.outcome === 'failed' ? late.error : undefined);

@@ -21,7 +21,7 @@ describe('QaapStopAckTracker', () => {
         const tracker = new QaapStopAckTracker();
         const request = deferred();
         const settled: QaapStopAckOutcome[] = [];
-        const done = tracker.track('c1', request.promise, { isStillStreaming: () => true, onSettled: outcome => settled.push(outcome) });
+        const done = tracker.track('c1', request.promise, { isStillStreaming: async () => true, onSettled: outcome => settled.push(outcome) });
 
         expect(tracker.isSendBlocked('c1')).to.equal(true);
         expect(tracker.isSendBlocked('c2')).to.equal(false);
@@ -38,8 +38,8 @@ describe('QaapStopAckTracker', () => {
         const failure = new Error('HTTP 503');
         let reported: unknown;
         const done = tracker.track('c1', request.promise, {
-            isStillStreaming: () => true,
-            onSettled: (outcome, error) => { reported = outcome === 'failed' ? error : undefined; },
+            isStillStreaming: async () => true,
+            onSettled: (outcome, detail) => { reported = outcome === 'failed' ? detail.error : undefined; },
         });
         request.reject(failure);
 
@@ -54,7 +54,7 @@ describe('QaapStopAckTracker', () => {
         const settled: QaapStopAckOutcome[] = [];
         const late: QaapStopAckOutcome[] = [];
         const done = tracker.track('c1', request.promise, {
-            isStillStreaming: () => true,
+            isStillStreaming: async () => true,
             timeoutMs: 5,
             onSettled: outcome => settled.push(outcome),
             onLateAnswer: outcome => late.push(outcome),
@@ -73,7 +73,7 @@ describe('QaapStopAckTracker', () => {
     it('releases Send at expiry when the conversation is no longer streaming', async () => {
         const tracker = new QaapStopAckTracker();
         const done = tracker.track('c1', new Promise(() => undefined), {
-            isStillStreaming: () => false,
+            isStillStreaming: async () => false,
             timeoutMs: 5,
             onSettled: () => undefined,
         });
@@ -86,8 +86,8 @@ describe('QaapStopAckTracker', () => {
         const tracker = new QaapStopAckTracker();
         const first = deferred();
         const second = deferred();
-        await tracker.track('c1', first.promise, { isStillStreaming: () => true, timeoutMs: 5, onSettled: () => undefined });
-        const retry = tracker.track('c1', second.promise, { isStillStreaming: () => true, onSettled: () => undefined });
+        await tracker.track('c1', first.promise, { isStillStreaming: async () => true, timeoutMs: 5, onSettled: () => undefined });
+        const retry = tracker.track('c1', second.promise, { isStillStreaming: async () => true, onSettled: () => undefined });
 
         first.resolve();
         await wait(5);
