@@ -184,23 +184,26 @@ function forceNodePreviewPortImport(kind: QaapProjectKind): string {
 }
 
 /**
- * Directory a Theia preview uses as its HOME: `.qaap/preview-home` under the project root (`fsPath`).
- * Keeps the dev server's `~/.theia` and Qaap's `~/.qaap` stores out of the host user's home.
+ * Directory a Theia preview uses as its HOME: `node_modules/.cache/qaap-preview-home` under the
+ * preview root (`fsPath`). `node_modules` is git-ignored in Node apps, so the directory never gets
+ * committed, and the dev server's `~/.theia` and Qaap's `~/.qaap` stores stay out of the host home.
  */
-export function previewHomeDirFor(projectRootFsPath: string): string {
-    return `${projectRootFsPath.replace(/[\\/]+$/, '')}/.qaap/preview-home`;
+export function previewHomeDirFor(previewRootFsPath: string): string {
+    return `${previewRootFsPath.replace(/[\\/]+$/, '')}/node_modules/.cache/qaap-preview-home`;
 }
 
 /**
  * Prefixes a Theia dev command with its own HOME and `THEIA_CONFIG_DIR` under `previewHomeDir`.
  * Node's `os.homedir()` reads `HOME` on POSIX and `USERPROFILE` on Windows, so both are set there.
+ * POSIX uses `export ... &&` so the variables reach every command of a chain (`a && b`), and Windows
+ * `set` lines persist across `&&` within the same cmd.exe line.
  */
 export function prefixTheiaPreviewHomeEnv(command: string, previewHomeDir: string, isWindows: boolean = isWorkspaceHostWindows()): string {
     const configDir = `${previewHomeDir}/.theia`;
     if (isWindows) {
         return `set USERPROFILE=${previewHomeDir}&& set HOME=${previewHomeDir}&& set THEIA_CONFIG_DIR=${configDir}&& ${command}`;
     }
-    return `HOME=${shellSingleQuote(previewHomeDir)} THEIA_CONFIG_DIR=${shellSingleQuote(configDir)} ${command}`;
+    return `export HOME=${shellSingleQuote(previewHomeDir)} THEIA_CONFIG_DIR=${shellSingleQuote(configDir)} && ${command}`;
 }
 
 /** Gives a Theia dev command its own HOME; other frameworks keep the host environment. */
