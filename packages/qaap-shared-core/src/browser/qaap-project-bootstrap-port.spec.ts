@@ -11,6 +11,8 @@ import { join } from 'path';
 import URI from '@theia/core/lib/common/uri';
 import {
     getImplicitDevPort,
+    DEV_PREVIEW_HEALTH_BASE_INTERVAL_MS,
+    devPreviewHealthDelayMs,
     isolateTheiaPreviewCommand,
     isReservedIdePort,
     pickAlternateDevPort,
@@ -338,6 +340,14 @@ describe('qaap-project-bootstrap-port', () => {
         const cwd = new URI('file:///tmp/qaap-chain-home-spec');
         const command = isolateTheiaPreviewCommand('true && printf %s "$HOME"', { isTheiaApp: true, cwd });
         expect(execFileSync('/bin/sh', ['-c', command], { encoding: 'utf8' })).to.equal(previewHomeDirFor('/tmp/qaap-chain-home-spec'));
+    });
+
+    it('spaces health probes 2.5 s, 5 s, 10 s, then 15 s while the server stays healthy', () => {
+        expect([0, 1, 2, 3, 4, 9].map(devPreviewHealthDelayMs)).to.deep.equal([2500, 5000, 10000, 15000, 15000, 15000]);
+    });
+
+    it('returns the probe spacing to 2.5 s when the healthy streak resets', () => {
+        expect(devPreviewHealthDelayMs(0)).to.equal(DEV_PREVIEW_HEALTH_BASE_INTERVAL_MS);
     });
 
     it('isolates only Theia previews: other apps keep the host HOME', () => {
