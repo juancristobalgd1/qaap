@@ -159,6 +159,9 @@ jobs:
       - name: Checkout
         if: needs.gate.outputs.redundant != 'true'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          # On a PR, HEAD is the merge commit and HEAD^1 the base tip: enough for the affected-tests diff.
+          fetch-depth: 2
 
       - name: Use Node.js ${{ matrix.node }}
         if: needs.gate.outputs.redundant != 'true'
@@ -228,8 +231,21 @@ jobs:
       - name: Test (headless)
         if: needs.gate.outputs.redundant != 'true' && matrix.tests != 'skip'
         shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           npm run rebuild:browser
+          # PRs test only the packages they change plus their dependents, when every changed file is under
+          # packages/ (a change to configs/, scripts/, root manifests or anything else runs everything).
+          # master pushes and manual runs always run the whole suite, so nothing escapes past the merge.
+          if [[ "${EVENT_NAME}" == "pull_request" ]] && git rev-parse -q --verify HEAD^1 >/dev/null; then
+            changed="$(git diff --name-only HEAD^1 HEAD)"
+            if [[ -n "${changed}" ]] && ! grep -qv '^packages/' <<< "${changed}"; then
+              echo "Affected-only tests (changed: $(cut -d/ -f2 <<< "${changed}" | sort -u | tr '\n' ' '))"
+              npx lerna run --scope "@theia/!(example-)*" test --stream --concurrency=1 --since HEAD^1 --include-dependents
+              exit 0
+            fi
+          fi
           npm run test:theia
 
       - name: Test (browser)
