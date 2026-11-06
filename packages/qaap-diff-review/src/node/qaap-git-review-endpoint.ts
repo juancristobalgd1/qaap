@@ -46,6 +46,7 @@ import {
     snapshotWorktreeTree,
     type QaapTreeGitResult,
 } from '@theia/qaap-shared-core/lib/node/qaap-git-tree-diff';
+import { QaapAsyncRoute } from '@theia/qaap-shared-core/lib/node/qaap-async-route';
 
 interface QaapHostedPushTarget {
     readonly branch: string;
@@ -170,42 +171,18 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
     protected readonly changedFilesSnapshots = new Map<string, QaapGitChangedFilesSnapshot>();
 
     configure(app: Application): void {
-        app.get(`${QAAP_GIT_REVIEW_API_PATH}/changes`, (req, res) => {
-            void this.handleChanges(req, res);
-        });
-        app.get(`${QAAP_GIT_REVIEW_API_PATH}/diff`, (req, res) => {
-            void this.handleDiff(req, res);
-        });
-        app.get(`${QAAP_GIT_REVIEW_API_PATH}/history`, (req, res) => {
-            void this.handleHistory(req, res);
-        });
-        app.get(`${QAAP_GIT_REVIEW_API_PATH}/branches`, (req, res) => {
-            void this.handleBranches(req, res);
-        });
-        app.post(`${QAAP_GIT_REVIEW_API_PATH}/checkout`, (req, res) => {
-            void this.handleCheckout(req, res);
-        });
-        app.post(`${QAAP_GIT_REVIEW_API_PATH}/delete-branch`, (req, res) => {
-            void this.handleDeleteBranch(req, res);
-        });
-        app.post(`${QAAP_GIT_REVIEW_API_PATH}/stage`, (req, res) => {
-            void this.handleStage(req, res);
-        });
-        app.post(`${QAAP_GIT_REVIEW_API_PATH}/stage-hunk`, (req, res) => {
-            void this.handleStageHunk(req, res);
-        });
-        app.post(`${QAAP_GIT_REVIEW_API_PATH}/discard-hunk`, (req, res) => {
-            void this.handleDiscardHunk(req, res);
-        });
-        app.post(`${QAAP_GIT_REVIEW_API_PATH}/discard`, (req, res) => {
-            void this.handleDiscard(req, res);
-        });
-        app.post(`${QAAP_GIT_REVIEW_API_PATH}/commit-workflow`, (req, res) => {
-            void this.handleCommitWorkflow(req, res);
-        });
-        app.get(`${QAAP_GIT_REVIEW_API_PATH}/commit-context`, (req, res) => {
-            void this.handleCommitContext(req, res);
-        });
+        app.get(`${QAAP_GIT_REVIEW_API_PATH}/changes`, QaapAsyncRoute.wrap('qaap-git-review', (req, res) => this.handleChanges(req, res)));
+        app.get(`${QAAP_GIT_REVIEW_API_PATH}/diff`, QaapAsyncRoute.wrap('qaap-git-review', (req, res) => this.handleDiff(req, res)));
+        app.get(`${QAAP_GIT_REVIEW_API_PATH}/history`, QaapAsyncRoute.wrap('qaap-git-review', (req, res) => this.handleHistory(req, res)));
+        app.get(`${QAAP_GIT_REVIEW_API_PATH}/branches`, QaapAsyncRoute.wrap('qaap-git-review', (req, res) => this.handleBranches(req, res)));
+        app.post(`${QAAP_GIT_REVIEW_API_PATH}/checkout`, QaapAsyncRoute.wrap('qaap-git-review', (req, res) => this.handleCheckout(req, res)));
+        app.post(`${QAAP_GIT_REVIEW_API_PATH}/delete-branch`, QaapAsyncRoute.wrap('qaap-git-review', (req, res) => this.handleDeleteBranch(req, res)));
+        app.post(`${QAAP_GIT_REVIEW_API_PATH}/stage`, QaapAsyncRoute.wrap('qaap-git-review', (req, res) => this.handleStage(req, res)));
+        app.post(`${QAAP_GIT_REVIEW_API_PATH}/stage-hunk`, QaapAsyncRoute.wrap('qaap-git-review', (req, res) => this.handleStageHunk(req, res)));
+        app.post(`${QAAP_GIT_REVIEW_API_PATH}/discard-hunk`, QaapAsyncRoute.wrap('qaap-git-review', (req, res) => this.handleDiscardHunk(req, res)));
+        app.post(`${QAAP_GIT_REVIEW_API_PATH}/discard`, QaapAsyncRoute.wrap('qaap-git-review', (req, res) => this.handleDiscard(req, res)));
+        app.post(`${QAAP_GIT_REVIEW_API_PATH}/commit-workflow`, QaapAsyncRoute.wrap('qaap-git-review', (req, res) => this.handleCommitWorkflow(req, res)));
+        app.get(`${QAAP_GIT_REVIEW_API_PATH}/commit-context`, QaapAsyncRoute.wrap('qaap-git-review', (req, res) => this.handleCommitContext(req, res)));
     }
 
     /** Changed files plus a truncated combined diff — input for AI commit-message generation. */

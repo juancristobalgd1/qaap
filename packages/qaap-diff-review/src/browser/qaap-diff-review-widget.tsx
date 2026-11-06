@@ -42,6 +42,7 @@ import {
 } from '../common/qaap-verify-commit-readiness';
 import { confirmVerifyCommitReadiness } from './qaap-verify-commit-confirm';
 import { QaapBulkReviewAction, runQaapBulkReviewAction } from './qaap-diff-review-bulk-action';
+import { QaapUserFacingErrors } from '@theia/qaap-adapters/lib/common/qaap-user-facing-error';
 
 /** Git extension commands used by the commit without a message (see also QAAP_BULK_REVIEW_GIT_COMMANDS). */
 const GIT_STAGE_ALL = 'git.stageAll';
@@ -970,8 +971,7 @@ export class QaapDiffReviewWidget extends ReactWidget {
                     }),
                 });
                 if (!response.ok) {
-                    const body = await response.json().catch(() => ({})) as { error?: string };
-                    throw new Error(body.error ?? `commit workflow failed (${response.status})`);
+                    throw await QaapUserFacingErrors.fromResponse(response, `commit workflow failed (${response.status})`);
                 }
                 const result = await response.json().catch(() => ({})) as { branch?: string; pushedTo?: QaapGitPushDestination };
                 if (result.pushedTo) {
@@ -1457,8 +1457,7 @@ export class QaapDiffReviewWidget extends ReactWidget {
                 body: JSON.stringify({ root: this.rootFsPath, file, hunkIndex }),
             });
             if (!response.ok) {
-                const body = await response.json().catch(() => ({})) as { error?: string };
-                throw new Error(body.error ?? `request failed (${response.status})`);
+                throw await QaapUserFacingErrors.fromResponse(response, `request failed (${response.status})`);
             }
             await this.refresh();
         } catch (error) {
@@ -1497,8 +1496,7 @@ export class QaapDiffReviewWidget extends ReactWidget {
             body: JSON.stringify({ root: this.rootFsPath, file, ...(this.activeBaseCommit() ? { baseCommit: this.activeBaseCommit() } : {}) }),
         });
         if (!response.ok) {
-            const body = await response.json().catch(() => ({})) as { error?: string };
-            throw new Error(body.error ?? `request failed (${response.status})`);
+            throw await QaapUserFacingErrors.fromResponse(response, `request failed (${response.status})`);
         }
     }
 

@@ -26,6 +26,7 @@ import { isQaapVerificationScriptName } from './qaap-agent-verification';
 import { QaapWorkflowTemplateRegistry } from '../common/qaap-workflow-template-registry';
 import { QaapPersistedWorkflowRun, QaapWorkflowRunRequestError, QaapWorkflowRunStore } from './qaap-workflow-run-store';
 import { QaapWorkflowService } from './qaap-workflow-service';
+import { QaapAsyncRoute } from '@theia/qaap-shared-core/lib/node/qaap-async-route';
 
 /** Authenticated HTTP API for Dynamic Workflow runs (ADR-001). */
 @injectable()
@@ -46,9 +47,9 @@ export class QaapWorkflowEndpoint implements BackendApplicationContribution {
     configure(app: Application): void {
         app.get(`${QAAP_WORKFLOW_API_PATH}/templates`, (req, res) => this.handleListTemplates(req, res));
         app.get(QAAP_WORKFLOW_API_PATH, (req, res) => this.handleListRuns(req, res));
-        app.post(QAAP_WORKFLOW_API_PATH, (req, res) => void this.handleStart(req, res));
+        app.post(QAAP_WORKFLOW_API_PATH, QaapAsyncRoute.wrap('qaap-workflow', (req, res) => this.handleStart(req, res)));
         app.get(`${QAAP_WORKFLOW_API_PATH}/:id`, (req, res) => this.handleGetRun(req, res));
-        app.post(`${QAAP_WORKFLOW_API_PATH}/:id/continue`, (req, res) => void this.handleContinue(req, res));
+        app.post(`${QAAP_WORKFLOW_API_PATH}/:id/continue`, QaapAsyncRoute.wrap('qaap-workflow', (req, res) => this.handleContinue(req, res)));
     }
 
     protected handleListTemplates(req: Request, res: Response): void {

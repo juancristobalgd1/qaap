@@ -30,6 +30,7 @@ import { QaapTenantActivityTracker } from './qaap-tenant-activity-tracker';
 import { QaapTenantContainerReaper } from './qaap-tenant-container-reaper';
 import { QaapTenantRuntimeMetrics } from './qaap-tenant-runtime-metrics';
 import { QaapTenantRuntimeStore } from './qaap-tenant-runtime-store';
+import { QaapAsyncRoute } from '@theia/qaap-shared-core/lib/node/qaap-async-route';
 
 const ACTIVITY_REASONS = new Set<QaapTenantActivityReason>([
     'agent', 'terminal', 'websocket', 'workspace', 'preview', 'job', 'deploy', 'user',
@@ -128,9 +129,7 @@ export class QaapTenantRuntimeEndpoint implements BackendApplicationContribution
         app.get(`${QAAP_TENANT_RUNTIME_API_PATH}/metrics`, (req, res) => {
             this.handleMetrics(req, res);
         });
-        app.post(`${QAAP_TENANT_RUNTIME_API_PATH}/wake`, (req, res) => {
-            void this.handleWake(req, res);
-        });
+        app.post(`${QAAP_TENANT_RUNTIME_API_PATH}/wake`, QaapAsyncRoute.wrap('qaap-tenant-runtime', (req, res) => this.handleWake(req, res)));
         app.get(`${QAAP_TENANT_RUNTIME_API_PATH}/busy`, (req, res) => {
             this.handleBusy(req, res);
         });

@@ -699,7 +699,7 @@ export async function listAllConversationGroups(options?: { readonly onRetry?: (
         onRetry: options?.onRetry,
     });
     if (!response.ok) {
-        throw new Error(response.statusText);
+        throw await QaapUserFacingErrors.fromResponse(response);
     }
     const body = await response.json() as { groups?: QaapAgentConversationGroupDTO[] };
     return body.groups ?? [];
@@ -708,7 +708,7 @@ export async function listAllConversationGroups(options?: { readonly onRetry?: (
 export async function getConversation(id: string): Promise<QaapAgentConversationDTO> {
     const response = await fetch(`${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(id)}`, { credentials: 'include' });
     if (!response.ok) {
-        throw new Error(response.statusText);
+        throw await QaapUserFacingErrors.fromResponse(response);
     }
     return response.json() as Promise<QaapAgentConversationDTO>;
 }
@@ -1028,16 +1028,7 @@ export async function respondTaskPullRequestConsent(id: string, allow: boolean):
 
 async function readTaskPlanResponse(response: Response): Promise<QaapAgentConversationDTO> {
     if (!response.ok) {
-        let message = response.statusText;
-        try {
-            const body = await response.json() as { error?: unknown };
-            if (typeof body.error === 'string' && body.error.trim()) {
-                message = body.error;
-            }
-        } catch {
-            // Non-JSON error body — keep the status text.
-        }
-        throw new Error(message);
+        throw await QaapUserFacingErrors.fromResponse(response);
     }
     return response.json() as Promise<QaapAgentConversationDTO>;
 }
@@ -1107,7 +1098,7 @@ export async function cancelConversationHttp(id: string, signal?: AbortSignal): 
         signal,
     });
     if (!response.ok) {
-        const error: QaapConversationCancelError = Object.assign(new Error(response.statusText), { status: response.status });
+        const error: QaapConversationCancelError = Object.assign(await QaapUserFacingErrors.fromResponse(response), { status: response.status });
         throw error;
     }
     // The answer carries the stopped conversation (with its "Turn cancelled." trace); an empty body is tolerated.
@@ -1140,16 +1131,7 @@ export async function cancelConversation(id: string, signal?: AbortSignal): Prom
 
 async function readGoalLoopResponse(response: Response): Promise<QaapGoalLoopResponseDTO> {
     if (!response.ok) {
-        let message = response.statusText;
-        try {
-            const body = await response.json() as { error?: unknown };
-            if (typeof body.error === 'string' && body.error.trim()) {
-                message = body.error;
-            }
-        } catch {
-            // Non-JSON error body — keep the status text.
-        }
-        throw new Error(message);
+        throw await QaapUserFacingErrors.fromResponse(response);
     }
     return response.json() as Promise<QaapGoalLoopResponseDTO>;
 }
@@ -1194,7 +1176,7 @@ export async function startConversationVisualRepair(id: string, sourceAgentMessa
         body: JSON.stringify({ sourceAgentMessageId }),
     });
     if (!response.ok) {
-        throw new Error(response.statusText);
+        throw await QaapUserFacingErrors.fromResponse(response);
     }
     return response.json() as Promise<QaapAgentConversationDTO>;
 }
@@ -1207,7 +1189,7 @@ export async function cancelConversationRun(id: string, userMessageId: string): 
         body: JSON.stringify({ userMessageId }),
     });
     if (!response.ok) {
-        throw new Error(response.statusText);
+        throw await QaapUserFacingErrors.fromResponse(response);
     }
 }
 
@@ -1274,7 +1256,7 @@ export async function deleteConversation(id: string): Promise<void> {
         credentials: 'include',
     });
     if (!response.ok && response.status !== 404) {
-        throw new Error(response.statusText);
+        throw await QaapUserFacingErrors.fromResponse(response);
     }
 }
 
