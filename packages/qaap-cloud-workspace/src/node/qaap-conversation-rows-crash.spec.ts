@@ -69,7 +69,12 @@ describe('Conversation rows after a real SIGKILL', function (): void {
                 console.log('survived');
             `, databasePath], { encoding: 'utf8' });
 
-            expect(child.signal).to.equal('SIGKILL');
+            if (process.platform === 'win32') {
+                // Windows has no signals: process.kill(pid, 'SIGKILL') is TerminateProcess, a non-zero exit code (1).
+                expect(child.status).to.be.a('number').and.not.equal(0);
+            } else {
+                expect(child.signal).to.equal('SIGKILL');
+            }
             expect(child.stdout).to.not.contain('survived');
             expect(integrityCheck(databasePath)).to.equal('ok');
 
