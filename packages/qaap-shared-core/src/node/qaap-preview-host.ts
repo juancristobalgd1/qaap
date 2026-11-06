@@ -46,10 +46,31 @@ export function resolveQaapPreviewBaseDomainForRequest(rawHost: string | undefin
     } catch {
         return undefined;
     }
-    if (parsed.hostname.toLowerCase() !== 'localhost') {
+    // An isolated request arrives on `<label>.localhost`; its base is the same loopback origin.
+    const hostname = parsed.hostname.toLowerCase();
+    if (hostname !== 'localhost' && !hostname.endsWith('.localhost')) {
         return undefined;
     }
     return parsed.port ? `localhost:${parsed.port}` : 'localhost';
+}
+
+/**
+ * Origin of the Qaap app that frames an isolated preview host: the explicit `QAAP_OAUTH_PUBLIC_URL`,
+ * or in local isolation the loopback origin of the same port. Preview frame headers and the bridge
+ * loader must name this origin, never the preview host itself. Undefined when no origin applies.
+ */
+export function resolveQaapIsolatedParentOrigin(rawHost: string | undefined, env: NodeJS.ProcessEnv = process.env): string | undefined {
+    const explicit = env.QAAP_OAUTH_PUBLIC_URL?.trim();
+    if (explicit) {
+        try {
+            const url = new URL(explicit);
+            return url.protocol === 'https:' || url.protocol === 'http:' ? url.origin : undefined;
+        } catch {
+            return undefined;
+        }
+    }
+    const base = resolveQaapPreviewBaseDomainForRequest(rawHost, env);
+    return base ? `http://${base}` : undefined;
 }
 
 /**

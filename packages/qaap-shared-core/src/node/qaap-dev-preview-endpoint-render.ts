@@ -25,7 +25,7 @@ import {
     type QaapPreviewIdentity,
 } from '../common/qaap-preview-identity';
 import { QAAP_PREVIEW_ROUTE_HEADER, formatQaapPreviewRoutes, type QaapPreviewRoute } from '../common/qaap-preview-route';
-import { parseQaapPreviewHostLabel, resolveQaapPreviewBaseDomain } from './qaap-preview-host';
+import { parseQaapPreviewHostLabel, resolveQaapIsolatedParentOrigin, resolveQaapPreviewBaseDomain } from './qaap-preview-host';
 import { canSignalProcessGroup, isSelfOrUnsafeSignalTarget, terminateListenersOnPort } from './qaap-dev-preview-port-listener';
 import { PREVIEW_RESERVATION_START_GRACE_MS, canonicalizeQaapPreviewRoot, parseClaimOsProcessId } from './qaap-dev-preview-endpoint';
 import { PREVIEW_PORT_ALLOCATION_ATTEMPTS } from './qaap-dev-preview-endpoint';
@@ -130,7 +130,8 @@ export function earlyMiddlewareExtracted(ctx: QaapDevPreviewEndpointContext): Ha
             }
             const record = ctx.portRegistry.getByHostLabel(hostLabel);
             if (!record) {
-                respondUnknownPreviewHost(res, qaapPublicOriginFromEnv());
+                const rawHost = ctx.firstHeaderValue(req.headers['x-forwarded-host']) ?? ctx.firstHeaderValue(req.headers.host);
+                respondUnknownPreviewHost(res, resolveQaapIsolatedParentOrigin(rawHost) ?? qaapPublicOriginFromEnv());
                 return;
             }
             ctx.portRegistry.touchPreview(record.previewId, record.ownerLogin);

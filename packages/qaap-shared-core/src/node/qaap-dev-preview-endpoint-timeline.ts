@@ -2,7 +2,7 @@
 
 import type { Request, Response } from '@theia/core/shared/express';
 import * as http from 'http';
-import { buildQaapPreviewHostLabel, parseQaapPreviewHostLabel, resolveQaapPreviewBaseDomain, resolveQaapPreviewBaseDomainForRequest } from './qaap-preview-host';
+import { buildQaapPreviewHostLabel, parseQaapPreviewHostLabel, resolveQaapIsolatedParentOrigin, resolveQaapPreviewBaseDomain, resolveQaapPreviewBaseDomainForRequest } from './qaap-preview-host';
 import { resolveQaapPublicOrigin } from './qaap-github-oauth-config';
 import type { QaapDevPreviewRecord } from './qaap-dev-preview-port-registry';
 import { buildQaapPreviewUpstreamHeaders, sanitizeQaapPreviewResponseHeaders } from './qaap-dev-preview-forward-headers';
@@ -56,7 +56,7 @@ export async function forwardHttpExtracted(ctx: QaapDevPreviewEndpointContext, i
             // Every proxied preview is rendered inside Qaap's mini-browser. Remove upstream
             // anti-frame headers and scope frame-ancestors to this Qaap origin for identity,
             // legacy-port, and isolated-host preview routes alike.
-            ctx.rewritePreviewFrameHeaders(responseHeaders, ctx.resolvePublicOrigin(incoming));
+            ctx.rewritePreviewFrameHeaders(responseHeaders, previewParentOrigin(ctx, incoming, publicPrefix));
             if (incoming.headers['x-qaap-preview-referer-id']) {
                 responseHeaders['cache-control'] = 'private, no-store';
                 const vary = String(responseHeaders.vary ?? '').split(',').map(value => value.trim()).filter(Boolean);
@@ -196,6 +196,22 @@ function isNextPreviewDocument(body: string | Buffer): boolean {
  * `truncated` means `html` is only the look-ahead of a streamed document: head placement still
  * patches it, while Next's body-end scripts come back as a `trailer` for the end of the stream.
  */
+/**
+ * Origin that frames a preview response. An isolated host (empty prefix) is framed by the Qaap app,
+ * so its frame-ancestors and bridge parent name that app's origin, not the preview host.
+ */
+export function previewParentOrigin(ctx: QaapDevPreviewEndpointContext, incoming: Request | http.IncomingMessage, publicPrefix: string): string {
+        if (publicPrefix === '') {
+            const rawHost = ctx.firstHeaderValue(incoming.headers['x-forwarded-host'])
+                ?? ctx.firstHeaderValue(incoming.headers.host);
+            const isolatedParent = resolveQaapIsolatedParentOrigin(rawHost);
+            if (isolatedParent) {
+                return isolatedParent;
+            }
+        }
+        return ctx.resolvePublicOrigin(incoming as Request);
+}
+
 function injectPreviewHtmlScripts(
     ctx: QaapDevPreviewEndpointContext,
     incoming: Request,
@@ -204,7 +220,7 @@ function injectPreviewHtmlScripts(
     isNextDocument: boolean,
     truncated: boolean,
 ): { html: string; trailer: string } {
-    const bridge = buildQaapPreviewBridgeLoaderScript(html || ' ', ctx.resolvePublicOrigin(incoming));
+    const bridge = buildQaapPreviewBridgeLoaderScript(html || ' ', previewParentOrigin(ctx, incoming, publicPrefix));
     if (truncated && isNextDocument) {
         return { html, trailer: bridge + buildQaapPreviewTrailingScripts(html, publicPrefix) };
     }

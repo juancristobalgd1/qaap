@@ -5,7 +5,8 @@
 
 import { expect } from 'chai';
 import type { Handler, Request, Response } from '@theia/core/shared/express';
-import { buildQaapPreviewHostLabel, parseQaapPreviewHostLabel, resolveQaapPreviewBaseDomain, resolveQaapPreviewBaseDomainForRequest } from './qaap-preview-host';
+import { buildQaapPreviewHostLabel, parseQaapPreviewHostLabel, resolveQaapIsolatedParentOrigin, resolveQaapPreviewBaseDomain, resolveQaapPreviewBaseDomainForRequest } from './qaap-preview-host';
+import { rewritePreviewCspExtracted } from './qaap-dev-preview-endpoint-timeline';
 import { advertisePreviewRouteOnJson, earlyMiddlewareExtracted, isQaapTenantBackendRuntime } from './qaap-dev-preview-endpoint-render';
 import type { QaapDevPreviewEndpointContext } from './qaap-dev-preview-endpoint-context';
 import { QAAP_PREVIEW_ROUTE_HEADER } from '../common/qaap-preview-route';
@@ -26,6 +27,21 @@ describe('qaap-preview-host', () => {
         expect(resolveQaapPreviewBaseDomainForRequest('127.0.0.1:3101', local)).to.equal(undefined);
         expect(resolveQaapPreviewBaseDomainForRequest('192.168.1.20:3101', local)).to.equal(undefined);
         expect(resolveQaapPreviewBaseDomainForRequest(undefined, local)).to.equal(undefined);
+    });
+
+    it('keeps the local base domain on an isolated request host and frames it from the Qaap origin', () => {
+        const local = {};
+        const label = buildQaapPreviewHostLabel('u-alice-w-x-1', 'secret');
+        expect(resolveQaapPreviewBaseDomainForRequest(`${label}.localhost:3101`, local)).to.equal('localhost:3101');
+        expect(resolveQaapPreviewBaseDomainForRequest(`${label}.localhost`, local)).to.equal('localhost');
+        expect(resolveQaapIsolatedParentOrigin(`${label}.localhost:3101`, local)).to.equal('http://localhost:3101');
+        expect(resolveQaapIsolatedParentOrigin(`${label}.localhost:3101`, { QAAP_OAUTH_PUBLIC_URL: 'https://qaap.example.test/' }))
+            .to.equal('https://qaap.example.test');
+        expect(resolveQaapIsolatedParentOrigin(`${label}.127.0.0.1.nip.io:3101`, local)).to.equal(undefined);
+        // Upstream anti-frame answer through the isolated host: the parent is the Qaap origin.
+        const upstreamCsp = "frame-ancestors 'none'";
+        expect(rewritePreviewCspExtracted({} as QaapDevPreviewEndpointContext, upstreamCsp, 'http://localhost:3101'))
+            .to.equal('frame-ancestors http://localhost:3101');
     });
 
     it('never derives the base domain from the Host in production', () => {
@@ -161,6 +177,7 @@ describe('earlyMiddlewareExtracted', () => {
             touchPreview: () => undefined,
         } as unknown as QaapDevPreviewEndpointContext['portRegistry'],
         isIdeListenPort: () => false,
+        firstHeaderValue: (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value)?.split(',')[0]?.trim(),
     });
 
     it('answers isolated preview hosts before static files, at the origin root', () => {
