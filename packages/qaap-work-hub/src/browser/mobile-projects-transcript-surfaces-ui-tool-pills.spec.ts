@@ -151,7 +151,9 @@ describe('empty Browser run hint', () => {
 
 describe('Browser view follows the active project after a bootstrap change', () => {
 
-    function buildCtx(options: { activeId: string, openId: string, tab?: string }): {
+    const RUNNING = { phase: 'running', previewUrl: 'http://localhost:5173/' } as const;
+
+    function buildCtx(options: { activeId: string, openId: string, tab?: string, currentUrl?: string }): {
         ctx: MobileProjectsTranscriptSurfacesUiContext,
         renderPreviewTab: sinon.SinonSpy,
         updateLaunchStatus: sinon.SinonSpy,
@@ -169,6 +171,7 @@ describe('Browser view follows the active project after a bootstrap change', () 
                 executionSurfaceTabsUi: { activeExecutionTab: () => options.tab ?? 'preview' },
             },
             renderPreviewTab,
+            getTranscriptEmbeddedPreviewUrl: () => options.currentUrl,
             updateTranscriptPreviewLaunchStatus: updateLaunchStatus,
         } as unknown as MobileProjectsTranscriptSurfacesUiContext;
         return { ctx, renderPreviewTab, updateLaunchStatus };
@@ -176,7 +179,7 @@ describe('Browser view follows the active project after a bootstrap change', () 
 
     it('re-renders the preview of the project on screen after its bootstrap changes', () => {
         const { ctx, renderPreviewTab, updateLaunchStatus } = buildCtx({ activeId: 'vyyq', openId: 'vyyq' });
-        refreshPreviewForBootstrapChangeExtracted(ctx);
+        refreshPreviewForBootstrapChangeExtracted(ctx, RUNNING);
         expect(renderPreviewTab.calledOnce).to.equal(true);
         expect((renderPreviewTab.firstCall.args[0] as MobileProjectEntry).id).to.equal('vyyq');
         expect(updateLaunchStatus.calledOnce).to.equal(true);
@@ -184,13 +187,34 @@ describe('Browser view follows the active project after a bootstrap change', () 
 
     it('does not touch the Browser view for a project that is not on screen', () => {
         const { ctx, renderPreviewTab } = buildCtx({ activeId: 'vyyq', openId: 'qaap' });
-        refreshPreviewForBootstrapChangeExtracted(ctx);
+        refreshPreviewForBootstrapChangeExtracted(ctx, RUNNING);
         expect(renderPreviewTab.called).to.equal(false);
     });
 
     it('does not touch the Browser view while another execution tab is shown', () => {
         const { ctx, renderPreviewTab } = buildCtx({ activeId: 'vyyq', openId: 'vyyq', tab: 'files' });
-        refreshPreviewForBootstrapChangeExtracted(ctx);
+        refreshPreviewForBootstrapChangeExtracted(ctx, RUNNING);
         expect(renderPreviewTab.called).to.equal(false);
+    });
+
+    it('reacts once to repeated emissions with the same phase and URL', () => {
+        const { ctx, renderPreviewTab } = buildCtx({ activeId: 'vyyq', openId: 'vyyq' });
+        refreshPreviewForBootstrapChangeExtracted(ctx, RUNNING);
+        refreshPreviewForBootstrapChangeExtracted(ctx, { ...RUNNING, previewLogTail: 'vite ready' });
+        expect(renderPreviewTab.calledOnce).to.equal(true);
+    });
+
+    it('navigates when the URL changes', () => {
+        const { ctx, renderPreviewTab } = buildCtx({ activeId: 'vyyq', openId: 'vyyq' });
+        refreshPreviewForBootstrapChangeExtracted(ctx, RUNNING);
+        refreshPreviewForBootstrapChangeExtracted(ctx, { phase: 'running', previewUrl: 'http://localhost:5174/' });
+        expect(renderPreviewTab.calledTwice).to.equal(true);
+    });
+
+    it('never reassigns a frame that already shows the running URL', () => {
+        const { ctx, renderPreviewTab } = buildCtx({ activeId: 'vyyq', openId: 'vyyq', currentUrl: RUNNING.previewUrl });
+        refreshPreviewForBootstrapChangeExtracted(ctx, { phase: 'starting' });
+        refreshPreviewForBootstrapChangeExtracted(ctx, RUNNING);
+        expect(renderPreviewTab.calledOnce).to.equal(true);
     });
 });

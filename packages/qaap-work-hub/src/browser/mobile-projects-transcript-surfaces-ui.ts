@@ -232,6 +232,8 @@ export class MobileProjectsTranscriptSurfacesUi {
     public transcriptPreviewAppPickerCancel: (() => void) | undefined;
     /** @internal Project whose app picker was dismissed without a choice; drives the "Choose an app" state. */
     public transcriptPreviewAppPickerCancelledProjectId: string | undefined;
+    /** @internal Last (project, phase, readiness, URL) the Browser view reacted to; see refreshPreviewForBootstrapChangeExtracted. */
+    public lastBootstrapPreviewKey: string | undefined;
     /** Subscription to the bootstrap state of the project the Browser view follows; see {@link watchProjectBootstrapForPreview}. */
     protected projectBootstrapPreviewWatch: { readonly bootstrap: QaapProjectBootstrapService; readonly subscription: Disposable } | undefined;
 
@@ -340,7 +342,7 @@ export class MobileProjectsTranscriptSurfacesUi {
         this.projectBootstrapPreviewWatch?.subscription.dispose();
         this.projectBootstrapPreviewWatch = {
             bootstrap,
-            subscription: bootstrap.onStateChange(() => refreshPreviewForBootstrapChangeExtracted(this)),
+            subscription: bootstrap.onStateChange(state => refreshPreviewForBootstrapChangeExtracted(this, state)),
         };
     }
 

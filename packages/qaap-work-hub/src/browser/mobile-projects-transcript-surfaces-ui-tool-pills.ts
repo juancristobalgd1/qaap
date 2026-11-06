@@ -2,6 +2,7 @@ import type { MobileProjectsTranscriptSurfacesUiContext } from './mobile-project
 // Extracted from mobile-projects-transcript-surfaces-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
+import type { QaapBootstrapStateChange } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service';
 import { invalidateVerifyWorkspaceSnapshots } from '@theia/qaap-diff-review/lib/common/qaap-verify-commit-readiness';
 import { FileUri } from '@theia/core/lib/common/file-uri';
 import {
@@ -444,12 +445,22 @@ export function resolveEmptyPreviewRunAppName(snapshot: EmptyPreviewRunSnapshot 
  * previous project's frame up. Re-render the active project's preview, then re-evaluate the Run card,
  * which only reads a `ready-to-run` bootstrap.
  */
-export function refreshPreviewForBootstrapChangeExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext): void {
+export function refreshPreviewForBootstrapChangeExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, state: QaapBootstrapStateChange): void {
     const projectId = ctx.transcriptPreviewProjectId;
     const project = projectId ? ctx.host.projects.find(candidate => candidate.id === projectId) : undefined;
     const summary = ctx.host.transcriptOpenSummary;
     if (!project || !summary || ctx.host.transcriptOpenProject?.id !== project.id
         || ctx.host.executionSurfaceTabsUi.activeExecutionTab(project) !== 'preview') {
+        return;
+    }
+    // Bootstrap emits often (dev-server output, readiness). React only when the phase, readiness or URL moved.
+    const key = [project.id, state.phase, state.previewReadiness ?? '', state.previewUrl ?? ''].join('|');
+    if (key === ctx.lastBootstrapPreviewKey) {
+        return;
+    }
+    ctx.lastBootstrapPreviewKey = key;
+    // The frame already shows this project's running URL: never reassign its src or remount it.
+    if (state.phase === 'running' && state.previewUrl && ctx.getTranscriptEmbeddedPreviewUrl() === state.previewUrl) {
         return;
     }
     ctx.renderPreviewTab(project, summary);

@@ -59,6 +59,7 @@ export type MobileProjectsTranscriptSurfacesUiContextMember =
     | 'isTranscriptPreviewStoppable'
     | 'isTranscriptPreviewUrlFieldActive'
     | 'isTranscriptPreviewWaiting'
+    | 'lastBootstrapPreviewKey'
     | 'lastSyncedPreviewUrl'
     | 'matchesActivePreviewSummary'
     | 'mountFreshTranscriptTerminalSlide'
