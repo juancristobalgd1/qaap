@@ -26,6 +26,12 @@ export interface QaapAgentTaskBillingGateOptions {
     readonly retryDelayMs?: number;
 }
 
+/** Filled in as the gate learns about the turn, so a later crash can still be classified. */
+interface QaapAgentTurnBillingProbe {
+    /** Set once the turn is known to be (or not be) a hosted Codex turn; `undefined` while still unknown. */
+    hostedCodex?: boolean;
+}
+
 /** Retries a transient billing-store read before the caller decides how to degrade. */
 async function retryBillingRead<T>(read: () => Promise<T>, retryDelayMs: number): Promise<T> {
     let lastError: unknown;
@@ -57,6 +63,16 @@ export async function checkAgentTaskBillingGate(
     request: QaapCreateAgentTaskRequest,
     options: QaapAgentTaskBillingGateOptions = {},
 ): Promise<string | undefined> {
+    return checkAgentTaskBillingGateWithProbe(ctx, task, request, options, {});
+}
+
+async function checkAgentTaskBillingGateWithProbe(
+    ctx: QaapAgentTaskBillingGateContext,
+    task: QaapAgentTask,
+    request: QaapCreateAgentTaskRequest,
+    options: QaapAgentTaskBillingGateOptions,
+    probe: QaapAgentTurnBillingProbe,
+): Promise<string | undefined> {
     const billingStore = ctx.billingStore;
     const ownerLogin = task.ownerLogin;
     if (!ownerLogin || !billingStore) {
@@ -79,6 +95,7 @@ export async function checkAgentTaskBillingGate(
     const modelId = agentModel?.modelId ?? task.agentModel?.modelId ?? task.qaiqModel?.modelId;
     const agentId = ctx.resolveAgentId?.(request.prompt ?? '', request.agent, ownerLogin) ?? request.agent ?? task.agentId;
     const hostedCodex = isHostedCodexUsage(agentId, modelId) && await ctx.isAgentConnectedFresh?.(agentId ?? '', ownerLogin) !== true;
+    probe.hostedCodex = hostedCodex;
     if (account) {
         const hostedDenial = hostedCodex ? hostedModelDenialReason(account, modelId) : undefined;
         if (!hostedDenial) {
@@ -120,9 +137,16 @@ export async function resolveAgentTaskBillingRejection(
     request: QaapCreateAgentTaskRequest,
     options?: QaapAgentTaskBillingGateOptions,
 ): Promise<string | undefined> {
+    const probe: QaapAgentTurnBillingProbe = {};
     try {
-        return await checkAgentTaskBillingGate(ctx, task, request, options);
+        return await checkAgentTaskBillingGateWithProbe(ctx, task, request, options ?? {}, probe);
     } catch (error) {
+        // Same policy as the read branch: a BYOK turn is known not to be hosted Codex, so an unexpected
+        // error must not block work the user pays for with their own key. Unknown or hosted turns still fail closed.
+        if (probe.hostedCodex === false) {
+            console.error(`[qaap-billing] Entitlement gate crashed for task ${task.id}; letting the turn run (BYOK, fail-open).`, error);
+            return undefined;
+        }
         console.error(`[qaap-billing] Entitlement gate crashed for task ${task.id}; failing the turn.`, error);
         return nls.localize('qaap/billing/gateFailed', 'This turn could not be started because the entitlement check failed unexpectedly. Please try again.');
     }

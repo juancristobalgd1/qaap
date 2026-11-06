@@ -126,6 +126,37 @@ describe('checkAgentTaskBillingGate', () => {
         expect(await gate({ agentId: 'claude', modelId: BYOK_MODEL, cached: { canStartAgent: true } })).to.equal(undefined);
     });
 
+    it('lets a BYOK turn run when an unexpected error hits after the turn is known to be BYOK', async () => {
+        const base = context({ agentId: 'claude', modelId: BYOK_MODEL });
+        const ctx: QaapAgentTaskBillingGateContext = {
+            ...base,
+            billingStore: {
+                getOrCreateAccount: () => Promise.reject(new Error('SQLITE_BUSY: database is locked')),
+                peekEntitlements: () => { throw new Error('cache corrupt'); },
+            } as unknown as QaapBillingStore,
+        };
+        expect(await resolveAgentTaskBillingRejection(ctx, task, request, { retryDelayMs: 0 })).to.equal(undefined);
+    });
+
+    it('rejects a hosted Codex turn when an unexpected error hits after the turn is known to be hosted', async () => {
+        const base = context({ agentId: 'codex', modelId: HOSTED_MODEL });
+        const ctx: QaapAgentTaskBillingGateContext = {
+            ...base,
+            billingStore: {
+                getOrCreateAccount: () => Promise.reject(new Error('SQLITE_BUSY: database is locked')),
+                peekEntitlements: () => { throw new Error('cache corrupt'); },
+            } as unknown as QaapBillingStore,
+        };
+        const rejection = await resolveAgentTaskBillingRejection(ctx, task, request, { retryDelayMs: 0 });
+        expect(rejection).to.be.a('string').and.to.contain('entitlement check failed unexpectedly');
+    });
+
+    it('rejects a BYOK turn when the error hits before its kind is known', async () => {
+        const fixture: GateFixture = { agentId: 'claude', modelId: BYOK_MODEL, resolveModel: () => { throw new Error('boom'); } };
+        const rejection = await resolveAgentTaskBillingRejection(context(fixture), task, request, { retryDelayMs: 0 });
+        expect(rejection).to.be.a('string').and.to.contain('entitlement check failed unexpectedly');
+    });
+
     it('turns an unexpected gate error into a rejection line instead of throwing', async () => {
         const fixture: GateFixture = { agentId: 'codex', modelId: HOSTED_MODEL, resolveModel: () => { throw new Error('boom'); } };
         const rejection = await resolveAgentTaskBillingRejection(context(fixture), task, request, { retryDelayMs: 0 });
