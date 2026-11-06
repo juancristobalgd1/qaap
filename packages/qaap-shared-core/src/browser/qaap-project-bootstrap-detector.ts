@@ -65,6 +65,7 @@ interface PackageJsonShape {
     dependencies?: Record<string, unknown>;
     devDependencies?: Record<string, unknown>;
     workspaces?: unknown;
+    theia?: unknown;
 }
 
 /** Hard cap on sub-apps enumerated so we never freeze the UI on enormous monorepos. */
@@ -1139,6 +1140,10 @@ export class QaapProjectBootstrapDetector {
         if (!devScriptKey) {
             return undefined;
         }
+        // Electron apps cannot run inside a preview iframe, so they are never offered as previewable apps.
+        if (this.isElectronAppPackage(pkg, String(scripts[devScriptKey]))) {
+            return undefined;
+        }
         const { kind, expectedPort } = this.guessFramework(pkg);
         const pkgName = typeof pkg.name === 'string' && pkg.name.trim().length > 0
             ? pkg.name.trim()
@@ -1173,6 +1178,17 @@ export class QaapProjectBootstrapDetector {
                 previewStartCommand: devCommand,
             } : {}),
         };
+    }
+
+    /**
+     * True when the app is an Electron app: it depends on `electron`, declares `theia.target` `electron`,
+     * or its chosen dev script invokes electron.
+     */
+    protected isElectronAppPackage(pkg: PackageJsonShape, devScript: string): boolean {
+        const dependsOnElectron = [pkg.dependencies, pkg.devDependencies]
+            .some(deps => !!deps && typeof deps === 'object' && 'electron' in deps);
+        const theiaTarget = pkg.theia && typeof pkg.theia === 'object' ? (pkg.theia as { target?: unknown }).target : undefined;
+        return dependsOnElectron || theiaTarget === 'electron' || /electron/i.test(devScript);
     }
 
     protected relativePathFromRoot(rootUri: URI, appUri: URI): string | undefined {
