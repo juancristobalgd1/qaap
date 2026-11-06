@@ -481,7 +481,7 @@ export class QaapProjectBootstrapContribution implements FrontendApplicationCont
                 if (state.previewWaitTimedOut) {
                     return nls.localize('qaap/projectBootstrap/previewNotReady', 'Preview not ready');
                 }
-                if (state.previewReadiness === 'waiting-for-server') {
+                if (state.previewReadiness === 'waiting-for-server' || state.previewReadiness === 'compiling') {
                     return nls.localize('qaap/projectBootstrap/waitingForServer', 'Waiting for server…');
                 }
                 return nls.localize('qaap/projectBootstrap/starting', 'Starting dev server…');
@@ -528,7 +528,7 @@ export class QaapProjectBootstrapContribution implements FrontendApplicationCont
                         'Check the startup log, then retry.',
                     );
                 }
-                if (state.previewReadiness === 'waiting-for-server') {
+                if (state.previewReadiness === 'waiting-for-server' || state.previewReadiness === 'compiling') {
                     const port = state.activePort ? nls.localize('qaap/projectBootstrap/waitingOnPort', ' on :{0}', state.activePort) : '';
                     return nls.localize(
                         'qaap/projectBootstrap/waitingForServerSubtitle',

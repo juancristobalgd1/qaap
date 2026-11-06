@@ -214,7 +214,11 @@ export async function handleProbeExtracted(ctx: QaapDevPreviewEndpointContext, r
             res.json({ ready: false, previewUrl: buildQaapDevPreviewOpenUrl(origin, port) } satisfies QaapDevPreviewProbeResponse);
             return;
         }
-        const ready = await ctx.probeLocalDevServer(port);
+        const state = await ctx.probeLocalDevServerState(port);
+        const ready = state === 'ready';
+        // `listening` also covers a port that accepted the probe but is still compiling: the
+        // frontend keeps waiting for it instead of giving up on the first silent answer.
+        const listening = state !== 'down';
         const record = ctx.portRegistry.getByPort(port);
         const login = ctx.auth.resolveUserLogin(ctx.auth.authenticate(req));
         if (record && login === record.ownerLogin) {
@@ -226,6 +230,7 @@ export async function handleProbeExtracted(ctx: QaapDevPreviewEndpointContext, r
             const body: QaapDevPreviewProbeResponse = {
                 ready,
                 ...(ready ? { readiness: 'transport_ready' as const } : {}),
+                ...(listening ? { listening } : {}),
                 previewUrl: ctx.buildIdentityPreviewUrl(req, record),
                 previewId: record.previewId,
                 projectId: record.projectId,
@@ -242,6 +247,7 @@ export async function handleProbeExtracted(ctx: QaapDevPreviewEndpointContext, r
         const body: QaapDevPreviewProbeResponse = {
             ready,
             ...(ready ? { readiness: 'transport_ready' as const } : {}),
+            ...(listening ? { listening } : {}),
             previewUrl: buildQaapDevPreviewOpenUrl(origin, port),
         };
         res.json(body);

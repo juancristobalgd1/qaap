@@ -550,6 +550,10 @@ describe('QaapDevPreviewEndpoint', () => {
                 return Promise.resolve(this.listeningPorts.size > 0 ? this.listeningPorts.has(port) : this.listening);
             }
 
+            override async probeLocalDevServerState(port: number): Promise<'ready' | 'busy' | 'down'> {
+                return await this.probeLocalDevServer(port) ? 'ready' : 'down';
+            }
+
             /** Ports held by a non-HTTP listener; `realBindProbe` exercises the production bind test. */
             readonly boundPorts = new Set<number>();
             realBindProbe = false;
@@ -1895,6 +1899,10 @@ describe('QaapDevPreviewEndpoint', () => {
                 return Promise.resolve(this.listening);
             }
 
+            override async probeLocalDevServerState(): Promise<'ready' | 'busy' | 'down'> {
+                return await this.probeLocalDevServer() ? 'ready' : 'down';
+            }
+
             setCurrentFakes(login: string, registry: unknown): void {
                 const mutable = this as unknown as { auth: unknown; portRegistry: unknown };
                 mutable.auth = {
@@ -2136,6 +2144,10 @@ describe('QaapDevPreviewEndpoint identity probe state', () => {
 
         override probeLocalDevServer(): Promise<boolean> {
             return Promise.resolve(this.listening);
+        }
+
+        override async probeLocalDevServerState(): Promise<'ready' | 'busy' | 'down'> {
+            return await this.probeLocalDevServer() ? 'ready' : 'down';
         }
     }
 

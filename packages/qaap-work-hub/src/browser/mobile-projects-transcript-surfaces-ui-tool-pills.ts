@@ -327,15 +327,20 @@ export function updateTranscriptPreviewLaunchStatusExtracted(ctx: MobileProjects
                 'qaap/mobileProjects/previewLaunchInstallHint',
                 'The first launch can take a little longer. The preview will open automatically when installation finishes.',
             );
-        } else if (phase === 'starting' && bootstrapState?.previewReadiness === 'waiting-for-server') {
+        } else if (phase === 'starting' && (bootstrapState?.previewReadiness === 'waiting-for-server' || bootstrapState?.previewReadiness === 'compiling')) {
             title.textContent = nls.localize(
                 'qaap/mobileProjects/previewLaunchBuilding',
                 'Building your preview…',
             );
-            detail.textContent = nls.localize(
-                'qaap/mobileProjects/previewLaunchBuildHint',
-                'Waiting for the app to respond. This view will update automatically.',
-            );
+            detail.textContent = bootstrapState.previewReadiness === 'compiling'
+                ? nls.localize(
+                    'qaap/projectBootstrap/previewCompiling',
+                    'The app is compiling its first page. Large apps can take a minute or two.',
+                )
+                : nls.localize(
+                    'qaap/mobileProjects/previewLaunchBuildHint',
+                    'Waiting for the app to respond. This view will update automatically.',
+                );
         } else if (phase === 'running') {
             title.textContent = nls.localize(
                 'qaap/mobileProjects/previewLaunchOpening',

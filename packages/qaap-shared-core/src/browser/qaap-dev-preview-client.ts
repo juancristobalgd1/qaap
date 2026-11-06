@@ -17,7 +17,12 @@ import {
     type QaapDevPreviewProbeResponse,
 } from '../common/qaap-dev-preview';
 
-const PROBE_TIMEOUT_MS = 2500;
+/**
+ * Client-side budget for one probe. It must exceed the backend's own worst case, a HEAD and then a
+ * GET each waiting `PROBE_TIMEOUT_MS` (2 × 2500 ms) on a dev server that accepts but is still
+ * compiling; otherwise the client aborts first and never sees the `listening` answer.
+ */
+const PROBE_TIMEOUT_MS = 6000;
 
 /** Per-request timeout, combined with the caller's optional cancellation signal. */
 function probeSignal(signal?: AbortSignal): AbortSignal {
@@ -65,6 +70,16 @@ export interface WaitForDevPreviewOptions {
     readonly signal?: AbortSignal;
     /** Jitter source in [0, 1); injectable for deterministic tests. */
     readonly random?: () => number;
+    /**
+     * How long to keep polling a port that answers `listening` (its connection was accepted but the
+     * dev server has not answered yet, e.g. a first compile), measured from the first such answer.
+     * Listening probes do not use up `maxAttempts`. Unset: listening probes count like any other.
+     */
+    readonly listeningGraceMs?: number;
+    /** Called the first time a probe reports the port as listening. */
+    readonly onListening?: () => void;
+    /** Probe source; defaults to {@link probeQaapDevPreviewPort}. Injectable for tests. */
+    readonly probe?: (port: number, signal?: AbortSignal) => Promise<QaapDevPreviewProbeResponse>;
 }
 
 const MAX_PROBE_BACKOFF_MS = 4000;
@@ -98,27 +113,56 @@ export async function waitForQaapDevPreviewPort(
     if ((options.maxAttempts ?? 30) <= 0) {
         return undefined;
     }
-    const delays = devPreviewProbeBackoffDelays(options.maxAttempts ?? 30, options.intervalMs ?? 500, options.random);
-    for (let attempt = 0; attempt <= delays.length && !signal?.aborted; attempt++) {
-        const probe = await probeQaapDevPreviewPort(port, signal);
-        if (probe.ready) {
-            return probe;
+    const probe = options.probe ?? probeQaapDevPreviewPort;
+    const intervalMs = options.intervalMs ?? 500;
+    const graceMs = options.listeningGraceMs ?? 0;
+    const delays = devPreviewProbeBackoffDelays(options.maxAttempts ?? 30, intervalMs, options.random);
+    let attempt = 0;
+    let listeningSince: number | undefined;
+    while (!signal?.aborted) {
+        const result = await probe(port, signal);
+        if (result.ready) {
+            return result;
         }
-        if (attempt < delays.length && !signal?.aborted) {
-            await new Promise<void>(resolve => {
-                const onAbort = (): void => {
-                    clearTimeout(timer);
-                    resolve();
-                };
-                const timer = setTimeout(() => {
-                    signal?.removeEventListener('abort', onAbort);
-                    resolve();
-                }, delays[attempt]);
-                signal?.addEventListener('abort', onAbort, { once: true });
-            });
+        if (result.listening) {
+            if (listeningSince === undefined) {
+                listeningSince = Date.now();
+                options.onListening?.();
+            }
+            if (graceMs > 0) {
+                if (Date.now() - listeningSince >= graceMs) {
+                    return undefined;
+                }
+                // Still compiling: poll at the normal interval without spending an attempt.
+                await sleepUnlessAborted(intervalMs, signal);
+                continue;
+            }
         }
+        if (attempt >= delays.length) {
+            return undefined;
+        }
+        await sleepUnlessAborted(delays[attempt], signal);
+        attempt++;
     }
     return undefined;
+}
+
+/** Resolves after `ms`, or at once when `signal` has aborted (an already-fired abort never wakes a timer). */
+function sleepUnlessAborted(ms: number, signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) {
+        return Promise.resolve();
+    }
+    return new Promise<void>(resolve => {
+        const onAbort = (): void => {
+            clearTimeout(timer);
+            resolve();
+        };
+        const timer = setTimeout(() => {
+            signal?.removeEventListener('abort', onAbort);
+            resolve();
+        }, ms);
+        signal?.addEventListener('abort', onAbort, { once: true });
+    });
 }
 
 /** `signal` aborts the in-flight probe; an aborted probe resolves to the not-ready fallback. */
