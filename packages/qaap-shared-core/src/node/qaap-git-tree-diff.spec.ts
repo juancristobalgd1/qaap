@@ -137,6 +137,27 @@ describe('qaap-git-tree-diff against a real repository', () => {
         expect(fs.readFileSync(indexFile).equals(before)).to.equal(true);
     });
 
+    it('a seeded index copy keeps racy-git protection: a same-size edit in the index\'s second is snapshotted', async () => {
+        // Seconds-resolution stat: an edit with the same size and mtime as the index entry looks clean unless git
+        // knows the entry is racy (entry mtime >= index file mtime). A copy with a fresh mtime hides that.
+        git(root, ['config', 'core.trustctime', 'false']);
+        const file = path.join(root, 'a.ts');
+        const indexFile = path.join(root, '.git', 'index');
+        const instant = new Date(Math.floor(Date.now() / 1000) * 1000 - 100_000);
+        fs.utimesSync(file, instant, instant);
+        git(root, ['add', '--', 'a.ts']);
+        fs.utimesSync(indexFile, instant, instant);
+        fs.writeFileSync(file, 'two\n');
+        fs.utimesSync(file, instant, instant);
+        // --no-optional-locks: a plain status would rewrite the index and smudge the racy entry itself.
+        expect(git(root, ['--no-optional-locks', 'status', '--porcelain']).stdout, 'the real index sees the racy edit').to.contain('a.ts');
+
+        const tree = await snapshotWorktreeTree(root, gitWrite, path.join(root, '.git'), indexFile);
+
+        expect(tree).to.match(/^[0-9a-f]{40}$/);
+        expect(git(root, ['cat-file', '-p', `${tree}:a.ts`]).stdout).to.equal('two\n');
+    });
+
     it('returns undefined when the baseline commit does not exist', async () => {
         const tree = await snapshotWorktreeTree(root, gitWrite, path.join(root, '.git'));
         expect(await computeTreeDiff(root, '0'.repeat(40), tree!, gitRead)).to.equal(undefined);
