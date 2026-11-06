@@ -447,6 +447,7 @@ export function stopTranscriptPreviewExtracted(ctx: MobileProjectsTranscriptSurf
     ctx.host.transcriptPreviewRequestRunning = false;
     ctx.host.transcriptPreviewRequestPending = false;
     ctx.closeTranscriptPreviewAppPicker();
+    ctx.transcriptPreviewAppPickerCancelledProjectId = undefined;
     ctx.transcriptPreviewEnsureRequests.clear();
     ctx.stopTranscriptPreviewTabProbe();
     ctx.stopTranscriptPreviewIdentityWatch();

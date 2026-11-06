@@ -116,6 +116,7 @@ export type MobileProjectsTranscriptSurfacesUiContextMember =
     | 'transcriptHistoryUi'
     | 'transcriptPreviewAppPicker'
     | 'transcriptPreviewAppPickerCancel'
+    | 'transcriptPreviewAppPickerCancelledProjectId'
     | 'transcriptPreviewConversationScopeId'
     | 'transcriptPreviewEnsureRequests'
     | 'transcriptPreviewIdentityHealthyChecks'

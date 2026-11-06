@@ -263,8 +263,11 @@ export function updateTranscriptPreviewLaunchStatusExtracted(ctx: MobileProjects
         overlay.remove();
         overlay = undefined;
     }
+    // The app picker was dismissed without a choice: say so instead of leaving the frame blank.
+    const awaitingAppChoice = !requestActive && !failed && projectId !== ''
+        && ctx.transcriptPreviewAppPickerCancelledProjectId === projectId;
     if (!frameSlot || root?.classList.contains(USER_NAVIGATED_PREVIEW_CLASS)
-        || (!requestActive && !(failed && overlay))) {
+        || (!requestActive && !(failed && overlay) && !awaitingAppChoice)) {
         overlay?.remove();
         return;
     }
@@ -276,11 +279,12 @@ export function updateTranscriptPreviewLaunchStatusExtracted(ctx: MobileProjects
     }
 
     const showFailure = !requestActive && failed;
+    const showAppChoice = awaitingAppChoice;
     const status = document.createElement('div');
     status.className = 'theia-mobile-transcript-preview-launch-card';
     status.setAttribute('role', showFailure ? 'alert' : 'status');
     status.setAttribute('aria-live', showFailure ? 'assertive' : 'polite');
-    if (!showFailure) {
+    if (!showFailure && !showAppChoice) {
         status.setAttribute('aria-busy', 'true');
         const spinner = document.createElement('span');
         spinner.className = 'codicon codicon-loading theia-mobile-transcript-preview-launch-spinner';
@@ -324,6 +328,28 @@ export function updateTranscriptPreviewLaunchStatusExtracted(ctx: MobileProjects
             });
         }
         status.append(retry);
+    } else if (showAppChoice) {
+        title.textContent = nls.localize('qaap/projectBootstrap/appPickerCancelledTitle', 'Choose an app to preview');
+        detail.textContent = nls.localize(
+            'qaap/projectBootstrap/appPickerCancelledHint',
+            'This repository has several apps. Pick the one Qaap should run.',
+        );
+        status.append(title, detail);
+        const choose = document.createElement('button');
+        choose.type = 'button';
+        choose.className = 'theia-mobile-transcript-preview-launch-retry';
+        choose.textContent = nls.localize('qaap/projectBootstrap/appPickerChoose', 'Choose app');
+        choose.addEventListener('click', () => {
+            const project = ctx.host.transcriptOpenProject;
+            const summary = ctx.host.transcriptOpenSummary;
+            if (project && summary) {
+                void ctx.requestTranscriptPreview(project, summary, {
+                    revealPreviewTab: true,
+                    allowAgentFallback: false,
+                });
+            }
+        });
+        status.append(choose);
     } else {
         const phase = bootstrapState?.phase;
         if (phase === 'installing') {
