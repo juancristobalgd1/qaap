@@ -439,6 +439,25 @@ export function resolveEmptyPreviewRunAppName(snapshot: EmptyPreviewRunSnapshot 
 }
 
 /**
+ * The Browser view renders from its own probes, so a bootstrap transition for the project on screen
+ * (starting, running on a URL, failed) never reached it: a project switch left the Run card or the
+ * previous project's frame up. Re-render the active project's preview, then re-evaluate the Run card,
+ * which only reads a `ready-to-run` bootstrap.
+ */
+export function refreshPreviewForBootstrapChangeExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext): void {
+    const projectId = ctx.transcriptPreviewProjectId;
+    const project = projectId ? ctx.host.projects.find(candidate => candidate.id === projectId) : undefined;
+    const summary = ctx.host.transcriptOpenSummary;
+    if (!project || !summary || ctx.host.transcriptOpenProject?.id !== project.id
+        || ctx.host.executionSurfaceTabsUi.activeExecutionTab(project) !== 'preview') {
+        return;
+    }
+    ctx.renderPreviewTab(project, summary);
+    renderEmptyPreviewRunHintExtracted(ctx, project, summary);
+    ctx.updateTranscriptPreviewLaunchStatus();
+}
+
+/**
  * Empty Browser state for a runnable project: names the app and offers the same «Run app» action
  * as the composer quick action. Replaces only its own card, never the "no runnable app" overlay.
  */

@@ -134,6 +134,7 @@ export type MobileProjectsTranscriptSurfacesUiContextMember =
     | 'updateTranscriptPreviewLaunchStatus'
     | 'updateTranscriptPreviewRunButtonState'
     | 'verifyMountedTranscriptPreviewIdentity'
+    | 'watchProjectBootstrapForPreview'
     | 'wireTranscriptPreviewAnnotationScope';
 
 /**

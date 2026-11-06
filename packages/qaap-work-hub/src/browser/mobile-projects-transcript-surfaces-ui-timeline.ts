@@ -781,6 +781,7 @@ export function renderPreviewTabExtracted(ctx: MobileProjectsTranscriptSurfacesU
         if (!host) {
             return;
         }
+        ctx.watchProjectBootstrapForPreview();
         if (ctx.host.transcriptPreviewSuppressedByUser) {
             resetTranscriptPreviewToEmptyExtracted(ctx, host, project, summary);
             ctx.syncHeaderPreviewRunButton(project, summary);

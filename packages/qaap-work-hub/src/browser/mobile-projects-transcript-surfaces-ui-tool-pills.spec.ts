@@ -14,6 +14,7 @@ import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/li
 import type { MobileProjectsTranscriptSurfacesUiContext } from './mobile-projects-transcript-surfaces-ui-context';
 import {
     formatPreviewLaunchFailureDetail,
+    refreshPreviewForBootstrapChangeExtracted,
     renderEmptyPreviewRunHintExtracted,
     resolveEmptyPreviewRunAppName,
 } from './mobile-projects-transcript-surfaces-ui-tool-pills';
@@ -70,6 +71,8 @@ describe('empty Browser run hint', () => {
         expect(resolveEmptyPreviewRunAppName(readySnapshot, ROOT, true)).to.equal(undefined);
         expect(resolveEmptyPreviewRunAppName(readySnapshot, 'file:///workspace/other', false)).to.equal(undefined);
         expect(resolveEmptyPreviewRunAppName({ ...readySnapshot, phase: 'installing' }, ROOT, false)).to.equal(undefined);
+        expect(resolveEmptyPreviewRunAppName({ ...readySnapshot, phase: 'starting' }, ROOT, false)).to.equal(undefined);
+        expect(resolveEmptyPreviewRunAppName({ ...readySnapshot, phase: 'running' }, ROOT, false)).to.equal(undefined);
         expect(resolveEmptyPreviewRunAppName({ phase: 'ready-to-run', descriptor: { name: 'app', rootUri: { toString: () => ROOT } } }, ROOT, false)).to.equal(undefined);
         expect(resolveEmptyPreviewRunAppName(undefined, ROOT, false)).to.equal(undefined);
     });
@@ -118,6 +121,17 @@ describe('empty Browser run hint', () => {
             expect(launch.calledOnceWith(project, summary)).to.equal(true);
         });
 
+        it('paints no Run card while the bootstrap of this project starts or runs', () => {
+            for (const phase of ['starting', 'running'] as const) {
+                const ctx = buildCtx({
+                    phase,
+                    descriptor: { name: 'app', devCommand: 'npm run dev', rootUri: { toString: () => 'file:///workspace/app' } },
+                }, sinon.spy());
+                renderEmptyPreviewRunHintExtracted(ctx, project, summary);
+                expect(ctx.host.transcriptEmbeddedPreview!.root.querySelector('.theia-mobile-transcript-preview-run-hint')).to.equal(null);
+            }
+        });
+
         it('leaves the empty state alone without a runnable app', () => {
             const ctx = buildCtx({ phase: 'detected' }, sinon.spy());
             renderEmptyPreviewRunHintExtracted(ctx, project, summary);
@@ -132,5 +146,51 @@ describe('empty Browser run hint', () => {
             renderEmptyPreviewRunHintExtracted(ctx, project, summary);
             expect(ctx.host.transcriptEmbeddedPreview!.root.querySelector('.theia-mobile-transcript-preview-run-hint')).to.equal(null);
         });
+    });
+});
+
+describe('Browser view follows the active project after a bootstrap change', () => {
+
+    function buildCtx(options: { activeId: string, openId: string, tab?: string }): {
+        ctx: MobileProjectsTranscriptSurfacesUiContext,
+        renderPreviewTab: sinon.SinonSpy,
+        updateLaunchStatus: sinon.SinonSpy,
+    } {
+        const renderPreviewTab = sinon.spy();
+        const updateLaunchStatus = sinon.spy();
+        const projects = [{ id: 'qaap' }, { id: 'vyyq' }] as unknown as MobileProjectEntry[];
+        const ctx = {
+            transcriptPreviewProjectId: options.activeId,
+            host: {
+                projects,
+                transcriptOpenSummary: { id: 'c1' },
+                transcriptOpenProject: projects.find(candidate => candidate.id === options.openId),
+                transcriptEmbeddedPreview: undefined,
+                executionSurfaceTabsUi: { activeExecutionTab: () => options.tab ?? 'preview' },
+            },
+            renderPreviewTab,
+            updateTranscriptPreviewLaunchStatus: updateLaunchStatus,
+        } as unknown as MobileProjectsTranscriptSurfacesUiContext;
+        return { ctx, renderPreviewTab, updateLaunchStatus };
+    }
+
+    it('re-renders the preview of the project on screen after its bootstrap changes', () => {
+        const { ctx, renderPreviewTab, updateLaunchStatus } = buildCtx({ activeId: 'vyyq', openId: 'vyyq' });
+        refreshPreviewForBootstrapChangeExtracted(ctx);
+        expect(renderPreviewTab.calledOnce).to.equal(true);
+        expect((renderPreviewTab.firstCall.args[0] as MobileProjectEntry).id).to.equal('vyyq');
+        expect(updateLaunchStatus.calledOnce).to.equal(true);
+    });
+
+    it('does not touch the Browser view for a project that is not on screen', () => {
+        const { ctx, renderPreviewTab } = buildCtx({ activeId: 'vyyq', openId: 'qaap' });
+        refreshPreviewForBootstrapChangeExtracted(ctx);
+        expect(renderPreviewTab.called).to.equal(false);
+    });
+
+    it('does not touch the Browser view while another execution tab is shown', () => {
+        const { ctx, renderPreviewTab } = buildCtx({ activeId: 'vyyq', openId: 'vyyq', tab: 'files' });
+        refreshPreviewForBootstrapChangeExtracted(ctx);
+        expect(renderPreviewTab.called).to.equal(false);
     });
 });
