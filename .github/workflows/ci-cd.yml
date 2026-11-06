@@ -242,8 +242,18 @@ jobs:
             changed="$(git diff --name-only HEAD^1 HEAD)"
             if [[ -n "${changed}" ]] && ! grep -qv '^packages/' <<< "${changed}"; then
               echo "Affected-only tests (changed: $(cut -d/ -f2 <<< "${changed}" | sort -u | tr '\n' ' '))"
-              npx lerna run --scope "@theia/!(example-)*" test --stream --concurrency=1 --since HEAD^1 --include-dependents
-              exit 0
+              # Package list computed apart: lerna's --include-dependents ignores --scope and would add
+              # the example apps, whose `test` is the browser api-test suite (Test (browser) runs it).
+              if scopes="$(node scripts/qaap-affected-test-scopes.js HEAD^1)"; then
+                if [[ -z "${scopes}" ]]; then
+                  echo "No package to test."
+                  exit 0
+                fi
+                # shellcheck disable=SC2086 # one --scope=<name> word per package
+                npx lerna run test --stream --concurrency=1 ${scopes}
+                exit 0
+              fi
+              echo "::warning::Could not compute the affected packages; running the whole suite."
             fi
           fi
           npm run test:theia

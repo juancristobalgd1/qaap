@@ -222,6 +222,9 @@ History: #112, #113 (Sep 25, 2026), #121, #122, #124, #125 (Sep 26, 2026). All w
   (`HEAD^1` of the merge commit, hence `fetch-depth: 2`) plus their dependents, and only when every
   changed file is under `packages/`; any other change, master pushes and manual runs run the full
   `test:theia`. A spec that only fails in another package's suite therefore surfaces on master.
+  The package list comes from `scripts/qaap-affected-test-scopes.js` (also used by `qaap:preflight`):
+  lerna's `--include-dependents` ignores `--scope`, so a plain `--scope ... --since ... --include-dependents`
+  pulled `@theia/example-browser` (the browser api-test suite) into the headless step (756 failures, Nov 6).
 
 ### 12. Installs retry the whole `npm ci`
 
