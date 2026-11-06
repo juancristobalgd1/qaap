@@ -220,6 +220,12 @@ export async function claimDevPreviewPortExtracted(ctx: QaapProjectBootstrapServ
         }
 }
 
+/**
+ * How long a port that accepted the probe but has not answered is still awaited. The first compile
+ * of a Next, Nuxt or webpack app in a large project can take minutes.
+ */
+const PREVIEW_COMPILE_GRACE_MS = 240_000;
+
 export async function openPrimaryPreviewWhenReadyExtracted(ctx: QaapProjectBootstrapServiceContext, port: number, url: string, options?: { auto?: boolean }): Promise<void> {
         if (ctx._previewUrl) {
             return;
@@ -232,9 +238,17 @@ export async function openPrimaryPreviewWhenReadyExtracted(ctx: QaapProjectBoots
         const readyAttempts = readyTimeoutMs !== undefined
             ? readyTimeoutProbeAttempts(readyTimeoutMs, DEV_PREVIEW_OPEN_PROBE_INTERVAL_MS)
             : DEV_PREVIEW_OPEN_PROBE_ATTEMPTS;
+        let listeningSeen = false;
         let ready = await waitForQaapDevPreviewPort(port, {
             maxAttempts: readyAttempts,
             intervalMs: DEV_PREVIEW_OPEN_PROBE_INTERVAL_MS,
+            listeningGraceMs: PREVIEW_COMPILE_GRACE_MS,
+            onListening: () => {
+                // The socket is accepted but the app has not answered: the first compile is running.
+                listeningSeen = true;
+                ctx._previewReadiness = 'compiling';
+                ctx.stateEmitter.fire(ctx.buildStateChange(ctx._phase));
+            },
         });
         if (!ready) {
             ready = await ctx.healPreviewClaimToListeningPort(port);
@@ -251,7 +265,7 @@ export async function openPrimaryPreviewWhenReadyExtracted(ctx: QaapProjectBoots
             ctx._error = nls.localize(
                 'qaap/projectBootstrap/previewWaitTimedOut',
                 'The server has not answered after {0} seconds. Check the startup log, then retry.',
-                String(Math.round(((readyAttempts - 1) * DEV_PREVIEW_OPEN_PROBE_INTERVAL_MS) / 1000)),
+                String(Math.round((listeningSeen ? PREVIEW_COMPILE_GRACE_MS : (readyAttempts - 1) * DEV_PREVIEW_OPEN_PROBE_INTERVAL_MS) / 1000)),
             );
             ctx.stateEmitter.fire(ctx.buildStateChange(ctx._phase));
             return;

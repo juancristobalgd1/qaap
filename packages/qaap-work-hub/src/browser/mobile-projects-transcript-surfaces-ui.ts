@@ -229,6 +229,8 @@ export class MobileProjectsTranscriptSurfacesUi {
     public transcriptPreviewAppPicker: HTMLElement | undefined;
     /** @internal Used by the extracted mobile-projects-transcript-surfaces-ui-* modules. */
     public transcriptPreviewAppPickerCancel: (() => void) | undefined;
+    /** @internal Project whose app picker was dismissed without a choice; drives the "Choose an app" state. */
+    public transcriptPreviewAppPickerCancelledProjectId: string | undefined;
 
     constructor(
         /** @internal Used by the extracted mobile-projects-transcript-surfaces-ui-* modules. */

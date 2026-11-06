@@ -82,12 +82,18 @@ export async function requestTranscriptPreviewExtracted(ctx: MobileProjectsTrans
                 detected = bootstrap.getStateSnapshot();
                 if (detected.descriptor && detected.descriptor.apps.length > 1 && !detected.selectedApp) {
                     const selectedApp = await ctx.pickTranscriptPreviewApp(detected.descriptor.apps);
+                    ctx.transcriptPreviewAppPickerCancelledProjectId = undefined;
                     if (launchGeneration !== ctx.previewLaunchGeneration || ctx.host.transcriptPreviewSuppressedByUser) {
                         return;
                     }
                     if (!selectedApp) {
                         ctx.host.transcriptPreviewRequestRunning = false;
                         ctx.host.transcriptPreviewRequestPending = false;
+                        // Dismissed without a choice: keep an explicit "Choose an app" state instead of a blank frame.
+                        // A picker that replaced this one (no longer the open picker) must not paint the state.
+                        if (!ctx.transcriptPreviewAppPicker) {
+                            ctx.transcriptPreviewAppPickerCancelledProjectId = project.id;
+                        }
                         ctx.syncHeaderPreviewRunButton(project, summary);
                         refreshPreviewComposer();
                         MobileSnackbar.dismiss();

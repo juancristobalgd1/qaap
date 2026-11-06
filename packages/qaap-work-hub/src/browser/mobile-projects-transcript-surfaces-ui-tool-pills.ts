@@ -256,23 +256,35 @@ export function updateTranscriptPreviewLaunchStatusExtracted(ctx: MobileProjects
     const requestActive = ctx.host.transcriptPreviewRequestRunning || ctx.host.transcriptPreviewRequestPending;
     const failed = bootstrapState?.phase === 'install-failed' || bootstrapState?.phase === 'run-failed';
     let overlay = frameSlot?.querySelector<HTMLElement>('.theia-mobile-transcript-preview-launch-overlay');
+    // The bootstrap state is shared by every project, so an overlay drawn for the previous project
+    // must not survive a project switch (it would show that project's "Preview could not start").
+    const projectId = ctx.transcriptPreviewProjectId ?? '';
+    if (overlay && overlay.dataset.projectId !== projectId) {
+        overlay.remove();
+        overlay = undefined;
+    }
+    // The app picker was dismissed without a choice: say so instead of leaving the frame blank.
+    const awaitingAppChoice = !requestActive && !failed && projectId !== ''
+        && ctx.transcriptPreviewAppPickerCancelledProjectId === projectId;
     if (!frameSlot || root?.classList.contains(USER_NAVIGATED_PREVIEW_CLASS)
-        || (!requestActive && !(failed && overlay))) {
+        || (!requestActive && !(failed && overlay) && !awaitingAppChoice)) {
         overlay?.remove();
         return;
     }
     if (!overlay) {
         overlay = document.createElement('div');
         overlay.className = 'theia-mobile-transcript-preview-launch-overlay';
+        overlay.dataset.projectId = projectId;
         frameSlot.append(overlay);
     }
 
     const showFailure = !requestActive && failed;
+    const showAppChoice = awaitingAppChoice;
     const status = document.createElement('div');
     status.className = 'theia-mobile-transcript-preview-launch-card';
     status.setAttribute('role', showFailure ? 'alert' : 'status');
     status.setAttribute('aria-live', showFailure ? 'assertive' : 'polite');
-    if (!showFailure) {
+    if (!showFailure && !showAppChoice) {
         status.setAttribute('aria-busy', 'true');
         const spinner = document.createElement('span');
         spinner.className = 'codicon codicon-loading theia-mobile-transcript-preview-launch-spinner';
@@ -316,6 +328,28 @@ export function updateTranscriptPreviewLaunchStatusExtracted(ctx: MobileProjects
             });
         }
         status.append(retry);
+    } else if (showAppChoice) {
+        title.textContent = nls.localize('qaap/projectBootstrap/appPickerCancelledTitle', 'Choose an app to preview');
+        detail.textContent = nls.localize(
+            'qaap/projectBootstrap/appPickerCancelledHint',
+            'This repository has several apps. Pick the one Qaap should run.',
+        );
+        status.append(title, detail);
+        const choose = document.createElement('button');
+        choose.type = 'button';
+        choose.className = 'theia-mobile-transcript-preview-launch-retry';
+        choose.textContent = nls.localize('qaap/projectBootstrap/appPickerChoose', 'Choose app');
+        choose.addEventListener('click', () => {
+            const project = ctx.host.transcriptOpenProject;
+            const summary = ctx.host.transcriptOpenSummary;
+            if (project && summary) {
+                void ctx.requestTranscriptPreview(project, summary, {
+                    revealPreviewTab: true,
+                    allowAgentFallback: false,
+                });
+            }
+        });
+        status.append(choose);
     } else {
         const phase = bootstrapState?.phase;
         if (phase === 'installing') {
@@ -327,15 +361,20 @@ export function updateTranscriptPreviewLaunchStatusExtracted(ctx: MobileProjects
                 'qaap/mobileProjects/previewLaunchInstallHint',
                 'The first launch can take a little longer. The preview will open automatically when installation finishes.',
             );
-        } else if (phase === 'starting' && bootstrapState?.previewReadiness === 'waiting-for-server') {
+        } else if (phase === 'starting' && (bootstrapState?.previewReadiness === 'waiting-for-server' || bootstrapState?.previewReadiness === 'compiling')) {
             title.textContent = nls.localize(
                 'qaap/mobileProjects/previewLaunchBuilding',
                 'Building your preview…',
             );
-            detail.textContent = nls.localize(
-                'qaap/mobileProjects/previewLaunchBuildHint',
-                'Waiting for the app to respond. This view will update automatically.',
-            );
+            detail.textContent = bootstrapState.previewReadiness === 'compiling'
+                ? nls.localize(
+                    'qaap/projectBootstrap/previewCompiling',
+                    'The app is compiling its first page. Large apps can take a minute or two.',
+                )
+                : nls.localize(
+                    'qaap/mobileProjects/previewLaunchBuildHint',
+                    'Waiting for the app to respond. This view will update automatically.',
+                );
         } else if (phase === 'running') {
             title.textContent = nls.localize(
                 'qaap/mobileProjects/previewLaunchOpening',

@@ -53,6 +53,11 @@ export interface QaapDevPreviewProbeResponse {
      * Render readiness is produced later by visual verification and must not be inferred here.
      */
     readonly readiness?: 'transport_ready' | 'render_ready' | 'failed';
+    /**
+     * The port accepted the probe connection, so a dev server is there, but it has not answered
+     * yet (a first compile can take minutes). Only the port probe sets it; `ready` stays false.
+     */
+    readonly listening?: boolean;
     /** URL the mini-browser should load via the same-origin `/qaap-dev/:port/` proxy. */
     readonly previewUrl: string;
     readonly previewId?: string;

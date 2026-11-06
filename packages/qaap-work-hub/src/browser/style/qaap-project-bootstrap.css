@@ -302,7 +302,11 @@
 
 .theia-mobile-transcript-app-picker-sheet {
     position: relative;
-    width: min(460px, calc(100vw - 32px));
+    /* Sized against the picker's own box (it may live in a side panel, not the viewport), with
+       padding and border inside the width, so it never overflows to one side. */
+    box-sizing: border-box;
+    width: min(460px, 100%);
+    min-width: 0;
     max-height: min(70vh, 560px);
     overflow: hidden;
     display: flex;

@@ -114,6 +114,20 @@ function createSpawnHarness(
     };
 }
 
+/**
+ * Every spawn path ends the task log with one write, so the log is non-empty once that write has landed.
+ * Polls briefly (bounded) instead of guessing with a fixed number of event-loop turns.
+ */
+async function waitForTaskLogWrite(dir: string): Promise<void> {
+    const logFile = path.join(dir, `${TASK_ID}.log`);
+    for (let attempt = 0; attempt < 200; attempt++) {
+        if (fs.existsSync(logFile) && fs.statSync(logFile).size > 0) {
+            return;
+        }
+        await new Promise(resolve => setTimeout(resolve, 5));
+    }
+}
+
 describe('QaapAgentTaskRunner spawn after Stop', () => {
     let logDir: string;
     let consoleWarn: sinon.SinonStub;
@@ -130,9 +144,12 @@ describe('QaapAgentTaskRunner spawn after Stop', () => {
         consoleWarn = sinon.stub(console, 'warn');
     });
 
-    afterEach(() => {
+    afterEach(async () => {
         // Also restores the console.warn stub.
         sinon.restore();
+        // The runner ends the task log stream without awaiting its flush, so the async open can still be
+        // pending here; removing the directory first would surface as an uncaught ENOENT on the stream.
+        await waitForTaskLogWrite(logDir);
         fs.rmSync(logDir, { recursive: true, force: true });
     });
 

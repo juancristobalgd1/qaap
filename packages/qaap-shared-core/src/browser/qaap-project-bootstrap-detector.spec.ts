@@ -537,6 +537,29 @@ describe('QaapProjectBootstrapDetector package-manager workspaces', () => {
         expect(descriptor?.nodeModulesPresent).to.equal(false);
     });
 
+    it('never offers Electron members as previewable apps', async () => {
+        const mock = new MockFileService();
+        theiaMonorepo(mock);
+        mock.addDir('/ws/examples/electron');
+        mock.addFile('/ws/examples/electron/package.json', JSON.stringify({
+            name: '@theia/example-electron',
+            theia: { target: 'electron' },
+            scripts: { start: 'theia start' },
+            dependencies: { '@theia/core': '1.73.0' },
+        }));
+        mock.addDir('/ws/examples/desktop');
+        mock.addFile('/ws/examples/desktop/package.json', JSON.stringify({
+            name: 'desktop-shell',
+            scripts: { start: 'electron .' },
+            devDependencies: { electron: '33.0.0' },
+        }));
+        const detector = new QaapProjectBootstrapDetector();
+        bindMockFileService(detector, mock);
+
+        const apps = (await detector.detect(URI.fromFilePath('/ws')))?.apps ?? [];
+        expect(apps.map(candidate => candidate.relativePath)).to.deep.equal(['examples/browser']);
+    });
+
     it('builds before `theia start` only when .qaap/preview.json opts in with "build": "auto"', async () => {
         const mock = new MockFileService();
         theiaMonorepo(mock);
