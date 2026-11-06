@@ -78,6 +78,17 @@ export async function resolveTemporaryIndexDir(cwd: string, gitRead: QaapTreeGit
 }
 
 /**
+ * Copy an index file and give the copy the source's timestamps. Git treats an entry whose mtime is not older
+ * than the index file's own mtime as racy and re-reads its content; a copy with a fresh mtime would make such
+ * entries look clean, so a same-size edit made in the second of the last index write would be missed.
+ */
+async function copyIndexKeepingTimes(source: string, target: string): Promise<void> {
+    await fs.promises.copyFile(source, target);
+    const { atime, mtime } = await fs.promises.stat(source);
+    await fs.promises.utimes(target, atime, mtime);
+}
+
+/**
  * Write the current worktree (tracked and untracked, honouring ignore rules) into a git tree object
  * through a throwaway index, so the real `.git/index` is never touched. Returns the tree id, or
  * `undefined` when git fails. The throwaway index lives under `indexDir` (the repository's git
@@ -91,7 +102,7 @@ export async function snapshotWorktreeTree(cwd: string, git: QaapTreeGitWrite, i
     try {
         // Seed from a copy of the real index when given: its stat cache lets `add -A` hash only what changed.
         // Otherwise (or when the copy fails) seed from HEAD when a commit exists; an empty repo is fine.
-        const seeded = seedIndexFile !== undefined && await fs.promises.copyFile(seedIndexFile, tmpIndex).then(() => true, () => false);
+        const seeded = seedIndexFile !== undefined && await copyIndexKeepingTimes(seedIndexFile, tmpIndex).then(() => true, () => false);
         if (!seeded) {
             await git(cwd, ['read-tree', 'HEAD'], env);
         }
