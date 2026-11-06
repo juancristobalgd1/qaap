@@ -360,5 +360,6 @@ TerminalFrontendContribution -> rebind.toService(QaapTerminalFrontendContributio
 TerminalThemeService -> rebind.toService(QaapTerminalThemeService)
 TextmateRegistry -> rebind.toService(QaapTextmateRegistry)
 WebSocketConnectionSource -> onActivation
+WindowTitleUpdater -> rebind.to(QaapWindowTitleUpdater).inSingletonScope()
 WorkHubShellAIChatInputWidget -> bind.toSelf()
 WorkspaceService -> rebind.toService(QaapWorkspaceService)
