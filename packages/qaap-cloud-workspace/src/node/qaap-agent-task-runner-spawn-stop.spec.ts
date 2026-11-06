@@ -118,10 +118,14 @@ describe('QaapAgentTaskRunner spawn after Stop', () => {
     let logDir: string;
     let consoleWarn: sinon.SinonStub;
 
-    beforeEach(function (): void {
+    before(function (): void {
+        // Skipping here (not in beforeEach) also skips afterEach, which would otherwise rmSync an unset logDir.
         if (globalThis.process.platform === 'win32') {
             this.skip();
         }
+    });
+
+    beforeEach(() => {
         logDir = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-spawn-stop-'));
         consoleWarn = sinon.stub(console, 'warn');
     });

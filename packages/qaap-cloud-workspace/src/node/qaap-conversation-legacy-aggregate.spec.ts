@@ -13,7 +13,7 @@ import { QaapJsonArrayElementSplitter, forEachLegacyAggregateElement } from './q
 const TRICKY = [
     { id: 'plain' },
     { id: 'brackets in strings', text: ']}[{ "quoted" \\" and \\\\', nested: { list: [1, [2, { deep: '}' }]] } },
-    { id: 'unicode', text: 'ñandú 🦤   end' },
+    { id: 'unicode', text: 'ñandú 🦤 \u2028 end' },
 ];
 
 function split(text: string, pieceLength: number): string[] {
