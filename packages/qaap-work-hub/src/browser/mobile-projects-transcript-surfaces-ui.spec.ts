@@ -962,3 +962,41 @@ describe('MobileProjectsTranscriptSurfacesUi — preview request without a start
         expect(notices.some(text => /No start command found/.test(text))).to.equal(true);
     });
 });
+
+describe('MobileProjectsTranscriptSurfacesUi — launch overlay across a project switch', () => {
+
+    useSuiteJSDOM();
+
+    afterEach(() => {
+        document.body.replaceChildren();
+    });
+
+    it('drops a failure overlay drawn for the previous project', () => {
+        const host = buildIdlePreviewHost();
+        const ui = new MobileProjectsTranscriptSurfacesUi(host, historyUiStub);
+        const root = document.createElement('div');
+        const frameSlot = document.createElement('div');
+        frameSlot.className = 'qaap-preview-frame-slot';
+        root.append(frameSlot);
+        host.transcriptEmbeddedPreview = { root } as unknown as MobileProjectsTranscriptSurfacesHost['transcriptEmbeddedPreview'];
+        host.projectBootstrap = {
+            getStateSnapshot: () => ({ phase: 'starting' }),
+        } as unknown as MobileProjectsTranscriptSurfacesHost['projectBootstrap'];
+        ui.transcriptPreviewProjectId = 'project-a';
+        host.transcriptPreviewRequestRunning = true;
+        ui.updateTranscriptPreviewLaunchStatus();
+        expect(frameSlot.querySelector('.theia-mobile-transcript-preview-launch-overlay')).to.not.equal(null);
+
+        host.transcriptPreviewRequestRunning = false;
+        host.projectBootstrap = {
+            getStateSnapshot: () => ({ phase: 'run-failed', error: 'boom' }),
+            canBuildAndStartPreview: () => false,
+        } as unknown as MobileProjectsTranscriptSurfacesHost['projectBootstrap'];
+        ui.updateTranscriptPreviewLaunchStatus();
+        expect(frameSlot.querySelector('.theia-mobile-transcript-preview-launch-title')?.textContent).to.equal('Preview could not start');
+
+        ui.transcriptPreviewProjectId = 'project-b';
+        ui.updateTranscriptPreviewLaunchStatus();
+        expect(frameSlot.querySelector('.theia-mobile-transcript-preview-launch-overlay')).to.equal(null);
+    });
+});

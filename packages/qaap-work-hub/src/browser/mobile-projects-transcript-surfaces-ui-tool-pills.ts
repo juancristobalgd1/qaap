@@ -256,6 +256,13 @@ export function updateTranscriptPreviewLaunchStatusExtracted(ctx: MobileProjects
     const requestActive = ctx.host.transcriptPreviewRequestRunning || ctx.host.transcriptPreviewRequestPending;
     const failed = bootstrapState?.phase === 'install-failed' || bootstrapState?.phase === 'run-failed';
     let overlay = frameSlot?.querySelector<HTMLElement>('.theia-mobile-transcript-preview-launch-overlay');
+    // The bootstrap state is shared by every project, so an overlay drawn for the previous project
+    // must not survive a project switch (it would show that project's "Preview could not start").
+    const projectId = ctx.transcriptPreviewProjectId ?? '';
+    if (overlay && overlay.dataset.projectId !== projectId) {
+        overlay.remove();
+        overlay = undefined;
+    }
     if (!frameSlot || root?.classList.contains(USER_NAVIGATED_PREVIEW_CLASS)
         || (!requestActive && !(failed && overlay))) {
         overlay?.remove();
@@ -264,6 +271,7 @@ export function updateTranscriptPreviewLaunchStatusExtracted(ctx: MobileProjects
     if (!overlay) {
         overlay = document.createElement('div');
         overlay.className = 'theia-mobile-transcript-preview-launch-overlay';
+        overlay.dataset.projectId = projectId;
         frameSlot.append(overlay);
     }
 
