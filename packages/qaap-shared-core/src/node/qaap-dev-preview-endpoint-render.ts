@@ -326,7 +326,7 @@ export async function handleClaimExtracted(ctx: QaapDevPreviewEndpointContext, r
                 portsToProbe.add(port);
             }
             for (const conflictPort of portsToProbe) {
-                if (await ctx.probeLocalDevServer(conflictPort)) {
+                if ((await ctx.probeLocalDevServerState(conflictPort)) !== 'down') {
                     res.status(409).type('text/plain').send('This preview identity or port is already in use.');
                     return;
                 }
@@ -354,14 +354,14 @@ export async function handleClaimExtracted(ctx: QaapDevPreviewEndpointContext, r
         // listening on it: an idle-but-still-running server must not be silently taken over
         // just because its owner did not touch the preview for 30 minutes.
         const stale = ctx.portRegistry.staleOwnerOf(port);
-        if (stale !== undefined && stale !== owner && await ctx.probeLocalDevServer(port)) {
+        if (stale !== undefined && stale !== owner && (await ctx.probeLocalDevServerState(port)) !== 'down') {
             res.status(409).type('text/plain').send('This preview port is in use by another workspace.');
             return;
         }
         if (authResult.kind !== 'skip'
             && ctx.portRegistry.ownerOf(port) === undefined && stale === undefined
             && !ctx.ownsUnclaimedPorts(owner)
-            && await ctx.probeLocalDevServer(port, owner)) {
+            && (await ctx.probeLocalDevServerState(port, owner)) !== 'down') {
             // After a backend restart an unregistered listener has no trustworthy project or
             // tenant identity. Adopting it based only on liveness is the exact cross-project
             // failure this endpoint must prevent. This guard applies to authenticated
@@ -421,7 +421,7 @@ export async function handleProcessClaimExtracted(ctx: QaapDevPreviewEndpointCon
             ctx.terminatePreviewProcess(existing);
             ctx.portRegistry.releasePreview(existing.previewId, owner);
         } else {
-            if (!ctx.isPreviewProcessDead(existing) && await ctx.probeLocalDevServer(existing.port)) {
+            if (!ctx.isPreviewProcessDead(existing) && (await ctx.probeLocalDevServerState(existing.port)) !== 'down') {
                 if (osProcessId !== undefined) {
                     ctx.portRegistry.attachProcess(existing.previewId, owner, osProcessId);
                 }
@@ -434,7 +434,7 @@ export async function handleProcessClaimExtracted(ctx: QaapDevPreviewEndpointCon
             }
             // Reserved empty / dead claim, but the process bound the preferred port (common when a
             // project hardcodes PORT while the allocator had to park on another free slot first).
-            if (preferredPort !== existing.port && await ctx.probeLocalDevServer(preferredPort)) {
+            if (preferredPort !== existing.port && (await ctx.probeLocalDevServerState(preferredPort)) !== 'down') {
                 const rebound = ctx.portRegistry.rebindPort(existing.previewId, owner, preferredPort);
                 if (rebound) {
                     if (osProcessId !== undefined) {
@@ -488,7 +488,7 @@ export async function handleProcessClaimExtracted(ctx: QaapDevPreviewEndpointCon
         .sort((left, right) => Number(right.port === preferredPort) - Number(left.port === preferredPort)
             || right.touchedAt - left.touchedAt);
     for (const record of previousSectionRecords) {
-        if (!ctx.isPreviewProcessDead(record) && await ctx.probeLocalDevServer(record.port)) {
+        if (!ctx.isPreviewProcessDead(record) && (await ctx.probeLocalDevServerState(record.port)) !== 'down') {
             if (osProcessId !== undefined) {
                 ctx.portRegistry.attachProcess(record.previewId, owner, osProcessId);
             }
@@ -519,7 +519,7 @@ export async function handleProcessClaimExtracted(ctx: QaapDevPreviewEndpointCon
             && record.root === canonicalRoot)
         .sort((left, right) => right.touchedAt - left.touchedAt);
     for (const record of sharedRootRecords) {
-        if (!ctx.isPreviewProcessDead(record) && await ctx.probeLocalDevServer(record.port)) {
+        if (!ctx.isPreviewProcessDead(record) && (await ctx.probeLocalDevServerState(record.port)) !== 'down') {
             console.info('[qaap-preview] sharing live project preview of another conversation', {
                 previewId: record.previewId,
                 ownerLogin: owner,
@@ -630,7 +630,7 @@ export async function releaseSupersededProcesslessPreviewExtracted(
     if (record.osProcessId !== undefined && !ctx.isPreviewProcessDead(record)) {
         return false;
     }
-    if (!await ctx.probeLocalDevServer(port)) {
+    if ((await ctx.probeLocalDevServerState(port)) === 'down') {
         return false;
     }
     const listenerCwds = ctx.resolvePortListenerCwds(port, owner);
@@ -674,7 +674,7 @@ export async function allocatePreviewPortExtracted(
         }
         if (occupiedRecord) {
             const withinStartGrace = Date.now() - occupiedRecord.claimedAt < PREVIEW_RESERVATION_START_GRACE_MS;
-            if (withinStartGrace || await ctx.probeLocalDevServer(port)) {
+            if (withinStartGrace || (await ctx.probeLocalDevServerState(port)) !== 'down') {
                 continue;
             }
             ctx.portRegistry.releasePreview(occupiedRecord.previewId, occupiedRecord.ownerLogin);
@@ -683,7 +683,7 @@ export async function allocatePreviewPortExtracted(
                 ownerLogin: occupiedRecord.ownerLogin,
                 port,
             });
-        } else if (await ctx.probeLocalDevServer(port, owner)) {
+        } else if ((await ctx.probeLocalDevServerState(port, owner)) !== 'down') {
             // Crucial fail-closed rule: never infer project ownership from a responding port. The
             // one exception is not an inference: the SAME owner explicitly claimed this very port
             // (an external Vite they started and pointed the workspace at). The claim endpoint

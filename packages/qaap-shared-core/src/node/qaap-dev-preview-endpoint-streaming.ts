@@ -181,7 +181,7 @@ export async function reapStoppedPreviewsExtracted(ctx: QaapDevPreviewEndpointCo
                 // not touchedAt, so those probes cannot keep a dead listener registered forever.
                 if (!ctx.isPreviewProcessDead(record)
                     && (now - record.claimedAt < PREVIEW_RESERVATION_START_GRACE_MS
-                        || await ctx.probeLocalDevServer(record.port))) {
+                        || (await ctx.probeLocalDevServerState(record.port)) !== 'down')) {
                     continue;
                 }
                 // releasePreview fires onDidReleasePort, which clears this port's probe caches.
@@ -290,7 +290,8 @@ export async function handleCurrentProjectPreviewExtracted(ctx: QaapDevPreviewEn
         const conversationId = isQaapProcessPreviewIdentity(record)
             ? normalizeQaapPreviewConversationId(record.conversationId)
             : undefined;
-        const ready = await ctx.probeLocalDevServer(record.port);
+        const state = await ctx.probeLocalDevServerState(record.port);
+        const ready = state === 'ready';
         if (ready) {
             ctx.portRegistry.touchPreview(record.previewId, login);
             const claimLog = {
@@ -319,7 +320,8 @@ export async function handleCurrentProjectPreviewExtracted(ctx: QaapDevPreviewEn
             return;
         }
         const withinStartGrace = Date.now() - record.claimedAt < PREVIEW_RESERVATION_START_GRACE_MS;
-        if (!withinStartGrace) {
+        // A server still compiling (`busy`) is alive: only a silent port releases the claim.
+        if (!withinStartGrace && state === 'down') {
             ctx.portRegistry.releasePreview(record.previewId, login);
             res.json({ ready: false, previewUrl: '' } satisfies QaapDevPreviewProbeResponse);
             return;
