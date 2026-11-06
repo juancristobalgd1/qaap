@@ -23,14 +23,12 @@ import {
     createAgentSheetOptionButton,
     createAgentSheetSplitOptionRow,
     createUnavailableAgentSheetOption,
+    formatAgentPickerSelectedLabel,
     resolveAgentPickerDescription,
 } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { resolveAgentPickerConnectionDescription } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-login-instructions';
 import { agentNeedsSettingsApiKeyPath } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
 import { hasAnyConfiguredByokCredential } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
-import {
-    formatQaiqModelSelectionLabel,
-} from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
 import { QAIQ_AGENT_ID, THEIA_CODER_AGENT_ID } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import {
     isStickyComposerAnnotationPopoverAnchor,
@@ -434,7 +432,7 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
             : undefined;
         let displayLabel = label;
         if (storedModel?.modelId && agentSelected) {
-            displayLabel = `${label} · ${formatQaiqModelSelectionLabel(storedModel)}`;
+            displayLabel = formatAgentPickerSelectedLabel(label, storedModel);
         }
         const row: HTMLElement = hasModels
             ? createAgentSheetSplitOptionRow({
