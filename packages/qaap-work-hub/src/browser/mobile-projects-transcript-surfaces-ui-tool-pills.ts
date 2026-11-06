@@ -35,6 +35,28 @@ import { createTranscriptReviewChrome } from '@theia/qaap-transcript/lib/browser
 import {
     resolveProjectScopedWorkspaceKey as resolveProjectScopedWorkspaceKeyHelper,
 } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-surfaces-helpers';
+import { lastDevOutputLines } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-dev-errors';
+
+/** Lines of the dev-server log kept in the "Preview could not start" overlay. */
+const PREVIEW_LAUNCH_FAILURE_LOG_LINES = 12;
+/** Characters of the dev-server log kept in the "Preview could not start" overlay. */
+const PREVIEW_LAUNCH_FAILURE_LOG_CHARS = 1200;
+
+/**
+ * Trims a raw bootstrap error for the failure overlay: escaped line breaks become real ones, ANSI
+ * escapes go, and only the last lines (and at most {@link PREVIEW_LAUNCH_FAILURE_LOG_CHARS} characters)
+ * remain, prefixed with an ellipsis when cut. Returns undefined when nothing printable is left.
+ */
+export function formatPreviewLaunchFailureDetail(error: string | undefined): string | undefined {
+    const trimmed = lastDevOutputLines(error ?? '', PREVIEW_LAUNCH_FAILURE_LOG_LINES).trim();
+    if (!trimmed) {
+        return undefined;
+    }
+    if (trimmed.length <= PREVIEW_LAUNCH_FAILURE_LOG_CHARS) {
+        return trimmed;
+    }
+    return `…${trimmed.slice(-PREVIEW_LAUNCH_FAILURE_LOG_CHARS).trimStart()}`;
+}
 
 export function cancelPreviewAgentTurnExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,): void {
@@ -263,7 +285,8 @@ export function updateTranscriptPreviewLaunchStatusExtracted(ctx: MobileProjects
     detail.className = 'theia-mobile-transcript-preview-launch-detail';
     if (showFailure) {
         title.textContent = nls.localize('qaap/mobileProjects/previewLaunchFailedTitle', 'Preview could not start');
-        detail.textContent = bootstrapState?.error
+        // The hint stays when the error carries no printable log, so the overlay never shows an empty detail.
+        detail.textContent = formatPreviewLaunchFailureDetail(bootstrapState?.error)
             ?? nls.localize(
                 'qaap/mobileProjects/previewLaunchFailedHint',
                 'The app stopped before it was ready. Check the Dev terminal, then try again.',

@@ -21,6 +21,7 @@ import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { QaapBackgroundContextProvider } from './qaap-background-context-provider';
 import { QaapQaiqStreamAccumulator } from '../common/qaap-qaiq-stream';
 import { QaapQaiqChatStreamSync } from './qaap-qaiq-chat-stream-sync';
+import { QaapUserFacingErrors } from '@theia/qaap-adapters/lib/common/qaap-user-facing-error';
 
 const QAIQ_CHAT_AGENT_ID = 'qaiq';
 /** Max time to wait for the task to complete before resolving with a "still running" message. */
@@ -379,8 +380,7 @@ export class QaapQaiqChatAgentContribution implements FrontendApplicationContrib
             }),
         });
         if (!response.ok) {
-            const detail = await response.text();
-            throw new Error(detail || nls.localize(
+            throw await QaapUserFacingErrors.fromResponse(response, nls.localize(
                 'qaap/agentFailure/qaiqStartFailed',
                 'QAIQ task start failed ({0}).',
                 String(response.status),

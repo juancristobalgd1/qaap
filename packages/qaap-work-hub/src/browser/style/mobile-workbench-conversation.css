@@ -1679,10 +1679,15 @@ button.theia-mobile-transcript-team-row:focus-visible {
 
 .theia-mobile-transcript-preview-launch-detail {
   margin: 0;
+  font-family: var(--theia-code-font-family, monospace);
   font-size: 13px;
   line-height: 1.45;
   color: var(--theia-descriptionForeground);
+  white-space: pre-wrap;
   overflow-wrap: anywhere;
+  max-height: 12em;
+  min-height: 0;
+  overflow: auto;
 }
 
 .theia-mobile-transcript-preview-launch-retry {

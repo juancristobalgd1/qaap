@@ -19,6 +19,7 @@ import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
 import { QaapGithubInboxHub } from './qaap-github-inbox-hub';
 import { QaapGithubSessionStore } from './qaap-github-session-store';
 import { QaapGithubWebhookListener } from './qaap-github-webhook-listener';
+import { QaapAsyncRoute } from './qaap-async-route';
 
 const SSE_HEARTBEAT_MS = 25_000;
 /** GitHub caps webhook payloads at 25 MB; issue and PR events are a few KB. */
@@ -69,15 +70,11 @@ export class QaapGithubInboxEndpoint implements BackendApplicationContribution {
 
     configure(app: Application): void {
         // The signature covers GitHub's exact bytes: this route parses its own raw body (any content type).
-        app.post(`${QAAP_GITHUB_API_PATH}/webhook`, raw({ type: () => true, limit: WEBHOOK_MAX_BODY }), (req, res) => {
-            void this.handleWebhook(req, res);
-        });
+        app.post(`${QAAP_GITHUB_API_PATH}/webhook`, raw({ type: () => true, limit: WEBHOOK_MAX_BODY }), QaapAsyncRoute.wrap('qaap-github-inbox', (req, res) => this.handleWebhook(req, res)));
         // Contributions configured earlier (upstream `@theia/filesystem`'s download endpoint) install a global
         // `json()` that would consume the stream first. The webhook route goes to the front of the router.
         QaapExpressRouteOrder.moveLastRouteFirst(app, 'qaap-github-webhook');
-        app.get(`${QAAP_GITHUB_API_PATH}/inbox/stream`, (req, res) => {
-            void this.handleInboxStream(req, res);
-        });
+        app.get(`${QAAP_GITHUB_API_PATH}/inbox/stream`, QaapAsyncRoute.wrap('qaap-github-inbox', (req, res) => this.handleInboxStream(req, res)));
     }
 
     protected async handleWebhook(req: Request, res: Response): Promise<void> {

@@ -19,6 +19,7 @@ import { isQaapExternalTasksGithubEnabled } from './qaap-external-task-intake';
 import { verifyQaapExternalTaskIntake } from './qaap-external-task-intake-signature';
 import { QaapExternalTaskLauncher } from './qaap-external-task-launcher';
 import { QaapTaskPullRequestConsentStore } from './qaap-task-pull-request-consent-store';
+import { QaapAsyncRoute } from '@theia/qaap-shared-core/lib/node/qaap-async-route';
 
 const REPOSITORY_SEGMENT = /^[A-Za-z0-9_.-]{1,100}$/;
 
@@ -45,9 +46,7 @@ export class QaapExternalTaskEndpoint implements BackendApplicationContribution 
         app.get(QAAP_EXTERNAL_TASK_GITHUB_OPT_IN_PATH, (req, res) => this.handleListOptIns(req, res));
         app.put(`${QAAP_EXTERNAL_TASK_GITHUB_OPT_IN_PATH}/:owner/:repo`, (req, res) => this.handleSetOptIn(req, res, true));
         app.delete(`${QAAP_EXTERNAL_TASK_GITHUB_OPT_IN_PATH}/:owner/:repo`, (req, res) => this.handleSetOptIn(req, res, false));
-        app.post(QAAP_EXTERNAL_TASK_INTAKE_PATH, json({ limit: '256kb' }), (req, res) => {
-            void this.handleIntake(req, res);
-        });
+        app.post(QAAP_EXTERNAL_TASK_INTAKE_PATH, json({ limit: '256kb' }), QaapAsyncRoute.wrap('qaap-external-task', (req, res) => this.handleIntake(req, res)));
     }
 
     protected requireUser(req: Request, res: Response): string | undefined {
