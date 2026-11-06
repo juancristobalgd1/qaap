@@ -426,6 +426,7 @@ export function skipExtracted(ctx: QaapProjectBootstrapServiceContext): void {
 
 export function resetExtracted(ctx: QaapProjectBootstrapServiceContext): void {
         ctx.hubPinnedWorkspaceRoot = undefined;
+        ctx.hubProjectRootEmitter.fire(undefined);
         if (ctx._descriptor) {
             ctx.persistPhase(ctx._descriptor.nodeModulesPresent ? 'ready-to-run' : 'detected');
         }

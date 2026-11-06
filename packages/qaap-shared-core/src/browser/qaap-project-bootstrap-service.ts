@@ -238,6 +238,11 @@ export class QaapProjectBootstrapService {
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
     public readonly forwardedPortsEmitter = new Emitter<QaapForwardedPort[]>();
 
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public readonly hubProjectRootEmitter = new Emitter<URI | undefined>();
+    /** Fires when the Work Hub pins a project root (`refreshFromProjectRoot`) or releases it (`reset`). */
+    readonly onDidChangeHubProjectRoot: Event<URI | undefined> = this.hubProjectRootEmitter.event;
+
     protected readonly devOutputEmitter = new Emitter<string>();
     /** Fires whenever new dev-server output is appended (for live streaming in the Preview tab). */
     readonly onDevOutput: Event<string> = this.devOutputEmitter.event;

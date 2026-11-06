@@ -204,6 +204,7 @@ export async function refreshFromProjectRootExtracted(ctx: QaapProjectBootstrapS
             : projectId;
         ctx.activeWorkspaceRoot = resource;
         ctx.hubPinnedWorkspaceRoot = resource;
+        ctx.hubProjectRootEmitter.fire(resource);
         await ctx.refreshFromRoot(resource);
 }
 
