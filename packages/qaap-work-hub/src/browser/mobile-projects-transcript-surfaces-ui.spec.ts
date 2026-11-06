@@ -194,8 +194,8 @@ describe('MobileProjectsTranscriptSurfacesUi — syncHeaderPreviewRunButton', ()
         expect(host.headerPreviewRunHost.hidden).to.equal(false);
         const previewButton = host.headerPreviewRunHost.querySelector<HTMLButtonElement>('.theia-mobile-transcript-preview-run');
         expect(previewButton).to.not.equal(null);
-        expect(previewButton?.title).to.equal('Navegador');
-        expect(previewButton?.getAttribute('aria-label')).to.equal('Navegador');
+        expect(previewButton?.title).to.equal('Browser');
+        expect(previewButton?.getAttribute('aria-label')).to.equal('Browser');
     });
 
     it('shows the selected monorepo app and exposes an explicit switch action', () => {
