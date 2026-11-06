@@ -2,7 +2,7 @@
 
 import type { Request, Response } from '@theia/core/shared/express';
 import * as http from 'http';
-import { buildQaapPreviewHostLabel, parseQaapPreviewHostLabel, resolveQaapPreviewBaseDomain } from './qaap-preview-host';
+import { buildQaapPreviewHostLabel, parseQaapPreviewHostLabel, resolveQaapPreviewBaseDomain, resolveQaapPreviewBaseDomainForRequest } from './qaap-preview-host';
 import { resolveQaapPublicOrigin } from './qaap-github-oauth-config';
 import type { QaapDevPreviewRecord } from './qaap-dev-preview-port-registry';
 import { buildQaapPreviewUpstreamHeaders, sanitizeQaapPreviewResponseHeaders } from './qaap-dev-preview-forward-headers';
@@ -515,7 +515,7 @@ export function resolvePublicOriginExtracted(ctx: QaapDevPreviewEndpointContext,
 }
 
 export function buildIdentityPreviewUrlExtracted(ctx: QaapDevPreviewEndpointContext, req: Request, record: Pick<QaapDevPreviewRecord, 'previewId' | 'accessToken'>): string {
-        const baseDomain = ctx.previewBaseDomain();
+        const baseDomain = ctx.previewBaseDomain(req);
         if (!baseDomain) {
             return buildQaapIdentityPreviewUrl(ctx.resolvePublicOrigin(req), record.previewId);
         }
@@ -525,14 +525,20 @@ export function buildIdentityPreviewUrlExtracted(ctx: QaapDevPreviewEndpointCont
         return `${protocol}://${buildQaapPreviewHostLabel(record.previewId, record.accessToken)}.${baseDomain}/`;
 }
 
-export function previewBaseDomainExtracted(ctx: QaapDevPreviewEndpointContext): string | undefined {
-        return resolveQaapPreviewBaseDomain();
+/** Without a request, only explicit configuration applies; with one, the local default may apply. */
+export function previewBaseDomainExtracted(ctx: QaapDevPreviewEndpointContext, req?: Request | http.IncomingMessage): string | undefined {
+        if (!req) {
+            return resolveQaapPreviewBaseDomain();
+        }
+        const rawHost = ctx.firstHeaderValue(req.headers['x-forwarded-host'])
+            ?? ctx.firstHeaderValue(req.headers.host);
+        return resolveQaapPreviewBaseDomainForRequest(rawHost);
 }
 
 export function previewHostLabelExtracted(ctx: QaapDevPreviewEndpointContext, req: Request | http.IncomingMessage): string | undefined {
         const rawHost = ctx.firstHeaderValue(req.headers['x-forwarded-host'])
             ?? ctx.firstHeaderValue(req.headers.host);
-        return parseQaapPreviewHostLabel(rawHost, ctx.previewBaseDomain());
+        return parseQaapPreviewHostLabel(rawHost, ctx.previewBaseDomain(req));
 }
 
 export function firstHeaderValueExtracted(ctx: QaapDevPreviewEndpointContext, value: string | string[] | undefined): string | undefined {

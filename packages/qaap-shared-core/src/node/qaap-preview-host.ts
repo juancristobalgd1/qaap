@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { createHash } from 'crypto';
+import { isQaapHostedEnvironment } from '@theia/qaap-adapters/lib/common/qaap-hosted-runtime';
 import { isQaapPreviewId } from '../common/qaap-preview-identity';
 import { normalizeQaapPreviewBaseDomain } from './qaap-production-auth-readiness';
 
@@ -17,6 +18,38 @@ export function resolveQaapPreviewBaseDomain(env: NodeJS.ProcessEnv = process.en
         return undefined;
     }
     return normalizeQaapPreviewBaseDomain(env.QAAP_PREVIEW_BASE_DOMAIN);
+}
+
+/** Local isolated previews are on unless `QAAP_PREVIEW_LOCAL_ISOLATION=0` opts out. */
+export function isQaapLocalPreviewIsolationEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+    return env.QAAP_PREVIEW_LOCAL_ISOLATION?.trim() !== '0';
+}
+
+/**
+ * Base domain of isolated preview hosts for one request. Explicit configuration always wins (see
+ * {@link resolveQaapPreviewBaseDomain}). Otherwise, on a non-hosted runtime only, a request for
+ * `localhost[:port]` gets the base domain `localhost[:port]`: browsers resolve `*.localhost` to
+ * loopback, so no DNS is needed, and the origin stays the one the developer already uses. Requests
+ * on any other host (127.0.0.1, IPs, LAN names) get no isolation. The Host header is never read in
+ * production, where it is client-controlled.
+ */
+export function resolveQaapPreviewBaseDomainForRequest(rawHost: string | undefined, env: NodeJS.ProcessEnv = process.env): string | undefined {
+    if (env.QAAP_PREVIEW_BASE_DOMAIN?.trim() || env.QAAP_OAUTH_PUBLIC_URL?.trim()) {
+        return resolveQaapPreviewBaseDomain(env);
+    }
+    if (!rawHost || isQaapHostedEnvironment(env) || !isQaapLocalPreviewIsolationEnabled(env)) {
+        return undefined;
+    }
+    let parsed: URL;
+    try {
+        parsed = new URL(`http://${rawHost}`);
+    } catch {
+        return undefined;
+    }
+    if (parsed.hostname.toLowerCase() !== 'localhost') {
+        return undefined;
+    }
+    return parsed.port ? `localhost:${parsed.port}` : 'localhost';
 }
 
 /**

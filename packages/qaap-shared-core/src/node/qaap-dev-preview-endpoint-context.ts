@@ -148,7 +148,8 @@ export interface QaapDevPreviewEndpointContext {
 
     buildIdentityPreviewUrl(req: Request, record: Pick<QaapDevPreviewRecord, 'previewId' | 'accessToken'>): string;
 
-    previewBaseDomain(): string | undefined;
+    /** Isolated-host base domain; with a request, the local default may derive it from the Host. */
+    previewBaseDomain(req?: Request | http.IncomingMessage): string | undefined;
 
     /** Host label of an isolated preview host request (the label is the access capability). */
     previewHostLabel(req: Request | http.IncomingMessage): string | undefined;

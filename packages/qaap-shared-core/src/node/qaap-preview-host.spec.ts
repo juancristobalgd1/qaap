@@ -5,7 +5,7 @@
 
 import { expect } from 'chai';
 import type { Handler, Request, Response } from '@theia/core/shared/express';
-import { buildQaapPreviewHostLabel, parseQaapPreviewHostLabel, resolveQaapPreviewBaseDomain } from './qaap-preview-host';
+import { buildQaapPreviewHostLabel, parseQaapPreviewHostLabel, resolveQaapPreviewBaseDomain, resolveQaapPreviewBaseDomainForRequest } from './qaap-preview-host';
 import { advertisePreviewRouteOnJson, earlyMiddlewareExtracted, isQaapTenantBackendRuntime } from './qaap-dev-preview-endpoint-render';
 import type { QaapDevPreviewEndpointContext } from './qaap-dev-preview-endpoint-context';
 import { QAAP_PREVIEW_ROUTE_HEADER } from '../common/qaap-preview-route';
@@ -15,6 +15,34 @@ describe('qaap-preview-host', () => {
         expect(resolveQaapPreviewBaseDomain({ QAAP_PREVIEW_BASE_DOMAIN: 'preview.example.test' })).to.equal(undefined);
         expect(resolveQaapPreviewBaseDomain({ QAAP_PREVIEW_BASE_DOMAIN: 'preview.example.test', QAAP_OAUTH_PUBLIC_URL: 'https://qaap.example.test' }))
             .to.equal('preview.example.test');
+    });
+
+    it('defaults the isolated base domain to the request localhost origin on a local runtime', () => {
+        const local = {};
+        expect(resolveQaapPreviewBaseDomainForRequest('localhost:3101', local)).to.equal('localhost:3101');
+        expect(resolveQaapPreviewBaseDomainForRequest('LOCALHOST:3101', local)).to.equal('localhost:3101');
+        expect(resolveQaapPreviewBaseDomainForRequest('localhost', local)).to.equal('localhost');
+        // Never a loopback IP or a LAN name: only `*.localhost` resolves to loopback in browsers.
+        expect(resolveQaapPreviewBaseDomainForRequest('127.0.0.1:3101', local)).to.equal(undefined);
+        expect(resolveQaapPreviewBaseDomainForRequest('192.168.1.20:3101', local)).to.equal(undefined);
+        expect(resolveQaapPreviewBaseDomainForRequest(undefined, local)).to.equal(undefined);
+    });
+
+    it('never derives the base domain from the Host in production', () => {
+        expect(resolveQaapPreviewBaseDomainForRequest('localhost:3101', { NODE_ENV: 'production' })).to.equal(undefined);
+        expect(resolveQaapPreviewBaseDomainForRequest('localhost:3101', { QAAP_CLOUD_MODE: 'docker' })).to.equal(undefined);
+    });
+
+    it('honours the opt-out and explicit configuration', () => {
+        expect(resolveQaapPreviewBaseDomainForRequest('localhost:3101', { QAAP_PREVIEW_LOCAL_ISOLATION: '0' })).to.equal(undefined);
+        // Explicit configuration wins over the request default, in both directions.
+        expect(resolveQaapPreviewBaseDomainForRequest('localhost:3101', {
+            QAAP_PREVIEW_BASE_DOMAIN: 'preview.example.test',
+            QAAP_OAUTH_PUBLIC_URL: 'https://qaap.example.test',
+        })).to.equal('preview.example.test');
+        // An explicit base domain without a public URL keeps the isolation off, as before.
+        expect(resolveQaapPreviewBaseDomainForRequest('localhost:3101', { QAAP_PREVIEW_BASE_DOMAIN: 'preview.example.test' })).to.equal(undefined);
+        expect(resolveQaapPreviewBaseDomainForRequest('localhost:3101', { QAAP_OAUTH_PUBLIC_URL: 'http://localhost:3101' })).to.equal(undefined);
     });
 
     it('extracts the host label of a preview host and nothing else', () => {
