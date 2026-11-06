@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { OS } from '@theia/core/lib/common/os';
+import URI from '@theia/core/lib/common/uri';
 import { qaapPreviewPortNodeImportFlag } from '../common/qaap-preview-port-preload';
 import { QAAP_STATIC_DEV_PORT, QAAP_THEIA_DEV_PORT, QaapProjectKind } from './qaap-project-bootstrap-types';
 
@@ -180,6 +181,37 @@ function forceNodePreviewPortImport(kind: QaapProjectKind): string {
         || kind === 'node-svelte'
         || kind === 'node-next'
         || kind === 'node-remix');
+}
+
+/**
+ * Directory a Theia preview uses as its HOME: `.qaap/preview-home` under the project root (`fsPath`).
+ * Keeps the dev server's `~/.theia` and Qaap's `~/.qaap` stores out of the host user's home.
+ */
+export function previewHomeDirFor(projectRootFsPath: string): string {
+    return `${projectRootFsPath.replace(/[\\/]+$/, '')}/.qaap/preview-home`;
+}
+
+/**
+ * Prefixes a Theia dev command with its own HOME and `THEIA_CONFIG_DIR` under `previewHomeDir`.
+ * Node's `os.homedir()` reads `HOME` on POSIX and `USERPROFILE` on Windows, so both are set there.
+ */
+export function prefixTheiaPreviewHomeEnv(command: string, previewHomeDir: string, isWindows: boolean = isWorkspaceHostWindows()): string {
+    const configDir = `${previewHomeDir}/.theia`;
+    if (isWindows) {
+        return `set USERPROFILE=${previewHomeDir}&& set HOME=${previewHomeDir}&& set THEIA_CONFIG_DIR=${configDir}&& ${command}`;
+    }
+    return `HOME=${shellSingleQuote(previewHomeDir)} THEIA_CONFIG_DIR=${shellSingleQuote(configDir)} ${command}`;
+}
+
+/** Gives a Theia dev command its own HOME; other frameworks keep the host environment. */
+export function isolateTheiaPreviewCommand(command: string, plan: { readonly isTheiaApp?: boolean; readonly cwd?: URI }): string {
+    return plan.isTheiaApp && plan.cwd
+        ? prefixTheiaPreviewHomeEnv(command, previewHomeDirFor(plan.cwd.path.fsPath()))
+        : command;
+}
+
+function shellSingleQuote(value: string): string {
+    return '\'' + value.replace(/'/g, '\'\\\'\'') + '\'';
 }
 
 function prefixPortEnv(command: string, port: number, kind: QaapProjectKind, isWindows: boolean): string {

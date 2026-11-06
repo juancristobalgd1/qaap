@@ -62,6 +62,11 @@ export interface QaapMonorepoAppCandidate {
     /** Default port hint for this framework, used when stdout parsing fails. */
     readonly expectedPort?: number;
     /**
+     * True for a Theia application (depends on `@theia/core` or `@theia/cli`, or starts with `theia start`).
+     * Its preview dev server runs with a HOME of its own so it never touches the host's `~/.theia` or `~/.qaap`.
+     */
+    readonly isTheiaApp?: boolean;
+    /**
      * `node_modules/.bin` executable the dev script starts with (`theia`, `vite`, …). Set for members
      * of a package-manager workspace, whose bins are hoisted to the workspace root.
      */
@@ -144,6 +149,11 @@ export interface QaapProjectDescriptor {
     readonly devCommandLabel?: string;
     /** Optional hint to seed port detection if stdout parsing fails. */
     readonly expectedPort?: number;
+    /**
+     * True for a Theia application (depends on `@theia/core` or `@theia/cli`, or starts with `theia start`).
+     * Its preview dev server runs with a HOME of its own so it never touches the host's `~/.theia` or `~/.qaap`.
+     */
+    readonly isTheiaApp?: boolean;
     /** Wait for the preview server to answer, from `readyTimeoutMs` in `.qaap/preview.json`. */
     readonly readyTimeoutMs?: number;
     /** True when dev tooling shims exist under `node_modules/.bin` (not just an empty tree). */

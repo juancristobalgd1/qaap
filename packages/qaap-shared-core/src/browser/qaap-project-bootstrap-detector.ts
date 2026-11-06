@@ -186,6 +186,7 @@ export class QaapProjectBootstrapDetector {
         const scripts = pkg.scripts && typeof pkg.scripts === 'object' ? pkg.scripts : {};
         const devScriptKey = this.pickRootDevScript(scripts);
         const { kind, expectedPort } = this.guessFramework(pkg);
+        const isTheiaApp = this.isTheiaPackage(pkg);
 
         let devCommand: string | undefined;
         let devCommandLabel: string | undefined;
@@ -249,6 +250,7 @@ export class QaapProjectBootstrapDetector {
             devCommand,
             devCommandLabel,
             expectedPort,
+            ...(isTheiaApp ? { isTheiaApp } : {}),
             nodeModulesPresent,
             monorepoFlavor: flavor,
             apps,
@@ -1145,6 +1147,7 @@ export class QaapProjectBootstrapDetector {
             return undefined;
         }
         const { kind, expectedPort } = this.guessFramework(pkg);
+        const isTheiaApp = this.isTheiaPackage(pkg);
         const pkgName = typeof pkg.name === 'string' && pkg.name.trim().length > 0
             ? pkg.name.trim()
             : appUri.path.base || 'app';
@@ -1165,6 +1168,7 @@ export class QaapProjectBootstrapDetector {
             devCommand,
             devCommandLabel: devCommand,
             expectedPort,
+            ...(isTheiaApp ? { isTheiaApp } : {}),
             ...(build?.buildScript && rootPm !== 'native' ? {
                 buildScript: build.buildScript,
                 previewStartCommand: buildQaapWorkspaceScriptCommand({ packageManager: rootPm, packageName: pkgName, script: devScriptKey }),
@@ -1433,6 +1437,20 @@ export class QaapProjectBootstrapDetector {
             }
         }
         return undefined;
+    }
+
+    /** True for a Theia application: depends on `@theia/core` or `@theia/cli`, or its start script runs `theia start`. */
+    protected isTheiaPackage(pkg: PackageJsonShape): boolean {
+        const allDeps: Record<string, unknown> = {
+            ...(pkg.dependencies && typeof pkg.dependencies === 'object' ? pkg.dependencies : {}),
+            ...(pkg.devDependencies && typeof pkg.devDependencies === 'object' ? pkg.devDependencies : {}),
+        };
+        if ('@theia/core' in allDeps || '@theia/cli' in allDeps) {
+            return true;
+        }
+        const scripts = pkg.scripts && typeof pkg.scripts === 'object' ? pkg.scripts : {};
+        const start = scripts.start;
+        return typeof start === 'string' && /\btheia\s+start\b/.test(start);
     }
 
     protected guessFramework(pkg: PackageJsonShape): { kind: QaapProjectKind; expectedPort?: number } {

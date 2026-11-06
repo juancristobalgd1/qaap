@@ -169,6 +169,35 @@ describe('QaapProjectBootstrapDetector scaffold subfolders', () => {
         expect(descriptor?.readyTimeoutMs).to.equal(180000);
     });
 
+    it('flags a Theia app so its preview gets an isolated HOME', async () => {
+        const mock = new MockFileService();
+        mock.addDir('/ws');
+        mock.addFile('/ws/package.json', JSON.stringify({
+            name: 'vyyq', dependencies: { '@theia/core': '1.73.0' }, scripts: { start: 'theia start --port 3000' },
+        }));
+
+        const detector = new QaapProjectBootstrapDetector();
+        bindMockFileService(detector, mock);
+
+        const descriptor = await detectWithBackend(detector, 'posix');
+        expect(descriptor?.isTheiaApp).to.equal(true);
+    });
+
+    it('does not flag a Next app as Theia', async () => {
+        const mock = new MockFileService();
+        mock.addDir('/ws');
+        mock.addFile('/ws/package.json', JSON.stringify({
+            name: 'site', dependencies: { next: '15.0.0' }, scripts: { dev: 'next dev' },
+        }));
+
+        const detector = new QaapProjectBootstrapDetector();
+        bindMockFileService(detector, mock);
+
+        const descriptor = await detectWithBackend(detector, 'posix');
+        expect(descriptor?.kind).to.equal('node-next');
+        expect(descriptor?.isTheiaApp).to.be.undefined;
+    });
+
     it('auto-detects Django at the workspace root', async () => {
         const mock = new MockFileService();
         mock.addDir('/ws');

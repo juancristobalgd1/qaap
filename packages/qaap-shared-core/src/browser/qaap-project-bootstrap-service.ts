@@ -514,7 +514,7 @@ export class QaapProjectBootstrapService {
     }
 
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
-    public resolveDevPlan(): { command: string; cwd: URI; expectedPort?: number; kind: QaapProjectKind } | undefined {
+    public resolveDevPlan(): { command: string; cwd: URI; expectedPort?: number; kind: QaapProjectKind; isTheiaApp?: boolean } | undefined {
         return resolveDevPlanExtracted(this);
     }
 
@@ -532,7 +532,7 @@ export class QaapProjectBootstrapService {
     }
 
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
-    public buildDevSpawnPlan(plan: { command: string; expectedPort?: number; kind: QaapProjectKind; }): { command: string; targetPort?: number } {
+    public buildDevSpawnPlan(plan: { command: string; expectedPort?: number; kind: QaapProjectKind; cwd?: URI; isTheiaApp?: boolean; }): { command: string; targetPort?: number } {
         return buildDevSpawnPlanExtracted(this, plan);
     }
 

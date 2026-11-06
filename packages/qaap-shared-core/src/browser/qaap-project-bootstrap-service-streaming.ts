@@ -161,7 +161,7 @@ export async function runDevServerExtracted(ctx: QaapProjectBootstrapServiceCont
         await ctx.startDevServer(plan, descriptor);
 }
 
-export async function startDevServerExtracted(ctx: QaapProjectBootstrapServiceContext, plan: { command: string; cwd: URI; expectedPort?: number; kind: QaapProjectKind },
+export async function startDevServerExtracted(ctx: QaapProjectBootstrapServiceContext, plan: { command: string; cwd: URI; expectedPort?: number; kind: QaapProjectKind; isTheiaApp?: boolean },
         descriptor: QaapProjectDescriptor,): Promise<void> {
         // The start script runs build output that does not exist and the project did not opt in to
         // building first: fail now with how to build, instead of a server that cannot run (or an

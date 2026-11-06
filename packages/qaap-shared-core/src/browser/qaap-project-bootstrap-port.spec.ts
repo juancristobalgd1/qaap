@@ -8,11 +8,15 @@ import { execFileSync } from 'child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import URI from '@theia/core/lib/common/uri';
 import {
     getImplicitDevPort,
+    isolateTheiaPreviewCommand,
     isReservedIdePort,
     pickAlternateDevPort,
     pickNextDevPort,
+    previewHomeDirFor,
+    prefixTheiaPreviewHomeEnv,
     resolveBootstrapDevPort,
     wrapCommandForDevNodeEnv,
     wrapDevCommandForPort,
@@ -304,5 +308,37 @@ describe('qaap-project-bootstrap-port', () => {
         expect(command).to.not.include('set "PORT=');
         expect(wrapCommandForDevNodeEnv('pnpm install', false)).to.equal('NODE_ENV=development pnpm install');
         expect(wrapCommandForDevNodeEnv('pnpm install', true)).to.equal('set "NODE_ENV=development"&& pnpm install');
+    });
+
+    it('gives a Theia preview its own HOME and THEIA_CONFIG_DIR under the project', () => {
+        const command = prefixTheiaPreviewHomeEnv('npm run dev', previewHomeDirFor('/work/vyyq'), false);
+        expect(command).to.equal(
+            "HOME='/work/vyyq/.qaap/preview-home' THEIA_CONFIG_DIR='/work/vyyq/.qaap/preview-home/.theia' npm run dev"
+        );
+    });
+
+    it('quotes a single quote in the preview home path for POSIX shells', () => {
+        expect(prefixTheiaPreviewHomeEnv('npm run dev', "/a/it's/preview-home", false))
+            .to.equal("HOME='/a/it'\\''s/preview-home' THEIA_CONFIG_DIR='/a/it'\\''s/preview-home/.theia' npm run dev");
+    });
+
+    it('sets USERPROFILE and HOME on Windows hosts', () => {
+        const command = prefixTheiaPreviewHomeEnv('npm run dev', previewHomeDirFor('C:/work/vyyq'), true);
+        expect(command).to.equal(
+            'set USERPROFILE=C:/work/vyyq/.qaap/preview-home&& set HOME=C:/work/vyyq/.qaap/preview-home&& set THEIA_CONFIG_DIR=C:/work/vyyq/.qaap/preview-home/.theia&& npm run dev'
+        );
+    });
+
+    it('gives two projects distinct preview homes and ignores a trailing slash', () => {
+        expect(previewHomeDirFor('/work/vyyq')).to.not.equal(previewHomeDirFor('/work/qaap'));
+        expect(previewHomeDirFor('/work/vyyq/')).to.equal(previewHomeDirFor('/work/vyyq'));
+    });
+
+    it('isolates only Theia previews: other apps keep the host HOME', () => {
+        const cwd = new URI('file:///work/vyyq');
+        const theia = isolateTheiaPreviewCommand('npm run dev', { isTheiaApp: true, cwd });
+        expect(theia).to.equal("HOME='/work/vyyq/.qaap/preview-home' THEIA_CONFIG_DIR='/work/vyyq/.qaap/preview-home/.theia' npm run dev");
+        expect(isolateTheiaPreviewCommand('npm run dev', { isTheiaApp: false, cwd })).to.equal('npm run dev');
+        expect(isolateTheiaPreviewCommand('npm run dev', { cwd })).to.equal('npm run dev');
     });
 });
