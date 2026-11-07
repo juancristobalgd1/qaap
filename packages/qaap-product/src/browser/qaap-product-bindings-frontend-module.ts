@@ -13,7 +13,9 @@ import { QaapCopilotDefaultsContribution } from './qaap-copilot-defaults-contrib
 import { QaapCorePreferenceBrandingContribution } from './qaap-core-preference-branding-contribution';
 import { QaapDisplayLanguageCommandContribution } from './qaap-display-language-command-contribution';
 import { QaapAiPreferenceBrandingStartup } from './qaap-ai-preference-branding-contribution';
+import { QaapUserStorageContribution } from './qaap-user-storage-contribution';
 import { QaapWorkspaceSafetyDefaultsContribution } from './qaap-workspace-safety-defaults-contribution';
+import { UserStorageContribution } from '@theia/userstorage/lib/browser/user-storage-contribution';
 import { rebindQaapPreferenceTreeGenerator } from '@theia/qaap-shared-core/lib/browser/qaap-preference-tree-generator';
 import { rebindQaapPreferencesContribution } from '@theia/qaap-shared-core/lib/browser/qaap-preferences-contribution';
 import { bindQaapSecretPreferenceInputRenderer } from '@theia/qaap-shared-core/lib/browser/qaap-secret-preference-input-renderer';
@@ -52,6 +54,10 @@ export default new ContainerModule((bind, _unbind, isBound, rebind) => {
             title: FrontendApplicationConfigProvider.get().applicationName
         })).inSingletonScope();
     }
+
+    // Incremental settings saves reach the real config file (upstream forwards the user-storage URI).
+    bind(QaapUserStorageContribution).toSelf().inSingletonScope();
+    rebind(UserStorageContribution).toService(QaapUserStorageContribution);
 
     // Settings tree keeps the curated QaapPreferenceLayoutProvider order instead of upstream's id sort.
     rebindQaapPreferenceTreeGenerator(bind, rebind);
