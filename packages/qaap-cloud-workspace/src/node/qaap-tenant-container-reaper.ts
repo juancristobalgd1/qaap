@@ -170,6 +170,7 @@ export class QaapTenantContainerReaper implements BackendApplicationContribution
                 await this.reconcile(candidate, byTenant.get(candidate.tenantLogin) ?? [], now);
             }
             await this.docker.retryDeferredTenantBackendRecreations();
+            await this.docker.reconcileTenantRuntimes();
         } catch (error) {
             console.warn(`[qaap-runtime] reaper scan failed: ${error instanceof Error ? error.message : String(error)}`);
         } finally {

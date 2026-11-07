@@ -1,0 +1,40 @@
+# Tenants may run a pinned fork of gVisor (deploy/rootless/gvisor/README.md), so upstream security fixes do not reach us
+# on their own. This run fails, and notifies the repository owner, when the pin is older than the allowed window or when
+# google/gvisor#13853 has merged and the fork can be dropped.
+name: gVisor upstream watch
+
+on:
+  schedule:
+    - cron: '17 7 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Compare the pinned release with upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MAX_AGE_DAYS: 30
+        run: |
+          pinned="$(sed -n "s/^GVISOR_RELEASE='qaap-\([0-9]*\)\..*/\1/p" deploy/rootless/gvisor/qaap-gvisor-install.sh)"
+          latest="$(gh release list --repo google/gvisor --limit 1 --json tagName --jq '.[0].tagName')"
+          latest_date="$(echo "$latest" | sed -n 's/^release-\([0-9]\{8\}\).*/\1/p')"
+          echo "pinned $pinned, latest upstream $latest"
+          state="$(gh pr view 13853 --repo google/gvisor --json state --jq .state)"
+          echo "google/gvisor#13853 is $state"
+          status=0
+          if [ "$state" = MERGED ]; then
+            echo '::error::google/gvisor#13853 merged: move to an upstream release and drop the fork.'
+            status=1
+          fi
+          age=$(( ( $(date -u -d "$latest_date" +%s) - $(date -u -d "$pinned" +%s) ) / 86400 ))
+          if [ "$age" -gt "$MAX_AGE_DAYS" ]; then
+            echo "::error::The pinned gVisor is $age days behind upstream ($latest): rebase the fork (deploy/rootless/gvisor/README.md, Updating)."
+            status=1
+          fi
+          exit "$status"
