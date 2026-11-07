@@ -768,6 +768,9 @@ export class QaapTenantSpawnService {
         const cwd = this.canonicalizeCwd(options.cwd);
         this.enforceIsolationPolicy();
         this.prepareTenantIsolation(cwd);
+        if (!this.isContainerIsolationEnabled()) {
+            args = this.withDroppedGitTrust(cwd, file, args);
+        }
         const spawnOptions: { cwd: string; env: NodeJS.ProcessEnv; stdio: QaapSpawnStdio; detached: boolean } = {
             cwd,
             env: options.env,
@@ -1083,7 +1086,19 @@ export class QaapTenantSpawnService {
                 tenantRoot,
             );
         }
-        return this.wrapShellForTenant(cwd, 'git', ['-c', 'core.hooksPath=/dev/null', '-C', cwd, ...gitArgs]);
+        return this.wrapShellForTenant(cwd, 'git', this.withDroppedGitTrust(cwd, 'git', ['-c', 'core.hooksPath=/dev/null', '-C', cwd, ...gitArgs]));
+    }
+
+    /**
+     * Read-only git children ignore the system config (`GIT_CONFIG_NOSYSTEM`), including the image's
+     * `safe.directory`, so git dropped to the agent uid refuses a repo the root backend cloned
+     * ("detected dubious ownership"). Trust it on the command line only for that dropped uid: it
+     * already controls the repo's config, so nothing is gained. Never for a process running as the
+     * backend, where this check stops repo config such as filters from running with its privileges.
+     */
+    protected withDroppedGitTrust(cwd: string, file: string, args: readonly string[]): string[] {
+        const uid = file === 'git' ? this.resolveSpawnIdentity(cwd).uid : undefined;
+        return uid ? ['-c', 'safe.directory=*', ...args] : [...args];
     }
 
     /**
