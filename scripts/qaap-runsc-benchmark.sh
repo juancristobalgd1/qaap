@@ -2,7 +2,7 @@
 # Compares runc and runsc on the same host for a repository that a tenant would work on.
 #
 # Usage:
-#   DOCKER_HOST=unix:///run/docker-tenants/proxy.sock scripts/qaap-runsc-benchmark.sh /path/to/repo
+#   DOCKER_HOST=unix:///run/docker-tenants-proxy/proxy.sock scripts/qaap-runsc-benchmark.sh /path/to/repo
 #
 # Measured per runtime (REPS repetitions each, default 10):
 #   install-cold   install from an empty package cache into an empty node_modules

@@ -69,9 +69,19 @@ compromised control plane must not be able to turn it into host root.
 - **Binds.** Host sources must be exactly one of the per-tenant directories under
   `QAAP_TENANT_DATA_ROOT` (`QAAP_TENANT_BIND_TEMPLATES`, default
   `workspace/repos/users/{tenant}`, `worktrees/{tenant}`, `parallel/{tenant}`,
-  `auth/users/{tenant}`, `auth/users/{tenant}/theia-home`), all of one tenant per container, with
-  `rw` or `ro` only. `fs.realpathSync(source)` must equal the source, which refuses a symlink in any
-  component; the data root itself must therefore not be a symlink. The long `Mounts` syntax is refused.
+  `auth/users/{tenant}`, `theia-homes/{tenant}`), all of one tenant per container, with `rw` or `ro`
+  only. `fs.realpathSync(source)` must equal the source, which refuses a symlink in any component; the
+  data root itself must therefore not be a symlink. The long `Mounts` syntax is refused.
+  - **Nesting.** A source strictly inside a writable tenant directory is refused in either mode: a
+    template instance of the same tenant, or a read-write source of the same request. The check
+    compares path segments (`/a/bc` is not under `/a/b`). The reason is a TOCTOU: a tenant can
+    replace a directory under a writable parent with a symlink after the proxy validated it, and
+    the daemon would then bind-mount the symlink target as root on the host (no user namespace on
+    the rootful daemon). The proxy also refuses to start if one template is nested in another.
+  - **Why `theia-homes/<tenant>` is outside `auth/users/<tenant>`.** The tenant container mounts
+    `auth/users/<tenant>` read-write, so a theia home inside it could be swapped for a symlink. The
+    theia home lives in its own tree, `theia-homes/<tenant>`, which no tenant container mounts as a
+    parent. The old path `auth/users/<tenant>/theia-home` is refused as nested.
 - **Ownership.** start, stop, kill, wait, pause, unpause, rename, inspect, logs, rm, attach, exec and
   network connect, disconnect and rm only reach resources labelled `com.qaap.managed=true` (an
   upstream inspect, cached 2 s). A missing resource gets the daemon's 404.
@@ -232,11 +242,35 @@ rootful or rootless daemon.
 ## Data migration (later phase, not part of this canary)
 
 Tenant data lives in `/opt/qaap-runtime` (`workspace`, `worktrees`, `parallel`, `auth`,
-`theia-user`, `tenant-homes`) and is bind-mounted into tenants by path, so the same host directories
+`theia-user`, `tenant-homes`, `theia-homes`) and is bind-mounted into tenants by path, so the same host directories
 serve both daemons. Tenant images must be present in the new daemon: pull or `docker save | load`
 the tenant image into `/var/lib/docker-tenants` (the same mechanism as
 `scripts/qaap-vps-tenant-image.sh`, with the tenant daemon socket). Existing tenant containers keep
 their old runtime until they are recreated. Migrating them is a separate maintenance window.
+
+**Moving an existing theia home to `theia-homes/<tenant>`.** The proxy refuses the old
+`auth/users/<tenant>/theia-home` bind, so a tenant that already has one must be moved before its
+backend is recreated under runsc. Do it per tenant, with no backend or worker of that tenant running:
+
+1. Stop the tenant's containers (`com.qaap.tenant-name` label) and confirm none is running.
+2. Record the owner and mode: `stat -c '%u:%g %a' /opt/qaap-runtime/auth/users/<tenant>/theia-home`.
+3. As root, create the destination with that owner and mode, then copy with ownership kept:
+   `install -d -o <uid> -g <gid> -m <mode> /opt/qaap-runtime/theia-homes/<tenant>` and
+   `cp -a /opt/qaap-runtime/auth/users/<tenant>/theia-home/. /opt/qaap-runtime/theia-homes/<tenant>/`.
+4. Verify: `diff -r` between the two trees, and `stat` of the top directory and a sample file. Owners
+   and modes must match.
+5. Keep the old `auth/users/<tenant>/theia-home` until the tenant has run a turn on runsc and the
+   copy is verified. Only then remove it. Do not delete it in the same step as the copy.
+
+Deploy the orchestrator that binds `theia-homes/<tenant>` together with the proxy. The proxy alone
+rejects the old binds that a running backend still has.
+
+**Optional, not enabled: `userns-remap` canary.** A user namespace on the rootful tenant daemon
+would map container root to an unprivileged host range, so a bind write that escapes the proxy
+lands as an unprivileged host user instead of root. It is a defence-in-depth improvement, not part
+of the current design, and it is not enabled. It would change the ownership of images and volumes
+under `/var/lib/docker-tenants` and of the bind sources, so it needs its own canary on a
+non-production daemon first. This section makes no claim about results: none has been measured.
 
 ## Canary
 
