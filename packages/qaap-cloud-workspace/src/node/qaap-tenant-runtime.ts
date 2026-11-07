@@ -43,6 +43,19 @@ export const QAAP_RUNSC_SANDBOX_PIDS_FACTOR = 2;
 export const QAAP_RUNSC_ARGS: readonly string[] = ['--platform=systrap', '--directfs=false', '--systemd-cgroup'];
 
 /** Where `qaap-gvisor-install.sh` puts root-owned binaries. Anywhere else may be writable by the rootless user. */
+/**
+ * Tells a tenant backend how to give the agent uid access to its files. gVisor has no POSIX ACLs on host files (setfacl
+ * fails with ENOTSUP), so a backend under runsc shares a group with the agent instead:
+ * - the backend's root process is a member of the agent's group (`HostConfig.GroupAdd`), and both use umask 002;
+ * - only trees meant for the agent are `setgid` with that group. Files there inherit it.
+ * Anywhere else a new file keeps group 0, which the agent is not in (`setpriv --clear-groups`), so umask 002 gives it nothing.
+ */
+export const QAAP_TENANT_AGENT_ACCESS_ENV = 'QAAP_TENANT_AGENT_ACCESS';
+export const QAAP_TENANT_AGENT_ACCESS_GROUP = 'group';
+export const QAAP_TENANT_AGENT_GID = 1001;
+/** Node reloads about 8 times slower under runsc, so a cold backend needs longer than the default 30 s. */
+export const QAAP_RUNSC_BACKEND_READY_TIMEOUT_MS = 150_000;
+
 const RUNSC_PATH_PATTERN = /^\/usr\/local\/lib\/qaap-gvisor\/[A-Za-z0-9][A-Za-z0-9._-]*\/runsc$/;
 
 /**

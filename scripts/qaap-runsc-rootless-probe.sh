@@ -124,6 +124,7 @@ cat > "$SCRATCH/daemon.json" <<EOF
   "runtimes": {
     "runsc-systemd": { "path": "$RUNSC", "runtimeArgs": ["--platform=systrap", "--directfs=false", "--systemd-cgroup"] },
     "tune-directfs": { "path": "$RUNSC", "runtimeArgs": ["--platform=systrap", "--systemd-cgroup"] },
+    "tune-rootmem": { "path": "$RUNSC", "runtimeArgs": ["--platform=systrap", "--directfs=false", "--systemd-cgroup", "--overlay2=root:memory"] },
     "runsc-plain": { "path": "$RUNSC", "runtimeArgs": ["--platform=systrap"] },
     "runsc-nocgroups": { "path": "$RUNSC", "runtimeArgs": ["--platform=systrap", "--ignore-cgroups"] },
     "tune-dcache": { "path": "$RUNSC", "runtimeArgs": ["--platform=systrap", "--systemd-cgroup", "--dcache=65536"] },
@@ -417,6 +418,86 @@ run_sec() {
     dk rm -f "$id" >/dev/null 2>&1
     say "leftover scopes: $(find "/sys/fs/cgroup/user.slice/user-$REAL_UID.slice/user@$REAL_UID.service" -type d -name "*$id*" 2>/dev/null | wc -l)"
 }
+
+# Whether a shared group can replace POSIX ACLs, which gVisor does not implement on host files.
+run_group() {
+    local out
+    mkdir -p "$SCRATCH/bind/shared" "$SCRATCH/bind/private"
+    say '=== shared group on a bind mount: uid 0 with supplementary group 1001 and uid 1001, umask 002'
+    out="$(dk run --rm --runtime runsc-systemd "${HARD[@]}" --cap-add SETUID --cap-add SETGID --group-add 1001 -v "$SCRATCH/bind:/w:rw" "$IMAGE" sh -c '
+        umask 002
+        drop() { setpriv --reuid=1001 --regid=1001 --clear-groups sh -c "umask 002; $1"; }
+        result() { if [ "$2" -eq 0 ]; then echo "$1=yes"; else echo "$1=no"; fi; }
+        chgrp 1001 /w/shared; result root-chgrp-without-cap-chown $?
+        chmod 2770 /w/shared; result root-chmod $?
+        chmod 0700 /w/private
+        stat -c "shared-mode=%a group=%g" /w/shared
+        mkdir /w/shared/rootdir; echo r > /w/shared/rootfile
+        stat -c "rootfile-mode=%a group=%g uid=%u" /w/shared/rootfile
+        stat -c "rootdir-mode=%a group=%g" /w/shared/rootdir
+        drop "echo more >> /w/shared/rootfile"; result agent-writes-root-file $?
+        drop "echo a > /w/shared/rootdir/agentfile"; result agent-creates-in-root-dir $?
+        drop "mkdir /w/shared/agentdir && echo a > /w/shared/agentdir/f"; result agent-creates-dir $?
+        stat -c "agentfile-mode=%a group=%g uid=%u" /w/shared/agentdir/f
+        echo more >> /w/shared/agentdir/f; result root-writes-agent-file $?
+        touch /w/shared/agentdir/rootnew; result root-creates-in-agent-dir $?
+        rm /w/shared/rootdir/agentfile; result root-deletes-agent-file $?
+        drop "rm -rf /w/shared/rootdir"; result agent-deletes-root-dir $?
+        drop "git init -q /w/shared/repo && cd /w/shared/repo && git config user.email a@a && git config user.name a && echo x > f && git add f && git commit -qm c"; result agent-git $?
+        git -c safe.directory=* -C /w/shared/repo log --oneline >/dev/null 2>&1; result root-reads-agent-git $?
+        drop "cat /w/private/x 2>/dev/null; ls /w/private >/dev/null 2>&1"; result agent-lists-private-dir $?
+        echo secret > /w/private/secret
+        drop "cat /w/private/secret >/dev/null 2>&1"; result agent-reads-private-file $?
+        mkdir -m 0710 /w/traverse; chgrp 1001 /w/traverse; echo secret > /w/traverse/secret; chmod 0660 /w/traverse/secret
+        stat -c "traverse-file-group=%g" /w/traverse/secret
+        drop "cat /w/traverse/secret >/dev/null 2>&1"; result agent-reads-root-file-through-traverse-only-dir $?
+        drop "ls /w/traverse >/dev/null 2>&1"; result agent-lists-traverse-only-dir $?
+        command -v setfacl >/dev/null && { setfacl -m u:1001:rwx /w/shared 2>&1 | cut -c1-70; }
+        true
+    ' 2>&1)"
+    say "$out"
+
+    say '=== real backend boot: seconds until "modules loaded", image '"${QAAP_PROBE_BOOT_IMAGE:-none}"
+    [ -n "${QAAP_PROBE_BOOT_IMAGE:-}" ] || return 0
+    local attempt pulled=0
+    for attempt in 1 2 3 4 5 6; do
+        if timeout 900 docker pull -q "$QAAP_PROBE_BOOT_IMAGE" >/dev/null 2>&1; then pulled=1; break; fi
+        say "pull attempt $attempt failed, retrying"
+        sleep 10
+    done
+    [ "$pulled" = 1 ] || { say 'could not pull the boot image'; return 0; }
+    boot_row() {
+        local label=$1 runtime=$2 cpus=$3 cache=$4 id i line
+        local extra=()
+        [ "$cache" = none ] || extra=(-e "NODE_COMPILE_CACHE=/w/$cache" -v "$SCRATCH/bind:/w:rw")
+        id="$(dk run -d --runtime "$runtime" "${HARD[@]}" --cpus "$cpus" --memory 1610612736 --tmpfs /home/theia --tmpfs /app/examples/browser/logs -e HOME=/home/theia -e NODE_ENV=development -w /app/examples/browser "${extra[@]}" "$QAAP_PROBE_BOOT_IMAGE" node src-gen/backend/main.js --hostname=0.0.0.0 --port=4873 --no-cluster --plugins=local-dir:/app/plugins 2>&1 | tail -1)"
+        line=''
+        for i in $(seq 1 110); do
+            line="$(dk logs "$id" 2>&1 | grep -E 'Backend server: modules loaded' | tail -1)"
+            [ -n "$line" ] && break
+            [ "$(dk inspect -f '{{.State.Running}}' "$id" 2>/dev/null)" = true ] || break
+            sleep 2
+        done
+        say "$label: ${line:-no result, last log: $(dk logs --tail 1 "$id" 2>&1 | cut -c1-140)}"
+        dk rm -f "$id" >/dev/null 2>&1
+    }
+    boot_row 'runc cpus=1' runc 1 none
+    boot_row 'runc cpus=2' runc 2 none
+    boot_row 'runsc cpus=1' runsc-systemd 1 none
+    boot_row 'runsc cpus=2' runsc-systemd 2 none
+    boot_row 'runsc cpus=4' runsc-systemd 4 none
+    boot_row 'runsc directfs cpus=2' tune-directfs 2 none
+    boot_row 'runsc root overlay in memory cpus=2' tune-rootmem 2 none
+    boot_row 'runsc compile cache, first run, cpus=2' runsc-systemd 2 cc
+    boot_row 'runsc compile cache, second run, cpus=2' runsc-systemd 2 cc
+    boot_row 'runsc compile cache, second run, cpus=1' runsc-systemd 1 cc
+}
+
+if [ "${QAAP_PROBE_MODE:-contract}" = group ]; then
+    run_group
+    say 'TUNE DONE. Production was not touched.'
+    exit 0
+fi
 
 if [ "${QAAP_PROBE_MODE:-contract}" = sec ]; then
     run_sec

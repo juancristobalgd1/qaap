@@ -1018,6 +1018,12 @@ describe('QaapDockerOrchestrator', () => {
             delete process.env.QAAP_TENANT_PIDS_LIMIT;
         });
 
+        it('tells only a gVisor backend to use the shared group, and gives only it a longer start', async () => {
+            const backend = new QaapDockerOrchestrator() as unknown as { tenantBackendAgentDropEnv(login: string): string[] };
+            expect(backend.tenantBackendAgentDropEnv('alice')).to.include('QAAP_TENANT_AGENT_ACCESS=group');
+            expect(backend.tenantBackendAgentDropEnv('bob')).not.to.include('QAAP_TENANT_AGENT_ACCESS=group');
+        });
+
         it('refuses a gVisor tenant without the egress proxy', async () => {
             delete process.env.QAAP_TENANT_EGRESS_PROXY_IMAGE;
             let message = '';

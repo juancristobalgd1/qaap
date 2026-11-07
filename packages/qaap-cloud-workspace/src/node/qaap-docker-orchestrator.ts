@@ -33,7 +33,7 @@ import { QAAP_TENANT_PUSH_OUTBOX_PATH, QAAP_TENANT_RUNTIME_API_PATH, type QaapTe
 import { QAAP_TENANT_BUSY_PROBE_HEADER, QaapTenantBusyProbe, type QaapTenantBusyStatus } from './qaap-tenant-busy-probe';
 import { computeTenantBackendUpdateStatus } from './qaap-tenant-backend-update';
 import { QaapTenantRuntimeMetrics } from './qaap-tenant-runtime-metrics';
-import { isQaapRunscConfigured, QAAP_RUNSC_PIDS_FACTOR, QAAP_RUNSC_RUNTIME_NAME, qaapRunscDaemonProblem, qaapTenantCgroupParent, resolveQaapTenantRuntime, type QaapDockerRuntimeInfo, type QaapTenantRuntime } from './qaap-tenant-runtime';
+import { isQaapRunscConfigured, QAAP_RUNSC_BACKEND_READY_TIMEOUT_MS, QAAP_RUNSC_PIDS_FACTOR, QAAP_RUNSC_RUNTIME_NAME, QAAP_TENANT_AGENT_ACCESS_ENV, QAAP_TENANT_AGENT_ACCESS_GROUP, QAAP_TENANT_AGENT_GID, qaapRunscDaemonProblem, qaapTenantCgroupParent, resolveQaapTenantRuntime, type QaapDockerRuntimeInfo, type QaapTenantRuntime } from './qaap-tenant-runtime';
 import { QaapTenantBackendWakeTimeline } from './qaap-tenant-backend-wake-timeline';
 import { QaapTenantRuntimeStore } from './qaap-tenant-runtime-store';
 import { QaapTenantResourceOverrides } from './qaap-tenant-resource-overrides';
@@ -1076,8 +1076,11 @@ export class QaapDockerOrchestrator {
      * (stale or tampered container), instead of running them under its own uid. A local, non-rootless
      * backend keeps its non-root container uid and inherits that identity, as before.
      */
-    protected tenantBackendAgentDropEnv(): string[] {
-        return this.getTenantContainerUser().startsWith('0:') ? ['QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP=1'] : [];
+    protected tenantBackendAgentDropEnv(ownerLogin?: string): string[] {
+        return [
+            ...this.getTenantContainerUser().startsWith('0:') ? ['QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP=1'] : [],
+            ...this.getTenantRuntime(ownerLogin) === 'runsc' ? [`${QAAP_TENANT_AGENT_ACCESS_ENV}=${QAAP_TENANT_AGENT_ACCESS_GROUP}`] : [],
+        ];
     }
 
     /**
@@ -1475,7 +1478,7 @@ export class QaapDockerOrchestrator {
                 'QAAP_AGENT_UID_PER_USER=0',
                 'QAAP_AGENT_UID=1001',
                 'QAAP_AGENT_GID=1001',
-                ...this.tenantBackendAgentDropEnv(),
+                ...this.tenantBackendAgentDropEnv(ownerLogin),
                 `QAAP_REPOS_ROOT=${TENANT_BACKEND_REPOS_ROOT}`,
                 `QAAP_TENANT_CONFIG_ROOT=${TENANT_BACKEND_QAAP_HOME_MOUNT}`,
                 'QAAP_TENANT_BACKEND_MODE=1',
@@ -1562,6 +1565,7 @@ export class QaapDockerOrchestrator {
                     RestartPolicy: { Name: 'on-failure', MaximumRetryCount: 3 },
                     AutoRemove: false,
                     ...this.tenantRuntimeHostConfig(ownerLogin, extraHosts),
+                    ...this.getTenantRuntime(ownerLogin) === 'runsc' ? { GroupAdd: [String(QAAP_TENANT_AGENT_GID)] } : {},
                 },
             });
             if (directEgressNetwork) {
@@ -2063,7 +2067,8 @@ export class QaapDockerOrchestrator {
     /** Do not route the first browser request into a Theia process that is still deploying plugins. */
     protected async waitForTenantBackendReady(target: QaapTenantBackendTarget): Promise<void> {
         const configuredTimeout = Number.parseInt(process.env.QAAP_TENANT_BACKEND_READY_TIMEOUT_MS?.trim() ?? '', 10);
-        const timeoutMs = Number.isInteger(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : 30_000;
+        const defaultTimeout = this.getTenantRuntime(target.tenantLogin) === 'runsc' ? QAAP_RUNSC_BACKEND_READY_TIMEOUT_MS : 30_000;
+        const timeoutMs = Number.isInteger(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : defaultTimeout;
         const deadline = Date.now() + timeoutMs;
         let lastFailure = 'no response';
         while (Date.now() < deadline) {
@@ -2186,7 +2191,7 @@ export class QaapDockerOrchestrator {
             'QAAP_AGENT_UID_PER_USER=0',
             'QAAP_AGENT_UID=1001',
             'QAAP_AGENT_GID=1001',
-            ...this.tenantBackendAgentDropEnv(),
+            ...this.tenantBackendAgentDropEnv(ownerLogin),
             `QAAP_REPOS_ROOT=${TENANT_BACKEND_REPOS_ROOT}`,
             `QAAP_TENANT_CONFIG_ROOT=${TENANT_BACKEND_QAAP_HOME_MOUNT}`,
             'QAAP_TENANT_BACKEND_MODE=1',
@@ -2240,6 +2245,7 @@ export class QaapDockerOrchestrator {
             && hostConfig.CapDrop?.includes('ALL') === true
             && hostConfig.CapAdd?.includes('SETUID') === true
             && hostConfig.CapAdd?.includes('SETGID') === true
+            && (this.getTenantRuntime(ownerLogin) !== 'runsc' || (hostConfig as { GroupAdd?: string[] }).GroupAdd?.includes(String(QAAP_TENANT_AGENT_GID)) === true)
             && hostConfig.ReadonlyRootfs === true
             && hostConfig.Tmpfs?.['/tmp'] === this.getTenantTmpfsOptions()
             && hostConfig.Tmpfs?.[TENANT_BACKEND_LOGS_MOUNT] === TENANT_BACKEND_LOGS_TMPFS_OPTIONS

@@ -36,7 +36,10 @@ Estado para continuar el trabajo desde otra cuenta o sesión. Actualízalo al ce
 
 **Sonda de seguridad y contrato final en el VPS** (flags definitivos, ajustes de red de producción, `VERDICT: VIABLE`): sentry con uid sin privilegios y 0 capacidades; gofer sigue con uid 1000, capacidades y seccomp. El uid del agente no lee el entorno de root, raíz de solo lectura, `/tmp` sin ejecución. Con controles positivos, ni runc ni runsc alcanzan desde la red interna el relay de otro tenant, la gateway, `10.0.2.2` ni la IP pública. Pausa, reanudación, OOM (137, 3 reinicios) sin unidades fallidas ni scopes restantes. Adoptado `--directfs=false`: `npm` igual, `tsc` +16 %, `git` +35 %, pero 2000 ficheros pequeños ×10 frente a runc. A2 resuelto con `qaap-<hash>.slice` (`TasksMax=8192`) bajo `qaap.slice` (50000); los límites de slice no se han probado aún en el VPS.
 
+**Canario en staging, primer intento** (`jcristgd`, imagen ba9ac937d): instalador correcto en el host real, producción intacta. El backend real arranca bajo runsc. Dos fallos que la sonda no vio: `setfacl` da ENOTSUP bajo gVisor, y eso impedía agentes y terminales (cambiado a grupo compartido 1001 con `setgid` y umask 002, validado en una sonda: acceso mutuo y `git` funcionan, lo privado sigue denegado); el arranque en frío llegó a 95 s a 1 CPU frente a 10,6 s en runc (plazo subido a 150 s).
+
 **Pendiente**
+- Repetir el canario con el arreglo. Medir el arranque con `QAAP_PROBE_MODE=group` y `QAAP_PROBE_BOOT_IMAGE` (la descarga falló la primera vez). Revisión de seguridad del cambio de permisos.
 - Canario en staging y luego en un login, con los pasos del README. M3 se simuló: repetirlo contra relays reales. Medir tareas reales antes de decidir activarlo para todos.
 - `--memory` deja el doble con swap, igual que en runc; decidir aparte si fijar `MemorySwap`.
 - Restos en el VPS: `/tmp/gvisor-fork.tar.zstd`, `/tmp/qaap-runsc-rootless-probe.sh`. En el fork, rama antigua `qaap/release-20261102.0-rootless` sin uso.

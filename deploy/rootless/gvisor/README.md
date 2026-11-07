@@ -65,6 +65,8 @@ Staging first, then one real login:
 4. On the host, confirm the limits with `qaap-gvisor-install.sh check`, and that the scope of the tenant backend has the
    expected `memory.max`, `pids.max` and `cpu.max`.
 
+On staging, `action=deploy` rewrites `/opt/qaap-staging/staging.env`, so these settings have to be added again after it.
+
 ## Rollback
 
 Remove the login from `QAAP_TENANT_RUNSC_LOGINS` and restart the control plane; its containers come back under runc with
@@ -85,6 +87,11 @@ Measured on the VPS (8 cores, one run each, npm and git on a bind mount, 2 CPUs)
 - **`--directfs=false` is deliberate.** With directfs the sentry keeps host uid 1000, which owns the Docker socket and the
   tenant data, plus capabilities. Without it the sentry has an unprivileged uid and no capabilities. The gofer stays on
   uid 1000 with capabilities and seccomp: that remains the part to escape from.
+- **No POSIX ACLs on host files.** `setfacl` fails under gVisor, so the backend and the agent share group 1001 instead:
+  the backend's root is a member (`GroupAdd`), both use umask 002, and only the workspace and agent storage are `setgid`.
+  Files anywhere else keep group 0, which the agent is not in. `--clear-groups` on the drop is what keeps it that way.
+- **Slow cold start.** Loading the backend's modules took 76 s at 1 CPU, against 9 s under runc. The ready timeout is 150 s
+  under gVisor (`QAAP_TENANT_BACKEND_READY_TIMEOUT_MS`).
 - **Do not use `--file-access-mounts=exclusive`.** Worker, backend and sandboxes share the tenant trees, and that flag
   assumes nothing else changes them.
 - **Pids.** The limit counts host tasks: about 40 at rest plus 2 per guest process. The limit is multiplied by 4 for
