@@ -15,6 +15,7 @@ import type { AnnotationComposerSessionControls } from '@theia/qaap-adapters/lib
 import { type QaapAgentConversationDTO, type QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { type QaapAgentApprovalPolicyId } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import type { ExecutionSurfaceTabId } from '@theia/qaap-shared-core/lib/common/qaap-execution-surface-tabs';
+import type { Disposable } from '@theia/core/lib/common/disposable';
 import type { QaapProjectBootstrapService } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service';
 import type { QaapMonorepoAppCandidate } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-types';
 import {
@@ -55,7 +56,7 @@ import { bootstrapAppliesToProjectExtracted, bootstrapPreviewUrlForProjectExtrac
 import { claimTranscriptPreviewExecutionExtracted, clearTranscriptEmptyPreviewChromeExtracted, detachTranscriptReviewWidgetExtracted, disposePreviewForConversationExtracted, disposeTranscriptEmbeddedPreviewExtracted, disposeTranscriptTerminalSlidesForConversationExtracted, getOrCreateOffscreenPreviewHostExtracted, getTranscriptEmbeddedPreviewUrlExtracted, mountTranscriptEmbeddedPreviewExtracted, mountTranscriptReviewWidgetExtracted, resolvePreviewAnnotationScopeExtracted, resolveTranscriptPreviewIdentityExtracted, submitTranscriptReviewFeedbackExtracted, suspendTranscriptPreviewIframeExtracted, wireTranscriptPreviewAnnotationScopeExtracted } from './mobile-projects-transcript-surfaces-ui-streaming';
 import { beginTranscriptDevPreviewRequestExtracted, discoverProjectDevPreviewUrlExtracted, disposeTranscriptTerminalSlidesExtracted, prepareTranscriptTerminalsForPageUnloadExtracted, previewUrlMatchesProjectExtracted, refreshTranscriptPreviewProjectExtracted, resolveTranscriptPreviewUrlExtracted, syncTranscriptPreviewFromConversationExtracted } from './mobile-projects-transcript-surfaces-ui-thought-brief';
 import { adoptReconciledProjectPreviewUrlExtracted, clearMismatchedProjectPreviewUrlExtracted, discoverAndMountTranscriptPreviewIfReadyExtracted, fetchCurrentProjectClaimUrlExtracted, reconcileSupersededProjectPreviewUrlExtracted, renderPreviewTabExtracted, scheduleTranscriptPreviewIdentityWatchExtracted, shouldKeepTranscriptPreviewTabProbeExtracted, stopTranscriptPreviewIdentityWatchExtracted, tryMountProjectScopedPreviewExtracted, tryMountVerifiedTranscriptPreviewExtracted, verifyMountedTranscriptPreviewIdentityExtracted } from './mobile-projects-transcript-surfaces-ui-timeline';
-import { annotateEmptyPreviewWhenNotRunnableExtracted, cancelPreviewAgentTurnExtracted, ensureTranscriptFilesTabExtracted, ensureTranscriptPreviewServingExtracted, mountTranscriptEmptyPreviewExtracted, recoverTranscriptPreviewUrlExtracted, resolveProjectScopedWorkspaceKeyExtracted, resolveRunnableTranscriptProjectRootExtracted, resolveTranscriptProjectCwdExtracted, resolveTranscriptWorkspaceKeyExtracted, revealTranscriptFileExtracted, revealTranscriptReviewFileExtracted, updateTranscriptPreviewLaunchStatusExtracted } from './mobile-projects-transcript-surfaces-ui-tool-pills';
+import { annotateEmptyPreviewWhenNotRunnableExtracted, cancelPreviewAgentTurnExtracted, ensureTranscriptFilesTabExtracted, ensureTranscriptPreviewServingExtracted, mountTranscriptEmptyPreviewExtracted, recoverTranscriptPreviewUrlExtracted, refreshPreviewForBootstrapChangeExtracted, resolveProjectScopedWorkspaceKeyExtracted, resolveRunnableTranscriptProjectRootExtracted, resolveTranscriptProjectCwdExtracted, resolveTranscriptWorkspaceKeyExtracted, revealTranscriptFileExtracted, revealTranscriptReviewFileExtracted, updateTranscriptPreviewLaunchStatusExtracted } from './mobile-projects-transcript-surfaces-ui-tool-pills';
 
 export type TranscriptTab = ExecutionSurfaceTabId;
 
@@ -231,6 +232,10 @@ export class MobileProjectsTranscriptSurfacesUi {
     public transcriptPreviewAppPickerCancel: (() => void) | undefined;
     /** @internal Project whose app picker was dismissed without a choice; drives the "Choose an app" state. */
     public transcriptPreviewAppPickerCancelledProjectId: string | undefined;
+    /** @internal Last (project, phase, readiness, URL) the Browser view reacted to; see refreshPreviewForBootstrapChangeExtracted. */
+    public lastBootstrapPreviewKey: string | undefined;
+    /** Subscription to the bootstrap state of the project the Browser view follows; see {@link watchProjectBootstrapForPreview}. */
+    protected projectBootstrapPreviewWatch: { readonly bootstrap: QaapProjectBootstrapService; readonly subscription: Disposable } | undefined;
 
     constructor(
         /** @internal Used by the extracted mobile-projects-transcript-surfaces-ui-* modules. */
@@ -322,6 +327,23 @@ export class MobileProjectsTranscriptSurfacesUi {
     /** @internal Used by the extracted mobile-projects-transcript-surfaces-ui-* modules. */
     public ensurePreviewProjectContext(project: MobileProjectEntry): void {
         ensurePreviewProjectContextExtracted(this, project);
+    }
+
+    /**
+     * Re-renders the Browser view on every bootstrap state change, so a project switch with a run in
+     * flight shows that run's URL or Run card. Subscribes once per bootstrap instance.
+     */
+    /** @internal Used by the extracted mobile-projects-transcript-surfaces-ui-* modules. */
+    public watchProjectBootstrapForPreview(): void {
+        const bootstrap = this.host.projectBootstrap;
+        if (!bootstrap || this.projectBootstrapPreviewWatch?.bootstrap === bootstrap) {
+            return;
+        }
+        this.projectBootstrapPreviewWatch?.subscription.dispose();
+        this.projectBootstrapPreviewWatch = {
+            bootstrap,
+            subscription: bootstrap.onStateChange(state => refreshPreviewForBootstrapChangeExtracted(this, state)),
+        };
     }
 
     mountProjectDetailSurfaceTab(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, tab: TranscriptTab,): void {

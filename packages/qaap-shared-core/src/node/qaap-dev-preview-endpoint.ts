@@ -426,8 +426,8 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution, Q
     }
 
     /** @internal Used by the extracted qaap-dev-preview-endpoint-* modules. */
-    public previewBaseDomain(): string | undefined {
-        return previewBaseDomainExtracted(this);
+    public previewBaseDomain(req?: Request | http.IncomingMessage): string | undefined {
+        return previewBaseDomainExtracted(this, req);
     }
 
     /** @internal Used by the extracted qaap-dev-preview-endpoint-* modules. */

@@ -2,6 +2,7 @@ import type { MobileProjectsTranscriptSurfacesUiContext } from './mobile-project
 // Extracted from mobile-projects-transcript-surfaces-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
+import type { QaapBootstrapStateChange } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service';
 import { invalidateVerifyWorkspaceSnapshots } from '@theia/qaap-diff-review/lib/common/qaap-verify-commit-readiness';
 import { FileUri } from '@theia/core/lib/common/file-uri';
 import {
@@ -37,6 +38,8 @@ import {
 } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-surfaces-helpers';
 import { lastDevOutputLines } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-dev-errors';
 
+/** Marks the empty Browser card that offers to run the project's runnable app. */
+const PREVIEW_RUN_HINT_CLASS = 'theia-mobile-transcript-preview-run-hint';
 /** Lines of the dev-server log kept in the "Preview could not start" overlay. */
 const PREVIEW_LAUNCH_FAILURE_LOG_LINES = 12;
 /** Characters of the dev-server log kept in the "Preview could not start" overlay. */
@@ -246,6 +249,7 @@ export function mountTranscriptEmptyPreviewExtracted(ctx: MobileProjectsTranscri
     ctx.host.transcriptEmbeddedPreview.root.querySelector('.theia-mobile-transcript-preview-empty-overlay')?.remove();
     ctx.syncHeaderPreviewRunButton(project, summary);
     ctx.annotateEmptyPreviewWhenNotRunnable(project, summary);
+    renderEmptyPreviewRunHintExtracted(ctx, project, summary);
     ctx.updateTranscriptPreviewLaunchStatus();
 }
 
@@ -397,6 +401,119 @@ export function updateTranscriptPreviewLaunchStatusExtracted(ctx: MobileProjects
         status.append(title, detail);
     }
     overlay.replaceChildren(status);
+    const openProject = ctx.host.transcriptOpenProject;
+    const openSummary = ctx.host.transcriptOpenSummary;
+    if (openProject && openSummary) {
+        renderEmptyPreviewRunHintExtracted(ctx, openProject, openSummary);
+    }
+}
+
+/** Bootstrap facts the empty Browser state needs; structural so the gate stays a pure function. */
+export interface EmptyPreviewRunSnapshot {
+    readonly phase?: string;
+    readonly previewUrl?: string;
+    readonly descriptor?: {
+        readonly name: string;
+        readonly devCommand?: string;
+        readonly rootUri: { toString(): string };
+        readonly previewRootUri?: { toString(): string };
+    };
+}
+
+/**
+ * Name of the runnable app the empty Browser state should offer to run, or `undefined` when the
+ * state must stay untouched: a URL is loaded or a preview is starting, the bootstrap is not
+ * `ready-to-run` with a dev command, or the bootstrap descriptor belongs to another root (the
+ * bootstrap is scoped to the active workspace, not to this project).
+ */
+export function resolveEmptyPreviewRunAppName(snapshot: EmptyPreviewRunSnapshot | undefined, expectedRootUri: string | undefined,
+    requestActive: boolean): string | undefined {
+    const descriptor = snapshot?.descriptor;
+    if (requestActive || snapshot?.previewUrl || snapshot?.phase !== 'ready-to-run'
+        || !descriptor?.devCommand || !expectedRootUri) {
+        return undefined;
+    }
+    const ownsRoot = descriptor.rootUri.toString() === expectedRootUri
+        || descriptor.previewRootUri?.toString() === expectedRootUri;
+    const name = descriptor.name.trim();
+    return ownsRoot && name ? name : undefined;
+}
+
+/**
+ * The Browser view renders from its own probes, so a bootstrap transition for the project on screen
+ * (starting, running on a URL, failed) never reached it: a project switch left the Run card or the
+ * previous project's frame up. Re-render the active project's preview, then re-evaluate the Run card,
+ * which only reads a `ready-to-run` bootstrap.
+ */
+export function refreshPreviewForBootstrapChangeExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, state: QaapBootstrapStateChange): void {
+    const projectId = ctx.transcriptPreviewProjectId;
+    const project = projectId ? ctx.host.projects.find(candidate => candidate.id === projectId) : undefined;
+    const summary = ctx.host.transcriptOpenSummary;
+    if (!project || !summary || ctx.host.transcriptOpenProject?.id !== project.id
+        || ctx.host.executionSurfaceTabsUi.activeExecutionTab(project) !== 'preview') {
+        return;
+    }
+    // Bootstrap emits often (dev-server output, readiness). React only when the phase, readiness or URL moved.
+    const key = [project.id, state.phase, state.previewReadiness ?? '', state.previewUrl ?? ''].join('|');
+    if (key === ctx.lastBootstrapPreviewKey) {
+        return;
+    }
+    ctx.lastBootstrapPreviewKey = key;
+    // The frame already shows this project's running URL: never reassign its src or remount it.
+    if (state.phase === 'running' && state.previewUrl && ctx.getTranscriptEmbeddedPreviewUrl() === state.previewUrl) {
+        return;
+    }
+    ctx.renderPreviewTab(project, summary);
+    renderEmptyPreviewRunHintExtracted(ctx, project, summary);
+    ctx.updateTranscriptPreviewLaunchStatus();
+}
+
+/**
+ * Empty Browser state for a runnable project: names the app and offers the same «Run app» action
+ * as the composer quick action. Replaces only its own card, never the "no runnable app" overlay.
+ */
+export function renderEmptyPreviewRunHintExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry,
+    summary: QaapAgentConversationSummaryDTO,): void {
+    const root = ctx.host.transcriptEmbeddedPreview?.root;
+    const frameSlot = root?.querySelector<HTMLElement>('.qaap-preview-frame-slot')
+        ?? root?.querySelector<HTMLElement>('.qaap-preview-content-area');
+    if (!root || !frameSlot || !root.classList.contains('theia-mod-empty-preview')) {
+        return;
+    }
+    frameSlot.querySelector(`.${PREVIEW_RUN_HINT_CLASS}`)?.remove();
+    if (ctx.host.transcriptOpenProject && ctx.host.transcriptOpenProject.id !== project.id) {
+        return;
+    }
+    const rootPath = ctx.resolveRunnableTranscriptProjectRoot(project, summary);
+    const requestActive = ctx.host.transcriptPreviewRequestRunning || ctx.host.transcriptPreviewRequestPending;
+    const appName = resolveEmptyPreviewRunAppName(
+        ctx.host.projectBootstrap?.getStateSnapshot(),
+        rootPath ? FileUri.create(rootPath).toString() : undefined,
+        requestActive,
+    );
+    if (!appName) {
+        return;
+    }
+    const overlay = document.createElement('div');
+    overlay.className = `theia-mobile-transcript-preview-empty-overlay theia-mod-status ${PREVIEW_RUN_HINT_CLASS}`;
+    const wrap = document.createElement('div');
+    wrap.className = 'theia-mobile-transcript-preview-empty';
+    const note = document.createElement('div');
+    note.className = 'theia-mobile-transcript-preview-ready';
+    const hint = document.createElement('p');
+    hint.className = 'theia-mobile-transcript-preview-ready-hint';
+    hint.textContent = nls.localize('qaap/projectBootstrap/browserEmptyRunHint', 'Run {0} to preview it here.', appName);
+    const run = document.createElement('button');
+    run.type = 'button';
+    run.className = 'theia-mobile-transcript-preview-launch-retry';
+    run.textContent = nls.localize('qaap/projectBootstrap/runPreview', 'Run & Preview');
+    run.addEventListener('click', () => {
+        void ctx.host.transcriptStickyComposerUi?.launchComposerDevPreview(project, summary);
+    });
+    note.append(hint, run);
+    wrap.append(note);
+    overlay.append(wrap);
+    frameSlot.append(overlay);
 }
 
 export function annotateEmptyPreviewWhenNotRunnableExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry,

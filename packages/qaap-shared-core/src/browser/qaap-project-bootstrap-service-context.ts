@@ -82,6 +82,7 @@ export type QaapProjectBootstrapServiceContextMember =
     | 'getMissingDescriptorHint'
     | 'healPreviewClaimToListeningPort'
     | 'hubPinnedWorkspaceRoot'
+    | 'hubProjectRootEmitter'
     | 'hubProjects'
     | 'installGeneration'
     | 'installTerminal'

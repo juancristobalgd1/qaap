@@ -9,7 +9,7 @@ import { inject, injectable, optional } from '@theia/core/shared/inversify';
 import * as express from '@theia/core/shared/express';
 import { BackendApplicationContribution, BackendApplicationPath } from '@theia/core/lib/node';
 import { EarlyExpressMiddleware } from '@theia/core/lib/node/backend-application';
-import { parseQaapPreviewHostLabel, resolveQaapPreviewBaseDomain } from '@theia/qaap-shared-core/lib/node/qaap-preview-host';
+import { parseQaapPreviewHostLabel, resolveQaapPreviewBaseDomainForRequest } from '@theia/qaap-shared-core/lib/node/qaap-preview-host';
 
 const BROTLI_CONTENT_TYPES: Record<string, string> = {
     '.js': 'text/javascript',
@@ -28,7 +28,7 @@ export async function qaapServeBrotli(
     req: express.Request,
     res: express.Response,
     frontendDir: string,
-    previewBaseDomain: string | undefined = resolveQaapPreviewBaseDomain()
+    previewBaseDomain?: string
 ): Promise<void> {
     if (req.method !== 'GET' && req.method !== 'HEAD') {
         return;
@@ -44,7 +44,7 @@ export async function qaapServeBrotli(
     const headers = req.headers ?? {};
     const forwardedHost = headers['x-forwarded-host'];
     const rawHost = (Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost)?.split(',')[0]?.trim() ?? headers.host;
-    if (parseQaapPreviewHostLabel(rawHost, previewBaseDomain)) {
+    if (parseQaapPreviewHostLabel(rawHost, previewBaseDomain ?? resolveQaapPreviewBaseDomainForRequest(rawHost))) {
         return;
     }
     // The representation depends on Accept-Encoding whether or not a .br companion exists.

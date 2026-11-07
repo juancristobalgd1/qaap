@@ -59,6 +59,7 @@ export type MobileProjectsTranscriptSurfacesUiContextMember =
     | 'isTranscriptPreviewStoppable'
     | 'isTranscriptPreviewUrlFieldActive'
     | 'isTranscriptPreviewWaiting'
+    | 'lastBootstrapPreviewKey'
     | 'lastSyncedPreviewUrl'
     | 'matchesActivePreviewSummary'
     | 'mountFreshTranscriptTerminalSlide'
@@ -134,6 +135,7 @@ export type MobileProjectsTranscriptSurfacesUiContextMember =
     | 'updateTranscriptPreviewLaunchStatus'
     | 'updateTranscriptPreviewRunButtonState'
     | 'verifyMountedTranscriptPreviewIdentity'
+    | 'watchProjectBootstrapForPreview'
     | 'wireTranscriptPreviewAnnotationScope';
 
 /**

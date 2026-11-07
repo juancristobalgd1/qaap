@@ -22,10 +22,38 @@ import { markQaapBootMilestone } from './qaap-boot-marks';
  * Extends the collaboration subclass, which upstream already binds as the `WorkspaceService` and
  * which switches workspaces in place the same way (`setHostWorkspace`).
  */
+/** Window-title name of the project the Work Hub pinned, from its root folder. */
+export namespace QaapWindowTitleRootName {
+    export function fromHubProjectRoot(root: URI | undefined): string | undefined {
+        const name = root?.path.base;
+        return name ? name : undefined;
+    }
+}
+
 @injectable()
 export class QaapWorkspaceService extends CollaborationWorkspaceService {
 
     protected skippedMostRecentWorkspace = false;
+
+    /** Project root the Work Hub pinned (`QaapProjectBootstrapService.hubPinnedWorkspaceRoot`), if any. */
+    protected hubProjectRoot: URI | undefined;
+
+    /**
+     * Makes the window title name the Work Hub project instead of the open workspace; `undefined`
+     * restores the workspace name.
+     */
+    setHubProjectRoot(root: URI | undefined): void {
+        this.hubProjectRoot = root;
+        this.updateTitle();
+    }
+
+    protected override updateTitle(): void {
+        super.updateTitle();
+        const hubRootName = QaapWindowTitleRootName.fromHubProjectRoot(this.hubProjectRoot);
+        if (hubRootName) {
+            this.windowTitleService.update({ rootName: hubRootName });
+        }
+    }
 
     protected override async doInit(): Promise<void> {
         await super.doInit();
