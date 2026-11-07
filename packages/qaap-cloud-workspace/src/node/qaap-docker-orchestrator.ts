@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { inject, injectable, optional } from '@theia/core/shared/inversify';
+import { inject, injectable, optional, postConstruct } from '@theia/core/shared/inversify';
 import { FileUri } from '@theia/core/lib/node';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
@@ -33,6 +33,7 @@ import { QAAP_TENANT_PUSH_OUTBOX_PATH, QAAP_TENANT_RUNTIME_API_PATH, type QaapTe
 import { QAAP_TENANT_BUSY_PROBE_HEADER, QaapTenantBusyProbe, type QaapTenantBusyStatus } from './qaap-tenant-busy-probe';
 import { computeTenantBackendUpdateStatus } from './qaap-tenant-backend-update';
 import { QaapTenantRuntimeMetrics } from './qaap-tenant-runtime-metrics';
+import { resolveQaapTenantDockerHost, resolveQaapTenantRuntime, type QaapTenantRuntime } from './qaap-tenant-runtime';
 import { QaapTenantBackendWakeTimeline } from './qaap-tenant-backend-wake-timeline';
 import { QaapTenantRuntimeStore } from './qaap-tenant-runtime-store';
 import { QaapTenantResourceOverrides } from './qaap-tenant-resource-overrides';
@@ -161,6 +162,8 @@ export interface QaapTaskSandboxPlacement {
     readonly directEgressNetwork?: string;
     readonly egressEnv: Readonly<Record<string, string>>;
     readonly roots: readonly QaapTaskSandboxRoot[];
+    /** OCI runtime the sandbox container must run under (`QAAP_TENANT_RUNTIME`); absent means runc. */
+    readonly runtime?: QaapTenantRuntime;
 }
 
 export interface QaapTenantBackendTarget {
@@ -750,6 +753,7 @@ export class QaapDockerOrchestrator {
                 { kind: 'parallel', backendPath: `${TENANT_BACKEND_PARALLEL_MOUNT}/${segment}`, hostPath: mounts.parallelRoot, source: this.dockerMountSource(mounts.parallelRoot, 'parallel') },
                 { kind: 'tenant-config', backendPath: TENANT_BACKEND_QAAP_HOME_MOUNT, hostPath: tenantDataRoot, source: this.dockerMountSource(tenantDataRoot, 'tenant-config') },
             ],
+            runtime: this.getTenantRuntime(),
         };
     }
 
@@ -762,10 +766,19 @@ export class QaapDockerOrchestrator {
 
     protected async verifyDockerNode(node: QaapDockerNodeClient): Promise<void> {
         if (isQaapHostedRuntime(process.env) && !this.verifiedDockerNodeIds.has(node.config.id)) {
-            const info = await node.docker.info() as { SecurityOptions?: readonly string[] };
-            const rootless = (info.SecurityOptions ?? []).some(option => /rootless/i.test(option));
-            if (!rootless) {
-                throw new Error(`Refusing hosted Docker control-plane access: Docker node ${node.config.id} did not report rootless mode.`);
+            const info = await node.docker.info() as { SecurityOptions?: readonly string[]; Runtimes?: Record<string, unknown>; DefaultRuntime?: string };
+            if (this.getTenantRuntime() === 'runsc') {
+                // gVisor replaces the rootless check: the daemon must offer runsc and default to it, so a
+                // tenant container that omits HostConfig.Runtime still never runs on the host kernel.
+                const runsc = Object.keys(info.Runtimes ?? {}).includes('runsc') && info.DefaultRuntime === 'runsc';
+                if (!runsc) {
+                    throw new Error(`Refusing hosted tenant runtime: QAAP_TENANT_RUNTIME=runsc but Docker node ${node.config.id} does not report runsc as its runtime and DefaultRuntime.`);
+                }
+            } else {
+                const rootless = (info.SecurityOptions ?? []).some(option => /rootless/i.test(option));
+                if (!rootless) {
+                    throw new Error(`Refusing hosted Docker control-plane access: Docker node ${node.config.id} did not report rootless mode.`);
+                }
             }
             this.verifiedDockerNodeIds.add(node.config.id);
         }
@@ -781,7 +794,11 @@ export class QaapDockerOrchestrator {
     }
 
     protected getDockerNodeClients(): readonly QaapDockerNodeClient[] {
-        if (!process.env.QAAP_DOCKER_NODES?.trim() && this.docker) {
+        const tenantDockerHost = resolveQaapTenantDockerHost(process.env);
+        if (tenantDockerHost && process.env.QAAP_DOCKER_NODES?.trim()) {
+            throw new Error('QAAP_TENANT_DOCKER_HOST cannot be combined with QAAP_DOCKER_NODES: set dockerHost on the tenant node in QAAP_DOCKER_NODES instead.');
+        }
+        if (!process.env.QAAP_DOCKER_NODES?.trim() && this.docker && !tenantDockerHost) {
             return [{
                 config: {
                     id: 'default',
@@ -794,7 +811,9 @@ export class QaapDockerOrchestrator {
             }];
         }
         if (!this.dockerNodeConfigs) {
-            this.dockerNodeConfigs = resolveQaapDockerNodes(process.env);
+            // The single-node case only: QAAP_TENANT_DOCKER_HOST points the tenant daemon at its own socket.
+            this.dockerNodeConfigs = resolveQaapDockerNodes(process.env)
+                .map(config => tenantDockerHost ? { ...config, dockerHost: tenantDockerHost } : config);
         }
         return this.dockerNodeConfigs.map(config => {
             const existing = this.dockerNodeClients.get(config.id);
@@ -1233,6 +1252,7 @@ export class QaapDockerOrchestrator {
                     Tmpfs: { '/tmp': this.getTenantTmpfsOptions() },
                     NetworkMode: networkMode,
                     AutoRemove: false,
+                    ...this.tenantRuntimeHostConfig(),
                 },
             });
             if (directEgressNetwork) {
@@ -1501,6 +1521,7 @@ export class QaapDockerOrchestrator {
                     // tenantBackendContainerMatches, so live containers are never recreated over this setting.
                     RestartPolicy: { Name: 'on-failure', MaximumRetryCount: 3 },
                     AutoRemove: false,
+                    ...this.tenantRuntimeHostConfig(),
                 },
             });
             if (directEgressNetwork) {
@@ -2007,6 +2028,7 @@ export class QaapDockerOrchestrator {
                 IpcMode?: string;
                 PortBindings?: Record<string, Array<{ HostIp?: string; HostPort?: string }> | null>;
                 PublishAllPorts?: boolean;
+                Runtime?: string;
             };
             Mounts?: Array<{ Source?: string; Destination?: string; RW?: boolean }>;
             NetworkSettings?: {
@@ -2091,6 +2113,7 @@ export class QaapDockerOrchestrator {
             && (!hostConfig.PidMode || hostConfig.PidMode === 'private')
             && (!hostConfig.IpcMode || hostConfig.IpcMode === 'private')
             && hostConfig.NetworkMode === networkMode
+            && this.tenantRuntimeMatches(hostConfig.Runtime)
             && ports === null
             && Object.values((hostConfig.PortBindings ?? {}) as Record<string, unknown[] | null | undefined>).every(bindings => !bindings || bindings.length === 0)
             && hostConfig.PublishAllPorts !== true;
@@ -2334,6 +2357,7 @@ export class QaapDockerOrchestrator {
                 ReadonlyRootfs?: boolean;
                 Tmpfs?: Record<string, string>;
                 NetworkMode?: string;
+                Runtime?: string;
                 Privileged?: boolean;
                 PidMode?: string;
                 IpcMode?: string;
@@ -2373,7 +2397,8 @@ export class QaapDockerOrchestrator {
             // host/container namespace sharing, not the safe private default.
             && (!hostConfig.PidMode || hostConfig.PidMode === 'private')
             && (!hostConfig.IpcMode || hostConfig.IpcMode === 'private')
-            && hostConfig.NetworkMode === networkMode;
+            && hostConfig.NetworkMode === networkMode
+            && this.tenantRuntimeMatches(hostConfig.Runtime);
     }
 
     /** Derive the complete per-tenant mount set from any one of its canonical roots. */
@@ -2567,6 +2592,30 @@ export class QaapDockerOrchestrator {
             throw new Error('QAAP_TENANT_DOCKER_IMAGE or QAAP_THEIA_IMAGE is required for hosted tenant workers.');
         }
         return DEFAULT_IMAGE;
+    }
+
+    /** Fail closed at startup: an unsupported QAAP_TENANT_RUNTIME stops the orchestrator before any tenant starts. */
+    @postConstruct()
+    protected validateTenantRuntimeConfig(): void {
+        this.getTenantRuntime();
+    }
+
+    /** `QAAP_TENANT_RUNTIME` resolved per call; throws on an unsupported value (fail closed). */
+    protected getTenantRuntime(): QaapTenantRuntime {
+        return resolveQaapTenantRuntime(process.env);
+    }
+
+    /** `HostConfig` fragment that selects gVisor for code-running tenant containers; empty under runc. */
+    protected tenantRuntimeHostConfig(): { Runtime?: 'runsc' } {
+        return this.getTenantRuntime() === 'runsc' ? { Runtime: 'runsc' } : {};
+    }
+
+    /**
+     * An existing container must have been created under the selected runtime. Under runc any non-gVisor
+     * runtime (including unset) matches, so the default keeps today's behaviour.
+     */
+    protected tenantRuntimeMatches(actual: string | undefined): boolean {
+        return this.getTenantRuntime() === 'runsc' ? actual === 'runsc' : actual !== 'runsc';
     }
 
     protected getTenantContainerUser(): string {

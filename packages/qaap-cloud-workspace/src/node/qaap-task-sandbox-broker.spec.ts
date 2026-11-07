@@ -370,6 +370,7 @@ describe('QaapTaskSandboxBroker (control plane)', () => {
     let hostRoot: string;
     let docker: FakeDocker;
     let broker: QaapTaskSandboxBroker;
+    let placementRuntime: 'runc' | 'runsc' | undefined;
 
     const placementFor = (tenant: string): QaapTaskSandboxPlacement => ({
         docker: docker as unknown as QaapTaskSandboxPlacement['docker'],
@@ -401,7 +402,7 @@ describe('QaapTaskSandboxBroker (control plane)', () => {
         });
         broker = new QaapTaskSandboxBroker();
         const orchestrator = {
-            taskSandboxPlacement: async (tenant: string) => placementFor(tenant),
+            taskSandboxPlacement: async (tenant: string) => ({ ...placementFor(tenant), runtime: placementRuntime }),
             getTenantBackendTarget: (tenant: string) => tenant === 'alice'
                 ? { containerId: 'qaap-backend-alice', containerName: 'qaap-backend-alice', host: '127.0.0.1', port: 4873, tenantLogin: 'alice' }
                 : undefined,
@@ -435,6 +436,24 @@ describe('QaapTaskSandboxBroker (control plane)', () => {
         ]) {
             expect(() => broker.validateRoot(placement, hostile), hostile).to.throw();
         }
+    });
+
+    it('runs the sandbox under runsc only when the placement selects it', async () => {
+        placementRuntime = 'runsc';
+        try {
+            const sandbox = await broker.create('alice', { root: '/tmp/qaap-worktrees/alice/repo-1' });
+            const config = docker.created.find(entry => entry.name === sandbox.name) as { HostConfig: Record<string, unknown> };
+            expect(config.HostConfig.Runtime).to.equal('runsc');
+            expect(config.HostConfig.CapDrop).to.deep.equal(['ALL']);
+        } finally {
+            placementRuntime = undefined;
+        }
+    });
+
+    it('sets no Runtime on the sandbox under the default runc runtime', async () => {
+        const sandbox = await broker.create('alice', { root: '/tmp/qaap-worktrees/alice/repo-1' });
+        const config = docker.created.find(entry => entry.name === sandbox.name) as { HostConfig: Record<string, unknown> };
+        expect(config.HostConfig).to.not.have.property('Runtime');
     });
 
     it('creates a hardened sandbox on the tenant network that binds only the fixed tenant roots', async () => {

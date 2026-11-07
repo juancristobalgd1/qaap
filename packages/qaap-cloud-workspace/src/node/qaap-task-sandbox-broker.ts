@@ -622,6 +622,8 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
                 ],
                 NetworkMode: placement.network,
                 AutoRemove: false,
+                // gVisor for the user's code only when the orchestrator selected it (QAAP_TENANT_RUNTIME).
+                ...(placement.runtime === 'runsc' ? { Runtime: 'runsc' } : {}),
             },
         });
         if (placement.directEgressNetwork) {
@@ -694,6 +696,8 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
             HostConfig: {
                 LogConfig: resolveQaapDockerLogConfig(),
                 Binds: [`${volume}:/out`],
+                // Stays on the daemon default runtime on purpose: it only copies the exec server binary, runs no
+                // user code, and has no network. It is not given Runtime 'runsc' (see the sandbox HostConfig).
                 NetworkMode: 'none',
                 CapDrop: ['ALL'],
                 SecurityOpt: ['no-new-privileges:true'],

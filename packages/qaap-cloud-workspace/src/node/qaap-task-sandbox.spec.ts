@@ -172,6 +172,27 @@ describe('QaapTaskSandboxService', function (): void {
         expect(service.isEnabled({ QAAP_TASK_SANDBOX: 'true' })).to.equal(true);
     });
 
+    it('adds --runtime runsc to the sandbox run only when QAAP_TENANT_RUNTIME=runsc', async () => {
+        const previous = process.env.QAAP_TENANT_RUNTIME;
+        try {
+            delete process.env.QAAP_TENANT_RUNTIME;
+            const service = new FakeDockerSandboxService();
+            await service.acquire({ taskId: 'rt-default', cwd: worktreeA, env: { HOME: home }, uid: 20001, gid: 20002 });
+            expect(service.callsOf('run')[0]).to.not.include('--runtime');
+            process.env.QAAP_TENANT_RUNTIME = 'runsc';
+            await service.acquire({ taskId: 'rt-gvisor', cwd: worktreeB, env: { HOME: home }, uid: 20001, gid: 20002 });
+            const runsc = service.callsOf('run')[1];
+            expect(runsc.join(' ')).to.contain('--runtime runsc');
+            expect(runsc.join(' ')).to.contain('--cap-drop ALL');
+        } finally {
+            if (previous === undefined) {
+                delete process.env.QAAP_TENANT_RUNTIME;
+            } else {
+                process.env.QAAP_TENANT_RUNTIME = previous;
+            }
+        }
+    });
+
     it('gives each worktree its own hardened container holding only that worktree', async () => {
         const service = new FakeDockerSandboxService();
         const a = await service.acquire({ taskId: 't1', cwd: path.join(worktreeA), env: { HOME: home }, uid: 20001, gid: 20002 });

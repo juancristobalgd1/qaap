@@ -21,6 +21,7 @@ import type { QaapTaskSandboxBrokerSandbox } from './qaap-task-sandbox-broker-pr
 import type { QaapSandboxExecClientRequest } from './qaap-task-sandbox-exec-client-main';
 import { encodeQaapSandboxFrame, parseQaapListeningPorts, QaapSandboxFrame, QaapSandboxFrameDecoder } from './qaap-task-sandbox-exec-protocol';
 import { QAAP_PERSISTENT_HOME_DIRECTORIES, QAAP_PERSISTENT_HOME_FILES } from './qaap-tenant-persistent-home';
+import { resolveQaapTenantRuntime } from './qaap-tenant-runtime';
 import { isQaapBackendOnlyEnvKey } from './qaap-child-process-env';
 
 /**
@@ -1138,6 +1139,8 @@ export class QaapTaskSandboxService implements BackendApplicationContribution, Q
             '--tmpfs', '/tmp:rw,exec,nosuid,size=2g,mode=1777',
             '--tmpfs', `${QAAP_TASK_SANDBOX_HOME}:rw,exec,nosuid,size=1g,mode=0700,uid=${uid},gid=${gid}`,
             '--network', process.env.QAAP_TASK_SANDBOX_NETWORK?.trim() || 'bridge',
+            // gVisor for the user's code when QAAP_TENANT_RUNTIME=runsc; the default runtime otherwise.
+            ...(resolveQaapTenantRuntime(process.env) === 'runsc' ? ['--runtime', 'runsc'] : []),
             '-e', `HOME=${QAAP_TASK_SANDBOX_HOME}`,
             '-e', `QAAP_SANDBOX_EXEC_RUNNER=${EXEC_RUNNER}`,
             '-e', `QAAP_SANDBOX_BRIDGE_RUNNER=${BRIDGE_RUNNER}`,

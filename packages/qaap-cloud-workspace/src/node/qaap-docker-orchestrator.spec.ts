@@ -9,6 +9,7 @@ import * as path from 'path';
 import type * as Dockerode from 'dockerode';
 import { QaapDockerOrchestrator } from './qaap-docker-orchestrator';
 import { QaapTenantBackendWakeTimeline } from './qaap-tenant-backend-wake-timeline';
+import { resolveQaapTenantRuntime } from './qaap-tenant-runtime';
 import { QaapTenantRuntimeMetrics } from './qaap-tenant-runtime-metrics';
 
 /**
@@ -33,6 +34,10 @@ interface QaapDockerOrchestratorTestAccess {
     readonly tenantBackendTargets: Map<string, unknown>;
     readonly tenantBackendEnsurePromises: Map<string, Promise<unknown>>;
     tenantMountsForRoot(hostPath: string): QaapTenantMountSet;
+    verifyDockerNode(node: { config: { id: string; dockerHost: string }; docker: Dockerode }): Promise<void>;
+    validateTenantRuntimeConfig(): void;
+    tenantRuntimeMatches(actual: string | undefined): boolean;
+    getDockerNodeClients(): ReadonlyArray<{ config: { dockerHost: string } }>;
     toContainerPath(hostPath: string, tenantRootHostPath?: string): string;
     dockerMountSource(hostPath: string, kind: 'repos' | 'worktrees' | 'parallel' | 'tenant-config'): string;
     tenantContainerMatches(inspect: Dockerode.ContainerInspectInfo, mounts: QaapTenantMountSet, networkMode: string): boolean;
@@ -359,6 +364,8 @@ const ENV_KEYS = [
     'QAAP_TENANT_CONTAINER_UID',
     'QAAP_TENANT_CONTAINER_GID',
     'QAAP_DOCKER_ROOTLESS',
+    'QAAP_TENANT_RUNTIME',
+    'QAAP_TENANT_DOCKER_HOST',
     'DOCKER_HOST',
 ] as const;
 
@@ -895,6 +902,104 @@ describe('QaapDockerOrchestrator', () => {
             expect(thrown).to.be.instanceOf(Error);
             expect((thrown as Error).message).to.match(/requires QAAP_CLOUD_MODE=docker/);
             expect(fakeDocker.calls.getContainer).to.equal(0);
+        });
+    });
+
+    describe('tenant runtime (QAAP_TENANT_RUNTIME)', () => {
+
+        async function captureWorkerCreate(): Promise<CreateCapturingDockerode> {
+            const root = path.join(os.tmpdir(), 'qaap-orchestrator-spec-runtime', 'repos', 'users', 'alice');
+            const orchestrator = access(new QaapDockerOrchestrator());
+            const fakeDocker = new CreateCapturingDockerode();
+            orchestrator.getDocker = async () => fakeDocker as unknown as Dockerode;
+            let thrown: unknown;
+            try {
+                await orchestrator.createOrValidateTenantContainer('qaap-tenant-spec', orchestrator.tenantMountsForRoot(root), 'none', 'alice');
+            } catch (error) {
+                thrown = error;
+            }
+            expect((thrown as Error | undefined)?.message).to.equal('CreateCapturingDockerode: stop after create');
+            return fakeDocker;
+        }
+
+        async function verifyFailure(info: Record<string, unknown>): Promise<string | undefined> {
+            const orchestrator = access(new QaapDockerOrchestrator());
+            const node = { config: { id: 'default', dockerHost: 'unix:///var/run/docker.sock' }, docker: { info: async () => info } as unknown as Dockerode };
+            try {
+                await orchestrator.verifyDockerNode(node);
+                return undefined;
+            } catch (error) {
+                return (error as Error).message;
+            }
+        }
+
+        it('resolves runc by default, trims the value and accepts only the exact runtime names', () => {
+            expect(resolveQaapTenantRuntime({})).to.equal('runc');
+            expect(resolveQaapTenantRuntime({ QAAP_TENANT_RUNTIME: '   ' })).to.equal('runc');
+            expect(resolveQaapTenantRuntime({ QAAP_TENANT_RUNTIME: ' runsc ' })).to.equal('runsc');
+            for (const value of ['RUNSC', 'kata', 'runc2', 'none']) {
+                expect(() => resolveQaapTenantRuntime({ QAAP_TENANT_RUNTIME: value }), value).to.throw(/Unsupported QAAP_TENANT_RUNTIME/);
+            }
+        });
+
+        it('refuses to start the orchestrator on an unsupported QAAP_TENANT_RUNTIME (fail closed)', () => {
+            process.env.QAAP_TENANT_RUNTIME = 'kata';
+            expect(() => access(new QaapDockerOrchestrator()).validateTenantRuntimeConfig()).to.throw(/Unsupported QAAP_TENANT_RUNTIME/);
+        });
+
+        it('sets no Runtime on the tenant worker under the default runc runtime', async () => {
+            delete process.env.QAAP_TENANT_RUNTIME;
+            const fakeDocker = await captureWorkerCreate();
+            expect(fakeDocker.created[0].HostConfig).to.not.have.property('Runtime');
+        });
+
+        it('runs the tenant worker under runsc and keeps its hardening (CapDrop, no-new-privileges, read-only root, no privilege)', async () => {
+            process.env.QAAP_TENANT_RUNTIME = 'runsc';
+            const fakeDocker = await captureWorkerCreate();
+            const hostConfig = fakeDocker.created[0].HostConfig ?? {};
+            expect(hostConfig.Runtime).to.equal('runsc');
+            expect(hostConfig.CapDrop).to.deep.equal(['ALL']);
+            expect(hostConfig.SecurityOpt).to.deep.equal(['no-new-privileges:true']);
+            expect(hostConfig.ReadonlyRootfs).to.equal(true);
+            expect(hostConfig.Privileged).to.not.equal(true);
+            expect(hostConfig.NetworkMode).to.equal('none');
+            expect(hostConfig.Init).to.equal(true);
+        });
+
+        it('matches an existing container only under the runtime the operator selected', () => {
+            const orchestrator = access(new QaapDockerOrchestrator());
+            delete process.env.QAAP_TENANT_RUNTIME;
+            expect(orchestrator.tenantRuntimeMatches(undefined)).to.equal(true);
+            expect(orchestrator.tenantRuntimeMatches('runc')).to.equal(true);
+            expect(orchestrator.tenantRuntimeMatches('runsc')).to.equal(false);
+            process.env.QAAP_TENANT_RUNTIME = 'runsc';
+            expect(orchestrator.tenantRuntimeMatches(undefined)).to.equal(false);
+            expect(orchestrator.tenantRuntimeMatches('runc')).to.equal(false);
+            expect(orchestrator.tenantRuntimeMatches('runsc')).to.equal(true);
+        });
+
+        it('refuses a hosted runsc node whose daemon does not offer runsc as its default runtime', async () => {
+            process.env.QAAP_CLOUD_MODE = 'docker';
+            process.env.QAAP_TENANT_RUNTIME = 'runsc';
+            expect(await verifyFailure({ Runtimes: { runc: {} }, DefaultRuntime: 'runc' })).to.match(/does not report runsc/);
+            expect(await verifyFailure({ Runtimes: { runc: {}, runsc: {} }, DefaultRuntime: 'runc' })).to.match(/does not report runsc/);
+            expect(await verifyFailure({ Runtimes: { runsc: {} }, DefaultRuntime: 'runc' })).to.match(/does not report runsc/);
+        });
+
+        it('no longer requires rootless on a hosted runsc node, but still requires rootless under runc', async () => {
+            process.env.QAAP_CLOUD_MODE = 'docker';
+            process.env.QAAP_TENANT_RUNTIME = 'runsc';
+            expect(await verifyFailure({ SecurityOptions: ['name=seccomp'], Runtimes: { runsc: {} }, DefaultRuntime: 'runsc' })).to.equal(undefined);
+            delete process.env.QAAP_TENANT_RUNTIME;
+            expect(await verifyFailure({ SecurityOptions: ['name=seccomp'], Runtimes: { runsc: {} }, DefaultRuntime: 'runsc' })).to.match(/did not report rootless mode/);
+        });
+
+        it('routes the single tenant node to QAAP_TENANT_DOCKER_HOST and refuses to combine it with QAAP_DOCKER_NODES', () => {
+            delete process.env.QAAP_DOCKER_NODES;
+            process.env.QAAP_TENANT_DOCKER_HOST = 'unix:///run/qaap-gvisor/docker.sock';
+            expect(access(new QaapDockerOrchestrator()).getDockerNodeClients()[0].config.dockerHost).to.equal('unix:///run/qaap-gvisor/docker.sock');
+            process.env.QAAP_DOCKER_NODES = '[{"id":"a","dockerHost":"unix:///var/run/docker.sock"}]';
+            expect(() => access(new QaapDockerOrchestrator()).getDockerNodeClients()).to.throw(/cannot be combined with QAAP_DOCKER_NODES/);
         });
     });
 
@@ -1441,6 +1546,35 @@ describe('QaapDockerOrchestrator', () => {
                 });
             });
         }
+
+        it('leaves Runtime unset on the backend and the ingress relay under the default runc runtime', async () => {
+            const root = configureBackendIngressEnvironment();
+            delete process.env.QAAP_TENANT_RUNTIME;
+            const fakeDocker = createFakeTenantBackendDocker();
+            const orchestrator = createOrchestratorWithFakeDocker(fakeDocker.docker);
+            await access(orchestrator).createOrValidateTenantBackend('alice', root);
+            const backend = fakeDocker.created.find(container => container.name.startsWith('qaap-backend-'));
+            const relay = fakeDocker.created.find(container => container.name.startsWith('qaap-ingress-'));
+            expect(backend?.options.HostConfig).to.not.have.property('Runtime');
+            expect(relay?.options.HostConfig).to.not.have.property('Runtime');
+        });
+
+        it('sets Runtime runsc on the tenant backend but not on the ingress relay when QAAP_TENANT_RUNTIME=runsc', async () => {
+            const root = configureBackendIngressEnvironment();
+            process.env.QAAP_TENANT_RUNTIME = 'runsc';
+            const fakeDocker = createFakeTenantBackendDocker();
+            const orchestrator = createOrchestratorWithFakeDocker(fakeDocker.docker);
+            await access(orchestrator).createOrValidateTenantBackend('alice', root);
+            const backend = fakeDocker.created.find(container => container.name.startsWith('qaap-backend-'));
+            const relay = fakeDocker.created.find(container => container.name.startsWith('qaap-ingress-'));
+            const backendHostConfig = backend?.options.HostConfig as Record<string, unknown> | undefined;
+            const relayHostConfig = relay?.options.HostConfig as Record<string, unknown> | undefined;
+            expect(backendHostConfig?.Runtime).to.equal('runsc');
+            expect(backendHostConfig?.CapDrop).to.deep.equal(['ALL']);
+            expect(backendHostConfig?.ReadonlyRootfs).to.equal(true);
+            expect(relayHostConfig).to.not.have.property('Runtime');
+            expect(relayHostConfig?.CapDrop).to.deep.equal(['ALL']);
+        });
     });
 
     describe('buildTenantEnvironmentArgs', () => {
