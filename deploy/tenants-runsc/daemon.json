@@ -37,5 +37,14 @@
   "log-opts": {
     "max-size": "10m",
     "max-file": "3"
-  }
+  },
+  "ip": "127.0.0.1",
+  "default-ulimits": {
+    "nofile": {
+      "Name": "nofile",
+      "Soft": 65536,
+      "Hard": 65536
+    }
+  },
+  "default-shm-size": "64M"
 }

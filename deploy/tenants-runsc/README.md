@@ -12,13 +12,14 @@ Caddy, the relay, the Squid egress proxy and the toolchain images do not change.
 
 ```
  control plane (container, uid 100999, supplementary group qaap-tenants-client)
-        |  DOCKER_HOST=unix:///run/docker-tenants/proxy.sock  (QAAP_TENANT_RUNTIME=runsc)
+        |  DOCKER_HOST=unix:///run/docker-tenants-proxy/proxy.sock  (QAAP_TENANT_RUNTIME=runsc)
         v
  +-------------------------------------------+
  | docker-tenants-socket-proxy.service       |  user qaap-tenants-proxy
  |  allowlist of Engine API endpoints        |  403 on everything else
- |  create inspection (privileged, runtime,  |  rejects logged, bodies never logged
- |  caps, devices, host ns, bind roots, ...) |
+ |  canonical bodies (strict JSON, field     |  rejects logged, bodies never logged
+ |  allowlist, Runtime=runsc forced, exact   |  every response: X-Qaap-Tenant-Proxy: 1
+ |  per-tenant binds, Qaap ownership)        |
  +-------------------------------------------+
         |  /run/docker-tenants/docker.sock   (group qaap-tenants-backend, proxy user only)
         v
@@ -34,8 +35,58 @@ Caddy, the relay, the Squid egress proxy and the toolchain images do not change.
  Unchanged: rootless daemon (uid 1000, runc) for relay / Squid / toolchain; rootful docker for Caddy and control plane.
 ```
 
-Tenant containers keep the labels set by the orchestrator (`com.qaap.tenant-container` or
-`com.qaap.tenant-backend` set to `true`). The proxy requires one of them on every create.
+## What the proxy enforces
+
+The raw daemon socket is root on the host, so the proxy is written as a canonical allowlist. A
+compromised control plane must not be able to turn it into host root.
+
+- **Strict parsing.** Bodies are parsed by a JSON parser that refuses (400) duplicate keys and keys
+  that differ only in case at any depth (Go's `encoding/json` matches field names case-insensitively,
+  folds `ſ`/`K` to `s`/`k`, and lets the last duplicate win). The daemon only receives
+  `JSON.stringify(canonical)` with a recomputed `Content-Length`.
+- **Field allowlist.** A listed field with an unexpected value, or an unlisted field with a non-empty
+  value, is refused (403). Unlisted fields whose value is empty (`null`, `""`, `0`, `false`, `[]`,
+  `{}`) are dropped, which leaves Docker's default; this keeps the docker CLI working.
+  - `containers/create`: `Image`, `User`, `Cmd`, `Entrypoint`, `Env`, `WorkingDir`, `Labels`
+    (only `com.qaap.*`, `com.qaap.managed=true` required), `ExposedPorts`, `Tty`, `OpenStdin`,
+    `StdinOnce`, `Attach*`, `Healthcheck`, `NetworkingConfig` (only the `NetworkMode` network, only
+    `Aliases`), and `HostConfig.{Init, Binds, Memory, NanoCpus, PidsLimit>0, SecurityOpt, CapDrop,
+    CapAdd ⊆ [SETUID, SETGID], ReadonlyRootfs, Tmpfs, NetworkMode (none or a Qaap name),
+    RestartPolicy (no/on-failure), AutoRemove, LogConfig (json-file), PortBindings, ConsoleSize,
+    Runtime}`. The proxy always sets `Runtime: runsc`, `CapDrop: [ALL]`,
+    `SecurityOpt: [no-new-privileges:true]`, a `PidsLimit` (`QAAP_TENANT_DEFAULT_PIDS_LIMIT`) and
+    `NetworkMode: none` when they are missing. `PortBindings` must name a `HostIp` from
+    `QAAP_TENANT_PUBLISH_HOST_IPS` (the relay's `publishHostIp`, default `127.0.0.1`).
+  - Exec create: `Cmd`, `Env`, `User`, `WorkingDir`, `Tty`, `Attach*`, `Detach`, `DetachKeys`,
+    `ConsoleSize`; `Privileged` must be false. `User: 0:0` stays allowed because hosted tenant
+    containers run as uid 0 (`resolveQaapHostedTenantContainerUser`) and the orchestrator execs
+    shells with that user; under runsc that is root inside the gVisor sandbox only.
+  - `networks/create`: Qaap name, `bridge`, `Internal`, `CheckDuplicate`, labels, and only the
+    `enable_icc` option (`true` only on an internal network, as the orchestrator's per-tenant
+    bridge uses). No IPAM, `Attachable`, `Ingress`, `Scope` or `ConfigFrom`.
+  - `volumes/create`: only the broker's `qaap-agent-toolchain-<12 hex>` volume, driver `local`,
+    no `DriverOpts`. Volumes cannot be removed through the proxy.
+- **Binds.** Host sources must be exactly one of the per-tenant directories under
+  `QAAP_TENANT_DATA_ROOT` (`QAAP_TENANT_BIND_TEMPLATES`, default
+  `workspace/repos/users/{tenant}`, `worktrees/{tenant}`, `parallel/{tenant}`,
+  `auth/users/{tenant}`, `auth/users/{tenant}/theia-home`), all of one tenant per container, with
+  `rw` or `ro` only. `fs.realpathSync(source)` must equal the source, which refuses a symlink in any
+  component; the data root itself must therefore not be a symlink. The long `Mounts` syntax is refused.
+- **Ownership.** start, stop, kill, wait, pause, unpause, rename, inspect, logs, rm, attach, exec and
+  network connect, disconnect and rm only reach resources labelled `com.qaap.managed=true` (an
+  upstream inspect, cached 2 s). A missing resource gets the daemon's 404.
+- **Hijack.** attach and exec start send only the canonical request upstream; client bytes follow
+  only after the daemon's `101`. Any other status is relayed with `Connection: close` and both
+  connections are closed. Every other request uses its own upstream connection with
+  `Connection: close`.
+- **Targets.** Percent-encoding, dot or empty segments, `;` and duplicate query parameters are
+  refused (400); `/vX.Y/` prefixes are normalised; query parameters are allowlisted per endpoint.
+- **Reads.** Container inspect drops the daemon host paths (`GraphDriver`, `LogPath`,
+  `ResolvConfPath`, `HostsPath`, `HostnamePath`). `Config.Env` and `HostConfig` stay: the
+  orchestrator's reuse matchers compare them (backend secret, egress env, `QAAP_BUILD_SHA`, every
+  hardening field). Anyone who can reach the proxy socket can therefore read tenant env secrets.
+- **Identity.** Every response carries `X-Qaap-Tenant-Proxy: 1`. The orchestrator requires it on
+  `/_ping`, so pointing it at the raw daemon socket fails closed.
 
 ## Files
 
@@ -44,7 +95,7 @@ Tenant containers keep the labels set by the orchestrator (`com.qaap.tenant-cont
 | `install-runsc.sh` | Installs the pinned gVisor release (sha512-verified). Does not run `runsc install`. |
 | `daemon.json` | Config of the tenant dockerd. Install as `/etc/docker-tenants/daemon.json`. |
 | `dockerd-tenants.service` | systemd unit for the tenant dockerd. |
-| `docker-tenants.tmpfiles.conf` | Creates `/run/docker-tenants` with the right group. |
+| `docker-tenants.tmpfiles.conf` | Creates `/run/docker-tenants` (0750, group `qaap-tenants-backend`). |
 | `docker-tenants-socket-proxy.mjs` | Allowlist proxy (Node >= 22, no npm dependencies). |
 | `docker-tenants-socket-proxy.service` | systemd unit for the proxy. |
 | `docker-tenants-socket-proxy.test.mjs` | `node --test` suite with a fake upstream daemon. |
@@ -78,10 +129,16 @@ Tenant containers keep the labels set by the orchestrator (`com.qaap.tenant-cont
 - **`default-address-pools: 10.210.0.0/16, size 24`.** It must not overlap the rootless pool
   (`10.200.0.0/16` in the example of `doc/qaap-ci-invariants.md`), the rootful bridges (`172.17`,
   `172.18` ...), the host, or the VPN. Check with `ip -4 route` before starting.
-- **`group: qaap-tenants-backend`.** Socket group of the raw daemon socket. Only the proxy user
-  belongs to it. The control plane must not, or it could bypass the allowlist.
+- **`group: qaap-tenants-backend`.** Socket group of the raw daemon socket (and of
+  `/run/docker-tenants`). Only the proxy user belongs to it. The control plane must not, or it could
+  bypass the allowlist.
 - **`live-restore: false`, `userland-proxy: false`, `icc: false`, `no-new-privileges: true`.** As
-  requested. With `live-restore` false, a daemon restart stops the tenant containers. Check how the
+  requested. `icc` only affects the default bridge, which is disabled; per-network ICC is the
+  `enable_icc` option the proxy pins.
+- **`ip: 127.0.0.1`.** Default host address for published ports, so a binding without a HostIp
+  could not land on every interface even if the proxy let it through.
+- **`default-ulimits` (nofile 65536) and `default-shm-size: 64M`.** Bounds for containers that
+  set nothing. PIDs are bounded by the proxy (`PidsLimit` forced). With `live-restore` false, a daemon restart stops the tenant containers. Check how the
   orchestrator handles a restart of the tenant daemon before the canary (the backend auto-resume
   path in the orchestrator is the relevant one).
 - **Logs.** json-file with 10 MB x 3 rotation.
@@ -91,9 +148,14 @@ Tenant containers keep the labels set by the orchestrator (`com.qaap.tenant-cont
 - `dockerd-tenants.service` runs as root with `Delegate=yes`, `KillMode=process` and no
   `NoNewPrivileges`, `ProtectSystem` or `PrivateNetwork`. dockerd needs them to manage namespaces,
   cgroups and iptables. The unit requires `containerd.service`.
-- `docker-tenants-socket-proxy.service` runs as `qaap-tenants-proxy` with capabilities dropped,
-  `ProtectSystem=strict`, `RestrictAddressFamilies=AF_UNIX` and a UMask of 0117.
-  `MemoryDenyWriteExecute` is not set because Node's JIT needs writable executable memory.
+- `docker-tenants-socket-proxy.service` runs as `qaap-tenants-proxy` with only
+  `CAP_DAC_READ_SEARCH` (read-only path resolution through the 0700 tenant directories for the
+  symlink check), `ProtectSystem=strict`, `RestrictAddressFamilies=AF_UNIX`,
+  `SystemCallFilter=@system-service`, `MemoryMax=256M` and a UMask of 0117. It listens in its own
+  `RuntimeDirectory` (`/run/docker-tenants-proxy`, 0750, group `qaap-tenants-client`).
+  `/run/docker-tenants` (raw socket, exec-root, pidfile) is 0750 `root:qaap-tenants-backend`, so the
+  control plane cannot traverse it. `MemoryDenyWriteExecute` is not set because Node's JIT needs
+  writable executable memory.
 
 ## Installation (manual, host by host)
 
@@ -112,7 +174,8 @@ rootful or rootless daemon.
    sudo groupadd --system qaap-tenants-client
    sudo useradd --system --gid qaap-tenants-client --groups qaap-tenants-backend \
        --shell /usr/sbin/nologin --no-create-home qaap-tenants-proxy
-   # Add the control plane's supplementary group (qaap-tenants-client) to its container. Do NOT add it to qaap-tenants-backend.
+   # Add the control plane's supplementary group (qaap-tenants-client) to its container and mount only
+   # /run/docker-tenants-proxy into it. Do NOT add it to qaap-tenants-backend or mount /run/docker-tenants.
    ```
 4. **Data root and runtime dir.**
    ```sh
@@ -136,23 +199,34 @@ rootful or rootless daemon.
    sudo install -m 0644 deploy/tenants-runsc/docker-tenants-socket-proxy.mjs /usr/local/lib/qaap/
    sudo install -m 0644 deploy/tenants-runsc/docker-tenants-socket-proxy.service /etc/systemd/system/
    sudo systemctl daemon-reload && sudo systemctl enable --now docker-tenants-socket-proxy.service
-   ls -l /run/docker-tenants/   # proxy.sock: mode 0660, group qaap-tenants-client; docker.sock: group qaap-tenants-backend
+   ls -ld /run/docker-tenants /run/docker-tenants-proxy   # 0750 root:qaap-tenants-backend / 0750 qaap-tenants-proxy:qaap-tenants-client
+   ls -l /run/docker-tenants-proxy/proxy.sock /run/docker-tenants/docker.sock   # both 0660, groups qaap-tenants-client / qaap-tenants-backend
+   curl -sI --unix-socket /run/docker-tenants-proxy/proxy.sock http://d/_ping | grep -i x-qaap-tenant-proxy
    ```
 8. **Smoke test.** Images can only be pulled through the proxy from the registries in
    `QAAP_TENANT_ALLOWED_REGISTRIES` (default `ghcr.io`). Pull the test images with the raw socket as
    root, then run them through the proxy:
    ```sh
-   sudo docker -H unix:///run/docker-tenants/docker.sock pull hello-world
    sudo docker -H unix:///run/docker-tenants/docker.sock pull busybox
-   docker -H unix:///run/docker-tenants/proxy.sock run --rm hello-world
-   docker -H unix:///run/docker-tenants/proxy.sock run --rm busybox dmesg
+   P=unix:///run/docker-tenants-proxy/proxy.sock
+   docker -H $P run --rm --label com.qaap.managed=true --network none busybox dmesg
    ```
    `dmesg` must print gVisor's boot banner (for example "Starting gVisor..."), not the host kernel log.
-   Then check the rejections: `docker -H unix:///run/docker-tenants/proxy.sock run --privileged --rm busybox true`
-   must fail with `privileged containers are not allowed`.
+   The proxy refuses containers without the `com.qaap.managed=true` label and networks other than
+   `none` or a Qaap network. Then check the rejections, each of which must fail with a
+   `qaap tenant proxy:` message:
+   ```sh
+   docker -H $P run --rm --label com.qaap.managed=true --network none --privileged busybox true
+   docker -H $P run --rm --label com.qaap.managed=true --network none -v /:/host busybox true
+   docker -H $P run --rm --label com.qaap.managed=true --network none --runtime runc busybox true
+   docker -H $P run --rm --label com.qaap.managed=true --network none --cap-add SYS_ADMIN busybox true
+   docker -H $P volume create -o type=none -o o=bind -o device=/ qaap-agent-toolchain-000000000000
+   ```
+   The docker CLI may send fields the allowlist does not know (newer API versions); a refusal names
+   the field (`body.HostConfig.X is not allowed`).
 9. **Orchestrator (other workstream).** Set `QAAP_TENANT_RUNTIME=runsc` (the orchestrator must
    fail closed if the daemon does not report runsc as its default runtime) and point the tenant
-   Docker client at `DOCKER_HOST=unix:///run/docker-tenants/proxy.sock`. Keep the rootless socket
+   Docker client at `DOCKER_HOST=unix:///run/docker-tenants-proxy/proxy.sock`. Keep the rootless socket
    for everything else.
 
 ## Data migration (later phase, not part of this canary)
@@ -184,7 +258,8 @@ item is checked on the tenant daemon before the next runs:
 - [ ] Egress to a domain that is not allowed fails in the Squid allowlist, not inside gVisor.
 - [ ] Restart `dockerd-tenants.service` with no tenant running: Caddy, control plane and rootless
       tenants still answer (checks the iptables risk above).
-- [ ] Benchmark: `DOCKER_HOST=unix:///run/docker-tenants/proxy.sock scripts/qaap-runsc-benchmark.sh <repo>`.
+- [ ] Benchmark: `DOCKER_HOST=unix:///run/docker-tenants-proxy/proxy.sock scripts/qaap-runsc-benchmark.sh <repo>`
+      (the benchmark's containers need the `com.qaap.managed=true` label to pass the proxy).
       Thresholds: install ratio <= 1.6, dev-start ratio <= 1.3 (median). Exit code 1 means fail.
 
 ## Rollback (no redeploy)
@@ -203,7 +278,11 @@ item is checked on the tenant daemon before the next runs:
   paths in `daemon.json`. `runsc --version` must run as root.
 - `DENY` lines in `journalctl -u docker-tenants-socket-proxy`: the method, path and reason are logged,
   never bodies. An unexpected denial of a legitimate control-plane call means the allowlist needs
-  the endpoint; add it in `ROUTES` with a test, do not open the proxy wholesale.
+  the endpoint or field; add it in `ROUTES` or the canonical schema with a test, do not open the
+  proxy wholesale.
+- `bind source ... is not an existing directory (EACCES)`: the unit lost `CAP_DAC_READ_SEARCH`.
+  `... resolves through a symlink`: a component of the path is a symlink, or the data root itself is
+  one (set `QAAP_TENANT_DATA_ROOT` to the resolved path).
 - Proxy cannot reach the daemon: the proxy user must be in `qaap-tenants-backend`
   (`id qaap-tenants-proxy`), and `/run/docker-tenants/docker.sock` must be group `qaap-tenants-backend`.
 - Tenant network creation fails with an address pool error: the `default-address-pools` range

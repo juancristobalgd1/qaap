@@ -5,8 +5,12 @@
 #
 # Identity: user qaap-tenants-proxy, primary group qaap-tenants-client (the proxy socket group,
 # which the control plane also belongs to), supplementary group qaap-tenants-backend (the group
-# of the raw daemon socket, which only this user belongs to). The control plane must NOT be in
-# qaap-tenants-backend, or it could bypass the allowlist.
+# of the raw daemon socket and of /run/docker-tenants, which only this user belongs to). The
+# control plane must NOT be in qaap-tenants-backend, or it could bypass the allowlist.
+#
+# Socket: /run/docker-tenants-proxy/proxy.sock (0660, group qaap-tenants-client) in a directory
+# systemd creates for this unit (RuntimeDirectory=, 0750 qaap-tenants-proxy:qaap-tenants-client).
+# Mount only that directory into the control plane, never /run/docker-tenants.
 
 [Unit]
 Description=Allowlist socket proxy for the gVisor tenant Docker daemon
@@ -22,22 +26,37 @@ Group=qaap-tenants-client
 SupplementaryGroups=qaap-tenants-backend
 ExecStart=/usr/bin/node /usr/local/lib/qaap/docker-tenants-socket-proxy.mjs
 Environment=NODE_ENV=production
-Environment=QAAP_TENANT_PROXY_LISTEN=/run/docker-tenants/proxy.sock
+Environment=QAAP_TENANT_PROXY_LISTEN=/run/docker-tenants-proxy/proxy.sock
 Environment=QAAP_TENANT_PROXY_UPSTREAM=/run/docker-tenants/docker.sock
 Environment=QAAP_TENANT_PROXY_SOCKET_MODE=660
 Environment=QAAP_TENANT_DATA_ROOT=/opt/qaap-runtime
 Environment=QAAP_TENANT_ALLOWED_REGISTRIES=ghcr.io
-# Named volumes that tenant containers may mount, comma-separated. Empty by default.
-Environment=QAAP_TENANT_ALLOWED_VOLUMES=
+# Host addresses a container may publish a port on (the orchestrator's publishHostIp /
+# QAAP_DOCKER_PUBLISH_HOST_IP for the tenant ingress relay). Comma-separated.
+Environment=QAAP_TENANT_PUBLISH_HOST_IPS=127.0.0.1
+# Per-tenant bind sources, relative to QAAP_TENANT_DATA_ROOT ({tenant} is one path segment). The
+# default matches QAAP_DOCKER_REMOTE_*_ROOT in deploy/rootless/compose.override.yml:
+#   workspace/repos/users/{tenant},worktrees/{tenant},parallel/{tenant},auth/users/{tenant},auth/users/{tenant}/theia-home
+# Environment=QAAP_TENANT_BIND_TEMPLATES=...
+# Set to the control plane's QAAP_DOCKER_NAMESPACE when it uses one (names and labels are then pinned).
+# Environment=QAAP_DOCKER_NAMESPACE=
+# PidsLimit forced on containers that do not set one.
+Environment=QAAP_TENANT_DEFAULT_PIDS_LIMIT=4096
 Restart=on-failure
 RestartSec=3
 StartLimitIntervalSec=60
 StartLimitBurst=5
 
-# Hardening. The proxy only needs the two unix sockets and the data root for path checks.
+RuntimeDirectory=docker-tenants-proxy
+RuntimeDirectoryMode=0750
+
+# Hardening. The proxy needs the two unix sockets and read-only path resolution in the data root.
+# CAP_DAC_READ_SEARCH lets fs.realpathSync walk the 0700 per-tenant directories (owned by the tenant
+# uid) to reject symlinked bind sources; it grants read and search only, never write, and the whole
+# file system is read-only for this unit (ProtectSystem=strict).
 NoNewPrivileges=yes
-CapabilityBoundingSet=
-AmbientCapabilities=
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH
+AmbientCapabilities=CAP_DAC_READ_SEARCH
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
@@ -55,7 +74,12 @@ RestrictSUIDSGID=yes
 LockPersonality=yes
 SystemCallArchitectures=native
 UMask=0117
-ReadWritePaths=/run/docker-tenants
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+RemoveIPC=yes
+MemoryMax=256M
+TasksMax=64
+LimitNOFILE=4096
 # Node uses a JIT, so MemoryDenyWriteExecute is deliberately not set.
 
 [Install]
