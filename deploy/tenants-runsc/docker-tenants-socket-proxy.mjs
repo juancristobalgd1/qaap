@@ -55,15 +55,15 @@ const OWNERSHIP_CACHE_MS = 2000;
 // Per-tenant host directories the orchestrator and the task-sandbox broker bind-mount, relative to
 // the data root. They mirror QAAP_DOCKER_REMOTE_{REPOS,WORKTREES,PARALLEL,TENANT_CONFIG}_ROOT in
 // deploy/rootless/compose.override.yml (repos root + users/<segment>, worktrees/<segment>,
-// parallel/<segment>, tenant data root). The theia home lives in its own tree, theia-homes/<segment>,
-// outside auth/users/<segment>: it is not nested under any writable tenant directory, so a tenant
+// parallel/<segment>, tenant data root). The theia home lives in its own tree, auth/theia-homes/<segment>,
+// under auth/, next to auth/users/<segment>: it is not nested under any writable tenant directory, so a tenant
 // cannot swap it for a symlink in a directory it can write.
 const DEFAULT_BIND_TEMPLATES = [
     'workspace/repos/users/{tenant}',
     'worktrees/{tenant}',
     'parallel/{tenant}',
     'auth/users/{tenant}',
-    'theia-homes/{tenant}'
+    'auth/theia-homes/{tenant}'
 ];
 const NAMESPACE_PATTERN = /^[a-z][a-z0-9]{0,15}$/;
 const TENANT_SEGMENT = /^[A-Za-z0-9_.-]{1,128}$/;

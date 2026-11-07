@@ -37,9 +37,9 @@ function mkdirs(...relative) {
 
 function setUpDataRoot() {
     for (const tenant of ['alice', 'bob']) {
-        mkdirs(`workspace/repos/users/${tenant}`, `worktrees/${tenant}`, `parallel/${tenant}`, `auth/users/${tenant}/theia-home`, `theia-homes/${tenant}`);
+        mkdirs(`workspace/repos/users/${tenant}`, `worktrees/${tenant}`, `parallel/${tenant}`, `auth/users/${tenant}/theia-home`, `auth/theia-homes/${tenant}`);
     }
-    mkdirs('worktrees/alice/sub', 'worktrees/bob/sub', 'theia-homes/alice/sub');
+    mkdirs('worktrees/alice/sub', 'worktrees/bob/sub', 'auth/theia-homes/alice/sub');
     fs.mkdirSync(path.join(OUTSIDE, 'theia-home'), { recursive: true });
     // The tenant directory itself is a symlink to the host root.
     fs.symlinkSync('/', path.join(DATA_ROOT, 'workspace/repos/users/mallory'));
@@ -50,7 +50,7 @@ function setUpDataRoot() {
     fs.rmSync(path.join(DATA_ROOT, 'auth/users/bob/theia-home'), { recursive: true });
     fs.symlinkSync('/etc', path.join(DATA_ROOT, 'auth/users/bob/theia-home'));
     // The theia home of a tenant is the symlink target when the tenant replaces its own directory.
-    fs.symlinkSync('/', path.join(DATA_ROOT, 'theia-homes/mallory'));
+    fs.symlinkSync('/', path.join(DATA_ROOT, 'auth/theia-homes/mallory'));
 }
 
 function json(res, status, body) {
@@ -229,7 +229,7 @@ function backendBody() {
                 `${D}/worktrees/alice:/tmp/qaap-worktrees/alice:rw`,
                 `${D}/parallel/alice:/tmp/qaap-parallel/alice:rw`,
                 `${D}/auth/users/alice:/home/theia/.qaap:rw`,
-                `${D}/theia-homes/alice:/home/theia/.theia:rw`
+                `${D}/auth/theia-homes/alice:/home/theia/.theia:rw`
             ],
             Memory: 4294967296,
             NanoCpus: 2000000000,
@@ -790,8 +790,8 @@ describe('theia homes and nested binds', () => {
         `${D}/worktrees/alice:/tmp/qaap-worktrees/alice:rw`,
         `${D}/parallel/alice:/tmp/qaap-parallel/alice:rw`
     ];
-    it('accepts the tenant theia home under theia-homes/<tenant> next to the tenant roots', async () => {
-        const binds = [...tenantRoots, `${D}/auth/users/alice:/home/theia/.qaap:rw`, `${D}/theia-homes/alice:/home/theia/.theia:rw`];
+    it('accepts the tenant theia home under auth/theia-homes/<tenant> next to the tenant roots', async () => {
+        const binds = [...tenantRoots, `${D}/auth/users/alice:/home/theia/.qaap:rw`, `${D}/auth/theia-homes/alice:/home/theia/.theia:rw`];
         assert.equal((await request('POST', '/containers/create', withHost({ Binds: binds }))).status, 201);
     });
     it('refuses the old auth/users/<tenant>/theia-home path, which is nested under the tenant config root', async () => {
@@ -801,12 +801,12 @@ describe('theia homes and nested binds', () => {
         assert.equal(lastForwarded('POST', /containers\/create/), undefined);
     });
     it('refuses another tenant theia home mixed into a request for this tenant', async () => {
-        const res = await request('POST', '/containers/create', withHost({ Binds: [...tenantRoots, `${D}/theia-homes/bob:/home/theia/.theia:rw`] }));
+        const res = await request('POST', '/containers/create', withHost({ Binds: [...tenantRoots, `${D}/auth/theia-homes/bob:/home/theia/.theia:rw`] }));
         assert.equal(res.status, 403);
         assert.match(res.body, /different tenants/);
     });
-    it('refuses a theia-homes/<tenant> that is a symlink', async () => {
-        const res = await request('POST', '/containers/create', withHost({ Binds: [`${D}/theia-homes/mallory:/home/theia/.theia:rw`] }));
+    it('refuses an auth/theia-homes/<tenant> that is a symlink', async () => {
+        const res = await request('POST', '/containers/create', withHost({ Binds: [`${D}/auth/theia-homes/mallory:/home/theia/.theia:rw`] }));
         assert.equal(res.status, 403);
         assert.match(res.body, /symlink/);
     });
@@ -821,8 +821,8 @@ describe('theia homes and nested binds', () => {
         assert.match(res.body, /nested/);
     });
     it('refuses a ro or rw bind nested under a tenant template whose parent is not in the request', async () => {
-        assert.match((await request('POST', '/containers/create', withHost({ Binds: [`${D}/theia-homes/alice/sub:/b:ro`] }))).body, /nested/);
-        assert.match((await request('POST', '/containers/create', withHost({ Binds: [`${D}/theia-homes/alice/sub:/b:rw`] }))).body, /nested/);
+        assert.match((await request('POST', '/containers/create', withHost({ Binds: [`${D}/auth/theia-homes/alice/sub:/b:ro`] }))).body, /nested/);
+        assert.match((await request('POST', '/containers/create', withHost({ Binds: [`${D}/auth/theia-homes/alice/sub:/b:rw`] }))).body, /nested/);
         assert.match((await request('POST', '/containers/create', withHost({ Binds: [`${D}/worktrees/bob/sub:/b:ro`] }))).body, /nested/);
     });
     it('compares path segments, so a sibling sharing a name prefix is not nested', () => {
@@ -850,7 +850,7 @@ describe('configuration', () => {
         assert.throws(() => loadConfig({ QAAP_DOCKER_NAMESPACE: 'Bad-NS' }), /QAAP_DOCKER_NAMESPACE/);
         assert.throws(() => loadConfig({ QAAP_TENANT_BIND_TEMPLATES: '../{tenant}' }), /invalid bind template/);
         const templates = loadConfig({}).bindTemplates.map(segments => segments.join('/'));
-        assert.ok(templates.includes('theia-homes/{tenant}'));
+        assert.ok(templates.includes('auth/theia-homes/{tenant}'));
         assert.ok(!templates.some(template => template.endsWith('theia-home')));
     });
 });
