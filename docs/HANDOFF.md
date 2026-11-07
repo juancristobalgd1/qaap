@@ -2,6 +2,16 @@
 
 Estado para continuar el trabajo desde otra cuenta o sesión. Actualízalo al cerrar cada tarea: qué queda pendiente, cómo se validó y qué limitaciones conviene conocer. La política de modelos está en la sección «Selección de modelos y orquestación» de `CLAUDE.md`.
 
+## 2026-11-08 — Decisión: tenants siguen en runc; gVisor queda dormido
+
+**Decisión del usuario:** no se usa gVisor para los backends de Theia. El arranque en frío es ~8 veces más lento (76 s frente a 9 s cargando módulos) y `npm`, `git` y `tsc` son 3–5 veces más lentos todo el rato. El código queda con `runc` por defecto (sin coste) para usos futuros: código de terceros en sandboxes cortos sin Theia. No borrar nada.
+
+**Auditoría de endurecimiento con runc** (VPS, 8 nov, en vivo): Docker rootless 29.8.1, seccomp `profile=builtin`. Backend, relay, Squid y sandboxes llevan `no-new-privileges`, `cap-drop ALL` y rootfs de solo lectura. El backend conserva solo `SETUID`/`SETGID`, que necesita para bajar al uid 1001 del agente. Probé las syscalls dentro de un backend de staging, como root y como uid 1001. Devuelven EPERM o ENOSYS: `unshare` (user y mount ns), `clone3`, `io_uring_setup`, `keyctl`, `add_key`, `bpf`, `userfaultfd`, `perf_event_open`, `mount`, `setns`, `open_by_handle_at`, `fsopen`, `kexec_load` e `init_module`. Siguen permitidas `ptrace` y `process_vm_readv`, dentro del propio contenedor; `ptrace_scope=1` impide atacar procesos de otro uid. Host: `kernel.io_uring_disabled=2`, `unprivileged_bpf_disabled=2`, `apparmor_restrict_unprivileged_userns=1`. Kernel 6.8.0-149: el más reciente instalado, reiniciado el 7 nov. AppArmor no se aplica (limitación de rootless).
+
+**Hueco corregido:** el orquestador no exigía seccomp. Ahora rechaza un daemon alojado que no informe seccomp o que lo tenga `unconfined` (`dockerDaemonSeccompProblem`), con 3 specs nuevos (3507 en total).
+
+**Pendiente (host, lo hace el usuario):** Livepatch no está instalado y `unattended-upgrades` no reinicia solo. Un kernel nuevo exige un reinicio manual o activar Livepatch (Ubuntu Pro). Hay que quitar las variables de gVisor de `/opt/qaap-staging/staging.env`.
+
 ## 2026-11-07 — gVisor (systrap) para tenants: sonda sobre el daemon rootless
 
 **Hecho** (rama `claude/gvisor-systrap-implementation-73cb80`): `scripts/qaap-runsc-rootless-probe.sh` comprueba si runsc funciona sobre rootless con el contrato real de los tenants. Usa un daemon desechable y no toca producción. Si funciona, sobran el daemon rootful y el proxy de `origin/claude/tenant-runsc-theia-homes`, cuya revisión fue NO APTO.

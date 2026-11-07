@@ -351,6 +351,59 @@ describe('Container-per-Tenant Runner (Option A)', () => {
             }
         });
 
+        for (const [label, securityOptions, expected] of [
+            ['without seccomp', ['name=rootless', 'name=cgroupns'], /did not report seccomp/i],
+            ['with seccomp unconfined', ['name=seccomp,profile=unconfined', 'name=rootless'], /seccomp unconfined/i],
+        ] as const) {
+            it(`rejects a hosted rootless daemon ${label}`, async () => {
+                const previousEnv = process.env;
+                process.env = {
+                    ...previousEnv,
+                    NODE_ENV: 'production',
+                    QAAP_CLOUD_MODE: 'docker',
+                    DOCKER_HOST: 'unix:///run/user/1000/docker.sock',
+                };
+                try {
+                    const hosted = new QaapDockerOrchestrator();
+                    (hosted as any).docker = {
+                        info: async (): Promise<{ SecurityOptions: readonly string[] }> => ({ SecurityOptions: securityOptions }),
+                    };
+                    let error: unknown;
+                    try {
+                        await (hosted as any).getDocker();
+                    } catch (caught) {
+                        error = caught;
+                    }
+                    expect(error).to.be.instanceOf(Error);
+                    expect((error as Error).message).to.match(expected);
+                } finally {
+                    process.env = previousEnv;
+                }
+            });
+        }
+
+        it('accepts a hosted rootless daemon with the builtin seccomp profile', async () => {
+            const previousEnv = process.env;
+            process.env = {
+                ...previousEnv,
+                NODE_ENV: 'production',
+                QAAP_CLOUD_MODE: 'docker',
+                DOCKER_HOST: 'unix:///run/user/1000/docker.sock',
+            };
+            try {
+                const hosted = new QaapDockerOrchestrator();
+                const fakeDocker = {
+                    info: async (): Promise<{ SecurityOptions: string[] }> => ({
+                        SecurityOptions: ['name=seccomp,profile=builtin', 'name=rootless', 'name=cgroupns'],
+                    }),
+                };
+                (hosted as any).docker = fakeDocker;
+                expect(await (hosted as any).getDocker()).to.equal(fakeDocker);
+            } finally {
+                process.env = previousEnv;
+            }
+        });
+
         it('wraps shell commands into docker exec -i targeting the tenant container', () => {
             (orchestrator as any).tenantRoots.set(orchestrator.containerNameForTenant('alice'), aliceRoot);
             const wrapped = orchestrator.wrapShellForTenantContainer('alice', aliceCwd, '/bin/bash', ['-c', 'npm test']);

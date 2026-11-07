@@ -820,8 +820,30 @@ export class QaapDockerOrchestrator {
             if (!rootless) {
                 throw new Error(`Refusing hosted Docker control-plane access: Docker node ${node.config.id} did not report rootless mode.`);
             }
+            const seccompProblem = this.dockerDaemonSeccompProblem(info.SecurityOptions ?? []);
+            if (seccompProblem) {
+                throw new Error(`Refusing hosted Docker control-plane access: Docker node ${node.config.id} ${seccompProblem}.`);
+            }
             this.verifiedDockerNodeIds.add(node.config.id);
         }
+    }
+
+    /**
+     * Tenant containers rely on the daemon's seccomp profile to block the syscalls kernel exploits use most
+     * (io_uring, user namespaces, bpf, keyctl, userfaultfd, mount). The code never sets a per-container profile,
+     * so a daemon running without seccomp, or with `seccomp-profile=unconfined`, would silently drop that layer.
+     * @param securityOptions the daemon's `docker info` SecurityOptions, e.g. `name=seccomp,profile=builtin`.
+     * @returns why the daemon is unacceptable, or undefined when seccomp is enforced.
+     */
+    protected dockerDaemonSeccompProblem(securityOptions: readonly string[]): string | undefined {
+        const seccomp = securityOptions.find(option => /(^|,)name=seccomp(,|$)/.test(option));
+        if (!seccomp) {
+            return 'did not report seccomp';
+        }
+        if (/(^|,)profile=unconfined(,|$)/.test(seccomp)) {
+            return 'runs seccomp unconfined';
+        }
+        return undefined;
     }
 
     protected async verifiedDockerNodesForTenant(ownerLogin?: string): Promise<readonly QaapDockerNodeClient[]> {
