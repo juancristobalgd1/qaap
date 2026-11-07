@@ -2,6 +2,23 @@
 
 Estado para continuar el trabajo desde otra cuenta o sesión. Actualízalo al cerrar cada tarea: qué queda pendiente, cómo se validó y qué limitaciones conviene conocer. La política de modelos está en la sección «Selección de modelos y orquestación» de `CLAUDE.md`.
 
+## 2026-10-25 — Arranque de sandboxes por tarea: toolchain precalentado + sandbox de reserva
+
+Ideas tomadas de tryboxi (warm pool, imágenes preparadas), aplicadas a los contenedores del broker. Detalle en `doc/qaap-task-sandbox.md` («Startup budget», «Spare sandbox»).
+
+**Hecho** (rama `perf/task-sandbox-spare-prewarm`)
+- `QaapTaskSandboxBroker.onStart` llena el volumen `qaap-agent-toolchain-*` de cada nodo Docker al arrancar el control plane (`QaapDockerOrchestrator.taskSandboxToolchainPlacements`); la clave del volumen ahora incluye el nodo.
+- Sandbox de reserva por tenant: op nueva `prepare { homeLinks }` (el backend del tenant la envía en cada (re)link) y relleno tras cada create; un create de imagen base con los mismos enlaces HOME la adopta con `docker rename`. Oculta en `list`, fuera del cap, se reapea con el tenant. `QAAP_TASK_SANDBOX_SPARE=0` la apaga.
+- Métricas `taskSandbox` en `QaapTenantRuntimeMetrics` (spare/cold p50/p95, reusos, spares, poblaciones del toolchain). Bench nuevo `scripts/qaap-task-sandbox-startup-bench.mjs`.
+
+**Validación** (macOS, Docker Desktop 29.1.2, `node:22-bookworm-slim`)
+- Bench: primer sandbox 1,2–5,9 s → 15–19 ms; siguientes p50 283–590 ms → 23–25 ms (solo prewarm: 213–232 ms).
+- Specs de qaap-cloud-workspace: 2945 passing; broker e2e 14/14 en 10 ejecuciones seguidas (una ejecución anterior perdió la conexión exec del segundo sandbox y no se reprodujo).
+
+**Pendiente**
+- Medir en el VPS tras el deploy (`GET …/metrics` → `taskSandbox`, y el log `broker handed out the spare`); el «antes» de prod era 8,0 s el primer sandbox tras deploy.
+- ~~Pérdida intermitente de la conexión exec~~: resuelta. No era la red: docker-modem envía las opciones del `attach` como body JSON y, con carga, el daemon las pasa al stdin del contenedor delante del token (`{"stream":true,…}<token>`), así que el exec server rechazaba su propio token (6 de 80 sandboxes en Docker Desktop; también pasaba en `master`, sin reserva). El exec server toma ahora la cola base64url de la primera línea. Un body vacío (`_body: {}`) no sirve: con stdin abierto Node no envía las cabeceras y el attach se cuelga.
+
 ## 2026-10-24 — VPS caído: backend de tenant se autoeliminaba y no se recuperaba
 
 **Diagnóstico** (prod `https://161.97.69.219.sslip.io`, build `f89ce0b32`): toda la app quedaba en spinner + "took too long to start", 502 `Tenant backend unavailable / socket hang up` en `project-sessions`, `user-settings` y `socket.io`.

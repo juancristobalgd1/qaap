@@ -19,6 +19,7 @@ import { QaapTaskSandboxBroker } from './qaap-task-sandbox-broker';
 import { QaapTaskSandboxBrokerClient } from './qaap-task-sandbox-broker-client';
 import { QaapTaskSandboxBrokerAuth, type QaapTaskSandboxBrokerCreateArgs, type QaapTaskSandboxBrokerSandbox } from './qaap-task-sandbox-broker-protocol';
 import { encodeQaapSandboxFrame, parseQaapListeningPorts, QaapSandboxFrame, QaapSandboxFrameDecoder } from './qaap-task-sandbox-exec-protocol';
+import { QaapTenantRuntimeMetrics } from './qaap-tenant-runtime-metrics';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 
 const SECRET = 'a'.repeat(64);
@@ -193,6 +194,24 @@ describe('task sandbox exec server and local client (real processes)', function 
         const code = await new Promise(resolve => envOnly.on('exit', resolve));
         expect(code).to.equal(2);
         expect(stderr).to.contain('without a token on stdin');
+    });
+
+    it('finds its token behind the attach body that docker can leak onto stdin', async () => {
+        const leakedPort = await freePort();
+        const leaked = spawn(process.execPath, [path.join(__dirname, 'qaap-task-sandbox-exec-server.js')], {
+            env: { PATH: process.env.PATH, HOME: home, QAAP_SANDBOX_EXEC_PORT: String(leakedPort) },
+            stdio: ['pipe', 'pipe', 'pipe'],
+        });
+        try {
+            // What a container read under load: docker-modem's JSON attach body, then the token line.
+            leaked.stdin!.end(`{"stream":true,"stdin":true,"hijack":true}${TOKEN}\n`);
+            let stdout = '';
+            leaked.stdout!.on('data', chunk => stdout += chunk);
+            await waitFor(() => stdout.includes('QAAP_SANDBOX_EXEC_READY'));
+            expect(await queryLine(leakedPort, { token: TOKEN, op: 'ping' })).to.equal('{"ok":true}');
+        } finally {
+            leaked.kill();
+        }
     });
 
     it('never passes the token to the commands it runs', async () => {
@@ -630,6 +649,140 @@ describe('QaapTaskSandboxBroker (control plane)', () => {
             delete process.env.QAAP_TASK_SANDBOX_MAX_PER_TENANT;
         }
     });
+
+    describe('spare sandbox', () => {
+        const homeLinks = [{ name: '.claude', target: '/home/theia/.qaap/agent/.claude' }];
+        const settled = (tenant = 'alice'): Promise<void> =>
+            (broker as unknown as { withTenantLock(tenant: string, operation: () => Promise<void>): Promise<void> }).withTenantLock(tenant, async () => undefined);
+
+        it('keeps one hidden spare after prepare and hands it out to the next base-image create', async () => {
+            const metrics = new QaapTenantRuntimeMetrics();
+            (broker as unknown as { runtimeMetrics: QaapTenantRuntimeMetrics }).runtimeMetrics = metrics;
+            await broker.handle('alice', { op: 'prepare', args: { homeLinks } });
+            await settled();
+            const spare = broker.spareName('alice');
+            expect(docker.containers.get(spare)?.running).to.equal(true);
+            const spareConfig = docker.created.find(entry => entry.name === spare) as { Env: string[]; HostConfig: { Binds: string[]; CapDrop: string[] }; User: string };
+            // Hardened and mounted exactly like any sandbox of this tenant, with the requested HOME links.
+            expect(spareConfig.User).to.equal('1001:1001');
+            expect(spareConfig.HostConfig.CapDrop).to.deep.equal(['ALL']);
+            expect(spareConfig.HostConfig.Binds.slice(0, 4)).to.deep.equal([
+                '/node/repos/alice:/workspace/repos/users/alice:rw',
+                '/node/worktrees/alice:/tmp/qaap-worktrees/alice:rw',
+                '/node/parallel/alice:/tmp/qaap-parallel/alice:rw',
+                '/node/config/alice:/home/theia/.qaap:rw',
+            ]);
+            expect(spareConfig.Env).to.include(`QAAP_SANDBOX_HOME_LINKS=${JSON.stringify(homeLinks)}`);
+            // No task owns it: the tenant never sees it (its backend would reap it as an orphan).
+            expect(await broker.list('alice')).to.deep.equal([]);
+
+            const spareToken = docker.stdinWrites.get(spare)!.trim();
+            const creates = docker.created.length;
+            const root = '/tmp/qaap-worktrees/alice/repo-1';
+            const sandbox = await broker.create('alice', { root, homeLinks });
+            expect(sandbox).to.include({ name: broker.containerName('alice', root), root, token: spareToken, created: true, source: 'spare' });
+            expect(docker.created.length).to.equal(creates); // renamed, not created
+            expect(docker.containers.has(sandbox.name)).to.equal(true);
+            expect(sandbox.host).to.equal(docker.containers.get(sandbox.name)!.networks['qaap-tenant-net-alice']);
+            expect(await broker.list('alice')).to.deep.equal([{ name: sandbox.name, root, running: true, archived: false }]);
+            // A second create for the same root reuses the adopted sandbox.
+            expect(await broker.create('alice', { root, homeLinks })).to.include({ token: spareToken, created: false, source: 'reused' });
+
+            // The handout queued a refill: a fresh spare with a new token.
+            await settled();
+            expect(docker.containers.get(spare)?.running).to.equal(true);
+            expect(docker.stdinWrites.get(spare)!.trim()).to.not.equal(spareToken);
+            const report = metrics.snapshot().taskSandbox;
+            expect(report.spare).to.deep.include({ count: 1, window: 1 });
+            expect(report.cold.count).to.equal(0);
+            expect(report.reused).to.equal(1);
+            expect(report.sparesCreated.count).to.equal(2);
+            expect(report.toolchainPopulations.count).to.equal(1);
+        });
+
+        it('never hands the spare to a create with other HOME links or a devcontainer env, and replaces a stale one', async () => {
+            await broker.handle('alice', { op: 'prepare', args: { homeLinks } });
+            await settled();
+            const spare = broker.spareName('alice');
+            const firstSpareToken = docker.stdinWrites.get(spare);
+            fs.mkdirSync(path.join(hostRoot, 'worktrees', 'alice', 'repo-2'));
+            const withEnv = await broker.create('alice', { root: '/tmp/qaap-worktrees/alice/repo-1', homeLinks, devcontainer: { containerEnv: { APP_MODE: 'dev' } } });
+            expect(withEnv.source).to.equal('cold');
+            expect(docker.stdinWrites.get(spare)).to.equal(firstSpareToken); // untouched
+            const otherLinks = await broker.create('alice', { root: '/tmp/qaap-worktrees/alice/repo-2', homeLinks: [] });
+            expect(otherLinks.source).to.equal('cold');
+            expect(otherLinks.token).to.not.equal(firstSpareToken!.trim());
+            // The refill follows the links the tenant now asks for.
+            await settled();
+            const refilled = docker.created.filter(entry => entry.name === spare).pop() as { Env: string[] };
+            expect(refilled.Env).to.include('QAAP_SANDBOX_HOME_LINKS=[]');
+        });
+
+        it('recreates a spare whose container died, skips it at the cap, is off with QAAP_TASK_SANDBOX_SPARE=0, and is reaped with the tenant', async () => {
+            const spare = broker.spareName('alice');
+            await broker.handle('alice', { op: 'prepare', args: { homeLinks } });
+            await settled();
+            docker.containers.get(spare)!.running = false;
+            const sandbox = await broker.create('alice', { root: '/tmp/qaap-worktrees/alice/repo-1', homeLinks });
+            expect(sandbox.source).to.equal('cold');
+            await settled();
+            expect(docker.containers.get(spare)?.running).to.equal(true);
+
+            process.env.QAAP_TASK_SANDBOX_MAX_PER_TENANT = '1';
+            try {
+                await broker.removeTenantSandboxes('alice');
+                expect(docker.containers.has(spare)).to.equal(false);
+                await broker.create('alice', { root: '/tmp/qaap-worktrees/alice/repo-1', homeLinks });
+                await settled();
+                expect(docker.containers.has(spare)).to.equal(false); // the cap is reached
+            } finally {
+                delete process.env.QAAP_TASK_SANDBOX_MAX_PER_TENANT;
+            }
+
+            process.env.QAAP_TASK_SANDBOX_SPARE = '0';
+            try {
+                await broker.handle('bob', { op: 'prepare', args: { homeLinks: [] } });
+                await settled('bob');
+                expect(docker.containers.has(broker.spareName('bob'))).to.equal(false);
+            } finally {
+                delete process.env.QAAP_TASK_SANDBOX_SPARE;
+            }
+        });
+    });
+
+    it('populates the toolchain volume of every Docker node at boot, so the first create does not', async () => {
+        const second = new FakeDocker();
+        const metrics = new QaapTenantRuntimeMetrics();
+        const orchestrator = (broker as unknown as { orchestrator: Record<string, unknown> }).orchestrator;
+        orchestrator.taskSandboxToolchainPlacements = async () => [
+            { docker, image: 'qaap-theia:test', nodeId: 'default' },
+            { docker: second, image: 'qaap-theia:test', nodeId: 'node-2' },
+        ];
+        (broker as unknown as { runtimeMetrics: QaapTenantRuntimeMetrics }).runtimeMetrics = metrics;
+        const saved = { ...process.env };
+        process.env.QAAP_TASK_SANDBOX = '1';
+        delete process.env.QAAP_TENANT_BACKEND_MODE;
+        try {
+            broker.onStart();
+            await broker.toolchainPrewarm;
+        } finally {
+            broker.onStop();
+            process.env = saved;
+        }
+        // One volume per node: each node has its own daemon.
+        expect(docker.volumes).to.have.length(1);
+        expect(second.volumes).to.have.length(1);
+        expect(metrics.snapshot().taskSandbox.toolchainPopulations.count).to.equal(2);
+        const helpers = docker.created.length;
+        process.env.QAAP_TASK_SANDBOX_SPARE = '0';
+        try {
+            await broker.create('alice', { root: '/tmp/qaap-worktrees/alice/repo-1' });
+        } finally {
+            delete process.env.QAAP_TASK_SANDBOX_SPARE;
+        }
+        expect(docker.created.length).to.equal(helpers + 1); // the sandbox only, no toolchain helper
+        expect(docker.volumes).to.have.length(1);
+    });
 });
 
 async function expectRejection(promise: Promise<unknown>, pattern?: RegExp): Promise<void> {
@@ -677,6 +830,9 @@ describe('task sandbox broker link (tenant backend ↔ control plane over HTTP)'
             if (request.op === 'create') {
                 return { name: 'qaap-task-x', root: (request.args as { root: string }).root, host: 'qaap-task-x', port: 7391, token: 't', image: 'i', imageKind: 'base', startupMs: 1, created: true };
             }
+            if (request.op === 'prepare') {
+                return { ok: true };
+            }
             throw new Error('no such sandbox');
         };
     });
@@ -706,14 +862,22 @@ describe('task sandbox broker link (tenant backend ↔ control plane over HTTP)'
     });
 
     it('carries signed requests down the link and replies back, scoped to the linked tenant', async () => {
+        // The tenant backend asks for a spare sandbox every time the link comes up.
+        const prepared = new Promise<void>(resolve => client.onDidLink(() => {
+            client.prepare({ homeLinks: [{ name: '.claude', target: '/home/theia/.qaap/agent/.claude' }] }).then(resolve);
+        }));
         broker.syncLinks();
         await waitFor(() => client.isLinked() || undefined);
+        await prepared;
+        expect(handled.find(entry => entry.op === 'prepare')).to.deep.equal({
+            tenant: 'alice', op: 'prepare', args: { homeLinks: [{ name: '.claude', target: '/home/theia/.qaap/agent/.claude' }] },
+        });
         // The link must stay up after the GET was read (not just long enough for one call).
         await new Promise(resolve => setTimeout(resolve, 200));
         expect(client.isLinked()).to.equal(true);
         const created = await client.create({ root: '/tmp/qaap-worktrees/alice/repo-1' }) as QaapTaskSandboxBrokerSandbox;
         expect(created.name).to.equal('qaap-task-x');
-        expect(handled[0]).to.deep.equal({ tenant: 'alice', op: 'create', args: { root: '/tmp/qaap-worktrees/alice/repo-1' } });
+        expect(handled.find(entry => entry.op === 'create')).to.deep.equal({ tenant: 'alice', op: 'create', args: { root: '/tmp/qaap-worktrees/alice/repo-1' } });
         await expectRejection(client.destroy({ name: 'other' }), /no such sandbox/);
     });
 
