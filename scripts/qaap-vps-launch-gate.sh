@@ -172,7 +172,10 @@ if [[ "$BACKEND_ISOLATION_MODE" == "per-tenant" && "$BACKEND_PER_TENANT" =~ ^(1|
         # secrets, instead of trusting the static config. Fail closed: the probe must report that it ran
         # as uid 1001, found the backend process and finished; an exec failure or an empty answer blocks.
         # `mai[n]` keeps the probe's own `sh -c` command line from matching itself.
-        PROBE_SCRIPT='echo "PROBE:uid:$(id -u)"; n=0; for d in /proc/[0-9]*; do p="${d#/proc/}"; [ "$p" = "$$" ] && continue; if tr "\0" " " < "$d/cmdline" 2>/dev/null | grep -q "src-gen/backend/mai[n][.]js"; then n=$((n+1)); cat "$d/environ" >/dev/null 2>&1 && echo "LEAK:environ:$p"; elif [ "$p" = 1 ]; then cat "$d/environ" >/dev/null 2>&1 && echo "LEAK:environ:$p"; fi; done; echo "PROBE:backend-procs:$n"; ls /home/theia/.qaap >/dev/null 2>&1 && echo LEAK:config; cat /home/theia/.qaap/tenant.sqlite >/dev/null 2>&1 && echo LEAK:sqlite; echo PROBE:done'
+        # `test -w` (no file is created) covers the state the uid-0 backend trusts: Theia loads
+        # ~/.theia/extensions/*.vsix and deployedPlugins into a uid-0 plugin host, so an agent-writable
+        # ~/.theia, or a ~/.qaap root it could rename entries in, is privilege escalation, however the mode got there.
+        PROBE_SCRIPT='echo "PROBE:uid:$(id -u)"; n=0; for d in /proc/[0-9]*; do p="${d#/proc/}"; [ "$p" = "$$" ] && continue; if tr "\0" " " < "$d/cmdline" 2>/dev/null | grep -q "src-gen/backend/mai[n][.]js"; then n=$((n+1)); cat "$d/environ" >/dev/null 2>&1 && echo "LEAK:environ:$p"; elif [ "$p" = 1 ]; then cat "$d/environ" >/dev/null 2>&1 && echo "LEAK:environ:$p"; fi; done; echo "PROBE:backend-procs:$n"; ls /home/theia/.qaap >/dev/null 2>&1 && echo LEAK:config; cat /home/theia/.qaap/tenant.sqlite >/dev/null 2>&1 && echo LEAK:sqlite; for s in /home/theia/.theia /home/theia/.qaap; do test -w "$s" && echo "LEAK:writable:$s"; done; echo PROBE:done'
         # Probe targets: every running, unpaused backend. The reaper pauses idle backends and a paused
         # container cannot be exec'd, so when only paused ones exist ONE is unpaused and probed (a real
         # docker exec in its own context, not a weaker sidecar). It is deliberately NOT re-paused: a
@@ -216,13 +219,13 @@ if [[ "$BACKEND_ISOLATION_MODE" == "per-tenant" && "$BACKEND_PER_TENANT" =~ ^(1|
             TOP_LEAKS="$(printf '%s\n' "$TOP_OUT" | awk 'NR==2 { backend_uid=$2 } NR>2 && $2==backend_uid && $3 ~ /^(pi|qaiq|claude|codex|opencode)$/ { print "LEAK:agent-uid:" $3 ":" $1 }')"
             LEAKS="$(printf '%s\n%s\n' "$PROBE_OUT" "$TOP_LEAKS" | grep 'LEAK:' | tr '\n' ' ' || true)"
             if [[ -n "$LEAKS" ]]; then
-                bad "agent uid can read backend secrets or shares the backend uid in ${backend_name} (${LEAKS% }) — release blocked"
+                bad "agent uid can read backend secrets, write backend state or shares the backend uid in ${backend_name} (${LEAKS% }) — release blocked"
             elif ! grep -qx 'PROBE:uid:1001' <<< "$PROBE_OUT" \
                 || ! grep -qx 'PROBE:done' <<< "$PROBE_OUT" \
                 || ! grep -qE '^PROBE:backend-procs:[1-9][0-9]*$' <<< "$PROBE_OUT"; then
                 bad "agent-uid probe inconclusive in ${backend_name} (exec failed, wrong uid or backend process not found) — release blocked"
             else
-                ok "agent uid 1001 cannot read backend secrets in ${backend_name}"
+                ok "agent uid 1001 cannot read backend secrets in ${backend_name} nor write ~/.theia or the ~/.qaap root"
             fi
         done
         if [[ "${#PROBE_TARGETS[@]}" -eq 0 && -z "$PAUSED_TARGET" ]]; then

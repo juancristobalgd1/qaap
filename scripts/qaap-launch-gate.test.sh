@@ -202,6 +202,38 @@ export TEST_PROBE_OUTPUT='LEAK:environ:1\n'
 expect_status 1 qaap-vps-launch-gate.sh
 grep -q 'LEAK:environ:1' "$TEST_ROOT/output" || { cat "$TEST_ROOT/output"; echo 'expected LEAK in output' >&2; exit 1; }
 unset TEST_PROBE_OUTPUT
+# Agent-writable backend state blocks the release; locked state passes (the default fixture above is that case).
+grep -q 'nor write ~/.theia or the ~/.qaap root' "$TEST_ROOT/output" && { cat "$TEST_ROOT/output"; echo 'LEAK run must not report the probe OK' >&2; exit 1; }
+expect_status 0 qaap-vps-launch-gate.sh
+grep -q 'nor write ~/.theia or the ~/.qaap root' "$TEST_ROOT/output" || { cat "$TEST_ROOT/output"; echo 'expected locked-state evidence' >&2; exit 1; }
+for state_dir in /home/theia/.theia /home/theia/.qaap; do
+    export TEST_PROBE_OUTPUT="PROBE:uid:1001\nPROBE:backend-procs:1\nLEAK:writable:${state_dir}\nPROBE:done\n"
+    expect_status 1 qaap-vps-launch-gate.sh
+    grep -q "LEAK:writable:${state_dir}" "$TEST_ROOT/output" || { cat "$TEST_ROOT/output"; echo 'expected writable LEAK in output' >&2; exit 1; }
+done
+unset TEST_PROBE_OUTPUT
+# The fixtures above never run PROBE_SCRIPT: run the real one over a throwaway home, as the current uid.
+# Root passes every `test -w`, so this part only means something (and only runs) unprivileged.
+if [[ "$(id -u)" != 0 ]]; then
+    PROBE_HOME="$TEST_ROOT/probe-home"
+    mkdir -p "$PROBE_HOME/.theia" "$PROBE_HOME/.qaap"
+    PROBE_BODY="$(sed -n "s/^ *PROBE_SCRIPT='\(.*\)'$/\1/p" "$TEST_ROOT/scripts/qaap-vps-launch-gate.sh")"
+    [[ -n "$PROBE_BODY" ]] || { echo 'could not extract PROBE_SCRIPT from the gate' >&2; exit 1; }
+    PROBE_BODY="${PROBE_BODY//\/home\/theia/$PROBE_HOME}"
+    chmod 555 "$PROBE_HOME/.theia" "$PROBE_HOME/.qaap"
+    probe_writable="$(sh -c "$PROBE_BODY" 2>/dev/null | grep '^LEAK:writable:' || true)"
+    [[ -z "$probe_writable" ]] || { echo "locked state reported as writable: $probe_writable" >&2; exit 1; }
+    for state_dir in .theia .qaap; do
+        chmod 755 "$PROBE_HOME/$state_dir"
+        probe_writable="$(sh -c "$PROBE_BODY" 2>/dev/null | grep '^LEAK:writable:' || true)"
+        [[ "$probe_writable" == "LEAK:writable:$PROBE_HOME/$state_dir" ]] || { echo "expected only $state_dir writable, got: $probe_writable" >&2; exit 1; }
+        chmod 555 "$PROBE_HOME/$state_dir"
+    done
+    # Read-only: the probe left nothing behind in a directory it was able to write to.
+    chmod 755 "$PROBE_HOME/.theia" "$PROBE_HOME/.qaap"
+    sh -c "$PROBE_BODY" >/dev/null 2>&1 || true
+    [[ -z "$(find "$PROBE_HOME" -mindepth 2)" ]] || { find "$PROBE_HOME"; echo 'probe must not create files' >&2; exit 1; }
+fi
 export TEST_TOP_OUTPUT='PID UID COMMAND\n1 1000 docker-init\n2 1000 node\n3 1000 claude\n'
 expect_status 1 qaap-vps-launch-gate.sh
 unset TEST_TOP_OUTPUT
@@ -268,4 +300,4 @@ export TEST_AUTH_CONFIG='{"ok":true,"ready":true,"skipAuth":false,"oauthConfigur
 expect_status 1 qaap-verify-launch-readiness.sh
 export TEST_AUTH_CONFIG='{"ok":true,"ready":true,"skipAuth":false,"oauthConfigured":true,"githubOAuth":true,"productionRuntime":true,"agentUidPerUser":true,"backendIsolationReady":true,"backendIsolationMode":"per-tenant","build":"abcdef123456","betaAccessRequired":true,"betaAccessConfigured":true}'
 expect_status 0 qaap-verify-launch-readiness.sh
-echo 'PASS: fewer than two tenants (warning), missing tenants, uid/flag/LEAK/inconclusive probes, stopped/paused-backend drift, paused-only/drifted-paused/restarting/none probe targets, failed isolation, per-tenant backend evidence/isolation, successful isolation, missing preview domain, operator-only allowlist, missing invitations, configured invitations'
+echo 'PASS: fewer than two tenants (warning), missing tenants, uid/flag/LEAK/writable-state/inconclusive probes, stopped/paused-backend drift, paused-only/drifted-paused/restarting/none probe targets, failed isolation, per-tenant backend evidence/isolation, successful isolation, missing preview domain, operator-only allowlist, missing invitations, configured invitations'
