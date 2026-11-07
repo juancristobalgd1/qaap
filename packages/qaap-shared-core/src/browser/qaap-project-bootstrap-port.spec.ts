@@ -353,7 +353,13 @@ describe('qaap-project-bootstrap-port', () => {
     it('isolates only Theia previews: other apps keep the host HOME', () => {
         const cwd = new URI('file:///work/vyyq');
         const theia = isolateTheiaPreviewCommand('npm run dev', { isTheiaApp: true, cwd });
-        expect(theia).to.equal("export HOME='/work/vyyq/node_modules/.cache/qaap-preview-home' THEIA_CONFIG_DIR='/work/vyyq/node_modules/.cache/qaap-preview-home/.theia' && npm run dev");
+        if (process.platform === 'win32') {
+            // cmd.exe: `set` lines persist across `&&`; the Windows fsPath of file:///work/vyyq is `\work\vyyq`.
+            const winHome = '\\work\\vyyq/node_modules/.cache/qaap-preview-home';
+            expect(theia).to.equal(`set USERPROFILE=${winHome}&& set HOME=${winHome}&& set THEIA_CONFIG_DIR=${winHome}/.theia&& npm run dev`);
+        } else {
+            expect(theia).to.equal("export HOME='/work/vyyq/node_modules/.cache/qaap-preview-home' THEIA_CONFIG_DIR='/work/vyyq/node_modules/.cache/qaap-preview-home/.theia' && npm run dev");
+        }
         expect(isolateTheiaPreviewCommand('npm run dev', { isTheiaApp: false, cwd })).to.equal('npm run dev');
         expect(isolateTheiaPreviewCommand('npm run dev', { cwd })).to.equal('npm run dev');
     });
