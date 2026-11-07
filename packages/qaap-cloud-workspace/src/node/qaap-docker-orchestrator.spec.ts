@@ -8,6 +8,7 @@ import * as os from 'os';
 import * as path from 'path';
 import type * as Dockerode from 'dockerode';
 import { QaapDockerOrchestrator } from './qaap-docker-orchestrator';
+import { qaapTenantCgroupParent } from './qaap-tenant-runtime';
 import { QaapTenantBackendWakeTimeline } from './qaap-tenant-backend-wake-timeline';
 import { QaapTenantRuntimeMetrics } from './qaap-tenant-runtime-metrics';
 
@@ -898,6 +899,255 @@ describe('QaapDockerOrchestrator', () => {
         });
     });
 
+    describe('gVisor tenant runtime', () => {
+        const SQUID_HOSTS = ['qaap-tenant-egress-proxy:172.24.0.2'];
+        interface RuntimeAccess {
+            verifyRunscDockerNode(node: unknown, ownerLogin?: string): Promise<void>;
+            assertRunscAvailable(ownerLogin?: string): Promise<void>;
+            reconcileTenantRuntimes(): Promise<void>;
+            getDockerNodeClients: () => unknown[];
+            listManagedTenantContainers: () => Promise<unknown[]>;
+            listTaskSandboxContainers: () => Promise<unknown[]>;
+            probeTenantBackendBusy: (login: string) => Promise<{ busy: boolean } | undefined>;
+            removeTenantBackendIngressRelay: (docker: unknown, login: string) => Promise<void>;
+            invalidateTenantBackendTarget: (login: string) => void;
+            getDocker: (login?: string) => Promise<unknown>;
+            tenantRunscExtraHosts(docker: unknown, networkMode: string, ownerLogin?: string): Promise<readonly string[]>;
+            tenantRuntimeHostConfig(ownerLogin: string | undefined, extraHosts: readonly string[]): Record<string, unknown>;
+            tenantRuntimeMatches(hostConfig: { Runtime?: string; CgroupParent?: string; ExtraHosts?: string[] | null }, ownerLogin: string | undefined, extraHosts?: readonly string[]): boolean;
+            tenantEgressProxyNameFor(ownerLogin?: string): string;
+        }
+        const runtimeAccess = (): RuntimeAccess => new QaapDockerOrchestrator() as unknown as RuntimeAccess;
+        const dockerInfo = (info: Record<string, unknown>): unknown => {
+            let calls = 0;
+            return { config: { id: 'n1' }, docker: { info: async () => { calls++; return info; } }, get calls(): number { return calls; } };
+        };
+
+        beforeEach(() => {
+            process.env.QAAP_TENANT_RUNSC_LOGINS = 'alice';
+            process.env.QAAP_TENANT_EGRESS_PROXY_IMAGE = 'qaap-tenant-egress:current';
+        });
+
+        afterEach(() => {
+            delete process.env.QAAP_TENANT_RUNSC_LOGINS;
+            delete process.env.QAAP_TENANT_RUNTIME;
+            delete process.env.QAAP_TENANT_EGRESS_PROXY_IMAGE;
+            delete process.env.QAAP_CLOUD_MODE;
+        });
+
+        it('selects runsc and the Squid address only for a canary login', () => {
+            const orchestrator = runtimeAccess();
+            expect(orchestrator.tenantRuntimeHostConfig('alice', SQUID_HOSTS)).to.deep.equal({ Runtime: 'runsc', CgroupParent: qaapTenantCgroupParent('alice'), ExtraHosts: SQUID_HOSTS });
+            expect(orchestrator.tenantRuntimeHostConfig('bob', SQUID_HOSTS)).to.deep.equal({});
+        });
+
+        it('recreates a container whose runtime or Squid address is stale, in both directions', () => {
+            const orchestrator = runtimeAccess();
+            const CgroupParent = qaapTenantCgroupParent('alice');
+            const runsc = { Runtime: 'runsc', CgroupParent, ExtraHosts: SQUID_HOSTS };
+            expect(orchestrator.tenantRuntimeMatches(runsc, 'alice', SQUID_HOSTS)).to.equal(true);
+            expect(orchestrator.tenantRuntimeMatches({ Runtime: 'runc', CgroupParent, ExtraHosts: SQUID_HOSTS }, 'alice', SQUID_HOSTS)).to.equal(false);
+            expect(orchestrator.tenantRuntimeMatches({ CgroupParent, ExtraHosts: SQUID_HOSTS }, 'alice', SQUID_HOSTS)).to.equal(false);
+            expect(orchestrator.tenantRuntimeMatches({ Runtime: 'runsc', ExtraHosts: SQUID_HOSTS }, 'alice', SQUID_HOSTS), 'outside the tenant slice').to.equal(false);
+            expect(orchestrator.tenantRuntimeMatches({ ...runsc, CgroupParent: qaapTenantCgroupParent('bob') }, 'alice', SQUID_HOSTS), 'in another tenant slice').to.equal(false);
+            expect(orchestrator.tenantRuntimeMatches({ Runtime: 'runc', CgroupParent: 'qaap-x.slice' }, 'bob'), 'a slice left over under runc').to.equal(false);
+            expect(orchestrator.tenantRuntimeMatches(runsc, 'alice', ['qaap-tenant-egress-proxy:172.24.0.9'])).to.equal(false);
+            expect(orchestrator.tenantRuntimeMatches(runsc, 'alice')).to.equal(false);
+            expect(orchestrator.tenantRuntimeMatches({ ...runsc, ExtraHosts: [...SQUID_HOSTS, 'evil:1.2.3.4'] }, 'alice', SQUID_HOSTS)).to.equal(false);
+            expect(orchestrator.tenantRuntimeMatches({ Runtime: 'runc' }, 'bob')).to.equal(true);
+            expect(orchestrator.tenantRuntimeMatches({}, 'bob')).to.equal(true);
+            expect(orchestrator.tenantRuntimeMatches(runsc, 'bob')).to.equal(false);
+            expect(orchestrator.tenantRuntimeMatches({ Runtime: 'runc', ExtraHosts: SQUID_HOSTS }, 'bob')).to.equal(false);
+        });
+
+        it('makes the worker matcher depend on the runtime', () => {
+            process.env.QAAP_TENANT_NETWORK_MODE = 'none';
+            process.env.QAAP_TENANT_DOCKER_IMAGE = 'qaap-tenant-test-image:latest';
+            const root = path.join(os.tmpdir(), 'qaap-orchestrator-spec-runtime', 'repos', 'users', 'bob');
+            const orchestrator = access(new QaapDockerOrchestrator());
+            const mounts = orchestrator.tenantMountsForRoot(root);
+            const inspect = {
+                Image: 'x', State: { Running: true }, Config: {
+                    User: orchestrator.getTenantContainerUser(), Image: 'qaap-tenant-test-image:latest', Env: [],
+                    Labels: { 'com.qaap.managed': 'true', 'com.qaap.tenant-container': 'true', 'com.qaap.tenant-login': 'bob' },
+                },
+                HostConfig: {
+                    Memory: 4 * 1024 ** 3, NanoCpus: 2e9, PidsLimit: 256, SecurityOpt: ['no-new-privileges:true'], CapDrop: ['ALL'], ReadonlyRootfs: true,
+                    Tmpfs: { '/tmp': orchestrator.getTenantTmpfsOptions() }, NetworkMode: 'none', Runtime: 'runc',
+                },
+                NetworkSettings: { Networks: { none: {} } },
+                Mounts: [
+                    { Source: mounts.reposRoot, Destination: '/workspace', RW: true },
+                    { Source: mounts.worktreesRoot, Destination: '/tmp/qaap-worktrees', RW: true },
+                    { Source: mounts.parallelRoot, Destination: '/tmp/qaap-parallel', RW: true },
+                ],
+            } as unknown as Dockerode.ContainerInspectInfo;
+            const before = orchestrator.tenantContainerMatches(inspect, mounts, 'none');
+            process.env.QAAP_TENANT_RUNSC_LOGINS = 'bob';
+            expect(orchestrator.tenantContainerMatches(inspect, mounts, 'none')).to.equal(false);
+            process.env.QAAP_TENANT_RUNSC_LOGINS = '';
+            expect(orchestrator.tenantContainerMatches(inspect, mounts, 'none')).to.equal(before);
+        });
+
+        it('reads the Squid address on the tenant network and fails closed without one', async () => {
+            const orchestrator = runtimeAccess();
+            const squid = (networks: Record<string, unknown>, running: boolean = true) => ({
+                getContainer: (name: string) => {
+                    expect(name).to.equal(orchestrator.tenantEgressProxyNameFor('alice'));
+                    return { inspect: async () => ({ State: { Running: running }, NetworkSettings: { Networks: networks } }) };
+                },
+            });
+            const hosts = await orchestrator.tenantRunscExtraHosts(squid({ uplink: { IPAddress: '10.0.0.9' }, tenant: { IPAddress: '172.24.0.2' } }), 'tenant', 'alice');
+            expect(hosts).to.deep.equal(SQUID_HOSTS);
+            for (const docker of [squid({ uplink: { IPAddress: '10.0.0.9' } }), squid({ tenant: { IPAddress: '' } }), squid({ tenant: { IPAddress: '172.24.0.2' } }, false)]) {
+                let message = '';
+                await orchestrator.tenantRunscExtraHosts(docker, 'tenant', 'alice').catch((error: Error) => { message = error.message; });
+                expect(message).to.contain('has no address');
+            }
+            expect(await orchestrator.tenantRunscExtraHosts(undefined, 'none', 'alice')).to.deep.equal([]);
+            expect(await orchestrator.tenantRunscExtraHosts(undefined, 'tenant', 'bob')).to.deep.equal([]);
+        });
+
+        it('gives a gVisor tenant four times the pids, overrides included, and leaves the others alone', () => {
+            const limits = new QaapDockerOrchestrator() as unknown as { getTenantPidsLimitFor(login: string): number };
+            process.env.QAAP_TENANT_PIDS_LIMIT = '256';
+            process.env.QAAP_TENANT_PIDS_LIMIT_OVERRIDES = 'alice=512';
+            expect(limits.getTenantPidsLimitFor('alice')).to.equal(2048);
+            expect(limits.getTenantPidsLimitFor('bob')).to.equal(256);
+            delete process.env.QAAP_TENANT_PIDS_LIMIT_OVERRIDES;
+            delete process.env.QAAP_TENANT_PIDS_LIMIT;
+        });
+
+        it('refuses a gVisor tenant without the egress proxy', async () => {
+            delete process.env.QAAP_TENANT_EGRESS_PROXY_IMAGE;
+            let message = '';
+            await runtimeAccess().tenantRunscExtraHosts(undefined, 'tenant', 'alice').catch((error: Error) => { message = error.message; });
+            expect(message).to.contain('QAAP_TENANT_EGRESS_PROXY_IMAGE');
+        });
+
+        it('refuses a daemon that cannot host gVisor, and does not ask for other tenants', async () => {
+            const orchestrator = runtimeAccess();
+            let message = '';
+            await orchestrator.verifyRunscDockerNode(dockerInfo({ Runtimes: { runc: {} } }), 'alice').catch((error: Error) => { message = error.message; });
+            expect(message).to.contain('no runsc runtime');
+
+            const ignored = dockerInfo({}) as { calls: number };
+            await orchestrator.verifyRunscDockerNode(ignored, 'bob');
+            expect(ignored.calls).to.equal(0);
+
+            const good = dockerInfo({ Runtimes: { runsc: { runtimeArgs: ['--platform=systrap', '--directfs=false', '--systemd-cgroup'] } } }) as { calls: number };
+            await orchestrator.verifyRunscDockerNode(good, 'alice');
+            await orchestrator.verifyRunscDockerNode(good, 'alice');
+            expect(good.calls).to.equal(1);
+            const now = Date.now;
+            try {
+                Date.now = () => now() + 61_000;
+                await orchestrator.verifyRunscDockerNode(good, 'alice');
+                expect(good.calls, 'the daemon is read again after a minute').to.equal(2);
+            } finally {
+                Date.now = now;
+            }
+        });
+
+        it('requires a rootless daemon in hosted deployments', async () => {
+            process.env.QAAP_CLOUD_MODE = 'docker';
+            const orchestrator = runtimeAccess();
+            let message = '';
+            await orchestrator.verifyRunscDockerNode(
+                dockerInfo({ SecurityOptions: ['name=seccomp'], Runtimes: { runsc: { runtimeArgs: ['--platform=systrap', '--directfs=false', '--systemd-cgroup'] } } }), 'alice',
+            ).catch((error: Error) => { message = error.message; });
+            expect(message).to.contain('not rootless');
+        });
+
+        describe('reconcileTenantRuntimes', () => {
+            function fixture(busy: boolean): { orchestrator: RuntimeAccess; removed: string[]; invalidated: string[]; relays: string[] } {
+                const orchestrator = runtimeAccess();
+                const removed: string[] = [];
+                const invalidated: string[] = [];
+                const relays: string[] = [];
+                const runtimes: Record<string, string> = {
+                    'backend-alice': 'runc', 'worker-alice': 'runc', 'backend-bob': 'runc', 'worker-carol': 'runsc', 'sandbox-alice': 'runc',
+                };
+                const docker = {
+                    getContainer: (name: string) => ({
+                        inspect: async () => ({ HostConfig: { Runtime: runtimes[name] } }),
+                        remove: async () => { removed.push(name); },
+                    }),
+                };
+                orchestrator.getDockerNodeClients = () => [{ config: { id: 'n1' }, docker }];
+                orchestrator.getDocker = async () => docker;
+                orchestrator.listManagedTenantContainers = async () => [
+                    { tenantLogin: 'alice', kind: 'backend', containerName: 'backend-alice', running: true, paused: false, nodeId: 'n1' },
+                    { tenantLogin: 'alice', kind: 'worker', containerName: 'worker-alice', running: true, paused: false, nodeId: 'n1' },
+                    { tenantLogin: 'bob', kind: 'backend', containerName: 'backend-bob', running: true, paused: false, nodeId: 'n1' },
+                    { tenantLogin: 'carol', kind: 'worker', containerName: 'worker-carol', running: true, paused: false, nodeId: 'n1' },
+                ];
+                orchestrator.listTaskSandboxContainers = async () => [{ tenantLogin: 'alice', name: 'sandbox-alice', running: true }];
+                orchestrator.probeTenantBackendBusy = async () => ({ busy });
+                orchestrator.removeTenantBackendIngressRelay = async (_docker, login) => { relays.push(login); };
+                orchestrator.invalidateTenantBackendTarget = login => { invalidated.push(login); };
+                return { orchestrator, removed, invalidated, relays };
+            }
+
+            it('does nothing while no tenant is selected', async () => {
+                delete process.env.QAAP_TENANT_RUNSC_LOGINS;
+                const { orchestrator, removed } = fixture(false);
+                await orchestrator.reconcileTenantRuntimes();
+                expect(removed).to.deep.equal([]);
+            });
+
+            it('removes an idle tenant\'s stale containers and forgets its cached target, leaving correct ones alone', async () => {
+                process.env.QAAP_TENANT_RUNSC_LOGINS = 'alice';
+                const { orchestrator, removed, invalidated, relays } = fixture(false);
+                await orchestrator.reconcileTenantRuntimes();
+                expect(removed).to.have.members(['backend-alice', 'worker-alice', 'sandbox-alice', 'worker-carol']);
+                expect(invalidated).to.deep.equal(['alice']);
+                expect(relays).to.deep.equal(['alice']);
+            });
+
+            it('waits for a running turn only until the deadline', async () => {
+                process.env.QAAP_TENANT_RUNSC_LOGINS = 'alice';
+                process.env.QAAP_TENANT_RUNTIME_MIGRATION_GRACE_MS = '60000';
+                const { orchestrator, removed } = fixture(true);
+                await orchestrator.reconcileTenantRuntimes();
+                expect(removed).not.to.include('backend-alice');
+                expect(removed).not.to.include('sandbox-alice');
+                expect(removed).to.include('worker-alice');
+                const now = Date.now;
+                try {
+                    Date.now = () => now() + 61_000;
+                    await orchestrator.reconcileTenantRuntimes();
+                } finally {
+                    Date.now = now;
+                    delete process.env.QAAP_TENANT_RUNTIME_MIGRATION_GRACE_MS;
+                }
+                expect(removed, 'a busy tenant cannot stay out of gVisor past the deadline').to.include.members(['backend-alice', 'sandbox-alice']);
+            });
+
+            it('keeps reconciling the rest when one container fails', async () => {
+                process.env.QAAP_TENANT_RUNSC_LOGINS = 'alice';
+                const { orchestrator, removed } = fixture(false);
+                orchestrator.removeTenantBackendIngressRelay = async () => { throw new Error('boom'); };
+                await orchestrator.reconcileTenantRuntimes();
+                expect(removed).to.include.members(['worker-alice', 'sandbox-alice']);
+            });
+        });
+
+        it('creates the worker under runsc with the expected fragment only when selected', async () => {
+            process.env.QAAP_TENANT_NETWORK_MODE = 'none';
+            const root = path.join(os.tmpdir(), 'qaap-orchestrator-spec-runtime-worker', 'repos', 'users', 'alice');
+            const orchestrator = access(new QaapDockerOrchestrator());
+            const fakeDocker = new CreateCapturingDockerode();
+            orchestrator.getDocker = async () => fakeDocker as unknown as Dockerode;
+            (orchestrator as unknown as RuntimeAccess).assertRunscAvailable = async () => undefined;
+            await orchestrator.createOrValidateTenantContainer('qaap-tenant-spec', orchestrator.tenantMountsForRoot(root), 'none', 'alice').catch(() => undefined);
+            expect(fakeDocker.created[0].HostConfig?.Runtime).to.equal('runsc');
+            expect((fakeDocker.created[0].HostConfig as { CgroupParent?: string }).CgroupParent).to.equal(qaapTenantCgroupParent('alice'));
+            await orchestrator.createOrValidateTenantContainer('qaap-tenant-spec', orchestrator.tenantMountsForRoot(root), 'none', 'bob').catch(() => undefined);
+            expect(fakeDocker.created[1].HostConfig?.Runtime).to.equal(undefined);
+        });
+    });
+
     describe('tenant container create options', () => {
 
         async function captureCreate(run: (orchestrator: QaapDockerOrchestratorTestAccess) => Promise<unknown>): Promise<CreateCapturingDockerode> {
@@ -1721,6 +1971,9 @@ describe('QaapDockerOrchestrator', () => {
                 },
                 HostConfig: {
                     NetworkMode: 'qaap-tenant-egress-uplink',
+                    Memory: 512 * 1024 ** 2,
+                    PidsLimit: 256,
+                    NanoCpus: 1e9,
                     CapDrop: ['ALL'],
                     SecurityOpt: ['no-new-privileges:true'],
                     ReadonlyRootfs: true,
@@ -1735,6 +1988,11 @@ describe('QaapDockerOrchestrator', () => {
                 },
             } as unknown as Dockerode.ContainerInspectInfo;
             expect(orchestrator.tenantEgressProxyMatches(inspect, 'alice', 'qaap-net-v3-alice', 'qaap-tenant-egress:release')).to.equal(true);
+            for (const unbounded of ['Memory', 'PidsLimit', 'NanoCpus']) {
+                const host = (inspect as unknown as { HostConfig: Record<string, unknown> }).HostConfig;
+                const without = { ...inspect, HostConfig: { ...host, [unbounded]: 0 } } as unknown as Dockerode.ContainerInspectInfo;
+                expect(orchestrator.tenantEgressProxyMatches(without, 'alice', 'qaap-net-v3-alice', 'qaap-tenant-egress:release'), unbounded).to.equal(false);
+            }
             expect(orchestrator.tenantEgressProxyMatches(inspect, 'alice', 'qaap-net-v3-bob', 'qaap-tenant-egress:release')).to.equal(false);
             const proxyWithUntrustedNetwork = {
                 ...inspect,
