@@ -1,0 +1,62 @@
+# Allowlist proxy in front of dockerd-tenants.service.
+# Install: /etc/systemd/system/docker-tenants-socket-proxy.service, script at
+# /usr/local/lib/qaap/docker-tenants-socket-proxy.mjs, then
+#   sudo systemctl daemon-reload && sudo systemctl enable --now docker-tenants-socket-proxy.service
+#
+# Identity: user qaap-tenants-proxy, primary group qaap-tenants-client (the proxy socket group,
+# which the control plane also belongs to), supplementary group qaap-tenants-backend (the group
+# of the raw daemon socket, which only this user belongs to). The control plane must NOT be in
+# qaap-tenants-backend, or it could bypass the allowlist.
+
+[Unit]
+Description=Allowlist socket proxy for the gVisor tenant Docker daemon
+Documentation=https://github.com/juancristobalgd1/qaap/blob/master/deploy/tenants-runsc/README.md
+After=dockerd-tenants.service
+Requires=dockerd-tenants.service
+PartOf=dockerd-tenants.service
+
+[Service]
+Type=simple
+User=qaap-tenants-proxy
+Group=qaap-tenants-client
+SupplementaryGroups=qaap-tenants-backend
+ExecStart=/usr/bin/node /usr/local/lib/qaap/docker-tenants-socket-proxy.mjs
+Environment=NODE_ENV=production
+Environment=QAAP_TENANT_PROXY_LISTEN=/run/docker-tenants/proxy.sock
+Environment=QAAP_TENANT_PROXY_UPSTREAM=/run/docker-tenants/docker.sock
+Environment=QAAP_TENANT_PROXY_SOCKET_MODE=660
+Environment=QAAP_TENANT_DATA_ROOT=/opt/qaap-runtime
+Environment=QAAP_TENANT_ALLOWED_REGISTRIES=ghcr.io
+# Named volumes that tenant containers may mount, comma-separated. Empty by default.
+Environment=QAAP_TENANT_ALLOWED_VOLUMES=
+Restart=on-failure
+RestartSec=3
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+# Hardening. The proxy only needs the two unix sockets and the data root for path checks.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectKernelLogs=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+UMask=0117
+ReadWritePaths=/run/docker-tenants
+# Node uses a JIT, so MemoryDenyWriteExecute is deliberately not set.
+
+[Install]
+WantedBy=multi-user.target

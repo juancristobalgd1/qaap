@@ -1,0 +1,41 @@
+{
+  "default-runtime": "runsc",
+  "runtimes": {
+    "runsc": {
+      "path": "/usr/local/bin/runsc",
+      "runtimeArgs": [
+        "--platform=systrap"
+      ]
+    }
+  },
+  "data-root": "/var/lib/docker-tenants",
+  "exec-root": "/run/docker-tenants/exec",
+  "pidfile": "/run/docker-tenants/dockerd.pid",
+  "hosts": [
+    "unix:///run/docker-tenants/docker.sock"
+  ],
+  "group": "qaap-tenants-backend",
+  "containerd-namespace": "moby-tenants",
+  "containerd-plugins-namespace": "plugins.moby-tenants",
+  "bridge": "none",
+  "iptables": true,
+  "ip-masq": true,
+  "exec-opts": [
+    "native.cgroupdriver=cgroupfs"
+  ],
+  "live-restore": false,
+  "userland-proxy": false,
+  "no-new-privileges": true,
+  "icc": false,
+  "default-address-pools": [
+    {
+      "base": "10.210.0.0/16",
+      "size": 24
+    }
+  ],
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "10m",
+    "max-file": "3"
+  }
+}

@@ -1,0 +1,48 @@
+# Rootful dockerd dedicated to gVisor (runsc) tenant containers.
+# Install: /etc/systemd/system/dockerd-tenants.service, then
+#   sudo systemctl daemon-reload && sudo systemctl enable --now dockerd-tenants.service
+# Config: /etc/docker-tenants/daemon.json (from deploy/tenants-runsc/daemon.json).
+# The socket is /run/docker-tenants/docker.sock. Clients must NOT use it directly:
+# they go through docker-tenants-socket-proxy.service (allowlist).
+#
+# Containerd: this daemon shares the system containerd (/run/containerd/containerd.sock)
+# and isolates itself with containerd-namespace=moby-tenants (see daemon.json). It does
+# not start its own containerd, so it Requires/After containerd.service.
+#
+# Hardening: dockerd must keep root, mount namespaces, cgroup delegation and the
+# iptables/netns control, so only low-risk limits are set here. Do not add
+# NoNewPrivileges, ProtectSystem or PrivateNetwork: they break dockerd.
+
+[Unit]
+Description=Docker daemon for gVisor tenant containers (runsc)
+Documentation=https://github.com/juancristobalgd1/qaap/blob/master/deploy/tenants-runsc/README.md
+Wants=network-online.target
+After=network-online.target containerd.service
+Requires=containerd.service
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=notify
+ExecStartPre=/usr/bin/test -x /usr/local/bin/runsc
+ExecStartPre=/usr/bin/test -x /usr/local/bin/containerd-shim-runsc-v1
+ExecStart=/usr/bin/dockerd --config-file /etc/docker-tenants/daemon.json
+ExecReload=/bin/kill -s HUP $MAINPID
+# Docker needs cgroup delegation to manage the containers' cgroups.
+Delegate=yes
+# Kill only the daemon, not the running tenant containers, when the unit stops
+# (live-restore is false, so containers are still stopped by the daemon on shutdown).
+KillMode=process
+KillSignal=SIGINT
+TimeoutStartSec=120
+TimeoutStopSec=120
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=1048576
+LimitNPROC=infinity
+LimitCORE=infinity
+TasksMax=infinity
+OOMScoreAdjust=-500
+
+[Install]
+WantedBy=multi-user.target

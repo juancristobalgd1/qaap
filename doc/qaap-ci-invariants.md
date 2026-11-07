@@ -319,3 +319,19 @@ History: #112, #113 (Sep 25, 2026), #121, #122, #124, #125 (Sep 26, 2026). All w
   then replace the dead head (or the dead entries thinning the first 4) in `OPENROUTER_DEFAULT_FREE_MODELS` with healthy tool-capable models,
   keeping the first four on different providers. Update `scripts/qaap-openrouter-free-model-health.test.mjs` if it pins the head.
   Tests: `node --test scripts/qaap-openrouter-free-model-health.test.mjs`.
+
+## Tenant runtime (gVisor)
+
+- **Rule:** tenant containers may run under gVisor (`runsc`) only through the dedicated tenant
+  daemon (`dockerd-tenants.service`) behind the allowlist proxy (`docker-tenants-socket-proxy.service`),
+  both in `deploy/tenants-runsc/`. The orchestrator sets `QAAP_TENANT_RUNTIME=runsc` and must
+  **fail closed**: if the daemon it talks to does not report `runsc` as its default runtime, tenant
+  creation fails. It must never fall back silently to `runc` for a tenant that was asked for runsc.
+- **Stays on runc:** the rootless daemon's relay, the Squid egress proxy and the toolchain images are
+  not run under gVisor by this change. They keep the rootless or rootful runc daemons.
+- **Guard:** `deploy/tenants-runsc/docker-tenants-socket-proxy.test.mjs` runs with
+  `node --test deploy/tenants-runsc/docker-tenants-socket-proxy.test.mjs` (no Docker needed).
+  Changing the proxy allowlist or create checks requires adding a test case first.
+- **Why:** gVisor is the default isolation for tenant code on this host, and a silent runc fallback
+  would drop that boundary without any visible error. Rollback is the flag and the socket, see
+  `deploy/tenants-runsc/README.md`.

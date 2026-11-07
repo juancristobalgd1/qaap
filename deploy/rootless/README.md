@@ -103,3 +103,10 @@ works. During this repair, the authenticated repository-open API returned 200
 for `juancristobalgd1/startcraft_remastered`, and the project appeared in the UI.
 The new-project dialog opened and local `git init` worked; no GitHub repository
 was created solely for testing. Preview startup is a separate verification.
+
+## gVisor tenant mode (opt-in, canary)
+
+A second, rootful dockerd running tenant containers under gVisor (`runsc`) behind an allowlist
+proxy is described in `deploy/tenants-runsc/README.md`. It is not installed by the rootless
+overlay and does not replace it: the rootless daemon remains the default tenant runtime until the
+canary checklist passes. Rollback is `QAAP_TENANT_RUNTIME=runc` and the rootless `DOCKER_HOST`.
