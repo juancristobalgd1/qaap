@@ -25,6 +25,8 @@ RUNSC_SHA512_AARCH64='e829ca32eef36f4e960460a6dcb094d7945ab507e9bfe0275f09467ab9
 INSTALL_DIR="${QAAP_RUNSC_INSTALL_DIR:-/usr/local/bin}"
 STATE_DIR="${QAAP_RUNSC_STATE_DIR:-/usr/local/share/qaap}"
 MARKER="$STATE_DIR/runsc-release"
+# sha512 of every installed file, written at install time. The idempotency shortcut re-verifies it.
+MANIFEST="$STATE_DIR/runsc-release.sha512"
 BASE_URL='https://storage.googleapis.com/gvisor/releases/release'
 
 log() { printf '[install-runsc] %s\n' "$*"; }
@@ -41,9 +43,19 @@ case "$(uname -m)" in
     *) die "unsupported architecture: $(uname -m)" ;;
 esac
 
-if [ -x "$INSTALL_DIR/runsc" ] && [ -x "$INSTALL_DIR/containerd-shim-runsc-v1" ] \
-    && [ -d "$INSTALL_DIR/gvisor-bin" ] && [ -f "$MARKER" ] \
-    && [ "$(cat "$MARKER")" = "$RUNSC_RELEASE" ]; then
+# The shortcut trusts the installed bytes, not a marker file: the manifest must list exactly the installed
+# files, and every listed sha512 must still match. Anything else reinstalls the pinned release.
+installed_intact() {
+    [ -f "$MANIFEST" ] && [ -f "$MARKER" ] && [ "$(cat "$MARKER")" = "$RUNSC_RELEASE" ] || return 1
+    [ -x "$INSTALL_DIR/runsc" ] && [ -x "$INSTALL_DIR/containerd-shim-runsc-v1" ] && [ -d "$INSTALL_DIR/gvisor-bin" ] || return 1
+    local listed present
+    listed="$(awk '{print $2}' "$MANIFEST" | LC_ALL=C sort)"
+    present="$(cd "$INSTALL_DIR" && { echo runsc; echo containerd-shim-runsc-v1; find gvisor-bin -type f; } | LC_ALL=C sort)"
+    [ "$listed" = "$present" ] || return 1
+    (cd "$INSTALL_DIR" && sha512sum --check --quiet --strict "$MANIFEST") >/dev/null 2>&1
+}
+
+if installed_intact; then
     log "release $RUNSC_RELEASE already installed in $INSTALL_DIR; nothing to do"
 else
     WORK="$(mktemp -d)"
@@ -62,7 +74,8 @@ else
     fi
     log 'SHA-512 verified'
 
-    tar --zstd -xf "$TARBALL" -C "$STAGE"
+    # Archive owners and modes are not trusted: everything is re-owned to root below.
+    tar --zstd --no-same-owner --no-same-permissions -xf "$TARBALL" -C "$STAGE"
     [ -x "$STAGE/runsc" ] || die 'tarball does not contain an executable runsc at its root'
     [ -x "$STAGE/containerd-shim-runsc-v1" ] || die 'tarball does not contain containerd-shim-runsc-v1'
     [ -d "$STAGE/gvisor-bin" ] || die 'tarball does not contain gvisor-bin/ (runsc needs its sidecar binaries)'
@@ -73,7 +86,12 @@ else
     rm -rf "$INSTALL_DIR/gvisor-bin"
     cp -a "$STAGE/gvisor-bin" "$INSTALL_DIR/gvisor-bin"
 
+    # Root-owned, and not writable by group or others: a tenant-readable binary is a root escape path.
+    chown -R root:root "$INSTALL_DIR/runsc" "$INSTALL_DIR/containerd-shim-runsc-v1" "$INSTALL_DIR/gvisor-bin"
+    chmod -R go-w "$INSTALL_DIR/runsc" "$INSTALL_DIR/containerd-shim-runsc-v1" "$INSTALL_DIR/gvisor-bin"
+
     mkdir -p "$STATE_DIR"
+    (cd "$INSTALL_DIR" && { sha512sum runsc containerd-shim-runsc-v1; find gvisor-bin -type f -print0 | LC_ALL=C sort -z | xargs -0 sha512sum; }) > "$MANIFEST"
     printf '%s\n' "$RUNSC_RELEASE" > "$MARKER"
     log "installed release $RUNSC_RELEASE into $INSTALL_DIR"
 fi

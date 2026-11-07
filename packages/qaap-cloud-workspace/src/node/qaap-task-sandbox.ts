@@ -1101,6 +1101,11 @@ export class QaapTaskSandboxService implements BackendApplicationContribution, Q
 
     /** `docker run` argv for a sandbox: hardened like the tenant workers, holding only this worktree. */
     async buildRunArgs(name: string, root: string, plan: QaapTaskSandboxImagePlan, options: QaapTaskSandboxAcquireOptions): Promise<string[]> {
+        // This path talks to whatever DOCKER_HOST the process has, and it cannot verify the tenant socket
+        // proxy. Under gVisor the broker on the verified tenant daemon is the only sandbox path.
+        if (resolveQaapTenantRuntime(process.env) === 'runsc') {
+            throw new Error('QAAP_TENANT_RUNTIME=runsc: the direct docker CLI sandbox is disabled; task sandboxes must go through the broker on the verified tenant daemon.');
+        }
         const uid = options.uid ?? process.getuid?.() ?? 1000;
         const gid = options.gid ?? options.uid ?? process.getgid?.() ?? uid;
         const binds = await this.gitBinds(root);
@@ -1139,8 +1144,6 @@ export class QaapTaskSandboxService implements BackendApplicationContribution, Q
             '--tmpfs', '/tmp:rw,exec,nosuid,size=2g,mode=1777',
             '--tmpfs', `${QAAP_TASK_SANDBOX_HOME}:rw,exec,nosuid,size=1g,mode=0700,uid=${uid},gid=${gid}`,
             '--network', process.env.QAAP_TASK_SANDBOX_NETWORK?.trim() || 'bridge',
-            // gVisor for the user's code when QAAP_TENANT_RUNTIME=runsc; the default runtime otherwise.
-            ...(resolveQaapTenantRuntime(process.env) === 'runsc' ? ['--runtime', 'runsc'] : []),
             '-e', `HOME=${QAAP_TASK_SANDBOX_HOME}`,
             '-e', `QAAP_SANDBOX_EXEC_RUNNER=${EXEC_RUNNER}`,
             '-e', `QAAP_SANDBOX_BRIDGE_RUNNER=${BRIDGE_RUNNER}`,

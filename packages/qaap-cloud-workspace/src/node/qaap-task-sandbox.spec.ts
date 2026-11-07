@@ -172,7 +172,7 @@ describe('QaapTaskSandboxService', function (): void {
         expect(service.isEnabled({ QAAP_TASK_SANDBOX: 'true' })).to.equal(true);
     });
 
-    it('adds --runtime runsc to the sandbox run only when QAAP_TENANT_RUNTIME=runsc', async () => {
+    it('refuses the direct docker CLI sandbox under QAAP_TENANT_RUNTIME=runsc; the broker is the only gVisor path', async () => {
         const previous = process.env.QAAP_TENANT_RUNTIME;
         try {
             delete process.env.QAAP_TENANT_RUNTIME;
@@ -180,10 +180,14 @@ describe('QaapTaskSandboxService', function (): void {
             await service.acquire({ taskId: 'rt-default', cwd: worktreeA, env: { HOME: home }, uid: 20001, gid: 20002 });
             expect(service.callsOf('run')[0]).to.not.include('--runtime');
             process.env.QAAP_TENANT_RUNTIME = 'runsc';
-            await service.acquire({ taskId: 'rt-gvisor', cwd: worktreeB, env: { HOME: home }, uid: 20001, gid: 20002 });
-            const runsc = service.callsOf('run')[1];
-            expect(runsc.join(' ')).to.contain('--runtime runsc');
-            expect(runsc.join(' ')).to.contain('--cap-drop ALL');
+            let thrown: unknown;
+            try {
+                await service.acquire({ taskId: 'rt-gvisor', cwd: worktreeB, env: { HOME: home }, uid: 20001, gid: 20002 });
+            } catch (error) {
+                thrown = error;
+            }
+            expect((thrown as Error | undefined)?.message).to.match(/direct docker CLI sandbox is disabled/);
+            expect(service.callsOf('run')).to.have.length(1);
         } finally {
             if (previous === undefined) {
                 delete process.env.QAAP_TENANT_RUNTIME;

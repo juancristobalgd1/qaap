@@ -35,6 +35,7 @@ import { QAAP_TENANT_BUSY_PROBE_HEADER, QaapTenantBusyProbe, type QaapTenantBusy
 import { computeTenantBackendUpdateStatus } from './qaap-tenant-backend-update';
 import { QaapTenantRuntimeMetrics } from './qaap-tenant-runtime-metrics';
 import { resolveQaapTenantDockerHost, resolveQaapTenantRuntime, type QaapTenantRuntime } from './qaap-tenant-runtime';
+import { isQaapTenantProxyPing, QAAP_TENANT_PROXY_HEADER, requestDockerPingHeaders, type QaapDockerEndpoint } from './qaap-tenant-proxy-identity';
 import { QaapTenantBackendWakeTimeline } from './qaap-tenant-backend-wake-timeline';
 import { QaapTenantRuntimeStore } from './qaap-tenant-runtime-store';
 import { QaapTenantResourceOverrides } from './qaap-tenant-resource-overrides';
@@ -766,9 +767,16 @@ export class QaapDockerOrchestrator {
     }
 
     protected async verifyDockerNode(node: QaapDockerNodeClient): Promise<void> {
-        if (isQaapHostedRuntime(process.env) && !this.verifiedDockerNodeIds.has(node.config.id)) {
+        const runsc = this.getTenantRuntime() === 'runsc';
+        if (!isQaapHostedRuntime(process.env) && !runsc) {
+            return;
+        }
+        if (this.verifiedDockerNodeIds.has(node.config.id)) {
+            return;
+        }
+        if (isQaapHostedRuntime(process.env)) {
             const info = await node.docker.info() as { SecurityOptions?: readonly string[]; Runtimes?: Record<string, unknown>; DefaultRuntime?: string };
-            if (this.getTenantRuntime() === 'runsc') {
+            if (runsc) {
                 // gVisor replaces the rootless check: the daemon must offer runsc and default to it, so a
                 // tenant container that omits HostConfig.Runtime still never runs on the host kernel.
                 if (!isQaapRunscDaemonInfo(info)) {
@@ -780,8 +788,25 @@ export class QaapDockerOrchestrator {
                     throw new Error(`Refusing hosted Docker control-plane access: Docker node ${node.config.id} did not report rootless mode.`);
                 }
             }
-            this.verifiedDockerNodeIds.add(node.config.id);
         }
+        if (runsc) {
+            // The tenant endpoint must be the socket proxy, which answers /_ping with its identity header.
+            // A raw gVisor daemon behind the same path would accept every tenant API call unfiltered.
+            const headers = await this.fetchTenantDaemonPingHeaders(node);
+            if (!isQaapTenantProxyPing(headers)) {
+                throw new Error(`Refusing tenant Docker access: the tenant DOCKER_HOST is not the socket proxy on Docker node ${node.config.id} (no ${QAAP_TENANT_PROXY_HEADER}: 1 on GET /_ping). QAAP_TENANT_DOCKER_HOST must point at the proxy, never at the raw gVisor daemon.`);
+            }
+        }
+        this.verifiedDockerNodeIds.add(node.config.id);
+    }
+
+    /** `GET /_ping` on the node's endpoint, returning the response headers (see isQaapTenantProxyPing). */
+    protected async fetchTenantDaemonPingHeaders(node: QaapDockerNodeClient): Promise<http.IncomingHttpHeaders> {
+        const modem = (node.docker as unknown as { modem?: QaapDockerEndpoint }).modem;
+        if (!modem) {
+            throw new Error(`Cannot verify the tenant socket proxy on Docker node ${node.config.id}: no Docker endpoint.`);
+        }
+        return requestDockerPingHeaders(modem);
     }
 
     protected async verifiedDockerNodesForTenant(ownerLogin?: string): Promise<readonly QaapDockerNodeClient[]> {

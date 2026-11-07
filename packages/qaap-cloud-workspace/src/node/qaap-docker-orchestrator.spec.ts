@@ -38,6 +38,7 @@ interface QaapDockerOrchestratorTestAccess {
     validateTenantRuntimeConfig(): void;
     tenantRuntimeMatches(actual: string | undefined): boolean;
     getDockerNodeClients(): ReadonlyArray<{ config: { dockerHost: string } }>;
+    fetchTenantDaemonPingHeaders(node: { config: { id: string; dockerHost: string }; docker: Dockerode }): Promise<Record<string, string | string[] | undefined>>;
     toContainerPath(hostPath: string, tenantRootHostPath?: string): string;
     dockerMountSource(hostPath: string, kind: 'repos' | 'worktrees' | 'parallel' | 'tenant-config'): string;
     tenantContainerMatches(inspect: Dockerode.ContainerInspectInfo, mounts: QaapTenantMountSet, networkMode: string): boolean;
@@ -922,8 +923,9 @@ describe('QaapDockerOrchestrator', () => {
             return fakeDocker;
         }
 
-        async function verifyFailure(info: Record<string, unknown>): Promise<string | undefined> {
+        async function verifyFailure(info: Record<string, unknown>, headers: Record<string, string> = { 'x-qaap-tenant-proxy': '1' }): Promise<string | undefined> {
             const orchestrator = access(new QaapDockerOrchestrator());
+            orchestrator.fetchTenantDaemonPingHeaders = async () => headers;
             const node = { config: { id: 'default', dockerHost: 'unix:///var/run/docker.sock' }, docker: { info: async () => info } as unknown as Dockerode };
             try {
                 await orchestrator.verifyDockerNode(node);
@@ -992,6 +994,39 @@ describe('QaapDockerOrchestrator', () => {
             expect(await verifyFailure({ SecurityOptions: ['name=seccomp'], Runtimes: { runsc: {} }, DefaultRuntime: 'runsc' })).to.equal(undefined);
             delete process.env.QAAP_TENANT_RUNTIME;
             expect(await verifyFailure({ SecurityOptions: ['name=seccomp'], Runtimes: { runsc: {} }, DefaultRuntime: 'runsc' })).to.match(/did not report rootless mode/);
+        });
+
+        it('refuses a hosted runsc endpoint that is a raw daemon, not the tenant socket proxy', async () => {
+            process.env.QAAP_CLOUD_MODE = 'docker';
+            process.env.QAAP_TENANT_RUNTIME = 'runsc';
+            const message = await verifyFailure({ Runtimes: { runsc: {} }, DefaultRuntime: 'runsc' }, {});
+            expect(message).to.match(/the tenant DOCKER_HOST is not the socket proxy/);
+            expect(await verifyFailure({ Runtimes: { runsc: {} }, DefaultRuntime: 'runsc' }, { 'x-qaap-tenant-proxy': '0' }))
+                .to.match(/is not the socket proxy/);
+        });
+
+        it('checks the proxy identity of a non-hosted runsc endpoint too, and not under runc', async () => {
+            delete process.env.QAAP_CLOUD_MODE;
+            process.env.QAAP_TENANT_RUNTIME = 'runsc';
+            const orchestrator = access(new QaapDockerOrchestrator());
+            let pings = 0;
+            orchestrator.fetchTenantDaemonPingHeaders = async () => { pings += 1; return {}; };
+            const node = { config: { id: 'default', dockerHost: 'unix:///run/qaap-gvisor/docker.sock' }, docker: {} as unknown as Dockerode };
+            let thrown: unknown;
+            try {
+                await orchestrator.verifyDockerNode(node);
+            } catch (error) {
+                thrown = error;
+            }
+            expect((thrown as Error | undefined)?.message).to.match(/socket proxy/);
+            expect(pings).to.equal(1);
+
+            process.env.QAAP_TENANT_RUNTIME = 'runc';
+            const runcOrchestrator = access(new QaapDockerOrchestrator());
+            let runcPings = 0;
+            runcOrchestrator.fetchTenantDaemonPingHeaders = async () => { runcPings += 1; return {}; };
+            await runcOrchestrator.verifyDockerNode(node);
+            expect(runcPings).to.equal(0);
         });
 
         it('routes the single tenant node to QAAP_TENANT_DOCKER_HOST and refuses to combine it with QAAP_DOCKER_NODES', () => {
