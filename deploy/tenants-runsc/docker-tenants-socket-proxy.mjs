@@ -15,7 +15,10 @@
 //   [no-new-privileges:true], a positive PidsLimit and NetworkMode none unless a Qaap network is named.
 // - Host bind sources must be exactly one of the per-tenant directories under the data root
 //   (QAAP_TENANT_BIND_TEMPLATES), and fs.realpathSync(source) must equal the source, which rejects a
-//   symlink in any component. Mounts (the long syntax) are refused.
+//   symlink in any component. A source nested strictly inside a writable tenant directory (a template
+//   instance, or a read-write source of the same request) is refused whatever its mode, because a
+//   tenant can replace a directory under a writable parent with a symlink after validation (TOCTOU).
+//   Templates may not nest inside each other. Mounts (the long syntax) are refused.
 // - Container, exec and network operations only reach resources labelled com.qaap.managed=true
 //   (checked with an upstream inspect, cached briefly).
 // - Hijacked endpoints (attach, exec start) never send client bytes upstream before the daemon
@@ -52,13 +55,15 @@ const OWNERSHIP_CACHE_MS = 2000;
 // Per-tenant host directories the orchestrator and the task-sandbox broker bind-mount, relative to
 // the data root. They mirror QAAP_DOCKER_REMOTE_{REPOS,WORKTREES,PARALLEL,TENANT_CONFIG}_ROOT in
 // deploy/rootless/compose.override.yml (repos root + users/<segment>, worktrees/<segment>,
-// parallel/<segment>, tenant data root and its theia-home).
+// parallel/<segment>, tenant data root). The theia home lives in its own tree, theia-homes/<segment>,
+// outside auth/users/<segment>: it is not nested under any writable tenant directory, so a tenant
+// cannot swap it for a symlink in a directory it can write.
 const DEFAULT_BIND_TEMPLATES = [
     'workspace/repos/users/{tenant}',
     'worktrees/{tenant}',
     'parallel/{tenant}',
     'auth/users/{tenant}',
-    'auth/users/{tenant}/theia-home'
+    'theia-homes/{tenant}'
 ];
 const NAMESPACE_PATTERN = /^[a-z][a-z0-9]{0,15}$/;
 const TENANT_SEGMENT = /^[A-Za-z0-9_.-]{1,128}$/;
@@ -110,7 +115,7 @@ export function loadConfig(env = process.env) {
         upstreamPath: env.QAAP_TENANT_PROXY_UPSTREAM || DEFAULT_UPSTREAM,
         socketMode: parseInt(env.QAAP_TENANT_PROXY_SOCKET_MODE || '660', 8),
         dataRoot,
-        bindTemplates: templates.map(parseBindTemplate),
+        bindTemplates: assertTemplatesNotNested(templates.map(parseBindTemplate)),
         namespace,
         allowedRegistries: env.QAAP_TENANT_ALLOWED_REGISTRIES === undefined
             ? [...DEFAULT_REGISTRIES]
@@ -131,6 +136,41 @@ export function loadConfig(env = process.env) {
  */
 function splitList(value) {
     return (value ?? '').split(',').map(entry => entry.trim()).filter(entry => entry.length > 0);
+}
+
+/**
+ * Fails closed when one template sits inside another: a tenant directory nested in a writable tenant
+ * directory can be replaced through its parent. Two segments may overlap when they are equal or when
+ * either is `{tenant}`, which can match the literal of the other, so the check is conservative.
+ * @param {string[][]} templates parsed templates
+ * @returns {string[][]} the same templates
+ */
+export function assertTemplatesNotNested(templates) {
+    for (const [outerIndex, outer] of templates.entries()) {
+        for (const [innerIndex, inner] of templates.entries()) {
+            if (outerIndex === innerIndex || inner.length <= outer.length) {
+                continue;
+            }
+            const overlaps = outer.every((part, position) => part === inner[position] || part === '{tenant}' || inner[position] === '{tenant}');
+            if (overlaps) {
+                throw new Error(`bind template ${inner.join('/')} is nested inside bind template ${outer.join('/')}`);
+            }
+        }
+    }
+    return templates;
+}
+
+/**
+ * Segment-wise strict descendant test on canonical absolute paths. `/a/bc` is not under `/a/b`.
+ * @param {string} child
+ * @param {string} parent
+ * @returns {boolean}
+ */
+export function isStrictDescendant(child, parent) {
+    const childSegments = child.split('/');
+    const parentSegments = parent.split('/');
+    return childSegments.length > parentSegments.length
+        && parentSegments.every((segment, index) => childSegments[index] === segment);
 }
 
 /**
@@ -513,6 +553,35 @@ function tenantOfBindSource(source, cfg) {
 }
 
 /**
+ * Whether a strict ancestor of the source (below the data root) is itself a template instance.
+ * @param {string} source
+ * @param {ProxyConfig} cfg
+ * @returns {boolean}
+ */
+function nestedInTemplateDirectory(source, cfg) {
+    if (!source.startsWith(`${cfg.dataRoot}/`)) {
+        return false;
+    }
+    const segments = source.slice(cfg.dataRoot.length + 1).split('/');
+    for (let length = 1; length < segments.length; length++) {
+        if (tenantOfBindSource(`${cfg.dataRoot}/${segments.slice(0, length).join('/')}`, cfg) !== undefined) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * The absolute template instances of one tenant: every directory that tenant may have bind-mounted writable.
+ * @param {string} tenant
+ * @param {ProxyConfig} cfg
+ * @returns {string[]}
+ */
+function templateDirectories(tenant, cfg) {
+    return cfg.bindTemplates.map(template => `${cfg.dataRoot}/${template.map(part => (part === '{tenant}' ? tenant : part)).join('/')}`);
+}
+
+/**
  * @param {ProxyConfig} cfg
  * @returns {Validator}
  */
@@ -521,6 +590,8 @@ const binds = cfg => (value, where) => {
         throw deny(`${where} must be an array of at most 16 binds`);
     }
     const tenants = new Set();
+    /** @type {{ source: string, tenant: string, writable: boolean }[]} */
+    const sources = [];
     const result = value.map(entry => {
         if (typeof entry !== 'string') {
             throw deny(`${where} entries must be strings`);
@@ -547,6 +618,9 @@ const binds = cfg => (value, where) => {
         }
         const tenant = tenantOfBindSource(source, cfg);
         if (tenant === undefined) {
+            if (nestedInTemplateDirectory(source, cfg)) {
+                throw deny(`bind source ${source} is nested inside a writable tenant directory`);
+            }
             throw deny(`bind source ${source} is not a per-tenant directory under ${cfg.dataRoot}`);
         }
         let real;
@@ -562,10 +636,24 @@ const binds = cfg => (value, where) => {
             throw deny(`bind source ${source} resolves through a symlink`);
         }
         tenants.add(tenant.toLowerCase());
+        sources.push({ source, tenant, writable: mode !== 'ro' });
         return entry;
     });
     if (tenants.size > 1) {
         throw deny('binds mix directories of different tenants');
+    }
+    if (sources.length > 0) {
+        // Writable parents: the tenant's template instances and the read-write sources of this request.
+        const writableParents = [
+            ...templateDirectories(sources[0].tenant, cfg),
+            ...sources.filter(entry => entry.writable).map(entry => entry.source)
+        ];
+        for (const { source } of sources) {
+            const parent = writableParents.find(candidate => isStrictDescendant(source, candidate));
+            if (parent !== undefined) {
+                throw deny(`bind source ${source} is nested inside writable path ${parent}`);
+            }
+        }
     }
     return result;
 };
