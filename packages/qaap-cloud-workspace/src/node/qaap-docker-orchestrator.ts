@@ -20,6 +20,7 @@ import {
     resolveQaapTenantUserRoot,
     resolveQaapTenantConfigRoot,
     resolveUserReposRoot,
+    safeUserIdSegment,
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import {
     assertQaapDockerControlPlane,
@@ -1365,10 +1366,10 @@ export class QaapDockerOrchestrator {
         const ingressNetwork = this.backendIngressNetworkNameForTenant(ownerLogin);
         await this.ensureTenantIngressNetwork(docker, ingressNetwork, ownerLogin);
         const tenantDataRoot = this.normalizeHostPath(resolveQaapTenantUserRoot(ownerLogin));
-        const theiaHome = path.join(tenantDataRoot, 'theia-home');
+        const theiaHome = this.tenantTheiaHomePath(ownerLogin, tenantDataRoot);
         const publishHostIp = this.dockerPublishHostIp(node.config);
         const dockerTenantDataRoot = this.dockerMountSource(tenantDataRoot, 'tenant-config');
-        const dockerTheiaHome = this.dockerMountSource(theiaHome, 'tenant-config');
+        const dockerTheiaHome = this.dockerMountSource(theiaHome, this.theiaHomeMountKind());
         for (const root of [...Object.values(mounts), tenantDataRoot, theiaHome]) {
             fs.mkdirSync(root, { recursive: true });
         }
@@ -2069,7 +2070,7 @@ export class QaapDockerOrchestrator {
             { source: this.dockerMountSource(mounts.worktreesRoot, 'worktrees'), destination: `${TENANT_BACKEND_WORKTREES_MOUNT}/${tenantSegmentKey(ownerLogin)}` },
             { source: this.dockerMountSource(mounts.parallelRoot, 'parallel'), destination: `${TENANT_BACKEND_PARALLEL_MOUNT}/${tenantSegmentKey(ownerLogin)}` },
             { source: this.dockerMountSource(tenantDataRoot, 'tenant-config'), destination: TENANT_BACKEND_QAAP_HOME_MOUNT },
-            { source: this.dockerMountSource(theiaHome, 'tenant-config'), destination: TENANT_BACKEND_THEIA_HOME_MOUNT },
+            { source: this.dockerMountSource(theiaHome, this.theiaHomeMountKind()), destination: TENANT_BACKEND_THEIA_HOME_MOUNT },
         ];
         const hostConfig = raw.HostConfig ?? {};
         const labels = raw.Config?.Labels ?? {};
@@ -2315,21 +2316,25 @@ export class QaapDockerOrchestrator {
      * canonical location. Explicit mappings are useful when the backend and Docker nodes use
      * different mount prefixes.
      */
-    protected dockerMountSource(hostPath: string, kind: 'repos' | 'worktrees' | 'parallel' | 'tenant-config'): string {
+    protected dockerMountSource(hostPath: string, kind: 'repos' | 'worktrees' | 'parallel' | 'tenant-config' | 'theia-home'): string {
         const localRoot = kind === 'repos'
             ? resolveQaapReposRoot()
             : kind === 'worktrees'
                 ? resolveQaapWorktreesRoot()
                 : kind === 'parallel'
                     ? resolveQaapParallelRoot()
-                    : resolveQaapTenantConfigRoot();
+                    : kind === 'theia-home'
+                        ? this.theiaHomesRoot()
+                        : resolveQaapTenantConfigRoot();
         const remoteRoot = kind === 'repos'
             ? process.env.QAAP_DOCKER_REMOTE_REPOS_ROOT?.trim()
             : kind === 'worktrees'
                 ? process.env.QAAP_DOCKER_REMOTE_WORKTREES_ROOT?.trim()
                 : kind === 'parallel'
                     ? process.env.QAAP_DOCKER_REMOTE_PARALLEL_ROOT?.trim()
-                    : process.env.QAAP_DOCKER_REMOTE_TENANT_CONFIG_ROOT?.trim();
+                    : kind === 'theia-home'
+                        ? process.env.QAAP_DOCKER_REMOTE_THEIA_HOMES_ROOT?.trim()
+                        : process.env.QAAP_DOCKER_REMOTE_TENANT_CONFIG_ROOT?.trim();
         const normalizedHost = this.normalizeHostPath(hostPath);
         if (!remoteRoot) {
             return normalizedHost;
@@ -2340,12 +2345,33 @@ export class QaapDockerOrchestrator {
         }
         const normalizedRemoteRoot = remoteRoot.replace(/\\/g, '/').replace(/\/+$/, '') || '/';
         if (!normalizedRemoteRoot.startsWith('/')) {
-            const setting = kind === 'tenant-config' ? 'TENANT_CONFIG' : kind.toUpperCase();
+            const setting = kind === 'tenant-config' ? 'TENANT_CONFIG' : kind === 'theia-home' ? 'THEIA_HOMES' : kind.toUpperCase();
             throw new Error(`QAAP_DOCKER_REMOTE_${setting}_ROOT must be an absolute path on the Docker node.`);
         }
         return normalizedRemoteRoot === '/'
             ? `/${relative.replace(/\\/g, '/')}`
             : `${normalizedRemoteRoot}/${relative.replace(/\\/g, '/')}`;
+    }
+
+    /**
+     * The control-plane root of the theia homes that runsc tenants mount: `auth/theia-homes`, the sibling of
+     * `auth/users`. It is its own root, not part of the tenant-config root: widening `tenant-config` to `auth/`
+     * would make the whole auth tree a valid tenant bind for the broker and the proxy. Derived from the
+     * parent of the tenant config root, which is the `auth` mount in the rootless control plane.
+     */
+    protected theiaHomesRoot(): string {
+        return path.join(path.dirname(resolveQaapTenantConfigRoot()), 'theia-homes');
+    }
+
+    /** Under runsc the theia home is `auth/theia-homes/<segment>`; otherwise it stays `auth/users/<segment>/theia-home`. */
+    protected tenantTheiaHomePath(ownerLogin: string, tenantDataRoot: string): string {
+        return this.getTenantRuntime() === 'runsc'
+            ? path.join(this.theiaHomesRoot(), safeUserIdSegment(ownerLogin))
+            : path.join(tenantDataRoot, 'theia-home');
+    }
+
+    protected theiaHomeMountKind(): 'theia-home' | 'tenant-config' {
+        return this.getTenantRuntime() === 'runsc' ? 'theia-home' : 'tenant-config';
     }
 
     protected normalizeDockerMountPath(hostPath: string): string {

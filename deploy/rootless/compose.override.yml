@@ -19,6 +19,7 @@ services:
       QAAP_DOCKER_REMOTE_WORKTREES_ROOT: /opt/qaap-runtime/worktrees
       QAAP_DOCKER_REMOTE_PARALLEL_ROOT: /opt/qaap-runtime/parallel
       QAAP_DOCKER_REMOTE_TENANT_CONFIG_ROOT: /opt/qaap-runtime/auth/users
+      QAAP_DOCKER_REMOTE_THEIA_HOMES_ROOT: /opt/qaap-runtime/auth/theia-homes
     volumes:
       - /opt/qaap-runtime/workspace:/workspace
       - /opt/qaap-runtime/worktrees:/tmp/qaap-worktrees

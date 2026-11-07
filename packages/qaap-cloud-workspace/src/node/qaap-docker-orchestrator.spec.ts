@@ -40,7 +40,7 @@ interface QaapDockerOrchestratorTestAccess {
     getDockerNodeClients(): ReadonlyArray<{ config: { dockerHost: string } }>;
     fetchTenantDaemonPingHeaders(node: { config: { id: string; dockerHost: string }; docker: Dockerode }): Promise<Record<string, string | string[] | undefined>>;
     toContainerPath(hostPath: string, tenantRootHostPath?: string): string;
-    dockerMountSource(hostPath: string, kind: 'repos' | 'worktrees' | 'parallel' | 'tenant-config'): string;
+    dockerMountSource(hostPath: string, kind: 'repos' | 'worktrees' | 'parallel' | 'tenant-config' | 'theia-home'): string;
     tenantContainerMatches(inspect: Dockerode.ContainerInspectInfo, mounts: QaapTenantMountSet, networkMode: string): boolean;
     buildTenantEnvironmentArgs(environment?: NodeJS.ProcessEnv, inheritByName?: boolean): string[];
     getTenantNetworkMode(ownerLogin?: string): string;
@@ -344,6 +344,8 @@ const ENV_KEYS = [
     'QAAP_DOCKER_REMOTE_REPOS_ROOT',
     'QAAP_DOCKER_REMOTE_WORKTREES_ROOT',
     'QAAP_DOCKER_REMOTE_PARALLEL_ROOT',
+    'QAAP_DOCKER_REMOTE_TENANT_CONFIG_ROOT',
+    'QAAP_DOCKER_REMOTE_THEIA_HOMES_ROOT',
     'QAAP_DOCKER_NODES',
     'QAAP_DOCKER_PUBLISH_HOST_IP',
     'QAAP_TENANT_NETWORK_MODE',
@@ -604,6 +606,18 @@ describe('QaapDockerOrchestrator', () => {
     });
 
     describe('dockerMountSource', () => {
+
+        it('maps the theia-home kind under the auth sibling root and refuses the tenant config tree', () => {
+            const specRoot = path.join(os.tmpdir(), 'qaap-orchestrator-spec-theia-homes');
+            process.env.QAAP_TENANT_CONFIG_ROOT = path.join(specRoot, 'users');
+            process.env.QAAP_DOCKER_REMOTE_THEIA_HOMES_ROOT = '/opt/qaap-runtime/auth/theia-homes';
+            const orchestrator = access(new QaapDockerOrchestrator());
+
+            expect(orchestrator.dockerMountSource(path.join(specRoot, 'theia-homes', 'alice'), 'theia-home'))
+                .to.equal('/opt/qaap-runtime/auth/theia-homes/alice');
+            expect(() => orchestrator.dockerMountSource(path.join(specRoot, 'users', 'alice', 'theia-home'), 'theia-home'))
+                .to.throw(/outside the configured theia-home root/);
+        });
 
         it('returns the host path unchanged when no remote Docker root is configured', () => {
             const reposRootTmp = path.join(os.tmpdir(), 'qaap-orchestrator-spec-repos');
@@ -1609,6 +1623,83 @@ describe('QaapDockerOrchestrator', () => {
             expect(backendHostConfig?.ReadonlyRootfs).to.equal(true);
             expect(relayHostConfig?.Runtime).to.equal('runsc');
             expect(relayHostConfig?.CapDrop).to.deep.equal(['ALL']);
+        });
+
+        function backendBinds(fakeDocker: { readonly created: Array<{ readonly name: string; readonly options: Record<string, unknown> }> }): string[] {
+            const backend = fakeDocker.created.find(container => container.name.startsWith('qaap-backend-'));
+            return (backend?.options.HostConfig as { Binds?: string[] } | undefined)?.Binds ?? [];
+        }
+
+        /** Segment-wise strict descendant test, as the proxy applies it. */
+        function isStrictlyInside(child: string, parent: string): boolean {
+            const childSegments = child.split('/');
+            const parentSegments = parent.split('/');
+            return childSegments.length > parentSegments.length && parentSegments.every((segment, index) => childSegments[index] === segment);
+        }
+
+        function configureRunscRemoteRoots(): void {
+            process.env.QAAP_TENANT_RUNTIME = 'runsc';
+            process.env.QAAP_DOCKER_REMOTE_TENANT_CONFIG_ROOT = '/opt/qaap-runtime/auth/users';
+            process.env.QAAP_DOCKER_REMOTE_THEIA_HOMES_ROOT = '/opt/qaap-runtime/auth/theia-homes';
+        }
+
+        it('mounts the runsc theia home at auth/theia-homes/<segment>, a sibling of the tenant config root', async () => {
+            const root = configureBackendIngressEnvironment();
+            configureRunscRemoteRoots();
+            const fakeDocker = createFakeTenantBackendDocker();
+            const orchestrator = createOrchestratorWithFakeDocker(fakeDocker.docker);
+            await access(orchestrator).createOrValidateTenantBackend('alice', root);
+            const binds = backendBinds(fakeDocker);
+
+            expect(binds).to.include('/opt/qaap-runtime/auth/theia-homes/alice:/home/theia/.theia:rw');
+            expect(binds).to.include('/opt/qaap-runtime/auth/users/alice:/home/theia/.qaap:rw');
+            expect(binds.some(bind => bind.includes('/theia-home:'))).to.equal(false);
+            // No bind is nested inside another bind source of the same container.
+            const sources = binds.map(bind => bind.split(':')[0]);
+            for (const source of sources) {
+                for (const other of sources) {
+                    expect(isStrictlyInside(source, other), `${source} nested in ${other}`).to.equal(false);
+                }
+            }
+        });
+
+        it('keeps the non-runsc theia home at auth/users/<segment>/theia-home with the same binds', async () => {
+            const root = configureBackendIngressEnvironment();
+            delete process.env.QAAP_TENANT_RUNTIME;
+            const fakeDocker = createFakeTenantBackendDocker();
+            const orchestrator = createOrchestratorWithFakeDocker(fakeDocker.docker);
+            await access(orchestrator).createOrValidateTenantBackend('alice', root);
+            const binds = backendBinds(fakeDocker);
+            const specRoot = path.join(os.tmpdir(), 'qaap-orchestrator-spec-tenant-ingress');
+
+            expect(binds).to.have.length(5);
+            expect(binds).to.include(`${access(orchestrator).normalizeHostPath(path.join(specRoot, 'config', 'alice', 'theia-home'))}:/home/theia/.theia:rw`);
+            expect(binds.some(bind => bind.includes('theia-homes'))).to.equal(false);
+        });
+
+        it('recreates a runsc backend that still mounts the old auth/users theia home', async () => {
+            const root = configureBackendIngressEnvironment();
+            configureRunscRemoteRoots();
+            const fakeDocker = createFakeTenantBackendDocker();
+            const orchestrator = createOrchestratorWithFakeDocker(fakeDocker.docker);
+            await access(orchestrator).createOrValidateTenantBackend('alice', root);
+            const createdBefore = fakeDocker.created.length;
+
+            // Positive control: an unchanged runsc backend is reused, not created again.
+            await access(orchestrator).createOrValidateTenantBackend('alice', root);
+            expect(fakeDocker.created.slice(createdBefore).map(container => container.name)).to.deep.equal([]);
+
+            // The same backend with the pre-migration theia home mount is not a match and is replaced.
+            const backend = fakeDocker.created.find(container => container.name.startsWith('qaap-backend-'));
+            const theiaMount = backend?.info.Mounts.find(mount => mount.Destination === '/home/theia/.theia');
+            expect(theiaMount).to.not.equal(undefined);
+            theiaMount!.Source = '/opt/qaap-runtime/auth/users/alice/theia-home';
+            await access(orchestrator).createOrValidateTenantBackend('alice', root);
+            // The backend is replaced (the ingress relay goes with it), so a new backend container is created.
+            expect(fakeDocker.created.slice(createdBefore).map(container => container.name)).to.include.members([
+                access(orchestrator).backendContainerNameForTenant('alice'),
+            ]);
+            expect(backendBinds(fakeDocker)).to.include('/opt/qaap-runtime/auth/theia-homes/alice:/home/theia/.theia:rw');
         });
     });
 
