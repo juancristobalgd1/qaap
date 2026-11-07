@@ -25,6 +25,18 @@ export function resolveQaapTenantRuntime(env: NodeJS.ProcessEnv = process.env): 
 }
 
 /**
+ * Startup validation of the tenant runtime settings: an unsupported runtime, or a tenant daemon socket
+ * combined with a multi-node QAAP_DOCKER_NODES list, stops the backend before any tenant starts.
+ * @param env the environment to read, `process.env` by default.
+ */
+export function validateQaapTenantRuntimeEnv(env: NodeJS.ProcessEnv = process.env): void {
+    resolveQaapTenantRuntime(env);
+    if (resolveQaapTenantDockerHost(env) && env.QAAP_DOCKER_NODES?.trim()) {
+        throw new Error('QAAP_TENANT_DOCKER_HOST cannot be combined with QAAP_DOCKER_NODES: set dockerHost on the tenant node in QAAP_DOCKER_NODES instead.');
+    }
+}
+
+/**
  * Optional socket of the Docker daemon that runs tenant containers (`QAAP_TENANT_DOCKER_HOST`), used
  * when the gVisor daemon is separate from the control-plane daemon. Undefined keeps the node's own host.
  * @param env the environment to read, `process.env` by default.

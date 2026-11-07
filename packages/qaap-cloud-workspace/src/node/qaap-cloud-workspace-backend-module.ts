@@ -81,6 +81,7 @@ import { QaapCloudWorkspaceStore } from './qaap-cloud-workspace-store';
 import { QaapConversationWorktreeService } from './qaap-conversation-worktree';
 import { QaapDeployRunner } from './qaap-deploy-runner';
 import { QaapDockerOrchestrator } from './qaap-docker-orchestrator';
+import { QaapTenantRuntimeStartupContribution } from './qaap-tenant-runtime-startup';
 import { QaapHeadlessVisualCaptureService } from './qaap-headless-visual-capture';
 import { QaapPreviewShareStore } from './qaap-preview-share-store';
 import { QaapPreviewSupervisor } from './qaap-preview-supervisor';
@@ -268,6 +269,8 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     rebind(WorkspaceServer).toService(QaapHostedWorkspaceServer);
     bind(QaapCloudWorkspaceStore).toSelf().inSingletonScope();
     bind(QaapDockerOrchestrator).toSelf().inSingletonScope();
+    bind(QaapTenantRuntimeStartupContribution).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapTenantRuntimeStartupContribution);
     bind(QaapCloudOrchestrator).toSelf().inSingletonScope();
     bind(QaapDeployRunner).toSelf().inSingletonScope();
     bind(QaapPushSubscriptionStore).toSelf().inSingletonScope();

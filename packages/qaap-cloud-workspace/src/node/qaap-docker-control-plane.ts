@@ -188,6 +188,14 @@ function isSecureRemoteDockerNode(node: QaapDockerNodeConfig, env: NodeJS.Proces
 }
 
 /**
+ * True when a daemon's `docker info` lists gVisor as an available runtime and as the default one, so a
+ * container that omits HostConfig.Runtime still runs under runsc.
+ */
+export function isQaapRunscDaemonInfo(info: { Runtimes?: Record<string, unknown>; DefaultRuntime?: string }): boolean {
+    return Object.keys(info.Runtimes ?? {}).includes('runsc') && info.DefaultRuntime === 'runsc';
+}
+
+/**
  * Evaluate the Docker control-plane contract without contacting Docker.
  * This is intentionally pure so launch gates and unit tests can use the same
  * policy as the runtime orchestrator.
@@ -219,6 +227,15 @@ export function evaluateQaapDockerControlPlane(
     const supervisorConfigured = isTruthy(env.QAAP_DOCKER_SUPERVISOR);
 
     if (!hostedRuntime) {
+        return { hostedRuntime, dockerHost, dockerHosts, rootlessSocket, supervisorConfigured, ready: true };
+    }
+    // gVisor tenant daemons: a local unix socket need not be rootless here, because the orchestrator
+    // refuses any hosted daemon whose `docker info` does not satisfy isQaapRunscDaemonInfo before first use.
+    // Plaintext TCP is still refused.
+    const runscTenantRuntime = env.QAAP_TENANT_RUNTIME?.trim() === 'runsc';
+    const localOrSecureNodes = nodes.length > 0
+        && nodes.every(node => node.dockerHost.toLowerCase().startsWith('unix://') || isSecureRemoteDockerNode(node, env));
+    if (runscTenantRuntime && localOrSecureNodes) {
         return { hostedRuntime, dockerHost, dockerHosts, rootlessSocket, supervisorConfigured, ready: true };
     }
     if (rootlessSocket || secureRemoteNodes || allNodesSafe) {

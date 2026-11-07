@@ -1559,7 +1559,7 @@ describe('QaapDockerOrchestrator', () => {
             expect(relay?.options.HostConfig).to.not.have.property('Runtime');
         });
 
-        it('sets Runtime runsc on the tenant backend but not on the ingress relay when QAAP_TENANT_RUNTIME=runsc', async () => {
+        it('sets Runtime runsc on the tenant backend and on the ingress relay when QAAP_TENANT_RUNTIME=runsc', async () => {
             const root = configureBackendIngressEnvironment();
             process.env.QAAP_TENANT_RUNTIME = 'runsc';
             const fakeDocker = createFakeTenantBackendDocker();
@@ -1572,7 +1572,7 @@ describe('QaapDockerOrchestrator', () => {
             expect(backendHostConfig?.Runtime).to.equal('runsc');
             expect(backendHostConfig?.CapDrop).to.deep.equal(['ALL']);
             expect(backendHostConfig?.ReadonlyRootfs).to.equal(true);
-            expect(relayHostConfig).to.not.have.property('Runtime');
+            expect(relayHostConfig?.Runtime).to.equal('runsc');
             expect(relayHostConfig?.CapDrop).to.deep.equal(['ALL']);
         });
     });

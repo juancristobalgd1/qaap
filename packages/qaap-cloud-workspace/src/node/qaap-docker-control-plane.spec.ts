@@ -8,6 +8,7 @@ import {
     assertQaapDockerControlPlane,
     assertQaapHostedTenantIsolation,
     evaluateQaapDockerControlPlane,
+    isQaapRunscDaemonInfo,
     resolveQaapDockerNodes,
 } from './qaap-docker-control-plane';
 
@@ -98,6 +99,26 @@ describe('qaap-docker-control-plane', () => {
                 { id: 'a', dockerHost: 'tcp://a:2376' },
             ]),
         }).map(node => node.id)).to.deep.equal(['a', 'b']);
+    });
+
+    it('accepts a hosted rootful unix socket only when the tenant runtime is runsc', () => {
+        const env = { QAAP_CLOUD_MODE: 'docker', DOCKER_HOST: 'unix:///var/run/docker.sock' };
+        expect(evaluateQaapDockerControlPlane({ ...env, QAAP_TENANT_RUNTIME: 'runsc' }).ready).to.equal(true);
+        expect(evaluateQaapDockerControlPlane({ ...env, QAAP_TENANT_RUNTIME: 'runc' }).ready).to.equal(false);
+        expect(evaluateQaapDockerControlPlane(env).ready).to.equal(false);
+    });
+
+    it('still refuses plaintext TCP in hosted runsc mode', () => {
+        const result = evaluateQaapDockerControlPlane({
+            QAAP_CLOUD_MODE: 'docker', QAAP_TENANT_RUNTIME: 'runsc', DOCKER_HOST: 'tcp://10.0.0.5:2375',
+        });
+        expect(result.ready).to.equal(false);
+    });
+
+    it('recognises a daemon whose default runtime and runtimes are gVisor', () => {
+        expect(isQaapRunscDaemonInfo({ Runtimes: { runc: {}, runsc: {} }, DefaultRuntime: 'runsc' })).to.equal(true);
+        expect(isQaapRunscDaemonInfo({ Runtimes: { runc: {}, runsc: {} }, DefaultRuntime: 'runc' })).to.equal(false);
+        expect(isQaapRunscDaemonInfo({ Runtimes: { runc: {} }, DefaultRuntime: 'runsc' })).to.equal(false);
     });
 
     it('rejects a pool containing one plaintext remote node', () => {

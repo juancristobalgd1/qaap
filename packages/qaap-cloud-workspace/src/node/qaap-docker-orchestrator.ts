@@ -25,6 +25,7 @@ import {
     assertQaapDockerControlPlane,
     resolveQaapDockerLogConfig,
     isQaapHostedRuntime,
+    isQaapRunscDaemonInfo,
     resolveQaapDockerNodes,
     resolveQaapHostedTenantContainerUser,
     type QaapDockerNodeConfig,
@@ -770,8 +771,7 @@ export class QaapDockerOrchestrator {
             if (this.getTenantRuntime() === 'runsc') {
                 // gVisor replaces the rootless check: the daemon must offer runsc and default to it, so a
                 // tenant container that omits HostConfig.Runtime still never runs on the host kernel.
-                const runsc = Object.keys(info.Runtimes ?? {}).includes('runsc') && info.DefaultRuntime === 'runsc';
-                if (!runsc) {
+                if (!isQaapRunscDaemonInfo(info)) {
                     throw new Error(`Refusing hosted tenant runtime: QAAP_TENANT_RUNTIME=runsc but Docker node ${node.config.id} does not report runsc as its runtime and DefaultRuntime.`);
                 }
             } else {
@@ -1680,6 +1680,7 @@ export class QaapDockerOrchestrator {
                     // interface and its fixed forward destination resolves by Docker DNS.
                     NetworkMode: ingressNetwork,
                     AutoRemove: false,
+                    ...this.tenantRuntimeHostConfig(),
                 },
             });
             await docker.getNetwork(tenantNetwork).connect({ Container: relayName });
@@ -1746,6 +1747,7 @@ export class QaapDockerOrchestrator {
                 PublishAllPorts?: boolean;
                 AutoRemove?: boolean;
                 Privileged?: boolean;
+                Runtime?: string;
                 PidMode?: string;
                 IpcMode?: string;
             };
@@ -1786,6 +1788,7 @@ export class QaapDockerOrchestrator {
             && (!host.PidMode || host.PidMode === 'private')
             && (!host.IpcMode || host.IpcMode === 'private')
             && host.NetworkMode === ingressNetwork
+            && this.tenantRuntimeMatches(host.Runtime)
             && host.PublishAllPorts !== true
             && host.AutoRemove !== true
             && Object.keys(host.PortBindings ?? {}).length === 1
@@ -2979,6 +2982,7 @@ export class QaapDockerOrchestrator {
                 ReadonlyRootfs: true,
                 Tmpfs: { '/tmp': 'rw,noexec,nosuid,nodev,size=16m' },
                 AutoRemove: false,
+                ...this.tenantRuntimeHostConfig(),
             },
         });
         await docker.getNetwork(networkName).connect({
@@ -3082,6 +3086,7 @@ export class QaapDockerOrchestrator {
                 ReadonlyRootfs?: boolean;
                 Tmpfs?: Record<string, string>;
                 Privileged?: boolean;
+                Runtime?: string;
                 PidMode?: string;
                 IpcMode?: string;
             };
@@ -3096,6 +3101,7 @@ export class QaapDockerOrchestrator {
             && raw.Config?.User === 'proxy'
             && raw.Config?.Cmd?.join('\u0000') === ['squid', '-N', '-f', '/etc/squid/squid.conf'].join('\u0000')
             && host.NetworkMode === qaapDockerName(QAAP_TENANT_EGRESS_UPLINK)
+            && this.tenantRuntimeMatches(host.Runtime)
             && host.CapDrop?.includes('ALL') === true
             && host.SecurityOpt?.includes('no-new-privileges:true') === true
             && host.ReadonlyRootfs === true

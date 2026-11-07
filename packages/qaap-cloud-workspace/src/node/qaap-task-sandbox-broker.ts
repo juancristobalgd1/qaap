@@ -371,7 +371,8 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
                 throw new Error(`Sandbox ${name} is not owned by this tenant.`);
             }
             const existingToken = this.tokens.get(name);
-            if (existing.State?.Running && !existing.State.Paused && existingToken) {
+            // A sandbox created under another runtime than the current one is recreated, never reused.
+            if (existing.State?.Running && !existing.State.Paused && existingToken && this.runtimeMatches(existing, placement)) {
                 return this.describe(name, root, existingToken, existing.Config?.Image ?? placement.image, placement, 0, false, existing);
             }
             // Stopped, paused, or created before this control plane started (its token is gone): recreate.
@@ -566,6 +567,12 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
 
     // ─── Docker ──────────────────────────────────────────────────────────────────────────────────
 
+    /** Same rule as the orchestrator's tenant matchers: runsc must match runsc, and runc must not be runsc. */
+    protected runtimeMatches(inspect: Dockerode.ContainerInspectInfo, placement: QaapTaskSandboxPlacement): boolean {
+        const actual = (inspect as Dockerode.ContainerInspectInfo & { HostConfig?: { Runtime?: string } }).HostConfig?.Runtime;
+        return placement.runtime === 'runsc' ? actual === 'runsc' : actual !== 'runsc';
+    }
+
     protected async runSandbox(
         placement: QaapTaskSandboxPlacement, name: string, tenant: string, root: string, image: string,
         toolchain: string, token: string, homeLinks: Array<{ name: string; target: string }>, containerEnv: Record<string, string>,
@@ -696,13 +703,13 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
             HostConfig: {
                 LogConfig: resolveQaapDockerLogConfig(),
                 Binds: [`${volume}:/out`],
-                // Stays on the daemon default runtime on purpose: it only copies the exec server binary, runs no
-                // user code, and has no network. It is not given Runtime 'runsc' (see the sandbox HostConfig).
+                // Runs no user code and has no network; it still gets Runtime 'runsc' on the gVisor daemon.
                 NetworkMode: 'none',
                 CapDrop: ['ALL'],
                 SecurityOpt: ['no-new-privileges:true'],
                 ReadonlyRootfs: true,
                 AutoRemove: false,
+                ...(placement.runtime === 'runsc' ? { Runtime: 'runsc' } : {}),
             },
         });
         try {

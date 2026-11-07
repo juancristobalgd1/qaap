@@ -261,7 +261,7 @@ describe('task sandbox exec server and local client (real processes)', function 
 class FakeDocker {
     readonly created: Array<Record<string, unknown>> = [];
     readonly removed: string[] = [];
-    readonly containers = new Map<string, { labels: Record<string, string>; env: string[]; running: boolean; image: string; networks: Record<string, string> }>();
+    readonly containers = new Map<string, { labels: Record<string, string>; env: string[]; running: boolean; image: string; networks: Record<string, string>; runtime?: string }>();
     readonly volumes: Array<Record<string, unknown>> = [];
     readonly connected: string[] = [];
     readonly presentImages = new Set(['qaap-theia:test']);
@@ -275,7 +275,7 @@ class FakeDocker {
         this.created.push(config as unknown as Record<string, unknown>);
         const name = config.name ?? `helper-${this.created.length}`;
         const networks: Record<string, string> = config.HostConfig?.NetworkMode ? { [config.HostConfig.NetworkMode]: `172.24.0.${this.created.length + 1}` } : {};
-        this.containers.set(name, { labels: config.Labels ?? {}, env: config.Env ?? [], running: false, image: config.Image, networks });
+        this.containers.set(name, { labels: config.Labels ?? {}, env: config.Env ?? [], running: false, image: config.Image, networks, runtime: (config as { HostConfig?: { Runtime?: string } }).HostConfig?.Runtime });
         return this.getContainer(name);
     }
 
@@ -316,6 +316,7 @@ class FakeDocker {
                 return {
                     Config: { Labels: container.labels, Env: container.env, Image: container.image },
                     State: { Running: container.running, ExitCode: 127 },
+                    HostConfig: { Runtime: container.runtime },
                     NetworkSettings: { Networks: Object.fromEntries(Object.entries(container.networks).map(([network, IPAddress]) => [network, { IPAddress }])) },
                 };
             },
@@ -438,22 +439,46 @@ describe('QaapTaskSandboxBroker (control plane)', () => {
         }
     });
 
-    it('runs the sandbox under runsc only when the placement selects it', async () => {
+    it('runs the sandbox and its toolchain copier under runsc only when the placement selects it', async () => {
         placementRuntime = 'runsc';
         try {
             const sandbox = await broker.create('alice', { root: '/tmp/qaap-worktrees/alice/repo-1' });
             const config = docker.created.find(entry => entry.name === sandbox.name) as { HostConfig: Record<string, unknown> };
             expect(config.HostConfig.Runtime).to.equal('runsc');
             expect(config.HostConfig.CapDrop).to.deep.equal(['ALL']);
+            const toolchains = docker.created.filter(entry => (entry.HostConfig as { NetworkMode?: string }).NetworkMode === 'none');
+            expect(toolchains).to.have.length.greaterThan(0);
+            for (const entry of toolchains) {
+                expect((entry.HostConfig as { Runtime?: string }).Runtime).to.equal('runsc');
+            }
         } finally {
             placementRuntime = undefined;
         }
     });
 
-    it('sets no Runtime on the sandbox under the default runc runtime', async () => {
+    it('sets no Runtime on the sandbox or its toolchain copier under the default runc runtime', async () => {
         const sandbox = await broker.create('alice', { root: '/tmp/qaap-worktrees/alice/repo-1' });
         const config = docker.created.find(entry => entry.name === sandbox.name) as { HostConfig: Record<string, unknown> };
         expect(config.HostConfig).to.not.have.property('Runtime');
+        for (const entry of docker.created.filter(item => (item.HostConfig as { NetworkMode?: string }).NetworkMode === 'none')) {
+            expect(entry.HostConfig).to.not.have.property('Runtime');
+        }
+    });
+
+    it('recreates a running sandbox whose runtime no longer matches the placement instead of reusing it', async () => {
+        const root = '/tmp/qaap-worktrees/alice/repo-1';
+        await broker.create('alice', { root });
+        placementRuntime = 'runsc';
+        try {
+            const second = await broker.create('alice', { root });
+            const runtimes = docker.created
+                .filter(entry => entry.name === second.name)
+                .map(entry => (entry.HostConfig as { Runtime?: string }).Runtime);
+            expect(runtimes).to.deep.equal([undefined, 'runsc']);
+            expect(docker.removed).to.include(second.name);
+        } finally {
+            placementRuntime = undefined;
+        }
     });
 
     it('creates a hardened sandbox on the tenant network that binds only the fixed tenant roots', async () => {
