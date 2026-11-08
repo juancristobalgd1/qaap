@@ -133,7 +133,7 @@ export function customPropertiesOf(style: string): string {
  * the OS class (it selects the UI font stack; same device, same class).
  */
 export function isQaapBootReplicaBodyClass(cssClass: string): boolean {
-    return /^qaap-theme-(light|dark|hc)$/.test(cssClass) || /^theia-mobile-mod-workhub-[a-z-]+$/.test(cssClass)
+    return /^qaap-theme-(light|dark|hc|hc-dark|hc-light)$/.test(cssClass) || /^theia-mobile-mod-workhub-[a-z-]+$/.test(cssClass)
         || /^(linux|windows|mac)$/.test(cssClass);
 }
 

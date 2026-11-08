@@ -141,11 +141,14 @@ const EXPECTED_CHALLENGES: Readonly<Record<string, Omit<QaapAgentAuthLoginChalle
  * gets an entry here (and, for a CLI login, a captured output above).
  */
 const EXPECTED_CONNECT_PATHS: Readonly<Record<string, QaapAgentConnectionFlow['kind']>> = {
-    qaiq: 'settings-api-key',
     codex: 'cli-login',
     claude: 'cli-login',
     opencode: 'cli-login',
     pi: 'tui-login',
+    cursor: 'cli-login',
+    antigravity: 'cli-login',
+    copilot: 'cli-login',
+    grok: 'cli-login',
 };
 
 describe('harness connect paths', () => {

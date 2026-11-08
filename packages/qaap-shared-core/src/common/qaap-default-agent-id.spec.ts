@@ -10,27 +10,27 @@ import { getQaapDefaultAgentId, resolveQaapDefaultAgentId } from './qaap-default
 describe('qaap-default-agent-id', () => {
     afterEach(() => rememberQaapDefaultAgentIdConfig(undefined));
 
-    it('defaults to qaiq when nothing is configured', () => {
-        expect(resolveQaapDefaultAgentId(undefined)).to.equal('qaiq');
-        expect(resolveQaapDefaultAgentId('')).to.equal('qaiq');
-        expect(getQaapDefaultAgentId()).to.equal('qaiq');
+    it('has no default when nothing is configured (first available harness wins)', () => {
+        expect(resolveQaapDefaultAgentId(undefined)).to.be.undefined;
+        expect(resolveQaapDefaultAgentId('')).to.be.undefined;
+        expect(getQaapDefaultAgentId()).to.be.undefined;
     });
 
     it('accepts a known agent id, case and spaces insensitive', () => {
         expect(resolveQaapDefaultAgentId('pi')).to.equal('pi');
         expect(resolveQaapDefaultAgentId('  Codex ')).to.equal('codex');
-        expect(resolveQaapDefaultAgentId('qaiq')).to.equal('qaiq');
     });
 
-    it('falls back to qaiq for an unknown or retired agent id', () => {
-        expect(resolveQaapDefaultAgentId('no-such-agent')).to.equal('qaiq');
-        expect(resolveQaapDefaultAgentId('openclaude')).to.equal('qaiq');
+    it('ignores an unknown, retired or hidden agent id, including qaiq', () => {
+        expect(resolveQaapDefaultAgentId('no-such-agent')).to.be.undefined;
+        expect(resolveQaapDefaultAgentId('openclaude')).to.be.undefined;
+        expect(resolveQaapDefaultAgentId('qaiq')).to.be.undefined;
     });
 
     it('uses the id the backend announced to the frontend', () => {
         rememberQaapDefaultAgentIdConfig('pi');
         expect(getQaapDefaultAgentId()).to.equal('pi');
-        rememberQaapDefaultAgentIdConfig('bogus');
-        expect(getQaapDefaultAgentId()).to.equal('qaiq');
+        rememberQaapDefaultAgentIdConfig('qaiq');
+        expect(getQaapDefaultAgentId()).to.be.undefined;
     });
 });

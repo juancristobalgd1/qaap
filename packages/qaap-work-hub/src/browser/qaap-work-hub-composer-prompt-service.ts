@@ -9,11 +9,11 @@ import { MessageService } from '@theia/core/lib/common/message-service';
 import { nls } from '@theia/core/lib/common/nls';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
-import { getQaapDefaultAgentId } from '@theia/qaap-shared-core/lib/common/qaap-default-agent-id';
 import { createConversation, createConversationRequestId, QaapDirtyWorkspaceError } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { retryAfterDirtyWorkspace, type QaapDirtyWorkspaceRetryOptions } from './mobile-projects-workspace-dirty-dialog';
 import {
-    readStoredAgent,
+    fetchAgentTaskListAll,
+    reconcileSelectedAgent,
     type QaapCreateAgentTaskQaiqModel,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { confirmPaidModelSend, resolveSendAgentModel } from '@theia/qaap-composer/lib/browser/qaap-paid-model-send-confirm';
@@ -147,7 +147,11 @@ export class QaapWorkHubComposerPromptService {
             ));
             return;
         }
-        const agent = options.agentId ?? readStoredAgent(cwd) ?? getQaapDefaultAgentId();
+        const agent = options.agentId ?? await this.resolveDefaultAgentId(cwd);
+        if (!agent) {
+            this.messages.warn(nls.localize('qaap/workHub/composerPromptNoAgent', 'Connect a coding agent before asking.'));
+            return;
+        }
         const modelResolution = await resolveSendAgentModel(agent, cwd, options.agentModel);
         if (!modelResolution.ok) {
             // Fail closed: a picker agent with no chosen model never sends on the CLI default.
@@ -199,6 +203,16 @@ export class QaapWorkHubComposerPromptService {
                 'Could not start task: {0}',
                 detail,
             ));
+        }
+    }
+
+    /** The stored or configured harness for `cwd`, else the first available one; undefined when none is installed. */
+    protected async resolveDefaultAgentId(cwd: string): Promise<string | undefined> {
+        try {
+            const snapshot = await fetchAgentTaskListAll();
+            return reconcileSelectedAgent(undefined, snapshot.agents, snapshot.defaultAgent, cwd);
+        } catch {
+            return undefined;
         }
     }
 

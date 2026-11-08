@@ -412,19 +412,8 @@ export async function openAgentLoginDialogInBackground(
     };
 
     /** BYOK harnesses still need their CLI: an uninstalled one offers Install instead of the key. */
-    const startSettingsApiKey = async (): Promise<void> => {
-        flow.requireSettingsApiKey();
-        void enableHarness().catch(error => console.warn('[qaap] Could not enable harness before login:', error));
-        const status = await fetchAgentLoginHarnessStatus(agentId);
-        if (closed || flow.state.phase !== 'settings-api-key' || status?.installed !== false) {
-            return;
-        }
-        const canInstall = status.installSupported === true && status.installPackageAvailable !== false;
-        flow.requireInstall(canInstall, canInstall ? undefined : localizeInstallBlockedMessage(agentLabel, status));
-    };
-
     const install = async (): Promise<void> => {
-        if (!hiddenLogin && connectionFlow.kind !== 'settings-api-key') {
+        if (!hiddenLogin) {
             return;
         }
         flow.startInstall(Date.now());
@@ -549,9 +538,6 @@ export async function openAgentLoginDialogInBackground(
         case 'cli-login':
         case 'tui-login':
             await startCliLogin(hiddenLogin!.command, hiddenLogin!.input);
-            return;
-        case 'settings-api-key':
-            await startSettingsApiKey();
             return;
         case 'tenant-terminal':
             flow.showManualInstructions(localizeAgentTenantTerminalLoginMessage(agentLabel, connectionFlow.command, connectionFlow.followUp));

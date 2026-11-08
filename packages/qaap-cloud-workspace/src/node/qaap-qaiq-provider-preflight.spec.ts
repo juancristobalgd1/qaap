@@ -95,7 +95,7 @@ describe('QAIQ provider preflight', () => {
             expect(logDefaultAgentOverriddenOnce('qaiq', line => lines.push(line), logged)).to.equal(false);
             expect(lines).to.have.length(1);
             expect(lines[0]).to.contain('QAAP_DEFAULT_AGENT=qaiq');
-            expect(lines[0]).to.contain('Settings → BYOK');
+            expect(lines[0]).to.contain('they get the next usable agent instead');
         });
 
         it('logs once per provider and audience', () => {
@@ -159,11 +159,10 @@ describe('QAIQ provider preflight', () => {
             return runner;
         }
 
-        it('refuses a keyless owner before spawn with the BYOK copy, and runs the owner who has a key', () => {
+        it('refuses a keyless owner before spawn with the harness copy, and runs the owner who has a key', () => {
             const runner = createRunner();
             expect(() => runner.assertQaiqConfigured('qaiq', 'bob', NEMOTRON))
-                .to.throw('Add your OpenRouter API key in Settings → BYOK to use QAIQ, pick a model from a provider you have a key for, '
-                    + 'or pick another agent from the agent chip.');
+                .to.throw('Connect a harness in Settings → Harness to run this turn, or pick another agent from the agent chip.');
             expect(() => runner.assertQaiqConfigured('qaiq', 'alice', NEMOTRON)).to.not.throw();
         });
 
@@ -175,7 +174,7 @@ describe('QAIQ provider preflight', () => {
             try {
                 const runner = createRunner();
                 expect(() => runner.assertQaiqConfigured('qaiq', 'carol'))
-                    .to.throw(/^Add your OpenRouter API key in Settings/);
+                    .to.throw(/^Connect a harness in Settings → Harness/);
                 // The command builder and the spawn env resolve the same (alias) vendor as the preflight.
                 expect(runner.resolveQaiqProviderFlags('carol')).to.contain(NEMOTRON.modelId);
                 expect(runner.resolveQaiqProviderFlags('carol')).to.not.contain('gemini');
@@ -184,32 +183,25 @@ describe('QAIQ provider preflight', () => {
             }
         });
 
-        it('logs one operator hint when QAAP_DEFAULT_AGENT=qaiq is skipped for a keyless owner', () => {
+        it('ignores a QAAP_DEFAULT_AGENT=qaiq pin: QAIQ is never the default, so no QAIQ operator hint is logged', () => {
             process.env.QAAP_DEFAULT_AGENT = 'qaiq';
             const lines: string[] = [];
             const original = console.warn;
             console.warn = (message: string) => { lines.push(message); };
             try {
                 const runner = createRunner();
-                // The skipped operator default still falls back to QAIQ for a keyless owner (BYOK prompt in the composer).
-                expect(runner.defaultAgent('bob')).to.equal('qaiq');
-                runner.defaultAgent('bob');
-                expect(runner.defaultAgent('alice')).to.equal('qaiq');
+                expect(runner.defaultAgent('bob')).to.not.equal('qaiq');
+                expect(runner.defaultAgent('alice')).to.not.equal('qaiq');
             } finally {
                 console.warn = original;
             }
-            const hints = lines.filter(line => line.includes('QAAP_DEFAULT_AGENT=qaiq'));
-            expect(hints.length).to.be.at.most(1);
-            expect(hints.join('\n')).to.not.match(/sk-|bob|alice/);
+            expect(lines.filter(line => line.includes('QAAP_DEFAULT_AGENT=qaiq'))).to.deep.equal([]);
         });
 
-        it('reports QAIQ connected per owner; a keyless owner defaults to QAIQ too, so the BYOK prompt shows instead of a keyless agent', () => {
+        it('lists no QAIQ agent for any owner (retired and UI-hidden), so a keyless owner never sees a QAIQ connection state', () => {
             const runner = createRunner();
-            const states = (owner: string): string | undefined => runner.listAgents(owner).find(agent => agent.id === 'qaiq')?.connectionState;
-            expect(states('alice')).to.equal('connected');
-            expect(states('bob')).to.equal('disconnected');
-            expect(runner.defaultAgent('alice')).to.equal('qaiq');
-            expect(runner.defaultAgent('bob')).to.equal('qaiq');
+            expect(runner.listAgents('alice').find(agent => agent.id === 'qaiq')).to.equal(undefined);
+            expect(runner.listAgents('bob').find(agent => agent.id === 'qaiq')).to.equal(undefined);
         });
     });
 });

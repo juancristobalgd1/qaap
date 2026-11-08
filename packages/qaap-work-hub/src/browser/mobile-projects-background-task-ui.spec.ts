@@ -13,7 +13,7 @@ import { expect } from 'chai';
 import { writeStoredAgentModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
 import { MobileProjectsBackgroundTaskUi } from './mobile-projects-background-task-ui';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
-import { localizeMissingQaiqMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
+import { localizeMissingCodingAgentMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 import { requestStopNewTaskStartup } from '../common/qaap-new-task-startup';
 
@@ -95,7 +95,7 @@ describe('MobileProjectsBackgroundTaskUi', () => {
         expect(catalogRead).to.equal(false);
     });
 
-    it('keeps the localized QAIQ error when the resolved default agent is QAIQ', async () => {
+    it('falls back to the missing-agent error when the stored default is the retired QAIQ', async () => {
         const ui = withAgentSnapshot({
             agents: [{ id: 'qaiq', label: 'QAIQ', available: true }],
             agentConfigured: true,
@@ -109,7 +109,7 @@ describe('MobileProjectsBackgroundTaskUi', () => {
             expect.fail('expected missing QAIQ error');
         } catch (error) {
             expect(error).to.be.an('error');
-            expect((error as Error).message).to.equal(localizeMissingQaiqMessage());
+            expect((error as Error).message).to.equal(localizeMissingCodingAgentMessage());
         }
     });
 

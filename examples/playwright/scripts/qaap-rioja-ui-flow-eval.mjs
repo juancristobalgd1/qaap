@@ -4,7 +4,7 @@
  *
  * Gate P0 tras QA-001/002: el composer debe usar el cwd del hash URL, no Mockup.
  *
- * Requiere servidor en QAAP_BASE_URL con mock QAIQ en PATH.
+ * Requiere servidor en QAAP_BASE_URL con el mock del harness Claude (`claude`) en PATH.
  */
 import { chromium } from 'playwright';
 import * as fs from 'fs';
@@ -54,7 +54,7 @@ async function main() {
     };
 
     const t0 = now();
-    console.log('\n=== Qaap Rioja UI Flow Eval (composer + mock QAIQ) ===');
+    console.log('\n=== Qaap Rioja UI Flow Eval (composer + mock Claude harness) ===');
     console.log(`Workspace: ${workspace}`);
 
     const { browser, context } = await createMobileBrowserContext(chromium);
@@ -82,8 +82,8 @@ async function main() {
         }
 
         metrics.backendAgents = await fetchBackendAgents(page);
-        if (!metrics.backendAgents.ok || !metrics.backendAgents.agents?.some(a => a.id === 'qaiq')) {
-            metrics.issues.push('Backend no detecta QAIQ — arranca con mock en PATH');
+        if (!metrics.backendAgents.ok || !metrics.backendAgents.agents?.some(a => a.id === 'claude')) {
+            metrics.issues.push('Backend no detecta el harness Claude — arranca con el mock `claude` en PATH');
         }
 
         metrics.newChat = await startNewAgentChat(page).catch(err => ({ ok: false, error: String(err) }));

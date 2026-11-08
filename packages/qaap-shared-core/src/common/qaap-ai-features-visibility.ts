@@ -7,7 +7,7 @@
  * Preference key prefixes (and exact keys) that are Theia IDE leftovers in Qaap.
  * Hidden from Settings / Work Hub AI Features; schemas stay registered for compatibility.
  *
- * Items that map to Work Hub (BYOK, MCP, skills, aliases, guidance placeholders) stay visible
+ * Items that map to Work Hub (MCP, skills, aliases, guidance placeholders) stay visible
  * and are re-labeled via {@link QaapAiPreferenceBrandingStartup}.
  */
 export const QAAP_HIDDEN_AI_FEATURES_PREF_PREFIXES: readonly string[] = [
@@ -21,6 +21,15 @@ export const QAAP_HIDDEN_AI_FEATURES_PREF_PREFIXES: readonly string[] = [
     'ai-features.SCANOSS.',
     'ai-features.codeCompletion.',
     'ai-features.registry.',
+    // Provider keys and endpoints: agents connect through their own harness login (Settings → Harness).
+    'ai-features.openrouter.',
+    'ai-features.nvidia.',
+    'ai-features.anthropic.',
+    'ai-features.google.',
+    'ai-features.openAiOfficial.',
+    'ai-features.openAiCustom.',
+    'ai-features.huggingFace.',
+    'ai-features.ollama.',
     // Theia workspace tools / terminal agent — Work Hub uses VPS approval policy instead.
     'ai-features.workspaceFunctions.',
     'ai-features.terminal.',
@@ -31,6 +40,7 @@ export const QAAP_HIDDEN_AI_FEATURES_PREF_KEYS: readonly string[] = [
     'ai-features.orchestrator.excludedAgents',
     'ai-features.agentMode.enabled',
     'ai-features.notifications.default',
+    'ai-features.ollama',
 ];
 
 /**

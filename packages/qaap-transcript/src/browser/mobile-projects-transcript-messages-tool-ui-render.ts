@@ -4,8 +4,6 @@ import type { MobileProjectsTranscriptMessagesToolUiContext } from './mobile-pro
 import { nls } from '@theia/core/lib/common/nls';
 import {
     extractAgentAuthLoginChallenge,
-    agentNeedsSettingsApiKeyPath,
-    localizeAddApiKeyInSettingsCta,
     type QaapAgentAuthLoginChallenge,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
 import { QaapPlanLimit } from '@theia/qaap-adapters/lib/common/qaap-plan-limit';
@@ -93,10 +91,9 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
                 ? resolved
                 : (persisted || resolved || generic);
         const failureKind = detectAgentFailureKind(authSample);
-        // QAIQ refused before running: no provider key for this user. Only a key in Settings fixes it
-        // (BYOK), so the card offers "Add API key in Settings" and no sign-in.
+        // Legacy QAIQ turn refused before running (no provider key). Fixed by connecting a harness, not a key.
         const isQaiqKeyMissing = isQaiqProviderKeyMissingFailure(authSample);
-        // The user's own provider key (BYOK) was refused: fix it in BYOK settings, not by signing in.
+        // A provider key was refused by a legacy turn: the fix is to connect a harness in Settings.
         const isProviderKeyFailure = !planLimit && !isQaiqKeyMissing && isProviderKeyFailureKind(failureKind);
         const extractedChallenge = isProviderKeyFailure || isQaiqKeyMissing
             ? undefined
@@ -153,12 +150,12 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
         const label = document.createElement('span');
         label.className = 'theia-mobile-agent-shell-title';
         const authTitle = isQaiqKeyMissing
-            ? nls.localize('qaap/agentFailure/reasonApiKeyMissing', 'API key needed')
+            ? nls.localize('qaap/agentFailure/reasonHarnessNotConnected', 'Connect a harness')
             : nls.localize('qaap/mobileProjects/transcriptSignInRequired', 'Sign in required');
         label.textContent = authChallenge
             ? authTitle
             : isProviderKeyFailure
-              ? (localizeAgentFailureShortReason(formatted) ?? nls.localize('qaap/agentFailure/reasonProviderKey', 'API key rejected'))
+              ? (localizeAgentFailureShortReason(formatted) ?? nls.localize('qaap/agentFailure/reasonProviderKey', 'Provider key rejected'))
               : isProviderRejected
                 ? nls.localize('qaap/mobileProjects/transcriptProviderRejected', 'The model\'s provider rejected the request')
               : planLimit
@@ -245,7 +242,7 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
             const settingsBtn = document.createElement('button');
             settingsBtn.type = 'button';
             settingsBtn.className = 'theia-mobile-agent-auth-login-action theia-mod-primary codicon codicon-settings-gear';
-            settingsBtn.textContent = nls.localize('qaap/mobileProjects/openByokSettings', 'Open BYOK settings');
+            settingsBtn.textContent = nls.localize('qaap/mobileProjects/openHarnessSettings', 'Open Harness settings');
             settingsBtn.addEventListener('click', event => {
                 event.stopPropagation();
                 event.preventDefault();
@@ -296,19 +293,9 @@ export function createTranscriptAgentAuthLoginCardExtracted(ctx: MobileProjectsT
         },): HTMLElement {
         const card = document.createElement('div');
         card.className = 'theia-mobile-agent-auth-login-card';
-        // Only QAIQ runs on Settings API keys. Any other harness whose CLI complained about a key
-        // ("Invalid API key · Please run /login") is fixed by signing in, never by adding a key.
-        const apiKeyFix = challenge.mode === 'api_key'
-            && (!options?.agentId || agentNeedsSettingsApiKeyPath(options.agentId));
-
         const hint = document.createElement('p');
         hint.className = 'theia-mobile-agent-auth-login-hint';
-        if (apiKeyFix) {
-            hint.textContent = nls.localize(
-                'qaap/mobileProjects/authLoginApiKeyHint',
-                'Add or refresh the API key in Settings, then retry.',
-            );
-        } else if (challenge.url) {
+        if (challenge.url) {
             hint.textContent = nls.localize(
                 'qaap/mobileProjects/authLoginUrlHint',
                 'Open the sign-in page, authorize the agent, then retry this task.',
@@ -387,20 +374,7 @@ export function createTranscriptAgentAuthLoginCardExtracted(ctx: MobileProjectsT
             card.append(urlLine);
         }
 
-        if (apiKeyFix && options?.onOpenAiFeaturesSettings) {
-            const settingsBtn = document.createElement('button');
-            settingsBtn.type = 'button';
-            settingsBtn.className = 'theia-mobile-agent-auth-login-action theia-mod-primary codicon codicon-settings-gear';
-            settingsBtn.textContent = localizeAddApiKeyInSettingsCta();
-            settingsBtn.addEventListener('click', event => {
-                event.stopPropagation();
-                event.preventDefault();
-                void Promise.resolve(options.onOpenAiFeaturesSettings!());
-            });
-            actions.append(settingsBtn);
-        }
-
-        if (options?.onOpenAgentSignIn && !apiKeyFix) {
+        if (options?.onOpenAgentSignIn) {
             const terminalBtn = document.createElement('button');
             terminalBtn.type = 'button';
             terminalBtn.className = 'theia-mobile-agent-auth-login-action codicon codicon-terminal';

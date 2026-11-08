@@ -31,8 +31,10 @@ export class QaapThemeContribution implements FrontendApplicationContribution {
     protected static readonly QAAP_THEME_IDS: ReadonlyMap<string, readonly string[]> = new Map([
         ['light', ['qaap-theme-light']],
         ['dark', ['qaap-theme-dark']],
-        // High Contrast keeps its black canvas but reuses the Qaap dark accents; `qaap-theme-hc` carries the HC overrides.
-        ['hc-theia', ['qaap-theme-dark', 'qaap-theme-hc']]
+        // High Contrast keeps its own canvas (black / white); `qaap-theme-hc` only swaps the VS Code
+        // HC blues and cyans for neutral greys, like the Qaap dark / light accents.
+        ['hc-theia', ['qaap-theme-hc', 'qaap-theme-hc-dark']],
+        ['hc-theia-light', ['qaap-theme-hc', 'qaap-theme-hc-light']]
     ]);
 
     @inject(ThemeService)

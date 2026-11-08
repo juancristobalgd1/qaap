@@ -7,7 +7,6 @@ import { nls } from '@theia/core/lib/common/nls';
 import { appendAgentBrandIcon, createAgentBrandIcon, resolveAgentBrand } from '@theia/qaap-shared-core/lib/common/qaap-agent-branding';
 import type { MobileProjectTaskVerification } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
 import { appendLlmProviderIcon } from '@theia/qaap-shared-core/lib/common/qaap-llm-provider-branding';
-import { agentNeedsSettingsApiKeyPath } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
 import { formatQaiqModelDisplayLabel } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
 import type { QaapAgentApprovalPolicyOption } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import type { QaapComposerInteractionModeId } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-mode';
@@ -774,10 +773,7 @@ export function populateAgentToolbarButton(
         warning.setAttribute('aria-hidden', 'true');
         const connect = document.createElement('span');
         connect.className = 'theia-qaap-agent-connect-chip';
-        // QAIQ is "disconnected" when its provider key is missing (BYOK): name that fix, not a sign-in.
-        connect.textContent = agentNeedsSettingsApiKeyPath(options.agentId)
-            ? nls.localize('qaap/agentPicker/addApiKey', 'Add API key')
-            : nls.localize('qaap/agentPicker/connect', 'Connect');
+        connect.textContent = nls.localize('qaap/agentPicker/connect', 'Connect');
         (button.querySelector('.theia-qaap-agent-identity-avatar') ?? button).prepend(warning);
         chevron.before(connect);
     }

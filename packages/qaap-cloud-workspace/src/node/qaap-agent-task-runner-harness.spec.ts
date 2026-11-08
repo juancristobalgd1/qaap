@@ -45,7 +45,7 @@ describe('QaapAgentTaskRunner harness status catalog', () => {
             installSupported: true,
             cliBinDirectory: aliceBin,
         });
-        expect(statuses.find(status => status.id === 'qaiq')?.installed).to.equal(true);
+        expect(statuses.find(status => status.id === 'qaiq')).to.equal(undefined);
     });
 
     it("reports the owner's last turn per harness, and nothing for harnesses never used", () => {
@@ -200,4 +200,41 @@ describe('QaapAgentTaskRunner connection probes', () => {
         await new Promise(resolve => setTimeout(resolve, 0));
         expect(runner.isAgentConnected('codex', 'alice')).to.equal(true);
     });
+
+    it("probes a tenant whose repos folder does not exist yet from the backend's cwd instead of failing to spawn", async () => {
+        const reposRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-probe-root-'));
+        const previousRoot = process.env.QAAP_REPOS_ROOT;
+        const previousMode = process.env.QAAP_CLOUD_MODE;
+        process.env.QAAP_REPOS_ROOT = reposRoot;
+        process.env.QAAP_CLOUD_MODE = 'local';
+        try {
+            const runner = Object.create(QaapAgentTaskRunner.prototype) as QaapAgentTaskRunner;
+            Object.assign(runner, {
+                resolveAgentCliPrefix: () => path.join(reposRoot, 'cli'),
+                isTenantPrivilegeDropActive: () => false,
+                tenantSpawn: {
+                    tenantHomeEnvOverlay: () => ({}),
+                    // Stands in for `claude auth status` on every platform.
+                    wrapArgvForTenant: () => ({ file: process.execPath, args: ['-e', 'console.log(JSON.stringify({ loggedIn: true }))'] }),
+                },
+            });
+            const probe = (runner as unknown as {
+                probeAgentConnectionState(agentId: string, bin: string, ownerLogin?: string): Promise<string>;
+            }).probeAgentConnectionState('claude', 'claude', '_dev');
+
+            expect(await probe).to.equal('connected');
+        } finally {
+            restoreEnv('QAAP_REPOS_ROOT', previousRoot);
+            restoreEnv('QAAP_CLOUD_MODE', previousMode);
+            fs.rmSync(reposRoot, { recursive: true, force: true });
+        }
+    });
 });
+
+function restoreEnv(key: string, value: string | undefined): void {
+    if (value === undefined) {
+        delete process.env[key];
+    } else {
+        process.env[key] = value;
+    }
+}

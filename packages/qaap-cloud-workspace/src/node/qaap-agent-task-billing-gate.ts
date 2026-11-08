@@ -122,7 +122,7 @@ async function checkAgentTaskBillingGateWithProbe(
     console.error(`[qaap-billing] Entitlement read failed for ${ownerLogin}; hosted Codex turn rejected (fail-closed, ${cached ? 'cache denies' : 'no cache'}). ${message}`);
     return nls.localize(
         'qaap/billing/hostedCodexUnavailable',
-        'Billing is temporarily unavailable, so hosted Codex models cannot be started right now. Try again in a moment or pick a BYOK model.',
+        'Billing is temporarily unavailable, so hosted Codex models cannot be started right now. Try again in a moment or use another harness.',
     );
 }
 

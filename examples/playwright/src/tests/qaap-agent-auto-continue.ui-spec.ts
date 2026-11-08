@@ -22,6 +22,25 @@ async function dismissMobileTutorial(page: import('@playwright/test').Page): Pro
     }
 }
 
+/**
+ * Claude Code (the default harness) holds a send until a model is chosen — the model picker opens — and
+ * asks once before the first paid send in a project. Pick the first model, resend, and confirm.
+ */
+async function acceptComposerSendGuards(page: import('@playwright/test').Page): Promise<void> {
+    const picker = page.locator('.qaap-model-picker').first();
+    const visible = (locator: import('@playwright/test').Locator): Promise<boolean> =>
+        locator.waitFor({ state: 'visible', timeout: 4000 }).then(() => true, () => false);
+    if (await visible(picker)) {
+        await page.locator('.qaap-model-picker-row:not(:disabled)').first().click();
+        await picker.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => undefined);
+        await page.getByRole('button', { name: /^send$|^create$/i }).click();
+    }
+    const paidConfirm = page.locator('.dialogOverlay .theia-button.main').first();
+    if (await visible(paidConfirm)) {
+        await paidConfirm.click();
+    }
+}
+
 test.describe('@qaap-mobile agent auto-continue after exploration stop', () => {
     test.use({ viewport: MOBILE_VIEWPORT });
     test.describe.configure({ timeout: 300_000 });
@@ -40,6 +59,7 @@ test.describe('@qaap-mobile agent auto-continue after exploration stop', () => {
         await composer.fill(RUN_APP_PROMPT_TEXT);
         await expect(composer).toHaveValue(RUN_APP_PROMPT);
         await app.page.getByRole('button', { name: /^send$|^create$/i }).click();
+        await acceptComposerSendGuards(app.page);
 
         const workspaceCwd = ws.path;
 

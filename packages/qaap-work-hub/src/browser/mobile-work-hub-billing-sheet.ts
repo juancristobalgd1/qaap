@@ -34,7 +34,7 @@ function planTagline(planId: string): string {
         case 'team':
             return nls.localize('qaap/billing/taglineTeam', 'For multi-agent teams');
         default:
-            return nls.localize('qaap/billing/taglineStarter', 'Fair-use BYOK start');
+            return nls.localize('qaap/billing/taglineStarter', 'Fair-use start');
     }
 }
 
@@ -349,7 +349,7 @@ export class MobileWorkHubBillingSheet {
                 '{0} Codex hosted credits / month',
                 formatCredits(plan.includedCreditsPerMonth),
             )
-            : nls.localize('qaap/billing/planByok', 'BYOK models (your API keys)');
+            : nls.localize('qaap/billing/planByok', 'Your harness subscriptions (Claude, Codex, …)');
         const storage = nls.localize(
             'qaap/billing/planStorage',
             '{0} GB storage · {1} concurrent agents',
@@ -476,7 +476,7 @@ export class MobileWorkHubBillingSheet {
                             '{0} credits remaining',
                             formatCredits(entitlements.creditsRemaining),
                         )
-                        : nls.localize('qaap/billing/byokOnly', 'BYOK — bring your own keys'),
+                        : nls.localize('qaap/billing/byokOnly', 'Your harness subscriptions (Claude, Codex, …)'),
                     entitlements.hostedModels && entitlements.includedCreditsPerMonth > 0
                         ? Math.min(1, 1 - (entitlements.creditsRemaining / entitlements.includedCreditsPerMonth))
                         : undefined,
@@ -534,7 +534,7 @@ export class MobileWorkHubBillingSheet {
             });
             hint.textContent = nls.localize(
                 'qaap/billing/ctaStarterHint',
-                'No card required. Bring your own API keys.',
+                'No card required. Connect your own harness subscriptions.',
             );
             wrap.append(button, hint);
             return wrap;

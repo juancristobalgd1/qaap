@@ -446,7 +446,7 @@ export class MobileOnboardingTutorialContribution implements FrontendApplication
                 title: nls.localize('qaap/mobileOnboarding/workHub/compose/title', 'Delegate your first task'),
                 body: nls.localize(
                     'qaap/mobileOnboarding/workHub/compose/body',
-                    'Describe the outcome in the composer below. QAIQ plans and runs it on the server — the work keeps going even if you close this tab, and you get notified when it finishes or needs you.'
+                    'Describe the outcome in the composer below. Your harness plans and runs it on the server — the work keeps going even if you close this tab, and you get notified when it finishes or needs you.'
                 ),
                 target: () => visibleElement('.theia-mobile-projects-sticky-composer'),
                 placement: 'top',

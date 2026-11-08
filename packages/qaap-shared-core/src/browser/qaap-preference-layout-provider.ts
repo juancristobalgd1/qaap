@@ -52,46 +52,6 @@ export class QaapPreferenceLayoutProvider extends PreferenceLayoutProvider {
                 ],
             },
             {
-                id: 'ai-features.openrouter',
-                label: 'OpenRouter',
-                settings: ['ai-features.openrouter.*'],
-            },
-            {
-                id: 'ai-features.nvidia',
-                label: 'NVIDIA',
-                settings: ['ai-features.nvidia.*'],
-            },
-            {
-                id: 'ai-features.anthropic',
-                label: 'Anthropic',
-                settings: ['ai-features.anthropic.*'],
-            },
-            {
-                id: 'ai-features.google',
-                label: 'Google',
-                settings: ['ai-features.google.*'],
-            },
-            {
-                id: 'ai-features.openAiOfficial',
-                label: 'OpenAI',
-                settings: ['ai-features.openAiOfficial.*'],
-            },
-            {
-                id: 'ai-features.openAiCustom',
-                label: nls.localize('qaap/preferences/ai-features/open-ai-custom', 'OpenAI-compatible (custom)'),
-                settings: ['ai-features.openAiCustom.*'],
-            },
-            {
-                id: 'ai-features.huggingFace',
-                label: 'Hugging Face',
-                settings: ['ai-features.huggingFace.*'],
-            },
-            {
-                id: 'ai-features.ollama',
-                label: 'Ollama',
-                settings: ['ai-features.ollama.*', 'ai-features.ollama'],
-            },
-            {
                 id: 'ai-features.routing',
                 label: nls.localize('qaap/preferences/ai-features/routing', 'Model routing & behavior'),
                 settings: [

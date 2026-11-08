@@ -47,52 +47,52 @@ describe('defaultAgentExtracted', () => {
         }
     });
 
-    it('without any key or login defaults to QAIQ (the BYOK prompt), never the keyless hosted agent', () => {
+    it('without any key or login never picks the keyless hosted agent; with nothing connected it falls to the shell', () => {
         expect(pickDefault({
-            detected: ['qaiq', 'claude', 'opencode'],
-            states: { qaiq: 'disconnected', claude: 'disconnected', opencode: 'unknown' },
-        })).to.equal('qaiq');
+            detected: ['claude', 'opencode'],
+            states: { claude: 'disconnected', opencode: 'unknown' },
+        })).to.equal('shell');
     });
 
     it('without a QAIQ key but with a connected Codex picks the first usable agent (Codex)', () => {
         expect(pickDefault({
-            detected: ['qaiq', 'codex', 'opencode'],
-            states: { qaiq: 'disconnected', codex: 'connected' },
+            detected: ['codex', 'opencode'],
+            states: { codex: 'connected' },
         })).to.equal('codex');
     });
 
     it('keeps the pre-keyless default while a preferred agent is still unprobed (fresh backend start)', () => {
         expect(pickDefault({
-            detected: ['qaiq', 'claude', 'opencode'],
-            states: { qaiq: 'disconnected', claude: 'unknown', opencode: 'unknown' },
+            detected: ['claude', 'opencode'],
+            states: { claude: 'unknown', opencode: 'unknown' },
         })).to.equal('claude');
     });
 
     it('prefers the first genuinely connected agent over an unconnected one earlier in the list', () => {
         expect(pickDefault({
-            detected: ['qaiq', 'codex', 'claude', 'opencode'],
-            states: { qaiq: 'disconnected', codex: 'disconnected', claude: 'connected', opencode: 'unknown' },
+            detected: ['codex', 'claude', 'opencode'],
+            states: { codex: 'disconnected', claude: 'connected', opencode: 'unknown' },
         })).to.equal('claude');
     });
 
-    it('keeps qaiq first when its API key is configured', () => {
+    it('prefers claude over codex when both are connected', () => {
         expect(pickDefault({
-            detected: ['qaiq', 'claude', 'opencode'],
-            states: { qaiq: 'connected', claude: 'connected' },
-        })).to.equal('qaiq');
+            detected: ['codex', 'claude', 'opencode'],
+            states: { codex: 'connected', claude: 'connected' },
+        })).to.equal('claude');
     });
 
     it('on Starter never picks hosted Codex, but Pro/Team may', () => {
-        const input = { detected: ['qaiq', 'codex', 'opencode'], states: { qaiq: 'disconnected' as const, codex: 'disconnected' as const } };
-        expect(pickDefault({ ...input, hostedModels: false })).to.equal('qaiq');
+        const input = { detected: ['codex', 'grok'], states: { codex: 'disconnected' as const, grok: 'connected' as const } };
+        expect(pickDefault({ ...input, hostedModels: false })).to.equal('grok');
         expect(pickDefault({ ...input, hostedModels: true })).to.equal('codex');
     });
 
     it('honours the operator-configured QAAP_DEFAULT_AGENT, ignoring connection state', () => {
         process.env.QAAP_DEFAULT_AGENT = 'claude';
         expect(pickDefault({
-            detected: ['qaiq', 'claude', 'opencode'],
-            states: { qaiq: 'connected', claude: 'unknown' },
+            detected: ['claude', 'opencode'],
+            states: { claude: 'unknown' },
         })).to.equal('claude');
     });
 
@@ -124,20 +124,12 @@ describe('defaultAgentExtracted without an auth signal', () => {
         expect(defaultAgentExtracted(ctx, enabled, usable, hasAuthSignal)).to.equal('claude');
     });
 
-    it('falls to QAIQ, not keyless OpenCode, when the only installed preferred agent has no auth signal', () => {
+    it('a disconnected preferred agent gives way to a custom detected agent', () => {
         const [ctx, enabled, usable] = pickDefaultArgs({
-            detected: ['grok', 'qaiq', 'opencode'],
-            states: { grok: 'unknown', qaiq: 'disconnected', opencode: 'unknown' },
+            detected: ['claude', 'my-custom-cli'],
+            states: { claude: 'disconnected' },
         });
-        expect(defaultAgentExtracted(ctx, enabled, usable, id => id !== 'grok')).to.equal('qaiq');
-    });
-
-    it('a disabled QAIQ is not the fallback; the remaining custom agent is used', () => {
-        const [ctx, enabled, usable] = pickDefaultArgs({
-            detected: ['qaiq', 'claude', 'my-custom-cli'],
-            states: { qaiq: 'disconnected', claude: 'disconnected' },
-        });
-        expect(defaultAgentExtracted(ctx, enabled, usable, () => true, id => id !== 'qaiq')).to.equal('my-custom-cli');
+        expect(defaultAgentExtracted(ctx, enabled, usable, () => true)).to.equal('my-custom-cli');
     });
 });
 
@@ -152,10 +144,10 @@ describe('defaultAgentFreshExtracted', () => {
         }
     });
 
-    /** Probes that settle `claude` (and qaiq) to `settle` after `delayMs`, or never when `delayMs` is undefined. */
+    /** Probes that settle `claude` to `settle` after `delayMs`, or never when `delayMs` is undefined. */
     function pickFresh(settle: ConnectionState, delayMs: number | undefined, budgetMs: number): Promise<string> {
-        const states: Record<string, ConnectionState> = { qaiq: 'disconnected', claude: 'unknown', opencode: 'unknown' };
-        const [ctx, enabled, usable] = pickDefaultArgs({ detected: ['qaiq', 'claude', 'opencode'], states });
+        const states: Record<string, ConnectionState> = { claude: 'unknown', opencode: 'unknown' };
+        const [ctx, enabled, usable] = pickDefaultArgs({ detected: ['claude', 'opencode'], states });
         const refresh = (id: string): Promise<ConnectionState> | undefined => {
             if (states[id] !== 'unknown') {
                 return undefined;
@@ -182,8 +174,8 @@ describe('defaultAgentFreshExtracted', () => {
         expect(Date.now() - started).to.be.lessThan(1_000);
     });
 
-    it('falls back to QAIQ once every preferred agent is explicitly disconnected', async () => {
-        expect(await pickFresh('disconnected', 5, 500)).to.equal('qaiq');
+    it('falls to the shell once every preferred agent is explicitly disconnected', async () => {
+        expect(await pickFresh('disconnected', 5, 500)).to.equal('shell');
     });
 });
 
@@ -206,7 +198,7 @@ describe('QaapAgentTaskRunner.defaultAgent (real runner, stubbed auth and billin
         const runner = Object.create(QaapAgentTaskRunner.prototype) as QaapAgentTaskRunner;
         Object.assign(runner, {
             detectedAgents: new Map<string, AgentCandidate>(
-                ['qaiq', 'codex', 'opencode', ...(options.extraDetected ?? [])].map(id => [id, { id, label: id, bin: id, template: `${id} {prompt}` }]),
+                ['codex', 'opencode', ...(options.extraDetected ?? [])].map(id => [id, { id, label: id, bin: id, template: `${id} {prompt}` }]),
             ),
             isAgentEnabled: () => true,
             agentConnectionState: (id: string) => options.states[id] ?? 'unknown',
@@ -218,11 +210,11 @@ describe('QaapAgentTaskRunner.defaultAgent (real runner, stubbed auth and billin
         return runner;
     }
 
-    const signedOut = { qaiq: 'disconnected', codex: 'disconnected', opencode: 'unknown' } as const;
+    const signedOut = { codex: 'disconnected', opencode: 'unknown' } as const;
 
-    it('Starter without keys or logins defaults to QAIQ (BYOK prompt), not keyless OpenCode', () => {
+    it('Starter without keys or logins falls to the shell, not keyless OpenCode', () => {
         const runner = runnerWith({ states: signedOut, entitlements: { hostedModels: false, creditsRemaining: 0 } });
-        expect(runner.defaultAgent('alice')).to.equal('qaiq');
+        expect(runner.defaultAgent('alice')).to.equal('shell');
     });
 
     it('Pro with credits gets hosted Codex even though Codex is signed out', () => {
@@ -232,22 +224,24 @@ describe('QaapAgentTaskRunner.defaultAgent (real runner, stubbed auth and billin
 
     it('Pro with the hosted credits spent does not get a Codex that turn start would deny', () => {
         const runner = runnerWith({ states: signedOut, entitlements: { hostedModels: true, creditsRemaining: 0 } });
-        expect(runner.defaultAgent('alice')).to.equal('qaiq');
+        expect(runner.defaultAgent('alice')).to.equal('shell');
     });
 
-    it('an installed grok (no auth probe, never connected) does not beat QAIQ', () => {
+    // Grok is a builtin harness again: with no auth signal (no probe, never connected) it is not a
+    // default, so a signed-out owner falls to the shell like any other builtin.
+    it('an installed grok (no auth probe, never connected) is not picked by default once QAIQ is gone', () => {
         const runner = runnerWith({ states: signedOut, entitlements: undefined, extraDetected: ['grok'] });
-        expect(runner.defaultAgent('alice')).to.equal('qaiq');
+        expect(runner.defaultAgent('alice')).to.equal('shell');
     });
 
     it('a cold billing cache is treated as Starter', () => {
         const runner = runnerWith({ states: signedOut, entitlements: undefined });
-        expect(runner.defaultAgent('alice')).to.equal('qaiq');
+        expect(runner.defaultAgent('alice')).to.equal('shell');
     });
 
     it('an anonymous owner never gets hosted Codex', () => {
         const runner = runnerWith({ states: signedOut, entitlements: { hostedModels: true, creditsRemaining: 10 } });
-        expect(runner.defaultAgent(undefined)).to.equal('qaiq');
+        expect(runner.defaultAgent(undefined)).to.equal('shell');
     });
 
     it('listAgents keeps a signed-out Codex unavailable once the credits are gone', () => {
@@ -327,18 +321,18 @@ describe('defaultAgentExtracted fallbacks past the preferred agents', () => {
         })).to.equal('my-custom-cli');
     });
 
-    it('when every preferred agent is disconnected, defaults to QAIQ before a custom detected agent', () => {
+    it('a retired QAIQ is never the default, even when it is the only installed runner', () => {
         expect(pickDefault({
-            detected: ['qaiq', 'claude', 'my-custom-cli'],
-            states: { qaiq: 'disconnected', claude: 'disconnected' },
-        })).to.equal('qaiq');
+            detected: ['qaiq', 'my-custom-cli'],
+            states: { qaiq: 'connected' },
+        })).to.equal('my-custom-cli');
     });
 
-    it('an operator QAAP_DEFAULT_AGENT=opencode still wins over the QAIQ fallback', () => {
+    it('an operator QAAP_DEFAULT_AGENT=opencode still wins', () => {
         process.env.QAAP_DEFAULT_AGENT = 'opencode';
         expect(pickDefault({
-            detected: ['qaiq', 'opencode'],
-            states: { qaiq: 'disconnected' },
+            detected: ['opencode'],
+            states: {},
         })).to.equal('opencode');
     });
 });

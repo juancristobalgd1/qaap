@@ -244,9 +244,14 @@ const NETWORK_PATTERNS: readonly RegExp[] = [
 const SELECTED_MODEL_ACCESS_FAILURE = /\bissue\s+with\s+the\s+selected\s+model\s*\(([^)\n]+)\)/i;
 
 /** Persisted (English, backend-locale) form of {@link localizeQaiqProviderKeyMissingMessage}. */
-const STORED_PROVIDER_KEY_MISSING = /^Add (?:your|an) .+ API key\b.* in Settings\b.* to use QAIQ\b/m;
+const STORED_PROVIDER_KEY_MISSING = /^(?:Add (?:your|an) .+ API key\b.* in Settings\b.* to use QAIQ\b|Connect a harness in Settings → Harness to run this turn\b)/m;
 /** Persisted (English, backend-locale) form of {@link localizeProviderModelAccessMessage}. */
 const STORED_MODEL_ACCESS_DENIED = /^The model provider (?:refused|rejected access to) /m;
+/**
+ * Persisted form of {@link localizeAgentFailureMessage} for `provider_key_rejected` (with or without the
+ * provider name), and the pre-harness copy ("Your X key was rejected … Settings → BYOK") that older turns kept.
+ */
+const STORED_PROVIDER_KEY_REJECTED = /^(?:The (?:.+ )?provider refused this turn\. Connect a harness in Settings → Harness, then retry\.|Your (?:.+ )?key was rejected\. Update it in Settings → BYOK, then retry\.)/m;
 /**
  * Note the task runner appends after probing the user's BYOK key with the provider, when the CLI's
  * own error was ambiguous (QAIQ reports any OpenRouter 4xx as "an issue with the selected model").
@@ -896,15 +901,21 @@ export function localizeAgentFailureMessage(kind: QaapAgentFailureKind, provider
     const provider = providerLabel?.trim() || nls.localize('qaap/agentFailure/providerFallback', 'provider');
     switch (kind) {
         case 'provider_key_rejected':
+            if (!providerLabel?.trim()) {
+                return nls.localize(
+                    'qaap/agentFailure/providerKeyRejectedAnyProvider',
+                    'The provider refused this turn. Connect a harness in Settings → Harness, then retry.',
+                );
+            }
             return nls.localize(
                 'qaap/agentFailure/providerKeyRejected',
-                'Your {0} key was rejected. Update it in Settings → BYOK, then retry.',
+                'The {0} provider refused this turn. Connect a harness in Settings → Harness, then retry.',
                 provider,
             );
         case 'provider_credits':
             return nls.localize(
                 'qaap/agentFailure/providerCredits',
-                'Your {0} key is out of credits. Add credits with {0}, or update the key in Settings → BYOK.',
+                'The {0} account is out of credits. Add credits with {0}, or connect a harness in Settings → Harness.',
                 provider,
             );
         case 'provider_data_policy':
@@ -985,7 +996,7 @@ export function localizeMissingCodingAgentMessage(): string {
     }
     return nls.localize(
         'qaap/agentFailure/noCodingAgent',
-        'No coding agent CLI is installed. Install Cursor Agent, QAIQ, Claude Code, Codex, or OpenCode, then restart Qaap.',
+        'No coding agent CLI is installed. Install Cursor Agent, Claude Code, Codex, or OpenCode, then restart Qaap.',
     );
 }
 
@@ -1007,15 +1018,13 @@ export function localizeQaiqProviderKeyMissingMessage(providerLabel?: string): s
     if (label) {
         return nls.localize(
             'qaap/agentFailure/qaiqProviderKeyMissing',
-            'Add your {0} API key in Settings → BYOK to use QAIQ, pick a model from a provider you have a key for, '
-            + 'or pick another agent from the agent chip. Keys are personal: each account adds its own.',
+            'Connect a harness in Settings → Harness to run this turn, or pick another agent from the agent chip.',
             label,
         );
     }
     return nls.localize(
         'qaap/agentFailure/qaiqAnyProviderKeyMissing',
-        'Add an AI provider API key (for example OpenRouter) in Settings → BYOK to use QAIQ, pick a model from a provider you have a key for, '
-        + 'or pick another agent from the agent chip.',
+        'Connect a harness in Settings → Harness to run this turn, or pick another agent from the agent chip.',
     );
 }
 
@@ -1030,7 +1039,7 @@ export function localizeProviderModelAccessMessage(model: string): string {
         'qaap/agentFailure/providerModelAccessDenied',
         'The model provider refused {0}. The model may be unavailable or retired at the provider right now, its API key may be missing or invalid, '
         + 'the account may be out of credits, or (for free OpenRouter models) your privacy settings may block it. '
-        + 'Pick another model, or check the key in Settings → BYOK.',
+        + 'Pick another model, or connect a harness in Settings → Harness.',
         model,
     );
 }
@@ -1492,6 +1501,9 @@ function classifyStoredAgentFailure(error: string): QaapAgentFailureReasonKind {
     if (STORED_PROVIDER_REJECTED.test(error)) {
         return 'provider_rejected';
     }
+    if (STORED_PROVIDER_KEY_REJECTED.test(error)) {
+        return 'provider_key';
+    }
     // The raw CLI 404 only when nothing more specific (a provider key/credits/policy check) explains it.
     if (STORED_MODEL_ACCESS_DENIED.test(error)
         || (extractSelectedModelAccessFailure(error) && detectAgentFailureKind(error) === 'model_unavailable')) {
@@ -1546,11 +1558,11 @@ function localizeAgentFailureReasonLabel(kind: QaapAgentFailureReasonKind, optio
         case 'network':
             return nls.localize('qaap/agentFailure/reasonNetwork', 'Could not reach the model provider');
         case 'api_key':
-            return nls.localize('qaap/agentFailure/reasonApiKeyMissing', 'API key needed');
+            return nls.localize('qaap/agentFailure/reasonApiKeyMissing', 'Connect a harness');
         case 'model_access':
             return nls.localize('qaap/agentFailure/reasonModelAccessDenied', 'Model access denied');
         case 'provider_key':
-            return nls.localize('qaap/agentFailure/reasonProviderKey', 'API key rejected');
+            return nls.localize('qaap/agentFailure/reasonProviderKey', 'Provider rejected the key');
         case 'provider_policy':
             return nls.localize('qaap/agentFailure/reasonProviderPolicy', 'Blocked by provider settings');
         case 'provider_rejected':

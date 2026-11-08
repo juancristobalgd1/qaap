@@ -303,69 +303,217 @@ body.qaap-theme-dark {
 }
 
 /*-----------------------------------------------------------------------------
-|| High Contrast (Qaap) = `hc-theia`. It carries both `qaap-theme-dark` (the
-|| graphite accents) and `qaap-theme-hc` (this block, declared after the dark
-|| one so it wins at equal specificity). Keeps the black canvas and drops the
-|| VS Code HC blues / cyans (contrastBorder, focus, links, progress, selections).
+|| High Contrast (Qaap) = `hc-theia` (black canvas) and High Contrast Light
+|| (Qaap) = `hc-theia-light` (white canvas). They keep the VS Code HC canvas,
+|| text and syntax colours and only swap the HC blues / cyans (borders, focus,
+|| links, progress, selection) for neutral greys, like the Qaap dark / light
+|| graphite accents. `qaap-theme-hc` holds the mapping; the variant class
+|| holds the greys.
 ||----------------------------------------------------------------------------*/
 
+body.qaap-theme-hc-dark {
+  --qaap-hc-line: #262626;
+  --qaap-hc-strong: #7A7A7A;
+  --qaap-hc-soft: #2A2A2A;
+  --qaap-hc-ink: #F4F1E8;
+  --qaap-hc-focus: #9A9A9A;
+  --qaap-hc-select: rgba(255, 255, 255, 0.10);
+  --qaap-hc-editor-select: #3A3A3A;
+  --qaap-hc-button: #494949;
+  --qaap-hc-button-ink: #F4F1E8;
+  --qaap-hc-widget: #000000;
+}
+
+body.qaap-theme-hc-light {
+  --qaap-hc-line: #DCDCDC;
+  --qaap-hc-strong: #494949;
+  --qaap-hc-soft: #E2E2E2;
+  --qaap-hc-ink: #111111;
+  --qaap-hc-focus: #494949;
+  --qaap-hc-select: rgba(0, 0, 0, 0.08);
+  --qaap-hc-editor-select: #C8C8C8;
+  --qaap-hc-button: #2A2A2A;
+  --qaap-hc-button-ink: #FFFFFF;
+  --qaap-hc-widget: #FFFFFF;
+}
+
 body.qaap-theme-hc {
-  --qaap-bg: #000000;
-  --qaap-surface: #000000;
-  --qaap-surface-alt: #000000;
-  --qaap-code: #000000;
-  --theia-focusBorder: var(--qaap-focus-border) !important;
-  --theia-contrastBorder: var(--qaap-line) !important;
-  --theia-contrastActiveBorder: var(--qaap-ink) !important;
-  --theia-progressBar-background: var(--qaap-accent) !important;
-  --theia-inputOption-activeBorder: var(--qaap-accent) !important;
-  --theia-panelTitle-activeBorder: var(--qaap-ink) !important;
-  --theia-textLink-foreground: var(--qaap-ink) !important;
-  --theia-textLink-activeForeground: var(--qaap-ink-2) !important;
-  --theia-inputValidation-infoBorder: var(--qaap-line) !important;
-  --theia-textBlockQuote-border: var(--qaap-line) !important;
-  --theia-selection-background: var(--qaap-accent-soft) !important;
-  /* VS Code HC paints every border with its cyan contrastBorder (#6FC3DF): use the Qaap line. */
-  --theia-button-border: var(--qaap-line) !important;
-  --theia-checkbox-border: var(--qaap-line) !important;
-  --theia-chart-axis: var(--qaap-line) !important;
-  --theia-chart-guide: var(--qaap-line) !important;
-  --theia-diffEditor-border: var(--qaap-line) !important;
-  --theia-editorBracketMatch-border: var(--qaap-line) !important;
-  --theia-editorGroupHeader-tabsBorder: var(--qaap-line) !important;
-  --theia-editorHoverWidget-border: var(--qaap-line) !important;
-  --theia-editorStickyScroll-border: var(--qaap-line) !important;
-  --theia-editorSuggestWidget-border: var(--qaap-line) !important;
-  --theia-imagePreview-border: var(--qaap-line) !important;
-  --theia-inputValidation-errorBorder: var(--qaap-line) !important;
-  --theia-inputValidation-warningBorder: var(--qaap-line) !important;
-  --theia-list-filterMatchBorder: var(--qaap-line) !important;
-  --theia-listFilterWidget-noMatchesOutline: var(--qaap-line) !important;
-  --theia-menu-separatorBackground: var(--qaap-line) !important;
-  --theia-multiDiffEditor-border: var(--qaap-line) !important;
-  --theia-notificationCenter-border: var(--qaap-line) !important;
-  --theia-notificationToast-border: var(--qaap-line) !important;
-  --theia-peekView-border: var(--qaap-line) !important;
-  --theia-radio-activeBorder: var(--qaap-line) !important;
-  --theia-settings-checkboxBorder: var(--qaap-line) !important;
-  --theia-settings-dropdownBorder: var(--qaap-line) !important;
-  --theia-settings-dropdownListBorder: var(--qaap-line) !important;
-  --theia-settings-numberInputBorder: var(--qaap-line) !important;
-  --theia-settings-textInputBorder: var(--qaap-line) !important;
-  --theia-statusBar-noFolderBorder: var(--qaap-line) !important;
-  --theia-terminal-border: var(--qaap-line) !important;
-  --theia-textPreformat-border: var(--qaap-line) !important;
-  --theia-titleBar-border: var(--qaap-line) !important;
-  --theia-widget-border: var(--qaap-line) !important;
-  --theia-window-activeBorder: var(--qaap-line) !important;
-  --theia-window-inactiveBorder: var(--qaap-line) !important;
-  --theia-editorHoverWidgetInternalBorder: var(--qaap-line) !important;
-  --theia-minimapSlider-background: var(--qaap-accent-soft) !important;
-  --theia-minimapSlider-hoverBackground: var(--qaap-accent) !important;
-  --theia-minimapSlider-activeBackground: var(--qaap-accent) !important;
-  --theia-notificationLink-foreground: var(--qaap-ink) !important;
-  --theia-editorLink-activeForeground: var(--qaap-ink) !important;
-  --theia-settings-modifiedItemIndicator: var(--qaap-accent) !important;
+  --theia-focusBorder: var(--qaap-hc-focus) !important;
+  --theia-contrastBorder: var(--qaap-hc-line) !important;
+  --theia-contrastActiveBorder: var(--qaap-hc-ink) !important;
+  --theia-progressBar-background: var(--qaap-hc-strong) !important;
+  --theia-inputOption-activeBorder: var(--qaap-hc-strong) !important;
+  --theia-panelTitle-activeBorder: var(--qaap-hc-ink) !important;
+  --theia-textLink-foreground: var(--qaap-hc-ink) !important;
+  --theia-textLink-activeForeground: var(--qaap-hc-ink) !important;
+  --theia-inputValidation-infoBorder: var(--qaap-hc-line) !important;
+  --theia-textBlockQuote-border: var(--qaap-hc-line) !important;
+  --theia-selection-background: var(--qaap-hc-soft) !important;
+  /* VS Code HC paints every border with its cyan contrastBorder (#6FC3DF): use a neutral grey. */
+  --theia-button-border: var(--qaap-hc-line) !important;
+  --theia-checkbox-border: var(--qaap-hc-line) !important;
+  --theia-chart-axis: var(--qaap-hc-line) !important;
+  --theia-chart-guide: var(--qaap-hc-line) !important;
+  --theia-diffEditor-border: var(--qaap-hc-line) !important;
+  --theia-editorBracketMatch-border: var(--qaap-hc-line) !important;
+  --theia-editorGroupHeader-tabsBorder: var(--qaap-hc-line) !important;
+  --theia-editorHoverWidget-border: var(--qaap-hc-line) !important;
+  --theia-editorStickyScroll-border: var(--qaap-hc-line) !important;
+  --theia-editorSuggestWidget-border: var(--qaap-hc-line) !important;
+  --theia-imagePreview-border: var(--qaap-hc-line) !important;
+  --theia-inputValidation-errorBorder: var(--qaap-hc-line) !important;
+  --theia-inputValidation-warningBorder: var(--qaap-hc-line) !important;
+  --theia-list-filterMatchBorder: var(--qaap-hc-line) !important;
+  --theia-listFilterWidget-noMatchesOutline: var(--qaap-hc-line) !important;
+  --theia-menu-separatorBackground: var(--qaap-hc-line) !important;
+  --theia-multiDiffEditor-border: var(--qaap-hc-line) !important;
+  --theia-notificationCenter-border: var(--qaap-hc-line) !important;
+  --theia-notificationToast-border: var(--qaap-hc-line) !important;
+  --theia-peekView-border: var(--qaap-hc-line) !important;
+  --theia-radio-activeBorder: var(--qaap-hc-line) !important;
+  --theia-settings-checkboxBorder: var(--qaap-hc-line) !important;
+  --theia-settings-dropdownBorder: var(--qaap-hc-line) !important;
+  --theia-settings-dropdownListBorder: var(--qaap-hc-line) !important;
+  --theia-settings-numberInputBorder: var(--qaap-hc-line) !important;
+  --theia-settings-textInputBorder: var(--qaap-hc-line) !important;
+  --theia-statusBar-noFolderBorder: var(--qaap-hc-line) !important;
+  --theia-terminal-border: var(--qaap-hc-line) !important;
+  --theia-textPreformat-border: var(--qaap-hc-line) !important;
+  --theia-titleBar-border: var(--qaap-hc-line) !important;
+  --theia-widget-border: var(--qaap-hc-line) !important;
+  /* Navy HC widget surfaces (#0C141F: pickers, popovers, notifications) and blue debug glyphs. */
+  --theia-editorWidget-background: var(--qaap-hc-widget) !important;
+  --theia-quickInput-background: var(--qaap-hc-widget) !important;
+  --theia-editorHoverWidget-background: var(--qaap-hc-widget) !important;
+  --theia-editorHoverWidget-statusBarBackground: var(--qaap-hc-widget) !important;
+  --theia-breadcrumbPicker-background: var(--qaap-hc-widget) !important;
+  --theia-checkbox-selectBackground: var(--qaap-hc-widget) !important;
+  --theia-listFilterWidget-background: var(--qaap-hc-widget) !important;
+  --theia-editorActionList-background: var(--qaap-hc-widget) !important;
+  --theia-editorMarkerNavigationWarning-headerBackground: var(--qaap-hc-widget) !important;
+  --theia-editorSuggestWidget-background: var(--qaap-hc-widget) !important;
+  --theia-notifications-background: var(--qaap-hc-widget) !important;
+  --theia-notificationCenterHeader-background: var(--qaap-hc-widget) !important;
+  --theia-notifications-border: var(--qaap-hc-line) !important;
+  --theia-editorMarkerNavigationError-background: var(--qaap-hc-line) !important;
+  --theia-editorMarkerNavigationWarning-background: var(--qaap-hc-line) !important;
+  --theia-editorMarkerNavigationInfo-background: var(--qaap-hc-line) !important;
+  --theia-statusBar-debuggingBorder: var(--qaap-hc-line) !important;
+  --theia-notebook-cellBorderColor: var(--qaap-hc-line) !important;
+  --theia-notebook-cellToolbarSeparator: var(--qaap-hc-line) !important;
+  --theia-notebook-selectedCellBorder: var(--qaap-hc-line) !important;
+  --theia-notebook-inactiveFocusedCellBorder: var(--qaap-hc-line) !important;
+  --theia-actionBar-toggledBackground: var(--qaap-hc-soft) !important;
+  --theia-notebookScrollbarSlider-background: var(--qaap-hc-soft) !important;
+  --theia-notebookScrollbarSlider-hoverBackground: var(--qaap-hc-line) !important;
+  --theia-notebookScrollbarSlider-activeBackground: var(--qaap-hc-strong) !important;
+  --theia-debugIcon-pauseForeground: var(--qaap-hc-ink) !important;
+  --theia-debugIcon-continueForeground: var(--qaap-hc-ink) !important;
+  --theia-debugIcon-stepOverForeground: var(--qaap-hc-ink) !important;
+  --theia-debugIcon-stepIntoForeground: var(--qaap-hc-ink) !important;
+  --theia-debugIcon-stepOutForeground: var(--qaap-hc-ink) !important;
+  --theia-debugIcon-stepBackForeground: var(--qaap-hc-ink) !important;
+  /* HC Light paints selections, buttons and badges blue (#0F4A85 / #006BBD): neutral greys instead. */
+  --theia-editor-selectionBackground: var(--qaap-hc-editor-select) !important;
+  --theia-editor-inactiveSelectionBackground: var(--qaap-hc-select) !important;
+  --theia-menu-selectionBackground: var(--qaap-hc-select) !important;
+  --theia-list-hoverBackground: var(--qaap-hc-select) !important;
+  --theia-list-activeSelectionBackground: var(--qaap-hc-select) !important;
+  --theia-list-inactiveSelectionBackground: var(--qaap-hc-select) !important;
+  --theia-list-highlightForeground: var(--qaap-hc-ink) !important;
+  --theia-list-focusHighlightForeground: var(--qaap-hc-ink) !important;
+  --theia-pickerGroup-border: var(--qaap-hc-line) !important;
+  --theia-pickerGroup-foreground: var(--qaap-hc-strong) !important;
+  --theia-sash-hoverBorder: var(--qaap-hc-strong) !important;
+  --theia-button-background: var(--qaap-hc-button) !important;
+  --theia-button-hoverBackground: var(--qaap-hc-button) !important;
+  --theia-button-foreground: var(--qaap-hc-button-ink) !important;
+  --theia-activityBarBadge-background: var(--qaap-hc-button) !important;
+  --theia-badge-background: var(--qaap-hc-button) !important;
+  --theia-badge-foreground: var(--qaap-hc-button-ink) !important;
+  --theia-panel-border: var(--qaap-hc-line) !important;
+  --theia-input-border: var(--qaap-hc-line) !important;
+  --theia-editorWidget-border: var(--qaap-hc-line) !important;
+  --theia-editorGroup-border: var(--qaap-hc-line) !important;
+  --theia-sideBarSectionHeader-border: var(--qaap-hc-line) !important;
+  --theia-activityBar-border: var(--qaap-hc-line) !important;
+  --theia-tab-border: var(--qaap-hc-line) !important;
+  --theia-menu-border: var(--qaap-hc-line) !important;
+  --theia-dropdown-border: var(--qaap-hc-line) !important;
+  --theia-keybindingLabel-border: var(--qaap-hc-line) !important;
+  --theia-keybindingLabel-bottomBorder: var(--qaap-hc-line) !important;
+  --theia-statusBar-border: var(--qaap-hc-line) !important;
+  --theia-scrollbarSlider-background: var(--qaap-hc-soft) !important;
+  --theia-scrollbarSlider-hoverBackground: var(--qaap-hc-line) !important;
+  --theia-scrollbarSlider-activeBackground: var(--qaap-hc-strong) !important;
+  --theia-window-activeBorder: var(--qaap-hc-line) !important;
+  --theia-window-inactiveBorder: var(--qaap-hc-line) !important;
+  --theia-editorHoverWidgetInternalBorder: var(--qaap-hc-line) !important;
+  --theia-minimapSlider-background: var(--qaap-hc-soft) !important;
+  --theia-minimapSlider-hoverBackground: var(--qaap-hc-strong) !important;
+  --theia-minimapSlider-activeBackground: var(--qaap-hc-strong) !important;
+  --theia-notificationLink-foreground: var(--qaap-hc-ink) !important;
+  --theia-editorLink-activeForeground: var(--qaap-hc-ink) !important;
+  --theia-settings-modifiedItemIndicator: var(--qaap-hc-strong) !important;
+}
+
+/* Theia and Monaco also inject HC rules with literal colours (cyan #6FC3DF borders, orange
+ * #F38518 hover/selection outlines, navy #0C141F surfaces): neutral greys instead. */
+body.qaap-theme-hc .theia-tabBar-breadcrumb-row,
+body.qaap-theme-hc .lm-TabBar .theia-badge-decorator-sidebar,
+body.qaap-theme-hc .quick-input-widget,
+body.qaap-theme-hc .theia-scm-input-message-container textarea {
+  outline-color: var(--qaap-hc-line) !important;
+}
+
+body.qaap-theme-hc .action-label:hover,
+body.qaap-theme-hc .lm-Menu .lm-Menu-item.lm-mod-active,
+body.qaap-theme-hc .lm-MenuBar .lm-MenuBar-item.lm-mod-active,
+body.qaap-theme-hc .theia-sidebar-menu > :hover,
+body.qaap-theme-hc .lm-TabBar .lm-TabBar-tab,
+body.qaap-theme-hc .theia-TreeNode,
+body.qaap-theme-hc #theia-statusBar .area .element.hasCommand,
+body.qaap-theme-hc .quick-input-list .monaco-list-row,
+body.qaap-theme-hc .theia-notification-list-item {
+  outline-color: var(--qaap-hc-focus) !important;
+}
+
+body.qaap-theme-hc .theia-button,
+body.qaap-theme-hc .monaco-keybinding > .monaco-keybinding-key,
+body.qaap-theme-hc .monaco-editor .find-widget,
+body.qaap-theme-hc .t-siw-search-container .searchHeader .search-field-container,
+body.qaap-theme-hc #theia-main-content-panel .lm-TabBar .lm-TabBar-tab.lm-mod-current,
+body.qaap-theme-hc .monaco-hover .hover-row,
+body.qaap-theme-hc .monaco-hover hr {
+  border-color: var(--qaap-hc-line) !important;
+}
+
+body.qaap-theme-hc .monaco-editor .view-overlays .current-line-exact,
+body.qaap-theme-hc .monaco-editor .margin-view-overlays .current-line-exact-margin {
+  border-color: var(--qaap-hc-line) !important;
+}
+
+body.qaap-theme-hc .quick-input-widget .monaco-highlighted-label .highlight {
+  color: var(--qaap-hc-ink) !important;
+}
+
+body.qaap-theme-hc .theia-notification-list-item-container {
+  background-color: var(--qaap-hc-widget) !important;
+}
+
+body.qaap-theme-hc .monaco-editor,
+body.qaap-theme-hc .monaco-diff-editor,
+body.qaap-theme-hc .monaco-component {
+  --vscode-contrastBorder: var(--qaap-hc-line);
+  --vscode-focusBorder: var(--qaap-hc-focus);
+  --vscode-contrastActiveBorder: var(--qaap-hc-focus);
+  --vscode-editorWidget-background: var(--qaap-hc-widget);
+  --vscode-editorWidget-border: var(--qaap-hc-line);
+  --vscode-quickInput-background: var(--qaap-hc-widget);
+  --vscode-editorHoverWidget-border: var(--qaap-hc-line);
+  --vscode-editorSuggestWidget-border: var(--qaap-hc-line);
+  --vscode-textLink-foreground: var(--qaap-hc-ink);
+  --vscode-textLink-activeForeground: var(--qaap-hc-ink);
 }
 
 /*-----------------------------------------------------------------------------

@@ -2,7 +2,7 @@
 // Per-task sandbox end to end (roadmap H2.2, doc/qaap-task-sandbox.md).
 //
 // Starts the built browser backend (examples/browser/lib/backend/main.js) in skip-auth local mode
-// with QAAP_TASK_SANDBOX=1, an isolated HOME and a fake `qaiq` (mounted into the sandboxes as the
+// with QAAP_TASK_SANDBOX=1, an isolated HOME and a fake `claude` (mounted into the sandboxes as the
 // toolchain), and starts TWO worktree-isolated chat turns on the SAME repository at once. Each fake
 // agent runs inside its own sandbox container and:
 //   - binds the same hardcoded port (4545) with a tiny HTTP server that answers its own token,
@@ -28,10 +28,12 @@ const BACKEND = join(ROOT, 'examples/browser/lib/backend/main.js');
 const CONVERSATIONS = '/qaap/api/agent-conversations';
 const HARDCODED_PORT = 4545;
 
-const FAKE_QAIQ = `#!/usr/bin/env bash
-# Fake qaiq for the task-sandbox e2e (stream-json over stdio). Runs INSIDE the sandbox.
-if [[ "\${1:-}" == "--version" ]]; then echo "qaiq 0.0.0-sandbox-e2e"; exit 0; fi
-IFS= read -r line || true
+const FAKE_CLAUDE = `#!/usr/bin/env bash
+# Fake claude for the task-sandbox e2e (stream-json over stdio). Runs INSIDE the sandbox.
+if [[ "\${1:-}" == "--version" ]]; then echo "2.1.0 (Claude Code) sandbox-e2e"; exit 0; fi
+if [[ "\${1:-}" == "auth" && "\${2:-}" == "status" ]]; then echo '{"loggedIn": true, "authMethod": "mock", "apiProvider": "mock"}'; exit 0; fi
+# Approvals on: one NDJSON user line, stdin stays open. Approvals off: the prompt is piped and stdin closes.
+if [[ " $* " == *" --input-format "* ]]; then IFS= read -r line || true; else line="$(cat)"; fi
 token="$(printf '%s' "$line" | grep -oE 'QAAP_SANDBOX_[0-9A-F]{12}' | head -1)"
 emit() { printf '%s\\n' "$1"; }
 emit '{"type":"system","subtype":"init","cwd":"'"$(pwd)"'","session_id":"sandbox-e2e","tools":[],"model":"mock/sandbox-e2e"}'
@@ -117,8 +119,8 @@ async function main() {
     for (const dir of [home, join(toolchain, 'bin'), repo]) {
         mkdirSync(dir, { recursive: true });
     }
-    writeFileSync(join(toolchain, 'bin', 'qaiq'), FAKE_QAIQ);
-    chmodSync(join(toolchain, 'bin', 'qaiq'), 0o755);
+    writeFileSync(join(toolchain, 'bin', 'claude'), FAKE_CLAUDE);
+    chmodSync(join(toolchain, 'bin', 'claude'), 0o755);
     const gitIdentity = ['-c', 'user.email=e2e@qaap.local', '-c', 'user.name=e2e'];
     execFileSync('git', ['init', '-q'], { cwd: repo });
     writeFileSync(join(repo, 'README.md'), 'task sandbox e2e\n');
@@ -165,7 +167,7 @@ async function main() {
         const tokens = [0, 1].map(() => `QAAP_SANDBOX_${randomBytes(6).toString('hex').toUpperCase()}`);
         const started = Date.now();
         const created = await Promise.all(tokens.map((token, index) => api('POST', CONVERSATIONS, {
-            cwd: repo, agent: 'qaiq', isolation: 'worktree', title: `sandbox e2e ${index + 1}`,
+            cwd: repo, agent: 'claude', isolation: 'worktree', title: `sandbox e2e ${index + 1}`,
             message: `Sandbox e2e. Reply with ${token}`,
         })));
         for (const response of created) {
@@ -232,7 +234,7 @@ async function main() {
         }
         ok = checks.every(([passed]) => passed);
         if (!ok) {
-            console.log(log.split('\n').filter(line => /sandbox|qaiq|spawn|error/i.test(line)).slice(-30).join('\n'));
+            console.log(log.split('\n').filter(line => /sandbox|claude|spawn|error/i.test(line)).slice(-30).join('\n'));
         }
     } finally {
         // Deleting the conversations removes their thread worktrees and branches.

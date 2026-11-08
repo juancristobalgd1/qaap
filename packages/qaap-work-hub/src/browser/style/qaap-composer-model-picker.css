@@ -288,7 +288,11 @@
     gap: 8px;
     margin: 0;
     padding: 0 12px;
+    /* Never shrink: with a long model list (OpenCode) the flex column squeezed it to ~17px. */
+    flex: 0 0 40px;
+    box-sizing: border-box;
     height: 40px;
+    min-height: 40px;
     border: none;
     border-bottom: 1px solid var(--theia-widget-border, var(--theia-panel-border));
     background: transparent;
@@ -321,6 +325,24 @@
     padding: 0 6px 8px;
     overflow-y: auto;
     overscroll-behavior: contain;
+}
+
+.qaap-model-picker-rows.theia-mod-more-below {
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 56px), transparent);
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 56px), transparent);
+}
+
+/* Same treatment for every harness logo in the picker: no tone tile, same box. */
+.qaap-model-picker .theia-qaap-agent-brand-icon,
+.qaap-model-picker .theia-qaap-agent-brand-icon.theia-mod-tone-dark,
+.qaap-model-picker .theia-qaap-agent-brand-icon.theia-mod-tone-light {
+    background: transparent;
+    border-radius: 4px;
+}
+
+.qaap-model-picker-rail-item > .theia-qaap-agent-brand-icon {
+    width: 20px;
+    height: 20px;
 }
 
 .qaap-model-picker-row {

@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import { migrateQaapProductAgentId, QAIQ_AGENT_ID } from './qaap-agent-task-client';
+import { migrateQaapProductAgentId } from './qaap-agent-task-client';
 import { isAgentHiddenOnHostedRuntime } from './qaap-hosted-agent-auth-policy';
 
 /**
@@ -481,17 +481,8 @@ export function agentNeedsSettingsApiKeyPath(agentId: string | undefined): boole
     return SETTINGS_API_KEY_AGENT_IDS.has(normalized);
 }
 
-/** Harnesses whose background task runner consumes credentials from the user's BYOK settings. */
-const SETTINGS_API_KEY_AGENT_IDS = new Set([
-    QAIQ_AGENT_ID,
-]);
-
-export function localizeAddApiKeyInSettingsCta(): string {
-    return nls.localize(
-        'qaap/agentLogin/addApiKeyInSettings',
-        'Add API key in Settings',
-    );
-}
+/** Harnesses that sign in with a Settings API key. None: every harness connects through its own login. */
+const SETTINGS_API_KEY_AGENT_IDS = new Set<string>();
 
 /** Clear instructions for CLIs whose authentication needs interactive input in the tenant terminal. */
 export function localizeAgentTenantTerminalLoginMessage(agentLabel: string, command: string, followUp?: string): string {
@@ -522,20 +513,19 @@ export function localizeAgentConnectionUnsupportedMessage(agentLabel: string): s
 }
 
 /**
- * User-facing copy for BYOK / Settings-catalog agents that do NOT have a terminal
- * sign-in: they authenticate with an API key configured in Settings, so opening a
- * TUI would not log anyone in.
+ * User-facing copy for a harness that cannot be connected from a terminal login: the user connects
+ * it in Settings → Harness, never by pasting an API key.
  */
 export function localizeAgentSettingsApiKeyLoginMessage(agentLabel?: string): string {
     if (agentLabel) {
         return nls.localize(
             'qaap/agentLogin/settingsApiKeyNamed',
-            '{0} signs in with an API key in Settings, not a terminal login. Add or update the key in Settings, then retry.',
+            'Connect {0} in Settings → Harness, then retry.',
             agentLabel,
         );
     }
     return nls.localize(
         'qaap/agentLogin/settingsApiKey',
-        'This agent signs in with an API key in Settings, not a terminal login. Add or update the key in Settings, then retry.',
+        'Connect this harness in Settings → Harness, then retry.',
     );
 }

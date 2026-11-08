@@ -78,7 +78,7 @@ async function pollConversationFirstToken(page, cwd, timeoutMs = 30_000) {
     return { ok: false, timedOut: true, elapsedMs: now() - start };
 }
 
-async function createAgentConversation(page, cwd, message, agent = 'qaiq') {
+async function createAgentConversation(page, cwd, message, agent = 'claude') {
     return page.evaluate(async ({ workspaceCwd, body, agentId }) => {
         const res = await fetch('/qaap/api/agent-conversations', {
             method: 'POST',
@@ -231,7 +231,7 @@ async function main() {
         // T+B → prompt al agente
         const tB = now();
         report.timestamps['T+B'] = tB - t0;
-        const conv = await createAgentConversation(page, workspace, EXACT_PROMPT, 'qaiq');
+        const conv = await createAgentConversation(page, workspace, EXACT_PROMPT, 'claude');
         report.conversationId = conv.id;
 
         // Primer token agente

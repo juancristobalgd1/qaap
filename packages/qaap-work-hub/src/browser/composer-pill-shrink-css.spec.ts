@@ -9,10 +9,10 @@ import * as path from 'path';
 
 /** The model pill shrinks with an ellipsis and the send control never gives way. */
 describe('composer pill shrink CSS', () => {
+    // Windows checkouts get CRLF; the selectors below are matched with `\n`.
     const css = fs.readFileSync(
         path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'qaap-composer-model-picker.css'),
         'utf8',
-    // A Windows checkout has CRLF line endings; the multi-line selectors below use \n.
     ).replace(/\r\n/g, '\n');
 
     function declarations(selector: string): string {

@@ -41,10 +41,10 @@ describe('mobile-projects-transcript-messages-tool-ui', () => {
             { agentId, onOpenAgentSignIn: noop, onOpenAiFeaturesSettings: noop },
         );
 
-        it('offers Settings for a QAIQ API-key error', () => {
+        it('offers no Settings API-key button for a QAIQ API-key error (harnesses connect in Settings → Harness)', () => {
             const qaiq = card('qaiq');
-            expect(qaiq.querySelector('.codicon-settings-gear')).to.not.equal(null);
-            expect(qaiq.querySelector('.codicon-terminal')).to.equal(null);
+            expect(qaiq.querySelector('.codicon-settings-gear')).to.equal(null);
+            expect(qaiq.textContent).to.not.match(/API key/i);
         });
 
         it('offers the CLI sign-in, never Add API key, for every other harness', () => {
@@ -94,26 +94,22 @@ describe('mobile-projects-transcript-messages-tool-ui', () => {
             options: Parameters<typeof createTranscriptAgentAuthLoginCardExtracted>[2],
         ) => createTranscriptAgentAuthLoginCardExtracted(ctx, challenge, options);
 
-        it('reads "API key needed", opens Settings → BYOK, and offers no sign-in', () => {
+        it('reads "Connect a harness", offers no API-key button and no sign-in', () => {
             let openedSettings = 0;
-            let signIns = 0;
             const card = createTranscriptAgentFailureDialogExtracted(ctx, refusal, refusal, {
                 agentId: 'qaiq',
                 agentLabel: 'QAIQ',
                 onOpenAiFeaturesSettings: () => { openedSettings++; },
-                onOpenAgentSignIn: () => { signIns++; },
                 onRetry: () => undefined,
             });
-            expect(card.querySelector('.theia-mobile-agent-shell-title')?.textContent).to.equal('API key needed');
+            expect(card.querySelector('.theia-mobile-agent-shell-title')?.textContent).to.equal('Connect a harness');
             expect(card.querySelector('.theia-mobile-agent-turn-failure-message')?.textContent).to.equal(refusal);
             const settings = card.querySelector<HTMLButtonElement>('.codicon-settings-gear');
-            expect(settings?.textContent).to.equal('Add API key in Settings');
+            expect(settings).to.equal(null);
             expect(card.querySelector('.codicon-terminal')).to.equal(null);
             expect(card.querySelector('.codicon-link-external')).to.equal(null);
             expect(card.textContent).to.not.match(/sign in/i);
-            settings!.click();
-            expect(openedSettings).to.equal(1);
-            expect(signIns).to.equal(0);
+            expect(openedSettings).to.equal(0);
         });
     });
 
@@ -124,7 +120,7 @@ describe('mobile-projects-transcript-messages-tool-ui', () => {
             createTranscriptClampedPre: (text: string) => Object.assign(document.createElement('pre'), { textContent: text }),
         } as unknown as MobileProjectsTranscriptMessagesToolUiContext;
 
-        it('names the rejected key and opens BYOK settings instead of a sign-in or model hint', () => {
+        it('names the rejected key and opens Harness settings instead of a sign-in or model hint', () => {
             let opened = 0;
             const error = 'Your OpenRouter key was rejected. Update it in Settings → BYOK, then retry.';
             const log = 'There\'s an issue with the selected model (nvidia/nemotron-3-super-120b-a12b:free).\n'
@@ -134,11 +130,12 @@ describe('mobile-projects-transcript-messages-tool-ui', () => {
                 onOpenAiFeaturesSettings: () => { opened++; },
             });
             expect(card.classList.contains('theia-mod-provider-key')).to.equal(true);
-            expect(card.querySelector('.theia-mobile-agent-shell-title')?.textContent).to.equal('API key rejected');
-            expect(card.querySelector('.theia-mobile-agent-turn-failure-message')?.textContent).to.equal(error);
+            expect(card.querySelector('.theia-mobile-agent-shell-title')?.textContent).to.equal('Provider rejected the key');
+            expect(card.querySelector('.theia-mobile-agent-turn-failure-message')?.textContent)
+                .to.equal('The OpenRouter provider refused this turn. Connect a harness in Settings → Harness, then retry.');
             expect(card.querySelector('.codicon-terminal')).to.equal(null);
             const button = card.querySelector<HTMLButtonElement>('.codicon-settings-gear');
-            expect(button?.textContent).to.equal('Open BYOK settings');
+            expect(button?.textContent).to.equal('Open Harness settings');
             button!.click();
             expect(opened).to.equal(1);
         });

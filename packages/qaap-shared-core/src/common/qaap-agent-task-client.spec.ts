@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { buildCreateAgentTaskBody, extractBackendAgentMention, hashString, isOpencodeAgent, isQaiqAgent, usesStructuredAgentTranscript, isStickyComposerAgentSelected, isTheiaCoderMention, stripNonCoderAgentMention, normalizeBackendAgentId, migrateLegacyBackendAgentId, migrateStoredComposerAgentId, QAIQ_AGENT_ID, mergeAgentTaskAgentOptions, mergeComposerAgentPickerOptions, listQaapComposerPickerAgents, migrateQaapProductAgentId, QAAP_PRIMARY_AGENT_ID, reconcileSelectedAgent, reconcileStickyComposerAgent, resolveAgentOptionId, resolveBackendAgentForTurn, resolveExplicitAgentForSubmit, resolveQaapAgentMentionToken, normalizeOpenCodeModelOptions, SHELL_AGENT_ID, THEIA_CODER_AGENT_ID } from './qaap-agent-task-client';
+import { buildCreateAgentTaskBody, extractBackendAgentMention, hashString, isOpencodeAgent, isQaiqAgent, usesStructuredAgentTranscript, isStickyComposerAgentSelected, isTheiaCoderMention, stripNonCoderAgentMention, normalizeBackendAgentId, migrateLegacyBackendAgentId, mergeAgentTaskAgentOptions, mergeComposerAgentPickerOptions, listQaapComposerPickerAgents, migrateQaapProductAgentId, reconcileSelectedAgent, reconcileStickyComposerAgent, resolveAgentOptionId, resolveBackendAgentForTurn, resolveExplicitAgentForSubmit, resolveQaapAgentMentionToken, normalizeOpenCodeModelOptions, SHELL_AGENT_ID, THEIA_CODER_AGENT_ID } from './qaap-agent-task-client';
 import { rememberQaapHostedRuntime } from './qaap-hosted-agent-auth-policy';
 import {
     AGENT_MODELS_CACHE_TTL_MS,
@@ -27,7 +27,6 @@ describe('qaap-agent-task-client', () => {
     });
 
     it('normalizeBackendAgentId recognizes the registered coding agents', () => {
-        expect(normalizeBackendAgentId('qaiq')).to.equal('qaiq');
         expect(normalizeBackendAgentId('opencode')).to.equal('opencode');
         expect(normalizeBackendAgentId('pi')).to.equal('pi');
         expect(normalizeBackendAgentId('codex')).to.equal('codex');
@@ -35,13 +34,14 @@ describe('qaap-agent-task-client', () => {
     });
 
     it('normalizeBackendAgentId no longer recognizes retired agents', () => {
-        for (const id of ['hermes', 'openclaw', 'cursor', 'cursor-agent', 'antigravity', 'gemini', 'copilot', 'qwen', 'kimi', 'openclaude', 'grok']) {
+        for (const id of ['qaiq', 'hermes', 'openclaw', 'qwen', 'kimi', 'openclaude']) {
             expect(normalizeBackendAgentId(id), id).to.equal(undefined);
         }
     });
 
     it('extractBackendAgentMention prefers the last recognized @agent', () => {
-        expect(extractBackendAgentMention('@codex hola @qaiq adiós')).to.equal(QAIQ_AGENT_ID);
+        expect(extractBackendAgentMention('@codex hola @qaiq adiós')).to.equal('codex');
+        expect(extractBackendAgentMention('@qaiq solo')).to.equal(undefined);
         expect(extractBackendAgentMention('@opencode revisa la app')).to.equal('opencode');
         expect(extractBackendAgentMention('@pi fix tests')).to.equal('pi');
     });
@@ -76,17 +76,10 @@ describe('qaap-agent-task-client', () => {
         expect(migrateLegacyBackendAgentId('codex')).to.equal('codex');
     });
 
-    it('migrateQaapProductAgentId maps retired Coder defaults to QAIQ', () => {
-        expect(migrateQaapProductAgentId('Coder')).to.equal(QAAP_PRIMARY_AGENT_ID);
+    it('migrateQaapProductAgentId drops retired Coder defaults so the default harness applies', () => {
+        expect(migrateQaapProductAgentId('Coder')).to.equal(undefined);
         expect(migrateQaapProductAgentId('codex')).to.equal('codex');
         expect(migrateQaapProductAgentId('opencode')).to.equal('opencode');
-    });
-
-    it('migrateStoredComposerAgentId upgrades opencode when qaiq is on PATH', () => {
-        const available = new Set(['qaiq', 'opencode']);
-        expect(migrateStoredComposerAgentId('opencode', available)).to.equal('qaiq');
-        expect(migrateStoredComposerAgentId('codex', available)).to.equal('codex');
-        expect(migrateStoredComposerAgentId('openclaude', available)).to.equal('openclaude');
     });
 
     it('mergeAgentTaskAgentOptions unions HTTP and WebSocket agent snapshots', () => {
@@ -97,14 +90,14 @@ describe('qaap-agent-task-client', () => {
         expect(merged.map(agent => agent.id)).to.deep.equal(['codex', 'qaiq']);
     });
 
-    it('mergeComposerAgentPickerOptions lists QAIQ first when installed', () => {
+    it('mergeComposerAgentPickerOptions orders harnesses by label and never lists retired qaiq', () => {
         const agents = [
             { id: 'codex', label: 'Codex', available: true },
             { id: 'qaiq', label: 'QAIQ', available: true },
             { id: 'claude', label: 'Claude Code', available: true },
         ];
         const ids = mergeComposerAgentPickerOptions(agents).map(agent => agent.id);
-        expect(ids[0]).to.equal('qaiq');
+        expect(ids).to.deep.equal(['claude', 'codex']);
     });
 
     it('mergeComposerAgentPickerOptions only lists agents the server detected as installed', () => {
@@ -113,7 +106,7 @@ describe('qaap-agent-task-client', () => {
             { id: 'claude', label: 'Claude Code', available: false },
         ];
         const ids = mergeComposerAgentPickerOptions(agents).map(agent => agent.id);
-        expect(ids).to.deep.equal(['qaiq']);
+        expect(ids).to.deep.equal([]);
     });
 
     it('listQaapComposerPickerAgents keeps enabled undetected harnesses for connection actions', () => {
@@ -123,23 +116,24 @@ describe('qaap-agent-task-client', () => {
         ]);
         const codex = agents.find(agent => agent.id === 'codex');
         expect(codex?.available).to.equal(false);
-        expect(agents.find(agent => agent.id === 'qaiq')?.available).to.equal(true);
+        expect(agents.find(agent => agent.id === 'qaiq')).to.equal(undefined);
     });
 
-    it('listQaapComposerPickerAgents lists exactly qaiq, claude, codex, opencode and pi by default', () => {
+    it('listQaapComposerPickerAgents lists every builtin harness by default and never the retired qaiq', () => {
         const detected = ['qaiq', 'claude'].map(id => ({ id, label: id, available: true }));
         const agents = listQaapComposerPickerAgents(detected, [...QAAP_DEFAULT_DISABLED_HARNESS_IDS]);
-        expect(agents.map(agent => agent.id).sort()).to.deep.equal(['claude', 'codex', 'opencode', 'pi', 'qaiq']);
         expect(agents.map(agent => agent.id).sort()).to.deep.equal(QAAP_HARNESS_DEFINITIONS.map(harness => harness.id).sort());
+        expect(agents.find(agent => agent.id === 'qaiq')).to.equal(undefined);
         for (const id of ['codex', 'opencode', 'pi']) {
             expect(agents.find(agent => agent.id === id)?.available, id).to.equal(false);
         }
     });
 
-    it('reconcileSelectedAgent falls back to QAIQ when the stored agent is a retired harness', () => {
+    it('reconcileSelectedAgent falls back to the first available harness when the stored agent is retired', () => {
         const agents = ['qaiq', 'codex'].map(id => ({ id, label: id, available: true }));
-        expect(reconcileSelectedAgent('kimi', agents, undefined, undefined)).to.equal('qaiq');
-        expect(reconcileSelectedAgent('cursor', agents, 'hermes', undefined)).to.equal('qaiq');
+        expect(reconcileSelectedAgent('kimi', agents, undefined, undefined)).to.equal('codex');
+        expect(reconcileSelectedAgent('cursor', agents, 'hermes', undefined)).to.equal('codex');
+        expect(reconcileSelectedAgent('qaiq', agents, 'qaiq', undefined)).to.equal('codex');
     });
 
     it('listQaapComposerPickerAgents honors harnesses disabled in AI Configuration', () => {
@@ -153,16 +147,21 @@ describe('qaap-agent-task-client', () => {
         expect(agents.some(agent => agent.id === 'claude')).to.equal(true);
     });
 
-    it('reconcileSelectedAgent prefers QAIQ as the composer default', () => {
+    it('reconcileSelectedAgent uses the server default, else the first available harness', () => {
         const agents = [
-            { id: 'qaiq', label: 'QAIQ', available: true },
             { id: 'opencode', label: 'OpenCode', available: true },
             { id: 'codex', label: 'Codex', available: true },
         ];
-        expect(reconcileSelectedAgent(undefined, agents, 'codex', undefined)).to.equal('qaiq');
+        expect(reconcileSelectedAgent(undefined, agents, 'opencode', undefined)).to.equal('opencode');
+        expect(reconcileSelectedAgent(undefined, agents, undefined, undefined)).to.equal('codex');
+        const unavailableFirst = [
+            { id: 'claude', label: 'Claude Code', available: false },
+            { id: 'pi', label: 'Pi', available: true },
+        ];
+        expect(reconcileSelectedAgent(undefined, unavailableFirst, undefined, undefined)).to.equal('pi');
     });
 
-    it('reconcileSelectedAgent upgrades stored OpenCode to QAIQ when both are available', () => {
+    it('reconcileSelectedAgent keeps a stored OpenCode pick when it is available', () => {
         const storage = new Map<string, string>();
         (global as unknown as { window: Window }).window = {
             localStorage: {
@@ -179,8 +178,8 @@ describe('qaap-agent-task-client', () => {
             { id: 'qaiq', label: 'QAIQ', available: true },
             { id: 'opencode', label: 'OpenCode', available: true },
         ];
-        expect(reconcileSelectedAgent(undefined, agents, 'opencode', '/repo')).to.equal('qaiq');
-        expect(storage.get(`qaap.agentTasks.selectedAgent.${hashString('/repo')}`)).to.equal('qaiq');
+        expect(reconcileSelectedAgent(undefined, agents, 'codex', '/repo')).to.equal('opencode');
+        expect(storage.get(`qaap.agentTasks.selectedAgent.${hashString('/repo')}`)).to.equal('opencode');
     });
 
     it('resolveExplicitAgentForSubmit prefers @mention over pinned chat agent', () => {
@@ -188,18 +187,18 @@ describe('qaap-agent-task-client', () => {
         expect(resolveExplicitAgentForSubmit('arregla tests', { pinnedChatAgentId: 'qaiq' })).to.equal('qaiq');
     });
 
-    it('reconcileStickyComposerAgent defaults to QAIQ but honors an explicit VPS pick', () => {
+    it('reconcileStickyComposerAgent defaults to the server default but honors an explicit VPS pick', () => {
         const agents = [
             { id: 'qaiq', label: 'QAIQ', available: true },
             { id: 'opencode', label: 'OpenCode', available: true },
             { id: 'codex', label: 'Codex', available: true },
         ];
         expect(reconcileStickyComposerAgent(THEIA_CODER_AGENT_ID, agents, 'codex', undefined, true))
-            .to.equal(QAIQ_AGENT_ID);
-        expect(reconcileStickyComposerAgent('codex', agents, 'codex', undefined, true))
             .to.equal('codex');
+        expect(reconcileStickyComposerAgent('opencode', agents, 'codex', undefined, true))
+            .to.equal('opencode');
         expect(reconcileStickyComposerAgent(undefined, agents, 'codex', undefined, false))
-            .to.equal(QAIQ_AGENT_ID);
+            .to.equal('codex');
     });
 
     it('isStickyComposerAgentSelected matches Coder case-insensitively', () => {
@@ -278,7 +277,9 @@ describe('qaap-agent-task-client', () => {
         expect(resolveBackendAgentForTurn('fix it', agents, { explicitAgentId: 'codex' }))
             .to.equal('codex');
         expect(resolveBackendAgentForTurn('fix it', agents, { storedAgentId: 'qaiq' }))
-            .to.equal('qaiq');
+            .to.equal('codex');
+        expect(resolveBackendAgentForTurn('@qaiq fix it', agents, {})).to.equal('codex');
+        expect(resolveBackendAgentForTurn('fix it', agents, { conversationAgentId: 'qaiq' })).to.equal('codex');
     });
 });
 

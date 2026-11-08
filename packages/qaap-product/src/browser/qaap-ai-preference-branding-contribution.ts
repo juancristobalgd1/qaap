@@ -25,16 +25,16 @@ const IDE_BRIDGE_PREFIX =
  */
 const WORK_HUB_PREF_MARKDOWN: Readonly<Record<string, string>> = {
     'ai-features.agentSettings.details':
-        'Work Hub agents (`@qaiq`, `@codex`, `@claude`, …) are chosen in the **composer**. '
+        'Work Hub agents (`@codex`, `@claude`, …) are chosen in the **composer**. '
         + 'Use **AI Features → Agents & runtimes** for agent behavior and runtime availability.',
     'ai-features.promptTemplates.details':
         'Prompt folders apply to **classic IDE chat** agents. '
         + 'Work Hub skills and prompt locations are organized under **AI Features → Tools, skills & prompts**.',
     'ai-features.modelSelection.details':
-        'Model aliases (for example `default/code`) drive **QAIQ** routing in Work Hub. '
+        'Model aliases (for example `default/code`) drive routing for IDE chat agents. '
         + 'Configure them under **AI Features → Model routing & behavior**.',
     [LANGUAGE_MODEL_ALIASES_PREF]:
-        'Aliases used by **QAIQ** in Work Hub (and IDE chat agents). '
+        'Aliases used by IDE chat agents and Work Hub routing. '
         + 'Edit them directly in this setting or in `settings.json`, for example:\n'
         + '```\n'
         + '"default/code": {\n'

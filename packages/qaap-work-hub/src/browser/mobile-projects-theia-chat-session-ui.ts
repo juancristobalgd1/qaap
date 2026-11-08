@@ -30,7 +30,6 @@ import {
     isTheiaCoderMention,
     migrateLegacyBackendAgentId,
     normalizeBackendAgentId,
-    QAIQ_AGENT_ID,
     readStoredAgent,
     stripNonCoderAgentMention,
     THEIA_CODER_AGENT_ID,
@@ -414,7 +413,7 @@ export class MobileProjectsTheiaChatSessionUi {
             return lastMention;
         }
         const pinned = migrateLegacyBackendAgentId(session.pinnedAgent?.id);
-        if (pinned && pinned !== 'chat' && (normalizeBackendAgentId(pinned) || pinned === QAIQ_AGENT_ID)) {
+        if (pinned && pinned !== 'chat' && normalizeBackendAgentId(pinned)) {
             return pinned;
         }
         return undefined;
