@@ -14,6 +14,7 @@
 // pull requests (ensurePullRequestsSurfaceCss) and diff review (QaapWidgetStylesheetContribution).
 import '../../src/browser/style/mobile-workbench-base.css';
 import '../../src/browser/style/mobile-workbench-projects.css';
+import '../../src/browser/style/qaap-usage-dialog.css';
 import '../../src/browser/style/mobile-workbench-open-repo.css';
 import '../../src/browser/style/mobile-workbench-work-hub.css';
 import '../../src/browser/style/mobile-workbench-chrome.css';

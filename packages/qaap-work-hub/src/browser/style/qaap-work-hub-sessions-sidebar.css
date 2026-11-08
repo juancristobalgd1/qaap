@@ -590,6 +590,7 @@ body[data-theia-theme-mode="dark"] .theia-mobile-work-hub-sessions-sidebar {
   background: color-mix(in srgb, var(--theia-foreground) 6%, transparent);
 }
 
+.theia-mobile-work-hub-sessions-sidebar-usage-button,
 .theia-mobile-work-hub-sessions-sidebar-settings-button {
   display: inline-flex;
   flex: 0 0 44px;
@@ -614,6 +615,8 @@ body[data-theia-theme-mode="dark"] .theia-mobile-work-hub-sessions-sidebar {
   display: none;
 }
 
+.theia-mobile-work-hub-sessions-sidebar-usage-button:hover,
+.theia-mobile-work-hub-sessions-sidebar-usage-button:focus-visible,
 .theia-mobile-work-hub-sessions-sidebar-settings-button:hover,
 .theia-mobile-work-hub-sessions-sidebar-settings-button:focus-visible {
   background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
