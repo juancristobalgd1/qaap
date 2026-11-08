@@ -40,6 +40,9 @@
       "path": "../filesystem"
     },
     {
+      "path": "../keymaps"
+    },
+    {
       "path": "../memory-inspector"
     },
     {
