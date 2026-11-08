@@ -67,7 +67,8 @@ export interface QaapUsageLimitWindow {
 
 export interface QaapUsageProviderLimits {
     provider: QaapUsageProviderId | 'antigravity';
-    status: 'ok' | 'unavailable' | 'error';
+    /** `loading` while the first local log scan is still running; the client should retry shortly. */
+    status: 'ok' | 'loading' | 'unavailable' | 'error';
     reason?: string;
     windows: QaapUsageLimitWindow[];
     observedAt?: string;
