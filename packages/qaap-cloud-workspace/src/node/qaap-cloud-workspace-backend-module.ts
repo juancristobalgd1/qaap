@@ -61,6 +61,9 @@ import { QaapAgentTaskEndpoint } from './qaap-agent-task-endpoint';
 import { QaapStandaloneTaskModelFallback } from './qaap-standalone-task-model-fallback';
 import { QaapUserAiSettingsEndpoint } from './qaap-user-ai-settings-endpoint';
 import { QaapBillingEndpoint } from './qaap-billing-endpoint';
+import { QaapUsageEndpoint } from './usage/qaap-usage-endpoint';
+import { QaapUsageLimitsService } from './usage/qaap-usage-limits';
+import { QaapUsageScanner } from './usage/qaap-usage-scanner';
 import { QaapBillingStore } from './qaap-billing-store';
 import { QaapBillingQuotaService } from './qaap-billing-quota-service';
 import { QaapBillingQuota } from '@theia/qaap-adapters/lib/common/qaap-billing-quota';
@@ -353,6 +356,10 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapBillingQuota).toService(QaapBillingQuotaService);
     bind(QaapBillingEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapBillingEndpoint);
+    bind(QaapUsageScanner).toSelf().inSingletonScope();
+    bind(QaapUsageLimitsService).toSelf().inSingletonScope();
+    bind(QaapUsageEndpoint).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapUsageEndpoint);
     bind(QaapAgentConversationStore).toSelf().inSingletonScope();
     // onStop flushes pending conversation rows to SQLite and stops the sweep.
     bind(BackendApplicationContribution).toService(QaapAgentConversationStore);
