@@ -973,6 +973,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         await this.stickyComposerWorkspaceUi.onCreateNewProjectFromSheet();
     }
 
+    protected async onStartNewLocalProject(): Promise<void> {
+        await this.stickyComposerWorkspaceUi.onCreateNewProjectFromSheet('local');
+    }
+
     protected async activateAgentsHubProject(project: MobileProjectEntry): Promise<void> {
         return activateAgentsHubProjectExtracted(this, project);
     }
