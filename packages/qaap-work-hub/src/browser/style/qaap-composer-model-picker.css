@@ -158,19 +158,24 @@
 .qaap-model-picker-search {
     display: flex;
     align-items: center;
-    gap: 6px;
-    margin: 10px;
-    padding: 0 8px;
-    border: 1px solid var(--theia-input-border, var(--theia-widget-border));
-    border-radius: 8px;
-    background: var(--theia-input-background);
+    gap: 8px;
+    margin: 0;
+    padding: 0 12px;
+    height: 40px;
+    border: none;
+    border-bottom: 1px solid var(--theia-widget-border, var(--theia-panel-border));
+    background: transparent;
     color: var(--theia-descriptionForeground);
+}
+
+.qaap-model-picker-search:focus-within {
+    border-bottom-color: var(--theia-focusBorder);
 }
 
 .qaap-model-picker-search input {
     flex: 1 1 auto;
     min-width: 0;
-    height: 32px;
+    height: 100%;
     border: none;
     outline: none;
     background: transparent;
