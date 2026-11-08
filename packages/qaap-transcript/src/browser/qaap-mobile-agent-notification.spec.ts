@@ -189,6 +189,7 @@ describe('Mobile agent notification routing', () => {
 
             contribution = new QaapTurnSettleNotifyContribution();
             (contribution as unknown as { conversations: MobileProjectsConversations }).conversations = conversations;
+            (contribution as unknown as { completionSound: { play(): void } }).completionSound = { play: () => undefined };
             contribution.onStart();
         });
 

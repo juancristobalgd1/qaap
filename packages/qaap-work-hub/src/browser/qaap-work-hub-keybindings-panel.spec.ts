@@ -94,6 +94,16 @@ describe('QaapWorkHubKeybindingsPanel', () => {
         { id: 'internal.hidden' }
     ];
 
+    let disableJSDOM: (() => void) | undefined;
+
+    before(() => {
+        disableJSDOM = enableJSDOM();
+    });
+
+    after(() => {
+        disableJSDOM?.();
+    });
+
     afterEach(() => {
         document.body.innerHTML = '';
     });
