@@ -20,6 +20,7 @@ export type MobileProjectsStickyComposerSheetsUiContextMember =
     | 'appendAgentModelPickerList'
     | 'approvalPolicyPopoverAlign'
     | 'approvalPolicyPopoverCleanup'
+    | 'mountApprovalPolicySheetPresentation'
     | 'approvalPolicySheetAnchor'
     | 'assignAgentPickerPopover'
     | 'closeAllComposerSheets'
@@ -28,17 +29,9 @@ export type MobileProjectsStickyComposerSheetsUiContextMember =
     | 'contextUsagePopoverCleanup'
     | 'createAgentPickerNoResultsHint'
     | 'createComposerAgentPickerChrome'
-    | 'createModeSheetOption'
     | 'host'
     | 'isApprovalPolicyPopoverAnchoredTo'
-    | 'isModeSheetPopoverAnchoredTo'
-    | 'modePopoverAlign'
-    | 'modePopoverCleanup'
-    | 'modeSheetAnchor'
-    | 'mountApprovalPolicySheetPresentation'
-    | 'mountModeSheetPresentation'
     | 'openApprovalPolicySheet'
-    | 'openComposerModeSheet'
     | 'renderComposerAgentPicker'
     | 'resolveModelsForAgentPicker'
     | 'resolveModelsForAgentPickerSafe'
@@ -47,9 +40,7 @@ export type MobileProjectsStickyComposerSheetsUiContextMember =
     | 'syncAgentPickerPopoverPosition'
     | 'syncApprovalPolicyPopoverPosition'
     | 'teardownAgentPickerPopover'
-    | 'teardownApprovalPolicySheetPopover'
-    | 'teardownContextUsagePresentation'
-    | 'teardownModeSheetPopover';
+    | 'teardownApprovalPolicySheetPopover';
 
 /**
  * Members of {@link MobileProjectsStickyComposerSheetsUi} that the extracted helper functions

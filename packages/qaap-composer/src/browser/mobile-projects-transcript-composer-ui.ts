@@ -7,7 +7,6 @@ import { matchesMobileNarrowViewport } from '@theia/core/lib/browser/shell/mobil
 
 import { nls } from '@theia/core/lib/common/nls';
 import { ChatAgentService } from '@theia/ai-chat/lib/common/chat-agent-service';
-import { ChatMode } from '@theia/ai-chat';
 import type {
     QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
@@ -48,7 +47,6 @@ import type { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/brow
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
 import type { MobileProjectsStickyComposerSheetsUi } from './mobile-projects-sticky-composer-sheets-ui';
-import type { StickyComposerUntilDoneToggleOptions } from './qaap-sticky-composer-until-done-toggle';
 import { writeComposerAgentCatalogSession } from './composer-agent-catalog-session-cache';
 import { composerAgentCatalogSignature, STICKY_CATALOG_REFRESH_MIN_INTERVAL_MS } from './mobile-projects-sticky-composer-agents-ui';
 
@@ -473,40 +471,8 @@ export class MobileProjectsTranscriptComposerUi {
         loadAgentCatalog();
     }
 
-    openTranscriptComposerModeSheet(
-        project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,
-        modes: readonly ChatMode[],
-        anchor?: HTMLElement,
-        untilDone?: StickyComposerUntilDoneToggleOptions,
-    ): void {
-        const cwd = this.host.projectsService.getProjectCwd(project) ?? summary.cwd;
-        this.host.stickyComposerSheetsUi.openComposerModeSheet({
-            modes,
-            selectedModeId: this.host.transcriptComposerModeId,
-            cwd,
-            anchor,
-            untilDone,
-            transcriptOverlay: true,
-            closeTitle: nls.localize('qaap/mobileProjects/closeTranscript', 'Close'),
-            onClose: () => this.closeAllComposerSheets(),
-            isOpen: () => this.host.transcriptComposerModeSheet !== undefined,
-            assignSheet: sheet => { this.host.transcriptComposerModeSheet = sheet; },
-            onSelect: id => {
-                this.host.transcriptComposerModeId = id;
-                if (cwd) {
-                    writeStoredComposerMode(cwd, id);
-                }
-                this.host.transcriptStickyComposerUi.schedulePersistTranscriptComposerPrefs(project, summary);
-                this.closeAllComposerSheets();
-                this.host.transcriptStickyComposerUi.remountTranscriptStickyComposer();
-            },
-        });
-    }
-
     closeTranscriptComposerSheets(): void {
         this.host.stickyComposerSheetsUi.teardownAgentPickerPopover();
-        this.host.stickyComposerSheetsUi.teardownModeSheetPopover();
         this.host.stickyComposerSheetsUi.teardownApprovalPolicySheetPopover();
         if (this.host.transcriptComposerAgentSheet) {
             this.host.transcriptComposerAgentSheet.remove();

@@ -18,19 +18,10 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-mode';
 import { QAAP_AI_FEATURES_SETTINGS_QUERY } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
 import {
-    renderContextUsagePopover,
-    renderContextUsageSheet,
-    wireContextUsagePopoverDismiss,
-    type ContextUsageBreakdownView,
-} from '@theia/qaap-transcript/lib/browser/qaap-chat-context-usage-panel';
-import {
     isStickyComposerAnnotationPopoverAnchor,
     markStickyComposerPopoverAnchor,
-    mountStickyComposerBottomSheet,
-    mountStickyComposerSheetPopover,
     scheduleStickyComposerPopoverPosition,
-    shouldUseStickyComposerDesktopPopover,
-} from '@theia/qaap-transcript/lib/browser/qaap-sticky-composer-popover';
+    } from '@theia/qaap-transcript/lib/browser/qaap-sticky-composer-popover';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
 export function shouldElevateComposerSheetsExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext): boolean {
@@ -45,7 +36,6 @@ export function closeStickyComposerSheetsExtracted(ctx: MobileProjectsStickyComp
             ctx.host.stickyComposerAgentSheet.remove();
             ctx.host.stickyComposerAgentSheet = undefined;
         }
-        ctx.teardownModeSheetPopover();
         if (ctx.host.stickyComposerModeSheet) {
             ctx.host.stickyComposerModeSheet.remove();
             ctx.host.stickyComposerModeSheet = undefined;
@@ -56,57 +46,7 @@ export function closeStickyComposerSheetsExtracted(ctx: MobileProjectsStickyComp
             ctx.host.stickyComposerApprovalSheet = undefined;
         }
         ctx.host.stickyComposerWorkspaceUi.closeComposerWorkspaceSheet();
-        ctx.teardownContextUsagePresentation();
         ctx.notifyComposerSheetsClosed();
-}
-
-export function teardownContextUsagePresentationExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext): void {
-        ctx.contextUsagePopoverCleanup?.();
-        ctx.contextUsagePopoverCleanup = undefined;
-        if (ctx.contextUsageAnchor) {
-            ctx.contextUsageAnchor.setAttribute('aria-expanded', 'false');
-            ctx.contextUsageAnchor.classList.remove('theia-mod-active');
-            ctx.contextUsageAnchor = undefined;
-        }
-        if (ctx.host.stickyComposerContextUsageSheet) {
-            ctx.host.stickyComposerContextUsageSheet.remove();
-            ctx.host.stickyComposerContextUsageSheet = undefined;
-        }
-}
-
-export function openStickyComposerContextUsageSheetExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext, refreshBreakdown: () => ContextUsageBreakdownView,
-        transcriptOverlay?: boolean,
-        anchor?: HTMLElement,): void {
-        const usePopover = shouldUseStickyComposerDesktopPopover(anchor);
-        if (usePopover
-            && ctx.contextUsageAnchor === anchor
-            && ctx.host.stickyComposerContextUsageSheet) {
-            ctx.closeAllComposerSheets();
-            return;
-        }
-        ctx.closeAllComposerSheets();
-        const overlay = transcriptOverlay ?? ctx.shouldElevateComposerSheets();
-        const onClose = (): void => { ctx.closeAllComposerSheets(); };
-        const view = refreshBreakdown();
-        if (usePopover && anchor) {
-            const popover = renderContextUsagePopover(view, {
-                transcriptOverlay: overlay,
-                onClose,
-            });
-            document.body.append(popover);
-            ctx.host.stickyComposerContextUsageSheet = popover;
-            ctx.contextUsageAnchor = anchor;
-            anchor.setAttribute('aria-expanded', 'true');
-            anchor.classList.add('theia-mod-active');
-            ctx.contextUsagePopoverCleanup = wireContextUsagePopoverDismiss(popover, anchor, onClose);
-            return;
-        }
-        const sheet = renderContextUsageSheet(view, {
-            transcriptOverlay: overlay,
-            onClose,
-        });
-        document.body.append(sheet);
-        ctx.host.stickyComposerContextUsageSheet = sheet;
 }
 
 export function teardownAgentPickerPopoverExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext): void {
@@ -305,42 +245,5 @@ export function openExternalAgentPickerForSubmitExtracted(ctx: MobileProjectsSti
             });
         };
         loadAgentCatalog();
-}
-
-export function teardownModeSheetPopoverExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext): void {
-        ctx.modePopoverCleanup?.();
-        ctx.modePopoverCleanup = undefined;
-        if (ctx.modeSheetAnchor) {
-            markStickyComposerPopoverAnchor(ctx.modeSheetAnchor, false);
-            ctx.modeSheetAnchor = undefined;
-        }
-}
-
-export function mountModeSheetPresentationExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext, panel: HTMLElement,
-        options: {
-            readonly anchor?: HTMLElement;
-            readonly transcriptOverlay: boolean;
-            readonly onClose: () => void;
-        },): HTMLElement {
-        ctx.modePopoverAlign = 'start';
-        if (ctx.shouldUseAgentPickerPopover(options.anchor)) {
-            const mounted = mountStickyComposerSheetPopover(panel, {
-                anchor: options.anchor,
-                onClose: options.onClose,
-                align: ctx.modePopoverAlign,
-                transcriptOverlay: options.transcriptOverlay,
-                modifierClasses: ['theia-mod-mode-picker'],
-            });
-            ctx.modeSheetAnchor = options.anchor;
-            ctx.modePopoverCleanup = mounted.cleanup;
-            scheduleStickyComposerPopoverPosition(mounted.root, options.anchor, ctx.modePopoverAlign);
-            return mounted.root;
-        }
-        return mountStickyComposerBottomSheet(panel, {
-            sheetClassName: options.transcriptOverlay
-                ? 'theia-mobile-sticky-composer-sheet theia-mod-mode theia-mod-transcript-overlay'
-                : 'theia-mobile-sticky-composer-sheet theia-mod-mode',
-            onClose: options.onClose,
-        });
 }
 
