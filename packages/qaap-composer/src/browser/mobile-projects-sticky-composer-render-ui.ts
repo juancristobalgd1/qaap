@@ -68,10 +68,7 @@ import {
 } from '../common/qaap-mcp-plugin-install';
 import { readProjectComposerDraft, writeProjectComposerDraft } from '../common/qaap-project-composer-draft';
 import { resolveComposerEffortLevel } from '../common/qaap-composer-effort';
-import {
-    QAAP_COMPOSER_SUBMIT_MODE_ID,
-    resolveComposerUntilDoneForSubmit,
-} from '../common/qaap-composer-until-done';
+import { QAAP_COMPOSER_SUBMIT_MODE_ID } from '../common/qaap-composer-until-done';
 import { parkWorkingControlFromAncestor } from './qaap-sticky-composer-working-agents-popover';
 import {
     ComposerSheetRenderDeferral,
@@ -517,9 +514,6 @@ export class MobileProjectsStickyComposerRenderUi {
                     agentModelAgentId: selectedAgentId,
                     openModelPicker: () => { this.host.stickyComposerSheetsUi.openStickyComposerAgentSheet(project); },
                     effort: resolveComposerEffortLevel(cwd, selectedAgentId, readStoredAgentModel(cwd, selectedAgentId)?.modelId),
-                    untilDone: showApprovalPolicy && !isChatSurface && resolveComposerUntilDoneForSubmit(
-                        this.host.stickyComposerApprovalPolicyId,
-                    ),
                 });
                 void done.then(started => {
                     // Nothing was sent (not ready, model held, cancelled): give the prompt back unless the user typed anew.

@@ -120,10 +120,8 @@ describe('qaap-composer-model-picker', () => {
         expect(picked).to.deep.equal(['low']);
     });
 
-    it('shows the single-turn note only under manual approval', () => {
+    it('shows no access note under any approval', () => {
         renderQaapComposerModelPicker(host, props({ approval: { current: 'request-approval' } }));
-        expect(host.querySelector('.qaap-model-picker-access-note')?.textContent).to.equal('Runs as a single turn, without Goal.');
-        renderQaapComposerModelPicker(host, props({ approval: { current: 'full-access' } }));
         expect(host.querySelector('.qaap-model-picker-access-note')).to.equal(null);
     });
 

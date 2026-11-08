@@ -368,8 +368,7 @@
 .qaap-model-picker-row-paid,
 .qaap-model-picker-shortcut,
 .qaap-model-picker-star,
-.qaap-model-picker-empty,
-.qaap-model-picker-access-note {
+.qaap-model-picker-empty {
     color: var(--theia-descriptionForeground);
 }
 
@@ -472,11 +471,6 @@
     color: var(--theia-menu-selectionForeground, var(--theia-foreground));
 }
 
-.qaap-model-picker-access-note {
-    flex-basis: 100%;
-    margin: 0;
-    font-size: 12px;
-}
 
 @media (max-width: 767px) {
     .qaap-sticky-composer-sheet-popover.theia-mod-agent-picker.theia-mod-model-picker {

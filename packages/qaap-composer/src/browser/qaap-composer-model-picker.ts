@@ -493,12 +493,6 @@ function renderFooter(host: HTMLElement, props: QaapComposerModelPickerProps): H
     }))));
 
     footer.append(left, right);
-    if (props.approval.current === 'request-approval') {
-        const note = document.createElement('p');
-        note.className = 'qaap-model-picker-access-note';
-        note.textContent = nls.localize('qaap/composer/picker/singleTurnNote', 'Runs as a single turn, without Goal.');
-        footer.append(note);
-    }
     return footer;
 }
 
