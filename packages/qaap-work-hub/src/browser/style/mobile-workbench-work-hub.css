@@ -656,6 +656,22 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   padding: 12px 20px 24px;
 }
 
+.theia-mobile-agent-transcript-empty.theia-mod-no-project {
+  display: flex;
+  flex-direction: column;
+}
+
+.theia-mobile-agents-hub-no-project-empty {
+  max-width: 320px;
+  margin: auto;
+  /* No entrance animation: the landing re-renders this node, which would replay it as a flicker. */
+}
+
+/* The open sessions sidebar already shows the same "No projects yet" call to action. */
+body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-agents-hub-no-project-empty {
+  display: none;
+}
+
 .theia-mobile-agents-hub-onboarding-btn {
   display: inline-flex;
   align-items: center;
@@ -901,9 +917,13 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 }
 
 /* Empty the header on the Agents Hub landing when there is no workspace yet
-   (the "No workspaces yet" onboarding state). The header reappears once a
-   project is opened (.theia-mod-agents-hub-shell-active) or pinned. */
-.theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing.theia-mod-has-no-project-empty.theia-mod-has-no-project-empty .theia-mobile-projects-header-main {
+   (the "No workspaces yet" state). The header reappears once a project is
+   opened (.theia-mod-agents-hub-shell-active) or pinned.
+   The sessions-sidebar toggle stays: projects are added from that sidebar, and
+   on a first run it is still closed, so hiding the toggle left a blank screen. */
+.theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing.theia-mod-has-no-project-empty.theia-mod-has-no-project-empty .theia-mobile-projects-header-main> :not(.theia-mobile-projects-title-block),
+.theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing.theia-mod-has-no-project-empty.theia-mod-has-no-project-empty .theia-mobile-projects-title-block> :not(.theia-mobile-projects-title-row),
+.theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing.theia-mod-has-no-project-empty.theia-mod-has-no-project-empty .theia-mobile-projects-title-row> :not(.theia-mobile-projects-sessions-menu):not(.theia-mod-sr-only) {
   display: none !important;
 }
 
@@ -14546,4 +14566,19 @@ body.theia-mod-work-hub-settings-resizing * {
     background: var(--theia-descriptionForeground);
     opacity: 0.25;
     visibility: visible;
+}
+
+/*
+ * Desktop: the composer and its quick-action chips share the transcript's reading column
+ * (`width: min(100%, 760px)` on transcript rows in qaap-transcript's mobile-workbench-transcript.css)
+ * instead of spanning the whole panel. Narrow viewports keep the full-width composer.
+ */
+@media (min-width: 768px) {
+  .theia-mobile-projects-sticky-composer>.theia-mobile-projects-sticky-composer>.theia-mobile-projects-sticky-composer-column,
+  .theia-mobile-projects-sticky-composer>.theia-mobile-projects-sticky-composer>.theia-mobile-agent-transcript-empty-actions {
+    --qaap-work-hub-reading-column: 760px;
+    max-width: var(--qaap-work-hub-reading-column);
+    margin-inline: auto;
+    box-sizing: border-box;
+  }
 }

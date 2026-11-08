@@ -33,6 +33,7 @@ import { disposeComposerContextEntries, type StickyComposerContextEntry } from '
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import { startGithubOAuth } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import { ensureTranscriptSurfaceCss } from './ensure-transcript-surface-css';
+import { HubEmptyStateDom } from './mobile-projects-hub-empty-state-dom';
 
 /** Panel surface for the Agents Hub inline execution shell (tasks landing). */
 export interface MobileProjectsAgentsHubInlineHost {
@@ -293,8 +294,12 @@ export class MobileProjectsAgentsHubInlineUi {
             note.className = 'theia-mobile-agent-transcript-empty theia-mod-no-project';
             // No "Add your first project" onboarding: projects are added from the sessions sidebar.
             // Signed-out users still need a way in, so only the GitHub sign-in action remains.
+            // Signed-in users get the sidebar's own quiet empty state, so a first visit (sidebar
+            // still closed) is not a blank screen; CSS hides it while the sidebar shows the same CTA.
             if (!this.isAgentsHubSignedIn()) {
                 note.append(this.createAgentsHubGithubSignInButton());
+            } else {
+                note.append(this.createAgentsHubNoProjectEmptyState());
             }
             this.host.scroll.append(note);
             this.host.updateTasksAttentionChrome();
@@ -396,6 +401,20 @@ export class MobileProjectsAgentsHubInlineUi {
 
     protected isAgentsHubSignedIn(): boolean {
         return this.host.readQaapSignedIn?.() ?? readQaapSignedIn();
+    }
+
+    /** Same copy and action as the sessions sidebar's "No projects yet" state (`q-empty`). */
+    protected createAgentsHubNoProjectEmptyState(): HTMLElement {
+        return HubEmptyStateDom.createEmptyState({
+            icon: 'codicon-repo',
+            title: nls.localize('qaap/sessionsSidebar/noProjectsTitle', 'No projects yet'),
+            hint: nls.localize('qaap/sessionsSidebar/noProjectsHint', 'Add a GitHub repository to start delegating tasks to agents.'),
+            action: {
+                label: nls.localize('qaap/mobileProjects/newRepository', 'Add repository'),
+                onClick: () => this.host.onNewClick(),
+            },
+            className: 'theia-mobile-agents-hub-no-project-empty',
+        });
     }
 
     protected createAgentsHubGithubSignInButton(): HTMLButtonElement {
