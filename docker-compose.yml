@@ -243,6 +243,9 @@ services:
       QAAP_TENANT_NETWORK_MODE: ${QAAP_TENANT_NETWORK_MODE:-isolated-bridge}
       # Empty (default) = direct tenant egress. Set to qaap-tenant-egress:current to route tenant egress through the Squid allowlist proxy.
       QAAP_TENANT_EGRESS_PROXY_IMAGE: ${QAAP_TENANT_EGRESS_PROXY_IMAGE:-}
+      # gVisor (deploy/rootless/gvisor/README.md): runc by default. QAAP_TENANT_RUNSC_LOGINS moves single logins to runsc.
+      QAAP_TENANT_RUNTIME: ${QAAP_TENANT_RUNTIME:-runc}
+      QAAP_TENANT_RUNSC_LOGINS: ${QAAP_TENANT_RUNSC_LOGINS:-}
       # Billing / Stripe Checkout (Pro €29, Team €79). Without these, Work Hub Billing shows
       # stripeEnabled=false and POST /qaap/api/billing/checkout returns 503.
       # Public origin for Checkout success/cancel URLs (prefer the Caddy HTTPS host).

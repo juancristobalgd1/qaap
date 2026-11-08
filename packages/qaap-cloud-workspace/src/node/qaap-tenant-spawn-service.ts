@@ -30,6 +30,7 @@ import { QaapTenantUidRegistry, resolveDefaultTenantUidRegistryPath } from './qa
 import { QaapDockerOrchestrator } from './qaap-docker-orchestrator';
 import { QaapTaskSandbox, QaapTaskSandboxService } from './qaap-task-sandbox';
 import { QaapTenantAgentStorageEnv } from './qaap-tenant-agent-storage-env';
+import { QAAP_TENANT_AGENT_ACCESS_ENV, QAAP_TENANT_AGENT_ACCESS_GROUP } from './qaap-tenant-runtime';
 import { QaapTenantPersistentHome, type QaapTenantPersistentHomeAccessGrant, type QaapTenantPersistentHomeOwner } from './qaap-tenant-persistent-home';
 import { findExecutableOnPath, readEnvPath, resolveTrustedExecutable, resolveTrustedSystemExecutable } from './qaap-trusted-executable';
 import { childProcessEnv } from './qaap-child-process-env';
@@ -530,19 +531,59 @@ export class QaapTenantSpawnService {
         if (uid === undefined) {
             throw new Error('Refusing to prepare tenant workspace access without a non-root agent uid.');
         }
-        const rootAcl = this.runTenantAccessCommand('setfacl', ['-m', `u:${uid}:rwx,d:u:${uid}:rwx`, root]);
+        const rootAcl = this.grantAgentAccess(uid, 'directory', [root]);
         if (!rootAcl.ok) {
             throw new Error(`Could not grant the non-root agent access to its tenant workspace ${root} (${rootAcl.reason}); install the acl package.`);
         }
-        const dirs = this.runTenantAccessCommand('find', [root, '-xdev', '-uid', '0', '-type', 'd', '-exec', 'setfacl', '-m', `u:${uid}:rwx,d:u:${uid}:rwx`, '{}', '+']);
+        const dirs = this.sweepAgentAccess(uid, 'd', root);
         if (!dirs.ok) {
             throw new Error(`Could not prepare tenant workspace directories for agent uid ${uid} (${dirs.reason}); install find and acl.`);
         }
-        const files = this.runTenantAccessCommand('find', [root, '-xdev', '-uid', '0', '-type', 'f', '-exec', 'setfacl', '-m', `u:${uid}:rwX`, '{}', '+']);
+        const files = this.sweepAgentAccess(uid, 'f', root);
         if (!files.ok) {
             throw new Error(`Could not prepare tenant workspace files for agent uid ${uid} (${files.reason}); install find and acl.`);
         }
         this.preparedTenantBackendAgentRoots.add(root);
+    }
+
+    /** See QAAP_TENANT_AGENT_ACCESS_ENV: under gVisor the agent's access comes from a shared group rather than an ACL. */
+    protected usesAgentGroupAccess(): boolean {
+        return process.env[QAAP_TENANT_AGENT_ACCESS_ENV] === QAAP_TENANT_AGENT_ACCESS_GROUP;
+    }
+
+    protected agentAccessGroup(uid: number): string {
+        const gid = Number.parseInt(process.env.QAAP_AGENT_GID?.trim() ?? '', 10);
+        return String(Number.isInteger(gid) && gid > 0 ? gid : uid);
+    }
+
+    /**
+     * Gives the agent uid access to `paths`: `directory` for read and write with later entries included, `file` for read
+     * and write, `traverse` to pass through a directory it cannot list. `chgrp -h` never follows a link: the agent can
+     * replace entries in the directories it writes to, and a followed link could put a backend file in the agent's group.
+     */
+    protected grantAgentAccess(uid: number, access: 'directory' | 'file' | 'traverse', paths: readonly string[]): QaapTenantAccessCommandResult {
+        if (this.usesAgentGroupAccess()) {
+            const group = this.runTenantAccessCommand('chgrp', ['-h', this.agentAccessGroup(uid), ...paths]);
+            if (!group.ok) {
+                return group;
+            }
+            const mode = access === 'directory' ? 'g+rwxs' : access === 'file' ? 'g+rw' : 'g=x';
+            return this.runTenantAccessCommand('chmod', [mode, ...paths]);
+        }
+        const spec = access === 'directory' ? `u:${uid}:rwx,d:u:${uid}:rwx` : access === 'file' ? `u:${uid}:rw` : `u:${uid}:--x`;
+        return this.runTenantAccessCommand('setfacl', ['-m', spec, ...paths]);
+    }
+
+    /** Grants the agent uid access to what the backend already created under `dir`: directories (`d`) or files (`f`). */
+    protected sweepAgentAccess(uid: number, type: 'd' | 'f', dir: string): QaapTenantAccessCommandResult {
+        const select = [dir, '-xdev', '-uid', '0', '-type', type];
+        if (this.usesAgentGroupAccess()) {
+            return this.runTenantAccessCommand('find', [...select,
+                '-exec', 'chgrp', '-h', this.agentAccessGroup(uid), '{}', '+',
+                '-exec', 'chmod', type === 'd' ? 'g+rwxs' : 'g+rwX', '{}', '+',
+            ]);
+        }
+        return this.runTenantAccessCommand('find', [...select, '-exec', 'setfacl', '-m', type === 'd' ? `u:${uid}:rwx,d:u:${uid}:rwx` : `u:${uid}:rwX`, '{}', '+']);
     }
 
     protected runTenantAccessCommand(file: string, args: readonly string[]): QaapTenantAccessCommandResult {
@@ -952,8 +993,7 @@ export class QaapTenantSpawnService {
      * access to `entry`. Directories also get a default ACL so entries created later stay reachable.
      */
     protected grantTenantEntryAccess(entry: string, uid: number, directory: boolean): void {
-        const spec = directory ? `u:${uid}:rwx,d:u:${uid}:rwx` : `u:${uid}:rw`;
-        const result = this.runTenantAccessCommand('setfacl', ['-m', spec, entry]);
+        const result = this.grantAgentAccess(uid, directory ? 'directory' : 'file', [entry]);
         if (!result.ok) {
             throw new Error(`Could not grant agent uid ${uid} access to ${entry} (${result.reason ?? 'unknown reason'}).`);
         }
@@ -989,9 +1029,9 @@ export class QaapTenantSpawnService {
     }
 
     protected grantTenantAgentStorageAccess(configRoot: string, root: string, uid: number): void {
-        const configAcl = this.runTenantAccessCommand('setfacl', ['-m', `u:${uid}:--x`, configRoot]);
-        const rootAcl = this.runTenantAccessCommand('setfacl', ['-m', `u:${uid}:rwx`, root]);
-        const childAcl = this.runTenantAccessCommand('setfacl', ['-m', `u:${uid}:rwx,d:u:${uid}:rwx`, QaapTenantAgentStorageEnv.cacheDir(root), QaapTenantAgentStorageEnv.dataDir(root), QaapTenantAgentStorageEnv.homeDir(root)]);
+        const configAcl = this.grantAgentAccess(uid, 'traverse', [configRoot]);
+        const rootAcl = this.grantAgentAccess(uid, 'directory', [root]);
+        const childAcl = this.grantAgentAccess(uid, 'directory', [QaapTenantAgentStorageEnv.cacheDir(root), QaapTenantAgentStorageEnv.dataDir(root), QaapTenantAgentStorageEnv.homeDir(root)]);
         const failedAcl = [configAcl, rootAcl, childAcl].find(result => !result.ok);
         if (failedAcl) {
             throw new Error(`Could not grant agent uid ${uid} access to its private tenant cache at ${root} (${failedAcl.reason}).`);
@@ -1007,9 +1047,9 @@ export class QaapTenantSpawnService {
         // run left at 0700 with `mask::---`. A failure is logged per directory and never skips the
         // remaining ones, so a stale cache cannot block the home repair; the storage stays usable.
         for (const dir of [QaapTenantAgentStorageEnv.cacheDir(root), QaapTenantAgentStorageEnv.dataDir(root), QaapTenantAgentStorageEnv.homeDir(root)]) {
-            const dirs = this.runTenantAccessCommand('find', [dir, '-xdev', '-uid', '0', '-type', 'd', '-exec', 'setfacl', '-m', `u:${uid}:rwx,d:u:${uid}:rwx`, '{}', '+']);
+            const dirs = this.sweepAgentAccess(uid, 'd', dir);
             const files = dirs.ok
-                ? this.runTenantAccessCommand('find', [dir, '-xdev', '-uid', '0', '-type', 'f', '-exec', 'setfacl', '-m', `u:${uid}:rwX`, '{}', '+'])
+                ? this.sweepAgentAccess(uid, 'f', dir)
                 : dirs;
             if (!files.ok) {
                 console.warn(`[qaap-security] agent uid ${uid} may not reach existing harness state under ${dir} `

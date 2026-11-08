@@ -335,6 +335,66 @@ describe('QaapTenantSpawnService tenant backend workspace ACL', () => {
         ]);
     });
 
+    describe('shared group access under gVisor, which has no POSIX ACLs on host files', () => {
+        class GroupAccessService extends TenantBackendAclTestService {
+            grant(entry: string, uid: number, directory: boolean): void {
+                this.grantTenantEntryAccess(entry, uid, directory);
+            }
+            sweep(uid: number, type: 'd' | 'f', dir: string): void {
+                this.sweepAgentAccess(uid, type, dir);
+            }
+            storage(configRoot: string, root: string, uid: number): void {
+                this.grantTenantAgentStorageAccess(configRoot, root, uid);
+            }
+        }
+
+        beforeEach(() => {
+            process.env.QAAP_TENANT_AGENT_ACCESS = 'group';
+            process.env.QAAP_AGENT_GID = '1001';
+        });
+        afterEach(() => {
+            delete process.env.QAAP_TENANT_AGENT_ACCESS;
+            delete process.env.QAAP_AGENT_GID;
+        });
+
+        it('never calls setfacl, and never follows a link when changing the group', () => {
+            const service = new GroupAccessService();
+            service.grant('/tmp/qaap-home/.codex', 1001, true);
+            service.grant('/tmp/qaap-home/.claude.json', 1001, false);
+            expect(service.commands).to.deep.equal([
+                { file: 'chgrp', args: ['-h', '1001', '/tmp/qaap-home/.codex'] },
+                { file: 'chmod', args: ['g+rwxs', '/tmp/qaap-home/.codex'] },
+                { file: 'chgrp', args: ['-h', '1001', '/tmp/qaap-home/.claude.json'] },
+                { file: 'chmod', args: ['g+rw', '/tmp/qaap-home/.claude.json'] },
+            ]);
+        });
+
+        it('sweeps only real directories and files that the backend owns, without crossing mounts', () => {
+            const service = new GroupAccessService();
+            service.sweep(1001, 'd', '/w');
+            service.sweep(1001, 'f', '/w');
+            expect(service.commands[0]).to.deep.equal({ file: 'find', args: ['/w', '-xdev', '-uid', '0', '-type', 'd', '-exec', 'chgrp', '-h', '1001', '{}', '+', '-exec', 'chmod', 'g+rwxs', '{}', '+'] });
+            expect(service.commands[1]).to.deep.equal({ file: 'find', args: ['/w', '-xdev', '-uid', '0', '-type', 'f', '-exec', 'chgrp', '-h', '1001', '{}', '+', '-exec', 'chmod', 'g+rwX', '{}', '+'] });
+        });
+
+        it('lets the agent only pass through the config root, without setgid or listing, so backend files there stay out of its group', () => {
+            const service = new GroupAccessService();
+            service.storage('/home/theia/.qaap', '/home/theia/.qaap/.qaap-agent-storage', 1001);
+            expect(service.commands.slice(0, 2)).to.deep.equal([
+                { file: 'chgrp', args: ['-h', '1001', '/home/theia/.qaap'] },
+                { file: 'chmod', args: ['g=x', '/home/theia/.qaap'] },
+            ]);
+            expect(service.commands.filter(command => command.file === 'setfacl')).to.deep.equal([]);
+        });
+
+        it('falls back to the agent uid when no agent gid is set', () => {
+            delete process.env.QAAP_AGENT_GID;
+            const service = new GroupAccessService();
+            service.grant('/x', 1234, false);
+            expect(service.commands[0].args).to.deep.equal(['-h', '1234', '/x']);
+        });
+    });
+
     it('fails the HOME grant with the setfacl reason so the link reports it', () => {
         class RefusingAclService extends TenantBackendAclTestService {
             protected override runTenantAccessCommand(file: string, args: readonly string[]): { ok: boolean; reason?: string } {

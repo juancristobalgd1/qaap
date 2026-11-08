@@ -33,6 +33,7 @@ import { QAAP_TENANT_PUSH_OUTBOX_PATH, QAAP_TENANT_RUNTIME_API_PATH, type QaapTe
 import { QAAP_TENANT_BUSY_PROBE_HEADER, QaapTenantBusyProbe, type QaapTenantBusyStatus } from './qaap-tenant-busy-probe';
 import { computeTenantBackendUpdateStatus } from './qaap-tenant-backend-update';
 import { QaapTenantRuntimeMetrics } from './qaap-tenant-runtime-metrics';
+import { isQaapRunscConfigured, QAAP_RUNSC_BACKEND_READY_TIMEOUT_MS, QAAP_RUNSC_PIDS_FACTOR, QAAP_RUNSC_RUNTIME_NAME, QAAP_TENANT_AGENT_ACCESS_ENV, QAAP_TENANT_AGENT_ACCESS_GROUP, QAAP_TENANT_AGENT_GID, qaapRunscDaemonProblem, qaapTenantCgroupParent, resolveQaapTenantRuntime, type QaapDockerRuntimeInfo, type QaapTenantRuntime } from './qaap-tenant-runtime';
 import { QaapTenantBackendWakeTimeline } from './qaap-tenant-backend-wake-timeline';
 import { QaapTenantRuntimeStore } from './qaap-tenant-runtime-store';
 import { QaapTenantResourceOverrides } from './qaap-tenant-resource-overrides';
@@ -50,6 +51,15 @@ const QAAP_TENANT_NETWORK_PREFIX = 'qaap-net-v3-';
 const QAAP_TENANT_INGRESS_NETWORK_PREFIX = 'qaap-ingress-v1-';
 const QAAP_TENANT_DIRECT_EGRESS_NETWORK_PREFIX = 'qaap-egress-v1-';
 const QAAP_TENANT_EGRESS_PROXY_ALIAS = 'qaap-tenant-egress-proxy';
+// Tenant code talks to Squid directly and Squid runs on the host kernel, so one tenant must not be able to use it to
+// exhaust the host. It caches nothing (deploy/qaap-tenant-egress/squid.conf); this bounds connection buffers.
+const TENANT_EGRESS_PROXY_MEMORY = 512 * 1024 ** 2;
+const TENANT_EGRESS_PROXY_PIDS = 256;
+const TENANT_EGRESS_PROXY_NANO_CPUS = 1e9;
+/** How long the daemon's gVisor configuration is trusted before it is read again. */
+const RUNSC_DAEMON_RECHECK_MS = 60_000;
+/** How long a runtime migration waits for running turns (`QAAP_TENANT_RUNTIME_MIGRATION_GRACE_MS`). */
+const RUNTIME_MIGRATION_GRACE_MS = 30 * 60_000;
 const QAAP_TENANT_EGRESS_UPLINK = 'qaap-tenant-egress-uplink';
 const DEFAULT_IMAGE = process.env.QAAP_DOCKER_IMAGE?.trim() || 'node:20-bookworm';
 const WORKSPACE_MOUNT = '/workspace';
@@ -108,6 +118,8 @@ const TENANT_WORKER_ENV_DENYLIST = new Set([
     'QAAP_DOCKER_REMOTE_TENANT_CONFIG_ROOT',
     'QAAP_ALLOW_ROOTFUL_DOCKER_SOCKET_IN_PRODUCTION',
     'QAAP_TENANT_EGRESS_PROXY_IMAGE',
+    'QAAP_TENANT_RUNTIME',
+    'QAAP_TENANT_RUNSC_LOGINS',
     'HTTP_PROXY',
     'HTTPS_PROXY',
     'http_proxy',
@@ -161,6 +173,12 @@ export interface QaapTaskSandboxPlacement {
     readonly directEgressNetwork?: string;
     readonly egressEnv: Readonly<Record<string, string>>;
     readonly roots: readonly QaapTaskSandboxRoot[];
+    /** OCI runtime for the sandbox; absent means the daemon default (runc). */
+    readonly runtime?: QaapTenantRuntime;
+    /** Systemd slice of the tenant, for gVisor sandboxes; see qaapTenantCgroupParent. */
+    readonly cgroupParent?: string;
+    /** `HostConfig.ExtraHosts` the runtime needs; see tenantRunscExtraHosts. */
+    readonly extraHosts?: readonly string[];
 }
 
 export interface QaapTenantBackendTarget {
@@ -200,6 +218,10 @@ export class QaapDockerOrchestrator {
     protected docker: Dockerode | undefined;
     /** Per-node verification is needed when a tenant pool uses more than one remote daemon. */
     protected readonly verifiedDockerNodeIds = new Set<string>();
+    /** When each node last passed the gVisor checks. Bounded in time: the daemon can be reconfigured under a running control plane. */
+    protected readonly verifiedRunscNodeAt = new Map<string, number>();
+    /** When a tenant was first seen running under the wrong runtime, for the migration deadline. */
+    protected readonly runtimeMigrationSeenAt = new Map<string, number>();
     protected dockerNodeConfigs: readonly QaapDockerNodeConfig[] | undefined;
     protected readonly dockerNodeClients = new Map<string, QaapDockerNodeClient>();
     /** Canonical host-side repository roots for containers validated during this backend lifetime. */
@@ -725,7 +747,11 @@ export class QaapDockerOrchestrator {
      * tenant backend sees. Only these control-plane-chosen roots are ever bound: a tenant-chosen
      * sub-path could be swapped for a symlink between validation and the daemon's mount.
      */
-    async taskSandboxPlacement(ownerLogin: string): Promise<QaapTaskSandboxPlacement> {
+    /**
+     * @param options `forCreate` prepares what a new sandbox needs. Listing and removing sandboxes must not depend on
+     * Squid or on the gVisor checks: a failure there must never keep an orphaned sandbox running.
+     */
+    async taskSandboxPlacement(ownerLogin: string, options: { readonly forCreate?: boolean } = {}): Promise<QaapTaskSandboxPlacement> {
         const tenant = ownerLogin.trim().toLowerCase();
         if (!tenant) {
             throw new Error('A task sandbox needs a tenant login.');
@@ -737,8 +763,14 @@ export class QaapDockerOrchestrator {
         if (networkMode === 'none') {
             throw new Error('Task sandboxes need the isolated tenant bridge to reach their exec server.');
         }
+        const docker = await this.getDocker(ownerLogin);
+        if (options.forCreate && this.getTenantRuntime(ownerLogin) === 'runsc') {
+            await this.assertRunscAvailable(ownerLogin);
+            // A sandbox needs Squid's current address, and a restarted control plane may not have started it yet.
+            await this.ensureTenantNetwork(docker, networkMode, ownerLogin);
+        }
         return {
-            docker: await this.getDocker(ownerLogin),
+            docker,
             image: this.getTenantImage(),
             user: '1001:1001',
             network: networkMode,
@@ -750,6 +782,9 @@ export class QaapDockerOrchestrator {
                 { kind: 'parallel', backendPath: `${TENANT_BACKEND_PARALLEL_MOUNT}/${segment}`, hostPath: mounts.parallelRoot, source: this.dockerMountSource(mounts.parallelRoot, 'parallel') },
                 { kind: 'tenant-config', backendPath: TENANT_BACKEND_QAAP_HOME_MOUNT, hostPath: tenantDataRoot, source: this.dockerMountSource(tenantDataRoot, 'tenant-config') },
             ],
+            runtime: this.getTenantRuntime(ownerLogin),
+            cgroupParent: qaapTenantCgroupParent(ownerLogin),
+            extraHosts: options.forCreate ? await this.tenantRunscExtraHosts(docker, networkMode, ownerLogin) : undefined,
         };
     }
 
@@ -760,6 +795,24 @@ export class QaapDockerOrchestrator {
         return node.docker;
     }
 
+    /** A container selected for gVisor is never created on a daemon that cannot provide it, in any deployment. */
+    protected async assertRunscAvailable(ownerLogin?: string): Promise<void> {
+        if (this.getTenantRuntime(ownerLogin) === 'runsc') {
+            await this.verifyRunscDockerNode(this.dockerNodeForTenant(ownerLogin), ownerLogin);
+        }
+    }
+
+    protected async verifyRunscDockerNode(node: QaapDockerNodeClient, ownerLogin?: string): Promise<void> {
+        if (this.getTenantRuntime(ownerLogin) !== 'runsc' || Date.now() - (this.verifiedRunscNodeAt.get(node.config.id) ?? -Infinity) < RUNSC_DAEMON_RECHECK_MS) {
+            return;
+        }
+        const problem = qaapRunscDaemonProblem(await node.docker.info() as QaapDockerRuntimeInfo, isQaapHostedRuntime(process.env));
+        if (problem) {
+            throw new Error(`Refusing to start a gVisor tenant on Docker node ${node.config.id}: ${problem}.`);
+        }
+        this.verifiedRunscNodeAt.set(node.config.id, Date.now());
+    }
+
     protected async verifyDockerNode(node: QaapDockerNodeClient): Promise<void> {
         if (isQaapHostedRuntime(process.env) && !this.verifiedDockerNodeIds.has(node.config.id)) {
             const info = await node.docker.info() as { SecurityOptions?: readonly string[] };
@@ -767,8 +820,30 @@ export class QaapDockerOrchestrator {
             if (!rootless) {
                 throw new Error(`Refusing hosted Docker control-plane access: Docker node ${node.config.id} did not report rootless mode.`);
             }
+            const seccompProblem = this.dockerDaemonSeccompProblem(info.SecurityOptions ?? []);
+            if (seccompProblem) {
+                throw new Error(`Refusing hosted Docker control-plane access: Docker node ${node.config.id} ${seccompProblem}.`);
+            }
             this.verifiedDockerNodeIds.add(node.config.id);
         }
+    }
+
+    /**
+     * Tenant containers rely on the daemon's seccomp profile to block the syscalls kernel exploits use most
+     * (io_uring, user namespaces, bpf, keyctl, userfaultfd, mount). The code never sets a per-container profile,
+     * so a daemon running without seccomp, or with `seccomp-profile=unconfined`, would silently drop that layer.
+     * @param securityOptions the daemon's `docker info` SecurityOptions, e.g. `name=seccomp,profile=builtin`.
+     * @returns why the daemon is unacceptable, or undefined when seccomp is enforced.
+     */
+    protected dockerDaemonSeccompProblem(securityOptions: readonly string[]): string | undefined {
+        const seccomp = securityOptions.find(option => /(^|,)name=seccomp(,|$)/.test(option));
+        if (!seccomp) {
+            return 'did not report seccomp';
+        }
+        if (/(^|,)profile=unconfined(,|$)/.test(seccomp)) {
+            return 'runs seccomp unconfined';
+        }
+        return undefined;
     }
 
     protected async verifiedDockerNodesForTenant(ownerLogin?: string): Promise<readonly QaapDockerNodeClient[]> {
@@ -1023,8 +1098,11 @@ export class QaapDockerOrchestrator {
      * (stale or tampered container), instead of running them under its own uid. A local, non-rootless
      * backend keeps its non-root container uid and inherits that identity, as before.
      */
-    protected tenantBackendAgentDropEnv(): string[] {
-        return this.getTenantContainerUser().startsWith('0:') ? ['QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP=1'] : [];
+    protected tenantBackendAgentDropEnv(ownerLogin?: string): string[] {
+        return [
+            ...this.getTenantContainerUser().startsWith('0:') ? ['QAAP_TENANT_BACKEND_REQUIRE_AGENT_DROP=1'] : [],
+            ...this.getTenantRuntime(ownerLogin) === 'runsc' ? [`${QAAP_TENANT_AGENT_ACCESS_ENV}=${QAAP_TENANT_AGENT_ACCESS_GROUP}`] : [],
+        ];
     }
 
     /**
@@ -1132,6 +1210,7 @@ export class QaapDockerOrchestrator {
         ownerLogin?: string,
     ): Promise<QaapDockerEnsureResult> {
         const docker = await this.getDocker(ownerLogin);
+        await this.assertRunscAvailable(ownerLogin);
         const dockerMounts = this.tenantMountsForDocker(mounts);
         for (const root of Object.values(mounts)) {
             fs.mkdirSync(root, { recursive: true });
@@ -1141,6 +1220,7 @@ export class QaapDockerOrchestrator {
         }
         const directEgressNetwork = this.tenantDirectEgressNetworkFor(networkMode, ownerLogin);
         const tenantEgressNetwork = networkMode === 'none' ? undefined : this.tenantDirectEgressNetworkNameFor(ownerLogin);
+        const extraHosts = await this.tenantRunscExtraHosts(docker, networkMode, ownerLogin);
         if (directEgressNetwork) {
             await this.ensureTenantDirectEgressNetwork(docker, directEgressNetwork, ownerLogin);
         }
@@ -1166,7 +1246,7 @@ export class QaapDockerOrchestrator {
                     inspect = await container.inspect();
                 }
             }
-            if (!this.tenantContainerMatches(inspect, mounts, networkMode, directEgressNetwork) || !(await this.runsCurrentTenantImage(docker, inspect))) {
+            if (!this.tenantContainerMatches(inspect, mounts, networkMode, directEgressNetwork, extraHosts) || !(await this.runsCurrentTenantImage(docker, inspect))) {
                 if (!this.isManagedTenantContainerFor(inspect, ownerLogin)) {
                     throw new Error(`Tenant container ${name} has an unexpected mount or security configuration; refusing to reuse it.`);
                 }
@@ -1233,6 +1313,7 @@ export class QaapDockerOrchestrator {
                     Tmpfs: { '/tmp': this.getTenantTmpfsOptions() },
                     NetworkMode: networkMode,
                     AutoRemove: false,
+                    ...this.tenantRuntimeHostConfig(ownerLogin, extraHosts),
                 },
             });
             if (directEgressNetwork) {
@@ -1243,7 +1324,7 @@ export class QaapDockerOrchestrator {
             await container.start();
         }
         inspect = await container.inspect();
-        if (!inspect.State.Running || !this.tenantContainerMatches(inspect, mounts, networkMode, directEgressNetwork)) {
+        if (!inspect.State.Running || !this.tenantContainerMatches(inspect, mounts, networkMode, directEgressNetwork, extraHosts)) {
             throw new Error(`Tenant container ${name} did not start with the required isolated configuration.`);
         }
         this.tenantRoots.set(name, mounts.reposRoot);
@@ -1307,6 +1388,7 @@ export class QaapDockerOrchestrator {
         if (actualSegment !== expectedSegment) {
             throw new Error(`Tenant identity ${ownerLogin} does not match the requested backend root ${tenantRootHostPath}.`);
         }
+        await this.assertRunscAvailable(ownerLogin);
         const networkMode = this.getTenantNetworkMode(ownerLogin);
         if (networkMode === 'none') {
             throw new Error('Backend-per-tenant routing requires the isolated tenant bridge so its ingress relay can reach the backend.');
@@ -1314,6 +1396,7 @@ export class QaapDockerOrchestrator {
         await this.ensureTenantNetwork(docker, networkMode, ownerLogin);
         const directEgressNetwork = this.tenantDirectEgressNetworkFor(networkMode, ownerLogin);
         const tenantEgressNetwork = networkMode === 'none' ? undefined : this.tenantDirectEgressNetworkNameFor(ownerLogin);
+        const extraHosts = await this.tenantRunscExtraHosts(docker, networkMode, ownerLogin);
         if (directEgressNetwork) {
             await this.ensureTenantDirectEgressNetwork(docker, directEgressNetwork, ownerLogin);
         }
@@ -1357,7 +1440,7 @@ export class QaapDockerOrchestrator {
                     inspect = await container.inspect();
                 }
             }
-            if (!this.tenantBackendContainerMatches(inspect, ownerLogin, mounts, tenantDataRoot, theiaHome, networkMode, directEgressNetwork)
+            if (!this.tenantBackendContainerMatches(inspect, ownerLogin, mounts, tenantDataRoot, theiaHome, networkMode, directEgressNetwork, extraHosts)
                 || !(await this.runsCurrentTenantImage(docker, inspect))) {
                 if (!this.isManagedTenantBackendFor(inspect, ownerLogin)) {
                     throw new Error(`Tenant backend ${name} has an unexpected security or mount configuration; refusing to reuse it.`);
@@ -1374,7 +1457,9 @@ export class QaapDockerOrchestrator {
                     )
                     : undefined;
                 const busy = runningTarget ? await this.fetchTenantBusyStatus(runningTarget) : undefined;
-                if (runningTarget && busy?.busy) {
+                // A runtime migration waits for running turns only until its deadline: `busy` is what the tenant's
+                // own backend reports, so otherwise a tenant could stay out of gVisor for as long as it liked.
+                if (runningTarget && busy?.busy && !this.tenantRuntimeMigrationIsOverdue(inspect, ownerLogin)) {
                     console.warn(`[qaap-docker] Deferring recreation of stale tenant backend ${name} for ${ownerLogin}: `
                         + `${busy.runningTasks} agent turn(s) running.`);
                     this.deferredTenantBackendRecreations.add(ownerLogin.trim().toLowerCase());
@@ -1415,7 +1500,7 @@ export class QaapDockerOrchestrator {
                 'QAAP_AGENT_UID_PER_USER=0',
                 'QAAP_AGENT_UID=1001',
                 'QAAP_AGENT_GID=1001',
-                ...this.tenantBackendAgentDropEnv(),
+                ...this.tenantBackendAgentDropEnv(ownerLogin),
                 `QAAP_REPOS_ROOT=${TENANT_BACKEND_REPOS_ROOT}`,
                 `QAAP_TENANT_CONFIG_ROOT=${TENANT_BACKEND_QAAP_HOME_MOUNT}`,
                 'QAAP_TENANT_BACKEND_MODE=1',
@@ -1501,6 +1586,8 @@ export class QaapDockerOrchestrator {
                     // tenantBackendContainerMatches, so live containers are never recreated over this setting.
                     RestartPolicy: { Name: 'on-failure', MaximumRetryCount: 3 },
                     AutoRemove: false,
+                    ...this.tenantRuntimeHostConfig(ownerLogin, extraHosts),
+                    ...this.getTenantRuntime(ownerLogin) === 'runsc' ? { GroupAdd: [String(QAAP_TENANT_AGENT_GID)] } : {},
                 },
             });
             if (directEgressNetwork) {
@@ -1511,7 +1598,7 @@ export class QaapDockerOrchestrator {
             await container.start();
         }
         inspect = await container.inspect();
-        if (!inspect.State.Running || !this.tenantBackendContainerMatches(inspect, ownerLogin, mounts, tenantDataRoot, theiaHome, networkMode, directEgressNetwork)) {
+        if (!inspect.State.Running || !this.tenantBackendContainerMatches(inspect, ownerLogin, mounts, tenantDataRoot, theiaHome, networkMode, directEgressNetwork, extraHosts)) {
             throw new Error(`Tenant backend ${name} did not start with the required isolated configuration.`);
         }
         wake.mark('container');
@@ -1809,6 +1896,97 @@ export class QaapDockerOrchestrator {
         }
     }
 
+    /**
+     * Enforces the selected runtime on containers nobody is asking for. Ensuring a tenant only happens on demand and a
+     * ready backend is served from a cached target, so without this a selected tenant could keep running on runc.
+     * Workers are disposable; a backend and its sandboxes wait for running turns until the migration deadline.
+     */
+    async reconcileTenantRuntimes(): Promise<void> {
+        if (!isQaapRunscConfigured(process.env)) {
+            return;
+        }
+        const nodes = new Map(this.getDockerNodeClients().map(node => [node.config.id, node]));
+        const stale = new Set<string>();
+        for (const managed of await this.listManagedTenantContainers()) {
+            const node = managed.nodeId ? nodes.get(managed.nodeId) : undefined;
+            if (!node) {
+                continue;
+            }
+            try {
+                const container = node.docker.getContainer(managed.containerName);
+                const inspect = await container.inspect();
+                if (!this.tenantRuntimeIsStale(inspect, managed.tenantLogin)) {
+                    continue;
+                }
+                stale.add(managed.tenantLogin ?? '');
+                if (managed.kind === 'worker') {
+                    console.warn(`[qaap-docker] Removing tenant worker ${managed.containerName}: it does not run the selected runtime.`);
+                    await container.remove({ force: true });
+                    continue;
+                }
+                const login = managed.tenantLogin ?? '';
+                const busy = managed.running && !managed.paused ? await this.probeTenantBackendBusy(login) : undefined;
+                if (busy?.busy && !this.tenantRuntimeMigrationIsOverdue(inspect, login)) {
+                    this.deferredTenantBackendRecreations.add(login);
+                    continue;
+                }
+                console.warn(`[qaap-docker] Removing tenant backend ${managed.containerName}: it does not run the selected runtime.`);
+                await this.removeTenantBackendIngressRelay(node.docker, login);
+                await container.remove({ force: true });
+                this.invalidateTenantBackendTarget(login);
+                this.deferredTenantBackendRecreations.delete(login);
+            } catch (error) {
+                console.warn(`[qaap-docker] Could not reconcile the runtime of ${managed.containerName}: ${error instanceof Error ? error.message : String(error)}`);
+            }
+        }
+        await this.reconcileTaskSandboxRuntimes(stale);
+        for (const login of [...this.runtimeMigrationSeenAt.keys()]) {
+            if (!stale.has(login)) {
+                this.runtimeMigrationSeenAt.delete(login);
+            }
+        }
+    }
+
+    protected async reconcileTaskSandboxRuntimes(stale: Set<string>): Promise<void> {
+        for (const sandbox of await this.listTaskSandboxContainers()) {
+            try {
+                const docker = await this.getDocker(sandbox.tenantLogin);
+                const container = docker.getContainer(sandbox.name);
+                const inspect = await container.inspect();
+                if (!this.tenantRuntimeIsStale(inspect, sandbox.tenantLogin)) {
+                    continue;
+                }
+                stale.add(sandbox.tenantLogin);
+                const busy = await this.probeTenantBackendBusy(sandbox.tenantLogin);
+                if (!busy?.busy || this.tenantRuntimeMigrationIsOverdue(inspect, sandbox.tenantLogin)) {
+                    console.warn(`[qaap-docker] Removing task sandbox ${sandbox.name}: it does not run the selected runtime.`);
+                    await container.remove({ force: true });
+                }
+            } catch (error) {
+                console.warn(`[qaap-docker] Could not reconcile the runtime of ${sandbox.name}: ${error instanceof Error ? error.message : String(error)}`);
+            }
+        }
+    }
+
+    protected tenantRuntimeIsStale(inspect: Dockerode.ContainerInspectInfo, ownerLogin: string | undefined): boolean {
+        const runtime = (inspect as Dockerode.ContainerInspectInfo & { HostConfig?: { Runtime?: string } }).HostConfig?.Runtime;
+        return (runtime === QAAP_RUNSC_RUNTIME_NAME) !== (this.getTenantRuntime(ownerLogin) === 'runsc');
+    }
+
+    /** True once a tenant has been under the wrong runtime for longer than the grace period. */
+    protected tenantRuntimeMigrationIsOverdue(inspect: Dockerode.ContainerInspectInfo, ownerLogin: string): boolean {
+        if (!this.tenantRuntimeIsStale(inspect, ownerLogin)) {
+            return false;
+        }
+        const login = ownerLogin.trim().toLowerCase();
+        const now = Date.now();
+        const seenAt = this.runtimeMigrationSeenAt.get(login) ?? now;
+        this.runtimeMigrationSeenAt.set(login, seenAt);
+        const raw = process.env.QAAP_TENANT_RUNTIME_MIGRATION_GRACE_MS?.trim();
+        const grace = raw && Number.isFinite(Number(raw)) && Number(raw) >= 0 ? Number(raw) : RUNTIME_MIGRATION_GRACE_MS;
+        return now - seenAt >= grace;
+    }
+
     protected async inspectRunningTenantBackendTarget(ownerLogin: string): Promise<QaapTenantBackendTarget | undefined> {
         try {
             const node = this.dockerNodeForTenant(ownerLogin);
@@ -1911,7 +2089,8 @@ export class QaapDockerOrchestrator {
     /** Do not route the first browser request into a Theia process that is still deploying plugins. */
     protected async waitForTenantBackendReady(target: QaapTenantBackendTarget): Promise<void> {
         const configuredTimeout = Number.parseInt(process.env.QAAP_TENANT_BACKEND_READY_TIMEOUT_MS?.trim() ?? '', 10);
-        const timeoutMs = Number.isInteger(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : 30_000;
+        const defaultTimeout = this.getTenantRuntime(target.tenantLogin) === 'runsc' ? QAAP_RUNSC_BACKEND_READY_TIMEOUT_MS : 30_000;
+        const timeoutMs = Number.isInteger(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : defaultTimeout;
         const deadline = Date.now() + timeoutMs;
         let lastFailure = 'no response';
         while (Date.now() < deadline) {
@@ -1989,6 +2168,7 @@ export class QaapDockerOrchestrator {
         theiaHome: string,
         networkMode: string,
         directEgressNetwork?: string,
+        extraHosts?: readonly string[],
     ): boolean {
         const raw = inspect as Dockerode.ContainerInspectInfo & {
             Config?: { User?: string; Image?: string; Cmd?: string[]; Env?: string[]; WorkingDir?: string; Labels?: Record<string, string> };
@@ -2007,6 +2187,9 @@ export class QaapDockerOrchestrator {
                 IpcMode?: string;
                 PortBindings?: Record<string, Array<{ HostIp?: string; HostPort?: string }> | null>;
                 PublishAllPorts?: boolean;
+                Runtime?: string;
+                CgroupParent?: string;
+                ExtraHosts?: string[] | null;
             };
             Mounts?: Array<{ Source?: string; Destination?: string; RW?: boolean }>;
             NetworkSettings?: {
@@ -2030,7 +2213,7 @@ export class QaapDockerOrchestrator {
             'QAAP_AGENT_UID_PER_USER=0',
             'QAAP_AGENT_UID=1001',
             'QAAP_AGENT_GID=1001',
-            ...this.tenantBackendAgentDropEnv(),
+            ...this.tenantBackendAgentDropEnv(ownerLogin),
             `QAAP_REPOS_ROOT=${TENANT_BACKEND_REPOS_ROOT}`,
             `QAAP_TENANT_CONFIG_ROOT=${TENANT_BACKEND_QAAP_HOME_MOUNT}`,
             'QAAP_TENANT_BACKEND_MODE=1',
@@ -2084,6 +2267,7 @@ export class QaapDockerOrchestrator {
             && hostConfig.CapDrop?.includes('ALL') === true
             && hostConfig.CapAdd?.includes('SETUID') === true
             && hostConfig.CapAdd?.includes('SETGID') === true
+            && (this.getTenantRuntime(ownerLogin) !== 'runsc' || (hostConfig as { GroupAdd?: string[] }).GroupAdd?.includes(String(QAAP_TENANT_AGENT_GID)) === true)
             && hostConfig.ReadonlyRootfs === true
             && hostConfig.Tmpfs?.['/tmp'] === this.getTenantTmpfsOptions()
             && hostConfig.Tmpfs?.[TENANT_BACKEND_LOGS_MOUNT] === TENANT_BACKEND_LOGS_TMPFS_OPTIONS
@@ -2091,6 +2275,7 @@ export class QaapDockerOrchestrator {
             && (!hostConfig.PidMode || hostConfig.PidMode === 'private')
             && (!hostConfig.IpcMode || hostConfig.IpcMode === 'private')
             && hostConfig.NetworkMode === networkMode
+            && this.tenantRuntimeMatches(hostConfig, ownerLogin, extraHosts)
             && ports === null
             && Object.values((hostConfig.PortBindings ?? {}) as Record<string, unknown[] | null | undefined>).every(bindings => !bindings || bindings.length === 0)
             && hostConfig.PublishAllPorts !== true;
@@ -2322,6 +2507,7 @@ export class QaapDockerOrchestrator {
         mounts: QaapTenantMountSet,
         networkMode: string,
         directEgressNetwork?: string,
+        extraHosts?: readonly string[],
     ): boolean {
         const raw = inspect as Dockerode.ContainerInspectInfo & {
             Config?: { User?: string; Image?: string; Labels?: Record<string, string>; Env?: string[] };
@@ -2337,6 +2523,9 @@ export class QaapDockerOrchestrator {
                 Privileged?: boolean;
                 PidMode?: string;
                 IpcMode?: string;
+                Runtime?: string;
+                CgroupParent?: string;
+                ExtraHosts?: string[] | null;
             };
             NetworkSettings?: { Networks?: Record<string, unknown> };
             Mounts?: Array<{ Source?: string; Destination?: string; RW?: boolean }>;
@@ -2373,7 +2562,8 @@ export class QaapDockerOrchestrator {
             // host/container namespace sharing, not the safe private default.
             && (!hostConfig.PidMode || hostConfig.PidMode === 'private')
             && (!hostConfig.IpcMode || hostConfig.IpcMode === 'private')
-            && hostConfig.NetworkMode === networkMode;
+            && hostConfig.NetworkMode === networkMode
+            && this.tenantRuntimeMatches(hostConfig, labels['com.qaap.tenant-login'], extraHosts);
     }
 
     /** Derive the complete per-tenant mount set from any one of its canonical roots. */
@@ -2527,7 +2717,8 @@ export class QaapDockerOrchestrator {
     }
 
     protected getTenantPidsLimitFor(ownerLogin: string | undefined): number {
-        return QaapTenantResourceOverrides.pidsLimit(ownerLogin, this.getTenantPidsLimit());
+        const limit = QaapTenantResourceOverrides.pidsLimit(ownerLogin, this.getTenantPidsLimit());
+        return this.getTenantRuntime(ownerLogin) === 'runsc' ? limit * QAAP_RUNSC_PIDS_FACTOR : limit;
     }
 
     protected getTenantBackendIngressRelayMemoryLimit(): number {
@@ -2567,6 +2758,58 @@ export class QaapDockerOrchestrator {
             throw new Error('QAAP_TENANT_DOCKER_IMAGE or QAAP_THEIA_IMAGE is required for hosted tenant workers.');
         }
         return DEFAULT_IMAGE;
+    }
+
+    protected getTenantRuntime(ownerLogin?: string): QaapTenantRuntime {
+        return resolveQaapTenantRuntime(ownerLogin, process.env);
+    }
+
+    /**
+     * `/etc/hosts` entries a gVisor tenant needs. Docker's embedded DNS does not work under runsc, so the
+     * only internal name a tenant uses, its Squid proxy, is written with the address it has right now. The
+     * address changes when Squid is recreated: the matchers then see a stale entry and recreate the container.
+     */
+    protected async tenantRunscExtraHosts(docker: Dockerode, networkMode: string, ownerLogin?: string): Promise<readonly string[]> {
+        if (this.getTenantRuntime(ownerLogin) !== 'runsc' || networkMode === 'none') {
+            return [];
+        }
+        if (!process.env.QAAP_TENANT_EGRESS_PROXY_IMAGE?.trim()) {
+            throw new Error('gVisor tenants require QAAP_TENANT_EGRESS_PROXY_IMAGE.');
+        }
+        const proxyName = this.tenantEgressProxyNameFor(ownerLogin);
+        const inspect = await docker.getContainer(proxyName).inspect() as Dockerode.ContainerInspectInfo & {
+            NetworkSettings?: { Networks?: Record<string, { IPAddress?: string } | undefined> };
+        };
+        const address = inspect.NetworkSettings?.Networks?.[networkMode]?.IPAddress;
+        if (!inspect.State?.Running || !address) {
+            throw new Error(`Tenant egress proxy ${proxyName} has no address on ${networkMode}.`);
+        }
+        return [`${QAAP_TENANT_EGRESS_PROXY_ALIAS}:${address}`];
+    }
+
+    /** `HostConfig` fragment of a container that runs tenant code; empty under runc. */
+    protected tenantRuntimeHostConfig(ownerLogin: string | undefined, extraHosts: readonly string[]): { Runtime?: string; CgroupParent?: string; ExtraHosts?: string[] } {
+        return this.getTenantRuntime(ownerLogin) === 'runsc'
+            ? {
+                Runtime: QAAP_RUNSC_RUNTIME_NAME,
+                CgroupParent: qaapTenantCgroupParent(ownerLogin),
+                ...(extraHosts.length > 0 ? { ExtraHosts: [...extraHosts] } : {}),
+            }
+            : {};
+    }
+
+    /** An existing container must run the tenant's runtime with current `/etc/hosts` entries, in both directions. */
+    protected tenantRuntimeMatches(
+        hostConfig: { Runtime?: string; CgroupParent?: string; ExtraHosts?: string[] | null },
+        ownerLogin: string | undefined,
+        extraHosts: readonly string[] = [],
+    ): boolean {
+        const runsc = this.getTenantRuntime(ownerLogin) === 'runsc';
+        const hosts = hostConfig.ExtraHosts ?? [];
+        return (hostConfig.Runtime === QAAP_RUNSC_RUNTIME_NAME) === runsc
+            && (hostConfig.CgroupParent || '') === (runsc ? qaapTenantCgroupParent(ownerLogin) : '')
+            && hosts.length === (runsc ? extraHosts.length : 0)
+            && (!runsc || extraHosts.every(entry => hosts.includes(entry)));
     }
 
     protected getTenantContainerUser(): string {
@@ -2929,6 +3172,9 @@ export class QaapDockerOrchestrator {
                 SecurityOpt: ['no-new-privileges:true'],
                 ReadonlyRootfs: true,
                 Tmpfs: { '/tmp': 'rw,noexec,nosuid,nodev,size=16m' },
+                Memory: TENANT_EGRESS_PROXY_MEMORY,
+                PidsLimit: TENANT_EGRESS_PROXY_PIDS,
+                NanoCpus: TENANT_EGRESS_PROXY_NANO_CPUS,
                 AutoRemove: false,
             },
         });
@@ -3047,6 +3293,9 @@ export class QaapDockerOrchestrator {
             && raw.Config?.User === 'proxy'
             && raw.Config?.Cmd?.join('\u0000') === ['squid', '-N', '-f', '/etc/squid/squid.conf'].join('\u0000')
             && host.NetworkMode === qaapDockerName(QAAP_TENANT_EGRESS_UPLINK)
+            && (host as { Memory?: number }).Memory === TENANT_EGRESS_PROXY_MEMORY
+            && (host as { PidsLimit?: number }).PidsLimit === TENANT_EGRESS_PROXY_PIDS
+            && (host as { NanoCpus?: number }).NanoCpus === TENANT_EGRESS_PROXY_NANO_CPUS
             && host.CapDrop?.includes('ALL') === true
             && host.SecurityOpt?.includes('no-new-privileges:true') === true
             && host.ReadonlyRootfs === true

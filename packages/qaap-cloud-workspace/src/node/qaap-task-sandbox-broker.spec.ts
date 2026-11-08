@@ -437,6 +437,37 @@ describe('QaapTaskSandboxBroker (control plane)', () => {
         }
     });
 
+    it('applies the gVisor runtime and Squid address from the placement, and recreates a stale sandbox', () => {
+        const access = broker as unknown as { runtimeMatches(inspect: unknown, placement: QaapTaskSandboxPlacement): boolean };
+        const hosts = ['qaap-tenant-egress-proxy:172.24.0.2'];
+        const cgroupParent = 'qaap-0123456789abcdef.slice';
+        const runsc: QaapTaskSandboxPlacement = { ...placementFor('alice'), runtime: 'runsc', cgroupParent, extraHosts: hosts };
+        const runc: QaapTaskSandboxPlacement = { ...placementFor('alice'), runtime: 'runc', extraHosts: [] };
+        const inspect = (HostConfig: Record<string, unknown>): unknown => ({ HostConfig });
+        expect(access.runtimeMatches(inspect({ Runtime: 'runsc', CgroupParent: cgroupParent, ExtraHosts: hosts }), runsc)).to.equal(true);
+        expect(access.runtimeMatches(inspect({ Runtime: 'runsc', ExtraHosts: hosts }), runsc), 'outside the tenant slice').to.equal(false);
+        expect(access.runtimeMatches(inspect({ Runtime: 'runc', CgroupParent: cgroupParent, ExtraHosts: hosts }), runsc)).to.equal(false);
+        expect(access.runtimeMatches(inspect({ Runtime: 'runsc', CgroupParent: cgroupParent, ExtraHosts: ['qaap-tenant-egress-proxy:172.24.0.9'] }), runsc)).to.equal(false);
+        expect(access.runtimeMatches(inspect({ Runtime: 'runsc', CgroupParent: cgroupParent }), runsc)).to.equal(false);
+        expect(access.runtimeMatches(inspect({ Runtime: 'runc' }), runc)).to.equal(true);
+        expect(access.runtimeMatches(inspect({}), placementFor('alice'))).to.equal(true);
+        expect(access.runtimeMatches(inspect({ Runtime: 'runsc', ExtraHosts: hosts }), runc)).to.equal(false);
+    });
+
+    it('creates the sandbox under runsc, and the toolchain copier stays on the default runtime', async () => {
+        const hosts = ['qaap-tenant-egress-proxy:172.24.0.2'];
+        (broker as unknown as { orchestrator: { taskSandboxPlacement: unknown } }).orchestrator.taskSandboxPlacement =
+            async (tenant: string) => ({ ...placementFor(tenant), runtime: 'runsc', cgroupParent: 'qaap-0123456789abcdef.slice', extraHosts: hosts });
+        const sandbox = await broker.create('alice', { root: '/tmp/qaap-worktrees/alice/repo-1' });
+        const config = docker.created.find(entry => entry.name === sandbox.name) as { HostConfig: { Runtime?: string; CgroupParent?: string; ExtraHosts?: string[] } };
+        expect(config.HostConfig.Runtime).to.equal('runsc');
+        expect(config.HostConfig.CgroupParent).to.equal('qaap-0123456789abcdef.slice');
+        expect(config.HostConfig.ExtraHosts).to.deep.equal(hosts);
+        expect((config.HostConfig as { PidsLimit?: number }).PidsLimit).to.equal(2048);
+        const others = docker.created.filter(entry => entry.name !== sandbox.name) as Array<{ HostConfig: { Runtime?: string } }>;
+        expect(others.every(entry => entry.HostConfig.Runtime === undefined)).to.equal(true);
+    });
+
     it('creates a hardened sandbox on the tenant network that binds only the fixed tenant roots', async () => {
         const args: QaapTaskSandboxBrokerCreateArgs = {
             root: '/tmp/qaap-worktrees/alice/repo-1',
