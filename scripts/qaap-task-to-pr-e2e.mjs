@@ -2,7 +2,7 @@
 // Task → PR with evidence end to end (roadmap H3.1/H3.2, doc/qaap-task-to-pr.md).
 //
 // Starts the built browser backend (examples/browser/lib/backend/main.js) in skip-auth local mode with
-// an isolated HOME, a fake `qaiq` on PATH that edits a file, a local bare repository as the project's
+// an isolated HOME, a fake `claude` on PATH that edits a file, a local bare repository as the project's
 // `origin` and a tiny local GitHub REST stub (QAAP_GITHUB_API_BASE_URL). QAAP_TASK_PR_TEST_TOKEN is the
 // token the task pull request service uses in that mode only. Runs one chat turn and requires:
 // - the bare remote got `refs/heads/qaap/task/<conversationId>` with the agent's file and without the
@@ -28,10 +28,12 @@ const ROOT = resolve(import.meta.dirname, '..');
 const BACKEND = join(ROOT, 'examples/browser/lib/backend/main.js');
 const CONVERSATIONS = '/qaap/api/agent-conversations';
 
-const FAKE_QAIQ = `#!/usr/bin/env bash
-# Fake qaiq for the task-to-pr e2e (stream-json over stdio): writes one file and reports success.
-if [[ "\${1:-}" == "--version" ]]; then echo "qaiq 0.0.0-task-pr-e2e"; exit 0; fi
-IFS= read -r line || true
+const FAKE_CLAUDE = `#!/usr/bin/env bash
+# Fake claude for the task-to-pr e2e (stream-json over stdio): writes one file and reports success.
+if [[ "\${1:-}" == "--version" ]]; then echo "2.1.0 (Claude Code) task-pr-e2e"; exit 0; fi
+if [[ "\${1:-}" == "auth" && "\${2:-}" == "status" ]]; then echo '{"loggedIn": true, "authMethod": "mock", "apiProvider": "mock"}'; exit 0; fi
+# Approvals on: one NDJSON user line, stdin stays open. Approvals off: the prompt is piped and stdin closes.
+if [[ " $* " == *" --input-format "* ]]; then IFS= read -r line || true; else line="$(cat)"; fi
 STATE="\${QAAP_E2E_STATE:?}"
 echo run >> "$STATE/runs"
 runs="$(wc -l < "$STATE/runs" | tr -d ' ')"
@@ -137,8 +139,8 @@ async function main() {
     for (const dir of [home, bin, remote, seed, state]) {
         mkdirSync(dir, { recursive: true });
     }
-    writeFileSync(join(bin, 'qaiq'), FAKE_QAIQ);
-    chmodSync(join(bin, 'qaiq'), 0o755);
+    writeFileSync(join(bin, 'claude'), FAKE_CLAUDE);
+    chmodSync(join(bin, 'claude'), 0o755);
     const gitId = ['-c', 'user.email=e2e@qaap.local', '-c', 'user.name=e2e'];
     execFileSync('git', ['init', '--bare', '-q', '-b', 'main', remote]);
     execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: seed });
@@ -195,7 +197,7 @@ async function main() {
         const created = await api('POST', CONVERSATIONS, {
             // The repo is dirty on purpose (notes-by-user.txt): sharing it is the case under test, so
             // accept the dirt explicitly instead of getting the `dirty_workspace` 409.
-            cwd: repo, agent: 'qaiq', isolation: 'none', acceptDirty: true, title: 'Add the answer module',
+            cwd: repo, agent: 'claude', isolation: 'none', acceptDirty: true, title: 'Add the answer module',
             message: 'Add feature.ts exporting the answer.',
         });
         if (created.status !== 201 || !created.json?.id) {

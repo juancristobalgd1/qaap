@@ -2,12 +2,13 @@
 // Restart-resume end to end (roadmap H1.1): a chat turn must survive the backend being killed under it.
 //
 // Starts the built browser backend (examples/browser/lib/backend/main.js) in skip-auth local mode with
-// an isolated HOME and a fake `qaiq` on PATH, starts a chat turn over HTTP, SIGKILLs the whole backend
+// an isolated HOME and a fake `claude` on PATH, starts a chat turn over HTTP, SIGKILLs the whole backend
 // process group while the turn is running, starts the backend again, and requires the boot-time
 // auto-resume to re-run the turn to completion: the conversation settles (not `failed`), the user
 // message records one restart resume, and the final agent message carries the token from the prompt.
 //
-// The fake qaiq reads the prompt from stdin (qaiq-stdio mode). Its first run prints a partial reply
+// The fake claude reads the prompt from stdin (stream-json NDJSON with approvals on, plain stdin with
+// full access). Its first run prints a partial reply
 // and hangs until killed; every later run echoes the prompt's token and exits 0.
 //
 // Usage: node scripts/qaap-restart-resume-e2e.mjs [--port 3466] [--keep]   (needs `npm run build:browser`)
@@ -22,11 +23,13 @@ const ROOT = resolve(import.meta.dirname, '..');
 const BACKEND = join(ROOT, 'examples/browser/lib/backend/main.js');
 const CONVERSATIONS = '/qaap/api/agent-conversations';
 
-const FAKE_QAIQ = `#!/usr/bin/env bash
-# Fake qaiq for the restart-resume e2e (stream-json over stdio).
-if [[ "\${1:-}" == "--version" ]]; then echo "qaiq 0.0.0-restart-e2e"; exit 0; fi
+const FAKE_CLAUDE = `#!/usr/bin/env bash
+# Fake claude for the restart-resume e2e (stream-json over stdio). Installed on the PATH as "claude".
+if [[ "\${1:-}" == "--version" ]]; then echo "2.1.0 (Claude Code) restart-e2e"; exit 0; fi
+if [[ "\${1:-}" == "auth" && "\${2:-}" == "status" ]]; then echo '{"loggedIn": true, "authMethod": "mock", "apiProvider": "mock"}'; exit 0; fi
 STATE="\${QAAP_E2E_STATE:?}"
-IFS= read -r line || true
+# Approvals on: one NDJSON user line, stdin stays open. Approvals off: the prompt is piped and stdin closes.
+if [[ " $* " == *" --input-format "* ]]; then IFS= read -r line || true; else line="$(cat)"; fi
 token="$(printf '%s' "$line" | grep -oE 'QAAP_RESUME_[0-9A-F]{12}' | head -1)"
 echo "run" >> "$STATE/runs"
 runs="$(wc -l < "$STATE/runs" | tr -d ' ')"
@@ -101,8 +104,8 @@ async function main() {
     for (const dir of [home, bin, state, repo]) {
         mkdirSync(dir, { recursive: true });
     }
-    writeFileSync(join(bin, 'qaiq'), FAKE_QAIQ);
-    chmodSync(join(bin, 'qaiq'), 0o755);
+    writeFileSync(join(bin, 'claude'), FAKE_CLAUDE);
+    chmodSync(join(bin, 'claude'), 0o755);
     execFileSync('git', ['init', '-q'], { cwd: repo });
     writeFileSync(join(repo, 'README.md'), 'restart e2e\n');
     execFileSync('git', ['-c', 'user.email=e2e@qaap.local', '-c', 'user.name=e2e', 'add', '-A'], { cwd: repo });
@@ -152,7 +155,7 @@ async function main() {
         await startBackend('first boot');
         const token = `QAAP_RESUME_${randomBytes(6).toString('hex').toUpperCase()}`;
         const created = await api('POST', CONVERSATIONS, {
-            cwd: repo, agent: 'qaiq', isolation: 'none', title: 'restart e2e',
+            cwd: repo, agent: 'claude', isolation: 'none', title: 'restart e2e',
             message: `Restart e2e. Reply with ${token}`,
         });
         if (created.status !== 201 || !created.json?.id) {
@@ -192,7 +195,7 @@ async function main() {
             [user?.restartResumeCount === 1, `restartResumeCount ${user?.restartResumeCount}`],
             [typeof last?.content === 'string' && last.content.includes(token), `final agent message ${JSON.stringify(last?.content?.slice(0, 120))}`],
             [!agentMessages.some(message => message.content.includes('partial answer before the crash')), 'partial pre-crash message replaced'],
-            [runs >= 2, `qaiq runs ${runs}`],
+            [runs >= 2, `claude runs ${runs}`],
         ];
         for (const [passed, label] of checks) {
             console.log(`${passed ? 'PASS' : 'FAIL'}  ${label}`);
