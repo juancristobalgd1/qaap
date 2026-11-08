@@ -80,3 +80,77 @@ describe('QaapAgentConversationStore goal loop integration', () => {
         expect(events.some(event => event.type === 'goal_loop')).to.equal(false);
     });
 });
+
+describe('QaapAgentConversationStore cancel is idempotent', () => {
+    let store: QaapAgentConversationStore;
+    let events: QaapAgentConversationEvent[];
+    let runnerCancels: string[];
+
+    beforeEach(() => {
+        store = Object.create(QaapAgentConversationStore.prototype) as QaapAgentConversationStore;
+        events = [];
+        runnerCancels = [];
+        const fields = store as unknown as Record<string, unknown>;
+        const taskToConversation = new Map<string, { conversationId: string; userMessageId: string; turnAgentId: string; agentMessageId: string }>();
+        fields.conversations = new Map<string, QaapAgentConversation>();
+        fields.taskToConversation = taskToConversation;
+        fields.fire = (event: QaapAgentConversationEvent): void => { events.push(event); };
+        fields.persist = async (): Promise<void> => undefined;
+        fields.flushPersist = (): void => undefined;
+        fields.schedulePersist = (): void => undefined;
+        // Wire fan-out is not under test here; the trace and status edits are.
+        fields.publishFinalizedAgentMessage = (): void => undefined;
+        fields.getActiveTaskIdsForConversation = (conversationId: string): string[] =>
+            [...taskToConversation.entries()].filter(([, ref]) => ref.conversationId === conversationId).map(([taskId]) => taskId);
+        // A cancelled task settles and its conversation ref is released, as the task outcome path does.
+        fields.taskRunner = {
+            cancel: (taskId: string): undefined => {
+                runnerCancels.push(taskId);
+                taskToConversation.delete(taskId);
+                return undefined;
+            },
+            list: (): QaapAgentTask[] => [],
+        };
+        store.conversations.set('c1', {
+            id: 'c1',
+            cwd: '/repo',
+            agentId: 'claude',
+            title: 'Login',
+            status: 'streaming',
+            createdAt: 0,
+            updatedAt: 0,
+            messages: [
+                { id: 'u1', role: 'user', content: 'do it', createdAt: 0, taskId: 't1' },
+                { id: 'a1', role: 'agent', content: '', createdAt: 0, status: 'streaming' },
+            ],
+            pendingUserMessages: [{ id: 'q1', content: 'follow up', createdAt: 0 }],
+        } as unknown as QaapAgentConversation);
+        taskToConversation.set('t1', { conversationId: 'c1', userMessageId: 'u1', turnAgentId: 'claude', agentMessageId: 'a1' });
+    });
+
+    const traceCount = (conv: QaapAgentConversation): number =>
+        conv.messages.flatMap(message => message.traceEvents ?? []).filter(event => event.type === 'run_cancelled').length;
+
+    it('settles to idle at once with exactly one updated event and pauses the queue', () => {
+        const next = store.cancel('c1')!;
+
+        expect(next.status).to.equal('idle');
+        expect(next.pendingUserMessagesPaused).to.equal(true);
+        expect(runnerCancels).to.deep.equal(['t1']);
+        expect(events.filter(event => event.type === 'updated')).to.have.length(1);
+    });
+
+    it('makes a second cancel a no-op: no duplicate trace and no new updated event', () => {
+        const first = store.cancel('c1')!;
+        const updatesAfterFirst = events.filter(event => event.type === 'updated').length;
+        const tracesAfterFirst = traceCount(first);
+
+        const second = store.cancel('c1')!;
+
+        expect(second).to.equal(first);
+        expect(traceCount(second)).to.equal(tracesAfterFirst);
+        expect(tracesAfterFirst).to.equal(1);
+        expect(events.filter(event => event.type === 'updated')).to.have.length(updatesAfterFirst);
+        expect(runnerCancels).to.deep.equal(['t1']);
+    });
+});

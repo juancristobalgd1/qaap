@@ -63,7 +63,7 @@ describe('Qaap login gate accessibility contract', () => {
         expect(source).to.include('cursor:not-allowed');
         expect(source).to.include('.qaap-login-btn[aria-busy="true"]{cursor:wait}');
         expect(source).to.include('.qaap-login-btn[hidden]{display:none}');
-        expect(source).to.include('var AUTH_CONFIG_TIMEOUT_MS = 4000');
+        expect(source).to.include('var AUTH_CONFIG_TIMEOUT_MS = 8000');
         expect(source).to.include('var AUTH_SESSION_TIMEOUT_MS = 6000');
         expect(source).to.include('function showGateAndLoadBundle()');
         expect(source).to.include('if (skipped === false)');

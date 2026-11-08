@@ -45,6 +45,7 @@ import {
     collectMobileClosingNarrativeTextsBefore as collectMobileClosingNarrativeTextsBeforeHelper,
 } from './mobile-projects-transcript-messages-artifacts-helpers';
 import { resolveTranscriptDiscardCheckpointId, resolveTranscriptTurnRetryAttempt } from '../common/qaap-transcript-turn-recovery';
+import { createMobileStoppedTurnLineElement } from './mobile-stopped-turn-line';
 
 export function removeTranscriptLiveStatusWithOrbExtracted(ctx: MobileProjectsTranscriptMessagesArtifactsUiContext, root: ParentNode): void {
         removeTranscriptLiveStatusElement(root, {
@@ -137,6 +138,11 @@ export function createTranscriptAgentSegmentsRowExtracted(ctx: MobileProjectsTra
                     textBlock.setAttribute(TRANSCRIPT_SEGMENT_INDEX_ATTR, String(segmentIndex));
                     body.append(textBlock);
                 }
+            }
+            // A Stop on a turn without tool calls has no process accordion to say so: show the
+            // stopped closing state under whatever partial answer streamed.
+            if (ctx.isAgentMessageCancelled(options?.message ?? ctx.resolveLastAgentMessage(conv))) {
+                body.append(createMobileStoppedTurnLineElement());
             }
         }
 
@@ -354,6 +360,8 @@ export function resolveRunStopHandlerExtracted(ctx: MobileProjectsTranscriptMess
             return () => ctx.host.cancelOpenTranscriptStream?.();
         }
         return () => {
+            // Optimistic: this run shows "Turn cancelled." at once; the backend answer settles it.
+            ctx.host.transcriptLiveUi.applyOptimisticRunCancel(conv.id, message.id);
             void cancelConversationRun(conv.id, userMessageId).catch(() => {
                 // Backend refused the targeted cancel — fall back to stopping the session.
                 ctx.host.cancelOpenTranscriptStream?.();

@@ -10,12 +10,13 @@ import { nls } from '@theia/core/lib/common/nls';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
 import { getQaapDefaultAgentId } from '@theia/qaap-shared-core/lib/common/qaap-default-agent-id';
-import { createConversation, createConversationRequestId } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { createConversation, createConversationRequestId, QaapDirtyWorkspaceError } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { retryAfterDirtyWorkspace, type QaapDirtyWorkspaceRetryOptions } from './mobile-projects-workspace-dirty-dialog';
 import {
     readStoredAgent,
     type QaapCreateAgentTaskQaiqModel,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
-import { resolveStoredAgentModelForSubmit } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
+import { confirmPaidModelSend, resolveSendAgentModel } from '@theia/qaap-composer/lib/browser/qaap-paid-model-send-confirm';
 import type {
     QaapAttachComposerContextArgs,
     QaapWorkHubPickAgentAndSubmitPromptOptions,
@@ -147,21 +148,44 @@ export class QaapWorkHubComposerPromptService {
             return;
         }
         const agent = options.agentId ?? readStoredAgent(cwd) ?? getQaapDefaultAgentId();
-        const agentModel = options.agentModel ?? resolveStoredAgentModelForSubmit(agent, cwd);
+        const modelResolution = await resolveSendAgentModel(agent, cwd, options.agentModel);
+        if (!modelResolution.ok) {
+            // Fail closed: a picker agent with no chosen model never sends on the CLI default.
+            this.messages.warn(nls.localize('qaap/composer/chooseModelForAgent', 'Choose a model for {0}', agent));
+            return;
+        }
+        const agentModel = modelResolution.model;
+        // A paid model asks once per project per browser session before the first prompt is sent.
+        if (!await confirmPaidModelSend(cwd, agentModel)) {
+            return;
+        }
         const retry = this.pendingSubmit?.prompt === prompt && this.pendingSubmit.cwd === cwd ? this.pendingSubmit : undefined;
         const clientRequestId = retry?.clientRequestId ?? createConversationRequestId();
         this.pendingSubmit = { prompt, cwd, clientRequestId };
+        const create = (extra: QaapDirtyWorkspaceRetryOptions = {}) => createConversation({
+            cwd,
+            clientRequestId,
+            agent,
+            title: prompt,
+            message: prompt,
+            ...(agentModel ? { agentModel, qaiqModel: agentModel } : {}),
+            ...(extra.isolation ? { isolation: extra.isolation } : {}),
+            ...(extra.acceptDirty ? { acceptDirty: true } : {}),
+        });
         try {
-            await createConversation({
-                cwd,
-                clientRequestId,
-                agent,
-                title: prompt,
-                message: prompt,
-                ...(agentModel ? { agentModel, qaiqModel: agentModel } : {}),
+            // A shared tree with uncommitted changes asks first (409 dirty_workspace): Start clean or Continue here.
+            const created = await create().catch(error => {
+                if (error instanceof QaapDirtyWorkspaceError) {
+                    return retryAfterDirtyWorkspace(error, create);
+                }
+                throw error;
             });
             if (this.pendingSubmit?.clientRequestId === clientRequestId) {
                 this.pendingSubmit = undefined;
+            }
+            if (!created) {
+                // Cancelled on the dirty-workspace dialog: nothing was created.
+                return;
             }
             this.messages.info(nls.localize(
                 'qaap/workHub/composerPromptStarted',

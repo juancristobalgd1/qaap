@@ -45,6 +45,17 @@ describe('QaapSqliteStore', () => {
         database.close();
     });
 
+    it('reports the cost of a namespace rewrite without record content', () => {
+        const store = new QaapSqliteStore({ databasePath: path.join(directory, 'state.sqlite'), namespace: 'stats' });
+        const stats = store.replace([['a', { secret: 'PRIVATE TEXT' }], ['b', { secret: 'MORE' }]]);
+        expect(stats.namespace).to.equal('stats');
+        expect(stats.entries).to.equal(2);
+        expect(stats.chars).to.equal(JSON.stringify({ secret: 'PRIVATE TEXT' }).length + JSON.stringify({ secret: 'MORE' }).length);
+        expect(stats.stringifyMs).to.be.at.least(0);
+        expect(stats.totalMs).to.be.at.least(stats.stringifyMs);
+        expect(JSON.stringify(stats)).to.not.include('PRIVATE TEXT');
+    });
+
     it('imports a legacy JSON file once and keeps the source untouched', () => {
         const legacyPath = path.join(directory, 'legacy.json');
         const databasePath = path.join(directory, 'state.sqlite');
@@ -207,6 +218,73 @@ describe('QaapSqliteStore', () => {
             expect(store.list<number>()).to.deep.equal([['new', 2]]);
             expect(fs.existsSync(databasePath)).to.equal(true);
             expect(registry.opens).to.equal(2);
+        });
+    });
+
+    describe('applyBatch, hasMigration and recordMigration', () => {
+        let batchDirectory: string;
+
+        beforeEach(() => {
+            batchDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-sqlite-batch-'));
+        });
+
+        afterEach(() => {
+            QaapSqliteConnectionRegistry.shared.closeUnder(batchDirectory);
+            fs.rmSync(batchDirectory, { recursive: true, force: true });
+        });
+
+        it('applies upserts and deletes in one transaction', () => {
+            const store = new QaapSqliteStore({ databasePath: path.join(batchDirectory, 'state.sqlite'), namespace: 'batch' });
+            store.set('gone', 0);
+            store.applyBatch<unknown>([['a', 1], ['b', { two: 2 }]], ['gone', 'missing']);
+            expect(store.list<unknown>()).to.deep.equal([['a', 1], ['b', { two: 2 }]]);
+        });
+
+        it('is atomic: a value that cannot be serialized leaves no change behind', () => {
+            const store = new QaapSqliteStore({ databasePath: path.join(batchDirectory, 'state.sqlite'), namespace: 'batch' });
+            store.set('keep', 'original');
+            expect(() => store.applyBatch<unknown>([
+                ['keep', 'changed'],
+                ['new', 1n],
+            ], ['keep'])).to.throw();
+            expect(store.list<unknown>()).to.deep.equal([['keep', 'original']]);
+        });
+
+        it('deletes only the requested key and leaves the other keys of the namespace', () => {
+            const databasePath = path.join(batchDirectory, 'state.sqlite');
+            const store = new QaapSqliteStore({ databasePath, namespace: 'batch' });
+            const other = new QaapSqliteStore({ databasePath, namespace: 'other' });
+            store.set('x', 1);
+            store.set('y', 2);
+            other.set('x', 'other-namespace');
+            store.applyBatch([], ['x']);
+            expect(store.list<number>()).to.deep.equal([['y', 2]]);
+            expect(other.get<string>('x')).to.equal('other-namespace');
+        });
+
+        it('records and reports a migration per namespace', () => {
+            const databasePath = path.join(batchDirectory, 'state.sqlite');
+            const store = new QaapSqliteStore({ databasePath, namespace: 'v2' });
+            const other = new QaapSqliteStore({ databasePath, namespace: 'other' });
+            expect(store.hasMigration()).to.equal(false);
+            store.withTransaction(() => {
+                store.applyBatch([['conv:1', { id: '1' }]], []);
+                store.recordMigration('legacy-namespace');
+            });
+            expect(store.hasMigration()).to.equal(true);
+            expect(other.hasMigration()).to.equal(false);
+            expect(store.get<{ id: string }>('conv:1')).to.deep.equal({ id: '1' });
+        });
+
+        it('rolls back the rows together with a migration mark that fails to record', () => {
+            const databasePath = path.join(batchDirectory, 'state.sqlite');
+            const store = new QaapSqliteStore({ databasePath, namespace: 'v2' });
+            store.recordMigration('first');
+            expect(() => store.withTransaction(() => {
+                store.applyBatch([['conv:1', 1]], []);
+                store.recordMigration('second');
+            })).to.throw();
+            expect(store.list<number>()).to.deep.equal([]);
         });
     });
 });

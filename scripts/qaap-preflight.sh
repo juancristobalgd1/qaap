@@ -227,8 +227,16 @@ changed_lint() {
 changed_tests() {
     git rev-parse --verify --quiet "${BASE_REF}^{commit}" >/dev/null \
         || { echo "Base ref ${BASE_REF} not found; git fetch origin master or pass --base." >&2; return 2; }
-    # Same scope and concurrency as `npm run test:theia`, restricted to changed packages + dependents.
-    npx lerna run test --scope "@theia/!(example-)*" --since "$BASE_REF" --include-dependents --stream --concurrency=1
+    # Same packages and concurrency as `npm run test:theia`, restricted to changed packages + dependents.
+    # The list is computed apart: lerna's --include-dependents ignores --scope and would add the example apps.
+    local scopes
+    scopes="$(node scripts/qaap-affected-test-scopes.js "$BASE_REF")" || return 1
+    if [[ -z "$scopes" ]]; then
+        echo "No package to test."
+        return 0
+    fi
+    # shellcheck disable=SC2086 # one --scope=<name> word per package
+    npx lerna run test --stream --concurrency=1 $scopes
 }
 
 full_lint() { npx lerna run lint --stream --concurrency 2; }

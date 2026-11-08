@@ -23,6 +23,8 @@ import {
     type QaapTranscriptLiveRefreshOptions,
 } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-live-controller';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
+import { qaapStopAck } from '@theia/qaap-shared-core/lib/browser/qaap-stop-ack';
+import { overlayPendingStopOnConversation } from '../common/qaap-transcript-stop-overlay';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
 export function scheduleTranscriptConversationRefreshExtracted(ctx: MobileProjectsTranscriptLiveUiContext, project: MobileProjectEntry,
@@ -162,9 +164,12 @@ export async function doRefreshOpenTranscriptConversationExtracted(ctx: MobilePr
             && !options?.forcePoll) {
             return;
         }
-        const localSnapshot = options?.forcePoll
+        const cachedSnapshot = options?.forcePoll && !options.bypassCache
             ? ctx.readCachedTranscriptConversation(activeSummary.id)
             : undefined;
+        const localSnapshot = cachedSnapshot && qaapStopAck.isStopOverlayActive(activeSummary.id)
+            ? overlayPendingStopOnConversation(cachedSnapshot)
+            : cachedSnapshot;
         if (localSnapshot && localSnapshot.messages.length > 0) {
             ctx.host.transcriptLastConv = localSnapshot;
             const cacheFingerprint = ctx.conversationTranscriptFingerprint(localSnapshot);
@@ -173,14 +178,25 @@ export async function doRefreshOpenTranscriptConversationExtracted(ctx: MobilePr
                 ctx.host.transcriptMessagesUi.renderTranscriptMessages(activeChatHost, localSnapshot);
             }
         }
+        // A GET that started before a Stop settled may predate the acknowledgement: its streaming
+        // answer must not repaint the stopped run as working.
+        const stopSequenceAtStart = qaapStopAck.currentSequence();
         try {
-            const full = await ctx.resolveOpenTranscriptConversation(activeSummary);
-            if (!full) {
+            const answered = await ctx.resolveOpenTranscriptConversation(activeSummary);
+            if (!answered) {
                 throw new Error('Conversation not found');
             }
             if (!ctx.isActiveTranscriptConversation(activeSummary.id) || !activeChatHost.isConnected) {
                 return;
             }
+            if (answered.status === 'streaming' && qaapStopAck.settledSince(answered.id, stopSequenceAtStart)) {
+                return;
+            }
+            if (answered.status !== 'streaming') {
+                // The server reports the run ended: a Stop still pending cannot end a turn that is over.
+                qaapStopAck.reportServerIdle(answered.id);
+            }
+            const full = qaapStopAck.isStopOverlayActive(answered.id) ? overlayPendingStopOnConversation(answered) : answered;
             const fingerprint = ctx.conversationTranscriptFingerprint(full);
             const fingerprintUnchanged = fingerprint === ctx.host.transcriptLastFingerprint;
             const forceStatusSettle = options?.forceStatusSettle

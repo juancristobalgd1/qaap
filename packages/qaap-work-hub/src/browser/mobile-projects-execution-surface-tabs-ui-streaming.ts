@@ -308,11 +308,11 @@ export function executionSurfaceTabSpecsExtracted(ctx: MobileProjectsExecutionSu
     // must not strip the Work Hub surfaces there.
     if (!matchesMobileOneColumnLayout() && peekPreferDesktopIde()) {
         return [
-            { id: 'preview', label: nls.localize('qaap/mobileProjects/tabPreview', 'Navegador'), icon: 'codicon-globe' },
+            { id: 'preview', label: nls.localize('qaap/mobileProjects/tabPreview', 'Browser'), icon: 'codicon-globe' },
         ];
     }
     return [
-        { id: 'preview', label: nls.localize('qaap/mobileProjects/tabPreview', 'Navegador'), icon: 'codicon-globe' },
+        { id: 'preview', label: nls.localize('qaap/mobileProjects/tabPreview', 'Browser'), icon: 'codicon-globe' },
         { id: 'files', label: nls.localize('qaap/mobileProjects/tabFiles', 'Files'), icon: 'codicon-files' },
         { id: 'terminal', label: nls.localize('qaap/mobileProjects/tabTerminal', 'Terminal'), icon: 'codicon-terminal' },
     ];

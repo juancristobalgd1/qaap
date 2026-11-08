@@ -5,6 +5,7 @@
 
 import { expect } from 'chai';
 import { devPreviewProbeBackoffDelays, probeQaapDevPreviewPort, probeQaapIdentityPreview, resolveQaapIdentityProbeState, waitForQaapDevPreviewPort } from './qaap-dev-preview-client';
+import type { QaapDevPreviewProbeResponse } from '../common/qaap-dev-preview';
 
 describe('qaap-dev-preview-client cancellation', () => {
     const globals = globalThis as unknown as { window?: unknown; fetch: typeof fetch };
@@ -135,5 +136,70 @@ describe('qaap-dev-preview-client identity probe state', () => {
 
         globals.fetch = (() => Promise.reject(new Error('offline'))) as typeof fetch;
         expect((await probeQaapIdentityPreview('abc')).state).to.equal('unknown');
+    });
+});
+
+describe('qaap-dev-preview-client listening grace', () => {
+    const listening = (): QaapDevPreviewProbeResponse => ({ ready: false, listening: true, previewUrl: '' });
+    const ready = (): QaapDevPreviewProbeResponse => ({ ready: true, readiness: 'transport_ready', previewUrl: '' });
+    const down = (): QaapDevPreviewProbeResponse => ({ ready: false, previewUrl: '' });
+
+    /** Replays `answers` in order and repeats the last one once they run out. */
+    function scripted(answers: Array<() => QaapDevPreviewProbeResponse>): { probe: (port: number) => Promise<QaapDevPreviewProbeResponse>; calls: () => number } {
+        let calls = 0;
+        return {
+            probe: async (): Promise<QaapDevPreviewProbeResponse> => {
+                const answer = answers[Math.min(calls, answers.length - 1)];
+                calls++;
+                return answer();
+            },
+            calls: () => calls,
+        };
+    }
+
+    it('keeps polling a listening port past maxAttempts and resolves when it becomes ready', async () => {
+        const script = scripted([listening, listening, listening, listening, ready]);
+        let listeningNotified = 0;
+        const result = await waitForQaapDevPreviewPort(5173, {
+            maxAttempts: 2,
+            intervalMs: 1,
+            listeningGraceMs: 10_000,
+            onListening: () => { listeningNotified++; },
+            probe: script.probe,
+        });
+        expect(result?.ready).to.equal(true);
+        expect(script.calls()).to.equal(5);
+        expect(listeningNotified).to.equal(1);
+    });
+
+    it('gives up after maxAttempts when nothing listens', async () => {
+        const script = scripted([down]);
+        const result = await waitForQaapDevPreviewPort(5173, { maxAttempts: 3, intervalMs: 1, random: () => 0.5, probe: script.probe });
+        expect(result).to.equal(undefined);
+        expect(script.calls()).to.equal(3);
+    });
+
+    it('counts listening probes like any other when no grace is set', async () => {
+        const script = scripted([listening]);
+        let listeningNotified = 0;
+        const result = await waitForQaapDevPreviewPort(5173, {
+            maxAttempts: 3,
+            intervalMs: 1,
+            random: () => 0.5,
+            onListening: () => { listeningNotified++; },
+            probe: script.probe,
+        });
+        expect(result).to.equal(undefined);
+        expect(script.calls()).to.equal(3);
+        expect(listeningNotified).to.equal(1);
+    });
+
+    it('stops once the listening grace window has elapsed', async () => {
+        const script = scripted([listening]);
+        const startedAt = Date.now();
+        const result = await waitForQaapDevPreviewPort(5173, { maxAttempts: 2, intervalMs: 5, listeningGraceMs: 30, probe: script.probe });
+        expect(result).to.equal(undefined);
+        expect(script.calls()).to.be.greaterThan(1);
+        expect(Date.now() - startedAt).to.be.lessThan(1000);
     });
 });

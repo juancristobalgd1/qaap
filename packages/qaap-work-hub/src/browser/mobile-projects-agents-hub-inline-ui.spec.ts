@@ -175,8 +175,20 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
         expect(host.scroll.querySelector('.theia-mobile-agents-hub-onboarding')).to.equal(null);
         expect(host.scroll.textContent).not.to.include('Add your first project');
         expect(host.scroll.textContent).not.to.include('Start new project');
-        expect(host.scroll.textContent).not.to.include('Add repository');
         expect(host.scroll.querySelector('.theia-mobile-agents-hub-signin-btn')).to.equal(null);
+    });
+
+    it('mirrors the sidebar "No projects yet" empty state so a first visit is not blank', async () => {
+        let added = 0;
+        const host = createHost({ readQaapSignedIn: () => true, onNewClick: async () => { added++; } });
+        const ui = new MobileProjectsAgentsHubInlineUi(host);
+        ui.renderAgentsHubExecutionShell();
+        const empty = host.scroll.querySelector('.theia-mod-no-project .q-empty.theia-mobile-agents-hub-no-project-empty');
+        expect(empty?.querySelector('.q-empty-title')?.textContent).to.equal('No projects yet');
+        const action = empty?.querySelector<HTMLButtonElement>('.q-empty-action');
+        expect(action?.textContent).to.equal('Add repository');
+        action?.click();
+        expect(added).to.equal(1);
     });
 
     it('keeps only a GitHub sign-in action when the user is signed out and has no project', () => {
@@ -838,5 +850,44 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
         expect(host.transcriptLastConv).to.equal(undefined);
         expect(host.transcriptConversationCache.has('__qaap_agents_hub_idle__')).to.equal(false);
         expect(rendered).to.equal(true);
+    });
+
+    it('resetAgentsHubIdleTranscriptShell drops the previous task as the composer target', () => {
+        const project = { id: 'proj-1', name: 'notes-dev' } as MobileProjectEntry;
+        const previousTask = {
+            id: 'task-previous',
+            cwd: '/workspace',
+            agentId: 'codex',
+            title: 'Write a 300-line JavaScript file',
+            status: 'settled',
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            messageCount: 2,
+        } as QaapAgentConversationSummaryDTO;
+        const host = createHost({
+            agentsHubShellActive: false,
+            transcriptOpenSummaryId: 'task-previous',
+            transcriptOpenSummary: previousTask,
+            transcriptComposerSummary: previousTask,
+            transcriptComposerMountKey: 'proj-1|task-previous',
+            projectsService: {
+                getProjectCwd: () => '/workspace',
+            } as unknown as MobileProjectsAgentsHubInlineHost['projectsService'],
+            transcriptLiveUi: {
+                clearTranscriptSemanticProgressClock: () => undefined,
+                stopTranscriptLiveWatch: () => undefined,
+                peekCachedOpenTranscript: () => undefined,
+                applyCachedTranscriptOnOpen: () => false,
+                isTrustedOpenTranscriptCache: () => false,
+            } as unknown as MobileProjectsAgentsHubInlineHost['transcriptLiveUi'],
+            transcriptUi: {
+                disposeList: () => undefined,
+            } as unknown as MobileProjectsAgentsHubInlineHost['transcriptUi'],
+        });
+        const ui = new MobileProjectsAgentsHubInlineUi(host);
+        ui.resetAgentsHubIdleTranscriptShell(project);
+        expect(host.transcriptOpenSummaryId).to.equal(undefined);
+        expect(host.transcriptComposerSummary).to.equal(undefined);
+        expect(host.transcriptComposerMountKey).to.equal(undefined);
     });
 });

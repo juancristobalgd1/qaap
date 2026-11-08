@@ -197,6 +197,28 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
         expect(host.transcriptComposerQueueExpanded).to.equal(true);
     });
 
+    it('says the queue is paused when the conversation has paused pending messages', () => {
+        const probe = createProbe({ agentWorking: false });
+        const host = (probe.ui as unknown as {
+            host: { transcriptLastConv: unknown };
+        }).host;
+        host.transcriptLastConv = { id: summary.id, pendingUserMessagesPaused: true };
+
+        expect(probe.ui.enqueueTranscriptFollowUp(summary.id, { draft: 'paused follow-up' })).to.equal(true);
+        expect(document.body.textContent).to.contain('1 message(s) queued — paused, send or discard');
+    });
+
+    it('keeps the will-send-later message when the queue is not paused', () => {
+        const probe = createProbe({ agentWorking: true });
+        const host = (probe.ui as unknown as {
+            host: { transcriptLastConv: unknown };
+        }).host;
+        host.transcriptLastConv = { id: summary.id, pendingUserMessagesPaused: false };
+
+        expect(probe.ui.enqueueTranscriptFollowUp(summary.id, { draft: 'running follow-up' })).to.equal(true);
+        expect(document.body.textContent).to.contain('will send when the agent finishes');
+    });
+
     it('resets the expanded state after the last queued message is gone', () => {
         const root = document.createElement('div');
         const wrap = document.createElement('div');
@@ -388,6 +410,56 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
         expect(optimisticRenders).to.deep.equal([]);
     });
 
+    it('opens the agent sheet when no send model can be resolved', async () => {
+        const paidModelModule = require('./qaap-paid-model-send-confirm');
+        const originalResolve = paidModelModule.resolveSendAgentModel;
+        const openedSheets: unknown[][] = [];
+        paidModelModule.resolveSendAgentModel = async () => ({ ok: false });
+        try {
+            const host = {
+                transcriptComposerContext: [],
+                transcriptComposerDraft: 'needs a model',
+                transcriptComposerDraftPersistTimer: undefined,
+                transcriptComposerModeId: undefined,
+                transcriptComposerApprovalPolicyId: undefined,
+                transcriptComposerAgentModel: undefined,
+                transcriptComposerHost: undefined,
+                transcriptComposerSendRefresh: undefined,
+                transcriptComposerUi: {
+                    openTranscriptComposerAgentSheet: (...args: unknown[]) => { openedSheets.push(args); },
+                },
+                resolveAttachmentPreview: () => undefined,
+                messageService: { warn: () => undefined, error: () => undefined },
+                submitTranscriptViaBackendConversation: async () => true,
+            };
+            const ui = Object.create(
+                composerModule.MobileProjectsTranscriptStickyComposerUi.prototype,
+            ) as MobileProjectsTranscriptStickyComposerUi;
+            const seam = ui as unknown as Record<string, any>;
+            seam.host = host;
+            seam.isTranscriptStickyComposerAgentWorking = () => false;
+            seam.remountTranscriptStickyComposer = () => undefined;
+
+            await liveStatusModule.submitTranscriptComposerDraftExtracted(
+                seam as unknown as MobileProjectsTranscriptStickyComposerUiContext,
+                'needs a model',
+                project,
+                { ...summary, status: 'idle' },
+                document.createElement('div'),
+                {
+                    resolvedPinnedId: 'qaiq',
+                    showApprovalPolicy: false,
+                    isLegacyTheiaChat: false,
+                },
+            );
+
+            expect(openedSheets).to.have.lengthOf(1);
+            expect(openedSheets[0][0]).to.equal(project);
+        } finally {
+            paidModelModule.resolveSendAgentModel = originalResolve;
+        }
+    });
+
     it('restores an idle prompt when background task startup is rejected', async () => {
         const submitted: string[] = [];
         const isolations: unknown[] = [];
@@ -402,6 +474,8 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
             transcriptComposerSendRefresh: undefined,
             resolveAttachmentPreview: undefined,
             messageService: { warn: () => undefined, error: () => undefined },
+            projectsService: { getProjectCwd: () => undefined },
+            transcriptComposerUi: { resolveTranscriptComposerAgentModel: () => undefined },
             submitBackgroundAgentTask: async (
                 _project: MobileProjectEntry,
                 draft: string,
@@ -441,6 +515,61 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
         // The default (local) destination leaves the worktree decision to the server.
         expect(isolations).to.deep.equal(['auto']);
         expect(host.transcriptComposerDraft).to.equal('start the task');
+    });
+
+    it('starts a new task with the chip agent and the chip model, naming the model\'s agent', async () => {
+        const cohere = { provider: 'openai' as const, vendor: 'openrouter', modelId: 'openrouter/cohere/north-mini-code:free' };
+        const sent: Record<string, unknown>[] = [];
+        const opened: unknown[][] = [];
+        const host = {
+            transcriptComposerContext: [],
+            transcriptComposerDraft: 'start the task',
+            transcriptComposerDraftPersistTimer: undefined,
+            transcriptComposerModeId: undefined,
+            transcriptComposerApprovalPolicyId: undefined,
+            // A stale in-memory pick of another harness must not ride along: the chip resolver decides.
+            transcriptComposerAgentModel: { provider: 'openai' as const, vendor: 'opencode', modelId: 'opencode/beam-free' },
+            transcriptComposerHost: undefined,
+            transcriptComposerSendRefresh: undefined,
+            resolveAttachmentPreview: undefined,
+            messageService: { warn: () => undefined, error: () => undefined },
+            projectsService: { getProjectCwd: () => undefined },
+            transcriptComposerUi: {
+                resolveTranscriptComposerAgentModel: (agentId: string) => agentId === 'pi' ? cohere : undefined,
+                openTranscriptComposerAgentSheet: (...args: unknown[]) => { opened.push(args); },
+            },
+            submitBackgroundAgentTask: async (_project: MobileProjectEntry, _draft: string, opts: Record<string, unknown>) => {
+                sent.push(opts);
+                return { id: 'task-new' };
+            },
+        };
+        const ui = Object.create(
+            composerModule.MobileProjectsTranscriptStickyComposerUi.prototype,
+        ) as MobileProjectsTranscriptStickyComposerUi;
+        const seam = ui as unknown as Record<string, any>;
+        seam.host = host;
+        seam.isTranscriptStickyComposerAgentWorking = () => false;
+        seam.resolveComposerTranscriptChatHost = () => undefined;
+        seam.workHub = { renderIdleSubmitOptimistic: () => undefined };
+        seam.host.stickyComposerWorkspaceUi = { resolveComposerWorkspaceDestination: () => 'local' };
+        seam.host.stickyComposerRenderUi = { renderStickyComposer: () => undefined };
+        seam.remountTranscriptStickyComposer = () => undefined;
+
+        await liveStatusModule.submitTranscriptComposerDraftExtracted(
+            seam as unknown as MobileProjectsTranscriptStickyComposerUiContext,
+            'start the task',
+            project,
+            { ...summary, id: QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID, status: 'idle' },
+            document.createElement('div'),
+            { resolvedPinnedId: 'pi', showApprovalPolicy: false, isLegacyTheiaChat: false },
+        );
+
+        expect(sent).to.have.length(1);
+        expect(sent[0].selectedAgentId).to.equal('pi');
+        expect(sent[0].agentModel).to.deep.equal(cohere);
+        expect(sent[0].agentModelAgentId).to.equal('pi');
+        (sent[0].openModelPicker as () => void)();
+        expect(opened).to.have.length(1);
     });
 
     interface BusySubmitOverrides {
@@ -686,5 +815,202 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
         expect(host.transcriptComposerDraft).to.equal('send this safely');
         expect(host.transcriptComposerContext).to.deep.equal([contextEntry]);
         expect(errors[0]).to.contain('network offline');
+    });
+
+    it('a flush after a Stop submits nothing and leaves the paused queue in place', async () => {
+        const queue = new TranscriptFollowUpQueue();
+        queue.enqueue('c1', { draft: 'queued before stop' } as Parameters<TranscriptFollowUpQueue['enqueue']>[1]);
+        const submits: string[] = [];
+        const ctx = {
+            host: {
+                transcriptFollowUpQueue: queue,
+                transcriptLastConv: undefined,
+                transcriptFollowUpFlushInFlight: false,
+            },
+            isTranscriptFollowUpReady: () => true,
+            refreshComposerActivityStack: () => { },
+            submitQueuedFollowUpEntry: async (_project: unknown, _summary: unknown, entry: { draft: string }) => {
+                submits.push(entry.draft);
+            },
+        };
+
+        await timelineModule.flushTranscriptFollowUpQueueExtracted(
+            ctx as unknown as MobileProjectsTranscriptStickyComposerUiContext,
+            project,
+            { ...summary, lastTurnCancelled: true } as QaapAgentConversationSummaryDTO,
+        );
+
+        expect(submits).to.deep.equal([]);
+        expect(queue.size('c1')).to.equal(1);
+    });
+
+    it('a follow-up the server accepted is synced even without a matching pending row, so a flush resends nothing', async () => {
+        const activityModule: typeof import('./mobile-projects-transcript-sticky-composer-ui-activity') = require('./mobile-projects-transcript-sticky-composer-ui-activity');
+        const queue = new TranscriptFollowUpQueue();
+        queue.enqueue('c1', { draft: 'mirrored draft' } as Parameters<TranscriptFollowUpQueue['enqueue']>[1]);
+        const mirrorCtx = {
+            host: {
+                transcriptFollowUpQueue: queue,
+                transcriptLastConv: { id: 'c1', pendingUserMessages: [] },
+                transcriptComposerAgentModel: undefined,
+                submitTranscriptViaBackendConversation: async () => true,
+            },
+            syncTranscriptQueuedFollowUpBubbles: () => { },
+            refreshComposerActivityStack: () => { },
+        };
+
+        const mirrored = await activityModule.mirrorFollowUpToServerQueueExtracted(
+            mirrorCtx as unknown as MobileProjectsTranscriptStickyComposerUiContext,
+            project,
+            summary,
+            queue.peek('c1')[0],
+        );
+
+        expect(mirrored).to.equal(true);
+        expect(queue.peek('c1')[0].serverSynced).to.equal(true);
+        expect(queue.peek('c1')[0].serverPendingId).to.be.undefined;
+
+        const submits: string[] = [];
+        const flushCtx = {
+            host: {
+                transcriptFollowUpQueue: queue,
+                transcriptLastConv: undefined,
+                transcriptFollowUpFlushInFlight: false,
+            },
+            isTranscriptFollowUpReady: () => true,
+            refreshComposerActivityStack: () => { },
+            submitQueuedFollowUpEntry: async (_project: unknown, _summary: unknown, entry: { draft: string }) => {
+                submits.push(entry.draft);
+            },
+        };
+        await timelineModule.flushTranscriptFollowUpQueueExtracted(
+            flushCtx as unknown as MobileProjectsTranscriptStickyComposerUiContext,
+            project,
+            summary,
+        );
+
+        expect(submits).to.deep.equal([]);
+        expect(queue.size('c1')).to.equal(0);
+    });
+
+    it('a flush after a Stop is blocked by the store snapshot even when the summary has no lastTurnCancelled', async () => {
+        const queue = new TranscriptFollowUpQueue();
+        queue.enqueue('c1', { draft: 'queued before stop' } as Parameters<TranscriptFollowUpQueue['enqueue']>[1]);
+        const submits: string[] = [];
+        const ctx = {
+            host: {
+                transcriptFollowUpQueue: queue,
+                transcriptLastConv: { id: 'c1', status: 'idle', messages: [] },
+                transcriptFollowUpFlushInFlight: false,
+                conversations: {
+                    findSummaryById: () => ({ id: 'c1', lastTurnCancelled: true }),
+                },
+            },
+            isTranscriptFollowUpReady: () => true,
+            refreshComposerActivityStack: () => { },
+            submitQueuedFollowUpEntry: async (_project: unknown, _summary: unknown, entry: { draft: string }) => {
+                submits.push(entry.draft);
+            },
+        };
+
+        await timelineModule.flushTranscriptFollowUpQueueExtracted(
+            ctx as unknown as MobileProjectsTranscriptStickyComposerUiContext,
+            project,
+            summary,
+        );
+
+        expect(submits).to.deep.equal([]);
+        expect(queue.size('c1')).to.equal(1);
+    });
+
+    it('passes the entry clientMessageId to the mirror POST and to the queued submit', async () => {
+        const activityModule: typeof import('./mobile-projects-transcript-sticky-composer-ui-activity') = require('./mobile-projects-transcript-sticky-composer-ui-activity');
+        const queue = new TranscriptFollowUpQueue();
+        queue.enqueue('c1', { draft: 'stable id', clientMessageId: 'pending-user-stable-1' } as Parameters<TranscriptFollowUpQueue['enqueue']>[1]);
+        const postOptions: Record<string, unknown>[] = [];
+        const submitTranscriptViaBackendConversation = async (_p: unknown, _s: unknown, _d: unknown, opts: Record<string, unknown>) => {
+            postOptions.push(opts);
+            return true;
+        };
+        const mirrorCtx = {
+            host: {
+                transcriptFollowUpQueue: queue,
+                transcriptLastConv: undefined,
+                transcriptComposerAgentModel: undefined,
+                submitTranscriptViaBackendConversation,
+            },
+            syncTranscriptQueuedFollowUpBubbles: () => { },
+            refreshComposerActivityStack: () => { },
+        };
+        await activityModule.mirrorFollowUpToServerQueueExtracted(
+            mirrorCtx as unknown as MobileProjectsTranscriptStickyComposerUiContext,
+            project,
+            summary,
+            queue.peek('c1')[0],
+        );
+
+        const submitCtx = {
+            host: {
+                transcriptFollowUpQueue: queue,
+                transcriptComposerAgentModel: undefined,
+                transcriptFollowUpFlushInFlight: false,
+                submitTranscriptViaBackendConversation,
+            },
+            refreshComposerActivityStack: () => { },
+            remountTranscriptStickyComposer: () => { },
+        };
+        await activityModule.submitQueuedFollowUpEntryExtracted(
+            submitCtx as unknown as MobileProjectsTranscriptStickyComposerUiContext,
+            project,
+            summary,
+            { draft: 'stable id', clientMessageId: 'pending-user-stable-1' } as Parameters<TranscriptFollowUpQueue['enqueue']>[1],
+        );
+
+        expect(postOptions).to.have.length(2);
+        expect(postOptions[0].clientMessageId).to.equal('pending-user-stable-1');
+        expect(postOptions[1].clientMessageId).to.equal('pending-user-stable-1');
+        // The mirror is marked queueOnly; the flush (a normal queued send) is not.
+        expect(postOptions[0].queueOnly).to.equal(true);
+        expect(postOptions[1].queueOnly).to.be.undefined;
+    });
+
+    it('send now dispatches the server row found by clientMessageId when the entry has no serverPendingId', async () => {
+        const queue = new TranscriptFollowUpQueue();
+        queue.enqueue('c1', {
+            draft: 'mirror in flight',
+            clientMessageId: 'pending-user-cm-1',
+            serverSynced: true,
+        } as Parameters<TranscriptFollowUpQueue['enqueue']>[1]);
+        const dispatched: string[] = [];
+        const ctx = {
+            host: {
+                transcriptFollowUpQueue: queue,
+                transcriptComposerQueueExpanded: false,
+                transcriptLastConv: {
+                    id: 'c1',
+                    status: 'idle',
+                    messages: [],
+                    pendingUserMessages: [{ id: 'row-9', clientMessageId: 'pending-user-cm-1', content: 'mirror in flight' }],
+                },
+                transcriptMessagesUi: {
+                    dispatchQueuedMessage: async (_conversationId: string, pending: { id: string }) => {
+                        dispatched.push(pending.id);
+                    },
+                },
+            },
+            refreshComposerActivityStack: () => { },
+            isTranscriptStickyComposerAgentWorking: () => false,
+            submitQueuedFollowUpEntry: async () => { throw new Error('must not re-post'); },
+        };
+
+        await timelineModule.sendQueuedFollowUpNowExtracted(
+            ctx as unknown as MobileProjectsTranscriptStickyComposerUiContext,
+            project,
+            summary,
+            0,
+        );
+
+        expect(dispatched).to.deep.equal(['row-9']);
+        expect(queue.size('c1')).to.equal(0);
     });
 });

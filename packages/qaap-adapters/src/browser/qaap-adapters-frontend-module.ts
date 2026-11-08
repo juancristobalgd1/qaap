@@ -21,6 +21,8 @@ import { QaapMiniBrowserContent } from './qaap-mini-browser-content';
 import { LocationMapper } from '@theia/mini-browser/lib/browser/location-mapper-service';
 import { QaapLocationWithoutSchemeMapper } from './qaap-mini-browser-location-mapper';
 import { QaapMiniBrowserOpenHandler } from './qaap-mini-browser-open-handler';
+import { WindowTitleUpdater } from '@theia/core/lib/browser/window/window-title-updater';
+import { QaapWindowTitleUpdater } from './qaap-window-title-updater';
 import { DefaultQaapMiniBrowserLifecycle } from './default-qaap-mini-browser-lifecycle';
 import { DefaultQaapMonacoQuickInputAdapter } from './default-qaap-monaco-quick-input-adapter';
 import { QaapMiniBrowserLifecycle } from './qaap-mini-browser-lifecycle';
@@ -69,6 +71,9 @@ export default new ContainerModule((bind, _unbind, isBound, rebind) => {
 
     bind(QaapMiniBrowserOpenHandler).toSelf().inSingletonScope();
     rebind(MiniBrowserOpenHandler).toService(QaapMiniBrowserOpenHandler);
+
+    // Preview tabs must not leak their project digest into document.title (see QaapWindowTitleUpdater).
+    rebind(WindowTitleUpdater).to(QaapWindowTitleUpdater).inSingletonScope();
 
     bind(QaapPreviewFramePickerFactory).toSelf().inSingletonScope();
     bind(QaapPreviewSurfaceRegistry).toSelf().inSingletonScope();

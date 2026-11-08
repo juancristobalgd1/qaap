@@ -33,6 +33,7 @@ import { disposeComposerContextEntries, type StickyComposerContextEntry } from '
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import { startGithubOAuth } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import { ensureTranscriptSurfaceCss } from './ensure-transcript-surface-css';
+import { HubEmptyStateDom } from './mobile-projects-hub-empty-state-dom';
 
 /** Panel surface for the Agents Hub inline execution shell (tasks landing). */
 export interface MobileProjectsAgentsHubInlineHost {
@@ -293,8 +294,12 @@ export class MobileProjectsAgentsHubInlineUi {
             note.className = 'theia-mobile-agent-transcript-empty theia-mod-no-project';
             // No "Add your first project" onboarding: projects are added from the sessions sidebar.
             // Signed-out users still need a way in, so only the GitHub sign-in action remains.
+            // Signed-in users get the sidebar's own quiet empty state, so a first visit (sidebar
+            // still closed) is not a blank screen; CSS hides it while the sidebar shows the same CTA.
             if (!this.isAgentsHubSignedIn()) {
                 note.append(this.createAgentsHubGithubSignInButton());
+            } else {
+                note.append(this.createAgentsHubNoProjectEmptyState());
             }
             this.host.scroll.append(note);
             this.host.updateTasksAttentionChrome();
@@ -396,6 +401,20 @@ export class MobileProjectsAgentsHubInlineUi {
 
     protected isAgentsHubSignedIn(): boolean {
         return this.host.readQaapSignedIn?.() ?? readQaapSignedIn();
+    }
+
+    /** Same copy and action as the sessions sidebar's "No projects yet" state (`q-empty`). */
+    protected createAgentsHubNoProjectEmptyState(): HTMLElement {
+        return HubEmptyStateDom.createEmptyState({
+            icon: 'codicon-repo',
+            title: nls.localize('qaap/sessionsSidebar/noProjectsTitle', 'No projects yet'),
+            hint: '',
+            action: {
+                label: nls.localize('qaap/mobileProjects/newRepository', 'Add repository'),
+                onClick: () => this.host.onNewClick(),
+            },
+            className: 'theia-mobile-agents-hub-no-project-empty',
+        });
     }
 
     protected createAgentsHubGithubSignInButton(): HTMLButtonElement {
@@ -758,6 +777,10 @@ export class MobileProjectsAgentsHubInlineUi {
         this.host.transcriptLastSseDeltaAt = undefined;
         this.host.transcriptOpenSummaryId = undefined;
         this.host.transcriptOpenSummary = undefined;
+        // The composer must not keep targeting the previous task: a remount or submit before the
+        // idle shell re-mounts would otherwise post the new prompt into that old conversation.
+        this.host.transcriptComposerSummary = undefined;
+        this.host.transcriptComposerMountKey = undefined;
         this.host.transcriptConversationCache.delete(QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID);
         this.host.transcriptUi.disposeList();
         const chatHost = this.host.agentsHubInlineChatHost;

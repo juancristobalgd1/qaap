@@ -4,15 +4,19 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import { OPENROUTER_DEFAULT_FREE_MODELS } from '@theia/qaap-ai-openrouter/lib/common/openrouter-models';
 import {
     agentSupportsModelPicker,
     agentUsesNativeModelCatalog,
     agentUsesSettingsModelCatalog,
     ensureStoredAgentModel,
+    isFreeAgentModel,
     isStoredAgentModelUsable,
     pickDefaultAgentModel,
     readStoredAgentModel,
     resolveAgentModelForSubmit,
+    scopedAgentModelStorageKey,
+    seedDisplayedAgentModel,
     setAgentModelStorageUserLogin,
     writeStoredAgentModel,
 } from './qaap-agent-model-selection';
@@ -123,34 +127,62 @@ describe('qaap-agent-model-selection', () => {
         expect(resolveAgentModelForSubmit('opencode', cwd)).to.deep.equal(stored);
     });
 
-    it('ensureStoredAgentModel seeds the first usable catalog entry when empty', () => {
+    it('ensureStoredAgentModel seeds the first free catalog entry when empty', () => {
         const cwd = '/repo';
         expect(readStoredAgentModel(cwd, 'opencode')).to.be.undefined;
         const catalog = [
             { provider: 'openai' as const, vendor: 'opencode', modelId: 'opencode/claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
-            { provider: 'openai' as const, vendor: 'opencode', modelId: 'opencode/gpt-5', label: 'GPT-5' },
+            { provider: 'openai' as const, vendor: 'opencode', modelId: 'opencode/beam-free', label: 'Beam Free' },
         ];
-        expect(pickDefaultAgentModel(catalog)?.modelId).to.equal('opencode/claude-sonnet-4-6');
+        expect(pickDefaultAgentModel(catalog)?.modelId).to.equal('opencode/beam-free');
         const seeded = ensureStoredAgentModel(cwd, 'opencode', catalog);
-        expect(seeded?.modelId).to.equal('opencode/claude-sonnet-4-6');
-        expect(readStoredAgentModel(cwd, 'opencode')?.modelId).to.equal('opencode/claude-sonnet-4-6');
-        const again = ensureStoredAgentModel(cwd, 'opencode', [
-            { provider: 'openai' as const, vendor: 'opencode', modelId: 'opencode/gpt-5', label: 'GPT-5' },
-        ]);
-        expect(again?.modelId).to.equal('opencode/gpt-5');
-        expect(readStoredAgentModel(cwd, 'opencode')?.modelId).to.equal('opencode/gpt-5');
+        expect(seeded?.modelId).to.equal('opencode/beam-free');
+        expect(readStoredAgentModel(cwd, 'opencode')?.modelId).to.equal('opencode/beam-free');
     });
 
     it('pickDefaultAgentModel skips models the plan or connection denies', () => {
         const base = { provider: 'openai' as const, vendor: 'codex' };
         expect(pickDefaultAgentModel([
-            { ...base, modelId: 'gpt-pro', label: 'GPT Pro', available: false, unavailableReason: 'plan' },
-            { ...base, modelId: 'gpt-offline', label: 'GPT Offline', available: false, unavailableReason: 'not-connected' },
-            { ...base, modelId: 'gpt-mini', label: 'GPT Mini', available: true },
-        ])?.modelId).to.equal('gpt-mini');
+            { ...base, modelId: 'gpt-pro:free', label: 'GPT Pro', available: false, unavailableReason: 'plan' },
+            { ...base, modelId: 'gpt-offline:free', label: 'GPT Offline', available: false, unavailableReason: 'not-connected' },
+            { ...base, modelId: 'gpt-mini:free', label: 'GPT Mini', available: true },
+        ])?.modelId).to.equal('gpt-mini:free');
         expect(pickDefaultAgentModel([
-            { ...base, modelId: 'gpt-pro', label: 'GPT Pro', available: false, unavailableReason: 'plan' },
+            { ...base, modelId: 'gpt-pro:free', label: 'GPT Pro', available: false, unavailableReason: 'plan' },
         ])).to.equal(undefined);
+    });
+
+    it('a default never falls back to a paid model: a catalog without a free entry seeds nothing', () => {
+        const cwd = '/repo-paid-only';
+        const paidCatalog = [
+            { provider: 'openai' as const, vendor: 'opencode', modelId: 'opencode/minimax-m3', label: 'MiniMax-M3' },
+            { provider: 'openai' as const, vendor: 'opencode', modelId: 'opencode/gpt-5', label: 'GPT-5' },
+        ];
+        expect(pickDefaultAgentModel(paidCatalog)).to.equal(undefined);
+        expect(ensureStoredAgentModel(cwd, 'opencode', paidCatalog)).to.equal(undefined);
+        expect(readStoredAgentModel(cwd, 'opencode')).to.equal(undefined);
+        expect(seedDisplayedAgentModel(cwd, 'opencode', paidCatalog)).to.equal(undefined);
+        expect(readStoredAgentModel(cwd, 'opencode')).to.equal(undefined);
+    });
+
+    it('seedDisplayedAgentModel never replaces a stored selection while the picker is navigated', () => {
+        const cwd = '/repo-navigate';
+        const beamFree = { provider: 'openai' as const, vendor: 'opencode', modelId: 'opencode/beam-free', label: 'Beam Free' };
+        const minimax = { provider: 'openai' as const, vendor: 'opencode', modelId: 'opencode/minimax-m3', label: 'MiniMax-M3' };
+        writeStoredAgentModel(cwd, 'opencode', beamFree);
+        // Back navigation re-renders with a catalog that lists a different first entry, or none at all.
+        expect(seedDisplayedAgentModel(cwd, 'opencode', [minimax, beamFree])?.modelId).to.equal('opencode/beam-free');
+        expect(seedDisplayedAgentModel(cwd, 'opencode', [minimax])?.modelId).to.equal('opencode/beam-free');
+        expect(seedDisplayedAgentModel(cwd, 'opencode', [])?.modelId).to.equal('opencode/beam-free');
+        expect(readStoredAgentModel(cwd, 'opencode')?.modelId).to.equal('opencode/beam-free');
+    });
+
+    it('seedDisplayedAgentModel seeds a free default only when nothing is stored', () => {
+        const cwd = '/repo-seed-display';
+        const minimax = { provider: 'openai' as const, vendor: 'opencode', modelId: 'opencode/minimax-m3', label: 'MiniMax-M3' };
+        const beamFree = { provider: 'openai' as const, vendor: 'opencode', modelId: 'opencode/beam-free', label: 'Beam Free' };
+        expect(seedDisplayedAgentModel(cwd, 'opencode', [minimax, beamFree])?.modelId).to.equal('opencode/beam-free');
+        expect(readStoredAgentModel(cwd, 'opencode')?.modelId).to.equal('opencode/beam-free');
     });
 
     it('ensureStoredAgentModel keeps an explicit stored choice even if the catalog marks it unavailable', () => {
@@ -161,6 +193,53 @@ describe('qaap-agent-model-selection', () => {
             { ...base, modelId: 'gpt-mini', label: 'GPT Mini', available: true },
         ]);
         expect(resolved?.modelId).to.equal('gpt-pro');
+    });
+
+    it('pickDefaultAgentModel prefers the QAIQ default free model over a paid entry listed first', () => {
+        const paid = { provider: 'openai' as const, vendor: 'openrouter', modelId: 'anthropic/claude-haiku-4.5', label: 'Claude Haiku' };
+        const free = { provider: 'openai' as const, vendor: 'openrouter', modelId: OPENROUTER_DEFAULT_FREE_MODELS[0], label: 'Nemotron Ultra' };
+        expect(pickDefaultAgentModel([paid, free])?.modelId).to.equal(OPENROUTER_DEFAULT_FREE_MODELS[0]);
+        expect(pickDefaultAgentModel([paid, { ...free, modelId: 'google/gemma-4-31b-it:free' }])?.modelId)
+            .to.equal('google/gemma-4-31b-it:free');
+        expect(isFreeAgentModel({ modelId: 'x/y:free' })).to.be.true;
+        expect(isFreeAgentModel({ modelId: 'openai/gpt-5' })).to.be.false;
+    });
+
+    it('isFreeAgentModel recognizes OpenCode free models (Beam Free) and keeps paid ones paid', () => {
+        expect(isFreeAgentModel({ vendor: 'opencode', modelId: 'opencode/beam-free', label: 'Beam Free' })).to.be.true;
+        // The OpenCode rule needs the vendor too: a bare `opencode/` id without it is not a free marker.
+        expect(isFreeAgentModel({ modelId: 'opencode/beam-free' })).to.be.false;
+        expect(isFreeAgentModel({ vendor: 'opencode', modelId: 'opencode/big-pickle' })).to.be.true;
+        expect(isFreeAgentModel({ vendor: 'opencode', modelId: 'opencode/new-model', label: 'New Model Free' })).to.be.true;
+        expect(isFreeAgentModel({ vendor: 'opencode', modelId: 'anthropic/x', label: 'X Free' })).to.be.false;
+        expect(isFreeAgentModel({ vendor: 'opencode', modelId: 'opencode/minimax-m3', label: 'MiniMax-M3' })).to.be.false;
+        expect(isFreeAgentModel({ vendor: 'opencode', modelId: 'opencode/gpt-5', label: 'GPT-5' })).to.be.false;
+        // A " Free" label on a non-OpenCode model is not a provider free marker.
+        expect(isFreeAgentModel({ vendor: 'openrouter', modelId: 'acme/paid', label: 'Acme Free' })).to.be.false;
+    });
+
+    it('pickDefaultAgentModel picks an OpenCode free model over paid ones listed first', () => {
+        const minimax = { provider: 'openai' as const, vendor: 'opencode', modelId: 'opencode/minimax-m3', label: 'MiniMax-M3' };
+        const beamFree = { provider: 'openai' as const, vendor: 'opencode', modelId: 'opencode/beam-free', label: 'Beam Free' };
+        expect(pickDefaultAgentModel([minimax, beamFree])?.modelId).to.equal('opencode/beam-free');
+    });
+
+    it('ensureStoredAgentModel seeds a free model for a project with no explicit choice', () => {
+        const paid = { provider: 'openai' as const, vendor: 'openrouter', modelId: 'openai/gpt-5', label: 'GPT-5' };
+        const free = { provider: 'openai' as const, vendor: 'openrouter', modelId: OPENROUTER_DEFAULT_FREE_MODELS[0], label: 'Nemotron Ultra' };
+        const seeded = ensureStoredAgentModel('/repo-free', QAIQ_AGENT_ID, [paid, free]);
+        expect(seeded?.modelId).to.equal(OPENROUTER_DEFAULT_FREE_MODELS[0]);
+    });
+
+    it('a paid default the user never chose yields to a free model; a user-chosen paid model is kept', () => {
+        const cwd = '/repo-legacy';
+        const paid = { provider: 'openai' as const, vendor: 'openrouter', modelId: 'openai/gpt-5', label: 'GPT-5' };
+        const free = { provider: 'openai' as const, vendor: 'openrouter', modelId: OPENROUTER_DEFAULT_FREE_MODELS[0], label: 'Nemotron Ultra' };
+        // Seeded by an older build: no userChosen marker.
+        storage.set(scopedAgentModelStorageKey(cwd, QAIQ_AGENT_ID), JSON.stringify({ provider: paid.provider, vendor: paid.vendor, modelId: paid.modelId }));
+        expect(ensureStoredAgentModel(cwd, QAIQ_AGENT_ID, [paid, free])?.modelId).to.equal(OPENROUTER_DEFAULT_FREE_MODELS[0]);
+        writeStoredAgentModel(cwd, QAIQ_AGENT_ID, paid);
+        expect(ensureStoredAgentModel(cwd, QAIQ_AGENT_ID, [paid, free])?.modelId).to.equal('openai/gpt-5');
     });
 
     it('scopes stored model picks per authenticated user', () => {

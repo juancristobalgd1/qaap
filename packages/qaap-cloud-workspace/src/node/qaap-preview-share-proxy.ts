@@ -20,6 +20,7 @@ import { buildQaapPreviewFailureHtml } from '../common/qaap-preview-supervisor-t
 import { QaapPreviewShareStore, type QaapPreviewShareEntry } from './qaap-preview-share-store';
 import { QaapPreviewSupervisor } from './qaap-preview-supervisor';
 import { QaapCloudWorkspaceStore } from './qaap-cloud-workspace-store';
+import { QaapAsyncRoute } from '@theia/qaap-shared-core/lib/node/qaap-async-route';
 
 @injectable()
 export class QaapPreviewShareProxyContribution implements BackendApplicationContribution {
@@ -53,14 +54,15 @@ export class QaapPreviewShareProxyContribution implements BackendApplicationCont
     }
 
     configure(app: Application): void {
-        app.use(`${QAAP_DEV_PREVIEW_PUBLIC_PREFIX}/:token`, (req, res) => {
-            void this.handleProxy(req, res);
-        });
+        app.use(`${QAAP_DEV_PREVIEW_PUBLIC_PREFIX}/:token`, QaapAsyncRoute.wrap('qaap-preview-share', (req, res) => this.handleProxy(req, res)));
     }
 
     onStart(server: http.Server): void {
         server.on('upgrade', (req, socket, head) => {
-            void this.handleWebSocketUpgrade(req, socket as net.Socket, head);
+            this.handleWebSocketUpgrade(req, socket as net.Socket, head).catch(error => {
+                console.error('[qaap-preview-share] WebSocket upgrade failed:', error instanceof Error ? error.message : error);
+                socket.destroy();
+            });
         });
     }
 

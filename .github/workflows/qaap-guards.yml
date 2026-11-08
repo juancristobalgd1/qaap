@@ -79,6 +79,9 @@ jobs:
       # allow-list widens (doc/qaap-ci-invariants.md, "Tenant host loopback guard").
       - name: Tenant host loopback guard regression
         run: bash scripts/qaap-tenant-loopback-guard.test.sh
+      # Fails if the gVisor installer stops verifying the pinned release or restarts the daemon.
+      - name: gVisor installer regression
+        run: bash scripts/qaap-gvisor-install.test.sh
       # Fails if a Dockerfile base image is not pinned as name:version@sha256:<digest>, or if the
       # VPS deploy could build `theia` from source before pulling the CI-verified image
       # (doc/qaap-ci-invariants.md, "Deploy runs the CI-verified image").

@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { OS } from '@theia/core/lib/common/os';
+import URI from '@theia/core/lib/common/uri';
 import { qaapPreviewPortNodeImportFlag } from '../common/qaap-preview-port-preload';
 import { QAAP_STATIC_DEV_PORT, QAAP_THEIA_DEV_PORT, QaapProjectKind } from './qaap-project-bootstrap-types';
 
@@ -180,6 +181,52 @@ function forceNodePreviewPortImport(kind: QaapProjectKind): string {
         || kind === 'node-svelte'
         || kind === 'node-next'
         || kind === 'node-remix');
+}
+
+/**
+ * Directory a Theia preview uses as its HOME: `node_modules/.cache/qaap-preview-home` under the
+ * preview root (`fsPath`). `node_modules` is git-ignored in Node apps, so the directory never gets
+ * committed, and the dev server's `~/.theia` and Qaap's `~/.qaap` stores stay out of the host home.
+ */
+export function previewHomeDirFor(previewRootFsPath: string): string {
+    return `${previewRootFsPath.replace(/[\\/]+$/, '')}/node_modules/.cache/qaap-preview-home`;
+}
+
+/**
+ * Prefixes a Theia dev command with its own HOME and `THEIA_CONFIG_DIR` under `previewHomeDir`.
+ * Node's `os.homedir()` reads `HOME` on POSIX and `USERPROFILE` on Windows, so both are set there.
+ * POSIX uses `export ... &&` so the variables reach every command of a chain (`a && b`), and Windows
+ * `set` lines persist across `&&` within the same cmd.exe line.
+ */
+export function prefixTheiaPreviewHomeEnv(command: string, previewHomeDir: string, isWindows: boolean = isWorkspaceHostWindows()): string {
+    const configDir = `${previewHomeDir}/.theia`;
+    if (isWindows) {
+        return `set USERPROFILE=${previewHomeDir}&& set HOME=${previewHomeDir}&& set THEIA_CONFIG_DIR=${configDir}&& ${command}`;
+    }
+    return `export HOME=${shellSingleQuote(previewHomeDir)} THEIA_CONFIG_DIR=${shellSingleQuote(configDir)} && ${command}`;
+}
+
+/** Gives a Theia dev command its own HOME; other frameworks keep the host environment. */
+export function isolateTheiaPreviewCommand(command: string, plan: { readonly isTheiaApp?: boolean; readonly cwd?: URI }): string {
+    return plan.isTheiaApp && plan.cwd
+        ? prefixTheiaPreviewHomeEnv(command, previewHomeDirFor(plan.cwd.path.fsPath()))
+        : command;
+}
+
+/**
+ * Health-probe spacing while the dev server keeps answering: 2.5 s, then doubling per healthy probe
+ * (5, 10 s) up to 15 s. A failed probe resets the spacing to the base interval.
+ */
+export const DEV_PREVIEW_HEALTH_BASE_INTERVAL_MS = 2500;
+export const DEV_PREVIEW_HEALTH_MAX_INTERVAL_MS = 15000;
+
+/** Delay before the next health probe after `healthyChecks` consecutive healthy probes. */
+export function devPreviewHealthDelayMs(healthyChecks: number): number {
+    return Math.min(DEV_PREVIEW_HEALTH_BASE_INTERVAL_MS * 2 ** healthyChecks, DEV_PREVIEW_HEALTH_MAX_INTERVAL_MS);
+}
+
+function shellSingleQuote(value: string): string {
+    return '\'' + value.replace(/'/g, '\'\\\'\'') + '\'';
 }
 
 function prefixPortEnv(command: string, port: number, kind: QaapProjectKind, isWindows: boolean): string {

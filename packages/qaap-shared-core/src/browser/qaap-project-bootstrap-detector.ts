@@ -65,6 +65,7 @@ interface PackageJsonShape {
     dependencies?: Record<string, unknown>;
     devDependencies?: Record<string, unknown>;
     workspaces?: unknown;
+    theia?: unknown;
 }
 
 /** Hard cap on sub-apps enumerated so we never freeze the UI on enormous monorepos. */
@@ -185,6 +186,7 @@ export class QaapProjectBootstrapDetector {
         const scripts = pkg.scripts && typeof pkg.scripts === 'object' ? pkg.scripts : {};
         const devScriptKey = this.pickRootDevScript(scripts);
         const { kind, expectedPort } = this.guessFramework(pkg);
+        const isTheiaApp = this.isTheiaPackage(pkg);
 
         let devCommand: string | undefined;
         let devCommandLabel: string | undefined;
@@ -248,6 +250,7 @@ export class QaapProjectBootstrapDetector {
             devCommand,
             devCommandLabel,
             expectedPort,
+            ...(isTheiaApp ? { isTheiaApp } : {}),
             nodeModulesPresent,
             monorepoFlavor: flavor,
             apps,
@@ -1139,7 +1142,12 @@ export class QaapProjectBootstrapDetector {
         if (!devScriptKey) {
             return undefined;
         }
+        // Electron apps cannot run inside a preview iframe, so they are never offered as previewable apps.
+        if (this.isElectronAppPackage(pkg, String(scripts[devScriptKey]))) {
+            return undefined;
+        }
         const { kind, expectedPort } = this.guessFramework(pkg);
+        const isTheiaApp = this.isTheiaPackage(pkg);
         const pkgName = typeof pkg.name === 'string' && pkg.name.trim().length > 0
             ? pkg.name.trim()
             : appUri.path.base || 'app';
@@ -1160,6 +1168,7 @@ export class QaapProjectBootstrapDetector {
             devCommand,
             devCommandLabel: devCommand,
             expectedPort,
+            ...(isTheiaApp ? { isTheiaApp } : {}),
             ...(build?.buildScript && rootPm !== 'native' ? {
                 buildScript: build.buildScript,
                 previewStartCommand: buildQaapWorkspaceScriptCommand({ packageManager: rootPm, packageName: pkgName, script: devScriptKey }),
@@ -1173,6 +1182,17 @@ export class QaapProjectBootstrapDetector {
                 previewStartCommand: devCommand,
             } : {}),
         };
+    }
+
+    /**
+     * True when the app is an Electron app: it depends on `electron`, declares `theia.target` `electron`,
+     * or its chosen dev script invokes electron.
+     */
+    protected isElectronAppPackage(pkg: PackageJsonShape, devScript: string): boolean {
+        const dependsOnElectron = [pkg.dependencies, pkg.devDependencies]
+            .some(deps => !!deps && typeof deps === 'object' && 'electron' in deps);
+        const theiaTarget = pkg.theia && typeof pkg.theia === 'object' ? (pkg.theia as { target?: unknown }).target : undefined;
+        return dependsOnElectron || theiaTarget === 'electron' || /electron/i.test(devScript);
     }
 
     protected relativePathFromRoot(rootUri: URI, appUri: URI): string | undefined {
@@ -1417,6 +1437,20 @@ export class QaapProjectBootstrapDetector {
             }
         }
         return undefined;
+    }
+
+    /** True for a Theia application: depends on `@theia/core` or `@theia/cli`, or its start script runs `theia start`. */
+    protected isTheiaPackage(pkg: PackageJsonShape): boolean {
+        const allDeps: Record<string, unknown> = {
+            ...(pkg.dependencies && typeof pkg.dependencies === 'object' ? pkg.dependencies : {}),
+            ...(pkg.devDependencies && typeof pkg.devDependencies === 'object' ? pkg.devDependencies : {}),
+        };
+        if ('@theia/core' in allDeps || '@theia/cli' in allDeps) {
+            return true;
+        }
+        const scripts = pkg.scripts && typeof pkg.scripts === 'object' ? pkg.scripts : {};
+        const start = scripts.start;
+        return typeof start === 'string' && /\btheia\s+start\b/.test(start);
     }
 
     protected guessFramework(pkg: PackageJsonShape): { kind: QaapProjectKind; expectedPort?: number } {

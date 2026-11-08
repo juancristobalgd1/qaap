@@ -18,6 +18,7 @@ import '../../src/browser/style/qaap-sidepanel-narrow-viewport.css';
 import '../../src/browser/style/qaap-dialog-narrow-viewport.css';
 import '../../src/browser/style/qaap-watermark-narrow-viewport.css';
 import '../../src/browser/style/qaap-tabbar-narrow-viewport.css';
+import '../../src/browser/style/qaap-touch-targets-narrow-viewport.css';
 import '../../src/browser/style/qaap-mini-browser-toolbar-mobile.css';
 import '../../src/browser/style/qaap-monaco-quick-input-narrow.css';
 import '../../src/browser/style/qaap-select-component-narrow.css';
@@ -28,6 +29,7 @@ import '../../src/browser/style/qaap-secret-preference-input.css';
 import '../../src/browser/style/qaap-workbench-chrome.css';
 import '../../src/browser/style/qaap-file-dialog.css';
 import '../../src/browser/style/qaap-notifications.css';
+import '../../src/browser/style/qaap-scrollbars.css';
 
 // Widget-specific sheets (VSX extensions, terminal, getting started) are not listed above:
 // they are `?qaap-lazy` stylesheets attached before their widget is first created

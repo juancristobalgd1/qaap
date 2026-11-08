@@ -59,6 +59,7 @@ export type MobileProjectsTranscriptSurfacesUiContextMember =
     | 'isTranscriptPreviewStoppable'
     | 'isTranscriptPreviewUrlFieldActive'
     | 'isTranscriptPreviewWaiting'
+    | 'lastBootstrapPreviewKey'
     | 'lastSyncedPreviewUrl'
     | 'matchesActivePreviewSummary'
     | 'mountFreshTranscriptTerminalSlide'
@@ -116,6 +117,7 @@ export type MobileProjectsTranscriptSurfacesUiContextMember =
     | 'transcriptHistoryUi'
     | 'transcriptPreviewAppPicker'
     | 'transcriptPreviewAppPickerCancel'
+    | 'transcriptPreviewAppPickerCancelledProjectId'
     | 'transcriptPreviewConversationScopeId'
     | 'transcriptPreviewEnsureRequests'
     | 'transcriptPreviewIdentityHealthyChecks'
@@ -133,6 +135,7 @@ export type MobileProjectsTranscriptSurfacesUiContextMember =
     | 'updateTranscriptPreviewLaunchStatus'
     | 'updateTranscriptPreviewRunButtonState'
     | 'verifyMountedTranscriptPreviewIdentity'
+    | 'watchProjectBootstrapForPreview'
     | 'wireTranscriptPreviewAnnotationScope';
 
 /**

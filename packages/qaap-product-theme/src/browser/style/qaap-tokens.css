@@ -397,12 +397,9 @@ body.qaap-theme-dark .qaap-pill.qaap-mod-danger {
     border-radius: var(--qaap-radius-xl);
   }
 
+  /* The Open repository filter and clone URL are inline hairline fields (mobile-workbench-open-repo.css). */
   body.qaap-theme-light .theia-mobile-projects-search,
-  body.qaap-theme-dark .theia-mobile-projects-search,
-  body.qaap-theme-light .theia-mobile-open-repo-filter,
-  body.qaap-theme-dark .theia-mobile-open-repo-filter,
-  body.qaap-theme-light .theia-mobile-open-repo-public-input,
-  body.qaap-theme-dark .theia-mobile-open-repo-public-input {
+  body.qaap-theme-dark .theia-mobile-projects-search {
     background: var(--qaap-surface);
     border-color: var(--qaap-line);
     border-radius: var(--qaap-radius-md);
@@ -412,9 +409,7 @@ body.qaap-theme-dark .qaap-pill.qaap-mod-danger {
   }
 
   body.qaap-theme-light .theia-mobile-projects-search:focus-within,
-  body.qaap-theme-dark .theia-mobile-projects-search:focus-within,
-  body.qaap-theme-light .theia-mobile-open-repo-filter:focus-within,
-  body.qaap-theme-dark .theia-mobile-open-repo-filter:focus-within {
+  body.qaap-theme-dark .theia-mobile-projects-search:focus-within {
     border-color: var(--qaap-line);
     box-shadow: none;
     outline: none;

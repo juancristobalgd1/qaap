@@ -18,7 +18,7 @@ import {
     getQaapIdeListenPort,
     resolveBootstrapDevPort,
     wrapCommandForDevNodeEnv,
-    wrapDevCommandForPort,
+    isolateTheiaPreviewCommand, wrapDevCommandForPort,
 } from './qaap-project-bootstrap-port';
 import {
     extractTerminalFailureLine,
@@ -204,6 +204,7 @@ export async function refreshFromProjectRootExtracted(ctx: QaapProjectBootstrapS
             : projectId;
         ctx.activeWorkspaceRoot = resource;
         ctx.hubPinnedWorkspaceRoot = resource;
+        ctx.hubProjectRootEmitter.fire(resource);
         await ctx.refreshFromRoot(resource);
 }
 
@@ -223,7 +224,7 @@ export function getBootstrapFailureDetailExtracted(ctx: QaapProjectBootstrapServ
         };
 }
 
-export function resolveDevPlanExtracted(ctx: QaapProjectBootstrapServiceContext): { command: string; cwd: URI; expectedPort?: number; kind: QaapProjectKind } | undefined {
+export function resolveDevPlanExtracted(ctx: QaapProjectBootstrapServiceContext): { command: string; cwd: URI; expectedPort?: number; kind: QaapProjectKind; isTheiaApp?: boolean } | undefined {
         const descriptor = ctx._descriptor;
         if (!descriptor) {
             return undefined;
@@ -254,6 +255,7 @@ export function resolveDevPlanExtracted(ctx: QaapProjectBootstrapServiceContext)
             cwd: descriptor.previewRootUri ?? new URI(plan.cwdKey),
             expectedPort: plan.expectedPort,
             kind: plan.kind as QaapProjectKind,
+            isTheiaApp: app ? app.isTheiaApp : descriptor.isTheiaApp,
         };
 }
 
@@ -304,17 +306,17 @@ export function buildDevSpawnPlanExtracted(ctx: QaapProjectBootstrapServiceConte
         command: string;
         expectedPort?: number;
         kind: QaapProjectKind;
+        cwd?: URI;
+        isTheiaApp?: boolean;
     }): { command: string; targetPort?: number } {
         const idePort = getQaapIdeListenPort();
         const frameworkPort = plan.expectedPort ?? getImplicitDevPort(plan.kind);
         const targetPort = ctx.devPortOverride ?? resolveBootstrapDevPort(frameworkPort, idePort);
-        if (targetPort === undefined) {
-            return { command: wrapCommandForDevNodeEnv(plan.command), targetPort: undefined };
-        }
-        return {
-            command: wrapDevCommandForPort(plan.command, targetPort, plan.kind),
-            targetPort,
-        };
+        const command = targetPort === undefined
+            ? wrapCommandForDevNodeEnv(plan.command)
+            : wrapDevCommandForPort(plan.command, targetPort, plan.kind);
+        // A Theia preview gets its own HOME, so its dev server cannot touch the host's ~/.theia or ~/.qaap.
+        return { command: isolateTheiaPreviewCommand(command, plan), targetPort };
 }
 
 export function reserveActivePreviewExtracted(ctx: QaapProjectBootstrapServiceContext, port: number, cwd: URI, osProcessId?: number): Promise<QaapPreviewPortClaimResult> {

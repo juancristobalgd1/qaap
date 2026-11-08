@@ -1,0 +1,200 @@
+/********************************************************************************
+ * Copyright (C) 2026 Theia contributors and Qaap product fork.
+ * SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
+ ********************************************************************************/
+
+/*
+ * Work Hub microinteractions: how menus, popovers and sheets enter, and how the header and
+ * composer controls answer a hover or a press. Imported last so it layers over the surface
+ * stylesheets without editing them.
+ *
+ * Performance rules: only `opacity`, `transform` and `scale` animate (compositor-only), entrances
+ * use `animation-fill-mode: backwards` so inline transforms set later by gestures (sheet drag,
+ * visualViewport pinning) are never overridden, and nothing here touches the transcript timeline.
+ * `prefers-reduced-motion` turns all of it off at the end of the file.
+ */
+
+:root {
+  --qaap-work-hub-enter-duration: 160ms;
+  --qaap-work-hub-sheet-duration: 240ms;
+  --qaap-work-hub-press-scale: 0.94;
+  --qaap-work-hub-enter-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* Slight overshoot for the bottom sheet; settles without a visible bounce. */
+  --qaap-work-hub-sheet-ease: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@keyframes qaap-work-hub-pop-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes qaap-work-hub-pop-in-down {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes qaap-work-hub-fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes qaap-work-hub-sheet-in {
+  from {
+    opacity: 0.6;
+    transform: translateY(24px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/*-----------------------------------------------------------------------------
+|| Popovers and menus anchored to a control.
+||----------------------------------------------------------------------------*/
+
+/* Composer pickers (agent, mode, approval policy) open above the composer; the account menu
+   opens above the sidebar footer. */
+.qaap-sticky-composer-sheet-popover:not(.theia-mod-model-capability):not(.theia-mod-project-sheet),
+.theia-mobile-projects-sticky-composer-attach-menu.theia-mod-open,
+.theia-qaap-account-menu {
+  transform-origin: bottom left;
+  animation: qaap-work-hub-pop-in-up var(--qaap-work-hub-enter-duration) var(--qaap-work-hub-enter-ease) backwards;
+}
+
+/* Header menus (project switcher, New task and more, change view) open below the header. */
+.qaap-sticky-composer-sheet-popover.theia-mod-project-sheet {
+  transform-origin: top left;
+  animation: qaap-work-hub-pop-in-down var(--qaap-work-hub-enter-duration) var(--qaap-work-hub-enter-ease) backwards;
+}
+
+.qaap-work-hub-toolbar-menu:not([hidden]),
+.theia-mobile-transcript-tab-icon-select-menu.theia-mod-open:not([hidden]) {
+  transform-origin: top right;
+  animation: qaap-work-hub-pop-in-down var(--qaap-work-hub-enter-duration) var(--qaap-work-hub-enter-ease) backwards;
+}
+
+/*-----------------------------------------------------------------------------
+|| Bottom sheets (narrow viewport): the scrim fades, the panel rises.
+||----------------------------------------------------------------------------*/
+
+.theia-mobile-sticky-composer-sheet:not(.theia-mod-model-capability)>.theia-mobile-sticky-composer-sheet-backdrop {
+  animation: qaap-work-hub-fade-in var(--qaap-work-hub-sheet-duration) ease-out backwards;
+}
+
+.theia-mobile-sticky-composer-sheet:not(.theia-mod-model-capability)>.theia-mobile-sticky-composer-sheet-panel {
+  animation: qaap-work-hub-sheet-in var(--qaap-work-hub-sheet-duration) var(--qaap-work-hub-sheet-ease) backwards;
+}
+
+/*-----------------------------------------------------------------------------
+|| Header and composer controls: eased hover colours and a press response.
+||----------------------------------------------------------------------------*/
+
+.theia-mobile-projects-sessions-menu,
+.theia-mobile-projects-header-project-switcher,
+.qaap-work-hub-toolbar-menu-button,
+.theia-mobile-transcript-tab-icon-select,
+.theia-mobile-projects-sticky-composer-attach,
+.theia-mobile-projects-sticky-composer-agent,
+.theia-mobile-projects-sticky-composer-send,
+.theia-mobile-projects-sticky-composer-mode,
+.theia-mobile-projects-sticky-composer-approval-policy,
+.theia-mobile-projects-sticky-composer-model-capability,
+.qaap-chat-mic-btn-sticky {
+  transition:
+    background-color var(--qaap-duration-fast, 120ms) ease,
+    border-color var(--qaap-duration-fast, 120ms) ease,
+    color var(--qaap-duration-fast, 120ms) ease,
+    opacity var(--qaap-duration-fast, 120ms) ease,
+    scale var(--qaap-duration-base, 180ms) var(--qaap-work-hub-enter-ease);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.theia-mobile-projects-sessions-menu:active,
+.qaap-work-hub-toolbar-menu-button:active,
+.theia-mobile-transcript-tab-icon-select:active,
+.theia-mobile-projects-sticky-composer-attach:active,
+.theia-mobile-projects-sticky-composer-send:active:not(:disabled):not([aria-disabled='true']),
+.qaap-chat-mic-btn-sticky:active {
+  scale: var(--qaap-work-hub-press-scale);
+  transition-duration: 60ms;
+}
+
+/* Wide pill controls shrink less, so their label does not visibly squeeze. */
+.theia-mobile-projects-header-project-switcher:active,
+.theia-mobile-projects-sticky-composer-agent:active,
+.theia-mobile-projects-sticky-composer-mode:active,
+.theia-mobile-projects-sticky-composer-approval-policy:active,
+.theia-mobile-projects-sticky-composer-model-capability:active {
+  scale: 0.97;
+  transition-duration: 60ms;
+}
+
+/*-----------------------------------------------------------------------------
+|| Menu and sheet rows: eased highlight and a pressed state on touch.
+||----------------------------------------------------------------------------*/
+
+.qaap-work-hub-toolbar-menu-item,
+.theia-mobile-projects-sticky-composer-attach-menu-item,
+.theia-qaap-agent-sheet-row,
+.theia-mobile-work-hub-sessions-sidebar-nav-item {
+  transition:
+    background-color var(--qaap-duration-fast, 120ms) ease,
+    color var(--qaap-duration-fast, 120ms) ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.qaap-work-hub-toolbar-menu-item:active,
+.theia-mobile-projects-sticky-composer-attach-menu-item:active,
+.theia-qaap-agent-sheet-row:active:not(.theia-qaap-agent-sheet-unavailable),
+.theia-mobile-work-hub-sessions-sidebar-nav-item:active {
+  background-color: color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+  transition-duration: 0s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  .qaap-sticky-composer-sheet-popover,
+  .theia-mobile-projects-sticky-composer-attach-menu,
+  .theia-qaap-account-menu,
+  .qaap-work-hub-toolbar-menu,
+  .theia-mobile-transcript-tab-icon-select-menu,
+  .theia-mobile-sticky-composer-sheet>.theia-mobile-sticky-composer-sheet-backdrop,
+  .theia-mobile-sticky-composer-sheet>.theia-mobile-sticky-composer-sheet-panel {
+    animation: none;
+  }
+
+  .theia-mobile-projects-sessions-menu:active,
+  .theia-mobile-projects-header-project-switcher:active,
+  .qaap-work-hub-toolbar-menu-button:active,
+  .theia-mobile-transcript-tab-icon-select:active,
+  .theia-mobile-projects-sticky-composer-attach:active,
+  .theia-mobile-projects-sticky-composer-agent:active,
+  .theia-mobile-projects-sticky-composer-send:active,
+  .theia-mobile-projects-sticky-composer-mode:active,
+  .theia-mobile-projects-sticky-composer-approval-policy:active,
+  .theia-mobile-projects-sticky-composer-model-capability:active,
+  .qaap-chat-mic-btn-sticky:active {
+    scale: none;
+  }
+}

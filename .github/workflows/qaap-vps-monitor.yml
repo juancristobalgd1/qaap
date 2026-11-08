@@ -43,29 +43,55 @@ jobs:
             echo "status=skipped" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          # Last non-healthy health answer (HTTP code + body, truncated); its presence means "degraded".
+          DETAIL_FILE="$RUNNER_TEMP/vps-health-detail.txt"
+          HEALTH_BODY_FILE="$RUNNER_TEMP/vps-health-body.txt"
+          rm -f "$DETAIL_FILE"
           # 3 attempts, 20s apart: a single blip must not page anyone.
           for attempt in 1 2 3; do
-            HEALTH="$(curl -fsS --max-time 15 "$QAAP_VPS_PUBLIC_URL/qaap/api/health" 2>/dev/null || true)"
-            BODY="$HEALTH"
-            if [ -z "$BODY" ]; then
-              BODY="$(curl -fsS --max-time 15 "$QAAP_VPS_PUBLIC_URL/qaap/api/auth/config" 2>/dev/null || true)"
-            fi
-            BUILD="$(printf '%s' "$BODY" | jq -r '.build // empty' 2>/dev/null || true)"
-            if [ -n "$BODY" ]; then
-              echo "healthy (attempt $attempt) — build=${BUILD:-unknown}"
-              echo "status=healthy" >> "$GITHUB_OUTPUT"
-              echo "build=$BUILD" >> "$GITHUB_OUTPUT"
-              chmod +x ./scripts/qaap-verify-auth-api-gate.sh
-              QAAP_BASE_URL="$QAAP_VPS_PUBLIC_URL" ./scripts/qaap-verify-auth-api-gate.sh
-              exit 0
-            fi
-            echo "attempt $attempt failed"
+            # Health answers with its own status: 2xx is healthy, any other answer (e.g. 503 with a JSON body)
+            # is degraded and never masked. Only "no response at all" (000) falls back to the public auth config.
+            HEALTH_CODE="$(curl -sS --max-time 15 -o "$HEALTH_BODY_FILE" -w '%{http_code}' "$QAAP_VPS_PUBLIC_URL/qaap/api/health" 2>/dev/null || true)"
+            HEALTH_CODE="${HEALTH_CODE:-000}"
+            HEALTH="$(cat "$HEALTH_BODY_FILE" 2>/dev/null || true)"
+            case "$HEALTH_CODE" in
+              2??)
+                BUILD="$(printf '%s' "$HEALTH" | jq -r '.build // empty' 2>/dev/null || true)"
+                echo "healthy (attempt $attempt) — build=${BUILD:-unknown}"
+                echo "status=healthy" >> "$GITHUB_OUTPUT"
+                echo "build=$BUILD" >> "$GITHUB_OUTPUT"
+                chmod +x ./scripts/qaap-verify-auth-api-gate.sh
+                QAAP_BASE_URL="$QAAP_VPS_PUBLIC_URL" ./scripts/qaap-verify-auth-api-gate.sh
+                exit 0
+                ;;
+              000)
+                CONFIG="$(curl -fsS --max-time 15 "$QAAP_VPS_PUBLIC_URL/qaap/api/auth/config" 2>/dev/null || true)"
+                BUILD="$(printf '%s' "$CONFIG" | jq -r '.build // empty' 2>/dev/null || true)"
+                if [ -n "$CONFIG" ]; then
+                  echo "healthy via auth config (attempt $attempt, health gave no response) — build=${BUILD:-unknown}"
+                  echo "status=healthy" >> "$GITHUB_OUTPUT"
+                  echo "build=$BUILD" >> "$GITHUB_OUTPUT"
+                  chmod +x ./scripts/qaap-verify-auth-api-gate.sh
+                  QAAP_BASE_URL="$QAAP_VPS_PUBLIC_URL" ./scripts/qaap-verify-auth-api-gate.sh
+                  exit 0
+                fi
+                echo "attempt $attempt: no response from health or auth config"
+                ;;
+              *)
+                echo "attempt $attempt: health answered HTTP $HEALTH_CODE"
+                printf 'HTTP %s\n%s\n' "$HEALTH_CODE" "$(printf '%s' "$HEALTH" | head -c 1500)" > "$DETAIL_FILE"
+                ;;
+            esac
             [ "$attempt" -lt 3 ] && sleep 20
           done
-          echo "status=down" >> "$GITHUB_OUTPUT"
+          if [ -s "$DETAIL_FILE" ]; then
+            echo "status=degraded" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=down" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Open or reuse the outage issue
-        if: steps.probe.outputs.status == 'down'
+        if: steps.probe.outputs.status == 'down' || steps.probe.outputs.status == 'degraded'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
@@ -78,12 +104,12 @@ jobs:
           fi
           EXISTING="$(gh issue list --label vps-down --state open --json number --jq '.[0].number // empty')"
           if [ -n "$EXISTING" ]; then
-            gh issue comment "$EXISTING" --body "Still down at $(date -u +%FT%TZ) (monitor run ${{ github.run_id }})."
+            gh issue comment "$EXISTING" --body "Still ${{ steps.probe.outputs.status }} at $(date -u +%FT%TZ) (monitor run ${{ github.run_id }})."
             echo "commented on existing issue #$EXISTING"
           else
             gh label create vps-down --description "Production VPS unreachable" --color B60205 2>/dev/null || true
             BODY="$(printf '%s\n' \
-              "The synthetic monitor could not reach \`/qaap/api/auth/config\` after 3 attempts at $(date -u +%FT%TZ)." \
+              "The synthetic monitor did not get a healthy answer from \`/qaap/api/health\` after 3 attempts at $(date -u +%FT%TZ) (status: ${{ steps.probe.outputs.status }})." \
               '' \
               '**Check:**' \
               '1. `ssh root@<vps>` → `cd /opt/qaap && docker compose ps` and `docker compose logs --since 30m theia`' \
@@ -91,6 +117,9 @@ jobs:
               '3. This issue closes automatically when the monitor sees the endpoint healthy again.' \
               '' \
               'Monitor run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}')"
+            if [ -s "$RUNNER_TEMP/vps-health-detail.txt" ]; then
+              BODY="$BODY"$'\n\n**Last health answer:**\n```\n'"$(cat "$RUNNER_TEMP/vps-health-detail.txt")"$'\n```'
+            fi
             gh issue create \
               --title "🔴 VPS down: public endpoint unreachable" \
               --label vps-down \

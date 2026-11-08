@@ -167,10 +167,12 @@ export class MobileProjectsService {
     /** Register a finished import as a project; `open` also switches the workspace (page reload). */
     async finishGithubRepositoryImport(result: QaapGithubOpenRepositoryResponse, open: boolean): Promise<MobileProjectEntry[] | undefined> {
         const projects = await finishGithubRepositoryImportExtracted(this, result, open);
-        // `open` reloads the page, and the reloaded page asks through loadProjects. Otherwise ask now.
-        if (!open) {
-            const cwd = this.cwdFromFileUri(new URI(result.workspaceUri));
-            if (cwd) {
+        // `open` reloads the page: the reloaded page asks for this folder (see loadProjects). Otherwise ask now.
+        const cwd = this.cwdFromFileUri(new URI(result.workspaceUri));
+        if (cwd) {
+            if (open) {
+                this.folderTrust.markAskAfterReload(cwd);
+            } else {
                 void this.folderTrust.askIfUndecided(cwd, result.repository.fullName);
             }
         }
@@ -355,10 +357,13 @@ export class MobileProjectsService {
 
     async loadProjects(): Promise<MobileProjectEntry[]> {
         const projects = this.withoutPendingRemovals(await loadProjectsExtracted(this));
-        // The current project is the one the Work Hub is working in; a reload after "Open" lands here too.
-        for (const project of projects) {
-            if (project.isCurrent) {
-                this.askFolderTrustIfUndecided(project);
+        // Background loads and refreshes never open the trust dialog. Only the folder the user just
+        // opened (marked before the reload) is asked here; any other folder waits for an explicit select.
+        const openedCwd = this.folderTrust.takeAskAfterReload();
+        if (openedCwd) {
+            const opened = projects.find(project => project.isCurrent && this.getProjectCwd(project) === openedCwd);
+            if (opened) {
+                this.askFolderTrustIfUndecided(opened);
             }
         }
         return projects;

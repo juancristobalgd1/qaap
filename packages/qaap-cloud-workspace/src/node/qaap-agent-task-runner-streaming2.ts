@@ -1,4 +1,5 @@
 import { buildPiGateTemplateVars } from './qaap-tool-gate-pi-adapter';
+import { formatTaskStartLog } from './qaap-agent-conversation-persist-policy';
 import { buildPiDefaultModelFlagShell } from '@theia/qaap-shared-core/lib/common/qaap-pi-default-model';
 import { AGENT_STOP_GRACE_TIMEOUT_MS, SHELL_AGENT_ID, QAIQ_AGENT_ID, REPO_MAP_CACHE_TTL_MS, REPO_MAP_MAX_CHARS, USER_REQUEST_MAX_CHARS } from './qaap-agent-task-runner-constants';
 import type { QaapAgentCommandBuildResult, QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
@@ -184,6 +185,7 @@ export function createExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCr
         }
         assertAgentAllowedOnHostedRuntime(resolvedAgentId);
         const id = randomUUID();
+        console.warn(formatTaskStartLog('create', id, request.clientRequestId)); // [qaap-task-start] origin of every create
         const parentId = request.parentId && ctx.tasks.has(request.parentId) ? request.parentId : undefined;
         const parentTask = parentId ? ctx.tasks.get(parentId) : undefined;
         // "Request approval" is authoritative: a stale/omitted autoApprove must never turn it into
@@ -779,17 +781,42 @@ export function finishTaskWithPauseCause(
     }
 }
 
+/**
+ * Logs the first `[qaap-stop]` line of a cancel: how long the task took to settle, and whether a
+ * child process is still running (its `exit` logs the second line via {@link logCancelExitExtracted}).
+ */
+function logCancelSettledExtracted(ctx: Pick<QaapAgentTaskRunnerContext, 'conversationIdForTask'>, taskId: string, settledMs: number, hasChild: boolean): void {
+        const conversationId = ctx.conversationIdForTask?.(taskId) ?? '-';
+        console.warn(`[qaap-stop] conv=${conversationId} task=${taskId} settledMs=${settledMs} exitMs=${hasChild ? 'pending' : 'none'}`);
+}
+
+/** Logs `exitMs` (cancel to child exit) for a stopped task; called from the child's `exit` handler after `process_exit` is recorded. */
+export function logCancelExitExtracted(ctx: Pick<QaapAgentTaskRunnerContext, 'tasks' | 'conversationIdForTask'>, taskId: string): void {
+        const receivedAt = ctx.tasks.get(taskId)?.latencyMarks?.cancel_received;
+        if (receivedAt === undefined) {
+            return;
+        }
+        const exitedAt = ctx.tasks.get(taskId)?.latencyMarks?.process_exit ?? Date.now();
+        const conversationId = ctx.conversationIdForTask?.(taskId) ?? '-';
+        console.warn(`[qaap-stop] conv=${conversationId} task=${taskId} exitMs=${exitedAt - receivedAt}`);
+}
+
 export function cancelExtracted(ctx: QaapAgentTaskRunnerContext, id: string, options?: QaapAgentTaskCancelOptions): QaapAgentTask | undefined {
         const child = ctx.processes.get(id);
         ctx.queuedCreateRequests.delete(id);
         const task = ctx.tasks.get(id);
         if (task && (task.state === 'running' || task.state === 'queued')) {
+            const receivedAt = Date.now();
+            ctx.recordTaskLatencyMark(id, 'cancel_received', receivedAt);
             if (child) {
                 ctx.stoppingTaskIds.add(id);
             }
             const finished = options?.interrupt
                 ? finishTaskWithPauseCause(ctx, id, options.pauseCause)
                 : ctx.finishTask(id, 'cancelled', undefined);
+            const settledAt = Date.now();
+            ctx.recordTaskLatencyMark(id, 'cancel_settled', settledAt);
+            logCancelSettledExtracted(ctx, id, settledAt - receivedAt, child !== undefined);
             if (child) {
                 // Cancellation is visible immediately, but retain the concurrency slot until the
                 // process group has had time to finish an in-flight workspace write safely.

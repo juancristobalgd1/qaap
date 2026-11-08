@@ -47,6 +47,7 @@ import { parseRewindRestoreOptions } from '@theia/qaap-shared-core/lib/common/qa
 import { QaapRewindConfirmationRequiredError } from './qaap-agent-conversation-rewind-preview-git';
 import { QaapBillingStore } from './qaap-billing-store';
 import { QaapConversationWorktreeService } from './qaap-conversation-worktree';
+import { readDirtyWorkspace, resolveTaskIsolationMode } from './qaap-task-workspace-dirty';
 import { QaapAgentGoalLoopError, QaapAgentGoalLoopRunner } from './qaap-agent-goal-loop-runner';
 import type { QaapAgentGoalLoopResponse, QaapStartAgentGoalLoopRequest } from '../common/qaap-agent-goal-loop';
 import {
@@ -62,6 +63,7 @@ import {
     normalizeQaapVisualPreviewUrl,
     type QaapPreviewVisualValidationResult,
 } from '@theia/qaap-shared-core/lib/common/qaap-visual-verification';
+import { QaapAsyncRoute } from '@theia/qaap-shared-core/lib/node/qaap-async-route';
 
 const SSE_HEARTBEAT_MS = 25_000;
 /** A v2 socket that never sends `hello` is served a full `resync` after this long. */
@@ -142,6 +144,15 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
     protected readonly repoClaims = new Map<string, number>();
 
     configure(app: Application): void {
+        // A failed restore must not look like an empty history or accept turns that would be lost.
+        app.use(QAAP_AGENT_CONVERSATION_API_PATH, (_req, res, next) => {
+            const failure = this.store.storageHealth().failure;
+            if (failure === undefined) {
+                next();
+                return;
+            }
+            res.status(503).json({ error: `Conversation storage is unavailable: ${failure}`, code: 'conversation-storage-unavailable' });
+        });
         // List for one cwd (or all).
         app.get(QAAP_AGENT_CONVERSATION_API_PATH, (req, res) => {
             const ctx = this.requireAuth(req, res);
@@ -186,9 +197,7 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
         app.get(`${QAAP_AGENT_CONVERSATION_API_PATH}/stream`, (req, res) => {
             this.handleStream(req, res);
         });
-        app.post(QAAP_AGENT_CONVERSATION_API_PATH, (req, res) => {
-            void this.handleCreate(req, res);
-        });
+        app.post(QAAP_AGENT_CONVERSATION_API_PATH, QaapAsyncRoute.wrap('qaap-agent-conversation', (req, res) => this.handleCreate(req, res)));
         app.get(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/visual-verifications/:evidenceId`, (req, res) => {
             if (!this.getConversationIfOwned(req, res, req.params.id)) {
                 return;
@@ -220,24 +229,24 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             }
             res.json({ ...conv, ...cursor });
         });
-        app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/messages`, (req, res) => {
+        app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/messages`, QaapAsyncRoute.wrap('qaap-agent-conversation', async (req, res) => {
             if (!this.getConversationIfOwned(req, res, req.params.id)) {
                 return;
             }
-            void this.handlePostMessage(req, res);
-        });
+            await this.handlePostMessage(req, res);
+        }));
         app.delete(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/queued-messages/:queuedMessageId`, (req, res) => {
             if (!this.getConversationIfOwned(req, res, req.params.id)) {
                 return;
             }
             this.handleCancelQueuedMessage(req, res);
         });
-        app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/queued-messages/:queuedMessageId/dispatch`, (req, res) => {
+        app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/queued-messages/:queuedMessageId/dispatch`, QaapAsyncRoute.wrap('qaap-agent-conversation', async (req, res) => {
             if (!this.getConversationIfOwned(req, res, req.params.id)) {
                 return;
             }
-            void this.handleDispatchQueuedMessage(req, res);
-        });
+            await this.handleDispatchQueuedMessage(req, res);
+        }));
         app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/ag-ui/events`, (req, res) => {
             if (!this.getConversationIfOwned(req, res, req.params.id)) {
                 return;
@@ -250,42 +259,62 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             }
             this.handlePostPreviewBootstrapFailure(req, res);
         });
-        app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/visual-verifications`, (req, res) => {
+        app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/visual-verifications`, QaapAsyncRoute.wrap('qaap-agent-conversation', async (req, res) => {
             if (!this.getConversationIfOwned(req, res, req.params.id)) {
                 return;
             }
-            void this.handlePostVisualVerification(req, res);
-        });
-        app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/visual-verification-failures`, (req, res) => {
+            await this.handlePostVisualVerification(req, res);
+        }));
+        app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/visual-repair`, (req, res) => {
             if (!this.getConversationIfOwned(req, res, req.params.id)) {
                 return;
             }
-            void this.handlePostVisualVerificationFailure(req, res);
+            const body = (req.body ?? {}) as { sourceAgentMessageId?: unknown };
+            const sourceAgentMessageId = typeof body.sourceAgentMessageId === 'string' ? body.sourceAgentMessageId.trim() : '';
+            if (!sourceAgentMessageId) {
+                res.status(400).json({ error: 'sourceAgentMessageId is required.' });
+                return;
+            }
+            void this.store.startVisualRepairProposal(req.params.id, sourceAgentMessageId).then(conv => {
+                if (!conv) {
+                    res.status(409).json({ error: 'No open repair proposal on that message.' });
+                    return;
+                }
+                res.json(conv);
+            }, (error: unknown) => {
+                res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+            });
         });
+        app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/visual-verification-failures`, QaapAsyncRoute.wrap('qaap-agent-conversation', async (req, res) => {
+            if (!this.getConversationIfOwned(req, res, req.params.id)) {
+                return;
+            }
+            await this.handlePostVisualVerificationFailure(req, res);
+        }));
         app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/git-actions`, (req, res) => {
             if (!this.getConversationIfOwned(req, res, req.params.id)) {
                 return;
             }
             this.handlePostGitAction(req, res);
         });
-        app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/visual-evidence-images`, (req, res) => {
+        app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/visual-evidence-images`, QaapAsyncRoute.wrap('qaap-agent-conversation', async (req, res) => {
             if (!this.getConversationIfOwned(req, res, req.params.id)) {
                 return;
             }
-            void this.handlePostVisualEvidenceImage(req, res);
-        });
+            await this.handlePostVisualEvidenceImage(req, res);
+        }));
         app.patch(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id`, (req, res) => {
             if (!this.getConversationIfOwned(req, res, req.params.id)) {
                 return;
             }
             this.handleUpdate(req, res);
         });
-        app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/task-pull-request/consent`, (req, res) => {
+        app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/task-pull-request/consent`, QaapAsyncRoute.wrap('qaap-agent-conversation', async (req, res) => {
             if (!this.getConversationIfOwned(req, res, req.params.id)) {
                 return;
             }
-            void this.handleTaskPullRequestConsent(req, res);
-        });
+            await this.handleTaskPullRequestConsent(req, res);
+        }));
         app.patch(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/task-plan`, (req, res) => {
             this.handleTaskPlan(req, res, plans => plans.edit(req.params.id, (req.body ?? {}) as QaapTaskPlanEditRequest));
         });
@@ -298,9 +327,7 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
         app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/task-plan/cancel`, (req, res) => {
             this.handleTaskPlan(req, res, plans => plans.cancel(req.params.id));
         });
-        app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/worktree/apply`, (req, res) => {
-            void this.handleApplyWorktree(req, res);
-        });
+        app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/worktree/apply`, QaapAsyncRoute.wrap('qaap-agent-conversation', (req, res) => this.handleApplyWorktree(req, res)));
         app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/fork`, (req, res) => {
             const conv = this.getConversationIfOwned(req, res, req.params.id);
             if (!conv) {
@@ -317,6 +344,7 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             if (!this.getConversationIfOwned(req, res, req.params.id)) {
                 return;
             }
+            console.warn(`[qaap-stop] enter conv=${req.params.id} via=http`);
             // `userMessageId` narrows the cancel to ONE run of a multitasking session; without
             // it Stop stays session-wide (every live run), which is what the composer Stop does.
             const body = (req.body ?? {}) as { userMessageId?: unknown };
@@ -533,6 +561,7 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
                     }
                     if (parsed.op === 'cancel') {
                         const conv = this.store.get(parsed.conversationId);
+                        console.warn(`[qaap-stop] enter conv=${parsed.conversationId} via=ws`);
                         if (conv && this.auth.ownsWorkspacePath(ctx, conv.cwd)) {
                             this.store.cancel(parsed.conversationId);
                         }
@@ -666,8 +695,29 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             let cwd = resolvedCwd.cwd;
             let baseCwd: string | undefined;
             let worktreeBranch: string | undefined;
-            const isolation = this.resolveIsolation(body);
             const repoKey = this.repoKey(cwd);
+            let isolation = this.resolveIsolation(body);
+            const isolationMode = resolveTaskIsolationMode();
+            if (isolation === 'auto' && isolationMode === 'worktree') {
+                isolation = 'worktree';
+            }
+            // A task that would share the working tree must not silently mix into uncommitted changes
+            // the user made outside it: ask first (409 `dirty_workspace`), unless the client accepts the
+            // dirt. `QAAP_TASK_ISOLATION=dirty` isolates an 'auto' task instead of asking.
+            if (isolation !== 'worktree' && !(isolation === 'auto' && this.repoHasActiveThread(repoKey, ownerLogin))) {
+                const dirty = await readDirtyWorkspace(cwd, (gitCwd, args) => this.store.readGit(gitCwd, args));
+                if (dirty.kind === 'unknown') {
+                    // git could not answer: proceed as before rather than blocking the user on a failed check.
+                    console.warn(`[qaap] dirty-workspace check failed for ${cwd}, creating the task without it: ${dirty.reason}`);
+                } else if (dirty.kind === 'dirty') {
+                    if (isolation === 'auto' && isolationMode === 'dirty') {
+                        isolation = 'worktree';
+                    } else if (body.acceptDirty !== true) {
+                        res.status(409).json({ code: 'dirty_workspace', files: dirty.files, total: dirty.total });
+                        return;
+                    }
+                }
+            }
             if (isolation === 'worktree' || (isolation === 'auto' && this.repoHasActiveThread(repoKey, ownerLogin))) {
                 try {
                     const worktree = await this.worktrees.create(cwd, ownerLogin);
@@ -860,6 +910,7 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
         const clientMessageId = /^[A-Za-z0-9._:-]{1,160}$/.test(rawClientMessageId)
             ? rawClientMessageId
             : undefined;
+        const queueOnly = body.queueOnly === true;
         try {
             const autoApprove = typeof body.autoApprove === 'boolean' ? body.autoApprove : undefined;
             const interactionModeId = typeof body.interactionModeId === 'string' ? body.interactionModeId.trim() : undefined;
@@ -885,7 +936,9 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
                 approvalPolicyId,
                 toolApprovalRules,
                 sanitizeLatencyMarks(body.latencyMarks),
-                clientMessageId ? { clientMessageId } : undefined,
+                clientMessageId || queueOnly
+                    ? { ...(clientMessageId ? { clientMessageId } : {}), ...(queueOnly ? { queueOnly: true } : {}) }
+                    : undefined,
                 deliveryMode,
             );
             res.status(202).json(conv);

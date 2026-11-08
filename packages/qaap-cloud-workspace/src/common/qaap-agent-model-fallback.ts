@@ -5,7 +5,7 @@
 
 import type { QaapAgentTask, QaapCreateAgentTaskQaiqModel } from './qaap-agent-task';
 import type { QaapAgentModelFallbackReason } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
-import { agentSupportsModelPicker } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
+import { agentSupportsModelPicker, isFreeAgentModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
 import {
     agentUsesNativeModelCatalog,
     agentUsesSettingsModelCatalog,
@@ -39,13 +39,28 @@ export const AGENT_ACCOUNT_LEVEL_FAILURE_KINDS: ReadonlySet<QaapAgentFailureKind
     'cli_missing',
 ]);
 
-export function agentModelKey(model: QaapCreateAgentTaskQaiqModel | undefined): string | undefined {
-    const modelId = model?.modelId?.trim();
-    if (!modelId) {
-        return undefined;
+/**
+ * Canonical id of a model for "is this the same model?": case-insensitive, without the OpenRouter `~`
+ * alias and without the `openrouter/` provider prefix, so `openrouter/x:free`, `~x:free` and `x:free`
+ * are one model. The vendor is not part of identity: a fallback chain is per agent, and the same slug
+ * can arrive tagged with different vendors (the composer's `openrouter` vs the slug's own org).
+ * The key namespace is fixed to `openrouter/` so existing key values stay stable.
+ */
+export function normalizeAgentModelId(modelId: string): string {
+    let id = modelId.trim().toLowerCase();
+    if (id.startsWith('~')) {
+        id = id.slice(1);
     }
-    const vendor = model?.vendor?.trim().toLowerCase() || 'unknown';
-    return `${vendor}/${modelId}`;
+    if (id.startsWith('openrouter/')) {
+        id = id.slice('openrouter/'.length);
+    }
+    return id;
+}
+
+/** Identity key of a model in fallback chains: one fixed namespace plus the normalized id (see {@link normalizeAgentModelId}). */
+export function agentModelKey(model: QaapCreateAgentTaskQaiqModel | undefined): string | undefined {
+    const modelId = model?.modelId ? normalizeAgentModelId(model.modelId) : '';
+    return modelId ? `openrouter/${modelId}` : undefined;
 }
 
 function optionToAgentModel(option: {
@@ -69,17 +84,8 @@ function modelsFromByokDescriptor(descriptor: QaapQaiqByokProviderDescriptor): Q
     }));
 }
 
-/** OpenRouter's free-tier slug suffix. The catalogs carry no price, so the slug is the free marker. */
-const FREE_MODEL_SLUG_SUFFIX = ':free';
-
-/**
- * True for a free model: an OpenRouter free-tier slug (`:free`, or the `/free` router). Every other model
- * is treated as paid.
- */
-export function isFreeAgentModel(model: QaapCreateAgentTaskQaiqModel | undefined): boolean {
-    const modelId = model?.modelId?.trim().toLowerCase() ?? '';
-    return modelId.endsWith(FREE_MODEL_SLUG_SUFFIX) || modelId.endsWith('/free');
-}
+/** Free-model rule shared with the composer (Paid badge, paid-send confirmation); see the shared module. */
+export { isFreeAgentModel };
 
 /**
  * Ordered model candidates for one agent — current pick first, then fallbacks. Native catalogs prefer
@@ -319,6 +325,11 @@ export function agentTurnQualifiesForModelFallback(
     agentMessage: QaapAgentModelFallbackEvidence | undefined,
 ): boolean {
     if (!agentTurnMayFallBackToAnotherModel(turnAgentId, task)) {
+        return false;
+    }
+    // A turn the user stopped (or the watchdog paused) never swaps model: Stop is final. This runs before the
+    // tool-support shortcut, which would otherwise qualify a stopped turn whose partial output looks like a tool call.
+    if (task.state === 'cancelled' || task.state === 'interrupted') {
         return false;
     }
     if (agentTurnHasRetryableToolSupportFailure(agentMessage)) {

@@ -42,6 +42,7 @@ import {
 import { resolveQaapBuiltinAgentMentionId } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 import type { QaapAgentTask, QaapAgentTaskCwdGroup } from '../common/qaap-agent-task';
 import { QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
+import { QaapAsyncRoute } from '@theia/qaap-shared-core/lib/node/qaap-async-route';
 
 /** Keep SSE connections warm through proxies that idle-kill silent sockets. */
 const SSE_HEARTBEAT_MS = 25_000;
@@ -50,6 +51,8 @@ const WS_PING_MS = 25_000;
 const WS_PATH = `${QAAP_AGENT_TASK_API_PATH}/ws`;
 /** How long the picker's model request waits for a cold native CLI model discovery. */
 const QAAP_NATIVE_MODEL_DISCOVERY_BUDGET_MS = 1_200;
+/** How long the picker's model request waits for the billing account before answering without it. */
+const QAAP_AGENT_MODELS_BILLING_BUDGET_MS = 800;
 
 /** Header carrying the helper-CLI token when an agent calls back to spawn a sub-task. */
 const HELPER_TOKEN_HEADER = 'x-qaap-task-token';
@@ -98,22 +101,14 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         app.get(`${QAAP_AGENT_TASK_API_PATH}/storage-health`, (req, res) => {
             this.handleStorageHealth(req, res);
         });
-        app.post(`${QAAP_AGENT_TASK_API_PATH}/storage-retry`, (req, res) => {
-            void this.handleStorageRetry(req, res);
-        });
-        app.get(`${QAAP_AGENT_TASK_API_PATH}/agent-models`, (req, res) => {
-            void this.handleListAgentModels(req, res);
-        });
+        app.post(`${QAAP_AGENT_TASK_API_PATH}/storage-retry`, QaapAsyncRoute.wrap('qaap-agent-task', (req, res) => this.handleStorageRetry(req, res)));
+        app.get(`${QAAP_AGENT_TASK_API_PATH}/agent-models`, QaapAsyncRoute.wrap('qaap-agent-task', (req, res) => this.handleListAgentModels(req, res)));
         app.get(`${QAAP_AGENT_TASK_API_PATH}/harness-status`, (req, res) => {
             this.handleListHarnessStatuses(req, res);
         });
         // Static `/cli-updates` segments must register before `/:id` below.
-        app.get(`${QAAP_AGENT_TASK_API_PATH}/cli-updates`, (req, res) => {
-            void this.handleListCliUpdates(req, res);
-        });
-        app.post(`${QAAP_AGENT_TASK_API_PATH}/cli-updates/:agentId`, (req, res) => {
-            void this.handleInstallCliUpdate(req, res);
-        });
+        app.get(`${QAAP_AGENT_TASK_API_PATH}/cli-updates`, QaapAsyncRoute.wrap('qaap-agent-task', (req, res) => this.handleListCliUpdates(req, res)));
+        app.post(`${QAAP_AGENT_TASK_API_PATH}/cli-updates/:agentId`, QaapAsyncRoute.wrap('qaap-agent-task', (req, res) => this.handleInstallCliUpdate(req, res)));
         app.get(QAAP_AGENT_TASK_API_PATH, (req, res) => {
             const ctx = this.requireAuth(req, res);
             if (!ctx) {
@@ -135,9 +130,7 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         });
         // Cross-project dashboard feed — `/all` and `/stream` are static segments routed before
         // the `/:id` handler below so they never collide with a task id.
-        app.get(`${QAAP_AGENT_TASK_API_PATH}/all`, (req, res) => {
-            void this.handleListAll(req, res);
-        });
+        app.get(`${QAAP_AGENT_TASK_API_PATH}/all`, QaapAsyncRoute.wrap('qaap-agent-task', (req, res) => this.handleListAll(req, res)));
         app.get(`${QAAP_AGENT_TASK_API_PATH}/stream`, (req, res) => {
             this.handleStream(req, res);
         });
@@ -187,15 +180,9 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
             }
         });
-        app.post(`${QAAP_AGENT_TASK_API_PATH}/improve-prompt`, (req, res) => {
-            void this.handleImprovePrompt(req, res);
-        });
-        app.post(QAAP_AGENT_TASK_API_PATH, (req, res) => {
-            void this.handleCreate(req, res);
-        });
-        app.get(`${QAAP_AGENT_TASK_API_PATH}/:id`, (req, res) => {
-            void this.handleDetail(req, res);
-        });
+        app.post(`${QAAP_AGENT_TASK_API_PATH}/improve-prompt`, QaapAsyncRoute.wrap('qaap-agent-task', (req, res) => this.handleImprovePrompt(req, res)));
+        app.post(QAAP_AGENT_TASK_API_PATH, QaapAsyncRoute.wrap('qaap-agent-task', (req, res) => this.handleCreate(req, res)));
+        app.get(`${QAAP_AGENT_TASK_API_PATH}/:id`, QaapAsyncRoute.wrap('qaap-agent-task', (req, res) => this.handleDetail(req, res)));
         app.post(`${QAAP_AGENT_TASK_API_PATH}/:id/cancel`, (req, res) => {
             const ctx = this.requireAuth(req, res);
             if (!ctx) {
@@ -394,28 +381,39 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         const normalizedAgent = requestedAgent.replace(/^@/, '').trim().toLowerCase();
         const agent = resolveQaapBuiltinAgentMentionId(normalizedAgent) ?? normalizedAgent;
         const login = this.auth.resolveUserLogin(ctx);
+        const startedAt = Date.now();
+        let billingStartedAt = startedAt;
+        let billingMs = 0;
         if (this.billingStore && login) {
+            // Creating the account is only a side effect here: the picker answers from the native catalog
+            // and never reads it. Past the budget the request continues without waiting for the billing store.
+            const billingStore = this.billingStore;
+            billingStartedAt = Date.now();
             try {
-                await this.billingStore.getOrCreateAccount(login);
+                await this.withinBudget(billingStore.getOrCreateAccount(login), QAAP_AGENT_MODELS_BILLING_BUDGET_MS);
             } catch {
-                // Fail closed in the picker: cold/missing entitlements hide hosted models.
+                // Account creation failures are not picker data; the native catalog below still answers.
             }
+            billingMs = Date.now() - billingStartedAt;
         }
         // A freshly-created hosted runner can briefly have an empty detected-agent cache even
         // though the native catalog is already available. Keep the read-only picker endpoint
         // useful during that window instead of turning a valid native harness into `models: []`.
         // Give a cold CLI model discovery (`cursor-agent models`) a moment; past the budget the
         // curated catalog answers and the discovered one is cached for the next request.
+        const discoveryStartedAt = Date.now();
         await this.withinBudget(prepareNativeAgentModels(agent, {
             ownerLogin: login,
             spawner: this.runner.nativeModelDiscoverySpawner(login),
         }), QAAP_NATIVE_MODEL_DISCOVERY_BUDGET_MS);
+        const discoveryMs = Date.now() - discoveryStartedAt;
         if (res.headersSent || res.writableEnded) {
             return;
         }
         const runnerModels = this.runner.listModelsForAgent(agent, login);
         const nativeModels = listNativeAgentModels(agent, login);
         const models = runnerModels.length > 0 ? runnerModels : nativeModels;
+        res.setHeader('Server-Timing', `billing;dur=${billingMs}, discovery;dur=${discoveryMs}, total;dur=${Date.now() - startedAt}`);
         res.setHeader('Cache-Control', 'no-store');
         res.json({ agent: requestedAgent, models });
     }

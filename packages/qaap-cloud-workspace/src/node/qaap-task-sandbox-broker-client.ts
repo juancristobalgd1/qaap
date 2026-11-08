@@ -20,6 +20,7 @@ import {
     type QaapTaskSandboxBrokerReply,
     type QaapTaskSandboxBrokerSandbox,
 } from './qaap-task-sandbox-broker-protocol';
+import { QaapAsyncRoute } from '@theia/qaap-shared-core/lib/node/qaap-async-route';
 
 const LINK_WAIT_MS = 15_000;
 const CALL_TIMEOUT_MS = 90_000;
@@ -55,9 +56,7 @@ export class QaapTaskSandboxBrokerClient implements BackendApplicationContributi
             return;
         }
         app.get(`${QAAP_TENANT_RUNTIME_API_PATH}${QAAP_TASK_SANDBOX_LINK_PATH}`, (req, res) => this.handleLink(req, res));
-        app.post(`${QAAP_TENANT_RUNTIME_API_PATH}${QAAP_TASK_SANDBOX_REPLY_PATH}`, (req, res) => {
-            void this.handleReply(req, res);
-        });
+        app.post(`${QAAP_TENANT_RUNTIME_API_PATH}${QAAP_TASK_SANDBOX_REPLY_PATH}`, QaapAsyncRoute.wrap('qaap-task-sandbox-broker', (req, res) => this.handleReply(req, res)));
     }
 
     onStop(): void {

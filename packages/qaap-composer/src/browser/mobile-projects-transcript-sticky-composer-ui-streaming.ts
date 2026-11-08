@@ -32,6 +32,7 @@ import {
 } from './qaap-composer-preview-action';
 import type { StickyComposerChangedFileView } from '@theia/qaap-transcript/lib/browser/qaap-transcript-host-contracts';
 import { clearQaapPreviewDismissedByUser } from '@theia/qaap-shared-core/lib/browser/qaap-preview-user-dismissal';
+import { QaapUserFacingErrors } from '@theia/qaap-adapters/lib/common/qaap-user-facing-error';
 
 export async function runComposerGitFileActionExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,
@@ -49,8 +50,7 @@ export async function runComposerGitFileActionExtracted(ctx: MobileProjectsTrans
             body: JSON.stringify({ root: cwd, file: file.path }),
         });
         if (!response.ok) {
-            const body = await response.json().catch(() => ({})) as { error?: string };
-            throw new Error(body.error ?? `${endpoint} failed (${response.status})`);
+            throw await QaapUserFacingErrors.fromResponse(response, `${endpoint} failed (${response.status})`);
         }
     }
 }
@@ -491,8 +491,7 @@ export async function runComposerCommitActionExtracted(ctx: MobileProjectsTransc
             body: JSON.stringify({ root: cwd, action, branchName, message }),
         });
         if (!response.ok) {
-            const body = await response.json().catch(() => ({})) as { error?: string };
-            throw new Error(body.error ?? `commit workflow failed (${response.status})`);
+            throw await QaapUserFacingErrors.fromResponse(response, `commit workflow failed (${response.status})`);
         }
         const result = await response.json().catch(() => ({})) as {
             branch?: string;

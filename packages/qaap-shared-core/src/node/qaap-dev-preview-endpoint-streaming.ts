@@ -181,7 +181,7 @@ export async function reapStoppedPreviewsExtracted(ctx: QaapDevPreviewEndpointCo
                 // not touchedAt, so those probes cannot keep a dead listener registered forever.
                 if (!ctx.isPreviewProcessDead(record)
                     && (now - record.claimedAt < PREVIEW_RESERVATION_START_GRACE_MS
-                        || await ctx.probeLocalDevServer(record.port))) {
+                        || (await ctx.probeLocalDevServerState(record.port)) !== 'down')) {
                     continue;
                 }
                 // releasePreview fires onDidReleasePort, which clears this port's probe caches.
@@ -214,7 +214,11 @@ export async function handleProbeExtracted(ctx: QaapDevPreviewEndpointContext, r
             res.json({ ready: false, previewUrl: buildQaapDevPreviewOpenUrl(origin, port) } satisfies QaapDevPreviewProbeResponse);
             return;
         }
-        const ready = await ctx.probeLocalDevServer(port);
+        const state = await ctx.probeLocalDevServerState(port);
+        const ready = state === 'ready';
+        // `listening` also covers a port that accepted the probe but is still compiling: the
+        // frontend keeps waiting for it instead of giving up on the first silent answer.
+        const listening = state !== 'down';
         const record = ctx.portRegistry.getByPort(port);
         const login = ctx.auth.resolveUserLogin(ctx.auth.authenticate(req));
         if (record && login === record.ownerLogin) {
@@ -226,6 +230,7 @@ export async function handleProbeExtracted(ctx: QaapDevPreviewEndpointContext, r
             const body: QaapDevPreviewProbeResponse = {
                 ready,
                 ...(ready ? { readiness: 'transport_ready' as const } : {}),
+                ...(listening ? { listening } : {}),
                 previewUrl: ctx.buildIdentityPreviewUrl(req, record),
                 previewId: record.previewId,
                 projectId: record.projectId,
@@ -242,6 +247,7 @@ export async function handleProbeExtracted(ctx: QaapDevPreviewEndpointContext, r
         const body: QaapDevPreviewProbeResponse = {
             ready,
             ...(ready ? { readiness: 'transport_ready' as const } : {}),
+            ...(listening ? { listening } : {}),
             previewUrl: buildQaapDevPreviewOpenUrl(origin, port),
         };
         res.json(body);
@@ -284,7 +290,8 @@ export async function handleCurrentProjectPreviewExtracted(ctx: QaapDevPreviewEn
         const conversationId = isQaapProcessPreviewIdentity(record)
             ? normalizeQaapPreviewConversationId(record.conversationId)
             : undefined;
-        const ready = await ctx.probeLocalDevServer(record.port);
+        const state = await ctx.probeLocalDevServerState(record.port);
+        const ready = state === 'ready';
         if (ready) {
             ctx.portRegistry.touchPreview(record.previewId, login);
             const claimLog = {
@@ -313,7 +320,8 @@ export async function handleCurrentProjectPreviewExtracted(ctx: QaapDevPreviewEn
             return;
         }
         const withinStartGrace = Date.now() - record.claimedAt < PREVIEW_RESERVATION_START_GRACE_MS;
-        if (!withinStartGrace) {
+        // A server still compiling (`busy`) is alive: only a silent port releases the claim.
+        if (!withinStartGrace && state === 'down') {
             ctx.portRegistry.releasePreview(record.previewId, login);
             res.json({ ready: false, previewUrl: '' } satisfies QaapDevPreviewProbeResponse);
             return;

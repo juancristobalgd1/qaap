@@ -34,6 +34,7 @@ import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/
 import type { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
 import type { ComposerAgentPickerChrome } from './mobile-projects-sticky-composer-sheets-ui';
 import { renderAgentPickerLoadError, renderAgentPickerSkeleton } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-picker-loading';
+import { prewarmSendCatalog } from './qaap-paid-model-send-confirm';
 import { readComposerAgentCatalogSession, writeComposerAgentCatalogSession } from './composer-agent-catalog-session-cache';
 
 /** Minimum gap between agent catalog reloads for the same cwd when a catalog is already loaded. */
@@ -119,6 +120,20 @@ export class MobileProjectsStickyComposerAgentsUi {
         // roll back after 20s even though the shell runner is already available.
         return resolved ?? SHELL_AGENT_ID;
     }
+    /**
+     * The agent the composer chip names, and therefore the agent a submit sends. The user's choice
+     * (pinned in memory or stored for the project) wins as is: reconciling it against a catalog that
+     * is still warming or lists it under another state made the chip say one agent while the submit
+     * routed another. Without a usable choice it is the reconciled pinned agent.
+     */
+    resolveStickyComposerDisplayedAgentId(project: MobileProjectEntry): string {
+        const cwd = this.host.projectsService.getProjectCwd(project) ?? this.host.preparedCwdByProjectId.get(project.id);
+        const chosen = (this.host.stickyComposerPinnedAgentId ?? readStoredAgent(cwd))?.trim();
+        if (chosen && chosen !== 'task' && !isTheiaCoderAgent(chosen)) {
+            return chosen;
+        }
+        return this.resolveStickyComposerPinnedAgentId(project);
+    }
     resolveStickyComposerAgentLabel(project?: MobileProjectEntry): string {
         const cwd = project
             ? this.host.projectsService.getProjectCwd(project) ?? this.host.preparedCwdByProjectId.get(project.id)
@@ -129,7 +144,7 @@ export class MobileProjectsStickyComposerAgentsUi {
         if (!chosen && project && !this.stickyComposerAgentCatalogSettled) {
             return nls.localize('qaap/mobileProjects/stickyComposerAgentPending', 'Agent');
         }
-        const pinned = chosen ?? (project ? this.resolveStickyComposerPinnedAgentId(project) : undefined);
+        const pinned = project ? this.resolveStickyComposerDisplayedAgentId(project) : chosen;
         if (isTheiaCoderAgent(pinned)) {
             return this.host.chatAgentService?.getAgent(THEIA_CODER_AGENT_ID)?.name ?? 'Coder';
         }
@@ -181,6 +196,8 @@ export class MobileProjectsStickyComposerAgentsUi {
         if (!agentSupportsModelPicker(agentId)) {
             return undefined;
         }
+        // Warm the send catalog on mount and agent change, so the first send rarely waits on it.
+        void prewarmSendCatalog(agentId);
         const existing = readStoredAgentModel(cwd, agentId);
         // A stored selection is kept only when the catalog lists it. Without a preferred catalog the live one
         // is fetched below, so a model the account can no longer run (e.g. Codex `gpt-5.6-sol` on a Free plan)
@@ -222,19 +239,29 @@ export class MobileProjectsStickyComposerAgentsUi {
             ...this.filterSelectableComposerAgents(agents).map(agent => agent.id),
         ];
         const seen = new Set<string>();
+        const candidates: string[] = [];
         for (const candidate of candidateIds) {
             const agentId = candidate?.trim();
             if (!agentId) {
                 continue;
             }
             const key = agentId.toLowerCase();
-            if (seen.has(key)) {
+            if (seen.has(key) || !agentSupportsModelPicker(agentId)) {
+                seen.add(key);
                 continue;
             }
             seen.add(key);
-            if (!agentSupportsModelPicker(agentId)) {
-                continue;
+            candidates.push(agentId);
+        }
+        // Start every harness's model catalog at once. The loop below consumes them in picker order, so the
+        // first usable harness still wins, but a slow or hung catalog no longer delays the ones behind it.
+        for (const agentId of candidates) {
+            if (agentId.toLowerCase() !== 'qaiq') {
+                void fetchAgentModelsForAgent(agentId).catch(() => undefined);
             }
+        }
+        for (const agentId of candidates) {
+            const key = agentId.toLowerCase();
             const model = await this.ensureStickyComposerAgentModel(
                 agentId,
                 cwd,

@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { DEV_PREVIEW_HEALTH_BASE_INTERVAL_MS } from './qaap-project-bootstrap-port';
 import { inject, injectable, optional, postConstruct } from '@theia/core/shared/inversify';
 import { Emitter, Event } from '@theia/core/lib/common/event';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
@@ -108,7 +109,7 @@ export const DEV_PREVIEW_AUTO_RETRY_DELAY_MS = 1_500;
 /** Delay before auto-attaching or restarting a remembered dev port after workspace load. */
 export const DEV_PREVIEW_WARMUP_DELAY_MS = 800;
 /** Detect a dead restored process even when Theia reconstructs its terminal after the preview URL. */
-export const DEV_PREVIEW_HEALTH_INTERVAL_MS = 2500;
+export const DEV_PREVIEW_HEALTH_INTERVAL_MS = DEV_PREVIEW_HEALTH_BASE_INTERVAL_MS;
 export const DEV_PREVIEW_HEALTH_FAILURE_LIMIT = 2;
 /** Bounded conflict recovery: enough to escape a cluster of stale dev servers without looping forever. */
 export const DEV_PORT_RECOVERY_MAX_ATTEMPTS = 8;
@@ -237,6 +238,11 @@ export class QaapProjectBootstrapService {
 
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
     public readonly forwardedPortsEmitter = new Emitter<QaapForwardedPort[]>();
+
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public readonly hubProjectRootEmitter = new Emitter<URI | undefined>();
+    /** Fires when the Work Hub pins a project root (`refreshFromProjectRoot`) or releases it (`reset`). */
+    readonly onDidChangeHubProjectRoot: Event<URI | undefined> = this.hubProjectRootEmitter.event;
 
     protected readonly devOutputEmitter = new Emitter<string>();
     /** Fires whenever new dev-server output is appended (for live streaming in the Preview tab). */
@@ -509,7 +515,7 @@ export class QaapProjectBootstrapService {
     }
 
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
-    public resolveDevPlan(): { command: string; cwd: URI; expectedPort?: number; kind: QaapProjectKind } | undefined {
+    public resolveDevPlan(): { command: string; cwd: URI; expectedPort?: number; kind: QaapProjectKind; isTheiaApp?: boolean } | undefined {
         return resolveDevPlanExtracted(this);
     }
 
@@ -527,7 +533,7 @@ export class QaapProjectBootstrapService {
     }
 
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
-    public buildDevSpawnPlan(plan: { command: string; expectedPort?: number; kind: QaapProjectKind; }): { command: string; targetPort?: number } {
+    public buildDevSpawnPlan(plan: { command: string; expectedPort?: number; kind: QaapProjectKind; cwd?: URI; isTheiaApp?: boolean; }): { command: string; targetPort?: number } {
         return buildDevSpawnPlanExtracted(this, plan);
     }
 

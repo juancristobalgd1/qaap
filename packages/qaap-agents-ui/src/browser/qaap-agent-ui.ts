@@ -56,6 +56,23 @@ export function resolveUnavailableModelTitle(agentId: string, reason: 'plan' | '
     );
 }
 
+/**
+ * Title of a selected agent row: the agent name plus its readable model label (`OpenCode · Beam Free`).
+ * The model segment is dropped when it repeats the agent name ignoring case, so the row never reads
+ * `OpenCode · Opencode`.
+ */
+export function formatAgentPickerSelectedLabel(agentLabel: string, model: {
+    readonly modelId: string;
+    readonly label?: string;
+}): string {
+    const trimmedAgentLabel = agentLabel.trim();
+    const modelLabel = formatQaiqModelDisplayLabel(model);
+    if (!modelLabel || modelLabel.toLowerCase() === trimmedAgentLabel.toLowerCase()) {
+        return trimmedAgentLabel;
+    }
+    return `${trimmedAgentLabel} · ${modelLabel}`;
+}
+
 /** One short, localized description for every agent in the composer picker. */
 export function resolveAgentPickerDescription(agentId: string, fallbackLabel: string): string {
     switch (agentId.trim().toLowerCase()) {

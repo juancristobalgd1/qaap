@@ -4010,12 +4010,13 @@ body.theia-dark .theia-mobile-agent-web-search,
   flex-direction: column;
   align-items: flex-end;
   gap: 6px;
-  opacity: 0.62;
   border-style: dashed;
 }
 
+/* Dim only the message text: the Send now / Cancel actions live in the row header and must stay at full strength. */
 .theia-mobile-agent-transcript-msg.theia-mod-user.theia-mod-queued .theia-mobile-agent-transcript-content {
   align-self: stretch;
+  opacity: 0.62;
 }
 
 .theia-mobile-agent-transcript-queued-tag {
@@ -4068,6 +4069,12 @@ body.theia-dark .theia-mobile-agent-web-search,
 .theia-mobile-agent-transcript-queued-badge-icon {
   font-size: 12px;
   opacity: 0.8;
+}
+
+.theia-mobile-agent-transcript-queued-paused-hint {
+  font-size: 11px;
+  color: var(--theia-descriptionForeground, var(--theia-foreground));
+  white-space: nowrap;
 }
 
 .theia-mobile-agent-transcript-queued-actions {
@@ -4263,4 +4270,41 @@ details > summary:focus-visible,
   .theia-mobile-terminal-output-summary:hover {
     background: transparent !important;
   }
+}
+
+/* Stopped turn without a process accordion (no tool calls): quiet closing line, same tokens as the accordion. */
+.theia-mobile-stopped-turn-line {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 6px 0 2px;
+    font-size: 12px;
+    color: var(--theia-descriptionForeground);
+}
+
+.theia-mobile-stopped-turn-line .theia-mobile-stopped-turn-line-icon {
+    font-size: 14px;
+}
+
+/* "Fix with agent" proposal after a failed visual check: a bordered notice under the transcript. */
+.theia-mobile-visual-repair-proposal {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    margin: 8px 0;
+    padding: 8px 10px;
+    border: 1px solid var(--theia-editorWidget-border);
+    border-radius: 6px;
+    font-size: 13px;
+    color: var(--theia-foreground);
+}
+
+.theia-mobile-visual-repair-proposal-text {
+    flex: 1 1 200px;
+}
+
+.theia-mobile-visual-repair-proposal-actions {
+    display: flex;
+    gap: 6px;
 }

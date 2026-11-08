@@ -1031,4 +1031,83 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
             .to.equal('Copy link');
     });
 
+    function pausedQueueConv(messageCount: number, queued: boolean): QaapAgentConversationDTO {
+        const messages: QaapAgentConversationDTO['messages'] = [];
+        for (let index = 0; index < messageCount; index++) {
+            messages.push(index % 2 === 0
+                ? { id: `user-${index}`, role: 'user', content: `Question ${index}`, createdAt: index + 1 }
+                : { id: `agent-${index}`, role: 'agent', content: `Answer ${index}`, createdAt: index + 1 });
+        }
+        return {
+            id: 'conv-queued',
+            cwd: '/workspace',
+            agentId: 'codex',
+            title: 'Queued',
+            status: 'idle',
+            createdAt: 0,
+            updatedAt: 1000,
+            messages,
+            ...(queued ? {
+                pendingUserMessages: [{ id: 'queued-1', content: 'queued follow-up', createdAt: 999 }],
+                pendingUserMessagesPaused: true,
+            } : {}),
+        };
+    }
+
+    it('paints the queued follow-up with a paused hint in a short idle conversation', () => {
+        const { renderUi } = createRenderUi();
+        const chatHost = document.createElement('div');
+        chatHost.className = 'theia-mobile-agent-transcript-real-chat';
+        document.body.append(chatHost);
+
+        renderUi.renderTranscriptMessages(chatHost, pausedQueueConv(4, true));
+        const messageHost = renderUi.resolveTranscriptMessageHost(chatHost);
+
+        const rows = messageHost.querySelectorAll('.theia-mobile-agent-transcript-queued-message');
+        expect(rows).to.have.length(1);
+        expect(rows[0].classList.contains('theia-mod-paused')).to.equal(true);
+        expect(rows[0].querySelectorAll('button.theia-mod-send-now')).to.have.length(1);
+        expect(rows[0].querySelector('.theia-mobile-agent-transcript-queued-paused-hint')?.textContent)
+            .to.equal('Paused — send or discard');
+    });
+
+    it('removes the queued rows when the queue is empty on the next render', () => {
+        const { renderUi } = createRenderUi();
+        const chatHost = document.createElement('div');
+        chatHost.className = 'theia-mobile-agent-transcript-real-chat';
+        document.body.append(chatHost);
+
+        renderUi.renderTranscriptMessages(chatHost, pausedQueueConv(4, true));
+        renderUi.renderTranscriptMessages(chatHost, pausedQueueConv(4, false));
+        const messageHost = renderUi.resolveTranscriptMessageHost(chatHost);
+
+        expect(messageHost.querySelectorAll('.theia-mobile-agent-transcript-queued-message')).to.have.length(0);
+    });
+
+    it('paints the queued follow-up once in the virtualized path', () => {
+        const { renderUi } = createRenderUi();
+        const chatHost = document.createElement('div');
+        chatHost.className = 'theia-mobile-agent-transcript-real-chat';
+        document.body.append(chatHost);
+
+        renderUi.renderTranscriptMessages(chatHost, pausedQueueConv(60, true));
+        const messageHost = renderUi.resolveTranscriptMessageHost(chatHost);
+
+        expect(messageHost.querySelectorAll('.theia-mobile-agent-transcript-queued-message')).to.have.length(1);
+    });
+
+    it('does not stack duplicate queued rows across repeated renders of the same queue', () => {
+        const { renderUi } = createRenderUi();
+        const chatHost = document.createElement('div');
+        chatHost.className = 'theia-mobile-agent-transcript-real-chat';
+        document.body.append(chatHost);
+
+        const conv = pausedQueueConv(4, true);
+        renderUi.renderTranscriptMessages(chatHost, conv);
+        renderUi.renderTranscriptMessages(chatHost, conv);
+        renderUi.renderTranscriptMessages(chatHost, { ...conv });
+        const messageHost = renderUi.resolveTranscriptMessageHost(chatHost);
+
+        expect(messageHost.querySelectorAll('.theia-mobile-agent-transcript-queued-message')).to.have.length(1);
+    });
 });
