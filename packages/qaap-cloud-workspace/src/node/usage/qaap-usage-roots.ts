@@ -7,6 +7,7 @@ import * as path from 'path';
 
 /** Where each agent CLI keeps its local logs. Resolved from the backend's home directory and CLI overrides. */
 export interface QaapUsageRoots {
+    claudeConfigDir: string;
     claudeProjects: string;
     codexSessions: string;
     piSessions: string;
@@ -25,6 +26,7 @@ export namespace QaapUsageRoots {
         const dataHome = nonEmpty(env.XDG_DATA_HOME) ?? path.join(homeDir, '.local', 'share');
         const openCodeStorage = path.join(dataHome, 'opencode', 'storage');
         return {
+            claudeConfigDir: claudeConfig,
             claudeProjects: path.join(claudeConfig, 'projects'),
             codexSessions: path.join(codexHome, 'sessions'),
             piSessions,
