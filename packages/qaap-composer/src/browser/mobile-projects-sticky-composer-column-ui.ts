@@ -14,6 +14,8 @@ import type { StickyComposerSlashSection } from '../common/qaap-sticky-composer-
 import { attachStickyComposerSyntaxHighlight } from '../common/qaap-sticky-composer-syntax-highlight';
 import { formatQaiqModelSelectionLabel } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
 import { populateAgentToolbarButton } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
+import { QaapAgentEffort } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
+import { resolveComposerEffortLevel } from '../common/qaap-composer-effort';
 import { resolveComposerEnterDeliveryOverride } from '@theia/qaap-transcript-overlay/lib/browser/qaap-composer-delivery-mode';
 import {
     renderStickyComposerContextStrip,
@@ -154,7 +156,6 @@ export class MobileProjectsStickyComposerColumnUi {
             options.onAttach(attachBtn);
         });
 
-        const controlsLeftItems: HTMLElement[] = [];
         const agentBtn = document.createElement('button');
         agentBtn.type = 'button';
         agentBtn.className = 'theia-mobile-projects-sticky-composer-agent';
@@ -185,11 +186,22 @@ export class MobileProjectsStickyComposerColumnUi {
             agentModel: agentModel && catalogLabel ? { ...agentModel, label: catalogLabel } : agentModel,
             connectionState: this.host.stickyComposerAgentsUi.isAgentDisconnected(agentId) ? 'disconnected' : undefined,
         });
+        const effortLevel = resolveComposerEffortLevel(options.composerCwd, agentId, agentModel?.modelId);
+        if (effortLevel) {
+            const effort = document.createElement('span');
+            effort.className = 'theia-mobile-projects-sticky-composer-agent-effort';
+            effort.textContent = `(${QaapAgentEffort.label(effortLevel)})`;
+            const chevron = agentBtn.querySelector('.codicon-chevron-down');
+            if (chevron) {
+                chevron.before(effort);
+            } else {
+                agentBtn.append(effort);
+            }
+        }
         if (options.agentLocked) {
             agentBtn.classList.add('theia-mod-locked');
             agentBtn.disabled = true;
         }
-        controlsLeftItems.push(agentBtn);
 
         const stage = document.createElement('div');
         stage.className = 'theia-mobile-projects-sticky-composer-stage';
@@ -482,15 +494,13 @@ export class MobileProjectsStickyComposerColumnUi {
 
         inputBody.append(inputEditor);
         controlsLeft.append(attachBtn);
-        for (const item of controlsLeftItems) {
-            controlsLeft.append(item);
-        }
         if (!options.agentLocked) {
             bindStickyComposerControlClick(agentBtn, ev => {
                 this.openComposerControlSheet(ev, input, () => options.onOpenAgentSheet(agentBtn));
             });
         }
-        controlsRight.append(inputActions);
+        // The model pill sits right of the input, before send, like the model picker of T3 Code.
+        controlsRight.append(agentBtn, inputActions);
         controlsRow.append(controlsLeft, controlsRight);
         const borderBeamBloom = document.createElement('div');
         borderBeamBloom.className = 'qaap-border-beam-bloom';
