@@ -48,7 +48,6 @@ export const QAAP_SESSIONS_SIDEBAR_DESKTOP_WIDTH_KEY = 'qaap.sessionsSidebar.des
  */
 export const QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY = '(min-width: 768px) and (pointer: fine)';
 
-
 const DISMISS_HINT_DURATION_MS = 4200;
 /** Quiet time after the last touch/scroll before the pull request list may be rebuilt (covers momentum). */
 const PULL_REQUEST_SCROLL_SETTLE_MS = 350;
@@ -251,7 +250,7 @@ export class MobileWorkHubSessionsSidebar {
         this.backBtn = document.createElement('button');
         this.backBtn.type = 'button';
         this.backBtn.className = 'theia-mobile-work-hub-sessions-sidebar-back codicon codicon-chevron-left';
-        this.backBtn.title = nls.localize('qaap/sessionsSidebar/back', 'Back');
+        this.backBtn.title = nls.localizeByDefault('Back');
         this.backBtn.setAttribute('aria-label', this.backBtn.title);
         this.backBtn.hidden = true;
         this.backBtn.addEventListener('click', () => {
@@ -264,7 +263,7 @@ export class MobileWorkHubSessionsSidebar {
         this.closeBtn = document.createElement('button');
         this.closeBtn.type = 'button';
         this.closeBtn.className = 'theia-mobile-work-hub-sessions-sidebar-close codicon codicon-layout-sidebar-left-off';
-        this.closeBtn.title = nls.localize('qaap/sessionsSidebar/close', 'Close');
+        this.closeBtn.title = nls.localizeByDefault('Close');
         this.closeBtn.setAttribute('aria-label', this.closeBtn.title);
         this.closeBtn.addEventListener('click', ev => {
             if (this.closeBtn.classList.contains('theia-mod-close-guarded')) {
@@ -277,7 +276,7 @@ export class MobileWorkHubSessionsSidebar {
         this.searchBtn = document.createElement('button');
         this.searchBtn.type = 'button';
         this.searchBtn.className = 'theia-mobile-work-hub-sessions-sidebar-search codicon codicon-search';
-        this.searchBtn.title = nls.localize('qaap/sessionsSidebar/search', 'Search');
+        this.searchBtn.title = nls.localizeByDefault('Search');
         this.searchBtn.setAttribute('aria-label', this.searchBtn.title);
         this.searchBtn.addEventListener('click', () => this.delegate.onSearch?.());
         this.pullRequestSearchBtn = document.createElement('button');
@@ -292,7 +291,7 @@ export class MobileWorkHubSessionsSidebar {
         this.settingsSearchBtn = document.createElement('button');
         this.settingsSearchBtn.type = 'button';
         this.settingsSearchBtn.className = 'theia-mobile-work-hub-sessions-sidebar-search theia-mobile-work-hub-sessions-sidebar-settings-search-toggle codicon codicon-search';
-        this.settingsSearchBtn.title = nls.localize('qaap/workHubSettings/searchLabel', 'Search settings');
+        this.settingsSearchBtn.title = nls.localizeByDefault('Search settings');
         this.settingsSearchBtn.setAttribute('aria-label', this.settingsSearchBtn.title);
         this.settingsSearchBtn.setAttribute('aria-expanded', 'false');
         this.settingsSearchBtn.hidden = true;
@@ -304,7 +303,7 @@ export class MobileWorkHubSessionsSidebar {
         this.accountBtn = document.createElement('button');
         this.accountBtn.type = 'button';
         this.accountBtn.className = 'theia-workbench-nav-btn theia-workbench-account-btn theia-mobile-work-hub-sessions-sidebar-account-btn';
-        this.accountBtn.title = nls.localize('qaap/accountMenu/title', 'Account');
+        this.accountBtn.title = nls.localizeByDefault('Account');
         this.accountBtn.setAttribute('aria-haspopup', 'menu');
         this.accountAvatar = document.createElement('span');
         this.accountAvatar.className = 'theia-workbench-account-avatar';
@@ -319,7 +318,7 @@ export class MobileWorkHubSessionsSidebar {
         this.usageBtn = document.createElement('button');
         this.usageBtn.type = 'button';
         this.usageBtn.className = 'theia-mobile-work-hub-sessions-sidebar-usage-button codicon codicon-graph';
-        this.usageBtn.title = nls.localize('qaap/usage/title', 'Usage');
+        this.usageBtn.title = nls.localizeByDefault('Usage');
         this.usageBtn.setAttribute('aria-label', this.usageBtn.title);
         this.usageBtn.setAttribute('aria-haspopup', 'dialog');
         this.usageBtn.addEventListener('click', event => {
@@ -329,7 +328,7 @@ export class MobileWorkHubSessionsSidebar {
         this.settingsBtn = document.createElement('button');
         this.settingsBtn.type = 'button';
         this.settingsBtn.className = 'theia-mobile-work-hub-sessions-sidebar-settings-button codicon codicon-settings-gear';
-        this.settingsBtn.title = nls.localize('qaap/sessionsSidebar/settings', 'Settings');
+        this.settingsBtn.title = nls.localizeByDefault('Settings');
         this.settingsBtn.setAttribute('aria-label', this.settingsBtn.title);
         this.settingsBtn.addEventListener('click', event => {
             event.stopPropagation();
@@ -369,8 +368,8 @@ export class MobileWorkHubSessionsSidebar {
         settingsSearchIcon.setAttribute('aria-hidden', 'true');
         this.settingsSearchInput = document.createElement('input');
         this.settingsSearchInput.type = 'search';
-        this.settingsSearchInput.placeholder = nls.localize('qaap/workHubSettings/searchPlaceholder', 'Search settings');
-        this.settingsSearchInput.setAttribute('aria-label', nls.localize('qaap/workHubSettings/searchLabel', 'Search settings'));
+        this.settingsSearchInput.placeholder = nls.localizeByDefault('Search settings');
+        this.settingsSearchInput.setAttribute('aria-label', nls.localizeByDefault('Search settings'));
         this.settingsSearchInput.addEventListener('input', () => {
             this.settingsSearchTyped = true;
             this.settingsOptions?.onSearch(this.settingsSearchInput.value);
@@ -385,7 +384,7 @@ export class MobileWorkHubSessionsSidebar {
         settingsSearch.append(settingsSearchIcon, this.settingsSearchInput);
         this.settingsSectionLabel = document.createElement('div');
         this.settingsSectionLabel.className = 'theia-mobile-work-hub-settings-section-label';
-        this.settingsSectionLabel.textContent = nls.localize('qaap/workHubSettings/sectionLabel', 'Settings');
+        this.settingsSectionLabel.textContent = nls.localizeByDefault('Settings');
         this.settingsNav = document.createElement('nav');
         this.settingsNav.className = 'theia-mobile-work-hub-settings-nav';
         this.settingsNav.setAttribute('aria-label', nls.localize('qaap/workHubSettings/navigationLabel', 'Work Hub settings sections'));
@@ -523,7 +522,7 @@ export class MobileWorkHubSessionsSidebar {
      */
     protected syncAccountLabel(): void {
         const name = this.accountBtn.title.trim()
-            || nls.localize('qaap/accountMenu/title', 'Account');
+            || nls.localizeByDefault('Account');
         this.accountLabel.replaceChildren();
         const nameEl = document.createElement('span');
         nameEl.className = 'theia-mobile-work-hub-sessions-sidebar-account-name';
@@ -687,7 +686,7 @@ export class MobileWorkHubSessionsSidebar {
         this.sidebarMode = 'settings';
         this.root.classList.add('theia-mod-settings');
         this.root.classList.remove('theia-mod-pull-requests');
-        this.root.setAttribute('aria-label', nls.localize('qaap/workHubSettings/label', 'Settings'));
+        this.root.setAttribute('aria-label', nls.localizeByDefault('Settings'));
         this.backBtn.hidden = false;
         this.searchBtn.hidden = true;
         this.settingsSearchBtn.hidden = false;
@@ -696,7 +695,7 @@ export class MobileWorkHubSessionsSidebar {
         this.settingsHost.hidden = false;
         this.scrollHost.hidden = true;
         this.delegate.onPullRequestSearchClose?.();
-        this.brand.textContent = nls.localize('qaap/workHubSettings/title', 'Settings');
+        this.brand.textContent = nls.localizeByDefault('Settings');
         this.renderSettingsSidebar();
     }
 
@@ -1042,7 +1041,6 @@ export class MobileWorkHubSessionsSidebar {
         }
     }
 
-
     protected installDesktopResize(): void {
         this.resizeDispose.dispose();
         const toDispose = new DisposableCollection();
@@ -1102,7 +1100,6 @@ export class MobileWorkHubSessionsSidebar {
             /* private browsing / quota */
         }
     }
-
 
     protected maybeShowDismissHint(): void {
         if (typeof window === 'undefined' || hasSeenSessionsSidebarDismissHint()) {
