@@ -18,7 +18,7 @@ import {
     type QaapAgentApprovalPolicyId,
 } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import { QaapComposerModelPickerModel, type QaapPickerModel, type QaapPickerState } from '../common/qaap-composer-model-picker-model';
-import { resolveComposerEffortLevel, writeComposerEffortLevel } from '../common/qaap-composer-effort';
+import { adoptPendingComposerEffort, resolveComposerEffortLevel, writeComposerEffortLevel } from '../common/qaap-composer-effort';
 import type { MobileProjectsStickyComposerSheetsUiContext } from './mobile-projects-sticky-composer-sheets-ui-context';
 import type { ComposerAgentPickerChrome } from './mobile-projects-sticky-composer-sheets-ui';
 import { renderQaapComposerModelPicker } from './qaap-composer-model-picker';
@@ -79,6 +79,8 @@ export interface StickyComposerModelPickerOptions {
     /** Same handlers the previous agent sheet used for its sign-in and AI settings rows. */
     readonly onProactiveLogin?: (agentId: string) => void;
     readonly onOpenAiFeaturesSettings?: () => void;
+    /** Keeps catalog labels so the model pill shows «GPT-5.6 Sol», not the slug, after a reload. */
+    readonly rememberModelLabels?: (models: readonly QaapQaiqModelOption[]) => void;
 }
 
 /** Converts a catalog model to the picker row; a row without `available` is selectable. */
@@ -131,26 +133,28 @@ export async function renderStickyComposerModelPicker(
     const pinned = options.selectedAgentId ?? harnesses[0]?.id ?? '';
     const currentModel = readStoredAgentModel(options.cwd, pinned);
 
-    // Models of every harness, fetched once per open; the list reads them from the chrome cache.
-    const loaded = await Promise.all(agents.map(async agent => {
+    // Paint at once from the models seen so far; the background refresh below repaints as each harness answers.
+    const modelsByAgent = new Map<string, readonly QaapQaiqModelOption[]>();
+    for (const agent of agents) {
         const cached = chrome.modelsByAgent.get(agent.id);
-        if (cached !== undefined) {
-            return { agentId: agent.id, models: cached };
-        }
-        const resolved = await ctx.resolveModelsForAgentPickerSafe(agent.id);
-        chrome.modelsByAgent.set(agent.id, resolved.models);
-        return { agentId: agent.id, models: resolved.models };
-    }));
-    if (!chrome.sheet.isConnected) {
-        return;
-    }
-    const models: QaapPickerModel[] = loaded.flatMap(entry => entry.models.map(model => toPickerModel(entry.agentId, model)));
-    const catalog = new Map<string, QaapQaiqModelOption>();
-    for (const entry of loaded) {
-        for (const model of entry.models) {
-            catalog.set(QaapComposerModelPickerModel.favoriteKey(entry.agentId, model.modelId), model);
+        if (cached) {
+            modelsByAgent.set(agent.id, cached);
         }
     }
+    let models: QaapPickerModel[] = [];
+    let catalog = new Map<string, QaapQaiqModelOption>();
+    const rebuildModels = (): void => {
+        models = [];
+        catalog = new Map();
+        for (const [agentId, list] of modelsByAgent) {
+            for (const model of list) {
+                models.push(toPickerModel(agentId, model));
+                catalog.set(QaapComposerModelPickerModel.favoriteKey(agentId, model.modelId), model);
+            }
+            options.rememberModelLabels?.(list);
+        }
+    };
+    rebuildModels();
 
     let query = '';
     let railSelection: 'favorites' | string = pinned;
@@ -200,6 +204,7 @@ export async function renderStickyComposerModelPicker(
                 if (!model) {
                     return;
                 }
+                adoptPendingComposerEffort(options.cwd, agentId, modelId);
                 options.onSelectAgent(agentId, model);
             },
             onSelectEffort: (level: QaapAgentEffortLevel) => {
@@ -230,4 +235,16 @@ export async function renderStickyComposerModelPicker(
         });
     };
     repaint();
+    // Background refresh of every harness: each answer repaints, so the list never waits for the slowest one.
+    for (const agent of agents) {
+        void ctx.resolveModelsForAgentPickerSafe(agent.id).then(resolved => {
+            if (!chrome.sheet.isConnected) {
+                return;
+            }
+            chrome.modelsByAgent.set(agent.id, resolved.models);
+            modelsByAgent.set(agent.id, resolved.models);
+            rebuildModels();
+            repaint();
+        });
+    }
 }

@@ -132,6 +132,7 @@ export function openStickyComposerAgentSheetExtracted(ctx: MobileProjectsStickyC
                     project,
                     isMobile: matchesMobileNarrowViewport(),
                     anchor,
+                    rememberModelLabels: models => { ctx.host.stickyComposerAgentsUi.rememberModelLabels(models); },
                     onSelectAgent: selectAgent,
                     approval: ctx.host.stickyComposerApprovalPolicyId ?? DEFAULT_AGENT_APPROVAL_POLICY_ID,
                     onSelectApproval: policyId => { ctx.host.stickyComposerApprovalPolicyId = policyId; },

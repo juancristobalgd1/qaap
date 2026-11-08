@@ -450,6 +450,7 @@ export class MobileProjectsTranscriptComposerUi {
                     project,
                     isMobile: matchesMobileNarrowViewport(),
                     anchor,
+                    rememberModelLabels: models => { this.host.stickyComposerAgentsUi.rememberModelLabels(models); },
                     onSelectAgent: selectAgent,
                     approval: reconcileAgentApprovalPolicyId(this.host.transcriptComposerApprovalPolicyId, cwd),
                     onSelectApproval: policyId => { this.host.transcriptComposerApprovalPolicyId = policyId; },

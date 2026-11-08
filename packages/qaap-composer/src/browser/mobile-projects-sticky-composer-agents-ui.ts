@@ -38,6 +38,8 @@ import { prewarmSendCatalog } from './qaap-paid-model-send-confirm';
 import { readComposerAgentCatalogSession, writeComposerAgentCatalogSession } from './composer-agent-catalog-session-cache';
 
 /** Minimum gap between agent catalog reloads for the same cwd when a catalog is already loaded. */
+const MODEL_LABELS_STORAGE_KEY = 'qaap.composer.modelLabels';
+
 export const STICKY_CATALOG_REFRESH_MIN_INTERVAL_MS = 10_000;
 
 export interface MobileProjectsStickyComposerAgentsHost {
@@ -65,18 +67,47 @@ export class MobileProjectsStickyComposerAgentsUi {
 
     constructor(protected readonly host: MobileProjectsStickyComposerAgentsHost) { }
 
+    /** Labels saved by an earlier session, so a reloaded pill shows the catalog name before any picker opens. */
+    protected restoreModelLabels(): void {
+        try {
+            const raw = window.localStorage.getItem(MODEL_LABELS_STORAGE_KEY);
+            const parsed: unknown = raw ? JSON.parse(raw) : undefined;
+            if (parsed && typeof parsed === 'object') {
+                for (const [modelId, label] of Object.entries(parsed)) {
+                    if (typeof label === 'string' && label.trim()) {
+                        this.modelLabelsById.set(modelId, label.trim());
+                    }
+                }
+            }
+        } catch {
+            /* unreadable or blocked: the slug stays the fallback */
+        }
+    }
+
     /** Remember the labels of a freshly resolved model catalog so the toolbar chip can show them. */
     rememberModelLabels(models: readonly QaapQaiqModelOption[]): void {
+        let changed = false;
         for (const model of models) {
             const label = model.label?.trim();
-            if (label) {
+            if (label && this.modelLabelsById.get(model.modelId) !== label) {
                 this.modelLabelsById.set(model.modelId, label);
+                changed = true;
+            }
+        }
+        if (changed) {
+            try {
+                window.localStorage.setItem(MODEL_LABELS_STORAGE_KEY, JSON.stringify(Object.fromEntries(this.modelLabelsById)));
+            } catch {
+                /* session-only */
             }
         }
     }
 
     /** Live-catalog label for a model id, or undefined until a catalog containing it has loaded. */
     resolveModelLabel(modelId: string): string | undefined {
+        if (this.modelLabelsById.size === 0) {
+            this.restoreModelLabels();
+        }
         return this.modelLabelsById.get(modelId)
             ?? this.host.stickyComposerQaiqModels.find(model => model.modelId === modelId)?.label?.trim();
     }
