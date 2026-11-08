@@ -327,6 +327,24 @@
     overscroll-behavior: contain;
 }
 
+.qaap-model-picker-rows.theia-mod-more-below {
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 56px), transparent);
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 56px), transparent);
+}
+
+/* Same treatment for every harness logo in the picker: no tone tile, same box. */
+.qaap-model-picker .theia-qaap-agent-brand-icon,
+.qaap-model-picker .theia-qaap-agent-brand-icon.theia-mod-tone-dark,
+.qaap-model-picker .theia-qaap-agent-brand-icon.theia-mod-tone-light {
+    background: transparent;
+    border-radius: 4px;
+}
+
+.qaap-model-picker-rail-item > .theia-qaap-agent-brand-icon {
+    width: 20px;
+    height: 20px;
+}
+
 .qaap-model-picker-row {
     display: flex;
     flex: 0 0 auto;

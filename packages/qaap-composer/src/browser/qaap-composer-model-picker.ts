@@ -302,6 +302,12 @@ function renderList(host: HTMLElement, props: QaapComposerModelPickerProps): HTM
     const rows = document.createElement('div');
     rows.className = 'qaap-model-picker-rows';
     rows.setAttribute('role', 'listbox');
+    // Bottom fade while more models sit below the fold, so a long list reads as scrollable.
+    const updateRowsFade = (): void => {
+        rows.classList.toggle('theia-mod-more-below', rows.scrollHeight - rows.scrollTop - rows.clientHeight > 1);
+    };
+    rows.addEventListener('scroll', updateRowsFade, { passive: true });
+    rows.ownerDocument.defaultView?.requestAnimationFrame?.(updateRowsFade);
     const models = QaapComposerModelPickerModel.visibleModels(props.state);
     const favorites = new Set(props.state.favorites);
     const compact = !props.isMobile;
