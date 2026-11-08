@@ -17,11 +17,11 @@ import {
 /** Thin fetch wrapper around the usage endpoints; errors surface as user-facing errors. */
 export class UsageClient {
 
-    /** Summary for `range`, optionally limited to one provider, bucketed in the browser's timezone. */
-    async fetchSummary(range: QaapUsageRange, provider: QaapUsageProviderId | undefined, timezone: string): Promise<QaapUsageSummary> {
+    /** Summary for `range`, limited to `providers` when non-empty, bucketed in the browser's timezone. */
+    async fetchSummary(range: QaapUsageRange, providers: readonly QaapUsageProviderId[], timezone: string): Promise<QaapUsageSummary> {
         const params = new URLSearchParams({ range, tz: timezone });
-        if (provider) {
-            params.set('provider', provider);
+        if (providers.length > 0) {
+            params.set('provider', providers.join(','));
         }
         return this.getJson<QaapUsageSummary>(`${QAAP_USAGE_SUMMARY_PATH}?${params.toString()}`);
     }

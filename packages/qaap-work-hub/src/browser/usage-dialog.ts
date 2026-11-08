@@ -12,6 +12,7 @@ import type {
     QaapUsageSummary
 } from '@theia/qaap-shared-core/lib/common/qaap-usage-summary-protocol';
 import { UsageClient } from './usage-client';
+import { appendAgentBrandIcon } from '@theia/qaap-shared-core/lib/common/qaap-agent-branding';
 import { USAGE_RANGE_OPTIONS, UsageDialogBody } from './usage-dialog-body';
 
 /** Tabs of the dialog: the two summary measures and the rate limits. */
@@ -22,6 +23,8 @@ const SCAN_RETRY_MS = 1500;
 const MAX_SCAN_RETRIES = 40;
 /** Limits are re-rendered this often so the reset countdowns stay current. */
 const LIMITS_TICK_MS = 30000;
+/** sessionStorage key for the provider selection; per-tab, never shared. */
+const PROVIDERS_STORAGE_KEY = 'qaap.usage.providers';
 
 const PROVIDER_CHOICES: ReadonlyArray<{ value: QaapUsageProviderId; label: string }> = [
     { value: 'claude', label: 'Claude' },
@@ -44,7 +47,8 @@ export class UsageDialog {
 
     protected backdrop: HTMLElement | undefined;
     protected dialogElement: HTMLElement | undefined;
-    protected providerSelect: HTMLSelectElement | undefined;
+    protected providerButton: HTMLButtonElement | undefined;
+    protected providerMenu: HTMLElement | undefined;
     protected rangeGroup: HTMLElement | undefined;
     protected tabGroup: HTMLElement | undefined;
     protected refreshButton: HTMLButtonElement | undefined;
@@ -52,7 +56,9 @@ export class UsageDialog {
 
     protected range: QaapUsageRange = '7d';
     protected tab: UsageDialogTab = 'cost';
-    protected provider: QaapUsageProviderId | undefined;
+    /** Selected providers in display order; empty means all of them. */
+    protected providers: QaapUsageProviderId[] = this.readStoredProviders();
+    protected providerMenuOpen = false;
     protected summary: QaapUsageSummary | undefined;
     protected limits: QaapUsageLimits | undefined;
     protected errorMessage: string | undefined;
@@ -71,8 +77,24 @@ export class UsageDialog {
         if (event.key === 'Escape') {
             event.preventDefault();
             event.stopPropagation();
-            this.close();
+            if (this.providerMenuOpen) {
+                this.setProviderMenuOpen(false);
+            } else {
+                this.close();
+            }
         }
+    };
+
+    /** Clicking anywhere outside the provider button and its menu closes the menu only. */
+    protected readonly onDocumentPointerDown = (event: PointerEvent): void => {
+        if (!this.providerMenuOpen) {
+            return;
+        }
+        const target = event.target as Node | null;
+        if (target && (this.providerMenu?.contains(target) || this.providerButton?.contains(target))) {
+            return;
+        }
+        this.setProviderMenuOpen(false);
     };
 
     isOpen(): boolean {
@@ -90,6 +112,7 @@ export class UsageDialog {
         this.scanRetries = 0;
         this.backdrop!.hidden = false;
         document.addEventListener('keydown', this.onDocumentKeyDown, true);
+        document.addEventListener('pointerdown', this.onDocumentPointerDown, true);
         this.render();
         this.dialogElement?.focus();
         void this.refreshSummary();
@@ -108,6 +131,8 @@ export class UsageDialog {
         this.clearScanTimer();
         this.clearLimitsTimer();
         document.removeEventListener('keydown', this.onDocumentKeyDown, true);
+        document.removeEventListener('pointerdown', this.onDocumentPointerDown, true);
+        this.setProviderMenuOpen(false);
         if (this.backdrop) {
             this.backdrop.hidden = true;
         }
@@ -144,13 +169,26 @@ export class UsageDialog {
         void this.refreshSummary();
     }
 
-    selectProvider(provider: QaapUsageProviderId | undefined): void {
-        if (provider === this.provider) {
+    /** Adds or removes one provider from the filter, keeping the menu open. */
+    toggleProvider(provider: QaapUsageProviderId): void {
+        const next = this.providers.includes(provider)
+            ? this.providers.filter(id => id !== provider)
+            : [...this.providers, provider];
+        this.setProviders(next);
+    }
+
+    /** Replaces the filter; an empty list means all providers. */
+    setProviders(next: readonly QaapUsageProviderId[]): void {
+        const known = PROVIDER_CHOICES.map(choice => choice.value);
+        const ordered = known.filter(id => next.includes(id));
+        if (ordered.join(',') === this.providers.join(',')) {
             return;
         }
-        this.provider = provider;
+        this.providers = ordered;
+        this.writeStoredProviders();
         this.summary = undefined;
         this.scanRetries = 0;
+        this.renderProviderMenu();
         this.render();
         void this.refreshSummary();
     }
@@ -171,7 +209,7 @@ export class UsageDialog {
         this.summaryLoading = true;
         this.render();
         try {
-            const summary = await this.client.fetchSummary(this.range, this.provider, this.client.browserTimezone());
+            const summary = await this.client.fetchSummary(this.range, this.providers, this.client.browserTimezone());
             if (request !== this.summaryRequest || !this.visible) {
                 return;
             }
@@ -242,17 +280,27 @@ export class UsageDialog {
         title.textContent = nls.localize('qaap/usage/title', 'Usage');
         dialog.setAttribute('aria-labelledby', title.id);
 
-        const providerSelect = document.createElement('select');
-        providerSelect.className = 'theia-qaap-usage-provider-select';
-        providerSelect.setAttribute('aria-label', nls.localize('qaap/usage/providerFilter', 'Provider'));
-        providerSelect.append(new Option(nls.localize('qaap/usage/allProviders', 'All providers'), ''));
-        for (const choice of PROVIDER_CHOICES) {
-            providerSelect.append(new Option(choice.label, choice.value));
-        }
-        providerSelect.addEventListener('change', () => {
-            const value = providerSelect.value as QaapUsageProviderId | '';
-            this.selectProvider(value || undefined);
-        });
+        const providerButton = document.createElement('button');
+        providerButton.type = 'button';
+        providerButton.className = 'theia-qaap-usage-provider-button';
+        providerButton.setAttribute('aria-haspopup', 'menu');
+        providerButton.setAttribute('aria-expanded', 'false');
+        const providerLabel = document.createElement('span');
+        providerLabel.className = 'theia-qaap-usage-provider-button-label';
+        const chevron = document.createElement('span');
+        chevron.className = 'codicon codicon-chevron-down';
+        chevron.setAttribute('aria-hidden', 'true');
+        providerButton.append(providerLabel, chevron);
+        providerButton.addEventListener('click', () => this.setProviderMenuOpen(!this.providerMenuOpen));
+
+        const providerMenu = document.createElement('div');
+        providerMenu.className = 'theia-qaap-usage-provider-menu';
+        providerMenu.setAttribute('role', 'menu');
+        providerMenu.setAttribute('aria-multiselectable', 'true');
+        providerMenu.hidden = true;
+        const providerAnchor = document.createElement('div');
+        providerAnchor.className = 'theia-qaap-usage-provider-anchor';
+        providerAnchor.append(providerButton, providerMenu);
 
         const refreshButton = this.iconButton('codicon-refresh', nls.localize('qaap/usage/refresh', 'Refresh'));
         refreshButton.addEventListener('click', () => this.refresh());
@@ -278,7 +326,7 @@ export class UsageDialog {
         controls.append(rangeGroup, tabGroup);
         const headRow = document.createElement('div');
         headRow.className = 'theia-qaap-usage-head-row';
-        headRow.append(title, providerSelect, refreshButton, closeButton);
+        headRow.append(title, providerAnchor, refreshButton, closeButton);
         header.append(headRow, controls);
 
         const bodyElement = document.createElement('div');
@@ -290,7 +338,8 @@ export class UsageDialog {
 
         this.backdrop = backdrop;
         this.dialogElement = dialog;
-        this.providerSelect = providerSelect;
+        this.providerButton = providerButton;
+        this.providerMenu = providerMenu;
         this.rangeGroup = rangeGroup;
         this.tabGroup = tabGroup;
         this.refreshButton = refreshButton;
@@ -303,8 +352,11 @@ export class UsageDialog {
         }
         const limitsTab = this.tab === 'limits';
         this.rangeGroup!.hidden = limitsTab;
-        this.providerSelect!.hidden = limitsTab;
-        this.providerSelect!.value = this.provider ?? '';
+        this.providerButton!.hidden = limitsTab;
+        this.providerButton!.querySelector('.theia-qaap-usage-provider-button-label')!.textContent = this.providerButtonLabel();
+        if (limitsTab) {
+            this.setProviderMenuOpen(false);
+        }
         this.setPressed(this.rangeGroup!, this.range);
         this.setPressed(this.tabGroup!, this.tab);
         this.refreshButton!.disabled = this.summaryLoading || this.limitsLoading;
@@ -332,6 +384,95 @@ export class UsageDialog {
             content.append(this.loadingBlock());
         }
         this.bodyElement.replaceChildren(content);
+    }
+
+    protected setProviderMenuOpen(open: boolean): void {
+        if (!this.providerMenu || !this.providerButton) {
+            return;
+        }
+        this.providerMenuOpen = open;
+        this.providerMenu.hidden = !open;
+        this.providerButton.setAttribute('aria-expanded', String(open));
+        if (open) {
+            this.renderProviderMenu();
+        }
+    }
+
+    protected providerButtonLabel(): string {
+        if (this.providers.length === 0) {
+            return nls.localize('qaap/usage/allProviders', 'All providers');
+        }
+        if (this.providers.length === 1) {
+            return this.body.providerLabel(this.providers[0]);
+        }
+        return nls.localize('qaap/usage/providerCount', '{0} providers', this.providers.length);
+    }
+
+    /** Menu rows: «All providers», a separator, then one checkable row per harness. */
+    protected renderProviderMenu(): void {
+        if (!this.providerMenu) {
+            return;
+        }
+        const rows: HTMLElement[] = [this.providerOption(undefined, nls.localize('qaap/usage/allProviders', 'All providers'))];
+        const separator = document.createElement('div');
+        separator.className = 'theia-qaap-usage-provider-separator';
+        separator.setAttribute('role', 'separator');
+        rows.push(separator);
+        for (const choice of PROVIDER_CHOICES) {
+            rows.push(this.providerOption(choice.value, choice.label));
+        }
+        this.providerMenu.textContent = '';
+        this.providerMenu.append(...rows);
+    }
+
+    protected providerOption(provider: QaapUsageProviderId | undefined, label: string): HTMLButtonElement {
+        const selected = provider === undefined ? this.providers.length === 0 : this.providers.includes(provider);
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = 'theia-qaap-usage-provider-option';
+        row.setAttribute('role', 'menuitemcheckbox');
+        row.setAttribute('aria-checked', String(selected));
+        const check = document.createElement('span');
+        check.className = selected ? 'theia-qaap-usage-provider-check codicon codicon-check' : 'theia-qaap-usage-provider-check';
+        check.setAttribute('aria-hidden', 'true');
+        row.append(check);
+        if (provider !== undefined) {
+            appendAgentBrandIcon(row, provider, 'sm');
+        }
+        const text = document.createElement('span');
+        text.className = 'theia-qaap-usage-provider-option-label';
+        text.textContent = label;
+        row.append(text);
+        row.addEventListener('click', () => {
+            if (provider === undefined) {
+                this.setProviders([]);
+            } else {
+                this.toggleProvider(provider);
+            }
+        });
+        return row;
+    }
+
+    /** Selection survives reloads within the tab only; storage errors are ignored. */
+    protected readStoredProviders(): QaapUsageProviderId[] {
+        try {
+            const raw = window.sessionStorage.getItem(PROVIDERS_STORAGE_KEY);
+            const parsed: unknown = raw ? JSON.parse(raw) : [];
+            if (!Array.isArray(parsed)) {
+                return [];
+            }
+            return PROVIDER_CHOICES.map(choice => choice.value).filter(id => parsed.includes(id));
+        } catch {
+            return [];
+        }
+    }
+
+    protected writeStoredProviders(): void {
+        try {
+            window.sessionStorage.setItem(PROVIDERS_STORAGE_KEY, JSON.stringify(this.providers));
+        } catch {
+            // Storage can be blocked; the selection then lasts for this dialog instance only.
+        }
     }
 
     protected loadingBlock(): HTMLElement {

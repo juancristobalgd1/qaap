@@ -157,4 +157,97 @@ describe('UsageDialog', () => {
         const backdrop = document.querySelector('.theia-qaap-usage-backdrop') as HTMLElement;
         expect(backdrop.hidden).to.equal(true);
     });
+
+    describe('provider filter menu', () => {
+
+        const KEY = 'qaap.usage.providers';
+        let requested: string[][];
+
+        beforeEach(() => {
+            window.sessionStorage.removeItem(KEY);
+            requested = [];
+            dialog = new UsageDialog();
+            stubClient(async () => summaryFixture());
+            dialog['client'].fetchSummary = async (_range, providers) => {
+                requested.push([...providers]);
+                return summaryFixture();
+            };
+        });
+
+        afterEach(() => {
+            window.sessionStorage.removeItem(KEY);
+        });
+
+        function menuRow(label: string): HTMLButtonElement {
+            const rows = Array.from(document.querySelectorAll<HTMLButtonElement>('.theia-qaap-usage-provider-option'));
+            const row = rows.find(candidate => candidate.textContent === label);
+            if (!row) {
+                throw new Error(`no menu row ${label}`);
+            }
+            return row;
+        }
+
+        function buttonLabel(): string | null | undefined {
+            return document.querySelector('.theia-qaap-usage-provider-button-label')?.textContent;
+        }
+
+        it('toggles providers from the menu, keeps it open, and labels the button', async () => {
+            dialog.open();
+            await settle();
+            expect(buttonLabel()).to.equal('All providers');
+            (document.querySelector('.theia-qaap-usage-provider-button') as HTMLButtonElement).click();
+            const menu = document.querySelector('.theia-qaap-usage-provider-menu') as HTMLElement;
+            expect(menu.hidden).to.equal(false);
+            expect(document.querySelectorAll('.theia-qaap-usage-provider-option')).to.have.length(7);
+
+            menuRow('Claude').click();
+            await settle();
+            expect(buttonLabel()).to.equal('Claude');
+            expect(menu.hidden).to.equal(false);
+            menuRow('Codex').click();
+            await settle();
+            expect(buttonLabel()).to.equal('2 providers');
+            expect(requested[requested.length - 1]).to.deep.equal(['claude', 'codex']);
+            expect(menuRow('Codex').getAttribute('aria-checked')).to.equal('true');
+
+            menuRow('All providers').click();
+            await settle();
+            expect(buttonLabel()).to.equal('All providers');
+            expect(requested[requested.length - 1]).to.deep.equal([]);
+        });
+
+        it('unchecking the last provider returns to all providers', async () => {
+            dialog.open();
+            await settle();
+            (document.querySelector('.theia-qaap-usage-provider-button') as HTMLButtonElement).click();
+            menuRow('Pi').click();
+            await settle();
+            expect(buttonLabel()).to.equal('Pi');
+            menuRow('Pi').click();
+            await settle();
+            expect(buttonLabel()).to.equal('All providers');
+        });
+
+        it('Escape closes only the menu, a second Escape closes the dialog', async () => {
+            dialog.open();
+            await settle();
+            (document.querySelector('.theia-qaap-usage-provider-button') as HTMLButtonElement).click();
+            document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+            expect((document.querySelector('.theia-qaap-usage-provider-menu') as HTMLElement).hidden).to.equal(true);
+            expect(dialog.isOpen()).to.equal(true);
+            document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+            expect(dialog.isOpen()).to.equal(false);
+        });
+
+        it('restores the selection from sessionStorage and ignores unknown ids', () => {
+            window.sessionStorage.setItem(KEY, JSON.stringify(['pi', 'vscode', 'claude']));
+            const restored = new UsageDialog();
+            expect(restored['providers']).to.deep.equal(['claude', 'pi']);
+        });
+
+        it('falls back to all providers when storage holds invalid data', () => {
+            window.sessionStorage.setItem(KEY, '{not json');
+            expect(new UsageDialog()['providers']).to.deep.equal([]);
+        });
+    });
 });
