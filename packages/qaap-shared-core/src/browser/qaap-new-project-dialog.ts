@@ -38,6 +38,7 @@ export class QaapNewProjectDialog extends AbstractDialog<QaapNewProjectValue> {
 
     protected readonly nameInput: HTMLInputElement;
     protected privateRadio: HTMLInputElement | undefined;
+    protected readonly kind: QaapNewProjectKind;
 
     protected readonly onEscapeCapture = (event: KeyboardEvent): void => {
         if (event.key !== 'Escape') {
@@ -55,8 +56,11 @@ export class QaapNewProjectDialog extends AbstractDialog<QaapNewProjectValue> {
                 ? nls.localize('qaap/newProject/githubTitle', 'New GitHub repository')
                 : nls.localize('qaap/newProject/localTitle', 'New local project'),
         });
+        this.kind = options.kind;
 
         if (options.kind === 'github') {
+            // Compact Work Hub styling (mobile-workbench-open-repo.css) for the repository form.
+            this.node.classList.add('qaap-compact-input-dialog');
             this.contentNode.appendChild(this.createLabelledRow(
                 nls.localize('qaap/newProject/owner', 'Owner'),
                 options.owner ?? nls.localize('qaap/newProject/ownerSignedIn', 'Your GitHub account'),
@@ -72,8 +76,14 @@ export class QaapNewProjectDialog extends AbstractDialog<QaapNewProjectValue> {
         this.nameInput.type = 'text';
         this.nameInput.className = 'theia-input';
         this.nameInput.spellcheck = false;
-        this.nameInput.placeholder = nls.localize('qaap/newProject/namePlaceholder', 'project-name');
-        this.nameInput.setAttribute('aria-label', nls.localize('qaap/newProject/nameLabel', 'Project name'));
+        if (options.kind === 'github') {
+            this.nameInput.classList.add('qaap-compact-input-dialog-input');
+            this.nameInput.placeholder = nls.localize('qaap/mobileProjects/createGithubRepoPlaceholder', 'repository-name');
+            this.nameInput.setAttribute('aria-label', nls.localize('qaap/newProject/repositoryNameLabel', 'Repository name'));
+        } else {
+            this.nameInput.placeholder = nls.localize('qaap/newProject/namePlaceholder', 'project-name');
+            this.nameInput.setAttribute('aria-label', nls.localize('qaap/newProject/nameLabel', 'Project name'));
+        }
         this.contentNode.appendChild(this.nameInput);
 
         if (options.kind === 'github') {
@@ -106,6 +116,16 @@ export class QaapNewProjectDialog extends AbstractDialog<QaapNewProjectValue> {
 
     protected override isValid(value: QaapNewProjectValue, mode: DialogMode): DialogError {
         if (mode === 'preview') {
+            return true;
+        }
+        if (this.kind === 'github') {
+            // Same rules and wording as the former "Create GitHub repository" dialog.
+            if (!value.name) {
+                return nls.localize('qaap/mobileProjects/createGithubRepoRequired', 'Enter a repository name');
+            }
+            if (value.name.startsWith('.') || !NAME_PATTERN.test(value.name)) {
+                return nls.localize('qaap/mobileProjects/createGithubRepoInvalid', 'Use letters, numbers, dashes, underscores, or dots');
+            }
             return true;
         }
         if (!value.name) {
