@@ -193,4 +193,24 @@ describe('qaap-composer-model-picker', () => {
             }
         }
     });
+
+    it('keeps the search field focused and its text while typing several characters', () => {
+        let query = '';
+        const paint = (): void => {
+            renderQaapComposerModelPicker(host, props({
+                state: state({ query }),
+                onQuery: value => { query = value; paint(); },
+            }));
+        };
+        paint();
+        const input = host.querySelector<HTMLInputElement>('.qaap-model-picker-search input')!;
+        input.focus();
+        for (const character of 'opu') {
+            input.value += character;
+            input.dispatchEvent(new window.Event('input'));
+        }
+        expect(document.activeElement).to.equal(host.querySelector('.qaap-model-picker-search input'));
+        expect(host.querySelector<HTMLInputElement>('.qaap-model-picker-search input')!.value).to.equal('opu');
+        expect(rows(host).map(row => row.dataset.modelId)).to.deep.equal(['opus-4-6']);
+    });
 });

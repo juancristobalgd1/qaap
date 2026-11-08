@@ -63,6 +63,12 @@ export function renderQaapComposerModelPicker(host: HTMLElement, props: QaapComp
     const previous = hostStates.get(host);
     const openMenu = previous?.openMenu;
     previous?.disposeRail?.();
+    // The search field is the node the user types into: it is kept across repaints, focus included.
+    const previousInput = host.querySelector<HTMLInputElement>('.qaap-model-picker-search input') ?? undefined;
+    const hadFocus = previousInput !== undefined && document.activeElement === previousInput;
+    const selection: [number | null, number | null] = hadFocus
+        ? [previousInput.selectionStart, previousInput.selectionEnd]
+        : [null, null];
     if (!previous) {
         host.addEventListener('keydown', event => handlePickerKeydown(host, event));
     }
@@ -84,8 +90,16 @@ export function renderQaapComposerModelPicker(host: HTMLElement, props: QaapComp
     root.append(body, renderFooter(host, props));
     host.replaceChildren(root);
     const input = root.querySelector<HTMLInputElement>('.qaap-model-picker-search input');
-    if (input && props.state.query) {
-        input.value = props.state.query;
+    if (input && previousInput && input !== previousInput) {
+        input.replaceWith(previousInput);
+    }
+    const kept = root.querySelector<HTMLInputElement>('.qaap-model-picker-search input');
+    if (kept && props.state.query && !hadFocus) {
+        kept.value = props.state.query;
+    }
+    if (kept && hadFocus) {
+        kept.focus({ preventScroll: true });
+        kept.setSelectionRange(selection[0], selection[1]);
     }
     if (reveal) {
         rail.nav.querySelector<HTMLElement>('.qaap-model-picker-rail-item.theia-mod-selected')
@@ -248,7 +262,7 @@ function renderList(host: HTMLElement, props: QaapComposerModelPickerProps): HTM
     input.placeholder = nls.localize('qaap/composer/picker/searchModels', 'Search models…');
     input.setAttribute('aria-label', input.placeholder);
     input.autocomplete = 'off';
-    input.addEventListener('input', () => props.onQuery(input.value));
+    input.addEventListener('input', () => (hostStates.get(host)?.props ?? props).onQuery(input.value));
     input.addEventListener('keydown', ev => {
         if (ev.key === 'Enter') {
             ev.preventDefault();
