@@ -233,6 +233,7 @@ export function createExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCr
             autoApprove,
             ...(request.readOnlyWorkspace || planMode ? { readOnlyWorkspace: true } : {}),
             ...(request.externalReview ? { externalReview: true } : {}),
+            ...(request.effort ? { effort: request.effort } : {}),
             ...(ownerLogin ? { ownerLogin: ownerLogin.trim() } : {}),
             ...((request.userQuery?.trim() || prompt)
                 ? { userRequest: (request.userQuery?.trim() || prompt).slice(0, USER_REQUEST_MAX_CHARS) }
@@ -290,6 +291,7 @@ export function retryExtracted(ctx: QaapAgentTaskRunnerContext, id: string, owne
                 autoApprove: task.autoApprove,
                 readOnlyWorkspace: task.readOnlyWorkspace,
                 externalReview: task.externalReview,
+                effort: task.effort,
             }
             : {
                 title: task.title,
@@ -302,6 +304,7 @@ export function retryExtracted(ctx: QaapAgentTaskRunnerContext, id: string, owne
                 autoApprove: task.autoApprove,
                 readOnlyWorkspace: task.readOnlyWorkspace,
                 externalReview: task.externalReview,
+                effort: task.effort,
             };
         return ctx.create(request, task.ownerLogin ?? ownerLogin);
 }
@@ -335,6 +338,7 @@ export function resumeExtracted(ctx: QaapAgentTaskRunnerContext, id: string, own
                 autoApprove: task.autoApprove,
                 readOnlyWorkspace: task.readOnlyWorkspace,
                 externalReview: task.externalReview,
+                effort: task.effort,
                 resumedFromTaskId: id,
             }
             : {
@@ -348,6 +352,7 @@ export function resumeExtracted(ctx: QaapAgentTaskRunnerContext, id: string, own
                 autoApprove: task.autoApprove,
                 readOnlyWorkspace: task.readOnlyWorkspace,
                 externalReview: task.externalReview,
+                effort: task.effort,
                 resumedFromTaskId: id,
             };
         const resumed = ctx.create(request, task.ownerLogin ?? ownerLogin);

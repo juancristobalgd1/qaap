@@ -96,6 +96,8 @@ export interface QaapAgentTask {
     readonly externalReview?: boolean;
     /** Model the user picked in the mobile agent sheet (provider + vendor + modelId). */
     readonly agentModel?: QaapCreateAgentTaskQaiqModel;
+    /** Reasoning effort the task was created with; retries and resumes reuse it. */
+    readonly effort?: QaapAgentEffortLevel;
     /** @deprecated Use {@link agentModel}. Kept for persisted tasks and older clients. */
     readonly qaiqModel?: QaapCreateAgentTaskQaiqModel;
     /**
