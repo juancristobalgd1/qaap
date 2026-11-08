@@ -3073,25 +3073,17 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
     }
 }
 
-/* Mobile: frosted glass over the Work Hub (Cursor-style) instead of a solid sidebar shade.
+/* Mobile keeps the sidebar's own shade (as before): the side-bar colour, and a subtly distinct
+ * near-black in dark mode. Desktop uses the theme canvas (see the root rule).
  * Keep the breakpoint in sync with MOBILE_NARROW_VIEWPORT_MEDIA_QUERY (767px). */
 @media (max-width: 767px), (pointer: coarse) {
   .theia-mobile-work-hub-sessions-sidebar {
-    --qaap-sessions-sidebar-background: color-mix(in srgb, var(--theia-editor-background, #ffffff) 68%, transparent);
-    -webkit-backdrop-filter: blur(28px) saturate(170%);
-    backdrop-filter: blur(28px) saturate(170%);
+    --qaap-sessions-sidebar-background: var(--theia-sideBar-background, var(--theia-editor-background, #ffffff));
   }
 
-  .theia-mobile-work-hub-sessions-sidebar .theia-mobile-work-hub-sessions-sidebar-panel,
-  .theia-mobile-work-hub-sessions-sidebar .theia-mobile-work-hub-sessions-sidebar-head {
-    background: transparent;
-  }
-}
-
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  @media (max-width: 767px), (pointer: coarse) {
-    .theia-mobile-work-hub-sessions-sidebar {
-      --qaap-sessions-sidebar-background: var(--theia-editor-background, #ffffff);
-    }
+  body.qaap-theme-dark .theia-mobile-work-hub-sessions-sidebar,
+  body.theia-dark .theia-mobile-work-hub-sessions-sidebar,
+  body[data-theia-theme-mode="dark"] .theia-mobile-work-hub-sessions-sidebar {
+    --qaap-sessions-sidebar-background: #0b0908;
   }
 }

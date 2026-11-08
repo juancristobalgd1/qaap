@@ -12,7 +12,6 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { readStoredAgentModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
 import { formatQaiqModelIdShortLabel } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
-import { agentNeedsSettingsApiKeyPath } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
 import { QaapAgentEffort, type QaapAgentEffortLevel } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
 import {
     writeStoredAgentApprovalPolicy,
@@ -28,7 +27,6 @@ import { placePickerAbove } from './qaap-composer-picker-placement';
 /** Sign-in or API key guidance for a harness that cannot run yet; `undefined` when it can. */
 function connectionStripFor(
     agent: QaapAgentTaskAgentOption,
-    hasAvailableModels: boolean,
     options: StickyComposerModelPickerOptions,
 ): { message: string; actionLabel: string; onAction: () => void } | undefined {
     if ((agent.connectionState === 'disconnected' || agent.accessState === 'none') && options.onProactiveLogin) {
@@ -38,19 +36,14 @@ function connectionStripFor(
             onAction: () => options.onProactiveLogin?.(agent.id),
         };
     }
-    if (!hasAvailableModels && agentNeedsSettingsApiKeyPath(agent.id) && options.onOpenAiFeaturesSettings) {
-        return {
-            message: nls.localize('qaap/composer/picker/apiKeyNeeded', 'Add an API key in AI settings to use {0}.', agent.label),
-            actionLabel: nls.localize('qaap/composer/picker/openAiSettings', 'Open AI settings'),
-            onAction: () => options.onOpenAiFeaturesSettings?.(),
-        };
-    }
     return undefined;
 }
 
 export interface StickyComposerModelPickerOptions {
     readonly cwd: string | undefined;
     readonly agents: readonly QaapAgentTaskAgentOption[];
+    /** Harness ids disabled in Settings → Harness; they never reach the picker. */
+    readonly disabledHarnessIds?: readonly string[];
     readonly selectedAgentId: string | undefined;
     readonly project?: MobileProjectEntry;
     readonly onSelectAgent: (agentId: string, model?: QaapQaiqModelOption) => void;
@@ -115,7 +108,7 @@ export async function renderStickyComposerModelPicker(
     host.className = 'qaap-composer-model-picker-host';
     chrome.list.replaceChildren(host);
 
-    const agents = listQaapComposerPickerAgents(options.agents);
+    const agents = listQaapComposerPickerAgents(options.agents, options.disabledHarnessIds ?? []);
     const harnesses = agents.map(agent => ({ id: agent.id, label: agent.label }));
     const pinned = options.selectedAgentId ?? harnesses[0]?.id ?? '';
     const currentModel = readStoredAgentModel(options.cwd, pinned);
@@ -179,8 +172,7 @@ export async function renderStickyComposerModelPicker(
             ? currentModel?.modelId
             : readStoredAgentModel(options.cwd, effortAgentId)?.modelId;
         const railAgent = agents.find(agent => agent.id === railSelection);
-        const railHasModels = models.some(model => model.agentId === railSelection && model.available);
-        const connect = railAgent ? connectionStripFor(railAgent, railHasModels, options) : undefined;
+        const connect = railAgent ? connectionStripFor(railAgent, options) : undefined;
         renderQaapComposerModelPicker(host, {
             state,
             effort: {

@@ -41,7 +41,6 @@ import {
     type QaapAgentToolApprovalRules,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-approval-rules';
 import { isAgentsHubIdleConversationSummary } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
-import { QAAP_AI_FEATURES_SETTINGS_QUERY } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
@@ -206,8 +205,8 @@ export class MobileProjectsTranscriptComposerUi {
     resolveTranscriptComposerPinnedAgentId(
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
-        const cwd = this.host.projectsService.getProjectCwd(project) ?? summary.cwd;
     ): string {
+        const cwd = this.host.projectsService.getProjectCwd(project) ?? summary.cwd;
         if (summary.source === 'theia-chat') {
             return this.resolveDefaultTranscriptComposerAgentId(cwd);
         }
@@ -230,11 +229,11 @@ export class MobileProjectsTranscriptComposerUi {
             this.host.transcriptComposerBackendAgents,
         )[0]?.id ?? '';
     }
+
     /** The configured default harness, else the first available one (never a retired runner). */
     protected resolveDefaultTranscriptComposerAgentId(cwd: string | undefined): string {
         return reconcileSelectedAgent(undefined, this.host.transcriptComposerBackendAgents, undefined, cwd) ?? '';
     }
-
 
     /**
      * Label for the composer agent chip. `agentId` is the id the chip and submit resolved
@@ -451,6 +450,7 @@ export class MobileProjectsTranscriptComposerUi {
                 render: agents => void renderStickyComposerModelPicker(this.host.stickyComposerSheetsUi, chrome, {
                     cwd,
                     agents,
+                    disabledHarnessIds: this.host.stickyComposerAgentsUi.getDisabledHarnessIds(),
                     selectedAgentId: this.resolveTranscriptComposerPinnedAgentId(project, summary),
                     project,
                     isMobile: matchesMobileNarrowViewport(),
@@ -464,12 +464,6 @@ export class MobileProjectsTranscriptComposerUi {
                         ? agentId => {
                             this.closeAllComposerSheets();
                             void this.host.openAgentSignInTerminal?.(agentId, project);
-                        }
-                        : undefined,
-                    onOpenAiFeaturesSettings: this.host.openPreferencesSheet
-                        ? () => {
-                            this.closeAllComposerSheets();
-                            void this.host.openPreferencesSheet?.(QAAP_AI_FEATURES_SETTINGS_QUERY);
                         }
                         : undefined,
                 }),

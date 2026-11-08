@@ -355,10 +355,11 @@ export class MobileProjectsStickyComposerAgentsUi {
     getComposerAgentPickerAgents(
         agents: readonly QaapAgentTaskAgentOption[],
     ): QaapAgentTaskAgentOption[] {
-        const disabledIds = readDisabledHarnessIds(
-            this.host.readPreference?.(QAAP_DISABLED_HARNESSES_PREF),
-        );
-        return listQaapComposerPickerAgents(agents, disabledIds);
+        return listQaapComposerPickerAgents(agents, this.getDisabledHarnessIds());
+    }
+    /** Harnesses switched off in Settings → Harness: kept out of every composer picker. */
+    getDisabledHarnessIds(): string[] {
+        return readDisabledHarnessIds(this.host.readPreference?.(QAAP_DISABLED_HARNESSES_PREF));
     }
     /** Last catalog request per cwd: re-renders inside the window reuse the loaded catalog. */
     protected lastStickyCatalogRefresh: { readonly cwd: string; readonly at: number } | undefined;
