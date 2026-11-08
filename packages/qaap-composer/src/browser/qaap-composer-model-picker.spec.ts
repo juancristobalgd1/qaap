@@ -62,7 +62,7 @@ describe('qaap-composer-model-picker', () => {
 
     it('paints the rail and the model list side by side, with no effort column', () => {
         renderQaapComposerModelPicker(host, props());
-        expect(host.querySelector('.qaap-model-picker-body > .qaap-model-picker-rail')).to.not.equal(null);
+        expect(host.querySelector('.qaap-model-picker-body > .qaap-model-picker-rail-frame > .qaap-model-picker-rail')).to.not.equal(null);
         expect(host.querySelector('.qaap-model-picker-body > .qaap-model-picker-list')).to.not.equal(null);
         expect(host.querySelector('.qaap-model-picker-body .qaap-model-picker-effort')).to.equal(null);
         expect(rows(host).map(row => row.dataset.modelId)).to.deep.equal(['opus-4-6', 'sonnet-4-6', 'haiku-4-5']);
@@ -138,5 +138,59 @@ describe('qaap-composer-model-picker', () => {
         renderQaapComposerModelPicker(host, props({ onClose: () => { closed++; } }));
         host.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
         expect(closed).to.equal(1);
+    });
+
+    it('scrolls a long harness rail: the end fade shows first, the start fade after scrolling, and the selection comes into view', () => {
+        const harnesses = Array.from({ length: 12 }, (_, index) => ({ id: `agent-${index}`, label: `Agent ${index}` }));
+        const scrollTopDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTop');
+        const scrollHeightDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollHeight');
+        const clientHeightDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientHeight');
+        const scrollIntoViewDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollIntoView');
+        const revealed: string[] = [];
+        Object.defineProperty(HTMLElement.prototype, 'scrollTop', {
+            configurable: true,
+            get(this: HTMLElement) { return (this as unknown as { fakeTop?: number }).fakeTop ?? 0; },
+            set(this: HTMLElement, value: number) { (this as unknown as { fakeTop?: number }).fakeTop = value; },
+        });
+        Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
+            configurable: true,
+            get(this: HTMLElement) { return this.classList.contains('qaap-model-picker-rail') ? 600 : 0; },
+        });
+        Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
+            configurable: true,
+            get(this: HTMLElement) { return this.classList.contains('qaap-model-picker-rail') ? 200 : 0; },
+        });
+        Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+            configurable: true,
+            value(this: HTMLElement) { revealed.push(this.title); },
+        });
+        try {
+            renderQaapComposerModelPicker(host, props({
+                state: state({ harnesses, railSelection: 'agent-9', currentAgentId: 'agent-9' }),
+            }));
+            const rail = host.querySelector<HTMLElement>('.qaap-model-picker-rail')!;
+            expect(rail.classList.contains('theia-mod-overflow-end')).to.equal(true);
+            expect(rail.classList.contains('theia-mod-overflow-start')).to.equal(false);
+            expect(revealed).to.deep.equal(['Agent 9']);
+
+            rail.scrollTop = 200;
+            rail.dispatchEvent(new window.Event('scroll'));
+            expect(rail.classList.contains('theia-mod-overflow-start')).to.equal(true);
+            expect(rail.classList.contains('theia-mod-overflow-end')).to.equal(true);
+            expect(revealed).to.deep.equal(['Agent 9']);
+        } finally {
+            restoreDescriptor('scrollTop', scrollTopDescriptor);
+            restoreDescriptor('scrollHeight', scrollHeightDescriptor);
+            restoreDescriptor('clientHeight', clientHeightDescriptor);
+            restoreDescriptor('scrollIntoView', scrollIntoViewDescriptor);
+        }
+
+        function restoreDescriptor(name: string, descriptor: PropertyDescriptor | undefined): void {
+            if (descriptor) {
+                Object.defineProperty(HTMLElement.prototype, name, descriptor);
+            } else {
+                delete (HTMLElement.prototype as unknown as Record<string, unknown>)[name];
+            }
+        }
     });
 });

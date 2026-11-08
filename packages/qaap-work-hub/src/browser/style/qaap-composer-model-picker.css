@@ -113,14 +113,122 @@
     flex: 1 1 auto;
 }
 
+.qaap-model-picker-rail-frame {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    border-right: 1px solid var(--theia-widget-border, var(--theia-panel-border));
+}
+
+/* The rail scrolls on its own axis (Y on desktop, X in the narrow layout) with no visible scrollbar. */
 .qaap-model-picker-rail {
+    flex: 1 1 auto;
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 6px;
+    min-width: 0;
+    min-height: 0;
     padding: 10px 0;
-    border-right: 1px solid var(--theia-widget-border, var(--theia-panel-border));
+    overflow-x: hidden;
     overflow-y: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    scroll-snap-type: y mandatory;
+    scrollbar-width: none;
+}
+
+.qaap-model-picker-rail::-webkit-scrollbar {
+    display: none;
+}
+
+.qaap-model-picker-rail > * {
+    flex: 0 0 auto;
+    scroll-snap-align: start;
+}
+
+/* The favorites star stays pinned at the top of the vertical rail; it is kept out of the scroll. */
+.qaap-model-picker-rail > .qaap-model-picker-rail-item:first-child {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+.qaap-model-picker-rail > .qaap-model-picker-rail-item:first-child:not(.theia-mod-selected) {
+    background: var(--theia-editorWidget-background, var(--theia-editor-background));
+}
+
+/* Edge fades only on the side where items are hidden; the masks follow the rail's scroll axis. */
+.qaap-model-picker-rail.theia-mod-overflow-end:not(.theia-mod-horizontal) {
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
+}
+
+.qaap-model-picker-rail.theia-mod-overflow-start:not(.theia-mod-horizontal) {
+    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 28px);
+    mask-image: linear-gradient(to bottom, transparent, #000 28px);
+}
+
+.qaap-model-picker-rail.theia-mod-overflow-start.theia-mod-overflow-end:not(.theia-mod-horizontal) {
+    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to bottom, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+}
+
+.qaap-model-picker-rail.theia-mod-horizontal.theia-mod-overflow-end {
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+}
+
+.qaap-model-picker-rail.theia-mod-horizontal.theia-mod-overflow-start {
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 28px);
+    mask-image: linear-gradient(to right, transparent, #000 28px);
+}
+
+.qaap-model-picker-rail.theia-mod-horizontal.theia-mod-overflow-start.theia-mod-overflow-end {
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+}
+
+/* Discrete arrows, shown only with a fine pointer and only on a side that has hidden items. */
+.qaap-model-picker-rail-arrow {
+    display: none;
+    position: absolute;
+    top: 50%;
+    z-index: 2;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    transform: translateY(-50%);
+    border: 1px solid var(--theia-widget-border, var(--theia-panel-border));
+    border-radius: 999px;
+    background: var(--theia-editorWidget-background, var(--theia-editor-background));
+    color: var(--theia-foreground);
+    box-shadow: 0 1px 4px var(--theia-widget-shadow);
+    cursor: pointer;
+}
+
+.qaap-model-picker-rail-arrow.is-start {
+    left: 4px;
+}
+
+.qaap-model-picker-rail-arrow.is-end {
+    right: 4px;
+}
+
+.qaap-model-picker-rail-arrow:hover {
+    color: var(--theia-list-activeSelectionForeground);
+    background: var(--theia-list-activeSelectionBackground);
+}
+
+@media (pointer: fine) {
+    .qaap-model-picker-rail.theia-mod-horizontal.theia-mod-overflow-start ~ .qaap-model-picker-rail-arrow.is-start,
+    .qaap-model-picker-rail.theia-mod-horizontal.theia-mod-overflow-end ~ .qaap-model-picker-rail-arrow.is-end {
+        display: inline-flex;
+    }
 }
 
 .qaap-model-picker-rail-item {
@@ -134,6 +242,7 @@
     background: transparent;
     color: var(--theia-descriptionForeground);
     cursor: pointer;
+    transition: background-color 160ms ease, color 160ms ease;
 }
 
 .qaap-model-picker-rail-item:hover {
@@ -144,6 +253,12 @@
 .qaap-model-picker-rail-item.theia-mod-selected {
     background: var(--theia-list-activeSelectionBackground);
     color: var(--theia-list-activeSelectionForeground);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    .qaap-model-picker-rail {
+        scroll-behavior: smooth;
+    }
 }
 
 .qaap-model-picker-list {
@@ -358,14 +473,25 @@
         grid-template-rows: auto minmax(0, 1fr);
     }
 
+    .qaap-model-picker-rail-frame {
+        border-right: none;
+        border-bottom: 1px solid var(--theia-widget-border, var(--theia-panel-border));
+    }
+
     .qaap-model-picker-rail {
         flex-direction: row;
         justify-content: flex-start;
+        padding: 8px 10px;
         overflow-x: auto;
         overflow-y: hidden;
-        padding: 8px 10px;
-        border-right: none;
-        border-bottom: 1px solid var(--theia-widget-border, var(--theia-panel-border));
+        overscroll-behavior-x: contain;
+        touch-action: pan-x;
+        scroll-snap-type: x mandatory;
+        scroll-padding: 0 10px;
+    }
+
+    .qaap-model-picker-rail > .qaap-model-picker-rail-item:first-child {
+        position: static;
     }
 
     .qaap-model-picker-star {
@@ -375,8 +501,13 @@
 
 @media (prefers-reduced-motion: reduce) {
     .qaap-model-picker,
-    .qaap-model-picker-access-menu {
+    .qaap-model-picker-access-menu,
+    .qaap-model-picker-rail-item {
         transition: none;
+    }
+
+    .qaap-model-picker-rail {
+        scroll-behavior: auto;
     }
 }
 

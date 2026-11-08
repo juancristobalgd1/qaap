@@ -44,6 +44,10 @@ interface PickerHostState {
     props: QaapComposerModelPickerProps;
     /** Footer menu currently open: the access presets or the effort levels. */
     openMenu: FooterMenuKey | undefined;
+    /** Tears down the harness rail listeners of the previous paint. */
+    disposeRail?: () => void;
+    /** Rail selection last scrolled into view, so searches and effort changes do not fight the user's scroll. */
+    revealedRailSelection?: string;
 }
 
 /** Latest props per picker root, so one keydown listener serves every re-render. */
@@ -58,25 +62,49 @@ const SHORTCUT_LIMIT = 9;
 export function renderQaapComposerModelPicker(host: HTMLElement, props: QaapComposerModelPickerProps): void {
     const previous = hostStates.get(host);
     const openMenu = previous?.openMenu;
+    previous?.disposeRail?.();
     if (!previous) {
         host.addEventListener('keydown', event => handlePickerKeydown(host, event));
     }
-    hostStates.set(host, { props, openMenu });
+    const railSelection = props.state.railSelection;
+    const reveal = previous?.revealedRailSelection !== railSelection;
+    const rail = renderRail(props);
+    hostStates.set(host, {
+        props,
+        openMenu,
+        disposeRail: attachRailScroll(rail.frame, rail.nav),
+        revealedRailSelection: railSelection,
+    });
 
     const root = document.createElement('div');
     root.className = 'qaap-model-picker';
     const body = document.createElement('div');
     body.className = 'qaap-model-picker-body';
-    body.append(renderRail(host, props), renderList(host, props));
+    body.append(rail.frame, renderList(host, props));
     root.append(body, renderFooter(host, props));
     host.replaceChildren(root);
     const input = root.querySelector<HTMLInputElement>('.qaap-model-picker-search input');
     if (input && props.state.query) {
         input.value = props.state.query;
     }
+    if (reveal) {
+        rail.nav.querySelector<HTMLElement>('.qaap-model-picker-rail-item.theia-mod-selected')
+            ?.scrollIntoView?.({ inline: 'nearest', block: 'nearest' });
+    }
 }
 
-function renderRail(host: HTMLElement, props: QaapComposerModelPickerProps): HTMLElement {
+/** Removes the harness rail listeners once the picker is gone; the host is no longer painted. */
+export function disposeQaapComposerModelPicker(host: HTMLElement): void {
+    const state = hostStates.get(host);
+    state?.disposeRail?.();
+    if (state) {
+        state.disposeRail = undefined;
+    }
+}
+
+function renderRail(props: QaapComposerModelPickerProps): { frame: HTMLElement; nav: HTMLElement } {
+    const frame = document.createElement('div');
+    frame.className = 'qaap-model-picker-rail-frame';
     const nav = document.createElement('nav');
     nav.className = 'qaap-model-picker-rail';
     nav.setAttribute('aria-label', nls.localize('qaap/composer/picker/rail', 'Harnesses'));
@@ -99,7 +127,90 @@ function renderRail(host: HTMLElement, props: QaapComposerModelPickerProps): HTM
         }
         nav.append(button);
     }
-    return nav;
+    frame.append(nav, railArrow('start', nls.localize('qaap/composer/picker/railScrollStart', 'Show earlier harnesses')));
+    frame.append(railArrow('end', nls.localize('qaap/composer/picker/railScrollEnd', 'Show more harnesses')));
+    return { frame, nav };
+}
+
+function railArrow(side: 'start' | 'end', title: string): HTMLButtonElement {
+    const arrow = document.createElement('button');
+    arrow.type = 'button';
+    arrow.className = `qaap-model-picker-rail-arrow is-${side}`;
+    arrow.title = title;
+    arrow.setAttribute('aria-label', title);
+    arrow.tabIndex = -1;
+    const glyph = document.createElement('span');
+    glyph.className = `codicon codicon-chevron-${side === 'start' ? 'left' : 'right'}`;
+    glyph.setAttribute('aria-hidden', 'true');
+    arrow.append(glyph);
+    return arrow;
+}
+
+/** Steps the rail by roughly three items; reduced motion jumps instead of animating. */
+const RAIL_ARROW_ITEMS = 3;
+const RAIL_ITEM_STEP_FALLBACK = 42;
+
+function prefersReducedMotion(): boolean {
+    return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+/**
+ * Keeps the rail's overflow classes in step with its scroll position, translates a vertical wheel
+ * into horizontal travel on the horizontal rail, and wires the discrete arrows. Returns the teardown.
+ */
+function attachRailScroll(frame: HTMLElement, nav: HTMLElement): () => void {
+    const disposables: Array<() => void> = [];
+    const listen = <K extends keyof HTMLElementEventMap>(
+        target: HTMLElement,
+        type: K,
+        handler: (event: HTMLElementEventMap[K]) => void,
+        options?: AddEventListenerOptions
+    ): void => {
+        target.addEventListener(type, handler, options);
+        disposables.push(() => target.removeEventListener(type, handler, options));
+    };
+    const isHorizontal = (): boolean => getComputedStyle(nav).flexDirection === 'row';
+    const update = (): void => {
+        const horizontal = isHorizontal();
+        const position = horizontal ? nav.scrollLeft : nav.scrollTop;
+        const viewport = horizontal ? nav.clientWidth : nav.clientHeight;
+        const content = horizontal ? nav.scrollWidth : nav.scrollHeight;
+        nav.classList.toggle('theia-mod-horizontal', horizontal);
+        nav.classList.toggle('theia-mod-overflow-start', position > 1);
+        nav.classList.toggle('theia-mod-overflow-end', content - viewport - position > 1);
+    };
+    const step = (): number => {
+        const item = nav.querySelector<HTMLElement>('.qaap-model-picker-rail-item');
+        const gap = parseFloat(getComputedStyle(nav).columnGap) || 0;
+        return item ? (item.offsetWidth + gap) * RAIL_ARROW_ITEMS : RAIL_ITEM_STEP_FALLBACK * RAIL_ARROW_ITEMS;
+    };
+    listen(nav, 'scroll', update, { passive: true });
+    listen(nav, 'wheel', event => {
+        if (!isHorizontal() || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
+            return;
+        }
+        const max = nav.scrollWidth - nav.clientWidth;
+        const canMove = event.deltaY > 0 ? nav.scrollLeft < max - 1 : nav.scrollLeft > 1;
+        if (canMove) {
+            event.preventDefault();
+            nav.scrollLeft += event.deltaY;
+        }
+    }, { passive: false });
+    frame.querySelectorAll<HTMLButtonElement>('.qaap-model-picker-rail-arrow').forEach(arrow => {
+        const direction = arrow.classList.contains('is-start') ? -1 : 1;
+        listen(arrow, 'click', event => {
+            event.preventDefault();
+            nav.scrollBy({ left: direction * step(), behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+        });
+    });
+    let observer: ResizeObserver | undefined;
+    if (typeof ResizeObserver === 'function') {
+        observer = new ResizeObserver(update);
+        observer.observe(nav);
+        disposables.push(() => observer?.disconnect());
+    }
+    update();
+    return () => disposables.forEach(dispose => dispose());
 }
 
 function railButton(options: { title: string; selected: boolean; onClick: () => void; icon?: string }): HTMLButtonElement {

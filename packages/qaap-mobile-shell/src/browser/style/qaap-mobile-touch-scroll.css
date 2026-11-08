@@ -306,6 +306,12 @@
     overscroll-behavior-x: contain;
   }
 
+  /* Model picker harness rail — horizontal snap rail in the narrow layout; the sheet must not take its swipe. */
+  .qaap-model-picker-rail {
+    touch-action: pan-x;
+    overscroll-behavior-x: contain;
+  }
+
   /* Billing plan picker — horizontal snap slider. */
   .theia-mobile-work-hub-billing-plan-slider {
     overflow-x: auto !important;

@@ -21,7 +21,7 @@ import { QaapComposerModelPickerModel, type QaapPickerModel, type QaapPickerStat
 import { adoptPendingComposerEffort, resolveComposerEffortLevel, writeComposerEffortLevel } from '../common/qaap-composer-effort';
 import type { MobileProjectsStickyComposerSheetsUiContext } from './mobile-projects-sticky-composer-sheets-ui-context';
 import type { ComposerAgentPickerChrome } from './mobile-projects-sticky-composer-sheets-ui';
-import { renderQaapComposerModelPicker } from './qaap-composer-model-picker';
+import { disposeQaapComposerModelPicker, renderQaapComposerModelPicker } from './qaap-composer-model-picker';
 import { positionStickyComposerPopover } from '@theia/qaap-transcript/lib/browser/qaap-sticky-composer-popover';
 
 /**
@@ -165,6 +165,7 @@ export async function renderStickyComposerModelPicker(
             return;
         }
         observer.disconnect();
+        disposeQaapComposerModelPicker(host);
         chrome.list.replaceChildren();
         options.onRefresh();
     });
