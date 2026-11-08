@@ -288,6 +288,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 4px;
     height: 32px;
     padding: 0 8px;
     border: none;
@@ -436,5 +437,25 @@
     .qaap-model-picker,
     .qaap-model-picker-access-menu {
         transition: none;
+    }
+}
+
+/* Model pill: one harness icon, the catalog model name, ellipsis only when the name does not fit. */
+.theia-mobile-projects-sticky-composer-agent .theia-mobile-projects-sticky-composer-agent-provider-badge {
+    display: none;
+}
+
+.theia-mobile-projects-sticky-composer-agent .theia-mobile-projects-sticky-composer-agent-label {
+    max-width: 220px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+@media (max-width: 767px) {
+    .theia-mobile-projects-sticky-composer-agent .theia-mobile-projects-sticky-composer-agent-label {
+        max-width: none;
+        flex: 1 1 auto;
     }
 }
