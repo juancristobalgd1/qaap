@@ -515,8 +515,8 @@ export class MobileProjectsStickyComposerRenderUi {
                         : readStoredAgentModel(cwd, selectedAgentId),
                     agentModelAgentId: selectedAgentId,
                     openModelPicker: () => { this.host.stickyComposerSheetsUi.openStickyComposerAgentSheet(project); },
-                    untilDone: !isChatSurface && resolveComposerUntilDoneForSubmit(
-                        showApprovalPolicy ? this.host.stickyComposerApprovalPolicyId : undefined,
+                    untilDone: showApprovalPolicy && !isChatSurface && resolveComposerUntilDoneForSubmit(
+                        this.host.stickyComposerApprovalPolicyId,
                     ),
                 });
                 void done.then(started => {

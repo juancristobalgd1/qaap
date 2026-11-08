@@ -71,7 +71,8 @@ export async function submitTranscriptComposerDraftExtracted(ctx: MobileProjects
         // prompt submission after the composer has already accepted it.
         console.warn('[qaap] failed to collect composer image previews', error);
     }
-    const modeId = QAAP_COMPOSER_SUBMIT_MODE_ID;
+    // Legacy Theia chat keeps the mode it always sent; task submits run in the fixed agent mode.
+    const modeId = options.isLegacyTheiaChat ? ctx.host.transcriptComposerModeId : QAAP_COMPOSER_SUBMIT_MODE_ID;
     const autoApprove = resolveComposerAutoApprove(
         options.showApprovalPolicy,
         ctx.host.transcriptComposerApprovalPolicyId,
@@ -79,10 +80,8 @@ export async function submitTranscriptComposerDraftExtracted(ctx: MobileProjects
     );
     // "Until done": start a goal loop instead of a single turn (idle conversations only; a busy
     // follow-up below is queued as a normal message).
-    const untilDone = !options.isLegacyTheiaChat && resolveComposerUntilDoneForSubmit(
-        options.showApprovalPolicy
-            ? reconcileAgentApprovalPolicyId(ctx.host.transcriptComposerApprovalPolicyId, summary.cwd)
-            : undefined,
+    const untilDone = options.showApprovalPolicy && !options.isLegacyTheiaChat && resolveComposerUntilDoneForSubmit(
+        reconcileAgentApprovalPolicyId(ctx.host.transcriptComposerApprovalPolicyId, summary.cwd),
     );
     ctx.host.transcriptComposerContext = [];
     const commitComposerSubmission = (): void => {
