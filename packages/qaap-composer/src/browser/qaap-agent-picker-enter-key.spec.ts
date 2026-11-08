@@ -39,6 +39,8 @@ describe('agent picker: Enter and Escape keyboard handling', () => {
 
     beforeEach(() => {
         window.requestAnimationFrame = (): number => 0;
+        // Detach sheets from earlier tests so their document-level Escape listeners abort.
+        document.body.innerHTML = '';
     });
 
     function render(): {
@@ -70,7 +72,8 @@ describe('agent picker: Enter and Escape keyboard handling', () => {
             modelLoadFailedByAgent: new Map(),
             onClose: () => { closed.count++; },
         } as unknown as ComposerAgentPickerChrome;
-        document.body.append(target.list, target.searchInput);
+        document.body.append(target.sheet);
+        target.sheet.append(target.list, target.searchInput);
         void renderComposerAgentPickerExtracted(ctx, target, {
             view: 'agents',
             cwd: '/repo/enter-key',
@@ -112,6 +115,36 @@ describe('agent picker: Enter and Escape keyboard handling', () => {
     it('Escape closes the picker from the search box when it is empty', async () => {
         const { target, closed } = render();
         await flush();
+        key(target.searchInput, 'Escape');
+        expect(closed.count).to.equal(1);
+    });
+
+    it('Escape from a result closes the picker exactly once and does not reach outer layers', async () => {
+        const { target, closed } = render();
+        await flush();
+        let outerCalls = 0;
+        const outer = (): void => { outerCalls++; };
+        document.addEventListener('keydown', outer);
+        try {
+            const first = target.list.querySelector<HTMLElement>('.theia-qaap-agent-sheet-option:not(.theia-qaap-agent-sheet-split-main), .theia-qaap-agent-sheet-split-chevron');
+            expect(first).to.not.equal(null);
+            first!.focus();
+            const event = key(first!, 'Escape');
+            expect(event.defaultPrevented).to.equal(true);
+            expect(closed.count).to.equal(1);
+            expect(outerCalls).to.equal(0);
+        } finally {
+            document.removeEventListener('keydown', outer);
+        }
+    });
+
+    it('Escape with a search query clears the query first and keeps the picker open', async () => {
+        const { target, closed } = render();
+        await flush();
+        target.searchInput.value = 'gpt';
+        key(target.searchInput, 'Escape');
+        expect(target.searchInput.value).to.equal('');
+        expect(closed.count).to.equal(0);
         key(target.searchInput, 'Escape');
         expect(closed.count).to.equal(1);
     });
