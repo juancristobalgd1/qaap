@@ -197,6 +197,18 @@ export function openStickyComposerAgentSheetExtracted(ctx: MobileProjectsStickyC
                     approval: ctx.host.stickyComposerApprovalPolicyId ?? DEFAULT_AGENT_APPROVAL_POLICY_ID,
                     onSelectApproval: policyId => { ctx.host.stickyComposerApprovalPolicyId = policyId; },
                     onRefresh: () => { ctx.host.stickyComposerRenderUi.renderStickyComposer(); },
+                    onProactiveLogin: ctx.host.openAgentSignInTerminal
+                        ? agentId => {
+                            ctx.closeAllComposerSheets();
+                            void ctx.host.openAgentSignInTerminal?.(agentId, project);
+                        }
+                        : undefined,
+                    onOpenAiFeaturesSettings: ctx.host.openPreferencesSheet
+                        ? () => {
+                            ctx.closeAllComposerSheets();
+                            void ctx.host.openPreferencesSheet?.(QAAP_AI_FEATURES_SETTINGS_QUERY);
+                        }
+                        : undefined,
                 }),
             });
         };

@@ -60,6 +60,30 @@ describe('mobile-projects-sticky-composer-model-picker-ui', () => {
         });
         expect(chrome.list.querySelector('.qaap-model-picker')).to.not.equal(null);
         expect(chrome.list.querySelectorAll('.qaap-model-picker-row')).to.have.length(1);
-        expect(chrome.title.textContent).to.equal('Model');
+        expect(chrome.header.style.display).to.equal('none');
+        expect(chrome.sheet.classList.contains('theia-mod-model-picker')).to.equal(true);
+    });
+
+    it('offers the sign-in action of the old agent sheet when the harness is disconnected', async () => {
+        const ctx = {
+            resolveModelsForAgentPickerSafe: async () => ({ models: [], loadFailed: false }),
+        };
+        const signedIn: string[] = [];
+        await renderStickyComposerModelPicker(ctx, chrome, {
+            cwd: undefined,
+            agents: [{ id: 'claude', label: 'Claude Code', available: true, connectionState: 'disconnected' }],
+            selectedAgentId: 'claude',
+            project: undefined,
+            isMobile: false,
+            onSelectAgent: () => undefined,
+            approval: 'approve-for-me',
+            onSelectApproval: () => undefined,
+            onRefresh: () => undefined,
+            onProactiveLogin: agentId => { signedIn.push(agentId); },
+        });
+        const action = chrome.list.querySelector<HTMLButtonElement>('.qaap-model-picker-connect-action');
+        expect(action?.textContent).to.equal('Sign in');
+        action?.click();
+        expect(signedIn).to.deep.equal(['claude']);
     });
 });

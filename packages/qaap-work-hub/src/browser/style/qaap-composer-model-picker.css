@@ -1,3 +1,84 @@
+/* The picker inside the agent popover or sheet: the popover is sized for the picker, not the old list. */
+.qaap-sticky-composer-sheet-popover.theia-mod-agent-picker.theia-mod-model-picker {
+    width: min(720px, calc(100vw - 32px));
+    max-width: calc(100vw - 32px);
+    max-height: min(460px, 70vh);
+    padding: 0;
+}
+
+.qaap-sticky-composer-sheet-popover.theia-mod-agent-picker.theia-mod-model-picker .theia-mobile-sticky-composer-sheet-panel,
+.qaap-sticky-composer-sheet-popover.theia-mod-agent-picker.theia-mod-model-picker .theia-mobile-sticky-composer-sheet-list {
+    width: 100%;
+    max-height: none;
+    padding: 0;
+    margin: 0;
+    min-height: 0;
+    overflow: visible;
+}
+
+.theia-mobile-sticky-composer-sheet.theia-mod-model-picker .theia-mobile-sticky-composer-sheet-panel,
+.theia-mobile-sticky-composer-sheet.theia-mod-model-picker .theia-mobile-sticky-composer-sheet-list {
+    padding: 0;
+    margin: 0;
+    min-height: 0;
+}
+
+.qaap-composer-model-picker-host,
+.qaap-model-picker {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.qaap-model-picker-body {
+    grid-template-columns: 56px minmax(0, 1fr) 220px;
+}
+
+.qaap-model-picker-connect {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin: 0 10px 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--theia-inputValidation-warningBorder, var(--theia-widget-border));
+    border-radius: 8px;
+    background: var(--theia-inputValidation-warningBackground, var(--theia-list-hoverBackground));
+    color: var(--theia-foreground);
+    font-size: 12px;
+}
+
+.qaap-model-picker-connect-action {
+    flex: none;
+    height: 26px;
+    padding: 0 10px;
+    border: 1px solid var(--theia-button-border, var(--theia-widget-border));
+    border-radius: 6px;
+    background: var(--theia-button-background);
+    color: var(--theia-button-foreground);
+    cursor: pointer;
+}
+
+.qaap-model-picker-row > svg,
+.qaap-model-picker-row > img,
+.qaap-model-picker-row > .theia-qaap-agent-brand-icon {
+    flex: none;
+    width: 16px;
+    height: 16px;
+}
+
+.qaap-model-picker-row-label {
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.theia-mobile-sticky-composer-sheet.theia-mod-model-picker {
+    width: 100%;
+    max-height: min(560px, 80vh);
+}
+
 /* Unified composer model picker: harness rail, model list, effort column and access footer. */
 
 .qaap-model-picker {
@@ -299,6 +380,12 @@
 }
 
 @media (max-width: 767px) {
+    .qaap-sticky-composer-sheet-popover.theia-mod-agent-picker.theia-mod-model-picker {
+        width: 100%;
+        max-width: 100%;
+        max-height: min(560px, 80vh);
+    }
+
     .qaap-model-picker {
         width: 100%;
         max-height: min(560px, 80vh);

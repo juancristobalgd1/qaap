@@ -11,6 +11,7 @@ import {
     type QaapQaiqModelOption,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { readStoredAgentModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
+import { agentNeedsSettingsApiKeyPath } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
 import { QaapAgentEffort, type QaapAgentEffortLevel } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
 import {
     writeStoredAgentApprovalPolicy,
@@ -21,6 +22,29 @@ import { resolveComposerEffortLevel, writeComposerEffortLevel } from '../common/
 import type { MobileProjectsStickyComposerSheetsUiContext } from './mobile-projects-sticky-composer-sheets-ui-context';
 import type { ComposerAgentPickerChrome } from './mobile-projects-sticky-composer-sheets-ui';
 import { renderQaapComposerModelPicker } from './qaap-composer-model-picker';
+
+/** Sign-in or API key guidance for a harness that cannot run yet; `undefined` when it can. */
+function connectionStripFor(
+    agent: QaapAgentTaskAgentOption,
+    hasAvailableModels: boolean,
+    options: StickyComposerModelPickerOptions,
+): { message: string; actionLabel: string; onAction: () => void } | undefined {
+    if ((agent.connectionState === 'disconnected' || agent.accessState === 'none') && options.onProactiveLogin) {
+        return {
+            message: nls.localize('qaap/composer/picker/connectNeeded', '{0} needs a sign-in before it can run.', agent.label),
+            actionLabel: nls.localize('qaap/composer/picker/signIn', 'Sign in'),
+            onAction: () => options.onProactiveLogin?.(agent.id),
+        };
+    }
+    if (!hasAvailableModels && agentNeedsSettingsApiKeyPath(agent.id) && options.onOpenAiFeaturesSettings) {
+        return {
+            message: nls.localize('qaap/composer/picker/apiKeyNeeded', 'Add an API key in AI settings to use {0}.', agent.label),
+            actionLabel: nls.localize('qaap/composer/picker/openAiSettings', 'Open AI settings'),
+            onAction: () => options.onOpenAiFeaturesSettings?.(),
+        };
+    }
+    return undefined;
+}
 
 export interface StickyComposerModelPickerOptions {
     readonly cwd: string | undefined;
@@ -34,6 +58,9 @@ export interface StickyComposerModelPickerOptions {
     readonly onSelectApproval: (policyId: QaapAgentApprovalPolicyId) => void;
     /** Repaints the composer once the picker closes, so the model pill shows the new effort. */
     readonly onRefresh: () => void;
+    /** Same handlers the previous agent sheet used for its sign-in and AI settings rows. */
+    readonly onProactiveLogin?: (agentId: string) => void;
+    readonly onOpenAiFeaturesSettings?: () => void;
 }
 
 /** Converts a catalog model to the picker row; a row without `available` is selectable. */
@@ -69,13 +96,14 @@ export async function renderStickyComposerModelPicker(
     chrome: ComposerAgentPickerChrome,
     options: StickyComposerModelPickerOptions,
 ): Promise<void> {
-    chrome.title.textContent = nls.localize('qaap/composer/picker/title', 'Model');
-    chrome.intro.hidden = true;
+    // The picker brings its own search and close gestures: hide the old header and search row.
+    chrome.sheet.classList.add('theia-mod-model-picker');
+    chrome.header.style.display = 'none';
+    chrome.intro.style.display = 'none';
     const searchRow = chrome.searchInput.parentElement;
     if (searchRow) {
-        searchRow.hidden = true;
+        searchRow.style.display = 'none';
     }
-    chrome.backBtn.hidden = true;
     const host = document.createElement('div');
     host.className = 'qaap-composer-model-picker-host';
     chrome.list.replaceChildren(host);
@@ -126,6 +154,9 @@ export async function renderStickyComposerModelPicker(
             currentModelId: currentModel?.modelId,
         };
         const effortAgentId = pinned;
+        const railAgent = agents.find(agent => agent.id === railSelection);
+        const railHasModels = models.some(model => model.agentId === railSelection && model.available);
+        const connect = railAgent ? connectionStripFor(railAgent, railHasModels, options) : undefined;
         const effortModelId = currentModel?.modelId;
         renderQaapComposerModelPicker(host, {
             state,
@@ -166,6 +197,7 @@ export async function renderStickyComposerModelPicker(
                 repaint();
             },
             onClose: close,
+            connect,
         });
     };
     repaint();

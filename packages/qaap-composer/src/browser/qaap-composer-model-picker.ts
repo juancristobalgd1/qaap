@@ -36,6 +36,8 @@ export interface QaapComposerModelPickerProps {
     readonly onQuery: (query: string) => void;
     readonly onRail: (selection: 'favorites' | string) => void;
     readonly onClose: () => void;
+    /** Connection strip above the list when the selected harness needs a sign-in or an API key. */
+    readonly connect?: { readonly message: string; readonly actionLabel: string; readonly onAction: () => void };
 }
 
 interface PickerHostState {
@@ -148,6 +150,23 @@ function renderList(host: HTMLElement, props: QaapComposerModelPickerProps): HTM
     });
     search.append(glass, input);
 
+    if (props.connect) {
+        const strip = document.createElement('div');
+        strip.className = 'qaap-model-picker-connect';
+        strip.setAttribute('role', 'status');
+        const text = document.createElement('span');
+        text.textContent = props.connect.message;
+        const action = document.createElement('button');
+        action.type = 'button';
+        action.className = 'qaap-model-picker-connect-action';
+        action.textContent = props.connect.actionLabel;
+        action.addEventListener('click', ev => {
+            ev.preventDefault();
+            props.connect?.onAction();
+        });
+        strip.append(text, action);
+        section.append(strip);
+    }
     const rows = document.createElement('div');
     rows.className = 'qaap-model-picker-rows';
     rows.setAttribute('role', 'listbox');
