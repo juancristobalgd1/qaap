@@ -308,8 +308,10 @@ export class MobileProjectsExecutionSurfaceTabsUi {
         if (!target) {
             return;
         }
-        recordUserPreviewSurfaceChoiceExtracted(this, kind);
-        this.activateExecutionSurfaceTab(kind, target.project, target.summary, target.origin);
+        // Changes is the files surface in Changes mode: the existing 'review' tab opens it that way.
+        const tab = kind === 'changes' ? 'review' : kind;
+        recordUserPreviewSurfaceChoiceExtracted(this, tab);
+        this.activateExecutionSurfaceTab(tab, target.project, target.summary, target.origin);
     }
 
     /** @internal */

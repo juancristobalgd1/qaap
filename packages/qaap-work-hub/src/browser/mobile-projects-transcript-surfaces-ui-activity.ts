@@ -211,7 +211,7 @@ export function syncHeaderFilesMoreButtonExtracted(ctx: MobileProjectsTranscript
         ctx.hideHeaderFilesMoreButton();
         return;
     }
-    const onFilesTab = ctx.host.executionSurfaceTabsUi.executionSurfaceTabForProject(openProject) === 'files';
+    const onFilesTab = isFilesSurfaceTab(ctx.host.executionSurfaceTabsUi.executionSurfaceTabForProject(openProject));
     const workspaceKey = ctx.resolveTranscriptWorkspaceKey(openProject, openSummary);
     const mount = workspaceKey
         ? ctx.host.transcriptWorkspaceSurfaces.peekFiles(workspaceKey)
@@ -249,7 +249,7 @@ export function syncHeaderViewModeSwitchExtracted(ctx: MobileProjectsTranscriptS
         ctx.hideHeaderViewModeSwitch();
         return;
     }
-    const onFilesTab = ctx.host.executionSurfaceTabsUi.executionSurfaceTabForProject(openProject) === 'files';
+    const onFilesTab = isFilesSurfaceTab(ctx.host.executionSurfaceTabsUi.executionSurfaceTabForProject(openProject));
     const useHubHeader = !ctx.host.transcriptSheet
         && (ctx.host.agentsHubShellActive || Boolean(ctx.host.projectDetailSurfaceTargets));
     const workspaceKey = ctx.resolveTranscriptWorkspaceKey(openProject, openSummary);
@@ -475,3 +475,7 @@ export function stopTranscriptPreviewExtracted(ctx: MobileProjectsTranscriptSurf
     );
 }
 
+/** Changes ('review') and Files are both views of the files surface. */
+function isFilesSurfaceTab(tab: string | undefined): boolean {
+    return tab === 'files' || tab === 'review';
+}

@@ -2455,6 +2455,13 @@ button.theia-mobile-transcript-team-row:focus-visible {
   background: var(--theia-editor-background);
 }
 
+/* In the Work Hub, Changes and Files are separate views (right panel and views menu), each opening the
+   files surface in its own mode, so the surface's own Files ↔ Changes switch is not shown there. */
+.theia-mobile-execution-surface-sidebar .theia-mobile-transcript-files-view-mode-switch,
+.theia-mobile-projects-header-view-mode-switch {
+  display: none !important;
+}
+
 /* View-mode switch (Files ↔ Changes) — segmented control at the left of the preview header. */
 .theia-mobile-transcript-files-view-mode-switch {
   flex: 0 0 auto;

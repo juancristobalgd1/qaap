@@ -60,10 +60,9 @@ export function mountTranscriptSurfaceTabExtracted(ctx: MobileProjectsExecutionS
     summary: QaapAgentConversationSummaryDTO,
     tab: TranscriptTab,): void {
     if (tab === 'review') {
-        // 'review' (Changes) is merged into the 'files' tab — set pending
-        // view-mode flag and mount the files tab instead.
+        // 'review' (Changes) mounts the shared files surface in Changes mode.
         writePendingTranscriptFilesViewMode('changes');
-        ctx.host.transcriptSurfacesUi.ensureTranscriptFilesTab(project, summary);
+        ctx.host.transcriptSurfacesUi.ensureTranscriptFilesTab(project, summary, 'changes');
     } else if (tab === 'preview') {
         ctx.host.transcriptSurfacesUi.renderPreviewTab(project, summary);
     } else if (tab === 'files') {
