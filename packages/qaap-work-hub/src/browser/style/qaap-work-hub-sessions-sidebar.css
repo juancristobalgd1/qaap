@@ -27,7 +27,8 @@
 .theia-mobile-work-hub-sessions-sidebar {
   --qaap-sessions-sidebar-motion-duration: 220ms;
   --qaap-sessions-sidebar-motion-easing: cubic-bezier(0.2, 0.8, 0.2, 1);
-  --qaap-sessions-sidebar-background: var(--theia-sideBar-background, var(--theia-editor-background, #ffffff));
+  /* Same canvas as the theme (no separate sidebar shade); mobile turns it into glass below. */
+  --qaap-sessions-sidebar-background: var(--theia-editor-background, #ffffff);
   /* One gutter for project rows, session pills, and leftover list chrome. */
   --qaap-sessions-row-gutter: 8px;
   position: fixed;
@@ -415,12 +416,6 @@
   touch-action: manipulation;
 }
 
-/* Keep the sessions sidebar subtly distinct from the Work Hub content in dark mode. */
-body.qaap-theme-dark .theia-mobile-work-hub-sessions-sidebar,
-body.theia-dark .theia-mobile-work-hub-sessions-sidebar,
-body[data-theia-theme-mode="dark"] .theia-mobile-work-hub-sessions-sidebar {
-  --qaap-sessions-sidebar-background: #0b0908;
-}
 
 /* Pull Requests keeps the search and close controls in the same trailing
  * position as the normal chat sidebar. */
@@ -3076,4 +3071,27 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
     .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-variant-head::before {
         top: -22px;
     }
+}
+
+/* Mobile: frosted glass over the Work Hub (Cursor-style) instead of a solid sidebar shade.
+ * Keep the breakpoint in sync with MOBILE_NARROW_VIEWPORT_MEDIA_QUERY (767px). */
+@media (max-width: 767px), (pointer: coarse) {
+  .theia-mobile-work-hub-sessions-sidebar {
+    --qaap-sessions-sidebar-background: color-mix(in srgb, var(--theia-editor-background, #ffffff) 68%, transparent);
+    -webkit-backdrop-filter: blur(28px) saturate(170%);
+    backdrop-filter: blur(28px) saturate(170%);
+  }
+
+  .theia-mobile-work-hub-sessions-sidebar .theia-mobile-work-hub-sessions-sidebar-panel,
+  .theia-mobile-work-hub-sessions-sidebar .theia-mobile-work-hub-sessions-sidebar-head {
+    background: transparent;
+  }
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  @media (max-width: 767px), (pointer: coarse) {
+    .theia-mobile-work-hub-sessions-sidebar {
+      --qaap-sessions-sidebar-background: var(--theia-editor-background, #ffffff);
+    }
+  }
 }
