@@ -29,11 +29,11 @@ export function resolveComposerEffortLevel(
     if (!support) {
         return undefined;
     }
-    let stored: string | null = null;
+    let stored: string | undefined;
     try {
-        stored = window.localStorage.getItem(scopedComposerEffortStorageKey(cwd, agentId, modelId));
+        stored = window.localStorage.getItem(scopedComposerEffortStorageKey(cwd, agentId, modelId)) ?? undefined;
     } catch {
-        stored = null;
+        stored = undefined;
     }
     const level = stored ? QaapAgentEffort.normalize(agentId, modelId, stored) : undefined;
     return level ?? support.defaultLevel;
