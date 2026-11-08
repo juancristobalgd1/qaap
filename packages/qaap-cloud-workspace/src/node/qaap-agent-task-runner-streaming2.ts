@@ -51,7 +51,7 @@ import {
     QAIQ_STDIO_APPROVAL_FLAGS,
 } from '../common/qaap-qaiq-stdio-approvals';
 import {
-    resolveAgentAutoApprove,
+    resolveTaskAutoApproveFromPolicy,
 } from '../common/qaap-agent-auto-approve';
 import { formatModelFlagsForAgent } from '../common/qaap-agent-model-flags';
 import { resolveQaapHarnessCapabilities } from '@theia/qaap-shared-core/lib/common/qaap-harness-capabilities';
@@ -190,11 +190,10 @@ export function createExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCr
         const parentTask = parentId ? ctx.tasks.get(parentId) : undefined;
         // "Request approval" is authoritative: a stale/omitted autoApprove must never turn it into
         // auto-allowed writes plus shell calls silently auto-denied after the grace timeout.
-        const autoApprove = request.approvalPolicyId === 'request-approval'
-            ? false
-            : resolveAgentAutoApprove(
-                request.autoApprove ?? (parentTask?.autoApprove !== false ? undefined : false),
-            );
+        const autoApprove = resolveTaskAutoApproveFromPolicy(
+            request.approvalPolicyId,
+            request.autoApprove ?? (parentTask?.autoApprove !== false ? undefined : false),
+        );
         // A task without its own worktree edits the repository's shared working tree: while the same owner has
         // another such task running in this cwd it queues (visible as `queued`) instead of racing on the same files.
         const sharedWorkingTree = request.ownWorkingTree !== true;

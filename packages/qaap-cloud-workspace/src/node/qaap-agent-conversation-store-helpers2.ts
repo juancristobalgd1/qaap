@@ -17,6 +17,7 @@ import {
 } from '../common/qaap-agent-conversation';
 import type { QaapCreateAgentTaskRequest } from '../common/qaap-agent-task';
 import { agentSupportsModelPicker } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { isExplicitAutoApprovePolicy } from '../common/qaap-agent-auto-approve';
 import {
     createComposerGitActionDisplayMarker,
     type ComposerGitActionDisplayMetadata,
@@ -123,7 +124,9 @@ export function buildTaskCreateRequest(
         ...ownWorkingTree,
         // Clean latest user message (mention-stripped) for opt-in relevance retrieval.
         ...(lastUser?.content ? { userQuery: deps.stripLeadingAgentMention(lastUser.content) } : {}),
-        ...(requestConv.autoApprove === false ? { autoApprove: false } : {}),
+        ...(requestConv.autoApprove === false && !isExplicitAutoApprovePolicy(requestConv.approvalPolicyId)
+            ? { autoApprove: false }
+            : {}),
         ...(requestConv.contextPreamble ? { contextPreamble: requestConv.contextPreamble } : {}),
         ...(requestConv.interactionModeId ? { interactionModeId: requestConv.interactionModeId } : {}),
         ...(requestConv.approvalPolicyId ? { approvalPolicyId: requestConv.approvalPolicyId } : {}),

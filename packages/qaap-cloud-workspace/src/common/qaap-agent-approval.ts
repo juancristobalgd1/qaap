@@ -36,6 +36,8 @@ export interface QaapAgentApprovalListResponse {
 export interface QaapAgentApprovalActionResponse {
     readonly ok: boolean;
     readonly error?: string;
+    /** Set when the approval no longer has a running task to answer (the turn ended or was cancelled). */
+    readonly expired?: boolean;
 }
 
 export function buildToolApprovalId(conversationId: string, toolUseId: string): string {

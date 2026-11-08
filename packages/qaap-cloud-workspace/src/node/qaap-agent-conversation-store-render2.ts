@@ -777,7 +777,7 @@ export function postUserMessageExtracted(ctx: QaapAgentConversationStoreContext,
     const messages = [...conv.messages, userMessage];
     let next: QaapAgentConversation = {
         ...conv,
-        ...patchConversationAutoApprove(conv, autoApproveOverride),
+        ...patchConversationAutoApprove(conv, autoApproveOverride, approvalPolicyId),
         agentId: turnAgentId,
         title: conv.messages.length === 0 ? ctx.deriveTitle(content) : conv.title,
         status: 'streaming',

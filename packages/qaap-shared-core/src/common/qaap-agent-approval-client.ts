@@ -32,6 +32,8 @@ export interface QaapAgentApprovalListResponseDTO {
 export interface QaapAgentApprovalActionResponseDTO {
     readonly ok: boolean;
     readonly error?: string;
+    /** The turn that owned the approval ended; the card is stale and should simply go away. */
+    readonly expired?: boolean;
 }
 
 /** Pending list requests in flight, keyed by query: concurrent pollers share one request. */

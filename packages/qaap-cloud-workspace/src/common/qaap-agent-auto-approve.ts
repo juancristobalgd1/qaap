@@ -34,6 +34,27 @@ export function resolveAgentAutoApprove(explicit?: boolean): boolean {
     return true;
 }
 
+/** True for an explicit approval policy that decides auto-approve itself (not `request-approval`). */
+export function isExplicitAutoApprovePolicy(policyId: string | undefined): boolean {
+    return policyId === 'approve-for-me' || policyId === 'full-access';
+}
+
+/**
+ * Auto-approve for a task from its explicit approval policy. An explicit `request-approval` always asks, and an
+ * inherited `true` never weakens it. An explicit `approve-for-me` or `full-access` decides for itself: a stale
+ * inherited `false` (an earlier turn in the same conversation) is ignored, but QAAP_AGENT_AUTO_APPROVE=0 still wins.
+ * Without an explicit policy the inherited value decides, as before.
+ */
+export function resolveTaskAutoApproveFromPolicy(policyId: string | undefined, inherited: boolean | undefined): boolean {
+    if (policyId === 'request-approval') {
+        return false;
+    }
+    if (isExplicitAutoApprovePolicy(policyId)) {
+        return resolveAgentAutoApprove(undefined);
+    }
+    return resolveAgentAutoApprove(inherited);
+}
+
 /** Routines are unattended by definition — only an explicit `false` disables YOLO. */
 export function resolveRoutineAutoApprove(explicit?: boolean): boolean {
     return explicit !== false;
