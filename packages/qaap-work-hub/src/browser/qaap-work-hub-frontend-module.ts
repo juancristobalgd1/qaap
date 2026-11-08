@@ -34,6 +34,8 @@ import '../../src/browser/style/qaap-work-hub-aux-panel.css';
 import '@theia/qaap-transcript/src/browser/style/qaap-transcript-lobehub.css';
 import '@theia/qaap-agents-ui/src/browser/style/qaap-agent-setup-animations.css';
 import '@theia/ai-claude-code/src/browser/style/claude-code-tool-renderers.css';
+// Last: menu/sheet entrances and control press feedback layer over every surface stylesheet above.
+import '../../src/browser/style/qaap-work-hub-motion.css';
 
 import { ChatResponsePartRenderer } from '@theia/ai-chat-ui/lib/browser/chat-response-part-renderer';
 
