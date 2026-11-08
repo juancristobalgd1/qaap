@@ -23,7 +23,8 @@ const HOURS_IN_24H = 24;
 export interface QaapUsageAggregationOptions {
     range: QaapUsageRange;
     timezone: string;
-    provider?: QaapUsageProviderId;
+    /** Only these providers are summarized; empty or undefined means all of them. */
+    providers?: readonly QaapUsageProviderId[];
     nowMs: number;
     scanning: boolean;
 }
@@ -39,9 +40,10 @@ export class QaapUsageAggregator {
         const totals = emptyAccumulator();
         const buckets: BucketAccumulator[] = window.starts.map(start => ({ start, perProvider: new Map() }));
         const seenDedupeKeys = new Set<string>();
+        const providerFilter = options.providers && options.providers.length > 0 ? new Set(options.providers) : undefined;
 
         for (const entry of ledger.allEntries()) {
-            if (options.provider && entry.provider !== options.provider) {
+            if (providerFilter && !providerFilter.has(entry.provider)) {
                 continue;
             }
             if (entry.minuteMs < window.startMs || entry.minuteMs > options.nowMs) {

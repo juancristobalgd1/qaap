@@ -59,9 +59,9 @@ export class QaapUsageEndpoint implements BackendApplicationContribution {
             res.status(400).json({ error: 'range must be one of 24h, 7d, 30d, 90d' });
             return;
         }
-        const providerParam = this.queryValue(req, 'provider');
-        if (providerParam !== undefined && !PROVIDERS.includes(providerParam as QaapUsageProviderId)) {
-            res.status(400).json({ error: `provider must be one of ${PROVIDERS.join(', ')}` });
+        const providers = this.parseProviderList(this.queryValue(req, 'provider'));
+        if (providers === undefined) {
+            res.status(400).json({ error: `provider must be a comma-separated list of ${PROVIDERS.join(', ')}` });
             return;
         }
         const timezone = this.queryValue(req, 'tz') ?? QaapUsageTime.defaultTimeZone();
@@ -74,10 +74,23 @@ export class QaapUsageEndpoint implements BackendApplicationContribution {
         res.json(this.aggregator.summarize(this.scanner.getLedger(), {
             range: range as QaapUsageRange,
             timezone,
-            provider: providerParam as QaapUsageProviderId | undefined,
+            providers,
             nowMs: Date.now(),
             scanning: !this.scanner.hasCompletedScan(),
         }));
+    }
+
+    /**
+     * Parses `provider=claude,codex`. A missing or empty value means every provider (`[]`).
+     * Returns `undefined` when any id is not a known provider.
+     */
+    protected parseProviderList(raw: string | undefined): QaapUsageProviderId[] | undefined {
+        const ids = (raw ?? '').split(',').map(part => part.trim()).filter(part => part.length > 0);
+        const unique = [...new Set(ids)];
+        if (!unique.every(id => PROVIDERS.includes(id as QaapUsageProviderId))) {
+            return undefined;
+        }
+        return unique as QaapUsageProviderId[];
     }
 
     protected async handleLimits(req: Request, res: Response): Promise<void> {

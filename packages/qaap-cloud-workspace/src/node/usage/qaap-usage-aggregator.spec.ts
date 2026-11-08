@@ -87,10 +87,22 @@ describe('QaapUsageAggregator', () => {
             { file: 'a', record: record({ provider: 'claude', timestampMs: NOW - 10 * 86_400_000 }) },
             { file: 'a', record: record({ provider: 'pi', tokens: { input: 5, cachedInput: 0, cacheWrite: 0, output: 5, reasoning: 0 } }) },
         ]);
-        const claudeOnly = aggregator.summarize(ledger, { range: '7d', timezone: 'UTC', provider: 'claude', nowMs: NOW, scanning: false });
+        const claudeOnly = aggregator.summarize(ledger, { range: '7d', timezone: 'UTC', providers: ['claude'], nowMs: NOW, scanning: false });
         expect(claudeOnly.providers).to.have.length(0);
         const all = aggregator.summarize(ledger, { range: '7d', timezone: 'UTC', nowMs: NOW, scanning: false });
         expect(all.providers.map(row => row.provider)).to.deep.equal(['pi']);
+    });
+
+    it('keeps every listed provider and treats an empty list as all providers', () => {
+        const ledger = ledgerOf([
+            { file: 'a', record: record({ provider: 'claude', sessionId: 'c1' }) },
+            { file: 'a', record: record({ provider: 'codex', model: 'unlisted-model', sessionId: 'x1' }) },
+            { file: 'a', record: record({ provider: 'pi', tokens: { input: 5, cachedInput: 0, cacheWrite: 0, output: 5, reasoning: 0 } }) },
+        ]);
+        const pair = aggregator.summarize(ledger, { range: '7d', timezone: 'UTC', providers: ['pi', 'claude'], nowMs: NOW, scanning: false });
+        expect(pair.providers.map(row => row.provider).sort()).to.deep.equal(['claude', 'pi']);
+        const empty = aggregator.summarize(ledger, { range: '7d', timezone: 'UTC', providers: [], nowMs: NOW, scanning: false });
+        expect(empty.providers).to.have.length(3);
     });
 
     it('returns one bucket per day for 7 days and one per hour for 24 hours', () => {

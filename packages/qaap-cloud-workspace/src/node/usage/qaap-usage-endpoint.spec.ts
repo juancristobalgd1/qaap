@@ -96,6 +96,14 @@ describe('QaapUsageEndpoint', () => {
         expect(badZone.statusCode).to.equal(400);
     });
 
+    it('parses a comma-separated provider filter and rejects any unknown id in it', () => {
+        const endpoint = endpointSignedInAs('someone') as unknown as { parseProviderList(raw: string | undefined): string[] | undefined };
+        expect(endpoint.parseProviderList(undefined)).to.deep.equal([]);
+        expect(endpoint.parseProviderList('')).to.deep.equal([]);
+        expect(endpoint.parseProviderList('claude, codex,claude')).to.deep.equal(['claude', 'codex']);
+        expect(endpoint.parseProviderList('claude,vscode')).to.equal(undefined);
+    });
+
     it('requires a signed-in user', async () => {
         delete process.env.NODE_ENV;
         const response = call(endpointSignedInAs(undefined), 'handleLimits');

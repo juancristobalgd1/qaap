@@ -77,7 +77,7 @@ export interface QaapUsageLimits {
     providers: QaapUsageProviderLimits[];
 }
 
-/** GET with query `range`, `provider` and `tz`. */
+/** GET with query `range`, `tz` and optional `provider`: one id or a comma-separated list (`claude,codex`); empty means all. */
 export const QAAP_USAGE_SUMMARY_PATH = '/qaap/api/usage/summary';
 /** GET. */
 export const QAAP_USAGE_LIMITS_PATH = '/qaap/api/usage/limits';
