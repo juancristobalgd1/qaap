@@ -321,6 +321,7 @@ body.qaap-theme-hc-dark {
   --qaap-hc-editor-select: #3A3A3A;
   --qaap-hc-button: #494949;
   --qaap-hc-button-ink: #F4F1E8;
+  --qaap-hc-widget: #111111;
 }
 
 body.qaap-theme-hc-light {
@@ -333,6 +334,7 @@ body.qaap-theme-hc-light {
   --qaap-hc-editor-select: #C8C8C8;
   --qaap-hc-button: #2A2A2A;
   --qaap-hc-button-ink: #FFFFFF;
+  --qaap-hc-widget: #FFFFFF;
 }
 
 body.qaap-theme-hc {
@@ -379,6 +381,38 @@ body.qaap-theme-hc {
   --theia-textPreformat-border: var(--qaap-hc-line) !important;
   --theia-titleBar-border: var(--qaap-hc-line) !important;
   --theia-widget-border: var(--qaap-hc-line) !important;
+  /* Navy HC widget surfaces (#0C141F: pickers, popovers, notifications) and blue debug glyphs. */
+  --theia-editorWidget-background: var(--qaap-hc-widget) !important;
+  --theia-quickInput-background: var(--qaap-hc-widget) !important;
+  --theia-editorHoverWidget-background: var(--qaap-hc-widget) !important;
+  --theia-editorHoverWidget-statusBarBackground: var(--qaap-hc-widget) !important;
+  --theia-breadcrumbPicker-background: var(--qaap-hc-widget) !important;
+  --theia-checkbox-selectBackground: var(--qaap-hc-widget) !important;
+  --theia-listFilterWidget-background: var(--qaap-hc-widget) !important;
+  --theia-editorActionList-background: var(--qaap-hc-widget) !important;
+  --theia-editorMarkerNavigationWarning-headerBackground: var(--qaap-hc-widget) !important;
+  --theia-editorSuggestWidget-background: var(--qaap-hc-widget) !important;
+  --theia-notifications-background: var(--qaap-hc-widget) !important;
+  --theia-notificationCenterHeader-background: var(--qaap-hc-widget) !important;
+  --theia-notifications-border: var(--qaap-hc-line) !important;
+  --theia-editorMarkerNavigationError-background: var(--qaap-hc-line) !important;
+  --theia-editorMarkerNavigationWarning-background: var(--qaap-hc-line) !important;
+  --theia-editorMarkerNavigationInfo-background: var(--qaap-hc-line) !important;
+  --theia-statusBar-debuggingBorder: var(--qaap-hc-line) !important;
+  --theia-notebook-cellBorderColor: var(--qaap-hc-line) !important;
+  --theia-notebook-cellToolbarSeparator: var(--qaap-hc-line) !important;
+  --theia-notebook-selectedCellBorder: var(--qaap-hc-line) !important;
+  --theia-notebook-inactiveFocusedCellBorder: var(--qaap-hc-line) !important;
+  --theia-actionBar-toggledBackground: var(--qaap-hc-soft) !important;
+  --theia-notebookScrollbarSlider-background: var(--qaap-hc-soft) !important;
+  --theia-notebookScrollbarSlider-hoverBackground: var(--qaap-hc-line) !important;
+  --theia-notebookScrollbarSlider-activeBackground: var(--qaap-hc-strong) !important;
+  --theia-debugIcon-pauseForeground: var(--qaap-hc-ink) !important;
+  --theia-debugIcon-continueForeground: var(--qaap-hc-ink) !important;
+  --theia-debugIcon-stepOverForeground: var(--qaap-hc-ink) !important;
+  --theia-debugIcon-stepIntoForeground: var(--qaap-hc-ink) !important;
+  --theia-debugIcon-stepOutForeground: var(--qaap-hc-ink) !important;
+  --theia-debugIcon-stepBackForeground: var(--qaap-hc-ink) !important;
   /* HC Light paints selections, buttons and badges blue (#0F4A85 / #006BBD): neutral greys instead. */
   --theia-editor-selectionBackground: var(--qaap-hc-editor-select) !important;
   --theia-editor-inactiveSelectionBackground: var(--qaap-hc-select) !important;
@@ -421,6 +455,65 @@ body.qaap-theme-hc {
   --theia-notificationLink-foreground: var(--qaap-hc-ink) !important;
   --theia-editorLink-activeForeground: var(--qaap-hc-ink) !important;
   --theia-settings-modifiedItemIndicator: var(--qaap-hc-strong) !important;
+}
+
+/* Theia and Monaco also inject HC rules with literal colours (cyan #6FC3DF borders, orange
+ * #F38518 hover/selection outlines, navy #0C141F surfaces): neutral greys instead. */
+body.qaap-theme-hc .theia-tabBar-breadcrumb-row,
+body.qaap-theme-hc .lm-TabBar .theia-badge-decorator-sidebar,
+body.qaap-theme-hc .quick-input-widget,
+body.qaap-theme-hc .theia-scm-input-message-container textarea {
+  outline-color: var(--qaap-hc-line) !important;
+}
+
+body.qaap-theme-hc .action-label:hover,
+body.qaap-theme-hc .lm-Menu .lm-Menu-item.lm-mod-active,
+body.qaap-theme-hc .lm-MenuBar .lm-MenuBar-item.lm-mod-active,
+body.qaap-theme-hc .theia-sidebar-menu > :hover,
+body.qaap-theme-hc .lm-TabBar .lm-TabBar-tab,
+body.qaap-theme-hc .theia-TreeNode,
+body.qaap-theme-hc #theia-statusBar .area .element.hasCommand,
+body.qaap-theme-hc .quick-input-list .monaco-list-row,
+body.qaap-theme-hc .theia-notification-list-item {
+  outline-color: var(--qaap-hc-focus) !important;
+}
+
+body.qaap-theme-hc .theia-button,
+body.qaap-theme-hc .monaco-keybinding > .monaco-keybinding-key,
+body.qaap-theme-hc .monaco-editor .find-widget,
+body.qaap-theme-hc .t-siw-search-container .searchHeader .search-field-container,
+body.qaap-theme-hc #theia-main-content-panel .lm-TabBar .lm-TabBar-tab.lm-mod-current,
+body.qaap-theme-hc .monaco-hover .hover-row,
+body.qaap-theme-hc .monaco-hover hr {
+  border-color: var(--qaap-hc-line) !important;
+}
+
+body.qaap-theme-hc .monaco-editor .view-overlays .current-line-exact,
+body.qaap-theme-hc .monaco-editor .margin-view-overlays .current-line-exact-margin {
+  border-color: var(--qaap-hc-line) !important;
+}
+
+body.qaap-theme-hc .quick-input-widget .monaco-highlighted-label .highlight {
+  color: var(--qaap-hc-ink) !important;
+}
+
+body.qaap-theme-hc .theia-notification-list-item-container {
+  background-color: var(--qaap-hc-widget) !important;
+}
+
+body.qaap-theme-hc .monaco-editor,
+body.qaap-theme-hc .monaco-diff-editor,
+body.qaap-theme-hc .monaco-component {
+  --vscode-contrastBorder: var(--qaap-hc-line);
+  --vscode-focusBorder: var(--qaap-hc-focus);
+  --vscode-contrastActiveBorder: var(--qaap-hc-focus);
+  --vscode-editorWidget-background: var(--qaap-hc-widget);
+  --vscode-editorWidget-border: var(--qaap-hc-line);
+  --vscode-quickInput-background: var(--qaap-hc-widget);
+  --vscode-editorHoverWidget-border: var(--qaap-hc-line);
+  --vscode-editorSuggestWidget-border: var(--qaap-hc-line);
+  --vscode-textLink-foreground: var(--qaap-hc-ink);
+  --vscode-textLink-activeForeground: var(--qaap-hc-ink);
 }
 
 /*-----------------------------------------------------------------------------
