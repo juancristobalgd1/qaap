@@ -12,7 +12,8 @@ describe('composer pill shrink CSS', () => {
     const css = fs.readFileSync(
         path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'qaap-composer-model-picker.css'),
         'utf8',
-    );
+    // A Windows checkout has CRLF line endings; the multi-line selectors below use \n.
+    ).replace(/\r\n/g, '\n');
 
     function declarations(selector: string): string {
         const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
