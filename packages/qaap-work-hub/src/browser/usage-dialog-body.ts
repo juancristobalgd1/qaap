@@ -93,6 +93,14 @@ export class UsageDialogBody {
         return root;
     }
 
+    /** Singular or plural session label; `count` is passed as the formatted `{0}` argument. */
+    protected sessionCountLabel(count: number, singularKey: string, singularText: string, pluralKey: string, pluralText: string): string {
+        const formatted = this.numbers.formatInteger(count);
+        return count === 1
+            ? nls.localize(singularKey, singularText, formatted)
+            : nls.localize(pluralKey, pluralText, formatted);
+    }
+
     protected renderScanning(): HTMLElement {
         const block = this.element('div', 'theia-qaap-usage-scanning');
         block.append(
@@ -110,7 +118,7 @@ export class UsageDialogBody {
         left.append(this.element('div', 'theia-qaap-usage-total', headline));
         const subtitle = this.element('div', 'theia-qaap-usage-total-sub');
         subtitle.append(
-            this.element('span', undefined, nls.localize('qaap/usage/sessionsEstimate', '{0} sessions · API estimate', this.numbers.formatInteger(summary.totals.sessions))),
+            this.element('span', undefined, this.sessionCountLabel(summary.totals.sessions, 'qaap/usage/sessionEstimate', '{0} session · API estimate', 'qaap/usage/sessionsEstimate', '{0} sessions · API estimate')),
             this.element('span', 'theia-qaap-usage-info codicon codicon-info')
         );
         subtitle.querySelector('.theia-qaap-usage-info')?.setAttribute('title', nls.localize(
@@ -137,7 +145,7 @@ export class UsageDialogBody {
         const names = this.element('div', 'theia-qaap-usage-provider-names');
         names.append(
             this.element('span', 'theia-qaap-usage-provider-name', this.providerLabel(row.provider)),
-            this.element('span', 'theia-qaap-usage-provider-sub', nls.localize('qaap/usage/sessionCount', '{0} sessions', this.numbers.formatInteger(row.sessions)))
+            this.element('span', 'theia-qaap-usage-provider-sub', this.sessionCountLabel(row.sessions, 'qaap/usage/sessionCountOne', '{0} session', 'qaap/usage/sessionCount', '{0} sessions'))
         );
         const share = measure === 'cost'
             ? this.numbers.formatShare(row.costUsd, summary.totals.costUsd)

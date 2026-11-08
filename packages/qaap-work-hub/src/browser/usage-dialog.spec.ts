@@ -86,9 +86,22 @@ describe('UsageDialog', () => {
         const body = bodyOf();
         expect(body.querySelector('.theia-qaap-usage-total')?.textContent).to.equal('$1.48');
         expect(body.querySelectorAll('.theia-qaap-usage-provider-row')).to.have.length(2);
+        expect(body.querySelector('.theia-qaap-usage-total-sub')?.textContent).to.contain('3 sessions · API estimate');
+        expect(body.querySelector('.theia-qaap-usage-provider-sub')?.textContent).to.equal('2 sessions');
         const areas = body.querySelectorAll<SVGPathElement>('.theia-qaap-usage-area');
         expect(areas).to.have.length(2);
         expect(areas[0].getAttribute('d')?.startsWith('M')).to.equal(true);
+    });
+
+    it('uses the singular session label for one session', async () => {
+        stubClient(async () => summaryFixture({
+            totals: { sessions: 1, tokens: 1, costUsd: 0.1, cacheSavingsUsd: 0, breakdown },
+            providers: [{ provider: 'codex', sessions: 1, tokens: 1, costUsd: 0.1, unpricedTokens: 0, breakdown }]
+        }));
+        dialog.open();
+        await settle();
+        expect(bodyOf().querySelector('.theia-qaap-usage-provider-sub')?.textContent).to.equal('1 session');
+        expect(bodyOf().querySelector('.theia-qaap-usage-total-sub')?.textContent).to.contain('1 session · API estimate');
     });
 
     it('switches the headline to abbreviated tokens on the tokens tab', async () => {
