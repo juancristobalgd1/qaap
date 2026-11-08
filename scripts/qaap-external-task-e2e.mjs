@@ -2,7 +2,7 @@
 // GitHub issue → task → linked PR + notifications, end to end (roadmap H4.1, doc/qaap-external-task-inputs.md).
 //
 // Starts the built browser backend in skip-auth local mode (like scripts/qaap-task-to-pr-e2e.mjs) with an
-// isolated HOME, a fake `qaiq` that edits a file, a local bare repository as `origin`, a stateful GitHub REST
+// isolated HOME, a fake `claude` that edits a file, a local bare repository as `origin`, a stateful GitHub REST
 // stub (QAAP_GITHUB_API_BASE_URL) and an HTTPS web-push receiver. It never opens the app: every step is a
 // signed GitHub webhook delivery to POST /qaap/api/github/webhook. It requires:
 // - a forged signature is refused (401) and the raw-body signature of pretty-printed JSON is accepted;
@@ -36,10 +36,13 @@ const REQUESTER = '_dev'; // the skip-auth user (QAAP_SKIP_AUTH_USER_LOGIN)
 const REPO_ID = 4242;
 const MARKER = '<!-- qaap:external-task -->';
 
-const FAKE_QAIQ = `#!/usr/bin/env bash
-# Fake qaiq for the external task e2e (stream-json over stdio): writes one file per run and reports success.
-if [[ "\${1:-}" == "--version" ]]; then echo "qaiq 0.0.0-external-task-e2e"; exit 0; fi
-IFS= read -r line || true
+const FAKE_CLAUDE = `#!/usr/bin/env bash
+# Fake claude for the external task e2e (stream-json over stdio): writes one file per run and reports success.
+# Installed on the PATH as "claude", the default harness; answers its sign-in probe as signed in.
+if [[ "\${1:-}" == "--version" ]]; then echo "2.1.0 (Claude Code) external-task-e2e"; exit 0; fi
+if [[ "\${1:-}" == "auth" && "\${2:-}" == "status" ]]; then echo '{"loggedIn": true, "authMethod": "mock", "apiProvider": "mock"}'; exit 0; fi
+# Approvals on: one NDJSON user line, stdin stays open. Approvals off: the prompt is piped and stdin closes.
+if [[ " $* " == *" --input-format "* ]]; then IFS= read -r line || true; else line="$(cat)"; fi
 STATE="\${QAAP_E2E_STATE:?}"
 echo run >> "$STATE/runs"
 runs="$(wc -l < "$STATE/runs" | tr -d ' ')"
@@ -230,8 +233,8 @@ async function main() {
     for (const dir of [home, bin, remote, seed, state]) {
         mkdirSync(dir, { recursive: true });
     }
-    writeFileSync(join(bin, 'qaiq'), FAKE_QAIQ);
-    chmodSync(join(bin, 'qaiq'), 0o755);
+    writeFileSync(join(bin, 'claude'), FAKE_CLAUDE);
+    chmodSync(join(bin, 'claude'), 0o755);
     const gitId = ['-c', 'user.email=e2e@qaap.local', '-c', 'user.name=e2e'];
     execFileSync('git', ['init', '--bare', '-q', '-b', 'main', remote]);
     execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: seed });
@@ -265,7 +268,7 @@ async function main() {
         QAAP_GITHUB_API_BASE_URL: `http://127.0.0.1:${stub.port}`,
         QAAP_GITHUB_WEBHOOK_SECRET: SECRET,
         QAAP_EXTERNAL_TASKS_GITHUB: '1',
-        QAAP_EXTERNAL_TASKS_AGENT: 'qaiq',
+        QAAP_EXTERNAL_TASKS_AGENT: 'claude',
         QAAP_VAPID_PUBLIC_KEY: vapid.publicKey,
         QAAP_VAPID_PRIVATE_KEY: vapid.privateKey,
         NODE_EXTRA_CA_CERTS: push.cert,
