@@ -28,10 +28,10 @@ describe('qaap-ai-features-visibility', () => {
         expect(shouldHideQaapAiFeaturesPreference('ai-features.harness.disabledAgents')).to.equal(false);
     });
 
-    it('keeps Qaap BYOK and MCP preferences visible', () => {
-        expect(shouldHideQaapAiFeaturesPreference('ai-features.openrouter.openrouterApiKey')).to.equal(false);
-        expect(shouldHideQaapAiFeaturesPreference('ai-features.nvidia.nvidiaApiKey')).to.equal(false);
-        expect(shouldHideQaapAiFeaturesPreference('ai-features.anthropic.AnthropicApiKey')).to.equal(false);
+    it('hides provider key preferences (agents connect through Settings → Harness) and keeps MCP and aliases visible', () => {
+        expect(shouldHideQaapAiFeaturesPreference('ai-features.openrouter.openrouterApiKey')).to.equal(true);
+        expect(shouldHideQaapAiFeaturesPreference('ai-features.nvidia.nvidiaApiKey')).to.equal(true);
+        expect(shouldHideQaapAiFeaturesPreference('ai-features.anthropic.AnthropicApiKey')).to.equal(true);
         expect(shouldHideQaapAiFeaturesPreference('ai-features.mcp.mcpServers')).to.equal(false);
         expect(shouldHideQaapAiFeaturesPreference('ai-features.languageModelAliases')).to.equal(false);
     });

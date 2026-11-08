@@ -38,9 +38,9 @@ describe('qaap-agent-submit-routing', () => {
         })).to.equal('vps-background');
     });
 
-    it('VPS @mention beats an explicit Coder pin', () => {
+    it('VPS @mention beats an explicit Coder pin (retired @qaiq no longer counts as a mention)', () => {
         expect(resolveAgentSubmitSurface({
-            draft: `@${QAIQ_AGENT_ID} ship it`,
+            draft: '@codex ship it',
             selectedAgentId: THEIA_CODER_AGENT_ID,
         })).to.equal('vps-background');
     });
