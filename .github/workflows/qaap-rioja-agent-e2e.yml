@@ -71,23 +71,25 @@ jobs:
         shell: bash
         run: cd examples/playwright && npx playwright install chromium
 
-      - name: Start browser backend with mock QAIQ
+      - name: Start browser backend with mock Claude
         shell: bash
         env:
           QAAP_SKIP_AUTH: 'true'
-          # The mock QAIQ ignores it, but the runner starts a QAIQ task only with a configured provider
+          # The mock Claude ignores it, but the runner starts a task only with a configured provider
           # (the Ollama schema default stopped counting as one); without it every turn fails before spawn.
           OPENROUTER_API_KEY: mock-rioja-e2e
           # Rioja E2E asserts scaffold + preview, not headless visual verification. Disabling
           # the backend capture avoids racing the browser autopilot and flaky repair→failed.
           QAAP_HEADLESS_VISUAL_CAPTURE: '0'
         run: |
-          MOCK_BIN="${{ github.workspace }}/test-results/mock-qaiq-bin"
+          # The mock is installed as `claude`: the default harness answers `claude auth status` with a
+          # signed-in result, so no agent id has to be picked by hand.
+          MOCK_BIN="${{ github.workspace }}/test-results/mock-claude-bin"
           mkdir -p "${MOCK_BIN}"
-          ln -sf "${{ github.workspace }}/examples/playwright/scripts/mock-qaiq-rioja-agent" "${MOCK_BIN}/qaiq"
+          ln -sf "${{ github.workspace }}/examples/playwright/scripts/mock-qaiq-rioja-agent" "${MOCK_BIN}/claude"
           echo "${MOCK_BIN}" >> "${GITHUB_PATH}"
           # GITHUB_PATH only affects *subsequent* steps; the backend is started in THIS step and
-          # detects agents with `which qaiq`, so it must have the mock on its own PATH.
+          # detects agents with `which claude`, so it must have the mock on its own PATH.
           export PATH="${MOCK_BIN}:${PATH}"
           cd examples/browser
           npm run start > "${{ github.workspace }}/test-results/browser-server.log" 2>&1 &
