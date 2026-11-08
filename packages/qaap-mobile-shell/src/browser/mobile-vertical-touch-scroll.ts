@@ -188,6 +188,7 @@ export const MOBILE_VERTICAL_SCROLL_SELECTORS = [
     '.chat-view-widget',
     '.chat-tree-view-widget .body',
     '.theia-mobile-projects-scroll',
+    '.theia-qaap-usage-body',
     '.theia-mobile-work-hub-sessions-sidebar-scroll',
     '.theia-mobile-work-hub-sessions-sidebar-status-legend-list',
     '.theia-mobile-pr-stack',
