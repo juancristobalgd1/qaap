@@ -370,6 +370,7 @@ export async function createGithubProjectExtracted(ctx: MobileProjectsServiceCon
         const dialog = new SingleTextInputDialog({
             title: nls.localize('qaap/mobileProjects/createGithubRepo', 'Create GitHub repository'),
             placeholder: nls.localize('qaap/mobileProjects/createGithubRepoPlaceholder', 'repository-name'),
+            confirmButtonLabel: nls.localize('qaap/mobileProjects/createGithubRepoConfirm', 'Create'),
             validate: (value, mode) => {
                 const name = value.trim();
                 if (mode !== 'preview' && !name) {
@@ -381,6 +382,15 @@ export async function createGithubProjectExtracted(ctx: MobileProjectsServiceCon
                 return true;
             },
         });
+        // Compact Work Hub styling (qaap-work-hub mobile-workbench-open-repo.css) and the one fact
+        // the bare name field does not say: the repository is created private.
+        dialog.node.classList.add('qaap-compact-input-dialog');
+        const hint = document.createElement('p');
+        hint.className = 'qaap-compact-input-dialog-hint';
+        hint.textContent = nls.localize('qaap/mobileProjects/createGithubRepoHint', 'Creates a private repository on your GitHub account.');
+        const nameInput = dialog.node.querySelector<HTMLInputElement>('.dialogContent input');
+        nameInput?.classList.add('qaap-compact-input-dialog-input');
+        nameInput?.after(hint);
         const name = (await dialog.open())?.trim();
         if (!name) {
             return undefined;

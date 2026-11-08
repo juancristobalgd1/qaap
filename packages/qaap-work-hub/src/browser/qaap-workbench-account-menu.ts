@@ -145,11 +145,13 @@ export function buildQaapAccountMenuEntries(
         {
             kind: 'action',
             label: nls.localize('qaap/accountMenu/extensions', 'Extensions'),
+            iconClass: 'codicon-extensions',
             commandId: WORKBENCH_OPEN_EXTENSIONS,
         },
         {
             kind: 'action',
             label: nls.localize('qaap/accountMenu/keybindings', 'Keyboard Shortcuts'),
+            iconClass: 'codicon-keyboard',
             commandId: WORKBENCH_OPEN_KEYBINDINGS,
         },
     ];
@@ -159,6 +161,7 @@ export function buildQaapAccountMenuEntries(
             {
                 kind: 'action',
                 label: nls.localize('qaap/accountMenu/signInGithub', 'Sign in with GitHub'),
+                iconClass: 'codicon-github',
                 commandId: QAAP_AUTH_SIGN_IN_GITHUB_COMMAND,
             },
             { kind: 'separator' },
@@ -170,6 +173,7 @@ export function buildQaapAccountMenuEntries(
         {
             kind: 'action',
             label: nls.localize('qaap/accountMenu/commandPalette', 'Command Palette…'),
+            iconClass: 'codicon-terminal-cmd',
             commandId: WORKBENCH_SHOW_COMMANDS,
         },
         { kind: 'separator' },
@@ -180,6 +184,7 @@ export function buildQaapAccountMenuEntries(
         {
             kind: 'action',
             label: nls.localize('qaap/accountMenu/signOut', 'Sign Out'),
+            iconClass: 'codicon-sign-out',
             commandId: QAAP_AUTH_SIGN_OUT_COMMAND,
         },
     ];

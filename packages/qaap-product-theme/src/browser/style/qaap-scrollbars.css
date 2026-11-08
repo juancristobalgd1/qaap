@@ -1,0 +1,64 @@
+/********************************************************************************
+ * Copyright (C) 2026 Theia contributors and Qaap product fork.
+ * SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
+ ********************************************************************************/
+
+/*
+ * App-wide scrollbars: thin, rounded and trackless instead of Theia's 10px square bars.
+ * Native (WebKit/Blink) bars keep a 10px hit area but paint a 4px pill that grows to 6px on hover
+ * (transparent border + padding-box clip). Perfect-scrollbar panels get the same 6px pill.
+ * Colours stay on the theme's scrollbarSlider tokens.
+ */
+
+:root {
+  --theia-scrollbar-width: 6px;
+  --theia-scrollbar-rail-width: 10px;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+  background: transparent;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+  background-color: var(--theia-scrollbarSlider-background);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  border-width: 2px;
+  background-color: var(--theia-scrollbarSlider-hoverBackground);
+}
+
+::-webkit-scrollbar-thumb:active {
+  border-width: 2px;
+  background-color: var(--theia-scrollbarSlider-activeBackground);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Firefox only: in Chromium the standard properties would switch off the ::-webkit-scrollbar rules. */
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--theia-scrollbarSlider-background) transparent;
+  }
+}
+
+body #theia-app-shell .ps__rail-y>.ps__thumb-y,
+body #theia-dialog-shell .ps__rail-y>.ps__thumb-y,
+body #theia-breadcrumbs-popups-overlay .ps__rail-y>.ps__thumb-y,
+body #theia-app-shell .ps__rail-x>.ps__thumb-x,
+body #theia-dialog-shell .ps__rail-x>.ps__thumb-x,
+body #theia-breadcrumbs-popups-overlay .ps__rail-x>.ps__thumb-x {
+  border-radius: 999px;
+}

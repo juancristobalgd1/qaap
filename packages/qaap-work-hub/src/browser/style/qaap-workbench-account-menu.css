@@ -4,9 +4,9 @@
  ********************************************************************************/
 
 .theia-qaap-account-menu.theia-mod-with-getting-started {
-  min-width: min(280px, calc(100vw - 16px));
-  max-width: min(320px, calc(100vw - 16px));
-  padding: 4px 0;
+  min-width: min(220px, calc(100vw - 16px));
+  max-width: min(260px, calc(100vw - 16px));
+  padding: 4px;
 }
 
 .theia-qaap-account-menu-getting-started {
@@ -14,11 +14,7 @@
 }
 
 .theia-qaap-account-menu-getting-started-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 8px 14px 4px;
+  display: none;
 }
 
 .theia-qaap-account-menu-getting-started-title {
@@ -38,46 +34,48 @@
   display: flex;
   flex-direction: column;
   gap: 0;
-  padding: 2px 0;
+  padding: 0;
 }
 
 .theia-qaap-account-menu-catalog-card {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
+  min-height: 30px;
   margin: 0;
-  padding: 8px 14px;
+  padding: 0 8px;
   border: none;
-  border-radius: 0;
+  border-radius: 5px;
   background: transparent;
   color: inherit;
   font: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.3;
   text-align: left;
   cursor: pointer;
   box-sizing: border-box;
-  transition: background-color 100ms ease;
+  transition: background-color var(--qaap-duration-fast, 120ms) ease;
 }
 
 .theia-qaap-account-menu-catalog-card:hover,
 .theia-qaap-account-menu-catalog-card:focus-visible {
-  background: var(--theia-menu-selectionBackground);
-  color: var(--theia-menu-selectionForeground, var(--theia-menu-foreground));
+  background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+  color: var(--theia-menu-foreground, var(--theia-foreground));
   outline: none;
 }
 
-.theia-qaap-account-menu-catalog-card-icon {
+.theia-qaap-account-menu-catalog-card-icon,
+.theia-qaap-account-menu-item .codicon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: 0 0 16px;
   width: 16px;
   height: 16px;
-  flex: 0 0 16px;
-  border-radius: 0;
-  font-size: 16px;
-  background: transparent;
-  color: var(--theia-icon-foreground, var(--theia-foreground));
-  opacity: 0.62;
+  font-size: 14px;
+  color: var(--theia-descriptionForeground);
 }
 
 .theia-qaap-account-menu-catalog-card:hover .theia-qaap-account-menu-catalog-card-icon,
@@ -95,9 +93,9 @@
 
 .theia-qaap-account-menu-catalog-card-title {
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 400;
   line-height: 1.3;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
 }
 
 .theia-qaap-account-menu-catalog-card-subtitle {
@@ -140,49 +138,75 @@ body.theia-mobile-mod-landing .theia-qaap-account-menu {
 .theia-qaap-account-menu {
   position: fixed;
   z-index: 10100;
-  min-width: 220px;
-  max-width: min(320px, calc(100vw - 16px));
-  padding: 4px 0;
-  border: 1px solid color-mix(in srgb, var(--theia-widget-border, var(--theia-contrastBorder)) 72%, transparent);
-  border-radius: 10px;
+  min-width: 200px;
+  max-width: min(260px, calc(100vw - 16px));
+  padding: 4px;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+  border-radius: 8px;
   background: var(--theia-menu-background);
   color: var(--theia-menu-foreground);
-  box-shadow:
-    0 0 0 0.5px color-mix(in srgb, var(--theia-foreground) 6%, transparent),
-    0 8px 28px color-mix(in srgb, var(--theia-widget-shadow, #000) 28%, transparent);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--theia-widget-shadow, black) 40%, transparent);
   box-sizing: border-box;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
 }
 
 .theia-qaap-account-menu-item {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   width: 100%;
+  min-height: 30px;
   margin: 0;
-  padding: 8px 14px;
+  padding: 0 8px;
   border: none;
+  border-radius: 5px;
   background: transparent;
   color: inherit;
   font: inherit;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 400;
+  line-height: 1.3;
   text-align: left;
   cursor: pointer;
   box-sizing: border-box;
-  transition: background-color 100ms ease;
+  transition: background-color var(--qaap-duration-fast, 120ms) ease;
 }
 
 .theia-qaap-account-menu-item:hover:not(:disabled),
 .theia-qaap-account-menu-item:focus-visible {
-  background: var(--theia-menu-selectionBackground);
-  color: var(--theia-menu-selectionForeground, var(--theia-menu-foreground));
+  background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+  color: var(--theia-menu-foreground, var(--theia-foreground));
   outline: none;
+}
+
+/* Sign Out closes the list, set apart by a hairline (the menu renders no separator before it). */
+.theia-qaap-account-menu>.theia-qaap-account-menu-item:last-child {
+  position: relative;
+  margin-top: 9px;
+}
+
+.theia-qaap-account-menu>.theia-qaap-account-menu-item:last-child::before {
+  content: '';
+  position: absolute;
+  top: -5px;
+  right: -4px;
+  left: -4px;
+  height: 1px;
+  background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+  pointer-events: none;
+}
+
+@media (pointer: coarse) {
+
+  .theia-qaap-account-menu-item,
+  .theia-qaap-account-menu-catalog-card {
+    min-height: 44px;
+  }
 }
 
 .theia-qaap-account-menu-separator {
   height: 1px;
-  margin: 4px 0;
-  background: var(--theia-menu-separatorBackground, var(--theia-contrastBorder));
+  margin: 4px -4px;
+  background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
 }
 
 .theia-workbench-right-controls .theia-workbench-nav-btn.theia-workbench-account-btn {
@@ -339,4 +363,11 @@ body.theia-mobile-mod-landing .theia-qaap-account-menu {
   .theia-qaap-account-menu-item {
     transition: none;
   }
+}
+
+.theia-qaap-account-menu-item:hover:not(:disabled) .codicon,
+.theia-qaap-account-menu-item:focus-visible .codicon,
+.theia-qaap-account-menu-catalog-card:hover .theia-qaap-account-menu-catalog-card-icon,
+.theia-qaap-account-menu-catalog-card:focus-visible .theia-qaap-account-menu-catalog-card-icon {
+  color: var(--theia-foreground);
 }

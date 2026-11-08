@@ -175,8 +175,20 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
         expect(host.scroll.querySelector('.theia-mobile-agents-hub-onboarding')).to.equal(null);
         expect(host.scroll.textContent).not.to.include('Add your first project');
         expect(host.scroll.textContent).not.to.include('Start new project');
-        expect(host.scroll.textContent).not.to.include('Add repository');
         expect(host.scroll.querySelector('.theia-mobile-agents-hub-signin-btn')).to.equal(null);
+    });
+
+    it('mirrors the sidebar "No projects yet" empty state so a first visit is not blank', async () => {
+        let added = 0;
+        const host = createHost({ readQaapSignedIn: () => true, onNewClick: async () => { added++; } });
+        const ui = new MobileProjectsAgentsHubInlineUi(host);
+        ui.renderAgentsHubExecutionShell();
+        const empty = host.scroll.querySelector('.theia-mod-no-project .q-empty.theia-mobile-agents-hub-no-project-empty');
+        expect(empty?.querySelector('.q-empty-title')?.textContent).to.equal('No projects yet');
+        const action = empty?.querySelector<HTMLButtonElement>('.q-empty-action');
+        expect(action?.textContent).to.equal('Add repository');
+        action?.click();
+        expect(added).to.equal(1);
     });
 
     it('keeps only a GitHub sign-in action when the user is signed out and has no project', () => {
