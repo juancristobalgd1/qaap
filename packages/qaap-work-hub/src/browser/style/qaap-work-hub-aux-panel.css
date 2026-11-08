@@ -17,13 +17,16 @@
   display: none;
 }
 
-/* Keep in sync with QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY. */
+/* Keep in sync with QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY. The glyph follows
+ * the media query alone, not the toggle class: that class is set when the header
+ * is built, so a header built at phone width kept the chevrons after the window
+ * widened to the desktop layout (where a click already toggles the panel). */
 @media (min-width: 768px) and (pointer: fine) {
-  body:not(.theia-mobile-mod-desktop-ide) .qaap-mod-aux-panel-toggle .qaap-glyph-view-menu {
+  body:not(.theia-mobile-mod-desktop-ide) .theia-mobile-transcript-tab-icon-select-double-chevron .qaap-glyph-view-menu {
     display: none;
   }
 
-  body:not(.theia-mobile-mod-desktop-ide) .qaap-mod-aux-panel-toggle .qaap-glyph-right-panel {
+  body:not(.theia-mobile-mod-desktop-ide) .theia-mobile-transcript-tab-icon-select-double-chevron .qaap-glyph-right-panel {
     display: inline;
   }
 
