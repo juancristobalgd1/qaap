@@ -288,7 +288,11 @@
     gap: 8px;
     margin: 0;
     padding: 0 12px;
+    /* Never shrink: with a long model list (OpenCode) the flex column squeezed it to ~17px. */
+    flex: 0 0 40px;
+    box-sizing: border-box;
     height: 40px;
+    min-height: 40px;
     border: none;
     border-bottom: 1px solid var(--theia-widget-border, var(--theia-panel-border));
     background: transparent;
