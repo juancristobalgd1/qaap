@@ -445,9 +445,17 @@
     display: none;
 }
 
-.theia-mobile-projects-sticky-composer-controls-right .theia-mobile-projects-sticky-composer-agent {
+.theia-mobile-projects-sticky-composer-controls-left .theia-mobile-projects-sticky-composer-agent {
     /* The shared pill cap (42vw / 160px) left room for ~60px of name; the model pill needs the name and effort. */
     max-width: min(360px, calc(100vw - 96px));
+    background: transparent;
+    border: none;
+    box-shadow: none;
+}
+
+.theia-mobile-projects-sticky-composer-controls-left .theia-mobile-projects-sticky-composer-agent:hover {
+    background: var(--theia-toolbar-hoverBackground);
+    border-radius: 6px;
 }
 
 .theia-mobile-projects-sticky-composer-agent .theia-mobile-projects-sticky-composer-agent-label {
@@ -459,7 +467,7 @@
 }
 
 @media (max-width: 767px) {
-    .theia-mobile-projects-sticky-composer-controls-right .theia-mobile-projects-sticky-composer-agent {
+    .theia-mobile-projects-sticky-composer-controls-left .theia-mobile-projects-sticky-composer-agent {
         max-width: min(70vw, 100%);
     }
 

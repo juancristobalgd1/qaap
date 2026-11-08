@@ -510,14 +510,14 @@ export class MobileProjectsStickyComposerColumnUi {
         controlsRight.className = 'theia-mobile-projects-sticky-composer-controls-right';
 
         inputBody.append(inputEditor);
-        controlsLeft.append(attachBtn);
+        // The model pill sits right of the attach button, as in T3 Code; the actions stay on the right.
+        controlsLeft.append(attachBtn, agentBtn);
         if (!options.agentLocked) {
             bindStickyComposerControlClick(agentBtn, ev => {
                 this.openComposerControlSheet(ev, input, () => options.onOpenAgentSheet(agentBtn));
             });
         }
-        // The model pill sits right of the input, before send, like the model picker of T3 Code.
-        controlsRight.append(agentBtn, inputActions);
+        controlsRight.append(inputActions);
         controlsRow.append(controlsLeft, controlsRight);
         const borderBeamBloom = document.createElement('div');
         borderBeamBloom.className = 'qaap-border-beam-bloom';
