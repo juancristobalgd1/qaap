@@ -1,6 +1,6 @@
 /* The picker inside the agent popover or sheet: the popover is sized for the picker, not the old list. */
 .qaap-sticky-composer-sheet-popover.theia-mod-agent-picker.theia-mod-model-picker {
-    width: min(720px, calc(100vw - 32px));
+    width: min(560px, calc(100vw - 32px));
     max-width: calc(100vw - 32px);
     height: min(460px, 70vh);
     max-height: min(460px, 70vh);
@@ -31,7 +31,7 @@
 }
 
 .qaap-model-picker-body {
-    grid-template-columns: 56px minmax(0, 1fr) 220px;
+    grid-template-columns: 56px minmax(0, 1fr);
 }
 
 .qaap-model-picker-connect {
@@ -85,7 +85,7 @@
 .qaap-model-picker {
     display: flex;
     flex-direction: column;
-    width: min(720px, 100%);
+    width: min(560px, 100%);
     height: min(460px, 70vh);
     max-height: min(460px, 70vh);
     min-height: 0;
@@ -110,7 +110,7 @@
 
 .qaap-model-picker-body {
     display: grid;
-    grid-template-columns: 56px minmax(0, 1fr) 220px;
+    grid-template-columns: 56px minmax(0, 1fr);
     min-height: 0;
     flex: 1 1 auto;
 }
@@ -268,56 +268,12 @@
 .qaap-model-picker-empty {
     margin: 8px;
     font-size: 12px;
-}
-
-.qaap-model-picker-effort {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: 10px;
-    min-height: 0;
-    border-left: 1px solid var(--theia-widget-border, var(--theia-panel-border));
-    overflow-y: auto;
-}
-
-.qaap-model-picker-effort-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 4px 8px 8px;
-    color: var(--theia-descriptionForeground);
-    font-size: 12px;
-}
-
-.qaap-model-picker-effort-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 4px;
-    height: 32px;
-    padding: 0 8px;
-    border: none;
-    border-radius: 8px;
-    background: transparent;
-    color: var(--theia-foreground);
-    cursor: pointer;
-}
-
-.qaap-model-picker-effort-row:hover {
-    background: var(--theia-list-hoverBackground);
-}
-
-.qaap-model-picker-effort-row.theia-mod-current {
-    background: var(--theia-list-activeSelectionBackground);
-    color: var(--theia-list-activeSelectionForeground);
-}
-
-.qaap-model-picker-footer {
+}.qaap-model-picker-footer {
     position: relative;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    justify-content: flex-end;
+    justify-content: space-between;
     gap: 8px;
     padding: 8px 10px;
     border-top: 1px solid var(--theia-widget-border, var(--theia-panel-border));
@@ -401,7 +357,7 @@
 
     .qaap-model-picker-body {
         grid-template-columns: minmax(0, 1fr);
-        grid-template-rows: auto minmax(0, 1fr) auto;
+        grid-template-rows: auto minmax(0, 1fr);
     }
 
     .qaap-model-picker-rail {
@@ -412,25 +368,6 @@
         padding: 8px 10px;
         border-right: none;
         border-bottom: 1px solid var(--theia-widget-border, var(--theia-panel-border));
-    }
-
-    .qaap-model-picker-effort {
-        flex-direction: row;
-        flex-wrap: wrap;
-        align-items: center;
-        border-left: none;
-        border-top: 1px solid var(--theia-widget-border, var(--theia-panel-border));
-    }
-
-    .qaap-model-picker-effort-header {
-        width: 100%;
-        padding: 0;
-    }
-
-    .qaap-model-picker-effort-row {
-        height: 30px;
-        border: 1px solid var(--theia-widget-border, var(--theia-panel-border));
-        border-radius: 999px;
     }
 
     .qaap-model-picker-star {
@@ -480,4 +417,25 @@
         max-width: none;
         flex: 1 1 auto;
     }
+}
+
+.qaap-model-picker-footer-left,
+.qaap-model-picker-footer-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.qaap-model-picker-menu-wrap {
+    position: relative;
+}
+
+.qaap-model-picker-menu-wrap .qaap-model-picker-access-menu {
+    left: 0;
+    right: auto;
+}
+
+.qaap-model-picker-access-wrap .qaap-model-picker-access-menu {
+    right: 0;
+    left: auto;
 }

@@ -33,7 +33,7 @@ function placePickerAbove(popover: HTMLElement, anchor: HTMLElement | undefined)
     }
     const rect = anchor.getBoundingClientRect();
     const gap = 8;
-    const width = Math.min(720, window.innerWidth - 32);
+    const width = Math.min(560, window.innerWidth - 32);
     const height = Math.min(460, window.innerHeight * 0.7);
     popover.style.left = `${Math.max(16, Math.min(rect.right - width, window.innerWidth - width - 16))}px`;
     popover.style.top = `${Math.max(16, rect.top - gap - height)}px`;

@@ -42,7 +42,8 @@ export interface QaapComposerModelPickerProps {
 
 interface PickerHostState {
     props: QaapComposerModelPickerProps;
-    accessOpen: boolean;
+    /** Footer menu currently open: the access presets or the effort levels. */
+    openMenu: FooterMenuKey | undefined;
 }
 
 /** Latest props per picker root, so one keydown listener serves every re-render. */
@@ -56,18 +57,17 @@ const SHORTCUT_LIMIT = 9;
  */
 export function renderQaapComposerModelPicker(host: HTMLElement, props: QaapComposerModelPickerProps): void {
     const previous = hostStates.get(host);
-    const accessOpen = previous?.accessOpen ?? false;
+    const openMenu = previous?.openMenu;
     if (!previous) {
         host.addEventListener('keydown', event => handlePickerKeydown(host, event));
     }
-    hostStates.set(host, { props, accessOpen });
+    hostStates.set(host, { props, openMenu });
 
     const root = document.createElement('div');
     root.className = 'qaap-model-picker';
     const body = document.createElement('div');
     body.className = 'qaap-model-picker-body';
     body.append(renderRail(host, props), renderList(host, props));
-    body.append(renderEffort(props));
     root.append(body, renderFooter(host, props));
     host.replaceChildren(root);
     const input = root.querySelector<HTMLInputElement>('.qaap-model-picker-search input');
@@ -242,52 +242,81 @@ function renderList(host: HTMLElement, props: QaapComposerModelPickerProps): HTM
     return section;
 }
 
-function renderEffort(props: QaapComposerModelPickerProps): HTMLElement {
-    const aside = document.createElement('aside');
-    aside.className = 'qaap-model-picker-effort';
-    const header = document.createElement('div');
-    header.className = 'qaap-model-picker-effort-header';
-    const title = document.createElement('span');
-    title.textContent = nls.localize('qaap/composer/picker/effort', 'Effort');
-    header.append(title);
-    if (props.effort.current) {
-        const value = document.createElement('span');
-        value.className = 'qaap-model-picker-effort-value';
-        value.textContent = QaapAgentEffort.label(props.effort.current);
-        header.append(value);
-    }
-    aside.append(header);
-    const support = props.effort.support;
-    if (!support) {
-        const none = document.createElement('p');
-        none.className = 'qaap-model-picker-empty';
-        none.textContent = nls.localize('qaap/composer/picker/noEffortLevels', 'No effort levels');
-        aside.append(none);
-        return aside;
-    }
-    for (const level of support.levels) {
-        const option = document.createElement('button');
-        option.type = 'button';
-        option.className = 'qaap-model-picker-effort-row';
-        const isCurrent = level === props.effort.current;
-        option.classList.toggle('theia-mod-current', isCurrent);
-        option.setAttribute('aria-pressed', String(isCurrent));
-        const text = document.createElement('span');
-        text.textContent = QaapAgentEffort.label(level);
-        option.append(text);
-        if (isCurrent) {
-            const check = document.createElement('span');
-            check.className = 'codicon codicon-check';
-            check.setAttribute('aria-hidden', 'true');
-            option.append(check);
+type FooterMenuKey = 'access' | 'effort';
+
+interface FooterMenuItem {
+    readonly label: string;
+    readonly iconClass?: string;
+    readonly checked: boolean;
+    readonly onSelect: () => void;
+}
+
+/**
+ * One footer control with its menu: the effort and the access controls share this markup and CSS.
+ * The menu opens above the control; `openMenu` in the host state keeps it open across repaints.
+ */
+function createFooterMenu(
+    host: HTMLElement,
+    key: FooterMenuKey,
+    trigger: { readonly iconClass: string; readonly label: string; readonly title: string },
+    items: readonly FooterMenuItem[],
+): HTMLElement {
+    const wrap = document.createElement('div');
+    wrap.className = `qaap-model-picker-menu-wrap qaap-model-picker-${key}-wrap`;
+    const open = hostStates.get(host)?.openMenu === key;
+
+    const menu = document.createElement('ul');
+    menu.className = 'qaap-model-picker-access-menu';
+    menu.setAttribute('role', 'menu');
+    menu.hidden = !open;
+    for (const item of items) {
+        const li = document.createElement('li');
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'qaap-model-picker-access-option';
+        button.setAttribute('role', 'menuitemradio');
+        button.setAttribute('aria-checked', String(item.checked));
+        button.classList.toggle('theia-mod-current', item.checked);
+        if (item.iconClass) {
+            const glyph = document.createElement('span');
+            glyph.className = `codicon ${item.iconClass}`;
+            glyph.setAttribute('aria-hidden', 'true');
+            button.append(glyph);
         }
-        option.addEventListener('click', ev => {
+        const text = document.createElement('span');
+        text.textContent = item.label;
+        button.append(text);
+        button.addEventListener('click', ev => {
             ev.preventDefault();
-            props.onSelectEffort(level);
+            setOpenMenu(host, undefined);
+            item.onSelect();
         });
-        aside.append(option);
+        li.append(button);
+        menu.append(li);
     }
-    return aside;
+
+    const control = document.createElement('button');
+    control.type = 'button';
+    control.className = `qaap-model-picker-access qaap-model-picker-${key}`;
+    control.title = trigger.title;
+    control.setAttribute('aria-label', trigger.title);
+    control.setAttribute('aria-haspopup', 'menu');
+    control.setAttribute('aria-expanded', String(open));
+    const glyph = document.createElement('span');
+    glyph.className = `codicon ${trigger.iconClass}`;
+    glyph.setAttribute('aria-hidden', 'true');
+    const text = document.createElement('span');
+    text.textContent = trigger.label;
+    const chevron = document.createElement('span');
+    chevron.className = 'codicon codicon-chevron-down';
+    chevron.setAttribute('aria-hidden', 'true');
+    control.append(glyph, text, chevron);
+    control.addEventListener('click', ev => {
+        ev.preventDefault();
+        setOpenMenu(host, hostStates.get(host)?.openMenu === key ? undefined : key);
+    });
+    wrap.append(control, menu);
+    return wrap;
 }
 
 function renderFooter(host: HTMLElement, props: QaapComposerModelPickerProps): HTMLElement {
@@ -295,56 +324,37 @@ function renderFooter(host: HTMLElement, props: QaapComposerModelPickerProps): H
     footer.className = 'qaap-model-picker-footer';
     const options = props.approval.options ?? QAAP_AGENT_APPROVAL_POLICIES;
     const current = options.find(option => option.id === props.approval.current) ?? options[0];
-    const accessOpen = hostStates.get(host)?.accessOpen ?? false;
 
-    const menu = document.createElement('ul');
-    menu.className = 'qaap-model-picker-access-menu';
-    menu.setAttribute('role', 'menu');
-    menu.hidden = !accessOpen;
-    for (const option of options) {
-        const item = document.createElement('li');
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'qaap-model-picker-access-option';
-        button.setAttribute('role', 'menuitemradio');
-        const picked = option.id === props.approval.current;
-        button.setAttribute('aria-checked', String(picked));
-        button.classList.toggle('theia-mod-current', picked);
-        const glyph = document.createElement('span');
-        glyph.className = `codicon ${option.sheetIconClass}`;
-        glyph.setAttribute('aria-hidden', 'true');
-        const text = document.createElement('span');
-        text.textContent = option.label;
-        button.append(glyph, text);
-        button.addEventListener('click', ev => {
-            ev.preventDefault();
-            setAccessOpen(host, false);
-            props.onSelectApproval(option.id);
-        });
-        item.append(button);
-        menu.append(item);
+    const left = document.createElement('div');
+    left.className = 'qaap-model-picker-footer-left';
+    const effortCurrent = props.effort.current;
+    if (props.effort.support && effortCurrent) {
+        const levelLabel = QaapAgentEffort.label(effortCurrent);
+        left.append(createFooterMenu(host, 'effort', {
+            iconClass: 'codicon-zap',
+            label: levelLabel,
+            title: nls.localize('qaap/composer/picker/effortTitle', 'Effort: {0}', levelLabel),
+        }, props.effort.support.levels.map(level => ({
+            label: QaapAgentEffort.label(level),
+            checked: level === effortCurrent,
+            onSelect: () => props.onSelectEffort(level),
+        }))));
     }
 
-    const access = document.createElement('button');
-    access.type = 'button';
-    access.className = 'qaap-model-picker-access';
-    access.setAttribute('aria-haspopup', 'menu');
-    access.setAttribute('aria-expanded', String(accessOpen));
-    const accessGlyph = document.createElement('span');
-    accessGlyph.className = `codicon ${current.toolbarIconClass}`;
-    accessGlyph.setAttribute('aria-hidden', 'true');
-    const accessLabel = document.createElement('span');
-    accessLabel.textContent = current.label;
-    const chevron = document.createElement('span');
-    chevron.className = 'codicon codicon-chevron-down';
-    chevron.setAttribute('aria-hidden', 'true');
-    access.append(accessGlyph, accessLabel, chevron);
-    access.addEventListener('click', ev => {
-        ev.preventDefault();
-        setAccessOpen(host, !(hostStates.get(host)?.accessOpen ?? false));
-    });
+    const right = document.createElement('div');
+    right.className = 'qaap-model-picker-footer-right';
+    right.append(createFooterMenu(host, 'access', {
+        iconClass: current.toolbarIconClass,
+        label: current.label,
+        title: nls.localize('qaap/composer/picker/accessTitle', 'Access: {0}', current.label),
+    }, options.map(option => ({
+        label: option.label,
+        iconClass: option.sheetIconClass,
+        checked: option.id === props.approval.current,
+        onSelect: () => props.onSelectApproval(option.id),
+    }))));
 
-    footer.append(access, menu);
+    footer.append(left, right);
     if (props.approval.current === 'request-approval') {
         const note = document.createElement('p');
         note.className = 'qaap-model-picker-access-note';
@@ -354,19 +364,22 @@ function renderFooter(host: HTMLElement, props: QaapComposerModelPickerProps): H
     return footer;
 }
 
-/** Opens or closes the access menu in place, without repainting the list. */
-function setAccessOpen(host: HTMLElement, open: boolean): void {
+/** Opens one footer menu (closing the other) in place, without repainting the list. */
+function setOpenMenu(host: HTMLElement, key: FooterMenuKey | undefined): void {
     const state = hostStates.get(host);
     if (!state) {
         return;
     }
-    state.accessOpen = open;
-    const menu = host.querySelector<HTMLElement>('.qaap-model-picker-access-menu');
-    const access = host.querySelector<HTMLElement>('.qaap-model-picker-access');
-    if (menu) {
-        menu.hidden = !open;
+    state.openMenu = key;
+    for (const menuKey of ['access', 'effort'] as const) {
+        const wrap = host.querySelector<HTMLElement>(`.qaap-model-picker-${menuKey}-wrap`);
+        const menu = wrap?.querySelector<HTMLElement>('.qaap-model-picker-access-menu');
+        const control = wrap?.querySelector<HTMLElement>(`.qaap-model-picker-${menuKey}`);
+        if (menu) {
+            menu.hidden = key !== menuKey;
+        }
+        control?.setAttribute('aria-expanded', String(key === menuKey));
     }
-    access?.setAttribute('aria-expanded', String(open));
 }
 
 function visibleRows(host: HTMLElement): HTMLButtonElement[] {
@@ -397,8 +410,8 @@ function handlePickerKeydown(host: HTMLElement, event: KeyboardEvent): void {
     if (event.key === 'Escape') {
         event.preventDefault();
         event.stopPropagation();
-        if (state.accessOpen) {
-            setAccessOpen(host, false);
+        if (state.openMenu) {
+            setOpenMenu(host, undefined);
             return;
         }
         state.props.onClose();
