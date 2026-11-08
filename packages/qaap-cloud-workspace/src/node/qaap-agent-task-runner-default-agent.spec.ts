@@ -227,11 +227,11 @@ describe('QaapAgentTaskRunner.defaultAgent (real runner, stubbed auth and billin
         expect(runner.defaultAgent('alice')).to.equal('shell');
     });
 
-    // Open question (see report): without QAIQ in front, an installed grok with no auth probe is the
-    // last candidate in the detected list and is returned. Pinned here so a change is deliberate.
-    it('an installed grok (no auth probe, never connected) is the last resort once QAIQ is gone', () => {
+    // Grok is a builtin harness again: with no auth signal (no probe, never connected) it is not a
+    // default, so a signed-out owner falls to the shell like any other builtin.
+    it('an installed grok (no auth probe, never connected) is not picked by default once QAIQ is gone', () => {
         const runner = runnerWith({ states: signedOut, entitlements: undefined, extraDetected: ['grok'] });
-        expect(runner.defaultAgent('alice')).to.equal('grok');
+        expect(runner.defaultAgent('alice')).to.equal('shell');
     });
 
     it('a cold billing cache is treated as Starter', () => {
