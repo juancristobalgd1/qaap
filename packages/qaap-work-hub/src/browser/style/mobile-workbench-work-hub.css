@@ -12940,11 +12940,11 @@ body.theia-mod-work-hub-settings-resizing * {
 /* Keep the embedded Work Hub settings on the same card system as General.
    The source widgets are also used by the IDE, so these overrides stay scoped
    to this sheet and do not change their desktop presentation. */
-.theia-mobile-work-hub-settings-embedded-widget .mcp-server-card,
-.theia-mobile-work-hub-settings-embedded-widget .qaap-ai-skill-card {
-  border: 1px solid color-mix(in srgb, var(--theia-widget-border, #454545) 78%, transparent);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--theia-sideBar-background, #1b1b1b) 78%, var(--theia-editor-background, #151515));
+.theia-mobile-work-hub-settings-embedded-widget .mcp-server-card {
+  margin-bottom: 12px;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 9%, transparent);
+  border-radius: 10px;
+  background: transparent;
   box-shadow: none;
 }
 
@@ -13047,105 +13047,132 @@ body.theia-mod-work-hub-settings-resizing * {
   margin-top: 0;
 }
 
-.theia-mobile-work-hub-settings-embedded-widget .qaap-ai-skill-card {
-  border: 1px solid color-mix(in srgb, var(--theia-widget-border, #454545) 78%, transparent);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--theia-sideBar-background, #1b1b1b) 78%, var(--theia-editor-background, #151515));
-  box-shadow: none;
+/*
+ * Skills: the same hairline list as Harness. Muted 16px glyph, name with the source as small muted
+ * text (no uppercase pill), a two-line description, "Open SKILL.md" as a text link, switch right.
+ * Compound root class: the widget's stylesheet loads lazily after this one.
+ */
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-skills-configuration .qaap-ai-skills-list {
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 9%, transparent);
+  border-radius: 10px;
 }
 
-.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-card {
-  grid-template-columns: 32px minmax(0, 1fr) 40px;
-  align-items: center;
-  gap: 14px;
-  padding: 16px 18px;
-}
-
-.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-card.qaap-harness-card-install-unavailable {
-  grid-template-columns: 32px minmax(0, 1fr);
-}
-
-.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-card.theia-mod-disabled {
-  border-color: var(--theia-widget-border, rgba(128, 128, 128, 0.35));
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-skills-configuration .qaap-ai-skill-card {
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+  border: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--theia-foreground) 7%, transparent);
+  border-radius: 0;
   background: transparent;
+  box-shadow: none;
+  transition: background-color var(--qaap-duration-fast, 120ms) ease;
 }
 
-.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-card-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-skills-configuration .qaap-ai-skill-card:last-child {
+  border-bottom: none;
 }
 
-.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-card-body {
-  gap: 6px;
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-skills-configuration .qaap-ai-skill-card:hover {
+  background: color-mix(in srgb, var(--theia-foreground) 3%, transparent);
 }
 
-.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-card-title-row {
-  gap: 8px;
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-skills-configuration .qaap-ai-skill-card.theia-mod-disabled .qaap-ai-skill-card-icon,
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-skills-configuration .qaap-ai-skill-card.theia-mod-disabled .qaap-ai-skill-card-body {
+  opacity: 0.55;
 }
 
-.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-card-name {
-  font-size: 13px;
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-skills-configuration .qaap-ai-skill-card-icon {
+  width: 16px;
+  height: 20px;
+  border-radius: 0;
+  background: transparent;
+  color: var(--theia-descriptionForeground);
 }
 
-.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-card-bin {
-  padding: 2px 6px;
-  font-size: 10px;
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-skills-configuration .qaap-ai-skill-card-body {
+  gap: 3px;
 }
 
-.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-card-status {
-  font-size: 12px;
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-skills-configuration .qaap-ai-skill-card-title-row {
+  align-items: baseline;
 }
 
-.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-toggle,
-.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-install {
-  margin-top: 0;
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-skills-configuration .qaap-ai-skill-card-name {
+  font-size: 13.5px;
+  font-weight: 500;
 }
 
-.theia-mobile-work-hub-settings-embedded-widget .qaap-ai-skill-card {
-  gap: 14px;
-  padding: 16px 18px;
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-skills-configuration .qaap-ai-skill-card-badge {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--theia-descriptionForeground);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: lowercase;
 }
 
-.theia-mobile-work-hub-settings-embedded-widget .qaap-ai-skill-card-name {
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.theia-mobile-work-hub-settings-embedded-widget .qaap-ai-skill-card-description {
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-skills-configuration .qaap-ai-skill-card-description {
+  -webkit-line-clamp: 2;
   font-size: 12px;
   line-height: 1.45;
 }
 
-.theia-mobile-work-hub-settings-embedded-widget .qaap-ai-skill-card-open {
-  min-height: 30px;
-  margin-top: 2px;
-  padding: 0 12px;
-  border: 1px solid var(--theia-input-border, rgba(128, 128, 128, 0.35));
-  border-radius: 8px;
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-skills-configuration .qaap-ai-skill-card-open.qaap-ai-skill-card-open {
+  min-width: 0;
+  min-height: 0;
+  height: auto;
+  margin: 2px 0 0;
+  padding: 0;
+  border: none;
   background: transparent;
-  color: var(--theia-foreground);
+  color: var(--theia-textLink-foreground, var(--theia-foreground));
+  font-size: 12px;
+  font-weight: 400;
 }
 
-.theia-mobile-work-hub-settings-embedded-widget .qaap-ai-skill-card-open:hover,
-.theia-mobile-work-hub-settings-embedded-widget .qaap-ai-skill-card-open:focus-visible {
-  background: var(--theia-toolbar-hoverBackground);
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-skills-configuration .qaap-ai-skill-card-open.qaap-ai-skill-card-open:hover,
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-skills-configuration .qaap-ai-skill-card-open.qaap-ai-skill-card-open:focus-visible {
+  background: transparent;
+  text-decoration: underline;
 }
 
-.theia-mobile-work-hub-settings-embedded-widget .qaap-ai-skill-toggle {
-  border: 0;
-  background: var(--theia-input-background, #3b3d40);
-  box-shadow: inset 0 0 0 1px var(--theia-widget-border, rgba(255, 255, 255, 0.12));
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-skills-configuration .qaap-ai-skill-toggle {
+  margin-top: 0;
 }
 
-.theia-mobile-work-hub-settings-embedded-widget .qaap-ai-skill-toggle.theia-mod-on {
-  background: var(--theia-successBackground, #4ea66d);
-  box-shadow: none;
-}
-
+/* MCP servers: one hairline card each, untinted header, quiet property rows. */
 .theia-mobile-work-hub-settings-embedded-widget .mcp-server-header {
-  background: color-mix(in srgb, var(--theia-sideBar-background, #1b1b1b) 86%, var(--theia-editor-background, #151515));
-  border-bottom-color: color-mix(in srgb, var(--theia-widget-border, #454545) 52%, transparent);
+  padding: 10px 12px 10px 16px;
+  background: transparent;
+  border-bottom-color: color-mix(in srgb, var(--theia-foreground) 7%, transparent);
+}
+
+.theia-mobile-work-hub-settings-embedded-widget .mcp-server-name {
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+.theia-mobile-work-hub-settings-embedded-widget .mcp-server-content {
+  gap: 6px;
+  padding: 12px 16px;
+}
+
+.theia-mobile-work-hub-settings-embedded-widget .mcp-property-label {
+  color: var(--theia-descriptionForeground);
+  font-size: 12px;
+}
+
+.theia-mobile-work-hub-settings-embedded-widget .mcp-property-value {
+  font-size: 12px;
+}
+
+.theia-mobile-work-hub-settings-embedded-widget .mcp-action-button {
+  border-radius: 6px;
 }
 
 .theia-mobile-work-hub-settings-embedded-widget .mcp-server-content,
