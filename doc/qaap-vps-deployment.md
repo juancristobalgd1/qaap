@@ -134,7 +134,7 @@ Edit `.env`:
 | `QAAP_OAUTH_PUBLIC_URL` | `https://161.97.69.219.sslip.io` | Public HTTPS origin (OAuth + dev preview) |
 | `QAAP_GITHUB_CLIENT_ID` / `SECRET` | from GitHub OAuth app | Login (or `QAAP_SKIP_AUTH=true` for private labs) |
 | `OPENROUTER_API_KEY` | `sk-or-…` | Self-hosted / skip-auth only. Signed-in users never receive server provider keys: QAIQ provider keys are BYOK, each user adds their own in Settings → BYOK (production runs without this var) |
-| `QAAP_DEFAULT_AGENT` | `qaiq` | Default agent (already the image default) |
+| `QAAP_DEFAULT_AGENT` | unset | Default agent; unset uses the first installed, signed-in harness |
 | `QAAP_MOBILE_ENTRY` | unset (on) | Signed-in phones boot `bundle-mobile.js` (Work Hub without IDE code); a failure falls back to `bundle.js` for the tab. `0` is the kill switch: every phone loads `bundle.js` |
 | `CODEX_CLI_VERSION` | `0.144.5` | Codex CLI version for a source build |
 | `CLAUDE_CODE_VERSION` | `latest` | Claude Code CLI version for a source build |

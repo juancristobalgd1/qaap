@@ -193,8 +193,7 @@ RUN test -n "${QAIQ_COMMIT}" \
     && qaiq --version \
     && openclaude --version
 
-ENV PATH="/root/.local/bin:${PATH}" \
-    QAAP_DEFAULT_AGENT=qaiq
+ENV PATH="/root/.local/bin:${PATH}"
 
 # These executables are runtime dependencies of Jobs / Background tasks. Keep the image build
 # fail-fast: a worker based on a partially built image must never reach a VPS and silently accept
