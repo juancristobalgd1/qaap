@@ -14,8 +14,8 @@ import {
     isTheiaCoderAgent,
     agentUsesSettingsModelCatalog,
     migrateLegacyBackendAgentId,
-    QAAP_PRIMARY_AGENT_ID,
     readStoredAgent,
+    reconcileSelectedAgent,
     readStoredAgentModel,
     agentSupportsModelPicker,
     THEIA_CODER_AGENT_ID,
@@ -41,7 +41,6 @@ import {
     type QaapAgentToolApprovalRules,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-approval-rules';
 import { isAgentsHubIdleConversationSummary } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
-import { QAAP_AI_FEATURES_SETTINGS_QUERY } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
@@ -207,14 +206,14 @@ export class MobileProjectsTranscriptComposerUi {
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
     ): string {
-        if (summary.source === 'theia-chat') {
-            return QAAP_PRIMARY_AGENT_ID;
-        }
         const cwd = this.host.projectsService.getProjectCwd(project) ?? summary.cwd;
+        if (summary.source === 'theia-chat') {
+            return this.resolveDefaultTranscriptComposerAgentId(cwd);
+        }
         if (this.host.transcriptComposerPinnedAgentId) {
             const explicit = this.host.transcriptComposerPinnedAgentId;
             if (explicit !== 'task' && !isTheiaCoderAgent(explicit)) {
-                return agentUsesSettingsModelCatalog(explicit) ? QAAP_PRIMARY_AGENT_ID : explicit;
+                return agentUsesSettingsModelCatalog(explicit) ? this.resolveDefaultTranscriptComposerAgentId(cwd) : explicit;
             }
         }
         const summaryAgent = isAgentsHubIdleConversationSummary(summary)
@@ -224,11 +223,16 @@ export class MobileProjectsTranscriptComposerUi {
             ?? summaryAgent
             ?? readStoredAgent(cwd);
         if (pinned && pinned !== 'task' && !isTheiaCoderAgent(pinned)) {
-            return agentUsesSettingsModelCatalog(pinned) ? QAAP_PRIMARY_AGENT_ID : pinned;
+            return agentUsesSettingsModelCatalog(pinned) ? this.resolveDefaultTranscriptComposerAgentId(cwd) : pinned;
         }
         return this.host.stickyComposerAgentsUi.filterSelectableComposerAgents(
             this.host.transcriptComposerBackendAgents,
         )[0]?.id ?? '';
+    }
+
+    /** The configured default harness, else the first available one (never a retired runner). */
+    protected resolveDefaultTranscriptComposerAgentId(cwd: string | undefined): string {
+        return reconcileSelectedAgent(undefined, this.host.transcriptComposerBackendAgents, undefined, cwd) ?? '';
     }
 
     /**
@@ -446,6 +450,7 @@ export class MobileProjectsTranscriptComposerUi {
                 render: agents => void renderStickyComposerModelPicker(this.host.stickyComposerSheetsUi, chrome, {
                     cwd,
                     agents,
+                    disabledHarnessIds: this.host.stickyComposerAgentsUi.getDisabledHarnessIds(),
                     selectedAgentId: this.resolveTranscriptComposerPinnedAgentId(project, summary),
                     project,
                     isMobile: matchesMobileNarrowViewport(),
@@ -459,12 +464,6 @@ export class MobileProjectsTranscriptComposerUi {
                         ? agentId => {
                             this.closeAllComposerSheets();
                             void this.host.openAgentSignInTerminal?.(agentId, project);
-                        }
-                        : undefined,
-                    onOpenAiFeaturesSettings: this.host.openPreferencesSheet
-                        ? () => {
-                            this.closeAllComposerSheets();
-                            void this.host.openPreferencesSheet?.(QAAP_AI_FEATURES_SETTINGS_QUERY);
                         }
                         : undefined,
                 }),

@@ -66,7 +66,7 @@ export class QaapPlanLimit {
             case 'repo_limit':
                 return nls.localize('qaap/planLimit/repoLimit', 'You have reached the number of active repositories your plan allows. Upgrade your plan or remove a clone to open another.');
             case 'hosted_model_denied':
-                return nls.localize('qaap/planLimit/hostedModelDenied', 'Hosted Codex models are not included in your plan. Pick a BYOK model or upgrade your plan.');
+                return nls.localize('qaap/planLimit/hostedModelDenied', 'Hosted Codex models are not included in your plan. Connect your own harness in Settings → Harness or upgrade your plan.');
             case 'credits_exhausted':
                 return nls.localize('qaap/planLimit/creditsExhausted', 'Your hosted Codex credits are used up for this billing period. Top up credits or wait for the next cycle.');
             case 'runtime_exhausted':

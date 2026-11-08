@@ -130,7 +130,6 @@ import { QaapChatInputCodexLayoutContribution } from '@theia/qaap-composer/lib/b
 import { QaapChatInputProductContribution } from '@theia/qaap-composer/lib/browser/qaap-chat-input-product-contribution';
 import { MobileConnectionStatusContribution } from './mobile-connection-status-contribution';
 import { MobileChatSessionRestoreContribution } from './mobile-chat-session-restore-contribution';
-import { QaapQaiqChatAgentContribution } from '@theia/qaap-shared-core/lib/browser/qaap-qaiq-chat-agent-contribution';
 import { QaapBackgroundContextProvider } from '@theia/qaap-shared-core/lib/browser/qaap-background-context-provider';
 import { QaapQaiqBashToolRenderer } from '@theia/qaap-transcript/lib/browser/qaap-qaiq-bash-tool-renderer';
 import { QaapQaiqGenericToolRenderer } from '@theia/qaap-transcript/lib/browser/qaap-qaiq-generic-tool-renderer';
@@ -321,8 +320,6 @@ export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync
     bind(MobileChatSessionRestoreContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(MobileChatSessionRestoreContribution);
     bind(QaapBackgroundContextProvider).toSelf().inSingletonScope();
-    bind(QaapQaiqChatAgentContribution).toSelf().inSingletonScope();
-    bind(FrontendApplicationContribution).toService(QaapQaiqChatAgentContribution);
 
     bind(QaapQaiqBashToolRenderer).toSelf().inSingletonScope();
     bind(ChatResponsePartRenderer).toService(QaapQaiqBashToolRenderer);

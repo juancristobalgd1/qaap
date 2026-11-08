@@ -203,7 +203,7 @@ describe('account menu controls', () => {
         expect(document.querySelector('.theia-qaap-account-menu')).to.not.equal(null);
     });
 
-    it('keeps the account menu flat and renders Configuration without a description', () => {
+    it('keeps the account menu flat and renders Harnesses without a description', () => {
         const anchor = document.createElement('button');
         document.body.append(anchor);
         const commands = {
@@ -220,8 +220,8 @@ describe('account menu controls', () => {
         const menu = document.querySelector('.theia-qaap-account-menu');
         const configuration = menu?.querySelector('.theia-qaap-account-menu-catalog-card');
         expect(menu?.querySelectorAll('.theia-qaap-account-menu-separator')).to.have.lengthOf(0);
-        expect(configuration?.textContent).to.equal('Configuration');
-        expect(configuration?.querySelector('.codicon-settings-gear')).to.not.equal(null);
+        expect(configuration?.textContent).to.equal('Harnesses');
+        expect(configuration?.querySelector('.codicon-hubot')).to.not.equal(null);
         expect(configuration?.querySelector('.theia-qaap-account-menu-catalog-card-subtitle')).to.equal(null);
     });
 

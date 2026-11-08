@@ -5,6 +5,7 @@
 
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
 import { resolveRoutineAutoApprove } from '../common/qaap-agent-auto-approve';
+import { isUiHiddenVpsAgent } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 import { isQaapAgentTaskFinished, type QaapAgentTaskEvent } from '../common/qaap-agent-task';
 import {
     normalizeRoutineRunMode,
@@ -52,11 +53,20 @@ export class QaapWorkHubRoutineRunner {
         return this.runViaTask(routine);
     }
 
+    /** The routine's harness; a stored retired or hidden pick (e.g. an old `qaiq` seed) runs on the owner's default. */
+    protected routineAgent(routine: QaapWorkHubRoutine): string {
+        const stored = routine.agent?.trim();
+        if (stored && !isUiHiddenVpsAgent(stored)) {
+            return stored;
+        }
+        return this.taskRunner.defaultAgent(routine.ownerLogin);
+    }
+
     protected runViaTask(routine: QaapWorkHubRoutine): QaapWorkHubRoutine {
         const task = this.taskRunner.create({
             cwd: routine.cwd,
             prompt: routine.prompt,
-            agent: routine.agent ?? this.taskRunner.defaultAgent(routine.ownerLogin),
+            agent: this.routineAgent(routine),
             title: routine.title,
             autoApprove: resolveRoutineAutoApprove(routine.autoApprove),
         }, routine.ownerLogin);
@@ -66,7 +76,7 @@ export class QaapWorkHubRoutineRunner {
     }
 
     protected runViaConversation(routine: QaapWorkHubRoutine): QaapWorkHubRoutine {
-        const agent = routine.agent ?? this.taskRunner.defaultAgent(routine.ownerLogin);
+        const agent = this.routineAgent(routine);
         let conversationId: string | undefined;
         let taskId: string | undefined;
 

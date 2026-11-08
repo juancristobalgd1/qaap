@@ -47,7 +47,7 @@ describe('QAIQ provider key failures', () => {
                 `The model provider refused ${MODEL}. The model may be unavailable or retired at the provider right now, `
                 + 'its API key may be missing or invalid, the account may be out of credits, '
                 + 'or (for free OpenRouter models) your privacy settings may block it. '
-                + 'Pick another model, or check the key in Settings → BYOK.',
+                + 'Pick another model, or connect a harness in Settings → Harness.',
             );
             expect(message).to.not.match(/--model/);
         });
@@ -82,21 +82,19 @@ describe('QAIQ provider key failures', () => {
     describe('the runner\'s preflight refusal (no key for the provider)', () => {
         const refusal = localizeQaiqProviderKeyMissingMessage('OpenRouter');
 
-        it('leads with the BYOK fix and offers another agent, never an administrator or a sign-in', () => {
+        it('points to Settings → Harness and offers another agent, never an administrator or a sign-in', () => {
             expect(refusal).to.equal(
-                'Add your OpenRouter API key in Settings → BYOK to use QAIQ, pick a model from a provider you have a key for, '
-                + 'or pick another agent from the agent chip. '
-                + 'Keys are personal: each account adds its own.',
+                'Connect a harness in Settings → Harness to run this turn, or pick another agent from the agent chip.',
             );
-            expect(refusal).to.not.match(/administrator|sign in/i);
-            expect(localizeQaiqProviderKeyMissingMessage()).to.match(/^Add an AI provider API key \(for example OpenRouter\) in Settings/);
+            expect(refusal).to.not.match(/administrator|sign in|API key/i);
+            expect(localizeQaiqProviderKeyMissingMessage()).to.equal(refusal);
         });
 
-        it('is the turn\'s failure reason verbatim, labelled "API key needed", not auth or model', () => {
+        it('is the turn\'s failure reason verbatim, labelled "Connect a harness", not auth or model', () => {
             expect(resolveAgentTurnFailureMessage(`${refusal}\n`, { state: 'failed', exitCode: 1, agentId: 'qaiq' })).to.equal(refusal);
             expect(detectAgentFailureKind(refusal)).to.equal(undefined);
             expect(formatStoredAgentFailureMessage(refusal)).to.equal(refusal);
-            expect(describeAgentTurnFailure(refusal)?.label).to.equal('API key needed');
+            expect(describeAgentTurnFailure(refusal)?.label).to.equal('Connect a harness');
             expect(isQaiqProviderKeyMissingFailure(refusal)).to.equal(true);
             expect(isQaiqProviderKeyMissingFailure(localizeQaiqProviderKeyMissingMessage())).to.equal(true);
             expect(isQaiqProviderKeyMissingFailure(CLI_TEXT)).to.equal(false);

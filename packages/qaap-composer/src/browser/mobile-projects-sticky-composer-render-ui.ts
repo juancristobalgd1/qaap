@@ -11,16 +11,9 @@ import { ChatAgentService } from '@theia/ai-chat/lib/common/chat-agent-service';
 import { ChatModel, ChatService } from '@theia/ai-chat';
 import {
     THEIA_CODER_AGENT_ID,
-    agentUsesSettingsModelCatalog,
     readStoredAgentModel,
     resolveExplicitAgentForSubmit,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
-import {
-    QAAP_AI_FEATURES_SETTINGS_QUERY,
-    agentNeedsSettingsApiKeyPath,
-    localizeAddApiKeyInSettingsCta,
-} from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
-import { hasAnyConfiguredByokCredential } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 import {
     agentSupportsApprovalPolicy,
     reconcileAgentApprovalPolicyId,
@@ -569,30 +562,6 @@ export class MobileProjectsStickyComposerRenderUi {
                 ? nls.localize('qaap/mobileProjects/chatSend', 'Send')
                 : nls.localize('qaap/mobileProjects/taskCreate', 'Create'),
         });
-        const pinnedAgentId = this.host.stickyComposerPinnedAgentId;
-        if (
-            this.host.openPreferencesSheet
-            && agentNeedsSettingsApiKeyPath(pinnedAgentId)
-            && agentUsesSettingsModelCatalog(pinnedAgentId)
-            && !hasAnyConfiguredByokCredential(key => this.host.readPreference?.(key))
-        ) {
-            const keyBanner = document.createElement('div');
-            keyBanner.className = 'theia-mobile-sticky-composer-mode-banner theia-mobile-sticky-composer-api-key-banner';
-            const keyText = document.createElement('span');
-            keyText.textContent = nls.localize(
-                'qaap/mobileProjects/stickyComposerNeedApiKey',
-                'This agent needs an API key in Settings before it can run.',
-            );
-            const keyBtn = document.createElement('button');
-            keyBtn.type = 'button';
-            keyBtn.className = 'theia-mobile-sticky-composer-api-key-banner-action';
-            keyBtn.textContent = localizeAddApiKeyInSettingsCta();
-            keyBtn.addEventListener('click', () => {
-                void this.host.openPreferencesSheet?.(QAAP_AI_FEATURES_SETTINGS_QUERY);
-            });
-            keyBanner.append(keyText, keyBtn);
-            this.host.stickyComposerHost.append(keyBanner);
-        }
         this.host.stickyComposerHost.append(column);
         this.host.updateWorkingPillChrome();
         const becameMounted = showComposer && !this.reposComposerMounted;

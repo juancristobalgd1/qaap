@@ -27,7 +27,8 @@
 .theia-mobile-work-hub-sessions-sidebar {
   --qaap-sessions-sidebar-motion-duration: 220ms;
   --qaap-sessions-sidebar-motion-easing: cubic-bezier(0.2, 0.8, 0.2, 1);
-  --qaap-sessions-sidebar-background: var(--theia-sideBar-background, var(--theia-editor-background, #ffffff));
+  /* Same canvas as the theme (no separate sidebar shade); mobile turns it into glass below. */
+  --qaap-sessions-sidebar-background: var(--theia-editor-background, #ffffff);
   /* One gutter for project rows, session pills, and leftover list chrome. */
   --qaap-sessions-row-gutter: 8px;
   position: fixed;
@@ -117,15 +118,10 @@
   pointer-events: none;
 }
 
-/* Left-edge zone (20px) — swipe left to close, symmetric to dashboard open swipe-right. */
-.theia-mobile-work-hub-sessions-sidebar-edge-zone {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 20px;
-  z-index: 3;
-  touch-action: none;
+/* Bottom fade while more tasks / projects remain below the fold. */
+.theia-mobile-work-hub-sessions-sidebar-scroll.theia-mod-more-below {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 64px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 64px), transparent);
 }
 
 .theia-mobile-work-hub-sessions-sidebar-resize-handle {
@@ -415,12 +411,6 @@
   touch-action: manipulation;
 }
 
-/* Keep the sessions sidebar subtly distinct from the Work Hub content in dark mode. */
-body.qaap-theme-dark .theia-mobile-work-hub-sessions-sidebar,
-body.theia-dark .theia-mobile-work-hub-sessions-sidebar,
-body[data-theia-theme-mode="dark"] .theia-mobile-work-hub-sessions-sidebar {
-  --qaap-sessions-sidebar-background: #0b0908;
-}
 
 /* Pull Requests keeps the search and close controls in the same trailing
  * position as the normal chat sidebar. */
@@ -2474,7 +2464,6 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
     user-select: none !important;
   }
 
-  .theia-mobile-work-hub-sessions-sidebar-edge-zone,
   .theia-mobile-work-hub-sessions-sidebar-dismiss-hint {
     display: none !important;
   }
@@ -3076,4 +3065,19 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
     .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-variant-head::before {
         top: -22px;
     }
+}
+
+/* Mobile keeps the sidebar's own shade (as before): the side-bar colour, and a subtly distinct
+ * near-black in dark mode. Desktop uses the theme canvas (see the root rule).
+ * Keep the breakpoint in sync with MOBILE_NARROW_VIEWPORT_MEDIA_QUERY (767px). */
+@media (max-width: 767px), (pointer: coarse) {
+  .theia-mobile-work-hub-sessions-sidebar {
+    --qaap-sessions-sidebar-background: var(--theia-sideBar-background, var(--theia-editor-background, #ffffff));
+  }
+
+  body.qaap-theme-dark .theia-mobile-work-hub-sessions-sidebar,
+  body.theia-dark .theia-mobile-work-hub-sessions-sidebar,
+  body[data-theia-theme-mode="dark"] .theia-mobile-work-hub-sessions-sidebar {
+    --qaap-sessions-sidebar-background: #0b0908;
+  }
 }

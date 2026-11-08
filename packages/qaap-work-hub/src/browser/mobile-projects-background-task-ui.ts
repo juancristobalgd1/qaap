@@ -38,7 +38,7 @@ import {
     type QaapAgentTaskListSnapshot,
     type QaapCreateAgentTaskQaiqModel,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
-import { localizeMissingCodingAgentMessage, localizeMissingQaiqMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
+import { localizeMissingCodingAgentMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 import { shouldRouteSubmitToTheiaCoder } from '@theia/qaap-shared-core/lib/common/qaap-agent-submit-routing';
 import { reportQaapClientError } from '@theia/qaap-shared-core/lib/common/qaap-client-error-report';
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
@@ -722,12 +722,6 @@ export class MobileProjectsBackgroundTaskUi {
         });
         if (!resolved) {
             throw new Error(localizeMissingCodingAgentMessage());
-        }
-        if (snapshot.qaiqInstalled === false && resolved === QAIQ_AGENT_ID) {
-            // QAIQ is required only for QAIQ turns. Local Codex/Coder selections can run
-            // without the QAIQ executable, while an explicit/default QAIQ turn still fails
-            // before creating a turn that could sit in Planning waiting for an executable.
-            throw new Error(localizeMissingQaiqMessage());
         }
         writeStoredAgent(cwd, resolved);
         return resolved;

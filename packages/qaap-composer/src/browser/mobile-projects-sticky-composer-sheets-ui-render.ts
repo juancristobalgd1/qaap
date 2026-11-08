@@ -16,7 +16,6 @@ import {
     resolveStickyComposerModes,
     writeStoredComposerMode,
 } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-mode';
-import { QAAP_AI_FEATURES_SETTINGS_QUERY } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
 import {
     isStickyComposerAnnotationPopoverAnchor,
     markStickyComposerPopoverAnchor,
@@ -128,6 +127,7 @@ export function openStickyComposerAgentSheetExtracted(ctx: MobileProjectsStickyC
                 render: agents => void renderStickyComposerModelPicker(ctx, chrome, {
                     cwd,
                     agents,
+                    disabledHarnessIds: ctx.host.stickyComposerAgentsUi.getDisabledHarnessIds(),
                     selectedAgentId: ctx.host.stickyComposerPinnedAgentId,
                     project,
                     isMobile: matchesMobileNarrowViewport(),
@@ -141,12 +141,6 @@ export function openStickyComposerAgentSheetExtracted(ctx: MobileProjectsStickyC
                         ? agentId => {
                             ctx.closeAllComposerSheets();
                             void ctx.host.openAgentSignInTerminal?.(agentId, project);
-                        }
-                        : undefined,
-                    onOpenAiFeaturesSettings: ctx.host.openPreferencesSheet
-                        ? () => {
-                            ctx.closeAllComposerSheets();
-                            void ctx.host.openPreferencesSheet?.(QAAP_AI_FEATURES_SETTINGS_QUERY);
                         }
                         : undefined,
                 }),
@@ -233,12 +227,6 @@ export function openExternalAgentPickerForSubmitExtracted(ctx: MobileProjectsSti
                         ? (agentId, pickerProject) => {
                             ctx.closeAllComposerSheets();
                             void ctx.host.openAgentSignInTerminal?.(agentId, pickerProject);
-                        }
-                        : undefined,
-                    onOpenAiFeaturesSettings: ctx.host.openPreferencesSheet
-                        ? () => {
-                            ctx.closeAllComposerSheets();
-                            void ctx.host.openPreferencesSheet?.(QAAP_AI_FEATURES_SETTINGS_QUERY);
                         }
                         : undefined,
                 }),

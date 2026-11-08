@@ -32,12 +32,11 @@ are recognized when an operator installs them separately or exposes them through
 Codex still needs auth/API-key setup if you want to use `@codex`; Claude Code still needs its own
 CLI/auth setup.
 
-QAIQ is the generic BYOK/free-tier path: it can run non-interactively in the server with
-providers such as `openai`, `gemini`, `ollama`, and other OpenAI-compatible routes. Select it
-with `@qaiq` or make it the default with `QAAP_DEFAULT_AGENT=qaiq`. The Work Hub composer also defaults to **QAIQ** when no per-project agent is stored.
+QAIQ (the former BYOK runner, with providers such as `openai`, `gemini` or `ollama`) is retired from the product: it is no longer offered, and a stored or
+mentioned `qaiq` runs on the default harness instead. The Work Hub composer defaults to the first available harness when no per-project agent is stored.
 
-When several CLIs are installed, QAAP prefers **QAIQ**, then Grok Build, before Codex or Claude Code
-— so background jobs do not silently burn Codex subscription quota unless you pick `@codex` or
+When several CLIs are installed, QAAP prefers **Claude Code**, then Codex, Pi, Grok Build and Cursor Agent
+(in that order) — so background jobs do not silently burn Codex subscription quota unless you pick `@codex` or
 set `QAAP_DEFAULT_AGENT=codex`.
 
 For OpenRouter, QAIQ uses your Settings model alias (`default/code`) or the first entry in

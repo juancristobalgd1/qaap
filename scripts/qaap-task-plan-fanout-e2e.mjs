@@ -3,7 +3,7 @@
 // doc/qaap-task-plan-fanout.md).
 //
 // Same recipe as scripts/qaap-task-to-pr-e2e.mjs: the built browser backend in skip-auth local mode with an
-// isolated HOME, a fake `qaiq` on PATH, a local bare `origin` and a GitHub REST stub. The fake agent plays
+// isolated HOME, a fake `claude` on PATH, a local bare `origin` and a GitHub REST stub. The fake agent plays
 // three roles, told apart by the prompt: the planning turn answers with a `qaap-plan` block of three
 // subtasks, each subtask writes `part-<k>.ts` (slowly, so they overlap), and the integration turn writes
 // `integration.txt` listing the parts it found in the working tree. The script requires:
@@ -26,11 +26,13 @@ const ROOT = resolve(import.meta.dirname, '..');
 const BACKEND = join(ROOT, 'examples/browser/lib/backend/main.js');
 const CONVERSATIONS = '/qaap/api/agent-conversations';
 
-const FAKE_QAIQ = `#!/usr/bin/env bash
-# Fake qaiq for the plan fan-out e2e (stream-json over stdio).
-if [[ "\${1:-}" == "--version" ]]; then echo "qaiq 0.0.0-plan-fanout-e2e"; exit 0; fi
+const FAKE_CLAUDE = `#!/usr/bin/env bash
+# Fake claude for the plan fan-out e2e (stream-json over stdio).
+if [[ "\${1:-}" == "--version" ]]; then echo "2.1.0 (Claude Code) plan-fanout-e2e"; exit 0; fi
+if [[ "\${1:-}" == "auth" && "\${2:-}" == "status" ]]; then echo '{"loggedIn": true, "authMethod": "mock", "apiProvider": "mock"}'; exit 0; fi
 # The prompt can span several lines (Plan mode puts its instruction before the message) and stdin may
-# stay open, so read until it is quiet for a second.
+# stay open (approvals on), so read until it is quiet for a second. With approvals off stdin is piped
+# and closes, so the loop ends at EOF.
 line=""
 while IFS= read -r -t 1 part; do line+="$part "; done
 line+="\${part:-}"
@@ -149,8 +151,8 @@ async function main() {
     for (const dir of [home, bin, remote, seed]) {
         mkdirSync(dir, { recursive: true });
     }
-    writeFileSync(join(bin, 'qaiq'), FAKE_QAIQ);
-    chmodSync(join(bin, 'qaiq'), 0o755);
+    writeFileSync(join(bin, 'claude'), FAKE_CLAUDE);
+    chmodSync(join(bin, 'claude'), 0o755);
     const gitId = ['-c', 'user.email=e2e@qaap.local', '-c', 'user.name=e2e'];
     execFileSync('git', ['init', '--bare', '-q', '-b', 'main', remote]);
     execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: seed });
@@ -211,7 +213,7 @@ async function main() {
     try {
         await waitFor('the backend', 90_000, async () => (await fetch(`${base}/`)).status < 500);
         const created = await api('POST', CONVERSATIONS, {
-            cwd: repo, agent: 'qaiq', isolation: 'none', fanOut: true, title: 'Build the three parts',
+            cwd: repo, agent: 'claude', isolation: 'none', fanOut: true, title: 'Build the three parts',
             message: 'Build the three parts of the demo.',
         });
         if (created.status !== 201 || !created.json?.id) {

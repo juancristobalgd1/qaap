@@ -6,8 +6,6 @@
 import { QAAP_BUILTIN_AGENT_DEFINITIONS } from './qaap-builtin-agents';
 import { OPENCLAUDE_AGENT_ID, QAIQ_AGENT_ID, migrateQaapProductAgentId } from './qaap-agent-task-client';
 import {
-    agentNeedsSettingsApiKeyPath,
-    QAAP_AI_FEATURES_SETTINGS_QUERY,
     resolveAgentLoginCliCommand,
 } from './qaap-agent-auth-login';
 import { isAgentHiddenOnHostedRuntime } from './qaap-hosted-agent-auth-policy';
@@ -112,7 +110,6 @@ export type QaapAgentConnectionFlow =
         /** Environment for the login command only (Pi: `PI_HYPERLINKS=1`). */
         readonly env: Readonly<Record<string, string>>;
     }
-    | { readonly kind: 'settings-api-key'; readonly settingsQuery: string }
     /** `followUp`: what to type inside the CLI once it starts (e.g. Pi's `/login`). */
     | { readonly kind: 'tenant-terminal'; readonly command: string; readonly followUp?: string }
     | { readonly kind: 'hosted-restricted' }
@@ -141,9 +138,6 @@ export function resolveAgentConnectionFlow(
     const loginCommand = resolveAgentLoginCliCommand(normalized);
     if (loginCommand) {
         return { kind: 'cli-login', command: loginCommand };
-    }
-    if (agentNeedsSettingsApiKeyPath(normalized)) {
-        return { kind: 'settings-api-key', settingsQuery: QAAP_AI_FEATURES_SETTINGS_QUERY };
     }
     const bin = resolveInteractiveAgentCliBin(normalized);
     if (!bin) {

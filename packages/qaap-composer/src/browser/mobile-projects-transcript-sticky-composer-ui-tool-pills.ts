@@ -297,7 +297,7 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: MobilePro
         legacyBanner.className = 'theia-mobile-sticky-composer-legacy-banner';
         legacyBanner.textContent = nls.localize(
             'qaap/mobileProjects/transcriptLegacyTheiaBanner',
-            'Legacy local chat — replies start a new QAIQ session in the cloud.',
+            'Legacy local chat — replies start a new cloud session.',
         );
         shell.append(legacyBanner);
     }

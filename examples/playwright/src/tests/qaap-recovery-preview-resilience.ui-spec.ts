@@ -212,7 +212,7 @@ async function installTaskRecoverySocket(
         state: 'interrupted',
         title: 'Recover after browser disconnect',
         command: 'qaap recovery probe',
-        agentId: 'qaiq',
+        agentId: 'claude',
         createdAt: Date.now() - 5_000,
         startedAt: Date.now() - 4_000,
         finishedAt: Date.now() - 1_000,
@@ -226,8 +226,8 @@ async function installTaskRecoverySocket(
         socket.send(JSON.stringify({
             type: 'snapshot',
             agentConfigured: true,
-            defaultAgent: 'qaiq',
-            agents: [{ id: 'qaiq', label: 'QAIQ', available: true }],
+            defaultAgent: 'claude',
+            agents: [{ id: 'claude', label: 'Claude Code', available: true }],
             groups: [{ cwd: workspaceCwd, activeCount: 0, tasks: [task] }],
         }));
         socket.send(JSON.stringify({ type: 'heartbeat' }));

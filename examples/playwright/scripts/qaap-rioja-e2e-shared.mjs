@@ -40,10 +40,14 @@ export function resolveMockQaiqPath() {
     return MOCK_QAIQ;
 }
 
+/**
+ * Puts the Rioja mock on a PATH dir as `claude`: the only harness the backend auto-selects by default
+ * (`DEFAULT_AGENT_PREFERENCE`), and the one that counts as signed in through `claude auth status`.
+ */
 export function ensureMockQaiqSymlink(outDir) {
-    const binDir = path.join(outDir, 'mock-qaiq-bin');
+    const binDir = path.join(outDir, 'mock-claude-bin');
     fs.mkdirSync(binDir, { recursive: true });
-    const linkPath = path.join(binDir, 'qaiq');
+    const linkPath = path.join(binDir, 'claude');
     const target = resolveMockQaiqPath();
     try {
         if (fs.existsSync(linkPath)) {
@@ -155,7 +159,7 @@ export async function openWorkspace(page, workspace) {
     await page.locator('.theia-mobile-projects-sticky-composer-input').waitFor({ state: 'visible', timeout: 60_000 });
 }
 
-export async function createAgentConversation(page, cwd, message, agent = 'qaiq') {
+export async function createAgentConversation(page, cwd, message, agent = 'claude') {
     return page.evaluate(async ({ workspaceCwd, body, agentId }) => {
         const res = await fetch('/qaap/api/agent-conversations', {
             method: 'POST',
@@ -206,7 +210,7 @@ export async function startNewAgentChat(page) {
     return { ok: true, skipped: true, placeholder };
 }
 
-export async function selectComposerAgent(page, labelPattern = /qaiq|^q$/i) {
+export async function selectComposerAgent(page, labelPattern = /claude/i) {
     // The pill opens the unified model picker: a harness rail on the left, model rows on the right.
     const agentBtn = page.locator('.theia-mobile-projects-sticky-composer-agent:not(.theia-mod-locked)').first();
     if (!(await agentBtn.count()) || await agentBtn.isDisabled()) {
@@ -237,7 +241,7 @@ export async function selectComposerAgent(page, labelPattern = /qaiq|^q$/i) {
         await page.keyboard.press('Escape').catch(() => undefined);
         await picker.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => undefined);
     });
-    // The pill must reflect the harness: «Agent: QAIQ, model: …» in its title and aria-label.
+    // The pill must reflect the harness: «Agent: Claude Code, model: …» in its title and aria-label.
     const label = ((await agentBtn.textContent()) ?? '').trim();
     const pillTitle = (await agentBtn.getAttribute('aria-label')) ?? '';
     if (!labelPattern.test(pillTitle)) {
@@ -246,7 +250,7 @@ export async function selectComposerAgent(page, labelPattern = /qaiq|^q$/i) {
     return { ok: true, label, pillTitle, skipped: false };
 }
 
-export async function submitPromptViaComposer(page, message, { agentPattern = /qaiq|^q$/i, requireAgentPick = false } = {}) {
+export async function submitPromptViaComposer(page, message, { agentPattern = /claude/i, requireAgentPick = false } = {}) {
     const agentPick = await selectComposerAgent(page, agentPattern);
     if (!agentPick.ok && requireAgentPick) {
         return { ok: false, reason: agentPick.reason ?? 'agent-select-failed' };
@@ -263,12 +267,41 @@ export async function submitPromptViaComposer(page, message, { agentPattern = /q
         return { ok: false, reason: 'send-not-ready' };
     }
     await page.locator('.theia-mobile-projects-sticky-composer-send.theia-mod-ready').first().click();
+    const sendGuards = await acceptComposerSendGuards(page);
     await page.waitForTimeout(800);
     return {
         ok: true,
+        sendGuards,
         agentLabel: agentPick.label ?? agentPick.currentLabel,
         agentPickWarning: agentPick.ok ? undefined : agentPick.reason,
     };
+}
+
+/**
+ * Gets a composer send past the two guards a priced harness has (Claude Code is the default since
+ * QAIQ left): with no model chosen the send is held, a «Choose a model» snackbar shows and the model
+ * picker opens, so the first available model is picked and the send repeated; the first paid send in
+ * a project asks «Send with a paid model?», which is confirmed. The mock CLI ignores the model.
+ */
+export async function acceptComposerSendGuards(page, { timeoutMs = 4000 } = {}) {
+    const guards = { pickedModel: undefined, confirmedPaid: false };
+    const picker = page.locator('.qaap-model-picker').first();
+    const paidConfirm = page.locator('.dialogOverlay .theia-button.main').first();
+    const appeared = async locator => locator.waitFor({ state: 'visible', timeout: timeoutMs }).then(() => true, () => false);
+    if (await appeared(picker)) {
+        const row = page.locator('.qaap-model-picker-row:not(:disabled)').first();
+        guards.pickedModel = (await row.getAttribute('data-model-id').catch(() => undefined)) ?? undefined;
+        await row.click();
+        await picker.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => undefined);
+        const send = page.locator('.theia-mobile-projects-sticky-composer-send.theia-mod-ready').first();
+        await send.waitFor({ state: 'visible', timeout: 10_000 });
+        await send.click();
+    }
+    if (await appeared(paidConfirm)) {
+        await paidConfirm.click();
+        guards.confirmedPaid = true;
+    }
+    return guards;
 }
 
 export async function readComposerProjectLabel(page) {

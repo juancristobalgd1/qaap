@@ -64,7 +64,7 @@ jobs:
         id: source
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-  # Pre-deploy smoke gate: build the browser app, boot it with the mock QAIQ agent, and run the
+  # Pre-deploy smoke gate: build the browser app, boot it with the mock Claude agent, and run the
   # Rioja composer UI-flow eval — which now also asserts runtime shell health (the DI container
   # actually registered its commands). This catches runtime-only regressions that pass compile
   # and build:browser. The deploy job depends on this, so a red gate blocks the VPS deploy.
@@ -118,7 +118,7 @@ jobs:
         shell: bash
         run: cd examples/playwright && npx playwright install chromium
 
-      - name: Start browser backend with mock QAIQ
+      - name: Start browser backend with mock Claude
         shell: bash
         # The eval drives the composer UI, which only mounts once past the Work Hub login gate. With
         # no GitHub OAuth configured in CI, the gate shows "sign-in unavailable" and #theia-app-shell
@@ -126,17 +126,19 @@ jobs:
         # keeps QAAP_SKIP_AUTH honored (it is refused in a production runtime).
         env:
           QAAP_SKIP_AUTH: 'true'
-          # The mock QAIQ ignores it, but the runner starts a QAIQ task only with a configured provider
+          # The mock Claude ignores it, but the runner starts a task only with a configured provider
           # (the Ollama schema default stopped counting as one); without it every turn fails before spawn.
           OPENROUTER_API_KEY: mock-rioja-e2e
           QAAP_CLOUD_MODE: local
         run: |
-          MOCK_BIN="${{ github.workspace }}/test-results/mock-qaiq-bin"
+          # The mock is installed as `claude`: the default harness answers `claude auth status` with a
+          # signed-in result, so no agent id has to be picked by hand.
+          MOCK_BIN="${{ github.workspace }}/test-results/mock-claude-bin"
           mkdir -p "${MOCK_BIN}"
-          ln -sf "${{ github.workspace }}/examples/playwright/scripts/mock-qaiq-rioja-agent" "${MOCK_BIN}/qaiq"
+          ln -sf "${{ github.workspace }}/examples/playwright/scripts/mock-qaiq-rioja-agent" "${MOCK_BIN}/claude"
           echo "${MOCK_BIN}" >> "${GITHUB_PATH}"
           # GITHUB_PATH only affects *subsequent* steps; the backend is started in THIS step and
-          # detects agents with `which qaiq`, so it must have the mock on its own PATH.
+          # detects agents with `which claude`, so it must have the mock on its own PATH.
           export PATH="${MOCK_BIN}:${PATH}"
           cd examples/browser
           npm run start > "${{ github.workspace }}/test-results/browser-server.log" 2>&1 &
@@ -158,13 +160,13 @@ jobs:
 
       # A chat turn must survive the backend dying under it (OOM, deploy): SIGKILL the backend
       # mid-turn, restart it, and require the boot-time auto-resume to finish the turn. Uses its own
-      # backend on :3466 with an isolated HOME and a fake qaiq; ~10 s.
+      # backend on :3466 with an isolated HOME and a fake claude; ~10 s.
       - name: Restart-resume e2e (turn survives a backend kill)
         shell: bash
         run: node scripts/qaap-restart-resume-e2e.mjs --port 3466
 
       # Every Work Hub task ends in a PR carrying its evidence (doc/qaap-task-to-pr.md): one chat turn
-      # with a fake qaiq must push refs/heads/qaap/task/<id> to a local bare origin and open a PR on a
+      # with a fake claude must push refs/heads/qaap/task/<id> to a local bare origin and open a PR on a
       # local GitHub stub whose body has the checks and reviewer sections. Own backend on :3467; ~10 s.
       - name: Task-to-PR e2e (turn becomes a PR with evidence)
         shell: bash

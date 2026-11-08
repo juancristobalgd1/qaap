@@ -311,7 +311,7 @@ export function hostedModelDenialReason(account: QaapBillingAccount, modelId: st
     }
     const entitlements = entitlementsFor(account);
     if (!entitlements.hostedModels) {
-        return 'Hosted Codex models require Pro or Team. Starter is BYOK-only — pick a BYOK model or upgrade.';
+        return 'Hosted Codex models require Pro or Team. Connect your own Codex subscription in Settings → Harness, or upgrade.';
     }
     if (entitlements.creditsRemaining <= 0) {
         return 'Codex hosted credits are exhausted for this billing period. Top up credits or wait for the next cycle.';

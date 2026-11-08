@@ -184,6 +184,12 @@ const QAAP_HARNESS_CAPABILITY_ENTRIES: readonly QaapHarnessCapabilities[] = [
         usage: 'pi-json',
         costSource: 'reported',
     },
+    // Cursor, Antigravity, Copilot and Grok run unchecked: no permission gate and no ask window. Explicit
+    // entries keep them covered by the registry spec, so a future gate is a deliberate change here.
+    { ...createDefaultHarnessCapabilities('cursor') },
+    { ...createDefaultHarnessCapabilities('antigravity') },
+    { ...createDefaultHarnessCapabilities('copilot') },
+    { ...createDefaultHarnessCapabilities('grok') },
 ];
 
 /**

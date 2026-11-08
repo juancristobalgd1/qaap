@@ -610,7 +610,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             githubOAuth: readiness.oauthConfigured,
             skipAuth: this.auth.isSkipAuthEnabled(),
             productionRuntime: readiness.productionRuntime,
-            // The default harness for new composers and routines (QAAP_DEFAULT_AGENT_ID, else qaiq).
+            // The configured default harness for new composers and routines (QAAP_DEFAULT_AGENT_ID); omitted when unset (first available harness).
             defaultAgentId: readBackendDefaultAgentId(),
             oauthConfigured: readiness.oauthConfigured,
             agentUidPerUser: readiness.agentUidPerUser,

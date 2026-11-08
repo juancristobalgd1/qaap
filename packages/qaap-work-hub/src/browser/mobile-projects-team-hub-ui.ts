@@ -200,7 +200,7 @@ export class MobileProjectsTeamHubUi {
         body.className = 'theia-mobile-projects-empty-body';
         body.textContent = nls.localize(
             'qaap/mobileProjects/teamEmptyBody',
-            'Start a chat with @qaiq or @codex — leaders can delegate sub-tasks with qaap-task.',
+            'Start a chat with @claude or @codex — leaders can delegate sub-tasks with qaap-task.',
         );
         empty.append(title, body);
         if (this.deps.onOpenWorkflows) {

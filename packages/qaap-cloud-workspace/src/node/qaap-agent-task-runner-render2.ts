@@ -334,7 +334,8 @@ export function resolveTaskAgentIdExtracted(ctx: QaapAgentTaskRunnerContext, tas
         if (/\bopenclaude\b/.test(task.command ?? '')) {
             return OPENCLAUDE_AGENT_ID;
         }
-        return ctx.isQaiqRunner(undefined, task.command) ? QAIQ_AGENT_ID : SHELL_AGENT_ID;
+        // A legacy QAIQ runner command resumes on the default harness, never on QAIQ itself.
+        return ctx.isQaiqRunner(undefined, task.command) ? ctx.defaultAgent(undefined) : SHELL_AGENT_ID;
 }
 
 export function readCustomAgentsExtracted(ctx: QaapAgentTaskRunnerContext): AgentCandidate[] {
@@ -756,7 +757,7 @@ const loggedDefaultAgentOverrides = new Set<string>();
 
 /**
  * Operator hint (once per agent id, no owner, no secrets) when `QAAP_DEFAULT_AGENT` is skipped for an
- * owner it cannot serve, e.g. QAIQ for a user without their own provider key (keys are BYOK).
+ * owner it cannot serve, e.g. a harness the owner has disabled or is not signed in to.
  */
 export function logDefaultAgentOverriddenOnce(
     agentId: string,
@@ -767,8 +768,8 @@ export function logDefaultAgentOverriddenOnce(
         return false;
     }
     logged.add(agentId);
-    warn(`[qaap-agent-tasks] QAAP_DEFAULT_AGENT=${agentId} is not usable for at least one user (disabled, signed out, or no API key of `
-        + 'their own in Settings → BYOK); they get the next usable agent instead.');
+    warn(`[qaap-agent-tasks] QAAP_DEFAULT_AGENT=${agentId} is not usable for at least one user (disabled or signed out); `
+        + 'they get the next usable agent instead.');
     return true;
 }
 
@@ -778,11 +779,10 @@ export function logDefaultAgentOverriddenOnce(
  * hosted agent the owner's plan allows); then the pre-existing "installed and not known to be
  * disconnected" preference (an agent whose auth probe has not answered yet, e.g. right after a
  * backend restart, keeps the pre-keyless behaviour instead of losing to the keyless agent); only
- * when every preferred agent is explicitly disconnected, QAIQ itself (the BYOK harness, even without
- * a key) so the composer shows the "add your API key in Settings → BYOK" prompt. The keyless hosted
- * agents (`HOSTED_KEYLESS_DEFAULT_AGENTS`) are never picked automatically; a user can still choose
- * them by hand. `isHarnessEnabled` is the admin/user enablement only, without the connection check,
- * so a disconnected QAIQ can still be the fallback.
+ * when every preferred agent is explicitly disconnected, a custom detected agent, else the shell (no
+ * retired QAIQ fallback). The keyless hosted agents (`HOSTED_KEYLESS_DEFAULT_AGENTS`) are never picked
+ * automatically; a user can still choose them by hand. `isHarnessEnabled` is the admin/user
+ * enablement only, without the connection check.
  * An agent with no auth probe and no credential mapping (e.g. grok) never wins automatically; `QAAP_DEFAULT_AGENT` overrides.
  */
 export function defaultAgentExtracted(
@@ -790,7 +790,6 @@ export function defaultAgentExtracted(
     isAgentEnabled: (agentId: string) => boolean = () => true,
     isAgentUsable: (agentId: string) => boolean = () => true,
     hasAuthSignal: (agentId: string) => boolean = () => true,
-    isHarnessEnabled: (agentId: string) => boolean = () => true,
 ): string {
         const configured = ctx.normalizeAgentId(process.env.QAAP_DEFAULT_AGENT);
         if (configured && ctx.detectedAgents.has(configured) && !isUiHiddenVpsAgent(configured)) {
@@ -813,11 +812,6 @@ export function defaultAgentExtracted(
             if (selectable(id) && hasAuthSignal(id)) {
                 return id;
             }
-        }
-        // Every preferred agent is explicitly disconnected: default to QAIQ even without a key, so the
-        // composer's BYOK prompt is shown instead of silently starting a keyless hosted agent.
-        if (ctx.detectedAgents.has(QAIQ_AGENT_ID) && !isUiHiddenVpsAgent(QAIQ_AGENT_ID) && isHarnessEnabled(QAIQ_AGENT_ID)) {
-            return QAIQ_AGENT_ID;
         }
         for (const candidate of [...ctx.detectedAgents.values()]) {
             if (
@@ -851,7 +845,6 @@ export async function defaultAgentFreshExtracted(
     budgetMs: number,
     hasAuthSignal: (agentId: string) => boolean = () => true,
     isProbeWorthAwaiting: (agentId: string) => boolean = isAgentEnabled,
-    isHarnessEnabled: (agentId: string) => boolean = () => true,
 ): Promise<string> {
     const pending = DEFAULT_AGENT_PREFERENCE
         .filter(id => ctx.detectedAgents.has(id) && !isUiHiddenVpsAgent(id) && isProbeWorthAwaiting(id))
@@ -867,7 +860,7 @@ export async function defaultAgentFreshExtracted(
         ]);
         clearTimeout(timer);
     }
-    return defaultAgentExtracted(ctx, isAgentEnabled, isAgentUsable, hasAuthSignal, isHarnessEnabled);
+    return defaultAgentExtracted(ctx, isAgentEnabled, isAgentUsable, hasAuthSignal);
 }
 
 export function normalizeAgentIdExtracted(ctx: QaapAgentTaskRunnerContext, token: string | undefined): string | undefined {

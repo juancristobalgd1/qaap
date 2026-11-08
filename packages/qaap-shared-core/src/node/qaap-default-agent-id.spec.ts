@@ -7,9 +7,13 @@ import { expect } from 'chai';
 import { readBackendDefaultAgentId } from './qaap-default-agent-id';
 
 describe('qaap-default-agent-id (backend)', () => {
-    it('reads QAAP_DEFAULT_AGENT_ID and falls back to qaiq', () => {
-        expect(readBackendDefaultAgentId({})).to.equal('qaiq');
+    it('reads QAAP_DEFAULT_AGENT_ID and leaves the default unset otherwise', () => {
+        expect(readBackendDefaultAgentId({})).to.be.undefined;
         expect(readBackendDefaultAgentId({ QAAP_DEFAULT_AGENT_ID: 'pi' })).to.equal('pi');
-        expect(readBackendDefaultAgentId({ QAAP_DEFAULT_AGENT_ID: 'nope' })).to.equal('qaiq');
+        expect(readBackendDefaultAgentId({ QAAP_DEFAULT_AGENT_ID: 'nope' })).to.be.undefined;
+    });
+
+    it('ignores a retired qaiq default silently', () => {
+        expect(readBackendDefaultAgentId({ QAAP_DEFAULT_AGENT_ID: 'qaiq' })).to.be.undefined;
     });
 });

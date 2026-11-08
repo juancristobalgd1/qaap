@@ -160,9 +160,11 @@ jobs:
           QAAP_CLOUD_MODE: local
           FRONTEND_CONNECTION_TIMEOUT: '2700000'
         run: |
-          MOCK_BIN="${{ github.workspace }}/test-results/mock-qaiq-bin"
+          # The mock is installed as `claude`: the default harness (DEFAULT_AGENT_PREFERENCE) answers
+          # `claude auth status` with a signed-in result, so no agent id has to be picked by hand.
+          MOCK_BIN="${{ github.workspace }}/test-results/mock-claude-bin"
           mkdir -p "$MOCK_BIN"
-          ln -sf "${{ github.workspace }}/examples/playwright/scripts/mock-qaiq-rioja-agent" "$MOCK_BIN/qaiq"
+          ln -sf "${{ github.workspace }}/examples/playwright/scripts/mock-qaiq-rioja-agent" "$MOCK_BIN/claude"
           export PATH="$MOCK_BIN:$PATH"
           cd examples/playwright
           npx playwright test --config=./configs/playwright.qaap-mobile-required.config.ts

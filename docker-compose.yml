@@ -117,7 +117,7 @@ services:
       # Background-agent CLI template for Jobs tasks ({prompt} = task description).
       QAAP_AGENT_COMMAND: ${QAAP_AGENT_COMMAND:-}
       QAAP_AGENT_COMMANDS: ${QAAP_AGENT_COMMANDS:-}
-      QAAP_DEFAULT_AGENT: ${QAAP_DEFAULT_AGENT:-qaiq}
+      QAAP_DEFAULT_AGENT: ${QAAP_DEFAULT_AGENT:-}
       # Agent CLI update toast: set QAAP_AGENT_CLI_UPDATE_CHECK=0 to disable boot probes / npm lookups.
       QAAP_AGENT_CLI_UPDATE_CHECK: ${QAAP_AGENT_CLI_UPDATE_CHECK:-0}
       # Optional min-version fallback when npm registry is unreachable (Codex pin is also a build arg).

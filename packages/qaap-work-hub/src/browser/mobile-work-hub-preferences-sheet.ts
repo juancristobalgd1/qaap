@@ -43,9 +43,6 @@ import type {
 /** Work Hub AI Features sheet scopes Settings to this search term. */
 export const WORK_HUB_AI_FEATURES_PREFERENCES_QUERY = 'ai-features';
 
-const AI_FEATURES_SEARCH_LOCKED_CLASS = 'theia-mod-ai-features-search-locked';
-const BYOK_SETTINGS_WIDGET_CLASS = 'theia-mod-byok-settings';
-const SETTINGS_JSON_EDITOR_OVERLAY_CLASS = 'theia-mod-work-hub-settings-json-editor-open';
 const DEFAULT_WORK_HUB_SETTINGS_SIDEBAR_WIDTH = 262;
 const MIN_WORK_HUB_SETTINGS_SIDEBAR_WIDTH = 180;
 const MAX_WORK_HUB_SETTINGS_SIDEBAR_WIDTH = 420;
@@ -91,7 +88,6 @@ const WORK_HUB_SETTINGS_SECTIONS: readonly WorkHubSettingsSection[] = [
         id: 'agents', label: nls.localize('qaap/workHubSettings/agents', 'Harness'), icon: 'hubot', query: 'Agents',
         group: nls.localize('qaap/workHubSettings/groupAgents', 'Agents'),
     },
-    { id: 'models', label: nls.localize('qaap/workHubSettings/models', 'BYOK'), icon: 'key', query: 'ai-features' },
     { id: 'mcp', label: nls.localize('qaap/workHubSettings/mcp', 'MCP'), icon: 'plug', query: 'MCP' },
     { id: 'skills', label: nls.localize('qaap/workHubSettings/skills', 'Skills'), icon: 'lightbulb', query: 'Skills' },
     {
@@ -143,11 +139,6 @@ export class MobileWorkHubPreferencesSheet {
     protected activeSettingsSectionId = 'general';
     protected widgetHostResizeObserver: ResizeObserver | undefined;
     protected windowResizeListener: (() => void) | undefined;
-    /** When set, the embedded search bar stays pinned to this AI Features query. */
-    protected lockedAiFeaturesQuery: string | undefined;
-    protected searchLockObserver: MutationObserver | undefined;
-    protected searchLockListener: ((ev: Event) => void) | undefined;
-    protected searchLockTarget: HTMLElement | undefined;
     protected settingsSidebarWidth = DEFAULT_WORK_HUB_SETTINGS_SIDEBAR_WIDTH;
     protected settingsSidebarResizePointerId: number | undefined;
     protected settingsSidebarResizeStartX = 0;
@@ -156,7 +147,6 @@ export class MobileWorkHubPreferencesSheet {
     protected embeddedSettingsRenderToken = 0;
     protected embeddedSettingsWidget: Widget | undefined;
     protected settingsSidebarController: MobileWorkHubSessionsSidebar | undefined;
-    protected settingsJsonEditorOverlayObserver: MutationObserver | undefined;
 
     protected readonly resolveWorkHubHost: (() => HTMLElement | undefined) | undefined;
     protected readonly resolveSettingsSidebar: (() => MobileWorkHubSessionsSidebar | undefined) | undefined;
@@ -234,18 +224,6 @@ export class MobileWorkHubPreferencesSheet {
             ev.stopPropagation();
             this.hide();
         }
-    };
-
-    protected readonly onSettingsJsonLinkClick = (ev: MouseEvent): void => {
-        if (!this.visible || this.activeSettingsSectionId !== 'models'
-            || !this.node.classList.contains('theia-mod-work-hub-inline')) {
-            return;
-        }
-        const target = ev.target;
-        if (!(target instanceof Element) || !target.closest('.theia-json-input')) {
-            return;
-        }
-        void this.showSettingsJsonEditorOverlay();
     };
 
     constructor(
@@ -405,7 +383,6 @@ export class MobileWorkHubPreferencesSheet {
 
         this.widgetHost = document.createElement('div');
         this.widgetHost.className = 'theia-mobile-work-hub-preferences-widget-host';
-        this.widgetHost.addEventListener('click', this.onSettingsJsonLinkClick, true);
 
         this.customContentHost = document.createElement('div');
         this.customContentHost.className = 'theia-mobile-work-hub-settings-custom-content';
@@ -444,13 +421,12 @@ export class MobileWorkHubPreferencesSheet {
         this.settingsLayout.classList.remove('theia-mod-sidebar-collapsed');
         this.settingsSidebarOpenButton.hidden = true;
         this.settingsSidebarController = inline ? this.resolveSettingsSidebar?.() : undefined;
-        const aiFeatures = isWorkHubAiFeaturesPreferencesQuery(query);
         const section = this.resolveSettingsSection(query);
         this.activeSettingsSectionId = section.id;
         this.titleEl.textContent = section.label;
-        this.settingsSearchInput.value = typeof query === 'string'
-            ? query
-            : (this.isCustomSettingsSection(section.id) ? '' : section.query);
+        this.settingsSearchInput.value = this.isCustomSettingsSection(section.id)
+            ? ''
+            : (typeof query === 'string' ? query : section.query);
         this.updateSettingsNavigation();
         this.node.hidden = false;
         this.node.classList.add('theia-mod-visible');
@@ -474,14 +450,10 @@ export class MobileWorkHubPreferencesSheet {
         this.scheduleLayoutSync(widget);
         await animationFrame(2);
         if (this.visible) {
-            this.unlockAiFeaturesSearch();
-            if (this.isCustomSettingsSection(section.id)) {
+                if (this.isCustomSettingsSection(section.id)) {
                 this.showCustomSettingsSection(section.id);
             } else {
                 await this.showPreferencesSectionFiltered(widget, typeof query === 'string' ? query : section.query);
-                if (aiFeatures && this.visible) {
-                    this.lockAiFeaturesSearch(widget, WORK_HUB_AI_FEATURES_PREFERENCES_QUERY);
-                }
             }
         }
         if (this.visible) {
@@ -494,16 +466,13 @@ export class MobileWorkHubPreferencesSheet {
             return;
         }
         this.stopSettingsSidebarResize();
-        this.stopSettingsJsonEditorOverlay();
         if (this.windowResizeListener) {
             window.removeEventListener('resize', this.windowResizeListener);
             this.windowResizeListener = undefined;
         }
         this.unobserveWidgetHostResize();
         this.widgetHost.classList.remove(WORK_HUB_PREFERENCES_APPLYING_QUERY_CLASS);
-        const lockedWidget = this.lockedAiFeaturesQuery ? this.preferencesWidget : undefined;
-        this.unlockAiFeaturesSearch();
-        void (lockedWidget ?? this.preferencesWidget)?.setSearchTerm('');
+        void this.preferencesWidget?.setSearchTerm('');
         this.settingsSearchInput.value = '';
         this.activeSettingsSectionId = 'general';
         this.updateSettingsNavigation();
@@ -524,50 +493,8 @@ export class MobileWorkHubPreferencesSheet {
 
     dispose(): void {
         this.unobserveWidgetHostResize();
-        this.widgetHost.removeEventListener('click', this.onSettingsJsonLinkClick, true);
         this.hide();
         this.node.remove();
-    }
-
-    protected async showSettingsJsonEditorOverlay(): Promise<void> {
-        for (let attempt = 0; attempt < 30; attempt++) {
-            await animationFrame();
-            if (!this.visible || this.activeSettingsSectionId !== 'models') {
-                return;
-            }
-            if (this.isSettingsJsonEditorActive()) {
-                document.body.classList.add(SETTINGS_JSON_EDITOR_OVERLAY_CLASS);
-                this.settingsJsonEditorOverlayObserver?.disconnect();
-                this.settingsJsonEditorOverlayObserver = new MutationObserver(() => {
-                    if (!this.isSettingsJsonEditorActive()) {
-                        this.stopSettingsJsonEditorOverlay();
-                    }
-                });
-                const editorPanel = document.getElementById('theia-main-content-panel');
-                if (editorPanel) {
-                    this.settingsJsonEditorOverlayObserver.observe(editorPanel, {
-                        attributes: true,
-                        childList: true,
-                        subtree: true,
-                        attributeFilter: ['class'],
-                    });
-                }
-                return;
-            }
-        }
-    }
-
-    protected isSettingsJsonEditorActive(): boolean {
-        const activeTab = document.querySelector<HTMLElement>(
-            '#theia-main-content-panel .lm-TabBar-tab.lm-mod-current .lm-TabBar-tabLabel',
-        );
-        return activeTab?.textContent?.trim() === 'settings.json';
-    }
-
-    protected stopSettingsJsonEditorOverlay(): void {
-        this.settingsJsonEditorOverlayObserver?.disconnect();
-        this.settingsJsonEditorOverlayObserver = undefined;
-        document.body.classList.remove(SETTINGS_JSON_EDITOR_OVERLAY_CLASS);
     }
 
     protected attachWidget(widget: PreferencesWidget): void {
@@ -583,10 +510,6 @@ export class MobileWorkHubPreferencesSheet {
             this.widgetHost.appendChild(widget.node);
         }
         widget.node.classList.add('theia-mobile-work-hub-preferences-embed');
-        widget.node.classList.toggle(
-            BYOK_SETTINGS_WIDGET_CLASS,
-            this.activeSettingsSectionId === 'models',
-        );
         widget.node.style.flex = '1 1 auto';
         widget.node.style.minHeight = '0';
         widget.node.style.height = '100%';
@@ -696,7 +619,7 @@ export class MobileWorkHubPreferencesSheet {
 
     protected resolveSettingsSection(query?: string): WorkHubSettingsSection {
         if (isWorkHubAiFeaturesPreferencesQuery(query)) {
-            return this.getSettingsSection('models');
+            return this.getSettingsSection('agents');
         }
         if (typeof query === 'string' && query.trim()) {
             return {
@@ -722,7 +645,6 @@ export class MobileWorkHubPreferencesSheet {
     }
 
     protected async selectSettingsSection(section: WorkHubSettingsSection): Promise<void> {
-        this.unlockAiFeaturesSearch();
         this.activeSettingsSectionId = section.id;
         this.titleEl.textContent = section.label;
         this.settingsSearchInput.value = this.isCustomSettingsSection(section.id) ? '' : section.query;
@@ -847,7 +769,6 @@ export class MobileWorkHubPreferencesSheet {
             await this.selectSettingsSection(this.getSettingsSection('general'));
             return;
         }
-        this.unlockAiFeaturesSearch();
         this.activeSettingsSectionId = 'search';
         this.titleEl.textContent = nls.localize('qaap/workHubSettings/searchResults', 'Search results');
         this.updateSettingsNavigation();
@@ -1307,7 +1228,6 @@ export class MobileWorkHubPreferencesSheet {
         }
         this.clearMobilePreferencesEditorHeight(widget);
         widget.node.classList.remove('theia-mobile-work-hub-preferences-embed');
-        widget.node.classList.remove(BYOK_SETTINGS_WIDGET_CLASS);
         if (widget.isAttached) {
             UnsafeWidgetUtilities.detach(widget);
         }
@@ -1460,120 +1380,5 @@ export class MobileWorkHubPreferencesSheet {
             await animationFrame();
         }
         return hasPreferencesContent(widget.node);
-    }
-
-    /**
-     * Keep the AI Features filter pinned: users must not clear/edit search and land on IDE prefs.
-     * Avoid capture-phase preventDefault/stopPropagation — that blocks list pan/scroll.
-     * React re-renders of the searchbar can drop DOM attributes, so we re-apply via MutationObserver.
-     */
-    protected lockAiFeaturesSearch(widget: PreferencesWidget, query: string): void {
-        this.unlockAiFeaturesSearch();
-        this.lockedAiFeaturesQuery = query;
-        this.settingsSearchInput.readOnly = true;
-        this.settingsSearchInput.setAttribute('aria-readonly', 'true');
-        this.settingsSearchInput.title = nls.localize(
-            'qaap/mobileWorkHubPreferences/aiFeaturesSearchLocked',
-            'Search is fixed to AI Features in Work Hub',
-        );
-        this.settingsSearchInput.value = query;
-        widget.node.classList.add(AI_FEATURES_SEARCH_LOCKED_CLASS);
-
-        let applying = false;
-        const applyLock = (): void => {
-            if (applying || !this.visible || this.lockedAiFeaturesQuery !== query) {
-                return;
-            }
-            applying = true;
-            try {
-                const searchId = PreferencesSearchbarWidget.SEARCHBAR_ID;
-                const input = widget.node.querySelector<HTMLInputElement>(`#${CSS.escape(searchId)}`);
-                if (!input) {
-                    return;
-                }
-                // readOnly (not disabled): disabled + capture listeners were blocking scroll/pan.
-                input.readOnly = true;
-                input.disabled = false;
-                input.setAttribute('aria-readonly', 'true');
-                input.tabIndex = -1;
-                input.title = nls.localize(
-                    'qaap/mobileWorkHubPreferences/aiFeaturesSearchLocked',
-                    'Search is fixed to AI Features in Work Hub',
-                );
-                if (input.value !== query) {
-                    input.value = query;
-                    void widget.setSearchTerm(query);
-                }
-                const clearBtn = input.closest('.settings-search-container')
-                    ?.querySelector<HTMLButtonElement>('button.option');
-                if (clearBtn) {
-                    clearBtn.disabled = true;
-                    clearBtn.tabIndex = -1;
-                    clearBtn.setAttribute('aria-hidden', 'true');
-                }
-            } finally {
-                applying = false;
-            }
-        };
-
-        // Restore the pinned query if anything still mutates the field (no preventDefault).
-        const onInput = (ev: Event): void => {
-            if (!this.lockedAiFeaturesQuery) {
-                return;
-            }
-            const target = ev.target;
-            if (!(target instanceof HTMLInputElement) || target.id !== PreferencesSearchbarWidget.SEARCHBAR_ID) {
-                return;
-            }
-            if (target.value !== query) {
-                target.value = query;
-                void widget.setSearchTerm(query);
-            }
-        };
-
-        this.searchLockListener = onInput;
-        this.searchLockTarget = widget.node;
-        widget.node.addEventListener('input', onInput, false);
-
-        applyLock();
-        if (typeof MutationObserver !== 'undefined') {
-            const host = widget.node.querySelector('.preferences-searchbar-widget') ?? widget.node;
-            this.searchLockObserver = new MutationObserver(() => applyLock());
-            this.searchLockObserver.observe(host, {
-                childList: true,
-                subtree: true,
-            });
-        }
-    }
-
-    protected unlockAiFeaturesSearch(): void {
-        const widget = this.preferencesWidget;
-        widget?.node.classList.remove(AI_FEATURES_SEARCH_LOCKED_CLASS);
-        this.searchLockObserver?.disconnect();
-        this.searchLockObserver = undefined;
-        if (this.searchLockListener && this.searchLockTarget) {
-            this.searchLockTarget.removeEventListener('input', this.searchLockListener, false);
-        }
-        this.searchLockListener = undefined;
-        this.searchLockTarget = undefined;
-        this.settingsSearchInput.readOnly = false;
-        this.settingsSearchInput.removeAttribute('aria-readonly');
-        this.settingsSearchInput.removeAttribute('title');
-        const searchId = PreferencesSearchbarWidget.SEARCHBAR_ID;
-        const input = widget?.node.querySelector<HTMLInputElement>(`#${CSS.escape(searchId)}`);
-        if (input) {
-            input.readOnly = false;
-            input.disabled = false;
-            input.tabIndex = 0;
-            input.removeAttribute('aria-readonly');
-            input.removeAttribute('title');
-            const clearBtn = input.closest('.settings-search-container')
-                ?.querySelector<HTMLButtonElement>('button.option');
-            if (clearBtn) {
-                clearBtn.removeAttribute('aria-hidden');
-                clearBtn.tabIndex = 0;
-            }
-        }
-        this.lockedAiFeaturesQuery = undefined;
     }
 }

@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * E2E evaluación (API): proyecto vacío → agente QAIQ crea landing Rioja → preview.
+ * E2E evaluación (API): proyecto vacío → agente Claude (mock) crea landing Rioja → preview.
  *
  * Requiere:
  *   - Browser app compilado y servidor en QAAP_BASE_URL (default http://127.0.0.1:3000)
- *   - Mock QAIQ en PATH como `qaiq` (scripts/mock-qaiq-rioja-agent)
+ *   - Mock en PATH como `claude` (scripts/mock-qaiq-rioja-agent)
  */
 import { chromium } from 'playwright';
 import * as fs from 'fs';
@@ -49,9 +49,9 @@ async function main() {
     };
 
     const t0 = now();
-    console.log('\n=== Qaap Rioja E2E Eval (API + mock QAIQ) ===');
+    console.log('\n=== Qaap Rioja E2E Eval (API + mock Claude harness) ===');
     console.log(`Workspace vacío: ${workspace}`);
-    console.log(`Mock QAIQ: ${resolveMockQaiqPath()}`);
+    console.log(`Mock Claude harness: ${resolveMockQaiqPath()}`);
     console.log(`Symlink: ${mockLink.linkPath} -> ${mockLink.target}`);
 
     const { browser, context } = await createMobileBrowserContext(chromium);
@@ -63,9 +63,9 @@ async function main() {
         metrics.phases.shellLoadMs = now() - tLoad;
 
         metrics.backendAgents = await fetchBackendAgents(page);
-        if (!metrics.backendAgents.ok || !metrics.backendAgents.agents?.some(a => a.id === 'qaiq')) {
-            metrics.errors.push('Backend no detecta QAIQ — reinicia con PATH incluyendo mock-qaiq-bin');
-            console.warn('\n⚠️  Backend sin QAIQ mock. Reinicia el servidor con mock en PATH.\n');
+        if (!metrics.backendAgents.ok || !metrics.backendAgents.agents?.some(a => a.id === 'claude')) {
+            metrics.errors.push('Backend no detecta el harness Claude — reinicia con PATH incluyendo mock-claude-bin');
+            console.warn('\n⚠️  Backend sin harness Claude mock. Reinicia el servidor con mock en PATH.\n');
         }
 
         metrics.newChat = await startNewAgentChat(page).catch(err => ({ ok: false, error: String(err) }));
@@ -82,7 +82,7 @@ async function main() {
         const tPrompt = now();
         let conversation;
         try {
-            conversation = await createAgentConversation(page, workspace, RIOJA_SCAFFOLD_PROMPT, 'qaiq');
+            conversation = await createAgentConversation(page, workspace, RIOJA_SCAFFOLD_PROMPT, 'claude');
             metrics.conversationCreate = { ok: true, id: conversation.id, agentId: conversation.agentId, cwd: conversation.cwd };
         } catch (err) {
             metrics.conversationCreate = { ok: false, error: String(err) };

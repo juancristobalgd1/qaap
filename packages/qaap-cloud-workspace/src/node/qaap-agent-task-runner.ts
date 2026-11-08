@@ -846,7 +846,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             return await probeAgentConnectionStateHelper(agentId, bin, {
                 file: wrapped.file,
                 args: wrapped.args,
-                cwd: tenantCwd,
+                cwd: existingTenantCwd(tenantCwd),
                 env,
             });
         } catch (error) {
@@ -877,7 +877,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
                 prependAgentCliBinToPath(env, prefix);
             }
             const wrapped = this.tenantSpawn.wrapArgvForTenant(tenantCwd, bin, [...args]);
-            return { file: wrapped.file, args: wrapped.args, cwd: tenantCwd, env };
+            return { file: wrapped.file, args: wrapped.args, cwd: existingTenantCwd(tenantCwd), env };
         };
     }
 
@@ -904,7 +904,6 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             agentId => this.isAgentSelectableAsDefault(agentId, ownerLogin),
             agentId => this.isAgentUsableAsDefault(agentId, ownerLogin),
             agentId => this.hasAgentAuthSignal(agentId, ownerLogin),
-            agentId => this.isAgentEnabled(agentId, ownerLogin),
         );
     }
 
@@ -965,7 +964,6 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             budgetMs,
             agentId => this.hasAgentAuthSignal(agentId, ownerLogin),
             // A failed probe makes the agent unselectable, yet a stale failure must still be re-probed.
-            agentId => this.isAgentEnabled(agentId, ownerLogin),
             agentId => this.isAgentEnabled(agentId, ownerLogin),
         );
     }
@@ -2058,4 +2056,14 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     public runOneShotCommand(command: string, cwd: string, env: NodeJS.ProcessEnv, agentId?: string, timeoutMs = 45_000, stdinPrompt?: string, promptTempDir?: string,): Promise<string> {
         return runOneShotCommandExtracted(this, command, cwd, env, agentId, timeoutMs, stdinPrompt, promptTempDir);
     }
+}
+
+/**
+ * The tenant cwd when it exists, else `undefined` (the backend's own cwd). Outside docker mode a
+ * tenant that never opened a repo has no repos folder yet (a fresh `QAAP_SKIP_AUTH` `_dev` session,
+ * CI), and spawning with a missing cwd fails with ENOENT before the CLI runs: every auth probe then
+ * read `unknown` and the picker asked a signed-in harness to sign in. Docker mode rejects earlier.
+ */
+function existingTenantCwd(tenantCwd: string): string | undefined {
+    return fs.existsSync(tenantCwd) ? tenantCwd : undefined;
 }

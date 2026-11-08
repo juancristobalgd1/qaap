@@ -112,7 +112,7 @@ export class QaapAgentCliUpdateContribution implements FrontendApplicationContri
         void this.messages?.info(
             nls.localize(
                 'qaap/agentCliUpdate/settingsFallback',
-                'Open Settings → AI Features to review provider configuration.',
+                'Open Settings → Harness to review harness connections.',
             ),
         );
     }

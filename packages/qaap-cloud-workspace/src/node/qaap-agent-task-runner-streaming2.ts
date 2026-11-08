@@ -574,6 +574,18 @@ export function resolveAgentIdExtracted(ctx: QaapAgentTaskRunnerContext, prompt:
             }
             return resolved;
         };
+        // QAIQ is retired: an explicit, mentioned or stored `qaiq` (old API calls, @qaiq, routines,
+        // conversations) runs on the owner's default harness instead of the QAIQ executable.
+        const useDefaultHarness = (): string => {
+            console.info('[qaap-agent-tasks] QAIQ is retired; this turn runs on the default harness.');
+            const fallback = ctx.defaultAgent(ownerLogin);
+            assertAgentAllowedOnHostedRuntime(fallback);
+            return fallback;
+        };
+        const requested = agentId?.trim().toLowerCase();
+        if (requested === QAIQ_AGENT_ID) {
+            return useDefaultHarness();
+        }
         const explicit = ctx.normalizeAgentId(agentId);
         if (explicit) {
             return ensureEnabled(explicit);
@@ -583,10 +595,16 @@ export function resolveAgentIdExtracted(ctx: QaapAgentTaskRunnerContext, prompt:
             throw new Error(`Agent "${agentId.trim()}" is not available on this server.`);
         }
         const mentioned = ctx.extractLastAgentMention(prompt);
+        if (mentioned === QAIQ_AGENT_ID) {
+            return useDefaultHarness();
+        }
         if (mentioned) {
             return ensureEnabled(mentioned);
         }
         const unavailableMention = ctx.extractLastAgentMentionToken(prompt);
+        if (unavailableMention === QAIQ_AGENT_ID) {
+            return useDefaultHarness();
+        }
         if (unavailableMention) {
             assertAgentAllowedOnHostedRuntime(unavailableMention);
             throw new Error(`Agent "@${unavailableMention}" is not available on this server.`);

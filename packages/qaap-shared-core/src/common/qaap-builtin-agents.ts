@@ -25,6 +25,10 @@ export const QAAP_BUILTIN_AGENT_DEFINITIONS: readonly QaapBuiltinAgentDefinition
     { id: 'claude', label: 'Claude Code', bin: 'claude', template: 'claude --print --output-format stream-json --verbose --include-partial-messages {trust_flags} {model_flags} -p {prompt}' },
     { id: 'opencode', label: 'OpenCode', bin: 'opencode', template: 'opencode run --format json --print-logs --log-level ERROR --dangerously-skip-permissions {model_flags} {prompt}' },
     { id: 'pi', label: 'Pi', bin: 'pi', template: 'pi --mode json -p --no-session -ne -e {gate_ext} {trust_flags} {model_flags} {prompt}' },
+    { id: 'cursor', label: 'Cursor Agent', bin: 'cursor-agent', template: 'cursor-agent -p --force --trust --approve-mcps {model_flags} {prompt}' },
+    { id: 'antigravity', label: 'Antigravity CLI', bin: 'agy', template: 'agy -p {prompt}' },
+    { id: 'copilot', label: 'Copilot CLI', bin: 'copilot', template: 'copilot --autopilot --yolo --max-autopilot-continues 20 -p {prompt}' },
+    { id: 'grok', label: 'Grok Build', bin: 'grok', template: 'grok --always-approve {model_flags} -p {prompt}' },
 ];
 
 /**
@@ -35,7 +39,6 @@ export const QAAP_BUILTIN_AGENT_DEFINITIONS: readonly QaapBuiltinAgentDefinition
  */
 export const QAAP_RETIRED_AGENT_DEFINITIONS: readonly QaapBuiltinAgentDefinition[] = [
     { id: 'openclaude', label: 'OpenClaude', bin: 'openclaude', template: 'openclaude --print --output-format stream-json --verbose --include-partial-messages {qaiq_flags} {prompt}' },
-    { id: 'grok', label: 'Grok Build', bin: 'grok', template: 'grok --always-approve {model_flags} -p {prompt}' },
     // `--model` is a top-level Hermes flag (`hermes --model <slug> chat`). Putting it after
     // `chat` is accepted by argparse, but a stale ~/.hermes/config.yaml still supplies the
     // main/auxiliary model when `{model_flags}` is empty — including dead OpenRouter `:free`
@@ -45,9 +48,6 @@ export const QAAP_RETIRED_AGENT_DEFINITIONS: readonly QaapBuiltinAgentDefinition
     // only QAIQ runs on Settings API keys. Nous serves the same `org/model` picker slugs.
     { id: 'hermes', label: 'Hermes', bin: 'hermes', template: 'hermes --yolo --ignore-user-config --provider nous {model_flags} chat -Q -q {prompt}' },
     { id: 'openclaw', label: 'OpenClaw', bin: 'openclaw', template: 'openclaw agent --local --message {prompt}' },
-    { id: 'cursor', label: 'Cursor Agent', bin: 'cursor-agent', template: 'cursor-agent -p --force --trust --approve-mcps {model_flags} {prompt}' },
-    { id: 'antigravity', label: 'Antigravity CLI', bin: 'agy', template: 'agy -p {prompt}' },
-    { id: 'copilot', label: 'Copilot CLI', bin: 'copilot', template: 'copilot --autopilot --yolo --max-autopilot-continues 20 -p {prompt}' },
     { id: 'qwen', label: 'Qwen Code', bin: 'qwen', template: 'qwen -p --approval-mode yolo {model_flags} {prompt}' },
     { id: 'kimi', label: 'Kimi CLI', bin: 'kimi', template: 'kimi -p {prompt}' },
 ];
@@ -66,14 +66,17 @@ export interface QaapHarnessDefinition {
 }
 
 export const QAAP_HARNESS_DEFINITIONS: readonly QaapHarnessDefinition[] = [
-    { id: 'qaiq', label: 'QAIQ', bin: 'qaiq' },
     ...QAAP_BUILTIN_AGENT_DEFINITIONS.map(({ id, label, bin }) => ({ id, label, bin })),
 ];
 
 export const CURSOR_AGENT_ID = 'cursor';
 
-/** Optional denylist for detected CLIs that should stay out of the composer picker. */
-export const UI_HIDDEN_VPS_AGENT_IDS = new Set<string>();
+/**
+ * Detected CLIs that stay out of the composer picker, the default-agent resolution and the
+ * backend runner's selection. `qaiq` (retired, BYOK-only runner) and `openclaude` (retired) are
+ * kept here so a stale `qaiq` default, pick or @mention falls back to the first available harness.
+ */
+export const UI_HIDDEN_VPS_AGENT_IDS = new Set<string>(['qaiq', 'openclaude']);
 
 /** VPS agents whose CLI model list is not API-selectable in headless runs. */
 export const NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS = new Set<string>();

@@ -61,11 +61,11 @@ describe('QaapPreferenceTreeGenerator', () => {
         const root = createGenerator().generateTree();
         expect(childGroupIds(root, 'ai-features')).to.deep.equal([
             'ai-features.agents',
-            'ai-features.openrouter',
+            'ai-features.aaa',
             'ai-features.anthropic',
             'ai-features.google',
             'ai-features.ollama',
-            'ai-features.aaa',
+            'ai-features.openrouter',
             'ai-features.zzz',
         ]);
     });
