@@ -560,6 +560,12 @@
   background: var(--theia-widget-border, transparent);
 }
 
+/* Notice sits clear of the body's top edge and of the total below it. */
+.theia-qaap-usage-notice {
+  margin: 0 0 4px;
+  line-height: 1.4;
+}
+
 @media (max-width: 767px) {
   .theia-qaap-usage-backdrop {
     align-items: stretch;
@@ -586,6 +592,10 @@
   .theia-qaap-usage-overview {
     grid-template-columns: minmax(0, 1fr);
     gap: 16px;
+  }
+
+  .theia-qaap-usage-notice {
+    margin-bottom: 0;
   }
 
   .theia-qaap-usage-controls {
