@@ -39,6 +39,9 @@ import { readComposerAgentCatalogSession, writeComposerAgentCatalogSession } fro
 
 /** Minimum gap between agent catalog reloads for the same cwd when a catalog is already loaded. */
 const MODEL_LABELS_STORAGE_KEY = 'qaap.composer.modelLabels';
+/** Dispatched on window when a catalog label first arrives, so mounted pills repaint. */
+export const QAAP_MODEL_LABELS_CHANGED_EVENT = 'qaap-model-labels-changed';
+const LABEL_WARM_MIN_INTERVAL_MS = 10_000;
 
 export const STICKY_CATALOG_REFRESH_MIN_INTERVAL_MS = 10_000;
 
@@ -100,7 +103,32 @@ export class MobileProjectsStickyComposerAgentsUi {
             } catch {
                 /* session-only */
             }
+            try {
+                window.dispatchEvent(new Event(QAAP_MODEL_LABELS_CHANGED_EVENT));
+            } catch {
+                /* no DOM event target here: mounted pills repaint on their next build */
+            }
         }
+    }
+
+    protected readonly labelWarmAt = new Map<string, number>();
+
+    /**
+     * Loads the model catalog of a harness in the background, at most once per interval, so the pill
+     * learns the catalog names even before the picker has been opened in this browser.
+     */
+    warmModelLabels(agentId: string): void {
+        const now = Date.now();
+        const last = this.labelWarmAt.get(agentId);
+        if (last !== undefined && now - last < LABEL_WARM_MIN_INTERVAL_MS) {
+            return;
+        }
+        this.labelWarmAt.set(agentId, now);
+        void fetchAgentModelsForAgent(agentId).then(models => {
+            this.rememberModelLabels(models);
+        }, () => {
+            this.labelWarmAt.delete(agentId);
+        });
     }
 
     /** Live-catalog label for a model id, or undefined until a catalog containing it has loaded. */

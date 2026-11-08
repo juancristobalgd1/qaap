@@ -16,6 +16,8 @@ import { formatQaiqModelSelectionLabel } from '@theia/qaap-shared-core/lib/commo
 import { populateAgentToolbarButton } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { QaapAgentEffort } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
 import { resolveComposerEffortLevel } from '../common/qaap-composer-effort';
+import { humanizeModelSlug } from '../common/qaap-composer-model-label';
+import { QAAP_MODEL_LABELS_CHANGED_EVENT } from './mobile-projects-sticky-composer-agents-ui';
 import { resolveComposerEnterDeliveryOverride } from '@theia/qaap-transcript-overlay/lib/browser/qaap-composer-delivery-mode';
 import {
     renderStickyComposerContextStrip,
@@ -177,27 +179,42 @@ export class MobileProjectsStickyComposerColumnUi {
             )
             : nls.localize('qaap/mobileProjects/stickyComposerAgent', 'Agent: {0}', agentLabel);
         agentBtn.setAttribute('aria-label', agentBtn.title);
-        const catalogLabel = agentModel
-            ? this.host.stickyComposerAgentsUi.resolveModelLabel(agentModel.modelId)
-            : undefined;
-        populateAgentToolbarButton(agentBtn, {
-            agentId,
-            label: agentLabel,
-            agentModel: agentModel && catalogLabel ? { ...agentModel, label: catalogLabel } : agentModel,
-            connectionState: this.host.stickyComposerAgentsUi.isAgentDisconnected(agentId) ? 'disconnected' : undefined,
-        });
-        const effortLevel = resolveComposerEffortLevel(options.composerCwd, agentId, agentModel?.modelId);
-        if (effortLevel) {
-            const effort = document.createElement('span');
-            effort.className = 'theia-mobile-projects-sticky-composer-agent-effort';
-            effort.textContent = `(${QaapAgentEffort.label(effortLevel)})`;
-            const chevron = agentBtn.querySelector('.codicon-chevron-down');
-            if (chevron) {
-                chevron.before(effort);
-            } else {
-                agentBtn.append(effort);
+        // The pill paints the catalog name when known, else a readable form of the slug; it repaints when labels arrive.
+        const paintAgentPill = (): void => {
+            const catalogLabel = agentModel
+                ? this.host.stickyComposerAgentsUi.resolveModelLabel(agentModel.modelId)
+                : undefined;
+            populateAgentToolbarButton(agentBtn, {
+                agentId,
+                label: agentLabel,
+                agentModel: agentModel
+                    ? { ...agentModel, label: catalogLabel ?? humanizeModelSlug(agentModel.modelId) }
+                    : undefined,
+                connectionState: this.host.stickyComposerAgentsUi.isAgentDisconnected(agentId) ? 'disconnected' : undefined,
+            });
+            const effortLevel = resolveComposerEffortLevel(options.composerCwd, agentId, agentModel?.modelId);
+            if (effortLevel) {
+                const effort = document.createElement('span');
+                effort.className = 'theia-mobile-projects-sticky-composer-agent-effort';
+                effort.textContent = `(${QaapAgentEffort.label(effortLevel)})`;
+                const chevron = agentBtn.querySelector('.codicon-chevron-down');
+                if (chevron) {
+                    chevron.before(effort);
+                } else {
+                    agentBtn.append(effort);
+                }
             }
-        }
+        };
+        paintAgentPill();
+        const repaintOnLabels = (): void => {
+            if (!agentBtn.isConnected) {
+                window.removeEventListener(QAAP_MODEL_LABELS_CHANGED_EVENT, repaintOnLabels);
+                return;
+            }
+            paintAgentPill();
+        };
+        window.addEventListener(QAAP_MODEL_LABELS_CHANGED_EVENT, repaintOnLabels);
+        this.host.stickyComposerAgentsUi.warmModelLabels(agentId);
         if (options.agentLocked) {
             agentBtn.classList.add('theia-mod-locked');
             agentBtn.disabled = true;
