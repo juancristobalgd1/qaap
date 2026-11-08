@@ -320,11 +320,16 @@ export class UsageDialogBody {
         appendAgentBrandIcon(head, provider.provider, 'sm');
         head.append(this.element('span', 'theia-qaap-usage-provider-name', this.providerLabel(provider.provider)));
         card.append(head);
+        if (provider.status === 'loading') {
+            card.append(this.renderLimitSkeleton());
+            return card;
+        }
         if (provider.status !== 'ok' || provider.windows.length === 0) {
             const reason = provider.status === 'error'
                 ? nls.localize('qaap/usage/limitError', 'Could not read limits: {0}', provider.reason ?? '')
                 : provider.reason ?? nls.localize('qaap/usage/limitUnavailable', 'Limits are unavailable.');
             card.append(this.element('p', 'theia-qaap-usage-limit-reason', reason));
+            this.appendStaleNote(card, provider.observedAt, now);
             return card;
         }
         for (const window of provider.windows) {
@@ -348,7 +353,34 @@ export class UsageDialogBody {
             }
             card.append(row);
         }
+        this.appendStaleNote(card, provider.observedAt, now);
         return card;
+    }
+
+    /** Placeholder bars while the first scan has not produced limits yet. */
+    protected renderLimitSkeleton(): HTMLElement {
+        const block = this.element('div', 'theia-qaap-usage-limit-skeleton');
+        block.append(
+            this.element('span', 'theia-qaap-usage-limit-skeleton-text q-skeleton q-skeleton-text'),
+            this.element('span', 'theia-qaap-usage-limit-skeleton-bar q-skeleton')
+        );
+        return block;
+    }
+
+    /** Shows «Updated N min ago» when the observation is older than two minutes. */
+    protected appendStaleNote(card: HTMLElement, observedAt: string | undefined, now: number): void {
+        if (!observedAt) {
+            return;
+        }
+        const observed = Date.parse(observedAt);
+        if (Number.isNaN(observed)) {
+            return;
+        }
+        const ageMinutes = Math.floor((now - observed) / 60000);
+        if (ageMinutes < 2) {
+            return;
+        }
+        card.append(this.element('p', 'theia-qaap-usage-limit-updated', nls.localize('qaap/usage/updatedMinutesAgo', 'Updated {0} min ago', ageMinutes)));
     }
 
     protected bucketValue(bucket: QaapUsageBucket, provider: string, measure: UsageMeasure): number {

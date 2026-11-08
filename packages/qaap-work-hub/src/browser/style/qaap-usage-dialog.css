@@ -458,6 +458,29 @@
   background: var(--usage-provider-color, var(--theia-progressBar-background));
 }
 
+.theia-qaap-usage-limit-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.theia-qaap-usage-limit-skeleton-text {
+  display: block;
+  width: 60%;
+}
+
+.theia-qaap-usage-limit-skeleton-bar {
+  display: block;
+  height: 6px;
+  border-radius: 999px;
+}
+
+.theia-qaap-usage-limit-updated {
+  margin: 0;
+  color: var(--theia-descriptionForeground);
+  font-size: 12px;
+}
+
 .theia-qaap-usage-limit-reset {
   align-self: flex-start;
   padding: 2px 8px;

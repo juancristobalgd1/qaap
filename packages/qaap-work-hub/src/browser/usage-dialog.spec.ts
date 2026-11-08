@@ -10,6 +10,7 @@ const disableImportJSDOM = enableJSDOM();
 
 import { expect } from 'chai';
 import { UsageDialog } from './usage-dialog';
+import { UsageDialogBody } from './usage-dialog-body';
 import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 import type { QaapUsageLimits, QaapUsageSummary } from '@theia/qaap-shared-core/lib/common/qaap-usage-summary-protocol';
 
@@ -248,6 +249,39 @@ describe('UsageDialog', () => {
         it('falls back to all providers when storage holds invalid data', () => {
             window.sessionStorage.setItem(KEY, '{not json');
             expect(new UsageDialog()['providers']).to.deep.equal([]);
+        });
+    });
+
+    describe('limits still loading', () => {
+
+        it('renders a skeleton for a loading card and a stale note for old observations', () => {
+            const now = Date.parse('2026-11-08T10:00:00.000Z');
+            const body = new UsageDialogBody();
+            const root = body.renderLimits({
+                providers: [
+                    { provider: 'codex', status: 'loading', windows: [] },
+                    { provider: 'claude', status: 'ok', windows: [{ id: 'primary', label: 'Session', usedPercent: 10 }], observedAt: '2026-11-08T09:50:00.000Z' },
+                    { provider: 'pi', status: 'ok', windows: [{ id: 'primary', label: 'Session', usedPercent: 10 }], observedAt: '2026-11-08T09:59:30.000Z' }
+                ]
+            }, now);
+            const cards = root.querySelectorAll('.theia-qaap-usage-limit-card');
+            expect(cards[0].querySelector('.theia-qaap-usage-limit-skeleton')).to.not.equal(null);
+            expect(cards[0].querySelector('.q-skeleton')).to.not.equal(null);
+            expect(cards[1].querySelector('.theia-qaap-usage-limit-updated')?.textContent).to.equal('Updated 10 min ago');
+            expect(cards[2].querySelector('.theia-qaap-usage-limit-updated')).to.equal(null);
+        });
+
+        it('schedules a bounded retry while a card is loading and clears it on close', async () => {
+            const dialog = new UsageDialog();
+            dialog['client'].fetchSummary = async () => summaryFixture();
+            dialog['client'].fetchLimits = async () => ({ providers: [{ provider: 'codex', status: 'loading', windows: [] }] });
+            dialog.open();
+            dialog.selectTab('limits');
+            await settle();
+            expect(dialog['limitsRetries']).to.equal(1);
+            expect(dialog['limitsRetryTimer']).to.not.equal(undefined);
+            dialog.close();
+            expect(dialog['limitsRetryTimer']).to.equal(undefined);
         });
     });
 });

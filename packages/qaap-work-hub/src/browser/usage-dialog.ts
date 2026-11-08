@@ -23,6 +23,9 @@ const SCAN_RETRY_MS = 1500;
 const MAX_SCAN_RETRIES = 40;
 /** Limits are re-rendered this often so the reset countdowns stay current. */
 const LIMITS_TICK_MS = 30000;
+/** Limits still `loading` are polled at this interval, at most `MAX_LIMITS_RETRIES` times. */
+const LIMITS_RETRY_MS = 3000;
+const MAX_LIMITS_RETRIES = 10;
 /** sessionStorage key for the provider selection; per-tab, never shared. */
 const PROVIDERS_STORAGE_KEY = 'qaap.usage.providers';
 
@@ -70,6 +73,8 @@ export class UsageDialog {
     protected visible = false;
     protected scanTimer: number | undefined;
     protected limitsTimer: number | undefined;
+    protected limitsRetryTimer: number | undefined;
+    protected limitsRetries = 0;
     /** Element focused before the dialog opened, restored on close. */
     protected previousFocus: HTMLElement | undefined;
 
@@ -110,6 +115,7 @@ export class UsageDialog {
         this.previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
         this.visible = true;
         this.scanRetries = 0;
+        this.limitsRetries = 0;
         this.backdrop!.hidden = false;
         document.addEventListener('keydown', this.onDocumentKeyDown, true);
         document.addEventListener('pointerdown', this.onDocumentPointerDown, true);
@@ -130,6 +136,7 @@ export class UsageDialog {
         this.limitsRequest++;
         this.clearScanTimer();
         this.clearLimitsTimer();
+        this.clearLimitsRetryTimer();
         document.removeEventListener('keydown', this.onDocumentKeyDown, true);
         document.removeEventListener('pointerdown', this.onDocumentPointerDown, true);
         this.setProviderMenuOpen(false);
@@ -196,6 +203,7 @@ export class UsageDialog {
     /** Refetches whatever the active tab shows. */
     refresh(): void {
         this.scanRetries = 0;
+        this.limitsRetries = 0;
         if (this.tab === 'limits') {
             void this.refreshLimits();
         } else {
@@ -233,6 +241,7 @@ export class UsageDialog {
 
     protected async refreshLimits(): Promise<void> {
         const request = ++this.limitsRequest;
+        this.clearLimitsRetryTimer();
         this.limitsLoading = true;
         this.render();
         try {
@@ -240,6 +249,11 @@ export class UsageDialog {
             if (request === this.limitsRequest && this.visible) {
                 this.limits = limits;
                 this.errorMessage = undefined;
+                const stillLoading = limits.providers.some(provider => provider.status === 'loading');
+                if (stillLoading && this.limitsRetries < MAX_LIMITS_RETRIES) {
+                    this.limitsRetries++;
+                    this.limitsRetryTimer = window.setTimeout(() => void this.refreshLimits(), LIMITS_RETRY_MS);
+                }
             }
         } catch (error) {
             if (request === this.limitsRequest && this.visible) {
@@ -498,6 +512,13 @@ export class UsageDialog {
         if (this.limitsTimer !== undefined) {
             window.clearInterval(this.limitsTimer);
             this.limitsTimer = undefined;
+        }
+    }
+
+    protected clearLimitsRetryTimer(): void {
+        if (this.limitsRetryTimer !== undefined) {
+            window.clearTimeout(this.limitsRetryTimer);
+            this.limitsRetryTimer = undefined;
         }
     }
 
