@@ -40,10 +40,14 @@ export function resolveMockQaiqPath() {
     return MOCK_QAIQ;
 }
 
+/**
+ * Puts the Rioja mock on a PATH dir as `claude`: the only harness the backend auto-selects by default
+ * (`DEFAULT_AGENT_PREFERENCE`), and the one that counts as signed in through `claude auth status`.
+ */
 export function ensureMockQaiqSymlink(outDir) {
-    const binDir = path.join(outDir, 'mock-qaiq-bin');
+    const binDir = path.join(outDir, 'mock-claude-bin');
     fs.mkdirSync(binDir, { recursive: true });
-    const linkPath = path.join(binDir, 'qaiq');
+    const linkPath = path.join(binDir, 'claude');
     const target = resolveMockQaiqPath();
     try {
         if (fs.existsSync(linkPath)) {
@@ -155,7 +159,7 @@ export async function openWorkspace(page, workspace) {
     await page.locator('.theia-mobile-projects-sticky-composer-input').waitFor({ state: 'visible', timeout: 60_000 });
 }
 
-export async function createAgentConversation(page, cwd, message, agent = 'qaiq') {
+export async function createAgentConversation(page, cwd, message, agent = 'claude') {
     return page.evaluate(async ({ workspaceCwd, body, agentId }) => {
         const res = await fetch('/qaap/api/agent-conversations', {
             method: 'POST',
@@ -206,7 +210,7 @@ export async function startNewAgentChat(page) {
     return { ok: true, skipped: true, placeholder };
 }
 
-export async function selectComposerAgent(page, labelPattern = /qaiq|^q$/i) {
+export async function selectComposerAgent(page, labelPattern = /claude/i) {
     // The pill opens the unified model picker: a harness rail on the left, model rows on the right.
     const agentBtn = page.locator('.theia-mobile-projects-sticky-composer-agent:not(.theia-mod-locked)').first();
     if (!(await agentBtn.count()) || await agentBtn.isDisabled()) {
@@ -237,7 +241,7 @@ export async function selectComposerAgent(page, labelPattern = /qaiq|^q$/i) {
         await page.keyboard.press('Escape').catch(() => undefined);
         await picker.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => undefined);
     });
-    // The pill must reflect the harness: «Agent: QAIQ, model: …» in its title and aria-label.
+    // The pill must reflect the harness: «Agent: Claude Code, model: …» in its title and aria-label.
     const label = ((await agentBtn.textContent()) ?? '').trim();
     const pillTitle = (await agentBtn.getAttribute('aria-label')) ?? '';
     if (!labelPattern.test(pillTitle)) {
@@ -246,7 +250,7 @@ export async function selectComposerAgent(page, labelPattern = /qaiq|^q$/i) {
     return { ok: true, label, pillTitle, skipped: false };
 }
 
-export async function submitPromptViaComposer(page, message, { agentPattern = /qaiq|^q$/i, requireAgentPick = false } = {}) {
+export async function submitPromptViaComposer(page, message, { agentPattern = /claude/i, requireAgentPick = false } = {}) {
     const agentPick = await selectComposerAgent(page, agentPattern);
     if (!agentPick.ok && requireAgentPick) {
         return { ok: false, reason: agentPick.reason ?? 'agent-select-failed' };

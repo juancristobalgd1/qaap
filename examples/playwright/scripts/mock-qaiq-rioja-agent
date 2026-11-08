@@ -79,6 +79,13 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
     exit 0
 fi
 
+# Installed as `claude` on the CI PATH (the harness probe runs `claude auth status`, and the backend
+# treats a `"loggedIn": true` answer with exit 0 as signed in, which makes it the default harness).
+if [[ "${1:-}" == "auth" && "${2:-}" == "status" ]]; then
+    echo '{"loggedIn": true, "authMethod": "mock", "apiProvider": "mock"}'
+    exit 0
+fi
+
 has_flag() {
     local needle="$1"
     shift
