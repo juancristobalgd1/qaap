@@ -21,7 +21,7 @@ import type { QaapTaskSandboxBrokerSandbox } from './qaap-task-sandbox-broker-pr
 import type { QaapSandboxExecClientRequest } from './qaap-task-sandbox-exec-client-main';
 import { isQaapRunscConfigured } from './qaap-tenant-runtime';
 import { encodeQaapSandboxFrame, parseQaapListeningPorts, QaapSandboxFrame, QaapSandboxFrameDecoder } from './qaap-task-sandbox-exec-protocol';
-import { QAAP_PERSISTENT_HOME_DIRECTORIES, QAAP_PERSISTENT_HOME_FILES } from './qaap-tenant-persistent-home';
+import { QAAP_PERSISTENT_HOME_DIRECTORIES, QAAP_PERSISTENT_HOME_FILES, QAAP_TENANT_BACKEND_HOME } from './qaap-tenant-persistent-home';
 import { isQaapBackendOnlyEnvKey } from './qaap-child-process-env';
 
 /**
@@ -227,6 +227,15 @@ export class QaapTaskSandboxService implements BackendApplicationContribution, Q
                 console.info(`[qaap-task-sandbox] removed ${removed} orphaned sandbox container(s)`);
             }
         });
+        if (this.mode() === 'broker' && this.broker?.isEnabled()) {
+            // Every (re)link: let the broker keep a spare sandbox ready for this backend's sign-in links,
+            // so the next task adopts it instead of waiting for a container to start. Agent tasks in a
+            // tenant backend always run with this HOME (QaapTenantSpawnService.tenantHomeEnvOverlay).
+            this.broker.onDidLink(() => {
+                this.broker!.prepare({ homeLinks: this.homeLinks(QAAP_TENANT_BACKEND_HOME) }).catch(error =>
+                    console.warn(`[qaap-task-sandbox] could not ask the broker for a spare sandbox: ${(error as Error).message}`));
+            });
+        }
     }
 
     /**

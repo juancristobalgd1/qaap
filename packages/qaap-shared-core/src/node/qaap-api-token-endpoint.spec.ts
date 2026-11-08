@@ -45,7 +45,9 @@ function fakeResponse(recorded: RecordedResponse): Response {
     return res as unknown as Response;
 }
 
-describe('QaapApiTokenEndpoint (personal API tokens)', () => {
+describe('QaapApiTokenEndpoint (personal API tokens)', function (): void {
+    // Each test opens a fresh SQLite store (WAL, synchronous=FULL); the first fsyncs on a Windows runner can pass 2 s.
+    this.timeout(10_000);
     const storeEnvKeys = ['QAAP_AUTH_STORE_PATH', 'QAAP_SQLITE_STORE_PATH'] as const;
     const savedStoreEnv: Partial<Record<typeof storeEnvKeys[number], string>> = {};
     let authStoreDir: string;
