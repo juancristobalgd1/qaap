@@ -196,8 +196,8 @@ describe('qaap-agent-auth-login', () => {
         expect(agentHasCliOAuthLogin('')).to.equal(false);
     });
 
-    it('agentNeedsSettingsApiKeyPath is true for QAIQ only', () => {
-        expect(agentNeedsSettingsApiKeyPath('qaiq')).to.equal(true);
+    it('agentNeedsSettingsApiKeyPath is false for every agent: no API-key CTA, QAIQ included', () => {
+        expect(agentNeedsSettingsApiKeyPath('qaiq')).to.equal(false);
         expect(agentNeedsSettingsApiKeyPath('openclaude')).to.equal(false);
         expect(agentNeedsSettingsApiKeyPath('hermes')).to.equal(false);
         expect(agentNeedsSettingsApiKeyPath('antigravity')).to.equal(false);

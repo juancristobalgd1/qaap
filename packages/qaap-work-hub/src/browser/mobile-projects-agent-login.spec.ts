@@ -10,7 +10,6 @@ import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 const disableImportJSDOM = enableJSDOM();
 
 import { expect } from 'chai';
-import { QAAP_AI_FEATURES_SETTINGS_QUERY } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileProjectsPanelContext } from './mobile-projects-panel-context';
 import { openAgentSignInTerminalExtracted } from './mobile-projects-panel-timeline';
@@ -86,9 +85,9 @@ describe('Work Hub harness connection actions', () => {
         globalThis.fetch = originalFetch!;
     });
 
-    // Product rule: QAIQ is the only harness that signs in with an API key.
+    // QAIQ is no longer a harness with an API-key Settings link: it connects through Settings → Harness.
     for (const agentId of ['qaiq']) {
-        it(`opens the dialog with "Add API key in Settings" for ${agentId} immediately, without a workspace`, async () => {
+        it(`offers no API-key Settings link for ${agentId} immediately, without a workspace`, async () => {
             const openedSettings: string[] = [];
 
             openAgentSignInTerminalExtracted(createWorkspacelessContext(openedSettings), agentId);
@@ -97,20 +96,15 @@ describe('Work Hub harness connection actions', () => {
             const shown = readConnectDialog();
             expect(shown.title).to.match(/^Connect /);
             expect(shown.spinnerVisible).to.equal(false);
-            expect(shown.message).to.match(/API key/i);
-            expect(shown.message).to.match(/Settings/);
-            expect(shown.actions.map(button => button.textContent)).to.deep.equal(['Add API key in Settings']);
+            expect(shown.message).not.to.match(/API key/i);
+            expect(shown.actions.map(button => button.textContent)).not.to.include('Add API key in Settings');
             expect(shown.dismissLabel).to.equal('Close');
 
-            // Once the advisory status lookup settles the action is unchanged.
             await new Promise(resolve => setTimeout(resolve, 0));
             const settled = readConnectDialog();
             expect(settled.spinnerVisible).to.equal(false);
-            expect(settled.actions.map(button => button.textContent)).to.deep.equal(['Add API key in Settings']);
-
-            settled.actions[0].click();
-            expect(openedSettings).to.deep.equal([QAAP_AI_FEATURES_SETTINGS_QUERY]);
-            expect(connectDialogs(), 'the Settings link replaces the dialog').to.have.length(0);
+            expect(settled.actions.map(button => button.textContent)).not.to.include('Add API key in Settings');
+            expect(openedSettings).to.deep.equal([]);
         });
     }
 

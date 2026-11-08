@@ -381,11 +381,10 @@ describe('createQaapAgentLoginDialog', () => {
             .to.equal('Authorization code');
     });
 
-    it('offers the Settings button with no spinner', () => {
+    it('offers no API-key Settings button: the settings-api-key phase is gone, a harness connects in Settings → Harness', () => {
         const controller = open({ onOpenSettings: () => undefined });
         controller.render({ phase: 'settings-api-key' });
-        expect(buttonLabels(controller.root)).to.include('Add API key in Settings');
-        expect(controller.root.querySelector<HTMLElement>('.theia-mobile-agent-login-dialog-status')!.hidden).to.equal(true);
+        expect(buttonLabels(controller.root)).to.not.include('Add API key in Settings');
     });
 
     it('offers Install for a missing harness', () => {
