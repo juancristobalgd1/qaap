@@ -66,8 +66,16 @@
   outline: none;
 }
 
-.theia-qaap-account-menu-catalog-card-icon {
-  display: none;
+.theia-qaap-account-menu-catalog-card-icon,
+.theia-qaap-account-menu-item .codicon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  font-size: 14px;
+  color: var(--theia-descriptionForeground);
 }
 
 .theia-qaap-account-menu-catalog-card:hover .theia-qaap-account-menu-catalog-card-icon,
@@ -168,10 +176,6 @@ body.theia-mobile-mod-landing .theia-qaap-account-menu {
   background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
   color: var(--theia-menu-foreground, var(--theia-foreground));
   outline: none;
-}
-
-.theia-qaap-account-menu-item .codicon {
-  display: none;
 }
 
 /* Sign Out closes the list, set apart by a hairline (the menu renders no separator before it). */
@@ -359,4 +363,11 @@ body.theia-mobile-mod-landing .theia-qaap-account-menu {
   .theia-qaap-account-menu-item {
     transition: none;
   }
+}
+
+.theia-qaap-account-menu-item:hover:not(:disabled) .codicon,
+.theia-qaap-account-menu-item:focus-visible .codicon,
+.theia-qaap-account-menu-catalog-card:hover .theia-qaap-account-menu-catalog-card-icon,
+.theia-qaap-account-menu-catalog-card:focus-visible .theia-qaap-account-menu-catalog-card-icon {
+  color: var(--theia-foreground);
 }
