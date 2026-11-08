@@ -9766,8 +9766,6 @@ body.theia-mobile-mod-has-transcript-overlay.theia-mobile-mod-has-transcript-ove
   /* Match classic IDE chat input surface (--theia-input-background / --qaap-surface). */
   --qaap-codex-shell-bg: var(--theia-input-background, var(--theia-editor-background));
   --qaap-codex-tray-bg: color-mix(in srgb, var(--qaap-codex-shell-bg) 88%, #000 12%);
-  --qaap-codex-send-ready-bg: color-mix(in srgb, var(--theia-foreground) 92%, #fff);
-  --qaap-codex-send-ready-fg: color-mix(in srgb, var(--theia-editor-background) 92%, #000);
   /* Keep the composer structured without the oversized pill silhouette. */
   --qaap-codex-shell-radius: 16px;
   --qaap-codex-shell-lip-radius: 12px;
@@ -10238,11 +10236,55 @@ button.theia-mobile-projects-sticky-composer-context-usage-btn {
   color: var(--theia-foreground);
 }
 
-.theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-input-actions .theia-mobile-projects-sticky-composer-send {
+/* Send: a round arrow-up button, as in T3 Code. Theme colours only; the grey tone steps up when text is ready. */
+.theia-mobile-projects-sticky-composer-send {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--theia-foreground) 10%, transparent);
-  color: color-mix(in srgb, var(--theia-foreground) 40%, transparent);
-  opacity: 0.45;
+  background: color-mix(in srgb, var(--theia-foreground) 14%, transparent);
+  color: var(--theia-foreground);
+  opacity: 1;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease,
+    scale 120ms ease;
+}
+
+@media (max-width: 767px) {
+  .theia-mobile-projects-sticky-composer-send {
+    width: 32px;
+    min-width: 32px;
+    height: 32px;
+  }
+}
+
+.theia-mobile-projects-sticky-composer-send:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--theia-foreground) 20%, transparent);
+}
+
+.theia-mobile-projects-sticky-composer-send:active:not(:disabled) {
+  scale: 0.94;
+}
+
+.theia-mobile-projects-sticky-composer-send:disabled,
+.theia-mobile-projects-sticky-composer-send[aria-disabled='true'] {
+  background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+  color: color-mix(in srgb, var(--theia-foreground) 45%, transparent);
+  cursor: default;
+}
+
+.theia-mobile-projects-sticky-composer-send.theia-mod-ready:not(:disabled):not(.theia-mod-stop) {
+  background: color-mix(in srgb, var(--theia-foreground) 20%, transparent);
+  color: var(--theia-foreground);
 }
 
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-input-actions .theia-mobile-projects-sticky-composer-send .codicon {
@@ -10265,50 +10307,6 @@ button.theia-mobile-projects-sticky-composer-context-usage-btn {
   width: 16px;
   height: 16px;
   overflow: hidden;
-}
-
-.theia-mobile-projects-sticky-composer-send-plane {
-  transform-box: fill-box;
-  transform-origin: 50% 50%;
-}
-
-/* animate-ui Send: dip back-right, fly off top-right, re-enter bottom-left, settle. */
-@keyframes qaap-sticky-composer-send-fly {
-  0% {
-    transform: translate(0, 0) scale(1);
-  }
-
-  25% {
-    transform: translate(-10%, 10%) scale(0.8);
-  }
-
-  50% {
-    transform: translate(100%, -100%) scale(1);
-  }
-
-  50.01% {
-    transform: translate(-125%, 125%) scale(1);
-  }
-
-  100% {
-    transform: translate(0, 0) scale(1);
-  }
-}
-
-.theia-mobile-projects-sticky-composer-send-icon.theia-mod-send-fly .theia-mobile-projects-sticky-composer-send-plane {
-  animation: qaap-sticky-composer-send-fly 1.2s ease-in-out both;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .theia-mobile-projects-sticky-composer-send-icon.theia-mod-send-fly .theia-mobile-projects-sticky-composer-send-plane {
-    animation: none;
-  }
-}
-
-.theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-input-actions .theia-mobile-projects-sticky-composer-send.theia-mod-ready {
-  background: var(--qaap-codex-send-ready-bg);
-  color: var(--qaap-codex-send-ready-fg);
-  opacity: 1;
 }
 
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-input-actions .theia-mobile-projects-sticky-composer-send.theia-mod-stop {

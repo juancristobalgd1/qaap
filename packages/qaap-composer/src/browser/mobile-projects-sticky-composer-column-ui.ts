@@ -34,7 +34,6 @@ import {
 } from './qaap-sticky-composer-prompt-history';
 import {
     createStickyComposerSendIcon,
-    playStickyComposerSendFly,
 } from './mobile-projects-sticky-composer-send-icon';
 
 export interface MobileProjectsStickyComposerColumnHost {
@@ -436,7 +435,6 @@ export class MobileProjectsStickyComposerColumnUi {
             submitInFlight = true;
             lastSubmitAt = now;
             lastSubmitDraft = draft;
-            playStickyComposerSendFly(sendBtn);
             recordStickyComposerPromptSubmission(input, draft);
             if (syntaxHighlight) {
                 syntaxHighlight.syncInputValue('');
