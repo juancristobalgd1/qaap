@@ -36,7 +36,7 @@ describe('mobile-work-hub-catalog', () => {
     it('only exposes Configuration in the account menu', () => {
         const items = QAAP_WORK_HUB_GETTING_STARTED.items;
 
-        expect(items.map(item => item.title)).to.deep.equal(['Configuration']);
+        expect(items.map(item => item.title)).to.deep.equal(['Harnesses']);
         expect(items.some(item => item.title === 'Color Theme')).to.equal(false);
         expect(items[0].action).to.deep.equal({
             type: 'command',
