@@ -247,8 +247,11 @@ const SELECTED_MODEL_ACCESS_FAILURE = /\bissue\s+with\s+the\s+selected\s+model\s
 const STORED_PROVIDER_KEY_MISSING = /^(?:Add (?:your|an) .+ API key\b.* in Settings\b.* to use QAIQ\b|Connect a harness in Settings → Harness to run this turn\b)/m;
 /** Persisted (English, backend-locale) form of {@link localizeProviderModelAccessMessage}. */
 const STORED_MODEL_ACCESS_DENIED = /^The model provider (?:refused|rejected access to) /m;
-/** Persisted form of {@link localizeAgentFailureMessage} for `provider_key_rejected` (with or without the provider name). */
-const STORED_PROVIDER_KEY_REJECTED = /^The (?:.+ )?provider refused this turn\. Connect a harness in Settings → Harness, then retry\./m;
+/**
+ * Persisted form of {@link localizeAgentFailureMessage} for `provider_key_rejected` (with or without the
+ * provider name), and the pre-harness copy ("Your X key was rejected … Settings → BYOK") that older turns kept.
+ */
+const STORED_PROVIDER_KEY_REJECTED = /^(?:The (?:.+ )?provider refused this turn\. Connect a harness in Settings → Harness, then retry\.|Your (?:.+ )?key was rejected\. Update it in Settings → BYOK, then retry\.)/m;
 /**
  * Note the task runner appends after probing the user's BYOK key with the provider, when the CLI's
  * own error was ambiguous (QAIQ reports any OpenRouter 4xx as "an issue with the selected model").
@@ -993,7 +996,7 @@ export function localizeMissingCodingAgentMessage(): string {
     }
     return nls.localize(
         'qaap/agentFailure/noCodingAgent',
-        'No coding agent CLI is installed. Install Cursor Agent, QAIQ, Claude Code, Codex, or OpenCode, then restart Qaap.',
+        'No coding agent CLI is installed. Install Cursor Agent, Claude Code, Codex, or OpenCode, then restart Qaap.',
     );
 }
 
