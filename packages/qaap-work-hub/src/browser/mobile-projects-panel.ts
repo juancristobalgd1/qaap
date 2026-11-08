@@ -411,7 +411,6 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     public agentsHubSelectedProjectId: string | undefined;
     protected readonly composerWorkspaceBranchByProjectId = new Map<string, string>();
     protected stickyComposerModeId: string | undefined;
-    protected stickyComposerCapabilityLevel: import('@theia/qaap-composer/lib/common/qaap-sticky-composer-model-capability').ModelCapabilityLevelValue | undefined;
     protected stickyComposerApprovalPolicyId: QaapAgentApprovalPolicyId | undefined;
     protected stickyComposerToolApprovalRules: QaapAgentToolApprovalRules | undefined;
     protected stickyComposerSurface: QaapComposerSurface = 'task';

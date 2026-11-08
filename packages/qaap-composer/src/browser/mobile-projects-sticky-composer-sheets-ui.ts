@@ -16,9 +16,6 @@ import {
     type QaapAgentToolApprovalRules,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-approval-rules';
 import {
-    type ModelCapabilityLevelValue,
-} from '../common/qaap-sticky-composer-model-capability';
-import {
     type ContextUsageBreakdownView,
 } from '@theia/qaap-transcript/lib/browser/qaap-chat-context-usage-panel';
 import {
@@ -29,7 +26,7 @@ import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mob
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import type { QaapComposerSurface } from '../common/qaap-composer-surface';
 import { appendAgentModelPickerListExtracted, createAgentPickerNoResultsHintExtracted } from './mobile-projects-sticky-composer-sheets-ui-activity';
-import { assignAgentPickerPopoverExtracted, closeStickyComposerSheetsExtracted, mountModeSheetPresentationExtracted, openExternalAgentPickerForSubmitExtracted, openStickyComposerAgentSheetExtracted, openStickyComposerContextUsageSheetExtracted, openStickyComposerModelCapabilityPopoverExtracted, shouldElevateComposerSheetsExtracted, syncAgentPickerPopoverPositionExtracted, teardownAgentPickerPopoverExtracted, teardownCapabilityPresentationExtracted, teardownContextUsagePresentationExtracted, teardownModeSheetPopoverExtracted } from './mobile-projects-sticky-composer-sheets-ui-render';
+import { assignAgentPickerPopoverExtracted, closeStickyComposerSheetsExtracted, mountModeSheetPresentationExtracted, openExternalAgentPickerForSubmitExtracted, openStickyComposerAgentSheetExtracted, openStickyComposerContextUsageSheetExtracted, shouldElevateComposerSheetsExtracted, syncAgentPickerPopoverPositionExtracted, teardownAgentPickerPopoverExtracted, teardownContextUsagePresentationExtracted, teardownModeSheetPopoverExtracted } from './mobile-projects-sticky-composer-sheets-ui-render';
 import { createModeSheetOptionExtracted, mountApprovalPolicySheetPresentationExtracted, openApprovalPolicySheetExtracted, openComposerModeSheetExtracted, openStickyComposerApprovalPolicySheetExtracted, openStickyComposerModeSheetExtracted, resolveModelsForAgentPickerExtracted, resolveModelsForAgentPickerSafeExtracted, syncApprovalPolicyPopoverPositionExtracted, teardownApprovalPolicySheetPopoverExtracted } from './mobile-projects-sticky-composer-sheets-ui-streaming';
 import { createComposerAgentPickerChromeExtracted, renderComposerAgentPickerExtracted } from './mobile-projects-sticky-composer-sheets-ui-timeline';
 import type { StickyComposerUntilDoneToggleOptions } from './qaap-sticky-composer-until-done-toggle';
@@ -108,12 +105,6 @@ export class MobileProjectsStickyComposerSheetsUi {
     public approvalPolicyPopoverCleanup: (() => void) | undefined;
     /** @internal Used by the extracted mobile-projects-sticky-composer-sheets-ui-* modules. */
     public approvalPolicyPopoverAlign: StickyComposerPopoverAlign = 'start';
-    /** @internal Used by the extracted mobile-projects-sticky-composer-sheets-ui-* modules. */
-    public capabilitySheetAnchor: HTMLElement | undefined;
-    /** @internal Used by the extracted mobile-projects-sticky-composer-sheets-ui-* modules. */
-    public capabilityPopoverCleanup: (() => void) | undefined;
-    /** @internal Used by the extracted mobile-projects-sticky-composer-sheets-ui-* modules. */
-    public capabilityPopoverAlign: StickyComposerPopoverAlign = 'end';
 
     constructor(
         /** @internal Used by the extracted mobile-projects-sticky-composer-sheets-ui-* modules. */
@@ -127,11 +118,6 @@ export class MobileProjectsStickyComposerSheetsUi {
 
     closeStickyComposerSheets(): void {
         closeStickyComposerSheetsExtracted(this);
-    }
-
-    /** @internal Used by the extracted mobile-projects-sticky-composer-sheets-ui-* modules. */
-    public teardownCapabilityPresentation(): void {
-        teardownCapabilityPresentationExtracted(this);
     }
 
     /** @internal Used by the extracted mobile-projects-sticky-composer-sheets-ui-* modules. */
@@ -151,10 +137,6 @@ export class MobileProjectsStickyComposerSheetsUi {
 
     openStickyComposerContextUsageSheet(refreshBreakdown: () => ContextUsageBreakdownView, transcriptOverlay?: boolean, anchor?: HTMLElement,): void {
         openStickyComposerContextUsageSheetExtracted(this, refreshBreakdown, transcriptOverlay, anchor);
-    }
-
-    openStickyComposerModelCapabilityPopover(options: { readonly anchor: HTMLButtonElement; readonly cwd: string | undefined; readonly transcriptOverlay?: boolean; readonly resolveLevel: () => ModelCapabilityLevelValue; readonly assignLevel: (level: ModelCapabilityLevelValue) => void; readonly onCommit?: () => void; }): void {
-        openStickyComposerModelCapabilityPopoverExtracted(this, options);
     }
 
     teardownAgentPickerPopover(): void {

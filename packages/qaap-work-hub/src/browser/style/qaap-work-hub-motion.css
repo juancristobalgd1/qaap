@@ -92,21 +92,7 @@
 .theia-mobile-transcript-tab-icon-select-menu.theia-mod-open:not([hidden]) {
   transform-origin: top right;
   animation: qaap-work-hub-pop-in-down var(--qaap-work-hub-enter-duration) var(--qaap-work-hub-enter-ease) backwards;
-}
-
-/*-----------------------------------------------------------------------------
-|| Bottom sheets (narrow viewport): the scrim fades, the panel rises.
-||----------------------------------------------------------------------------*/
-
-.theia-mobile-sticky-composer-sheet:not(.theia-mod-model-capability)>.theia-mobile-sticky-composer-sheet-backdrop {
-  animation: qaap-work-hub-fade-in var(--qaap-work-hub-sheet-duration) ease-out backwards;
-}
-
-.theia-mobile-sticky-composer-sheet:not(.theia-mod-model-capability)>.theia-mobile-sticky-composer-sheet-panel {
-  animation: qaap-work-hub-sheet-in var(--qaap-work-hub-sheet-duration) var(--qaap-work-hub-sheet-ease) backwards;
-}
-
-/*-----------------------------------------------------------------------------
+}/*-----------------------------------------------------------------------------
 || Header and composer controls: eased hover colours and a press response.
 ||----------------------------------------------------------------------------*/
 

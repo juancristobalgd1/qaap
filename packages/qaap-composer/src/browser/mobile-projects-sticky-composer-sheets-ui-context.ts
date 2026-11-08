@@ -22,9 +22,6 @@ export type MobileProjectsStickyComposerSheetsUiContextMember =
     | 'approvalPolicyPopoverCleanup'
     | 'approvalPolicySheetAnchor'
     | 'assignAgentPickerPopover'
-    | 'capabilityPopoverAlign'
-    | 'capabilityPopoverCleanup'
-    | 'capabilitySheetAnchor'
     | 'closeAllComposerSheets'
     | 'notifyComposerSheetsClosed'
     | 'contextUsageAnchor'
@@ -51,7 +48,6 @@ export type MobileProjectsStickyComposerSheetsUiContextMember =
     | 'syncApprovalPolicyPopoverPosition'
     | 'teardownAgentPickerPopover'
     | 'teardownApprovalPolicySheetPopover'
-    | 'teardownCapabilityPresentation'
     | 'teardownContextUsagePresentation'
     | 'teardownModeSheetPopover';
 
