@@ -458,14 +458,12 @@
 
 @media (max-width: 767px) {
     .qaap-sticky-composer-sheet-popover.theia-mod-agent-picker.theia-mod-model-picker {
-        width: 100%;
-        max-width: 100%;
-        max-height: min(560px, 80vh);
+        max-height: min(460px, 70vh);
     }
 
     .qaap-model-picker {
         width: 100%;
-        max-height: min(560px, 80vh);
+        max-height: min(460px, 70vh);
     }
 
     .qaap-model-picker-body {

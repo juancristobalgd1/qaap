@@ -25,8 +25,8 @@ import { disposeQaapComposerModelPicker, renderQaapComposerModelPicker } from '.
 import { positionStickyComposerPopover } from '@theia/qaap-transcript/lib/browser/qaap-sticky-composer-popover';
 
 /**
- * Desktop: the popover opens above the pill with its right edge on the pill. Its height is fixed by
- * the CSS so switching the rail does not move it; the list scrolls inside.
+ * Every width: the popover opens above the pill, its bottom edge 8px over the pill and its left edge on
+ * the pill (clamped 16px inside the viewport). Height follows the content up to the CSS cap; the list scrolls.
  */
 function placePickerAbove(popover: HTMLElement, anchor: HTMLElement | undefined): void {
     if (!anchor || !popover.classList.contains('qaap-sticky-composer-sheet-popover')) {
@@ -34,7 +34,7 @@ function placePickerAbove(popover: HTMLElement, anchor: HTMLElement | undefined)
     }
     // The shared popover positioning reads this flag on every resize and scroll too.
     popover.dataset.placement = 'above-start';
-    positionStickyComposerPopover(popover, anchor, 'start', 560);
+    positionStickyComposerPopover(popover, anchor, 'start', Math.min(560, window.innerWidth - 32));
 }
 
 /** Sign-in or API key guidance for a harness that cannot run yet; `undefined` when it can. */

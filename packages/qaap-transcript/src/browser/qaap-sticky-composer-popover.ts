@@ -54,11 +54,18 @@ export function isModelCapabilityPopoverAnchor(anchor?: HTMLElement): anchor is 
  * or when opening the model capability slider.
  * Working agents expand in place on the pill (not via this floating popover path).
  */
+/** Harness and model pill of the composer: the picker floats above it on every width. */
+export function isStickyComposerAgentPillPopoverAnchor(anchor?: HTMLElement): anchor is HTMLElement {
+    return anchor instanceof HTMLElement
+        && anchor.classList.contains('theia-mobile-projects-sticky-composer-agent');
+}
+
 export function shouldUseStickyComposerPopover(anchor?: HTMLElement): anchor is HTMLElement {
     return shouldUseStickyComposerDesktopPopover(anchor)
         || isStickyComposerAnnotationPopoverAnchor(anchor)
         || isWorkHubHeaderProjectPopoverAnchor(anchor)
-        || isModelCapabilityPopoverAnchor(anchor);
+        || isModelCapabilityPopoverAnchor(anchor)
+        || isStickyComposerAgentPillPopoverAnchor(anchor);
 }
 
 function getStickyComposerViewportBounds(): StickyComposerViewportBounds {
