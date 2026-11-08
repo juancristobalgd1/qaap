@@ -11,6 +11,7 @@ import {
     type StickyComposerTokenOption,
 } from '../common/qaap-sticky-composer-mention';
 import type { StickyComposerSlashSection } from '../common/qaap-sticky-composer-slash-menu';
+import { registerComposerImprovePromptAction } from './qaap-composer-improve-prompt-action';
 import { attachStickyComposerSyntaxHighlight } from '../common/qaap-sticky-composer-syntax-highlight';
 import { formatQaiqModelSelectionLabel } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
 import { populateAgentToolbarButton } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
@@ -262,6 +263,12 @@ export class MobileProjectsStickyComposerColumnUi {
         improveBloom.className = 'qaap-border-beam-bloom';
         improveBloom.setAttribute('aria-hidden', 'true');
         improveBtn.append(createStickyComposerImproveIcon(), improveBloom);
+        // The button lives in the "+" menu now; the menu runs this same control through the registry.
+        registerComposerImprovePromptAction(attachBtn, {
+            input,
+            hasText: () => input.value.trim().length > 0,
+            run: () => improveBtn.click(),
+        });
 
         const expandBtn = document.createElement('button');
         expandBtn.type = 'button';
@@ -492,9 +499,6 @@ export class MobileProjectsStickyComposerColumnUi {
         const inputActions = document.createElement('div');
         inputActions.className = 'theia-mobile-projects-sticky-composer-input-actions';
         inputActions.append(expandBtn);
-        if (options.onImprovePrompt) {
-            inputActions.append(improveBtn);
-        }
         inputActions.append(sendBtn);
 
         const inputBody = document.createElement('div');

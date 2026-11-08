@@ -112,3 +112,16 @@
     color: var(--theia-foreground);
     background: color-mix(in srgb, var(--q-accent, var(--qaap-accent, #E58E40)) 12%, transparent);
 }
+
+/* "Improve prompt" as a "+" menu item: it reads as disabled while the prompt is empty, with no hover or click. */
+.theia-mobile-projects-sticky-composer-attach-menu .theia-mobile-projects-sticky-composer-attach-menu-item.theia-mod-disabled,
+.theia-mobile-projects-sticky-composer-attach-menu .theia-mobile-projects-sticky-composer-attach-menu-item:disabled {
+    opacity: 0.4;
+    cursor: default;
+    pointer-events: none;
+}
+
+.theia-mobile-projects-sticky-composer-attach-menu .theia-mobile-projects-sticky-composer-attach-menu-item:disabled:hover,
+.theia-mobile-projects-sticky-composer-attach-menu .theia-mobile-projects-sticky-composer-attach-menu-item:disabled:focus-visible {
+    background: transparent !important;
+}
