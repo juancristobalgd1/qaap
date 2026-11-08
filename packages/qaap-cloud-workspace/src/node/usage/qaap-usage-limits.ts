@@ -49,9 +49,7 @@ export class QaapUsageLimitsService {
 
     async getLimits(): Promise<QaapUsageLimits> {
         const claude = await this.claudeLimits();
-        return {
-            providers: [claude, this.codexLimits(), { provider: 'antigravity', status: 'unavailable', reason: 'Not available yet', windows: [] }],
-        };
+        return { providers: [claude, this.codexLimits()] };
     }
 
     protected codexLimits(): QaapUsageProviderLimits {

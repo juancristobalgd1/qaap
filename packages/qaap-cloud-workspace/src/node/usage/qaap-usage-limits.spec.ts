@@ -79,7 +79,7 @@ describe('QaapUsageLimitsService', () => {
         const limits = await serviceWith(new QaapUsageScanner(), path.join(directory, 'missing.json')).getLimits();
         expect(claudeOf(limits)).to.deep.equal({ provider: 'claude', status: 'unavailable', reason: 'Sign in to Claude Code on this machine', windows: [] });
         expect(called).to.be.false;
-        expect(limits.providers.find(provider => provider.provider === 'antigravity')?.status).to.equal('unavailable');
+        expect(limits.providers.map(provider => provider.provider)).to.deep.equal(['claude', 'codex']);
     });
 
     it('maps the Claude usage response and caches it without leaking the token', async () => {
