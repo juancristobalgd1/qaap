@@ -1749,12 +1749,6 @@ body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects.theia-mod-hom
   .theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-controls-row {
     padding: 4px 10px 6px;
   }
-
-  .theia-mobile-projects-sticky-composer-card.theia-mod-codex .qaap-codex-context-tray,
-  .theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-toolbar.qaap-codex-context-tray {
-    padding-left: 10px;
-    padding-right: 10px;
-  }
 }
 
 /* Landscape phones in one-column shell — same horizontal inset as narrow mobile. */
@@ -2086,17 +2080,6 @@ body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects.theia-mod-hom
 
 .theia-mobile-projects-sticky-composer-surface.theia-mod-locked .theia-qaap-segmented-option {
   opacity: 0.92;
-}
-
-.theia-mobile-projects-sticky-composer-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-  width: 100%;
-  min-width: 0;
-  max-width: 100%;
-  box-sizing: border-box;
 }
 
 .theia-mobile-projects-sticky-composer-inner {

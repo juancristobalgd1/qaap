@@ -97,12 +97,12 @@ describe('header IDE/Agents switch CSS', () => {
         );
     });
 
-    it('keeps the composer in place while the input is focused', () => {
-        expect(conversationCss).to.not.match(
-            /\.theia-mod-input-expanded \.theia-mobile-projects-sticky-composer-stage\s*\{[^}]*padding-bottom:\s*0/s,
+    it('reserves no band under the composer stage', () => {
+        expect(conversationCss).to.match(
+            /\.theia-mobile-projects-sticky-composer-card\.theia-mod-codex \.theia-mobile-projects-sticky-composer-stage\s*\{[^}]*padding-bottom:\s*0;/s,
         );
         expect(conversationCss).to.not.match(
-            /\.theia-mod-input-expanded \.theia-mobile-projects-sticky-composer-stage>\.qaap-codex-context-tray[^{]*\{[^}]*translateY\(100%\)/s,
+            /sticky-composer-stage[^{]*\{[^}]*padding-bottom:\s*calc\(/s,
         );
     });
 });
