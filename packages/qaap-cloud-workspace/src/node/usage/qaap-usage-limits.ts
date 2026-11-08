@@ -24,6 +24,11 @@ export const QAAP_USAGE_CLAUDE_KEYCHAIN_SERVICE = 'Claude Code-credentials';
 const KEYCHAIN_TIMEOUT_MS = 5_000;
 const SIGN_IN_REASON = 'Sign in to Claude Code on this machine';
 const EXPIRED_REASON = 'Claude Code session expired: open Claude Code to refresh it';
+/** How long the first scan may delay a limits answer before the Codex card reports `loading`. */
+const FIRST_SCAN_WAIT_MS = 10_000;
+/** Waits after successive HTTP 429 responses when Anthropic sends no Retry-After. */
+const RATE_LIMIT_BACKOFF_MS = [60_000, 120_000, 300_000, 600_000];
+const MINUTE_MS = 60_000;
 
 /** Anthropic's OAuth usage endpoint, the same one Claude Code's `/usage` view reads. */
 export const QAAP_USAGE_CLAUDE_USAGE_URL = 'https://api.anthropic.com/api/oauth/usage';
@@ -51,6 +56,10 @@ export class QaapUsageLimitsService {
     protected claudeCache: { expiresAt: number; value: QaapUsageProviderLimits } | undefined;
     protected claudeInFlight: Promise<QaapUsageProviderLimits> | undefined;
     protected loggedResponseShape = false;
+    /** Last successful Claude answer, returned with its `observedAt` while Anthropic rate-limits us. */
+    protected claudeLastGood: QaapUsageProviderLimits | undefined;
+    protected claudeBlockedUntil = 0;
+    protected claudeBackoffStep = 0;
     /** `execFile` without a shell, promisified once so that tests can replace it. */
     protected readonly execFileAsync = promisify(childProcess.execFile) as unknown as (
         file: string,
@@ -86,15 +95,33 @@ export class QaapUsageLimitsService {
     }
 
     async getLimits(): Promise<QaapUsageLimits> {
-        const claude = await this.claudeLimits();
+        const [claude] = await Promise.all([this.claudeLimits(), this.waitForFirstScan()]);
         return { providers: [claude, this.codexLimits()] };
+    }
+
+    /** Starts the first local log scan if needed and waits for it, for at most `FIRST_SCAN_WAIT_MS`. */
+    protected async waitForFirstScan(): Promise<void> {
+        if (this.scanner.hasCompletedScan()) {
+            return;
+        }
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const timeout = new Promise<void>(resolve => {
+            timer = setTimeout(resolve, FIRST_SCAN_WAIT_MS);
+        });
+        try {
+            await Promise.race([this.scanner.scan().catch(() => undefined), timeout]);
+        } finally {
+            clearTimeout(timer);
+        }
     }
 
     protected codexLimits(): QaapUsageProviderLimits {
         const observation = this.scanner.getLedger().latestRateLimits();
         if (!observation) {
-            const reason = this.scanner.hasCompletedScan() ? 'No Codex rate-limit data in local logs' : 'Codex logs have not been scanned yet';
-            return { provider: 'codex', status: 'unavailable', reason, windows: [] };
+            if (!this.scanner.hasCompletedScan()) {
+                return { provider: 'codex', status: 'loading', reason: 'Scanning local agent logs…', windows: [] };
+            }
+            return { provider: 'codex', status: 'unavailable', reason: 'No Codex rate-limit data in local logs', windows: [] };
         }
         const windows: QaapUsageLimitWindow[] = [];
         if (observation.primary) {
@@ -128,6 +155,9 @@ export class QaapUsageLimitsService {
     }
 
     protected async fetchClaudeLimits(): Promise<QaapUsageProviderLimits> {
+        if (this.now() < this.claudeBlockedUntil) {
+            return this.rateLimitedClaudeLimits();
+        }
         const token = await this.readClaudeAccessToken();
         if (typeof token !== 'string') {
             return { provider: 'claude', status: 'unavailable', reason: token.reason, windows: [] };
@@ -142,18 +172,47 @@ export class QaapUsageLimitsService {
                 },
                 signal: AbortSignal.timeout(CLAUDE_REQUEST_TIMEOUT_MS),
             });
+            if (response.status === 429) {
+                this.blockClaudeRequests(response.headers.get('retry-after'));
+                return this.rateLimitedClaudeLimits();
+            }
             if (!response.ok) {
                 return { provider: 'claude', status: 'error', reason: `Claude usage request failed (HTTP ${response.status})`, windows: [] };
             }
             const body = await response.json() as unknown;
             this.logResponseShapeOnce(body);
             const windows = claudeWindows(body);
-            return windows.length > 0
-                ? { provider: 'claude', status: 'ok', windows, observedAt: new Date(this.now()).toISOString() }
-                : { provider: 'claude', status: 'unavailable', reason: 'Claude usage response had no limit windows', windows: [] };
+            if (windows.length === 0) {
+                return { provider: 'claude', status: 'unavailable', reason: 'Claude usage response had no limit windows', windows: [] };
+            }
+            this.claudeBackoffStep = 0;
+            this.claudeBlockedUntil = 0;
+            this.claudeLastGood = { provider: 'claude', status: 'ok', windows, observedAt: new Date(this.now()).toISOString() };
+            return this.claudeLastGood;
         } catch {
             return { provider: 'claude', status: 'error', reason: 'Claude usage request failed', windows: [] };
         }
+    }
+
+    /** Stops asking Anthropic until the Retry-After delay (or the backoff step) has passed. */
+    protected blockClaudeRequests(retryAfter: string | null): void {
+        const delay = parseRetryAfterMs(retryAfter, this.now()) ?? RATE_LIMIT_BACKOFF_MS[Math.min(this.claudeBackoffStep, RATE_LIMIT_BACKOFF_MS.length - 1)];
+        this.claudeBackoffStep++;
+        this.claudeBlockedUntil = this.now() + delay;
+    }
+
+    /** The last good answer, marked with its age, or an unavailable card that says when the next try is. */
+    protected rateLimitedClaudeLimits(): QaapUsageProviderLimits {
+        if (this.claudeLastGood) {
+            return this.claudeLastGood;
+        }
+        const minutes = Math.max(1, Math.ceil((this.claudeBlockedUntil - this.now()) / MINUTE_MS));
+        return {
+            provider: 'claude',
+            status: 'unavailable',
+            reason: `Anthropic is rate-limiting usage checks; retrying in ${minutes} min`,
+            windows: [],
+        };
     }
 
     /**
@@ -222,6 +281,19 @@ export class QaapUsageLimitsService {
             return 'unknown';
         }
     }
+}
+
+/** Seconds or an HTTP date from a Retry-After header, as milliseconds from `now`. */
+export function parseRetryAfterMs(value: string | null, now: number): number | undefined {
+    if (!value) {
+        return undefined;
+    }
+    const seconds = Number(value);
+    if (Number.isFinite(seconds)) {
+        return seconds > 0 ? seconds * 1000 : undefined;
+    }
+    const date = Date.parse(value);
+    return Number.isNaN(date) || date <= now ? undefined : date - now;
 }
 
 /** Label for a Codex rate-limit window, from its length in minutes. */

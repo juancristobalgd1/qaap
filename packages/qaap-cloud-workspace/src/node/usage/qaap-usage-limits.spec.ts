@@ -9,7 +9,7 @@ import { expect } from 'chai';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { QaapUsageLimitsService, codexWindowLabel } from './qaap-usage-limits';
+import { QaapUsageLimitsService, codexWindowLabel, parseRetryAfterMs } from './qaap-usage-limits';
 import { QaapUsageScanner } from './qaap-usage-scanner';
 
 const FAKE_TOKEN = 'sk-ant-oat01-synthetic-token-for-tests';
@@ -39,16 +39,23 @@ describe('QaapUsageLimitsService', () => {
     });
 
     /** A service on Linux by default, so the real keychain is never read unless a test asks for macOS. */
+    /** A scanner whose first scan has already finished and which never reads the real home directory. */
+    function completedScanner(): QaapUsageScanner {
+        const scanner = new QaapUsageScanner();
+        Object.assign(scanner, { hasCompletedScan: () => true, scan: async () => undefined });
+        return scanner;
+    }
+
     /**
      * `keychain` is what the fake `security` prints; `null` makes it fail as for a missing item. Commands are
      * recorded in `calls`.
      */
-    function serviceWith(credentialsFile: string, options: { platform?: NodeJS.Platform; scanner?: QaapUsageScanner; keychain?: string | null; calls?: string[][] } = {}): QaapUsageLimitsService {
+    function serviceWith(credentialsFile: string, options: { platform?: NodeJS.Platform; scanner?: QaapUsageScanner; keychain?: string | null; calls?: string[][]; clock?: { now: number } } = {}): QaapUsageLimitsService {
         const service = new QaapUsageLimitsService();
         Object.assign(service, {
-            scanner: options.scanner ?? new QaapUsageScanner(),
+            scanner: options.scanner ?? completedScanner(),
             credentialsFile,
-            now: () => Date.now(),
+            now: () => options.clock?.now ?? Date.now(),
             platform: () => options.platform ?? 'linux',
         });
         if (options.keychain !== undefined) {
@@ -87,7 +94,7 @@ describe('QaapUsageLimitsService', () => {
     }
 
     it('reads Codex windows from the newest rate-limit observation', async () => {
-        const scanner = new QaapUsageScanner();
+        const scanner = completedScanner();
         scanner.getLedger().set('older.jsonl', {
             size: 0, mtimeMs: 0, offset: 0, context: { fallbackSessionId: 'older' }, entries: new Map(), skipped: 0,
             rateLimits: { observedAtMs: Date.parse('2026-01-01T00:00:00.000Z'), primary: { usedPercent: 90, windowMinutes: 300 } },
@@ -214,5 +221,81 @@ describe('QaapUsageLimitsService', () => {
         const claude = claudeOf(await serviceWith(path.join(directory, 'missing.json'), { platform: 'darwin', keychain: keychainPayload(), calls }).getLimits());
         expect(calls).to.have.length(0);
         expect(claude).to.deep.include({ status: 'unavailable', reason: 'Sign in to Claude Code on this machine' });
+    });
+
+    it('retries after Retry-After and reports the wait while Anthropic rate-limits', async () => {
+        const credentials = path.join(directory, '.credentials.json');
+        fs.writeFileSync(credentials, keychainPayload());
+        const clock = { now: Date.parse('2026-02-01T00:00:00.000Z') };
+        const service = serviceWith(credentials, { clock });
+        let calls = 0;
+        globalThis.fetch = (async () => {
+            calls++;
+            return new Response('slow down', { status: 429, headers: { 'retry-after': '120' } });
+        }) as typeof fetch;
+        const first = claudeOf(await service.getLimits());
+        expect(first).to.deep.include({ status: 'unavailable', reason: 'Anthropic is rate-limiting usage checks; retrying in 2 min' });
+        expect(calls).to.equal(1);
+
+        clock.now += 60_000;
+        claudeOf(await service.getLimits());
+        expect(calls).to.equal(1);
+
+        clock.now += 5 * 60_000;
+        globalThis.fetch = (async () => {
+            calls++;
+            return new Response(JSON.stringify({ five_hour: { utilization: 20 } }), { status: 200 });
+        }) as typeof fetch;
+        expect(claudeOf(await service.getLimits()).status).to.equal('ok');
+        expect(calls).to.equal(2);
+    });
+
+    it('returns the last good Claude answer with its observedAt while rate-limited', async () => {
+        const credentials = path.join(directory, '.credentials.json');
+        fs.writeFileSync(credentials, keychainPayload());
+        const clock = { now: Date.parse('2026-02-01T00:00:00.000Z') };
+        const service = serviceWith(credentials, { clock });
+        fakeUsageFetch({ five_hour: { utilization: 30 } });
+        const good = claudeOf(await service.getLimits());
+        expect(good.observedAt).to.equal('2026-02-01T00:00:00.000Z');
+
+        clock.now += 6 * 60_000;
+        globalThis.fetch = (async () => new Response('slow down', { status: 429 })) as typeof fetch;
+        const stale = claudeOf(await service.getLimits());
+        expect(stale).to.deep.include({ status: 'ok', observedAt: '2026-02-01T00:00:00.000Z' });
+        expect(stale.windows).to.deep.equal(good.windows);
+    });
+
+    it('sends one request for concurrent limits calls', async () => {
+        const credentials = path.join(directory, '.credentials.json');
+        fs.writeFileSync(credentials, keychainPayload());
+        let calls = 0;
+        globalThis.fetch = (async () => {
+            calls++;
+            await new Promise(resolve => setTimeout(resolve, 10));
+            return new Response(JSON.stringify({ five_hour: { utilization: 5 } }), { status: 200 });
+        }) as typeof fetch;
+        const service = serviceWith(credentials);
+        const answers = await Promise.all([service.getLimits(), service.getLimits(), service.getLimits()]);
+        expect(calls).to.equal(1);
+        expect(answers.every(answer => claudeOf(answer).status === 'ok')).to.be.true;
+    });
+
+    it('starts the first log scan from /limits and reports Codex as loading until it finishes', async () => {
+        const scanner = new QaapUsageScanner();
+        let scans = 0;
+        Object.assign(scanner, { hasCompletedScan: () => false, scan: async () => { scans++; } });
+        const limits = await serviceWith(path.join(directory, 'missing.json'), { scanner }).getLimits();
+        expect(scans).to.equal(1);
+        expect(limits.providers.find(provider => provider.provider === 'codex')).to.deep.include({
+            status: 'loading', reason: 'Scanning local agent logs…',
+        });
+    });
+
+    it('reads Retry-After as seconds or as an HTTP date', () => {
+        expect(parseRetryAfterMs('90', 0)).to.equal(90_000);
+        expect(parseRetryAfterMs('Thu, 01 Jan 1970 00:02:00 GMT', 0)).to.equal(120_000);
+        expect(parseRetryAfterMs(undefined as unknown as string, 0)).to.be.undefined;
+        expect(parseRetryAfterMs('soon', 0)).to.be.undefined;
     });
 });
