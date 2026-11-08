@@ -13,6 +13,7 @@
 // `import type` throughout to avoid a runtime import cycle with the extracted modules (all of which
 // are imported back into `qaap-agent-task-runner.ts`).
 
+import type { QaapAgentEffortLevel } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
 import type { Emitter } from '@theia/core/lib/common/event';
 import type { PreferenceService } from '@theia/core/lib/common/preferences';
 import type { ChildProcess } from 'child_process';
@@ -206,6 +207,7 @@ export interface QaapAgentTaskRunnerContext {
         userQuery?: string,
         readOnlyWorkspace?: boolean,
         ownerLogin?: string,
+        effort?: QaapAgentEffortLevel,
     ): QaapAgentCommandBuildResult;
     readProjectInfo(cwd: string): string | undefined;
     loadProjectInfoFromDisk(cwd: string): string | undefined;

@@ -449,6 +449,7 @@ export async function spawnProcessWhenReadyExtracted(ctx: QaapAgentTaskRunnerCon
                     request.userQuery,
                     task.readOnlyWorkspace,
                     task.ownerLogin,
+                    request.effort,
                 );
                 ctx.recordTaskLatencyMark(task.id, 'build_agent_command_end');
                 if (stdinPrompt) {
