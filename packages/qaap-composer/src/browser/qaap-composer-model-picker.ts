@@ -286,6 +286,12 @@ function createFooterMenu(
         const text = document.createElement('span');
         text.textContent = item.label;
         button.append(text);
+        if (item.checked) {
+            const check = document.createElement('span');
+            check.className = 'codicon codicon-check qaap-model-picker-menu-check';
+            check.setAttribute('aria-hidden', 'true');
+            button.append(check);
+        }
         button.addEventListener('click', ev => {
             ev.preventDefault();
             setOpenMenu(host, undefined);

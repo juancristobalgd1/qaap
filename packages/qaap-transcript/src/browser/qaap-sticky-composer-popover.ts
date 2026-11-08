@@ -85,6 +85,15 @@ export function positionStickyComposerPopover(
     const viewport = getStickyComposerViewportBounds();
     const popoverWidth = Math.max(popover.offsetWidth, minimumWidth);
     const popoverHeight = popover.offsetHeight;
+    if (popover.dataset.placement === 'above-start') {
+        // Opens upward with its left edge on the anchor's left edge, kept 16px inside the viewport.
+        const edge = 16;
+        const aboveTop = anchorRect.top - gap - popoverHeight;
+        popover.style.top = `${Math.max(viewport.top + edge, aboveTop)}px`;
+        const maxLeft = viewport.right - popoverWidth - edge;
+        popover.style.left = `${Math.max(viewport.left + edge, Math.min(anchorRect.left, maxLeft))}px`;
+        return;
+    }
     let top = anchorRect.bottom + gap;
     const minTop = viewport.top + margin;
     const maxBottom = viewport.bottom - margin;

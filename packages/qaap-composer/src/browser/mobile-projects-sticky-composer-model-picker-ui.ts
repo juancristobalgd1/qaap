@@ -22,6 +22,7 @@ import { adoptPendingComposerEffort, resolveComposerEffortLevel, writeComposerEf
 import type { MobileProjectsStickyComposerSheetsUiContext } from './mobile-projects-sticky-composer-sheets-ui-context';
 import type { ComposerAgentPickerChrome } from './mobile-projects-sticky-composer-sheets-ui';
 import { renderQaapComposerModelPicker } from './qaap-composer-model-picker';
+import { positionStickyComposerPopover } from '@theia/qaap-transcript/lib/browser/qaap-sticky-composer-popover';
 
 /**
  * Desktop: the popover opens above the pill with its right edge on the pill. Its height is fixed by
@@ -31,12 +32,9 @@ function placePickerAbove(popover: HTMLElement, anchor: HTMLElement | undefined)
     if (!anchor || !popover.classList.contains('qaap-sticky-composer-sheet-popover')) {
         return;
     }
-    const rect = anchor.getBoundingClientRect();
-    const gap = 8;
-    const width = Math.min(560, window.innerWidth - 32);
-    const height = Math.min(460, window.innerHeight * 0.7);
-    popover.style.left = `${Math.max(16, Math.min(rect.right - width, window.innerWidth - width - 16))}px`;
-    popover.style.top = `${Math.max(16, rect.top - gap - height)}px`;
+    // The shared popover positioning reads this flag on every resize and scroll too.
+    popover.dataset.placement = 'above-start';
+    positionStickyComposerPopover(popover, anchor, 'start', 560);
 }
 
 /** Sign-in or API key guidance for a harness that cannot run yet; `undefined` when it can. */
