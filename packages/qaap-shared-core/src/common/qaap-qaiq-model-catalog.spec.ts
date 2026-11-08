@@ -22,6 +22,14 @@ describe('formatQaiqModelIdShortLabel', () => {
         expect(formatQaiqModelIdShortLabel('tencent/hy3:free')).to.equal('hy3:free');
     });
 
+    it('keeps only the model name: provider segments and the OpenRouter ~ go', () => {
+        expect(formatQaiqModelIdShortLabel('openrouter/~moonshotai/kimi-latest')).to.equal('kimi-latest');
+        expect(formatQaiqModelIdShortLabel('anthropic/claude-sonnet-latest')).to.equal('claude-sonnet-latest');
+        expect(formatQaiqModelIdShortLabel('mlx-community/Qwen2.5-Coder-7B-Instruct-4bit'))
+            .to.equal('Qwen2.5-Coder-7B-Instruct-4bit');
+        expect(formatQaiqModelDisplayLabel({ modelId: 'openrouter/~moonshotai/kimi-latest' })).to.equal('kimi-latest');
+    });
+
     it('keeps ids without a path segment as-is', () => {
         expect(formatQaiqModelIdShortLabel('claude-sonnet-4')).to.equal('claude-sonnet-4');
         expect(formatQaiqModelIdShortLabel('gpt-4o')).to.equal('gpt-4o');
