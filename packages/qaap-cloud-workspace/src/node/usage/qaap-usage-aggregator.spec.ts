@@ -7,9 +7,8 @@
 
 import { expect } from 'chai';
 import type { QaapUsageRecord } from './qaap-usage-record';
-import type { QaapUsageLedgerEntry } from './qaap-usage-ledger';
 import { QaapUsageAggregator } from './qaap-usage-aggregator';
-import { QaapUsageLedger } from './qaap-usage-ledger';
+import { QaapUsageLedger, type QaapUsageLedgerEntry } from './qaap-usage-ledger';
 import { QaapUsagePriceList } from './qaap-usage-prices';
 import { QaapUsageTime } from './qaap-usage-time';
 
