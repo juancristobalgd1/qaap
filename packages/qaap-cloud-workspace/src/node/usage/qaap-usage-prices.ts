@@ -3,9 +3,8 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import * as fs from 'fs';
-import * as path from 'path';
 import type { QaapUsageTokenBreakdown } from '@theia/qaap-shared-core/lib/common/qaap-usage-summary-protocol';
+import { QAAP_USAGE_MODEL_PRICES } from './qaap-usage-model-prices-data';
 
 /** List price in USD per million tokens. Cache rates fall back to the input rate when absent. */
 export interface QaapUsageModelPrice {
@@ -22,21 +21,19 @@ export interface QaapUsageCost {
 }
 
 /**
- * List prices from the bundled `resources/qaap-usage-model-prices.json`, a snapshot of the LiteLLM price
- * catalogue for the models the local agent CLIs use. Reported CLI costs never pass through here.
+ * List prices from the compiled-in `QAAP_USAGE_MODEL_PRICES` table, a snapshot of the LiteLLM price catalogue
+ * for the models the local agent CLIs use. Reported CLI costs never pass through here.
  */
 export class QaapUsagePriceList {
-
-    static readonly BUNDLED_PATH = path.join(__dirname, '..', '..', '..', 'resources', 'qaap-usage-model-prices.json');
 
     private static bundled: QaapUsagePriceList | undefined;
 
     protected constructor(protected readonly prices: ReadonlyMap<string, QaapUsageModelPrice>) { }
 
-    /** The bundled table, read once per process. An unreadable file yields an empty table. */
+    /** The compiled-in table, built once per process. */
     static loadBundled(): QaapUsagePriceList {
         if (!QaapUsagePriceList.bundled) {
-            QaapUsagePriceList.bundled = QaapUsagePriceList.fromJson(QaapUsagePriceList.readBundledFile());
+            QaapUsagePriceList.bundled = QaapUsagePriceList.fromJson(QAAP_USAGE_MODEL_PRICES);
         }
         return QaapUsagePriceList.bundled;
     }
@@ -108,13 +105,5 @@ export class QaapUsagePriceList {
             price.cacheWrite = record.cacheWrite;
         }
         return price;
-    }
-
-    protected static readBundledFile(): unknown {
-        try {
-            return JSON.parse(fs.readFileSync(QaapUsagePriceList.BUNDLED_PATH, 'utf8'));
-        } catch {
-            return undefined;
-        }
     }
 }

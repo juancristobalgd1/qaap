@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import { QAAP_USAGE_MODEL_PRICES } from './qaap-usage-model-prices-data';
 import { QaapUsagePriceList } from './qaap-usage-prices';
 
 describe('QaapUsagePriceList', () => {
@@ -44,9 +45,15 @@ describe('QaapUsagePriceList', () => {
         expect(table.costOf('mystery', { input: 1, cachedInput: 0, cacheWrite: 0, output: 1, reasoning: 0 })).to.be.undefined;
     });
 
-    it('loads the bundled catalogue with entries for the common CLI models', () => {
+    it('loads the compiled-in catalogue with entries for the common CLI models', () => {
         const bundled = QaapUsagePriceList.loadBundled();
-        expect(bundled.lookup('claude-sonnet-4-5-20250929')?.input).to.be.a('number');
+        expect(Object.keys(QAAP_USAGE_MODEL_PRICES).length).to.be.greaterThan(100);
+        expect(bundled.lookup('claude-sonnet-4-5-20250929')?.input).to.equal(3);
         expect(bundled.lookup('gpt-5-codex')?.output).to.be.a('number');
+    });
+
+    it('prices a bundled Claude model to a non-zero cost', () => {
+        const cost = QaapUsagePriceList.loadBundled().costOf('claude-sonnet-4-5', { input: 1_000_000, cachedInput: 0, cacheWrite: 0, output: 0, reasoning: 0 });
+        expect(cost?.costUsd).to.equal(3);
     });
 });
