@@ -41,7 +41,7 @@ function defaultCwd(): string {
 
 function seedRoutines(cwd: string): QaapWorkHubRoutine[] {
     const now = Date.now();
-    // The seeded routines run on the configured default harness (QAAP_DEFAULT_AGENT_ID, else qaiq).
+    // The seeded routines run on the configured default harness (QAAP_DEFAULT_AGENT_ID); unset means the first available harness.
     const defaultAgent = readBackendDefaultAgentId();
     const base = (partial: Omit<QaapWorkHubRoutine, 'createdAt' | 'updatedAt'>): QaapWorkHubRoutine => ({
         ...partial,

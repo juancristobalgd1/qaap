@@ -45,7 +45,7 @@ describe('QaapAgentTaskRunner harness status catalog', () => {
             installSupported: true,
             cliBinDirectory: aliceBin,
         });
-        expect(statuses.find(status => status.id === 'qaiq')?.installed).to.equal(true);
+        expect(statuses.find(status => status.id === 'qaiq')).to.equal(undefined);
     });
 
     it("reports the owner's last turn per harness, and nothing for harnesses never used", () => {

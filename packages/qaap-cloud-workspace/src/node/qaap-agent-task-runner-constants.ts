@@ -61,8 +61,12 @@ export const REPO_MAP_MAX_CHARS = 4000;
 export const REPO_MAP_CACHE_TTL_MS = 60_000;
 /** Source-ish top-level directories worth expanding one level deeper in the repo map. */
 
-/** When several CLIs are on PATH, prefer BYOK/free-tier runners over subscription CLIs. */
-export const DEFAULT_AGENT_PREFERENCE: readonly string[] = [QAIQ_AGENT_ID, 'openclaude', 'grok', 'codex', 'claude', 'cursor'];
+/**
+ * When several harnesses are installed, the first usable one in this order is the default for an
+ * owner (after the operator's `QAAP_DEFAULT_AGENT`). QAIQ is retired and never listed here. Pi is
+ * deliberately not a preferred default (a never-probed Pi must not win the fallback).
+ */
+export const DEFAULT_AGENT_PREFERENCE: readonly string[] = ['claude', 'codex', 'grok', 'cursor'];
 
 /**
  * Hosted agents that run without a user key or login (OpenCode's free catalog). They are never the
