@@ -28,9 +28,11 @@ export class QaapThemeContribution implements FrontendApplicationContribution {
 
     /** Theme ids that should receive Qaap styling (kept in sync with the
      * `QaapBuiltinThemeBrandingContribution` registrations). */
-    protected static readonly QAAP_THEME_IDS: ReadonlyMap<string, string> = new Map([
-        ['light', 'qaap-theme-light'],
-        ['dark', 'qaap-theme-dark']
+    protected static readonly QAAP_THEME_IDS: ReadonlyMap<string, readonly string[]> = new Map([
+        ['light', ['qaap-theme-light']],
+        ['dark', ['qaap-theme-dark']],
+        // High Contrast keeps its black canvas but reuses the Qaap dark accents; `qaap-theme-hc` carries the HC overrides.
+        ['hc-theia', ['qaap-theme-dark', 'qaap-theme-hc']]
     ]);
 
     @inject(ThemeService)
@@ -47,12 +49,12 @@ export class QaapThemeContribution implements FrontendApplicationContribution {
         const body = document.body;
         body.dataset.theiaThemeMode = getThemeMode(theme.type);
         // Clear any previous Qaap class so theme switches don't leave both on.
-        for (const cssClass of QaapThemeContribution.QAAP_THEME_IDS.values()) {
-            body.classList.remove(cssClass);
+        for (const cssClasses of QaapThemeContribution.QAAP_THEME_IDS.values()) {
+            body.classList.remove(...cssClasses);
         }
         const next = QaapThemeContribution.QAAP_THEME_IDS.get(theme.id);
         if (next) {
-            body.classList.add(next);
+            body.classList.add(...next);
         }
     }
 }
