@@ -34,7 +34,7 @@ describe('qaap-agent-task-client', () => {
     });
 
     it('normalizeBackendAgentId no longer recognizes retired agents', () => {
-        for (const id of ['qaiq', 'hermes', 'openclaw', 'cursor', 'cursor-agent', 'antigravity', 'gemini', 'copilot', 'qwen', 'kimi', 'openclaude', 'grok']) {
+        for (const id of ['qaiq', 'hermes', 'openclaw', 'qwen', 'kimi', 'openclaude']) {
             expect(normalizeBackendAgentId(id), id).to.equal(undefined);
         }
     });
@@ -119,11 +119,11 @@ describe('qaap-agent-task-client', () => {
         expect(agents.find(agent => agent.id === 'qaiq')).to.equal(undefined);
     });
 
-    it('listQaapComposerPickerAgents lists exactly claude, codex, opencode and pi by default', () => {
+    it('listQaapComposerPickerAgents lists every builtin harness by default and never the retired qaiq', () => {
         const detected = ['qaiq', 'claude'].map(id => ({ id, label: id, available: true }));
         const agents = listQaapComposerPickerAgents(detected, [...QAAP_DEFAULT_DISABLED_HARNESS_IDS]);
-        expect(agents.map(agent => agent.id).sort()).to.deep.equal(['claude', 'codex', 'opencode', 'pi']);
         expect(agents.map(agent => agent.id).sort()).to.deep.equal(QAAP_HARNESS_DEFINITIONS.map(harness => harness.id).sort());
+        expect(agents.find(agent => agent.id === 'qaiq')).to.equal(undefined);
         for (const id of ['codex', 'opencode', 'pi']) {
             expect(agents.find(agent => agent.id === id)?.available, id).to.equal(false);
         }

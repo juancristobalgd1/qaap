@@ -28,8 +28,9 @@ describe('Qaap built-in agent command templates', () => {
             .to.contain('-c check_for_update_on_startup=false');
     });
 
-    it('registers exactly claude, codex, opencode and pi as harnesses; retired qaiq is hidden', () => {
-        expect(QAAP_HARNESS_DEFINITIONS.map(harness => harness.id).sort()).to.deep.equal(['claude', 'codex', 'opencode', 'pi']);
+    it('registers the builtin CLIs as harnesses; retired qaiq is hidden', () => {
+        expect(QAAP_HARNESS_DEFINITIONS.map(harness => harness.id).sort())
+            .to.deep.equal(['antigravity', 'claude', 'codex', 'copilot', 'cursor', 'grok', 'opencode', 'pi']);
         expect(isUiHiddenVpsAgent('qaiq')).to.equal(true);
     });
 
@@ -42,10 +43,13 @@ describe('Qaap built-in agent command templates', () => {
 
     it('keeps retired CLIs out of the registry and the mention resolver', () => {
         const retired = QAAP_RETIRED_AGENT_DEFINITIONS.map(agent => agent.id).sort();
-        expect(retired).to.deep.equal(['antigravity', 'copilot', 'cursor', 'grok', 'hermes', 'kimi', 'openclaude', 'openclaw', 'qwen']);
-        for (const id of [...retired, 'cursor-agent', 'gemini', 'grok-build']) {
+        expect(retired).to.deep.equal(['hermes', 'kimi', 'openclaude', 'openclaw', 'qwen']);
+        for (const id of retired) {
             expect(resolveQaapBuiltinAgentMentionId(id), id).to.equal(undefined);
         }
+        expect(resolveQaapBuiltinAgentMentionId('cursor-agent')).to.equal('cursor');
+        expect(resolveQaapBuiltinAgentMentionId('gemini')).to.equal('antigravity');
+        expect(resolveQaapBuiltinAgentMentionId('grok-build')).to.equal('grok');
         expect(resolveQaapBuiltinAgentMentionId('PI')).to.equal('pi');
     });
 });

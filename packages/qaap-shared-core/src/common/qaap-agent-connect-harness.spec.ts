@@ -145,6 +145,10 @@ const EXPECTED_CONNECT_PATHS: Readonly<Record<string, QaapAgentConnectionFlow['k
     claude: 'cli-login',
     opencode: 'cli-login',
     pi: 'tui-login',
+    cursor: 'cli-login',
+    antigravity: 'cli-login',
+    copilot: 'cli-login',
+    grok: 'cli-login',
 };
 
 describe('harness connect paths', () => {

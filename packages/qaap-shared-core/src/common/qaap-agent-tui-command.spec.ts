@@ -21,7 +21,7 @@ describe('resolveInteractiveAgentCliBin', () => {
         expect(resolveInteractiveAgentCliBin('codex')).to.equal('codex');
         expect(resolveInteractiveAgentCliBin('claude')).to.equal('claude');
         expect(resolveInteractiveAgentCliBin('pi')).to.equal('pi');
-        expect(resolveInteractiveAgentCliBin('grok')).to.equal(undefined);
+        expect(resolveInteractiveAgentCliBin('grok')).to.equal('grok');
         expect(resolveInteractiveAgentCliBin('antigravity')).to.equal('agy');
         expect(resolveInteractiveAgentCliBin('gemini')).to.equal('agy');
         expect(resolveInteractiveAgentCliBin('opencode')).to.equal('opencode');
@@ -122,6 +122,10 @@ describe('resolveAgentConnectionFlow', () => {
         claude: 'cli-login',
         opencode: 'cli-login',
         pi: 'tui-login',
+        cursor: 'cli-login',
+        antigravity: 'cli-login',
+        copilot: 'cli-login',
+        grok: 'cli-login',
     };
 
     for (const harness of QAAP_HARNESS_DEFINITIONS) {
