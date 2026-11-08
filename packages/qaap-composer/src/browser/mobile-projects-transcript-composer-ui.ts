@@ -417,8 +417,8 @@ export class MobileProjectsTranscriptComposerUi {
                 let resolvedModel: QaapCreateAgentTaskQaiqModel | undefined = model
                     ? { provider: model.provider, vendor: model.vendor, modelId: model.modelId }
                     : undefined;
+                writeStoredAgent(cwd, agentId);
                 if (cwd) {
-                    writeStoredAgent(cwd, agentId);
                     if (model) {
                         writeStoredAgentModel(cwd, agentId, model);
                     } else {
@@ -449,6 +449,7 @@ export class MobileProjectsTranscriptComposerUi {
                     selectedAgentId: this.resolveTranscriptComposerPinnedAgentId(project, summary),
                     project,
                     isMobile: matchesMobileNarrowViewport(),
+                    anchor,
                     onSelectAgent: selectAgent,
                     approval: reconcileAgentApprovalPolicyId(this.host.transcriptComposerApprovalPolicyId, cwd),
                     onSelectApproval: policyId => { this.host.transcriptComposerApprovalPolicyId = policyId; },

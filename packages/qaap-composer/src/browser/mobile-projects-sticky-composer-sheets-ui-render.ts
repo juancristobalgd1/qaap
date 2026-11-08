@@ -101,11 +101,9 @@ export function openStickyComposerAgentSheetExtracted(ctx: MobileProjectsStickyC
         const selectAgent = (agentId: string, model?: QaapQaiqModelOption): void => {
         ctx.host.stickyComposerPinnedAgentId = agentId;
         void (async (): Promise<void> => {
-            if (cwd) {
-                writeStoredAgent(cwd, agentId);
-                if (model) {
-                    writeStoredAgentModel(cwd, agentId, model);
-                }
+            writeStoredAgent(cwd, agentId);
+            if (cwd && model) {
+                writeStoredAgentModel(cwd, agentId, model);
             }
             const modes = resolveStickyComposerModes(agentId, ctx.host.chatAgentService);
             ctx.host.stickyComposerModeId = reconcileComposerModeId(undefined, modes, cwd);
@@ -133,6 +131,7 @@ export function openStickyComposerAgentSheetExtracted(ctx: MobileProjectsStickyC
                     selectedAgentId: ctx.host.stickyComposerPinnedAgentId,
                     project,
                     isMobile: matchesMobileNarrowViewport(),
+                    anchor,
                     onSelectAgent: selectAgent,
                     approval: ctx.host.stickyComposerApprovalPolicyId ?? DEFAULT_AGENT_APPROVAL_POLICY_ID,
                     onSelectApproval: policyId => { ctx.host.stickyComposerApprovalPolicyId = policyId; },

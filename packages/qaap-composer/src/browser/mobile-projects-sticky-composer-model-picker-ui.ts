@@ -23,6 +23,22 @@ import type { MobileProjectsStickyComposerSheetsUiContext } from './mobile-proje
 import type { ComposerAgentPickerChrome } from './mobile-projects-sticky-composer-sheets-ui';
 import { renderQaapComposerModelPicker } from './qaap-composer-model-picker';
 
+/**
+ * Desktop: the popover opens above the pill with its right edge on the pill. Its height is fixed by
+ * the CSS so switching the rail does not move it; the list scrolls inside.
+ */
+function placePickerAbove(popover: HTMLElement, anchor: HTMLElement | undefined): void {
+    if (!anchor || !popover.classList.contains('qaap-sticky-composer-sheet-popover')) {
+        return;
+    }
+    const rect = anchor.getBoundingClientRect();
+    const gap = 8;
+    const width = Math.min(720, window.innerWidth - 32);
+    const height = Math.min(460, window.innerHeight * 0.7);
+    popover.style.left = `${Math.max(16, Math.min(rect.right - width, window.innerWidth - width - 16))}px`;
+    popover.style.top = `${Math.max(16, rect.top - gap - height)}px`;
+}
+
 /** Sign-in or API key guidance for a harness that cannot run yet; `undefined` when it can. */
 function connectionStripFor(
     agent: QaapAgentTaskAgentOption,
@@ -53,10 +69,12 @@ export interface StickyComposerModelPickerOptions {
     readonly project?: MobileProjectEntry;
     readonly onSelectAgent: (agentId: string, model?: QaapQaiqModelOption) => void;
     readonly isMobile: boolean;
+    /** The pill the picker opens from: the desktop popover sits above it, right-aligned. */
+    readonly anchor?: HTMLElement;
     /** Approval preset the composer currently submits with. */
     readonly approval: QaapAgentApprovalPolicyId;
     readonly onSelectApproval: (policyId: QaapAgentApprovalPolicyId) => void;
-    /** Repaints the composer once the picker closes, so the model pill shows the new effort. */
+    /** Repaints the composer once the picker is removed, whatever closed it (selection, Escape, ✕, outside click). */
     readonly onRefresh: () => void;
     /** Same handlers the previous agent sheet used for its sign-in and AI settings rows. */
     readonly onProactiveLogin?: (agentId: string) => void;
@@ -138,10 +156,18 @@ export async function renderStickyComposerModelPicker(
     let railSelection: 'favorites' | string = pinned;
     let favorites = QaapComposerModelPickerModel.readFavorites(window.localStorage);
     let approvalCurrent: QaapAgentApprovalPolicyId = options.approval;
-    const close = (): void => {
-        chrome.onClose();
+    const close = (): void => { chrome.onClose(); };
+    // Every close path removes the sheet: one observer turns that into the refresh and drops the content.
+    const observer = new MutationObserver(() => {
+        if (chrome.sheet.isConnected) {
+            return;
+        }
+        observer.disconnect();
+        chrome.list.replaceChildren();
         options.onRefresh();
-    };
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    placePickerAbove(chrome.sheet, options.anchor);
 
     const repaint = (): void => {
         const state: QaapPickerState = {
@@ -153,11 +179,14 @@ export async function renderStickyComposerModelPicker(
             currentAgentId: pinned,
             currentModelId: currentModel?.modelId,
         };
-        const effortAgentId = pinned;
+        // The effort column follows the harness highlighted on the rail, not only the pinned one.
+        const effortAgentId = railSelection !== 'favorites' ? railSelection : pinned;
+        const effortModelId = effortAgentId === pinned
+            ? currentModel?.modelId
+            : readStoredAgentModel(options.cwd, effortAgentId)?.modelId;
         const railAgent = agents.find(agent => agent.id === railSelection);
         const railHasModels = models.some(model => model.agentId === railSelection && model.available);
         const connect = railAgent ? connectionStripFor(railAgent, railHasModels, options) : undefined;
-        const effortModelId = currentModel?.modelId;
         renderQaapComposerModelPicker(host, {
             state,
             effort: {
@@ -174,7 +203,7 @@ export async function renderStickyComposerModelPicker(
                 options.onSelectAgent(agentId, model);
             },
             onSelectEffort: (level: QaapAgentEffortLevel) => {
-                writeComposerEffortLevel(options.cwd, pinned, currentModel?.modelId, level);
+                writeComposerEffortLevel(options.cwd, effortAgentId, effortModelId, level);
                 repaint();
             },
             onSelectApproval: (policyId: QaapAgentApprovalPolicyId) => {

@@ -86,4 +86,59 @@ describe('mobile-projects-sticky-composer-model-picker-ui', () => {
         action?.click();
         expect(signedIn).to.deep.equal(['claude']);
     });
+
+    it('selecting a model of another harness hands that harness and model to the caller', async () => {
+        const ctx = {
+            resolveModelsForAgentPickerSafe: async (agentId: string) => ({
+                models: agentId === 'codex'
+                    ? [{ provider: 'openai' as const, vendor: 'openai', modelId: 'gpt-5-6-sol', label: 'GPT-5.6 Sol' }]
+                    : [],
+                loadFailed: false,
+            }),
+        };
+        const picked: Array<{ agentId: string; modelId?: string }> = [];
+        await renderStickyComposerModelPicker(ctx, chrome, {
+            cwd: undefined,
+            agents: [{ id: 'claude', label: 'Claude Code', available: true }, { id: 'codex', label: 'Codex', available: true }],
+            selectedAgentId: 'claude',
+            project: undefined,
+            isMobile: false,
+            onSelectAgent: (agentId, model) => { picked.push({ agentId, modelId: model?.modelId }); },
+            approval: 'approve-for-me',
+            onSelectApproval: () => undefined,
+            onRefresh: () => undefined,
+        });
+        const codexRail = Array.from(chrome.list.querySelectorAll<HTMLButtonElement>('.qaap-model-picker-rail-item'))
+            .find(button => button.title === 'Codex');
+        expect(codexRail).to.not.equal(undefined);
+        codexRail?.click();
+        const row = chrome.list.querySelector<HTMLButtonElement>('.qaap-model-picker-row');
+        row?.click();
+        expect(picked).to.deep.equal([{ agentId: 'codex', modelId: 'gpt-5-6-sol' }]);
+    });
+
+    it('refreshes the composer when the picker is removed and paints again on reopen', async () => {
+        const ctx = { resolveModelsForAgentPickerSafe: async () => ({ models: [], loadFailed: false }) };
+        let refreshed = 0;
+        const options = {
+            cwd: undefined,
+            agents: [{ id: 'claude', label: 'Claude Code', available: true }],
+            selectedAgentId: 'claude',
+            project: undefined,
+            isMobile: false,
+            onSelectAgent: () => undefined,
+            approval: 'approve-for-me' as const,
+            onSelectApproval: () => undefined,
+            onRefresh: () => { refreshed++; },
+        };
+        await renderStickyComposerModelPicker(ctx, chrome, options);
+        chrome.sheet.remove();
+        await new Promise(resolve => setTimeout(resolve, 0));
+        expect(refreshed).to.equal(1);
+        expect(chrome.list.querySelector('.qaap-model-picker')).to.equal(null);
+
+        document.body.append(chrome.sheet);
+        await renderStickyComposerModelPicker(ctx, chrome, options);
+        expect(chrome.list.querySelector('.qaap-model-picker')).to.not.equal(null);
+    });
 });
