@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import type { QaapAgentMessageDTO } from './qaap-agent-conversation-client';
-import { QAAP_PRIMARY_AGENT_ID } from './qaap-agent-task-client';
+import { QAIQ_AGENT_ID } from './qaap-agent-task-client';
 import { parseAgentLogForTranscript } from './qaap-cli-transcript-stream';
 import { resolveAgentMessageSegments } from './qaap-transcript-trace-model';
 import {
@@ -44,7 +44,7 @@ export function normalizeAgentMessageContentForDisplay(raw: string | undefined |
     const trimmed = text.trim();
     let display: string;
     if (looksLikeQaiqProcessLog(trimmed)) {
-        display = parseAgentLogForTranscript(QAAP_PRIMARY_AGENT_ID, trimmed).content.trim();
+        display = parseAgentLogForTranscript(QAIQ_AGENT_ID, trimmed).content.trim();
     } else if (!looksLikeJson(trimmed)) {
         display = text;
     } else {

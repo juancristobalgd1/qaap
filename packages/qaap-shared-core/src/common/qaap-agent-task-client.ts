@@ -44,9 +44,6 @@ export const OPENCLAUDE_AGENT_ID = 'openclaude';
 export const OPENCODE_AGENT_ID = 'opencode';
 export const PI_AGENT_ID = 'pi';
 
-/** Legacy product default — still used for QAIQ-specific parsing and explicit QAIQ pins. */
-export const QAAP_PRIMARY_AGENT_ID = QAIQ_AGENT_ID;
-
 /** @deprecated Kept for QAIQ-family protocol and transcript compatibility. */
 export const LEGACY_OPENCLAUDE_AGENT_ID = OPENCLAUDE_AGENT_ID;
 
@@ -217,35 +214,14 @@ export function migrateLegacyBackendAgentId(agentId: string | undefined): string
     return agentId;
 }
 
-/**
- * Upgrade legacy composer storage picks when QAIQ is available on the server.
- * OpenCode was the previous product default — migrate silently so existing users land on QAIQ.
- */
-export function migrateStoredComposerAgentId(
-    stored: string | undefined,
-    availableIds: ReadonlySet<string>,
-    cwd?: string,
-): string | undefined {
-    const migrated = migrateLegacyBackendAgentId(stored);
-    if (!migrated) {
-        return undefined;
-    }
-    const normalized = migrated.trim().toLowerCase();
-    if (normalized === OPENCODE_AGENT_ID && availableIds.has(QAIQ_AGENT_ID)) {
-        writeStoredAgent(cwd, QAIQ_AGENT_ID);
-        return QAIQ_AGENT_ID;
-    }
-    return migrated;
-}
-
-/** Map retired defaults (Coder, Codex, …) to {@link QAAP_PRIMARY_AGENT_ID} for Qaap product UI. */
+/** Map retired defaults (Coder, …) to `undefined` so the configured or first available harness applies. */
 export function migrateQaapProductAgentId(agentId: string | undefined): string | undefined {
     const migrated = migrateLegacyBackendAgentId(agentId);
     if (!migrated) {
         return undefined;
     }
     if (isTheiaCoderAgent(migrated) || QAAP_RETIRED_DEFAULT_AGENT_IDS.has(migrated.trim().toLowerCase())) {
-        return QAAP_PRIMARY_AGENT_ID;
+        return undefined;
     }
     return migrated;
 }
@@ -285,7 +261,8 @@ export function toQaapCreateAgentTaskQaiqModel(model: {
 }
 
 /**
- * Pick a valid coding-agent id: honor the current choice, then per-cwd storage, then server default.
+ * Pick a valid coding-agent id: honor the current choice, then per-cwd storage, then the configured
+ * default, then the first available harness. Retired ids (`qaiq`, Coder) are never returned.
  * Returns undefined when no VPS coding CLI is installed — never invents Shell.
  */
 export function reconcileSelectedAgent(
@@ -300,24 +277,23 @@ export function reconcileSelectedAgent(
     if (normalizedCurrent && ids.has(normalizedCurrent)) {
         return normalizedCurrent;
     }
-    const stored = migrateStoredComposerAgentId(readStoredAgent(cwd), ids, cwd);
+    const stored = readStoredAgent(cwd);
     if (stored && ids.has(stored)) {
         return stored;
     }
-    if (!normalizedCurrent && !stored && ids.has(getQaapDefaultAgentId())) {
-        return getQaapDefaultAgentId();
+    const configuredDefault = getQaapDefaultAgentId();
+    if (!normalizedCurrent && !stored && configuredDefault && ids.has(configuredDefault)) {
+        return configuredDefault;
     }
     const normalizedDefault = migrateQaapProductAgentId(defaultAgent);
     if (normalizedDefault && ids.has(normalizedDefault)) {
         return normalizedDefault;
     }
-    if (ids.has(getQaapDefaultAgentId())) {
-        return getQaapDefaultAgentId();
+    if (configuredDefault && ids.has(configuredDefault)) {
+        return configuredDefault;
     }
-    if (ids.has(QAAP_PRIMARY_AGENT_ID)) {
-        return QAAP_PRIMARY_AGENT_ID;
-    }
-    return selectable[0]?.id;
+    const firstAvailable = [...selectable].sort(compareComposerAgentPickerOrder).find(agent => agent.available !== false);
+    return firstAvailable?.id;
 }
 
 /**
@@ -341,11 +317,6 @@ function compareComposerAgentPickerOrder(
     left: QaapAgentTaskAgentOption,
     right: QaapAgentTaskAgentOption,
 ): number {
-    const leftPrimary = left.id.toLowerCase() === QAIQ_AGENT_ID;
-    const rightPrimary = right.id.toLowerCase() === QAIQ_AGENT_ID;
-    if (leftPrimary !== rightPrimary) {
-        return leftPrimary ? -1 : 1;
-    }
     return left.label.localeCompare(right.label);
 }
 
@@ -440,9 +411,6 @@ export function normalizeBackendAgentId(agentId: string | undefined): string | u
     const builtin = resolveQaapBuiltinAgentMentionId(id);
     if (builtin) {
         return builtin;
-    }
-    if (id === QAIQ_AGENT_ID) {
-        return QAIQ_AGENT_ID;
     }
     return id === SHELL_AGENT_ID ? SHELL_AGENT_ID : undefined;
 }
@@ -562,7 +530,7 @@ export function resolveBackendAgentForTurn(
         readonly conversationAgentId?: string;
     },
 ): string | undefined {
-    const ids = new Set(agents.map(agent => agent.id));
+    const ids = new Set(filterUiSelectableVpsAgents(agents).map(agent => agent.id));
     const mentioned = extractBackendAgentMention(userContent);
     if (mentioned) {
         return mentioned;

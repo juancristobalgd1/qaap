@@ -8,6 +8,7 @@ import {
     QAAP_BUILTIN_AGENT_DEFINITIONS,
     QAAP_HARNESS_DEFINITIONS,
     QAAP_RETIRED_AGENT_DEFINITIONS,
+    isUiHiddenVpsAgent,
     resolveQaapBuiltinAgentMentionId,
     resolveQaapCodexTemplate,
 } from './qaap-builtin-agents';
@@ -27,8 +28,9 @@ describe('Qaap built-in agent command templates', () => {
             .to.contain('-c check_for_update_on_startup=false');
     });
 
-    it('registers exactly qaiq, claude, codex, opencode and pi as harnesses', () => {
-        expect(QAAP_HARNESS_DEFINITIONS.map(harness => harness.id).sort()).to.deep.equal(['claude', 'codex', 'opencode', 'pi', 'qaiq']);
+    it('registers exactly claude, codex, opencode and pi as harnesses; retired qaiq is hidden', () => {
+        expect(QAAP_HARNESS_DEFINITIONS.map(harness => harness.id).sort()).to.deep.equal(['claude', 'codex', 'opencode', 'pi']);
+        expect(isUiHiddenVpsAgent('qaiq')).to.equal(true);
     });
 
     it('runs Pi non-interactively in JSON mode behind the gate extension, with folder trust from {trust_flags}', () => {

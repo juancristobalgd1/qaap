@@ -66,14 +66,17 @@ export interface QaapHarnessDefinition {
 }
 
 export const QAAP_HARNESS_DEFINITIONS: readonly QaapHarnessDefinition[] = [
-    { id: 'qaiq', label: 'QAIQ', bin: 'qaiq' },
     ...QAAP_BUILTIN_AGENT_DEFINITIONS.map(({ id, label, bin }) => ({ id, label, bin })),
 ];
 
 export const CURSOR_AGENT_ID = 'cursor';
 
-/** Optional denylist for detected CLIs that should stay out of the composer picker. */
-export const UI_HIDDEN_VPS_AGENT_IDS = new Set<string>();
+/**
+ * Detected CLIs that stay out of the composer picker, the default-agent resolution and the
+ * backend runner's selection. `qaiq` (retired, BYOK-only runner) and `openclaude` (retired) are
+ * kept here so a stale `qaiq` default, pick or @mention falls back to the first available harness.
+ */
+export const UI_HIDDEN_VPS_AGENT_IDS = new Set<string>(['qaiq', 'openclaude']);
 
 /** VPS agents whose CLI model list is not API-selectable in headless runs. */
 export const NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS = new Set<string>();
