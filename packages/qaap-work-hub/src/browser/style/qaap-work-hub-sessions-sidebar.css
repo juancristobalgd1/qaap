@@ -118,15 +118,10 @@
   pointer-events: none;
 }
 
-/* Left-edge zone (20px) — swipe left to close, symmetric to dashboard open swipe-right. */
-.theia-mobile-work-hub-sessions-sidebar-edge-zone {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 20px;
-  z-index: 3;
-  touch-action: none;
+/* Bottom fade while more tasks / projects remain below the fold. */
+.theia-mobile-work-hub-sessions-sidebar-scroll.theia-mod-more-below {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 64px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 64px), transparent);
 }
 
 .theia-mobile-work-hub-sessions-sidebar-resize-handle {
@@ -2469,7 +2464,6 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
     user-select: none !important;
   }
 
-  .theia-mobile-work-hub-sessions-sidebar-edge-zone,
   .theia-mobile-work-hub-sessions-sidebar-dismiss-hint {
     display: none !important;
   }
