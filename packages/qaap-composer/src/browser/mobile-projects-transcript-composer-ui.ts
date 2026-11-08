@@ -1,3 +1,5 @@
+import { renderStickyComposerModelPicker } from './mobile-projects-sticky-composer-model-picker-ui';
+import { matchesMobileNarrowViewport } from '@theia/core/lib/browser/shell/mobile-layout-state';
 // *****************************************************************************
 // Copyright (C) 2026 Theia contributors and Qaap product fork.
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
@@ -5,7 +7,6 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import { ChatAgentService } from '@theia/ai-chat/lib/common/chat-agent-service';
-import { ChatMode } from '@theia/ai-chat';
 import type {
     QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
@@ -46,7 +47,6 @@ import type { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/brow
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
 import type { MobileProjectsStickyComposerSheetsUi } from './mobile-projects-sticky-composer-sheets-ui';
-import type { StickyComposerUntilDoneToggleOptions } from './qaap-sticky-composer-until-done-toggle';
 import { writeComposerAgentCatalogSession } from './composer-agent-catalog-session-cache';
 import { composerAgentCatalogSignature, STICKY_CATALOG_REFRESH_MIN_INTERVAL_MS } from './mobile-projects-sticky-composer-agents-ui';
 
@@ -408,6 +408,34 @@ export class MobileProjectsTranscriptComposerUi {
             this.host.stickyComposerSheetsUi.assignAgentPickerPopover(anchor, chrome.popoverCleanup);
             this.host.stickyComposerSheetsUi.syncAgentPickerPopoverPosition(chrome.sheet);
         }
+        const selectAgent = (agentId: string, model?: QaapQaiqModelOption): void => {
+            this.host.transcriptComposerPinnedAgentId = agentId;
+            this.host.transcriptComposerPrefsConvId = summary.id;
+            // Close before any model probe: a row tap must not leave the sheet open while the catalog loads.
+            this.closeAllComposerSheets();
+            void (async (): Promise<void> => {
+                let resolvedModel: QaapCreateAgentTaskQaiqModel | undefined = model
+                    ? { provider: model.provider, vendor: model.vendor, modelId: model.modelId }
+                    : undefined;
+                writeStoredAgent(cwd, agentId);
+                if (cwd) {
+                    if (model) {
+                        writeStoredAgentModel(cwd, agentId, model);
+                    } else {
+                        resolvedModel = await this.host.stickyComposerAgentsUi.ensureStickyComposerAgentModel(agentId, cwd);
+                    }
+                }
+                this.host.transcriptComposerAgentModel = resolvedModel;
+                const modes = resolveStickyComposerModes(agentId, this.host.chatAgentService);
+                this.host.transcriptComposerModeId = reconcileComposerModeId(undefined, modes, cwd);
+                if (cwd && this.host.transcriptComposerModeId) {
+                    writeStoredComposerMode(cwd, this.host.transcriptComposerModeId);
+                }
+                this.host.transcriptStickyComposerUi.schedulePersistTranscriptComposerPrefs(project, summary);
+                this.host.transcriptStickyComposerUi.remountTranscriptStickyComposer();
+                options?.onSelectionApplied?.();
+            })();
+        };
         const loadAgentCatalog = (): void => {
             this.host.stickyComposerSheetsUi.syncAgentPickerPopoverPosition(chrome.sheet);
             this.host.stickyComposerAgentsUi.loadComposerAgentPickerCatalog(chrome, {
@@ -415,93 +443,38 @@ export class MobileProjectsTranscriptComposerUi {
                 load: () => this.ensureTranscriptComposerAgentsLoaded(project, { force: true }),
                 isCurrent: () => this.host.transcriptComposerAgentSheet === chrome.sheet,
                 onError: () => this.host.stickyComposerAgentsUi.showComposerAgentPickerError(chrome, loadAgentCatalog),
-                render: agents => void this.host.stickyComposerSheetsUi.renderComposerAgentPicker(chrome, {
-                view: 'agents',
-                cwd,
-                agents,
-                selectedAgentId: this.resolveTranscriptComposerPinnedAgentId(project, summary),
-                includeCoder: true,
-                project,
-                onSelectAgent: (agentId, model) => {
-                    this.host.transcriptComposerPinnedAgentId = agentId;
-                    this.host.transcriptComposerPrefsConvId = summary.id;
-                    // Close before any model probe: a row tap must not leave the sheet open while the catalog loads.
-                    this.closeAllComposerSheets();
-                    void (async (): Promise<void> => {
-                        let resolvedModel: QaapCreateAgentTaskQaiqModel | undefined = model
-                            ? { provider: model.provider, vendor: model.vendor, modelId: model.modelId }
-                            : undefined;
-                        if (cwd) {
-                            writeStoredAgent(cwd, agentId);
-                            if (model) {
-                                writeStoredAgentModel(cwd, agentId, model);
-                            } else {
-                                resolvedModel = await this.host.stickyComposerAgentsUi.ensureStickyComposerAgentModel(agentId, cwd);
-                            }
+                render: agents => void renderStickyComposerModelPicker(this.host.stickyComposerSheetsUi, chrome, {
+                    cwd,
+                    agents,
+                    selectedAgentId: this.resolveTranscriptComposerPinnedAgentId(project, summary),
+                    project,
+                    isMobile: matchesMobileNarrowViewport(),
+                    anchor,
+                    rememberModelLabels: models => { this.host.stickyComposerAgentsUi.rememberModelLabels(models); },
+                    onSelectAgent: selectAgent,
+                    approval: reconcileAgentApprovalPolicyId(this.host.transcriptComposerApprovalPolicyId, cwd),
+                    onSelectApproval: policyId => { this.host.transcriptComposerApprovalPolicyId = policyId; },
+                    onRefresh: () => { this.host.transcriptStickyComposerUi.remountTranscriptStickyComposer(); },
+                    onProactiveLogin: this.host.openAgentSignInTerminal
+                        ? agentId => {
+                            this.closeAllComposerSheets();
+                            void this.host.openAgentSignInTerminal?.(agentId, project);
                         }
-                        this.host.transcriptComposerAgentModel = resolvedModel;
-                        const modes = resolveStickyComposerModes(agentId, this.host.chatAgentService);
-                        this.host.transcriptComposerModeId = reconcileComposerModeId(undefined, modes, cwd);
-                        if (cwd && this.host.transcriptComposerModeId) {
-                            writeStoredComposerMode(cwd, this.host.transcriptComposerModeId);
+                        : undefined,
+                    onOpenAiFeaturesSettings: this.host.openPreferencesSheet
+                        ? () => {
+                            this.closeAllComposerSheets();
+                            void this.host.openPreferencesSheet?.(QAAP_AI_FEATURES_SETTINGS_QUERY);
                         }
-                        this.host.transcriptStickyComposerUi.schedulePersistTranscriptComposerPrefs(project, summary);
-                        this.host.transcriptStickyComposerUi.remountTranscriptStickyComposer();
-                        options?.onSelectionApplied?.();
-                    })();
-                },
-                onProactiveLogin: this.host.openAgentSignInTerminal
-                    ? (agentId, pickerProject) => {
-                        this.closeAllComposerSheets();
-                        void this.host.openAgentSignInTerminal?.(agentId, pickerProject);
-                    }
-                    : undefined,
-                onOpenAiFeaturesSettings: this.host.openPreferencesSheet
-                    ? () => {
-                        this.closeAllComposerSheets();
-                        void this.host.openPreferencesSheet?.(QAAP_AI_FEATURES_SETTINGS_QUERY);
-                    }
-                    : undefined,
+                        : undefined,
                 }),
             });
         };
         loadAgentCatalog();
     }
 
-    openTranscriptComposerModeSheet(
-        project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,
-        modes: readonly ChatMode[],
-        anchor?: HTMLElement,
-        untilDone?: StickyComposerUntilDoneToggleOptions,
-    ): void {
-        const cwd = this.host.projectsService.getProjectCwd(project) ?? summary.cwd;
-        this.host.stickyComposerSheetsUi.openComposerModeSheet({
-            modes,
-            selectedModeId: this.host.transcriptComposerModeId,
-            cwd,
-            anchor,
-            untilDone,
-            transcriptOverlay: true,
-            closeTitle: nls.localize('qaap/mobileProjects/closeTranscript', 'Close'),
-            onClose: () => this.closeAllComposerSheets(),
-            isOpen: () => this.host.transcriptComposerModeSheet !== undefined,
-            assignSheet: sheet => { this.host.transcriptComposerModeSheet = sheet; },
-            onSelect: id => {
-                this.host.transcriptComposerModeId = id;
-                if (cwd) {
-                    writeStoredComposerMode(cwd, id);
-                }
-                this.host.transcriptStickyComposerUi.schedulePersistTranscriptComposerPrefs(project, summary);
-                this.closeAllComposerSheets();
-                this.host.transcriptStickyComposerUi.remountTranscriptStickyComposer();
-            },
-        });
-    }
-
     closeTranscriptComposerSheets(): void {
         this.host.stickyComposerSheetsUi.teardownAgentPickerPopover();
-        this.host.stickyComposerSheetsUi.teardownModeSheetPopover();
         this.host.stickyComposerSheetsUi.teardownApprovalPolicySheetPopover();
         if (this.host.transcriptComposerAgentSheet) {
             this.host.transcriptComposerAgentSheet.remove();

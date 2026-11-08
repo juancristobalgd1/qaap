@@ -7,6 +7,7 @@
  * Shared HTTP + persistence helpers for background agent tasks.
  * Keep {@link QAAP_AGENT_TASK_API_PATH} in sync with `@theia/qaap-cloud-workspace`.
  */
+import type { QaapAgentEffortLevel } from './qaap-agent-effort';
 import { QaapUserFacingErrors } from '@theia/qaap-adapters/lib/common/qaap-user-facing-error';
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import { fetchQaapGetWithTransientRetry } from '@theia/qaap-adapters/lib/common/qaap-transient-get';
@@ -197,6 +198,8 @@ export type QaapCreateAgentTaskBody =
         /** Reused by a client retry so a slow POST cannot start the same task twice. */
         readonly clientRequestId?: string;
         readonly agentModel?: QaapCreateAgentTaskQaiqModel;
+        /** Reasoning effort for this task; the backend drops it when the harness/model does not take it. */
+        readonly effort?: QaapAgentEffortLevel;
         /** @deprecated Use {@link agentModel}. */
         readonly qaiqModel?: QaapCreateAgentTaskQaiqModel;
         /** Resolved cross-project context, prepended to the agent prompt by the backend runner. */

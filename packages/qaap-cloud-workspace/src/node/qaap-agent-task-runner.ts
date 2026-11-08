@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Theia contributors and Qaap product fork.
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
+import type { QaapAgentEffortLevel } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
 import { Emitter, Event } from '@theia/core/lib/common/event';
 import { PreferenceService } from '@theia/core/lib/common/preferences';
 import {
@@ -1065,8 +1066,8 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
-    public buildAgentCommand(prompt: string, agentId: string | undefined, autoApprove: boolean, agentModel?: QaapCreateAgentTaskQaiqModel, cwd?: string, contextPreamble?: string, interactionModeId?: string, approvalPolicyId?: string, toolApprovalRules?: QaapCreateAgentTaskRequest['toolApprovalRules'], userQuery?: string, readOnlyWorkspace?: boolean, ownerLogin?: string,): { command: string; stdinPrompt?: string; stdinPromptMode?: 'qaiq-stdio' | 'plain'; agentId: string; promptTempDir?: string } {
-        return buildAgentCommandExtracted(this, prompt, agentId, autoApprove, agentModel, cwd, contextPreamble, interactionModeId, approvalPolicyId, toolApprovalRules, userQuery, readOnlyWorkspace, ownerLogin);
+    public buildAgentCommand(prompt: string, agentId: string | undefined, autoApprove: boolean, agentModel?: QaapCreateAgentTaskQaiqModel, cwd?: string, contextPreamble?: string, interactionModeId?: string, approvalPolicyId?: string, toolApprovalRules?: QaapCreateAgentTaskRequest['toolApprovalRules'], userQuery?: string, readOnlyWorkspace?: boolean, ownerLogin?: string, effort?: QaapAgentEffortLevel,): { command: string; stdinPrompt?: string; stdinPromptMode?: 'qaiq-stdio' | 'plain'; agentId: string; promptTempDir?: string } {
+        return buildAgentCommandExtracted(this, prompt, agentId, autoApprove, agentModel, cwd, contextPreamble, interactionModeId, approvalPolicyId, toolApprovalRules, userQuery, readOnlyWorkspace, ownerLogin, effort);
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */

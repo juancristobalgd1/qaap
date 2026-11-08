@@ -92,7 +92,6 @@ export interface MobileProjectsTranscriptStickyComposerHost {
     transcriptComposerSendRefresh: (() => void) | undefined;
     stickyComposerContextUsageDispose: Disposable;
     transcriptComposerModeId: string | undefined;
-    transcriptComposerCapabilityLevel: import('../common/qaap-sticky-composer-model-capability').ModelCapabilityLevelValue | undefined;
     transcriptComposerApprovalPolicyId: QaapAgentApprovalPolicyId | undefined;
     transcriptComposerToolApprovalRules: QaapAgentToolApprovalRules | undefined;
     transcriptComposerPinnedAgentId: string | undefined;

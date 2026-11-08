@@ -1,0 +1,593 @@
+/* The picker inside the agent popover or sheet: the popover is sized for the picker, not the old list. */
+.qaap-sticky-composer-sheet-popover.theia-mod-agent-picker.theia-mod-model-picker {
+    width: min(560px, calc(100vw - 32px));
+    max-width: calc(100vw - 32px);
+    /* One height for every harness: the model list scrolls inside, the footer stays at the bottom. */
+    height: min(440px, 70vh);
+    max-height: none;
+    padding: 0;
+}
+
+.qaap-sticky-composer-sheet-popover.theia-mod-agent-picker.theia-mod-model-picker .theia-mobile-sticky-composer-sheet-panel,
+.qaap-sticky-composer-sheet-popover.theia-mod-agent-picker.theia-mod-model-picker .theia-mobile-sticky-composer-sheet-list,
+.qaap-sticky-composer-sheet-popover.theia-mod-agent-picker.theia-mod-model-picker .qaap-composer-model-picker-host {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.qaap-sticky-composer-sheet-popover.theia-mod-agent-picker.theia-mod-model-picker .theia-mobile-sticky-composer-sheet-panel,
+.qaap-sticky-composer-sheet-popover.theia-mod-agent-picker.theia-mod-model-picker .theia-mobile-sticky-composer-sheet-list {
+    width: 100%;
+    max-height: none;
+    padding: 0;
+    margin: 0;
+    min-height: 0;
+    overflow: visible;
+}
+
+.theia-mobile-sticky-composer-sheet.theia-mod-model-picker .theia-mobile-sticky-composer-sheet-panel,
+.theia-mobile-sticky-composer-sheet.theia-mod-model-picker .theia-mobile-sticky-composer-sheet-list {
+    padding: 0;
+    margin: 0;
+    min-height: 0;
+}
+
+.qaap-composer-model-picker-host,
+.qaap-model-picker {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.qaap-model-picker-body {
+    grid-template-columns: 56px minmax(0, 1fr);
+}
+
+.qaap-model-picker-connect {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin: 0 10px 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--theia-inputValidation-warningBorder, var(--theia-widget-border));
+    border-radius: 8px;
+    background: var(--theia-inputValidation-warningBackground, var(--theia-list-hoverBackground));
+    color: var(--theia-foreground);
+    font-size: 12px;
+}
+
+.qaap-model-picker-connect-action {
+    flex: none;
+    height: 26px;
+    padding: 0 10px;
+    border: 1px solid var(--theia-button-border, var(--theia-widget-border));
+    border-radius: 6px;
+    background: var(--theia-button-background);
+    color: var(--theia-button-foreground);
+    cursor: pointer;
+}
+
+.qaap-model-picker-row > svg,
+.qaap-model-picker-row > img,
+.qaap-model-picker-row > .theia-qaap-agent-brand-icon {
+    flex: none;
+    width: 16px;
+    height: 16px;
+}
+
+.qaap-model-picker-row-label {
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.theia-mobile-sticky-composer-sheet.theia-mod-model-picker {
+    width: 100%;
+    max-height: min(560px, 80vh);
+}
+
+/* Unified composer model picker: harness rail, model list, effort column and access footer. */
+
+.qaap-model-picker {
+    display: flex;
+    flex-direction: column;
+    width: min(560px, 100%);
+    flex: 1 1 auto;
+    height: 100%;
+    max-height: none;
+    min-height: 0;
+    overflow: hidden;
+    border: 1px solid var(--theia-widget-border, var(--theia-panel-border));
+    border-radius: 12px;
+    background: var(--theia-editorWidget-background, var(--theia-editor-background));
+    color: var(--theia-foreground);
+    box-shadow: 0 12px 32px var(--theia-widget-shadow);
+    font-size: var(--theia-ui-font-size1, 13px);
+    opacity: 1;
+    transform: none;
+    transition: opacity 160ms ease, transform 160ms ease;
+}
+
+@starting-style {
+    .qaap-model-picker {
+        opacity: 0;
+        transform: translateY(-4px) scale(0.98);
+    }
+}
+
+.qaap-model-picker-body {
+    display: grid;
+    grid-template-columns: 56px minmax(0, 1fr);
+    min-height: 0;
+    flex: 1 1 auto;
+}
+
+.qaap-model-picker-rail-frame {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    border-right: 1px solid var(--theia-widget-border, var(--theia-panel-border));
+}
+
+/* The rail scrolls on its own axis (Y on desktop, X in the narrow layout) with no visible scrollbar. */
+.qaap-model-picker-rail {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    min-height: 0;
+    padding: 10px 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    scroll-snap-type: y mandatory;
+    scrollbar-width: none;
+}
+
+.qaap-model-picker-rail::-webkit-scrollbar {
+    display: none;
+}
+
+.qaap-model-picker-rail > * {
+    flex: 0 0 auto;
+    scroll-snap-align: start;
+}
+
+/* The favorites star stays pinned at the top of the vertical rail; it is kept out of the scroll. */
+.qaap-model-picker-rail > .qaap-model-picker-rail-item:first-child {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+.qaap-model-picker-rail > .qaap-model-picker-rail-item:first-child:not(.theia-mod-selected) {
+    background: var(--theia-editorWidget-background, var(--theia-editor-background));
+}
+
+/* Edge fades only on the side where items are hidden; the masks follow the rail's scroll axis. */
+.qaap-model-picker-rail.theia-mod-overflow-end:not(.theia-mod-horizontal) {
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
+}
+
+.qaap-model-picker-rail.theia-mod-overflow-start:not(.theia-mod-horizontal) {
+    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 28px);
+    mask-image: linear-gradient(to bottom, transparent, #000 28px);
+}
+
+.qaap-model-picker-rail.theia-mod-overflow-start.theia-mod-overflow-end:not(.theia-mod-horizontal) {
+    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to bottom, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+}
+
+.qaap-model-picker-rail.theia-mod-horizontal.theia-mod-overflow-end {
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+}
+
+.qaap-model-picker-rail.theia-mod-horizontal.theia-mod-overflow-start {
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 28px);
+    mask-image: linear-gradient(to right, transparent, #000 28px);
+}
+
+.qaap-model-picker-rail.theia-mod-horizontal.theia-mod-overflow-start.theia-mod-overflow-end {
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+}
+
+/* Discrete arrows, shown only with a fine pointer and only on a side that has hidden items. */
+.qaap-model-picker-rail-arrow {
+    display: none;
+    position: absolute;
+    top: 50%;
+    z-index: 2;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    transform: translateY(-50%);
+    border: 1px solid var(--theia-widget-border, var(--theia-panel-border));
+    border-radius: 999px;
+    background: var(--theia-editorWidget-background, var(--theia-editor-background));
+    color: var(--theia-foreground);
+    box-shadow: 0 1px 4px var(--theia-widget-shadow);
+    cursor: pointer;
+}
+
+.qaap-model-picker-rail-arrow.is-start {
+    left: 4px;
+}
+
+.qaap-model-picker-rail-arrow.is-end {
+    right: 4px;
+}
+
+.qaap-model-picker-rail-arrow:hover {
+    color: var(--theia-list-activeSelectionForeground);
+    background: var(--theia-list-activeSelectionBackground);
+}
+
+@media (pointer: fine) {
+    .qaap-model-picker-rail.theia-mod-horizontal.theia-mod-overflow-start ~ .qaap-model-picker-rail-arrow.is-start,
+    .qaap-model-picker-rail.theia-mod-horizontal.theia-mod-overflow-end ~ .qaap-model-picker-rail-arrow.is-end {
+        display: inline-flex;
+    }
+}
+
+.qaap-model-picker-rail-item {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--theia-descriptionForeground);
+    cursor: pointer;
+    transition: background-color 160ms ease, color 160ms ease;
+}
+
+.qaap-model-picker-rail-item:hover {
+    background: var(--theia-list-hoverBackground);
+    color: var(--theia-foreground);
+}
+
+.qaap-model-picker-rail-item.theia-mod-selected {
+    background: var(--theia-list-activeSelectionBackground);
+    color: var(--theia-list-activeSelectionForeground);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    .qaap-model-picker-rail {
+        scroll-behavior: smooth;
+    }
+}
+
+.qaap-model-picker-list {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+}
+
+.qaap-model-picker-search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    padding: 0 12px;
+    height: 40px;
+    border: none;
+    border-bottom: 1px solid var(--theia-widget-border, var(--theia-panel-border));
+    background: transparent;
+    color: var(--theia-descriptionForeground);
+}
+
+.qaap-model-picker-search:focus-within {
+    border-bottom-color: var(--theia-focusBorder);
+}
+
+.qaap-model-picker-search input {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 100%;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: var(--theia-input-foreground);
+}
+
+.qaap-model-picker-rows {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    gap: 2px;
+    min-height: 0;
+    padding: 0 6px 8px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.qaap-model-picker-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 36px;
+    padding: 0 8px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--theia-foreground);
+    text-align: left;
+    cursor: pointer;
+}
+
+.qaap-model-picker-row:hover:not(:disabled),
+.qaap-model-picker-row:focus-visible {
+    background: var(--theia-list-hoverBackground);
+    outline: none;
+}
+
+.qaap-model-picker-row.theia-mod-current {
+    background: var(--theia-list-activeSelectionBackground);
+    color: var(--theia-list-activeSelectionForeground);
+}
+
+.qaap-model-picker-row:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.qaap-model-picker-row-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.qaap-model-picker-row-paid,
+.qaap-model-picker-shortcut,
+.qaap-model-picker-star,
+.qaap-model-picker-empty,
+.qaap-model-picker-access-note {
+    color: var(--theia-descriptionForeground);
+}
+
+.qaap-model-picker-shortcut {
+    padding: 0 4px;
+    border: 1px solid var(--theia-widget-border, var(--theia-panel-border));
+    border-radius: 4px;
+    font-family: var(--theia-code-font-family, monospace);
+    font-size: 11px;
+}
+
+.qaap-model-picker-star {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    opacity: 0;
+}
+
+.qaap-model-picker-row:hover .qaap-model-picker-star,
+.qaap-model-picker-star.theia-mod-favorite {
+    opacity: 1;
+}
+
+.qaap-model-picker-star.theia-mod-favorite {
+    color: var(--theia-editorWarning-foreground, var(--theia-foreground));
+}
+
+.qaap-model-picker-empty {
+    margin: 8px;
+    font-size: 12px;
+}.qaap-model-picker-footer {
+    position: relative;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 10px;
+    border-top: 1px solid var(--theia-widget-border, var(--theia-panel-border));
+}
+
+.qaap-model-picker-access {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 8px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--theia-foreground);
+    cursor: pointer;
+}
+
+.qaap-model-picker-access:hover {
+    background: var(--theia-list-hoverBackground);
+}
+
+.qaap-model-picker-access-menu {
+    position: absolute;
+    right: 10px;
+    bottom: calc(100% + 4px);
+    min-width: 200px;
+    margin: 0;
+    padding: 4px;
+    list-style: none;
+    border: 1px solid var(--theia-widget-border, var(--theia-panel-border));
+    border-radius: 10px;
+    background: var(--theia-menu-background, var(--theia-editorWidget-background));
+    box-shadow: 0 8px 24px var(--theia-widget-shadow);
+    opacity: 1;
+    transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.qaap-model-picker-access-menu[hidden] {
+    display: none;
+}
+
+.qaap-model-picker-access-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    height: 32px;
+    padding: 0 8px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--theia-menu-foreground, var(--theia-foreground));
+    text-align: left;
+    cursor: pointer;
+}
+
+.qaap-model-picker-access-option:hover,
+.qaap-model-picker-access-option.theia-mod-current {
+    background: var(--theia-menu-selectionBackground, var(--theia-list-hoverBackground));
+    color: var(--theia-menu-selectionForeground, var(--theia-foreground));
+}
+
+.qaap-model-picker-access-note {
+    flex-basis: 100%;
+    margin: 0;
+    font-size: 12px;
+}
+
+@media (max-width: 767px) {
+    .qaap-sticky-composer-sheet-popover.theia-mod-agent-picker.theia-mod-model-picker {
+        height: min(440px, 70vh);
+    }
+
+    .qaap-model-picker {
+        width: 100%;
+        max-height: none;
+    }
+
+    .qaap-model-picker-body {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto minmax(0, 1fr);
+    }
+
+    .qaap-model-picker-rail-frame {
+        border-right: none;
+        border-bottom: 1px solid var(--theia-widget-border, var(--theia-panel-border));
+    }
+
+    .qaap-model-picker-rail {
+        flex-direction: row;
+        justify-content: flex-start;
+        padding: 8px 10px;
+        overflow-x: auto;
+        overflow-y: hidden;
+        overscroll-behavior-x: contain;
+        touch-action: pan-x;
+        scroll-snap-type: x mandatory;
+        scroll-padding: 0 10px;
+    }
+
+    .qaap-model-picker-rail > .qaap-model-picker-rail-item:first-child {
+        position: static;
+    }
+
+    .qaap-model-picker-star {
+        opacity: 1;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .qaap-model-picker,
+    .qaap-model-picker-access-menu,
+    .qaap-model-picker-rail-item {
+        transition: none;
+    }
+
+    .qaap-model-picker-rail {
+        scroll-behavior: auto;
+    }
+}
+
+/* Model pill: one harness icon, the catalog model name, ellipsis only when the name does not fit. */
+.theia-mobile-projects-sticky-composer-agent .theia-mobile-projects-sticky-composer-agent-provider-badge {
+    display: none;
+}
+
+.theia-mobile-projects-sticky-composer-controls-left .theia-mobile-projects-sticky-composer-agent {
+    /* The shared pill cap (42vw / 160px) left room for ~60px of name; the model pill needs the name and effort. */
+    max-width: min(360px, calc(100vw - 96px));
+    background: transparent;
+    border: none;
+    box-shadow: none;
+}
+
+.theia-mobile-projects-sticky-composer-controls-left .theia-mobile-projects-sticky-composer-agent:hover {
+    background: var(--theia-toolbar-hoverBackground);
+    border-radius: 6px;
+}
+
+.theia-mobile-projects-sticky-composer-agent .theia-mobile-projects-sticky-composer-agent-label {
+    max-width: 220px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+@media (max-width: 767px) {
+    .theia-mobile-projects-sticky-composer-controls-left .theia-mobile-projects-sticky-composer-agent {
+        max-width: min(70vw, 100%);
+    }
+
+    .theia-mobile-projects-sticky-composer-agent .theia-mobile-projects-sticky-composer-agent-label {
+        max-width: none;
+        flex: 1 1 auto;
+    }
+}
+
+.qaap-model-picker-footer-left,
+.qaap-model-picker-footer-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.qaap-model-picker-menu-wrap {
+    position: relative;
+}
+
+.qaap-model-picker-menu-wrap .qaap-model-picker-access-menu {
+    left: 0;
+    right: auto;
+}
+
+.qaap-model-picker-access-wrap .qaap-model-picker-access-menu {
+    right: 0;
+    left: auto;
+}
+
+.qaap-model-picker-menu-check {
+    margin-left: auto;
+}
+
+/* Effort sits after the model name, plain and quiet: «Sonnet 4.6 Legado  High». */
+.theia-mobile-projects-sticky-composer-agent .theia-mobile-projects-sticky-composer-agent-effort {
+    margin-left: 6px;
+    color: var(--theia-descriptionForeground);
+    white-space: nowrap;
+}

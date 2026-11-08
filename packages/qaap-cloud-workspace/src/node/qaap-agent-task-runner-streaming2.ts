@@ -54,6 +54,8 @@ import {
     resolveTaskAutoApproveFromPolicy,
 } from '../common/qaap-agent-auto-approve';
 import { formatModelFlagsForAgent } from '../common/qaap-agent-model-flags';
+import { formatEffortFlagsForAgent } from '../common/qaap-agent-effort-flags';
+import type { QaapAgentEffortLevel } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
 import { resolveQaapHarnessCapabilities } from '@theia/qaap-shared-core/lib/common/qaap-harness-capabilities';
 import { QAAP_PROJECT_TRUST_FLAGS_TEMPLATE_VAR, resolveAgentProjectTrustFlags } from '@theia/qaap-shared-core/lib/common/qaap-project-folder-trust';
 import {
@@ -230,6 +232,7 @@ export function createExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCr
             autoApprove,
             ...(request.readOnlyWorkspace || planMode ? { readOnlyWorkspace: true } : {}),
             ...(request.externalReview ? { externalReview: true } : {}),
+            ...(request.effort ? { effort: request.effort } : {}),
             ...(ownerLogin ? { ownerLogin: ownerLogin.trim() } : {}),
             ...((request.userQuery?.trim() || prompt)
                 ? { userRequest: (request.userQuery?.trim() || prompt).slice(0, USER_REQUEST_MAX_CHARS) }
@@ -287,6 +290,7 @@ export function retryExtracted(ctx: QaapAgentTaskRunnerContext, id: string, owne
                 autoApprove: task.autoApprove,
                 readOnlyWorkspace: task.readOnlyWorkspace,
                 externalReview: task.externalReview,
+                effort: task.effort,
             }
             : {
                 title: task.title,
@@ -299,6 +303,7 @@ export function retryExtracted(ctx: QaapAgentTaskRunnerContext, id: string, owne
                 autoApprove: task.autoApprove,
                 readOnlyWorkspace: task.readOnlyWorkspace,
                 externalReview: task.externalReview,
+                effort: task.effort,
             };
         return ctx.create(request, task.ownerLogin ?? ownerLogin);
 }
@@ -332,6 +337,7 @@ export function resumeExtracted(ctx: QaapAgentTaskRunnerContext, id: string, own
                 autoApprove: task.autoApprove,
                 readOnlyWorkspace: task.readOnlyWorkspace,
                 externalReview: task.externalReview,
+                effort: task.effort,
                 resumedFromTaskId: id,
             }
             : {
@@ -345,12 +351,21 @@ export function resumeExtracted(ctx: QaapAgentTaskRunnerContext, id: string, own
                 autoApprove: task.autoApprove,
                 readOnlyWorkspace: task.readOnlyWorkspace,
                 externalReview: task.externalReview,
+                effort: task.effort,
                 resumedFromTaskId: id,
             };
         const resumed = ctx.create(request, task.ownerLogin ?? ownerLogin);
         ctx.resumingTaskIds ??= new Map();
         ctx.resumingTaskIds.set(id, resumed.id);
         return resumed;
+}
+
+/** Appends the harness effort flags to the `{model_flags}` placeholder; both build branches use it. */
+export function withEffortFlags(vars: Record<string, string>, effortFlags: string): Record<string, string> {
+    if (!effortFlags) {
+        return vars;
+    }
+    return { ...vars, model_flags: [vars.model_flags, effortFlags].filter(Boolean).join(' ') };
 }
 
 export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prompt: string,
@@ -364,7 +379,8 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
         toolApprovalRules?: QaapCreateAgentTaskRequest['toolApprovalRules'],
         userQuery?: string,
         readOnlyWorkspace?: boolean,
-        ownerLogin?: string,): QaapAgentCommandBuildResult {
+        ownerLogin?: string,
+        effort?: QaapAgentEffortLevel,): QaapAgentCommandBuildResult {
         const id = ctx.resolveAgentId(prompt, agentId, ownerLogin);
         const runnerPrompt = withPiPlanModeInstruction(ctx.stripLeadingAgentMention(prompt), id, interactionModeId);
         if (id === SHELL_AGENT_ID) {
@@ -408,6 +424,7 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
         ctx.assertQaiqConfigured(id, ownerLogin, agentModel);
         const detected = ctx.detectedAgents.get(id);
         let command: string;
+        const effortFlags = formatEffortFlagsForAgent(id, agentModel?.modelId, effort);
         const interaction: QaapQaiqInteractionFlagOptions = {
             interactionModeId,
             approvalPolicyId: approvalPolicyId === 'approve-for-me'
@@ -443,14 +460,14 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
             : undefined));
         const usesOffArgvPrompt = promptTransport.kind !== 'argv';
         if (detected) {
-            const vars = ctx.buildTemplateVars(id, agentModel, interaction, ownerLogin, resolvedCwd);
+            const vars = withEffortFlags(ctx.buildTemplateVars(id, agentModel, interaction, ownerLogin, resolvedCwd), effortFlags);
             command = useStdioApprovals
                 ? ctx.applyTemplateWithoutPrompt(detected.template, vars)
                 : usesOffArgvPrompt
                     ? applyTemplateForPromptTransportHelper(detected.template, promptTransport, vars)
                     : ctx.applyTemplate(detected.template, agentPrompt, vars);
         } else if (envTemplate) {
-            const vars = ctx.buildTemplateVars(id, agentModel, interaction, ownerLogin, resolvedCwd);
+            const vars = withEffortFlags(ctx.buildTemplateVars(id, agentModel, interaction, ownerLogin, resolvedCwd), effortFlags);
             command = useStdioApprovals || usesOffArgvPrompt
                 ? applyTemplateForPromptTransportHelper(envTemplate, useStdioApprovals
                     ? { kind: 'plain-stdin', placeholder: 'omit' }

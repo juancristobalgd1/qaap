@@ -1,3 +1,7 @@
+import { DEFAULT_AGENT_APPROVAL_POLICY_ID } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
+import type { QaapQaiqModelOption } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { renderStickyComposerModelPicker } from './mobile-projects-sticky-composer-model-picker-ui';
+import { matchesMobileNarrowViewport } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import type { MobileProjectsStickyComposerSheetsUiContext } from './mobile-projects-sticky-composer-sheets-ui-context';
 // Extracted from mobile-projects-sticky-composer-sheets-ui.ts
 
@@ -14,26 +18,10 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-mode';
 import { QAAP_AI_FEATURES_SETTINGS_QUERY } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
 import {
-    reconcileModelCapabilityLevel,
-    writeStoredModelCapabilityLevel,
-    type ModelCapabilityLevelValue,
-} from '../common/qaap-sticky-composer-model-capability';
-import { renderModelCapabilityPopoverPanel } from './model-capability-popover';
-import {
-    renderContextUsagePopover,
-    renderContextUsageSheet,
-    wireContextUsagePopoverDismiss,
-    type ContextUsageBreakdownView,
-} from '@theia/qaap-transcript/lib/browser/qaap-chat-context-usage-panel';
-import {
     isStickyComposerAnnotationPopoverAnchor,
     markStickyComposerPopoverAnchor,
-    mountStickyComposerBottomSheet,
-    mountStickyComposerSheetPopover,
     scheduleStickyComposerPopoverPosition,
-    shouldUseStickyComposerDesktopPopover,
-    shouldUseStickyComposerPopover,
-} from '@theia/qaap-transcript/lib/browser/qaap-sticky-composer-popover';
+    } from '@theia/qaap-transcript/lib/browser/qaap-sticky-composer-popover';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
 export function shouldElevateComposerSheetsExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext): boolean {
@@ -48,7 +36,6 @@ export function closeStickyComposerSheetsExtracted(ctx: MobileProjectsStickyComp
             ctx.host.stickyComposerAgentSheet.remove();
             ctx.host.stickyComposerAgentSheet = undefined;
         }
-        ctx.teardownModeSheetPopover();
         if (ctx.host.stickyComposerModeSheet) {
             ctx.host.stickyComposerModeSheet.remove();
             ctx.host.stickyComposerModeSheet = undefined;
@@ -59,128 +46,7 @@ export function closeStickyComposerSheetsExtracted(ctx: MobileProjectsStickyComp
             ctx.host.stickyComposerApprovalSheet = undefined;
         }
         ctx.host.stickyComposerWorkspaceUi.closeComposerWorkspaceSheet();
-        ctx.teardownContextUsagePresentation();
-        ctx.teardownCapabilityPresentation();
         ctx.notifyComposerSheetsClosed();
-}
-
-export function teardownCapabilityPresentationExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext): void {
-        ctx.capabilityPopoverCleanup?.();
-        ctx.capabilityPopoverCleanup = undefined;
-        if (ctx.capabilitySheetAnchor) {
-            markStickyComposerPopoverAnchor(ctx.capabilitySheetAnchor, false);
-            ctx.capabilitySheetAnchor = undefined;
-        }
-        if (ctx.host.stickyComposerCapabilitySheet) {
-            ctx.host.stickyComposerCapabilitySheet.remove();
-            ctx.host.stickyComposerCapabilitySheet = undefined;
-        }
-}
-
-export function teardownContextUsagePresentationExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext): void {
-        ctx.contextUsagePopoverCleanup?.();
-        ctx.contextUsagePopoverCleanup = undefined;
-        if (ctx.contextUsageAnchor) {
-            ctx.contextUsageAnchor.setAttribute('aria-expanded', 'false');
-            ctx.contextUsageAnchor.classList.remove('theia-mod-active');
-            ctx.contextUsageAnchor = undefined;
-        }
-        if (ctx.host.stickyComposerContextUsageSheet) {
-            ctx.host.stickyComposerContextUsageSheet.remove();
-            ctx.host.stickyComposerContextUsageSheet = undefined;
-        }
-}
-
-export function openStickyComposerContextUsageSheetExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext, refreshBreakdown: () => ContextUsageBreakdownView,
-        transcriptOverlay?: boolean,
-        anchor?: HTMLElement,): void {
-        const usePopover = shouldUseStickyComposerDesktopPopover(anchor);
-        if (usePopover
-            && ctx.contextUsageAnchor === anchor
-            && ctx.host.stickyComposerContextUsageSheet) {
-            ctx.closeAllComposerSheets();
-            return;
-        }
-        ctx.closeAllComposerSheets();
-        const overlay = transcriptOverlay ?? ctx.shouldElevateComposerSheets();
-        const onClose = (): void => { ctx.closeAllComposerSheets(); };
-        const view = refreshBreakdown();
-        if (usePopover && anchor) {
-            const popover = renderContextUsagePopover(view, {
-                transcriptOverlay: overlay,
-                onClose,
-            });
-            document.body.append(popover);
-            ctx.host.stickyComposerContextUsageSheet = popover;
-            ctx.contextUsageAnchor = anchor;
-            anchor.setAttribute('aria-expanded', 'true');
-            anchor.classList.add('theia-mod-active');
-            ctx.contextUsagePopoverCleanup = wireContextUsagePopoverDismiss(popover, anchor, onClose);
-            return;
-        }
-        const sheet = renderContextUsageSheet(view, {
-            transcriptOverlay: overlay,
-            onClose,
-        });
-        document.body.append(sheet);
-        ctx.host.stickyComposerContextUsageSheet = sheet;
-}
-
-export function openStickyComposerModelCapabilityPopoverExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext, options: {
-        readonly anchor: HTMLButtonElement;
-        readonly cwd: string | undefined;
-        readonly transcriptOverlay?: boolean;
-        readonly resolveLevel: () => ModelCapabilityLevelValue;
-        readonly assignLevel: (level: ModelCapabilityLevelValue) => void;
-        readonly onCommit?: () => void;
-    }): void {
-        const usePopover = shouldUseStickyComposerPopover(options.anchor);
-        if (usePopover
-            && ctx.capabilitySheetAnchor === options.anchor
-            && ctx.host.stickyComposerCapabilitySheet) {
-            ctx.closeAllComposerSheets();
-            return;
-        }
-        ctx.closeAllComposerSheets();
-        const level = reconcileModelCapabilityLevel(options.resolveLevel(), options.cwd);
-        const overlay = options.transcriptOverlay ?? ctx.shouldElevateComposerSheets();
-        const onClose = (): void => { ctx.closeAllComposerSheets(); };
-        const panel = renderModelCapabilityPopoverPanel({
-            level,
-            onCommit: next => {
-                options.assignLevel(next);
-                if (options.cwd) {
-                    writeStoredModelCapabilityLevel(options.cwd, next);
-                }
-                options.onCommit?.();
-            },
-        });
-        if (usePopover) {
-            const mounted = mountStickyComposerSheetPopover(panel, {
-                anchor: options.anchor,
-                onClose,
-                align: 'end',
-                transcriptOverlay: overlay,
-                modifierClasses: ['theia-mod-model-capability'],
-            });
-            document.body.append(mounted.root);
-            ctx.host.stickyComposerCapabilitySheet = mounted.root;
-            ctx.capabilitySheetAnchor = options.anchor;
-            ctx.capabilityPopoverAlign = 'end';
-            ctx.capabilityPopoverCleanup = mounted.cleanup;
-            scheduleStickyComposerPopoverPosition(mounted.root, options.anchor, ctx.capabilityPopoverAlign);
-            return;
-        }
-        const sheet = mountStickyComposerBottomSheet(panel, {
-            sheetClassName: overlay
-                ? 'theia-mobile-sticky-composer-sheet theia-mod-model-capability theia-mod-transcript-overlay'
-                : 'theia-mobile-sticky-composer-sheet theia-mod-model-capability',
-            onClose,
-        });
-        document.body.append(sheet);
-        ctx.host.stickyComposerCapabilitySheet = sheet;
-        ctx.capabilitySheetAnchor = options.anchor;
-        markStickyComposerPopoverAnchor(options.anchor, true);
 }
 
 export function teardownAgentPickerPopoverExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext): void {
@@ -232,6 +98,26 @@ export function openStickyComposerAgentSheetExtracted(ctx: MobileProjectsStickyC
             ctx.assignAgentPickerPopover(anchor, chrome.popoverCleanup);
             scheduleStickyComposerPopoverPosition(chrome.sheet, anchor, ctx.agentPopoverAlign);
         }
+        const selectAgent = (agentId: string, model?: QaapQaiqModelOption): void => {
+        ctx.host.stickyComposerPinnedAgentId = agentId;
+        void (async (): Promise<void> => {
+            writeStoredAgent(cwd, agentId);
+            if (cwd && model) {
+                writeStoredAgentModel(cwd, agentId, model);
+            }
+            const modes = resolveStickyComposerModes(agentId, ctx.host.chatAgentService);
+            ctx.host.stickyComposerModeId = reconcileComposerModeId(undefined, modes, cwd);
+            if (cwd && ctx.host.stickyComposerModeId) {
+                writeStoredComposerMode(cwd, ctx.host.stickyComposerModeId);
+            }
+            // Close before any model probe: a row tap must not leave the sheet open while the catalog loads.
+            ctx.closeAllComposerSheets();
+            if (cwd && !model) {
+                await ctx.host.stickyComposerAgentsUi.ensureStickyComposerAgentModel(agentId, cwd);
+            }
+            ctx.host.stickyComposerRenderUi.renderStickyComposer();
+        })();
+        };
         const loadAgentCatalog = (): void => {
             ctx.syncAgentPickerPopoverPosition(chrome.sheet);
             ctx.host.stickyComposerAgentsUi.loadComposerAgentPickerCatalog(chrome, {
@@ -239,47 +125,30 @@ export function openStickyComposerAgentSheetExtracted(ctx: MobileProjectsStickyC
                 load: () => ctx.host.stickyComposerAgentsUi.ensureStickyComposerAgentsLoaded(project, { force: true }),
                 isCurrent: () => ctx.host.stickyComposerAgentSheet === chrome.sheet,
                 onError: () => ctx.host.stickyComposerAgentsUi.showComposerAgentPickerError(chrome, loadAgentCatalog),
-                render: agents => void ctx.renderComposerAgentPicker(chrome, {
-                view: 'agents',
-                cwd,
-                agents,
-                selectedAgentId: ctx.host.stickyComposerPinnedAgentId,
-                includeCoder: true,
-                project,
-                onSelectAgent: (agentId, model) => {
-                    ctx.host.stickyComposerPinnedAgentId = agentId;
-                    void (async (): Promise<void> => {
-                        if (cwd) {
-                            writeStoredAgent(cwd, agentId);
-                            if (model) {
-                                writeStoredAgentModel(cwd, agentId, model);
-                            }
+                render: agents => void renderStickyComposerModelPicker(ctx, chrome, {
+                    cwd,
+                    agents,
+                    selectedAgentId: ctx.host.stickyComposerPinnedAgentId,
+                    project,
+                    isMobile: matchesMobileNarrowViewport(),
+                    anchor,
+                    rememberModelLabels: models => { ctx.host.stickyComposerAgentsUi.rememberModelLabels(models); },
+                    onSelectAgent: selectAgent,
+                    approval: ctx.host.stickyComposerApprovalPolicyId ?? DEFAULT_AGENT_APPROVAL_POLICY_ID,
+                    onSelectApproval: policyId => { ctx.host.stickyComposerApprovalPolicyId = policyId; },
+                    onRefresh: () => { ctx.host.stickyComposerRenderUi.renderStickyComposer(); },
+                    onProactiveLogin: ctx.host.openAgentSignInTerminal
+                        ? agentId => {
+                            ctx.closeAllComposerSheets();
+                            void ctx.host.openAgentSignInTerminal?.(agentId, project);
                         }
-                        const modes = resolveStickyComposerModes(agentId, ctx.host.chatAgentService);
-                        ctx.host.stickyComposerModeId = reconcileComposerModeId(undefined, modes, cwd);
-                        if (cwd && ctx.host.stickyComposerModeId) {
-                            writeStoredComposerMode(cwd, ctx.host.stickyComposerModeId);
+                        : undefined,
+                    onOpenAiFeaturesSettings: ctx.host.openPreferencesSheet
+                        ? () => {
+                            ctx.closeAllComposerSheets();
+                            void ctx.host.openPreferencesSheet?.(QAAP_AI_FEATURES_SETTINGS_QUERY);
                         }
-                        // Close before any model probe: a row tap must not leave the sheet open while the catalog loads.
-                        ctx.closeAllComposerSheets();
-                        if (cwd && !model) {
-                            await ctx.host.stickyComposerAgentsUi.ensureStickyComposerAgentModel(agentId, cwd);
-                        }
-                        ctx.host.stickyComposerRenderUi.renderStickyComposer();
-                    })();
-                },
-                onProactiveLogin: ctx.host.openAgentSignInTerminal
-                    ? (agentId, pickerProject) => {
-                        ctx.closeAllComposerSheets();
-                        void ctx.host.openAgentSignInTerminal?.(agentId, pickerProject);
-                    }
-                    : undefined,
-                onOpenAiFeaturesSettings: ctx.host.openPreferencesSheet
-                    ? () => {
-                        ctx.closeAllComposerSheets();
-                        void ctx.host.openPreferencesSheet?.(QAAP_AI_FEATURES_SETTINGS_QUERY);
-                    }
-                    : undefined,
+                        : undefined,
                 }),
             });
         };
@@ -376,42 +245,5 @@ export function openExternalAgentPickerForSubmitExtracted(ctx: MobileProjectsSti
             });
         };
         loadAgentCatalog();
-}
-
-export function teardownModeSheetPopoverExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext): void {
-        ctx.modePopoverCleanup?.();
-        ctx.modePopoverCleanup = undefined;
-        if (ctx.modeSheetAnchor) {
-            markStickyComposerPopoverAnchor(ctx.modeSheetAnchor, false);
-            ctx.modeSheetAnchor = undefined;
-        }
-}
-
-export function mountModeSheetPresentationExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext, panel: HTMLElement,
-        options: {
-            readonly anchor?: HTMLElement;
-            readonly transcriptOverlay: boolean;
-            readonly onClose: () => void;
-        },): HTMLElement {
-        ctx.modePopoverAlign = 'start';
-        if (ctx.shouldUseAgentPickerPopover(options.anchor)) {
-            const mounted = mountStickyComposerSheetPopover(panel, {
-                anchor: options.anchor,
-                onClose: options.onClose,
-                align: ctx.modePopoverAlign,
-                transcriptOverlay: options.transcriptOverlay,
-                modifierClasses: ['theia-mod-mode-picker'],
-            });
-            ctx.modeSheetAnchor = options.anchor;
-            ctx.modePopoverCleanup = mounted.cleanup;
-            scheduleStickyComposerPopoverPosition(mounted.root, options.anchor, ctx.modePopoverAlign);
-            return mounted.root;
-        }
-        return mountStickyComposerBottomSheet(panel, {
-            sheetClassName: options.transcriptOverlay
-                ? 'theia-mobile-sticky-composer-sheet theia-mod-mode theia-mod-transcript-overlay'
-                : 'theia-mobile-sticky-composer-sheet theia-mod-mode',
-            onClose: options.onClose,
-        });
 }
 

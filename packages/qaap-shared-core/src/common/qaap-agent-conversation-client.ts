@@ -6,6 +6,7 @@
 import { QaapUserFacingErrors } from '@theia/qaap-adapters/lib/common/qaap-user-facing-error';
 import type { QaapLinkedPullRequest } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import type { QaapTaskPullRequest } from './qaap-task-pull-request';
+import type { QaapAgentEffortLevel } from './qaap-agent-effort';
 import type { QaapTaskPlan, QaapTaskPlanEditRequest } from './qaap-task-plan';
 import { fetchQaapGetWithTransientRetry } from '@theia/qaap-adapters/lib/common/qaap-transient-get';
 import type { QaapCreateAgentTaskQaiqModel } from './qaap-agent-task-client';
@@ -680,6 +681,8 @@ export interface QaapCreateConversationBody {
     /** Resolved cross-project context, stored on the conversation and prepended to each agent turn. */
     readonly contextPreamble?: string;
     readonly interactionModeId?: string;
+    /** Reasoning effort for the first turn; the server drops it when the harness/model does not take it. */
+    readonly effort?: QaapAgentEffortLevel;
     readonly approvalPolicyId?: string;
     readonly toolApprovalRules?: import('./qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules;
     readonly latencyMarks?: Partial<Record<QaapTurnLatencyMark, number>>;
@@ -822,6 +825,8 @@ export interface QaapPostConversationMessageOptions {
     /** Mirror of a follow-up queued on the client: never starts a turn on a stopped conversation. */
     readonly queueOnly?: boolean;
     readonly interactionModeId?: string;
+    /** Reasoning effort for this turn; the server drops it when the harness/model does not take it. */
+    readonly effort?: QaapAgentEffortLevel;
     readonly approvalPolicyId?: string;
     readonly toolApprovalRules?: import('./qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules;
     readonly latencyMarks?: Partial<Record<QaapTurnLatencyMark, number>>;
@@ -853,6 +858,7 @@ export async function postConversationMessage(
             clientMessageId: options.clientMessageId,
             ...(options.queueOnly ? { queueOnly: true } : {}),
             interactionModeId: options.interactionModeId,
+            ...(options.effort ? { effort: options.effort } : {}),
             approvalPolicyId: options.approvalPolicyId,
             toolApprovalRules: options.toolApprovalRules,
             latencyMarks: options.latencyMarks,
