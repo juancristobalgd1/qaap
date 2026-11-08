@@ -10167,7 +10167,6 @@ button.theia-mobile-projects-sticky-composer-context-usage-btn {
   background: color-mix(in srgb, var(--theia-editorWarning-background) 45%, transparent);
 }
 
-.theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-input-actions .theia-mobile-projects-sticky-composer-send,
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-input-actions .qaap-composer-improve-btn,
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-input-actions .qaap-chat-mic-btn-sticky {
   flex: 0 0 32px;

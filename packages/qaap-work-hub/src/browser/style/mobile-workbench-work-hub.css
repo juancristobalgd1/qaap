@@ -7562,7 +7562,6 @@ body.qaap-theme-dark .theia-qaap-agent-brand-icon.theia-mod-theme-adaptive .thei
 .theia-mobile-projects-sticky-composer-input-wrap>.theia-mobile-projects-sticky-composer-attach,
 .theia-mobile-projects-sticky-composer-input-wrap>.theia-mobile-projects-sticky-composer-mention,
 .theia-mobile-projects-sticky-composer-input-wrap>.theia-mobile-projects-sticky-composer-variable,
-.theia-mobile-projects-sticky-composer-input-wrap>.theia-mobile-projects-sticky-composer-send,
 .theia-mobile-projects-sticky-composer-input-wrap>.qaap-composer-improve-btn,
 .theia-mobile-projects-sticky-composer-input-wrap>.qaap-chat-mic-btn-sticky {
   flex: 0 0 30px;
@@ -7641,7 +7640,6 @@ body.qaap-theme-dark .theia-qaap-agent-brand-icon.theia-mod-theme-adaptive .thei
   .theia-mobile-projects-sticky-composer-input-wrap>.theia-mobile-projects-sticky-composer-attach,
   .theia-mobile-projects-sticky-composer-input-wrap>.theia-mobile-projects-sticky-composer-mention,
   .theia-mobile-projects-sticky-composer-input-wrap>.theia-mobile-projects-sticky-composer-variable,
-  .theia-mobile-projects-sticky-composer-input-wrap>.theia-mobile-projects-sticky-composer-send,
   .theia-mobile-projects-sticky-composer-input-wrap>.qaap-composer-improve-btn,
   .theia-mobile-projects-sticky-composer-input-wrap>.qaap-chat-mic-btn-sticky {
     flex-basis: 28px;
