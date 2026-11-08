@@ -1,4 +1,4 @@
-import { resolveComposerUntilDoneForSubmit } from '../common/qaap-composer-until-done';
+import { QAAP_COMPOSER_SUBMIT_MODE_ID, resolveComposerUntilDoneForSubmit } from '../common/qaap-composer-until-done';
 import type { MobileProjectsTranscriptStickyComposerUiContext } from './mobile-projects-transcript-sticky-composer-ui-context';
 // Extracted from mobile-projects-transcript-sticky-composer-ui.ts
 
@@ -71,7 +71,7 @@ export async function submitTranscriptComposerDraftExtracted(ctx: MobileProjects
         // prompt submission after the composer has already accepted it.
         console.warn('[qaap] failed to collect composer image previews', error);
     }
-    const modeId = ctx.host.transcriptComposerModeId;
+    const modeId = QAAP_COMPOSER_SUBMIT_MODE_ID;
     const autoApprove = resolveComposerAutoApprove(
         options.showApprovalPolicy,
         ctx.host.transcriptComposerApprovalPolicyId,
@@ -79,12 +79,11 @@ export async function submitTranscriptComposerDraftExtracted(ctx: MobileProjects
     );
     // "Until done": start a goal loop instead of a single turn (idle conversations only; a busy
     // follow-up below is queued as a normal message).
-    const untilDone = options.showApprovalPolicy && !options.isLegacyTheiaChat && resolveComposerUntilDoneForSubmit({
-        // Same key the toolbar toggle writes (project cwd, falling back to the thread's).
-        cwd: ctx.host.projectsService.getProjectCwd(project) ?? summary.cwd,
-        approvalPolicyId: reconcileAgentApprovalPolicyId(ctx.host.transcriptComposerApprovalPolicyId, summary.cwd),
-        modeId,
-    });
+    const untilDone = !options.isLegacyTheiaChat && resolveComposerUntilDoneForSubmit(
+        options.showApprovalPolicy
+            ? reconcileAgentApprovalPolicyId(ctx.host.transcriptComposerApprovalPolicyId, summary.cwd)
+            : undefined,
+    );
     ctx.host.transcriptComposerContext = [];
     const commitComposerSubmission = (): void => {
         disposeComposerContextEntries(contextSnapshot);

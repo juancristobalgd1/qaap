@@ -5,7 +5,6 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import { Disposable } from '@theia/core/lib/common/disposable';
-import { ChatMode } from '@theia/ai-chat';
 import type { QaapComposerSurface } from '../common/qaap-composer-surface';
 import {
     attachStickyComposerMentionUi,
@@ -13,35 +12,17 @@ import {
 } from '../common/qaap-sticky-composer-mention';
 import type { StickyComposerSlashSection } from '../common/qaap-sticky-composer-slash-menu';
 import { attachStickyComposerSyntaxHighlight } from '../common/qaap-sticky-composer-syntax-highlight';
-import {
-    resolveApprovalPolicyToolbarDisplay,
-    type QaapAgentApprovalPolicyId,
-} from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import { formatQaiqModelSelectionLabel } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
-import type { ModelCapabilityLevelValue } from '../common/qaap-sticky-composer-model-capability';
-import {
-    populateAgentToolbarButton,
-    populateApprovalPolicyToolbarButton,
-    populateModeToolbarButton,
-} from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
+import { populateAgentToolbarButton } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { resolveComposerEnterDeliveryOverride } from '@theia/qaap-transcript-overlay/lib/browser/qaap-composer-delivery-mode';
-import { populateModelCapabilityToolbarButton } from './model-capability-popover';
 import {
     renderStickyComposerContextStrip,
     type StickyComposerContextChipView,
 } from './qaap-sticky-composer-context-ui';
-import {
-    createContextUsageIndicatorBadge,
-} from '@theia/qaap-transcript/lib/browser/qaap-chat-context-usage-indicator';
 import type { StickyComposerContextEntry } from '@theia/qaap-shared-core/lib/common/qaap-composer-context-entry';
 import type { AIVariableResolutionRequest } from '@theia/ai-core';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { bindStickyComposerControlClick } from '../common/qaap-sticky-composer-control-click';
-import {
-    createStickyComposerUntilDoneToggle,
-    isStickyComposerUntilDoneActive,
-    type StickyComposerUntilDoneToggleOptions,
-} from './qaap-sticky-composer-until-done-toggle';
 import {
     handleStickyComposerPromptHistoryKeydown,
     recordStickyComposerPromptSubmission,
@@ -97,17 +78,8 @@ export class MobileProjectsStickyComposerColumnUi {
         resolveAgentId: () => string;
         resolveAgentModel?: () => { readonly vendor: string; readonly modelId: string } | undefined;
         composerCwd?: string;
-        modes?: readonly ChatMode[];
-        resolveModeLabel?: () => string;
-        resolveModeId?: () => string | undefined;
-        /** Opens the Mode sheet; `untilDone` adds the goal-loop toggle to it when available. */
-        onOpenModeSheet?: (anchor: HTMLButtonElement, untilDone?: StickyComposerUntilDoneToggleOptions) => void;
-        approvalPolicyId?: QaapAgentApprovalPolicyId;
         /** Harness the approval preset applies to; a harness that cannot ask shows its effective mode. */
-        approvalAgent?: { readonly id: string; readonly label: string };
-        onOpenApprovalPolicySheet?: (anchor: HTMLButtonElement) => void;
         /** "Until done" goal-loop toggle; VPS agent (task) surface only. */
-        untilDone?: StickyComposerUntilDoneToggleOptions;
         canSubmit: boolean;
         /** True while a Stop for this conversation is unacknowledged: Send is disabled and reads "Stopping…". */
         isSubmitBlocked?: () => boolean;
@@ -149,11 +121,6 @@ export class MobileProjectsStickyComposerColumnUi {
         onRemoveMcpServer?: (slug: string) => void | Promise<void>;
         onBrowseMcpMarketplace?: () => void | Promise<void>;
         getSkillNames?: () => readonly string[];
-        onContextUsageBadgeMounted?: (badge: HTMLButtonElement) => void;
-        onOpenContextUsageSheet?: (anchor: HTMLButtonElement) => void;
-        resolveCapabilityLevel?: () => ModelCapabilityLevelValue;
-        onOpenCapabilityPopover?: (anchor: HTMLButtonElement) => void;
-        onCapabilityTriggerMounted?: (refresh: () => void) => void;
         transcriptOverlay?: boolean;
     }): HTMLElement {
         const column = document.createElement('div');
@@ -166,9 +133,6 @@ export class MobileProjectsStickyComposerColumnUi {
         if (options.surface) {
             column.classList.add(`theia-mod-surface-${options.surface}`);
         }
-
-        const toolbar = document.createElement('div');
-        toolbar.className = 'theia-mobile-projects-sticky-composer-toolbar';
 
         const wrap = document.createElement('div');
         wrap.className = 'theia-mobile-projects-sticky-composer-inner';
@@ -189,37 +153,6 @@ export class MobileProjectsStickyComposerColumnUi {
             ev.stopPropagation();
             options.onAttach(attachBtn);
         });
-
-        let approvalBtn: HTMLButtonElement | undefined;
-        let bindApprovalPolicyClick: (() => void) | undefined;
-        if (options.approvalPolicyId && options.onOpenApprovalPolicySheet) {
-            const display = resolveApprovalPolicyToolbarDisplay(options.approvalPolicyId, options.approvalAgent);
-            approvalBtn = document.createElement('button');
-            approvalBtn.type = 'button';
-            approvalBtn.className = 'theia-mobile-projects-sticky-composer-approval-policy';
-            const approvalTitle = nls.localize(
-                'qaap/mobileProjects/stickyComposerApprovalPolicy',
-                'Approval policy: {0}',
-                display.policy.label,
-            );
-            approvalBtn.title = display.unsupportedText ? `${approvalTitle}. ${display.unsupportedText}` : approvalTitle;
-            approvalBtn.setAttribute('aria-label', approvalBtn.title);
-            approvalBtn.setAttribute('aria-haspopup', 'dialog');
-            populateApprovalPolicyToolbarButton(approvalBtn, display.policy);
-            if (display.unsupportedText) {
-                approvalBtn.classList.add('theia-mobile-projects-sticky-composer-approval-policy-unsupported');
-                const warning = document.createElement('span');
-                warning.className = 'codicon codicon-warning theia-mobile-projects-sticky-composer-approval-policy-warning';
-                warning.setAttribute('aria-hidden', 'true');
-                approvalBtn.append(warning);
-            }
-            const approvalButton = approvalBtn;
-            bindApprovalPolicyClick = () => {
-                bindStickyComposerControlClick(approvalButton, ev => {
-                    this.openComposerControlSheet(ev, input, () => options.onOpenApprovalPolicySheet!(approvalButton));
-                });
-            };
-        }
 
         const controlsLeftItems: HTMLElement[] = [];
         const agentBtn = document.createElement('button');
@@ -258,89 +191,6 @@ export class MobileProjectsStickyComposerColumnUi {
         }
         controlsLeftItems.push(agentBtn);
 
-        const modes = options.modes ?? [];
-        const untilDone = options.surface !== 'chat' ? options.untilDone : undefined;
-        let modeBtn: HTMLButtonElement | undefined;
-        if (modes.length > 1 && options.onOpenModeSheet && options.resolveModeLabel && options.resolveModeId) {
-            modeBtn = document.createElement('button');
-            modeBtn.type = 'button';
-            modeBtn.className = 'theia-mobile-projects-sticky-composer-mode';
-            const modeLabel = options.resolveModeLabel();
-            const modeId = options.resolveModeId() ?? modes[0]?.id ?? 'agent';
-            modeBtn.title = nls.localize('qaap/mobileProjects/stickyComposerMode', 'Mode: {0}', modeLabel);
-            modeBtn.setAttribute('aria-label', modeBtn.title);
-            populateModeToolbarButton(modeBtn, { modeId, label: modeLabel });
-            if (isStickyComposerUntilDoneActive(untilDone)) {
-                // "Until done" now lives in the Mode sheet: keep its state visible on the trigger.
-                const untilDoneIcon = document.createElement('span');
-                untilDoneIcon.className = 'codicon codicon-target theia-mobile-projects-sticky-composer-mode-until-done';
-                untilDoneIcon.setAttribute('aria-hidden', 'true');
-                modeBtn.lastElementChild?.before(untilDoneIcon);
-                modeBtn.title = nls.localize(
-                    'qaap/mobileProjects/stickyComposerModeUntilDone',
-                    'Mode: {0} · Goal',
-                    modeLabel,
-                );
-                modeBtn.setAttribute('aria-label', modeBtn.title);
-            }
-            const modeButton = modeBtn;
-            // Goal is blocked by manual approval: let its row open the approval picker instead
-            // of being a dead end ("Requires auto-approve").
-            const approvalAnchor = approvalBtn;
-            const sheetUntilDone: StickyComposerUntilDoneToggleOptions | undefined = untilDone
-                && untilDone.disabledReason
-                && options.approvalPolicyId === 'request-approval'
-                && approvalAnchor
-                && options.onOpenApprovalPolicySheet
-                ? { ...untilDone, onResolveDisabled: () => options.onOpenApprovalPolicySheet!(approvalAnchor) }
-                : untilDone;
-            bindStickyComposerControlClick(modeBtn, ev => {
-                this.openComposerControlSheet(ev, input, () => options.onOpenModeSheet!(modeButton, sheetUntilDone));
-            });
-        }
-
-        const toolbarItems: HTMLElement[] = [];
-        if (modeBtn) {
-            toolbarItems.push(modeBtn);
-        }
-        if (approvalBtn) {
-            toolbarItems.push(approvalBtn);
-        }
-        if (untilDone && !modeBtn) {
-            // No Mode sheet to host it (single-mode agent): keep the standalone toggle.
-            toolbarItems.push(createStickyComposerUntilDoneToggle(untilDone));
-        }
-
-        toolbar.append(...toolbarItems);
-        const usageBadge = createContextUsageIndicatorBadge();
-        usageBadge.classList.add('theia-mobile-projects-sticky-composer-context-usage');
-        const trayRight = document.createElement('div');
-        trayRight.className = 'theia-mobile-projects-sticky-composer-tray-right';
-
-        let capabilityBtn: HTMLButtonElement | undefined;
-        if (options.resolveCapabilityLevel && options.onOpenCapabilityPopover) {
-            capabilityBtn = document.createElement('button');
-            capabilityBtn.type = 'button';
-            capabilityBtn.className = 'theia-mobile-projects-sticky-composer-model-capability';
-            capabilityBtn.setAttribute('aria-haspopup', 'dialog');
-            capabilityBtn.setAttribute('aria-expanded', 'false');
-            const refreshCapabilityTrigger = (): void => {
-                populateModelCapabilityToolbarButton(capabilityBtn!, {
-                    level: options.resolveCapabilityLevel!(),
-                });
-            };
-            refreshCapabilityTrigger();
-            options.onCapabilityTriggerMounted?.(refreshCapabilityTrigger);
-            const capabilityButton = capabilityBtn;
-            bindStickyComposerControlClick(capabilityBtn, ev => {
-                this.openComposerControlSheet(ev, input, () => options.onOpenCapabilityPopover!(capabilityButton));
-            });
-            trayRight.append(capabilityBtn);
-        }
-
-        trayRight.append(usageBadge);
-        toolbar.append(trayRight);
-
         const stage = document.createElement('div');
         stage.className = 'theia-mobile-projects-sticky-composer-stage';
 
@@ -362,7 +212,6 @@ export class MobileProjectsStickyComposerColumnUi {
         input.setAttribute('aria-label', input.placeholder);
         input.value = options.getDraft();
         input.disabled = !options.canSubmit;
-        bindApprovalPolicyClick?.();
 
         const sendBtn = document.createElement('button');
         sendBtn.type = 'button';
@@ -641,12 +490,6 @@ export class MobileProjectsStickyComposerColumnUi {
                 this.openComposerControlSheet(ev, input, () => options.onOpenAgentSheet(agentBtn));
             });
         }
-        if (options.onOpenContextUsageSheet) {
-            bindStickyComposerControlClick(usageBadge, ev => {
-                this.openComposerControlSheet(ev, input, () => options.onOpenContextUsageSheet!(usageBadge));
-            });
-        }
-        options.onContextUsageBadgeMounted?.(usageBadge);
         controlsRight.append(inputActions);
         controlsRow.append(controlsLeft, controlsRight);
         const borderBeamBloom = document.createElement('div');
@@ -660,7 +503,7 @@ export class MobileProjectsStickyComposerColumnUi {
             inputPanel.prepend(draftHint);
         }
         inputPanel.append(inputBody, runPermissions, controlsRow, borderBeamBloom);
-        stage.append(inputPanel, toolbar);
+        stage.append(inputPanel);
 
         const card = document.createElement('div');
         card.className = 'theia-mobile-projects-sticky-composer-card theia-mod-codex';
@@ -679,7 +522,6 @@ export class MobileProjectsStickyComposerColumnUi {
                 resolveAttachmentPreview: this.host.resolveAttachmentPreview,
             }));
         }
-        toolbar.classList.add('qaap-codex-context-tray');
         card.append(stage);
         // Bloom layer for the card-level border beam. CSS shows it via :has() when the card has
         // context and the input-panel inside it is in agent-working state.

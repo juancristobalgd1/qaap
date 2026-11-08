@@ -1,10 +1,8 @@
-import { readStoredComposerUntilDone, resolveUntilDoneDisabledReason, writeStoredComposerUntilDone } from '../common/qaap-composer-until-done';
 import type { MobileProjectsTranscriptStickyComposerUiContext } from './mobile-projects-transcript-sticky-composer-ui-context';
 // Extracted from mobile-projects-transcript-sticky-composer-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
-import { resolveAgentDisplayLabel } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import {
     type QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
@@ -12,19 +10,6 @@ import {
     readStoredAgentModel,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { warmAgentTurnPath } from '@theia/qaap-shared-core/lib/common/qaap-agent-turn-warm';
-import {
-    resolveChatModelContextUsageBreakdown,
-    resolveVpsContextUsageBreakdown,
-} from '@theia/qaap-transcript/lib/browser/qaap-chat-context-usage-panel';
-import {
-    describeComposerInteractionMode,
-    reconcileComposerModeId,
-    resolveComposerModeLabel,
-    resolveStickyComposerModes,
-} from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-mode';
-import {
-    reconcileModelCapabilityLevel,
-} from '../common/qaap-sticky-composer-model-capability';
 import {
     agentSupportsApprovalPolicy,
     reconcileAgentApprovalPolicyId,
@@ -106,18 +91,7 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: MobilePro
     shell.append(ctx.workHub.createAgentsHubQuickActionsBlock());
     const isLegacyTheiaChat = summary.source === 'theia-chat';
     const pinnedId = ctx.host.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(project, summary);
-    const modes = resolveStickyComposerModes(pinnedId, ctx.host.chatAgentService);
-    ctx.host.transcriptComposerModeId = reconcileComposerModeId(
-        ctx.host.transcriptComposerModeId,
-        modes,
-        cwd,
-    );
-    ctx.host.transcriptComposerCapabilityLevel = reconcileModelCapabilityLevel(
-        ctx.host.transcriptComposerCapabilityLevel,
-        cwd,
-    );
     const showApprovalPolicy = !isLegacyTheiaChat && agentSupportsApprovalPolicy(pinnedId);
-    let capabilityTriggerRefresh: (() => void) | undefined;
     if (showApprovalPolicy) {
         ctx.host.transcriptComposerApprovalPolicyId = reconcileAgentApprovalPolicyId(
             ctx.host.transcriptComposerApprovalPolicyId,
@@ -212,47 +186,6 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: MobilePro
             ctx.host.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(project, summary),
             cwd,
         ),
-        modes,
-        resolveModeLabel: () => resolveComposerModeLabel(modes, ctx.host.transcriptComposerModeId),
-        resolveModeId: () => ctx.host.transcriptComposerModeId,
-        onOpenModeSheet: modes.length > 1
-            ? (anchor, untilDone) => { ctx.host.transcriptComposerUi.openTranscriptComposerModeSheet(project, summary, modes, anchor, untilDone); }
-            : undefined,
-        approvalPolicyId: showApprovalPolicy ? ctx.host.transcriptComposerApprovalPolicyId : undefined,
-        approvalAgent: showApprovalPolicy
-            ? {
-                id: ctx.host.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(project, summary),
-                label: ctx.host.transcriptComposerUi.resolveTranscriptComposerAgentLabel(
-                    ctx.host.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(project, summary),
-                ),
-            }
-            : undefined,
-        onOpenApprovalPolicySheet: showApprovalPolicy
-            ? anchor => {
-                ctx.host.transcriptComposerUi.openTranscriptComposerApprovalPolicySheet(
-                    project,
-                    summary,
-                    ctx.host.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(project, summary),
-                    ctx.host.transcriptComposerUi.resolveTranscriptComposerAgentLabel(
-                        ctx.host.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(project, summary),
-                    ),
-                    anchor,
-                );
-            }
-            : undefined,
-        untilDone: showApprovalPolicy
-            ? {
-                checked: readStoredComposerUntilDone(cwd),
-                disabledReason: resolveUntilDoneDisabledReason({
-                    approvalPolicyId: ctx.host.transcriptComposerApprovalPolicyId,
-                    modeId: ctx.host.transcriptComposerModeId,
-                }),
-                onToggle: checked => {
-                    writeStoredComposerUntilDone(cwd, checked);
-                    ctx.remountTranscriptStickyComposer();
-                },
-            }
-            : undefined,
         canSubmit: true,
         isSubmitBlocked: () => qaapStopAck.isSendBlocked(ctx.host.transcriptLastConv?.id ?? summary.id),
         isStopRetryable: () => qaapStopAck.isStopRetryable(ctx.host.transcriptLastConv?.id ?? summary.id),
@@ -279,9 +212,7 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: MobilePro
                     autoApprove: conv?.autoApprove ?? summary.autoApprove,
                     cwd,
                 });
-                const modeId = conv?.interactionModeId ?? summary.interactionModeId ?? ctx.host.transcriptComposerModeId;
-                const modeLabel = modes.length > 1 ? resolveComposerModeLabel(modes, modeId) : undefined;
-                return formatComposerRunPermissionsLabel(modeLabel, policyId, conv?.agentId ?? summary.agentId);
+                return formatComposerRunPermissionsLabel(undefined, policyId, conv?.agentId ?? summary.agentId);
             }
             : undefined,
         isAgentBeamIdle: () => ctx.isTranscriptStickyComposerAgentBeamIdle(),
@@ -363,56 +294,8 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: MobilePro
             : isLegacyTheiaChat
                 ? nls.localize('qaap/mobileProjects/transcriptLegacyTheiaPlaceholder', 'Start a new agent session…')
                 : nls.localize('qaap/mobileProjects/transcriptTaskPlaceholder', 'Follow up on this task…'),
-        resolveCapabilityLevel: () => ctx.host.transcriptComposerCapabilityLevel
-            ?? reconcileModelCapabilityLevel(undefined, cwd),
-        onOpenCapabilityPopover: !isLegacyTheiaChat
-            ? anchor => {
-                ctx.host.stickyComposerSheetsUi.openStickyComposerModelCapabilityPopover({
-                    anchor,
-                    cwd,
-                    transcriptOverlay: !ctx.host.agentsHubShellActive,
-                    resolveLevel: () => ctx.host.transcriptComposerCapabilityLevel
-                        ?? reconcileModelCapabilityLevel(undefined, cwd),
-                    assignLevel: level => { ctx.host.transcriptComposerCapabilityLevel = level; },
-                    onCommit: () => capabilityTriggerRefresh?.(),
-                });
-            }
-            : undefined,
-        onCapabilityTriggerMounted: !isLegacyTheiaChat
-            ? refresh => { capabilityTriggerRefresh = refresh; }
-            : undefined,
-        onContextUsageBadgeMounted: badge => {
-            ctx.host.stickyComposerContextUsageDispose = ctx.host.stickyComposerRenderUi.mountStickyComposerContextUsage(
-                badge,
-                () => ctx.resolveTranscriptContextUsageTarget(summary),
-            );
-        },
-        onOpenContextUsageSheet: anchor => {
-            ctx.host.stickyComposerSheetsUi.openStickyComposerContextUsageSheet(
-                () => {
-                    const target = ctx.resolveTranscriptContextUsageTarget(summary);
-                    if (target?.chatModel) {
-                        return resolveChatModelContextUsageBreakdown(target.chatModel);
-                    }
-                    return resolveVpsContextUsageBreakdown(target?.summary, target?.full);
-                },
-                !ctx.host.agentsHubShellActive,
-                anchor,
-            );
-        },
         transcriptOverlay: !ctx.host.agentsHubShellActive,
     });
-    const pinnedAgentId = ctx.host.transcriptComposerPinnedAgentId;
-    const pinnedAgentLabel = ctx.host.transcriptComposerBackendAgents.find(agent =>
-        agent.id.toLowerCase() === pinnedAgentId?.toLowerCase()
-    )?.label ?? (pinnedAgentId ? resolveAgentDisplayLabel(pinnedAgentId) : undefined);
-    const modeHint = describeComposerInteractionMode(ctx.host.transcriptComposerModeId, pinnedAgentLabel);
-    if (modeHint) {
-        const modeBanner = document.createElement('div');
-        modeBanner.className = 'theia-mobile-sticky-composer-mode-banner';
-        modeBanner.textContent = modeHint;
-        shell.append(modeBanner);
-    }
     if (isLegacyTheiaChat) {
         const legacyBanner = document.createElement('div');
         legacyBanner.className = 'theia-mobile-sticky-composer-legacy-banner';
