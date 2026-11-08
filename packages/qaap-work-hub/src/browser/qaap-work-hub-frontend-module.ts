@@ -79,6 +79,7 @@ import { QaapBuildFreshnessContribution } from '@theia/qaap-shared-core/lib/brow
 import { QaapHasStateClasses } from './qaap-has-state-classes';
 import { QaapWindowTitleProjectContribution } from './qaap-window-title-project-contribution';
 import { QaapWorkHubBootReplicaContribution } from './qaap-work-hub-boot-replica-contribution';
+import { QaapWorkHubKeybindingsPanel } from './qaap-work-hub-keybindings-panel';
 import { QaapAgentCliUpdateContribution } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-cli-update-contribution';
 import { MobileOneColumnShellContribution } from './mobile-one-column-shell-contribution';
 import { QaapShellLayoutRestoreContribution } from './qaap-shell-layout-restore-contribution';
@@ -204,6 +205,7 @@ export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync
     bind(MobileProjectsConversations).toSelf().inSingletonScope();
     bind(MobileWorkHubInboxStream).toSelf().inSingletonScope();
     bind(MobileProjectsConversationFlags).toSelf().inSingletonScope();
+    bind(QaapWorkHubKeybindingsPanel).toSelf().inSingletonScope();
     // Transient binding so each `getOrCreateWidget` call (with a unique options.id) gets a fresh
     // instance — the workspace Agent AI view already mounts an AIChatInputWidget with a fixed
     // resource URI, and a second one would collide unless this subclass mints its own URI.
