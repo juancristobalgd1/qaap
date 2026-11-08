@@ -24,12 +24,16 @@ import type { ComposerAgentPickerChrome } from './mobile-projects-sticky-compose
 import { disposeQaapComposerModelPicker, renderQaapComposerModelPicker } from './qaap-composer-model-picker';
 import { placePickerAbove } from './qaap-composer-picker-placement';
 
-/** Sign-in or API key guidance for a harness that cannot run yet; `undefined` when it can. */
+/**
+ * Sign-in action for a harness known to be signed out; `undefined` otherwise. Only a settled
+ * `disconnected` counts: Copilot, Grok and Antigravity have no reliable status command, so their
+ * state stays `unknown` (backend access `none`) even after a sign-in, and must not nag for one.
+ */
 function connectionStripFor(
     agent: QaapAgentTaskAgentOption,
     options: StickyComposerModelPickerOptions,
 ): { message: string; actionLabel: string; onAction: () => void } | undefined {
-    if ((agent.connectionState === 'disconnected' || agent.accessState === 'none') && options.onProactiveLogin) {
+    if (agent.connectionState === 'disconnected' && options.onProactiveLogin) {
         return {
             message: nls.localize('qaap/composer/picker/connectNeeded', '{0} needs a sign-in before it can run.', agent.label),
             actionLabel: nls.localizeByDefault('Sign in'),
