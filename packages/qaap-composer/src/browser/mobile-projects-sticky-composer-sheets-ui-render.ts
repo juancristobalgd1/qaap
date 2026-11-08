@@ -1,3 +1,4 @@
+import { DEFAULT_AGENT_APPROVAL_POLICY_ID } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import type { QaapQaiqModelOption } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { renderStickyComposerModelPicker } from './mobile-projects-sticky-composer-model-picker-ui';
 import { matchesMobileNarrowViewport } from '@theia/core/lib/browser/shell/mobile-layout-state';
@@ -271,6 +272,9 @@ export function openStickyComposerAgentSheetExtracted(ctx: MobileProjectsStickyC
                     project,
                     isMobile: matchesMobileNarrowViewport(),
                     onSelectAgent: selectAgent,
+                    approval: ctx.host.stickyComposerApprovalPolicyId ?? DEFAULT_AGENT_APPROVAL_POLICY_ID,
+                    onSelectApproval: policyId => { ctx.host.stickyComposerApprovalPolicyId = policyId; },
+                    onRefresh: () => { ctx.host.stickyComposerRenderUi.renderStickyComposer(); },
                 }),
             });
         };

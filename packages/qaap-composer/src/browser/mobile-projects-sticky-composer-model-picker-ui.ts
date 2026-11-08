@@ -13,7 +13,6 @@ import {
 import { readStoredAgentModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
 import { QaapAgentEffort, type QaapAgentEffortLevel } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
 import {
-    DEFAULT_AGENT_APPROVAL_POLICY_ID,
     writeStoredAgentApprovalPolicy,
     type QaapAgentApprovalPolicyId,
 } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
@@ -30,6 +29,11 @@ export interface StickyComposerModelPickerOptions {
     readonly project?: MobileProjectEntry;
     readonly onSelectAgent: (agentId: string, model?: QaapQaiqModelOption) => void;
     readonly isMobile: boolean;
+    /** Approval preset the composer currently submits with. */
+    readonly approval: QaapAgentApprovalPolicyId;
+    readonly onSelectApproval: (policyId: QaapAgentApprovalPolicyId) => void;
+    /** Repaints the composer once the picker closes, so the model pill shows the new effort. */
+    readonly onRefresh: () => void;
 }
 
 /** Converts a catalog model to the picker row; a row without `available` is selectable. */
@@ -61,7 +65,7 @@ function unavailableText(reason: QaapQaiqModelOption['unavailableReason']): stri
  * goes through the same `onSelectAgent` path, so the stored agent and model stay identical.
  */
 export async function renderStickyComposerModelPicker(
-    ctx: MobileProjectsStickyComposerSheetsUiContext,
+    ctx: Pick<MobileProjectsStickyComposerSheetsUiContext, 'resolveModelsForAgentPickerSafe'>,
     chrome: ComposerAgentPickerChrome,
     options: StickyComposerModelPickerOptions,
 ): Promise<void> {
@@ -105,10 +109,13 @@ export async function renderStickyComposerModelPicker(
     let query = '';
     let railSelection: 'favorites' | string = pinned;
     let favorites = QaapComposerModelPickerModel.readFavorites(window.localStorage);
-    const close = (): void => { chrome.onClose(); };
+    let approvalCurrent: QaapAgentApprovalPolicyId = options.approval;
+    const close = (): void => {
+        chrome.onClose();
+        options.onRefresh();
+    };
 
     const repaint = (): void => {
-        const approvalCurrent: QaapAgentApprovalPolicyId = ctx.host.stickyComposerApprovalPolicyId ?? DEFAULT_AGENT_APPROVAL_POLICY_ID;
         const state: QaapPickerState = {
             harnesses,
             models,
@@ -141,7 +148,8 @@ export async function renderStickyComposerModelPicker(
             },
             onSelectApproval: (policyId: QaapAgentApprovalPolicyId) => {
                 writeStoredAgentApprovalPolicy(options.cwd, policyId);
-                ctx.host.stickyComposerApprovalPolicyId = policyId;
+                approvalCurrent = policyId;
+                options.onSelectApproval(policyId);
                 repaint();
             },
             onToggleFavorite: key => {
