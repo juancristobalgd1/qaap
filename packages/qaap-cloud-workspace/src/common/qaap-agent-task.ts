@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import type { QaapTurnLatencyMark } from '@theia/qaap-shared-core/lib/common/qaap-agent-stream-metrics';
+import type { QaapAgentEffortLevel } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
 import type { QaapAgentReadOnlyEnforcement } from './qaap-agent-readonly-workspace';
 import type { QaapAgentFailureKind } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 import type { QaapAgentClosingReport } from './qaap-agent-closing-report';
@@ -323,6 +324,8 @@ export interface QaapCreateAgentTaskRequest {
     readonly externalReview?: boolean;
     /** Composer interaction mode for QAIQ (`agent`, `plan`, `ask`). */
     readonly interactionModeId?: string;
+    /** Reasoning effort for this turn; the runner drops it when the harness/model does not take it. */
+    readonly effort?: QaapAgentEffortLevel;
     /** Composer approval preset (`request-approval`, `approve-for-me`, `full-access`). */
     readonly approvalPolicyId?: string;
     /** Optional scopes under {@code approve-for-me} (shell / network). */

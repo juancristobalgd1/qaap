@@ -55,6 +55,16 @@ describe('qaap-agent-effort', () => {
         });
     });
 
+    describe('parse', () => {
+        it('accepts only known level names', () => {
+            expect(QaapAgentEffort.parse('xhigh')).to.equal('xhigh');
+            expect(QaapAgentEffort.parse(' MAX ')).to.equal('max');
+            expect(QaapAgentEffort.parse('ultra')).to.equal(undefined);
+            expect(QaapAgentEffort.parse(3)).to.equal(undefined);
+            expect(QaapAgentEffort.parse(undefined)).to.equal(undefined);
+        });
+    });
+
     describe('label', () => {
         it('names each level', () => {
             expect(QaapAgentEffort.label('xhigh')).to.equal('Extra high');

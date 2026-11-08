@@ -26,6 +26,7 @@ import type { QaapAgentMessageWireDelta } from '@theia/qaap-shared-core/lib/comm
 import type { QaapAgentTaskReview, QaapAgentTaskState, QaapAgentTaskVerification, QaapCreateAgentTaskQaiqModel } from './qaap-agent-task';
 import type { QaapTurnLatencyMark } from '@theia/qaap-shared-core/lib/common/qaap-agent-stream-metrics';
 import type { QaapAgentGoalLoopPhase, QaapAgentGoalLoopState } from './qaap-agent-goal-loop';
+import type { QaapAgentEffortLevel } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
 
 /** HTTP base path for the persistent agent-conversation endpoints. */
 export const QAAP_AGENT_CONVERSATION_API_PATH = '/qaap/api/agent-conversations';
@@ -295,6 +296,8 @@ export interface QaapAgentConversation {
     readonly contextPreamble?: string;
     /** Last composer interaction mode (`agent`, `plan`, `ask`) — drives QAIQ CLI flags. */
     readonly interactionModeId?: string;
+    /** Reasoning effort last chosen in the composer; kept on the conversation for later turns. */
+    readonly effort?: QaapAgentEffortLevel;
     /** Last composer approval preset — drives QAIQ permission mode when auto-approve is on. */
     readonly approvalPolicyId?: string;
     /** Optional scopes under {@code approve-for-me} (shell / network). Edits are always included. */
@@ -523,6 +526,8 @@ export interface QaapCreateAgentConversationRequest {
     /** Resolved cross-project context (frontend PromptService), stored on the conversation. */
     readonly contextPreamble?: string;
     readonly interactionModeId?: string;
+    /** Reasoning effort last chosen in the composer; kept on the conversation for later turns. */
+    readonly effort?: QaapAgentEffortLevel;
     readonly approvalPolicyId?: string;
     readonly toolApprovalRules?: QaapAgentToolApprovalRules;
     /** Optional submit diagnostics forwarded by the browser for end-to-end latency logs. */
@@ -555,6 +560,8 @@ export interface QaapPostAgentMessageRequest {
      */
     readonly autoApprove?: boolean;
     readonly interactionModeId?: string;
+    /** Reasoning effort last chosen in the composer; kept on the conversation for later turns. */
+    readonly effort?: QaapAgentEffortLevel;
     readonly approvalPolicyId?: string;
     readonly toolApprovalRules?: QaapAgentToolApprovalRules;
     /** Optional submit diagnostics forwarded by the browser for end-to-end latency logs. */

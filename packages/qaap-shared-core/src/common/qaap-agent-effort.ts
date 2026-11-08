@@ -15,6 +15,7 @@ export interface QaapAgentEffortSupport {
     readonly defaultLevel: QaapAgentEffortLevel;
 }
 
+const ALL_EFFORT_LEVELS: readonly QaapAgentEffortLevel[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 const CLAUDE_EFFORT_SUPPORT: QaapAgentEffortSupport = {
     levels: ['low', 'medium', 'high', 'xhigh', 'max'],
     defaultLevel: 'high',
@@ -71,6 +72,14 @@ export namespace QaapAgentEffort {
             case 'max':
                 return nls.localize('qaap/composer/picker/effortMax', 'Max');
         }
+    }
+
+    /** Narrows an untrusted request value to a known level; anything else is `undefined`. */
+    export function parse(value: unknown): QaapAgentEffortLevel | undefined {
+        if (typeof value !== 'string') {
+            return undefined;
+        }
+        return ALL_EFFORT_LEVELS.find(level => level === value.trim().toLowerCase());
     }
 
     /**

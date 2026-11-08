@@ -43,6 +43,7 @@ import { resolveQaapBuiltinAgentMentionId } from '@theia/qaap-shared-core/lib/co
 import type { QaapAgentTask, QaapAgentTaskCwdGroup } from '../common/qaap-agent-task';
 import { QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import { QaapAsyncRoute } from '@theia/qaap-shared-core/lib/node/qaap-async-route';
+import { QaapAgentEffort } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
 
 /** Keep SSE connections warm through proxies that idle-kill silent sockets. */
 const SSE_HEARTBEAT_MS = 25_000;
@@ -726,6 +727,7 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 parentId,
                 autoApprove: approval.autoApprove,
                 interactionModeId: body.interactionModeId,
+                effort: QaapAgentEffort.parse(body.effort),
                 approvalPolicyId: approval.approvalPolicyId,
                 // Part of the request type, so a caller may legitimately send it; this handler
                 // builds its argument field by field and was dropping it on the floor, which made

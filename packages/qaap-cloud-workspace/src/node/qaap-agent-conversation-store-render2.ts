@@ -1,4 +1,5 @@
 // Extracted from qaap-agent-conversation-store.ts
+import type { QaapAgentEffortLevel } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
 import { logTurnCreatedExtracted } from './qaap-agent-turn-create-log';
 import type { QaapAgentConversationStoreContext } from './qaap-agent-conversation-store-context';
 
@@ -218,6 +219,7 @@ export function createExtracted(ctx: QaapAgentConversationStoreContext, request:
         ...(request.autoApprove === false ? { autoApprove: false } : {}),
         ...(request.contextPreamble ? { contextPreamble: request.contextPreamble } : {}),
         ...(request.interactionModeId ? { interactionModeId: request.interactionModeId } : {}),
+        ...(request.effort ? { effort: request.effort } : {}),
         ...(request.approvalPolicyId ? { approvalPolicyId: request.approvalPolicyId } : {}),
         ...(request.toolApprovalRules ? { toolApprovalRules: request.toolApprovalRules } : {}),
         ...(request.taskPlan ? { taskPlan: request.taskPlan } : {}),
@@ -599,7 +601,8 @@ export function postUserMessageExtracted(ctx: QaapAgentConversationStoreContext,
     toolApprovalRules?: QaapCreateAgentConversationRequest['toolApprovalRules'],
     latencyMarks?: QaapCreateAgentConversationRequest['latencyMarks'],
     internal?: PostUserMessageInternalOptions,
-    deliveryMode: QaapMessageDeliveryMode = QAAP_DEFAULT_DELIVERY_MODE, ): QaapAgentConversation {
+    deliveryMode: QaapMessageDeliveryMode = QAAP_DEFAULT_DELIVERY_MODE,
+    effort?: QaapAgentEffortLevel, ): QaapAgentConversation {
     let conv = ctx.conversations.get(id);
     if (!conv) {
         throw new Error('Conversation not found.');
@@ -791,6 +794,7 @@ export function postUserMessageExtracted(ctx: QaapAgentConversationStoreContext,
         discardCheckpointId: undefined,
         ...modelPatch,
         ...(interactionModeId ? { interactionModeId } : {}),
+        ...(effort ? { effort } : {}),
         ...(approvalPolicyId ? { approvalPolicyId } : {}),
         ...(toolApprovalRules ? { toolApprovalRules } : {}),
     };

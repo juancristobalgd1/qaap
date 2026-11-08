@@ -13,6 +13,7 @@
 // `import type` throughout to avoid a runtime import cycle with the extracted modules (several of
 // which are imported back into `qaap-agent-conversation-store.ts`).
 
+import type { QaapAgentEffortLevel } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
 import type { QaapAgentClosingReport } from '../common/qaap-agent-closing-report';
 import type { Emitter } from '@theia/core/lib/common/event';
 import type { QaapGitRunResult } from './qaap-agent-conversation-store-git';
@@ -156,6 +157,7 @@ export interface QaapAgentConversationStoreContext {
         latencyMarks?: QaapCreateAgentConversationRequest['latencyMarks'],
         internal?: import('./qaap-agent-conversation-store-constants').PostUserMessageInternalOptions,
         deliveryMode?: import('../common/qaap-agent-conversation').QaapMessageDeliveryMode,
+        effort?: QaapAgentEffortLevel,
     ): QaapAgentConversation;
     applyAgUiTranscriptEvent(
         conversationId: string,

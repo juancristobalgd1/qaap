@@ -64,6 +64,7 @@ import {
     type QaapPreviewVisualValidationResult,
 } from '@theia/qaap-shared-core/lib/common/qaap-visual-verification';
 import { QaapAsyncRoute } from '@theia/qaap-shared-core/lib/node/qaap-async-route';
+import { QaapAgentEffort } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
 
 const SSE_HEARTBEAT_MS = 25_000;
 /** A v2 socket that never sends `hello` is served a full `resync` after this long. */
@@ -763,6 +764,7 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
                 autoApprove: body.autoApprove,
                 contextPreamble: body.contextPreamble,
                 interactionModeId: body.interactionModeId,
+                effort: QaapAgentEffort.parse(body.effort),
                 approvalPolicyId,
                 ...(toolApprovalRules ? { toolApprovalRules } : {}),
                 latencyMarks: sanitizeLatencyMarks(body.latencyMarks),
@@ -940,6 +942,7 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
                     ? { ...(clientMessageId ? { clientMessageId } : {}), ...(queueOnly ? { queueOnly: true } : {}) }
                     : undefined,
                 deliveryMode,
+                QaapAgentEffort.parse(body.effort),
             );
             res.status(202).json(conv);
         } catch (error) {

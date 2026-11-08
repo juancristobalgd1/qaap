@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Theia contributors and Qaap product fork.
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
+import type { QaapAgentEffortLevel } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
 import type { QaapAgentClosingReport } from '../common/qaap-agent-closing-report';
 import { Emitter, Event } from '@theia/core/lib/common/event';
 import type { QaapTaskPlan } from '@theia/qaap-shared-core/lib/common/qaap-task-plan';
@@ -306,8 +307,8 @@ export class QaapAgentConversationStore implements QaapAgentConversationStoreCon
         return createExtracted(this, request, ownerLogin);
     }
 
-    postUserMessage(id: string, content: string, agentOverride?: string, agentModelOverride?: QaapCreateAgentTaskRequest['agentModel'], autoApproveOverride?: boolean, interactionModeId?: string, approvalPolicyId?: string, toolApprovalRules?: QaapCreateAgentConversationRequest['toolApprovalRules'], latencyMarks?: QaapCreateAgentConversationRequest['latencyMarks'], internal?: PostUserMessageInternalOptions, deliveryMode?: import('../common/qaap-agent-conversation').QaapMessageDeliveryMode, ): QaapAgentConversation {
-        return postUserMessageExtracted(this, id, content, agentOverride, agentModelOverride, autoApproveOverride, interactionModeId, approvalPolicyId, toolApprovalRules, latencyMarks, internal, deliveryMode);
+    postUserMessage(id: string, content: string, agentOverride?: string, agentModelOverride?: QaapCreateAgentTaskRequest['agentModel'], autoApproveOverride?: boolean, interactionModeId?: string, approvalPolicyId?: string, toolApprovalRules?: QaapCreateAgentConversationRequest['toolApprovalRules'], latencyMarks?: QaapCreateAgentConversationRequest['latencyMarks'], internal?: PostUserMessageInternalOptions, deliveryMode?: import('../common/qaap-agent-conversation').QaapMessageDeliveryMode, effort?: QaapAgentEffortLevel, ): QaapAgentConversation {
+        return postUserMessageExtracted(this, id, content, agentOverride, agentModelOverride, autoApproveOverride, interactionModeId, approvalPolicyId, toolApprovalRules, latencyMarks, internal, deliveryMode, effort);
     }
 
     enqueuePendingMessage(conv: import('../common/qaap-agent-conversation').QaapAgentConversation, userMessage: import('../common/qaap-agent-conversation').QaapAgentMessage, turnAgentId?: string, sealedTurnModel?: QaapCreateAgentTaskRequest['agentModel'], clientMessageId?: string): import('../common/qaap-agent-conversation').QaapAgentConversation {

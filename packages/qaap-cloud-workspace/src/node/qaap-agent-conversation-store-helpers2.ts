@@ -126,6 +126,7 @@ export function buildTaskCreateRequest(
         ...(requestConv.autoApprove === false ? { autoApprove: false } : {}),
         ...(requestConv.contextPreamble ? { contextPreamble: requestConv.contextPreamble } : {}),
         ...(requestConv.interactionModeId ? { interactionModeId: requestConv.interactionModeId } : {}),
+        ...(requestConv.effort ? { effort: requestConv.effort } : {}),
         ...(requestConv.approvalPolicyId ? { approvalPolicyId: requestConv.approvalPolicyId } : {}),
         ...(requestConv.toolApprovalRules ? { toolApprovalRules: requestConv.toolApprovalRules } : {}),
         ...(latencyMarks ? { latencyMarks } : {}),
