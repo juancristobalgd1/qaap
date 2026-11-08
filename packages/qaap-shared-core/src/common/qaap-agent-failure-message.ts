@@ -898,13 +898,13 @@ export function localizeAgentFailureMessage(kind: QaapAgentFailureKind, provider
         case 'provider_key_rejected':
             return nls.localize(
                 'qaap/agentFailure/providerKeyRejected',
-                'Your {0} key was rejected. Update it in Settings → BYOK, then retry.',
+                'The {0} provider refused this turn. Connect a harness in Settings → Harness, then retry.',
                 provider,
             );
         case 'provider_credits':
             return nls.localize(
                 'qaap/agentFailure/providerCredits',
-                'Your {0} key is out of credits. Add credits with {0}, or update the key in Settings → BYOK.',
+                'The {0} account is out of credits. Add credits with {0}, or connect a harness in Settings → Harness.',
                 provider,
             );
         case 'provider_data_policy':
@@ -1007,15 +1007,13 @@ export function localizeQaiqProviderKeyMissingMessage(providerLabel?: string): s
     if (label) {
         return nls.localize(
             'qaap/agentFailure/qaiqProviderKeyMissing',
-            'Add your {0} API key in Settings → BYOK to use QAIQ, pick a model from a provider you have a key for, '
-            + 'or pick another agent from the agent chip. Keys are personal: each account adds its own.',
+            'Connect a harness in Settings → Harness to run this turn, or pick another agent from the agent chip.',
             label,
         );
     }
     return nls.localize(
         'qaap/agentFailure/qaiqAnyProviderKeyMissing',
-        'Add an AI provider API key (for example OpenRouter) in Settings → BYOK to use QAIQ, pick a model from a provider you have a key for, '
-        + 'or pick another agent from the agent chip.',
+        'Connect a harness in Settings → Harness to run this turn, or pick another agent from the agent chip.',
     );
 }
 
@@ -1030,7 +1028,7 @@ export function localizeProviderModelAccessMessage(model: string): string {
         'qaap/agentFailure/providerModelAccessDenied',
         'The model provider refused {0}. The model may be unavailable or retired at the provider right now, its API key may be missing or invalid, '
         + 'the account may be out of credits, or (for free OpenRouter models) your privacy settings may block it. '
-        + 'Pick another model, or check the key in Settings → BYOK.',
+        + 'Pick another model, or connect a harness in Settings → Harness.',
         model,
     );
 }
@@ -1546,11 +1544,11 @@ function localizeAgentFailureReasonLabel(kind: QaapAgentFailureReasonKind, optio
         case 'network':
             return nls.localize('qaap/agentFailure/reasonNetwork', 'Could not reach the model provider');
         case 'api_key':
-            return nls.localize('qaap/agentFailure/reasonApiKeyMissing', 'API key needed');
+            return nls.localize('qaap/agentFailure/reasonApiKeyMissing', 'Connect a harness');
         case 'model_access':
             return nls.localize('qaap/agentFailure/reasonModelAccessDenied', 'Model access denied');
         case 'provider_key':
-            return nls.localize('qaap/agentFailure/reasonProviderKey', 'API key rejected');
+            return nls.localize('qaap/agentFailure/reasonProviderKey', 'Provider rejected the key');
         case 'provider_policy':
             return nls.localize('qaap/agentFailure/reasonProviderPolicy', 'Blocked by provider settings');
         case 'provider_rejected':

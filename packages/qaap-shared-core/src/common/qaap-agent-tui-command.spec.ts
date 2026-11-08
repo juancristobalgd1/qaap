@@ -118,7 +118,6 @@ describe('resolveAgentConnectionFlow', () => {
     });
 
     const expectedKinds: Readonly<Record<string, string>> = {
-        qaiq: 'settings-api-key',
         codex: 'cli-login',
         claude: 'cli-login',
         opencode: 'cli-login',
@@ -154,11 +153,11 @@ describe('resolveAgentConnectionFlow', () => {
             : /selectedType:"oauth-personal".*"TRUST_FOLDER".*&& NO_BROWSER=true GEMINI_CLI_TRUST_WORKSPACE=true gemini$/);
     });
 
-    it('offers the Settings API-key route to QAIQ only', () => {
+    it('offers no Settings API-key route to any harness', () => {
         const apiKeyHarnesses = QAAP_HARNESS_DEFINITIONS
-            .filter(harness => resolveAgentConnectionFlow(harness.id).kind === 'settings-api-key')
+            .filter(harness => resolveAgentConnectionFlow(harness.id).kind === ('settings-api-key' as string))
             .map(harness => harness.id);
-        expect(apiKeyHarnesses).to.deep.equal(['qaiq']);
+        expect(apiKeyHarnesses).to.deep.equal([]);
     });
 
     it('provides no false sign-in route for an unknown harness', () => {

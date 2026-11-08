@@ -27,9 +27,7 @@ import {
     resolveAgentPickerDescription,
 } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { resolveAgentPickerConnectionDescription } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-login-instructions';
-import { agentNeedsSettingsApiKeyPath } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
-import { hasAnyConfiguredByokCredential } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
-import { QAIQ_AGENT_ID, THEIA_CODER_AGENT_ID } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { THEIA_CODER_AGENT_ID } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import {
     isStickyComposerAnnotationPopoverAnchor,
     mountStickyComposerBottomSheet,
@@ -395,44 +393,18 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
         const { id: agentId, label } = entry;
         const agentDescription = resolveAgentPickerDescription(agentId, label);
         if (entry.available === false) {
-            const missingQaiqByok = agentId.toLowerCase() === QAIQ_AGENT_ID
-                && !!ctx.host.readPreference
-                && !hasAnyConfiguredByokCredential(key => ctx.host.readPreference?.(key));
-            // A Settings-key agent (QAIQ) is unavailable only for lack of a provider key for the model it
-            // routes to (keys are BYOK). That includes an owner with *some* key but not that provider's,
-            // so it is never a CLI sign-in: always offer "Add API key" (Settings → BYOK).
-            // Mapping every unavailable QAIQ entry to needsApiKey is only correct because a missing
-            // key is the sole way the backend makes QAIQ unavailable (its connection state comes
-            // from the per-owner key preflight); revisit this if QAIQ gains another unavailable cause.
-            const needsApiKey = missingQaiqByok || agentNeedsSettingsApiKeyPath(agentId);
             // Codex with no sign-in and no hosted entitlement (access `none`) is opened via the same sign-in flow.
-            const needsSignIn = !needsApiKey
-                && agentId.trim().toLowerCase() === 'codex'
+            const needsSignIn = agentId.trim().toLowerCase() === 'codex'
                 && options.agents.some(agent => agent.id === agentId && agent.accessState === 'none');
             content.append(createUnavailableAgentSheetOption({
                 agentId,
                 label,
-                description: needsApiKey
-                    ? nls.localize(
-                        'qaap/agentPicker/descriptionNeedsProviderKey',
-                        '{0} · API key required',
-                        agentDescription,
-                    )
-                    : resolveAgentPickerConnectionDescription(agentId, label, agentDescription),
+                description: resolveAgentPickerConnectionDescription(agentId, label, agentDescription),
                 actionLabel: needsSignIn
                     ? nls.localize('qaap/agentPicker/signIn', 'Sign in')
-                    : nls.localize(
-                        needsApiKey
-                            ? 'qaap/agentPicker/addApiKey'
-                            : 'qaap/agentPicker/connect',
-                        needsApiKey ? 'Add API key' : 'Connect',
-                    ),
+                    : nls.localize('qaap/agentPicker/connect', 'Connect'),
                 onAction: () => {
-                    if (needsApiKey) {
-                        options.onOpenAiFeaturesSettings?.(agentId);
-                    } else {
-                        options.onProactiveLogin?.(agentId, options.project);
-                    }
+                    options.onProactiveLogin?.(agentId, options.project);
                 },
             }));
             return;

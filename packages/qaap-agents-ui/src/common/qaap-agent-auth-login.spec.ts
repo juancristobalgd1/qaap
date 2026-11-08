@@ -7,7 +7,6 @@ import { expect } from 'chai';
 import {
     agentHasCliOAuthLogin,
     agentNeedsSettingsApiKeyPath,
-    localizeAddApiKeyInSettingsCta,
     detectAgentAuthFailureMode,
     extractAgentAuthLoginChallenge,
     isUnauthenticatedCliDeclaration,
@@ -211,18 +210,17 @@ describe('qaap-agent-auth-login', () => {
         expect(agentNeedsSettingsApiKeyPath('not-a-registered-harness')).to.equal(false);
         rememberQaapHostedRuntime(true);
         expect(agentNeedsSettingsApiKeyPath('cursor')).to.equal(false);
-        expect(agentNeedsSettingsApiKeyPath('qaiq')).to.equal(true);
-        expect(localizeAddApiKeyInSettingsCta()).to.match(/API key/i);
+        expect(agentNeedsSettingsApiKeyPath('qaiq')).to.equal(false);
     });
 
-    it('localizeAgentSettingsApiKeyLoginMessage points BYOK agents to the Settings API key', () => {
-        const named = localizeAgentSettingsApiKeyLoginMessage('QAIQ');
-        expect(named).to.match(/QAIQ/);
-        expect(named).to.match(/API key/i);
-        expect(named).to.match(/Settings/i);
+    it('localizeAgentSettingsApiKeyLoginMessage points to Settings → Harness and never to an API key', () => {
+        const named = localizeAgentSettingsApiKeyLoginMessage('Codex');
+        expect(named).to.match(/Codex/);
+        expect(named).to.match(/Harness/);
+        expect(named).to.not.match(/API key/i);
         const generic = localizeAgentSettingsApiKeyLoginMessage();
-        expect(generic).to.match(/API key/i);
-        expect(generic).to.match(/Settings/i);
+        expect(generic).to.match(/Harness/);
+        expect(generic).to.not.match(/API key/i);
     });
 
     it('resolveAgentTurnFailureMessage uses session-login copy for OAuth expiry', () => {

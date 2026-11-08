@@ -5,10 +5,7 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import type { QaapAgentAuthLoginChallenge } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
-import {
-    localizeAddApiKeyInSettingsCta,
-    localizeAgentSettingsApiKeyLoginMessage,
-} from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
+import { localizeAgentSettingsApiKeyLoginMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
 import {
     QAAP_AGENT_LOGIN_CALLBACK_CHANNEL,
     type QaapAgentLoginCallbackMessage,
@@ -469,7 +466,7 @@ export function createQaapAgentLoginDialog(
                 if (options.onOpenSettings) {
                     actions.append(createButton(
                         'theia-button main theia-mobile-agent-login-dialog-primary',
-                        localizeAddApiKeyInSettingsCta(),
+                        nls.localize('qaap/mobileProjects/openHarnessSettings', 'Open Harness settings'),
                         options.onOpenSettings,
                     ));
                 }

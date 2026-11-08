@@ -46,33 +46,33 @@ export function localizeHostedLocalhostOAuthAgentMessage(agentId?: string): stri
     if (normalized === 'cursor') {
         return nls.localize(
             'qaap/agentLogin/hostedLocalhostOAuthNamed',
-            'Cursor Agent needs a desktop browser login, which cannot finish on this cloud workspace. Use QAIQ, Codex, Claude Code, or Grok (device-code or API key).',
+            'Cursor Agent needs a desktop browser login, which cannot finish on this cloud workspace. Use Codex, Claude Code, or Grok (device-code sign-in).',
         );
     }
     return nls.localize(
         'qaap/agentLogin/hostedLocalhostOAuth',
-        'This agent needs a desktop browser login, which cannot finish on this cloud workspace. Use a device-code or API-key agent such as QAIQ, Codex, Claude Code, or Grok.',
+        'This agent needs a desktop browser login, which cannot finish on this cloud workspace. Use a device-code agent such as Codex, Claude Code, or Grok.',
     );
 }
 
 export function localizeHostedMissingCodingAgentMessage(): string {
     return nls.localize(
         'qaap/agentFailure/noCodingAgentHosted',
-        'No cloud-ready coding agent CLI is installed. Install QAIQ, Codex, Claude Code, or Grok, then restart Qaap. Cursor Agent is not available here because it cannot finish browser login.',
+        'No cloud-ready coding agent CLI is installed. Install Codex, Claude Code, or Grok, then restart Qaap. Cursor Agent is not available here because it cannot finish browser login.',
     );
 }
 
 export function localizeHostedComposerNoAgentsMessage(): string {
     return nls.localize(
         'qaap/mobileProjects/stickyComposerNoAgentsHosted',
-        'No cloud-ready agent is available. Install QAIQ, Codex, Claude Code, or Grok on the server (device-code or API key), then restart the backend. Cursor Agent is not available on this workspace.',
+        'No cloud-ready agent is available. Install Codex, Claude Code, or Grok on the server (device-code sign-in), then restart the backend. Cursor Agent is not available on this workspace.',
     );
 }
 
 export function localizeHostedComposerNoAgentsFilteredMessage(): string {
     return nls.localize(
         'qaap/mobileProjects/stickyComposerNoAgentsFilteredHosted',
-        'Agents were detected on the server but none can sign in on this cloud workspace. Install QAIQ, Codex, Claude Code, or Grok (device-code or API key), then restart the backend.',
+        'Agents were detected on the server but none can sign in on this cloud workspace. Install Codex, Claude Code, or Grok (device-code sign-in), then restart the backend.',
     );
 }
 

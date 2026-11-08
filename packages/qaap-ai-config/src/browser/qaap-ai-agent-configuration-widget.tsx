@@ -42,7 +42,7 @@ export class QaapAiAgentConfigurationWidget extends AIAgentConfigurationWidget {
                 <div className="theia-qaap-ai-config-ide-agents-banner" role="note">
                     {nls.localize(
                         'qaap/aiConfiguration/ideAgentsBanner',
-                        'Work Hub agents (@qaiq, @codex, @claude, …) are chosen in the composer. This list is only for classic IDE chat agents.',
+                        'Work Hub agents (@codex, @claude, …) are chosen in the composer. This list is only for classic IDE chat agents.',
                     )}
                 </div>
                 <ul>
