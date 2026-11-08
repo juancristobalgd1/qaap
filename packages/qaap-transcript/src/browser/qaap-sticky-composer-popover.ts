@@ -88,7 +88,8 @@ export function positionStickyComposerPopover(
     if (popover.dataset.placement === 'above-start') {
         // Opens upward with its left edge on the anchor's left edge, kept 16px inside the viewport.
         const edge = 16;
-        const aboveTop = anchorRect.top - gap - popoverHeight;
+        // Bottom edge 8px above the pill; the height follows the content, the list scrolls past the cap.
+        const aboveTop = anchorRect.top - 8 - popoverHeight;
         popover.style.top = `${Math.max(viewport.top + edge, aboveTop)}px`;
         const maxLeft = viewport.right - popoverWidth - edge;
         popover.style.left = `${Math.max(viewport.left + edge, Math.min(anchorRect.left, maxLeft))}px`;

@@ -2,7 +2,6 @@
 .qaap-sticky-composer-sheet-popover.theia-mod-agent-picker.theia-mod-model-picker {
     width: min(560px, calc(100vw - 32px));
     max-width: calc(100vw - 32px);
-    height: min(460px, 70vh);
     max-height: min(460px, 70vh);
     padding: 0;
 }
@@ -86,7 +85,6 @@
     display: flex;
     flex-direction: column;
     width: min(560px, 100%);
-    height: min(460px, 70vh);
     max-height: min(460px, 70vh);
     min-height: 0;
     overflow: hidden;
