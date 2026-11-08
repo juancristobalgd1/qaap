@@ -254,7 +254,8 @@ body.theia-mobile-mod-landing.theia-mobile-mod-landing-hub-list .theia-mobile-pr
 }
 
 .theia-mobile-open-repo-panel.theia-mod-clone {
-  flex: 1;
+  /* Content height: a flexible panel overflowed by a few px and showed a pointless scrollbar. */
+  flex: 0 0 auto;
   min-height: 0;
   margin: 0 16px 16px;
   padding: 0;

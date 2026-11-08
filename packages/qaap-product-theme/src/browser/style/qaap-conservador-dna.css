@@ -516,11 +516,7 @@ body.qaap-theme-light .theia-mobile-pr-action.theia-mod-secondary:hover {
   }
 
   body.qaap-theme-dark .theia-mobile-projects-search,
-  body.qaap-theme-light .theia-mobile-projects-search,
-  body.qaap-theme-dark .theia-mobile-open-repo-filter,
-  body.qaap-theme-light .theia-mobile-open-repo-filter,
-  body.qaap-theme-dark .theia-mobile-open-repo-public-input,
-  body.qaap-theme-light .theia-mobile-open-repo-public-input {
+  body.qaap-theme-light .theia-mobile-projects-search {
     min-height: 42px;
     border-radius: var(--q-radius-card);
   }
