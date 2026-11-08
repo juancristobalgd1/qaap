@@ -6,6 +6,7 @@
 import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import { positionStickyComposerPopover } from '@theia/qaap-transcript/lib/browser/qaap-sticky-composer-popover';
+import { pickerPopoverHeight } from './qaap-composer-model-picker';
 
 interface PillRect {
     readonly left: number;
@@ -67,5 +68,21 @@ describe('qaap-composer-model-picker placement', () => {
         const popover = placePicker(1280, pill, 320);
         expect(popover.style.left).to.equal('300px');
         expect(popover.style.top).to.equal(`${pill.top - 8 - 320}px`);
+    });
+
+    it('keeps one popover height for every harness, 440px where there is room', () => {
+        expect(pickerPopoverHeight(756, 812)).to.equal(440);
+        const pill = { left: 59, top: 756, width: 200, height: 44 };
+        const popover = placePicker(375, pill, pickerPopoverHeight(pill.top, 812));
+        expect(popover.style.top).to.equal(`${pill.top - 8 - 440}px`);
+        expect(parseFloat(popover.style.top) + 440).to.equal(pill.top - 8);
+    });
+
+    it('caps the height at the space above the pill less 16px when the pill sits low', () => {
+        const pill = { left: 59, top: 300, width: 200, height: 44 };
+        const height = pickerPopoverHeight(pill.top, 812);
+        expect(height).to.equal(300 - 8 - 16);
+        const popover = placePicker(375, pill, height);
+        expect(popover.style.top).to.equal('16px');
     });
 });

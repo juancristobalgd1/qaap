@@ -2,8 +2,19 @@
 .qaap-sticky-composer-sheet-popover.theia-mod-agent-picker.theia-mod-model-picker {
     width: min(560px, calc(100vw - 32px));
     max-width: calc(100vw - 32px);
-    max-height: min(460px, 70vh);
+    /* One height for every harness: the model list scrolls inside, the footer stays at the bottom. */
+    height: min(440px, 70vh);
+    max-height: none;
     padding: 0;
+}
+
+.qaap-sticky-composer-sheet-popover.theia-mod-agent-picker.theia-mod-model-picker .theia-mobile-sticky-composer-sheet-panel,
+.qaap-sticky-composer-sheet-popover.theia-mod-agent-picker.theia-mod-model-picker .theia-mobile-sticky-composer-sheet-list,
+.qaap-sticky-composer-sheet-popover.theia-mod-agent-picker.theia-mod-model-picker .qaap-composer-model-picker-host {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
 }
 
 .qaap-sticky-composer-sheet-popover.theia-mod-agent-picker.theia-mod-model-picker .theia-mobile-sticky-composer-sheet-panel,
@@ -85,7 +96,9 @@
     display: flex;
     flex-direction: column;
     width: min(560px, 100%);
-    max-height: min(460px, 70vh);
+    flex: 1 1 auto;
+    height: 100%;
+    max-height: none;
     min-height: 0;
     overflow: hidden;
     border: 1px solid var(--theia-widget-border, var(--theia-panel-border));
@@ -298,6 +311,7 @@
 .qaap-model-picker-rows {
     display: flex;
     flex-direction: column;
+    flex: 1 1 auto;
     gap: 2px;
     min-height: 0;
     padding: 0 6px 8px;
@@ -458,12 +472,12 @@
 
 @media (max-width: 767px) {
     .qaap-sticky-composer-sheet-popover.theia-mod-agent-picker.theia-mod-model-picker {
-        max-height: min(460px, 70vh);
+        height: min(440px, 70vh);
     }
 
     .qaap-model-picker {
         width: 100%;
-        max-height: min(460px, 70vh);
+        max-height: none;
     }
 
     .qaap-model-picker-body {

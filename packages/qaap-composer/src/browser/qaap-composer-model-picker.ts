@@ -107,6 +107,13 @@ export function renderQaapComposerModelPicker(host: HTMLElement, props: QaapComp
     }
 }
 
+/** Picker popover height: the same for every harness, 440px or 70vh, and never past the space above the pill. */
+export function pickerPopoverHeight(pillTop: number, viewportHeight: number): number {
+    const gap = 8;
+    const margin = 16;
+    return Math.max(0, Math.min(440, viewportHeight * 0.7, pillTop - gap - margin));
+}
+
 /** Removes the harness rail listeners once the picker is gone; the host is no longer painted. */
 export function disposeQaapComposerModelPicker(host: HTMLElement): void {
     const state = hostStates.get(host);

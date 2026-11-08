@@ -21,7 +21,7 @@ import { QaapComposerModelPickerModel, type QaapPickerModel, type QaapPickerStat
 import { adoptPendingComposerEffort, resolveComposerEffortLevel, writeComposerEffortLevel } from '../common/qaap-composer-effort';
 import type { MobileProjectsStickyComposerSheetsUiContext } from './mobile-projects-sticky-composer-sheets-ui-context';
 import type { ComposerAgentPickerChrome } from './mobile-projects-sticky-composer-sheets-ui';
-import { disposeQaapComposerModelPicker, renderQaapComposerModelPicker } from './qaap-composer-model-picker';
+import { disposeQaapComposerModelPicker, pickerPopoverHeight, renderQaapComposerModelPicker } from './qaap-composer-model-picker';
 import { positionStickyComposerPopover } from '@theia/qaap-transcript/lib/browser/qaap-sticky-composer-popover';
 
 /**
@@ -34,6 +34,7 @@ function placePickerAbove(popover: HTMLElement, anchor: HTMLElement | undefined)
     }
     // The shared popover positioning reads this flag on every resize and scroll too.
     popover.dataset.placement = 'above-start';
+    popover.style.height = `${pickerPopoverHeight(anchor.getBoundingClientRect().top, window.innerHeight)}px`;
     positionStickyComposerPopover(popover, anchor, 'start', Math.min(560, window.innerWidth - 32));
 }
 
