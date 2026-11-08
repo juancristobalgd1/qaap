@@ -18,7 +18,6 @@ import {
     reconcileAgentToolApprovalRules,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-approval-rules';
 import { buildAgentsHubIdleConversationSummary, isAgentsHubIdleConversationSummary } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
-import { isComposerDraftRestored, resolveComposerRestoredDraftKey } from '../common/qaap-composer-restored-draft';
 import { resolveComposerSubmitTarget } from '../common/qaap-composer-submit-target';
 import { resolveComposerStopTarget } from '../common/qaap-composer-stop-target';
 import { qaapStopAck } from '@theia/qaap-shared-core/lib/browser/qaap-stop-ack';
@@ -285,9 +284,6 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: MobilePro
         onBrowseMcpMarketplace: () => ctx.host.stickyComposerRenderUi.handleBrowseMcpMarketplace(),
         getSkillNames: ctx.host.getComposerSkills
             ? () => ctx.host.getComposerSkills!().map(skill => skill.name)
-            : undefined,
-        draftHint: isComposerDraftRestored(resolveComposerRestoredDraftKey(project.id, summary.id, isAgentsHubIdleConversationSummary(summary)))
-            ? nls.localize('qaap/mobileProjects/transcriptRestoredDraftHint', 'Restored draft, not sent. Review it, then send.')
             : undefined,
         inputPlaceholder: isAgentsHubIdleConversationSummary(summary)
             ? nls.localize('qaap/mobileProjects/stickyComposerNewTask', 'Delegate a task…')

@@ -2070,14 +2070,6 @@ body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects.theia-mod-hom
   width: 100%;
 }
 
-.theia-mobile-projects-sticky-composer-surface-hint {
-  margin: 0;
-  padding: 0 2px;
-  font-size: 11px;
-  line-height: 1.45;
-  color: var(--theia-descriptionForeground);
-}
-
 .theia-mobile-projects-sticky-composer-surface.theia-mod-locked .theia-qaap-segmented-option {
   opacity: 0.92;
 }
