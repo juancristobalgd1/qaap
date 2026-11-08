@@ -629,7 +629,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
         applyTranscriptComposerPrefsExtracted(this, prefs, project, summary, conversationId);
     }
 
-    resetToProjectComposerDefaults(project: MobileProjectEntry, defaultAgentId: string = getQaapDefaultAgentId(),): void {
+    resetToProjectComposerDefaults(project: MobileProjectEntry, defaultAgentId: string = getQaapDefaultAgentId() ?? '',): void {
         resetToProjectComposerDefaultsExtracted(this, project, defaultAgentId);
     }
 

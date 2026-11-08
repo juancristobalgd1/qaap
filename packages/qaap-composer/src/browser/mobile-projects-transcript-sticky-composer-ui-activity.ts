@@ -320,7 +320,7 @@ export function applyTranscriptComposerPrefsExtracted(ctx: MobileProjectsTranscr
 }
 
 export function resetToProjectComposerDefaultsExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, project: MobileProjectEntry,
-    defaultAgentId: string = getQaapDefaultAgentId(),): void {
+    defaultAgentId: string = getQaapDefaultAgentId() ?? '',): void {
     const cwd = ctx.host.projectsService.getProjectCwd(project);
     const runtime = applyProjectComposerDefaults(cwd, defaultAgentId);
     ctx.host.transcriptComposerPrefsConvId = undefined;

@@ -1,6 +1,5 @@
 
 import { writeStoredComposerSurface, type QaapComposerSurface } from '../common/qaap-composer-surface';
-import { QAAP_PRIMARY_AGENT_ID, writeStoredAgent } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import type { MobileProjectEntry, MobileProjectFilter } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileBottomButtonId } from '@theia/qaap-mobile-shell/lib/browser/mobile-shell-bottom-bar-widget';
 import type { MobileViewToggleId } from '@theia/qaap-shared-core/lib/common/qaap-mobile-work-surface-preference';
@@ -57,11 +56,6 @@ export class MobileProjectsComposerHeaderUi {
         const lift = composerVisible ? Math.round(this.host.stickyComposerHost.getBoundingClientRect().height) : 0;
         this.host.stickyComposerFabLiftPx = lift;
         this.host.root.style.setProperty('--theia-mobile-projects-fab-lift', `${lift}px`);
-    }
-
-    pinStickyComposerToQaiq(cwd: string | undefined): void {
-        this.host.stickyComposerPinnedAgentId = QAAP_PRIMARY_AGENT_ID;
-        writeStoredAgent(cwd, QAAP_PRIMARY_AGENT_ID);
     }
 
     resolveStickyComposerProject(projects: MobileProjectEntry[]): MobileProjectEntry | undefined {

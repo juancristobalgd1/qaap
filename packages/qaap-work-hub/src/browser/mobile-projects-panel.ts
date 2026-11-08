@@ -864,10 +864,6 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.composerHeaderUi.preferComposerSurface(surface, projectCwd);
     }
 
-    protected pinStickyComposerToQaiq(cwd: string | undefined): void {
-        this.composerHeaderUi.pinStickyComposerToQaiq(cwd);
-    }
-
     /** Work Hub home: user drilled into a single repository (tasks list + sticky composer). */
     isProjectDetailView(): boolean {
         return this.homeMode && this.hubView === 'repos' && this.expandedId !== undefined;

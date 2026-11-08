@@ -10,7 +10,6 @@ import {
     type QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
-    QAAP_PRIMARY_AGENT_ID,
     resolveExplicitAgentForSubmit,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import {
@@ -270,7 +269,7 @@ export async function submitTranscriptComposerDraftExtracted(ctx: MobileProjects
             const started = await ctx.host.submitBackgroundAgentTask(project, draft, {
                 openConversation: true,
                 forceVps: true,
-                selectedAgentId: QAAP_PRIMARY_AGENT_ID,
+                selectedAgentId: undefined,
                 modeId,
                 variables,
                 autoApprove,

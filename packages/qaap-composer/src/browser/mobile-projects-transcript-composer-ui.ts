@@ -14,8 +14,8 @@ import {
     isTheiaCoderAgent,
     agentUsesSettingsModelCatalog,
     migrateLegacyBackendAgentId,
-    QAAP_PRIMARY_AGENT_ID,
     readStoredAgent,
+    reconcileSelectedAgent,
     readStoredAgentModel,
     agentSupportsModelPicker,
     THEIA_CODER_AGENT_ID,
@@ -206,15 +206,15 @@ export class MobileProjectsTranscriptComposerUi {
     resolveTranscriptComposerPinnedAgentId(
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
+        const cwd = this.host.projectsService.getProjectCwd(project) ?? summary.cwd;
     ): string {
         if (summary.source === 'theia-chat') {
-            return QAAP_PRIMARY_AGENT_ID;
+            return this.resolveDefaultTranscriptComposerAgentId(cwd);
         }
-        const cwd = this.host.projectsService.getProjectCwd(project) ?? summary.cwd;
         if (this.host.transcriptComposerPinnedAgentId) {
             const explicit = this.host.transcriptComposerPinnedAgentId;
             if (explicit !== 'task' && !isTheiaCoderAgent(explicit)) {
-                return agentUsesSettingsModelCatalog(explicit) ? QAAP_PRIMARY_AGENT_ID : explicit;
+                return agentUsesSettingsModelCatalog(explicit) ? this.resolveDefaultTranscriptComposerAgentId(cwd) : explicit;
             }
         }
         const summaryAgent = isAgentsHubIdleConversationSummary(summary)
@@ -224,12 +224,17 @@ export class MobileProjectsTranscriptComposerUi {
             ?? summaryAgent
             ?? readStoredAgent(cwd);
         if (pinned && pinned !== 'task' && !isTheiaCoderAgent(pinned)) {
-            return agentUsesSettingsModelCatalog(pinned) ? QAAP_PRIMARY_AGENT_ID : pinned;
+            return agentUsesSettingsModelCatalog(pinned) ? this.resolveDefaultTranscriptComposerAgentId(cwd) : pinned;
         }
         return this.host.stickyComposerAgentsUi.filterSelectableComposerAgents(
             this.host.transcriptComposerBackendAgents,
         )[0]?.id ?? '';
     }
+    /** The configured default harness, else the first available one (never a retired runner). */
+    protected resolveDefaultTranscriptComposerAgentId(cwd: string | undefined): string {
+        return reconcileSelectedAgent(undefined, this.host.transcriptComposerBackendAgents, undefined, cwd) ?? '';
+    }
+
 
     /**
      * Label for the composer agent chip. `agentId` is the id the chip and submit resolved
