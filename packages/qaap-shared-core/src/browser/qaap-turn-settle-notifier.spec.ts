@@ -10,7 +10,8 @@ import { QAAP_WORK_HUB_SYSTEM_NOTIFICATIONS_KEY } from './qaap-work-hub-notifica
 describe('QaapTurnSettleNotifier', () => {
     const store = new Map<string, string>();
     const globals = globalThis as unknown as Record<string, unknown>;
-    const saved = { window: globals.window, document: globals.document, Notification: globals.Notification };
+    // Captured per test (not at load time): a stale JSDOM document restored later breaks other suites.
+    let saved: { window: unknown; document: unknown; Notification: unknown } = { window: undefined, document: undefined, Notification: undefined };
     let constructed = 0;
 
     class FakeNotification {
@@ -26,6 +27,7 @@ describe('QaapTurnSettleNotifier', () => {
     }
 
     beforeEach(() => {
+        saved = { window: globals.window, document: globals.document, Notification: globals.Notification };
         store.clear();
         constructed = 0;
         globals.window = {

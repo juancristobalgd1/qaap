@@ -8,9 +8,10 @@ import { QaapWorkHubNotificationSettings, QAAP_WORK_HUB_COMPLETION_SOUND_KEY, QA
 
 describe('QaapWorkHubNotificationSettings', () => {
     const store = new Map<string, string>();
-    const originalWindow = (globalThis as { window?: unknown }).window;
+    let originalWindow: unknown;
 
     beforeEach(() => {
+        originalWindow = (globalThis as { window?: unknown }).window;
         store.clear();
         (globalThis as { window?: unknown }).window = {
             localStorage: {
