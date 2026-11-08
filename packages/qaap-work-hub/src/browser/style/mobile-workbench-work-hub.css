@@ -13317,6 +13317,10 @@ body.theia-mod-work-hub-settings-resizing * {
   opacity: 0.6;
 }
 
+.theia-mobile-work-hub-settings-restore-defaults[hidden] {
+  display: none;
+}
+
 .theia-mobile-work-hub-settings-restore-defaults {
   display: inline-flex;
   flex: 0 0 auto;
@@ -13342,8 +13346,8 @@ body.theia-mod-work-hub-settings-resizing * {
 }
 
 .theia-mobile-work-hub-settings-note {
-  margin: 0;
-  padding: 0 20px 14px;
+  margin: 4px 0 0;
+  padding: 0;
   color: var(--theia-descriptionForeground);
   font-size: 12px;
   line-height: 1.45;

@@ -4,7 +4,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { inject, injectable } from '@theia/core/shared/inversify';
+import { inject, injectable, optional } from '@theia/core/shared/inversify';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { CommandRegistry } from '@theia/core/lib/common/command';
 import { nls } from '@theia/core/lib/common/nls';
@@ -59,8 +59,9 @@ export class QaapWorkHubKeybindingsPanel {
     @inject(CommandRegistry)
     protected readonly commandRegistry: CommandRegistry;
 
-    @inject(KeymapsService)
-    protected readonly keymapsService: KeymapsService;
+    /** Optional: the slim mobile bundle ships without `@theia/keymaps`; the panel is read-only there. */
+    @inject(KeymapsService) @optional()
+    protected readonly keymapsService: KeymapsService | undefined;
 
     @inject(MessageService)
     protected readonly messageService: MessageService;
@@ -232,7 +233,7 @@ export class QaapWorkHubKeybindingsPanel {
             warning.textContent = conflict;
             meta.appendChild(warning);
         }
-        if (row.binding.scope === KeybindingScope.USER) {
+        if (row.binding.scope === KeybindingScope.USER && this.keymapsService) {
             const badge = doc.createElement('span');
             badge.className = 'theia-mobile-work-hub-keybindings-badge';
             badge.textContent = nls.localize('qaap/settings/keybindings/custom', 'Custom');
@@ -277,6 +278,10 @@ export class QaapWorkHubKeybindingsPanel {
         button.className = 'theia-mobile-work-hub-keybindings-chip';
         button.setAttribute('aria-label', nls.localize('qaap/settings/keybindings/changeKey', 'Change keybinding for {0}', row.label));
         button.appendChild(this.keysElement(doc, this.keyChips(row.binding)));
+        if (!this.keymapsService) {
+            button.disabled = true;
+            return button;
+        }
         button.addEventListener('click', () => {
             state.recording = this.recordingId(row);
             state.pending = undefined;
@@ -347,7 +352,12 @@ export class QaapWorkHubKeybindingsPanel {
     /** Display chips for a keystroke string: one chip per key, with ⌘⇧⌥⌃ symbols on macOS. */
     protected keyChips(binding: ScopedKeybinding, keybinding: string = binding.keybinding): string[] {
         const accelerator = this.keybindingRegistry.acceleratorFor({ ...binding, keybinding }, '+');
-        return accelerator.flatMap(element => element.split('+').filter(part => part.length > 0));
+        return accelerator.flatMap(element => element.split('+').filter(part => part.length > 0))
+            // macOS accelerators glue modifier glyphs to the key ('⌘⌥E'): one chip per key.
+            .flatMap(part => {
+                const match = /^([⌘⌥⇧⌃]+)(.+)$/u.exec(part);
+                return match ? [...Array.from(match[1]), match[2]] : [part];
+            });
     }
 
     protected recordingId(row: QaapWorkHubKeybindingRow): string {
@@ -356,7 +366,7 @@ export class QaapWorkHubKeybindingsPanel {
 
     protected async saveBinding(row: QaapWorkHubKeybindingRow, keybinding: string): Promise<void> {
         try {
-            await this.keymapsService.setKeybinding({
+            await this.keymapsService?.setKeybinding({
                 command: row.commandId,
                 keybinding,
                 when: row.binding.when,
@@ -369,7 +379,7 @@ export class QaapWorkHubKeybindingsPanel {
 
     protected async resetCommand(commandId: string): Promise<void> {
         try {
-            await this.keymapsService.removeKeybinding(commandId);
+            await this.keymapsService?.removeKeybinding(commandId);
         } catch (error) {
             this.messageService.error(nls.localize('qaap/settings/keybindings/resetFailed', 'The keybinding could not be reset.'));
         }

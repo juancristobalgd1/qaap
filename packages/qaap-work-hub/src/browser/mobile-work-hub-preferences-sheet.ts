@@ -880,7 +880,7 @@ export class MobileWorkHubPreferencesSheet {
             'Notifications are blocked by the browser for this site.',
         );
         blockedNote.hidden = !this.isNotificationPermissionDenied();
-        notificationsCard.append(this.createSettingsRow(
+        const systemNotificationsRow = this.createSettingsRow(
             nls.localize('qaap/workHubSettings/general/systemNotifications', 'System Notifications'),
             nls.localize(
                 'qaap/workHubSettings/general/systemNotificationsDescription',
@@ -894,7 +894,10 @@ export class MobileWorkHubPreferencesSheet {
                     blockedNote.hidden = !this.isNotificationPermissionDenied();
                 });
             }),
-        ), blockedNote);
+        );
+        // The note belongs to this row: render it under the description, not as a separate row.
+        systemNotificationsRow.querySelector('.theia-mobile-work-hub-settings-row-copy')?.append(blockedNote);
+        notificationsCard.append(systemNotificationsRow);
         notificationsCard.append(this.createSettingsRow(
             nls.localize('qaap/workHubSettings/general/completionSound', 'Completion Sound'),
             nls.localize(
