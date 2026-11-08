@@ -97,12 +97,12 @@ describe('header IDE/Agents switch CSS', () => {
         );
     });
 
-    it('hides Codex context controls while the input is focused', () => {
-        expect(conversationCss).to.match(
-            /\.theia-mobile-projects-sticky-composer-card\.theia-mod-codex\.theia-mod-input-expanded \.theia-mobile-projects-sticky-composer-stage\s*\{[^}]*padding-bottom:\s*0/s,
+    it('keeps the composer in place while the input is focused', () => {
+        expect(conversationCss).to.not.match(
+            /\.theia-mod-input-expanded \.theia-mobile-projects-sticky-composer-stage\s*\{[^}]*padding-bottom:\s*0/s,
         );
-        expect(conversationCss).to.match(
-            /\.theia-mobile-projects-sticky-composer-card\.theia-mod-codex\.theia-mod-input-expanded \.theia-mobile-projects-sticky-composer-stage>\.qaap-codex-context-tray,[\s\S]*?pointer-events:\s*none/s,
+        expect(conversationCss).to.not.match(
+            /\.theia-mod-input-expanded \.theia-mobile-projects-sticky-composer-stage>\.qaap-codex-context-tray[^{]*\{[^}]*translateY\(100%\)/s,
         );
     });
 });

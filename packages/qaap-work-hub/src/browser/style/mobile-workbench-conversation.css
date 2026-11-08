@@ -9864,7 +9864,6 @@ body.qaap-theme-dark .theia-mobile-projects-sticky-composer-card.theia-mod-codex
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex.theia-mod-input-expanded:not(.theia-mod-has-activity):not(.theia-mod-has-context) .theia-mobile-projects-sticky-composer-input-panel.theia-mod-codex {
   border-bottom-left-radius: var(--qaap-codex-shell-radius) !important;
   border-bottom-right-radius: var(--qaap-codex-shell-radius) !important;
-  border-bottom: 1px solid color-mix(in srgb, var(--theia-foreground) 8%, transparent) !important;
 }
 
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex.theia-mod-input-expanded.theia-mod-has-activity .theia-mobile-projects-sticky-composer-input-panel.theia-mod-codex,
@@ -9873,7 +9872,6 @@ body.qaap-theme-dark .theia-mobile-projects-sticky-composer-card.theia-mod-codex
   border-top-right-radius: 0 !important;
   border-bottom-left-radius: var(--qaap-codex-shell-radius) !important;
   border-bottom-right-radius: var(--qaap-codex-shell-radius) !important;
-  border-bottom: 1px solid color-mix(in srgb, var(--theia-foreground) 8%, transparent) !important;
 }
 
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-input-wrap.theia-mod-codex:focus-within {
@@ -9923,9 +9921,7 @@ body.qaap-theme-dark .theia-mobile-projects-sticky-composer-card.theia-mod-codex
   transition: padding-bottom 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-.theia-mobile-projects-sticky-composer-card.theia-mod-codex.theia-mod-input-expanded .theia-mobile-projects-sticky-composer-stage {
-  padding-bottom: 0;
-}
+/* The composer keeps its place on focus: the reserved tray band never collapses. */
 
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-input-panel {
   position: relative;
@@ -9954,18 +9950,6 @@ body.qaap-theme-dark .theia-mobile-projects-sticky-composer-card.theia-mod-codex
     padding 200ms ease;
 }
 
-.theia-mobile-projects-sticky-composer-card.theia-mod-codex.theia-mod-input-expanded .theia-mobile-projects-sticky-composer-stage>.qaap-codex-context-tray,
-.theia-mobile-projects-sticky-composer-card.theia-mod-codex.theia-mod-input-expanded .theia-mobile-projects-sticky-composer-stage>.theia-mobile-projects-sticky-composer-toolbar.qaap-codex-context-tray {
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-  transform: translateY(100%);
-  max-height: 0;
-  min-height: 0;
-  padding-top: 0;
-  padding-bottom: 0;
-  overflow: hidden;
-}
 
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-context-strip {
   background: transparent;
