@@ -49,6 +49,7 @@ export const QAAP_SPANISH_TRANSLATIONS: Readonly<Record<string, string>> = {
     'qaap/agentFailure/failed': 'No se pudo terminar esta tarea. Edita el mensaje, cambia de modelo o agente, o envía un seguimiento.',
     'qaap/agentFailure/failedToStart': 'El agente no pudo iniciar este turno. Revisa la configuración del agente e inténtalo de nuevo.',
     'qaap/agentFailure/providerKeyRejected': 'El proveedor {0} rechazó este turno. Conecta un harness en Ajustes → Harness y vuelve a intentarlo.',
+    'qaap/agentFailure/providerKeyRejectedAnyProvider': 'El proveedor rechazó este turno. Conecta un harness en Ajustes → Harness y vuelve a intentarlo.',
     'qaap/agentFailure/providerCredits': 'La cuenta de {0} no tiene créditos. Añade créditos en {0} o conecta un harness en Ajustes → Harness.',
     'qaap/agentFailure/providerDataPolicy': 'Puede que este modelo gratuito de {0} no esté disponible ahora, o que tus ajustes de privacidad de {0} bloqueen los endpoints gratuitos. Elige otro modelo o permite los endpoints gratuitos en los ajustes de privacidad de {0}.',
     'qaap/agentFailure/providerFreeLimit': 'Se alcanzó el límite de modelos gratuitos de {0}. Espera al reinicio diario, añade créditos en {0} o elige otro modelo.',
@@ -332,5 +333,4 @@ export const QAAP_SPANISH_REQUIRED_KEYS: readonly string[] = [
     'qaap/mobileProjects/agentLoginDialogTimedOut',
     'qaap/mobileProjects/agentLoginDialogRetry',
     'qaap/mobileProjects/agentLoginDialogInstall',
-    'qaap/agentLogin/addApiKeyInSettings',
 ];

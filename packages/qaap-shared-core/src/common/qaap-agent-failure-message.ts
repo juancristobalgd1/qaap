@@ -244,9 +244,11 @@ const NETWORK_PATTERNS: readonly RegExp[] = [
 const SELECTED_MODEL_ACCESS_FAILURE = /\bissue\s+with\s+the\s+selected\s+model\s*\(([^)\n]+)\)/i;
 
 /** Persisted (English, backend-locale) form of {@link localizeQaiqProviderKeyMissingMessage}. */
-const STORED_PROVIDER_KEY_MISSING = /^Add (?:your|an) .+ API key\b.* in Settings\b.* to use QAIQ\b/m;
+const STORED_PROVIDER_KEY_MISSING = /^(?:Add (?:your|an) .+ API key\b.* in Settings\b.* to use QAIQ\b|Connect a harness in Settings → Harness to run this turn\b)/m;
 /** Persisted (English, backend-locale) form of {@link localizeProviderModelAccessMessage}. */
 const STORED_MODEL_ACCESS_DENIED = /^The model provider (?:refused|rejected access to) /m;
+/** Persisted form of {@link localizeAgentFailureMessage} for `provider_key_rejected` (with or without the provider name). */
+const STORED_PROVIDER_KEY_REJECTED = /^The (?:.+ )?provider refused this turn\. Connect a harness in Settings → Harness, then retry\./m;
 /**
  * Note the task runner appends after probing the user's BYOK key with the provider, when the CLI's
  * own error was ambiguous (QAIQ reports any OpenRouter 4xx as "an issue with the selected model").
@@ -896,6 +898,12 @@ export function localizeAgentFailureMessage(kind: QaapAgentFailureKind, provider
     const provider = providerLabel?.trim() || nls.localize('qaap/agentFailure/providerFallback', 'provider');
     switch (kind) {
         case 'provider_key_rejected':
+            if (!providerLabel?.trim()) {
+                return nls.localize(
+                    'qaap/agentFailure/providerKeyRejectedAnyProvider',
+                    'The provider refused this turn. Connect a harness in Settings → Harness, then retry.',
+                );
+            }
             return nls.localize(
                 'qaap/agentFailure/providerKeyRejected',
                 'The {0} provider refused this turn. Connect a harness in Settings → Harness, then retry.',
@@ -1489,6 +1497,9 @@ function classifyStoredAgentFailure(error: string): QaapAgentFailureReasonKind {
     }
     if (STORED_PROVIDER_REJECTED.test(error)) {
         return 'provider_rejected';
+    }
+    if (STORED_PROVIDER_KEY_REJECTED.test(error)) {
+        return 'provider_key';
     }
     // The raw CLI 404 only when nothing more specific (a provider key/credits/policy check) explains it.
     if (STORED_MODEL_ACCESS_DENIED.test(error)

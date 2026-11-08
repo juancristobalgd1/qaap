@@ -32,12 +32,12 @@ import {
 } from './test/qaap-agent-failure-log-fixtures';
 
 describe('qaap-agent-failure-message', () => {
-    it('asks a sign-in harness to sign in when its provider rejects an API key; QAIQ keeps the Settings copy', () => {
+    it('asks a sign-in harness to sign in when its provider rejects an API key, QAIQ included (no API-key CTA)', () => {
         const codexLog = 'unexpected status 401 Unauthorized: Incorrect API key provided: sk-proj-***dUA';
         const codex = resolveAgentTurnFailureMessage(codexLog, { state: 'failed', agentId: 'codex' });
         expect(codex).to.match(/needs you to sign in/i);
         expect(codex).not.to.match(/401|sk-proj|API key/i);
-        expect(resolveAgentTurnFailureMessage(codexLog, { state: 'failed', agentId: 'qaiq' })).to.match(/Check your API key in Settings/);
+        expect(resolveAgentTurnFailureMessage(codexLog, { state: 'failed', agentId: 'qaiq' })).to.match(/needs you to sign in/i);
     });
 
     afterEach(() => {
@@ -378,11 +378,11 @@ describe('BYOK provider key failures', () => {
         const log = `${qaiqModelIssueLog}\n${formatProviderPreflightNote('OpenRouter', 'key_rejected', 401)}\n`;
         expect(detectAgentFailureKind(log)).to.equal('provider_key_rejected');
         const message = resolveAgentTurnFailureMessage(log, { state: 'failed', agentId: 'qaiq' });
-        expect(message).to.equal('Your OpenRouter key was rejected. Update it in Settings → BYOK, then retry.');
+        expect(message).to.equal('The OpenRouter provider refused this turn. Connect a harness in Settings → Harness, then retry.');
         expect(message).not.to.match(/model/i);
         const reason = describeAgentTurnFailure(message);
         expect(reason?.kind).to.equal('provider_key');
-        expect(reason?.label).to.equal('API key rejected');
+        expect(reason?.label).to.equal('Provider rejected the key');
     });
 
     it('reads a valid key on a refused free model as the OpenRouter privacy setting', () => {
@@ -396,7 +396,7 @@ describe('BYOK provider key failures', () => {
         const log = 'API Error: 401 {"error":{"message":"No auth credentials found","code":401}} (openrouter.ai)';
         expect(detectAgentFailureKind(log)).to.equal('provider_key_rejected');
         expect(resolveAgentTurnFailureMessage(log, { state: 'failed', agentId: 'qaiq' }))
-            .to.equal('Your OpenRouter key was rejected. Update it in Settings → BYOK, then retry.');
+            .to.equal('The OpenRouter provider refused this turn. Connect a harness in Settings → Harness, then retry.');
         expect(detectAgentFailureKind('API Error: 401 OpenRouter: User not found.')).to.equal('provider_key_rejected');
     });
 
@@ -434,14 +434,14 @@ describe('BYOK provider key failures', () => {
         expect(describeAgentTurnFailure(resolveAgentTurnFailureMessage(policy))?.label).to.equal('Blocked by provider settings');
         const credits = 'API Error: 402 {"error":{"message":"Insufficient credits. Add more using https://openrouter.ai/settings/credits","code":402}}';
         expect(detectAgentFailureKind(credits)).to.equal('provider_credits');
-        expect(resolveAgentTurnFailureMessage(credits)).to.match(/^Your OpenRouter key is out of credits\./);
+        expect(resolveAgentTurnFailureMessage(credits)).to.match(/^The OpenRouter account is out of credits\./);
     });
 
     it('keeps the stored provider copy stable across a reload', () => {
         const stored = localizeAgentFailureMessage('provider_key_rejected', 'OpenRouter');
         expect(formatStoredAgentFailureMessage(stored)).to.equal(stored);
         expect(detectAgentFailureProviderLabel(stored)).to.equal('OpenRouter');
-        expect(localizeAgentFailureMessage('provider_key_rejected')).to.equal('Your provider key was rejected. Update it in Settings → BYOK, then retry.');
+        expect(localizeAgentFailureMessage('provider_key_rejected')).to.equal('The provider refused this turn. Connect a harness in Settings → Harness, then retry.');
     });
 });
 
