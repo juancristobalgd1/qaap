@@ -1,0 +1,351 @@
+/* Unified composer model picker: harness rail, model list, effort column and access footer. */
+
+.qaap-model-picker {
+    display: flex;
+    flex-direction: column;
+    width: min(720px, 100%);
+    max-height: min(460px, 70vh);
+    min-height: 0;
+    overflow: hidden;
+    border: 1px solid var(--theia-widget-border, var(--theia-panel-border));
+    border-radius: 12px;
+    background: var(--theia-editorWidget-background, var(--theia-editor-background));
+    color: var(--theia-foreground);
+    box-shadow: 0 12px 32px var(--theia-widget-shadow);
+    font-size: var(--theia-ui-font-size1, 13px);
+    opacity: 1;
+    transform: none;
+    transition: opacity 160ms ease, transform 160ms ease;
+}
+
+@starting-style {
+    .qaap-model-picker {
+        opacity: 0;
+        transform: translateY(-4px) scale(0.98);
+    }
+}
+
+.qaap-model-picker-body {
+    display: grid;
+    grid-template-columns: 56px minmax(0, 1fr) 220px;
+    min-height: 0;
+    flex: 1 1 auto;
+}
+
+.qaap-model-picker-rail {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 0;
+    border-right: 1px solid var(--theia-widget-border, var(--theia-panel-border));
+    overflow-y: auto;
+}
+
+.qaap-model-picker-rail-item {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--theia-descriptionForeground);
+    cursor: pointer;
+}
+
+.qaap-model-picker-rail-item:hover {
+    background: var(--theia-list-hoverBackground);
+    color: var(--theia-foreground);
+}
+
+.qaap-model-picker-rail-item.theia-mod-selected {
+    background: var(--theia-list-activeSelectionBackground);
+    color: var(--theia-list-activeSelectionForeground);
+}
+
+.qaap-model-picker-list {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+}
+
+.qaap-model-picker-search {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 10px;
+    padding: 0 8px;
+    border: 1px solid var(--theia-input-border, var(--theia-widget-border));
+    border-radius: 8px;
+    background: var(--theia-input-background);
+    color: var(--theia-descriptionForeground);
+}
+
+.qaap-model-picker-search input {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 32px;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: var(--theia-input-foreground);
+}
+
+.qaap-model-picker-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-height: 0;
+    padding: 0 6px 8px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.qaap-model-picker-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 36px;
+    padding: 0 8px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--theia-foreground);
+    text-align: left;
+    cursor: pointer;
+}
+
+.qaap-model-picker-row:hover:not(:disabled),
+.qaap-model-picker-row:focus-visible {
+    background: var(--theia-list-hoverBackground);
+    outline: none;
+}
+
+.qaap-model-picker-row.theia-mod-current {
+    background: var(--theia-list-activeSelectionBackground);
+    color: var(--theia-list-activeSelectionForeground);
+}
+
+.qaap-model-picker-row:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.qaap-model-picker-row-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.qaap-model-picker-row-paid,
+.qaap-model-picker-shortcut,
+.qaap-model-picker-star,
+.qaap-model-picker-empty,
+.qaap-model-picker-access-note {
+    color: var(--theia-descriptionForeground);
+}
+
+.qaap-model-picker-shortcut {
+    padding: 0 4px;
+    border: 1px solid var(--theia-widget-border, var(--theia-panel-border));
+    border-radius: 4px;
+    font-family: var(--theia-code-font-family, monospace);
+    font-size: 11px;
+}
+
+.qaap-model-picker-star {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    opacity: 0;
+}
+
+.qaap-model-picker-row:hover .qaap-model-picker-star,
+.qaap-model-picker-star.theia-mod-favorite {
+    opacity: 1;
+}
+
+.qaap-model-picker-star.theia-mod-favorite {
+    color: var(--theia-editorWarning-foreground, var(--theia-foreground));
+}
+
+.qaap-model-picker-empty {
+    margin: 8px;
+    font-size: 12px;
+}
+
+.qaap-model-picker-effort {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 10px;
+    min-height: 0;
+    border-left: 1px solid var(--theia-widget-border, var(--theia-panel-border));
+    overflow-y: auto;
+}
+
+.qaap-model-picker-effort-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 8px 8px;
+    color: var(--theia-descriptionForeground);
+    font-size: 12px;
+}
+
+.qaap-model-picker-effort-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 32px;
+    padding: 0 8px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--theia-foreground);
+    cursor: pointer;
+}
+
+.qaap-model-picker-effort-row:hover {
+    background: var(--theia-list-hoverBackground);
+}
+
+.qaap-model-picker-effort-row.theia-mod-current {
+    background: var(--theia-list-activeSelectionBackground);
+    color: var(--theia-list-activeSelectionForeground);
+}
+
+.qaap-model-picker-footer {
+    position: relative;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 8px 10px;
+    border-top: 1px solid var(--theia-widget-border, var(--theia-panel-border));
+}
+
+.qaap-model-picker-access {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 8px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--theia-foreground);
+    cursor: pointer;
+}
+
+.qaap-model-picker-access:hover {
+    background: var(--theia-list-hoverBackground);
+}
+
+.qaap-model-picker-access-menu {
+    position: absolute;
+    right: 10px;
+    bottom: calc(100% + 4px);
+    min-width: 200px;
+    margin: 0;
+    padding: 4px;
+    list-style: none;
+    border: 1px solid var(--theia-widget-border, var(--theia-panel-border));
+    border-radius: 10px;
+    background: var(--theia-menu-background, var(--theia-editorWidget-background));
+    box-shadow: 0 8px 24px var(--theia-widget-shadow);
+    opacity: 1;
+    transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.qaap-model-picker-access-menu[hidden] {
+    display: none;
+}
+
+.qaap-model-picker-access-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    height: 32px;
+    padding: 0 8px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--theia-menu-foreground, var(--theia-foreground));
+    text-align: left;
+    cursor: pointer;
+}
+
+.qaap-model-picker-access-option:hover,
+.qaap-model-picker-access-option.theia-mod-current {
+    background: var(--theia-menu-selectionBackground, var(--theia-list-hoverBackground));
+    color: var(--theia-menu-selectionForeground, var(--theia-foreground));
+}
+
+.qaap-model-picker-access-note {
+    flex-basis: 100%;
+    margin: 0;
+    font-size: 12px;
+}
+
+@media (max-width: 767px) {
+    .qaap-model-picker {
+        width: 100%;
+        max-height: min(560px, 80vh);
+    }
+
+    .qaap-model-picker-body {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto minmax(0, 1fr) auto;
+    }
+
+    .qaap-model-picker-rail {
+        flex-direction: row;
+        justify-content: flex-start;
+        overflow-x: auto;
+        overflow-y: hidden;
+        padding: 8px 10px;
+        border-right: none;
+        border-bottom: 1px solid var(--theia-widget-border, var(--theia-panel-border));
+    }
+
+    .qaap-model-picker-effort {
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center;
+        border-left: none;
+        border-top: 1px solid var(--theia-widget-border, var(--theia-panel-border));
+    }
+
+    .qaap-model-picker-effort-header {
+        width: 100%;
+        padding: 0;
+    }
+
+    .qaap-model-picker-effort-row {
+        height: 30px;
+        border: 1px solid var(--theia-widget-border, var(--theia-panel-border));
+        border-radius: 999px;
+    }
+
+    .qaap-model-picker-star {
+        opacity: 1;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .qaap-model-picker,
+    .qaap-model-picker-access-menu {
+        transition: none;
+    }
+}
