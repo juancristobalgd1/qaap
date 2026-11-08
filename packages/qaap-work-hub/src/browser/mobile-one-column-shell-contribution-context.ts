@@ -180,6 +180,7 @@ export type MobileOneColumnShellContributionContextMember =
     | 'teardownMobileUi'
     | 'terminalService'
     | 'themeService'
+    | 'keybindingsPanel'
     | 'toDispose'
     | 'toggleMobileAgentSheet'
     | 'toggleMobileExploreSheet'

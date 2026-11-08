@@ -561,16 +561,17 @@ body[data-theia-theme-mode="dark"] .theia-mobile-work-hub-sessions-sidebar {
   box-sizing: border-box;
   display: flex;
   align-items: center;
-  justify-content: flex-start;
-  gap: 10px;
-  /* Avatar only, pinned left: the free footer space is reserved for more actions. */
-  flex: 0 0 auto;
-  width: auto;
-  max-width: 100%;
-  min-width: 0;
+  justify-content: center;
+  gap: 0;
+  /* Avatar only, pinned left, in the same 44x44 box as the usage and settings buttons on its right. */
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  max-width: 44px;
+  min-width: 44px;
   min-height: 44px;
   margin-right: auto;
-  padding: 4px;
+  padding: 0;
   border: none;
   border-radius: 8px;
   overflow: hidden;
@@ -631,13 +632,13 @@ body[data-theia-theme-mode="dark"] .theia-mobile-work-hub-sessions-sidebar {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 28px;
-  width: 28px;
-  height: 28px;
-  min-width: 28px;
-  min-height: 28px;
-  max-width: 28px;
-  max-height: 28px;
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
+  max-width: 24px;
+  max-height: 24px;
   border-radius: 50%;
   overflow: hidden;
   flex-shrink: 0;
@@ -663,10 +664,10 @@ body[data-theia-theme-mode="dark"] .theia-mobile-work-hub-sessions-sidebar {
 
 .theia-mobile-work-hub-sessions-sidebar-foot .theia-workbench-account-avatar .theia-workbench-account-fallback-icon {
   display: inline-block;
-  width: 16px;
-  height: 16px;
-  font-size: 16px;
-  line-height: 16px;
+  width: 14px;
+  height: 14px;
+  font-size: 14px;
+  line-height: 14px;
   color: inherit;
   opacity: 1;
 }
@@ -708,7 +709,7 @@ body[data-theia-theme-mode="dark"] .theia-mobile-work-hub-sessions-sidebar {
   justify-content: center;
   width: 100%;
   height: 100%;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
   line-height: 1;
   color: inherit;
@@ -2100,31 +2101,16 @@ button.theia-mod-sessions-sidebar-accordion .theia-mobile-projects-conversation-
   }
 }
 
-/* Touch and narrow screens: project, pinned and session names may wrap to two lines instead of
-   one ellipsised line. Flex parents keep min-width: 0 so siblings do not squeeze them further.
-   Desktop keeps the single-line ellipsis; the full name is also the element's title tooltip. */
+/* Touch and narrow screens: project and pinned names may wrap to two lines instead of one
+   ellipsised line. Task titles stay on one line everywhere (desktop rules), so they are not
+   listed here. Flex parents keep min-width: 0 so siblings do not squeeze them further.
+   The full name is also the element's title tooltip. */
 @media (max-width: 767px), (pointer: coarse), (hover: none) {
   .theia-mobile-work-hub-sessions-sidebar-project-name,
   .theia-mobile-work-hub-sessions-sidebar-pinned-project-name {
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
-    min-width: 0;
-    overflow: hidden;
-    overflow-wrap: anywhere;
-    white-space: normal;
-  }
-
-  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-title {
-    white-space: normal;
-    overflow-wrap: anywhere;
-  }
-
-  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-title-text {
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    width: 100%;
     min-width: 0;
     overflow: hidden;
     overflow-wrap: anywhere;

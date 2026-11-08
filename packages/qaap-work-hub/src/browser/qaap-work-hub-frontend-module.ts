@@ -32,6 +32,7 @@ import '@theia/qaap-composer/src/browser/style/qaap-chat-select-dropdown.css';
 import '@theia/qaap-composer/src/browser/style/qaap-composer-goal-loop.css';
 import '../../src/browser/style/qaap-work-hub-sessions-sidebar.css';
 import '../../src/browser/style/qaap-work-hub-aux-panel.css';
+import '../../src/browser/style/qaap-work-hub-keybindings.css';
 import '@theia/qaap-transcript/src/browser/style/qaap-transcript-lobehub.css';
 import '@theia/qaap-agents-ui/src/browser/style/qaap-agent-setup-animations.css';
 import '@theia/ai-claude-code/src/browser/style/claude-code-tool-renderers.css';
@@ -79,6 +80,7 @@ import { QaapBuildFreshnessContribution } from '@theia/qaap-shared-core/lib/brow
 import { QaapHasStateClasses } from './qaap-has-state-classes';
 import { QaapWindowTitleProjectContribution } from './qaap-window-title-project-contribution';
 import { QaapWorkHubBootReplicaContribution } from './qaap-work-hub-boot-replica-contribution';
+import { QaapWorkHubKeybindingsPanel } from './qaap-work-hub-keybindings-panel';
 import { QaapAgentCliUpdateContribution } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-cli-update-contribution';
 import { MobileOneColumnShellContribution } from './mobile-one-column-shell-contribution';
 import { QaapShellLayoutRestoreContribution } from './qaap-shell-layout-restore-contribution';
@@ -90,6 +92,8 @@ import { TerminalFrontendContribution } from '@theia/terminal/lib/browser/termin
 import { XtermLinkFactory } from '@theia/terminal/lib/browser/terminal-link-provider';
 import { QaapIdeShellTerminalServer, QaapIdeTerminalService, QaapIdeTerminalWatcher } from '@theia/qaap-shared-core/lib/browser/qaap-ide-bridge';
 import { QaapTerminalFrontendContribution } from '@theia/qaap-shared-core/lib/browser/qaap-terminal-frontend-contribution';
+import { QaapWorkHubNotificationSettings } from '@theia/qaap-shared-core/lib/browser/qaap-work-hub-notification-settings';
+import { QaapCompletionSound } from '@theia/qaap-shared-core/lib/browser/qaap-completion-sound';
 import { createQaapXtermLinkFactory } from '@theia/qaap-shared-core/lib/browser/qaap-xterm-link-adapter';
 import { MobileOnboardingTutorialContribution } from './mobile-onboarding-tutorial-contribution';
 import { MobileThemeChromeContribution } from './mobile-theme-chrome-contribution';
@@ -204,6 +208,7 @@ export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync
     bind(MobileProjectsConversations).toSelf().inSingletonScope();
     bind(MobileWorkHubInboxStream).toSelf().inSingletonScope();
     bind(MobileProjectsConversationFlags).toSelf().inSingletonScope();
+    bind(QaapWorkHubKeybindingsPanel).toSelf().inSingletonScope();
     // Transient binding so each `getOrCreateWidget` call (with a unique options.id) gets a fresh
     // instance — the workspace Agent AI view already mounts an AIChatInputWidget with a fixed
     // resource URI, and a second one would collide unless this subclass mints its own URI.
@@ -410,6 +415,8 @@ export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync
     bind(FrontendApplicationContribution).toService(QaapTranscriptImageLightboxContribution);
     bind(QaapTurnSettleNotifyContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapTurnSettleNotifyContribution);
+    bind(QaapWorkHubNotificationSettings).toSelf().inSingletonScope();
+    bind(QaapCompletionSound).toSelf().inSingletonScope();
     bind(QaapAgentFinishedToastContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapAgentFinishedToastContribution);
 

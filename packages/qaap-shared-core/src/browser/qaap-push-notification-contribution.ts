@@ -11,6 +11,8 @@ import { WindowBlinkService } from '@theia/ai-core/lib/browser/window-blink-serv
 import { QaapBootstrapStateChange, QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
 import { qaapBootstrapFailureKind } from './qaap-project-bootstrap-types';
 import { QAAP_NAVIGATE_TO_CONVERSATION_EVENT } from './qaap-turn-settle-notifier';
+import { QaapWorkHubNotificationSettings } from './qaap-work-hub-notification-settings';
+import { QaapCompletionSound } from './qaap-completion-sound';
 
 export const QAAP_BOOTSTRAP_FAILED_EVENT = 'qaap-bootstrap-failed';
 export const QAAP_AGENT_COMPLETED_EVENT = 'qaap-agent-completed';
@@ -24,6 +26,12 @@ export class QaapPushNotificationContribution implements FrontendApplicationCont
 
     @inject(QaapProjectBootstrapService)
     protected readonly bootstrap: QaapProjectBootstrapService;
+
+    @inject(QaapWorkHubNotificationSettings)
+    protected readonly notificationSettings: QaapWorkHubNotificationSettings;
+
+    @inject(QaapCompletionSound)
+    protected readonly completionSound: QaapCompletionSound;
 
     onStart(): void {
         this.bootstrap.onStateChange((state: QaapBootstrapStateChange) => {
@@ -66,10 +74,12 @@ export class QaapPushNotificationContribution implements FrontendApplicationCont
         // completion Web Notification and routes its activation to the originating Work Hub
         // conversation. Showing a second notification here would duplicate it and its click would
         // only focus the window without navigating to the session.
+        this.completionSound.play('completed');
         void this.blink.blinkWindow(agentName);
     }
 
     protected notifyAgentNeedsConfirmation(agentName?: string, conversationId?: string): void {
+        this.completionSound.play('attention');
         void this.blink.blinkWindow(agentName);
         this.showSystemNotification(
             nls.localize('qaap/push/agentNeedsConfirmation', 'Agent needs your confirmation'),
@@ -98,6 +108,9 @@ export class QaapPushNotificationContribution implements FrontendApplicationCont
     }
 
     protected showSystemNotification(title: string, body: string, conversationId?: string): void {
+        if (!this.notificationSettings.systemNotifications) {
+            return;
+        }
         if (typeof Notification === 'undefined' || Notification.permission !== 'granted') {
             return;
         }
@@ -118,6 +131,9 @@ export class QaapPushNotificationContribution implements FrontendApplicationCont
     }
 
     protected async requestNotificationPermission(): Promise<void> {
+        if (!this.notificationSettings.systemNotifications) {
+            return;
+        }
         if (typeof Notification === 'undefined' || Notification.permission !== 'default') {
             return;
         }

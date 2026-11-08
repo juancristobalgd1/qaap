@@ -75,6 +75,7 @@ describe('qaap-work-hub-boot-replica', () => {
 
         it('allows only theme, Work Hub chrome and OS body classes', () => {
             expect(['qaap-theme-dark', 'theia-mobile-mod-workhub-composer-header', 'linux'].every(isQaapBootReplicaBodyClass)).to.equal(true);
+            expect(isQaapBootReplicaBodyClass('qaap-theme-hc')).to.equal(true);
             expect(['theia-mobile-mod-sessions-sidebar-open', 'monaco-workbench', 'vs'].some(isQaapBootReplicaBodyClass)).to.equal(false);
         });
     });

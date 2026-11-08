@@ -72,6 +72,7 @@ import { QaapPreviewSurfaceRegistry } from '@theia/qaap-adapters/lib/browser/qaa
 import { ElementInspectorService } from '@theia/qaap-element-inspector/lib/browser/element-inspector-service';
 import { MobileAgentTaskComposer } from '@theia/qaap-composer/lib/browser/mobile-agent-task-composer';
 import { MobileWorkHubPreferencesSheet } from './mobile-work-hub-preferences-sheet';
+import { QaapWorkHubKeybindingsPanel } from './qaap-work-hub-keybindings-panel';
 import { MobileWorkHubBillingSheet } from './mobile-work-hub-billing-sheet';
 import { MCPFrontendService } from '@theia/ai-mcp/lib/common/mcp-server-manager';
 import {
@@ -253,6 +254,10 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     @inject(ThemeService)
     /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
     public readonly themeService: ThemeService;
+
+    @inject(QaapWorkHubKeybindingsPanel)
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly keybindingsPanel: QaapWorkHubKeybindingsPanel;
 
     @inject(MCPFrontendService) @optional()
     /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
