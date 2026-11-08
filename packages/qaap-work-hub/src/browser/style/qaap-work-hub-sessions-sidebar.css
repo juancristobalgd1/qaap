@@ -2722,12 +2722,13 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
   height: 22px;
   margin-left: auto;
   padding: 0 8px;
-  border: 1px solid color-mix(in srgb, var(--theia-errorForeground, var(--theia-editorError-foreground)) 45%, transparent);
+  /* A discreet neutral outline: the error color stays on the icon and label only. */
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 16%, transparent);
   border-radius: 999px;
   /* The tint is layered over an opaque base: on hover the chip sits on top of the task title,
      which must not show through it. */
   background:
-    linear-gradient(color-mix(in srgb, var(--theia-errorForeground, var(--theia-editorError-foreground)) 14%, transparent), color-mix(in srgb, var(--theia-errorForeground, var(--theia-editorError-foreground)) 14%, transparent)),
+    linear-gradient(color-mix(in srgb, var(--theia-foreground) 6%, transparent), color-mix(in srgb, var(--theia-foreground) 6%, transparent)),
     var(--theia-sideBar-background, var(--theia-editor-background));
   color: var(--theia-errorForeground, var(--theia-editorError-foreground));
   font-family: var(--theia-ui-font-family, sans-serif);
@@ -2755,8 +2756,9 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
 
 .theia-mobile-projects-failed-run-chip:hover,
 .theia-mobile-projects-failed-run-chip:focus-visible {
+  border-color: color-mix(in srgb, var(--theia-foreground) 28%, transparent);
   background:
-    linear-gradient(color-mix(in srgb, currentColor 22%, transparent), color-mix(in srgb, currentColor 22%, transparent)),
+    linear-gradient(color-mix(in srgb, var(--theia-foreground) 12%, transparent), color-mix(in srgb, var(--theia-foreground) 12%, transparent)),
     var(--theia-sideBar-background, var(--theia-editor-background));
 }
 
