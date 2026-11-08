@@ -500,15 +500,14 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
         const homeLinksKey = JSON.stringify(homeLinks);
         const known = this.spares.get(tenant);
         const existing = await this.inspect(docker, name);
-        if (known && known.homeLinksKey === homeLinksKey && known.image === placement.image && existing?.State?.Running && !existing.State.Paused
-            && this.runtimeMatches(existing, placement)) {
+        if (known && known.homeLinksKey === homeLinksKey && known.image === placement.image && existing?.State?.Running && !existing.State.Paused) {
             return;
         }
         if (existing) {
             if (!this.ownedBy(existing, tenant)) {
                 throw new Error(`Sandbox ${name} is not owned by this tenant.`);
             }
-            // Stale links, image or runtime, stopped, or left by a previous control plane (its token is gone).
+            // Stale links or image, stopped, or left by a previous control plane (its token is gone).
             await docker.getContainer(name).remove({ force: true });
         }
         this.spares.delete(tenant);
@@ -551,9 +550,7 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
         try {
             if (!inspect || !this.ownedBy(inspect, tenant) || !inspect.State?.Running || inspect.State.Paused) {
                 throw new Error('the spare is not running');
-            }
-            if (!this.runtimeMatches(inspect, placement)) {
-                throw new Error('the spare predates a runtime change');
+
             }
             await docker.getContainer(spare.name).rename({ name });
         } catch (error) {
