@@ -152,19 +152,18 @@ export function formatQaiqModelSelectionLabel(model: { readonly vendor: string; 
 }
 
 /**
- * Compact model-id label for tight UI (sticky composer toolbar): drops a leading
- * `org/` segment (OpenRouter-style `nvidia/llama-…` → `llama-…`). Keeps ids without `/` as-is.
+ * Compact model-id label for tight UI (pill, picker rows): only the model name. Every provider
+ * segment goes, the last one included as the name (`openrouter/~moonshotai/kimi-latest` →
+ * `kimi-latest`, `anthropic/claude-sonnet-latest` → `claude-sonnet-latest`), and an OpenRouter `~`
+ * prefix goes too. Ids without `/` stay as they are.
  */
 export function formatQaiqModelIdShortLabel(modelId: string): string {
     const trimmed = modelId.trim();
     if (!trimmed) {
         return trimmed;
     }
-    const slash = trimmed.indexOf('/');
-    if (slash <= 0 || slash >= trimmed.length - 1) {
-        return trimmed;
-    }
-    return trimmed.slice(slash + 1);
+    const name = trimmed.slice(trimmed.lastIndexOf('/') + 1).replace(/^~+/, '');
+    return name || trimmed;
 }
 
 /**

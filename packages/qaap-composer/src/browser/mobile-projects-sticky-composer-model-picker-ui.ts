@@ -11,6 +11,7 @@ import {
     type QaapQaiqModelOption,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { readStoredAgentModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
+import { formatQaiqModelIdShortLabel } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
 import { agentNeedsSettingsApiKeyPath } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
 import { QaapAgentEffort, type QaapAgentEffortLevel } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
 import {
@@ -74,7 +75,8 @@ function toPickerModel(agentId: string, model: QaapQaiqModelOption): QaapPickerM
     return {
         agentId,
         modelId: model.modelId,
-        label: model.label || model.modelId,
+        // Only the model name: a label that still carries a provider path falls back to the id's name.
+        label: model.label && !model.label.includes('/') ? model.label : formatQaiqModelIdShortLabel(model.modelId),
         available: !unavailable,
         unavailableReason: unavailable ? unavailableText(model.unavailableReason) : undefined,
     };
