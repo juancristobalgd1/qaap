@@ -21,22 +21,8 @@ import { QaapComposerModelPickerModel, type QaapPickerModel, type QaapPickerStat
 import { adoptPendingComposerEffort, resolveComposerEffortLevel, writeComposerEffortLevel } from '../common/qaap-composer-effort';
 import type { MobileProjectsStickyComposerSheetsUiContext } from './mobile-projects-sticky-composer-sheets-ui-context';
 import type { ComposerAgentPickerChrome } from './mobile-projects-sticky-composer-sheets-ui';
-import { disposeQaapComposerModelPicker, pickerPopoverHeight, renderQaapComposerModelPicker } from './qaap-composer-model-picker';
-import { positionStickyComposerPopover } from '@theia/qaap-transcript/lib/browser/qaap-sticky-composer-popover';
-
-/**
- * Every width: the popover opens above the pill, its bottom edge 8px over the pill and its left edge on
- * the pill (clamped 16px inside the viewport). Height follows the content up to the CSS cap; the list scrolls.
- */
-function placePickerAbove(popover: HTMLElement, anchor: HTMLElement | undefined): void {
-    if (!anchor || !popover.classList.contains('qaap-sticky-composer-sheet-popover')) {
-        return;
-    }
-    // The shared popover positioning reads this flag on every resize and scroll too.
-    popover.dataset.placement = 'above-start';
-    popover.style.height = `${pickerPopoverHeight(anchor.getBoundingClientRect().top, window.innerHeight)}px`;
-    positionStickyComposerPopover(popover, anchor, 'start', Math.min(560, window.innerWidth - 32));
-}
+import { disposeQaapComposerModelPicker, renderQaapComposerModelPicker } from './qaap-composer-model-picker';
+import { placePickerAbove } from './qaap-composer-picker-placement';
 
 /** Sign-in or API key guidance for a harness that cannot run yet; `undefined` when it can. */
 function connectionStripFor(
@@ -47,7 +33,7 @@ function connectionStripFor(
     if ((agent.connectionState === 'disconnected' || agent.accessState === 'none') && options.onProactiveLogin) {
         return {
             message: nls.localize('qaap/composer/picker/connectNeeded', '{0} needs a sign-in before it can run.', agent.label),
-            actionLabel: nls.localize('qaap/composer/picker/signIn', 'Sign in'),
+            actionLabel: nls.localizeByDefault('Sign in'),
             onAction: () => options.onProactiveLogin?.(agent.id),
         };
     }
@@ -167,11 +153,13 @@ export async function renderStickyComposerModelPicker(
         }
         observer.disconnect();
         disposeQaapComposerModelPicker(host);
+        window.removeEventListener('resize', onResize);
         chrome.list.replaceChildren();
         options.onRefresh();
     });
     observer.observe(document.body, { childList: true, subtree: true });
-    placePickerAbove(chrome.sheet, options.anchor);
+    const onResize = (): void => placePickerAbove(chrome.sheet, options.anchor);
+    window.addEventListener('resize', onResize);
 
     const repaint = (): void => {
         const state: QaapPickerState = {
@@ -233,6 +221,7 @@ export async function renderStickyComposerModelPicker(
             onClose: close,
             connect,
         });
+        placePickerAbove(chrome.sheet, options.anchor);
     };
     repaint();
     // Background refresh of every harness: each answer repaints, so the list never waits for the slowest one.

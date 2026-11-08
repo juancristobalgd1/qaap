@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import { positionStickyComposerPopover } from '@theia/qaap-transcript/lib/browser/qaap-sticky-composer-popover';
 import { pickerPopoverHeight } from './qaap-composer-model-picker';
+import { placePickerAbove } from './qaap-composer-picker-placement';
 
 interface PillRect {
     readonly left: number;
@@ -84,5 +85,28 @@ describe('qaap-composer-model-picker placement', () => {
         expect(height).to.equal(300 - 8 - 16);
         const popover = placePicker(375, pill, height);
         expect(popover.style.top).to.equal('16px');
+    });
+
+    it('keeps the height and the top the same after opening and switching the rail', () => {
+        Object.defineProperty(window, 'innerHeight', { configurable: true, value: 800 });
+        Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1280 });
+        const popover = document.createElement('div');
+        popover.className = 'qaap-sticky-composer-sheet-popover';
+        Object.defineProperty(popover, 'offsetHeight', { configurable: true, get: () => parseFloat(popover.style.height) || 0 });
+        Object.defineProperty(popover, 'offsetWidth', { configurable: true, get: () => 560 });
+        const anchor = document.createElement('button');
+        anchor.getBoundingClientRect = (): DOMRect => ({
+            x: 900, y: 748, left: 900, top: 748, width: 260, height: 44, right: 1160, bottom: 792, toJSON: () => ({}),
+        }) as DOMRect;
+        document.body.append(popover, anchor);
+
+        placePickerAbove(popover, anchor);
+        const opened = { height: popover.style.height, top: popover.style.top };
+        // A rail switch repaints the picker: the content changes, the placement must not.
+        popover.append(document.createElement('div'));
+        placePickerAbove(popover, anchor);
+        expect({ height: popover.style.height, top: popover.style.top }).to.deep.equal(opened);
+        expect(opened.height).to.equal('440px');
+        expect(parseFloat(opened.top) + 440).to.equal(748 - 8);
     });
 });
