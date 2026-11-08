@@ -30,12 +30,8 @@ import {
 } from '@theia/qaap-composer/lib/browser/qaap-sticky-composer-working-agents-popover';
 import { syncStickyComposerStepPillInRoots } from '@theia/qaap-composer/lib/browser/qaap-sticky-composer-step-pill';
 import { syncStickyComposerGoalLoopPillInRoots } from '@theia/qaap-composer/lib/browser/qaap-sticky-composer-goal-loop-pill';
-import { syncTranscriptGoalLoopChips } from '@theia/qaap-transcript/lib/browser/qaap-transcript-goal-loop-chip';
 import { syncOpenTranscriptTaskPlanCard } from '@theia/qaap-transcript/lib/browser/qaap-transcript-task-plan-card';
-import {
-    resolveGoalLoopChipView,
-    resolveGoalLoopPillLabel,
-} from '@theia/qaap-shared-core/lib/common/qaap-agent-goal-loop-labels';
+import { resolveGoalLoopPillLabel } from '@theia/qaap-shared-core/lib/common/qaap-agent-goal-loop-labels';
 import {
     resolveLatestTranscriptTodos,
     resolveTodoStepProgress,
@@ -427,8 +423,7 @@ export function updateStepPillChromeExtracted(ctx: MobileProjectsTasksHubUiConte
 
 /**
  * "Until done" chrome for the open conversation: the iteration pill above the composer (while a
- * loop runs) and the phase chip in the transcript header (kept after it ends). Reads the live
- * summary so `goal_loop` events land without a transcript refresh.
+ * loop runs). Reads the live summary so `goal_loop` events land without a transcript refresh.
  */
 export function updateGoalLoopChromeExtracted(ctx: MobileProjectsTasksHubUiContext): void {
         const open = ctx.host.transcriptComposerSummary ?? ctx.host.transcriptOpenSummary;
@@ -440,10 +435,6 @@ export function updateGoalLoopChromeExtracted(ctx: MobileProjectsTasksHubUiConte
             [ctx.host.stickyComposerHost, ctx.host.transcriptComposerHost],
             { label: resolveGoalLoopPillLabel(summary) },
         );
-        const headerSummary = ctx.host.transcriptOpenSummary?.id
-            ? ctx.host.conversations?.threadStore.getSummary(ctx.host.transcriptOpenSummary.id) ?? ctx.host.transcriptOpenSummary
-            : undefined;
-        syncTranscriptGoalLoopChips(document, resolveGoalLoopChipView(headerSummary));
         // Re-mount the task plan card when a Work Hub re-render replaced the transcript chat host.
         syncOpenTranscriptTaskPlanCard(ctx.host, ctx.host.transcriptLiveUi?.resolveActiveTranscriptChatHost());
 }

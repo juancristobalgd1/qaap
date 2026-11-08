@@ -4,15 +4,7 @@
 // *****************************************************************************
 
 /**
- * Every composer submit is a goal loop: the agent keeps iterating, verifying and reviewing until
- * the goal is met. The composer no longer offers a mode or a goal toggle, so the mode is fixed.
+ * Composer submits send the prompt to the harness as written, in the agent mode. Qaap adds no goal
+ * loop on submit: `/goal <objective>` is the agent's own command and reaches it as plain text.
  */
 export const QAAP_COMPOSER_SUBMIT_MODE_ID = 'agent';
-
-/**
- * Whether a submit starts a goal loop. Manual approval asks before each change and cannot run
- * unattended, so that approval keeps a single turn.
- */
-export function resolveComposerUntilDoneForSubmit(approvalPolicyId: string | undefined): boolean {
-    return approvalPolicyId !== 'request-approval';
-}

@@ -1,4 +1,4 @@
-import { QAAP_COMPOSER_SUBMIT_MODE_ID, resolveComposerUntilDoneForSubmit } from '../common/qaap-composer-until-done';
+import { QAAP_COMPOSER_SUBMIT_MODE_ID } from '../common/qaap-composer-until-done';
 import { resolveComposerEffortLevel } from '../common/qaap-composer-effort';
 import type { MobileProjectsTranscriptStickyComposerUiContext } from './mobile-projects-transcript-sticky-composer-ui-context';
 // Extracted from mobile-projects-transcript-sticky-composer-ui.ts
@@ -78,11 +78,6 @@ export async function submitTranscriptComposerDraftExtracted(ctx: MobileProjects
         options.showApprovalPolicy,
         ctx.host.transcriptComposerApprovalPolicyId,
         summary.cwd,
-    );
-    // "Until done": start a goal loop instead of a single turn (idle conversations only; a busy
-    // follow-up below is queued as a normal message).
-    const untilDone = options.showApprovalPolicy && !options.isLegacyTheiaChat && resolveComposerUntilDoneForSubmit(
-        reconcileAgentApprovalPolicyId(ctx.host.transcriptComposerApprovalPolicyId, summary.cwd),
     );
     ctx.host.transcriptComposerContext = [];
     const commitComposerSubmission = (): void => {
@@ -245,7 +240,6 @@ export async function submitTranscriptComposerDraftExtracted(ctx: MobileProjects
                 agentModelAgentId: selectedAgentId,
                 openModelPicker,
                 imagePreviews,
-                untilDone,
                 effort: resolveComposerEffortLevel(chipCwd ?? summary.cwd, selectedAgentId, newTaskAgentModel?.modelId),
             });
             // Background submission reports preflight/create failures as `undefined` after
@@ -303,7 +297,6 @@ export async function submitTranscriptComposerDraftExtracted(ctx: MobileProjects
                 ),
                 agentModel: ctx.host.transcriptComposerAgentModel,
                 imagePreviews,
-                untilDone,
                 effort: resolveComposerEffortLevel(summary.cwd, selectedAgentId, ctx.host.transcriptComposerAgentModel?.modelId),
             });
             if (!submitted) {
