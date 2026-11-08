@@ -73,9 +73,11 @@
 || Popovers and menus anchored to a control.
 ||----------------------------------------------------------------------------*/
 
-/* Composer pickers (agent, mode, approval policy) open above the composer. */
+/* Composer pickers (agent, mode, approval policy) open above the composer; the account menu
+   opens above the sidebar footer. */
 .qaap-sticky-composer-sheet-popover:not(.theia-mod-model-capability):not(.theia-mod-project-sheet),
-.theia-mobile-projects-sticky-composer-attach-menu.theia-mod-open {
+.theia-mobile-projects-sticky-composer-attach-menu.theia-mod-open,
+.theia-qaap-account-menu {
   transform-origin: bottom left;
   animation: qaap-work-hub-pop-in-up var(--qaap-work-hub-enter-duration) var(--qaap-work-hub-enter-ease) backwards;
 }
@@ -174,6 +176,7 @@
 
   .qaap-sticky-composer-sheet-popover,
   .theia-mobile-projects-sticky-composer-attach-menu,
+  .theia-qaap-account-menu,
   .qaap-work-hub-toolbar-menu,
   .theia-mobile-transcript-tab-icon-select-menu,
   .theia-mobile-sticky-composer-sheet>.theia-mobile-sticky-composer-sheet-backdrop,

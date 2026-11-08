@@ -293,10 +293,11 @@ body.qaap-theme-light .theia-mobile-pr-card {
   color: var(--q-text);
 }
 
+/* Inline (hairline) fields in the Open repository and Create repository dialogs opt out below. */
 body.qaap-theme-dark .theia-input,
 body.qaap-theme-light .theia-input,
-body.qaap-theme-dark input:not(.theia-mobile-projects-sticky-composer-input):not(.theia-mobile-projects-search-input):not(.theia-qaap-agent-sheet-search-input):not(.theia-mobile-skills-attach-search):not(.theia-mobile-mcp-attach-search),
-body.qaap-theme-light input:not(.theia-mobile-projects-sticky-composer-input):not(.theia-mobile-projects-search-input):not(.theia-qaap-agent-sheet-search-input):not(.theia-mobile-skills-attach-search):not(.theia-mobile-mcp-attach-search),
+body.qaap-theme-dark input:not(.theia-mobile-projects-sticky-composer-input):not(.theia-mobile-projects-search-input):not(.theia-qaap-agent-sheet-search-input):not(.theia-mobile-skills-attach-search):not(.theia-mobile-mcp-attach-search):not(.theia-mobile-open-repo-filter-input):not(.theia-mobile-open-repo-public-input):not(.qaap-compact-input-dialog-input),
+body.qaap-theme-light input:not(.theia-mobile-projects-sticky-composer-input):not(.theia-mobile-projects-search-input):not(.theia-qaap-agent-sheet-search-input):not(.theia-mobile-skills-attach-search):not(.theia-mobile-mcp-attach-search):not(.theia-mobile-open-repo-filter-input):not(.theia-mobile-open-repo-public-input):not(.qaap-compact-input-dialog-input),
 body.qaap-theme-dark textarea:not(.theia-mobile-projects-sticky-composer-input):not(.qaap-preview-annotation-popover-input),
 body.qaap-theme-light textarea:not(.theia-mobile-projects-sticky-composer-input):not(.qaap-preview-annotation-popover-input),
 body.qaap-theme-dark .monaco-inputbox,

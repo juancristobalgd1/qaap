@@ -729,9 +729,10 @@ body.theia-mobile-mod-landing.theia-mobile-mod-landing-hub-list .theia-mobile-pr
 }
 
 /*
- * The product theme's generic input / primary-button / overline rules
- * (`body.qaap-theme-* …` in qaap-conservador-dna.css) outrank the single-class rules above;
- * keep the clone tab as compact as the repositories tab.
+ * Inline fields (command-palette style). The filter and the clone URL have no box: glyph and text
+ * sit on a hairline that brightens on focus; on the clone tab the Clone button ends the line.
+ * The product theme's generic input / primary-button / overline rules (`body.qaap-theme-* …` in
+ * qaap-conservador-dna.css) outrank single-class rules, hence the doubled classes here.
  */
 .theia-mobile-open-repo .theia-mobile-open-repo-section-label.theia-mobile-open-repo-section-label {
   text-transform: none;
@@ -741,38 +742,189 @@ body.theia-mobile-mod-landing.theia-mobile-mod-landing-hub-list .theia-mobile-pr
   color: var(--theia-foreground);
 }
 
-.theia-mobile-open-repo .theia-mobile-open-repo-public-input.theia-mobile-open-repo-public-input {
-  min-height: 34px;
-  height: 34px;
-  padding: 0 10px;
-  border: 1px solid color-mix(in srgb, var(--theia-foreground) 12%, transparent);
-  border-radius: 6px;
-  font-size: 13px;
-  box-shadow: none;
+.theia-mobile-open-repo .theia-mobile-open-repo-filter.theia-mobile-open-repo-filter,
+.theia-mobile-open-repo .theia-mobile-open-repo-public-row.theia-mobile-open-repo-public-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  border: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+  border-radius: 0;
+  background: transparent;
+  box-sizing: border-box;
+  transition: border-color var(--qaap-duration-fast, 120ms) ease;
 }
 
-.theia-mobile-open-repo .theia-mobile-open-repo-public-input.theia-mobile-open-repo-public-input:focus-visible {
-  border-color: color-mix(in srgb, var(--theia-foreground) 30%, transparent);
+.theia-mobile-open-repo .theia-mobile-open-repo-filter.theia-mobile-open-repo-filter:focus-within,
+.theia-mobile-open-repo .theia-mobile-open-repo-public-row.theia-mobile-open-repo-public-row:focus-within {
+  border-bottom-color: color-mix(in srgb, var(--theia-foreground) 28%, transparent);
+}
+
+/* Clone tab: the hairline belongs to the URL field only, not under the Clone button. */
+.theia-mobile-open-repo .theia-mobile-open-repo-public-row.theia-mobile-open-repo-public-row {
+  gap: 10px;
+  border-bottom: none;
+}
+
+.theia-mobile-open-repo .theia-mobile-open-repo-public-row.theia-mobile-open-repo-public-row .theia-mobile-open-repo-public-input.theia-mobile-open-repo-public-input {
+  border-bottom: 1px solid color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+  transition: border-color var(--qaap-duration-fast, 120ms) ease;
+}
+
+.theia-mobile-open-repo .theia-mobile-open-repo-public-row.theia-mobile-open-repo-public-row .theia-mobile-open-repo-public-input.theia-mobile-open-repo-public-input:focus {
+  border-bottom-color: color-mix(in srgb, var(--theia-foreground) 28%, transparent);
+}
+
+.theia-mobile-open-repo .theia-mobile-open-repo-filter-input.theia-mobile-open-repo-filter-input,
+.theia-mobile-open-repo .theia-mobile-open-repo-public-input.theia-mobile-open-repo-public-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+  color: var(--theia-input-foreground, var(--theia-foreground));
+  font-size: 13px;
 }
 
 .theia-mobile-open-repo .theia-mobile-open-repo-public-submit.theia-mobile-open-repo-public-submit {
-  min-height: 34px;
-  height: 34px;
-  padding: 0 12px;
+  flex: 0 0 auto;
+  height: 26px;
+  min-height: 26px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+@media (pointer: coarse) {
+
+  .theia-mobile-open-repo .theia-mobile-open-repo-filter.theia-mobile-open-repo-filter,
+  .theia-mobile-open-repo .theia-mobile-open-repo-public-row.theia-mobile-open-repo-public-row {
+    height: 44px;
+    min-height: 44px;
+  }
+
+  .theia-mobile-open-repo .theia-mobile-open-repo-filter-input.theia-mobile-open-repo-filter-input,
+  .theia-mobile-open-repo .theia-mobile-open-repo-public-input.theia-mobile-open-repo-public-input {
+    font-size: 16px;
+  }
+
+  .theia-mobile-open-repo .theia-mobile-open-repo-public-submit.theia-mobile-open-repo-public-submit {
+    height: 34px;
+    min-height: 34px;
+  }
+}
+
+/*
+ * "Create GitHub repository" (Theia SingleTextInputDialog, tagged `qaap-compact-input-dialog` in
+ * qaap-shared-core): the same compact language as the dialog behind it — 14px title, an inline
+ * name field on a hairline, a muted note and a small Create button. Doubled classes outrank the
+ * product theme's generic dialog, input and primary-button rules.
+ */
+.qaap-compact-input-dialog.qaap-compact-input-dialog .dialogBlock {
+  width: min(380px, calc(100vw - 32px));
+  min-width: 0;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+  border-radius: 12px;
+  background: var(--theia-editor-background);
+  box-shadow: 0 12px 40px color-mix(in srgb, var(--theia-widget-shadow, black) 60%, transparent);
+}
+
+.qaap-compact-input-dialog.qaap-compact-input-dialog .dialogTitle {
+  min-height: 0;
+  padding: 14px 12px 2px 16px;
+  border: none;
+  background: transparent;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.qaap-compact-input-dialog.qaap-compact-input-dialog .dialogTitle .closeButton {
+  width: 28px;
+  height: 28px;
   border-radius: 6px;
+  color: var(--theia-descriptionForeground);
+  font-size: 14px;
+}
+
+.qaap-compact-input-dialog.qaap-compact-input-dialog .dialogContent {
+  gap: 0;
+  padding: 8px 16px 0;
+}
+
+.qaap-compact-input-dialog.qaap-compact-input-dialog .dialogContent input.theia-input {
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  border: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+  font-size: 13px;
+  transition: border-color var(--qaap-duration-fast, 120ms) ease;
+}
+
+.qaap-compact-input-dialog.qaap-compact-input-dialog .dialogContent input.theia-input:focus {
+  border-bottom-color: color-mix(in srgb, var(--theia-foreground) 28%, transparent);
+}
+
+.qaap-compact-input-dialog-hint {
+  margin: 8px 0 0;
+  color: var(--theia-descriptionForeground);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.qaap-compact-input-dialog.qaap-compact-input-dialog .dialogContent .error {
+  min-height: 0;
+  font-size: 12px;
+}
+
+.qaap-compact-input-dialog.qaap-compact-input-dialog .dialogControl {
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 16px 14px;
+  border: none;
+  background: transparent;
+}
+
+.qaap-compact-input-dialog.qaap-compact-input-dialog .dialogControl .theia-button.main {
+  min-width: 0;
+  height: 30px;
+  min-height: 30px;
+  margin: 0;
+  padding: 0 14px;
+  border: none;
+  border-radius: 6px;
+  background: var(--theia-foreground);
+  color: var(--theia-editor-background);
   font-size: 12.5px;
   font-weight: 500;
 }
 
 @media (pointer: coarse) {
 
-  .theia-mobile-open-repo .theia-mobile-open-repo-public-input.theia-mobile-open-repo-public-input,
-  .theia-mobile-open-repo .theia-mobile-open-repo-public-submit.theia-mobile-open-repo-public-submit {
-    min-height: 44px;
+  .qaap-compact-input-dialog.qaap-compact-input-dialog .dialogContent input.theia-input {
     height: 44px;
+    min-height: 44px;
+    font-size: 16px;
   }
 
-  .theia-mobile-open-repo .theia-mobile-open-repo-public-input.theia-mobile-open-repo-public-input {
-    font-size: 16px;
+  .qaap-compact-input-dialog.qaap-compact-input-dialog .dialogControl .theia-button.main {
+    height: 44px;
+    min-height: 44px;
   }
 }
