@@ -321,7 +321,7 @@ body.qaap-theme-hc-dark {
   --qaap-hc-editor-select: #3A3A3A;
   --qaap-hc-button: #494949;
   --qaap-hc-button-ink: #F4F1E8;
-  --qaap-hc-widget: #111111;
+  --qaap-hc-widget: #000000;
 }
 
 body.qaap-theme-hc-light {
