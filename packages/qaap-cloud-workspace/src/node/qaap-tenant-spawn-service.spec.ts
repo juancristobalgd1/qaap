@@ -804,15 +804,23 @@ describe('QaapTenantSpawnService.wrapGitForTenant (mutating git over a tenant re
     });
 
     it('command-line trust clears dubious ownership when the system config is ignored', () => {
-        const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-dubious-'));
-        const env = { ...process.env, GIT_TEST_ASSUME_DIFFERENT_OWNER: '1', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: os.devNull };
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-dubious-'));
+        const repo = path.join(root, 'repo');
+        fs.mkdirSync(repo);
+        // An empty file instead of os.devNull: git for Windows does not reliably treat `NUL` as an empty config.
+        const globalConfig = path.join(root, 'empty.gitconfig');
+        fs.writeFileSync(globalConfig, '');
+        const env = { ...process.env, GIT_TEST_ASSUME_DIFFERENT_OWNER: '1', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: globalConfig };
         const git = (...args: string[]): ReturnType<typeof spawnSync> => spawnSync('git', args, { cwd: repo, env, encoding: 'utf8' });
         try {
-            expect(spawnSync('git', ['init', '-q'], { cwd: repo }).status).to.equal(0);
-            expect(git('status', '--porcelain').status, 'git must refuse without the trust').to.not.equal(0);
-            expect(git('-c', 'safe.directory=*', 'status', '--porcelain').status).to.equal(0);
+            const init = spawnSync('git', ['init', '-q'], { cwd: repo, encoding: 'utf8' });
+            expect(init.status, String(init.stderr)).to.equal(0);
+            const refused = git('status', '--porcelain');
+            expect(refused.status, 'git must refuse without the trust').to.not.equal(0);
+            const trusted = git('-c', 'safe.directory=*', 'status', '--porcelain');
+            expect(trusted.status, String(trusted.stderr)).to.equal(0);
         } finally {
-            fs.rmSync(repo, { recursive: true, force: true });
+            fs.rmSync(root, { recursive: true, force: true });
         }
     });
 

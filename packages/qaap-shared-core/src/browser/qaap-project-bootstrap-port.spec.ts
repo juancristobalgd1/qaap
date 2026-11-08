@@ -209,6 +209,8 @@ describe('qaap-project-bootstrap-port', () => {
         if (process.platform === 'win32') {
             this.skip();
         }
+        // Twelve sequential `sh` + node spawns: about 2 s on a loaded macOS runner, above mocha's 2 s default.
+        this.timeout(15000);
         const directory = mkdtempSync(join(tmpdir(), 'qaap-preview-port-'));
         // Each fake CLI prints the argv it received after the preload ran; `kind` only picks how
         // wrapDevCommandForPort prefixes the command, the preload itself keys on the binary name.
