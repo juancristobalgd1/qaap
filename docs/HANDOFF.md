@@ -2,6 +2,61 @@
 
 Estado para continuar el trabajo desde otra cuenta o sesión. Actualízalo al cerrar cada tarea: qué queda pendiente, cómo se validó y qué limitaciones conviene conocer. La política de modelos está en la sección «Selección de modelos y orquestación» de `CLAUDE.md`.
 
+## 2026-11-08 — Decisión: tenants siguen en runc; gVisor queda dormido
+
+**Decisión del usuario:** no se usa gVisor para los backends de Theia. El arranque en frío es ~8 veces más lento (76 s frente a 9 s cargando módulos) y `npm`, `git` y `tsc` son 3–5 veces más lentos todo el rato. El código queda con `runc` por defecto (sin coste) para usos futuros: código de terceros en sandboxes cortos sin Theia. No borrar nada.
+
+**Auditoría de endurecimiento con runc** (VPS, 8 nov, en vivo): Docker rootless 29.8.1, seccomp `profile=builtin`. Backend, relay, Squid y sandboxes llevan `no-new-privileges`, `cap-drop ALL` y rootfs de solo lectura. El backend conserva solo `SETUID`/`SETGID`, que necesita para bajar al uid 1001 del agente. Probé las syscalls dentro de un backend de staging, como root y como uid 1001. Devuelven EPERM o ENOSYS: `unshare` (user y mount ns), `clone3`, `io_uring_setup`, `keyctl`, `add_key`, `bpf`, `userfaultfd`, `perf_event_open`, `mount`, `setns`, `open_by_handle_at`, `fsopen`, `kexec_load` e `init_module`. Siguen permitidas `ptrace` y `process_vm_readv`, dentro del propio contenedor; `ptrace_scope=1` impide atacar procesos de otro uid. Host: `kernel.io_uring_disabled=2`, `unprivileged_bpf_disabled=2`, `apparmor_restrict_unprivileged_userns=1`. Kernel 6.8.0-149: el más reciente instalado, reiniciado el 7 nov. AppArmor no se aplica (limitación de rootless).
+
+**Hueco corregido:** el orquestador no exigía seccomp. Ahora rechaza un daemon alojado que no informe seccomp o que lo tenga `unconfined` (`dockerDaemonSeccompProblem`), con 3 specs nuevos (3507 en total).
+
+**Pendiente (host, lo hace el usuario):** Livepatch no está instalado y `unattended-upgrades` no reinicia solo. Un kernel nuevo exige un reinicio manual o activar Livepatch (Ubuntu Pro). Hay que quitar las variables de gVisor de `/opt/qaap-staging/staging.env`.
+
+## 2026-11-07 — gVisor (systrap) para tenants: sonda sobre el daemon rootless
+
+**Hecho** (rama `claude/gvisor-systrap-implementation-73cb80`): `scripts/qaap-runsc-rootless-probe.sh` comprueba si runsc funciona sobre rootless con el contrato real de los tenants. Usa un daemon desechable y no toca producción. Si funciona, sobran el daemon rootful y el proxy de `origin/claude/tenant-runsc-theia-homes`, cuya revisión fue NO APTO.
+
+**Validación** (Docker Desktop arm64, `docker:29-dind-rootless`, sin cgroups delegados; no equivale al VPS)
+- Pasan: arranque con systrap (solo con `--ignore-cgroups` en este entorno), bind y uid mapping, setpriv a 1001, git, SQLite WAL, inotify, exec y TTY, restart, relay runc→runsc y aislamiento de la red interna. La limpieza no deja restos.
+- Fallan: DNS desde runsc en bridge de usuario (gVisor #7469), también con las dos redes conectadas antes del start, y memoria (1024 MiB bajo un límite de 256 MiB, esperable sin cgroups). Aviso: pids sin aplicar (204 bajo un límite de 64).
+- Sin probar: `--reproduce-nat`, añadido como arreglo del DNS después de esa ejecución. Existe en `runsc/config/flags.go`; la reejecución local quedó bloqueada por permisos.
+
+**Resultado en el VPS** (7 nov, kernel 6.8.0-149, Docker 29.8.1, driver systemd): `NOT VIABLE` tal como está, limpieza correcta.
+- Cgroups: runsc solo arranca con `--ignore-cgroups`, que elimina los límites (1024 MiB bajo un límite de 256). Con el driver systemd usa el bus del sistema y polkit lo rechaza: gVisor #11543, con arreglo propuesto en #13853 sin fusionar.
+- DNS: falla desde runsc en bridge de usuario también con `--reproduce-nat` (gVisor #7469, abierto). Los tenants usan el alias `qaap-tenant-egress-proxy` para llegar a Squid.
+- Pasa el resto del contrato. Coste de una sola medición: 2000 ficheros en bind 1,66 → 6,21 s; arranque de node 1,00 → 1,98 s.
+
+**Fork de gVisor** (decisión del usuario, 7 nov): `juancristobalgd1/gvisor`, rama `qaap-release-20261102.0-rootless` (05ea21fd2; sin `/` porque `build.yml` filtra con `branches: "*"`, que no la admite) = release `20261102.0` + los dos commits de google/gvisor#13853 + un commit vacío que dispara el CI. El segundo se portó a mano sobre el refactor `resourceProps`. El CI propio de gVisor (`build.yml`) debe compilar `//:release` al hacer push; GitHub exige habilitar Actions en la web del fork.
+- Validado: el parche compila sobre la rama `go` (commit de la release +17, no la release exacta) y pasan sus tests de `runsc/cgroup`. `TestCreateController` falla igual sin el parche (corre como root en Docker). No probado aún con Docker real ni en x86_64.
+- Corrección: el ✅ de «la red interna no tiene egress» de la ejecución anterior no probaba nada, porque usaba DNS roto. La sonda ya comprueba por IP.
+
+**Sonda con el binario del fork en el VPS** (run 42374045629, x86-64, Docker 29.8.1): `VIABLE` con 2 avisos, flags `--platform=systrap --systemd-cgroup`, limpieza correcta.
+- Pasan: límite de memoria (la asignación se detuvo en 448 MiB con `--memory 256m`; no se confirmó el exit 137 y es coherente con los 256 MiB de swap que Docker añade por defecto), setpriv, bind, git, SQLite WAL, inotify, relay runc→runsc, `--add-host`, aislamiento por IP, dos redes, exec, TTY, restart.
+- Avisos: DNS embebido sigue roto (#7469). Prueba de pids sin resultado (sin salida con `--pids-limit 64`): no sabemos si se limitó o si murió el sandbox.
+- Coste, una medición: 2000 ficheros en bind 1,91 → 7,92 s (×4,1); arranque de node 0,95 → 1,93 s (×2).
+
+**Implementado sin commitear ni desplegar** (7 nov): `qaap-tenant-runtime.ts` con `QAAP_TENANT_RUNTIME` y `QAAP_TENANT_RUNSC_LOGINS`; orquestador y broker con runtime por tenant y `ExtraHosts` con la IP actual de Squid; `deploy/rootless/gvisor/qaap-gvisor-install.sh` (`install|check|remove`) y su test. Release publicada: `qaap-20261102.0-1` en el fork, asset `gvisor-fork.tar.zstd`, SHA-512 fijado en el instalador. Verificado: 218 specs, 14 tests del instalador con dobles, sin daemon real.
+
+**Mediciones en el VPS, primera ronda** (filas limpias runc/runsc; el resto se solapó en parte con una segunda ejecución): `npm install` ×3, `tsc` ×4,2, `git` ×3. `--dcache` y `--file-access-mounts=exclusive` no ayudan; `--directfs=false` empeora. Recarga con HUP: daemon vivo, runtime nuevo operativo, contenedor conservado. Limpieza al interrumpir: comprobada.
+- Pids: 31 tareas en reposo y unas 2,4 tareas del host por proceso del invitado. Con límite 256: 100 procesos llegan a 246; 200 matan el sandbox entero (exit 2), sin `EAGAIN`. Fork bomb: muere en menos de 10 s, host intacto. **El límite actual no sirve bajo runsc.**
+
+**Segunda ronda** (`tune2`): más CPU no ayuda (`npm` 80 s con 2 CPUs, 74 s con 8; runc 25 s), `RLIMIT_NPROC` no se aplica, 1024 de pids aguantan 400 procesos y a 500 muere el sandbox. Aplicado `QAAP_RUNSC_PIDS_FACTOR = 4`.
+
+**Revisión de seguridad independiente** (`deep-reasoner`, solo lectura, sin nada en vivo): canario en un login sí con condiciones; todos los tenants no. Corregido: A1 (plazo de 30 min y `reconcileTenantRuntimes` en el reaper), M2 (README con `--noproxy`), M4 (`check` lee el cgroup de un sandbox real), M5 (flags exactos, ruta del binario, nueva lectura cada 60 s), M6/M7/B5/B6 (instalador), M8 (`forCreate`), M9 (límites de Squid, recrea Squid de todos los tenants en el siguiente despliegue), M11 (`qaap-gvisor-upstream-watch.yml`), B2, B3. Sin corregir: B1 (IP de Squid, falla cerrado), B4 (no afecta a logins de GitHub).
+
+**Sonda de seguridad y contrato final en el VPS** (flags definitivos, ajustes de red de producción, `VERDICT: VIABLE`): sentry con uid sin privilegios y 0 capacidades; gofer sigue con uid 1000, capacidades y seccomp. El uid del agente no lee el entorno de root, raíz de solo lectura, `/tmp` sin ejecución. Con controles positivos, ni runc ni runsc alcanzan desde la red interna el relay de otro tenant, la gateway, `10.0.2.2` ni la IP pública. Pausa, reanudación, OOM (137, 3 reinicios) sin unidades fallidas ni scopes restantes. Adoptado `--directfs=false`: `npm` igual, `tsc` +16 %, `git` +35 %, pero 2000 ficheros pequeños ×10 frente a runc. A2 resuelto con `qaap-<hash>.slice` (`TasksMax=8192`) bajo `qaap.slice` (50000); los límites de slice no se han probado aún en el VPS.
+
+**Canario en staging, primer intento** (`jcristgd`, imagen ba9ac937d): instalador correcto en el host real, producción intacta. El backend real arranca bajo runsc. Dos fallos que la sonda no vio: `setfacl` da ENOTSUP bajo gVisor, y eso impedía agentes y terminales (cambiado a grupo compartido 1001 con `setgid` y umask 002, validado en una sonda: acceso mutuo y `git` funcionan, lo privado sigue denegado); el arranque en frío llegó a 95 s a 1 CPU frente a 10,6 s en runc (plazo subido a 150 s).
+
+**Pendiente**
+- Repetir el canario con el arreglo. Medir el arranque con `QAAP_PROBE_MODE=group` y `QAAP_PROBE_BOOT_IMAGE` (la descarga falló la primera vez). Revisión de seguridad del cambio de permisos.
+- Canario en staging y luego en un login, con los pasos del README. M3 se simuló: repetirlo contra relays reales. Medir tareas reales antes de decidir activarlo para todos.
+- `--memory` deja el doble con swap, igual que en runc; decidir aparte si fijar `MemorySwap`.
+- Restos en el VPS: `/tmp/gvisor-fork.tar.zstd`, `/tmp/qaap-runsc-rootless-probe.sh`. En el fork, rama antigua `qaap/release-20261102.0-rootless` sin uso.
+- Revisión de seguridad independiente del fork y del montaje antes de producción, y medir un build real.
+- Mantener el fork al día con los parches de seguridad de gVisor; la PR sigue sin revisión de Google.
+- Restos en el VPS: `/tmp/gvisor-fork.tar.zstd`, `/tmp/qaap-runsc-rootless-probe.sh`.
+
 ## 2026-10-24 — VPS caído: backend de tenant se autoeliminaba y no se recuperaba
 
 **Diagnóstico** (prod `https://161.97.69.219.sslip.io`, build `f89ce0b32`): toda la app quedaba en spinner + "took too long to start", 502 `Tenant backend unavailable / socket hang up` en `project-sessions`, `user-settings` y `socket.io`.
