@@ -408,7 +408,7 @@ export class MobileProjectsAgentsHubInlineUi {
         return HubEmptyStateDom.createEmptyState({
             icon: 'codicon-repo',
             title: nls.localize('qaap/sessionsSidebar/noProjectsTitle', 'No projects yet'),
-            hint: nls.localize('qaap/sessionsSidebar/noProjectsHint', 'Add a GitHub repository to start delegating tasks to agents.'),
+            hint: '',
             action: {
                 label: nls.localize('qaap/mobileProjects/newRepository', 'Add repository'),
                 onClick: () => this.host.onNewClick(),

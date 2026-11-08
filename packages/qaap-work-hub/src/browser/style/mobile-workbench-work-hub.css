@@ -661,10 +661,57 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   flex-direction: column;
 }
 
-.theia-mobile-agents-hub-no-project-empty {
-  max-width: 320px;
+/* Same quiet note as the sidebar's empty state, centred: muted line + "+ Add repository" text row.
+   No entrance animation: the landing re-renders this node, which would replay it as a flicker. */
+.q-empty.theia-mobile-agents-hub-no-project-empty.theia-mobile-agents-hub-no-project-empty {
+  gap: 2px;
   margin: auto;
-  /* No entrance animation: the landing re-renders this node, which would replay it as a flicker. */
+  padding: 0;
+}
+
+.q-empty.theia-mobile-agents-hub-no-project-empty.theia-mobile-agents-hub-no-project-empty .q-empty-icon,
+.q-empty.theia-mobile-agents-hub-no-project-empty.theia-mobile-agents-hub-no-project-empty .q-empty-hint {
+  display: none;
+}
+
+.q-empty.theia-mobile-agents-hub-no-project-empty.theia-mobile-agents-hub-no-project-empty .q-empty-title {
+  color: var(--theia-descriptionForeground);
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+.q-empty.theia-mobile-agents-hub-no-project-empty.theia-mobile-agents-hub-no-project-empty .q-empty-action {
+  gap: 6px;
+  min-height: 28px;
+  margin: 2px 0 0;
+  padding: 0 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--theia-foreground);
+  font-size: 13px;
+  font-weight: 400;
+  cursor: pointer;
+  transition: background-color var(--qaap-duration-fast, 120ms) ease;
+}
+
+.q-empty.theia-mobile-agents-hub-no-project-empty.theia-mobile-agents-hub-no-project-empty .q-empty-action::before {
+  content: '+';
+  color: var(--theia-descriptionForeground);
+  font-size: 15px;
+  line-height: 1;
+}
+
+.q-empty.theia-mobile-agents-hub-no-project-empty.theia-mobile-agents-hub-no-project-empty .q-empty-action:hover,
+.q-empty.theia-mobile-agents-hub-no-project-empty.theia-mobile-agents-hub-no-project-empty .q-empty-action:focus-visible {
+  background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+}
+
+@media (pointer: coarse) {
+  .theia-mobile-agents-hub-no-project-empty.theia-mobile-agents-hub-no-project-empty .q-empty-action {
+    min-height: 44px;
+  }
 }
 
 /* The open sessions sidebar already shows the same "No projects yet" call to action. */
@@ -924,6 +971,11 @@ body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-agents-hub-no-project-
 .theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing.theia-mod-has-no-project-empty.theia-mod-has-no-project-empty .theia-mobile-projects-header-main> :not(.theia-mobile-projects-title-block),
 .theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing.theia-mod-has-no-project-empty.theia-mod-has-no-project-empty .theia-mobile-projects-title-block> :not(.theia-mobile-projects-title-row),
 .theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing.theia-mod-has-no-project-empty.theia-mod-has-no-project-empty .theia-mobile-projects-title-row> :not(.theia-mobile-projects-sessions-menu):not(.theia-mod-sr-only) {
+  display: none !important;
+}
+
+/* With the sidebar already open, its toggle in the empty header has nothing left to do. */
+body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing.theia-mod-has-no-project-empty.theia-mod-has-no-project-empty .theia-mobile-projects-sessions-menu {
   display: none !important;
 }
 
