@@ -312,7 +312,7 @@ body.qaap-theme-dark {
 ||----------------------------------------------------------------------------*/
 
 body.qaap-theme-hc-dark {
-  --qaap-hc-line: #494949;
+  --qaap-hc-line: #262626;
   --qaap-hc-strong: #7A7A7A;
   --qaap-hc-soft: #2A2A2A;
   --qaap-hc-ink: #F4F1E8;
@@ -325,7 +325,7 @@ body.qaap-theme-hc-dark {
 }
 
 body.qaap-theme-hc-light {
-  --qaap-hc-line: #8A8A8A;
+  --qaap-hc-line: #DCDCDC;
   --qaap-hc-strong: #494949;
   --qaap-hc-soft: #E2E2E2;
   --qaap-hc-ink: #111111;
