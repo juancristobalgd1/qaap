@@ -256,7 +256,7 @@
 .theia-qaap-usage-svg {
   display: block;
   width: 100%;
-  height: 240px;
+  height: auto;
   overflow: visible;
 }
 

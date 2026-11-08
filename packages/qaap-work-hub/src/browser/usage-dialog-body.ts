@@ -382,7 +382,6 @@ export class UsageDialogBody {
         return this.svgElement('svg', {
             class: 'theia-qaap-usage-svg',
             viewBox: `0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`,
-            preserveAspectRatio: 'none',
             role: 'img'
         });
     }
