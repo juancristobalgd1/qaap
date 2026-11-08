@@ -196,7 +196,7 @@ export class MobileProjectsStickyComposerColumnUi {
             if (effortLevel) {
                 const effort = document.createElement('span');
                 effort.className = 'theia-mobile-projects-sticky-composer-agent-effort';
-                effort.textContent = `(${QaapAgentEffort.label(effortLevel)})`;
+                effort.textContent = QaapAgentEffort.label(effortLevel);
                 const chevron = agentBtn.querySelector('.codicon-chevron-down');
                 if (chevron) {
                     chevron.before(effort);

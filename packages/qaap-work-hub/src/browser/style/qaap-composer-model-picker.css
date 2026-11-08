@@ -570,3 +570,10 @@
 .qaap-model-picker-menu-check {
     margin-left: auto;
 }
+
+/* Effort sits after the model name, plain and quiet: «Sonnet 4.6 Legado  High». */
+.theia-mobile-projects-sticky-composer-agent .theia-mobile-projects-sticky-composer-agent-effort {
+    margin-left: 6px;
+    color: var(--theia-descriptionForeground);
+    white-space: nowrap;
+}
