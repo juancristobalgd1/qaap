@@ -4,17 +4,26 @@
 // *****************************************************************************
 
 import { inject, injectable } from '@theia/core/shared/inversify';
+import * as childProcess from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { promisify } from 'util';
 import type {
     QaapUsageLimitWindow,
     QaapUsageLimits,
     QaapUsageProviderLimits,
 } from '@theia/qaap-shared-core/lib/common/qaap-usage-summary-protocol';
 import type { QaapUsageRateLimitWindowReading } from './qaap-usage-record';
+import { isQaapHostedProductionRuntime } from '@theia/qaap-shared-core/lib/node/qaap-production-auth-readiness';
 import { QaapUsageRoots } from './qaap-usage-roots';
 import { QaapUsageScanner } from './qaap-usage-scanner';
+
+/** Keychain item that Claude Code keeps its OAuth session in on macOS. */
+export const QAAP_USAGE_CLAUDE_KEYCHAIN_SERVICE = 'Claude Code-credentials';
+const KEYCHAIN_TIMEOUT_MS = 5_000;
+const SIGN_IN_REASON = 'Sign in to Claude Code on this machine';
+const EXPIRED_REASON = 'Claude Code session expired: open Claude Code to refresh it';
 
 /** Anthropic's OAuth usage endpoint, the same one Claude Code's `/usage` view reads. */
 export const QAAP_USAGE_CLAUDE_USAGE_URL = 'https://api.anthropic.com/api/oauth/usage';
@@ -41,10 +50,39 @@ export class QaapUsageLimitsService {
     protected readonly credentialsFile = path.join(QaapUsageRoots.resolve(process.env, os.homedir()).claudeConfigDir, '.credentials.json');
     protected claudeCache: { expiresAt: number; value: QaapUsageProviderLimits } | undefined;
     protected claudeInFlight: Promise<QaapUsageProviderLimits> | undefined;
+    protected loggedResponseShape = false;
+    /** `execFile` without a shell, promisified once so that tests can replace it. */
+    protected readonly execFileAsync = promisify(childProcess.execFile) as unknown as (
+        file: string,
+        args: string[],
+        options: { timeout: number },
+    ) => Promise<{ stdout: string }>;
 
     /** Current time in epoch milliseconds; overridable in tests. */
     protected now(): number {
         return Date.now();
+    }
+
+    /** Platform of this process; overridable in tests. */
+    protected platform(): NodeJS.Platform {
+        return process.platform;
+    }
+
+    /**
+     * Runs `security` without a shell. Returns the item's secret, or `undefined` when the item is absent or the
+     * call fails. The first call may show macOS's keychain access prompt.
+     */
+    protected async readKeychainSecret(): Promise<string | undefined> {
+        try {
+            const { stdout } = await this.execFileAsync(
+                'security',
+                ['find-generic-password', '-s', QAAP_USAGE_CLAUDE_KEYCHAIN_SERVICE, '-w'],
+                { timeout: KEYCHAIN_TIMEOUT_MS },
+            );
+            return String(stdout);
+        } catch {
+            return undefined;
+        }
     }
 
     async getLimits(): Promise<QaapUsageLimits> {
@@ -107,7 +145,9 @@ export class QaapUsageLimitsService {
             if (!response.ok) {
                 return { provider: 'claude', status: 'error', reason: `Claude usage request failed (HTTP ${response.status})`, windows: [] };
             }
-            const windows = claudeWindows(await response.json() as unknown);
+            const body = await response.json() as unknown;
+            this.logResponseShapeOnce(body);
+            const windows = claudeWindows(body);
             return windows.length > 0
                 ? { provider: 'claude', status: 'ok', windows, observedAt: new Date(this.now()).toISOString() }
                 : { provider: 'claude', status: 'unavailable', reason: 'Claude usage response had no limit windows', windows: [] };
@@ -116,27 +156,62 @@ export class QaapUsageLimitsService {
         }
     }
 
-    /** The OAuth access token, or the reason it is unavailable. */
+    /**
+     * The OAuth access token, or the reason it is unavailable. The credentials file is read first; on macOS
+     * the keychain item is tried next, and only on a hosted-free runtime. The token is never stored.
+     */
     protected async readClaudeAccessToken(): Promise<string | { reason: string }> {
-        let text: string;
+        const fromFile = await this.tokenFromCredentialsText(await this.readFileOrUndefined(this.credentialsFile));
+        if (typeof fromFile === 'string' || fromFile.reason === EXPIRED_REASON) {
+            return fromFile;
+        }
+        if (this.platform() === 'darwin' && !isQaapHostedProductionRuntime()) {
+            const fromKeychain = await this.tokenFromCredentialsText(await this.readKeychainSecret());
+            if (typeof fromKeychain === 'string' || fromKeychain.reason === EXPIRED_REASON) {
+                return fromKeychain;
+            }
+        }
+        return { reason: SIGN_IN_REASON };
+    }
+
+    protected async readFileOrUndefined(file: string): Promise<string | undefined> {
         try {
-            text = await fs.promises.readFile(this.credentialsFile, 'utf8');
+            return await fs.promises.readFile(file, 'utf8');
         } catch {
-            return { reason: 'Sign in to Claude Code on this machine' };
+            return undefined;
+        }
+    }
+
+    /** Parses one credentials document. An absent document or no token counts as signed out. */
+    protected tokenFromCredentialsText(text: string | undefined): string | { reason: string } {
+        if (text === undefined) {
+            return { reason: SIGN_IN_REASON };
         }
         try {
             const oauth = (JSON.parse(text) as { claudeAiOauth?: { accessToken?: unknown; expiresAt?: unknown } }).claudeAiOauth;
             const token = oauth?.accessToken;
             if (typeof token !== 'string' || !token) {
-                return { reason: 'Sign in to Claude Code on this machine' };
+                return { reason: SIGN_IN_REASON };
             }
             if (typeof oauth?.expiresAt === 'number' && oauth.expiresAt < this.now()) {
-                return { reason: 'Claude Code sign-in has expired' };
+                return { reason: EXPIRED_REASON };
             }
             return token;
         } catch {
             return { reason: 'Claude Code credentials could not be read' };
         }
+    }
+
+    /** Logs only the top-level keys and value types of the first usage response, never the values. */
+    protected logResponseShapeOnce(body: unknown): void {
+        if (this.loggedResponseShape) {
+            return;
+        }
+        this.loggedResponseShape = true;
+        const shape = typeof body === 'object' && body !== null && !Array.isArray(body)
+            ? Object.fromEntries(Object.entries(body as Record<string, unknown>).map(([key, value]) => [key, value === null ? 'null' : typeof value]))
+            : typeof body;
+        console.debug('[qaap-usage] Claude usage response shape (keys and types only):', JSON.stringify(shape));
     }
 
     protected static appVersion(): string {
@@ -173,36 +248,44 @@ function toCodexWindow(kind: 'primary' | 'secondary', reading: QaapUsageRateLimi
     };
 }
 
-/** The `five_hour` and `seven_day` windows of the Claude usage response; other fields are ignored. */
+/**
+ * The `five_hour` and `seven_day` windows of the Claude usage response; other fields are ignored.
+ * When every utilization is a fraction (all ≤ 1, at least one above 0) the values are scaled to percent.
+ */
 function claudeWindows(body: unknown): QaapUsageLimitWindow[] {
     if (typeof body !== 'object' || body === null) {
         return [];
     }
     const record = body as Record<string, unknown>;
-    const windows: QaapUsageLimitWindow[] = [];
-    const session = claudeWindow(record.five_hour, 'session', 'Session', SESSION_WINDOW_MINUTES);
-    if (session) {
-        windows.push(session);
-    }
-    const weekly = claudeWindow(record.seven_day, 'weekly', 'Weekly', WEEKLY_WINDOW_MINUTES);
-    if (weekly) {
-        windows.push(weekly);
-    }
-    return windows;
+    const specs: { value: unknown; id: string; label: string; windowMinutes: number }[] = [
+        { value: record.five_hour, id: 'session', label: 'Session', windowMinutes: SESSION_WINDOW_MINUTES },
+        { value: record.seven_day, id: 'weekly', label: 'Weekly', windowMinutes: WEEKLY_WINDOW_MINUTES },
+    ];
+    const readings = specs.map(spec => ({ ...spec, utilization: utilizationOf(spec.value), resetsAt: resetsAtOf(spec.value) }))
+        .filter((reading): reading is typeof reading & { utilization: number } => reading.utilization !== undefined);
+    const fractional = readings.length > 0
+        && readings.every(reading => reading.utilization <= 1)
+        && readings.some(reading => reading.utilization > 0);
+    return readings.map(reading => ({
+        id: reading.id,
+        label: reading.label,
+        usedPercent: clampPercent(fractional ? reading.utilization * 100 : reading.utilization),
+        resetsAt: reading.resetsAt,
+        windowMinutes: reading.windowMinutes,
+    }));
 }
 
-function claudeWindow(value: unknown, id: string, label: string, windowMinutes: number): QaapUsageLimitWindow | undefined {
+function utilizationOf(value: unknown): number | undefined {
     if (typeof value !== 'object' || value === null) {
         return undefined;
     }
-    const window = value as { utilization?: unknown; resets_at?: unknown };
-    if (typeof window.utilization !== 'number' || !Number.isFinite(window.utilization)) {
-        return undefined;
-    }
-    const resetsAt = typeof window.resets_at === 'string' && !Number.isNaN(Date.parse(window.resets_at))
-        ? new Date(Date.parse(window.resets_at)).toISOString()
-        : undefined;
-    return { id, label, usedPercent: clampPercent(window.utilization), resetsAt, windowMinutes };
+    const utilization = (value as { utilization?: unknown }).utilization;
+    return typeof utilization === 'number' && Number.isFinite(utilization) ? utilization : undefined;
+}
+
+function resetsAtOf(value: unknown): string | undefined {
+    const resetsAt = typeof value === 'object' && value !== null ? (value as { resets_at?: unknown }).resets_at : undefined;
+    return typeof resetsAt === 'string' && !Number.isNaN(Date.parse(resetsAt)) ? new Date(Date.parse(resetsAt)).toISOString() : undefined;
 }
 
 function clampPercent(value: number): number {

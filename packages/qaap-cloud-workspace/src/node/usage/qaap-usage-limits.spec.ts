@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-// Credentials and HTTP responses are synthetic; no request leaves the test process.
+// Credentials, keychain output and HTTP responses are synthetic; no request leaves the test process.
 
 import { expect } from 'chai';
 import * as fs from 'fs';
@@ -14,33 +14,76 @@ import { QaapUsageScanner } from './qaap-usage-scanner';
 
 const FAKE_TOKEN = 'sk-ant-oat01-synthetic-token-for-tests';
 
+type Limits = Awaited<ReturnType<QaapUsageLimitsService['getLimits']>>;
+
 describe('QaapUsageLimitsService', () => {
 
     let directory: string;
     let originalFetch: typeof fetch;
+    const savedNodeEnv = process.env.NODE_ENV;
 
     beforeEach(() => {
         directory = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-usage-limits-'));
         originalFetch = globalThis.fetch;
+        delete process.env.NODE_ENV;
     });
 
     afterEach(() => {
         globalThis.fetch = originalFetch;
+        if (savedNodeEnv === undefined) {
+            delete process.env.NODE_ENV;
+        } else {
+            process.env.NODE_ENV = savedNodeEnv;
+        }
         fs.rmSync(directory, { recursive: true, force: true });
     });
 
-    function serviceWith(scanner: QaapUsageScanner, credentialsFile: string, clock: () => number = () => Date.now()): QaapUsageLimitsService {
+    /** A service on Linux by default, so the real keychain is never read unless a test asks for macOS. */
+    /**
+     * `keychain` is what the fake `security` prints; `null` makes it fail as for a missing item. Commands are
+     * recorded in `calls`.
+     */
+    function serviceWith(credentialsFile: string, options: { platform?: NodeJS.Platform; scanner?: QaapUsageScanner; keychain?: string | null; calls?: string[][] } = {}): QaapUsageLimitsService {
         const service = new QaapUsageLimitsService();
-        Object.assign(service, { scanner, credentialsFile, now: clock });
+        Object.assign(service, {
+            scanner: options.scanner ?? new QaapUsageScanner(),
+            credentialsFile,
+            now: () => Date.now(),
+            platform: () => options.platform ?? 'linux',
+        });
+        if (options.keychain !== undefined) {
+            Object.assign(service, {
+                execFileAsync: async (command: string, args: string[]) => {
+                    options.calls?.push([command, ...args]);
+                    if (options.keychain === null) {
+                        throw new Error('The specified item could not be found in the keychain.');
+                    }
+                    return { stdout: options.keychain };
+                },
+            });
+        }
         return service;
     }
 
-    function claudeOf(limits: Awaited<ReturnType<QaapUsageLimitsService['getLimits']>>): (typeof limits)['providers'][number] {
+    function claudeOf(limits: Limits): Limits['providers'][number] {
         const claude = limits.providers.find(provider => provider.provider === 'claude');
         if (!claude) {
             throw new Error('no claude entry');
         }
         return claude;
+    }
+
+    function keychainPayload(overrides: Record<string, unknown> = {}): string {
+        return JSON.stringify({ claudeAiOauth: { accessToken: FAKE_TOKEN, expiresAt: Date.now() + 3_600_000, ...overrides } });
+    }
+
+    function fakeUsageFetch(body: unknown, status = 200): { seen: { url: string; headers: Record<string, string> }[] } {
+        const seen: { url: string; headers: Record<string, string> }[] = [];
+        globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+            seen.push({ url: String(input), headers: init?.headers as Record<string, string> });
+            return new Response(JSON.stringify(body), { status });
+        }) as typeof fetch;
+        return { seen };
     }
 
     it('reads Codex windows from the newest rate-limit observation', async () => {
@@ -57,7 +100,7 @@ describe('QaapUsageLimitsService', () => {
                 secondary: { usedPercent: 140, windowMinutes: 10080 },
             },
         });
-        const limits = await serviceWith(scanner, path.join(directory, 'none.json')).getLimits();
+        const limits = await serviceWith(path.join(directory, 'none.json'), { scanner }).getLimits();
         const codex = limits.providers.find(provider => provider.provider === 'codex');
         expect(codex?.status).to.equal('ok');
         expect(codex?.observedAt).to.equal('2026-01-02T00:00:00.000Z');
@@ -73,27 +116,27 @@ describe('QaapUsageLimitsService', () => {
         expect(codexWindowLabel(43200)).to.equal('Monthly');
     });
 
-    it('reports Claude as unavailable when no credentials file exists', async () => {
+    it('lists only Claude and Codex, without an Antigravity card', async () => {
+        const limits = await serviceWith(path.join(directory, 'missing.json')).getLimits();
+        expect(limits.providers.map(provider => provider.provider)).to.deep.equal(['claude', 'codex']);
+    });
+
+    it('reports Claude as unavailable when neither the file nor the keychain has a session', async () => {
         let called = false;
         globalThis.fetch = (async () => { called = true; return new Response('{}'); }) as typeof fetch;
-        const limits = await serviceWith(new QaapUsageScanner(), path.join(directory, 'missing.json')).getLimits();
-        expect(claudeOf(limits)).to.deep.equal({ provider: 'claude', status: 'unavailable', reason: 'Sign in to Claude Code on this machine', windows: [] });
+        const claude = claudeOf(await serviceWith(path.join(directory, 'missing.json')).getLimits());
+        expect(claude).to.deep.equal({ provider: 'claude', status: 'unavailable', reason: 'Sign in to Claude Code on this machine', windows: [] });
         expect(called).to.be.false;
-        expect(limits.providers.map(provider => provider.provider)).to.deep.equal(['claude', 'codex']);
     });
 
     it('maps the Claude usage response and caches it without leaking the token', async () => {
         const credentials = path.join(directory, '.credentials.json');
-        fs.writeFileSync(credentials, JSON.stringify({ claudeAiOauth: { accessToken: FAKE_TOKEN, expiresAt: Date.now() + 3_600_000 } }));
-        const seen: { url: string; headers: Record<string, string> }[] = [];
-        globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-            seen.push({ url: String(input), headers: init?.headers as Record<string, string> });
-            return new Response(JSON.stringify({
-                five_hour: { utilization: 37.5, resets_at: '2026-01-02T05:00:00Z' },
-                seven_day: { utilization: 81, resets_at: '2026-01-08T00:00:00Z' },
-            }), { status: 200 });
-        }) as typeof fetch;
-        const service = serviceWith(new QaapUsageScanner(), credentials);
+        fs.writeFileSync(credentials, keychainPayload());
+        const { seen } = fakeUsageFetch({
+            five_hour: { utilization: 37.5, resets_at: '2026-01-02T05:00:00Z' },
+            seven_day: { utilization: 81, resets_at: '2026-01-08T00:00:00Z' },
+        });
+        const service = serviceWith(credentials);
         const first = claudeOf(await service.getLimits());
         expect(first.status).to.equal('ok');
         expect(first.windows).to.deep.equal([
@@ -110,23 +153,66 @@ describe('QaapUsageLimitsService', () => {
         expect(JSON.stringify(first)).to.not.include(FAKE_TOKEN);
     });
 
+    it('scales fractional utilization to percent only when every value is a fraction', async () => {
+        const credentials = path.join(directory, '.credentials.json');
+        fs.writeFileSync(credentials, keychainPayload());
+        fakeUsageFetch({ five_hour: { utilization: 0.375 }, seven_day: { utilization: 0.81 } });
+        const fractional = claudeOf(await serviceWith(credentials).getLimits());
+        expect(fractional.windows.map(window => window.usedPercent)).to.deep.equal([37.5, 81]);
+
+        fakeUsageFetch({ five_hour: { utilization: 1 }, seven_day: { utilization: 50 } });
+        const percent = claudeOf(await serviceWith(credentials).getLimits());
+        expect(percent.windows.map(window => window.usedPercent)).to.deep.equal([1, 50]);
+    });
+
     it('reports a failed Claude request without the token', async () => {
         const credentials = path.join(directory, '.credentials.json');
         fs.writeFileSync(credentials, JSON.stringify({ claudeAiOauth: { accessToken: FAKE_TOKEN } }));
         globalThis.fetch = (async () => new Response('denied', { status: 401 })) as typeof fetch;
-        const claude = claudeOf(await serviceWith(new QaapUsageScanner(), credentials).getLimits());
+        const claude = claudeOf(await serviceWith(credentials).getLimits());
         expect(claude.status).to.equal('error');
         expect(claude.reason).to.equal('Claude usage request failed (HTTP 401)');
         expect(JSON.stringify(claude)).to.not.include(FAKE_TOKEN);
     });
 
-    it('does not call the network with an expired Claude token', async () => {
+    it('does not call the network with an expired file token', async () => {
         const credentials = path.join(directory, '.credentials.json');
         fs.writeFileSync(credentials, JSON.stringify({ claudeAiOauth: { accessToken: FAKE_TOKEN, expiresAt: 1000 } }));
         let called = false;
         globalThis.fetch = (async () => { called = true; return new Response('{}'); }) as typeof fetch;
-        const claude = claudeOf(await serviceWith(new QaapUsageScanner(), credentials).getLimits());
-        expect(claude).to.deep.include({ status: 'unavailable', reason: 'Claude Code sign-in has expired' });
+        const claude = claudeOf(await serviceWith(credentials).getLimits());
+        expect(claude).to.deep.include({ status: 'unavailable', reason: 'Claude Code session expired: open Claude Code to refresh it' });
         expect(called).to.be.false;
+    });
+
+    it('reads the macOS keychain with execFile when the file is absent', async () => {
+        const calls: string[][] = [];
+        const { seen } = fakeUsageFetch({ five_hour: { utilization: 10 } });
+        const claude = claudeOf(await serviceWith(path.join(directory, 'missing.json'), { platform: 'darwin', keychain: keychainPayload(), calls }).getLimits());
+        expect(claude.status).to.equal('ok');
+        expect(calls).to.deep.equal([['security', 'find-generic-password', '-s', 'Claude Code-credentials', '-w']]);
+        expect(seen[0].headers.Authorization).to.equal(`Bearer ${FAKE_TOKEN}`);
+    });
+
+    it('reports an expired keychain session without calling the usage endpoint', async () => {
+        let called = false;
+        globalThis.fetch = (async () => { called = true; return new Response('{}'); }) as typeof fetch;
+        const keychain = keychainPayload({ expiresAt: 1000 });
+        const claude = claudeOf(await serviceWith(path.join(directory, 'missing.json'), { platform: 'darwin', keychain }).getLimits());
+        expect(claude).to.deep.include({ status: 'unavailable', reason: 'Claude Code session expired: open Claude Code to refresh it' });
+        expect(called).to.be.false;
+    });
+
+    it('reports signed-out when the keychain item is absent', async () => {
+        const claude = claudeOf(await serviceWith(path.join(directory, 'missing.json'), { platform: 'darwin', keychain: null }).getLimits());
+        expect(claude).to.deep.include({ status: 'unavailable', reason: 'Sign in to Claude Code on this machine' });
+    });
+
+    it('never touches the keychain on a hosted runtime', async () => {
+        process.env.NODE_ENV = 'production';
+        const calls: string[][] = [];
+        const claude = claudeOf(await serviceWith(path.join(directory, 'missing.json'), { platform: 'darwin', keychain: keychainPayload(), calls }).getLimits());
+        expect(calls).to.have.length(0);
+        expect(claude).to.deep.include({ status: 'unavailable', reason: 'Sign in to Claude Code on this machine' });
     });
 });
