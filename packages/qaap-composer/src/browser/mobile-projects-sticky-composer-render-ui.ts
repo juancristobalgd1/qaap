@@ -67,6 +67,7 @@ import {
     removeMcpServer,
 } from '../common/qaap-mcp-plugin-install';
 import { readProjectComposerDraft, writeProjectComposerDraft } from '../common/qaap-project-composer-draft';
+import { resolveComposerEffortLevel } from '../common/qaap-composer-effort';
 import {
     QAAP_COMPOSER_SUBMIT_MODE_ID,
     resolveComposerUntilDoneForSubmit,
@@ -515,6 +516,7 @@ export class MobileProjectsStickyComposerRenderUi {
                         : readStoredAgentModel(cwd, selectedAgentId),
                     agentModelAgentId: selectedAgentId,
                     openModelPicker: () => { this.host.stickyComposerSheetsUi.openStickyComposerAgentSheet(project); },
+                    effort: resolveComposerEffortLevel(cwd, selectedAgentId, readStoredAgentModel(cwd, selectedAgentId)?.modelId),
                     untilDone: showApprovalPolicy && !isChatSurface && resolveComposerUntilDoneForSubmit(
                         this.host.stickyComposerApprovalPolicyId,
                     ),

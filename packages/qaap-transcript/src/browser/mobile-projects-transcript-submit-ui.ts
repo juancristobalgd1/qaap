@@ -1,3 +1,4 @@
+import type { QaapAgentEffortLevel } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
 // *****************************************************************************
 // Copyright (C) 2026 Theia contributors and Qaap product fork.
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
@@ -86,6 +87,8 @@ export interface MobileProjectsTranscriptSubmitHost {
             latencyMarks?: import('@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client').QaapPostConversationMessageOptions['latencyMarks'];
             /** Create without a message, then start an "Until done" goal loop with the draft. */
             untilDone?: boolean;
+            /** Reasoning effort the composer picked; the backend drops it when the harness or model does not take it. */
+            effort?: QaapAgentEffortLevel;
         },
     ): Promise<import('./qaap-transcript-host-contracts').QaapProjectChatSessionCreated>;
     resolveActiveTranscriptChatHost(): HTMLElement | undefined;
@@ -247,6 +250,8 @@ export class MobileProjectsTranscriptSubmitUi {
             queueOnly?: boolean;
             /** Start an "Until done" goal loop (draft = goal + first prompt) instead of one turn. */
             untilDone?: boolean;
+            /** Reasoning effort the composer picked; the backend drops it when the harness or model does not take it. */
+            effort?: QaapAgentEffortLevel;
         } = {},
     ): Promise<boolean> {
         // Reports whether the message was actually submitted. A concurrent send that lands while
@@ -318,6 +323,8 @@ export class MobileProjectsTranscriptSubmitUi {
             /** Mirror of a follow-up queued on the client: never starts a turn on a stopped conversation. */
             queueOnly?: boolean;
             untilDone?: boolean;
+            /** Reasoning effort the composer picked; the backend drops it when the harness or model does not take it. */
+            effort?: QaapAgentEffortLevel;
         } = {},
         submitAt = Date.now(),
     ): Promise<void> {
@@ -352,6 +359,7 @@ export class MobileProjectsTranscriptSubmitUi {
                 agentModel: options.agentModel ?? this.resolveTranscriptSubmitAgentModel(pendingAgent, summary),
                 latencyMarks: this.host.conversations?.getSubmitLatencyMarks(summary.id),
                 ...(options.untilDone ? { untilDone: true } : {}),
+                ...(options.effort ? { effort: options.effort } : {}),
             });
             this.host.conversations?.recordSubmitLatencyMark(created.id, 'ui_submit_clicked', submitAt);
             if (optimisticAt !== undefined) {

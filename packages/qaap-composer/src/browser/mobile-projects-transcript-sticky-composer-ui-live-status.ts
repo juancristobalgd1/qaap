@@ -1,4 +1,5 @@
 import { QAAP_COMPOSER_SUBMIT_MODE_ID, resolveComposerUntilDoneForSubmit } from '../common/qaap-composer-until-done';
+import { resolveComposerEffortLevel } from '../common/qaap-composer-effort';
 import type { MobileProjectsTranscriptStickyComposerUiContext } from './mobile-projects-transcript-sticky-composer-ui-context';
 // Extracted from mobile-projects-transcript-sticky-composer-ui.ts
 
@@ -245,6 +246,7 @@ export async function submitTranscriptComposerDraftExtracted(ctx: MobileProjects
                 openModelPicker,
                 imagePreviews,
                 untilDone,
+                effort: resolveComposerEffortLevel(chipCwd ?? summary.cwd, selectedAgentId, newTaskAgentModel?.modelId),
             });
             // Background submission reports preflight/create failures as `undefined` after
             // surfacing the actionable error (for example when QAIQ is missing). Keep the
@@ -302,6 +304,7 @@ export async function submitTranscriptComposerDraftExtracted(ctx: MobileProjects
                 agentModel: ctx.host.transcriptComposerAgentModel,
                 imagePreviews,
                 untilDone,
+                effort: resolveComposerEffortLevel(summary.cwd, selectedAgentId, ctx.host.transcriptComposerAgentModel?.modelId),
             });
             if (!submitted) {
                 restoreComposerSubmission();

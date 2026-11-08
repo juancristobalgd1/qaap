@@ -1,3 +1,6 @@
+import type { QaapQaiqModelOption } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { renderStickyComposerModelPicker } from './mobile-projects-sticky-composer-model-picker-ui';
+import { matchesMobileNarrowViewport } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import type { MobileProjectsStickyComposerSheetsUiContext } from './mobile-projects-sticky-composer-sheets-ui-context';
 // Extracted from mobile-projects-sticky-composer-sheets-ui.ts
 
@@ -232,6 +235,28 @@ export function openStickyComposerAgentSheetExtracted(ctx: MobileProjectsStickyC
             ctx.assignAgentPickerPopover(anchor, chrome.popoverCleanup);
             scheduleStickyComposerPopoverPosition(chrome.sheet, anchor, ctx.agentPopoverAlign);
         }
+        const selectAgent = (agentId: string, model?: QaapQaiqModelOption): void => {
+        ctx.host.stickyComposerPinnedAgentId = agentId;
+        void (async (): Promise<void> => {
+            if (cwd) {
+                writeStoredAgent(cwd, agentId);
+                if (model) {
+                    writeStoredAgentModel(cwd, agentId, model);
+                }
+            }
+            const modes = resolveStickyComposerModes(agentId, ctx.host.chatAgentService);
+            ctx.host.stickyComposerModeId = reconcileComposerModeId(undefined, modes, cwd);
+            if (cwd && ctx.host.stickyComposerModeId) {
+                writeStoredComposerMode(cwd, ctx.host.stickyComposerModeId);
+            }
+            // Close before any model probe: a row tap must not leave the sheet open while the catalog loads.
+            ctx.closeAllComposerSheets();
+            if (cwd && !model) {
+                await ctx.host.stickyComposerAgentsUi.ensureStickyComposerAgentModel(agentId, cwd);
+            }
+            ctx.host.stickyComposerRenderUi.renderStickyComposer();
+        })();
+        };
         const loadAgentCatalog = (): void => {
             ctx.syncAgentPickerPopoverPosition(chrome.sheet);
             ctx.host.stickyComposerAgentsUi.loadComposerAgentPickerCatalog(chrome, {
@@ -239,47 +264,13 @@ export function openStickyComposerAgentSheetExtracted(ctx: MobileProjectsStickyC
                 load: () => ctx.host.stickyComposerAgentsUi.ensureStickyComposerAgentsLoaded(project, { force: true }),
                 isCurrent: () => ctx.host.stickyComposerAgentSheet === chrome.sheet,
                 onError: () => ctx.host.stickyComposerAgentsUi.showComposerAgentPickerError(chrome, loadAgentCatalog),
-                render: agents => void ctx.renderComposerAgentPicker(chrome, {
-                view: 'agents',
-                cwd,
-                agents,
-                selectedAgentId: ctx.host.stickyComposerPinnedAgentId,
-                includeCoder: true,
-                project,
-                onSelectAgent: (agentId, model) => {
-                    ctx.host.stickyComposerPinnedAgentId = agentId;
-                    void (async (): Promise<void> => {
-                        if (cwd) {
-                            writeStoredAgent(cwd, agentId);
-                            if (model) {
-                                writeStoredAgentModel(cwd, agentId, model);
-                            }
-                        }
-                        const modes = resolveStickyComposerModes(agentId, ctx.host.chatAgentService);
-                        ctx.host.stickyComposerModeId = reconcileComposerModeId(undefined, modes, cwd);
-                        if (cwd && ctx.host.stickyComposerModeId) {
-                            writeStoredComposerMode(cwd, ctx.host.stickyComposerModeId);
-                        }
-                        // Close before any model probe: a row tap must not leave the sheet open while the catalog loads.
-                        ctx.closeAllComposerSheets();
-                        if (cwd && !model) {
-                            await ctx.host.stickyComposerAgentsUi.ensureStickyComposerAgentModel(agentId, cwd);
-                        }
-                        ctx.host.stickyComposerRenderUi.renderStickyComposer();
-                    })();
-                },
-                onProactiveLogin: ctx.host.openAgentSignInTerminal
-                    ? (agentId, pickerProject) => {
-                        ctx.closeAllComposerSheets();
-                        void ctx.host.openAgentSignInTerminal?.(agentId, pickerProject);
-                    }
-                    : undefined,
-                onOpenAiFeaturesSettings: ctx.host.openPreferencesSheet
-                    ? () => {
-                        ctx.closeAllComposerSheets();
-                        void ctx.host.openPreferencesSheet?.(QAAP_AI_FEATURES_SETTINGS_QUERY);
-                    }
-                    : undefined,
+                render: agents => void renderStickyComposerModelPicker(ctx, chrome, {
+                    cwd,
+                    agents,
+                    selectedAgentId: ctx.host.stickyComposerPinnedAgentId,
+                    project,
+                    isMobile: matchesMobileNarrowViewport(),
+                    onSelectAgent: selectAgent,
                 }),
             });
         };

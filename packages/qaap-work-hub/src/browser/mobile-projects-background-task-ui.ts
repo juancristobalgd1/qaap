@@ -1,3 +1,4 @@
+import type { QaapAgentEffortLevel } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
 // *****************************************************************************
 // Copyright (C) 2026 Theia contributors and Qaap product fork.
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
@@ -238,6 +239,8 @@ export class MobileProjectsBackgroundTaskUi {
             imagePreviews?: readonly QaapTranscriptUserImagePreview[];
             /** Create without a message, then start an "Until done" goal loop with the draft. */
             untilDone?: boolean;
+            /** Reasoning effort the composer picked; the backend drops it when the harness or model does not take it. */
+            effort?: QaapAgentEffortLevel;
         } = {},
     ): Promise<QaapAgentConversationSummaryDTO | undefined> {
         if (this.backgroundSubmitInFlightByProjectId.has(project.id)) {
@@ -361,6 +364,8 @@ export class MobileProjectsBackgroundTaskUi {
             imagePreviews?: readonly QaapTranscriptUserImagePreview[];
             /** Create without a message, then start an "Until done" goal loop with the draft. */
             untilDone?: boolean;
+            /** Reasoning effort the composer picked; the backend drops it when the harness or model does not take it. */
+            effort?: QaapAgentEffortLevel;
             /** Repository cwd submitBackgroundAgentTask already prepared (and routed with) for this submit. */
             preparedCwd?: string;
         } = {},
@@ -538,6 +543,8 @@ export class MobileProjectsBackgroundTaskUi {
             agentModel?: QaapCreateAgentTaskQaiqModel;
             latencyMarks?: import('@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client').QaapPostConversationMessageOptions['latencyMarks'];
             untilDone?: boolean;
+            /** Reasoning effort the composer picked; the backend drops it when the harness or model does not take it. */
+            effort?: QaapAgentEffortLevel;
         },
     ): Promise<QaapProjectChatSessionCreated> {
         const agent = options.resolvedAgentId ?? await this.boundedSubmitStage(
@@ -577,6 +584,7 @@ export class MobileProjectsBackgroundTaskUi {
             // "Until done": the goal loop posts the first turn itself (start requires an idle thread).
             ...(options.untilDone ? {} : { message: outbound }),
             interactionModeId: options.modeId,
+            effort: options.effort,
             approvalPolicyId,
             toolApprovalRules,
             latencyMarks: options.latencyMarks,
