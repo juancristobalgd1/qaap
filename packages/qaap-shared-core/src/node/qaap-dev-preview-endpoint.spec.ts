@@ -550,6 +550,16 @@ describe('QaapDevPreviewEndpoint', () => {
                 return Promise.resolve(this.listeningPorts.size > 0 ? this.listeningPorts.has(port) : this.listening);
             }
 
+            /** Ports whose server accepts connections but is still compiling (`busy`). */
+            readonly compilingPorts = new Set<number>();
+
+            override async probeLocalDevServerState(port: number): Promise<'ready' | 'busy' | 'down'> {
+                if (await this.probeLocalDevServer(port)) {
+                    return 'ready';
+                }
+                return this.compilingPorts.has(port) ? 'busy' : 'down';
+            }
+
             /** Ports held by a non-HTTP listener; `realBindProbe` exercises the production bind test. */
             readonly boundPorts = new Set<number>();
             realBindProbe = false;
@@ -947,6 +957,75 @@ describe('QaapDevPreviewEndpoint', () => {
             expect(secondRes.record.body).to.deep.equal(firstRes.record.body);
             expect(registry.records()).to.have.length(1);
             expect(registry.records()[0].projectId).to.equal(canonicalProjectId);
+        });
+
+        describe('re-claim while the dev server is still compiling', () => {
+            const compileIdentity = (processId: string): Record<string, string> => ({
+                workspaceId: 'file:///workspace/alice/project-c',
+                projectId: 'file:///workspace/alice/project-c',
+                processId,
+                conversationId: 'conversation-c',
+            });
+            const compileRoot = 'file:///workspace/alice/project-c';
+            /** Records terminations on this instance only; the real method (which signals) is not run. */
+            const spyTerminate = (ep: ClaimTestEndpoint): number[] => {
+                const terminated: number[] = [];
+                ep.terminatePreviewProcess = (record: { readonly port?: number }): void => {
+                    if (record.port !== undefined) {
+                        terminated.push(record.port);
+                    }
+                };
+                return terminated;
+            };
+
+            it('reattaches the same identity whose server is busy and does not terminate it', async () => {
+                const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+                const registry = new Registry();
+                const ep = new ClaimTestEndpoint();
+                ep.setClaimFakes('alice', registry);
+                const terminated = spyTerminate(ep);
+                const first = makeRes();
+                await ep.exposeHandleClaim(claimReq(5173, compileIdentity('process-c'), compileRoot), first);
+                ep.compilingPorts.add(5173);
+                const second = makeRes();
+                await ep.exposeHandleClaim(claimReq(5173, compileIdentity('process-c'), compileRoot), second);
+
+                expect(second.record.code).to.equal(200);
+                expect((second.record.body as { previewId: string }).previewId)
+                    .to.equal((first.record.body as { previewId: string }).previewId);
+                expect(terminated).to.deep.equal([]);
+            });
+
+            it('reattaches a busy section preview instead of terminating it', async () => {
+                const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+                const registry = new Registry();
+                const ep = new ClaimTestEndpoint();
+                ep.setClaimFakes('alice', registry);
+                const terminated = spyTerminate(ep);
+                const first = makeRes();
+                await ep.exposeHandleClaim(claimReq(5173, compileIdentity('process-c'), compileRoot), first);
+                ep.compilingPorts.add(5173);
+                // Another process id in the same section: no identity match, so the section loop decides.
+                const second = makeRes();
+                await ep.exposeHandleClaim(claimReq(5999, compileIdentity('process-c2'), compileRoot), second);
+
+                expect(second.record.code).to.equal(200);
+                expect((second.record.body as { previewId: string }).previewId)
+                    .to.equal((first.record.body as { previewId: string }).previewId);
+                expect(terminated).to.not.include(5173);
+            });
+
+            it('terminates a section preview whose port is silent, as before', async () => {
+                const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+                const registry = new Registry();
+                const ep = new ClaimTestEndpoint();
+                ep.setClaimFakes('alice', registry);
+                const terminated = spyTerminate(ep);
+                await ep.exposeHandleClaim(claimReq(5173, compileIdentity('process-c'), compileRoot), makeRes());
+                await ep.exposeHandleClaim(claimReq(5999, compileIdentity('process-c2'), compileRoot), makeRes());
+
+                expect(terminated).to.include(5173);
+            });
         });
 
         it('persists a client-supplied osProcessId on a fresh process claim', async () => {
@@ -1895,6 +1974,10 @@ describe('QaapDevPreviewEndpoint', () => {
                 return Promise.resolve(this.listening);
             }
 
+            override async probeLocalDevServerState(): Promise<'ready' | 'busy' | 'down'> {
+                return await this.probeLocalDevServer() ? 'ready' : 'down';
+            }
+
             setCurrentFakes(login: string, registry: unknown): void {
                 const mutable = this as unknown as { auth: unknown; portRegistry: unknown };
                 mutable.auth = {
@@ -2136,6 +2219,10 @@ describe('QaapDevPreviewEndpoint identity probe state', () => {
 
         override probeLocalDevServer(): Promise<boolean> {
             return Promise.resolve(this.listening);
+        }
+
+        override async probeLocalDevServerState(): Promise<'ready' | 'busy' | 'down'> {
+            return await this.probeLocalDevServer() ? 'ready' : 'down';
         }
     }
 

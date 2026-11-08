@@ -13,6 +13,7 @@
 // `import type` throughout to avoid a runtime import cycle with the extracted modules (all of which
 // are imported back into `qaap-agent-task-runner.ts`).
 
+import type { QaapAgentEffortLevel } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
 import type { Emitter } from '@theia/core/lib/common/event';
 import type { PreferenceService } from '@theia/core/lib/common/preferences';
 import type { ChildProcess } from 'child_process';
@@ -206,6 +207,7 @@ export interface QaapAgentTaskRunnerContext {
         userQuery?: string,
         readOnlyWorkspace?: boolean,
         ownerLogin?: string,
+        effort?: QaapAgentEffortLevel,
     ): QaapAgentCommandBuildResult;
     readProjectInfo(cwd: string): string | undefined;
     loadProjectInfoFromDisk(cwd: string): string | undefined;
@@ -343,6 +345,8 @@ export interface QaapAgentTaskRunnerContext {
     ensureAgentCwdOwnershipAsync(cwd: string): Promise<void>;
     /** Start (or join) the task's per-task sandbox when QAAP_TASK_SANDBOX is on; no-op otherwise. */
     acquireTaskSandbox?(task: QaapAgentTask): Promise<void>;
+    /** Release a sandbox acquired for a task that was stopped before its agent could spawn. */
+    releaseTaskSandbox?(taskId: string): void;
     buildChildEnv(task: QaapAgentTask): NodeJS.ProcessEnv;
     applyOpenAiVendorCompatEnv(env: NodeJS.ProcessEnv, binding: QaapQaiqModelBinding): void;
     applyQaiqProviderEnv(env: NodeJS.ProcessEnv, command: string, binding?: QaapQaiqModelBinding): void;

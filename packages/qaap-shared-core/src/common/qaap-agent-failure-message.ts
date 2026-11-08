@@ -298,6 +298,113 @@ const PROVIDER_FREE_LIMIT_PATTERNS: readonly RegExp[] = [
 ];
 
 /**
+ * A transient upstream outage: the provider has no capacity behind the model right now, or a gateway
+ * answered 502/503/504/529. The same model usually serves the next request, but the turn cannot finish
+ * here, so it reads as `model_unavailable` and the next model of the chain takes over (see
+ * {@link isTransientUpstreamFailureText}). Account-level statuses are never transient.
+ */
+const TRANSIENT_UPSTREAM_PATTERNS: readonly RegExp[] = [
+    // OpenRouter and its hosts: `{"error":"no upstreams available"}` behind "Provider returned error".
+    /\bno\s+upstreams?\s+(?:are\s+)?available\b/i,
+    /\b(?:model|provider|server|service|api)\s+(?:is\s+)?overloaded\b/i,
+    /\boverloaded_error\b/i,
+    /\bservice\s+(?:is\s+)?temporarily\s+unavailable\b/i,
+    /\bbad\s+gateway\b/i,
+    /\bgateway\s+time-?out\b/i,
+    // A status number on an HTTP/API error line: "503:", "API Error: 529", "status code 502", `"code":504`.
+    /(?:\bstatus(?:\s+code)?\s*:?\s*|\bhttp\s*(?:\/\d(?:\.\d)?\s+)?|\bapi\s+error\s*:\s*|\\?"(?:code|status)\\?"\s*:\s*)(?:502|503|504|529)\b/i,
+    /^\s*(?:502|503|504|529)\s*:/m,
+];
+
+/** A provider's own error envelope, as OpenRouter returns it (`{"message":…,"code":…,"metadata":{…}}`). */
+export interface QaapProviderErrorEnvelope {
+    readonly code?: number;
+    readonly providerName?: string;
+    /** Human prose: `metadata.raw` when it is not JSON, else the message the raw JSON carries. */
+    readonly message?: string;
+    readonly remedyHint?: string;
+    /** `metadata.limit_source`, e.g. `upstream_provider_shared_pool` for a shared free pool. */
+    readonly limitSource?: string;
+}
+
+function isJsonRecord(value: unknown): value is Record<string, unknown> {
+    return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function stringField(record: Record<string, unknown>, key: string): string | undefined {
+    const value = record[key];
+    return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+/**
+ * Reads an OpenRouter-style error body out of a text (a status prefix such as `429: ` is skipped). The
+ * prose in `metadata.raw` is the human message; a `metadata.raw` that is itself JSON contributes its
+ * `error` / `message` text instead. Undefined when the text carries no JSON object.
+ */
+export function parseProviderErrorEnvelope(text: string | undefined): QaapProviderErrorEnvelope | undefined {
+    const start = text?.indexOf('{') ?? -1;
+    const end = text?.lastIndexOf('}') ?? -1;
+    if (!text || start < 0 || end <= start) {
+        return undefined;
+    }
+    let root: unknown;
+    try {
+        root = JSON.parse(text.slice(start, end + 1));
+    } catch {
+        return undefined;
+    }
+    if (!isJsonRecord(root)) {
+        return undefined;
+    }
+    const metadata = isJsonRecord(root.metadata) ? root.metadata : {};
+    const raw = stringField(metadata, 'raw');
+    let rawInner: Record<string, unknown> | undefined;
+    if (raw?.startsWith('{')) {
+        try {
+            const parsed: unknown = JSON.parse(raw);
+            rawInner = isJsonRecord(parsed) ? parsed : undefined;
+        } catch {
+            rawInner = undefined;
+        }
+    }
+    const innerError = rawInner && (typeof rawInner.error === 'string'
+        ? rawInner.error
+        : isJsonRecord(rawInner.error) ? stringField(rawInner.error, 'message') : undefined);
+    const prose = raw && !raw.startsWith('{') ? raw : undefined;
+    const providerCode = typeof root.code === 'number' ? root.code : Number(stringField(metadata, 'provider_error_code'));
+    return {
+        ...(Number.isFinite(providerCode) ? { code: providerCode } : {}),
+        ...(stringField(metadata, 'provider_name') ? { providerName: stringField(metadata, 'provider_name') } : {}),
+        ...((prose ?? innerError ?? stringField(root, 'message')) ? { message: prose ?? innerError ?? stringField(root, 'message') } : {}),
+        ...(stringField(metadata, 'remedy_hint') ? { remedyHint: stringField(metadata, 'remedy_hint') } : {}),
+        ...(stringField(metadata, 'limit_source') ? { limitSource: stringField(metadata, 'limit_source') } : {}),
+    };
+}
+
+/** A 429 from a shared upstream pool ("temporarily rate-limited upstream"): not the user's account. */
+const SHARED_POOL_UPSTREAM_TEXT = /\btemporarily\s+rate-?limited\s+upstream\b/i;
+const SHARED_POOL_LIMIT_SOURCE = /\bupstream_provider_shared_pool\b/i;
+
+export function isSharedPoolRateLimitText(sample: string): boolean {
+    return SHARED_POOL_UPSTREAM_TEXT.test(sample) || SHARED_POOL_LIMIT_SOURCE.test(sample);
+}
+
+/** A 5xx code inside a provider error envelope (`"code":503`, `"provider_name":...`). */
+const TRANSIENT_PROVIDER_CODE = /\\?"code\\?"\s*:\s*(?:502|503|504|529)\b/;
+
+/** True when the text reports a transient upstream outage (502/503/504/529, "no upstreams available"). */
+function isTransientUpstreamFailureText(sample: string): boolean {
+    if (matchesAny(sample, PROVIDER_REJECTED_EXCLUDED_PATTERNS) || matchesAny(sample, AUTH_PATTERNS)
+        || matchesAny(sample, AUTH_ENVELOPE_ONLY_PATTERNS)) {
+        return false;
+    }
+    if (matchesAny(sample, TRANSIENT_UPSTREAM_PATTERNS)) {
+        return true;
+    }
+    return TRANSIENT_PROVIDER_CODE.test(sample) && (PROVIDER_REJECTED_TEXT.test(sample) || PROVIDER_NAME_FIELD.test(sample));
+}
+
+/**
  * The provider answered the request itself with an error ("Provider returned error", OpenRouter's
  * wrapper for an upstream host's 4xx/5xx). Neither the user's key nor the model's name is at fault
  * here, so the card says the provider rejected the request and offers another model.
@@ -514,6 +621,21 @@ function isTopLevelErrorRecord(value: unknown): boolean {
     return record.type === undefined && record.error !== undefined && record.error !== null;
 }
 
+/**
+ * The error of a Pi assistant message that ended on a provider error (`message_end` with
+ * `stopReason: "error"`). Pi exits 0 after it, so this record is the only place the failure is written.
+ */
+function piAssistantErrorText(value: unknown): string | undefined {
+    if (!isJsonRecord(value) || value.type !== 'message_end' || !isJsonRecord(value.message)) {
+        return undefined;
+    }
+    const message = value.message;
+    if (message.role !== 'assistant' || message.stopReason !== 'error') {
+        return undefined;
+    }
+    return typeof message.errorMessage === 'string' && message.errorMessage.trim() ? message.errorMessage.trim() : undefined;
+}
+
 function isProviderRetryRecord(value: unknown): boolean {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
         return false;
@@ -542,6 +664,10 @@ function collectAgentFailureEvidence(log: string | undefined): AgentFailureEvide
                 structured = true;
                 if (isTopLevelErrorRecord(parsed)) {
                     errorRecords.unshift(line);
+                }
+                const piAssistantError = piAssistantErrorText(parsed);
+                if (piAssistantError) {
+                    errorRecords.unshift(piAssistantError);
                 }
                 trailingRetryRecords = isProviderRetryRecord(parsed) ? [...trailingRetryRecords, line] : [];
                 continue;
@@ -726,6 +852,11 @@ function classifyAgentFailureEvidence(evidence: AgentFailureEvidence): QaapAgent
     if (providerKind) {
         return providerKind;
     }
+    // A shared free pool that is busy right now is transient: another model can finish the turn. The
+    // user's own account limits (BYOK key, credits, plan) never carry this marker and stay account-level.
+    if (isSharedPoolRateLimitText(sample) && !matchesAny(sample, AUTH_PATTERNS)) {
+        return 'model_unavailable';
+    }
     if (matchesAny(sample, QUOTA_PATTERNS)) {
         return 'quota';
     }
@@ -737,6 +868,11 @@ function classifyAgentFailureEvidence(evidence: AgentFailureEvidence): QaapAgent
         return 'tool_unsupported';
     }
     if (matchesAny(sample, MODEL_UNAVAILABLE_PATTERNS)) {
+        return 'model_unavailable';
+    }
+    // A 502/503/504/529 or "no upstreams available" is transient: the next model of the chain can finish
+    // the turn, while the user's key and plan are fine. Account-level statuses never reach this line.
+    if (isTransientUpstreamFailureText(sample)) {
         return 'model_unavailable';
     }
     // After quota, rate limit and model_unavailable (an explicit "model not found" keeps the model

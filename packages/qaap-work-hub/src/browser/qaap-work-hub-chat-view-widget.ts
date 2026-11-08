@@ -51,6 +51,7 @@ import { MobileWorkHubInboxStream } from './mobile-work-hub-inbox-stream';
 import { MobileProjectChatViewWidgetFactory } from '@theia/qaap-composer/lib/browser/mobile-project-ai-chat-input-widget';
 import { MobileWorkHubBillingSheet } from './mobile-work-hub-billing-sheet';
 import { MobileWorkHubPreferencesSheet } from './mobile-work-hub-preferences-sheet';
+import { QaapWorkHubKeybindingsPanel } from './qaap-work-hub-keybindings-panel';
 import { QaapAgUiFrontendToolService } from '@theia/qaap-shared-core/lib/browser/qaap-ag-ui-frontend-tool-service';
 import { QaapBackgroundContextProvider } from '@theia/qaap-shared-core/lib/browser/qaap-background-context-provider';
 import { QaapCommitMessageAi } from '@theia/qaap-diff-review/lib/browser/qaap-commit-message-ai';
@@ -127,6 +128,8 @@ export class QaapWorkHubChatViewWidget extends ChatViewWidget {
     protected readonly appearanceModeService: QaapAppearanceModeService;
     @inject(ThemeService)
     protected readonly themeService: ThemeService;
+    @inject(QaapWorkHubKeybindingsPanel)
+    protected readonly keybindingsPanel: QaapWorkHubKeybindingsPanel;
     @inject(MCPFrontendService) @optional()
     protected readonly mcpFrontendService?: MCPFrontendService;
     @inject(FrontendLanguageModelRegistry) @optional()
@@ -342,6 +345,7 @@ export class QaapWorkHubChatViewWidget extends ChatViewWidget {
                 () => this.resolveIdeSettingsPanel()
                     ?.node.querySelector<HTMLElement>(':scope > .theia-mobile-projects-scroll') ?? this.resolveIdeSettingsPanel()?.node,
                 () => this.resolveIdeSettingsPanel()?.sessionsSidebarUi.ensureWorkHubSessionsSidebar(),
+                this.keybindingsPanel,
             );
             document.body.appendChild(this.preferencesSheet.node);
             this.toDispose.push(Disposable.create(() => {

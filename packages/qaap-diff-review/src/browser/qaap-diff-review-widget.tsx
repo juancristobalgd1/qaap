@@ -42,6 +42,7 @@ import {
 } from '../common/qaap-verify-commit-readiness';
 import { confirmVerifyCommitReadiness } from './qaap-verify-commit-confirm';
 import { QaapBulkReviewAction, runQaapBulkReviewAction } from './qaap-diff-review-bulk-action';
+import { QaapUserFacingErrors } from '@theia/qaap-adapters/lib/common/qaap-user-facing-error';
 
 /** Git extension commands used by the commit without a message (see also QAAP_BULK_REVIEW_GIT_COMMANDS). */
 const GIT_STAGE_ALL = 'git.stageAll';
@@ -81,6 +82,11 @@ export interface QaapDiffReviewRepositoryContext {
     rootFsPath: string;
     /** When false, accept/reject actions are disabled (workspace must be open for git commands). */
     isActiveWorkspace: boolean;
+    /**
+     * Task baseline commit of the conversation this view belongs to. When set, the changed-file list is
+     * measured against it (pre-existing dirt and other tasks' edits are excluded). Omitted for global views.
+     */
+    baselineCommit?: string;
 }
 
 /**
@@ -253,7 +259,19 @@ export class QaapDiffReviewWidget extends ReactWidget {
     /** Work Hub: point the widget at a specific project repository. */
     setRepositoryContext(context: QaapDiffReviewRepositoryContext | undefined): void {
         this.repositoryContext = context;
+        this.baselineFallback = false;
         this.trackRepository();
+    }
+
+    /** Set after the server rejected the task baseline (400); the view then shows the repository's changes. */
+    protected baselineFallback = false;
+
+    /**
+     * Task baseline the view measures against, or `undefined` for a repository-wide view (no conversation,
+     * or the server rejected the baseline).
+     */
+    protected activeBaseCommit(): string | undefined {
+        return this.baselineFallback ? undefined : this.repositoryContext?.baselineCommit;
     }
 
     setCommitReadinessProvider(
@@ -380,10 +398,16 @@ export class QaapDiffReviewWidget extends ReactWidget {
         this.loadingChanges = true;
         this.update();
         try {
-            const response = await fetch(
-                `${QAAP_GIT_REVIEW_API_PATH}/changes?root=${encodeURIComponent(requestRoot)}`,
-                { credentials: 'include' },
-            );
+            const baseCommit = this.activeBaseCommit();
+            const changesUrl = (base: string | undefined): string => `${QAAP_GIT_REVIEW_API_PATH}/changes?root=${encodeURIComponent(requestRoot)}`
+                + (base ? `&baseCommit=${encodeURIComponent(base)}` : '');
+            let response = await fetch(changesUrl(baseCommit), { credentials: 'include' });
+            if (!response.ok && response.status === 400 && baseCommit) {
+                // The baseline was rejected (for example garbage-collected): show the repository's changes instead.
+                console.warn(`[qaap-diff-review] task baseline ${baseCommit} rejected, showing repository changes`);
+                this.baselineFallback = true;
+                response = await fetch(changesUrl(undefined), { credentials: 'include' });
+            }
             if (!response.ok) {
                 throw new Error(`changes request failed (${response.status})`);
             }
@@ -430,8 +454,10 @@ export class QaapDiffReviewWidget extends ReactWidget {
         if (!this.rootFsPath) {
             return undefined;
         }
+        const baseCommit = this.activeBaseCommit();
+        const baseQuery = baseCommit ? `&baseCommit=${encodeURIComponent(baseCommit)}` : '';
         const response = await fetch(
-            `${QAAP_GIT_REVIEW_API_PATH}/diff?root=${encodeURIComponent(this.rootFsPath)}&file=${encodeURIComponent(path)}`,
+            `${QAAP_GIT_REVIEW_API_PATH}/diff?root=${encodeURIComponent(this.rootFsPath)}&file=${encodeURIComponent(path)}${baseQuery}`,
             { credentials: 'include' },
         );
         if (!response.ok) {
@@ -923,6 +949,11 @@ export class QaapDiffReviewWidget extends ReactWidget {
                     return;
                 }
             }
+            const baseCommit = this.activeBaseCommit();
+            if (action === 'commit' && !message && baseCommit) {
+                // Theia's stage-all would stage the uncommitted changes that were there before the task.
+                throw new Error(nls.localize('qaap/diff/commitNeedsMessage', 'Write a commit message to commit only this task\'s changes.'));
+            }
             if (action === 'commit' && !message) {
                 await this.commands.executeCommand(GIT_STAGE_ALL);
                 await this.commands.executeCommand(GIT_COMMIT);
@@ -936,11 +967,11 @@ export class QaapDiffReviewWidget extends ReactWidget {
                         action,
                         branchName,
                         message,
+                        ...(baseCommit ? { baseCommit } : {}),
                     }),
                 });
                 if (!response.ok) {
-                    const body = await response.json().catch(() => ({})) as { error?: string };
-                    throw new Error(body.error ?? `commit workflow failed (${response.status})`);
+                    throw await QaapUserFacingErrors.fromResponse(response, `commit workflow failed (${response.status})`);
                 }
                 const result = await response.json().catch(() => ({})) as { branch?: string; pushedTo?: QaapGitPushDestination };
                 if (result.pushedTo) {
@@ -1257,6 +1288,7 @@ export class QaapDiffReviewWidget extends ReactWidget {
                                 className='qaap-diff-review-hunk-btn qaap-mod-stage'
                                 title={nls.localize('qaap/diff/stageHunk', 'Stage this hunk')}
                                 aria-label={nls.localize('qaap/diff/stageHunk', 'Stage this hunk')}
+                                disabled={!!this.activeBaseCommit()}
                                 onClick={() => void this.runHunkAction(`${QAAP_GIT_REVIEW_API_PATH}/stage-hunk`, selectedFile!, hunkIndex)}
                             >
                                 <i className={codicon('add')} aria-hidden='true' />
@@ -1266,6 +1298,7 @@ export class QaapDiffReviewWidget extends ReactWidget {
                                 className='qaap-diff-review-hunk-btn qaap-mod-discard'
                                 title={nls.localize('qaap/diff/discardHunk', 'Discard this hunk')}
                                 aria-label={nls.localize('qaap/diff/discardHunk', 'Discard this hunk')}
+                                disabled={!!this.activeBaseCommit()}
                                 onClick={() => void this.runHunkAction(`${QAAP_GIT_REVIEW_API_PATH}/discard-hunk`, selectedFile!, hunkIndex)}
                             >
                                 <i className={codicon('discard')} aria-hidden='true' />
@@ -1406,6 +1439,10 @@ export class QaapDiffReviewWidget extends ReactWidget {
     }
 
     protected async runHunkAction(endpoint: string, file: string, hunkIndex: number): Promise<void> {
+        if (this.activeBaseCommit()) {
+            // Hunk indexes come from the baseline diff; the hunk endpoints index against HEAD and the index.
+            return;
+        }
         if (this.runningFileAction || !this.rootFsPath || !this.bulkActionsEnabled) {
             return;
         }
@@ -1420,8 +1457,7 @@ export class QaapDiffReviewWidget extends ReactWidget {
                 body: JSON.stringify({ root: this.rootFsPath, file, hunkIndex }),
             });
             if (!response.ok) {
-                const body = await response.json().catch(() => ({})) as { error?: string };
-                throw new Error(body.error ?? `request failed (${response.status})`);
+                throw await QaapUserFacingErrors.fromResponse(response, `request failed (${response.status})`);
             }
             await this.refresh();
         } catch (error) {
@@ -1457,11 +1493,10 @@ export class QaapDiffReviewWidget extends ReactWidget {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
-            body: JSON.stringify({ root: this.rootFsPath, file }),
+            body: JSON.stringify({ root: this.rootFsPath, file, ...(this.activeBaseCommit() ? { baseCommit: this.activeBaseCommit() } : {}) }),
         });
         if (!response.ok) {
-            const body = await response.json().catch(() => ({})) as { error?: string };
-            throw new Error(body.error ?? `request failed (${response.status})`);
+            throw await QaapUserFacingErrors.fromResponse(response, `request failed (${response.status})`);
         }
     }
 

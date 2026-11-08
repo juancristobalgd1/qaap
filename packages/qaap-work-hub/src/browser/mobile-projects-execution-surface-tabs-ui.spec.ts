@@ -1104,7 +1104,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
 
         const labels = Array.from(strip.querySelectorAll('.theia-mobile-transcript-tab-icon-select-option-label'))
             .map(label => label.textContent);
-        expect(labels).to.deep.equal(['Navegador', 'Files', 'Terminal']);
+        expect(labels).to.deep.equal(['Browser', 'Files', 'Terminal']);
         expect(labels).to.not.include('Editor');
         expect(labels).to.not.include('Changes');
 
@@ -1127,7 +1127,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
             const strip = ui.buildExecutionViewTabStrip('messages', () => undefined);
             const labels = Array.from(strip.querySelectorAll('.theia-mobile-transcript-tab-icon-select-option-label'))
                 .map(label => label.textContent);
-            expect(labels).to.deep.equal(['Navegador']);
+            expect(labels).to.deep.equal(['Browser']);
         } finally {
             clearPreferDesktopIde();
         }

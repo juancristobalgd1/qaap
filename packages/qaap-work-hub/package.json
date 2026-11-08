@@ -16,6 +16,7 @@
     "@theia/core": "1.73.0",
     "@theia/editor": "1.73.0",
     "@theia/filesystem": "1.73.0",
+    "@theia/keymaps": "1.73.0",
     "@theia/memory-inspector": "1.73.0",
     "@theia/mini-browser": "1.73.0",
     "@theia/monaco": "1.73.0",

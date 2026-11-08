@@ -37,12 +37,29 @@ const NO_CHECK_SUPPRESSION_MARKER = '[QAAP no check suppression]';
 const WEB_GENERATION_MARKER = '[QAAP web generation quality]';
 const VISUAL_EVIDENCE_MARKER = '[QAAP visual evidence]';
 
-export function buildAgentPlanningPromptBlock(): string {
+/** Harnesses whose tool set includes Claude Code's `TodoWrite` (Claude Code and its QAIQ fork). */
+const TODO_WRITE_HARNESS_IDS: ReadonlySet<string> = new Set(['claude', 'qaiq', 'openclaude']);
+
+/**
+ * The planning block. Only harnesses that really have `TodoWrite` are told to call it; the others get the
+ * same discipline as a plain checklist in their reply (Pi, for example, has no todo tool).
+ */
+export function buildAgentPlanningPromptBlock(agentId?: string): string {
+    const normalized = agentId?.trim().toLowerCase();
+    const hasTodoWrite = !normalized || TODO_WRITE_HARNESS_IDS.has(normalized);
+    if (hasTodoWrite) {
+        return [
+            PLANNING_MARKER,
+            'For any task with three or more steps, call TodoWrite with a short plan before you start editing, then mark each item completed as you finish it.',
+            'Keep exactly one item in_progress at a time so the user can follow your progress live; do not leave finished items unmarked.',
+            'Skip the todo list only for trivial one-step changes (a single edit, a one-line answer).',
+        ].join('\n');
+    }
     return [
         PLANNING_MARKER,
-        'For any task with three or more steps, call TodoWrite with a short plan before you start editing, then mark each item completed as you finish it.',
-        'Keep exactly one item in_progress at a time so the user can follow your progress live; do not leave finished items unmarked.',
-        'Skip the todo list only for trivial one-step changes (a single edit, a one-line answer).',
+        'For any task with three or more steps, write a short numbered checklist of the steps before you start editing, and state each step as done when you finish it.',
+        'Keep exactly one step marked in progress at a time so the user can follow your progress; do not leave finished steps unmarked.',
+        'Skip the checklist only for trivial one-step changes (a single edit, a one-line answer).',
     ].join('\n');
 }
 
@@ -308,6 +325,8 @@ export function buildAgentHonestReportingPromptBlock(): string {
         'A single passing check does not override multiple failing checks. If any check fails, the overall status is not "fixed" — it is "partially verified with remaining failures".',
         'Do not describe a fix as "minimal" or "surgical" if you changed more than one file for a single bug — state the actual number of files changed and why.',
         'For every claim you mark as verified, cite the evidence: the exact command you ran and its key output line.',
+        'Overwrites and deletions: if you replaced, rewrote, truncated, or deleted existing content in a file the task did not ask you to modify, say so explicitly in the final message — name the file and what was removed. Never describe a replacement as a creation.',
+        'Do not overwrite an existing file that the task did not mention. Ask the user before doing so instead of replacing it silently.',
     ].join('\n');
 }
 
@@ -430,7 +449,7 @@ export function appendAgentDefaultWorkflowToPrompt(
     }
     const blocks = [buildAgentDefaultWorkflowPromptBlock(options)];
     if (!prompt.includes(PLANNING_MARKER)) {
-        blocks.push(buildAgentPlanningPromptBlock());
+        blocks.push(buildAgentPlanningPromptBlock(agentId));
     }
     if (!prompt.includes(COMMUNICATION_MARKER)) {
         blocks.push(buildAgentCommunicationPromptBlock());

@@ -10,6 +10,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { resolveQaapHarnessCapabilities } from '@theia/qaap-shared-core/lib/common/qaap-harness-capabilities';
 import { quoteShellArg } from './qaap-agent-task-runner-utils';
+import { resolveQaapCloudWorkspaceResource } from './qaap-cloud-workspace-resource';
 
 /** File name of the standalone Codex PreToolUse hook shipped in this package's `resources/`. */
 export const QAAP_TOOL_GATE_CODEX_HOOK_FILE = 'qaap-tool-gate-codex-hook.mjs';
@@ -31,7 +32,7 @@ interface SafeRead {
 
 /** Absolute path of the Codex gate hook, resolved from the compiled module location at spawn time. */
 export function resolveQaapToolGateCodexHookPath(): string {
-    return path.resolve(__dirname, '..', '..', 'resources', QAAP_TOOL_GATE_CODEX_HOOK_FILE);
+    return resolveQaapCloudWorkspaceResource(QAAP_TOOL_GATE_CODEX_HOOK_FILE);
 }
 
 export interface QaapCodexGateOverlayOptions {

@@ -23,6 +23,13 @@ export const TRANSCRIPT_STREAM_ACTIVE_TOOL_TIMEOUT_MS = 120_000;
 export const TRANSCRIPT_STREAM_FIRST_OUTPUT_TIMEOUT_MS = 90_000;
 
 /**
+ * First-output budget after which the activity row says the model has not responded yet and offers
+ * keep waiting / pick another model. Between the 20s "Still starting" stall and the 90s timeout card;
+ * status only, the turn keeps running.
+ */
+export const TRANSCRIPT_FIRST_OUTPUT_SLOW_HINT_MS = 45_000;
+
+/**
  * Retry a turn once automatically when the agent has produced no output. Later than the visible
  * timeout: a forced retry kills the running agent, so the user gets the Retry card first.
  */
@@ -81,6 +88,8 @@ export interface TranscriptStreamHealth {
     readonly idleMs: number;
     /** Streaming, but the agent has not produced anything for this turn yet. */
     readonly awaitingFirstOutput: boolean;
+    /** Still no first output past {@link TRANSCRIPT_FIRST_OUTPUT_SLOW_HINT_MS}; the turn is not stopped. */
+    readonly slowFirstOutput: boolean;
 }
 
 export function resolveTranscriptStreamHealth(
@@ -98,6 +107,7 @@ export function resolveTranscriptStreamHealth(
             thinkingActive: isTranscriptAgentThinkingPhase(input.segments, input.streaming),
             idleMs: 0,
             awaitingFirstOutput: false,
+            slowFirstOutput: false,
         };
     }
     const idleMs = Math.max(0, now - lastProgressAtMs);
@@ -130,5 +140,6 @@ export function resolveTranscriptStreamHealth(
         thinkingActive,
         idleMs,
         awaitingFirstOutput,
+        slowFirstOutput: awaitingFirstOutput && !timedOut && idleMs >= TRANSCRIPT_FIRST_OUTPUT_SLOW_HINT_MS,
     };
 }

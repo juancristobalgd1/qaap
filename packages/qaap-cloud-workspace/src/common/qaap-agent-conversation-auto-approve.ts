@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import type { QaapAgentConversation } from './qaap-agent-conversation';
-import { resolveConversationAutoApprove } from './qaap-agent-auto-approve';
+import { isExplicitAutoApprovePolicy, resolveConversationAutoApprove } from './qaap-agent-auto-approve';
 
 /**
  * Merge composer / per-message auto-approve into the conversation before spawning a task.
@@ -13,7 +13,15 @@ import { resolveConversationAutoApprove } from './qaap-agent-auto-approve';
 export function patchConversationAutoApprove(
     conv: Pick<QaapAgentConversation, 'autoApprove'>,
     override?: boolean,
+    approvalPolicyId?: string,
 ): Pick<QaapAgentConversation, 'autoApprove'> {
+    // An explicit policy of the turn decides, so a stale `false` from an earlier turn cannot stick.
+    if (approvalPolicyId === 'request-approval') {
+        return { autoApprove: false };
+    }
+    if (isExplicitAutoApprovePolicy(approvalPolicyId)) {
+        return { autoApprove: undefined };
+    }
     if (override === false) {
         return { autoApprove: false };
     }

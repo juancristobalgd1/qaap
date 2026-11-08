@@ -303,6 +303,72 @@ body.qaap-theme-dark {
 }
 
 /*-----------------------------------------------------------------------------
+|| High Contrast (Qaap) = `hc-theia`. It carries both `qaap-theme-dark` (the
+|| graphite accents) and `qaap-theme-hc` (this block, declared after the dark
+|| one so it wins at equal specificity). Keeps the black canvas and drops the
+|| VS Code HC blues / cyans (contrastBorder, focus, links, progress, selections).
+||----------------------------------------------------------------------------*/
+
+body.qaap-theme-hc {
+  --qaap-bg: #000000;
+  --qaap-surface: #000000;
+  --qaap-surface-alt: #000000;
+  --qaap-code: #000000;
+  --theia-focusBorder: var(--qaap-focus-border) !important;
+  --theia-contrastBorder: var(--qaap-line) !important;
+  --theia-contrastActiveBorder: var(--qaap-ink) !important;
+  --theia-progressBar-background: var(--qaap-accent) !important;
+  --theia-inputOption-activeBorder: var(--qaap-accent) !important;
+  --theia-panelTitle-activeBorder: var(--qaap-ink) !important;
+  --theia-textLink-foreground: var(--qaap-ink) !important;
+  --theia-textLink-activeForeground: var(--qaap-ink-2) !important;
+  --theia-inputValidation-infoBorder: var(--qaap-line) !important;
+  --theia-textBlockQuote-border: var(--qaap-line) !important;
+  --theia-selection-background: var(--qaap-accent-soft) !important;
+  /* VS Code HC paints every border with its cyan contrastBorder (#6FC3DF): use the Qaap line. */
+  --theia-button-border: var(--qaap-line) !important;
+  --theia-checkbox-border: var(--qaap-line) !important;
+  --theia-chart-axis: var(--qaap-line) !important;
+  --theia-chart-guide: var(--qaap-line) !important;
+  --theia-diffEditor-border: var(--qaap-line) !important;
+  --theia-editorBracketMatch-border: var(--qaap-line) !important;
+  --theia-editorGroupHeader-tabsBorder: var(--qaap-line) !important;
+  --theia-editorHoverWidget-border: var(--qaap-line) !important;
+  --theia-editorStickyScroll-border: var(--qaap-line) !important;
+  --theia-editorSuggestWidget-border: var(--qaap-line) !important;
+  --theia-imagePreview-border: var(--qaap-line) !important;
+  --theia-inputValidation-errorBorder: var(--qaap-line) !important;
+  --theia-inputValidation-warningBorder: var(--qaap-line) !important;
+  --theia-list-filterMatchBorder: var(--qaap-line) !important;
+  --theia-listFilterWidget-noMatchesOutline: var(--qaap-line) !important;
+  --theia-menu-separatorBackground: var(--qaap-line) !important;
+  --theia-multiDiffEditor-border: var(--qaap-line) !important;
+  --theia-notificationCenter-border: var(--qaap-line) !important;
+  --theia-notificationToast-border: var(--qaap-line) !important;
+  --theia-peekView-border: var(--qaap-line) !important;
+  --theia-radio-activeBorder: var(--qaap-line) !important;
+  --theia-settings-checkboxBorder: var(--qaap-line) !important;
+  --theia-settings-dropdownBorder: var(--qaap-line) !important;
+  --theia-settings-dropdownListBorder: var(--qaap-line) !important;
+  --theia-settings-numberInputBorder: var(--qaap-line) !important;
+  --theia-settings-textInputBorder: var(--qaap-line) !important;
+  --theia-statusBar-noFolderBorder: var(--qaap-line) !important;
+  --theia-terminal-border: var(--qaap-line) !important;
+  --theia-textPreformat-border: var(--qaap-line) !important;
+  --theia-titleBar-border: var(--qaap-line) !important;
+  --theia-widget-border: var(--qaap-line) !important;
+  --theia-window-activeBorder: var(--qaap-line) !important;
+  --theia-window-inactiveBorder: var(--qaap-line) !important;
+  --theia-editorHoverWidgetInternalBorder: var(--qaap-line) !important;
+  --theia-minimapSlider-background: var(--qaap-accent-soft) !important;
+  --theia-minimapSlider-hoverBackground: var(--qaap-accent) !important;
+  --theia-minimapSlider-activeBackground: var(--qaap-accent) !important;
+  --theia-notificationLink-foreground: var(--qaap-ink) !important;
+  --theia-editorLink-activeForeground: var(--qaap-ink) !important;
+  --theia-settings-modifiedItemIndicator: var(--qaap-accent) !important;
+}
+
+/*-----------------------------------------------------------------------------
 || Reusable Qaap primitives. Components living anywhere in the workbench can
 || add `qaap-card` / `qaap-pill` for the canonical premium look.
 ||----------------------------------------------------------------------------*/
@@ -397,12 +463,9 @@ body.qaap-theme-dark .qaap-pill.qaap-mod-danger {
     border-radius: var(--qaap-radius-xl);
   }
 
+  /* The Open repository filter and clone URL are inline hairline fields (mobile-workbench-open-repo.css). */
   body.qaap-theme-light .theia-mobile-projects-search,
-  body.qaap-theme-dark .theia-mobile-projects-search,
-  body.qaap-theme-light .theia-mobile-open-repo-filter,
-  body.qaap-theme-dark .theia-mobile-open-repo-filter,
-  body.qaap-theme-light .theia-mobile-open-repo-public-input,
-  body.qaap-theme-dark .theia-mobile-open-repo-public-input {
+  body.qaap-theme-dark .theia-mobile-projects-search {
     background: var(--qaap-surface);
     border-color: var(--qaap-line);
     border-radius: var(--qaap-radius-md);
@@ -412,9 +475,7 @@ body.qaap-theme-dark .qaap-pill.qaap-mod-danger {
   }
 
   body.qaap-theme-light .theia-mobile-projects-search:focus-within,
-  body.qaap-theme-dark .theia-mobile-projects-search:focus-within,
-  body.qaap-theme-light .theia-mobile-open-repo-filter:focus-within,
-  body.qaap-theme-dark .theia-mobile-open-repo-filter:focus-within {
+  body.qaap-theme-dark .theia-mobile-projects-search:focus-within {
     border-color: var(--qaap-line);
     box-shadow: none;
     outline: none;

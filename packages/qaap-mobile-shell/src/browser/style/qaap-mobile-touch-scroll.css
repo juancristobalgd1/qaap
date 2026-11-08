@@ -80,14 +80,17 @@
   #theia-app-shell #debug-console .theia-Tree,
   #theia-app-shell .gs-container,
   .theia-mobile-projects-scroll,
+  .theia-qaap-usage-body,
   .theia-mobile-work-hub-sessions-sidebar-scroll,
   .theia-mobile-work-hub-sessions-sidebar-status-legend-list,
+  .theia-mobile-work-hub-keybindings-list,
   .theia-mobile-pr-stack,
   .theia-mobile-pr-picker,
   .theia-mobile-pr-quick-row,
   .theia-mobile-onboarding-body,
   .theia-mobile-bottom-actionsheet,
   .theia-mobile-sticky-composer-sheet-list,
+  .qaap-model-picker-rows,
   .qaap-chat-context-usage-sheet-body,
   .theia-mobile-projects-sticky-composer-mention-popover,
   .theia-mobile-projects-sticky-composer-plugin-picker-body,
@@ -302,6 +305,12 @@
     overflow-y: hidden !important;
     -webkit-overflow-scrolling: touch;
     touch-action: pan-x !important;
+    overscroll-behavior-x: contain;
+  }
+
+  /* Model picker harness rail — horizontal snap rail in the narrow layout; the sheet must not take its swipe. */
+  .qaap-model-picker-rail {
+    touch-action: pan-x;
     overscroll-behavior-x: contain;
   }
 

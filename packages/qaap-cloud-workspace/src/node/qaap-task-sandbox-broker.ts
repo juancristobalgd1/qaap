@@ -9,11 +9,13 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as http from 'http';
 import * as path from 'path';
+import { resolveQaapPackageFile } from '@theia/qaap-shared-core/lib/node/qaap-package-file';
 import type * as Dockerode from 'dockerode';
 import { QAAP_TENANT_RUNTIME_API_PATH } from '../common/qaap-cloud-api-types';
 import { resolveQaapDockerLogConfig } from './qaap-docker-control-plane';
 import { isInQaapDockerNamespace, qaapDockerName, qaapDockerNamespaceLabels } from './qaap-docker-namespace';
 import { QaapDockerOrchestrator, type QaapTaskSandboxPlacement, type QaapTenantBackendTarget } from './qaap-docker-orchestrator';
+import { QAAP_RUNSC_SANDBOX_PIDS_FACTOR } from './qaap-tenant-runtime';
 import { QaapTenantRuntimeMetrics, type QaapTaskSandboxStartSource } from './qaap-tenant-runtime-metrics';
 import {
     QAAP_TASK_SANDBOX_LINK_HEADER,
@@ -369,7 +371,7 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
 
     async create(tenant: string, args: QaapTaskSandboxBrokerCreateArgs): Promise<QaapTaskSandboxBrokerSandbox> {
         const started = Date.now();
-        const placement = await this.orchestrator!.taskSandboxPlacement(tenant);
+        const placement = await this.orchestrator!.taskSandboxPlacement(tenant, { forCreate: true });
         const root = this.validateRoot(placement, args?.root);
         const homeLinks = this.validateHomeLinks(placement, args?.homeLinks);
         const containerEnv = this.validateContainerEnv(args?.devcontainer?.containerEnv);
@@ -407,7 +409,7 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
                 throw new Error(`Sandbox ${name} is not owned by this tenant.`);
             }
             const existingToken = this.tokens.get(name);
-            if (existing.State?.Running && !existing.State.Paused && existingToken) {
+            if (existing.State?.Running && !existing.State.Paused && existingToken && this.runtimeMatches(existing, placement)) {
                 this.runtimeMetrics?.recordTaskSandboxStart('reused', 0);
                 return this.describe(name, root, existingToken, existing.Config?.Image ?? placement.image, placement, 0, false, existing, 'reused');
             }
@@ -498,14 +500,15 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
         const homeLinksKey = JSON.stringify(homeLinks);
         const known = this.spares.get(tenant);
         const existing = await this.inspect(docker, name);
-        if (known && known.homeLinksKey === homeLinksKey && known.image === placement.image && existing?.State?.Running && !existing.State.Paused) {
+        if (known && known.homeLinksKey === homeLinksKey && known.image === placement.image && existing?.State?.Running && !existing.State.Paused
+            && this.runtimeMatches(existing, placement)) {
             return;
         }
         if (existing) {
             if (!this.ownedBy(existing, tenant)) {
                 throw new Error(`Sandbox ${name} is not owned by this tenant.`);
             }
-            // Stale links or image, stopped, or left by a previous control plane (its token is gone).
+            // Stale links, image or runtime, stopped, or left by a previous control plane (its token is gone).
             await docker.getContainer(name).remove({ force: true });
         }
         this.spares.delete(tenant);
@@ -548,6 +551,9 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
         try {
             if (!inspect || !this.ownedBy(inspect, tenant) || !inspect.State?.Running || inspect.State.Paused) {
                 throw new Error('the spare is not running');
+            }
+            if (!this.runtimeMatches(inspect, placement)) {
+                throw new Error('the spare predates a runtime change');
             }
             await docker.getContainer(spare.name).rename({ name });
         } catch (error) {
@@ -727,6 +733,18 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
 
     // ─── Docker ──────────────────────────────────────────────────────────────────────────────────
 
+    /** A sandbox from before a runtime change, or with a stale Squid address, is recreated rather than reused. */
+    protected runtimeMatches(inspect: Dockerode.ContainerInspectInfo, placement: QaapTaskSandboxPlacement): boolean {
+        const host = (inspect as Dockerode.ContainerInspectInfo & { HostConfig?: { Runtime?: string; CgroupParent?: string; ExtraHosts?: string[] | null } }).HostConfig;
+        const runsc = placement.runtime === 'runsc';
+        const expected = runsc ? placement.extraHosts ?? [] : [];
+        const actual = host?.ExtraHosts ?? [];
+        return (host?.Runtime === 'runsc') === runsc
+            && (host?.CgroupParent || '') === (runsc ? placement.cgroupParent ?? '' : '')
+            && actual.length === expected.length
+            && expected.every(entry => actual.includes(entry));
+    }
+
     protected async runSandbox(
         placement: QaapTaskSandboxPlacement, name: string, tenant: string, root: string, image: string,
         toolchain: string, token: string, homeLinks: Array<{ name: string; target: string }>, containerEnv: Record<string, string>,
@@ -767,7 +785,7 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
                 Init: true,
                 CapDrop: ['ALL'],
                 SecurityOpt: ['no-new-privileges:true'],
-                PidsLimit: this.positiveInt('QAAP_TASK_SANDBOX_PIDS', 1024),
+                PidsLimit: this.positiveInt('QAAP_TASK_SANDBOX_PIDS', 1024) * (placement.runtime === 'runsc' ? QAAP_RUNSC_SANDBOX_PIDS_FACTOR : 1),
                 // 4g: building a large monorepo (e.g. a Theia app, whose CI runs with a 4 GiB heap) OOMs at 2g.
                 Memory: this.memoryBytes(process.env.QAAP_TASK_SANDBOX_MEMORY?.trim() || '4g'),
                 NanoCpus: Math.round(Number(process.env.QAAP_TASK_SANDBOX_CPUS?.trim() || '2') * 1e9) || 2e9,
@@ -783,6 +801,7 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
                 ],
                 NetworkMode: placement.network,
                 AutoRemove: false,
+                ...(placement.runtime === 'runsc' ? { Runtime: 'runsc', CgroupParent: placement.cgroupParent, ExtraHosts: [...placement.extraHosts ?? []] } : {}),
             },
         });
         if (placement.directEgressNetwork) {
@@ -920,7 +939,9 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
     }
 
     protected execServerSource(): string {
-        return fs.readFileSync(path.join(__dirname, EXEC_SERVER_FILE), 'utf8');
+        return fs.readFileSync(resolveQaapPackageFile('@theia/qaap-cloud-workspace', `lib/node/${EXEC_SERVER_FILE}`, {
+            directCandidate: path.join(__dirname, EXEC_SERVER_FILE),
+        }), 'utf8');
     }
 
     /**

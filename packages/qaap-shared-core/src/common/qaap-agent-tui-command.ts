@@ -11,6 +11,7 @@ import {
     resolveAgentLoginCliCommand,
 } from './qaap-agent-auth-login';
 import { isAgentHiddenOnHostedRuntime } from './qaap-hosted-agent-auth-policy';
+import { QAAP_PI_DEFAULT_LOGIN_PROVIDER, resolvePiLoginProvider } from './qaap-pi-login-providers';
 
 /**
  * Interactive TUI CLI binary for an agent id — the bare executable to type into a PTY,
@@ -48,10 +49,10 @@ export interface QaapAgentLoginInputStep {
     readonly fallbackMs?: number;
     /** Skipped when the output since the previous step already matches this pattern. */
     readonly skipWhen?: string;
+    /** With `waitFor`: written once before a restart types the sequence again (clears what a stale keystroke left). */
+    readonly resetText?: string;
 }
 
-/** Provider Pi signs in to when the Connect action does not name one. */
-export const QAAP_PI_DEFAULT_LOGIN_PROVIDER = 'openrouter';
 /**
  * Pi 1.4 has no non-interactive provider login, only the TUI `/login`. Regular (non-fullscreen)
  * mode keeps the output scrapeable, `--no-session` writes no session file and `--no-approve`
@@ -59,25 +60,37 @@ export const QAAP_PI_DEFAULT_LOGIN_PROVIDER = 'openrouter';
  * without asking, so nothing but the login dialog can take the keystrokes.
  */
 export const QAAP_PI_TUI_LOGIN_COMMAND = 'pi --tui-mode regular --no-session --no-approve';
-/** Pi's startup header (version, `/ commands` hint, onboarding line): the editor takes input. */
-const PI_READY_PATTERN = '\\bv\\d+\\.\\d+\\.\\d+\\b|\\bcommands\\b|Pi can explain';
+/**
+ * The hidden terminal has no TERM_PROGRAM, so Pi defaults to plain `text (url)` output, which the
+ * 80-column TUI wraps mid-URL. `PI_HYPERLINKS=1` makes Pi emit the whole sign-in URL as an OSC-8
+ * target, which the dialog collects whatever the wrapping.
+ */
+export const QAAP_PI_TUI_LOGIN_ENV: Readonly<Record<string, string>> = { PI_HYPERLINKS: '1' };
+/**
+ * The TUI is drawn and owns stdin: its startup header (version, `/ commands` hint, onboarding line),
+ * the editor's horizontal rules (a quiet `quietStartup` header still draws them) or the no-models
+ * warning. Matched only against output printed after the login command was sent.
+ */
+const PI_READY_PATTERN = '\\bv\\d+\\.\\d+\\.\\d+\\b|\\bcommands\\b|Pi can explain|No models available|─{20,}';
 /** `Select authentication method for OpenRouter:` (Sign in with OpenRouter / with an API key). */
 const PI_AUTH_METHOD_PICKER_PATTERN = 'Select authentication method';
-/** Pi provider ids are plain slugs; anything else must never be typed into the TUI. */
-const PI_PROVIDER_ID_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/i;
-
 /**
- * Keystrokes that take Pi from its editor to the provider's browser sign-in (verified against
- * Pi 1.4.0 in a PTY): `/login <provider>` + Enter shows the autocomplete row, a second Enter opens
- * the method picker, a third picks its default "Sign in with <Provider>" entry. Pi then prints the
- * authorization URL and `…paste the authorization code / redirect URL here:`.
+ * Keystrokes that take Pi from its editor to the provider's browser sign-in (OpenRouter verified
+ * against Pi 1.4.0 in a PTY): `/login <provider>` + Enter shows the autocomplete row, a second Enter
+ * opens the method picker, a third picks its default "Sign in with <Provider>" entry. Providers with
+ * an extra login screen (Anthropic's method choice, GitHub Copilot's enterprise domain) get one more
+ * Enter for it. Pi then prints the authorization URL, or the device code.
  */
 export function resolvePiTuiLoginInput(provider: string): readonly QaapAgentLoginInputStep[] {
+    const loginScreenPattern = resolvePiLoginProvider(provider)?.loginScreenPattern;
     return [
-        { text: `/login ${provider}`, waitFor: PI_READY_PATTERN, fallbackMs: 8_000 },
+        // One Ctrl-C closes a provider selector a stale Enter opened and clears a stale editor line
+        // (a second one within 500 ms would exit Pi, so the reset is a single key).
+        { text: `/login ${provider}`, waitFor: PI_READY_PATTERN, fallbackMs: 8_000, resetText: '\x03' },
         { text: '\r' },
         { text: '\r', skipWhen: PI_AUTH_METHOD_PICKER_PATTERN },
         { text: '\r', waitFor: PI_AUTH_METHOD_PICKER_PATTERN },
+        ...(loginScreenPattern ? [{ text: '\r', waitFor: loginScreenPattern, fallbackMs: 8_000 }] : []),
     ];
 }
 
@@ -96,6 +109,8 @@ export type QaapAgentConnectionFlow =
         readonly input: readonly QaapAgentLoginInputStep[];
         readonly fallbackCommand: string;
         readonly followUp: string;
+        /** Environment for the login command only (Pi: `PI_HYPERLINKS=1`). */
+        readonly env: Readonly<Record<string, string>>;
     }
     | { readonly kind: 'settings-api-key'; readonly settingsQuery: string }
     /** `followUp`: what to type inside the CLI once it starts (e.g. Pi's `/login`). */
@@ -140,8 +155,8 @@ export function resolveAgentConnectionFlow(
             ? 'openclaw onboard'
             : bin;
     if (normalized === 'pi') {
-        const requested = options?.provider?.trim().toLowerCase();
-        const provider = requested && PI_PROVIDER_ID_RE.test(requested) ? requested : QAAP_PI_DEFAULT_LOGIN_PROVIDER;
+        // Only the providers listed in QAAP_PI_LOGIN_PROVIDERS are ever typed into the TUI.
+        const provider = resolvePiLoginProvider(options?.provider)?.id ?? QAAP_PI_DEFAULT_LOGIN_PROVIDER;
         return {
             kind: 'tui-login',
             command: QAAP_PI_TUI_LOGIN_COMMAND,
@@ -149,6 +164,7 @@ export function resolveAgentConnectionFlow(
             input: resolvePiTuiLoginInput(provider),
             fallbackCommand: tenantCommand,
             followUp: '/login',
+            env: QAAP_PI_TUI_LOGIN_ENV,
         };
     }
     return { kind: 'tenant-terminal', command: tenantCommand };

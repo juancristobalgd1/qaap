@@ -152,19 +152,18 @@ export function formatQaiqModelSelectionLabel(model: { readonly vendor: string; 
 }
 
 /**
- * Compact model-id label for tight UI (sticky composer toolbar): drops a leading
- * `org/` segment (OpenRouter-style `nvidia/llama-…` → `llama-…`). Keeps ids without `/` as-is.
+ * Compact model-id label for tight UI (pill, picker rows): only the model name. Every provider
+ * segment goes, the last one included as the name (`openrouter/~moonshotai/kimi-latest` →
+ * `kimi-latest`, `anthropic/claude-sonnet-latest` → `claude-sonnet-latest`), and an OpenRouter `~`
+ * prefix goes too. Ids without `/` stay as they are.
  */
 export function formatQaiqModelIdShortLabel(modelId: string): string {
     const trimmed = modelId.trim();
     if (!trimmed) {
         return trimmed;
     }
-    const slash = trimmed.indexOf('/');
-    if (slash <= 0 || slash >= trimmed.length - 1) {
-        return trimmed;
-    }
-    return trimmed.slice(slash + 1);
+    const name = trimmed.slice(trimmed.lastIndexOf('/') + 1).replace(/^~+/, '');
+    return name || trimmed;
 }
 
 /**
@@ -173,11 +172,16 @@ export function formatQaiqModelIdShortLabel(modelId: string): string {
  * label), and only then the short slug.
  */
 export function formatQaiqModelDisplayLabel(model: { readonly modelId: string; readonly label?: string }): string {
-    const label = model.label?.trim();
-    if (label) {
-        return label;
-    }
     const modelId = model.modelId.trim();
+    const label = model.label?.trim() || resolveKnownModelLabel(modelId);
+    // A catalog label often drops the OpenRouter `:free` marker (`Gemma 4 31B (free)`); a free slug keeps it.
+    if (/:free$/i.test(modelId) && !/free/i.test(label)) {
+        return `${label} :free`;
+    }
+    return label;
+}
+
+function resolveKnownModelLabel(modelId: string): string {
     const known = OPENCODE_FALLBACK_MODELS.find(candidate => candidate.modelId === modelId)
         ?? OPENCODE_PAID_MODEL_OPTIONS.find(candidate => candidate.modelId === modelId);
     return known?.label ?? formatQaiqModelIdShortLabel(modelId);

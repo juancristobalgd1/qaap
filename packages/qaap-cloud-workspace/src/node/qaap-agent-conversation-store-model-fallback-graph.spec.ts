@@ -147,7 +147,7 @@ class TestConversationStore extends QaapAgentConversationStore {
     }
 }
 
-const MODEL_ZERO: QaapCreateAgentTaskQaiqModel = { provider: 'openai', vendor: 'openrouter', modelId: 'spec-model-zero' };
+const MODEL_ZERO: QaapCreateAgentTaskQaiqModel = { provider: 'openai', vendor: 'openrouter', modelId: 'spec-model-zero:free' };
 const CHAIN = buildAgentModelFallbackChain('qaiq', MODEL_ZERO);
 
 function failedTask(id: string): QaapAgentTask {

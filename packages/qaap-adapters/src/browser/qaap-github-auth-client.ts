@@ -35,6 +35,7 @@ import {
     type QaapProjectSessionSummary,
 } from '../common/qaap-github-api-types';
 import { rememberQaapHostedRuntime } from '../common/qaap-hosted-runtime';
+import { rememberQaapDefaultAgentIdConfig } from '../common/qaap-default-agent-config';
 import { fetchQaapGetWithTransientRetry } from '../common/qaap-transient-get';
 import { takeQaapBootPrefetch } from './qaap-boot-prefetch';
 import { nls } from '@theia/core/lib/common/nls';
@@ -178,6 +179,9 @@ async function requestQaapAuthConfig(): Promise<{ config: QaapAuthConfigResponse
     const config = await response.json() as QaapAuthConfigResponse;
     if (typeof config.productionRuntime === 'boolean') {
         rememberQaapHostedRuntime(config.productionRuntime);
+    }
+    if (typeof config.defaultAgentId === 'string') {
+        rememberQaapDefaultAgentIdConfig(config.defaultAgentId);
     }
     return { config, cacheable: true };
 }
@@ -474,6 +478,19 @@ export async function createQaapGithubRepository(request: QaapGithubCreateReposi
         throw await QaapUserFacingErrors.fromResponse(response, `Failed to create GitHub repository (${response.status})`);
     }
     return response.json() as Promise<QaapGithubOpenRepositoryResponse>;
+}
+
+/** "New local project": a git folder under the caller's repos root. No GitHub call is made. */
+export async function createQaapLocalProject(name: string): Promise<{ name: string; workspaceUri: string }> {
+    const response = await fetchQaapOrTimeoutError(`${QAAP_GITHUB_API_PATH}/local-projects`, qaapAuthenticatedFetchInit({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+    }), QAAP_GITHUB_WORKSPACE_TIMEOUT_MS, () => nls.localize('qaap/localProject/timedOut', 'Creating the local project took too long. Try again.'));
+    if (!response.ok) {
+        throw await QaapUserFacingErrors.fromResponse(response, `Failed to create local project (${response.status})`);
+    }
+    return response.json() as Promise<{ name: string; workspaceUri: string }>;
 }
 
 export async function cloneQaapGithubRepository(repository: string): Promise<QaapGithubOpenRepositoryResponse> {

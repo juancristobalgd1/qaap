@@ -14,6 +14,7 @@ import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import { writeJsonAtomic } from './qaap-write-json-atomic';
 import * as path from 'path';
+import { findQaapRepositoryFile } from '@theia/qaap-shared-core/lib/node/qaap-package-file';
 import {
     buildImproveComposerPromptRequest,
     ComposerPromptImproveTimeoutError,
@@ -124,7 +125,7 @@ export async function runGenericCommandExtracted(ctx: QaapAgentTaskRunnerContext
                     cwd,
                     env,
                     stdio: options.stdinPrompt === undefined ? ['ignore', 'pipe', 'pipe'] : ['pipe', 'pipe', 'pipe'],
-                    detached: options.stdinPrompt === undefined ? undefined : false,
+                    detached: options.stdinPrompt === undefined || process.platform !== 'win32' ? undefined : false,
                 });
             } catch (error) {
                 stderr = error instanceof Error ? error.message : String(error);
@@ -279,10 +280,9 @@ export function buildChildEnvExtracted(ctx: QaapAgentTaskRunnerContext, task: Qa
             // QAIQ shell through the versioned Qaap boundary so destructive commands remain
             // denied even in headless/bypass runs. The boundary loads the compiled guard and
             // fails closed when the package has not been compiled yet.
-            env.CLAUDE_CODE_SHELL = path.resolve(
-                __dirname,
-                '../../../../scripts/qaap-guarded-bash.mjs',
-            );
+            env.CLAUDE_CODE_SHELL = findQaapRepositoryFile('scripts/qaap-guarded-bash.mjs', {
+                directCandidate: path.resolve(__dirname, '../../../../scripts/qaap-guarded-bash.mjs'),
+            }) ?? path.resolve(__dirname, '../../../../scripts/qaap-guarded-bash.mjs');
             // The hosted backend runs as root inside its container, where qaiq refuses
             // `--dangerously-skip-permissions` unless it detects a sandbox. The container IS the
             // sandbox, so opt in explicitly (qaiq honours IS_SANDBOX=1 as the root-bypass escape

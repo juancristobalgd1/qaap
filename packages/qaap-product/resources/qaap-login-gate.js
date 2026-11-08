@@ -367,7 +367,7 @@
     // Legacy key, purged on every sign-in write: the session id must never live in
     // localStorage (XSS could exfiltrate it) — the HttpOnly cookie is the only credential.
     var LEGACY_SESSION_ID_SUFFIX = 'qaap.auth.sessionId';
-    var AUTH_CONFIG_TIMEOUT_MS = 4000;
+    var AUTH_CONFIG_TIMEOUT_MS = 8000;
     var AUTH_SESSION_TIMEOUT_MS = 6000;
 
     function storagePrefix() {
@@ -1946,7 +1946,11 @@
             });
     }
 
-    function trySkipAuthDevMode() {
+    /**
+     * Resolves true (dev auth skipped), false (auth required) or undefined (no answer: timed out,
+     * failed or not ok). The gate decides only on an explicit answer; see trySkipAuthDevMode.
+     */
+    function probeAuthConfigSkipState() {
         return fetchWithTimeout('/qaap/api/auth/config', { credentials: 'include' }, AUTH_CONFIG_TIMEOUT_MS)
             .then(function (response) {
                 if (!response.ok) {
@@ -1972,11 +1976,23 @@
                 return false;
             })
             .catch(function () {
-                // A failed config probe is not evidence that another auth probe can help.
-                // Return an explicit unknown state so startup does not wait for a second
-                // timeout against the same unreachable VPS/proxy.
+                // Unknown state: the caller retries once before the gate decides.
                 return undefined;
             });
+    }
+
+    /**
+     * Dev-auth skip probe. A timed-out or failed config probe (undefined) is retried once, so a
+     * slow cold tenant does not flash the sign-in gate over a session that would have skipped auth.
+     * The final undefined still lets the caller show the gate.
+     */
+    function trySkipAuthDevMode() {
+        return probeAuthConfigSkipState().then(function (skipped) {
+            if (skipped !== undefined) {
+                return skipped;
+            }
+            return probeAuthConfigSkipState();
+        });
     }
 
     function verifyStoredSessionThenLoad() {

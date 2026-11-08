@@ -17,6 +17,30 @@ export interface QaapSqliteStoreOptions {
 
 export type QaapSqliteEntry<T> = readonly [key: string, value: T];
 
+/** Cost of one namespace rewrite (see `QaapSqliteStore.replace`). Numbers and the namespace only. */
+export interface QaapSqliteReplaceStats {
+    readonly namespace: string;
+    readonly entries: number;
+    readonly chars: number;
+    readonly stringifyMs: number;
+    readonly totalMs: number;
+}
+
+/** A value that is already JSON text, stored as is. */
+export type QaapSqliteRawEntry = readonly [key: string, json: string];
+
+/** Write time and size of one row (see `QaapSqliteStore.getRowStamp`). */
+export interface QaapSqliteRowStamp {
+    readonly updatedAt: number;
+    readonly bytes: number;
+}
+
+/** The row in `qaap_migration` for one namespace. */
+export interface QaapSqliteMigrationRecord {
+    readonly sourcePath: string;
+    readonly migratedAt: number;
+}
+
 /**
  * Ordered schema migrations; `PRAGMA user_version` records how many have been applied.
  * Append new steps, never edit or reorder existing ones. v1 uses `IF NOT EXISTS`, so databases
@@ -52,6 +76,10 @@ const QAAP_SQLITE_UPSERT_SQL = `
 `;
 
 const QAAP_SQLITE_FILE_SUFFIXES = ['', '-wal', '-shm'];
+
+/** First string after every key that starts with `prefix`. */
+const qaapSqlitePrefixEnd = (prefix: string): string =>
+    `${prefix.slice(0, -1)}${String.fromCharCode(prefix.charCodeAt(prefix.length - 1) + 1)}`;
 
 /**
  * One long-lived connection to a SQLite file, shared by every store (namespace) that uses the same
@@ -346,14 +374,234 @@ export class QaapSqliteStore {
         });
     }
 
-    replace<T>(entries: readonly QaapSqliteEntry<T>[]): void {
+    /**
+     * Rewrites the whole namespace in one synchronous transaction and reports what it cost. The
+     * stats let callers adapt their write cadence to the real duration; they carry no record content.
+     */
+    replace<T>(entries: readonly QaapSqliteEntry<T>[]): QaapSqliteReplaceStats {
+        const startedAt = performance.now();
+        let stringifyMs = 0;
+        let chars = 0;
         this.withConnectionTransaction(connection => {
             connection.prepare('DELETE FROM qaap_kv WHERE namespace = ?').run(this.namespace);
             const statement = connection.prepare(QAAP_SQLITE_UPSERT_SQL);
             const now = Date.now();
             for (const [key, value] of entries) {
+                const stringifyStartedAt = performance.now();
+                const json = JSON.stringify(value);
+                stringifyMs += performance.now() - stringifyStartedAt;
+                chars += json.length;
+                statement.run(this.namespace, key, json, now);
+            }
+        });
+        return {
+            namespace: this.namespace,
+            entries: entries.length,
+            chars,
+            stringifyMs,
+            totalMs: performance.now() - startedAt,
+        };
+    }
+
+    /**
+     * Applies several upserts and key deletions in one transaction: either every change is
+     * committed or, when any value fails to serialize or a statement throws, none is. Only the
+     * listed keys are touched; other keys of this namespace are left as they are.
+     *
+     * @param upserts entries to insert or overwrite, serialized as JSON.
+     * @param deletes keys to remove from this namespace; missing keys are ignored.
+     */
+    applyBatch<T>(upserts: readonly QaapSqliteEntry<T>[], deletes: readonly string[]): void {
+        this.withConnectionTransaction(connection => {
+            const deleteStatement = connection.prepare('DELETE FROM qaap_kv WHERE namespace = ? AND key = ?');
+            for (const key of deletes) {
+                deleteStatement.run(this.namespace, key);
+            }
+            const statement = connection.prepare(QAAP_SQLITE_UPSERT_SQL);
+            const now = Date.now();
+            for (const [key, value] of upserts) {
                 statement.run(this.namespace, key, JSON.stringify(value), now);
             }
+        });
+    }
+
+    /**
+     * Same contract as {@link applyBatch} for values that are already JSON text, so a caller that had
+     * to serialize them (for example to hash them) does not pay for it twice.
+     *
+     * @param upserts entries to insert or overwrite; each value must be valid JSON.
+     * @param deletes keys to remove from this namespace; missing keys are ignored.
+     */
+    applyRawBatch(upserts: readonly QaapSqliteRawEntry[], deletes: readonly string[]): void {
+        this.withConnectionTransaction(connection => {
+            const deleteStatement = connection.prepare('DELETE FROM qaap_kv WHERE namespace = ? AND key = ?');
+            for (const key of deletes) {
+                deleteStatement.run(this.namespace, key);
+            }
+            const statement = connection.prepare(QAAP_SQLITE_UPSERT_SQL);
+            const now = Date.now();
+            for (const [key, json] of upserts) {
+                statement.run(this.namespace, key, json, now);
+            }
+        });
+    }
+
+    /**
+     * Reads the raw JSON text of one key, without parsing it.
+     *
+     * @param key the key to read.
+     * @returns the stored JSON text, or `undefined` when the key does not exist.
+     */
+    getRaw(key: string): string | undefined {
+        return this.withConnection(connection => (connection.prepare(
+            'SELECT value FROM qaap_kv WHERE namespace = ? AND key = ?',
+        ).get(this.namespace, key) as { value?: string } | undefined)?.value);
+    }
+
+    /**
+     * Reads one page of raw rows whose key starts with `prefix`, in key order.
+     *
+     * @param prefix key prefix.
+     * @param afterKey the last key of the previous page, if any.
+     * @param limit maximum rows in the page.
+     * @returns the rows of the page; fewer than `limit` means the last page.
+     */
+    listRawPage(prefix: string, afterKey: string | undefined, limit: number): QaapSqliteRawEntry[] {
+        const lower = afterKey === undefined ? 'key >= ?' : 'key > ?';
+        return this.withConnection(connection => (connection.prepare(
+            `SELECT key, value FROM qaap_kv WHERE namespace = ? AND ${lower} AND key < ? ORDER BY key LIMIT ?`,
+        ).all(this.namespace, afterKey ?? prefix, qaapSqlitePrefixEnd(prefix), limit) as Array<{ key: string; value: string }>)
+            .map((row): QaapSqliteRawEntry => [row.key, row.value]));
+    }
+
+    /**
+     * Whether any key of this namespace starts with `prefix`, without reading any value.
+     *
+     * @param prefix key prefix.
+     * @returns `true` when at least one such key exists.
+     */
+    hasKeyWithPrefix(prefix: string): boolean {
+        return this.withConnection(connection => connection.prepare(
+            'SELECT 1 FROM qaap_kv WHERE namespace = ? AND key >= ? AND key < ? LIMIT 1',
+        ).get(this.namespace, prefix, qaapSqlitePrefixEnd(prefix)) !== undefined);
+    }
+
+    /**
+     * Reads a piece of a stored value without building the whole value as a JavaScript string, which
+     * fails once it nears V8's string limit (~536 M characters).
+     *
+     * @param key the key to read.
+     * @param start zero-based offset, in characters.
+     * @param length maximum characters to return.
+     * @returns the piece; empty past the end of the value; `undefined` when the key does not exist.
+     */
+    readValueChunk(key: string, start: number, length: number): string | undefined {
+        return this.withConnection(connection => (connection.prepare(
+            'SELECT substr(value, ?, ?) AS chunk FROM qaap_kv WHERE namespace = ? AND key = ?',
+        ).get(start + 1, length, this.namespace, key) as { chunk?: string } | undefined)?.chunk);
+    }
+
+    /**
+     * When a key was last written, without reading its value.
+     *
+     * @param key the key to look up.
+     * @returns the `updated_at` timestamp in milliseconds, or `undefined` when the key does not exist.
+     */
+    getUpdatedAt(key: string): number | undefined {
+        return this.withConnection(connection => (connection.prepare(
+            'SELECT updated_at FROM qaap_kv WHERE namespace = ? AND key = ?',
+        ).get(this.namespace, key) as { updated_at?: number } | undefined)?.updated_at);
+    }
+
+    /**
+     * When a key was last written and how many bytes its value holds, without reading the value.
+     *
+     * @param key the key to look up.
+     * @returns the stamp, or `undefined` when the key does not exist.
+     */
+    getRowStamp(key: string): QaapSqliteRowStamp | undefined {
+        const row = this.withConnection(connection => connection.prepare(
+            'SELECT updated_at, octet_length(value) AS bytes FROM qaap_kv WHERE namespace = ? AND key = ?',
+        ).get(this.namespace, key) as { updated_at: number; bytes: number } | undefined);
+        return row === undefined ? undefined : { updatedAt: Number(row.updated_at), bytes: Number(row.bytes) };
+    }
+
+    /** Path of the database file. */
+    get path(): string {
+        return this.databasePath;
+    }
+
+    /**
+     * Bytes the database uses, free pages excluded and committed WAL content included.
+     *
+     * @returns the used size in bytes.
+     */
+    usedBytes(): number {
+        return this.withConnection(connection => {
+            const read = (pragma: string): number => Number(Object.values(connection.prepare(`PRAGMA ${pragma}`).get() as Record<string, unknown>)[0]);
+            return (read('page_count') - read('freelist_count')) * read('page_size');
+        });
+    }
+
+    /**
+     * Moves the whole WAL into the database file and truncates the WAL to zero bytes. Blocks until it
+     * is done; call it only outside a transaction.
+     *
+     * @returns `true` when the checkpoint completed; `false` when another connection kept it from finishing.
+     */
+    checkpointAndTruncateWal(): boolean {
+        return this.withConnection(connection => {
+            const row = connection.database.prepare('PRAGMA wal_checkpoint(TRUNCATE)').get() as { busy?: number } | undefined;
+            return Number(row?.busy ?? 0) === 0;
+        });
+    }
+
+    /**
+     * Whether a migration into this namespace has been recorded in `qaap_migration`.
+     *
+     * @returns `true` once {@link recordMigration} ran for this namespace.
+     */
+    hasMigration(): boolean {
+        return this.withConnection(connection => connection.prepare(
+            'SELECT 1 FROM qaap_migration WHERE namespace = ?',
+        ).get(this.namespace) !== undefined);
+    }
+
+    /**
+     * Records that this namespace was populated from `source`. Call it in the same
+     * {@link withTransaction} as the import so the import and its mark commit together.
+     *
+     * @param source identifier of the legacy source (for example the old namespace name or file path).
+     */
+    recordMigration(source: string): void {
+        this.withConnectionTransaction(connection => {
+            connection.prepare(`
+                INSERT INTO qaap_migration (namespace, source_path, migrated_at)
+                VALUES (?, ?, ?)
+            `).run(this.namespace, source, Date.now());
+        });
+    }
+
+    /**
+     * The migration recorded for this namespace.
+     *
+     * @returns the record, or `undefined` before {@link recordMigration} ran.
+     */
+    getMigration(): QaapSqliteMigrationRecord | undefined {
+        const row = this.withConnection(connection => connection.prepare(
+            'SELECT source_path, migrated_at FROM qaap_migration WHERE namespace = ?',
+        ).get(this.namespace)) as { source_path: string; migrated_at: number } | undefined;
+        return row && { sourcePath: row.source_path, migratedAt: row.migrated_at };
+    }
+
+    /**
+     * Moves the time of the recorded migration forward, keeping its source.
+     *
+     * @param migratedAt the new time, in milliseconds.
+     */
+    touchMigration(migratedAt: number): void {
+        this.withConnectionTransaction(connection => {
+            connection.prepare('UPDATE qaap_migration SET migrated_at = ? WHERE namespace = ?').run(migratedAt, this.namespace);
         });
     }
 

@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import { QAIQ_AGENT_ID } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import {
     agentModelKey,
     agentTurnHasRetryableEmptyOutput,
@@ -93,6 +94,69 @@ describe('qaap-agent-model-fallback', () => {
         })).to.be.false;
     });
 
+    it('treats a turn that only printed its provider error as having no output', () => {
+        const providerError = '\n\n**Error:** {"message":"Provider returned error","code":503}';
+        expect(agentTurnHasRetryableEmptyOutput({
+            segments: [{ type: 'text', content: providerError }],
+        })).to.be.true;
+        expect(agentTurnHasRetryableEmptyOutput({ content: providerError })).to.be.true;
+        expect(agentTurnHasRetryableEmptyOutput({
+            segments: [{ type: 'text', content: `Partial answer${providerError}` }],
+        })).to.be.false;
+        expect(agentTurnQualifiesForModelFallback('pi', { state: 'failed' }, {
+            segments: [{ type: 'text', content: providerError }],
+        })).to.be.true;
+    });
+
+    it('builds the Pi chain from the owner discovered models, without the failed one, capped at four', () => {
+        const failed = { provider: 'openai' as const, vendor: 'openrouter', modelId: 'recursive/flint-v1.0:free' };
+        const discovered = ['recursive/flint-v1.0:free', 'deepseek/a:free', 'qwen/b:free', 'z-ai/c:free', 'mistral/d:free']
+            .map(modelId => ({ provider: 'openai' as const, vendor: 'openrouter', modelId }));
+        const chain = buildAgentModelFallbackChain('pi', failed, discovered);
+        expect(chain.map(agentModelKey)).to.deep.equal([
+            'openrouter/recursive/flint-v1.0:free',
+            'openrouter/deepseek/a:free',
+            'openrouter/qwen/b:free',
+            'openrouter/z-ai/c:free',
+        ]);
+        // The caller records the failed model as tried, so the next pick is the first untried discovered one.
+        expect(resolveNextFallbackAgentModel('pi', failed, new Set(['openrouter/recursive/flint-v1.0:free', 'openrouter/deepseek/a:free']), discovered)?.modelId)
+            .to.equal('qwen/b:free');
+    });
+
+    it('never falls back from a paid model, and never picks a paid fallback target', () => {
+        const paid = { provider: 'openai' as const, vendor: 'openrouter', modelId: '~anthropic/claude-fable-latest' };
+        const discovered = [
+            { provider: 'openai' as const, vendor: 'openrouter', modelId: '~anthropic/claude-sonnet-latest' },
+            { provider: 'openai' as const, vendor: 'openrouter', modelId: 'google/gemma-4-26b-a4b-it:free' },
+        ];
+        expect(buildAgentModelFallbackChain('pi', paid, discovered).map(agentModelKey)).to.deep.equal([agentModelKey(paid)]);
+        expect(resolveNextFallbackAgentModel('pi', paid, new Set([agentModelKey(paid)!]), discovered)).to.equal(undefined);
+        expect(buildAgentModelFallbackChain('pi', paid).map(agentModelKey)).to.deep.equal([agentModelKey(paid)]);
+    });
+
+    it('a free model falls back to free discovered models only, never to a paid one', () => {
+        const free = { provider: 'openai' as const, vendor: 'openrouter', modelId: 'google/gemma-4-26b-a4b-it:free' };
+        const discovered = [
+            { provider: 'openai' as const, vendor: 'openrouter', modelId: '~anthropic/claude-fable-latest' },
+            { provider: 'openai' as const, vendor: 'openrouter', modelId: 'poolside/laguna-s-2.1:free' },
+            { provider: 'openai' as const, vendor: 'openrouter', modelId: 'cohere/north-mini-code:free' },
+        ];
+        const chain = buildAgentModelFallbackChain('pi', free, discovered).map(agentModelKey);
+        expect(chain).to.deep.equal([
+            'openrouter/google/gemma-4-26b-a4b-it:free',
+            'openrouter/poolside/laguna-s-2.1:free',
+            'openrouter/cohere/north-mini-code:free',
+        ]);
+    });
+
+    it('a free model with only paid candidates has no fallback', () => {
+        const free = { provider: 'openai' as const, vendor: 'openrouter', modelId: 'google/gemma-4-26b-a4b-it:free' };
+        const paidOnly = [{ provider: 'openai' as const, vendor: 'openrouter', modelId: '~anthropic/claude-sonnet-latest' }];
+        expect(buildAgentModelFallbackChain('pi', free, paidOnly).map(agentModelKey)).to.deep.equal([agentModelKey(free)]);
+        expect(resolveNextFallbackAgentModel('pi', free, new Set([agentModelKey(free)!]), paidOnly)).to.equal(undefined);
+    });
+
     it('retries explicit credit exhaustion even when the provider returned text', () => {
         expect(agentTurnHasRetryableQuotaFailure({
             content: 'Free credits for this model are exhausted.',
@@ -179,13 +243,16 @@ describe('qaap-agent-model-fallback', () => {
         expect(agentTurnHasRetryableModelFailure({ content: endOfLife })).to.be.true;
         expect(agentTurnHasRetryableModelFailure({ content: endpoint404 })).to.be.true;
         expect(agentTurnQualifiesForModelFallback('qaiq', { state: 'failed' }, { content: endOfLife })).to.be.true;
+        // A NIM model without the free slug is paid by the policy: its retired-model failure has no fallback.
+        const paidCurrent = { provider: 'openai' as const, vendor: 'nvidia', modelId: 'nvidia/llama-3.3-nemotron-super-49b-v1' };
+        expect(resolveNextFallbackAgentModel('qaiq', paidCurrent, new Set([agentModelKey(paidCurrent)!]))).to.equal(undefined);
         const next = resolveNextFallbackAgentModel(
             'qaiq',
-            { provider: 'openai', vendor: 'nvidia', modelId: 'nvidia/llama-3.3-nemotron-super-49b-v1' },
-            new Set(['nvidia/nvidia/llama-3.3-nemotron-super-49b-v1']),
+            { provider: 'openai', vendor: 'openrouter', modelId: 'nvidia/llama-3.3-nemotron-super-49b-v1:free' },
+            new Set(['openrouter/nvidia/llama-3.3-nemotron-super-49b-v1:free']),
         );
-        expect(next?.vendor).to.equal('nvidia');
-        expect(next?.modelId).to.not.equal('nvidia/llama-3.3-nemotron-super-49b-v1');
+        expect(next).to.not.equal(undefined);
+        expect(next?.modelId.endsWith(':free')).to.equal(true);
     });
 
     describe('agentTurnQualifiesForModelFallback (shared by conversation turns and standalone tasks)', () => {
@@ -227,6 +294,35 @@ describe('qaap-agent-model-fallback', () => {
             expect(agentTurnQualifiesForModelFallback('qaiq', { state: 'failed', providerKeyVerdict: 'key_rejected' }, deadModel)).to.be.false;
             expect(agentTurnQualifiesForModelFallback('qaiq', { state: 'failed', providerKeyVerdict: 'no_credits' }, deadModel)).to.be.false;
             expect(agentTurnQualifiesForModelFallback('shell', { state: 'failed' }, undefined)).to.be.false;
+        });
+    });
+
+    it('falls back to another model for a shared-pool 429, but not for the account credits or key limit', () => {
+        const sharedPool = '429: {"message":"Provider returned error","code":429,"metadata":{"raw":"google/gemma-4-26b-a4b-it:free is temporarily rate-limited upstream.","limit_source":"upstream_provider_shared_pool"}}';
+        expect(agentTurnQualifiesForModelFallback('pi', { state: 'failed' }, { segments: [{ type: 'text', content: sharedPool }] })).to.be.true;
+        expect(agentTurnQualifiesForModelFallback('pi', { state: 'failed' }, { content: '402 Payment Required: insufficient credits' })).to.be.false;
+        expect(agentTurnQualifiesForModelFallback('pi', { state: 'failed' }, { content: '429: rate limit exceeded for your API key' })).to.be.false;
+    });
+
+    describe('model identity and Stop', () => {
+        it('treats the same slug as one model across the openrouter prefix and the ~ alias', () => {
+            expect(agentModelKey({ provider: 'openai', vendor: 'openrouter', modelId: 'openrouter/cohere/north-mini-code:free' }))
+                .to.equal(agentModelKey({ provider: 'openai', vendor: 'cohere', modelId: 'cohere/north-mini-code:free' }));
+            expect(agentModelKey({ provider: 'openai', vendor: 'openrouter', modelId: '~cohere/north-mini-code:free' }))
+                .to.equal(agentModelKey({ provider: 'openai', vendor: 'openrouter', modelId: 'cohere/north-mini-code:free' }));
+        });
+
+        it('never chooses the model that just failed as the fallback, even when its vendor tag differs', () => {
+            const failed = { provider: 'openai' as const, vendor: 'cohere', modelId: 'cohere/north-mini-code:free' };
+            const tried = new Set<string>([agentModelKey(failed)!]);
+            const next = resolveNextFallbackAgentModel(QAIQ_AGENT_ID, { provider: 'openai', vendor: 'openrouter', modelId: 'openrouter/cohere/north-mini-code:free' }, tried);
+            expect(next && agentModelKey(next)).to.not.equal(agentModelKey(failed));
+        });
+
+        it('a stopped turn never qualifies for a model fallback, even with tool-call-shaped partial output', () => {
+            const toolShaped = { content: '{"name":"read_file","arguments":{"path":"a"}}' };
+            expect(agentTurnQualifiesForModelFallback(QAIQ_AGENT_ID, { state: 'cancelled', providerKeyVerdict: undefined, preflightFailure: undefined }, toolShaped)).to.be.false;
+            expect(agentTurnQualifiesForModelFallback(QAIQ_AGENT_ID, { state: 'interrupted', providerKeyVerdict: undefined, preflightFailure: undefined }, toolShaped)).to.be.false;
         });
     });
 });

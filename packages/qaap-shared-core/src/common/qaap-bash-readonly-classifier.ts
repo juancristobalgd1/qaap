@@ -217,7 +217,7 @@ export class QaapBashReadOnlyClassifier {
                 return { readOnly: false, reason };
             }
             if (words[0].value === 'cd') {
-                const next = words.length === 2 ? this.resolveRelative(words[1].value, location) : undefined;
+                const next = words.length === 2 ? this.resolveCdLocation(words[1].value, location, options.cwd) : undefined;
                 if (!next) {
                     return { readOnly: false, reason: 'cd outside the working directory' };
                 }
@@ -599,6 +599,23 @@ export class QaapBashReadOnlyClassifier {
             }
         }
         return result;
+    }
+
+    /**
+     * Resolves a `cd` target to path segments below the cwd. Relative targets resolve against `location`;
+     * absolute targets are accepted only when they stay inside the cwd, and then restart from the cwd root.
+     */
+    protected resolveCdLocation(value: string, location: string[], cwd: string | undefined): string[] | undefined {
+        const normalized = value.replace(/\\/g, '/');
+        if (!normalized.startsWith('/') && !WINDOWS_DRIVE_RE.test(normalized)) {
+            return this.resolveRelative(value, location);
+        }
+        const root = cwd ? this.canonicalAbsolute(cwd) : undefined;
+        const target = this.canonicalAbsolute(value);
+        if (!root || !target || !this.isInsideCwd(value, cwd)) {
+            return undefined;
+        }
+        return target.slice(root.length);
     }
 
     /** Lexical containment check (no symlink resolution); Windows drive paths compare case-insensitively. */

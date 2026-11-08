@@ -10,7 +10,6 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-hosted-agent-auth-policy';
 import {
     agentSupportsModelPicker,
-    ensureStoredAgentModel,
     isSameAgentModel,
     isStickyComposerAgentSelected,
     PI_AGENT_ID,
@@ -18,19 +17,18 @@ import {
     type QaapAgentTaskAgentOption,
     type QaapQaiqModelOption,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { seedDisplayedAgentModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
 import {
     createAgentBrandChip,
     createAgentSheetOptionButton,
     createAgentSheetSplitOptionRow,
     createUnavailableAgentSheetOption,
+    formatAgentPickerSelectedLabel,
     resolveAgentPickerDescription,
 } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { resolveAgentPickerConnectionDescription } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-login-instructions';
 import { agentNeedsSettingsApiKeyPath } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
 import { hasAnyConfiguredByokCredential } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
-import {
-    formatQaiqModelSelectionLabel,
-} from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
 import { QAIQ_AGENT_ID, THEIA_CODER_AGENT_ID } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import {
     isStickyComposerAnnotationPopoverAnchor,
@@ -189,24 +187,61 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
     const rerender = (): void => {
         void ctx.renderComposerAgentPicker(chrome, options);
     };
-    const wireSearchKeyboard = (onlyResult?: HTMLElement): void => {
+    /**
+     * Enter acts only on a result the user navigated to with the arrow keys (the focused one, which is
+     * a native button activation). With nothing navigated to, Enter closes the picker and keeps the
+     * current selection. Escape is not handled here: the document-level listener below owns it, so a
+     * single Escape press runs once and stops before any other layer sees it.
+     */
+    const wireSearchKeyboard = (results: readonly HTMLElement[] = []): void => {
         chrome.searchInput.oninput = rerender;
         chrome.searchInput.onkeydown = event => {
-            if (event.key === 'Escape') {
+            if (event.key === 'ArrowDown' && results.length > 0) {
                 event.preventDefault();
-                event.stopPropagation();
-                if (chrome.searchInput.value) {
-                    chrome.searchInput.value = '';
-                    rerender();
-                } else {
-                    chrome.onClose();
-                }
-            } else if (event.key === 'Enter' && onlyResult) {
+                results[0].focus();
+            } else if (event.key === 'Enter') {
                 event.preventDefault();
-                onlyResult.click();
+                chrome.onClose();
             }
         };
+        results.forEach((result, index) => {
+            result.addEventListener('keydown', event => {
+                if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                    event.preventDefault();
+                    const next = event.key === 'ArrowDown' ? results[index + 1] : results[index - 1];
+                    if (next) {
+                        next.focus();
+                    } else if (event.key === 'ArrowUp') {
+                        chrome.searchInput.focus();
+                    }
+                }
+            });
+        });
     };
+    // Escape closes the picker wherever focus is inside it (the search field alone handled it before).
+    if (chrome.sheet.dataset.agentPickerEscapeWired !== 'true') {
+        chrome.sheet.dataset.agentPickerEscapeWired = 'true';
+        const onEscape = (event: KeyboardEvent): void => {
+            if (!chrome.sheet.isConnected) {
+                // Picker closed: stop listening and let the next render wire it again.
+                chrome.sheet.dataset.agentPickerEscapeWired = '';
+                document.removeEventListener('keydown', onEscape, true);
+                return;
+            }
+            if (event.key !== 'Escape') {
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            if (chrome.searchInput.value) {
+                chrome.searchInput.value = '';
+                rerender();
+            } else {
+                chrome.onClose();
+            }
+        };
+        document.addEventListener('keydown', onEscape, true);
+    }
     if (chrome.searchInput.dataset.initialFocusApplied !== 'true') {
         chrome.searchInput.dataset.initialFocusApplied = 'true';
         window.requestAnimationFrame(() => chrome.searchInput.focus({ preventScroll: true }));
@@ -233,7 +268,7 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
             return;
         }
         const storedModel = options.cwd
-            ? ensureStoredAgentModel(options.cwd, modelAgentId, pickerModels ?? [])
+            ? seedDisplayedAgentModel(options.cwd, modelAgentId, pickerModels ?? [])
             : undefined;
         chrome.header.classList.add('theia-mod-drilldown');
         chrome.backBtn.hidden = false;
@@ -278,7 +313,7 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
             replaceAgentPickerLoading(chrome.list, ...Array.from(modelContent.childNodes));
         }
         const modelButtons = chrome.list.querySelectorAll<HTMLElement>('.theia-mobile-sticky-composer-sheet-option');
-        wireSearchKeyboard(modelButtons.length === 1 ? modelButtons[0] : undefined);
+        wireSearchKeyboard(Array.from(modelButtons));
         window.requestAnimationFrame(() => ctx.syncAgentPickerPopoverPosition(chrome.sheet));
         return;
     }
@@ -405,11 +440,11 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
         const hasModels = agentSupportsModelPicker(agentId);
         const agentSelected = isStickyComposerAgentSelected(agentId, options.selectedAgentId, options.cwd);
         const storedModel = options.cwd
-            ? ensureStoredAgentModel(options.cwd, agentId, entry.models)
+            ? seedDisplayedAgentModel(options.cwd, agentId, entry.models)
             : undefined;
         let displayLabel = label;
         if (storedModel?.modelId && agentSelected) {
-            displayLabel = `${label} · ${formatQaiqModelSelectionLabel(storedModel)}`;
+            displayLabel = formatAgentPickerSelectedLabel(label, storedModel);
         }
         const row: HTMLElement = hasModels
             ? createAgentSheetSplitOptionRow({
@@ -546,6 +581,6 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
     const resultButtons = chrome.list.querySelectorAll<HTMLElement>(
         '.theia-qaap-agent-sheet-option:not(.theia-qaap-agent-sheet-split-main), .theia-qaap-agent-sheet-split-chevron, .theia-qaap-agent-sheet-inline-model',
     );
-    wireSearchKeyboard(resultButtons.length === 1 ? resultButtons[0] : undefined);
+    wireSearchKeyboard(Array.from(resultButtons));
     window.requestAnimationFrame(() => ctx.syncAgentPickerPopoverPosition(chrome.sheet));
 }

@@ -1,6 +1,7 @@
 import type { MobileClosingNarrativeAction } from './mobile-projects-transcript-messages-artifacts-ui';
 import type { MobileProjectsTranscriptMessagesArtifactsUiContext } from './mobile-projects-transcript-messages-artifacts-ui-context';
 import { resolveAgentMessageTiming } from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
+import { stripQaapControlMarkersForDisplay } from '@theia/qaap-shared-core/lib/common/qaap-agent-message-content';
 import { MOBILE_CLOSING_TEXT_ERROR_PREFIX } from './mobile-projects-transcript-messages-artifacts-ui-constants';
 // Extracted from mobile-projects-transcript-messages-artifacts-ui.ts
 
@@ -44,6 +45,7 @@ import {
     collectMobileClosingNarrativeTextsBefore as collectMobileClosingNarrativeTextsBeforeHelper,
 } from './mobile-projects-transcript-messages-artifacts-helpers';
 import { resolveTranscriptDiscardCheckpointId, resolveTranscriptTurnRetryAttempt } from '../common/qaap-transcript-turn-recovery';
+import { createMobileStoppedTurnLineElement } from './mobile-stopped-turn-line';
 
 export function removeTranscriptLiveStatusWithOrbExtracted(ctx: MobileProjectsTranscriptMessagesArtifactsUiContext, root: ParentNode): void {
         removeTranscriptLiveStatusElement(root, {
@@ -126,14 +128,21 @@ export function createTranscriptAgentSegmentsRowExtracted(ctx: MobileProjectsTra
             }
             for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex++) {
                 const segment = segments[segmentIndex];
-                if (segment.type === 'text' && (segment.content?.trim() ?? '').length > 0) {
-                    const textBlock = ctx.toolUi.createTranscriptSegmentDetails(segment, {
+                // Protocol sentinels (@@QAAP:BLOCKED@@, @@QAAP:VERDICT@@) are machine markers, never transcript text.
+                const visibleText = segment.type === 'text' ? stripQaapControlMarkersForDisplay(segment.content ?? '') : '';
+                if (segment.type === 'text' && visibleText.length > 0) {
+                    const textBlock = ctx.toolUi.createTranscriptSegmentDetails({ ...segment, content: visibleText }, {
                         defer,
                         streaming: options?.streaming,
                     });
                     textBlock.setAttribute(TRANSCRIPT_SEGMENT_INDEX_ATTR, String(segmentIndex));
                     body.append(textBlock);
                 }
+            }
+            // A Stop on a turn without tool calls has no process accordion to say so: show the
+            // stopped closing state under whatever partial answer streamed.
+            if (ctx.isAgentMessageCancelled(options?.message ?? ctx.resolveLastAgentMessage(conv))) {
+                body.append(createMobileStoppedTurnLineElement());
             }
         }
 
@@ -351,6 +360,8 @@ export function resolveRunStopHandlerExtracted(ctx: MobileProjectsTranscriptMess
             return () => ctx.host.cancelOpenTranscriptStream?.();
         }
         return () => {
+            // Optimistic: this run shows "Turn cancelled." at once; the backend answer settles it.
+            ctx.host.transcriptLiveUi.applyOptimisticRunCancel(conv.id, message.id);
             void cancelConversationRun(conv.id, userMessageId).catch(() => {
                 // Backend refused the targeted cancel — fall back to stopping the session.
                 ctx.host.cancelOpenTranscriptStream?.();

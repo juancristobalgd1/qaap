@@ -61,12 +61,16 @@ import { QaapAgentTaskEndpoint } from './qaap-agent-task-endpoint';
 import { QaapStandaloneTaskModelFallback } from './qaap-standalone-task-model-fallback';
 import { QaapUserAiSettingsEndpoint } from './qaap-user-ai-settings-endpoint';
 import { QaapBillingEndpoint } from './qaap-billing-endpoint';
+import { QaapUsageEndpoint } from './usage/qaap-usage-endpoint';
+import { QaapUsageLimitsService } from './usage/qaap-usage-limits';
+import { QaapUsageScanner } from './usage/qaap-usage-scanner';
 import { QaapBillingStore } from './qaap-billing-store';
 import { QaapBillingQuotaService } from './qaap-billing-quota-service';
 import { QaapBillingQuota } from '@theia/qaap-adapters/lib/common/qaap-billing-quota';
 import { QaapAgentCliUpdateService } from './qaap-agent-cli-update-service';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { QaapAgentStorageHealthCheck } from './qaap-agent-storage-health-check';
+import { QaapConversationStorageHealthCheck } from './qaap-conversation-storage-health-check';
 import { QaapHealthCheckContribution } from '@theia/qaap-shared-core/lib/node/qaap-health-check-contribution';
 import { QaapDevPreviewForwardedPorts } from '@theia/qaap-shared-core/lib/node/qaap-dev-preview-forwarded-ports';
 import { QaapWorktreeGcContribution } from './qaap-worktree-gc';
@@ -80,6 +84,7 @@ import { QaapCloudWorkspaceStore } from './qaap-cloud-workspace-store';
 import { QaapConversationWorktreeService } from './qaap-conversation-worktree';
 import { QaapDeployRunner } from './qaap-deploy-runner';
 import { QaapDockerOrchestrator } from './qaap-docker-orchestrator';
+import { QaapTenantRuntimeStartupContribution } from './qaap-tenant-runtime-startup';
 import { QaapHeadlessVisualCaptureService } from './qaap-headless-visual-capture';
 import { QaapPreviewShareStore } from './qaap-preview-share-store';
 import { QaapPreviewSupervisor } from './qaap-preview-supervisor';
@@ -267,6 +272,8 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     rebind(WorkspaceServer).toService(QaapHostedWorkspaceServer);
     bind(QaapCloudWorkspaceStore).toSelf().inSingletonScope();
     bind(QaapDockerOrchestrator).toSelf().inSingletonScope();
+    bind(QaapTenantRuntimeStartupContribution).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapTenantRuntimeStartupContribution);
     bind(QaapCloudOrchestrator).toSelf().inSingletonScope();
     bind(QaapDeployRunner).toSelf().inSingletonScope();
     bind(QaapPushSubscriptionStore).toSelf().inSingletonScope();
@@ -334,6 +341,8 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapAgentTaskRunner).toSelf().inSingletonScope();
     bind(QaapAgentStorageHealthCheck).toSelf().inSingletonScope();
     bind(QaapHealthCheckContribution).toService(QaapAgentStorageHealthCheck);
+    bind(QaapConversationStorageHealthCheck).toSelf().inSingletonScope();
+    bind(QaapHealthCheckContribution).toService(QaapConversationStorageHealthCheck);
     bind(QaapAgentCliUpdateService).toSelf().inSingletonScope();
     bind(QaapWorktreeGcContribution).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapWorktreeGcContribution);
@@ -347,7 +356,13 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapBillingQuota).toService(QaapBillingQuotaService);
     bind(QaapBillingEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapBillingEndpoint);
+    bind(QaapUsageScanner).toSelf().inSingletonScope();
+    bind(QaapUsageLimitsService).toSelf().inSingletonScope();
+    bind(QaapUsageEndpoint).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapUsageEndpoint);
     bind(QaapAgentConversationStore).toSelf().inSingletonScope();
+    // onStop flushes pending conversation rows to SQLite and stops the sweep.
+    bind(BackendApplicationContribution).toService(QaapAgentConversationStore);
     // A removed clone's conversations, terminal sessions and recent workspaces must not list it again.
     bind(QaapRemovedRepositoryCleanup).toSelf().inSingletonScope();
     bind(QaapRepositoryRemovalContribution).toService(QaapRemovedRepositoryCleanup);

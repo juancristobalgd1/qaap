@@ -10,6 +10,9 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-context-usage';
 import type { QaapAgentMessage } from './qaap-agent-conversation';
 
+/** First line of the transcript prompt a follow-up turn gets; {@link isTranscriptWrappedPrompt} reads it. */
+export const CONVERSATION_TRANSCRIPT_HEADER = 'You are continuing an ongoing conversation.';
+
 /** Start compressing older turns once the estimated prompt exceeds this share of the context window. */
 export const VPS_PROMPT_COMPRESS_THRESHOLD_RATIO = 0.35;
 /**
@@ -133,7 +136,7 @@ export function buildConversationAgentPrompt(options: BuildConversationAgentProm
         : { compressed: [], recent: [...history] };
 
     const lines: string[] = [
-        'You are continuing an ongoing conversation.',
+        CONVERSATION_TRANSCRIPT_HEADER,
         'Make minimal, targeted edits only — do not regenerate or replace the whole project.',
         'Honor stack and scope constraints from earlier user messages (e.g. vanilla HTML vs a framework).',
         'When the user asks what changed earlier, summarize from the transcript below.',

@@ -254,8 +254,17 @@ export class QaapToolGateService {
             forceAsk = outcome.decision === 'ask';
         }
         const request = requestFor(input);
-        if (!forceAsk && (env.autoApprove !== false || req.toolKind === 'read')) {
-            return { kind: 'allow', source: 'policy', ...(updatedInput ? { updatedInput } : {}) };
+        // Read-only shell commands (same proof as the read-only workspace: classifier plus git-config and
+        // path-containment checks) run without a card in every mode, but never past a hook ask (forceAsk).
+        const readOnlyShell = !forceAsk && isShell
+            && this.isVerifiedReadOnlyShell(typeof input.command === 'string' ? input.command : undefined, req.cwd, env);
+        if (!forceAsk && (env.autoApprove !== false || req.toolKind === 'read' || readOnlyShell)) {
+            return {
+                kind: 'allow',
+                source: 'policy',
+                ...(readOnlyShell ? { reason: 'read-only-shell' as const } : {}),
+                ...(updatedInput ? { updatedInput } : {}),
+            };
         }
         const ttlSec = Math.min(env.askTtlSec, QAAP_TOOL_GATE_MAX_ASK_TTL_SEC);
         if (!(ttlSec > 0)) {

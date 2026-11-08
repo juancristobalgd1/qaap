@@ -34,9 +34,15 @@ import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/
 import type { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
 import type { ComposerAgentPickerChrome } from './mobile-projects-sticky-composer-sheets-ui';
 import { renderAgentPickerLoadError, renderAgentPickerSkeleton } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-picker-loading';
+import { prewarmSendCatalog } from './qaap-paid-model-send-confirm';
 import { readComposerAgentCatalogSession, writeComposerAgentCatalogSession } from './composer-agent-catalog-session-cache';
 
 /** Minimum gap between agent catalog reloads for the same cwd when a catalog is already loaded. */
+const MODEL_LABELS_STORAGE_KEY = 'qaap.composer.modelLabels';
+/** Dispatched on window when a catalog label first arrives, so mounted pills repaint. */
+export const QAAP_MODEL_LABELS_CHANGED_EVENT = 'qaap-model-labels-changed';
+const LABEL_WARM_MIN_INTERVAL_MS = 10_000;
+
 export const STICKY_CATALOG_REFRESH_MIN_INTERVAL_MS = 10_000;
 
 export interface MobileProjectsStickyComposerAgentsHost {
@@ -64,18 +70,72 @@ export class MobileProjectsStickyComposerAgentsUi {
 
     constructor(protected readonly host: MobileProjectsStickyComposerAgentsHost) { }
 
+    /** Labels saved by an earlier session, so a reloaded pill shows the catalog name before any picker opens. */
+    protected restoreModelLabels(): void {
+        try {
+            const raw = window.localStorage.getItem(MODEL_LABELS_STORAGE_KEY);
+            const parsed: unknown = raw ? JSON.parse(raw) : undefined;
+            if (parsed && typeof parsed === 'object') {
+                for (const [modelId, label] of Object.entries(parsed)) {
+                    if (typeof label === 'string' && label.trim()) {
+                        this.modelLabelsById.set(modelId, label.trim());
+                    }
+                }
+            }
+        } catch {
+            /* unreadable or blocked: the slug stays the fallback */
+        }
+    }
+
     /** Remember the labels of a freshly resolved model catalog so the toolbar chip can show them. */
     rememberModelLabels(models: readonly QaapQaiqModelOption[]): void {
+        let changed = false;
         for (const model of models) {
             const label = model.label?.trim();
-            if (label) {
+            if (label && this.modelLabelsById.get(model.modelId) !== label) {
                 this.modelLabelsById.set(model.modelId, label);
+                changed = true;
+            }
+        }
+        if (changed) {
+            try {
+                window.localStorage.setItem(MODEL_LABELS_STORAGE_KEY, JSON.stringify(Object.fromEntries(this.modelLabelsById)));
+            } catch {
+                /* session-only */
+            }
+            try {
+                window.dispatchEvent(new Event(QAAP_MODEL_LABELS_CHANGED_EVENT));
+            } catch {
+                /* no DOM event target here: mounted pills repaint on their next build */
             }
         }
     }
 
+    protected readonly labelWarmAt = new Map<string, number>();
+
+    /**
+     * Loads the model catalog of a harness in the background, at most once per interval, so the pill
+     * learns the catalog names even before the picker has been opened in this browser.
+     */
+    warmModelLabels(agentId: string): void {
+        const now = Date.now();
+        const last = this.labelWarmAt.get(agentId);
+        if (last !== undefined && now - last < LABEL_WARM_MIN_INTERVAL_MS) {
+            return;
+        }
+        this.labelWarmAt.set(agentId, now);
+        void fetchAgentModelsForAgent(agentId).then(models => {
+            this.rememberModelLabels(models);
+        }, () => {
+            this.labelWarmAt.delete(agentId);
+        });
+    }
+
     /** Live-catalog label for a model id, or undefined until a catalog containing it has loaded. */
     resolveModelLabel(modelId: string): string | undefined {
+        if (this.modelLabelsById.size === 0) {
+            this.restoreModelLabels();
+        }
         return this.modelLabelsById.get(modelId)
             ?? this.host.stickyComposerQaiqModels.find(model => model.modelId === modelId)?.label?.trim();
     }
@@ -119,6 +179,20 @@ export class MobileProjectsStickyComposerAgentsUi {
         // roll back after 20s even though the shell runner is already available.
         return resolved ?? SHELL_AGENT_ID;
     }
+    /**
+     * The agent the composer chip names, and therefore the agent a submit sends. The user's choice
+     * (pinned in memory or stored for the project) wins as is: reconciling it against a catalog that
+     * is still warming or lists it under another state made the chip say one agent while the submit
+     * routed another. Without a usable choice it is the reconciled pinned agent.
+     */
+    resolveStickyComposerDisplayedAgentId(project: MobileProjectEntry): string {
+        const cwd = this.host.projectsService.getProjectCwd(project) ?? this.host.preparedCwdByProjectId.get(project.id);
+        const chosen = (this.host.stickyComposerPinnedAgentId ?? readStoredAgent(cwd))?.trim();
+        if (chosen && chosen !== 'task' && !isTheiaCoderAgent(chosen)) {
+            return chosen;
+        }
+        return this.resolveStickyComposerPinnedAgentId(project);
+    }
     resolveStickyComposerAgentLabel(project?: MobileProjectEntry): string {
         const cwd = project
             ? this.host.projectsService.getProjectCwd(project) ?? this.host.preparedCwdByProjectId.get(project.id)
@@ -129,7 +203,7 @@ export class MobileProjectsStickyComposerAgentsUi {
         if (!chosen && project && !this.stickyComposerAgentCatalogSettled) {
             return nls.localize('qaap/mobileProjects/stickyComposerAgentPending', 'Agent');
         }
-        const pinned = chosen ?? (project ? this.resolveStickyComposerPinnedAgentId(project) : undefined);
+        const pinned = project ? this.resolveStickyComposerDisplayedAgentId(project) : chosen;
         if (isTheiaCoderAgent(pinned)) {
             return this.host.chatAgentService?.getAgent(THEIA_CODER_AGENT_ID)?.name ?? 'Coder';
         }
@@ -181,6 +255,8 @@ export class MobileProjectsStickyComposerAgentsUi {
         if (!agentSupportsModelPicker(agentId)) {
             return undefined;
         }
+        // Warm the send catalog on mount and agent change, so the first send rarely waits on it.
+        void prewarmSendCatalog(agentId);
         const existing = readStoredAgentModel(cwd, agentId);
         // A stored selection is kept only when the catalog lists it. Without a preferred catalog the live one
         // is fetched below, so a model the account can no longer run (e.g. Codex `gpt-5.6-sol` on a Free plan)
@@ -222,19 +298,29 @@ export class MobileProjectsStickyComposerAgentsUi {
             ...this.filterSelectableComposerAgents(agents).map(agent => agent.id),
         ];
         const seen = new Set<string>();
+        const candidates: string[] = [];
         for (const candidate of candidateIds) {
             const agentId = candidate?.trim();
             if (!agentId) {
                 continue;
             }
             const key = agentId.toLowerCase();
-            if (seen.has(key)) {
+            if (seen.has(key) || !agentSupportsModelPicker(agentId)) {
+                seen.add(key);
                 continue;
             }
             seen.add(key);
-            if (!agentSupportsModelPicker(agentId)) {
-                continue;
+            candidates.push(agentId);
+        }
+        // Start every harness's model catalog at once. The loop below consumes them in picker order, so the
+        // first usable harness still wins, but a slow or hung catalog no longer delays the ones behind it.
+        for (const agentId of candidates) {
+            if (agentId.toLowerCase() !== 'qaiq') {
+                void fetchAgentModelsForAgent(agentId).catch(() => undefined);
             }
+        }
+        for (const agentId of candidates) {
+            const key = agentId.toLowerCase();
             const model = await this.ensureStickyComposerAgentModel(
                 agentId,
                 cwd,

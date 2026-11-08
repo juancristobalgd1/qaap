@@ -280,7 +280,7 @@ describe('task sandbox exec server and local client (real processes)', function 
 class FakeDocker {
     readonly created: Array<Record<string, unknown>> = [];
     readonly removed: string[] = [];
-    readonly containers = new Map<string, { labels: Record<string, string>; env: string[]; running: boolean; image: string; networks: Record<string, string> }>();
+    readonly containers = new Map<string, { labels: Record<string, string>; env: string[]; running: boolean; image: string; networks: Record<string, string>; hostConfig?: Record<string, unknown> }>();
     readonly volumes: Array<Record<string, unknown>> = [];
     readonly connected: string[] = [];
     readonly presentImages = new Set(['qaap-theia:test']);
@@ -290,11 +290,11 @@ class FakeDocker {
     failImage: string | undefined;
     modem = { followProgress: (_stream: unknown, done: (error: Error | null) => void) => done(null) };
 
-    createContainer(config: { name?: string; Image: string; Labels?: Record<string, string>; Env?: string[]; HostConfig?: { NetworkMode?: string } }): unknown {
+    createContainer(config: { name?: string; Image: string; Labels?: Record<string, string>; Env?: string[]; HostConfig?: { NetworkMode?: string; [key: string]: unknown } }): unknown {
         this.created.push(config as unknown as Record<string, unknown>);
         const name = config.name ?? `helper-${this.created.length}`;
         const networks: Record<string, string> = config.HostConfig?.NetworkMode ? { [config.HostConfig.NetworkMode]: `172.24.0.${this.created.length + 1}` } : {};
-        this.containers.set(name, { labels: config.Labels ?? {}, env: config.Env ?? [], running: false, image: config.Image, networks });
+        this.containers.set(name, { labels: config.Labels ?? {}, env: config.Env ?? [], running: false, image: config.Image, networks, hostConfig: config.HostConfig ?? {} });
         return this.getContainer(name);
     }
 
@@ -334,6 +334,7 @@ class FakeDocker {
                 }
                 return {
                     Config: { Labels: container.labels, Env: container.env, Image: container.image },
+                    HostConfig: container.hostConfig,
                     State: { Running: container.running, ExitCode: 127 },
                     NetworkSettings: { Networks: Object.fromEntries(Object.entries(container.networks).map(([network, IPAddress]) => [network, { IPAddress }])) },
                 };
@@ -454,6 +455,37 @@ describe('QaapTaskSandboxBroker (control plane)', () => {
         ]) {
             expect(() => broker.validateRoot(placement, hostile), hostile).to.throw();
         }
+    });
+
+    it('applies the gVisor runtime and Squid address from the placement, and recreates a stale sandbox', () => {
+        const access = broker as unknown as { runtimeMatches(inspect: unknown, placement: QaapTaskSandboxPlacement): boolean };
+        const hosts = ['qaap-tenant-egress-proxy:172.24.0.2'];
+        const cgroupParent = 'qaap-0123456789abcdef.slice';
+        const runsc: QaapTaskSandboxPlacement = { ...placementFor('alice'), runtime: 'runsc', cgroupParent, extraHosts: hosts };
+        const runc: QaapTaskSandboxPlacement = { ...placementFor('alice'), runtime: 'runc', extraHosts: [] };
+        const inspect = (HostConfig: Record<string, unknown>): unknown => ({ HostConfig });
+        expect(access.runtimeMatches(inspect({ Runtime: 'runsc', CgroupParent: cgroupParent, ExtraHosts: hosts }), runsc)).to.equal(true);
+        expect(access.runtimeMatches(inspect({ Runtime: 'runsc', ExtraHosts: hosts }), runsc), 'outside the tenant slice').to.equal(false);
+        expect(access.runtimeMatches(inspect({ Runtime: 'runc', CgroupParent: cgroupParent, ExtraHosts: hosts }), runsc)).to.equal(false);
+        expect(access.runtimeMatches(inspect({ Runtime: 'runsc', CgroupParent: cgroupParent, ExtraHosts: ['qaap-tenant-egress-proxy:172.24.0.9'] }), runsc)).to.equal(false);
+        expect(access.runtimeMatches(inspect({ Runtime: 'runsc', CgroupParent: cgroupParent }), runsc)).to.equal(false);
+        expect(access.runtimeMatches(inspect({ Runtime: 'runc' }), runc)).to.equal(true);
+        expect(access.runtimeMatches(inspect({}), placementFor('alice'))).to.equal(true);
+        expect(access.runtimeMatches(inspect({ Runtime: 'runsc', ExtraHosts: hosts }), runc)).to.equal(false);
+    });
+
+    it('creates the sandbox under runsc, and the toolchain copier stays on the default runtime', async () => {
+        const hosts = ['qaap-tenant-egress-proxy:172.24.0.2'];
+        (broker as unknown as { orchestrator: { taskSandboxPlacement: unknown } }).orchestrator.taskSandboxPlacement =
+            async (tenant: string) => ({ ...placementFor(tenant), runtime: 'runsc', cgroupParent: 'qaap-0123456789abcdef.slice', extraHosts: hosts });
+        const sandbox = await broker.create('alice', { root: '/tmp/qaap-worktrees/alice/repo-1' });
+        const config = docker.created.find(entry => entry.name === sandbox.name) as { HostConfig: { Runtime?: string; CgroupParent?: string; ExtraHosts?: string[] } };
+        expect(config.HostConfig.Runtime).to.equal('runsc');
+        expect(config.HostConfig.CgroupParent).to.equal('qaap-0123456789abcdef.slice');
+        expect(config.HostConfig.ExtraHosts).to.deep.equal(hosts);
+        expect((config.HostConfig as { PidsLimit?: number }).PidsLimit).to.equal(2048);
+        const others = docker.created.filter(entry => entry.name !== sandbox.name) as Array<{ HostConfig: { Runtime?: string } }>;
+        expect(others.every(entry => entry.HostConfig.Runtime === undefined)).to.equal(true);
     });
 
     it('creates a hardened sandbox on the tenant network that binds only the fixed tenant roots', async () => {
@@ -716,6 +748,24 @@ describe('QaapTaskSandboxBroker (control plane)', () => {
             await settled();
             const refilled = docker.created.filter(entry => entry.name === spare).pop() as { Env: string[] };
             expect(refilled.Env).to.include('QAAP_SANDBOX_HOME_LINKS=[]');
+        });
+
+        it('never hands out a spare that predates a runtime change', async () => {
+            await broker.handle('alice', { op: 'prepare', args: { homeLinks } });
+            await settled();
+            const spare = broker.spareName('alice');
+            const runcToken = docker.stdinWrites.get(spare)!.trim();
+            const hosts = ['qaap-tenant-egress-proxy:172.24.0.2'];
+            (broker as unknown as { orchestrator: { taskSandboxPlacement: unknown } }).orchestrator.taskSandboxPlacement =
+                async (tenant: string) => ({ ...placementFor(tenant), runtime: 'runsc', cgroupParent: 'qaap-0123456789abcdef.slice', extraHosts: hosts });
+            const sandbox = await broker.create('alice', { root: '/tmp/qaap-worktrees/alice/repo-1', homeLinks });
+            expect(sandbox.source).to.equal('cold');
+            expect(sandbox.token).to.not.equal(runcToken);
+            // The refill replaces the runc spare with one on the new runtime.
+            await settled();
+            const refilled = docker.created.filter(entry => entry.name === spare).pop() as { HostConfig: { Runtime?: string } };
+            expect(refilled.HostConfig.Runtime).to.equal('runsc');
+            expect(docker.stdinWrites.get(spare)!.trim()).to.not.equal(runcToken);
         });
 
         it('recreates a spare whose container died, skips it at the cap, is off with QAAP_TASK_SANDBOX_SPARE=0, and is reaped with the tenant', async () => {

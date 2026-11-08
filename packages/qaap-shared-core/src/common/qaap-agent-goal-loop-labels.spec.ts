@@ -7,23 +7,17 @@ import { expect } from 'chai';
 import {
     goalLoopSummaryFields,
     isGoalLoopSummaryActive,
-    resolveGoalLoopChipView,
     resolveGoalLoopPillLabel,
 } from './qaap-agent-goal-loop-labels';
 
 describe('qaap-agent-goal-loop-labels', () => {
     it('shows nothing without a goal loop', () => {
-        expect(resolveGoalLoopChipView(undefined)).to.equal(undefined);
-        expect(resolveGoalLoopChipView({})).to.equal(undefined);
         expect(resolveGoalLoopPillLabel({})).to.equal(undefined);
         expect(isGoalLoopSummaryActive({})).to.equal(false);
     });
 
     it('labels the running phases with the iteration', () => {
         const executing = { goalLoopPhase: 'executing' as const, goalLoopIteration: 2, goalLoopMaxIterations: 8 };
-        expect(resolveGoalLoopChipView(executing)).to.include({ label: 'Executing 2/8', tone: 'running' });
-        expect(resolveGoalLoopChipView({ ...executing, goalLoopPhase: 'verifying' })?.label).to.equal('Verifying 2/8');
-        expect(resolveGoalLoopChipView({ ...executing, goalLoopPhase: 'evaluating' })?.label).to.equal('Evaluating 2/8');
         expect(resolveGoalLoopPillLabel({ ...executing, goalLoopPhase: 'verifying' })).to.equal('Iteration 2/8 · Verifying');
         expect(isGoalLoopSummaryActive(executing)).to.equal(true);
     });
@@ -35,11 +29,6 @@ describe('qaap-agent-goal-loop-labels', () => {
     });
 
     it('labels terminal phases, with the stop reason as tooltip', () => {
-        expect(resolveGoalLoopChipView({ goalLoopPhase: 'completed' })).to.include({ label: 'Goal done', tone: 'ok' });
-        expect(resolveGoalLoopChipView({ goalLoopPhase: 'blocked', goalLoopStopReason: 'Out of time.' }))
-            .to.include({ label: 'Goal blocked', tone: 'fail', title: 'Out of time.' });
-        expect(resolveGoalLoopChipView({ goalLoopPhase: 'cancelled', goalLoopStopReason: 'Stopped by the user.' }))
-            .to.include({ label: 'Goal cancelled', tone: 'cancelled', title: 'Stopped by the user.' });
         expect(resolveGoalLoopPillLabel({ goalLoopPhase: 'completed' })).to.equal(undefined);
     });
 

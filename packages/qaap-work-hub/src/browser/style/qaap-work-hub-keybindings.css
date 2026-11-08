@@ -1,0 +1,172 @@
+/* Keybindings section of the mobile Work Hub settings sheet
+ * (`qaap-work-hub-keybindings-panel.ts`). Colors come from Theia variables only. */
+
+.theia-mobile-work-hub-keybindings {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+.theia-mobile-work-hub-keybindings-search {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid var(--theia-input-border, var(--theia-widget-border));
+  border-radius: 6px;
+  background: var(--theia-input-background);
+  color: var(--theia-input-foreground, var(--theia-foreground));
+  font: inherit;
+  font-size: 13px;
+}
+
+.theia-mobile-work-hub-keybindings-search:focus {
+  outline: 1px solid var(--theia-focusBorder);
+  outline-offset: -1px;
+}
+
+.theia-mobile-work-hub-keybindings-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.theia-mobile-work-hub-keybindings-group-title {
+  margin: 20px 0 4px;
+  padding: 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--theia-foreground);
+}
+
+.theia-mobile-work-hub-keybindings-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  min-height: 44px;
+  box-sizing: border-box;
+  padding: 8px 8px;
+  border-bottom: 1px solid var(--theia-widget-border);
+}
+
+.theia-mobile-work-hub-keybindings-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13.5px;
+  font-weight: 400;
+  color: var(--theia-foreground);
+}
+
+.theia-mobile-work-hub-keybindings-keys,
+.theia-mobile-work-hub-keybindings-chip {
+  display: inline-flex;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.theia-mobile-work-hub-keybindings-chip {
+  padding: 2px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.theia-mobile-work-hub-keybindings-chip:hover,
+.theia-mobile-work-hub-keybindings-chip:focus-visible {
+  background: var(--theia-list-hoverBackground);
+  outline: 1px solid var(--theia-focusBorder);
+}
+
+.theia-mobile-work-hub-keybindings kbd {
+  display: inline-block;
+  min-width: 20px;
+  padding: 1px 6px;
+  border: 1px solid var(--theia-widget-border);
+  border-radius: 4px;
+  background: var(--theia-keybindingLabel-background, var(--theia-input-background));
+  color: var(--theia-keybindingLabel-foreground, var(--theia-foreground));
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  text-align: center;
+}
+
+.theia-mobile-work-hub-keybindings-recording {
+  min-height: 28px;
+  padding: 2px 10px;
+  border: 1px dashed var(--theia-focusBorder);
+  border-radius: 6px;
+  background: var(--theia-input-background);
+  color: var(--theia-descriptionForeground);
+  font: inherit;
+  font-size: 13px;
+  cursor: text;
+}
+
+.theia-mobile-work-hub-keybindings-meta {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--theia-descriptionForeground);
+}
+
+.theia-mobile-work-hub-keybindings-when {
+  font-family: var(--theia-code-font-family, monospace);
+  font-size: 12px;
+}
+
+.theia-mobile-work-hub-keybindings-conflict {
+  color: var(--theia-editorWarning-foreground);
+}
+
+.theia-mobile-work-hub-keybindings-badge {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--theia-badge-background);
+  color: var(--theia-badge-foreground);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.theia-mobile-work-hub-keybindings-reset {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--theia-descriptionForeground);
+  cursor: pointer;
+}
+
+.theia-mobile-work-hub-keybindings-reset:hover {
+  color: var(--theia-foreground);
+}
+
+.theia-mobile-work-hub-keybindings-empty {
+  padding: 24px 16px;
+  font-size: 13px;
+  color: var(--theia-descriptionForeground);
+  text-align: center;
+}
+
+/* Narrow (mobile) layout: still one line per shortcut (label ellipsizes, keys stay right);
+ * only the metadata (when / conflict / custom) wraps below. Keep the breakpoint in sync with
+ * MOBILE_NARROW_VIEWPORT_MEDIA_QUERY (767px). */
+@media (max-width: 767px) {
+  .theia-mobile-work-hub-keybindings-row {
+    padding: 10px 4px;
+  }
+}

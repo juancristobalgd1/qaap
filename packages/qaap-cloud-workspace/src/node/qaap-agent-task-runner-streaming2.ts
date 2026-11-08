@@ -1,4 +1,6 @@
 import { buildPiGateTemplateVars } from './qaap-tool-gate-pi-adapter';
+import { formatTaskStartLog } from './qaap-agent-conversation-persist-policy';
+import { buildPiDefaultModelFlagShell } from '@theia/qaap-shared-core/lib/common/qaap-pi-default-model';
 import { AGENT_STOP_GRACE_TIMEOUT_MS, SHELL_AGENT_ID, QAIQ_AGENT_ID, REPO_MAP_CACHE_TTL_MS, REPO_MAP_MAX_CHARS, USER_REQUEST_MAX_CHARS } from './qaap-agent-task-runner-constants';
 import type { QaapAgentCommandBuildResult, QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { QaapAgentQueuePolicy } from './qaap-agent-queue-policy';
@@ -39,7 +41,7 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-interaction-flags';
 import type { QaapAgentApprovalPolicyId } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model-catalog';
-import { canEnforceReadOnlyWorkspace } from '../common/qaap-agent-readonly-workspace';
+import { canEnforceReadOnlyWorkspace, withPiPlanModeInstruction } from '../common/qaap-agent-readonly-workspace';
 import { listNativeAgentModels } from './qaap-agent-native-models';
 import {
     applyAgentApprovalPolicyToCommand,
@@ -49,9 +51,11 @@ import {
     QAIQ_STDIO_APPROVAL_FLAGS,
 } from '../common/qaap-qaiq-stdio-approvals';
 import {
-    resolveAgentAutoApprove,
+    resolveTaskAutoApproveFromPolicy,
 } from '../common/qaap-agent-auto-approve';
 import { formatModelFlagsForAgent } from '../common/qaap-agent-model-flags';
+import { formatEffortFlagsForAgent } from '../common/qaap-agent-effort-flags';
+import type { QaapAgentEffortLevel } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
 import { resolveQaapHarnessCapabilities } from '@theia/qaap-shared-core/lib/common/qaap-harness-capabilities';
 import { QAAP_PROJECT_TRUST_FLAGS_TEMPLATE_VAR, resolveAgentProjectTrustFlags } from '@theia/qaap-shared-core/lib/common/qaap-project-folder-trust';
 import {
@@ -183,15 +187,15 @@ export function createExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCr
         }
         assertAgentAllowedOnHostedRuntime(resolvedAgentId);
         const id = randomUUID();
+        console.warn(formatTaskStartLog('create', id, request.clientRequestId)); // [qaap-task-start] origin of every create
         const parentId = request.parentId && ctx.tasks.has(request.parentId) ? request.parentId : undefined;
         const parentTask = parentId ? ctx.tasks.get(parentId) : undefined;
         // "Request approval" is authoritative: a stale/omitted autoApprove must never turn it into
         // auto-allowed writes plus shell calls silently auto-denied after the grace timeout.
-        const autoApprove = request.approvalPolicyId === 'request-approval'
-            ? false
-            : resolveAgentAutoApprove(
-                request.autoApprove ?? (parentTask?.autoApprove !== false ? undefined : false),
-            );
+        const autoApprove = resolveTaskAutoApproveFromPolicy(
+            request.approvalPolicyId,
+            request.autoApprove ?? (parentTask?.autoApprove !== false ? undefined : false),
+        );
         // A task without its own worktree edits the repository's shared working tree: while the same owner has
         // another such task running in this cwd it queues (visible as `queued`) instead of racing on the same files.
         const sharedWorkingTree = request.ownWorkingTree !== true;
@@ -228,6 +232,7 @@ export function createExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCr
             autoApprove,
             ...(request.readOnlyWorkspace || planMode ? { readOnlyWorkspace: true } : {}),
             ...(request.externalReview ? { externalReview: true } : {}),
+            ...(request.effort ? { effort: request.effort } : {}),
             ...(ownerLogin ? { ownerLogin: ownerLogin.trim() } : {}),
             ...((request.userQuery?.trim() || prompt)
                 ? { userRequest: (request.userQuery?.trim() || prompt).slice(0, USER_REQUEST_MAX_CHARS) }
@@ -285,6 +290,7 @@ export function retryExtracted(ctx: QaapAgentTaskRunnerContext, id: string, owne
                 autoApprove: task.autoApprove,
                 readOnlyWorkspace: task.readOnlyWorkspace,
                 externalReview: task.externalReview,
+                effort: task.effort,
             }
             : {
                 title: task.title,
@@ -297,6 +303,7 @@ export function retryExtracted(ctx: QaapAgentTaskRunnerContext, id: string, owne
                 autoApprove: task.autoApprove,
                 readOnlyWorkspace: task.readOnlyWorkspace,
                 externalReview: task.externalReview,
+                effort: task.effort,
             };
         return ctx.create(request, task.ownerLogin ?? ownerLogin);
 }
@@ -330,6 +337,7 @@ export function resumeExtracted(ctx: QaapAgentTaskRunnerContext, id: string, own
                 autoApprove: task.autoApprove,
                 readOnlyWorkspace: task.readOnlyWorkspace,
                 externalReview: task.externalReview,
+                effort: task.effort,
                 resumedFromTaskId: id,
             }
             : {
@@ -343,12 +351,21 @@ export function resumeExtracted(ctx: QaapAgentTaskRunnerContext, id: string, own
                 autoApprove: task.autoApprove,
                 readOnlyWorkspace: task.readOnlyWorkspace,
                 externalReview: task.externalReview,
+                effort: task.effort,
                 resumedFromTaskId: id,
             };
         const resumed = ctx.create(request, task.ownerLogin ?? ownerLogin);
         ctx.resumingTaskIds ??= new Map();
         ctx.resumingTaskIds.set(id, resumed.id);
         return resumed;
+}
+
+/** Appends the harness effort flags to the `{model_flags}` placeholder; both build branches use it. */
+export function withEffortFlags(vars: Record<string, string>, effortFlags: string): Record<string, string> {
+    if (!effortFlags) {
+        return vars;
+    }
+    return { ...vars, model_flags: [vars.model_flags, effortFlags].filter(Boolean).join(' ') };
 }
 
 export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prompt: string,
@@ -362,9 +379,10 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
         toolApprovalRules?: QaapCreateAgentTaskRequest['toolApprovalRules'],
         userQuery?: string,
         readOnlyWorkspace?: boolean,
-        ownerLogin?: string,): QaapAgentCommandBuildResult {
+        ownerLogin?: string,
+        effort?: QaapAgentEffortLevel,): QaapAgentCommandBuildResult {
         const id = ctx.resolveAgentId(prompt, agentId, ownerLogin);
-        const runnerPrompt = ctx.stripLeadingAgentMention(prompt);
+        const runnerPrompt = withPiPlanModeInstruction(ctx.stripLeadingAgentMention(prompt), id, interactionModeId);
         if (id === SHELL_AGENT_ID) {
             return { command: runnerPrompt, agentId: id };
         }
@@ -406,6 +424,7 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
         ctx.assertQaiqConfigured(id, ownerLogin, agentModel);
         const detected = ctx.detectedAgents.get(id);
         let command: string;
+        const effortFlags = formatEffortFlagsForAgent(id, agentModel?.modelId, effort);
         const interaction: QaapQaiqInteractionFlagOptions = {
             interactionModeId,
             approvalPolicyId: approvalPolicyId === 'approve-for-me'
@@ -441,14 +460,14 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
             : undefined));
         const usesOffArgvPrompt = promptTransport.kind !== 'argv';
         if (detected) {
-            const vars = ctx.buildTemplateVars(id, agentModel, interaction, ownerLogin, resolvedCwd);
+            const vars = withEffortFlags(ctx.buildTemplateVars(id, agentModel, interaction, ownerLogin, resolvedCwd), effortFlags);
             command = useStdioApprovals
                 ? ctx.applyTemplateWithoutPrompt(detected.template, vars)
                 : usesOffArgvPrompt
                     ? applyTemplateForPromptTransportHelper(detected.template, promptTransport, vars)
                     : ctx.applyTemplate(detected.template, agentPrompt, vars);
         } else if (envTemplate) {
-            const vars = ctx.buildTemplateVars(id, agentModel, interaction, ownerLogin, resolvedCwd);
+            const vars = withEffortFlags(ctx.buildTemplateVars(id, agentModel, interaction, ownerLogin, resolvedCwd), effortFlags);
             command = useStdioApprovals || usesOffArgvPrompt
                 ? applyTemplateForPromptTransportHelper(envTemplate, useStdioApprovals
                     ? { kind: 'plain-stdin', placeholder: 'omit' }
@@ -623,7 +642,13 @@ export function buildTemplateVarsExtracted(ctx: QaapAgentTaskRunnerContext, agen
         ownerLogin?: string,
         cwd?: string,): Record<string, string> {
         const vars = buildBaseTemplateVars(ctx, agentId, agentModel, interaction, ownerLogin, cwd);
-        return agentId.trim().toLowerCase() === 'pi' ? { ...vars, ...buildPiGateTemplateVars() } : vars;
+        if (agentId.trim().toLowerCase() !== 'pi') {
+            return vars;
+        }
+        // No model chosen: Pi would pick its own (often a down free model). The product default is resolved by
+        // the shell inside the Pi child, so it sees that child's HOME and pins (see buildPiDefaultModelFlagShell).
+        const modelFlags = vars.model_flags || buildPiDefaultModelFlagShell();
+        return { ...vars, model_flags: modelFlags, ...buildPiGateTemplateVars() };
 }
 
 function buildBaseTemplateVars(ctx: QaapAgentTaskRunnerContext, agentId: string,
@@ -772,17 +797,42 @@ export function finishTaskWithPauseCause(
     }
 }
 
+/**
+ * Logs the first `[qaap-stop]` line of a cancel: how long the task took to settle, and whether a
+ * child process is still running (its `exit` logs the second line via {@link logCancelExitExtracted}).
+ */
+function logCancelSettledExtracted(ctx: Pick<QaapAgentTaskRunnerContext, 'conversationIdForTask'>, taskId: string, settledMs: number, hasChild: boolean): void {
+        const conversationId = ctx.conversationIdForTask?.(taskId) ?? '-';
+        console.warn(`[qaap-stop] conv=${conversationId} task=${taskId} settledMs=${settledMs} exitMs=${hasChild ? 'pending' : 'none'}`);
+}
+
+/** Logs `exitMs` (cancel to child exit) for a stopped task; called from the child's `exit` handler after `process_exit` is recorded. */
+export function logCancelExitExtracted(ctx: Pick<QaapAgentTaskRunnerContext, 'tasks' | 'conversationIdForTask'>, taskId: string): void {
+        const receivedAt = ctx.tasks.get(taskId)?.latencyMarks?.cancel_received;
+        if (receivedAt === undefined) {
+            return;
+        }
+        const exitedAt = ctx.tasks.get(taskId)?.latencyMarks?.process_exit ?? Date.now();
+        const conversationId = ctx.conversationIdForTask?.(taskId) ?? '-';
+        console.warn(`[qaap-stop] conv=${conversationId} task=${taskId} exitMs=${exitedAt - receivedAt}`);
+}
+
 export function cancelExtracted(ctx: QaapAgentTaskRunnerContext, id: string, options?: QaapAgentTaskCancelOptions): QaapAgentTask | undefined {
         const child = ctx.processes.get(id);
         ctx.queuedCreateRequests.delete(id);
         const task = ctx.tasks.get(id);
         if (task && (task.state === 'running' || task.state === 'queued')) {
+            const receivedAt = Date.now();
+            ctx.recordTaskLatencyMark(id, 'cancel_received', receivedAt);
             if (child) {
                 ctx.stoppingTaskIds.add(id);
             }
             const finished = options?.interrupt
                 ? finishTaskWithPauseCause(ctx, id, options.pauseCause)
                 : ctx.finishTask(id, 'cancelled', undefined);
+            const settledAt = Date.now();
+            ctx.recordTaskLatencyMark(id, 'cancel_settled', settledAt);
+            logCancelSettledExtracted(ctx, id, settledAt - receivedAt, child !== undefined);
             if (child) {
                 // Cancellation is visible immediately, but retain the concurrency slot until the
                 // process group has had time to finish an in-flight workspace write safely.

@@ -18,6 +18,7 @@ import { fetchQaapAuthConfig, qaapAuthenticatedFetchInit } from '@theia/qaap-ada
 import { ensurePullRequestsSurfaceCss } from './ensure-pull-requests-surface-css';
 import { TASK_TITLE_OVERFLOW_CLASS } from './mobile-projects-task-title-marquee';
 import { QAAP_NEW_TASK_ICON_CLASS } from './qaap-new-task-icon';
+import { UsageDialog } from './usage-dialog';
 
 export const QAAP_MOBILE_SESSIONS_SIDEBAR_BODY_CLASS = 'theia-mobile-mod-sessions-sidebar-open';
 
@@ -145,7 +146,10 @@ export class MobileWorkHubSessionsSidebar {
     protected readonly settingsSectionLabel: HTMLElement;
     protected readonly settingsNav: HTMLElement;
     protected readonly accountBtn: HTMLButtonElement;
+    protected readonly usageBtn: HTMLButtonElement;
     protected readonly settingsBtn: HTMLButtonElement;
+    /** Built lazily on first open; the sidebar only owns the entry point. */
+    protected readonly usageDialog = new UsageDialog();
     protected readonly accountAvatar: HTMLSpanElement;
     protected readonly accountLabel: HTMLSpanElement;
     /** Short deployed git SHA from `/qaap/api/auth/config` (shown next to the account name). */
@@ -312,6 +316,16 @@ export class MobileWorkHubSessionsSidebar {
             ev.stopPropagation();
             this.delegate.onAccountMenu?.(this.accountBtn);
         });
+        this.usageBtn = document.createElement('button');
+        this.usageBtn.type = 'button';
+        this.usageBtn.className = 'theia-mobile-work-hub-sessions-sidebar-usage-button codicon codicon-graph';
+        this.usageBtn.title = nls.localize('qaap/usage/title', 'Usage');
+        this.usageBtn.setAttribute('aria-label', this.usageBtn.title);
+        this.usageBtn.setAttribute('aria-haspopup', 'dialog');
+        this.usageBtn.addEventListener('click', event => {
+            event.stopPropagation();
+            this.usageDialog.open();
+        });
         this.settingsBtn = document.createElement('button');
         this.settingsBtn.type = 'button';
         this.settingsBtn.className = 'theia-mobile-work-hub-sessions-sidebar-settings-button codicon codicon-settings-gear';
@@ -321,7 +335,7 @@ export class MobileWorkHubSessionsSidebar {
             event.stopPropagation();
             void this.delegate.onSettings?.();
         });
-        footer.append(this.accountBtn, this.settingsBtn);
+        footer.append(this.accountBtn, this.usageBtn, this.settingsBtn);
         this.updateAccountAvatar();
         this.loadDeployedBuildSha();
 

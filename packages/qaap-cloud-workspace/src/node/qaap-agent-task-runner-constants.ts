@@ -113,7 +113,7 @@ export const IDLE_TASK_TIMEOUT_MS = 20 * 60 * 1000;
  * Let a user-stopped agent and its active tools finish cleanup before forcing SIGKILL.
  * The UI still transitions to cancelled immediately; this only controls backend cleanup.
  */
-export const DEFAULT_AGENT_STOP_GRACE_TIMEOUT_MS = 5_000;
+export const DEFAULT_AGENT_STOP_GRACE_TIMEOUT_MS = 2_000;
 export const MIN_AGENT_STOP_GRACE_TIMEOUT_MS = 1_000;
 export const MAX_AGENT_STOP_GRACE_TIMEOUT_MS = 30_000;
 

@@ -54,11 +54,18 @@ export function isModelCapabilityPopoverAnchor(anchor?: HTMLElement): anchor is 
  * or when opening the model capability slider.
  * Working agents expand in place on the pill (not via this floating popover path).
  */
+/** Harness and model pill of the composer: the picker floats above it on every width. */
+export function isStickyComposerAgentPillPopoverAnchor(anchor?: HTMLElement): anchor is HTMLElement {
+    return anchor instanceof HTMLElement
+        && anchor.classList.contains('theia-mobile-projects-sticky-composer-agent');
+}
+
 export function shouldUseStickyComposerPopover(anchor?: HTMLElement): anchor is HTMLElement {
     return shouldUseStickyComposerDesktopPopover(anchor)
         || isStickyComposerAnnotationPopoverAnchor(anchor)
         || isWorkHubHeaderProjectPopoverAnchor(anchor)
-        || isModelCapabilityPopoverAnchor(anchor);
+        || isModelCapabilityPopoverAnchor(anchor)
+        || isStickyComposerAgentPillPopoverAnchor(anchor);
 }
 
 function getStickyComposerViewportBounds(): StickyComposerViewportBounds {
@@ -79,12 +86,23 @@ export function positionStickyComposerPopover(
     align: StickyComposerPopoverAlign = 'start',
     minimumWidth = 280,
 ): void {
-    const margin = 8;
+    // A popover may ask for a wider inset from the viewport edges through `data-viewport-inset`.
+    const margin = Number(popover.dataset.viewportInset) || 8;
     const gap = 6;
     const anchorRect = anchor.getBoundingClientRect();
     const viewport = getStickyComposerViewportBounds();
     const popoverWidth = Math.max(popover.offsetWidth, minimumWidth);
     const popoverHeight = popover.offsetHeight;
+    if (popover.dataset.placement === 'above-start') {
+        // Opens upward with its left edge on the anchor's left edge, kept 16px inside the viewport.
+        const edge = 16;
+        // Bottom edge 8px above the pill; the height follows the content, the list scrolls past the cap.
+        const aboveTop = anchorRect.top - 8 - popoverHeight;
+        popover.style.top = `${Math.max(viewport.top + edge, aboveTop)}px`;
+        const maxLeft = viewport.right - popoverWidth - edge;
+        popover.style.left = `${Math.max(viewport.left + edge, Math.min(anchorRect.left, maxLeft))}px`;
+        return;
+    }
     let top = anchorRect.bottom + gap;
     const minTop = viewport.top + margin;
     const maxBottom = viewport.bottom - margin;
@@ -403,9 +421,23 @@ export function mountStickyComposerBottomSheet(
     backdrop.addEventListener('click', options.onClose);
     sheet.append(backdrop, panel);
     const stopViewport = wireStickyComposerBottomSheetViewport(sheet);
+    // Escape closes the sheet like the popover variant does; the listener ends with the sheet.
+    const escape = new AbortController();
+    document.addEventListener('keydown', (event: KeyboardEvent) => {
+        if (event.key !== 'Escape' || !sheet.isConnected) {
+            if (!sheet.isConnected) {
+                escape.abort();
+            }
+            return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        options.onClose();
+    }, { capture: true, signal: escape.signal });
     const removeSheet = sheet.remove.bind(sheet);
     sheet.remove = (): void => {
         stopViewport();
+        escape.abort();
         removeSheet();
     };
     return sheet;

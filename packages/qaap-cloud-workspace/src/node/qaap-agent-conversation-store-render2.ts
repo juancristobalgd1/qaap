@@ -1,4 +1,6 @@
 // Extracted from qaap-agent-conversation-store.ts
+import type { QaapAgentEffortLevel } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
+import { logTurnCreatedExtracted } from './qaap-agent-turn-create-log';
 import type { QaapAgentConversationStoreContext } from './qaap-agent-conversation-store-context';
 
 import { randomUUID } from 'crypto';
@@ -14,6 +16,7 @@ import { isGoalLoopActive } from '../common/qaap-agent-goal-loop';
 import { QAAP_DEFAULT_DELIVERY_MODE, QaapAgentConversation, QaapAgentConversationStatus, QaapAgentConversationSummary, QaapAgentMessage, QaapCreateAgentConversationRequest, QaapLinkConversationsByBranchRequest, QaapMessageDeliveryMode, QaapPendingUserMessage, toConversationSummary } from '../common/qaap-agent-conversation';
 
 import { agentSupportsModelPicker, QAIQ_AGENT_ID, SHELL_AGENT_ID } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { isLastTurnCancelled } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 
 import { DEFAULT_QAAP_CONTEXT_WINDOW } from '@theia/qaap-shared-core/lib/common/qaap-agent-context-usage';
 
@@ -164,6 +167,9 @@ export function settleStatusForRunExtracted(ctx: QaapAgentConversationStoreConte
 }
 
 export function createExtracted(ctx: QaapAgentConversationStoreContext, request: QaapCreateAgentConversationRequest, ownerLogin?: string): QaapAgentConversation {
+    if (ctx.conversationStorageFailure !== undefined) {
+        throw new Error(`Conversation storage is unavailable: ${ctx.conversationStorageFailure}`);
+    }
     const cwd = path.resolve(request.cwd ?? '');
     if (!path.isAbsolute(cwd) || !ctx.isDirectory(cwd)) {
         throw new Error('A valid absolute "cwd" directory is required.');
@@ -213,6 +219,7 @@ export function createExtracted(ctx: QaapAgentConversationStoreContext, request:
         ...(request.autoApprove === false ? { autoApprove: false } : {}),
         ...(request.contextPreamble ? { contextPreamble: request.contextPreamble } : {}),
         ...(request.interactionModeId ? { interactionModeId: request.interactionModeId } : {}),
+        ...(request.effort ? { effort: request.effort } : {}),
         ...(request.approvalPolicyId ? { approvalPolicyId: request.approvalPolicyId } : {}),
         ...(request.toolApprovalRules ? { toolApprovalRules: request.toolApprovalRules } : {}),
         ...(request.taskPlan ? { taskPlan: request.taskPlan } : {}),
@@ -311,7 +318,7 @@ export function enqueuePendingMessageExtracted(
  */
 export function drainPendingMessagesExtracted(ctx: QaapAgentConversationStoreContext, conversationId: string): void {
     const conv = ctx.conversations.get(conversationId) as QaapAgentConversation | undefined;
-    if (!conv?.pendingUserMessages?.length) {
+    if (!conv?.pendingUserMessages?.length || conv.pendingUserMessagesPaused) {
         return;
     }
     // Only drain when the conversation can accept a new turn — 'idle' or 'failed'. If another
@@ -342,7 +349,7 @@ export function drainPendingMessagesExtracted(ctx: QaapAgentConversationStoreCon
 /** Immediate drain — bypasses the coalesce window. Used after the timer fires. */
 function drainPendingMessagesNow(ctx: QaapAgentConversationStoreContext, conversationId: string): void {
     const conv = ctx.conversations.get(conversationId) as QaapAgentConversation | undefined;
-    if (!conv?.pendingUserMessages?.length) {
+    if (!conv?.pendingUserMessages?.length || conv.pendingUserMessagesPaused) {
         return;
     }
     if (conv.status !== 'idle' && conv.status !== 'failed') {
@@ -463,6 +470,7 @@ export function cancelQueuedMessageExtracted(ctx: QaapAgentConversationStoreCont
     const next: QaapAgentConversation = {
         ...conv,
         pendingUserMessages: filtered.length > 0 ? filtered : undefined,
+        pendingUserMessagesPaused: filtered.length > 0 ? conv.pendingUserMessagesPaused : undefined,
         updatedAt: Date.now(),
     };
     ctx.conversations.set(conversationId, next);
@@ -486,7 +494,7 @@ export function cancelQueuedMessageExtracted(ctx: QaapAgentConversationStoreCont
  */
 export function maybeDrainAtToolRoundBoundaryExtracted(ctx: QaapAgentConversationStoreContext, conversationId: string): void {
     const conv = ctx.conversations.get(conversationId) as QaapAgentConversation | undefined;
-    if (!conv?.pendingUserMessages?.length) {
+    if (!conv?.pendingUserMessages?.length || conv.pendingUserMessagesPaused) {
         return;
     }
     if (conv.status !== 'streaming') {
@@ -560,12 +568,14 @@ export function dispatchQueuedMessageExtracted(ctx: QaapAgentConversationStoreCo
     const cleared: QaapAgentConversation = {
         ...conv,
         pendingUserMessages: filtered.length > 0 ? filtered : undefined,
+        pendingUserMessagesPaused: filtered.length > 0 ? conv.pendingUserMessagesPaused : undefined,
         updatedAt: Date.now(),
     };
     ctx.conversations.set(conversationId, cleared);
     ctx.fire({ type: 'updated', conversation: toConversationSummary(cleared) });
     void ctx.persist();
-    // Re-post the message with the requested delivery mode.
+    // Re-post the message with the requested delivery mode. An explicit dispatch is not blocked
+    // by the Stop pause (postUserMessage does not go through the drain guards).
     return ctx.postUserMessage(
         conversationId,
         pending.content,
@@ -591,7 +601,8 @@ export function postUserMessageExtracted(ctx: QaapAgentConversationStoreContext,
     toolApprovalRules?: QaapCreateAgentConversationRequest['toolApprovalRules'],
     latencyMarks?: QaapCreateAgentConversationRequest['latencyMarks'],
     internal?: PostUserMessageInternalOptions,
-    deliveryMode: QaapMessageDeliveryMode = QAAP_DEFAULT_DELIVERY_MODE, ): QaapAgentConversation {
+    deliveryMode: QaapMessageDeliveryMode = QAAP_DEFAULT_DELIVERY_MODE,
+    effort?: QaapAgentEffortLevel, ): QaapAgentConversation {
     let conv = ctx.conversations.get(id);
     if (!conv) {
         throw new Error('Conversation not found.');
@@ -607,6 +618,32 @@ export function postUserMessageExtracted(ctx: QaapAgentConversationStoreContext,
         if (alreadyAccepted) {
             return conv;
         }
+    }
+    if (internal?.queueOnly && conv.status !== 'streaming' && (isLastTurnCancelled(conv) || conv.pendingUserMessagesPaused)) {
+        // A late mirror of a follow-up queued on the client, arriving after Stop: keep it queued and
+        // paused instead of starting a turn on a stopped conversation.
+        const turnAgentId = ctx.resolveTurnAgent(conv, content, agentOverride);
+        const sealedTurnModel = agentModelOverride && agentSupportsModelPicker(turnAgentId)
+            ? agentModelOverride
+            : undefined;
+        const queued = ctx.enqueuePendingMessage(
+            conv,
+            {
+                id: randomUUID(),
+                role: 'user',
+                content,
+                createdAt: Date.now(),
+                ...(internal.clientMessageId ? { clientMessageId: internal.clientMessageId } : {}),
+            },
+            turnAgentId,
+            sealedTurnModel,
+            internal.clientMessageId,
+        );
+        const paused: QaapAgentConversation = { ...queued, pendingUserMessagesPaused: true };
+        ctx.conversations.set(id, paused);
+        ctx.fire({ type: 'updated', conversation: toConversationSummary(paused) });
+        void ctx.persist();
+        return paused;
     }
     if (conv.status === 'streaming') {
         const activeTaskIds = ctx.getActiveTaskIdsForConversation(id);
@@ -743,7 +780,7 @@ export function postUserMessageExtracted(ctx: QaapAgentConversationStoreContext,
     const messages = [...conv.messages, userMessage];
     let next: QaapAgentConversation = {
         ...conv,
-        ...patchConversationAutoApprove(conv, autoApproveOverride),
+        ...patchConversationAutoApprove(conv, autoApproveOverride, approvalPolicyId),
         agentId: turnAgentId,
         title: conv.messages.length === 0 ? ctx.deriveTitle(content) : conv.title,
         status: 'streaming',
@@ -757,6 +794,7 @@ export function postUserMessageExtracted(ctx: QaapAgentConversationStoreContext,
         discardCheckpointId: undefined,
         ...modelPatch,
         ...(interactionModeId ? { interactionModeId } : {}),
+        ...(effort ? { effort } : {}),
         ...(approvalPolicyId ? { approvalPolicyId } : {}),
         ...(toolApprovalRules ? { toolApprovalRules } : {}),
     };
@@ -791,6 +829,7 @@ export function postUserMessageExtracted(ctx: QaapAgentConversationStoreContext,
             next.ownerLogin,
             { spawnGate },
         );
+        logTurnCreatedExtracted('render2:send', next.id, userMessage.id, task.id);
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         return ctx.failTurnBeforeSpawn(id, next, userMessage.id, message);
@@ -956,6 +995,7 @@ export function nextRetryAttempt(message: Pick<QaapAgentMessage, 'retryAttempt'>
 }
 
 export function cancelExtracted(ctx: QaapAgentConversationStoreContext, id: string): QaapAgentConversation | undefined {
+    const activeTaskCount = ctx.getActiveTaskIdsForConversation(id).length;
     const conv = ctx.conversations.get(id);
     if (!conv) {
         return undefined;
@@ -966,6 +1006,16 @@ export function cancelExtracted(ctx: QaapAgentConversationStoreContext, id: stri
     // finalized; the last-user-message fallback keeps pre-multitasking conversations working.
     const activeRefs = ctx.getActiveTaskIdsForConversation(id)
         .map(taskId => ({ taskId, ref: ctx.taskToConversation.get(taskId) }));
+    // Idempotent: a repeat Stop (the client retries, or the user taps twice) on a conversation with
+    // no live run changes nothing; no second "Turn cancelled." trace and no extra 'updated' event.
+    // An active goal loop still has to be stopped below, even with no live run. A queue that is not yet
+    // paused, or an armed coalesce drain, still needs the Stop below (pause the queue, disarm the drain).
+    const hasArmedDrain = ctx.drainTimers?.has(id) ?? false;
+    const hasUnpausedQueue = (conv.pendingUserMessages?.length ?? 0) > 0 && !conv.pendingUserMessagesPaused;
+    if (activeRefs.length === 0 && conv.status !== 'streaming' && !isGoalLoopActive(conv) && !hasArmedDrain && !hasUnpausedQueue) {
+        console.warn(`[qaap-stop] noop conv=${id} status=${conv.status} liveRuns=0 reason=no-live-run`);
+        return conv;
+    }
     const lastUser = [...conv.messages].reverse().find(m => m.role === 'user' && m.taskId);
     const cancelTaskIds = activeRefs.length > 0
         ? activeRefs.map(entry => entry.taskId)
@@ -1009,6 +1059,15 @@ export function cancelExtracted(ctx: QaapAgentConversationStoreContext, id: stri
     const withLoopCancelled = ctx.cancelGoalLoopOnConversation(next, 'Stopped by the user.');
     const goalLoopCancelled = withLoopCancelled !== next;
     next = withLoopCancelled;
+    // Stop pauses queued follow-ups instead of delivering them; an armed coalesce drain is disarmed.
+    if (next.pendingUserMessages?.length) {
+        next = { ...next, pendingUserMessagesPaused: true };
+    }
+    const armedDrainTimer = ctx.drainTimers?.get(id);
+    if (armedDrainTimer !== undefined) {
+        clearTimeout(armedDrainTimer);
+        ctx.drainTimers.delete(id);
+    }
     ctx.conversations.set(id, next);
     for (const messageId of agentMessageIds) {
         ctx.publishFinalizedAgentMessage(id, next, messageId);
@@ -1019,6 +1078,7 @@ export function cancelExtracted(ctx: QaapAgentConversationStoreContext, id: stri
     if (goalLoopCancelled) {
         ctx.fire({ type: 'goal_loop', conversationId: id, cwd: next.cwd, goalLoop: next.goalLoop });
     }
+    console.warn(`[qaap-stop] result conv=${id} active=${activeTaskCount} outcome=cancelled`);
     ctx.fire({ type: 'updated', conversation: toConversationSummary(next) });
     void ctx.persist();
     return next;

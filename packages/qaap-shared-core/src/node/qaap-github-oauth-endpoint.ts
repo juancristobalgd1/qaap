@@ -9,7 +9,7 @@ import { json } from 'body-parser';
 import { ContributionProvider } from '@theia/core/lib/common/contribution-provider';
 import { BackendApplicationContribution, FileUri } from '@theia/core/lib/node';
 import { WorkspaceServer } from '@theia/workspace/lib/common';
-import { spawn, type ChildProcess } from 'child_process';
+import { execFile, spawn, type ChildProcess } from 'child_process';
 import { randomBytes } from 'crypto';
 import { existsSync, readdirSync, realpathSync } from 'fs';
 import * as fs from 'fs/promises';
@@ -70,6 +70,7 @@ import {
     parseGithubPullRequestViewFilter,
 } from '@theia/qaap-adapters/lib/common/qaap-github-pull-request-search';
 import { readQaapGithubOAuthConfig } from './qaap-github-oauth-config';
+import { readBackendDefaultAgentId } from './qaap-default-agent-id';
 import { QaapGithubAuthGuard, type QaapGithubAuthContext } from './qaap-github-auth-guard';
 import { QaapApiTokenStore } from './qaap-api-token-store';
 import { QaapGithubSessionStore } from './qaap-github-session-store';
@@ -95,6 +96,8 @@ import {
     type QaapGithubWorkspaceJobContext,
 } from './qaap-github-workspace-jobs';
 import { qaapGitReadEnv } from './qaap-child-process-env';
+import { resolveLocalProjectWorkspacePath } from './qaap-local-project-path';
+import { QaapAsyncRoute } from './qaap-async-route';
 
 const GITHUB_AUTHORIZE_URL = 'https://github.com/login/oauth/authorize';
 const GITHUB_OAUTH_SCOPE = 'read:user repo';
@@ -208,29 +211,28 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     configure(app: Application): void {
         app.use(json());
         app.get(QAAP_GITHUB_OAUTH_START_PATH, (req, res) => this.handleOAuthStart(req, res));
-        app.get(QAAP_GITHUB_OAUTH_CALLBACK_PATH, (req, res) => this.handleOAuthCallback(req, res));
+        app.get(QAAP_GITHUB_OAUTH_CALLBACK_PATH, QaapAsyncRoute.wrap('qaap-github-oauth', (req, res) => this.handleOAuthCallback(req, res)));
         app.get(QAAP_HEALTH_API_PATH, (req, res) => this.handleHealth(req, res));
         app.get(`${QAAP_AUTH_API_PATH}/config`, (req, res) => this.handleAuthConfig(req, res));
         app.get(`${QAAP_AUTH_API_PATH}/session`, (req, res) => this.handleAuthSession(req, res));
         app.post(`${QAAP_AUTH_API_PATH}/signout`, (req, res) => this.handleSignOut(req, res));
-        app.get(`${QAAP_GITHUB_API_PATH}/repositories`, (req, res) => this.handleGithubRepositories(req, res));
-        app.post(`${QAAP_GITHUB_API_PATH}/repositories`, (req, res) => this.handleCreateGithubRepository(req, res));
-        app.post(`${QAAP_GITHUB_API_PATH}/repositories/open`, (req, res) => this.handleCloneGithubRepository(req, res));
+        app.get(`${QAAP_GITHUB_API_PATH}/repositories`, QaapAsyncRoute.wrap('qaap-github-oauth', (req, res) => this.handleGithubRepositories(req, res)));
+        app.post(`${QAAP_GITHUB_API_PATH}/repositories`, QaapAsyncRoute.wrap('qaap-github-oauth', (req, res) => this.handleCreateGithubRepository(req, res)));
+        app.post(`${QAAP_GITHUB_API_PATH}/repositories/open`, QaapAsyncRoute.wrap('qaap-github-oauth', (req, res) => this.handleCloneGithubRepository(req, res)));
+        app.post(`${QAAP_GITHUB_API_PATH}/local-projects`, QaapAsyncRoute.wrap('qaap-github-oauth', (req, res) => this.handleCreateLocalProject(req, res)));
         app.post(`${QAAP_GITHUB_API_PATH}/workspace-jobs`, (req, res) => this.handleStartWorkspaceJob(req, res));
         app.get(`${QAAP_GITHUB_API_PATH}/workspace-jobs`, (req, res) => this.handleListWorkspaceJobs(req, res));
         app.get(`${QAAP_GITHUB_API_PATH}/workspace-jobs/:id`, (req, res) => this.handleGetWorkspaceJob(req, res));
-        app.post(`${QAAP_GITHUB_API_PATH}/workspace-jobs/:id/cancel`, (req, res) => this.handleCancelWorkspaceJob(req, res));
+        app.post(`${QAAP_GITHUB_API_PATH}/workspace-jobs/:id/cancel`, QaapAsyncRoute.wrap('qaap-github-oauth', (req, res) => this.handleCancelWorkspaceJob(req, res)));
         // POST, not GET: opening clones/pulls to disk, and SameSite=Lax only shields non-GET
         // requests from cross-site initiation (a top-level GET navigation would send the cookie).
-        app.post(`${QAAP_GITHUB_API_PATH}/repositories/:owner/:repo/open`, (req, res) => this.handleOpenGithubRepository(req, res));
-        app.delete(`${QAAP_GITHUB_API_PATH}/repositories/:owner/:repo`, (req, res) => {
-            void this.handleDeleteGithubRepository(req, res);
-        });
+        app.post(`${QAAP_GITHUB_API_PATH}/repositories/:owner/:repo/open`, QaapAsyncRoute.wrap('qaap-github-oauth', (req, res) => this.handleOpenGithubRepository(req, res)));
+        app.delete(`${QAAP_GITHUB_API_PATH}/repositories/:owner/:repo`, QaapAsyncRoute.wrap('qaap-github-oauth', (req, res) => this.handleDeleteGithubRepository(req, res)));
         app.delete(`${QAAP_GITHUB_API_PATH}/worktrees/:slug`, (req, res) => this.handleRemoveWorktreeProject(req, res));
-        app.get(`${QAAP_GITHUB_API_PATH}/pull-requests`, (req, res) => this.handleGithubPullRequests(req, res));
-        app.get(`${QAAP_GITHUB_API_PATH}/pull-requests/search`, (req, res) => this.handleSearchGithubPullRequests(req, res));
-        app.get(`${QAAP_GITHUB_API_PATH}/pull-requests/detail`, (req, res) => this.handleGithubPullRequestDetail(req, res));
-        app.post(`${QAAP_GITHUB_API_PATH}/pull-requests/merge`, (req, res) => this.handleMergeGithubPullRequest(req, res));
+        app.get(`${QAAP_GITHUB_API_PATH}/pull-requests`, QaapAsyncRoute.wrap('qaap-github-oauth', (req, res) => this.handleGithubPullRequests(req, res)));
+        app.get(`${QAAP_GITHUB_API_PATH}/pull-requests/search`, QaapAsyncRoute.wrap('qaap-github-oauth', (req, res) => this.handleSearchGithubPullRequests(req, res)));
+        app.get(`${QAAP_GITHUB_API_PATH}/pull-requests/detail`, QaapAsyncRoute.wrap('qaap-github-oauth', (req, res) => this.handleGithubPullRequestDetail(req, res)));
+        app.post(`${QAAP_GITHUB_API_PATH}/pull-requests/merge`, QaapAsyncRoute.wrap('qaap-github-oauth', (req, res) => this.handleMergeGithubPullRequest(req, res)));
         app.get(`${QAAP_GITHUB_API_PATH}/project-sessions`, (req, res) => this.handleProjectSessions(req, res));
         app.post(`${QAAP_GITHUB_API_PATH}/project-sessions`, (req, res) => this.handleUpsertProjectSession(req, res));
     }
@@ -608,6 +610,8 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             githubOAuth: readiness.oauthConfigured,
             skipAuth: this.auth.isSkipAuthEnabled(),
             productionRuntime: readiness.productionRuntime,
+            // The default harness for new composers and routines (QAAP_DEFAULT_AGENT_ID, else qaiq).
+            defaultAgentId: readBackendDefaultAgentId(),
             oauthConfigured: readiness.oauthConfigured,
             agentUidPerUser: readiness.agentUidPerUser,
             backendIsolationMode: readiness.backendIsolationMode,
@@ -1170,6 +1174,48 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             }
             this.portRegistry.releasePreview(record.previewId, login);
         }
+    }
+
+    /**
+     * "New local project": a fresh folder under the caller's repos root, `git init`ed with an empty
+     * first commit so diffs, review and task worktrees have a HEAD. Never clones or touches GitHub.
+     */
+    protected async handleCreateLocalProject(req: Request, res: Response): Promise<void> {
+        const auth = this.auth.authenticate(req);
+        if (auth.kind === 'unauthorized') {
+            res.status(401).json({ error: 'Not signed in' });
+            return;
+        }
+        if (auth.kind === 'skip') {
+            res.status(503).json({ error: 'Sign-in required' });
+            return;
+        }
+        const body = (req.body ?? {}) as { name?: unknown };
+        const name = typeof body.name === 'string' ? body.name.trim() : '';
+        const target = resolveLocalProjectWorkspacePath(this.reposRoot, auth.userLogin, name);
+        if (!target) {
+            res.status(400).json({ error: 'Use letters, numbers, dashes, underscores, or dots for the project name.' });
+            return;
+        }
+        if (existsSync(target)) {
+            res.status(409).json({ error: `A local project named ${name} already exists.` });
+            return;
+        }
+        try {
+            await fs.mkdir(target, { recursive: true, mode: 0o700 });
+            await runLocalProjectGit(target, ['init', '-q']);
+            await runLocalProjectGit(target, [
+                '-c', 'user.name=Qaap', '-c', 'user.email=qaap@localhost',
+                'commit', '--allow-empty', '-q', '-m', 'Initial commit',
+            ]);
+        } catch (err) {
+            // The folder did not exist before this request, so removing it cannot touch user data.
+            await fs.rm(target, { recursive: true, force: true }).catch(() => undefined);
+            const detail = err instanceof Error ? err.message : String(err);
+            res.status(500).json({ error: `Could not create the local project: ${detail}` });
+            return;
+        }
+        res.json({ name, workspaceUri: FileUri.create(target).toString() });
     }
 
     protected async handleCreateGithubRepository(req: Request, res: Response): Promise<void> {
@@ -2244,4 +2290,17 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             `${QAAP_AUTH_SESSION_COOKIE}=; ${this.sessionCookieFlags()}; Max-Age=0`
         );
     }
+}
+
+/** Runs one git command in a freshly created project folder; rejects with git's own message. */
+function runLocalProjectGit(cwd: string, args: string[]): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+        execFile('git', args, { cwd, env: qaapGitReadEnv(), timeout: 30_000 }, (error, _stdout, stderr) => {
+            if (error) {
+                reject(new Error(stderr.trim() || error.message));
+                return;
+            }
+            resolve();
+        });
+    });
 }

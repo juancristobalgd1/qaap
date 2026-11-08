@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { QaapCodexStreamAccumulator } from './qaap-codex-stream';
-import { QaapPiStreamAccumulator } from './qaap-pi-json-stream';
+import { QaapPiStreamAccumulator, type QaapProviderRetryStatus } from './qaap-pi-json-stream';
 import { parseOpencodeFormattedLog, QaapOpencodeStreamAccumulator } from './qaap-opencode-stream';
 import {
     isAntigravityAgent,
@@ -42,6 +42,8 @@ export interface QaapAgentStreamAccumulator {
     getDisplayText(): string;
     getTraceEvents(): readonly QaapTranscriptTraceEventDTO[];
     getTurnUsage?(): QaapAgentContextUsage | undefined;
+    /** Provider retry the CLI reports it is waiting out (Pi only), or undefined. */
+    getProviderRetry?(): QaapProviderRetryStatus | undefined;
 }
 
 export function mergeAccumulatorTraceEvents(

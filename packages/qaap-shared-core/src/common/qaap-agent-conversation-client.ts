@@ -6,6 +6,7 @@
 import { QaapUserFacingErrors } from '@theia/qaap-adapters/lib/common/qaap-user-facing-error';
 import type { QaapLinkedPullRequest } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import type { QaapTaskPullRequest } from './qaap-task-pull-request';
+import type { QaapAgentEffortLevel } from './qaap-agent-effort';
 import type { QaapTaskPlan, QaapTaskPlanEditRequest } from './qaap-task-plan';
 import { fetchQaapGetWithTransientRetry } from '@theia/qaap-adapters/lib/common/qaap-transient-get';
 import type { QaapCreateAgentTaskQaiqModel } from './qaap-agent-task-client';
@@ -22,6 +23,7 @@ import { resolveTranscriptEffectiveStatus } from './qaap-transcript-turn-status'
 import type { QaapTranscriptTraceEventDTO } from './qaap-transcript-trace-model';
 import type { QaapTranscriptUserImagePreview } from './qaap-transcript-user-image-preview';
 import type { QaapTurnLatencyMark } from './qaap-agent-stream-metrics';
+import type { QaapProviderRetryStatus } from './qaap-pi-json-stream';
 import { normalizeQaapVisualPreviewUrl, type QaapPreviewVisualValidationResult } from './qaap-visual-verification';
 import type { ComposerGitActionDisplayMetadata } from './qaap-composer-git-action-display';
 import type { QaapRewindPreviewDTO, QaapRewindRestoreOptions } from './qaap-conversation-rewind-preview';
@@ -116,6 +118,8 @@ export interface QaapAgentConversationSummaryDTO {
     readonly activityLabel?: string;
     readonly linesAdded?: number;
     readonly linesRemoved?: number;
+    /** Task baseline commit (pre-turn snapshot of the first user message); the changes panel diffs against it. */
+    readonly baselineCommit?: string;
     readonly turnStartedAt?: number;
     readonly turnProgressCurrent?: number;
     readonly turnProgressTotal?: number;
@@ -153,6 +157,8 @@ export interface QaapAgentConversationSummaryDTO {
     readonly goalLoopStopReason?: string;
     /** Live phase of the in-flight turn (automatic verification); present only while streaming. */
     readonly turnPhase?: QaapAgentConversationTurnPhaseDTO;
+    /** Provider retry Pi is waiting out in the in-flight turn; present only while streaming. */
+    readonly providerRetry?: QaapProviderRetryStatus;
     /** Pre-turn checkpoint of the last cancelled turn, published once its agent process exited. */
     readonly discardCheckpointId?: string;
 }
@@ -200,6 +206,10 @@ export interface QaapAgentMessageDTO {
     readonly id: string;
     readonly role: 'user' | 'agent';
     readonly content: string;
+    /** Backend-generated visual repair turn: the agent evidence message it re-runs. Never shown as a user bubble. */
+    readonly visualRepairSourceAgentMessageId?: string;
+    /** Agent evidence message carrying a pending "Fix with agent" repair proposal. */
+    readonly visualRepairProposedAt?: number;
     /** Correlates a persisted user row with the client-only optimistic row it confirms. */
     readonly clientMessageId?: string;
     /** Structured Codex/Cursor-style execution trace. Preferred over parsing content. */
@@ -310,10 +320,14 @@ export interface QaapAgentConversationDTO {
     readonly contextCompaction?: QaapContextCompactionDTO;
     /** User messages queued for the next agent turn (delivery mode 'queue'). */
     readonly pendingUserMessages?: QaapPendingUserMessageDTO[];
+    /** Set when the user stops a turn while messages are queued; automatic drain is suspended until the user sends or discards them. */
+    readonly pendingUserMessagesPaused?: boolean;
     /** "Until done" goal loop driving this conversation (kept after it ends). */
     readonly goalLoop?: QaapAgentGoalLoopStateDTO;
     /** Live phase of the in-flight turn (automatic verification). Only meaningful while streaming. */
     readonly turnPhase?: QaapAgentConversationTurnPhaseDTO;
+    /** Provider retry Pi is waiting out in the in-flight turn. Only meaningful while streaming. */
+    readonly providerRetry?: QaapProviderRetryStatus;
     /** Pre-turn checkpoint of the last cancelled turn, published once its agent process exited. */
     readonly discardCheckpointId?: string;
 }
@@ -628,6 +642,7 @@ export function conversationToSummary(conv: QaapAgentConversationDTO): QaapAgent
             ...(conv.goalLoop.stopReason ? { goalLoopStopReason: conv.goalLoop.stopReason } : {}),
         } : {}),
         ...(conv.turnPhase && status === 'streaming' ? { turnPhase: conv.turnPhase } : {}),
+        ...(conv.providerRetry && status === 'streaming' ? { providerRetry: conv.providerRetry } : {}),
         ...(conv.discardCheckpointId ? { discardCheckpointId: conv.discardCheckpointId } : {}),
     };
 }
@@ -666,11 +681,18 @@ export interface QaapCreateConversationBody {
     /** Resolved cross-project context, stored on the conversation and prepended to each agent turn. */
     readonly contextPreamble?: string;
     readonly interactionModeId?: string;
+    /** Reasoning effort for the first turn; the server drops it when the harness/model does not take it. */
+    readonly effort?: QaapAgentEffortLevel;
     readonly approvalPolicyId?: string;
     readonly toolApprovalRules?: import('./qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules;
     readonly latencyMarks?: Partial<Record<QaapTurnLatencyMark, number>>;
     /** Defaults to `'auto'` on the server. */
     readonly isolation?: QaapAgentConversationIsolation;
+    /**
+     * `true` lets a task share a working tree that already has uncommitted changes. Without it the
+     * server answers 409 `dirty_workspace` for a shared-tree create in a dirty repository.
+     */
+    readonly acceptDirty?: boolean;
     /** `true` asks for an editable plan split into parallel subtasks; `false` never plans. Omitted: the server decides. */
     readonly fanOut?: boolean;
 }
@@ -680,7 +702,7 @@ export async function listAllConversationGroups(options?: { readonly onRetry?: (
         onRetry: options?.onRetry,
     });
     if (!response.ok) {
-        throw new Error(response.statusText);
+        throw await QaapUserFacingErrors.fromResponse(response);
     }
     const body = await response.json() as { groups?: QaapAgentConversationGroupDTO[] };
     return body.groups ?? [];
@@ -689,7 +711,7 @@ export async function listAllConversationGroups(options?: { readonly onRetry?: (
 export async function getConversation(id: string): Promise<QaapAgentConversationDTO> {
     const response = await fetch(`${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(id)}`, { credentials: 'include' });
     if (!response.ok) {
-        throw new Error(response.statusText);
+        throw await QaapUserFacingErrors.fromResponse(response);
     }
     return response.json() as Promise<QaapAgentConversationDTO>;
 }
@@ -789,7 +811,7 @@ export async function createConversation(
         signal,
     });
     if (!response.ok) {
-        throw await buildPostMessageError(response);
+        throw await buildCreateConversationError(response);
     }
     return response.json() as Promise<QaapAgentConversationDTO>;
 }
@@ -800,7 +822,11 @@ export interface QaapPostConversationMessageOptions {
     readonly autoApprove?: boolean;
     /** ID of the optimistic user row that this request confirms. */
     readonly clientMessageId?: string;
+    /** Mirror of a follow-up queued on the client: never starts a turn on a stopped conversation. */
+    readonly queueOnly?: boolean;
     readonly interactionModeId?: string;
+    /** Reasoning effort for this turn; the server drops it when the harness/model does not take it. */
+    readonly effort?: QaapAgentEffortLevel;
     readonly approvalPolicyId?: string;
     readonly toolApprovalRules?: import('./qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules;
     readonly latencyMarks?: Partial<Record<QaapTurnLatencyMark, number>>;
@@ -830,7 +856,9 @@ export async function postConversationMessage(
             agentModel,
             qaiqModel: agentModel,
             clientMessageId: options.clientMessageId,
+            ...(options.queueOnly ? { queueOnly: true } : {}),
             interactionModeId: options.interactionModeId,
+            ...(options.effort ? { effort: options.effort } : {}),
             approvalPolicyId: options.approvalPolicyId,
             toolApprovalRules: options.toolApprovalRules,
             latencyMarks: options.latencyMarks,
@@ -900,10 +928,49 @@ export class QaapConversationMessageError extends Error {
     }
 }
 
+/**
+ * A create refused because the shared working tree has uncommitted changes (409 `dirty_workspace`).
+ * `files` lists the first paths the server reported; `total` counts every changed path.
+ */
+export class QaapDirtyWorkspaceError extends QaapConversationMessageError {
+    constructor(message: string, readonly files: readonly string[], readonly total: number) {
+        super(message, 409, 'dirty_workspace');
+    }
+}
+
+/**
+ * The user cancelled the dirty-workspace dialog: nothing was created. Callers keep the draft and must not
+ * report it as a failure.
+ */
+export class QaapDirtyWorkspaceCancelledError extends Error {
+    constructor() {
+        super('Task creation was cancelled on the dirty-workspace dialog.');
+        this.name = 'QaapDirtyWorkspaceCancelledError';
+    }
+}
+
+/** True when a send failed only because the user cancelled the dirty-workspace dialog: silent, draft kept. */
+export function isDirtyWorkspaceCancelled(error: unknown): boolean {
+    return error instanceof QaapDirtyWorkspaceCancelledError;
+}
+
 /** The server's readable error (JSON `error` / `message` unwrapped), keeping status and code for the UI to branch on. */
 async function buildPostMessageError(response: Response): Promise<Error> {
     const error = await QaapUserFacingErrors.fromResponse(response);
     return new QaapConversationMessageError(error.message, response.status, error.code, error.details);
+}
+
+/** Like {@link buildPostMessageError}, but keeps the changed-path list of a `dirty_workspace` 409. */
+async function buildCreateConversationError(response: Response): Promise<Error> {
+    if (response.status === 409) {
+        const body = await response.clone().json().catch(() => undefined) as { code?: unknown; files?: unknown; total?: unknown } | undefined;
+        if (body?.code === 'dirty_workspace') {
+            const files = Array.isArray(body.files) ? body.files.filter((file): file is string => typeof file === 'string') : [];
+            const total = typeof body.total === 'number' ? body.total : files.length;
+            return new QaapDirtyWorkspaceError('The workspace has uncommitted changes.', files, total);
+        }
+    }
+    return buildPostMessageError(response);
 }
 
 /** True when the send failed only because the session already runs the maximum agents. */
@@ -967,16 +1034,7 @@ export async function respondTaskPullRequestConsent(id: string, allow: boolean):
 
 async function readTaskPlanResponse(response: Response): Promise<QaapAgentConversationDTO> {
     if (!response.ok) {
-        let message = response.statusText;
-        try {
-            const body = await response.json() as { error?: unknown };
-            if (typeof body.error === 'string' && body.error.trim()) {
-                message = body.error;
-            }
-        } catch {
-            // Non-JSON error body — keep the status text.
-        }
-        throw new Error(message);
+        throw await QaapUserFacingErrors.fromResponse(response);
     }
     return response.json() as Promise<QaapAgentConversationDTO>;
 }
@@ -1031,37 +1089,55 @@ export async function forkConversation(id: string): Promise<QaapAgentConversatio
     return response.json() as Promise<QaapAgentConversationDTO>;
 }
 
-export async function cancelConversationHttp(id: string): Promise<void> {
+/** Delay before the single retry of a Stop that failed on the network or with a 5xx. */
+export const QAAP_CANCEL_RETRY_DELAY_MS = 1_500;
+
+/** A cancel the server answered with a non-2xx status; `status` is undefined when the request never got one. */
+export interface QaapConversationCancelError extends Error {
+    readonly status?: number;
+}
+
+export async function cancelConversationHttp(id: string, signal?: AbortSignal): Promise<QaapAgentConversationDTO | undefined> {
     const response = await fetch(`${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(id)}/cancel`, {
         method: 'POST',
         credentials: 'include',
+        signal,
     });
     if (!response.ok) {
-        throw new Error(response.statusText);
+        const error: QaapConversationCancelError = Object.assign(await QaapUserFacingErrors.fromResponse(response), { status: response.status });
+        throw error;
     }
+    // The answer carries the stopped conversation (with its "Turn cancelled." trace); an empty body is tolerated.
+    const text = await response.text();
+    return text ? JSON.parse(text) as QaapAgentConversationDTO : undefined;
 }
 
-/** Cancels via WebSocket when the live feed is connected; falls back to HTTP POST /cancel. */
-export async function cancelConversation(id: string): Promise<void> {
-    if (conversationLiveCancel) {
-        await conversationLiveCancel(id);
-        return;
+/**
+ * Stops the running turn over HTTP, always (never the WebSocket op, which can be dropped with the
+ * socket). One retry after {@link QAAP_CANCEL_RETRY_DELAY_MS}, only for a network failure or a 5xx;
+ * a 4xx is the server's answer and is not retried. The server cancel is idempotent, so a retry that
+ * races a successful first attempt is harmless.
+ */
+export async function cancelConversation(id: string, signal?: AbortSignal): Promise<QaapAgentConversationDTO | undefined> {
+    console.warn(`[qaap-stop] client conv=${id} transport=http`);
+    try {
+        return await cancelConversationHttp(id, signal);
+    } catch (error) {
+        const status = (error as QaapConversationCancelError).status;
+        if ((status !== undefined && status < 500) || signal?.aborted) {
+            throw error;
+        }
+        await new Promise<void>(resolve => setTimeout(resolve, QAAP_CANCEL_RETRY_DELAY_MS));
+        if (signal?.aborted) {
+            throw error;
+        }
+        return cancelConversationHttp(id, signal);
     }
-    await cancelConversationHttp(id);
 }
 
 async function readGoalLoopResponse(response: Response): Promise<QaapGoalLoopResponseDTO> {
     if (!response.ok) {
-        let message = response.statusText;
-        try {
-            const body = await response.json() as { error?: unknown };
-            if (typeof body.error === 'string' && body.error.trim()) {
-                message = body.error;
-            }
-        } catch {
-            // Non-JSON error body — keep the status text.
-        }
-        throw new Error(message);
+        throw await QaapUserFacingErrors.fromResponse(response);
     }
     return response.json() as Promise<QaapGoalLoopResponseDTO>;
 }
@@ -1097,6 +1173,20 @@ export async function fetchGoalLoopStatus(id: string): Promise<QaapGoalLoopRespo
  * Stops ONE run of a multitasking session (the turn started by `userMessageId`), leaving its
  * peers working. Always HTTP: the WebSocket cancel channel is session-wide by construction.
  */
+/** "Fix with agent": starts the repair turn for an evidence message that carries an open proposal. */
+export async function startConversationVisualRepair(id: string, sourceAgentMessageId: string): Promise<QaapAgentConversationDTO> {
+    const response = await fetch(`${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(id)}/visual-repair`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourceAgentMessageId }),
+    });
+    if (!response.ok) {
+        throw await QaapUserFacingErrors.fromResponse(response);
+    }
+    return response.json() as Promise<QaapAgentConversationDTO>;
+}
+
 export async function cancelConversationRun(id: string, userMessageId: string): Promise<void> {
     const response = await fetch(`${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(id)}/cancel`, {
         method: 'POST',
@@ -1105,7 +1195,7 @@ export async function cancelConversationRun(id: string, userMessageId: string): 
         body: JSON.stringify({ userMessageId }),
     });
     if (!response.ok) {
-        throw new Error(response.statusText);
+        throw await QaapUserFacingErrors.fromResponse(response);
     }
 }
 
@@ -1172,7 +1262,7 @@ export async function deleteConversation(id: string): Promise<void> {
         credentials: 'include',
     });
     if (!response.ok && response.status !== 404) {
-        throw new Error(response.statusText);
+        throw await QaapUserFacingErrors.fromResponse(response);
     }
 }
 

@@ -193,7 +193,9 @@ async function main() {
     try {
         await waitFor('the backend', 90_000, async () => (await fetch(`${base}/`)).status < 500);
         const created = await api('POST', CONVERSATIONS, {
-            cwd: repo, agent: 'qaiq', isolation: 'none', title: 'Add the answer module',
+            // The repo is dirty on purpose (notes-by-user.txt): sharing it is the case under test, so
+            // accept the dirt explicitly instead of getting the `dirty_workspace` 409.
+            cwd: repo, agent: 'qaiq', isolation: 'none', acceptDirty: true, title: 'Add the answer module',
             message: 'Add feature.ts exporting the answer.',
         });
         if (created.status !== 201 || !created.json?.id) {

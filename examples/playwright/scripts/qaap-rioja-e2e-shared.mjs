@@ -207,39 +207,43 @@ export async function startNewAgentChat(page) {
 }
 
 export async function selectComposerAgent(page, labelPattern = /qaiq|^q$/i) {
+    // The pill opens the unified model picker: a harness rail on the left, model rows on the right.
     const agentBtn = page.locator('.theia-mobile-projects-sticky-composer-agent:not(.theia-mod-locked)').first();
     if (!(await agentBtn.count()) || await agentBtn.isDisabled()) {
         return { ok: true, skipped: true, reason: 'agent-selector-unavailable' };
     }
     const currentLabel = ((await agentBtn.textContent()) ?? '').trim();
-    if (labelPattern.test(currentLabel)) {
+    const currentTitle = (await agentBtn.getAttribute('aria-label')) ?? '';
+    if (labelPattern.test(currentLabel) || labelPattern.test(currentTitle)) {
         return { ok: true, label: currentLabel, skipped: true };
     }
     await agentBtn.click();
-    await page.waitForSelector('.theia-mobile-sticky-composer-sheet, .qaap-sticky-composer-sheet-popover.theia-mod-agent-picker', { timeout: 10_000 });
-    const option = page.locator('.theia-qaap-agent-sheet-option, .theia-mobile-sticky-composer-sheet-option')
-        .filter({ hasText: labelPattern })
-        .first();
-    if (!(await option.count())) {
-        const closeBtn = page.locator('.theia-mobile-sticky-composer-sheet-close').first();
-        if (await closeBtn.count()) {
-            await closeBtn.click();
-        } else {
-            await page.keyboard.press('Escape').catch(() => undefined);
-        }
+    const picker = page.locator('.qaap-model-picker').first();
+    await picker.waitFor({ state: 'visible', timeout: 10_000 });
+    const railItems = page.locator('.qaap-model-picker-rail-item');
+    const titles = await railItems.evaluateAll(items => items.map(item => item.getAttribute('title') ?? ''));
+    const index = titles.findIndex(title => labelPattern.test(title));
+    if (index < 0) {
+        await page.keyboard.press('Escape').catch(() => undefined);
         return { ok: false, reason: 'agent-option-not-found', currentLabel };
     }
-    await option.click();
-    await page.waitForTimeout(400);
-    const closeBtn = page.locator('.theia-mobile-sticky-composer-sheet-close').first();
-    if (await closeBtn.count()) {
-        await closeBtn.click();
-    } else {
-        await page.keyboard.press('Escape').catch(() => undefined);
+    await railItems.nth(index).click();
+    // Keep the model the picker already has when it is still offered; otherwise the first available row.
+    const row = page.locator('.qaap-model-picker-row:not(:disabled)').first();
+    if (await row.count()) {
+        await row.click();
     }
-    await page.waitForSelector('.theia-mobile-sticky-composer-sheet', { state: 'hidden', timeout: 5000 }).catch(() => undefined);
+    await picker.waitFor({ state: 'hidden', timeout: 5000 }).catch(async () => {
+        await page.keyboard.press('Escape').catch(() => undefined);
+        await picker.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => undefined);
+    });
+    // The pill must reflect the harness: «Agent: QAIQ, model: …» in its title and aria-label.
     const label = ((await agentBtn.textContent()) ?? '').trim();
-    return { ok: true, label, skipped: false };
+    const pillTitle = (await agentBtn.getAttribute('aria-label')) ?? '';
+    if (!labelPattern.test(pillTitle)) {
+        return { ok: false, reason: 'agent-not-reflected', label, pillTitle };
+    }
+    return { ok: true, label, pillTitle, skipped: false };
 }
 
 export async function submitPromptViaComposer(page, message, { agentPattern = /qaiq|^q$/i, requireAgentPick = false } = {}) {

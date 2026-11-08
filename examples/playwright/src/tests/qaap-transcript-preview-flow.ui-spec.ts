@@ -324,9 +324,12 @@ async function expectDevPreviewMounted(page: Page): Promise<void> {
         const previewSurfaces = document.querySelectorAll(
             '[data-active-surface="preview"], .theia-mobile-execution-surface-sidebar[data-surface="preview"]',
         );
-        const mounted = [...previewSurfaces].some(surface => surface.querySelector(
-            'iframe[src*="/qaap-dev/"], iframe[src*="/qaap-preview/"]',
-        ) !== null);
+        // Local isolation (on by default) frames the preview on `<32 hex>.localhost:<port>` instead of a path.
+        const isolatedPreviewOrigin = /^https?:\/\/[0-9a-f]{32}\.localhost(:\d+)?\//;
+        const mounted = [...previewSurfaces].some(surface => [...surface.querySelectorAll('iframe')].some(frame => {
+            const src = frame.getAttribute('src') ?? '';
+            return src.includes('/qaap-dev/') || src.includes('/qaap-preview/') || isolatedPreviewOrigin.test(src);
+        }));
         if (mounted) {
             return 'mounted';
         }
@@ -366,6 +369,9 @@ async function runWorkHubProxiedPreviewFlow(
         await expectDevPreviewMounted(page);
     } finally {
         await releasePreviewIdentities(page);
+        // An isolated preview host carries a hash of (previewId, accessToken), not the previewId, so
+        // releasePreviewIdentities cannot recover it from the iframe. Release by port instead.
+        await releaseRegisteredPreviewPorts(new URL(page.url()).origin).catch(() => undefined);
     }
 }
 

@@ -2,7 +2,7 @@
 
 import type { Request, Response } from '@theia/core/shared/express';
 import * as http from 'http';
-import { buildQaapPreviewHostLabel, parseQaapPreviewHostLabel, resolveQaapPreviewBaseDomain } from './qaap-preview-host';
+import { buildQaapPreviewHostLabel, parseQaapPreviewHostLabel, resolveQaapIsolatedParentOrigin, resolveQaapPreviewBaseDomain, resolveQaapPreviewBaseDomainForRequest } from './qaap-preview-host';
 import { resolveQaapPublicOrigin } from './qaap-github-oauth-config';
 import type { QaapDevPreviewRecord } from './qaap-dev-preview-port-registry';
 import { buildQaapPreviewUpstreamHeaders, sanitizeQaapPreviewResponseHeaders } from './qaap-dev-preview-forward-headers';
@@ -56,7 +56,7 @@ export async function forwardHttpExtracted(ctx: QaapDevPreviewEndpointContext, i
             // Every proxied preview is rendered inside Qaap's mini-browser. Remove upstream
             // anti-frame headers and scope frame-ancestors to this Qaap origin for identity,
             // legacy-port, and isolated-host preview routes alike.
-            ctx.rewritePreviewFrameHeaders(responseHeaders, ctx.resolvePublicOrigin(incoming));
+            ctx.rewritePreviewFrameHeaders(responseHeaders, previewParentOrigin(ctx, incoming, publicPrefix));
             if (incoming.headers['x-qaap-preview-referer-id']) {
                 responseHeaders['cache-control'] = 'private, no-store';
                 const vary = String(responseHeaders.vary ?? '').split(',').map(value => value.trim()).filter(Boolean);
@@ -196,6 +196,22 @@ function isNextPreviewDocument(body: string | Buffer): boolean {
  * `truncated` means `html` is only the look-ahead of a streamed document: head placement still
  * patches it, while Next's body-end scripts come back as a `trailer` for the end of the stream.
  */
+/**
+ * Origin that frames a preview response. An isolated host (empty prefix) is framed by the Qaap app,
+ * so its frame-ancestors and bridge parent name that app's origin, not the preview host.
+ */
+export function previewParentOrigin(ctx: QaapDevPreviewEndpointContext, incoming: Request | http.IncomingMessage, publicPrefix: string): string {
+        if (publicPrefix === '') {
+            const rawHost = ctx.firstHeaderValue(incoming.headers['x-forwarded-host'])
+                ?? ctx.firstHeaderValue(incoming.headers.host);
+            const isolatedParent = resolveQaapIsolatedParentOrigin(rawHost);
+            if (isolatedParent) {
+                return isolatedParent;
+            }
+        }
+        return ctx.resolvePublicOrigin(incoming as Request);
+}
+
 function injectPreviewHtmlScripts(
     ctx: QaapDevPreviewEndpointContext,
     incoming: Request,
@@ -204,7 +220,7 @@ function injectPreviewHtmlScripts(
     isNextDocument: boolean,
     truncated: boolean,
 ): { html: string; trailer: string } {
-    const bridge = buildQaapPreviewBridgeLoaderScript(html || ' ', ctx.resolvePublicOrigin(incoming));
+    const bridge = buildQaapPreviewBridgeLoaderScript(html || ' ', previewParentOrigin(ctx, incoming, publicPrefix));
     if (truncated && isNextDocument) {
         return { html, trailer: bridge + buildQaapPreviewTrailingScripts(html, publicPrefix) };
     }
@@ -400,37 +416,49 @@ export function rewritePreviewCspExtracted(ctx: QaapDevPreviewEndpointContext, r
         return rewritten.join('; ');
 }
 
+/**
+ * `ready`: the dev server answered with its app. `busy`: the TCP connection was accepted but no
+ * answer came within the probe timeout (a first compile still running). `down`: nothing listens.
+ */
+export type QaapDevServerProbeState = 'ready' | 'busy' | 'down';
+
 export async function probeLocalDevServerExtracted(ctx: QaapDevPreviewEndpointContext, port: number, ownerLogin?: string): Promise<boolean> {
+        return await probeLocalDevServerStateExtracted(ctx, port, ownerLogin) === 'ready';
+}
+
+export async function probeLocalDevServerStateExtracted(ctx: QaapDevPreviewEndpointContext, port: number, ownerLogin?: string): Promise<QaapDevServerProbeState> {
         if (!isAllowedDevPreviewPort(port) || ctx.isIdeListenPort(port)) {
-            return false;
+            return 'down';
         }
         const targetHost = await ctx.resolveTargetHost(port, ownerLogin);
         if (!targetHost) {
-            return false;
+            return 'down';
         }
-        // HEAD skips SSR rendering on every readiness check. Fall back to GET only when HEAD is
-        // unsupported (405/501) or unanswered (timeout, reset, parse error) — never on a refused
-        // connection, where GET cannot fare better. Each attempt keeps the same timeout.
+        // HEAD skips SSR rendering on every readiness check. Fall back to GET when HEAD is
+        // unsupported (405/501) or unanswered (timeout, reset, parse error, or accepted-but-silent
+        // `busy`) — never on a refused connection, where GET cannot fare better.
         // Ports whose server rejected or ignored HEAD while answering GET go straight to GET
         // for a while, so 405-on-HEAD servers don't pay a double request on every probe.
         const headlessPorts = headUnsupportedPorts(ctx);
         const skipHead = (headlessPorts.get(port) ?? 0) > Date.now();
         const head = skipHead ? 'unsupported' : await probeDevServerOnce(ctx, targetHost, port, 'HEAD');
         if (head === 'refused') {
-            return false;
+            return 'down';
         }
         if (typeof head === 'boolean') {
-            return head;
+            return head ? 'ready' : 'down';
         }
         const get = await probeDevServerOnce(ctx, targetHost, port, 'GET');
         if (typeof get !== 'boolean') {
             headlessPorts.delete(port);
-            return false;
+            // Accepted connections are evidence of a listener even when neither method answered.
+            // A refused GET means nothing listens any more, whatever HEAD saw.
+            return get === 'busy' || (get === 'failed' && head === 'busy') ? 'busy' : 'down';
         }
         if (!skipHead) {
             headlessPorts.set(port, Date.now() + HEAD_UNSUPPORTED_TTL_MS);
         }
-        return get;
+        return get ? 'ready' : 'down';
 }
 
 /** How long a port stays in the "HEAD unsupported" cache (ports get reused by new servers). */
@@ -451,14 +479,19 @@ function headUnsupportedPorts(ctx: QaapDevPreviewEndpointContext): Map<number, n
     return ports;
 }
 
-/** `true`/`false` per the served rule, `'unsupported'` (405/501), `'refused'` or `'failed'`. */
+/**
+ * `true`/`false` per the served rule, `'unsupported'` (405/501), `'refused'`, `'failed'` (timeout or
+ * error before the connection was accepted) or `'busy'` (accepted, then silent until the timeout).
+ */
 function probeDevServerOnce(
     ctx: QaapDevPreviewEndpointContext,
     targetHost: string,
     port: number,
     method: 'HEAD' | 'GET',
-): Promise<boolean | 'unsupported' | 'refused' | 'failed'> {
+): Promise<boolean | 'unsupported' | 'refused' | 'failed' | 'busy'> {
     return new Promise(resolve => {
+        // A keep-alive socket reused from the agent is already connected: `connecting` is false.
+        let connected = false;
         const req = http.request({
             host: targetHost,
             port,
@@ -475,9 +508,18 @@ function probeDevServerOnce(
                 ? 'unsupported'
                 : isQaapDevPreviewServedResponse(status, ctx.firstHeaderValue(res.headers[QAAP_DEV_PREVIEW_WAITING_HEADER])));
         });
+        req.on('socket', socket => {
+            if (!socket.connecting) {
+                connected = true;
+                return;
+            }
+            socket.once('connect', () => {
+                connected = true;
+            });
+        });
         req.on('timeout', () => {
             req.destroy();
-            resolve('failed');
+            resolve(connected ? 'busy' : 'failed');
         });
         req.on('error', error => resolve((error as NodeJS.ErrnoException).code === 'ECONNREFUSED' ? 'refused' : 'failed'));
         req.end();
@@ -489,7 +531,7 @@ export function resolvePublicOriginExtracted(ctx: QaapDevPreviewEndpointContext,
 }
 
 export function buildIdentityPreviewUrlExtracted(ctx: QaapDevPreviewEndpointContext, req: Request, record: Pick<QaapDevPreviewRecord, 'previewId' | 'accessToken'>): string {
-        const baseDomain = ctx.previewBaseDomain();
+        const baseDomain = ctx.previewBaseDomain(req);
         if (!baseDomain) {
             return buildQaapIdentityPreviewUrl(ctx.resolvePublicOrigin(req), record.previewId);
         }
@@ -499,14 +541,20 @@ export function buildIdentityPreviewUrlExtracted(ctx: QaapDevPreviewEndpointCont
         return `${protocol}://${buildQaapPreviewHostLabel(record.previewId, record.accessToken)}.${baseDomain}/`;
 }
 
-export function previewBaseDomainExtracted(ctx: QaapDevPreviewEndpointContext): string | undefined {
-        return resolveQaapPreviewBaseDomain();
+/** Without a request, only explicit configuration applies; with one, the local default may apply. */
+export function previewBaseDomainExtracted(ctx: QaapDevPreviewEndpointContext, req?: Request | http.IncomingMessage): string | undefined {
+        if (!req) {
+            return resolveQaapPreviewBaseDomain();
+        }
+        const rawHost = ctx.firstHeaderValue(req.headers['x-forwarded-host'])
+            ?? ctx.firstHeaderValue(req.headers.host);
+        return resolveQaapPreviewBaseDomainForRequest(rawHost);
 }
 
 export function previewHostLabelExtracted(ctx: QaapDevPreviewEndpointContext, req: Request | http.IncomingMessage): string | undefined {
         const rawHost = ctx.firstHeaderValue(req.headers['x-forwarded-host'])
             ?? ctx.firstHeaderValue(req.headers.host);
-        return parseQaapPreviewHostLabel(rawHost, ctx.previewBaseDomain());
+        return parseQaapPreviewHostLabel(rawHost, ctx.previewBaseDomain(req));
 }
 
 export function firstHeaderValueExtracted(ctx: QaapDevPreviewEndpointContext, value: string | string[] | undefined): string | undefined {

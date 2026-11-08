@@ -2,11 +2,7 @@ import type { MobileProjectsStickyComposerSheetsUiContext } from './mobile-proje
 // Extracted from mobile-projects-sticky-composer-sheets-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
-import { ChatMode } from '@theia/ai-chat';
 import { agentUsesSettingsModelCatalog, fetchAgentModelsForAgent, type QaapQaiqModelOption } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
-import {
-    writeStoredComposerMode,
-} from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-mode';
 import {
     QAAP_AGENT_APPROVAL_POLICIES,
     reconcileAgentApprovalPolicyId,
@@ -16,7 +12,7 @@ import {
     writeStoredAgentApprovalPolicy,
     type QaapAgentApprovalPolicyId,
 } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
-import { createApprovalPolicySheetOptionButton, createModeSheetOptionButton } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
+import { createApprovalPolicySheetOptionButton } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { qaiqModelSupportsToolCalls } from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-support';
 import {
     filterQaiqModelsWithConfiguredCredentials,
@@ -31,101 +27,6 @@ import {
     scheduleStickyComposerPopoverPosition,
 } from '@theia/qaap-transcript/lib/browser/qaap-sticky-composer-popover';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
-import { createStickyComposerUntilDoneSheetOption, type StickyComposerUntilDoneToggleOptions } from './qaap-sticky-composer-until-done-toggle';
-
-export function openComposerModeSheetExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext, options: {
-    readonly modes: readonly ChatMode[];
-    readonly selectedModeId: string | undefined;
-    readonly cwd: string | undefined;
-    readonly anchor?: HTMLElement;
-    readonly transcriptOverlay: boolean;
-    readonly closeTitle: string;
-    readonly onClose: () => void;
-    readonly onSelect: (modeId: string) => void;
-    readonly assignSheet: (sheet: HTMLElement) => void;
-    readonly isOpen?: () => boolean;
-    /** Adds the "Until done" goal-loop toggle after the modes. */
-    readonly untilDone?: StickyComposerUntilDoneToggleOptions;
-}): void {
-    const usePopover = ctx.shouldUseAgentPickerPopover(options.anchor);
-    if (usePopover
-        && ctx.isModeSheetPopoverAnchoredTo(options.anchor)
-        && options.isOpen?.()) {
-        options.onClose();
-        return;
-    }
-    options.onClose();
-
-    const panel = document.createElement('section');
-    panel.className = 'theia-mobile-sticky-composer-sheet-panel';
-
-    const header = document.createElement('header');
-    header.className = 'theia-mobile-sticky-composer-sheet-header';
-    const title = document.createElement('h2');
-    title.textContent = nls.localize('qaap/mobileProjects/stickyComposerPickMode', 'Choose mode');
-    const close = document.createElement('button');
-    close.type = 'button';
-    close.className = 'theia-mobile-sticky-composer-sheet-close codicon codicon-close';
-    close.title = options.closeTitle;
-    close.setAttribute('aria-label', options.closeTitle);
-    close.addEventListener('click', options.onClose);
-    header.append(title, close);
-
-    const list = document.createElement('div');
-    list.className = 'theia-mobile-sticky-composer-sheet-list';
-    for (const mode of options.modes) {
-        list.append(ctx.createModeSheetOption(
-            mode.name,
-            mode.id,
-            options.selectedModeId,
-            id => {
-                options.onSelect(id);
-            },
-        ));
-    }
-    if (options.untilDone) {
-        const separator = document.createElement('div');
-        separator.className = 'theia-mobile-sticky-composer-sheet-separator';
-        separator.setAttribute('role', 'separator');
-        list.append(separator, createStickyComposerUntilDoneSheetOption(options.untilDone, options.onClose));
-    }
-
-    panel.append(header, list);
-    const root = ctx.mountModeSheetPresentation(panel, {
-        anchor: options.anchor,
-        transcriptOverlay: options.transcriptOverlay,
-        onClose: options.onClose,
-    });
-    document.body.append(root);
-    options.assignSheet(root);
-}
-
-export function openStickyComposerModeSheetExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext, project: MobileProjectEntry,
-    modes: readonly ChatMode[],
-    anchor?: HTMLElement,
-    untilDone?: StickyComposerUntilDoneToggleOptions,): void {
-    const cwd = ctx.host.projectsService.getProjectCwd(project) ?? ctx.host.preparedCwdByProjectId.get(project.id);
-    ctx.openComposerModeSheet({
-        modes,
-        selectedModeId: ctx.host.stickyComposerModeId,
-        cwd,
-        anchor,
-        untilDone,
-        transcriptOverlay: ctx.shouldElevateComposerSheets(),
-        closeTitle: nls.localize('qaap/mobileAgentComposer/close', 'Close'),
-        onClose: () => ctx.closeAllComposerSheets(),
-        isOpen: () => ctx.host.stickyComposerModeSheet !== undefined,
-        assignSheet: sheet => { ctx.host.stickyComposerModeSheet = sheet; },
-        onSelect: id => {
-            ctx.host.stickyComposerModeId = id;
-            if (cwd) {
-                writeStoredComposerMode(cwd, id);
-            }
-            ctx.closeAllComposerSheets();
-            ctx.host.stickyComposerRenderUi.renderStickyComposer();
-        },
-    });
-}
 
 export function openStickyComposerApprovalPolicySheetExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext, project: MobileProjectEntry,
     agentId: string,
@@ -287,40 +188,7 @@ export function openApprovalPolicySheetExtracted(ctx: MobileProjectsStickyCompos
     syncPopover();
 }
 
-export function createModeSheetOptionExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext, label: string,
-    modeId: string,
-    selectedModeId: string | undefined,
-    onSelect: (modeId: string) => void,): HTMLElement {
-    const button = createModeSheetOptionButton({
-        modeId,
-        label,
-        selected: selectedModeId === modeId,
-        onSelect: () => {
-            onSelect(modeId);
-        },
-    });
-    const description = resolveComposerModeDescription(modeId);
-    if (description) {
-        const descriptionEl = document.createElement('span');
-        descriptionEl.className = 'theia-mobile-sticky-composer-sheet-option-description';
-        descriptionEl.textContent = description;
-        button.querySelector('.theia-mobile-sticky-composer-sheet-option-content')?.append(descriptionEl);
-    }
-    return button;
-}
-
 /** One-line explanation under the Build / Plan rows of the Mode sheet. */
-function resolveComposerModeDescription(modeId: string): string | undefined {
-    switch (modeId) {
-        case 'agent':
-            return nls.localize('qaap/mobileProjects/modeBuildDescription', 'Edits files and runs commands');
-        case 'plan':
-            return nls.localize('qaap/mobileProjects/modePlanDescription', 'Reads and proposes a plan, no edits');
-        default:
-            return undefined;
-    }
-}
-
 export async function resolveModelsForAgentPickerExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext, agentId: string): Promise<QaapQaiqModelOption[]> {
     const withoutToolLess = (models: readonly QaapQaiqModelOption[]): QaapQaiqModelOption[] =>
         models.filter(model => qaiqModelSupportsToolCalls(model.modelId) !== false);

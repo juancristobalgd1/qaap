@@ -4,7 +4,6 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import { resolveAgentDisplayLabel } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { PreferenceService } from '@theia/core/lib/common/preferences';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import URI from '@theia/core/lib/common/uri';
@@ -22,12 +21,6 @@ import {
     localizeAddApiKeyInSettingsCta,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
 import { hasAnyConfiguredByokCredential } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
-import {
-    describeComposerInteractionMode,
-    reconcileComposerModeId,
-    resolveComposerModeLabel,
-    resolveStickyComposerModes,
-} from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-mode';
 import {
     agentSupportsApprovalPolicy,
     reconcileAgentApprovalPolicyId,
@@ -49,10 +42,6 @@ import {
     resolveContextUsageWarningThresholdPercentage,
     resolveVpsContextUsageIndicatorState,
 } from '@theia/qaap-transcript/lib/browser/qaap-chat-context-usage-indicator';
-import {
-    resolveChatModelContextUsageBreakdown,
-    resolveVpsContextUsageBreakdown,
-} from '@theia/qaap-transcript/lib/browser/qaap-chat-context-usage-panel';
 import type { QaapAgentConversationSummaryDTO, QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type { QaapAgentApprovalPolicyId } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import type { QaapAgentToolApprovalRules } from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-approval-rules';
@@ -78,16 +67,8 @@ import {
     removeMcpServer,
 } from '../common/qaap-mcp-plugin-install';
 import { readProjectComposerDraft, writeProjectComposerDraft } from '../common/qaap-project-composer-draft';
-import {
-    readStoredComposerUntilDone,
-    resolveComposerUntilDoneForSubmit,
-    resolveUntilDoneDisabledReason,
-    writeStoredComposerUntilDone,
-} from '../common/qaap-composer-until-done';
-import {
-    reconcileModelCapabilityLevel,
-} from '../common/qaap-sticky-composer-model-capability';
-import type { ModelCapabilityLevelValue } from '../common/qaap-sticky-composer-model-capability';
+import { resolveComposerEffortLevel } from '../common/qaap-composer-effort';
+import { QAAP_COMPOSER_SUBMIT_MODE_ID } from '../common/qaap-composer-until-done';
 import { parkWorkingControlFromAncestor } from './qaap-sticky-composer-working-agents-popover';
 import {
     ComposerSheetRenderDeferral,
@@ -125,8 +106,6 @@ export interface MobileProjectsStickyComposerRenderHost extends ComposerSheetSlo
     stickyComposerFilesExpanded: boolean;
     stickyComposerDraft: string;
     stickyComposerSurface: QaapComposerSurface;
-    stickyComposerModeId: string | undefined;
-    stickyComposerCapabilityLevel: ModelCapabilityLevelValue | undefined;
     stickyComposerApprovalPolicyId: QaapAgentApprovalPolicyId | undefined;
     stickyComposerToolApprovalRules: QaapAgentToolApprovalRules | undefined;
     stickyComposerBackendAgents: import('@theia/qaap-shared-core/lib/common/qaap-agent-task-client').QaapAgentTaskAgentOption[];
@@ -145,7 +124,8 @@ export interface MobileProjectsStickyComposerRenderHost extends ComposerSheetSlo
     resolveAgentsHubShellProject(): MobileProjectEntry | undefined;
     resolveAgentsHubShellSummary(project: MobileProjectEntry): QaapAgentConversationSummaryDTO | undefined;
     updateNewFabVisibility(): void;
-    submitBackgroundAgentTask(project: MobileProjectEntry, draft: string, options: Record<string, unknown>): Promise<void>;
+    /** Resolves the created task, or a falsy value when nothing was sent (the composer gives the draft back). */
+    submitBackgroundAgentTask(project: MobileProjectEntry, draft: string, options: Record<string, unknown>): Promise<unknown>;
     executionSurfaceTabsUi: import('@theia/qaap-transcript/lib/browser/qaap-transcript-host-contracts').TranscriptExecutionSurfaceTabsApi;
     transcriptComposerUi: MobileProjectsTranscriptComposerUi;
     transcriptStickyComposerUi: MobileProjectsTranscriptStickyComposerUi;
@@ -379,9 +359,7 @@ export class MobileProjectsStickyComposerRenderUi {
                 if (!composerStable) {
                     parkWorkingControlFromAncestor(this.host.stickyComposerHost);
                     this.host.stickyComposerHost.replaceChildren();
-                    if (this.host.transcriptComposerBackendAgents.length === 0) {
-                        void this.host.transcriptComposerUi.refreshTranscriptComposerAgents(shellProject!);
-                    }
+                    void this.host.transcriptComposerUi.ensureComposerAgentCatalog(shellProject!);
                     this.host.transcriptStickyComposerUi.mountTranscriptStickyComposer(this.host.stickyComposerHost, shellProject!, shellSummary!, chatHost!);
                 } else {
                     this.host.transcriptComposerSendRefresh?.();
@@ -433,18 +411,7 @@ export class MobileProjectsStickyComposerRenderUi {
         const canRunChat = !!this.host.chatService && !!project;
         const canSubmit = isChatSurface ? canRunChat : canRunTask;
         const pinnedId = this.host.stickyComposerAgentsUi.resolveStickyComposerPinnedAgentId(project);
-        const modes = resolveStickyComposerModes(pinnedId, this.host.chatAgentService);
-        this.host.stickyComposerModeId = reconcileComposerModeId(
-            this.host.stickyComposerModeId,
-            modes,
-            cwd,
-        );
-        this.host.stickyComposerCapabilityLevel = reconcileModelCapabilityLevel(
-            this.host.stickyComposerCapabilityLevel,
-            cwd,
-        );
         const showApprovalPolicy = agentSupportsApprovalPolicy(pinnedId);
-        let capabilityTriggerRefresh: (() => void) | undefined;
         if (showApprovalPolicy) {
             this.host.stickyComposerApprovalPolicyId = reconcileAgentApprovalPolicyId(
                 this.host.stickyComposerApprovalPolicyId,
@@ -484,43 +451,7 @@ export class MobileProjectsStickyComposerRenderUi {
             getDraft: () => this.readStickyComposerDraft(project),
             setDraft: value => { this.writeStickyComposerDraft(project, value); },
             resolveAgentLabel: () => this.host.stickyComposerAgentsUi.resolveStickyComposerAgentLabel(project),
-            resolveAgentId: () => this.host.stickyComposerAgentsUi.resolveStickyComposerPinnedAgentId(project),
-            modes,
-            resolveModeLabel: () => resolveComposerModeLabel(modes, this.host.stickyComposerModeId),
-            resolveModeId: () => this.host.stickyComposerModeId,
-            onOpenModeSheet: modes.length > 1
-                ? (anchor, untilDone) => { this.host.stickyComposerSheetsUi.openStickyComposerModeSheet(project, modes, anchor, untilDone); }
-                : undefined,
-            approvalPolicyId: showApprovalPolicy ? this.host.stickyComposerApprovalPolicyId : undefined,
-            approvalAgent: showApprovalPolicy
-                ? {
-                    id: this.host.stickyComposerAgentsUi.resolveStickyComposerPinnedAgentId(project),
-                    label: this.host.stickyComposerAgentsUi.resolveStickyComposerAgentLabel(project),
-                }
-                : undefined,
-            onOpenApprovalPolicySheet: showApprovalPolicy
-                ? anchor => {
-                    this.host.stickyComposerSheetsUi.openStickyComposerApprovalPolicySheet(
-                        project,
-                        this.host.stickyComposerAgentsUi.resolveStickyComposerPinnedAgentId(project),
-                        this.host.stickyComposerAgentsUi.resolveStickyComposerAgentLabel(project),
-                        anchor,
-                    );
-                }
-                : undefined,
-            untilDone: showApprovalPolicy && !isChatSurface
-                ? {
-                    checked: readStoredComposerUntilDone(cwd),
-                    disabledReason: resolveUntilDoneDisabledReason({
-                        approvalPolicyId: this.host.stickyComposerApprovalPolicyId,
-                        modeId: this.host.stickyComposerModeId,
-                    }),
-                    onToggle: checked => {
-                        writeStoredComposerUntilDone(cwd, checked);
-                        this.renderStickyComposer();
-                    },
-                }
-                : undefined,
+            resolveAgentId: () => this.host.stickyComposerAgentsUi.resolveStickyComposerDisplayedAgentId(project),
             canSubmit,
             onImprovePrompt: this.createImprovePromptHandler(
                 cwd,
@@ -541,16 +472,17 @@ export class MobileProjectsStickyComposerRenderUi {
                     this.host.stickyComposerContextUi.notifyPendingComposerAttachments();
                     return;
                 }
+                // The agent the chip shows is the agent the submit sends (an @mention in the draft still overrides it).
                 const resolvedPinnedId = isChatSurface
                     ? THEIA_CODER_AGENT_ID
-                    : this.host.stickyComposerAgentsUi.resolveStickyComposerPinnedAgentId(project);
+                    : this.host.stickyComposerAgentsUi.resolveStickyComposerDisplayedAgentId(project);
                 const selectedAgentId = isChatSurface
                     ? THEIA_CODER_AGENT_ID
                     : resolveExplicitAgentForSubmit(draft, {
                         pinnedChatAgentId: resolvedPinnedId,
                     }) ?? resolvedPinnedId;
                 const variables = composerContextRequests(this.host.stickyComposerContext);
-                const modeId = this.host.stickyComposerModeId;
+                const modeId = QAAP_COMPOSER_SUBMIT_MODE_ID;
                 const autoApprove = resolveComposerAutoApprove(
                     showApprovalPolicy,
                     this.host.stickyComposerApprovalPolicyId,
@@ -575,14 +507,24 @@ export class MobileProjectsStickyComposerRenderUi {
                     toolApprovalRules: showApprovalPolicy
                         ? this.host.stickyComposerToolApprovalRules
                         : undefined,
-                    agentModel: readStoredAgentModel(cwd, selectedAgentId),
-                    untilDone: showApprovalPolicy && resolveComposerUntilDoneForSubmit({
-                        cwd,
-                        approvalPolicyId: this.host.stickyComposerApprovalPolicyId,
-                        modeId,
-                    }),
+                    // The model the chip shows for the chip's agent; an @mention of another agent sends that agent's stored pick.
+                    agentModel: selectedAgentId === resolvedPinnedId
+                        ? this.host.stickyComposerAgentsUi.resolveStickyComposerAgentModel(selectedAgentId, project, cwd)
+                        : readStoredAgentModel(cwd, selectedAgentId),
+                    agentModelAgentId: selectedAgentId,
+                    openModelPicker: () => { this.host.stickyComposerSheetsUi.openStickyComposerAgentSheet(project); },
+                    effort: resolveComposerEffortLevel(cwd, selectedAgentId, readStoredAgentModel(cwd, selectedAgentId)?.modelId),
                 });
-                void done.finally(() => this.renderStickyComposer());
+                void done.then(started => {
+                    // Nothing was sent (not ready, model held, cancelled): give the prompt back unless the user typed anew.
+                    if (!started && !this.readStickyComposerDraft(project).trim()) {
+                        this.writeStickyComposerDraft(project, draft);
+                    }
+                }, () => {
+                    if (!this.readStickyComposerDraft(project).trim()) {
+                        this.writeStickyComposerDraft(project, draft);
+                    }
+                }).finally(() => this.renderStickyComposer());
             },
             onSubmitBlocked: () => {
                 if (this.host.stickyComposerContextUi.hasPendingComposerAttachments()) {
@@ -626,58 +568,8 @@ export class MobileProjectsStickyComposerRenderUi {
             sendLabel: isChatSurface
                 ? nls.localize('qaap/mobileProjects/chatSend', 'Send')
                 : nls.localize('qaap/mobileProjects/taskCreate', 'Create'),
-            resolveCapabilityLevel: () => this.host.stickyComposerCapabilityLevel
-                ?? reconcileModelCapabilityLevel(undefined, cwd),
-            onOpenCapabilityPopover: anchor => {
-                this.host.stickyComposerSheetsUi.openStickyComposerModelCapabilityPopover({
-                    anchor,
-                    cwd,
-                    resolveLevel: () => this.host.stickyComposerCapabilityLevel
-                        ?? reconcileModelCapabilityLevel(undefined, cwd),
-                    assignLevel: level => { this.host.stickyComposerCapabilityLevel = level; },
-                    onCommit: () => capabilityTriggerRefresh?.(),
-                });
-            },
-            onCapabilityTriggerMounted: refresh => { capabilityTriggerRefresh = refresh; },
-            onContextUsageBadgeMounted: badge => {
-                this.host.stickyComposerContextUsageDispose = this.mountStickyComposerContextUsage(
-                    badge,
-                    () => isChatSurface
-                        ? (() => {
-                            const chatModel = this.resolveProjectTheiaChatModel(project);
-                            return chatModel ? { chatModel } : undefined;
-                        })()
-                        : undefined,
-                );
-            },
-            onOpenContextUsageSheet: anchor => {
-                this.host.stickyComposerSheetsUi.openStickyComposerContextUsageSheet(
-                    () => {
-                        if (isChatSurface) {
-                            const chatModel = this.resolveProjectTheiaChatModel(project);
-                            if (chatModel) {
-                                return resolveChatModelContextUsageBreakdown(chatModel);
-                            }
-                        }
-                        return resolveVpsContextUsageBreakdown(undefined);
-                    },
-                    document.body.classList.contains('theia-mobile-mod-workhub-composer-header')
-                    || document.body.classList.contains('theia-mobile-mod-workhub-no-bottom-chrome'),
-                    anchor,
-                );
-            },
         });
         const pinnedAgentId = this.host.stickyComposerPinnedAgentId;
-        const pinnedAgentLabel = this.host.stickyComposerBackendAgents.find(agent =>
-            agent.id.toLowerCase() === pinnedAgentId?.toLowerCase()
-        )?.label ?? (pinnedAgentId ? resolveAgentDisplayLabel(pinnedAgentId) : undefined);
-        const modeHint = describeComposerInteractionMode(this.host.stickyComposerModeId, pinnedAgentLabel);
-        if (modeHint) {
-            const modeBanner = document.createElement('div');
-            modeBanner.className = 'theia-mobile-sticky-composer-mode-banner';
-            modeBanner.textContent = modeHint;
-            this.host.stickyComposerHost.append(modeBanner);
-        }
         if (
             this.host.openPreferencesSheet
             && agentNeedsSettingsApiKeyPath(pinnedAgentId)

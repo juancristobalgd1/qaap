@@ -32,6 +32,9 @@ import {
 } from './mobile-work-hub-preferences-filter';
 import type { QaapAppearanceMode } from '@theia/qaap-shared-core/lib/common/qaap-appearance-mode';
 import { QaapAppearanceModeService } from '@theia/qaap-shared-core/lib/browser/qaap-appearance-mode-service';
+import { QaapWorkHubNotificationSettings } from '@theia/qaap-shared-core/lib/browser/qaap-work-hub-notification-settings';
+import { QaapCompletionSound } from '@theia/qaap-shared-core/lib/browser/qaap-completion-sound';
+import { Disposable } from '@theia/core/lib/common/disposable';
 import type {
     MobileWorkHubSessionsSidebar,
     MobileWorkHubSettingsSidebarOptions,
@@ -46,10 +49,6 @@ const SETTINGS_JSON_EDITOR_OVERLAY_CLASS = 'theia-mod-work-hub-settings-json-edi
 const DEFAULT_WORK_HUB_SETTINGS_SIDEBAR_WIDTH = 262;
 const MIN_WORK_HUB_SETTINGS_SIDEBAR_WIDTH = 180;
 const MAX_WORK_HUB_SETTINGS_SIDEBAR_WIDTH = 420;
-const WORK_HUB_COMPLETION_SOUND_KEY = 'qaap.workHub.settings.completionSound';
-const WORK_HUB_TELEMETRY_PREFERENCE = 'telemetry.telemetryLevel';
-const WORK_HUB_WORKTREE_MAX_COUNT_KEY = 'qaap.workHub.worktrees.maxCount';
-const WORK_HUB_WORKTREE_MAX_SIZE_KEY = 'qaap.workHub.worktrees.maxSizeGb';
 const CUSTOM_SETTINGS_SECTIONS = new Set([
     'general',
     'profile',
@@ -58,8 +57,7 @@ const CUSTOM_SETTINGS_SECTIONS = new Set([
     'agents',
     'mcp',
     'skills',
-    'worktrees',
-    'docs',
+    'keybindings',
 ]);
 
 const EMBEDDED_AI_SETTINGS_WIDGET_IDS: Readonly<Record<string, string>> = {
@@ -88,7 +86,7 @@ const WORK_HUB_SETTINGS_SECTIONS: readonly WorkHubSettingsSection[] = [
         group: nls.localize('qaap/workHubSettings/groupApp', 'App'),
     },
     { id: 'appearance', label: nls.localize('qaap/workHubSettings/appearance', 'Appearance'), icon: 'symbol-color', query: 'workbench' },
-    { id: 'worktrees', label: nls.localize('qaap/workHubSettings/worktrees', 'Worktrees'), icon: 'repo', query: '' },
+    { id: 'keybindings', label: nls.localize('qaap/workHubSettings/keybindings', 'Keybindings'), icon: 'keyboard', query: '' },
     {
         id: 'agents', label: nls.localize('qaap/workHubSettings/agents', 'Harness'), icon: 'hubot', query: 'Agents',
         group: nls.localize('qaap/workHubSettings/groupAgents', 'Agents'),
@@ -101,10 +99,6 @@ const WORK_HUB_SETTINGS_SECTIONS: readonly WorkHubSettingsSection[] = [
         group: nls.localize('qaap/workHubSettings/groupAccount', 'Account'),
     },
     { id: 'plan-usage', label: nls.localize('qaap/workHubSettings/planUsage', 'Plan & Usage'), icon: 'credit-card', query: '' },
-    {
-        id: 'docs', label: nls.localize('qaap/workHubSettings/docs', 'Docs'), icon: 'book', query: '',
-        group: nls.localize('qaap/workHubSettings/groupHelp', 'Help'),
-    },
 ];
 
 /** Small heading that opens a group of Settings nav items (the Work Hub sidebar renders the same markup). */
@@ -120,6 +114,11 @@ export function isWorkHubAiFeaturesPreferencesQuery(query?: string): boolean {
     return typeof query === 'string' && query.trim().toLowerCase() === WORK_HUB_AI_FEATURES_PREFERENCES_QUERY;
 }
 
+/** Structural contract of the Keybindings section, so the sheet does not import the panel class. */
+export interface WorkHubKeybindingsPanelContract {
+    render(host: HTMLElement): Disposable;
+}
+
 /** Opens the same Settings widget as the IDE, embedded in the Work Hub overlay. */
 export class MobileWorkHubPreferencesSheet {
 
@@ -127,6 +126,10 @@ export class MobileWorkHubPreferencesSheet {
     protected readonly widgetHost: HTMLElement;
     protected readonly customContentHost: HTMLElement;
     protected readonly titleEl: HTMLElement;
+    protected readonly restoreDefaultsButton: HTMLButtonElement;
+    protected readonly notificationSettings = new QaapWorkHubNotificationSettings();
+    protected previewCompletionSound: QaapCompletionSound | undefined;
+    protected keybindingsRender: Disposable | undefined;
     protected readonly settingsSearchInput: HTMLInputElement;
     protected readonly settingsNav: HTMLElement;
     protected readonly settingsSidebar: HTMLElement;
@@ -253,6 +256,7 @@ export class MobileWorkHubPreferencesSheet {
         protected readonly openBilling?: () => Promise<void>,
         resolveWorkHubHost?: () => HTMLElement | undefined,
         resolveSettingsSidebar?: () => MobileWorkHubSessionsSidebar | undefined,
+        protected readonly keybindingsPanel?: WorkHubKeybindingsPanelContract,
     ) {
         this.resolveWorkHubHost = resolveWorkHubHost;
         this.resolveSettingsSidebar = resolveSettingsSidebar;
@@ -374,6 +378,15 @@ export class MobileWorkHubPreferencesSheet {
         title.textContent = this.getSettingsSection('general').label;
         this.titleEl = title;
 
+        const crumb = document.createElement('span');
+        crumb.className = 'theia-mobile-work-hub-settings-crumb';
+        crumb.textContent = nls.localize('qaap/workHubSettings/crumbSettings', 'Settings');
+        const crumbSeparator = document.createElement('span');
+        crumbSeparator.className = 'theia-mobile-work-hub-settings-crumb-separator';
+        crumbSeparator.setAttribute('aria-hidden', 'true');
+        crumbSeparator.textContent = '/';
+        this.restoreDefaultsButton = this.createRestoreDefaultsButton();
+
         const openSidebarLabel = nls.localize(
             'qaap/workHubSettings/openSidebar',
             'Open settings sidebar',
@@ -388,7 +401,7 @@ export class MobileWorkHubPreferencesSheet {
         openSidebarButton.addEventListener('click', () => this.setSettingsSidebarCollapsed(false));
         this.settingsSidebarOpenButton = openSidebarButton;
 
-        header.append(openSidebarButton, title);
+        header.append(openSidebarButton, crumb, crumbSeparator, title, this.restoreDefaultsButton);
 
         this.widgetHost = document.createElement('div');
         this.widgetHost.className = 'theia-mobile-work-hub-preferences-widget-host';
@@ -494,6 +507,7 @@ export class MobileWorkHubPreferencesSheet {
         this.settingsSearchInput.value = '';
         this.activeSettingsSectionId = 'general';
         this.updateSettingsNavigation();
+        this.disposeKeybindingsRender();
         this.detachWidget();
         this.detachEmbeddedSettingsWidget();
         this.settingsSidebarController?.hide();
@@ -696,6 +710,7 @@ export class MobileWorkHubPreferencesSheet {
     }
 
     protected updateSettingsNavigation(): void {
+        this.restoreDefaultsButton.hidden = this.activeSettingsSectionId !== 'general';
         for (const item of this.settingsNav.querySelectorAll<HTMLButtonElement>('[data-qaap-settings-section]')) {
             const selected = item.dataset.qaapSettingsSection === this.activeSettingsSectionId;
             item.classList.toggle('theia-mod-selected', selected);
@@ -726,6 +741,7 @@ export class MobileWorkHubPreferencesSheet {
     }
 
     protected showPreferencesSection(widget: PreferencesWidget): void {
+        this.disposeKeybindingsRender();
         this.detachEmbeddedSettingsWidget();
         this.customContentHost.hidden = true;
         this.customContentHost.classList.remove('theia-mod-embedded-settings');
@@ -749,6 +765,7 @@ export class MobileWorkHubPreferencesSheet {
     }
 
     protected showCustomSettingsSection(sectionId: string): void {
+        this.disposeKeybindingsRender();
         this.detachWidget();
         this.detachEmbeddedSettingsWidget();
         this.widgetHost.hidden = true;
@@ -814,11 +831,8 @@ export class MobileWorkHubPreferencesSheet {
             case 'mcp':
             case 'skills':
                 break;
-            case 'worktrees':
-                this.renderWorktreesSection();
-                break;
-            case 'docs':
-                // Docs is intentionally reserved for a future Work Hub surface.
+            case 'keybindings':
+                this.renderKeybindingsSection();
                 break;
             case 'general':
             default:
@@ -859,61 +873,104 @@ export class MobileWorkHubPreferencesSheet {
         ));
 
         const notificationsCard = this.createSettingsCard();
-        const systemNotifications = this.preferenceService?.get<string>(
-            PREFERENCE_NAME_DEFAULT_NOTIFICATION_TYPE,
-            NOTIFICATION_TYPE_OFF,
-        ) === NOTIFICATION_TYPE_OS_NOTIFICATION;
-        notificationsCard.append(this.createSettingsRow(
+        const blockedNote = document.createElement('p');
+        blockedNote.className = 'theia-mobile-work-hub-settings-note';
+        blockedNote.textContent = nls.localize(
+            'qaap/workHubSettings/general/notificationsBlocked',
+            'Notifications are blocked by the browser for this site.',
+        );
+        blockedNote.hidden = !this.isNotificationPermissionDenied();
+        const systemNotificationsRow = this.createSettingsRow(
             nls.localize('qaap/workHubSettings/general/systemNotifications', 'System Notifications'),
             nls.localize(
                 'qaap/workHubSettings/general/systemNotificationsDescription',
                 'Show a notification when an agent completes or needs your attention.',
             ),
-            this.createToggle(systemNotifications, nls.localize(
+            this.createToggle(this.notificationSettings.systemNotifications, nls.localize(
                 'qaap/workHubSettings/general/systemNotificationsLabel',
                 'System notifications',
             ), checked => {
-                void this.preferenceService?.set(
-                    PREFERENCE_NAME_DEFAULT_NOTIFICATION_TYPE,
-                    checked ? NOTIFICATION_TYPE_OS_NOTIFICATION : NOTIFICATION_TYPE_OFF,
-                );
+                void this.setSystemNotificationsEnabled(checked).then(() => {
+                    blockedNote.hidden = !this.isNotificationPermissionDenied();
+                });
             }),
-        ));
-        const completionSound = this.readLocalBoolean(WORK_HUB_COMPLETION_SOUND_KEY, false);
+        );
+        // The note belongs to this row: render it under the description, not as a separate row.
+        systemNotificationsRow.querySelector('.theia-mobile-work-hub-settings-row-copy')?.append(blockedNote);
+        notificationsCard.append(systemNotificationsRow);
         notificationsCard.append(this.createSettingsRow(
             nls.localize('qaap/workHubSettings/general/completionSound', 'Completion Sound'),
             nls.localize(
                 'qaap/workHubSettings/general/completionSoundDescription',
                 'Play a sound when agents finish or need your attention.',
             ),
-            this.createToggle(completionSound, nls.localize(
+            this.createToggle(this.notificationSettings.completionSound, nls.localize(
                 'qaap/workHubSettings/general/completionSoundLabel',
                 'Completion sound',
-            ), checked => this.writeLocalBoolean(WORK_HUB_COMPLETION_SOUND_KEY, checked)),
-        ));
-        panel.append(notificationsCard);
-
-        panel.append(this.createCustomHeading(
-            nls.localize('qaap/workHubSettings/general/privacy', 'Privacy'),
-        ));
-        const privacyCard = this.createSettingsCard();
-        const telemetryLevel = this.preferenceService?.get<string>(WORK_HUB_TELEMETRY_PREFERENCE, 'off');
-        const dataSharing = telemetryLevel !== 'off';
-        privacyCard.append(this.createSettingsRow(
-            nls.localize('qaap/workHubSettings/general/dataSharing', 'Data Sharing'),
-            nls.localize(
-                'qaap/workHubSettings/general/dataSharingDescription',
-                'Share anonymous product usage data to help improve Qaap.',
-            ),
-            this.createToggle(dataSharing, nls.localize(
-                'qaap/workHubSettings/general/dataSharingLabel',
-                'Data sharing',
             ), checked => {
-                void this.preferenceService?.set(WORK_HUB_TELEMETRY_PREFERENCE, checked ? 'all' : 'off');
+                this.notificationSettings.setCompletionSound(checked);
+                if (checked) {
+                    this.playPreviewCompletionSound();
+                }
             }),
         ));
-        panel.append(privacyCard);
+        panel.append(notificationsCard);
         this.customContentHost.append(panel);
+    }
+
+    /** Turns OS notifications on or off, keeps the IDE chat preference in step, and asks for permission on enable. */
+    protected async setSystemNotificationsEnabled(enabled: boolean): Promise<void> {
+        this.notificationSettings.setSystemNotifications(enabled);
+        void this.preferenceService?.set(
+            PREFERENCE_NAME_DEFAULT_NOTIFICATION_TYPE,
+            enabled ? NOTIFICATION_TYPE_OS_NOTIFICATION : NOTIFICATION_TYPE_OFF,
+        );
+        if (enabled && typeof Notification !== 'undefined' && Notification.permission === 'default') {
+            try {
+                await Notification.requestPermission();
+            } catch {
+                /* user dismissed the prompt */
+            }
+        }
+    }
+
+    protected restoreGeneralDefaults(): void {
+        this.notificationSettings.setSystemNotifications(true);
+        this.notificationSettings.setCompletionSound(false);
+        void this.preferenceService?.set(PREFERENCE_NAME_DEFAULT_NOTIFICATION_TYPE, NOTIFICATION_TYPE_OS_NOTIFICATION);
+        this.renderCustomSettingsSection('general');
+    }
+
+    protected isNotificationPermissionDenied(): boolean {
+        return typeof Notification !== 'undefined' && Notification.permission === 'denied';
+    }
+
+    protected playPreviewCompletionSound(): void {
+        this.previewCompletionSound ??= new QaapCompletionSound();
+        this.previewCompletionSound.play('completed');
+    }
+
+    protected createRestoreDefaultsButton(): HTMLButtonElement {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'theia-mobile-work-hub-settings-restore-defaults';
+        button.hidden = true;
+        const icon = document.createElement('span');
+        icon.className = 'codicon codicon-discard';
+        icon.setAttribute('aria-hidden', 'true');
+        button.append(icon, document.createTextNode(nls.localize('qaap/workHubSettings/general/restoreDefaults', 'Restore defaults')));
+        button.addEventListener('click', () => this.restoreGeneralDefaults());
+        return button;
+    }
+
+    protected disposeKeybindingsRender(): void {
+        this.keybindingsRender?.dispose();
+        this.keybindingsRender = undefined;
+    }
+
+    protected renderKeybindingsSection(): void {
+        this.disposeKeybindingsRender();
+        this.keybindingsRender = this.keybindingsPanel?.render(this.customContentHost);
     }
 
     protected renderProfileSection(): void {
@@ -1029,57 +1086,6 @@ export class MobileWorkHubPreferencesSheet {
         });
         themeCard.append(themeLabel, themeSelect);
         panel.append(themeCard);
-        this.customContentHost.append(panel);
-    }
-
-    protected renderWorktreesSection(): void {
-        const panel = this.createCustomPanel();
-        panel.append(this.createCustomHeading(
-            nls.localize('qaap/workHubSettings/worktrees/cleanup', 'Cleanup'),
-        ));
-
-        const description = document.createElement('p');
-        description.className = 'theia-mobile-work-hub-settings-description';
-        description.textContent = nls.localize(
-            'qaap/workHubSettings/worktrees/cleanupDescription',
-            'Qaap periodically removes old, clean worktrees to keep workspace storage healthy. Active or modified worktrees are always preserved.',
-        );
-        panel.append(description);
-
-        const card = this.createSettingsCard();
-        const maxCount = this.readLocalNumber(WORK_HUB_WORKTREE_MAX_COUNT_KEY, 25);
-        const maxSizeGb = this.readLocalNumber(WORK_HUB_WORKTREE_MAX_SIZE_KEY, 50);
-        card.append(
-            this.createSettingsRow(
-                nls.localize('qaap/workHubSettings/worktrees/maxCount', 'Max Worktrees'),
-                nls.localize(
-                    'qaap/workHubSettings/worktrees/maxCountDescription',
-                    'Maximum number of Qaap-managed worktrees to retain for this account. Older clean worktrees are removed first.',
-                ),
-                this.createNumberStepper(
-                    maxCount,
-                    1,
-                    100,
-                    nls.localize('qaap/workHubSettings/worktrees/maxCountLabel', 'Maximum worktrees'),
-                    value => this.writeLocalNumber(WORK_HUB_WORKTREE_MAX_COUNT_KEY, value),
-                ),
-            ),
-            this.createSettingsRow(
-                nls.localize('qaap/workHubSettings/worktrees/maxSize', 'Max Total Size (GB)'),
-                nls.localize(
-                    'qaap/workHubSettings/worktrees/maxSizeDescription',
-                    'Maximum storage budget for Qaap-managed worktrees. Set to 0 to disable the size limit.',
-                ),
-                this.createNumberStepper(
-                    maxSizeGb,
-                    0,
-                    500,
-                    nls.localize('qaap/workHubSettings/worktrees/maxSizeLabel', 'Maximum worktree storage in gigabytes'),
-                    value => this.writeLocalNumber(WORK_HUB_WORKTREE_MAX_SIZE_KEY, value),
-                ),
-            ),
-        );
-        panel.append(card);
         this.customContentHost.append(panel);
     }
 
@@ -1241,62 +1247,6 @@ export class MobileWorkHubPreferencesSheet {
         return wrapper;
     }
 
-    protected createNumberStepper(
-        value: number,
-        min: number,
-        max: number,
-        label: string,
-        onChange: (value: number) => void,
-    ): HTMLElement {
-        const stepper = document.createElement('div');
-        stepper.className = 'theia-mobile-work-hub-settings-stepper';
-        stepper.setAttribute('role', 'group');
-        stepper.setAttribute('aria-label', label);
-        const input = document.createElement('input');
-        input.type = 'number';
-        input.min = String(min);
-        input.max = String(max);
-        input.step = '1';
-        input.value = String(Math.min(max, Math.max(min, Math.round(value))));
-        input.setAttribute('aria-label', label);
-        const update = (): void => {
-            const next = Math.min(max, Math.max(min, Math.round(Number(input.value) || min)));
-            input.value = String(next);
-            onChange(next);
-        };
-        const decrement = this.createStepperButton(
-            '−',
-            nls.localize('qaap/workHubSettings/worktrees/decrease', 'Decrease value'),
-            () => {
-                input.value = String(Math.max(min, Number(input.value) - 1));
-                update();
-            },
-        );
-        const increment = this.createStepperButton(
-            '+',
-            nls.localize('qaap/workHubSettings/worktrees/increase', 'Increase value'),
-            () => {
-                input.value = String(Math.min(max, Number(input.value) + 1));
-                update();
-            },
-        );
-        input.addEventListener('change', update);
-        input.addEventListener('blur', update);
-        stepper.append(decrement, input, increment);
-        return stepper;
-    }
-
-    protected createStepperButton(text: string, label: string, onClick: () => void): HTMLButtonElement {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'theia-mobile-work-hub-settings-stepper-button';
-        button.textContent = text;
-        button.title = label;
-        button.setAttribute('aria-label', label);
-        button.addEventListener('click', onClick);
-        return button;
-    }
-
     protected createUsageMeter(
         title: string,
         remaining: number,
@@ -1348,44 +1298,6 @@ export class MobileWorkHubPreferencesSheet {
 
     protected formatNumber(value: number): string {
         return new Intl.NumberFormat(nls.locale ?? nls.defaultLocale, { maximumFractionDigits: 1 }).format(value);
-    }
-
-    protected readLocalBoolean(key: string, fallback: boolean): boolean {
-        try {
-            const value = window.localStorage.getItem(key);
-            return value === null ? fallback : value === '1';
-        } catch {
-            return fallback;
-        }
-    }
-
-    protected writeLocalBoolean(key: string, value: boolean): void {
-        try {
-            window.localStorage.setItem(key, value ? '1' : '0');
-        } catch {
-            // Private browsing / quota errors should not block the settings UI.
-        }
-    }
-
-    protected readLocalNumber(key: string, fallback: number): number {
-        try {
-            const storedValue = window.localStorage.getItem(key);
-            if (storedValue === null) {
-                return fallback;
-            }
-            const value = Number(storedValue);
-            return Number.isFinite(value) ? value : fallback;
-        } catch {
-            return fallback;
-        }
-    }
-
-    protected writeLocalNumber(key: string, value: number): void {
-        try {
-            window.localStorage.setItem(key, String(value));
-        } catch {
-            // Private browsing / quota errors should not block the settings UI.
-        }
     }
 
     protected detachWidget(): void {

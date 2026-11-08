@@ -1,0 +1,43 @@
+/* *****************************************************************************
+ * Copyright (C) 2026 Theia contributors and Qaap product fork.
+ * SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
+ * ***************************************************************************** */
+
+/**
+ * Touch targets for narrow and touch viewports: interactive controls reach a 44px minimum hit
+ * area (WCAG 2.5.5). Small chips and icon controls keep their visual size and extend the hit
+ * area through ::after. Desktop fine-pointer layouts are not affected.
+ */
+@media (max-width: 767px), (pointer: coarse) {
+    .theia-mobile-sticky-composer-sheet-close,
+    .theia-mobile-sticky-composer-sheet-branch-menu-btn,
+    .qaap-chat-mic-btn-sticky,
+    .theia-mobile-projects-sticky-composer-input-expand,
+    .theia-mobile-agent-transcript-empty-action,
+    .theia-mobile-agent-transcript-user-action,
+    .theia-mobile-agent-transcript-queued-action,
+    .theia-mobile-agent-activity-error-panel-action,
+    .theia-mobile-transcript-files-action,
+    .theia-mobile-agent-stream-timeout-btn,
+    .theia-mobile-agent-transcript-git-action-pill,
+    .qaap-work-hub-toolbar-menu-button,
+    .theia-workbench-account-btn,
+    .theia-mobile-keyboard-accessory-btn,
+    .theia-workbench-nav-btn,
+    .theia-workbench-history-nav-btn {
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    .theia-mobile-projects-sticky-composer-context-chip-remove,
+    .theia-mobile-transcript-checks-run-chip {
+        position: relative;
+    }
+
+    .theia-mobile-projects-sticky-composer-context-chip-remove::after,
+    .theia-mobile-transcript-checks-run-chip::after {
+        content: '';
+        position: absolute;
+        inset: -10px;
+    }
+}

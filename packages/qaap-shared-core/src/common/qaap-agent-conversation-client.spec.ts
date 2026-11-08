@@ -13,7 +13,9 @@ import {
     isLastTurnCancelled,
     latestConversationTurnHasError,
     looksLikeSelfReportedAgentStopFailure,
+    cancelConversation,
     preferQaapConversationSummary,
+    registerConversationLiveCancel,
     type QaapAgentConversationSummaryDTO,
 } from './qaap-agent-conversation-client';
 import { createAgentTask } from './qaap-agent-task-client';
@@ -262,5 +264,78 @@ describe('create requests surface the server error text', () => {
         expect(isMaxConcurrentRunsError(error)).to.equal(true);
         expect((error as QaapConversationMessageError).message).to.equal('This session already runs 3 agents.');
         expect((error as QaapConversationMessageError).details).to.equal(body);
+    });
+});
+
+describe('cancelConversation always stops over HTTP', () => {
+    const originalFetch = globalThis.fetch;
+    let calls: Array<{ url: string; method: string | undefined }>;
+    afterEach(() => {
+        globalThis.fetch = originalFetch;
+    });
+
+    /** Replays one scripted outcome per fetch: a status, or a rejection for a network failure. */
+    const script = (...outcomes: Array<number | 'network'>): void => {
+        calls = [];
+        globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+            const url = String(input);
+            // Other suites' timers may fetch during these tests; only the cancel calls are scripted.
+            if (!url.endsWith('/conv-1/cancel')) {
+                throw new TypeError('Unrelated request in cancel test');
+            }
+            calls.push({ url, method: init?.method });
+            const outcome = outcomes[Math.min(calls.length - 1, outcomes.length - 1)];
+            if (outcome === 'network') {
+                throw new TypeError('Failed to fetch');
+            }
+            return new Response('', { status: outcome, statusText: outcome === 200 ? 'OK' : 'Error' });
+        }) as typeof fetch;
+    };
+
+    it('posts the HTTP cancel even while a live WebSocket cancel handler is registered', async () => {
+        script(200);
+        let liveCalls = 0;
+        const registration = registerConversationLiveCancel(async () => { liveCalls++; });
+        try {
+            await cancelConversation('conv-1');
+        } finally {
+            registration.dispose();
+        }
+        expect(liveCalls).to.equal(0);
+        expect(calls).to.have.length(1);
+        expect(calls[0].url.endsWith('/conv-1/cancel')).to.equal(true);
+        expect(calls[0].method).to.equal('POST');
+    });
+
+    it('retries once after a network failure', async function (): Promise<void> {
+        this.timeout(5_000);
+        script('network', 200);
+        await cancelConversation('conv-1');
+        expect(calls).to.have.length(2);
+    });
+
+    it('retries once on a 5xx', async function (): Promise<void> {
+        this.timeout(5_000);
+        script(503, 200);
+        await cancelConversation('conv-1');
+        expect(calls).to.have.length(2);
+    });
+
+    it('does not retry a 4xx and surfaces the error', async () => {
+        script(409);
+        const error = await cancelConversation('conv-1').catch((e: Error) => e);
+        expect(error).to.be.instanceOf(Error);
+        expect(calls).to.have.length(1);
+    });
+
+    it('passes the abort signal to the POST and does not retry once it is aborted', async function (): Promise<void> {
+        this.timeout(5_000);
+        script('network', 200);
+        const controller = new AbortController();
+        const pending = cancelConversation('conv-1', controller.signal).catch((e: Error) => e);
+        controller.abort();
+        const error = await pending;
+        expect(error).to.be.instanceOf(Error);
+        expect(calls).to.have.length(1);
     });
 });

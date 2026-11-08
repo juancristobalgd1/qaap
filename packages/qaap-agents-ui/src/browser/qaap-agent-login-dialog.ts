@@ -18,6 +18,7 @@ import {
 import {
     QAAP_AGENT_LOGIN_CHALLENGE_TIMEOUT_MS,
     QAAP_AGENT_LOGIN_PREPARE_TIMEOUT_MS,
+    QAAP_AGENT_LOGIN_SIGN_IN_TIMEOUT_MS,
     type QaapAgentLoginFlowState,
 } from '../common/qaap-agent-login-flow';
 import { resolveAgentLoginDialogSubtitle } from './qaap-agent-login-instructions';
@@ -44,6 +45,15 @@ export interface QaapAgentLoginDialogOptions {
     readonly onOpenTerminal?: () => void;
     /** Tooltip of the fallback "Open terminal" action (what to type once it opens). */
     readonly openTerminalHint?: string;
+    /**
+     * Pi: the account providers the dialog can sign in to. Picking one calls `onSelect`, and the host
+     * restarts the sign-in for that provider.
+     */
+    readonly loginProviders?: {
+        readonly options: readonly { readonly id: string; readonly label: string }[];
+        readonly selectedId: string;
+        readonly onSelect: (id: string) => void;
+    };
 }
 
 function createIcon(className: string): HTMLElement {
@@ -91,6 +101,13 @@ function localizeFailure(state: Extract<QaapAgentLoginFlowState, { phase: 'faile
                 '{0} did not show a sign-in link within {1} seconds. Its last output is below.',
                 agentLabel,
                 String(Math.round((state.timeoutMs ?? QAAP_AGENT_LOGIN_CHALLENGE_TIMEOUT_MS) / 1000)),
+            );
+        case 'sign-in-expired':
+            return nls.localize(
+                'qaap/mobileProjects/agentLoginDialogSignInExpired',
+                'The {0} sign-in did not complete within {1} minutes. Retry the sign-in, or add an API key in Settings instead.',
+                agentLabel,
+                String(Math.round(QAAP_AGENT_LOGIN_SIGN_IN_TIMEOUT_MS / 60_000)),
             );
         case 'rejected':
             return nls.localize(
@@ -171,7 +188,32 @@ export function createQaapAgentLoginDialog(
     content.className = 'theia-mobile-agent-login-dialog-content';
     const subtitle = document.createElement('p');
     subtitle.className = 'theia-mobile-agent-login-dialog-subtitle';
-    subtitle.textContent = resolveAgentLoginDialogSubtitle(options.agentId);
+    const providers = options.loginProviders;
+    const providerLabel = (id: string | undefined): string | undefined => providers?.options.find(option => option.id === id)?.label;
+    subtitle.textContent = resolveAgentLoginDialogSubtitle(options.agentId, providerLabel(providers?.selectedId));
+    const providerRow = document.createElement('div');
+    providerRow.className = 'theia-mobile-agent-login-dialog-provider';
+    if (providers) {
+        const providerSelect = document.createElement('select');
+        providerSelect.className = 'theia-select theia-mobile-agent-login-dialog-provider-select';
+        providerSelect.setAttribute('aria-label', nls.localize('qaap/mobileProjects/agentLoginDialogProvider', 'Sign-in provider'));
+        for (const option of providers.options) {
+            const choice = document.createElement('option');
+            choice.value = option.id;
+            choice.textContent = option.label;
+            choice.selected = option.id === providers.selectedId;
+            providerSelect.append(choice);
+        }
+        providerSelect.addEventListener('change', () => {
+            const label = providerLabel(providerSelect.value);
+            if (!label) {
+                return;
+            }
+            subtitle.textContent = resolveAgentLoginDialogSubtitle(options.agentId, label);
+            providers.onSelect(providerSelect.value);
+        });
+        providerRow.append(providerSelect);
+    }
     const body = document.createElement('div');
     body.className = 'theia-mobile-agent-login-dialog-challenge';
 
@@ -191,7 +233,7 @@ export function createQaapAgentLoginDialog(
     cancelButton.className = 'theia-mobile-agent-login-dialog-cancel';
     footer.append(actions, cancelButton);
 
-    content.append(subtitle, body, status);
+    content.append(...(providers ? [providerRow] : []), subtitle, body, status);
     panel.append(header, content, footer);
     root.append(panel);
     document.body.append(root);

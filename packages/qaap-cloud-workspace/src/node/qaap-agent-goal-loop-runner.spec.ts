@@ -32,7 +32,13 @@ class FakeConversationStore {
     readonly onDidChange = new Emitter<unknown>().event;
     activeTaskIds: string[] = [];
     failNextPost = false;
+    /** Turns handed to the text-heuristic auto-continue when the evaluator stays unparseable. */
+    readonly autoContinued: string[] = [];
     protected messageSequence = 0;
+
+    maybeAutoContinueIncompleteTurn(conversationId: string, conv: QaapAgentConversation, userMessageId: string): void {
+        this.autoContinued.push(`${conversationId}:${userMessageId}:${conv.id}`);
+    }
 
     get(id: string): QaapAgentConversation | undefined {
         return this.conversations.get(id);
@@ -381,12 +387,25 @@ describe('QaapAgentGoalLoopRunner', () => {
         expect(loop().phase).to.equal('cancelled');
     });
 
-    it('falls back to the verify-only verdict when the evaluator reply is unparseable', async () => {
-        taskRunner.evaluatorReplies.push('Looks complete to me!');
+    it('retries an unparseable evaluator reply once, then follows the parseable one', async () => {
+        taskRunner.evaluatorReplies.push('Looks complete to me!', GAPS);
         runner.start(CONVERSATION_ID, { goal: 'Ship it' });
         await settle('success', { status: 'passed', command: 'npm run test', attempts: 0 });
-        expect(loop().phase).to.equal('completed');
-        expect(loop().lastEvaluation).to.include({ done: true, confidence: 'low', source: 'fallback' });
+        expect(taskRunner.evaluatorCalls).to.have.length(2);
+        expect(loop().phase).to.equal('executing');
+        expect(loop().lastEvaluation).to.include({ done: false, source: 'evaluator' });
+        expect(store.autoContinued).to.deep.equal([]);
+    });
+
+    it('hands the turn to auto-continue, without blocking, when the evaluator stays unparseable', async () => {
+        taskRunner.evaluatorReplies.push('Looks complete to me!', 'still not json');
+        runner.start(CONVERSATION_ID, { goal: 'Ship it' });
+        await settle('success', { status: 'passed', command: 'npm run test', attempts: 0 });
+        expect(taskRunner.evaluatorCalls).to.have.length(2);
+        expect(loop().phase).to.equal('cancelled');
+        expect(terminal.some(event => event.goalLoop.phase === 'blocked')).to.equal(false);
+        expect(store.autoContinued).to.have.length(1);
+        expect(store.autoContinued[0].startsWith(`${CONVERSATION_ID}:`)).to.equal(true);
     });
 
     it('ends blocked when the evaluator fails and there are no checks to fall back on', async () => {

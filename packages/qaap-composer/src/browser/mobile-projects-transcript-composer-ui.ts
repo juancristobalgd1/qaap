@@ -1,3 +1,5 @@
+import { renderStickyComposerModelPicker } from './mobile-projects-sticky-composer-model-picker-ui';
+import { matchesMobileNarrowViewport } from '@theia/core/lib/browser/shell/mobile-layout-state';
 // *****************************************************************************
 // Copyright (C) 2026 Theia contributors and Qaap product fork.
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
@@ -5,7 +7,6 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import { ChatAgentService } from '@theia/ai-chat/lib/common/chat-agent-service';
-import { ChatMode } from '@theia/ai-chat';
 import type {
     QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
@@ -46,9 +47,8 @@ import type { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/brow
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
 import type { MobileProjectsStickyComposerSheetsUi } from './mobile-projects-sticky-composer-sheets-ui';
-import type { StickyComposerUntilDoneToggleOptions } from './qaap-sticky-composer-until-done-toggle';
 import { writeComposerAgentCatalogSession } from './composer-agent-catalog-session-cache';
-import { composerAgentCatalogSignature } from './mobile-projects-sticky-composer-agents-ui';
+import { composerAgentCatalogSignature, STICKY_CATALOG_REFRESH_MIN_INTERVAL_MS } from './mobile-projects-sticky-composer-agents-ui';
 
 export interface ComposerAgentPickerChrome {
     readonly sheet: HTMLElement;
@@ -96,9 +96,99 @@ export interface MobileProjectsTranscriptComposerHost {
     projectRowsUi: import('@theia/qaap-transcript/lib/browser/qaap-transcript-host-contracts').TranscriptProjectLabelsApi;
 }
 
+/**
+ * Delays before each retry of an empty or failed composer agent catalog load. Three retries follow the first
+ * attempt; once they are used up, the next composer mount starts a new series.
+ */
+export const COMPOSER_CATALOG_RETRY_DELAYS_MS: readonly number[] = [1_000, 2_000, 4_000];
+
+/** Per-cwd catalog load bookkeeping for {@link MobileProjectsTranscriptComposerUi.ensureComposerAgentCatalog}. */
+interface ComposerCatalogLoadState {
+    /** When the last load succeeded with a non-empty catalog; undefined after an empty or failed load. */
+    okAt?: number;
+    /** Retries already scheduled in the current series. */
+    attempts: number;
+    inFlight?: Promise<boolean>;
+    timer?: ReturnType<typeof setTimeout>;
+}
+
 /** Transcript sticky-composer agent/mode/approval sheets and backend agent list refresh. */
 export class MobileProjectsTranscriptComposerUi {
+    /** Load bookkeeping per cwd (empty key when no cwd is known). */
+    protected readonly composerCatalogLoads = new Map<string, ComposerCatalogLoadState>();
+
+    /** Overridable by specs so the retry series does not wait for real seconds. */
+    protected composerCatalogRetryDelaysMs: readonly number[] = COMPOSER_CATALOG_RETRY_DELAYS_MS;
+
     constructor(protected readonly host: MobileProjectsTranscriptComposerHost) { }
+
+    /**
+     * Idempotent catalog load for a composer mount. A non-empty catalog that loaded successfully is not
+     * repeated inside {@link STICKY_CATALOG_REFRESH_MIN_INTERVAL_MS}. An empty or failed load is retried
+     * with backoff (1 s, 2 s, 4 s), and while a retry is scheduled or in flight no second request starts.
+     * Resolves true only when the catalog is non-empty.
+     */
+    async ensureComposerAgentCatalog(project: MobileProjectEntry): Promise<boolean> {
+        const state = this.getComposerCatalogLoadState(this.resolveCatalogCwd(project) ?? '');
+        const hasCatalog = this.host.transcriptComposerBackendAgents.length > 0;
+        if (hasCatalog && state.okAt !== undefined && Date.now() - state.okAt < STICKY_CATALOG_REFRESH_MIN_INTERVAL_MS) {
+            return true;
+        }
+        if (state.inFlight) {
+            return state.inFlight;
+        }
+        if (state.timer !== undefined) {
+            return hasCatalog;
+        }
+        return this.loadComposerAgentCatalog(project, state);
+    }
+
+    protected getComposerCatalogLoadState(key: string): ComposerCatalogLoadState {
+        let state = this.composerCatalogLoads.get(key);
+        if (!state) {
+            state = { attempts: 0 };
+            this.composerCatalogLoads.set(key, state);
+        }
+        return state;
+    }
+
+    protected loadComposerAgentCatalog(project: MobileProjectEntry, state: ComposerCatalogLoadState): Promise<boolean> {
+        const load = this.refreshTranscriptComposerAgents(project)
+            .then(loaded => loaded && this.host.transcriptComposerBackendAgents.length > 0, () => false)
+            .then(ok => {
+                state.inFlight = undefined;
+                if (ok) {
+                    state.okAt = Date.now();
+                    state.attempts = 0;
+                    return true;
+                }
+                state.okAt = undefined;
+                this.scheduleComposerAgentCatalogRetry(project, state);
+                return false;
+            });
+        state.inFlight = load;
+        return load;
+    }
+
+    protected scheduleComposerAgentCatalogRetry(project: MobileProjectEntry, state: ComposerCatalogLoadState): void {
+        const delay = this.composerCatalogRetryDelaysMs[state.attempts];
+        if (delay === undefined) {
+            // Retries used up: the next mount starts a new series.
+            state.attempts = 0;
+            return;
+        }
+        state.attempts++;
+        state.timer = setTimeout(() => {
+            state.timer = undefined;
+            void this.loadComposerAgentCatalog(project, state);
+        }, delay);
+    }
+
+    protected resolveCatalogCwd(project: MobileProjectEntry): string | undefined {
+        return this.host.projectsService.getProjectCwd(project)
+            ?? this.host.transcriptComposerSummary?.cwd
+            ?? this.host.preparedCwdByProjectId.get(project.id);
+    }
 
     async ensureTranscriptComposerAgentsLoaded(
         project: MobileProjectEntry,
@@ -189,9 +279,7 @@ export class MobileProjectsTranscriptComposerUi {
 
     async refreshTranscriptComposerAgents(project: MobileProjectEntry, options?: { readonly forceRefresh?: boolean }): Promise<boolean> {
         this.host.activeTasks?.start();
-        const cwd = this.host.projectsService.getProjectCwd(project)
-            ?? this.host.transcriptComposerSummary?.cwd
-            ?? this.host.preparedCwdByProjectId.get(project.id);
+        const cwd = this.resolveCatalogCwd(project);
         try {
             const snapshot = await this.host.loadBackendAgentSnapshot(options);
             let pickerAgents = this.host.stickyComposerAgentsUi.getComposerAgentPickerAgents(snapshot.agents);
@@ -320,6 +408,34 @@ export class MobileProjectsTranscriptComposerUi {
             this.host.stickyComposerSheetsUi.assignAgentPickerPopover(anchor, chrome.popoverCleanup);
             this.host.stickyComposerSheetsUi.syncAgentPickerPopoverPosition(chrome.sheet);
         }
+        const selectAgent = (agentId: string, model?: QaapQaiqModelOption): void => {
+            this.host.transcriptComposerPinnedAgentId = agentId;
+            this.host.transcriptComposerPrefsConvId = summary.id;
+            // Close before any model probe: a row tap must not leave the sheet open while the catalog loads.
+            this.closeAllComposerSheets();
+            void (async (): Promise<void> => {
+                let resolvedModel: QaapCreateAgentTaskQaiqModel | undefined = model
+                    ? { provider: model.provider, vendor: model.vendor, modelId: model.modelId }
+                    : undefined;
+                writeStoredAgent(cwd, agentId);
+                if (cwd) {
+                    if (model) {
+                        writeStoredAgentModel(cwd, agentId, model);
+                    } else {
+                        resolvedModel = await this.host.stickyComposerAgentsUi.ensureStickyComposerAgentModel(agentId, cwd);
+                    }
+                }
+                this.host.transcriptComposerAgentModel = resolvedModel;
+                const modes = resolveStickyComposerModes(agentId, this.host.chatAgentService);
+                this.host.transcriptComposerModeId = reconcileComposerModeId(undefined, modes, cwd);
+                if (cwd && this.host.transcriptComposerModeId) {
+                    writeStoredComposerMode(cwd, this.host.transcriptComposerModeId);
+                }
+                this.host.transcriptStickyComposerUi.schedulePersistTranscriptComposerPrefs(project, summary);
+                this.host.transcriptStickyComposerUi.remountTranscriptStickyComposer();
+                options?.onSelectionApplied?.();
+            })();
+        };
         const loadAgentCatalog = (): void => {
             this.host.stickyComposerSheetsUi.syncAgentPickerPopoverPosition(chrome.sheet);
             this.host.stickyComposerAgentsUi.loadComposerAgentPickerCatalog(chrome, {
@@ -327,93 +443,38 @@ export class MobileProjectsTranscriptComposerUi {
                 load: () => this.ensureTranscriptComposerAgentsLoaded(project, { force: true }),
                 isCurrent: () => this.host.transcriptComposerAgentSheet === chrome.sheet,
                 onError: () => this.host.stickyComposerAgentsUi.showComposerAgentPickerError(chrome, loadAgentCatalog),
-                render: agents => void this.host.stickyComposerSheetsUi.renderComposerAgentPicker(chrome, {
-                view: 'agents',
-                cwd,
-                agents,
-                selectedAgentId: this.resolveTranscriptComposerPinnedAgentId(project, summary),
-                includeCoder: true,
-                project,
-                onSelectAgent: (agentId, model) => {
-                    this.host.transcriptComposerPinnedAgentId = agentId;
-                    this.host.transcriptComposerPrefsConvId = summary.id;
-                    // Close before any model probe: a row tap must not leave the sheet open while the catalog loads.
-                    this.closeAllComposerSheets();
-                    void (async (): Promise<void> => {
-                        let resolvedModel: QaapCreateAgentTaskQaiqModel | undefined = model
-                            ? { provider: model.provider, vendor: model.vendor, modelId: model.modelId }
-                            : undefined;
-                        if (cwd) {
-                            writeStoredAgent(cwd, agentId);
-                            if (model) {
-                                writeStoredAgentModel(cwd, agentId, model);
-                            } else {
-                                resolvedModel = await this.host.stickyComposerAgentsUi.ensureStickyComposerAgentModel(agentId, cwd);
-                            }
+                render: agents => void renderStickyComposerModelPicker(this.host.stickyComposerSheetsUi, chrome, {
+                    cwd,
+                    agents,
+                    selectedAgentId: this.resolveTranscriptComposerPinnedAgentId(project, summary),
+                    project,
+                    isMobile: matchesMobileNarrowViewport(),
+                    anchor,
+                    rememberModelLabels: models => { this.host.stickyComposerAgentsUi.rememberModelLabels(models); },
+                    onSelectAgent: selectAgent,
+                    approval: reconcileAgentApprovalPolicyId(this.host.transcriptComposerApprovalPolicyId, cwd),
+                    onSelectApproval: policyId => { this.host.transcriptComposerApprovalPolicyId = policyId; },
+                    onRefresh: () => { this.host.transcriptStickyComposerUi.remountTranscriptStickyComposer(); },
+                    onProactiveLogin: this.host.openAgentSignInTerminal
+                        ? agentId => {
+                            this.closeAllComposerSheets();
+                            void this.host.openAgentSignInTerminal?.(agentId, project);
                         }
-                        this.host.transcriptComposerAgentModel = resolvedModel;
-                        const modes = resolveStickyComposerModes(agentId, this.host.chatAgentService);
-                        this.host.transcriptComposerModeId = reconcileComposerModeId(undefined, modes, cwd);
-                        if (cwd && this.host.transcriptComposerModeId) {
-                            writeStoredComposerMode(cwd, this.host.transcriptComposerModeId);
+                        : undefined,
+                    onOpenAiFeaturesSettings: this.host.openPreferencesSheet
+                        ? () => {
+                            this.closeAllComposerSheets();
+                            void this.host.openPreferencesSheet?.(QAAP_AI_FEATURES_SETTINGS_QUERY);
                         }
-                        this.host.transcriptStickyComposerUi.schedulePersistTranscriptComposerPrefs(project, summary);
-                        this.host.transcriptStickyComposerUi.remountTranscriptStickyComposer();
-                        options?.onSelectionApplied?.();
-                    })();
-                },
-                onProactiveLogin: this.host.openAgentSignInTerminal
-                    ? (agentId, pickerProject) => {
-                        this.closeAllComposerSheets();
-                        void this.host.openAgentSignInTerminal?.(agentId, pickerProject);
-                    }
-                    : undefined,
-                onOpenAiFeaturesSettings: this.host.openPreferencesSheet
-                    ? () => {
-                        this.closeAllComposerSheets();
-                        void this.host.openPreferencesSheet?.(QAAP_AI_FEATURES_SETTINGS_QUERY);
-                    }
-                    : undefined,
+                        : undefined,
                 }),
             });
         };
         loadAgentCatalog();
     }
 
-    openTranscriptComposerModeSheet(
-        project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,
-        modes: readonly ChatMode[],
-        anchor?: HTMLElement,
-        untilDone?: StickyComposerUntilDoneToggleOptions,
-    ): void {
-        const cwd = this.host.projectsService.getProjectCwd(project) ?? summary.cwd;
-        this.host.stickyComposerSheetsUi.openComposerModeSheet({
-            modes,
-            selectedModeId: this.host.transcriptComposerModeId,
-            cwd,
-            anchor,
-            untilDone,
-            transcriptOverlay: true,
-            closeTitle: nls.localize('qaap/mobileProjects/closeTranscript', 'Close'),
-            onClose: () => this.closeAllComposerSheets(),
-            isOpen: () => this.host.transcriptComposerModeSheet !== undefined,
-            assignSheet: sheet => { this.host.transcriptComposerModeSheet = sheet; },
-            onSelect: id => {
-                this.host.transcriptComposerModeId = id;
-                if (cwd) {
-                    writeStoredComposerMode(cwd, id);
-                }
-                this.host.transcriptStickyComposerUi.schedulePersistTranscriptComposerPrefs(project, summary);
-                this.closeAllComposerSheets();
-                this.host.transcriptStickyComposerUi.remountTranscriptStickyComposer();
-            },
-        });
-    }
-
     closeTranscriptComposerSheets(): void {
         this.host.stickyComposerSheetsUi.teardownAgentPickerPopover();
-        this.host.stickyComposerSheetsUi.teardownModeSheetPopover();
         this.host.stickyComposerSheetsUi.teardownApprovalPolicySheetPopover();
         if (this.host.transcriptComposerAgentSheet) {
             this.host.transcriptComposerAgentSheet.remove();

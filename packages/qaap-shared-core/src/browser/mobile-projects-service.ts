@@ -36,7 +36,7 @@ import {
     MOBILE_PROJECTS_HIDDEN_IDS_BASE,
     MOBILE_PROJECTS_PINNED_IDS_BASE,
 } from './mobile-projects-user-storage';
-import { cloneGithubProjectByRepositoryExtracted, cloneGithubProjectExtracted, createGithubProjectExtracted, finishGithubRepositoryImportExtracted, watchGithubRepositoryImportInBackgroundExtracted, formatRepositoryLabelExtracted, importGithubProjectExtracted, isPinnedExtracted, openGithubProjectExtracted, openInCurrentWindowAsyncExtracted, openProjectWithoutReloadExtracted, openWorkspaceUriExtracted, readCustomProjectsExtracted, readDisplayNamesExtracted, readHiddenProjectIdsExtracted, readPinnedProjectIdsExtracted, registerGithubWorkspaceProjectExtracted, storedToEntryExtracted, togglePinExtracted, uniqueCopyNameExtracted, workspacePathFromUriExtracted, writeCustomProjectsExtracted, writeDisplayNamesExtracted, writeHiddenProjectIdsExtracted, writePinnedProjectIdsExtracted } from './mobile-projects-service-render';
+import { cloneGithubProjectByRepositoryExtracted, cloneGithubProjectExtracted, createGithubProjectExtracted, createLocalProjectExtracted, registerLocalWorkspaceProjectExtracted, finishGithubRepositoryImportExtracted, watchGithubRepositoryImportInBackgroundExtracted, formatRepositoryLabelExtracted, importGithubProjectExtracted, isPinnedExtracted, openGithubProjectExtracted, openInCurrentWindowAsyncExtracted, openProjectWithoutReloadExtracted, openWorkspaceUriExtracted, readCustomProjectsExtracted, readDisplayNamesExtracted, readHiddenProjectIdsExtracted, readPinnedProjectIdsExtracted, registerGithubWorkspaceProjectExtracted, storedToEntryExtracted, togglePinExtracted, uniqueCopyNameExtracted, workspacePathFromUriExtracted, writeCustomProjectsExtracted, writeDisplayNamesExtracted, writeHiddenProjectIdsExtracted, writePinnedProjectIdsExtracted } from './mobile-projects-service-render';
 import { cachedGithubSessionToEntryExtracted, cachedSessionToEntryExtracted, cachedWorkspaceSessionToEntryExtracted, collapseCurrentWorkspaceDuplicatesExtracted, duplicateProjectExtracted, getCurrentWorkspaceBranchExtracted, getCurrentWorkspaceDisplayNameExtracted, getProjectCwdExtracted, isBrowsableHubProjectExtracted, loadProjectsExtracted, overlayActiveTasksExtracted, peekCachedProjectsExtracted, removeProjectExtracted, renameProjectExtracted } from './mobile-projects-service-streaming';
 import { applySessionToEntryExtracted, buildEphemeralCurrentWorkspaceEntryExtracted, currentGithubRepositoryFullNameExtracted, currentRepoKeyExtracted, cwdFromFileUriExtracted, getCurrentWorkspaceMatchKeyExtracted, getProjectWorkspaceMatchKeyExtracted, githubRepositoryToProjectExtracted, isProjectContainerWorkspaceExtracted, latestTimestampExtracted, loadGithubProjectsExtracted, loadSessionMapExtracted, prepareProjectCwdExtracted, projectActivityTimeExtracted, projectMatchesCurrentWorkspaceExtracted, projectSessionKeyExtracted, recordProjectPreviewUrlExtracted, recordProjectSessionExtracted, relativeUpdatedAtExtracted, resolveCurrentWorkspaceProjectExtracted, resolveProjectPreviewUrlExtracted, touchProjectActivityExtracted, touchProjectSessionExtracted } from './mobile-projects-service-timeline';
 
@@ -144,6 +144,10 @@ export class MobileProjectsService {
         return createGithubProjectExtracted(this);
     }
 
+    async createLocalProject(): Promise<MobileProjectEntry[] | undefined> {
+        return createLocalProjectExtracted(this);
+    }
+
     async cloneGithubProject(): Promise<MobileProjectEntry[] | undefined> {
         return cloneGithubProjectExtracted(this);
     }
@@ -163,10 +167,12 @@ export class MobileProjectsService {
     /** Register a finished import as a project; `open` also switches the workspace (page reload). */
     async finishGithubRepositoryImport(result: QaapGithubOpenRepositoryResponse, open: boolean): Promise<MobileProjectEntry[] | undefined> {
         const projects = await finishGithubRepositoryImportExtracted(this, result, open);
-        // `open` reloads the page, and the reloaded page asks through loadProjects. Otherwise ask now.
-        if (!open) {
-            const cwd = this.cwdFromFileUri(new URI(result.workspaceUri));
-            if (cwd) {
+        // `open` reloads the page: the reloaded page asks for this folder (see loadProjects). Otherwise ask now.
+        const cwd = this.cwdFromFileUri(new URI(result.workspaceUri));
+        if (cwd) {
+            if (open) {
+                this.folderTrust.markAskAfterReload(cwd);
+            } else {
                 void this.folderTrust.askIfUndecided(cwd, result.repository.fullName);
             }
         }
@@ -217,6 +223,10 @@ export class MobileProjectsService {
     }
 
     /** @internal Used by the extracted mobile-projects-service-* modules. */
+    public registerLocalWorkspaceProject(name: string, uri: URI): void {
+        registerLocalWorkspaceProjectExtracted(this, name, uri);
+    }
+
     public registerGithubWorkspaceProject(repository: QaapGithubRepositorySummary, uri: URI): void {
         registerGithubWorkspaceProjectExtracted(this, repository, uri);
     }
@@ -347,10 +357,13 @@ export class MobileProjectsService {
 
     async loadProjects(): Promise<MobileProjectEntry[]> {
         const projects = this.withoutPendingRemovals(await loadProjectsExtracted(this));
-        // The current project is the one the Work Hub is working in; a reload after "Open" lands here too.
-        for (const project of projects) {
-            if (project.isCurrent) {
-                this.askFolderTrustIfUndecided(project);
+        // Background loads and refreshes never open the trust dialog. Only the folder the user just
+        // opened (marked before the reload) is asked here; any other folder waits for an explicit select.
+        const openedCwd = this.folderTrust.takeAskAfterReload();
+        if (openedCwd) {
+            const opened = projects.find(project => project.isCurrent && this.getProjectCwd(project) === openedCwd);
+            if (opened) {
+                this.askFolderTrustIfUndecided(opened);
             }
         }
         return projects;

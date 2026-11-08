@@ -6,6 +6,7 @@ import {
 } from './qaap-qaiq-byok-provider-registry';
 import {
     filterQaiqModelsWithConfiguredCredentials,
+    formatQaiqModelDisplayLabel,
     formatQaiqModelIdShortLabel,
     groupQaiqModelsByProvider,
     isQaiqByokLanguageModelId,
@@ -19,6 +20,14 @@ describe('formatQaiqModelIdShortLabel', () => {
         expect(formatQaiqModelIdShortLabel('nvidia/llama-nemotron-rerank-vl-1b-v2:free'))
             .to.equal('llama-nemotron-rerank-vl-1b-v2:free');
         expect(formatQaiqModelIdShortLabel('tencent/hy3:free')).to.equal('hy3:free');
+    });
+
+    it('keeps only the model name: provider segments and the OpenRouter ~ go', () => {
+        expect(formatQaiqModelIdShortLabel('openrouter/~moonshotai/kimi-latest')).to.equal('kimi-latest');
+        expect(formatQaiqModelIdShortLabel('anthropic/claude-sonnet-latest')).to.equal('claude-sonnet-latest');
+        expect(formatQaiqModelIdShortLabel('mlx-community/Qwen2.5-Coder-7B-Instruct-4bit'))
+            .to.equal('Qwen2.5-Coder-7B-Instruct-4bit');
+        expect(formatQaiqModelDisplayLabel({ modelId: 'openrouter/~moonshotai/kimi-latest' })).to.equal('kimi-latest');
     });
 
     it('keeps ids without a path segment as-is', () => {
@@ -214,5 +223,13 @@ describe('listQaiqModelsFromPreferences', () => {
         ]);
         expect(grouped.get('openrouter')).to.have.length(1);
         expect(grouped.get('nvidia')).to.have.length(1);
+    });
+
+    it('keeps the :free marker on a free model label even when the catalog label drops it', () => {
+        expect(formatQaiqModelDisplayLabel({ modelId: 'google/gemma-4-31b-it:free', label: 'Gemma 4 31B' }))
+            .to.equal('Gemma 4 31B :free');
+        expect(formatQaiqModelDisplayLabel({ modelId: 'google/gemma-4-31b-it:free', label: 'Gemma 4 31B (free)' }))
+            .to.equal('Gemma 4 31B (free)');
+        expect(formatQaiqModelDisplayLabel({ modelId: 'openai/gpt-5', label: 'GPT-5' })).to.equal('GPT-5');
     });
 });

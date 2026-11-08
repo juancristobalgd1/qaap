@@ -4,6 +4,11 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { QaapSqliteConnectionRegistry, QaapSqliteStore } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
+import { QAAP_CONVERSATION_LEGACY_NAMESPACE, QAAP_CONVERSATION_ROWS_NAMESPACE } from './qaap-agent-conversation-store-rows';
 import type { QaapAgentConversation } from '../common/qaap-agent-conversation';
 import { QaapAgentConversationSseBatcher } from '../common/qaap-agent-conversation-sse-batcher';
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
@@ -232,15 +237,21 @@ describe('QaapAgentConversationStore restart auto-resume', () => {
         }
         const now = Date.now();
         const persisted = streamingConversation('c7', now - 60 * 1000);
+        // A real database in a temporary directory; never touches ~/.qaap.
+        const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-restart-resume-'));
+        const databasePath = path.join(directory, 'index.sqlite');
+        const legacyStore = new QaapSqliteStore({ databasePath, namespace: QAAP_CONVERSATION_LEGACY_NAMESPACE });
+        legacyStore.set('conversations', [persisted]);
+        const rowsStore = new QaapSqliteStore({ databasePath, namespace: QAAP_CONVERSATION_ROWS_NAMESPACE });
         class DiskBackedStore extends TestConversationStore {
             override async restoreFromDisk(): Promise<void> {
                 return QaapAgentConversationStore.prototype.restoreFromDisk.call(this);
             }
             override getSqliteStore(): ReturnType<QaapAgentConversationStore['getSqliteStore']> {
-                return {
-                    migrateLegacy: () => undefined,
-                    get: (key: string) => (key === 'conversations' ? [persisted] : undefined),
-                } as unknown as ReturnType<QaapAgentConversationStore['getSqliteStore']>;
+                return legacyStore;
+            }
+            override getSqliteStoreV2(): ReturnType<QaapAgentConversationStore['getSqliteStoreV2']> {
+                return rowsStore;
             }
             override isTurnGraphEnabled(): boolean {
                 return false;
@@ -249,14 +260,20 @@ describe('QaapAgentConversationStore restart auto-resume', () => {
         const runner = new RecoveringTaskRunner();
         const store = new DiskBackedStore();
         store.configureForTest(runner);
+        try {
+            const restoring = store.restoreFromDisk();
+            await new Promise(resolve => setTimeout(resolve, 10));
+            expect(runner.created).to.have.length(0);
+            finishRecovery();
+            await restoring;
 
-        const restoring = store.restoreFromDisk();
-        await new Promise(resolve => setTimeout(resolve, 10));
-        expect(runner.created).to.have.length(0);
-        finishRecovery();
-        await restoring;
-
-        expect(runner.created).to.have.length(1);
-        expect(store.get('c7')!.status).to.equal('streaming');
+            expect(runner.created).to.have.length(1);
+            expect(store.get('c7')!.status).to.equal('streaming');
+        } finally {
+            // Always release the handles: on Windows an open SQLite file makes rmSync fail with EBUSY.
+            store.onStop();
+            QaapSqliteConnectionRegistry.shared.closeUnder(directory);
+            fs.rmSync(directory, { recursive: true, force: true });
+        }
     });
 });

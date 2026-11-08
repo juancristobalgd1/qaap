@@ -7,6 +7,7 @@
  * Shared HTTP + persistence helpers for background agent tasks.
  * Keep {@link QAAP_AGENT_TASK_API_PATH} in sync with `@theia/qaap-cloud-workspace`.
  */
+import type { QaapAgentEffortLevel } from './qaap-agent-effort';
 import { QaapUserFacingErrors } from '@theia/qaap-adapters/lib/common/qaap-user-facing-error';
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import { fetchQaapGetWithTransientRetry } from '@theia/qaap-adapters/lib/common/qaap-transient-get';
@@ -18,6 +19,8 @@ import {
 import { isQaapHarnessEnabled, readDisabledHarnessIds } from './qaap-harness-preferences';
 import { OPENCODE_FREE_MODEL_OPTIONS, OPENCODE_PAID_MODEL_OPTIONS } from './qaap-opencode-model-catalog';
 import { resolveStoredAgentModelForSubmit } from './qaap-agent-model-selection';
+import { getQaapDefaultAgentId } from './qaap-default-agent-id';
+import { dedupeInFlight } from './qaap-in-flight-dedupe';
 
 export {
     agentSupportsModelPicker,
@@ -43,9 +46,6 @@ export const PI_AGENT_ID = 'pi';
 
 /** Legacy product default — still used for QAIQ-specific parsing and explicit QAIQ pins. */
 export const QAAP_PRIMARY_AGENT_ID = QAIQ_AGENT_ID;
-
-/** Composer / Work Hub default when no per-project agent is stored. */
-export const QAAP_COMPOSER_DEFAULT_AGENT_ID = QAIQ_AGENT_ID;
 
 /** @deprecated Kept for QAIQ-family protocol and transcript compatibility. */
 export const LEGACY_OPENCLAUDE_AGENT_ID = OPENCLAUDE_AGENT_ID;
@@ -198,6 +198,8 @@ export type QaapCreateAgentTaskBody =
         /** Reused by a client retry so a slow POST cannot start the same task twice. */
         readonly clientRequestId?: string;
         readonly agentModel?: QaapCreateAgentTaskQaiqModel;
+        /** Reasoning effort for this task; the backend drops it when the harness/model does not take it. */
+        readonly effort?: QaapAgentEffortLevel;
         /** @deprecated Use {@link agentModel}. */
         readonly qaiqModel?: QaapCreateAgentTaskQaiqModel;
         /** Resolved cross-project context, prepended to the agent prompt by the backend runner. */
@@ -302,15 +304,15 @@ export function reconcileSelectedAgent(
     if (stored && ids.has(stored)) {
         return stored;
     }
-    if (!normalizedCurrent && !stored && ids.has(QAAP_COMPOSER_DEFAULT_AGENT_ID)) {
-        return QAAP_COMPOSER_DEFAULT_AGENT_ID;
+    if (!normalizedCurrent && !stored && ids.has(getQaapDefaultAgentId())) {
+        return getQaapDefaultAgentId();
     }
     const normalizedDefault = migrateQaapProductAgentId(defaultAgent);
     if (normalizedDefault && ids.has(normalizedDefault)) {
         return normalizedDefault;
     }
-    if (ids.has(QAAP_COMPOSER_DEFAULT_AGENT_ID)) {
-        return QAAP_COMPOSER_DEFAULT_AGENT_ID;
+    if (ids.has(getQaapDefaultAgentId())) {
+        return getQaapDefaultAgentId();
     }
     if (ids.has(QAAP_PRIMARY_AGENT_ID)) {
         return QAAP_PRIMARY_AGENT_ID;
@@ -376,7 +378,7 @@ export function filterQaapComposerAgents(
 
 /**
  * Sticky/transcript composer agent picker — honors the current/stored choice, then defaults to
- * {@link QAAP_COMPOSER_DEFAULT_AGENT_ID} when available. Returns undefined when no coding CLI is installed
+ * {@link getQaapDefaultAgentId} when available. Returns undefined when no coding CLI is installed
  * (never invents Shell).
  */
 export function reconcileStickyComposerAgent(
@@ -594,13 +596,50 @@ export function resolveAgentOptionId(agentId: string | undefined, agents: readon
     return normalizeBackendAgentId(trimmed) ?? migrateLegacyBackendAgentId(trimmed);
 }
 
+/** How long a fetched `GET /agent-tasks/all` snapshot is reused before the next call refetches it. */
+export const AGENT_TASK_LIST_ALL_TTL_MS = 15_000;
+
+let agentTaskListAllCache: { readonly at: number; readonly snapshot: QaapAgentTaskListSnapshot } | undefined;
+/** Bumped by every invalidation so a request started before it never repopulates the cache. */
+let agentTaskListAllGeneration = 0;
+const agentTaskListAllInFlight = new Map<string, Promise<QaapAgentTaskListSnapshot>>();
+
+/**
+ * Drop the cached agent task list (and any request still in flight) so the next call refetches.
+ * Call after a harness connects, signs in, or its settings change.
+ */
+export function invalidateAgentTaskListAllCache(): void {
+    agentTaskListAllCache = undefined;
+    agentTaskListAllGeneration++;
+    agentTaskListAllInFlight.clear();
+}
+
+/**
+ * Load the agent task list. Within {@link AGENT_TASK_LIST_ALL_TTL_MS} the cached snapshot is returned,
+ * concurrent calls share one request, and `forceRefresh` bypasses the cache with a `refresh=1` request.
+ * Failed requests are never cached.
+ */
 export async function fetchAgentTaskListAll(options?: { readonly forceRefresh?: boolean }): Promise<QaapAgentTaskListSnapshot> {
-    const endpoint = options?.forceRefresh ? `${QAAP_AGENT_TASK_API_PATH}/all?refresh=1` : `${QAAP_AGENT_TASK_API_PATH}/all`;
+    const forceRefresh = options?.forceRefresh === true;
+    if (!forceRefresh && agentTaskListAllCache && Date.now() - agentTaskListAllCache.at < AGENT_TASK_LIST_ALL_TTL_MS) {
+        return agentTaskListAllCache.snapshot;
+    }
+    return dedupeInFlight(agentTaskListAllInFlight, forceRefresh ? 'refresh' : 'cached', () => requestAgentTaskListAll(forceRefresh));
+}
+
+async function requestAgentTaskListAll(forceRefresh: boolean): Promise<QaapAgentTaskListSnapshot> {
+    const generation = agentTaskListAllGeneration;
+    const endpoint = forceRefresh ? `${QAAP_AGENT_TASK_API_PATH}/all?refresh=1` : `${QAAP_AGENT_TASK_API_PATH}/all`;
     const response = await fetchQaapGetWithTransientRetry(endpoint, { credentials: 'include', cache: 'no-store' });
     if (!response.ok) {
         throw new Error(response.statusText);
     }
-    return parseAgentTaskListBody(await response.json());
+    const snapshot = parseAgentTaskListBody(await response.json());
+    // An empty agent list is never cached: it is usually a backend still starting, and the next call must ask again.
+    if (generation === agentTaskListAllGeneration && snapshot.agents.length > 0) {
+        agentTaskListAllCache = { at: Date.now(), snapshot };
+    }
+    return snapshot;
 }
 
 export interface QaapAgentWarmResult {
@@ -638,7 +677,50 @@ export async function warmAgentRunner(cwd: string): Promise<QaapAgentWarmResult 
 /** Upper bound for one agent model catalog request, so a hung probe rejects instead of leaving the picker loading. */
 export const AGENT_MODELS_REQUEST_TIMEOUT_MS = 15000;
 
+/** How long a successful model catalog per agent is reused before the next call refetches it. */
+export const AGENT_MODELS_CACHE_TTL_MS = 60_000;
+
+const agentModelsCache = new Map<string, { readonly at: number; readonly models: QaapQaiqModelOption[] }>();
+const agentModelsInFlight = new Map<string, Promise<QaapQaiqModelOption[]>>();
+/** Bumped by every invalidation so a request started before it never repopulates the cache. */
+let agentModelsGeneration = 0;
+
+/**
+ * Drop the cached model catalog for one agent, or for every agent when no id is given.
+ * Call after credentials, providers or harness settings change.
+ */
+export function invalidateAgentModelsCache(agentId?: string): void {
+    agentModelsGeneration++;
+    if (agentId === undefined) {
+        agentModelsCache.clear();
+        agentModelsInFlight.clear();
+        return;
+    }
+    agentModelsCache.delete(agentId);
+    agentModelsInFlight.delete(agentId);
+}
+
+/**
+ * Load the model catalog of one agent. Successful results are reused for {@link AGENT_MODELS_CACHE_TTL_MS},
+ * concurrent calls for the same agent share one request, and errors are never cached.
+ */
 export async function fetchAgentModelsForAgent(agentId: string): Promise<QaapQaiqModelOption[]> {
+    const cached = agentModelsCache.get(agentId);
+    if (cached && Date.now() - cached.at < AGENT_MODELS_CACHE_TTL_MS) {
+        return cached.models;
+    }
+    return dedupeInFlight(agentModelsInFlight, agentId, async () => {
+        const generation = agentModelsGeneration;
+        const models = await requestAgentModelsForAgent(agentId);
+        // Empty catalogs are not cached: a CLI that is still signing in must be asked again on the next call.
+        if (generation === agentModelsGeneration && models.length > 0) {
+            agentModelsCache.set(agentId, { at: Date.now(), models });
+        }
+        return models;
+    });
+}
+
+async function requestAgentModelsForAgent(agentId: string): Promise<QaapQaiqModelOption[]> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), AGENT_MODELS_REQUEST_TIMEOUT_MS);
     let body: { models?: QaapQaiqModelOption[] };

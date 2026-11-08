@@ -411,7 +411,6 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     public agentsHubSelectedProjectId: string | undefined;
     protected readonly composerWorkspaceBranchByProjectId = new Map<string, string>();
     protected stickyComposerModeId: string | undefined;
-    protected stickyComposerCapabilityLevel: import('@theia/qaap-composer/lib/common/qaap-sticky-composer-model-capability').ModelCapabilityLevelValue | undefined;
     protected stickyComposerApprovalPolicyId: QaapAgentApprovalPolicyId | undefined;
     protected stickyComposerToolApprovalRules: QaapAgentToolApprovalRules | undefined;
     protected stickyComposerSurface: QaapComposerSurface = 'task';
@@ -1665,7 +1664,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     /** @internal Used by the extracted mobile-projects-panel-* modules. */
-    public async submitTranscriptViaBackendConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, content: string, options: { selectedAgentId?: string; modeId?: string; autoApprove?: boolean; approvalPolicyId?: string; toolApprovalRules?: import('@theia/qaap-shared-core/lib/common/qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules; capabilityOverrides?: Record<string, boolean>; genericCapabilitySelections?: GenericCapabilitySelections; variables?: AIVariableResolutionRequest[]; widget?: AIChatInputWidget; agentModel?: import('@theia/qaap-shared-core/lib/common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel; imagePreviews?: readonly import('@theia/qaap-shared-core/lib/common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[]; parallel?: boolean; deliveryMode?: import('@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client').QaapMessageDeliveryMode; } = {},): Promise<boolean> {
+    public async submitTranscriptViaBackendConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, content: string, options: { selectedAgentId?: string; modeId?: string; autoApprove?: boolean; approvalPolicyId?: string; toolApprovalRules?: import('@theia/qaap-shared-core/lib/common/qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules; capabilityOverrides?: Record<string, boolean>; genericCapabilitySelections?: GenericCapabilitySelections; variables?: AIVariableResolutionRequest[]; widget?: AIChatInputWidget; agentModel?: import('@theia/qaap-shared-core/lib/common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel; imagePreviews?: readonly import('@theia/qaap-shared-core/lib/common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[]; parallel?: boolean; deliveryMode?: import('@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client').QaapMessageDeliveryMode; clientMessageId?: string; queueOnly?: boolean; } = {},): Promise<boolean> {
         return submitTranscriptViaBackendConversationExtracted(this, project, summary, content, options);
     }
 
@@ -2075,6 +2074,13 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     protected async refreshOpenTranscriptConversation(options?: QaapTranscriptLiveRefreshOptions,): Promise<void> {
         return refreshOpenTranscriptConversationExtracted(this, options);
+    }
+
+    protected syncOpenTranscriptApprovalPolicy(conversationId: string, approvalPolicyId: 'approve-for-me' | 'request-approval'): void {
+        const state = this.transcriptController.state;
+        if (state.transcriptOpenSummaryId === conversationId) {
+            state.transcriptComposerApprovalPolicyId = approvalPolicyId;
+        }
     }
 
     protected isWatchingOpenTranscript(conversationId: string): boolean {

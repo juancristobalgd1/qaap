@@ -35,7 +35,15 @@ export interface QaapAgentAuthLoginChallenge {
     readonly acceptsRedirectUrl?: boolean;
 }
 
-const AUTH_URL_RE = /https?:\/\/[^\s<>"'`)\]|,]+/gi;
+/** Box-drawing characters and ESC/BEL end a URL: TUIs draw a URL row inside a `│` gutter, and OSC-8 sequences carry ESC/BEL. */
+const AUTH_URL_RE = /https?:\/\/[^\s<>"'`)\]|,─-╿\x07\x1B]+/gi;
+const OSC8_HYPERLINK_TARGET_RE = /\x1B\]8;[^;\x07\x1B]*;([^\x07\x1B]+)(?:\x07|\x1B\\)/g;
+const TERMINAL_CONTROL_RE = /\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)|\x1B\[[0-?]*[ -/]*[@-~]/g;
+/** Box-drawing gutter and spaces around the text of one terminal row. */
+const ROW_EDGE_DECORATION_RE = /^[\s|─-╿]+|[\s|─-╿]+$/g;
+/** The end of a row that is cut inside an http(s) URL, and the start of the row that continues it. */
+const WRAPPED_URL_TAIL_RE = /https?:\/\/\S*$/i;
+const WRAPPED_URL_ROW_START_RE = /^[\w%&=?#+.~\/-]+/;
 
 interface AuthUrlPolicy {
     readonly agents: readonly string[];
@@ -70,6 +78,12 @@ const AUTH_URL_POLICIES: readonly AuthUrlPolicy[] = [
     { agents: ['grok'], hostname: 'auth.x.ai', path: /^\/(?:auth|login|oauth|device|authorize)(?:\/|$)/i },
     // Pi 1.4 `/login openrouter` prints `https://openrouter.ai/auth?callback_url=http%3A%2F%2F127.0.0.1…&code_challenge=…`.
     { agents: ['pi'], hostname: 'openrouter.ai', path: /^\/auth\/?$/i },
+    // Pi `/login` providers (qaap-pi-login-providers.ts), each on its exact authorize / device page:
+    // Anthropic `claude.ai/oauth/authorize`, OpenAI ChatGPT `auth.openai.com/api/accounts/authorize`,
+    // GitHub Copilot device verification `github.com/login/device`.
+    { agents: ['pi'], hostname: 'claude.ai', path: /^\/oauth\/authorize(?:\/|$)/i },
+    { agents: ['pi'], hostname: 'auth.openai.com', path: /^\/api\/accounts\/authorize(?:\/|$)/i },
+    { agents: ['pi'], hostname: 'github.com', path: /^\/login\/device(?:\/|$)/i },
     { agents: ['copilot'], hostname: 'login.microsoftonline.com', path: /^\/[^/]+\/oauth2\/(?:v2\.0\/)?authorize(?:\/|$)/i },
 ];
 
@@ -79,6 +93,8 @@ const CODE_ENTRY_PROMPT_PATTERNS: readonly RegExp[] = [
     /\benter\s+the\s+authori[sz]ation\s+code\b/i,
     // Pi: `Complete sign-in in your browser, or paste the authorization code / redirect URL here:`.
     /\bpaste\s+(?:the\s+)?authori[sz]ation\s+code\s*\/\s*redirect\s+url\b/i,
+    // Pi OpenAI (ChatGPT): `Complete login in your browser, or paste the final redirect URL here:`.
+    /\bpaste\s+(?:the\s+)?(?:final\s+)?redirect\s+url\s+here\b/i,
 ];
 
 /** A paste-back prompt that also takes the browser's final redirect URL. */
@@ -156,11 +172,40 @@ function normalizeTrustedAuthLoginUrl(candidate: string, agentId?: string): stri
     }
 }
 
+/**
+ * Joins a URL that a TUI cut at the end of a row (inside a box gutter or not) with the row that
+ * continues it. Only a continuation that cannot be prose is joined: it must start with a URL
+ * delimiter, or the cut must follow `=`, `&`, `?`, `#` or a percent-escape.
+ */
+function joinWrappedAuthUrlRows(text: string): string {
+    const rows: string[] = [];
+    for (const rawRow of text.split('\n')) {
+        const row = rawRow.replace(ROW_EDGE_DECORATION_RE, '');
+        const previous = rows.length ? rows[rows.length - 1] : undefined;
+        const tail = previous?.match(WRAPPED_URL_TAIL_RE)?.[0];
+        const continuation = WRAPPED_URL_ROW_START_RE.exec(row)?.[0];
+        if (previous !== undefined && tail && continuation && isWrappedAuthUrlContinuation(tail, continuation)) {
+            rows[rows.length - 1] = `${previous}${row}`;
+        } else {
+            rows.push(row);
+        }
+    }
+    return rows.join('\n');
+}
+
+function isWrappedAuthUrlContinuation(tail: string, continuation: string): boolean {
+    return /^[%&=?#+.~\/_-]/.test(continuation) || /[=&?#]$|%[0-9A-Fa-f]{2}$/.test(tail);
+}
+
 function extractAuthUrls(sample: string, agentId?: string): string[] {
+    // Whole OSC-8 targets first: a TUI that wraps its URL row still links the complete URL.
+    const hyperlinkTargets = [...sample.matchAll(OSC8_HYPERLINK_TARGET_RE)].map(match => match[1].trim());
+    const visible = joinWrappedAuthUrlRows(sample.replace(TERMINAL_CONTROL_RE, ''));
+    const candidates = [...hyperlinkTargets, ...[...visible.matchAll(AUTH_URL_RE)].map(match => match[0])];
     const found: string[] = [];
     const seen = new Set<string>();
-    for (const match of sample.matchAll(AUTH_URL_RE)) {
-        const url = normalizeTrustedAuthLoginUrl(stripTrailingUrlPunctuation(match[0]), agentId);
+    for (const candidate of candidates) {
+        const url = normalizeTrustedAuthLoginUrl(stripTrailingUrlPunctuation(candidate), agentId);
         if (!url || seen.has(url)) {
             continue;
         }

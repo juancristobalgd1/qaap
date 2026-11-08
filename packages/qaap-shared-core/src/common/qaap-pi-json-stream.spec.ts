@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import * as fs from 'fs';
 import * as path from 'path';
 import { createAgentStreamAccumulator } from './qaap-cli-transcript-stream';
+import { stripQaapControlMarkersForDisplay } from './qaap-agent-message-content';
 import {
     isPiJsonSessionHeaderLine,
     QaapPiStreamAccumulator,
@@ -161,5 +162,91 @@ describe('qaap-pi-json-stream', () => {
             expect(accumulator.getSegments()).to.deep.equal([]);
             expect(accumulator.hasSessionHeader()).to.equal(true);
         });
+    });
+});
+
+describe('qaap-pi-json-stream reported cost', () => {
+    const messageEnd = (input: number, cost: number | undefined): string => JSON.stringify({
+        type: 'message_end',
+        message: {
+            role: 'assistant',
+            content: [{ type: 'text', text: 'done' }],
+            stopReason: 'stop',
+            usage: { input, output: 5, cacheRead: 0, cacheWrite: 0, ...(cost !== undefined ? { cost: { total: cost } } : {}) },
+        },
+    });
+    const context = { taskId: 't1', turnId: 'u1', agentId: 'pi' };
+
+    it('turns Pi-reported cost into a reported usage event summed over the run', () => {
+        const stream = new QaapPiStreamAccumulator();
+        // Two turns: Pi's usage is cumulative within a turn, so each turn keeps its last value.
+        stream.push(`${messageEnd(10, 0.001)}\n${JSON.stringify({ type: 'turn_end' })}\n${messageEnd(20, 0.0025)}\n`);
+        const event = stream.getUsageEvent(context);
+        expect(event).to.deep.include({
+            taskId: 't1',
+            agentId: 'pi',
+            inputTokens: 30,
+            outputTokens: 10,
+            costSource: 'reported',
+            cumulative: true,
+        });
+        expect(event?.costUsd).to.be.closeTo(0.0035, 1e-9);
+    });
+
+    it('reports no usage event when Pi gave no cost, never a derived price', () => {
+        const stream = new QaapPiStreamAccumulator();
+        stream.push(`${messageEnd(10, undefined)}\n`);
+        expect(stream.getUsageEvent(context)).to.equal(undefined);
+    });
+});
+
+describe('qaap-pi-json-stream provider error replay', () => {
+    const SHARED_POOL_BODY = '429: {"message":"Provider returned error","code":429,"metadata":{"raw":"google/gemma-4-26b-a4b-it:free is temporarily rate-limited upstream.","provider_name":"Google AI Studio","limit_source":"upstream_provider_shared_pool"}}';
+
+    it('keeps the raw provider JSON out of the transcript text', () => {
+        const log = [
+            JSON.stringify({ type: 'session', id: 's' }),
+            JSON.stringify({ type: 'message_end', message: { role: 'assistant', content: [], stopReason: 'error', errorMessage: SHARED_POOL_BODY } }),
+        ].join('\n');
+        const stream = new QaapPiStreamAccumulator();
+        stream.push(`${log}\n`);
+        expect(stream.getDisplayText()).to.equal('');
+        expect(stream.getSegments().some(segment => segment.type === 'text' && segment.content.includes('"code"'))).to.equal(false);
+    });
+});
+
+describe('qaap-pi-json-stream blocked sentinel replay', () => {
+    it('shows the blocked question without the @@QAAP:BLOCKED@@ marker, in Pi text segments', () => {
+        const text = "I'm blocked only on your input: what task would you like me to work on? @@QAAP:BLOCKED@@ What change or task should I perform on the esor-vite project?";
+        const log = [
+            JSON.stringify({ type: 'session', id: 's' }),
+            JSON.stringify({ type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text }], stopReason: 'stop' } }),
+        ].join('\n');
+        const stream = new QaapPiStreamAccumulator();
+        stream.push(`${log}\n`);
+        const shown = stream.getSegments()
+            .filter(segment => segment.type === 'text')
+            .map(segment => stripQaapControlMarkersForDisplay(segment.content))
+            .join('\n');
+        expect(shown).to.not.include('@@QAAP');
+        expect(shown).to.include('What change or task should I perform on the esor-vite project?');
+    });
+});
+
+describe('qaap-pi-json-stream provider retry replay', () => {
+    it('reports the provider retry Pi is waiting out, and clears it when the retry ends', () => {
+        const lines = [
+            JSON.stringify({ type: 'session', id: 's' }),
+            JSON.stringify({ type: 'auto_retry_start', attempt: 1, maxAttempts: 3, delayMs: 2000, errorMessage: '429 rate limited' }),
+        ];
+        const stream = new QaapPiStreamAccumulator();
+        stream.push(`${lines.join('\n')}\n`);
+        expect(stream.getProviderRetry()).to.deep.equal({ attempt: 1, maxAttempts: 3, delayMs: 2000 });
+        // The retry does not add transcript text: the user only sees the status line.
+        expect(stream.getSegments()).to.be.empty;
+        stream.push(`${JSON.stringify({ type: 'auto_retry_start', attempt: 2, maxAttempts: 3, delayMs: 4000, errorMessage: '429' })}\n`);
+        expect(stream.getProviderRetry()?.attempt).to.equal(2);
+        stream.push(`${JSON.stringify({ type: 'auto_retry_end', success: true, attempt: 2 })}\n`);
+        expect(stream.getProviderRetry()).to.be.undefined;
     });
 });

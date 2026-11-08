@@ -10,7 +10,7 @@ const disableImportJSDOM = enableJSDOM();
 import { expect } from 'chai';
 import URI from '@theia/core/lib/common/uri';
 import { FileStat } from '@theia/filesystem/lib/common/files';
-import { QaapWorkspaceService } from './qaap-workspace-service';
+import { QaapWindowTitleRootName, QaapWorkspaceService } from './qaap-workspace-service';
 import { clearPreferDesktopIde, markPreferDesktopIde } from '../common/qaap-mobile-work-surface-preference';
 
 disableImportJSDOM();
@@ -153,5 +153,36 @@ describe('QaapWorkspaceService default workspace', () => {
         window.matchMedia = (query: string) => ({ matches: true, media: query } as MediaQueryList);
         const service = new TestWorkspaceService();
         expect(await service.defaultWorkspaceUri()).to.equal(OTHER.toString());
+    });
+});
+
+describe('QaapWindowTitleRootName', () => {
+    it('names the window after the pinned project folder', () => {
+        expect(QaapWindowTitleRootName.fromHubProjectRoot(new URI('file:///workspace/repos/users/alice/acme/vyyq'))).to.equal('vyyq');
+    });
+
+    it('names no project when nothing is pinned', () => {
+        expect(QaapWindowTitleRootName.fromHubProjectRoot(undefined)).to.be.undefined;
+    });
+
+    it('names no project for a filesystem root without a folder name', () => {
+        expect(QaapWindowTitleRootName.fromHubProjectRoot(new URI('file:///'))).to.be.undefined;
+    });
+});
+
+describe('QaapWorkspaceService window title with a pinned Work Hub project', () => {
+    function titleService(): { updates: Record<string, string | undefined>[]; service: QaapWorkspaceService } {
+        const service = new QaapWorkspaceService();
+        const updates: Record<string, string | undefined>[] = [];
+        Object.assign(service, { windowTitleService: { update: (parts: Record<string, string | undefined>) => updates.push(parts) } });
+        return { updates, service };
+    }
+
+    it('overrides rootName with the pinned project and restores the workspace name when released', () => {
+        const { updates, service } = titleService();
+        service.setHubProjectRoot(new URI('file:///workspace/repos/users/alice/acme/vyyq'));
+        expect(updates[updates.length - 1]).to.deep.include({ rootName: 'vyyq' });
+        service.setHubProjectRoot(undefined);
+        expect(updates[updates.length - 1]).to.have.property('rootName', undefined);
     });
 });

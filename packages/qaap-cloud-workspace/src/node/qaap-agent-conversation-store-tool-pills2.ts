@@ -1,4 +1,6 @@
 // Extracted from qaap-agent-conversation-store.ts
+import { logTurnCreatedExtracted } from './qaap-agent-turn-create-log';
+import { discoveredFallbackModels } from './qaap-agent-model-fallback-candidates';
 import type { QaapAgentClosingReport } from '../common/qaap-agent-closing-report';
 import type { QaapAgentConversationStoreContext } from './qaap-agent-conversation-store-context';
 
@@ -54,7 +56,7 @@ export function maybeRetryTurnWithFallbackModelExtracted(ctx: QaapAgentConversat
         if (currentKey) {
             tried.add(currentKey);
         }
-        const nextModel = resolveNextFallbackAgentModel(turnAgentId, currentModel, tried);
+        const nextModel = resolveNextFallbackAgentModel(turnAgentId, currentModel, tried, discoveredFallbackModels(turnAgentId, conv.ownerLogin));
         if (!nextModel) {
             ctx.modelFallbackTriedByUserMessage.delete(loopBudgetKey);
             return false;
@@ -88,6 +90,7 @@ export function maybeRetryTurnWithFallbackModelExtracted(ctx: QaapAgentConversat
                 ctx.buildTaskCreateRequest(retryConv, turnAgentId, undefined, userMessageId),
                 retryConv.ownerLogin,
             );
+            logTurnCreatedExtracted('tool-pills2:retry', retryConv.id, userMessageId, spawned.id);
         } catch {
             return false;
         }

@@ -14,8 +14,10 @@ import {
     QAAP_AGENT_LOGIN_INSTALL_TIMEOUT_MS,
     QAAP_AGENT_LOGIN_PREPARE_TIMEOUT_MS,
     QAAP_AGENT_LOGIN_PROMPT_GRACE_MS,
+    QAAP_AGENT_LOGIN_SIGN_IN_TIMEOUT_MS,
     extractAgentLoginHyperlinkTargets,
     QaapAgentLoginFlow,
+    stripAgentLoginTerminalControlSequences,
     type QaapAgentLoginFlowState,
 } from '../common/qaap-agent-login-flow';
 import { createQaapAgentLoginDialog, type QaapAgentLoginDialogController } from './qaap-agent-login-dialog';
@@ -87,6 +89,11 @@ function piRawLoginOutput(): string {
 }
 
 describe('QaapAgentLoginFlow', () => {
+
+    it('strips an ST-terminated OSC-8 link without swallowing the text between two links', () => {
+        expect(stripAgentLoginTerminalControlSequences('\x1b]8;;https://a.test\x1b\\Open\x1b]8;;\x1b\\ then paste the code'))
+            .to.equal('Open then paste the code');
+    });
 
     it('finds Pi\'s whole OpenRouter link from its OSC-8 hyperlinks although the TUI wrapped it', () => {
         expect(extractAgentLoginHyperlinkTargets(piRawLoginOutput())).to.deep.equal([PI_AUTH_URL]);
@@ -254,6 +261,25 @@ describe('QaapAgentLoginFlow', () => {
         expect(QAAP_AGENT_LOGIN_CHALLENGE_TIMEOUT_MS).to.be.at.most(15_000);
     });
 
+    it('expires a shown sign-in link that is never completed, counting from the first link', () => {
+        const { flow } = createFlow('grok');
+        flow.restart(0);
+        flow.commandStarted(0);
+        flow.appendRawOutput(GROK_OUTPUT, 1_000);
+        expect(flow.state.phase).to.equal('challenge');
+        // Later output does not restart the sign-in clock.
+        flow.appendRawOutput('\r\nStill waiting...\r\n', 200_000);
+        flow.tick(1_000 + QAAP_AGENT_LOGIN_SIGN_IN_TIMEOUT_MS - 1);
+        expect(flow.state.phase).to.equal('challenge');
+        flow.tick(1_000 + QAAP_AGENT_LOGIN_SIGN_IN_TIMEOUT_MS);
+        const state = flow.state;
+        expect(state.phase).to.equal('failed');
+        if (state.phase === 'failed') {
+            expect(state.reason).to.equal('sign-in-expired');
+            expect(state.tail.join('\n')).to.contain('Still waiting');
+        }
+    });
+
     it('starts each attempt without the previous attempt\'s question', () => {
         const { flow } = createFlow('antigravity');
         flow.commandStarted(0);
@@ -380,6 +406,14 @@ describe('createQaapAgentLoginDialog', () => {
         expect(controller.root.querySelector('.theia-mobile-agent-login-dialog-status')?.textContent).to.contain('exit code 1');
     });
 
+    it('says the sign-in did not complete and offers Retry or a Settings API key', () => {
+        const controller = open();
+        controller.render({ phase: 'failed', reason: 'sign-in-expired', tail: [] });
+        const status = controller.root.querySelector('.theia-mobile-agent-login-dialog-status')?.textContent ?? '';
+        expect(status).to.contain('did not complete within 5 minutes');
+        expect(status).to.contain('API key in Settings');
+    });
+
     it('names the question a stuck CLI asked, with no spinner', () => {
         const controller = open({ onRetry: () => undefined });
         controller.render({
@@ -404,5 +438,63 @@ describe('createQaapAgentLoginDialog', () => {
         expect(status()).to.contain('Could not open a terminal in this workspace');
         expect(controller.root.querySelector('.theia-mobile-agent-login-dialog-output')?.textContent).to.equal('Host is not attached.');
         expect(status()).to.not.contain('Secure sign-in is not available');
+    });
+
+    describe('Pi sign-in provider picker', () => {
+        const providers = [
+            { id: 'openrouter', label: 'OpenRouter' },
+            { id: 'anthropic', label: 'Anthropic (Claude Pro/Max)' },
+            { id: 'github-copilot', label: 'GitHub Copilot' },
+        ];
+        const openWithProviders = (onSelect: (id: string) => void = () => undefined) => {
+            dialog = createQaapAgentLoginDialog({
+                agentId: 'pi',
+                agentLabel: 'Pi',
+                onClose: () => undefined,
+                loginProviders: { options: providers, selectedId: 'openrouter', onSelect },
+            });
+            return dialog;
+        };
+        const providerSelect = (root: HTMLElement): HTMLSelectElement => root.querySelector<HTMLSelectElement>('.theia-mobile-agent-login-dialog-provider-select')!;
+        const subtitle = (root: HTMLElement): string => root.querySelector('.theia-mobile-agent-login-dialog-subtitle')?.textContent ?? '';
+
+        it('lists the providers with OpenRouter selected and the subtitle naming it', () => {
+            const controller = openWithProviders();
+            const select = providerSelect(controller.root);
+            expect(Array.from(select.options).map(option => option.value)).to.deep.equal(['openrouter', 'anthropic', 'github-copilot']);
+            expect(select.value).to.equal('openrouter');
+            expect(subtitle(controller.root)).to.contain('Sign in to Pi with your OpenRouter account');
+        });
+
+        it('calls back with the picked provider and follows its name in the subtitle', () => {
+            const picked: string[] = [];
+            const controller = openWithProviders(id => picked.push(id));
+            const select = providerSelect(controller.root);
+            select.value = 'anthropic';
+            select.dispatchEvent(new window.Event('change'));
+            expect(picked).to.deep.equal(['anthropic']);
+            expect(subtitle(controller.root)).to.contain('Sign in to Pi with your Anthropic (Claude Pro/Max) account');
+        });
+
+        it('keeps the picker outside the challenge body, so a restart re-renders the steps only', () => {
+            const controller = openWithProviders();
+            controller.render({ phase: 'waiting', startedAt: 0 });
+            controller.render({ phase: 'challenge', challenge: { mode: 'session', url: 'https://github.com/login/device', userCode: 'ABCD-1234' } });
+            expect(providerSelect(controller.root)).to.not.equal(null);
+            expect(controller.root.querySelector('.theia-mobile-agent-login-dialog-challenge .theia-mobile-agent-login-dialog-provider-select')).to.equal(null);
+        });
+
+        it('shows a device code read-only with a copy button, without a paste field when none is asked', () => {
+            const controller = openWithProviders();
+            controller.render({ phase: 'challenge', challenge: { mode: 'session', url: 'https://github.com/login/device', userCode: 'ABCD-1234' } });
+            expect(controller.root.querySelector('.theia-mobile-agent-login-dialog-code-row code')?.textContent).to.equal('ABCD-1234');
+            expect(controller.root.querySelector('.theia-mobile-agent-login-dialog-copy')).to.not.equal(null);
+            expect(controller.root.querySelector('.theia-mobile-agent-login-dialog-code-input')).to.equal(null);
+        });
+
+        it('renders no provider picker for other harnesses', () => {
+            const controller = open();
+            expect(controller.root.querySelector('.theia-mobile-agent-login-dialog-provider-select')).to.equal(null);
+        });
     });
 });

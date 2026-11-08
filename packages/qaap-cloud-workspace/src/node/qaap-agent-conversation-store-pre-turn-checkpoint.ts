@@ -7,6 +7,7 @@ import {
     type QaapAgentConversation,
     type QaapAgentMessage,
     type QaapConversationCheckpoint,
+    findPreTurnCheckpoint,
     toConversationSummary,
 } from '../common/qaap-agent-conversation';
 import type { QaapAgentConversationStoreContext } from './qaap-agent-conversation-store-context';
@@ -95,6 +96,8 @@ export function capturePreTurnCheckpointThenPrepare(
 }
 
 /** Append a pre-turn checkpoint when its user message still exists; `false` when it was dropped. */
+export { findPreTurnCheckpoint };
+
 export function recordPreTurnCheckpoint(
     ctx: QaapAgentConversationStoreContext,
     conversationId: string,
@@ -110,15 +113,6 @@ export function recordPreTurnCheckpoint(
     });
     void ctx.persist();
     return true;
-}
-
-/** Newest pre-turn checkpoint captured for `userMessageId`. */
-export function findPreTurnCheckpoint(
-    conv: Pick<QaapAgentConversation, 'checkpoints'>,
-    userMessageId: string,
-): QaapConversationCheckpoint | undefined {
-    return [...(conv.checkpoints ?? [])].reverse()
-        .find(checkpoint => checkpoint.kind === 'pre-turn' && checkpoint.messageId === userMessageId && !!checkpoint.commit);
 }
 
 /**

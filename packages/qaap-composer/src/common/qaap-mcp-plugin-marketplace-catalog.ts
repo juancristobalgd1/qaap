@@ -18,22 +18,6 @@ export interface QaapMcpMarketplacePlugin {
 /** Curated MCP plugins shown in the composer slash "Add Plugin" picker (Cursor-style). */
 export const QAAP_MCP_MARKETPLACE_PLUGINS: readonly QaapMcpMarketplacePlugin[] = [
     {
-        id: 'datadog',
-        name: 'Datadog',
-        slug: 'datadog',
-        description: nls.localize(
-            'qaap/mobileProjects/mcpPlugin/datadog',
-            'Use Datadog directly in Qaap to query metrics, logs, and incidents.',
-        ),
-        iconLetter: 'D',
-        iconColor: '#632CA6',
-        serverConfig: {
-            command: 'npx',
-            args: ['-y', '@datadog/mcp-server'],
-            autostart: true,
-        },
-    },
-    {
         id: 'slack',
         name: 'Slack',
         slug: 'slack',
@@ -62,22 +46,6 @@ export const QAAP_MCP_MARKETPLACE_PLUGINS: readonly QaapMcpMarketplacePlugin[] =
         serverConfig: {
             command: 'npx',
             args: ['-y', 'figma-developer-mcp'],
-            autostart: true,
-        },
-    },
-    {
-        id: 'linear',
-        name: 'Linear',
-        slug: 'linear',
-        description: nls.localize(
-            'qaap/mobileProjects/mcpPlugin/linear',
-            'Create and update Linear issues, projects, and cycles.',
-        ),
-        iconLetter: 'L',
-        iconColor: '#5E6AD2',
-        serverConfig: {
-            command: 'npx',
-            args: ['-y', '@linear/mcp-server'],
             autostart: true,
         },
     },

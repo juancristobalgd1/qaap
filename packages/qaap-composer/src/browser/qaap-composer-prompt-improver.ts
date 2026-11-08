@@ -25,6 +25,7 @@ import {
     sanitizeImprovedComposerPrompt,
     type QaapImproveComposerPromptResponseBody,
 } from '../common/qaap-composer-prompt-improve';
+import { QaapUserFacingErrors } from '@theia/qaap-adapters/lib/common/qaap-user-facing-error';
 
 export interface ImproveComposerPromptRequest {
     readonly prompt: string;
@@ -151,16 +152,7 @@ export class QaapComposerPromptImprover {
                 throw new ComposerPromptImproveCancelledError();
             }
             if (!response.ok) {
-                let message = `Prompt improvement failed (${response.status}).`;
-                try {
-                    const payload = await response.json() as { error?: string };
-                    if (payload.error?.trim()) {
-                        message = payload.error.trim();
-                    }
-                } catch {
-                    // Keep generic message.
-                }
-                throw new Error(message);
+                throw await QaapUserFacingErrors.fromResponse(response, `Prompt improvement failed (${response.status}).`);
             }
             const payload = await response.json() as QaapImproveComposerPromptResponseBody;
             if (signal.aborted) {

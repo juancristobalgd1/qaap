@@ -3,7 +3,8 @@
 #
 # Run on the VPS from the repo root (root). This is a multi-user beta release gate:
 # two disposable invited accounts must exercise agent, worktree and parallel runs
-# first. Missing or failed isolation evidence blocks the release.
+# first. Failed isolation evidence blocks the release; fewer than two tenants is a warning
+# (single-operator deployments), see SECURITY.md.
 #
 #   ./scripts/qaap-vps-launch-gate.sh
 set -euo pipefail
@@ -14,8 +15,10 @@ SVC="${QAAP_THEIA_SERVICE:-theia}"
 
 pass=0
 fail=0
-ok()  { echo "  OK   $*"; pass=$((pass + 1)); }
-bad() { echo "  FAIL $*" >&2; fail=$((fail + 1)); }
+warnings=0
+ok()   { echo "  OK   $*"; pass=$((pass + 1)); }
+bad()  { echo "  FAIL $*" >&2; fail=$((fail + 1)); }
+warn() { echo "  WARN $*"; warnings=$((warnings + 1)); }
 
 echo "Qaap VPS launch gate"
 
@@ -39,7 +42,7 @@ OFFSITE_ENV="${QAAP_BACKUP_OFFSITE_ENV:-/opt/qaap/.env.backup}"
 if [[ -n "${QAAP_BACKUP_OFFSITE_CMD:-}" || -f "$OFFSITE_ENV" ]]; then
     ok "offsite backup command is configured"
 else
-    echo "  WARN no ${OFFSITE_ENV} — local tars do not survive disk loss (see doc/qaap-vps-deployment.md)"
+    warn "no ${OFFSITE_ENV} — local tars do not survive disk loss (see doc/qaap-vps-deployment.md)"
 fi
 
 dexec() { docker compose exec -T "$SVC" sh -c "$1"; }
@@ -91,7 +94,7 @@ OPERATOR_LOGINS="$(dexec 'printf %s "${QAAP_OPERATOR_LOGINS:-}"')"
 # Advisory only: sealing of stored API keys and GitHub tokens (length is printed, never the value).
 SECRETS_KEYS_LENGTH="$(dexec 'printf %s "${#QAAP_SECRETS_KEYS}"')"
 if [[ "$SECRETS_KEYS_LENGTH" -eq 0 ]]; then
-    echo "  WARN QAAP_SECRETS_KEYS is not set: user API keys and GitHub tokens are stored in plain text (see doc/qaap-secrets-at-rest.md)"
+    warn "QAAP_SECRETS_KEYS is not set: user API keys and GitHub tokens are stored in plain text (see doc/qaap-secrets-at-rest.md)"
 fi
 # Third party = an admitted login that is not an operator; only those need isolated previews.
 OPERATOR_SET=",${OPERATOR_LOGINS//[[:space:]]/},"
@@ -127,7 +130,7 @@ fi
 if dexec 'tr "\0" "\n" < /proc/1/cmdline 2>/dev/null | grep -Fxq -- "--no-cluster"'; then
     ok "backend PID 1 has --no-cluster"
 else
-    echo "  WARN PID 1 has no --no-cluster token (verify manually if docker --init is in use)"
+    warn "PID 1 has no --no-cluster token (verify manually if docker --init is in use)"
 fi
 
 # Tenant evidence depends on the isolation mode. In backend-per-tenant mode each tenant runs in its
@@ -169,7 +172,10 @@ if [[ "$BACKEND_ISOLATION_MODE" == "per-tenant" && "$BACKEND_PER_TENANT" =~ ^(1|
         # secrets, instead of trusting the static config. Fail closed: the probe must report that it ran
         # as uid 1001, found the backend process and finished; an exec failure or an empty answer blocks.
         # `mai[n]` keeps the probe's own `sh -c` command line from matching itself.
-        PROBE_SCRIPT='echo "PROBE:uid:$(id -u)"; n=0; for d in /proc/[0-9]*; do p="${d#/proc/}"; [ "$p" = "$$" ] && continue; if tr "\0" " " < "$d/cmdline" 2>/dev/null | grep -q "src-gen/backend/mai[n][.]js"; then n=$((n+1)); cat "$d/environ" >/dev/null 2>&1 && echo "LEAK:environ:$p"; elif [ "$p" = 1 ]; then cat "$d/environ" >/dev/null 2>&1 && echo "LEAK:environ:$p"; fi; done; echo "PROBE:backend-procs:$n"; ls /home/theia/.qaap >/dev/null 2>&1 && echo LEAK:config; cat /home/theia/.qaap/tenant.sqlite >/dev/null 2>&1 && echo LEAK:sqlite; echo PROBE:done'
+        # `test -w` (no file is created) covers the state the uid-0 backend trusts: Theia loads
+        # ~/.theia/extensions/*.vsix and deployedPlugins into a uid-0 plugin host, so an agent-writable
+        # ~/.theia, or a ~/.qaap root it could rename entries in, is privilege escalation, however the mode got there.
+        PROBE_SCRIPT='echo "PROBE:uid:$(id -u)"; n=0; for d in /proc/[0-9]*; do p="${d#/proc/}"; [ "$p" = "$$" ] && continue; if tr "\0" " " < "$d/cmdline" 2>/dev/null | grep -q "src-gen/backend/mai[n][.]js"; then n=$((n+1)); cat "$d/environ" >/dev/null 2>&1 && echo "LEAK:environ:$p"; elif [ "$p" = 1 ]; then cat "$d/environ" >/dev/null 2>&1 && echo "LEAK:environ:$p"; fi; done; echo "PROBE:backend-procs:$n"; ls /home/theia/.qaap >/dev/null 2>&1 && echo LEAK:config; cat /home/theia/.qaap/tenant.sqlite >/dev/null 2>&1 && echo LEAK:sqlite; for s in /home/theia/.theia /home/theia/.qaap; do test -w "$s" && echo "LEAK:writable:$s"; done; echo PROBE:done'
         # Probe targets: every running, unpaused backend. The reaper pauses idle backends and a paused
         # container cannot be exec'd, so when only paused ones exist ONE is unpaused and probed (a real
         # docker exec in its own context, not a weaker sidecar). It is deliberately NOT re-paused: a
@@ -213,20 +219,20 @@ if [[ "$BACKEND_ISOLATION_MODE" == "per-tenant" && "$BACKEND_PER_TENANT" =~ ^(1|
             TOP_LEAKS="$(printf '%s\n' "$TOP_OUT" | awk 'NR==2 { backend_uid=$2 } NR>2 && $2==backend_uid && $3 ~ /^(pi|qaiq|claude|codex|opencode)$/ { print "LEAK:agent-uid:" $3 ":" $1 }')"
             LEAKS="$(printf '%s\n%s\n' "$PROBE_OUT" "$TOP_LEAKS" | grep 'LEAK:' | tr '\n' ' ' || true)"
             if [[ -n "$LEAKS" ]]; then
-                bad "agent uid can read backend secrets or shares the backend uid in ${backend_name} (${LEAKS% }) — release blocked"
+                bad "agent uid can read backend secrets, write backend state or shares the backend uid in ${backend_name} (${LEAKS% }) — release blocked"
             elif ! grep -qx 'PROBE:uid:1001' <<< "$PROBE_OUT" \
                 || ! grep -qx 'PROBE:done' <<< "$PROBE_OUT" \
                 || ! grep -qE '^PROBE:backend-procs:[1-9][0-9]*$' <<< "$PROBE_OUT"; then
                 bad "agent-uid probe inconclusive in ${backend_name} (exec failed, wrong uid or backend process not found) — release blocked"
             else
-                ok "agent uid 1001 cannot read backend secrets in ${backend_name}"
+                ok "agent uid 1001 cannot read backend secrets in ${backend_name} nor write ~/.theia or the ~/.qaap root"
             fi
         done
         if [[ "${#PROBE_TARGETS[@]}" -eq 0 && -z "$PAUSED_TARGET" ]]; then
             echo "  SKIP agent-uid runtime probe: no running or paused tenant backend (stopped ones are recreated and re-checked by S1 on wake)"
         fi
     else
-        bad "only ${TENANT_COUNT} tenant backend(s): exercise two disposable invited accounts (agent + New Worktree + parallel) before release"
+        warn "only ${TENANT_COUNT} tenant backend(s): exercise two disposable invited accounts (agent + New Worktree + parallel) before release (warning: release not exercised with two tenants)"
     fi
 else
     REG="${QAAP_TENANT_UID_REGISTRY_PATH:-/workspace/.qaap/uid-registry.json}"
@@ -246,7 +252,7 @@ else
             bad "multi-tenant isolation failed for ${LOGIN_A} / ${LOGIN_B} — release blocked"
         fi
     else
-        bad "only ${TENANT_COUNT} tenant(s): exercise two disposable invited accounts (agent + New Worktree + parallel) before release"
+        warn "only ${TENANT_COUNT} tenant(s): exercise two disposable invited accounts (agent + New Worktree + parallel) before release (warning: release not exercised with two tenants)"
     fi
 fi
 
@@ -264,9 +270,9 @@ stripe_ready=0
 [[ -n "${stripe_wh}" ]] && stripe_ready=$((stripe_ready + 1))
 [[ -n "${public_url}" ]] && stripe_ready=$((stripe_ready + 1))
 if [[ "${stripe_ready}" -eq 0 ]]; then
-    echo "  WARN Stripe unset in container — Work Hub Billing checkout disabled"
+    warn "Stripe unset in container — Work Hub Billing checkout disabled"
 elif [[ "${stripe_ready}" -lt 5 ]]; then
-    echo "  WARN Stripe partial in container (${stripe_ready}/5) — set STRIPE_* + QAAP_PUBLIC_URL (doc/qaap-vps-deployment.md)"
+    warn "Stripe partial in container (${stripe_ready}/5) — set STRIPE_* + QAAP_PUBLIC_URL (doc/qaap-vps-deployment.md)"
 else
     ok "Stripe checkout + webhook env present in container"
 fi
@@ -275,10 +281,14 @@ if [[ "${dev_checkout}" == "1" || "${dev_checkout}" == "true" ]]; then
 fi
 
 echo
-echo "${pass} passed, ${fail} failed"
+echo "${pass} passed, ${fail} failed, ${warnings} warning$([[ "${warnings}" -eq 1 ]] || echo s)"
 if [[ "${fail}" -gt 0 ]]; then
     echo "Launch gate failed. See SECURITY.md." >&2
     exit 1
 fi
-echo "VPS launch gate passed."
+if [[ "${warnings}" -gt 0 ]]; then
+    echo "VPS launch gate passed with ${warnings} warning(s)."
+else
+    echo "VPS launch gate passed."
+fi
 exit 0

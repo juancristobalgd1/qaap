@@ -17,6 +17,8 @@ export interface QaapTranscriptLiveRefreshOptions {
     readonly forceStatusSettle?: boolean;
     /** Bypass SSE grace skip — used by the streaming fallback poll when EventSource is silent. */
     readonly forcePoll?: boolean;
+    /** Skip the cached copy and render only the server's answer (a Stop expired: the cache still says cancelled). */
+    readonly bypassCache?: boolean;
 }
 
 export interface QaapTranscriptLiveControllerDeps {
@@ -29,6 +31,11 @@ export interface QaapTranscriptLiveControllerDeps {
     readonly getLastSseDeltaAt: () => number | undefined;
     readonly setLastSseDeltaAt: (at: number | undefined) => void;
     readonly findSummaryById: (conversationId: string) => QaapAgentConversationSummaryDTO | undefined;
+    /**
+     * True while a Stop for the conversation is unacknowledged. An incoming `streaming` summary is then
+     * held at `idle`: the server may still report the stopped run as live.
+     */
+    readonly isStopPending?: (conversationId: string) => boolean;
     readonly refreshConversation: (options?: QaapTranscriptLiveRefreshOptions) => Promise<void>;
     readonly renderConversation: (conv: QaapAgentConversationDTO) => void;
     readonly onApprovalRefresh: () => void;
@@ -164,10 +171,13 @@ export class QaapTranscriptLiveController implements Disposable {
         this.deps.setLastSseDeltaAt(Date.now());
     }
 
-    handleSummaryUpdated(summary: QaapAgentConversationSummaryDTO): void {
-        if (!this.deps.isWatching(summary.id)) {
+    handleSummaryUpdated(incoming: QaapAgentConversationSummaryDTO): void {
+        if (!this.deps.isWatching(incoming.id)) {
             return;
         }
+        const summary = this.deps.isStopPending?.(incoming.id) && incoming.status === 'streaming'
+            ? { ...incoming, status: 'idle' as const }
+            : incoming;
         const last = this.deps.getLastConv();
         if (!last || last.id !== summary.id) {
             return;

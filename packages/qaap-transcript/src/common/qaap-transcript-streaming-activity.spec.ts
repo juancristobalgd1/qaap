@@ -72,3 +72,24 @@ describe('qaap-transcript-streaming-activity', () => {
         expect(view.detail).to.not.contain('  ');
     });
 });
+
+describe('qaap-transcript-streaming-activity provider retry and slow start', () => {
+    it('shows the provider retry attempt in place of the starting label', () => {
+        const view = resolveTranscriptStreamingActivityFromSegments([], {
+            providerRetry: { attempt: 1, maxAttempts: 3 },
+        });
+        expect(view.kind).to.equal('retry');
+        expect(view.title).to.contain('retrying (1/3)');
+    });
+
+    it('says the model has not responded yet, with actionable options, and keeps the turn running', () => {
+        const view = resolveTranscriptStreamingActivityFromSegments([], { slowFirstOutput: true });
+        expect(view.kind).to.equal('slow-start');
+        expect(view.title).to.contain('hasn’t responded yet');
+        expect(view.detail).to.contain('pick another model');
+    });
+
+    it('keeps the plain starting label when no slow-start or retry is reported', () => {
+        expect(resolveTranscriptStreamingActivityFromSegments([]).title).to.equal('Starting the agent');
+    });
+});

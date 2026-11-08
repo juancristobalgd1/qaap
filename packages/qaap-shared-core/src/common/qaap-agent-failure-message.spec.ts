@@ -6,6 +6,7 @@
 import { expect } from 'chai';
 import {
     describeAgentTurnFailure,
+    parseProviderErrorEnvelope,
     detectAgentFailureKind,
     extractRetiredModelId,
     detectAgentFailureProviderLabel,
@@ -544,5 +545,93 @@ describe('provider rejected requests', () => {
     it('keeps an explicit model-not-found on the model fallback path', () => {
         expect(detectAgentFailureKind('Provider returned error: model_not_found: kimi-k2.6'))
             .to.equal('model_unavailable');
+    });
+
+    it('reads the OpenRouter 503 "no upstreams available" as a transient model failure', () => {
+        // The status line Pi prints for the failed request, then OpenRouter's body.
+        const log = '503 {"message":"Provider returned error","code":503,"metadata":{"raw":"{\\"error\\":\\"no upstreams available\\"}","provider_name":"Recursive","is_byok":false}}';
+        expect(detectAgentFailureKind(log)).to.equal('model_unavailable');
+        expect(detectAgentFailureKind('API Error: 503 {"error":"no upstreams available"}')).to.equal('model_unavailable');
+    });
+
+    it('reads a bare 502, 503, 504 or 529 status as a transient model failure', () => {
+        for (const log of [
+            '502: Bad Gateway',
+            '503: upstream unavailable',
+            'API Error: 504 Gateway Timeout',
+            'API Error: 529 {"type":"error","error":{"type":"overloaded_error"}}',
+            'HTTP/1.1 503 Service Unavailable',
+            'status code 502 from the upstream host',
+            'Provider returned error {"code":504,"provider_name":"AtlasCloud"}',
+        ]) {
+            expect(detectAgentFailureKind(log), log).to.equal('model_unavailable');
+        }
+    });
+
+    it('reads overloaded and temporarily-unavailable provider text as transient', () => {
+        expect(detectAgentFailureKind('The model is overloaded. Please try again later.')).to.equal('model_unavailable');
+        expect(detectAgentFailureKind('The service is temporarily unavailable')).to.equal('model_unavailable');
+    });
+
+    it('keeps account-level statuses out of the transient class', () => {
+        for (const log of [
+            'Provider returned error {"code":401,"provider_name":"AtlasCloud"}',
+            'Provider returned error {"code":403,"provider_name":"AtlasCloud"}',
+            'Provider returned error {"code":429,"provider_name":"AtlasCloud"}',
+            'HTTP 402 insufficient credits',
+            '401 Unauthorized',
+        ]) {
+            expect(detectAgentFailureKind(log), log).not.to.equal('model_unavailable');
+        }
+        expect(detectAgentFailureKind('Provider returned error {"code":429,"provider_name":"AtlasCloud"}')).to.equal('rate_limit');
+    });
+
+    it('keeps a 400 provider rejection as provider_rejected, not transient', () => {
+        expect(detectAgentFailureKind(ATLAS_CLOUD_LOG)).to.equal('provider_rejected');
+    });
+
+    describe('shared upstream pool and Pi provider errors', () => {
+        const SHARED_POOL_BODY = '429: {"message":"Provider returned error","code":429,"metadata":{"raw":"google/gemma-4-26b-a4b-it:free is temporarily rate-limited upstream. Please retry shortly, or add your own key ...","provider_name":"Google AI Studio","is_byok":false,"provider_error_code":"429","limit_source":"upstream_provider_shared_pool","remedy_hint":"Retry shortly, add your own provider key (...), or route to another provider ..."}}';
+
+        it('reads the OpenRouter envelope: code, provider, prose message and remedy', () => {
+            expect(parseProviderErrorEnvelope(SHARED_POOL_BODY)).to.deep.equal({
+                code: 429,
+                providerName: 'Google AI Studio',
+                message: 'google/gemma-4-26b-a4b-it:free is temporarily rate-limited upstream. Please retry shortly, or add your own key ...',
+                remedyHint: 'Retry shortly, add your own provider key (...), or route to another provider ...',
+                limitSource: 'upstream_provider_shared_pool',
+            });
+        });
+
+        it('reads the inner error of a metadata.raw that is itself JSON', () => {
+            const body = '503 {"message":"Provider returned error","code":503,"metadata":{"raw":"{\\"error\\":\\"no upstreams available\\"}","provider_name":"Recursive"}}';
+            expect(parseProviderErrorEnvelope(body)?.message).to.equal('no upstreams available');
+            expect(parseProviderErrorEnvelope('no json here')).to.equal(undefined);
+        });
+
+        it('treats a 429 from the shared upstream pool as transient: another model can finish the turn', () => {
+            expect(detectAgentFailureKind(SHARED_POOL_BODY)).to.equal('model_unavailable');
+            expect(detectAgentFailureKind('429: google/gemma-4-26b-a4b-it:free is temporarily rate-limited upstream.'))
+                .to.equal('model_unavailable');
+        });
+
+        it('keeps the user\'s own account limits account-level: BYOK key limit, credits, 402', () => {
+            expect(detectAgentFailureKind('429: {"code":429,"metadata":{"limit_source":"openrouter_free_tier_daily"}}'))
+                .to.not.equal('model_unavailable');
+            expect(detectAgentFailureKind('429: rate limit exceeded for your API key'))
+                .to.equal('rate_limit');
+            expect(detectAgentFailureKind('402 Payment Required: insufficient credits'))
+                .to.equal('provider_credits');
+            expect(detectAgentFailureKind('Insufficient credits. Add credits to your account.'))
+                .to.not.equal('model_unavailable');
+        });
+
+        it('classifies a Pi log whose assistant message ended on that provider error', () => {
+            const log = [
+                JSON.stringify({ type: 'session', id: 's' }),
+                JSON.stringify({ type: 'message_end', message: { role: 'assistant', content: [], stopReason: 'error', errorMessage: SHARED_POOL_BODY } }),
+            ].join('\n');
+            expect(detectAgentFailureKind(log)).to.equal('model_unavailable');
+        });
     });
 });

@@ -11,6 +11,7 @@ import * as fs from 'fs';
 import * as net from 'net';
 import * as os from 'os';
 import * as path from 'path';
+import { resolveQaapPackageFile } from '@theia/qaap-shared-core/lib/node/qaap-package-file';
 import { QAAP_TENANT_LOGIN_ENV } from '@theia/qaap-adapters/lib/common/qaap-tenant-backend-auth';
 import { normalizeQaapForwardedPortOwner, type QaapDevPreviewForwardedPorts } from '@theia/qaap-shared-core/lib/node/qaap-dev-preview-forwarded-ports';
 import { QaapDevcontainerResolver, type QaapTaskSandboxImagePlan } from './qaap-devcontainer-config';
@@ -18,6 +19,7 @@ import { qaapDockerName, qaapDockerNamespaceLabels } from './qaap-docker-namespa
 import { QaapTaskSandboxBrokerClient } from './qaap-task-sandbox-broker-client';
 import type { QaapTaskSandboxBrokerSandbox } from './qaap-task-sandbox-broker-protocol';
 import type { QaapSandboxExecClientRequest } from './qaap-task-sandbox-exec-client-main';
+import { isQaapRunscConfigured } from './qaap-tenant-runtime';
 import { encodeQaapSandboxFrame, parseQaapListeningPorts, QaapSandboxFrame, QaapSandboxFrameDecoder } from './qaap-task-sandbox-exec-protocol';
 import { QAAP_PERSISTENT_HOME_DIRECTORIES, QAAP_PERSISTENT_HOME_FILES, QAAP_TENANT_BACKEND_HOME } from './qaap-tenant-persistent-home';
 import { isQaapBackendOnlyEnvKey } from './qaap-child-process-env';
@@ -854,6 +856,11 @@ export class QaapTaskSandboxService implements BackendApplicationContribution, Q
         if (this.mode() === 'broker') {
             return this.createBrokerEntry(root, options);
         }
+        // This path uses whatever DOCKER_HOST the process has and knows no tenant, so it cannot choose gVisor. Refused
+        // before anything runs, since resolving the image plan can build a Dockerfile from the tenant's repository.
+        if (isQaapRunscConfigured(process.env)) {
+            throw new Error('Direct task sandboxes are disabled while gVisor tenants are configured: they must go through the broker.');
+        }
         const started = Date.now();
         const name = this.containerName(root);
         const plan = await this.resolveImagePlan(root);
@@ -999,7 +1006,10 @@ export class QaapTaskSandboxService implements BackendApplicationContribution, Q
         const dir = this.execRequestDir();
         const requestFile = path.join(dir, `${crypto.randomBytes(12).toString('hex')}.json`);
         fs.writeFileSync(requestFile, JSON.stringify(request), { mode: 0o600, flag: 'wx' });
-        return { file: process.execPath, args: [path.join(__dirname, 'qaap-task-sandbox-exec-client-main.js'), requestFile] };
+        const client = resolveQaapPackageFile('@theia/qaap-cloud-workspace', 'lib/node/qaap-task-sandbox-exec-client-main.js', {
+            directCandidate: path.join(__dirname, 'qaap-task-sandbox-exec-client-main.js'),
+        });
+        return { file: process.execPath, args: [client, requestFile] };
     }
 
     protected execRequestDir(): string {

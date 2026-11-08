@@ -15,6 +15,7 @@ const QAAP_AGENT_CONFIRMATION_NEEDED_EVENT = 'qaap-agent-confirmation-needed';
 import { fetchQaapPushVapid, sendQaapPushNotify, subscribeQaapWebPush } from './qaap-cloud-workspace-client';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { QaapDeferredStartup } from './qaap-deferred-startup';
+import { QaapWorkHubNotificationSettings } from '@theia/qaap-shared-core/lib/browser/qaap-work-hub-notification-settings';
 
 @injectable()
 export class QaapWebPushContribution implements FrontendApplicationContribution {
@@ -25,7 +26,11 @@ export class QaapWebPushContribution implements FrontendApplicationContribution 
     @inject(QaapDeferredStartup)
     protected readonly deferredStartup: QaapDeferredStartup;
 
+    @inject(QaapWorkHubNotificationSettings)
+    protected readonly notificationSettings: QaapWorkHubNotificationSettings;
+
     protected deferredRegistration: Disposable | undefined;
+    protected settingsListener: Disposable | undefined;
 
     onStart(): void {
         // Push registration (VAPID fetch + service worker subscribe) is not needed for first paint.
@@ -36,6 +41,9 @@ export class QaapWebPushContribution implements FrontendApplicationContribution 
             if (state.phase === 'install-failed' || state.phase === 'run-failed') {
                 const kind = qaapBootstrapFailureKind(state.phase, state.error);
                 if (!kind || kind === 'cancelled') {
+                    return;
+                }
+                if (!this.notificationSettings.systemNotifications) {
                     return;
                 }
                 void sendQaapPushNotify({
@@ -49,17 +57,22 @@ export class QaapWebPushContribution implements FrontendApplicationContribution 
         });
         window.addEventListener(QAAP_BOOTSTRAP_FAILED_EVENT, this.onBootstrapFailed);
         window.addEventListener(QAAP_AGENT_COMPLETED_EVENT, this.onAgentCompleted);
+        this.settingsListener = this.notificationSettings.onDidChange((): void => this.onNotificationSettingsChanged());
         window.addEventListener(QAAP_AGENT_CONFIRMATION_NEEDED_EVENT, this.onConfirmationNeeded);
     }
 
     onStop(): void {
         this.deferredRegistration?.dispose();
+        this.settingsListener?.dispose();
         window.removeEventListener(QAAP_BOOTSTRAP_FAILED_EVENT, this.onBootstrapFailed);
         window.removeEventListener(QAAP_AGENT_COMPLETED_EVENT, this.onAgentCompleted);
         window.removeEventListener(QAAP_AGENT_CONFIRMATION_NEEDED_EVENT, this.onConfirmationNeeded);
     }
 
     protected readonly onBootstrapFailed = (event: Event): void => {
+        if (!this.notificationSettings.systemNotifications) {
+            return;
+        }
         const detail = (event as CustomEvent<{ error?: string; kind?: 'install' | 'preview' }>).detail;
         const kind = detail?.kind === 'preview' ? 'preview' : 'install';
         void sendQaapPushNotify({
@@ -72,6 +85,9 @@ export class QaapWebPushContribution implements FrontendApplicationContribution 
     };
 
     protected readonly onAgentCompleted = (event: Event): void => {
+        if (!this.notificationSettings.systemNotifications) {
+            return;
+        }
         // Only push when the app is backgrounded/locked — a foreground tab already shows the
         // in-app notification, so a system push would be redundant noise.
         if (document.visibilityState === 'visible') {
@@ -93,6 +109,9 @@ export class QaapWebPushContribution implements FrontendApplicationContribution 
     };
 
     protected readonly onConfirmationNeeded = (event: Event): void => {
+        if (!this.notificationSettings.systemNotifications) {
+            return;
+        }
         // The agent is blocked waiting on the user — always push, even if the tab is foregrounded
         // but the OS has hidden it (split-screen, screen off). Same `tag` collapses repeats from
         // chained confirmations into a single visible notification.
@@ -114,7 +133,32 @@ export class QaapWebPushContribution implements FrontendApplicationContribution 
         });
     };
 
+    /** Turning notifications off drops the browser subscription; turning them back on re-subscribes. */
+    protected onNotificationSettingsChanged(): void {
+        if (this.notificationSettings.systemNotifications) {
+            void this.registerWebPushSubscription();
+        } else {
+            void this.unsubscribeWebPush();
+        }
+    }
+
+    protected async unsubscribeWebPush(): Promise<void> {
+        if (!('serviceWorker' in navigator)) {
+            return;
+        }
+        try {
+            const registration = await navigator.serviceWorker.ready;
+            const subscription = await registration.pushManager.getSubscription();
+            await subscription?.unsubscribe();
+        } catch (err) {
+            console.warn('[qaap] Web Push unsubscribe failed', err);
+        }
+    }
+
     protected async registerWebPushSubscription(): Promise<void> {
+        if (!this.notificationSettings.systemNotifications) {
+            return;
+        }
         if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
             return;
         }

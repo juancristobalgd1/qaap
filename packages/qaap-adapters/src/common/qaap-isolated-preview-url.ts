@@ -25,8 +25,10 @@ export function isQaapIsolatedPreviewHostLabel(value: string | undefined): boole
 /**
  * Recognizes an isolated-origin preview URL (`https://<32 hex>.<baseDomain>/…`, backend env
  * `QAAP_PREVIEW_BASE_DOMAIN`). The frontend does not know the base domain, so the shape is the
- * contract: an absolute http(s) URL whose first host label is the 32-hex capability, followed by at
- * least two more labels, on an origin other than the Qaap app origin (when `appOrigin` is given).
+ * contract: an absolute http(s) URL whose first host label is the 32-hex capability, followed by a
+ * base domain of at least two labels, or exactly `localhost` (the local default, `<hex>.localhost`,
+ * which browsers resolve to loopback), on an origin other than the Qaap app origin (when `appOrigin`
+ * is given).
  */
 export function parseQaapIsolatedPreviewUrl(url: string | undefined, appOrigin?: string): QaapIsolatedPreviewUrl | undefined {
     const trimmed = url?.trim();
@@ -40,7 +42,9 @@ export function parseQaapIsolatedPreviewUrl(url: string | undefined, appOrigin?:
         return undefined;
     }
     const labels = parsed.hostname.split('.');
-    if (labels.length < 3 || labels.slice(1).some(label => !label) || !isQaapIsolatedPreviewHostLabel(labels[0])) {
+    // `<hex>.localhost` has a single base label; accept it only for loopback, so `<hex>.example` stays rejected.
+    const loopbackBase = labels.length === 2 && labels[1] === 'localhost';
+    if ((labels.length < 3 && !loopbackBase) || labels.slice(1).some(label => !label) || !isQaapIsolatedPreviewHostLabel(labels[0])) {
         return undefined;
     }
     if (appOrigin) {

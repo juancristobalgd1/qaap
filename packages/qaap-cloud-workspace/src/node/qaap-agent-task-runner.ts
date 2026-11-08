@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Theia contributors and Qaap product fork.
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
+import type { QaapAgentEffortLevel } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
 import { Emitter, Event } from '@theia/core/lib/common/event';
 import { PreferenceService } from '@theia/core/lib/common/preferences';
 import {
@@ -54,7 +55,7 @@ import { QAAP_TOOL_GATE_API_PATH } from '@theia/qaap-shared-core/lib/common/qaap
 import { resolveQaapHarnessCapabilities } from '@theia/qaap-shared-core/lib/common/qaap-harness-capabilities';
 import { QaapProjectFolderTrustStore, resolveProjectFolderTrustRoot } from './qaap-project-folder-trust-store';
 import { QaapHostedWorktreeRegistry } from '@theia/qaap-shared-core/lib/node/qaap-hosted-worktree-registry';
-import { invalidateNativeAgentModels, prepareNativeAgentModels, type NativeModelDiscoverySpawner } from './qaap-agent-native-models';
+import { clearNativeAgentModelCache, invalidateNativeAgentModels, prepareNativeAgentModels, type NativeModelDiscoverySpawner } from './qaap-agent-native-models';
 import { fireStopAgentHook } from './qaap-agent-task-runner-hooks';
 import { type QaapAgentReadOnlyEnforcement, } from '../common/qaap-agent-readonly-workspace';
 import { type QaapQaiqPendingControlRequest } from '../common/qaap-qaiq-stdio-approvals';
@@ -608,6 +609,8 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     refreshAgentCatalog(): void {
         this.agentConnectionStates.clear();
         this.agentConnectionProbes.clear();
+        // Harness settings or the CLI may have changed: the next model request runs discovery again.
+        clearNativeAgentModelCache();
         this.detectAgents();
     }
 
@@ -1063,8 +1066,8 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
-    public buildAgentCommand(prompt: string, agentId: string | undefined, autoApprove: boolean, agentModel?: QaapCreateAgentTaskQaiqModel, cwd?: string, contextPreamble?: string, interactionModeId?: string, approvalPolicyId?: string, toolApprovalRules?: QaapCreateAgentTaskRequest['toolApprovalRules'], userQuery?: string, readOnlyWorkspace?: boolean, ownerLogin?: string,): { command: string; stdinPrompt?: string; stdinPromptMode?: 'qaiq-stdio' | 'plain'; agentId: string; promptTempDir?: string } {
-        return buildAgentCommandExtracted(this, prompt, agentId, autoApprove, agentModel, cwd, contextPreamble, interactionModeId, approvalPolicyId, toolApprovalRules, userQuery, readOnlyWorkspace, ownerLogin);
+    public buildAgentCommand(prompt: string, agentId: string | undefined, autoApprove: boolean, agentModel?: QaapCreateAgentTaskQaiqModel, cwd?: string, contextPreamble?: string, interactionModeId?: string, approvalPolicyId?: string, toolApprovalRules?: QaapCreateAgentTaskRequest['toolApprovalRules'], userQuery?: string, readOnlyWorkspace?: boolean, ownerLogin?: string, effort?: QaapAgentEffortLevel,): { command: string; stdinPrompt?: string; stdinPromptMode?: 'qaiq-stdio' | 'plain'; agentId: string; promptTempDir?: string } {
+        return buildAgentCommandExtracted(this, prompt, agentId, autoApprove, agentModel, cwd, contextPreamble, interactionModeId, approvalPolicyId, toolApprovalRules, userQuery, readOnlyWorkspace, ownerLogin, effort);
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
@@ -1774,6 +1777,11 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             gid: identity.gid,
         });
         console.info(`[qaap-task-sandbox] task ${task.id} → ${sandbox.name} (${sandbox.created ? `started in ${sandbox.startupMs} ms` : 'reused'})`);
+    }
+
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public releaseTaskSandbox(taskId: string): void {
+        this.taskSandbox?.release(taskId);
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */

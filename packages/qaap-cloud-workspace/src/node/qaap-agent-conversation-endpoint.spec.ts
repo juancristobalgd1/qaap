@@ -421,7 +421,7 @@ describe('QaapAgentConversationEndpoint same-conversation parallel delivery', ()
     } {
         const parent = streamingParent();
         const created: Array<Record<string, unknown>> = [];
-        const posted: Array<{ readonly conversationId: string; readonly content: string; readonly deliveryMode: string }> = [];
+        const posted: Array<{ readonly conversationId: string; readonly content: string; readonly deliveryMode: string; readonly effort?: string }> = [];
         const dispatched: string[] = [];
         let worktreeCalls = 0;
         const conversations = new Map<string, typeof parent>([['c1', parent]]);
@@ -434,11 +434,15 @@ describe('QaapAgentConversationEndpoint same-conversation parallel delivery', ()
                 taskRunner: { defaultAgentFresh: async () => 'opencode', defaultAgent: () => 'opencode' },
                 get: (id: string) => conversations.get(id),
                 getActiveTaskIdsForConversation: (id: string) => id === 'c1' ? ['task-1'] : [],
+                // Positional, as in the store signature: deliveryMode is the 11th argument and effort the 12th.
                 postUserMessage: (...args: unknown[]) => {
+                    const deliveryModeIndex = 10;
+                    const effortIndex = 11;
                     posted.push({
                         conversationId: String(args[0]),
                         content: String(args[1]),
-                        deliveryMode: String(args[args.length - 1]),
+                        deliveryMode: String(args[deliveryModeIndex]),
+                        effort: args[effortIndex] === undefined ? undefined : String(args[effortIndex]),
                     });
                     return parent;
                 },
@@ -476,7 +480,7 @@ describe('QaapAgentConversationEndpoint same-conversation parallel delivery', ()
         await (h.endpoint as unknown as { handlePostMessage(req: unknown, res: unknown): Promise<void> })
             .handlePostMessage({
                 params: { id: 'c1' },
-                body: { content: 'do this in parallel', deliveryMode: 'parallel' },
+                body: { content: 'do this in parallel', deliveryMode: 'parallel', effort: 'high' },
             }, response);
 
         expect(response.statusCode).to.equal(202);
@@ -486,6 +490,7 @@ describe('QaapAgentConversationEndpoint same-conversation parallel delivery', ()
             conversationId: 'c1',
             content: 'do this in parallel',
             deliveryMode: 'parallel',
+            effort: 'high',
         }]);
         expect((response.body as { id: string }).id).to.equal('c1');
     });

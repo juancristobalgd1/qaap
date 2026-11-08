@@ -1,9 +1,11 @@
-import { resolveComposerUntilDoneForSubmit } from '../common/qaap-composer-until-done';
+import { QAAP_COMPOSER_SUBMIT_MODE_ID } from '../common/qaap-composer-until-done';
+import { resolveComposerEffortLevel } from '../common/qaap-composer-effort';
 import type { MobileProjectsTranscriptStickyComposerUiContext } from './mobile-projects-transcript-sticky-composer-ui-context';
 // Extracted from mobile-projects-transcript-sticky-composer-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
 import {
+    isDirtyWorkspaceCancelled,
     isMaxConcurrentRunsError,
     type QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
@@ -28,7 +30,10 @@ import {
 } from '@theia/qaap-transcript-overlay/lib/browser/qaap-composer-delivery-mode';
 import { isAgentsHubIdleConversationSummary } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
 import { writeProjectComposerDraft } from '../common/qaap-project-composer-draft';
+import { clearComposerDraftRestored, markComposerDraftRestored, resolveComposerRestoredDraftKey } from '../common/qaap-composer-restored-draft';
 import { collectComposerImagePreviews } from './qaap-sticky-composer-context-ui';
+import { confirmPaidModelSend, resolveSendAgentModel, warnChooseSendModel } from './qaap-paid-model-send-confirm';
+import { readStoredAgentModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
 import {
     composerContextRequests,
     disposeComposerContextEntries,
@@ -67,25 +72,20 @@ export async function submitTranscriptComposerDraftExtracted(ctx: MobileProjects
         // prompt submission after the composer has already accepted it.
         console.warn('[qaap] failed to collect composer image previews', error);
     }
-    const modeId = ctx.host.transcriptComposerModeId;
+    // Legacy Theia chat keeps the mode it always sent; task submits run in the fixed agent mode.
+    const modeId = options.isLegacyTheiaChat ? ctx.host.transcriptComposerModeId : QAAP_COMPOSER_SUBMIT_MODE_ID;
     const autoApprove = resolveComposerAutoApprove(
         options.showApprovalPolicy,
         ctx.host.transcriptComposerApprovalPolicyId,
         summary.cwd,
     );
-    // "Until done": start a goal loop instead of a single turn (idle conversations only; a busy
-    // follow-up below is queued as a normal message).
-    const untilDone = options.showApprovalPolicy && !options.isLegacyTheiaChat && resolveComposerUntilDoneForSubmit({
-        // Same key the toolbar toggle writes (project cwd, falling back to the thread's).
-        cwd: ctx.host.projectsService.getProjectCwd(project) ?? summary.cwd,
-        approvalPolicyId: reconcileAgentApprovalPolicyId(ctx.host.transcriptComposerApprovalPolicyId, summary.cwd),
-        modeId,
-    });
     ctx.host.transcriptComposerContext = [];
     const commitComposerSubmission = (): void => {
         disposeComposerContextEntries(contextSnapshot);
     };
+    const restoredDraftKey = resolveComposerRestoredDraftKey(project.id, summary.id, isAgentsHubIdleConversationSummary(summary));
     const restoreComposerSubmission = (): void => {
+        markComposerDraftRestored(restoredDraftKey);
         const existingIds = new Set(ctx.host.transcriptComposerContext.map(entry => entry.id));
         ctx.host.transcriptComposerContext = [
             ...contextSnapshot.filter(entry => !existingIds.has(entry.id)),
@@ -102,6 +102,7 @@ export async function submitTranscriptComposerDraftExtracted(ctx: MobileProjects
         }
     };
     const clearComposerDraft = (): void => {
+        clearComposerDraftRestored(restoredDraftKey);
         if (ctx.host.transcriptComposerDraftPersistTimer !== undefined) {
             window.clearTimeout(ctx.host.transcriptComposerDraftPersistTimer);
             ctx.host.transcriptComposerDraftPersistTimer = undefined;
@@ -114,6 +115,36 @@ export async function submitTranscriptComposerDraftExtracted(ctx: MobileProjects
         }
         ctx.host.transcriptComposerDraft = '';
     };
+    // A paid model asks once per project per browser session before anything is sent; cancelling keeps the draft.
+    const sendCwd = summary.cwd;
+    const openModelPicker = (): void => { ctx.host.transcriptComposerUi.openTranscriptComposerAgentSheet(project, summary); };
+    // A new task carries the model the chip shows for the chip's agent (same resolution as the toolbar);
+    // an @mention of another agent carries that agent's stored pick, never the chip agent's model.
+    const isNewTask = isAgentsHubIdleConversationSummary(summary);
+    const chipCwd = isNewTask ? ctx.host.projectsService.getProjectCwd(project) ?? summary.cwd : undefined;
+    const newTaskAgentModel = !isNewTask
+        ? undefined
+        : selectedAgentId === options.resolvedPinnedId
+            ? ctx.host.transcriptComposerUi.resolveTranscriptComposerAgentModel(selectedAgentId, chipCwd)
+            : readStoredAgentModel(chipCwd, selectedAgentId);
+    const modelResolution = await resolveSendAgentModel(
+        selectedAgentId,
+        sendCwd,
+        isNewTask ? newTaskAgentModel : ctx.host.transcriptComposerAgentModel,
+    );
+    if (!modelResolution.ok) {
+        // Fail closed: no model chosen for a picker agent, so nothing is sent on the CLI default.
+        restoreComposerSubmission();
+        ctx.remountTranscriptStickyComposer();
+        warnChooseSendModel(selectedAgentId ?? '', openModelPicker);
+        return;
+    }
+    const sendModel = modelResolution.model;
+    if (!await confirmPaidModelSend(sendCwd, sendModel)) {
+        restoreComposerSubmission();
+        ctx.remountTranscriptStickyComposer();
+        return;
+    }
     if ((ctx.isTranscriptStickyComposerAgentWorking() || summary.status === 'streaming' || summary.status === 'settled') && !isAgentsHubIdleConversationSummary(summary)) {
         // Busy follow-up: Queue stays in the composer popover (Edit / Send now / wait).
         // Parallel / Interrupt bypass that UI and POST immediately. Queue is also mirrored
@@ -126,6 +157,7 @@ export async function submitTranscriptComposerDraftExtracted(ctx: MobileProjects
             forceDeliveryMode: options.forceDeliveryMode,
         });
         const entry: TranscriptFollowUpEntry = {
+            clientMessageId: `pending-user-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
             draft,
             selectedAgentId,
             modeId,
@@ -204,9 +236,11 @@ export async function submitTranscriptComposerDraftExtracted(ctx: MobileProjects
                     ctx.host.transcriptComposerApprovalPolicyId,
                     summary.cwd,
                 ),
-                agentModel: ctx.host.transcriptComposerAgentModel,
+                agentModel: newTaskAgentModel,
+                agentModelAgentId: selectedAgentId,
+                openModelPicker,
                 imagePreviews,
-                untilDone,
+                effort: resolveComposerEffortLevel(chipCwd ?? summary.cwd, selectedAgentId, newTaskAgentModel?.modelId),
             });
             // Background submission reports preflight/create failures as `undefined` after
             // surfacing the actionable error (for example when QAIQ is missing). Keep the
@@ -263,7 +297,7 @@ export async function submitTranscriptComposerDraftExtracted(ctx: MobileProjects
                 ),
                 agentModel: ctx.host.transcriptComposerAgentModel,
                 imagePreviews,
-                untilDone,
+                effort: resolveComposerEffortLevel(summary.cwd, selectedAgentId, ctx.host.transcriptComposerAgentModel?.modelId),
             });
             if (!submitted) {
                 restoreComposerSubmission();
@@ -277,6 +311,10 @@ export async function submitTranscriptComposerDraftExtracted(ctx: MobileProjects
         }
     } catch (error) {
         restoreComposerSubmission();
+        if (isDirtyWorkspaceCancelled(error)) {
+            // Cancelled on the dirty-workspace dialog: nothing was sent and the draft is back.
+            return;
+        }
         if (isMaxConcurrentRunsError(error)) {
             // The conversation already has the maximum number of concurrent agent runs.
             // Show a friendly message instead of a generic error — the user can wait for

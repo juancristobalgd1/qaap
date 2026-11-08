@@ -3,7 +3,6 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { ChatMode } from '@theia/ai-chat';
 import {
     readStoredAgentModel,
     type QaapAgentTaskAgentOption,
@@ -16,12 +15,6 @@ import {
     type QaapAgentToolApprovalRules,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-approval-rules';
 import {
-    type ModelCapabilityLevelValue,
-} from '../common/qaap-sticky-composer-model-capability';
-import {
-    type ContextUsageBreakdownView,
-} from '@theia/qaap-transcript/lib/browser/qaap-chat-context-usage-panel';
-import {
     shouldUseStickyComposerPopover,
     type StickyComposerPopoverAlign,
 } from '@theia/qaap-transcript/lib/browser/qaap-sticky-composer-popover';
@@ -29,10 +22,9 @@ import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mob
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import type { QaapComposerSurface } from '../common/qaap-composer-surface';
 import { appendAgentModelPickerListExtracted, createAgentPickerNoResultsHintExtracted } from './mobile-projects-sticky-composer-sheets-ui-activity';
-import { assignAgentPickerPopoverExtracted, closeStickyComposerSheetsExtracted, mountModeSheetPresentationExtracted, openExternalAgentPickerForSubmitExtracted, openStickyComposerAgentSheetExtracted, openStickyComposerContextUsageSheetExtracted, openStickyComposerModelCapabilityPopoverExtracted, shouldElevateComposerSheetsExtracted, syncAgentPickerPopoverPositionExtracted, teardownAgentPickerPopoverExtracted, teardownCapabilityPresentationExtracted, teardownContextUsagePresentationExtracted, teardownModeSheetPopoverExtracted } from './mobile-projects-sticky-composer-sheets-ui-render';
-import { createModeSheetOptionExtracted, mountApprovalPolicySheetPresentationExtracted, openApprovalPolicySheetExtracted, openComposerModeSheetExtracted, openStickyComposerApprovalPolicySheetExtracted, openStickyComposerModeSheetExtracted, resolveModelsForAgentPickerExtracted, resolveModelsForAgentPickerSafeExtracted, syncApprovalPolicyPopoverPositionExtracted, teardownApprovalPolicySheetPopoverExtracted } from './mobile-projects-sticky-composer-sheets-ui-streaming';
+import { assignAgentPickerPopoverExtracted, closeStickyComposerSheetsExtracted, openExternalAgentPickerForSubmitExtracted, openStickyComposerAgentSheetExtracted, shouldElevateComposerSheetsExtracted, syncAgentPickerPopoverPositionExtracted, teardownAgentPickerPopoverExtracted, } from './mobile-projects-sticky-composer-sheets-ui-render';
+import { mountApprovalPolicySheetPresentationExtracted, openApprovalPolicySheetExtracted, openStickyComposerApprovalPolicySheetExtracted, resolveModelsForAgentPickerExtracted, resolveModelsForAgentPickerSafeExtracted, syncApprovalPolicyPopoverPositionExtracted, teardownApprovalPolicySheetPopoverExtracted } from './mobile-projects-sticky-composer-sheets-ui-streaming';
 import { createComposerAgentPickerChromeExtracted, renderComposerAgentPickerExtracted } from './mobile-projects-sticky-composer-sheets-ui-timeline';
-import type { StickyComposerUntilDoneToggleOptions } from './qaap-sticky-composer-until-done-toggle';
 
 export type ComposerAgentPickerView = 'agents' | 'models';
 
@@ -108,12 +100,6 @@ export class MobileProjectsStickyComposerSheetsUi {
     public approvalPolicyPopoverCleanup: (() => void) | undefined;
     /** @internal Used by the extracted mobile-projects-sticky-composer-sheets-ui-* modules. */
     public approvalPolicyPopoverAlign: StickyComposerPopoverAlign = 'start';
-    /** @internal Used by the extracted mobile-projects-sticky-composer-sheets-ui-* modules. */
-    public capabilitySheetAnchor: HTMLElement | undefined;
-    /** @internal Used by the extracted mobile-projects-sticky-composer-sheets-ui-* modules. */
-    public capabilityPopoverCleanup: (() => void) | undefined;
-    /** @internal Used by the extracted mobile-projects-sticky-composer-sheets-ui-* modules. */
-    public capabilityPopoverAlign: StickyComposerPopoverAlign = 'end';
 
     constructor(
         /** @internal Used by the extracted mobile-projects-sticky-composer-sheets-ui-* modules. */
@@ -129,16 +115,6 @@ export class MobileProjectsStickyComposerSheetsUi {
         closeStickyComposerSheetsExtracted(this);
     }
 
-    /** @internal Used by the extracted mobile-projects-sticky-composer-sheets-ui-* modules. */
-    public teardownCapabilityPresentation(): void {
-        teardownCapabilityPresentationExtracted(this);
-    }
-
-    /** @internal Used by the extracted mobile-projects-sticky-composer-sheets-ui-* modules. */
-    public teardownContextUsagePresentation(): void {
-        teardownContextUsagePresentationExtracted(this);
-    }
-
     closeAllComposerSheets(): void {
         this.closeStickyComposerSheets();
         this.host.closeTranscriptComposerSheets();
@@ -147,14 +123,6 @@ export class MobileProjectsStickyComposerSheetsUi {
     /** Replays composer rebuilds that were deferred while a sheet was open. */
     notifyComposerSheetsClosed(): void {
         this.host.stickyComposerRenderUi?.scheduleDeferredComposerRenderFlush?.();
-    }
-
-    openStickyComposerContextUsageSheet(refreshBreakdown: () => ContextUsageBreakdownView, transcriptOverlay?: boolean, anchor?: HTMLElement,): void {
-        openStickyComposerContextUsageSheetExtracted(this, refreshBreakdown, transcriptOverlay, anchor);
-    }
-
-    openStickyComposerModelCapabilityPopover(options: { readonly anchor: HTMLButtonElement; readonly cwd: string | undefined; readonly transcriptOverlay?: boolean; readonly resolveLevel: () => ModelCapabilityLevelValue; readonly assignLevel: (level: ModelCapabilityLevelValue) => void; readonly onCommit?: () => void; }): void {
-        openStickyComposerModelCapabilityPopoverExtracted(this, options);
     }
 
     teardownAgentPickerPopover(): void {
@@ -181,31 +149,15 @@ export class MobileProjectsStickyComposerSheetsUi {
         openStickyComposerAgentSheetExtracted(this, project, anchor);
     }
 
-    openExternalAgentPickerForSubmit(project: MobileProjectEntry, draft: string, options: { readonly title?: string; readonly intro?: string; readonly anchor?: HTMLElement; } = {},): void {
+    openExternalAgentPickerForSubmit(project: MobileProjectEntry, draft: string, options: { readonly title?: string; readonly intro?: string; readonly anchor?: HTMLElement; } = {}, ): void {
         openExternalAgentPickerForSubmitExtracted(this, project, draft, options);
-    }
-    teardownModeSheetPopover(): void {
-        teardownModeSheetPopoverExtracted(this);
     }
 
     isModeSheetPopoverAnchoredTo(anchor?: HTMLElement): boolean {
         return anchor !== undefined && this.modeSheetAnchor === anchor;
     }
 
-    /** @internal Used by the extracted mobile-projects-sticky-composer-sheets-ui-* modules. */
-    public mountModeSheetPresentation(panel: HTMLElement, options: { readonly anchor?: HTMLElement; readonly transcriptOverlay: boolean; readonly onClose: () => void; },): HTMLElement {
-        return mountModeSheetPresentationExtracted(this, panel, options);
-    }
-
-    openComposerModeSheet(options: { readonly modes: readonly ChatMode[]; readonly selectedModeId: string | undefined; readonly cwd: string | undefined; readonly anchor?: HTMLElement; readonly transcriptOverlay: boolean; readonly closeTitle: string; readonly onClose: () => void; readonly onSelect: (modeId: string) => void; readonly assignSheet: (sheet: HTMLElement) => void; readonly isOpen?: () => boolean; readonly untilDone?: StickyComposerUntilDoneToggleOptions; }): void {
-        openComposerModeSheetExtracted(this, options);
-    }
-
-    openStickyComposerModeSheet(project: MobileProjectEntry, modes: readonly ChatMode[], anchor?: HTMLElement, untilDone?: StickyComposerUntilDoneToggleOptions,): void {
-        openStickyComposerModeSheetExtracted(this, project, modes, anchor, untilDone);
-    }
-
-    openStickyComposerApprovalPolicySheet(project: MobileProjectEntry, agentId: string, agentLabel: string, anchor?: HTMLElement,): void {
+    openStickyComposerApprovalPolicySheet(project: MobileProjectEntry, agentId: string, agentLabel: string, anchor?: HTMLElement, ): void {
         openStickyComposerApprovalPolicySheetExtracted(this, project, agentId, agentLabel, anchor);
     }
     teardownApprovalPolicySheetPopover(): void {
@@ -221,34 +173,31 @@ export class MobileProjectsStickyComposerSheetsUi {
     }
 
     /** @internal Used by the extracted mobile-projects-sticky-composer-sheets-ui-* modules. */
-    public mountApprovalPolicySheetPresentation(panel: HTMLElement, options: { readonly anchor?: HTMLElement; readonly transcriptOverlay: boolean; readonly onClose: () => void; },): HTMLElement {
+    public mountApprovalPolicySheetPresentation(panel: HTMLElement, options: { readonly anchor?: HTMLElement; readonly transcriptOverlay: boolean; readonly onClose: () => void; }, ): HTMLElement {
         return mountApprovalPolicySheetPresentationExtracted(this, panel, options);
     }
 
     openApprovalPolicySheet(options: Parameters<typeof openApprovalPolicySheetExtracted>[1]): void {
         openApprovalPolicySheetExtracted(this, options);
     }
-    createModeSheetOption(label: string, modeId: string, selectedModeId: string | undefined, onSelect: (modeId: string) => void,): HTMLElement {
-        return createModeSheetOptionExtracted(this, label, modeId, selectedModeId, onSelect);
-    }
     async resolveModelsForAgentPicker(agentId: string): Promise<QaapQaiqModelOption[]> {
         return resolveModelsForAgentPickerExtracted(this, agentId);
     }
     /** @internal Used by the extracted mobile-projects-sticky-composer-sheets-ui-* modules. */
-    public async resolveModelsForAgentPickerSafe(agentId: string,): Promise<{ readonly models: QaapQaiqModelOption[]; readonly loadFailed: boolean }> {
+    public async resolveModelsForAgentPickerSafe(agentId: string, ): Promise<{ readonly models: QaapQaiqModelOption[]; readonly loadFailed: boolean }> {
         return resolveModelsForAgentPickerSafeExtracted(this, agentId);
     }
     createComposerAgentPickerChrome(options: { readonly closeTitle: string; readonly onClose: () => void; readonly anchor?: HTMLElement; readonly transcriptOverlay?: boolean; readonly sheetModifierClass?: string; }): ComposerAgentPickerChrome {
         return createComposerAgentPickerChromeExtracted(this, options);
     }
-    async renderComposerAgentPicker(chrome: ComposerAgentPickerChrome, options: { readonly view: ComposerAgentPickerView; readonly modelPickerAgentId?: string; readonly cwd: string | undefined; readonly agents: readonly QaapAgentTaskAgentOption[]; readonly selectedAgentId: string | undefined; readonly includeCoder: boolean; readonly agentsTitle?: string; readonly agentsIntro?: string; readonly project?: MobileProjectEntry; readonly onSelectAgent: (agentId: string, model?: QaapQaiqModelOption) => void; readonly onProactiveLogin?: (agentId: string, project?: MobileProjectEntry) => void; readonly onOpenAiFeaturesSettings?: (agentId?: string) => void; },): Promise<void> {
+    async renderComposerAgentPicker(chrome: ComposerAgentPickerChrome, options: { readonly view: ComposerAgentPickerView; readonly modelPickerAgentId?: string; readonly cwd: string | undefined; readonly agents: readonly QaapAgentTaskAgentOption[]; readonly selectedAgentId: string | undefined; readonly includeCoder: boolean; readonly agentsTitle?: string; readonly agentsIntro?: string; readonly project?: MobileProjectEntry; readonly onSelectAgent: (agentId: string, model?: QaapQaiqModelOption) => void; readonly onProactiveLogin?: (agentId: string, project?: MobileProjectEntry) => void; readonly onOpenAiFeaturesSettings?: (agentId?: string) => void; }, ): Promise<void> {
         return renderComposerAgentPickerExtracted(this, chrome, options);
     }
     /** @internal Used by the extracted mobile-projects-sticky-composer-sheets-ui-* modules. */
     public createAgentPickerNoResultsHint(): HTMLElement {
         return createAgentPickerNoResultsHintExtracted(this);
     }
-    appendAgentModelPickerList(list: HTMLElement, agentId: string, models: readonly QaapQaiqModelOption[], storedModel: ReturnType<typeof readStoredAgentModel>, onSelect: (model: QaapQaiqModelOption) => void, loadFailed = false, onRetry?: () => void, onOpenAiFeaturesSettings?: () => void, onSignIn?: () => void,): void {
+    appendAgentModelPickerList(list: HTMLElement, agentId: string, models: readonly QaapQaiqModelOption[], storedModel: ReturnType<typeof readStoredAgentModel>, onSelect: (model: QaapQaiqModelOption) => void, loadFailed = false, onRetry?: () => void, onOpenAiFeaturesSettings?: () => void, onSignIn?: () => void, ): void {
         appendAgentModelPickerListExtracted(this, list, agentId, models, storedModel, onSelect, loadFailed, onRetry, onOpenAiFeaturesSettings, onSignIn);
     }
 }

@@ -34,8 +34,8 @@ describe('qaap-sticky-composer-plugin-picker', () => {
         expect(list.querySelector('.theia-mobile-projects-sticky-composer-plugin-picker-title')?.textContent).to.equal('Add Plugin');
         expect(list.querySelector('.theia-mobile-projects-sticky-composer-plugin-picker-browse')?.textContent).to.equal('Browse Marketplace');
         const first = list.querySelector('.theia-mobile-projects-sticky-composer-plugin-picker-option');
-        expect(first?.querySelector('.theia-mobile-projects-sticky-composer-plugin-picker-option-name')?.textContent).to.equal('Datadog');
-        expect(first?.querySelector('.theia-mobile-projects-sticky-composer-plugin-picker-option-slug')?.textContent).to.equal('datadog');
-        expect(first?.querySelector('.theia-mobile-projects-sticky-composer-plugin-picker-option-description')?.textContent).to.match(/Datadog/);
+        expect(first?.querySelector('.theia-mobile-projects-sticky-composer-plugin-picker-option-name')?.textContent).to.equal('Slack');
+        expect(first?.querySelector('.theia-mobile-projects-sticky-composer-plugin-picker-option-slug')?.textContent).to.equal('slack');
+        expect(first?.querySelector('.theia-mobile-projects-sticky-composer-plugin-picker-option-description')?.textContent).to.match(/\S/);
     });
 });

@@ -175,6 +175,24 @@ describe('buildAgentPlanningPromptBlock', () => {
     });
 });
 
+describe('buildAgentPlanningPromptBlock per harness', () => {
+    it('names TodoWrite only for harnesses that have it', () => {
+        for (const agent of ['claude', 'qaiq', 'openclaude']) {
+            expect(buildAgentPlanningPromptBlock(agent), agent).to.include('TodoWrite');
+        }
+    });
+
+    it('gives Pi and other harnesses a neutral checklist instead of TodoWrite', () => {
+        for (const agent of ['pi', 'codex', 'opencode', 'cursor']) {
+            const block = buildAgentPlanningPromptBlock(agent);
+            expect(block, agent).to.include('[QAAP planning]');
+            expect(block, agent).to.not.include('TodoWrite');
+            expect(block, agent).to.include('numbered checklist');
+            expect(block, agent).to.include('one step marked in progress');
+        }
+    });
+});
+
 describe('buildAgentDevServerVerificationPromptBlock', () => {
     it('requires curl verification before reporting a URL', () => {
         const block = buildAgentDevServerVerificationPromptBlock();
@@ -206,6 +224,13 @@ describe('buildAgentHonestReportingPromptBlock', () => {
         const block = buildAgentHonestReportingPromptBlock();
         expect(block).to.include('cite the evidence');
         expect(block).to.include('exact command you ran');
+    });
+
+    it('requires disclosing overwrites and asking before replacing an unmentioned existing file', () => {
+        const block = buildAgentHonestReportingPromptBlock();
+        expect(block).to.include('Overwrites and deletions');
+        expect(block).to.include('name the file and what was removed');
+        expect(block).to.include('Ask the user before doing so');
     });
 });
 

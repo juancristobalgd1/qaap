@@ -1,0 +1,642 @@
+/* Usage dialog (sidebar footer). Colors come from theme variables only. */
+
+.theia-qaap-usage-provider-claude { --usage-provider-color: var(--theia-charts-orange); }
+.theia-qaap-usage-provider-codex { --usage-provider-color: var(--theia-charts-blue); }
+.theia-qaap-usage-provider-opencode { --usage-provider-color: var(--theia-charts-green); }
+.theia-qaap-usage-provider-pi { --usage-provider-color: var(--theia-charts-purple); }
+.theia-qaap-usage-provider-grok { --usage-provider-color: var(--theia-charts-red); }
+.theia-qaap-usage-provider-copilot { --usage-provider-color: var(--theia-charts-yellow); }
+.theia-qaap-usage-provider-antigravity { --usage-provider-color: var(--theia-charts-foreground); }
+
+.theia-qaap-usage-backdrop[hidden] {
+  display: none;
+}
+
+.theia-qaap-usage-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--theia-editor-background) 60%, transparent);
+}
+
+.theia-qaap-usage-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(960px, calc(100vw - 32px));
+  height: 80vh;
+  border: 1px solid var(--theia-widget-border, transparent);
+  border-radius: 12px;
+  background: var(--theia-editorWidget-background, var(--theia-editor-background));
+  color: var(--theia-foreground);
+  box-shadow: var(--theia-widget-shadow);
+  outline: none;
+  overflow: hidden;
+}
+
+.theia-qaap-usage-header {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--theia-widget-border, transparent);
+}
+
+.theia-qaap-usage-head-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.theia-qaap-usage-title {
+  margin: 0;
+  flex: 1 1 auto;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.theia-qaap-usage-provider-select {
+  min-height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--theia-input-border, transparent);
+  border-radius: 6px;
+  background: var(--theia-input-background);
+  color: var(--theia-input-foreground);
+}
+
+.theia-qaap-usage-provider-select[hidden] {
+  display: none;
+}
+
+.theia-qaap-usage-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--theia-descriptionForeground);
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.theia-qaap-usage-icon-button:hover,
+.theia-qaap-usage-icon-button:focus-visible {
+  background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+  color: var(--theia-foreground);
+}
+
+.theia-qaap-usage-icon-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.theia-qaap-usage-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.theia-qaap-usage-segmented {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--theia-foreground) 6%, transparent);
+}
+
+.theia-qaap-usage-segmented[hidden] {
+  display: none;
+}
+
+.theia-qaap-usage-segment {
+  min-height: 28px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--theia-descriptionForeground);
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.theia-qaap-usage-segment.theia-qaap-usage-segment-active {
+  background: var(--theia-editor-background);
+  color: var(--theia-foreground);
+  box-shadow: var(--theia-widget-shadow);
+}
+
+.theia-qaap-usage-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 16px 20px 24px;
+}
+
+.theia-qaap-usage-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.theia-qaap-usage-notice,
+.theia-qaap-usage-empty,
+.theia-qaap-usage-scanning-text,
+.theia-qaap-usage-loading,
+.theia-qaap-usage-limit-reason {
+  margin: 0;
+  color: var(--theia-descriptionForeground);
+  font-size: 13px;
+}
+
+.theia-qaap-usage-error {
+  margin: 0;
+  color: var(--theia-errorForeground);
+  font-size: 13px;
+}
+
+.theia-qaap-usage-skeleton {
+  height: 120px;
+  margin-top: 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--theia-foreground) 6%, transparent);
+}
+
+.theia-qaap-usage-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.theia-qaap-usage-total {
+  font-size: 32px;
+  font-weight: 600;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.theia-qaap-usage-total-sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  color: var(--theia-descriptionForeground);
+  font-size: 13px;
+}
+
+.theia-qaap-usage-providers {
+  display: flex;
+  flex-direction: column;
+  margin-top: 16px;
+}
+
+.theia-qaap-usage-provider-row {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0;
+  border-top: 1px solid var(--theia-widget-border, transparent);
+}
+
+.theia-qaap-usage-provider-dot,
+.theia-qaap-usage-tooltip-row .theia-qaap-usage-provider-dot,
+.theia-qaap-usage-type-swatch {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--usage-provider-color, var(--theia-descriptionForeground));
+}
+
+.theia-qaap-usage-type-swatch {
+  background: currentColor;
+}
+
+.theia-qaap-usage-provider-names {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.theia-qaap-usage-provider-name,
+.theia-qaap-usage-limit-label {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.theia-qaap-usage-provider-sub,
+.theia-qaap-usage-provider-share {
+  color: var(--theia-descriptionForeground);
+  font-size: 12px;
+}
+
+.theia-qaap-usage-provider-value {
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.theia-qaap-usage-section-title {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.theia-qaap-usage-chart-frame {
+  position: relative;
+}
+
+.theia-qaap-usage-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.theia-qaap-usage-grid {
+  stroke: var(--theia-widget-border, currentColor);
+  stroke-opacity: 0.6;
+  stroke-width: 1;
+}
+
+.theia-qaap-usage-axis {
+  fill: var(--theia-descriptionForeground);
+  font-size: 11px;
+}
+
+.theia-qaap-usage-area {
+  fill: var(--usage-provider-color, var(--theia-descriptionForeground));
+  fill-opacity: 0.55;
+  stroke: var(--usage-provider-color, var(--theia-descriptionForeground));
+  stroke-width: 1;
+}
+
+.theia-qaap-usage-cursor {
+  stroke: var(--theia-descriptionForeground);
+  stroke-dasharray: 3 3;
+}
+
+.theia-qaap-usage-hover-target {
+  fill: transparent;
+  cursor: crosshair;
+}
+
+.theia-qaap-usage-tooltip {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  min-width: 160px;
+  padding: 8px 10px;
+  border: 1px solid var(--theia-widget-border, transparent);
+  border-radius: 8px;
+  background: var(--theia-editorHoverWidget-background, var(--theia-editor-background));
+  box-shadow: var(--theia-widget-shadow);
+  font-size: 12px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.theia-qaap-usage-tooltip[hidden] {
+  display: none;
+}
+
+.theia-qaap-usage-tooltip-date,
+.theia-qaap-usage-tooltip-total {
+  font-weight: 600;
+}
+
+.theia-qaap-usage-tooltip-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.theia-qaap-usage-tooltip-value {
+  font-variant-numeric: tabular-nums;
+}
+
+.theia-qaap-usage-totals-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+
+.theia-qaap-usage-totals-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.theia-qaap-usage-totals-label {
+  color: var(--theia-descriptionForeground);
+  font-size: 12px;
+}
+
+.theia-qaap-usage-totals-value {
+  margin: 0;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.theia-qaap-usage-type {
+  margin-top: 16px;
+}
+
+.theia-qaap-usage-type-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.theia-qaap-usage-type-bar {
+  display: flex;
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theia-foreground) 6%, transparent);
+}
+
+.theia-qaap-usage-type-segment {
+  display: block;
+  height: 100%;
+}
+
+.theia-qaap-usage-type-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+
+.theia-qaap-usage-type-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--theia-descriptionForeground);
+}
+
+.theia-qaap-usage-type-amount {
+  color: var(--theia-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.theia-qaap-usage-type-input .theia-qaap-usage-type-swatch,
+.theia-qaap-usage-type-input.theia-qaap-usage-type-segment { background: var(--theia-charts-blue); color: var(--theia-charts-blue); }
+.theia-qaap-usage-type-cachedInput .theia-qaap-usage-type-swatch,
+.theia-qaap-usage-type-cachedInput.theia-qaap-usage-type-segment { background: var(--theia-charts-green); color: var(--theia-charts-green); }
+.theia-qaap-usage-type-cacheWrite .theia-qaap-usage-type-swatch,
+.theia-qaap-usage-type-cacheWrite.theia-qaap-usage-type-segment { background: var(--theia-charts-purple); color: var(--theia-charts-purple); }
+.theia-qaap-usage-type-output .theia-qaap-usage-type-swatch,
+.theia-qaap-usage-type-output.theia-qaap-usage-type-segment { background: var(--theia-charts-orange); color: var(--theia-charts-orange); }
+.theia-qaap-usage-type-reasoning .theia-qaap-usage-type-swatch,
+.theia-qaap-usage-type-reasoning.theia-qaap-usage-type-segment { background: var(--theia-charts-yellow); color: var(--theia-charts-yellow); }
+
+.theia-qaap-usage-limits {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.theia-qaap-usage-limit-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--theia-widget-border, transparent);
+  border-radius: 10px;
+}
+
+.theia-qaap-usage-limit-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.theia-qaap-usage-limit-window {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.theia-qaap-usage-limit-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.theia-qaap-usage-limit-left {
+  font-size: 18px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.theia-qaap-usage-limit-track {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+}
+
+.theia-qaap-usage-limit-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--usage-provider-color, var(--theia-progressBar-background));
+}
+
+.theia-qaap-usage-limit-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.theia-qaap-usage-limit-skeleton-text {
+  display: block;
+  width: 60%;
+}
+
+.theia-qaap-usage-limit-skeleton-bar {
+  display: block;
+  height: 6px;
+  border-radius: 999px;
+}
+
+.theia-qaap-usage-limit-updated {
+  margin: 0;
+  color: var(--theia-descriptionForeground);
+  font-size: 12px;
+}
+
+.theia-qaap-usage-limit-reset {
+  align-self: flex-start;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+  color: var(--theia-descriptionForeground);
+  font-size: 12px;
+}
+
+/* Provider filter: borderless header button and a popover menu (multi-select). */
+.theia-qaap-usage-provider-anchor {
+  position: relative;
+}
+
+.theia-qaap-usage-provider-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--theia-foreground);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.theia-qaap-usage-provider-button:hover,
+.theia-qaap-usage-provider-button:focus-visible,
+.theia-qaap-usage-provider-button[aria-expanded="true"] {
+  background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+}
+
+.theia-qaap-usage-provider-button[hidden] {
+  display: none;
+}
+
+.theia-qaap-usage-provider-button .codicon {
+  font-size: 12px;
+  color: var(--theia-descriptionForeground);
+}
+
+.theia-qaap-usage-provider-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+  padding: 4px;
+  border: 1px solid var(--theia-widget-border, transparent);
+  border-radius: 10px;
+  background: var(--theia-editorWidget-background, var(--theia-editor-background));
+  box-shadow: var(--theia-widget-shadow);
+}
+
+.theia-qaap-usage-provider-menu[hidden] {
+  display: none;
+}
+
+.theia-qaap-usage-provider-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--theia-foreground);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.theia-qaap-usage-provider-option:hover,
+.theia-qaap-usage-provider-option:focus-visible {
+  background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+}
+
+.theia-qaap-usage-provider-check {
+  display: inline-flex;
+  width: 14px;
+  justify-content: center;
+  font-size: 14px;
+  color: var(--theia-foreground);
+}
+
+.theia-qaap-usage-provider-option-label {
+  flex: 1 1 auto;
+}
+
+.theia-qaap-usage-provider-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--theia-widget-border, transparent);
+}
+
+/* Notice sits clear of the body's top edge and of the total below it. */
+.theia-qaap-usage-notice {
+  margin: 0 0 4px;
+  line-height: 1.4;
+}
+
+@media (max-width: 767px) {
+  .theia-qaap-usage-backdrop {
+    align-items: stretch;
+    justify-content: stretch;
+    background: var(--theia-editor-background);
+  }
+
+  .theia-qaap-usage-dialog {
+    width: 100%;
+    height: 100%;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .theia-qaap-usage-header {
+    padding: 12px 16px 10px;
+  }
+
+  .theia-qaap-usage-body {
+    padding: 12px 16px calc(24px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .theia-qaap-usage-overview {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+
+  .theia-qaap-usage-notice {
+    margin-bottom: 0;
+  }
+
+  .theia-qaap-usage-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .theia-qaap-usage-segmented {
+    overflow-x: auto;
+  }
+
+  .theia-qaap-usage-segment {
+    flex: 1 1 auto;
+    min-height: 36px;
+  }
+
+  .theia-qaap-usage-icon-button {
+    width: 40px;
+    height: 40px;
+  }
+}

@@ -656,6 +656,69 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   padding: 12px 20px 24px;
 }
 
+.theia-mobile-agent-transcript-empty.theia-mod-no-project {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Same quiet note as the sidebar's empty state, centred: muted line + "+ Add repository" text row.
+   No entrance animation: the landing re-renders this node, which would replay it as a flicker. */
+.q-empty.theia-mobile-agents-hub-no-project-empty.theia-mobile-agents-hub-no-project-empty {
+  gap: 2px;
+  margin: auto;
+  padding: 0;
+}
+
+.q-empty.theia-mobile-agents-hub-no-project-empty.theia-mobile-agents-hub-no-project-empty .q-empty-icon,
+.q-empty.theia-mobile-agents-hub-no-project-empty.theia-mobile-agents-hub-no-project-empty .q-empty-hint {
+  display: none;
+}
+
+.q-empty.theia-mobile-agents-hub-no-project-empty.theia-mobile-agents-hub-no-project-empty .q-empty-title {
+  color: var(--theia-descriptionForeground);
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+.q-empty.theia-mobile-agents-hub-no-project-empty.theia-mobile-agents-hub-no-project-empty .q-empty-action {
+  gap: 6px;
+  min-height: 28px;
+  margin: 2px 0 0;
+  padding: 0 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--theia-foreground);
+  font-size: 13px;
+  font-weight: 400;
+  cursor: pointer;
+  transition: background-color var(--qaap-duration-fast, 120ms) ease;
+}
+
+.q-empty.theia-mobile-agents-hub-no-project-empty.theia-mobile-agents-hub-no-project-empty .q-empty-action::before {
+  content: '+';
+  color: var(--theia-descriptionForeground);
+  font-size: 15px;
+  line-height: 1;
+}
+
+.q-empty.theia-mobile-agents-hub-no-project-empty.theia-mobile-agents-hub-no-project-empty .q-empty-action:hover,
+.q-empty.theia-mobile-agents-hub-no-project-empty.theia-mobile-agents-hub-no-project-empty .q-empty-action:focus-visible {
+  background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+}
+
+@media (pointer: coarse) {
+  .theia-mobile-agents-hub-no-project-empty.theia-mobile-agents-hub-no-project-empty .q-empty-action {
+    min-height: 44px;
+  }
+}
+
+/* The open sessions sidebar already shows the same "No projects yet" call to action. */
+body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-agents-hub-no-project-empty {
+  display: none;
+}
+
 .theia-mobile-agents-hub-onboarding-btn {
   display: inline-flex;
   align-items: center;
@@ -901,9 +964,18 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 }
 
 /* Empty the header on the Agents Hub landing when there is no workspace yet
-   (the "No workspaces yet" onboarding state). The header reappears once a
-   project is opened (.theia-mod-agents-hub-shell-active) or pinned. */
-.theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing.theia-mod-has-no-project-empty.theia-mod-has-no-project-empty .theia-mobile-projects-header-main {
+   (the "No workspaces yet" state). The header reappears once a project is
+   opened (.theia-mod-agents-hub-shell-active) or pinned.
+   The sessions-sidebar toggle stays: projects are added from that sidebar, and
+   on a first run it is still closed, so hiding the toggle left a blank screen. */
+.theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing.theia-mod-has-no-project-empty.theia-mod-has-no-project-empty .theia-mobile-projects-header-main> :not(.theia-mobile-projects-title-block),
+.theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing.theia-mod-has-no-project-empty.theia-mod-has-no-project-empty .theia-mobile-projects-title-block> :not(.theia-mobile-projects-title-row),
+.theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing.theia-mod-has-no-project-empty.theia-mod-has-no-project-empty .theia-mobile-projects-title-row> :not(.theia-mobile-projects-sessions-menu):not(.theia-mod-sr-only) {
+  display: none !important;
+}
+
+/* With the sidebar already open, its toggle in the empty header has nothing left to do. */
+body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing.theia-mod-has-no-project-empty.theia-mod-has-no-project-empty .theia-mobile-projects-sessions-menu {
   display: none !important;
 }
 
@@ -1677,12 +1749,6 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   .theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-controls-row {
     padding: 4px 10px 6px;
   }
-
-  .theia-mobile-projects-sticky-composer-card.theia-mod-codex .qaap-codex-context-tray,
-  .theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-toolbar.qaap-codex-context-tray {
-    padding-left: 10px;
-    padding-right: 10px;
-  }
 }
 
 /* Landscape phones in one-column shell — same horizontal inset as narrow mobile. */
@@ -2004,27 +2070,8 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   width: 100%;
 }
 
-.theia-mobile-projects-sticky-composer-surface-hint {
-  margin: 0;
-  padding: 0 2px;
-  font-size: 11px;
-  line-height: 1.45;
-  color: var(--theia-descriptionForeground);
-}
-
 .theia-mobile-projects-sticky-composer-surface.theia-mod-locked .theia-qaap-segmented-option {
   opacity: 0.92;
-}
-
-.theia-mobile-projects-sticky-composer-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-  width: 100%;
-  min-width: 0;
-  max-width: 100%;
-  box-sizing: border-box;
 }
 
 .theia-mobile-projects-sticky-composer-inner {
@@ -7515,7 +7562,6 @@ body.qaap-theme-dark .theia-qaap-agent-brand-icon.theia-mod-theme-adaptive .thei
 .theia-mobile-projects-sticky-composer-input-wrap>.theia-mobile-projects-sticky-composer-attach,
 .theia-mobile-projects-sticky-composer-input-wrap>.theia-mobile-projects-sticky-composer-mention,
 .theia-mobile-projects-sticky-composer-input-wrap>.theia-mobile-projects-sticky-composer-variable,
-.theia-mobile-projects-sticky-composer-input-wrap>.theia-mobile-projects-sticky-composer-send,
 .theia-mobile-projects-sticky-composer-input-wrap>.qaap-composer-improve-btn,
 .theia-mobile-projects-sticky-composer-input-wrap>.qaap-chat-mic-btn-sticky {
   flex: 0 0 30px;
@@ -7548,25 +7594,6 @@ body.qaap-theme-dark .theia-qaap-agent-brand-icon.theia-mod-theme-adaptive .thei
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.theia-mobile-projects-sticky-composer-send {
-  border: none;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--theia-descriptionForeground);
-  opacity: 0.55;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  padding: 0;
-}
-
-.theia-mobile-projects-sticky-composer-send.theia-mod-ready {
-  background: var(--q-accent, var(--qaap-accent, #E58E40));
-  color: #fff;
-  opacity: 1;
 }
 
 .theia-mobile-projects-sticky-composer-send.theia-mod-stop {
@@ -7613,7 +7640,6 @@ body.qaap-theme-dark .theia-qaap-agent-brand-icon.theia-mod-theme-adaptive .thei
   .theia-mobile-projects-sticky-composer-input-wrap>.theia-mobile-projects-sticky-composer-attach,
   .theia-mobile-projects-sticky-composer-input-wrap>.theia-mobile-projects-sticky-composer-mention,
   .theia-mobile-projects-sticky-composer-input-wrap>.theia-mobile-projects-sticky-composer-variable,
-  .theia-mobile-projects-sticky-composer-input-wrap>.theia-mobile-projects-sticky-composer-send,
   .theia-mobile-projects-sticky-composer-input-wrap>.qaap-composer-improve-btn,
   .theia-mobile-projects-sticky-composer-input-wrap>.qaap-chat-mic-btn-sticky {
     flex-basis: 28px;
@@ -12756,16 +12782,18 @@ body.theia-mod-work-hub-settings-resizing * {
   flex: 0 0 auto;
   align-items: center;
   gap: 12px;
-  min-height: 76px;
-  padding: 20px 32px 12px;
+  min-height: 52px;
+  padding: 12px 32px;
+  border-bottom: 1px solid color-mix(in srgb, var(--theia-foreground) 7%, transparent);
 }
 
+/* A quiet page title on a hairline, like the rest of the chrome, not a 24px heading. */
 .theia-mobile-work-hub-settings-content-header .theia-mobile-work-hub-preferences-title {
   flex: 1 1 auto;
   min-width: 0;
   margin: 0;
   color: var(--theia-foreground);
-  font-size: 24px;
+  font-size: 15px;
   font-weight: 600;
   line-height: 1.2;
 }
@@ -12866,107 +12894,239 @@ body.theia-mod-work-hub-settings-resizing * {
 /* Keep the embedded Work Hub settings on the same card system as General.
    The source widgets are also used by the IDE, so these overrides stay scoped
    to this sheet and do not change their desktop presentation. */
-.theia-mobile-work-hub-settings-embedded-widget .qaap-harness-card,
-.theia-mobile-work-hub-settings-embedded-widget .mcp-server-card,
-.theia-mobile-work-hub-settings-embedded-widget .qaap-ai-skill-card {
-  border: 1px solid color-mix(in srgb, var(--theia-widget-border, #454545) 78%, transparent);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--theia-sideBar-background, #1b1b1b) 78%, var(--theia-editor-background, #151515));
+.theia-mobile-work-hub-settings-embedded-widget .mcp-server-card {
+  margin-bottom: 12px;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 9%, transparent);
+  border-radius: 10px;
+  background: transparent;
   box-shadow: none;
 }
 
-.theia-mobile-work-hub-settings-embedded-widget .qaap-harness-card {
-  grid-template-columns: 32px minmax(0, 1fr) 40px;
+/*
+ * Harness list: one hairline-bordered list with divided rows instead of separate filled cards.
+ * Glyph, name with the CLI id in muted mono, one muted status line, switch on the right.
+ * The widget's own stylesheet loads lazily after this one, hence the compound root class.
+ */
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-count {
+  padding: 0;
+  border: none;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-list {
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 9%, transparent);
+  border-radius: 10px;
+}
+
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-card {
+  grid-template-columns: 24px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 14px;
-  padding: 16px 18px;
+  gap: 12px;
+  padding: 14px 16px;
+  border: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--theia-foreground) 7%, transparent);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  transition: background-color var(--qaap-duration-fast, 120ms) ease;
 }
 
-.theia-mobile-work-hub-settings-embedded-widget .qaap-harness-card.qaap-harness-card-install-unavailable {
-  grid-template-columns: 32px minmax(0, 1fr);
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-card:last-child {
+  border-bottom: none;
 }
 
-.theia-mobile-work-hub-settings-embedded-widget .qaap-harness-card.theia-mod-disabled {
-  border-color: var(--theia-widget-border, rgba(128, 128, 128, 0.35));
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-card:hover {
+  border-color: color-mix(in srgb, var(--theia-foreground) 7%, transparent);
+  background: color-mix(in srgb, var(--theia-foreground) 3%, transparent);
+}
+
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-card.qaap-harness-card-install-unavailable {
+  grid-template-columns: 24px minmax(0, 1fr);
+}
+
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-card.theia-mod-disabled {
+  opacity: 1;
+  border-color: color-mix(in srgb, var(--theia-foreground) 7%, transparent);
   background: transparent;
 }
 
-.theia-mobile-work-hub-settings-embedded-widget .qaap-harness-card-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-card.theia-mod-disabled .qaap-harness-card-icon,
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-card.theia-mod-disabled .qaap-harness-card-body {
+  opacity: 0.55;
 }
 
-.theia-mobile-work-hub-settings-embedded-widget .qaap-harness-card-body {
-  gap: 6px;
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-card-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
 }
 
-.theia-mobile-work-hub-settings-embedded-widget .qaap-harness-card-title-row {
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-card-body {
+  gap: 3px;
+}
+
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-card-title-row {
+  align-items: baseline;
   gap: 8px;
 }
 
-.theia-mobile-work-hub-settings-embedded-widget .qaap-harness-card-name {
-  font-size: 13px;
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-card-name {
+  font-size: 13.5px;
+  font-weight: 500;
 }
 
-.theia-mobile-work-hub-settings-embedded-widget .qaap-harness-card-bin {
-  padding: 2px 6px;
-  font-size: 10px;
-}
-
-.theia-mobile-work-hub-settings-embedded-widget .qaap-harness-card-status {
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-card-bin {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--theia-descriptionForeground);
   font-size: 12px;
 }
 
-.theia-mobile-work-hub-settings-embedded-widget .qaap-harness-toggle,
-.theia-mobile-work-hub-settings-embedded-widget .qaap-harness-install {
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-card-status {
+  font-size: 12px;
+}
+
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-card-status::before {
+  display: none;
+}
+
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-toggle,
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-install {
   margin-top: 0;
 }
 
-.theia-mobile-work-hub-settings-embedded-widget .qaap-ai-skill-card {
-  gap: 14px;
-  padding: 16px 18px;
+/*
+ * Skills: the same hairline list as Harness. Muted 16px glyph, name with the source as small muted
+ * text (no uppercase pill), a two-line description, "Open SKILL.md" as a text link, switch right.
+ * Compound root class: the widget's stylesheet loads lazily after this one.
+ */
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-skills-configuration .qaap-ai-skills-list {
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 9%, transparent);
+  border-radius: 10px;
 }
 
-.theia-mobile-work-hub-settings-embedded-widget .qaap-ai-skill-card-name {
-  font-size: 13px;
-  font-weight: 600;
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-skills-configuration .qaap-ai-skill-card {
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+  border: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--theia-foreground) 7%, transparent);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  transition: background-color var(--qaap-duration-fast, 120ms) ease;
 }
 
-.theia-mobile-work-hub-settings-embedded-widget .qaap-ai-skill-card-description {
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-skills-configuration .qaap-ai-skill-card:last-child {
+  border-bottom: none;
+}
+
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-skills-configuration .qaap-ai-skill-card:hover {
+  background: color-mix(in srgb, var(--theia-foreground) 3%, transparent);
+}
+
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-skills-configuration .qaap-ai-skill-card.theia-mod-disabled .qaap-ai-skill-card-icon,
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-skills-configuration .qaap-ai-skill-card.theia-mod-disabled .qaap-ai-skill-card-body {
+  opacity: 0.55;
+}
+
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-skills-configuration .qaap-ai-skill-card-icon {
+  width: 16px;
+  height: 20px;
+  border-radius: 0;
+  background: transparent;
+  color: var(--theia-descriptionForeground);
+}
+
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-skills-configuration .qaap-ai-skill-card-body {
+  gap: 3px;
+}
+
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-skills-configuration .qaap-ai-skill-card-title-row {
+  align-items: baseline;
+}
+
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-skills-configuration .qaap-ai-skill-card-name {
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-skills-configuration .qaap-ai-skill-card-badge {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--theia-descriptionForeground);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: lowercase;
+}
+
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-skills-configuration .qaap-ai-skill-card-description {
+  -webkit-line-clamp: 2;
   font-size: 12px;
   line-height: 1.45;
 }
 
-.theia-mobile-work-hub-settings-embedded-widget .qaap-ai-skill-card-open {
-  min-height: 30px;
-  margin-top: 2px;
-  padding: 0 12px;
-  border: 1px solid var(--theia-input-border, rgba(128, 128, 128, 0.35));
-  border-radius: 8px;
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-skills-configuration .qaap-ai-skill-card-open.qaap-ai-skill-card-open {
+  min-width: 0;
+  min-height: 0;
+  height: auto;
+  margin: 2px 0 0;
+  padding: 0;
+  border: none;
   background: transparent;
-  color: var(--theia-foreground);
+  color: var(--theia-textLink-foreground, var(--theia-foreground));
+  font-size: 12px;
+  font-weight: 400;
 }
 
-.theia-mobile-work-hub-settings-embedded-widget .qaap-ai-skill-card-open:hover,
-.theia-mobile-work-hub-settings-embedded-widget .qaap-ai-skill-card-open:focus-visible {
-  background: var(--theia-toolbar-hoverBackground);
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-skills-configuration .qaap-ai-skill-card-open.qaap-ai-skill-card-open:hover,
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-skills-configuration .qaap-ai-skill-card-open.qaap-ai-skill-card-open:focus-visible {
+  background: transparent;
+  text-decoration: underline;
 }
 
-.theia-mobile-work-hub-settings-embedded-widget .qaap-ai-skill-toggle {
-  border: 0;
-  background: var(--theia-input-background, #3b3d40);
-  box-shadow: inset 0 0 0 1px var(--theia-widget-border, rgba(255, 255, 255, 0.12));
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-skills-configuration .qaap-ai-skill-toggle {
+  margin-top: 0;
 }
 
-.theia-mobile-work-hub-settings-embedded-widget .qaap-ai-skill-toggle.theia-mod-on {
-  background: var(--theia-successBackground, #4ea66d);
-  box-shadow: none;
-}
-
+/* MCP servers: one hairline card each, untinted header, quiet property rows. */
 .theia-mobile-work-hub-settings-embedded-widget .mcp-server-header {
-  background: color-mix(in srgb, var(--theia-sideBar-background, #1b1b1b) 86%, var(--theia-editor-background, #151515));
-  border-bottom-color: color-mix(in srgb, var(--theia-widget-border, #454545) 52%, transparent);
+  padding: 10px 12px 10px 16px;
+  background: transparent;
+  border-bottom-color: color-mix(in srgb, var(--theia-foreground) 7%, transparent);
+}
+
+.theia-mobile-work-hub-settings-embedded-widget .mcp-server-name {
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+.theia-mobile-work-hub-settings-embedded-widget .mcp-server-content {
+  gap: 6px;
+  padding: 12px 16px;
+}
+
+.theia-mobile-work-hub-settings-embedded-widget .mcp-property-label {
+  color: var(--theia-descriptionForeground);
+  font-size: 12px;
+}
+
+.theia-mobile-work-hub-settings-embedded-widget .mcp-property-value {
+  font-size: 12px;
+}
+
+.theia-mobile-work-hub-settings-embedded-widget .mcp-action-button {
+  border-radius: 6px;
 }
 
 .theia-mobile-work-hub-settings-embedded-widget .mcp-server-content,
@@ -13060,9 +13220,9 @@ body.theia-mod-work-hub-settings-resizing * {
 }
 
 .theia-mobile-work-hub-settings-custom-heading {
-  margin: 18px 0 10px;
+  margin: 24px 0 10px;
   color: var(--theia-foreground);
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
   line-height: 1.3;
 }
@@ -13120,12 +13280,81 @@ body.theia-mod-work-hub-settings-resizing * {
   align-items: center;
   gap: 24px;
   min-height: 76px;
-  padding: 15px 18px;
+  padding: 16px 20px;
   border-bottom: 1px solid color-mix(in srgb, var(--theia-widget-border, #454545) 52%, transparent);
 }
 
 .theia-mobile-work-hub-settings-row:last-child {
   border-bottom: 0;
+}
+
+/* Card rows: titles 14px/600, descriptions 13px muted, control centred on the row. */
+.theia-mobile-work-hub-settings-card .theia-mobile-work-hub-settings-row-copy strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.theia-mobile-work-hub-settings-card .theia-mobile-work-hub-settings-row-copy span {
+  font-size: 13px;
+}
+
+.theia-mobile-work-hub-settings-card .theia-mobile-work-hub-settings-row > .theia-mobile-work-hub-settings-toggle {
+  align-self: center;
+}
+
+/* Muted "Settings /" breadcrumb ahead of the current section title. */
+.theia-mobile-work-hub-settings-crumb,
+.theia-mobile-work-hub-settings-crumb-separator {
+  flex: 0 0 auto;
+  color: var(--theia-descriptionForeground);
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.theia-mobile-work-hub-settings-crumb-separator {
+  opacity: 0.6;
+}
+
+.theia-mobile-work-hub-settings-restore-defaults[hidden] {
+  display: none;
+}
+
+.theia-mobile-work-hub-settings-restore-defaults {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  margin-left: auto;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--theia-foreground);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.theia-mobile-work-hub-settings-restore-defaults:hover {
+  background: var(--theia-toolbar-hoverBackground);
+}
+
+.theia-mobile-work-hub-settings-restore-defaults .codicon {
+  font-size: 14px;
+}
+
+.theia-mobile-work-hub-settings-note {
+  margin: 4px 0 0;
+  padding: 0;
+  color: var(--theia-descriptionForeground);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.theia-mobile-work-hub-settings-note[hidden] {
+  display: none;
 }
 
 .theia-mobile-work-hub-settings-row-copy {
@@ -13487,13 +13716,13 @@ body.theia-mod-work-hub-settings-resizing * {
   }
 
   .theia-mobile-work-hub-settings-content-header {
-    min-height: 56px;
-    padding: 10px 16px 6px;
+    min-height: 52px;
+    padding: 8px 16px;
     box-sizing: border-box;
   }
 
   .theia-mobile-work-hub-settings-content-header .theia-mobile-work-hub-preferences-title {
-    font-size: 20px;
+    font-size: 16px;
   }
 
   .theia-mobile-work-hub-settings-custom-content {
@@ -13522,7 +13751,12 @@ body.theia-mod-work-hub-settings-resizing * {
 
   .theia-mobile-work-hub-settings-row {
     gap: 12px;
-    padding: 14px;
+    padding: 14px 16px;
+  }
+
+  .theia-mobile-work-hub-settings-crumb,
+  .theia-mobile-work-hub-settings-crumb-separator {
+    display: none;
   }
 
   .theia-mobile-work-hub-settings-profile-card {
@@ -14281,6 +14515,15 @@ body.theia-mod-work-hub-settings-resizing * {
   line-height: 1.5;
 }
 
+.theia-mobile-agent-login-dialog-provider {
+  margin: 0 0 12px;
+}
+
+.theia-mobile-agent-login-dialog-provider-select {
+  width: 100%;
+  min-height: 40px;
+}
+
 .theia-mobile-agent-login-dialog-challenge {
   display: flex;
   flex-direction: column;
@@ -14537,4 +14780,19 @@ body.theia-mod-work-hub-settings-resizing * {
     background: var(--theia-descriptionForeground);
     opacity: 0.25;
     visibility: visible;
+}
+
+/*
+ * Desktop: the composer and its quick-action chips share the transcript's reading column
+ * (`width: min(100%, 760px)` on transcript rows in qaap-transcript's mobile-workbench-transcript.css)
+ * instead of spanning the whole panel. Narrow viewports keep the full-width composer.
+ */
+@media (min-width: 768px) {
+  .theia-mobile-projects-sticky-composer>.theia-mobile-projects-sticky-composer>.theia-mobile-projects-sticky-composer-column,
+  .theia-mobile-projects-sticky-composer>.theia-mobile-projects-sticky-composer>.theia-mobile-agent-transcript-empty-actions {
+    --qaap-work-hub-reading-column: 760px;
+    max-width: var(--qaap-work-hub-reading-column);
+    margin-inline: auto;
+    box-sizing: border-box;
+  }
 }

@@ -297,6 +297,14 @@ export class QaapAgentGoalLoopRunner implements BackendApplicationContribution {
         if (!afterEvaluation) {
             return;
         }
+        if (!evaluation) {
+            // Unparseable twice: the loop does not block the conversation; the turn goes to the
+            // text-heuristic auto-continue, which keeps its own limits.
+            console.warn('[qaap-goal-loop] evaluator unparseable, falling back');
+            this.finish(conversationId, afterEvaluation, 'cancelled', 'The evaluator reply stayed unparseable; the turn falls back to auto-continue.');
+            this.store.maybeAutoContinueIncompleteTurn(conversationId, this.store.get(conversationId) ?? conv, settlement.userMessageId);
+            return;
+        }
         loop = this.commit(conversationId, { ...afterEvaluation, lastEvaluation: evaluation });
         if (evaluation.done) {
             this.finish(conversationId, loop, 'completed', evaluation.source === 'fallback'
@@ -416,12 +424,15 @@ export class QaapAgentGoalLoopRunner implements BackendApplicationContribution {
         return { status: 'passed', command: `npm run ${scripts[scripts.length - 1]}`, checkedAt: checkedAt() };
     }
 
-    /** Read-only evaluator verdict; any failure degrades to the deterministic verify-only verdict. */
+    /**
+     * Read-only evaluator verdict. An unparseable reply is asked for once more; still unparseable gives
+     * `undefined`, which hands the turn to auto-continue. A thrown error degrades to the verify-only verdict.
+     */
     protected async evaluate(
         conv: QaapAgentConversation,
         loop: QaapAgentGoalLoopState,
         verify: QaapAgentGoalLoopVerifyResult,
-    ): Promise<QaapAgentGoalLoopEvaluation> {
+    ): Promise<QaapAgentGoalLoopEvaluation | undefined> {
         const prompt = buildGoalLoopEvaluatorPrompt({
             goal: loop.goal,
             verify,
@@ -430,18 +441,21 @@ export class QaapAgentGoalLoopRunner implements BackendApplicationContribution {
             transcriptExcerpt: buildGoalLoopTranscriptExcerpt(conv.messages),
         });
         const agentId = this.latestUserMessage(conv)?.turnAgentId ?? conv.agentId;
+        const ask = (): Promise<string> => this.taskRunner.runReadOnlyOneShotPrompt({
+            prompt,
+            agentId,
+            cwd: conv.cwd,
+            ownerLogin: conv.ownerLogin,
+            // No explicit model: the owner's `review` routing picks it (their own keys).
+            taskKind: 'review',
+            timeoutMs: QAAP_AGENT_GOAL_LOOP_EVALUATOR_TIMEOUT_MS,
+        });
         try {
-            const raw = await this.taskRunner.runReadOnlyOneShotPrompt({
-                prompt,
-                agentId,
-                cwd: conv.cwd,
-                ownerLogin: conv.ownerLogin,
-                // No explicit model: the owner's `review` routing picks it (their own keys).
-                taskKind: 'review',
-                timeoutMs: QAAP_AGENT_GOAL_LOOP_EVALUATOR_TIMEOUT_MS,
-            });
-            return parseGoalLoopEvaluatorResponse(raw, Date.now())
-                ?? resolveGoalLoopFallbackEvaluation(verify, 'unparseable evaluator reply', Date.now());
+            const first = parseGoalLoopEvaluatorResponse(await ask(), Date.now());
+            if (first) {
+                return first;
+            }
+            return parseGoalLoopEvaluatorResponse(await ask(), Date.now());
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             return resolveGoalLoopFallbackEvaluation(verify, message, Date.now());

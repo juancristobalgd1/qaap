@@ -66,11 +66,12 @@ function isAgentApprovalPolicyId(value: string | undefined): value is QaapAgentA
 export function resolveApprovalPolicyFromConversation(
     conv: { readonly approvalPolicyId?: string; readonly autoApprove?: boolean; readonly cwd?: string },
 ): QaapAgentApprovalPolicyId {
-    if (conv.approvalPolicyId && isAgentApprovalPolicyId(conv.approvalPolicyId)) {
-        return conv.approvalPolicyId;
-    }
+    // A switch that is off wins over a stored policy: legacy conversations kept approve-for-me next to autoApprove false.
     if (conv.autoApprove === false) {
         return 'request-approval';
+    }
+    if (conv.approvalPolicyId && isAgentApprovalPolicyId(conv.approvalPolicyId)) {
+        return conv.approvalPolicyId;
     }
     return readStoredAgentApprovalPolicy(conv.cwd) ?? DEFAULT_AGENT_APPROVAL_POLICY_ID;
 }

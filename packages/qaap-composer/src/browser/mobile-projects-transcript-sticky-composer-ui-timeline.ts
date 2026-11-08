@@ -3,6 +3,7 @@ import type { MobileProjectsTranscriptStickyComposerUiContext } from './mobile-p
 
 import {
     conversationToSummary,
+    isLastTurnCancelled,
     recordConversationGitAction,
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
@@ -372,6 +373,15 @@ export async function flushTranscriptFollowUpQueueExtracted(ctx: MobileProjectsT
     if (!ctx.isTranscriptFollowUpReady(summary)) {
         return;
     }
+    // A Stop pauses the queued follow-ups: nothing is auto-delivered until the user sends or discards them.
+    const lastConv = ctx.host.transcriptLastConv?.id === summary.id ? ctx.host.transcriptLastConv : undefined;
+    // The optimistic Stop repaints the summary before this flush runs; the store snapshot it records is the
+    // authoritative "cancelled" signal even when the summary handed in here was built before the Stop.
+    if (summary.lastTurnCancelled === true
+        || ctx.host.conversations?.findSummaryById(summary.id)?.lastTurnCancelled === true
+        || (lastConv && (isLastTurnCancelled(lastConv) || lastConv.pendingUserMessagesPaused))) {
+        return;
+    }
     // Drop leading entries already mirrored to the server — the backend drain owns them.
     while (ctx.host.transcriptFollowUpQueue.peek(summary.id)[0]?.serverSynced) {
         ctx.host.transcriptFollowUpQueue.shift(summary.id);
@@ -396,10 +406,16 @@ export async function sendQueuedFollowUpNowExtracted(ctx: MobileProjectsTranscri
     }
     ctx.host.transcriptComposerQueueExpanded = false;
     ctx.refreshComposerActivityStack();
-    if (entry.serverPendingId && ctx.host.transcriptMessagesUi?.dispatchQueuedMessage) {
+    // A mirror still in flight leaves no serverPendingId yet, but its row carries the same clientMessageId:
+    // dispatch that row instead of re-posting (a re-post with the same id would be a server no-op).
+    const rowForClientMessageId = entry.clientMessageId && ctx.host.transcriptLastConv?.id === summary.id
+        ? ctx.host.transcriptLastConv.pendingUserMessages?.find(item => item.clientMessageId === entry.clientMessageId)
+        : undefined;
+    const serverPendingId = entry.serverPendingId ?? rowForClientMessageId?.id;
+    if (serverPendingId && ctx.host.transcriptMessagesUi?.dispatchQueuedMessage) {
         await ctx.host.transcriptMessagesUi.dispatchQueuedMessage(
             summary.id,
-            { id: entry.serverPendingId, content: entry.draft, createdAt: Date.now() },
+            { id: serverPendingId, content: entry.draft, createdAt: Date.now() },
             'parallel',
         );
         return;

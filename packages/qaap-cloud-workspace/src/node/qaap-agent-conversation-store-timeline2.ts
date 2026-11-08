@@ -70,7 +70,7 @@ export async function recordVisualVerificationFlowExtracted(ctx: QaapAgentConver
             const next = ctx.attachVisualVerificationBlock(conv, target, buildQaapVisualFlowMarkdown(evidenceSteps, previewUrl));
             void ctx.sweepUnreferencedVisualEvidence(conversationId).catch(() => undefined);
             return evidenceSteps.some(step => step.result.status === 'failed')
-                ? await ctx.continueVisualRepairLoop(conversationId, target.id)
+                ? await ctx.continueVisualRepairLoop(conversationId, target.id, { propose: true })
                 : next;
         } finally {
             ctx.visualVerificationInFlight.delete(conversationId);
@@ -101,7 +101,7 @@ export async function recordVisualVerificationFailureExtracted(ctx: QaapAgentCon
                 buildQaapVisualVerificationFailureMarkdown(trimmed, retryForCodeChanges),
             );
             return retryForCodeChanges
-                ? await ctx.continueVisualRepairLoop(conversationId, target.id)
+                ? await ctx.continueVisualRepairLoop(conversationId, target.id, { propose: true })
                 : next;
         } finally {
             ctx.visualVerificationInFlight.delete(conversationId);
@@ -431,6 +431,7 @@ export function applyTaskOutputExtracted(ctx: QaapAgentConversationStoreContext,
             messages,
             ...(totalTokensFromContextUsage(conv.contextUsage) === 0 ? { contextUsageEstimated: true } : {}),
             contextWindowSize: conv.contextWindowSize ?? DEFAULT_QAAP_CONTEXT_WINDOW,
+            providerRetry: stream?.getProviderRetry?.(),
         };
         ctx.conversations.set(conv.id, next);
         ctx.fire({ type: 'updated', conversation: toConversationSummary(next) });

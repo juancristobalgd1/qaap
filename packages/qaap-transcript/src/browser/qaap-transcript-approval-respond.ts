@@ -39,6 +39,14 @@ export async function respondToTranscriptApproval(
             options.callbacks?.onSettled?.();
             return true;
         }
+        // Cast: the shared-core DTO gains `expired` in this same change; older builds of it lack the field.
+        if ((result as { expired?: boolean }).expired) {
+            // The task already ended: the approval is stale, not a failure, so drop the card quietly.
+            MobileSnackbar.show(nls.localize('qaap/mobileProjects/transcriptApprovalExpired', 'Approval expired.'), { duration: 2600 });
+            card?.remove();
+            options.callbacks?.onSettled?.();
+            return false;
+        }
         const fallback = action === 'approve'
             ? nls.localize(
                 'qaap/mobileProjects/transcriptApprovalApproveFailed',

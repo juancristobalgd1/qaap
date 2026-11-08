@@ -1,3 +1,4 @@
+import type { QaapAgentEffortLevel } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
 // *****************************************************************************
 // Copyright (C) 2026 Theia contributors and Qaap product fork.
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
@@ -10,13 +11,14 @@ import {
     conversationToSummary,
     getConversation,
     postConversationMessage,
+    QaapDirtyWorkspaceCancelledError,
     startGoalLoop,
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
     type QaapMessageDeliveryMode,
     type QaapPendingUserMessageDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
-import { mergePendingUserMessagesWithLocalQueue } from '@theia/qaap-shared-core/lib/common/qaap-pending-user-messages-merge';
+import { mergePendingUserMessagesWithLocalQueue, resolveQueuedFollowUpBaseConversation } from '@theia/qaap-shared-core/lib/common/qaap-pending-user-messages-merge';
 import {
     resolveAgentModelForSubmit,
     resolveExplicitAgentForSubmit,
@@ -85,6 +87,8 @@ export interface MobileProjectsTranscriptSubmitHost {
             latencyMarks?: import('@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client').QaapPostConversationMessageOptions['latencyMarks'];
             /** Create without a message, then start an "Until done" goal loop with the draft. */
             untilDone?: boolean;
+            /** Reasoning effort the composer picked; the backend drops it when the harness or model does not take it. */
+            effort?: QaapAgentEffortLevel;
         },
     ): Promise<import('./qaap-transcript-host-contracts').QaapProjectChatSessionCreated>;
     resolveActiveTranscriptChatHost(): HTMLElement | undefined;
@@ -165,16 +169,7 @@ export class MobileProjectsTranscriptSubmitUi {
         if (!chatHost) {
             return undefined;
         }
-        const baseConv: QaapAgentConversationDTO = cached?.id === summary.id ? cached : {
-            id: summary.id,
-            cwd: summary.cwd,
-            agentId: summary.agentId,
-            title: summary.title,
-            status: summary.status,
-            createdAt: summary.createdAt,
-            updatedAt: Date.now(),
-            messages: [],
-        };
+        const baseConv: QaapAgentConversationDTO = resolveQueuedFollowUpBaseConversation(cached, summary);
         const pending = imagePreviews?.length
             ? { ...pendingUserMessage, optimisticImagePreviews: imagePreviews }
             : pendingUserMessage;
@@ -200,6 +195,24 @@ export class MobileProjectsTranscriptSubmitUi {
      * Optimistic paint for deliveryMode `queue`: append a footer "Queued" row without treating
      * the follow-up as the live user turn (keeps the streaming activity under the active turn).
      */
+
+    /**
+     * The composer chip is the single source of truth for a follow-up's approval policy. The chip is synced
+     * with the conversation when it changes (chip sheet and Auto-approve switch), so it already carries the
+     * switch state. A conversation with no explicit chip value falls back to its switch.
+     */
+    protected resolveFollowUpApproval(summary: QaapAgentConversationSummaryDTO,
+        options: { readonly autoApprove?: boolean; readonly approvalPolicyId?: string }): { autoApprove: boolean | undefined; approvalPolicyId: string } {
+        const current = this.host.conversations?.findSummaryById(summary.id)?.autoApprove ?? summary.autoApprove;
+        const explicit = options.approvalPolicyId ?? this.host.transcriptComposerApprovalPolicyId;
+        const approvalPolicyId = explicit
+            ?? (current === false ? 'request-approval' : reconcileAgentApprovalPolicyId(undefined, summary.cwd));
+        return {
+            autoApprove: approvalPolicyId === 'request-approval' ? false : options.autoApprove,
+            approvalPolicyId,
+        };
+    }
+
     protected renderInstantQueuedPendingOptimistic(
         summary: QaapAgentConversationSummaryDTO,
         pending: QaapPendingUserMessageDTO,
@@ -209,16 +222,7 @@ export class MobileProjectsTranscriptSubmitUi {
         if (!chatHost) {
             return undefined;
         }
-        const baseConv: QaapAgentConversationDTO = cached?.id === summary.id ? cached : {
-            id: summary.id,
-            cwd: summary.cwd,
-            agentId: summary.agentId,
-            title: summary.title,
-            status: summary.status,
-            createdAt: summary.createdAt,
-            updatedAt: Date.now(),
-            messages: [],
-        };
+        const baseConv: QaapAgentConversationDTO = resolveQueuedFollowUpBaseConversation(cached, summary);
         const pendingUserMessages = [
             ...(baseConv.pendingUserMessages ?? []).filter(item =>
                 item.id !== pending.id
@@ -258,8 +262,14 @@ export class MobileProjectsTranscriptSubmitUi {
              * When `parallel` is true, this is set to 'parallel' for backward compatibility.
              */
             deliveryMode?: QaapMessageDeliveryMode;
+            /** Stable id for the POST (a queued follow-up keeps the same id across retries). */
+            clientMessageId?: string;
+            /** Mirror of a follow-up queued on the client: never starts a turn on a stopped conversation. */
+            queueOnly?: boolean;
             /** Start an "Until done" goal loop (draft = goal + first prompt) instead of one turn. */
             untilDone?: boolean;
+            /** Reasoning effort the composer picked; the backend drops it when the harness or model does not take it. */
+            effort?: QaapAgentEffortLevel;
         } = {},
     ): Promise<boolean> {
         // Reports whether the message was actually submitted. A concurrent send that lands while
@@ -286,10 +296,24 @@ export class MobileProjectsTranscriptSubmitUi {
         try {
             await this.submitTranscriptViaBackendConversationInner(project, summary, content, options, submitAt);
             return true;
+        } catch (error) {
+            if (error instanceof QaapDirtyWorkspaceCancelledError) {
+                // The user cancelled the dirty-workspace dialog: nothing was created, so the pending paint goes.
+                this.rollbackPendingNewChatPaint(summary);
+            }
+            throw error;
         } finally {
             if (!allowConcurrent) {
                 this.submitInFlightByConversationId.delete(summary.id);
             }
+        }
+    }
+
+    /** Repaints the transcript from the cached conversation, dropping the optimistic row of a cancelled new task. */
+    protected rollbackPendingNewChatPaint(summary: QaapAgentConversationSummaryDTO): void {
+        const chatHost = this.host.resolveActiveTranscriptChatHost();
+        if (chatHost) {
+            this.renderTranscriptSubmitMessages(chatHost, resolveQueuedFollowUpBaseConversation(this.host.transcriptLastConv, summary), summary);
         }
     }
 
@@ -312,7 +336,13 @@ export class MobileProjectsTranscriptSubmitUi {
             parallel?: boolean;
             /** Delivery mode: 'queue', 'parallel', or 'interrupt'. */
             deliveryMode?: QaapMessageDeliveryMode;
+            /** Stable id for the POST (see {@link QaapPendingUserMessageDTO.clientMessageId}); a generated id when absent. */
+            clientMessageId?: string;
+            /** Mirror of a follow-up queued on the client: never starts a turn on a stopped conversation. */
+            queueOnly?: boolean;
             untilDone?: boolean;
+            /** Reasoning effort the composer picked; the backend drops it when the harness or model does not take it. */
+            effort?: QaapAgentEffortLevel;
         } = {},
         submitAt = Date.now(),
     ): Promise<void> {
@@ -347,6 +377,7 @@ export class MobileProjectsTranscriptSubmitUi {
                 agentModel: options.agentModel ?? this.resolveTranscriptSubmitAgentModel(pendingAgent, summary),
                 latencyMarks: this.host.conversations?.getSubmitLatencyMarks(summary.id),
                 ...(options.untilDone ? { untilDone: true } : {}),
+                ...(options.effort ? { effort: options.effort } : {}),
             });
             this.host.conversations?.recordSubmitLatencyMark(created.id, 'ui_submit_clicked', submitAt);
             if (optimisticAt !== undefined) {
@@ -389,7 +420,7 @@ export class MobileProjectsTranscriptSubmitUi {
         ) ?? expandedContent;
         const outbound = applyBackendInteractionModeToPrompt(withAttachments, options.modeId);
         const pendingUserMessage = {
-            id: `pending-user-${Date.now()}`,
+            id: options.clientMessageId ?? `pending-user-${Date.now()}`,
             role: 'user' as const,
             content: outbound,
             createdAt: Date.now(),
@@ -461,19 +492,19 @@ export class MobileProjectsTranscriptSubmitUi {
         try {
             const agentModel = options.agentModel ?? this.resolveTranscriptSubmitAgentModel(agent, summary);
             this.host.conversations?.recordSubmitLatencyMark(summary.id, 'post_message_start');
+            const followUp = this.resolveFollowUpApproval(summary, options);
             const updated = options.untilDone
                 ? await this.startGoalLoopFromComposer(summary.id, base, content, outbound)
                 : await postConversationMessage(summary.id, outbound, {
                 agent,
                 agentModel,
                 clientMessageId: pendingUserMessage.id,
-                autoApprove: options.autoApprove,
+                queueOnly: options.queueOnly,
+                autoApprove: followUp.autoApprove,
                 interactionModeId: options.modeId,
-                approvalPolicyId: options.approvalPolicyId
-                    ?? reconcileAgentApprovalPolicyId(this.host.transcriptComposerApprovalPolicyId, summary.cwd),
+                approvalPolicyId: followUp.approvalPolicyId,
                 toolApprovalRules: reconcileAgentToolApprovalRules(
-                    (options.approvalPolicyId as QaapAgentApprovalPolicyId | undefined)
-                    ?? reconcileAgentApprovalPolicyId(this.host.transcriptComposerApprovalPolicyId, summary.cwd),
+                    followUp.approvalPolicyId as QaapAgentApprovalPolicyId,
                     summary.cwd,
                     this.host.transcriptComposerToolApprovalRules,
                 ),

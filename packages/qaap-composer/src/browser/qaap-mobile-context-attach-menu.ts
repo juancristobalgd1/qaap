@@ -33,6 +33,7 @@ import {
 import { resolveComposerProjectFileAttachment } from '../common/qaap-mobile-composer-project-file-attach';
 import { QAAP_EDITOR_CONTEXT_VARIABLE_NAME } from '../common/qaap-composer-editor-context-bridge-core';
 import { wireStickyComposerPopoverPosition } from '@theia/qaap-transcript/lib/browser/qaap-sticky-composer-popover';
+import { getComposerImprovePromptAction } from './qaap-composer-improve-prompt-action';
 
 const QUERY_CONTEXT = { type: 'context-variable-picker' };
 
@@ -56,8 +57,6 @@ type MobileContextAttachMenuSelection =
     | { kind: 'skill'; skillName: string }
     | { kind: 'variable'; variable: AIContextVariable };
 
-type MobileDeviceUploadKind = 'device-files' | 'device-images';
-
 let activeMenu: HTMLElement | undefined;
 let activeAnchor: HTMLElement | undefined;
 let activeDismiss: (() => void) | undefined;
@@ -79,6 +78,7 @@ function createAttachMenuItem(options: {
     hint?: string;
     submenu?: boolean;
     compact?: boolean;
+    disabled?: boolean;
     onSelect: () => void;
 }): HTMLButtonElement {
     const item = document.createElement('button');
@@ -88,6 +88,11 @@ function createAttachMenuItem(options: {
         item.classList.add('theia-mod-compact');
     }
     item.setAttribute('role', 'menuitem');
+    if (options.disabled) {
+        item.disabled = true;
+        item.setAttribute('aria-disabled', 'true');
+        item.classList.add('theia-mod-disabled');
+    }
 
     const icon = document.createElement('span');
     icon.className = options.iconClasses;
@@ -181,96 +186,6 @@ function createAttachMenuBackButton(label: string, onBack: () => void): HTMLButt
     return item;
 }
 
-function showDeviceUploadKindMenu(anchor: HTMLElement): Promise<MobileDeviceUploadKind | undefined> {
-    return new Promise(resolve => {
-        const menu = document.createElement('div');
-        menu.className = 'theia-mobile-projects-sticky-composer-attach-menu theia-mod-open theia-mod-device-upload-kind';
-        menu.setAttribute('role', 'menu');
-        menu.tabIndex = -1;
-
-        const finish = (kind: MobileDeviceUploadKind | undefined): void => {
-            dismissMobileContextAttachMenu();
-            resolve(kind);
-        };
-
-        menu.append(createAttachMenuItem({
-            iconClasses: 'codicon codicon-file',
-            label: nls.localize(
-                'qaap/mobileProjects/stickyComposerAttachDeviceFileShort',
-                'File',
-            ),
-            hint: nls.localize(
-                'qaap/mobileProjects/stickyComposerAttachDeviceFileHint',
-                'Upload a file from this phone or tablet',
-            ),
-            onSelect: () => finish('device-files'),
-        }));
-        menu.append(createAttachMenuItem({
-            iconClasses: 'codicon codicon-file-media',
-            label: nls.localize(
-                'qaap/mobileProjects/stickyComposerAttachDeviceImageShort',
-                'Photo or image',
-            ),
-            hint: nls.localize(
-                'qaap/mobileProjects/stickyComposerAttachDeviceImageHint',
-                'Attach a photo or screenshot from this device',
-            ),
-            onSelect: () => finish('device-images'),
-        }));
-
-        document.body.appendChild(menu);
-        activeMenu = menu;
-        activeAnchor = anchor;
-        anchor.setAttribute('aria-expanded', 'true');
-        anchor.classList.add('theia-mod-active');
-
-        const onPointerDown = (event: PointerEvent): void => {
-            const target = event.target as Node | null;
-            if (target && (menu.contains(target) || anchor.contains(target))) {
-                return;
-            }
-            finish(undefined);
-        };
-        const onKeyDown = (event: KeyboardEvent): void => {
-            if (event.key === 'Escape') {
-                event.preventDefault();
-                finish(undefined);
-                anchor.focus();
-            }
-        };
-        let stopPositioning = (): void => undefined;
-
-        const dismiss = (): void => {
-            document.removeEventListener('pointerdown', onPointerDown, true);
-            document.removeEventListener('keydown', onKeyDown, true);
-            stopPositioning();
-            menu.remove();
-            if (activeMenu === menu) {
-                activeMenu = undefined;
-            }
-            if (activeDismiss === dismiss) {
-                activeDismiss = undefined;
-            }
-            if (activeAnchor === anchor) {
-                anchor.setAttribute('aria-expanded', 'false');
-                anchor.classList.remove('theia-mod-active');
-                activeAnchor = undefined;
-            }
-        };
-
-        activeDismiss = dismiss;
-        stopPositioning = wireStickyComposerPopoverPosition(menu, anchor, {
-            minimumWidth: 200,
-            onAnchorUnavailable: () => finish(undefined),
-        });
-        document.addEventListener('pointerdown', onPointerDown, true);
-        document.addEventListener('keydown', onKeyDown, true);
-        window.requestAnimationFrame(() => {
-            menu.focus();
-        });
-    });
-}
-
 function showContextAttachMenu(
     anchor: HTMLElement,
     variables: readonly AIContextVariable[],
@@ -280,7 +195,8 @@ function showContextAttachMenu(
     mcpOptions?: MobileMcpAttachOptions,
     includeProjectFile = false,
 ): Promise<MobileContextAttachMenuSelection | undefined> {
-    if (!includeDeviceAttach && !variables.length && !includeSkillsPicker && !mcpOptions && !includeProjectFile) {
+    const improve = getComposerImprovePromptAction(anchor);
+    if (!includeDeviceAttach && !variables.length && !includeSkillsPicker && !mcpOptions && !includeProjectFile && !improve) {
         return Promise.resolve(undefined);
     }
     if (activeAnchor === anchor && activeMenu) {
@@ -306,12 +222,41 @@ function showContextAttachMenu(
 
         let showingSkills = false;
         let showingMcp = false;
+        let improveItem: HTMLButtonElement | undefined;
+        // Live state of the improve item: an empty prompt disables it, typing enables it again.
+        const syncImproveItem = (): void => {
+            if (!improveItem || !improve) {
+                return;
+            }
+            const enabled = improve.hasText();
+            improveItem.disabled = !enabled;
+            improveItem.classList.toggle('theia-mod-disabled', !enabled);
+            improveItem.setAttribute('aria-disabled', String(!enabled));
+        };
+        improve?.input.addEventListener('input', syncImproveItem);
+        const detachImprove = (): void => {
+            improve?.input.removeEventListener('input', syncImproveItem);
+        };
 
         const renderMainView = (): void => {
             showingSkills = false;
             showingMcp = false;
             menu.classList.remove('theia-mod-skills-view', 'theia-mod-mcp-view');
             menuBody.replaceChildren();
+
+            if (improve) {
+                improveItem = createAttachMenuItem({
+                    iconClasses: 'codicon codicon-wand',
+                    label: nls.localize('qaap/composer/improvePrompt', 'Improve prompt'),
+                    hint: nls.localize('qaap/composer/improvePromptHint', 'Rewrite your prompt to be clearer'),
+                    disabled: !improve.hasText(),
+                    onSelect: () => {
+                        finish(undefined);
+                        improve.run();
+                    },
+                });
+                menuBody.append(improveItem, createAttachMenuSeparator());
+            }
 
             if (includeDeviceAttach) {
                 menuBody.append(createAttachMenuItem({
@@ -492,6 +437,7 @@ function showContextAttachMenu(
         const dismiss = (): void => {
             document.removeEventListener('pointerdown', onPointerDown, true);
             document.removeEventListener('keydown', onKeyDown, true);
+            detachImprove();
             stopPositioning();
             menu.remove();
             if (activeMenu === menu) {
@@ -647,11 +593,8 @@ export async function pickMobileContextVariable(
         return [];
     }
     if (selected.kind === 'device-upload') {
-        const uploadKind = await showDeviceUploadKindMenu(anchor);
-        if (!uploadKind) {
-            return [];
-        }
-        return resolveDeviceAttachSelection({ kind: uploadKind }, attachServices!, handlers);
+        // Straight to the system picker: any file, images included; each file is routed by its type.
+        return resolveDeviceAttachSelection({ kind: 'device-files' }, attachServices!, handlers);
     }
     if (selected.kind === 'device-files' || selected.kind === 'device-images') {
         return resolveDeviceAttachSelection(selected, attachServices!, handlers);

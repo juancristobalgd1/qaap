@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { discoveredFallbackModels } from './qaap-agent-model-fallback-candidates';
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
 import { QaapPlanLimit } from '@theia/qaap-adapters/lib/common/qaap-plan-limit';
 import { detectAgentFailureKind } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
@@ -126,7 +127,7 @@ export class QaapStandaloneTaskModelFallback {
             return false;
         }
         const currentModel = resolveTaskAgentModel(task);
-        const nextModel = resolveNextFallbackAgentModel(agentId, currentModel, triedModelKeys);
+        const nextModel = resolveNextFallbackAgentModel(agentId, currentModel, triedModelKeys, discoveredFallbackModels(agentId, origin.ownerLogin));
         if (!nextModel) {
             return false;
         }

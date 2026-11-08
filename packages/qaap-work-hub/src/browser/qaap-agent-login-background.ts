@@ -16,8 +16,10 @@ import { buildAgentLoginShellCommand } from '@theia/qaap-shared-core/lib/common/
 import { QAAP_AGENT_TASK_API_PATH } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import {
     resolveAgentConnectionFlow,
+    type QaapAgentConnectionFlow,
     type QaapAgentLoginInputStep,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-tui-command';
+import { QAAP_PI_LOGIN_PROVIDERS } from '@theia/qaap-shared-core/lib/common/qaap-pi-login-providers';
 import {
     QAAP_DISABLED_HARNESSES_PREF,
     isQaapHarnessEnabled,
@@ -100,6 +102,21 @@ function localizeInstallBlockedMessage(agentLabel: string, status: AgentLoginHar
  * paste-code field, and never waits forever: a watchdog turns silence or an exit into the CLI's
  * last output plus Retry.
  */
+/** Command run in the hidden terminal, and the keystrokes that drive it (TUI logins). */
+interface AgentLoginHiddenCommand {
+    readonly command: string;
+    readonly input?: readonly QaapAgentLoginInputStep[];
+    readonly env?: Readonly<Record<string, string>>;
+}
+
+function resolveHiddenLogin(connectionFlow: QaapAgentConnectionFlow): AgentLoginHiddenCommand | undefined {
+    return connectionFlow.kind === 'cli-login'
+        ? { command: connectionFlow.command }
+        : connectionFlow.kind === 'tui-login'
+            ? { command: connectionFlow.command, input: connectionFlow.input, env: connectionFlow.env }
+            : undefined;
+}
+
 export async function openAgentLoginDialogInBackground(
     ctx: any,
     project: MobileProjectEntry | undefined,
@@ -108,14 +125,9 @@ export async function openAgentLoginDialogInBackground(
     onConnected?: () => boolean | void | Promise<boolean | void>,
 ): Promise<void> {
     const agentLabel = resolveAgentDisplayLabel(agentId);
-    const connectionFlow = resolveAgentConnectionFlow(agentId);
-    /** Command run in the hidden terminal, and the keystrokes that drive it (TUI logins). */
-    const hiddenLogin: { readonly command: string; readonly input?: readonly QaapAgentLoginInputStep[] } | undefined =
-        connectionFlow.kind === 'cli-login'
-            ? { command: connectionFlow.command }
-            : connectionFlow.kind === 'tui-login'
-                ? { command: connectionFlow.command, input: connectionFlow.input }
-                : undefined;
+    // Pi's provider can be switched in the dialog: the flow and its keystrokes follow the choice.
+    let connectionFlow = resolveAgentConnectionFlow(agentId);
+    let hiddenLogin = resolveHiddenLogin(connectionFlow);
 
     let staging: HTMLElement | undefined;
     let surface: any;
@@ -274,6 +286,7 @@ export async function openAgentLoginDialogInBackground(
                     driverSurface.terminal.sendText(text);
                 }
             },
+            onRestart: now => flow.restartWaitingDeadline(now),
         });
         inputDriver = driver;
         inputDriverHandle = window.setInterval(() => {
@@ -363,6 +376,7 @@ export async function openAgentLoginDialogInBackground(
             surface.terminal.sendText(`${buildAgentLoginShellCommand(command, {
                 cliBinDirectory: status?.cliBinDirectory,
                 platform: runtimePlatform(),
+                env: hiddenLogin?.env,
             })}\r`);
             if (input?.length) {
                 startInputDriver(input, currentAttempt);
@@ -466,10 +480,35 @@ export async function openAgentLoginDialogInBackground(
         }
     };
 
+    /** Pi: picking another account provider cancels the running sign-in and starts `/login <id>` again. */
+    const selectLoginProvider = (providerId: string): void => {
+        const next = resolveAgentConnectionFlow(agentId, { provider: providerId });
+        if (closed || next.kind !== 'tui-login') {
+            return;
+        }
+        connectionFlow = next;
+        hiddenLogin = resolveHiddenLogin(next);
+        void startCliLogin(next.command, next.input);
+    };
+
+    /** Manual route: the visible terminal's command (the Pi fallback is the same for every provider). */
+    const terminalCommand: string | undefined = connectionFlow.kind === 'tui-login'
+        ? connectionFlow.fallbackCommand
+        : connectionFlow.kind === 'tenant-terminal'
+            ? connectionFlow.command
+            : undefined;
+
     const dialog = createQaapAgentLoginDialog({
         agentId,
         agentLabel,
         onClose: close,
+        ...(connectionFlow.kind === 'tui-login' ? {
+            loginProviders: {
+                options: QAAP_PI_LOGIN_PROVIDERS.map(provider => ({ id: provider.id, label: provider.name })),
+                selectedId: connectionFlow.provider,
+                onSelect: selectLoginProvider,
+            },
+        } : {}),
         onSubmitCode: code => {
             if (!surface || surface.terminal.isDisposed) {
                 return;
@@ -483,9 +522,9 @@ export async function openAgentLoginDialogInBackground(
             }
         },
         onInstall: () => void install(),
-        onOpenTerminal: (connectionFlow.kind === 'tenant-terminal' || connectionFlow.kind === 'tui-login')
+        onOpenTerminal: terminalCommand !== undefined
             && project && typeof ctx.transcriptSurfacesUi?.launchAgentTuiInTranscriptTerminal === 'function'
-            ? () => void openVisibleTerminal(connectionFlow.kind === 'tui-login' ? connectionFlow.fallbackCommand : connectionFlow.command)
+            ? () => void openVisibleTerminal(terminalCommand)
             : undefined,
         ...(connectionFlow.kind === 'tui-login' ? {
             openTerminalHint: localizeAgentTenantTerminalLoginMessage(agentLabel, connectionFlow.fallbackCommand, connectionFlow.followUp),

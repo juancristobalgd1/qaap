@@ -11,6 +11,7 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { canonicalModelStatsKey, recordModelTurnDuration } from '@theia/qaap-shared-core/lib/common/qaap-model-latency-stats';
 import { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
+import { QaapCompletionSound } from '@theia/qaap-shared-core/lib/browser/qaap-completion-sound';
 import { QaapTurnSettleNotifier, QAAP_NAVIGATE_TO_CONVERSATION_EVENT } from '@theia/qaap-shared-core/lib/browser/qaap-turn-settle-notifier';
 
 /**
@@ -25,6 +26,9 @@ export class QaapTurnSettleNotifyContribution implements FrontendApplicationCont
 
     @inject(MobileProjectsConversations)
     protected readonly conversations: MobileProjectsConversations;
+
+    @inject(QaapCompletionSound)
+    protected readonly completionSound: QaapCompletionSound;
 
     protected readonly notifier = new QaapTurnSettleNotifier();
     protected readonly priorStatus = new Map<string, QaapAgentConversationSummaryDTO['status']>();
@@ -92,6 +96,9 @@ export class QaapTurnSettleNotifyContribution implements FrontendApplicationCont
         // turn cannot be distinguished from a normal completion at this layer — it is reported
         // as 'completed' rather than over-engineering a fetch of the full document just for this.
         const outcome = isFailedRunSummary(latest) ? 'failed' : 'completed';
+        // Work Hub turns run on the backend, so the IDE chat's `qaap-agent-completed` event never
+        // fires for them: chime here (the sound honours the Completion Sound setting itself).
+        this.completionSound.play('completed');
         // Route activation to the Work Hub panel via a window event: this summary-layer
         // contribution has no reference to the panel/navigation UI, so a direct callback isn't
         // available. The panel listens for `QAAP_NAVIGATE_TO_CONVERSATION_EVENT` and opens the

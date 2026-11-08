@@ -147,6 +147,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     acl \
     util-linux \
     ripgrep \
+    # Pi (pi-coding-agent) finds `fd` only as `fd` or `fdfind` on PATH; otherwise it downloads fd from GitHub on first start.
+    fd-find \
     # Headless Chromium for server-side visual evidence (QaapHeadlessVisualCaptureService).
     chromium \
     fonts-liberation \

@@ -5,6 +5,7 @@
 
 import type { QaapAgentStreamAccumulator } from './qaap-cli-transcript-stream';
 import type { QaapAgentContextUsage } from './qaap-agent-context-usage';
+import type { QaapUsageEvent } from './qaap-usage-protocol';
 import type { QaapAgentMessageSegment } from './qaap-qaiq-stream';
 import { normalizeQaiqToolName } from './qaap-qaiq-stream';
 import { segmentsToTraceEvents, type QaapTranscriptTraceEventDTO } from './qaap-transcript-trace-model';
@@ -53,6 +54,11 @@ interface PiJsonAssistantMessageEvent {
 
 interface PiJsonEvent {
     readonly type?: string;
+    readonly attempt?: number;
+    readonly maxAttempts?: number;
+    readonly delayMs?: number;
+    readonly errorMessage?: string;
+    readonly success?: boolean;
     readonly usage?: PiJsonUsage;
     readonly assistantMessageEvent?: PiJsonAssistantMessageEvent;
     readonly message?: PiJsonMessage;
@@ -63,6 +69,19 @@ interface PiJsonEvent {
     readonly result?: unknown;
     readonly isError?: boolean;
 }
+
+/**
+ * Pi is retrying the provider after a retryable error (rate limit, saturated free pool). Set between
+ * `auto_retry_start` and `auto_retry_end`, so the transcript can say the model is busy instead of idle.
+ */
+export interface QaapProviderRetryStatus {
+    readonly attempt: number;
+    readonly maxAttempts: number;
+    readonly delayMs: number;
+}
+
+/** Identity of the usage event: the task, turn and agent the Pi run belongs to. */
+export type QaapPiUsageContext = Pick<QaapUsageEvent, 'taskId' | 'turnId' | 'agentId' | 'model' | 'provider'>;
 
 /** Token and cost totals for one turn, read from its last cumulative usage value. */
 interface PiTurnUsage {
@@ -92,6 +111,7 @@ export class QaapPiStreamAccumulator implements QaapAgentStreamAccumulator {
     protected sessionHeaderSeen = false;
     protected activeTurn: PiTurnUsage | undefined;
     protected readonly completedTurns: PiTurnUsage[] = [];
+    protected providerRetry: QaapProviderRetryStatus | undefined;
 
     push(chunk: string): readonly QaapAgentMessageSegment[] {
         if (!chunk) {
@@ -113,6 +133,11 @@ export class QaapPiStreamAccumulator implements QaapAgentStreamAccumulator {
     /** True once at least one JSON record was consumed. */
     consumedJsonEvents(): boolean {
         return this.jsonEvents > 0;
+    }
+
+    /** The provider retry Pi is waiting out now, or undefined when no automatic retry is in progress. */
+    getProviderRetry(): QaapProviderRetryStatus | undefined {
+        return this.providerRetry;
     }
 
     /** True once the session header record was seen. */
@@ -165,6 +190,30 @@ export class QaapPiStreamAccumulator implements QaapAgentStreamAccumulator {
         return costs.length > 0 ? costs.reduce((sum, cost) => sum + cost, 0) : undefined;
     }
 
+    /**
+     * The run's Pi-reported cost as a usage event (`costSource: 'reported'`, the same channel the Claude
+     * parser uses). Undefined when Pi reported no cost, so no price is ever derived here.
+     */
+    getUsageEvent(context: QaapPiUsageContext): QaapUsageEvent | undefined {
+        const costUsd = this.getReportedCostUsd();
+        if (costUsd === undefined) {
+            return undefined;
+        }
+        const turns = this.allTurns();
+        const sum = (pick: (turn: PiTurnUsage) => number): number => turns.reduce((total, turn) => total + pick(turn), 0);
+        return {
+            ...context,
+            inputTokens: sum(turn => turn.inputTokens),
+            outputTokens: sum(turn => turn.outputTokens),
+            cacheReadTokens: sum(turn => turn.cacheReadTokens),
+            cacheWriteTokens: sum(turn => turn.cacheWriteTokens),
+            costUsd,
+            costSource: 'reported',
+            billing: 'unknown',
+            cumulative: true,
+        };
+    }
+
     protected allTurns(): PiTurnUsage[] {
         return this.activeTurn ? [...this.completedTurns, this.activeTurn] : [...this.completedTurns];
     }
@@ -189,6 +238,16 @@ export class QaapPiStreamAccumulator implements QaapAgentStreamAccumulator {
                 return;
             case 'turn_start':
                 this.finishActiveTurn();
+                return;
+            case 'auto_retry_start':
+                this.providerRetry = {
+                    attempt: event.attempt ?? 1,
+                    maxAttempts: event.maxAttempts ?? event.attempt ?? 1,
+                    delayMs: event.delayMs ?? 0,
+                };
+                return;
+            case 'auto_retry_end':
+                this.providerRetry = undefined;
                 return;
             case 'turn_end':
                 this.consumeUsage(event.message?.usage);
@@ -289,9 +348,7 @@ export class QaapPiStreamAccumulator implements QaapAgentStreamAccumulator {
                 this.upsertTool(block.id, normalizeQaiqToolName(block.name ?? 'tool'), stringifyArgs(block.arguments));
             }
         });
-        if (message.stopReason === 'error' && message.errorMessage?.trim()) {
-            this.appendText(`\n\n**Error:** ${message.errorMessage.trim()}`);
-        }
+        // A provider error is not transcript text: the turn's failure card shows it, classified, from the log.
         this.consumeUsage(message.usage);
     }
 

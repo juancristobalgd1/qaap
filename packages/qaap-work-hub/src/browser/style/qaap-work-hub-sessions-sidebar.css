@@ -523,7 +523,7 @@ body[data-theia-theme-mode="dark"] .theia-mobile-work-hub-sessions-sidebar {
   flex: 0 1 auto;
   min-width: 0;
   margin-right: 0;
-  padding-left: 2px;
+  padding-left: 8px;
   font-size: 15px;
   font-weight: 600;
   letter-spacing: -0.01em;
@@ -561,13 +561,17 @@ body[data-theia-theme-mode="dark"] .theia-mobile-work-hub-sessions-sidebar {
   box-sizing: border-box;
   display: flex;
   align-items: center;
-  gap: 10px;
-  flex: 1 1 auto;
-  width: auto;
-  max-width: 100%;
-  min-width: 0;
+  justify-content: center;
+  gap: 0;
+  /* Avatar only, pinned left, in the same 44x44 box as the usage and settings buttons on its right. */
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  max-width: 44px;
+  min-width: 44px;
   min-height: 44px;
-  padding: 8px 6px;
+  margin-right: auto;
+  padding: 0;
   border: none;
   border-radius: 8px;
   overflow: hidden;
@@ -587,6 +591,7 @@ body[data-theia-theme-mode="dark"] .theia-mobile-work-hub-sessions-sidebar {
   background: color-mix(in srgb, var(--theia-foreground) 6%, transparent);
 }
 
+.theia-mobile-work-hub-sessions-sidebar-usage-button,
 .theia-mobile-work-hub-sessions-sidebar-settings-button {
   display: inline-flex;
   flex: 0 0 44px;
@@ -611,6 +616,8 @@ body[data-theia-theme-mode="dark"] .theia-mobile-work-hub-sessions-sidebar {
   display: none;
 }
 
+.theia-mobile-work-hub-sessions-sidebar-usage-button:hover,
+.theia-mobile-work-hub-sessions-sidebar-usage-button:focus-visible,
 .theia-mobile-work-hub-sessions-sidebar-settings-button:hover,
 .theia-mobile-work-hub-sessions-sidebar-settings-button:focus-visible {
   background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
@@ -625,13 +632,13 @@ body[data-theia-theme-mode="dark"] .theia-mobile-work-hub-sessions-sidebar {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 28px;
-  width: 28px;
-  height: 28px;
-  min-width: 28px;
-  min-height: 28px;
-  max-width: 28px;
-  max-height: 28px;
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
+  max-width: 24px;
+  max-height: 24px;
   border-radius: 50%;
   overflow: hidden;
   flex-shrink: 0;
@@ -657,10 +664,10 @@ body[data-theia-theme-mode="dark"] .theia-mobile-work-hub-sessions-sidebar {
 
 .theia-mobile-work-hub-sessions-sidebar-foot .theia-workbench-account-avatar .theia-workbench-account-fallback-icon {
   display: inline-block;
-  width: 16px;
-  height: 16px;
-  font-size: 16px;
-  line-height: 16px;
+  width: 14px;
+  height: 14px;
+  font-size: 14px;
+  line-height: 14px;
   color: inherit;
   opacity: 1;
 }
@@ -672,6 +679,19 @@ body[data-theia-theme-mode="dark"] .theia-mobile-work-hub-sessions-sidebar {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
+  white-space: nowrap;
+}
+
+/* Avatar only: the name stays in the accessibility tree (visually hidden), not on screen. */
+.theia-mobile-work-hub-sessions-sidebar-foot .theia-mobile-work-hub-sessions-sidebar-account-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
   white-space: nowrap;
 }
 
@@ -689,7 +709,7 @@ body[data-theia-theme-mode="dark"] .theia-mobile-work-hub-sessions-sidebar {
   justify-content: center;
   width: 100%;
   height: 100%;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
   line-height: 1;
   color: inherit;
@@ -1337,7 +1357,8 @@ body[data-theia-theme-mode="dark"] .theia-mobile-work-hub-sessions-sidebar {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 0 -6px 0 -8px;
+  /* Label starts on the 16px column shared by the brand, nav icons and project rows. */
+  margin: 0 -6px 0 0;
   padding: 12px 16px 8px;
   background: var(--qaap-sessions-sidebar-background);
 }
@@ -2080,31 +2101,16 @@ button.theia-mod-sessions-sidebar-accordion .theia-mobile-projects-conversation-
   }
 }
 
-/* Touch and narrow screens: project, pinned and session names may wrap to two lines instead of
-   one ellipsised line. Flex parents keep min-width: 0 so siblings do not squeeze them further.
-   Desktop keeps the single-line ellipsis; the full name is also the element's title tooltip. */
+/* Touch and narrow screens: project and pinned names may wrap to two lines instead of one
+   ellipsised line. Task titles stay on one line everywhere (desktop rules), so they are not
+   listed here. Flex parents keep min-width: 0 so siblings do not squeeze them further.
+   The full name is also the element's title tooltip. */
 @media (max-width: 767px), (pointer: coarse), (hover: none) {
   .theia-mobile-work-hub-sessions-sidebar-project-name,
   .theia-mobile-work-hub-sessions-sidebar-pinned-project-name {
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
-    min-width: 0;
-    overflow: hidden;
-    overflow-wrap: anywhere;
-    white-space: normal;
-  }
-
-  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-title {
-    white-space: normal;
-    overflow-wrap: anywhere;
-  }
-
-  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-title-text {
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    width: 100%;
     min-width: 0;
     overflow: hidden;
     overflow-wrap: anywhere;
@@ -2611,9 +2617,69 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
 
 /* ── Launch polish (O2/E1/F4/E2) ───────────────────────────────────────────── */
 
-/* Empty states use the design-system `q-empty` block; only the sidebar spacing lives here. */
-.theia-mobile-work-hub-sessions-sidebar-empty-state {
-  margin: var(--q-space-4, 16px) var(--qaap-sessions-row-gutter, 8px);
+/*
+ * Sidebar empty states (no projects, no matches, history retry): a quiet IDE-style note on the
+ * 16px column, not the design-system hero block. Muted one-line title, small hint, and the action
+ * as a text row with a leading "+" (same weight as the New task / Pull requests rows).
+ * `.q-empty` plus the repeated class outranks the theme-scoped `q-empty` rules in qaap-conservador-dna.css.
+ */
+.q-empty.theia-mobile-work-hub-sessions-sidebar-empty-state.theia-mobile-work-hub-sessions-sidebar-empty-state {
+  align-items: flex-start;
+  gap: 2px;
+  margin: 2px 0 0;
+  padding: 6px 16px;
+  text-align: left;
+}
+
+.q-empty.theia-mobile-work-hub-sessions-sidebar-empty-state.theia-mobile-work-hub-sessions-sidebar-empty-state .q-empty-icon,
+.q-empty.theia-mobile-work-hub-sessions-sidebar-empty-state.theia-mobile-work-hub-sessions-sidebar-empty-state .q-empty-hint:empty {
+  display: none;
+}
+
+.q-empty.theia-mobile-work-hub-sessions-sidebar-empty-state.theia-mobile-work-hub-sessions-sidebar-empty-state .q-empty-title {
+  color: var(--theia-descriptionForeground);
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+.q-empty.theia-mobile-work-hub-sessions-sidebar-empty-state.theia-mobile-work-hub-sessions-sidebar-empty-state .q-empty-hint {
+  max-width: none;
+  color: color-mix(in srgb, var(--theia-descriptionForeground) 80%, transparent);
+  font-size: 12px;
+}
+
+.q-empty.theia-mobile-work-hub-sessions-sidebar-empty-state.theia-mobile-work-hub-sessions-sidebar-empty-state .q-empty-action {
+  gap: 6px;
+  min-height: 28px;
+  margin: 2px 0 0 -6px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--theia-foreground);
+  font-size: 13px;
+  font-weight: 400;
+  cursor: pointer;
+  transition: background-color var(--qaap-duration-fast, 120ms) ease;
+}
+
+.q-empty.theia-mobile-work-hub-sessions-sidebar-empty-state.theia-mobile-work-hub-sessions-sidebar-empty-state .q-empty-action::before {
+  content: '+';
+  color: var(--theia-descriptionForeground);
+  font-size: 15px;
+  line-height: 1;
+}
+
+.q-empty.theia-mobile-work-hub-sessions-sidebar-empty-state.theia-mobile-work-hub-sessions-sidebar-empty-state .q-empty-action:hover,
+.q-empty.theia-mobile-work-hub-sessions-sidebar-empty-state.theia-mobile-work-hub-sessions-sidebar-empty-state .q-empty-action:focus-visible {
+  background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+}
+
+@media (pointer: coarse) {
+  .theia-mobile-work-hub-sessions-sidebar-empty-state.theia-mobile-work-hub-sessions-sidebar-empty-state .q-empty-action {
+    min-height: 44px;
+  }
 }
 
 /* First history load: placeholder rows under the Projects head instead of a blank list. */

@@ -264,6 +264,21 @@ describe('Connect terminal wrapper', () => {
         );
     });
 
+    it('exports the login-only environment before the command, in POSIX and PowerShell', () => {
+        expect(buildAgentLoginShellCommand('pi --no-session', { env: { PI_HYPERLINKS: '1' } })).to.equal(
+            'stty cols 500 rows 50 2>/dev/null; export PI_HYPERLINKS=\'1\'; pi --no-session; echo "QAAP_LOGIN_EXIT:$?"',
+        );
+        expect(buildAgentLoginShellCommand('pi --no-session', { platform: 'win32', env: { PI_HYPERLINKS: '1' } })).to.equal(
+            '$env:PI_HYPERLINKS = \'1\'; pi --no-session; echo "QAAP_LOGIN_EXIT:$LASTEXITCODE"',
+        );
+    });
+
+    it('sets no login environment for a harness without one', () => {
+        expect(buildAgentLoginShellCommand('grok login --device-auth')).to.equal(
+            'stty cols 500 rows 50 2>/dev/null; grok login --device-auth; echo "QAAP_LOGIN_EXIT:$?"',
+        );
+    });
+
     it('reads the exit code only from the real marker, never from the echoed command', () => {
         const echoed = 'grok login --device-auth; echo "QAAP_LOGIN_EXIT:$?"';
         expect(parseAgentLoginExitMarker(echoed)).to.equal(undefined);

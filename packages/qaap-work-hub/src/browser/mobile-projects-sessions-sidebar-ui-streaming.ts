@@ -115,7 +115,8 @@ export function createSessionsSidebarNoProjectsExtracted(ctx: MobileProjectsSess
     return createSessionsSidebarEmptyState({
         icon: 'codicon-repo',
         title: nls.localize('qaap/sessionsSidebar/noProjectsTitle', 'No projects yet'),
-        hint: nls.localize('qaap/sessionsSidebar/noProjectsHint', 'Add a GitHub repository to start delegating tasks to agents.'),
+        // The action already says what to do; a hint line would only repeat it.
+        hint: '',
         action: {
             label: nls.localize('qaap/mobileProjects/newRepository', 'Add repository'),
             onClick: () => {
