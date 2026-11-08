@@ -600,3 +600,32 @@
     color: var(--theia-descriptionForeground);
     white-space: nowrap;
 }
+
+/* The composer row never hides send: the model pill gives way first and ends in an ellipsis. */
+.theia-mobile-projects-sticky-composer-controls-left {
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+}
+
+.theia-mobile-projects-sticky-composer-controls-right,
+.theia-mobile-projects-sticky-composer-input-actions {
+    flex-shrink: 0;
+}
+
+.theia-mobile-projects-sticky-composer-agent {
+    min-width: 0;
+    flex: 0 1 auto;
+}
+
+.theia-mobile-projects-sticky-composer-agent .theia-mobile-projects-sticky-composer-agent-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.theia-mobile-projects-sticky-composer-agent .theia-mobile-projects-sticky-composer-agent-effort,
+.theia-mobile-projects-sticky-composer-agent .codicon-chevron-down {
+    flex: 0 0 auto;
+}

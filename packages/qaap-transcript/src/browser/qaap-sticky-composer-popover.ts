@@ -86,7 +86,8 @@ export function positionStickyComposerPopover(
     align: StickyComposerPopoverAlign = 'start',
     minimumWidth = 280,
 ): void {
-    const margin = 8;
+    // A popover may ask for a wider inset from the viewport edges through `data-viewport-inset`.
+    const margin = Number(popover.dataset.viewportInset) || 8;
     const gap = 6;
     const anchorRect = anchor.getBoundingClientRect();
     const viewport = getStickyComposerViewportBounds();

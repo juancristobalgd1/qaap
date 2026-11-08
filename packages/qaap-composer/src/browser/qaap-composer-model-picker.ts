@@ -317,7 +317,8 @@ function renderList(host: HTMLElement, props: QaapComposerModelPickerProps): HTM
         row.dataset.modelId = model.modelId;
         row.disabled = !model.available;
         row.classList.toggle('theia-mod-current', isCurrent);
-        row.title = model.available ? model.label : (model.unavailableReason ?? model.label);
+        // The row shows the name only; the full model id is the tooltip.
+        row.title = model.available ? model.modelId : (model.unavailableReason ?? model.modelId);
         row.addEventListener('click', ev => {
             ev.preventDefault();
             if (!model.available) {

@@ -124,8 +124,9 @@ export class MobileProjectsStickyComposerWorkspaceUi {
         return shouldUseStickyComposerPopover(anchor);
     }
 
-    protected resolveWorkspacePopoverAlign(anchor?: HTMLElement): StickyComposerPopoverAlign {
-        return isWorkHubHeaderProjectPopoverAnchor(anchor) ? 'center' : 'start';
+    /** Every workspace popover opens from its trigger's left edge, below it (or above when it does not fit). */
+    protected resolveWorkspacePopoverAlign(_anchor?: HTMLElement): StickyComposerPopoverAlign {
+        return 'start';
     }
 
     protected shouldToggleCloseComposerWorkspaceSheet(
@@ -208,6 +209,8 @@ export class MobileProjectsStickyComposerWorkspaceUi {
                 transcriptOverlay: options.transcriptOverlay,
                 modifierClasses,
             });
+            // The workspace popovers keep 16px from the viewport edges, as the picker does.
+            mounted.root.dataset.viewportInset = '16';
             document.body.append(mounted.root);
             this.host.stickyComposerWorkspaceSheet = mounted.root;
             this.workspaceSheetAnchor = options.anchor;

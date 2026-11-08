@@ -17,7 +17,7 @@ import { formatQaiqModelSelectionLabel } from '@theia/qaap-shared-core/lib/commo
 import { populateAgentToolbarButton } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { QaapAgentEffort } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
 import { resolveComposerEffortLevel } from '../common/qaap-composer-effort';
-import { humanizeModelSlug } from '../common/qaap-composer-model-label';
+import { formatQaiqModelIdShortLabel } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
 import { QAAP_MODEL_LABELS_CHANGED_EVENT } from './mobile-projects-sticky-composer-agents-ui';
 import { resolveComposerEnterDeliveryOverride } from '@theia/qaap-transcript-overlay/lib/browser/qaap-composer-delivery-mode';
 import {
@@ -187,7 +187,7 @@ export class MobileProjectsStickyComposerColumnUi {
                 agentId,
                 label: agentLabel,
                 agentModel: agentModel
-                    ? { ...agentModel, label: catalogLabel ?? humanizeModelSlug(agentModel.modelId) }
+                    ? { ...agentModel, label: catalogLabel ?? formatQaiqModelIdShortLabel(agentModel.modelId) }
                     : undefined,
                 connectionState: this.host.stickyComposerAgentsUi.isAgentDisconnected(agentId) ? 'disconnected' : undefined,
             });
