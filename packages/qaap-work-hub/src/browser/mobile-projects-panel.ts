@@ -2076,6 +2076,13 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return refreshOpenTranscriptConversationExtracted(this, options);
     }
 
+    protected syncOpenTranscriptApprovalPolicy(conversationId: string, approvalPolicyId: 'approve-for-me' | 'request-approval'): void {
+        const state = this.transcriptController.state;
+        if (state.transcriptOpenSummaryId === conversationId) {
+            state.transcriptComposerApprovalPolicyId = approvalPolicyId;
+        }
+    }
+
     protected isWatchingOpenTranscript(conversationId: string): boolean {
         return this.transcriptLiveUi.isWatchingOpenTranscript(conversationId);
     }

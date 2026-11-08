@@ -9,7 +9,7 @@ import { json } from 'body-parser';
 import { ContributionProvider } from '@theia/core/lib/common/contribution-provider';
 import { BackendApplicationContribution, FileUri } from '@theia/core/lib/node';
 import { WorkspaceServer } from '@theia/workspace/lib/common';
-import { spawn, type ChildProcess } from 'child_process';
+import { execFile, spawn, type ChildProcess } from 'child_process';
 import { randomBytes } from 'crypto';
 import { existsSync, readdirSync, realpathSync } from 'fs';
 import * as fs from 'fs/promises';
@@ -96,6 +96,7 @@ import {
     type QaapGithubWorkspaceJobContext,
 } from './qaap-github-workspace-jobs';
 import { qaapGitReadEnv } from './qaap-child-process-env';
+import { resolveLocalProjectWorkspacePath } from './qaap-local-project-path';
 import { QaapAsyncRoute } from './qaap-async-route';
 
 const GITHUB_AUTHORIZE_URL = 'https://github.com/login/oauth/authorize';
@@ -218,6 +219,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         app.get(`${QAAP_GITHUB_API_PATH}/repositories`, QaapAsyncRoute.wrap('qaap-github-oauth', (req, res) => this.handleGithubRepositories(req, res)));
         app.post(`${QAAP_GITHUB_API_PATH}/repositories`, QaapAsyncRoute.wrap('qaap-github-oauth', (req, res) => this.handleCreateGithubRepository(req, res)));
         app.post(`${QAAP_GITHUB_API_PATH}/repositories/open`, QaapAsyncRoute.wrap('qaap-github-oauth', (req, res) => this.handleCloneGithubRepository(req, res)));
+        app.post(`${QAAP_GITHUB_API_PATH}/local-projects`, QaapAsyncRoute.wrap('qaap-github-oauth', (req, res) => this.handleCreateLocalProject(req, res)));
         app.post(`${QAAP_GITHUB_API_PATH}/workspace-jobs`, (req, res) => this.handleStartWorkspaceJob(req, res));
         app.get(`${QAAP_GITHUB_API_PATH}/workspace-jobs`, (req, res) => this.handleListWorkspaceJobs(req, res));
         app.get(`${QAAP_GITHUB_API_PATH}/workspace-jobs/:id`, (req, res) => this.handleGetWorkspaceJob(req, res));
@@ -1172,6 +1174,48 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             }
             this.portRegistry.releasePreview(record.previewId, login);
         }
+    }
+
+    /**
+     * "New local project": a fresh folder under the caller's repos root, `git init`ed with an empty
+     * first commit so diffs, review and task worktrees have a HEAD. Never clones or touches GitHub.
+     */
+    protected async handleCreateLocalProject(req: Request, res: Response): Promise<void> {
+        const auth = this.auth.authenticate(req);
+        if (auth.kind === 'unauthorized') {
+            res.status(401).json({ error: 'Not signed in' });
+            return;
+        }
+        if (auth.kind === 'skip') {
+            res.status(503).json({ error: 'Sign-in required' });
+            return;
+        }
+        const body = (req.body ?? {}) as { name?: unknown };
+        const name = typeof body.name === 'string' ? body.name.trim() : '';
+        const target = resolveLocalProjectWorkspacePath(this.reposRoot, auth.userLogin, name);
+        if (!target) {
+            res.status(400).json({ error: 'Use letters, numbers, dashes, underscores, or dots for the project name.' });
+            return;
+        }
+        if (existsSync(target)) {
+            res.status(409).json({ error: `A local project named ${name} already exists.` });
+            return;
+        }
+        try {
+            await fs.mkdir(target, { recursive: true, mode: 0o700 });
+            await runLocalProjectGit(target, ['init', '-q']);
+            await runLocalProjectGit(target, [
+                '-c', 'user.name=Qaap', '-c', 'user.email=qaap@localhost',
+                'commit', '--allow-empty', '-q', '-m', 'Initial commit',
+            ]);
+        } catch (err) {
+            // The folder did not exist before this request, so removing it cannot touch user data.
+            await fs.rm(target, { recursive: true, force: true }).catch(() => undefined);
+            const detail = err instanceof Error ? err.message : String(err);
+            res.status(500).json({ error: `Could not create the local project: ${detail}` });
+            return;
+        }
+        res.json({ name, workspaceUri: FileUri.create(target).toString() });
     }
 
     protected async handleCreateGithubRepository(req: Request, res: Response): Promise<void> {
@@ -2246,4 +2290,17 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             `${QAAP_AUTH_SESSION_COOKIE}=; ${this.sessionCookieFlags()}; Max-Age=0`
         );
     }
+}
+
+/** Runs one git command in a freshly created project folder; rejects with git's own message. */
+function runLocalProjectGit(cwd: string, args: string[]): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+        execFile('git', args, { cwd, env: qaapGitReadEnv(), timeout: 30_000 }, (error, _stdout, stderr) => {
+            if (error) {
+                reject(new Error(stderr.trim() || error.message));
+                return;
+            }
+            resolve();
+        });
+    });
 }

@@ -26,6 +26,7 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { resolveStoredAgentModelForSubmit } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
 import { reportQaapClientError } from '@theia/qaap-shared-core/lib/common/qaap-client-error-report';
+import { buildAutoApprovePatch } from '../common/mobile-projects-auto-approve-patch';
 import { qaapStopAck, type QaapStopAckDetail, type QaapStopAckOutcome } from '@theia/qaap-shared-core/lib/browser/qaap-stop-ack';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import { isAgentsHubIdleConversationSummary } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
@@ -58,6 +59,8 @@ export interface MobileProjectsConversationActionsHost {
     ): Promise<ChatSession | undefined>;
     applyTaskStartedToProject(cwd: string, title: string, taskId: string): void;
     isWatchingOpenTranscript(conversationId: string): boolean;
+    /** Moves the composer's approval chip to match a conversation whose Auto-approve switch changed, when it is open. */
+    syncOpenTranscriptApprovalPolicy(conversationId: string, approvalPolicyId: 'approve-for-me' | 'request-approval'): void;
     transcriptLiveUi: MobileProjectsTranscriptLiveUi;
     resolveActiveTranscriptChatHost(): HTMLElement | undefined;
     cardMenuUi: import('./mobile-projects-card-menu-ui').MobileProjectsCardMenuUi;
@@ -237,9 +240,12 @@ export class MobileProjectsConversationActionsUi {
         this.host.cardMenuUi.closeCardMenu();
         this.host.transcriptAutoApproveBusy = true;
         try {
-            const full = await updateConversation(summary.id, { autoApprove });
+            // The switch and the approval policy are one setting: the conversation stores both, and the open chip follows.
+            const { autoApprove: patchAutoApprove, approvalPolicyId } = buildAutoApprovePatch(autoApprove);
+            const full = await updateConversation(summary.id, { autoApprove: patchAutoApprove, approvalPolicyId });
             const next = conversationToSummary(full);
             this.host.conversations?.recordSnapshot(next);
+            this.host.syncOpenTranscriptApprovalPolicy(summary.id, approvalPolicyId);
             this.host.renderList();
             MobileSnackbar.show(
                 autoApprove

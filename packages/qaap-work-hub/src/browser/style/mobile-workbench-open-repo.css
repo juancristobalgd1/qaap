@@ -882,13 +882,6 @@ body.theia-mobile-mod-landing.theia-mobile-mod-landing-hub-list .theia-mobile-pr
   border-bottom-color: color-mix(in srgb, var(--theia-foreground) 28%, transparent);
 }
 
-.qaap-compact-input-dialog-hint {
-  margin: 8px 0 0;
-  color: var(--theia-descriptionForeground);
-  font-size: 12px;
-  line-height: 1.4;
-}
-
 .qaap-compact-input-dialog.qaap-compact-input-dialog .dialogContent .error {
   min-height: 0;
   font-size: 12px;

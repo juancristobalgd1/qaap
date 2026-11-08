@@ -190,21 +190,13 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
     /**
      * Enter acts only on a result the user navigated to with the arrow keys (the focused one, which is
      * a native button activation). With nothing navigated to, Enter closes the picker and keeps the
-     * current selection. Escape closes it from the search box or any result.
+     * current selection. Escape is not handled here: the document-level listener below owns it, so a
+     * single Escape press runs once and stops before any other layer sees it.
      */
     const wireSearchKeyboard = (results: readonly HTMLElement[] = []): void => {
         chrome.searchInput.oninput = rerender;
         chrome.searchInput.onkeydown = event => {
-            if (event.key === 'Escape') {
-                event.preventDefault();
-                event.stopPropagation();
-                if (chrome.searchInput.value) {
-                    chrome.searchInput.value = '';
-                    rerender();
-                } else {
-                    chrome.onClose();
-                }
-            } else if (event.key === 'ArrowDown' && results.length > 0) {
+            if (event.key === 'ArrowDown' && results.length > 0) {
                 event.preventDefault();
                 results[0].focus();
             } else if (event.key === 'Enter') {
@@ -222,14 +214,34 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
                     } else if (event.key === 'ArrowUp') {
                         chrome.searchInput.focus();
                     }
-                } else if (event.key === 'Escape') {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    chrome.onClose();
                 }
             });
         });
     };
+    // Escape closes the picker wherever focus is inside it (the search field alone handled it before).
+    if (chrome.sheet.dataset.agentPickerEscapeWired !== 'true') {
+        chrome.sheet.dataset.agentPickerEscapeWired = 'true';
+        const onEscape = (event: KeyboardEvent): void => {
+            if (!chrome.sheet.isConnected) {
+                // Picker closed: stop listening and let the next render wire it again.
+                chrome.sheet.dataset.agentPickerEscapeWired = '';
+                document.removeEventListener('keydown', onEscape, true);
+                return;
+            }
+            if (event.key !== 'Escape') {
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            if (chrome.searchInput.value) {
+                chrome.searchInput.value = '';
+                rerender();
+            } else {
+                chrome.onClose();
+            }
+        };
+        document.addEventListener('keydown', onEscape, true);
+    }
     if (chrome.searchInput.dataset.initialFocusApplied !== 'true') {
         chrome.searchInput.dataset.initialFocusApplied = 'true';
         window.requestAnimationFrame(() => chrome.searchInput.focus({ preventScroll: true }));

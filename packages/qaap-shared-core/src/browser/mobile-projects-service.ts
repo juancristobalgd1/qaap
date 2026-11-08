@@ -36,7 +36,7 @@ import {
     MOBILE_PROJECTS_HIDDEN_IDS_BASE,
     MOBILE_PROJECTS_PINNED_IDS_BASE,
 } from './mobile-projects-user-storage';
-import { cloneGithubProjectByRepositoryExtracted, cloneGithubProjectExtracted, createGithubProjectExtracted, finishGithubRepositoryImportExtracted, watchGithubRepositoryImportInBackgroundExtracted, formatRepositoryLabelExtracted, importGithubProjectExtracted, isPinnedExtracted, openGithubProjectExtracted, openInCurrentWindowAsyncExtracted, openProjectWithoutReloadExtracted, openWorkspaceUriExtracted, readCustomProjectsExtracted, readDisplayNamesExtracted, readHiddenProjectIdsExtracted, readPinnedProjectIdsExtracted, registerGithubWorkspaceProjectExtracted, storedToEntryExtracted, togglePinExtracted, uniqueCopyNameExtracted, workspacePathFromUriExtracted, writeCustomProjectsExtracted, writeDisplayNamesExtracted, writeHiddenProjectIdsExtracted, writePinnedProjectIdsExtracted } from './mobile-projects-service-render';
+import { cloneGithubProjectByRepositoryExtracted, cloneGithubProjectExtracted, createGithubProjectExtracted, createLocalProjectExtracted, registerLocalWorkspaceProjectExtracted, finishGithubRepositoryImportExtracted, watchGithubRepositoryImportInBackgroundExtracted, formatRepositoryLabelExtracted, importGithubProjectExtracted, isPinnedExtracted, openGithubProjectExtracted, openInCurrentWindowAsyncExtracted, openProjectWithoutReloadExtracted, openWorkspaceUriExtracted, readCustomProjectsExtracted, readDisplayNamesExtracted, readHiddenProjectIdsExtracted, readPinnedProjectIdsExtracted, registerGithubWorkspaceProjectExtracted, storedToEntryExtracted, togglePinExtracted, uniqueCopyNameExtracted, workspacePathFromUriExtracted, writeCustomProjectsExtracted, writeDisplayNamesExtracted, writeHiddenProjectIdsExtracted, writePinnedProjectIdsExtracted } from './mobile-projects-service-render';
 import { cachedGithubSessionToEntryExtracted, cachedSessionToEntryExtracted, cachedWorkspaceSessionToEntryExtracted, collapseCurrentWorkspaceDuplicatesExtracted, duplicateProjectExtracted, getCurrentWorkspaceBranchExtracted, getCurrentWorkspaceDisplayNameExtracted, getProjectCwdExtracted, isBrowsableHubProjectExtracted, loadProjectsExtracted, overlayActiveTasksExtracted, peekCachedProjectsExtracted, removeProjectExtracted, renameProjectExtracted } from './mobile-projects-service-streaming';
 import { applySessionToEntryExtracted, buildEphemeralCurrentWorkspaceEntryExtracted, currentGithubRepositoryFullNameExtracted, currentRepoKeyExtracted, cwdFromFileUriExtracted, getCurrentWorkspaceMatchKeyExtracted, getProjectWorkspaceMatchKeyExtracted, githubRepositoryToProjectExtracted, isProjectContainerWorkspaceExtracted, latestTimestampExtracted, loadGithubProjectsExtracted, loadSessionMapExtracted, prepareProjectCwdExtracted, projectActivityTimeExtracted, projectMatchesCurrentWorkspaceExtracted, projectSessionKeyExtracted, recordProjectPreviewUrlExtracted, recordProjectSessionExtracted, relativeUpdatedAtExtracted, resolveCurrentWorkspaceProjectExtracted, resolveProjectPreviewUrlExtracted, touchProjectActivityExtracted, touchProjectSessionExtracted } from './mobile-projects-service-timeline';
 
@@ -144,6 +144,10 @@ export class MobileProjectsService {
         return createGithubProjectExtracted(this);
     }
 
+    async createLocalProject(): Promise<MobileProjectEntry[] | undefined> {
+        return createLocalProjectExtracted(this);
+    }
+
     async cloneGithubProject(): Promise<MobileProjectEntry[] | undefined> {
         return cloneGithubProjectExtracted(this);
     }
@@ -219,6 +223,10 @@ export class MobileProjectsService {
     }
 
     /** @internal Used by the extracted mobile-projects-service-* modules. */
+    public registerLocalWorkspaceProject(name: string, uri: URI): void {
+        registerLocalWorkspaceProjectExtracted(this, name, uri);
+    }
+
     public registerGithubWorkspaceProject(repository: QaapGithubRepositorySummary, uri: URI): void {
         registerGithubWorkspaceProjectExtracted(this, repository, uri);
     }

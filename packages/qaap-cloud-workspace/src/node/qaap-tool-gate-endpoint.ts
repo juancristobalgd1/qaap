@@ -234,6 +234,7 @@ export class QaapToolGateEndpoint implements BackendApplicationContribution {
                 command,
                 decision: decision.kind === 'allow' ? 'approve' : 'reject',
                 ...(decision.kind === 'allow' && decision.updatedInput ? { autoApprovalReason: 'input-rewritten' } : {}),
+                ...(decision.kind === 'allow' && (decision as { reason?: string }).reason === 'read-only-shell' ? { autoApprovalReason: 'read-only-shell' as const } : {}),
             });
         } catch {
             // Auditing must never change the decision.

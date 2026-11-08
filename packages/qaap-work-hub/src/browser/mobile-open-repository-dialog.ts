@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { isQaapNewProjectDialogOpen } from '@theia/qaap-shared-core/lib/browser/qaap-new-project-dialog';
 import { QaapUserFacingErrors } from '@theia/qaap-adapters/lib/common/qaap-user-facing-error';
 import { nls } from '@theia/core/lib/common/nls';
 import { QaapPlanLimit } from '@theia/qaap-adapters/lib/common/qaap-plan-limit';
@@ -50,6 +51,7 @@ export class MobileOpenRepositoryDialog {
     protected readonly emptyState: HTMLElement;
     protected readonly footer: HTMLElement;
     protected readonly createButton: HTMLButtonElement;
+    protected readonly createLocalButton: HTMLButtonElement;
     protected publicInput!: HTMLInputElement;
     protected publicSubmit!: HTMLButtonElement;
     protected publicError!: HTMLElement;
@@ -84,8 +86,8 @@ export class MobileOpenRepositoryDialog {
     protected activeTab: 'repositories' | 'clone' = 'repositories';
     protected readonly onKeyDown = (ev: KeyboardEvent): void => {
         if (ev.key === 'Escape' && this.visible) {
-            // Leave Escape to the nested dialog (e.g. "Create repository") while it is on top.
-            if (this.busy) {
+            // Leave Escape to the nested "New project" dialog while it is on top.
+            if (this.busy || isQaapNewProjectDialogOpen()) {
                 return;
             }
             ev.stopPropagation();
@@ -195,13 +197,19 @@ export class MobileOpenRepositoryDialog {
 
         this.footer = document.createElement('div');
         this.footer.className = 'theia-mobile-open-repo-footer';
+        this.createLocalButton = document.createElement('button');
+        this.createLocalButton.type = 'button';
+        this.createLocalButton.className = 'theia-mobile-open-repo-create';
+        this.createLocalButton.innerHTML = '<span class="codicon codicon-new-folder" aria-hidden="true"></span> ' +
+            nls.localize('qaap/newProject/menuLocal', 'New local project');
+        this.createLocalButton.addEventListener('click', () => { void this.onCreateNew('local'); });
         this.createButton = document.createElement('button');
         this.createButton.type = 'button';
         this.createButton.className = 'theia-mobile-open-repo-create';
-        this.createButton.innerHTML = '<span class="codicon codicon-repo" aria-hidden="true"></span> ' +
-            nls.localize('qaap/mobileOpenRepo/startNewProject', 'Start new project');
-        this.createButton.addEventListener('click', () => { void this.onCreateNew(); });
-        this.footer.append(this.createButton);
+        this.createButton.innerHTML = '<span class="codicon codicon-github" aria-hidden="true"></span> ' +
+            nls.localize('qaap/newProject/menuGithub', 'New GitHub repository');
+        this.createButton.addEventListener('click', () => { void this.onCreateNew('github'); });
+        this.footer.append(this.createLocalButton, this.createButton);
         this.repositoriesPanel.append(this.footer);
 
         this.clonePanel = this.createClonePanel();
@@ -789,11 +797,21 @@ export class MobileOpenRepositoryDialog {
         );
     }
 
-    protected async onCreateNew(): Promise<void> {
-        await this.runWithBusy(
-            () => this.service.createGithubProject(),
-            nls.localize('qaap/mobileOpenRepo/busyCreating', 'Creating repository…')
-        );
+    /**
+     * Opens the naming dialog WITHOUT the busy state: the busy state disables the controls that
+     * would close it (and made Escape a no-op). Success then closes this dialog as before.
+     */
+    protected async onCreateNew(kind: 'local' | 'github'): Promise<void> {
+        const next = kind === 'local'
+            ? await this.service.createLocalProject()
+            : await this.service.createGithubProject();
+        if (next) {
+            this.repositories = next;
+            this.renderList();
+            this.delegate.onProjectsChanged?.(next);
+            this.delegate.onWorkspaceOpened?.();
+            this.hide();
+        }
     }
 
     protected async runWithBusy(action: () => Promise<MobileProjectEntry[] | undefined>, busyMessage: string): Promise<void> {
@@ -821,6 +839,7 @@ export class MobileOpenRepositoryDialog {
         this.repositoriesTab.disabled = busy;
         this.cloneTab.disabled = busy;
         this.createButton.disabled = busy;
+        this.createLocalButton.disabled = busy;
         this.busyRow.hidden = !busy;
         this.busyText.textContent = busy
             ? (message ?? nls.localize('qaap/mobileOpenRepo/busyDefault', 'Working…'))
