@@ -130,7 +130,7 @@ async function main(): Promise<void> {
             socket.write(encodeQaapSandboxFrame(QaapSandboxFrame.Signal, JSON.stringify({ signal })));
             if (signal === 'SIGTERM' || signal === 'SIGHUP') {
                 // The server escalates to SIGKILL after its grace period; never outlive that by much.
-                setTimeout(() => finish(null, signal), 10_000).unref();
+                setTimeout(() => finish(null, signal), 3_000).unref();
             }
         });
     }

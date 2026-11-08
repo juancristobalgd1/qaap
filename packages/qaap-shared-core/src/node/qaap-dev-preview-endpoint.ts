@@ -24,7 +24,8 @@ import { findListeningProcessCwdsOnPort } from './qaap-dev-preview-port-listener
 import { QAAP_TENANT_BACKEND_MODE_ENV, QAAP_TENANT_LOGIN_ENV } from '@theia/qaap-adapters/lib/common/qaap-tenant-backend-auth';
 import { allocatePreviewPortExtracted, configureExtracted, earlyMiddlewareExtracted, handleClaimExtracted, handleProcessClaimExtracted, releaseSupersededProcesslessPreviewExtracted, requireHttpAuthExtracted, supersedeConversationPreviewsExtracted, terminatePreviewProcessExtracted } from './qaap-dev-preview-endpoint-render';
 import { handleCurrentProjectPreviewExtracted, handleIdentityProbeExtracted, handleIdentityProxyExtracted, handleProbeExtracted, handleProxyExtracted, handleReleaseExtracted, handleWebSocketUpgradeExtracted, isPreviewProcessDeadExtracted, mayProxyPortExtracted, nextAllocationCandidateExtracted, onStartExtracted, previewForRequestExtracted, proxyWebSocketExtracted, reapStoppedPreviewsExtracted } from './qaap-dev-preview-endpoint-streaming';
-import { buildIdentityPreviewUrlExtracted, firstHeaderValueExtracted, forgetHeadUnsupportedPort, forwardHttpExtracted, previewBaseDomainExtracted, previewHostLabelExtracted, probeLocalDevServerExtracted, resolvePublicOriginExtracted, rewriteDevPreviewBodyExtracted, rewriteDevPreviewLocationExtracted, rewritePreviewCspExtracted, rewriteViteHmrClientExtracted, shouldRewriteProxyBodyExtracted } from './qaap-dev-preview-endpoint-timeline';
+import { buildIdentityPreviewUrlExtracted, firstHeaderValueExtracted, forgetHeadUnsupportedPort, forwardHttpExtracted, previewBaseDomainExtracted, previewHostLabelExtracted, probeLocalDevServerExtracted, probeLocalDevServerStateExtracted, resolvePublicOriginExtracted, rewriteDevPreviewBodyExtracted, rewriteDevPreviewLocationExtracted, rewritePreviewCspExtracted, rewriteViteHmrClientExtracted, shouldRewriteProxyBodyExtracted } from './qaap-dev-preview-endpoint-timeline';
+import type { QaapDevServerProbeState } from './qaap-dev-preview-endpoint-timeline';
 
 export const PROBE_TIMEOUT_MS = 2500;
 export const LOCAL_TARGET_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '::1', '[::1]', '0.0.0.0']);
@@ -379,6 +380,11 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution, Q
         return probeLocalDevServerExtracted(this, port, ownerLogin);
     }
 
+    /** @internal Used by the extracted qaap-dev-preview-endpoint-* modules. */
+    public async probeLocalDevServerState(port: number, ownerLogin?: string): Promise<QaapDevServerProbeState> {
+        return probeLocalDevServerStateExtracted(this, port, ownerLogin);
+    }
+
     /**
      * True when a new dev server could bind `port` here. Tunnelled runtimes live in another network
      * namespace where a local bind proves nothing; their HTTP probe stays authoritative. A port
@@ -420,8 +426,8 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution, Q
     }
 
     /** @internal Used by the extracted qaap-dev-preview-endpoint-* modules. */
-    public previewBaseDomain(): string | undefined {
-        return previewBaseDomainExtracted(this);
+    public previewBaseDomain(req?: Request | http.IncomingMessage): string | undefined {
+        return previewBaseDomainExtracted(this, req);
     }
 
     /** @internal Used by the extracted qaap-dev-preview-endpoint-* modules. */

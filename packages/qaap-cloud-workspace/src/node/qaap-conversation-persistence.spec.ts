@@ -5,6 +5,7 @@ import { expect } from 'chai';
 import * as sinon from 'sinon';
 import { persistExtracted } from './qaap-agent-conversation-store-thought-brief2';
 import { clearRunActive } from './qaap-agent-conversation-store-helpers';
+import * as rows from './qaap-agent-conversation-store-rows';
 import type { QaapAgentConversation } from '../common/qaap-agent-conversation';
 import type { QaapAgentConversationStoreContext } from './qaap-agent-conversation-store-context';
 
@@ -12,29 +13,33 @@ describe('conversation persistence and turn completion', () => {
     afterEach(() => sinon.restore());
 
     it('serializes writes and continues after a failed save', async () => {
-        sinon.stub(console, 'warn');
-        let release!: () => void;
-        const write = sinon.stub();
-        write.onFirstCall().returns(new Promise<void>(resolve => { release = resolve; }));
-        write.onSecondCall().rejects(new Error('busy'));
-        write.onThirdCall().resolves();
+        const warn = sinon.stub(console, 'warn');
+        const write = sinon.stub(rows, 'writePendingConversationRows');
+        write.onFirstCall().returns({ namespace: 'agent-conversations.v2', entries: 1, chars: 10, stringifyMs: 1, totalMs: 7 });
+        write.onSecondCall().throws(new Error('busy'));
+        write.onThirdCall().returns(undefined);
         // Narrow unit test: `persistExtracted` only touches these members (plus `persistChain`,
         // which it initializes itself), so the fake implements a slice of the context.
         const ctx = {
-            conversations: new Map(),
+            conversationRowsReady: true,
             persistFailureLoggedAtMs: 0,
-            getSqliteStore: () => ({ replace: write }),
         } as unknown as QaapAgentConversationStoreContext;
         const first = persistExtracted(ctx);
-        await new Promise(resolve => setImmediate(resolve));
         const second = persistExtracted(ctx);
-        const third = persistExtracted(ctx);
-        await new Promise(resolve => setImmediate(resolve));
-        expect(write.callCount).to.equal(1);
-        release();
-        await Promise.all([first, second, third]);
+        await second;
+        expect(warn.calledOnce).to.equal(true);
+        expect(ctx.persistFailureLoggedAtMs).to.be.greaterThan(0);
+        await Promise.all([first, persistExtracted(ctx)]);
         expect(write.callCount).to.equal(3);
+        expect(ctx.lastPersistDurationMs).to.equal(7);
         expect(ctx.persistFailureLoggedAtMs).to.equal(0);
+    });
+
+    it('does not write rows before the migration and load finished', async () => {
+        const write = sinon.stub(rows, 'writePendingConversationRows');
+        const ctx = { conversationRowsReady: false, persistFailureLoggedAtMs: 0 } as unknown as QaapAgentConversationStoreContext;
+        await persistExtracted(ctx);
+        expect(write.called).to.equal(false);
     });
 
     it('retains a completed turn timestamp when later turns change the conversation', () => {

@@ -215,6 +215,29 @@ describe('MobileOpenRepositoryDialog clone flow', () => {
         expect(harness.dialog.isVisible()).to.equal(false);
     });
 
+    it('turns a plan_limit failure of the synchronous open endpoint into the same Upgrade plan CTA', async () => {
+        let billingOpened = 0;
+        const harness = createHarness({
+            // Backends without /workspace-jobs answer 404, so the tracker falls back to the single request.
+            start: async () => {
+                throw Object.assign(new Error('Not found'), { status: 404 });
+            },
+            legacy: async () => {
+                throw Object.assign(new Error('Your Starter plan allows 3 active repositories.'), { status: 403, code: 'plan_limit' });
+            },
+        }, async () => { billingOpened++; });
+        await harness.dialog.show();
+        await submitClone(harness.dialog, 'octocat/one-too-many');
+
+        const error = harness.dialog.node.querySelector<HTMLElement>('.theia-mobile-open-repo-progress-error')!;
+        expect(error.textContent).to.contain('active repositories your plan allows');
+        expect(error.textContent).not.to.contain('Starter');
+        const upgrade = harness.dialog.node.querySelector<HTMLButtonElement>('.theia-mobile-open-repo-progress-upgrade')!;
+        expect(upgrade.hidden).to.equal(false);
+        upgrade.click();
+        expect(billingOpened).to.equal(1);
+    });
+
     it('does not offer Upgrade plan for an ordinary failure', async () => {
         const harness = createHarness({ start: async () => { throw new Error('boom'); } }, async () => undefined);
         await harness.dialog.show();

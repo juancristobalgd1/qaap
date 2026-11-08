@@ -6,6 +6,14 @@
 import { expect } from 'chai';
 import { buildCreateAgentTaskBody, extractBackendAgentMention, hashString, isOpencodeAgent, isQaiqAgent, usesStructuredAgentTranscript, isStickyComposerAgentSelected, isTheiaCoderMention, stripNonCoderAgentMention, normalizeBackendAgentId, migrateLegacyBackendAgentId, migrateStoredComposerAgentId, QAIQ_AGENT_ID, mergeAgentTaskAgentOptions, mergeComposerAgentPickerOptions, listQaapComposerPickerAgents, migrateQaapProductAgentId, QAAP_PRIMARY_AGENT_ID, reconcileSelectedAgent, reconcileStickyComposerAgent, resolveAgentOptionId, resolveBackendAgentForTurn, resolveExplicitAgentForSubmit, resolveQaapAgentMentionToken, normalizeOpenCodeModelOptions, SHELL_AGENT_ID, THEIA_CODER_AGENT_ID } from './qaap-agent-task-client';
 import { rememberQaapHostedRuntime } from './qaap-hosted-agent-auth-policy';
+import {
+    AGENT_MODELS_CACHE_TTL_MS,
+    AGENT_TASK_LIST_ALL_TTL_MS,
+    fetchAgentModelsForAgent,
+    fetchAgentTaskListAll,
+    invalidateAgentModelsCache,
+    invalidateAgentTaskListAllCache,
+} from './qaap-agent-task-client';
 import { QAAP_HARNESS_DEFINITIONS } from './qaap-builtin-agents';
 import { QAAP_DEFAULT_DISABLED_HARNESS_IDS } from './qaap-harness-preferences';
 
@@ -271,5 +279,142 @@ describe('qaap-agent-task-client', () => {
             .to.equal('codex');
         expect(resolveBackendAgentForTurn('fix it', agents, { storedAgentId: 'qaiq' }))
             .to.equal('qaiq');
+    });
+});
+
+describe('qaap-agent-task-client request caches', () => {
+    let now: number;
+    let realNow: () => number;
+    let realFetch: typeof fetch;
+    let requestUrls: string[];
+    let respond: (call: number) => Response;
+
+    beforeEach(() => {
+        now = 1_000_000;
+        realNow = Date.now;
+        Date.now = () => now;
+        realFetch = globalThis.fetch;
+        requestUrls = [];
+        respond = () => new Response(JSON.stringify({
+            agents: [{ id: 'pi', label: 'Pi', available: true }],
+            models: [{ provider: 'provider', vendor: 'vendor', modelId: 'model' }],
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        globalThis.fetch = (async (input: RequestInfo | URL) => {
+            requestUrls.push(String(input));
+            return respond(requestUrls.length - 1);
+        }) as typeof fetch;
+        invalidateAgentTaskListAllCache();
+        invalidateAgentModelsCache();
+    });
+
+    afterEach(() => {
+        Date.now = realNow;
+        globalThis.fetch = realFetch;
+        invalidateAgentTaskListAllCache();
+        invalidateAgentModelsCache();
+    });
+
+    it('shares one agent task list request between concurrent calls', async () => {
+        await Promise.all([1, 2, 3, 4, 5].map(() => fetchAgentTaskListAll()));
+        expect(requestUrls).to.have.length(1);
+    });
+
+    it('serves the agent task list from cache within the TTL and refetches after it', async () => {
+        await fetchAgentTaskListAll();
+        now += AGENT_TASK_LIST_ALL_TTL_MS - 1;
+        await fetchAgentTaskListAll();
+        expect(requestUrls).to.have.length(1);
+
+        now += 1;
+        await fetchAgentTaskListAll();
+        expect(requestUrls).to.have.length(2);
+    });
+
+    it('bypasses the cache on forceRefresh and asks the backend to refresh', async () => {
+        await fetchAgentTaskListAll();
+        await fetchAgentTaskListAll({ forceRefresh: true });
+        expect(requestUrls).to.have.length(2);
+        expect(requestUrls[1]).to.contain('/all?refresh=1');
+    });
+
+    it('does not cache a failed agent task list request', async () => {
+        respond = call => call === 0
+            ? new Response('', { status: 500, statusText: 'backend down' })
+            : new Response(JSON.stringify({ agents: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        let failure: unknown;
+        try {
+            await fetchAgentTaskListAll();
+        } catch (error) {
+            failure = error;
+        }
+        expect(failure).to.be.instanceOf(Error);
+        await fetchAgentTaskListAll();
+        expect(requestUrls).to.have.length(2);
+    });
+
+    it('drops the cached agent task list on invalidation', async () => {
+        await fetchAgentTaskListAll();
+        invalidateAgentTaskListAllCache();
+        await fetchAgentTaskListAll();
+        expect(requestUrls).to.have.length(2);
+    });
+
+    it('shares one model catalog request per agent between concurrent calls', async () => {
+        await Promise.all([fetchAgentModelsForAgent('cursor'), fetchAgentModelsForAgent('cursor'), fetchAgentModelsForAgent('cursor')]);
+        expect(requestUrls).to.have.length(1);
+        await fetchAgentModelsForAgent('gemini');
+        expect(requestUrls).to.have.length(2);
+    });
+
+    it('reuses an agent model catalog within the TTL and refetches it after the TTL', async () => {
+        await fetchAgentModelsForAgent('cursor');
+        now += AGENT_MODELS_CACHE_TTL_MS - 1;
+        await fetchAgentModelsForAgent('cursor');
+        expect(requestUrls).to.have.length(1);
+
+        now += 1;
+        await fetchAgentModelsForAgent('cursor');
+        expect(requestUrls).to.have.length(2);
+    });
+
+    it('does not cache a failed agent model request', async () => {
+        respond = call => call === 0
+            ? new Response('', { status: 404, statusText: 'not found' })
+            : new Response(JSON.stringify({ models: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        let failure: unknown;
+        try {
+            await fetchAgentModelsForAgent('cursor');
+        } catch (error) {
+            failure = error;
+        }
+        expect(failure).to.be.instanceOf(Error);
+        await fetchAgentModelsForAgent('cursor');
+        expect(requestUrls).to.have.length(2);
+    });
+
+    it('never caches an empty agent task list, so the next call asks the backend again', async () => {
+        respond = () => new Response(JSON.stringify({ agents: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        const first = await fetchAgentTaskListAll();
+        const second = await fetchAgentTaskListAll();
+        expect(first.agents).to.deep.equal([]);
+        expect(second.agents).to.deep.equal([]);
+        expect(requestUrls).to.have.length(2);
+    });
+
+    it('never caches an empty agent model catalog, so the next call asks again', async () => {
+        respond = () => new Response(JSON.stringify({ models: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        await fetchAgentModelsForAgent('cursor');
+        await fetchAgentModelsForAgent('cursor');
+        expect(requestUrls).to.have.length(2);
+    });
+
+    it('drops only the invalidated agent model catalog', async () => {
+        await fetchAgentModelsForAgent('cursor');
+        await fetchAgentModelsForAgent('gemini');
+        invalidateAgentModelsCache('cursor');
+        await fetchAgentModelsForAgent('gemini');
+        expect(requestUrls).to.have.length(2);
+        await fetchAgentModelsForAgent('cursor');
+        expect(requestUrls).to.have.length(3);
     });
 });

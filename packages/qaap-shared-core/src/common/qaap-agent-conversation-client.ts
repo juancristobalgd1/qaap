@@ -117,6 +117,8 @@ export interface QaapAgentConversationSummaryDTO {
     readonly activityLabel?: string;
     readonly linesAdded?: number;
     readonly linesRemoved?: number;
+    /** Task baseline commit (pre-turn snapshot of the first user message); the changes panel diffs against it. */
+    readonly baselineCommit?: string;
     readonly turnStartedAt?: number;
     readonly turnProgressCurrent?: number;
     readonly turnProgressTotal?: number;
@@ -683,6 +685,11 @@ export interface QaapCreateConversationBody {
     readonly latencyMarks?: Partial<Record<QaapTurnLatencyMark, number>>;
     /** Defaults to `'auto'` on the server. */
     readonly isolation?: QaapAgentConversationIsolation;
+    /**
+     * `true` lets a task share a working tree that already has uncommitted changes. Without it the
+     * server answers 409 `dirty_workspace` for a shared-tree create in a dirty repository.
+     */
+    readonly acceptDirty?: boolean;
     /** `true` asks for an editable plan split into parallel subtasks; `false` never plans. Omitted: the server decides. */
     readonly fanOut?: boolean;
 }
@@ -692,7 +699,7 @@ export async function listAllConversationGroups(options?: { readonly onRetry?: (
         onRetry: options?.onRetry,
     });
     if (!response.ok) {
-        throw new Error(response.statusText);
+        throw await QaapUserFacingErrors.fromResponse(response);
     }
     const body = await response.json() as { groups?: QaapAgentConversationGroupDTO[] };
     return body.groups ?? [];
@@ -701,7 +708,7 @@ export async function listAllConversationGroups(options?: { readonly onRetry?: (
 export async function getConversation(id: string): Promise<QaapAgentConversationDTO> {
     const response = await fetch(`${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(id)}`, { credentials: 'include' });
     if (!response.ok) {
-        throw new Error(response.statusText);
+        throw await QaapUserFacingErrors.fromResponse(response);
     }
     return response.json() as Promise<QaapAgentConversationDTO>;
 }
@@ -801,7 +808,7 @@ export async function createConversation(
         signal,
     });
     if (!response.ok) {
-        throw await buildPostMessageError(response);
+        throw await buildCreateConversationError(response);
     }
     return response.json() as Promise<QaapAgentConversationDTO>;
 }
@@ -915,10 +922,49 @@ export class QaapConversationMessageError extends Error {
     }
 }
 
+/**
+ * A create refused because the shared working tree has uncommitted changes (409 `dirty_workspace`).
+ * `files` lists the first paths the server reported; `total` counts every changed path.
+ */
+export class QaapDirtyWorkspaceError extends QaapConversationMessageError {
+    constructor(message: string, readonly files: readonly string[], readonly total: number) {
+        super(message, 409, 'dirty_workspace');
+    }
+}
+
+/**
+ * The user cancelled the dirty-workspace dialog: nothing was created. Callers keep the draft and must not
+ * report it as a failure.
+ */
+export class QaapDirtyWorkspaceCancelledError extends Error {
+    constructor() {
+        super('Task creation was cancelled on the dirty-workspace dialog.');
+        this.name = 'QaapDirtyWorkspaceCancelledError';
+    }
+}
+
+/** True when a send failed only because the user cancelled the dirty-workspace dialog: silent, draft kept. */
+export function isDirtyWorkspaceCancelled(error: unknown): boolean {
+    return error instanceof QaapDirtyWorkspaceCancelledError;
+}
+
 /** The server's readable error (JSON `error` / `message` unwrapped), keeping status and code for the UI to branch on. */
 async function buildPostMessageError(response: Response): Promise<Error> {
     const error = await QaapUserFacingErrors.fromResponse(response);
     return new QaapConversationMessageError(error.message, response.status, error.code, error.details);
+}
+
+/** Like {@link buildPostMessageError}, but keeps the changed-path list of a `dirty_workspace` 409. */
+async function buildCreateConversationError(response: Response): Promise<Error> {
+    if (response.status === 409) {
+        const body = await response.clone().json().catch(() => undefined) as { code?: unknown; files?: unknown; total?: unknown } | undefined;
+        if (body?.code === 'dirty_workspace') {
+            const files = Array.isArray(body.files) ? body.files.filter((file): file is string => typeof file === 'string') : [];
+            const total = typeof body.total === 'number' ? body.total : files.length;
+            return new QaapDirtyWorkspaceError('The workspace has uncommitted changes.', files, total);
+        }
+    }
+    return buildPostMessageError(response);
 }
 
 /** True when the send failed only because the session already runs the maximum agents. */
@@ -982,16 +1028,7 @@ export async function respondTaskPullRequestConsent(id: string, allow: boolean):
 
 async function readTaskPlanResponse(response: Response): Promise<QaapAgentConversationDTO> {
     if (!response.ok) {
-        let message = response.statusText;
-        try {
-            const body = await response.json() as { error?: unknown };
-            if (typeof body.error === 'string' && body.error.trim()) {
-                message = body.error;
-            }
-        } catch {
-            // Non-JSON error body — keep the status text.
-        }
-        throw new Error(message);
+        throw await QaapUserFacingErrors.fromResponse(response);
     }
     return response.json() as Promise<QaapAgentConversationDTO>;
 }
@@ -1046,37 +1083,55 @@ export async function forkConversation(id: string): Promise<QaapAgentConversatio
     return response.json() as Promise<QaapAgentConversationDTO>;
 }
 
-export async function cancelConversationHttp(id: string): Promise<void> {
+/** Delay before the single retry of a Stop that failed on the network or with a 5xx. */
+export const QAAP_CANCEL_RETRY_DELAY_MS = 1_500;
+
+/** A cancel the server answered with a non-2xx status; `status` is undefined when the request never got one. */
+export interface QaapConversationCancelError extends Error {
+    readonly status?: number;
+}
+
+export async function cancelConversationHttp(id: string, signal?: AbortSignal): Promise<QaapAgentConversationDTO | undefined> {
     const response = await fetch(`${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(id)}/cancel`, {
         method: 'POST',
         credentials: 'include',
+        signal,
     });
     if (!response.ok) {
-        throw new Error(response.statusText);
+        const error: QaapConversationCancelError = Object.assign(await QaapUserFacingErrors.fromResponse(response), { status: response.status });
+        throw error;
     }
+    // The answer carries the stopped conversation (with its "Turn cancelled." trace); an empty body is tolerated.
+    const text = await response.text();
+    return text ? JSON.parse(text) as QaapAgentConversationDTO : undefined;
 }
 
-/** Cancels via WebSocket when the live feed is connected; falls back to HTTP POST /cancel. */
-export async function cancelConversation(id: string): Promise<void> {
-    if (conversationLiveCancel) {
-        await conversationLiveCancel(id);
-        return;
+/**
+ * Stops the running turn over HTTP, always (never the WebSocket op, which can be dropped with the
+ * socket). One retry after {@link QAAP_CANCEL_RETRY_DELAY_MS}, only for a network failure or a 5xx;
+ * a 4xx is the server's answer and is not retried. The server cancel is idempotent, so a retry that
+ * races a successful first attempt is harmless.
+ */
+export async function cancelConversation(id: string, signal?: AbortSignal): Promise<QaapAgentConversationDTO | undefined> {
+    console.warn(`[qaap-stop] client conv=${id} transport=http`);
+    try {
+        return await cancelConversationHttp(id, signal);
+    } catch (error) {
+        const status = (error as QaapConversationCancelError).status;
+        if ((status !== undefined && status < 500) || signal?.aborted) {
+            throw error;
+        }
+        await new Promise<void>(resolve => setTimeout(resolve, QAAP_CANCEL_RETRY_DELAY_MS));
+        if (signal?.aborted) {
+            throw error;
+        }
+        return cancelConversationHttp(id, signal);
     }
-    await cancelConversationHttp(id);
 }
 
 async function readGoalLoopResponse(response: Response): Promise<QaapGoalLoopResponseDTO> {
     if (!response.ok) {
-        let message = response.statusText;
-        try {
-            const body = await response.json() as { error?: unknown };
-            if (typeof body.error === 'string' && body.error.trim()) {
-                message = body.error;
-            }
-        } catch {
-            // Non-JSON error body — keep the status text.
-        }
-        throw new Error(message);
+        throw await QaapUserFacingErrors.fromResponse(response);
     }
     return response.json() as Promise<QaapGoalLoopResponseDTO>;
 }
@@ -1121,7 +1176,7 @@ export async function startConversationVisualRepair(id: string, sourceAgentMessa
         body: JSON.stringify({ sourceAgentMessageId }),
     });
     if (!response.ok) {
-        throw new Error(response.statusText);
+        throw await QaapUserFacingErrors.fromResponse(response);
     }
     return response.json() as Promise<QaapAgentConversationDTO>;
 }
@@ -1134,7 +1189,7 @@ export async function cancelConversationRun(id: string, userMessageId: string): 
         body: JSON.stringify({ userMessageId }),
     });
     if (!response.ok) {
-        throw new Error(response.statusText);
+        throw await QaapUserFacingErrors.fromResponse(response);
     }
 }
 
@@ -1201,7 +1256,7 @@ export async function deleteConversation(id: string): Promise<void> {
         credentials: 'include',
     });
     if (!response.ok && response.status !== 404) {
-        throw new Error(response.statusText);
+        throw await QaapUserFacingErrors.fromResponse(response);
     }
 }
 

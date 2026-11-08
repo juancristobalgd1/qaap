@@ -21,6 +21,7 @@ import {
 import { QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import { QaapResearchRunner } from './qaap-research-runner';
 import { QaapResearchStore } from './qaap-research-store';
+import { QaapAsyncRoute } from '@theia/qaap-shared-core/lib/node/qaap-async-route';
 
 /**
  * REST create/list/detail/cancel/replay for the auto-researcher v1. Work Hub lists goals and
@@ -50,9 +51,7 @@ export class QaapResearchEndpoint implements BackendApplicationContribution {
         app.post(QAAP_RESEARCH_API_PATH, (req, res) => {
             this.handleCreate(req, res);
         });
-        app.get(`${QAAP_RESEARCH_API_PATH}/:id`, (req, res) => {
-            void this.handleDetail(req, res);
-        });
+        app.get(`${QAAP_RESEARCH_API_PATH}/:id`, QaapAsyncRoute.wrap('qaap-research', (req, res) => this.handleDetail(req, res)));
         app.post(`${QAAP_RESEARCH_API_PATH}/:id/cancel`, (req, res) => {
             this.handleCancel(req, res);
         });

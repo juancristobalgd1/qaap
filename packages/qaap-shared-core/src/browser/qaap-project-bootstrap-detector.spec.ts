@@ -169,6 +169,35 @@ describe('QaapProjectBootstrapDetector scaffold subfolders', () => {
         expect(descriptor?.readyTimeoutMs).to.equal(180000);
     });
 
+    it('flags a Theia app so its preview gets an isolated HOME', async () => {
+        const mock = new MockFileService();
+        mock.addDir('/ws');
+        mock.addFile('/ws/package.json', JSON.stringify({
+            name: 'vyyq', dependencies: { '@theia/core': '1.73.0' }, scripts: { start: 'theia start --port 3000' },
+        }));
+
+        const detector = new QaapProjectBootstrapDetector();
+        bindMockFileService(detector, mock);
+
+        const descriptor = await detectWithBackend(detector, 'posix');
+        expect(descriptor?.isTheiaApp).to.equal(true);
+    });
+
+    it('does not flag a Next app as Theia', async () => {
+        const mock = new MockFileService();
+        mock.addDir('/ws');
+        mock.addFile('/ws/package.json', JSON.stringify({
+            name: 'site', dependencies: { next: '15.0.0' }, scripts: { dev: 'next dev' },
+        }));
+
+        const detector = new QaapProjectBootstrapDetector();
+        bindMockFileService(detector, mock);
+
+        const descriptor = await detectWithBackend(detector, 'posix');
+        expect(descriptor?.kind).to.equal('node-next');
+        expect(descriptor?.isTheiaApp).to.be.undefined;
+    });
+
     it('auto-detects Django at the workspace root', async () => {
         const mock = new MockFileService();
         mock.addDir('/ws');
@@ -535,6 +564,29 @@ describe('QaapProjectBootstrapDetector package-manager workspaces', () => {
         // `theia start` names no output folder: it is not a certain miss, so it is not blocked either.
         expect(app?.buildRequired).to.equal(undefined);
         expect(descriptor?.nodeModulesPresent).to.equal(false);
+    });
+
+    it('never offers Electron members as previewable apps', async () => {
+        const mock = new MockFileService();
+        theiaMonorepo(mock);
+        mock.addDir('/ws/examples/electron');
+        mock.addFile('/ws/examples/electron/package.json', JSON.stringify({
+            name: '@theia/example-electron',
+            theia: { target: 'electron' },
+            scripts: { start: 'theia start' },
+            dependencies: { '@theia/core': '1.73.0' },
+        }));
+        mock.addDir('/ws/examples/desktop');
+        mock.addFile('/ws/examples/desktop/package.json', JSON.stringify({
+            name: 'desktop-shell',
+            scripts: { start: 'electron .' },
+            devDependencies: { electron: '33.0.0' },
+        }));
+        const detector = new QaapProjectBootstrapDetector();
+        bindMockFileService(detector, mock);
+
+        const apps = (await detector.detect(URI.fromFilePath('/ws')))?.apps ?? [];
+        expect(apps.map(candidate => candidate.relativePath)).to.deep.equal(['examples/browser']);
     });
 
     it('builds before `theia start` only when .qaap/preview.json opts in with "build": "auto"', async () => {

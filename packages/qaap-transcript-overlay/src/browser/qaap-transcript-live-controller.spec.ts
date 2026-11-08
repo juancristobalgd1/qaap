@@ -145,6 +145,30 @@ describe('QaapTranscriptLiveController', () => {
         changeEmitter.dispose();
     });
 
+    it('holds a streaming summary at idle while its Stop is pending, so a stale frame cannot restore Stop', () => {
+        let lastConv = conv({ status: 'idle' });
+        const changeEmitter = new Emitter<void>();
+        const controller = new QaapTranscriptLiveController({
+            isWatching: () => true,
+            isStopPending: () => true,
+            getOpenSummary: () => summary({ status: 'idle' }),
+            setOpenSummary: () => undefined,
+            getLastConv: () => lastConv,
+            setLastConv: next => { if (next) { lastConv = next; } },
+            getLastSseDeltaAt: () => undefined,
+            setLastSseDeltaAt: () => undefined,
+            findSummaryById: () => summary({ status: 'idle' }),
+            refreshConversation: async () => undefined,
+            renderConversation: () => undefined,
+            onApprovalRefresh: () => undefined,
+            conversationsOnDidChange: changeEmitter.event,
+        });
+        controller.handleSummaryUpdated(summary({ status: 'streaming', updatedAt: 12 }));
+        expect(lastConv.status).to.equal('idle');
+        controller.dispose();
+        changeEmitter.dispose();
+    });
+
     it('handleSummaryUpdated force-polls when visual verification pending clears while idle', async () => {
         let forcePollCalls = 0;
         let openSummary = summary({ status: 'idle', visualVerificationPending: true });

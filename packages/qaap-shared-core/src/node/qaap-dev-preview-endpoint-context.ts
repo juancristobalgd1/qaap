@@ -14,6 +14,7 @@ import type * as net from 'net';
 import type { QaapGithubAuthGuard } from './qaap-github-auth-guard';
 import type { QaapDevPreviewPortRegistry, QaapDevPreviewRecord } from './qaap-dev-preview-port-registry';
 import type { QaapProcessPreviewIdentity } from '../common/qaap-preview-identity';
+import type { QaapDevServerProbeState } from './qaap-dev-preview-endpoint-timeline';
 
 /** A process-preview registration still waiting for its port (see `allocatePreviewPort`). */
 export type QaapDevPreviewAllocation = QaapProcessPreviewIdentity & {
@@ -135,6 +136,9 @@ export interface QaapDevPreviewEndpointContext {
 
     probeLocalDevServer(port: number, ownerLogin?: string): Promise<boolean>;
 
+    /** Three-way liveness: `busy` when the port accepts connections but has not answered yet. */
+    probeLocalDevServerState(port: number, ownerLogin?: string): Promise<QaapDevServerProbeState>;
+
     /** True when a new dev server could bind `port` (real bind test; tunnelled runtimes always pass). */
     isPortBindable(port: number, ownerLogin?: string, root?: string): Promise<boolean>;
     /** True when every unclaimed listener of this runtime belongs to `login` (single-tenant backend). */
@@ -144,7 +148,8 @@ export interface QaapDevPreviewEndpointContext {
 
     buildIdentityPreviewUrl(req: Request, record: Pick<QaapDevPreviewRecord, 'previewId' | 'accessToken'>): string;
 
-    previewBaseDomain(): string | undefined;
+    /** Isolated-host base domain; with a request, the local default may derive it from the Host. */
+    previewBaseDomain(req?: Request | http.IncomingMessage): string | undefined;
 
     /** Host label of an isolated preview host request (the label is the access capability). */
     previewHostLabel(req: Request | http.IncomingMessage): string | undefined;

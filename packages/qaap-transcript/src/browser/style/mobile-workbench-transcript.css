@@ -4010,12 +4010,13 @@ body.theia-dark .theia-mobile-agent-web-search,
   flex-direction: column;
   align-items: flex-end;
   gap: 6px;
-  opacity: 0.62;
   border-style: dashed;
 }
 
+/* Dim only the message text: the Send now / Cancel actions live in the row header and must stay at full strength. */
 .theia-mobile-agent-transcript-msg.theia-mod-user.theia-mod-queued .theia-mobile-agent-transcript-content {
   align-self: stretch;
+  opacity: 0.62;
 }
 
 .theia-mobile-agent-transcript-queued-tag {

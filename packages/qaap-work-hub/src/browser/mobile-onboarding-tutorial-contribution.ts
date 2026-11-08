@@ -234,6 +234,7 @@ export class MobileOnboardingTutorialContribution implements FrontendApplication
                     return;
                 }
                 const blocking = shouldDeferMobileOnboardingTutorial()
+                    || !this.isSurfaceReadyForTour(surface)
                     || await hasBlockingAgentConversationWork();
                 if (blocking) {
                     this.deferTimer = window.setTimeout(attempt, 2000);
@@ -243,6 +244,14 @@ export class MobileOnboardingTutorialContribution implements FrontendApplication
             })();
         };
         this.deferTimer = window.setTimeout(attempt, 0);
+    }
+
+    /**
+     * The Work Hub tour opens on "Describe the outcome in the composer below"; with no project yet
+     * there is no composer, so wait until one is on screen instead of pointing at nothing.
+     */
+    protected isSurfaceReadyForTour(surface: MobileOnboardingSurface): boolean {
+        return surface !== 'work-hub' || !!visibleElement('.theia-mobile-projects-sticky-composer');
     }
 
     protected stopDeferLoop(): void {

@@ -19,6 +19,7 @@ import {
     type QaapAgentConversationIsolation,
     type QaapAgentConversationSummaryDTO,
     cancelConversation,
+    QaapDirtyWorkspaceError,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { beginNewTaskStartup, conversationHasAgentOutput, endNewTaskStartup, QaapNewTaskStartup, resolveNewTaskStartupOutcome } from '../common/qaap-new-task-startup';
 import type { QaapTranscriptUserImagePreview } from '@theia/qaap-shared-core/lib/common/qaap-transcript-user-image-preview';
@@ -41,10 +42,10 @@ import { shouldRouteSubmitToTheiaCoder } from '@theia/qaap-shared-core/lib/commo
 import { reportQaapClientError } from '@theia/qaap-shared-core/lib/common/qaap-client-error-report';
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import { applyBackendInteractionModeToPrompt } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-mode';
+import { QaapDirtyWorkspaceDialog, retryAfterDirtyWorkspace, type QaapDirtyWorkspaceChoice } from './mobile-projects-workspace-dirty-dialog';
 import { reconcileAgentApprovalPolicyId, type QaapAgentApprovalPolicyId } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import { reconcileAgentToolApprovalRules } from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-approval-rules';
-import { getQaapDefaultAgentId } from '@theia/qaap-shared-core/lib/common/qaap-default-agent-id';
-import { confirmPaidModelSend, resolveSendAgentModel, warnChooseSendModel } from '@theia/qaap-composer/lib/browser/qaap-paid-model-send-confirm';
+import { confirmPaidModelSend, resolveSendAgentModel, sendModelBelongsToAgent, warnChooseSendModel } from '@theia/qaap-composer/lib/browser/qaap-paid-model-send-confirm';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
@@ -227,7 +228,13 @@ export class MobileProjectsBackgroundTaskUi {
             variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>;
             /** Omitted → the server's `'auto'`: a worktree only when another thread is active on the repository. */
             isolation?: QaapAgentConversationIsolation;
+            /** The user chose "Continue here" on the dirty-workspace dialog: share the uncommitted tree. */
+            acceptDirty?: boolean;
             agentModel?: QaapCreateAgentTaskQaiqModel;
+            /** The agent `agentModel` was resolved for (the composer chip's agent); another routed agent blocks the send. */
+            agentModelAgentId?: string;
+            /** Opens the composer's agent/model picker when the send is held for a model choice. */
+            openModelPicker?: () => void;
             imagePreviews?: readonly QaapTranscriptUserImagePreview[];
             /** Create without a message, then start an "Until done" goal loop with the draft. */
             untilDone?: boolean;
@@ -243,40 +250,79 @@ export class MobileProjectsBackgroundTaskUi {
         try {
             // A paid model asks once per project per browser session before a new task starts; cancelling
             // reports no created conversation, so the caller restores the draft.
+            // The repository cwd comes first: routing reads the agent stored for it, and the model and
+            // paid gate are keyed by it. A cwd prepared here is handed to the send, which never routes again.
             const projectCwd = this.host.projectsService.getProjectCwd(project);
-            // One routing decision per submit: the agent that routes the turn is the agent the paid gate checks
-            // and the agent the send carries. Without a prepared repo cwd it is resolved later, inside the send.
-            let resolvedAgentId: string | undefined;
-            if (projectCwd) {
-                try {
-                    resolvedAgentId = await this.routeSubmitAgent(projectCwd, draft, options.selectedAgentId);
-                } catch (error) {
-                    // Routing failed: abort rather than gate and send with different agents. The draft is restored by the caller.
-                    const reason = error instanceof Error ? error.message : String(error);
-                    MobileSnackbar.show(
-                        nls.localize('qaap/mobileProjects/routingFailed', 'Could not choose an agent for this task: {0}', reason),
-                        { kind: 'warning' },
-                    );
+            let cwd = projectCwd;
+            if (!cwd) {
+                cwd = await this.prepareSubmitCwd(project);
+                if (!cwd) {
+                    // Not ready: nothing is sent, the caller keeps the draft.
+                    this.host.rollbackTranscriptOptimisticSubmit?.();
                     return undefined;
                 }
             }
-            const modelResolution = await resolveSendAgentModel(
-                resolvedAgentId ?? options.selectedAgentId ?? getQaapDefaultAgentId(),
-                projectCwd,
-                options.agentModel,
-            );
+            // One routing decision per submit: the agent that routes the turn is the agent the paid gate checks
+            // and the agent the send carries.
+            let resolvedAgentId: string;
+            try {
+                resolvedAgentId = await this.routeSubmitAgent(cwd, draft, options.selectedAgentId);
+            } catch (error) {
+                // Routing failed: abort rather than gate and send with different agents. The draft is restored by the caller.
+                const reason = error instanceof Error ? error.message : String(error);
+                MobileSnackbar.show(
+                    nls.localize('qaap/mobileProjects/routingFailed', 'Could not choose an agent for this task: {0}', reason),
+                    { kind: 'warning' },
+                );
+                return undefined;
+            }
+            if (!sendModelBelongsToAgent(resolvedAgentId, options.agentModel, options.agentModelAgentId)) {
+                // The composer's model belongs to another harness: sending it would run the wrong model
+                // (or the routed agent's stored one). Hold the send and let the user pick.
+                this.host.rollbackTranscriptOptimisticSubmit?.();
+                warnChooseSendModel(resolvedAgentId, options.openModelPicker);
+                return undefined;
+            }
+            const modelResolution = await resolveSendAgentModel(resolvedAgentId, cwd, options.agentModel);
             if (!modelResolution.ok) {
                 // Fail closed: a picker agent with no chosen model is not sent on the CLI default.
-                warnChooseSendModel(resolvedAgentId ?? options.selectedAgentId ?? getQaapDefaultAgentId());
+                warnChooseSendModel(resolvedAgentId, options.openModelPicker);
                 return undefined;
             }
-            if (!await this.confirmPaidSend(projectCwd ?? project.id, modelResolution.model)) {
+            if (!await this.confirmPaidSend(cwd, modelResolution.model)) {
                 return undefined;
             }
-            return await this.submitBackgroundAgentTaskInner(project, draft, { ...options, resolvedAgentId }, startup);
+            return await this.submitBackgroundAgentTaskInner(project, draft, {
+                ...options,
+                resolvedAgentId,
+                // The model the gate checked is the model the create carries, never one re-read for another harness.
+                agentModel: modelResolution.model,
+                ...(projectCwd ? {} : { preparedCwd: cwd }),
+            }, startup);
         } finally {
             endNewTaskStartup(startup);
             this.backgroundSubmitInFlightByProjectId.delete(project.id);
+        }
+    }
+
+    /**
+     * Prepares the repository cwd of a project that has none yet, before anything is routed. Resolves
+     * `undefined` when it cannot be prepared: the submit is then abandoned with the draft kept.
+     */
+    protected async prepareSubmitCwd(project: MobileProjectEntry): Promise<string | undefined> {
+        const preparingMessage = nls.localize('qaap/mobileProjects/newTaskPreparing', 'Preparing the project…');
+        try {
+            const cwd = await this.ensureInlineComposerCwd(project);
+            if (!cwd && project.github) {
+                // A GitHub project that did not resolve is still being prepared; without a repository
+                // the snackbar from ensureInlineComposerCwd already says to open or clone it.
+                MobileSnackbar.show(preparingMessage, { kind: 'warning' });
+            }
+            return cwd;
+        } catch (error) {
+            reportQaapClientError('background-task-prepare-cwd', error);
+            MobileSnackbar.show(preparingMessage, { kind: 'warning' });
+            return undefined;
         }
     }
 
@@ -307,22 +353,33 @@ export class MobileProjectsBackgroundTaskUi {
             variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>;
             /** Omitted → the server's `'auto'`: a worktree only when another thread is active on the repository. */
             isolation?: QaapAgentConversationIsolation;
+            /** The user chose "Continue here" on the dirty-workspace dialog: share the uncommitted tree. */
+            acceptDirty?: boolean;
             agentModel?: QaapCreateAgentTaskQaiqModel;
+            agentModelAgentId?: string;
+            openModelPicker?: () => void;
             imagePreviews?: readonly QaapTranscriptUserImagePreview[];
             /** Create without a message, then start an "Until done" goal loop with the draft. */
             untilDone?: boolean;
+            /** Repository cwd submitBackgroundAgentTask already prepared (and routed with) for this submit. */
+            preparedCwd?: string;
         } = {},
         startup: QaapNewTaskStartup,
     ): Promise<QaapAgentConversationSummaryDTO | undefined> {
         try {
-            const cwd = await this.ensureInlineComposerCwd(project);
+            const cwd = options.preparedCwd ?? await this.ensureInlineComposerCwd(project);
             if (!cwd) {
                 // No usable repository path (snackbar already explained why). Roll the
                 // optimistic paint back or it lingers as a phantom "streaming" conversation.
                 this.host.rollbackTranscriptOptimisticSubmit?.();
                 return undefined;
             }
-            const { summary, outbound } = await this.createProjectChatSession(project, cwd, draft, options);
+            const created = await this.createWithDirtyWorkspaceDecision(project, cwd, draft, options, startup);
+            if (!created) {
+                // Cancelled on the dirty-workspace dialog: nothing was created, the caller restores the draft.
+                return undefined;
+            }
+            const { summary, outbound } = created;
             if (resolveNewTaskStartupOutcome(startup, summary) === 'cancelAndRestore') {
                 // Stop arrived while the task was being created. The create already carries the first
                 // message, so the turn may be running: cancel it, then decide from what it produced.
@@ -360,6 +417,48 @@ export class MobileProjectsBackgroundTaskUi {
             return undefined;
         }
     }
+    /**
+     * Creates the task; when the shared working tree has uncommitted changes the server answers 409
+     * `dirty_workspace` and the user decides: "Start clean" retries in a worktree, "Continue here" retries
+     * sharing the tree, Cancel resolves `undefined` so the caller restores the draft as not sent.
+     */
+    async createWithDirtyWorkspaceDecision(
+        project: MobileProjectEntry,
+        cwd: string,
+        draft: string,
+        options: Parameters<MobileProjectsBackgroundTaskUi['createProjectChatSession']>[3],
+        startup?: QaapNewTaskStartup,
+    ): Promise<QaapProjectChatSessionCreated | undefined> {
+        try {
+            return await this.createProjectChatSession(project, cwd, draft, options);
+        } catch (error) {
+            if (!(error instanceof QaapDirtyWorkspaceError)) {
+                throw error;
+            }
+            const retried = await retryAfterDirtyWorkspace(
+                error,
+                async retryOptions => {
+                    // Stop pressed while the dialog was open: the user asked for no task, so none is created.
+                    if (startup?.stopRequested) {
+                        return undefined;
+                    }
+                    return this.createProjectChatSession(project, cwd, draft, { ...options, ...retryOptions });
+                },
+                (files, total) => this.askDirtyWorkspaceChoice(files, total),
+            );
+            if (!retried) {
+                // The server refused the create and the user cancelled (or stopped): the pre-create optimistic paint goes.
+                this.host.rollbackTranscriptOptimisticSubmit?.();
+            }
+            return retried;
+        }
+    }
+
+    /** Seam over the dirty-workspace dialog so the decision can be exercised without a DOM. */
+    protected askDirtyWorkspaceChoice(files: readonly string[], total: number): Promise<QaapDirtyWorkspaceChoice | undefined> {
+        return new QaapDirtyWorkspaceDialog(files, total).open();
+    }
+
     /**
      * Resolves a new task whose creation was stopped. Returns the task when it stays open (the
      * prompt counts as sent: the composer commits it), or `undefined` when the task was archived
@@ -407,7 +506,7 @@ export class MobileProjectsBackgroundTaskUi {
 
     /** Seams over the conversation client so the stop outcome can be exercised without a backend. */
     protected requestConversationCancel(id: string): Promise<void> {
-        return cancelConversation(id);
+        return cancelConversation(id).then(() => undefined);
     }
 
     protected loadConversation(id: string): Promise<QaapAgentConversationDTO> {
@@ -435,6 +534,7 @@ export class MobileProjectsBackgroundTaskUi {
             genericCapabilitySelections?: GenericCapabilitySelections;
             variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>;
             isolation?: QaapAgentConversationIsolation;
+            acceptDirty?: boolean;
             agentModel?: QaapCreateAgentTaskQaiqModel;
             latencyMarks?: import('@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client').QaapPostConversationMessageOptions['latencyMarks'];
             untilDone?: boolean;
@@ -481,6 +581,7 @@ export class MobileProjectsBackgroundTaskUi {
             toolApprovalRules,
             latencyMarks: options.latencyMarks,
             ...(options.isolation ? { isolation: options.isolation } : {}),
+            ...(options.acceptDirty ? { acceptDirty: true } : {}),
             ...(contextPreamble ? { contextPreamble } : {}),
             ...(agentModel ? { agentModel, qaiqModel: agentModel } : {}),
             ...(options.autoApprove === false

@@ -343,6 +343,8 @@ export interface QaapAgentTaskRunnerContext {
     ensureAgentCwdOwnershipAsync(cwd: string): Promise<void>;
     /** Start (or join) the task's per-task sandbox when QAAP_TASK_SANDBOX is on; no-op otherwise. */
     acquireTaskSandbox?(task: QaapAgentTask): Promise<void>;
+    /** Release a sandbox acquired for a task that was stopped before its agent could spawn. */
+    releaseTaskSandbox?(taskId: string): void;
     buildChildEnv(task: QaapAgentTask): NodeJS.ProcessEnv;
     applyOpenAiVendorCompatEnv(env: NodeJS.ProcessEnv, binding: QaapQaiqModelBinding): void;
     applyQaiqProviderEnv(env: NodeJS.ProcessEnv, command: string, binding?: QaapQaiqModelBinding): void;

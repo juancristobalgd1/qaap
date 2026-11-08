@@ -1,0 +1,12 @@
+/* Send control while a Stop is unacknowledged: a dimmed, non-interactive "Stopping…" state.
+   Colours come from the VS Code theme tokens only. */
+
+.theia-mobile-projects-sticky-composer-send.theia-mod-stopping {
+    opacity: 0.55;
+    cursor: progress;
+    color: var(--theia-descriptionForeground);
+}
+
+.theia-mobile-projects-sticky-composer-send.theia-mod-stopping:disabled {
+    pointer-events: none;
+}

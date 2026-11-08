@@ -16,9 +16,11 @@ import {
     MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY,
 } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { TerminalCommands } from '@theia/terminal/lib/browser/terminal-frontend-contribution';
+import { peekPreferDesktopIde, QAAP_PREFER_DESKTOP_IDE_EVENT } from '@theia/qaap-shared-core/lib/common/qaap-mobile-work-surface-preference';
 
 /**
- * Desktop default: show the terminal in the normal bottom panel.
+ * Desktop default: show the terminal in the normal bottom panel once the classic IDE is preferred.
+ * Work Hub boots without a terminal; the first explicit IDE open ({@link QAAP_PREFER_DESKTOP_IDE_EVENT}) runs the setup once.
  */
 @injectable()
 export class QaapDesktopTerminalLayoutContribution implements FrontendApplicationContribution {
@@ -43,6 +45,7 @@ export class QaapDesktopTerminalLayoutContribution implements FrontendApplicatio
 
     onStart(): void {
         this.mobileMq?.addEventListener('change', this.onViewportChange);
+        window.addEventListener(QAAP_PREFER_DESKTOP_IDE_EVENT, this.onPreferDesktopIde);
         this.shell.onDidAddWidget(widget => {
             if (!matchesMobileOneColumnLayout() && this.shell.getAreaFor(widget) === 'bottom') {
                 this.scheduleEnsureDesktopTerminal();
@@ -52,7 +55,17 @@ export class QaapDesktopTerminalLayoutContribution implements FrontendApplicatio
 
     onStop(): void {
         this.mobileMq?.removeEventListener('change', this.onViewportChange);
+        window.removeEventListener(QAAP_PREFER_DESKTOP_IDE_EVENT, this.onPreferDesktopIde);
     }
+
+    /** Runs the terminal setup once, on the first explicit IDE preference; later events are ignored. */
+    protected readonly onPreferDesktopIde = (): void => {
+        if (!peekPreferDesktopIde()) {
+            return;
+        }
+        window.removeEventListener(QAAP_PREFER_DESKTOP_IDE_EVENT, this.onPreferDesktopIde);
+        this.scheduleEnsureDesktopTerminal();
+    };
 
     onDidInitializeLayout(_app: FrontendApplication): void {
         void this.stateService.reachedState('ready').then(() => this.scheduleEnsureDesktopTerminal());
@@ -75,7 +88,7 @@ export class QaapDesktopTerminalLayoutContribution implements FrontendApplicatio
     }
 
     protected async runEnsureDesktopTerminal(): Promise<void> {
-        if (matchesMobileOneColumnLayout()) {
+        if (matchesMobileOneColumnLayout() || !peekPreferDesktopIde()) {
             return;
         }
         await this.stateService.reachedState('ready');
@@ -86,7 +99,8 @@ export class QaapDesktopTerminalLayoutContribution implements FrontendApplicatio
 
     /** Called from {@link MobileOneColumnShellContribution.ensureDesktopSidePanelSizes} after split restore. */
     async ensureDesktopTerminalNormal(): Promise<void> {
-        if (matchesMobileOneColumnLayout()) {
+        // Side-panel resizes call this too: without the classic IDE preference it must not open a terminal.
+        if (matchesMobileOneColumnLayout() || !peekPreferDesktopIde()) {
             return;
         }
         await this.preferenceService.ready;

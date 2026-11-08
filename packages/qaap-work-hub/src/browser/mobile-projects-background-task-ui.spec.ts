@@ -255,6 +255,78 @@ describe('MobileProjectsBackgroundTaskUi', () => {
         expect((await createSession('worktree', 'qaap/worktree/a')).snackbar).to.equal(undefined);
     });
 
+    describe('dirty shared workspace on a new task', () => {
+        function dirtyResponse(): Response {
+            const body = { code: 'dirty_workspace', files: ['README.md', 'hello.txt'], total: 2 };
+            const response = { ok: false, status: 409, statusText: 'Conflict', json: async () => body, clone: () => response };
+            return response as unknown as Response;
+        }
+
+        async function submitOnDirtyTree(choice: 'startClean' | 'continueHere' | undefined, stopWhileDialogOpen = false): Promise<{ bodies: Array<Record<string, unknown>>; result: unknown; rollbacks: number }> {
+            const ui = withAgentSnapshot({ agents: [], agentConfigured: false, qaiqInstalled: false, qaiqModels: [] });
+            let rollbacks = 0;
+            (ui as unknown as { host: { rollbackTranscriptOptimisticSubmit?: () => void } }).host.rollbackTranscriptOptimisticSubmit = () => { rollbacks++; };
+            const decision = ui as unknown as {
+                askDirtyWorkspaceChoice: (files: readonly string[], total: number) => Promise<'startClean' | 'continueHere' | undefined>;
+                createWithDirtyWorkspaceDecision: (project: MobileProjectEntry, cwd: string, draft: string, options: { selectedAgentId?: string }, startup?: { projectId: string; stopRequested: boolean }) => Promise<unknown>;
+            };
+            const startup = { projectId: 'p', stopRequested: false };
+            decision.askDirtyWorkspaceChoice = async () => {
+                if (stopWhileDialogOpen) {
+                    startup.stopRequested = true;
+                }
+                return choice;
+            };
+            const bodies: Array<Record<string, unknown>> = [];
+            const originalFetch = globalThis.fetch;
+            globalThis.fetch = (async (_input: unknown, init?: { body?: unknown }) => {
+                bodies.push(JSON.parse(String(init?.body)));
+                if (bodies.length === 1) {
+                    return dirtyResponse();
+                }
+                const conversation = { id: 'conv-1', cwd: '/repo', status: 'streaming', messages: [], createdAt: 1, updatedAt: 1 };
+                return { ok: true, status: 201, json: async () => conversation };
+            }) as unknown as typeof globalThis.fetch;
+            try {
+                const project = { id: 'p', name: 'repo' } as MobileProjectEntry;
+                const result = await decision.createWithDirtyWorkspaceDecision(project, '/repo', 'fix it', { selectedAgentId: '@shell' }, startup);
+                return { bodies, result, rollbacks };
+            } finally {
+                globalThis.fetch = originalFetch;
+            }
+        }
+
+        it('retries in a clean worktree when the user chooses Start clean', async () => {
+            const { bodies, result } = await submitOnDirtyTree('startClean');
+            expect(bodies).to.have.length(2);
+            expect(bodies[0]).to.not.have.property('acceptDirty');
+            expect(bodies[1].isolation).to.equal('worktree');
+            expect(result).to.not.equal(undefined);
+        });
+
+        it('retries sharing the tree with acceptDirty when the user chooses Continue here', async () => {
+            const { bodies, result } = await submitOnDirtyTree('continueHere');
+            expect(bodies).to.have.length(2);
+            expect(bodies[1].acceptDirty).to.equal(true);
+            expect(bodies[1]).to.not.have.property('isolation');
+            expect(result).to.not.equal(undefined);
+        });
+
+        it('creates no task when Stop is pressed while the dialog is open, even if the user then chooses Continue here', async () => {
+            const { bodies, result, rollbacks } = await submitOnDirtyTree('continueHere', true);
+            expect(bodies).to.have.length(1);
+            expect(result).to.equal(undefined);
+            expect(rollbacks).to.equal(1);
+        });
+
+        it('creates nothing and resolves undefined (draft restored by the caller) when the dialog is cancelled', async () => {
+            const { bodies, result, rollbacks } = await submitOnDirtyTree(undefined);
+            expect(bodies).to.have.length(1);
+            expect(result).to.equal(undefined);
+            expect(rollbacks).to.equal(1);
+        });
+    });
+
     describe('paid-send gate on a new task', () => {
         const project = { id: 'p1', name: 'app' } as unknown as MobileProjectEntry;
         const paidModel = { provider: 'openai' as const, vendor: 'openrouter', modelId: 'openai/gpt-5' };
@@ -495,6 +567,151 @@ describe('MobileProjectsBackgroundTaskUi', () => {
             expect(created?.id).to.equal('task-new');
             expect(h.cancelled).to.be.empty;
             expect(h.archived).to.be.empty;
+        });
+    });
+
+    describe('new task uses the composer chip agent and model', () => {
+        const project = { id: 'p-route', name: 'app', github: { owner: 'o', repo: 'app' } } as unknown as MobileProjectEntry;
+        const cohere = { provider: 'openai' as const, vendor: 'openrouter', modelId: 'openrouter/cohere/north-mini-code:free' };
+        const beamFree = { provider: 'openai' as const, vendor: 'opencode', modelId: 'opencode/beam-free' };
+
+        interface RoutingHarness {
+            ui: MobileProjectsBackgroundTaskUi;
+            bodies: Array<Record<string, unknown>>;
+            routed: string[];
+            prepared: number[];
+            rolledBack: number[];
+        }
+
+        /** A submit that runs the real routing and create against a stubbed POST; `projectCwd` undefined = repo not prepared yet. */
+        function uiRouting(options: { projectCwd?: string; prepare?: () => Promise<string | undefined> } = {}): RoutingHarness {
+            const harness: RoutingHarness = { ui: undefined as never, bodies: [], routed: [], prepared: [], rolledBack: [] };
+            const ui = new MobileProjectsBackgroundTaskUi({
+                projects: [],
+                preparedCwdByProjectId: new Map(),
+                justAddedTaskId: undefined,
+                agentsHubShellActive: false,
+                projectsService: { getProjectCwd: () => options.projectCwd } as never,
+                delegate: {},
+                transcriptSheetUi: { openTranscriptSheet: async () => undefined } as never,
+                transcriptLiveUi: {} as never,
+                shouldUseAgentsHubLanding: () => false,
+                renderSubtitle: () => undefined,
+                renderList: () => undefined,
+                seedTranscriptOptimisticSubmit: () => undefined,
+                syncWorkHubProjectSkillRoots: () => undefined,
+                rollbackTranscriptOptimisticSubmit: () => { harness.rolledBack.push(1); },
+            });
+            ui['confirmPaidSend'] = async (): Promise<boolean> => true;
+            ui['ensureInlineComposerCwd'] = async (): Promise<string | undefined> => {
+                harness.prepared.push(1);
+                return options.prepare ? options.prepare() : '/repo/app';
+            };
+            const realSelect = ui.selectBackendConversationAgent.bind(ui);
+            ui.selectBackendConversationAgent = async (cwd: string, prompt: string, selectedAgentId?: string): Promise<string> => {
+                const agent = await realSelect(cwd, prompt, selectedAgentId);
+                harness.routed.push(agent);
+                return agent;
+            };
+            ui.loadBackendAgentSnapshot = async () => ({
+                agents: [{ id: 'opencode', label: 'OpenCode', available: true }, { id: 'pi', label: 'Pi', available: true }],
+                defaultAgent: 'opencode',
+                agentConfigured: true,
+                qaiqInstalled: false,
+                qaiqModels: [],
+            });
+            harness.ui = ui;
+            return harness;
+        }
+
+        async function withCreateStub<T>(harness: RoutingHarness, run: () => Promise<T>): Promise<T> {
+            const originalFetch = globalThis.fetch;
+            globalThis.fetch = (async (input: unknown, init?: { body?: unknown }) => {
+                const body = JSON.parse(String(init?.body));
+                if (String(input).includes('client-errors')) {
+                    // The failure breadcrumb, not a create.
+                    return { ok: true, status: 204, json: async () => ({}) };
+                }
+                harness.bodies.push(body);
+                const conversation = { id: 'conv-route', cwd: body.cwd, agentId: body.agent, status: 'streaming', messages: [], createdAt: 1, updatedAt: 1 };
+                return { ok: true, status: 201, json: async () => conversation };
+            }) as unknown as typeof globalThis.fetch;
+            try {
+                return await run();
+            } finally {
+                globalThis.fetch = originalFetch;
+            }
+        }
+
+        beforeEach(() => {
+            window.localStorage.clear();
+            document.querySelectorAll('.theia-mobile-snackbar-message').forEach(node => node.remove());
+        });
+
+        it('creates the task with the chip agent (Pi) and the chip model, never the default harness', async () => {
+            const h = uiRouting({ projectCwd: '/repo/app' });
+            // Another harness's pick is stored for the project: it must not leak into the Pi send.
+            writeStoredAgentModel('/repo/app', 'opencode', beamFree);
+            const created = await withCreateStub(h, () => h.ui.submitBackgroundAgentTask(project, 'build it', {
+                openConversation: false,
+                selectedAgentId: 'pi',
+                agentModel: cohere,
+                agentModelAgentId: 'pi',
+            }));
+            expect(created?.id).to.equal('conv-route');
+            expect(h.bodies).to.have.length(1);
+            expect(h.bodies[0].agent).to.equal('pi');
+            expect(h.bodies[0].agentModel).to.deep.equal(cohere);
+            expect(h.routed).to.deep.equal(['pi']);
+        });
+
+        it('without a cwd prepares it first and routes exactly once', async () => {
+            const h = uiRouting({ projectCwd: undefined });
+            await withCreateStub(h, () => h.ui.submitBackgroundAgentTask(project, 'build it', {
+                openConversation: false,
+                selectedAgentId: 'pi',
+                agentModel: cohere,
+                agentModelAgentId: 'pi',
+            }));
+            expect(h.prepared).to.have.length(1);
+            expect(h.routed).to.deep.equal(['pi']);
+            expect(h.bodies).to.have.length(1);
+            expect(h.bodies[0].cwd).to.equal('/repo/app');
+            expect(h.bodies[0].agent).to.equal('pi');
+            expect(h.bodies[0].agentModel).to.deep.equal(cohere);
+        });
+
+        it('without a cwd that cannot be prepared sends nothing and says the project is being prepared', async () => {
+            const h = uiRouting({
+                projectCwd: undefined,
+                prepare: async () => { throw new Error('Timed out after 90s while preparing the repository.'); },
+            });
+            const created = await withCreateStub(h, () => h.ui.submitBackgroundAgentTask(project, 'build it', {
+                openConversation: false,
+                selectedAgentId: 'pi',
+                agentModel: cohere,
+            }));
+            expect(created).to.equal(undefined);
+            expect(h.routed).to.be.empty;
+            expect(h.bodies).to.be.empty;
+            expect(h.rolledBack).to.have.length(1);
+            expect(document.querySelector('.theia-mobile-snackbar-message')?.textContent).to.equal('Preparing the project…');
+        });
+
+        it('a model of another harness blocks the send and opens the model picker', async () => {
+            const h = uiRouting({ projectCwd: '/repo/app' });
+            let pickerOpened = 0;
+            const created = await withCreateStub(h, () => h.ui.submitBackgroundAgentTask(project, 'build it', {
+                openConversation: false,
+                selectedAgentId: 'pi',
+                agentModel: beamFree,
+                agentModelAgentId: 'opencode',
+                openModelPicker: () => { pickerOpened++; },
+            }));
+            expect(created).to.equal(undefined);
+            expect(h.bodies).to.be.empty;
+            expect(pickerOpened).to.equal(1);
+            expect(h.rolledBack).to.have.length(1);
         });
     });
 });

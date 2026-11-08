@@ -10,6 +10,7 @@ import {
     conversationToSummary,
     getConversation,
     postConversationMessage,
+    QaapDirtyWorkspaceCancelledError,
     startGoalLoop,
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
@@ -290,10 +291,24 @@ export class MobileProjectsTranscriptSubmitUi {
         try {
             await this.submitTranscriptViaBackendConversationInner(project, summary, content, options, submitAt);
             return true;
+        } catch (error) {
+            if (error instanceof QaapDirtyWorkspaceCancelledError) {
+                // The user cancelled the dirty-workspace dialog: nothing was created, so the pending paint goes.
+                this.rollbackPendingNewChatPaint(summary);
+            }
+            throw error;
         } finally {
             if (!allowConcurrent) {
                 this.submitInFlightByConversationId.delete(summary.id);
             }
+        }
+    }
+
+    /** Repaints the transcript from the cached conversation, dropping the optimistic row of a cancelled new task. */
+    protected rollbackPendingNewChatPaint(summary: QaapAgentConversationSummaryDTO): void {
+        const chatHost = this.host.resolveActiveTranscriptChatHost();
+        if (chatHost) {
+            this.renderTranscriptSubmitMessages(chatHost, resolveQueuedFollowUpBaseConversation(this.host.transcriptLastConv, summary), summary);
         }
     }
 

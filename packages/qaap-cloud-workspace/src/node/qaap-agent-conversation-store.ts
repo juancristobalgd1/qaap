@@ -13,6 +13,8 @@ import {
 } from '@theia/core/shared/inversify';
 import { spawnSync, SpawnSyncReturns } from 'child_process';
 import { QaapSqliteStore, resolveQaapSqlitePath } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
+import { QaapTrackedConversationMap } from './qaap-tracked-conversation-map';
+import { QAAP_CONVERSATION_LEGACY_NAMESPACE, QAAP_CONVERSATION_ROWS_NAMESPACE, flushConversationRowsSync, stopFullConversationSweep } from './qaap-agent-conversation-store-rows';
 import {
     QaapAgentConversation,
     QaapAgentConversationCwdGroup,
@@ -164,7 +166,7 @@ export class QaapAgentConversationStore implements QaapAgentConversationStoreCon
     public readonly workflowRuns: QaapWorkflowRunStore | undefined;
 
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
-    public readonly conversations = new Map<string, QaapAgentConversation>();
+    public readonly conversations = new QaapTrackedConversationMap();
     /** Highest worktree ordinal handed out per (owner, source repo) — see qaap-worktree-ordinal-allocator. */
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
     public readonly worktreeOrdinalHighWater = new Map<string, number>();
@@ -212,7 +214,23 @@ export class QaapAgentConversationStore implements QaapAgentConversationStoreCon
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
     public persistTimer: ReturnType<typeof setTimeout> | undefined;
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public lastPersistDurationMs: number | undefined;
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
     public sqliteStore: QaapSqliteStore | undefined;
+    /** @internal Row-per-conversation store (`agent-conversations.v2`). */
+    public sqliteRowsStore: QaapSqliteStore | undefined;
+    /** @internal Last high-water JSON written to the row store. */
+    public persistedHighWaterJson: string | undefined;
+    /** @internal False until the migration and load finished; writes are skipped before that. */
+    public conversationRowsReady = false;
+    /** @internal Why the restore failed; conversations are unavailable while set. */
+    public conversationStorageFailure: string | undefined;
+    /** @internal The last write of conversation rows failed. */
+    public conversationWriteFailed = false;
+    /** @internal Periodic sweep that looks for rows changed without `set`. */
+    public fullSweepTimer: ReturnType<typeof setInterval> | undefined;
+    /** @internal Ids the sweep still has to look at. */
+    public conversationSweepQueue: string[] = [];
     /** Periodic sweep that pauses turns silent past `QAAP_TURN_IDLE_MINUTES` or running past `QAAP_MAX_TURN_MINUTES`. */
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
     public turnWatchdogTimer: ReturnType<typeof setInterval> | undefined;
@@ -981,13 +999,57 @@ export class QaapAgentConversationStore implements QaapAgentConversationStoreCon
         return persistExtracted(this);
     }
 
-    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    /**
+     * Legacy namespace (`agent-conversations`) holding the single aggregate row. It is read for the
+     * migration and after a rollback, and is never written by the store.
+     * @internal Used by the extracted qaap-agent-conversation-store-* modules.
+     */
     public getSqliteStore(): QaapSqliteStore {
         return this.sqliteStore ??= new QaapSqliteStore({
             databasePath: resolveQaapSqlitePath(INDEX_PATH),
-            namespace: 'agent-conversations',
+            namespace: QAAP_CONVERSATION_LEGACY_NAMESPACE,
             legacyPath: INDEX_PATH,
         });
+    }
+
+    /**
+     * Row-per-conversation namespace (`agent-conversations.v2`) in the same database file as
+     * {@link getSqliteStore}. Source of truth once the migration is recorded.
+     * @internal Used by the extracted qaap-agent-conversation-store-* modules.
+     */
+    public getSqliteStoreV2(): QaapSqliteStore {
+        return this.sqliteRowsStore ??= new QaapSqliteStore({
+            databasePath: resolveQaapSqlitePath(INDEX_PATH),
+            namespace: QAAP_CONVERSATION_ROWS_NAMESPACE,
+        });
+    }
+
+    /**
+     * Backend shutdown hook: stops the sweep and writes only the pending conversation rows,
+     * synchronously and within a time budget, so what changed since the last debounced persist is not
+     * lost on a clean stop.
+     */
+    onStop(): void {
+        stopFullConversationSweep(this);
+        if (this.persistTimer !== undefined) {
+            clearTimeout(this.persistTimer);
+            this.persistTimer = undefined;
+        }
+        try {
+            flushConversationRowsSync(this);
+        } catch (error) {
+            this.conversationWriteFailed = true;
+            console.error('[qaap-agent-conversation-store] failed to flush conversations on shutdown:', error);
+        }
+    }
+
+    /**
+     * State of the conversation storage, for the health check and the HTTP API.
+     *
+     * @returns the restore failure, if any, and whether the last write failed.
+     */
+    storageHealth(): { readonly failure: string | undefined; readonly writeFailed: boolean } {
+        return { failure: this.conversationStorageFailure, writeFailed: this.conversationWriteFailed };
     }
 
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
@@ -1001,7 +1063,7 @@ export class QaapAgentConversationStore implements QaapAgentConversationStoreCon
     }
 
     /** Async twin of {@link readGitSync} for the turn-settle path: same tenant worker, same 4s budget. */
-    protected readGit(cwd: string, args: readonly string[]): Promise<QaapGitRunResult> {
+    public readGit(cwd: string, args: readonly string[]): Promise<QaapGitRunResult> {
         try {
             const wrapped = this.tenantSpawn.wrapGitForTenant(cwd, args);
             return runGitAsync(wrapped.file, wrapped.args, { cwd, timeoutMs: 4000, maxBuffer: 64 * 1024 * 1024 });
@@ -1024,8 +1086,8 @@ export class QaapAgentConversationStore implements QaapAgentConversationStoreCon
     }
 
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
-    public captureCheckpoint(cwd: string, conversationId: string, messageId: string, label: string, stats?: { added: number; removed: number }, ): Promise<QaapConversationCheckpoint | undefined> {
-        return captureCheckpointExtracted(this, cwd, conversationId, messageId, label, stats);
+    public captureCheckpoint(cwd: string, conversationId: string, messageId: string, label: string, stats?: { added: number; removed: number }, treeId?: string, ): Promise<QaapConversationCheckpoint | undefined> {
+        return captureCheckpointExtracted(this, cwd, conversationId, messageId, label, stats, treeId);
     }
 
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */

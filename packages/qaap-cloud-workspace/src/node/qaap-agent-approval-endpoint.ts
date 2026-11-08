@@ -12,6 +12,7 @@ import {
 } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
 import { QAAP_AGENT_APPROVAL_API_PATH } from '../common/qaap-agent-approval';
 import { QaapAgentApprovalStore } from './qaap-agent-approval-store';
+import { QaapAsyncRoute } from '@theia/qaap-shared-core/lib/node/qaap-async-route';
 
 /** HTTP surface for granular VPS agent tool / permission approvals. */
 @injectable()
@@ -24,15 +25,9 @@ export class QaapAgentApprovalEndpoint implements BackendApplicationContribution
     protected readonly auth: QaapGithubAuthGuard;
 
     configure(app: Application): void {
-        app.get(QAAP_AGENT_APPROVAL_API_PATH, (req, res) => {
-            void this.handleList(req, res);
-        });
-        app.post(`${QAAP_AGENT_APPROVAL_API_PATH}/:id/approve`, (req, res) => {
-            void this.handleApprove(req, res);
-        });
-        app.post(`${QAAP_AGENT_APPROVAL_API_PATH}/:id/reject`, (req, res) => {
-            void this.handleReject(req, res);
-        });
+        app.get(QAAP_AGENT_APPROVAL_API_PATH, QaapAsyncRoute.wrap('qaap-agent-approval', (req, res) => this.handleList(req, res)));
+        app.post(`${QAAP_AGENT_APPROVAL_API_PATH}/:id/approve`, QaapAsyncRoute.wrap('qaap-agent-approval', (req, res) => this.handleApprove(req, res)));
+        app.post(`${QAAP_AGENT_APPROVAL_API_PATH}/:id/reject`, QaapAsyncRoute.wrap('qaap-agent-approval', (req, res) => this.handleReject(req, res)));
     }
 
     protected async handleList(req: Request, res: Response): Promise<void> {

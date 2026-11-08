@@ -27,8 +27,9 @@ export class QaapPlanRepoLimitError extends Error {
         readonly limit: number,
         message?: string,
     ) {
+        const planName = planId.charAt(0).toUpperCase() + planId.slice(1);
         super(message ?? (
-            `Your ${planId} plan allows ${limit} active repositories. `
+            `Your ${planName} plan allows ${limit} active repositories. `
             + 'Remove a clone or upgrade to open another.'
         ));
         this.name = 'QaapPlanRepoLimitError';

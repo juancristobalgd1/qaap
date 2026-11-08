@@ -18,6 +18,7 @@ import type { Emitter } from '@theia/core/lib/common/event';
 import type { QaapGitRunResult } from './qaap-agent-conversation-store-git';
 import type { QaapConversationEventLog, QaapConversationLogEntry } from './qaap-conversation-event-log';
 import type { QaapSqliteStore } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
+import type { QaapTrackedConversationMap } from './qaap-tracked-conversation-map';
 import type {
     QaapAgentConversation,
     QaapAgentConversationEvent,
@@ -61,7 +62,13 @@ export interface QaapAgentConversationStoreContext {
     readonly workflowRuns: QaapWorkflowRunStore | undefined;
 
     // ─── State maps / sets ──────────────────────────────────────────────────
-    readonly conversations: Map<string, QaapAgentConversation>;
+    /**
+     * Live conversations, one row each in SQLite. Invariant: a conversation object is an immutable
+     * value. Change it only by building a new object and calling `set`; never mutate it in place.
+     * `set` marks the row dirty. A change that bypasses it is still found by hash at the next persist
+     * (ids read through `get`) or by the bounded sweep, and is logged as a bug.
+     */
+    readonly conversations: QaapTrackedConversationMap;
     /** Optional so narrow unit-test fakes of the context keep compiling. */
     readonly worktreeOrdinalHighWater?: Map<string, number>;
     readonly chatTurnRunByTask: Map<string, { runId: string; ownerLogin?: string; nodeId: string }>;
@@ -91,11 +98,27 @@ export interface QaapAgentConversationStoreContext {
     /** Tasks the turn watchdog is stopping as `interrupted`; their settle keeps the watchdog's reason. */
     readonly turnWatchdogPausedTaskIds: Set<string>;
     persistFailureLoggedAtMs: number;
+    /** Duration of the last completed store write; drives the adaptive streaming persist debounce. */
+    lastPersistDurationMs: number | undefined;
     persistChain: Promise<void>;
+    /** Last high-water JSON written to the v2 namespace; `undefined` forces the next write. */
+    persistedHighWaterJson: string | undefined;
+    /** False until the v2 migration and load finished; writes are skipped before that. */
+    conversationRowsReady: boolean;
+    /** Why the restore failed. Set: conversations are unavailable (HTTP 503, unhealthy `/qaap/api/health`). */
+    conversationStorageFailure: string | undefined;
+    /** The last write of conversation rows failed; a later successful write clears it. */
+    conversationWriteFailed: boolean;
+    fullSweepTimer: ReturnType<typeof setInterval> | undefined;
+    /** Ids the sweep still has to look at; refilled when it runs empty. */
+    conversationSweepQueue: string[];
 
     // ─── Persistence / lifecycle ────────────────────────────────────────────
     persist(): Promise<void>;
+    /** Legacy namespace (`agent-conversations`): read for the migration and after a rollback, never written. */
     getSqliteStore(): QaapSqliteStore;
+    /** Row-per-conversation namespace (`agent-conversations.v2`): the source of truth after migration. */
+    getSqliteStoreV2(): QaapSqliteStore;
     schedulePersist(): void;
     flushPersist(): void;
     restoreFromDisk(): Promise<void>;
@@ -342,13 +365,19 @@ export interface QaapAgentConversationStoreContext {
     runSerializedGit<T>(cwd: string, job: () => Promise<T>): Promise<T>;
     captureGitSha(cwd: string): string | undefined;
     computeGitDiffStats(cwd: string, startSha?: string): Promise<{ added: number; removed: number; files?: number } | undefined>;
-    /** Not serialized by itself: callers wrap it (plus related git) in {@link runSerializedGit}. */
+    /** Read-only git through the tenant worker (same seam as the turn settle path). */
+    readGit(cwd: string, args: readonly string[]): Promise<QaapGitRunResult>;
+    /**
+     * Not serialized by itself: callers wrap it (plus related git) in {@link runSerializedGit}. `treeId`
+     * reuses a worktree snapshot the caller already took, so the worktree is scanned once per turn.
+     */
     captureCheckpoint(
         cwd: string,
         conversationId: string,
         messageId: string,
         label: string,
         stats?: { added: number; removed: number },
+        treeId?: string,
     ): Promise<QaapConversationCheckpoint | undefined>;
     /** Best-effort removal of a checkpoint ref that ended up not recorded on the conversation. */
     discardCheckpointRef(cwd: string, ref: string): Promise<void>;

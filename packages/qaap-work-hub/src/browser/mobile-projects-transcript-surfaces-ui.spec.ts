@@ -194,8 +194,8 @@ describe('MobileProjectsTranscriptSurfacesUi — syncHeaderPreviewRunButton', ()
         expect(host.headerPreviewRunHost.hidden).to.equal(false);
         const previewButton = host.headerPreviewRunHost.querySelector<HTMLButtonElement>('.theia-mobile-transcript-preview-run');
         expect(previewButton).to.not.equal(null);
-        expect(previewButton?.title).to.equal('Navegador');
-        expect(previewButton?.getAttribute('aria-label')).to.equal('Navegador');
+        expect(previewButton?.title).to.equal('Browser');
+        expect(previewButton?.getAttribute('aria-label')).to.equal('Browser');
     });
 
     it('shows the selected monorepo app and exposes an explicit switch action', () => {
@@ -960,5 +960,147 @@ describe('MobileProjectsTranscriptSurfacesUi — preview request without a start
         expect(host.transcriptPreviewRequestPending).to.equal(false);
         const notices = snackbar.getCalls().map(call => String(call.args[0]));
         expect(notices.some(text => /No start command found/.test(text))).to.equal(true);
+    });
+});
+
+describe('MobileProjectsTranscriptSurfacesUi — launch overlay across a project switch', () => {
+
+    useSuiteJSDOM();
+
+    afterEach(() => {
+        document.body.replaceChildren();
+    });
+
+    it('drops a failure overlay drawn for the previous project', () => {
+        const host = buildIdlePreviewHost();
+        const ui = new MobileProjectsTranscriptSurfacesUi(host, historyUiStub);
+        const root = document.createElement('div');
+        const frameSlot = document.createElement('div');
+        frameSlot.className = 'qaap-preview-frame-slot';
+        root.append(frameSlot);
+        host.transcriptEmbeddedPreview = { root } as unknown as MobileProjectsTranscriptSurfacesHost['transcriptEmbeddedPreview'];
+        host.projectBootstrap = {
+            getStateSnapshot: () => ({ phase: 'starting' }),
+        } as unknown as MobileProjectsTranscriptSurfacesHost['projectBootstrap'];
+        ui.transcriptPreviewProjectId = 'project-a';
+        host.transcriptPreviewRequestRunning = true;
+        ui.updateTranscriptPreviewLaunchStatus();
+        expect(frameSlot.querySelector('.theia-mobile-transcript-preview-launch-overlay')).to.not.equal(null);
+
+        host.transcriptPreviewRequestRunning = false;
+        host.projectBootstrap = {
+            getStateSnapshot: () => ({ phase: 'run-failed', error: 'boom' }),
+            canBuildAndStartPreview: () => false,
+        } as unknown as MobileProjectsTranscriptSurfacesHost['projectBootstrap'];
+        ui.updateTranscriptPreviewLaunchStatus();
+        expect(frameSlot.querySelector('.theia-mobile-transcript-preview-launch-title')?.textContent).to.equal('Preview could not start');
+
+        ui.transcriptPreviewProjectId = 'project-b';
+        ui.updateTranscriptPreviewLaunchStatus();
+        expect(frameSlot.querySelector('.theia-mobile-transcript-preview-launch-overlay')).to.equal(null);
+    });
+});
+
+describe('MobileProjectsTranscriptSurfacesUi — app picker dismissed without a choice', () => {
+
+    useSuiteJSDOM();
+
+    afterEach(() => {
+        sinon.restore();
+        document.body.replaceChildren();
+    });
+
+    function buildFrame(): { host: MobileProjectsTranscriptSurfacesHost; ui: MobileProjectsTranscriptSurfacesUi; frameSlot: HTMLElement } {
+        const host = buildIdlePreviewHost();
+        const ui = new MobileProjectsTranscriptSurfacesUi(host, historyUiStub);
+        const root = document.createElement('div');
+        const frameSlot = document.createElement('div');
+        frameSlot.className = 'qaap-preview-frame-slot';
+        root.append(frameSlot);
+        host.transcriptEmbeddedPreview = { root } as unknown as MobileProjectsTranscriptSurfacesHost['transcriptEmbeddedPreview'];
+        host.projectBootstrap = {
+            getStateSnapshot: () => ({ phase: 'ready-to-run' }),
+            canBuildAndStartPreview: () => false,
+        } as unknown as MobileProjectsTranscriptSurfacesHost['projectBootstrap'];
+        ui.transcriptPreviewProjectId = 'project-a';
+        return { host, ui, frameSlot };
+    }
+
+    it('paints a "Choose an app" state with a button instead of a blank frame', () => {
+        const { ui, frameSlot } = buildFrame();
+        ui.transcriptPreviewAppPickerCancelledProjectId = 'project-a';
+
+        ui.updateTranscriptPreviewLaunchStatus();
+
+        const overlay = frameSlot.querySelector('.theia-mobile-transcript-preview-launch-overlay');
+        expect(overlay).to.not.equal(null);
+        expect(frameSlot.querySelector('.theia-mobile-transcript-preview-launch-title')?.textContent).to.equal('Choose an app to preview');
+        expect(frameSlot.querySelector('.theia-mobile-transcript-preview-launch-detail')?.textContent)
+            .to.equal('This repository has several apps. Pick the one Qaap should run.');
+        expect(frameSlot.querySelector('.theia-mobile-transcript-preview-launch-spinner')).to.equal(null);
+        expect(frameSlot.querySelector<HTMLButtonElement>('.theia-mobile-transcript-preview-launch-retry')?.textContent).to.equal('Choose app');
+    });
+
+    it('reopens the app picker from the Choose app button', () => {
+        const { host, ui, frameSlot } = buildFrame();
+        const project = sampleProject();
+        const summary = sampleSummary();
+        host.transcriptOpenProject = project;
+        host.transcriptOpenSummary = summary;
+        ui.transcriptPreviewAppPickerCancelledProjectId = 'project-a';
+        const request = sinon.stub(ui, 'requestTranscriptPreview').resolves();
+        ui.updateTranscriptPreviewLaunchStatus();
+
+        frameSlot.querySelector<HTMLButtonElement>('.theia-mobile-transcript-preview-launch-retry')?.click();
+
+        expect(request.calledOnce).to.equal(true);
+        expect(request.firstCall.args[0]).to.equal(project);
+        expect(request.firstCall.args[1]).to.equal(summary);
+        expect(request.firstCall.args[2]).to.deep.equal({ revealPreviewTab: true, allowAgentFallback: false });
+    });
+
+    it('drops the state when a request is running again or the project changes', () => {
+        const { host, ui, frameSlot } = buildFrame();
+        ui.transcriptPreviewAppPickerCancelledProjectId = 'project-a';
+        ui.updateTranscriptPreviewLaunchStatus();
+        expect(frameSlot.querySelector('.theia-mobile-transcript-preview-launch-overlay')).to.not.equal(null);
+
+        host.transcriptPreviewRequestRunning = true;
+        ui.updateTranscriptPreviewLaunchStatus();
+        expect(frameSlot.querySelector('.theia-mobile-transcript-preview-launch-title')?.textContent).to.equal('Preparing your preview…');
+
+        host.transcriptPreviewRequestRunning = false;
+        ui.transcriptPreviewProjectId = 'project-b';
+        ui.updateTranscriptPreviewLaunchStatus();
+        expect(frameSlot.querySelector('.theia-mobile-transcript-preview-launch-overlay')).to.equal(null);
+    });
+
+    it('is painted when the picker resolves without a choice during a preview request', async () => {
+        const project = sampleProject();
+        const summary = sampleSummary();
+        const { host } = buildSyncHeaderPreviewHost({ activeTab: 'messages' });
+        (host as unknown as { projects: MobileProjectEntry[] }).projects = [project];
+        (host as unknown as { projectsService: unknown }).projectsService = { getProjectCwd: () => '/tmp/demo' };
+        (host as unknown as { preparedCwdByProjectId: Map<string, string> }).preparedCwdByProjectId = new Map();
+        const apps = sampleApps();
+        (host as unknown as { projectBootstrap: unknown }).projectBootstrap = {
+            refreshFromProjectRoot: async () => undefined,
+            getStateSnapshot: () => ({ descriptor: { apps }, selectedApp: undefined, phase: 'ready-to-run' }),
+            canBuildAndStartPreview: () => false,
+        };
+        const root = document.createElement('div');
+        const frameSlot = document.createElement('div');
+        frameSlot.className = 'qaap-preview-frame-slot';
+        root.append(frameSlot);
+        host.transcriptEmbeddedPreview = { root } as unknown as MobileProjectsTranscriptSurfacesHost['transcriptEmbeddedPreview'];
+        const ui = new MobileProjectsTranscriptSurfacesUi(host, historyUiStub);
+        sinon.stub(ui, 'resolveRunnableTranscriptProjectRoot').returns('/tmp/demo');
+        sinon.stub(ui, 'pickTranscriptPreviewApp').resolves(undefined);
+        ui.transcriptPreviewProjectId = project.id;
+
+        await ui.requestTranscriptPreview(project, summary, { allowAgentFallback: false });
+
+        expect(host.transcriptPreviewRequestPending).to.equal(false);
+        expect(frameSlot.querySelector('.theia-mobile-transcript-preview-launch-title')?.textContent).to.equal('Choose an app to preview');
     });
 });

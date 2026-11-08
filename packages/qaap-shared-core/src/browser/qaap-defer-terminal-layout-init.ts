@@ -4,14 +4,20 @@
 // *****************************************************************************
 
 import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
-import { peekPreferDesktopIde, shouldBootstrapMobileAgentsChat, shouldPreferWorkHubAgentsLayout } from './mobile-projects-open';
+import { peekPreferDesktopIde } from '../common/qaap-mobile-work-surface-preference';
+import { shouldBootstrapMobileAgentsChat, shouldPreferWorkHubAgentsLayout } from './mobile-projects-open';
 
-/** Work Hub boots without a bottom-panel terminal; defer creation until the user opens one. */
+/**
+ * Work Hub boots without a bottom-panel terminal; defer creation until the user opens the classic IDE.
+ * A fresh tab (no IDE preference in sessionStorage) defers on desktop too, so the terminal is created
+ * only after {@link markPreferDesktopIde}.
+ */
 export function shouldDeferTerminalLayoutInit(): boolean {
     if (typeof window === 'undefined') {
         return false;
     }
-    return matchesMobileOneColumnLayout()
+    return !peekPreferDesktopIde()
+        || matchesMobileOneColumnLayout()
         || shouldBootstrapMobileAgentsChat()
         || shouldPreferWorkHubAgentsLayout();
 }

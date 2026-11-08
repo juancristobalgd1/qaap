@@ -96,6 +96,7 @@ import {
     type QaapGithubWorkspaceJobContext,
 } from './qaap-github-workspace-jobs';
 import { qaapGitReadEnv } from './qaap-child-process-env';
+import { QaapAsyncRoute } from './qaap-async-route';
 
 const GITHUB_AUTHORIZE_URL = 'https://github.com/login/oauth/authorize';
 const GITHUB_OAUTH_SCOPE = 'read:user repo';
@@ -209,29 +210,27 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     configure(app: Application): void {
         app.use(json());
         app.get(QAAP_GITHUB_OAUTH_START_PATH, (req, res) => this.handleOAuthStart(req, res));
-        app.get(QAAP_GITHUB_OAUTH_CALLBACK_PATH, (req, res) => this.handleOAuthCallback(req, res));
+        app.get(QAAP_GITHUB_OAUTH_CALLBACK_PATH, QaapAsyncRoute.wrap('qaap-github-oauth', (req, res) => this.handleOAuthCallback(req, res)));
         app.get(QAAP_HEALTH_API_PATH, (req, res) => this.handleHealth(req, res));
         app.get(`${QAAP_AUTH_API_PATH}/config`, (req, res) => this.handleAuthConfig(req, res));
         app.get(`${QAAP_AUTH_API_PATH}/session`, (req, res) => this.handleAuthSession(req, res));
         app.post(`${QAAP_AUTH_API_PATH}/signout`, (req, res) => this.handleSignOut(req, res));
-        app.get(`${QAAP_GITHUB_API_PATH}/repositories`, (req, res) => this.handleGithubRepositories(req, res));
-        app.post(`${QAAP_GITHUB_API_PATH}/repositories`, (req, res) => this.handleCreateGithubRepository(req, res));
-        app.post(`${QAAP_GITHUB_API_PATH}/repositories/open`, (req, res) => this.handleCloneGithubRepository(req, res));
+        app.get(`${QAAP_GITHUB_API_PATH}/repositories`, QaapAsyncRoute.wrap('qaap-github-oauth', (req, res) => this.handleGithubRepositories(req, res)));
+        app.post(`${QAAP_GITHUB_API_PATH}/repositories`, QaapAsyncRoute.wrap('qaap-github-oauth', (req, res) => this.handleCreateGithubRepository(req, res)));
+        app.post(`${QAAP_GITHUB_API_PATH}/repositories/open`, QaapAsyncRoute.wrap('qaap-github-oauth', (req, res) => this.handleCloneGithubRepository(req, res)));
         app.post(`${QAAP_GITHUB_API_PATH}/workspace-jobs`, (req, res) => this.handleStartWorkspaceJob(req, res));
         app.get(`${QAAP_GITHUB_API_PATH}/workspace-jobs`, (req, res) => this.handleListWorkspaceJobs(req, res));
         app.get(`${QAAP_GITHUB_API_PATH}/workspace-jobs/:id`, (req, res) => this.handleGetWorkspaceJob(req, res));
-        app.post(`${QAAP_GITHUB_API_PATH}/workspace-jobs/:id/cancel`, (req, res) => this.handleCancelWorkspaceJob(req, res));
+        app.post(`${QAAP_GITHUB_API_PATH}/workspace-jobs/:id/cancel`, QaapAsyncRoute.wrap('qaap-github-oauth', (req, res) => this.handleCancelWorkspaceJob(req, res)));
         // POST, not GET: opening clones/pulls to disk, and SameSite=Lax only shields non-GET
         // requests from cross-site initiation (a top-level GET navigation would send the cookie).
-        app.post(`${QAAP_GITHUB_API_PATH}/repositories/:owner/:repo/open`, (req, res) => this.handleOpenGithubRepository(req, res));
-        app.delete(`${QAAP_GITHUB_API_PATH}/repositories/:owner/:repo`, (req, res) => {
-            void this.handleDeleteGithubRepository(req, res);
-        });
+        app.post(`${QAAP_GITHUB_API_PATH}/repositories/:owner/:repo/open`, QaapAsyncRoute.wrap('qaap-github-oauth', (req, res) => this.handleOpenGithubRepository(req, res)));
+        app.delete(`${QAAP_GITHUB_API_PATH}/repositories/:owner/:repo`, QaapAsyncRoute.wrap('qaap-github-oauth', (req, res) => this.handleDeleteGithubRepository(req, res)));
         app.delete(`${QAAP_GITHUB_API_PATH}/worktrees/:slug`, (req, res) => this.handleRemoveWorktreeProject(req, res));
-        app.get(`${QAAP_GITHUB_API_PATH}/pull-requests`, (req, res) => this.handleGithubPullRequests(req, res));
-        app.get(`${QAAP_GITHUB_API_PATH}/pull-requests/search`, (req, res) => this.handleSearchGithubPullRequests(req, res));
-        app.get(`${QAAP_GITHUB_API_PATH}/pull-requests/detail`, (req, res) => this.handleGithubPullRequestDetail(req, res));
-        app.post(`${QAAP_GITHUB_API_PATH}/pull-requests/merge`, (req, res) => this.handleMergeGithubPullRequest(req, res));
+        app.get(`${QAAP_GITHUB_API_PATH}/pull-requests`, QaapAsyncRoute.wrap('qaap-github-oauth', (req, res) => this.handleGithubPullRequests(req, res)));
+        app.get(`${QAAP_GITHUB_API_PATH}/pull-requests/search`, QaapAsyncRoute.wrap('qaap-github-oauth', (req, res) => this.handleSearchGithubPullRequests(req, res)));
+        app.get(`${QAAP_GITHUB_API_PATH}/pull-requests/detail`, QaapAsyncRoute.wrap('qaap-github-oauth', (req, res) => this.handleGithubPullRequestDetail(req, res)));
+        app.post(`${QAAP_GITHUB_API_PATH}/pull-requests/merge`, QaapAsyncRoute.wrap('qaap-github-oauth', (req, res) => this.handleMergeGithubPullRequest(req, res)));
         app.get(`${QAAP_GITHUB_API_PATH}/project-sessions`, (req, res) => this.handleProjectSessions(req, res));
         app.post(`${QAAP_GITHUB_API_PATH}/project-sessions`, (req, res) => this.handleUpsertProjectSession(req, res));
     }

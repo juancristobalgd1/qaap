@@ -6,6 +6,7 @@ import {
     conversationToSummary,
     getConversation,
     isMaxConcurrentRunsError,
+    QaapDirtyWorkspaceCancelledError,
     updateConversation,
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
@@ -70,6 +71,10 @@ export async function startPeerRunOrQueueExtracted(ctx: MobileProjectsTranscript
             ), { duration: 2600 });
             return true;
         } catch (error) {
+            if (error instanceof QaapDirtyWorkspaceCancelledError) {
+                // Cancelled on the dirty-workspace dialog: nothing was sent and the draft stays.
+                return false;
+            }
             if (!isMaxConcurrentRunsError(error)) {
                 const detail = error instanceof Error ? error.message : String(error);
                 ctx.host.messageService?.error(nls.localize(
@@ -111,6 +116,10 @@ export async function startPeerRunOrQueueExtracted(ctx: MobileProjectsTranscript
         }
         return true;
     } catch (error) {
+        if (error instanceof QaapDirtyWorkspaceCancelledError) {
+            // Cancelled on the dirty-workspace dialog: nothing was sent and the draft stays.
+            return false;
+        }
         if (!isMaxConcurrentRunsError(error)) {
             const detail = error instanceof Error ? error.message : String(error);
             ctx.host.messageService?.error(nls.localize(

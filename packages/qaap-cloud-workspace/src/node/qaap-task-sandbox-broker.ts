@@ -15,6 +15,7 @@ import { QAAP_TENANT_RUNTIME_API_PATH } from '../common/qaap-cloud-api-types';
 import { resolveQaapDockerLogConfig } from './qaap-docker-control-plane';
 import { isInQaapDockerNamespace, qaapDockerName, qaapDockerNamespaceLabels } from './qaap-docker-namespace';
 import { QaapDockerOrchestrator, type QaapTaskSandboxPlacement, type QaapTenantBackendTarget } from './qaap-docker-orchestrator';
+import { QAAP_RUNSC_SANDBOX_PIDS_FACTOR } from './qaap-tenant-runtime';
 import {
     QAAP_TASK_SANDBOX_LINK_HEADER,
     QAAP_TASK_SANDBOX_LINK_PATH,
@@ -333,7 +334,7 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
 
     async create(tenant: string, args: QaapTaskSandboxBrokerCreateArgs): Promise<QaapTaskSandboxBrokerSandbox> {
         const started = Date.now();
-        const placement = await this.orchestrator!.taskSandboxPlacement(tenant);
+        const placement = await this.orchestrator!.taskSandboxPlacement(tenant, { forCreate: true });
         const root = this.validateRoot(placement, args?.root);
         const homeLinks = this.validateHomeLinks(placement, args?.homeLinks);
         const containerEnv = this.validateContainerEnv(args?.devcontainer?.containerEnv);
@@ -371,7 +372,7 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
                 throw new Error(`Sandbox ${name} is not owned by this tenant.`);
             }
             const existingToken = this.tokens.get(name);
-            if (existing.State?.Running && !existing.State.Paused && existingToken) {
+            if (existing.State?.Running && !existing.State.Paused && existingToken && this.runtimeMatches(existing, placement)) {
                 return this.describe(name, root, existingToken, existing.Config?.Image ?? placement.image, placement, 0, false, existing);
             }
             // Stopped, paused, or created before this control plane started (its token is gone): recreate.
@@ -566,6 +567,18 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
 
     // ─── Docker ──────────────────────────────────────────────────────────────────────────────────
 
+    /** A sandbox from before a runtime change, or with a stale Squid address, is recreated rather than reused. */
+    protected runtimeMatches(inspect: Dockerode.ContainerInspectInfo, placement: QaapTaskSandboxPlacement): boolean {
+        const host = (inspect as Dockerode.ContainerInspectInfo & { HostConfig?: { Runtime?: string; CgroupParent?: string; ExtraHosts?: string[] | null } }).HostConfig;
+        const runsc = placement.runtime === 'runsc';
+        const expected = runsc ? placement.extraHosts ?? [] : [];
+        const actual = host?.ExtraHosts ?? [];
+        return (host?.Runtime === 'runsc') === runsc
+            && (host?.CgroupParent || '') === (runsc ? placement.cgroupParent ?? '' : '')
+            && actual.length === expected.length
+            && expected.every(entry => actual.includes(entry));
+    }
+
     protected async runSandbox(
         placement: QaapTaskSandboxPlacement, name: string, tenant: string, root: string, image: string,
         toolchain: string, token: string, homeLinks: Array<{ name: string; target: string }>, containerEnv: Record<string, string>,
@@ -606,7 +619,7 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
                 Init: true,
                 CapDrop: ['ALL'],
                 SecurityOpt: ['no-new-privileges:true'],
-                PidsLimit: this.positiveInt('QAAP_TASK_SANDBOX_PIDS', 1024),
+                PidsLimit: this.positiveInt('QAAP_TASK_SANDBOX_PIDS', 1024) * (placement.runtime === 'runsc' ? QAAP_RUNSC_SANDBOX_PIDS_FACTOR : 1),
                 // 4g: building a large monorepo (e.g. a Theia app, whose CI runs with a 4 GiB heap) OOMs at 2g.
                 Memory: this.memoryBytes(process.env.QAAP_TASK_SANDBOX_MEMORY?.trim() || '4g'),
                 NanoCpus: Math.round(Number(process.env.QAAP_TASK_SANDBOX_CPUS?.trim() || '2') * 1e9) || 2e9,
@@ -622,6 +635,7 @@ export class QaapTaskSandboxBroker implements BackendApplicationContribution {
                 ],
                 NetworkMode: placement.network,
                 AutoRemove: false,
+                ...(placement.runtime === 'runsc' ? { Runtime: 'runsc', CgroupParent: placement.cgroupParent, ExtraHosts: [...placement.extraHosts ?? []] } : {}),
             },
         });
         if (placement.directEgressNetwork) {

@@ -74,6 +74,7 @@ function createHarness(containers: any[], record: QaapTenantRuntimeRecord, busy?
             return busy ? busy() : { busy: false, runningTasks: 0 };
         },
         retryDeferredTenantBackendRecreations: async () => undefined,
+        reconcileTenantRuntimes: async () => undefined,
     };
     const activity = new QaapTenantActivityTracker();
     (activity as any).store = store;

@@ -122,6 +122,29 @@ describe('Qaap login gate', () => {
         });
     });
 
+    it('retries a timed-out auth config probe once and skips auth without showing the gate', async () => {
+        let clock: InstalledClock | undefined;
+        const run = start((pathname, call) => {
+            if (pathname !== CONFIG) {
+                return undefined;
+            }
+            return call === 0 ? new Promise<undefined>(() => undefined) : { ok: true, body: { skipAuth: true } };
+        }, 'http://localhost:3000/', {
+            beforeRun: window => {
+                clock = withGlobal(window).install({ toFake: ['setTimeout', 'clearTimeout'] });
+            },
+        });
+
+        try {
+            await clock!.tickAsync(8000);
+            await run.bundleAppended;
+            expect(run.requests.filter(request => request === CONFIG)).to.have.length(2);
+            expect(run.document.getElementById('qaap-login-host')).to.equal(null);
+        } finally {
+            clock?.uninstall();
+        }
+    });
+
     describe('GitHub OAuth callback', () => {
         it('stores the session, strips the OAuth marker from the URL and loads the bundle', async () => {
             const run = start(
@@ -458,13 +481,15 @@ describe('Qaap login gate', () => {
             try {
                 await run.waitFor(() => button(run) !== null, 'GitHub sign-in button');
                 expect((await run.window.fetch(HEALTH)).ok).to.equal(true);
-                await clock!.tickAsync(4000);
+                // The first probe times out after 8 s, the single retry after another 8 s.
+                await clock!.tickAsync(16000);
 
                 expect(button(run).disabled).to.equal(false);
                 expect(button(run).textContent).to.contain('Sign in with GitHub');
                 expect(status(run)).to.not.contain('The Qaap server is not responding.');
                 expect(retry.hidden).to.equal(true);
-                expect(run.requests.filter(request => request === CONFIG)).to.have.length(2);
+                // The timed-out probe is retried once, on top of the two probes the boot already makes.
+                expect(run.requests.filter(request => request === CONFIG)).to.have.length(3);
             } finally {
                 clock?.uninstall();
             }

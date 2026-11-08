@@ -1,4 +1,5 @@
 // Extracted from qaap-agent-conversation-store.ts
+import { logTurnCreatedExtracted } from './qaap-agent-turn-create-log';
 import type { QaapAgentConversationStoreContext } from './qaap-agent-conversation-store-context';
 
 import { randomUUID } from 'crypto';
@@ -165,6 +166,9 @@ export function settleStatusForRunExtracted(ctx: QaapAgentConversationStoreConte
 }
 
 export function createExtracted(ctx: QaapAgentConversationStoreContext, request: QaapCreateAgentConversationRequest, ownerLogin?: string): QaapAgentConversation {
+    if (ctx.conversationStorageFailure !== undefined) {
+        throw new Error(`Conversation storage is unavailable: ${ctx.conversationStorageFailure}`);
+    }
     const cwd = path.resolve(request.cwd ?? '');
     if (!path.isAbsolute(cwd) || !ctx.isDirectory(cwd)) {
         throw new Error('A valid absolute "cwd" directory is required.');
@@ -821,6 +825,7 @@ export function postUserMessageExtracted(ctx: QaapAgentConversationStoreContext,
             next.ownerLogin,
             { spawnGate },
         );
+        logTurnCreatedExtracted('render2:send', next.id, userMessage.id, task.id);
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         return ctx.failTurnBeforeSpawn(id, next, userMessage.id, message);
@@ -986,6 +991,7 @@ export function nextRetryAttempt(message: Pick<QaapAgentMessage, 'retryAttempt'>
 }
 
 export function cancelExtracted(ctx: QaapAgentConversationStoreContext, id: string): QaapAgentConversation | undefined {
+    const activeTaskCount = ctx.getActiveTaskIdsForConversation(id).length;
     const conv = ctx.conversations.get(id);
     if (!conv) {
         return undefined;
@@ -996,6 +1002,16 @@ export function cancelExtracted(ctx: QaapAgentConversationStoreContext, id: stri
     // finalized; the last-user-message fallback keeps pre-multitasking conversations working.
     const activeRefs = ctx.getActiveTaskIdsForConversation(id)
         .map(taskId => ({ taskId, ref: ctx.taskToConversation.get(taskId) }));
+    // Idempotent: a repeat Stop (the client retries, or the user taps twice) on a conversation with
+    // no live run changes nothing; no second "Turn cancelled." trace and no extra 'updated' event.
+    // An active goal loop still has to be stopped below, even with no live run. A queue that is not yet
+    // paused, or an armed coalesce drain, still needs the Stop below (pause the queue, disarm the drain).
+    const hasArmedDrain = ctx.drainTimers?.has(id) ?? false;
+    const hasUnpausedQueue = (conv.pendingUserMessages?.length ?? 0) > 0 && !conv.pendingUserMessagesPaused;
+    if (activeRefs.length === 0 && conv.status !== 'streaming' && !isGoalLoopActive(conv) && !hasArmedDrain && !hasUnpausedQueue) {
+        console.warn(`[qaap-stop] noop conv=${id} status=${conv.status} liveRuns=0 reason=no-live-run`);
+        return conv;
+    }
     const lastUser = [...conv.messages].reverse().find(m => m.role === 'user' && m.taskId);
     const cancelTaskIds = activeRefs.length > 0
         ? activeRefs.map(entry => entry.taskId)
@@ -1058,6 +1074,7 @@ export function cancelExtracted(ctx: QaapAgentConversationStoreContext, id: stri
     if (goalLoopCancelled) {
         ctx.fire({ type: 'goal_loop', conversationId: id, cwd: next.cwd, goalLoop: next.goalLoop });
     }
+    console.warn(`[qaap-stop] result conv=${id} active=${activeTaskCount} outcome=cancelled`);
     ctx.fire({ type: 'updated', conversation: toConversationSummary(next) });
     void ctx.persist();
     return next;

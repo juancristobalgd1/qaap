@@ -26,7 +26,10 @@ export type QaapTurnLatencyMark =
     | 'spawn_start'
     | 'spawn_end'
     | 'first_stdout_chunk'
-    | 'first_transcript_delta_rendered';
+    | 'first_transcript_delta_rendered'
+    | 'cancel_received'
+    | 'cancel_settled'
+    | 'process_exit';
 
 export interface QaapConversationStreamMetricsSnapshot {
     readonly side: QaapStreamMetricsSide;

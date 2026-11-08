@@ -19,6 +19,7 @@ import { qaapDockerName, qaapDockerNamespaceLabels } from './qaap-docker-namespa
 import { QaapTaskSandboxBrokerClient } from './qaap-task-sandbox-broker-client';
 import type { QaapTaskSandboxBrokerSandbox } from './qaap-task-sandbox-broker-protocol';
 import type { QaapSandboxExecClientRequest } from './qaap-task-sandbox-exec-client-main';
+import { isQaapRunscConfigured } from './qaap-tenant-runtime';
 import { encodeQaapSandboxFrame, parseQaapListeningPorts, QaapSandboxFrame, QaapSandboxFrameDecoder } from './qaap-task-sandbox-exec-protocol';
 import { QAAP_PERSISTENT_HOME_DIRECTORIES, QAAP_PERSISTENT_HOME_FILES } from './qaap-tenant-persistent-home';
 import { isQaapBackendOnlyEnvKey } from './qaap-child-process-env';
@@ -845,6 +846,11 @@ export class QaapTaskSandboxService implements BackendApplicationContribution, Q
     protected async createEntry(root: string, options: QaapTaskSandboxAcquireOptions): Promise<SandboxEntry> {
         if (this.mode() === 'broker') {
             return this.createBrokerEntry(root, options);
+        }
+        // This path uses whatever DOCKER_HOST the process has and knows no tenant, so it cannot choose gVisor. Refused
+        // before anything runs, since resolving the image plan can build a Dockerfile from the tenant's repository.
+        if (isQaapRunscConfigured(process.env)) {
+            throw new Error('Direct task sandboxes are disabled while gVisor tenants are configured: they must go through the broker.');
         }
         const started = Date.now();
         const name = this.containerName(root);

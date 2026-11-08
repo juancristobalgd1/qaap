@@ -2,6 +2,7 @@ import type { MobileProjectsTranscriptSurfacesUiContext } from './mobile-project
 // Extracted from mobile-projects-transcript-surfaces-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
+import type { QaapBootstrapStateChange } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service';
 import { invalidateVerifyWorkspaceSnapshots } from '@theia/qaap-diff-review/lib/common/qaap-verify-commit-readiness';
 import { FileUri } from '@theia/core/lib/common/file-uri';
 import {
@@ -35,6 +36,30 @@ import { createTranscriptReviewChrome } from '@theia/qaap-transcript/lib/browser
 import {
     resolveProjectScopedWorkspaceKey as resolveProjectScopedWorkspaceKeyHelper,
 } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-surfaces-helpers';
+import { lastDevOutputLines } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-dev-errors';
+
+/** Marks the empty Browser card that offers to run the project's runnable app. */
+const PREVIEW_RUN_HINT_CLASS = 'theia-mobile-transcript-preview-run-hint';
+/** Lines of the dev-server log kept in the "Preview could not start" overlay. */
+const PREVIEW_LAUNCH_FAILURE_LOG_LINES = 12;
+/** Characters of the dev-server log kept in the "Preview could not start" overlay. */
+const PREVIEW_LAUNCH_FAILURE_LOG_CHARS = 1200;
+
+/**
+ * Trims a raw bootstrap error for the failure overlay: escaped line breaks become real ones, ANSI
+ * escapes go, and only the last lines (and at most {@link PREVIEW_LAUNCH_FAILURE_LOG_CHARS} characters)
+ * remain, prefixed with an ellipsis when cut. Returns undefined when nothing printable is left.
+ */
+export function formatPreviewLaunchFailureDetail(error: string | undefined): string | undefined {
+    const trimmed = lastDevOutputLines(error ?? '', PREVIEW_LAUNCH_FAILURE_LOG_LINES).trim();
+    if (!trimmed) {
+        return undefined;
+    }
+    if (trimmed.length <= PREVIEW_LAUNCH_FAILURE_LOG_CHARS) {
+        return trimmed;
+    }
+    return `…${trimmed.slice(-PREVIEW_LAUNCH_FAILURE_LOG_CHARS).trimStart()}`;
+}
 
 export function cancelPreviewAgentTurnExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,): void {
@@ -224,6 +249,7 @@ export function mountTranscriptEmptyPreviewExtracted(ctx: MobileProjectsTranscri
     ctx.host.transcriptEmbeddedPreview.root.querySelector('.theia-mobile-transcript-preview-empty-overlay')?.remove();
     ctx.syncHeaderPreviewRunButton(project, summary);
     ctx.annotateEmptyPreviewWhenNotRunnable(project, summary);
+    renderEmptyPreviewRunHintExtracted(ctx, project, summary);
     ctx.updateTranscriptPreviewLaunchStatus();
 }
 
@@ -234,23 +260,35 @@ export function updateTranscriptPreviewLaunchStatusExtracted(ctx: MobileProjects
     const requestActive = ctx.host.transcriptPreviewRequestRunning || ctx.host.transcriptPreviewRequestPending;
     const failed = bootstrapState?.phase === 'install-failed' || bootstrapState?.phase === 'run-failed';
     let overlay = frameSlot?.querySelector<HTMLElement>('.theia-mobile-transcript-preview-launch-overlay');
+    // The bootstrap state is shared by every project, so an overlay drawn for the previous project
+    // must not survive a project switch (it would show that project's "Preview could not start").
+    const projectId = ctx.transcriptPreviewProjectId ?? '';
+    if (overlay && overlay.dataset.projectId !== projectId) {
+        overlay.remove();
+        overlay = undefined;
+    }
+    // The app picker was dismissed without a choice: say so instead of leaving the frame blank.
+    const awaitingAppChoice = !requestActive && !failed && projectId !== ''
+        && ctx.transcriptPreviewAppPickerCancelledProjectId === projectId;
     if (!frameSlot || root?.classList.contains(USER_NAVIGATED_PREVIEW_CLASS)
-        || (!requestActive && !(failed && overlay))) {
+        || (!requestActive && !(failed && overlay) && !awaitingAppChoice)) {
         overlay?.remove();
         return;
     }
     if (!overlay) {
         overlay = document.createElement('div');
         overlay.className = 'theia-mobile-transcript-preview-launch-overlay';
+        overlay.dataset.projectId = projectId;
         frameSlot.append(overlay);
     }
 
     const showFailure = !requestActive && failed;
+    const showAppChoice = awaitingAppChoice;
     const status = document.createElement('div');
     status.className = 'theia-mobile-transcript-preview-launch-card';
     status.setAttribute('role', showFailure ? 'alert' : 'status');
     status.setAttribute('aria-live', showFailure ? 'assertive' : 'polite');
-    if (!showFailure) {
+    if (!showFailure && !showAppChoice) {
         status.setAttribute('aria-busy', 'true');
         const spinner = document.createElement('span');
         spinner.className = 'codicon codicon-loading theia-mobile-transcript-preview-launch-spinner';
@@ -263,7 +301,8 @@ export function updateTranscriptPreviewLaunchStatusExtracted(ctx: MobileProjects
     detail.className = 'theia-mobile-transcript-preview-launch-detail';
     if (showFailure) {
         title.textContent = nls.localize('qaap/mobileProjects/previewLaunchFailedTitle', 'Preview could not start');
-        detail.textContent = bootstrapState?.error
+        // The hint stays when the error carries no printable log, so the overlay never shows an empty detail.
+        detail.textContent = formatPreviewLaunchFailureDetail(bootstrapState?.error)
             ?? nls.localize(
                 'qaap/mobileProjects/previewLaunchFailedHint',
                 'The app stopped before it was ready. Check the Dev terminal, then try again.',
@@ -293,6 +332,28 @@ export function updateTranscriptPreviewLaunchStatusExtracted(ctx: MobileProjects
             });
         }
         status.append(retry);
+    } else if (showAppChoice) {
+        title.textContent = nls.localize('qaap/projectBootstrap/appPickerCancelledTitle', 'Choose an app to preview');
+        detail.textContent = nls.localize(
+            'qaap/projectBootstrap/appPickerCancelledHint',
+            'This repository has several apps. Pick the one Qaap should run.',
+        );
+        status.append(title, detail);
+        const choose = document.createElement('button');
+        choose.type = 'button';
+        choose.className = 'theia-mobile-transcript-preview-launch-retry';
+        choose.textContent = nls.localize('qaap/projectBootstrap/appPickerChoose', 'Choose app');
+        choose.addEventListener('click', () => {
+            const project = ctx.host.transcriptOpenProject;
+            const summary = ctx.host.transcriptOpenSummary;
+            if (project && summary) {
+                void ctx.requestTranscriptPreview(project, summary, {
+                    revealPreviewTab: true,
+                    allowAgentFallback: false,
+                });
+            }
+        });
+        status.append(choose);
     } else {
         const phase = bootstrapState?.phase;
         if (phase === 'installing') {
@@ -304,15 +365,20 @@ export function updateTranscriptPreviewLaunchStatusExtracted(ctx: MobileProjects
                 'qaap/mobileProjects/previewLaunchInstallHint',
                 'The first launch can take a little longer. The preview will open automatically when installation finishes.',
             );
-        } else if (phase === 'starting' && bootstrapState?.previewReadiness === 'waiting-for-server') {
+        } else if (phase === 'starting' && (bootstrapState?.previewReadiness === 'waiting-for-server' || bootstrapState?.previewReadiness === 'compiling')) {
             title.textContent = nls.localize(
                 'qaap/mobileProjects/previewLaunchBuilding',
                 'Building your preview…',
             );
-            detail.textContent = nls.localize(
-                'qaap/mobileProjects/previewLaunchBuildHint',
-                'Waiting for the app to respond. This view will update automatically.',
-            );
+            detail.textContent = bootstrapState.previewReadiness === 'compiling'
+                ? nls.localize(
+                    'qaap/projectBootstrap/previewCompiling',
+                    'The app is compiling its first page. Large apps can take a minute or two.',
+                )
+                : nls.localize(
+                    'qaap/mobileProjects/previewLaunchBuildHint',
+                    'Waiting for the app to respond. This view will update automatically.',
+                );
         } else if (phase === 'running') {
             title.textContent = nls.localize(
                 'qaap/mobileProjects/previewLaunchOpening',
@@ -335,6 +401,119 @@ export function updateTranscriptPreviewLaunchStatusExtracted(ctx: MobileProjects
         status.append(title, detail);
     }
     overlay.replaceChildren(status);
+    const openProject = ctx.host.transcriptOpenProject;
+    const openSummary = ctx.host.transcriptOpenSummary;
+    if (openProject && openSummary) {
+        renderEmptyPreviewRunHintExtracted(ctx, openProject, openSummary);
+    }
+}
+
+/** Bootstrap facts the empty Browser state needs; structural so the gate stays a pure function. */
+export interface EmptyPreviewRunSnapshot {
+    readonly phase?: string;
+    readonly previewUrl?: string;
+    readonly descriptor?: {
+        readonly name: string;
+        readonly devCommand?: string;
+        readonly rootUri: { toString(): string };
+        readonly previewRootUri?: { toString(): string };
+    };
+}
+
+/**
+ * Name of the runnable app the empty Browser state should offer to run, or `undefined` when the
+ * state must stay untouched: a URL is loaded or a preview is starting, the bootstrap is not
+ * `ready-to-run` with a dev command, or the bootstrap descriptor belongs to another root (the
+ * bootstrap is scoped to the active workspace, not to this project).
+ */
+export function resolveEmptyPreviewRunAppName(snapshot: EmptyPreviewRunSnapshot | undefined, expectedRootUri: string | undefined,
+    requestActive: boolean): string | undefined {
+    const descriptor = snapshot?.descriptor;
+    if (requestActive || snapshot?.previewUrl || snapshot?.phase !== 'ready-to-run'
+        || !descriptor?.devCommand || !expectedRootUri) {
+        return undefined;
+    }
+    const ownsRoot = descriptor.rootUri.toString() === expectedRootUri
+        || descriptor.previewRootUri?.toString() === expectedRootUri;
+    const name = descriptor.name.trim();
+    return ownsRoot && name ? name : undefined;
+}
+
+/**
+ * The Browser view renders from its own probes, so a bootstrap transition for the project on screen
+ * (starting, running on a URL, failed) never reached it: a project switch left the Run card or the
+ * previous project's frame up. Re-render the active project's preview, then re-evaluate the Run card,
+ * which only reads a `ready-to-run` bootstrap.
+ */
+export function refreshPreviewForBootstrapChangeExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, state: QaapBootstrapStateChange): void {
+    const projectId = ctx.transcriptPreviewProjectId;
+    const project = projectId ? ctx.host.projects.find(candidate => candidate.id === projectId) : undefined;
+    const summary = ctx.host.transcriptOpenSummary;
+    if (!project || !summary || ctx.host.transcriptOpenProject?.id !== project.id
+        || ctx.host.executionSurfaceTabsUi.activeExecutionTab(project) !== 'preview') {
+        return;
+    }
+    // Bootstrap emits often (dev-server output, readiness). React only when the phase, readiness or URL moved.
+    const key = [project.id, state.phase, state.previewReadiness ?? '', state.previewUrl ?? ''].join('|');
+    if (key === ctx.lastBootstrapPreviewKey) {
+        return;
+    }
+    ctx.lastBootstrapPreviewKey = key;
+    // The frame already shows this project's running URL: never reassign its src or remount it.
+    if (state.phase === 'running' && state.previewUrl && ctx.getTranscriptEmbeddedPreviewUrl() === state.previewUrl) {
+        return;
+    }
+    ctx.renderPreviewTab(project, summary);
+    renderEmptyPreviewRunHintExtracted(ctx, project, summary);
+    ctx.updateTranscriptPreviewLaunchStatus();
+}
+
+/**
+ * Empty Browser state for a runnable project: names the app and offers the same «Run app» action
+ * as the composer quick action. Replaces only its own card, never the "no runnable app" overlay.
+ */
+export function renderEmptyPreviewRunHintExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry,
+    summary: QaapAgentConversationSummaryDTO,): void {
+    const root = ctx.host.transcriptEmbeddedPreview?.root;
+    const frameSlot = root?.querySelector<HTMLElement>('.qaap-preview-frame-slot')
+        ?? root?.querySelector<HTMLElement>('.qaap-preview-content-area');
+    if (!root || !frameSlot || !root.classList.contains('theia-mod-empty-preview')) {
+        return;
+    }
+    frameSlot.querySelector(`.${PREVIEW_RUN_HINT_CLASS}`)?.remove();
+    if (ctx.host.transcriptOpenProject && ctx.host.transcriptOpenProject.id !== project.id) {
+        return;
+    }
+    const rootPath = ctx.resolveRunnableTranscriptProjectRoot(project, summary);
+    const requestActive = ctx.host.transcriptPreviewRequestRunning || ctx.host.transcriptPreviewRequestPending;
+    const appName = resolveEmptyPreviewRunAppName(
+        ctx.host.projectBootstrap?.getStateSnapshot(),
+        rootPath ? FileUri.create(rootPath).toString() : undefined,
+        requestActive,
+    );
+    if (!appName) {
+        return;
+    }
+    const overlay = document.createElement('div');
+    overlay.className = `theia-mobile-transcript-preview-empty-overlay theia-mod-status ${PREVIEW_RUN_HINT_CLASS}`;
+    const wrap = document.createElement('div');
+    wrap.className = 'theia-mobile-transcript-preview-empty';
+    const note = document.createElement('div');
+    note.className = 'theia-mobile-transcript-preview-ready';
+    const hint = document.createElement('p');
+    hint.className = 'theia-mobile-transcript-preview-ready-hint';
+    hint.textContent = nls.localize('qaap/projectBootstrap/browserEmptyRunHint', 'Run {0} to preview it here.', appName);
+    const run = document.createElement('button');
+    run.type = 'button';
+    run.className = 'theia-mobile-transcript-preview-launch-retry';
+    run.textContent = nls.localize('qaap/projectBootstrap/runPreview', 'Run & Preview');
+    run.addEventListener('click', () => {
+        void ctx.host.transcriptStickyComposerUi?.launchComposerDevPreview(project, summary);
+    });
+    note.append(hint, run);
+    wrap.append(note);
+    overlay.append(wrap);
+    frameSlot.append(overlay);
 }
 
 export function annotateEmptyPreviewWhenNotRunnableExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry,
@@ -562,6 +741,8 @@ export function ensureTranscriptFilesTabExtracted(
                     rootUri,
                     rootFsPath: cwd,
                     isActiveWorkspace: project.isCurrent,
+                    // This Changes tab belongs to one conversation: measure it against that task's baseline.
+                    baselineCommit: summary.baselineCommit,
                 });
                 ctx.host.diffReviewWidget.setCommitReadinessProvider(
                     () => ({

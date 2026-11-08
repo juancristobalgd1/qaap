@@ -26,6 +26,7 @@ import '../../src/browser/style/qaap-project-bootstrap.css';
 import '@theia/qaap-agents-ui/src/browser/style/qaap-agent-cli-update-toast.css';
 import '@theia/qaap-composer/src/browser/style/qaap-chat-mic.css';
 import '@theia/qaap-composer/src/browser/style/qaap-composer-prompt-improve.css';
+import '@theia/qaap-composer/src/browser/style/qaap-composer-stop-ack.css';
 import '@theia/qaap-composer/src/browser/style/qaap-chat-select-dropdown.css';
 import '@theia/qaap-composer/src/browser/style/qaap-composer-goal-loop.css';
 import '../../src/browser/style/qaap-work-hub-sessions-sidebar.css';
@@ -33,6 +34,8 @@ import '../../src/browser/style/qaap-work-hub-aux-panel.css';
 import '@theia/qaap-transcript/src/browser/style/qaap-transcript-lobehub.css';
 import '@theia/qaap-agents-ui/src/browser/style/qaap-agent-setup-animations.css';
 import '@theia/ai-claude-code/src/browser/style/claude-code-tool-renderers.css';
+// Last: menu/sheet entrances and control press feedback layer over every surface stylesheet above.
+import '../../src/browser/style/qaap-work-hub-motion.css';
 
 import { ChatResponsePartRenderer } from '@theia/ai-chat-ui/lib/browser/chat-response-part-renderer';
 
@@ -72,6 +75,7 @@ import { bindQaapWorkspacePreferenceProvider } from '@theia/qaap-shared-core/lib
 import { QaapQuickCommandService } from './qaap-quick-command-service';
 import { QaapBuildFreshnessContribution } from '@theia/qaap-shared-core/lib/browser/qaap-build-freshness-contribution';
 import { QaapHasStateClasses } from './qaap-has-state-classes';
+import { QaapWindowTitleProjectContribution } from './qaap-window-title-project-contribution';
 import { QaapWorkHubBootReplicaContribution } from './qaap-work-hub-boot-replica-contribution';
 import { QaapAgentCliUpdateContribution } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-cli-update-contribution';
 import { MobileOneColumnShellContribution } from './mobile-one-column-shell-contribution';
@@ -241,6 +245,8 @@ export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync
     bind(FrontendApplicationContribution).toService(MobileOneColumnShellContribution);
     bind(QaapBuildFreshnessContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapBuildFreshnessContribution);
+    bind(QaapWindowTitleProjectContribution).toSelf().inSingletonScope();
+    bind(FrontendApplicationContribution).toService(QaapWindowTitleProjectContribution);
     // Classes standing in for the `:has()` on the streaming transcript's ancestors (H4.2 / R2).
     bind(QaapHasStateClasses).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapHasStateClasses);
