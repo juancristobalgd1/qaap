@@ -92,6 +92,8 @@ import { TerminalFrontendContribution } from '@theia/terminal/lib/browser/termin
 import { XtermLinkFactory } from '@theia/terminal/lib/browser/terminal-link-provider';
 import { QaapIdeShellTerminalServer, QaapIdeTerminalService, QaapIdeTerminalWatcher } from '@theia/qaap-shared-core/lib/browser/qaap-ide-bridge';
 import { QaapTerminalFrontendContribution } from '@theia/qaap-shared-core/lib/browser/qaap-terminal-frontend-contribution';
+import { QaapWorkHubNotificationSettings } from '@theia/qaap-shared-core/lib/browser/qaap-work-hub-notification-settings';
+import { QaapCompletionSound } from '@theia/qaap-shared-core/lib/browser/qaap-completion-sound';
 import { createQaapXtermLinkFactory } from '@theia/qaap-shared-core/lib/browser/qaap-xterm-link-adapter';
 import { MobileOnboardingTutorialContribution } from './mobile-onboarding-tutorial-contribution';
 import { MobileThemeChromeContribution } from './mobile-theme-chrome-contribution';
@@ -413,6 +415,8 @@ export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync
     bind(FrontendApplicationContribution).toService(QaapTranscriptImageLightboxContribution);
     bind(QaapTurnSettleNotifyContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapTurnSettleNotifyContribution);
+    bind(QaapWorkHubNotificationSettings).toSelf().inSingletonScope();
+    bind(QaapCompletionSound).toSelf().inSingletonScope();
     bind(QaapAgentFinishedToastContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapAgentFinishedToastContribution);
 

@@ -367,6 +367,7 @@ export async function openWorkHubPreferencesSheetExtracted(ctx: MobileOneColumnS
                 }
                 return panel.sessionsSidebarUi.ensureWorkHubSessionsSidebar();
             },
+            ctx.keybindingsPanel,
         );
         ctx.toDispose.push(Disposable.create(() => {
             ctx.workHubPreferencesSheet?.dispose();

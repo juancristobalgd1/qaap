@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
+import { QaapWorkHubNotificationSettings } from './qaap-work-hub-notification-settings';
 
 /**
  * Dispatched (with `detail: { conversationId }`) when a settled-turn notification is activated, so
@@ -37,12 +38,18 @@ export class QaapTurnSettleNotifier {
     /** Conversation ids already notified this session — a turn is only ever announced once. */
     protected readonly notifiedConversationIds = new Set<string>();
 
+    /** Read on every call so a toggle change in Work Hub takes effect without re-creating the notifier. */
+    protected readonly settings = new QaapWorkHubNotificationSettings();
+
     /**
      * Announce that a conversation's turn has settled. No-ops unless the document is hidden, the
      * Notification API is available and permission has already been granted, and this conversation
      * has not already been announced this session.
      */
     notifyTurnSettled(conversationId: string, options: QaapTurnSettleNotifyOptions): void {
+        if (!this.settings.systemNotifications) {
+            return;
+        }
         if (this.notifiedConversationIds.has(conversationId)) {
             return;
         }
@@ -79,6 +86,9 @@ export class QaapTurnSettleNotifier {
      * a `'denied'` result is enforced by the browser itself, and requesting again would just nag.
      */
     async maybeRequestPermission(): Promise<void> {
+        if (!this.settings.systemNotifications) {
+            return;
+        }
         if (typeof Notification === 'undefined' || Notification.permission !== 'default') {
             return;
         }
