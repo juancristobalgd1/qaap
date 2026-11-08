@@ -267,12 +267,41 @@ export async function submitPromptViaComposer(page, message, { agentPattern = /c
         return { ok: false, reason: 'send-not-ready' };
     }
     await page.locator('.theia-mobile-projects-sticky-composer-send.theia-mod-ready').first().click();
+    const sendGuards = await acceptComposerSendGuards(page);
     await page.waitForTimeout(800);
     return {
         ok: true,
+        sendGuards,
         agentLabel: agentPick.label ?? agentPick.currentLabel,
         agentPickWarning: agentPick.ok ? undefined : agentPick.reason,
     };
+}
+
+/**
+ * Gets a composer send past the two guards a priced harness has (Claude Code is the default since
+ * QAIQ left): with no model chosen the send is held, a «Choose a model» snackbar shows and the model
+ * picker opens, so the first available model is picked and the send repeated; the first paid send in
+ * a project asks «Send with a paid model?», which is confirmed. The mock CLI ignores the model.
+ */
+export async function acceptComposerSendGuards(page, { timeoutMs = 4000 } = {}) {
+    const guards = { pickedModel: undefined, confirmedPaid: false };
+    const picker = page.locator('.qaap-model-picker').first();
+    const paidConfirm = page.locator('.dialogOverlay .theia-button.main').first();
+    const appeared = async locator => locator.waitFor({ state: 'visible', timeout: timeoutMs }).then(() => true, () => false);
+    if (await appeared(picker)) {
+        const row = page.locator('.qaap-model-picker-row:not(:disabled)').first();
+        guards.pickedModel = (await row.getAttribute('data-model-id').catch(() => undefined)) ?? undefined;
+        await row.click();
+        await picker.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => undefined);
+        const send = page.locator('.theia-mobile-projects-sticky-composer-send.theia-mod-ready').first();
+        await send.waitFor({ state: 'visible', timeout: 10_000 });
+        await send.click();
+    }
+    if (await appeared(paidConfirm)) {
+        await paidConfirm.click();
+        guards.confirmedPaid = true;
+    }
+    return guards;
 }
 
 export async function readComposerProjectLabel(page) {
