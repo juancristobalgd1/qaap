@@ -83,6 +83,10 @@ describe('mobile-projects-sticky-composer-model-picker-ui', () => {
         });
         const action = chrome.list.querySelector<HTMLButtonElement>('.qaap-model-picker-connect-action');
         expect(action?.textContent).to.equal('Sign in');
+        // Sits at the end of the search row; no separate warning strip, the explanation is its tooltip.
+        expect(action?.parentElement?.classList.contains('qaap-model-picker-search')).to.equal(true);
+        expect(chrome.list.querySelector('.qaap-model-picker-connect')).to.equal(null);
+        expect(action?.title).to.equal('Claude Code needs a sign-in before it can run.');
         action?.click();
         expect(signedIn).to.deep.equal(['claude']);
     });
