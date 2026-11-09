@@ -958,33 +958,50 @@
     background: color-mix(in srgb, var(--theia-foreground) 12%, transparent);
 }
 
+/* Two lines that never truncate: the count and +/- totals first, then staging and status chips,
+   which wrap as whole items when the panel is narrow. */
 .qaap-agent-changes-summary {
     flex: 1 1 auto;
     min-width: 0;
-    display: inline-flex;
+    display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 6px;
-    padding: 2px 0;
+    column-gap: 8px;
+    row-gap: 4px;
+    padding: 4px 0;
+}
+
+.qaap-agent-changes-summary::after {
+    content: '';
+    order: 2;
+    flex-basis: 100%;
+    height: 0;
 }
 
 .qaap-agent-changes-summary-label {
-    flex: 0 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    flex: none;
     white-space: nowrap;
     font-size: 12px;
     color: var(--theia-foreground);
-    font-weight: 500;
+    font-weight: 600;
+}
+
+/* Staging counts ("0 staged · 3 unstaged") sit on the second line, muted. */
+.qaap-agent-changes-summary-label + .qaap-agent-changes-summary-label {
+    order: 3;
+    color: var(--theia-descriptionForeground);
+    font-weight: 400;
 }
 
 .qaap-agent-changes-verify-status {
-    flex: 0 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    order: 3;
+    flex: none;
     white-space: nowrap;
-    font-size: 12px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: color-mix(in srgb, currentColor 12%, transparent);
+    font-size: 11px;
+    line-height: 16px;
     color: var(--theia-descriptionForeground);
 }
 
@@ -999,6 +1016,8 @@
 }
 
 .qaap-agent-changes-summary-stats {
+    order: 1;
+    margin-left: auto;
     flex: none;
     display: inline-flex;
     align-items: center;
@@ -1084,6 +1103,14 @@
     display: flex;
     flex-direction: column;
     gap: 0;
+}
+
+/* Off-screen file diffs skip layout and paint (large diffs such as lock files stay smooth to
+   scroll); `auto` remembers each file's last height so the scrollbar does not jump. The file
+   header stays outside this container, so its sticky behaviour is unchanged. */
+.qaap-agent-changes-hunks {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 320px;
 }
 
 /* Flat indented file rows — Cursor Changes, not card stack. */

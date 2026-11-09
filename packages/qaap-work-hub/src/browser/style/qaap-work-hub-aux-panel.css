@@ -17,13 +17,16 @@
   display: none;
 }
 
-/* Keep in sync with QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY. */
+/* Keep in sync with QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY. The glyph follows
+ * the media query alone, not the toggle class: that class is set when the header
+ * is built, so a header built at phone width kept the chevrons after the window
+ * widened to the desktop layout (where a click already toggles the panel). */
 @media (min-width: 768px) and (pointer: fine) {
-  body:not(.theia-mobile-mod-desktop-ide) .qaap-mod-aux-panel-toggle .qaap-glyph-view-menu {
+  body:not(.theia-mobile-mod-desktop-ide) .theia-mobile-transcript-tab-icon-select-double-chevron .qaap-glyph-view-menu {
     display: none;
   }
 
-  body:not(.theia-mobile-mod-desktop-ide) .qaap-mod-aux-panel-toggle .qaap-glyph-right-panel {
+  body:not(.theia-mobile-mod-desktop-ide) .theia-mobile-transcript-tab-icon-select-double-chevron .qaap-glyph-right-panel {
     display: inline;
   }
 
@@ -290,12 +293,30 @@ body.qaap-mod-work-hub-aux-panel-maximized .qaap-work-hub-aux-panel-resize-handl
   display: flex;
   align-items: center;
   gap: 10px;
+  width: 100%;
+  margin: 0;
   padding: 6px 8px;
+  border: 0;
   border-radius: 9px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
-.qaap-work-hub-aux-panel-launcher-item:hover {
+.qaap-work-hub-aux-panel-launcher-item:hover:not(:disabled) {
   background: color-mix(in srgb, var(--theia-foreground) 5%, transparent);
+}
+
+.qaap-work-hub-aux-panel-launcher-item:focus-visible {
+  outline: 1px solid var(--theia-focusBorder);
+  outline-offset: -1px;
+}
+
+.qaap-work-hub-aux-panel-launcher-item:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .qaap-work-hub-aux-panel-launcher-icon {
@@ -508,5 +529,23 @@ body.qaap-mod-work-hub-aux-panel-maximized .qaap-work-hub-aux-panel-resize-handl
 
 .theia-mobile-execution-surface-sidebar.qaap-mod-docked .theia-mobile-execution-surface-sidebar-close,
 .theia-mobile-execution-surface-sidebar.qaap-mod-docked .theia-mobile-execution-surface-sidebar-header-divider {
+  display: none;
+}
+
+/* Docked in the right panel the tab already names the view: drop the repeated "Changes" title
+   and keep only its history action in a slim row, so the diff starts higher. */
+.qaap-work-hub-aux-panel .theia-mobile-transcript-files-changes-header {
+  display: none;
+}
+
+.qaap-work-hub-aux-panel .theia-mobile-execution-surface-sidebar-header:has(> .theia-mobile-transcript-files-changes-header) {
+  justify-content: flex-end;
+  min-height: 34px;
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+
+/* Without a history action the row would be empty: drop it. */
+.qaap-work-hub-aux-panel .theia-mobile-execution-surface-sidebar-header:has(> .theia-mobile-transcript-files-changes-header):not(:has(.theia-mobile-transcript-history-toggle-host:not([hidden]))) {
   display: none;
 }

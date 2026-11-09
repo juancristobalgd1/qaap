@@ -282,22 +282,22 @@ function renderList(host: HTMLElement, props: QaapComposerModelPickerProps): HTM
     });
     search.append(glass, input);
 
+    // A harness that needs a sign-in gets a compact action at the end of the search row instead of
+    // a warning strip; the explanation stays as its tooltip and accessible name.
     if (props.connect) {
-        const strip = document.createElement('div');
-        strip.className = 'qaap-model-picker-connect';
-        strip.setAttribute('role', 'status');
-        const text = document.createElement('span');
-        text.textContent = props.connect.message;
         const action = document.createElement('button');
         action.type = 'button';
         action.className = 'qaap-model-picker-connect-action';
         action.textContent = props.connect.actionLabel;
+        action.title = props.connect.message;
+        action.setAttribute('aria-label', `${props.connect.actionLabel}: ${props.connect.message}`);
         action.addEventListener('click', ev => {
+            // Inside the search <label>: keep the click from also focusing the input.
             ev.preventDefault();
+            ev.stopPropagation();
             props.connect?.onAction();
         });
-        strip.append(text, action);
-        section.append(strip);
+        search.append(action);
     }
     const rows = document.createElement('div');
     rows.className = 'qaap-model-picker-rows';

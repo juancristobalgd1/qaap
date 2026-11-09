@@ -16,7 +16,7 @@ import {
     QAAP_SCM_CHANGES_ICON_CLASS,
 } from '@theia/qaap-shared-core/lib/common/qaap-scm-changes-icon';
 import { applyExecutionSurfaceHeaderChrome, queryExecutionSurfaceViewSelect } from '@theia/qaap-shared-core/lib/browser/qaap-execution-surface-header-chrome';
-import { writePendingTranscriptFilesViewMode } from '@theia/qaap-transcript/lib/browser/qaap-transcript-files-view';
+import { readPendingTranscriptFilesViewMode, writePendingTranscriptFilesViewMode } from '@theia/qaap-transcript/lib/browser/qaap-transcript-files-view';
 import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { peekPreferDesktopIde } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
@@ -105,12 +105,8 @@ export function mountTranscriptExecutionHeaderExtracted(ctx: MobileProjectsExecu
 
 export function restoreActiveExecutionSurfaceExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, project: MobileProjectEntry,
     summary?: QaapAgentConversationSummaryDTO,): void {
-    let activeTab = ctx.executionSurfaceTabForProject(project);
-    if (activeTab === 'review') {
-        // Changes is represented by the Files surface; normalize old in-memory state too.
-        activeTab = 'files';
-        ctx.host.executionSurfaceTabByProjectId.set(project.id, activeTab);
-    }
+    // 'review' (Changes) stays its own tab; it mounts the files surface in Changes mode.
+    const activeTab = ctx.executionSurfaceTabForProject(project);
     ctx.showOnlyExecutionSurfaceTab(activeTab);
     const activeSummary = summary
         ?? ctx.host.transcriptOpenSummary
@@ -707,7 +703,12 @@ export function openExecutionSurfaceSidebarExtracted(ctx: MobileProjectsExecutio
     sidebar.classList.add('qaap-mod-docked');
     sidebar.removeAttribute('aria-modal');
     sidebar.setAttribute('role', 'region');
-    if (!ctx.claimWorkHubAuxPanel()?.dockSurface(activeSurface, sidebar)) {
+    // The files surface docks under the right panel's Changes or Files view, by its current mode.
+    // The files surface docks under Changes when it was opened as Changes (the 'review' tab), or when
+    // its mode is Changes (a first mount may not have applied a pending Changes request yet).
+    const filesMode = readPendingTranscriptFilesViewMode() ?? filesMount?.viewMode?.();
+    const dockedView = activeSurface === 'files' && (tab === 'review' || filesMode === 'changes') ? 'changes' : activeSurface;
+    if (!ctx.claimWorkHubAuxPanel()?.dockSurface(dockedView, sidebar)) {
         sidebar.classList.remove('qaap-mod-docked');
         sidebar.setAttribute('role', 'dialog');
         sidebar.setAttribute('aria-modal', 'true');
@@ -827,14 +828,12 @@ export function activateExecutionSurfaceTabExtracted(ctx: MobileProjectsExecutio
         void ctx.host.openTranscriptChanges?.();
         return;
     }
-    // 'review' (Changes) is merged into the 'files' tab — redirect with a
-    // pending view-mode flag so the file view activates changes mode on mount.
-    // The content mount keeps the original 'review' id: its review branch sets the
-    // pending Changes mode, whereas mounting 'files' would clear it and show the tree.
+    // 'review' (Changes) is its own view: it shares the files surface, opened in Changes mode.
+    // Keeping it as the tab (not folding it into 'files') means a later re-mount (header rebuild,
+    // restore) stays on Changes instead of forcing the file tree.
     const mountTab = tab;
     if (tab === 'review') {
         writePendingTranscriptFilesViewMode('changes');
-        tab = 'files';
     }
     if (tab === 'messages') {
         ctx.dismissExecutionSurfaceSidebar();
@@ -875,7 +874,7 @@ export function activateExecutionSurfaceTabExtracted(ctx: MobileProjectsExecutio
         } else {
             ctx.host.transcriptSurfacesUi.hideHeaderPreviewRunButton();
         }
-        if (tab === 'files') {
+        if (tab === 'files' || tab === 'review') {
             ctx.host.transcriptSurfacesUi.syncHeaderFilesMoreButton(project, summary);
             ctx.host.transcriptSurfacesUi.syncHeaderViewModeSwitch(project, summary);
         } else {

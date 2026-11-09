@@ -928,16 +928,16 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
         }));
 
         expect(ui.executionSurfaceTabSpecs().map(spec => spec.id)).to.deep.equal([
-            'preview', 'files', 'terminal',
+            'preview', 'review', 'files', 'terminal',
         ]);
         expect(ui.executionSurfaceTabSpecs().find(spec => spec.id === 'files')?.icon).to.equal('codicon-files');
         const strip = ui.buildExecutionViewTabStrip('messages', () => undefined);
         expect(Array.from(strip.querySelectorAll<HTMLElement>('.theia-mobile-transcript-tab-icon-select-option[data-tab]')).map(item => item.dataset.tab)).to.deep.equal([
-            'preview', 'files', 'terminal',
+            'preview', 'review', 'files', 'terminal',
         ]);
     });
 
-    it('redirects Changes (review) to the Files tab with changes view mode', () => {
+    it('keeps Changes (review) as its own tab, shown on the files surface', () => {
         const project: MobileProjectEntry = {
             id: 'p1',
             name: 'Demo',
@@ -991,9 +991,9 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
 
         ui.selectTranscriptTab('review', project, summary);
 
-        // 'review' is redirected to 'files' — the tab is stored as 'files'
-        // and the files host is shown (not the review host).
-        expect(host.executionSurfaceTabByProjectId.get(project.id)).to.equal('files');
+        // Changes is its own view (stored as 'review') but it shares the files surface:
+        // the files host is shown, never the legacy review host.
+        expect(host.executionSurfaceTabByProjectId.get(project.id)).to.equal('review');
         expect(filesHost.hidden).to.equal(false);
         expect(reviewHost.hidden).to.equal(true);
     });
@@ -1049,10 +1049,10 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
 
         ui.selectTranscriptTab('review', project, summary);
 
-        // Files tab is stored, but the mount must not force 'files': the pending
-        // Changes mode has to survive until the file view consumes it.
-        expect(host.executionSurfaceTabByProjectId.get(project.id)).to.equal('files');
-        expect(observed.requestedMode).to.equal(undefined);
+        // Changes is stored as its own tab and mounts the files surface asking for Changes mode
+        // (the pending flag stays set too, for a mount that consumes it later).
+        expect(host.executionSurfaceTabByProjectId.get(project.id)).to.equal('review');
+        expect(observed.requestedMode).to.equal('changes');
         expect(observed.pendingMode).to.equal('changes');
         clearPendingTranscriptFilesViewMode();
     });
@@ -1104,9 +1104,8 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
 
         const labels = Array.from(strip.querySelectorAll('.theia-mobile-transcript-tab-icon-select-option-label'))
             .map(label => label.textContent);
-        expect(labels).to.deep.equal(['Browser', 'Files', 'Terminal']);
+        expect(labels).to.deep.equal(['Browser', 'Changes', 'Files', 'Terminal']);
         expect(labels).to.not.include('Editor');
-        expect(labels).to.not.include('Changes');
 
         const chatOption = strip.querySelector<HTMLElement>('.theia-mobile-transcript-tab-icon-select-option[data-tab="messages"]');
         expect(chatOption).to.equal(null);

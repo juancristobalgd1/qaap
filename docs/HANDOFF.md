@@ -2,6 +2,21 @@
 
 Estado para continuar el trabajo desde otra cuenta o sesión. Actualízalo al cerrar cada tarea: qué queda pendiente, cómo se validó y qué limitaciones conviene conocer. La política de modelos está en la sección «Selección de modelos y orquestación» de `CLAUDE.md`.
 
+## 2026-11-09 — Pulido de UI del Work Hub (rama `claude/work-hub-ui-polish`)
+
+**Hecho** (13 commits, una sola PR):
+- Changes y Files son vistas separadas (panel derecho y menú de vistas en móvil) sobre la misma superficie de archivos. `review` es ahora una pestaña propia, ya no se pliega en `files`; el panel acopla la superficie bajo la vista que pidió. El conmutador interno Files/Changes se oculta en el Work Hub; el IDE no cambia.
+- Panel derecho: los ítems del launcher se abren con un clic en toda la fila; el glifo del selector de vista sigue a la media query (doble chevron ↔ panel derecho al cambiar de ancho).
+- Picker de modelos: Sign in en la fila del buscador y solo con `disconnected` confirmado (Copilot, Grok y Antigravity no tienen comando de estado: `unknown` ya no pide sesión). Codex usa el logo de OpenAI/ChatGPT.
+- Sidebar: «New local project» en el menú Add project; chip de Retry con borde neutro. Barra Project/Branch/Run in sin la línea de ancho completo.
+- Chat vacío: logo y título más pequeños; el título es una frase distinta cada día (34 frases, ciclo barajado con semilla, `qaap-daily-welcome-phrase.ts`).
+- El nombre del proyecto ya no se corta en el IDE (el tope de ancho del selector central solo aplica cuando ese selector es visible).
+- Changes: el resumen ya no trunca; el diff JSON conserva la indentación (bug del resaltador); diff perezoso con `content-visibility`. Files: filas de 28px con ratón.
+
+**Validación:** `npx tsc -b examples/browser`; suites de composer, diff-review, shared-core, transcript, transcript-overlay y work-hub en verde; eslint sin errores; drift-check y package-graph-check OK; todo comprobado en la preview (escritorio y móvil).
+
+**Pendiente:** `scripts/qaap-transcript-scroll-perf.mjs` aún usa un `qaiq` falso (ningún workflow lo ejecuta).
+
 ## 2026-11-08 — Decisión: tenants siguen en runc; gVisor queda dormido
 
 **Decisión del usuario:** no se usa gVisor para los backends de Theia. El arranque en frío es ~8 veces más lento (76 s frente a 9 s cargando módulos) y `npm`, `git` y `tsc` son 3–5 veces más lentos todo el rato. El código queda con `runc` por defecto (sin coste) para usos futuros: código de terceros en sandboxes cortos sin Theia. No borrar nada.

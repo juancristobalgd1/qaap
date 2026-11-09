@@ -112,9 +112,9 @@ describe('mobile mode never opens the IDE', () => {
         expect(calls).to.deep.equal(['commands.executeCommand:file.newFolder']);
     });
 
-    it('Work Hub execution surface offers Preview, Files and Terminal', () => {
+    it('Work Hub execution surface offers Preview, Changes, Files and Terminal', () => {
         const ids = executionSurfaceTabSpecsExtracted({} as never).map(spec => spec.id);
-        expect(ids).to.deep.equal(['preview', 'files', 'terminal']);
+        expect(ids).to.deep.equal(['preview', 'review', 'files', 'terminal']);
         const ui = new MobileProjectsExecutionSurfaceTabsUi({
             executionSurfaceTabByProjectId: new Map([['p', 'terminal']]),
         } as never);
@@ -124,7 +124,7 @@ describe('mobile mode never opens the IDE', () => {
     it('a stale desktop-IDE preference does not strip the Work Hub surfaces', () => {
         storage.set(QAAP_MOBILE_PREFER_DESKTOP_IDE_KEY, '1');
         const ids = executionSurfaceTabSpecsExtracted({} as never).map(spec => spec.id);
-        expect(ids).to.deep.equal(['preview', 'files', 'terminal']);
+        expect(ids).to.deep.equal(['preview', 'review', 'files', 'terminal']);
     });
 
     it('the desktop-IDE preference still reduces the surfaces outside mobile mode', () => {

@@ -44,24 +44,13 @@
     grid-template-columns: 56px minmax(0, 1fr);
 }
 
-.qaap-model-picker-connect {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    margin: 0 10px 8px;
-    padding: 8px 10px;
-    border: 1px solid var(--theia-inputValidation-warningBorder, var(--theia-widget-border));
-    border-radius: 8px;
-    background: var(--theia-inputValidation-warningBackground, var(--theia-list-hoverBackground));
-    color: var(--theia-foreground);
-    font-size: 12px;
-}
-
+/* Sign-in action at the right end of the search row (only for a harness that needs it). */
 .qaap-model-picker-connect-action {
     flex: none;
-    height: 26px;
+    margin-left: auto;
+    height: 24px;
     padding: 0 10px;
+    font-size: 12px;
     border: 1px solid var(--theia-button-border, var(--theia-widget-border));
     border-radius: 6px;
     background: var(--theia-button-background);

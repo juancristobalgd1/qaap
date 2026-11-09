@@ -35,6 +35,11 @@ export interface QaapWorkHubAuxPanelHost {
 /** Marks the chat-header buttons that open and close the panel. */
 export const QAAP_WORK_HUB_AUX_PANEL_TOGGLE_CLASS = 'qaap-mod-aux-panel-toggle';
 
+/** Changes and Files are two views over the same files surface. */
+function isFilesSurfaceView(kind: QaapWorkHubAuxPanelSurfaceKind): boolean {
+    return kind === 'changes' || kind === 'files';
+}
+
 /** `true` where the chevron opens the docked right panel instead of the views menu. */
 export function isQaapWorkHubAuxPanelLayout(): boolean {
     return typeof document !== 'undefined'
@@ -58,10 +63,16 @@ function viewSpec(kind: QaapWorkHubAuxPanelViewKind): ViewSpec {
                 description: nls.localize('qaap/workHubAuxPanel/browserDescription', 'Browse websites and preview apps.'),
                 icon: 'codicon-globe',
             };
+        case 'changes':
+            return {
+                label: nls.localizeByDefault('Changes'),
+                description: nls.localize('qaap/workHubAuxPanel/changesDescription', 'Review the changes made in this task.'),
+                icon: 'codicon-git-compare',
+            };
         case 'files':
             return {
                 label: nls.localizeByDefault('Files'),
-                description: nls.localize('qaap/workHubAuxPanel/filesDescription', 'Browse the project files and review changes.'),
+                description: nls.localize('qaap/workHubAuxPanel/filesOnlyDescription', 'Browse the project files.'),
                 icon: 'codicon-files',
             };
         case 'terminal':
@@ -144,6 +155,8 @@ export class QaapWorkHubAuxPanel {
 
     protected dockedElement: HTMLElement | undefined;
     protected dockedSurface: QaapWorkHubAuxPanelSurface | undefined;
+    /** The view this panel last asked the host to show, until its surface docks. */
+    protected requestedSurface: QaapWorkHubAuxPanelSurfaceKind | undefined;
     /** Tab id whose surface was already re-requested, so header rebuilds cannot loop. */
     protected restoredTabId: string | undefined;
     /** Set while the panel itself swaps or closes the docked surface. */
@@ -281,6 +294,12 @@ export class QaapWorkHubAuxPanel {
         if (!isQaapWorkHubAuxPanelLayout()) {
             return false;
         }
+        // Changes and Files share the files surface: dock it under the one this panel just asked for,
+        // whatever mode the surface reports while it is still applying that request.
+        if (isFilesSurfaceView(surface) && this.requestedSurface && isFilesSurfaceView(this.requestedSurface)) {
+            surface = this.requestedSurface;
+        }
+        this.requestedSurface = undefined;
         if (this.dockedElement && this.dockedElement !== element) {
             this.dockedElement.remove();
         }
@@ -420,6 +439,8 @@ export class QaapWorkHubAuxPanel {
         if (this.dockedSurface && this.dockedSurface !== kind) {
             this.releaseDocked(false);
         }
+        // Kept until the surface docks: the drawer may open on a later retry, not synchronously.
+        this.requestedSurface = kind;
         this.host.showSurface(kind);
     }
 
@@ -506,14 +527,17 @@ export class QaapWorkHubAuxPanel {
         title.textContent = viewSpec('launcher').label;
         const list = document.createElement('div');
         list.className = 'qaap-work-hub-aux-panel-launcher-list';
-        list.setAttribute('role', 'list');
         const enabled = this.host.canShowSurfaces();
         for (const kind of QAAP_WORK_HUB_AUX_PANEL_SURFACE_KINDS) {
             const spec = viewSpec(kind);
-            const row = document.createElement('div');
+            // The whole row is the button: no separate "Open" pill.
+            const row = document.createElement('button');
+            row.type = 'button';
             row.className = 'qaap-work-hub-aux-panel-launcher-item';
             row.dataset.kind = kind;
-            row.setAttribute('role', 'listitem');
+            row.setAttribute('aria-label', `${nls.localizeByDefault('Open')} ${spec.label}`);
+            row.disabled = !enabled;
+            row.addEventListener('click', () => this.activateTab(this.model.openView(kind)));
             // The tile centers the glyph; the codicon itself keeps its own inline box.
             const icon = document.createElement('span');
             icon.className = 'qaap-work-hub-aux-panel-launcher-icon';
@@ -530,14 +554,7 @@ export class QaapWorkHubAuxPanel {
             description.className = 'qaap-work-hub-aux-panel-launcher-description';
             description.textContent = spec.description;
             text.append(name, description);
-            const open = document.createElement('button');
-            open.type = 'button';
-            open.className = 'qaap-work-hub-aux-panel-launcher-open';
-            open.textContent = nls.localizeByDefault('Open');
-            open.setAttribute('aria-label', `${open.textContent} ${spec.label}`);
-            open.disabled = !enabled;
-            open.addEventListener('click', () => this.activateTab(this.model.openView(kind)));
-            row.append(icon, text, open);
+            row.append(icon, text);
             list.append(row);
         }
         const children: HTMLElement[] = [title, list];

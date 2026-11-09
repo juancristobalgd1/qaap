@@ -8,15 +8,16 @@
 // persistence. The DOM component lives in `qaap-work-hub-aux-panel.ts`.
 
 /** A view the right panel can host. `launcher` is the "New tab" page. */
-export type QaapWorkHubAuxPanelViewKind = 'launcher' | 'preview' | 'files' | 'terminal';
+export type QaapWorkHubAuxPanelViewKind = 'launcher' | 'preview' | 'changes' | 'files' | 'terminal';
 
 /**
  * Views backed by an existing execution surface (everything but the launcher).
- * Review (Changes) is not a view of its own: it is the Files view's Changes mode.
+ * Changes and Files are separate views over the same files surface: each opens it in its own mode
+ * (the surface's own Changes/Files switch is hidden in the Work Hub).
  */
 export type QaapWorkHubAuxPanelSurfaceKind = Exclude<QaapWorkHubAuxPanelViewKind, 'launcher'>;
 
-export const QAAP_WORK_HUB_AUX_PANEL_SURFACE_KINDS: readonly QaapWorkHubAuxPanelSurfaceKind[] = ['preview', 'files', 'terminal'];
+export const QAAP_WORK_HUB_AUX_PANEL_SURFACE_KINDS: readonly QaapWorkHubAuxPanelSurfaceKind[] = ['preview', 'changes', 'files', 'terminal'];
 
 export interface QaapWorkHubAuxPanelTab {
     readonly id: string;

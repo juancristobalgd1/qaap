@@ -313,6 +313,8 @@ export function executionSurfaceTabSpecsExtracted(ctx: MobileProjectsExecutionSu
     }
     return [
         { id: 'preview', label: nls.localize('qaap/mobileProjects/tabPreview', 'Browser'), icon: 'codicon-globe' },
+        // Changes opens the files surface in Changes mode (the surface's own switch is hidden here).
+        { id: 'review', label: nls.localizeByDefault('Changes'), icon: 'codicon-git-compare' },
         { id: 'files', label: nls.localize('qaap/mobileProjects/tabFiles', 'Files'), icon: 'codicon-files' },
         { id: 'terminal', label: nls.localize('qaap/mobileProjects/tabTerminal', 'Terminal'), icon: 'codicon-terminal' },
     ];

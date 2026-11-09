@@ -64,7 +64,12 @@ describe('qaap-work-hub-aux-panel', () => {
     }
 
     /** A host that docks a fake surface element synchronously, like the execution-surface UI. */
-    function createHarness(options: { canShow?: boolean; storage?: QaapWorkHubAuxPanelStorage } = {}): {
+    function createHarness(options: {
+        canShow?: boolean;
+        storage?: QaapWorkHubAuxPanelStorage;
+        /** The surface the host reports when it docks a requested view (defaults to the view itself). */
+        dockAs?: (kind: QaapWorkHubAuxPanelSurfaceKind) => QaapWorkHubAuxPanelSurfaceKind;
+    } = {}): {
         panel: QaapWorkHubAuxPanel;
         shown: QaapWorkHubAuxPanelSurfaceKind[];
         released: boolean[];
@@ -79,7 +84,7 @@ describe('qaap-work-hub-aux-panel', () => {
                 docked = document.createElement('section');
                 docked.className = 'fake-surface';
                 docked.dataset.kind = kind;
-                panel.dockSurface(kind, docked);
+                panel.dockSurface(options.dockAs?.(kind) ?? kind, docked);
             },
             releaseSurface: userClosed => {
                 released.push(userClosed);
@@ -99,7 +104,8 @@ describe('qaap-work-hub-aux-panel', () => {
     }
 
     function launcherOpen(panel: QaapWorkHubAuxPanel, kind: string): HTMLButtonElement {
-        return panel.element.querySelector<HTMLButtonElement>(`.qaap-work-hub-aux-panel-launcher-item[data-kind="${kind}"] .qaap-work-hub-aux-panel-launcher-open`)!;
+        // The whole launcher row is the button; there is no separate "Open" pill.
+        return panel.element.querySelector<HTMLButtonElement>(`button.qaap-work-hub-aux-panel-launcher-item[data-kind="${kind}"]`)!;
     }
 
     it('is only active on the desktop Work Hub', () => {
@@ -121,7 +127,7 @@ describe('qaap-work-hub-aux-panel', () => {
         expect(document.body.classList.contains('qaap-mod-work-hub-aux-panel-open')).to.equal(true);
         expect(tabKinds(panel)).to.deep.equal(['launcher']);
         const names = Array.from(panel.element.querySelectorAll('.qaap-work-hub-aux-panel-launcher-name')).map(name => name.textContent);
-        expect(names).to.deep.equal(['Browser', 'Files', 'Terminal']);
+        expect(names).to.deep.equal(['Browser', 'Changes', 'Files', 'Terminal']);
 
         panel.toggle();
         expect(panel.isOpen).to.equal(false);
@@ -162,13 +168,24 @@ describe('qaap-work-hub-aux-panel', () => {
         expect(panel.element.querySelector('.fake-surface')?.getAttribute('data-kind')).to.equal('preview');
     });
 
-    it('has no standalone Review view: Changes is the Files view\'s mode', () => {
-        const { panel } = createHarness();
+    it('offers Changes and Files as separate views over the files surface', () => {
+        const { panel, shown } = createHarness();
         panel.show();
-        expect(panel.element.querySelector('.qaap-work-hub-aux-panel-launcher-item[data-kind="review"]')).to.equal(null);
-        // A Changes request from the composer arrives as the Files surface.
-        panel.dockSurface('files', document.createElement('section'));
-        expect(tabKinds(panel)).to.deep.equal(['files']);
+        expect(panel.element.querySelector('button.qaap-work-hub-aux-panel-launcher-item[data-kind="changes"]')).to.not.equal(null);
+        expect(panel.element.querySelector('button.qaap-work-hub-aux-panel-launcher-item[data-kind="files"]')).to.not.equal(null);
+        launcherOpen(panel, 'changes').click();
+        expect(shown).to.deep.equal(['changes']);
+        // The files surface docks under the view whose mode it shows.
+        panel.dockSurface('changes', document.createElement('section'));
+        expect(tabKinds(panel)).to.deep.equal(['changes']);
+    });
+
+    it('docks the files surface under the view it asked for, even while the surface reports the other mode', () => {
+        // The surface arrives as Files because its pending Changes mode is not applied yet.
+        const { panel } = createHarness({ dockAs: kind => kind === 'changes' ? 'files' : kind });
+        panel.show();
+        launcherOpen(panel, 'changes').click();
+        expect(tabKinds(panel)).to.deep.equal(['changes']);
     });
 
     it('opens the tab menu from a double-chevron button', () => {

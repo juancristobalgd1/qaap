@@ -70,7 +70,8 @@ export class MobileProjectsProjectDetailUi {
 
         const reviewHost = document.createElement('div');
         reviewHost.className = 'theia-mobile-project-detail-panel theia-mobile-transcript-review';
-        reviewHost.hidden = activeTab !== 'review';
+        // Legacy host: Changes ('review') shows the files surface in Changes mode, never this panel.
+        reviewHost.hidden = true;
 
         const previewHost = document.createElement('div');
         previewHost.className = 'theia-mobile-project-detail-panel theia-mobile-transcript-preview';
@@ -78,7 +79,7 @@ export class MobileProjectsProjectDetailUi {
 
         const filesHost = document.createElement('div');
         filesHost.className = 'theia-mobile-project-detail-panel theia-mobile-transcript-files-host';
-        filesHost.hidden = activeTab !== 'files';
+        filesHost.hidden = activeTab !== 'files' && activeTab !== 'review';
 
         const terminalHost = document.createElement('div');
         terminalHost.className = 'theia-mobile-project-detail-panel theia-mobile-transcript-terminal-host';

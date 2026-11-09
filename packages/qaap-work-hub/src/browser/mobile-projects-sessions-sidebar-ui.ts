@@ -111,6 +111,8 @@ export interface MobileProjectsSessionsSidebarHost {
     runCatalogAction(action: import('@theia/qaap-shared-core/lib/common/mobile-work-hub-catalog').WorkHubCatalogAction): Promise<void>;
     onNewClick(): Promise<void>;
     onStartNewProject(): Promise<void>;
+    /** "New local project": a git folder on this workspace only, opened as soon as it exists. */
+    onStartNewLocalProject(): Promise<void>;
 }
 
 export interface SessionsSidebarConversationEntry {

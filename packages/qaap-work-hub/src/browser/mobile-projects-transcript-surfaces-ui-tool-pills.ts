@@ -657,7 +657,8 @@ export function ensureTranscriptFilesTabExtracted(
     }
     if (!workspaceKey && project.github && ctx.host.projectsService) {
         void ctx.host.projectsService.prepareProjectCwd(project).then(prepared => {
-            if (!prepared || !ctx.executionFilesHost()?.isConnected || ctx.host.executionSurfaceTabsUi.activeExecutionTab(project) !== 'files') {
+            const activeTab = ctx.host.executionSurfaceTabsUi.activeExecutionTab(project);
+            if (!prepared || !ctx.executionFilesHost()?.isConnected || (activeTab !== 'files' && activeTab !== 'review')) {
                 return;
             }
             ctx.host.preparedCwdByProjectId.set(project.id, prepared);
