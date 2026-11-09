@@ -96,6 +96,7 @@ describe('OpenCode gate plugin against the real CLI', function (): void {
             ...process.env,
             QAAP_GATE_URL: `http://127.0.0.1:${(gate.address() as AddressInfo).port}/gate`,
             QAAP_GATE_TOKEN: 't',
+            QAAP_GATE_ARM_NONCE: 'nonce-spec',
             OPENCODE_PERMISSION: '{"edit":"ask","bash":"ask","webfetch":"ask"}',
             OPENCODE_CONFIG_CONTENT: JSON.stringify({
                 model: 'fake/m',
