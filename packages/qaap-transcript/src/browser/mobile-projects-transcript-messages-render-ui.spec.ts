@@ -35,6 +35,7 @@ import { ensureTranscriptScrollController } from '@theia/qaap-transcript-overlay
 import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
 import type { WorkHubTranscriptBridge } from '@theia/qaap-transcript-overlay/lib/browser/work-hub-transcript-bridge';
 import { useSuiteAnimationFrameStub, useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
+import { QAAP_DAILY_WELCOME_PHRASES, qaapDailyWelcomePhraseIndex } from '../common/qaap-daily-welcome-phrase';
 
 disableImportJSDOM();
 
@@ -179,7 +180,9 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
 
         expect(messageHost.querySelector('.theia-mobile-agent-transcript-empty')).to.equal(null);
         expect(messageHost.querySelector('.theia-mobile-agent-transcript-empty-welcome')).to.not.equal(null);
-        expect(messageHost.querySelector('.theia-mobile-agent-transcript-empty-title')?.textContent).to.equal('Ready when you are.');
+        // The welcome line is the phrase of the day.
+        expect(messageHost.querySelector('.theia-mobile-agent-transcript-empty-title')?.textContent)
+            .to.equal(QAAP_DAILY_WELCOME_PHRASES[qaapDailyWelcomePhraseIndex()]);
         expect(messageHost.querySelector('.theia-mobile-agent-transcript-empty-subtitle')).to.equal(null);
         expect(messageHost.textContent).to.not.contain('Describe the outcome.');
         expect(composerHost.classList.contains('theia-mod-show-quick-actions')).to.equal(true);

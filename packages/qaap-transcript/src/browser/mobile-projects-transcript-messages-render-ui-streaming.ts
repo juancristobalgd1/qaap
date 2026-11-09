@@ -22,6 +22,7 @@ import {
     restoreTranscriptReadPosition,
 } from './qaap-transcript-read-position';
 import { type QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { QAAP_DAILY_WELCOME_PHRASES, qaapDailyWelcomePhraseIndex } from '../common/qaap-daily-welcome-phrase';
 
 export function createTranscriptEmptyWelcomeExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext): HTMLElement {
         const welcome = document.createElement('section');
@@ -37,7 +38,9 @@ export function createTranscriptEmptyWelcomeExtracted(ctx: MobileProjectsTranscr
 
         const title = document.createElement('h2');
         title.className = 'theia-mobile-agent-transcript-empty-title';
-        title.textContent = nls.localize('qaap/mobileProjects/transcriptEmptyWelcomeTitle', 'Ready when you are.');
+        // One inspiring line per day, cycling through all of them before repeating.
+        const phraseIndex = qaapDailyWelcomePhraseIndex();
+        title.textContent = nls.localize(`qaap/welcomePhrase/${phraseIndex}`, QAAP_DAILY_WELCOME_PHRASES[phraseIndex]);
 
         welcome.append(logo, title);
         return welcome;
