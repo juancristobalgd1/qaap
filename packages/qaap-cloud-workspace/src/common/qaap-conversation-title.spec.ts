@@ -6,7 +6,7 @@
 import { expect } from 'chai';
 import { applyBackendInteractionModeToPrompt } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-mode';
 import { QAAP_AGENTS_HUB_QUICK_ACTIONS } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
-import { clippedPromptTitle, deriveConversationTitle, isComposerAttachmentPreambleTitle, quickActionConversationTitle, resolveConversationTitleSeed } from './qaap-conversation-title';
+import { clippedPromptTitle, deriveConversationTitle, isComposerAttachmentPreambleTitle, quickActionConversationTitle, quickActionTitleForStoredTitle, resolveConversationTitleSeed } from './qaap-conversation-title';
 
 describe('deriveConversationTitle', () => {
 
@@ -149,5 +149,17 @@ describe('quick-action conversation titles', () => {
         const prompt = QAAP_AGENTS_HUB_QUICK_ACTIONS[0].promptDefault;
         expect(clippedPromptTitle(prompt)).to.not.equal('');
         expect(clippedPromptTitle(prompt)).to.not.equal(QAAP_AGENTS_HUB_QUICK_ACTIONS[0].labelDefault);
+    });
+
+    it('recognises a stored clipped-prompt title even without the first message', () => {
+        const action = QAAP_AGENTS_HUB_QUICK_ACTIONS[0];
+        expect(quickActionTitleForStoredTitle(clippedPromptTitle(action.promptDefault))).to.equal(action.labelDefault);
+        expect(quickActionTitleForStoredTitle('My renamed task')).to.equal(undefined);
+        expect(quickActionTitleForStoredTitle('Review the latest pull request: summarize changes, flag r\u2026')).to.equal('Review PR');
+        expect(quickActionTitleForStoredTitle('Find and fix a bug in this project. Reproduce the issue, \u2026')).to.equal('Fix a bug');
+        // A short or unrelated ellipsis title is left alone.
+        expect(quickActionTitleForStoredTitle('Find and fix\u2026')).to.equal(undefined);
+        expect(quickActionTitleForStoredTitle('Refactor the login flow and\u2026')).to.equal(undefined);
+        expect(quickActionTitleForStoredTitle(undefined)).to.equal(undefined);
     });
 });

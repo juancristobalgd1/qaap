@@ -20,7 +20,7 @@ import {
     type QaapExpiredStreamingTurn,
     type QaapTurnWatchdogLimits,
 } from '../common/qaap-agent-turn-watchdog';
-import { clippedPromptTitle, deriveConversationTitle, isComposerAttachmentPreambleTitle, quickActionConversationTitle } from '../common/qaap-conversation-title';
+import { clippedPromptTitle, deriveConversationTitle, isComposerAttachmentPreambleTitle, quickActionConversationTitle, quickActionTitleForStoredTitle } from '../common/qaap-conversation-title';
 
 import { isTeamSynthesisUserMessage } from '../common/qaap-team-mailbox';
 
@@ -531,6 +531,11 @@ function repairAttachmentPreambleTitle(conv: QaapAgentConversation): QaapAgentCo
     const quickActionTitle = firstUser ? quickActionConversationTitle(firstUser.content) : undefined;
     if (quickActionTitle && conv.title !== quickActionTitle && conv.title === clippedPromptTitle(firstUser!.content)) {
         return { ...conv, title: quickActionTitle };
+    }
+    // Same repair when the first message is gone: the stored title is exactly a chip's clipped prompt.
+    const storedQuickActionTitle = quickActionTitleForStoredTitle(conv.title);
+    if (storedQuickActionTitle) {
+        return { ...conv, title: storedQuickActionTitle };
     }
     if (!isComposerAttachmentPreambleTitle(conv.title)) {
         return conv;

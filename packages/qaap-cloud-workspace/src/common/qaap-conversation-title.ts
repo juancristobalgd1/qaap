@@ -63,6 +63,26 @@ export function clippedPromptTitle(firstUserMessage: string): string {
     return cleaned ? clipToTitle(cleaned) : '';
 }
 
+/**
+ * The chip label for a title that is exactly the clipped canned prompt of a quick action (what tasks
+ * stored before the label), so a task can be repaired even when its first message is gone.
+ */
+export function quickActionTitleForStoredTitle(title: string | undefined): string | undefined {
+    if (!title) {
+        return undefined;
+    }
+    const exact = QAAP_AGENTS_HUB_QUICK_ACTIONS.find(action => clippedPromptTitle(action.promptDefault) === title);
+    if (exact) {
+        return exact.labelDefault;
+    }
+    // Older builds clipped with a trailing ellipsis ("…, flag r…"): a long prefix of a canned prompt.
+    const stem = title.replace(/\s*(?:…|\.\.\.)\s*$/, '').trim();
+    if (stem === title.trim() || stem.length < 24) {
+        return undefined;
+    }
+    return QAAP_AGENTS_HUB_QUICK_ACTIONS.find(action => action.promptDefault.startsWith(stem))?.labelDefault;
+}
+
 export function quickActionConversationTitle(firstUserMessage: string): string | undefined {
     const message = firstUserMessage?.trim();
     if (!message) {
