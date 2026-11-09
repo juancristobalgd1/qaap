@@ -46,6 +46,8 @@ import {
 } from './mobile-projects-transcript-messages-artifacts-helpers';
 import { resolveTranscriptDiscardCheckpointId, resolveTranscriptTurnRetryAttempt } from '../common/qaap-transcript-turn-recovery';
 import { createMobileStoppedTurnLineElement } from './mobile-stopped-turn-line';
+import { createMobileTurnClosingReportElement } from './mobile-turn-closing-report';
+import { findQaapClosingReport } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model';
 
 export function removeTranscriptLiveStatusWithOrbExtracted(ctx: MobileProjectsTranscriptMessagesArtifactsUiContext, root: ParentNode): void {
         removeTranscriptLiveStatusElement(root, {
@@ -184,6 +186,12 @@ export function createTranscriptAgentSegmentsRowExtracted(ctx: MobileProjectsTra
                     agentMessage: failureMessage,
                 },
             ));
+        }
+        // The turn's closing report (blocked / warnings / done) as a quiet closing row. A failure
+        // already has its own dialog above.
+        const closingReport = !streaming && !error ? findQaapClosingReport(options?.message) : undefined;
+        if (closingReport) {
+            body.append(createMobileTurnClosingReportElement(closingReport));
         }
         row.append(body);
         // Child Markdown blocks may have rendered synchronously before the row was

@@ -337,3 +337,15 @@ describe('qaap-transcript-activity-navigation', () => {
         expect(items[1]?.label).to.include('package.json');
     });
 });
+
+describe('resolveTranscriptLifecycleActivityItems closing reports', () => {
+    it('ignores the closing-report event and keeps a normal error', () => {
+        const items = resolveTranscriptLifecycleActivityItems([
+            { type: 'error', id: 'closing-report-1', message: 'Blocked — needs your input: x' },
+            { type: 'error', id: 'error-1', message: 'Preview failed hard' },
+        ]);
+        expect(items).to.have.length(1);
+        expect(items[0]?.state).to.equal('error');
+        expect(items[0]?.label).to.equal('Preview failed hard');
+    });
+});

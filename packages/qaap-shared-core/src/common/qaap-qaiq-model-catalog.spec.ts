@@ -7,6 +7,7 @@ import {
 import {
     filterQaiqModelsWithConfiguredCredentials,
     formatQaiqModelDisplayLabel,
+    formatFriendlyModelLabel,
     formatQaiqModelIdShortLabel,
     groupQaiqModelsByProvider,
     isQaiqByokLanguageModelId,
@@ -231,5 +232,15 @@ describe('listQaiqModelsFromPreferences', () => {
         expect(formatQaiqModelDisplayLabel({ modelId: 'google/gemma-4-31b-it:free', label: 'Gemma 4 31B (free)' }))
             .to.equal('Gemma 4 31B (free)');
         expect(formatQaiqModelDisplayLabel({ modelId: 'openai/gpt-5', label: 'GPT-5' })).to.equal('GPT-5');
+    });
+
+    it('names well-known first-party models the way the picker does', () => {
+        expect(formatFriendlyModelLabel('claude-opus-4-8')).to.equal('Opus 4.8');
+        expect(formatFriendlyModelLabel('anthropic/claude-sonnet-5')).to.equal('Sonnet 5');
+        expect(formatFriendlyModelLabel('claude-haiku-4-5-20251001')).to.equal('Haiku 4.5');
+        expect(formatFriendlyModelLabel('gpt-5.6-sol')).to.equal('GPT-5.6 Sol');
+        expect(formatFriendlyModelLabel('gpt-5.5')).to.equal('GPT-5.5');
+        expect(formatFriendlyModelLabel('openrouter/~moonshotai/kimi-latest')).to.equal('kimi-latest');
+        expect(formatFriendlyModelLabel('claude-sonnet-latest')).to.equal('claude-sonnet-latest');
     });
 });

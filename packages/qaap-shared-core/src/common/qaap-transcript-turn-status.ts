@@ -19,8 +19,15 @@ export function resolveAgentMessageTiming(conv: QaapAgentConversationDTO | undef
     const isWorking = (conv?.status === 'streaming' || conv?.status === 'settled')
         && cancelledAt === undefined && message?.runFinishedAt === undefined && nextUserAt === undefined;
     const endAt = message?.runFinishedAt ?? cancelledAt ?? nextUserAt ?? conv?.updatedAt;
-    return { isWorking, turnStartMs, elapsedMs: turnStartMs === undefined ? undefined : Math.max(0, (isWorking ? now : endAt ?? turnStartMs) - turnStartMs) };
+    const elapsedMs = turnStartMs === undefined ? undefined : Math.max(0, (isWorking ? now : endAt ?? turnStartMs) - turnStartMs);
+    // A settled turn longer than any turn limit means its end time is unknown (old data without
+    // runFinishedAt measured to a later conversation update: "Processed in 2621h"). Show no duration.
+    const reliableElapsedMs = !isWorking && elapsedMs !== undefined && elapsedMs > QAAP_MAX_PLAUSIBLE_TURN_MS ? undefined : elapsedMs;
+    return { isWorking, turnStartMs, elapsedMs: reliableElapsedMs };
 }
+
+/** Longest settled turn duration shown; above it the end time is not trustworthy (turn limit is 3h by default). */
+const QAAP_MAX_PLAUSIBLE_TURN_MS = 24 * 60 * 60 * 1000;
 
 export interface TranscriptAgentExecutionState {
     readonly phase: TranscriptAgentExecutionPhase;

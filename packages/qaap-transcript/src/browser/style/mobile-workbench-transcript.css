@@ -1736,10 +1736,38 @@ body.qaap-theme-light .theia-mobile-agent-transcript-empty-action.theia-mod-prev
     pointer-events: none;
   }
 
-  .theia-mobile-agent-transcript-user-wrap:focus-within .theia-mobile-agent-transcript-user-actions,
-  .theia-mobile-agent-transcript-user-wrap:hover .theia-mobile-agent-transcript-user-actions {
+  /* Hidden actions take no room: an invisible 28px row under every user message read as a dead
+     gap before the agent's reply. A tap on the message (focus-within) unfolds them. */
+  @media (hover: none) {
+    .theia-mobile-agent-transcript-user-wrap:not(:focus-within) .theia-mobile-agent-transcript-user-actions {
+      height: 0;
+      min-height: 0;
+      overflow: hidden;
+    }
+  }
+
+  @media (hover: hover) {
+    .theia-mobile-agent-transcript-user-wrap:not(:focus-within):not(:hover) .theia-mobile-agent-transcript-user-actions {
+      height: 0;
+      min-height: 0;
+      overflow: hidden;
+    }
+  }
+
+  .theia-mobile-agent-transcript-user-wrap:focus {
+    outline: none;
+  }
+
+  .theia-mobile-agent-transcript-user-wrap:focus-within .theia-mobile-agent-transcript-user-actions {
     opacity: 0.82;
     pointer-events: auto;
+  }
+
+  @media (hover: hover) {
+    .theia-mobile-agent-transcript-user-wrap:hover .theia-mobile-agent-transcript-user-actions {
+      opacity: 0.82;
+      pointer-events: auto;
+    }
   }
 
   .theia-mobile-agent-lobe-workflow-summary,
@@ -2417,7 +2445,8 @@ body.qaap-theme-light .theia-mobile-agent-transcript-empty-action.theia-mod-prev
 /* Auto-expands while working, auto-collapses on success, open on error.       */
 
 .theia-mobile-process-accordion {
-  margin: 0 0 20px 0;
+  /* Same rhythm as the header → answer gap (~16–18px), not a 28px pause before the answer. */
+  margin: 0 0 14px 0;
   border-bottom: none;
 }
 
@@ -4307,4 +4336,49 @@ details > summary:focus-visible,
 .theia-mobile-visual-repair-proposal-actions {
     display: flex;
     gap: 6px;
+}
+
+/* Turn closing report: one quiet line under the answer (icon, short title, informative details).
+   Replaces the raw "Error: Blocked — needs your input …" text block. */
+.theia-mobile-turn-closing-report {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin-top: 10px;
+  color: var(--theia-descriptionForeground);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.theia-mobile-turn-closing-report-icon {
+  flex: 0 0 auto;
+  font-size: 14px;
+}
+
+.theia-mobile-turn-closing-report-title {
+  color: var(--theia-foreground);
+  font-weight: 600;
+}
+
+.theia-mobile-turn-closing-report-details {
+  flex: 1 1 100%;
+  padding-left: 22px;
+  overflow-wrap: anywhere;
+}
+
+.theia-mobile-turn-closing-report.theia-mod-blocked .theia-mobile-turn-closing-report-icon {
+  color: var(--theia-textLink-foreground, var(--theia-focusBorder));
+}
+
+.theia-mobile-turn-closing-report.theia-mod-warning .theia-mobile-turn-closing-report-icon {
+  color: var(--theia-editorWarning-foreground);
+}
+
+.theia-mobile-turn-closing-report.theia-mod-failed .theia-mobile-turn-closing-report-icon {
+  color: var(--theia-errorForeground);
+}
+
+.theia-mobile-turn-closing-report.theia-mod-done .theia-mobile-turn-closing-report-icon {
+  color: var(--theia-charts-green, var(--theia-gitDecoration-addedResourceForeground));
 }

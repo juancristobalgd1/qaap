@@ -11,7 +11,7 @@
 // qaap-execution-event-timeline.ts.
 
 import { createAgentIdentityElement, resolveAgentDisplayLabel } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
-import { formatQaiqModelIdShortLabel, formatQaiqModelSelectionLabel } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
+import { formatFriendlyModelLabel, formatQaiqModelIdShortLabel, formatQaiqModelSelectionLabel } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
 import type { QaapCreateAgentTaskQaiqModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import type { QaapAgentMessageDTO, QaapAgentModelFallbackReason } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { nls } from '@theia/core/lib/common/nls';
@@ -100,7 +100,8 @@ function resolveTranscriptProvenanceBadgeText(
         return { visibleLabel: agentLabel, fullLabel: agentLabel };
     }
     return {
-        visibleLabel: formatQaiqModelIdShortLabel(modelId),
+        // A readable name ("Opus 4.8", not "claude-opus-4-8"), as the model picker lists it.
+        visibleLabel: formatFriendlyModelLabel(modelId),
         fullLabel: `${agentLabel} · ${formatQaiqModelSelectionLabel(turnAgentModel!)}`,
     };
 }

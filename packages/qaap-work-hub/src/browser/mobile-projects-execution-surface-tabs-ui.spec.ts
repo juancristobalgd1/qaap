@@ -19,6 +19,8 @@ import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mob
 import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { clearPreferDesktopIde, markPreferDesktopIde } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 import { clearQaapPreviewDismissedByUser, isQaapPreviewDismissedByUser } from '@theia/qaap-shared-core/lib/browser/qaap-preview-user-dismissal';
+import { QAAP_DISABLED_HARNESSES_PREF } from '@theia/qaap-shared-core/lib/common/qaap-harness-preferences';
+import { MobileProjectsStickyComposerAgentsUi } from '@theia/qaap-composer/lib/browser/mobile-projects-sticky-composer-agents-ui';
 import { QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY } from './mobile-work-hub-sessions-sidebar';
 import {
     clearPendingTranscriptFilesViewMode,
@@ -1241,6 +1243,96 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
         const labels = Array.from(menu!.querySelectorAll('.theia-mobile-transcript-tab-icon-select-option-label'))
             .map(node => node.textContent);
         expect(labels).to.include.members(['QAIQ', 'Claude Code', 'Codex', 'Pi']);
+        tuiHost.remove();
+        ui.closeExecutionTabOverflowMenu();
+    });
+
+    it('places the overflow menu inside a contained portal even when the portal is displaced', () => {
+        const host = createHost();
+        const ui = createUi(host);
+        const portal = document.createElement('section');
+        portal.className = 'theia-mobile-execution-surface-sidebar theia-mod-open';
+        portal.style.setProperty('contain', 'layout paint');
+        // The portal sits at x=360; a fixed child is placed against it, so the menu reports the shift.
+        const portalLeft = 360;
+        portal.getBoundingClientRect = (): DOMRect => ({
+            left: portalLeft, top: 0, right: 760, bottom: 700, width: 400, height: 700, x: portalLeft, y: 0, toJSON: () => ({}),
+        } as DOMRect);
+        const anchor = document.createElement('button');
+        anchor.getBoundingClientRect = (): DOMRect => ({
+            left: 700, top: 50, right: 760, bottom: 80, width: 60, height: 30, x: 700, y: 50, toJSON: () => ({}),
+        } as DOMRect);
+        const menu = document.createElement('div');
+        menu.getBoundingClientRect = (): DOMRect => {
+            const left = parseFloat(menu.style.left) || 0;
+            const top = parseFloat(menu.style.top) || 0;
+            const rectLeft = left + portalLeft;
+            return { left: rectLeft, top, right: rectLeft + 188, bottom: top + 120, width: 188, height: 120, x: rectLeft, y: top, toJSON: () => ({}) } as DOMRect;
+        };
+        portal.append(anchor, menu);
+        host.root.append(portal);
+
+        ui.positionExecutionTabOverflowMenu(menu, anchor);
+
+        const renderedLeft = parseFloat(menu.style.left) + portalLeft;
+        const renderedRight = renderedLeft + 188;
+        // Right-aligned to the trigger and clamped to the visible portal (360..760), not the viewport.
+        expect(renderedRight).to.equal(752);
+        expect(renderedLeft).to.be.at.least(portalLeft + 8);
+        expect(renderedRight).to.be.at.most(760 - 8);
+        expect(menu.style.position).to.equal('fixed');
+    });
+
+    it('lists only enabled harnesses in the agent TUI menu and re-reads Settings on each open', async () => {
+        const project: MobileProjectEntry = {
+            id: 'p-qaap',
+            name: 'qaap',
+            color: '#8EB5DC',
+            branch: 'main',
+            status: 'idle',
+            task: '',
+            progress: 0,
+            agents: [],
+            lastActive: 'now',
+            tokens: '0',
+            cost: '$0',
+            pinned: false,
+            isCurrent: true,
+        };
+        let disabledHarnesses: string[] = ['codex'];
+        const stickyComposerAgentsUi = new MobileProjectsStickyComposerAgentsUi({
+            stickyComposerBackendAgents: [
+                { id: 'claude', label: 'Claude Code', available: true },
+                { id: 'codex', label: 'Codex', available: true },
+            ],
+            readPreference: (key: string): unknown => key === QAAP_DISABLED_HARNESSES_PREF ? disabledHarnesses : undefined,
+        } as unknown as ConstructorParameters<typeof MobileProjectsStickyComposerAgentsUi>[0]);
+        const host = createHost({
+            agentsHubShellActive: true,
+            transcriptOpenProject: undefined,
+            resolveAgentsHubShellProject: () => project,
+            stickyComposerAgentsUi,
+        });
+        const ui = createUi(host);
+
+        const tuiHost = ui.createTerminalAgentTuiSelect();
+        host.root.append(tuiHost);
+        const trigger = tuiHost.querySelector<HTMLButtonElement>('.theia-mobile-transcript-terminal-agent-tui')!;
+        const readLabels = (): (string | null | undefined)[] => Array.from(
+            host.root.querySelectorAll('.theia-mobile-transcript-terminal-agent-tui-menu .theia-mobile-transcript-tab-icon-select-option-label'),
+        ).map(node => node.textContent);
+
+        trigger.click();
+        await new Promise<void>(resolve => { window.setTimeout(resolve, 0); });
+        expect(readLabels()).to.include('Claude Code');
+        expect(readLabels()).to.not.include('Codex');
+
+        ui.closeExecutionTabOverflowMenu();
+        disabledHarnesses = [];
+        trigger.click();
+        await new Promise<void>(resolve => { window.setTimeout(resolve, 0); });
+        expect(readLabels()).to.include.members(['Claude Code', 'Codex']);
+
         tuiHost.remove();
         ui.closeExecutionTabOverflowMenu();
     });

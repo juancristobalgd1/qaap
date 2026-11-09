@@ -298,6 +298,13 @@ export function buildChildEnvExtracted(ctx: QaapAgentTaskRunnerContext, task: Qa
                 env.OPENCLAUDE_MAX_RETRIES = '3';
             }
         }
+        const harnessId = task.agentId?.trim().toLowerCase();
+        if ((harnessId === 'claude' || harnessId === 'openclaude') && env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC === undefined) {
+            // Telemetry, error reporting and the auto-updater run when the CLI exits. Behind the tenant
+            // egress allowlist they wait out network timeouts, so the turn kept showing "Preparing the
+            // response…" for ~30s after the answer was complete. An operator override wins.
+            env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1';
+        }
         // OpenCode allows every tool by default; gate it explicitly unless the run is meant to be
         // ungated (security: "Request approval" must never execute shell commands silently).
         const opencodePermission = resolveOpencodePermissionEnv({

@@ -9725,15 +9725,10 @@ body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-
  */
 .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-shell-active.theia-mod-has-changes-pill,
 .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-inline-active.theia-mod-has-changes-pill {
-  --theia-mobile-transcript-composer-scroll-gap: -34px;
-}
-
-@media (max-width: 767px) {
-  .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-shell-active.theia-mod-has-changes-pill,
-  .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-inline-active.theia-mod-has-changes-pill {
-    /* Match densified 26px pill strip (+ lip) in work-hub narrow CSS. */
-    --theia-mobile-transcript-composer-scroll-gap: -30px;
-  }
+  /* Overlap (and tail clearance) follow the measured strip (View Preview, Changes, Working…):
+     a fixed -30/-34px left the last line under taller rows. --qaap-composer-pill-strip-height is
+     published by the strip itself (qaap-sticky-composer-activity-stack.ts). */
+  --theia-mobile-transcript-composer-scroll-gap: calc(-1 * (var(--qaap-composer-pill-strip-height, 28px) + 6px));
 }
 
 /*
