@@ -328,7 +328,7 @@ export const AGENT_PROMPT_WRITE_SCRIPT = [
     "const fs=require('fs');",
     "const i=JSON.parse(fs.readFileSync(0,'utf8'));",
     'try{',
-    "fs.mkdirSync(i.dir,{mode:0o700});",
+    'fs.mkdirSync(i.dir,{mode:0o700});',
     "const fd=fs.openSync(i.file,'wx',0o600);",
     "try{const b=Buffer.from(i.text,'utf8');let o=0;while(o<b.length){o+=fs.writeSync(fd,b,o,b.length-o);}}finally{fs.closeSync(fd);}",
     '}catch(e){process.stderr.write(String(e&&e.message));process.exit(1);}',
