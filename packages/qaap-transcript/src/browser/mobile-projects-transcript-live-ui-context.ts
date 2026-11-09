@@ -89,6 +89,7 @@ export type MobileProjectsTranscriptLiveUiContextMember =
     | 'transcriptPreviewPollIntervalMs'
     | 'transcriptPreviewPollMisses'
     | 'transcriptPreviewSettlePollUntil'
+    | 'previewStartingWatchdog'
     | 'transcriptTurnVisuallySettledActive'
     | 'transcriptVisualVerificationPollTimer'
     | 'transcriptVisualVerificationPollUntil'

@@ -236,6 +236,12 @@ export function resolveTranscriptComposerQuickActionsMode(
     return previewStarting ? 'preview-only' : 'hidden';
 }
 
+/**
+ * How long a chat preview request may show "Starting preview…" with neither a preview URL nor a
+ * progress event before the chip is retired and falls back to "Run app".
+ */
+export const PREVIEW_STARTING_STALL_TIMEOUT_MS = 60_000;
+
 /** What a turn Stop does to the preview request that turn may have started. */
 export type QaapTurnStopPreviewRequestAction =
     /** No preview request is pending or running: nothing to clear. */

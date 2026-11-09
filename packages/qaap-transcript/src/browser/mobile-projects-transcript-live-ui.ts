@@ -38,6 +38,8 @@ import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcr
 import { QaapAgUiTranscriptLiveBridge } from './qaap-ag-ui-transcript-live-bridge';
 import { applyCachedTranscriptOnOpenExtracted, doRefreshOpenTranscriptConversationExtracted, isTrustedOpenTranscriptCache, reconcileConversationListSummaryExtracted, refreshOpenTranscriptConversationExtracted, renderOpenTranscriptPlaceholderExtracted, resolveOpenTranscriptConversationExtracted, scheduleTranscriptConversationRefreshExtracted } from './mobile-projects-transcript-live-ui-activity';
 import { applyOptimisticConversationCancelExtracted, applyOptimisticRunCancelExtracted, applyOptimisticFailedTaskRetryExtracted, applyOptimisticStreamTimeoutRetryExtracted, bindOpenTranscriptThreadStoreExtracted, clearTranscriptSemanticProgressClockExtracted, ensureVisibilityResumeListenerExtracted, flushPendingSseRenderExtracted, handleTranscriptSseMessageExtracted, isActiveTranscriptNearBottomExtracted, pauseTranscriptBackgroundRendersExtracted, readOpenTranscriptRollbackSnapshotExtracted, resolveLiveSseMessageExtracted, restoreOpenTranscriptSnapshotExtracted, resyncOpenTranscriptStreamAfterTimeoutExtracted, schedulePendingSseRenderExtracted, scheduleSseDeltaResyncExtracted, seedTranscriptSemanticProgressClockExtracted, touchTranscriptSemanticProgressFromConversationExtracted } from './mobile-projects-transcript-live-ui-render';
+import { onTranscriptPreviewStartStalledExtracted } from './mobile-projects-transcript-live-ui-streaming';
+import { QaapPreviewStartingWatchdog } from './qaap-preview-starting-watchdog';
 import { applyTranscriptSseRenderExtracted, ensureBootstrapPreviewListenerExtracted, ensureTranscriptDevPreviewWatchExtracted, finalizeTranscriptDevPreviewAfterSettleExtracted, kickoffTranscriptDevPreviewBootstrapExtracted, maybeActivateTranscriptDevPreviewExtracted, maybeReportTranscriptPreviewBootstrapFailureExtracted, maybeSyncTranscriptVisuallySettledChromeExtracted, onTranscriptUserMessageSubmittedExtracted, openReadyTranscriptPreviewUrlExtracted, resolveTranscriptRefreshContextExtracted, scheduleTranscriptComposerActivityRefreshExtracted, stopTranscriptComposerActivityRefreshExtracted, syncTranscriptConversationSettledChromeExtracted } from './mobile-projects-transcript-live-ui-streaming';
 import { buildTranscriptApprovalSyncKeyExtracted, ensureTranscriptConversationRefreshExtracted, ensureTranscriptLiveControllerExtracted, findTranscriptToolSegmentExtracted, getPendingTranscriptToolApprovalExtracted, reconcileTranscriptInlineToolApprovalCardsExtracted, refreshTranscriptApprovalsExtracted, refreshTranscriptPreviewOfferExtracted, resolveReadyTranscriptPreviewUrlExtracted, resolveTranscriptPreviewPollIntervalMsExtracted, scheduleTranscriptApprovalRefreshExtracted, scheduleTranscriptPreviewOfferRefreshExtracted, scheduleTranscriptVisualVerificationPollExtracted, stopTranscriptApprovalRefreshExtracted, stopTranscriptLiveWatchExtracted, stopTranscriptPreviewOfferRefreshExtracted, stopTranscriptVisualVerificationPollExtracted, syncTranscriptPendingApprovalExtracted } from './mobile-projects-transcript-live-ui-timeline';
 
@@ -136,6 +138,11 @@ export class MobileProjectsTranscriptLiveUi {
     public transcriptPreviewOfferAnnouncedUrl: string | undefined;
     /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
     public transcriptPreviewSettlePollUntil: number | undefined;
+    /**
+     * @internal Retires a chat "Starting preview…" request that stalls with no URL and no progress.
+     * Timers come from the window that hosts the transcript.
+     */
+    public readonly previewStartingWatchdog = new QaapPreviewStartingWatchdog(window, () => onTranscriptPreviewStartStalledExtracted(this));
     /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
     public transcriptDevPreviewBootstrapConversationId: string | undefined;
     /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
