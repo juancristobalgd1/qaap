@@ -180,6 +180,8 @@ export interface QaapAgentTask {
      * a fix turn; cleared before the task settles. Announced with a task event of type `'updated'`.
      */
     readonly verificationPhase?: QaapAgentTaskVerificationPhase;
+    /** Set when Stop could not signal the agent: the task is not stopped and its process may still run. */
+    readonly stopFailure?: string;
 }
 
 /** Progress of the automatic verification loop for a task that is still running. */

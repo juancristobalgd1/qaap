@@ -15,7 +15,7 @@ import { QaapQaiqProviderKeyMissingError } from './qaap-qaiq-provider-preflight'
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { awaitQaapAgentTaskSpawnGate } from './qaap-agent-task-spawn-gate';
 import { resolveAgentTaskBillingRejection } from './qaap-agent-task-billing-gate';
-import { finishTaskWithPauseCause, logCancelExitExtracted } from './qaap-agent-task-runner-streaming2';
+import { finishTaskWithPauseCause, logCancelExitExtracted, releaseStoppingTaskSlotOnExitExtracted } from './qaap-agent-task-runner-streaming2';
 import { createOpencodeFatalStderrWatcher } from './qaap-opencode-fatal-error';
 import { createPiProviderErrorWatcher } from './qaap-pi-provider-error-watcher';
 import { removeStaleOpencodeSnapshotLocks } from './qaap-opencode-snapshot-lock';
@@ -589,6 +589,8 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                 console.warn(`[qaap-stop] spawn-skipped task=${task.id} state=${ctx.tasks.get(task.id)?.state ?? 'missing'}`);
                 return;
             }
+            // The stack is the only backend record of a spawn that never produced an agent process.
+            console.error(`[qaap-start] task=${task.id} failed to start: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
             logStream.end(`Failed to start: ${error instanceof Error ? error.message : String(error)}\n`);
             ctx.finishTask(task.id, 'failed', undefined);
             return;
@@ -860,6 +862,8 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             ctx.recordTaskLatencyMark(task.id, 'process_exit');
             logCancelExitExtracted(ctx, task.id);
             reapAgentProcessGroupOnExitExtracted(ctx, task.id, child);
+            // The slot of a stopped task is held until the process is really gone.
+            releaseStoppingTaskSlotOnExitExtracted(ctx, task.id);
         });
         child.on('close', exitCode => {
             clearTimeout(exitAfterResultTimer);

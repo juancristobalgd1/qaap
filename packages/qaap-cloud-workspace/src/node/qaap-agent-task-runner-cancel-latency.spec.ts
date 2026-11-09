@@ -13,7 +13,7 @@ import {
     MIN_AGENT_STOP_GRACE_TIMEOUT_MS,
     resolveAgentStopGraceTimeoutMs,
 } from './qaap-agent-task-runner-constants';
-import { cancelExtracted, logCancelExitExtracted } from './qaap-agent-task-runner-streaming2';
+import { cancelExtracted, logCancelExitExtracted, releaseStoppingTaskSlotOnExitExtracted } from './qaap-agent-task-runner-streaming2';
 import { killAgentProcessTreeExtracted } from './qaap-agent-task-runner-timeline2';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 
@@ -73,6 +73,7 @@ function createHarness(child: ChildProcess): Harness {
             return finished;
         },
         drainQueuedTasks: (): void => { harness.drains++; },
+        persist: (): Promise<void> => Promise.resolve(),
     };
     const ctx = fields as unknown as QaapAgentTaskRunnerContext;
     Object.assign(ctx, {
@@ -87,6 +88,7 @@ describe('QaapAgentTaskRunner stop latency', () => {
     let clock: sinon.SinonFakeTimers;
     let processKill: sinon.SinonStub;
     let consoleWarn: sinon.SinonStub;
+    let consoleError: sinon.SinonStub;
 
     /** The `[qaap-stop] conv=` settle and exit lines; the signal and escalation timing lines are separate. */
     const stopLines = (): string[] => consoleWarn.getCalls()
@@ -100,10 +102,12 @@ describe('QaapAgentTaskRunner stop latency', () => {
         clock = sinon.useFakeTimers({ now: 1_000_000, toFake: ['setTimeout', 'clearTimeout', 'Date'] });
         processKill = sinon.stub(globalThis.process, 'kill').callsFake(() => true);
         consoleWarn = sinon.stub(console, 'warn');
+        consoleError = sinon.stub(console, 'error');
     });
 
     afterEach(() => {
         consoleWarn?.restore();
+        consoleError?.restore();
         processKill?.restore();
         clock?.restore();
     });
@@ -123,7 +127,7 @@ describe('QaapAgentTaskRunner stop latency', () => {
         expect(marks?.cancel_settled).to.be.at.least(marks?.cancel_received ?? Infinity);
     });
 
-    it('escalates to SIGKILL at the grace timeout, then clears the stopping set and drains', () => {
+    it('escalates to SIGKILL at the grace timeout but holds the slot until the process exits', () => {
         const child = new FakeChild();
         const harness = createHarness(child as unknown as ChildProcess);
         cancelExtracted(harness.ctx, TASK_ID);
@@ -134,9 +138,47 @@ describe('QaapAgentTaskRunner stop latency', () => {
 
         clock.tick(1);
         expect(processKill.calledWith(-51001, 'SIGKILL')).to.equal(true);
+        // SIGKILL was sent, but the process has not exited yet: the slot stays held.
+        expect(harness.stoppingTaskIds.has(TASK_ID)).to.equal(true);
+        expect(harness.drains).to.equal(0);
+        expect(AGENT_STOP_GRACE_TIMEOUT_MS).to.equal(2_000);
+
+        // The exit handler releases the slot once the process is really gone.
+        releaseStoppingTaskSlotOnExitExtracted(harness.ctx, TASK_ID);
         expect(harness.stoppingTaskIds.has(TASK_ID)).to.equal(false);
         expect(harness.drains).to.equal(1);
-        expect(AGENT_STOP_GRACE_TIMEOUT_MS).to.equal(2_000);
+    });
+
+    it('releases the slot at the grace timeout when the process already exited', () => {
+        const child = new FakeChild();
+        Object.assign(child, { exitCode: 0 });
+        const harness = createHarness(child as unknown as ChildProcess);
+        cancelExtracted(harness.ctx, TASK_ID);
+
+        clock.tick(AGENT_STOP_GRACE_TIMEOUT_MS);
+        expect(harness.stoppingTaskIds.has(TASK_ID)).to.equal(false);
+        expect(harness.drains).to.equal(1);
+    });
+
+    it('marks the task as not stopped when SIGKILL fails, and keeps the slot', () => {
+        const child = new FakeChild();
+        const harness = createHarness(child as unknown as ChildProcess);
+        processKill.callsFake((pid: number, signal: NodeJS.Signals | number) => {
+            if (signal === 'SIGKILL') {
+                const error = Object.assign(new Error('operation not permitted'), { code: 'EPERM' });
+                throw error;
+            }
+            return true;
+        });
+        cancelExtracted(harness.ctx, TASK_ID);
+
+        clock.tick(AGENT_STOP_GRACE_TIMEOUT_MS);
+        const task = harness.tasks.get(TASK_ID);
+        expect(task?.state).to.equal('failed');
+        expect(task?.stopFailure).to.equal('Could not stop the agent; it may still be running.');
+        expect(harness.stoppingTaskIds.has(TASK_ID)).to.equal(true);
+        expect(harness.drains).to.equal(0);
+        expect(consoleError.called).to.equal(true);
     });
 
     it('signals the leader directly when the process group is already gone (ESRCH)', () => {
