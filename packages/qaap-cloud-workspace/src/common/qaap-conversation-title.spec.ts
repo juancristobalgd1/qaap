@@ -5,7 +5,8 @@
 
 import { expect } from 'chai';
 import { applyBackendInteractionModeToPrompt } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-mode';
-import { deriveConversationTitle, isComposerAttachmentPreambleTitle, resolveConversationTitleSeed } from './qaap-conversation-title';
+import { QAAP_AGENTS_HUB_QUICK_ACTIONS } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
+import { clippedPromptTitle, deriveConversationTitle, isComposerAttachmentPreambleTitle, quickActionConversationTitle, resolveConversationTitleSeed } from './qaap-conversation-title';
 
 describe('deriveConversationTitle', () => {
 
@@ -127,5 +128,26 @@ describe('attachment-aware conversation titles', () => {
     it('recognizes titles persisted from the raw preamble', () => {
         expect(isComposerAttachmentPreambleTitle('The user attached the following context')).to.equal(true);
         expect(isComposerAttachmentPreambleTitle('Mejora la ui')).to.equal(false);
+    });
+});
+
+describe('quick-action conversation titles', () => {
+    it('titles an unedited quick-action prompt with the chip label', () => {
+        for (const action of QAAP_AGENTS_HUB_QUICK_ACTIONS) {
+            expect(deriveConversationTitle(action.promptDefault)).to.equal(action.labelDefault);
+            expect(deriveConversationTitle(`  ${action.promptDefault}\n`)).to.equal(action.labelDefault);
+        }
+    });
+
+    it('titles an edited prompt from its own text', () => {
+        const edited = `${QAAP_AGENTS_HUB_QUICK_ACTIONS[0].promptDefault} Focus on the login form.`;
+        expect(quickActionConversationTitle(edited)).to.equal(undefined);
+        expect(deriveConversationTitle(edited)).to.not.equal(QAAP_AGENTS_HUB_QUICK_ACTIONS[0].labelDefault);
+    });
+
+    it('keeps the clipped prompt title available to recognise titles stored before the label', () => {
+        const prompt = QAAP_AGENTS_HUB_QUICK_ACTIONS[0].promptDefault;
+        expect(clippedPromptTitle(prompt)).to.not.equal('');
+        expect(clippedPromptTitle(prompt)).to.not.equal(QAAP_AGENTS_HUB_QUICK_ACTIONS[0].labelDefault);
     });
 });

@@ -17,6 +17,8 @@
  * already refreshes rows from those events, so no extra plumbing is needed.
  */
 
+import { QAAP_AGENTS_HUB_QUICK_ACTIONS } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
+
 /** Target character length for a derived title. */
 const TITLE_TARGET_LENGTH = 48;
 /** Lower bound of the window in which a clause boundary is preferred over a plain word cut. */
@@ -39,11 +41,34 @@ const CLAUSE_CONNECTORS: readonly string[] = [' and ', ' then '];
  * own localized fallback (e.g. 'New conversation').
  */
 export function deriveConversationTitle(firstUserMessage: string): string {
+    const quickAction = quickActionConversationTitle(firstUserMessage);
+    if (quickAction) {
+        return quickAction;
+    }
     const cleaned = cleanPromptText(resolveConversationTitleSeed(firstUserMessage));
     if (!cleaned) {
         return '';
     }
     return clipToTitle(cleaned);
+}
+
+/**
+ * A quick-action chip sends a long canned prompt ("Find and fix a bug in this project. Reproduce…");
+ * clipped, every such task read the same in the sidebar. Its title is the chip's label instead
+ * ("Fix a bug"). Only an unedited prompt counts: a prompt the user changed is titled from its text.
+ */
+/** The heuristic (clipped prompt) title, ignoring the quick-action label: what older tasks stored. */
+export function clippedPromptTitle(firstUserMessage: string): string {
+    const cleaned = cleanPromptText(resolveConversationTitleSeed(firstUserMessage));
+    return cleaned ? clipToTitle(cleaned) : '';
+}
+
+export function quickActionConversationTitle(firstUserMessage: string): string | undefined {
+    const message = firstUserMessage?.trim();
+    if (!message) {
+        return undefined;
+    }
+    return QAAP_AGENTS_HUB_QUICK_ACTIONS.find(action => action.promptDefault === message)?.labelDefault;
 }
 
 /**
