@@ -51,6 +51,13 @@ export interface QaapHasStateClassRule {
 export const QAAP_HAS_STATE_CLASS_RULES: readonly QaapHasStateClassRule[] = [
     // `body` — overlays and surfaces.
     {
+        // A composer popover (model picker, project sheet) is open: toasts sit beneath it.
+        subject: 'body',
+        has: '.qaap-sticky-composer-sheet-popover',
+        className: 'qaap-mod-has-composer-popover',
+        classes: ['qaap-sticky-composer-sheet-popover'],
+    },
+    {
         subject: 'body',
         has: '.theia-mobile-agent-transcript-root.theia-mod-visible',
         className: 'theia-mobile-mod-has-transcript-overlay',
