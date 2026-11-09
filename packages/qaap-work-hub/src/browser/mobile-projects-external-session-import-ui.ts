@@ -36,11 +36,11 @@ export class MobileProjectsExternalSessionImportUi {
 
     protected readonly client = new QaapExternalSessionClient();
 
-    constructor(protected readonly host: MobileProjectsExternalSessionImportHost) { }
+    constructor(protected readonly services: MobileProjectsExternalSessionImportHost) { }
 
     async open(project: MobileProjectEntry): Promise<void> {
-        const cwd = this.host.getProjectCwd(project);
-        const quickInput = this.host.quickInputService;
+        const cwd = this.services.getProjectCwd(project);
+        const quickInput = this.services.quickInputService;
         if (!cwd || !quickInput) {
             return;
         }
@@ -121,7 +121,7 @@ export class MobileProjectsExternalSessionImportUi {
                 externalSession: conversation.externalSession,
             } : undefined);
             if (summary) {
-                await this.host.openConversationSummary(project, summary);
+                await this.services.openConversationSummary(project, summary);
             }
             if (conversation) {
                 MobileSnackbar.show(nls.localize('qaap/externalSessions/imported', 'Imported from {0}. Your next message continues the thread.',
@@ -136,7 +136,7 @@ export class MobileProjectsExternalSessionImportUi {
     protected async waitForSummary(id: string): Promise<QaapAgentConversationSummaryDTO | undefined> {
         const deadline = Date.now() + SUMMARY_WAIT_MS;
         for (;;) {
-            const summary = this.host.findSummaryById(id);
+            const summary = this.services.findSummaryById(id);
             if (summary || Date.now() >= deadline) {
                 return summary;
             }
