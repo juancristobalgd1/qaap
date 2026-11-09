@@ -391,7 +391,35 @@ export function renderStickyComposerChangesPill(options: StickyComposerActivityS
     const host = document.createElement('div');
     host.className = 'theia-mobile-sticky-composer-changes-pill-host';
     host.append(renderStickyComposerChangedFilesSection(options));
+    publishPillStripHeight(host);
     return host;
+}
+
+/**
+ * The transcript keeps its tail clear of this strip by overlapping the composer by the strip's
+ * height. A fixed guess (26–30px) hid the last line behind taller rows such as View Preview, so
+ * the real height is published as `--qaap-composer-pill-strip-height` on the Work Hub root.
+ * The observer stops once the strip leaves the document.
+ */
+function publishPillStripHeight(host: HTMLElement): void {
+    if (typeof ResizeObserver === 'undefined') {
+        return;
+    }
+    const observer = new ResizeObserver(() => {
+        if (!host.isConnected) {
+            observer.disconnect();
+            return;
+        }
+        const root = host.closest<HTMLElement>('.theia-mobile-projects');
+        if (!root || host.hidden) {
+            return;
+        }
+        const height = Math.round(host.getBoundingClientRect().height);
+        if (height > 0) {
+            root.style.setProperty('--qaap-composer-pill-strip-height', `${height}px`);
+        }
+    });
+    observer.observe(host);
 }
 
 export function renderStickyComposerActivityStack(options: StickyComposerActivityStackOptions): HTMLElement | undefined {
