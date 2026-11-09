@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { test } from 'node:test';
 import {
-    describeFallbacks, describeTaskFailure, followModelFallback, main, mayStillFallBack, parseFallbackGraceMs, findProviderCredentialRejection, isModelUnavailableFailure,
+    describeFallbacks, describeTaskFailure, findAccountUsageLimit, followModelFallback, main, mayStillFallBack, parseFallbackGraceMs, findProviderCredentialRejection, isModelUnavailableFailure,
     judgeTask, redactSecrets, pickProjectCwd, pickSmokeAgent, smokeCookie, taskModel,
 } from './qaap-post-deploy-agent-smoke.mjs';
 
@@ -468,4 +468,18 @@ test('a fallback grace that is not a finite number falls back to 15 s', () => {
     assert.equal(parseFallbackGraceMs('-5'), 15_000);
     assert.equal(parseFallbackGraceMs('0'), 0);
     assert.equal(parseFallbackGraceMs('2500'), 2500);
+});
+
+test('a harness that hit its subscription usage limit makes the smoke inconclusive, not failed', () => {
+    const log = 'starting claude\nYou\'ve hit your session limit \u00b7 resets 2:50am (UTC)\n';
+    const verdict = judgeTask({ state: 'failed', exitCode: 1, log }, 'TOKEN');
+    assert.equal(verdict.ok, false);
+    assert.equal(verdict.inconclusive, true);
+    assert.match(verdict.reason, /usage limit: You've hit your session limit/);
+    assert.match(verdict.hint, /QAAP_SMOKE_AGENT/);
+    assert.equal(findAccountUsageLimit({ log: 'You\u2019ve hit your usage limit.' }), 'You\u2019ve hit your usage limit.');
+    assert.equal(findAccountUsageLimit({ log: 'Error: insufficient_quota' }), 'Error: insufficient_quota');
+    // An ordinary failure stays a failure.
+    assert.equal(findAccountUsageLimit({ log: 'TypeError: cannot read x' }), undefined);
+    assert.equal(judgeTask({ state: 'failed', exitCode: 1, log: 'TypeError: boom' }, 'TOKEN').inconclusive, undefined);
 });
