@@ -38,6 +38,8 @@ interface QaapPreviewProcessRecord {
     autoRestartAt: number[];
     /** Structured launch supplied by the shared preview plan (non-Node/custom runtimes). */
     launch?: QaapPreviewSupervisorLaunch;
+    /** Stop signalled SIGTERM: the record and its port are retired only when the child reports its exit. */
+    stopRequested?: boolean;
 }
 
 export interface QaapPreviewSupervisorLaunch {
@@ -96,6 +98,8 @@ export class QaapPreviewSupervisor implements BackendApplicationContribution {
     protected readonly tenantSpawn: QaapTenantSpawnService;
 
     protected readonly records = new Map<string, QaapPreviewProcessRecord>();
+    /** Starts still spawning, per preview key: a concurrent start reuses the promise instead of a second dev server. */
+    protected readonly pendingStarts = new Map<string, Promise<QaapPreviewProcessStatus>>();
     protected cleanupRegistered = false;
 
     /**
@@ -109,6 +113,10 @@ export class QaapPreviewSupervisor implements BackendApplicationContribution {
         launch?: QaapPreviewSupervisorLaunch,
     ): Promise<QaapPreviewProcessStatus> {
         const key = identity?.previewId ?? `legacy-port-${port}`;
+        const pending = this.pendingStarts.get(key);
+        if (pending) {
+            return pending;
+        }
         const existing = this.records.get(key);
         if (existing && existing.status !== 'exited' && existing.child && existing.child.exitCode === null) {
             return existing.status;
@@ -118,7 +126,10 @@ export class QaapPreviewSupervisor implements BackendApplicationContribution {
         if (collision) {
             throw new Error(`Preview port ${port} is already reserved by ${collision.identity?.previewId ?? collision.key}.`);
         }
-        return this.spawnDevServer(cwd, port, existing?.autoRestartAt ?? [], identity, launch);
+        const starting = this.spawnDevServer(cwd, port, existing?.autoRestartAt ?? [], identity, launch)
+            .finally(() => this.pendingStarts.delete(key));
+        this.pendingStarts.set(key, starting);
+        return starting;
     }
 
     /**
@@ -131,15 +142,19 @@ export class QaapPreviewSupervisor implements BackendApplicationContribution {
             return false;
         }
         if (record.child && record.child.exitCode === null) {
-            if (signalAgentProcessTree(record.child, 'SIGTERM') === 'failed') {
-                // The dev server may still be running: keep its record so it is not reported as stopped.
-                this.records.set(previewId, record);
+            const outcome = signalAgentProcessTree(record.child, 'SIGTERM');
+            if (outcome === 'failed') {
+                // The dev server may still be running: keep its record (and port) so it is not reported as stopped.
                 console.warn(`[qaap-preview] could not stop preview ${previewId}; its dev server may still be running`);
                 return false;
             }
-            this.records.delete(previewId);
-            return true;
+            if (outcome === 'sent') {
+                // Not confirmed dead yet: the record and its port stay until the child exits (see recordExit).
+                record.stopRequested = true;
+                return true;
+            }
         }
+        // Already gone (ESRCH or never spawned): nothing can still hold the port.
         this.records.delete(previewId);
         return false;
     }
@@ -263,6 +278,9 @@ export class QaapPreviewSupervisor implements BackendApplicationContribution {
             record.stderr.push(`spawn error: ${err.message}\n`);
             this.recordExit(record, 1, undefined);
         });
+        child.on('exit', (code, signal) => {
+            this.recordExit(record, code ?? undefined, signal ?? undefined);
+        });
         child.on('close', (code, signal) => {
             this.recordExit(record, code ?? undefined, signal ?? undefined);
         });
@@ -278,6 +296,13 @@ export class QaapPreviewSupervisor implements BackendApplicationContribution {
         record.exitCode = exitCode;
         record.signal = signal;
         record.child = undefined;
+        if (record.stopRequested) {
+            // Stopped on purpose and confirmed gone: retire the record, which also frees its port. No auto-restart.
+            if (this.records.get(record.key) === record) {
+                this.records.delete(record.key);
+            }
+            return;
+        }
         this.maybeAutoRestart(record);
     }
 

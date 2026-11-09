@@ -15,6 +15,7 @@ import type { QaapGithubAuthGuard } from './qaap-github-auth-guard';
 import type { QaapDevPreviewPortRegistry, QaapDevPreviewRecord } from './qaap-dev-preview-port-registry';
 import type { QaapProcessPreviewIdentity } from '../common/qaap-preview-identity';
 import type { QaapDevServerProbeState } from './qaap-dev-preview-endpoint-timeline';
+import type { QaapPreviewPidLiveness } from './qaap-dev-preview-process-liveness';
 
 /** A process-preview registration still waiting for its port (see `allocatePreviewPort`). */
 export type QaapDevPreviewAllocation = QaapProcessPreviewIdentity & {
@@ -65,6 +66,9 @@ export interface QaapDevPreviewEndpointContext {
     terminatePreviewProcess(record: { readonly osProcessId?: number; readonly port?: number; readonly ownerLogin?: string }): void;
 
     isPreviewProcessDead(record: { readonly osProcessId?: number; readonly port?: number; readonly ownerLogin?: string; readonly adopted?: true }): boolean;
+
+    /** Liveness of the record's recorded process; `unknown` when no local pid describes it (adopted, tunnelled, none). */
+    previewPidLiveness(record: { readonly osProcessId?: number; readonly port?: number; readonly ownerLogin?: string; readonly adopted?: true }): QaapPreviewPidLiveness;
 
     /**
      * Canonical working directories of the processes listening on `port`. Empty when unknown
