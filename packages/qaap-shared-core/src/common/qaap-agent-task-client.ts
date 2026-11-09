@@ -179,6 +179,8 @@ export interface QaapAgentTaskDetailDTO {
     readonly modelFallbackTaskId?: string;
     readonly log: string;
     readonly workspaceSnapshot?: 'current' | 'changed' | 'unknown';
+    /** Set when Stop could not signal the agent: the task is not stopped and its process may still run. */
+    readonly stopFailure?: string;
 }
 
 /** True once a task has stopped and will not change state again. */

@@ -193,8 +193,11 @@ describe('QaapAgentTaskRunner stop latency', () => {
 
         cancelExtracted(harness.ctx, TASK_ID);
 
-        expect(child.kill.calledWith('SIGTERM')).to.equal(true);
-        expect(consoleWarn.getCalls().some(call => /\[qaap-stop\] process group 51001 not found/.test(String(call.args[0])))).to.equal(true);
+        // The group signal was attempted first and reported ESRCH; the leader then receives the signal itself.
+        expect(processKill.calledWith(-51001, 'SIGTERM')).to.equal(true);
+        expect(processKill.calledWith(51001, 'SIGTERM')).to.equal(true);
+        expect(child.kill.called).to.equal(false);
+        expect(consoleError.called).to.equal(false);
     });
 
     it('logs the epoch of each signal and how late the grace timer fired', () => {
