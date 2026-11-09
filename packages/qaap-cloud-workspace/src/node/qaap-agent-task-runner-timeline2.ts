@@ -19,6 +19,7 @@ import { finishTaskWithPauseCause, logCancelExitExtracted } from './qaap-agent-t
 import { createOpencodeFatalStderrWatcher } from './qaap-opencode-fatal-error';
 import { createPiProviderErrorWatcher } from './qaap-pi-provider-error-watcher';
 import { removeStaleOpencodeSnapshotLocks } from './qaap-opencode-snapshot-lock';
+import { type AgentProcessSignalOutcome, signalAgentProcessTree } from './qaap-agent-process-signal';
 // Extracted from qaap-agent-task-runner.ts
 
 import { ChildProcess, spawnSync } from 'child_process';
@@ -168,7 +169,7 @@ export function expireIdleAgentTask(
 const LOOP_SAMPLER_INTERVAL_MS = 100;
 
 export function killAgentProcessTreeExtracted(ctx: QaapAgentTaskRunnerContext, child: ChildProcess,
-        options?: { readonly escalateAfterMs?: number; readonly onGracePeriodElapsed?: () => void },): NodeJS.Timeout | undefined {
+        options?: { readonly escalateAfterMs?: number; readonly onGracePeriodElapsed?: () => void; readonly onSignalFailed?: () => void },): NodeJS.Timeout | undefined {
         const pid = child.pid;
         if (!pid) {
             options?.onGracePeriodElapsed?.();
@@ -186,26 +187,18 @@ export function killAgentProcessTreeExtracted(ctx: QaapAgentTaskRunnerContext, c
             lastTick = now;
         }, LOOP_SAMPLER_INTERVAL_MS);
         loopSampler.unref?.();
-        const sendSignal = (signal: NodeJS.Signals): void => {
+        const sendSignal = (signal: NodeJS.Signals): AgentProcessSignalOutcome => {
             if (globalThis.process.platform === 'win32') {
                 spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
-                return;
+                return 'sent';
             }
             console.warn(`[qaap-stop] signal pid=${pid} target=group sig=${signal} epoch=${Date.now()}`);
-            try {
-                globalThis.process.kill(-pid, signal);
-                return;
-            } catch (error) {
-                // ESRCH: no such process group (already exited, or never became a group leader).
-                // Signal the leader directly so the stop still reaches the agent.
-                if ((error as NodeJS.ErrnoException).code === 'ESRCH') {
-                    console.warn(`[qaap-stop] process group ${pid} not found; signalling the leader with ${signal}`);
-                }
+            // Group first, then the leader when the group is gone. EPERM is relayed as the agent uid inside.
+            const outcome = signalAgentProcessTree(child, signal);
+            if (outcome === 'failed') {
+                console.error(`[qaap-stop] could not deliver ${signal} to pid=${pid}; the agent may still be running`);
             }
-            console.warn(`[qaap-stop] signal pid=${pid} target=leader sig=${signal} epoch=${Date.now()}`);
-            try {
-                child.kill(signal);
-            } catch { /* already gone */ }
+            return outcome;
         };
         sendSignal('SIGTERM');
         const escalateAfterMs = options?.escalateAfterMs ?? 5_000;
@@ -213,11 +206,12 @@ export function killAgentProcessTreeExtracted(ctx: QaapAgentTaskRunnerContext, c
             const firedAt = Date.now();
             clearInterval(loopSampler);
             console.warn(`[qaap-stop] escalation-fired pid=${pid} armedAt=${armedAt} deadline=${armedAt + escalateAfterMs} fired=${firedAt} lagMs=${firedAt - armedAt - escalateAfterMs} maxLoopGapMs=${maxLoopGapMs}`);
-            try {
-                sendSignal('SIGKILL');
-            } finally {
-                options?.onGracePeriodElapsed?.();
+            // A failed SIGKILL leaves the agent alive: it is not stopped, so do not run the stopped continuation.
+            if (sendSignal('SIGKILL') === 'failed') {
+                options?.onSignalFailed?.();
+                return;
             }
+            options?.onGracePeriodElapsed?.();
         };
         if (escalateAfterMs <= 0) {
             sendKill();

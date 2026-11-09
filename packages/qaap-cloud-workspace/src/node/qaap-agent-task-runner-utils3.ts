@@ -9,6 +9,7 @@ import { execFile, spawnSync, type ChildProcess, type SpawnSyncReturns } from 'c
 import * as fs from 'fs';
 import * as path from 'path';
 import { nls } from '@theia/core/lib/common/nls';
+import { agentProcessIdentityOf, signalAgentProcess } from './qaap-agent-process-signal';
 import {
     extractRetrievalKeywords,
     formatRelevantFilesHint,
@@ -117,10 +118,9 @@ export function reapAgentProcessGroupAfterExit(child: ChildProcess): void {
         }
         return;
     }
-    try {
-        globalThis.process.kill(-pid, 'SIGKILL');
-    } catch {
-        // ESRCH is the common clean case: the agent left no descendants behind.
+    // ESRCH is the common clean case: the agent left no descendants behind.
+    if (signalAgentProcess(-pid, 'SIGKILL', agentProcessIdentityOf(child)) === 'failed') {
+        console.warn(`[qaap-agent] could not reap the process group ${pid}: its descendants may still be running`);
     }
 }
 

@@ -9,6 +9,7 @@ import { ChildProcess } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { qaapPreviewPortNodeImportFlag } from '@theia/qaap-shared-core/lib/common/qaap-preview-port-preload';
+import { rememberAgentProcessIdentity, signalAgentProcessTree } from './qaap-agent-process-signal';
 import {
     pruneRestartHistory,
     QaapStderrRing,
@@ -129,16 +130,27 @@ export class QaapPreviewSupervisor implements BackendApplicationContribution {
         if (!record) {
             return false;
         }
-        this.records.delete(previewId);
         if (record.child && record.child.exitCode === null) {
-            try {
-                record.child.kill('SIGTERM');
-            } catch {
-                // Already gone — retiring the record is all that matters.
+            if (signalAgentProcessTree(record.child, 'SIGTERM') === 'failed') {
+                // The dev server may still be running: keep its record so it is not reported as stopped.
+                this.records.set(previewId, record);
+                console.warn(`[qaap-preview] could not stop preview ${previewId}; its dev server may still be running`);
+                return false;
             }
+            this.records.delete(previewId);
             return true;
         }
+        this.records.delete(previewId);
         return false;
+    }
+
+    /** The identity a preview dev server in `cwd` runs as, or undefined when it is not dropped (or cannot be resolved). */
+    protected previewIdentityFor(cwd: string): { uid?: number; gid?: number } | undefined {
+        try {
+            return this.tenantSpawn.resolveSpawnIdentity(cwd);
+        } catch {
+            return undefined;
+        }
     }
 
     /** Returns a serializable snapshot for the failure page, if this port was ever supervised. */
@@ -203,6 +215,7 @@ export class QaapPreviewSupervisor implements BackendApplicationContribution {
         try {
             const env = this.tenantSpawn.resolveProcessEnv(cwd, buildQaapPreviewProcessEnv(childProcessEnv(), port));
             child = await this.tenantSpawn.spawnArgvPreparedAsync(plan.command, plan.args, { cwd, env });
+            rememberAgentProcessIdentity(child, this.previewIdentityFor(cwd));
         } catch (error) {
             const refused: QaapPreviewProcessRecord = {
                 key,
@@ -329,8 +342,9 @@ export class QaapPreviewSupervisor implements BackendApplicationContribution {
 
     protected killAll(): void {
         for (const record of this.records.values()) {
-            if (record.child && record.child.exitCode === null) {
-                record.child.kill('SIGTERM');
+            if (record.child && record.child.exitCode === null
+                && signalAgentProcessTree(record.child, 'SIGTERM') === 'failed') {
+                console.warn(`[qaap-preview] could not stop preview on port ${record.port}; its dev server may still be running`);
             }
         }
     }

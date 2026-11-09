@@ -248,7 +248,7 @@ export interface QaapAgentTaskRunnerContext {
     // ─── Process lifecycle / approvals ──────────────────────────────────────
     killAgentProcessTree(
         child: ChildProcess,
-        options?: { readonly escalateAfterMs?: number; readonly onGracePeriodElapsed?: () => void },
+        options?: { readonly escalateAfterMs?: number; readonly onGracePeriodElapsed?: () => void; readonly onSignalFailed?: () => void },
     ): NodeJS.Timeout | undefined;
     reapAgentProcessGroupAfterExit(child: ChildProcess): void;
     findPendingControlRequestEntry(pending: QaapQaiqPendingControlRequest[], idFromApproval?: string): QaapQaiqPendingControlRequest | undefined;

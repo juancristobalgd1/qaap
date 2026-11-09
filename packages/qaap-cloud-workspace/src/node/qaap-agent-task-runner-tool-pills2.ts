@@ -50,12 +50,13 @@ import {
     prependPathEntry as prependPathEntryHelper,
 } from './qaap-agent-task-runner-utils';
 import { buildPromptTransportCommand, type AgentPromptOwner } from './qaap-agent-task-runner-utils';
+import { canExposeAgentCliBinToChild, prependAgentCliBinToPath } from './qaap-agent-cli-prefix';
+import { rememberAgentProcessIdentity } from './qaap-agent-process-signal';
 
 /** The agent uid a prompt file must be readable by, or undefined when the backend itself runs the agent. */
 function promptOwnerFor(identity: { uid?: number; gid?: number }): AgentPromptOwner | undefined {
     return identity.uid === undefined ? undefined : { uid: identity.uid, gid: identity.gid };
 }
-import { canExposeAgentCliBinToChild, prependAgentCliBinToPath } from './qaap-agent-cli-prefix';
 
 export async function runGenericCommandExtracted(ctx: QaapAgentTaskRunnerContext, command: string,
         cwd: string,
@@ -228,7 +229,18 @@ export function spawnAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, comm
         stdio: ('pipe' | 'ignore')[];
         detached?: boolean;
     }): ChildProcess {
-        return ctx.tenantSpawn.spawn(command, options);
+        const child = ctx.tenantSpawn.spawn(command, options);
+        rememberAgentProcessIdentity(child, agentIdentityForStop(ctx, options.cwd));
+        return child;
+}
+
+/** The identity an agent spawned in `cwd` runs as, or undefined when it is not dropped (or cannot be resolved). */
+function agentIdentityForStop(ctx: QaapAgentTaskRunnerContext, cwd: string): { uid?: number; gid?: number } | undefined {
+        try {
+            return ctx.resolveAgentSpawnIdentity(cwd);
+        } catch {
+            return undefined;
+        }
 }
 
 export function buildChildEnvExtracted(ctx: QaapAgentTaskRunnerContext, task: QaapAgentTask): NodeJS.ProcessEnv {
