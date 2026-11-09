@@ -62,6 +62,8 @@ import { QaapStandaloneTaskModelFallback } from './qaap-standalone-task-model-fa
 import { QaapUserAiSettingsEndpoint } from './qaap-user-ai-settings-endpoint';
 import { QaapBillingEndpoint } from './qaap-billing-endpoint';
 import { QaapUsageEndpoint } from './usage/qaap-usage-endpoint';
+import { QaapExternalSessionEndpoint } from './external-sessions/qaap-external-session-endpoint';
+import { QaapExternalSessionService } from './external-sessions/qaap-external-session-service';
 import { QaapUsageLimitsService } from './usage/qaap-usage-limits';
 import { QaapUsageScanner } from './usage/qaap-usage-scanner';
 import { QaapBillingStore } from './qaap-billing-store';
@@ -360,6 +362,9 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapUsageLimitsService).toSelf().inSingletonScope();
     bind(QaapUsageEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapUsageEndpoint);
+    bind(QaapExternalSessionService).toSelf().inSingletonScope();
+    bind(QaapExternalSessionEndpoint).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapExternalSessionEndpoint);
     bind(QaapAgentConversationStore).toSelf().inSingletonScope();
     // onStop flushes pending conversation rows to SQLite and stops the sweep.
     bind(BackendApplicationContribution).toService(QaapAgentConversationStore);

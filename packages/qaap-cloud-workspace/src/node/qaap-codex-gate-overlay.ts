@@ -21,6 +21,8 @@ const STALE_OVERLAY_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const HOOK_KEY_SUFFIX = 'pre_tool_use:0:0';
 const BASE_PREFIX = 'qaap-codex-gate-';
 const MAX_SECRET_FILE_BYTES = 1024 * 1024;
+/** Largest Codex rollout a resumed task copies into its overlay (doc/qaap-external-session-import.md). */
+const MAX_RESUMED_ROLLOUT_BYTES = 128 * 1024 * 1024;
 // O_NOFOLLOW does not exist on Windows (where tenant privilege drops do not apply either).
 const NOFOLLOW = fs.constants.O_NOFOLLOW ?? 0;
 
@@ -54,6 +56,12 @@ export interface QaapCodexGateOverlayOptions {
     readonly overlayRoot?: string;
     readonly nodeBin?: string;
     readonly hookPath?: string;
+    /**
+     * A Codex rollout this task resumes (`codex exec resume`, doc/qaap-external-session-import.md): copied into
+     * the overlay's `sessions/` at the same relative path, and written back when the task ends if Codex appended
+     * to it. Only honoured without an identity drop; the caller checks {@link QaapCodexGateOverlayBuilder.dropsIdentity}.
+     */
+    readonly resumeRollout?: { readonly file: string; readonly sessionsRoot: string };
 }
 
 export interface QaapCodexGateOverlay {
@@ -98,6 +106,7 @@ export class QaapCodexGateOverlayBuilder {
         const sourceAuth = path.join(options.sourceCodexHome, 'auth.json');
         const expectedUid = drop ? drop.uid : QaapCodexGateOverlayBuilder.currentUid();
         let initialAuth: SafeRead | undefined;
+        let resumed: { overlayFile: string; sourceFile: string; initial: string } | undefined;
         let disposed = false;
         const dispose = (): void => {
             if (disposed) {
@@ -109,6 +118,9 @@ export class QaapCodexGateOverlayBuilder {
                 this.finishAsAgent(drop, taskDir, overlayAuth, sourceAuth, initialAuth?.text);
             } else {
                 this.writeBackRefreshedAuth(taskDir, codexHome, overlayAuth, sourceAuth, initialAuth, expectedUid);
+                if (resumed) {
+                    this.writeBackResumedRollout(resumed.overlayFile, resumed.sourceFile, resumed.initial);
+                }
                 this.removeTaskTree(taskDir);
             }
         };
@@ -117,6 +129,9 @@ export class QaapCodexGateOverlayBuilder {
             initialAuth = QaapCodexGateOverlayBuilder.readRegularFile(sourceAuth, true, drop?.uid);
             if (initialAuth) {
                 this.writeOwnedFile(overlayAuth, initialAuth.text, drop);
+            }
+            if (options.resumeRollout && !drop) {
+                resumed = this.seedResumedRollout(codexHome, options.resumeRollout.file, options.resumeRollout.sessionsRoot);
             }
             const hooksPath = path.join(codexHome, 'hooks.json');
             const hookCommand = this.hookCommand(options);
@@ -142,6 +157,55 @@ export class QaapCodexGateOverlayBuilder {
             throw error;
         }
         return { codexHome, dispose };
+    }
+
+    /** Whether the overlay for `identity` is built for another uid (then a resumed rollout cannot be written back by this process). */
+    dropsIdentity(identity: QaapCodexGateOverlayOptions['agentIdentity']): boolean {
+        return this.resolveDrop(identity) !== undefined;
+    }
+
+    /** Copies the rollout a resumed task continues into the overlay, at its path relative to the sessions root. */
+    protected seedResumedRollout(codexHome: string, sourceFile: string, sessionsRoot: string): { overlayFile: string; sourceFile: string; initial: string } {
+        const relative = path.relative(sessionsRoot, sourceFile);
+        if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
+            throw new Error('The Codex session to resume is outside its sessions folder.');
+        }
+        const initial = QaapCodexGateOverlayBuilder.readRegularFile(sourceFile, true, undefined, MAX_RESUMED_ROLLOUT_BYTES)?.text;
+        if (initial === undefined) {
+            throw new Error('The Codex session to resume could not be read.');
+        }
+        const overlayFile = path.join(codexHome, 'sessions', relative);
+        fs.mkdirSync(path.dirname(overlayFile), { recursive: true, mode: 0o700 });
+        this.writeOwnedFile(overlayFile, initial, undefined);
+        return { overlayFile, sourceFile, initial };
+    }
+
+    /**
+     * Writes the resumed rollout back when Codex only appended to it, and the user's copy did not change meanwhile,
+     * so the CLI's own session holds the turns run from Qaap (the next resume, in Qaap or in Codex, sees them).
+     */
+    protected writeBackResumedRollout(overlayFile: string, sourceFile: string, initial: string): void {
+        try {
+            const next = QaapCodexGateOverlayBuilder.readRegularFile(overlayFile, false, undefined, MAX_RESUMED_ROLLOUT_BYTES)?.text;
+            if (!next || next.length <= initial.length || !next.startsWith(initial)) {
+                return;
+            }
+            const target = fs.realpathSync(sourceFile);
+            if (QaapCodexGateOverlayBuilder.readRegularFile(target, false, undefined, MAX_RESUMED_ROLLOUT_BYTES)?.text !== initial) {
+                console.warn('[qaap-codex-gate] the resumed Codex session changed during the task; not overwriting it');
+                return;
+            }
+            const temp = `${target}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
+            const fd = fs.openSync(temp, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | NOFOLLOW, 0o600);
+            try {
+                fs.writeSync(fd, next);
+            } finally {
+                fs.closeSync(fd);
+            }
+            fs.renameSync(temp, target);
+        } catch (error) {
+            console.warn('[qaap-codex-gate] could not write the resumed Codex session back', error instanceof Error ? error.message : String(error));
+        }
     }
 
     protected hookCommand(options: QaapCodexGateOverlayOptions): string {
@@ -405,7 +469,7 @@ export class QaapCodexGateOverlayBuilder {
     }
 
     /** Reads a regular, single-link file without following a final link (or after resolving it, for the owner's files). */
-    static readRegularFile(file: string, resolveLink: boolean, requiredUid: number | undefined): SafeRead | undefined {
+    static readRegularFile(file: string, resolveLink: boolean, requiredUid: number | undefined, maxBytes = MAX_SECRET_FILE_BYTES): SafeRead | undefined {
         let target = file;
         if (resolveLink) {
             try {
@@ -422,7 +486,7 @@ export class QaapCodexGateOverlayBuilder {
         }
         try {
             const stat = fs.fstatSync(fd);
-            if (!stat.isFile() || stat.nlink !== 1 || stat.size > MAX_SECRET_FILE_BYTES || (requiredUid !== undefined && stat.uid !== requiredUid)) {
+            if (!stat.isFile() || stat.nlink !== 1 || stat.size > maxBytes || (requiredUid !== undefined && stat.uid !== requiredUid)) {
                 console.warn('[qaap-codex-gate] refusing to read an unexpected file (link, hardlink or foreign owner)');
                 return undefined;
             }

@@ -6,6 +6,7 @@
 import { QaapUserFacingErrors } from '@theia/qaap-adapters/lib/common/qaap-user-facing-error';
 import type { QaapLinkedPullRequest } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import type { QaapTaskPullRequest } from './qaap-task-pull-request';
+import type { QaapExternalSessionOrigin } from './qaap-external-session-protocol';
 import type { QaapAgentEffortLevel } from './qaap-agent-effort';
 import type { QaapTaskPlan, QaapTaskPlanEditRequest } from './qaap-task-plan';
 import { fetchQaapGetWithTransientRetry } from '@theia/qaap-adapters/lib/common/qaap-transient-get';
@@ -87,6 +88,8 @@ export interface QaapAgentConversationSummaryDTO {
     readonly lastTurnCancelled?: boolean;
     readonly workspacePath?: string;
     readonly sessionId?: string;
+    /** Set when the thread was imported from another agent CLI (`doc/qaap-external-session-import.md`). */
+    readonly externalSession?: QaapExternalSessionOrigin;
     /** User-flagged "high priority" — sorts at the top of the project list. */
     readonly priority?: boolean;
     /** User-flagged "paused" — sinks to the bottom and renders dimmed. */
@@ -290,6 +293,8 @@ export interface QaapAgentConversationDTO {
     readonly createdAt: number;
     readonly updatedAt: number;
     readonly messages: QaapAgentMessageDTO[];
+    /** Set when the thread was imported from another agent CLI. */
+    readonly externalSession?: QaapExternalSessionOrigin;
     readonly priority?: boolean;
     readonly paused?: boolean;
     readonly archived?: boolean;

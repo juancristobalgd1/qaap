@@ -13,6 +13,8 @@ export interface QaapUsageRoots {
     piSessions: string;
     opencodeMessages: string;
     opencodeParts: string;
+    /** Current OpenCode releases keep sessions in SQLite; `storage/` holds only older sessions. */
+    opencodeDatabase: string;
     grokSessions: string;
     copilotDatabase: string;
 }
@@ -32,6 +34,7 @@ export namespace QaapUsageRoots {
             piSessions,
             opencodeMessages: path.join(openCodeStorage, 'message'),
             opencodeParts: path.join(openCodeStorage, 'part'),
+            opencodeDatabase: path.join(dataHome, 'opencode', 'opencode.db'),
             grokSessions: path.join(homeDir, '.grok', 'sessions'),
             copilotDatabase: path.join(homeDir, '.copilot', 'session-store.db'),
         };

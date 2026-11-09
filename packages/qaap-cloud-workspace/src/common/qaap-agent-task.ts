@@ -269,6 +269,13 @@ export interface QaapCreateAgentTaskRequest {
      * an HTTP body — only the backend's model-fallback service sets it.
      */
     readonly fallbackFromTaskId?: string;
+    /**
+     * Internal: resume this CLI session natively (`claude --resume`, `codex exec resume`) — the turn continues
+     * a conversation imported from that CLI. Never read from an HTTP body; only the conversation store sets it.
+     */
+    readonly nativeResumeSessionId?: string;
+    /** Internal: the replayed-history prompt, used when the runner finds the native session cannot be resumed. */
+    readonly nativeResumeFallbackPrompt?: string;
     readonly title?: string;
     /** A raw shell command to run. Provide this OR {@link prompt}. */
     readonly command?: string;

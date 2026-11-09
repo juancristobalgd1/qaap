@@ -6,6 +6,7 @@
 // Phase 12 extractions from QaapAgentConversationStore.
 // Each function receives its dependencies explicitly — no instance state access.
 
+import { resolveQaapExternalNativeResume } from '../common/qaap-external-session-resume';
 import { randomUUID } from 'crypto';
 import {
     toConversationSummary,
@@ -116,8 +117,15 @@ export function buildTaskCreateRequest(
             ...ownWorkingTree,
         };
     }
+    // A thread imported from this same CLI resumes its native session, which already holds the whole
+    // history: send only the new message (doc/qaap-external-session-import.md).
+    const nativeResume = lastUser ? resolveQaapExternalNativeResume(requestConv, turnAgentId, lastUser.id) : undefined;
     return {
-        prompt: deps.buildPrompt(requestConv, turnAgentId),
+        prompt: nativeResume ? deps.stripLeadingAgentMention(lastUser.content) : deps.buildPrompt(requestConv, turnAgentId),
+        ...(nativeResume ? {
+            nativeResumeSessionId: nativeResume.sessionId,
+            nativeResumeFallbackPrompt: deps.buildPrompt(requestConv, turnAgentId),
+        } : {}),
         agent: turnAgentId,
         cwd: requestConv.cwd,
         title: requestConv.title,

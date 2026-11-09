@@ -57,6 +57,35 @@ describe('QaapCodexGateOverlayBuilder', () => {
 
     const trusted = new QaapCodexGateOverlayBuilder(async () => 'trusted');
 
+    it('copies a resumed rollout into the overlay and writes back only what Codex appended', async () => {
+        const sessions = path.join(tmp, 'user-sessions');
+        const rollout = path.join(sessions, '2026', '11', '09', 'rollout-2026-11-09T10-00-00-abc.jsonl');
+        fs.mkdirSync(path.dirname(rollout), { recursive: true });
+        fs.writeFileSync(rollout, '{"type":"session_meta"}\n');
+        const overlay = await trusted.create(options({ resumeRollout: { file: rollout, sessionsRoot: sessions } }));
+        const copy = path.join(overlay.codexHome, 'sessions', '2026', '11', '09', 'rollout-2026-11-09T10-00-00-abc.jsonl');
+        expect(fs.readFileSync(copy, 'utf8')).to.equal('{"type":"session_meta"}\n');
+        fs.appendFileSync(copy, '{"type":"event_msg"}\n');
+        overlay.dispose();
+        expect(fs.readFileSync(rollout, 'utf8')).to.equal('{"type":"session_meta"}\n{"type":"event_msg"}\n');
+    });
+
+    it('never writes back a resumed rollout that was rewritten or changed by the user meanwhile', async () => {
+        const sessions = path.join(tmp, 'user-sessions');
+        const rollout = path.join(sessions, 'rollout-x-abc.jsonl');
+        fs.mkdirSync(sessions, { recursive: true });
+        fs.writeFileSync(rollout, 'original\n');
+        const rewritten = await trusted.create(options({ resumeRollout: { file: rollout, sessionsRoot: sessions } }));
+        fs.writeFileSync(path.join(rewritten.codexHome, 'sessions', 'rollout-x-abc.jsonl'), 'something else entirely\n');
+        rewritten.dispose();
+        expect(fs.readFileSync(rollout, 'utf8')).to.equal('original\n');
+        const raced = await trusted.create(options({ taskId: 'task-2', resumeRollout: { file: rollout, sessionsRoot: sessions } }));
+        fs.appendFileSync(path.join(raced.codexHome, 'sessions', 'rollout-x-abc.jsonl'), 'qaap turn\n');
+        fs.appendFileSync(rollout, 'user turn in codex\n');
+        raced.dispose();
+        expect(fs.readFileSync(rollout, 'utf8')).to.equal('original\nuser turn in codex\n');
+    });
+
     it('writes auth.json (0600), hooks.json with the gate hook and a config with the trusted hash', async () => {
         const overlay = await trusted.create(options());
         // Canonical path: Codex keys hook trust by it (macOS tmp is a symlink).
