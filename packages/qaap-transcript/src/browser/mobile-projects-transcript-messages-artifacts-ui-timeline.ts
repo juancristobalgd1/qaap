@@ -5,6 +5,7 @@ import { transcriptToolGroupItems } from './mobile-projects-transcript-messages-
 import { nls } from '@theia/core/lib/common/nls';
 import { type QaapAgentConversationDTO, type QaapAgentMessageDTO, type QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { conversationUsesInteractiveApprovals } from '@theia/qaap-shared-core/lib/common/qaap-agent-interactive-approvals';
+import { isQaapClosingReportTraceEvent } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model';
 import { isTranscriptComposerVisualIdle, resolveTranscriptTurnStartMs } from '../common/qaap-transcript-stream-status';
 import {
     resolveTranscriptStreamHealth,
@@ -296,7 +297,7 @@ export function resolveTranscriptActivityItemsForDisplayExtracted(ctx: MobilePro
         );
         const lifecycleItems = resolveTranscriptLifecycleActivityItems(rowContext.message?.traceEvents);
         const conv = options?.conv;
-        const hasPreviewFailureTrace = rowContext.message?.traceEvents?.some(event => event.type === 'error') ?? false;
+        const hasPreviewFailureTrace = rowContext.message?.traceEvents?.some(event => event.type === 'error' && !isQaapClosingReportTraceEvent(event)) ?? false;
         const bootstrapDiagnosticItems = conv
             && !hasPreviewFailureTrace
             && (conversationRequestsDevPreview(conv) || conv.status === 'failed')

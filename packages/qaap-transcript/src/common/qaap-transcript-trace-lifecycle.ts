@@ -5,7 +5,7 @@
 
 import type { QaapAgentMessageDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type { QaapConversationCheckpointDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
-import type { QaapTranscriptTraceEventDTO } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model';
+import { QAAP_CLOSING_REPORT_TRACE_ID_PREFIX, type QaapTranscriptTraceEventDTO } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model';
 import { backfillAgentMessageTraceEvents } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-backfill';
 
 export function appendTraceRunCancelledEvent(
@@ -68,7 +68,7 @@ export function appendTraceClosingReportEvent(
     const at = options.at ?? Date.now();
     const event: QaapTranscriptTraceEventDTO = {
         type: 'error',
-        id: `closing-report-${at}`,
+        id: `${QAAP_CLOSING_REPORT_TRACE_ID_PREFIX}${at}`,
         message: report,
         startedAt: at,
     };

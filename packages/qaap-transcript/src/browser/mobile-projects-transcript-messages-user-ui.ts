@@ -98,14 +98,16 @@ export class MobileProjectsTranscriptMessagesUserUi {
         const summary = this.host.transcriptComposerSummary;
         const isTheiaChat = summary?.source === 'theia-chat';
         const actionsEnabled = conv.status !== 'streaming' && !msg.id.startsWith('pending-user-') && !gitActionOnly;
+        const lastUserMessageId = [...conv.messages].reverse().find(message => message.role === 'user')?.id;
 
         wrap.append(this.createTranscriptUserMessageActions({
             plainText,
             canEdit: actionsEnabled,
             canUndo: actionsEnabled && !isTheiaChat,
+            canRetry: actionsEnabled && !!this.host.retryOpenTranscriptConversation && msg.id === lastUserMessageId,
             onEdit: () => { void this.editTranscriptUserMessage(msg, conv); },
             onCopy: () => this.copyTranscriptUserMessage(plainText),
-            onCopyLink: () => { void this.copyTranscriptUserMessageLink(msg.id); },
+            onRetry: () => { void this.host.retryOpenTranscriptConversation?.(); },
             onUndo: () => { void this.undoTranscriptUserMessage(msg, conv); },
         }));
         return wrap;
@@ -361,9 +363,10 @@ export class MobileProjectsTranscriptMessagesUserUi {
         plainText: string;
         canEdit: boolean;
         canUndo: boolean;
+        canRetry: boolean;
         onEdit: () => void;
         onCopy: () => Promise<boolean>;
-        onCopyLink: () => void;
+        onRetry: () => void;
         onUndo: () => void;
     }): HTMLElement {
         const actions = document.createElement('div');
@@ -371,7 +374,7 @@ export class MobileProjectsTranscriptMessagesUserUi {
 
         const editLabel = nls.localize('qaap/mobileProjects/transcriptUserEdit', 'Edit');
         const copyLabel = nls.localize('qaap/mobileProjects/transcriptUserCopy', 'Copy');
-        const linkLabel = nls.localize('qaap/mobileProjects/transcriptUserCopyLink', 'Copy link');
+        const retryLabel = nls.localize('qaap/mobileProjects/transcriptUserRetry', 'Retry');
         const undoLabel = nls.localize('qaap/mobileProjects/transcriptUserUndo', 'Undo');
 
         const editBtn = this.createTranscriptUserActionButton('edit', editLabel, 'codicon-edit', options.onEdit);
@@ -384,16 +387,18 @@ export class MobileProjectsTranscriptMessagesUserUi {
             });
         });
         copyBtn.disabled = !options.plainText;
-        const linkBtn = this.createTranscriptUserActionButton('link', linkLabel, 'codicon-link', options.onCopyLink);
+        const retryBtn = options.canRetry
+            ? this.createTranscriptUserActionButton('retry', retryLabel, 'codicon-refresh', options.onRetry)
+            : undefined;
         const undoBtn = this.createTranscriptUserActionButton('undo', undoLabel, 'codicon-discard', options.onUndo);
         undoBtn.disabled = !options.canUndo;
 
-        actions.append(editBtn, copyBtn, linkBtn, undoBtn);
+        actions.append(editBtn, copyBtn, ...(retryBtn ? [retryBtn] : []), undoBtn);
         return actions;
     }
 
     createTranscriptUserActionButton(
-        action: 'edit' | 'copy' | 'link' | 'undo',
+        action: 'edit' | 'copy' | 'retry' | 'undo',
         label: string,
         iconClass: string,
         onClick: () => void,
@@ -445,29 +450,6 @@ export class MobileProjectsTranscriptMessagesUserUi {
 
     protected transcriptUserMessageElementId(messageId: string): string {
         return `qaap-transcript-message-${messageId}`;
-    }
-
-    protected transcriptUserMessageLink(messageId: string): string {
-        const url = new URL(window.location.href);
-        url.hash = this.transcriptUserMessageElementId(messageId);
-        return url.toString();
-    }
-
-    async copyTranscriptUserMessageLink(messageId: string): Promise<void> {
-        if (!messageId) {
-            return;
-        }
-        try {
-            const link = this.transcriptUserMessageLink(messageId);
-            if (this.host.previewClipboard) {
-                await this.host.previewClipboard.writeText(link);
-            } else {
-                await navigator.clipboard.writeText(link);
-            }
-            MobileSnackbar.show(nls.localize('qaap/mobileProjects/transcriptShellLinkCopied', 'Link copied'), { kind: 'success', duration: 1800 });
-        } catch {
-            MobileSnackbar.show(nls.localize('qaap/mobileProjects/transcriptShellCopyFailed', 'Could not copy'), { kind: 'warning' });
-        }
     }
 
     /** Resolves `true` when the text reached the clipboard, so the caller can show the Copied state. */

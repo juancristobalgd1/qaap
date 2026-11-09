@@ -347,4 +347,28 @@ describe('qaap-work-hub-aux-panel', () => {
         expect(panel.isOpen).to.equal(false);
         expect(panel.element.querySelector('.fake-surface')).to.equal(null);
     });
+
+    it('fades the tab strip only on the edges where tabs are hidden', () => {
+        const { panel } = createHarness();
+        panel.show();
+        const tabs = panel.element.querySelector<HTMLElement>('.qaap-work-hub-aux-panel-tabs')!;
+        const measure = (scrollLeft: number, clientWidth: number, scrollWidth: number): void => {
+            Object.defineProperty(tabs, 'scrollLeft', { configurable: true, value: scrollLeft });
+            Object.defineProperty(tabs, 'clientWidth', { configurable: true, value: clientWidth });
+            Object.defineProperty(tabs, 'scrollWidth', { configurable: true, value: scrollWidth });
+            tabs.dispatchEvent(new window.Event('scroll'));
+        };
+        const edges = (): string[] => ['theia-mod-overflow-start', 'theia-mod-overflow-end'].filter(name => tabs.classList.contains(name));
+
+        measure(0, 200, 200);
+        expect(edges()).to.deep.equal([]);
+        measure(0, 200, 500);
+        expect(edges()).to.deep.equal(['theia-mod-overflow-end']);
+        measure(150, 200, 500);
+        expect(edges()).to.deep.equal(['theia-mod-overflow-start', 'theia-mod-overflow-end']);
+        measure(300, 200, 500);
+        expect(edges()).to.deep.equal(['theia-mod-overflow-start']);
+        measure(0, 200, 201);
+        expect(edges()).to.deep.equal([]);
+    });
 });

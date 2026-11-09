@@ -106,7 +106,8 @@ export function mergeStreamTraceEvents(
     incoming: readonly QaapTranscriptTraceEventDTO[],
 ): QaapTranscriptTraceEventDTO[] {
     const lifecycle = (existing ?? []).filter(event => LIFECYCLE_TRACE_EVENT_TYPES.has(event.type));
-    return [...incoming, ...lifecycle];
+    // Drop the `Error: …` text echoes that segment rows would otherwise re-add for kept lifecycle errors.
+    return sanitizeQaapTraceEchoes([...incoming, ...lifecycle]);
 }
 
 export function mergeSegmentTraceEvents(
@@ -169,15 +170,66 @@ export function segmentsToTraceEvents(
     });
 }
 
+/** Id prefix of the closing-report trace event (`appendTraceClosingReportEvent`). */
+export const QAAP_CLOSING_REPORT_TRACE_ID_PREFIX = 'closing-report-';
+
+/** The turn's closing report (headline + detail lines), stored as an `error`-typed trace event. */
+/** Id prefix of the retired blocked-signal note (`blocked-<ts>`), the closing report's predecessor in stored turns. */
+const QAAP_LEGACY_BLOCKED_TRACE_ID_PREFIX = 'blocked-';
+
+export function isQaapClosingReportTraceEvent(event: QaapTranscriptTraceEventDTO): boolean {
+    return event.type === 'error'
+        && (event.id.startsWith(QAAP_CLOSING_REPORT_TRACE_ID_PREFIX) || event.id.startsWith(QAAP_LEGACY_BLOCKED_TRACE_ID_PREFIX));
+}
+
+/** The closing report text of an agent message, if the store recorded one. */
+export function findQaapClosingReport(message: QaapAgentMessageDTO | undefined): string | undefined {
+    for (const event of [...(message?.traceEvents ?? [])].reverse()) {
+        if (event.type === 'error' && isQaapClosingReportTraceEvent(event)) {
+            return event.message.trim() || undefined;
+        }
+    }
+    return undefined;
+}
+
+function stripQaapTraceControlMarkers(text: string): string {
+    return text.includes('@@QAAP:') ? text.replace(/@@QAAP:[A-Z0-9_]+@@[ \t]?/g, '') : text;
+}
+
+/** Closing-outcome headlines that the segment round-trip used to store as `Error: …` assistant text. */
+const QAAP_CLOSING_OUTCOME_ECHO_PATTERN = /^Error: (?:Blocked — needs your input|Completed with warnings|Completed —|Failed —|Done\b)/;
+
+/**
+ * Removes assistant text rows that echo `error` trace events (`Error: <message>`), and, when a closing
+ * report is present, closing-outcome echoes. Legacy saves stored those echoes and re-merged them on
+ * every save, so they accumulated. Never mutates the input; returns a new array either way.
+ */
+export function sanitizeQaapTraceEchoes(events: readonly QaapTranscriptTraceEventDTO[]): QaapTranscriptTraceEventDTO[] {
+    const errorEchoes = new Set<string>(events.flatMap(event => event.type === 'error' ? [`Error: ${event.message.trim()}`] : []));
+    const hasClosingReport = events.some(event => isQaapClosingReportTraceEvent(event));
+    const isEcho = (event: QaapTranscriptTraceEventDTO): boolean => {
+        if (event.type !== 'assistant_text') {
+            return false;
+        }
+        const text = event.content.trim();
+        return errorEchoes.has(text) || (hasClosingReport && QAAP_CLOSING_OUTCOME_ECHO_PATTERN.test(text));
+    };
+    return events.some(isEcho) ? events.filter(event => !isEcho(event)) : [...events];
+}
+
 export function traceEventsToSegments(
     events: readonly QaapTranscriptTraceEventDTO[],
 ): QaapAgentMessageSegmentDTO[] {
-    return events.flatMap((event): QaapAgentMessageSegmentDTO[] => {
+    // Safety net: legacy echo rows must not render (or re-persist) as visible text.
+    return sanitizeQaapTraceEchoes(events).flatMap((event): QaapAgentMessageSegmentDTO[] => {
         switch (event.type) {
             case 'thought':
                 return event.content.trim() ? [{ type: 'thinking', content: event.content }] : [];
-            case 'assistant_text':
-                return event.content.trim() ? [{ type: 'text', content: event.content }] : [];
+            case 'assistant_text': {
+                // Machine sentinels (@@QAAP:BLOCKED@@, …) are never visible text, on any render path.
+                const content = stripQaapTraceControlMarkers(event.content);
+                return content.trim() ? [{ type: 'text', content }] : [];
+            }
             case 'tool_call':
                 return [{
                     type: 'tool',
@@ -191,7 +243,9 @@ export function traceEventsToSegments(
                     ...(event.parentId !== undefined ? { parentToolUseId: event.parentId } : {}),
                 }];
             case 'error':
-                return [{ type: 'text', content: `Error: ${event.message}` }];
+                // The closing report is the turn's outcome, not an error line; the transcript draws it
+                // as its own closing row (see isQaapClosingReportTraceEvent).
+                return isQaapClosingReportTraceEvent(event) ? [] : [{ type: 'text', content: `Error: ${event.message}` }];
             case 'run_cancelled':
                 return event.message.trim()
                     ? [{ type: 'text', content: event.message }]

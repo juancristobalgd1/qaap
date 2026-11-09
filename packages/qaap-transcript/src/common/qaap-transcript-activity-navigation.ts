@@ -5,7 +5,7 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import type { QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
-import type { QaapTranscriptTraceEventDTO } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model';
+import { isQaapClosingReportTraceEvent, type QaapTranscriptTraceEventDTO } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model';
 import { estimateToolArgFileDiffStats, parseDiffStatsFromText } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-list-metrics';
 import { excerptTranscriptReadResultPreview, extractTranscriptDiffCard, type QaapTranscriptToolActivityKind } from './qaap-agent-transcript-segments';
 import {
@@ -440,7 +440,7 @@ export function resolveTranscriptLifecycleActivityItems(
                 timestamp: event.startedAt,
             }];
         }
-        if (event.type === 'error') {
+        if (event.type === 'error' && !isQaapClosingReportTraceEvent(event)) {
             return [{
                 label: event.message.trim() || 'Preview failed.',
                 state: 'error',
