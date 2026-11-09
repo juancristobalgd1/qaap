@@ -66,6 +66,7 @@ import {
 import { applyPreTurnAgentHooks, createQaiqPreToolUseHookGate } from './qaap-agent-task-runner-hooks';
 import { canProbeProviderKey, runProviderKeyPreflight } from './qaap-provider-key-preflight';
 import { isConversationalTurn, isConversationalTurnTask } from '../common/qaap-agent-conversational-turn';
+import { emitsStreamJsonFinalResult, QAAP_AGENT_EXIT_AFTER_RESULT_GRACE_MS, QaapAgentFinalResultWatcher, type QaapAgentFinalResult } from './qaap-agent-final-result-watcher';
 
 export function enforceAgentTaskChangeScopeLimitExtracted(
     ctx: QaapAgentTaskRunnerContext,
@@ -790,7 +791,26 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
         };
         // Pi exits 0 after a provider error; its JSON stream is the only place the failure shows.
         const piProviderErrorWatcher = isPiAgent(task.agentId) ? createPiProviderErrorWatcher() : undefined;
+        // Claude Code may take long to exit after its final `result` (telemetry / update checks behind
+        // the egress allowlist) while the answer is already complete: end it after a short grace.
+        const finalResultWatcher = emitsStreamJsonFinalResult(task.agentId) ? new QaapAgentFinalResultWatcher() : undefined;
+        let exitAfterResultTimer: ReturnType<typeof setTimeout> | undefined;
+        let endedAfterResult: QaapAgentFinalResult | undefined;
         child.stdout?.on('data', chunk => {
+            if (finalResultWatcher && !exitAfterResultTimer) {
+                const finalResult = finalResultWatcher.push(Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk));
+                if (finalResult) {
+                    exitAfterResultTimer = setTimeout(() => {
+                        if (ctx.processes.get(task.id) !== child || child.exitCode !== null || child.signalCode !== null) {
+                            return;
+                        }
+                        console.warn(`[qaap-agent-tasks] ${task.id}: ${task.agentId} still running ${QAAP_AGENT_EXIT_AFTER_RESULT_GRACE_MS}ms after its final result; ending it`);
+                        endedAfterResult = finalResult;
+                        ctx.killAgentProcessTree(child);
+                    }, QAAP_AGENT_EXIT_AFTER_RESULT_GRACE_MS);
+                    exitAfterResultTimer.unref?.();
+                }
+            }
             if (isAgentProgressChunk(chunk)) {
                 bumpIdleTimer();
             }
@@ -847,7 +867,10 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             logCancelExitExtracted(ctx, task.id);
             reapAgentProcessGroupOnExitExtracted(ctx, task.id, child);
         });
-        child.on('close', code => {
+        child.on('close', exitCode => {
+            clearTimeout(exitAfterResultTimer);
+            // Ended by Qaap after a complete result: settle on the result, not on the kill signal.
+            const code = exitCode === null && endedAfterResult ? (endedAfterResult.isError ? 1 : 0) : exitCode;
             clearChangeScopeWatch();
             clearIdleTimer();
             finishAntigravitySettings();
