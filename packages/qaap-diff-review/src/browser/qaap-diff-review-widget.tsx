@@ -713,13 +713,6 @@ export class QaapDiffReviewWidget extends ReactWidget {
             <div className='qaap-agent-changes'>
                 {this.renderAgentToolbar(totals, count)}
                 <div className='qaap-agent-changes-scroll'>
-                    {this.loadingAgentDiffPaths.size > 0 && this.agentFileDiffs.size === 0 && (
-                        <div className='qaap-agent-changes-loading' aria-busy='true'>
-                            <div className='qaap-agent-changes-loading-bar' />
-                            <div className='qaap-agent-changes-loading-bar qaap-mod-short' />
-                            <div className='qaap-agent-changes-loading-bar qaap-mod-shorter' />
-                        </div>
-                    )}
                     {this.files.map(file => (
                         <QaapAgentFileSection
                             key={file.path}

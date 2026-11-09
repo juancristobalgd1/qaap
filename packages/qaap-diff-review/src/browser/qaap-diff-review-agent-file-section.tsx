@@ -176,9 +176,12 @@ function AgentFileDiffFallback(props: QaapAgentFileSectionProps): React.ReactEle
     const { onRetryDiff, file } = props;
     const onRetry = React.useCallback(() => onRetryDiff(file.path), [onRetryDiff, file.path]);
     if (props.loading) {
+        // One loading cue per file (no separate list-wide skeleton); the text is for screen readers.
         return (
-            <div className='qaap-diff-review-note qaap-mod-compact'>
-                {nls.localize('qaap/diff/loading', 'Loading diff…')}
+            <div className='qaap-agent-changes-loading' aria-busy='true'>
+                <span className='qaap-agent-changes-loading-label'>{nls.localize('qaap/diff/loading', 'Loading diff…')}</span>
+                <div className='qaap-agent-changes-loading-bar' />
+                <div className='qaap-agent-changes-loading-bar qaap-mod-short' />
             </div>
         );
     }
@@ -329,7 +332,16 @@ export const QaapDiffLine = React.memo(function QaapDiffLine(props: {
                     <span aria-hidden='true'>+</span>
                 </button>
             )}
-            <span className='qaap-diff-review-gutter'>{number ?? ''}</span>
+            {agentStyle
+                ? (
+                    // Old and new line numbers side by side (removed lines have no new number, added
+                    // lines no old one), so the numbering never seems to jump back after a removal.
+                    <>
+                        <span className='qaap-diff-review-gutter qaap-mod-old'>{line.type === 'add' ? '' : line.oldNumber ?? ''}</span>
+                        <span className='qaap-diff-review-gutter qaap-mod-new'>{line.type === 'del' ? '' : line.newNumber ?? ''}</span>
+                    </>
+                )
+                : <span className='qaap-diff-review-gutter'>{number ?? ''}</span>}
             {!agentStyle && <span className='qaap-diff-review-sign'>{sign}</span>}
             {agentStyle && language
                 ? <HighlightedDiffCode text={line.text} language={language} />
