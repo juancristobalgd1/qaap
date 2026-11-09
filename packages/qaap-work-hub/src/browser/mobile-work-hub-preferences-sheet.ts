@@ -94,7 +94,8 @@ const WORK_HUB_SETTINGS_SECTIONS: readonly WorkHubSettingsSection[] = [
         id: 'profile', label: nls.localize('qaap/workHubSettings/profile', 'Profile'), icon: 'account', query: '',
         group: nls.localize('qaap/workHubSettings/groupAccount', 'Account'),
     },
-    { id: 'plan-usage', label: nls.localize('qaap/workHubSettings/planUsage', 'Plan & Usage'), icon: 'credit-card', query: '' },
+    // Usage has its own view (sidebar footer); this section only shows the plan.
+    { id: 'plan-usage', label: nls.localize('qaap/workHubSettings/plan', 'Plan'), icon: 'credit-card', query: '' },
 ];
 
 /** Small heading that opens a group of Settings nav items (the Work Hub sidebar renders the same markup). */
@@ -1015,7 +1016,7 @@ export class MobileWorkHubPreferencesSheet {
         const panel = this.createCustomPanel();
         const loading = document.createElement('p');
         loading.className = 'theia-mobile-work-hub-settings-status';
-        loading.textContent = nls.localize('qaap/workHubSettings/planUsage/loading', 'Loading plan and usage…');
+        loading.textContent = nls.localize('qaap/workHubSettings/plan/loading', 'Loading plan…');
         panel.append(loading);
         this.customContentHost.append(panel);
 
@@ -1045,8 +1046,8 @@ export class MobileWorkHubPreferencesSheet {
         title.textContent = nls.localize('qaap/workHubSettings/planUsage/starter', 'Starter');
         const description = document.createElement('p');
         description.textContent = nls.localize(
-            'qaap/workHubSettings/planUsage/unavailable',
-            'Usage details will appear here when your Qaap account is connected.',
+            'qaap/workHubSettings/plan/unavailable',
+            'Plan details will appear here when your Qaap account is connected.',
         );
         card.append(title, description);
         panel.append(card);
@@ -1071,29 +1072,6 @@ export class MobileWorkHubPreferencesSheet {
             : nls.localize('qaap/workHubSettings/planUsage/qaapPlan', 'Qaap agent workspace plan');
         planCard.append(planMeta, planTitle, planDescription);
         panel.append(planCard);
-
-        panel.append(this.createCustomHeading(
-            nls.localize('qaap/workHubSettings/planUsage/usage', 'Usage'),
-        ));
-        const usageCard = this.createSettingsCard();
-        usageCard.append(
-            this.createUsageMeter(
-                nls.localize('qaap/workHubSettings/planUsage/runtime', 'Agent runtime'),
-                data.entitlements.runtimeHoursRemaining,
-                data.entitlements.includedRuntimeHoursPerMonth,
-                data.entitlements.runtimeFairUse
-                    ? nls.localize('qaap/workHubSettings/planUsage/fairUse', 'Fair use')
-                    : nls.localize('qaap/workHubSettings/planUsage/hoursRemaining', '{0} hours remaining', this.formatNumber(data.entitlements.runtimeHoursRemaining)),
-                data.entitlements.runtimeFairUse ? undefined : data.entitlements.runtimeUsageRatio,
-            ),
-            this.createUsageMeter(
-                nls.localize('qaap/workHubSettings/planUsage/credits', 'Hosted model credits'),
-                data.entitlements.creditsRemaining,
-                data.entitlements.includedCreditsPerMonth,
-                nls.localize('qaap/workHubSettings/planUsage/creditsRemaining', '{0} credits remaining', this.formatNumber(data.entitlements.creditsRemaining)),
-            ),
-        );
-        panel.append(usageCard);
         this.appendBillingButton(panel);
     }
 
@@ -1166,32 +1144,6 @@ export class MobileWorkHubPreferencesSheet {
         input.addEventListener('change', () => onChange(input.checked));
         wrapper.append(input, track);
         return wrapper;
-    }
-
-    protected createUsageMeter(
-        title: string,
-        remaining: number,
-        total: number,
-        caption: string,
-        usageRatio?: number,
-    ): HTMLElement {
-        const meter = document.createElement('div');
-        meter.className = 'theia-mobile-work-hub-settings-usage-meter';
-        const header = document.createElement('div');
-        header.className = 'theia-mobile-work-hub-settings-usage-header';
-        const titleEl = document.createElement('strong');
-        titleEl.textContent = title;
-        const value = document.createElement('span');
-        value.textContent = caption;
-        header.append(titleEl, value);
-        const progress = document.createElement('div');
-        progress.className = 'theia-mobile-work-hub-settings-progress';
-        const fill = document.createElement('span');
-        const ratio = usageRatio ?? (total > 0 ? 1 - remaining / total : 0);
-        fill.style.width = `${Math.round(Math.min(1, Math.max(0, ratio)) * 100)}%`;
-        progress.append(fill);
-        meter.append(header, progress);
-        return meter;
     }
 
     protected planName(planId: string): string {
