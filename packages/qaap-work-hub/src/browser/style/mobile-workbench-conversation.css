@@ -3088,6 +3088,18 @@ body>.theia-mobile-transcript-files-menu {
   background: color-mix(in srgb, var(--theia-list-activeSelectionBackground, #094771) 72%, transparent);
 }
 
+/* Mouse and trackpad: an editor-density tree (28px rows); touch keeps the 44px target above. */
+@media (hover: hover) and (pointer: fine) {
+  .theia-mobile-transcript-files-row {
+    min-height: 28px;
+    border-radius: 6px;
+  }
+
+  .theia-mobile-transcript-files-row:hover:not(.theia-mod-active) {
+    background: color-mix(in srgb, var(--theia-foreground) 6%, transparent);
+  }
+}
+
 .theia-mobile-transcript-files-chevron {
   flex: 0 0 14px;
   width: 14px;

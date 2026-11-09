@@ -531,3 +531,21 @@ body.qaap-mod-work-hub-aux-panel-maximized .qaap-work-hub-aux-panel-resize-handl
 .theia-mobile-execution-surface-sidebar.qaap-mod-docked .theia-mobile-execution-surface-sidebar-header-divider {
   display: none;
 }
+
+/* Docked in the right panel the tab already names the view: drop the repeated "Changes" title
+   and keep only its history action in a slim row, so the diff starts higher. */
+.qaap-work-hub-aux-panel .theia-mobile-transcript-files-changes-header {
+  display: none;
+}
+
+.qaap-work-hub-aux-panel .theia-mobile-execution-surface-sidebar-header:has(> .theia-mobile-transcript-files-changes-header) {
+  justify-content: flex-end;
+  min-height: 34px;
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+
+/* Without a history action the row would be empty: drop it. */
+.qaap-work-hub-aux-panel .theia-mobile-execution-surface-sidebar-header:has(> .theia-mobile-transcript-files-changes-header):not(:has(.theia-mobile-transcript-history-toggle-host:not([hidden]))) {
+  display: none;
+}
