@@ -27,7 +27,8 @@ describe('QaapExternalNativeResume.plan', () => {
     });
 
     const writeClaudeSession = (): void => {
-        const dir = path.join(roots.claudeProjects, '-work-app');
+        // Claude Code's slug of the resolved cwd (`D:\work\app` → `D--work-app` on Windows).
+        const dir = path.join(roots.claudeProjects, path.resolve(CWD).replace(/[^A-Za-z0-9]/g, '-'));
         fs.mkdirSync(dir, { recursive: true });
         fs.writeFileSync(path.join(dir, `${SESSION}.jsonl`), '{}\n');
     };
