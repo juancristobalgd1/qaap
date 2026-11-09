@@ -10,6 +10,7 @@ import {
     type QaapResolvedPreviewIdentity,
 } from '../common/qaap-preview-identity';
 import { buildQaapPreviewHostLabel } from './qaap-preview-host';
+import { readQaapPreviewProcessFingerprint } from './qaap-dev-preview-process-liveness';
 import { randomBytes, timingSafeEqual } from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -27,6 +28,11 @@ export type QaapDevPreviewRecord = QaapDevPreviewRegistration & {
     readonly touchedAt: number;
     /** Per-preview capability used only on an isolated preview hostname. Never sent to other users. */
     readonly accessToken: string;
+    /**
+     * Start-time fingerprint of `osProcessId` taken when the process registered (Linux `/proc`). A pid whose
+     * fingerprint no longer matches belongs to another process; absent when unavailable (pid-only liveness).
+     */
+    readonly osProcessFingerprint?: string;
     /**
      * The record adopted a listener that was already serving (an external server its owner
      * claimed). No pid describes that listener: the record never carries one, and only the
@@ -166,9 +172,13 @@ export class QaapDevPreviewPortRegistry {
                 }
                 this.removeExpiredRecord(existing);
             } else {
+                const attachedPid = existing.adopted ? undefined : registration.osProcessId ?? existing.osProcessId;
                 const refreshed = {
                     ...existing,
-                    osProcessId: existing.adopted ? undefined : registration.osProcessId ?? existing.osProcessId,
+                    osProcessId: attachedPid,
+                    osProcessFingerprint: attachedPid === undefined
+                        ? undefined
+                        : registration.osProcessId !== undefined ? this.fingerprintOf(registration.osProcessId) : existing.osProcessFingerprint,
                     claimedAt: expired ? now : existing.claimedAt,
                     touchedAt: now,
                     accessToken: expired ? randomBytes(24).toString('base64url') : existing.accessToken,
@@ -201,6 +211,9 @@ export class QaapDevPreviewPortRegistry {
         const record: QaapDevPreviewRecord = {
             ...coordinates,
             ...(options.adopted ? { adopted: true as const } : osProcessId !== undefined ? { osProcessId } : {}),
+            ...(!options.adopted && osProcessId !== undefined && this.fingerprintOf(osProcessId) !== undefined
+                ? { osProcessFingerprint: this.fingerprintOf(osProcessId) }
+                : {}),
             claimedAt: options.claimedAt ?? now,
             touchedAt: now,
             accessToken: this.takeRetainedAccessToken(registration, now) ?? randomBytes(24).toString('base64url'),
@@ -296,7 +309,12 @@ export class QaapDevPreviewPortRegistry {
             // reaper drop a live server once that unrelated process exits.
             return false;
         }
-        this.previews.set(record.previewId, { ...record, osProcessId, touchedAt: Date.now() });
+        this.previews.set(record.previewId, {
+            ...record,
+            osProcessId,
+            osProcessFingerprint: osProcessId === undefined ? undefined : this.fingerprintOf(osProcessId),
+            touchedAt: Date.now(),
+        });
         this.schedulePersist();
         return true;
     }
@@ -520,6 +538,11 @@ export class QaapDevPreviewPortRegistry {
             && retained.port === registration.port
             ? retained.accessToken
             : undefined;
+    }
+
+    /** Start-time fingerprint of a pid as it is now; `undefined` when unavailable. Overridable seam. */
+    protected fingerprintOf(pid: number): string | undefined {
+        return readQaapPreviewProcessFingerprint(pid);
     }
 
     protected sameRegistration(left: QaapDevPreviewRecord, right: QaapDevPreviewRegistration): boolean {

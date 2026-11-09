@@ -148,7 +148,7 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution, Q
     }
 
     /** @internal Used by the extracted qaap-dev-preview-endpoint-* modules. */
-    public isPreviewProcessDead(record: { readonly osProcessId?: number; readonly port?: number; readonly ownerLogin?: string; readonly adopted?: true }): boolean {
+    public isPreviewProcessDead(record: { readonly osProcessId?: number; readonly osProcessFingerprint?: string; readonly port?: number; readonly ownerLogin?: string; readonly adopted?: true }): boolean {
         if (record.adopted) {
             // No pid describes an adopted listener; the port probe alone decides (reaper, claims).
             return false;
@@ -162,7 +162,7 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution, Q
     }
 
     /** @internal Used by the extracted qaap-dev-preview-endpoint-* modules. */
-    public previewPidLiveness(record: { readonly osProcessId?: number; readonly port?: number; readonly ownerLogin?: string; readonly adopted?: true }): QaapPreviewPidLiveness {
+    public previewPidLiveness(record: { readonly osProcessId?: number; readonly osProcessFingerprint?: string; readonly port?: number; readonly ownerLogin?: string; readonly adopted?: true }): QaapPreviewPidLiveness {
         if (record.adopted || record.osProcessId === undefined) {
             return 'unknown';
         }
@@ -170,7 +170,7 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution, Q
             // Tunnelled pids belong to another pid namespace: a local signal-0 would answer for the wrong process.
             return 'unknown';
         }
-        return probeQaapPreviewPidLiveness(record.osProcessId);
+        return probeQaapPreviewPidLiveness(record.osProcessId, undefined, { fingerprint: record.osProcessFingerprint });
     }
 
     /** @internal Used by the extracted qaap-dev-preview-endpoint-* modules. */

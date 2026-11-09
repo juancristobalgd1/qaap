@@ -8,6 +8,7 @@ import * as sinon from 'sinon';
 import {
     classifyQaapPreviewProbeState,
     probeQaapPreviewPidLiveness,
+    readQaapPreviewProcessFingerprint,
     releaseStoppedPreviewExtracted,
 } from './qaap-dev-preview-process-liveness';
 import { PREVIEW_RESERVATION_START_GRACE_MS } from './qaap-dev-preview-endpoint';
@@ -33,6 +34,60 @@ describe('probeQaapPreviewPidLiveness', () => {
 
     it('reports any other failure as unknown, never as dead', () => {
         expect(probeQaapPreviewPidLiveness(4242, () => { throw errnoError('EINVAL'); })).to.equal('unknown');
+    });
+});
+
+describe('probeQaapPreviewPidLiveness with a process fingerprint', () => {
+    const signalOk = (): boolean => true;
+
+    it('reports alive when the recorded start time still matches the pid', () => {
+        expect(probeQaapPreviewPidLiveness(4242, signalOk, { fingerprint: '991', readFingerprint: () => '991' })).to.equal('alive');
+    });
+
+    it('reports dead when the pid now belongs to a process with another start time (reused pid)', () => {
+        expect(probeQaapPreviewPidLiveness(4242, signalOk, { fingerprint: '991', readFingerprint: () => '7777' })).to.equal('dead');
+    });
+
+    it('keeps the pid-only answer when the current fingerprint cannot be read', () => {
+        expect(probeQaapPreviewPidLiveness(4242, signalOk, { fingerprint: '991', readFingerprint: () => undefined })).to.equal('alive');
+    });
+
+    it('is pid-only without a recorded fingerprint (no /proc at registration)', () => {
+        const readFingerprint = sinon.stub().returns('7777');
+        expect(probeQaapPreviewPidLiveness(4242, signalOk, { readFingerprint })).to.equal('alive');
+        expect(readFingerprint.called).to.equal(false);
+    });
+
+    it('still reports ESRCH as dead before any fingerprint is read', () => {
+        expect(probeQaapPreviewPidLiveness(4242, () => { throw errnoError('ESRCH'); }, { fingerprint: '991', readFingerprint: () => '991' })).to.equal('dead');
+    });
+});
+
+describe('readQaapPreviewProcessFingerprint', () => {
+    it('reads starttime (field 22) from a /proc stat line', () => {
+        // Fields after the command: state is field 3, so starttime (field 22) is the 20th entry. Here it is 123456.
+        const fields = ['S', '1', '1', '1', '0', '-1', '4194560', '1', '0', '0', '0', '0', '0', '0', '20', '0', '1', '0', '0', '123456'];
+        const stat = `4242 (node) ${fields.join(' ')} 0 0`;
+        expect(readQaapPreviewProcessFingerprint(4242, () => stat)).to.equal('123456');
+    });
+
+    it('handles a command name with spaces and parentheses', () => {
+        const fields = ['S', '1', '1', '1', '0', '-1', '4194560', '1', '0', '0', '0', '0', '0', '0', '20', '0', '1', '0', '0', '987'];
+        const stat = `4242 (my (dev) server) ${fields.join(' ')}`;
+        expect(readQaapPreviewProcessFingerprint(4242, () => stat)).to.equal('987');
+    });
+
+    it('returns undefined when /proc cannot be read (no fingerprint, pid-only liveness)', () => {
+        expect(readQaapPreviewProcessFingerprint(4242, () => { throw errnoError('ENOENT'); })).to.equal(undefined);
+    });
+});
+
+describe('releaseStoppedPreviewExtracted options', () => {
+    it('forwards keepAccessToken to the release only once the process is dead', () => {
+        const releasePreview = sinon.stub().returns(true);
+        const ctx = { previewPidLiveness: () => 'dead' as const, portRegistry: { releasePreview } };
+        expect(releaseStoppedPreviewExtracted(ctx, { previewId: 'p-9', ownerLogin: 'carol', osProcessId: 9, port: 5180 }, { keepAccessToken: true })).to.equal(true);
+        expect(releasePreview.calledOnceWith('p-9', 'carol', { keepAccessToken: true })).to.equal(true);
     });
 });
 

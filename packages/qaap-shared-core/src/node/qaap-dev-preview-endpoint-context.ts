@@ -65,10 +65,10 @@ export interface QaapDevPreviewEndpointContext {
 
     terminatePreviewProcess(record: { readonly osProcessId?: number; readonly port?: number; readonly ownerLogin?: string }): void;
 
-    isPreviewProcessDead(record: { readonly osProcessId?: number; readonly port?: number; readonly ownerLogin?: string; readonly adopted?: true }): boolean;
+    isPreviewProcessDead(record: { readonly osProcessId?: number; readonly osProcessFingerprint?: string; readonly port?: number; readonly ownerLogin?: string; readonly adopted?: true }): boolean;
 
     /** Liveness of the record's recorded process; `unknown` when no local pid describes it (adopted, tunnelled, none). */
-    previewPidLiveness(record: { readonly osProcessId?: number; readonly port?: number; readonly ownerLogin?: string; readonly adopted?: true }): QaapPreviewPidLiveness;
+    previewPidLiveness(record: { readonly osProcessId?: number; readonly osProcessFingerprint?: string; readonly port?: number; readonly ownerLogin?: string; readonly adopted?: true }): QaapPreviewPidLiveness;
 
     /**
      * Canonical working directories of the processes listening on `port`. Empty when unknown

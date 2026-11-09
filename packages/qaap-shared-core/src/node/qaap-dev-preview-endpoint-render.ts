@@ -421,7 +421,7 @@ export async function handleProcessClaimExtracted(ctx: QaapDevPreviewEndpointCon
                 root: canonicalRoot,
             });
             ctx.terminatePreviewProcess(existing);
-            ctx.portRegistry.releasePreview(existing.previewId, owner);
+            releaseStoppedPreviewExtracted(ctx, { ...existing, ownerLogin: owner });
         } else {
             if (!ctx.isPreviewProcessDead(existing) && (await ctx.probeLocalDevServerState(existing.port)) !== 'down') {
                 if (osProcessId !== undefined) {
@@ -474,7 +474,7 @@ export async function handleProcessClaimExtracted(ctx: QaapDevPreviewEndpointCon
             // Same identity re-claimed while its dev server is not answering yet: the link the user
             // already holds must keep resolving once the server is up, so keep the access token.
             ctx.terminatePreviewProcess(existing);
-            ctx.portRegistry.releasePreview(existing.previewId, owner, { keepAccessToken: true });
+            releaseStoppedPreviewExtracted(ctx, { ...existing, ownerLogin: owner }, { keepAccessToken: true });
         }
     }
 

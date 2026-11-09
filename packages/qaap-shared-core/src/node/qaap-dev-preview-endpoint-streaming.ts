@@ -21,7 +21,7 @@ import {
 import type { QaapDevPreviewRecord } from './qaap-dev-preview-port-registry';
 import { buildQaapPreviewUpstreamHeaders, sanitizeQaapPreviewResponseHeaders } from './qaap-dev-preview-forward-headers';
 import { PREVIEW_RESERVATION_START_GRACE_MS } from './qaap-dev-preview-endpoint';
-import { classifyQaapPreviewProbeState, releaseStoppedPreviewExtracted } from './qaap-dev-preview-process-liveness';
+import { classifyQaapPreviewProbeState, probeQaapPreviewPidLiveness, releaseStoppedPreviewExtracted } from './qaap-dev-preview-process-liveness';
 import { PREVIEW_REAPER_INTERVAL_MS } from './qaap-dev-preview-endpoint';
 import type { QaapDevPreviewEndpointContext } from './qaap-dev-preview-endpoint-context';
 
@@ -63,16 +63,12 @@ export function shouldLogCurrentClaim(fields: CurrentClaimLogFields, now: number
     return true;
 }
 
-export function isPreviewProcessDeadExtracted(ctx: QaapDevPreviewEndpointContext, record: { readonly osProcessId?: number }): boolean {
+export function isPreviewProcessDeadExtracted(ctx: QaapDevPreviewEndpointContext, record: { readonly osProcessId?: number; readonly osProcessFingerprint?: string }): boolean {
         if (record.osProcessId === undefined) {
             return false;
         }
-        try {
-            process.kill(record.osProcessId, 0);
-            return false;
-        } catch (err) {
-            return (err as NodeJS.ErrnoException)?.code === 'ESRCH';
-        }
+        // Same identity rule as previewPidLiveness: a reused pid of another process is a dead claim.
+        return probeQaapPreviewPidLiveness(record.osProcessId, undefined, { fingerprint: record.osProcessFingerprint }) === 'dead';
 }
 
 export function nextAllocationCandidateExtracted(ctx: QaapDevPreviewEndpointContext, preferredPort: number, offset: number): number {
