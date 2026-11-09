@@ -111,14 +111,18 @@
   display: none !important;
 }
 
-.theia-mobile-projects-header-main:has(.theia-mobile-projects-header-ide-agents-switch:not([hidden])) .theia-mobile-projects-title-block {
-  max-width: calc(50% - 70px);
-}
+/* Only cap the sides while the centered switch is really shown: it is display:none below 768px and in
+   the IDE (rules below) without the hidden attribute, and the cap then truncated the project name. */
+@media (min-width: 768px) {
+  body:not(.theia-mobile-mod-desktop-ide) .theia-mobile-projects-header-main:has(.theia-mobile-projects-header-ide-agents-switch:not([hidden])) .theia-mobile-projects-title-block {
+    max-width: calc(50% - 70px);
+  }
 
-.theia-mobile-projects-header-main:has(.theia-mobile-projects-header-ide-agents-switch:not([hidden])) .theia-mobile-projects-header-execution-cluster {
-  margin-left: auto;
-  max-width: calc(50% - 70px);
-  justify-content: flex-end;
+  body:not(.theia-mobile-mod-desktop-ide) .theia-mobile-projects-header-main:has(.theia-mobile-projects-header-ide-agents-switch:not([hidden])) .theia-mobile-projects-header-execution-cluster {
+    margin-left: auto;
+    max-width: calc(50% - 70px);
+    justify-content: flex-end;
+  }
 }
 
 @media (max-width: 767px) {

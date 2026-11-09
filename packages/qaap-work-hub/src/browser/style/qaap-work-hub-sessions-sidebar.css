@@ -19,9 +19,12 @@
   border-radius: 10px;
 }
 
-.theia-mobile-projects-header-main:has(.theia-mobile-projects-header-ide-agents-switch:not([hidden])) .theia-mobile-projects-title-block,
-.theia-mobile-projects-header-main:has(.theia-mobile-projects-header-ide-agents-switch:not([hidden])) .theia-mobile-projects-header-execution-cluster {
-  max-width: calc(50% - 44px);
+/* Same visibility condition as the switch itself (shown from 768px, never in the IDE). */
+@media (min-width: 768px) {
+  body:not(.theia-mobile-mod-desktop-ide) .theia-mobile-projects-header-main:has(.theia-mobile-projects-header-ide-agents-switch:not([hidden])) .theia-mobile-projects-title-block,
+  body:not(.theia-mobile-mod-desktop-ide) .theia-mobile-projects-header-main:has(.theia-mobile-projects-header-ide-agents-switch:not([hidden])) .theia-mobile-projects-header-execution-cluster {
+    max-width: calc(50% - 44px);
+  }
 }
 
 .theia-mobile-work-hub-sessions-sidebar {
