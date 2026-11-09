@@ -5,24 +5,3 @@
 
 /** Composer target: local Theia chat vs VPS background task. */
 export type QaapComposerSurface = 'chat' | 'task';
-
-const COMPOSER_SURFACE_STORAGE_KEY = 'qaap.composerSurface';
-
-export function scopedComposerSurfaceStorageKey(cwd: string | undefined): string {
-    const scope = cwd?.trim() || 'global';
-    return `${COMPOSER_SURFACE_STORAGE_KEY}:${scope}`;
-}
-
-export function readStoredComposerSurface(cwd: string | undefined): QaapComposerSurface | undefined {
-    // The mobile shell only exposes the agentic Task surface; the local Chat surface was removed,
-    // so legacy stored 'chat' values are ignored and callers fall back to 'task'.
-    void cwd;
-    return undefined;
-}
-
-export function writeStoredComposerSurface(cwd: string | undefined, surface: QaapComposerSurface): void {
-    // Nothing reads the stored surface any more (see readStoredComposerSurface), so nothing is written.
-    void cwd;
-    void surface;
-}
-

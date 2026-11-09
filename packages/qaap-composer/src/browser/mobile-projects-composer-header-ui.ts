@@ -1,5 +1,5 @@
 
-import { writeStoredComposerSurface, type QaapComposerSurface } from '../common/qaap-composer-surface';
+import type { QaapComposerSurface } from '../common/qaap-composer-surface';
 import type { MobileProjectEntry, MobileProjectFilter } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileBottomButtonId } from '@theia/qaap-mobile-shell/lib/browser/mobile-shell-bottom-bar-widget';
 import type { MobileViewToggleId } from '@theia/qaap-shared-core/lib/common/qaap-mobile-work-surface-preference';
@@ -71,7 +71,7 @@ export class MobileProjectsComposerHeaderUi {
 
     preferComposerSurface(surface: QaapComposerSurface, projectCwd?: string): void {
         void surface;
-        writeStoredComposerSurface(projectCwd, 'task');
+        void projectCwd;
         this.host.stickyComposerSurface = 'task';
         if (this.host.visible && this.host.hubView === 'repos') {
             this.host.stickyComposerRenderUi.renderStickyComposer();

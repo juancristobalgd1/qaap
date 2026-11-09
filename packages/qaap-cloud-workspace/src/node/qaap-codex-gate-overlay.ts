@@ -736,7 +736,7 @@ export function usesCodexToolGateHook(agentId: string | undefined): boolean {
  */
 export function assertCodexGateTokenIssued(input: { readonly agentId: string | undefined; readonly gateWired: boolean; readonly gateToken: string | undefined }): void {
     if (input.gateWired && !input.gateToken && usesCodexToolGateHook(input.agentId)) {
-        throw new Error(nls.localize('qaap/codexGate/noToken',
+        throw new Error(nls.localize('theia/qaap-cloud-workspace/codexGateNoToken',
             'The Codex tool gate is active but no gate token could be issued for this task. Codex was not started without the gate.'));
     }
 }

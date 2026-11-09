@@ -877,7 +877,7 @@ export function cancelExtracted(ctx: QaapAgentTaskRunnerContext, id: string, opt
 }
 
 /** Visible state of a task whose agent could not be signalled: it is not stopped, and it keeps its slot. */
-export const STOP_FAILED_MESSAGE_KEY = 'theia/qaap/agentTask/stopFailed';
+export const STOP_FAILED_MESSAGE_KEY = 'theia/qaap-cloud-workspace/agentTaskStopFailed';
 
 /**
  * Releases the concurrency slot a cancelled task holds, once its process has really exited. A
