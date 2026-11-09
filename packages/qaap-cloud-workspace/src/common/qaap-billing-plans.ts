@@ -179,7 +179,7 @@ export const QAAP_CODEX_HOSTED_RATES: readonly QaapHostedModelRate[] = [
     },
     {
         modelId: 'gpt-5.5',
-        label: 'GPT-5.5 Legado',
+        label: 'GPT-5.5 Legacy',
         role: 'legacy',
         apiUsdPerMillionInput: 5,
         apiUsdPerMillionOutput: 30,

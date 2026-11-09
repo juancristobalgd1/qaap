@@ -66,8 +66,8 @@ export class UsageDialogBody {
         const root = this.element('div', 'theia-qaap-usage-summary');
         if (summary.skippedRecords > 0) {
             root.append(this.element('p', 'theia-qaap-usage-notice', nls.localize(
-                'qaap/usage/skippedRecords',
-                '{0} malformed or inconsistent usage record(s) were skipped; usage may be incomplete.',
+                'qaap/usage/skippedRecordsNotice',
+                'Some usage could not be read ({0}), so these totals may be a little low.',
                 summary.skippedRecords
             )));
         }

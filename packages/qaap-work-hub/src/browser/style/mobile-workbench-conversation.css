@@ -10714,6 +10714,12 @@ button.theia-mobile-projects-sticky-composer-context-usage-btn {
   }
 }
 
+/* A toast («Update available…») must not cover an open composer popover (model picker, project
+   sheet): while one is open, toasts sit just beneath it. */
+body:has(.qaap-sticky-composer-sheet-popover:not([hidden])) .theia-notifications-container.theia-notification-toasts {
+  z-index: 9680 !important;
+}
+
 .qaap-sticky-composer-sheet-popover {
   position: fixed;
   z-index: 9685;

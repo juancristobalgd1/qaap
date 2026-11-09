@@ -127,7 +127,7 @@ export function listStaticNativeAgentModels(agentId: string): QaapQaiqModelOptio
                 nativeOption(id, 'gpt-5.6-sol', 'GPT-5.6 Sol'),
                 nativeOption(id, 'gpt-5.6-terra', 'GPT-5.6 Terra'),
                 nativeOption(id, 'gpt-5.6-luna', 'GPT-5.6 Luna'),
-                nativeOption(id, 'gpt-5.5', 'GPT-5.5 Legado'),
+                nativeOption(id, 'gpt-5.5', 'GPT-5.5 Legacy'),
             ];
         case 'claude':
             // Keep in sync with the Claude Code CLI /model menu (mid-July 2026).
@@ -136,8 +136,8 @@ export function listStaticNativeAgentModels(agentId: string): QaapQaiqModelOptio
                 nativeOption(id, 'claude-opus-4-8', 'Opus 4.8', 'anthropic'),
                 nativeOption(id, 'claude-sonnet-5', 'Sonnet 5', 'anthropic'),
                 nativeOption(id, 'claude-haiku-4-5', 'Haiku 4.5', 'anthropic'),
-                nativeOption(id, 'claude-sonnet-4-6', 'Sonnet 4.6 Legado', 'anthropic'),
-                nativeOption(id, 'claude-opus-4-7', 'Opus 4.7 Legado', 'anthropic'),
+                nativeOption(id, 'claude-sonnet-4-6', 'Sonnet 4.6 Legacy', 'anthropic'),
+                nativeOption(id, 'claude-opus-4-7', 'Opus 4.7 Legacy', 'anthropic'),
             ];
         case 'openclaude':
             // OpenClaude is a separate harness. It accepts the QAIQ provider flags, but its
