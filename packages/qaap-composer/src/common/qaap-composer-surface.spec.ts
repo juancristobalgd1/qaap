@@ -42,4 +42,17 @@ describe('qaap-composer-surface', () => {
         expect(readStoredComposerSurface('/repo/b')).to.equal(undefined);
     });
 
+    it('writes nothing to localStorage, since no reader of the stored surface remains', () => {
+        const globals = globalThis as { window?: unknown };
+        const original = globals.window;
+        const writes: string[] = [];
+        globals.window = { localStorage: { setItem: (key: string) => writes.push(key), getItem: () => null } };
+        try {
+            writeStoredComposerSurface('/repo/a', 'task');
+            expect(writes).to.deep.equal([]);
+        } finally {
+            globals.window = original;
+        }
+    });
+
 });

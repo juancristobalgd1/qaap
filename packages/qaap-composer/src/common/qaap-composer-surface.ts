@@ -21,13 +21,8 @@ export function readStoredComposerSurface(cwd: string | undefined): QaapComposer
 }
 
 export function writeStoredComposerSurface(cwd: string | undefined, surface: QaapComposerSurface): void {
-    try {
-        if (typeof window !== 'undefined') {
-            window.localStorage.setItem(scopedComposerSurfaceStorageKey(cwd), surface);
-            window.localStorage.setItem(COMPOSER_SURFACE_STORAGE_KEY, surface);
-        }
-    } catch {
-        /* session-only */
-    }
+    // Nothing reads the stored surface any more (see readStoredComposerSurface), so nothing is written.
+    void cwd;
+    void surface;
 }
 
