@@ -64,5 +64,12 @@ grep -qi '<html' "$ARTIFACT_DIR/index.html" || { echo 'Frontend HTML missing' >&
 # needs root only to create/chown its disposable uid-boundary fixtures; the
 # probe then drops to the tenant uids with setpriv and validates the boundary.
 docker exec --user 0 -i "$CONTAINER" node < "$SCRIPT_DIR/qaap-image-runtime-check.js"
+# Agent-uid boundary, in a separate throwaway container with the backend's privilege shape: root with
+# CapDrop ALL and only SETUID/SETGID (no CHOWN, DAC_OVERRIDE, FOWNER or KILL). The probe asserts those caps
+# itself, so this fails if the flags drift. Regressions it detects are documented in the probe.
+docker run --rm -i --network none --read-only --user 0:0 \
+    --cap-drop ALL --cap-add SETUID --cap-add SETGID --security-opt no-new-privileges:true \
+    --tmpfs /tmp:rw,nosuid,mode=1777 --memory 1g --pids-limit 256 \
+    --env QAAP_IMAGE_SMOKE=1 --entrypoint node "$IMAGE" - < "$SCRIPT_DIR/qaap-image-agent-uid-check.js"
 [[ "$(docker inspect --format '{{.RestartCount}}' "$CONTAINER")" == 0 ]] || { echo 'Candidate restarted' >&2; exit 1; }
 echo "PASS: candidate $IMAGE ($SOURCE_SHA) boots with production auth and uid boundaries"
