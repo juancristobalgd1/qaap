@@ -49,7 +49,12 @@ import {
 import {
     prependPathEntry as prependPathEntryHelper,
 } from './qaap-agent-task-runner-utils';
-import { buildPromptTransportCommand } from './qaap-agent-task-runner-utils';
+import { buildPromptTransportCommand, type AgentPromptOwner } from './qaap-agent-task-runner-utils';
+
+/** The agent uid a prompt file must be readable by, or undefined when the backend itself runs the agent. */
+function promptOwnerFor(identity: { uid?: number; gid?: number }): AgentPromptOwner | undefined {
+    return identity.uid === undefined ? undefined : { uid: identity.uid, gid: identity.gid };
+}
 import { canExposeAgentCliBinToChild, prependAgentCliBinToPath } from './qaap-agent-cli-prefix';
 
 export async function runGenericCommandExtracted(ctx: QaapAgentTaskRunnerContext, command: string,
@@ -713,6 +718,7 @@ export async function improveComposerPromptExtracted(ctx: QaapAgentTaskRunnerCon
             agentId,
             detected,
             vars,
+            promptOwnerFor(ctx.resolveAgentSpawnIdentity(cwd)),
         );
         const command = applyAgentApprovalPolicyToCommand(
             transported.command,
@@ -804,7 +810,7 @@ export async function runReadOnlyOneShotPromptExtracted(ctx: QaapAgentTaskRunner
             .replace(/--output-format\s+\S+/g, '')
             .replace(/--include-partial-messages/g, '')
             .replace(/--verbose/g, '');
-        const transported = buildPromptTransportCommand(template, prompt, agentId, detected, vars);
+        const transported = buildPromptTransportCommand(template, prompt, agentId, detected, vars, promptOwnerFor(ctx.resolveAgentSpawnIdentity(options.cwd?.trim() || process.cwd())));
         const command = applyAgentApprovalPolicyToCommand(transported.command, {
             agentId,
             autoApprove: true,

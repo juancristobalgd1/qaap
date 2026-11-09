@@ -478,7 +478,8 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
         }
         let promptTempDir: string | undefined;
         if (promptTransport.kind === 'prompt-file' && !useStdioApprovals) {
-            const written = writeAgentPromptFileHelper(agentPrompt);
+            const spawnIdentity = ctx.resolveAgentSpawnIdentity(resolvedCwd ?? process.cwd());
+            const written = writeAgentPromptFileHelper(agentPrompt, spawnIdentity.uid === undefined ? undefined : { uid: spawnIdentity.uid, gid: spawnIdentity.gid });
             promptTempDir = written.dir;
             command = `${command} ${promptTransport.flag} ${quoteShellArgHelper(written.file)}`;
         }
