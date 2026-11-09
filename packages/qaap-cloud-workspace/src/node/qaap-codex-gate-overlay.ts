@@ -11,6 +11,7 @@ import * as path from 'path';
 import { resolveQaapHarnessCapabilities } from '@theia/qaap-shared-core/lib/common/qaap-harness-capabilities';
 import { quoteShellArg } from './qaap-agent-task-runner-utils';
 import { resolveQaapCloudWorkspaceResource } from './qaap-cloud-workspace-resource';
+import { nls } from '@theia/core/lib/common/nls';
 
 /** File name of the standalone Codex PreToolUse hook shipped in this package's `resources/`. */
 export const QAAP_TOOL_GATE_CODEX_HOOK_FILE = 'qaap-tool-gate-codex-hook.mjs';
@@ -727,6 +728,17 @@ export class QaapCodexGateOverlayBuilder {
 /** True when Codex tool calls reach the gate through a PreToolUse hook (the overlay applies). */
 export function usesCodexToolGateHook(agentId: string | undefined): boolean {
     return agentId?.trim().toLowerCase() === 'codex' && resolveQaapHarnessCapabilities(agentId).gate === 'hook';
+}
+
+/**
+ * Fail-closed guard for a Codex spawn: while the tool gate is wired on this backend, Codex must not start
+ * without the overlay, and the overlay needs a gate token. Without one the tool calls would run ungated.
+ */
+export function assertCodexGateTokenIssued(input: { readonly agentId: string | undefined; readonly gateWired: boolean; readonly gateToken: string | undefined }): void {
+    if (input.gateWired && !input.gateToken && usesCodexToolGateHook(input.agentId)) {
+        throw new Error(nls.localize('qaap/codexGate/noToken',
+            'The Codex tool gate is active but no gate token could be issued for this task. Codex was not started without the gate.'));
+    }
 }
 
 /** Shared builder: it remembers which Codex versions already passed the trust probe. */

@@ -7,7 +7,7 @@ import { expect } from 'chai';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { DEFAULT_QAAP_CODEX_GATE_OVERLAY_BUILDER, QaapCodexGateOverlayBuilder, usesCodexToolGateHook } from './qaap-codex-gate-overlay';
+import { assertCodexGateTokenIssued, DEFAULT_QAAP_CODEX_GATE_OVERLAY_BUILDER, QaapCodexGateOverlayBuilder, usesCodexToolGateHook } from './qaap-codex-gate-overlay';
 
 describe('QaapCodexGateOverlayBuilder', () => {
 
@@ -616,3 +616,22 @@ describe('QaapCodexGateOverlayBuilder', () => {
         expect(DEFAULT_QAAP_CODEX_GATE_OVERLAY_BUILDER).to.be.instanceOf(QaapCodexGateOverlayBuilder);
     });
 });
+
+describe('assertCodexGateTokenIssued', () => {
+    it('refuses a Codex spawn while the gate is wired but no token was issued', () => {
+        expect(() => assertCodexGateTokenIssued({ agentId: 'codex', gateWired: true, gateToken: undefined })).to.throw(/no gate token/);
+    });
+
+    it('allows the spawn when a token was issued', () => {
+        expect(() => assertCodexGateTokenIssued({ agentId: 'codex', gateWired: true, gateToken: 'tok' })).to.not.throw();
+    });
+
+    it('allows the spawn when the gate is not wired on this backend', () => {
+        expect(() => assertCodexGateTokenIssued({ agentId: 'codex', gateWired: false, gateToken: undefined })).to.not.throw();
+    });
+
+    it('does not apply to harnesses that do not use the Codex hook', () => {
+        expect(() => assertCodexGateTokenIssued({ agentId: 'opencode', gateWired: true, gateToken: undefined })).to.not.throw();
+    });
+});
+

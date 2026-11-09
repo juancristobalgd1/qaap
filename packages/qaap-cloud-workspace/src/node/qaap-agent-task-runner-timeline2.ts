@@ -8,7 +8,7 @@ import {
     startOpencodeArmWatch,
     usesOpencodeGatePlugin,
 } from './qaap-tool-gate-opencode-adapter';
-import { DEFAULT_QAAP_CODEX_GATE_OVERLAY_BUILDER, usesCodexToolGateHook, type QaapCodexGateOverlay } from './qaap-codex-gate-overlay';
+import { assertCodexGateTokenIssued, DEFAULT_QAAP_CODEX_GATE_OVERLAY_BUILDER, usesCodexToolGateHook, type QaapCodexGateOverlay } from './qaap-codex-gate-overlay';
 import { resolveCodexAgentHome } from './qaap-agent-native-models';
 import { IDLE_TASK_TIMEOUT_MS, QAAP_AGENT_VERIFY_ENABLED, QUEUED_APPROVAL_GRACE_TIMEOUT_MS, USER_REQUEST_MAX_CHARS } from './qaap-agent-task-runner-constants';
 import { QaapQaiqProviderKeyMissingError } from './qaap-qaiq-provider-preflight';
@@ -541,6 +541,12 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             }
             // Only the harness process gets gate credentials: issuing a token revokes the previous one.
             ctx.applyToolGateEnv(childEnv, task);
+            // Fails closed before any Codex process: no token while the gate is wired means no gate for its tool calls.
+            assertCodexGateTokenIssued({
+                agentId: ctx.resolveTaskAgentId(task),
+                gateWired: ctx.toolGateWired(),
+                gateToken: childEnv.QAAP_GATE_TOKEN,
+            });
             if (childEnv.QAAP_GATE_TOKEN && usesCodexToolGateHook(ctx.resolveTaskAgentId(task))) {
                 // Fails closed: if the overlay cannot be built or Codex does not trust its hook, nothing runs.
                 codexGateOverlay = await DEFAULT_QAAP_CODEX_GATE_OVERLAY_BUILDER.create({

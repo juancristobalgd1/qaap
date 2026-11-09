@@ -1941,6 +1941,10 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         return this.toolGateTokens?.isArmed(taskId) ?? false;
     }
 
+    toolGateWired(): boolean {
+        return !!this.toolGateTokens && !!this.helperApiUrl;
+    }
+
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public finishTask(id: string, state: QaapAgentTaskState, exitCode: number | undefined): QaapAgentTask | undefined {
         const previousState = this.tasks.get(id)?.state;
