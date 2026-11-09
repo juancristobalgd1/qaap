@@ -17,6 +17,8 @@
  * already refreshes rows from those events, so no extra plumbing is needed.
  */
 
+import { QAAP_AGENTS_HUB_QUICK_ACTIONS } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
+
 /** Target character length for a derived title. */
 const TITLE_TARGET_LENGTH = 48;
 /** Lower bound of the window in which a clause boundary is preferred over a plain word cut. */
@@ -39,11 +41,54 @@ const CLAUSE_CONNECTORS: readonly string[] = [' and ', ' then '];
  * own localized fallback (e.g. 'New conversation').
  */
 export function deriveConversationTitle(firstUserMessage: string): string {
+    const quickAction = quickActionConversationTitle(firstUserMessage);
+    if (quickAction) {
+        return quickAction;
+    }
     const cleaned = cleanPromptText(resolveConversationTitleSeed(firstUserMessage));
     if (!cleaned) {
         return '';
     }
     return clipToTitle(cleaned);
+}
+
+/**
+ * A quick-action chip sends a long canned prompt ("Find and fix a bug in this project. Reproduce…");
+ * clipped, every such task read the same in the sidebar. Its title is the chip's label instead
+ * ("Fix a bug"). Only an unedited prompt counts: a prompt the user changed is titled from its text.
+ */
+/** The heuristic (clipped prompt) title, ignoring the quick-action label: what older tasks stored. */
+export function clippedPromptTitle(firstUserMessage: string): string {
+    const cleaned = cleanPromptText(resolveConversationTitleSeed(firstUserMessage));
+    return cleaned ? clipToTitle(cleaned) : '';
+}
+
+/**
+ * The chip label for a title that is exactly the clipped canned prompt of a quick action (what tasks
+ * stored before the label), so a task can be repaired even when its first message is gone.
+ */
+export function quickActionTitleForStoredTitle(title: string | undefined): string | undefined {
+    if (!title) {
+        return undefined;
+    }
+    const exact = QAAP_AGENTS_HUB_QUICK_ACTIONS.find(action => clippedPromptTitle(action.promptDefault) === title);
+    if (exact) {
+        return exact.labelDefault;
+    }
+    // Older builds clipped with a trailing ellipsis ("…, flag r…"): a long prefix of a canned prompt.
+    const stem = title.replace(/\s*(?:…|\.\.\.)\s*$/, '').trim();
+    if (stem === title.trim() || stem.length < 24) {
+        return undefined;
+    }
+    return QAAP_AGENTS_HUB_QUICK_ACTIONS.find(action => action.promptDefault.startsWith(stem))?.labelDefault;
+}
+
+export function quickActionConversationTitle(firstUserMessage: string): string | undefined {
+    const message = firstUserMessage?.trim();
+    if (!message) {
+        return undefined;
+    }
+    return QAAP_AGENTS_HUB_QUICK_ACTIONS.find(action => action.promptDefault === message)?.labelDefault;
 }
 
 /**

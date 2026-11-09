@@ -118,7 +118,7 @@ describe('UsageDialog', () => {
         dialog.open();
         await settle();
         expect(bodyOf().querySelector('.theia-qaap-usage-notice')?.textContent)
-            .to.equal('2 malformed or inconsistent usage record(s) were skipped; usage may be incomplete.');
+            .to.equal('Some usage could not be read (2), so these totals may be a little low.');
     });
 
     it('shows the scanning text while the first scan runs', async () => {

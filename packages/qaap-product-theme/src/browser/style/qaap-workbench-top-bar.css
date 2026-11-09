@@ -355,7 +355,7 @@ body.theia-mobile-mod-desktop-ide #theia-top-panel>[id='theia:menubar'] {
 .theia-workbench-view-mode-switch .theia-qaap-segmented-option .codicon,
 .theia-workbench-view-mode-switch .theia-qaap-segmented-option .qaap-icon-message-circle {
   flex: 0 0 auto;
-  opacity: 0.72;
+  opacity: 0.6;
 }
 
 .theia-workbench-view-mode-switch .theia-qaap-segmented-option .codicon {
@@ -382,9 +382,13 @@ body.theia-mobile-mod-desktop-ide #theia-top-panel>[id='theia:menubar'] {
   outline: none;
 }
 
+/* A raised, clearly lighter thumb (segmented control), legible in dark and light themes. */
 .theia-workbench-view-mode-switch .theia-qaap-segmented-option.theia-mod-selected {
-  background: var(--theia-inputOption-activeBackground, var(--theia-toolbar-hoverBackground));
-  color: var(--theia-inputOption-activeForeground, var(--theia-foreground));
+  background: color-mix(in srgb, var(--theia-foreground) 16%, var(--theia-editor-background));
+  color: var(--theia-foreground);
+  box-shadow:
+    0 1px 2px color-mix(in srgb, #000 28%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--theia-foreground) 8%, transparent);
 }
 
 .theia-workbench-view-mode-switch .theia-qaap-segmented-option.theia-mod-selected .codicon,

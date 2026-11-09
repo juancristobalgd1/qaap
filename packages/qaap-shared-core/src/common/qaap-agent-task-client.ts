@@ -108,7 +108,7 @@ export const CODEX_FALLBACK_MODELS: readonly QaapQaiqModelOption[] = [
     { provider: 'openai', vendor: 'codex', modelId: 'gpt-5.6-sol', label: 'GPT-5.6 Sol' },
     { provider: 'openai', vendor: 'codex', modelId: 'gpt-5.6-terra', label: 'GPT-5.6 Terra' },
     { provider: 'openai', vendor: 'codex', modelId: 'gpt-5.6-luna', label: 'GPT-5.6 Luna' },
-    { provider: 'openai', vendor: 'codex', modelId: 'gpt-5.5', label: 'GPT-5.5 Legado' },
+    { provider: 'openai', vendor: 'codex', modelId: 'gpt-5.5', label: 'GPT-5.5 Legacy' },
 ];
 
 export function normalizeOpenCodeModelOptions(models: readonly QaapQaiqModelOption[]): QaapQaiqModelOption[] {

@@ -1047,10 +1047,20 @@
 }
 
 .qaap-agent-changes-loading {
-    padding: 12px;
+    padding: 10px 12px 12px 42px;
     display: flex;
     flex-direction: column;
     gap: 8px;
+}
+
+/* Visually hidden, still announced. */
+.qaap-agent-changes-loading-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
 }
 
 .qaap-agent-changes-loading-bar {
@@ -1254,12 +1264,20 @@
     position: relative;
 }
 
+.qaap-agent-changes-hunks {
+    --qaap-diff-add: var(--theia-gitDecoration-addedResourceForeground, #3fb950);
+    --qaap-diff-del: var(--theia-gitDecoration-deletedResourceForeground, #f85149);
+}
+
+/* Soft tints plus a thin edge bar (GitHub / Cursor), not a heavy block of colour. */
 .qaap-agent-changes-hunks .qaap-diff-review-line--add {
-    background: rgba(35, 134, 54, 0.15);
+    background: color-mix(in srgb, var(--qaap-diff-add) 9%, transparent);
+    box-shadow: inset 2px 0 0 color-mix(in srgb, var(--qaap-diff-add) 70%, transparent);
 }
 
 .qaap-agent-changes-hunks .qaap-diff-review-line--del {
-    background: rgba(248, 81, 73, 0.15);
+    background: color-mix(in srgb, var(--qaap-diff-del) 9%, transparent);
+    box-shadow: inset 2px 0 0 color-mix(in srgb, var(--qaap-diff-del) 70%, transparent);
 }
 
 .qaap-agent-changes-hunks .qaap-diff-review-line--ctx {
@@ -1267,23 +1285,32 @@
 }
 
 .qaap-agent-changes-hunks .qaap-diff-review-line--add .qaap-diff-review-gutter {
-    background: rgba(35, 134, 54, 0.2);
-    color: #3fb950;
-    opacity: 1;
+    color: var(--qaap-diff-add);
+    opacity: 0.85;
 }
 
 .qaap-agent-changes-hunks .qaap-diff-review-line--del .qaap-diff-review-gutter {
-    background: rgba(248, 81, 73, 0.2);
-    color: #f85149;
-    opacity: 1;
+    color: var(--qaap-diff-del);
+    opacity: 0.85;
 }
 
+/* Two narrow number columns: old, then new. */
 .qaap-agent-changes-hunks .qaap-diff-review-gutter {
-    width: 40px;
-    padding: 0 10px 0 20px;
+    width: 34px;
+    padding: 0 6px 0 0;
     font-size: 11px;
-    opacity: 0.72;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.6;
     text-align: right;
+}
+
+.qaap-agent-changes-hunks .qaap-diff-review-gutter.qaap-mod-old {
+    width: 38px;
+    padding-left: 4px;
+}
+
+.qaap-agent-changes-hunks .qaap-diff-review-gutter.qaap-mod-new {
+    margin-right: 10px;
 }
 
 .qaap-agent-changes-hunks .qaap-diff-review-code {

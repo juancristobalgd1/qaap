@@ -20,7 +20,7 @@ import {
     type QaapExpiredStreamingTurn,
     type QaapTurnWatchdogLimits,
 } from '../common/qaap-agent-turn-watchdog';
-import { deriveConversationTitle, isComposerAttachmentPreambleTitle } from '../common/qaap-conversation-title';
+import { clippedPromptTitle, deriveConversationTitle, isComposerAttachmentPreambleTitle, quickActionConversationTitle, quickActionTitleForStoredTitle } from '../common/qaap-conversation-title';
 
 import { isTeamSynthesisUserMessage } from '../common/qaap-team-mailbox';
 
@@ -526,10 +526,20 @@ export async function maybeAutoResumeInterruptedTurnExtracted(ctx: QaapAgentConv
  * when nothing needs repair.
  */
 function repairAttachmentPreambleTitle(conv: QaapAgentConversation): QaapAgentConversation {
+    const firstUser = conv.messages.find(message => message.role === 'user');
+    // A task started from a quick-action chip used to be titled with the clipped canned prompt.
+    const quickActionTitle = firstUser ? quickActionConversationTitle(firstUser.content) : undefined;
+    if (quickActionTitle && conv.title !== quickActionTitle && conv.title === clippedPromptTitle(firstUser!.content)) {
+        return { ...conv, title: quickActionTitle };
+    }
+    // Same repair when the first message is gone: the stored title is exactly a chip's clipped prompt.
+    const storedQuickActionTitle = quickActionTitleForStoredTitle(conv.title);
+    if (storedQuickActionTitle) {
+        return { ...conv, title: storedQuickActionTitle };
+    }
     if (!isComposerAttachmentPreambleTitle(conv.title)) {
         return conv;
     }
-    const firstUser = conv.messages.find(message => message.role === 'user');
     const title = firstUser ? deriveConversationTitle(firstUser.content) : '';
     return title && title !== conv.title ? { ...conv, title } : conv;
 }
