@@ -93,6 +93,9 @@ export class MobileProjectsTranscriptMessagesUserUi {
         if (options?.readOnly) {
             return wrap;
         }
+        // Touch screens have no hover: a tap must focus the bubble so `:focus-within` unfolds the
+        // actions. tabIndex -1 keeps it out of the Tab order (the action buttons stay tabbable).
+        wrap.tabIndex = -1;
 
         const plainText = this.contentUi.cleanTranscriptDisplayText(displayContent).trim();
         const summary = this.host.transcriptComposerSummary;

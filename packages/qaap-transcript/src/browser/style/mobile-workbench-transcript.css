@@ -1754,6 +1754,10 @@ body.qaap-theme-light .theia-mobile-agent-transcript-empty-action.theia-mod-prev
     }
   }
 
+  .theia-mobile-agent-transcript-user-wrap:focus {
+    outline: none;
+  }
+
   .theia-mobile-agent-transcript-user-wrap:focus-within .theia-mobile-agent-transcript-user-actions {
     opacity: 0.82;
     pointer-events: auto;
