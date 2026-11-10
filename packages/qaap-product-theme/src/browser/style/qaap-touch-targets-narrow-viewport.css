@@ -80,9 +80,22 @@
         min-height: 44px;
     }
 
-    /* Turn-failure "Retry task" sits at 24px visual height: keep a 44px touch height. */
-    body .theia-mobile-agent-turn-failure-summary-retry {
+    /* Turn-failure "Retry task" sits at 24px visual height: keep a 44px touch height. The shell
+       window rule (0,3,0) sets min-height 24px, so this selector repeats its chain under body. */
+    body .theia-mobile-agent-shell-window.theia-mod-turn-failure .theia-mobile-agent-turn-failure-summary-retry {
         min-height: 44px;
+    }
+
+    /* Header tab icon select: its 36px height is declared with `height`, which beats min-height, so
+       the 44px touch area is an ::after extension that leaves the visual size unchanged. */
+    body .theia-mobile-transcript-tab-icon-select {
+        position: relative;
+    }
+
+    body .theia-mobile-transcript-tab-icon-select::after {
+        content: '';
+        position: absolute;
+        inset: -4px 0;
     }
 
     /* Changes pill and Approve & Commit share the composer's changes row: 44px touch height. */
