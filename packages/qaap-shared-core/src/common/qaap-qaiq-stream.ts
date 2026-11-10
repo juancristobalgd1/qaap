@@ -474,8 +474,9 @@ export class QaapQaiqStreamAccumulator {
         for (const block of this.transcriptBlocks) {
             switch (block.type) {
                 case 'text':
+                    // Adjacent text blocks are distinct segments (ingest already merged token deltas).
                     pendingText = pendingText
-                        ? mergeIncrementalStreamText(pendingText, block.text ?? '')
+                        ? joinDistinctTextSegments(pendingText, block.text ?? '')
                         : (block.text ?? '');
                     break;
                 case 'thinking':
@@ -616,6 +617,49 @@ export function mergeIncrementalStreamText(existing: string, incoming: string): 
     return existing + incoming;
 }
 
+/**
+ * Join two adjacent text segments of one turn. Cumulative snapshots and exact repeats merge; a
+ * distinct segment starts a new paragraph, so `asked.` + `I will read` never fuses into `asked.I`.
+ * Token deltas that carry their own whitespace still concatenate as-is.
+ */
+export function joinDistinctTextSegments(existing: string, incoming: string): string {
+    if (!incoming) {
+        return existing;
+    }
+    if (!existing) {
+        return incoming;
+    }
+    if (incoming.startsWith(existing)) {
+        return incoming;
+    }
+    if (existing.endsWith(incoming) && incoming.trim().length >= 32) {
+        return existing;
+    }
+    if (/\s$/.test(existing) || /^\s/.test(incoming)) {
+        return existing + incoming;
+    }
+    return `${existing}\n\n${incoming}`;
+}
+
+const REPEATED_FAILURE_PARAGRAPH_RE = /\bstopped:\s*repeated tool failures\b|\bfailed \d+ times with\b/i;
+
+/**
+ * Drop a failure paragraph (`Stopped: repeated tool failures…`, `X failed 3 times with…`) when the
+ * same paragraph already appears earlier in the turn, so one failure is shown once per turn.
+ */
+export function dropRepeatedFailureParagraphs(chunk: string, priorText: string): string {
+    const seen = new Set(priorText.split(/\n\n+/).map(part => part.trim()).filter(Boolean));
+    const kept: string[] = [];
+    for (const paragraph of chunk.split(/\n\n+/).map(part => part.trim()).filter(Boolean)) {
+        if (REPEATED_FAILURE_PARAGRAPH_RE.test(paragraph) && seen.has(paragraph)) {
+            continue;
+        }
+        seen.add(paragraph);
+        kept.push(paragraph);
+    }
+    return kept.join('\n\n');
+}
+
 /** Collapse exact back-to-back repetition inside one text block (e.g. `hola…hola…` with no separator). */
 export function collapseExactRepeatedText(text: string): string {
     let normalized = text.trim();
@@ -714,22 +758,21 @@ export function dedupeAgentMessageTextSegments(
         }
 
         chunk = stripLeadingParagraphsInPriorText(chunk, priorText) ?? '';
+        chunk = dropRepeatedFailureParagraphs(chunk, priorText);
         if (!chunk) {
             continue;
         }
 
         const last = result[result.length - 1];
         if (last?.type === 'text') {
-            const merged = mergeIncrementalStreamText(last.content, chunk);
-            if (merged === last.content) {
+            const joined = joinDistinctTextSegments(last.content, chunk);
+            if (joined === last.content) {
                 priorText = collectAgentMessageText(result);
                 continue;
             }
-            if (merged.startsWith(last.content)) {
-                result[result.length - 1] = { type: 'text', content: merged };
-                priorText = collectAgentMessageText(result);
-                continue;
-            }
+            result[result.length - 1] = { type: 'text', content: joined };
+            priorText = collectAgentMessageText(result);
+            continue;
         }
 
         if (result.some(entry => entry.type === 'text' && entry.content.trim() === chunk)) {

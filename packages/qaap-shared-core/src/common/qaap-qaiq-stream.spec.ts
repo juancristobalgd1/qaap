@@ -10,6 +10,7 @@ import {
     dedupeAgentMessageTextSegments,
     filterQaiqStreamMetadataLines,
     filterQaiqStreamProcessLogLines,
+    joinDistinctTextSegments,
     mergeIncrementalStreamText,
     QaapQaiqStreamAccumulator,
     stripLeadingParagraphsInPriorText,
@@ -91,6 +92,43 @@ describe('dedupeAgentMessageTextSegments', () => {
         ])).to.deep.equal([
             { type: 'text', content: once },
         ]);
+    });
+
+    it('separates distinct adjacent text segments into paragraphs', () => {
+        expect(dedupeAgentMessageTextSegments([
+            { type: 'text', content: 'I asked.' },
+            { type: 'text', content: 'I will read the file.' },
+        ])).to.deep.equal([
+            { type: 'text', content: 'I asked.\n\nI will read the file.' },
+        ]);
+    });
+
+    it('shows a repeated failure paragraph once per turn', () => {
+        const failure = 'Stopped: repeated tool failures detected.\n\n`Edit` failed 3 times with InputValidationError.';
+        expect(dedupeAgentMessageTextSegments([
+            { type: 'text', content: failure },
+            { type: 'tool', toolUseId: 't1', name: 'Edit', args: '{}', finished: true, result: 'err' },
+            { type: 'text', content: failure },
+        ])).to.deep.equal([
+            { type: 'text', content: failure },
+            { type: 'tool', toolUseId: 't1', name: 'Edit', args: '{}', finished: true, result: 'err' },
+        ]);
+    });
+});
+
+describe('joinDistinctTextSegments', () => {
+
+    it('keeps token deltas that carry their own whitespace', () => {
+        expect(joinDistinctTextSegments('Hello ', 'world')).to.equal('Hello world');
+    });
+
+    it('adopts cumulative snapshots and ignores exact repeats', () => {
+        expect(joinDistinctTextSegments('part1', 'part1 part2')).to.equal('part1 part2');
+        expect(joinDistinctTextSegments('same', 'same')).to.equal('same');
+    });
+
+    it('starts a new paragraph for a distinct segment', () => {
+        expect(joinDistinctTextSegments('asked.', 'I will read')).to.equal('asked.\n\nI will read');
     });
 });
 
