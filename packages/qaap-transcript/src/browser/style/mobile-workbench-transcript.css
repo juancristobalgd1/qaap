@@ -1730,63 +1730,8 @@ body.qaap-theme-light .theia-mobile-agent-transcript-empty-action.theia-mod-prev
     max-width: min(82%, 420px);
   }
 
-  .theia-mobile-agent-transcript-user-actions {
-    opacity: 0;
-    min-height: 12px;
-    pointer-events: none;
-  }
-
-  /* Hidden actions take no room: an invisible 28px row under every user message read as a dead
-     gap before the agent's reply. A tap on the message (focus-within) unfolds them. */
-  @media (hover: none) {
-    .theia-mobile-agent-transcript-user-wrap:not(:focus-within) .theia-mobile-agent-transcript-user-actions {
-      height: 0;
-      min-height: 0;
-      overflow: hidden;
-    }
-  }
-
-  /* With a pointer the row floats under the bubble instead of unfolding: growing from 0 to 28px
-     on hover pushed the whole transcript down under the cursor. It sits right-aligned over the
-     gap before the agent reply, whose header is left-aligned, so it covers nothing. */
-  @media (hover: hover) {
-    /* Paint containment (timeline-premium) would clip the floating row to the bubble; keep
-       layout/style containment, the row is the only thing painted outside the box. */
-    .theia-mobile-agent-transcript .theia-mobile-agent-transcript-user-wrap:not(.theia-mod-streaming) {
-      contain: layout style;
-    }
-
-    /* Lift the message over the agent identity row it floats into, or that row eats the clicks.
-       `!important` with a higher specificity than the sticky reset that pins `z-index: auto`. */
-    .theia-mobile-agent-transcript .theia-mobile-agent-transcript-user-wrap:hover,
-    .theia-mobile-agent-transcript .theia-mobile-agent-transcript-user-wrap:focus-within {
-      z-index: 2 !important;
-    }
-
-    .theia-mobile-agent-transcript-user-wrap .theia-mobile-agent-transcript-user-actions {
-      position: absolute;
-      top: 100%;
-      right: 0;
-      z-index: 1;
-      white-space: nowrap;
-      flex-wrap: nowrap;
-    }
-  }
-
   .theia-mobile-agent-transcript-user-wrap:focus {
     outline: none;
-  }
-
-  .theia-mobile-agent-transcript-user-wrap:focus-within .theia-mobile-agent-transcript-user-actions {
-    opacity: 0.82;
-    pointer-events: auto;
-  }
-
-  @media (hover: hover) {
-    .theia-mobile-agent-transcript-user-wrap:hover .theia-mobile-agent-transcript-user-actions {
-      opacity: 0.82;
-      pointer-events: auto;
-    }
   }
 
   .theia-mobile-agent-lobe-workflow-summary,
@@ -4440,4 +4385,82 @@ details > summary:focus-visible,
 
 .theia-mobile-turn-closing-report.theia-mod-done .theia-mobile-turn-closing-report-icon {
   color: var(--theia-charts-green, var(--theia-gitDecoration-addedResourceForeground));
+}
+
+/* Narrow viewports: no inline action row under user messages (it unfolded on hover/tap and
+   pushed the transcript). A long press on the bubble opens the same actions in a small menu
+   (qaap-transcript-user-message-menu.ts); the hidden buttons keep owning the handlers. */
+@media (max-width: 767px) {
+  .theia-mobile-agent-transcript .theia-mobile-agent-transcript-user-wrap .theia-mobile-agent-transcript-user-actions {
+    display: none;
+  }
+
+  .theia-mobile-agent-transcript-user-wrap .theia-mobile-agent-transcript-msg.theia-mod-user {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    transition: transform 120ms ease, filter 120ms ease;
+  }
+
+  .theia-mobile-agent-transcript-user-wrap.theia-mod-menu-open .theia-mobile-agent-transcript-msg.theia-mod-user {
+    transform: scale(0.98);
+    filter: brightness(1.15);
+  }
+}
+
+.theia-mobile-agent-transcript-user-menu {
+  position: fixed;
+  z-index: 13100;
+  display: flex;
+  flex-direction: column;
+  min-width: 168px;
+  padding: 4px;
+  border: 1px solid var(--theia-menu-border, var(--theia-widget-border));
+  border-radius: 12px;
+  background: var(--theia-menu-background);
+  color: var(--theia-menu-foreground);
+  box-shadow: 0 8px 24px var(--theia-widget-shadow);
+  font-family: inherit;
+  animation: theia-mobile-agent-transcript-user-menu-in 120ms ease-out;
+}
+
+@keyframes theia-mobile-agent-transcript-user-menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+.theia-mobile-agent-transcript-user-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: var(--q-text-body);
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.theia-mobile-agent-transcript-user-menu-item .codicon {
+  font-size: 16px;
+  color: var(--theia-descriptionForeground);
+}
+
+.theia-mobile-agent-transcript-user-menu-item:hover:not(:disabled),
+.theia-mobile-agent-transcript-user-menu-item:focus-visible:not(:disabled) {
+  background: var(--theia-menu-selectionBackground);
+  color: var(--theia-menu-selectionForeground);
+  outline: none;
+}
+
+.theia-mobile-agent-transcript-user-menu-item:disabled {
+  opacity: 0.4;
+  cursor: default;
 }

@@ -17,6 +17,7 @@ import type { MobileProjectsTranscriptMessagesContentUi } from './mobile-project
 import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
 import type { MobileProjectsTranscriptMessagesToolUi } from './mobile-projects-transcript-messages-tool-ui';
 import { createTranscriptGitActionCard } from './qaap-transcript-git-action-ui';
+import { QaapTranscriptUserMessageMenu } from './qaap-transcript-user-message-menu';
 
 export class MobileProjectsTranscriptMessagesUserUi {
     /** Pending reset timers for the user-message Copy action, keyed by button. */
@@ -103,7 +104,7 @@ export class MobileProjectsTranscriptMessagesUserUi {
         const actionsEnabled = conv.status !== 'streaming' && !msg.id.startsWith('pending-user-') && !gitActionOnly;
         const lastUserMessageId = [...conv.messages].reverse().find(message => message.role === 'user')?.id;
 
-        wrap.append(this.createTranscriptUserMessageActions({
+        const actions = this.createTranscriptUserMessageActions({
             plainText,
             canEdit: actionsEnabled,
             canUndo: actionsEnabled && !isTheiaChat,
@@ -112,7 +113,10 @@ export class MobileProjectsTranscriptMessagesUserUi {
             onCopy: () => this.copyTranscriptUserMessage(plainText),
             onRetry: () => { void this.host.retryOpenTranscriptConversation?.(); },
             onUndo: () => { void this.undoTranscriptUserMessage(msg, conv); },
-        }));
+        });
+        wrap.append(actions);
+        // Narrow viewports hide the inline row; a long press on the bubble opens these actions.
+        new QaapTranscriptUserMessageMenu(wrap, actions).attach();
         return wrap;
     }
 
