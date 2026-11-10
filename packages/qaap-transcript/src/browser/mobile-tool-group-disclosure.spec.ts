@@ -9,7 +9,7 @@ import * as path from 'path';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import type { QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { buildMobileExecutionEvents } from './mobile-execution-event-builder';
-import { createMobileToolGroupElement, mobileToolGroupStateLabel } from './mobile-execution-event-renderer';
+import { createMobileToolGroupElement, mobileToolGroupStateLabel, syncMobileNarrativeToggle } from './mobile-execution-event-renderer';
 
 describe('mobile tool group disclosure', () => {
     let disableJSDOM: (() => void) | undefined;
@@ -60,6 +60,35 @@ describe('mobile tool group disclosure', () => {
         expect(mobileToolGroupStateLabel({ hasError: true, hasPending: true })).to.equal('Failed');
         expect(mobileToolGroupStateLabel({ hasError: false, hasPending: true })).to.equal('Running');
         expect(mobileToolGroupStateLabel({ hasError: false, hasPending: false })).to.equal('Completed');
+    });
+
+    it('clamps long agent narratives behind a Show more toggle with aria-expanded', () => {
+        const host = document.createElement('section');
+        const narrative = document.createElement('p');
+        narrative.className = 'theia-mobile-execution-event-narrative theia-mod-agent';
+        narrative.textContent = '1. first step\n2. second step\n3. third step\n4. fourth step';
+        host.append(narrative);
+        syncMobileNarrativeToggle(narrative);
+        const toggle = narrative.nextElementSibling as HTMLButtonElement;
+        expect(narrative.classList.contains('theia-mod-clamped')).to.equal(true);
+        expect(toggle.textContent).to.equal('Show more');
+        expect(toggle.getAttribute('aria-expanded')).to.equal('false');
+
+        toggle.click();
+        expect(narrative.classList.contains('theia-mod-expanded')).to.equal(true);
+        expect(toggle.getAttribute('aria-expanded')).to.equal('true');
+        expect(toggle.textContent).to.equal('Show less');
+    });
+
+    it('adds no toggle for a short narrative', () => {
+        const host = document.createElement('section');
+        const narrative = document.createElement('p');
+        narrative.className = 'theia-mobile-execution-event-narrative theia-mod-agent';
+        narrative.textContent = 'Short note.';
+        host.append(narrative);
+        syncMobileNarrativeToggle(narrative);
+        expect(narrative.nextElementSibling).to.equal(null);
+        expect(narrative.classList.contains('theia-mod-clamped')).to.equal(false);
     });
 
     it('keeps a visible focus ring on the disclosure summary', () => {

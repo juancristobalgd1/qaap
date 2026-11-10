@@ -85,7 +85,7 @@ export const QaapAgentFileSection = React.memo(function QaapAgentFileSection(pro
                         aria-hidden='true'
                     />
                     <i className={props.iconClass} aria-hidden='true' />
-                    <span className='qaap-agent-changes-path'>{leadingTruncatePath(path)}</span>
+                    <span className='qaap-agent-changes-path' title={path}>{leadingTruncatePath(path)}</span>
                     {isNew && (
                         <span className='qaap-agent-changes-new-badge'>
                             {nls.localize('qaap/diff/newFile', 'New')}

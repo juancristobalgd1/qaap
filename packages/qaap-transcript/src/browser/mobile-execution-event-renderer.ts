@@ -132,6 +132,45 @@ export function attachMobileTerminalLazyOpenHandler(details: HTMLDetailsElement,
 
 // ─── Element Creation ────────────────────────────────────────────────────────
 
+const MOBILE_NARRATIVE_CLAMP_MIN_CHARS = 200;
+const MOBILE_NARRATIVE_CLAMP_MIN_LINES = 4;
+const MOBILE_NARRATIVE_TOGGLE_CLASS = 'theia-mobile-execution-event-narrative-toggle';
+
+/**
+ * Clamps a long agent narrative to three lines and adds a "Show more" / "Show less" disclosure
+ * right after it. Short narratives get no toggle and no clamp. Idempotent: call it again after
+ * the narrative text changes.
+ */
+export function syncMobileNarrativeToggle(narrative: HTMLElement): void {
+    const text = narrative.textContent ?? '';
+    const isLong = text.length > MOBILE_NARRATIVE_CLAMP_MIN_CHARS || text.split('\n').length >= MOBILE_NARRATIVE_CLAMP_MIN_LINES;
+    const next = narrative.nextElementSibling;
+    const existing = next instanceof HTMLElement && next.classList.contains(MOBILE_NARRATIVE_TOGGLE_CLASS) ? next : undefined;
+    if (!isLong) {
+        existing?.remove();
+        narrative.classList.remove('theia-mod-clamped', 'theia-mod-expanded');
+        return;
+    }
+    narrative.classList.add('theia-mod-clamped');
+    if (existing) {
+        return;
+    }
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = MOBILE_NARRATIVE_TOGGLE_CLASS;
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.textContent = nls.localize('qaap/mobileProjects/narrativeShowMore', 'Show more');
+    toggle.addEventListener('click', () => {
+        const expanded = !narrative.classList.contains('theia-mod-expanded');
+        narrative.classList.toggle('theia-mod-expanded', expanded);
+        toggle.setAttribute('aria-expanded', String(expanded));
+        toggle.textContent = expanded
+            ? nls.localize('qaap/mobileProjects/narrativeShowLess', 'Show less')
+            : nls.localize('qaap/mobileProjects/narrativeShowMore', 'Show more');
+    });
+    narrative.after(toggle);
+}
+
 export function createMobileExecutionEventElement(
     event: MobileExecutionEvent,
 ): HTMLElement {
@@ -154,6 +193,7 @@ export function createMobileExecutionEventElement(
         narrative.className = 'theia-mobile-execution-event-narrative theia-mod-agent';
         narrative.textContent = event.narrative;
         section.append(narrative);
+        syncMobileNarrativeToggle(narrative);
     }
 
     // Tool group (collapsed by default)

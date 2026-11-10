@@ -44,7 +44,8 @@
 
 /* Disclosure rows and the diff "Review" link: 44px touch area. The review link keeps its visual size and extends its hit area through ::after. */
 @media (max-width: 767px), (pointer: coarse) {
-    body .theia-mobile-tool-group-summary {
+    body .theia-mobile-tool-group-summary,
+    body .theia-mobile-execution-event-narrative-toggle {
         min-height: 44px;
     }
 
@@ -70,6 +71,12 @@
     body .theia-mobile-projects-header-project-switcher,
     body .theia-mobile-projects-header-conversations {
         min-width: 44px;
+        min-height: 44px;
+    }
+
+    /* Changes pill and Approve & Commit share the composer's changes row: 44px touch height. */
+    body .theia-mobile-sticky-composer-changes-pill,
+    body .theia-mobile-sticky-composer-commit-btn {
         min-height: 44px;
     }
 }

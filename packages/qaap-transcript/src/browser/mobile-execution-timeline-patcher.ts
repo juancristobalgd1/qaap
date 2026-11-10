@@ -52,6 +52,7 @@ import {
     createMobileToolFileDetailSpan,
     createMobileExecutionEventElement,
     mobileToolGroupStateLabel,
+    syncMobileNarrativeToggle,
 } from './mobile-execution-event-renderer';
 import { MOBILE_EXECUTION_TIMELINE_CLASS, createMobileExecutionEventTimeline } from './qaap-execution-event-timeline';
 
@@ -155,8 +156,10 @@ function patchMobileExecutionEventSection(
             narrativeEl.className = 'theia-mobile-execution-event-narrative theia-mod-agent';
             narrativeEl.textContent = next.narrative;
             section.prepend(narrativeEl);
+            syncMobileNarrativeToggle(narrativeEl);
         } else if (prev.narrative !== next.narrative) {
             narrativeEl.textContent = next.narrative;
+            syncMobileNarrativeToggle(narrativeEl);
         }
     }
 

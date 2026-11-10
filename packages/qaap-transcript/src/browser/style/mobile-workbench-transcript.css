@@ -2636,7 +2636,7 @@ body.qaap-theme-light .theia-mobile-agent-transcript-empty-action.theia-mod-prev
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding-bottom: var(--q-space-6);
+  padding-bottom: var(--q-space-4);
 }
 
 .theia-mobile-execution-event:last-child {
@@ -2651,6 +2651,38 @@ body.qaap-theme-light .theia-mobile-agent-transcript-empty-action.theia-mod-prev
   font-size: 13px;
   font-weight: 500;
   line-height: 1.6;
+}
+
+/* Agent narrative keeps its line breaks; long text clamps to three lines until "Show more". */
+.theia-mobile-execution-event-narrative.theia-mod-agent {
+  white-space: pre-line;
+}
+
+.theia-mobile-execution-event-narrative.theia-mod-clamped:not(.theia-mod-expanded) {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.theia-mobile-execution-event-narrative-toggle {
+  align-self: flex-start;
+  min-height: 28px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--theia-textLink-foreground);
+  font: inherit;
+  font-size: var(--q-text-meta);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.theia-mobile-execution-event-narrative-toggle:focus-visible {
+  outline: 2px solid var(--theia-focusBorder);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 .theia-mobile-execution-event-narrative.theia-mod-synthetic {
