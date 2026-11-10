@@ -6,6 +6,7 @@
 import * as DOMPurify from '@theia/core/shared/dompurify';
 import * as markdownit from '@theia/core/shared/markdown-it';
 import * as markdownitemoji from '@theia/core/shared/markdown-it-emoji';
+import { normalizeChatMarkdownListBreaks } from './qaap-chat-markdown-list-normalize';
 
 /** Plain-text streaming is enough below this size when no fences/formatting are present. */
 export const QAAP_CHAT_MARKDOWN_PLAIN_MAX_CHARS = 480;
@@ -79,7 +80,7 @@ export function sanitizeChatMarkdownHtml(html: string): string {
 }
 
 export function renderChatMarkdownHtml(markdown: string, skipSurroundingParagraph = false): string {
-    const rendered = getSharedChatMarkdownIt().render(markdown);
+    const rendered = getSharedChatMarkdownIt().render(normalizeChatMarkdownListBreaks(markdown));
     const html = skipSurroundingParagraph
         ? rendered.replace(/^<p>|<\/p>|<p><\/p>$/g, '')
         : rendered;
