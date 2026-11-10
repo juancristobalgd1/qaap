@@ -83,6 +83,7 @@ export type MobileProjectsTranscriptLiveUiContextMember =
     | 'transcriptComposerActivityTimer'
     | 'transcriptDevPreviewBootstrapConversationId'
     | 'transcriptLiveController'
+    | 'transcriptRefetchThrottle'
     | 'transcriptPreviewFailureReportedFor'
     | 'transcriptPreviewOfferAnnouncedUrl'
     | 'transcriptPreviewOfferTimer'

@@ -438,13 +438,31 @@ export function ensureTranscriptConversationRefreshExtracted(ctx: MobileProjects
             void ctx.refreshOpenTranscriptConversation({ forcePoll: true });
             return;
         }
-        controller.ensureActivePoll();
         const liveStatus = ctx.host.transcriptLastConv?.status ?? context.summary.status;
-        if (liveStatus !== 'streaming') {
+        if (liveStatus === 'streaming') {
+            controller.ensureActivePoll();
+            ctx.host.transcriptScheduleRefresh();
+            return;
+        }
+        // Settled turn: every detail tick used to force a GET and re-arm the submit grace poll. Now a
+        // settled conversation refetches only when its visible state changed, at most once per throttle
+        // window. Pending visual evidence or interactive approvals keep the forced refresh.
+        const conv = ctx.host.transcriptLastConv;
+        const needsLiveRefresh = context.summary.visualVerificationPending === true
+            || (conv !== undefined && conversationUsesInteractiveApprovals(conv));
+        if (needsLiveRefresh) {
+            controller.ensureActivePoll();
             void ctx.refreshOpenTranscriptConversation({ forcePoll: true });
             return;
         }
-        ctx.host.transcriptScheduleRefresh();
+        const conversationId = context.summary.id;
+        const stateKey = `${liveStatus}|${conv?.updatedAt ?? context.summary.updatedAt}`;
+        const throttle = ctx.transcriptRefetchThrottle;
+        if (!throttle.hasStateChanged(conversationId, stateKey) || throttle.delayMs(conversationId) > 0) {
+            return;
+        }
+        throttle.markIssued(conversationId, stateKey);
+        void ctx.refreshOpenTranscriptConversation({ forcePoll: true });
 }
 
 export function scheduleTranscriptVisualVerificationPollExtracted(ctx: MobileProjectsTranscriptLiveUiContext, conversationId: string): void {

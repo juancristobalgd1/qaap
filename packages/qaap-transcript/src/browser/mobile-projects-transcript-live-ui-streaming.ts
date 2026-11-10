@@ -62,7 +62,7 @@ export function applyTranscriptSseRenderExtracted(ctx: MobileProjectsTranscriptL
         ctx.host.transcriptLastFingerprint = mergeConversationTranscriptFingerprint(prevConv, renderConv);
         ctx.cacheTranscriptConversation(renderConv);
         if (agentMessageHasVisualVerificationMarker(eventMessage)) {
-            void ctx.refreshOpenTranscriptConversation({ forcePoll: true });
+            ctx.scheduleSseDeltaResync();
         }
         return;
     }
