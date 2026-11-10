@@ -19,9 +19,6 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 import { shouldOpenTranscriptToolDetails as shouldOpenTranscriptToolDetailsSegment } from '../common/qaap-agent-transcript-segments';
 import { isTranscriptErrorOutput, isTranscriptTerminalOutputText } from '@theia/qaap-shared-core/lib/common/qaap-transcript-content-display';
-import {
-    registerDeferredTranscriptMarkdown,
-} from './qaap-transcript-row-defer';
 import type { QaapAgentMessageDTO, QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     isTranscriptWebSearchTool,
@@ -45,10 +42,7 @@ export function renderTranscriptRichContentExtracted(ctx: MobileProjectsTranscri
         host.classList.add('theia-mod-markdown');
         if (options?.sync) {
             if (options.defer) {
-                host.classList.add('theia-mod-deferred-markdown');
-                const excerpt = clean.length > 180 ? `${clean.slice(0, 180).trimEnd()}…` : clean;
-                host.textContent = excerpt;
-                registerDeferredTranscriptMarkdown({ host, content: clean, streaming: options.streaming });
+                ctx.contentUi.renderTranscriptDeferredMarkdown(host, clean, options.streaming);
                 return;
             }
             ctx.contentUi.renderTranscriptMarkdownImmediate(host, clean);
