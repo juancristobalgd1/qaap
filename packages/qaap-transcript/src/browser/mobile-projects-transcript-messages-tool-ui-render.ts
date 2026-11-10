@@ -300,13 +300,11 @@ export function createTranscriptAgentAuthLoginCardExtracted(ctx: MobileProjectsT
                 'qaap/mobileProjects/authLoginUrlHint',
                 'Open the sign-in page, authorize the agent, then retry this task.',
             );
-        } else {
-            hint.textContent = nls.localize(
-                'qaap/mobileProjects/authLoginTerminalHint',
-                'Open the agent terminal to complete sign-in (same as the agent TUI), then retry.',
-            );
         }
-        card.append(hint);
+        // Terminal sign-in is already described by the turn failure message: one description only.
+        if (challenge.url) {
+            card.append(hint);
+        }
 
         if (challenge.userCode) {
             const codeRow = document.createElement('div');
@@ -385,6 +383,9 @@ export function createTranscriptAgentAuthLoginCardExtracted(ctx: MobileProjectsT
                     options.agentLabel,
                 )
                 : nls.localize('qaap/mobileProjects/authLoginOpenTerminal', 'Sign in in terminal');
+            if (!challenge.url) {
+                terminalBtn.classList.add('theia-mod-primary');
+            }
             terminalBtn.addEventListener('click', event => {
                 event.stopPropagation();
                 event.preventDefault();

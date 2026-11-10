@@ -41,3 +41,18 @@
         inset: -10px;
     }
 }
+
+/* Controls whose component rules (0,1,0) load after this sheet and set a smaller min-height:
+   the 44px floor is scoped under body so it wins the cascade. Icon controls keep their visual size. */
+@media (max-width: 767px), (pointer: coarse) {
+    body .theia-mobile-agent-transcript-user-action,
+    body .theia-mobile-projects-sticky-composer-send,
+    body .theia-mobile-projects-sticky-composer-attach,
+    body .theia-mobile-projects-sticky-composer-agent,
+    body .theia-mobile-transcript-tab-icon-select,
+    body .theia-mobile-projects-header-project-switcher,
+    body .theia-mobile-projects-header-conversations {
+        min-width: 44px;
+        min-height: 44px;
+    }
+}

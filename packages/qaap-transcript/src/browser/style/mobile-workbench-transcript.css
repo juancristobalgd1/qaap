@@ -4040,6 +4040,8 @@ body.theia-dark .theia-mobile-agent-web-search,
   align-items: flex-end;
   gap: 6px;
   border-style: dashed;
+  border-color: var(--theia-descriptionForeground, var(--theia-foreground));
+  background: color-mix(in srgb, var(--theia-foreground) 6%, var(--theia-editor-background, transparent));
 }
 
 /* Dim only the message text: the Send now / Cancel actions live in the row header and must stay at full strength. */
@@ -4101,8 +4103,8 @@ body.theia-dark .theia-mobile-agent-web-search,
 }
 
 .theia-mobile-agent-transcript-queued-paused-hint {
-  font-size: 11px;
-  color: var(--theia-descriptionForeground, var(--theia-foreground));
+  font-size: var(--q-text-meta, 13px);
+  color: var(--theia-foreground);
   white-space: nowrap;
 }
 
@@ -4113,6 +4115,7 @@ body.theia-dark .theia-mobile-agent-web-search,
 }
 
 .theia-mobile-agent-transcript-queued-action {
+  font-family: inherit;
   display: inline-flex;
   align-items: center;
   gap: 4px;
