@@ -166,7 +166,11 @@ function sleepUnlessAborted(ms: number, signal?: AbortSignal): Promise<void> {
 }
 
 /** `signal` aborts the in-flight probe; an aborted probe resolves to the not-ready fallback. */
-export async function probeQaapDevPreviewPort(port: number, signal?: AbortSignal): Promise<QaapDevPreviewProbeResponse> {
+/**
+ * `root` (a project root URI) asks the backend whether an unclaimed listener runs inside it; the
+ * answer comes back as `listenerInRoot`.
+ */
+export async function probeQaapDevPreviewPort(port: number, signal?: AbortSignal, root?: string): Promise<QaapDevPreviewProbeResponse> {
     const origin = getQaapPublicOrigin();
     const fallback: QaapDevPreviewProbeResponse = {
         ready: false,
@@ -176,7 +180,8 @@ export async function probeQaapDevPreviewPort(port: number, signal?: AbortSignal
         return fallback;
     }
     try {
-        const response = await fetch(`${origin}${QAAP_DEV_PREVIEW_PROBE_PATH}/${port}`, {
+        const query = root ? `?root=${encodeURIComponent(root)}` : '';
+        const response = await fetch(`${origin}${QAAP_DEV_PREVIEW_PROBE_PATH}/${port}${query}`, {
             cache: 'no-store',
             signal: probeSignal(signal),
         });
@@ -188,6 +193,7 @@ export async function probeQaapDevPreviewPort(port: number, signal?: AbortSignal
             ready: !!body.ready,
             readiness: body.ready ? 'transport_ready' : body.readiness === 'failed' ? 'failed' : undefined,
             ...(!body.ready && body.listening === true ? { listening: true } : {}),
+            ...(typeof body.listenerInRoot === 'boolean' ? { listenerInRoot: body.listenerInRoot } : {}),
             previewUrl: body.previewUrl || fallback.previewUrl,
             previewId: typeof body.previewId === 'string' ? body.previewId : undefined,
             workspaceId: typeof body.workspaceId === 'string' ? body.workspaceId : undefined,

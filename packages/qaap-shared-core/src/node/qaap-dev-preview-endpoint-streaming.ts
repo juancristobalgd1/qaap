@@ -24,6 +24,7 @@ import { PREVIEW_RESERVATION_START_GRACE_MS } from './qaap-dev-preview-endpoint'
 import { classifyQaapPreviewProbeState, probeQaapPreviewPidLiveness, releaseStoppedPreviewExtracted } from './qaap-dev-preview-process-liveness';
 import { PREVIEW_REAPER_INTERVAL_MS } from './qaap-dev-preview-endpoint';
 import type { QaapDevPreviewEndpointContext } from './qaap-dev-preview-endpoint-context';
+import { resolveListenerInRootExtracted } from './qaap-dev-preview-endpoint-render';
 
 /** Longest gap between two `[qaap-preview] current claim` logs for an unchanged claim. */
 export const CURRENT_CLAIM_LOG_MAX_SILENCE_MS = 60_000;
@@ -288,10 +289,20 @@ export async function handleProbeExtracted(ctx: QaapDevPreviewEndpointContext, r
             res.json(body);
             return;
         }
+        // No claim names this listener: on request, say whether it runs inside the caller's project
+        // root (its process cwd), the identity evidence an attach needs to adopt it. Only where
+        // every local process is the caller's (local skip-auth, a single-tenant runtime): on a shared
+        // host the yes/no would describe another tenant's process.
+        const rootParam = typeof req.query.root === 'string' ? req.query.root : undefined;
+        const listenerEvidenceAllowed = ctx.auth.authenticate(req).kind === 'skip' || ctx.ownsUnclaimedPorts(login);
+        const listenerInRoot = ready && !record && rootParam && listenerEvidenceAllowed
+            ? resolveListenerInRootExtracted(ctx, port, login, rootParam)
+            : undefined;
         const body: QaapDevPreviewProbeResponse = {
             ready,
             ...(ready ? { readiness: 'transport_ready' as const } : {}),
             ...(listening ? { listening } : {}),
+            ...(listenerInRoot !== undefined ? { listenerInRoot } : {}),
             previewUrl: buildQaapDevPreviewOpenUrl(origin, port),
         };
         res.json(body);

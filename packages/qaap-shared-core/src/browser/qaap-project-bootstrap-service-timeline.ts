@@ -422,8 +422,17 @@ export async function tryAttachToExistingServerExtracted(ctx: QaapProjectBootstr
             // then adopts that owner-claimed listener into this project's next reservation
             // (`adopted listener explicitly claimed by its owner`), so the foreign app was served
             // as this preview while this project's own server never ran.
-            let probe = await probeQaapDevPreviewPort(port);
-            if (!isAttributableProbe(ctx, probe)) {
+            const projectRoot = (ctx.activeWorkspaceRoot ?? ctx._descriptor?.rootUri)?.toString();
+            let probe = await probeQaapDevPreviewPort(port, undefined, projectRoot);
+            if (isUnclaimedListenerOfThisProject(probe)) {
+                // No identity yet, but the listener's own cwd is inside this project (the user's
+                // `npm run dev` in a terminal, or a subfolder app): adopt it under a claim.
+                await ctx.previewPortClaimService.claim(port);
+                probe = await probeQaapDevPreviewPort(port);
+                if (!probe.ready || (probe.projectId !== undefined && !ctx.probeBelongsToActiveProject(probe.projectId))) {
+                    continue;
+                }
+            } else if (!isAttributableProbe(ctx, probe)) {
                 if (probe.ready && probe.projectId === undefined) {
                     continue;
                 }
@@ -454,6 +463,11 @@ export async function tryAttachToExistingServerExtracted(ctx: QaapProjectBootstr
             return true;
         }
         return false;
+}
+
+/** A ready listener with no claim whose processes all run inside this project's root (`?root=`). */
+function isUnclaimedListenerOfThisProject(probe: QaapDevPreviewProbeResponse): boolean {
+    return probe.ready && probe.projectId === undefined && probe.listenerInRoot === true;
 }
 
 /**

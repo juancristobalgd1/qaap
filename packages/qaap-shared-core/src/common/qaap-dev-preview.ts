@@ -63,6 +63,11 @@ export interface QaapDevPreviewProbeResponse {
      * answer), so the dev server's state is unknown. Never sent by the backend.
      */
     readonly probeFailed?: boolean;
+    /**
+     * Unclaimed ready listener, probed with `?root=`: whether every process listening on the port
+     * runs inside that root (by its working directory). Absent without `root` or with a claim.
+     */
+    readonly listenerInRoot?: boolean;
     /** URL the mini-browser should load via the same-origin `/qaap-dev/:port/` proxy. */
     readonly previewUrl: string;
     readonly previewId?: string;

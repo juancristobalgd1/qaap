@@ -102,6 +102,29 @@ describe('QaapProjectBootstrapService attach to an existing server', () => {
         expect(recorded).to.deep.equal([3001]);
     });
 
+    const withRoot = (ctx: QaapProjectBootstrapServiceContext): QaapProjectBootstrapServiceContext =>
+        Object.assign(ctx, { activeWorkspaceRoot: { toString: () => 'file:///workspace/app' } });
+
+    it('adopts an unclaimed listener whose process runs inside this project, under a claim', async () => {
+        const fetchCalls = stubProbe(
+            { ready: true, previewUrl: '/qaap-dev/5173/', listenerInRoot: true },
+            { ready: true, previewUrl: '/qaap-dev/5173/' },
+        );
+        const { ctx, claims, recorded } = makeCtx();
+        expect(await timeline.tryAttachToExistingServerExtracted(withRoot(ctx), [5173])).to.equal(true);
+        expect(String(fetchCalls.firstCall.args[0])).to.include(`?root=${encodeURIComponent('file:///workspace/app')}`);
+        expect(claims).to.deep.equal([5173]);
+        expect(recorded).to.deep.equal([5173]);
+    });
+
+    it('refuses an unclaimed listener running outside this project, and never claims it', async () => {
+        stubProbe({ ready: true, previewUrl: '/qaap-dev/3000/', listenerInRoot: false });
+        const { ctx, claims, recorded } = makeCtx();
+        expect(await timeline.tryAttachToExistingServerExtracted(withRoot(ctx), [3000])).to.equal(false);
+        expect(claims).to.deep.equal([]);
+        expect(recorded).to.deep.equal([]);
+    });
+
     it('skips the foreign expected port and attaches to the project\'s own port in the same sweep', async () => {
         const fetchCalls = stubProbe({});
         fetchCalls.callsFake(async (input: RequestInfo | URL) => {
