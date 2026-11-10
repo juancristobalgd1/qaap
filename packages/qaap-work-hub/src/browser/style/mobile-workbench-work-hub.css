@@ -14827,3 +14827,8 @@ body.theia-mod-work-hub-settings-resizing * {
     box-sizing: border-box;
   }
 }
+
+/* Belt and braces: never show the preview toolbar skeleton next to the real promoted toolbar. */
+.theia-mobile-execution-surface-sidebar-header > .qaap-agent-preview-embedded-toolbar:not(.qaap-mod-preview-toolbar-skeleton) ~ .qaap-mod-preview-toolbar-skeleton {
+  display: none;
+}

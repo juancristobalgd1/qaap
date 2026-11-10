@@ -331,7 +331,12 @@ function promoteExecutionSurfaceSidebarToolbarExtracted(sidebar: MobileProjectsE
     const header = sidebar.element?.querySelector<HTMLElement>('.theia-mobile-execution-surface-sidebar-header');
     const close = header?.querySelector<HTMLElement>('.theia-mobile-execution-surface-sidebar-close');
     const toolbar = activeHost && resolveExecutionSurfaceSidebarToolbarHostExtracted(sidebar.activeTab, activeHost);
-    syncExecutionSurfacePreviewToolbarSkeletonExtracted(header, close, sidebar.activeTab === 'preview' && !toolbar?.parentNode);
+    // Once promoted, the real toolbar lives in the header, not in the surface host: look there too,
+    // or the skeleton was re-added next to it (duplicated, greyed-out controls).
+    const headerHasRealToolbar = !!header?.querySelector(
+        `:scope > .qaap-agent-preview-embedded-toolbar:not(.${PREVIEW_TOOLBAR_SKELETON_CLASS})`);
+    syncExecutionSurfacePreviewToolbarSkeletonExtracted(header, close,
+        sidebar.activeTab === 'preview' && !toolbar?.parentNode && !headerHasRealToolbar);
     if (!header || !close || !toolbar?.parentNode) {
         return;
     }
@@ -356,6 +361,7 @@ function promoteExecutionSurfaceSidebarToolbarExtracted(sidebar: MobileProjectsE
     toolbar.classList.add('theia-mobile-execution-surface-sidebar-toolbar');
     header.insertBefore(toolbar, actionsAnchor);
     sidebar.toolbarHost = toolbar;
+    syncExecutionSurfacePreviewToolbarSkeletonExtracted(header, close, false);
 }
 
 const PREVIEW_TOOLBAR_SKELETON_CLASS = 'qaap-mod-preview-toolbar-skeleton';
