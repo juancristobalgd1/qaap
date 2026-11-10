@@ -2,7 +2,7 @@ import type { MobileClosingNarrativeAction } from './mobile-projects-transcript-
 import type { MobileProjectsTranscriptMessagesArtifactsUiContext } from './mobile-projects-transcript-messages-artifacts-ui-context';
 import { resolveAgentMessageTiming } from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
 import { stripQaapControlMarkersForDisplay } from '@theia/qaap-shared-core/lib/common/qaap-agent-message-content';
-import { MOBILE_CLOSING_TEXT_ERROR_PREFIX } from './mobile-projects-transcript-messages-artifacts-ui-constants';
+import { MOBILE_CLOSING_TEXT_ERROR_PREFIX, MOBILE_START_FAILURE_TEXT_PREFIX } from './mobile-projects-transcript-messages-artifacts-ui-constants';
 // Extracted from mobile-projects-transcript-messages-artifacts-ui.ts
 
 import { type QaapAgentConversationDTO, type QaapAgentMessageDTO, type QaapAgentMessageSegmentDTO, cancelConversationRun, resolveRunUserMessageId } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
@@ -443,6 +443,10 @@ export function resolveMobileClosingNarrativeActionExtracted(ctx: MobileProjects
             // Same message the failure dialog renders — skip the duplicate
             // instead of showing it twice.
             return { kind: 'skip' };
+        }
+        if (MOBILE_START_FAILURE_TEXT_PREFIX.test(text)) {
+            // The agent never started, so this line is the failure itself: a styled error card, not a reply.
+            return { kind: 'error-card', message: normalizedText };
         }
         if (isError && MOBILE_CLOSING_TEXT_ERROR_PREFIX.test(text)) {
             // A distinct error-derived closing line with no corresponding

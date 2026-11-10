@@ -1306,7 +1306,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public killAgentProcessTree(child: ChildProcess,
-        options?: { readonly escalateAfterMs?: number; readonly onGracePeriodElapsed?: () => void },): NodeJS.Timeout | undefined {
+        options?: { readonly escalateAfterMs?: number; readonly onGracePeriodElapsed?: () => void; readonly onSignalFailed?: () => void },): NodeJS.Timeout | undefined {
         return killAgentProcessTreeExtracted(this, child, options);
     }
 
@@ -1939,6 +1939,10 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     /** @internal Whether the harness plugin of a task reported in through the gate's `/arm`. */
     isToolGateArmed(taskId: string): boolean {
         return this.toolGateTokens?.isArmed(taskId) ?? false;
+    }
+
+    toolGateWired(): boolean {
+        return !!this.toolGateTokens && !!this.helperApiUrl;
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */

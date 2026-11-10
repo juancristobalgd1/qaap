@@ -44,7 +44,6 @@ import {
     QAAP_WORK_HUB_SEARCH_COMMAND,
 } from '../common/qaap-work-hub-command-palette';
 import { CommonCommands } from '@theia/core/lib/browser/common-commands';
-import { writeStoredComposerSurface } from '@theia/qaap-composer/lib/common/qaap-composer-surface';
 import {
     EXPLORER_VIEW_CONTAINER_ID,
     isMiniBrowserPreviewWidgetId,
@@ -583,7 +582,6 @@ export async function toggleMobileAgentSheetExtracted(ctx: MobileOneColumnShellC
     const project = await ctx.resolveCurrentProjectForAgent();
     if (project) {
         const cwd = ctx.projectsService.getProjectCwd(project);
-        writeStoredComposerSurface(cwd, 'chat');
         ctx.projectsPanel?.preferComposerSurface('chat', cwd);
     }
     // Mobile "Agent" opens Theia AI Chat in the right sheet.

@@ -21,6 +21,7 @@ import {
 import type { QaapDevPreviewRecord } from './qaap-dev-preview-port-registry';
 import { buildQaapPreviewUpstreamHeaders, sanitizeQaapPreviewResponseHeaders } from './qaap-dev-preview-forward-headers';
 import { PREVIEW_RESERVATION_START_GRACE_MS } from './qaap-dev-preview-endpoint';
+import { classifyQaapPreviewProbeState, probeQaapPreviewPidLiveness, releaseStoppedPreviewExtracted } from './qaap-dev-preview-process-liveness';
 import { PREVIEW_REAPER_INTERVAL_MS } from './qaap-dev-preview-endpoint';
 import type { QaapDevPreviewEndpointContext } from './qaap-dev-preview-endpoint-context';
 
@@ -62,16 +63,12 @@ export function shouldLogCurrentClaim(fields: CurrentClaimLogFields, now: number
     return true;
 }
 
-export function isPreviewProcessDeadExtracted(ctx: QaapDevPreviewEndpointContext, record: { readonly osProcessId?: number }): boolean {
+export function isPreviewProcessDeadExtracted(ctx: QaapDevPreviewEndpointContext, record: { readonly osProcessId?: number; readonly osProcessFingerprint?: string }): boolean {
         if (record.osProcessId === undefined) {
             return false;
         }
-        try {
-            process.kill(record.osProcessId, 0);
-            return false;
-        } catch (err) {
-            return (err as NodeJS.ErrnoException)?.code === 'ESRCH';
-        }
+        // Same identity rule as previewPidLiveness: a reused pid of another process is a dead claim.
+        return probeQaapPreviewPidLiveness(record.osProcessId, undefined, { fingerprint: record.osProcessFingerprint }) === 'dead';
 }
 
 export function nextAllocationCandidateExtracted(ctx: QaapDevPreviewEndpointContext, preferredPort: number, offset: number): number {
@@ -102,7 +99,8 @@ export function handleReleaseExtracted(ctx: QaapDevPreviewEndpointContext, req: 
         // Kill the dev server before releasing the claim (mirrors supersedeConversationPreviews),
         // otherwise it keeps listening on the now-unclaimed port — the VPS orphan-process path.
         ctx.terminatePreviewProcess(record);
-        ctx.portRegistry.releasePreview(previewId, owner);
+        // The port stays claimed until the dev server is confirmed gone; the reaper releases it after that.
+        releaseStoppedPreviewExtracted(ctx, record);
         console.info('[qaap-preview] released', { previewId, ownerLogin: owner, port: record.port });
         res.sendStatus(204);
 }
@@ -179,6 +177,11 @@ export async function reapStoppedPreviewsExtracted(ctx: QaapDevPreviewEndpointCo
                 // the port answers — a recycled port would otherwise keep a zombie record alive.
                 // The UI probes while showing loading/error. Use the immutable reservation age,
                 // not touchedAt, so those probes cannot keep a dead listener registered forever.
+                // A live process keeps its registration however quiet its port is: only a dead pid (or an unknown
+                // liveness with a silent port past the grace) may be released.
+                if (ctx.previewPidLiveness(record) === 'alive') {
+                    continue;
+                }
                 if (!ctx.isPreviewProcessDead(record)
                     && (now - record.claimedAt < PREVIEW_RESERVATION_START_GRACE_MS
                         || (await ctx.probeLocalDevServerState(record.port)) !== 'down')) {
@@ -321,7 +324,7 @@ export async function handleCurrentProjectPreviewExtracted(ctx: QaapDevPreviewEn
         }
         const withinStartGrace = Date.now() - record.claimedAt < PREVIEW_RESERVATION_START_GRACE_MS;
         // A server still compiling (`busy`) is alive: only a silent port releases the claim.
-        if (!withinStartGrace && state === 'down') {
+        if (!withinStartGrace && state === 'down' && ctx.previewPidLiveness(record) !== 'alive') {
             ctx.portRegistry.releasePreview(record.previewId, login);
             res.json({ ready: false, previewUrl: '' } satisfies QaapDevPreviewProbeResponse);
             return;
@@ -355,9 +358,12 @@ export async function handleIdentityProbeExtracted(ctx: QaapDevPreviewEndpointCo
         }
         const ready = await ctx.probeLocalDevServer(record.port);
         // Additive `state` lets the Work Hub tell a claim still booting from a dev server that stopped.
-        const state = ready
-            ? 'ready' as const
-            : Date.now() - record.claimedAt < PREVIEW_RESERVATION_START_GRACE_MS ? 'booting' as const : 'stopped' as const;
+        // A dead pid is stopped at once (also after a backend restart); a live pid is booting, never stopped.
+        const state = classifyQaapPreviewProbeState({
+            ready,
+            withinStartGrace: Date.now() - record.claimedAt < PREVIEW_RESERVATION_START_GRACE_MS,
+            liveness: ctx.previewPidLiveness(record),
+        });
         res.json({
             ready,
             ...(ready ? { readiness: 'transport_ready' as const } : {}),

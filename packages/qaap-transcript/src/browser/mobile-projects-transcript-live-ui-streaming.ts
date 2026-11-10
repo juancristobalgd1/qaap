@@ -357,11 +357,34 @@ export function relaunchPendingTranscriptPreviewAfterSettleExtracted(ctx: Mobile
     if (action === 'clear') {
         // The turn ended (failed, cancelled, or no launcher) and nothing will resolve the request:
         // without this the "Starting preview…" chip spins forever (QA: >4 min after the turn).
-        ctx.host.transcriptPreviewRequestPending = false;
-        ctx.host.transcriptPreviewRequestRunning = false;
-        ctx.host.transcriptStickyComposerUi.refreshComposerActivityStack();
-        ctx.host.transcriptHeaderUi.refreshTranscriptExecutionChrome();
+        clearTranscriptPreviewRequestExtracted(ctx);
     }
+}
+
+/**
+ * Drops a chat preview request: the chip falls back to "Run app" and the stall watchdog stops.
+ * Used when the turn failed or was stopped and nothing else will resolve the request.
+ */
+export function clearTranscriptPreviewRequestExtracted(ctx: MobileProjectsTranscriptLiveUiContext): void {
+    ctx.previewStartingWatchdog.disarm();
+    ctx.host.transcriptPreviewRequestPending = false;
+    ctx.host.transcriptPreviewRequestRunning = false;
+    ctx.host.transcriptStickyComposerUi.refreshComposerActivityStack();
+    ctx.host.transcriptHeaderUi.refreshTranscriptExecutionChrome();
+}
+
+/**
+ * The watchdog found a chat request with no URL and no progress for the stall timeout: retire it
+ * the same way a settled turn does. A request a Qaap launch owns (`requestRunning`) is left alone.
+ */
+export function onTranscriptPreviewStartStalledExtracted(ctx: MobileProjectsTranscriptLiveUiContext): void {
+    if (!ctx.host.transcriptPreviewRequestPending || ctx.host.transcriptPreviewRequestRunning) {
+        return;
+    }
+    if (ctx.host.transcriptOpenProject?.previewUrl) {
+        return;
+    }
+    clearTranscriptPreviewRequestExtracted(ctx);
 }
 
 export async function finalizeTranscriptDevPreviewAfterSettleExtracted(ctx: MobileProjectsTranscriptLiveUiContext): Promise<void> {
@@ -384,6 +407,8 @@ export function maybeActivateTranscriptDevPreviewExtracted(ctx: MobileProjectsTr
 
 export function ensureTranscriptDevPreviewWatchExtracted(ctx: MobileProjectsTranscriptLiveUiContext, conv: QaapAgentConversationDTO,
     options?: { readonly restartPreviewPoll?: boolean },): void {
+    // Every conversation refresh is progress for a pending chat preview request.
+    ctx.previewStartingWatchdog.progress();
     if (conversationRequestsDevPreview(conv) || conversationAwaitingDevPreview(conv)) {
         ctx.kickoffTranscriptDevPreviewBootstrap(conv);
     }
@@ -408,6 +433,7 @@ export function onTranscriptUserMessageSubmittedExtracted(ctx: MobileProjectsTra
         // A chat request only waits on the agent turn; no Qaap launch runs it. `Running` would mark
         // it as owned by a launch, so the settle relaunch/clear never fired and the chip stuck.
         ctx.host.transcriptPreviewRequestRunning = false;
+        ctx.previewStartingWatchdog.arm();
     }
     if (!ctx.host.transcriptPreviewSuppressedByUser) {
         ctx.ensureTranscriptDevPreviewWatch(conv, { restartPreviewPoll: true });

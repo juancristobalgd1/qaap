@@ -255,6 +255,40 @@ describe('MobileProjectsBackgroundTaskUi', () => {
         expect((await createSession('worktree', 'qaap/worktree/a')).snackbar).to.equal(undefined);
     });
 
+    describe('create idempotency key', () => {
+        function uiWithIds(): { ui: { createRequestIdFor(cwd: string, draft: string): string; pendingCreate: unknown }; minted: string[] } {
+            const minted: string[] = [];
+            const ui = Object.create(MobileProjectsBackgroundTaskUi.prototype) as unknown as { createRequestIdFor(cwd: string, draft: string): string; pendingCreate: unknown; newClientRequestId: () => string };
+            ui.newClientRequestId = () => {
+                const id = `req-${minted.length + 1}`;
+                minted.push(id);
+                return id;
+            };
+            return { ui, minted };
+        }
+
+        it('reuses the key of an unfinished create for the same draft and project', () => {
+            const { ui, minted } = uiWithIds();
+            const first = ui.createRequestIdFor('/repo', 'Fix the login bug');
+            expect(ui.createRequestIdFor('/repo', 'Fix the login bug')).to.equal(first);
+            expect(minted).to.have.length(1);
+        });
+
+        it('mints a new key for another draft or another project', () => {
+            const { ui } = uiWithIds();
+            const first = ui.createRequestIdFor('/repo', 'Fix the login bug');
+            expect(ui.createRequestIdFor('/repo', 'Write the release notes')).to.not.equal(first);
+            expect(ui.createRequestIdFor('/other', 'Write the release notes')).to.not.equal(ui.createRequestIdFor('/repo', 'Fix the login bug'));
+        });
+
+        it('mints a new key once the create finished and the pending one is cleared', () => {
+            const { ui } = uiWithIds();
+            const first = ui.createRequestIdFor('/repo', 'Fix the login bug');
+            ui.pendingCreate = undefined;
+            expect(ui.createRequestIdFor('/repo', 'Fix the login bug')).to.not.equal(first);
+        });
+    });
+
     describe('dirty shared workspace on a new task', () => {
         function dirtyResponse(): Response {
             const body = { code: 'dirty_workspace', files: ['README.md', 'hello.txt'], total: 2 };

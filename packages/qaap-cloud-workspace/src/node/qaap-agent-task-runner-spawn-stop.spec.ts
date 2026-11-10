@@ -94,6 +94,7 @@ function createSpawnHarness(
         applyToolGateEnv: (env: NodeJS.ProcessEnv): void => {
             env.QAAP_GATE_TOKEN = 'gate-token';
         },
+        toolGateWired: (): boolean => false,
         spawnAgentCommand,
         finishTask,
         persist: (): Promise<void> => Promise.resolve(),

@@ -29,6 +29,7 @@ import { parseQaapPreviewHostLabel, resolveQaapIsolatedParentOrigin, resolveQaap
 import { canSignalProcessGroup, isSelfOrUnsafeSignalTarget, terminateListenersOnPort } from './qaap-dev-preview-port-listener';
 import { PREVIEW_RESERVATION_START_GRACE_MS, canonicalizeQaapPreviewRoot, parseClaimOsProcessId } from './qaap-dev-preview-endpoint';
 import { PREVIEW_PORT_ALLOCATION_ATTEMPTS } from './qaap-dev-preview-endpoint';
+import { releaseStoppedPreviewExtracted } from './qaap-dev-preview-process-liveness';
 import type { QaapDevPreviewAllocation, QaapDevPreviewEndpointContext } from './qaap-dev-preview-endpoint-context';
 import type { QaapDevPreviewRecord } from './qaap-dev-preview-port-registry';
 
@@ -420,7 +421,7 @@ export async function handleProcessClaimExtracted(ctx: QaapDevPreviewEndpointCon
                 root: canonicalRoot,
             });
             ctx.terminatePreviewProcess(existing);
-            ctx.portRegistry.releasePreview(existing.previewId, owner);
+            releaseStoppedPreviewExtracted(ctx, { ...existing, ownerLogin: owner });
         } else {
             if (!ctx.isPreviewProcessDead(existing) && (await ctx.probeLocalDevServerState(existing.port)) !== 'down') {
                 if (osProcessId !== undefined) {
@@ -473,7 +474,7 @@ export async function handleProcessClaimExtracted(ctx: QaapDevPreviewEndpointCon
             // Same identity re-claimed while its dev server is not answering yet: the link the user
             // already holds must keep resolving once the server is up, so keep the access token.
             ctx.terminatePreviewProcess(existing);
-            ctx.portRegistry.releasePreview(existing.previewId, owner, { keepAccessToken: true });
+            releaseStoppedPreviewExtracted(ctx, { ...existing, ownerLogin: owner }, { keepAccessToken: true });
         }
     }
 
@@ -508,7 +509,7 @@ export async function handleProcessClaimExtracted(ctx: QaapDevPreviewEndpointCon
             return;
         }
         ctx.terminatePreviewProcess(record);
-        ctx.portRegistry.releasePreview(record.previewId, owner);
+        releaseStoppedPreviewExtracted(ctx, { ...record, ownerLogin: owner });
     }
 
     // One dev server per project working copy, shared by every conversation of the owner: a live
@@ -762,7 +763,7 @@ export function supersedeConversationPreviewsExtracted(ctx: QaapDevPreviewEndpoi
         // on the claimed port. Terminal-spawned previews rarely record osProcessId; leaving
         // those listeners alive after release was the VPS orphan path (claim gone, process live).
         ctx.terminatePreviewProcess(record);
-        ctx.portRegistry.releasePreview(record.previewId, record.ownerLogin);
+        releaseStoppedPreviewExtracted(ctx, record);
         console.info('[qaap-preview] superseded previous preview for conversation', {
             previewId: record.previewId,
             ownerLogin: record.ownerLogin,

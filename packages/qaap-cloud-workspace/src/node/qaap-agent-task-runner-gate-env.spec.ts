@@ -28,6 +28,7 @@ function contextWith(tokens: QaapToolGateTokenService): QaapAgentTaskRunnerConte
         applyToolGateEnv: (env: NodeJS.ProcessEnv) => {
             env.QAAP_GATE_TOKEN = tokens.issue('task-1', 'alice', '/w');
         },
+        toolGateWired: (): boolean => false,
         preferenceReaderForOwner: () => () => undefined,
         applyOpenRouterOpenAiCompatEnv: () => undefined,
         resolveAgentHome: () => '/h',

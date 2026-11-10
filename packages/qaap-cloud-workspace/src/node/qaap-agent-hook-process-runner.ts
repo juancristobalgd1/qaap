@@ -8,6 +8,7 @@ import { ChildProcess, spawnSync } from 'child_process';
 import type { QaapAgentHookProcessResult } from '../common/qaap-agent-hooks';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 import { stripSharedProviderEnv } from './qaap-agent-provider-env';
+import { rememberAgentProcessIdentity, signalAgentProcessTree } from './qaap-agent-process-signal';
 
 /** Per-stream capture cap; hooks are meant to print short decisions / context. */
 const MAX_HOOK_OUTPUT_CHARS = 64 * 1024;
@@ -89,11 +90,22 @@ export class QaapAgentHookProcessRunner {
 
     /** Spawn seam — overridden in tests. */
     protected async spawnHook(command: string, cwd: string, env: NodeJS.ProcessEnv): Promise<ChildProcess> {
-        return this.tenantSpawn.spawnPreparedAsync(command, {
+        const child = await this.tenantSpawn.spawnPreparedAsync(command, {
             cwd,
             env: this.tenantSpawn.resolveProcessEnv(cwd, env),
             stdio: ['pipe', 'pipe', 'pipe'],
         });
+        rememberAgentProcessIdentity(child, this.hookIdentity(cwd));
+        return child;
+    }
+
+    /** The identity the hook runs as (the tenant uid when the privilege drop is on), or undefined. */
+    protected hookIdentity(cwd: string): { uid?: number; gid?: number } | undefined {
+        try {
+            return this.tenantSpawn.resolveSpawnIdentity(cwd);
+        } catch {
+            return undefined;
+        }
     }
 
     protected buildEnv(options: QaapAgentHookProcessOptions): NodeJS.ProcessEnv {
@@ -119,13 +131,9 @@ export class QaapAgentHookProcessRunner {
             spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
             return;
         }
-        try {
-            process.kill(-pid, 'SIGKILL');
-            return;
-        } catch { /* not a group leader; fall through */ }
-        try {
-            child.kill('SIGKILL');
-        } catch { /* already gone */ }
+        if (signalAgentProcessTree(child, 'SIGKILL') === 'failed') {
+            console.warn(`[qaap-hook] could not kill hook pid=${pid}; it may still be running`);
+        }
     }
 
     protected append(current: string, chunk: unknown): string {

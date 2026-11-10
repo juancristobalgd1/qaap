@@ -7,6 +7,7 @@
 // These functions operate only on their parameters and do not access instance state.
 
 import { spawnSync } from 'child_process';
+import { randomBytes } from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -266,6 +267,7 @@ export function buildPromptTransportCommand(
     agentId: string | undefined,
     detected?: { readonly id?: string; readonly bin?: string; readonly template?: string },
     vars: Record<string, string> = {},
+    owner?: AgentPromptOwner,
 ): QaapPromptTransportCommand {
     const transport = resolveAgentPromptTransport(agentId, detected);
     if (transport.kind === 'argv') {
@@ -273,7 +275,7 @@ export function buildPromptTransportCommand(
     }
     let command = applyTemplateForPromptTransport(template, transport, vars);
     if (transport.kind === 'prompt-file') {
-        const written = writeAgentPromptFile(prompt);
+        const written = writeAgentPromptFile(prompt, owner);
         command = `${command} ${transport.flag} ${quoteShellArg(written.file)}`;
         return { command, promptTempDir: written.dir };
     }
@@ -288,8 +290,78 @@ export function quoteShellArg(value: string): string {
     return shellQuote(value);
 }
 
-/** Persist a prompt so CLIs such as Grok can take `--prompt-file` instead of argv. */
-export function writeAgentPromptFile(text: string): { readonly file: string; readonly dir: string } {
+/** The OS identity the agent CLI runs as when the backend drops privileges (`uid` differs from this process). */
+export interface AgentPromptOwner {
+    readonly uid: number;
+    readonly gid?: number;
+}
+
+/** Dirs created as another uid, keyed by path, so their removal runs as that uid too (root has no DAC override). */
+const promptDirOwners = new Map<string, AgentPromptOwner>();
+
+/**
+ * Runs a small Node script as `owner`, with `input` as JSON on stdin. Returns true on exit 0.
+ * Overridable through {@link agentPromptOwnerRunner} for tests, which cannot switch uid.
+ */
+function runAgentPromptScriptAsOwner(owner: AgentPromptOwner, script: string, input: object): boolean {
+    const result = spawnSync(process.execPath, ['-e', script], {
+        uid: owner.uid, gid: owner.gid ?? owner.uid, cwd: '/',
+        input: JSON.stringify(input), timeout: 30000,
+        env: { PATH: process.env.PATH ?? '/usr/bin:/bin' }, stdio: ['pipe', 'ignore', 'pipe'],
+    });
+    if (result.status !== 0 && result.stderr) {
+        console.warn(`[qaap-agent-prompt] agent-side prompt file step failed: ${String(result.stderr).slice(0, 200)}`);
+    }
+    return result.status === 0;
+}
+
+/** Seam for the agent-side runner; specs replace `run` to simulate the agent uid without root. */
+export const agentPromptOwnerRunner: { run: (owner: AgentPromptOwner, script: string, input: object) => boolean } = {
+    run: runAgentPromptScriptAsOwner,
+};
+
+/**
+ * Runs as the agent uid: creates the 0700 dir and the 0600 prompt file, so the agent (and nobody else) can read
+ * the prompt. Refuses to run over an existing entry (`mkdirSync`/`wx`), so nothing is planted in advance.
+ */
+export const AGENT_PROMPT_WRITE_SCRIPT = [
+    "const fs=require('fs');",
+    "const i=JSON.parse(fs.readFileSync(0,'utf8'));",
+    'try{',
+    'fs.mkdirSync(i.dir,{mode:0o700});',
+    "const fd=fs.openSync(i.file,'wx',0o600);",
+    "try{const b=Buffer.from(i.text,'utf8');let o=0;while(o<b.length){o+=fs.writeSync(fd,b,o,b.length-o);}}finally{fs.closeSync(fd);}",
+    '}catch(e){process.stderr.write(String(e&&e.message));process.exit(1);}',
+].join('');
+
+/** Runs as the agent uid: removes the prompt dir the agent created. Only ever called with a dir it owns. */
+export const AGENT_PROMPT_REMOVE_SCRIPT = [
+    "const fs=require('fs');",
+    "const i=JSON.parse(fs.readFileSync(0,'utf8'));",
+    'try{fs.rmSync(i.dir,{recursive:true,force:true});}catch(e){process.stderr.write(String(e&&e.message));process.exit(1);}',
+].join('');
+
+/**
+ * Persist a prompt so CLIs such as Grok can take `--prompt-file` instead of argv.
+ * Without an `owner` (or when it is this process's uid) the root-owned 0700 dir is enough. With a different
+ * `owner` the dir and file are created AS that uid, so the agent can read them; nothing is world-readable.
+ * Fails closed: if the agent side cannot write the file, this throws and the prompt is not written by root.
+ */
+export function writeAgentPromptFile(text: string, owner?: AgentPromptOwner): { readonly file: string; readonly dir: string } {
+    const currentUid = typeof process.getuid === 'function' ? process.getuid() : undefined;
+    if (owner && owner.uid !== currentUid) {
+        const dir = path.join(os.tmpdir(), `qaap-agent-prompt-${randomBytes(16).toString('hex')}`);
+        const file = path.join(dir, 'prompt.txt');
+        if (!agentPromptOwnerRunner.run(owner, AGENT_PROMPT_WRITE_SCRIPT, { dir, file, text })) {
+            throw new Error(`Could not write the agent prompt file as uid ${owner.uid}.`);
+        }
+        const stat = fs.lstatSync(dir);
+        if (!stat.isDirectory() || stat.uid !== owner.uid) {
+            throw new Error(`Refusing the agent prompt dir ${dir}: the agent user did not create it.`);
+        }
+        promptDirOwners.set(dir, owner);
+        return { file, dir };
+    }
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agent-prompt-'));
     const file = path.join(dir, 'prompt.txt');
     fs.writeFileSync(file, text, 'utf8');
@@ -302,6 +374,12 @@ export function removeAgentPromptTempDir(dir: string | undefined): void {
         return;
     }
     if (!path.basename(dir).startsWith('qaap-agent-prompt-')) {
+        return;
+    }
+    const owner = promptDirOwners.get(dir);
+    if (owner) {
+        promptDirOwners.delete(dir);
+        agentPromptOwnerRunner.run(owner, AGENT_PROMPT_REMOVE_SCRIPT, { dir });
         return;
     }
     try {

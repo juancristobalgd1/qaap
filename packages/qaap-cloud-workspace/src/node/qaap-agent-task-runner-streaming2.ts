@@ -13,6 +13,7 @@ import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { nls } from '@theia/core/lib/common/nls';
+import type { ChildProcess } from 'child_process';
 import {
     isQaapAgentTaskFinished,
     type QaapCreateAgentTaskQaiqModel,
@@ -478,7 +479,8 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
         }
         let promptTempDir: string | undefined;
         if (promptTransport.kind === 'prompt-file' && !useStdioApprovals) {
-            const written = writeAgentPromptFileHelper(agentPrompt);
+            const spawnIdentity = ctx.resolveAgentSpawnIdentity(resolvedCwd ?? process.cwd());
+            const written = writeAgentPromptFileHelper(agentPrompt, spawnIdentity.uid === undefined ? undefined : { uid: spawnIdentity.uid, gid: spawnIdentity.gid });
             promptTempDir = written.dir;
             command = `${command} ${promptTransport.flag} ${quoteShellArgHelper(written.file)}`;
         }
@@ -856,10 +858,8 @@ export function cancelExtracted(ctx: QaapAgentTaskRunnerContext, id: string, opt
                 // process group has had time to finish an in-flight workspace write safely.
                 ctx.killAgentProcessTree(child, {
                     escalateAfterMs: AGENT_STOP_GRACE_TIMEOUT_MS,
-                    onGracePeriodElapsed: () => {
-                        ctx.stoppingTaskIds.delete(id);
-                        ctx.drainQueuedTasks();
-                    },
+                    onGracePeriodElapsed: () => releaseStoppingTaskSlotExtracted(ctx, id, child),
+                    onSignalFailed: () => markTaskStopFailedExtracted(ctx, id),
                 });
             } else {
                 ctx.drainQueuedTasks();
@@ -867,9 +867,51 @@ export function cancelExtracted(ctx: QaapAgentTaskRunnerContext, id: string, opt
             return finished;
         }
         if (child) {
-            ctx.killAgentProcessTree(child, { escalateAfterMs: AGENT_STOP_GRACE_TIMEOUT_MS });
+            ctx.killAgentProcessTree(child, {
+                escalateAfterMs: AGENT_STOP_GRACE_TIMEOUT_MS,
+                onGracePeriodElapsed: () => releaseStoppingTaskSlotExtracted(ctx, id, child),
+                onSignalFailed: () => markTaskStopFailedExtracted(ctx, id),
+            });
         }
         return task;
+}
+
+/** Visible state of a task whose agent could not be signalled: it is not stopped, and it keeps its slot. */
+export const STOP_FAILED_MESSAGE_KEY = 'theia/qaap-cloud-workspace/agentTaskStopFailed';
+
+/**
+ * Releases the concurrency slot a cancelled task holds, once its process has really exited. A
+ * SIGKILL that was sent but whose `exit` has not fired yet keeps the slot; the `exit` handler
+ * releases it then (see {@link releaseStoppingTaskSlotOnExitExtracted}).
+ */
+export function releaseStoppingTaskSlotExtracted(ctx: Pick<QaapAgentTaskRunnerContext, 'stoppingTaskIds' | 'drainQueuedTasks'>, taskId: string, child: ChildProcess): void {
+        const exited = typeof child.exitCode === 'number' || typeof child.signalCode === 'string';
+        if (!exited) {
+            return;
+        }
+        releaseStoppingTaskSlotOnExitExtracted(ctx, taskId);
+}
+
+/** Called from the child's `exit` handler: frees the slot of a cancelled task whose process is gone. */
+export function releaseStoppingTaskSlotOnExitExtracted(ctx: Pick<QaapAgentTaskRunnerContext, 'stoppingTaskIds' | 'drainQueuedTasks'>, taskId: string): void {
+        if (ctx.stoppingTaskIds.delete(taskId)) {
+            ctx.drainQueuedTasks();
+        }
+}
+
+/**
+ * Stop could not signal the agent: the task leaves the `cancelled` state (it did not stop) and
+ * shows an error. The stopping entry stays, so the slot is held until the process exits.
+ */
+export function markTaskStopFailedExtracted(ctx: Pick<QaapAgentTaskRunnerContext, 'tasks' | 'persist'>, taskId: string): void {
+        const task = ctx.tasks.get(taskId);
+        if (!task) {
+            return;
+        }
+        const message = nls.localize(STOP_FAILED_MESSAGE_KEY, 'Could not stop the agent; it may still be running.');
+        console.error(`[qaap-stop] stop-failed task=${taskId} the agent may still be running`);
+        ctx.tasks.set(taskId, { ...task, state: 'failed', exitCode: undefined, stopFailure: message });
+        void ctx.persist();
 }
 
 /** Remove every persisted task rooted in a project after the user confirms project deletion. */

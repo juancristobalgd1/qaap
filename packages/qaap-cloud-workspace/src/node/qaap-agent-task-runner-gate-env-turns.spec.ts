@@ -29,6 +29,7 @@ describe('gate credentials for harness runs inside verification', () => {
                 env.QAAP_GATE_TOKEN = tokens.issue('task-1', 'alice', '/w');
                 env.QAAP_GATE_URL = 'http://127.0.0.1:1/qaap/api/tool-gate';
             },
+            toolGateWired: (): boolean => false,
             runGenericCommand: async (_c: string, _cwd: string, env: NodeJS.ProcessEnv) => {
                 seen.push(env);
                 return ok;
