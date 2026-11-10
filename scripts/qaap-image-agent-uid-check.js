@@ -67,6 +67,7 @@ function asAgent(identity, job) {
         "for(const w of j.write||[]){try{fs.writeFileSync(w.path,w.text,{mode:w.mode,flag:'wx'});out.write[w.path]='ok';}catch(e){out.write[w.path]=code(e);}}",
         "for(const p of j.read||[]){try{out.read[p]=fs.readFileSync(p,'utf8');}catch(e){out.read[p]=code(e);}}",
         "for(const p of j.exists||[]){out.exists[p]=fs.existsSync(p);}",
+        "out.rm={};for(const p of j.rm||[]){try{fs.rmSync(p,{recursive:true,force:true});out.rm[p]='ok';}catch(e){out.rm[p]=code(e);}}",
         'process.stdout.write(JSON.stringify(out));',
     ].join('');
     const result = spawnSync(process.execPath, ['-e', script], {
@@ -176,7 +177,16 @@ async function main() {
         await checkSignal();
         console.log('PASS: agent uid boundary (overlay, prompt file, process stop) under CapDrop ALL with SETUID/SETGID only');
     } finally {
-        fs.rmSync(workRoot, { recursive: true, force: true });
+        // The agent owns what it created under the work root (0700 dirs); root has no CAP_DAC_OVERRIDE
+        // in the image, so it cannot walk them. The agent removes its own entries first, then root
+        // removes the (root-owned, sticky) work root. Cleanup never masks the smoke's verdict.
+        try {
+            const entries = fs.readdirSync(workRoot).map(name => path.join(workRoot, name));
+            asAgent(AGENT, { rm: entries });
+            fs.rmSync(workRoot, { recursive: true, force: true });
+        } catch (error) {
+            console.warn(`Agent uid smoke: could not remove ${workRoot}: ${error && error.message ? error.message : error}`);
+        }
     }
 }
 
