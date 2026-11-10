@@ -413,3 +413,10 @@ body.theia-mobile-mod-desktop-ide #theia-top-panel>[id='theia:menubar'] {
   position: relative;
   z-index: 3;
 }
+
+/* Desktop IDE | Agents icon switch: 32px minimum height (mobile keeps its own touch floor). */
+@media (min-width: 768px) {
+  .theia-workbench-view-mode-switch .theia-qaap-segmented-bar.theia-mod-icon-only > .theia-qaap-segmented-option {
+    min-height: 32px;
+  }
+}

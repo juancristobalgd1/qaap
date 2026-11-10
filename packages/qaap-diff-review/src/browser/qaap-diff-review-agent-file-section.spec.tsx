@@ -140,10 +140,24 @@ describe('QaapAgentFileSection', () => {
         expect(host.querySelectorAll('.qaap-diff-review-line--suppression')).to.have.length(0);
     });
 
-    it('offers a retry with the failure detail when the diff could not be loaded', () => {
+    it('offers a retry with a human sentence and keeps the failure detail out of the text', () => {
         render({ diff: undefined, errorDetail: 'boom' });
-        expect(host.textContent).to.contain('(boom)');
+        expect(host.textContent).to.contain('Could not load the diff for this file.');
+        expect(host.textContent).not.to.contain('boom');
+        expect(host.querySelector('.qaap-mod-load-failed')?.getAttribute('title')).to.equal('boom');
         click('.qaap-diff-review-inline-btn');
         expect(calls).to.deep.equal(['retry:src/a.ts']);
+    });
+
+    it('asks for a refresh when the file changed again after the task (409)', () => {
+        render({ diff: undefined, errorDetail: 'diff request failed (409)', errorStale: true });
+        expect(host.textContent).to.contain('This file changed again since the task finished.');
+        expect(host.textContent).not.to.contain('409');
+    });
+
+    it('labels a new file with no line counts as New file', () => {
+        render({ file: { path: 'src/new.ts', status: 'U', adds: 0, dels: 0, staged: false } as QaapAgentFileSectionProps['file'] });
+        expect(host.textContent).to.contain('New file');
+        expect(host.textContent).not.to.contain('+0');
     });
 });

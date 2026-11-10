@@ -51,6 +51,8 @@ import {
     createMobileFileIconSpan,
     createMobileToolFileDetailSpan,
     createMobileExecutionEventElement,
+    mobileToolGroupStateLabel,
+    syncMobileNarrativeToggle,
 } from './mobile-execution-event-renderer';
 import { MOBILE_EXECUTION_TIMELINE_CLASS, createMobileExecutionEventTimeline } from './qaap-execution-event-timeline';
 
@@ -154,8 +156,10 @@ function patchMobileExecutionEventSection(
             narrativeEl.className = 'theia-mobile-execution-event-narrative theia-mod-agent';
             narrativeEl.textContent = next.narrative;
             section.prepend(narrativeEl);
+            syncMobileNarrativeToggle(narrativeEl);
         } else if (prev.narrative !== next.narrative) {
             narrativeEl.textContent = next.narrative;
+            syncMobileNarrativeToggle(narrativeEl);
         }
     }
 
@@ -206,6 +210,9 @@ function patchMobileExecutionEventSection(
         state.classList.toggle('failed', next.hasError);
         state.classList.toggle('running', next.hasPending && !next.hasError);
         state.classList.toggle('complete', !next.hasPending && !next.hasError);
+        const stateLabel = mobileToolGroupStateLabel(next);
+        state.setAttribute('aria-label', stateLabel);
+        state.title = stateLabel;
         const stateIcon = state.querySelector<HTMLElement>('.codicon');
         if (stateIcon) {
             stateIcon.className = `codicon ${next.hasError ? 'codicon-error' : next.hasPending ? 'codicon-loading theia-animation-spin' : 'codicon-check'}`;

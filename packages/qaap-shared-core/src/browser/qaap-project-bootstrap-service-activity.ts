@@ -374,9 +374,11 @@ export async function openPreviewExtracted(ctx: QaapProjectBootstrapServiceConte
             // Explicit request ("Open preview", "Focus preview"): lift a previous user close.
             clearQaapPreviewDismissedByUser(bootstrapPreviewDismissalDirectory(ctx));
         }
-        if (options?.auto && !ctx.mayAutoOpenPreviewNow()) {
-            // Stage instead of navigating: record the ready URL and flip to `running` so the
-            // transcript listener offers the "Open preview" pill; the user performs navigation.
+        if (options?.auto) {
+            // An automatic trigger (port detected, attach, agent tool) never opens the preview: it
+            // stages the ready URL and flips to `running` so the transcript offers the "View
+            // preview" pill, and the user opens it. Opening on its own pulled the user out of an
+            // unrelated conversation, often onto a page that was still compiling.
             ctx._previewUrl = targetUrl;
             ctx.persistPhase('running');
             ctx.setPhase('running');

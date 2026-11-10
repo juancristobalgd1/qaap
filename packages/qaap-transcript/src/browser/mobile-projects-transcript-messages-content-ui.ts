@@ -172,6 +172,27 @@ interface TranscriptStreamSmoothEntry {
     rafHandle: number | undefined;
 }
 
+/** Settled markdown up to this size renders on the main thread (no raw-text first paint). */
+const TRANSCRIPT_SYNC_MARKDOWN_MAX_CHARS = 20_000;
+/** Historical rows shorter than this are not worth deferring: they render in full at once. */
+const TRANSCRIPT_DEFER_MARKDOWN_MIN_CHARS = 2_500;
+
+/** First ~400 chars of a long message, cut at a line break and with code fences kept balanced. */
+function transcriptDeferredMarkdownExcerpt(clean: string): string {
+    const limit = 400;
+    let excerpt = clean.slice(0, limit);
+    const lastBreak = excerpt.lastIndexOf('\n');
+    if (lastBreak > limit / 2) {
+        excerpt = excerpt.slice(0, lastBreak);
+    }
+    const fences = [...excerpt.matchAll(/^[ \t]*(```|~~~)/gm)];
+    if (fences.length % 2 === 1) {
+        // Cut before the unclosed fence: half a code block would swallow the rest as code.
+        excerpt = excerpt.slice(0, fences[fences.length - 1].index);
+    }
+    return `${excerpt.trimEnd()}…`;
+}
+
 export class MobileProjectsTranscriptMessagesContentUi {
     constructor(protected readonly host: MobileProjectsTranscriptMessagesHost) { }
 
@@ -299,6 +320,13 @@ export class MobileProjectsTranscriptMessagesContentUi {
             TRANSCRIPT_STREAMING_HYBRID_CLASS,
         );
         host.classList.add('theia-mod-markdown');
+        if (clean.length <= TRANSCRIPT_SYNC_MARKDOWN_MAX_CHARS) {
+            // Settled text of ordinary size parses on the main thread in well under a frame. The
+            // worker round trip painted the raw source first (`**`, `#`, backticks) and swapped in
+            // the formatted HTML a beat later — visible on every conversation switch.
+            this.renderTranscriptMarkdownSync(host, linked);
+            return;
+        }
         host.textContent = clean;
         QaapTranscriptMarkdownWorkerClient.get().requestParse(
             host,
@@ -346,12 +374,26 @@ export class MobileProjectsTranscriptMessagesContentUi {
     }
 
     protected renderTranscriptDeferredMarkdownPlaceholder(host: HTMLElement, clean: string): void {
-        host.classList.add('theia-mod-markdown', 'theia-mod-deferred-markdown');
-        const excerpt = clean.length > 180 ? `${clean.slice(0, 180).trimEnd()}…` : clean;
-        host.textContent = excerpt;
+        this.renderTranscriptDeferredMarkdown(host, clean);
+    }
+
+    /**
+     * Historical rows: short ones paint in full right away (deferring them only showed raw
+     * markdown until an idle callback ran); long ones show a formatted excerpt — never raw
+     * source — until they scroll near the viewport and hydrate.
+     */
+    renderTranscriptDeferredMarkdown(host: HTMLElement, clean: string, streaming?: boolean): void {
+        host.classList.add('theia-mod-markdown');
+        if (clean.length <= TRANSCRIPT_DEFER_MARKDOWN_MIN_CHARS) {
+            this.renderTranscriptMarkdownSync(host, this.linkifyTranscriptPreviewUrls(clean));
+            return;
+        }
+        host.classList.add('theia-mod-deferred-markdown');
+        this.renderTranscriptMarkdownSync(host, this.linkifyTranscriptPreviewUrls(transcriptDeferredMarkdownExcerpt(clean)));
         const hydrate: TranscriptDeferredMarkdownHydrate = {
             host,
             content: clean,
+            streaming,
         };
         registerDeferredTranscriptMarkdown(hydrate);
     }

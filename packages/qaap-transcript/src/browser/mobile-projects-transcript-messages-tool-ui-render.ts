@@ -19,9 +19,6 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 import { shouldOpenTranscriptToolDetails as shouldOpenTranscriptToolDetailsSegment } from '../common/qaap-agent-transcript-segments';
 import { isTranscriptErrorOutput, isTranscriptTerminalOutputText } from '@theia/qaap-shared-core/lib/common/qaap-transcript-content-display';
-import {
-    registerDeferredTranscriptMarkdown,
-} from './qaap-transcript-row-defer';
 import type { QaapAgentMessageDTO, QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     isTranscriptWebSearchTool,
@@ -45,10 +42,7 @@ export function renderTranscriptRichContentExtracted(ctx: MobileProjectsTranscri
         host.classList.add('theia-mod-markdown');
         if (options?.sync) {
             if (options.defer) {
-                host.classList.add('theia-mod-deferred-markdown');
-                const excerpt = clean.length > 180 ? `${clean.slice(0, 180).trimEnd()}…` : clean;
-                host.textContent = excerpt;
-                registerDeferredTranscriptMarkdown({ host, content: clean, streaming: options.streaming });
+                ctx.contentUi.renderTranscriptDeferredMarkdown(host, clean, options.streaming);
                 return;
             }
             ctx.contentUi.renderTranscriptMarkdownImmediate(host, clean);
@@ -300,13 +294,11 @@ export function createTranscriptAgentAuthLoginCardExtracted(ctx: MobileProjectsT
                 'qaap/mobileProjects/authLoginUrlHint',
                 'Open the sign-in page, authorize the agent, then retry this task.',
             );
-        } else {
-            hint.textContent = nls.localize(
-                'qaap/mobileProjects/authLoginTerminalHint',
-                'Open the agent terminal to complete sign-in (same as the agent TUI), then retry.',
-            );
         }
-        card.append(hint);
+        // Terminal sign-in is already described by the turn failure message: one description only.
+        if (challenge.url) {
+            card.append(hint);
+        }
 
         if (challenge.userCode) {
             const codeRow = document.createElement('div');
@@ -381,10 +373,13 @@ export function createTranscriptAgentAuthLoginCardExtracted(ctx: MobileProjectsT
             terminalBtn.textContent = options.agentLabel
                 ? nls.localize(
                     'qaap/mobileProjects/authLoginOpenTerminalNamed',
-                    'Sign in with {0} in terminal',
+                    'Sign in with {0} via terminal',
                     options.agentLabel,
                 )
-                : nls.localize('qaap/mobileProjects/authLoginOpenTerminal', 'Sign in in terminal');
+                : nls.localize('qaap/mobileProjects/authLoginOpenTerminal', 'Sign in via terminal');
+            if (!challenge.url) {
+                terminalBtn.classList.add('theia-mod-primary');
+            }
             terminalBtn.addEventListener('click', event => {
                 event.stopPropagation();
                 event.preventDefault();

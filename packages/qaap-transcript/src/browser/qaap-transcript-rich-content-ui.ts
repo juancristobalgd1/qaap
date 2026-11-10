@@ -426,9 +426,21 @@ function wrapMarkdownTable(table: HTMLTableElement): void {
     scroll.append(table);
 }
 
+/**
+ * A provider API endpoint (`https://api.openai.com/v1/responses`) that a model or a failed request
+ * quoted is a diagnostic, not an article: it never becomes a link preview card.
+ */
+function isProviderApiEndpointHref(href: string): boolean {
+    try {
+        return /^api\./i.test(new URL(href).hostname);
+    } catch {
+        return false;
+    }
+}
+
 function tryLinkPreviewFromAnchor(anchor: HTMLAnchorElement): TranscriptToolUiLinkPreviewPayload | undefined {
     const href = anchor.getAttribute('href')?.trim();
-    if (!href || !/^https?:\/\//i.test(href)) {
+    if (!href || !/^https?:\/\//i.test(href) || isProviderApiEndpointHref(href)) {
         return undefined;
     }
     return {

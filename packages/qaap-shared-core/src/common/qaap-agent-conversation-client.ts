@@ -25,6 +25,7 @@ import type { QaapTranscriptUserImagePreview } from './qaap-transcript-user-imag
 import type { QaapTurnLatencyMark } from './qaap-agent-stream-metrics';
 import type { QaapProviderRetryStatus } from './qaap-pi-json-stream';
 import { normalizeQaapVisualPreviewUrl, type QaapPreviewVisualValidationResult } from './qaap-visual-verification';
+import { dedupeInFlight } from './qaap-in-flight-dedupe';
 import type { ComposerGitActionDisplayMetadata } from './qaap-composer-git-action-display';
 import type { QaapRewindPreviewDTO, QaapRewindRestoreOptions } from './qaap-conversation-rewind-preview';
 import { resolveQaapConversationAgentActivityAt, type QaapConversationActivityMessage } from './qaap-conversation-read-marks';
@@ -708,7 +709,14 @@ export async function listAllConversationGroups(options?: { readonly onRetry?: (
     return body.groups ?? [];
 }
 
-export async function getConversation(id: string): Promise<QaapAgentConversationDTO> {
+/** Pending `GET /conversation/:id` requests by id: concurrent callers share one request (no caching). */
+const conversationGetInFlight = new Map<string, Promise<QaapAgentConversationDTO>>();
+
+export function getConversation(id: string): Promise<QaapAgentConversationDTO> {
+    return dedupeInFlight(conversationGetInFlight, id, () => requestConversation(id));
+}
+
+async function requestConversation(id: string): Promise<QaapAgentConversationDTO> {
     const response = await fetch(`${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(id)}`, { credentials: 'include' });
     if (!response.ok) {
         throw await QaapUserFacingErrors.fromResponse(response);

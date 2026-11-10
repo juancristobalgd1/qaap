@@ -2423,7 +2423,7 @@ body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects.theia-mod-hom
 .theia-mobile-sticky-composer-queue-text {
   flex: 1 1 auto;
   min-width: 0;
-  font-size: 12px;
+  font-size: var(--q-text-meta, 13px);
   line-height: 1.35;
   color: color-mix(in srgb, var(--theia-descriptionForeground) 92%, var(--theia-foreground));
   overflow: hidden;
@@ -6068,6 +6068,7 @@ body.qaap-theme-light .qaap-working-agents-popover-row-status.theia-mod-shimmer 
 }
 
 .theia-mobile-projects-sticky-composer-attach {
+  font: inherit;
   flex: 0 0 32px;
   width: 32px;
   height: 32px;
@@ -6551,7 +6552,7 @@ body.qaap-theme-dark .theia-mobile-mcp-attach-server-icon.theia-mod-branded {
   word-break: break-word;
   color: var(--theia-foreground);
   font: inherit;
-  font-size: 15px;
+  font-size: var(--q-text-body, 14px);
   line-height: 1.45;
   letter-spacing: -0.01em;
 }
@@ -8963,6 +8964,7 @@ body.qaap-theme-dark .theia-qaap-llm-provider-icon.theia-mod-theme-adaptive .the
 
 .theia-mobile-projects-header-project-switcher,
 .theia-mobile-projects-header-conversations {
+  font: inherit;
   display: inline-flex;
   align-items: center;
   height: 32px;

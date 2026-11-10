@@ -12,6 +12,7 @@ import { FrontendApplicationStateService } from '@theia/core/lib/browser/fronten
 import {
     fetchAgentCliUpdates,
     pickNextAgentUpdateToShow,
+    countAgentUpdatesToShow,
     readAgentCliUpdateDismissMap,
     rememberAgentCliUpdateDismiss,
     requestAgentCliUpdate,
@@ -78,21 +79,26 @@ export class QaapAgentCliUpdateContribution implements FrontendApplicationContri
         if (this.disposed) {
             return;
         }
-        const next = pickNextAgentUpdateToShow(updates, readAgentCliUpdateDismissMap());
+        // At most one notice on screen: a visible toast (or an update in flight) keeps the queue.
+        if (this.toast) {
+            return;
+        }
+        const dismissed = readAgentCliUpdateDismissMap();
+        const next = pickNextAgentUpdateToShow(updates, dismissed);
         if (!next) {
             return;
         }
-        this.present(next);
+        this.present(next, countAgentUpdatesToShow(updates, dismissed));
     }
 
-    protected present(info: QaapAgentCliUpdateInfo): void {
+    protected present(info: QaapAgentCliUpdateInfo, pendingCount: number): void {
         this.toast?.dispose();
         this.shownAgentId = info.id;
         this.toast = showAgentCliUpdateToast(info, {
             onDismiss: () => this.dismiss(info),
             onCancel: () => this.dismiss(info),
             onUpdate: () => void this.runUpdate(info),
-        });
+        }, { pendingCount });
     }
 
     protected dismiss(info: QaapAgentCliUpdateInfo): void {

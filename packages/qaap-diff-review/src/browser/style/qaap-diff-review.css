@@ -1417,6 +1417,30 @@
     background: var(--theia-button-secondaryHoverBackground);
 }
 
+/* Per-file load failure: human sentence in the UI font; the HTTP detail lives in the title only. */
+.qaap-diff-review-note.qaap-mod-load-failed {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--theia-ui-font-family);
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.qaap-diff-review-note.qaap-mod-load-failed .qaap-diff-review-inline-btn {
+    margin-left: 0;
+}
+
+@media (max-width: 767px) {
+    .qaap-diff-review-note.qaap-mod-load-failed .qaap-diff-review-inline-btn {
+        min-height: 44px;
+        min-width: 44px;
+        padding: 0 16px;
+        font-size: 14px;
+    }
+}
+
 /* Added lines that silence a lint / type / test check (eslint-disable, @ts-ignore, it.skip, rule
    turned off in a config…). Flagged so the user reviews them instead of accepting a fake green. */
 .qaap-agent-changes-suppression-badge {

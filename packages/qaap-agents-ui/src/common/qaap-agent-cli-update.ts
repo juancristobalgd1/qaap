@@ -166,6 +166,14 @@ export function pickNextAgentUpdateToShow(
     })[0];
 }
 
+/** How many updates are still waiting to be shown (not dismissed for their latest version). */
+export function countAgentUpdatesToShow(
+    updates: readonly QaapAgentCliUpdateInfo[],
+    dismissed: QaapAgentCliUpdateDismissMap | undefined,
+): number {
+    return updates.filter(info => shouldShowAgentUpdateNotification(info, dismissed)).length;
+}
+
 export function readAgentCliUpdateDismissMap(
     storage: Pick<Storage, 'getItem'> | undefined = typeof localStorage === 'undefined' ? undefined : localStorage,
 ): QaapAgentCliUpdateDismissMap {

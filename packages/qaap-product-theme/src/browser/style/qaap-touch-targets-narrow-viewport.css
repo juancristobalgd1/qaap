@@ -41,3 +41,66 @@
         inset: -10px;
     }
 }
+
+/* Disclosure rows and the diff "Review" link: 44px touch area. The review link keeps its visual size and extends its hit area through ::after. */
+@media (max-width: 767px), (pointer: coarse) {
+    body .theia-mobile-tool-group-summary,
+    body .theia-mobile-execution-event-narrative-toggle {
+        min-height: 44px;
+    }
+
+    .theia-mobile-diff-summary-review {
+        position: relative;
+    }
+
+    .theia-mobile-diff-summary-review::after {
+        content: '';
+        position: absolute;
+        inset: -14px -10px;
+    }
+}
+
+/* Controls whose component rules (0,1,0) load after this sheet and set a smaller min-height:
+   the 44px floor is scoped under body so it wins the cascade. Icon controls keep their visual size. */
+@media (max-width: 767px), (pointer: coarse) {
+    body .theia-mobile-agent-transcript-user-action,
+    body .theia-mobile-projects-sticky-composer-send,
+    body .theia-mobile-projects-sticky-composer-attach,
+    body .theia-mobile-projects-sticky-composer-agent,
+    body .theia-mobile-transcript-tab-icon-select,
+    body .theia-mobile-projects-header-project-switcher,
+    body .theia-mobile-projects-header-conversations {
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    /* Update notice: Later / Update buttons and the close X keep a 44px touch height. */
+    body .qaap-agent-cli-update-toast-action,
+    body .qaap-agent-cli-update-toast-close {
+        min-height: 44px;
+    }
+
+    /* Turn-failure "Retry task" sits at 24px visual height: keep a 44px touch height. The shell
+       window rule (0,3,0) sets min-height 24px, so this selector repeats its chain under body. */
+    body .theia-mobile-agent-shell-window.theia-mod-turn-failure .theia-mobile-agent-turn-failure-summary-retry {
+        min-height: 44px;
+    }
+
+    /* Header tab icon select: its 36px height is declared with `height`, which beats min-height, so
+       the 44px touch area is an ::after extension that leaves the visual size unchanged. */
+    body .theia-mobile-transcript-tab-icon-select {
+        position: relative;
+    }
+
+    body .theia-mobile-transcript-tab-icon-select::after {
+        content: '';
+        position: absolute;
+        inset: -4px 0;
+    }
+
+    /* Changes pill and Approve & Commit share the composer's changes row: 44px touch height. */
+    body .theia-mobile-sticky-composer-changes-pill,
+    body .theia-mobile-sticky-composer-commit-btn {
+        min-height: 44px;
+    }
+}

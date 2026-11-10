@@ -28,6 +28,7 @@ import {
     QaapTranscriptLiveController,
     type QaapTranscriptLiveRefreshOptions,
 } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-live-controller';
+import { QaapTranscriptRefetchThrottle } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-refetch-throttle';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
@@ -127,6 +128,8 @@ export const TRANSCRIPT_VISUAL_VERIFICATION_POLL_BUDGET_MS = 180_000;
 export class MobileProjectsTranscriptLiveUi {
     /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
     public transcriptLiveController: QaapTranscriptLiveController | undefined;
+    /** @internal Per-conversation throttle for live-event driven GET /conversation refetches. */
+    public readonly transcriptRefetchThrottle = new QaapTranscriptRefetchThrottle();
     /**
      * Avoid remounting the sticky composer on every SSE patch once a turn looks visually idle.
      * @internal Used by the extracted mobile-projects-transcript-live-ui-* modules.

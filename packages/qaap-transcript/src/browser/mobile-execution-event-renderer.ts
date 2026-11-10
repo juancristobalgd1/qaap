@@ -132,6 +132,45 @@ export function attachMobileTerminalLazyOpenHandler(details: HTMLDetailsElement,
 
 // ─── Element Creation ────────────────────────────────────────────────────────
 
+const MOBILE_NARRATIVE_CLAMP_MIN_CHARS = 200;
+const MOBILE_NARRATIVE_CLAMP_MIN_LINES = 4;
+const MOBILE_NARRATIVE_TOGGLE_CLASS = 'theia-mobile-execution-event-narrative-toggle';
+
+/**
+ * Clamps a long agent narrative to three lines and adds a "Show more" / "Show less" disclosure
+ * right after it. Short narratives get no toggle and no clamp. Idempotent: call it again after
+ * the narrative text changes.
+ */
+export function syncMobileNarrativeToggle(narrative: HTMLElement): void {
+    const text = narrative.textContent ?? '';
+    const isLong = text.length > MOBILE_NARRATIVE_CLAMP_MIN_CHARS || text.split('\n').length >= MOBILE_NARRATIVE_CLAMP_MIN_LINES;
+    const next = narrative.nextElementSibling;
+    const existing = next instanceof HTMLElement && next.classList.contains(MOBILE_NARRATIVE_TOGGLE_CLASS) ? next : undefined;
+    if (!isLong) {
+        existing?.remove();
+        narrative.classList.remove('theia-mod-clamped', 'theia-mod-expanded');
+        return;
+    }
+    narrative.classList.add('theia-mod-clamped');
+    if (existing) {
+        return;
+    }
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = MOBILE_NARRATIVE_TOGGLE_CLASS;
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.textContent = nls.localize('qaap/mobileProjects/narrativeShowMore', 'Show more');
+    toggle.addEventListener('click', () => {
+        const expanded = !narrative.classList.contains('theia-mod-expanded');
+        narrative.classList.toggle('theia-mod-expanded', expanded);
+        toggle.setAttribute('aria-expanded', String(expanded));
+        toggle.textContent = expanded
+            ? nls.localize('qaap/mobileProjects/narrativeShowLess', 'Show less')
+            : nls.localize('qaap/mobileProjects/narrativeShowMore', 'Show more');
+    });
+    narrative.after(toggle);
+}
+
 export function createMobileExecutionEventElement(
     event: MobileExecutionEvent,
 ): HTMLElement {
@@ -154,12 +193,24 @@ export function createMobileExecutionEventElement(
         narrative.className = 'theia-mobile-execution-event-narrative theia-mod-agent';
         narrative.textContent = event.narrative;
         section.append(narrative);
+        syncMobileNarrativeToggle(narrative);
     }
 
     // Tool group (collapsed by default)
     section.append(createMobileToolGroupElement(event));
 
     return section;
+}
+
+/** Localized accessible name of a tool group's state icon (completed, failed or running). */
+export function mobileToolGroupStateLabel(event: Pick<MobileExecutionEvent, 'hasError' | 'hasPending'>): string {
+    if (event.hasError) {
+        return nls.localize('qaap/mobileProjects/toolGroupStateFailed', 'Failed');
+    }
+    if (event.hasPending) {
+        return nls.localize('qaap/mobileProjects/toolGroupStateRunning', 'Running');
+    }
+    return nls.localize('qaap/mobileProjects/toolGroupStateCompleted', 'Completed');
 }
 
 export function createMobileToolGroupElement(
@@ -179,6 +230,9 @@ export function createMobileToolGroupElement(
     // Summary line: icon + verb + count + state + chevron
     const summary = document.createElement('summary');
     summary.className = 'theia-mobile-tool-group-summary';
+    // Disclosure: the native <summary> toggles on Enter/Space; aria-expanded mirrors the open state.
+    summary.setAttribute('role', 'button');
+    summary.setAttribute('aria-expanded', 'false');
     if (webSearchOnly) {
         summary.classList.add('theia-mod-web-search-hidden');
     }
@@ -198,6 +252,10 @@ export function createMobileToolGroupElement(
 
     const state = document.createElement('span');
     state.className = `theia-mobile-tool-group-state ${event.hasError ? 'failed' : event.hasPending ? 'running' : 'complete'}`;
+    const stateLabel = mobileToolGroupStateLabel(event);
+    state.setAttribute('role', 'img');
+    state.setAttribute('aria-label', stateLabel);
+    state.title = stateLabel;
     const stateIcon = document.createElement('span');
     stateIcon.className = `codicon ${event.hasError ? 'codicon-error' : event.hasPending ? 'codicon-loading theia-animation-spin' : 'codicon-check'}`;
     state.append(stateIcon);
@@ -230,7 +288,9 @@ export function createMobileToolGroupElement(
     } else if (timelineDetailsOpenState.get(groupStateKey)) {
         details.open = true;
     }
+    summary.setAttribute('aria-expanded', String(details.open));
     details.addEventListener('toggle', () => {
+        summary.setAttribute('aria-expanded', String(details.open));
         if (webSearchOnly) {
             // Premium WebSearch cards own expand/collapse; keep the group shell open.
             details.open = true;
@@ -381,6 +441,8 @@ export function createMobileTerminalOutputElement(
     const detail = document.createElement('span');
     detail.className = 'theia-mobile-terminal-output-detail';
     renderMobileShellCommandDetail(detail, tool.detail);
+    // The command is ellipsized on narrow screens; the tooltip keeps the full text reachable.
+    detail.title = tool.detail;
 
     const state = document.createElement('span');
     state.className = `codicon ${tool.isError ? 'codicon-error' : tool.isFinished ? 'codicon-check' : 'codicon-loading theia-animation-spin'} theia-mobile-terminal-output-state`;
