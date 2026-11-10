@@ -387,7 +387,24 @@ export function scheduleDevPreviewFallbackExtracted(ctx: QaapProjectBootstrapSer
                 void tryOpen();
             }, DEV_PREVIEW_FALLBACK_MS),
         );
+        // Some servers never print a URL the output scanner recognises (a Theia backend logs only
+        // its startup lines) and bind their port long after the two early attempts: the run then
+        // stayed `starting` forever over a server that already answered. Keep attaching while the
+        // run is still starting, for the same grace the compile wait allows.
+        const pollUntil = Date.now() + PREVIEW_COMPILE_GRACE_MS;
+        const poll = (): void => {
+            if (runId !== ctx.devRunGeneration || ctx._phase !== 'starting' || ctx._previewUrl || Date.now() > pollUntil) {
+                return;
+            }
+            void tryOpen().finally(() => {
+                ctx.devPreviewFallbackTimers.push(window.setTimeout(poll, DEV_PREVIEW_FALLBACK_POLL_MS));
+            });
+        };
+        ctx.devPreviewFallbackTimers.push(window.setTimeout(poll, DEV_PREVIEW_FALLBACK_MS + DEV_PREVIEW_FALLBACK_POLL_MS));
 }
+
+/** Spacing of the attach attempts while a run is starting and its output named no URL. */
+const DEV_PREVIEW_FALLBACK_POLL_MS = 3_000;
 
 export async function tryAttachToExistingServerExtracted(ctx: QaapProjectBootstrapServiceContext, ports: number[]): Promise<boolean> {
         if (ports.length === 0 || ctx._previewUrl) {
