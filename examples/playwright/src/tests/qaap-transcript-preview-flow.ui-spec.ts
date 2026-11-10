@@ -398,7 +398,10 @@ test.describe('@qaap-mobile transcript dev preview flow', () => {
         const ws = new TheiaWorkspace([VITE_FIXTURE]);
         let viteDevServer: ChildProcess | undefined;
         try {
-            viteDevServer = await startWorkspaceViteDevServer(VITE_FIXTURE);
+            // The workspace is a copy of the fixture: start Vite from that copy, as a user would in
+            // the opened project. Qaap only adopts an unclaimed server whose cwd is inside the project.
+            ws.initialize();
+            viteDevServer = await startWorkspaceViteDevServer(ws.path);
 
             const app = await TheiaAppLoader.load({ playwright, browser }, ws);
             await app.waitForShellAndInitialized();
@@ -416,7 +419,8 @@ test.describe('@qaap-mobile transcript dev preview flow', () => {
         const ws = new TheiaWorkspace([VITE_SUBFOLDER_FIXTURE]);
         let viteDevServer: ChildProcess | undefined;
         try {
-            viteDevServer = await startWorkspaceViteDevServer(VITE_SUBFOLDER_APP);
+            ws.initialize();
+            viteDevServer = await startWorkspaceViteDevServer(path.join(ws.path, path.basename(VITE_SUBFOLDER_APP)));
 
             const app = await TheiaAppLoader.load({ playwright, browser }, ws);
             await app.waitForShellAndInitialized();
