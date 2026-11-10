@@ -1938,6 +1938,7 @@ describe('QaapDockerOrchestrator', () => {
             process.env.QAAP_TENANT_EGRESS_PROXY_IMAGE = 'qaap-tenant-egress:release';
             expect(orchestrator.tenantEgressProxyEnv()).to.deep.equal({
                 NODE_USE_ENV_PROXY: '1',
+                NODE_OPTIONS: '--disable-warning=UNDICI-EHPA',
                 HTTP_PROXY: 'http://qaap-tenant-egress-proxy:3128',
                 HTTPS_PROXY: 'http://qaap-tenant-egress-proxy:3128',
                 http_proxy: 'http://qaap-tenant-egress-proxy:3128',

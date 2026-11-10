@@ -3086,6 +3086,9 @@ export class QaapDockerOrchestrator {
         return {
             // Node 22.23 native fetch ignores HTTP(S)_PROXY unless this is set; the tenant backend calls GitHub with fetch.
             NODE_USE_ENV_PROXY: '1',
+            // With NODE_USE_ENV_PROXY every Node process prints "[UNDICI-EHPA] Warning: EnvHttpProxyAgent is
+            // experimental" on stderr: in each terminal and in every agent CLI log. Silence that one code only.
+            NODE_OPTIONS: '--disable-warning=UNDICI-EHPA',
             HTTP_PROXY: proxy,
             HTTPS_PROXY: proxy,
             http_proxy: proxy,

@@ -74,6 +74,13 @@
         min-height: 44px;
     }
 
+    /* Send is the one control here that paints a filled circle, so the 44px floor also grew the circle
+       next to the bare mic glyph. The touch box stays 44px; the circle is drawn at 32px inside it. */
+    body .theia-mobile-projects-sticky-composer-send {
+        padding: 6px;
+        background-clip: content-box !important;
+    }
+
     /* Update notice: Later / Update buttons and the close X keep a 44px touch height. */
     body .qaap-agent-cli-update-toast-action,
     body .qaap-agent-cli-update-toast-close {

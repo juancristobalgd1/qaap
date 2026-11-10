@@ -105,10 +105,12 @@ export function parseAgentLogForTranscript(
     }
     if (isPiAgent(agentId)) {
         const acc = new QaapPiStreamAccumulator();
-        acc.push(log);
+        acc.push(log.endsWith('\n') ? log : `${log}\n`);
         if (acc.consumedJsonEvents()) {
             return {
-                content: acc.getDisplayText() || log.trim(),
+                // Never the raw log: a turn that failed before any assistant text has an event stream
+                // (system prompt included) and nothing to show; its failure card carries the reason.
+                content: acc.getDisplayText(),
                 segments: [...acc.getSegments()],
                 traceEvents: [...acc.getTraceEvents()],
             };
