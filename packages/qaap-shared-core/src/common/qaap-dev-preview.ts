@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { QAAP_PREVIEW_PAINTED_MESSAGE } from '@theia/qaap-adapters/lib/common/qaap-preview-painted-message';
 import { isAllowedDevPreviewPort } from '@theia/qaap-adapters/lib/common/qaap-dev-preview-ports';
 import {
     isQaapIsolatedPreviewHostLabel,
@@ -173,6 +174,7 @@ export function buildQaapIdentityPreviewUrl(publicOrigin: string, previewId: str
 
 export const QAAP_PREVIEW_VITE_ENV_BOOTSTRAP_MARKER = 'data-qaap-preview-vite-env';
 export const QAAP_PREVIEW_DIAGNOSTICS_MARKER = 'data-qaap-preview-diagnostics';
+
 export const QAAP_PREVIEW_HISTORY_BASE_MARKER = 'data-qaap-preview-history-base';
 
 type PreviewScriptPlacement = 'head' | 'body-end';
@@ -322,6 +324,15 @@ addEventListener('unhandledrejection',function(event){add('unhandledrejection',e
 var original=console.error;
 console.error=function(){var values=Array.prototype.slice.call(arguments);add('console.error',values.map(text).join(' '));
 return original.apply(console,arguments);};
+var announced=false;
+function announce(){if(announced||root.parent===root){return;}announced=true;try{root.parent.postMessage({type:'${QAAP_PREVIEW_PAINTED_MESSAGE}'},'*');}catch(e){}}
+function painted(){var body=document.body;return !!body&&(body.innerText||'').trim().length>0||!!(body&&body.querySelector('img,canvas,svg,video,iframe'));}
+function watch(){if(painted()){requestAnimationFrame(announce);return;}
+var observer=new MutationObserver(function(){if(painted()){observer.disconnect();requestAnimationFrame(announce);}});
+observer.observe(document.documentElement,{childList:true,subtree:true,characterData:true});
+setTimeout(function(){observer.disconnect();announce();},15000);}
+if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',watch);}else{watch();}
+addEventListener('load',announce);
 })();</script>`;
 }
 
