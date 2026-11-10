@@ -677,6 +677,12 @@ export function mountEmbeddedAgentPreviewChrome(
         forwardBtn.disabled = !frameHistory.canGoForward();
     };
 
+    // While the frame navigates, the toolbar draws the same sliding progress bar as the sessions
+    // list on its bottom edge; the next `load` clears it (fired for cross-origin documents too).
+    const setFrameLoading = (loading: boolean): void => {
+        toolbar.classList.toggle('qaap-mod-frame-loading', loading);
+    };
+
     const adapter: QaapAgentPreviewChromeHost = {
         getRoot: () => root,
         getFrame: () => frame,
@@ -725,6 +731,7 @@ export function mountEmbeddedAgentPreviewChrome(
             }
             // Before `src`: sandbox changes only apply to the next navigation.
             blockedFrameGuard.arm(next);
+            setFrameLoading(true);
             if (navOptions?.hard) {
                 const bust = next.includes('?') ? `${next}&_qaap_cache_bust=${Date.now()}` : `${next}?_qaap_cache_bust=${Date.now()}`;
                 frame.src = bust;
@@ -735,6 +742,7 @@ export function mountEmbeddedAgentPreviewChrome(
             options.onNavigate?.(next);
         },
         reload: () => {
+            setFrameLoading(true);
             try {
                 frame.contentWindow?.location.reload();
             } catch {
@@ -754,6 +762,7 @@ export function mountEmbeddedAgentPreviewChrome(
             const bust = url.includes('?')
                 ? `${url}&_qaap_cache_bust=${Date.now()}`
                 : `${url}?_qaap_cache_bust=${Date.now()}`;
+            setFrameLoading(true);
             try {
                 frame.contentWindow?.location.replace(bust);
             } catch {
@@ -858,6 +867,7 @@ export function mountEmbeddedAgentPreviewChrome(
         urlInput.setSelectionRange(caretPosition, caretPosition);
     }));
     disposables.push(addEventListener(frame, 'load', () => {
+        setFrameLoading(false);
         try {
             const href = frame.contentWindow?.location.href;
             if (href && href !== 'about:blank') {

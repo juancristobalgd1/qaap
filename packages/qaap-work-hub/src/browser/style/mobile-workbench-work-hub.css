@@ -14264,6 +14264,11 @@ body.theia-mod-work-hub-settings-resizing * {
   padding-right: 0;
 }
 
+/* The preview's loading bar belongs on the drawer header's bottom edge, not the inner toolbar's. */
+.theia-mobile-execution-surface-sidebar-header > .theia-mobile-execution-surface-sidebar-toolbar.qaap-agent-preview-embedded-toolbar.qaap-mod-frame-loading {
+  position: static;
+}
+
 /* Files replaces the drawer title with the selected-file row. Keep the
  * existing preview controls and their actions, but let the row live in the
  * single drawer header so the file preview does not consume a second bar. */
