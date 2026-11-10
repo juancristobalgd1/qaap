@@ -1746,11 +1746,30 @@ body.qaap-theme-light .theia-mobile-agent-transcript-empty-action.theia-mod-prev
     }
   }
 
+  /* With a pointer the row floats under the bubble instead of unfolding: growing from 0 to 28px
+     on hover pushed the whole transcript down under the cursor. It sits right-aligned over the
+     gap before the agent reply, whose header is left-aligned, so it covers nothing. */
   @media (hover: hover) {
-    .theia-mobile-agent-transcript-user-wrap:not(:focus-within):not(:hover) .theia-mobile-agent-transcript-user-actions {
-      height: 0;
-      min-height: 0;
-      overflow: hidden;
+    /* Paint containment (timeline-premium) would clip the floating row to the bubble; keep
+       layout/style containment, the row is the only thing painted outside the box. */
+    .theia-mobile-agent-transcript .theia-mobile-agent-transcript-user-wrap:not(.theia-mod-streaming) {
+      contain: layout style;
+    }
+
+    /* Lift the message over the agent identity row it floats into, or that row eats the clicks.
+       `!important` with a higher specificity than the sticky reset that pins `z-index: auto`. */
+    .theia-mobile-agent-transcript .theia-mobile-agent-transcript-user-wrap:hover,
+    .theia-mobile-agent-transcript .theia-mobile-agent-transcript-user-wrap:focus-within {
+      z-index: 2 !important;
+    }
+
+    .theia-mobile-agent-transcript-user-wrap .theia-mobile-agent-transcript-user-actions {
+      position: absolute;
+      top: 100%;
+      right: 0;
+      z-index: 1;
+      white-space: nowrap;
+      flex-wrap: nowrap;
     }
   }
 
