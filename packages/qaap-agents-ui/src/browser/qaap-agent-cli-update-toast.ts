@@ -5,7 +5,8 @@
 
 /**
  * T3-inspired floating toast for agent CLI updates: provider logo + download badge,
- * title/subtitle, Cancel (outline) + Update (primary), and an X dismiss control.
+ * title/subtitle, Later (dismiss for this version) and Update (install), and an X dismiss control.
+ * Only one toast is mounted at a time; `pendingCount` groups the other outdated CLIs into the title.
  */
 
 import { nls } from '@theia/core/lib/common/nls';
@@ -18,6 +19,11 @@ export interface QaapAgentCliUpdateToastHandlers {
     readonly onDismiss: () => void;
 }
 
+export interface QaapAgentCliUpdateToastOptions {
+    /** Outdated CLIs still waiting (including this one). Above 1 the title groups them. */
+    readonly pendingCount?: number;
+}
+
 export interface QaapAgentCliUpdateToastController {
     readonly root: HTMLElement;
     setUpdating(updating: boolean): void;
@@ -28,6 +34,7 @@ export interface QaapAgentCliUpdateToastController {
 export function showAgentCliUpdateToast(
     info: QaapAgentCliUpdateInfo,
     handlers: QaapAgentCliUpdateToastHandlers,
+    options: QaapAgentCliUpdateToastOptions = {},
 ): QaapAgentCliUpdateToastController {
     document.querySelectorAll('.qaap-agent-cli-update-toast').forEach(node => node.remove());
 
@@ -74,19 +81,29 @@ export function showAgentCliUpdateToast(
     text.className = 'qaap-agent-cli-update-toast-text';
     const title = document.createElement('div');
     title.className = 'qaap-agent-cli-update-toast-title';
-    title.textContent = nls.localize(
-        'qaap/agentCliUpdate/title',
-        'Update Available: {0} v{1}',
-        info.label,
-        info.latestVersion,
-    );
+    const pendingCount = options.pendingCount ?? 1;
+    title.textContent = pendingCount > 1
+        ? nls.localize('qaap/agentCliUpdate/titleMany', '{0} CLI updates available', pendingCount)
+        : nls.localize(
+            'qaap/agentCliUpdate/title',
+            'Update Available: {0} v{1}',
+            info.label,
+            info.latestVersion,
+        );
     text.append(title);
     const subtitle = document.createElement('div');
     subtitle.className = 'qaap-agent-cli-update-toast-subtitle';
-    subtitle.textContent = nls.localize(
-        'qaap/agentCliUpdate/subtitle',
-        'Install the update now, or cancel to dismiss this notice.',
-    );
+    subtitle.textContent = pendingCount > 1
+        ? nls.localize(
+            'qaap/agentCliUpdate/subtitleMany',
+            'Starting with {0} v{1}. Later hides these notices for this version.',
+            info.label,
+            info.latestVersion,
+        )
+        : nls.localize(
+            'qaap/agentCliUpdate/subtitle',
+            'Install the update now, or choose Later to hide this notice for this version.',
+        );
     text.append(subtitle);
     body.append(text);
     root.append(body);
@@ -94,12 +111,13 @@ export function showAgentCliUpdateToast(
     const actions = document.createElement('div');
     actions.className = 'qaap-agent-cli-update-toast-actions';
 
-    const cancelBtn = document.createElement('button');
-    cancelBtn.type = 'button';
-    cancelBtn.className = 'qaap-agent-cli-update-toast-action';
-    cancelBtn.textContent = nls.localize('qaap/agentCliUpdate/cancel', 'Cancel');
-    cancelBtn.addEventListener('click', () => handlers.onCancel());
-    actions.append(cancelBtn);
+    // Non-destructive dismissal sits apart from the install action (left vs right).
+    const laterBtn = document.createElement('button');
+    laterBtn.type = 'button';
+    laterBtn.className = 'qaap-agent-cli-update-toast-action qaap-mod-later';
+    laterBtn.textContent = nls.localize('qaap/agentCliUpdate/later', 'Later');
+    laterBtn.addEventListener('click', () => handlers.onCancel());
+    actions.append(laterBtn);
 
     const updateBtn = document.createElement('button');
     updateBtn.type = 'button';
@@ -157,7 +175,7 @@ export function showAgentCliUpdateToast(
             clearDismiss();
             root.classList.toggle('qaap-mod-updating', updating);
             updateBtn.disabled = updating;
-            // Cancel stays enabled so the user can dismiss even while an update is in flight.
+            // Later stays enabled so the user can dismiss even while an update is in flight.
             updateBtn.textContent = updating
                 ? nls.localize('qaap/agentCliUpdate/updating', 'Updating…')
                 : nls.localize('qaap/agentCliUpdate/update', 'Update');

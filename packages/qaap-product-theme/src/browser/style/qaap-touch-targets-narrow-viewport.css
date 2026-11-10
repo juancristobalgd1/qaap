@@ -74,6 +74,12 @@
         min-height: 44px;
     }
 
+    /* Update notice: Later / Update buttons and the close X keep a 44px touch height. */
+    body .qaap-agent-cli-update-toast-action,
+    body .qaap-agent-cli-update-toast-close {
+        min-height: 44px;
+    }
+
     /* Turn-failure "Retry task" sits at 24px visual height: keep a 44px touch height. */
     body .theia-mobile-agent-turn-failure-summary-retry {
         min-height: 44px;
