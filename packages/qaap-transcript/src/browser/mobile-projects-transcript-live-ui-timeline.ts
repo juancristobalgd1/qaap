@@ -415,6 +415,8 @@ export function ensureTranscriptConversationRefreshExtracted(ctx: MobileProjects
         const context = ctx.resolveTranscriptRefreshContext();
         if (!context || !ctx.isWatchingOpenTranscript(context.summary.id)) {
             ctx.stopTranscriptVisualVerificationPoll();
+            // Leaving the conversation: a trailing refetch must not fire for a transcript no longer open.
+            ctx.transcriptRefetchThrottle.cancelAll();
             return;
         }
         const wasPolling = ctx.transcriptVisualVerificationPollTimer !== undefined
@@ -458,7 +460,15 @@ export function ensureTranscriptConversationRefreshExtracted(ctx: MobileProjects
         const conversationId = context.summary.id;
         const stateKey = `${liveStatus}|${conv?.updatedAt ?? context.summary.updatedAt}`;
         const throttle = ctx.transcriptRefetchThrottle;
-        if (!throttle.hasStateChanged(conversationId, stateKey) || throttle.delayMs(conversationId) > 0) {
+        if (!throttle.hasStateChanged(conversationId, stateKey)) {
+            return;
+        }
+        const delayMs = throttle.delayMs(conversationId);
+        if (delayMs > 0) {
+            // Window still open: one trailing refetch replaces any pending one, so the change is not lost.
+            throttle.scheduleTrailing(conversationId, delayMs, stateKey, () => {
+                void ctx.refreshOpenTranscriptConversation({ forcePoll: true });
+            });
             return;
         }
         throttle.markIssued(conversationId, stateKey);
