@@ -72,8 +72,11 @@ describe('qaap-agent-task-runner-utils prompt file for a dropped agent uid', () 
         expect(path.dirname(sent.dir)).to.equal(os.tmpdir());
         expect(path.basename(sent.dir)).to.match(/^qaap-agent-prompt-[0-9a-f]{32}$/);
         expect(fs.existsSync(sent.dir)).to.equal(true);
-        expect(fs.statSync(sent.dir).mode & 0o777).to.equal(0o700);
-        expect(fs.statSync(sent.file).mode & 0o777).to.equal(0o600);
+        // POSIX permission bits do not exist on Windows (files report 0o666 there).
+        if (process.platform !== 'win32') {
+            expect(fs.statSync(sent.dir).mode & 0o777).to.equal(0o700);
+            expect(fs.statSync(sent.file).mode & 0o777).to.equal(0o600);
+        }
         created.push(sent.dir);
     });
 
