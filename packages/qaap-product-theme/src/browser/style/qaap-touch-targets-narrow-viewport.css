@@ -74,6 +74,11 @@
         min-height: 44px;
     }
 
+    /* Turn-failure "Retry task" sits at 24px visual height: keep a 44px touch height. */
+    body .theia-mobile-agent-turn-failure-summary-retry {
+        min-height: 44px;
+    }
+
     /* Changes pill and Approve & Commit share the composer's changes row: 44px touch height. */
     body .theia-mobile-sticky-composer-changes-pill,
     body .theia-mobile-sticky-composer-commit-btn {
