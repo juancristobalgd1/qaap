@@ -39,7 +39,6 @@ import { isTranscriptAgentExecutionBusy, resolveTranscriptEffectiveStatus, isCon
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { TRANSCRIPT_COMPOSER_ACTIVITY_DEBOUNCE_MS } from './mobile-projects-transcript-live-ui';
-import { isQaapPreviewDismissedByUser, qaapProjectPreviewDirectory } from '@theia/qaap-shared-core/lib/browser/qaap-preview-user-dismissal';
 
 export function applyTranscriptSseRenderExtracted(ctx: MobileProjectsTranscriptLiveUiContext, incoming: QaapAgentConversationDTO,
     eventMessage: QaapAgentMessageDTO,): void {
@@ -301,25 +300,15 @@ export async function openReadyTranscriptPreviewUrlExtracted(ctx: MobileProjects
     if (ctx.transcriptPreviewOfferAnnouncedUrl === normalized) {
         return;
     }
+    // Staging only: the ready URL feeds the "View preview" pill and the Preview tab, and the user
+    // opens it. Switching the Work Hub to the Preview tab on its own interrupted whatever the user
+    // was reading, even in a thread that once asked to run the app.
     ctx.host.stageTranscriptPreviewReadyUrl(normalized);
     ctx.transcriptPreviewOfferAnnouncedUrl = normalized;
     const project = ctx.host.transcriptOpenProject;
-    if (
-        ctx.host.transcriptPreviewSuppressedByUser
-        || !conversationMayAutoOpenTranscriptPreview(conv)
-        // The user closed this project's preview: a new URL form, a state change or a poll hit
-        // only refreshes the staged URL; the user reopens it from the Preview tab/pill.
-        || isQaapPreviewDismissedByUser(qaapProjectPreviewDirectory(ctx.host.projectsService, project, undefined, conv?.cwd))
-    ) {
-        return;
+    if (project && ctx.host.transcriptOpenSummary) {
+        ctx.host.transcriptOpenProject = { ...project, previewUrl: normalized };
     }
-    const summary = ctx.host.transcriptOpenSummary;
-    if (!project || !summary) {
-        return;
-    }
-    const previewProject = { ...project, previewUrl: normalized };
-    ctx.host.transcriptOpenProject = previewProject;
-    ctx.host.executionSurfaceTabsUi.selectTranscriptTab('preview', previewProject, summary);
 }
 
 /**
