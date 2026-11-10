@@ -26,6 +26,7 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-git-review';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import { formatCommitFeedback } from '../common/qaap-commit-feedback';
+import { QaapDiffRequestError } from './qaap-diff-request-error';
 import { splitRepoRelativePath } from './qaap-diff-review-path';
 import { QaapAgentFileSection, QaapDiffLine } from './qaap-diff-review-agent-file-section';
 import { diffLineKey } from './qaap-diff-review-segments';
@@ -156,8 +157,8 @@ export class QaapDiffReviewWidget extends ReactWidget {
     protected gitIdentity: QaapGitIdentity | undefined;
     protected commitMenuOpen = false;
     protected readonly agentFileDiffs = new Map<string, QaapGitFileDiffResponse>();
-    /** Per-file /diff failure detail (server error body or transport error), keyed by path. */
-    protected readonly agentFileDiffErrors = new Map<string, string>();
+    /** Per-file /diff failure: raw detail for the title/log, and whether the file changed since the task. */
+    protected readonly agentFileDiffErrors = new Map<string, { readonly detail: string; readonly stale: boolean }>();
     protected readonly loadingAgentDiffPaths = new Set<string>();
     protected readonly agentDiffLoadLimiter = new QaapAsyncConcurrencyLimiter(AGENT_DIFF_CONCURRENCY);
     protected agentDiffGeneration = 0;
@@ -469,7 +470,7 @@ export class QaapDiffReviewWidget extends ReactWidget {
             } catch {
                 /* non-JSON body (proxy error page) — keep the status-only message */
             }
-            throw new Error(detail
+            throw new QaapDiffRequestError(response.status, detail
                 ? `diff request failed (${response.status}): ${detail}`
                 : `diff request failed (${response.status})`);
         }
@@ -509,7 +510,11 @@ export class QaapDiffReviewWidget extends ReactWidget {
             });
         } catch (error) {
             if (this.isCurrentAgentDiffRequest(path, root, generation, serial)) {
-                this.agentFileDiffErrors.set(path, error instanceof Error ? error.message : String(error));
+                this.agentFileDiffErrors.set(path, {
+                    detail: error instanceof Error ? error.message : String(error),
+                    // 409 from /diff: git reports the file as changed but has no diff data (it moved on since the task).
+                    stale: error instanceof QaapDiffRequestError && error.status === 409,
+                });
             }
         } finally {
             if (this.isCurrentAgentDiffRequest(path, root, generation, serial)) {
@@ -720,7 +725,8 @@ export class QaapDiffReviewWidget extends ReactWidget {
                             diff={this.agentFileDiffs.get(file.path)}
                             expanded={this.isAgentFileExpanded(file.path)}
                             loading={this.loadingAgentDiffPaths.has(file.path)}
-                            errorDetail={this.agentFileDiffErrors.get(file.path)}
+                            errorDetail={this.agentFileDiffErrors.get(file.path)?.detail}
+                            errorStale={this.agentFileDiffErrors.get(file.path)?.stale ?? false}
                             iconClass={this.iconFor(file.path)}
                             fileActionsEnabled={this.bulkActionsEnabled}
                             fileActionRunning={this.runningFileAction}
