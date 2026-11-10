@@ -397,14 +397,27 @@ export async function tryAttachToExistingServerExtracted(ctx: QaapProjectBootstr
             if (isReservedIdePort(port)) {
                 continue;
             }
-            // Refresh only the owner/port gate before probing. A process-scoped claim here can
-            // replace the durable identity before the probe tells us which process is actually
-            // listening (observed after reload with multiple restored Dev terminals). The legacy
-            // claim is non-stealing and cannot adopt an unregistered listener in cloud mode.
-            await ctx.previewPortClaimService.claim(port);
-            const probe = await probeQaapDevPreviewPort(port);
-            if (!probe.ready || !ctx.probeBelongsToActiveProject(probe.projectId)) {
-                continue;
+            // Probe BEFORE claiming. A listener that answers without any registered identity
+            // (no projectId) is not this project's server: another app on the same port (a second
+            // project on :3000) must never become this preview. Claiming it first was the bug —
+            // the legacy claim records the caller as the port's owner, and the backend allocator
+            // then adopts that owner-claimed listener into this project's next reservation
+            // (`adopted listener explicitly claimed by its owner`), so the foreign app was served
+            // as this preview while this project's own server never ran.
+            let probe = await probeQaapDevPreviewPort(port);
+            if (!isAttributableProbe(ctx, probe)) {
+                if (probe.ready && probe.projectId === undefined) {
+                    continue;
+                }
+                // Not answering, refused (an expired own claim fails closed, SEC-8) or answering
+                // under another project's process-less identity: refresh only the owner/port gate
+                // and probe again. The legacy claim is non-stealing, and a process-scoped claim
+                // here could replace the durable identity before the probe names the listener.
+                await ctx.previewPortClaimService.claim(port);
+                probe = await probeQaapDevPreviewPort(port);
+                if (!isAttributableProbe(ctx, probe)) {
+                    continue;
+                }
             }
             ctx.adoptExistingPreviewIdentity(port, probe);
             const plan = ctx.resolveDevPlan();
@@ -423,6 +436,14 @@ export async function tryAttachToExistingServerExtracted(ctx: QaapProjectBootstr
             return true;
         }
         return false;
+}
+
+/**
+ * A probe proves the listener is this project's only when the backend names a registered identity
+ * for it. Liveness alone (any app answering on the port) is never ownership, also in local mode.
+ */
+function isAttributableProbe(ctx: QaapProjectBootstrapServiceContext, probe: QaapDevPreviewProbeResponse): boolean {
+    return probe.ready && probe.projectId !== undefined && ctx.probeBelongsToActiveProject(probe.projectId);
 }
 
 export function adoptExistingPreviewIdentityExtracted(ctx: QaapProjectBootstrapServiceContext, port: number, probe: QaapDevPreviewProbeResponse): void {

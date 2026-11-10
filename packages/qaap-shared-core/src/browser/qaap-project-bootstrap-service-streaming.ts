@@ -204,8 +204,9 @@ export async function startDevServerExtracted(ctx: QaapProjectBootstrapServiceCo
         // THIS project (external Vite, a run that outlived a reload) is the preview. Reserving
         // instead makes the allocator skip the occupied port and park a second copy of the app on
         // the next free one (:5174, or :5176 when earlier runs left :5174/:5175 behind). Ownership
-        // is still verified by the claim + probe inside the attach, so another project's or an
-        // unregistered listener is never adopted. A live managed terminal means this run is a
+        // is verified by the probe inside the attach (a registered identity of this project), so
+        // another project's or an unregistered listener is never adopted — the reservation below
+        // then moves past the occupied port. A live managed terminal means this run is a
         // restart whose old server may still be shutting down: spawn then, do not attach to it.
         const hasLiveManagedTerminal = ctx.devTerminal !== undefined && !ctx.devTerminal.isDisposed;
         if (spawnPlan.targetPort !== undefined && spawnPlan.targetPort !== sectionPort && !hasLiveManagedTerminal
