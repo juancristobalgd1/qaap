@@ -379,10 +379,10 @@ export function createTranscriptAgentAuthLoginCardExtracted(ctx: MobileProjectsT
             terminalBtn.textContent = options.agentLabel
                 ? nls.localize(
                     'qaap/mobileProjects/authLoginOpenTerminalNamed',
-                    'Sign in with {0} in terminal',
+                    'Sign in with {0} via terminal',
                     options.agentLabel,
                 )
-                : nls.localize('qaap/mobileProjects/authLoginOpenTerminal', 'Sign in in terminal');
+                : nls.localize('qaap/mobileProjects/authLoginOpenTerminal', 'Sign in via terminal');
             if (!challenge.url) {
                 terminalBtn.classList.add('theia-mod-primary');
             }
