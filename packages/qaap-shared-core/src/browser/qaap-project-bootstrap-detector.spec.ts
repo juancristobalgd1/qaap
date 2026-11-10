@@ -566,6 +566,39 @@ describe('QaapProjectBootstrapDetector package-manager workspaces', () => {
         expect(descriptor?.nodeModulesPresent).to.equal(false);
     });
 
+    it('isolates a root script that launches the Theia member through an indirection', async () => {
+        const mock = new MockFileService();
+        theiaMonorepo(mock);
+        mock.addFile('/ws/package.json', JSON.stringify({
+            name: '@theia/monorepo',
+            private: true,
+            scripts: { 'start:browser': 'node scripts/start-browser.mjs' },
+            workspaces: ['dev-packages/*', 'packages/*', 'examples/*'],
+        }));
+        const detector = new QaapProjectBootstrapDetector();
+        bindMockFileService(detector, mock);
+
+        const descriptor = await detector.detect(URI.fromFilePath('/ws'));
+        expect(descriptor?.devCommand).to.equal('npm run start:browser');
+        expect(descriptor?.isTheiaApp).to.equal(true);
+    });
+
+    it('does not flag a monorepo root without a Theia member', async () => {
+        const mock = new MockFileService();
+        mock.addDir('/ws');
+        mock.addFile('/ws/package.json', JSON.stringify({ name: 'root', private: true, workspaces: ['apps/*'], scripts: { dev: 'turbo dev' } }));
+        mock.addFile('/ws/package-lock.json', '{}');
+        mock.addDir('/ws/apps');
+        mock.addDir('/ws/apps/web');
+        mock.addFile('/ws/apps/web/package.json', JSON.stringify({ name: 'web', scripts: { dev: 'vite' }, devDependencies: { vite: '6.0.0' } }));
+        const detector = new QaapProjectBootstrapDetector();
+        bindMockFileService(detector, mock);
+
+        const descriptor = await detector.detect(URI.fromFilePath('/ws'));
+        expect(descriptor?.apps.length).to.equal(1);
+        expect(descriptor?.isTheiaApp).to.equal(undefined);
+    });
+
     it('never offers Electron members as previewable apps', async () => {
         const mock = new MockFileService();
         theiaMonorepo(mock);

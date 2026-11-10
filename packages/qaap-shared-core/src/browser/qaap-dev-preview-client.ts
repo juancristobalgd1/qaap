@@ -187,6 +187,7 @@ export async function probeQaapDevPreviewPort(port: number, signal?: AbortSignal
         return {
             ready: !!body.ready,
             readiness: body.ready ? 'transport_ready' : body.readiness === 'failed' ? 'failed' : undefined,
+            ...(!body.ready && body.listening === true ? { listening: true } : {}),
             previewUrl: body.previewUrl || fallback.previewUrl,
             previewId: typeof body.previewId === 'string' ? body.previewId : undefined,
             workspaceId: typeof body.workspaceId === 'string' ? body.workspaceId : undefined,
@@ -196,7 +197,8 @@ export async function probeQaapDevPreviewPort(port: number, signal?: AbortSignal
             root: typeof body.root === 'string' ? body.root : undefined,
         };
     } catch {
-        return fallback;
+        // Timed out or unreachable: the IDE backend did not answer, which says nothing about the dev server.
+        return { ...fallback, probeFailed: true };
     }
 }
 
@@ -240,6 +242,7 @@ export async function fetchQaapCurrentDevPreview(
         return {
             ready: !!body.ready,
             readiness: body.ready ? 'transport_ready' : body.readiness === 'failed' ? 'failed' : undefined,
+            ...(!body.ready && body.listening === true ? { listening: true } : {}),
             previewUrl: body.previewUrl,
             previewId: body.previewId,
             workspaceId: typeof body.workspaceId === 'string' ? body.workspaceId : undefined,

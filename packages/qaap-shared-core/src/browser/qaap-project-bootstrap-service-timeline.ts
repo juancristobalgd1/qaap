@@ -242,7 +242,8 @@ export async function openPrimaryPreviewWhenReadyExtracted(ctx: QaapProjectBoots
         let ready = await waitForQaapDevPreviewPort(port, {
             maxAttempts: readyAttempts,
             intervalMs: DEV_PREVIEW_OPEN_PROBE_INTERVAL_MS,
-            listeningGraceMs: PREVIEW_COMPILE_GRACE_MS,
+            // A project that declares a longer `readyTimeoutMs` gets at least that long to compile.
+            listeningGraceMs: Math.max(PREVIEW_COMPILE_GRACE_MS, readyTimeoutMs ?? 0),
             onListening: () => {
                 // The socket is accepted but the app has not answered: the first compile is running.
                 listeningSeen = true;
@@ -265,7 +266,7 @@ export async function openPrimaryPreviewWhenReadyExtracted(ctx: QaapProjectBoots
             ctx._error = nls.localize(
                 'qaap/projectBootstrap/previewWaitTimedOut',
                 'The server has not answered after {0} seconds. Check the startup log, then retry.',
-                String(Math.round((listeningSeen ? PREVIEW_COMPILE_GRACE_MS : (readyAttempts - 1) * DEV_PREVIEW_OPEN_PROBE_INTERVAL_MS) / 1000)),
+                String(Math.round((listeningSeen ? Math.max(PREVIEW_COMPILE_GRACE_MS, readyTimeoutMs ?? 0) : (readyAttempts - 1) * DEV_PREVIEW_OPEN_PROBE_INTERVAL_MS) / 1000)),
             );
             ctx.stateEmitter.fire(ctx.buildStateChange(ctx._phase));
             return;

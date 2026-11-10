@@ -58,6 +58,11 @@ export interface QaapDevPreviewProbeResponse {
      * yet (a first compile can take minutes). Only the port probe sets it; `ready` stays false.
      */
     readonly listening?: boolean;
+    /**
+     * Client-side only: the probe request itself timed out or failed (the IDE backend did not
+     * answer), so the dev server's state is unknown. Never sent by the backend.
+     */
+    readonly probeFailed?: boolean;
     /** URL the mini-browser should load via the same-origin `/qaap-dev/:port/` proxy. */
     readonly previewUrl: string;
     readonly previewId?: string;
