@@ -3156,22 +3156,20 @@ body.qaap-theme-light .theia-mobile-tool-group.running .theia-mobile-tool-group-
   color: var(--theia-descriptionForeground);
   font-size: 12px;
   font-family: var(--theia-monospace-font-family);
-  /* Allow the command text to scroll horizontally without truncation */
-  flex: 1;
+  /* A long command ends in an ellipsis (the full text is in the title tooltip) instead of being
+     cut off or scrolled sideways; the trailing status check keeps its own slot. */
+  flex: 1 1 auto;
   min-width: 0;
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
-  -webkit-overflow-scrolling: touch;
-  touch-action: pan-x;
-  overscroll-behavior-x: contain;
-  /* Hide scrollbar track but keep scroll functional */
-  scrollbar-width: none;
+  touch-action: manipulation;
 }
 
 .theia-mobile-terminal-output-detail::-webkit-scrollbar {
   display: none;
 }
+
 
 .theia-mobile-terminal-output-detail .theia-mobile-agent-token.theia-mod-keyword {
   color: var(--theia-symbolIcon-functionForeground, #dcdcaa);
@@ -3200,7 +3198,8 @@ body.qaap-theme-light .theia-mobile-tool-group.running .theia-mobile-tool-group-
 
 .theia-mobile-terminal-output-state {
   font-size: 14px;
-  margin-left: auto;
+  flex: 0 0 auto;
+  margin-left: 8px;
 }
 
 .theia-mobile-terminal-output.complete .theia-mobile-terminal-output-state {

@@ -441,6 +441,8 @@ export function createMobileTerminalOutputElement(
     const detail = document.createElement('span');
     detail.className = 'theia-mobile-terminal-output-detail';
     renderMobileShellCommandDetail(detail, tool.detail);
+    // The command is ellipsized on narrow screens; the tooltip keeps the full text reachable.
+    detail.title = tool.detail;
 
     const state = document.createElement('span');
     state.className = `codicon ${tool.isError ? 'codicon-error' : tool.isFinished ? 'codicon-check' : 'codicon-loading theia-animation-spin'} theia-mobile-terminal-output-state`;
