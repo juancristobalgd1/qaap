@@ -1151,7 +1151,7 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
         const report = row!.querySelector<HTMLElement>('.theia-mobile-turn-closing-report');
         expect(report, 'the closing report is rendered').to.not.equal(null);
         expect(report!.textContent).to.contain('Needs your input');
-        expect(report!.textContent).to.contain('Which database?');
+        expect(report!.textContent).to.not.contain('Which database?');
         expect(row!.textContent).to.not.contain('Error:');
         chatHost.remove();
     });

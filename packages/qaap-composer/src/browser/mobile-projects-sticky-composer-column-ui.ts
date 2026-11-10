@@ -87,6 +87,8 @@ export class MobileProjectsStickyComposerColumnUi {
         canSubmit: boolean;
         /** True while a Stop for this conversation is unacknowledged: Send is disabled and reads "Stopping…". */
         isSubmitBlocked?: () => boolean;
+        /** Attachments still uploading: Send keeps the draft in the input and reports through `onSubmitBlocked`. */
+        hasPendingAttachments?: () => boolean;
         /** True when a Stop expired while the server still streams: the Stop control is offered again. */
         isStopRetryable?: () => boolean;
         isAgentWorking?: () => boolean;
@@ -422,7 +424,7 @@ export class MobileProjectsStickyComposerColumnUi {
         const dispatchSubmit = (handler: (draft: string) => void): void => {
             const draft = input.value.trim();
             const now = Date.now();
-            if (!draft || !options.canSubmit || (options.isSubmitBlocked?.() ?? false)) {
+            if (!draft || !options.canSubmit || (options.isSubmitBlocked?.() ?? false) || (options.hasPendingAttachments?.() ?? false)) {
                 if (!submitInFlight) {
                     options.onSubmitBlocked?.();
                 }

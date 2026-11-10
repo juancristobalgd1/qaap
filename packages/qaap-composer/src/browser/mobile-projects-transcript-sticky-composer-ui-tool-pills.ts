@@ -187,6 +187,12 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: MobilePro
         ),
         canSubmit: true,
         isSubmitBlocked: () => qaapStopAck.isSendBlocked(ctx.host.transcriptLastConv?.id ?? summary.id),
+        hasPendingAttachments: () => hasPendingComposerContextEntries(ctx.host.transcriptComposerContext),
+        onSubmitBlocked: () => {
+            if (hasPendingComposerContextEntries(ctx.host.transcriptComposerContext)) {
+                ctx.host.stickyComposerContextUi.notifyPendingComposerAttachments();
+            }
+        },
         isStopRetryable: () => qaapStopAck.isStopRetryable(ctx.host.transcriptLastConv?.id ?? summary.id),
         onImprovePrompt: ctx.host.composerPromptImprover
             ? createStickyComposerImprovePromptHandler({
