@@ -308,6 +308,7 @@ export class MobileProjectsHubHeaderUi {
         this.host.headerProjectCluster.classList.toggle('theia-mod-conversation-title', showConversationSeparator);
         this.host.headerProjectCluster.classList.toggle('theia-mod-compact-project', showProject && compact);
         this.host.headerProjectLabelEl.textContent = sectionTitle;
+        this.host.headerProjectLabelEl.title = sectionTitle;
         layoutHeaderProjectClusterContents(
             this.host.headerProjectBtn,
             this.host.headerConversationsBtn,

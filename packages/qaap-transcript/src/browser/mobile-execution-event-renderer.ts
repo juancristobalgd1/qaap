@@ -162,6 +162,17 @@ export function createMobileExecutionEventElement(
     return section;
 }
 
+/** Localized accessible name of a tool group's state icon (completed, failed or running). */
+export function mobileToolGroupStateLabel(event: Pick<MobileExecutionEvent, 'hasError' | 'hasPending'>): string {
+    if (event.hasError) {
+        return nls.localize('qaap/mobileProjects/toolGroupStateFailed', 'Failed');
+    }
+    if (event.hasPending) {
+        return nls.localize('qaap/mobileProjects/toolGroupStateRunning', 'Running');
+    }
+    return nls.localize('qaap/mobileProjects/toolGroupStateCompleted', 'Completed');
+}
+
 export function createMobileToolGroupElement(
     event: MobileExecutionEvent,
 ): HTMLElement {
@@ -179,6 +190,9 @@ export function createMobileToolGroupElement(
     // Summary line: icon + verb + count + state + chevron
     const summary = document.createElement('summary');
     summary.className = 'theia-mobile-tool-group-summary';
+    // Disclosure: the native <summary> toggles on Enter/Space; aria-expanded mirrors the open state.
+    summary.setAttribute('role', 'button');
+    summary.setAttribute('aria-expanded', 'false');
     if (webSearchOnly) {
         summary.classList.add('theia-mod-web-search-hidden');
     }
@@ -198,6 +212,10 @@ export function createMobileToolGroupElement(
 
     const state = document.createElement('span');
     state.className = `theia-mobile-tool-group-state ${event.hasError ? 'failed' : event.hasPending ? 'running' : 'complete'}`;
+    const stateLabel = mobileToolGroupStateLabel(event);
+    state.setAttribute('role', 'img');
+    state.setAttribute('aria-label', stateLabel);
+    state.title = stateLabel;
     const stateIcon = document.createElement('span');
     stateIcon.className = `codicon ${event.hasError ? 'codicon-error' : event.hasPending ? 'codicon-loading theia-animation-spin' : 'codicon-check'}`;
     state.append(stateIcon);
@@ -230,7 +248,9 @@ export function createMobileToolGroupElement(
     } else if (timelineDetailsOpenState.get(groupStateKey)) {
         details.open = true;
     }
+    summary.setAttribute('aria-expanded', String(details.open));
     details.addEventListener('toggle', () => {
+        summary.setAttribute('aria-expanded', String(details.open));
         if (webSearchOnly) {
             // Premium WebSearch cards own expand/collapse; keep the group shell open.
             details.open = true;

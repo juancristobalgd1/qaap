@@ -2636,7 +2636,7 @@ body.qaap-theme-light .theia-mobile-agent-transcript-empty-action.theia-mod-prev
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding-bottom: 24px;
+  padding-bottom: var(--q-space-6);
 }
 
 .theia-mobile-execution-event:last-child {
@@ -2896,13 +2896,13 @@ body.qaap-theme-light .theia-mobile-agent-transcript-empty-action.theia-mod-prev
 
 .theia-mobile-tool-group-verb {
   font-weight: 500;
-  font-size: 13px;
+  font-size: var(--q-text-body);
   color: var(--theia-descriptionForeground);
 }
 
 .theia-mobile-tool-group-meta {
   color: var(--theia-descriptionForeground);
-  font-size: 12px;
+  font-size: var(--q-text-meta);
   font-weight: 400;
   opacity: 0.72;
 }
@@ -3026,7 +3026,7 @@ body.qaap-theme-light .theia-mobile-tool-group.running .theia-mobile-tool-group-
 
 .theia-mobile-tool-detail-detail {
   color: var(--theia-descriptionForeground);
-  font-size: 12px;
+  font-size: var(--q-text-body);
   font-family: var(--theia-monospace-font-family);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3373,7 +3373,7 @@ body.qaap-theme-light .theia-mobile-tool-group.running .theia-mobile-tool-group-
   background: transparent;
   color: color-mix(in srgb, var(--theia-descriptionForeground) 78%, transparent);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--q-text-meta);
   font-weight: 500;
   line-height: 1.3;
   cursor: pointer;
@@ -3460,13 +3460,14 @@ body.qaap-theme-light .theia-mobile-tool-group.running .theia-mobile-tool-group-
 
 .theia-mobile-diff-summary-file-badge {
   flex: none;
-  min-width: 1.4em;
+  min-width: 18px;
+  height: 18px;
   color: color-mix(in srgb, #6b8cae 82%, var(--theia-descriptionForeground));
   font-family: var(--theia-ui-font-family, system-ui, sans-serif);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.02em;
-  line-height: 1;
+  line-height: 18px;
   text-align: center;
 }
 
@@ -4279,13 +4280,18 @@ details > summary:focus-visible,
 .theia-mobile-agent-diff-card-head:focus-visible,
 .theia-mobile-process-accordion-header:focus,
 .theia-mobile-process-accordion-header:focus-visible,
-.theia-mobile-tool-group-summary:focus,
-.theia-mobile-tool-group-summary:focus-visible,
 .theia-mobile-terminal-output-summary:focus,
 .theia-mobile-terminal-output-summary:focus-visible {
   outline: none !important;
   box-shadow: none !important;
   background: transparent !important;
+}
+
+/* Disclosure focus: visible theme focus ring (outline is kept, never removed). */
+.theia-mobile-tool-group-summary:focus-visible {
+  outline: 2px solid var(--theia-focusBorder);
+  outline-offset: -2px;
+  border-radius: 6px;
 }
 
 @media (hover: none), (pointer: coarse) {

@@ -42,6 +42,23 @@
     }
 }
 
+/* Disclosure rows and the diff "Review" link: 44px touch area. The review link keeps its visual size and extends its hit area through ::after. */
+@media (max-width: 767px), (pointer: coarse) {
+    body .theia-mobile-tool-group-summary {
+        min-height: 44px;
+    }
+
+    .theia-mobile-diff-summary-review {
+        position: relative;
+    }
+
+    .theia-mobile-diff-summary-review::after {
+        content: '';
+        position: absolute;
+        inset: -14px -10px;
+    }
+}
+
 /* Controls whose component rules (0,1,0) load after this sheet and set a smaller min-height:
    the 44px floor is scoped under body so it wins the cascade. Icon controls keep their visual size. */
 @media (max-width: 767px), (pointer: coarse) {

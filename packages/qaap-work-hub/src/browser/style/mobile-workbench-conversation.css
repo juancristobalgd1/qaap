@@ -3745,8 +3745,8 @@ body>.theia-mobile-transcript-files-menu {
   box-sizing: border-box;
   /* A soft trailing fade says "more chips this way" instead of a chip cut mid-word; scrolled to the
      end it only fades the empty edge inset. */
-  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent);
-  mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent);
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent);
 }
 
 .theia-mobile-agent-transcript-empty-actions::after {
@@ -4467,7 +4467,7 @@ body.qaap-theme-light .theia-mobile-agent-transcript-git-action-pill.theia-mod-f
   border-radius: 6px;
   background: transparent;
   color: var(--theia-descriptionForeground);
-  font-size: 11px;
+  font-size: var(--q-text-meta);
   font-family: inherit;
   font-weight: 600;
   line-height: 1;
@@ -5074,7 +5074,7 @@ body.qaap-theme-light .theia-mobile-agent-stream-label.theia-mod-shimmer {
 }
 
 .theia-mobile-agent-thought-brief.theia-mod-cursor-flat .theia-mobile-agent-thought-brief-body {
-  font-size: 13px;
+  font-size: var(--q-text-body);
   line-height: 1.45;
   color: color-mix(in srgb, var(--theia-foreground) 88%, var(--theia-descriptionForeground));
 }
@@ -5145,7 +5145,7 @@ body.qaap-theme-light .theia-mobile-agent-stream-label.theia-mod-shimmer {
 
 .theia-mobile-agent-thought-brief-body {
   margin: 4px 0 0;
-  font-size: 13px;
+  font-size: var(--q-text-body);
   line-height: 1.45;
   letter-spacing: -0.01em;
   color: var(--theia-foreground);
@@ -7270,7 +7270,7 @@ body.qaap-theme-light .theia-mobile-agent-stream-label.theia-mod-shimmer {
 
 .theia-mobile-agent-thought-brief.theia-mod-cursor-flat .theia-mobile-agent-thought-brief-body,
 .theia-mobile-agent-thought-brief-more-body {
-  font-size: 15px;
+  font-size: var(--q-text-body);
   line-height: 1.72;
   letter-spacing: 0;
   color: color-mix(in srgb, var(--theia-descriptionForeground) 92%, var(--theia-foreground));
