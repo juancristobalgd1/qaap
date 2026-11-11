@@ -118,11 +118,18 @@ export function isUiHiddenVpsAgent(agentId: string | undefined): boolean {
  *
  * Background tasks cannot use the interactive TUI because the server process has no raw TTY,
  * so detect the installed CLI shape and always pick a non-interactive template.
+ *
+ * The `codex exec` template is the default. The legacy `codex -q` template is returned only when
+ * the help text is non-empty, does not list `exec` as a command, and positively shows the `-q`/`--quiet`
+ * flag. Empty or unrecognized help (e.g. a timed-out `codex --help`) must not select the legacy
+ * template, because modern CLIs reject `-q` with "unexpected argument".
  */
 export function resolveQaapCodexTemplate(helpText: string): string {
-    return /\bcodex\s+exec\b/.test(helpText) || /^\s+exec\b/m.test(helpText)
-        ? 'codex exec --json -c check_for_update_on_startup=false {model_flags} {prompt}'
-        : 'codex -q --json -c check_for_update_on_startup=false {model_flags} {prompt}';
+    const hasExecCommand = /\bcodex\s+exec\b/.test(helpText) || /^\s+exec\b/m.test(helpText);
+    const isLegacyCli = helpText.trim() !== '' && !hasExecCommand && /(^|\s)-q\b|--quiet\b/m.test(helpText);
+    return isLegacyCli
+        ? 'codex -q --json -c check_for_update_on_startup=false {model_flags} {prompt}'
+        : 'codex exec --json -c check_for_update_on_startup=false {model_flags} {prompt}';
 }
 
 const QAAP_BUILTIN_AGENT_ALIASES: Readonly<Record<string, string>> = {
