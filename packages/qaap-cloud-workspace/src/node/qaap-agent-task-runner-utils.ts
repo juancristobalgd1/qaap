@@ -50,7 +50,7 @@ export function readCodexHelp(env: NodeJS.ProcessEnv = process.env): string {
     try {
         const topLevel = spawnSync(codex, ['--help'], {
             encoding: 'utf8',
-            timeout: 2_000,
+            timeout: 5_000,
             killSignal: 'SIGTERM',
             windowsHide: true,
             env: childProcessEnv(env),
@@ -61,7 +61,7 @@ export function readCodexHelp(env: NodeJS.ProcessEnv = process.env): string {
         }
         const execCommand = spawnSync(codex, ['exec', '--help'], {
             encoding: 'utf8',
-            timeout: 2_000,
+            timeout: 5_000,
             killSignal: 'SIGTERM',
             windowsHide: true,
             env: childProcessEnv(env),
