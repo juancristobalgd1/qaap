@@ -192,18 +192,30 @@ export function previewHomeDirFor(previewRootFsPath: string): string {
     return `${previewRootFsPath.replace(/[\\/]+$/, '')}/node_modules/.cache/qaap-preview-home`;
 }
 
+/** Set to `1` in a Theia preview's environment: the process is a preview nested inside another Qaap. */
+export const QAAP_NESTED_PREVIEW_ENV = 'QAAP_NESTED_PREVIEW';
+
+/** POSIX `sh`: unsets every exported `QAAP_*` variable (names only; values never reach the command line). */
+const UNSET_INHERITED_QAAP_ENV = "unset $(env | sed -n 's/^\\(QAAP_[A-Za-z0-9_]*\\)=.*/\\1/p')";
+
 /**
  * Prefixes a Theia dev command with its own HOME and `THEIA_CONFIG_DIR` under `previewHomeDir`.
  * Node's `os.homedir()` reads `HOME` on POSIX and `USERPROFILE` on Windows, so both are set there.
  * POSIX uses `export ... &&` so the variables reach every command of a chain (`a && b`), and Windows
  * `set` lines persist across `&&` within the same cmd.exe line.
+ *
+ * A Theia preview is often Qaap itself: on POSIX every inherited `QAAP_*` variable is dropped first,
+ * since those point the nested backend at the host's stores (`QAAP_SQLITE_STORE_PATH`,
+ * `QAAP_PREVIEW_REGISTRY_PATH`, ...) or its cloud mode. Port variables the wrapper adds come after
+ * the prefix and survive. {@link QAAP_NESTED_PREVIEW_ENV} marks the nested instance.
  */
 export function prefixTheiaPreviewHomeEnv(command: string, previewHomeDir: string, isWindows: boolean = isWorkspaceHostWindows()): string {
     const configDir = `${previewHomeDir}/.theia`;
     if (isWindows) {
-        return `set USERPROFILE=${previewHomeDir}&& set HOME=${previewHomeDir}&& set THEIA_CONFIG_DIR=${configDir}&& ${command}`;
+        return `set USERPROFILE=${previewHomeDir}&& set HOME=${previewHomeDir}&& set THEIA_CONFIG_DIR=${configDir}&& set ${QAAP_NESTED_PREVIEW_ENV}=1&& ${command}`;
     }
-    return `export HOME=${shellSingleQuote(previewHomeDir)} THEIA_CONFIG_DIR=${shellSingleQuote(configDir)} && ${command}`;
+    return `${UNSET_INHERITED_QAAP_ENV} && export HOME=${shellSingleQuote(previewHomeDir)} THEIA_CONFIG_DIR=${shellSingleQuote(configDir)}`
+        + ` ${QAAP_NESTED_PREVIEW_ENV}=1 && ${command}`;
 }
 
 /** Gives a Theia dev command its own HOME; other frameworks keep the host environment. */
@@ -219,6 +231,30 @@ export function isolateTheiaPreviewCommand(command: string, plan: { readonly isT
  */
 export const DEV_PREVIEW_HEALTH_BASE_INTERVAL_MS = 2500;
 export const DEV_PREVIEW_HEALTH_MAX_INTERVAL_MS = 15000;
+
+/**
+ * How long a health probe may keep finding the dev server listening but silent (or the IDE probe
+ * itself unanswered) before the run is failed. A heavy server is routinely busy for many seconds:
+ * a Theia preview serving its bundle, a first route compile, a GC pause.
+ */
+export const DEV_PREVIEW_HEALTH_SLOW_LIMIT_MS = 180_000;
+
+/**
+ * Verdict of one health probe: `healthy` (answered for the active project), `slow` (a listener
+ * accepted the connection but did not answer in time, or the probe request itself failed, so
+ * nothing proves the server gone) or `down` (refused, foreign project, or an explicit error).
+ */
+export type QaapDevPreviewHealthVerdict = 'healthy' | 'slow' | 'down';
+
+export function classifyDevPreviewHealthProbe(
+    probe: { readonly ready: boolean; readonly listening?: boolean; readonly probeFailed?: boolean },
+    belongsToActiveProject: boolean,
+): QaapDevPreviewHealthVerdict {
+    if (probe.ready) {
+        return belongsToActiveProject ? 'healthy' : 'down';
+    }
+    return probe.listening || probe.probeFailed ? 'slow' : 'down';
+}
 
 /** Delay before the next health probe after `healthyChecks` consecutive healthy probes. */
 export function devPreviewHealthDelayMs(healthyChecks: number): number {

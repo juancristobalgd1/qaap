@@ -10,6 +10,7 @@ import {
     COMPOSER_PREVIEW_PROBE_BACKOFF_MAX_MS,
     composerConversationInvolvesPreview,
     composerPreviewProbeBackoffMs,
+    isComposerPreviewBootingForProject,
     isComposerPreviewStartupActive,
     openCurrentComposerPreview,
     resolveComposerPreviewChipVisibility,
@@ -36,6 +37,20 @@ describe('qaap-composer-preview-action', () => {
         expect(isComposerPreviewStartupActive({ phase: 'idle' }, { previewRequestActive: true })).to.equal(true);
         expect(isComposerPreviewStartupActive({ phase: 'idle' }, { agentWorking: true })).to.equal(true);
     });
+    it('keeps the starting chip while this project boots, until its URL is verified', () => {
+        const own = { projectCwd: '/repo', bootstrapRoot: '/repo/' };
+        expect(isComposerPreviewBootingForProject({ ...own, phase: 'installing' }, false)).to.equal(true);
+        expect(isComposerPreviewBootingForProject({ ...own, phase: 'starting' }, false)).to.equal(true);
+        // `running` but the first compile has not answered yet: still starting for the user.
+        expect(isComposerPreviewBootingForProject({ ...own, phase: 'running' }, false)).to.equal(true);
+        expect(isComposerPreviewBootingForProject({ ...own, phase: 'running' }, true)).to.equal(false);
+        expect(isComposerPreviewBootingForProject({ ...own, phase: 'ready-to-run' }, false)).to.equal(false);
+        expect(isComposerPreviewBootingForProject({ ...own, phase: 'run-failed' }, false)).to.equal(false);
+        // Another project's bootstrap never shows a starting chip here.
+        expect(isComposerPreviewBootingForProject({ projectCwd: '/repo', bootstrapRoot: '/other', phase: 'starting' }, false))
+            .to.equal(false);
+    });
+
     it('shows only the starting chip while a preview boots, even if a stale URL verified', () => {
         expect(resolveComposerPreviewChipVisibility({ previewStarting: true, previewVerified: true }))
             .to.deep.equal({ showStarting: true, showViewPreview: false });

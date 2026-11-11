@@ -28,6 +28,7 @@ import {
     composerConversationInvolvesPreview,
     resolveComposerPreviewCandidate,
     resolveComposerPreviewChipVisibility,
+    isComposerPreviewBootingForProject,
     resolveVerifiedComposerPreviewUrl,
 } from './qaap-composer-preview-action';
 import type { StickyComposerChangedFileView } from '@theia/qaap-transcript/lib/browser/qaap-transcript-host-contracts';
@@ -228,7 +229,8 @@ export function buildTranscriptComposerActivityOptionsExtracted(ctx: MobileProje
     const verifiedPreviewUrl = ctx.verifiedComposerPreview?.projectId === project.id
         ? resolveVerifiedComposerPreviewUrl(previewRuntime, ctx.verifiedComposerPreview.url, undefined, ctx.verifiedComposerPreview.candidate)
         : undefined;
-    const previewStarting = !!ctx.host.transcriptPreviewRequestRunning || !!ctx.host.transcriptPreviewRequestPending;
+    const previewStarting = !!ctx.host.transcriptPreviewRequestRunning || !!ctx.host.transcriptPreviewRequestPending
+        || isComposerPreviewBootingForProject(previewRuntime, !!verifiedPreviewUrl);
     const previewChips = resolveComposerPreviewChipVisibility({
         previewStarting,
         previewVerified: !!verifiedPreviewUrl,

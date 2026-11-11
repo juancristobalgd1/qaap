@@ -319,5 +319,11 @@ export function resolveQaapSettledPreviewRequestAction(input: QaapSettledPreview
     if (input.requestRunning) {
         return 'keep';
     }
+    // The turn ended while this project's bootstrap is still installing or compiling (a first Next
+    // compile takes minutes): the request is being served. Relaunching or clearing here dropped the
+    // "Starting preview…" chip while the server was still coming up, leaving no sign of progress.
+    if (input.bootstrapPhase === 'installing' || input.bootstrapPhase === 'starting') {
+        return 'keep';
+    }
     return input.canRelaunch ? 'relaunch' : 'clear';
 }
