@@ -273,7 +273,7 @@ function shellSingleQuote(value: string): string {
  * Windows (cmd.exe) has no equivalent loop; {@link prefixPortEnv} leaves that branch unscrubbed.
  */
 export function qaapPreviewHostEnvScrubPrefix(): string {
-    return `for __qaap_v in $(env | sed -n 's/^\\(QAAP_[A-Za-z0-9_]*\\)=.*/\\1/p'); do unset "$__qaap_v"; done && `;
+    return 'for __qaap_v in $(env | sed -n \'s/^\\(QAAP_[A-Za-z0-9_]*\\)=.*/\\1/p\'); do unset "$__qaap_v"; done && ';
 }
 
 function prefixPortEnv(command: string, port: number, kind: QaapProjectKind, isWindows: boolean): string {
