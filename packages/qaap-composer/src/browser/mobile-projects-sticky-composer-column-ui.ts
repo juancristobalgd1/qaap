@@ -659,8 +659,12 @@ export class MobileProjectsStickyComposerColumnUi {
             if (detachedResizeFrame) {
                 return;
             }
+            const view = input.ownerDocument.defaultView;
+            if (typeof view?.requestAnimationFrame !== 'function') {
+                return;
+            }
             detachedResizeFrame = true;
-            window.requestAnimationFrame(() => {
+            view.requestAnimationFrame(() => {
                 detachedResizeFrame = false;
                 if (input.isConnected) {
                     resize();
@@ -671,7 +675,6 @@ export class MobileProjectsStickyComposerColumnUi {
         const resize = (): void => {
             if (!input.isConnected) {
                 scheduleConnectedResize();
-                return;
             }
             const collapsedMaxHeight = resolveLineHeight() * COLLAPSED_LINE_COUNT;
             const expandedMaxHeight = Math.min(
