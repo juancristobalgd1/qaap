@@ -787,11 +787,20 @@ body:not(.theia-mobile-mod-has-work-hub-visible.theia-mobile-mod-has-work-hub-vi
   flex-direction: column;
   gap: 2px;
   min-width: 188px;
+  min-height: 0;
+  /* A tall list (agent TUI harnesses) scrolls inside the viewport instead of running off-screen. */
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 6px;
   border-radius: 12px;
   border: 1px solid var(--theia-panel-border, rgba(128, 128, 128, 0.22));
   background: var(--theia-dropdown-background, var(--theia-editor-background));
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+}
+
+.theia-mobile-transcript-tab-icon-select-menu > * {
+  flex: 0 0 auto;
 }
 
 .theia-mobile-projects-header-execution-tabs .theia-mobile-transcript-tabs,

@@ -1,14 +1,18 @@
 /* Keybindings section of the mobile Work Hub settings sheet
  * (`qaap-work-hub-keybindings-panel.ts`). Colors come from Theia variables only. */
 
+/* Fills the settings custom-content so the list below is the single bounded scroller
+ * (a content-height wrapper left the list unbounded and the nested overflow hosts ambiguous). */
 .theia-mobile-work-hub-keybindings {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  height: 100%;
   min-height: 0;
 }
 
 .theia-mobile-work-hub-keybindings-search {
+  flex: 0 0 auto;
   box-sizing: border-box;
   width: 100%;
   min-height: 36px;
@@ -28,6 +32,7 @@
 
 .theia-mobile-work-hub-keybindings-list {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   min-height: 0;
   overflow-y: auto;

@@ -346,6 +346,7 @@ export class QaapWorkHubChatViewWidget extends ChatViewWidget {
                     ?.node.querySelector<HTMLElement>(':scope > .theia-mobile-projects-scroll') ?? this.resolveIdeSettingsPanel()?.node,
                 () => this.resolveIdeSettingsPanel()?.sessionsSidebarUi.ensureWorkHubSessionsSidebar(),
                 this.keybindingsPanel,
+                this.mcpFrontendService,
             );
             document.body.appendChild(this.preferencesSheet.node);
             this.toDispose.push(Disposable.create(() => {

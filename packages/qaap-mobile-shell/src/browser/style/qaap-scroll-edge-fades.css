@@ -1,0 +1,44 @@
+/********************************************************************************
+ * Copyright (C) 2026 theia-ide and others.
+ *
+ * SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
+ ********************************************************************************/
+
+/*-----------------------------------------------------------------------------
+| Scroll-edge fades for menus, popover lists and horizontal rails.
+| `attachQaapScrollEdgeFades()` (qaap-scroll-edge-fades.ts) toggles the mod
+| classes; a fade shows only on the edge where content is hidden. Mask stops
+| are alpha-only (#000 = opaque), so the fade follows any theme.
+|-----------------------------------------------------------------------------*/
+
+/* Vertical (axis y): top and bottom. */
+.qaap-scroll-fades.qaap-mod-scroll-fade-top {
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 20px, #000 100%);
+    mask-image: linear-gradient(to bottom, transparent 0, #000 20px, #000 100%);
+}
+
+.qaap-scroll-fades.qaap-mod-scroll-fade-bottom {
+    -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 20px), transparent 100%);
+    mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 20px), transparent 100%);
+}
+
+.qaap-scroll-fades.qaap-mod-scroll-fade-top.qaap-mod-scroll-fade-bottom {
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 20px, #000 calc(100% - 20px), transparent 100%);
+    mask-image: linear-gradient(to bottom, transparent 0, #000 20px, #000 calc(100% - 20px), transparent 100%);
+}
+
+/* Horizontal (axis x): start and end. */
+.qaap-scroll-fades-x.qaap-mod-scroll-fade-start {
+    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 20px, #000 100%);
+    mask-image: linear-gradient(to right, transparent 0, #000 20px, #000 100%);
+}
+
+.qaap-scroll-fades-x.qaap-mod-scroll-fade-end {
+    -webkit-mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 20px), transparent 100%);
+    mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 20px), transparent 100%);
+}
+
+.qaap-scroll-fades-x.qaap-mod-scroll-fade-start.qaap-mod-scroll-fade-end {
+    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 20px, #000 calc(100% - 20px), transparent 100%);
+    mask-image: linear-gradient(to right, transparent 0, #000 20px, #000 calc(100% - 20px), transparent 100%);
+}

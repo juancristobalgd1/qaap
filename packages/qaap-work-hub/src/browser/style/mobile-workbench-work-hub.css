@@ -6158,33 +6158,7 @@ body.qaap-theme-dark {
   box-sizing: border-box;
 }
 
-/* Scroll-edge fades: a sticky blur pinned to the top and bottom of the scrollport. Zero flow height (negative
- * top margin over the menu padding) and no painted colour stop, so the edge softens instead of showing a band.
- * The shadow stays on the menu itself, since masking the menu would clip its box-shadow. */
-.theia-mobile-projects-sticky-composer-attach-menu::before,
-.theia-mobile-projects-sticky-composer-attach-menu::after {
-  content: '';
-  position: sticky;
-  z-index: 1;
-  display: block;
-  height: var(--q-space-4);
-  margin: calc(var(--q-space-4) * -1) 0 0;
-  pointer-events: none;
-  -webkit-backdrop-filter: blur(4px);
-  backdrop-filter: blur(4px);
-  -webkit-mask-image: linear-gradient(to bottom, #000 0, transparent 100%);
-  mask-image: linear-gradient(to bottom, #000 0, transparent 100%);
-}
-
-.theia-mobile-projects-sticky-composer-attach-menu::before {
-  top: 0;
-}
-
-.theia-mobile-projects-sticky-composer-attach-menu::after {
-  bottom: 0;
-  -webkit-mask-image: linear-gradient(to top, #000 0, transparent 100%);
-  mask-image: linear-gradient(to top, #000 0, transparent 100%);
-}
+/* Scroll-edge fades are toggled by attachQaapScrollEdgeFades() (qaap-scroll-edge-fades.css), only on hidden edges. */
 
 /* Menu is portaled to `body`; sit above the full-screen task transcript sheet. */
 body.theia-mobile-mod-has-transcript-overlay.theia-mobile-mod-has-transcript-overlay .theia-mobile-projects-sticky-composer-attach-menu {
@@ -6520,11 +6494,24 @@ body.qaap-theme-dark .theia-mobile-mcp-attach-server-icon.theia-mod-branded {
   max-height: min(56vh, 380px);
 }
 
+/* Skills view: the menu is a bounded flex column and only the list scrolls. Back and search keep their height;
+ * the body is bounded so `.theia-mobile-skills-attach-scroll` gets a real height to overflow against. */
+.theia-mobile-projects-sticky-composer-attach-menu.theia-mod-skills-view {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .theia-mobile-projects-sticky-composer-attach-menu.theia-mod-skills-view .theia-mobile-projects-sticky-composer-attach-menu-body {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
+}
+
+.theia-mobile-projects-sticky-composer-attach-menu.theia-mod-skills-view .theia-mobile-projects-sticky-composer-attach-menu-body > :not(.theia-mobile-skills-attach-scroll) {
+  flex: 0 0 auto;
 }
 
 .theia-mobile-skills-attach-scroll {

@@ -19,6 +19,7 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import { QaapComposerModelPickerModel, type QaapPickerModel, type QaapPickerState } from '../common/qaap-composer-model-picker-model';
 import { adoptPendingComposerEffort, resolveComposerEffortLevel, writeComposerEffortLevel } from '../common/qaap-composer-effort';
+import { detachSheetListEdgeFades } from './mobile-projects-sticky-composer-sheet-edge-fades';
 import type { MobileProjectsStickyComposerSheetsUiContext } from './mobile-projects-sticky-composer-sheets-ui-context';
 import type { ComposerAgentPickerChrome } from './mobile-projects-sticky-composer-sheets-ui';
 import { disposeQaapComposerModelPicker, renderQaapComposerModelPicker } from './qaap-composer-model-picker';
@@ -111,6 +112,8 @@ export async function renderStickyComposerModelPicker(
     const host = document.createElement('div');
     host.className = 'qaap-composer-model-picker-host';
     chrome.list.replaceChildren(host);
+    // The picker scrolls its own rows and fades them; the list around it must not mask the footer.
+    detachSheetListEdgeFades(chrome.list);
 
     const agents = listQaapComposerPickerAgents(options.agents, options.disabledHarnessIds ?? []);
     const harnesses = agents.map(agent => ({ id: agent.id, label: agent.label }));

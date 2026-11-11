@@ -35,10 +35,12 @@ import { QaapAppearanceModeService } from '@theia/qaap-shared-core/lib/browser/q
 import { QaapWorkHubNotificationSettings } from '@theia/qaap-shared-core/lib/browser/qaap-work-hub-notification-settings';
 import { QaapCompletionSound } from '@theia/qaap-shared-core/lib/browser/qaap-completion-sound';
 import { Disposable } from '@theia/core/lib/common/disposable';
+import type { MCPFrontendService } from '@theia/ai-mcp/lib/common/mcp-server-manager';
 import type {
     MobileWorkHubSessionsSidebar,
     MobileWorkHubSettingsSidebarOptions,
 } from './mobile-work-hub-sessions-sidebar';
+import { MobileWorkHubMcpServerSummary } from './mobile-work-hub-mcp-server-summary';
 
 /** Work Hub AI Features sheet scopes Settings to this search term. */
 export const WORK_HUB_AI_FEATURES_PREFERENCES_QUERY = 'ai-features';
@@ -147,6 +149,7 @@ export class MobileWorkHubPreferencesSheet {
     protected planUsageRenderToken = 0;
     protected embeddedSettingsRenderToken = 0;
     protected embeddedSettingsWidget: Widget | undefined;
+    protected mcpServerSummary: MobileWorkHubMcpServerSummary | undefined;
     protected settingsSidebarController: MobileWorkHubSessionsSidebar | undefined;
 
     protected readonly resolveWorkHubHost: (() => HTMLElement | undefined) | undefined;
@@ -236,6 +239,7 @@ export class MobileWorkHubPreferencesSheet {
         resolveWorkHubHost?: () => HTMLElement | undefined,
         resolveSettingsSidebar?: () => MobileWorkHubSessionsSidebar | undefined,
         protected readonly keybindingsPanel?: WorkHubKeybindingsPanelContract,
+        protected readonly mcpFrontendService?: MCPFrontendService,
     ) {
         this.resolveWorkHubHost = resolveWorkHubHost;
         this.resolveSettingsSidebar = resolveSettingsSidebar;
@@ -494,8 +498,20 @@ export class MobileWorkHubPreferencesSheet {
 
     dispose(): void {
         this.unobserveWidgetHostResize();
+        this.mcpServerSummary?.dispose();
+        this.mcpServerSummary = undefined;
         this.hide();
         this.node.remove();
+    }
+
+    protected getMcpServerSummary(): MobileWorkHubMcpServerSummary | undefined {
+        if (!this.mcpServerSummary && this.preferenceService) {
+            this.mcpServerSummary = new MobileWorkHubMcpServerSummary({
+                preferenceService: this.preferenceService,
+                mcpFrontendService: this.mcpFrontendService,
+            });
+        }
+        return this.mcpServerSummary;
     }
 
     protected attachWidget(widget: PreferencesWidget): void {
@@ -707,6 +723,14 @@ export class MobileWorkHubPreferencesSheet {
         const panel = this.createCustomPanel();
         panel.classList.add('theia-mobile-work-hub-settings-embedded-panel');
         this.customContentHost.replaceChildren(panel);
+        if (sectionId === 'mcp') {
+            // Same server list as the composer "+" MCP view, above the upstream widget (add/edit/delete).
+            const summary = this.getMcpServerSummary();
+            if (summary) {
+                panel.append(summary.node);
+                void summary.refresh();
+            }
+        }
         try {
             const widget = await this.widgetManager.getOrCreateWidget<Widget>(widgetId, {
                 id: `qaap-work-hub-settings-${sectionId}`,

@@ -46,6 +46,9 @@ function rows(host: HTMLElement): HTMLButtonElement[] {
 }
 
 describe('qaap-composer-model-picker', () => {
+
+    /** Waits for the next animation frame, which the edge-fade helper uses to sync classes. */
+    const nextFrame = (): Promise<void> => new Promise<void>(resolve => window.setTimeout(resolve, 50));
     let host: HTMLElement;
     let disableJSDOM: () => void;
 
@@ -138,7 +141,7 @@ describe('qaap-composer-model-picker', () => {
         expect(closed).to.equal(1);
     });
 
-    it('scrolls a long harness rail: the end fade shows first, the start fade after scrolling, and the selection comes into view', () => {
+    it('scrolls a long harness rail: the end fade shows first, the start fade after scrolling, and the selection comes into view', async () => {
         const harnesses = Array.from({ length: 12 }, (_, index) => ({ id: `agent-${index}`, label: `Agent ${index}` }));
         const scrollTopDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTop');
         const scrollHeightDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollHeight');
@@ -167,14 +170,17 @@ describe('qaap-composer-model-picker', () => {
                 state: state({ harnesses, railSelection: 'agent-9', currentAgentId: 'agent-9' }),
             }));
             const rail = host.querySelector<HTMLElement>('.qaap-model-picker-rail')!;
-            expect(rail.classList.contains('theia-mod-overflow-end')).to.equal(true);
-            expect(rail.classList.contains('theia-mod-overflow-start')).to.equal(false);
+            // The shared edge-fade helper syncs on the next frame.
+            await nextFrame();
+            expect(rail.classList.contains('qaap-mod-scroll-fade-bottom')).to.equal(true);
+            expect(rail.classList.contains('qaap-mod-scroll-fade-top')).to.equal(false);
             expect(revealed).to.deep.equal(['Agent 9']);
 
             rail.scrollTop = 200;
             rail.dispatchEvent(new window.Event('scroll'));
-            expect(rail.classList.contains('theia-mod-overflow-start')).to.equal(true);
-            expect(rail.classList.contains('theia-mod-overflow-end')).to.equal(true);
+            await nextFrame();
+            expect(rail.classList.contains('qaap-mod-scroll-fade-top')).to.equal(true);
+            expect(rail.classList.contains('qaap-mod-scroll-fade-bottom')).to.equal(true);
             expect(revealed).to.deep.equal(['Agent 9']);
         } finally {
             restoreDescriptor('scrollTop', scrollTopDescriptor);

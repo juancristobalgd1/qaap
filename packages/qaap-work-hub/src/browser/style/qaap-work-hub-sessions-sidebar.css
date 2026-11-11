@@ -121,10 +121,35 @@
   pointer-events: none;
 }
 
-/* Bottom fade while more tasks / projects remain below the fold. */
+/* Edge fades while more tasks / projects remain above or below the fold. The top fade starts
+   under the pinned "Projects" heading (--qaap-sidebar-fade-top-start, set from TS). */
 .theia-mobile-work-hub-sessions-sidebar-scroll.theia-mod-more-below {
   -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 64px), transparent);
   mask-image: linear-gradient(to bottom, #000 calc(100% - 64px), transparent);
+}
+
+.theia-mobile-work-hub-sessions-sidebar-scroll.theia-mod-more-above {
+  -webkit-mask-image: linear-gradient(to bottom,
+      #000 0, #000 var(--qaap-sidebar-fade-top-start, 0px),
+      transparent var(--qaap-sidebar-fade-top-start, 0px),
+      #000 calc(var(--qaap-sidebar-fade-top-start, 0px) + 40px));
+  mask-image: linear-gradient(to bottom,
+      #000 0, #000 var(--qaap-sidebar-fade-top-start, 0px),
+      transparent var(--qaap-sidebar-fade-top-start, 0px),
+      #000 calc(var(--qaap-sidebar-fade-top-start, 0px) + 40px));
+}
+
+.theia-mobile-work-hub-sessions-sidebar-scroll.theia-mod-more-above.theia-mod-more-below {
+  -webkit-mask-image: linear-gradient(to bottom,
+      #000 0, #000 var(--qaap-sidebar-fade-top-start, 0px),
+      transparent var(--qaap-sidebar-fade-top-start, 0px),
+      #000 calc(var(--qaap-sidebar-fade-top-start, 0px) + 40px),
+      #000 calc(100% - 64px), transparent);
+  mask-image: linear-gradient(to bottom,
+      #000 0, #000 var(--qaap-sidebar-fade-top-start, 0px),
+      transparent var(--qaap-sidebar-fade-top-start, 0px),
+      #000 calc(var(--qaap-sidebar-fade-top-start, 0px) + 40px),
+      #000 calc(100% - 64px), transparent);
 }
 
 .theia-mobile-work-hub-sessions-sidebar-resize-handle {
