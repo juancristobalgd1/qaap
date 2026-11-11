@@ -5070,10 +5070,18 @@ body.qaap-theme-light .qaap-working-agents-popover-row-status.theia-mod-shimmer 
   border-color: color-mix(in srgb, var(--theia-foreground) 18%, transparent);
 }
 
-.theia-mobile-sticky-composer-next-action.theia-mod-preview-starting,
+.theia-mobile-sticky-composer-next-action.theia-mod-preview-starting {
+  border-color: color-mix(in srgb, var(--theia-focusBorder) 65%, transparent);
+  background: color-mix(in srgb, var(--theia-foreground) 6%, var(--theia-editor-background));
+  color: var(--theia-foreground);
+  cursor: wait;
+  pointer-events: none;
+}
+
+/* Chip de Quick actions en arranque: fondo de tema igual que los chips inactivos (sin tinte de color) */
 .theia-mobile-agent-transcript-empty-action.theia-mod-preview-starting {
   border-color: color-mix(in srgb, var(--theia-focusBorder) 65%, transparent);
-  background: color-mix(in srgb, var(--theia-focusBorder) 20%, var(--theia-editor-background));
+  background: var(--theia-input-background, var(--theia-editor-background));
   color: var(--theia-foreground);
   cursor: wait;
   pointer-events: none;
@@ -6139,14 +6147,42 @@ body.qaap-theme-dark {
   max-width: min(320px, calc(100vw - 16px));
   max-height: min(40vh, 260px);
   overflow: auto;
-  padding: 4px;
-  border-radius: 12px;
-  border: 1px solid var(--theia-panel-border, rgba(128, 128, 128, 0.22));
+  padding: var(--q-space-4);
+  border-radius: var(--q-radius-card);
+  border: 1px solid color-mix(in srgb, var(--q-line, var(--theia-panel-border)) 75%, transparent);
   background: var(--theia-menu-background, var(--theia-editor-background));
   color: var(--theia-menu-foreground, var(--theia-foreground));
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  box-shadow: var(--q-shadow-lg);
   -webkit-overflow-scrolling: touch;
   box-sizing: border-box;
+}
+
+/* Scroll-edge fades: a sticky blur pinned to the top and bottom of the scrollport. Zero flow height (negative
+ * top margin over the menu padding) and no painted colour stop, so the edge softens instead of showing a band.
+ * The shadow stays on the menu itself, since masking the menu would clip its box-shadow. */
+.theia-mobile-projects-sticky-composer-attach-menu::before,
+.theia-mobile-projects-sticky-composer-attach-menu::after {
+  content: '';
+  position: sticky;
+  z-index: 1;
+  display: block;
+  height: var(--q-space-4);
+  margin: calc(var(--q-space-4) * -1) 0 0;
+  pointer-events: none;
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  -webkit-mask-image: linear-gradient(to bottom, #000 0, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 0, transparent 100%);
+}
+
+.theia-mobile-projects-sticky-composer-attach-menu::before {
+  top: 0;
+}
+
+.theia-mobile-projects-sticky-composer-attach-menu::after {
+  bottom: 0;
+  -webkit-mask-image: linear-gradient(to top, #000 0, transparent 100%);
+  mask-image: linear-gradient(to top, #000 0, transparent 100%);
 }
 
 /* Menu is portaled to `body`; sit above the full-screen task transcript sheet. */
@@ -6157,12 +6193,12 @@ body.theia-mobile-mod-has-transcript-overlay.theia-mobile-mod-has-transcript-ove
 .theia-mobile-projects-sticky-composer-attach-menu-item {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: var(--q-space-5);
   width: 100%;
   margin: 0;
-  padding: 10px 12px;
+  padding: var(--q-space-5) var(--q-space-6);
   border: none;
-  border-radius: 8px;
+  border-radius: var(--q-radius-icon);
   background: transparent;
   color: inherit;
   font: inherit;
@@ -6174,6 +6210,17 @@ body.theia-mobile-mod-has-transcript-overlay.theia-mobile-mod-has-transcript-ove
 .theia-mobile-projects-sticky-composer-attach-menu-item:hover,
 .theia-mobile-projects-sticky-composer-attach-menu-item:focus-visible {
   background: var(--theia-menu-selectionBackground, var(--theia-list-hoverBackground));
+  outline: none;
+}
+
+/* The menu container takes focus when it opens, so it must not draw Theia's global focus border (the rule in
+ * core's style/index.css is not edited; this override has more specificity). Items keep a subtle tint instead. */
+.theia-mobile-projects-sticky-composer-attach-menu[role='menu']:focus,
+.theia-mobile-projects-sticky-composer-attach-menu[role='menu']:focus-visible {
+  outline: none;
+}
+
+.theia-mobile-projects-sticky-composer-attach-menu .theia-mobile-projects-sticky-composer-attach-menu-item:focus {
   outline: none;
 }
 
@@ -6197,9 +6244,15 @@ body.theia-mobile-mod-has-transcript-overlay.theia-mobile-mod-has-transcript-ove
   opacity: 0.9;
 }
 
+.theia-mobile-projects-sticky-composer-attach-menu-item>.codicon {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  opacity: 0.85;
+}
+
 .theia-mobile-projects-sticky-composer-attach-menu-item.theia-mod-compact {
   align-items: flex-start;
-  padding: 8px 12px;
+  padding: var(--q-space-4) var(--q-space-6);
 }
 
 .theia-mobile-projects-sticky-composer-attach-menu-item.theia-mod-compact>.codicon {
@@ -6222,8 +6275,8 @@ body.theia-mobile-mod-has-transcript-overlay.theia-mobile-mod-has-transcript-ove
 
 .theia-mobile-projects-sticky-composer-attach-menu-separator {
   height: 1px;
-  margin: 4px 8px;
-  background: var(--theia-panel-border, rgba(128, 128, 128, 0.22));
+  margin: var(--q-space-2) var(--q-space-5);
+  background: color-mix(in srgb, var(--q-line, var(--theia-panel-border)) 70%, transparent);
 }
 
 .theia-mobile-projects-sticky-composer-attach-menu-body {
@@ -6488,12 +6541,12 @@ body.qaap-theme-dark .theia-mobile-mcp-attach-server-icon.theia-mod-branded {
 .theia-mobile-projects-sticky-composer-attach-menu-back {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--q-space-4);
   width: 100%;
   margin: 0;
-  padding: 10px 12px;
+  padding: var(--q-space-5) var(--q-space-6);
   border: none;
-  border-radius: 8px;
+  border-radius: var(--q-radius-icon);
   background: transparent;
   color: var(--theia-foreground);
   font: inherit;

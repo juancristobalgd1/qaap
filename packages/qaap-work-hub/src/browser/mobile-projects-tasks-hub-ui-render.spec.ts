@@ -12,7 +12,7 @@ const disableImportJSDOM = enableJSDOM();
 
 import { expect } from 'chai';
 import type { MobileProjectsTasksHubUiContext } from './mobile-projects-tasks-hub-ui-context';
-import { createAgentsHubQuickActionsBlockExtracted } from './mobile-projects-tasks-hub-ui-render';
+import { applyComposerQuickActionPromptExtracted, createAgentsHubQuickActionsBlockExtracted } from './mobile-projects-tasks-hub-ui-render';
 import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 disableImportJSDOM();
@@ -105,5 +105,48 @@ describe('mobile-projects-tasks-hub-ui-render', () => {
         expect(runApp?.getAttribute('aria-busy')).to.equal('true');
         expect(runApp?.querySelector('.codicon-loading')).to.not.equal(null);
         expect(runApp?.querySelector('.qaap-border-beam-bloom')).to.not.equal(null);
+    });
+    it('inserts a quick-action prompt like typing: input event, caret at end, scroll at the start', () => {
+        const host = document.createElement('div');
+        host.className = 'theia-mobile-projects-sticky-composer';
+        const input = document.createElement('textarea');
+        input.className = 'theia-mobile-projects-sticky-composer-input';
+        host.append(input);
+        document.body.append(host);
+        const previousRaf = window.requestAnimationFrame;
+        window.requestAnimationFrame = (callback: FrameRequestCallback): number => {
+            callback(0);
+            return 0;
+        };
+        const inputEvents: string[] = [];
+        input.addEventListener('input', () => inputEvents.push(input.value));
+        const stickyComposerHost = host;
+        const context = {
+            host: {
+                transcriptComposerHost: undefined,
+                stickyComposerHost,
+                stickyComposerDraft: '',
+                stickyComposerRenderUi: {
+                    renderStickyComposer: () => {
+                        input.value = context.host.stickyComposerDraft;
+                    },
+                },
+            },
+        } as unknown as MobileProjectsTasksHubUiContext;
+        const prompt = 'Find and fix a bug in this project.';
+
+        try {
+            applyComposerQuickActionPromptExtracted(context, `  ${prompt}  `);
+
+            expect(context.host.stickyComposerDraft).to.equal(prompt);
+            expect(input.value).to.equal(prompt);
+            expect(inputEvents).to.deep.equal([prompt]);
+            expect(input.selectionStart).to.equal(prompt.length);
+            expect(input.selectionEnd).to.equal(prompt.length);
+            expect(input.scrollTop).to.equal(0);
+        } finally {
+            window.requestAnimationFrame = previousRaf;
+            host.remove();
+        }
     });
 });

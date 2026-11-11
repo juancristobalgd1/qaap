@@ -651,7 +651,28 @@ export class MobileProjectsStickyComposerColumnUi {
             expandLabel.textContent = expandText;
         };
 
+        // The composer is built before it is attached, and a detached textarea measures scrollHeight 0.
+        // A draft set at build time (quick actions, restored drafts) then stayed one line tall until the
+        // user typed, so the measurement is retried once the textarea is in the document.
+        let detachedResizeFrame = false;
+        const scheduleConnectedResize = (): void => {
+            if (detachedResizeFrame) {
+                return;
+            }
+            detachedResizeFrame = true;
+            window.requestAnimationFrame(() => {
+                detachedResizeFrame = false;
+                if (input.isConnected) {
+                    resize();
+                }
+            });
+        };
+
         const resize = (): void => {
+            if (!input.isConnected) {
+                scheduleConnectedResize();
+                return;
+            }
             const collapsedMaxHeight = resolveLineHeight() * COLLAPSED_LINE_COUNT;
             const expandedMaxHeight = Math.min(
                 MAX_EXPANDED_HEIGHT,
