@@ -30,6 +30,11 @@ const VITE_PKG = JSON.stringify({
 class MockFileService {
     private readonly files = new Map<string, string>();
     private readonly directories = new Set<string>();
+    private readonly mtimes = new Map<string, number>();
+
+    setMtime(fsPath: string, mtime: number): void {
+        this.mtimes.set(this.uriKey(fsPath), mtime);
+    }
 
     addDir(fsPath: string): void {
         this.directories.add(this.uriKey(fsPath));
@@ -91,6 +96,7 @@ class MockFileService {
             isSymbolicLink: false,
             isReadonly: false,
             size: 0,
+            mtime: this.mtimes.get(uri.toString()),
             children,
         };
     }
@@ -519,6 +525,106 @@ describe('QaapProjectBootstrapDetector scaffold subfolders', () => {
 
         const candidates = await detector.listScaffoldSubfolderCandidates(URI.fromFilePath('/ws'));
         expect(candidates.map(c => c.relativePath)).to.deep.equal(['rioja-wines-landing-page']);
+    });
+
+    describe('preview.json one folder below the root', () => {
+        const uvicornPlan = JSON.stringify({
+            version: 1,
+            runtime: 'custom',
+            command: 'bash',
+            args: ['-c', 'python setup.py && exec python -m uvicorn app:app --host 0.0.0.0 --port {{PORT}}'],
+            cwd: '.',
+            port: 7000,
+        });
+
+        it('runs a plan written inside a subfolder from that folder when the root has no launch plan', async () => {
+            const mock = new MockFileService();
+            mock.addDir('/ws');
+            // The agent scaffolded a FastAPI app with its own package.json and wrote the plan there.
+            mock.addFile('/ws/odysseus-app/package.json', JSON.stringify({ devDependencies: { bombadil: '^0.3.2' } }));
+            mock.addFile('/ws/odysseus-app/app.py', '');
+            mock.addFile('/ws/odysseus-app/requirements.txt', 'fastapi\nuvicorn\n');
+            mock.addFile('/ws/odysseus-app/.qaap/preview.json', uvicornPlan);
+
+            const detector = new QaapProjectBootstrapDetector();
+            bindMockFileService(detector, mock);
+
+            const descriptor = await detectWithBackend(detector, 'posix');
+            expect(descriptor?.rootUri.path.toString()).to.equal('/ws');
+            expect(descriptor?.previewRootUri?.path.toString()).to.equal('/ws/odysseus-app');
+            expect(descriptor?.scaffoldRelativePath).to.equal('odysseus-app');
+            expect(descriptor?.expectedPort).to.equal(7000);
+            expect(descriptor?.devCommand).to.include('uvicorn');
+            expect(descriptor?.devCommand).to.include('{{PORT}}');
+        });
+
+        it('rebases a subfolder plan cwd onto the folder it lives in', async () => {
+            const mock = new MockFileService();
+            mock.addDir('/ws');
+            mock.addDir('/ws/odysseus-app');
+            mock.addFile('/ws/odysseus-app/.qaap/preview.json', JSON.stringify({
+                version: 1,
+                runtime: 'custom',
+                command: 'python3',
+                args: ['-m', 'http.server', '{{PORT}}'],
+                cwd: 'web',
+                port: 8000,
+            }));
+            mock.addDir('/ws/odysseus-app/web');
+
+            const detector = new QaapProjectBootstrapDetector();
+            bindMockFileService(detector, mock);
+
+            const descriptor = await detectWithBackend(detector, 'posix');
+            expect(descriptor?.previewRootUri?.path.toString()).to.equal('/ws/odysseus-app/web');
+        });
+
+        it('picks the most recently written plan when several folders carry one', async () => {
+            const mock = new MockFileService();
+            mock.addDir('/ws');
+            for (const [folder, port, mtime] of [['app-a', 8001, 1000], ['app-b', 8002, 2000]] as const) {
+                mock.addDir(`/ws/${folder}`);
+                mock.addFile(`/ws/${folder}/.qaap/preview.json`, JSON.stringify({
+                    version: 1, runtime: 'custom', command: 'python3', args: ['-m', 'http.server', '{{PORT}}'], cwd: '.', port,
+                }));
+                mock.setMtime(`/ws/${folder}/.qaap/preview.json`, mtime);
+            }
+
+            const detector = new QaapProjectBootstrapDetector();
+            bindMockFileService(detector, mock);
+
+            const descriptor = await detectWithBackend(detector, 'posix');
+            expect(descriptor?.previewRootUri?.path.toString()).to.equal('/ws/app-b');
+            expect(descriptor?.expectedPort).to.equal(8002);
+        });
+
+        it('ignores plans under node_modules and hidden folders', async () => {
+            const mock = new MockFileService();
+            mock.addDir('/ws');
+            mock.addFile('/ws/node_modules/pkg/.qaap/preview.json', uvicornPlan);
+            mock.addFile('/ws/.hidden/.qaap/preview.json', uvicornPlan);
+
+            const detector = new QaapProjectBootstrapDetector();
+            bindMockFileService(detector, mock);
+
+            expect(await detectWithBackend(detector, 'posix')).to.equal(undefined);
+        });
+
+        it('keeps a plan at the workspace root ahead of plans in subfolders', async () => {
+            const mock = new MockFileService();
+            mock.addDir('/ws');
+            mock.addFile('/ws/.qaap/preview.json', JSON.stringify({
+                version: 1, runtime: 'custom', command: 'python3', args: ['-m', 'http.server', '{{PORT}}'], cwd: '.', port: 3000,
+            }));
+            mock.addFile('/ws/odysseus-app/.qaap/preview.json', uvicornPlan);
+
+            const detector = new QaapProjectBootstrapDetector();
+            bindMockFileService(detector, mock);
+
+            const descriptor = await detectWithBackend(detector, 'posix');
+            expect(descriptor?.previewRootUri?.path.toString()).to.equal('/ws');
+            expect(descriptor?.expectedPort).to.equal(3000);
+        });
     });
 });
 

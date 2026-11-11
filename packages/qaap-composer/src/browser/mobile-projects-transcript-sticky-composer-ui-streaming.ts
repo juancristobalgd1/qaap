@@ -23,6 +23,7 @@ import {
     type QaapGitCommitWorkflowAction,
     type QaapGitPushDestination,
 } from '@theia/qaap-shared-core/lib/common/qaap-git-review';
+import { conversationEverRequestedDevPreview } from '@theia/qaap-shared-core/lib/common/qaap-transcript-preview-offer';
 import { buildStickyComposerChangesPillFingerprint, type StickyComposerActivityStackOptions } from './qaap-sticky-composer-activity-stack';
 import {
     composerConversationInvolvesPreview,
@@ -313,6 +314,7 @@ export function buildTranscriptComposerActivityOptionsExtracted(ctx: MobileProje
         diffStats: activityFiles.stats,
         hasFileActivity,
         previewInConversation: composerConversationInvolvesPreview(conv, window.location.origin),
+        previewRequested: !agentWorking && !!conv && conversationEverRequestedDevPreview(conv),
         hasCommittableChanges,
         hideApproveCommit: interactionModeId === 'plan',
         filesExpanded: ctx.peekTranscriptComposerChangedFilesExpanded(summary.id),

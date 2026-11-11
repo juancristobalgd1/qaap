@@ -5072,7 +5072,8 @@ body.qaap-theme-light .qaap-working-agents-popover-row-status.theia-mod-shimmer 
 
 .theia-mobile-sticky-composer-next-action.theia-mod-preview-starting {
   border-color: color-mix(in srgb, var(--theia-focusBorder) 65%, transparent);
-  background: color-mix(in srgb, var(--theia-foreground) 6%, var(--theia-editor-background));
+  /* Theme background: the border beam alone says "starting", no tinted fill. */
+  background: var(--theia-editor-background);
   color: var(--theia-foreground);
   cursor: wait;
   pointer-events: none;

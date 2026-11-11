@@ -34,12 +34,15 @@ import { QaapAgentLoginInputDriver } from '@theia/qaap-agents-ui/lib/common/qaap
 import { createTranscriptTerminalStagingHost, createTranscriptTerminalSurface } from '@theia/qaap-transcript/lib/browser/qaap-transcript-terminal-view';
 import { createQaapAgentLoginDialog } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-login-dialog';
 import { resolveAgentLoginCwd } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-login-cwd';
+import { agentLoginUtf8ByteLength, QaapAgentLoginBufferTap } from './qaap-agent-login-buffer-tap';
 
 const HARNESS_STATUS_TIMEOUT_MS = 5000;
 const CONNECTED_CLOSE_DELAY_MS = 1800;
 /** A driven TUI login starts the CLI first, then types its way to the link. */
 const TUI_LOGIN_CHALLENGE_TIMEOUT_MS = 30_000;
 const INPUT_DRIVER_TICK_MS = 150;
+/** Output the live stream missed is read back from the terminal screen this often. */
+const BUFFER_TAP_POLL_MS = 400;
 
 /** The subset of `/harness-status` the Connect flow needs. */
 interface AgentLoginHarnessStatus {
@@ -135,6 +138,10 @@ export async function openAgentLoginDialogInBackground(
     let watchdogHandle: number | undefined;
     let inputDriver: QaapAgentLoginInputDriver | undefined;
     let inputDriverHandle: number | undefined;
+    let bufferTap: QaapAgentLoginBufferTap | undefined;
+    let bufferTapHandle: number | undefined;
+    /** UTF-8 bytes the live `onOutput` stream delivered in the current attempt (diagnostics only). */
+    let onOutputBytes = 0;
     /**
      * Whether a "connected" answer of the status probe proves this sign-in. A TUI login can run
      * while the harness is already connected (Pi: adding another provider), so there the probe
@@ -171,9 +178,19 @@ export async function openAgentLoginDialogInBackground(
      * (`closeOnDispose`), which ends the shell and the CLI with it: an interactive CLI such as
      * Pi's TUI (and its 127.0.0.1 callback listener) never outlives the dialog attempt.
      */
+    const stopBufferTap = (): void => {
+        if (bufferTapHandle !== undefined) {
+            window.clearInterval(bufferTapHandle);
+            bufferTapHandle = undefined;
+        }
+        bufferTap?.dispose();
+        bufferTap = undefined;
+    };
+
     const disposeTerminal = (): void => {
         stopPolling();
         stopInputDriver();
+        stopBufferTap();
         outputListener?.dispose();
         outputListener = undefined;
         if (surface) {
@@ -211,6 +228,22 @@ export async function openAgentLoginDialogInBackground(
     const closeBeforeUnload = (): void => close();
     window.addEventListener('beforeunload', closeBeforeUnload);
 
+    /** What the host saw from the sign-in terminal: whether xterm opened, and the bytes per channel. */
+    const terminalDiagnostics = (): { readonly agentId: string; readonly opened: boolean; readonly onOutputBytes: number; readonly bufferBytes: number } => ({
+        agentId,
+        opened: (surface?.terminal as { termOpened?: boolean } | undefined)?.termOpened === true,
+        onOutputBytes,
+        bufferBytes: bufferTap?.fedBytes ?? 0,
+    });
+
+    const describeTerminalDiagnostics = (facts: ReturnType<typeof terminalDiagnostics>): string => nls.localize(
+        'qaap/agentLogin/diagnosticsDetail',
+        'Terminal started: {0}. Output received: {1} bytes from the live stream, {2} bytes from the terminal screen.',
+        facts.opened ? nls.localize('qaap/agentLogin/diagnosticsYes', 'yes') : nls.localize('qaap/agentLogin/diagnosticsNo', 'no'),
+        String(facts.onOutputBytes),
+        String(facts.bufferBytes),
+    );
+
     const flow = new QaapAgentLoginFlow({
         agentId,
         ...(connectionFlow.kind === 'tui-login' ? { challengeTimeoutMs: TUI_LOGIN_CHALLENGE_TIMEOUT_MS } : {}),
@@ -226,6 +259,9 @@ export async function openAgentLoginDialogInBackground(
                 });
                 successCloseHandle ??= window.setTimeout(close, CONNECTED_CLOSE_DELAY_MS);
             } else if (state.phase === 'failed') {
+                if (state.reason === 'timeout' && state.tail.length === 0) {
+                    console.warn('[qaap] agent login produced no output', terminalDiagnostics());
+                }
                 disposeTerminal();
             }
         },
@@ -276,6 +312,16 @@ export async function openAgentLoginDialogInBackground(
         }, error => console.warn('[qaap] Agent login baseline status failed:', error));
     };
 
+    /** Reads the screen for output the live stream missed; stops once the attempt is no longer waiting. */
+    const pollBufferTap = (): void => {
+        const phase = flow.state.phase;
+        if (closed || !bufferTap || (phase !== 'waiting' && phase !== 'challenge' && phase !== 'code-submitted')) {
+            stopBufferTap();
+            return;
+        }
+        bufferTap.poll();
+    };
+
     const startInputDriver = (steps: readonly QaapAgentLoginInputStep[], currentAttempt: number): void => {
         const driverSurface = surface;
         const driver = new QaapAgentLoginInputDriver({
@@ -308,6 +354,7 @@ export async function openAgentLoginDialogInBackground(
     ): Promise<void> => {
         const currentAttempt = ++attempt;
         disposeTerminal();
+        onOutputBytes = 0;
         probeProvesLogin = true;
         if (input?.length) {
             takeProbeBaseline(currentAttempt);
@@ -364,16 +411,30 @@ export async function openAgentLoginDialogInBackground(
             }
             staging = attemptStaging;
             surface = attemptSurface;
-            outputListener = surface.terminal.onOutput((chunk: string) => {
+            const liveTerminal = surface.terminal;
+            outputListener = liveTerminal.onOutput((chunk: string) => {
+                onOutputBytes += agentLoginUtf8ByteLength(chunk);
+                bufferTap?.noteOutput();
                 inputDriver?.feed(stripAgentLoginTerminalControlSequences(chunk), Date.now());
                 flow.appendRawOutput(chunk);
             });
             await wait(120);
-            if (closed || currentAttempt !== attempt || surface.terminal.isDisposed || flow.state.phase !== 'preparing') {
+            if (closed || currentAttempt !== attempt || liveTerminal.isDisposed || flow.state.phase !== 'preparing') {
                 return;
             }
+            // Baseline the screen read before the command: what is on it now is shell prompt, not login output.
+            const tap = new QaapAgentLoginBufferTap({
+                buffer: () => (liveTerminal.isDisposed ? undefined : liveTerminal.buffer),
+                feed: text => {
+                    inputDriver?.feed(text, Date.now());
+                    flow.appendRawOutput(text);
+                },
+                columns: () => (liveTerminal as unknown as { term?: { cols?: number } }).term?.cols,
+            });
+            tap.noteOutput();
+            bufferTap = tap;
             flow.commandStarted(Date.now());
-            surface.terminal.sendText(`${buildAgentLoginShellCommand(command, {
+            liveTerminal.sendText(`${buildAgentLoginShellCommand(command, {
                 cliBinDirectory: status?.cliBinDirectory,
                 platform: runtimePlatform(),
                 env: hiddenLogin?.env,
@@ -381,6 +442,7 @@ export async function openAgentLoginDialogInBackground(
             if (input?.length) {
                 startInputDriver(input, currentAttempt);
             }
+            bufferTapHandle = window.setInterval(pollBufferTap, BUFFER_TAP_POLL_MS);
             if (onConnected) {
                 // The browser can return from authorization before the CLI prints its final line.
                 void refreshConnectionState();
@@ -531,6 +593,7 @@ export async function openAgentLoginDialogInBackground(
         if (typeof shellExit === 'number') {
             flow.exited(shellExit === 0 ? 1 : shellExit);
         }
+        flow.setDiagnostics(describeTerminalDiagnostics(terminalDiagnostics()));
         flow.tick(Date.now());
     }, 1000);
 

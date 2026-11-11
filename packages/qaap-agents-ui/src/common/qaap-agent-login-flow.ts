@@ -132,6 +132,8 @@ export type QaapAgentLoginFlowState =
         readonly prompt?: string;
         /** The link deadline that elapsed (`timeout`), when it is not the default one. */
         readonly timeoutMs?: number;
+        /** What the host saw from the sign-in terminal before a `timeout` (set via `setDiagnostics`). */
+        readonly diagnostics?: string;
     };
 
 export interface QaapAgentLoginFlowOptions {
@@ -166,6 +168,8 @@ export class QaapAgentLoginFlow {
     protected blockingPrompt: { readonly line: string; readonly since: number } | undefined;
     /** When the first sign-in link appeared; the sign-in deadline runs from here. */
     protected challengeSince: number | undefined;
+    /** Host-provided description of the terminal (started, bytes seen); attached to a `timeout` failure. */
+    protected diagnostics: string | undefined;
 
     constructor(protected readonly options: QaapAgentLoginFlowOptions) { }
 
@@ -213,6 +217,11 @@ export class QaapAgentLoginFlow {
         if (this.current.phase === 'waiting') {
             this.set({ phase: 'waiting', startedAt: now });
         }
+    }
+
+    /** Host facts about the sign-in terminal, reported with a `timeout` failure. Call before `tick`. */
+    setDiagnostics(text: string | undefined): void {
+        this.diagnostics = text;
     }
 
     /** The login command was sent to the terminal; the watchdog starts now. */
@@ -344,6 +353,7 @@ export class QaapAgentLoginFlow {
                 reason: 'timeout',
                 tail: resolveAgentLoginOutputTail(this.output),
                 ...(state.phase === 'waiting' && this.options.challengeTimeoutMs !== undefined ? { timeoutMs: challengeTimeoutMs } : {}),
+                ...(this.diagnostics ? { diagnostics: this.diagnostics } : {}),
             });
         }
     }
