@@ -333,6 +333,19 @@ body.qaap-mod-history-resizing * {
   cursor: default;
 }
 
+/* Starting-preview skeleton: the whole toolbar is disabled. It only dims; a disabled control
+   keeps its transparent resting fill and shows no hover pill. */
+.qaap-mod-preview-toolbar-skeleton button:disabled,
+.qaap-mod-preview-toolbar-skeleton .theia-input:disabled {
+  opacity: var(--theia-mod-disabled-opacity, 0.4);
+  cursor: default;
+}
+
+.qaap-mod-preview-toolbar-skeleton button:disabled:hover {
+  background: transparent;
+  color: var(--theia-icon-foreground);
+}
+
 .qaap-agent-preview-toolbar-back::before,
 .qaap-agent-preview-toolbar-forward::before,
 .qaap-agent-preview-toolbar-overflow::before,

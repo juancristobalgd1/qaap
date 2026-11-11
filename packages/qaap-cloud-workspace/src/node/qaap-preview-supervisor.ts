@@ -69,15 +69,36 @@ export function buildQaapPreviewScriptCommand(
 }
 
 /**
+ * A preview dev server is user app code: it must not inherit the Qaap host runtime. Every `QAAP_*`
+ * key of the base env is dropped (case-insensitively, as Windows env names are). No `QAAP_*` key is
+ * kept: Qaap sets `QAAP_PREVIEW_PORT` itself, and the port preload (`qaapPreviewPortNodeImportFlag`)
+ * reads only that one. Inherited ones would point a nested Qaap at the host's stores, cloud mode,
+ * preview base domain and task tokens.
+ */
+export function qaapPreviewProcessBaseEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+    const env: NodeJS.ProcessEnv = {};
+    for (const [key, value] of Object.entries(base)) {
+        if (!/^QAAP_/i.test(key)) {
+            env[key] = value;
+        }
+    }
+    return env;
+}
+
+/**
  * Dev-server env pinned to `port` the way the frontend bootstrap pins it: `PORT` for generic
  * servers plus `QAAP_PREVIEW_PORT` and the framework preload, so Vite/Astro/Next/Remix (which
  * ignore `PORT`) bind exactly this port with `--strictPort` instead of their default one.
+ * Inherited `QAAP_*` variables are stripped first (see {@link qaapPreviewProcessBaseEnv}).
  */
 export function buildQaapPreviewProcessEnv(base: NodeJS.ProcessEnv, port: number): NodeJS.ProcessEnv {
     return {
-        ...base,
+        ...qaapPreviewProcessBaseEnv(base),
         PORT: String(port),
         QAAP_PREVIEW_PORT: String(port),
+        // Same rule as the terminal path (`wrapCommandForDevNodeEnv`): a dev server must not inherit
+        // the host's NODE_ENV=production (dev branches off, and a nested Qaap refuses skip-auth).
+        NODE_ENV: 'development',
         NODE_OPTIONS: [base.NODE_OPTIONS, qaapPreviewPortNodeImportFlag(true)].filter(Boolean).join(' '),
         BROWSER: 'none',
     };

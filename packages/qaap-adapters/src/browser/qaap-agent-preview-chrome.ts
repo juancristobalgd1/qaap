@@ -476,6 +476,21 @@ export function createQaapPreviewToolbarIconButton(title: string, icon: string, 
     return button;
 }
 
+/** Open-in-browser control at the URL field end (lucide arrow, revealed on URL-field hover). */
+export function createQaapPreviewOpenExternalButton(label: string): HTMLButtonElement {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.title = label;
+    button.setAttribute('aria-label', label);
+    button.classList.add(
+        'theia-mini-browser-url-field-go',
+        'theia-mini-browser-workbench-button',
+        'theia-mini-browser-open',
+    );
+    button.append(createLucideArrowUpRightIcon());
+    return button;
+}
+
 export type { QaapPreviewInspectorDeps } from './qaap-preview-inline-inspector';
 
 export interface EmbeddedAgentPreviewChromeOptions extends QaapAgentPreviewChromeOptions {
@@ -545,16 +560,7 @@ export function mountEmbeddedAgentPreviewChrome(
     urlField.append(urlInput);
 
     const openExternalLabel = nls.localize('theia/mini-browser/openInNewBrowserTab', 'Open in New Browser Tab');
-    const openBtn = document.createElement('button');
-    openBtn.type = 'button';
-    openBtn.title = openExternalLabel;
-    openBtn.setAttribute('aria-label', openExternalLabel);
-    openBtn.classList.add(
-        'theia-mini-browser-url-field-go',
-        'theia-mini-browser-workbench-button',
-        'theia-mini-browser-open',
-    );
-    openBtn.append(createLucideArrowUpRightIcon());
+    const openBtn = createQaapPreviewOpenExternalButton(openExternalLabel);
     urlField.append(openBtn);
 
     const body = document.createElement('div');

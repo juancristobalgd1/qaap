@@ -79,10 +79,9 @@ describe('QAIQ/OpenClaude model routing', () => {
         NATIVE_MODEL_PICKER_AGENT_IDS.delete('codex');
         try {
             expect(listNativeAgentModels('codex').map(model => model.modelId)).to.deep.equal([
-                'gpt-5.6-sol',
+                'gpt-6-luna',
                 'gpt-5.6-terra',
                 'gpt-5.6-luna',
-                'gpt-5.5',
             ]);
         } finally {
             NATIVE_MODEL_PICKER_AGENT_IDS.add('codex');
@@ -100,7 +99,7 @@ describe('QAIQ/OpenClaude model routing', () => {
             },
         };
         const models = listModelsForAgentExtracted(ctx as unknown as QaapAgentTaskRunnerContext, 'codex', 'starter-user');
-        expect(models).to.have.length(4);
+        expect(models).to.have.length(3);
         expect(models.every(model => model.available === false)).to.equal(true);
     });
 
@@ -114,7 +113,7 @@ describe('QAIQ/OpenClaude model routing', () => {
             },
         };
         const models = listModelsForAgentExtracted(ctx as unknown as QaapAgentTaskRunnerContext, 'codex', 'starter-user');
-        expect(models).to.have.length(4);
+        expect(models).to.have.length(3);
         expect(models.every(model => model.available === true)).to.equal(true);
     });
 
@@ -172,14 +171,14 @@ describe('QAIQ/OpenClaude model routing', () => {
         it('locks Codex models as not-connected (not plan) for a Pro owner without credits and no sign-in', () => {
             const models = listModelsForAgentExtracted(
                 codexCtx('disconnected', true, { hostedModels: true, creditsRemaining: 0 }), 'codex', 'pro-user');
-            expect(models).to.have.length(4);
+            expect(models).to.have.length(3);
             expect(models.every(model => model.available === false && model.unavailableReason === 'not-connected')).to.equal(true);
         });
 
         it('shows Codex models without a plan lock while the auth probe is still pending', () => {
             const models = listModelsForAgentExtracted(
                 codexCtx('unknown', false, { hostedModels: false, creditsRemaining: 0 }), 'codex', 'starter-user');
-            expect(models).to.have.length(4);
+            expect(models).to.have.length(3);
             expect(models.every(model => model.available !== false && model.unavailableReason === undefined)).to.equal(true);
         });
 

@@ -5,6 +5,10 @@ import type { ExecutionSurfaceTabId as TranscriptTab } from '@theia/qaap-shared-
 import type { MobileProjectsExecutionSurfaceSidebarState } from './mobile-projects-execution-surface-tabs-ui';
 import { nls } from '@theia/core/lib/common/nls';
 import {
+    createQaapPreviewToolbarSkeleton,
+    QAAP_PREVIEW_TOOLBAR_SKELETON_CLASS,
+} from '@theia/qaap-adapters/lib/browser/qaap-agent-preview-toolbar-skeleton';
+import {
     type QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
@@ -334,7 +338,7 @@ function promoteExecutionSurfaceSidebarToolbarExtracted(sidebar: MobileProjectsE
     // Once promoted, the real toolbar lives in the header, not in the surface host: look there too,
     // or the skeleton was re-added next to it (duplicated, greyed-out controls).
     const headerHasRealToolbar = !!header?.querySelector(
-        `:scope > .qaap-agent-preview-embedded-toolbar:not(.${PREVIEW_TOOLBAR_SKELETON_CLASS})`);
+        `:scope > .qaap-agent-preview-embedded-toolbar:not(.${QAAP_PREVIEW_TOOLBAR_SKELETON_CLASS})`);
     syncExecutionSurfacePreviewToolbarSkeletonExtracted(header, close,
         sidebar.activeTab === 'preview' && !toolbar?.parentNode && !headerHasRealToolbar);
     if (!header || !close || !toolbar?.parentNode) {
@@ -364,8 +368,6 @@ function promoteExecutionSurfaceSidebarToolbarExtracted(sidebar: MobileProjectsE
     syncExecutionSurfacePreviewToolbarSkeletonExtracted(header, close, false);
 }
 
-const PREVIEW_TOOLBAR_SKELETON_CLASS = 'qaap-mod-preview-toolbar-skeleton';
-
 /**
  * While the Preview drawer has no mounted preview yet (the dev server is still starting, or the
  * embedded chrome has not rendered), the header showed only the close button over a black pane.
@@ -376,7 +378,7 @@ function syncExecutionSurfacePreviewToolbarSkeletonExtracted(header: HTMLElement
     if (!header) {
         return;
     }
-    const existing = header.querySelector<HTMLElement>(`:scope > .${PREVIEW_TOOLBAR_SKELETON_CLASS}`);
+    const existing = header.querySelector<HTMLElement>(`:scope > .${QAAP_PREVIEW_TOOLBAR_SKELETON_CLASS}`);
     if (!show) {
         existing?.remove();
         return;
@@ -384,38 +386,9 @@ function syncExecutionSurfacePreviewToolbarSkeletonExtracted(header: HTMLElement
     if (existing || !close) {
         return;
     }
-    const doc = header.ownerDocument;
-    const skeleton = doc.createElement('div');
-    skeleton.className = `qaap-agent-preview-embedded-toolbar theia-mini-browser-toolbar theia-mobile-execution-surface-sidebar-toolbar ${PREVIEW_TOOLBAR_SKELETON_CLASS} qaap-mod-frame-loading`;
-    skeleton.setAttribute('aria-busy', 'true');
-    const iconButton = (icon: string, label: string): HTMLButtonElement => {
-        const button = doc.createElement('button');
-        button.type = 'button';
-        button.disabled = true;
-        button.className = `codicon codicon-${icon}`;
-        button.setAttribute('aria-label', label);
-        return button;
-    };
-    const urlField = doc.createElement('div');
-    urlField.className = 'theia-mini-browser-url-field';
-    const input = doc.createElement('input');
-    input.type = 'text';
-    input.className = 'theia-input';
-    input.disabled = true;
-    input.placeholder = nls.localize('qaap/mobileProjects/previewStarting', 'Starting preview…');
-    urlField.append(input);
-    const controls = doc.createElement('div');
-    controls.className = 'theia-mini-browser-workbench-controls';
-    controls.append(
-        iconButton('screen-full', nls.localize('qaap/preview/maximize', 'Maximize')),
-        iconButton('edit', nls.localize('qaap/preview/edit', 'Edit')),
-    );
-    skeleton.append(
-        iconButton('arrow-left', nls.localize('qaap/preview/showPreviousPage', 'Show the previous page')),
-        iconButton('arrow-right', nls.localize('qaap/preview/showNextPage', 'Show the next page')),
-        urlField,
-        controls,
-    );
+    const skeleton = createQaapPreviewToolbarSkeleton({
+        placeholder: nls.localize('qaap/mobileProjects/previewStarting', 'Starting preview…'),
+    });
     header.insertBefore(skeleton, executionSurfaceSidebarHeaderActionsAnchorExtracted(header, close));
 }
 

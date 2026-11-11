@@ -86,20 +86,19 @@ describe('qaap-agent-native-model-catalog', () => {
     it('lists frontier Claude Code, Codex, and Copilot models', () => {
         const claude = listStaticNativeAgentModels('claude').map(m => m.modelId);
         expect(claude).to.deep.equal([
+            'claude-fable-5-1',
+            'claude-opus-5-5',
+            'claude-sonnet-5-5',
+            'claude-haiku-5-5',
             'claude-fable-5',
-            'claude-opus-4-8',
             'claude-sonnet-5',
-            'claude-haiku-4-5',
-            'claude-sonnet-4-6',
-            'claude-opus-4-7',
         ]);
 
         const codex = listStaticNativeAgentModels('codex').map(m => m.modelId);
         expect(codex).to.deep.equal([
-            'gpt-5.6-sol',
+            'gpt-6-luna',
             'gpt-5.6-terra',
             'gpt-5.6-luna',
-            'gpt-5.5',
         ]);
 
         const copilot = listStaticNativeAgentModels('copilot').map(m => m.modelId);
@@ -116,6 +115,7 @@ describe('qaap-agent-native-model-catalog', () => {
         const models = listStaticAntigravityModels('antigravity');
         expect(models).to.have.length(ANTIGRAVITY_API_MODELS.length);
         expect(models.map(m => m.modelId)).to.deep.equal(ANTIGRAVITY_API_MODELS.map(m => m.label));
+        expect(models[0].label).to.equal('Gemini 3.8 Flash (High)');
         expect(models.map(m => m.label)).to.deep.equal(ANTIGRAVITY_API_MODELS.map(m => m.label));
         expect(listStaticNativeAgentModels('gemini').map(m => m.modelId))
             .to.deep.equal(listStaticAntigravityModels('gemini').map(m => m.modelId));

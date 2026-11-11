@@ -42,6 +42,31 @@ describe('buildQaapPreviewProcessEnv', () => {
         expect(source).to.contain('QAAP_PREVIEW_PORT');
         expect(source).to.contain('--strictPort');
     });
+
+    it('strips every inherited QAAP_* variable so only QAAP_PREVIEW_PORT reaches the dev server', () => {
+        const env = buildQaapPreviewProcessEnv({
+            PATH: '/bin',
+            QAAP_PREVIEW_BASE_DOMAIN: 'qaap.example.com',
+            QAAP_SKIP_AUTH: 'false',
+            QAAP_SQLITE_STORE_PATH: '/host/.qaap/store.sqlite',
+            QAAP_TASK_TOKEN: 'secret-task-token',
+            qaap_cloud_mode: '1',
+            QAAP_PREVIEW_PORT: '9999',
+        }, 5174);
+
+        const qaapKeys = Object.keys(env).filter(key => /^QAAP_/i.test(key));
+        expect(qaapKeys).to.deep.equal(['QAAP_PREVIEW_PORT']);
+        expect(env.QAAP_PREVIEW_PORT).to.equal('5174');
+        expect(env.PATH).to.equal('/bin');
+        expect(env.PORT).to.equal('5174');
+        expect(JSON.stringify(env)).to.not.contain('secret-task-token');
+    });
+
+    it('does not mutate the base env it was given', () => {
+        const base = { QAAP_SKIP_AUTH: 'false', KEEP: 'yes' };
+        buildQaapPreviewProcessEnv(base, 5174);
+        expect(base).to.deep.equal({ QAAP_SKIP_AUTH: 'false', KEEP: 'yes' });
+    });
 });
 
 describe('QaapPreviewSupervisor shutdown', () => {

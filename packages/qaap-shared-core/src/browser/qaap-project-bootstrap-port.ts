@@ -265,6 +265,17 @@ function shellSingleQuote(value: string): string {
     return '\'' + value.replace(/'/g, '\'\\\'\'') + '\'';
 }
 
+/**
+ * POSIX `sh`/`bash`/`zsh`/`dash` prefix that unsets every `QAAP_*` variable the terminal shell inherited
+ * from the Qaap backend, so a project's dev server (user app code) sees none of the host's Qaap runtime
+ * (stores, cloud mode, task tokens, preview base domain). Names only; values never reach the command line.
+ * Ends with `&& ` so the port assignments that follow are a separate command that still runs.
+ * Windows (cmd.exe) has no equivalent loop; {@link prefixPortEnv} leaves that branch unscrubbed.
+ */
+export function qaapPreviewHostEnvScrubPrefix(): string {
+    return `for __qaap_v in $(env | sed -n 's/^\\(QAAP_[A-Za-z0-9_]*\\)=.*/\\1/p'); do unset "$__qaap_v"; done && `;
+}
+
 function prefixPortEnv(command: string, port: number, kind: QaapProjectKind, isWindows: boolean): string {
     const isNode = kind.startsWith('node-');
     const forcePortImport = isNode ? forceNodePreviewPortImport(kind) : undefined;
@@ -274,15 +285,17 @@ function prefixPortEnv(command: string, port: number, kind: QaapProjectKind, isW
         // argv placeholders become empty (Next exits with "--port argument missing"). These
         // values are validated decimal ports, so unquoted assignments are both safe and parsed
         // consistently by cmd.exe.
+        // Not scrubbed: cmd.exe cannot enumerate and unset QAAP_* in a portable way.
         const base = `set QAAP_PREVIEW_PORT=${port}&& set PORT=${port}&& `;
         return isNode
             ? `${base}set "NODE_ENV=development"&& set "NODE_OPTIONS=%NODE_OPTIONS% ${forcePortImport}"&& ${command}`
             : `${base}${command}`;
     }
+    const scrub = qaapPreviewHostEnvScrubPrefix();
     return isNode
-        ? `QAAP_PREVIEW_PORT=${port} PORT=${port} NODE_ENV=development `
+        ? `${scrub}QAAP_PREVIEW_PORT=${port} PORT=${port} NODE_ENV=development `
             + `NODE_OPTIONS="$NODE_OPTIONS ${forcePortImport}" ${command}`
-        : `QAAP_PREVIEW_PORT=${port} PORT=${port} ${command}`;
+        : `${scrub}QAAP_PREVIEW_PORT=${port} PORT=${port} ${command}`;
 }
 
 /**

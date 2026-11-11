@@ -103,12 +103,13 @@ export const OPENCODE_FALLBACK_MODELS: readonly QaapQaiqModelOption[] = OPENCODE
 /**
  * Keep Codex's native rows visible if a hosted API responds before its runner catalog is warm.
  * The backend returns the same rows, including plan availability, once its catalog is ready.
+ * Mirrors `listStaticNativeAgentModels('codex')` in qaap-cloud-workspace (qaap-agent-native-model-catalog.ts):
+ * this package cannot import that catalog, so keep the two in sync by hand (`codex debug models`, 2026-11).
  */
 export const CODEX_FALLBACK_MODELS: readonly QaapQaiqModelOption[] = [
-    { provider: 'openai', vendor: 'codex', modelId: 'gpt-5.6-sol', label: 'GPT-5.6 Sol' },
-    { provider: 'openai', vendor: 'codex', modelId: 'gpt-5.6-terra', label: 'GPT-5.6 Terra' },
-    { provider: 'openai', vendor: 'codex', modelId: 'gpt-5.6-luna', label: 'GPT-5.6 Luna' },
-    { provider: 'openai', vendor: 'codex', modelId: 'gpt-5.5', label: 'GPT-5.5 Legacy' },
+    { provider: 'openai', vendor: 'codex', modelId: 'gpt-6-luna', label: 'GPT-6-Luna' },
+    { provider: 'openai', vendor: 'codex', modelId: 'gpt-5.6-terra', label: 'GPT-5.6-Terra' },
+    { provider: 'openai', vendor: 'codex', modelId: 'gpt-5.6-luna', label: 'GPT-5.6-Luna' },
 ];
 
 export function normalizeOpenCodeModelOptions(models: readonly QaapQaiqModelOption[]): QaapQaiqModelOption[] {
