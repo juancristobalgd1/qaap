@@ -341,10 +341,15 @@ export function syncTranscriptComposerQuickActionsVisibilityExtracted(ctx: Mobil
             updatedAt: summary.updatedAt,
             messages: [],
         };
+        // Once this project's preview is verified the composer offers View Preview: the quick-action
+        // "Starting preview…" chip must go with it, even while the request flags are still set (they
+        // are only cleared when the Preview surface mounts, which left both chips side by side).
+        const project = ctx.host.transcriptComposerProject;
+        const previewVerified = !!project && ctx.verifiedComposerPreview?.projectId === project.id;
         applyTranscriptComposerQuickActionsMode(host, resolveTranscriptComposerQuickActionsMode(
             conv,
             current,
-            !!ctx.host.transcriptPreviewRequestRunning || !!ctx.host.transcriptPreviewRequestPending,
+            (!!ctx.host.transcriptPreviewRequestRunning || !!ctx.host.transcriptPreviewRequestPending) && !previewVerified,
         ));
 }
 

@@ -57,6 +57,25 @@ export function isComposerPreviewStartupActive(
         || options.agentWorking === true;
 }
 
+/**
+ * This project's own Run is still coming up: installing, starting, or `running` while the composer
+ * has not yet verified that the URL answers (a first Next/Vite compile can take minutes). The
+ * starting chip follows this instead of only the explicit Run request, which ends with the agent
+ * turn and left the user without any sign of progress while the server was still compiling.
+ */
+export function isComposerPreviewBootingForProject(
+    runtime: Pick<ComposerPreviewRuntime, 'phase' | 'projectCwd' | 'bootstrapRoot'>,
+    previewVerified: boolean,
+): boolean {
+    if (!runtime.projectCwd || !runtime.bootstrapRoot
+        || normalizePath(runtime.projectCwd) !== normalizePath(runtime.bootstrapRoot)) {
+        return false;
+    }
+    return runtime.phase === 'installing'
+        || runtime.phase === 'starting'
+        || (runtime.phase === 'running' && !previewVerified);
+}
+
 /** What the composer must probe to verify a preview URL: a process identity or a legacy port. */
 export interface ComposerPreviewTarget {
     readonly previewId?: string;

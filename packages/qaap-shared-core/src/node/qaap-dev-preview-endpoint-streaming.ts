@@ -24,6 +24,7 @@ import { PREVIEW_RESERVATION_START_GRACE_MS } from './qaap-dev-preview-endpoint'
 import { classifyQaapPreviewProbeState, probeQaapPreviewPidLiveness, releaseStoppedPreviewExtracted } from './qaap-dev-preview-process-liveness';
 import { PREVIEW_REAPER_INTERVAL_MS } from './qaap-dev-preview-endpoint';
 import type { QaapDevPreviewEndpointContext } from './qaap-dev-preview-endpoint-context';
+import { resolveListenerInRootExtracted } from './qaap-dev-preview-endpoint-render';
 
 /** Longest gap between two `[qaap-preview] current claim` logs for an unchanged claim. */
 export const CURRENT_CLAIM_LOG_MAX_SILENCE_MS = 60_000;
@@ -154,7 +155,48 @@ export function previewForRequestExtracted(ctx: QaapDevPreviewEndpointContext, r
         return record;
 }
 
+/**
+ * Whether an upgrade belongs exclusively to a preview served by this backend: its host is an
+ * isolated preview origin (or its path a `/qaap-preview/<id>/` identity) with a local record.
+ * Such a socket speaks the previewed app's protocol: when that app is Qaap itself, its
+ * `/qaap/api/agent-*-ws` and `/socket.io` paths also match this backend's own upgrade listeners,
+ * and two writers on one socket corrupt the frames ("Invalid frame header").
+ */
+export function claimsPreviewOriginUpgradeExtracted(ctx: QaapDevPreviewEndpointContext, req: http.IncomingMessage): boolean {
+        const hostLabel = ctx.previewHostLabel(req);
+        if (hostLabel) {
+            return ctx.portRegistry.getByHostLabel(hostLabel) !== undefined;
+        }
+        const rawUrl = req.url ?? '';
+        const queryIndex = rawUrl.indexOf('?');
+        const identity = parseQaapIdentityPreviewRequestPath(queryIndex < 0 ? rawUrl : rawUrl.slice(0, queryIndex));
+        return !!identity && ctx.portRegistry.get(identity.previewId) !== undefined;
+}
+
+/**
+ * Routes preview-origin upgrades to the preview proxy before any `'upgrade'` listener runs, so
+ * the product's own WebSocket handlers (agent streams, Theia's Socket.IO) never see them. It wraps
+ * `emit` instead of reordering listeners because those register in any order during startup.
+ * Upgrades without a local preview record (e.g. a tenant's preview on the control plane) are
+ * left to the listeners as before.
+ */
+export function installPreviewUpgradeGateExtracted(ctx: QaapDevPreviewEndpointContext, server: http.Server): void {
+        const emit = server.emit;
+        server.emit = function (this: http.Server, event: string | symbol, ...args: unknown[]): boolean {
+            if (event === 'upgrade') {
+                const [req, socket, head] = args as [http.IncomingMessage, net.Socket, Buffer];
+                if (claimsPreviewOriginUpgradeExtracted(ctx, req)) {
+                    ctx.handleWebSocketUpgrade(req, socket, head);
+                    return true;
+                }
+            }
+            return emit.call(this, event, ...args);
+        } as typeof server.emit;
+}
+
 export function onStartExtracted(ctx: QaapDevPreviewEndpointContext, server: http.Server): void {
+        installPreviewUpgradeGateExtracted(ctx, server);
+        // `/qaap-dev/<port>/` and unclaimed preview hosts: these paths collide with no other listener.
         server.on('upgrade', (req, socket, head) => {
             ctx.handleWebSocketUpgrade(req, socket as net.Socket, head);
         });
@@ -247,10 +289,20 @@ export async function handleProbeExtracted(ctx: QaapDevPreviewEndpointContext, r
             res.json(body);
             return;
         }
+        // No claim names this listener: on request, say whether it runs inside the caller's project
+        // root (its process cwd), the identity evidence an attach needs to adopt it. Only where
+        // every local process is the caller's (local skip-auth, a single-tenant runtime): on a shared
+        // host the yes/no would describe another tenant's process.
+        const rootParam = typeof req.query.root === 'string' ? req.query.root : undefined;
+        const listenerEvidenceAllowed = ctx.auth.authenticate(req).kind === 'skip' || ctx.ownsUnclaimedPorts(login);
+        const listenerInRoot = ready && !record && rootParam && listenerEvidenceAllowed
+            ? resolveListenerInRootExtracted(ctx, port, login, rootParam)
+            : undefined;
         const body: QaapDevPreviewProbeResponse = {
             ready,
             ...(ready ? { readiness: 'transport_ready' as const } : {}),
             ...(listening ? { listening } : {}),
+            ...(listenerInRoot !== undefined ? { listenerInRoot } : {}),
             previewUrl: buildQaapDevPreviewOpenUrl(origin, port),
         };
         res.json(body);

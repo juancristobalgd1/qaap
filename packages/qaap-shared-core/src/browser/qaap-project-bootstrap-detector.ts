@@ -186,7 +186,7 @@ export class QaapProjectBootstrapDetector {
         const scripts = pkg.scripts && typeof pkg.scripts === 'object' ? pkg.scripts : {};
         const devScriptKey = this.pickRootDevScript(scripts);
         const { kind, expectedPort } = this.guessFramework(pkg);
-        const isTheiaApp = this.isTheiaPackage(pkg);
+        let isTheiaApp = this.isTheiaPackage(pkg);
 
         let devCommand: string | undefined;
         let devCommandLabel: string | undefined;
@@ -202,6 +202,9 @@ export class QaapProjectBootstrapDetector {
         // Building before preview is opt-in only (`"build": "auto"` in `.qaap/preview.json`).
         const buildPolicy = await this.readPreviewBuildPolicy(rootUri, enclosingWorkspaceRoot);
         const { flavor, apps } = await this.detectMonorepo(rootUri, pkg, packageManager, buildPolicy);
+        // A root script that launches a member through an indirection (`node scripts/start.mjs`,
+        // `lerna run start`) runs whatever Theia app the workspace holds: isolate it like one.
+        isTheiaApp = isTheiaApp || (!!devCommand && apps.some(app => app.isTheiaApp));
         const workspaceRootUri = flavor && PACKAGE_MANAGER_WORKSPACE_FLAVORS.has(flavor) ? rootUri : enclosingWorkspaceRoot;
         // A member opened on its own: its script's bin and build state, like a monorepo app's.
         const rootScript = devScriptKey ? String(scripts[devScriptKey]) : undefined;

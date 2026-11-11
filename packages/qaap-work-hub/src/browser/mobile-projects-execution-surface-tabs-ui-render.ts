@@ -292,6 +292,8 @@ function syncExecutionSurfaceSidebarFallbackPreviewHeaderExtracted(sidebar: Mobi
 function restoreExecutionSurfaceSidebarToolbarHostExtracted(sidebar: MobileProjectsExecutionSurfaceSidebarState): void {
     sidebar.toolbarObserver?.disconnect();
     sidebar.toolbarObserver = undefined;
+    syncExecutionSurfacePreviewToolbarSkeletonExtracted(
+        sidebar.element?.querySelector<HTMLElement>('.theia-mobile-execution-surface-sidebar-header'), undefined, false);
     const host = sidebar.toolbarHost as HTMLElement | undefined;
     if (!host) {
         return;
@@ -329,6 +331,12 @@ function promoteExecutionSurfaceSidebarToolbarExtracted(sidebar: MobileProjectsE
     const header = sidebar.element?.querySelector<HTMLElement>('.theia-mobile-execution-surface-sidebar-header');
     const close = header?.querySelector<HTMLElement>('.theia-mobile-execution-surface-sidebar-close');
     const toolbar = activeHost && resolveExecutionSurfaceSidebarToolbarHostExtracted(sidebar.activeTab, activeHost);
+    // Once promoted, the real toolbar lives in the header, not in the surface host: look there too,
+    // or the skeleton was re-added next to it (duplicated, greyed-out controls).
+    const headerHasRealToolbar = !!header?.querySelector(
+        `:scope > .qaap-agent-preview-embedded-toolbar:not(.${PREVIEW_TOOLBAR_SKELETON_CLASS})`);
+    syncExecutionSurfacePreviewToolbarSkeletonExtracted(header, close,
+        sidebar.activeTab === 'preview' && !toolbar?.parentNode && !headerHasRealToolbar);
     if (!header || !close || !toolbar?.parentNode) {
         return;
     }
@@ -353,6 +361,62 @@ function promoteExecutionSurfaceSidebarToolbarExtracted(sidebar: MobileProjectsE
     toolbar.classList.add('theia-mobile-execution-surface-sidebar-toolbar');
     header.insertBefore(toolbar, actionsAnchor);
     sidebar.toolbarHost = toolbar;
+    syncExecutionSurfacePreviewToolbarSkeletonExtracted(header, close, false);
+}
+
+const PREVIEW_TOOLBAR_SKELETON_CLASS = 'qaap-mod-preview-toolbar-skeleton';
+
+/**
+ * While the Preview drawer has no mounted preview yet (the dev server is still starting, or the
+ * embedded chrome has not rendered), the header showed only the close button over a black pane.
+ * A disabled copy of the preview controls holds the header instead, with the loading bar running,
+ * and is dropped as soon as the real toolbar is promoted.
+ */
+function syncExecutionSurfacePreviewToolbarSkeletonExtracted(header: HTMLElement | null | undefined, close: HTMLElement | null | undefined, show: boolean): void {
+    if (!header) {
+        return;
+    }
+    const existing = header.querySelector<HTMLElement>(`:scope > .${PREVIEW_TOOLBAR_SKELETON_CLASS}`);
+    if (!show) {
+        existing?.remove();
+        return;
+    }
+    if (existing || !close) {
+        return;
+    }
+    const doc = header.ownerDocument;
+    const skeleton = doc.createElement('div');
+    skeleton.className = `qaap-agent-preview-embedded-toolbar theia-mini-browser-toolbar theia-mobile-execution-surface-sidebar-toolbar ${PREVIEW_TOOLBAR_SKELETON_CLASS} qaap-mod-frame-loading`;
+    skeleton.setAttribute('aria-busy', 'true');
+    const iconButton = (icon: string, label: string): HTMLButtonElement => {
+        const button = doc.createElement('button');
+        button.type = 'button';
+        button.disabled = true;
+        button.className = `codicon codicon-${icon}`;
+        button.setAttribute('aria-label', label);
+        return button;
+    };
+    const urlField = doc.createElement('div');
+    urlField.className = 'theia-mini-browser-url-field';
+    const input = doc.createElement('input');
+    input.type = 'text';
+    input.className = 'theia-input';
+    input.disabled = true;
+    input.placeholder = nls.localize('qaap/mobileProjects/previewStarting', 'Starting preview…');
+    urlField.append(input);
+    const controls = doc.createElement('div');
+    controls.className = 'theia-mini-browser-workbench-controls';
+    controls.append(
+        iconButton('screen-full', nls.localize('qaap/preview/maximize', 'Maximize')),
+        iconButton('edit', nls.localize('qaap/preview/edit', 'Edit')),
+    );
+    skeleton.append(
+        iconButton('arrow-left', nls.localize('qaap/preview/showPreviousPage', 'Show the previous page')),
+        iconButton('arrow-right', nls.localize('qaap/preview/showNextPage', 'Show the next page')),
+        urlField,
+        controls,
+    );
+    header.insertBefore(skeleton, executionSurfaceSidebarHeaderActionsAnchorExtracted(header, close));
 }
 
 function observeExecutionSurfaceSidebarToolbarExtracted(sidebar: MobileProjectsExecutionSurfaceSidebarState): void {

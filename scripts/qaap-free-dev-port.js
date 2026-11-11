@@ -4,6 +4,7 @@
  * Safe to run before `npm run start:browser` — no-op when the port is already free.
  */
 const { execSync, spawnSync } = require('child_process');
+const path = require('path');
 
 const HOST = process.env.QAAP_DEV_HOST ?? '127.0.0.1';
 const PORT = Number(process.env.QAAP_DEV_PORT ?? 3000);
@@ -92,9 +93,67 @@ function terminate(pid) {
     }
 }
 
-function isStaleDevListener(command) {
+const REPO_ROOT = path.resolve(__dirname, '..');
+
+function isNodeOrElectron(command) {
     const base = command.split(/[\\/]/).pop()?.toLowerCase() ?? command.toLowerCase();
     return base === 'node' || base === 'node.exe' || base === 'electron' || base === 'electron.exe';
+}
+
+function resolveCommandLine(pid) {
+    try {
+        if (process.platform === 'win32') {
+            const probe = spawnSync('powershell.exe', [
+                '-NoProfile',
+                '-NonInteractive',
+                '-Command',
+                `(Get-CimInstance Win32_Process -Filter \"ProcessId = ${pid}\").CommandLine`,
+            ], { encoding: 'utf8' });
+            return probe.stdout?.trim() ?? '';
+        }
+        return spawnSync('ps', ['-p', String(pid), '-o', 'args='], { encoding: 'utf8' }).stdout?.trim() ?? '';
+    } catch {
+        return '';
+    }
+}
+
+function resolveWorkingDirectory(pid) {
+    if (process.platform === 'win32') {
+        return '';
+    }
+    try {
+        const probe = spawnSync('lsof', ['-a', '-p', String(pid), '-d', 'cwd', '-Fn'], { encoding: 'utf8' });
+        const line = (probe.stdout ?? '').split('\n').find(value => value.startsWith('n'));
+        return line ? line.slice(1).trim() : '';
+    } catch {
+        return '';
+    }
+}
+
+function isInsideRepo(dir) {
+    if (!dir) {
+        return false;
+    }
+    const relative = path.relative(REPO_ROOT, path.resolve(dir));
+    return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+/**
+ * Only a leftover Theia/Qaap backend of THIS repo may be killed. Any other Node process on the
+ * port is someone else's app (another project's dev server on :3000): killing it because it
+ * happens to be `node` took down unrelated work. Identity is the working directory inside this
+ * repo, or a command line that names this repo's Theia entry points.
+ */
+function isStaleDevListener(pid, command) {
+    if (!isNodeOrElectron(command)) {
+        return false;
+    }
+    if (isInsideRepo(resolveWorkingDirectory(pid))) {
+        return true;
+    }
+    const commandLine = resolveCommandLine(pid);
+    return commandLine.includes(REPO_ROOT)
+        || /(?:^|[\\/\s])(?:examples[\\/](?:browser|electron)|dev-packages[\\/]cli[\\/]bin[\\/]theia)/.test(commandLine);
 }
 
 /**
@@ -168,7 +227,7 @@ function main() {
     const foreign = [];
     for (const pid of pids) {
         const command = resolveCommand(pid);
-        if (isStaleDevListener(command)) {
+        if (isStaleDevListener(pid, command)) {
             stale.push({ pid, command });
         } else {
             foreign.push({ pid, command });

@@ -257,6 +257,13 @@ export class QaapCloudWorkspaceEndpoint implements BackendApplicationContributio
             res.status(400).json({ error: 'port is required' });
             return;
         }
+        if (await this.isUnauthenticatedIdePreview(port)) {
+            // A Qaap/Theia app previewed inside Qaap runs without its own login (the nested IDE
+            // trusts the owner-gated preview proxy). A public link would hand anyone an IDE with a
+            // terminal in this workspace, so such previews are never shared.
+            res.status(403).json({ error: 'This preview is an IDE without its own sign-in and cannot be shared publicly.' });
+            return;
+        }
         const origin = this.resolvePublicOrigin(req);
         const ownerLogin = ctx.kind === 'authenticated' ? ctx.userLogin : undefined;
         if (body.repoKey) {
@@ -272,6 +279,35 @@ export class QaapCloudWorkspaceEndpoint implements BackendApplicationContributio
             res.setHeader(QAAP_PREVIEW_ROUTE_HEADER, formatQaapPreviewRoutes([{ kind: 'share', id: summary.token }]));
         }
         res.json({ share: summary });
+    }
+
+    /**
+     * Whether the dev server on `port` is a Qaap or Theia IDE that answers without signing in: a
+     * Qaap backend that reports `skipAuth`, or a page carrying Theia's preload/splash shell. Probed on
+     * loopback with a short timeout; an unreachable or unknown server is not treated as an IDE.
+     */
+    protected async isUnauthenticatedIdePreview(port: number): Promise<boolean> {
+        const base = `http://127.0.0.1:${port}`;
+        const fetchText = async (path: string): Promise<string | undefined> => {
+            try {
+                const response = await fetch(`${base}${path}`, { signal: AbortSignal.timeout(2_500), redirect: 'manual' });
+                return response.ok ? (await response.text()).slice(0, 64_000) : undefined;
+            } catch {
+                return undefined;
+            }
+        };
+        const authConfig = await fetchText('/qaap/api/auth/config');
+        if (authConfig) {
+            try {
+                if ((JSON.parse(authConfig) as { skipAuth?: unknown }).skipAuth === true) {
+                    return true;
+                }
+            } catch {
+                // Not a Qaap backend.
+            }
+        }
+        const html = await fetchText('/');
+        return !!html && /class=["'][^"']*theia-(?:preload|splash)|id=["']theia-app-shell/.test(html);
     }
 
     /** Revokes a public preview share. Only the share's owner (or a skip-auth dev) may revoke it. */

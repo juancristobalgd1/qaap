@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { QaapCodexStreamAccumulator } from './qaap-codex-stream';
+import { structuredLogResidueText } from './qaap-structured-log-residue';
 import { QaapPiStreamAccumulator, type QaapProviderRetryStatus } from './qaap-pi-json-stream';
 import { parseOpencodeFormattedLog, QaapOpencodeStreamAccumulator } from './qaap-opencode-stream';
 import {
@@ -97,7 +98,7 @@ export function parseAgentLogForTranscript(
         if (acc.consumedJsonEvents()) {
             const segments = [...acc.getSegments()];
             return {
-                content: acc.getDisplayText() || log.trim(),
+                content: acc.getDisplayText() || structuredLogResidueText(log),
                 segments,
                 traceEvents: [...acc.getTraceEvents()],
             };
@@ -109,8 +110,8 @@ export function parseAgentLogForTranscript(
         if (acc.consumedJsonEvents()) {
             return {
                 // Never the raw log: a turn that failed before any assistant text has an event stream
-                // (system prompt included) and nothing to show; its failure card carries the reason.
-                content: acc.getDisplayText(),
+                // (system prompt included); only the plain lines the CLI printed around it are kept.
+                content: acc.getDisplayText() || structuredLogResidueText(log),
                 segments: [...acc.getSegments()],
                 traceEvents: [...acc.getTraceEvents()],
             };
@@ -122,7 +123,7 @@ export function parseAgentLogForTranscript(
         if (acc.consumedJsonEvents()) {
             const segments = [...acc.getSegments()];
             return {
-                content: acc.getDisplayText() || log,
+                content: acc.getDisplayText() || structuredLogResidueText(log),
                 segments,
                 traceEvents: [...acc.getTraceEvents()],
             };
