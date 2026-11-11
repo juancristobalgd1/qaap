@@ -6,6 +6,7 @@ import type { QaapAgentCommandBuildResult, QaapAgentTaskRunnerContext } from './
 import { QaapAgentQueuePolicy } from './qaap-agent-queue-policy';
 import { sharedWorkingTreeBusyExtracted } from './qaap-agent-task-runner-render2';
 import { QaapAgentStorageUnavailableError } from './qaap-agent-storage-unavailable-error';
+import { qaapMissingCwdError } from './qaap-missing-cwd-error';
 // Extracted from qaap-agent-task-runner.ts
 
 import { randomUUID } from 'crypto';
@@ -143,7 +144,7 @@ export function createExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCr
         }
         const cwd = path.resolve(request.cwd ?? '');
         if (!path.isAbsolute(cwd) || !ctx.isDirectory(cwd)) {
-            throw new Error('A valid absolute "cwd" directory is required.');
+            throw qaapMissingCwdError(request.cwd);
         }
         // Last line of defence, shared by every caller (endpoints, routine runner, retries): a
         // container cwd would spawn the agent over EVERY repository the user owns at once — wrong

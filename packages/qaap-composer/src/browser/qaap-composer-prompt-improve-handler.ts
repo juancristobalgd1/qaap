@@ -58,6 +58,45 @@ function notifyImproveFailure(anchor: HTMLElement, message: string): void {
 function resetImproveButton(context: StickyComposerImprovePromptContext): void {
     context.improveBtn.classList.remove('theia-mod-busy');
     context.input.classList.remove('qaap-composer-prompt-morphing');
+    endPromptImproving(context.input);
+}
+
+/**
+ * The textarea keeps the user's text on screen while the request runs, with a sweep over it. It is read-only
+ * meanwhile, so an edit cannot land between the request and the replacement.
+ */
+function beginPromptImproving(input: HTMLTextAreaElement): void {
+    input.readOnly = true;
+    input.setAttribute('aria-busy', 'true');
+    input.classList.add('qaap-mod-improving-prompt');
+}
+
+function endPromptImproving(input: HTMLTextAreaElement): void {
+    input.readOnly = false;
+    input.removeAttribute('aria-busy');
+    input.classList.remove('qaap-mod-improving-prompt');
+}
+
+/** A soft fade-in once the improved text is in place; the class is re-armed so every replacement fades. */
+function playPromptCrossfadeIn(input: HTMLTextAreaElement): void {
+    input.classList.remove('qaap-mod-prompt-crossfade-in');
+    // Forces a reflow so the animation restarts when the class is added again.
+    input.getBoundingClientRect();
+    input.classList.add('qaap-mod-prompt-crossfade-in');
+}
+
+function promptChangedWhileImproving(context: StickyComposerImprovePromptContext, promptSnapshot: string): boolean {
+    return context.getPrompt() !== promptSnapshot;
+}
+
+function notifyPromptChangedWhileImproving(anchor: HTMLElement): void {
+    notifyImproveFailure(
+        anchor,
+        nls.localize(
+            'qaap/composer/improvePromptChangedWhileRunning',
+            'The prompt changed while it was being improved. Your text was kept.',
+        ),
+    );
 }
 
 function restoreComposerPromptAfterCancel(
@@ -172,6 +211,7 @@ async function runStickyComposerImprovePrompt(
 
     clearComposerImproveFeedback(context.improveBtn);
     context.improveBtn.classList.add('theia-mod-busy');
+    beginPromptImproving(context.input);
     context.refreshControls();
 
     const isRunCancelled = (): boolean => runId !== getLatestGeneration();
@@ -186,8 +226,18 @@ async function runStickyComposerImprovePrompt(
         if (isRunCancelled()) {
             return;
         }
+        // The user may have typed while the request ran: their text wins over the suggestion.
+        if (promptChangedWhileImproving(context, promptSnapshot)) {
+            notifyPromptChangedWhileImproving(context.improveBtn);
+            return;
+        }
+        endPromptImproving(context.input);
         const accepted = await (options.confirmImprovedPrompt ?? confirmImprovedPrompt)(promptSnapshot, improved);
         if (!accepted || isRunCancelled()) {
+            return;
+        }
+        if (promptChangedWhileImproving(context, promptSnapshot)) {
+            notifyPromptChangedWhileImproving(context.improveBtn);
             return;
         }
         clearComposerImproveFeedback(context.improveBtn);
@@ -204,6 +254,7 @@ async function runStickyComposerImprovePrompt(
             restoreComposerPromptAfterCancel(context, promptSnapshot);
             return;
         }
+        playPromptCrossfadeIn(context.input);
         context.refreshControls();
     } catch (error) {
         if (isComposerPromptImproveCancelled(error) || isRunCancelled() || animationAbort.signal.aborted) {

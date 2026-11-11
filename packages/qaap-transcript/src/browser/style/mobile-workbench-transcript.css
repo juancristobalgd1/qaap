@@ -296,6 +296,13 @@ body.qaap-theme-light .theia-mobile-agent-transcript-empty-action.theia-mod-prev
   animation: qaap-border-beam-hue 12s ease-in-out infinite;
 }
 
+/* Chips en arranque: el interior no se tiñe (fondo de tema como los chips inactivos); el haz (::after) y el spinner siguen */
+.theia-mobile-sticky-composer-next-action.theia-mod-preview-starting::before,
+.theia-mobile-agent-transcript-empty-action.theia-mod-preview-starting::before {
+  background: none;
+  box-shadow: none;
+}
+
 /* Capa 3 — bloom: el pico del haz desenfocado, recortado al anillo */
 .theia-mobile-projects-sticky-composer-input-panel .qaap-border-beam-bloom,
 .theia-mobile-projects-sticky-composer-card.theia-mod-has-context .qaap-card-beam-bloom,
@@ -4412,9 +4419,12 @@ details > summary:focus-visible,
   position: fixed;
   z-index: 13100;
   display: flex;
-  flex-direction: column;
-  min-width: 168px;
-  padding: 4px;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--q-space-2);
+  box-sizing: border-box;
+  max-width: calc(100vw - 2 * var(--q-space-8));
+  padding: var(--q-space-2);
   border: 1px solid var(--theia-menu-border, var(--theia-widget-border));
   border-radius: 12px;
   background: var(--theia-menu-background);
@@ -4433,17 +4443,20 @@ details > summary:focus-visible,
 
 .theia-mobile-agent-transcript-user-menu-item {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
-  gap: 10px;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
   min-height: 44px;
-  padding: 0 12px;
+  padding: 0;
   border: none;
   border-radius: 8px;
   background: transparent;
   color: inherit;
   font-family: inherit;
-  font-size: var(--q-text-body);
-  text-align: left;
   cursor: pointer;
   touch-action: manipulation;
 }

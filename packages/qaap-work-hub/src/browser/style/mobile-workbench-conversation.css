@@ -11340,10 +11340,16 @@ body.theia-mobile-mod-has-transcript-overlay.theia-mobile-mod-has-transcript-ove
   .theia-mobile-sticky-composer-sheet-panel,
   .qaap-sticky-composer-sheet-popover,
   .qaap-chat-context-usage-popover,
-  .theia-mobile-projects-sticky-composer-attach-menu,
   .theia-mobile-projects-sticky-composer-mention-popover {
     background: var(--qaap-composer-menu-glass-bg);
     border-color: var(--qaap-composer-menu-glass-border);
+    -webkit-backdrop-filter: blur(20px) saturate(150%);
+    backdrop-filter: blur(20px) saturate(150%);
+  }
+
+  /* Attach menu keeps its own hairline border (set in mobile-workbench-work-hub.css) and only takes the glass fill. */
+  .theia-mobile-projects-sticky-composer-attach-menu {
+    background: var(--qaap-composer-menu-glass-bg);
     -webkit-backdrop-filter: blur(20px) saturate(150%);
     backdrop-filter: blur(20px) saturate(150%);
   }

@@ -189,7 +189,14 @@ export function applyComposerQuickActionPromptExtracted(ctx: MobileProjectsTasks
         if (ctx.host.transcriptComposerHost?.isConnected) {
             ctx.host.transcriptComposerDraft = trimmed;
             ctx.host.transcriptStickyComposerUi.remountTranscriptStickyComposer();
-            ctx.host.transcriptMessagesUi.focusTranscriptComposerInput();
+            window.requestAnimationFrame(() => {
+                const input = ctx.host.transcriptComposerHost?.querySelector<HTMLTextAreaElement>(
+                    '.theia-mobile-projects-sticky-composer-input',
+                );
+                if (input) {
+                    syncQuickActionPromptInput(input);
+                }
+            });
             return;
         }
         ctx.host.stickyComposerDraft = trimmed;
@@ -198,13 +205,23 @@ export function applyComposerQuickActionPromptExtracted(ctx: MobileProjectsTasks
             const input = ctx.host.stickyComposerHost?.querySelector<HTMLTextAreaElement>(
                 '.theia-mobile-projects-sticky-composer-input',
             );
-            if (!input) {
-                return;
+            if (input) {
+                syncQuickActionPromptInput(input);
             }
-            input.focus();
-            const end = input.value.length;
-            input.setSelectionRange(end, end);
         });
+}
+
+/**
+ * Focuses the composer with the caret at the end of an inserted quick-action prompt. The `input` event is
+ * the one typing fires, so the textarea autosizes and the draft syncs exactly as after user input; the
+ * scroll reset then shows the start of the prompt within the composer's max height.
+ */
+function syncQuickActionPromptInput(input: HTMLTextAreaElement): void {
+        input.focus();
+        const end = input.value.length;
+        input.setSelectionRange(end, end);
+        input.dispatchEvent(new window.Event('input', { bubbles: true }));
+        input.scrollTop = 0;
 }
 
 export function createAgentsHubRecentsBlockExtracted(ctx: MobileProjectsTasksHubUiContext, project: MobileProjectEntry): HTMLElement {

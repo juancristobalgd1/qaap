@@ -170,15 +170,14 @@ export class QaapTranscriptUserMessageMenu {
         item.className = 'theia-mobile-agent-transcript-user-menu-item';
         item.setAttribute('role', 'menuitem');
         item.disabled = source.disabled;
+        // Icon-only row: the visible text is dropped, the localized label stays as accessible name and tooltip.
         const label = source.getAttribute('aria-label') ?? source.title;
+        item.setAttribute('aria-label', label);
+        item.title = label;
         const icon = source.querySelector('.codicon');
         if (icon) {
             item.append(icon.cloneNode(true));
         }
-        const text = doc.createElement('span');
-        text.className = 'theia-mobile-agent-transcript-user-menu-label';
-        text.textContent = label;
-        item.append(text);
         item.addEventListener('click', event => {
             event.preventDefault();
             event.stopPropagation();

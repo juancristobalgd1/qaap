@@ -50,6 +50,7 @@ import {
 } from './qaap-agent-conversation-store-constants';
 import { capturePreTurnCheckpointGate, capturePreTurnCheckpointThenPrepare } from './qaap-agent-conversation-store-pre-turn-checkpoint';
 import { childProcessEnv } from './qaap-child-process-env';
+import { qaapMissingCwdError } from './qaap-missing-cwd-error';
 
 /**
  * MUTATING git under the tenant wrapper, run asynchronously so a turn settle / checkpoint never
@@ -172,7 +173,7 @@ export function createExtracted(ctx: QaapAgentConversationStoreContext, request:
     }
     const cwd = path.resolve(request.cwd ?? '');
     if (!path.isAbsolute(cwd) || !ctx.isDirectory(cwd)) {
-        throw new Error('A valid absolute "cwd" directory is required.');
+        throw qaapMissingCwdError(request.cwd);
     }
     // See QaapAgentTaskRunner.create: a container cwd feeds every repository to the agent.
     if (isQaapWorkspaceContainerPath(cwd)) {
