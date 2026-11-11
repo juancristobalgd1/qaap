@@ -19,11 +19,12 @@ export function parseMobileTurnClosingReport(report: string): { tone: MobileTurn
     const [headline = '', ...rest] = report.split('\n').map(line => line.trim()).filter(Boolean);
     const details = rest.filter(line => !/^[^:]+:\s*(?:not run|not measured|none|skipped)\.?$/i.test(line)).map(line => line.replace(/\.$/, ''));
     if (/^blocked\b/i.test(headline)) {
-        const need = headline.match(/needs your input:\s*(.+)$/i)?.[1]?.trim().replace(/\.$/, '');
+        // The question itself is the last line of the answer right above this row
+        // (`stripQaapControlMarkersForDisplay` keeps it), so the row does not repeat it.
         return {
             tone: 'blocked',
             title: nls.localize('qaap/transcript/closing/needsInput', 'Needs your input'),
-            details: need ? [need, ...details] : details,
+            details,
         };
     }
     if (/^failed\b/i.test(headline)) {

@@ -6,8 +6,9 @@
 import { expect } from 'chai';
 import * as fs from 'fs';
 import * as path from 'path';
-import { createAgentStreamAccumulator } from './qaap-cli-transcript-stream';
-import { stripQaapControlMarkersForDisplay } from './qaap-agent-message-content';
+import { createAgentStreamAccumulator, parseAgentLogForTranscript, resolveAgentLogDisplayText } from './qaap-cli-transcript-stream';
+import { normalizeAgentMessageContentForDisplay, stripQaapControlMarkersForDisplay } from './qaap-agent-message-content';
+import { detectAgentFailureKind, extractAgentLogFailureHint, resolveAgentTurnFailureMessage } from './qaap-agent-failure-message';
 import {
     isPiJsonSessionHeaderLine,
     QaapPiStreamAccumulator,
@@ -248,5 +249,69 @@ describe('qaap-pi-json-stream provider retry replay', () => {
         expect(stream.getProviderRetry()?.attempt).to.equal(2);
         stream.push(`${JSON.stringify({ type: 'auto_retry_end', success: true, attempt: 2 })}\n`);
         expect(stream.getProviderRetry()).to.be.undefined;
+    });
+});
+
+describe('qaap-pi-json-stream failed turn without assistant text', () => {
+    const STDERR_WARNING = '(node:43) [UNDICI-EHPA] Warning: EnvHttpProxyAgent is experimental, expect them to change at any time.\n'
+        + '(Use `node --trace-warnings ...` to show where the warning was created)';
+    const failedTurnLog = (provider: string, model: string, errorMessage: string): string => {
+        const assistant = { role: 'assistant', content: [], api: 'anthropic-messages', provider, model, stopReason: 'error', errorMessage };
+        const system = { role: 'system', content: '', sections: { preamble: 'You are an expert coding assistant operating inside pi.' } };
+        return [
+            STDERR_WARNING,
+            JSON.stringify({ type: 'session', version: 3, id: 's', timestamp: '2026-11-10T20:00:00.756Z', cwd: '/workspace/repo' }),
+            JSON.stringify({ type: 'agent_start' }),
+            JSON.stringify({ type: 'turn_start' }),
+            JSON.stringify({ type: 'message_start', message: system }),
+            JSON.stringify({ type: 'message_end', message: system }),
+            JSON.stringify({ type: 'message_end', message: assistant }),
+            JSON.stringify({ type: 'turn_end', message: assistant }),
+            JSON.stringify({ type: 'agent_end', messages: [system, assistant], willRetry: false }),
+            JSON.stringify({ type: 'agent_settled', aborted: false }),
+        ].join('\n');
+    };
+    const COPILOT_400 = '400 {"error":{"message":"The requested model is not supported.","code":"model_not_supported","param":"model","type":"invalid_request_error"}}';
+    const OPENROUTER_401 = '401 {"type":"error","error":{"type":"authentication_error","message":"User not found.","error_type":"authentication"}}';
+
+    it('never returns the raw event stream, the system prompt or stderr as the reply', () => {
+        for (const log of [
+            failedTurnLog('github-copilot', 'claude-haiku-4.5', COPILOT_400),
+            failedTurnLog('openrouter', '~anthropic/claude-sonnet-latest', OPENROUTER_401),
+        ]) {
+            expect(parseAgentLogForTranscript('pi', log).content).to.equal('');
+            const shown = resolveAgentLogDisplayText('pi', log);
+            expect(shown).to.not.include('"type"');
+            expect(shown).to.not.include('UNDICI');
+            expect(shown).to.not.include('expert coding assistant');
+        }
+    });
+
+    it('reads a model the provider does not serve as an unavailable model, without throwing', () => {
+        const log = failedTurnLog('github-copilot', 'claude-haiku-4.5', COPILOT_400);
+        expect(detectAgentFailureKind(log)).to.equal('model_unavailable');
+        expect(extractAgentLogFailureHint(log)).to.equal('The requested model is not supported.');
+        expect(() => resolveAgentTurnFailureMessage(log, { state: 'failed', exitCode: 1, agentId: 'pi' })).to.not.throw();
+    });
+
+    it('names the provider Pi called when its key is rejected, instead of asking for a sign-in', () => {
+        const log = failedTurnLog('openrouter', '~anthropic/claude-sonnet-latest', OPENROUTER_401);
+        expect(detectAgentFailureKind(log)).to.equal('provider_key_rejected');
+        expect(resolveAgentTurnFailureMessage(log, { state: 'failed', exitCode: 1, agentId: 'pi' })).to.include('OpenRouter');
+    });
+
+    it('still finds the error when the closing agent_end record is longer than the scanned tail', () => {
+        const lines = failedTurnLog('openrouter', '~anthropic/claude-sonnet-latest', '401: {"message":"User not found.","code":401}').split('\n');
+        const agentEnd = lines.length - 2;
+        lines[agentEnd] = JSON.stringify({ type: 'agent_end', messages: [{ role: 'user', content: 'x'.repeat(40_000) }], willRetry: false });
+        const log = lines.join('\n');
+        expect(detectAgentFailureKind(log)).to.equal('provider_key_rejected');
+        expect(resolveAgentTurnFailureMessage(log, { state: 'failed', exitCode: 1, agentId: 'pi' })).to.include('OpenRouter');
+    });
+
+    it('shows nothing for a turn that was stored with the raw event stream as its content', () => {
+        const stored = failedTurnLog('openrouter', '~anthropic/claude-sonnet-latest', OPENROUTER_401);
+        expect(normalizeAgentMessageContentForDisplay(stored)).to.equal('');
+        expect(normalizeAgentMessageContentForDisplay('{"type":"session","version":3} is how Pi starts')).to.include('is how Pi starts');
     });
 });

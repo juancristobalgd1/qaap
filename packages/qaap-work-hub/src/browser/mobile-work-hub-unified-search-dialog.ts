@@ -58,17 +58,12 @@ export class MobileWorkHubUnifiedSearchDialog {
         const panel = document.createElement('section');
         panel.className = 'theia-mobile-work-hub-unified-search-panel';
 
-        const header = document.createElement('header');
-        header.className = 'theia-mobile-work-hub-unified-search-header';
-        const heading = document.createElement('h2');
-        heading.textContent = nls.localize('qaap/sessionsSidebar/searchTitle', 'Search');
         const closeButton = document.createElement('button');
         closeButton.type = 'button';
         closeButton.className = 'theia-mobile-work-hub-unified-search-close codicon codicon-close';
         closeButton.title = nls.localize('qaap/sessionsSidebar/closeSearch', 'Close search');
         closeButton.setAttribute('aria-label', closeButton.title);
         closeButton.addEventListener('click', () => this.close());
-        header.append(heading, closeButton);
 
         const searchBox = document.createElement('label');
         searchBox.className = 'theia-mobile-work-hub-unified-search-box';
@@ -90,7 +85,7 @@ export class MobileWorkHubUnifiedSearchDialog {
                 this.resultButtons[0].focus();
             }
         });
-        searchBox.append(searchIcon, this.searchInput);
+        searchBox.append(searchIcon, this.searchInput, closeButton);
 
         const tabs = document.createElement('div');
         tabs.className = 'theia-mobile-work-hub-unified-search-tabs';
@@ -99,11 +94,11 @@ export class MobileWorkHubUnifiedSearchDialog {
             'qaap/sessionsSidebar/searchType',
             'Search type',
         ));
-        this.chatsTab = this.createTab('chats', 'comment-discussion', nls.localize(
+        this.chatsTab = this.createTab('chats', nls.localize(
             'qaap/sessionsSidebar/chatsTab',
             'Chats',
         ));
-        this.commandsTab = this.createTab('commands', 'terminal', nls.localize(
+        this.commandsTab = this.createTab('commands', nls.localize(
             'qaap/sessionsSidebar/commandsTab',
             'Commands',
         ));
@@ -117,10 +112,12 @@ export class MobileWorkHubUnifiedSearchDialog {
             'Search results',
         ));
         this.results.setAttribute('aria-live', 'polite');
+        this.results.addEventListener('keydown', event => this.onResultsKeyDown(event));
+        this.results.addEventListener('scroll', () => this.syncResultsFade(), { passive: true });
 
         this.emptyState = document.createElement('p');
         this.emptyState.className = 'theia-mobile-work-hub-unified-search-empty';
-        panel.append(header, searchBox, tabs, this.results, this.emptyState);
+        panel.append(searchBox, tabs, this.results, this.emptyState);
         this.node.append(panel);
     }
 
@@ -144,18 +141,31 @@ export class MobileWorkHubUnifiedSearchDialog {
         }
     }
 
-    protected createTab(tab: MobileWorkHubUnifiedSearchTab, icon: string, label: string): HTMLButtonElement {
+    /** Arrow keys walk the results; Up from the first one returns to the search field. */
+    protected onResultsKeyDown(event: KeyboardEvent): void {
+        if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') {
+            return;
+        }
+        const index = this.resultButtons.indexOf(document.activeElement as HTMLButtonElement);
+        if (index < 0) {
+            return;
+        }
+        event.preventDefault();
+        const next = this.resultButtons[index + (event.key === 'ArrowDown' ? 1 : -1)];
+        if (next) {
+            next.focus();
+        } else if (event.key === 'ArrowUp') {
+            this.searchInput.focus();
+        }
+    }
+
+    protected createTab(tab: MobileWorkHubUnifiedSearchTab, label: string): HTMLButtonElement {
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'theia-mobile-work-hub-unified-search-tab';
         button.setAttribute('role', 'tab');
         button.setAttribute('aria-selected', String(this.activeTab === tab));
-        const iconNode = document.createElement('span');
-        iconNode.className = `codicon codicon-${icon}`;
-        iconNode.setAttribute('aria-hidden', 'true');
-        const labelNode = document.createElement('span');
-        labelNode.textContent = label;
-        button.append(iconNode, labelNode);
+        button.textContent = label;
         button.addEventListener('click', () => {
             this.activeTab = tab;
             this.chatsTab.setAttribute('aria-selected', String(tab === 'chats'));
@@ -181,7 +191,7 @@ export class MobileWorkHubUnifiedSearchDialog {
                     'Untitled chat',
                 );
                 const detail = `${chat.project.name} · ${chat.summary.agentId}`;
-                this.appendResult('comment-discussion', label, detail, () => {
+                this.appendResult(label, detail, () => {
                     this.close(false);
                     this.onOpenChat(chat);
                 });
@@ -189,8 +199,8 @@ export class MobileWorkHubUnifiedSearchDialog {
         } else {
             for (const command of this.filteredCommands(query).slice(0, 30)) {
                 const category = command.category?.trim();
-                const detail = category ? `${category} · ${command.id}` : command.id;
-                this.appendResult(command.iconClass || 'terminal', command.label!.trim(), detail, () => {
+                const detail = category ?? '';
+                this.appendResult(command.label!.trim(), detail, () => {
                     this.close(false);
                     this.onRunCommand(command);
                 });
@@ -198,12 +208,21 @@ export class MobileWorkHubUnifiedSearchDialog {
         }
         const hasResults = this.resultButtons.length > 0;
         this.results.hidden = !hasResults;
+        this.results.scrollTop = 0;
+        this.syncResultsFade();
         this.emptyState.hidden = hasResults;
         if (!hasResults) {
             this.emptyState.textContent = this.activeTab === 'chats'
                 ? nls.localize('qaap/sessionsSidebar/noChatsFound', 'No matching chats')
                 : nls.localize('qaap/sessionsSidebar/noCommandsFound', 'No matching commands');
         }
+    }
+
+    /** Fades the edge of the list that still has results beyond it. */
+    protected syncResultsFade(): void {
+        const { scrollTop, scrollHeight, clientHeight } = this.results;
+        this.results.classList.toggle('theia-mod-more-above', scrollTop > 2);
+        this.results.classList.toggle('theia-mod-more-below', scrollTop + clientHeight < scrollHeight - 2);
     }
 
     protected filteredChats(query: string): MobileWorkHubUnifiedSearchChat[] {
@@ -236,25 +255,21 @@ export class MobileWorkHubUnifiedSearchDialog {
             .some(value => value?.toLocaleLowerCase().includes(query)));
     }
 
-    protected appendResult(iconClass: string, label: string, detail: string, onClick: () => void): void {
+    protected appendResult(label: string, detail: string, onClick: () => void): void {
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'theia-mobile-work-hub-unified-search-result';
         button.setAttribute('role', 'option');
-        const icon = document.createElement('span');
-        const normalizedIconClass = iconClass.split(/\s+/).filter(value => value && !value.includes('/'));
-        icon.className = normalizedIconClass.includes('codicon')
-            ? normalizedIconClass.join(' ')
-            : `codicon codicon-${normalizedIconClass.at(-1) || 'search'}`;
-        icon.setAttribute('aria-hidden', 'true');
-        const copy = document.createElement('span');
-        copy.className = 'theia-mobile-work-hub-unified-search-result-copy';
-        const title = document.createElement('strong');
+        const title = document.createElement('span');
+        title.className = 'theia-mobile-work-hub-unified-search-result-title';
         title.textContent = label;
-        const description = document.createElement('span');
-        description.textContent = detail;
-        copy.append(title, description);
-        button.append(icon, copy);
+        button.append(title);
+        if (detail) {
+            const description = document.createElement('span');
+            description.className = 'theia-mobile-work-hub-unified-search-result-detail';
+            description.textContent = detail;
+            button.append(description);
+        }
         button.addEventListener('click', onClick);
         this.resultButtons.push(button);
         this.results.append(button);

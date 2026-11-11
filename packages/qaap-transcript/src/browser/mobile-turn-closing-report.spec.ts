@@ -7,10 +7,10 @@ import { expect } from 'chai';
 import { createMobileTurnClosingReportElement, MOBILE_TURN_CLOSING_REPORT_CLASS, parseMobileTurnClosingReport } from './mobile-turn-closing-report';
 
 describe('parseMobileTurnClosingReport', () => {
-    it('reads a blocked headline into the blocked tone with the question as first detail', () => {
-        const parsed = parseMobileTurnClosingReport('Blocked — needs your input: pick a database.');
+    it('reads a blocked headline into the blocked tone without repeating the question the answer already shows', () => {
+        const parsed = parseMobileTurnClosingReport('Blocked — needs your input: pick a database.\nChecks: failing (npm test).');
         expect(parsed.tone).to.equal('blocked');
-        expect(parsed.details[0]).to.equal('pick a database');
+        expect(parsed.details).to.deep.equal(['Checks: failing (npm test)']);
     });
 
     it('drops detail lines that say nothing', () => {
@@ -21,7 +21,7 @@ describe('parseMobileTurnClosingReport', () => {
             'Changes: not measured.',
             'Changes: none.',
         ].join('\n'));
-        expect(parsed.details).to.deep.equal(['pick a database']);
+        expect(parsed.details).to.deep.equal([]);
     });
 
     it('keeps an informative detail that only mentions none inside a list', () => {

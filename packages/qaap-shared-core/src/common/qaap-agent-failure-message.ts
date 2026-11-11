@@ -80,6 +80,9 @@ const MODEL_UNAVAILABLE_PATTERNS: readonly RegExp[] = [
     /\bno\s+such\s+model\b/i,
     /\bunknown\s+model\b/i,
     /\bmodel\s+not\s+supported\b/i,
+    // GitHub Copilot: `400 {"error":{"message":"The requested model is not supported.","code":"model_not_supported"}}`.
+    /\brequested\s+model\s+is\s+not\s+supported\b/i,
+    /\bmodel_not_supported\b/i,
     // Codex CLI on a ChatGPT account: "The 'gpt-5.6-sol' model is not supported when using Codex with a ChatGPT account."
     /'[^']+'\s+model\s+is\s+not\s+supported\b/i,
     /\bmodel\s+is\s+not\s+supported\s+when\s+using\s+codex\b/i,
@@ -638,7 +641,37 @@ function piAssistantErrorText(value: unknown): string | undefined {
     if (message.role !== 'assistant' || message.stopReason !== 'error') {
         return undefined;
     }
-    return typeof message.errorMessage === 'string' && message.errorMessage.trim() ? message.errorMessage.trim() : undefined;
+    if (typeof message.errorMessage !== 'string' || !message.errorMessage.trim()) {
+        return undefined;
+    }
+    // The error body rarely names the provider (OpenRouter's 401 is just "User not found."); Pi does, on the message.
+    const provider = typeof message.provider === 'string' && message.provider.trim() ? message.provider.trim() : undefined;
+    return provider ? `${message.errorMessage.trim()} (provider: ${provider})` : message.errorMessage.trim();
+}
+
+const PI_ASSISTANT_MESSAGE_END_LINE = /^\{"type":"message_end","message":\{"role":"assistant"/;
+
+/**
+ * Pi closes its stream with an `agent_end` record that repeats every message of the session, system
+ * prompt included, so that one line can be longer than the scanned tail and push the failed
+ * `message_end` out of it. The latest assistant `message_end` of the whole log decides, as in the
+ * task runner: a later successful answer clears an earlier error.
+ */
+function findPiAssistantErrorBeforeTail(log: string): string | undefined {
+    let end = log.length;
+    while (end > 0) {
+        const start = log.lastIndexOf('\n', end - 1) + 1;
+        // Only the head of the line is tested, so a multi-megabyte `agent_end` line is never copied.
+        if (PI_ASSISTANT_MESSAGE_END_LINE.test(log.slice(start, Math.min(end, start + 80)))) {
+            try {
+                return piAssistantErrorText(JSON.parse(log.slice(start, end)));
+            } catch {
+                return undefined;
+            }
+        }
+        end = start - 1;
+    }
+    return undefined;
 }
 
 function isProviderRetryRecord(value: unknown): boolean {
@@ -681,6 +714,13 @@ function collectAgentFailureEvidence(log: string | undefined): AgentFailureEvide
             }
         }
         plainLines.push(line);
+    }
+    if (errorRecords.length === 0 && full.length > AGENT_FAILURE_SCAN_LIMIT) {
+        const piAssistantError = findPiAssistantErrorBeforeTail(full);
+        if (piAssistantError) {
+            structured = true;
+            errorRecords.unshift(piAssistantError);
+        }
     }
     return { envelope: findFinalErrorEnvelope(full), errorRecords, plainLines, structured, trailingRetryRecords };
 }
@@ -763,6 +803,23 @@ function extractPlainFailureHint(lines: readonly string[]): string | undefined {
 }
 
 /**
+ * The JSON body of an error record. A record is either a JSON line or a provider error text around
+ * one (Pi: `400 {"error":{…}} (provider: github-copilot)`); undefined when it carries no JSON object.
+ */
+function parseErrorRecordJson(record: string): unknown {
+    const start = record.indexOf('{');
+    const end = record.lastIndexOf('}');
+    if (start < 0 || end <= start) {
+        return undefined;
+    }
+    try {
+        return JSON.parse(record.slice(start, end + 1));
+    } catch {
+        return undefined;
+    }
+}
+
+/**
  * Pull a short, readable hint from agent stderr/stdout when no known kind matches. Reads the end
  * of the log and prefers the CLI's final error envelope over anything streamed before it.
  */
@@ -772,7 +829,7 @@ export function extractAgentLogFailureHint(log: string | undefined): string | un
         return truncateAgentFailureHint(evidence.envelope.replace(/\s+/g, ' '));
     }
     for (const record of evidence.errorRecords) {
-        const hint = readJsonFailureHint(JSON.parse(record));
+        const hint = readJsonFailureHint(parseErrorRecordJson(record));
         if (hint) {
             return hint;
         }

@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import type { QaapAgentMessageDTO } from './qaap-agent-conversation-client';
-import { QAIQ_AGENT_ID } from './qaap-agent-task-client';
+import { PI_AGENT_ID, QAIQ_AGENT_ID } from './qaap-agent-task-client';
 import { parseAgentLogForTranscript } from './qaap-cli-transcript-stream';
 import { resolveAgentMessageSegments } from './qaap-transcript-trace-model';
 import {
@@ -45,6 +45,9 @@ export function normalizeAgentMessageContentForDisplay(raw: string | undefined |
     let display: string;
     if (looksLikeQaiqProcessLog(trimmed)) {
         display = parseAgentLogForTranscript(QAIQ_AGENT_ID, trimmed).content.trim();
+    } else if (looksLikePiProcessLog(trimmed)) {
+        // A turn stored with Pi's whole event stream (system prompt included) as its content.
+        display = parseAgentLogForTranscript(PI_AGENT_ID, trimmed).content.trim();
     } else if (!looksLikeJson(trimmed)) {
         display = text;
     } else {
@@ -235,6 +238,11 @@ export function resolveMessagePreviewText(message: MessagePreviewLike | undefine
 
 function looksLikeQaiqProcessLog(text: string): boolean {
     return /\{"type":"(?:stream_event|system|result)"/.test(text);
+}
+
+/** Pi's `--mode json` stream: a session header line followed by its `agent_start` record. */
+function looksLikePiProcessLog(text: string): boolean {
+    return /^\{"type":"session","version":\d+,[^\n]*\}\s*\n\{"type":"agent_start"\}/m.test(text);
 }
 
 function isQaiqStreamMetadataJson(text: string): boolean {

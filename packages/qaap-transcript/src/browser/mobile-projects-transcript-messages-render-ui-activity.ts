@@ -238,6 +238,8 @@ export function createTranscriptAgentFailureRowExtracted(ctx: MobileProjectsTran
             },
         ));
         row.append(body);
+        // A failed turn can no longer deliver a capture: any pending chip in it reads "not available".
+        syncTranscriptCaptureClosedRow(row, true);
         return row;
 }
 

@@ -106,9 +106,11 @@ export function parseAgentLogForTranscript(
     }
     if (isPiAgent(agentId)) {
         const acc = new QaapPiStreamAccumulator();
-        acc.push(log);
+        acc.push(log.endsWith('\n') ? log : `${log}\n`);
         if (acc.consumedJsonEvents()) {
             return {
+                // Never the raw log: a turn that failed before any assistant text has an event stream
+                // (system prompt included); only the plain lines the CLI printed around it are kept.
                 content: acc.getDisplayText() || structuredLogResidueText(log),
                 segments: [...acc.getSegments()],
                 traceEvents: [...acc.getTraceEvents()],

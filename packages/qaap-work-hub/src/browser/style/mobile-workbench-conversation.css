@@ -3749,6 +3749,12 @@ body>.theia-mobile-transcript-files-menu {
   mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent);
 }
 
+/* Scrolled away from the start: the leading edge fades too, so the chips left behind are hinted. */
+.theia-mobile-agent-transcript-empty-actions.theia-mod-scrolled {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 48px, #000 calc(100% - 48px), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 48px, #000 calc(100% - 48px), transparent);
+}
+
 .theia-mobile-agent-transcript-empty-actions::after {
   content: '';
   flex: 0 0 var(--qaap-empty-actions-edge-inset);

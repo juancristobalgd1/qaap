@@ -77,6 +77,10 @@ export function createAgentsHubQuickActionsBlockExtracted(ctx: MobileProjectsTas
             'aria-label',
             nls.localize('qaap/agentsHub/quickActions', 'Quick actions'),
         );
+        // Chips scrolled off the leading edge get the same fade as the trailing ones.
+        container.addEventListener('scroll', () => {
+            container.classList.toggle('theia-mod-scrolled', container.scrollLeft > 2);
+        }, { passive: true });
         for (const action of QAAP_AGENTS_HUB_QUICK_ACTIONS) {
             const btn = document.createElement('button');
             btn.type = 'button';
