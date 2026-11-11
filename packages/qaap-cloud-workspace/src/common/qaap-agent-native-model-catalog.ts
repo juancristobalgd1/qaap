@@ -46,20 +46,17 @@ function nativeOption(
 }
 
 /**
- * Models exposed by the Antigravity CLI `/model` menu (Google API labels).
- * Keep in sync with the TUI strings — agy stores and resolves them verbatim in settings.
- * As of mid-July 2026 (agy 1.1.x): Gemini 3.5 Flash is the default frontier Flash;
- * Claude rows remain Sonnet/Opus 4.6 in the official picker (not Sonnet 5 / Opus 4.8 yet).
+ * Models exposed by the Antigravity CLI (`agy models`, 2026-11 capture). Antigravity stores and
+ * resolves the friendly label verbatim, so the label is the model id (see {@link parseAgyModelLines}).
+ * The first row is the default. Refresh from `agy models` when the CLI changes.
  */
 export const ANTIGRAVITY_API_MODELS: readonly {
     readonly label: string;
     readonly provider: QaapQaiqModelOption['provider'];
 }[] = [
-    { label: 'Gemini 3.5 Flash (Medium)', provider: 'gemini' },
-    { label: 'Gemini 3.5 Flash (High)', provider: 'gemini' },
-    { label: 'Gemini 3.5 Flash (Low)', provider: 'gemini' },
-    { label: 'Gemini 3.1 Pro (Low)', provider: 'gemini' },
-    { label: 'Gemini 3.1 Pro (High)', provider: 'gemini' },
+    { label: 'Gemini 3.8 Flash (High)', provider: 'gemini' },
+    { label: 'Gemini 3.8 Flash (Medium)', provider: 'gemini' },
+    { label: 'Gemini 3.8 Flash (Low)', provider: 'gemini' },
     { label: 'Claude Sonnet 4.6 (Thinking)', provider: 'anthropic' },
     { label: 'Claude Opus 4.6 (Thinking)', provider: 'anthropic' },
     { label: 'GPT-OSS 120B (Medium)', provider: 'openai' },
@@ -122,22 +119,23 @@ export function listStaticNativeAgentModels(agentId: string): QaapQaiqModelOptio
                 nativeOption(id, 'qwen3.5-plus', 'Qwen3.5 Plus'),
             ];
         case 'codex':
-            // Keep in sync with the Codex CLI /model menu (GPT-5.6 GA, July 2026).
+            // Keep in sync with `codex debug models` (visible rows, CLI order; captured 2026-11, codex 0.167.0).
+            // The first row is the CLI's own top-priority visible model, so it is the default.
             return [
-                nativeOption(id, 'gpt-5.6-sol', 'GPT-5.6 Sol'),
-                nativeOption(id, 'gpt-5.6-terra', 'GPT-5.6 Terra'),
-                nativeOption(id, 'gpt-5.6-luna', 'GPT-5.6 Luna'),
-                nativeOption(id, 'gpt-5.5', 'GPT-5.5 Legacy'),
+                nativeOption(id, 'gpt-6-luna', 'GPT-6-Luna'),
+                nativeOption(id, 'gpt-5.6-terra', 'GPT-5.6-Terra'),
+                nativeOption(id, 'gpt-5.6-luna', 'GPT-5.6-Luna'),
             ];
         case 'claude':
-            // Keep in sync with the Claude Code CLI /model menu (mid-July 2026).
+            // Claude Code has no model-list command, so this is the source of truth (verified against the
+            // installed CLI binary, 2026-11). First row is the default; at most two legacy rows follow.
             return [
-                nativeOption(id, 'claude-fable-5', 'Fable 5', 'anthropic'),
-                nativeOption(id, 'claude-opus-4-8', 'Opus 4.8', 'anthropic'),
-                nativeOption(id, 'claude-sonnet-5', 'Sonnet 5', 'anthropic'),
-                nativeOption(id, 'claude-haiku-4-5', 'Haiku 4.5', 'anthropic'),
-                nativeOption(id, 'claude-sonnet-4-6', 'Sonnet 4.6 Legacy', 'anthropic'),
-                nativeOption(id, 'claude-opus-4-7', 'Opus 4.7 Legacy', 'anthropic'),
+                nativeOption(id, 'claude-fable-5-1', 'Fable 5.1', 'anthropic'),
+                nativeOption(id, 'claude-opus-5-5', 'Opus 5.5', 'anthropic'),
+                nativeOption(id, 'claude-sonnet-5-5', 'Sonnet 5.5', 'anthropic'),
+                nativeOption(id, 'claude-haiku-5-5', 'Haiku 5.5', 'anthropic'),
+                nativeOption(id, 'claude-fable-5', 'Fable 5 Legacy', 'anthropic'),
+                nativeOption(id, 'claude-sonnet-5', 'Sonnet 5 Legacy', 'anthropic'),
             ];
         case 'openclaude':
             // OpenClaude is a separate harness. It accepts the QAIQ provider flags, but its
@@ -175,8 +173,9 @@ export function listStaticNativeAgentModels(agentId: string): QaapQaiqModelOptio
                 piOption('openrouter', '~deepseek/deepseek-pro-latest'),
             ];
         case 'grok':
+            // `grok models` (2026-11) marks grok-4.7 as the default.
             return [
-                nativeOption(id, 'grok-4.5', 'Grok 4.5'),
+                nativeOption(id, 'grok-4.7', 'Grok 4.7'),
             ];
         case 'cursor':
             // Cursor replaces this fallback with the account-scoped result of `cursor-agent models`

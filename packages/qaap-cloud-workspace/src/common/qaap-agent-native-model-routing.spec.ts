@@ -19,11 +19,12 @@ describe('DEFAULT_QAAP_NATIVE_MODEL_ROUTING_TABLE', () => {
     // The safety contract in one assertion: every id we ship must be offered by that agent's own
     // catalog. A typo or a model retired from the catalog would otherwise reach the CLI as
     // `--model <unknown>` and kill the turn.
-    it('only pins model ids the agent actually lists', () => {
+    it('only pins model ids or families the agent actually lists', () => {
         for (const [agentId, entry] of Object.entries(DEFAULT_QAAP_NATIVE_MODEL_ROUTING_TABLE)) {
-            const catalog = listStaticNativeAgentModels(agentId).map(option => option.modelId);
-            for (const [kind, modelId] of Object.entries(entry)) {
-                expect(catalog, `${agentId}/${kind}`).to.include(modelId);
+            const catalog = listStaticNativeAgentModels(agentId);
+            for (const [kind, pin] of Object.entries(entry)) {
+                const resolved = resolveNativeAgentModelForTaskKind(agentId, kind as 'exploration', catalog);
+                expect(resolved, `${agentId}/${kind} (${pin})`).to.not.equal(undefined);
             }
         }
     });
@@ -34,6 +35,15 @@ describe('DEFAULT_QAAP_NATIVE_MODEL_ROUTING_TABLE', () => {
                 expect(entry.review, agentId).to.not.equal(entry.implementation);
             }
         }
+    });
+
+    it('pins by family so a newer release is picked up without editing the table', () => {
+        for (const kind of ['exploration', 'implementation', 'review']) {
+            expect(DEFAULT_QAAP_NATIVE_MODEL_ROUTING_TABLE.claude?.[kind as 'exploration'], kind).to.match(/^family:/);
+        }
+        const newer = [...CLAUDE_CATALOG, { provider: 'anthropic' as const, vendor: 'claude', modelId: 'claude-haiku-6-0', label: 'Haiku 6' }];
+        const model = resolveNativeAgentModelForTaskKind('claude', 'exploration', newer);
+        expect(model?.modelId).to.equal('claude-haiku-6-0');
     });
 
     it('leaves codex on its default model — its tier ordering is not verifiable', () => {
@@ -47,14 +57,14 @@ describe('resolveNativeAgentModelForTaskKind', () => {
 
     it('routes a cheap/mechanical turn to the fast model', () => {
         const model = resolveNativeAgentModelForTaskKind('claude', 'exploration', CLAUDE_CATALOG);
-        expect(model?.modelId).to.equal('claude-haiku-4-5');
+        expect(model?.modelId).to.equal('claude-haiku-5-5');
     });
 
     it('routes a writer turn and a judge turn to different frontier models', () => {
         const writer = resolveNativeAgentModelForTaskKind('claude', 'implementation', CLAUDE_CATALOG);
         const judge = resolveNativeAgentModelForTaskKind('claude', 'review', CLAUDE_CATALOG);
-        expect(writer?.modelId).to.equal('claude-fable-5');
-        expect(judge?.modelId).to.equal('claude-opus-4-8');
+        expect(writer?.modelId).to.equal('claude-fable-5-1');
+        expect(judge?.modelId).to.equal('claude-opus-5-5');
         expect(judge?.modelId).to.not.equal(writer?.modelId);
     });
 
@@ -64,7 +74,7 @@ describe('resolveNativeAgentModelForTaskKind', () => {
 
     it('takes provider and vendor from the catalog entry, never from the table', () => {
         const model = resolveNativeAgentModelForTaskKind('claude', 'exploration', CLAUDE_CATALOG);
-        expect(model).to.deep.equal({ provider: 'anthropic', vendor: 'claude', modelId: 'claude-haiku-4-5' });
+        expect(model).to.deep.equal({ provider: 'anthropic', vendor: 'claude', modelId: 'claude-haiku-5-5' });
     });
 
     it('drops a pin the agent does not list rather than passing it through', () => {
@@ -78,10 +88,10 @@ describe('resolveNativeAgentModelForTaskKind', () => {
     });
 
     it('matches catalog ids case-insensitively', () => {
-        const table = { claude: { exploration: 'CLAUDE-Haiku-4-5' } };
+        const table = { claude: { exploration: 'CLAUDE-Haiku-5-5' } };
         const model = resolveNativeAgentModelForTaskKind('claude', 'exploration', CLAUDE_CATALOG, table);
         // The emitted id is the catalog's spelling, not the operator's.
-        expect(model?.modelId).to.equal('claude-haiku-4-5');
+        expect(model?.modelId).to.equal('claude-haiku-5-5');
     });
 
     it('never routes QAIQ, whose catalog is the Settings alias set', () => {

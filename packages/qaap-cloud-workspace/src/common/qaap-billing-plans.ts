@@ -148,6 +148,10 @@ export const QAAP_BILLING_PLANS: readonly QaapBillingPlan[] = [
 /**
  * Keep model IDs in sync with `listStaticNativeAgentModels('codex')`.
  * gpt-5.5 uses Sol rates until OpenAI publishes a distinct legado price we want to honor.
+ * gpt-6-luna has no published rate of its own yet: it bills at the closest family rate (Luna).
+ * A future Codex tier id (`gpt-N.M-sol|terra|luna`) the table does not list bills at its tier's rate,
+ * see {@link resolveQaapCodexHostedRateId}. Pricing is a product decision; this is the conservative
+ * default until a rate is added here.
  */
 export const QAAP_CODEX_HOSTED_RATES: readonly QaapHostedModelRate[] = [
     {
@@ -178,6 +182,15 @@ export const QAAP_CODEX_HOSTED_RATES: readonly QaapHostedModelRate[] = [
         creditsPerMillionOutput: 156,
     },
     {
+        modelId: 'gpt-6-luna',
+        label: 'GPT-6-Luna',
+        role: 'fast',
+        apiUsdPerMillionInput: 0.2,
+        apiUsdPerMillionOutput: 1.2,
+        creditsPerMillionInput: 26,
+        creditsPerMillionOutput: 156,
+    },
+    {
         modelId: 'gpt-5.5',
         label: 'GPT-5.5 Legacy',
         role: 'legacy',
@@ -191,6 +204,25 @@ export const QAAP_CODEX_HOSTED_RATES: readonly QaapHostedModelRate[] = [
 export const QAAP_CODEX_HOSTED_MODEL_IDS: ReadonlySet<string> = new Set(
     QAAP_CODEX_HOSTED_RATES.map(rate => rate.modelId),
 );
+
+/**
+ * Codex tier ids the CLI may add before the rate table does (`gpt-6-luna`, `gpt-6.1-sol`). Only this
+ * shape counts: a plain OpenAI API id such as `gpt-4o-mini` is never a hosted Codex model.
+ */
+const CODEX_TIER_MODEL_PATTERN = /^gpt-\d+(\.\d+)?-(sol|terra|luna)$/;
+
+/**
+ * The rate-table id a Codex model bills at. A listed id bills at its own row; an unlisted tier id
+ * bills at the row of its tier (`-sol`, `-terra`, `-luna`). Returns undefined for any other id.
+ */
+export function resolveQaapCodexHostedRateId(modelId: string): string | undefined {
+    const id = modelId.trim().toLowerCase();
+    if (QAAP_CODEX_HOSTED_MODEL_IDS.has(id)) {
+        return id;
+    }
+    const match = CODEX_TIER_MODEL_PATTERN.exec(id);
+    return match ? `gpt-5.6-${match[2]}` : undefined;
+}
 
 export function isQaapBillingPlanId(value: string): value is QaapBillingPlanId {
     return value === 'starter' || value === 'pro' || value === 'team';
@@ -210,12 +242,13 @@ export function parseQaapBillingPlanId(value: string | undefined, fallback: Qaap
 }
 
 export function getQaapHostedModelRate(modelId: string): QaapHostedModelRate | undefined {
-    const id = modelId.trim().toLowerCase();
-    return QAAP_CODEX_HOSTED_RATES.find(rate => rate.modelId === id);
+    const rateId = resolveQaapCodexHostedRateId(modelId);
+    return rateId ? QAAP_CODEX_HOSTED_RATES.find(rate => rate.modelId === rateId) : undefined;
 }
 
+/** Whether a model is a hosted Codex frontier model (listed, or an unlisted OpenAI GPT id that bills as one). */
 export function isQaapCodexHostedModel(modelId: string): boolean {
-    return QAAP_CODEX_HOSTED_MODEL_IDS.has(modelId.trim().toLowerCase());
+    return resolveQaapCodexHostedRateId(modelId) !== undefined;
 }
 
 export function hoursToMinutes(hours: number): number {

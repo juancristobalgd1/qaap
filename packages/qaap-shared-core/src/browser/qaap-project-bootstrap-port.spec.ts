@@ -5,7 +5,7 @@
 
 import { expect } from 'chai';
 import { execFileSync } from 'child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import URI from '@theia/core/lib/common/uri';
@@ -20,6 +20,7 @@ import {
     pickNextDevPort,
     previewHomeDirFor,
     prefixTheiaPreviewHomeEnv,
+    qaapPreviewHostEnvScrubPrefix,
     resolveBootstrapDevPort,
     wrapCommandForDevNodeEnv,
     wrapDevCommandForPort,
@@ -311,7 +312,8 @@ describe('qaap-project-bootstrap-port', () => {
 
     it('wrapDevCommandForPort uses POSIX env prefixes on a Linux host instead of cmd.exe SET', () => {
         const command = wrapDevCommandForPort('pnpm run dev', 3333, 'node-vite', false);
-        expect(command).to.match(/^QAAP_PREVIEW_PORT=3333 PORT=3333/);
+        expect(command).to.match(/QAAP_PREVIEW_PORT=3333 PORT=3333 NODE_ENV=development /);
+        expect(command.startsWith(qaapPreviewHostEnvScrubPrefix())).to.equal(true);
         expect(command).to.not.include('set "PORT=');
         expect(wrapCommandForDevNodeEnv('pnpm install', false)).to.equal('NODE_ENV=development pnpm install');
         expect(wrapCommandForDevNodeEnv('pnpm install', true)).to.equal('set "NODE_ENV=development"&& pnpm install');
@@ -388,5 +390,35 @@ describe('qaap-project-bootstrap-port', () => {
         }
         expect(isolateTheiaPreviewCommand('npm run dev', { isTheiaApp: false, cwd })).to.equal('npm run dev');
         expect(isolateTheiaPreviewCommand('npm run dev', { cwd })).to.equal('npm run dev');
+    });
+});
+
+(process.platform === 'win32' ? describe.skip : describe)('qaapPreviewHostEnvScrubPrefix in a real POSIX shell', () => {
+    const shells = ['/bin/sh', '/bin/bash', '/bin/zsh', '/bin/dash'].filter(shell => existsSync(shell));
+    const hostEnv: NodeJS.ProcessEnv = {
+        ...process.env,
+        QAAP_FOO: '1',
+        QAAP_PREVIEW_BASE_DOMAIN: 'qaap.example.com',
+        QAAP_SQLITE_STORE_PATH: '/host/.qaap/store.sqlite',
+        QAAP_TASK_TOKEN: 'secret',
+        KEEP_ME: 'yes',
+    };
+
+    for (const shell of shells) {
+        it(`leaves only QAAP_PREVIEW_PORT for the dev command under ${shell}`, () => {
+            const command = wrapDevCommandForPort('env', 3001, 'node-cra', false);
+            const output = execFileSync(shell, ['-c', command], { encoding: 'utf8', env: hostEnv });
+            const qaapLines = output.split('\n').filter(line => /^QAAP_/i.test(line));
+            expect(qaapLines).to.deep.equal(['QAAP_PREVIEW_PORT=3001']);
+            expect(output).to.contain('KEEP_ME=yes');
+            expect(output).to.contain('PORT=3001');
+        });
+    }
+
+    it('scrubs inherited variables before a non-Node command too', () => {
+        const shell = shells[0];
+        // A prefix assignment is not visible to expansions in the same simple command, so read the port through `sh -c`.
+        const command = wrapDevCommandForPort('sh -c \'printf "%s|%s" "${QAAP_FOO-unset}" "$QAAP_PREVIEW_PORT"\'', 5174, 'python-generic', false);
+        expect(execFileSync(shell, ['-c', command], { encoding: 'utf8', env: hostEnv })).to.equal('unset|5174');
     });
 });

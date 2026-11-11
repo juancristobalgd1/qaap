@@ -122,7 +122,7 @@ describe('resolveEffectiveRequestAgentModel', () => {
     });
 
     it('keeps an explicit picker model for a native-catalog agent', () => {
-        const explicit = { provider: 'anthropic' as const, vendor: 'claude', modelId: 'claude-haiku-4-5' };
+        const explicit = { provider: 'anthropic' as const, vendor: 'claude', modelId: 'claude-haiku-5-5' };
         expect(resolveEffectiveRequestAgentModel(
             { prompt: 'Implement the OAuth callback fix', agentModel: explicit },
             () => undefined,
@@ -143,7 +143,7 @@ describe('resolveEffectiveRequestAgentModel', () => {
                 'claude',
                 context,
             );
-            expect(routed).to.deep.equal({ provider: 'anthropic', vendor: 'claude', modelId: 'claude-haiku-4-5' });
+            expect(routed).to.deep.equal({ provider: 'anthropic', vendor: 'claude', modelId: 'claude-haiku-5-5' });
         });
 
         it('keeps a judge off the writer model', () => {
@@ -197,11 +197,11 @@ describe('resolveEffectiveRequestAgentModel', () => {
         it('honors an operator override and its off switch', () => {
             const override = {
                 ...context,
-                nativeTable: parseQaapNativeModelRoutingTable('{"codex":{"exploration":"gpt-5.5"},"claude":{}}'),
+                nativeTable: parseQaapNativeModelRoutingTable('{"codex":{"exploration":"gpt-5.6-terra"},"claude":{}}'),
             };
             expect(resolveEffectiveRequestAgentModel(
                 { prompt: 'Collect the bundle size', taskKind: 'exploration' }, noPrefs, 'codex', override,
-            )?.modelId).to.equal('gpt-5.5');
+            )?.modelId).to.equal('gpt-5.6-terra');
             expect(resolveEffectiveRequestAgentModel(
                 { prompt: 'Collect the bundle size', taskKind: 'exploration' }, noPrefs, 'claude', override,
             )).to.equal(undefined);

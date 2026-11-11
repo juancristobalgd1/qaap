@@ -79,21 +79,22 @@ describe('qaap-agent-native-models', () => {
             etag: 'W/"abc"',
             client_version: '0.144.5',
             models: [
-                { slug: 'gpt-reserve', display_name: 'Reserve', visibility: 'list' },
+                { slug: 'gpt-reserve', display_name: 'Reserve', visibility: 'hide' },
+                { slug: 'gpt-6-luna', display_name: 'GPT-6-Luna', visibility: 'list' },
                 { slug: 'gpt-5.6-terra', display_name: 'GPT-5.6 Terra', visibility: 'list' },
                 { slug: 'gpt-5.6-luna', display_name: 'GPT-5.6 Luna', visibility: 'list' },
                 { slug: 'codex-auto-review', display_name: 'Auto review', visibility: 'hide' },
             ],
         });
 
-        it('keeps only the curated Codex entries the account lists, in curated order', () => {
+        it('keeps every visible Codex entry in the CLI order, including ids the static list does not know', () => {
             const models = parseCodexModelsCache(freeAccountCache);
-            expect(models.map(model => model.modelId)).to.deep.equal(['gpt-5.6-terra', 'gpt-5.6-luna']);
-            expect(models).to.deep.equal(listStaticNativeAgentModels('codex').filter(model => model.modelId !== 'gpt-5.6-sol' && model.modelId !== 'gpt-5.5'));
+            expect(models.map(model => model.modelId)).to.deep.equal(['gpt-6-luna', 'gpt-5.6-terra', 'gpt-5.6-luna']);
+            expect(models[0]).to.deep.equal({ provider: 'openai', vendor: 'codex', modelId: 'gpt-6-luna', label: 'GPT-6-Luna' });
         });
 
-        it('returns no entries when the account lists none of the curated models', () => {
-            expect(parseCodexModelsCache(JSON.stringify({ models: [{ slug: 'gpt-reserve' }] }))).to.deep.equal([]);
+        it('returns no entries when the account lists no visible model', () => {
+            expect(parseCodexModelsCache(JSON.stringify({ models: [{ slug: 'gpt-reserve', visibility: 'hide' }] }))).to.deep.equal([]);
         });
 
         it('returns no entries for a garbage, empty or differently shaped cache', () => {
@@ -115,8 +116,8 @@ describe('qaap-agent-native-models', () => {
                 clearNativeAgentModelCache();
                 fs.writeFileSync(path.join(codexHome, 'models_cache.json'), freeAccountCache);
                 const discovered = await prepareNativeAgentModels('codex');
-                expect(discovered.map(model => model.modelId)).to.deep.equal(['gpt-5.6-terra', 'gpt-5.6-luna']);
-                expect(listNativeAgentModels('codex').map(model => model.modelId)).to.deep.equal(['gpt-5.6-terra', 'gpt-5.6-luna']);
+                expect(discovered.map(model => model.modelId)).to.deep.equal(['gpt-6-luna', 'gpt-5.6-terra', 'gpt-5.6-luna']);
+                expect(listNativeAgentModels('codex').map(model => model.modelId)).to.deep.equal(['gpt-6-luna', 'gpt-5.6-terra', 'gpt-5.6-luna']);
             } finally {
                 if (originalCodexHome === undefined) {
                     delete process.env.CODEX_HOME;
@@ -145,7 +146,7 @@ describe('qaap-agent-native-models', () => {
             };
             const env = { QAAP_TENANT_AGENT_STORAGE_ROOT: '/data/agent-storage', QAAP_AGENT_UID: '1001', QAAP_AGENT_GID: '1001' };
             const models = await discoverCodexAccountModels(env, true, reader);
-            expect(models.map(model => model.modelId)).to.deep.equal(['gpt-5.6-terra', 'gpt-5.6-luna']);
+            expect(models.map(model => model.modelId)).to.deep.equal(['gpt-6-luna', 'gpt-5.6-terra', 'gpt-5.6-luna']);
             expect(seen).to.deep.equal([{
                 file: path.join('/data/agent-storage/home/.codex', 'models_cache.json'),
                 identity: { uid: 1001, gid: 1001 },
@@ -259,7 +260,7 @@ describe('qaap-agent-native-models', () => {
         });
     });
 
-    it('rediscovers an agent once its successful catalog is older than the TTL', async function (): Promise<void> {
+    it('serves a stale live catalog at once and refreshes it once the TTL has passed', async function (): Promise<void> {
         if (process.platform === 'win32') {
             this.skip();
         }
@@ -276,8 +277,34 @@ describe('qaap-agent-native-models', () => {
             now += NATIVE_MODEL_CACHE_TTL_MS - 1;
             expect((await prepareNativeAgentModels('cursor')).map(model => model.modelId)).to.deep.equal(['auto']);
 
+            // Stale: the request is answered from the cache immediately; the refresh runs behind it.
             now += 1;
-            expect((await prepareNativeAgentModels('cursor')).map(model => model.modelId)).to.deep.equal(['fresh-model']);
+            expect(listNativeAgentModels('cursor').map(model => model.modelId)).to.deep.equal(['auto']);
+            await new Promise(resolve => setTimeout(resolve, 300));
+            expect(listNativeAgentModels('cursor').map(model => model.modelId)).to.deep.equal(['fresh-model']);
+        } finally {
+            Date.now = realNow;
+        }
+    });
+
+    it('never replaces a live catalog with a failed or empty refresh', async function (): Promise<void> {
+        if (process.platform === 'win32') {
+            this.skip();
+        }
+        const realNow = Date.now;
+        let now = realNow();
+        Date.now = () => now;
+        try {
+            const bin = path.join(sandbox, 'cursor-agent');
+            fs.writeFileSync(bin, '#!/bin/sh\necho auto\necho cursor-private-model\n', { mode: 0o755 });
+            process.env.PATH = `${sandbox}${path.delimiter}${originalPath ?? ''}`;
+            expect((await prepareNativeAgentModels('cursor')).map(model => model.modelId)).to.deep.equal(['auto', 'cursor-private-model']);
+
+            // The CLI now fails (signed out, crashed): the live list is kept, and retried after the fallback delay.
+            fs.writeFileSync(bin, '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+            now += NATIVE_MODEL_CACHE_TTL_MS;
+            expect((await prepareNativeAgentModels('cursor')).map(model => model.modelId)).to.deep.equal(['auto', 'cursor-private-model']);
+            expect(listNativeAgentModels('cursor').map(model => model.modelId)).to.deep.equal(['auto', 'cursor-private-model']);
         } finally {
             Date.now = realNow;
         }

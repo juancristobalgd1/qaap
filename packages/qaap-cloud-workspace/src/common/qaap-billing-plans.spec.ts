@@ -20,7 +20,9 @@ import {
     hoursToMinutes,
     isHostedCodexUsage,
     isQaapCodexHostedModel,
+    getQaapHostedModelRate,
     parseQaapBillingPlanId,
+    resolveQaapCodexHostedRateId,
     runtimeMinutesForDurationMs,
     runtimeUsageRatio,
     shouldWarnRuntime,
@@ -46,10 +48,20 @@ function account(overrides: Partial<QaapBillingAccount> = {}): QaapBillingAccoun
 }
 
 describe('qaap-billing-plans', () => {
-    it('hosted model ids match the Codex native catalog', () => {
+    it('every Codex native catalog model is a hosted model with a rate', () => {
         const catalog = listStaticNativeAgentModels('codex').map(model => model.modelId);
-        expect([...QAAP_CODEX_HOSTED_MODEL_IDS]).to.have.members(catalog);
-        expect(catalog).to.have.members([...QAAP_CODEX_HOSTED_MODEL_IDS]);
+        for (const modelId of catalog) {
+            expect(QAAP_CODEX_HOSTED_MODEL_IDS.has(modelId), modelId).to.equal(true);
+            expect(getQaapHostedModelRate(modelId)?.modelId, modelId).to.equal(modelId);
+        }
+    });
+
+    it('bills an unlisted Codex tier id at its tier rate, and never bills other ids as hosted', () => {
+        expect(resolveQaapCodexHostedRateId('gpt-7-terra')).to.equal('gpt-5.6-terra');
+        expect(resolveQaapCodexHostedRateId('gpt-6.1-sol')).to.equal('gpt-5.6-sol');
+        expect(resolveQaapCodexHostedRateId('gpt-4o-mini')).to.equal(undefined);
+        expect(resolveQaapCodexHostedRateId('gpt-reserve')).to.equal(undefined);
+        expect(creditsForTokenUsage('gpt-7-luna', 1_000_000, 0)).to.equal(26);
     });
 
     it('does not host non-Codex harness models', () => {
