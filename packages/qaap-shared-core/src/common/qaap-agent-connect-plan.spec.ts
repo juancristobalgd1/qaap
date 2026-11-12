@@ -18,7 +18,16 @@ describe('splitAgentLoginShellInput', () => {
     });
 
     it('splits the Gemini Connect command into pieces macOS does not drop', () => {
-        const line = `${buildAgentLoginShellCommand(resolveAgentLoginCliCommand('antigravity')!, {
+        // The Gemini login command follows the host platform; pin macOS so Windows CI builds the same line.
+        const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+        Object.defineProperty(process, 'platform', { value: 'darwin' });
+        let command: string;
+        try {
+            command = resolveAgentLoginCliCommand('antigravity')!;
+        } finally {
+            Object.defineProperty(process, 'platform', platform);
+        }
+        const line = `${buildAgentLoginShellCommand(command, {
             cliBinDirectory: '/Users/someone/.qaap/cli/bin',
             platform: 'darwin',
         })}\r`;
