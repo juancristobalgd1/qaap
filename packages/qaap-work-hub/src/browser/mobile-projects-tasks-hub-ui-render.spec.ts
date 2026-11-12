@@ -14,6 +14,8 @@ import { expect } from 'chai';
 import type { MobileProjectsTasksHubUiContext } from './mobile-projects-tasks-hub-ui-context';
 import { applyComposerQuickActionPromptExtracted, createAgentsHubQuickActionsBlockExtracted } from './mobile-projects-tasks-hub-ui-render';
 import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
+import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
+import { QAAP_AGENTS_HUB_QUICK_ACTIONS } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
 
 disableImportJSDOM();
 
@@ -148,5 +150,114 @@ describe('mobile-projects-tasks-hub-ui-render', () => {
             window.requestAnimationFrame = previousRaf;
             host.remove();
         }
+    });
+
+    describe('quick-action prompt replacement', () => {
+
+        type ShowCall = { message: string; options: MobileSnackbar.ShowOptions };
+
+        /**
+         * Mounted sticky composer. Like the real one, its input listener persists the draft to a store, and a
+         * re-render reads that store before the in-memory draft, so a stale persisted draft would win.
+         */
+        function mountStickyComposer(): { host: HTMLElement; input: HTMLTextAreaElement; context: MobileProjectsTasksHubUiContext } {
+            const host = document.createElement('div');
+            host.className = 'theia-mobile-projects-sticky-composer';
+            const input = document.createElement('textarea');
+            input.className = 'theia-mobile-projects-sticky-composer-input';
+            host.append(input);
+            document.body.append(host);
+            const persisted = { draft: '' };
+            const context = {
+                host: {
+                    transcriptComposerHost: undefined,
+                    stickyComposerHost: host,
+                    stickyComposerDraft: '',
+                    stickyComposerRenderUi: {
+                        renderStickyComposer: () => {
+                            input.value = persisted.draft || context.host.stickyComposerDraft;
+                        },
+                    },
+                },
+            } as unknown as MobileProjectsTasksHubUiContext;
+            input.addEventListener('input', () => {
+                context.host.stickyComposerDraft = input.value;
+                persisted.draft = input.value;
+            });
+            return { host, input, context };
+        }
+
+        /** Captures snackbar calls without rendering them. */
+        function captureSnackbar(run: (shown: ShowCall[]) => void): void {
+            const api = MobileSnackbar as { show: typeof MobileSnackbar.show };
+            const originalShow = api.show;
+            const shown: ShowCall[] = [];
+            api.show = (message: string, options: MobileSnackbar.ShowOptions = {}): void => {
+                shown.push({ message, options });
+            };
+            try {
+                run(shown);
+            } finally {
+                api.show = originalShow;
+            }
+        }
+
+        const [firstAction, secondAction] = QAAP_AGENTS_HUB_QUICK_ACTIONS;
+
+        it('replaces the prompt of a previously inserted chip with the next chip prompt', () => {
+            const { host, input, context } = mountStickyComposer();
+            try {
+                captureSnackbar(shown => {
+                    applyComposerQuickActionPromptExtracted(context, firstAction.promptDefault);
+                    expect(input.value).to.equal(firstAction.promptDefault);
+
+                    applyComposerQuickActionPromptExtracted(context, secondAction.promptDefault);
+
+                    expect(input.value).to.equal(secondAction.promptDefault);
+                    expect(context.host.stickyComposerDraft).to.equal(secondAction.promptDefault);
+                    expect(shown).to.deep.equal([]);
+                });
+            } finally {
+                host.remove();
+            }
+        });
+
+        it('inserts into an empty composer without a snackbar', () => {
+            const { host, input, context } = mountStickyComposer();
+            try {
+                captureSnackbar(shown => {
+                    applyComposerQuickActionPromptExtracted(context, secondAction.promptDefault);
+
+                    expect(input.value).to.equal(secondAction.promptDefault);
+                    expect(shown).to.deep.equal([]);
+                });
+            } finally {
+                host.remove();
+            }
+        });
+
+        it('replaces user-edited text, offers Undo, and restores the previous text on Undo', () => {
+            const { host, input, context } = mountStickyComposer();
+            const typed = 'My own notes, not a suggestion';
+            input.value = typed;
+            input.dispatchEvent(new window.Event('input', { bubbles: true }));
+            try {
+                captureSnackbar(shown => {
+                    applyComposerQuickActionPromptExtracted(context, firstAction.promptDefault);
+
+                    expect(input.value).to.equal(firstAction.promptDefault);
+                    expect(shown).to.have.length(1);
+                    expect(shown[0].options.actionLabel).to.equal('Undo');
+                    expect(shown[0].message).to.equal('Prompt replaced');
+
+                    shown[0].options.onAction?.();
+
+                    expect(input.value).to.equal(typed);
+                    expect(context.host.stickyComposerDraft).to.equal(typed);
+                });
+            } finally {
+                host.remove();
+            }
+        });
     });
 });

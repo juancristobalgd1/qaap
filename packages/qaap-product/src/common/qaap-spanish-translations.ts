@@ -293,6 +293,8 @@ export const QAAP_SPANISH_TRANSLATIONS: Readonly<Record<string, string>> = {
     'qaap/mobileProjects/agentLoginDialogVerifyingCode': 'Verificando el código con {0}…',
     'qaap/mobileProjects/agentLoginDialogStepThree': 'Inicia sesión y completa la verificación en el navegador.',
     'qaap/mobileProjects/agentLoginDialogConnected': '{0} conectado',
+    'qaap/quickActions/promptReplaced': 'Prompt reemplazado',
+    'qaap/quickActions/undo': 'Deshacer',
 };
 
 /** Keys that the Spanish overlay must cover for the trust / recovery / review surfaces. */
