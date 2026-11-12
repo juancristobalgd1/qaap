@@ -8,6 +8,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import {
     parseAgyModelLines,
+    parseClaudeBundleModelIds,
+    parseClaudeControlResponseModels,
     parseCodexDebugModels,
     parseGrokModelLines,
     parseNativeModelOutput,
@@ -92,6 +94,67 @@ describe('qaap-agent-native-model-parsers', () => {
             expect(models.length).to.be.greaterThan(40);
             expect(models.every(model => /^opencode\/[a-z0-9][a-z0-9._-]*$/i.test(model.modelId))).to.equal(true);
             expect(models.map(model => model.modelId)).to.include('opencode/claude-opus-5-5');
+        });
+    });
+
+    describe('claude initialize answer', () => {
+        const answer = (models: unknown, subtype: unknown = 'success'): unknown => ({
+            type: 'control_response',
+            response: { subtype, request_id: 'qaap-model-list', response: { models } },
+        });
+
+        it('keeps the CLI aliases and labels in the CLI order, and the fixture ids as usable model ids', () => {
+            const message: unknown = JSON.parse(fixture('claude-initialize-response.json'));
+            const models = parseClaudeControlResponseModels(message);
+            expect(models).to.have.length(14);
+            expect(models[0]).to.deep.equal({ provider: 'anthropic', vendor: 'claude', modelId: 'default', label: 'Default (recommended)' });
+            expect(models.map(model => model.modelId)).to.include.members(['opus', 'sonnet', 'fable', 'haiku', 'claude-fable-5-1']);
+            expect(models.find(model => model.modelId === 'fable')?.label).to.equal('Fable 5.2');
+        });
+
+        it('drops malformed, unsafe and duplicate entries and keeps the first of each value', () => {
+            const models = parseClaudeControlResponseModels(answer([
+                { value: 'opus', displayName: 'Opus 5.5' },
+                { value: 'opus', displayName: 'Opus again' },
+                { value: 'bad value; rm -rf', displayName: 'Injected' },
+                { value: '--dangerous', displayName: 'Flag-shaped' },
+                { value: 'sonnet' },
+                { displayName: 'No value' },
+                { value: 42, displayName: 'Numeric' },
+                { value: 'haiku', displayName: '' },
+                { value: 'fable', displayName: 'x'.repeat(121) },
+                'not an object',
+                null,
+            ]));
+            expect(models.map(model => model.modelId)).to.deep.equal(['opus']);
+            expect(models[0].label).to.equal('Opus 5.5');
+        });
+
+        it('returns nothing for an error answer, another message type or a differently shaped answer', () => {
+            expect(parseClaudeControlResponseModels(answer([{ value: 'opus', displayName: 'Opus' }], 'error'))).to.deep.equal([]);
+            expect(parseClaudeControlResponseModels({ ...(answer([]) as object), type: 'system' })).to.deep.equal([]);
+            expect(parseClaudeControlResponseModels(answer('opus'))).to.deep.equal([]);
+            expect(parseClaudeControlResponseModels(answer(undefined))).to.deep.equal([]);
+            expect(parseClaudeControlResponseModels(null)).to.deep.equal([]);
+            expect(parseClaudeControlResponseModels('control_response')).to.deep.equal([]);
+        });
+    });
+
+    describe('claude bundle model ids', () => {
+        it('keeps the newest non-dated id of each family and drops dated and suffixed ids', () => {
+            const models = parseClaudeBundleModelIds(fixture('claude-bundle-model-ids.txt').split(/\r?\n/));
+            expect(models.map(model => model.modelId)).to.deep.equal([
+                'claude-fable-5-2',
+                'claude-opus-5-5',
+                'claude-sonnet-5-5',
+                'claude-haiku-5-5',
+            ]);
+            expect(models.map(model => model.label)).to.deep.equal(['Fable 5.2', 'Opus 5.5', 'Sonnet 5.5', 'Haiku 5.5']);
+            expect(models.every(model => model.provider === 'anthropic' && model.vendor === 'claude')).to.equal(true);
+        });
+
+        it('returns nothing when the bundle lists only dated, suffixed or unrelated ids', () => {
+            expect(parseClaudeBundleModelIds(['claude-haiku-4-5-20251001', 'claude-fable-5-mythos-5', 'noise'])).to.deep.equal([]);
         });
     });
 

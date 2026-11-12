@@ -156,11 +156,13 @@ export function listStaticNativeAgentModels(agentId: string, antigravityBin?: Qa
                 nativeOption(id, 'gpt-5.6-luna', 'GPT-5.6-Luna'),
             ];
         case 'claude':
-            // Claude Code has no model-list command, so this is the source of truth (verified against the
-            // installed CLI binary, 2026-11). First row is the default; at most two legacy rows follow.
+            // Fallback only: the live list comes from the CLI's `initialize` answer (Claude CLI 2.1.322, 2026-11),
+            // which reports `default` -> claude-opus-5-5 and `fable` -> claude-fable-5-2. First row is the CLI
+            // default; at most two legacy rows follow.
             return [
-                nativeOption(id, 'claude-fable-5-1', 'Fable 5.1', 'anthropic'),
                 nativeOption(id, 'claude-opus-5-5', 'Opus 5.5', 'anthropic'),
+                nativeOption(id, 'claude-fable-5-2', 'Fable 5.2', 'anthropic'),
+                nativeOption(id, 'claude-fable-5-1', 'Fable 5.1', 'anthropic'),
                 nativeOption(id, 'claude-sonnet-5-5', 'Sonnet 5.5', 'anthropic'),
                 nativeOption(id, 'claude-haiku-5-5', 'Haiku 5.5', 'anthropic'),
                 nativeOption(id, 'claude-fable-5', 'Fable 5 Legacy', 'anthropic'),

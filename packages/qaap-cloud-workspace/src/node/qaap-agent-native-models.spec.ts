@@ -10,10 +10,12 @@ import * as path from 'path';
 import { listStaticNativeAgentModels, parseNativeModelLines } from '../common/qaap-agent-native-model-catalog';
 import {
     clearNativeAgentModelCache,
+    discoverClaudeCliModels,
     discoverCodexAccountModels,
     invalidateNativeAgentModels,
     listNativeAgentModels,
     NATIVE_MODEL_CACHE_TTL_MS,
+    type NativeModelDiscoverySpawner,
     parseCodexModelsCache,
     prepareNativeAgentModels,
     resolveCodexAgentHome,
@@ -362,6 +364,58 @@ describe('qaap-agent-native-models', () => {
                 .to.deep.equal(agyLabels);
             invalidateNativeAgentModels('antigravity');
             expect(listNativeAgentModels('antigravity', undefined, 'gemini').map(model => model.modelId)).to.include('auto');
+        });
+    });
+
+    describe('Claude catalog (initialize answer, bundle fallback)', () => {
+        const fixture = path.join(__dirname, '..', '..', 'test-resources', 'agent-models', 'claude-initialize-response.json');
+        const claudeSpawner = (file: string): NativeModelDiscoverySpawner => (bin, args) => ({
+            file: bin === 'claude' ? file : bin,
+            args: [...args],
+        });
+        let claudeBin: string;
+
+        beforeEach(function (): void {
+            if (process.platform === 'win32') {
+                this.skip();
+            }
+            claudeBin = path.join(sandbox, 'claude');
+            process.env.PATH = `${sandbox}${path.delimiter}${originalPath ?? ''}`;
+        });
+
+        it('lists the live models from the initialize answer, sending one control request and no user message', async function (): Promise<void> {
+            const requestFile = path.join(sandbox, 'request.json');
+            fs.writeFileSync(claudeBin, `#!/bin/sh\nread -r request\nprintf '%s' "$request" > '${requestFile}'\ncat '${fixture}'\nexec sleep 30\n`, { mode: 0o755 });
+
+            const discovered = await prepareNativeAgentModels('claude', { spawner: claudeSpawner(claudeBin) });
+
+            expect(discovered).to.have.length(14);
+            expect(discovered[0]).to.deep.equal({ provider: 'anthropic', vendor: 'claude', modelId: 'default', label: 'Default (recommended)' });
+            expect(listNativeAgentModels('claude').map(model => model.modelId)).to.include('fable');
+            const request = JSON.parse(fs.readFileSync(requestFile, 'utf8')) as { type: string; request: { subtype: string } };
+            expect(request.type).to.equal('control_request');
+            expect(request.request.subtype).to.equal('initialize');
+        });
+
+        it('answers with nothing when the CLI stays silent past the timeout', async () => {
+            fs.writeFileSync(claudeBin, '#!/bin/sh\nread -r request\nexec sleep 30\n', { mode: 0o755 });
+            const startedAt = Date.now();
+            expect(await discoverClaudeCliModels(claudeSpawner(claudeBin), 300)).to.deep.equal([]);
+            expect(Date.now() - startedAt).to.be.lessThan(5000);
+        });
+
+        it('falls back to the newest non-dated ids of the CLI bundle when initialize is not answered', async () => {
+            const bundleText = 'claude-fable-5-2 claude-opus-5-5 claude-opus-5-5-20251101 claude-sonnet-5-5 claude-haiku-4-5-20251001';
+            fs.writeFileSync(claudeBin, `#!/bin/sh\n# ${bundleText}\nexit 0\n`, { mode: 0o755 });
+            const models = await prepareNativeAgentModels('claude', { spawner: claudeSpawner(claudeBin) });
+            expect(models.map(model => model.modelId)).to.deep.equal(['claude-fable-5-2', 'claude-opus-5-5', 'claude-sonnet-5-5']);
+            expect(models.map(model => model.label)).to.deep.equal(['Fable 5.2', 'Opus 5.5', 'Sonnet 5.5']);
+        });
+
+        it('keeps the curated Claude catalog when the CLI answers with an error and its bundle lists no model', async () => {
+            const errorAnswer = JSON.stringify({ type: 'control_response', response: { subtype: 'error', request_id: 'qaap-model-list', error: 'unsupported' } });
+            fs.writeFileSync(claudeBin, `#!/bin/sh\nread -r request\necho '${errorAnswer}'\nexit 0\n`, { mode: 0o755 });
+            expect(await prepareNativeAgentModels('claude', { spawner: claudeSpawner(claudeBin) })).to.deep.equal(listStaticNativeAgentModels('claude'));
         });
     });
 });

@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { execFile } from 'child_process';
+import { type ChildProcess, execFile, spawn as spawnChild } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -17,7 +17,12 @@ import {
     agentUsesNativeModelCatalog,
     listStaticNativeAgentModels,
 } from '../common/qaap-agent-native-model-catalog';
-import { parseCodexDebugModels, parseNativeModelOutput } from '../common/qaap-agent-native-model-parsers';
+import {
+    parseClaudeBundleModelIds,
+    parseClaudeControlResponseModels,
+    parseCodexDebugModels,
+    parseNativeModelOutput,
+} from '../common/qaap-agent-native-model-parsers';
 import { childProcessEnv } from './qaap-child-process-env';
 
 /** One cached catalog. `live` is true when the CLI answered; false for the curated fallback. */
@@ -275,6 +280,10 @@ async function discoverNativeAgentModels(agentId: string, spawner?: NativeModelD
         case 'gemini':
             // The Antigravity binary is `agy`; the catalog is stored under the agent id.
             return discoverFromCommand('agy', ['models'], agentId, spawner);
+        case 'claude':
+            // Claude Code answers an `initialize` control request with the model list its own picker shows;
+            // the CLI bundle is only the fallback for a CLI that does not answer.
+            return discoverClaudeCliModels(spawner);
         case 'cursor':
             // Cursor Agent exposes the account-scoped catalog through both the modern
             // `agent models` command and the backwards-compatible `cursor-agent` alias.
@@ -287,6 +296,155 @@ async function discoverNativeAgentModels(agentId: string, spawner?: NativeModelD
         default:
             return [];
     }
+}
+
+/** The Claude Code binary: its `initialize` answer and its bundle are the two sources of the picker list. */
+const CLAUDE_BIN = 'claude';
+/** Request id of the one `initialize` control request the Claude discovery sends; only its answer is read. */
+const CLAUDE_INITIALIZE_REQUEST_ID = 'qaap-model-list';
+/** Bounded wait for the CLI's answer; past it the curated list answers and the next refresh retries. */
+export const CLAUDE_MODEL_LIST_TIMEOUT_MS = 15_000;
+/** Stream-json mode without a prompt: the CLI reads control requests only, so no model turn starts. */
+const CLAUDE_STREAM_ARGS: readonly string[] = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose'];
+/** Bundle scan pattern; the parser keeps only the newest non-dated id of each family. */
+const CLAUDE_BUNDLE_MODEL_ID_PATTERN = 'claude-(opus|sonnet|haiku|fable)-[0-9]+(-[0-9]+)*';
+/** Largest unfinished stdout line the probe buffers before giving up (a real answer is about 2 KB). */
+const CLAUDE_PROBE_MAX_PENDING_CHARS = 4 * 1024 * 1024;
+
+/**
+ * The Claude picker list: the live `initialize` answer of the CLI, else the model ids in its bundle. Both
+ * are bounded by `timeoutMs`; an empty result leaves the caller's catalog in place.
+ */
+export async function discoverClaudeCliModels(
+    spawner?: NativeModelDiscoverySpawner,
+    timeoutMs: number = CLAUDE_MODEL_LIST_TIMEOUT_MS,
+): Promise<QaapQaiqModelOption[]> {
+    const live = await askClaudeCliForModels(spawner, timeoutMs);
+    return live.length > 0 ? live : listClaudeBundleModels(spawner, timeoutMs);
+}
+
+/** Reads one `initialize` control response; `undefined` for any line that is not this request's answer. */
+function parseClaudeInitializeLine(line: string): QaapQaiqModelOption[] | undefined {
+    let message: { readonly type?: unknown; readonly response?: { readonly request_id?: unknown } } | null;
+    try {
+        message = JSON.parse(line) as typeof message;
+    } catch {
+        return undefined;
+    }
+    if (message?.response?.request_id !== CLAUDE_INITIALIZE_REQUEST_ID) {
+        return undefined;
+    }
+    return parseClaudeControlResponseModels(message);
+}
+
+/**
+ * Sends one `initialize` control request over stream-json and reads the CLI's answer. stdin stays open
+ * until the answer arrives, then the CLI is stopped; no user message is sent, so no model turn starts.
+ */
+function askClaudeCliForModels(spawner: NativeModelDiscoverySpawner | undefined, timeoutMs: number): Promise<QaapQaiqModelOption[]> {
+    const command = spawner ? spawner(CLAUDE_BIN, CLAUDE_STREAM_ARGS) : { file: CLAUDE_BIN, args: CLAUDE_STREAM_ARGS };
+    if (!command) {
+        return Promise.resolve([]);
+    }
+    return new Promise<QaapQaiqModelOption[]>(resolve => {
+        // npm-installed CLIs are `.cmd` shims on Windows; the same resolution as the one-shot listings.
+        const windowsShim = process.platform === 'win32' && command.file === CLAUDE_BIN;
+        let child: ChildProcess;
+        try {
+            child = spawnChild(windowsShim ? `${CLAUDE_BIN}.cmd` : command.file, [...command.args], {
+                cwd: command.cwd,
+                env: childProcessEnv({ ...(command.env ?? process.env) }),
+                stdio: ['pipe', 'pipe', 'ignore'],
+                shell: windowsShim,
+                windowsHide: true,
+            });
+        } catch {
+            resolve([]);
+            return;
+        }
+        let settled = false;
+        let pending = '';
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const finish = (models: QaapQaiqModelOption[]): void => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            clearTimeout(timer);
+            child.kill();
+            resolve(models);
+        };
+        timer = setTimeout(() => finish([]), timeoutMs);
+        child.on('error', () => finish([]));
+        child.on('close', () => finish([]));
+        child.stdin?.on('error', () => finish([]));
+        child.stdout?.setEncoding('utf8');
+        child.stdout?.on('data', (chunk: string) => {
+            pending += chunk;
+            let newline = pending.indexOf('\n');
+            while (newline >= 0 && !settled) {
+                const line = pending.slice(0, newline).trim();
+                pending = pending.slice(newline + 1);
+                newline = pending.indexOf('\n');
+                const models = line.startsWith('{') ? parseClaudeInitializeLine(line) : undefined;
+                if (models) {
+                    finish(models);
+                }
+            }
+            if (!settled && pending.length > CLAUDE_PROBE_MAX_PENDING_CHARS) {
+                finish([]);
+            }
+        });
+        child.stdin?.write(`${JSON.stringify({ type: 'control_request', request_id: CLAUDE_INITIALIZE_REQUEST_ID, request: { subtype: 'initialize' } })}\n`);
+    });
+}
+
+/** The first executable named `bin` on the backend PATH, resolved through symlinks; `undefined` when absent. */
+function findExecutableOnPath(bin: string): string | undefined {
+    for (const dir of (process.env.PATH ?? '').split(path.delimiter)) {
+        if (!dir) {
+            continue;
+        }
+        const candidate = path.join(dir, bin);
+        try {
+            fs.accessSync(candidate, fs.constants.X_OK);
+            return fs.realpathSync(candidate);
+        } catch {
+            // not in this directory; keep searching the PATH
+        }
+    }
+    return undefined;
+}
+
+/**
+ * Fallback when the CLI does not answer `initialize`: scans its bundle with `grep -aoE` (run through the
+ * same spawner, so a tenant reads the binary as the agent) and keeps the newest id of each family.
+ */
+function listClaudeBundleModels(spawner: NativeModelDiscoverySpawner | undefined, timeoutMs: number): Promise<QaapQaiqModelOption[]> {
+    const binary = findExecutableOnPath(CLAUDE_BIN);
+    if (!binary) {
+        return Promise.resolve([]);
+    }
+    const args = ['-aoE', CLAUDE_BUNDLE_MODEL_ID_PATTERN, binary];
+    const command = spawner ? spawner('grep', args) : { file: 'grep', args };
+    if (!command) {
+        return Promise.resolve([]);
+    }
+    return new Promise<QaapQaiqModelOption[]>(resolve => {
+        execFile(command.file, [...command.args], {
+            encoding: 'utf8',
+            timeout: timeoutMs,
+            maxBuffer: 16 * 1024 * 1024,
+            ...(command.cwd ? { cwd: command.cwd } : {}),
+            env: childProcessEnv({ ...(command.env ?? process.env) }),
+        }, (error, stdout) => {
+            if (error) {
+                resolve([]);
+                return;
+            }
+            resolve(parseClaudeBundleModelIds(String(stdout ?? '').split(/\r?\n/)));
+        });
+    });
 }
 
 /** File the Codex CLI keeps in its home: the model slugs the signed-in account may run (server-side list). */
