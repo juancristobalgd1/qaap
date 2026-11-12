@@ -63,7 +63,7 @@ describe('resolveNativeAgentModelForTaskKind', () => {
     it('routes a writer turn and a judge turn to different frontier models', () => {
         const writer = resolveNativeAgentModelForTaskKind('claude', 'implementation', CLAUDE_CATALOG);
         const judge = resolveNativeAgentModelForTaskKind('claude', 'review', CLAUDE_CATALOG);
-        expect(writer?.modelId).to.equal('claude-fable-5-1');
+        expect(writer?.modelId).to.equal('claude-fable-5-2');
         expect(judge?.modelId).to.equal('claude-opus-5-5');
         expect(judge?.modelId).to.not.equal(writer?.modelId);
     });
