@@ -18,7 +18,14 @@ import {
     QAAP_BILLING_DEV_ACTIVATE_API_PATH,
     QAAP_BILLING_WEBHOOK_API_PATH,
 } from '../common/qaap-cloud-api-types';
-import { QAAP_BILLING_PLANS, entitlementsFor, isQaapBillingPlanId, type QaapBillingPlanId } from '../common/qaap-billing-plans';
+import {
+    QAAP_BILLING_PLANS,
+    entitlementsFor,
+    isQaapBillingPlanId,
+    type QaapBillingAccount,
+    type QaapBillingPlanId,
+    type QaapBillingSubscriptionStatus,
+} from '../common/qaap-billing-plans';
 import {
     airwallexSubscriptionIdFromEvent,
     cancelAirwallexSubscription,
@@ -35,6 +42,9 @@ import {
 import { QaapBillingStore, type QaapAirwallexSubscriptionUpdate } from './qaap-billing-store';
 
 const CHECKOUT_PLAN_IDS: readonly QaapBillingPlanId[] = ['starter', 'pro'];
+
+/** Subscription states that still bill the account: a checkout for the same plan is refused, and a replaced one is cancelled. */
+const PAYING_SUBSCRIPTION_STATUSES: readonly string[] = ['active', 'past_due'];
 
 const unixSecondsNow = (): number => Math.floor(Date.now() / 1000);
 
@@ -115,6 +125,12 @@ export class QaapBillingEndpoint implements BackendApplicationContribution {
             });
             return;
         }
+        const current = await this.store.getOrCreateAccount(login);
+        if (current.planId === planIdRaw && this.isPayingSubscription(current)) {
+            // Re-buying the plan already paid for would create a second subscription that bills alongside it.
+            res.status(409).json({ error: 'already_subscribed' });
+            return;
+        }
         const origin = resolveBillingPublicOrigin(
             typeof req.headers.origin === 'string' ? req.headers.origin : undefined,
             typeof req.headers.referer === 'string' ? req.headers.referer : undefined,
@@ -175,7 +191,8 @@ export class QaapBillingEndpoint implements BackendApplicationContribution {
                 res.status(409).json({ error: 'checkout_not_complete', status: checkout.status });
                 return;
             }
-            const { account } = await this.store.applyAirwallexSubscription(login, {
+            const previous = await this.store.getOrCreateAccount(login);
+            const result = await this.store.applyAirwallexSubscription(login, {
                 status: subscription.status,
                 planId: checkout.planId,
                 customerId: subscription.customerId ?? checkout.customerId,
@@ -183,7 +200,8 @@ export class QaapBillingEndpoint implements BackendApplicationContribution {
                 eventCreated: readAt,
                 adoptSubscription: true,
             });
-            res.json(this.billingSnapshot(login, account));
+            await this.cancelSupersededSubscription(previous, result, subscription.status);
+            res.json(this.billingSnapshot(login, result.account));
         } catch (error) {
             const message = error instanceof Error ? error.message : 'confirm_failed';
             res.status(500).json({ error: 'confirm_failed', message });
@@ -302,13 +320,51 @@ export class QaapBillingEndpoint implements BackendApplicationContribution {
         }
         const readAt = unixSecondsNow();
         const subscription = await fetchAirwallexSubscription(subscriptionId);
-        const login = subscription.login
-            ?? await this.store.findLoginByAirwallexSubscription(subscription.subscriptionId)
-            ?? await this.loginFromCheckoutEvent(event, subscription.subscriptionId);
+        const metadataLogin = subscription.login
+            ?? await this.store.findLoginByAirwallexSubscription(subscription.subscriptionId);
+        const checkoutLogin = metadataLogin ? undefined : await this.loginFromCheckoutEvent(event, subscription.subscriptionId);
+        const login = metadataLogin ?? checkoutLogin;
         if (!login) {
             return;
         }
-        await this.store.applyAirwallexSubscription(login, this.toSubscriptionUpdate(subscription, readAt));
+        // Only a checkout that points at this subscription may move the account onto it. Plain updates of a
+        // subscription the account no longer uses (e.g. the superseded one) are ignored by the store.
+        const adoptSubscription = checkoutLogin !== undefined && subscription.status === 'active';
+        const previous = await this.store.getOrCreateAccount(login);
+        const result = await this.store.applyAirwallexSubscription(login, {
+            ...this.toSubscriptionUpdate(subscription, readAt),
+            adoptSubscription,
+        });
+        await this.cancelSupersededSubscription(previous, result, subscription.status);
+    }
+
+    protected isPayingSubscription(account: QaapBillingAccount): boolean {
+        return !!account.subscriptionId
+            && account.subscriptionStatus !== undefined
+            && PAYING_SUBSCRIPTION_STATUSES.includes(account.subscriptionStatus);
+    }
+
+    /**
+     * Cancels the subscription the account paid for before a new one took over. Runs only after the new
+     * subscription is applied and active, so a failed cancel leaves the new plan in place: it is logged and
+     * the caller still succeeds. The provider's later CANCELLED for the old subscription is ignored by the store.
+     */
+    protected async cancelSupersededSubscription(
+        previous: QaapBillingAccount,
+        result: { readonly applied: boolean; readonly account: QaapBillingAccount },
+        status: QaapBillingSubscriptionStatus,
+    ): Promise<void> {
+        const supersededId = previous.subscriptionId;
+        if (!result.applied || status !== 'active' || !supersededId || !this.isPayingSubscription(previous)
+            || !result.account.subscriptionId || result.account.subscriptionId === supersededId) {
+            return;
+        }
+        try {
+            await cancelAirwallexSubscription(supersededId);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'cancel_failed';
+            console.warn(`[qaap-billing] could not cancel superseded subscription ${supersededId}: ${message}`);
+        }
     }
 
     /**

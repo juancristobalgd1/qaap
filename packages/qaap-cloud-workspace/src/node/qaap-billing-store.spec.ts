@@ -211,6 +211,24 @@ describe('QaapBillingStore', () => {
             expect(old.account.planId).to.equal('pro');
         });
 
+        it('keeps Pro active when the superseded Starter subscription reports CANCELLED late', async () => {
+            const store = makeStore(filePath);
+            await store.applyAirwallexSubscription('alice', { status: 'active', planId: 'starter', subscriptionId: 'sub_old', eventCreated: 100 });
+            const switched = await store.applyAirwallexSubscription('alice', {
+                status: 'active', planId: 'pro', subscriptionId: 'sub_new', eventCreated: 200, adoptSubscription: true,
+            });
+            expect(switched.account.planId).to.equal('pro');
+            const lateCancel = await store.applyAirwallexSubscription('alice', {
+                status: 'canceled', subscriptionId: 'sub_old', eventCreated: 300,
+            });
+            expect(lateCancel.applied).to.equal(false);
+            const account = await store.getOrCreateAccount('alice');
+            expect(account.planId).to.equal('pro');
+            expect(account.subscriptionId).to.equal('sub_new');
+            expect(account.subscriptionStatus).to.equal('active');
+            expect((await store.getEntitlements('alice')).planId).to.equal('pro');
+        });
+
         it('never switches to another subscription on a plain update, only from a completed checkout', async () => {
             const store = makeStore(filePath);
             await store.applyAirwallexSubscription('alice', { ...active, subscriptionId: 'sub_current', planId: 'pro', eventCreated: 100 });

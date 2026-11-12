@@ -241,13 +241,19 @@ describe('QaapBillingEndpoint Airwallex webhook', () => {
         applyCalls: unknown[][],
         processed: Set<string> = new Set(),
         logins: Record<string, string> = {},
+        previous: Record<string, unknown> = { login: 'octocat', planId: 'starter' },
     ): express.Application => {
         const app = express();
         app.use(json());
         const endpoint = new QaapBillingEndpoint();
         Object.assign(endpoint, {
             store: {
-                applyAirwallexSubscription: async (...args: unknown[]) => { applyCalls.push(args); return { applied: true, account: {} }; },
+                getOrCreateAccount: async () => previous,
+                applyAirwallexSubscription: async (...args: unknown[]) => {
+                    applyCalls.push(args);
+                    const update = args[1] as { status: string; subscriptionId?: string };
+                    return { applied: true, account: { subscriptionId: update.subscriptionId, subscriptionStatus: update.status } };
+                },
                 findLoginByAirwallexSubscription: async (id: string) => logins[id],
                 hasProcessedBillingEvent: async (id: string) => processed.has(id),
                 markBillingEventProcessed: async (id: string) => { processed.add(id); },
@@ -317,6 +323,26 @@ describe('QaapBillingEndpoint Airwallex webhook', () => {
         expect(fetchCalls).to.include('GET /api/v1/billing/billing_checkouts/bco_9');
         expect(calls).to.have.length(1);
         expect(calls[0][0]).to.equal('octocat');
+    });
+
+    it('moves a Starter account to a new Pro checkout and cancels the superseded subscription after applying it', async () => {
+        restoreFetch = stubAirwallexFetch({
+            ...LOGIN_ROUTE,
+            'GET /api/v1/billing/subscriptions/sub_new': subscription({ id: 'sub_new', status: 'ACTIVE', price_id: 'price_pro' }),
+            'GET /api/v1/billing/billing_checkouts/bco_sw': {
+                id: 'bco_sw', status: 'COMPLETED', subscription_id: 'sub_new', metadata: { qaapLogin: 'octocat', planId: 'pro' },
+            },
+            'POST /api/v1/billing/subscriptions/sub_old/cancel': { id: 'sub_old', status: 'CANCELLED' },
+        }, fetchCalls);
+        const calls: unknown[][] = [];
+        const previous = { login: 'octocat', planId: 'starter', subscriptionId: 'sub_old', subscriptionStatus: 'active' };
+        const response = await deliver(appWithEarlierJsonParser(calls, new Set(), {}, previous), {
+            id: 'evt_switch', name: 'billing_checkout.completed', data: { object: { id: 'bco_sw', subscription_id: 'sub_new' } },
+        });
+        expect(response.status).to.equal(200);
+        expect(calls).to.have.length(1);
+        expect(calls[0][1]).to.include({ status: 'active', planId: 'pro', subscriptionId: 'sub_new', adoptSubscription: true });
+        expect(fetchCalls).to.include('POST /api/v1/billing/subscriptions/sub_old/cancel');
     });
 
     it('ignores a checkout whose subscription differs from the event subscription', async () => {
@@ -445,6 +471,7 @@ describe('QaapBillingEndpoint Airwallex webhook', () => {
         const endpoint = new QaapBillingEndpoint();
         Object.assign(endpoint, {
             store: {
+                getOrCreateAccount: async () => ({ login: 'octocat', planId: 'starter' }),
                 applyAirwallexSubscription: async (...args: unknown[]) => { calls.push(args); entered(); await gate; return { applied: true, account: {} }; },
                 findLoginByAirwallexSubscription: async () => 'octocat',
                 hasProcessedBillingEvent: async (id: string) => processed.has(id),
@@ -586,6 +613,123 @@ describe('QaapBillingEndpoint confirm and cancel', () => {
         await (endpoint as unknown as { handleCancel(req: object, response: typeof res): Promise<void> })
             .handleCancel({}, res);
         expect(res.statusCode).to.equal(404);
+    });
+
+    it('answers 409 to a checkout for the plan the account already pays for', async () => {
+        restoreFetch = stubAirwallexFetch({ ...LOGIN_ROUTE }, fetchCalls);
+        const endpoint = makeEndpoint('octocat', {
+            getOrCreateAccount: async () => ({ login: 'octocat', planId: 'starter', subscriptionId: 'sub_1', subscriptionStatus: 'active' }),
+        });
+        const res = makeRes();
+        await (endpoint as unknown as { handleCheckout(req: object, response: typeof res): Promise<void> })
+            .handleCheckout({ body: { planId: 'starter' }, headers: {} }, res);
+        expect(res.statusCode).to.equal(409);
+        expect(res.body).to.deep.equal({ error: 'already_subscribed' });
+        expect(fetchCalls).to.have.length(0);
+    });
+
+    it('answers 409 to a checkout for the same plan while that subscription is past_due', async () => {
+        restoreFetch = stubAirwallexFetch({ ...LOGIN_ROUTE }, fetchCalls);
+        const endpoint = makeEndpoint('octocat', {
+            getOrCreateAccount: async () => ({ login: 'octocat', planId: 'starter', subscriptionId: 'sub_1', subscriptionStatus: 'past_due' }),
+        });
+        const res = makeRes();
+        await (endpoint as unknown as { handleCheckout(req: object, response: typeof res): Promise<void> })
+            .handleCheckout({ body: { planId: 'starter' }, headers: {} }, res);
+        expect(res.statusCode).to.equal(409);
+        expect((res.body as { error: string }).error).to.equal('already_subscribed');
+    });
+
+    it('allows a plan switch from Starter to Pro while Starter is active', async () => {
+        const savedPublicUrl = process.env.QAAP_PUBLIC_URL;
+        process.env.QAAP_PUBLIC_URL = 'https://qaap.test';
+        try {
+            restoreFetch = stubAirwallexFetch({
+                ...LOGIN_ROUTE,
+                'POST /api/v1/billing/billing_checkouts/create': { id: 'bco_new', url: 'https://checkout.test/bco_new' },
+            }, fetchCalls);
+            const endpoint = makeEndpoint('octocat', {
+                getOrCreateAccount: async () => ({ login: 'octocat', planId: 'starter', subscriptionId: 'sub_1', subscriptionStatus: 'active' }),
+            });
+            const res = makeRes();
+            await (endpoint as unknown as { handleCheckout(req: object, response: typeof res): Promise<void> })
+                .handleCheckout({ body: { planId: 'pro' }, headers: {} }, res);
+            expect(res.statusCode).to.equal(200);
+            expect(res.body).to.deep.equal({ url: 'https://checkout.test/bco_new', checkoutId: 'bco_new' });
+        } finally {
+            if (savedPublicUrl === undefined) {
+                delete process.env.QAAP_PUBLIC_URL;
+            } else {
+                process.env.QAAP_PUBLIC_URL = savedPublicUrl;
+            }
+        }
+    });
+
+    it('cancels the superseded Starter subscription only after the new Pro subscription is applied on confirm', async () => {
+        restoreFetch = stubAirwallexFetch({
+            ...LOGIN_ROUTE,
+            'GET /api/v1/billing/billing_checkouts/bco_sw': {
+                id: 'bco_sw', status: 'COMPLETED', subscription_id: 'sub_new', customer_id: 'cus_1',
+                metadata: { qaapLogin: 'octocat', planId: 'pro' },
+            },
+            'GET /api/v1/billing/subscriptions/sub_new': { id: 'sub_new', status: 'ACTIVE', price_id: 'price_pro', customer_id: 'cus_1' },
+            'POST /api/v1/billing/subscriptions/sub_old/cancel': { id: 'sub_old', status: 'CANCELLED' },
+        }, fetchCalls);
+        const applied: unknown[][] = [];
+        const endpoint = makeEndpoint('octocat', {
+            getOrCreateAccount: async () => ({ login: 'octocat', planId: 'starter', subscriptionId: 'sub_old', subscriptionStatus: 'active' }),
+            applyAirwallexSubscription: async (...args: unknown[]) => {
+                applied.push(args);
+                fetchCalls.push('STORE apply sub_new');
+                return { applied: true, account: { login: 'octocat', planId: 'pro', subscriptionId: 'sub_new', subscriptionStatus: 'active' } };
+            },
+        });
+        const res = makeRes();
+        await (endpoint as unknown as { handleConfirmCheckout(req: object, response: typeof res): Promise<void> })
+            .handleConfirmCheckout({ body: { checkoutId: 'bco_sw' } }, res);
+        expect(res.statusCode).to.equal(200);
+        expect((res.body as { account: { planId: string } }).account.planId).to.equal('pro');
+        expect(applied).to.have.length(1);
+        expect(applied[0][1]).to.include({ status: 'active', planId: 'pro', subscriptionId: 'sub_new' });
+        const applyIndex = fetchCalls.indexOf('STORE apply sub_new');
+        const cancelIndex = fetchCalls.indexOf('POST /api/v1/billing/subscriptions/sub_old/cancel');
+        expect(applyIndex).to.be.greaterThan(-1);
+        expect(cancelIndex).to.be.greaterThan(applyIndex);
+    });
+
+    it('still answers 200 with the new Pro plan applied when cancelling the superseded subscription fails', async () => {
+        // No cancel route is stubbed, so the provider answers 404 and the cancel throws.
+        restoreFetch = stubAirwallexFetch({
+            ...LOGIN_ROUTE,
+            'GET /api/v1/billing/billing_checkouts/bco_sw': {
+                id: 'bco_sw', status: 'COMPLETED', subscription_id: 'sub_new', customer_id: 'cus_1',
+                metadata: { qaapLogin: 'octocat', planId: 'pro' },
+            },
+            'GET /api/v1/billing/subscriptions/sub_new': { id: 'sub_new', status: 'ACTIVE', price_id: 'price_pro', customer_id: 'cus_1' },
+        }, fetchCalls);
+        const warnings: string[] = [];
+        const originalWarn = console.warn;
+        console.warn = (...args: unknown[]) => { warnings.push(args.map(String).join(' ')); };
+        try {
+            const endpoint = makeEndpoint('octocat', {
+                getOrCreateAccount: async () => ({ login: 'octocat', planId: 'starter', subscriptionId: 'sub_old', subscriptionStatus: 'active' }),
+                applyAirwallexSubscription: async () => ({
+                    applied: true, account: { login: 'octocat', planId: 'pro', subscriptionId: 'sub_new', subscriptionStatus: 'active' },
+                }),
+            });
+            const res = makeRes();
+            await (endpoint as unknown as { handleConfirmCheckout(req: object, response: typeof res): Promise<void> })
+                .handleConfirmCheckout({ body: { checkoutId: 'bco_sw' } }, res);
+            expect(res.statusCode).to.equal(200);
+            expect((res.body as { account: { planId: string } }).account.planId).to.equal('pro');
+            expect(fetchCalls).to.include('POST /api/v1/billing/subscriptions/sub_old/cancel');
+            expect(warnings).to.have.length(1);
+            expect(warnings[0]).to.include('sub_old');
+            expect(warnings[0]).to.not.include('key_test');
+            expect(warnings[0]).to.not.include('tok');
+        } finally {
+            console.warn = originalWarn;
+        }
     });
 
     it('answers 503 to checkout when Airwallex billing is not configured', async () => {
