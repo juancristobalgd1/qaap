@@ -3666,7 +3666,9 @@ body.qaap-theme-light .theia-mobile-tool-group.running .theia-mobile-tool-group-
   font-size: 11px;
 }
 
-.theia-mobile-agent-transcript-capture-pending.theia-mod-unavailable .theia-mobile-agent-transcript-capture-pending-preview {
+.theia-mobile-agent-transcript-capture-pending.theia-mod-unavailable .theia-mobile-agent-transcript-capture-pending-preview,
+.theia-mobile-agent-transcript-capture-pending.theia-mod-awaiting .theia-mobile-agent-transcript-capture-pending-preview {
+  /* No image box until the capture can actually start (the reply is still streaming) or once it cannot. */
   display: none;
 }
 

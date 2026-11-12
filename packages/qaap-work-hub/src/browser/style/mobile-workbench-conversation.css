@@ -10203,6 +10203,13 @@ button.theia-mobile-projects-sticky-composer-context-usage-btn {
   min-width: 0;
 }
 
+/* The left group (attach + model pill) is the one that gives way: a long model name ends in an
+   ellipsis and never pushes the mic and send buttons out of the row. */
+.theia-mobile-projects-sticky-composer-controls-row > .theia-mobile-projects-sticky-composer-controls-left {
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
 .theia-mobile-projects-sticky-composer-controls-left .theia-mobile-projects-sticky-composer-agent {
   background: transparent;
   border: none;

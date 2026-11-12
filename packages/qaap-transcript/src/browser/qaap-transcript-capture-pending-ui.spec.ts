@@ -119,6 +119,23 @@ describe('qaap-transcript-capture-pending-ui', () => {
             .to.equal(settledAt + TRANSCRIPT_CAPTURE_EXPIRY_MS);
     });
 
+    it('says the screenshot comes after the reply while it streams, with no deadline, then waits for it', () => {
+        const { row, host } = createMessageRow('<p>Levanto la app.</p><p>[QAAP capture: /]</p>');
+        syncTranscriptCaptureClosedRow(row, false, Date.now() - 1, true);
+        expect(enhanceTranscriptCaptureDirectives(host)).to.equal(1);
+        const chip = host.querySelector(`.${TRANSCRIPT_CAPTURE_PENDING_CHIP_CLASS}`);
+        expect(chip?.classList.contains('theia-mod-awaiting'), 'no empty image box mid-reply').to.equal(true);
+        expect(chip?.classList.contains('theia-mod-unavailable'), 'a streaming reply never expires').to.equal(false);
+        expect(chip?.querySelector('.theia-mobile-agent-transcript-capture-pending-label')?.textContent)
+            .to.equal('Screenshot after the reply…');
+
+        syncTranscriptCaptureClosedRow(row, false, Date.now() + 60_000, false);
+        enhanceTranscriptCaptureDirectives(host);
+        expect(chip?.classList.contains('theia-mod-awaiting')).to.equal(false);
+        expect(chip?.querySelector('.theia-mobile-agent-transcript-capture-pending-label')?.textContent)
+            .to.equal('Processing screenshot…');
+    });
+
     it('renders a row whose deadline has passed as "Screenshot not available", not as a skeleton', () => {
         const { row, host } = createMessageRow('<p>Listo.</p><p>[QAAP capture: /]</p>');
         syncTranscriptCaptureClosedRow(row, false, Date.now() - 1);

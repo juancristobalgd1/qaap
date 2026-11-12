@@ -301,6 +301,7 @@ export function createTranscriptMessageRowExtracted(ctx: MobileProjectsTranscrip
                 row,
                 isTranscriptCaptureClosed(options?.conv, options?.message, !!options?.streaming),
                 transcriptCaptureExpiresAt(options?.message),
+                !!options?.streaming,
             );
         }
         // Ownership is conveyed by alignment and the bubble surface, so no redundant "You" label.
