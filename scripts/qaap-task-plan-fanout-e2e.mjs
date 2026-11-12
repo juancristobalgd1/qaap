@@ -36,6 +36,8 @@ if [[ "\${1:-}" == "auth" && "\${2:-}" == "status" ]]; then echo '{"loggedIn": t
 line=""
 while IFS= read -r -t 1 part; do line+="$part "; done
 line+="\${part:-}"
+# The backend's model discovery sends one stream-json \`initialize\` control request: not a turn, never a run.
+if [[ "$line" == *'"control_request"'* ]]; then exit 0; fi
 emit() { printf '%s\\n' "$1"; }
 emit '{"type":"system","subtype":"init","cwd":"'"$(pwd)"'","session_id":"plan-fanout-e2e","tools":[],"model":"mock/plan-fanout-e2e"}'
 if [[ "$line" == *"This is subtask "* ]]; then
