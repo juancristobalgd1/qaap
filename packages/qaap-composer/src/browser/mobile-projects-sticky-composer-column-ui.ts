@@ -184,9 +184,14 @@ export class MobileProjectsStickyComposerColumnUi {
         agentBtn.setAttribute('aria-label', agentBtn.title);
         // The pill paints the catalog name when known, else a readable form of the slug; it repaints when labels arrive.
         const paintAgentPill = (): void => {
-            const catalogLabel = agentModel
+            // The pill shows the model name only: `cohere/north-mini-code:free` → `north-mini-code:free`
+            // (Pi and router catalogs label models with their provider path, which eats the row).
+            const rawCatalogLabel = agentModel
                 ? this.host.stickyComposerAgentsUi.resolveModelLabel(agentModel.modelId)
                 : undefined;
+            const catalogLabel = rawCatalogLabel && /^[\w.@~-]+(\/[\w.@~:-]+)+$/.test(rawCatalogLabel.trim())
+                ? formatQaiqModelIdShortLabel(rawCatalogLabel)
+                : rawCatalogLabel;
             populateAgentToolbarButton(agentBtn, {
                 agentId,
                 label: agentLabel,

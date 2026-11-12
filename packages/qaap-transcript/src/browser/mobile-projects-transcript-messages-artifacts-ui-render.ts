@@ -85,6 +85,7 @@ export function createTranscriptAgentSegmentsRowExtracted(ctx: MobileProjectsTra
             row,
             isTranscriptCaptureClosed(conv, captureMessage, !!options?.streaming),
             transcriptCaptureExpiresAt(captureMessage),
+            !!options?.streaming,
         );
         const defer = !!options?.deferHeavyContent;
         if (defer) {

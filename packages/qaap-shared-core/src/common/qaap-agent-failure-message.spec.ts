@@ -14,6 +14,7 @@ import {
     formatProviderPreflightNote,
     extractLastFailedToolFromMessage,
     formatStoredAgentFailureMessage,
+    isGeminiIneligibleTierText,
     localizeAgentFailureMessage,
     localizeAgentFailureShortReason,
     localizeGenericAgentFailureMessage,
@@ -633,5 +634,25 @@ describe('provider rejected requests', () => {
             ].join('\n');
             expect(detectAgentFailureKind(log)).to.equal('model_unavailable');
         });
+    });
+});
+
+describe('Gemini CLI ineligible free tier', () => {
+    const log = [
+        'YOLO mode is enabled. All tool calls will be automatically approved.',
+        'Error authenticating: IneligibleTierError: This client is no longer supported for Gemini Code Assist for individuals. To continue using Gemini, please migrate to the Antigravity suite of products: https://antigravity.google',
+        '    at throwIneligibleOrProjectIdError (file:///usr/local/lib/node_modules/@google/gemini-cli/bundle/chunk-MLY4WQFO.js:311202:11)',
+        "  ineligibleTiers: [ { reasonCode: 'UNSUPPORTED_CLIENT', tierId: 'free-tier', tierName: 'Gemini Code Assist for individuals' } ]",
+    ].join('\n');
+
+    it('explains the retired free tier instead of a stack trace', () => {
+        const message = resolveAgentTurnFailureMessage(log);
+        expect(message).to.contain('free personal accounts');
+        expect(message).to.contain('Pick another agent');
+        expect(message).to.not.contain('throwIneligibleOrProjectIdError');
+    });
+
+    it('does not fire on unrelated failures', () => {
+        expect(isGeminiIneligibleTierText('Error: 429 Too Many Requests')).to.equal(false);
     });
 });

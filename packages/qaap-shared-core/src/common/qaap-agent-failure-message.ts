@@ -1406,6 +1406,24 @@ export function resolveAgentTurnFailureTechnicalContent(
 /**
  * User-facing turn failure — prefers product copy derived from agent logs over exit codes.
  */
+/**
+ * Gemini CLI signed in with a personal Google account on the free "Gemini Code Assist for
+ * individuals" tier, which Google no longer serves to this client (`IneligibleTierError`,
+ * `UNSUPPORTED_CLIENT`). The sign-in worked; a new sign-in or Retry cannot fix it.
+ */
+const GEMINI_INELIGIBLE_TIER_PATTERN = /\bIneligibleTierError\b|\bUNSUPPORTED_CLIENT\b[\s\S]{0,200}\bGemini Code Assist\b|\bno longer supported for Gemini Code Assist for individuals\b/i;
+
+export function isGeminiIneligibleTierText(text: string | undefined): boolean {
+    return !!text && GEMINI_INELIGIBLE_TIER_PATTERN.test(text);
+}
+
+export function localizeGeminiIneligibleTierMessage(): string {
+    return nls.localize(
+        'qaap/agentFailure/geminiIneligibleTier',
+        'Google no longer serves free personal accounts in Gemini CLI ("Gemini Code Assist for individuals") and points them to its Antigravity apps. Pick another agent in the composer, or reconnect Antigravity with a Google account on a paid Gemini plan.',
+    );
+}
+
 export function resolveAgentTurnFailureMessage(
     log: string | undefined,
     options?: QaapAgentTurnFailureOptions | string,
@@ -1418,6 +1436,9 @@ export function resolveAgentTurnFailureMessage(
     const keyMissing = evidence.plainLines.find(line => STORED_PROVIDER_KEY_MISSING.test(line));
     if (keyMissing) {
         return keyMissing;
+    }
+    if (isGeminiIneligibleTierText(agentFailureEvidenceText(evidence) || log)) {
+        return localizeGeminiIneligibleTierMessage();
     }
     let kind: QaapAgentFailureKind | undefined;
     const idleTimeout = RUNNER_IDLE_TIMEOUT_LINE.exec(evidence.plainLines.join('\n'));
