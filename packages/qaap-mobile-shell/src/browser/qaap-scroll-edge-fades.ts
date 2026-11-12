@@ -24,19 +24,35 @@ const EDGE_TOLERANCE_PX = 1;
 export interface QaapScrollEdgeFadesOptions {
     /** `y` (default): top/bottom fades for a vertical list. `x`: start/end fades for a horizontal rail. */
     readonly axis?: 'x' | 'y';
+    /**
+     * Element that receives the fade classes (default: the scroller). Pass a wrapper when the scroller
+     * is only part of what must be faded, e.g. a textarea drawn over a mirror layer.
+     */
+    readonly classTarget?: HTMLElement;
+}
+
+/** Handle returned by {@link attachQaapScrollEdgeFades}. */
+export interface QaapScrollEdgeFades extends Disposable {
+    /**
+     * Re-syncs the fade classes immediately. Call after writes the helper cannot observe, such as a
+     * textarea `value` assignment; scroll, `input`, resize and child-list changes are tracked automatically.
+     */
+    update(): void;
 }
 
 /**
  * Shows a soft fade only on the edge where content is actually hidden: top when scrolled down,
  * bottom when more content lies below (or start/end on the `x` axis). Classes are kept in sync on
- * scroll, on resize and on DOM changes inside the scroller. Works without `ResizeObserver`,
+ * scroll, on `input` events, on resize and on DOM changes inside the scroller. Works without `ResizeObserver`,
  * `MutationObserver` or `requestAnimationFrame` (updates run synchronously then), so it is safe under jsdom.
+ * The classes go on `options.classTarget` (default: the scroller); all tracking stays on the scroller.
  * @param scroller the element that scrolls along the chosen axis.
- * @param options the scroll axis; defaults to vertical.
- * @returns a disposable that stops tracking and removes all fade classes.
+ * @param options the scroll axis and optional class target; defaults to a vertical fade on the scroller.
+ * @returns a handle that stops tracking, removes all fade classes and re-syncs on demand via `update()`.
  */
-export function attachQaapScrollEdgeFades(scroller: HTMLElement, options: QaapScrollEdgeFadesOptions = {}): Disposable {
+export function attachQaapScrollEdgeFades(scroller: HTMLElement, options: QaapScrollEdgeFadesOptions = {}): QaapScrollEdgeFades {
     const horizontal = options.axis === 'x';
+    const target = options.classTarget ?? scroller;
     const view = scroller.ownerDocument?.defaultView ?? undefined;
     const requestFrame = typeof view?.requestAnimationFrame === 'function'
         ? (callback: () => void): number => view.requestAnimationFrame(callback)
@@ -47,20 +63,20 @@ export function attachQaapScrollEdgeFades(scroller: HTMLElement, options: QaapSc
     let frame: number | undefined;
     let disposed = false;
 
-    const update = (): void => {
+    const syncFades = (): void => {
         frame = undefined;
         if (disposed) {
             return;
         }
         if (horizontal) {
             const { scrollLeft, scrollWidth, clientWidth } = scroller;
-            scroller.classList.toggle(QAAP_SCROLL_FADE_START_CLASS, scrollLeft > 0);
-            scroller.classList.toggle(QAAP_SCROLL_FADE_END_CLASS, scrollLeft + clientWidth < scrollWidth - EDGE_TOLERANCE_PX);
+            target.classList.toggle(QAAP_SCROLL_FADE_START_CLASS, scrollLeft > 0);
+            target.classList.toggle(QAAP_SCROLL_FADE_END_CLASS, scrollLeft + clientWidth < scrollWidth - EDGE_TOLERANCE_PX);
             return;
         }
         const { scrollTop, scrollHeight, clientHeight } = scroller;
-        scroller.classList.toggle(QAAP_SCROLL_FADE_TOP_CLASS, scrollTop > 0);
-        scroller.classList.toggle(
+        target.classList.toggle(QAAP_SCROLL_FADE_TOP_CLASS, scrollTop > 0);
+        target.classList.toggle(
             QAAP_SCROLL_FADE_BOTTOM_CLASS,
             scrollTop + clientHeight < scrollHeight - EDGE_TOLERANCE_PX,
         );
@@ -71,17 +87,19 @@ export function attachQaapScrollEdgeFades(scroller: HTMLElement, options: QaapSc
             return;
         }
         if (requestFrame) {
-            frame = requestFrame(update);
+            frame = requestFrame(syncFades);
         } else {
-            update();
+            syncFades();
         }
     };
 
-    scroller.classList.add(QAAP_SCROLL_FADES_CLASS);
+    target.classList.add(QAAP_SCROLL_FADES_CLASS);
     if (horizontal) {
-        scroller.classList.add(QAAP_SCROLL_FADES_X_CLASS);
+        target.classList.add(QAAP_SCROLL_FADES_X_CLASS);
     }
     scroller.addEventListener('scroll', schedule, { passive: true });
+    // Typing changes a textarea's content without any child-list mutation, so `input` is tracked explicitly.
+    scroller.addEventListener('input', schedule);
 
     const ResizeObserverCtor = view?.ResizeObserver ?? (typeof ResizeObserver === 'function' ? ResizeObserver : undefined);
     const resizeObserver = ResizeObserverCtor ? new ResizeObserverCtor(schedule) : undefined;
@@ -93,16 +111,17 @@ export function attachQaapScrollEdgeFades(scroller: HTMLElement, options: QaapSc
 
     schedule();
 
-    return Disposable.create(() => {
+    const handle = Disposable.create(() => {
         disposed = true;
         scroller.removeEventListener('scroll', schedule);
+        scroller.removeEventListener('input', schedule);
         resizeObserver?.disconnect();
         mutationObserver?.disconnect();
         if (frame !== undefined) {
             cancelFrame?.(frame);
             frame = undefined;
         }
-        scroller.classList.remove(
+        target.classList.remove(
             QAAP_SCROLL_FADES_CLASS,
             QAAP_SCROLL_FADES_X_CLASS,
             QAAP_SCROLL_FADE_TOP_CLASS,
@@ -110,5 +129,12 @@ export function attachQaapScrollEdgeFades(scroller: HTMLElement, options: QaapSc
             QAAP_SCROLL_FADE_START_CLASS,
             QAAP_SCROLL_FADE_END_CLASS,
         );
+    });
+    return Object.assign(handle, {
+        update: (): void => {
+            if (!disposed) {
+                syncFades();
+            }
+        },
     });
 }

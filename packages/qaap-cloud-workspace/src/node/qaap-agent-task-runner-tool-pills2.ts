@@ -35,7 +35,7 @@ import { billableAgentDurationMs } from '../common/qaap-billing-agent-runtime';
 import { buildAgentClosingReport, type QaapAgentClosingDiffSummary, type QaapAgentClosingReport } from '../common/qaap-agent-closing-report';
 import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model-catalog';
 import { agentModelFitsAgent } from '../common/qaap-agent-task-model-routing';
-import { listNativeAgentModels } from './qaap-agent-native-models';
+import { antigravityBinFor, listNativeAgentModels } from './qaap-agent-native-models';
 import {
     applyAgentApprovalPolicyToCommand,
     resolveOpencodePermissionEnv,
@@ -707,7 +707,7 @@ export async function improveComposerPromptExtracted(ctx: QaapAgentTaskRunnerCon
         const improveText = buildImproveComposerPromptRequest(trimmed);
         const agentId = ctx.resolveAgentId(improveText, options.agentId, options.ownerLogin);
         // The composer may still hold another agent's pick; the agent's own default beats a foreign model.
-        const agentModel = options.agentModel && agentModelFitsAgent(agentId, options.agentModel, () => listNativeAgentModels(agentId, options.ownerLogin))
+        const agentModel = options.agentModel && agentModelFitsAgent(agentId, options.agentModel, () => listNativeAgentModels(agentId, options.ownerLogin, antigravityBinFor(ctx, agentId)))
             ? options.agentModel
             : undefined;
         ctx.assertQaiqConfigured(agentId, options.ownerLogin, agentModel);

@@ -5,6 +5,8 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import { Disposable } from '@theia/core/lib/common/disposable';
+import { attachQaapScrollEdgeFades } from '@theia/qaap-mobile-shell/lib/browser/qaap-scroll-edge-fades';
+import { attachStickyComposerInputEdgeFades } from './mobile-projects-sticky-composer-input-edge-fades';
 import type { QaapComposerSurface } from '../common/qaap-composer-surface';
 import {
     attachStickyComposerMentionUi,
@@ -393,6 +395,9 @@ export class MobileProjectsStickyComposerColumnUi {
             })
             : undefined;
 
+        // Fades go on the editor wrapper so they also mask the highlight mirror; the textarea scrolls.
+        const composerEdgeFades = attachStickyComposerInputEdgeFades(input);
+
         if (options.getMentionOptions || options.getVariableOptions || options.getSkillOptions || options.getSlashMenuSections) {
             attachStickyComposerMentionUi({
                 inputWrap: inputPanel,
@@ -413,6 +418,7 @@ export class MobileProjectsStickyComposerColumnUi {
                 },
                 afterInputChange: options.afterInputChange,
                 mentionButtonTitle: nls.localize('qaap/mobileProjects/stickyComposerMention', 'Mention agent (@)'),
+                attachScrollFades: scroller => attachQaapScrollEdgeFades(scroller),
                 variableButtonTitle: nls.localize('qaap/mobileProjects/stickyComposerVariable', 'Insert variable (#)'),
             });
         }
@@ -553,7 +559,7 @@ export class MobileProjectsStickyComposerColumnUi {
         cardBeamBloom.setAttribute('aria-hidden', 'true');
         card.append(cardBeamBloom);
         this.installCodexComposerExpandBehavior(card, stage, inputBody, input);
-        this.installTextareaAutoGrow(input, inputPanel, expandBtn, expandIcon, expandLabel);
+        this.installTextareaAutoGrow(input, inputPanel, expandBtn, expandIcon, expandLabel, () => composerEdgeFades.update());
         if (options.onDropFiles) {
             this.installComposerDropZone(card, inputPanel, input, options.onDropFiles);
             this.installComposerPasteHandler(inputPanel, input, options.onDropFiles);
@@ -625,6 +631,7 @@ export class MobileProjectsStickyComposerColumnUi {
         expandBtn: HTMLButtonElement,
         expandIcon: HTMLSpanElement,
         expandLabel: HTMLSpanElement,
+        onResize?: () => void,
     ): Disposable {
         const COLLAPSED_LINE_COUNT = 5;
         const MIN_HEIGHT = 24;
@@ -690,6 +697,7 @@ export class MobileProjectsStickyComposerColumnUi {
             const next = Math.min(Math.max(contentHeight, MIN_HEIGHT), maxHeight);
             input.style.height = `${next}px`;
             input.style.overflowY = contentHeight > maxHeight ? 'auto' : 'hidden';
+            onResize?.();
             const hasOverflow = contentHeight > collapsedMaxHeight + 1;
             if (!hasOverflow && expanded) {
                 expanded = false;

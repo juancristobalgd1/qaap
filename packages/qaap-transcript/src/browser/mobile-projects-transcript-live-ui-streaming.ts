@@ -223,10 +223,19 @@ export function ensureBootstrapPreviewListenerExtracted(ctx: MobileProjectsTrans
     });
 }
 
+/**
+ * Conversations with a preview kickoff still resolving. The offer poll ticks every ~900 ms, so
+ * without this a slow `ensureTranscriptDevPreview` would be re-entered on every tick.
+ */
+const kickoffInFlightConversationIds = new Set<string>();
+
 export function kickoffTranscriptDevPreviewBootstrapExtracted(ctx: MobileProjectsTranscriptLiveUiContext, conv: QaapAgentConversationDTO | undefined): void {
     const bootstrap = ctx.host.projectBootstrap;
     if (!bootstrap || !conv || !conversationRequestsDevPreview(conv)
         || !conversationShouldKickoffDevPreviewBootstrap(conv)) {
+        return;
+    }
+    if (kickoffInFlightConversationIds.has(conv.id)) {
         return;
     }
     const snapshot = typeof bootstrap.getStateSnapshot === 'function'
@@ -239,6 +248,7 @@ export function kickoffTranscriptDevPreviewBootstrapExtracted(ctx: MobileProject
     }
     ctx.transcriptDevPreviewBootstrapConversationId = conv.id;
     const project = ctx.host.transcriptOpenProject;
+    kickoffInFlightConversationIds.add(conv.id);
     void ensureTranscriptDevPreview(bootstrap, {
         conversation: conv,
         projectId: project?.id,
@@ -249,7 +259,9 @@ export function kickoffTranscriptDevPreviewBootstrapExtracted(ctx: MobileProject
             return;
         }
         void ctx.maybeReportTranscriptPreviewBootstrapFailure(conv, bootstrap);
-    }).catch(() => undefined);
+    }).catch(() => undefined).finally(() => {
+        kickoffInFlightConversationIds.delete(conv.id);
+    });
 }
 
 export async function maybeReportTranscriptPreviewBootstrapFailureExtracted(ctx: MobileProjectsTranscriptLiveUiContext, conv: QaapAgentConversationDTO,

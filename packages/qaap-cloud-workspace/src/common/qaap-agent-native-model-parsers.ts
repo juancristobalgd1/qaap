@@ -151,3 +151,75 @@ export function parseNativeModelOutput(agentId: string, stdout: string): QaapQai
             return [];
     }
 }
+
+/** A Claude model entry the CLI may list: an alias (`opus`, `default`) or a full id, usable as `claude --model <id>`. */
+const CLAUDE_MODEL_VALUE_PATTERN = /^[a-z0-9][a-z0-9._-]{0,99}$/i;
+/** The Claude CLI model families in picker order (the static catalog uses the same order). */
+const CLAUDE_MODEL_FAMILIES: readonly string[] = ['fable', 'opus', 'sonnet', 'haiku'];
+/** `claude-<family>-<major>[-<minor>]`; the bounded digits keep dated ids such as `claude-haiku-4-5-20251001` out. */
+const CLAUDE_BUNDLE_MODEL_ID_PATTERN = /^claude-(fable|opus|sonnet|haiku)-(\d{1,2})(?:-(\d{1,2}))?$/;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Parses the `control_response` the Claude CLI answers an `initialize` control request with. Only a
+ * successful answer whose `response.models` lists well-formed `value`/`displayName` entries is kept, in the
+ * CLI's order and without duplicate values; anything else yields `[]`.
+ */
+export function parseClaudeControlResponseModels(message: unknown): QaapQaiqModelOption[] {
+    if (!isRecord(message) || message.type !== 'control_response' || !isRecord(message.response)) {
+        return [];
+    }
+    const answer = message.response;
+    if (answer.subtype !== 'success' || !isRecord(answer.response) || !Array.isArray(answer.response.models)) {
+        return [];
+    }
+    const deduped = new Map<string, QaapQaiqModelOption>();
+    for (const entry of answer.response.models) {
+        if (!isRecord(entry) || typeof entry.value !== 'string' || typeof entry.displayName !== 'string') {
+            continue;
+        }
+        const modelId = entry.value.trim();
+        const label = entry.displayName.trim();
+        if (!CLAUDE_MODEL_VALUE_PATTERN.test(modelId) || label.length === 0 || label.length > 120) {
+            continue;
+        }
+        if (!deduped.has(modelId)) {
+            deduped.set(modelId, { provider: 'anthropic', vendor: 'claude', modelId, label });
+        }
+    }
+    return [...deduped.values()];
+}
+
+/**
+ * Parses the model ids `grep -aoE` finds in the Claude CLI bundle and keeps the newest version of each
+ * family (`fable`, `opus`, `sonnet`, `haiku`). Dated, preview and other suffixed ids are not chat models
+ * the picker should offer, so they are dropped. Used only when the CLI cannot answer `initialize`.
+ */
+export function parseClaudeBundleModelIds(lines: readonly string[]): QaapQaiqModelOption[] {
+    const newest = new Map<string, { readonly id: string; readonly major: number; readonly minor: number }>();
+    for (const raw of lines) {
+        const match = CLAUDE_BUNDLE_MODEL_ID_PATTERN.exec(raw.trim());
+        if (!match) {
+            continue;
+        }
+        const [id, family, majorText, minorText] = match;
+        const major = Number(majorText);
+        const minor = minorText === undefined ? 0 : Number(minorText);
+        const current = newest.get(family);
+        if (!current || major > current.major || (major === current.major && minor > current.minor)) {
+            newest.set(family, { id, major, minor });
+        }
+    }
+    return CLAUDE_MODEL_FAMILIES.flatMap(family => {
+        const entry = newest.get(family);
+        if (!entry) {
+            return [];
+        }
+        const name = family.charAt(0).toUpperCase() + family.slice(1);
+        const version = entry.minor > 0 ? `${entry.major}.${entry.minor}` : `${entry.major}`;
+        return [{ provider: 'anthropic', vendor: 'claude', modelId: entry.id, label: `${name} ${version}` }];
+    });
+}

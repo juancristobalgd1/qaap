@@ -8,6 +8,7 @@ import { collapseOlderFailedDuplicateTitles } from '@theia/qaap-transcript/lib/c
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import { startGithubOAuth } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import { createLucideSortIcon } from '@theia/qaap-adapters/lib/browser/qaap-lucide-icons';
+import { attachQaapScrollEdgeFades } from '@theia/qaap-mobile-shell/lib/browser/qaap-scroll-edge-fades';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import {
     resolveSessionsSidebarInitialConversationLimit,
@@ -863,6 +864,7 @@ export function toggleSessionsSidebarProjectSortPopoverExtracted(ctx: MobileProj
             popover.append(item);
         }
         document.body.append(popover);
+        const edgeFades = attachQaapScrollEdgeFades(popover);
         ctx.sessionsSidebarSortPopover = popover;
         anchor.setAttribute('aria-expanded', 'true');
         window.requestAnimationFrame(() => positionSessionsSidebarHeadPopover(popover, anchor));
@@ -879,6 +881,7 @@ export function toggleSessionsSidebarProjectSortPopoverExtracted(ctx: MobileProj
         ctx.closeSessionsSidebarHeadPopovers = (): void => {
             dismissCleanup();
             keyboardCleanup();
+            edgeFades.dispose();
             popover.remove();
             ctx.sessionsSidebarSortPopover = undefined;
             anchor.setAttribute('aria-expanded', 'false');
@@ -943,6 +946,7 @@ export function toggleSessionsSidebarAddProjectPopoverExtracted(ctx: MobileProje
         });
         popover.append(startNew, newLocal, addRepo);
         document.body.append(popover);
+        const edgeFades = attachQaapScrollEdgeFades(popover);
         ctx.sessionsSidebarAddProjectPopover = popover;
         anchor.setAttribute('aria-expanded', 'true');
         window.requestAnimationFrame(() => positionSessionsSidebarHeadPopover(popover, anchor));
@@ -959,6 +963,7 @@ export function toggleSessionsSidebarAddProjectPopoverExtracted(ctx: MobileProje
         ctx.closeSessionsSidebarHeadPopovers = (): void => {
             dismissCleanup();
             keyboardCleanup();
+            edgeFades.dispose();
             popover.remove();
             ctx.sessionsSidebarAddProjectPopover = undefined;
             anchor.setAttribute('aria-expanded', 'false');

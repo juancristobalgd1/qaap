@@ -9,36 +9,42 @@
 | `attachQaapScrollEdgeFades()` (qaap-scroll-edge-fades.ts) toggles the mod
 | classes; a fade shows only on the edge where content is hidden. Mask stops
 | are alpha-only (#000 = opaque), so the fade follows any theme.
+| The fade length is `--qaap-scroll-fade-size` (default 20px); set it on the
+| scroller or its class target to tune a surface.
 |-----------------------------------------------------------------------------*/
+
+.qaap-scroll-fades {
+    --qaap-scroll-fade-size: 20px;
+}
 
 /* Vertical (axis y): top and bottom. */
 .qaap-scroll-fades.qaap-mod-scroll-fade-top {
-    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 20px, #000 100%);
-    mask-image: linear-gradient(to bottom, transparent 0, #000 20px, #000 100%);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 var(--qaap-scroll-fade-size), #000 100%);
+    mask-image: linear-gradient(to bottom, transparent 0, #000 var(--qaap-scroll-fade-size), #000 100%);
 }
 
 .qaap-scroll-fades.qaap-mod-scroll-fade-bottom {
-    -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 20px), transparent 100%);
-    mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 20px), transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - var(--qaap-scroll-fade-size)), transparent 100%);
+    mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - var(--qaap-scroll-fade-size)), transparent 100%);
 }
 
 .qaap-scroll-fades.qaap-mod-scroll-fade-top.qaap-mod-scroll-fade-bottom {
-    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 20px, #000 calc(100% - 20px), transparent 100%);
-    mask-image: linear-gradient(to bottom, transparent 0, #000 20px, #000 calc(100% - 20px), transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 var(--qaap-scroll-fade-size), #000 calc(100% - var(--qaap-scroll-fade-size)), transparent 100%);
+    mask-image: linear-gradient(to bottom, transparent 0, #000 var(--qaap-scroll-fade-size), #000 calc(100% - var(--qaap-scroll-fade-size)), transparent 100%);
 }
 
 /* Horizontal (axis x): start and end. */
 .qaap-scroll-fades-x.qaap-mod-scroll-fade-start {
-    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 20px, #000 100%);
-    mask-image: linear-gradient(to right, transparent 0, #000 20px, #000 100%);
+    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 var(--qaap-scroll-fade-size), #000 100%);
+    mask-image: linear-gradient(to right, transparent 0, #000 var(--qaap-scroll-fade-size), #000 100%);
 }
 
 .qaap-scroll-fades-x.qaap-mod-scroll-fade-end {
-    -webkit-mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 20px), transparent 100%);
-    mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 20px), transparent 100%);
+    -webkit-mask-image: linear-gradient(to right, #000 0, #000 calc(100% - var(--qaap-scroll-fade-size)), transparent 100%);
+    mask-image: linear-gradient(to right, #000 0, #000 calc(100% - var(--qaap-scroll-fade-size)), transparent 100%);
 }
 
 .qaap-scroll-fades-x.qaap-mod-scroll-fade-start.qaap-mod-scroll-fade-end {
-    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 20px, #000 calc(100% - 20px), transparent 100%);
-    mask-image: linear-gradient(to right, transparent 0, #000 20px, #000 calc(100% - 20px), transparent 100%);
+    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 var(--qaap-scroll-fade-size), #000 calc(100% - var(--qaap-scroll-fade-size)), transparent 100%);
+    mask-image: linear-gradient(to right, transparent 0, #000 var(--qaap-scroll-fade-size), #000 calc(100% - var(--qaap-scroll-fade-size)), transparent 100%);
 }

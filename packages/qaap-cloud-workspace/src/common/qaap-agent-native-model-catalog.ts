@@ -8,6 +8,7 @@ import {
     NATIVE_MODEL_PICKER_AGENT_IDS,
 } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 import type { QaapQaiqModelOption } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import type { QaapAntigravityCliBin } from '@theia/qaap-shared-core/lib/common/qaap-antigravity-cli';
 import { listHermesNativeModels } from '@theia/qaap-shared-core/lib/common/qaap-hermes-model-catalog';
 import { listOpenClaudeNativeModels } from '@theia/qaap-shared-core/lib/common/qaap-openclaude-model-catalog';
 import { OPENCODE_FREE_MODEL_OPTIONS, OPENCODE_PAID_MODEL_OPTIONS } from '@theia/qaap-shared-core/lib/common/qaap-opencode-model-catalog';
@@ -62,8 +63,33 @@ export const ANTIGRAVITY_API_MODELS: readonly {
     { label: 'GPT-OSS 120B (Medium)', provider: 'openai' },
 ];
 
-export function listStaticAntigravityModels(agentId: string): QaapQaiqModelOption[] {
+/**
+ * Models the Gemini CLI accepts with `-m` (`gemini --help`, `@google/gemini-cli` 0.62 `VALID_GEMINI_MODELS`,
+ * captured 2026-11; the local 0.49 bundle lists the same stable ids). Only chat models a user picks: the
+ * newest pro and flash-lite generations, the newest flash, and `auto` (the CLI routes between pro and flash
+ * itself). The first row is the CLI default. Refresh when `VALID_GEMINI_MODELS` changes.
+ */
+export const GEMINI_CLI_MODEL_OPTIONS: readonly {
+    readonly modelId: string;
+    readonly label: string;
+}[] = [
+    { modelId: 'auto', label: 'Auto' },
+    { modelId: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro (Preview)' },
+    { modelId: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash' },
+    { modelId: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash' },
+    { modelId: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash Lite' },
+    { modelId: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+];
+
+/**
+ * The picker list for the Antigravity harness. `gemini` (the resolved CLI, or the `gemini` agent id) lists
+ * Gemini CLI model ids that `-m` accepts; `agy` (and an unresolved bin) lists the agy catalog labels.
+ */
+export function listStaticAntigravityModels(agentId: string, antigravityBin?: QaapAntigravityCliBin): QaapQaiqModelOption[] {
     const id = agentId.trim().toLowerCase();
+    if (antigravityBin === 'gemini' || id === 'gemini') {
+        return GEMINI_CLI_MODEL_OPTIONS.map(entry => nativeOption(id, entry.modelId, entry.label, 'gemini'));
+    }
     return ANTIGRAVITY_API_MODELS.map(entry => nativeOption(id, entry.label, entry.label, entry.provider));
 }
 
@@ -108,8 +134,11 @@ export function parsePiModelLines(lines: readonly string[]): QaapQaiqModelOption
     return [...deduped.values()];
 }
 
-/** Curated fallback when a CLI is missing on the VPS or its list command fails. */
-export function listStaticNativeAgentModels(agentId: string): QaapQaiqModelOption[] {
+/**
+ * Curated fallback when a CLI is missing on the VPS or its list command fails. `antigravityBin` selects the
+ * Antigravity list for the resolved CLI (see {@link listStaticAntigravityModels}); other agents ignore it.
+ */
+export function listStaticNativeAgentModels(agentId: string, antigravityBin?: QaapAntigravityCliBin): QaapQaiqModelOption[] {
     const id = agentId.trim().toLowerCase();
     switch (id) {
         case 'qwen':
@@ -127,11 +156,13 @@ export function listStaticNativeAgentModels(agentId: string): QaapQaiqModelOptio
                 nativeOption(id, 'gpt-5.6-luna', 'GPT-5.6-Luna'),
             ];
         case 'claude':
-            // Claude Code has no model-list command, so this is the source of truth (verified against the
-            // installed CLI binary, 2026-11). First row is the default; at most two legacy rows follow.
+            // Fallback only: the live list comes from the CLI's `initialize` answer (Claude CLI 2.1.322, 2026-11),
+            // which reports `default` -> claude-opus-5-5 and `fable` -> claude-fable-5-2. First row is the CLI
+            // default; at most two legacy rows follow.
             return [
-                nativeOption(id, 'claude-fable-5-1', 'Fable 5.1', 'anthropic'),
                 nativeOption(id, 'claude-opus-5-5', 'Opus 5.5', 'anthropic'),
+                nativeOption(id, 'claude-fable-5-2', 'Fable 5.2', 'anthropic'),
+                nativeOption(id, 'claude-fable-5-1', 'Fable 5.1', 'anthropic'),
                 nativeOption(id, 'claude-sonnet-5-5', 'Sonnet 5.5', 'anthropic'),
                 nativeOption(id, 'claude-haiku-5-5', 'Haiku 5.5', 'anthropic'),
                 nativeOption(id, 'claude-fable-5', 'Fable 5 Legacy', 'anthropic'),
@@ -155,7 +186,7 @@ export function listStaticNativeAgentModels(agentId: string): QaapQaiqModelOptio
             ];
         case 'antigravity':
         case 'gemini':
-            return listStaticAntigravityModels(id);
+            return listStaticAntigravityModels(id, antigravityBin);
         case 'opencode':
             // Free models first, then the paid catalog (locked per owner by the runner's access rule).
             return [

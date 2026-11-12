@@ -171,6 +171,9 @@ export interface StickyComposerTokenUi {
 
 export type StickyComposerTextField = HTMLInputElement | HTMLTextAreaElement;
 
+/** Attaches the edge fades to a scrolling popover; returns the disposable that detaches them. */
+export type StickyComposerScrollFadesAttach = (scroller: HTMLElement) => { dispose(): void };
+
 export function attachStickyComposerMentionUi(options: {
     inputWrap: HTMLElement;
     input: StickyComposerTextField;
@@ -187,6 +190,8 @@ export function attachStickyComposerMentionUi(options: {
     afterInputChange?: () => void;
     mentionButtonTitle: string;
     variableButtonTitle?: string;
+    /** Injected by the browser caller so the popover shows edge fades only while it is open. */
+    attachScrollFades?: StickyComposerScrollFadesAttach;
 }): StickyComposerTokenUi {
     const {
         inputWrap,
@@ -204,6 +209,7 @@ export function attachStickyComposerMentionUi(options: {
         afterInputChange,
         mentionButtonTitle,
         variableButtonTitle,
+        attachScrollFades,
     } = options;
     inputWrap.classList.add('theia-mod-mention-host');
 
@@ -244,6 +250,18 @@ export function attachStickyComposerMentionUi(options: {
     let forcedTrigger: StickyComposerTriggerChar | undefined;
     const expandedSlashSections = new Set<string>();
     let slashPluginPanel: StickyComposerPluginPickerMode | undefined;
+    let scrollFades: { dispose(): void } | undefined;
+
+    /** Fades are attached on open and detached on close, so a hidden popover carries no fade classes. */
+    const openScrollFades = (): void => {
+        if (!scrollFades && attachScrollFades) {
+            scrollFades = attachScrollFades(popover);
+        }
+    };
+    const closeScrollFades = (): void => {
+        scrollFades?.dispose();
+        scrollFades = undefined;
+    };
 
     const positionPopover = (): void => {
         const rect = input.getBoundingClientRect();
@@ -283,6 +301,7 @@ export function attachStickyComposerMentionUi(options: {
     const hide = (): void => {
         clearDismissTimer();
         popover.hidden = true;
+        closeScrollFades();
         popover.classList.remove('theia-mod-slash-menu', 'theia-mod-plugin-picker');
         inputWrap.classList.remove('theia-mod-mention-popover-open');
         forcedTrigger = undefined;
@@ -321,6 +340,7 @@ export function attachStickyComposerMentionUi(options: {
             renderList();
             positionPopover();
             popover.hidden = false;
+            openScrollFades();
             inputWrap.classList.add('theia-mod-mention-popover-open');
             setExpanded(true);
             input.focus();
@@ -500,6 +520,7 @@ export function attachStickyComposerMentionUi(options: {
         }
         positionPopover();
         popover.hidden = false;
+        openScrollFades();
         inputWrap.classList.add('theia-mod-mention-popover-open');
         setExpanded(true);
     };
@@ -682,6 +703,7 @@ export function attachStickyComposerMentionUi(options: {
             window.removeEventListener('scroll', onViewportChange, true);
             window.visualViewport?.removeEventListener('resize', onViewportChange);
             window.visualViewport?.removeEventListener('scroll', onViewportChange);
+            closeScrollFades();
             popover.remove();
         },
     };

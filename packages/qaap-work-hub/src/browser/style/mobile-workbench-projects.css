@@ -111,6 +111,28 @@
   display: none !important;
 }
 
+/* Header switch height matches the header controls (project switcher 32px, + and views 36px):
+   the shared desktop rule gives each segment min-height 32px plus the bar padding, so the bar ended
+   at 36px. Scoped to the header switch only; the IDE top bar keeps its own sizing. */
+.theia-mobile-projects-header-ide-agents-switch .theia-workbench-view-mode-switch .theia-qaap-segmented-bar.theia-mod-icon-only {
+  box-sizing: border-box;
+  height: 32px;
+  padding: 2px;
+}
+
+.theia-mobile-projects-header-ide-agents-switch .theia-workbench-view-mode-switch .theia-qaap-segmented-bar.theia-mod-icon-only > .theia-qaap-segmented-option {
+  min-height: 28px;
+  height: 28px;
+  padding: 0;
+}
+
+.theia-mobile-projects-header-ide-agents-switch .theia-workbench-view-mode-switch .theia-qaap-segmented-option .codicon,
+.theia-mobile-projects-header-ide-agents-switch .theia-workbench-view-mode-switch .theia-qaap-segmented-option .qaap-icon-message-circle {
+  font-size: 16px;
+  width: 16px;
+  height: 16px;
+}
+
 /* Only cap the sides while the centered switch is really shown: it is display:none below 768px and in
    the IDE (rules below) without the hidden attribute, and the cap then truncated the project name. */
 @media (min-width: 768px) {

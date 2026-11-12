@@ -6602,6 +6602,14 @@ body.qaap-theme-dark .theia-mobile-mcp-attach-server-icon.theia-mod-branded {
   align-items: stretch;
 }
 
+/*
+ * Top/bottom edge fades for a long draft (classes from attachStickyComposerInputEdgeFades).
+ * The wrapper has no border or background, so the mask hides only the text and caret at the edge.
+ */
+.theia-mobile-projects-sticky-composer-input-editor.qaap-scroll-fades {
+  --qaap-scroll-fade-size: 12px;
+}
+
 .theia-mobile-projects-sticky-composer-input-editor.theia-mod-syntax-highlight-host {
   min-height: 26px;
 }

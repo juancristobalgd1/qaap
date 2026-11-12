@@ -167,6 +167,47 @@ describe('qaap-scroll-edge-fades', () => {
         expect(scroller.classList.contains(QAAP_SCROLL_FADE_BOTTOM_CLASS)).to.be.false;
     });
 
+    it('puts the fade classes on classTarget while tracking the scroller', () => {
+        const scroller = createScroller(0, 500, 200);
+        const wrapper = document.createElement('div');
+        document.body.appendChild(wrapper);
+        const fades = attachQaapScrollEdgeFades(scroller, { classTarget: wrapper });
+        expect(wrapper.classList.contains(QAAP_SCROLL_FADES_CLASS)).to.be.true;
+        expect(wrapper.classList.contains(QAAP_SCROLL_FADE_BOTTOM_CLASS)).to.be.true;
+        expect(scroller.classList.contains(QAAP_SCROLL_FADES_CLASS)).to.be.false;
+        expect(scroller.classList.contains(QAAP_SCROLL_FADE_BOTTOM_CLASS)).to.be.false;
+        setScrollTop(scroller, 300);
+        scroller.dispatchEvent(new window.Event('scroll'));
+        expect(wrapper.classList.contains(QAAP_SCROLL_FADE_TOP_CLASS)).to.be.true;
+        expect(wrapper.classList.contains(QAAP_SCROLL_FADE_BOTTOM_CLASS)).to.be.false;
+        fades.dispose();
+        expect(wrapper.classList.contains(QAAP_SCROLL_FADES_CLASS)).to.be.false;
+        expect(wrapper.classList.contains(QAAP_SCROLL_FADE_TOP_CLASS)).to.be.false;
+    });
+
+    it('re-syncs on input events so typed content updates the fades', () => {
+        const scroller = createScroller(0, 200, 200);
+        const fades = attachQaapScrollEdgeFades(scroller);
+        expect(scroller.classList.contains(QAAP_SCROLL_FADE_BOTTOM_CLASS)).to.be.false;
+        Object.defineProperty(scroller, 'scrollHeight', { value: 600, configurable: true });
+        scroller.dispatchEvent(new window.Event('input'));
+        expect(scroller.classList.contains(QAAP_SCROLL_FADE_BOTTOM_CLASS)).to.be.true;
+        fades.dispose();
+    });
+
+    it('update() re-syncs immediately and is a no-op after dispose', () => {
+        const scroller = createScroller(0, 200, 200);
+        const fades = attachQaapScrollEdgeFades(scroller);
+        Object.defineProperty(scroller, 'scrollHeight', { value: 600, configurable: true });
+        fades.update();
+        expect(scroller.classList.contains(QAAP_SCROLL_FADE_BOTTOM_CLASS)).to.be.true;
+        fades.dispose();
+        Object.defineProperty(scroller, 'scrollHeight', { value: 100, configurable: true });
+        fades.update();
+        expect(scroller.classList.contains(QAAP_SCROLL_FADE_BOTTOM_CLASS)).to.be.false;
+        expect(scroller.classList.contains(QAAP_SCROLL_FADES_CLASS)).to.be.false;
+    });
+
     describe('horizontal axis', () => {
 
         /** Fake horizontal rail whose geometry is fixed by the test; `scrollLeft` stays writable. */

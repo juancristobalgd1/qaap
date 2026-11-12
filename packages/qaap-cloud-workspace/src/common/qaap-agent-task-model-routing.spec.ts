@@ -8,6 +8,7 @@ import { QaapAgentTaskKind } from './qaap-agent-task';
 import { listStaticNativeAgentModels } from './qaap-agent-native-model-catalog';
 import { parseQaapNativeModelRoutingTable } from './qaap-agent-native-model-routing';
 import {
+    agentModelFitsAgent,
     classifyAgentTaskKind,
     coerceRunnableAgentModel,
     resolveEffectiveRequestAgentModel,
@@ -321,5 +322,19 @@ describe('coerceRunnableAgentModel', () => {
 
     it('keeps the unrunnable model when there is no credentialed fallback', () => {
         expect(coerceRunnableAgentModel(openai, () => undefined, () => undefined, undefined)).to.deep.equal(openai);
+    });
+});
+
+describe('agentModelFitsAgent for the Antigravity harness', () => {
+    it('accepts a gemini catalog id on the Gemini CLI host and rejects a stale agy label there', () => {
+        const geminiCatalog = () => listStaticNativeAgentModels('antigravity', 'gemini');
+        expect(agentModelFitsAgent('antigravity', { provider: 'gemini', vendor: 'antigravity', modelId: 'gemini-3.5-flash' }, geminiCatalog)).to.equal(true);
+        expect(agentModelFitsAgent('antigravity', { provider: 'gemini', vendor: 'antigravity', modelId: 'auto' }, geminiCatalog)).to.equal(true);
+        expect(agentModelFitsAgent('antigravity', { provider: 'gemini', vendor: 'antigravity', modelId: 'Gemini 3.8 Flash (High)' }, geminiCatalog)).to.equal(false);
+    });
+
+    it('still accepts an agy label on the agy host', () => {
+        const agyCatalog = () => listStaticNativeAgentModels('antigravity', 'agy');
+        expect(agentModelFitsAgent('antigravity', { provider: 'gemini', vendor: 'antigravity', modelId: 'Gemini 3.8 Flash (High)' }, agyCatalog)).to.equal(true);
     });
 });

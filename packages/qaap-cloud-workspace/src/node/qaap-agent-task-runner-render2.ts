@@ -36,7 +36,7 @@ import { normalizeAntigravityCliBin, resolveAntigravityCliBin, resolveAntigravit
 import { isOpenCodeFreeModelId } from '@theia/qaap-shared-core/lib/common/qaap-opencode-model-catalog';
 import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model-catalog';
 import { isHostedCodexUsage } from '../common/qaap-billing-plans';
-import { listNativeAgentModels } from './qaap-agent-native-models';
+import { antigravityBinFor, listNativeAgentModels } from './qaap-agent-native-models';
 import { isHostedCodexEntitled, resolveAgentAccess } from './qaap-agent-access';
 import { listQaiqModelsFromPreferences } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
 import { resolveTrustedExecutable } from './qaap-trusted-executable';
@@ -719,7 +719,9 @@ export function listModelsForAgentExtracted(
         if (!normalized || agentUsesSettingsModelCatalog(normalized)) {
             return [];
         }
-        const models = listNativeAgentModels(normalized, ownerLogin);
+        // Antigravity lists the catalog of the CLI this host resolved (gemini ids or agy labels).
+        const antigravityBin = antigravityBinFor(ctx, normalized);
+        const models = listNativeAgentModels(normalized, ownerLogin, antigravityBin);
         const owner = ownerLogin?.trim();
         if (!owner) {
             return models;

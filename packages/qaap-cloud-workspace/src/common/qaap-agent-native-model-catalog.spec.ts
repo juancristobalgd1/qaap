@@ -6,6 +6,7 @@
 import { expect } from 'chai';
 import {
     ANTIGRAVITY_API_MODELS,
+    GEMINI_CLI_MODEL_OPTIONS,
     agentUsesNativeModelCatalog,
     agentUsesSettingsModelCatalog,
     listStaticAntigravityModels,
@@ -86,8 +87,9 @@ describe('qaap-agent-native-model-catalog', () => {
     it('lists frontier Claude Code, Codex, and Copilot models', () => {
         const claude = listStaticNativeAgentModels('claude').map(m => m.modelId);
         expect(claude).to.deep.equal([
-            'claude-fable-5-1',
             'claude-opus-5-5',
+            'claude-fable-5-2',
+            'claude-fable-5-1',
             'claude-sonnet-5-5',
             'claude-haiku-5-5',
             'claude-fable-5',
@@ -117,7 +119,39 @@ describe('qaap-agent-native-model-catalog', () => {
         expect(models.map(m => m.modelId)).to.deep.equal(ANTIGRAVITY_API_MODELS.map(m => m.label));
         expect(models[0].label).to.equal('Gemini 3.8 Flash (High)');
         expect(models.map(m => m.label)).to.deep.equal(ANTIGRAVITY_API_MODELS.map(m => m.label));
+        expect(listStaticAntigravityModels('antigravity', 'agy').map(m => m.modelId)).to.deep.equal(models.map(m => m.modelId));
+    });
+
+    it('lists the Gemini CLI model ids when gemini is the resolved Antigravity CLI', () => {
+        const models = listStaticAntigravityModels('antigravity', 'gemini');
+        expect(models.map(m => m.modelId)).to.deep.equal(GEMINI_CLI_MODEL_OPTIONS.map(entry => entry.modelId));
+        expect(models[0]).to.deep.equal({ provider: 'gemini', vendor: 'antigravity', modelId: 'auto', label: 'Auto' });
+        expect(models.find(m => m.modelId === 'gemini-3.5-flash')).to.deep.equal({
+            provider: 'gemini',
+            vendor: 'antigravity',
+            modelId: 'gemini-3.5-flash',
+            label: 'Gemini 3.5 Flash',
+        });
+        expect(listStaticNativeAgentModels('antigravity', 'gemini').map(m => m.modelId))
+            .to.deep.equal(models.map(m => m.modelId));
         expect(listStaticNativeAgentModels('gemini').map(m => m.modelId))
-            .to.deep.equal(listStaticAntigravityModels('gemini').map(m => m.modelId));
+            .to.deep.equal(models.map(m => m.modelId));
+    });
+
+    it('keeps the agy labels for an unresolved or agy Antigravity bin', () => {
+        const agyLabels = ANTIGRAVITY_API_MODELS.map(m => m.label);
+        expect(listStaticNativeAgentModels('antigravity').map(m => m.modelId)).to.deep.equal(agyLabels);
+        expect(listStaticNativeAgentModels('antigravity', 'agy').map(m => m.modelId)).to.deep.equal(agyLabels);
+        expect(listStaticNativeAgentModels('antigravity', 'antigravity').map(m => m.modelId)).to.deep.equal(agyLabels);
+    });
+
+    it('keeps the Gemini CLI catalog to real gemini model ids plus the auto alias, default first and unique', () => {
+        const ids = GEMINI_CLI_MODEL_OPTIONS.map(entry => entry.modelId);
+        expect(new Set(ids).size).to.equal(ids.length);
+        expect(ids[0]).to.equal('auto');
+        for (const id of ids.slice(1)) {
+            expect(id, id).to.match(/^gemini-[a-z0-9.-]+$/);
+        }
+        expect(ids.some(id => id.includes(' ') || id.includes('('))).to.equal(false);
     });
 });
