@@ -70,7 +70,7 @@ export interface QaapAgentTaskAgentOption {
     /** Installation and authentication are separate: an installed CLI may still need Connect. */
     readonly connectionState?: QaapAgentConnectionState;
     /** How the owner can run the agent now (see the backend `resolveAgentAccess`); `none` offers a sign-in. */
-    readonly accessState?: 'session' | 'hosted' | 'none' | 'unknown';
+    readonly accessState?: 'session' | 'none' | 'unknown';
     /** The Antigravity CLI the host resolved (`gemini`, `agy`, `antigravity`); only set for the Antigravity harness. */
     readonly cliBin?: string;
 }

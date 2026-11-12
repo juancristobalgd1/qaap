@@ -922,3 +922,134 @@ body.theia-mobile-mod-landing.theia-mobile-mod-landing-hub-list .theia-mobile-pr
     min-height: 44px;
   }
 }
+
+/* Workspace memory (RAM) choice: Pro picks per repository, Starter shows the single size as muted info. */
+.theia-mobile-open-repo-memory {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin: 8px 0;
+  font-size: 12.5px;
+  color: var(--theia-foreground);
+}
+
+.theia-mobile-open-repo-memory[hidden] {
+  display: none;
+}
+
+.theia-mobile-open-repo-memory-label {
+  font-weight: 600;
+}
+
+.theia-mobile-open-repo-memory-value {
+  color: var(--theia-descriptionForeground);
+}
+
+.theia-mobile-open-repo-memory-upgrade {
+  appearance: none;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--theia-textLink-foreground);
+  font-size: 12.5px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.theia-mobile-open-repo-memory-choices {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 18%, transparent);
+  border-radius: 6px;
+}
+
+.theia-mobile-open-repo-memory-choice {
+  appearance: none;
+  min-height: 32px;
+  min-width: 56px;
+  padding: 0 12px;
+  border: none;
+  background: transparent;
+  color: var(--theia-foreground);
+  font-size: 12.5px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.theia-mobile-open-repo-memory-choice + .theia-mobile-open-repo-memory-choice {
+  border-left: 1px solid color-mix(in srgb, var(--theia-foreground) 18%, transparent);
+}
+
+.theia-mobile-open-repo-memory-choice.theia-mod-selected {
+  background: var(--theia-foreground);
+  color: var(--theia-editor-background);
+  font-weight: 600;
+}
+
+.theia-mobile-open-repo-memory-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 8px 0 12px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 14%, transparent);
+}
+
+.theia-mobile-open-repo-memory-prompt[hidden],
+.theia-mobile-open-repo-memory-public[hidden] {
+  display: none;
+}
+
+.theia-mobile-open-repo-memory-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--theia-foreground);
+}
+
+.theia-mobile-open-repo-memory-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.theia-mobile-open-repo-memory-actions button {
+  appearance: none;
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.theia-mobile-open-repo-memory-cancel {
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 18%, transparent);
+  background: transparent;
+  color: var(--theia-foreground);
+}
+
+.theia-mobile-open-repo-memory-open {
+  border: 1px solid var(--theia-foreground);
+  background: var(--theia-foreground);
+  color: var(--theia-editor-background);
+  font-weight: 500;
+}
+
+.theia-mobile-open-repo-memory-open:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.theia-mobile-open-repo-memory-public {
+  margin: 8px 0;
+}
+
+@media (pointer: coarse) {
+  .theia-mobile-open-repo-memory-choice,
+  .theia-mobile-open-repo-memory-actions button,
+  .theia-mobile-open-repo-memory-upgrade {
+    min-height: 44px;
+  }
+}

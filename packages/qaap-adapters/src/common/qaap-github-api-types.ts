@@ -13,11 +13,30 @@ export const QAAP_BILLING_API_PATH = '/qaap/api/billing';
 export const QAAP_BILLING_CHECKOUT_API_PATH = '/qaap/api/billing/checkout';
 /** Confirm a completed checkout (`checkoutId` from the return URL) after the hosted page redirects back (idempotent with webhook). */
 export const QAAP_BILLING_CONFIRM_CHECKOUT_API_PATH = '/qaap/api/billing/confirm-checkout';
+/** Cancel the signed-in account's subscription at the payment provider (applies the re-read state). */
+export const QAAP_BILLING_CANCEL_API_PATH = '/qaap/api/billing/cancel';
 /** Dev-only plan activate when Airwallex billing is not configured. */
 export const QAAP_BILLING_DEV_ACTIVATE_API_PATH = '/qaap/api/billing/dev-activate';
+/** Per-project resources (container memory per repository) of the signed-in owner; `repo` is `owner/name`. */
+export const QAAP_PROJECT_RESOURCES_API_PATH = '/qaap/api/billing/project-resources';
 /** Unauthenticated liveness/readiness probe for monitors and VPS deploy gates. */
 export const QAAP_HEALTH_API_PATH = '/qaap/api/health';
 export const QAAP_GITHUB_OAUTH_START_PATH = '/qaap/oauth/github/start';
+
+/** Response of `GET` and `POST` on {@link QAAP_PROJECT_RESOURCES_API_PATH}. */
+export interface QaapProjectResourcesResponse {
+    readonly repo: string;
+    readonly memoryGb: number;
+    /** The memory choices the owner's plan allows. */
+    readonly options: ReadonlyArray<number>;
+    readonly plan: 'starter' | 'pro';
+}
+
+/** `POST` body on {@link QAAP_PROJECT_RESOURCES_API_PATH}: sets the container memory of one repository. */
+export interface QaapProjectResourcesUpdateRequest {
+    readonly repo: string;
+    readonly memoryGb: number;
+}
 /** Must match GitHub OAuth App «Authorization callback URL». */
 export const QAAP_GITHUB_OAUTH_CALLBACK_PATH = '/qaap/oauth/github/callback';
 

@@ -7,12 +7,16 @@ import { QaapUserFacingError, QaapUserFacingErrors } from '../common/qaap-user-f
 import {
     QAAP_AUTH_API_PATH,
     QAAP_BILLING_API_PATH,
+    QAAP_BILLING_CANCEL_API_PATH,
     QAAP_BILLING_CHECKOUT_API_PATH,
     QAAP_BILLING_CONFIRM_CHECKOUT_API_PATH,
     QAAP_BILLING_DEV_ACTIVATE_API_PATH,
     QAAP_GITHUB_API_PATH,
     QAAP_GITHUB_OAUTH_START_PATH,
+    QAAP_PROJECT_RESOURCES_API_PATH,
     QAAP_USER_SETTINGS_API_PATH,
+    type QaapProjectResourcesResponse,
+    type QaapProjectResourcesUpdateRequest,
     type QaapAuthConfigResponse,
     type QaapAuthSessionResponse,
     type QaapGithubCreateRepositoryRequest,
@@ -609,57 +613,45 @@ export async function fetchQaapUserAiSettings(): Promise<Record<string, unknown>
     return body.settings && typeof body.settings === 'object' ? body.settings : {};
 }
 
-/** Signed-in billing snapshot (plan, runtime/credits, catalog). */
+/** One plan of the Starter / Pro catalog, as the backend snapshot reports it. */
+export interface QaapBillingPlanSnapshot {
+    readonly id: string;
+    readonly priceUsdMonthly: number;
+    readonly memoryOptionsGb: ReadonlyArray<number>;
+    readonly defaultMemoryGb: number;
+    readonly cpuLimit: number;
+    readonly storageGb: number;
+    readonly maxActiveRepos: number;
+    readonly maxConcurrentAgents: number;
+    readonly idlePauseMinutes: number;
+}
+
+/** Signed-in billing snapshot (account, plan allowances, catalog, checkout availability). */
 export interface QaapBillingApiResponse {
     readonly account: {
         readonly login: string;
         readonly planId: string;
-        readonly includedRuntimeMinutesRemaining: number;
-        readonly purchasedRuntimeMinutes: number;
-        readonly includedCreditsRemaining: number;
-        readonly purchasedCredits: number;
-        readonly periodStart: string;
         readonly updatedAt: string;
+        readonly provider?: string;
+        readonly customerId?: string;
+        readonly subscriptionId?: string;
+        /** Last applied subscription status (`active`, `past_due`, `canceled`, `pending`). */
+        readonly subscriptionStatus?: string;
+        readonly subscriptionEventAt?: number;
     };
     readonly entitlements: {
         readonly planId: string;
+        readonly priceUsdMonthly: number;
+        readonly memoryOptionsGb: ReadonlyArray<number>;
+        readonly defaultMemoryGb: number;
+        readonly cpuLimit: number;
         readonly storageGb: number;
         readonly maxActiveRepos: number;
         readonly maxConcurrentAgents: number;
-        readonly hostedModels: boolean;
-        readonly runtimeFairUse: boolean;
-        readonly includedRuntimeHoursPerMonth: number;
-        readonly runtimeHoursRemaining: number;
-        readonly runtimeUsageRatio: number;
-        readonly runtimeWarning: boolean;
-        readonly canStartAgent: boolean;
-        readonly includedCreditsPerMonth: number;
-        readonly creditsRemaining: number;
+        readonly idlePauseMinutes: number;
     };
     readonly catalog: {
-        readonly plans: ReadonlyArray<{
-            readonly id: string;
-            readonly monthlyPriceEur: number;
-            readonly storageGb: number;
-            readonly maxActiveRepos: number;
-            readonly maxConcurrentAgents: number;
-            readonly includedRuntimeHoursPerMonth: number;
-            readonly runtimeFairUse: boolean;
-            readonly hostedModels: boolean;
-            readonly includedCreditsPerMonth: number;
-        }>;
-        readonly runtimePacks: ReadonlyArray<{
-            readonly monthlyPriceEur: number;
-            readonly qcu: number;
-            readonly bonusQcu?: number;
-        }>;
-        readonly hostedModels: ReadonlyArray<{
-            readonly modelId: string;
-            readonly label: string;
-            readonly role: string;
-            readonly creditsPerMillionInput: number;
-            readonly creditsPerMillionOutput: number;
-        }>;
+        readonly plans: ReadonlyArray<QaapBillingPlanSnapshot>;
     };
     readonly checkout?: {
         readonly checkoutEnabled: boolean;
@@ -719,6 +711,48 @@ export async function confirmQaapBillingCheckout(checkoutId: string): Promise<Qa
         throw await QaapUserFacingErrors.fromResponse(response, `Confirm checkout failed (${response.status})`);
     }
     return response.json() as Promise<QaapBillingApiResponse>;
+}
+
+/** Cancels the signed-in account's subscription; resolves with the re-read billing snapshot. */
+export async function cancelQaapBillingSubscription(): Promise<QaapBillingApiResponse> {
+    const response = await fetchQaapOrTimeoutError(QAAP_BILLING_CANCEL_API_PATH, qaapAuthenticatedFetchInit({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+    }), QAAP_BILLING_CHECKOUT_TIMEOUT_MS, billingTimedOut);
+    if (!response.ok) {
+        throw await QaapUserFacingErrors.fromResponse(response, `Cancel subscription failed (${response.status})`);
+    }
+    return response.json() as Promise<QaapBillingApiResponse>;
+}
+
+/** Container memory choice of one repository (`repo` is `owner/name`); the plan decides the allowed values. */
+export async function fetchQaapProjectResources(repo: string): Promise<QaapProjectResourcesResponse | undefined> {
+    const response = await fetchQaapOrTimeoutError(
+        `${QAAP_PROJECT_RESOURCES_API_PATH}?repo=${encodeURIComponent(repo)}`,
+        qaapAuthenticatedFetchInit(),
+        QAAP_API_REQUEST_TIMEOUT_MS,
+        billingTimedOut,
+    );
+    if (!response.ok) {
+        return undefined;
+    }
+    return response.json() as Promise<QaapProjectResourcesResponse>;
+}
+
+/** Saves the container memory for one repository; rejects values the owner's plan does not include. */
+export async function saveQaapProjectResources(
+    request: QaapProjectResourcesUpdateRequest,
+): Promise<QaapProjectResourcesResponse> {
+    const response = await fetchQaapOrTimeoutError(QAAP_PROJECT_RESOURCES_API_PATH, qaapAuthenticatedFetchInit({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request),
+    }), QAAP_API_REQUEST_TIMEOUT_MS, billingTimedOut);
+    if (!response.ok) {
+        throw await QaapUserFacingErrors.fromResponse(response, `Save workspace memory failed (${response.status})`);
+    }
+    return response.json() as Promise<QaapProjectResourcesResponse>;
 }
 
 export async function activateQaapBillingPlanDev(

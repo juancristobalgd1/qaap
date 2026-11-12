@@ -12738,6 +12738,39 @@ body.theia-mod-work-hub-settings-json-editor-open .theia-mobile-work-hub-prefere
   color: var(--theia-descriptionForeground);
 }
 
+.theia-mobile-work-hub-billing-byo {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--theia-foreground);
+}
+
+.theia-mobile-work-hub-billing-cancel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.theia-mobile-work-hub-billing-cancel-btn {
+  appearance: none;
+  min-height: 44px;
+  padding: 10px 16px;
+  border: none;
+  background: transparent;
+  color: var(--theia-errorForeground, var(--theia-foreground));
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.theia-mobile-work-hub-billing-cancel-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 /*-----------------------------------------------------------------------------
 | Work Hub Cursor-style Settings shell.
 | The embedded PreferencesWidget remains the data/editor layer; this shell owns

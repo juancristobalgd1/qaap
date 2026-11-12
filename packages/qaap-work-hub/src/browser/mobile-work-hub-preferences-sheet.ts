@@ -1135,7 +1135,40 @@ export class MobileWorkHubPreferencesSheet {
             : nls.localize('qaap/workHubSettings/planUsage/qaapPlan', 'Qaap agent workspace plan');
         planCard.append(planMeta, planTitle, planDescription);
         panel.append(planCard);
+
+        const usage = this.createSettingsCard();
+        const entitlements = data.entitlements;
+        usage.append(
+            this.createUsageLine(
+                nls.localize('qaap/workHubSettings/planUsage/activeRepos', 'Active repositories'),
+                nls.localize('qaap/workHubSettings/planUsage/upToRepos', 'Up to {0}', this.formatNumber(entitlements.maxActiveRepos)),
+            ),
+            this.createUsageLine(
+                nls.localize('qaap/workHubSettings/planUsage/storage', 'Storage'),
+                nls.localize('qaap/workHubSettings/planUsage/storageLimit', '{0} GB', this.formatNumber(entitlements.storageGb)),
+            ),
+            this.createUsageLine(
+                nls.localize('qaap/workHubSettings/planUsage/memory', 'Workspace memory'),
+                entitlements.memoryOptionsGb.map(gb => `${this.formatNumber(gb)} GB`).join(' / '),
+            ),
+            this.createUsageLine(
+                nls.localize('qaap/workHubSettings/planUsage/cpu', 'CPU'),
+                nls.localize('qaap/workHubSettings/planUsage/cpuLimit', '{0} vCPU', this.formatNumber(entitlements.cpuLimit)),
+            ),
+        );
+        panel.append(usage);
         this.appendBillingButton(panel);
+    }
+
+    protected createUsageLine(label: string, value: string): HTMLElement {
+        const line = document.createElement('div');
+        line.className = 'theia-mobile-work-hub-settings-row';
+        const labelEl = document.createElement('span');
+        labelEl.textContent = label;
+        const valueEl = document.createElement('strong');
+        valueEl.textContent = value;
+        line.append(labelEl, valueEl);
+        return line;
     }
 
     protected appendBillingButton(panel: HTMLElement): void {
@@ -1213,23 +1246,23 @@ export class MobileWorkHubPreferencesSheet {
         switch (planId) {
             case 'pro':
                 return nls.localize('qaap/workHubSettings/planUsage/pro', 'Pro');
-            case 'team':
-                return nls.localize('qaap/workHubSettings/planUsage/team', 'Team');
             default:
                 return nls.localize('qaap/workHubSettings/planUsage/starter', 'Starter');
         }
     }
 
     protected planSummary(plan: QaapBillingApiResponse['catalog']['plans'][number]): string {
-        if (plan.runtimeFairUse) {
-            return nls.localize('qaap/workHubSettings/planUsage/fairUseSummary', 'Fair-use agent runtime with your own model keys.');
-        }
         return nls.localize(
             'qaap/workHubSettings/planUsage/planSummary',
-            '{0} agent hours/month · {1} GB workspace storage',
-            this.formatNumber(plan.includedRuntimeHoursPerMonth),
+            '{0}/month · {1} GB storage · {2} parallel agents',
+            this.formatUsd(plan.priceUsdMonthly),
             this.formatNumber(plan.storageGb),
+            this.formatNumber(plan.maxConcurrentAgents),
         );
+    }
+
+    protected formatUsd(value: number): string {
+        return new Intl.NumberFormat(nls.locale ?? nls.defaultLocale, { style: 'currency', currency: 'USD' }).format(value);
     }
 
     protected formatNumber(value: number): string {
