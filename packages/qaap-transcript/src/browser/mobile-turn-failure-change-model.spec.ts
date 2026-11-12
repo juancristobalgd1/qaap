@@ -7,8 +7,6 @@ import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 
 // Modules below may touch the DOM while loading; it is removed again after the imports
 // so no suite depends on another spec file leaving jsdom behind.
-// Disable only a jsdom this module installed: enableJSDOM returns the shared teardown when one already exists.
-const hadImportDOM = typeof document !== 'undefined';
 const disableImportJSDOM = enableJSDOM();
 
 import { expect } from 'chai';
@@ -16,9 +14,7 @@ import type { MobileProjectsTranscriptMessagesToolUiContext } from './mobile-pro
 import { createTranscriptAgentFailureDialogExtracted } from './mobile-projects-transcript-messages-tool-ui-render';
 import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
-if (!hadImportDOM) {
-    disableImportJSDOM();
-}
+disableImportJSDOM();
 
 describe('failure card "Change model" action', () => {
 
