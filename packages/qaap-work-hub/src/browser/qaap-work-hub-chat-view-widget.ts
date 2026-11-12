@@ -30,6 +30,7 @@ import { Message } from '@lumino/messaging';
 import { EditorManager } from '@theia/editor/lib/browser';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { FileUploadService } from '@theia/filesystem/lib/common/upload/file-upload';
+import { FileSearchService } from '@theia/file-search/lib/common/file-search-service';
 import { MonacoEditorProvider } from '@theia/monaco/lib/browser/monaco-editor-provider';
 import { MarkdownPreviewHandler } from '@theia/preview/lib/browser/markdown/markdown-preview-handler';
 import { createWorkHubMoreActionsIcon } from '@theia/qaap-adapters/lib/browser/qaap-lucide-icons';
@@ -95,6 +96,8 @@ export class QaapWorkHubChatViewWidget extends ChatViewWidget {
     protected readonly quickInputService: QuickInputService;
     @inject(FileUploadService)
     protected readonly fileUploadService: FileUploadService;
+    @inject(FileSearchService)
+    protected readonly fileSearchService: FileSearchService;
     @inject(FileService)
     protected readonly fileService: FileService;
     @inject(WorkspaceService)
@@ -215,6 +218,7 @@ export class QaapWorkHubChatViewWidget extends ChatViewWidget {
                 promptService: this.promptService,
                 quickInputService: this.quickInputService,
                 fileUploadService: this.fileUploadService,
+                fileSearchService: this.fileSearchService,
                 fileService: this.fileService,
                 workspaceService: this.workspaceService,
                 editorManager: this.editorManager,

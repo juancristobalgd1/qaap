@@ -105,9 +105,19 @@
         inset: -4px 0;
     }
 
-    /* Changes pill and Approve & Commit share the composer's changes row: 44px touch height. */
+    /* Changes pill and Approve & Commit share the composer's changes row: they keep the row's visual
+       height (a 44px min-height made Approve & Commit taller than its neighbours) and get the 44px
+       touch area from an invisible ::after extension instead. */
     body .theia-mobile-sticky-composer-changes-pill,
     body .theia-mobile-sticky-composer-commit-btn {
-        min-height: 44px;
+        position: relative;
+        min-height: 0;
+    }
+
+    body .theia-mobile-sticky-composer-changes-pill::after,
+    body .theia-mobile-sticky-composer-commit-btn::after {
+        content: '';
+        position: absolute;
+        inset: -7px 0;
     }
 }

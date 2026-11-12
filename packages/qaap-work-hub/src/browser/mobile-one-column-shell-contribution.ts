@@ -34,6 +34,7 @@ import { ChatAgentService } from '@theia/ai-chat/lib/common/chat-agent-service';
 import { QuickInputService } from '@theia/core';
 import { PreferenceService } from '@theia/core/lib/common/preferences';
 import { FileUploadService } from '@theia/filesystem/lib/common/upload/file-upload';
+import { FileSearchService } from '@theia/file-search/lib/common/file-search-service';
 import {
     matchesMobileOneColumnLayout,
     MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY,
@@ -206,6 +207,10 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     @inject(FileUploadService)
     /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
     public readonly fileUploadService: FileUploadService;
+
+    @inject(FileSearchService)
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly fileSearchService: FileSearchService;
 
     @inject(MobileProjectsReadmeContribution)
     /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */

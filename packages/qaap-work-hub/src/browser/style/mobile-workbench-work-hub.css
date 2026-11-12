@@ -6147,7 +6147,11 @@ body.qaap-theme-dark {
   min-width: 200px;
   max-width: min(320px, calc(100vw - 16px));
   max-height: min(40vh, 260px);
-  overflow: auto;
+  /* The card never scrolls itself: its body does, so the scroll-edge fades (a mask) only fade the
+     content and never the card's rounded border and background. */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   padding: var(--q-space-4);
   border-radius: var(--q-radius-card);
   border: 1px solid color-mix(in srgb, var(--q-line, var(--theia-panel-border)) 75%, transparent);
@@ -6256,8 +6260,12 @@ body.theia-mobile-mod-has-transcript-overlay.theia-mobile-mod-has-transcript-ove
 
 .theia-mobile-projects-sticky-composer-attach-menu-body {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
 }
 
 .theia-mobile-projects-sticky-composer-attach-menu.theia-mod-mcp-view {
@@ -15272,4 +15280,17 @@ body.theia-mod-work-hub-settings-resizing * {
 /* Belt and braces: never show the preview toolbar skeleton next to the real promoted toolbar. */
 .theia-mobile-execution-surface-sidebar-header > .qaap-agent-preview-embedded-toolbar:not(.qaap-mod-preview-toolbar-skeleton) ~ .qaap-mod-preview-toolbar-skeleton {
   display: none;
+}
+
+/* Composer "File" view: theme file icons and the generic file codicon share one 16px column,
+   so every file name starts at the same x. */
+.theia-mobile-projects-sticky-composer-attach-menu.theia-mod-files-view .theia-mobile-projects-sticky-composer-attach-menu-item > .file-icon,
+.theia-mobile-projects-sticky-composer-attach-menu.theia-mod-files-view .theia-mobile-projects-sticky-composer-attach-menu-item > .codicon-file {
+  box-sizing: border-box;
+  flex: 0 0 18px !important;
+  width: 18px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  font-size: 16px;
+  text-align: center;
 }
