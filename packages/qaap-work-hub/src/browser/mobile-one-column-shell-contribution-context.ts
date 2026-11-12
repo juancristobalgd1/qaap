@@ -61,6 +61,7 @@ export type MobileOneColumnShellContributionContextMember =
     | 'executeAndDismiss'
     | 'fileService'
     | 'fileUploadService'
+    | 'fileSearchService'
     | 'findPreviewWidget'
     | 'forceCenterColumnFullWidth'
     | 'frontendStateService'

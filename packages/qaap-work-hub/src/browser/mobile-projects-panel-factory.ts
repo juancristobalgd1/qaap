@@ -19,6 +19,8 @@ import type { ChatAgentService } from '@theia/ai-chat/lib/common/chat-agent-serv
 import type { ChatService } from '@theia/ai-chat';
 import type { AIChatInputWidget } from '@theia/ai-chat-ui/lib/browser/chat-input-widget';
 import type { FileUploadService } from '@theia/filesystem/lib/common/upload/file-upload';
+import type { FileSearchService } from '@theia/file-search/lib/common/file-search-service';
+import { createComposerProjectFileSearch } from './qaap-composer-project-file-search';
 import type { FileService } from '@theia/filesystem/lib/browser/file-service';
 import type { EditorManager } from '@theia/editor/lib/browser';
 import type { MonacoEditorProvider } from '@theia/monaco/lib/browser/monaco-editor-provider';
@@ -96,6 +98,7 @@ export interface MobileProjectsPanelFactoryDeps {
     promptService: PromptService;
     quickInputService: QuickInputService;
     fileUploadService: FileUploadService;
+    fileSearchService: FileSearchService;
     fileService: FileService;
     workspaceService: WorkspaceService;
     editorManager: EditorManager;
@@ -205,6 +208,7 @@ export class MobileProjectsPanelFactory {
                         fileUploadService: deps.fileUploadService,
                         fileService: deps.fileService,
                         workspaceService: deps.workspaceService,
+                        searchProjectFiles: createComposerProjectFileSearch(deps.fileSearchService, deps.workspaceService),
                     },
                     handlers,
                     deps.skillService,
