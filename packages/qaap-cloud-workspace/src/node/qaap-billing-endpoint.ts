@@ -303,11 +303,26 @@ export class QaapBillingEndpoint implements BackendApplicationContribution {
         const readAt = unixSecondsNow();
         const subscription = await fetchAirwallexSubscription(subscriptionId);
         const login = subscription.login
-            ?? await this.store.findLoginByAirwallexSubscription(subscription.subscriptionId);
+            ?? await this.store.findLoginByAirwallexSubscription(subscription.subscriptionId)
+            ?? await this.loginFromCheckoutEvent(event, subscription.subscriptionId);
         if (!login) {
             return;
         }
         await this.store.applyAirwallexSubscription(login, this.toSubscriptionUpdate(subscription, readAt));
+    }
+
+    /**
+     * Airwallex may not copy the checkout metadata onto the subscription, and the buyer may never come back
+     * to confirm. For checkout events the checkout itself is re-fetched: its metadata carries the login we
+     * stamped at creation, and it must point at the same subscription.
+     */
+    protected async loginFromCheckoutEvent(event: QaapAirwallexWebhookEvent, subscriptionId: string): Promise<string | undefined> {
+        const objectId = event.data?.object?.id;
+        if (typeof objectId !== 'string' || !objectId.startsWith('bco_')) {
+            return undefined;
+        }
+        const checkout = await fetchAirwallexCheckout(objectId);
+        return checkout.subscriptionId === subscriptionId ? checkout.login : undefined;
     }
 
     protected toSubscriptionUpdate(

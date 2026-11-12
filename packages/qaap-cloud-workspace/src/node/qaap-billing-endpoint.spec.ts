@@ -301,6 +301,40 @@ describe('QaapBillingEndpoint Airwallex webhook', () => {
         expect(calls[0][1]).to.include({ status: 'active', planId: 'pro', subscriptionId: 'sub_1' });
     });
 
+    it('attributes a checkout event by re-reading the checkout when the subscription carries no login', async () => {
+        restoreFetch = stubAirwallexFetch({
+            ...LOGIN_ROUTE,
+            'GET /api/v1/billing/subscriptions/sub_1': subscription({ status: 'ACTIVE', price_id: 'price_pro' }),
+            'GET /api/v1/billing/billing_checkouts/bco_9': {
+                id: 'bco_9', status: 'COMPLETED', subscription_id: 'sub_1', metadata: { qaapLogin: 'octocat', planId: 'pro' },
+            },
+        }, fetchCalls);
+        const calls: unknown[][] = [];
+        const response = await deliver(appWithEarlierJsonParser(calls), {
+            id: 'evt_bco', name: 'billing_checkout.completed', data: { object: { id: 'bco_9', subscription_id: 'sub_1' } },
+        });
+        expect(response.status).to.equal(200);
+        expect(fetchCalls).to.include('GET /api/v1/billing/billing_checkouts/bco_9');
+        expect(calls).to.have.length(1);
+        expect(calls[0][0]).to.equal('octocat');
+    });
+
+    it('ignores a checkout whose subscription differs from the event subscription', async () => {
+        restoreFetch = stubAirwallexFetch({
+            ...LOGIN_ROUTE,
+            'GET /api/v1/billing/subscriptions/sub_1': subscription({ status: 'ACTIVE', price_id: 'price_pro' }),
+            'GET /api/v1/billing/billing_checkouts/bco_9': {
+                id: 'bco_9', status: 'COMPLETED', subscription_id: 'sub_other', metadata: { qaapLogin: 'mallory', planId: 'pro' },
+            },
+        }, fetchCalls);
+        const calls: unknown[][] = [];
+        const response = await deliver(appWithEarlierJsonParser(calls), {
+            id: 'evt_bco2', name: 'billing_checkout.completed', data: { object: { id: 'bco_9', subscription_id: 'sub_1' } },
+        });
+        expect(response.status).to.equal(200);
+        expect(calls).to.have.length(0);
+    });
+
     it('maps UNPAID to past_due, which the store turns into Starter', async () => {
         restoreFetch = stubAirwallexFetch({
             ...LOGIN_ROUTE,
