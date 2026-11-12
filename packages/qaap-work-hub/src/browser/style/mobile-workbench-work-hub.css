@@ -15273,3 +15273,13 @@ body.theia-mod-work-hub-settings-resizing * {
 .theia-mobile-execution-surface-sidebar-header > .qaap-agent-preview-embedded-toolbar:not(.qaap-mod-preview-toolbar-skeleton) ~ .qaap-mod-preview-toolbar-skeleton {
   display: none;
 }
+
+/* Composer "File" view: theme file icons and the generic file codicon share one 16px column,
+   so every file name starts at the same x. */
+.theia-mobile-projects-sticky-composer-attach-menu.theia-mod-files-view .theia-mobile-projects-sticky-composer-attach-menu-item > .file-icon,
+.theia-mobile-projects-sticky-composer-attach-menu.theia-mod-files-view .theia-mobile-projects-sticky-composer-attach-menu-item > .codicon-file {
+  flex: 0 0 16px;
+  width: 16px;
+  font-size: 16px;
+  text-align: center;
+}
