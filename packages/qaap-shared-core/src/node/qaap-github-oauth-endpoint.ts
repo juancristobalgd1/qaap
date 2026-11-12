@@ -34,6 +34,7 @@ import { parseQaapGithubRepositoryInput } from '@theia/qaap-adapters/lib/common/
 import {
     QaapBillingQuota,
     QaapPlanRepoLimitError,
+    QaapPlanStorageLimitError,
 } from '@theia/qaap-adapters/lib/common/qaap-billing-quota';
 import { QAAP_PLAN_LIMIT_CODE, QAAP_PLAN_REPO_LIMIT_CODE } from '@theia/qaap-adapters/lib/common/qaap-plan-limit';
 import {
@@ -952,7 +953,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             }
             workspacePath = await this.ensureRepositoryWorkspace(repository, auth.session.accessToken, auth.userLogin);
         } catch (err) {
-            if (err instanceof QaapPlanRepoLimitError) {
+            if (err instanceof QaapPlanRepoLimitError || err instanceof QaapPlanStorageLimitError) {
                 throw err;
             }
             throw new Error(describeRepositoryImportFailure(err instanceof Error ? err.message : String(err)));
@@ -1445,7 +1446,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
                 timeoutMs: this.workspaceJobTimeoutMs,
             });
         } catch (err) {
-            if (err instanceof QaapPlanRepoLimitError) {
+            if (err instanceof QaapPlanRepoLimitError || err instanceof QaapPlanStorageLimitError) {
                 throw new QaapGithubWorkspaceJobError(err.message, QAAP_PLAN_LIMIT_CODE);
             }
             throw err;
@@ -1901,6 +1902,18 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     }
 
     protected respondBillingQuotaError(err: unknown, res: Response): boolean {
+        if (err instanceof QaapPlanStorageLimitError) {
+            // Same 403 shape as the repo cap, with the storage reason; `plan_limit` is the code newer clients read.
+            res.status(403).json({
+                error: QAAP_PLAN_LIMIT_CODE,
+                code: QAAP_PLAN_LIMIT_CODE,
+                reason: err.reason,
+                planId: err.planId,
+                limit: err.limit,
+                message: err.message,
+            });
+            return true;
+        }
         if (!(err instanceof QaapPlanRepoLimitError)) {
             return false;
         }

@@ -65,6 +65,7 @@ import { type QaapNativeModelRoutingTable } from '../common/qaap-agent-native-mo
 import { pickReservedDevPreviewPort } from '../common/qaap-agent-live-preview-port';
 import { QaapWebPushService } from './qaap-web-push-service';
 import { QaapBillingStore } from './qaap-billing-store';
+import { QaapTenantStorageQuotaService } from './qaap-tenant-storage-quota-service';
 import { QaapWorkflowRoutingPolicy } from '../common/qaap-workflow-routing';
 import { QaapAgentHealthTracker } from './qaap-agent-health';
 import { classifyAgentLastTurn, QaapAgentLastTurnStore } from './qaap-agent-last-turn-store';
@@ -214,6 +215,10 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     @inject(QaapBillingStore) @optional()
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public readonly billingStore: QaapBillingStore | undefined;
+
+    @inject(QaapTenantStorageQuotaService) @optional()
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readonly tenantStorageQuota: QaapTenantStorageQuotaService | undefined;
 
     @inject(PreferenceService) @optional()
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */

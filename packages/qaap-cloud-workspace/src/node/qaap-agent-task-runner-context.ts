@@ -42,6 +42,7 @@ import type { QaapWorktreeChange } from '../common/qaap-verification-scope';
 import type { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 import type { QaapWebPushService } from './qaap-web-push-service';
 import type { QaapBillingStore } from './qaap-billing-store';
+import type { QaapTenantStorageQuotaService } from './qaap-tenant-storage-quota-service';
 import type { QaapAgentHealthTracker } from './qaap-agent-health';
 import type { QaapObservability } from './qaap-observability';
 import type { QaapAgentHookService } from './qaap-agent-hook-service';
@@ -86,6 +87,8 @@ export interface QaapAgentTaskRunnerContext {
     // ─── Injected services ──────────────────────────────────────────────────
     readonly webPush: QaapWebPushService;
     readonly billingStore: QaapBillingStore | undefined;
+    /** Optional so bare harnesses keep the old behaviour: no storage gate without it. */
+    readonly tenantStorageQuota?: QaapTenantStorageQuotaService | undefined;
     readonly preferenceService: PreferenceService | undefined;
     readonly workflowRouting: QaapWorkflowRoutingPolicy | undefined;
     readonly agentHealth: QaapAgentHealthTracker | undefined;

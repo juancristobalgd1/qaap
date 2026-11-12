@@ -3,12 +3,13 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { inject, injectable } from '@theia/core/shared/inversify';
+import { inject, injectable, optional } from '@theia/core/shared/inversify';
 import type { BackendApplicationContribution } from '@theia/core/lib/node';
 import { QaapDockerOrchestrator, type QaapManagedTenantContainer } from './qaap-docker-orchestrator';
 import { QaapTenantActivityTracker } from './qaap-tenant-activity-tracker';
 import { QaapTenantRuntimeMetrics } from './qaap-tenant-runtime-metrics';
 import { QaapTenantRuntimeStore, type QaapTenantRuntimeRecord } from './qaap-tenant-runtime-store';
+import { QaapBillingStore } from './qaap-billing-store';
 
 const DEFAULT_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 const DEFAULT_PAUSE_AFTER_MS = 30 * 60 * 1000;
@@ -43,6 +44,10 @@ export class QaapTenantContainerReaper implements BackendApplicationContribution
 
     @inject(QaapTenantRuntimeMetrics)
     protected readonly metrics: QaapTenantRuntimeMetrics;
+
+    /** Owner plans (`idlePauseMinutes`); absent in harnesses, where the env fallback applies. */
+    @inject(QaapBillingStore) @optional()
+    protected readonly billing: QaapBillingStore | undefined;
 
     protected timer: NodeJS.Timeout | undefined;
     protected firstSweepTimer: NodeJS.Timeout | undefined;
@@ -117,6 +122,23 @@ export class QaapTenantContainerReaper implements BackendApplicationContribution
      */
     protected pauseAfterMs(): number {
         return resolveTenantRuntimeDuration(process.env.QAAP_TENANT_PAUSE_AFTER_MS, DEFAULT_PAUSE_AFTER_MS);
+    }
+
+    /**
+     * Freeze threshold of one tenant: its owner's plan `idlePauseMinutes` when the plan can be read,
+     * otherwise {@link pauseAfterMs}. The stop and destroy thresholds do not depend on the plan.
+     */
+    protected async pauseAfterMsFor(tenantLogin: string): Promise<number> {
+        if (this.billing) {
+            try {
+                const entitlements = await this.billing.getEntitlements(tenantLogin);
+                return entitlements.idlePauseMinutes * 60 * 1000;
+            } catch (error) {
+                console.warn(`[qaap-runtime] Could not read the plan of ${tenantLogin}; using the default idle pause: `
+                    + (error instanceof Error ? error.message : String(error)));
+            }
+        }
+        return this.pauseAfterMs();
     }
 
     protected destroyAfterMs(): number {
@@ -238,7 +260,7 @@ export class QaapTenantContainerReaper implements BackendApplicationContribution
             return;
         }
 
-        const pauseAfter = this.pauseAfterMs();
+        const pauseAfter = await this.pauseAfterMsFor(candidate.tenantLogin);
         if ((latest.state === 'active' || latest.state === 'error')
             && pauseAfter > 0 && pauseAfter < this.idleTimeoutMs() && now - activityAt >= pauseAfter
             && containers.some(container => container.kind === 'backend' && container.running)) {

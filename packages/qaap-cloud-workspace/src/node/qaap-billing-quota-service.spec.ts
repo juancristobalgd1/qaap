@@ -7,7 +7,7 @@ import { expect } from 'chai';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { QaapPlanRepoLimitError } from '@theia/qaap-adapters/lib/common/qaap-billing-quota';
+import { QaapPlanRepoLimitError, QaapPlanStorageLimitError } from '@theia/qaap-adapters/lib/common/qaap-billing-quota';
 import { QaapBillingQuotaService } from './qaap-billing-quota-service';
 import { QaapBillingStore } from './qaap-billing-store';
 
@@ -22,6 +22,8 @@ function makeStore(filePath: string): QaapBillingStore {
     });
     return store;
 }
+
+const noStorageLimit = { isOverStorageLimit: async (): Promise<boolean> => false };
 
 describe('QaapBillingQuotaService', () => {
     let tmpDir: string;
@@ -39,7 +41,7 @@ describe('QaapBillingQuotaService', () => {
 
     it('throws plan_repo_limit when Starter already has 3 active clones', async () => {
         const quota = Object.create(QaapBillingQuotaService.prototype) as QaapBillingQuotaService;
-        Object.assign(quota, { store: makeStore(filePath) });
+        Object.assign(quota, { store: makeStore(filePath), storage: noStorageLimit });
         await quota.assertCanAddActiveRepo('alice', 2);
         try {
             await quota.assertCanAddActiveRepo('alice', 3);
@@ -57,7 +59,7 @@ describe('QaapBillingQuotaService', () => {
         const store = makeStore(filePath);
         await store.setPlan('alice', 'pro');
         const quota = Object.create(QaapBillingQuotaService.prototype) as QaapBillingQuotaService;
-        Object.assign(quota, { store });
+        Object.assign(quota, { store, storage: noStorageLimit });
         await quota.assertCanAddActiveRepo('alice', 9);
         try {
             await quota.assertCanAddActiveRepo('alice', 10);
@@ -72,7 +74,7 @@ describe('QaapBillingQuotaService', () => {
         const store = makeStore(filePath);
         await store.setPlan('alice', 'pro');
         const quota = Object.create(QaapBillingQuotaService.prototype) as QaapBillingQuotaService;
-        Object.assign(quota, { store });
+        Object.assign(quota, { store, storage: noStorageLimit });
         const snapshot = await quota.getEntitlements('alice');
         expect(snapshot).to.deep.include({
             planId: 'pro',
@@ -85,4 +87,19 @@ describe('QaapBillingQuotaService', () => {
         });
         expect(snapshot.memoryOptionsGb).to.deep.equal([2, 4]);
     });
+    it('throws plan_limit/storage_limit when the workspace is over its plan storage', async () => {
+        const quota = Object.create(QaapBillingQuotaService.prototype) as QaapBillingQuotaService;
+        Object.assign(quota, { store: makeStore(filePath), storage: { isOverStorageLimit: async (): Promise<boolean> => true } });
+        try {
+            await quota.assertCanAddActiveRepo('alice', 0);
+            expect.fail('expected QaapPlanStorageLimitError');
+        } catch (error) {
+            expect(error).to.be.instanceOf(QaapPlanStorageLimitError);
+            const limit = error as QaapPlanStorageLimitError;
+            expect(limit.code).to.equal('plan_limit');
+            expect(limit.reason).to.equal('storage_limit');
+            expect(limit.limit).to.equal(10);
+        }
+    });
+
 });
