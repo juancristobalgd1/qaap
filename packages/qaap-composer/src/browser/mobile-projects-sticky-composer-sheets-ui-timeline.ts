@@ -1,3 +1,4 @@
+import { attachSheetListEdgeFades } from './mobile-projects-sticky-composer-sheet-edge-fades';
 import type { MobileProjectsStickyComposerSheetsUiContext } from './mobile-projects-sticky-composer-sheets-ui-context';
 // Extracted from mobile-projects-sticky-composer-sheets-ui.ts
 
@@ -102,6 +103,7 @@ export function createComposerAgentPickerChromeExtracted(ctx: MobileProjectsStic
 
     const list = document.createElement('div');
     list.className = 'theia-mobile-sticky-composer-sheet-list';
+    attachSheetListEdgeFades(list);
 
     panel.append(header, intro, search, list);
 

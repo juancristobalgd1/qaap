@@ -40,6 +40,21 @@ const COLLAPSED_FAILURE_REASON_MAX_LENGTH = 96;
 const ANSI_REGEX = /\u001b\[[0-9;?]*[ -/]*[@-~]/g;
 const WINDOWS_CMD_ERROR_LINE = /^(FIND|DIR|COPY|XCOPY|DEL|ERASE|MOVE|REN|RENAME|TYPE|CMD|WHERE|FC|MORE):\s+\S/i;
 
+/**
+ * A usage limit the CLI reports on its own plan (Codex on a ChatGPT plan, OpenCode's free tier). Some
+ * name the reset time, see {@link USAGE_LIMIT_RESET_PATTERN}.
+ */
+const USAGE_LIMIT_PATTERNS: readonly RegExp[] = [
+    // OpenCode free tier: "AI_APICallError: Free usage limit reached. Subscribe to ... to keep going".
+    /\busage\s+limit\s+reached\b/i,
+    // Codex CLI on a ChatGPT plan: "You've hit your usage limit. Upgrade to Plus to continue ..., or try again at Nov 19th, 2026 12:56 AM."
+    /\bhit\s+your\s+usage\s+limit\b/i,
+    /\busage\s+limit\b[^\n]{0,160}\btry\s+again\s+at\b/i,
+];
+
+/** The reset time a usage-limit message names ("try again at Nov 19th, 2026 12:56 AM."). Never guessed. */
+const USAGE_LIMIT_RESET_PATTERN = /\btry\s+again\s+at\s+([^.\n]{3,60}?)\s*(?:\.|\n|$)/i;
+
 const QUOTA_PATTERNS: readonly RegExp[] = [
     /\binsufficient[_\s-]?quota\b/i,
     /\bquota\b/i,
@@ -50,13 +65,20 @@ const QUOTA_PATTERNS: readonly RegExp[] = [
     /\bdepleted\s+your\b[^.\n]{0,40}\bcredits?\b/i,
     /\bbilling\b/i,
     /\bresource[_\s-]?exhausted\b/i,
-    // OpenCode free tier: "AI_APICallError: Free usage limit reached. Subscribe to ... to keep going".
-    /\busage\s+limit\s+reached\b/i,
     /\bfree\s+usage\s+limit\b/i,
-    // Codex CLI on a ChatGPT plan: "You've hit your usage limit. Upgrade to Plus to continue ..., or try again at Nov 19th, 2026 12:56 AM."
-    /\bhit\s+your\s+usage\s+limit\b/i,
-    /\busage\s+limit\b[^\n]{0,160}\btry\s+again\s+at\b/i,
+    ...USAGE_LIMIT_PATTERNS,
 ];
+
+/** True when the text reports a plan / subscription usage limit (Codex, OpenCode free tier). */
+export function isAgentUsageLimitText(text: string | undefined): boolean {
+    return !!text && matchesAny(text, USAGE_LIMIT_PATTERNS);
+}
+
+/** The reset time a usage-limit message names, e.g. "Nov 19th, 2026 12:56 AM"; `undefined` when it names none. */
+export function extractAgentUsageLimitResetText(text: string | undefined): string | undefined {
+    const candidate = text ? USAGE_LIMIT_RESET_PATTERN.exec(text)?.[1]?.trim() : undefined;
+    return candidate && isAgentUsageLimitText(text) ? candidate : undefined;
+}
 
 const RATE_LIMIT_PATTERNS: readonly RegExp[] = [
     /\brate[_\s-]?limit(?:ed|ing)?\b/i,
@@ -241,6 +263,14 @@ const NETWORK_PATTERNS: readonly RegExp[] = [
     /\bnetwork\s+error\b/i,
     /\bfetch\s+failed\b/i,
     /\bconnection\s+(?:refused|reset)\b/i,
+];
+
+/** Squid egress proxy refusing a host (tenant allowlist): its error page and header names. */
+const EGRESS_PROXY_PATTERNS: readonly RegExp[] = [
+    /\bERR_ACCESS_DENIED\b/,
+    /\bX-Squid-Error\b/i,
+    /\bgenerated\s+by\s+squid\b/i,
+    /\bsquid\b[^\n]{0,40}\b(?:403|denied)\b/i,
 ];
 
 /** QAIQ / Claude-Code-compatible CLIs on a provider 404: names the model the provider refused. */
@@ -942,6 +972,11 @@ function classifyAgentFailureEvidence(evidence: AgentFailureEvidence): QaapAgent
     if (isProviderRejectedText(sample)) {
         return 'provider_rejected';
     }
+    // The tenant egress proxy (Squid) answers a blocked host with 403 "Access Denied": a network
+    // refusal, not an expired sign-in. Checked before the envelope's bare 403 reads as auth.
+    if (matchesAny(sample, EGRESS_PROXY_PATTERNS)) {
+        return 'network';
+    }
     if (matchesAny(sample, AUTH_PATTERNS) || matchesAny(agentFailureEnvelopeText(evidence), AUTH_ENVELOPE_ONLY_PATTERNS)) {
         return 'auth';
     }
@@ -1506,6 +1541,7 @@ export type QaapAgentFailureReasonKind =
     | 'sign_in'
     | 'command_failed'
     | 'usage_limit'
+    | 'rate_limit'
     | 'model'
     | 'agent_setup'
     | 'network'
@@ -1570,10 +1606,11 @@ function classifyStoredAgentFailure(error: string): QaapAgentFailureReasonKind {
         case 'auth':
             return 'sign_in';
         case 'quota':
-        case 'rate_limit':
         case 'provider_credits':
         case 'provider_free_limit':
             return 'usage_limit';
+        case 'rate_limit':
+            return 'rate_limit';
         case 'provider_key_rejected':
             return 'provider_key';
         case 'provider_data_policy':
@@ -1594,7 +1631,28 @@ function classifyStoredAgentFailure(error: string): QaapAgentFailureReasonKind {
     }
 }
 
-function localizeAgentFailureReasonLabel(kind: QaapAgentFailureReasonKind, options?: QaapAgentFailureReasonOptions): string {
+function localizeUsageLimitReasonLabel(sample: string, agentLabel: string | undefined): string {
+    if (!isAgentUsageLimitText(sample)) {
+        return nls.localize('qaap/mobileProjects/transcriptQuotaReached', 'Quota reached');
+    }
+    const reset = extractAgentUsageLimitResetText(sample);
+    if (agentLabel && reset) {
+        return nls.localize('qaap/agentFailure/reasonUsageLimitAgentReset', '{0} usage limit reached — resets {1}', agentLabel, reset);
+    }
+    if (agentLabel) {
+        return nls.localize('qaap/agentFailure/reasonUsageLimitAgent', '{0} usage limit reached', agentLabel);
+    }
+    if (reset) {
+        return nls.localize('qaap/agentFailure/reasonUsageLimitReset', 'Usage limit reached — resets {0}', reset);
+    }
+    return nls.localize('qaap/agentFailure/reasonUsageLimit', 'Usage limit reached');
+}
+
+function localizeAgentFailureReasonLabel(
+    kind: QaapAgentFailureReasonKind,
+    sample: string,
+    options?: QaapAgentFailureReasonOptions,
+): string {
     switch (kind) {
         case 'timeout':
             return nls.localize('qaap/agentFailure/reasonTimeout', 'Timed out');
@@ -1607,7 +1665,9 @@ function localizeAgentFailureReasonLabel(kind: QaapAgentFailureReasonKind, optio
         case 'command_failed':
             return nls.localize('qaap/agentFailure/reasonCommandFailed', 'A command failed');
         case 'usage_limit':
-            return nls.localize('qaap/mobileProjects/transcriptQuotaReached', 'Quota reached');
+            return localizeUsageLimitReasonLabel(sample, options?.agentLabel?.trim() || undefined);
+        case 'rate_limit':
+            return nls.localize('qaap/agentFailure/reasonRateLimited', 'Rate limited — try again in a moment');
         case 'model':
             return nls.localize('qaap/agentFailure/reasonModelUnavailable', 'Model unavailable');
         case 'agent_setup':
@@ -1643,7 +1703,7 @@ export function describeAgentTurnFailure(
         return undefined;
     }
     const kind = classifyStoredAgentFailure(sample);
-    const label = localizeAgentFailureReasonLabel(kind, options);
+    const label = localizeAgentFailureReasonLabel(kind, sample, options);
     const formatted = formatStoredAgentFailureMessage(sample);
     return {
         kind,

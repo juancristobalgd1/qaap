@@ -22,6 +22,7 @@ import { peekPreferDesktopIde } from '@theia/qaap-shared-core/lib/browser/mobile
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { clearQaapPreviewDismissedByUser, markQaapPreviewDismissedByUser } from '@theia/qaap-shared-core/lib/browser/qaap-preview-user-dismissal';
 import { executionSurfacePreviewDirectory } from './mobile-projects-execution-surface-tabs-ui-render';
+import { attachQaapScrollEdgeFades } from '@theia/qaap-mobile-shell/lib/browser/qaap-scroll-edge-fades';
 import { QAAP_WORK_HUB_AUX_PANEL_TOGGLE_CLASS, type QaapWorkHubAuxPanel } from './qaap-work-hub-aux-panel';
 
 export function applyExecutionSurfaceIconSelectDisplayExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, strip: HTMLElement, activeTab: TranscriptTab): void {
@@ -459,6 +460,8 @@ export function openExecutionTabOverflowMenuExtracted(ctx: MobileProjectsExecuti
     menu.hidden = false;
     menu.classList.add('theia-mod-open', 'theia-mod-floating');
     ctx.resolveExecutionTabOverflowMenuPortal(anchor).append(menu);
+    // Every tab/agent select menu shares this path: a tall list scrolls and fades on the hidden edges.
+    const edgeFades = attachQaapScrollEdgeFades(menu);
     ctx.scheduleExecutionSurfaceFrame(() => {
         if (ctx.host.executionTabOverflowMenu === menu && ctx.host.executionTabOverflowAnchor === anchor) {
             ctx.positionExecutionTabOverflowMenu(menu, anchor);
@@ -485,6 +488,7 @@ export function openExecutionTabOverflowMenuExtracted(ctx: MobileProjectsExecuti
         window.removeEventListener('pointerdown', onDismiss, true);
         window.removeEventListener('resize', onReposition);
         ctx.host.scroll.removeEventListener('scroll', onReposition);
+        edgeFades.dispose();
     });
 }
 

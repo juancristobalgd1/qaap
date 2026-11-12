@@ -45,6 +45,8 @@ async function loadTranscriptSurfaceCss(): Promise<void> {
         import('@theia/qaap-transcript/src/browser/style/qaap-transcript-rewind-preview.css?qaap-lazy-boot'),
         import('../../src/browser/style/mobile-workbench-conversation.css?qaap-lazy-boot'),
         import('@theia/qaap-transcript/src/browser/style/mobile-workbench-transcript.css?qaap-lazy-boot'),
+        // Native `qaap-ui` fence blocks (qaap-json-render-ui.ts) inside the markdown surface.
+        import('@theia/qaap-transcript/src/browser/style/qaap-json-render-ui.css?qaap-lazy-boot'),
         // Keep the Markdown surface last: it is the single canonical owner of transcript
         // typography, overflow, tables, headings, and rich code block presentation.
         import('@theia/qaap-transcript/src/browser/style/qaap-transcript-markdown.css?qaap-lazy-boot'),

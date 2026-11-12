@@ -26,6 +26,8 @@ import {
     type MobileComposerAttachHandlers,
 } from './qaap-mobile-composer-device-attach';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
+import { attachQaapScrollEdgeFades } from '@theia/qaap-mobile-shell/lib/browser/qaap-scroll-edge-fades';
+import { Disposable } from '@theia/core/lib/common/disposable';
 import {
     type MobileMcpAttachOptions,
     renderMobileMcpAttachView,
@@ -222,6 +224,12 @@ function showContextAttachMenu(
 
         let showingSkills = false;
         let showingMcp = false;
+        // Edge fades follow whichever element scrolls in the current view (menu, MCP list or skills list).
+        let edgeFades: Disposable | undefined;
+        const attachEdgeFades = (scroller: HTMLElement): void => {
+            edgeFades?.dispose();
+            edgeFades = attachQaapScrollEdgeFades(scroller);
+        };
         let improveItem: HTMLButtonElement | undefined;
         // Live state of the improve item: an empty prompt disables it, typing enables it again.
         const syncImproveItem = (): void => {
@@ -326,6 +334,7 @@ function showContextAttachMenu(
                     onSelect: () => finish({ kind: 'variable', variable }),
                 }));
             }
+            attachEdgeFades(menu);
             menu.focus();
         };
 
@@ -341,6 +350,7 @@ function showContextAttachMenu(
                 onBack: () => renderMainView(),
                 onCloseMenu: () => finish(undefined),
             });
+            attachEdgeFades(menu);
             menu.focus();
         };
 
@@ -357,6 +367,7 @@ function showContextAttachMenu(
             const scroll = document.createElement('div');
             scroll.className = 'theia-mobile-skills-attach-scroll';
             menuBody.append(scroll);
+            attachEdgeFades(scroll);
 
             let filterQuery = '';
             const renderSkillRows = (): void => {
@@ -435,6 +446,8 @@ function showContextAttachMenu(
         let stopPositioning = (): void => undefined;
 
         const dismiss = (): void => {
+            edgeFades?.dispose();
+            edgeFades = undefined;
             document.removeEventListener('pointerdown', onPointerDown, true);
             document.removeEventListener('keydown', onKeyDown, true);
             detachImprove();

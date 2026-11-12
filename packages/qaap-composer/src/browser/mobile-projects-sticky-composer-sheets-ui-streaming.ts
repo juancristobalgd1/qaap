@@ -1,3 +1,4 @@
+import { attachSheetListEdgeFades } from './mobile-projects-sticky-composer-sheet-edge-fades';
 import type { MobileProjectsStickyComposerSheetsUiContext } from './mobile-projects-sticky-composer-sheets-ui-context';
 // Extracted from mobile-projects-sticky-composer-sheets-ui.ts
 
@@ -145,6 +146,7 @@ export function openApprovalPolicySheetExtracted(ctx: MobileProjectsStickyCompos
 
     const list = document.createElement('div');
     list.className = 'theia-mobile-sticky-composer-sheet-list theia-qaap-approval-policy-sheet-list';
+    attachSheetListEdgeFades(list);
     // The checkmark follows the effective preset: a harness that cannot ask shows Autonomous mode checked.
     let selectedId = resolveEffectiveAgentApprovalPolicyId(options.selectedId, options.agentId) ?? options.selectedId;
     let mountedRoot: HTMLElement | undefined;

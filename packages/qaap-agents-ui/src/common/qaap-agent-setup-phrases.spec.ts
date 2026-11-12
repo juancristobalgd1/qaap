@@ -4,9 +4,19 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import { syncShimmerTextElement } from './qaap-agent-setup-phrases';
 
 describe('qaap-agent-setup-phrases', () => {
+
+    // Self-contained DOM: an earlier spec in the same mocha run may have torn the global jsdom down.
+    let disableJSDOM: (() => void) | undefined;
+    before(() => {
+        disableJSDOM = enableJSDOM();
+    });
+    after(() => {
+        disableJSDOM?.();
+    });
 
     it('renders shimmer letters through the container document even when the global document is gone', () => {
         const container = document.createElement('span');

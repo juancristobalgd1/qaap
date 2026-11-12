@@ -303,6 +303,12 @@ body.qaap-theme-light .theia-mobile-agent-transcript-empty-action.theia-mod-prev
   box-shadow: none;
 }
 
+/* Starting chips keep the theme background: no blurred colored bloom inside them either. */
+.theia-mobile-sticky-composer-next-action.theia-mod-preview-starting .qaap-border-beam-bloom,
+.theia-mobile-agent-transcript-empty-action.theia-mod-preview-starting .qaap-border-beam-bloom {
+  display: none;
+}
+
 /* Capa 3 — bloom: el pico del haz desenfocado, recortado al anillo */
 .theia-mobile-projects-sticky-composer-input-panel .qaap-border-beam-bloom,
 .theia-mobile-projects-sticky-composer-card.theia-mod-has-context .qaap-card-beam-bloom,
@@ -4476,4 +4482,20 @@ details > summary:focus-visible,
 .theia-mobile-agent-transcript-user-menu-item:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+/*
+ * Parking spot for terminals that are not on screen but must stay laid out (the Connect dialog's
+ * sign-in terminal, cached transcript terminals). Off screen and transparent rather than
+ * display:none, so xterm measures a real size, opens, and keeps parsing output.
+ */
+.theia-mobile-transcript-terminal-staging {
+  position: fixed;
+  top: 0;
+  left: -10000px;
+  width: 800px;
+  height: 400px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
 }

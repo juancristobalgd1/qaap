@@ -155,7 +155,8 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
               : planLimit
               ? nls.localize('qaap/mobileProjects/transcriptPlanLimitReached', 'Plan limit reached')
               : isQuotaFailure
-                ? nls.localize('qaap/mobileProjects/transcriptQuotaReached', 'Quota reached')
+                ? (localizeAgentFailureShortReason(authSample, { agentLabel: options?.agentLabel })
+                    ?? nls.localize('qaap/mobileProjects/transcriptQuotaReached', 'Quota reached'))
                 : isCliMissing
                     ? nls.localize('qaap/mobileProjects/transcriptAgentCliMissing', 'Agent CLI missing')
                     : nls.localize('qaap/mobileProjects/transcriptTurnFailed', 'Task failed');

@@ -22,6 +22,8 @@ import {
     ComposerPromptImproveTimeoutError,
     type QaapImproveComposerPromptRequestBody,
 } from '@theia/qaap-composer/lib/common/qaap-composer-prompt-improve';
+import { describeAgentTurnFailure, type QaapAgentFailureReasonKind } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
+import { resolveAgentBrand } from '@theia/qaap-shared-core/lib/common/qaap-agent-branding';
 import { QAAP_AGENT_CONNECTION_REFRESH_BUDGET_MS, QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { QaapAgentQueueFullError } from './qaap-agent-queue-policy';
 import { QaapAgentStorageUnavailableError } from './qaap-agent-storage-unavailable-error';
@@ -75,6 +77,49 @@ function trimTaskGroupCommandsForWire(group: QaapAgentTaskCwdGroup): QaapAgentTa
 }
 
 /** HTTP surface for the background agent-task runner. */
+/** HTTP status and short reason for a failed improve-prompt CLI run; the raw stderr never leaves the server. */
+export interface QaapImprovePromptFailure {
+    readonly status: number;
+    readonly error: string;
+    readonly kind: QaapAgentFailureReasonKind | 'unknown';
+}
+
+const IMPROVE_PROMPT_FAILURE_STATUS: Partial<Record<QaapAgentFailureReasonKind, number>> = {
+    usage_limit: 429,
+    rate_limit: 429,
+    sign_in: 401,
+    api_key: 401,
+    provider_key: 401,
+    network: 502,
+    model: 502,
+    model_access: 502,
+    provider_policy: 502,
+    provider_rejected: 502,
+};
+
+/**
+ * Classifies the CLI failure behind a prompt improvement with the shared failure classifier. Only the
+ * localized reason label is returned; the raw error text (which may echo prompts, paths or tokens)
+ * stays out of the response.
+ */
+export function describeImprovePromptFailure(error: unknown, agentId: string): QaapImprovePromptFailure {
+    const reason = describeAgentTurnFailure(error instanceof Error ? error.message : undefined, {
+        agentLabel: resolveAgentBrand(agentId)?.label,
+    });
+    if (!reason || reason.kind === 'stopped') {
+        return {
+            status: 500,
+            error: nls.localize('qaap/agentTasks/improvePromptFailed', 'Could not improve the prompt. Try again.'),
+            kind: 'unknown',
+        };
+    }
+    return {
+        status: IMPROVE_PROMPT_FAILURE_STATUS[reason.kind] ?? 500,
+        error: reason.label,
+        kind: reason.kind,
+    };
+}
+
 @injectable()
 export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
 
@@ -586,11 +631,15 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 errorType: error instanceof Error ? error.name : typeof error,
                 timedOut,
             });
-            res.status(timedOut ? 504 : 500).json({
-                error: timedOut
-                    ? nls.localize('qaap/agentTasks/improvePromptTimeout', 'Prompt improvement timed out. Try again.')
-                    : nls.localize('qaap/agentTasks/improvePromptFailed', 'Could not improve the prompt. Try again.'),
-            });
+            if (timedOut) {
+                res.status(504).json({
+                    error: nls.localize('qaap/agentTasks/improvePromptTimeout', 'Prompt improvement timed out. Try again.'),
+                    kind: 'timeout',
+                });
+                return;
+            }
+            const failure = describeImprovePromptFailure(error, agentId);
+            res.status(failure.status).json({ error: failure.error, kind: failure.kind });
         }
     }
 

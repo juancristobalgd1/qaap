@@ -445,7 +445,9 @@ describe('Pi Connect dialog: `/login` driven in the hidden terminal', () => {
         while (dialogSpinning() && Date.now() - startedAt <= 40_000) {
             await clock.tickAsync(500);
         }
-        expect(dialogStatus()).to.contain('did not show a sign-in link within 30 seconds');
+        // Only the echoed command came back, so the tail is empty: the dialog says so and gives the host's facts.
+        expect(dialogStatus()).to.contain('No output was received from the sign-in terminal.');
+        expect(dialogStatus()).to.contain('Terminal started:');
         expect(terminal.sent.filter(text => text === '\r').length, 'the method picker never showed, so its Enter was never typed')
             .to.be.below(3);
         expect(terminal.isDisposed).to.equal(true);

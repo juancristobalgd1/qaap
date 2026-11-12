@@ -162,36 +162,7 @@
     background: var(--theia-editorWidget-background, var(--theia-editor-background));
 }
 
-/* Edge fades only on the side where items are hidden; the masks follow the rail's scroll axis. */
-.qaap-model-picker-rail.theia-mod-overflow-end:not(.theia-mod-horizontal) {
-    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
-    mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
-}
-
-.qaap-model-picker-rail.theia-mod-overflow-start:not(.theia-mod-horizontal) {
-    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 28px);
-    mask-image: linear-gradient(to bottom, transparent, #000 28px);
-}
-
-.qaap-model-picker-rail.theia-mod-overflow-start.theia-mod-overflow-end:not(.theia-mod-horizontal) {
-    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 28px, #000 calc(100% - 28px), transparent);
-    mask-image: linear-gradient(to bottom, transparent, #000 28px, #000 calc(100% - 28px), transparent);
-}
-
-.qaap-model-picker-rail.theia-mod-horizontal.theia-mod-overflow-end {
-    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
-    mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
-}
-
-.qaap-model-picker-rail.theia-mod-horizontal.theia-mod-overflow-start {
-    -webkit-mask-image: linear-gradient(to right, transparent, #000 28px);
-    mask-image: linear-gradient(to right, transparent, #000 28px);
-}
-
-.qaap-model-picker-rail.theia-mod-horizontal.theia-mod-overflow-start.theia-mod-overflow-end {
-    -webkit-mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
-    mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
-}
+/* Edge fades on the hidden side come from attachQaapScrollEdgeFades() (qaap-scroll-edge-fades.css), on the rail's own axis. */
 
 /* Discrete arrows, shown only with a fine pointer and only on a side that has hidden items. */
 .qaap-model-picker-rail-arrow {
@@ -227,8 +198,8 @@
 }
 
 @media (pointer: fine) {
-    .qaap-model-picker-rail.theia-mod-horizontal.theia-mod-overflow-start ~ .qaap-model-picker-rail-arrow.is-start,
-    .qaap-model-picker-rail.theia-mod-horizontal.theia-mod-overflow-end ~ .qaap-model-picker-rail-arrow.is-end {
+    .qaap-model-picker-rail.theia-mod-horizontal.qaap-mod-scroll-fade-start ~ .qaap-model-picker-rail-arrow.is-start,
+    .qaap-model-picker-rail.theia-mod-horizontal.qaap-mod-scroll-fade-end ~ .qaap-model-picker-rail-arrow.is-end {
         display: inline-flex;
     }
 }
@@ -314,11 +285,6 @@
     padding: 0 6px 8px;
     overflow-y: auto;
     overscroll-behavior: contain;
-}
-
-.qaap-model-picker-rows.theia-mod-more-below {
-    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 56px), transparent);
-    mask-image: linear-gradient(to bottom, #000 calc(100% - 56px), transparent);
 }
 
 /* Same treatment for every harness logo in the picker: no tone tile, same box. */

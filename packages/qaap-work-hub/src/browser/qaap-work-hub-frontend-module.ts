@@ -21,6 +21,7 @@ import '../../src/browser/style/mobile-workbench-chrome.css';
 import '../../src/browser/style/mobile-workbench-ide-chrome.css';
 import '../../src/browser/style/qaap-catalog-card-tap-feedback.css';
 import '@theia/qaap-mobile-shell/src/browser/style/qaap-mobile-touch-scroll.css';
+import '@theia/qaap-mobile-shell/src/browser/style/qaap-scroll-edge-fades.css';
 import '../../src/browser/style/qaap-empty-workbench-brand.css';
 import '../../src/browser/style/qaap-ide-preferences.css';
 import '../../src/browser/style/qaap-project-bootstrap.css';
