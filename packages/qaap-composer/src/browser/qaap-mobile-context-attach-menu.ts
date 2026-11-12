@@ -52,6 +52,8 @@ export interface ComposerProjectFileMatch {
     readonly name: string;
     /** Folder shown under the name ('' at the root). */
     readonly folder: string;
+    /** File-icon theme class from the label provider; the generic file codicon when absent. */
+    readonly iconClass?: string;
 }
 
 export interface MobileContextAttachServices {
@@ -263,7 +265,7 @@ function showContextAttachMenu(
             showingSkills = false;
             showingMcp = false;
             showingFiles = false;
-            menu.classList.remove('theia-mod-skills-view', 'theia-mod-mcp-view', 'theia-mod-files-view');
+            menu.classList.remove('theia-mod-skills-view', 'theia-mod-mcp-view', 'theia-mod-files-view', 'show-file-icons');
             menuBody.replaceChildren();
 
             if (improve) {
@@ -374,7 +376,8 @@ function showContextAttachMenu(
             showingFiles = true;
             showingSkills = false;
             showingMcp = false;
-            menu.classList.add('theia-mod-skills-view', 'theia-mod-files-view');
+            // `show-file-icons` lets the active file-icon theme paint the per-type icons, as in the quick pick.
+            menu.classList.add('theia-mod-skills-view', 'theia-mod-files-view', 'show-file-icons');
             menuBody.replaceChildren();
             menuBody.append(createAttachMenuBackButton(
                 nls.localize('qaap/mobileProjects/stickyComposerAttachBack', 'Back'),
@@ -405,7 +408,7 @@ function showContextAttachMenu(
                         return;
                     }
                     scroll.replaceChildren(...matches.map(match => createAttachMenuItem({
-                        iconClasses: 'codicon codicon-file',
+                        iconClasses: match.iconClass ? `${match.iconClass} file-icon` : 'codicon codicon-file',
                         label: match.name,
                         hint: match.folder || undefined,
                         compact: true,

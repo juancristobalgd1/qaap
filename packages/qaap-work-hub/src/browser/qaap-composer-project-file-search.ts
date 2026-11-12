@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import URI from '@theia/core/lib/common/uri';
+import type { LabelProvider } from '@theia/core/lib/browser/label-provider';
 import type { FileSearchService } from '@theia/file-search/lib/common/file-search-service';
 import type { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
 import type { ComposerProjectFileMatch } from '@theia/qaap-composer/lib/browser/qaap-mobile-context-attach-menu';
@@ -19,6 +20,7 @@ const COMPOSER_PROJECT_FILE_SEARCH_LIMIT = 60;
 export function createComposerProjectFileSearch(
     fileSearchService: FileSearchService,
     workspaceService: WorkspaceService,
+    labelProvider?: LabelProvider,
 ): (query: string) => Promise<readonly ComposerProjectFileMatch[]> {
     return async query => {
         const rootUris = workspaceService.tryGetRoots().map(root => root.resource.toString());
@@ -40,6 +42,8 @@ export function createComposerProjectFileSearch(
                 path,
                 name: uri.path.base,
                 folder: slash > 0 ? path.slice(0, slash) : '',
+                // The file-icon theme class (the same icons Theia's quick pick and explorer show).
+                iconClass: labelProvider?.getIcon(uri) || undefined,
             };
         });
     };

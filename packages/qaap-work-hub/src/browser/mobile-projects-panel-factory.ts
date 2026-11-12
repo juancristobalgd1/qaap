@@ -208,7 +208,7 @@ export class MobileProjectsPanelFactory {
                         fileUploadService: deps.fileUploadService,
                         fileService: deps.fileService,
                         workspaceService: deps.workspaceService,
-                        searchProjectFiles: createComposerProjectFileSearch(deps.fileSearchService, deps.workspaceService),
+                        searchProjectFiles: createComposerProjectFileSearch(deps.fileSearchService, deps.workspaceService, deps.labelProvider),
                     },
                     handlers,
                     deps.skillService,
