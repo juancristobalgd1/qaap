@@ -29,7 +29,7 @@ import { resolveAgentMessageSegments } from '@theia/qaap-shared-core/lib/common/
 import { WORKING_DETAIL_TRANSCRIPT_CLASS } from './qaap-sticky-composer-working-detail-transcript';
 import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
 import type { MobileProjectsTranscriptLiveUi } from './mobile-projects-transcript-live-ui';
-import type { TranscriptExecutionSurfaceTabsApi, TranscriptProjectLabelsApi, TranscriptStickyComposerApi } from './qaap-transcript-host-contracts';
+import type { TranscriptExecutionSurfaceTabsApi, TranscriptProjectLabelsApi, TranscriptStickyComposerApi, TranscriptTurnResultApi } from './qaap-transcript-host-contracts';
 import type { WorkHubTranscriptBridge } from '@theia/qaap-transcript-overlay/lib/browser/work-hub-transcript-bridge';
 
 /** Panel surface consumed by transcript message rendering (keeps deps narrow vs. the full panel). */
@@ -92,6 +92,12 @@ export interface MobileProjectsTranscriptMessagesHost {
     openPreferencesSheet?(query?: string): Promise<void>;
     /** Opens the billing sheet (Upgrade / Top up call to action on plan-limit failures). */
     openBillingSheet?(): Promise<void>;
+    /** Composer actions behind the turn-end result card (preview, Create PR, Continue). */
+    turnResultApi?: TranscriptTurnResultApi;
+    /** Opens the composer's agent and model picker ("Change model" on usage-limit and model-unavailable failures). */
+    openTranscriptModelPicker?(): void;
+    /** Removes a project from the Work Hub list through the existing confirmed remove flow (missing-folder banner). */
+    removeTranscriptProject?(project: MobileProjectEntry): void | Promise<void>;
 }
 
 /** Transcript message list rendering: rows, streaming patches, and rich segment UI. */

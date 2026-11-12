@@ -177,7 +177,7 @@ export function createTerminalAgentTuiSelectExtracted(ctx: MobileProjectsExecuti
         try {
             const agents = await ctx.host.stickyComposerAgentsUi.ensureStickyComposerAgentsLoaded(project);
             menu.replaceChildren();
-            const launchable = agents.filter(agent => resolveInteractiveAgentCliBin(agent.id));
+            const launchable = agents.filter(agent => resolveInteractiveAgentCliBin(agent.id, agent.cliBin));
             const activeAgentId = ctx.resolveTerminalAgentTuiActiveAgentId(project);
 
             if (launchable.length === 0) {
@@ -221,6 +221,7 @@ export function createTerminalAgentTuiSelectExtracted(ctx: MobileProjectsExecuti
                         project,
                         ctx.host.transcriptOpenSummary ?? ctx.host.resolveAgentsHubShellSummary(project),
                         agent.id,
+                        { cliBin: agent.cliBin },
                     );
                 });
                 menu.append(item);

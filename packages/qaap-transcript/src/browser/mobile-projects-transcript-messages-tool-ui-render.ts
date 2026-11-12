@@ -10,6 +10,7 @@ import { QaapPlanLimit } from '@theia/qaap-adapters/lib/common/qaap-plan-limit';
 import {
     detectAgentFailureKind,
     formatStoredAgentFailureMessage,
+    isAgentUsageLimitText,
     isProviderKeyFailureKind,
     isQaiqProviderKeyMissingFailure,
     localizeAgentFailureShortReason,
@@ -69,6 +70,8 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
             readonly onOpenAiFeaturesSettings?: () => void | Promise<void>;
             /** Opens the billing sheet; backs the Upgrade / Top up button on plan-limit failures. */
             readonly onOpenBilling?: () => void | Promise<void>;
+            /** Opens the composer's model picker; backs "Change model" on usage-limit and model-unavailable failures. */
+            readonly onChangeModel?: () => void;
             readonly agentMessage?: Pick<QaapAgentMessageDTO, 'role' | 'content' | 'error' | 'segments' | 'traceEvents'>;
         },): HTMLElement {
         const persisted = formatStoredAgentFailureMessage(error);
@@ -252,6 +255,22 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
                 'Pick another model or effort in the composer, then retry. We do not change effort automatically.',
             );
             body.append(hint);
+        }
+
+        // A usage limit or a retired/unavailable model is cured by another model, not by retrying this one.
+        const canChangeModel = !authChallenge && (isAgentUsageLimitText(authSample) || failureKind === 'model_unavailable');
+        if (canChangeModel && options?.onChangeModel) {
+            const changeModelBtn = document.createElement('button');
+            changeModelBtn.type = 'button';
+            changeModelBtn.className = 'theia-mobile-agent-turn-failure-change-model codicon codicon-settings-gear';
+            changeModelBtn.textContent = nls.localize('qaap/mobileProjects/transcriptChangeModel', 'Change model');
+            changeModelBtn.setAttribute('aria-label', changeModelBtn.textContent);
+            changeModelBtn.addEventListener('click', event => {
+                event.stopPropagation();
+                event.preventDefault();
+                options.onChangeModel?.();
+            });
+            body.append(changeModelBtn);
         }
 
         const technical = technicalContent?.trim();

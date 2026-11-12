@@ -167,6 +167,9 @@ export function listAgents(detectedAgents: Map<string, AgentCandidate>): QaapAge
 
 // ─── DI: probeAgentBinOnce ───────────────────────────────────────────────────
 
+/** Boot-time `<cli> --version` probes never wait longer than this; a miss is logged once and the boot goes on. */
+const AGENT_BIN_VERSION_PROBE_TIMEOUT_MS = 5_000;
+
 export function probeAgentBinOnce(
     agentId: string,
     resolveBin: () => string | undefined,
@@ -180,7 +183,10 @@ export function probeAgentBinOnce(
         return false;
     }
     try {
-        spawnSync(bin, ['--version'], { encoding: 'utf8', timeout: 8000 });
+        const result = spawnSync(bin, ['--version'], { encoding: 'utf8', timeout: AGENT_BIN_VERSION_PROBE_TIMEOUT_MS });
+        if (result.error || result.status !== 0) {
+            console.warn(`[qaap-agent-tasks] ${agentId} --version probe failed: ${result.error?.message ?? `exit ${String(result.status)}`}`);
+        }
         probedAgentBins.add(agentId);
         return true;
     } catch {

@@ -47,6 +47,7 @@ import {
 import { resolveTranscriptDiscardCheckpointId, resolveTranscriptTurnRetryAttempt } from '../common/qaap-transcript-turn-recovery';
 import { createMobileStoppedTurnLineElement } from './mobile-stopped-turn-line';
 import { createMobileTurnClosingReportElement } from './mobile-turn-closing-report';
+import { MOBILE_TURN_RESULT_CLASS } from './mobile-turn-result-footer';
 import { findQaapClosingReport } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model';
 
 export function removeTranscriptLiveStatusWithOrbExtracted(ctx: MobileProjectsTranscriptMessagesArtifactsUiContext, root: ParentNode): void {
@@ -182,6 +183,7 @@ export function createTranscriptAgentSegmentsRowExtracted(ctx: MobileProjectsTra
                         ? () => ctx.host.openPreferencesSheet?.('ai-features')
                         : undefined,
                     onOpenBilling: ctx.host.openBillingSheet ? () => ctx.host.openBillingSheet?.() : undefined,
+                    onChangeModel: ctx.host.openTranscriptModelPicker ? () => ctx.host.openTranscriptModelPicker?.() : undefined,
                     agentId,
                     agentMessage: failureMessage,
                 },
@@ -189,8 +191,9 @@ export function createTranscriptAgentSegmentsRowExtracted(ctx: MobileProjectsTra
         }
         // The turn's closing report (blocked / warnings / done) as a quiet closing row. A failure
         // already has its own dialog above.
+        // The turn-result footer already carries the verdict on a successful turn with changes: no second row.
         const closingReport = !streaming && !error ? findQaapClosingReport(options?.message) : undefined;
-        if (closingReport) {
+        if (closingReport && !body.querySelector(`.${MOBILE_TURN_RESULT_CLASS}-verdict`)) {
             body.append(createMobileTurnClosingReportElement(closingReport));
         }
         row.append(body);
@@ -311,7 +314,7 @@ export function renderMobileExecutionEventTimelineExtracted(ctx: MobileProjectsT
         // (idle/failed/cancelled) — never while streaming, working, or finalizing
         // (status still `streaming`/`settled` even when the turn looks complete).
         if (ctx.shouldShowMobileDiffSummary(conv, streaming)) {
-            ctx.appendMobileDiffSummary(body, segments);
+            ctx.appendMobileDiffSummary(body, segments, { conv, message: message ?? ctx.resolveLastAgentMessage(conv) });
         } else {
             // Drop any premature card from an earlier paint; keep the live footer
             // only for true streaming renders.

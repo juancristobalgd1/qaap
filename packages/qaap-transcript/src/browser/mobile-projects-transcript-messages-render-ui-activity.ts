@@ -264,6 +264,7 @@ export function buildTranscriptAgentFailureDialogOptionsExtracted(ctx: MobilePro
                 ? () => ctx.host.openPreferencesSheet?.('ai-features')
                 : undefined,
             onOpenBilling: ctx.host.openBillingSheet ? () => ctx.host.openBillingSheet?.() : undefined,
+            onChangeModel: ctx.host.openTranscriptModelPicker ? () => ctx.host.openTranscriptModelPicker?.() : undefined,
             agentLabel: input.agentId ? resolveAgentDisplayLabel(input.agentId) : undefined,
             agentId: input.agentId,
             agentMessage: input.agentMessage,

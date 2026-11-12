@@ -639,8 +639,17 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
                 const available = agent.id.toLowerCase() === 'codex'
                     ? agent.available && accessState !== 'none'
                     : agent.available && connectionState !== 'disconnected';
-                return { ...agent, available, connectionState, accessState };
+                const cliBin = this.antigravityCliBinFor(agent.id);
+                return { ...agent, available, connectionState, accessState, ...(cliBin ? { cliBin } : {}) };
             });
+    }
+
+    /**
+     * The Antigravity CLI detection resolved at boot (the task template runs this same binary), for the
+     * frontend's TUI menu and Connect. Other harnesses have no such choice and get `undefined`.
+     */
+    protected antigravityCliBinFor(agentId: string): string | undefined {
+        return agentId === 'antigravity' ? this.detectedAgents.get('antigravity')?.bin : undefined;
     }
 
     /**
@@ -695,6 +704,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         return QAAP_HARNESS_DEFINITIONS.map(definition => {
             const candidate = this.detectedAgents.get(definition.id);
             const lastTurn = this.lastTurns?.get(ownerLogin, definition.id);
+            const cliBin = this.antigravityCliBinFor(definition.id);
             const installed = candidate
                 ? !candidate.bin || this.isOnPath(candidate.bin, pathEnv)
                 : this.isOnPath(definition.bin, pathEnv);
@@ -707,6 +717,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
                     : 'unknown',
                 installSupported: isInstallSupported(definition.id),
                 cliBinDirectory,
+                ...(cliBin ? { cliBin } : {}),
                 ...(lastTurn ? { lastTurn } : {}),
             };
         });

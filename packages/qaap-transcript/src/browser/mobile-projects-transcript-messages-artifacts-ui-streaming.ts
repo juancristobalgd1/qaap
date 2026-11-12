@@ -6,7 +6,10 @@ import { resolveTranscriptTurnRetryAttempt } from '../common/qaap-transcript-tur
 
 import { nls } from '@theia/core/lib/common/nls';
 import { localizeAgentFailureShortReason } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
-import { type QaapAgentConversationDTO, type QaapAgentConversationSummaryDTO, type QaapAgentMessageSegmentDTO, conversationToSummary } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { findQaapClosingReport } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model';
+import { createMobileTurnResultFooterElement } from './mobile-turn-result-footer';
+import { parseMobileTurnClosingReport } from './mobile-turn-closing-report';
+import { type QaapAgentConversationDTO, type QaapAgentConversationSummaryDTO, type QaapAgentMessageDTO, type QaapAgentMessageSegmentDTO, conversationToSummary } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { hasTranscriptActivityStats, resolveTranscriptActivityStats, resolveTranscriptThinkingContent } from '../common/qaap-agent-transcript-segments';
 import { resolveLastUserPromptChars, shouldShowTranscriptThoughtBrief } from '../common/qaap-transcript-stream-status';
 import type { TranscriptActivityNavigationItem } from '../common/qaap-transcript-activity-navigation';
@@ -184,8 +187,38 @@ export function enrichChangedFilesWithComposerGitStatsExtracted(ctx: MobileProje
         return enrichChangedFilesWithComposerGitStatsHelper(files, gitFiles);
 }
 
+/**
+ * Closes the Files Changed card with the turn-result footer (verdict, preview, next step) once the turn
+ * succeeded. Blocked and failed turns keep their own rows, so they get no footer.
+ */
+function appendTurnResultFooter(
+    ctx: MobileProjectsTranscriptMessagesArtifactsUiContext,
+    card: HTMLElement,
+    turn: { readonly conv?: QaapAgentConversationDTO; readonly message?: QaapAgentMessageDTO } | undefined,
+): void {
+    const conv = turn?.conv;
+    if (!conv) {
+        return;
+    }
+    const report = findQaapClosingReport(turn?.message ?? ctx.resolveLastAgentMessage(conv));
+    const parsed = report ? parseMobileTurnClosingReport(report) : undefined;
+    if (parsed?.tone === 'blocked' || parsed?.tone === 'failed') {
+        return;
+    }
+    const api = ctx.host.turnResultApi;
+    const state = api?.resolveTurnResultState(conv) ?? { previewState: 'none' as const, canCreatePr: false };
+    const verdict = parsed ? { tone: parsed.tone, title: parsed.title, details: parsed.details } : undefined;
+    card.append(createMobileTurnResultFooterElement({ verdict, state }, {
+        onOpenPreview: () => api?.openTurnResultPreview(conv),
+        onRunPreview: () => api?.runTurnResultPreview(conv),
+        onCreatePr: () => api?.createTurnResultPullRequest(conv),
+        onContinue: () => api?.focusTurnResultComposer(),
+    }));
+}
+
 export function appendMobileDiffSummaryExtracted(ctx: MobileProjectsTranscriptMessagesArtifactsUiContext, segmentsBody: HTMLElement,
-        segments: readonly QaapAgentMessageSegmentDTO[],): void {
+        segments: readonly QaapAgentMessageSegmentDTO[],
+        turn?: { readonly conv?: QaapAgentConversationDTO; readonly message?: QaapAgentMessageDTO },): void {
         // Remove any existing diff summary or live footer so re-calling this is idempotent.
         segmentsBody.querySelector('.theia-mobile-diff-summary')?.remove();
         ctx.removeTranscriptLiveStatusWithOrb(segmentsBody);
@@ -213,6 +246,7 @@ export function appendMobileDiffSummaryExtracted(ctx: MobileProjectsTranscriptMe
                     }
                 },
             );
+            appendTurnResultFooter(ctx, diffSummary, turn);
             // Last child = below process accordion + closing narrative summary.
             segmentsBody.append(diffSummary);
         } else {
@@ -223,6 +257,7 @@ export function appendMobileDiffSummaryExtracted(ctx: MobileProjectsTranscriptMe
             const diffStats = ctx.resolversUi.resolveTranscriptDiffStats(mutableSegments);
             if (diffStats && (diffStats.added > 0 || diffStats.removed > 0)) {
                 const diffSummary = createMobileLineDiffSummaryElement(diffStats.added, diffStats.removed);
+                appendTurnResultFooter(ctx, diffSummary, turn);
                 segmentsBody.append(diffSummary);
             }
         }
@@ -250,7 +285,7 @@ export function finalizeStreamingAgentTraceExtracted(ctx: MobileProjectsTranscri
             // response. Visual settle while status is still `streaming`/`settled`
             // must not show the card yet (agent still finalizing / VPS attached).
             if (ctx.shouldShowMobileDiffSummary(conv, false)) {
-                ctx.appendMobileDiffSummary(segmentsBody, segments);
+                ctx.appendMobileDiffSummary(segmentsBody, segments, { conv, message: ctx.resolveLastAgentMessage(conv) });
             } else {
                 segmentsBody.querySelector('.theia-mobile-diff-summary')?.remove();
                 ctx.removeTranscriptLiveStatusWithOrb(segmentsBody);

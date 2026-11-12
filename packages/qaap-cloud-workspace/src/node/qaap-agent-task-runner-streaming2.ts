@@ -1,6 +1,7 @@
 import { buildPiGateTemplateVars } from './qaap-tool-gate-pi-adapter';
 import { formatTaskStartLog } from './qaap-agent-conversation-persist-policy';
 import { buildPiDefaultModelFlagShell } from '@theia/qaap-shared-core/lib/common/qaap-pi-default-model';
+import { normalizeAntigravityCliBin } from '@theia/qaap-shared-core/lib/common/qaap-antigravity-cli';
 import { AGENT_STOP_GRACE_TIMEOUT_MS, SHELL_AGENT_ID, QAIQ_AGENT_ID, REPO_MAP_CACHE_TTL_MS, REPO_MAP_MAX_CHARS, USER_REQUEST_MAX_CHARS } from './qaap-agent-task-runner-constants';
 import type { QaapAgentCommandBuildResult, QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { QaapAgentQueuePolicy } from './qaap-agent-queue-policy';
@@ -694,7 +695,8 @@ function buildBaseTemplateVars(ctx: QaapAgentTaskRunnerContext, agentId: string,
         if (agentModel?.provider && agentModel.modelId?.trim()
             && agentModelFitsAgent(agentId, agentModel, () => listNativeAgentModels(agentId, ownerLogin))) {
             const binding = ctx.normalizeAgentBinding(bindingFromQaiqModelSelection(agentModel), ownerLogin);
-            const flags = formatModelFlagsForAgent(agentId, binding);
+            const antigravityBin = agentId.trim().toLowerCase() === 'antigravity' ? ctx.resolveAntigravityBin() : undefined;
+            const flags = formatModelFlagsForAgent(agentId, binding, normalizeAntigravityCliBin(antigravityBin));
             if (isQaiqAgent(agentId)) {
                 return { qaiq_flags: joinQaiqFlags(qaiqInteractionFlags, flags), model_flags: '', [QAAP_PROJECT_TRUST_FLAGS_TEMPLATE_VAR]: trustFlags };
             }
