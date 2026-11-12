@@ -22,12 +22,13 @@ export class QaapBillingQuotaService implements QaapBillingQuota {
         const entitlements = await this.store.getEntitlements(login);
         return {
             planId: entitlements.planId,
-            hostedModels: entitlements.hostedModels,
-            creditsRemaining: entitlements.creditsRemaining,
-            canStartAgent: entitlements.canStartAgent,
             maxConcurrentAgents: entitlements.maxConcurrentAgents,
             maxActiveRepos: entitlements.maxActiveRepos,
-            runtimeFairUse: entitlements.runtimeFairUse,
+            storageGb: entitlements.storageGb,
+            memoryOptionsGb: entitlements.memoryOptionsGb,
+            defaultMemoryGb: entitlements.defaultMemoryGb,
+            cpuLimit: entitlements.cpuLimit,
+            idlePauseMinutes: entitlements.idlePauseMinutes,
         };
     }
 

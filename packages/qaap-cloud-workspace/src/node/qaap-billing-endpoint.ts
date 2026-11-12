@@ -17,7 +17,7 @@ import {
     QAAP_BILLING_DEV_ACTIVATE_API_PATH,
     QAAP_BILLING_WEBHOOK_API_PATH,
 } from '../common/qaap-cloud-api-types';
-import { QAAP_BILLING_PLANS, QAAP_CODEX_HOSTED_RATES, QAAP_RUNTIME_PACKS, entitlementsFor } from '../common/qaap-billing-plans';
+import { QAAP_BILLING_PLANS, entitlementsFor } from '../common/qaap-billing-plans';
 import { QaapBillingStore } from './qaap-billing-store';
 import {
     createSubscriptionCheckoutSession,
@@ -39,7 +39,7 @@ import {
     type QaapStripeSubscriptionObject,
 } from './qaap-stripe-billing';
 
-/** Billing entitlements + Stripe Checkout for Pro / Team monthly subscriptions. */
+/** Billing entitlements + Stripe Checkout for the Pro monthly subscription. */
 @injectable()
 export class QaapBillingEndpoint implements BackendApplicationContribution {
 
@@ -74,13 +74,11 @@ export class QaapBillingEndpoint implements BackendApplicationContribution {
             entitlements: entitlementsFor(account),
             catalog: {
                 plans: QAAP_BILLING_PLANS,
-                runtimePacks: QAAP_RUNTIME_PACKS,
-                hostedModels: QAAP_CODEX_HOSTED_RATES,
             },
             checkout: {
                 stripeEnabled: isStripeBillingConfigured(),
                 devActivateEnabled: !isStripeBillingConfigured() && isBillingDevActivateEnabled(this.auth.isSkipAuthEnabled()),
-                payablePlanIds: ['pro', 'team'],
+                payablePlanIds: ['pro'],
             },
         };
     }
@@ -101,7 +99,7 @@ export class QaapBillingEndpoint implements BackendApplicationContribution {
         }
         const planIdRaw = typeof req.body?.planId === 'string' ? req.body.planId.trim() : '';
         if (!isQaapPayablePlanId(planIdRaw)) {
-            res.status(400).json({ error: 'planId must be "pro" or "team"' });
+            res.status(400).json({ error: 'planId must be "pro"' });
             return;
         }
         if (!isStripeBillingConfigured()) {
@@ -203,7 +201,7 @@ export class QaapBillingEndpoint implements BackendApplicationContribution {
         }
         const planIdRaw = typeof req.body?.planId === 'string' ? req.body.planId.trim() : '';
         if (planIdRaw !== 'starter' && !isQaapPayablePlanId(planIdRaw)) {
-            res.status(400).json({ error: 'planId must be "starter", "pro", or "team"' });
+            res.status(400).json({ error: 'planId must be "starter" or "pro"' });
             return;
         }
         const account = await this.store.setPlan(

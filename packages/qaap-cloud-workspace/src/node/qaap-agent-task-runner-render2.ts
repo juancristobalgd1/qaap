@@ -35,9 +35,8 @@ import { OPENCLAUDE_AGENT_ID, resolveQaapAgentMentionToken } from '@theia/qaap-s
 import { normalizeAntigravityCliBin, resolveAntigravityCliBin, resolveAntigravityCliTemplate } from '@theia/qaap-shared-core/lib/common/qaap-antigravity-cli';
 import { isOpenCodeFreeModelId } from '@theia/qaap-shared-core/lib/common/qaap-opencode-model-catalog';
 import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model-catalog';
-import { isHostedCodexUsage } from '../common/qaap-billing-plans';
 import { antigravityBinFor, listNativeAgentModels } from './qaap-agent-native-models';
-import { isHostedCodexEntitled, resolveAgentAccess } from './qaap-agent-access';
+import { resolveAgentAccess } from './qaap-agent-access';
 import { listQaiqModelsFromPreferences } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
 import { resolveTrustedExecutable } from './qaap-trusted-executable';
 import { childProcessEnv } from './qaap-child-process-env';
@@ -696,7 +695,7 @@ function applyOpenCodePaidModelAccess(model: QaapQaiqModelOption, access: QaapAg
     if (isOpenCodeFreeModelId(model.modelId)) {
         return model;
     }
-    if (access === 'session' || access === 'hosted') {
+    if (access === 'session') {
         return { ...model, available: true };
     }
     if (access === 'unknown') {
@@ -728,24 +727,23 @@ export function listModelsForAgentExtracted(
         }
         // Same access answer as the picker row (resolveAgentAccess), so the row and its models agree.
         // Keep the native catalog visible when the owner cannot use it yet; the picker explains the lock
-        // instead of opening an empty submenu, and task startup still enforces the billing gate.
+        // instead of opening an empty submenu.
         const snapshot = ctx.agentConnectionSnapshot(normalized, owner);
         const access = resolveAgentAccess({
             agentId: normalized,
             connectionState: snapshot.connectionState,
             probeSettled: snapshot.probeSettled,
-            hostedEntitled: isHostedCodexEntitled(ctx.billingStore?.peekEntitlements?.(owner)),
         });
         return models.map(model => {
             if (normalized === 'opencode') {
                 return applyOpenCodePaidModelAccess(model, access);
             }
-            if (!isHostedCodexUsage(normalized, model.modelId)) {
+            if (normalized !== 'codex') {
                 return model;
             }
-            // A user's own Codex login or Qaap-hosted entitlement unlocks the model. Only a settled
-            // sign-out is locked, and it is an actionable sign-in rather than a plan restriction.
-            if (access === 'session' || access === 'hosted') {
+            // Codex runs on the owner's own sign-in. Only a settled sign-out is locked, and it is an
+            // actionable sign-in rather than a plan restriction.
+            if (access === 'session') {
                 return { ...model, available: true };
             }
             // While the probe is still pending there is no answer yet: show the model without a lock.

@@ -31,7 +31,6 @@ import {
     type QaapAgentTaskState,
     type QaapCreateAgentTaskRequest,
 } from '../common/qaap-agent-task';
-import { billableAgentDurationMs } from '../common/qaap-billing-agent-runtime';
 import { buildAgentClosingReport, type QaapAgentClosingDiffSummary, type QaapAgentClosingReport } from '../common/qaap-agent-closing-report';
 import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model-catalog';
 import { agentModelFitsAgent } from '../common/qaap-agent-task-model-routing';
@@ -526,10 +525,6 @@ export function finishTaskExtracted(ctx: QaapAgentTaskRunnerContext, id: string,
             exitCode,
             finished.startedAt === undefined ? undefined : finished.finishedAt! - finished.startedAt,
         );
-        const durationMs = billableAgentDurationMs(finished);
-        if (durationMs > 0 && finished.ownerLogin && ctx.billingStore) {
-            void ctx.billingStore.debitRuntime(finished.ownerLogin, durationMs).catch(() => undefined);
-        }
         // 'completed'/'failed'/'interrupted' map to 'completed' for subscribers; 'cancelled' stays distinct.
         ctx.onDidChangeTaskEmitter.fire({
             type: state === 'cancelled' ? 'cancelled' : 'completed',

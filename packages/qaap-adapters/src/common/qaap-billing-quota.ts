@@ -11,12 +11,13 @@ export const QaapBillingQuota = Symbol.for('QaapBillingQuota');
 
 export interface QaapBillingQuotaSnapshot {
     readonly planId: string;
-    readonly hostedModels: boolean;
-    readonly creditsRemaining: number;
-    readonly canStartAgent: boolean;
     readonly maxConcurrentAgents: number;
     readonly maxActiveRepos: number;
-    readonly runtimeFairUse: boolean;
+    readonly storageGb: number;
+    readonly memoryOptionsGb: readonly number[];
+    readonly defaultMemoryGb: number;
+    readonly cpuLimit: number;
+    readonly idlePauseMinutes: number;
 }
 
 export class QaapPlanRepoLimitError extends Error {

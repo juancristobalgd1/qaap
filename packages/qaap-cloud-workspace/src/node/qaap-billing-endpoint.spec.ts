@@ -86,7 +86,7 @@ describe('QaapBillingEndpoint auth gate', () => {
             });
             const res = makeRes();
             await (endpoint as unknown as { handleDevActivate(req: object, response: typeof res): Promise<void> })
-                .handleDevActivate({ body: { planId: 'team' } }, res);
+                .handleDevActivate({ body: { planId: 'pro' } }, res);
             return { statusCode: res.statusCode, plans };
         }
 
@@ -117,9 +117,9 @@ describe('QaapBillingEndpoint auth gate', () => {
         });
 
         it('still switches plans locally under skip-auth or the dev-checkout flag', async () => {
-            expect(await devActivate(true)).to.deep.equal({ statusCode: 200, plans: ['team'] });
+            expect(await devActivate(true)).to.deep.equal({ statusCode: 200, plans: ['pro'] });
             process.env.QAAP_BILLING_DEV_CHECKOUT = '1';
-            expect(await devActivate(false)).to.deep.equal({ statusCode: 200, plans: ['team'] });
+            expect(await devActivate(false)).to.deep.equal({ statusCode: 200, plans: ['pro'] });
         });
     });
 });

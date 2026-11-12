@@ -9,7 +9,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { QaapPlanRepoLimitError } from '@theia/qaap-adapters/lib/common/qaap-billing-quota';
 import { QaapBillingQuotaService } from './qaap-billing-quota-service';
-import { QaapBillingStore } from './qaap-billing-store';
+import { QaapBillingStore } from './qaap-billing-store';
+
 import { QaapSqliteConnectionRegistry } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 
 function makeStore(filePath: string): QaapBillingStore {
@@ -52,11 +53,36 @@ describe('QaapBillingQuotaService', () => {
         }
     });
 
-    it('does not cap Team (unlimited active repos)', async () => {
+    it('caps Pro at 10 active repos', async () => {
         const store = makeStore(filePath);
-        await store.setPlan('alice', 'team');
+        await store.setPlan('alice', 'pro');
         const quota = Object.create(QaapBillingQuotaService.prototype) as QaapBillingQuotaService;
         Object.assign(quota, { store });
-        await quota.assertCanAddActiveRepo('alice', 99);
+        await quota.assertCanAddActiveRepo('alice', 9);
+        try {
+            await quota.assertCanAddActiveRepo('alice', 10);
+            expect.fail('expected QaapPlanRepoLimitError');
+        } catch (error) {
+            expect((error as QaapPlanRepoLimitError).limit).to.equal(10);
+            expect((error as QaapPlanRepoLimitError).planId).to.equal('pro');
+        }
+    });
+
+    it('reports the plan allowances the UI shows', async () => {
+        const store = makeStore(filePath);
+        await store.setPlan('alice', 'pro');
+        const quota = Object.create(QaapBillingQuotaService.prototype) as QaapBillingQuotaService;
+        Object.assign(quota, { store });
+        const snapshot = await quota.getEntitlements('alice');
+        expect(snapshot).to.deep.include({
+            planId: 'pro',
+            maxConcurrentAgents: 4,
+            maxActiveRepos: 10,
+            storageGb: 30,
+            defaultMemoryGb: 2,
+            cpuLimit: 4,
+            idlePauseMinutes: 360,
+        });
+        expect(snapshot.memoryOptionsGb).to.deep.equal([2, 4]);
     });
 });

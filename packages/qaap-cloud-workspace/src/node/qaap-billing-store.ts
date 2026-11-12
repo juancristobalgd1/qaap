@@ -3,46 +3,20 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { inject, injectable, optional } from '@theia/core/shared/inversify';
+import { injectable } from '@theia/core/shared/inversify';
 import * as os from 'os';
 import * as path from 'path';
 import { QaapSqliteStore, resolveQaapSqlitePath } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 import {
-    applyMonthlyReset,
-    canStartNewAgentJob,
-    chargedRuntimeMinutes,
-    creditsForTokenUsage,
+    QAAP_BILLING_PLANS,
     entitlementsFor,
     getQaapBillingPlan,
-    hoursToMinutes,
-    isRuntimeFairUse,
     parseQaapBillingPlanId,
-    runtimeMinutesForDurationMs,
-    spendCreditsUpTo,
-    spendRuntimeMinutes,
-    startOfUtcMonth,
     type QaapBillingAccount,
     type QaapBillingEntitlements,
     type QaapBillingPlanId,
 } from '../common/qaap-billing-plans';
-import { QaapObservability } from './qaap-observability';
 import { isStripeSubscriptionEnded, isStripeSubscriptionEntitled } from './qaap-stripe-billing';
-
-export type QaapBillingDebitResult =
-    | { readonly ok: true; readonly account: QaapBillingAccount; readonly creditsCharged: number }
-    | {
-        readonly ok: false;
-        readonly reason: 'not_hosted' | 'unknown_model' | 'insufficient_credits';
-        readonly account: QaapBillingAccount;
-        readonly creditsCharged?: number;
-    };
-
-export type QaapRuntimeDebitResult = {
-    readonly ok: true;
-    readonly account: QaapBillingAccount;
-    readonly minutesCharged: number;
-    readonly fairUse: boolean;
-};
 
 /** Stripe retries a failed delivery for up to three days; keep handled ids well past that. */
 const STRIPE_EVENT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
@@ -62,9 +36,6 @@ export interface QaapStripeSubscriptionUpdate {
 
 @injectable()
 export class QaapBillingStore {
-
-    @inject(QaapObservability) @optional()
-    protected readonly observability: QaapObservability | undefined;
 
     protected filePath = process.env.QAAP_BILLING_STORE_PATH?.trim()
         || path.join(os.homedir(), '.qaap', 'billing-accounts.json');
@@ -108,7 +79,7 @@ export class QaapBillingStore {
                 return parsed;
             }
         }
-        return getQaapBillingPlan('team').maxConcurrentAgents;
+        return Math.max(...QAAP_BILLING_PLANS.map(plan => plan.maxConcurrentAgents));
     }
 
     protected planConcurrentAgentsForOwner(login: string | undefined): number {
@@ -130,11 +101,8 @@ export class QaapBillingStore {
         return this.withLock(async () => {
             const all = await this.readAll();
             const existing = all[key];
-            const normalized = existing ? this.normalizeAccount(existing) : undefined;
-            const next = normalized
-                ? applyMonthlyReset(normalized, now)
-                : this.createDefaultAccount(key, now);
-            if (!existing || next !== normalized) {
+            const next = this.normalizeAccount(existing ?? this.createDefaultAccount(key, now));
+            if (!existing || JSON.stringify(existing) !== JSON.stringify(next)) {
                 all[key] = next;
                 await this.writeAll(all);
             }
@@ -143,225 +111,9 @@ export class QaapBillingStore {
         });
     }
 
-    async debitHostedUsage(
-        login: string,
-        modelId: string,
-        inputTokens: number,
-        outputTokens: number,
-        now: Date = new Date(),
-    ): Promise<QaapBillingDebitResult> {
-        const key = QaapBillingStore.normalizeLogin(login);
-        const debit = (): Promise<QaapBillingDebitResult> => this.withLock(async () => {
-            const all = await this.readAll();
-            const current = applyMonthlyReset(
-                this.normalizeAccount(all[key] ?? this.createDefaultAccount(key, now)),
-                now,
-            );
-            const creditsBefore = current.includedCreditsRemaining + current.purchasedCredits;
-            const plan = getQaapBillingPlan(current.planId);
-            if (!plan.hostedModels) {
-                this.rememberEntitlements(key, current);
-                const result = { ok: false as const, reason: 'not_hosted' as const, account: current };
-                this.recordHostedUsage(key, modelId, inputTokens, outputTokens, creditsBefore, result);
-                return result;
-            }
-            const creditsCharged = creditsForTokenUsage(modelId, inputTokens, outputTokens);
-            if (creditsCharged === undefined) {
-                this.rememberEntitlements(key, current);
-                const result = { ok: false as const, reason: 'unknown_model' as const, account: current };
-                this.recordHostedUsage(key, modelId, inputTokens, outputTokens, creditsBefore, result);
-                return result;
-            }
-            if (creditsCharged === 0) {
-                all[key] = current;
-                await this.writeAll(all);
-                this.rememberEntitlements(key, current);
-                const result = { ok: true as const, account: current, creditsCharged: 0 };
-                this.recordHostedUsage(key, modelId, inputTokens, outputTokens, creditsBefore, result, creditsCharged);
-                return result;
-            }
-            const spent = spendCreditsUpTo(current, creditsCharged);
-            all[key] = spent.account;
-            await this.writeAll(all);
-            this.rememberEntitlements(key, spent.account);
-            if (spent.charged < creditsCharged) {
-                const result = {
-                    ok: false as const,
-                    reason: 'insufficient_credits' as const,
-                    account: spent.account,
-                    creditsCharged: spent.charged,
-                };
-                this.recordHostedUsage(key, modelId, inputTokens, outputTokens, creditsBefore, result, creditsCharged);
-                return result;
-            }
-            const result = { ok: true as const, account: spent.account, creditsCharged: spent.charged };
-            this.recordHostedUsage(key, modelId, inputTokens, outputTokens, creditsBefore, result, creditsCharged);
-            return result;
-        });
-        return this.observability?.withSpan(
-            'qaap.quota.hosted_debit',
-            { tenantLogin: key, modelId },
-            debit,
-        ) ?? debit();
-    }
-
-    async canStartAgent(login: string, now: Date = new Date()): Promise<boolean> {
-        const account = await this.getOrCreateAccount(login, now);
-        return canStartNewAgentJob(account);
-    }
-
     /**
-     * Charge agent wall-clock after the process exits. Fair-use (Starter) is a no-op.
-     * Never fails: an in-flight turn is billed up to remaining minutes, then remaining = 0.
-     */
-    async debitRuntime(
-        login: string,
-        durationMs: number,
-        now: Date = new Date(),
-    ): Promise<QaapRuntimeDebitResult> {
-        const key = QaapBillingStore.normalizeLogin(login);
-        const debit = (): Promise<QaapRuntimeDebitResult> => this.withLock(async () => {
-            const all = await this.readAll();
-            const current = applyMonthlyReset(
-                this.normalizeAccount(all[key] ?? this.createDefaultAccount(key, now)),
-                now,
-            );
-            const runtimeBefore = current.includedRuntimeMinutesRemaining + current.purchasedRuntimeMinutes;
-            if (isRuntimeFairUse(current.planId)) {
-                all[key] = current;
-                await this.writeAll(all);
-                this.rememberEntitlements(key, current);
-                const result = { ok: true as const, account: current, minutesCharged: 0, fairUse: true };
-                this.recordRuntimeUsage(key, durationMs, runtimeBefore, result, 0);
-                return result;
-            }
-            const minutesRequested = runtimeMinutesForDurationMs(durationMs);
-            if (minutesRequested === 0) {
-                all[key] = current;
-                await this.writeAll(all);
-                this.rememberEntitlements(key, current);
-                const result = { ok: true as const, account: current, minutesCharged: 0, fairUse: false };
-                this.recordRuntimeUsage(key, durationMs, runtimeBefore, result, minutesRequested);
-                return result;
-            }
-            const spent = spendRuntimeMinutes(current, minutesRequested);
-            all[key] = spent;
-            await this.writeAll(all);
-            this.rememberEntitlements(key, spent);
-            const result = {
-                ok: true as const,
-                account: spent,
-                minutesCharged: chargedRuntimeMinutes(current, spent),
-                fairUse: false,
-            };
-            this.recordRuntimeUsage(key, durationMs, runtimeBefore, result, minutesRequested);
-            return result;
-        });
-        return this.observability?.withSpan(
-            'qaap.quota.runtime_debit',
-            { tenantLogin: key, durationMs },
-            debit,
-        ) ?? debit();
-    }
-
-    protected recordHostedUsage(
-        tenantLogin: string,
-        modelId: string,
-        inputTokens: number,
-        outputTokens: number,
-        creditsBefore: number,
-        result: QaapBillingDebitResult,
-        requestedCredits?: number,
-    ): void {
-        const chargedCredits = result.creditsCharged ?? 0;
-        this.observability?.recordQuotaConsumption({
-            tenantLogin,
-            resource: 'hosted-credits',
-            outcome: result.ok ? 'charged' : 'denied',
-            planId: result.account.planId,
-            modelId,
-            inputTokens,
-            outputTokens,
-            requestedCredits,
-            chargedCredits,
-            remainingCredits: result.account.includedCreditsRemaining + result.account.purchasedCredits,
-            creditsBefore,
-            creditsAfter: result.account.includedCreditsRemaining + result.account.purchasedCredits,
-            ...(result.ok ? {} : { reason: result.reason }),
-        });
-    }
-
-    protected recordRuntimeUsage(
-        tenantLogin: string,
-        durationMs: number,
-        runtimeBefore: number,
-        result: QaapRuntimeDebitResult,
-        requestedMinutes: number,
-    ): void {
-        this.observability?.recordQuotaConsumption({
-            tenantLogin,
-            resource: 'runtime-minutes',
-            outcome: result.fairUse ? 'fair-use' : 'charged',
-            planId: result.account.planId,
-            requestedMinutes,
-            chargedMinutes: result.minutesCharged,
-            remainingRuntimeMinutes: result.account.includedRuntimeMinutesRemaining + result.account.purchasedRuntimeMinutes,
-            runtimeBefore,
-            runtimeAfter: result.account.includedRuntimeMinutesRemaining + result.account.purchasedRuntimeMinutes,
-            durationMs,
-            ...(result.fairUse ? { reason: 'fair_use' } : {}),
-        });
-    }
-
-    async addPurchasedCredits(login: string, credits: number, now: Date = new Date()): Promise<QaapBillingAccount> {
-        if (credits <= 0) {
-            return this.getOrCreateAccount(login, now);
-        }
-        const key = QaapBillingStore.normalizeLogin(login);
-        return this.withLock(async () => {
-            const all = await this.readAll();
-            const current = applyMonthlyReset(
-                this.normalizeAccount(all[key] ?? this.createDefaultAccount(key, now)),
-                now,
-            );
-            const next: QaapBillingAccount = {
-                ...current,
-                purchasedCredits: current.purchasedCredits + credits,
-                updatedAt: now.toISOString(),
-            };
-            all[key] = next;
-            await this.writeAll(all);
-            this.rememberEntitlements(key, next);
-            return next;
-        });
-    }
-
-    async addPurchasedRuntimeHours(login: string, hours: number, now: Date = new Date()): Promise<QaapBillingAccount> {
-        if (hours <= 0) {
-            return this.getOrCreateAccount(login, now);
-        }
-        const key = QaapBillingStore.normalizeLogin(login);
-        return this.withLock(async () => {
-            const all = await this.readAll();
-            const current = applyMonthlyReset(
-                this.normalizeAccount(all[key] ?? this.createDefaultAccount(key, now)),
-                now,
-            );
-            const next: QaapBillingAccount = {
-                ...current,
-                purchasedRuntimeMinutes: current.purchasedRuntimeMinutes + hoursToMinutes(hours),
-                updatedAt: now.toISOString(),
-            };
-            all[key] = next;
-            await this.writeAll(all);
-            this.rememberEntitlements(key, next);
-            return next;
-        });
-    }
-
-    /**
-     * Apply a plan change (Stripe webhook or local/dev activate).
-     * Resets included runtime/credits to the new plan allowance; keeps purchased top-ups.
+     * Apply a plan change (Stripe webhook or local/dev activate). Only the plan and its subscription
+     * references change: the workspace limits come from the catalog on every read.
      */
     async setPlan(
         login: string,
@@ -376,12 +128,9 @@ export class QaapBillingStore {
         const key = QaapBillingStore.normalizeLogin(login);
         return this.withLock(async () => {
             const all = await this.readAll();
-            const current = applyMonthlyReset(
-                this.normalizeAccount(all[key] ?? this.createDefaultAccount(key, now)),
-                now,
-            );
+            const current = this.normalizeAccount(all[key] ?? this.createDefaultAccount(key, now));
             const next: QaapBillingAccount = {
-                ...this.withPlanAllowances(current, key, planId, now),
+                ...this.withPlan(current, key, planId, now),
                 stripeCustomerId: stripe?.customerId ?? current.stripeCustomerId,
                 stripeSubscriptionId: stripe?.clearSubscription
                     ? undefined
@@ -399,8 +148,7 @@ export class QaapBillingStore {
      * statuses grant `planId` (or keep the current paid plan); any other status drops to Starter while
      * keeping the subscription id, so a recovered `past_due` is upgraded again by its next event.
      * Deliveries older than the newest applied one, and events of a subscription other than the
-     * account's current one (unless `adoptSubscription`), are ignored. Allowances reset only when the
-     * plan actually changes.
+     * account's current one (unless `adoptSubscription`), are ignored.
      */
     async applyStripeSubscription(
         login: string,
@@ -410,10 +158,7 @@ export class QaapBillingStore {
         const key = QaapBillingStore.normalizeLogin(login);
         return this.withLock(async () => {
             const all = await this.readAll();
-            const current = applyMonthlyReset(
-                this.normalizeAccount(all[key] ?? this.createDefaultAccount(key, now)),
-                now,
-            );
+            const current = this.normalizeAccount(all[key] ?? this.createDefaultAccount(key, now));
             const entitled = isStripeSubscriptionEntitled(update.status);
             const stale = (current.stripeEventCreated ?? 0) > update.eventCreated;
             const otherSubscription = !!current.stripeSubscriptionId && !!update.subscriptionId
@@ -424,7 +169,7 @@ export class QaapBillingStore {
                 return { applied: false, account: current };
             }
             const planId: QaapBillingPlanId = entitled ? (update.planId ?? current.planId) : 'starter';
-            const base = planId === current.planId ? current : this.withPlanAllowances(current, key, planId, now);
+            const base = planId === current.planId ? current : this.withPlan(current, key, planId, now);
             const next: QaapBillingAccount = {
                 ...base,
                 updatedAt: now.toISOString(),
@@ -463,57 +208,37 @@ export class QaapBillingStore {
         }
     }
 
-    protected withPlanAllowances(current: QaapBillingAccount, login: string, planId: QaapBillingPlanId, now: Date): QaapBillingAccount {
-        const plan = getQaapBillingPlan(planId);
+    protected withPlan(current: QaapBillingAccount, login: string, planId: QaapBillingPlanId, now: Date): QaapBillingAccount {
         return {
             ...current,
             login,
             planId,
-            includedRuntimeMinutesRemaining: plan.runtimeFairUse
-                ? 0
-                : hoursToMinutes(plan.includedRuntimeHoursPerMonth),
-            includedCreditsRemaining: plan.includedCreditsPerMonth,
             updatedAt: now.toISOString(),
         };
     }
 
     protected createDefaultAccount(login: string, now: Date): QaapBillingAccount {
         const planId: QaapBillingPlanId = parseQaapBillingPlanId(process.env.QAAP_BILLING_DEFAULT_PLAN, 'starter');
-        const plan = getQaapBillingPlan(planId);
         return {
             login,
             planId,
-            includedRuntimeMinutesRemaining: plan.runtimeFairUse ? 0 : hoursToMinutes(plan.includedRuntimeHoursPerMonth),
-            purchasedRuntimeMinutes: 0,
-            includedCreditsRemaining: plan.includedCreditsPerMonth,
-            purchasedCredits: 0,
-            periodStart: startOfUtcMonth(now),
             updatedAt: now.toISOString(),
         };
     }
 
-    /** Migrate Phase-0 accounts that predate fair-use / 160h Pro. */
+    /**
+     * Keeps only the current account fields. Records persisted before the plan catalog changed still
+     * carry credit / runtime meters and the retired `team` plan: the meters are dropped and `team` maps to `pro`.
+     */
     protected normalizeAccount(account: QaapBillingAccount): QaapBillingAccount {
-        const plan = getQaapBillingPlan(account.planId);
-        if (plan.runtimeFairUse) {
-            return {
-                ...account,
-                includedRuntimeMinutesRemaining: 0,
-                purchasedRuntimeMinutes: typeof account.purchasedRuntimeMinutes === 'number'
-                    ? account.purchasedRuntimeMinutes
-                    : 0,
-            };
-        }
-        const includedRuntime = typeof account.includedRuntimeMinutesRemaining === 'number'
-            ? account.includedRuntimeMinutesRemaining
-            : hoursToMinutes(plan.includedRuntimeHoursPerMonth);
-        const purchasedRuntime = typeof account.purchasedRuntimeMinutes === 'number'
-            ? account.purchasedRuntimeMinutes
-            : 0;
         return {
-            ...account,
-            includedRuntimeMinutesRemaining: includedRuntime,
-            purchasedRuntimeMinutes: purchasedRuntime,
+            login: account.login,
+            planId: parseQaapBillingPlanId(account.planId),
+            updatedAt: account.updatedAt,
+            stripeCustomerId: account.stripeCustomerId,
+            stripeSubscriptionId: account.stripeSubscriptionId,
+            stripeSubscriptionStatus: account.stripeSubscriptionStatus,
+            stripeEventCreated: account.stripeEventCreated,
         };
     }
 

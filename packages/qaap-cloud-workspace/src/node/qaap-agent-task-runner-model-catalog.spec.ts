@@ -89,14 +89,11 @@ describe('QAIQ/OpenClaude model routing', () => {
         }
     });
 
-    it('keeps hosted models visible as locked on Starter when no user session is connected', () => {
+    it('keeps Codex models visible as locked when no user session is connected', () => {
         const ctx = {
             normalizeAgentId: () => undefined,
             isAgentConnected: () => false,
             agentConnectionSnapshot: () => ({ connectionState: 'disconnected', probeSettled: true }),
-            billingStore: {
-                peekEntitlements: () => ({ hostedModels: false }),
-            },
         };
         const models = listModelsForAgentExtracted(ctx as unknown as QaapAgentTaskRunnerContext, 'codex', 'starter-user');
         expect(models).to.have.length(3);
@@ -108,9 +105,6 @@ describe('QAIQ/OpenClaude model routing', () => {
             normalizeAgentId: () => undefined,
             isAgentConnected: () => true,
             agentConnectionSnapshot: () => ({ connectionState: 'connected', probeSettled: true }),
-            billingStore: {
-                peekEntitlements: () => ({ hostedModels: false }),
-            },
         };
         const models = listModelsForAgentExtracted(ctx as unknown as QaapAgentTaskRunnerContext, 'codex', 'starter-user');
         expect(models).to.have.length(3);
@@ -155,36 +149,30 @@ describe('QAIQ/OpenClaude model routing', () => {
         const codexCtx = (
             connectionState: 'connected' | 'disconnected' | 'unknown',
             probeSettled: boolean,
-            entitlements: { hostedModels: boolean; creditsRemaining: number } | undefined,
         ): QaapAgentTaskRunnerContext => ({
             normalizeAgentId: () => undefined,
             agentConnectionSnapshot: () => ({ connectionState, probeSettled }),
-            billingStore: { peekEntitlements: () => entitlements },
         } as unknown as QaapAgentTaskRunnerContext);
 
-        it('unlocks hosted Codex models for a Pro owner with credits but no sign-in', () => {
-            const models = listModelsForAgentExtracted(
-                codexCtx('disconnected', true, { hostedModels: true, creditsRemaining: 10 }), 'codex', 'pro-user');
+        it('unlocks Codex models for an owner with their own sign-in', () => {
+            const models = listModelsForAgentExtracted(codexCtx('connected', true), 'codex', 'pro-user');
             expect(models.every(model => model.available === true)).to.equal(true);
         });
 
-        it('locks Codex models as not-connected (not plan) for a Pro owner without credits and no sign-in', () => {
-            const models = listModelsForAgentExtracted(
-                codexCtx('disconnected', true, { hostedModels: true, creditsRemaining: 0 }), 'codex', 'pro-user');
+        it('locks Codex models as not-connected (never as plan) for an owner without a sign-in, on any plan', () => {
+            const models = listModelsForAgentExtracted(codexCtx('disconnected', true), 'codex', 'pro-user');
             expect(models).to.have.length(3);
             expect(models.every(model => model.available === false && model.unavailableReason === 'not-connected')).to.equal(true);
         });
 
         it('shows Codex models without a plan lock while the auth probe is still pending', () => {
-            const models = listModelsForAgentExtracted(
-                codexCtx('unknown', false, { hostedModels: false, creditsRemaining: 0 }), 'codex', 'starter-user');
+            const models = listModelsForAgentExtracted(codexCtx('unknown', false), 'codex', 'starter-user');
             expect(models).to.have.length(3);
             expect(models.every(model => model.available !== false && model.unavailableReason === undefined)).to.equal(true);
         });
 
         it('locks a settled-unknown Codex probe as not-connected, never as plan', () => {
-            const models = listModelsForAgentExtracted(
-                codexCtx('unknown', true, { hostedModels: false, creditsRemaining: 0 }), 'codex', 'starter-user');
+            const models = listModelsForAgentExtracted(codexCtx('unknown', true), 'codex', 'starter-user');
             expect(models.every(model => model.unavailableReason === 'not-connected')).to.equal(true);
         });
     });

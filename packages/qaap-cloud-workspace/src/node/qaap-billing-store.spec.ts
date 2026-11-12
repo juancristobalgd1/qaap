@@ -7,7 +7,6 @@ import { expect } from 'chai';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { hoursToMinutes } from '../common/qaap-billing-plans';
 import { QaapBillingStore } from './qaap-billing-store';
 
 import { QaapSqliteConnectionRegistry } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
@@ -50,27 +49,19 @@ describe('QaapBillingStore', () => {
         }
     });
 
-    it('defaults new users to Starter fair-use (no clock, no hosted credits)', async () => {
+    it('defaults new users to Starter with the catalog allowances', async () => {
         const entitlements = await makeStore(filePath).getEntitlements('alice');
-        expect(entitlements.planId).to.equal('starter');
-        expect(entitlements.hostedModels).to.equal(false);
-        expect(entitlements.runtimeFairUse).to.equal(true);
-        expect(entitlements.canStartAgent).to.equal(true);
-        expect(entitlements.creditsRemaining).to.equal(0);
-        expect(entitlements.runtimeHoursRemaining).to.equal(-1);
-        expect(entitlements.storageGb).to.equal(5);
+        expect(entitlements).to.deep.include({
+            planId: 'starter',
+            priceUsdMonthly: 4.99,
+            storageGb: 10,
+            maxActiveRepos: 3,
+            maxConcurrentAgents: 2,
+            idlePauseMinutes: 30,
+        });
     });
 
-    it('Starter fair-use does not debit runtime and always allows new jobs', async () => {
-        const store = makeStore(filePath);
-        const result = await store.debitRuntime('alice', 90_000);
-        expect(result.ok).to.equal(true);
-        expect(result.fairUse).to.equal(true);
-        expect(result.minutesCharged).to.equal(0);
-        expect(await store.canStartAgent('alice')).to.equal(true);
-    });
-
-    it('setPlan upgrades to Pro and resets included allowances', async () => {
+    it('setPlan upgrades to Pro and records the subscription references', async () => {
         const store = makeStore(filePath);
         await store.getOrCreateAccount('alice');
         const next = await store.setPlan('alice', 'pro', {
@@ -78,72 +69,27 @@ describe('QaapBillingStore', () => {
             subscriptionId: 'sub_test',
         });
         expect(next.planId).to.equal('pro');
-        expect(next.includedCreditsRemaining).to.equal(2500);
-        expect(next.includedRuntimeMinutesRemaining).to.equal(hoursToMinutes(160));
         expect(next.stripeCustomerId).to.equal('cus_test');
         expect(next.stripeSubscriptionId).to.equal('sub_test');
         expect(store.maxConcurrentAgentsForOwner('Alice')).to.equal(4);
     });
 
-    it('normalizes login casing so Alice and alice share one wallet', async () => {
+    it('normalizes login casing so Alice and alice share one account', async () => {
         const store = makeStore(filePath);
         await store.setPlan('Alice', 'pro');
         const entitlements = await store.getEntitlements('alice');
         expect(entitlements.planId).to.equal('pro');
         expect(entitlements.maxConcurrentAgents).to.equal(4);
         expect(entitlements.maxActiveRepos).to.equal(10);
-        expect(entitlements.hostedModels).to.equal(true);
+        expect(entitlements.storageGb).to.equal(30);
+        expect(entitlements.memoryOptionsGb).to.deep.equal([2, 4]);
     });
 
-    it('refuses hosted debit on Starter', async () => {
-        const result = await makeStore(filePath).debitHostedUsage('alice', 'gpt-5.6-sol', 1000, 100);
-        expect(result.ok).to.equal(false);
-        if (!result.ok) {
-            expect(result.reason).to.equal('not_hosted');
-        }
-    });
-
-    it('debits Codex Sol from Pro included credits', async () => {
-        process.env.QAAP_BILLING_DEFAULT_PLAN = 'pro';
-        const result = await makeStore(filePath).debitHostedUsage('bob', 'gpt-5.6-sol', 100_000, 8_000);
-        expect(result.ok).to.equal(true);
-        if (result.ok) {
-            expect(result.creditsCharged).to.equal(97);
-            expect(result.account.includedCreditsRemaining).to.equal(2500 - 97);
-        }
-    });
-
-    it('debits agent wall-clock minutes on Pro and still finishes if remaining is short', async () => {
-        process.env.QAAP_BILLING_DEFAULT_PLAN = 'pro';
+    it('honours the operator concurrency ceiling below the plan cap', async () => {
+        process.env.QAAP_MAX_CONCURRENT_AGENTS_PER_USER = '3';
         const store = makeStore(filePath);
-        const first = await store.debitRuntime('bob', 90_000);
-        expect(first.minutesCharged).to.equal(2);
-        expect(first.account.includedRuntimeMinutesRemaining).to.equal(hoursToMinutes(160) - 2);
-        const drained = await store.debitRuntime('bob', hoursToMinutes(200) * 60_000);
-        expect(drained.ok).to.equal(true);
-        expect(drained.account.includedRuntimeMinutesRemaining).to.equal(0);
-        expect(await store.canStartAgent('bob')).to.equal(false);
-    });
-
-    it('rejects unknown hosted models even on Pro', async () => {
-        process.env.QAAP_BILLING_DEFAULT_PLAN = 'pro';
-        const result = await makeStore(filePath).debitHostedUsage('bob', 'claude-fable-5', 1000, 100);
-        expect(result.ok).to.equal(false);
-        if (!result.ok) {
-            expect(result.reason).to.equal('unknown_model');
-        }
-    });
-
-    it('adds purchased credits that survive a hosted debit', async () => {
-        process.env.QAAP_BILLING_DEFAULT_PLAN = 'pro';
-        const store = makeStore(filePath);
-        await store.addPurchasedCredits('bob', 50);
-        const result = await store.debitHostedUsage('bob', 'gpt-5.6-luna', 100_000, 8_000);
-        expect(result.ok).to.equal(true);
-        if (result.ok) {
-            expect(result.account.purchasedCredits).to.equal(50);
-            expect(result.account.includedCreditsRemaining).to.equal(2500 - 4);
-        }
+        await store.setPlan('alice', 'pro');
+        expect(store.maxConcurrentAgentsForOwner('alice')).to.equal(3);
     });
 
     it('warms peek entitlements and caps concurrency to the plan', async () => {
@@ -154,24 +100,31 @@ describe('QaapBillingStore', () => {
         expect(store.maxConcurrentAgentsForOwner('alice')).to.equal(2);
         await store.setPlan('alice', 'pro');
         expect(store.maxConcurrentAgentsForOwner('alice')).to.equal(4);
-        await store.setPlan('alice', 'team');
-        expect(store.maxConcurrentAgentsForOwner('alice')).to.equal(8);
     });
 
-    it('partial-charges hosted credits when remaining is short', async () => {
-        process.env.QAAP_BILLING_DEFAULT_PLAN = 'pro';
+    it('maps a legacy team record to pro and drops its retired credit and runtime meters', async () => {
+        fs.writeFileSync(filePath, JSON.stringify({
+            Bob: {
+                login: 'Bob',
+                planId: 'team',
+                includedCreditsRemaining: 10000,
+                purchasedCredits: 5,
+                includedRuntimeMinutesRemaining: 30000,
+                purchasedRuntimeMinutes: 120,
+                periodStart: '2026-08-01T00:00:00.000Z',
+                updatedAt: '2026-08-01T00:00:00.000Z',
+            },
+        }));
         const store = makeStore(filePath);
-        await store.getOrCreateAccount('bob');
-        await store.setPlan('bob', 'pro');
-        const drained = await store.debitHostedUsage('bob', 'gpt-5.6-sol', 100_000, 8_000);
-        expect(drained.ok).to.equal(true);
-        const leftover = await store.debitHostedUsage('bob', 'gpt-5.6-sol', 10_000_000, 10_000_000);
-        expect(leftover.ok).to.equal(false);
-        if (!leftover.ok) {
-            expect(leftover.reason).to.equal('insufficient_credits');
-            expect(leftover.creditsCharged).to.equal(2500 - 97);
-            expect(leftover.account.includedCreditsRemaining).to.equal(0);
-        }
+        const account = await store.getOrCreateAccount('bob');
+        expect(account.planId).to.equal('pro');
+        expect(account).to.not.have.property('includedCreditsRemaining');
+        expect(account).to.not.have.property('purchasedRuntimeMinutes');
+        const entitlements = await store.getEntitlements('bob');
+        expect(entitlements.planId).to.equal('pro');
+        expect(entitlements.maxConcurrentAgents).to.equal(4);
+        expect(entitlements).to.not.have.property('creditsRemaining');
+        expect(entitlements).to.not.have.property('canStartAgent');
     });
 
     describe('Stripe subscription lifecycle', () => {
@@ -186,7 +139,7 @@ describe('QaapBillingStore', () => {
             expect(pastDue.applied).to.equal(true);
             expect(pastDue.account.planId).to.equal('starter');
             expect(pastDue.account.stripeSubscriptionId).to.equal('sub_1');
-            expect((await store.getEntitlements('alice')).hostedModels).to.equal(false);
+            expect((await store.getEntitlements('alice')).planId).to.equal('starter');
 
             const recovered = await store.applyStripeSubscription('alice', { status: 'active', subscriptionId: 'sub_1', eventCreated: 300 });
             expect(recovered.account.planId).to.equal('starter', 'no planId in the event: an entitled status keeps the current plan');
@@ -214,26 +167,16 @@ describe('QaapBillingStore', () => {
 
         it('never switches to another subscription on a plain update, only from a completed Checkout', async () => {
             const store = makeStore(filePath);
-            await store.applyStripeSubscription('alice', { ...active, subscriptionId: 'sub_team', planId: 'team', eventCreated: 100 });
+            await store.applyStripeSubscription('alice', { ...active, subscriptionId: 'sub_current', planId: 'pro', eventCreated: 100 });
             const oldActive = await store.applyStripeSubscription('alice', { ...active, subscriptionId: 'sub_old', planId: 'pro', eventCreated: 200 });
             expect(oldActive.applied).to.equal(false);
-            expect(oldActive.account.planId).to.equal('team');
-            expect(oldActive.account.stripeSubscriptionId).to.equal('sub_team');
+            expect(oldActive.account.stripeSubscriptionId).to.equal('sub_current');
             const checkout = await store.applyStripeSubscription('alice', {
                 ...active, subscriptionId: 'sub_new', planId: 'pro', eventCreated: 300, adoptSubscription: true,
             });
             expect(checkout.applied).to.equal(true);
             expect(checkout.account.planId).to.equal('pro');
             expect(checkout.account.stripeSubscriptionId).to.equal('sub_new');
-        });
-
-        it('does not refill allowances when the plan is unchanged', async () => {
-            const store = makeStore(filePath);
-            await store.applyStripeSubscription('alice', { ...active, eventCreated: 100 });
-            await store.debitHostedUsage('alice', 'gpt-5.6-sol', 100_000, 8_000);
-            const before = (await store.getOrCreateAccount('alice')).includedCreditsRemaining;
-            const again = await store.applyStripeSubscription('alice', { ...active, eventCreated: 150 });
-            expect(again.account.includedCreditsRemaining).to.equal(before);
         });
 
         it('finds the login of a subscription and remembers handled event ids', async () => {
