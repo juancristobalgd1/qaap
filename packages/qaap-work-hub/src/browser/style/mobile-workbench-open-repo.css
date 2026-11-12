@@ -934,6 +934,12 @@ body.theia-mobile-mod-landing.theia-mobile-mod-landing-hub-list .theia-mobile-pr
   color: var(--theia-foreground);
 }
 
+.theia-mobile-open-repo-memory.theia-mod-info {
+  /* Sits directly in the sheet: align with the description's 16px gutters. */
+  flex-shrink: 0;
+  margin: 0 16px 12px;
+}
+
 .theia-mobile-open-repo-memory[hidden] {
   display: none;
 }
