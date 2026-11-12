@@ -213,8 +213,8 @@ services:
       # Bytes per tenant container (backend + its agents, verification builds, dev servers and /tmp
       # tmpfs). 3 GiB fits 3 agents + 1 verification pass; Node sizes the tenant backend heap to half
       # of it on its own. Changing it recreates idle tenant backends (busy ones once their turns end).
-      QAAP_TENANT_MEMORY_LIMIT: ${QAAP_TENANT_MEMORY_LIMIT:-3221225472}
-      QAAP_TENANT_CPU_LIMIT: ${QAAP_TENANT_CPU_LIMIT:-2}
+      QAAP_TENANT_MEMORY_LIMIT: ${QAAP_TENANT_MEMORY_LIMIT:-}
+      QAAP_TENANT_CPU_LIMIT: ${QAAP_TENANT_CPU_LIMIT:-}
       QAAP_TENANT_PIDS_LIMIT: ${QAAP_TENANT_PIDS_LIMIT:-256}
       # Per-login raises for users who build large projects (e.g. Qaap itself) in a project:
       # "alice=8g,bob=6g" / "alice=4" / "alice=1024". Capped by the *_MAX values; never below the defaults above.

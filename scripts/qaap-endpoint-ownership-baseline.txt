@@ -6,9 +6,9 @@
 # Regenerate only with review: node scripts/qaap-endpoint-ownership-check.js --write
 
 packages/qaap-cloud-workspace/src/node/qaap-billing-endpoint.ts :: POST QAAP_BILLING_WEBHOOK_API_PATH
-# Stripe webhook: authenticated by Stripe's HMAC signature over the raw body
-# (verifyStripeWebhookEvent, qaap-stripe-billing.ts), not by session. A session guard
-# here would break Stripe's own calls. Auth in handler: none by design.
+# Airwallex webhook: authenticated by Airwallex's HMAC signature over x-timestamp + raw body
+# (verifyAirwallexWebhook, qaap-airwallex-billing.ts), not by session. A session guard
+# here would break Airwallex's own calls. Auth in handler: none by design.
 
 packages/qaap-cloud-workspace/src/node/qaap-push-outbox-endpoint.ts :: GET QAAP_TENANT_PUSH_OUTBOX_PATH
 # Tenant push outbox, drained by the control plane (QaapPushDrainer). Authenticated by the
