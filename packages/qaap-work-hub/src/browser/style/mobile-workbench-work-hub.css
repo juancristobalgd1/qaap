@@ -6147,7 +6147,11 @@ body.qaap-theme-dark {
   min-width: 200px;
   max-width: min(320px, calc(100vw - 16px));
   max-height: min(40vh, 260px);
-  overflow: auto;
+  /* The card never scrolls itself: its body does, so the scroll-edge fades (a mask) only fade the
+     content and never the card's rounded border and background. */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   padding: var(--q-space-4);
   border-radius: var(--q-radius-card);
   border: 1px solid color-mix(in srgb, var(--q-line, var(--theia-panel-border)) 75%, transparent);
@@ -6256,8 +6260,12 @@ body.theia-mobile-mod-has-transcript-overlay.theia-mobile-mod-has-transcript-ove
 
 .theia-mobile-projects-sticky-composer-attach-menu-body {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
 }
 
 .theia-mobile-projects-sticky-composer-attach-menu.theia-mod-mcp-view {

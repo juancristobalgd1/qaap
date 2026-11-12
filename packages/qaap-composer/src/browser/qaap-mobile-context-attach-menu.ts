@@ -351,7 +351,7 @@ function showContextAttachMenu(
                     onSelect: () => finish({ kind: 'variable', variable }),
                 }));
             }
-            attachEdgeFades(menu);
+            attachEdgeFades(menuBody);
             menu.focus();
         };
 
@@ -367,7 +367,7 @@ function showContextAttachMenu(
                 onBack: () => renderMainView(),
                 onCloseMenu: () => finish(undefined),
             });
-            attachEdgeFades(menu);
+            attachEdgeFades(menuBody);
             menu.focus();
         };
 
