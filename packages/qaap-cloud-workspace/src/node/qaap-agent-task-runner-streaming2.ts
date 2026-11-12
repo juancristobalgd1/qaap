@@ -1,7 +1,6 @@
 import { buildPiGateTemplateVars } from './qaap-tool-gate-pi-adapter';
 import { formatTaskStartLog } from './qaap-agent-conversation-persist-policy';
 import { buildPiDefaultModelFlagShell } from '@theia/qaap-shared-core/lib/common/qaap-pi-default-model';
-import { normalizeAntigravityCliBin } from '@theia/qaap-shared-core/lib/common/qaap-antigravity-cli';
 import { AGENT_STOP_GRACE_TIMEOUT_MS, SHELL_AGENT_ID, QAIQ_AGENT_ID, REPO_MAP_CACHE_TTL_MS, REPO_MAP_MAX_CHARS, USER_REQUEST_MAX_CHARS } from './qaap-agent-task-runner-constants';
 import type { QaapAgentCommandBuildResult, QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { QaapAgentQueuePolicy } from './qaap-agent-queue-policy';
@@ -45,7 +44,7 @@ import {
 import type { QaapAgentApprovalPolicyId } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model-catalog';
 import { canEnforceReadOnlyWorkspace, withPiPlanModeInstruction } from '../common/qaap-agent-readonly-workspace';
-import { listNativeAgentModels } from './qaap-agent-native-models';
+import { antigravityBinFor, listNativeAgentModels } from './qaap-agent-native-models';
 import {
     applyAgentApprovalPolicyToCommand,
     shouldUseQaiqStdioApprovals,
@@ -102,7 +101,7 @@ export function resolveAgentModelForRequestExtracted(ctx: QaapAgentTaskRunnerCon
             readPref,
             agentId,
             {
-                listNativeModels: id => listNativeAgentModels(id, ownerLogin),
+                listNativeModels: id => listNativeAgentModels(id, ownerLogin, antigravityBinFor(ctx, id)),
                 nativeTable: ctx.nativeModelRoutingTable(),
             },
         );
@@ -693,10 +692,9 @@ function buildBaseTemplateVars(ctx: QaapAgentTaskRunnerContext, agentId: string,
         // Last gate before argv: callers that hand a model straight in (prompt improve, reviewer)
         // skip the request resolution, and a foreign model here is `--model <id>` → model_not_found.
         if (agentModel?.provider && agentModel.modelId?.trim()
-            && agentModelFitsAgent(agentId, agentModel, () => listNativeAgentModels(agentId, ownerLogin))) {
+            && agentModelFitsAgent(agentId, agentModel, () => listNativeAgentModels(agentId, ownerLogin, antigravityBinFor(ctx, agentId)))) {
             const binding = ctx.normalizeAgentBinding(bindingFromQaiqModelSelection(agentModel), ownerLogin);
-            const antigravityBin = agentId.trim().toLowerCase() === 'antigravity' ? ctx.resolveAntigravityBin() : undefined;
-            const flags = formatModelFlagsForAgent(agentId, binding, normalizeAntigravityCliBin(antigravityBin));
+            const flags = formatModelFlagsForAgent(agentId, binding, antigravityBinFor(ctx, agentId));
             if (isQaiqAgent(agentId)) {
                 return { qaiq_flags: joinQaiqFlags(qaiqInteractionFlags, flags), model_flags: '', [QAAP_PROJECT_TRUST_FLAGS_TEMPLATE_VAR]: trustFlags };
             }

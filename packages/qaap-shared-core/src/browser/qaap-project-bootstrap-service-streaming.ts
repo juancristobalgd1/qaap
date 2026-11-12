@@ -519,6 +519,29 @@ export async function refreshFromCurrentWorkspaceExtracted(ctx: QaapProjectBoots
         await ctx.refreshFromRoot(first?.resource);
 }
 
+/**
+ * True when a refresh names the root already in the session and that root has a live dev run: a
+ * running preview, or a ready-to-run session whose dev terminal still belongs to this root. Such a
+ * refresh is a no-op; resetting would release the claim and dispose the terminal of a live server.
+ */
+function isSameRootWithLiveDevRunExtracted(ctx: QaapProjectBootstrapServiceContext, nextRootKey: string, currentRootKey: string): boolean {
+        if (nextRootKey.length === 0 || nextRootKey !== currentRootKey || ctx._descriptor === undefined) {
+            return false;
+        }
+        if (ctx._phase === 'running') {
+            return true;
+        }
+        if (ctx._phase !== 'ready-to-run') {
+            return false;
+        }
+        for (const entry of ctx.devTerminalByConversationId.values()) {
+            if (entry.rootKey === nextRootKey) {
+                return true;
+            }
+        }
+        return false;
+}
+
 export async function refreshFromRootExtracted(ctx: QaapProjectBootstrapServiceContext, resource: URI | undefined): Promise<void> {
         const nextRootKey = resource?.toString() ?? '';
         const currentRootKey = ctx._descriptor?.rootUri.toString() ?? '';
@@ -530,6 +553,11 @@ export async function refreshFromRootExtracted(ctx: QaapProjectBootstrapServiceC
         ) {
             // Applying the refresh now would kill the live run; replay it once the run is at rest.
             deferWorkspaceRefreshUntilDevRunRestsExtracted(ctx, resource);
+            return;
+        }
+        if (isSameRootWithLiveDevRunExtracted(ctx, nextRootKey, currentRootKey)) {
+            // Nothing changed for this project: a reset here would drop its claim and dispose its
+            // dev terminal, so the live server is released and restarted on every poll tick.
             return;
         }
         const refreshId = ++ctx.refreshGeneration;

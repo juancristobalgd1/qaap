@@ -55,7 +55,7 @@ import { QAAP_TOOL_GATE_API_PATH } from '@theia/qaap-shared-core/lib/common/qaap
 import { resolveQaapHarnessCapabilities } from '@theia/qaap-shared-core/lib/common/qaap-harness-capabilities';
 import { QaapProjectFolderTrustStore, resolveProjectFolderTrustRoot } from './qaap-project-folder-trust-store';
 import { QaapHostedWorktreeRegistry } from '@theia/qaap-shared-core/lib/node/qaap-hosted-worktree-registry';
-import { clearNativeAgentModelCache, invalidateNativeAgentModels, prepareNativeAgentModels, type NativeModelDiscoverySpawner } from './qaap-agent-native-models';
+import { antigravityBinFor, clearNativeAgentModelCache, invalidateNativeAgentModels, prepareNativeAgentModels, type NativeModelDiscoverySpawner } from './qaap-agent-native-models';
 import { fireStopAgentHook } from './qaap-agent-task-runner-hooks';
 import { type QaapAgentReadOnlyEnforcement, } from '../common/qaap-agent-readonly-workspace';
 import { type QaapQaiqPendingControlRequest } from '../common/qaap-qaiq-stdio-approvals';
@@ -798,6 +798,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
                         void prepareNativeAgentModels(normalized, {
                             ownerLogin,
                             spawner: this.nativeModelDiscoverySpawner(ownerLogin),
+                            antigravityBin: antigravityBinFor(this, normalized),
                         });
                     }
                 }

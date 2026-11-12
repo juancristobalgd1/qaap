@@ -67,6 +67,13 @@ describe('formatModelFlagsForAgent', () => {
         expect(formatModelFlagsForAgent('antigravity', binding, 'gemini')).to.equal('-m gemini-2.5-pro');
     });
 
+    it('passes every gemini catalog id to gemini with -m, including the auto alias', () => {
+        for (const modelId of ['auto', 'gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-pro-preview', 'gemini-2.5-pro']) {
+            const binding = bindingFromQaiqModelSelection({ provider: 'gemini', vendor: 'antigravity', modelId });
+            expect(formatModelFlagsForAgent('antigravity', binding, 'gemini'), modelId).to.equal(`-m ${modelId}`);
+        }
+    });
+
     it('emits no model flag for gemini when the id is a catalog label, not a gemini model id', () => {
         const binding = bindingFromQaiqModelSelection({
             provider: 'gemini',

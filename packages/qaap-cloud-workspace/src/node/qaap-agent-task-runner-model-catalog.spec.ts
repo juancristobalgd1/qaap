@@ -9,7 +9,7 @@ import { NATIVE_MODEL_PICKER_AGENT_IDS } from '@theia/qaap-shared-core/lib/commo
 import { bindingFromQaiqModelSelection } from '../common/qaap-qaiq-model-binding';
 import { formatModelFlagsForAgent } from '../common/qaap-agent-model-flags';
 import { applyTemplate } from './qaap-agent-task-runner-utils';
-import { clearNativeAgentModelCache, listNativeAgentModels } from './qaap-agent-native-models';
+import { clearNativeAgentModelCache, listNativeAgentModels, prepareNativeAgentModels } from './qaap-agent-native-models';
 import {
     buildTemplateVarsExtracted,
     resolveAgentBindingForTaskExtracted,
@@ -187,5 +187,42 @@ describe('QAIQ/OpenClaude model routing', () => {
                 codexCtx('unknown', true, { hostedModels: false, creditsRemaining: 0 }), 'codex', 'starter-user');
             expect(models.every(model => model.unavailableReason === 'not-connected')).to.equal(true);
         });
+    });
+});
+
+describe('Antigravity model listing follows the resolved CLI', () => {
+    const agyLabel = 'Gemini 3.8 Flash (High)';
+    const noSpawn = (): undefined => undefined;
+
+    const contextFor = (bin: string | undefined): QaapAgentTaskRunnerContext => ({
+        resolveAntigravityBin: () => bin,
+        agentConnectionSnapshot: () => ({ connectionState: 'connected', probeSettled: true }),
+    }) as unknown as QaapAgentTaskRunnerContext;
+
+    beforeEach(() => {
+        clearNativeAgentModelCache();
+    });
+
+    afterEach(() => {
+        clearNativeAgentModelCache();
+    });
+
+    it('lists Gemini CLI model ids when the host resolved gemini', () => {
+        const ids = listModelsForAgentExtracted(contextFor('gemini'), 'antigravity').map(model => model.modelId);
+        expect(ids).to.include('gemini-3.5-flash');
+        expect(ids).to.include('auto');
+        expect(ids).to.not.include(agyLabel);
+        expect(listModelsForAgentExtracted(contextFor('gemini'), 'antigravity', 'owner').map(model => model.modelId)).to.deep.equal(ids);
+    });
+
+    it('lists the agy catalog when the host resolved agy, and keeps it apart from gemini', async () => {
+        await prepareNativeAgentModels('antigravity', { antigravityBin: 'agy', spawner: noSpawn });
+        expect(listModelsForAgentExtracted(contextFor('agy'), 'antigravity').map(model => model.modelId)).to.include(agyLabel);
+        expect(listModelsForAgentExtracted(contextFor('gemini'), 'antigravity').map(model => model.modelId)).to.not.include(agyLabel);
+    });
+
+    it('answers the agy catalog when no Antigravity CLI is resolved', async () => {
+        await prepareNativeAgentModels('antigravity', { spawner: noSpawn });
+        expect(listModelsForAgentExtracted(contextFor(undefined), 'antigravity').map(model => model.modelId)).to.include(agyLabel);
     });
 });

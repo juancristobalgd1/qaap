@@ -17,8 +17,11 @@ function shellQuote(value: string): string {
     return `'${value.replace(/'/g, '\'\\\'\'')}'`;
 }
 
-/** Model ids Gemini CLI accepts (`gemini-2.5-pro`, `models/gemini-…`); anything else is not a flag value. */
-const GEMINI_MODEL_ID_PATTERN = /^(gemini|models\/gemini)-[a-z0-9.\-]+$/i;
+/**
+ * Model ids Gemini CLI accepts (`gemini-2.5-pro`, `models/gemini-…`, and the `auto` routing alias that the
+ * gemini catalog lists first); anything else is not a flag value.
+ */
+const GEMINI_MODEL_ID_PATTERN = /^(auto$|(gemini|models\/gemini)-[a-z0-9.\-]+$)/i;
 
 /**
  * CLI flags inserted into agent templates (`{model_flags}` / `{qaiq_flags}`).
@@ -41,7 +44,7 @@ export function formatModelFlagsForAgent(agentId: string, binding: QaapQaiqModel
     if (normalized === 'antigravity' || normalized === 'gemini') {
         // agy reads the model from ~/.gemini/antigravity-cli/settings.json (see qaap-antigravity-settings).
         // Gemini only takes real model ids: a catalog label (agy's "Gemini 3.8 Flash (High)") would fail,
-        // so an unrecognized id gets no flag and gemini runs its default model.
+        // so an unrecognized id gets no flag and gemini runs its default model (`auto`, the catalog's first row).
         if (antigravityBin === 'gemini') {
             return GEMINI_MODEL_ID_PATTERN.test(binding.modelId.trim()) ? `-m ${shellQuote(binding.modelId.trim())}` : '';
         }

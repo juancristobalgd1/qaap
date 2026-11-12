@@ -152,3 +152,19 @@ describe('parseQaapNativeModelRoutingTable', () => {
         expect(parseQaapNativeModelRoutingTable('{"claude":[]}')).to.equal(DEFAULT_QAAP_NATIVE_MODEL_ROUTING_TABLE);
     });
 });
+
+describe('resolveNativeAgentModelForTaskKind for the Antigravity harness', () => {
+    it('skips routing for antigravity on either CLI: no pin, so the CLI keeps its own default model', () => {
+        const geminiCatalog = listStaticNativeAgentModels('antigravity', 'gemini');
+        const agyCatalog = listStaticNativeAgentModels('antigravity', 'agy');
+        for (const kind of ['exploration', 'implementation', 'review'] as const) {
+            expect(resolveNativeAgentModelForTaskKind('antigravity', kind, geminiCatalog), kind).to.equal(undefined);
+            expect(resolveNativeAgentModelForTaskKind('antigravity', kind, agyCatalog), kind).to.equal(undefined);
+        }
+    });
+
+    it('never pins a family onto the Gemini CLI catalog', () => {
+        const table = parseQaapNativeModelRoutingTable(JSON.stringify({ antigravity: { implementation: 'family:pro' } }));
+        expect(resolveNativeAgentModelForTaskKind('antigravity', 'implementation', listStaticNativeAgentModels('antigravity', 'gemini'), table)).to.equal(undefined);
+    });
+});

@@ -8,6 +8,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import type { QaapQaiqModelOption } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { normalizeAntigravityCliBin, type QaapAntigravityCliBin } from '@theia/qaap-shared-core/lib/common/qaap-antigravity-cli';
 import { NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 import { resolveAgentSpawnIdentity } from './qaap-agent-spawn-identity';
 import { QaapTenantAgentStorageEnv } from './qaap-tenant-agent-storage-env';
@@ -53,6 +54,8 @@ export type NativeModelDiscoverySpawner = (bin: string, args: readonly string[])
 export interface NativeModelDiscoveryOptions {
     readonly ownerLogin?: string;
     readonly spawner?: NativeModelDiscoverySpawner;
+    /** The Antigravity CLI the host resolved; selects the gemini or agy catalog for `antigravity`. */
+    readonly antigravityBin?: QaapAntigravityCliBin;
 }
 
 /**
@@ -62,14 +65,52 @@ export interface NativeModelDiscoveryOptions {
  */
 const ACCOUNT_SCOPED_DISCOVERY_AGENT_IDS: ReadonlySet<string> = new Set(['pi']);
 
-function nativeModelCacheKey(agentId: string, ownerLogin: string | undefined): string {
+/** The Antigravity harness: its catalog depends on the resolved CLI (see {@link antigravityCatalogBin}). */
+const ANTIGRAVITY_AGENT_ID = 'antigravity';
+
+/**
+ * The catalog an Antigravity host lists: `gemini` (Gemini CLI model ids) or `agy` (live `agy models`). An
+ * unresolved bin keeps the historical `agy` catalog.
+ */
+export function antigravityCatalogBin(antigravityBin: QaapAntigravityCliBin | undefined): 'agy' | 'gemini' {
+    return antigravityBin === 'gemini' ? 'gemini' : 'agy';
+}
+
+/**
+ * The Antigravity CLI the host resolved, for the agent it is asked about. Only `antigravity` has a bin-scoped
+ * catalog; every other agent gets `undefined`.
+ */
+export function antigravityBinFor(
+    ctx: { resolveAntigravityBin(): string | undefined },
+    agentId: string | undefined,
+): QaapAntigravityCliBin | undefined {
+    return agentId?.trim().toLowerCase() === ANTIGRAVITY_AGENT_ID ? normalizeAntigravityCliBin(ctx.resolveAntigravityBin()) : undefined;
+}
+
+/** Gemini CLI has no model-list command, so its catalog is the curated list and never needs discovery. */
+function usesCuratedAntigravityCatalog(agentId: string, antigravityBin: QaapAntigravityCliBin | undefined): boolean {
+    return agentId === ANTIGRAVITY_AGENT_ID && antigravityCatalogBin(antigravityBin) === 'gemini';
+}
+
+function nativeModelCacheKey(agentId: string, ownerLogin: string | undefined, antigravityBin?: QaapAntigravityCliBin): string {
+    if (agentId === ANTIGRAVITY_AGENT_ID) {
+        return `${agentId}:${antigravityCatalogBin(antigravityBin)}`;
+    }
     if (!ACCOUNT_SCOPED_DISCOVERY_AGENT_IDS.has(agentId)) {
         return agentId;
     }
     return `${agentId}:${ownerLogin?.trim().toLowerCase() ?? ''}`;
 }
 
-export function listNativeAgentModels(agentId: string | undefined, ownerLogin?: string): QaapQaiqModelOption[] {
+/**
+ * The picker list for a native agent. `antigravityBin` is the Antigravity CLI the host resolved; it picks
+ * the gemini or agy catalog and keeps their caches apart. Other agents ignore it.
+ */
+export function listNativeAgentModels(
+    agentId: string | undefined,
+    ownerLogin?: string,
+    antigravityBin?: QaapAntigravityCliBin,
+): QaapQaiqModelOption[] {
     const normalized = agentId?.trim().toLowerCase();
     if (!normalized || NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS.has(normalized)) {
         return [];
@@ -78,24 +119,27 @@ export function listNativeAgentModels(agentId: string | undefined, ownerLogin?: 
     // sets are temporarily out of sync, keep a known native agent visible instead of
     // returning an empty picker and making the CLI look uninstalled.
     if (!agentUsesNativeModelCatalog(normalized)) {
-        return listStaticNativeAgentModels(normalized);
+        return listStaticNativeAgentModels(normalized, antigravityBin);
     }
-    const key = nativeModelCacheKey(normalized, ownerLogin);
+    if (usesCuratedAntigravityCatalog(normalized, antigravityBin)) {
+        return listStaticNativeAgentModels(normalized, antigravityBin);
+    }
+    const key = nativeModelCacheKey(normalized, ownerLogin, antigravityBin);
     const entry = cache.get(key);
     if (entry) {
         // Serve what we have at once; a stale entry is refreshed in the background.
         if (isNativeModelEntryStale(entry)) {
-            void prepareNativeAgentModels(normalized, { ownerLogin });
+            void prepareNativeAgentModels(normalized, { ownerLogin, antigravityBin });
         }
         return entry.models;
     }
     // Only the picker endpoint knows how to run an account-scoped CLI in the owner's HOME.
     if (ACCOUNT_SCOPED_DISCOVERY_AGENT_IDS.has(normalized)) {
-        return listStaticNativeAgentModels(normalized);
+        return listStaticNativeAgentModels(normalized, antigravityBin);
     }
     // Cold cache: answer with the curated catalog now and let the CLI discovery replace it.
-    void prepareNativeAgentModels(normalized, { ownerLogin });
-    return listStaticNativeAgentModels(normalized);
+    void prepareNativeAgentModels(normalized, { ownerLogin, antigravityBin });
+    return listStaticNativeAgentModels(normalized, antigravityBin);
 }
 
 /**
@@ -111,16 +155,18 @@ export function prepareNativeAgentModels(
     if (!normalized) {
         return Promise.resolve([]);
     }
-    const key = nativeModelCacheKey(normalized, options.ownerLogin);
+    const bin = options.antigravityBin;
+    if (!agentUsesNativeModelCatalog(normalized) || NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS.has(normalized)
+        || usesCuratedAntigravityCatalog(normalized, bin)) {
+        return Promise.resolve(listStaticNativeAgentModels(normalized, bin));
+    }
+    const key = nativeModelCacheKey(normalized, options.ownerLogin, bin);
     const entry = cache.get(key);
     if (entry && !isNativeModelEntryStale(entry)) {
         return Promise.resolve(entry.models);
     }
-    if (!agentUsesNativeModelCatalog(normalized) || NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS.has(normalized)) {
-        return Promise.resolve(listStaticNativeAgentModels(normalized));
-    }
     if (ACCOUNT_SCOPED_DISCOVERY_AGENT_IDS.has(normalized) && !options.spawner) {
-        return Promise.resolve(entry?.models ?? listStaticNativeAgentModels(normalized));
+        return Promise.resolve(entry?.models ?? listStaticNativeAgentModels(normalized, bin));
     }
     const inFlight = discoveries.get(key);
     if (inFlight) {
@@ -131,7 +177,7 @@ export function prepareNativeAgentModels(
         .then(discovered => {
             if (discoveries.get(key) !== discovery) {
                 // invalidated or cleared while running: the result is no longer wanted.
-                return discovered.length > 0 ? discovered : (cache.get(key)?.models ?? listStaticNativeAgentModels(normalized));
+                return discovered.length > 0 ? discovered : (cache.get(key)?.models ?? listStaticNativeAgentModels(normalized, bin));
             }
             discoveries.delete(key);
             if (discovered.length > 0) {
@@ -144,7 +190,7 @@ export function prepareNativeAgentModels(
                 cache.set(key, { ...previous, refreshAt: Date.now() + NATIVE_MODEL_FALLBACK_RETRY_MS });
                 return previous.models;
             }
-            const models = listStaticNativeAgentModels(normalized);
+            const models = listStaticNativeAgentModels(normalized, bin);
             cache.set(key, { models, live: false, refreshAt: Date.now() + NATIVE_MODEL_FALLBACK_RETRY_MS });
             return models;
         });
@@ -162,11 +208,14 @@ export function clearNativeAgentModelCache(): void {
  * Forget one agent's catalog, e.g. after it signed in: its CLI can now list the account's models.
  * Without an owner every owner's entry for that agent goes.
  */
-export function invalidateNativeAgentModels(agentId: string, ownerLogin?: string): void {
+export function invalidateNativeAgentModels(agentId: string, ownerLogin?: string, antigravityBin?: QaapAntigravityCliBin): void {
     const normalized = agentId.trim().toLowerCase();
-    const keys = ACCOUNT_SCOPED_DISCOVERY_AGENT_IDS.has(normalized) && ownerLogin === undefined
+    // Without an owner (or, for Antigravity, without a resolved bin) every catalog of that agent goes.
+    const wildcard = (ACCOUNT_SCOPED_DISCOVERY_AGENT_IDS.has(normalized) && ownerLogin === undefined)
+        || (normalized === ANTIGRAVITY_AGENT_ID && antigravityBin === undefined);
+    const keys = wildcard
         ? [...new Set([...cache.keys(), ...discoveries.keys()])].filter(key => key.startsWith(`${normalized}:`))
-        : [nativeModelCacheKey(normalized, ownerLogin)];
+        : [nativeModelCacheKey(normalized, ownerLogin, antigravityBin)];
     for (const key of keys) {
         cache.delete(key);
         discoveries.delete(key);

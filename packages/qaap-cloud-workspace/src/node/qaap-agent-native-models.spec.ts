@@ -327,4 +327,41 @@ describe('qaap-agent-native-models', () => {
         expect(models.length).to.be.greaterThan(0);
         expect(models.every(model => model.modelId.startsWith('openrouter/') && model.vendor === 'openrouter')).to.equal(true);
     });
+
+    describe('Antigravity catalog per resolved CLI', () => {
+        const agyLabels = [
+            'Gemini 3.8 Flash (High)', 'Gemini 3.8 Flash (Medium)', 'Gemini 3.8 Flash (Low)',
+            'Claude Sonnet 4.6 (Thinking)', 'Claude Opus 4.6 (Thinking)', 'GPT-OSS 120B (Medium)',
+        ];
+        /** A spawner that refuses to run anything: discovery then answers "no list" without touching a CLI. */
+        const noSpawn = (): undefined => undefined;
+
+        it('lists the Gemini CLI model ids, never the agy labels, when gemini is resolved', () => {
+            const ids = listNativeAgentModels('antigravity', undefined, 'gemini').map(model => model.modelId);
+            expect(ids).to.deep.equal(['auto', 'gemini-3.1-pro-preview', 'gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-2.5-pro']);
+            expect(ids.some(id => agyLabels.includes(id))).to.equal(false);
+        });
+
+        it('keeps the live agy list for an agy bin and keeps its cache apart from gemini', async () => {
+            // agy's list is the discovered one; a refused run keeps the curated agy labels.
+            expect((await prepareNativeAgentModels('antigravity', { antigravityBin: 'agy', spawner: noSpawn })).map(model => model.modelId))
+                .to.deep.equal(agyLabels);
+            expect(listNativeAgentModels('antigravity', undefined, 'agy').map(model => model.modelId)).to.deep.equal(agyLabels);
+            // The gemini list is unaffected by the cached agy entry.
+            expect(listNativeAgentModels('antigravity', undefined, 'gemini').map(model => model.modelId)).to.include('gemini-3.5-flash');
+            expect(await prepareNativeAgentModels('antigravity', { antigravityBin: 'gemini', spawner: noSpawn }))
+                .to.deep.equal(listStaticNativeAgentModels('antigravity', 'gemini'));
+        });
+
+        it('invalidates every Antigravity catalog when no bin is given, and only the named one otherwise', async () => {
+            await prepareNativeAgentModels('antigravity', { antigravityBin: 'agy', spawner: noSpawn });
+            await prepareNativeAgentModels('antigravity', { antigravityBin: 'agy', spawner: noSpawn });
+            invalidateNativeAgentModels('antigravity', undefined, 'agy');
+            // The agy entry is gone: a fresh discovery (refused here) answers the curated fallback again.
+            expect((await prepareNativeAgentModels('antigravity', { antigravityBin: 'agy', spawner: noSpawn })).map(model => model.modelId))
+                .to.deep.equal(agyLabels);
+            invalidateNativeAgentModels('antigravity');
+            expect(listNativeAgentModels('antigravity', undefined, 'gemini').map(model => model.modelId)).to.include('auto');
+        });
+    });
 });

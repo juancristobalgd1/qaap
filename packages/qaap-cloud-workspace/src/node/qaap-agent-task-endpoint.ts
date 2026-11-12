@@ -32,7 +32,7 @@ import { isQaapProductionRuntime } from './qaap-agent-spawn-identity';
 import type { QaapAgentCliUpdateResult } from '@theia/qaap-agents-ui/lib/common/qaap-agent-cli-update';
 import { QaapBillingStore } from './qaap-billing-store';
 import { QaapStandaloneTaskModelFallback } from './qaap-standalone-task-model-fallback';
-import { listNativeAgentModels, prepareNativeAgentModels } from './qaap-agent-native-models';
+import { antigravityBinFor, listNativeAgentModels, prepareNativeAgentModels } from './qaap-agent-native-models';
 import {
     QaapGithubAuthGuard,
     type QaapGithubAuthContext,
@@ -448,16 +448,19 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         // Give a cold CLI model discovery (`cursor-agent models`) a moment; past the budget the
         // curated catalog answers and the discovered one is cached for the next request.
         const discoveryStartedAt = Date.now();
+        // The Antigravity catalog follows the CLI this host resolved (gemini ids or agy's live list).
+        const antigravityBin = antigravityBinFor(this.runner, agent);
         await this.withinBudget(prepareNativeAgentModels(agent, {
             ownerLogin: login,
             spawner: this.runner.nativeModelDiscoverySpawner(login),
+            antigravityBin,
         }), QAAP_NATIVE_MODEL_DISCOVERY_BUDGET_MS);
         const discoveryMs = Date.now() - discoveryStartedAt;
         if (res.headersSent || res.writableEnded) {
             return;
         }
         const runnerModels = this.runner.listModelsForAgent(agent, login);
-        const nativeModels = listNativeAgentModels(agent, login);
+        const nativeModels = listNativeAgentModels(agent, login, antigravityBin);
         const models = runnerModels.length > 0 ? runnerModels : nativeModels;
         res.setHeader('Server-Timing', `billing;dur=${billingMs}, discovery;dur=${discoveryMs}, total;dur=${Date.now() - startedAt}`);
         res.setHeader('Cache-Control', 'no-store');

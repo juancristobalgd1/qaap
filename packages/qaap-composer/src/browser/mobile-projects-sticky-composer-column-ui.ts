@@ -5,6 +5,7 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import { Disposable } from '@theia/core/lib/common/disposable';
+import { attachQaapScrollEdgeFades } from '@theia/qaap-mobile-shell/lib/browser/qaap-scroll-edge-fades';
 import type { QaapComposerSurface } from '../common/qaap-composer-surface';
 import {
     attachStickyComposerMentionUi,
@@ -413,6 +414,7 @@ export class MobileProjectsStickyComposerColumnUi {
                 },
                 afterInputChange: options.afterInputChange,
                 mentionButtonTitle: nls.localize('qaap/mobileProjects/stickyComposerMention', 'Mention agent (@)'),
+                attachScrollFades: scroller => attachQaapScrollEdgeFades(scroller),
                 variableButtonTitle: nls.localize('qaap/mobileProjects/stickyComposerVariable', 'Insert variable (#)'),
             });
         }
