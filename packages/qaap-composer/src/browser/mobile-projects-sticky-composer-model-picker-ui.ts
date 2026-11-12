@@ -11,7 +11,6 @@ import {
     type QaapQaiqModelOption,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { readStoredAgentModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
-import { formatQaiqModelIdShortLabel } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
 import { QaapAgentEffort, type QaapAgentEffortLevel } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
 import {
     writeStoredAgentApprovalPolicy,
@@ -73,8 +72,9 @@ function toPickerModel(agentId: string, model: QaapQaiqModelOption): QaapPickerM
     return {
         agentId,
         modelId: model.modelId,
-        // Only the model name: a label that still carries a provider path falls back to the id's name.
-        label: model.label && !model.label.includes('/') ? model.label : formatQaiqModelIdShortLabel(model.modelId),
+        // The picker lists the provider too (`anthropic/claude-haiku-4.5`) so same-named models from
+        // different providers stay distinguishable; only the composer pill drops the provider path.
+        label: (model.label?.trim() || model.modelId).replace(/(^|\/)~+/g, '$1'),
         available: !unavailable,
         unavailableReason: unavailable ? unavailableText(model.unavailableReason) : undefined,
     };
