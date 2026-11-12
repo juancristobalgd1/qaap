@@ -15,20 +15,30 @@ import {
     type QaapBillingAccount,
     type QaapBillingEntitlements,
     type QaapBillingPlanId,
+    type QaapBillingSubscriptionStatus,
 } from '../common/qaap-billing-plans';
-import { isStripeSubscriptionEnded, isStripeSubscriptionEntitled } from './qaap-stripe-billing';
 
-/** Stripe retries a failed delivery for up to three days; keep handled ids well past that. */
-const STRIPE_EVENT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+/** Payment providers retry a failed delivery for days; keep handled ids well past that. */
+const BILLING_EVENT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
-export interface QaapStripeSubscriptionUpdate {
-    /** Stripe subscription status (`active`, `trialing`, `past_due`, `canceled`, …). */
-    readonly status: string;
-    /** Paid plan to grant while entitled; when absent an entitled status keeps the current plan. */
+/**
+ * Account fields written before the Airwallex switch (`stripe*` names). They are read as a fallback so an
+ * existing record keeps its plan and subscription link; they are never written.
+ */
+interface QaapLegacyBillingAccountFields {
+    readonly stripeCustomerId?: string;
+    readonly stripeSubscriptionId?: string;
+    readonly stripeSubscriptionStatus?: string;
+    readonly stripeEventCreated?: number;
+}
+
+export interface QaapAirwallexSubscriptionUpdate {
+    readonly status: QaapBillingSubscriptionStatus;
+    /** Paid plan to grant while `active`; when absent an active subscription keeps the current plan. */
     readonly planId?: QaapBillingPlanId;
     readonly subscriptionId?: string;
     readonly customerId?: string;
-    /** Unix seconds of the event (or Checkout session) this state comes from. */
+    /** Unix seconds of the moment this state was read from the provider. */
     readonly eventCreated: number;
     /** Set by a completed Checkout: lets the account move to this subscription from another one. */
     readonly adoptSubscription?: boolean;
@@ -41,7 +51,7 @@ export class QaapBillingStore {
         || path.join(os.homedir(), '.qaap', 'billing-accounts.json');
     protected writeChain: Promise<void> = Promise.resolve();
     protected sqliteStore: QaapSqliteStore | undefined;
-    protected stripeEventStore: QaapSqliteStore | undefined;
+    protected billingEventStore: QaapSqliteStore | undefined;
     /** Warm sync peek for concurrency / catalog gates (keyed by normalized login). */
     protected entitlementsCache = new Map<string, QaapBillingEntitlements>();
 
@@ -112,13 +122,13 @@ export class QaapBillingStore {
     }
 
     /**
-     * Apply a plan change (Stripe webhook or local/dev activate). Only the plan and its subscription
-     * references change: the workspace limits come from the catalog on every read.
+     * Apply a plan change (provider webhook, confirmed Checkout, or local/dev activate). Only the plan and its
+     * subscription references change: the workspace limits come from the catalog on every read.
      */
     async setPlan(
         login: string,
         planId: QaapBillingPlanId,
-        stripe?: {
+        subscription?: {
             readonly customerId?: string;
             readonly subscriptionId?: string;
             readonly clearSubscription?: boolean;
@@ -131,10 +141,10 @@ export class QaapBillingStore {
             const current = this.normalizeAccount(all[key] ?? this.createDefaultAccount(key, now));
             const next: QaapBillingAccount = {
                 ...this.withPlan(current, key, planId, now),
-                stripeCustomerId: stripe?.customerId ?? current.stripeCustomerId,
-                stripeSubscriptionId: stripe?.clearSubscription
+                customerId: subscription?.customerId ?? current.customerId,
+                subscriptionId: subscription?.clearSubscription
                     ? undefined
-                    : (stripe?.subscriptionId ?? current.stripeSubscriptionId),
+                    : (subscription?.subscriptionId ?? current.subscriptionId),
             };
             all[key] = next;
             await this.writeAll(all);
@@ -144,41 +154,46 @@ export class QaapBillingStore {
     }
 
     /**
-     * Applies a Stripe subscription state (webhook event or confirmed Checkout session). Entitled
-     * statuses grant `planId` (or keep the current paid plan); any other status drops to Starter while
-     * keeping the subscription id, so a recovered `past_due` is upgraded again by its next event.
-     * Deliveries older than the newest applied one, and events of a subscription other than the
-     * account's current one (unless `adoptSubscription`), are ignored.
+     * Applies a subscription state read from Airwallex (webhook re-fetch or confirmed Checkout).
+     * `active` grants `planId` (or keeps the current plan); `past_due` and `canceled` drop to Starter, keeping
+     * a `past_due` subscription id so its next `active` state restores the plan; `pending` changes no plan.
+     * States older than the newest applied one, and states of a subscription other than the account's current
+     * one (unless `adoptSubscription`), are ignored.
      */
-    async applyStripeSubscription(
+    async applyAirwallexSubscription(
         login: string,
-        update: QaapStripeSubscriptionUpdate,
+        update: QaapAirwallexSubscriptionUpdate,
         now: Date = new Date(),
     ): Promise<{ readonly applied: boolean; readonly account: QaapBillingAccount }> {
         const key = QaapBillingStore.normalizeLogin(login);
         return this.withLock(async () => {
             const all = await this.readAll();
             const current = this.normalizeAccount(all[key] ?? this.createDefaultAccount(key, now));
-            const entitled = isStripeSubscriptionEntitled(update.status);
-            const stale = (current.stripeEventCreated ?? 0) > update.eventCreated;
-            const otherSubscription = !!current.stripeSubscriptionId && !!update.subscriptionId
-                && current.stripeSubscriptionId !== update.subscriptionId;
-            // Only a completed Checkout (webhook or confirm) may switch the account to another
-            // subscription; plain updates of an old one never change its plan or id.
+            const stale = (current.subscriptionEventAt ?? 0) > update.eventCreated;
+            const otherSubscription = !!current.subscriptionId && !!update.subscriptionId
+                && current.subscriptionId !== update.subscriptionId;
+            // Only a completed Checkout may switch the account to another subscription; plain updates of an
+            // old one never change its plan or id.
             if (stale || (otherSubscription && !update.adoptSubscription)) {
                 return { applied: false, account: current };
             }
-            const planId: QaapBillingPlanId = entitled ? (update.planId ?? current.planId) : 'starter';
+            let planId: QaapBillingPlanId = current.planId;
+            if (update.status === 'active') {
+                planId = update.planId ?? current.planId;
+            } else if (update.status === 'past_due' || update.status === 'canceled') {
+                planId = 'starter';
+            }
             const base = planId === current.planId ? current : this.withPlan(current, key, planId, now);
             const next: QaapBillingAccount = {
                 ...base,
+                provider: 'airwallex',
                 updatedAt: now.toISOString(),
-                stripeCustomerId: update.customerId ?? current.stripeCustomerId,
-                stripeSubscriptionId: isStripeSubscriptionEnded(update.status)
+                customerId: update.customerId ?? current.customerId,
+                subscriptionId: update.status === 'canceled'
                     ? undefined
-                    : (update.subscriptionId ?? current.stripeSubscriptionId),
-                stripeSubscriptionStatus: update.status,
-                stripeEventCreated: Math.max(current.stripeEventCreated ?? 0, update.eventCreated),
+                    : (update.subscriptionId ?? current.subscriptionId),
+                subscriptionStatus: update.status,
+                subscriptionEventAt: Math.max(current.subscriptionEventAt ?? 0, update.eventCreated),
             };
             all[key] = next;
             await this.writeAll(all);
@@ -187,22 +202,22 @@ export class QaapBillingStore {
         });
     }
 
-    /** The login whose account holds `subscriptionId`, for Stripe objects without our metadata. */
-    async findLoginByStripeSubscription(subscriptionId: string): Promise<string | undefined> {
+    /** The login whose account holds `subscriptionId`, for provider objects without our metadata. */
+    async findLoginByAirwallexSubscription(subscriptionId: string): Promise<string | undefined> {
         const all = await this.readAll();
-        return Object.values(all).find(account => account.stripeSubscriptionId === subscriptionId)?.login;
+        return Object.values(all).find(account => account.subscriptionId === subscriptionId)?.login;
     }
 
-    async hasProcessedStripeEvent(eventId: string): Promise<boolean> {
-        return this.getStripeEventStore().get<number>(eventId) !== undefined;
+    async hasProcessedBillingEvent(eventId: string): Promise<boolean> {
+        return this.getBillingEventStore().get<number>(eventId) !== undefined;
     }
 
-    /** Records a handled Stripe event id; ids older than Stripe's retry window are pruned. */
-    async markStripeEventProcessed(eventId: string, now: Date = new Date()): Promise<void> {
-        const store = this.getStripeEventStore();
+    /** Records a handled webhook event id; ids older than the retention window are pruned. */
+    async markBillingEventProcessed(eventId: string, now: Date = new Date()): Promise<void> {
+        const store = this.getBillingEventStore();
         store.set(eventId, now.getTime());
         for (const [id, processedAt] of store.list<number>()) {
-            if (now.getTime() - processedAt > STRIPE_EVENT_RETENTION_MS) {
+            if (now.getTime() - processedAt > BILLING_EVENT_RETENTION_MS) {
                 store.delete(id);
             }
         }
@@ -229,16 +244,18 @@ export class QaapBillingStore {
     /**
      * Keeps only the current account fields. Records persisted before the plan catalog changed still
      * carry credit / runtime meters and the retired `team` plan: the meters are dropped and `team` maps to `pro`.
+     * Records persisted under the `stripe*` names are re-keyed to the provider-neutral fields.
      */
-    protected normalizeAccount(account: QaapBillingAccount): QaapBillingAccount {
+    protected normalizeAccount(account: QaapBillingAccount & QaapLegacyBillingAccountFields): QaapBillingAccount {
         return {
             login: account.login,
             planId: parseQaapBillingPlanId(account.planId),
             updatedAt: account.updatedAt,
-            stripeCustomerId: account.stripeCustomerId,
-            stripeSubscriptionId: account.stripeSubscriptionId,
-            stripeSubscriptionStatus: account.stripeSubscriptionStatus,
-            stripeEventCreated: account.stripeEventCreated,
+            provider: account.provider,
+            customerId: account.customerId ?? account.stripeCustomerId,
+            subscriptionId: account.subscriptionId ?? account.stripeSubscriptionId,
+            subscriptionStatus: account.subscriptionStatus ?? account.stripeSubscriptionStatus,
+            subscriptionEventAt: account.subscriptionEventAt ?? account.stripeEventCreated,
         };
     }
 
@@ -248,7 +265,7 @@ export class QaapBillingStore {
         return run;
     }
 
-    protected async readAll(): Promise<Record<string, QaapBillingAccount>> {
+    protected async readAll(): Promise<Record<string, QaapBillingAccount & QaapLegacyBillingAccountFields>> {
         try {
             const store = this.getSqliteStore();
             try {
@@ -266,8 +283,8 @@ export class QaapBillingStore {
             } catch {
                 // A malformed legacy file must not hide valid SQLite state.
             }
-            const normalized: Record<string, QaapBillingAccount> = {};
-            for (const [key, account] of store.list<QaapBillingAccount>()) {
+            const normalized: Record<string, QaapBillingAccount & QaapLegacyBillingAccountFields> = {};
+            for (const [key, account] of store.list<QaapBillingAccount & QaapLegacyBillingAccountFields>()) {
                 const login = QaapBillingStore.normalizeLogin(account?.login || key);
                 normalized[login] = { ...account, login };
             }
@@ -281,10 +298,10 @@ export class QaapBillingStore {
         this.getSqliteStore().replace(Object.entries(data));
     }
 
-    protected getStripeEventStore(): QaapSqliteStore {
-        return this.stripeEventStore ??= new QaapSqliteStore({
+    protected getBillingEventStore(): QaapSqliteStore {
+        return this.billingEventStore ??= new QaapSqliteStore({
             databasePath: resolveQaapSqlitePath(this.filePath),
-            namespace: 'billing-stripe-events',
+            namespace: 'billing-subscription-events',
         });
     }
 

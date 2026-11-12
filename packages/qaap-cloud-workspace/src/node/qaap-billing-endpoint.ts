@@ -12,34 +12,37 @@ import { QaapAsyncRoute } from '@theia/qaap-shared-core/lib/node/qaap-async-rout
 import { QaapExpressRouteOrder } from '@theia/qaap-shared-core/lib/node/qaap-express-route-order';
 import {
     QAAP_BILLING_API_PATH,
+    QAAP_BILLING_CANCEL_API_PATH,
     QAAP_BILLING_CHECKOUT_API_PATH,
     QAAP_BILLING_CONFIRM_CHECKOUT_API_PATH,
     QAAP_BILLING_DEV_ACTIVATE_API_PATH,
     QAAP_BILLING_WEBHOOK_API_PATH,
 } from '../common/qaap-cloud-api-types';
-import { QAAP_BILLING_PLANS, entitlementsFor } from '../common/qaap-billing-plans';
-import { QaapBillingStore } from './qaap-billing-store';
+import { QAAP_BILLING_PLANS, entitlementsFor, isQaapBillingPlanId, type QaapBillingPlanId } from '../common/qaap-billing-plans';
 import {
-    createSubscriptionCheckoutSession,
-    extractCheckoutPlanAndLogin,
+    airwallexSubscriptionIdFromEvent,
+    cancelAirwallexSubscription,
+    createAirwallexSubscriptionCheckout,
+    fetchAirwallexCheckout,
+    fetchAirwallexSubscription,
+    isAirwallexBillingConfigured,
     isBillingDevActivateEnabled,
-    isCheckoutSessionPaid,
-    isQaapPayablePlanId,
-    isStripeBillingConfigured,
     resolveBillingPublicOrigin,
-    retrieveCheckoutSession,
-    stripeCustomerIdFromObject,
-    stripeCustomerIdFromSession,
-    stripeSubscriptionIdFromInvoice,
-    stripeSubscriptionIdFromSession,
-    verifyStripeWebhookEvent,
-    type QaapStripeCheckoutSessionObject,
-    type QaapStripeEvent,
-    type QaapStripeInvoiceObject,
-    type QaapStripeSubscriptionObject,
-} from './qaap-stripe-billing';
+    verifyAirwallexWebhook,
+    type QaapAirwallexSubscriptionState,
+    type QaapAirwallexWebhookEvent,
+} from './qaap-airwallex-billing';
+import { QaapBillingStore, type QaapAirwallexSubscriptionUpdate } from './qaap-billing-store';
 
-/** Billing entitlements + Stripe Checkout for the Pro monthly subscription. */
+const CHECKOUT_PLAN_IDS: readonly QaapBillingPlanId[] = ['starter', 'pro'];
+
+const unixSecondsNow = (): number => Math.floor(Date.now() / 1000);
+
+/**
+ * Billing entitlements + hosted Airwallex subscription checkout for the Starter and Pro monthly plans.
+ * Subscription state is always re-read from Airwallex before it is applied, so a webhook, a confirm
+ * and a cancel all converge on the provider's current state.
+ */
 @injectable()
 export class QaapBillingEndpoint implements BackendApplicationContribution {
 
@@ -50,7 +53,7 @@ export class QaapBillingEndpoint implements BackendApplicationContribution {
     protected readonly store: QaapBillingStore;
 
     /** Event ids being handled right now, so a concurrent redelivery is not applied twice. */
-    protected readonly stripeEventsInFlight = new Set<string>();
+    protected readonly billingEventsInFlight = new Set<string>();
 
     configure(app: Application): void {
         // Webhook must receive the raw body for signature verification.
@@ -65,10 +68,12 @@ export class QaapBillingEndpoint implements BackendApplicationContribution {
         app.get(QAAP_BILLING_API_PATH, QaapAsyncRoute.wrap('qaap-billing', (req, res) => this.handleGet(req, res)));
         app.post(QAAP_BILLING_CHECKOUT_API_PATH, QaapAsyncRoute.wrap('qaap-billing', (req, res) => this.handleCheckout(req, res)));
         app.post(QAAP_BILLING_CONFIRM_CHECKOUT_API_PATH, QaapAsyncRoute.wrap('qaap-billing', (req, res) => this.handleConfirmCheckout(req, res)));
+        app.post(QAAP_BILLING_CANCEL_API_PATH, QaapAsyncRoute.wrap('qaap-billing', (req, res) => this.handleCancel(req, res)));
         app.post(QAAP_BILLING_DEV_ACTIVATE_API_PATH, QaapAsyncRoute.wrap('qaap-billing', (req, res) => this.handleDevActivate(req, res)));
     }
 
     protected billingSnapshot(login: string, account: Awaited<ReturnType<QaapBillingStore['getOrCreateAccount']>>): object {
+        const checkoutEnabled = isAirwallexBillingConfigured();
         return {
             account,
             entitlements: entitlementsFor(account),
@@ -76,9 +81,9 @@ export class QaapBillingEndpoint implements BackendApplicationContribution {
                 plans: QAAP_BILLING_PLANS,
             },
             checkout: {
-                stripeEnabled: isStripeBillingConfigured(),
-                devActivateEnabled: !isStripeBillingConfigured() && isBillingDevActivateEnabled(this.auth.isSkipAuthEnabled()),
-                payablePlanIds: ['pro'],
+                checkoutEnabled,
+                devActivateEnabled: !checkoutEnabled && isBillingDevActivateEnabled(this.auth.isSkipAuthEnabled()),
+                payablePlanIds: [...CHECKOUT_PLAN_IDS],
             },
         };
     }
@@ -98,14 +103,14 @@ export class QaapBillingEndpoint implements BackendApplicationContribution {
             return;
         }
         const planIdRaw = typeof req.body?.planId === 'string' ? req.body.planId.trim() : '';
-        if (!isQaapPayablePlanId(planIdRaw)) {
-            res.status(400).json({ error: 'planId must be "pro"' });
+        if (!isQaapBillingPlanId(planIdRaw)) {
+            res.status(400).json({ error: 'planId must be "starter" or "pro"' });
             return;
         }
-        if (!isStripeBillingConfigured()) {
+        if (!isAirwallexBillingConfigured()) {
             res.status(503).json({
-                error: 'stripe_not_configured',
-                message: 'Stripe is not configured. Set STRIPE_SECRET_KEY and STRIPE_PRICE_*_MONTHLY.',
+                error: 'checkout_not_configured',
+                message: 'Airwallex billing is not configured. Set AIRWALLEX_CLIENT_ID, AIRWALLEX_API_KEY, AIRWALLEX_PRICE_STARTER_MONTHLY and AIRWALLEX_PRICE_PRO_MONTHLY.',
                 devActivateEnabled: isBillingDevActivateEnabled(this.auth.isSkipAuthEnabled()),
             });
             return;
@@ -117,19 +122,13 @@ export class QaapBillingEndpoint implements BackendApplicationContribution {
         if (!origin) {
             res.status(503).json({
                 error: 'public_url_not_configured',
-                message: 'Set QAAP_PUBLIC_URL to the public https origin before enabling Stripe Checkout.',
+                message: 'Set QAAP_PUBLIC_URL to the public https origin before enabling checkout.',
             });
             return;
         }
         try {
-            const account = await this.store.getOrCreateAccount(login);
-            const session = await createSubscriptionCheckoutSession({
-                login,
-                planId: planIdRaw,
-                origin,
-                customerId: account.stripeCustomerId,
-            });
-            res.json({ url: session.url, sessionId: session.sessionId });
+            const checkout = await createAirwallexSubscriptionCheckout({ login, planId: planIdRaw, origin });
+            res.json({ url: checkout.url, checkoutId: checkout.id });
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Checkout failed';
             res.status(500).json({ error: 'checkout_failed', message });
@@ -137,50 +136,51 @@ export class QaapBillingEndpoint implements BackendApplicationContribution {
     }
 
     /**
-     * After Stripe redirects to `?qaapBilling=success&session_id=…`, the browser confirms the
-     * session so entitlements update even if the webhook is delayed. Idempotent with the webhook.
+     * After the hosted checkout returns with `?checkout=<id>`, the browser confirms it so entitlements update
+     * without waiting for the webhook. The checkout must belong to this login and carry a subscription, and
+     * the subscription's authoritative state is what gets applied. Idempotent with the webhook.
      */
     protected async handleConfirmCheckout(req: Request, res: Response): Promise<void> {
         const login = this.requireLogin(req, res);
         if (!login) {
             return;
         }
-        if (!isStripeBillingConfigured()) {
-            res.status(503).json({ error: 'stripe_not_configured' });
+        if (!isAirwallexBillingConfigured()) {
+            res.status(503).json({ error: 'checkout_not_configured' });
             return;
         }
-        const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId.trim() : '';
-        if (!sessionId) {
-            res.status(400).json({ error: 'sessionId_required' });
+        const checkoutId = typeof req.body?.checkoutId === 'string' ? req.body.checkoutId.trim() : '';
+        if (!checkoutId) {
+            res.status(400).json({ error: 'checkoutId_required' });
             return;
         }
         try {
-            const session = await retrieveCheckoutSession(sessionId);
-            if (session.mode && session.mode !== 'subscription') {
-                res.status(400).json({ error: 'not_subscription_session' });
-                return;
-            }
-            if (!isCheckoutSessionPaid(session)) {
-                res.status(409).json({ error: 'checkout_not_complete', status: session.status, payment_status: session.payment_status });
-                return;
-            }
-            const extracted = extractCheckoutPlanAndLogin(session);
-            if (!extracted.login || extracted.login !== login) {
+            // Captured before the provider reads: a webhook that fetched an older state and applies later is stale.
+            const readAt = unixSecondsNow();
+            const checkout = await fetchAirwallexCheckout(checkoutId);
+            if (checkout.login !== login) {
                 res.status(403).json({ error: 'session_login_mismatch' });
                 return;
             }
-            if (!extracted.planId) {
+            if (!checkout.planId) {
                 res.status(400).json({ error: 'session_missing_plan' });
                 return;
             }
-            // Dated by the session: once any newer subscription event (past_due, canceled) is applied,
-            // re-confirming an old paid session cannot hand the plan back.
-            const { account } = await this.store.applyStripeSubscription(login, {
-                status: 'active',
-                planId: extracted.planId,
-                customerId: stripeCustomerIdFromSession(session),
-                subscriptionId: stripeSubscriptionIdFromSession(session),
-                eventCreated: session.created ?? 0,
+            if (!checkout.subscriptionId) {
+                res.status(409).json({ error: 'checkout_not_complete', status: checkout.status });
+                return;
+            }
+            const subscription = await fetchAirwallexSubscription(checkout.subscriptionId);
+            if (subscription.status === 'pending') {
+                res.status(409).json({ error: 'checkout_not_complete', status: checkout.status });
+                return;
+            }
+            const { account } = await this.store.applyAirwallexSubscription(login, {
+                status: subscription.status,
+                planId: checkout.planId,
+                customerId: subscription.customerId ?? checkout.customerId,
+                subscriptionId: subscription.subscriptionId,
+                eventCreated: readAt,
                 adoptSubscription: true,
             });
             res.json(this.billingSnapshot(login, account));
@@ -190,17 +190,44 @@ export class QaapBillingEndpoint implements BackendApplicationContribution {
         }
     }
 
+    /** Cancels the signed-in account's subscription at Airwallex, then applies the re-read state. */
+    protected async handleCancel(req: Request, res: Response): Promise<void> {
+        const login = this.requireLogin(req, res);
+        if (!login) {
+            return;
+        }
+        if (!isAirwallexBillingConfigured()) {
+            res.status(503).json({ error: 'checkout_not_configured' });
+            return;
+        }
+        const current = await this.store.getOrCreateAccount(login);
+        if (!current.subscriptionId) {
+            res.status(404).json({ error: 'no_subscription' });
+            return;
+        }
+        try {
+            await cancelAirwallexSubscription(current.subscriptionId);
+            const readAt = unixSecondsNow();
+            const subscription = await fetchAirwallexSubscription(current.subscriptionId);
+            const { account } = await this.store.applyAirwallexSubscription(login, this.toSubscriptionUpdate(subscription, readAt));
+            res.json(this.billingSnapshot(login, account));
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'cancel_failed';
+            res.status(502).json({ error: 'cancel_failed', message });
+        }
+    }
+
     protected async handleDevActivate(req: Request, res: Response): Promise<void> {
         const login = this.requireLogin(req, res);
         if (!login) {
             return;
         }
-        if (isStripeBillingConfigured() || !isBillingDevActivateEnabled(this.auth.isSkipAuthEnabled())) {
+        if (isAirwallexBillingConfigured() || !isBillingDevActivateEnabled(this.auth.isSkipAuthEnabled())) {
             res.status(403).json({ error: 'dev_activate_disabled' });
             return;
         }
         const planIdRaw = typeof req.body?.planId === 'string' ? req.body.planId.trim() : '';
-        if (planIdRaw !== 'starter' && !isQaapPayablePlanId(planIdRaw)) {
+        if (!isQaapBillingPlanId(planIdRaw)) {
             res.status(400).json({ error: 'planId must be "starter" or "pro"' });
             return;
         }
@@ -216,14 +243,9 @@ export class QaapBillingEndpoint implements BackendApplicationContribution {
     }
 
     protected async handleWebhook(req: Request, res: Response): Promise<void> {
-        const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET?.trim();
+        const webhookSecret = process.env.AIRWALLEX_WEBHOOK_SECRET?.trim();
         if (!webhookSecret) {
-            res.status(503).json({ error: 'stripe_webhook_not_configured' });
-            return;
-        }
-        const signature = req.headers['stripe-signature'];
-        if (typeof signature !== 'string') {
-            res.status(400).json({ error: 'missing_signature' });
+            res.status(503).json({ error: 'webhook_not_configured' });
             return;
         }
         if (!Buffer.isBuffer(req.body)) {
@@ -231,32 +253,32 @@ export class QaapBillingEndpoint implements BackendApplicationContribution {
             res.status(400).json({ error: 'webhook_body_unavailable' });
             return;
         }
-        let event;
+        let event: QaapAirwallexWebhookEvent;
         try {
-            event = verifyStripeWebhookEvent(req.body, signature, webhookSecret);
+            event = verifyAirwallexWebhook(req.body, req.headers, webhookSecret);
         } catch {
             res.status(400).json({ error: 'invalid_signature' });
             return;
         }
 
-        const eventId = event.id;
-        if (eventId && this.stripeEventsInFlight.has(eventId)) {
-            // The first delivery may still fail: answer non-2xx so Stripe retries instead of dropping it.
+        const eventId = typeof event.id === 'string' && event.id ? event.id : undefined;
+        if (eventId && this.billingEventsInFlight.has(eventId)) {
+            // The first delivery may still fail: answer non-2xx so the provider retries instead of dropping it.
             res.status(409).json({ error: 'event_in_progress' });
             return;
         }
-        if (eventId && await this.store.hasProcessedStripeEvent(eventId)) {
+        if (eventId && await this.store.hasProcessedBillingEvent(eventId)) {
             res.json({ received: true, duplicate: true });
             return;
         }
         if (eventId) {
-            this.stripeEventsInFlight.add(eventId);
+            this.billingEventsInFlight.add(eventId);
         }
         try {
-            await this.applyStripeEvent(event);
+            await this.applyAirwallexEvent(event);
             if (eventId) {
                 // Only after success: a failed delivery must stay retryable.
-                await this.store.markStripeEventProcessed(eventId);
+                await this.store.markBillingEventProcessed(eventId);
             }
             res.json({ received: true });
         } catch (error) {
@@ -264,55 +286,41 @@ export class QaapBillingEndpoint implements BackendApplicationContribution {
             res.status(500).json({ error: message });
         } finally {
             if (eventId) {
-                this.stripeEventsInFlight.delete(eventId);
+                this.billingEventsInFlight.delete(eventId);
             }
         }
     }
 
-    protected async applyStripeEvent(event: QaapStripeEvent): Promise<void> {
-        const eventCreated = event.created ?? Math.floor(Date.now() / 1000);
-        if (event.type === 'checkout.session.completed') {
-            const session = event.data.object as QaapStripeCheckoutSessionObject;
-            if (session.mode !== 'subscription') {
-                return;
-            }
-            const { login, planId } = extractCheckoutPlanAndLogin(session);
-            if (login && planId) {
-                await this.store.applyStripeSubscription(login, {
-                    status: 'active',
-                    planId,
-                    customerId: stripeCustomerIdFromSession(session),
-                    subscriptionId: stripeSubscriptionIdFromSession(session),
-                    eventCreated,
-                    adoptSubscription: true,
-                });
-            }
-        } else if (event.type === 'customer.subscription.updated' || event.type === 'customer.subscription.deleted') {
-            const subscription = event.data.object as QaapStripeSubscriptionObject;
-            const login = subscription.metadata?.login?.trim()
-                || (subscription.id ? await this.store.findLoginByStripeSubscription(subscription.id) : undefined);
-            if (!login) {
-                return;
-            }
-            const planIdRaw = subscription.metadata?.planId?.trim() ?? '';
-            await this.store.applyStripeSubscription(login, {
-                status: event.type === 'customer.subscription.deleted' ? 'canceled' : (subscription.status ?? 'active'),
-                planId: isQaapPayablePlanId(planIdRaw) ? planIdRaw : undefined,
-                customerId: stripeCustomerIdFromObject(subscription),
-                subscriptionId: subscription.id,
-                eventCreated,
-            });
-        } else if (event.type === 'invoice.payment_failed') {
-            // Recorded only. The plan follows the subscription status: a failed renewal also sends
-            // customer.subscription.updated with past_due, while a failed proration or one-off invoice
-            // leaves the subscription active and must not suspend the plan.
-            const invoice = event.data.object as QaapStripeInvoiceObject;
-            console.info('[qaap-billing] Stripe invoice payment failed', {
-                eventId: event.id,
-                subscriptionId: stripeSubscriptionIdFromInvoice(invoice),
-                customerId: stripeCustomerIdFromObject(invoice),
-            });
+    /**
+     * Event names are not fully documented, so the event only selects a subscription id. The subscription is
+     * then re-fetched and its current state applied; the event payload is never trusted for the state itself.
+     */
+    protected async applyAirwallexEvent(event: QaapAirwallexWebhookEvent): Promise<void> {
+        const subscriptionId = airwallexSubscriptionIdFromEvent(event);
+        if (!subscriptionId) {
+            return;
         }
+        const readAt = unixSecondsNow();
+        const subscription = await fetchAirwallexSubscription(subscriptionId);
+        const login = subscription.login
+            ?? await this.store.findLoginByAirwallexSubscription(subscription.subscriptionId);
+        if (!login) {
+            return;
+        }
+        await this.store.applyAirwallexSubscription(login, this.toSubscriptionUpdate(subscription, readAt));
+    }
+
+    protected toSubscriptionUpdate(
+        subscription: QaapAirwallexSubscriptionState,
+        readAt: number,
+    ): QaapAirwallexSubscriptionUpdate {
+        return {
+            status: subscription.status,
+            planId: subscription.planId,
+            subscriptionId: subscription.subscriptionId,
+            customerId: subscription.customerId,
+            eventCreated: readAt,
+        };
     }
 
     protected requireLogin(req: Request, res: Response): string | undefined {

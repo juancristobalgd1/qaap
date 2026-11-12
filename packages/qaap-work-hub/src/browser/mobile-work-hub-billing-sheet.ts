@@ -52,11 +52,11 @@ function formatCredits(credits: number): string {
     return new Intl.NumberFormat(nls.locale ?? nls.defaultLocale, { maximumFractionDigits: 0 }).format(credits);
 }
 
-function isPayablePlan(planId: string): planId is 'pro' | 'team' {
-    return planId === 'pro' || planId === 'team';
+function isPayablePlan(planId: string): planId is 'pro' {
+    return planId === 'pro';
 }
 
-/** Work Hub overlay for plan picker, Stripe Checkout, and usage meters. */
+/** Work Hub overlay for plan picker, hosted checkout, and usage meters. */
 export class MobileWorkHubBillingSheet {
 
     readonly node: HTMLElement;
@@ -231,7 +231,7 @@ export class MobileWorkHubBillingSheet {
         } else {
             sub.textContent = nls.localize(
                 'qaap/billing/subhead',
-                'Starter is selected by default. Swipe to compare Pro and Team, then subscribe monthly with Stripe.',
+                'Starter is selected by default. Swipe to compare Pro and Team, then subscribe monthly with Airwallex.',
             );
         }
         intro.append(eyebrow, headline, sub);
@@ -548,7 +548,7 @@ export class MobileWorkHubBillingSheet {
         }
 
         const payablePlanId = plan.id;
-        const stripeEnabled = !!this.data?.checkout?.stripeEnabled;
+        const checkoutEnabled = !!this.data?.checkout?.checkoutEnabled;
         const devEnabled = !!this.data?.checkout?.devActivateEnabled;
         button.classList.add('theia-mod-primary');
         button.textContent = nls.localize(
@@ -559,20 +559,20 @@ export class MobileWorkHubBillingSheet {
         button.addEventListener('click', () => {
             void this.handleSubscribe(payablePlanId, button);
         });
-        if (stripeEnabled) {
+        if (checkoutEnabled) {
             hint.textContent = nls.localize(
-                'qaap/billing/ctaStripeHint',
-                'Secure monthly checkout powered by Stripe. Cancel anytime from Stripe.',
+                'qaap/billing/ctaCheckoutHint',
+                'Secure monthly checkout powered by Airwallex. Cancel anytime from Billing.',
             );
         } else if (devEnabled) {
             hint.textContent = nls.localize(
                 'qaap/billing/ctaDevHint',
-                'Stripe keys are not set — local preview will activate this plan without payment.',
+                'Airwallex billing is not configured — local preview will activate this plan without payment.',
             );
         } else {
             hint.textContent = nls.localize(
-                'qaap/billing/ctaStripeMissing',
-                'Set STRIPE_SECRET_KEY and STRIPE_PRICE_PRO_MONTHLY / STRIPE_PRICE_TEAM_MONTHLY to enable checkout.',
+                'qaap/billing/ctaCheckoutMissing',
+                'Set AIRWALLEX_CLIENT_ID, AIRWALLEX_API_KEY, AIRWALLEX_PRICE_STARTER_MONTHLY and AIRWALLEX_PRICE_PRO_MONTHLY to enable checkout.',
             );
             button.disabled = true;
         }
@@ -588,7 +588,7 @@ export class MobileWorkHubBillingSheet {
         await this.runDevActivate(planId, button);
     }
 
-    protected async handleSubscribe(planId: 'pro' | 'team', button: HTMLButtonElement): Promise<void> {
+    protected async handleSubscribe(planId: 'pro', button: HTMLButtonElement): Promise<void> {
         if (this.checkoutBusy || !this.data) {
             return;
         }
@@ -596,9 +596,9 @@ export class MobileWorkHubBillingSheet {
         this.ctaHost?.querySelector('.theia-mobile-work-hub-billing-cta-error')?.remove();
         const previous = button.textContent;
         button.disabled = true;
-        button.textContent = nls.localize('qaap/billing/ctaRedirecting', 'Opening Stripe…');
+        button.textContent = nls.localize('qaap/billing/ctaRedirecting', 'Opening checkout…');
         try {
-            if (this.data.checkout?.stripeEnabled) {
+            if (this.data.checkout?.checkoutEnabled) {
                 const { url } = await createQaapBillingCheckout(planId);
                 window.location.assign(url);
                 return;
@@ -607,10 +607,10 @@ export class MobileWorkHubBillingSheet {
                 await this.runDevActivate(planId, button);
                 return;
             }
-            button.textContent = nls.localize('qaap/billing/ctaStripeMissingShort', 'Stripe not configured');
+            button.textContent = nls.localize('qaap/billing/ctaCheckoutMissingShort', 'Checkout not configured');
         } catch (error) {
             const err = error as Error & { code?: string; devActivateEnabled?: boolean };
-            if (err.code === 'stripe_not_configured' && (err.devActivateEnabled || this.data.checkout?.devActivateEnabled)) {
+            if (err.code === 'checkout_not_configured' && (err.devActivateEnabled || this.data.checkout?.devActivateEnabled)) {
                 await this.runDevActivate(planId, button);
                 return;
             }
@@ -642,7 +642,7 @@ export class MobileWorkHubBillingSheet {
     }
 
     protected async runDevActivate(
-        planId: 'starter' | 'pro' | 'team',
+        planId: 'starter' | 'pro',
         button: HTMLButtonElement,
     ): Promise<void> {
         button.textContent = nls.localize('qaap/billing/ctaActivating', 'Activating…');

@@ -7,13 +7,13 @@ export const QAAP_AUTH_API_PATH = '/qaap/api/auth';
 export const QAAP_GITHUB_API_PATH = '/qaap/api/github';
 /** Per-user AI/BYOK settings (`~/.qaap/users/{login}/settings.json`). */
 export const QAAP_USER_SETTINGS_API_PATH = '/qaap/api/user-settings';
-/** Signed-in billing entitlements + Codex hosted credit wallet. */
+/** Signed-in billing entitlements for the Starter / Pro plans. */
 export const QAAP_BILLING_API_PATH = '/qaap/api/billing';
-/** Create a Stripe Checkout session for Pro / Team monthly subscription. */
+/** Create a hosted subscription checkout for the Starter or Pro monthly plan. */
 export const QAAP_BILLING_CHECKOUT_API_PATH = '/qaap/api/billing/checkout';
-/** Confirm a completed Checkout session after Stripe redirects back (idempotent with webhook). */
+/** Confirm a completed checkout (`checkoutId` from the return URL) after the hosted page redirects back (idempotent with webhook). */
 export const QAAP_BILLING_CONFIRM_CHECKOUT_API_PATH = '/qaap/api/billing/confirm-checkout';
-/** Dev-only plan activate when Stripe keys are not configured. */
+/** Dev-only plan activate when Airwallex billing is not configured. */
 export const QAAP_BILLING_DEV_ACTIVATE_API_PATH = '/qaap/api/billing/dev-activate';
 /** Unauthenticated liveness/readiness probe for monitors and VPS deploy gates. */
 export const QAAP_HEALTH_API_PATH = '/qaap/api/health';

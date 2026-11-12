@@ -31,16 +31,21 @@ export interface QaapBillingPlan {
     readonly idlePauseMinutes: number;
 }
 
+/** Subscription state as Qaap sees it, mapped from the payment provider's status. */
+export type QaapBillingSubscriptionStatus = 'active' | 'past_due' | 'canceled' | 'pending';
+
 export interface QaapBillingAccount {
     readonly login: string;
     readonly planId: QaapBillingPlanId;
     readonly updatedAt: string;
-    readonly stripeCustomerId?: string;
-    readonly stripeSubscriptionId?: string;
-    /** Last subscription status applied (`active`, `past_due`, …). */
-    readonly stripeSubscriptionStatus?: string;
-    /** Unix seconds of the newest subscription event applied; older, out-of-order deliveries are ignored. */
-    readonly stripeEventCreated?: number;
+    /** Payment provider that holds the subscription. */
+    readonly provider?: 'airwallex';
+    readonly customerId?: string;
+    readonly subscriptionId?: string;
+    /** Last subscription status applied (`active`, `past_due`, `canceled`, `pending`). */
+    readonly subscriptionStatus?: string;
+    /** Unix seconds of the newest subscription state applied; older, out-of-order deliveries are ignored. */
+    readonly subscriptionEventAt?: number;
 }
 
 /** Snapshot of what an account's plan allows; built by {@link entitlementsFor}. */

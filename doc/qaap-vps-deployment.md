@@ -595,58 +595,95 @@ still require a rehearsed operator procedure.
 > QAAP_BACKUP_OFFSITE_CMD='gpg --batch --yes --symmetric --cipher-algo AES256 --passphrase-file /root/.qaap-backup-passphrase --output "${QAAP_BACKUP_ARCHIVE}.gpg" "$QAAP_BACKUP_ARCHIVE" && rclone copy "${QAAP_BACKUP_ARCHIVE}.gpg" remote:qaap-backups && rm -f "${QAAP_BACKUP_ARCHIVE}.gpg"'
 > ```
 
-## Stripe billing
+## Airwallex billing
 
-Work Hub → Billing upgrades Pro / Team via Stripe Checkout. The backend needs these in
-`/opt/qaap/.env` (and a `docker compose up -d` so theia picks them up — they are mapped in
-`docker-compose.yml`):
+Work Hub → Billing subscribes to **Starter ($4.99 / month)** or **Pro ($12 / month)** through an Airwallex
+hosted subscription checkout. Qaap never pays for model usage (bring-your-own AI), so the plans only meter
+the workspace: repos, storage, concurrent agents, container memory/CPU and idle pause time. Plan limits are in
+`packages/qaap-cloud-workspace/src/common/qaap-billing-plans.ts`. New accounts stay on Starter
+(`QAAP_BILLING_DEFAULT_PLAN`). The backend needs these in `/opt/qaap/.env` (and a `docker compose up -d theia`
+so they reach the container; they are mapped in `docker-compose.yml`):
 
 | Variable | Where to get it |
 |----------|-----------------|
 | `QAAP_PUBLIC_URL` | Same HTTPS origin as the IDE, e.g. `https://161.97.69.219.sslip.io` |
-| `STRIPE_SECRET_KEY` | Stripe Dashboard → Developers → API keys (`sk_live_…` or `sk_test_…`) |
-| `STRIPE_PRICE_PRO_MONTHLY` | Price id for Pro (€29 / month recurring) |
-| `STRIPE_PRICE_TEAM_MONTHLY` | Price id for Team (€79 / month recurring) |
-| `STRIPE_WEBHOOK_SECRET` | Webhook signing secret (`whsec_…`) |
+| `AIRWALLEX_ENV` | `demo` (default, sandbox) or `prod` |
+| `AIRWALLEX_CLIENT_ID` | Airwallex dashboard → API keys (client id, for the selected environment) |
+| `AIRWALLEX_API_KEY` | Same page, the API key paired with the client id (never commit it) |
+| `AIRWALLEX_PRICE_STARTER_MONTHLY` | Price id (`price_…`) of the $4.99 monthly Starter price |
+| `AIRWALLEX_PRICE_PRO_MONTHLY` | Price id (`price_…`) of the $12 monthly Pro price |
+| `AIRWALLEX_WEBHOOK_SECRET` | Signing secret of the webhook endpoint created below |
+| `AIRWALLEX_API_BASE` | Optional override of the REST base (`https://api-demo.airwallex.com` for demo, `https://api.airwallex.com` for prod) |
 
-### One-time Stripe Dashboard setup
+`AIRWALLEX_ENV=demo` uses `https://api-demo.airwallex.com`; `prod` uses `https://api.airwallex.com`. Start with demo
+and only switch to prod (with prod credentials and prod prices) when the checklist below passes.
 
-1. Create two **Products** (or one product with two prices):
-   - **Qaap Pro** — recurring monthly **€29** → copy `price_…` → `STRIPE_PRICE_PRO_MONTHLY`
-   - **Qaap Team** — recurring monthly **€79** → copy `price_…` → `STRIPE_PRICE_TEAM_MONTHLY`
-2. Developers → Webhooks → **Add endpoint**:
+### One-time Airwallex setup
+
+1. In the Airwallex Billing area of the dashboard, create one product for Qaap (or one per plan).
+2. Create two recurring **monthly** prices in USD on that product:
+   - **Qaap Starter** at **$4.99** → copy the `price_…` id → `AIRWALLEX_PRICE_STARTER_MONTHLY`
+   - **Qaap Pro** at **$12** → copy the `price_…` id → `AIRWALLEX_PRICE_PRO_MONTHLY`
+3. In the dashboard's webhook settings, add an endpoint:
    - URL: `https://<QAAP_PUBLIC_HOST>/qaap/api/billing/webhook`
-   - Events: `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.payment_failed`
-   - Subscribe to all four on the same endpoint at once. The plan follows the subscription status: only
-     `active`/`trialing` keep Pro/Team, `past_due`/`unpaid`/`incomplete`/`paused` drop to Starter until
-     an `updated` event reports it active again, and `deleted` ends it. Without `customer.subscription.updated`
-     a past-due customer keeps the paid plan; `invoice.payment_failed` is only logged (a failed proration
-     leaves the subscription active). Events are deduplicated by id and applied in `created` order.
-   - Copy the endpoint signing secret → `STRIPE_WEBHOOK_SECRET`
-3. On the VPS:
+   - Subscribe to the subscription and checkout events (subscription created / updated / cancelled, and the
+     checkout completed event). The backend does not trust the event payload for plan state: it reads the
+     event's subscription id and re-fetches that subscription, so any subscription-level event is enough.
+   - Copy the endpoint signing secret → `AIRWALLEX_WEBHOOK_SECRET`. Requests are verified with
+     `x-signature` (HMAC-SHA256 of `x-timestamp` + the raw body) and rejected beyond five minutes.
+4. On the VPS, append the variables to `/opt/qaap/.env` (`chmod 600`), then:
 
 ```bash
 cd /opt/qaap
-# append the five vars to .env (chmod 600), then:
 docker compose up -d theia
 ```
 
-4. Verify while logged in: `GET /qaap/api/billing` JSON has `checkout.stripeEnabled: true`.
-   Work Hub avatar / Billing → Upgrade Pro should redirect to Stripe Checkout.
+### Plan rules
 
-Use **test** keys (`sk_test_…`) first; switch to live when ready to charge real cards.
+- `active` (and `IN_TRIAL`) grants the plan of the subscription's price.
+- `UNPAID` drops the account to Starter (`past_due`) until Airwallex reports it active again.
+- `CANCELLED` drops the account to Starter and clears the subscription id.
+- `PENDING` changes nothing.
+- Out-of-order state is ignored by timestamp. Only a completed checkout can switch an account to a different
+  subscription id. Events are deduplicated by id.
+- Cancel: Work Hub calls `POST /qaap/api/billing/cancel`, which asks Airwallex to cancel the subscription and then
+  applies the subscription's re-read state.
+
+### Demo vs prod
+
+- Demo (`AIRWALLEX_ENV=demo`) uses demo credentials, demo prices and the demo webhook endpoint. Use the test cards
+  documented by Airwallex; no real money moves.
+- Prod (`AIRWALLEX_ENV=prod`) needs production credentials, production prices and a production webhook. Use a
+  different webhook secret per environment.
+
+### Test checklist
+
+1. `GET /qaap/api/billing` while signed in: `checkout.checkoutEnabled` is `true`.
+2. Work Hub → Billing → subscribe to Pro: the browser lands on the Airwallex hosted page. Pay with a demo card.
+3. Return to Qaap: the plan switches to Pro (confirm via `?checkout=<id>`, or via the webhook if the return URL
+   does not carry the id).
+4. Send a webhook test from Airwallex, or cancel from Work Hub: the plan falls back to Starter, and the
+   `POST /qaap/api/billing/webhook` answers `200 {"received":true}`. A bad signature answers `400`.
+5. Repeat the same flow for Starter from the checkout page.
+6. Confirm `QAAP_BILLING_DEV_CHECKOUT` is unset on the public VPS.
+
+Things to verify in the first demo run (the Airwallex REST contract was implemented from the public docs without
+a live account): whether the success URL's `{CHECKOUT_ID}` placeholder is substituted, the exact cancel request
+body (cancel at period end vs immediate), and the webhook event names. If the placeholder is not substituted,
+the return path simply polls the entitlements, which the webhook also updates.
+
 `QAAP_BILLING_DEV_CHECKOUT` must stay unset on the public VPS.
 
 ### Paid beta smoke (single user)
 
-After Stripe env is live and `docker compose up -d theia`:
+After the Airwallex env is live and `docker compose up -d theia`:
 
 1. `QAAP_BASE_URL=https://<host> QAAP_ENV_FILE=/opt/qaap/.env ./scripts/qaap-verify-launch-readiness.sh`
-2. On the VPS: `./scripts/qaap-vps-launch-gate.sh` (Stripe incomplete → WARN; `QAAP_BILLING_DEV_CHECKOUT` → FAIL)
+2. On the VPS: `./scripts/qaap-vps-launch-gate.sh` (Airwallex incomplete → WARN; `QAAP_BILLING_DEV_CHECKOUT` → FAIL)
 3. Incognito → GitHub login → Work Hub avatar → **Billing**
-4. Upgrade **Pro** (test card `4242…`) → return URL `?qaapBilling=success` → sheet shows **CURRENT** Pro
-5. Stripe Dashboard → cancel subscription → reload Billing → Starter (needs webhook)
-6. Confirm `GET /qaap/api/billing` (while logged in) has `checkout.stripeEnabled: true`
+4. Upgrade **Pro** (an Airwallex test card) → return URL `?qaapBilling=success` → sheet shows **CURRENT** Pro
+5. Cancel the subscription from Work Hub Billing (or the Airwallex dashboard) → reload Billing → Starter (needs webhook)
+6. Confirm `GET /qaap/api/billing` (while logged in) has `checkout.checkoutEnabled: true`
 
 ## Related docs
 

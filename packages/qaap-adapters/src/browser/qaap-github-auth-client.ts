@@ -66,7 +66,7 @@ const QAAP_GITHUB_MERGE_TIMEOUT_MS = 90_000;
 const QAAP_GITHUB_DELETE_TIMEOUT_MS = 60_000;
 /** Small JSON reads/writes against the Qaap backend (project sessions, settings, billing). */
 const QAAP_API_REQUEST_TIMEOUT_MS = 15_000;
-/** Checkout creation round-trips to Stripe. */
+/** Checkout creation round-trips to the payment provider. */
 const QAAP_BILLING_CHECKOUT_TIMEOUT_MS = 30_000;
 const QAAP_AUTH_REQUEST_TIMEOUT_MS = 6000;
 /**
@@ -662,7 +662,7 @@ export interface QaapBillingApiResponse {
         }>;
     };
     readonly checkout?: {
-        readonly stripeEnabled: boolean;
+        readonly checkoutEnabled: boolean;
         readonly devActivateEnabled: boolean;
         readonly payablePlanIds: ReadonlyArray<string>;
     };
@@ -681,7 +681,7 @@ export async function fetchQaapBilling(): Promise<QaapBillingApiResponse | undef
     return response.json() as Promise<QaapBillingApiResponse>;
 }
 
-export async function createQaapBillingCheckout(planId: 'pro' | 'team'): Promise<{ url: string }> {
+export async function createQaapBillingCheckout(planId: 'starter' | 'pro'): Promise<{ url: string }> {
     const response = await fetchQaapOrTimeoutError(QAAP_BILLING_CHECKOUT_API_PATH, qaapAuthenticatedFetchInit({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -708,12 +708,12 @@ export async function createQaapBillingCheckout(planId: 'pro' | 'team'): Promise
     return { url: body.url };
 }
 
-/** Apply a paid Stripe Checkout session to the signed-in account (idempotent with the webhook). */
-export async function confirmQaapBillingCheckout(sessionId: string): Promise<QaapBillingApiResponse | undefined> {
+/** Apply a completed hosted checkout (its id from the return URL) to the signed-in account (idempotent with the webhook). */
+export async function confirmQaapBillingCheckout(checkoutId: string): Promise<QaapBillingApiResponse | undefined> {
     const response = await fetchQaapOrTimeoutError(QAAP_BILLING_CONFIRM_CHECKOUT_API_PATH, qaapAuthenticatedFetchInit({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId }),
+        body: JSON.stringify({ checkoutId }),
     }), QAAP_BILLING_CHECKOUT_TIMEOUT_MS, billingTimedOut);
     if (!response.ok) {
         throw await QaapUserFacingErrors.fromResponse(response, `Confirm checkout failed (${response.status})`);
@@ -722,7 +722,7 @@ export async function confirmQaapBillingCheckout(sessionId: string): Promise<Qaa
 }
 
 export async function activateQaapBillingPlanDev(
-    planId: 'starter' | 'pro' | 'team',
+    planId: 'starter' | 'pro',
 ): Promise<QaapBillingApiResponse | undefined> {
     const response = await fetchQaapOrTimeoutError(QAAP_BILLING_DEV_ACTIVATE_API_PATH, qaapAuthenticatedFetchInit({
         method: 'POST',

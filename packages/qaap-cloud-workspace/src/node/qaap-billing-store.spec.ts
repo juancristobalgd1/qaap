@@ -61,7 +61,7 @@ describe('QaapBillingStore', () => {
         });
     });
 
-    it('setPlan upgrades to Pro and records the subscription references', async () => {
+    it('setPlan upgrades to Pro and records the provider-neutral subscription references', async () => {
         const store = makeStore(filePath);
         await store.getOrCreateAccount('alice');
         const next = await store.setPlan('alice', 'pro', {
@@ -69,8 +69,8 @@ describe('QaapBillingStore', () => {
             subscriptionId: 'sub_test',
         });
         expect(next.planId).to.equal('pro');
-        expect(next.stripeCustomerId).to.equal('cus_test');
-        expect(next.stripeSubscriptionId).to.equal('sub_test');
+        expect(next.customerId).to.equal('cus_test');
+        expect(next.subscriptionId).to.equal('sub_test');
         expect(store.maxConcurrentAgentsForOwner('Alice')).to.equal(4);
     });
 
@@ -127,65 +127,112 @@ describe('QaapBillingStore', () => {
         expect(entitlements).to.not.have.property('canStartAgent');
     });
 
-    describe('Stripe subscription lifecycle', () => {
-        const active = { status: 'active', planId: 'pro' as const, subscriptionId: 'sub_1', customerId: 'cus_1' };
+    it('reads a legacy record written under the stripe* names and rewrites it provider-neutral', async () => {
+        fs.writeFileSync(filePath, JSON.stringify({
+            carol: {
+                login: 'carol',
+                planId: 'pro',
+                updatedAt: '2026-09-01T00:00:00.000Z',
+                stripeCustomerId: 'cus_legacy',
+                stripeSubscriptionId: 'sub_legacy',
+                stripeSubscriptionStatus: 'active',
+                stripeEventCreated: 1000,
+            },
+        }));
+        const store = makeStore(filePath);
+        const account = await store.getOrCreateAccount('carol');
+        expect(account.planId).to.equal('pro');
+        expect(account.subscriptionId).to.equal('sub_legacy');
+        expect(account.customerId).to.equal('cus_legacy');
+        expect(account.subscriptionEventAt).to.equal(1000);
+        expect(account).to.not.have.property('stripeSubscriptionId');
+        expect(await store.findLoginByAirwallexSubscription('sub_legacy')).to.equal('carol');
+        // A newer Airwallex state of the same id is applied on top of the migrated record.
+        const next = await store.applyAirwallexSubscription('carol', {
+            status: 'past_due', subscriptionId: 'sub_legacy', eventCreated: 2000,
+        });
+        expect(next.applied).to.equal(true);
+        expect(next.account.planId).to.equal('starter');
+    });
+
+    describe('Airwallex subscription lifecycle', () => {
+        const active = { status: 'active' as const, planId: 'pro' as const, subscriptionId: 'sub_1', customerId: 'cus_1' };
 
         it('drops a past_due subscription to Starter and restores Pro when it is active again', async () => {
             const store = makeStore(filePath);
-            await store.applyStripeSubscription('alice', { ...active, eventCreated: 100 });
+            await store.applyAirwallexSubscription('alice', { ...active, eventCreated: 100 });
             expect((await store.getEntitlements('alice')).planId).to.equal('pro');
 
-            const pastDue = await store.applyStripeSubscription('alice', { status: 'past_due', subscriptionId: 'sub_1', eventCreated: 200 });
+            const pastDue = await store.applyAirwallexSubscription('alice', { status: 'past_due', subscriptionId: 'sub_1', eventCreated: 200 });
             expect(pastDue.applied).to.equal(true);
             expect(pastDue.account.planId).to.equal('starter');
-            expect(pastDue.account.stripeSubscriptionId).to.equal('sub_1');
+            expect(pastDue.account.subscriptionId).to.equal('sub_1');
+            expect(pastDue.account.subscriptionStatus).to.equal('past_due');
             expect((await store.getEntitlements('alice')).planId).to.equal('starter');
 
-            const recovered = await store.applyStripeSubscription('alice', { status: 'active', subscriptionId: 'sub_1', eventCreated: 300 });
-            expect(recovered.account.planId).to.equal('starter', 'no planId in the event: an entitled status keeps the current plan');
-            const withPlan = await store.applyStripeSubscription('alice', { ...active, eventCreated: 301 });
+            const recovered = await store.applyAirwallexSubscription('alice', { status: 'active', subscriptionId: 'sub_1', eventCreated: 300 });
+            expect(recovered.account.planId).to.equal('starter', 'no planId in the state: an active subscription keeps the current plan');
+            const withPlan = await store.applyAirwallexSubscription('alice', { ...active, eventCreated: 301 });
             expect(withPlan.account.planId).to.equal('pro');
         });
 
-        it('ignores deliveries older than the newest applied event', async () => {
+        it('keeps the current plan on a pending state', async () => {
             const store = makeStore(filePath);
-            await store.applyStripeSubscription('alice', { ...active, eventCreated: 100 });
-            await store.applyStripeSubscription('alice', { status: 'canceled', subscriptionId: 'sub_1', eventCreated: 300 });
-            const late = await store.applyStripeSubscription('alice', { ...active, eventCreated: 200 });
-            expect(late.applied).to.equal(false);
-            expect(late.account.planId).to.equal('starter');
-            expect(late.account.stripeSubscriptionId).to.equal(undefined);
+            await store.applyAirwallexSubscription('alice', { ...active, eventCreated: 100 });
+            const pending = await store.applyAirwallexSubscription('alice', { status: 'pending', subscriptionId: 'sub_1', eventCreated: 200 });
+            expect(pending.applied).to.equal(true);
+            expect(pending.account.planId).to.equal('pro');
         });
 
-        it('does not let a non-entitled event of another subscription downgrade the current one', async () => {
+        it('falls back to Starter and clears the subscription id when canceled', async () => {
             const store = makeStore(filePath);
-            await store.applyStripeSubscription('alice', { ...active, subscriptionId: 'sub_new', eventCreated: 100 });
-            const old = await store.applyStripeSubscription('alice', { status: 'canceled', subscriptionId: 'sub_old', eventCreated: 200 });
+            await store.applyAirwallexSubscription('alice', { ...active, eventCreated: 100 });
+            const canceled = await store.applyAirwallexSubscription('alice', { status: 'canceled', subscriptionId: 'sub_1', eventCreated: 200 });
+            expect(canceled.account.planId).to.equal('starter');
+            expect(canceled.account.subscriptionId).to.equal(undefined);
+            expect(canceled.account.subscriptionStatus).to.equal('canceled');
+        });
+
+        it('ignores states older than the newest applied one', async () => {
+            const store = makeStore(filePath);
+            await store.applyAirwallexSubscription('alice', { ...active, eventCreated: 100 });
+            await store.applyAirwallexSubscription('alice', { status: 'canceled', subscriptionId: 'sub_1', eventCreated: 300 });
+            const late = await store.applyAirwallexSubscription('alice', { ...active, eventCreated: 200 });
+            expect(late.applied).to.equal(false);
+            expect(late.account.planId).to.equal('starter');
+            expect(late.account.subscriptionId).to.equal(undefined);
+        });
+
+        it('does not let a non-entitled state of another subscription downgrade the current one', async () => {
+            const store = makeStore(filePath);
+            await store.applyAirwallexSubscription('alice', { ...active, subscriptionId: 'sub_new', eventCreated: 100 });
+            const old = await store.applyAirwallexSubscription('alice', { status: 'canceled', subscriptionId: 'sub_old', eventCreated: 200 });
             expect(old.applied).to.equal(false);
             expect(old.account.planId).to.equal('pro');
         });
 
-        it('never switches to another subscription on a plain update, only from a completed Checkout', async () => {
+        it('never switches to another subscription on a plain update, only from a completed checkout', async () => {
             const store = makeStore(filePath);
-            await store.applyStripeSubscription('alice', { ...active, subscriptionId: 'sub_current', planId: 'pro', eventCreated: 100 });
-            const oldActive = await store.applyStripeSubscription('alice', { ...active, subscriptionId: 'sub_old', planId: 'pro', eventCreated: 200 });
+            await store.applyAirwallexSubscription('alice', { ...active, subscriptionId: 'sub_current', planId: 'pro', eventCreated: 100 });
+            const oldActive = await store.applyAirwallexSubscription('alice', { ...active, subscriptionId: 'sub_old', planId: 'pro', eventCreated: 200 });
             expect(oldActive.applied).to.equal(false);
-            expect(oldActive.account.stripeSubscriptionId).to.equal('sub_current');
-            const checkout = await store.applyStripeSubscription('alice', {
+            expect(oldActive.account.subscriptionId).to.equal('sub_current');
+            const checkout = await store.applyAirwallexSubscription('alice', {
                 ...active, subscriptionId: 'sub_new', planId: 'pro', eventCreated: 300, adoptSubscription: true,
             });
             expect(checkout.applied).to.equal(true);
             expect(checkout.account.planId).to.equal('pro');
-            expect(checkout.account.stripeSubscriptionId).to.equal('sub_new');
+            expect(checkout.account.subscriptionId).to.equal('sub_new');
+            expect(checkout.account.provider).to.equal('airwallex');
         });
 
         it('finds the login of a subscription and remembers handled event ids', async () => {
             const store = makeStore(filePath);
-            await store.applyStripeSubscription('Alice', { ...active, eventCreated: 100 });
-            expect(await store.findLoginByStripeSubscription('sub_1')).to.equal('alice');
-            expect(await store.hasProcessedStripeEvent('evt_1')).to.equal(false);
-            await store.markStripeEventProcessed('evt_1');
-            expect(await store.hasProcessedStripeEvent('evt_1')).to.equal(true);
+            await store.applyAirwallexSubscription('Alice', { ...active, eventCreated: 100 });
+            expect(await store.findLoginByAirwallexSubscription('sub_1')).to.equal('alice');
+            expect(await store.hasProcessedBillingEvent('evt_1')).to.equal(false);
+            await store.markBillingEventProcessed('evt_1');
+            expect(await store.hasProcessedBillingEvent('evt_1')).to.equal(true);
         });
     });
 });
