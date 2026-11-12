@@ -12,7 +12,7 @@ import {
     QAAP_AI_FEATURES_SETTINGS_QUERY,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
 import { localizeHostedLocalhostOAuthAgentMessage } from '@theia/qaap-shared-core/lib/common/qaap-hosted-agent-auth-policy';
-import { buildAgentLoginShellCommand } from '@theia/qaap-shared-core/lib/common/qaap-agent-connect-plan';
+import { buildAgentLoginShellCommand, splitAgentLoginShellInput } from '@theia/qaap-shared-core/lib/common/qaap-agent-connect-plan';
 import { QAAP_AGENT_TASK_API_PATH } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import {
     resolveAgentConnectionFlow,
@@ -57,6 +57,48 @@ interface AgentLoginHarnessStatus {
 
 function wait(milliseconds: number): Promise<void> {
     return new Promise(resolve => window.setTimeout(resolve, milliseconds));
+}
+
+/** Longest wait for the shell's first prompt before the login command is typed anyway. */
+const SHELL_PROMPT_WAIT_MS = 3_000;
+/** Pause between command pieces, so the shell drains the PTY input queue between writes. */
+const SHELL_INPUT_CHUNK_GAP_MS = 25;
+
+/**
+ * Types a long command into the hidden terminal. Text written before the shell reads its line
+ * editor input sits in the kernel's canonical queue, and macOS drops input past 1024 bytes there
+ * and in one raw write: the command's tail and its Enter were lost, so it never ran. Waiting for
+ * the first prompt and writing small pieces keeps every byte.
+ */
+async function typeAgentLoginCommand(
+    terminal: { sendText(text: string): void; readonly isDisposed: boolean },
+    line: string,
+    hasPrompt: () => boolean,
+    stillCurrent: () => boolean,
+): Promise<void> {
+    const promptDeadline = Date.now() + SHELL_PROMPT_WAIT_MS;
+    while (!hasPrompt() && Date.now() < promptDeadline && stillCurrent() && !terminal.isDisposed) {
+        await wait(50);
+    }
+    const chunks = splitAgentLoginShellInput(line);
+    for (let index = 0; index < chunks.length; index++) {
+        if (!stillCurrent() || terminal.isDisposed) {
+            return;
+        }
+        if (index > 0) {
+            await wait(SHELL_INPUT_CHUNK_GAP_MS);
+        }
+        terminal.sendText(chunks[index]);
+    }
+}
+
+/** True once the terminal shows any text (the shell's first prompt). */
+function hasBufferText(terminal: { readonly buffer?: { readonly length: number; getLines(start: number, length: number, trimRight?: boolean): string[] } }): boolean {
+    const buffer = terminal.buffer;
+    if (!buffer || buffer.length === 0) {
+        return false;
+    }
+    return buffer.getLines(0, buffer.length, true).some(line => line.trim().length > 0);
 }
 
 /** Browser bundles have no Node `process`; Electron frontends do and may run a Windows backend. */
@@ -436,11 +478,19 @@ export async function openAgentLoginDialogInBackground(
             tap.noteOutput();
             bufferTap = tap;
             flow.commandStarted(Date.now());
-            liveTerminal.sendText(`${buildAgentLoginShellCommand(command, {
-                cliBinDirectory: status?.cliBinDirectory,
-                platform: runtimePlatform(),
-                env: hiddenLogin?.env,
-            })}\r`);
+            await typeAgentLoginCommand(
+                liveTerminal,
+                `${buildAgentLoginShellCommand(command, {
+                    cliBinDirectory: status?.cliBinDirectory,
+                    platform: runtimePlatform(),
+                    env: hiddenLogin?.env,
+                })}\r`,
+                () => onOutputBytes > 0 || hasBufferText(liveTerminal),
+                () => !closed && currentAttempt === attempt,
+            );
+            if (closed || currentAttempt !== attempt || liveTerminal.isDisposed) {
+                return;
+            }
             if (input?.length) {
                 startInputDriver(input, currentAttempt);
             }
