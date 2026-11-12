@@ -15278,8 +15278,11 @@ body.theia-mod-work-hub-settings-resizing * {
    so every file name starts at the same x. */
 .theia-mobile-projects-sticky-composer-attach-menu.theia-mod-files-view .theia-mobile-projects-sticky-composer-attach-menu-item > .file-icon,
 .theia-mobile-projects-sticky-composer-attach-menu.theia-mod-files-view .theia-mobile-projects-sticky-composer-attach-menu-item > .codicon-file {
-  flex: 0 0 16px;
-  width: 16px;
+  box-sizing: border-box;
+  flex: 0 0 18px !important;
+  width: 18px !important;
+  padding: 0 !important;
+  margin: 0 !important;
   font-size: 16px;
   text-align: center;
 }
