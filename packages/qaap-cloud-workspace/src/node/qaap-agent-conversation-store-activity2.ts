@@ -6,7 +6,6 @@ import { QaapAgentConversation, QaapAgentMessage, QaapAgentTurnVerdict, QaapConv
 
 import { usesAgUiCliTranscriptStream, usesStructuredAgentTranscript } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 
-
 import { QaapPlanLimit } from '@theia/qaap-adapters/lib/common/qaap-plan-limit';
 
 import { isQaiqProviderKeyMissingFailure, localizeAgentFailureMessage, resolveAgentTurnFailureMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
