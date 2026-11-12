@@ -13,6 +13,7 @@ import { expect } from 'chai';
 import { MCPServerStatus } from '@theia/ai-mcp/lib/common/mcp-server-manager';
 import { QAAP_MCP_MARKETPLACE_PLUGINS } from '../common/qaap-mcp-plugin-marketplace-catalog';
 import {
+    createMobileMcpAttachRowElement,
     groupMobileMcpAttachRows,
     loadMobileMcpAttachServerRows,
     MobileMcpAttachServerRow,
@@ -145,5 +146,41 @@ describe('renderMobileMcpAttachSections', () => {
 
         container.querySelectorAll<HTMLButtonElement>('.theia-mobile-mcp-attach-toggle')[0].click();
         expect(frontend.calls).to.deep.equal([`stop:${PLUGIN_SLUG}`, `start:${USER_SLUG}`]);
+    });
+});
+
+describe('createMobileMcpAttachRowElement settings button', () => {
+
+    const row: MobileMcpAttachServerRow = {
+        slug: USER_SLUG,
+        label: 'Linear',
+        iconLetter: 'L',
+        running: false,
+        errored: false,
+        isMarketplacePlugin: false,
+    };
+
+    it('is left out in the composer, where only the switch is shown', () => {
+        const element = createMobileMcpAttachRowElement(row, { toggleDisabled: false, onToggle: () => undefined });
+        expect(element.querySelector('.theia-mobile-mcp-attach-settings-button')).to.equal(null);
+        expect(element.querySelector('.theia-mobile-mcp-attach-toggle')).to.not.equal(null);
+    });
+
+    it('sits immediately left of the switch and opens settings without toggling', () => {
+        const opened: MobileMcpAttachServerRow[] = [];
+        let toggles = 0;
+        const element = createMobileMcpAttachRowElement(row, {
+            toggleDisabled: false,
+            onToggle: () => { toggles++; },
+            onOpenSettings: opened.push.bind(opened),
+        });
+        const settings = element.querySelector<HTMLButtonElement>('.theia-mobile-mcp-attach-settings-button')!;
+        const toggle = element.querySelector<HTMLButtonElement>('.theia-mobile-mcp-attach-toggle')!;
+        expect(settings.nextElementSibling).to.equal(toggle);
+        expect(settings.getAttribute('aria-label')).to.equal('Server settings: Linear');
+
+        settings.click();
+        expect(opened).to.deep.equal([row]);
+        expect(toggles).to.equal(0);
     });
 });

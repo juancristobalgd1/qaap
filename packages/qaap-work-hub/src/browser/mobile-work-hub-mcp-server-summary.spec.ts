@@ -98,4 +98,26 @@ describe('MobileWorkHubMcpServerSummary', () => {
         expect(harness.disposed()).to.equal(true);
         harness.summary.node.remove();
     });
+
+    it('opens the server settings dialog from the gear button without toggling the switch', async () => {
+        const harness = createHarness(
+            { [USER_SLUG]: {}, [PLUGIN_SLUG]: {} },
+            { [PLUGIN_SLUG]: { status: MCPServerStatus.Running } },
+        );
+        await harness.summary.refresh();
+        document.body.appendChild(harness.summary.node);
+
+        const pluginRowName = harness.summary.node.querySelectorAll('.theia-mobile-mcp-attach-server-name')[1].textContent;
+        harness.summary.node.querySelectorAll<HTMLButtonElement>('.theia-mobile-mcp-attach-settings-button')[1].click();
+        await settle();
+
+        expect(harness.calls).to.deep.equal([]);
+        const dialog = document.querySelector<HTMLElement>('.theia-mobile-work-hub-mcp-server-dialog');
+        expect(dialog?.classList.contains('theia-mod-visible')).to.equal(true);
+        expect(dialog?.querySelector('.theia-mobile-work-hub-preferences-title')?.textContent).to.equal(pluginRowName);
+
+        harness.summary.dispose();
+        dialog?.remove();
+        harness.summary.node.remove();
+    });
 });

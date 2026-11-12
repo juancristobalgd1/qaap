@@ -39,6 +39,12 @@
   -webkit-overflow-scrolling: touch;
 }
 
+/* The list is the bounded flex scroller: its children keep their natural height instead of
+   shrinking (long `when` clauses overflowed onto the next row). */
+.theia-mobile-work-hub-keybindings-list > * {
+  flex-shrink: 0;
+}
+
 .theia-mobile-work-hub-keybindings-group-title {
   margin: 20px 0 4px;
   padding: 0 8px;

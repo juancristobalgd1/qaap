@@ -145,9 +145,27 @@ function createMcpToggle(
 export interface MobileMcpAttachRowElementOptions {
     readonly toggleDisabled: boolean;
     readonly onToggle: () => void;
+    /** When set, a settings button is shown left of the switch; the composer "+" menu leaves it out. */
+    readonly onOpenSettings?: (row: MobileMcpAttachServerRow) => void;
 }
 
-/** One server row: icon with status dot, name, optional error hint and the enable switch. */
+function createMcpSettingsButton(
+    row: MobileMcpAttachServerRow,
+    onOpenSettings: (row: MobileMcpAttachServerRow) => void,
+): HTMLButtonElement {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'theia-mobile-mcp-attach-settings-button codicon codicon-settings-gear';
+    button.title = nls.localize('qaap/mobileProjects/mcpAttachServerSettings', 'Server settings: {0}', row.label);
+    button.setAttribute('aria-label', button.title);
+    button.addEventListener('click', ev => {
+        ev.stopPropagation();
+        onOpenSettings(row);
+    });
+    return button;
+}
+
+/** One server row: icon with status dot, name, optional error hint, optional settings button and the enable switch. */
 export function createMobileMcpAttachRowElement(
     row: MobileMcpAttachServerRow,
     options: MobileMcpAttachRowElementOptions,
@@ -176,7 +194,11 @@ export function createMobileMcpAttachRowElement(
     }
 
     const toggle = createMcpToggle(row.running, options.toggleDisabled, options.onToggle);
-    item.append(icon, text, toggle);
+    if (options.onOpenSettings) {
+        item.append(icon, text, createMcpSettingsButton(row, options.onOpenSettings), toggle);
+    } else {
+        item.append(icon, text, toggle);
+    }
     return item;
 }
 
@@ -188,6 +210,8 @@ export interface MobileMcpAttachSectionsOptions {
     readonly rerender: () => void;
     /** Reloads the rows once a toggle settled. */
     readonly reload: () => Promise<void>;
+    /** Opens the per-server settings; omitted in the composer, where no settings button is shown. */
+    readonly onOpenSettings?: (row: MobileMcpAttachServerRow) => void;
 }
 
 /** Appends the "User" and "Plugins" sections with live enable switches into `container`. */
@@ -224,6 +248,7 @@ export function renderMobileMcpAttachSections(
                             await options.reload();
                         });
                 },
+                onOpenSettings: options.onOpenSettings,
             });
             container.append(item);
         }

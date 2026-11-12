@@ -228,6 +228,7 @@ export const MOBILE_VERTICAL_SCROLL_SELECTORS = [
     '.theia-mobile-work-hub-preferences-embed .settings-main-scroll-container',
     '.theia-mobile-work-hub-preferences-embed .preferences-tree-widget',
     '.theia-mobile-work-hub-billing-scroll',
+    '.theia-mobile-work-hub-mcp-server-dialog-scroll',
     '.theia-mobile-agent-activity-timeline:not(.theia-mod-cursor-trace) .theia-mobile-agent-activity-list.theia-mod-virtualized',
     '.theia-mobile-agent-activity-terminal-stack',
     '.theia-mobile-agent-activity-terminal-output',
