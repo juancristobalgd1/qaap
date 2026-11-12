@@ -22,8 +22,11 @@ describe('resolveInteractiveAgentCliBin', () => {
         expect(resolveInteractiveAgentCliBin('claude')).to.equal('claude');
         expect(resolveInteractiveAgentCliBin('pi')).to.equal('pi');
         expect(resolveInteractiveAgentCliBin('grok')).to.equal('grok');
-        expect(resolveInteractiveAgentCliBin('antigravity')).to.equal('agy');
-        expect(resolveInteractiveAgentCliBin('gemini')).to.equal('agy');
+        // Without the server's resolved bin the preferred Gemini CLI is assumed.
+        expect(resolveInteractiveAgentCliBin('antigravity')).to.equal('gemini');
+        expect(resolveInteractiveAgentCliBin('gemini')).to.equal('gemini');
+        expect(resolveInteractiveAgentCliBin('antigravity', 'agy')).to.equal('agy');
+        expect(resolveInteractiveAgentCliBin('antigravity', 'antigravity')).to.equal('antigravity');
         expect(resolveInteractiveAgentCliBin('opencode')).to.equal('opencode');
     });
 
@@ -146,6 +149,27 @@ describe('resolveAgentConnectionFlow', () => {
             kind: 'cli-login',
             command: 'copilot login --device-code',
         });
+    });
+
+    it('connects a resolved agy through the tenant terminal, with no hidden Gemini login', () => {
+        expect(resolveAgentConnectionFlow('antigravity', { cliBin: 'agy' })).to.deep.equal({
+            kind: 'tenant-terminal',
+            command: 'agy',
+        });
+        expect(resolveInteractiveAgentLoginCommand('antigravity', 'agy')).to.equal(undefined);
+    });
+
+    it('connects a resolved community antigravity through the tenant terminal too', () => {
+        expect(resolveAgentConnectionFlow('antigravity', { cliBin: 'antigravity' })).to.deep.equal({
+            kind: 'tenant-terminal',
+            command: 'antigravity',
+        });
+    });
+
+    it('keeps the Gemini sign-in when the resolved CLI is gemini', () => {
+        const flow = resolveAgentConnectionFlow('antigravity', { cliBin: 'gemini' });
+        expect(flow.kind).to.equal('cli-login');
+        expect(flow.kind === 'cli-login' && flow.command).to.contain('gemini');
     });
 
     it('signs the Gemini alias in with Google through Gemini CLI, never with an API key', () => {

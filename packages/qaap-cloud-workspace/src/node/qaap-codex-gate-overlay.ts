@@ -671,7 +671,14 @@ export class QaapCodexGateOverlayBuilder {
 
     protected static codexVersion(env: NodeJS.ProcessEnv): Promise<string> {
         return new Promise(resolve => {
-            execFile('codex', ['--version'], { env, timeout: 15000 }, (error, stdout) => resolve(error ? 'unknown' : stdout.trim()));
+            execFile('codex', ['--version'], { env, timeout: 5000 }, (error, stdout) => {
+                if (error) {
+                    console.warn(`[qaap-codex-gate] codex --version probe failed: ${error.message}`);
+                    resolve('unknown');
+                    return;
+                }
+                resolve(stdout.trim());
+            });
         });
     }
 

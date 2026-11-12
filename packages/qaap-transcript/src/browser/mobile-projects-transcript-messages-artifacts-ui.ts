@@ -368,8 +368,9 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
 
     /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
     public appendMobileDiffSummary(segmentsBody: HTMLElement,
-        segments: readonly QaapAgentMessageSegmentDTO[],): void {
-        appendMobileDiffSummaryExtracted(this, segmentsBody, segments);
+        segments: readonly QaapAgentMessageSegmentDTO[],
+        turn?: { readonly conv?: QaapAgentConversationDTO; readonly message?: QaapAgentMessageDTO },): void {
+        appendMobileDiffSummaryExtracted(this, segmentsBody, segments, turn);
     }
 
     finalizeStreamingAgentTrace(row: HTMLElement,

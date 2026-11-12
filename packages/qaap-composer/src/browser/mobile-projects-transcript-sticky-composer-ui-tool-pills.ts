@@ -33,6 +33,7 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-composer-context-entry';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { createStickyComposerImprovePromptHandler } from './qaap-composer-prompt-improve-handler';
+import { showMissingProjectFolderBanner } from './mobile-projects-transcript-missing-folder-banner';
 import {
     renderStickyComposerActivityStack,
     renderStickyComposerChangesPill,
@@ -309,6 +310,17 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: MobilePro
     }
     shell.append(column);
     host.append(shell);
+    // Missing project folder: a banner above the composer, checked after the mount so it never delays it.
+    void showMissingProjectFolderBanner({
+        project,
+        folderPath: cwd,
+        anchor: column,
+        folderExists: target => ctx.host.projectsService.projectFolderExists(target),
+        stillMounted: () => ctx.host.transcriptComposerHost === host && ctx.host.transcriptComposerMountKey === mountKey,
+        removeProject: ctx.host.removeTranscriptProject
+            ? target => ctx.host.removeTranscriptProject?.(target)
+            : undefined,
+    });
     const isIdleComposer = isAgentsHubIdleConversationSummary(summary);
     ctx.agentsHubIdleComposerMounted = isIdleComposer;
     // Autofocus deterministically AFTER the frontend reaches 'ready' — the

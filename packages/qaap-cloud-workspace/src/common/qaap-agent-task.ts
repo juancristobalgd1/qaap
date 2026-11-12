@@ -379,6 +379,11 @@ export interface QaapAgentHarnessStatus {
      * Connect flow prepends it to the login command; otherwise a per-user install is "not found".
      */
     readonly cliBinDirectory?: string;
+    /**
+     * The Antigravity CLI the host resolved (`gemini`, `agy` or `antigravity`); only set for the
+     * Antigravity harness. The TUI menu, Connect and the status probe all use this one binary.
+     */
+    readonly cliBin?: string;
     /** The user's last finished turn with this agent, when there is one. */
     readonly lastTurn?: QaapAgentLastTurn;
 }
@@ -401,6 +406,8 @@ export interface QaapAgentDescriptor {
      * (`hosted`, Codex on a plan with credits), nothing usable (`none`), or not yet known (`unknown`).
      */
     readonly accessState?: QaapAgentAccessState;
+    /** The Antigravity CLI the host resolved; only set for the Antigravity harness (see {@link QaapAgentHarnessStatus.cliBin}). */
+    readonly cliBin?: string;
 }
 
 /** See {@link QaapAgentDescriptor.accessState}. Resolved by `resolveAgentAccess` on the backend. */

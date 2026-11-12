@@ -41,6 +41,13 @@ export interface QaapAgentStdinPrompt {
 
 // ─── Agent detection ─────────────────────────────────────────────────────────
 
+/** Boot-time `codex --help` probes; each call is capped here (two may run in sequence). */
+const CODEX_HELP_PROBE_TIMEOUT_MS = 5_000;
+
+/**
+ * Top-level and `exec` help text of the trusted codex, or `''` when the probe fails. Callers treat `''`
+ * as "unknown" and fall back to the modern codex defaults (see resolveQaapCodexTemplate).
+ */
 export function readCodexHelp(env: NodeJS.ProcessEnv = process.env): string {
     // Only a codex the backend uid trusts may run here (never a tenant-installed one as root).
     const codex = resolveTrustedExecutable('codex', env);
@@ -50,7 +57,7 @@ export function readCodexHelp(env: NodeJS.ProcessEnv = process.env): string {
     try {
         const topLevel = spawnSync(codex, ['--help'], {
             encoding: 'utf8',
-            timeout: 5_000,
+            timeout: CODEX_HELP_PROBE_TIMEOUT_MS,
             killSignal: 'SIGTERM',
             windowsHide: true,
             env: childProcessEnv(env),
@@ -61,7 +68,7 @@ export function readCodexHelp(env: NodeJS.ProcessEnv = process.env): string {
         }
         const execCommand = spawnSync(codex, ['exec', '--help'], {
             encoding: 'utf8',
-            timeout: 5_000,
+            timeout: CODEX_HELP_PROBE_TIMEOUT_MS,
             killSignal: 'SIGTERM',
             windowsHide: true,
             env: childProcessEnv(env),

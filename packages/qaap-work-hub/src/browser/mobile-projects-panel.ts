@@ -460,6 +460,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     public get transcriptLiveUi() { return this.transcriptController.liveUi; }
     /** @internal Used by the extracted mobile-projects-panel-* modules. */
     public get transcriptVerifyUi() { return this.transcriptController.verifyUi; }
+    /** Turn-end result card actions, implemented by the sticky composer. */
+    public get turnResultApi() { return this.transcriptController.stickyComposerUi; }
     /** @internal Used by the extracted mobile-projects-panel-* modules. */
     public readonly backgroundTaskUi = new MobileProjectsBackgroundTaskUi(this as unknown as MobileProjectsBackgroundTaskHost);
     protected readonly chatServiceSummariesUi = new MobileProjectsChatServiceSummariesUi(this as unknown as MobileProjectsChatServiceSummariesHost);
@@ -1795,6 +1797,19 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     openAgentSignInTerminal(agentId?: string, project?: MobileProjectEntry): void {
         openAgentSignInTerminalExtracted(this, agentId, project);
+    }
+
+    /** Opens the composer's agent and model picker for the conversation on screen ("Change model" on a failed turn). */
+    public openTranscriptModelPicker(): void {
+        const project = this.transcriptController.state.transcriptComposerProject ?? this.transcriptController.state.transcriptOpenProject;
+        if (project) {
+            this.stickyComposerSheetsUi.openStickyComposerAgentSheet(project);
+        }
+    }
+
+    /** Removes a project through the existing confirmed remove flow (the transcript's missing-folder banner). */
+    public removeTranscriptProject(project: MobileProjectEntry): Promise<void> {
+        return this.onRemoveProject(project);
     }
 
     protected async onDeleteConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): Promise<void> {

@@ -49,6 +49,28 @@ export interface TranscriptStickyComposerApi {
     remountTranscriptStickyComposer(): void;
 }
 
+/** Preview state the turn-end result card shows: a verified live preview, a runnable app, a start in flight, or nothing. */
+export type TranscriptTurnResultPreviewState = 'live' | 'runnable' | 'starting' | 'none';
+
+/** What the turn-end result card needs from the composer for one conversation. */
+export interface TranscriptTurnResultState {
+    readonly previewState: TranscriptTurnResultPreviewState;
+    /** True when the conversation changed files in a git repository that has something to commit. */
+    readonly canCreatePr: boolean;
+}
+
+/**
+ * Composer actions the turn-end result card reuses (the same handlers as the composer's Changes row);
+ * implemented by `MobileProjectsTranscriptStickyComposerUi`. Every action targets the conversation the composer shows.
+ */
+export interface TranscriptTurnResultApi {
+    resolveTurnResultState(conv: QaapAgentConversationDTO): TranscriptTurnResultState | undefined;
+    runTurnResultPreview(conv: QaapAgentConversationDTO): void;
+    openTurnResultPreview(conv: QaapAgentConversationDTO): void;
+    createTurnResultPullRequest(conv: QaapAgentConversationDTO): void;
+    focusTurnResultComposer(): void;
+}
+
 /** Project-row labels reused by the transcript and composer; implemented by `MobileProjectsProjectRowsUi`. */
 export interface TranscriptProjectLabelsApi {
     localizeActivityLabel(label: string): string;

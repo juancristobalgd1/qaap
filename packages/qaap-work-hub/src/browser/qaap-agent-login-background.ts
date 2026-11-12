@@ -51,6 +51,8 @@ interface AgentLoginHarnessStatus {
     readonly installSupported?: boolean;
     readonly installPackageAvailable?: boolean;
     readonly cliBinDirectory?: string;
+    /** The Antigravity CLI the server resolved (`gemini`, `agy`, `antigravity`); decides whether Connect runs a hidden login. */
+    readonly cliBin?: string;
 }
 
 function wait(milliseconds: number): Promise<void> {
@@ -468,6 +470,13 @@ export async function openAgentLoginDialogInBackground(
         if (status && status.installed === false) {
             const canInstall = status.installSupported === true && status.installPackageAvailable !== false;
             flow.requireInstall(canInstall, canInstall ? undefined : localizeInstallBlockedMessage(agentLabel, status));
+            return;
+        }
+        // The resolved Antigravity CLI decides the sign-in: `agy` has no login command, so no hidden
+        // Gemini login runs and the user gets the terminal instructions instead.
+        const resolvedFlow = resolveAgentConnectionFlow(agentId, { cliBin: status?.cliBin });
+        if (resolvedFlow.kind === 'tenant-terminal') {
+            flow.showManualInstructions(localizeAgentTenantTerminalLoginMessage(agentLabel, resolvedFlow.command, resolvedFlow.followUp));
             return;
         }
         await runLogin(command, status, input);

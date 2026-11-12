@@ -68,7 +68,14 @@ import { clearComposerPreviewHealthTimerExtracted, enqueueTranscriptFollowUpExtr
 import { buildGitActionMetadataExtracted, buildTranscriptComposerActivityOptionsExtracted, keepAllComposerChangedFilesExtracted, launchComposerDevPreviewExtracted, refreshComposerActivityGitFilesIfNeededExtracted, runComposerCommitActionExtracted, runComposerGitFileActionExtracted, syncComposerGitSnapshotExtracted, undoAllComposerChangedFilesExtracted } from './mobile-projects-transcript-sticky-composer-ui-streaming';
 import { appendRunningGitActionToTranscriptExtracted, applyGitActionTranscriptConversationExtracted, buildComposerActivityFingerprintExtracted, dispatchQueuedFollowUpInParallelExtracted, flushTranscriptFollowUpQueueExtracted, interruptQueuedFollowUpExtracted, isTranscriptFollowUpReadyExtracted, markPendingGitActionFailedExtracted, recordComposerGitActionInTranscriptExtracted, refreshComposerActivityStackExtracted, refreshTranscriptComposerActivityIfNeededExtracted, sendQueuedFollowUpNowExtracted, syncComposerActivityFingerprintExtracted } from './mobile-projects-transcript-sticky-composer-ui-timeline';
 import { mountTranscriptStickyComposerAsyncExtracted } from './mobile-projects-transcript-sticky-composer-ui-tool-pills';
-import type { StickyComposerChangedFileView } from '@theia/qaap-transcript/lib/browser/qaap-transcript-host-contracts';
+import type { StickyComposerChangedFileView, TranscriptTurnResultState } from '@theia/qaap-transcript/lib/browser/qaap-transcript-host-contracts';
+import {
+    createTurnResultPullRequestExtracted,
+    focusTurnResultComposerExtracted,
+    openTurnResultPreviewExtracted,
+    resolveTurnResultStateExtracted,
+    runTurnResultPreviewExtracted,
+} from './mobile-projects-transcript-turn-result-ui';
 
 export const COMPOSER_PREVIEW_HEALTH_INTERVAL_MS = 5_000;
 
@@ -110,6 +117,8 @@ export interface MobileProjectsTranscriptStickyComposerHost {
     transcriptFollowUpQueue: TranscriptFollowUpQueue;
     transcriptTheiaSessionByConversationId: ReadonlyMap<string, string>;
     projectsService: MobileProjectsService;
+    /** Removes a project through the Work Hub's confirmed remove flow (the missing-folder banner's "Remove from list"). */
+    removeTranscriptProject?(project: MobileProjectEntry): void | Promise<void>;
     projectBootstrap?: QaapProjectBootstrapService;
     chatAgentService?: ChatAgentService;
     chatService?: import('@theia/ai-chat').ChatService;
@@ -667,6 +676,27 @@ export class MobileProjectsTranscriptStickyComposerUi {
     }
 
     /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    /** Turn-end result card: preview state and whether Create PR applies, for the composer's current conversation. */
+    public resolveTurnResultState(conv: QaapAgentConversationDTO): TranscriptTurnResultState | undefined {
+        return resolveTurnResultStateExtracted(this, conv);
+    }
+
+    public runTurnResultPreview(conv: QaapAgentConversationDTO): void {
+        runTurnResultPreviewExtracted(this, conv);
+    }
+
+    public openTurnResultPreview(conv: QaapAgentConversationDTO): void {
+        openTurnResultPreviewExtracted(this, conv);
+    }
+
+    public createTurnResultPullRequest(conv: QaapAgentConversationDTO): void {
+        createTurnResultPullRequestExtracted(this, conv);
+    }
+
+    public focusTurnResultComposer(): void {
+        focusTurnResultComposerExtracted(this);
+    }
+
     public async mountTranscriptStickyComposerAsync(host: HTMLElement, project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, chatHost: HTMLElement,): Promise<void> {
         return mountTranscriptStickyComposerAsyncExtracted(this, host, project, summary, chatHost);
     }

@@ -59,7 +59,7 @@ const NPM_CACHE_TTL_MS = 30 * 60_000;
 /** Cap `npm install` so a hung registry cannot wedge the UI action; the process group is killed then. */
 const NPM_INSTALL_TIMEOUT_MS = 120_000;
 /** Cap `<cli> --version` probes. */
-const CLI_VERSION_PROBE_TIMEOUT_MS = 8_000;
+const CLI_VERSION_PROBE_TIMEOUT_MS = 5_000;
 /** Cap the writable-prefix check run as the agent uid. */
 const PREFIX_WRITABLE_PROBE_TIMEOUT_MS = 5_000;
 /** Keep only the tail of child output (npm can be chatty); the UI shows at most 500 characters. */

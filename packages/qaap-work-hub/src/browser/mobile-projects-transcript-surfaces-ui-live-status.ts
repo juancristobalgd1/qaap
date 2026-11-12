@@ -229,10 +229,11 @@ export function showTranscriptTerminalErrorExtracted(ctx: MobileProjectsTranscri
 export async function launchAgentTuiInTranscriptTerminalExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,
     agentId: string,
-    options?: { readonly login?: boolean; readonly command?: string },): Promise<void> {
+    options?: { readonly login?: boolean; readonly command?: string; readonly cliBin?: string },): Promise<void> {
+    // `cliBin` is the Antigravity CLI the server resolved; the TUI and the login command must agree on it.
     const command = options?.command?.trim() || (options?.login
-        ? resolveInteractiveAgentLoginCommand(agentId)
-        : resolveInteractiveAgentCliBin(agentId));
+        ? resolveInteractiveAgentLoginCommand(agentId, options.cliBin)
+        : resolveInteractiveAgentCliBin(agentId, options?.cliBin));
     if (!command) {
         return;
     }

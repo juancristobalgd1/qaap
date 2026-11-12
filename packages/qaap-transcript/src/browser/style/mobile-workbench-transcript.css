@@ -4499,3 +4499,124 @@ details > summary:focus-visible,
   opacity: 0;
   pointer-events: none;
 }
+
+/* Turn-end result footer: closes the Files Changed card (verdict, preview, one primary next step). */
+.theia-mobile-turn-result {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid color-mix(in srgb, var(--theia-panel-border, rgba(128, 128, 128, 0.35)) 70%, transparent);
+}
+
+.theia-mobile-turn-result-verdict {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--q-text-meta);
+  color: var(--theia-descriptionForeground);
+}
+
+.theia-mobile-turn-result-verdict.theia-mod-warning .theia-mobile-turn-result-verdict-icon {
+  color: var(--theia-editorWarning-foreground);
+}
+
+.theia-mobile-turn-result-verdict.theia-mod-done .theia-mobile-turn-result-verdict-icon {
+  color: var(--theia-charts-green);
+}
+
+.theia-mobile-turn-result-verdict-title {
+  font-weight: 600;
+  color: var(--theia-foreground);
+}
+
+.theia-mobile-turn-result-verdict-details {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.theia-mobile-turn-result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.theia-mobile-turn-result-action {
+  display: inline-flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+  margin: 0;
+  padding: 0 14px;
+  border-radius: 10px;
+  font: inherit;
+  font-size: var(--q-text-meta);
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.theia-mobile-turn-result-action.theia-mod-primary {
+  border: 1px solid var(--theia-foreground);
+  background: var(--theia-foreground);
+  color: var(--theia-editor-background);
+}
+
+.theia-mobile-turn-result-action.theia-mod-secondary {
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 22%, transparent);
+  background: transparent;
+  color: var(--theia-foreground);
+}
+
+.theia-mobile-turn-result-action:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+.theia-mobile-turn-result-action:focus-visible {
+  outline: 2px solid var(--theia-focusBorder);
+  outline-offset: 2px;
+}
+
+.theia-mobile-turn-result-action-icon.codicon-loading {
+  animation: theia-mobile-turn-result-spin 1s linear infinite;
+}
+
+@keyframes theia-mobile-turn-result-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theia-mobile-turn-result-action-icon.codicon-loading {
+    animation: none;
+  }
+}
+
+/* "Change model" on usage-limit and model-unavailable failures. */
+.theia-mobile-agent-turn-failure-change-model {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 22%, transparent);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--theia-foreground);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.theia-mobile-agent-turn-failure-change-model:focus-visible {
+  outline: 2px solid var(--theia-focusBorder);
+  outline-offset: 2px;
+}

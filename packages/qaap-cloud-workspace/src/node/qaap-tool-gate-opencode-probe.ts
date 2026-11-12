@@ -64,6 +64,7 @@ export class QaapOpencodeGateProbe {
         try {
             key = `${command}|${await this.readVersion(command, env, drop)}|${fs.statSync(pluginPath).mtimeMs}`;
         } catch (error) {
+            console.warn(`[qaap-tool-gate] opencode --version probe failed: ${error instanceof Error ? error.message : String(error)}`);
             return this.latest = { ok: false, key: `${command}|unknown`, reason: `OpenCode could not be started to probe the gate plugin (${error instanceof Error ? error.message : String(error)}).` };
         }
         const cached = this.verdicts.get(key);
@@ -99,7 +100,7 @@ export class QaapOpencodeGateProbe {
             execFile(command, ['--version'], {
                 env: { PATH: env.PATH ?? '' },
                 cwd: path.parse(os.tmpdir()).root,
-                timeout: 10_000,
+                timeout: 5_000,
                 ...(drop ? { uid: drop.uid, gid: drop.gid } : {}),
             }, (error, stdout) => error ? reject(error) : resolve(stdout.trim()));
         });
