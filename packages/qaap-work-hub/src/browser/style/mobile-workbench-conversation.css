@@ -11937,3 +11937,26 @@ body.theia-mobile-mod-desktop-ide #theia-right-content-panel.theia-mod-has-work-
     transition: none;
   }
 }
+
+/* Agents hub inline chat: the transcript runs to the bottom of the screen and the composer floats
+   over it. The transcript keeps a bottom padding of the composer's height (published on the root
+   as --theia-mobile-projects-fab-lift), so the last message scrolls up to sit above the composer
+   instead of behind it. !important matches the composer lip rules above (margin-top !important). */
+body:not(.theia-mobile-mod-desktop-ide) .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-inline-active > .theia-mobile-projects-sticky-composer:not([hidden]) {
+  position: absolute !important;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin-top: 0 !important;
+  /* Content scrolling behind fades out under the pill strip and is hidden behind the card. */
+  background: linear-gradient(to bottom, transparent 0, var(--theia-editor-background) 36px) !important;
+}
+
+body:not(.theia-mobile-mod-desktop-ide) .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-inline-active .theia-mobile-agents-hub-inline-transcript .theia-mobile-agent-transcript {
+  padding-bottom: calc(var(--theia-mobile-projects-fab-lift, 0px) + 16px);
+  scroll-padding-bottom: calc(var(--theia-mobile-projects-fab-lift, 0px) + 16px);
+}
+
+body:not(.theia-mobile-mod-desktop-ide) .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-inline-active .theia-mobile-agents-hub-inline-transcript .theia-mobile-agent-transcript-scroll-to-bottom {
+  bottom: calc(var(--theia-mobile-projects-fab-lift, 0px) + 12px);
+}
