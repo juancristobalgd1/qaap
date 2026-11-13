@@ -337,12 +337,28 @@ export function mergeAgentTaskAgentOptions(
             }
             const key = agent.id.toLowerCase();
             const existing = merged.get(key);
-            if (!existing || agent.available && !existing.available) {
+            if (!existing) {
                 merged.set(key, agent);
+            } else if (agent.available && !existing.available) {
+                // The more available entry wins, but a definite sign-in state from the other list (the
+                // backend snapshot) must survive a live-stream entry that only knows `unknown`.
+                merged.set(key, {
+                    ...agent,
+                    connectionState: isDefiniteAgentConnectionState(agent.connectionState)
+                        ? agent.connectionState
+                        : existing.connectionState ?? agent.connectionState,
+                    accessState: agent.accessState && agent.accessState !== 'unknown'
+                        ? agent.accessState
+                        : existing.accessState ?? agent.accessState,
+                });
             }
         }
     }
     return Array.from(merged.values()).sort((left, right) => left.label.localeCompare(right.label));
+}
+
+function isDefiniteAgentConnectionState(state: QaapAgentConnectionState | undefined): boolean {
+    return state !== undefined && state !== 'unknown';
 }
 
 /** Composer pickers expose VPS-backed agents (QAIQ, Codex, …) but hide shell and UI-hidden runners. */

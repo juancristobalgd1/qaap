@@ -60,8 +60,11 @@ export interface MobileContextAttachServices {
     readonly fileUploadService: FileUploadService;
     readonly fileService: FileService;
     readonly workspaceService: WorkspaceService;
-    /** Searches the workspace for the in-composer "File" view; without it "File" opens the quick pick. */
-    readonly searchProjectFiles?: (query: string) => Promise<readonly ComposerProjectFileMatch[]>;
+    /**
+     * Searches the workspace for the in-composer "File" view; without it "File" opens the quick pick.
+     * `fallbackRootUri` is the composer's project folder, searched when no workspace root is open (Work Hub).
+     */
+    readonly searchProjectFiles?: (query: string, fallbackRootUri?: string) => Promise<readonly ComposerProjectFileMatch[]>;
 }
 
 type MobileContextAttachMenuSelection =
@@ -80,11 +83,16 @@ export function dismissMobileContextAttachMenu(): void {
     activeDismiss?.();
 }
 
-function canAttachProjectFile(attachServices?: MobileContextAttachServices): boolean {
+function canAttachProjectFile(attachServices?: MobileContextAttachServices, handlers?: MobileComposerAttachHandlers): boolean {
     if (!attachServices) {
         return false;
     }
-    return attachServices.workspaceService.opened && attachServices.workspaceService.tryGetRoots().length > 0;
+    if (attachServices.workspaceService.opened && attachServices.workspaceService.tryGetRoots().length > 0) {
+        return true;
+    }
+    // The Work Hub composer runs against its project folder without opening it as a workspace:
+    // the in-composer search can still list that folder (the quick pick could not).
+    return !!attachServices.searchProjectFiles && !!handlers?.uploadTargetDir;
 }
 
 function createAttachMenuItem(options: {
@@ -671,7 +679,9 @@ export async function pickMobileContextVariable(
         await skillService.ready;
     }
     const skills = skillService?.getSkills() ?? [];
-    const includeProjectFile = canAttachProjectFile(attachServices);
+    const includeProjectFile = canAttachProjectFile(attachServices, handlers);
+    const projectFolder = handlers?.uploadTargetDir?.toString();
+    const searchProjectFiles = attachServices?.searchProjectFiles;
     const selected = await showContextAttachMenu(
         anchor,
         variables,
@@ -680,7 +690,7 @@ export async function pickMobileContextVariable(
         !!skillService,
         mcpOptions,
         includeProjectFile,
-        attachServices?.searchProjectFiles,
+        searchProjectFiles ? query => searchProjectFiles(query, projectFolder) : undefined,
     );
     if (!selected) {
         return [];

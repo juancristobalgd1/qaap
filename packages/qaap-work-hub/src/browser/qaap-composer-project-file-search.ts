@@ -21,9 +21,12 @@ export function createComposerProjectFileSearch(
     fileSearchService: FileSearchService,
     workspaceService: WorkspaceService,
     labelProvider?: LabelProvider,
-): (query: string) => Promise<readonly ComposerProjectFileMatch[]> {
-    return async query => {
-        const rootUris = workspaceService.tryGetRoots().map(root => root.resource.toString());
+): (query: string, fallbackRootUri?: string) => Promise<readonly ComposerProjectFileMatch[]> {
+    return async (query, fallbackRootUri) => {
+        const workspaceRoots = workspaceService.tryGetRoots().map(root => root.resource.toString());
+        // The Work Hub composer has no workspace open: search its project folder instead.
+        const fallbackRoot = workspaceRoots.length === 0 && fallbackRootUri ? new URI(fallbackRootUri) : undefined;
+        const rootUris = fallbackRoot ? [fallbackRoot.toString()] : workspaceRoots;
         if (rootUris.length === 0) {
             return [];
         }
@@ -36,6 +39,17 @@ export function createComposerProjectFileSearch(
         });
         return uris.map(value => {
             const uri = new URI(value);
+            if (fallbackRoot) {
+                // Outside a workspace the `#file` argument is the absolute path; the row shows the folder
+                // relative to the project.
+                const folder = fallbackRoot.relative(uri.parent)?.toString() ?? '';
+                return {
+                    path: uri.path.fsPath(),
+                    name: uri.path.base,
+                    folder,
+                    iconClass: labelProvider?.getIcon(uri) || undefined,
+                };
+            }
             const path = workspaceService.getRootPrefixedPath(uri);
             const slash = path.lastIndexOf('/');
             return {

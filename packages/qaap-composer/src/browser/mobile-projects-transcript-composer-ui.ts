@@ -194,7 +194,7 @@ export class MobileProjectsTranscriptComposerUi {
         options?: { force?: boolean },
     ): Promise<readonly QaapAgentTaskAgentOption[]> {
         if (options?.force || this.host.transcriptComposerBackendAgents.length === 0) {
-            const loaded = await this.refreshTranscriptComposerAgents(project);
+            const loaded = await this.refreshTranscriptComposerAgents(project, { forceRefresh: !!options?.force });
             if (!loaded) {
                 throw new Error('Agent catalog unavailable');
             }
