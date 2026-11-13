@@ -12,7 +12,7 @@
 
 import { canPatchToolSegmentGrowth, TRANSCRIPT_TOOL_USE_ID_ATTR } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
 import { recordTranscriptRenderMetric } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-render-metrics';
-import { getFileIconClass } from '@theia/qaap-shared-core/lib/common/qaap-file-icon-utils';
+import { resolveQaapFileIconClasses } from '@theia/qaap-shared-core/lib/browser/qaap-file-theme-icon';
 import type { QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     isTranscriptWebSearchTool,
@@ -332,7 +332,7 @@ function patchMobileToolDetail(
     if (!shouldHaveIcon) {
         existingIcon?.remove();
     } else if (existingIcon) {
-        const iconClass = `codicon ${getFileIconClass(nextTool.detail)} theia-mobile-tool-detail-file-icon`;
+        const iconClass = `${resolveQaapFileIconClasses(nextTool.detail)} theia-mobile-tool-detail-file-icon`;
         if (existingIcon.className !== iconClass) {
             existingIcon.className = iconClass;
         }
