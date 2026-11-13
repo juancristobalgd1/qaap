@@ -4666,4 +4666,18 @@ details > summary:focus-visible,
 /* Long-press opens Qaap's link menu, not the OS link callout. */
 .theia-mobile-agent-transcript a[href] {
   -webkit-touch-callout: none;
+
+/* File-icon theme icons (resolveQaapFileIconClasses) take the slot of the old codicon: one fixed
+   16px column without the theme's own padding, so rows keep their alignment. */
+.theia-mobile-tool-detail-file-icon.file-icon,
+.theia-mobile-agent-changed-file-icon.file-icon,
+.theia-mobile-agent-activity-file-icon.file-icon,
+.theia-mobile-agent-activity-edit-row-icon.file-icon,
+.theia-mobile-agent-activity-file-chip > .file-icon {
+  box-sizing: border-box;
+  flex: 0 0 16px;
+  width: 16px;
+  padding: 0 !important;
+  margin-inline: 0 !important;
+  text-align: center;
 }

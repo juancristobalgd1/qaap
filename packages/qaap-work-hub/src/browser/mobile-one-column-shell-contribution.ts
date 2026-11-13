@@ -14,6 +14,8 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import URI from '@theia/core/lib/common/uri';
+import { setQaapFileThemeIconResolver } from '@theia/qaap-shared-core/lib/browser/qaap-file-theme-icon';
 import { inject, injectable, optional, postConstruct } from '@theia/core/shared/inversify';
 import { SplitPanel, Widget as LuminoWidget } from '@lumino/widgets';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
@@ -532,6 +534,8 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     }
 
     onStart(_app: FrontendApplication): void {
+        // Transcript and diff rows paint the file-icon theme's per-type icons (explorer parity).
+        setQaapFileThemeIconResolver(path => this.labelProvider.getIcon(new URI(`file:///${path.replace(/^\/+/, '')}`)) || undefined);
         this.toDispose.push(this.editorManager.onCreated(() => {
             // The classic IDE may asynchronously restore the Welcome widget while the first
             // editor is opening. Do not let that background activation steal focus from the
