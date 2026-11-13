@@ -90,6 +90,27 @@ describe('qaap-agent-task-client', () => {
         expect(merged.map(agent => agent.id)).to.deep.equal(['codex', 'qaiq']);
     });
 
+    it('mergeAgentTaskAgentOptions keeps the backend sign-in state when a stream entry only knows unknown', () => {
+        const merged = mergeAgentTaskAgentOptions(
+            [{ id: 'antigravity', label: 'Antigravity', available: false, connectionState: 'disconnected', accessState: 'none' }],
+            [{ id: 'antigravity', label: 'Antigravity', available: true, connectionState: 'unknown', accessState: 'unknown' }],
+        );
+        expect(merged).to.have.length(1);
+        expect(merged[0].available).to.equal(true);
+        expect(merged[0].connectionState).to.equal('disconnected');
+        expect(merged[0].accessState).to.equal('none');
+    });
+
+    it('mergeAgentTaskAgentOptions lets a definite sign-in state on the more available entry win', () => {
+        const merged = mergeAgentTaskAgentOptions(
+            [{ id: 'antigravity', label: 'Antigravity', available: false, connectionState: 'disconnected', accessState: 'none' }],
+            [{ id: 'antigravity', label: 'Antigravity', available: true, connectionState: 'connected', accessState: 'session' }],
+        );
+        expect(merged[0].available).to.equal(true);
+        expect(merged[0].connectionState).to.equal('connected');
+        expect(merged[0].accessState).to.equal('session');
+    });
+
     it('mergeComposerAgentPickerOptions orders harnesses by label and never lists retired qaiq', () => {
         const agents = [
             { id: 'codex', label: 'Codex', available: true },

@@ -543,7 +543,7 @@ export class MobileProjectsStickyComposerAgentsUi {
         options?: { force?: boolean },
     ): Promise<readonly QaapAgentTaskAgentOption[]> {
         if (options?.force || this.host.stickyComposerBackendAgents.length === 0) {
-            const loaded = await this.refreshStickyComposerAgents(project);
+            const loaded = await this.refreshStickyComposerAgents(project, { forceRefresh: !!options?.force });
             if (!loaded) {
                 throw new Error('Agent catalog unavailable');
             }
