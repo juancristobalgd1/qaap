@@ -37,6 +37,7 @@ import { isQaapRunscConfigured, QAAP_RUNSC_BACKEND_READY_TIMEOUT_MS, QAAP_RUNSC_
 import { QaapTenantBackendWakeTimeline } from './qaap-tenant-backend-wake-timeline';
 import { QaapTenantRuntimeStore } from './qaap-tenant-runtime-store';
 import { QaapTenantResourceOverrides } from './qaap-tenant-resource-overrides';
+import { QaapTenantResourceSizing } from './qaap-tenant-resource-sizing';
 import { isInQaapDockerNamespace, qaapDockerName, qaapDockerNamespaceLabels } from './qaap-docker-namespace';
 import {
     QAAP_TENANT_AGENT_STORAGE_DIRNAME,
@@ -130,8 +131,9 @@ const TENANT_WORKER_ENV_DENYLIST = new Set([
     'QAAP_VAPID_PRIVATE_KEY',
     'QAAP_VAPID_SUBJECT',
     'QAAP_SECRETS_KEYS',
-    'STRIPE_SECRET_KEY',
-    'STRIPE_WEBHOOK_SECRET',
+    'AIRWALLEX_API_KEY',
+    'AIRWALLEX_CLIENT_ID',
+    'AIRWALLEX_WEBHOOK_SECRET',
     'QAAP_SESSION_SECRET',
     'QAAP_COOKIE_SECRET',
     'QAAP_JWT_SECRET',
@@ -214,6 +216,10 @@ export class QaapDockerOrchestrator {
 
     @inject(QaapTenantRuntimeStore) @optional()
     protected readonly runtimeStore: QaapTenantRuntimeStore | undefined;
+
+    /** Plan-derived memory and CPU per owner; absent in harnesses, where the operator defaults apply. */
+    @inject(QaapTenantResourceSizing) @optional()
+    protected readonly tenantResourceSizing: QaapTenantResourceSizing | undefined;
 
     protected docker: Dockerode | undefined;
     /** Per-node verification is needed when a tenant pool uses more than one remote daemon. */
@@ -1210,6 +1216,7 @@ export class QaapDockerOrchestrator {
         ownerLogin?: string,
     ): Promise<QaapDockerEnsureResult> {
         const docker = await this.getDocker(ownerLogin);
+        await this.tenantResourceSizing?.refresh(ownerLogin);
         await this.assertRunscAvailable(ownerLogin);
         const dockerMounts = this.tenantMountsForDocker(mounts);
         for (const root of Object.values(mounts)) {
@@ -1229,6 +1236,7 @@ export class QaapDockerOrchestrator {
         try {
             container = docker.getContainer(name);
             inspect = await container.inspect();
+            inspect = await this.syncTenantResourceLimits(docker, name, inspect, ownerLogin);
             if (tenantEgressNetwork) {
                 if (directEgressNetwork
                     && !this.tenantContainerMatches(inspect, mounts, networkMode, directEgressNetwork)
@@ -1305,6 +1313,7 @@ export class QaapDockerOrchestrator {
                         `${dockerMounts.parallelRoot}:${PARALLEL_MOUNT}:rw`,
                     ],
                     Memory: this.getTenantMemoryLimitFor(ownerLogin),
+                    MemorySwap: this.getTenantMemoryLimitFor(ownerLogin),
                     NanoCpus: this.getTenantCpuLimitFor(ownerLogin),
                     PidsLimit: this.getTenantPidsLimitFor(ownerLogin),
                     SecurityOpt: ['no-new-privileges:true'],
@@ -1381,6 +1390,7 @@ export class QaapDockerOrchestrator {
         const node = this.dockerNodeForTenant(ownerLogin);
         const docker = await this.getDocker(ownerLogin);
         const name = this.backendContainerNameForTenant(ownerLogin);
+        await this.tenantResourceSizing?.refresh(ownerLogin);
         const mounts = this.tenantMountsForRoot(tenantRootHostPath);
         const dockerMounts = this.tenantMountsForDocker(mounts);
         const expectedSegment = tenantSegmentKey(ownerLogin);
@@ -1423,6 +1433,7 @@ export class QaapDockerOrchestrator {
                 await container.unpause();
                 inspect = await container.inspect();
             }
+            inspect = await this.syncTenantResourceLimits(docker, name, inspect, ownerLogin);
             if (tenantEgressNetwork) {
                 if (directEgressNetwork
                     && !this.tenantBackendContainerMatches(inspect, ownerLogin, mounts, tenantDataRoot, theiaHome, networkMode, directEgressNetwork)
@@ -1568,6 +1579,7 @@ export class QaapDockerOrchestrator {
                         `${dockerTheiaHome}:${TENANT_BACKEND_THEIA_HOME_MOUNT}:rw`,
                     ],
                     Memory: this.getTenantMemoryLimitFor(ownerLogin),
+                    MemorySwap: this.getTenantMemoryLimitFor(ownerLogin),
                     NanoCpus: this.getTenantCpuLimitFor(ownerLogin),
                     PidsLimit: this.getTenantPidsLimitFor(ownerLogin),
                     SecurityOpt: ['no-new-privileges:true'],
@@ -2664,9 +2676,24 @@ export class QaapDockerOrchestrator {
         return Number.isInteger(num) && num > 0 ? num : 3 * 1024 * 1024 * 1024;
     }
 
-    /** The default, raised for `ownerLogin` by `QAAP_TENANT_MEMORY_LIMIT_OVERRIDES` (see QaapTenantResourceOverrides). */
+    /** `QAAP_TENANT_MEMORY_LIMIT` only when the operator set it explicitly; it pins every tenant and ignores the plan. */
+    protected explicitTenantMemoryLimit(): number | undefined {
+        const raw = process.env.QAAP_TENANT_MEMORY_LIMIT?.trim();
+        const num = raw ? Number.parseInt(raw, 10) : Number.NaN;
+        return Number.isInteger(num) && num > 0 ? num : undefined;
+    }
+
+    /** Memory before the overrides: the explicit operator pin, else the owner's plan sizing, else the operator default. */
+    protected getTenantMemoryBaseFor(ownerLogin: string | undefined): number {
+        if (this.explicitTenantMemoryLimit() !== undefined) {
+            return this.getTenantMemoryLimit();
+        }
+        return this.tenantResourceSizing?.peek(ownerLogin)?.memoryBytes ?? this.getTenantMemoryLimit();
+    }
+
+    /** The plan memory (or the default), raised for `ownerLogin` by `QAAP_TENANT_MEMORY_LIMIT_OVERRIDES` (see QaapTenantResourceOverrides). */
     protected getTenantMemoryLimitFor(ownerLogin: string | undefined): number {
-        return QaapTenantResourceOverrides.memoryBytes(ownerLogin, this.getTenantMemoryLimit());
+        return QaapTenantResourceOverrides.memoryBytes(ownerLogin, this.getTenantMemoryBaseFor(ownerLogin));
     }
 
     /**
@@ -2706,8 +2733,85 @@ export class QaapDockerOrchestrator {
         return Number.isFinite(num) && num > 0 ? Math.floor(num * 1e9) : 2 * 1e9;
     }
 
+    /** `QAAP_TENANT_CPU_LIMIT` only when the operator set it explicitly; it pins every tenant and ignores the plan. */
+    protected explicitTenantCpuLimit(): number | undefined {
+        const raw = process.env.QAAP_TENANT_CPU_LIMIT?.trim();
+        const num = raw ? Number.parseFloat(raw) : Number.NaN;
+        return Number.isFinite(num) && num > 0 ? Math.floor(num * 1e9) : undefined;
+    }
+
+    protected getTenantCpuBaseFor(ownerLogin: string | undefined): number {
+        if (this.explicitTenantCpuLimit() !== undefined) {
+            return this.getTenantCpuLimit();
+        }
+        return this.tenantResourceSizing?.peek(ownerLogin)?.nanoCpus ?? this.getTenantCpuLimit();
+    }
+
     protected getTenantCpuLimitFor(ownerLogin: string | undefined): number {
-        return QaapTenantResourceOverrides.nanoCpus(ownerLogin, this.getTenantCpuLimit());
+        return QaapTenantResourceOverrides.nanoCpus(ownerLogin, this.getTenantCpuBaseFor(ownerLogin));
+    }
+
+    /**
+     * Brings a tenant container's Memory and NanoCpus to the owner's current sizing with `docker update`,
+     * so a plan or project memory change never recreates a running container. Returns the inspect to
+     * validate: re-read after an update, unchanged otherwise. A refused update (for example a memory
+     * limit below current usage) keeps the container as it is and is retried by the next ensure.
+     */
+    protected async syncTenantResourceLimits(
+        docker: Dockerode,
+        name: string,
+        inspect: Dockerode.ContainerInspectInfo,
+        ownerLogin: string | undefined,
+    ): Promise<Dockerode.ContainerInspectInfo> {
+        const memory = this.getTenantMemoryLimitFor(ownerLogin);
+        const nanoCpus = this.getTenantCpuLimitFor(ownerLogin);
+        const host = inspect.HostConfig as { Memory?: number; NanoCpus?: number } | undefined;
+        if (host?.Memory === memory && host?.NanoCpus === nanoCpus) {
+            return inspect;
+        }
+        try {
+            const container = docker.getContainer(name);
+            await container.update({ Memory: memory, MemorySwap: memory, NanoCpus: nanoCpus });
+            console.info(`[qaap-docker] Updated resource limits of ${name}: ${memory} bytes memory, ${nanoCpus / 1e9} CPU.`);
+            return await container.inspect();
+        } catch (error) {
+            console.warn(`[qaap-docker] Could not update resource limits of ${name}: ${error instanceof Error ? error.message : String(error)}`);
+            return inspect;
+        }
+    }
+
+    /**
+     * Applies the owner's current plan sizing to their existing tenant containers right away, after a
+     * per-project memory choice changed. Returns how many containers were updated; a no-op outside Docker.
+     */
+    async applyTenantResourceLimits(ownerLogin: string): Promise<number> {
+        const login = ownerLogin.trim().toLowerCase();
+        if (!login || !this.isEnabled()) {
+            return 0;
+        }
+        await this.tenantResourceSizing?.refresh(login);
+        const docker = await this.getDocker(login);
+        let updated = 0;
+        for (const name of [this.containerNameForTenant(login), this.backendContainerNameForTenant(login)]) {
+            let inspect: Dockerode.ContainerInspectInfo;
+            try {
+                inspect = await docker.getContainer(name).inspect();
+            } catch (error) {
+                if (this.isDockerNotFound(error)) {
+                    continue;
+                }
+                throw error;
+            }
+            const labels = inspect.Config?.Labels ?? {};
+            if (labels['com.qaap.managed'] !== 'true' || labels['com.qaap.tenant-login'] !== login) {
+                continue;
+            }
+            const after = await this.syncTenantResourceLimits(docker, name, inspect, login);
+            if (after !== inspect) {
+                updated += 1;
+            }
+        }
+        return updated;
     }
 
     protected getTenantPidsLimit(): number {

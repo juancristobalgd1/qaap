@@ -305,4 +305,50 @@ describe('Qaap tenant container reaper', () => {
             expect(harness.calls.stop).to.equal(1);
         });
     });
+
+    describe('per-plan idle pause', () => {
+        const withPlan = (
+            harness: ReturnType<typeof createHarness>,
+            billing: { getEntitlements(login: string): Promise<{ idlePauseMinutes: number }> },
+        ): ReturnType<typeof createHarness> => {
+            (harness.reaper as any).idleTimeoutMs = () => 60 * 60 * 1000;
+            (harness.reaper as any).billing = billing;
+            return harness;
+        };
+        const idleFor = (now: number, minutes: number): QaapTenantRuntimeRecord => ({
+            ...idleBackendTenant(now),
+            lastActivityAt: new Date(now - minutes * 60 * 1000).toISOString(),
+        });
+        const planWith = (idlePauseMinutes: number) => ({ getEntitlements: async () => ({ idlePauseMinutes }) });
+
+        it('pauses after the owner plan idle pause, overriding the env fallback', async () => {
+            const now = 10_000_000;
+            const harness = withPlan(createHarness(backendContainers, idleFor(now, 2)), planWith(1));
+
+            await harness.reaper.sweep(now);
+
+            expect(harness.calls.pause).to.equal(1);
+            expect(harness.calls.stop).to.equal(0);
+        });
+
+        it('does not pause before the plan idle pause has elapsed', async () => {
+            const now = 10_000_000;
+            const harness = withPlan(createHarness(backendContainers, idleFor(now, 2)), planWith(10));
+
+            await harness.reaper.sweep(now);
+
+            expect(harness.calls.pause).to.equal(0);
+        });
+
+        it('falls back to QAAP_TENANT_PAUSE_AFTER_MS when the plan cannot be read', async () => {
+            const now = 10_000_000;
+            const unreadable = { getEntitlements: async () => { throw new Error('store unavailable'); } };
+            const harness = withPlan(createHarness(backendContainers, idleFor(now, 2)), unreadable);
+            (harness.reaper as any).pauseAfterMs = () => 60 * 1000;
+
+            await harness.reaper.sweep(now);
+
+            expect(harness.calls.pause).to.equal(1);
+        });
+    });
 });

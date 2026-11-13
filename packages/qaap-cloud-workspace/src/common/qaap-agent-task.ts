@@ -402,8 +402,8 @@ export interface QaapAgentDescriptor {
     /** Authentication state is reported separately from CLI installation. */
     readonly connectionState?: QaapAgentConnectionState;
     /**
-     * How the owner can run this agent right now: their own sign-in (`session`), Qaap-hosted access
-     * (`hosted`, Codex on a plan with credits), nothing usable (`none`), or not yet known (`unknown`).
+     * How the owner can run this agent right now: their own sign-in (`session`), nothing usable (`none`),
+     * or not yet known (`unknown`).
      */
     readonly accessState?: QaapAgentAccessState;
     /** The Antigravity CLI the host resolved; only set for the Antigravity harness (see {@link QaapAgentHarnessStatus.cliBin}). */
@@ -411,7 +411,7 @@ export interface QaapAgentDescriptor {
 }
 
 /** See {@link QaapAgentDescriptor.accessState}. Resolved by `resolveAgentAccess` on the backend. */
-export type QaapAgentAccessState = 'session' | 'hosted' | 'none' | 'unknown';
+export type QaapAgentAccessState = 'session' | 'none' | 'unknown';
 
 /** Selectable QAIQ model option exposed to the frontend picker. */
 export interface QaapQaiqModelOption {

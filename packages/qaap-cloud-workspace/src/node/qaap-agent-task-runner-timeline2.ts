@@ -14,7 +14,6 @@ import { IDLE_TASK_TIMEOUT_MS, QAAP_AGENT_VERIFY_ENABLED, QUEUED_APPROVAL_GRACE_
 import { QaapQaiqProviderKeyMissingError } from './qaap-qaiq-provider-preflight';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { awaitQaapAgentTaskSpawnGate } from './qaap-agent-task-spawn-gate';
-import { resolveAgentTaskBillingRejection } from './qaap-agent-task-billing-gate';
 import { finishTaskWithPauseCause, logCancelExitExtracted, releaseStoppingTaskSlotOnExitExtracted } from './qaap-agent-task-runner-streaming2';
 import { createOpencodeFatalStderrWatcher } from './qaap-opencode-fatal-error';
 import { createPiProviderErrorWatcher } from './qaap-pi-provider-error-watcher';
@@ -385,19 +384,6 @@ export async function spawnProcessWhenReadyExtracted(ctx: QaapAgentTaskRunnerCon
         // Stop can arrive while preference initialization is pending, before a child exists.
         // Do not resurrect a task that cancel() has already transitioned out of running.
         if (ctx.tasks.get(task.id)?.state !== 'running') {
-            return;
-        }
-        // Fail-open only for BYOK turns on a billing outage; hosted Codex fails closed (billing gate).
-        const billingRejection = await resolveAgentTaskBillingRejection(ctx, task, request);
-        // The billing read is async: a stop that landed meanwhile already settled the task as
-        // `cancelled`. Neither fail it (that would overwrite `cancelled`) nor spawn it.
-        if (ctx.tasks.get(task.id)?.state !== 'running') {
-            return;
-        }
-        if (billingRejection !== undefined) {
-            fs.mkdirSync(path.dirname(ctx.logPath(task.id)), { recursive: true });
-            fs.writeFileSync(ctx.logPath(task.id), `${billingRejection}\n`, 'utf8');
-            ctx.finishTask(task.id, 'failed', 1);
             return;
         }
         const markedTask = ctx.tasks.get(task.id) ?? task;

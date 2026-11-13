@@ -6,6 +6,7 @@ import type { QaapAgentCommandBuildResult, QaapAgentTaskRunnerContext } from './
 import { QaapAgentQueuePolicy } from './qaap-agent-queue-policy';
 import { sharedWorkingTreeBusyExtracted } from './qaap-agent-task-runner-render2';
 import { QaapAgentStorageUnavailableError } from './qaap-agent-storage-unavailable-error';
+import { QaapPlanLimit } from '@theia/qaap-adapters/lib/common/qaap-plan-limit';
 import { qaapMissingCwdError } from './qaap-missing-cwd-error';
 // Extracted from qaap-agent-task-runner.ts
 
@@ -200,6 +201,10 @@ export function createExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCr
         );
         // A task without its own worktree edits the repository's shared working tree: while the same owner has
         // another such task running in this cwd it queues (visible as `queued`) instead of racing on the same files.
+        // A full workspace (over the plan's storage) runs no new turn until the owner frees space or upgrades.
+        if (ctx.tenantStorageQuota?.peekOverStorageLimit(ownerLogin)) {
+            throw new Error(QaapPlanLimit.tagged('storage_limit', QaapPlanLimit.describe('storage_limit')));
+        }
         const sharedWorkingTree = request.ownWorkingTree !== true;
         const sharedWorkingTreeQueued = sharedWorkingTree && sharedWorkingTreeBusyExtracted(ctx, ownerLogin, cwd);
         const atCapacity = ctx.isDrainingForDeploy?.() === true

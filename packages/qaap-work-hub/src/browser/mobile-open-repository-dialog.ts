@@ -8,13 +8,23 @@ import { QaapUserFacingErrors } from '@theia/qaap-adapters/lib/common/qaap-user-
 import { nls } from '@theia/core/lib/common/nls';
 import { QaapPlanLimit } from '@theia/qaap-adapters/lib/common/qaap-plan-limit';
 import { parseQaapGithubRepositoryInput } from '@theia/qaap-adapters/lib/common/qaap-github-repository-input';
-import { syncQaapAuthSessionFromServer } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
+import {
+    fetchQaapBilling,
+    fetchQaapProjectResources,
+    saveQaapProjectResources,
+    syncQaapAuthSessionFromServer,
+    type QaapBillingApiResponse,
+} from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import type { Disposable } from '@theia/core/lib/common/disposable';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
-import type { QaapGithubOpenRepositoryResponse, QaapGithubWorkspaceJobRequest } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
+import type {
+    QaapGithubOpenRepositoryResponse,
+    QaapGithubWorkspaceJobRequest,
+    QaapProjectResourcesResponse,
+} from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import {
     describeRepositoryImportPhase,
     QaapRepositoryImport,
@@ -34,6 +44,14 @@ export interface MobileOpenRepositoryDialogDelegate {
  * Lists the signed-in user's GitHub repositories, supports filtering by
  * name, and accepts a public `owner/repo` or github.com URL.
  */
+/** One repository's memory choice: the sizes its plan offers, the size saved, and the size the user picked. */
+interface MemoryChoiceState {
+    readonly repo: string;
+    readonly options: readonly number[];
+    savedGb: number;
+    memoryGb: number;
+}
+
 export class MobileOpenRepositoryDialog {
 
     protected readonly root: HTMLElement;
@@ -72,6 +90,19 @@ export class MobileOpenRepositoryDialog {
     protected progressBack!: HTMLButtonElement;
 
     /** Import shown by the progress view; it keeps running when the dialog is closed. */
+    /** Starter: the single memory size is shown as muted info; Pro picks memory per repository. */
+    protected memoryInfoRow!: HTMLElement;
+    protected memoryInfoValue!: HTMLElement;
+    /** Memory sizes of the signed-in plan, once the billing snapshot answered. */
+    protected planMemoryOptions: readonly number[] | undefined;
+    /** Pro: the repository picked from the list, waiting for its memory choice before it opens. */
+    protected memoryPrompt!: HTMLElement;
+    protected memoryPromptState: MemoryChoiceState | undefined;
+    /** Pro: memory choice for the repository typed into the clone field. */
+    protected publicMemory!: HTMLElement;
+    protected publicMemoryState: MemoryChoiceState | undefined;
+    protected publicMemoryToken = 0;
+    protected publicMemoryTimer: number | undefined;
     protected activeImport: QaapRepositoryImport | undefined;
     protected activeImportListener: Disposable | undefined;
     /** Element focused before the dialog opened, restored on close. */
@@ -115,6 +146,8 @@ export class MobileOpenRepositoryDialog {
 
         sheet.append(this.createHeader());
         sheet.append(this.createDescription());
+        this.memoryInfoRow = this.createMemoryInfoRow();
+        sheet.append(this.memoryInfoRow);
 
         const tabs = this.tabs = document.createElement('div');
         tabs.className = 'theia-mobile-open-repo-tabs';
@@ -184,6 +217,10 @@ export class MobileOpenRepositoryDialog {
         });
         filterWrap.append(filterIcon, this.filterInput);
         this.repositoriesPanel.append(filterWrap);
+        this.memoryPrompt = document.createElement('section');
+        this.memoryPrompt.className = 'theia-mobile-open-repo-memory-prompt';
+        this.memoryPrompt.hidden = true;
+        this.repositoriesPanel.append(this.memoryPrompt);
 
         this.list = document.createElement('div');
         this.list.className = 'theia-mobile-open-repo-list';
@@ -258,6 +295,7 @@ export class MobileOpenRepositoryDialog {
             this.setActiveTab('repositories');
         }
         this.renderConnectedStatus();
+        void this.refreshPlanMemoryInfo();
         await this.reloadRepositories();
     }
 
@@ -275,6 +313,7 @@ export class MobileOpenRepositoryDialog {
             }
         }, 280);
         this.clearPublicError();
+        this.hideMemoryPrompt();
         const repositoryImport = this.activeImport;
         if (repositoryImport?.running) {
             // Closing never stops the import: the snackbar keeps showing progress and the project
@@ -605,7 +644,10 @@ export class MobileOpenRepositoryDialog {
         );
         this.publicInput.spellcheck = false;
         this.publicInput.autocomplete = 'off';
-        this.publicInput.addEventListener('input', () => this.clearPublicError());
+        this.publicInput.addEventListener('input', () => {
+            this.clearPublicError();
+            this.schedulePublicMemoryRefresh();
+        });
         this.publicInput.addEventListener('keydown', ev => {
             if (ev.key === 'Enter') {
                 ev.preventDefault();
@@ -624,7 +666,10 @@ export class MobileOpenRepositoryDialog {
         this.publicError.hidden = true;
 
         inputRow.append(this.publicInput, this.publicSubmit);
-        section.append(label, hint, inputRow, this.publicError);
+        this.publicMemory = document.createElement('div');
+        this.publicMemory.className = 'theia-mobile-open-repo-memory-public';
+        this.publicMemory.hidden = true;
+        section.append(label, hint, inputRow, this.publicMemory, this.publicError);
         return section;
     }
 
@@ -784,6 +829,12 @@ export class MobileOpenRepositoryDialog {
             return;
         }
         this.clearPublicError();
+        const repo = parseQaapGithubRepositoryInput(value);
+        const fullName = repo ? `${repo.owner}/${repo.name}` : undefined;
+        const state = fullName && this.publicMemoryState?.repo === fullName ? this.publicMemoryState : undefined;
+        if (!await this.applyMemoryChoice(state, this.publicError)) {
+            return;
+        }
         this.startImport({ kind: 'clone', repository: value }, this.service.formatRepositoryLabel(value));
     }
 
@@ -791,10 +842,220 @@ export class MobileOpenRepositoryDialog {
         if (!project.github) {
             return;
         }
+        const { owner, name, fullName } = project.github;
+        // Starter has one memory size: open straight away, the info row already says so.
+        if (this.planMemoryOptions?.length === 1) {
+            this.startImport({ kind: 'open', owner, name }, fullName);
+            return;
+        }
+        let resources: QaapProjectResourcesResponse | undefined;
+        try {
+            resources = await fetchQaapProjectResources(fullName);
+        } catch {
+            resources = undefined;
+        }
+        if (resources && resources.options.length > 1) {
+            this.showMemoryPrompt(project, {
+                repo: fullName,
+                options: resources.options,
+                savedGb: resources.memoryGb,
+                memoryGb: resources.memoryGb,
+            });
+            return;
+        }
+        this.startImport({ kind: 'open', owner, name }, fullName);
+    }
+
+    /** Starter: "2 GB · Upgrade to Pro for 4 GB" as muted info. Hidden on Pro, where each repository picks its own. */
+    protected createMemoryInfoRow(): HTMLElement {
+        const row = document.createElement('div');
+        row.className = 'theia-mobile-open-repo-memory theia-mod-info';
+        row.hidden = true;
+        const label = document.createElement('span');
+        label.className = 'theia-mobile-open-repo-memory-label';
+        label.textContent = nls.localize('qaap/mobileOpenRepo/memoryLabel', 'Workspace memory');
+        this.memoryInfoValue = document.createElement('span');
+        this.memoryInfoValue.className = 'theia-mobile-open-repo-memory-value';
+        row.append(label, this.memoryInfoValue);
+        return row;
+    }
+
+    protected async refreshPlanMemoryInfo(): Promise<void> {
+        let billing: QaapBillingApiResponse | undefined;
+        try {
+            billing = await fetchQaapBilling();
+        } catch {
+            billing = undefined;
+        }
+        this.planMemoryOptions = billing?.entitlements.memoryOptionsGb;
+        const starterOnly = this.planMemoryOptions?.length === 1;
+        this.memoryInfoRow.hidden = !starterOnly;
+        this.memoryInfoValue.replaceChildren();
+        if (!starterOnly || !this.planMemoryOptions) {
+            return;
+        }
+        const current = document.createElement('span');
+        current.textContent = `${nls.localize('qaap/mobileOpenRepo/memoryGb', '{0} GB', String(this.planMemoryOptions[0]))} · `;
+        const upgrade = document.createElement('button');
+        upgrade.type = 'button';
+        upgrade.className = 'theia-mobile-open-repo-memory-upgrade';
+        upgrade.textContent = nls.localize('qaap/mobileOpenRepo/memoryUpgrade', 'Upgrade to Pro for {0} GB', '4');
+        upgrade.hidden = !this.delegate.openBillingSheet;
+        upgrade.addEventListener('click', () => {
+            // Close the picker first so the billing sheet is not stacked under it.
+            this.hide();
+            void this.delegate.openBillingSheet?.();
+        });
+        this.memoryInfoValue.append(current, upgrade);
+    }
+
+    /** A segmented "2 GB | 4 GB" choice for one repository's memory; `state.memoryGb` follows the tap. */
+    protected createMemoryPicker(state: MemoryChoiceState): HTMLElement {
+        const row = document.createElement('div');
+        row.className = 'theia-mobile-open-repo-memory';
+        const label = document.createElement('span');
+        label.className = 'theia-mobile-open-repo-memory-label';
+        label.textContent = nls.localize('qaap/mobileOpenRepo/memoryLabel', 'Workspace memory');
+        const group = document.createElement('div');
+        group.className = 'theia-mobile-open-repo-memory-choices';
+        group.setAttribute('role', 'radiogroup');
+        group.setAttribute('aria-label', label.textContent ?? 'Workspace memory');
+        const choices: HTMLButtonElement[] = [];
+        const sync = (): void => {
+            for (const choice of choices) {
+                const active = Number(choice.dataset.memoryGb) === state.memoryGb;
+                choice.classList.toggle('theia-mod-selected', active);
+                choice.setAttribute('aria-checked', active ? 'true' : 'false');
+            }
+        };
+        for (const gb of state.options) {
+            const choice = document.createElement('button');
+            choice.type = 'button';
+            choice.className = 'theia-mobile-open-repo-memory-choice';
+            choice.setAttribute('role', 'radio');
+            choice.dataset.memoryGb = String(gb);
+            choice.textContent = nls.localize('qaap/mobileOpenRepo/memoryGb', '{0} GB', String(gb));
+            choice.addEventListener('click', () => {
+                state.memoryGb = gb;
+                sync();
+            });
+            choices.push(choice);
+            group.append(choice);
+        }
+        sync();
+        row.append(label, group);
+        return row;
+    }
+
+    protected showMemoryPrompt(project: MobileProjectEntry, state: MemoryChoiceState): void {
+        this.memoryPromptState = state;
+        this.memoryPrompt.replaceChildren();
+        const title = document.createElement('p');
+        title.className = 'theia-mobile-open-repo-memory-title';
+        title.textContent = nls.localize('qaap/mobileOpenRepo/memoryPromptTitle', 'Workspace memory for {0}', state.repo);
+        const error = document.createElement('p');
+        error.className = 'theia-mobile-open-repo-public-error';
+        error.setAttribute('role', 'alert');
+        error.hidden = true;
+        const actions = document.createElement('div');
+        actions.className = 'theia-mobile-open-repo-memory-actions';
+        const cancel = document.createElement('button');
+        cancel.type = 'button';
+        cancel.className = 'theia-mobile-open-repo-memory-cancel';
+        cancel.textContent = nls.localize('qaap/mobileOpenRepo/memoryCancel', 'Cancel');
+        cancel.addEventListener('click', () => this.hideMemoryPrompt());
+        const open = document.createElement('button');
+        open.type = 'button';
+        open.className = 'theia-mobile-open-repo-memory-open';
+        open.textContent = nls.localize('qaap/mobileOpenRepo/memoryOpen', 'Open repository');
+        open.addEventListener('click', () => { void this.onConfirmMemoryPrompt(project, open, error); });
+        actions.append(cancel, open);
+        this.memoryPrompt.append(title, this.createMemoryPicker(state), error, actions);
+        this.memoryPrompt.hidden = false;
+    }
+
+    protected hideMemoryPrompt(): void {
+        this.memoryPromptState = undefined;
+        this.memoryPrompt.hidden = true;
+        this.memoryPrompt.replaceChildren();
+    }
+
+    protected async onConfirmMemoryPrompt(project: MobileProjectEntry, open: HTMLButtonElement, error: HTMLElement): Promise<void> {
+        const state = this.memoryPromptState;
+        if (!state || !project.github) {
+            return;
+        }
+        open.disabled = true;
+        const saved = await this.applyMemoryChoice(state, error);
+        open.disabled = false;
+        if (!saved) {
+            return;
+        }
+        this.hideMemoryPrompt();
         this.startImport(
             { kind: 'open', owner: project.github.owner, name: project.github.name },
             project.github.fullName,
         );
+    }
+
+    /** POSTs the memory choice when it differs from the saved one; on failure the open is held back and the error shown. */
+    protected async applyMemoryChoice(state: MemoryChoiceState | undefined, errorEl: HTMLElement): Promise<boolean> {
+        if (!state || state.memoryGb === state.savedGb) {
+            return true;
+        }
+        try {
+            await saveQaapProjectResources({ repo: state.repo, memoryGb: state.memoryGb });
+            state.savedGb = state.memoryGb;
+            return true;
+        } catch (error) {
+            errorEl.textContent = QaapUserFacingErrors.toMessageAndLog(error as Error);
+            errorEl.hidden = false;
+            return false;
+        }
+    }
+
+    protected schedulePublicMemoryRefresh(): void {
+        window.clearTimeout(this.publicMemoryTimer);
+        this.publicMemoryTimer = window.setTimeout(() => { void this.refreshPublicMemory(); }, 400);
+    }
+
+    /** Pro: once the typed URL is a valid repository, load its saved memory and show the choice. */
+    protected async refreshPublicMemory(): Promise<void> {
+        const token = ++this.publicMemoryToken;
+        const repo = parseQaapGithubRepositoryInput(this.publicInput.value);
+        const fullName = repo ? `${repo.owner}/${repo.name}` : undefined;
+        if (!fullName || this.planMemoryOptions?.length === 1) {
+            this.publicMemoryState = undefined;
+            this.publicMemory.replaceChildren();
+            this.publicMemory.hidden = true;
+            return;
+        }
+        if (this.publicMemoryState?.repo === fullName) {
+            return;
+        }
+        let resources: QaapProjectResourcesResponse | undefined;
+        try {
+            resources = await fetchQaapProjectResources(fullName);
+        } catch {
+            resources = undefined;
+        }
+        if (token !== this.publicMemoryToken) {
+            return;
+        }
+        if (!resources || resources.options.length < 2) {
+            this.publicMemoryState = undefined;
+            this.publicMemory.replaceChildren();
+            this.publicMemory.hidden = true;
+            return;
+        }
+        this.publicMemoryState = {
+            repo: fullName,
+            options: resources.options,
+            savedGb: resources.memoryGb,
+            memoryGb: resources.memoryGb,
+        };
+        this.publicMemory.replaceChildren(this.createMemoryPicker(this.publicMemoryState));
+        this.publicMemory.hidden = false;
     }
 
     /**

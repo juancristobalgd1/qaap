@@ -6,8 +6,8 @@
 import { nls } from '@theia/core/lib/common/nls';
 
 /**
- * Structured "you hit a plan boundary" signal shared by the backend (clone limit, hosted-model
- * denial, exhausted credits / runtime) and the frontends (clone dialog, transcript failure card).
+ * Structured "you hit a plan boundary" signal shared by the backend (active-repo limit, workspace
+ * storage limit) and the frontends (clone dialog, transcript failure card).
  *
  * HTTP/job responses carry `code: 'plan_limit'` plus a {@link QaapPlanLimitReason}. Agent turns only
  * persist free text (the CLI log), so the same signal rides in it as a machine-readable tag
@@ -18,11 +18,11 @@ export const QAAP_PLAN_LIMIT_CODE = 'plan_limit';
 /** Legacy repo-cap code: still sent as `error` in the 403 body for older clients, and still accepted by the UI; jobs now report {@link QAAP_PLAN_LIMIT_CODE}. */
 export const QAAP_PLAN_REPO_LIMIT_CODE = 'plan_repo_limit';
 
-export type QaapPlanLimitReason = 'repo_limit' | 'hosted_model_denied' | 'credits_exhausted' | 'runtime_exhausted';
+export type QaapPlanLimitReason = 'repo_limit' | 'storage_limit';
 
-export type QaapPlanLimitCta = 'upgrade' | 'top_up';
+export type QaapPlanLimitCta = 'upgrade';
 
-const PLAN_LIMIT_REASONS: readonly QaapPlanLimitReason[] = ['repo_limit', 'hosted_model_denied', 'credits_exhausted', 'runtime_exhausted'];
+const PLAN_LIMIT_REASONS: readonly QaapPlanLimitReason[] = ['repo_limit', 'storage_limit'];
 
 /** Anchored: only a tag that opens the text counts, so an agent echoing one mid-output cannot forge a paywall. */
 const PLAN_LIMIT_TAG = /^\s*\[qaap:plan_limit:([a-z_]+)\]\s*/;
@@ -50,14 +50,12 @@ export class QaapPlanLimit {
         return text.replace(PLAN_LIMIT_TAG, '').trim();
     }
 
-    static cta(reason: QaapPlanLimitReason): QaapPlanLimitCta {
-        return reason === 'credits_exhausted' || reason === 'runtime_exhausted' ? 'top_up' : 'upgrade';
+    static cta(_reason: QaapPlanLimitReason): QaapPlanLimitCta {
+        return 'upgrade';
     }
 
-    static ctaLabel(reason: QaapPlanLimitReason): string {
-        return QaapPlanLimit.cta(reason) === 'top_up'
-            ? nls.localize('qaap/planLimit/ctaTopUp', 'Top up')
-            : nls.localize('qaap/planLimit/ctaUpgrade', 'Upgrade plan');
+    static ctaLabel(_reason: QaapPlanLimitReason): string {
+        return nls.localize('qaap/planLimit/ctaUpgrade', 'Upgrade plan');
     }
 
     /** Localized, plan-name-free sentence the UI shows for each boundary. */
@@ -65,12 +63,8 @@ export class QaapPlanLimit {
         switch (reason) {
             case 'repo_limit':
                 return nls.localize('qaap/planLimit/repoLimit', 'You have reached the number of active repositories your plan allows. Upgrade your plan or remove a clone to open another.');
-            case 'hosted_model_denied':
-                return nls.localize('qaap/planLimit/hostedModelDenied', 'Hosted Codex models are not included in your plan. Connect your own harness in Settings → Harness or upgrade your plan.');
-            case 'credits_exhausted':
-                return nls.localize('qaap/planLimit/creditsExhausted', 'Your hosted Codex credits are used up for this billing period. Top up credits or wait for the next cycle.');
-            case 'runtime_exhausted':
-                return nls.localize('qaap/planLimit/runtimeExhausted', 'Your agent runtime allowance is used up for this billing period. Top up hours or wait for the next cycle.');
+            case 'storage_limit':
+                return nls.localize('qaap/planLimit/storageLimit', 'Your workspace is over its storage limit. Free some space or upgrade to Pro.');
         }
     }
 

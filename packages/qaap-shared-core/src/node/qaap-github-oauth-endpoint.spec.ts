@@ -10,7 +10,7 @@ import * as path from 'path';
 import { spawn, type ChildProcess } from 'child_process';
 import { QaapGithubOauthEndpoint } from './qaap-github-oauth-endpoint';
 import type { QaapProjectSessionSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
-import { QaapPlanRepoLimitError } from '@theia/qaap-adapters/lib/common/qaap-billing-quota';
+import { QaapPlanRepoLimitError, QaapPlanStorageLimitError } from '@theia/qaap-adapters/lib/common/qaap-billing-quota';
 
 describe('QaapGithubOauthEndpoint.enrichSessionWithWorkspaceUri', () => {
 
@@ -277,6 +277,35 @@ describe('QaapGithubOauthEndpoint plan repo limit', () => {
             reason: 'repo_limit',
             planId: 'starter',
             limit: 3,
+        });
+    });
+});
+
+describe('QaapGithubOauthEndpoint plan storage limit', () => {
+
+    it('returns 403 plan_limit with reason storage_limit, like the repo cap', () => {
+        const endpoint = Object.create(QaapGithubOauthEndpoint.prototype) as QaapGithubOauthEndpoint;
+        const res: {
+            statusCode?: number;
+            body?: unknown;
+            status: (code: number) => { json: (b: unknown) => void };
+        } = {
+            status(code: number) {
+                res.statusCode = code;
+                return { json: (b: unknown) => { res.body = b; } };
+            },
+        };
+        const handled = (endpoint as unknown as {
+            respondBillingQuotaError(err: unknown, response: typeof res): boolean;
+        }).respondBillingQuotaError(new QaapPlanStorageLimitError('starter', 10), res);
+        expect(handled).to.equal(true);
+        expect(res.statusCode).to.equal(403);
+        expect(res.body).to.deep.include({
+            error: 'plan_limit',
+            code: 'plan_limit',
+            reason: 'storage_limit',
+            planId: 'starter',
+            limit: 10,
         });
     });
 });

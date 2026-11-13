@@ -17,7 +17,6 @@ type ConnectionState = 'connected' | 'disconnected' | 'unknown';
 interface PickDefaultOptions {
     readonly detected: readonly string[];
     readonly states: Readonly<Record<string, ConnectionState>>;
-    readonly hostedModels?: boolean;
 }
 
 function pickDefaultArgs(options: PickDefaultOptions): [QaapAgentTaskRunnerContext, (id: string) => boolean, (id: string) => boolean] {
@@ -27,8 +26,7 @@ function pickDefaultArgs(options: PickDefaultOptions): [QaapAgentTaskRunnerConte
     } as unknown as QaapAgentTaskRunnerContext;
     const state = (id: string): ConnectionState => options.states[id] ?? 'unknown';
     const usable = (id: string): boolean => state(id) === 'connected'
-        || (id === 'opencode' && state(id) !== 'disconnected')
-        || (id === 'codex' && options.hostedModels === true);
+        || (id === 'opencode' && state(id) !== 'disconnected');
     return [ctx, id => state(id) !== 'disconnected' || usable(id), usable];
 }
 
@@ -82,10 +80,8 @@ describe('defaultAgentExtracted', () => {
         })).to.equal('claude');
     });
 
-    it('on Starter never picks hosted Codex, but Pro/Team may', () => {
-        const input = { detected: ['codex', 'grok'], states: { codex: 'disconnected' as const, grok: 'connected' as const } };
-        expect(pickDefault({ ...input, hostedModels: false })).to.equal('grok');
-        expect(pickDefault({ ...input, hostedModels: true })).to.equal('codex');
+    it('never picks a disconnected Codex: there is no Qaap-hosted Codex on any plan', () => {
+        expect(pickDefault({ detected: ['codex', 'grok'], states: { codex: 'disconnected', grok: 'connected' } })).to.equal('grok');
     });
 
     it('honours the operator-configured QAAP_DEFAULT_AGENT, ignoring connection state', () => {
@@ -192,7 +188,6 @@ describe('QaapAgentTaskRunner.defaultAgent (real runner, stubbed auth and billin
 
     function runnerWith(options: {
         readonly states: Readonly<Record<string, ConnectionState>>;
-        readonly entitlements?: { readonly hostedModels: boolean; readonly creditsRemaining: number };
         readonly extraDetected?: readonly string[];
     }): QaapAgentTaskRunner {
         const runner = Object.create(QaapAgentTaskRunner.prototype) as QaapAgentTaskRunner;
@@ -205,70 +200,45 @@ describe('QaapAgentTaskRunner.defaultAgent (real runner, stubbed auth and billin
             agentConnectionStates: new Map(),
             agentConnectionProbes: new Map(),
             preferenceReaderForOwner: () => () => undefined,
-            billingStore: { peekEntitlements: () => options.entitlements },
         });
         return runner;
     }
 
     const signedOut = { codex: 'disconnected', opencode: 'unknown' } as const;
 
-    it('Starter without keys or logins falls to the shell, not keyless OpenCode', () => {
-        const runner = runnerWith({ states: signedOut, entitlements: { hostedModels: false, creditsRemaining: 0 } });
-        expect(runner.defaultAgent('alice')).to.equal('shell');
-    });
-
-    it('Pro with credits gets hosted Codex even though Codex is signed out', () => {
-        const runner = runnerWith({ states: signedOut, entitlements: { hostedModels: true, creditsRemaining: 10 } });
-        expect(runner.defaultAgent('alice')).to.equal('codex');
-    });
-
-    it('Pro with the hosted credits spent does not get a Codex that turn start would deny', () => {
-        const runner = runnerWith({ states: signedOut, entitlements: { hostedModels: true, creditsRemaining: 0 } });
+    it('without a sign-in, falls to the shell rather than a Codex that is not connected', () => {
+        const runner = runnerWith({ states: signedOut });
         expect(runner.defaultAgent('alice')).to.equal('shell');
     });
 
     // Grok is a builtin harness again: with no auth signal (no probe, never connected) it is not a
     // default, so a signed-out owner falls to the shell like any other builtin.
     it('an installed grok (no auth probe, never connected) is not picked by default once QAIQ is gone', () => {
-        const runner = runnerWith({ states: signedOut, entitlements: undefined, extraDetected: ['grok'] });
+        const runner = runnerWith({ states: signedOut, extraDetected: ['grok'] });
         expect(runner.defaultAgent('alice')).to.equal('shell');
     });
 
-    it('a cold billing cache is treated as Starter', () => {
-        const runner = runnerWith({ states: signedOut, entitlements: undefined });
-        expect(runner.defaultAgent('alice')).to.equal('shell');
-    });
-
-    it('an anonymous owner never gets hosted Codex', () => {
-        const runner = runnerWith({ states: signedOut, entitlements: { hostedModels: true, creditsRemaining: 10 } });
+    it('an anonymous owner never gets a signed-out Codex', () => {
+        const runner = runnerWith({ states: signedOut });
         expect(runner.defaultAgent(undefined)).to.equal('shell');
     });
 
-    it('listAgents keeps a signed-out Codex unavailable once the credits are gone', () => {
-        const withCredits = runnerWith({ states: signedOut, entitlements: { hostedModels: true, creditsRemaining: 10 } });
-        const spent = runnerWith({ states: signedOut, entitlements: { hostedModels: true, creditsRemaining: 0 } });
-        const codexOf = (runner: QaapAgentTaskRunner) => runner.listAgents('alice').find(agent => agent.id === 'codex');
-        expect(codexOf(withCredits)?.available).to.equal(true);
-        expect(codexOf(spent)?.available).to.equal(false);
-    });
-
-    it('listAgents gives the picker row the same access answer as the Codex models', () => {
-        const withCredits = runnerWith({ states: signedOut, entitlements: { hostedModels: true, creditsRemaining: 10 } });
-        const spent = runnerWith({ states: signedOut, entitlements: { hostedModels: true, creditsRemaining: 0 } });
-        const codexOf = (runner: QaapAgentTaskRunner) => runner.listAgents('alice').find(agent => agent.id === 'codex');
-        expect(codexOf(withCredits)?.accessState).to.equal('hosted');
-        expect(codexOf(spent)?.accessState).to.equal('none');
+    it('listAgents keeps a signed-out Codex unavailable: no hosted access on any plan', () => {
+        const runner = runnerWith({ states: signedOut });
+        const codex = runner.listAgents('alice').find(agent => agent.id === 'codex');
+        expect(codex?.available).to.equal(false);
+        expect(codex?.accessState).to.equal('none');
     });
 
     it('listAgents gives a settled-unknown Codex probe a Sign in row, not an available one', () => {
-        const runner = runnerWith({ states: { codex: 'unknown' }, entitlements: { hostedModels: false, creditsRemaining: 0 } });
+        const runner = runnerWith({ states: { codex: 'unknown' } });
         const codex = runner.listAgents('alice').find(agent => agent.id === 'codex');
         expect(codex?.accessState).to.equal('none');
         expect(codex?.available).to.equal(false);
     });
 
     it('listAgents keeps a Codex row usable (no plan lock) while its auth probe is still pending', () => {
-        const runner = runnerWith({ states: { codex: 'unknown' }, entitlements: { hostedModels: false, creditsRemaining: 0 } });
+        const runner = runnerWith({ states: { codex: 'unknown' } });
         (runner as unknown as { agentConnectionProbes: Map<string, Promise<unknown>> }).agentConnectionProbes
             .set('codex:alice', new Promise(() => undefined));
         const codex = runner.listAgents('alice').find(agent => agent.id === 'codex');
@@ -307,7 +277,6 @@ describe('defaultAgentExtracted fallbacks past the preferred agents', () => {
         const input: PickDefaultOptions = {
             detected: ['codex', 'claude'],
             states: { codex: 'disconnected', claude: 'disconnected' },
-            hostedModels: false,
         };
         expect(pickDefault(input)).to.equal('shell');
         process.env.QAAP_AGENT_COMMAND = 'my-agent {prompt}';

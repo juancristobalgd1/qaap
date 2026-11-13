@@ -65,6 +65,7 @@ import { type QaapNativeModelRoutingTable } from '../common/qaap-agent-native-mo
 import { pickReservedDevPreviewPort } from '../common/qaap-agent-live-preview-port';
 import { QaapWebPushService } from './qaap-web-push-service';
 import { QaapBillingStore } from './qaap-billing-store';
+import { QaapTenantStorageQuotaService } from './qaap-tenant-storage-quota-service';
 import { QaapWorkflowRoutingPolicy } from '../common/qaap-workflow-routing';
 import { QaapAgentHealthTracker } from './qaap-agent-health';
 import { classifyAgentLastTurn, QaapAgentLastTurnStore } from './qaap-agent-last-turn-store';
@@ -182,7 +183,6 @@ import {
     type QaapGenericCommandResult,
 } from './qaap-agent-task-runner-constants';
 import {
-    isHostedCodexEntitled,
     resolveAgentAccess,
     type QaapAgentConnectionSnapshot,
 } from './qaap-agent-access';
@@ -215,6 +215,10 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     @inject(QaapBillingStore) @optional()
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public readonly billingStore: QaapBillingStore | undefined;
+
+    @inject(QaapTenantStorageQuotaService) @optional()
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readonly tenantStorageQuota: QaapTenantStorageQuotaService | undefined;
 
     @inject(PreferenceService) @optional()
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
@@ -627,14 +631,8 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             .filter(agent => this.isAgentEnabled(agent.id, ownerLogin))
             .map(agent => {
                 const { connectionState, probeSettled } = this.agentConnectionSnapshot(agent.id, ownerLogin);
-                const accessState = resolveAgentAccess({
-                    agentId: agent.id,
-                    connectionState,
-                    probeSettled,
-                    hostedEntitled: this.hostedCodexAllowed(ownerLogin),
-                });
-                // Codex follows the same access answer as its model list: a disconnected Codex is still
-                // usable through Qaap-hosted access on Pro/Team, and a settled sign-out is not usable.
+                const accessState = resolveAgentAccess({ agentId: agent.id, connectionState, probeSettled });
+                // Codex follows the same access answer as its model list, so a settled sign-out is not usable.
                 // Other agents keep their connection-only rule.
                 const available = agent.id.toLowerCase() === 'codex'
                     ? agent.available && accessState !== 'none'
@@ -1003,8 +1001,8 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     }
 
     /**
-     * Whether `agentId` can run the owner's first task without further setup: signed in / keyed, a
-     * keyless hosted agent, or Codex through Qaap-hosted access that the owner's plan includes.
+     * Whether `agentId` can run the owner's first task without further setup: signed in / keyed or a
+     * keyless hosted agent. Every other agent needs the owner's own sign-in first.
      */
     protected isAgentUsableAsDefault(agentId: string, ownerLogin?: string): boolean {
         const normalized = agentId.trim().toLowerCase();
@@ -1014,15 +1012,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         if (HOSTED_KEYLESS_DEFAULT_AGENTS.includes(normalized)) {
             return this.agentConnectionState(normalized, ownerLogin) !== 'disconnected';
         }
-        return normalized === 'codex' && this.hostedCodexAllowed(ownerLogin);
-    }
-
-    /** Qaap-hosted Codex needs a plan with hosted models and credits left (same gate as turn start). */
-    protected hostedCodexAllowed(ownerLogin?: string): boolean {
-        if (!ownerLogin?.trim()) {
-            return false;
-        }
-        return isHostedCodexEntitled(this.billingStore?.peekEntitlements?.(ownerLogin));
+        return false;
     }
 
     isAgentEnabled(agentId: string, ownerLogin?: string): boolean {

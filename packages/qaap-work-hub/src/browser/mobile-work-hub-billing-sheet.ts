@@ -7,6 +7,7 @@ import { QaapUserFacingErrors } from '@theia/qaap-adapters/lib/common/qaap-user-
 import { nls } from '@theia/core/lib/common/nls';
 import {
     activateQaapBillingPlanDev,
+    cancelQaapBillingSubscription,
     createQaapBillingCheckout,
     fetchQaapBilling,
     type QaapBillingApiResponse,
@@ -15,13 +16,15 @@ import { isWorkHubTheiaDialogOpen } from '../common/qaap-work-hub-dialog-utils';
 import { rememberQaapAccountBillingPlanId } from './qaap-workbench-account-menu';
 
 type BillingPlan = QaapBillingApiResponse['catalog']['plans'][number];
+type BillingPlanId = 'starter' | 'pro';
+
+/** The only two plans offered; the order is the slider order. */
+const BILLING_PLAN_IDS: readonly BillingPlanId[] = ['starter', 'pro'];
 
 function planDisplayName(planId: string): string {
     switch (planId) {
         case 'pro':
             return nls.localize('qaap/billing/planPro', 'Pro');
-        case 'team':
-            return nls.localize('qaap/billing/planTeam', 'Team');
         default:
             return nls.localize('qaap/billing/planStarter', 'Starter');
     }
@@ -30,33 +33,30 @@ function planDisplayName(planId: string): string {
 function planTagline(planId: string): string {
     switch (planId) {
         case 'pro':
-            return nls.localize('qaap/billing/taglinePro', 'For daily agent work');
-        case 'team':
-            return nls.localize('qaap/billing/taglineTeam', 'For multi-agent teams');
+            return nls.localize('qaap/billing/taglinePro', 'For parallel agent work');
         default:
-            return nls.localize('qaap/billing/taglineStarter', 'Fair-use start');
+            return nls.localize('qaap/billing/taglineStarter', 'For a few projects at a time');
     }
 }
 
-function formatHours(hours: number): string {
-    if (hours < 0) {
-        return nls.localize('qaap/billing/unlimited', 'Unlimited');
-    }
-    if (Number.isInteger(hours)) {
-        return String(hours);
-    }
-    return hours.toFixed(1);
+function formatUsd(value: number): string {
+    return new Intl.NumberFormat(nls.locale ?? nls.defaultLocale, {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2,
+    }).format(value);
 }
 
-function formatCredits(credits: number): string {
-    return new Intl.NumberFormat(nls.locale ?? nls.defaultLocale, { maximumFractionDigits: 0 }).format(credits);
+function formatCount(value: number): string {
+    return new Intl.NumberFormat(nls.locale ?? nls.defaultLocale, { maximumFractionDigits: 1 }).format(value);
 }
 
-function isPayablePlan(planId: string): planId is 'pro' | 'team' {
-    return planId === 'pro' || planId === 'team';
+function isBillingPlanId(planId: string): planId is BillingPlanId {
+    return planId === 'starter' || planId === 'pro';
 }
 
-/** Work Hub overlay for plan picker, Stripe Checkout, and usage meters. */
+/** Work Hub overlay for plan picker, hosted checkout, cancellation, and plan allowances. */
 export class MobileWorkHubBillingSheet {
 
     readonly node: HTMLElement;
@@ -65,8 +65,9 @@ export class MobileWorkHubBillingSheet {
     protected visible = false;
     protected loadToken = 0;
     protected data: QaapBillingApiResponse | undefined;
-    protected selectedPlanId = 'starter';
+    protected selectedPlanId: BillingPlanId = 'starter';
     protected checkoutBusy = false;
+    protected cancelBusy = false;
     protected detailHost: HTMLElement | undefined;
     protected ctaHost: HTMLElement | undefined;
     protected dotsHost: HTMLElement | undefined;
@@ -154,7 +155,7 @@ export class MobileWorkHubBillingSheet {
         }
         this.data = data;
         // Focus the user's active plan so post-checkout (and revisits) show "Your current plan".
-        this.selectedPlanId = data.entitlements.planId || 'starter';
+        this.selectedPlanId = isBillingPlanId(data.entitlements.planId) ? data.entitlements.planId : 'starter';
         rememberQaapAccountBillingPlanId(this.selectedPlanId);
         this.renderBilling(data, options?.afterCheckout === true);
         requestAnimationFrame(() => this.scrollSelectedPlanIntoView(true));
@@ -198,6 +199,8 @@ export class MobileWorkHubBillingSheet {
 
     protected renderBilling(data: QaapBillingApiResponse, afterCheckout: boolean = false): void {
         this.contentHost.replaceChildren();
+        const currentPlanId = data.entitlements.planId;
+        const currentName = planDisplayName(currentPlanId);
         const intro = document.createElement('section');
         intro.className = 'theia-mobile-work-hub-billing-intro';
         const eyebrow = document.createElement('p');
@@ -205,36 +208,28 @@ export class MobileWorkHubBillingSheet {
         eyebrow.textContent = nls.localize('qaap/billing/eyebrow', 'Subscription');
         const headline = document.createElement('h3');
         headline.className = 'theia-mobile-work-hub-billing-headline';
-        const currentName = planDisplayName(data.entitlements.planId);
-        if (afterCheckout && data.entitlements.planId !== 'starter') {
-            headline.textContent = nls.localize(
-                'qaap/billing/headlineAfterCheckout',
-                'You are on {0}',
-                currentName,
+        const sub = document.createElement('p');
+        sub.className = 'theia-mobile-work-hub-billing-subhead';
+        if (afterCheckout) {
+            headline.textContent = nls.localize('qaap/billing/headlineAfterCheckout', 'You are on {0}', currentName);
+            sub.textContent = nls.localize(
+                'qaap/billing/subheadAfterCheckout',
+                'Payment confirmed. This is your current plan. Allowances reset each billing period.',
             );
         } else {
             headline.textContent = nls.localize('qaap/billing/headline', 'Pick a plan that matches how you ship');
-        }
-        const sub = document.createElement('p');
-        sub.className = 'theia-mobile-work-hub-billing-subhead';
-        if (afterCheckout && data.entitlements.planId !== 'starter') {
-            sub.textContent = nls.localize(
-                'qaap/billing/subheadAfterCheckout',
-                'Payment confirmed. This is your current plan — allowances reset each billing period.',
-            );
-        } else if (data.entitlements.planId !== 'starter') {
-            sub.textContent = nls.localize(
-                'qaap/billing/subheadCurrent',
-                'Your current plan is {0}. Swipe to compare other plans.',
-                currentName,
-            );
-        } else {
             sub.textContent = nls.localize(
                 'qaap/billing/subhead',
-                'Starter is selected by default. Swipe to compare Pro and Team, then subscribe monthly with Stripe.',
+                'Both plans are billed monthly in USD through Airwallex. Swipe to compare them.',
             );
         }
-        intro.append(eyebrow, headline, sub);
+        const byo = document.createElement('p');
+        byo.className = 'theia-mobile-work-hub-billing-byo';
+        byo.textContent = nls.localize(
+            'qaap/billing/byoLine',
+            'Bring your own AI: sign in with your Claude, Codex or Copilot subscription, or use an API key.',
+        );
+        intro.append(eyebrow, headline, sub, byo);
 
         const sliderSection = document.createElement('section');
         sliderSection.className = 'theia-mobile-work-hub-billing-section theia-mobile-work-hub-billing-slider-section';
@@ -242,14 +237,14 @@ export class MobileWorkHubBillingSheet {
         slider.className = 'theia-mobile-work-hub-billing-plan-slider';
         slider.setAttribute('role', 'listbox');
         slider.setAttribute('aria-label', nls.localize('qaap/billing/allPlans', 'Plans'));
-        for (const plan of data.catalog.plans) {
-            slider.append(this.createPlanSlide(plan, data.entitlements.planId));
+        for (const plan of this.catalogPlans(data)) {
+            slider.append(this.createPlanSlide(plan, currentPlanId));
         }
         slider.addEventListener('scroll', () => this.syncDotsFromScroll(slider), { passive: true });
         this.dotsHost = document.createElement('div');
         this.dotsHost.className = 'theia-mobile-work-hub-billing-plan-dots';
         this.dotsHost.setAttribute('role', 'tablist');
-        for (const plan of data.catalog.plans) {
+        for (const plan of this.catalogPlans(data)) {
             const dot = document.createElement('button');
             dot.type = 'button';
             dot.className = 'theia-mobile-work-hub-billing-plan-dot';
@@ -270,6 +265,14 @@ export class MobileWorkHubBillingSheet {
 
         this.contentHost.append(intro, sliderSection, this.detailHost, this.ctaHost);
         this.renderSelectedPlanDetail();
+        this.renderCancelSection(data);
+    }
+
+    /** Only the two product plans, in slider order, whatever the backend catalog returns. */
+    protected catalogPlans(data: QaapBillingApiResponse): BillingPlan[] {
+        return BILLING_PLAN_IDS
+            .map(id => data.catalog.plans.find(plan => plan.id === id))
+            .filter((plan): plan is BillingPlan => plan !== undefined);
     }
 
     protected createPlanSlide(plan: BillingPlan, currentPlanId: string): HTMLElement {
@@ -303,11 +306,11 @@ export class MobileWorkHubBillingSheet {
         priceRow.className = 'theia-mobile-work-hub-billing-plan-price-row';
         const amount = document.createElement('span');
         amount.className = 'theia-mobile-work-hub-billing-plan-amount';
-        amount.textContent = `${plan.monthlyPriceEur}`;
-        const currency = document.createElement('span');
-        currency.className = 'theia-mobile-work-hub-billing-plan-currency';
-        currency.textContent = nls.localize('qaap/billing/eurPerMonth', '€ / mo');
-        priceRow.append(amount, currency);
+        amount.textContent = formatUsd(plan.priceUsdMonthly);
+        const period = document.createElement('span');
+        period.className = 'theia-mobile-work-hub-billing-plan-currency';
+        period.textContent = nls.localize('qaap/billing/perMonth', '/ month');
+        priceRow.append(amount, period);
 
         const preview = document.createElement('ul');
         preview.className = 'theia-mobile-work-hub-billing-plan-preview';
@@ -317,50 +320,40 @@ export class MobileWorkHubBillingSheet {
             preview.append(li);
         }
 
+        card.append(top, priceRow, preview);
         if (plan.id === currentPlanId) {
             const badge = document.createElement('span');
             badge.className = 'theia-mobile-work-hub-billing-plan-badge';
             badge.textContent = nls.localize('qaap/billing/currentBadge', 'Current');
-            card.append(top, priceRow, preview, badge);
-        } else if (plan.id === 'pro') {
-            const badge = document.createElement('span');
-            badge.className = 'theia-mobile-work-hub-billing-plan-badge theia-mod-popular';
-            badge.textContent = nls.localize('qaap/billing/popularBadge', 'Popular');
-            card.append(top, priceRow, preview, badge);
-        } else {
-            card.append(top, priceRow, preview);
+            card.append(badge);
         }
 
         card.addEventListener('click', () => this.selectPlan(plan.id, true));
         return card;
     }
 
+    /** The allowance rows shown for one plan: RAM, CPU, storage, repos, agents and idle pause. */
     protected planHighlights(plan: BillingPlan): string[] {
-        const runtime = plan.runtimeFairUse
-            ? nls.localize('qaap/billing/planFairUseRuntime', 'Fair-use agent runtime')
-            : nls.localize(
-                'qaap/billing/planRuntimeHours',
-                '{0} agent hours / month',
-                formatHours(plan.includedRuntimeHoursPerMonth),
-            );
-        const credits = plan.hostedModels
+        const memory = plan.memoryOptionsGb.length > 1
             ? nls.localize(
-                'qaap/billing/planCredits',
-                '{0} Codex hosted credits / month',
-                formatCredits(plan.includedCreditsPerMonth),
+                'qaap/billing/rowMemoryChoice',
+                '{0} or {1} GB RAM per project',
+                formatCount(plan.memoryOptionsGb[0]),
+                formatCount(plan.memoryOptionsGb[plan.memoryOptionsGb.length - 1]),
             )
-            : nls.localize('qaap/billing/planByok', 'Your harness subscriptions (Claude, Codex, …)');
-        const storage = nls.localize(
-            'qaap/billing/planStorage',
-            '{0} GB storage · {1} concurrent agents',
-            String(plan.storageGb),
-            plan.maxConcurrentAgents < 0 ? '∞' : String(plan.maxConcurrentAgents),
-        );
-        return [runtime, credits, storage];
+            : nls.localize('qaap/billing/rowMemory', '{0} GB RAM', formatCount(plan.defaultMemoryGb));
+        const cpu = nls.localize('qaap/billing/rowCpu', '{0} vCPU', formatCount(plan.cpuLimit));
+        const storage = nls.localize('qaap/billing/rowStorage', '{0} GB storage', formatCount(plan.storageGb));
+        const repos = nls.localize('qaap/billing/rowRepos', 'Up to {0} active repos', formatCount(plan.maxActiveRepos));
+        const agents = nls.localize('qaap/billing/rowAgents', '{0} parallel agents', formatCount(plan.maxConcurrentAgents));
+        const idle = plan.idlePauseMinutes >= 60
+            ? nls.localize('qaap/billing/rowIdleHours', 'Agents stay on up to {0} h idle', formatCount(plan.idlePauseMinutes / 60))
+            : nls.localize('qaap/billing/rowIdleMinutes', 'Pauses after {0} min idle', formatCount(plan.idlePauseMinutes));
+        return [memory, cpu, storage, repos, agents, idle];
     }
 
     protected selectPlan(planId: string, scrollIntoView: boolean): void {
-        if (!this.data) {
+        if (!this.data || !isBillingPlanId(planId)) {
             return;
         }
         this.selectedPlanId = planId;
@@ -417,8 +410,11 @@ export class MobileWorkHubBillingSheet {
         if (!this.data || !this.detailHost || !this.ctaHost) {
             return;
         }
-        const plan = this.data.catalog.plans.find(entry => entry.id === this.selectedPlanId)
-            ?? this.data.catalog.plans[0];
+        const plans = this.catalogPlans(this.data);
+        const plan = plans.find(entry => entry.id === this.selectedPlanId) ?? plans[0];
+        if (!plan) {
+            return;
+        }
         const isCurrent = plan.id === this.data.entitlements.planId;
         this.detailHost.replaceChildren();
         this.ctaHost.replaceChildren();
@@ -451,58 +447,6 @@ export class MobileWorkHubBillingSheet {
         }
         this.detailHost.append(head, list);
 
-        if (isCurrent) {
-            const meters = document.createElement('div');
-            meters.className = 'theia-mobile-work-hub-billing-meters';
-            const { entitlements } = this.data;
-            meters.append(
-                this.createMeter(
-                    nls.localize('qaap/billing/agentRuntime', 'Agent runtime'),
-                    entitlements.runtimeFairUse
-                        ? nls.localize('qaap/billing/fairUse', 'Fair use — no hard stop')
-                        : nls.localize(
-                            'qaap/billing/runtimeRemaining',
-                            '{0} h remaining this period',
-                            formatHours(entitlements.runtimeHoursRemaining),
-                        ),
-                    entitlements.runtimeFairUse ? undefined : entitlements.runtimeUsageRatio,
-                    entitlements.runtimeWarning,
-                ),
-                this.createMeter(
-                    nls.localize('qaap/billing/hostedCredits', 'Codex hosted credits'),
-                    entitlements.hostedModels
-                        ? nls.localize(
-                            'qaap/billing/creditsRemaining',
-                            '{0} credits remaining',
-                            formatCredits(entitlements.creditsRemaining),
-                        )
-                        : nls.localize('qaap/billing/byokOnly', 'Your harness subscriptions (Claude, Codex, …)'),
-                    entitlements.hostedModels && entitlements.includedCreditsPerMonth > 0
-                        ? Math.min(1, 1 - (entitlements.creditsRemaining / entitlements.includedCreditsPerMonth))
-                        : undefined,
-                    false,
-                ),
-            );
-            this.detailHost.append(meters);
-            if (!entitlements.canStartAgent) {
-                const warn = document.createElement('p');
-                warn.className = 'theia-mobile-work-hub-billing-warning';
-                warn.textContent = nls.localize(
-                    'qaap/billing/runtimeExhausted',
-                    'Agent runtime is exhausted. New jobs are blocked until the period resets or you add hours.',
-                );
-                this.detailHost.append(warn);
-            } else if (entitlements.runtimeWarning) {
-                const warn = document.createElement('p');
-                warn.className = 'theia-mobile-work-hub-billing-warning';
-                warn.textContent = nls.localize(
-                    'qaap/billing/runtimeWarning',
-                    'You have used most of your included agent runtime this period.',
-                );
-                this.detailHost.append(warn);
-            }
-        }
-
         this.ctaHost.append(this.createCta(plan, isCurrent));
     }
 
@@ -527,52 +471,32 @@ export class MobileWorkHubBillingSheet {
             return wrap;
         }
 
-        if (plan.id === 'starter') {
-            button.textContent = nls.localize('qaap/billing/ctaStayStarter', 'Stay on Starter');
-            button.addEventListener('click', () => {
-                void this.handleStayOrDevActivate('starter', button);
-            });
-            hint.textContent = nls.localize(
-                'qaap/billing/ctaStarterHint',
-                'No card required. Connect your own harness subscriptions.',
-            );
-            wrap.append(button, hint);
-            return wrap;
-        }
-
-        if (!isPayablePlan(plan.id)) {
-            button.disabled = true;
-            button.textContent = planDisplayName(plan.id);
-            wrap.append(button);
-            return wrap;
-        }
-
-        const payablePlanId = plan.id;
-        const stripeEnabled = !!this.data?.checkout?.stripeEnabled;
+        const planId: BillingPlanId = plan.id === 'pro' ? 'pro' : 'starter';
+        const checkoutEnabled = !!this.data?.checkout?.checkoutEnabled;
         const devEnabled = !!this.data?.checkout?.devActivateEnabled;
         button.classList.add('theia-mod-primary');
         button.textContent = nls.localize(
             'qaap/billing/ctaSubscribe',
-            'Subscribe · {0} € / month',
-            String(plan.monthlyPriceEur),
+            'Subscribe · {0} / month',
+            formatUsd(plan.priceUsdMonthly),
         );
         button.addEventListener('click', () => {
-            void this.handleSubscribe(payablePlanId, button);
+            void this.handleSubscribe(planId, button);
         });
-        if (stripeEnabled) {
+        if (checkoutEnabled) {
             hint.textContent = nls.localize(
-                'qaap/billing/ctaStripeHint',
-                'Secure monthly checkout powered by Stripe. Cancel anytime from Stripe.',
+                'qaap/billing/ctaCheckoutHint',
+                'Secure monthly checkout powered by Airwallex. Cancel anytime from Billing.',
             );
         } else if (devEnabled) {
             hint.textContent = nls.localize(
                 'qaap/billing/ctaDevHint',
-                'Stripe keys are not set — local preview will activate this plan without payment.',
+                'Airwallex billing is not configured — local preview will activate this plan without payment.',
             );
         } else {
             hint.textContent = nls.localize(
-                'qaap/billing/ctaStripeMissing',
-                'Set STRIPE_SECRET_KEY and STRIPE_PRICE_PRO_MONTHLY / STRIPE_PRICE_TEAM_MONTHLY to enable checkout.',
+                'qaap/billing/ctaCheckoutMissing',
+                'Set AIRWALLEX_CLIENT_ID, AIRWALLEX_API_KEY, AIRWALLEX_PRICE_STARTER_MONTHLY and AIRWALLEX_PRICE_PRO_MONTHLY to enable checkout.',
             );
             button.disabled = true;
         }
@@ -580,15 +504,44 @@ export class MobileWorkHubBillingSheet {
         return wrap;
     }
 
-    protected async handleStayOrDevActivate(planId: 'starter', button: HTMLButtonElement): Promise<void> {
-        if (!this.data?.checkout?.devActivateEnabled || this.data.entitlements.planId === 'starter') {
-            this.selectPlan('starter', true);
+    /**
+     * Cancel is offered only while the provider reports a live subscription. The first press asks for a
+     * second press (an inline confirmation, not a blocking browser dialog).
+     */
+    protected renderCancelSection(data: QaapBillingApiResponse): void {
+        if (!this.ctaHost) {
             return;
         }
-        await this.runDevActivate(planId, button);
+        const status = data.account.subscriptionStatus;
+        if (!data.account.subscriptionId || (status !== 'active' && status !== 'past_due')) {
+            return;
+        }
+        const wrap = document.createElement('div');
+        wrap.className = 'theia-mobile-work-hub-billing-cancel';
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'theia-mobile-work-hub-billing-cancel-btn';
+        button.textContent = nls.localize('qaap/billing/cancelSubscription', 'Cancel subscription');
+        const hint = document.createElement('p');
+        hint.className = 'theia-mobile-work-hub-billing-cta-hint';
+        hint.textContent = nls.localize(
+            'qaap/billing/cancelHint',
+            'Your plan stays active until the end of the current billing period.',
+        );
+        let armed = false;
+        button.addEventListener('click', () => {
+            if (!armed) {
+                armed = true;
+                button.textContent = nls.localize('qaap/billing/cancelConfirm', 'Confirm cancellation');
+                return;
+            }
+            void this.handleCancel(button);
+        });
+        wrap.append(button, hint);
+        this.ctaHost.append(wrap);
     }
 
-    protected async handleSubscribe(planId: 'pro' | 'team', button: HTMLButtonElement): Promise<void> {
+    protected async handleSubscribe(planId: BillingPlanId, button: HTMLButtonElement): Promise<void> {
         if (this.checkoutBusy || !this.data) {
             return;
         }
@@ -596,9 +549,9 @@ export class MobileWorkHubBillingSheet {
         this.ctaHost?.querySelector('.theia-mobile-work-hub-billing-cta-error')?.remove();
         const previous = button.textContent;
         button.disabled = true;
-        button.textContent = nls.localize('qaap/billing/ctaRedirecting', 'Opening Stripe…');
+        button.textContent = nls.localize('qaap/billing/ctaRedirecting', 'Opening checkout…');
         try {
-            if (this.data.checkout?.stripeEnabled) {
+            if (this.data.checkout?.checkoutEnabled) {
                 const { url } = await createQaapBillingCheckout(planId);
                 window.location.assign(url);
                 return;
@@ -607,10 +560,10 @@ export class MobileWorkHubBillingSheet {
                 await this.runDevActivate(planId, button);
                 return;
             }
-            button.textContent = nls.localize('qaap/billing/ctaStripeMissingShort', 'Stripe not configured');
+            button.textContent = nls.localize('qaap/billing/ctaCheckoutMissingShort', 'Checkout not configured');
         } catch (error) {
             const err = error as Error & { code?: string; devActivateEnabled?: boolean };
-            if (err.code === 'stripe_not_configured' && (err.devActivateEnabled || this.data.checkout?.devActivateEnabled)) {
+            if (err.code === 'checkout_not_configured' && (err.devActivateEnabled || this.data.checkout?.devActivateEnabled)) {
                 await this.runDevActivate(planId, button);
                 return;
             }
@@ -630,6 +583,33 @@ export class MobileWorkHubBillingSheet {
         }
     }
 
+    protected async handleCancel(button: HTMLButtonElement): Promise<void> {
+        if (this.cancelBusy) {
+            return;
+        }
+        this.cancelBusy = true;
+        button.disabled = true;
+        button.textContent = nls.localize('qaap/billing/cancelling', 'Cancelling…');
+        this.ctaHost?.querySelector('.theia-mobile-work-hub-billing-cta-error')?.remove();
+        try {
+            const refreshed = await cancelQaapBillingSubscription();
+            if (!this.visible) {
+                return;
+            }
+            this.data = refreshed;
+            this.selectedPlanId = isBillingPlanId(refreshed.entitlements.planId) ? refreshed.entitlements.planId : 'starter';
+            rememberQaapAccountBillingPlanId(this.selectedPlanId);
+            this.renderBilling(refreshed);
+            requestAnimationFrame(() => this.scrollSelectedPlanIntoView(true));
+        } catch (error) {
+            button.disabled = false;
+            button.textContent = nls.localize('qaap/billing/cancelSubscription', 'Cancel subscription');
+            this.showCheckoutError(QaapUserFacingErrors.toMessageAndLog(error as Error));
+        } finally {
+            this.cancelBusy = false;
+        }
+    }
+
     protected showCheckoutError(message: string): void {
         if (!this.ctaHost) {
             return;
@@ -642,7 +622,7 @@ export class MobileWorkHubBillingSheet {
     }
 
     protected async runDevActivate(
-        planId: 'starter' | 'pro' | 'team',
+        planId: BillingPlanId,
         button: HTMLButtonElement,
     ): Promise<void> {
         button.textContent = nls.localize('qaap/billing/ctaActivating', 'Activating…');
@@ -651,43 +631,8 @@ export class MobileWorkHubBillingSheet {
             return;
         }
         this.data = refreshed;
-        this.selectedPlanId = refreshed.entitlements.planId;
+        this.selectedPlanId = isBillingPlanId(refreshed.entitlements.planId) ? refreshed.entitlements.planId : 'starter';
         this.renderBilling(refreshed);
         requestAnimationFrame(() => this.scrollSelectedPlanIntoView(true));
-    }
-
-    protected createMeter(
-        label: string,
-        value: string,
-        usageRatio: number | undefined,
-        warning: boolean,
-    ): HTMLElement {
-        const meter = document.createElement('div');
-        meter.className = 'theia-mobile-work-hub-billing-meter';
-        if (warning) {
-            meter.classList.add('theia-mod-warning');
-        }
-        const labelEl = document.createElement('div');
-        labelEl.className = 'theia-mobile-work-hub-billing-meter-label';
-        labelEl.textContent = label;
-        const valueEl = document.createElement('div');
-        valueEl.className = 'theia-mobile-work-hub-billing-meter-value';
-        valueEl.textContent = value;
-        meter.append(labelEl, valueEl);
-        if (usageRatio !== undefined) {
-            const track = document.createElement('div');
-            track.className = 'theia-mobile-work-hub-billing-meter-track';
-            track.setAttribute('role', 'progressbar');
-            track.setAttribute('aria-valuemin', '0');
-            track.setAttribute('aria-valuemax', '100');
-            const percent = Math.round(Math.max(0, Math.min(1, usageRatio)) * 100);
-            track.setAttribute('aria-valuenow', String(percent));
-            const fill = document.createElement('div');
-            fill.className = 'theia-mobile-work-hub-billing-meter-fill';
-            fill.style.width = `${percent}%`;
-            track.append(fill);
-            meter.append(track);
-        }
-        return meter;
     }
 }

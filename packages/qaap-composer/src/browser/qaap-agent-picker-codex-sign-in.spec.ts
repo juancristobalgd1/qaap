@@ -97,10 +97,11 @@ describe('agent picker: Codex sign-in row', () => {
         expect(list.querySelector('.theia-qaap-agent-sheet-unavailable[data-agent-id="codex"]')).to.equal(null);
     });
 
-    it('keeps Codex usable through hosted access even when the CLI is disconnected', async () => {
+    it('keeps Codex locked behind Sign in when the CLI is disconnected (no hosted fallback)', async () => {
         const { list } = await render([
-            { id: 'codex', label: 'Codex', available: true, connectionState: 'disconnected', accessState: 'hosted' },
+            { id: 'codex', label: 'Codex', available: false, connectionState: 'disconnected', accessState: 'none' },
         ] as unknown as QaapAgentTaskAgentOption[]);
-        expect(list.querySelector('.theia-qaap-agent-sheet-unavailable[data-agent-id="codex"]')).to.equal(null);
+        const action = list.querySelector<HTMLButtonElement>('.theia-qaap-agent-sheet-unavailable[data-agent-id="codex"] .theia-qaap-agent-sheet-connect');
+        expect(action?.textContent).to.equal('Sign in');
     });
 });

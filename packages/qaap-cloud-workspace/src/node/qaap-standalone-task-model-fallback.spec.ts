@@ -240,7 +240,7 @@ describe('QaapStandaloneTaskModelFallback', () => {
         const service = fallbackService(runner);
         const first = createStandalone(runner, service);
 
-        runner.finish(first.id, 'failed', '[qaap:plan_limit:runtime_exhausted] Agent runtime allowance is used up for this billing period.');
+        runner.finish(first.id, 'failed', '[qaap:plan_limit:storage_limit] Your workspace is over its storage limit.');
 
         expect(await settle(service, first.id)).to.equal(false);
         expect(runner.created).to.have.length(1);
