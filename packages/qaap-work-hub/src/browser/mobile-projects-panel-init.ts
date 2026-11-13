@@ -1,6 +1,11 @@
 import type { MobileProjectsPanelContext } from './mobile-projects-panel-context';
 // Constructor initialization and arrow-function fields extracted from mobile-projects-panel.ts
 
+import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import { nls } from '@theia/core/lib/common/nls';
+import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
+import { installTranscriptLinkContextMenu } from '@theia/qaap-transcript/lib/browser/qaap-transcript-link-context-menu';
 import type { MobileProjectsPanelOptions } from './mobile-projects-panel-types';
 import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { peekPreferDesktopIde } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
@@ -64,6 +69,7 @@ export function applyPanelOptions(self: MobileProjectsPanelContext, options: Mob
  * to the transcript surfaces UI when a project+summary are active.
  */
 export function wireTranscriptFileOpeners(self: MobileProjectsPanelContext, options: MobileProjectsPanelOptions): void {
+    wireTranscriptLinkContextMenu(self);
     const editorOpenFallback = options.openTranscriptFile;
     self.openTranscriptFile = (filePath: string) => {
         // Mobile mode: the classic IDE never opens; only the hub Files viewer is used.
@@ -155,5 +161,64 @@ export function onAuthSessionChangedHandler(self: MobileProjectsPanelContext): v
     }
     self.refreshProjectsInFlight = self.refreshProjects().finally(() => {
         self.refreshProjectsInFlight = undefined;
+    });
+}
+
+/** Opens a URL in the system browser (new tab). */
+function openInSystemBrowser(url: string): void {
+    window.open(url, '_blank', 'noopener,noreferrer');
+}
+
+/** Panels that render chats; the link menu resolves the open conversation from whichever has one. */
+const transcriptLinkMenuPanels = new Set<MobileProjectsPanelContext>();
+let transcriptLinkMenuInstalled = false;
+
+interface OpenTranscriptTarget {
+    readonly panel: MobileProjectsPanelContext;
+    readonly project: MobileProjectEntry;
+    readonly summary: QaapAgentConversationSummaryDTO;
+}
+
+/** The panel showing an open conversation, with its project and summary. */
+function resolveOpenTranscriptTarget(): OpenTranscriptTarget | undefined {
+    for (const panel of transcriptLinkMenuPanels) {
+        const state = panel.transcriptController.state;
+        const surfacesHost = (panel.transcriptSurfacesUi as unknown as {
+            readonly host?: { readonly transcriptOpenProject?: MobileProjectEntry; readonly transcriptOpenSummary?: QaapAgentConversationSummaryDTO };
+        }).host;
+        const project = state.transcriptOpenProject ?? state.transcriptComposerProject ?? surfacesHost?.transcriptOpenProject;
+        const summary = state.transcriptOpenSummary ?? state.transcriptComposerSummary ?? surfacesHost?.transcriptOpenSummary;
+        if (project && summary) {
+            return { panel, project, summary };
+        }
+    }
+    return undefined;
+}
+
+/**
+ * Right-click / long-press on a chat link: Open in integrated browser (the transcript's Browser tab),
+ * Open in system browser, Copy Link. Installed once, delegated on the document.
+ */
+function wireTranscriptLinkContextMenu(self: MobileProjectsPanelContext): void {
+    transcriptLinkMenuPanels.add(self);
+    if (transcriptLinkMenuInstalled) {
+        return;
+    }
+    transcriptLinkMenuInstalled = true;
+    installTranscriptLinkContextMenu(document, {
+        openInIntegratedBrowser: url => {
+            const target = resolveOpenTranscriptTarget();
+            if (!target) {
+                openInSystemBrowser(url);
+                return;
+            }
+            void target.panel.transcriptSurfacesUi.openUrlInTranscriptBrowser(target.project, target.summary, url).then(opened => {
+                if (!opened) {
+                    openInSystemBrowser(url);
+                }
+            }, () => openInSystemBrowser(url));
+        },
+        openInSystemBrowser,
+        notifyCopied: () => MobileSnackbar.show(nls.localize('qaap/transcript/linkMenu/copied', 'Link copied'), { kind: 'success' }),
     });
 }
