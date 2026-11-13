@@ -21,9 +21,11 @@ import {
     readQaapAuthUser,
 } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import {
+    createQaapBillingCheckout,
     fetchQaapBilling,
     type QaapBillingApiResponse,
 } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
+import { QaapUserFacingErrors } from '@theia/qaap-adapters/lib/common/qaap-user-facing-error';
 import { listAllConversationGroups } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { isWorkHubTheiaDialogOpen } from '../common/qaap-work-hub-dialog-utils';
 import {
@@ -1117,47 +1119,174 @@ export class MobileWorkHubPreferencesSheet {
         this.appendBillingButton(panel);
     }
 
+    /**
+     * Plan section: the Starter and Pro plans side by side (stacked on phones), the current one marked,
+     * one clear action per plan that goes straight to Airwallex checkout, and "Manage subscription"
+     * for cancellation and the full details sheet.
+     */
     protected renderPlanUsageData(panel: HTMLElement, data: QaapBillingApiResponse): void {
-        const currentPlan = data.catalog.plans.find(plan => plan.id === data.entitlements.planId);
-        const currentPlanName = this.planName(data.entitlements.planId);
-        panel.append(this.createCustomHeading(
-            nls.localize('qaap/workHubSettings/planUsage/currentPlan', 'Current plan'),
-        ));
-        const planCard = this.createSettingsCard('theia-mobile-work-hub-settings-plan-card');
-        const planMeta = document.createElement('span');
-        planMeta.className = 'theia-mobile-work-hub-settings-eyebrow';
-        planMeta.textContent = nls.localize('qaap/workHubSettings/planUsage/active', 'Active plan');
-        const planTitle = document.createElement('h3');
-        planTitle.textContent = currentPlanName;
-        const planDescription = document.createElement('p');
-        planDescription.textContent = currentPlan
-            ? this.planSummary(currentPlan)
-            : nls.localize('qaap/workHubSettings/planUsage/qaapPlan', 'Qaap agent workspace plan');
-        planCard.append(planMeta, planTitle, planDescription);
-        panel.append(planCard);
+        const currentPlanId = data.entitlements.planId;
+        const plans = [...data.catalog.plans].sort((left, right) => left.priceUsdMonthly - right.priceUsdMonthly);
+        const currentPrice = plans.find(plan => plan.id === currentPlanId)?.priceUsdMonthly ?? 0;
 
-        const usage = this.createSettingsCard();
-        const entitlements = data.entitlements;
-        usage.append(
-            this.createUsageLine(
-                nls.localize('qaap/workHubSettings/planUsage/activeRepos', 'Active repositories'),
-                nls.localize('qaap/workHubSettings/planUsage/upToRepos', 'Up to {0}', this.formatNumber(entitlements.maxActiveRepos)),
-            ),
-            this.createUsageLine(
-                nls.localize('qaap/workHubSettings/planUsage/storage', 'Storage'),
-                nls.localize('qaap/workHubSettings/planUsage/storageLimit', '{0} GB', this.formatNumber(entitlements.storageGb)),
-            ),
-            this.createUsageLine(
-                nls.localize('qaap/workHubSettings/planUsage/memory', 'Workspace memory'),
-                entitlements.memoryOptionsGb.map(gb => `${this.formatNumber(gb)} GB`).join(' / '),
-            ),
-            this.createUsageLine(
-                nls.localize('qaap/workHubSettings/planUsage/cpu', 'CPU'),
-                nls.localize('qaap/workHubSettings/planUsage/cpuLimit', '{0} vCPU', this.formatNumber(entitlements.cpuLimit)),
-            ),
+        const intro = document.createElement('div');
+        intro.className = 'qaap-plan-picker-intro';
+        const title = document.createElement('h2');
+        title.className = 'qaap-plan-picker-title';
+        title.textContent = nls.localize('qaap/workHubSettings/plans/title', 'Plans');
+        const subtitle = document.createElement('p');
+        subtitle.className = 'qaap-plan-picker-subtitle';
+        subtitle.textContent = nls.localize(
+            'qaap/workHubSettings/plans/subtitle',
+            'You are on {0}. Bring your own model subscriptions; the plan sizes your cloud workspace.',
+            this.planName(currentPlanId),
         );
-        panel.append(usage);
-        this.appendBillingButton(panel);
+        intro.append(title, subtitle);
+        panel.append(intro);
+
+        const error = document.createElement('p');
+        error.className = 'qaap-plan-picker-error';
+        error.hidden = true;
+
+        const grid = document.createElement('div');
+        grid.className = 'qaap-plan-picker';
+        grid.setAttribute('role', 'list');
+        for (const plan of plans) {
+            grid.append(this.createPlanPickerCard(plan, currentPlanId, currentPrice, data, error));
+        }
+        panel.append(grid, error);
+
+        const footer = document.createElement('div');
+        footer.className = 'qaap-plan-picker-footer';
+        const secure = document.createElement('span');
+        secure.className = 'qaap-plan-picker-secure';
+        const lock = document.createElement('span');
+        lock.className = 'codicon codicon-lock';
+        lock.setAttribute('aria-hidden', 'true');
+        secure.append(lock, document.createTextNode(nls.localize(
+            'qaap/workHubSettings/plans/secure',
+            'Secure monthly checkout by Airwallex · Cancel anytime',
+        )));
+        footer.append(secure);
+        if (this.openBilling) {
+            const manage = document.createElement('button');
+            manage.type = 'button';
+            manage.className = 'qaap-plan-picker-manage';
+            manage.textContent = nls.localize('qaap/workHubSettings/plans/manage', 'Manage subscription');
+            manage.addEventListener('click', () => {
+                this.hide();
+                void this.openBilling?.();
+            });
+            footer.append(manage);
+        }
+        panel.append(footer);
+    }
+
+    protected createPlanPickerCard(
+        plan: QaapBillingApiResponse['catalog']['plans'][number],
+        currentPlanId: string,
+        currentPrice: number,
+        data: QaapBillingApiResponse,
+        error: HTMLElement,
+    ): HTMLElement {
+        const isCurrent = plan.id === currentPlanId;
+        const card = document.createElement('div');
+        card.className = 'qaap-plan-card';
+        card.setAttribute('role', 'listitem');
+        card.classList.toggle('theia-mod-current', isCurrent);
+        card.classList.toggle('theia-mod-featured', plan.id === 'pro');
+
+        const head = document.createElement('div');
+        head.className = 'qaap-plan-card-head';
+        const name = document.createElement('span');
+        name.className = 'qaap-plan-card-name';
+        name.textContent = this.planName(plan.id);
+        head.append(name);
+        if (isCurrent || plan.id === 'pro') {
+            const badge = document.createElement('span');
+            badge.className = 'qaap-plan-card-badge';
+            badge.textContent = isCurrent
+                ? nls.localize('qaap/workHubSettings/plans/current', 'Current')
+                : nls.localize('qaap/workHubSettings/plans/popular', 'Most popular');
+            head.append(badge);
+        }
+
+        const price = document.createElement('div');
+        price.className = 'qaap-plan-card-price';
+        const amount = document.createElement('span');
+        amount.className = 'qaap-plan-card-amount';
+        // Whole prices read cleaner without cents ($12, not $12.00); $4.99 keeps them.
+        amount.textContent = new Intl.NumberFormat(nls.locale ?? nls.defaultLocale, {
+            style: 'currency',
+            currency: 'USD',
+            minimumFractionDigits: Number.isInteger(plan.priceUsdMonthly) ? 0 : 2,
+        }).format(plan.priceUsdMonthly);
+        const period = document.createElement('span');
+        period.className = 'qaap-plan-card-period';
+        period.textContent = nls.localize('qaap/workHubSettings/plans/perMonth', '/ month');
+        price.append(amount, period);
+
+        const features = document.createElement('ul');
+        features.className = 'qaap-plan-card-features';
+        const memory = plan.memoryOptionsGb.length > 1
+            ? nls.localize('qaap/workHubSettings/plans/memoryChoice', '{0} or {1} GB RAM',
+                this.formatNumber(plan.memoryOptionsGb[0]), this.formatNumber(plan.memoryOptionsGb[plan.memoryOptionsGb.length - 1]))
+            : nls.localize('qaap/workHubSettings/plans/memory', '{0} GB RAM', this.formatNumber(plan.defaultMemoryGb));
+        for (const text of [
+            nls.localize('qaap/workHubSettings/plans/repos', 'Up to {0} active repos', this.formatNumber(plan.maxActiveRepos)),
+            nls.localize('qaap/workHubSettings/plans/agents', '{0} agents in parallel', this.formatNumber(plan.maxConcurrentAgents)),
+            `${memory} · ${nls.localize('qaap/workHubSettings/plans/cpu', '{0} vCPU', this.formatNumber(plan.cpuLimit))}`,
+            nls.localize('qaap/workHubSettings/plans/storage', '{0} GB storage', this.formatNumber(plan.storageGb)),
+        ]) {
+            const item = document.createElement('li');
+            const check = document.createElement('span');
+            check.className = 'codicon codicon-check';
+            check.setAttribute('aria-hidden', 'true');
+            item.append(check, document.createTextNode(text));
+            features.append(item);
+        }
+
+        const action = document.createElement('button');
+        action.type = 'button';
+        action.className = 'qaap-plan-card-action';
+        if (isCurrent) {
+            action.disabled = true;
+            action.textContent = nls.localize('qaap/workHubSettings/plans/currentAction', 'Your current plan');
+        } else {
+            const upgrade = plan.priceUsdMonthly > currentPrice;
+            action.classList.toggle('theia-mod-primary', upgrade);
+            action.textContent = upgrade
+                ? nls.localize('qaap/workHubSettings/plans/upgrade', 'Upgrade to {0}', this.planName(plan.id))
+                : nls.localize('qaap/workHubSettings/plans/switch', 'Switch to {0}', this.planName(plan.id));
+            action.addEventListener('click', () => void this.startPlanCheckout(plan.id, action, data, error));
+        }
+        card.append(head, price, features, action);
+        return card;
+    }
+
+    /** Straight to Airwallex hosted checkout; without checkout configured, the Billing sheet takes over. */
+    protected async startPlanCheckout(planId: string, button: HTMLButtonElement, data: QaapBillingApiResponse, error: HTMLElement): Promise<void> {
+        if (button.disabled) {
+            return;
+        }
+        error.hidden = true;
+        if (!data.checkout?.checkoutEnabled || (planId !== 'starter' && planId !== 'pro')) {
+            this.hide();
+            void this.openBilling?.();
+            return;
+        }
+        const label = button.textContent ?? '';
+        button.disabled = true;
+        button.textContent = nls.localize('qaap/workHubSettings/plans/opening', 'Opening checkout…');
+        try {
+            const { url } = await createQaapBillingCheckout(planId);
+            window.location.assign(url);
+        } catch (err) {
+            button.disabled = false;
+            button.textContent = label;
+            error.textContent = QaapUserFacingErrors.toMessageAndLog(err);
+            error.hidden = false;
+        }
     }
 
     protected createUsageLine(label: string, value: string): HTMLElement {
