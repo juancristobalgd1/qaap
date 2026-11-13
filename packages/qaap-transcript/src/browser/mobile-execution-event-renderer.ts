@@ -12,7 +12,7 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import { stripAnsiEscapes } from '@theia/qaap-shared-core/lib/common/qaap-transcript-content-display';
-import { getFileIconClass } from '@theia/qaap-shared-core/lib/common/qaap-file-icon-utils';
+import { resolveQaapFileIconClasses } from '@theia/qaap-shared-core/lib/browser/qaap-file-theme-icon';
 import { TRANSCRIPT_TOOL_USE_ID_ATTR } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
 import { createTranscriptCodeView, patchTranscriptCodeView, resolveTranscriptCodeLanguage, type TranscriptCodeLanguage } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-code-view';
 import {
@@ -402,7 +402,7 @@ export function createMobileToolFileDetailSpan(tool: MobileExecutionTool, canOpe
 
 export function createMobileFileIconSpan(filename: string): HTMLElement {
     const icon = document.createElement('span');
-    icon.className = `codicon ${getFileIconClass(filename)} theia-mobile-tool-detail-file-icon`;
+    icon.className = `${resolveQaapFileIconClasses(filename)} theia-mobile-tool-detail-file-icon`;
     icon.setAttribute('aria-hidden', 'true');
     return icon;
 }

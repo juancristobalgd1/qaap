@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { resolveQaapFileIconClasses } from '@theia/qaap-shared-core/lib/browser/qaap-file-theme-icon';
 import {
     type QaapAgentAuthLoginChallenge,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
@@ -30,7 +31,6 @@ import {
     transcriptShellStateAriaLabel as transcriptShellStateAriaLabelHelper,
     parseTranscriptShellExitCode as parseTranscriptShellExitCodeHelper,
     isTranscriptActivityTerminalEntryFailed as isTranscriptActivityTerminalEntryFailedHelper,
-    transcriptFileIconClass as transcriptFileIconClassHelper,
 } from './mobile-projects-transcript-messages-tool-helpers';
 import { appendTranscriptShellSummaryTailExtracted, copyTranscriptShellTextExtracted, createTranscriptActivityReadExpandCardExtracted, createTranscriptActivityReadExpandPanelExtracted, createTranscriptActivityTerminalExpandCardExtracted, createTranscriptActivityTerminalExpandPanelExtracted, createTranscriptShellDetailsExtracted, flashTranscriptShellCopyTooltipExtracted, resolveTranscriptActivityTerminalDefaultOpenIndexExtracted } from './mobile-projects-transcript-messages-tool-ui-activity';
 import { createTranscriptAgentAuthLoginCardExtracted, createTranscriptAgentFailureDialogExtracted, createTranscriptClampedPreExtracted, createTranscriptSegmentDetailsExtracted, createTranscriptTextTerminalWindowExtracted, renderTranscriptRichContentExtracted } from './mobile-projects-transcript-messages-tool-ui-render';
@@ -336,6 +336,6 @@ export class MobileProjectsTranscriptMessagesToolUi {
 
     /** @internal Used by the extracted mobile-projects-transcript-messages-tool-ui-* modules. */
     public transcriptFileIconClass(path: string): string {
-        return transcriptFileIconClassHelper(path);
+        return resolveQaapFileIconClasses(path);
     }
 }

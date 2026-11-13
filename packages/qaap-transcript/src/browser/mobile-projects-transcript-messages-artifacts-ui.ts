@@ -27,7 +27,7 @@ import {
     type TranscriptActivityExpandDeps,
 } from '../common/qaap-transcript-activity-expand-core';
 import { type ToolUmbrella } from '../common/qaap-tool-umbrella';
-import { getFileIconClass } from '@theia/qaap-shared-core/lib/common/qaap-file-icon-utils';
+import { resolveQaapFileIconClasses } from '@theia/qaap-shared-core/lib/browser/qaap-file-theme-icon';
 import { type TranscriptActivityTimelineItem } from './mobile-projects-transcript-timeline-utils';
 import {
     destroyThinkingOrbHosts as destroyThinkingOrbHostsHelper,
@@ -1064,10 +1064,9 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         return createTranscriptChangedFileRowExtracted(this, file, options);
     }
 
-    /** Codicon for a changed-file row, derived from the file extension. */
-
+    /** Full icon classes for a file row: the file-icon theme's icon, else the extension's codicon. */
     transcriptFileIconClass(path: string): string {
-        return getFileIconClass(path);
+        return resolveQaapFileIconClasses(path);
     }
 
     createTranscriptTechnicalDetailsCard(segments: QaapAgentMessageSegmentDTO[],
