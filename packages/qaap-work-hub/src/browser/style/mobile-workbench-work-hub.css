@@ -15327,3 +15327,203 @@ body.theia-mod-work-hub-settings-resizing * {
   font-size: 16px;
   text-align: center;
 }
+
+/* ── Settings → Plan: inline plan picker (Starter / Pro, Airwallex checkout) ───────────────── */
+.qaap-plan-picker-intro {
+  margin: 4px 0 16px;
+}
+
+.qaap-plan-picker-title {
+  margin: 0 0 4px;
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--theia-foreground);
+}
+
+.qaap-plan-picker-subtitle {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--theia-descriptionForeground);
+}
+
+.qaap-plan-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.qaap-plan-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 12%, transparent);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--theia-foreground) 3%, transparent);
+  box-sizing: border-box;
+}
+
+.qaap-plan-card.theia-mod-featured {
+  border-color: color-mix(in srgb, var(--theia-button-background) 55%, transparent);
+  background: color-mix(in srgb, var(--theia-button-background) 7%, transparent);
+}
+
+.qaap-plan-card.theia-mod-current {
+  border-color: color-mix(in srgb, var(--theia-foreground) 35%, transparent);
+}
+
+.qaap-plan-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.qaap-plan-card-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--theia-foreground);
+}
+
+.qaap-plan-card-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+  color: var(--theia-foreground);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.qaap-plan-card.theia-mod-featured:not(.theia-mod-current) .qaap-plan-card-badge {
+  background: var(--theia-button-background);
+  color: var(--theia-button-foreground);
+}
+
+.qaap-plan-card-price {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.qaap-plan-card-amount {
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  color: var(--theia-foreground);
+}
+
+.qaap-plan-card-period {
+  font-size: 13px;
+  color: var(--theia-descriptionForeground);
+}
+
+.qaap-plan-card-features {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--theia-foreground);
+}
+
+.qaap-plan-card-features li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.qaap-plan-card-features .codicon {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  font-size: 14px;
+  color: var(--theia-descriptionForeground);
+}
+
+.qaap-plan-card.theia-mod-featured .qaap-plan-card-features .codicon {
+  color: var(--theia-button-background);
+}
+
+.qaap-plan-card-action {
+  margin-top: auto;
+  width: 100%;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 18%, transparent);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--theia-foreground);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.qaap-plan-card-action.theia-mod-primary {
+  border-color: transparent;
+  background: var(--theia-button-background);
+  color: var(--theia-button-foreground);
+}
+
+.qaap-plan-card-action:not(:disabled):hover {
+  background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+}
+
+.qaap-plan-card-action.theia-mod-primary:not(:disabled):hover {
+  background: var(--theia-button-hoverBackground, var(--theia-button-background));
+}
+
+.qaap-plan-card-action:disabled {
+  cursor: default;
+  color: var(--theia-descriptionForeground);
+  border-style: dashed;
+}
+
+.qaap-plan-card-action:focus-visible {
+  outline: 2px solid var(--theia-focusBorder);
+  outline-offset: 2px;
+}
+
+.qaap-plan-picker-error {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--theia-errorForeground);
+}
+
+.qaap-plan-picker-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-top: 16px;
+}
+
+.qaap-plan-picker-secure {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--theia-descriptionForeground);
+}
+
+.qaap-plan-picker-manage {
+  padding: 6px 0;
+  border: none;
+  background: transparent;
+  color: var(--theia-textLink-foreground);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.qaap-plan-picker-manage:hover {
+  text-decoration: underline;
+}
