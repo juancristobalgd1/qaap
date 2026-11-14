@@ -1773,6 +1773,12 @@
             }
         } catch (e) { /* ignore */ }
         forgetWorkHubShellSnapshot();
+        try {
+            var logoutParams = new URLSearchParams(window.location.search);
+            logoutParams.delete('qaapLogout');
+            logoutParams.set('signin', '1');
+            window.history.replaceState(null, '', window.location.pathname + '?' + logoutParams.toString() + window.location.hash);
+        } catch (e) { /* ignore */ }
     }
 
     function fetchWithTimeout(url, options, timeoutMs) {
