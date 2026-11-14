@@ -11,7 +11,7 @@ import { createComposerProjectFileSearch } from './qaap-composer-project-file-se
 
 describe('createComposerProjectFileSearch', () => {
 
-    function createFileSearch(options: { roots: string[] }): {
+    function createFileSearch(options: { roots: string[]; found?: string[] }): {
         search: ReturnType<typeof createComposerProjectFileSearch>;
         findCalls: { rootUris: string[] }[];
     } {
@@ -19,7 +19,7 @@ describe('createComposerProjectFileSearch', () => {
         const fileSearchService = {
             find: async (_pattern: string, searchOptions: { rootUris: string[] }) => {
                 findCalls.push({ rootUris: searchOptions.rootUris });
-                return ['file:///proj/src/a.ts'];
+                return options.found ?? ['file:///proj/src/a.ts'];
             },
         } as unknown as FileSearchService;
         const workspaceService = {
@@ -37,6 +37,14 @@ describe('createComposerProjectFileSearch', () => {
         expect(findCalls).to.have.length(1);
         expect(findCalls[0].rootUris).to.deep.equal(['file:///proj']);
         expect(matches).to.deep.equal([{ path: '/proj/src/a.ts', name: 'a.ts', folder: 'src', iconClass: undefined }]);
+    });
+
+    it('keeps the backend path whatever OS the frontend runs on, dropping only a drive letter\'s leading slash', async () => {
+        const { search } = createFileSearch({ roots: [], found: ['file:///c%3A/proj/src/a.ts'] });
+
+        const matches = await search('a', 'file:///c%3A/proj');
+
+        expect(matches.map(match => match.path)).to.deep.equal(['c:/proj/src/a.ts']);
     });
 
     it('ignores the fallback folder when workspace roots are present', async () => {
