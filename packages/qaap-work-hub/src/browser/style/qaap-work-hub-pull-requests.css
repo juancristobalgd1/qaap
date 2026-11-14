@@ -990,3 +990,518 @@
     flex-direction: column;
   }
 }
+
+/* ── Pull request detail (header · tabs · summary · timeline) ─────────────────────────────── */
+.qaap-pr {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 8px 18px 24px;
+  color: var(--theia-foreground);
+}
+
+.qaap-pr-header {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+}
+
+.qaap-pr-topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+}
+
+.qaap-pr-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--theia-descriptionForeground);
+  cursor: pointer;
+}
+
+.qaap-pr-icon-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+  color: var(--theia-foreground);
+}
+
+.qaap-pr-icon-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.qaap-pr-icon-button .codicon {
+  font-size: 18px;
+}
+
+.qaap-pr-primary-action,
+.qaap-pr-primary-action:hover:not(:disabled) {
+  /* The accent blue (some themes paint buttons black on a black background). */
+  background: var(--theia-focusBorder, var(--theia-textLink-foreground));
+  color: #ffffff;
+}
+
+.qaap-pr-primary-action.theia-mod-merged {
+  background: color-mix(in srgb, var(--theia-charts-purple, #a371f7) 80%, transparent);
+  opacity: 1;
+}
+
+.qaap-pr-crumb {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  color: var(--theia-descriptionForeground);
+  font-size: 16px;
+  text-decoration: none;
+}
+
+.qaap-pr-crumb-repo {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qaap-pr-crumb-repo::after {
+  content: ' /';
+  opacity: 0.6;
+}
+
+.qaap-pr-crumb-number {
+  flex: 0 0 auto;
+  color: var(--theia-textLink-foreground);
+  font-weight: 600;
+}
+
+.qaap-pr-crumb-external {
+  align-self: center;
+  font-size: 13px;
+  color: var(--theia-textLink-foreground);
+}
+
+.qaap-pr-spacer {
+  flex: 1 1 auto;
+}
+
+.qaap-pr-title {
+  display: -webkit-box;
+  margin: 2px 0 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  color: var(--theia-foreground);
+}
+
+.qaap-pr-byline,
+.qaap-pr-branches {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.qaap-pr-person {
+  display: inline-flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px;
+}
+
+.qaap-pr-person .qaap-pr-muted {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.qaap-pr-author {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.qaap-pr-muted {
+  color: var(--theia-descriptionForeground);
+  white-space: nowrap;
+}
+
+.qaap-pr-avatar {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  overflow: hidden;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--theia-foreground) 14%, transparent);
+  color: var(--theia-foreground);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.qaap-pr-avatar img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.qaap-pr-checkout {
+  flex: 0 0 auto;
+  min-width: 0;
+  overflow: hidden;
+  padding: 4px 0 4px 6px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--theia-descriptionForeground);
+  font-family: var(--theia-code-font-family, ui-monospace, monospace);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.qaap-pr-checkout:hover {
+  background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+  color: var(--theia-foreground);
+}
+
+.qaap-pr-refs {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--theia-descriptionForeground);
+  font-family: var(--theia-code-font-family, ui-monospace, monospace);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qaap-pr-diffstat {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  color: var(--theia-descriptionForeground);
+  font-size: 14px;
+}
+
+.qaap-pr-adds {
+  color: var(--theia-gitDecoration-addedResourceForeground, #3fb950);
+  font-weight: 600;
+}
+
+.qaap-pr-dels {
+  color: var(--theia-gitDecoration-deletedResourceForeground, #f85149);
+  font-weight: 600;
+}
+
+.qaap-pr-tabbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 12px;
+  padding: 16px 0 6px;
+}
+
+.qaap-pr-tabs {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--theia-foreground) 7%, transparent);
+}
+
+.qaap-pr-tab {
+  min-height: 32px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--theia-descriptionForeground);
+  font: inherit;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.qaap-pr-tab.theia-mod-active {
+  background: var(--theia-editor-background);
+  color: var(--theia-foreground);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+}
+
+.qaap-pr-checks-rollup {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--theia-descriptionForeground);
+  font-size: 14px;
+}
+
+.qaap-pr-checks-rollup.theia-mod-pending .codicon,
+.qaap-pr-check-icon.theia-mod-pending {
+  color: var(--theia-charts-orange, #d29922);
+}
+
+.qaap-pr-checks-rollup.theia-mod-passing .codicon,
+.qaap-pr-check-icon.theia-mod-passing {
+  color: var(--theia-gitDecoration-addedResourceForeground, #3fb950);
+}
+
+.qaap-pr-checks-rollup.theia-mod-failing .codicon,
+.qaap-pr-check-icon.theia-mod-failing {
+  color: var(--theia-errorForeground, #f85149);
+}
+
+.qaap-pr-check-icon.theia-mod-skipped {
+  color: var(--theia-descriptionForeground);
+}
+
+.qaap-pr-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.qaap-pr-rows {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 0 10px;
+}
+
+.qaap-pr-row {
+  display: grid;
+  grid-template-columns: 128px 1fr;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+}
+
+.qaap-pr-row-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--theia-descriptionForeground);
+  font-size: 15px;
+}
+
+.qaap-pr-row-label .codicon {
+  font-size: 16px;
+}
+
+.qaap-pr-row-value {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  min-width: 0;
+  font-size: 15px;
+}
+
+.qaap-pr-row-action {
+  width: 30px;
+  height: 30px;
+}
+
+.qaap-pr-person-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px 2px 2px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theia-foreground) 7%, transparent);
+  font-size: 13px;
+}
+
+.qaap-pr-person-chip.theia-mod-approved {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theia-gitDecoration-addedResourceForeground, #3fb950) 70%, transparent);
+}
+
+.qaap-pr-person-chip.theia-mod-changes_requested {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theia-errorForeground, #f85149) 70%, transparent);
+}
+
+.qaap-pr-label {
+  --qaap-pr-label-color: var(--theia-focusBorder, var(--theia-textLink-foreground));
+  padding: 3px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--qaap-pr-label-color) 18%, transparent);
+  color: color-mix(in srgb, var(--qaap-pr-label-color) 70%, var(--theia-foreground));
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.qaap-pr-section {
+  padding: 8px 0 4px;
+  border: none;
+}
+
+.qaap-pr-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.qaap-pr-section-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border: none;
+  background: transparent;
+  color: var(--theia-descriptionForeground);
+  font: inherit;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.qaap-pr-section-title {
+  font-weight: 500;
+}
+
+.qaap-pr-section .theia-mobile-work-hub-pull-request-description-text {
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.qaap-pr-section .theia-mobile-work-hub-pull-request-description,
+.qaap-pr-section .theia-mobile-work-hub-pull-request-description-text > :last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.qaap-pr-section .theia-mobile-work-hub-pull-request-description-text code {
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+  font-size: 0.82em;
+}
+
+.qaap-pr-checks {
+  display: flex;
+  flex-direction: column;
+}
+
+.qaap-pr-check {
+  display: grid;
+  grid-template-columns: 22px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 46px;
+  color: var(--theia-foreground);
+  font-size: 15px;
+  text-decoration: none;
+}
+
+a.qaap-pr-check:hover .qaap-pr-check-name {
+  text-decoration: underline;
+}
+
+.qaap-pr-check-icon {
+  font-size: 18px;
+}
+
+.qaap-pr-check-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.qaap-pr-check-state {
+  color: var(--theia-descriptionForeground);
+  font-size: 14px;
+}
+
+.qaap-pr-timeline {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.qaap-pr-timeline::before {
+  content: '';
+  position: absolute;
+  top: 12px;
+  bottom: 12px;
+  left: 11px;
+  width: 1px;
+  background: color-mix(in srgb, var(--theia-foreground) 12%, transparent);
+}
+
+.qaap-pr-timeline-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  gap: 12px;
+}
+
+.qaap-pr-timeline-marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--theia-editor-background);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theia-foreground) 14%, transparent);
+  color: var(--theia-descriptionForeground);
+  font-size: 13px;
+}
+
+.qaap-pr-timeline-item.theia-mod-merged .qaap-pr-timeline-marker {
+  color: var(--theia-charts-purple, #a371f7);
+}
+
+.qaap-pr-timeline-line {
+  padding-top: 3px;
+  font-size: 14px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.qaap-pr-timeline-bubble {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--theia-foreground) 5%, transparent);
+  font-size: 14px;
+}
+
+@media (max-width: 420px) {
+  .qaap-pr {
+    padding: 6px 14px 20px;
+  }
+
+  .qaap-pr-row {
+    grid-template-columns: 110px 1fr;
+  }
+
+  .qaap-pr-title {
+    font-size: 22px;
+  }
+}

@@ -9,6 +9,9 @@ import type { AddressInfo } from 'net';
 import type { QaapGithubRepositorySummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import type { QaapGithubOAuthConfig } from './qaap-github-oauth-config';
 import {
+    fetchGithubPullRequestChecks,
+    fetchGithubPullRequestReviews,
+    fetchGithubPullRequestTimeline,
     GithubApiError,
     exchangeGithubCode,
     fetchGithubPullRequests,
@@ -369,5 +372,54 @@ describe('searchGithubPullRequests', () => {
 
         handler = async () => new Response('{}', { status: 422 });
         expect((await searchGithubPullRequests('token', 'is:pr involves:octo', 40, 30)).pullRequests).to.deep.equal([]);
+    });
+});
+
+describe('pull request detail extras (checks, reviews, timeline)', () => {
+    const originalFetch = globalThis.fetch;
+    const json = (body: unknown): Response => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+    afterEach(() => {
+        globalThis.fetch = originalFetch;
+    });
+
+    it('merges check runs and commit statuses by name, keeping run states', async () => {
+        globalThis.fetch = (async (input: RequestInfo | URL) => String(input).includes('/check-runs')
+            ? json({ check_runs: [
+                { name: 'Build', status: 'completed', conclusion: 'success', html_url: 'https://ci/build' },
+                { name: 'Lint', status: 'in_progress', conclusion: null },
+            ] })
+            : json({ statuses: [{ context: 'Build', state: 'failure' }, { context: 'deploy/preview', state: 'pending' }] })) as typeof fetch;
+        const checks = await fetchGithubPullRequestChecks('token', 'o', 'r', 'abc');
+        expect(checks).to.deep.equal([
+            { name: 'Build', status: 'completed', conclusion: 'success', url: 'https://ci/build' },
+            { name: 'Lint', status: 'in_progress', conclusion: undefined, url: undefined },
+            { name: 'deploy/preview', status: 'in_progress', conclusion: undefined, url: undefined },
+        ]);
+    });
+
+    it('keeps the latest meaningful review per reviewer', async () => {
+        globalThis.fetch = (async () => json([
+            { user: { login: 'ana' }, state: 'APPROVED' },
+            { user: { login: 'ana' }, state: 'COMMENTED' },
+            { user: { login: 'bo' }, state: 'CHANGES_REQUESTED' },
+            { user: { login: 'cy' }, state: 'PENDING' },
+        ])) as typeof fetch;
+        const reviews = await fetchGithubPullRequestReviews('token', 'o', 'r', 1);
+        expect(reviews.map(review => `${review.login}:${review.state}`)).to.deep.equal(['ana:approved', 'bo:changes_requested']);
+    });
+
+    it('maps timeline events and drops unknown ones', async () => {
+        globalThis.fetch = (async () => json([
+            { event: 'committed', message: 'fix: thing\n\nbody', author: { name: 'Ana', date: '2026-11-13T10:00:00Z' } },
+            { event: 'commented', actor: { login: 'bo' }, body: 'LGTM', created_at: '2026-11-13T11:00:00Z' },
+            { event: 'reviewed', user: { login: 'cy' }, state: 'approved', submitted_at: '2026-11-13T12:00:00Z' },
+            { event: 'subscribed', actor: { login: 'zz' } },
+        ])) as typeof fetch;
+        const timeline = await fetchGithubPullRequestTimeline('token', 'o', 'r', 1);
+        expect(timeline.map(event => `${event.kind}:${event.actor}:${event.text ?? ''}:${event.reviewState ?? ''}`)).to.deep.equal([
+            'committed:Ana:fix: thing:',
+            'commented:bo:LGTM:',
+            'reviewed:cy::approved',
+        ]);
     });
 });
