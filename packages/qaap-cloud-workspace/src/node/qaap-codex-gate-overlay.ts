@@ -159,7 +159,10 @@ export class QaapCodexGateOverlayBuilder {
             if (drop) {
                 // The agent creates the task dir, codex-home and the files itself; root only checks the result.
                 if (!this.buildAsAgent(drop, { taskDir, codexHome, files })) {
-                    throw new Error(`Could not create the Codex overlay as the agent user (uid ${drop.uid}).`);
+                    // This is also the real reachability test: tenant access is granted by ACLs (runc) or a shared group
+                    // (gVisor), which mode bits do not show, so only acting as the agent proves the base is reachable.
+                    throw new Error(`Could not create the Codex overlay as the agent user (uid ${drop.uid}) in ${path.dirname(taskDir)}: `
+                        + 'the agent must be able to reach and write that directory (set QAAP_CODEX_GATE_DIR to one it can reach).');
                 }
                 this.verifyAgentTaskDir(taskDir, drop);
             } else {
@@ -438,7 +441,6 @@ export class QaapCodexGateOverlayBuilder {
         }
         if (drop) {
             this.assertParentNotAgentWritable(base, drop);
-            this.assertReachable(base);
         }
         return base;
     }
@@ -453,15 +455,6 @@ export class QaapCodexGateOverlayBuilder {
         const sticky = (stat.mode & 0o1000) !== 0;
         if (stat.uid === drop.uid || (!sticky && (stat.mode & 0o022) !== 0)) {
             throw new Error(`Refusing to use ${base} for Codex overlays: its parent ${parent} is writable by the agent user.`);
-        }
-    }
-
-    /** The agent uid must be able to traverse every ancestor of the base; fail with a clear message otherwise. */
-    protected assertReachable(base: string): void {
-        for (let dir = path.dirname(fs.realpathSync(base)); dir !== path.dirname(dir); dir = path.dirname(dir)) {
-            if ((fs.statSync(dir).mode & 0o001) === 0) {
-                throw new Error(`Codex cannot reach ${base}: ${dir} is not searchable by other users (set QAAP_CODEX_GATE_DIR).`);
-            }
         }
     }
 

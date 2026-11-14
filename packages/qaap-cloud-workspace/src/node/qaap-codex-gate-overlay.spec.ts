@@ -206,13 +206,6 @@ describe('QaapCodexGateOverlayBuilder', () => {
             protected override treeOwner(stat: fs.Stats): { uid: number; gid: number } {
                 return this.foreignOwner ?? super.treeOwner(stat);
             }
-            skipReachability = true;
-            protected override assertReachable(base: string): void {
-                // the test tmp dir is private to the developer
-                if (!this.skipReachability) {
-                    super.assertReachable(base);
-                }
-            }
         }
 
         it('builds the overlay as the agent: nothing is chowned and the agent creates the task dir and files', async () => {
@@ -251,7 +244,8 @@ describe('QaapCodexGateOverlayBuilder', () => {
             } catch (caught) {
                 error = caught as Error;
             }
-            expect(error?.message).to.contain(`Could not create the Codex overlay as the agent user (uid ${agentUid})`);
+            expect(error?.message).to.contain(`Could not create the Codex overlay as the agent user (uid ${agentUid})`)
+                .and.to.contain('must be able to reach and write').and.to.contain('QAAP_CODEX_GATE_DIR');
             expect(builder.ran).to.deep.equal([]);
             expect(fs.readdirSync(root)).to.deep.equal([]);
         });
@@ -288,9 +282,6 @@ describe('QaapCodexGateOverlayBuilder', () => {
                 }
                 protected override treeOwner(): { uid: number; gid: number } {
                     return { uid: agentUid, gid: 7 };
-                }
-                protected override assertReachable(): void {
-                    // the test tmp dir is private to the developer
                 }
             }
             let chownCalls: number;
@@ -401,21 +392,6 @@ describe('QaapCodexGateOverlayBuilder', () => {
             expect(error?.message).to.contain('not a real directory');
             expect(builder.handedOver).to.deep.equal([]);
             expect(fs.readdirSync(secretDir)).to.deep.equal([]);
-        });
-
-        it('fails with a clear error when an ancestor of the base is not searchable by the agent', async () => {
-            const closed = path.join(tmp, 'closed');
-            fs.mkdirSync(closed, { mode: 0o700 });
-            fs.chmodSync(closed, 0o710);
-            const strict = new RecordingBuilder();
-            strict.skipReachability = false;
-            let error: Error | undefined;
-            try {
-                await strict.create(options({ agentIdentity: { uid: agentUid }, overlayRoot: path.join(closed, 'overlays') }));
-            } catch (caught) {
-                error = caught as Error;
-            }
-            expect(error?.message).to.contain('not searchable by other users').and.to.contain('QAAP_CODEX_GATE_DIR');
         });
 
         it('builds under a task sandbox shared root: CODEX_HOME and the hook-trust key are that same canonical path', async () => {
