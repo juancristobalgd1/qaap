@@ -36,7 +36,9 @@ describe('createComposerProjectFileSearch', () => {
 
         expect(findCalls).to.have.length(1);
         expect(findCalls[0].rootUris).to.deep.equal(['file:///proj']);
-        expect(matches).to.deep.equal([{ path: '/proj/src/a.ts', name: 'a.ts', folder: 'src', iconClass: undefined }]);
+        // The `#file` argument is the native absolute path (`\\proj\\src\\a.ts` on Windows hosts).
+        const nativePath = new URI('file:///proj/src/a.ts').path.fsPath();
+        expect(matches).to.deep.equal([{ path: nativePath, name: 'a.ts', folder: 'src', iconClass: undefined }]);
     });
 
     it('ignores the fallback folder when workspace roots are present', async () => {
