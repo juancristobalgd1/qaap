@@ -1511,35 +1511,8 @@
         }
         var style = document.createElement('style');
         style.id = 'qaap-login-gate-styles';
-        style.textContent = [
-            'body.qaap-login-active{overflow:hidden;margin:0}',
-            'body.qaap-login-active .theia-preload{display:none!important}',
-            '#qaap-login-host{--qaap-ink:#1a1a1a;--qaap-surface:#fff;--qaap-muted:#6b6b6b;--qaap-border:#e2e2e2;--qaap-link:#0969da;',
-            'position:fixed;inset:0;z-index:2147483647;display:flex;flex-direction:column;font-family:system-ui,-apple-system,sans-serif}',
-            '@media (prefers-color-scheme:dark){#qaap-login-host{--qaap-ink:#f5f5f5;--qaap-surface:#1e1e1e;--qaap-muted:#a0a0a0;--qaap-border:#3c3c3c;--qaap-link:#58a6ff}}',
-            '.qaap-login-overlay{flex:1;display:flex;flex-direction:column;padding:32px 24px 24px;background:var(--qaap-surface);color:var(--qaap-ink);box-sizing:border-box}',
-            '.qaap-login-brand{display:flex;flex-direction:column;align-items:center;gap:14px;margin-top:24px}',
-            '.qaap-login-logo{width:64px;height:64px;object-fit:contain}',
-            '.qaap-login-title{margin:0;font-size:30px;font-weight:700;letter-spacing:-.8px}',
-            '.qaap-login-tagline{margin:0;max-width:280px;font-size:14px;line-height:1.45;text-align:center;color:var(--qaap-muted)}',
-            '.qaap-login-spacer{flex:1;min-height:24px}',
-            '.qaap-login-actions{display:flex;flex-direction:column;gap:10px;width:100%;max-width:360px;margin:0 auto}',
-            '.qaap-login-btn{width:100%;min-height:44px;height:48px;border-radius:10px;cursor:pointer;font:inherit;font-size:15px;font-weight:600;display:inline-flex;align-items:center;justify-content:center;gap:10px;touch-action:manipulation;-webkit-tap-highlight-color:transparent}',
-            '.qaap-login-btn[hidden]{display:none}',
-            '.qaap-login-btn--primary{border:none;background:var(--qaap-ink);color:var(--qaap-surface)}',
-            '.qaap-login-btn--secondary{height:44px;border:1px solid var(--qaap-border);background:transparent;color:var(--qaap-ink);font-size:14px;font-weight:500}',
-            '.qaap-login-btn:disabled{opacity:.85;cursor:not-allowed}',
-            '.qaap-login-btn[aria-busy="true"]{cursor:wait}',
-            '.qaap-login-btn:focus-visible{outline:2px solid var(--qaap-link);outline-offset:2px}',
-            '.qaap-login-btn-icon{display:inline-flex;width:18px;height:18px;align-items:center;justify-content:center}',
-            '.qaap-login-spinner{width:16px;height:16px;border-radius:50%;border:2px solid color-mix(in srgb,currentColor 35%,transparent);border-top-color:currentColor;animation:qaap-spin .8s linear infinite}',
-            '@keyframes qaap-spin{to{transform:rotate(360deg)}}',
-            '.qaap-login-status{min-height:1.45em;margin:10px 0 0;font-size:12px;line-height:1.45;text-align:center;color:var(--qaap-muted)}',
-            '.qaap-login-footer{margin-top:20px;font-size:11.5px;line-height:1.5;text-align:center;color:var(--qaap-muted)}',
-            '.qaap-login-footer a{color:var(--qaap-link);text-decoration:none}',
-            '.qaap-login-footer a:focus-visible{outline:2px solid var(--qaap-link);outline-offset:2px;border-radius:2px}',
-            '@media(prefers-reduced-motion:reduce){.qaap-login-btn{transition:none}.qaap-login-btn:active{transform:none}.qaap-login-spinner{animation:none}}'
-        ].join('');
+        // Same rules as qaap-cloud-workspace/src/browser/style/qaap-login.css (minified); keep in sync.
+        style.textContent = 'body.qaap-login-active{overflow:hidden;margin:0}body.qaap-login-active .theia-preload{display:none !important}#qaap-login-host{--qaap-login-ink:#141414;--qaap-login-surface:#fbfaf8;--qaap-login-muted:#6f6b66;--qaap-login-border:#e6e2dc;--qaap-login-link:#141414;--qaap-login-ok:#2f7d4f;--qaap-login-hero:#efece6;--qaap-login-hero-ink:#141414;--qaap-login-hero-muted:#7a756e;--qaap-login-device:#141414;--qaap-login-serif:ui-serif,\'New York\',\'Iowan Old Style\',\'Charter\',\'Source Serif Pro\',Georgia,serif;position:fixed;inset:0;z-index:2147483647;display:flex;font-family:\'Inter\',system-ui,-apple-system,\'Segoe UI\',sans-serif;-webkit-font-smoothing:antialiased}@media (prefers-color-scheme:dark){#qaap-login-host{--qaap-login-ink:#f1efea;--qaap-login-surface:#121211;--qaap-login-muted:#9b968f;--qaap-login-border:#2a2926;--qaap-login-link:#f1efea;--qaap-login-ok:#6cc28f;--qaap-login-hero:#1a1918;--qaap-login-hero-ink:#f1efea;--qaap-login-hero-muted:#8f8a83;--qaap-login-device:#000000}}.qaap-login-overlay{flex:1;display:grid;grid-template-columns:minmax(0,1.1fr) minmax(380px,1fr);min-height:100%;overflow:auto;background:var(--qaap-login-surface);color:var(--qaap-login-ink);box-sizing:border-box}.qaap-login-hero{position:relative;display:flex;flex-direction:column;gap:18px;padding:56px clamp(36px,5.5vw,84px) 0;overflow:hidden;background:var(--qaap-login-hero);color:var(--qaap-login-hero-ink);border-right:1px solid var(--qaap-login-border)}.qaap-login-kicker{display:flex;align-items:center;gap:10px;color:var(--qaap-login-hero-muted);font-size:12px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase}.qaap-login-kicker::before{content:\'\';width:18px;height:1px;background:currentColor}.qaap-login-headline{margin:0;font-family:var(--qaap-login-serif);font-size:clamp(44px,5.2vw,76px);font-weight:400;line-height:0.98;letter-spacing:-0.025em}.qaap-login-headline em{font-style:italic}.qaap-login-sub{margin:0;max-width:30em;color:var(--qaap-login-hero-muted);font-size:15px;line-height:1.55}.qaap-login-device{position:relative;flex:1;display:flex;justify-content:center;align-items:stretch;min-height:340px;margin-top:22px}.qaap-login-phone{width:300px;padding:10px 10px 0;border-radius:46px 46px 0 0;background:var(--qaap-login-device);box-shadow:0 40px 80px -40px rgba(20,20,20,0.45),0 0 0 1px rgba(255,255,255,0.04) inset;display:flex;flex-direction:column;transform:translateY(14px);opacity:0;animation:qaap-login-rise 0.7s cubic-bezier(0.2,0.7,0.2,1) 0.1s forwards}.qaap-login-screen{position:relative;flex:1;min-height:470px;border-radius:37px 37px 0 0;background:#000000;overflow:hidden}.qaap-login-shot{display:block;width:100%;height:auto;margin-top:34px}.qaap-login-statusbar{position:absolute;top:0;left:0;right:0;z-index:1;display:flex;justify-content:space-between;align-items:center;height:34px;padding:6px 22px 0;box-sizing:border-box;color:#ffffff;font-size:11px;font-weight:600}.qaap-login-statusbar i{width:72px;height:20px;border-radius:12px;background:#000000;box-shadow:0 0 0 1px rgba(255,255,255,0.06)}.qaap-login-statusbar b{display:inline-flex;gap:3px}.qaap-login-statusbar b::before,.qaap-login-statusbar b::after{content:\'\';width:16px;height:8px;border-radius:2px;border:1px solid currentColor;opacity:0.85}.qaap-login-panel{display:flex;flex-direction:column;justify-content:center;padding:48px clamp(28px,5vw,72px) 32px;box-sizing:border-box}.qaap-login-panel-inner{width:100%;max-width:360px;margin:0 auto}.qaap-login-brand{display:flex;flex-direction:column;align-items:flex-start;gap:12px}.qaap-login-mark{display:flex;align-items:center;gap:10px}.qaap-login-logo{width:36px;height:36px;object-fit:contain}.qaap-login-wordmark{font-size:19px;font-weight:700;letter-spacing:-0.02em}.qaap-login-title{margin:36px 0 0;font-family:var(--qaap-login-serif);font-size:34px;font-weight:400;line-height:1.1;letter-spacing:-0.02em}.qaap-login-tagline{margin:0;font-size:14.5px;line-height:1.55;color:var(--qaap-login-muted)}.qaap-login-actions{display:flex;flex-direction:column;gap:10px;width:100%;margin-top:28px}.qaap-login-btn{width:100%;min-height:44px;height:50px;border-radius:999px;cursor:pointer;font:inherit;font-size:15px;font-weight:600;display:inline-flex;align-items:center;justify-content:center;gap:10px;touch-action:manipulation;-webkit-tap-highlight-color:transparent;transition:transform 0.12s ease,box-shadow 0.18s ease,background-color 0.18s ease,opacity 0.18s ease}.qaap-login-btn[hidden]{display:none}.qaap-login-btn--primary{border:none;background:var(--qaap-login-ink);color:var(--qaap-login-surface)}.qaap-login-btn--primary:hover:not(:disabled){opacity:0.88}.qaap-login-btn--secondary{height:46px;border:1px solid var(--qaap-login-border);background:transparent;color:var(--qaap-login-ink);font-size:14px;font-weight:500}.qaap-login-btn--secondary:hover:not(:disabled){background:color-mix(in srgb,var(--qaap-login-ink) 5%,transparent)}.qaap-login-btn:active:not(:disabled){transform:scale(0.985)}.qaap-login-btn:disabled{opacity:0.7;cursor:not-allowed}.qaap-login-btn[aria-busy="true"]{cursor:wait}.qaap-login-btn:focus-visible{outline:2px solid var(--qaap-login-link);outline-offset:3px}.qaap-login-btn-icon,.qaap-login-btn-icon-slot{display:inline-flex;width:18px;height:18px;align-items:center;justify-content:center}.qaap-login-provider-svg,.qaap-login-btn-icon svg,.qaap-login-btn-icon-slot svg{width:18px;height:18px}.qaap-login-spinner{width:16px;height:16px;border-radius:50%;border:2px solid color-mix(in srgb,currentColor 35%,transparent);border-top-color:currentColor;animation:qaap-login-spin 0.8s linear infinite}.qaap-login-status{min-height:1.45em;margin:12px 0 0;font-size:12.5px;line-height:1.45;color:var(--qaap-login-muted)}.qaap-login-points{display:flex;flex-direction:column;gap:10px;margin:18px 0 0;padding:18px 0 0;border-top:1px solid var(--qaap-login-border);list-style:none;font-size:13.5px;color:var(--qaap-login-muted)}.qaap-login-points li{display:flex;align-items:flex-start;gap:10px;line-height:1.45}.qaap-login-points li::before{content:\'\';flex:none;width:16px;height:16px;margin-top:1px;border-radius:50%;background:color-mix(in srgb,var(--qaap-login-ok) 14%,transparent) url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 16 16\'%3E%3Cpath d=\'M4.5 8.2l2.3 2.3 4.7-5\' fill=\'none\' stroke=\'%231f9d55\' stroke-width=\'1.8\' stroke-linecap=\'round\' stroke-linejoin=\'round\'/%3E%3C/svg%3E") center / 14px no-repeat}.qaap-login-footer{margin-top:28px;font-size:12px;line-height:1.55;color:var(--qaap-login-muted)}.qaap-login-footer a{color:var(--qaap-login-ink);text-decoration:underline;text-decoration-color:color-mix(in srgb,var(--qaap-login-ink) 30%,transparent);text-underline-offset:2px}.qaap-login-footer a:hover{text-decoration-color:currentColor}.qaap-login-footer a:focus-visible{outline:2px solid var(--qaap-login-link);outline-offset:2px;border-radius:2px}@keyframes qaap-login-spin{to{transform:rotate(360deg)}}@keyframes qaap-login-rise{to{opacity:1;transform:none}}@media (max-width:899px){.qaap-login-overlay{display:flex;flex-direction:column}.qaap-login-hero{flex:1 1 auto;gap:12px;padding:calc(26px + env(safe-area-inset-top,0px)) 22px 0;border-right:none;border-bottom:1px solid var(--qaap-login-border)}.qaap-login-headline{font-size:44px}.qaap-login-sub{font-size:14px}.qaap-login-kicker{font-size:10.5px;letter-spacing:0.06em}.qaap-login-device{flex:1 1 0;min-height:150px;margin-top:10px}.qaap-login-phone{width:270px}.qaap-login-panel{flex:none;justify-content:flex-start;padding:24px 22px calc(20px + env(safe-area-inset-bottom,0px))}.qaap-login-panel-inner{display:flex;flex-direction:column;flex:1;max-width:420px}.qaap-login-mark{display:none}.qaap-login-title{margin-top:0;font-size:28px}.qaap-login-points{display:none}.qaap-login-actions{margin-top:22px}.qaap-login-status{text-align:center}.qaap-login-footer{margin-top:4px;text-align:center}}@media (max-width:899px) and (max-height:700px){.qaap-login-device{display:none}}@media(prefers-reduced-motion:reduce){.qaap-login-btn{transition:none}.qaap-login-btn:active:not(:disabled){transform:none}.qaap-login-spinner{animation:none}.qaap-login-phone{animation:none;opacity:1;transform:none}}';
         document.head.appendChild(style);
     }
 
@@ -1562,20 +1535,23 @@
         host.tabIndex = -1;
         host.innerHTML =
             '<div class="qaap-login-overlay">' +
+            '<section class="qaap-login-hero" aria-hidden="true"><span class="qaap-login-kicker">The pocket workspace for coding agents</span><p class="qaap-login-headline">Ship code<br/>from <em>anywhere.</em></p><p class="qaap-login-sub">Claude Code, Codex, Gemini and Copilot working on your repos — you review and merge from your phone.</p><div class="qaap-login-device"><div class="qaap-login-phone"><div class="qaap-login-screen"><div class="qaap-login-statusbar"><span>9:41</span><i></i><b></b></div><img class="qaap-login-shot" src="./login/qaap-app-mobile.webp" width="600" height="1298" alt="" decoding="async"/></div></div></div></section>' +
+            '<main class="qaap-login-panel"><div class="qaap-login-panel-inner">' +
             '<header class="qaap-login-brand">' +
-            '<img class="qaap-login-logo" src="' + logoUrl() + '" width="64" height="64" alt=""/>' +
-            '<h1 id="qaap-login-title" class="qaap-login-title">' + appName() + '</h1>' +
-            '<p id="qaap-login-description" class="qaap-login-tagline">A pocket workspace for coding agents.<br/>Sign in to connect your repos.</p>' +
+            '<div class="qaap-login-mark"><img class="qaap-login-logo" src="' + logoUrl() + '" width="36" height="36" alt=""/><span class="qaap-login-wordmark">' + appName() + '</span></div>' +
+            '<h1 id="qaap-login-title" class="qaap-login-title">Sign in to ' + appName() + '</h1>' +
+            '<p id="qaap-login-description" class="qaap-login-tagline">A pocket workspace for coding agents. Connect your GitHub repos to get started.</p>' +
             '</header>' +
-            '<div class="qaap-login-spacer"></div>' +
             '<div class="qaap-login-actions">' +
             '<button type="button" id="qaap-login-github" class="qaap-login-btn qaap-login-btn--primary">' +
-            '<span class="qaap-login-btn-icon">' + GITHUB_SVG + '</span><span class="qaap-login-btn-label">Sign in with GitHub</span></button>' +
+            '<span class="qaap-login-btn-icon">' + GITHUB_SVG + '</span><span class="qaap-login-btn-label">Continue with GitHub</span></button>' +
             '<button type="button" id="qaap-login-local" class="qaap-login-btn qaap-login-btn--secondary" hidden>Continue in local mode</button>' +
             '<button type="button" id="qaap-login-retry" class="qaap-login-btn qaap-login-btn--secondary" hidden>Retry connection</button>' +
             '</div>' +
             '<p id="qaap-login-status" class="qaap-login-status" role="status" aria-live="polite" aria-atomic="true"></p>' +
-            '<footer class="qaap-login-footer">By continuing you agree to the <a href="/legal/terms.html">terms</a> &amp; <a href="/legal/privacy.html">privacy</a>.</footer>' +
+            '<ul class="qaap-login-points"><li>Run Claude Code, Codex and more in a cloud workspace</li><li>Review diffs and open pull requests from your phone</li><li>Only the repos you choose — revoke access anytime</li></ul>' +
+            '<footer class="qaap-login-footer">By continuing you agree to the <a href="/legal/terms.html">Terms</a> and <a href="/legal/privacy.html">Privacy Policy</a>.</footer>' +
+            '</div></main>' +
             '</div>';
 
         document.body.appendChild(host);
@@ -1721,7 +1697,7 @@
             button.classList.remove('qaap-login-btn--unavailable');
             var defaultLabel = button.querySelector('.qaap-login-btn-label');
             if (defaultLabel) {
-                defaultLabel.textContent = 'Sign in with GitHub';
+                defaultLabel.textContent = 'Continue with GitHub';
             }
         }
         fetchWithTimeout('/qaap/api/auth/config', { credentials: 'include' }, AUTH_CONFIG_TIMEOUT_MS)
@@ -1823,7 +1799,7 @@
 
     /** Mirrors QaapOAuthErrorMessages (qaap-adapters/common/qaap-oauth-error-reason.ts); keys are the backend `qaap_oauth_reason` codes. */
     var OAUTH_ERROR_MESSAGES = {
-        access_denied: 'GitHub sign-in was cancelled. Choose "Sign in with GitHub" to try again.',
+        access_denied: 'GitHub sign-in was cancelled. Choose "Continue with GitHub" to try again.',
         state_lost: 'Your sign-in session expired before GitHub responded. Please try again.',
         missing_code: 'GitHub did not complete the sign-in. Please try again.',
         not_configured: 'GitHub sign-in isn’t configured on this server yet. Ask the administrator to set the GitHub OAuth credentials.',

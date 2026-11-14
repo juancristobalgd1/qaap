@@ -209,7 +209,7 @@ describe('Qaap login gate', () => {
             await run.waitFor(() => run.document.getElementById('qaap-login-github') !== null, 'mobile sign-in gate');
 
             expect(Date.now() - startedAt).to.be.lessThan(2000);
-            expect(run.document.getElementById('qaap-login-github')?.textContent).to.contain('Sign in with GitHub');
+            expect(run.document.getElementById('qaap-login-github')?.textContent).to.contain('Continue with GitHub');
             expect(run.document.querySelectorAll('script[src*="bundle.js"]')).to.have.length(0);
             expect(run.document.querySelectorAll('link[href*="bundle.css"]')).to.have.length(0);
             expect((run.window as unknown as { __qaapBundleLoading?: boolean }).__qaapBundleLoading).to.equal(undefined);
@@ -485,7 +485,7 @@ describe('Qaap login gate', () => {
                 await clock!.tickAsync(16000);
 
                 expect(button(run).disabled).to.equal(false);
-                expect(button(run).textContent).to.contain('Sign in with GitHub');
+                expect(button(run).textContent).to.contain('Continue with GitHub');
                 expect(status(run)).to.not.contain('The Qaap server is not responding.');
                 expect(retry.hidden).to.equal(true);
                 // The timed-out probe is retried once, on top of the two probes the boot already makes.
