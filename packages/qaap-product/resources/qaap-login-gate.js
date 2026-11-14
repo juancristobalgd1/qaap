@@ -2065,10 +2065,45 @@
         } catch (_) { /* ignore */ }
     }
 
+    /**
+     * Signed-out visitors of the public site get the marketing page (`/landing/index.html`, which
+     * puts `/` back in the address bar). "Sign in" there links to `/?signin=1`, which lands here and
+     * shows the sign-in screen. Installed apps, embeds, local development and deep links keep the
+     * sign-in screen.
+     */
+    function shouldShowLanding() {
+        try {
+            var params = new URLSearchParams(window.location.search);
+            if (params.has('signin')) {
+                params.delete('signin');
+                var rest = params.toString();
+                window.history.replaceState(null, '', window.location.pathname + (rest ? '?' + rest : '') + window.location.hash);
+                return false;
+            }
+            if (params.has('landing')) {
+                return true;
+            }
+            if (window.location.pathname !== '/' || params.toString()) {
+                return false;
+            }
+            if (/^(localhost|127\.|\[?::1\]?$|0\.0\.0\.0)/.test(window.location.hostname)) {
+                return false;
+            }
+            if ((window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone) {
+                return false;
+            }
+            return window.top === window;
+        } catch (e) {
+            return false;
+        }
+    }
+
     if (window.location.search.indexOf('qaap_oauth=github') !== -1
         || window.location.search.indexOf('qaap_oauth_error=1') !== -1) {
         speculativePreloadBundle();
         resumeAfterOAuthOrSession();
+    } else if (!isSignedIn() && shouldShowLanding()) {
+        window.location.replace('/landing/index.html');
     } else if (isSignedIn()) {
         // Signed-in phone: paint the cached Work Hub shell in the first frame, start the app
         // download in parallel with the session check, and arm the phase-aware placeholder.

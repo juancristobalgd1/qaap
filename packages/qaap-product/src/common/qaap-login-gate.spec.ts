@@ -433,6 +433,33 @@ describe('Qaap login gate', () => {
         });
     });
 
+    describe('public landing page', () => {
+
+        const signedOut: LoginGateResponder = pathname => pathname === SESSION ? { ok: true, body: { signedIn: false } } : undefined;
+
+        it('sends signed-out visitors of the public site to the landing page', async () => {
+            const run = start(signedOut, 'https://qaap.example/');
+            // location.replace is a jsdom "not implemented" navigation: that error is the redirect.
+            runs.splice(runs.indexOf(run), 1);
+            await new Promise(resolve => setTimeout(resolve, 20));
+            expect(run.pageErrors.some(error => /navigation/i.test(error))).to.equal(true);
+            expect(run.document.getElementById('qaap-login-host')).to.equal(null);
+        });
+
+        it('shows the sign-in screen for ?signin=1 and drops the parameter from the address bar', async () => {
+            const run = start(signedOut, 'https://qaap.example/?signin=1');
+            await run.waitFor(() => run.document.getElementById('qaap-login-github') !== null, 'GitHub sign-in button');
+            expect(run.window.location.search).to.equal('');
+            expect(run.pageErrors.some(error => /navigation/i.test(error))).to.equal(false);
+        });
+
+        it('keeps the sign-in screen in local development', async () => {
+            const run = start(signedOut, 'http://localhost:3000/');
+            await new Promise(resolve => setTimeout(resolve, 20));
+            expect(run.pageErrors.some(error => /navigation/i.test(error))).to.equal(false);
+        });
+    });
+
     describe('GitHub availability on the sign-in gate', () => {
         function button(run: LoginGateRun): HTMLButtonElement {
             return run.document.getElementById('qaap-login-github') as HTMLButtonElement;
@@ -461,7 +488,7 @@ describe('Qaap login gate', () => {
                     return { ok: true, body: { signedIn: false } };
                 }
                 return pathname === CONFIG ? new Promise<undefined>(() => undefined) : undefined;
-            }, 'https://qaap.example/', {
+            }, 'https://qaap.example/?signin=1', {
                 beforeRun: window => {
                     clock = withGlobal(window).install({ toFake: ['setTimeout', 'clearTimeout'] });
                     window.matchMedia = (query: string): MediaQueryList => ({
