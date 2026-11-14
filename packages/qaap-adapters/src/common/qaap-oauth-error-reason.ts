@@ -26,7 +26,7 @@ export class QaapOAuthErrorMessages {
     static describe(reason: string | undefined): string {
         switch (reason) {
             case 'access_denied':
-                return nls.localize('qaap/auth/oauth/accessDenied', 'GitHub sign-in was cancelled. Choose "Sign in with GitHub" to try again.');
+                return nls.localize('qaap/auth/oauth/accessDenied', 'GitHub sign-in was cancelled. Choose "Continue with GitHub" to try again.');
             case 'state_lost':
                 return nls.localize('qaap/auth/oauth/stateLost', 'Your sign-in session expired before GitHub responded. Please try again.');
             case 'missing_code':
