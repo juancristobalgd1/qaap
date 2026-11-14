@@ -437,9 +437,23 @@ export class QaapCodexGateOverlayBuilder {
             throw new Error(`Refusing to use ${base} for Codex overlays: its mode is ${(stat.mode & 0o777).toString(8)}.`);
         }
         if (drop) {
+            this.assertParentNotAgentWritable(base, drop);
             this.assertReachable(base);
         }
         return base;
+    }
+
+    /**
+     * With a drop the agent must not be able to rename or replace the base (it would then see and alter the task
+     * dirs root verified): its parent is not the agent's and is either sticky (like `/tmp`) or not group/other-writable.
+     */
+    protected assertParentNotAgentWritable(base: string, drop: { uid: number }): void {
+        const parent = path.dirname(fs.realpathSync(base));
+        const stat = fs.statSync(parent);
+        const sticky = (stat.mode & 0o1000) !== 0;
+        if (stat.uid === drop.uid || (!sticky && (stat.mode & 0o022) !== 0)) {
+            throw new Error(`Refusing to use ${base} for Codex overlays: its parent ${parent} is writable by the agent user.`);
+        }
     }
 
     /** The agent uid must be able to traverse every ancestor of the base; fail with a clear message otherwise. */
@@ -730,6 +744,27 @@ export class QaapCodexGateOverlayBuilder {
             send({ id: 2, method: 'hooks/list', params: { cwds: [cwd] } });
         });
     }
+}
+
+/** Directory of the Codex overlay base inside a task sandbox's shared root (see {@link resolveCodexGateOverlayRoot}). */
+export const QAAP_CODEX_GATE_SANDBOX_DIRNAME = '.qaap-codex-gate';
+
+/**
+ * Where the Codex overlay of a task lives. Outside a task sandbox: undefined, so the builder keeps its default
+ * (an unpredictable base in the OS temp dir, or `QAAP_CODEX_GATE_DIR`). Inside one, Codex does not see the
+ * backend's temp dir (the sandbox has its own `/tmp`), so the base goes under the sandbox's shared root, which
+ * the sandbox binds at the IDENTICAL path: the `CODEX_HOME` the backend builds and verifies is then the same
+ * path for Codex, and so is the hook-trust key (Codex keys it by the canonical `hooks.json` path). A sandbox
+ * without a shared root fails closed: Codex must never start with a `CODEX_HOME` that holds no gate hook.
+ */
+export function resolveCodexGateOverlayRoot(sandbox: { readonly name: string; readonly sharedRoot?: string } | undefined): string | undefined {
+    if (!sandbox) {
+        return undefined;
+    }
+    if (!sandbox.sharedRoot) {
+        throw new Error(`The task sandbox ${sandbox.name} shares no directory with the backend, so Codex cannot get its tool-gate overlay. Codex was not started without the gate.`);
+    }
+    return path.join(sandbox.sharedRoot, QAAP_CODEX_GATE_SANDBOX_DIRNAME);
 }
 
 /** True when Codex tool calls reach the gate through a PreToolUse hook (the overlay applies). */

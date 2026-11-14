@@ -50,6 +50,7 @@ function createSpawnHarness(
     logDir: string,
     hook?: { point: 'ensureAgentCwdOwnershipAsync' | 'acquireTaskSandbox'; run: () => void; fail?: boolean },
     agentId?: string,
+    sandbox?: { name: string; sharedRoot?: string },
 ): SpawnHarness {
     const tasks = new Map<string, QaapAgentTask>([[TASK_ID, runningTask(agentId)]]);
     const stdinPrompts = new Map<string, unknown>([[TASK_ID, 'prompt text']]);
@@ -85,6 +86,7 @@ function createSpawnHarness(
         ensureAgentCwdOwnershipAsync: (): Promise<void> => awaitStep('ensureAgentCwdOwnershipAsync'),
         acquireTaskSandbox: (): Promise<void> => awaitStep('acquireTaskSandbox'),
         releaseTaskSandbox,
+        agentSandboxFor: (): unknown => sandbox,
         recordTaskLatencyMark: (): void => { /* no-op */ },
         observability: undefined,
         resolveTaskAgentId: (task: QaapAgentTask): string | undefined => task.agentId,
@@ -242,5 +244,58 @@ describe('QaapAgentTaskRunner spawn after Stop', () => {
         expect(dispose.callCount).to.equal(1);
         expect(harness.finishTask.called).to.equal(false);
         expect(harness.tasks.get(TASK_ID)?.state).to.equal('cancelled');
+    });
+
+    describe('Codex gate overlay location', () => {
+        const stubCreate = (): sinon.SinonStub => sinon.stub(DEFAULT_QAAP_CODEX_GATE_OVERLAY_BUILDER, 'create').callsFake(async options => ({
+            codexHome: path.join(options.overlayRoot ?? path.join(logDir, 'tmp-base'), 'task-x', 'codex-home'),
+            dispose: (): void => undefined,
+        }));
+
+        it('builds the overlay under the sandbox shared root, so CODEX_HOME is the same path inside the sandbox', async () => {
+            const sharedRoot = path.join(logDir, 'shared');
+            const harness = createSpawnHarness(logDir, undefined, 'codex', { name: 'qaap-sbx-1', sharedRoot });
+            const create = stubCreate();
+
+            await spawnProcessExtracted(harness.ctx, runningTask('codex'));
+
+            expect(create.callCount).to.equal(1);
+            expect(create.firstCall.args[0].overlayRoot).to.equal(path.join(sharedRoot, '.qaap-codex-gate'));
+            const env = (harness.spawnAgentCommand.firstCall.args as unknown[])[1] as { env: NodeJS.ProcessEnv };
+            expect(env.env.CODEX_HOME).to.equal(path.join(sharedRoot, '.qaap-codex-gate', 'task-x', 'codex-home'));
+        });
+
+        it('keeps the default overlay location outside a sandbox', async () => {
+            const harness = createSpawnHarness(logDir, undefined, 'codex');
+            const create = stubCreate();
+
+            await spawnProcessExtracted(harness.ctx, runningTask('codex'));
+
+            expect(create.callCount).to.equal(1);
+            expect(create.firstCall.args[0].overlayRoot).to.equal(undefined);
+        });
+
+        it('fails closed, without building an overlay or spawning, in a sandbox that shares no directory', async () => {
+            const harness = createSpawnHarness(logDir, undefined, 'codex', { name: 'qaap-sbx-2' });
+            const create = stubCreate();
+
+            await spawnProcessExtracted(harness.ctx, runningTask('codex'));
+
+            expect(create.callCount).to.equal(0);
+            expect(harness.spawnAgentCommand.callCount).to.equal(0);
+            expect(harness.tasks.get(TASK_ID)?.state).to.equal('failed');
+        });
+
+        it('builds no overlay for other agents in a sandbox', async () => {
+            const harness = createSpawnHarness(logDir, undefined, 'claude', { name: 'qaap-sbx-3', sharedRoot: path.join(logDir, 'shared') });
+            const create = stubCreate();
+
+            await spawnProcessExtracted(harness.ctx, runningTask('claude'));
+
+            expect(create.callCount).to.equal(0);
+            expect(harness.spawnAgentCommand.callCount).to.equal(1);
+            const env = (harness.spawnAgentCommand.firstCall.args as unknown[])[1] as { env: NodeJS.ProcessEnv };
+            expect(env.env.CODEX_HOME).to.equal(undefined);
+        });
     });
 });
