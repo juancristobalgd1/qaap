@@ -8,7 +8,9 @@ import {
     startOpencodeArmWatch,
     usesOpencodeGatePlugin,
 } from './qaap-tool-gate-opencode-adapter';
-import { assertCodexGateTokenIssued, DEFAULT_QAAP_CODEX_GATE_OVERLAY_BUILDER, usesCodexToolGateHook, type QaapCodexGateOverlay } from './qaap-codex-gate-overlay';
+import {
+    assertCodexGateTokenIssued, DEFAULT_QAAP_CODEX_GATE_OVERLAY_BUILDER, resolveCodexGateOverlayRoot, usesCodexToolGateHook, type QaapCodexGateOverlay,
+} from './qaap-codex-gate-overlay';
 import { resolveCodexAgentHome } from './qaap-agent-native-models';
 import { IDLE_TASK_TIMEOUT_MS, QAAP_AGENT_VERIFY_ENABLED, QUEUED_APPROVAL_GRACE_TIMEOUT_MS, USER_REQUEST_MAX_CHARS } from './qaap-agent-task-runner-constants';
 import { QaapQaiqProviderKeyMissingError } from './qaap-qaiq-provider-preflight';
@@ -542,6 +544,8 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                     sourceCodexHome: resolveCodexAgentHome(childEnv),
                     askTtlSec: Number(childEnv.QAAP_GATE_ASK_TTL_SEC) || 0,
                     agentIdentity: ctx.resolveAgentSpawnIdentity(task.cwd),
+                    // In a task sandbox Codex has its own /tmp: the overlay must sit where it sees the same path.
+                    overlayRoot: resolveCodexGateOverlayRoot(ctx.agentSandboxFor?.(task.cwd)),
                 }, childEnv);
                 childEnv.CODEX_HOME = codexGateOverlay.codexHome;
             }

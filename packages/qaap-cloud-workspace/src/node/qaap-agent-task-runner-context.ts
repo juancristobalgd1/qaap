@@ -40,6 +40,7 @@ import type { QaapNativeModelRoutingTable } from '../common/qaap-agent-native-mo
 import type { QaapWorkflowRoutingPolicy } from '../common/qaap-workflow-routing';
 import type { QaapWorktreeChange } from '../common/qaap-verification-scope';
 import type { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
+import type { QaapTaskSandbox } from './qaap-task-sandbox';
 import type { QaapWebPushService } from './qaap-web-push-service';
 import type { QaapBillingStore } from './qaap-billing-store';
 import type { QaapTenantStorageQuotaService } from './qaap-tenant-storage-quota-service';
@@ -350,6 +351,8 @@ export interface QaapAgentTaskRunnerContext {
     acquireTaskSandbox?(task: QaapAgentTask): Promise<void>;
     /** Release a sandbox acquired for a task that was stopped before its agent could spawn. */
     releaseTaskSandbox?(taskId: string): void;
+    /** The live task sandbox an agent started at `cwd` runs in, if any (after {@link acquireTaskSandbox}). */
+    agentSandboxFor?(cwd: string): QaapTaskSandbox | undefined;
     buildChildEnv(task: QaapAgentTask): NodeJS.ProcessEnv;
     applyOpenAiVendorCompatEnv(env: NodeJS.ProcessEnv, binding: QaapQaiqModelBinding): void;
     applyQaiqProviderEnv(env: NodeJS.ProcessEnv, command: string, binding?: QaapQaiqModelBinding): void;

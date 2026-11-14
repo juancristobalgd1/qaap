@@ -37,7 +37,7 @@ import { QaapDevPreviewPortRegistry } from '@theia/qaap-shared-core/lib/node/qaa
 import { type QaapQaiqInteractionFlagOptions } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-interaction-flags';
 import type { QaapPreferenceReader } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
-import { QaapTaskSandboxService } from './qaap-task-sandbox';
+import { QaapTaskSandbox, QaapTaskSandboxService } from './qaap-task-sandbox';
 import {
     canExposeAgentCliBinToChild,
     prependAgentCliBinToPath,
@@ -1782,6 +1782,11 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public releaseTaskSandbox(taskId: string): void {
         this.taskSandbox?.release(taskId);
+    }
+
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public agentSandboxFor(cwd: string): QaapTaskSandbox | undefined {
+        return this.tenantSpawn.agentSandboxFor(cwd);
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */

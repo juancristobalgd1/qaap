@@ -7,7 +7,10 @@ import { expect } from 'chai';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { assertCodexGateTokenIssued, DEFAULT_QAAP_CODEX_GATE_OVERLAY_BUILDER, QaapCodexGateOverlayBuilder, usesCodexToolGateHook } from './qaap-codex-gate-overlay';
+import {
+    assertCodexGateTokenIssued, DEFAULT_QAAP_CODEX_GATE_OVERLAY_BUILDER, QAAP_CODEX_GATE_SANDBOX_DIRNAME, QaapCodexGateOverlayBuilder, resolveCodexGateOverlayRoot,
+    usesCodexToolGateHook,
+} from './qaap-codex-gate-overlay';
 
 describe('QaapCodexGateOverlayBuilder', () => {
 
@@ -415,6 +418,38 @@ describe('QaapCodexGateOverlayBuilder', () => {
             expect(error?.message).to.contain('not searchable by other users').and.to.contain('QAAP_CODEX_GATE_DIR');
         });
 
+        it('builds under a task sandbox shared root: CODEX_HOME and the hook-trust key are that same canonical path', async () => {
+            // The sandbox binds the shared root at its own path (root-owned 0755 parent, like /home/theia/.qaap).
+            const sharedRoot = path.join(tmp, 'shared');
+            fs.mkdirSync(sharedRoot, { mode: 0o755 });
+            fs.chmodSync(sharedRoot, 0o755);
+            const builder = new RecordingBuilder();
+            const overlayRoot = resolveCodexGateOverlayRoot({ name: 'qaap-sbx', sharedRoot });
+            const overlay = await builder.create(options({ agentIdentity: { uid: agentUid, gid: 7 }, overlayRoot }));
+            const base = path.join(fs.realpathSync(sharedRoot), QAAP_CODEX_GATE_SANDBOX_DIRNAME);
+            expect(path.dirname(path.dirname(overlay.codexHome))).to.equal(base);
+            expect(fs.readFileSync(path.join(overlay.codexHome, 'config.toml'), 'utf8'))
+                .to.contain(`[hooks.state.${JSON.stringify(`${path.join(overlay.codexHome, 'hooks.json')}:pre_tool_use:0:0`)}]`);
+            // Same guarantees as the temp-dir base: root-owned sticky 1733, not listable by the agent.
+            expect(fs.lstatSync(base).mode & 0o7777).to.equal(0o1733);
+            overlay.dispose();
+        });
+
+        it('refuses a base whose parent the agent could write (it could swap the base), but accepts a sticky one', async () => {
+            const open = path.join(tmp, 'open');
+            fs.mkdirSync(open);
+            fs.chmodSync(open, 0o777);
+            let error: Error | undefined;
+            try {
+                await new RecordingBuilder().create(options({ agentIdentity: { uid: agentUid }, overlayRoot: path.join(open, 'overlays') }));
+            } catch (caught) {
+                error = caught as Error;
+            }
+            expect(error?.message).to.contain('writable by the agent user');
+            fs.chmodSync(open, 0o1777);
+            (await new RecordingBuilder().create(options({ agentIdentity: { uid: agentUid }, overlayRoot: path.join(open, 'overlays') }))).dispose();
+        });
+
         describe('default base in the OS temp dir (read-only tenant rootfs)', () => {
             let savedTmp: string | undefined;
             let tmpRoot: string;
@@ -614,6 +649,20 @@ describe('QaapCodexGateOverlayBuilder', () => {
             expect(usesCodexToolGateHook(id), String(id)).to.equal(false);
         }
         expect(DEFAULT_QAAP_CODEX_GATE_OVERLAY_BUILDER).to.be.instanceOf(QaapCodexGateOverlayBuilder);
+    });
+});
+
+describe('resolveCodexGateOverlayRoot', () => {
+    it('keeps the builder default outside a task sandbox', () => {
+        expect(resolveCodexGateOverlayRoot(undefined)).to.equal(undefined);
+    });
+
+    it('puts the overlay under the sandbox shared root (bound at the identical path)', () => {
+        expect(resolveCodexGateOverlayRoot({ name: 'sbx', sharedRoot: '/home/theia/.qaap' })).to.equal(path.join('/home/theia/.qaap', '.qaap-codex-gate'));
+    });
+
+    it('fails closed for a sandbox that shares no directory with the backend', () => {
+        expect(() => resolveCodexGateOverlayRoot({ name: 'sbx' })).to.throw(/shares no directory/);
     });
 });
 
