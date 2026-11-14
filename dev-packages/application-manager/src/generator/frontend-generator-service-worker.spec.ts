@@ -184,7 +184,10 @@ function loadServiceWorker(): SwHarness {
         navigate: async (path: string, preload: string | undefined) => {
             let handled: Promise<{ body: string }> | undefined;
             listeners['fetch']({
-                request: { method: 'GET', url: 'https://app.test' + path, mode: 'navigate', cache: 'default', destination: 'document', headers: { has: () => false, get: () => 'text/html' } },
+                request: {
+                    method: 'GET', url: 'https://app.test' + path, mode: 'navigate', cache: 'default', destination: 'document',
+                    headers: { has: () => false, get: () => 'text/html' }
+                },
                 preloadResponse: Promise.resolve(preload === undefined ? undefined : makeResponse(preload)),
                 respondWith: (p: Promise<{ body: string }>) => { handled = p; }
             });
