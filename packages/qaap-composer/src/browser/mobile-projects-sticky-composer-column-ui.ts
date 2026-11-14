@@ -5,6 +5,8 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import { Disposable } from '@theia/core/lib/common/disposable';
+import { attachQaapScrollEdgeFades } from '@theia/qaap-mobile-shell/lib/browser/qaap-scroll-edge-fades';
+import { attachStickyComposerInputEdgeFades } from './mobile-projects-sticky-composer-input-edge-fades';
 import type { QaapComposerSurface } from '../common/qaap-composer-surface';
 import {
     attachStickyComposerMentionUi,
@@ -87,6 +89,8 @@ export class MobileProjectsStickyComposerColumnUi {
         canSubmit: boolean;
         /** True while a Stop for this conversation is unacknowledged: Send is disabled and reads "Stopping…". */
         isSubmitBlocked?: () => boolean;
+        /** Attachments still uploading: Send keeps the draft in the input and reports through `onSubmitBlocked`. */
+        hasPendingAttachments?: () => boolean;
         /** True when a Stop expired while the server still streams: the Stop control is offered again. */
         isStopRetryable?: () => boolean;
         isAgentWorking?: () => boolean;
@@ -180,9 +184,14 @@ export class MobileProjectsStickyComposerColumnUi {
         agentBtn.setAttribute('aria-label', agentBtn.title);
         // The pill paints the catalog name when known, else a readable form of the slug; it repaints when labels arrive.
         const paintAgentPill = (): void => {
-            const catalogLabel = agentModel
+            // The pill shows the model name only: `cohere/north-mini-code:free` → `north-mini-code:free`
+            // (Pi and router catalogs label models with their provider path, which eats the row).
+            const rawCatalogLabel = agentModel
                 ? this.host.stickyComposerAgentsUi.resolveModelLabel(agentModel.modelId)
                 : undefined;
+            const catalogLabel = rawCatalogLabel && /^[\w.@~-]+(\/[\w.@~:-]+)+$/.test(rawCatalogLabel.trim())
+                ? formatQaiqModelIdShortLabel(rawCatalogLabel)
+                : rawCatalogLabel;
             populateAgentToolbarButton(agentBtn, {
                 agentId,
                 label: agentLabel,
@@ -391,6 +400,9 @@ export class MobileProjectsStickyComposerColumnUi {
             })
             : undefined;
 
+        // Fades go on the editor wrapper so they also mask the highlight mirror; the textarea scrolls.
+        const composerEdgeFades = attachStickyComposerInputEdgeFades(input);
+
         if (options.getMentionOptions || options.getVariableOptions || options.getSkillOptions || options.getSlashMenuSections) {
             attachStickyComposerMentionUi({
                 inputWrap: inputPanel,
@@ -411,6 +423,7 @@ export class MobileProjectsStickyComposerColumnUi {
                 },
                 afterInputChange: options.afterInputChange,
                 mentionButtonTitle: nls.localize('qaap/mobileProjects/stickyComposerMention', 'Mention agent (@)'),
+                attachScrollFades: scroller => attachQaapScrollEdgeFades(scroller),
                 variableButtonTitle: nls.localize('qaap/mobileProjects/stickyComposerVariable', 'Insert variable (#)'),
             });
         }
@@ -422,7 +435,7 @@ export class MobileProjectsStickyComposerColumnUi {
         const dispatchSubmit = (handler: (draft: string) => void): void => {
             const draft = input.value.trim();
             const now = Date.now();
-            if (!draft || !options.canSubmit || (options.isSubmitBlocked?.() ?? false)) {
+            if (!draft || !options.canSubmit || (options.isSubmitBlocked?.() ?? false) || (options.hasPendingAttachments?.() ?? false)) {
                 if (!submitInFlight) {
                     options.onSubmitBlocked?.();
                 }
@@ -551,7 +564,7 @@ export class MobileProjectsStickyComposerColumnUi {
         cardBeamBloom.setAttribute('aria-hidden', 'true');
         card.append(cardBeamBloom);
         this.installCodexComposerExpandBehavior(card, stage, inputBody, input);
-        this.installTextareaAutoGrow(input, inputPanel, expandBtn, expandIcon, expandLabel);
+        this.installTextareaAutoGrow(input, inputPanel, expandBtn, expandIcon, expandLabel, () => composerEdgeFades.update());
         if (options.onDropFiles) {
             this.installComposerDropZone(card, inputPanel, input, options.onDropFiles);
             this.installComposerPasteHandler(inputPanel, input, options.onDropFiles);
@@ -623,6 +636,7 @@ export class MobileProjectsStickyComposerColumnUi {
         expandBtn: HTMLButtonElement,
         expandIcon: HTMLSpanElement,
         expandLabel: HTMLSpanElement,
+        onResize?: () => void,
     ): Disposable {
         const COLLAPSED_LINE_COUNT = 5;
         const MIN_HEIGHT = 24;
@@ -649,7 +663,31 @@ export class MobileProjectsStickyComposerColumnUi {
             expandLabel.textContent = expandText;
         };
 
+        // The composer is built before it is attached, and a detached textarea measures scrollHeight 0.
+        // A draft set at build time (quick actions, restored drafts) then stayed one line tall until the
+        // user typed, so the measurement is retried once the textarea is in the document.
+        let detachedResizeFrame = false;
+        const scheduleConnectedResize = (): void => {
+            if (detachedResizeFrame) {
+                return;
+            }
+            const view = input.ownerDocument.defaultView;
+            if (typeof view?.requestAnimationFrame !== 'function') {
+                return;
+            }
+            detachedResizeFrame = true;
+            view.requestAnimationFrame(() => {
+                detachedResizeFrame = false;
+                if (input.isConnected) {
+                    resize();
+                }
+            });
+        };
+
         const resize = (): void => {
+            if (!input.isConnected) {
+                scheduleConnectedResize();
+            }
             const collapsedMaxHeight = resolveLineHeight() * COLLAPSED_LINE_COUNT;
             const expandedMaxHeight = Math.min(
                 MAX_EXPANDED_HEIGHT,
@@ -664,6 +702,7 @@ export class MobileProjectsStickyComposerColumnUi {
             const next = Math.min(Math.max(contentHeight, MIN_HEIGHT), maxHeight);
             input.style.height = `${next}px`;
             input.style.overflowY = contentHeight > maxHeight ? 'auto' : 'hidden';
+            onResize?.();
             const hasOverflow = contentHeight > collapsedMaxHeight + 1;
             if (!hasOverflow && expanded) {
                 expanded = false;

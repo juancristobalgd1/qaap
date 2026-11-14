@@ -2,7 +2,7 @@ import type { MobileClosingNarrativeAction } from './mobile-projects-transcript-
 import type { MobileProjectsTranscriptMessagesArtifactsUiContext } from './mobile-projects-transcript-messages-artifacts-ui-context';
 import { resolveAgentMessageTiming } from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
 import { stripQaapControlMarkersForDisplay } from '@theia/qaap-shared-core/lib/common/qaap-agent-message-content';
-import { MOBILE_CLOSING_TEXT_ERROR_PREFIX } from './mobile-projects-transcript-messages-artifacts-ui-constants';
+import { MOBILE_CLOSING_TEXT_ERROR_PREFIX, MOBILE_START_FAILURE_TEXT_PREFIX } from './mobile-projects-transcript-messages-artifacts-ui-constants';
 // Extracted from mobile-projects-transcript-messages-artifacts-ui.ts
 
 import { type QaapAgentConversationDTO, type QaapAgentMessageDTO, type QaapAgentMessageSegmentDTO, cancelConversationRun, resolveRunUserMessageId } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
@@ -46,6 +46,9 @@ import {
 } from './mobile-projects-transcript-messages-artifacts-helpers';
 import { resolveTranscriptDiscardCheckpointId, resolveTranscriptTurnRetryAttempt } from '../common/qaap-transcript-turn-recovery';
 import { createMobileStoppedTurnLineElement } from './mobile-stopped-turn-line';
+import { createMobileTurnClosingReportElement } from './mobile-turn-closing-report';
+import { MOBILE_TURN_RESULT_CLASS } from './mobile-turn-result-footer';
+import { findQaapClosingReport } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model';
 
 export function removeTranscriptLiveStatusWithOrbExtracted(ctx: MobileProjectsTranscriptMessagesArtifactsUiContext, root: ParentNode): void {
         removeTranscriptLiveStatusElement(root, {
@@ -82,6 +85,7 @@ export function createTranscriptAgentSegmentsRowExtracted(ctx: MobileProjectsTra
             row,
             isTranscriptCaptureClosed(conv, captureMessage, !!options?.streaming),
             transcriptCaptureExpiresAt(captureMessage),
+            !!options?.streaming,
         );
         const defer = !!options?.deferHeavyContent;
         if (defer) {
@@ -180,10 +184,18 @@ export function createTranscriptAgentSegmentsRowExtracted(ctx: MobileProjectsTra
                         ? () => ctx.host.openPreferencesSheet?.('ai-features')
                         : undefined,
                     onOpenBilling: ctx.host.openBillingSheet ? () => ctx.host.openBillingSheet?.() : undefined,
+                    onChangeModel: ctx.host.openTranscriptModelPicker ? () => ctx.host.openTranscriptModelPicker?.() : undefined,
                     agentId,
                     agentMessage: failureMessage,
                 },
             ));
+        }
+        // The turn's closing report (blocked / warnings / done) as a quiet closing row. A failure
+        // already has its own dialog above.
+        // The turn-result footer already carries the verdict on a successful turn with changes: no second row.
+        const closingReport = !streaming && !error ? findQaapClosingReport(options?.message) : undefined;
+        if (closingReport && !body.querySelector(`.${MOBILE_TURN_RESULT_CLASS}-verdict`)) {
+            body.append(createMobileTurnClosingReportElement(closingReport));
         }
         row.append(body);
         // Child Markdown blocks may have rendered synchronously before the row was
@@ -303,7 +315,7 @@ export function renderMobileExecutionEventTimelineExtracted(ctx: MobileProjectsT
         // (idle/failed/cancelled) — never while streaming, working, or finalizing
         // (status still `streaming`/`settled` even when the turn looks complete).
         if (ctx.shouldShowMobileDiffSummary(conv, streaming)) {
-            ctx.appendMobileDiffSummary(body, segments);
+            ctx.appendMobileDiffSummary(body, segments, { conv, message: message ?? ctx.resolveLastAgentMessage(conv) });
         } else {
             // Drop any premature card from an earlier paint; keep the live footer
             // only for true streaming renders.
@@ -435,6 +447,10 @@ export function resolveMobileClosingNarrativeActionExtracted(ctx: MobileProjects
             // Same message the failure dialog renders — skip the duplicate
             // instead of showing it twice.
             return { kind: 'skip' };
+        }
+        if (MOBILE_START_FAILURE_TEXT_PREFIX.test(text)) {
+            // The agent never started, so this line is the failure itself: a styled error card, not a reply.
+            return { kind: 'error-card', message: normalizedText };
         }
         if (isError && MOBILE_CLOSING_TEXT_ERROR_PREFIX.test(text)) {
             // A distinct error-derived closing line with no corresponding

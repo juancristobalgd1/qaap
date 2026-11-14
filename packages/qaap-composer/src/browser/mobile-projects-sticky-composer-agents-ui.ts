@@ -543,7 +543,7 @@ export class MobileProjectsStickyComposerAgentsUi {
         options?: { force?: boolean },
     ): Promise<readonly QaapAgentTaskAgentOption[]> {
         if (options?.force || this.host.stickyComposerBackendAgents.length === 0) {
-            const loaded = await this.refreshStickyComposerAgents(project);
+            const loaded = await this.refreshStickyComposerAgents(project, { forceRefresh: !!options?.force });
             if (!loaded) {
                 throw new Error('Agent catalog unavailable');
             }
@@ -581,5 +581,5 @@ export class MobileProjectsStickyComposerAgentsUi {
 /** Stable identity of what an agent picker row shows, used to skip no-op background repaints. */
 /** What a picker shows of a catalog: a sign-in (or sign-out) changes it, so painted views must refresh. */
 export function composerAgentCatalogSignature(agents: readonly QaapAgentTaskAgentOption[]): string {
-    return JSON.stringify(agents.map(agent => [agent.id, agent.label, agent.available, agent.connectionState, agent.accessState]));
+    return JSON.stringify(agents.map(agent => [agent.id, agent.label, agent.available, agent.connectionState, agent.accessState, agent.cliBin]));
 }

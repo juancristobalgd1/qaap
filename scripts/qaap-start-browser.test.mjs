@@ -46,3 +46,58 @@ test('free-dev-port never inspects or kills processes inside a Qaap preview', { 
     assert.equal(result.status, 0);
     assert.equal(recorded(), '');
 });
+
+// A real sleeping child stands in for the listener on the port; fake `lsof`/`ps` describe it.
+const fakeListener = (t, { cwd, args }) => {
+    const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-free-port-'));
+    // Double fork through `sh`: the sleeper is reparented away from this test process, so once it
+    // is killed it is reaped instead of lingering as a zombie that `kill -0` still reports.
+    const launched = spawnSync('sh', ['-c', `"${process.execPath}" -e "setInterval(() => {}, 1000)" >/dev/null 2>&1 & echo $!`], { encoding: 'utf8' });
+    const pid = Number(launched.stdout.trim());
+    t.after(() => {
+        try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ }
+        fs.rmSync(bin, { recursive: true, force: true });
+    });
+    fs.writeFileSync(path.join(bin, 'lsof'), [
+        '#!/bin/sh',
+        'case "$*" in',
+        `  *"-d cwd"*) echo "p${pid}"; echo "n${cwd}" ;;`,
+        `  *) kill -0 ${pid} 2>/dev/null && echo ${pid} ;;`,
+        'esac',
+        '',
+    ].join('\n'), { mode: 0o755 });
+    fs.writeFileSync(path.join(bin, 'ps'), [
+        '#!/bin/sh',
+        'case "$*" in',
+        '  *"comm="*) echo node ;;',
+        `  *"args="*) echo ${JSON.stringify(args)} ;;`,
+        '  *) echo "PID PPID ARGS" ;;',
+        'esac',
+        '',
+    ].join('\n'), { mode: 0o755 });
+    const alive = () => { try { process.kill(pid, 0); return true; } catch { return false; } };
+    const run = () => spawnSync(process.execPath, [path.join(scripts, 'qaap-free-dev-port.js')], {
+        encoding: 'utf8',
+        env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}`, QAAP_PREVIEW_PORT: '', QAAP_DEV_PORT: '3999' },
+    });
+    return { run, alive };
+};
+
+test('free-dev-port never kills another project\'s Node server on the port', { skip: process.platform === 'win32' }, t => {
+    const { run, alive } = fakeListener(t, { cwd: '/Users/someone/other-app/api', args: 'node --import tsx src/server.ts' });
+    const result = run();
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /ocupado por/);
+    assert.equal(alive(), true);
+});
+
+test('free-dev-port frees a leftover Theia backend of this repo', { skip: process.platform === 'win32' }, async t => {
+    const repo = path.resolve(scripts, '..');
+    const { run, alive } = fakeListener(t, {
+        cwd: path.join(repo, 'examples', 'browser'),
+        args: 'node ../../dev-packages/cli/bin/theia.js start --port 3999',
+    });
+    const result = run();
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(alive(), false);
+});

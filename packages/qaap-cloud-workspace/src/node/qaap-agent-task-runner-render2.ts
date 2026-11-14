@@ -32,11 +32,11 @@ import {
     resolveQaapCodexTemplate,
 } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 import { OPENCLAUDE_AGENT_ID, resolveQaapAgentMentionToken } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { normalizeAntigravityCliBin, resolveAntigravityCliBin, resolveAntigravityCliTemplate } from '@theia/qaap-shared-core/lib/common/qaap-antigravity-cli';
 import { isOpenCodeFreeModelId } from '@theia/qaap-shared-core/lib/common/qaap-opencode-model-catalog';
 import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model-catalog';
-import { isHostedCodexUsage } from '../common/qaap-billing-plans';
-import { listNativeAgentModels } from './qaap-agent-native-models';
-import { isHostedCodexEntitled, resolveAgentAccess } from './qaap-agent-access';
+import { antigravityBinFor, listNativeAgentModels } from './qaap-agent-native-models';
+import { resolveAgentAccess } from './qaap-agent-access';
 import { listQaiqModelsFromPreferences } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
 import { resolveTrustedExecutable } from './qaap-trusted-executable';
 import { childProcessEnv } from './qaap-child-process-env';
@@ -207,7 +207,8 @@ export function detectAgentsExtracted(ctx: QaapAgentTaskRunnerContext): void {
         ctx.logDetectedAgents();
 }
 
-const QAIQ_VERSION_PROBE_TIMEOUT_MS = 15_000;
+/** Boot-time CLI probes are capped at 5 s; a probe that misses it logs one warn line and the boot goes on. */
+const QAIQ_VERSION_PROBE_TIMEOUT_MS = 5_000;
 
 export function logDetectedAgentsExtracted(
     ctx: QaapAgentTaskRunnerContext,
@@ -227,7 +228,10 @@ export function logDetectedAgentsExtracted(
         // `qaiq --version` boots a Node CLI (2-3.5 s on a tenant), and spawnSync held the whole
         // backend startup for it just to print this line.
         try {
-            execFile(qaiq, ['--version'], { encoding: 'utf8', timeout: QAIQ_VERSION_PROBE_TIMEOUT_MS, env: childProcessEnv() }, (_error, stdout, stderr) => {
+            execFile(qaiq, ['--version'], { encoding: 'utf8', timeout: QAIQ_VERSION_PROBE_TIMEOUT_MS, env: childProcessEnv() }, (error, stdout, stderr) => {
+                if (error) {
+                    console.warn(`[qaap-agent-tasks] qaiq --version probe failed: ${error.message}`);
+                }
                 const line = (stdout || stderr || '').trim().split('\n')[0];
                 if (line) {
                     console.log(`[qaap-agent-tasks] qaiq: ${line}`);
@@ -238,35 +242,24 @@ export function logDetectedAgentsExtracted(
         }
 }
 
+/**
+ * The Antigravity CLI this host runs: the shared preference order (gemini, agy, antigravity). Task
+ * template, TUI, Connect and the status probe all follow this one answer.
+ */
 export function resolveAntigravityBinExtracted(ctx: QaapAgentTaskRunnerContext): string | undefined {
-        if (ctx.isOnPath('agy')) {
-            return 'agy';
-        }
-        // Gemini CLI before the community `antigravity`/`ag` CLI: the latter drives a running
-        // Antigravity desktop app and can never sign in on a server, while Gemini CLI signs in
-        // with the same Google account ("Login with Google") from the Connect dialog.
-        if (ctx.isOnPath('gemini')) {
-            return 'gemini';
-        }
-        if (ctx.isOnPath('antigravity')) {
-            return 'antigravity';
-        }
-        return undefined;
+        return resolveAntigravityCliBin(bin => ctx.isOnPath(bin));
 }
 
 export function detectAntigravityAgentExtracted(ctx: QaapAgentTaskRunnerContext): void {
-        const bin = ctx.resolveAntigravityBin();
-        if (!bin) {
+        const resolvedBin = normalizeAntigravityCliBin(ctx.resolveAntigravityBin());
+        if (!resolvedBin) {
             return;
         }
-        const template = bin === 'gemini'
-            ? 'gemini --approval-mode=yolo -p {prompt}'
-            : `${bin} -p {prompt}`;
         ctx.detectedAgents.set('antigravity', {
             id: 'antigravity',
             label: 'Antigravity CLI',
-            bin,
-            template,
+            bin: resolvedBin,
+            template: resolveAntigravityCliTemplate(resolvedBin),
         });
 }
 
@@ -318,12 +311,19 @@ export function detectCodexAgentExtracted(ctx: QaapAgentTaskRunnerContext): void
             return;
         }
         const help = ctx.readCodexHelp();
+        // An empty help (the probe timed out or failed) must not assume a flag the CLI may lack: prod
+        // codex 0.144.5 has no `--approve-for-me`, so an unknown flag would break every Codex task. The
+        // template still defaults to the modern `codex exec` form (resolveQaapCodexTemplate).
+        const probeFailed = help.trim() === '';
+        if (probeFailed) {
+            console.warn('[qaap-agent-tasks] codex --help probe returned no output; assuming no --approve-for-me');
+        }
         ctx.detectedAgents.set('codex', {
             id: 'codex',
             label: 'Codex',
             bin: 'codex',
             template: resolveQaapCodexTemplate(help),
-            codexSupportsApproveForMe: /\B--approve-for-me\b/.test(help),
+            codexSupportsApproveForMe: !probeFailed && /\B--approve-for-me\b/.test(help),
         });
 }
 
@@ -695,7 +695,7 @@ function applyOpenCodePaidModelAccess(model: QaapQaiqModelOption, access: QaapAg
     if (isOpenCodeFreeModelId(model.modelId)) {
         return model;
     }
-    if (access === 'session' || access === 'hosted') {
+    if (access === 'session') {
         return { ...model, available: true };
     }
     if (access === 'unknown') {
@@ -718,31 +718,32 @@ export function listModelsForAgentExtracted(
         if (!normalized || agentUsesSettingsModelCatalog(normalized)) {
             return [];
         }
-        const models = listNativeAgentModels(normalized, ownerLogin);
+        // Antigravity lists the catalog of the CLI this host resolved (gemini ids or agy labels).
+        const antigravityBin = antigravityBinFor(ctx, normalized);
+        const models = listNativeAgentModels(normalized, ownerLogin, antigravityBin);
         const owner = ownerLogin?.trim();
         if (!owner) {
             return models;
         }
         // Same access answer as the picker row (resolveAgentAccess), so the row and its models agree.
         // Keep the native catalog visible when the owner cannot use it yet; the picker explains the lock
-        // instead of opening an empty submenu, and task startup still enforces the billing gate.
+        // instead of opening an empty submenu.
         const snapshot = ctx.agentConnectionSnapshot(normalized, owner);
         const access = resolveAgentAccess({
             agentId: normalized,
             connectionState: snapshot.connectionState,
             probeSettled: snapshot.probeSettled,
-            hostedEntitled: isHostedCodexEntitled(ctx.billingStore?.peekEntitlements?.(owner)),
         });
         return models.map(model => {
             if (normalized === 'opencode') {
                 return applyOpenCodePaidModelAccess(model, access);
             }
-            if (!isHostedCodexUsage(normalized, model.modelId)) {
+            if (normalized !== 'codex') {
                 return model;
             }
-            // A user's own Codex login or Qaap-hosted entitlement unlocks the model. Only a settled
-            // sign-out is locked, and it is an actionable sign-in rather than a plan restriction.
-            if (access === 'session' || access === 'hosted') {
+            // Codex runs on the owner's own sign-in. Only a settled sign-out is locked, and it is an
+            // actionable sign-in rather than a plan restriction.
+            if (access === 'session') {
                 return { ...model, available: true };
             }
             // While the probe is still pending there is no answer yet: show the model without a lock.

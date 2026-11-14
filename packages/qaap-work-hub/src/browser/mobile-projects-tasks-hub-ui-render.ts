@@ -77,6 +77,10 @@ export function createAgentsHubQuickActionsBlockExtracted(ctx: MobileProjectsTas
             'aria-label',
             nls.localize('qaap/agentsHub/quickActions', 'Quick actions'),
         );
+        // Chips scrolled off the leading edge get the same fade as the trailing ones.
+        container.addEventListener('scroll', () => {
+            container.classList.toggle('theia-mod-scrolled', container.scrollLeft > 2);
+        }, { passive: true });
         for (const action of QAAP_AGENTS_HUB_QUICK_ACTIONS) {
             const btn = document.createElement('button');
             btn.type = 'button';
@@ -177,30 +181,90 @@ function resetAgentsHubQuickActionPreviewStarting(btn: HTMLButtonElement): void 
         btn.querySelector('.qaap-border-beam-bloom')?.remove();
 }
 
+/** How long the "Prompt replaced" toast keeps its Undo action on screen. */
+const QUICK_ACTION_UNDO_DURATION_MS = 5000;
+
+/**
+ * Replaces the composer text with a quick-action prompt. When the composer textarea is mounted the text is written
+ * straight into it and an `input` event is dispatched, so the composer's own draft listener persists it exactly as
+ * typing does. Re-rendering instead would re-read the persisted project draft, which the previous chip already
+ * wrote, and keep the first prompt.
+ */
 export function applyComposerQuickActionPromptExtracted(ctx: MobileProjectsTasksHubUiContext, prompt: string): void {
         const trimmed = prompt.trim();
         if (!trimmed) {
             return;
         }
-        if (ctx.host.transcriptComposerHost?.isConnected) {
-            ctx.host.transcriptComposerDraft = trimmed;
-            ctx.host.transcriptStickyComposerUi.remountTranscriptStickyComposer();
-            ctx.host.transcriptMessagesUi.focusTranscriptComposerInput();
+        const previous = readComposerQuickActionText(ctx);
+        writeComposerQuickActionText(ctx, trimmed);
+        if (!isComposerTextReplaceable(previous)) {
+            MobileSnackbar.show(nls.localize('qaap/quickActions/promptReplaced', 'Prompt replaced'), {
+                duration: QUICK_ACTION_UNDO_DURATION_MS,
+                actionLabel: nls.localize('qaap/quickActions/undo', 'Undo'),
+                onAction: () => writeComposerQuickActionText(ctx, previous),
+            });
+        }
+}
+
+/** True when the composer text is empty or still an untouched quick-action prompt, so replacing it needs no undo. */
+function isComposerTextReplaceable(text: string): boolean {
+        const trimmed = text.trim();
+        return !trimmed || QAAP_AGENTS_HUB_QUICK_ACTIONS.some(action =>
+            nls.localize(action.promptKey, action.promptDefault) === trimmed);
+}
+
+function readComposerQuickActionText(ctx: MobileProjectsTasksHubUiContext): string {
+        const input = resolveComposerQuickActionInput(ctx);
+        if (input) {
+            return input.value;
+        }
+        return ctx.host.transcriptComposerHost?.isConnected
+            ? ctx.host.transcriptComposerDraft
+            : ctx.host.stickyComposerDraft;
+}
+
+function resolveComposerQuickActionInput(ctx: MobileProjectsTasksHubUiContext): HTMLTextAreaElement | undefined {
+        const host = ctx.host.transcriptComposerHost?.isConnected ? ctx.host.transcriptComposerHost : ctx.host.stickyComposerHost;
+        return host?.querySelector<HTMLTextAreaElement>('.theia-mobile-projects-sticky-composer-input') ?? undefined;
+}
+
+function writeComposerQuickActionText(ctx: MobileProjectsTasksHubUiContext, text: string): void {
+        const transcriptMounted = !!ctx.host.transcriptComposerHost?.isConnected;
+        if (transcriptMounted) {
+            ctx.host.transcriptComposerDraft = text;
+        } else {
+            ctx.host.stickyComposerDraft = text;
+        }
+        const mountedInput = resolveComposerQuickActionInput(ctx);
+        if (mountedInput) {
+            mountedInput.value = text;
+            syncQuickActionPromptInput(mountedInput);
             return;
         }
-        ctx.host.stickyComposerDraft = trimmed;
-        ctx.host.stickyComposerRenderUi.renderStickyComposer();
+        if (transcriptMounted) {
+            ctx.host.transcriptStickyComposerUi.remountTranscriptStickyComposer();
+        } else {
+            ctx.host.stickyComposerRenderUi.renderStickyComposer();
+        }
         window.requestAnimationFrame(() => {
-            const input = ctx.host.stickyComposerHost?.querySelector<HTMLTextAreaElement>(
-                '.theia-mobile-projects-sticky-composer-input',
-            );
-            if (!input) {
-                return;
+            const input = resolveComposerQuickActionInput(ctx);
+            if (input) {
+                syncQuickActionPromptInput(input);
             }
-            input.focus();
-            const end = input.value.length;
-            input.setSelectionRange(end, end);
         });
+}
+
+/**
+ * Focuses the composer with the caret at the end of an inserted quick-action prompt. The `input` event is
+ * the one typing fires, so the textarea autosizes and the draft syncs exactly as after user input; the
+ * scroll reset then shows the start of the prompt within the composer's max height.
+ */
+function syncQuickActionPromptInput(input: HTMLTextAreaElement): void {
+        input.focus();
+        const end = input.value.length;
+        input.setSelectionRange(end, end);
+        input.dispatchEvent(new window.Event('input', { bubbles: true }));
+        input.scrollTop = 0;
 }
 
 export function createAgentsHubRecentsBlockExtracted(ctx: MobileProjectsTasksHubUiContext, project: MobileProjectEntry): HTMLElement {

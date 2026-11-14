@@ -5,6 +5,7 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import { migrateQaapProductAgentId } from './qaap-agent-task-client';
+import { normalizeAntigravityCliBin } from './qaap-antigravity-cli';
 import { isAgentHiddenOnHostedRuntime } from './qaap-hosted-agent-auth-policy';
 
 /**
@@ -350,8 +351,12 @@ export function localizeAgentAuthFailureMessage(
 /**
  * Interactive login command for the transcript terminal (device-auth / OAuth),
  * matching what users run in the agent TUI.
+ *
+ * `cliBin` is the Antigravity CLI the host resolved (`harness-status` / agent descriptor `cliBin`). Only
+ * Gemini CLI has an in-app sign-in; `agy` has none, so it gets no command and the Connect flow shows the
+ * terminal instructions instead. A missing `cliBin` keeps the Gemini login.
  */
-export function resolveAgentLoginCliCommand(agentId: string | undefined): string | undefined {
+export function resolveAgentLoginCliCommand(agentId: string | undefined, cliBin?: string): string | undefined {
     const normalized = migrateQaapProductAgentId(agentId?.trim());
     if (!normalized) {
         return undefined;
@@ -404,7 +409,7 @@ export function resolveAgentLoginCliCommand(agentId: string | undefined): string
             // The harness runs on Gemini CLI, which has no login subcommand: its interactive start
             // signs in. With "Login with Google" preselected and NO_BROWSER it prints an
             // `accounts.google.com` link and `Enter the authorization code:` instead of a picker.
-            return resolveGeminiCliLoginCommand();
+            return (normalizeAntigravityCliBin(cliBin) ?? 'gemini') === 'gemini' ? resolveGeminiCliLoginCommand() : undefined;
         // QAIQ is the only harness that runs on Settings API keys.
         default:
             return undefined;
@@ -458,8 +463,8 @@ function resolveGeminiCliLoginCommand(): string {
  * Mirrors {@link resolveAgentLoginCliCommand}: an agent has a terminal sign-in
  * exactly when a dedicated login command exists for it.
  */
-export function agentHasCliOAuthLogin(agentId: string | undefined): boolean {
-    return resolveAgentLoginCliCommand(agentId) !== undefined;
+export function agentHasCliOAuthLogin(agentId: string | undefined, cliBin?: string): boolean {
+    return resolveAgentLoginCliCommand(agentId, cliBin) !== undefined;
 }
 
 /** Preferences sheet query that contains BYOK API-key fields (not AI Configuration / MCP). */

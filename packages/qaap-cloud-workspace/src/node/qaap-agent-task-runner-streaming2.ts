@@ -6,6 +6,8 @@ import type { QaapAgentCommandBuildResult, QaapAgentTaskRunnerContext } from './
 import { QaapAgentQueuePolicy } from './qaap-agent-queue-policy';
 import { sharedWorkingTreeBusyExtracted } from './qaap-agent-task-runner-render2';
 import { QaapAgentStorageUnavailableError } from './qaap-agent-storage-unavailable-error';
+import { QaapPlanLimit } from '@theia/qaap-adapters/lib/common/qaap-plan-limit';
+import { qaapMissingCwdError } from './qaap-missing-cwd-error';
 // Extracted from qaap-agent-task-runner.ts
 
 import { randomUUID } from 'crypto';
@@ -13,6 +15,7 @@ import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { nls } from '@theia/core/lib/common/nls';
+import type { ChildProcess } from 'child_process';
 import {
     isQaapAgentTaskFinished,
     type QaapCreateAgentTaskQaiqModel,
@@ -42,7 +45,7 @@ import {
 import type { QaapAgentApprovalPolicyId } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model-catalog';
 import { canEnforceReadOnlyWorkspace, withPiPlanModeInstruction } from '../common/qaap-agent-readonly-workspace';
-import { listNativeAgentModels } from './qaap-agent-native-models';
+import { antigravityBinFor, listNativeAgentModels } from './qaap-agent-native-models';
 import {
     applyAgentApprovalPolicyToCommand,
     shouldUseQaiqStdioApprovals,
@@ -99,7 +102,7 @@ export function resolveAgentModelForRequestExtracted(ctx: QaapAgentTaskRunnerCon
             readPref,
             agentId,
             {
-                listNativeModels: id => listNativeAgentModels(id, ownerLogin),
+                listNativeModels: id => listNativeAgentModels(id, ownerLogin, antigravityBinFor(ctx, id)),
                 nativeTable: ctx.nativeModelRoutingTable(),
             },
         );
@@ -142,7 +145,7 @@ export function createExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCr
         }
         const cwd = path.resolve(request.cwd ?? '');
         if (!path.isAbsolute(cwd) || !ctx.isDirectory(cwd)) {
-            throw new Error('A valid absolute "cwd" directory is required.');
+            throw qaapMissingCwdError(request.cwd);
         }
         // Last line of defence, shared by every caller (endpoints, routine runner, retries): a
         // container cwd would spawn the agent over EVERY repository the user owns at once — wrong
@@ -198,6 +201,10 @@ export function createExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCr
         );
         // A task without its own worktree edits the repository's shared working tree: while the same owner has
         // another such task running in this cwd it queues (visible as `queued`) instead of racing on the same files.
+        // A full workspace (over the plan's storage) runs no new turn until the owner frees space or upgrades.
+        if (ctx.tenantStorageQuota?.peekOverStorageLimit(ownerLogin)) {
+            throw new Error(QaapPlanLimit.tagged('storage_limit', QaapPlanLimit.describe('storage_limit')));
+        }
         const sharedWorkingTree = request.ownWorkingTree !== true;
         const sharedWorkingTreeQueued = sharedWorkingTree && sharedWorkingTreeBusyExtracted(ctx, ownerLogin, cwd);
         const atCapacity = ctx.isDrainingForDeploy?.() === true
@@ -478,7 +485,8 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
         }
         let promptTempDir: string | undefined;
         if (promptTransport.kind === 'prompt-file' && !useStdioApprovals) {
-            const written = writeAgentPromptFileHelper(agentPrompt);
+            const spawnIdentity = ctx.resolveAgentSpawnIdentity(resolvedCwd ?? process.cwd());
+            const written = writeAgentPromptFileHelper(agentPrompt, spawnIdentity.uid === undefined ? undefined : { uid: spawnIdentity.uid, gid: spawnIdentity.gid });
             promptTempDir = written.dir;
             command = `${command} ${promptTransport.flag} ${quoteShellArgHelper(written.file)}`;
         }
@@ -689,9 +697,9 @@ function buildBaseTemplateVars(ctx: QaapAgentTaskRunnerContext, agentId: string,
         // Last gate before argv: callers that hand a model straight in (prompt improve, reviewer)
         // skip the request resolution, and a foreign model here is `--model <id>` → model_not_found.
         if (agentModel?.provider && agentModel.modelId?.trim()
-            && agentModelFitsAgent(agentId, agentModel, () => listNativeAgentModels(agentId, ownerLogin))) {
+            && agentModelFitsAgent(agentId, agentModel, () => listNativeAgentModels(agentId, ownerLogin, antigravityBinFor(ctx, agentId)))) {
             const binding = ctx.normalizeAgentBinding(bindingFromQaiqModelSelection(agentModel), ownerLogin);
-            const flags = formatModelFlagsForAgent(agentId, binding);
+            const flags = formatModelFlagsForAgent(agentId, binding, antigravityBinFor(ctx, agentId));
             if (isQaiqAgent(agentId)) {
                 return { qaiq_flags: joinQaiqFlags(qaiqInteractionFlags, flags), model_flags: '', [QAAP_PROJECT_TRUST_FLAGS_TEMPLATE_VAR]: trustFlags };
             }
@@ -856,10 +864,8 @@ export function cancelExtracted(ctx: QaapAgentTaskRunnerContext, id: string, opt
                 // process group has had time to finish an in-flight workspace write safely.
                 ctx.killAgentProcessTree(child, {
                     escalateAfterMs: AGENT_STOP_GRACE_TIMEOUT_MS,
-                    onGracePeriodElapsed: () => {
-                        ctx.stoppingTaskIds.delete(id);
-                        ctx.drainQueuedTasks();
-                    },
+                    onGracePeriodElapsed: () => releaseStoppingTaskSlotExtracted(ctx, id, child),
+                    onSignalFailed: () => markTaskStopFailedExtracted(ctx, id),
                 });
             } else {
                 ctx.drainQueuedTasks();
@@ -867,9 +873,51 @@ export function cancelExtracted(ctx: QaapAgentTaskRunnerContext, id: string, opt
             return finished;
         }
         if (child) {
-            ctx.killAgentProcessTree(child, { escalateAfterMs: AGENT_STOP_GRACE_TIMEOUT_MS });
+            ctx.killAgentProcessTree(child, {
+                escalateAfterMs: AGENT_STOP_GRACE_TIMEOUT_MS,
+                onGracePeriodElapsed: () => releaseStoppingTaskSlotExtracted(ctx, id, child),
+                onSignalFailed: () => markTaskStopFailedExtracted(ctx, id),
+            });
         }
         return task;
+}
+
+/** Visible state of a task whose agent could not be signalled: it is not stopped, and it keeps its slot. */
+export const STOP_FAILED_MESSAGE_KEY = 'theia/qaap-cloud-workspace/agentTaskStopFailed';
+
+/**
+ * Releases the concurrency slot a cancelled task holds, once its process has really exited. A
+ * SIGKILL that was sent but whose `exit` has not fired yet keeps the slot; the `exit` handler
+ * releases it then (see {@link releaseStoppingTaskSlotOnExitExtracted}).
+ */
+export function releaseStoppingTaskSlotExtracted(ctx: Pick<QaapAgentTaskRunnerContext, 'stoppingTaskIds' | 'drainQueuedTasks'>, taskId: string, child: ChildProcess): void {
+        const exited = typeof child.exitCode === 'number' || typeof child.signalCode === 'string';
+        if (!exited) {
+            return;
+        }
+        releaseStoppingTaskSlotOnExitExtracted(ctx, taskId);
+}
+
+/** Called from the child's `exit` handler: frees the slot of a cancelled task whose process is gone. */
+export function releaseStoppingTaskSlotOnExitExtracted(ctx: Pick<QaapAgentTaskRunnerContext, 'stoppingTaskIds' | 'drainQueuedTasks'>, taskId: string): void {
+        if (ctx.stoppingTaskIds.delete(taskId)) {
+            ctx.drainQueuedTasks();
+        }
+}
+
+/**
+ * Stop could not signal the agent: the task leaves the `cancelled` state (it did not stop) and
+ * shows an error. The stopping entry stays, so the slot is held until the process exits.
+ */
+export function markTaskStopFailedExtracted(ctx: Pick<QaapAgentTaskRunnerContext, 'tasks' | 'persist'>, taskId: string): void {
+        const task = ctx.tasks.get(taskId);
+        if (!task) {
+            return;
+        }
+        const message = nls.localize(STOP_FAILED_MESSAGE_KEY, 'Could not stop the agent; it may still be running.');
+        console.error(`[qaap-stop] stop-failed task=${taskId} the agent may still be running`);
+        ctx.tasks.set(taskId, { ...task, state: 'failed', exitCode: undefined, stopFailure: message });
+        void ctx.persist();
 }
 
 /** Remove every persisted task rooted in a project after the user confirms project deletion. */

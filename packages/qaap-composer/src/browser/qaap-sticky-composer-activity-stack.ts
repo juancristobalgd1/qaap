@@ -109,6 +109,12 @@ export interface StickyComposerActivityStackOptions {
     changedFilesBulkBusy?: boolean;
     onReview?: () => void;
     onRunApp?: () => void;
+    /**
+     * The conversation asked to run or preview the app and its turn has settled. Run app (or Starting
+     * preview…) then shows even without file activity: an agent that wrote its launch plan through a
+     * shell command has no file-change evidence, and the request must never end in silence.
+     */
+    previewRequested?: boolean;
     /** True while Run app is waiting for the managed dev server to become reachable. */
     previewStarting?: boolean;
     /** While a preview starts, the chip stays clickable and stops it (the chip must never be a dead end). */
@@ -250,7 +256,8 @@ function stickyComposerHasActivityRow(options: StickyComposerActivityStackOption
         // A preview/run action belongs to the post-edit state. A stale preview URL must not
         // push the prompt suggestions out of a fresh, empty composer.
         || !!((options.hasFileActivity || options.previewInConversation) && !!options.onOpenPreview)
-        || !!(options.hasFileActivity && !!options.onRunApp);
+        || !!(options.hasFileActivity && !!options.onRunApp)
+        || !!(options.previewRequested && !!options.onRunApp);
 }
 
 export function buildStickyComposerChangesPillFingerprint(options: StickyComposerActivityStackOptions): string {
@@ -266,6 +273,7 @@ export function buildStickyComposerChangesPillFingerprint(options: StickyCompose
         stickyComposerHasChangesToReview(options) ? 1 : 0,
         options.hasFileActivity ? 1 : 0,
         options.previewInConversation ? 1 : 0,
+        options.previewRequested ? 1 : 0,
         options.hasCommittableChanges ? 1 : 0,
         options.agentWorking ? 1 : 0,
         options.commitBusy ? 1 : 0,
@@ -391,7 +399,35 @@ export function renderStickyComposerChangesPill(options: StickyComposerActivityS
     const host = document.createElement('div');
     host.className = 'theia-mobile-sticky-composer-changes-pill-host';
     host.append(renderStickyComposerChangedFilesSection(options));
+    publishPillStripHeight(host);
     return host;
+}
+
+/**
+ * The transcript keeps its tail clear of this strip by overlapping the composer by the strip's
+ * height. A fixed guess (26–30px) hid the last line behind taller rows such as View Preview, so
+ * the real height is published as `--qaap-composer-pill-strip-height` on the Work Hub root.
+ * The observer stops once the strip leaves the document.
+ */
+function publishPillStripHeight(host: HTMLElement): void {
+    if (typeof ResizeObserver === 'undefined') {
+        return;
+    }
+    const observer = new ResizeObserver(() => {
+        if (!host.isConnected) {
+            observer.disconnect();
+            return;
+        }
+        const root = host.closest<HTMLElement>('.theia-mobile-projects');
+        if (!root || host.hidden) {
+            return;
+        }
+        const height = Math.round(host.getBoundingClientRect().height);
+        if (height > 0) {
+            root.style.setProperty('--qaap-composer-pill-strip-height', `${height}px`);
+        }
+    });
+    observer.observe(host);
 }
 
 export function renderStickyComposerActivityStack(options: StickyComposerActivityStackOptions): HTMLElement | undefined {

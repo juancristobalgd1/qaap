@@ -162,11 +162,14 @@ export function getTranscriptTerminalContext(terminal: TerminalWidget): string {
 /**
  * Creates a connected DOM staging parent so {@link LuminoWidget.attach} does not throw
  * ("Host is not attached") while the surface waits in the workspace cache.
+ *
+ * The parent is laid out but kept off screen (see `.theia-mobile-transcript-terminal-staging`),
+ * not `hidden`: xterm only measures cells and fits the grid for an element with a real size, so a
+ * `display: none` parent would leave a parked terminal at a bogus size.
  */
 export function createTranscriptTerminalStagingHost(): HTMLElement {
     const staging = document.createElement('div');
     staging.className = 'theia-mobile-transcript-terminal-staging';
-    staging.hidden = true;
     staging.setAttribute('aria-hidden', 'true');
     document.body.append(staging);
     return staging;

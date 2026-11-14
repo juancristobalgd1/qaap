@@ -43,13 +43,13 @@
   visibility: hidden !important;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   padding: 0;
   margin: 0;
   border-radius: 50%;
-  border: 1px solid color-mix(in srgb, var(--theia-foreground) 16%, transparent);
-  background: color-mix(in srgb, var(--theia-editor-background) 58%, transparent);
+  border: 1px solid var(--theia-widget-border, var(--theia-panel-border, transparent));
+  background: color-mix(in srgb, var(--theia-editorWidget-background, var(--theia-editor-background)) 92%, transparent);
   color: var(--theia-foreground);
   box-shadow:
     0 4px 16px rgba(0, 0, 0, 0.22),
@@ -89,7 +89,7 @@
   .theia-mobile-agent-transcript-scroll-to-bottom {
     -webkit-backdrop-filter: blur(14px) saturate(150%);
     backdrop-filter: blur(14px) saturate(150%);
-    background: color-mix(in srgb, var(--theia-editor-background) 48%, transparent);
+    background: color-mix(in srgb, var(--theia-editorWidget-background, var(--theia-editor-background)) 92%, transparent);
   }
 
 }
@@ -127,8 +127,8 @@
   padding: 0;
   margin: 0;
   border-radius: 50%;
-  border: 1px solid color-mix(in srgb, var(--theia-foreground) 16%, transparent);
-  background: color-mix(in srgb, var(--theia-editor-background) 58%, transparent);
+  border: 1px solid var(--theia-widget-border, var(--theia-panel-border, transparent));
+  background: color-mix(in srgb, var(--theia-editorWidget-background, var(--theia-editor-background)) 92%, transparent);
   color: var(--theia-foreground);
   box-shadow:
     0 4px 16px rgba(0, 0, 0, 0.22),
@@ -183,11 +183,11 @@
   left: 50%;
   right: auto;
   transform: translateX(-50%);
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
-  border: 1px solid color-mix(in srgb, var(--theia-foreground) 16%, transparent);
-  background: color-mix(in srgb, var(--theia-editor-background) 58%, transparent);
+  border: 1px solid var(--theia-widget-border, var(--theia-panel-border, transparent));
+  background: color-mix(in srgb, var(--theia-editorWidget-background, var(--theia-editor-background)) 92%, transparent);
   color: var(--theia-foreground);
   box-shadow:
     0 4px 16px rgba(0, 0, 0, 0.22),

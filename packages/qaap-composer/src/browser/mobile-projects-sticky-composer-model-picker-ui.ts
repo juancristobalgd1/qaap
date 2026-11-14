@@ -11,7 +11,6 @@ import {
     type QaapQaiqModelOption,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { readStoredAgentModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
-import { formatQaiqModelIdShortLabel } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
 import { QaapAgentEffort, type QaapAgentEffortLevel } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
 import {
     writeStoredAgentApprovalPolicy,
@@ -19,6 +18,7 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import { QaapComposerModelPickerModel, type QaapPickerModel, type QaapPickerState } from '../common/qaap-composer-model-picker-model';
 import { adoptPendingComposerEffort, resolveComposerEffortLevel, writeComposerEffortLevel } from '../common/qaap-composer-effort';
+import { detachSheetListEdgeFades } from './mobile-projects-sticky-composer-sheet-edge-fades';
 import type { MobileProjectsStickyComposerSheetsUiContext } from './mobile-projects-sticky-composer-sheets-ui-context';
 import type { ComposerAgentPickerChrome } from './mobile-projects-sticky-composer-sheets-ui';
 import { disposeQaapComposerModelPicker, renderQaapComposerModelPicker } from './qaap-composer-model-picker';
@@ -72,8 +72,9 @@ function toPickerModel(agentId: string, model: QaapQaiqModelOption): QaapPickerM
     return {
         agentId,
         modelId: model.modelId,
-        // Only the model name: a label that still carries a provider path falls back to the id's name.
-        label: model.label && !model.label.includes('/') ? model.label : formatQaiqModelIdShortLabel(model.modelId),
+        // The picker lists the provider too (`anthropic/claude-haiku-4.5`) so same-named models from
+        // different providers stay distinguishable; only the composer pill drops the provider path.
+        label: (model.label?.trim() || model.modelId).replace(/(^|\/)~+/g, '$1'),
         available: !unavailable,
         unavailableReason: unavailable ? unavailableText(model.unavailableReason) : undefined,
     };
@@ -111,6 +112,8 @@ export async function renderStickyComposerModelPicker(
     const host = document.createElement('div');
     host.className = 'qaap-composer-model-picker-host';
     chrome.list.replaceChildren(host);
+    // The picker scrolls its own rows and fades them; the list around it must not mask the footer.
+    detachSheetListEdgeFades(chrome.list);
 
     const agents = listQaapComposerPickerAgents(options.agents, options.disabledHarnessIds ?? []);
     const harnesses = agents.map(agent => ({ id: agent.id, label: agent.label }));

@@ -119,6 +119,70 @@ describe('QaapOpencodeGateProbe', () => {
         expect(fs.existsSync(second.base)).to.equal(false);
     });
 
+    describe('with a uid drop (the agent creates the sandbox directory, no chown)', () => {
+        const agentUid = (process.getuid?.() ?? 0) + 4242;
+        let chownCalls: number;
+        const realFchown = fs.fchownSync;
+
+        class AgentSandboxProbe extends SandboxProbe {
+            created: string[] = [];
+            /** Same mkdir the agent child runs, in this process: the test cannot change uid. */
+            protected override createAgentDirectory(agentDir: string): boolean {
+                this.created.push(agentDir);
+                fs.mkdirSync(agentDir, { mode: 0o700 });
+                return true;
+            }
+            protected override directoryOwnerUid(): number {
+                return agentUid;
+            }
+            withDrop(): { base: string; agentDir: string } {
+                return this.createSandbox({ uid: agentUid, gid: 7 });
+            }
+        }
+
+        beforeEach(() => {
+            chownCalls = 0;
+            // EPERM exactly as a root backend without CAP_CHOWN sees it: any chown would fail the probe.
+            (fs as any).fchownSync = (): void => {
+                chownCalls++;
+                throw Object.assign(new Error('EPERM: operation not permitted, fchown'), { code: 'EPERM' });
+            };
+        });
+
+        afterEach(() => {
+            (fs as any).fchownSync = realFchown;
+        });
+
+        it('creates a sticky 1733 base and the agent directory without calling chown', function (): void {
+            if (process.platform === 'win32') {
+                this.skip();
+            }
+            const probe = new AgentSandboxProbe();
+            const sandbox = probe.withDrop();
+            try {
+                expect(fs.statSync(sandbox.base).mode & 0o7777).to.equal(0o1733);
+                expect(probe.created).to.deep.equal([sandbox.agentDir]);
+                expect(fs.statSync(sandbox.agentDir).isDirectory()).to.equal(true);
+                expect(chownCalls).to.equal(0);
+            } finally {
+                fs.rmSync(sandbox.base, { recursive: true, force: true });
+            }
+        });
+
+        it('fails with a clear error when the agent user cannot create the directory', function (): void {
+            if (process.platform === 'win32') {
+                this.skip();
+            }
+            class Failing extends AgentSandboxProbe {
+                protected override createAgentDirectory(): boolean {
+                    return false;
+                }
+            }
+            expect(() => new Failing().withDrop()).to.throw('Could not create the gate probe directory as the agent user');
+            expect(chownCalls).to.equal(0);
+        });
+    });
+
     it('the plugin file the probe loads exists', () => {
         expect(fs.existsSync(plugin)).to.equal(true);
     });

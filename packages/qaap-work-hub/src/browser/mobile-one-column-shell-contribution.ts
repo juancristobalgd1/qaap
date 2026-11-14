@@ -14,6 +14,8 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import URI from '@theia/core/lib/common/uri';
+import { setQaapFileThemeIconResolver } from '@theia/qaap-shared-core/lib/browser/qaap-file-theme-icon';
 import { inject, injectable, optional, postConstruct } from '@theia/core/shared/inversify';
 import { SplitPanel, Widget as LuminoWidget } from '@lumino/widgets';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
@@ -34,6 +36,7 @@ import { ChatAgentService } from '@theia/ai-chat/lib/common/chat-agent-service';
 import { QuickInputService } from '@theia/core';
 import { PreferenceService } from '@theia/core/lib/common/preferences';
 import { FileUploadService } from '@theia/filesystem/lib/common/upload/file-upload';
+import { FileSearchService } from '@theia/file-search/lib/common/file-search-service';
 import {
     matchesMobileOneColumnLayout,
     MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY,
@@ -206,6 +209,10 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     @inject(FileUploadService)
     /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
     public readonly fileUploadService: FileUploadService;
+
+    @inject(FileSearchService)
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly fileSearchService: FileSearchService;
 
     @inject(MobileProjectsReadmeContribution)
     /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
@@ -527,6 +534,8 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     }
 
     onStart(_app: FrontendApplication): void {
+        // Transcript and diff rows paint the file-icon theme's per-type icons (explorer parity).
+        setQaapFileThemeIconResolver(path => this.labelProvider.getIcon(new URI(`file:///${path.replace(/^\/+/, '')}`)) || undefined);
         this.toDispose.push(this.editorManager.onCreated(() => {
             // The classic IDE may asynchronously restore the Welcome widget while the first
             // editor is opening. Do not let that background activation steal focus from the

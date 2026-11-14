@@ -3,10 +3,12 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { execFile } from 'child_process';
+import { type ChildProcess, execFile, spawn as spawnChild } from 'child_process';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import type { QaapQaiqModelOption } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { normalizeAntigravityCliBin, type QaapAntigravityCliBin } from '@theia/qaap-shared-core/lib/common/qaap-antigravity-cli';
 import { NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 import { resolveAgentSpawnIdentity } from './qaap-agent-spawn-identity';
 import { QaapTenantAgentStorageEnv } from './qaap-tenant-agent-storage-env';
@@ -14,36 +16,31 @@ import { resolveTrustedSystemExecutable } from './qaap-trusted-executable';
 import {
     agentUsesNativeModelCatalog,
     listStaticNativeAgentModels,
-    parseNativeModelLines,
 } from '../common/qaap-agent-native-model-catalog';
+import {
+    parseClaudeBundleModelIds,
+    parseClaudeControlResponseModels,
+    parseCodexDebugModels,
+    parseNativeModelOutput,
+} from '../common/qaap-agent-native-model-parsers';
 import { childProcessEnv } from './qaap-child-process-env';
 
-const cache = new Map<string, QaapQaiqModelOption[]>();
-/** How long a successful CLI discovery is reused before the next request runs the CLI again. */
-export const NATIVE_MODEL_CACHE_TTL_MS = 10 * 60_000;
-/** When each successful CLI discovery was cached, so {@link NATIVE_MODEL_CACHE_TTL_MS} can expire it. */
-const discoveredCachedAt = new Map<string, number>();
-/**
- * When a cached catalog is only the curated fallback because the CLI discovery found nothing (CLI
- * signed out, not on PATH yet): such entries expire so a later sign-in shows the real catalog.
- */
-const fallbackCachedAt = new Map<string, number>();
+/** One cached catalog. `live` is true when the CLI answered; false for the curated fallback. */
+interface NativeModelCacheEntry {
+    readonly models: QaapQaiqModelOption[];
+    readonly live: boolean;
+    /** When a request may start a background refresh (stale-while-revalidate). */
+    readonly refreshAt: number;
+}
+
+const cache = new Map<string, NativeModelCacheEntry>();
+/** A live CLI catalog is served for this long before a background refresh runs. */
+export const NATIVE_MODEL_CACHE_TTL_MS = 6 * 60 * 60_000;
+/** A curated fallback (CLI missing, signed out, listing failed) is retried after this long. */
 export const NATIVE_MODEL_FALLBACK_RETRY_MS = 60_000;
 
-function cachedNativeModels(agentId: string): QaapQaiqModelOption[] | undefined {
-    const at = fallbackCachedAt.get(agentId);
-    if (at !== undefined && Date.now() - at >= NATIVE_MODEL_FALLBACK_RETRY_MS) {
-        cache.delete(agentId);
-        fallbackCachedAt.delete(agentId);
-        return undefined;
-    }
-    const discoveredAt = discoveredCachedAt.get(agentId);
-    if (discoveredAt !== undefined && Date.now() - discoveredAt >= NATIVE_MODEL_CACHE_TTL_MS) {
-        cache.delete(agentId);
-        discoveredCachedAt.delete(agentId);
-        return undefined;
-    }
-    return cache.get(agentId);
+function isNativeModelEntryStale(entry: NativeModelCacheEntry, now: number = Date.now()): boolean {
+    return now >= entry.refreshAt;
 }
 /** In-flight CLI discoveries; the event loop is shared with every other request, so never spawn synchronously. */
 const discoveries = new Map<string, Promise<QaapQaiqModelOption[]>>();
@@ -62,6 +59,8 @@ export type NativeModelDiscoverySpawner = (bin: string, args: readonly string[])
 export interface NativeModelDiscoveryOptions {
     readonly ownerLogin?: string;
     readonly spawner?: NativeModelDiscoverySpawner;
+    /** The Antigravity CLI the host resolved; selects the gemini or agy catalog for `antigravity`. */
+    readonly antigravityBin?: QaapAntigravityCliBin;
 }
 
 /**
@@ -71,52 +70,87 @@ export interface NativeModelDiscoveryOptions {
  */
 const ACCOUNT_SCOPED_DISCOVERY_AGENT_IDS: ReadonlySet<string> = new Set(['pi']);
 
-function nativeModelCacheKey(agentId: string, ownerLogin: string | undefined): string {
+/** The Antigravity harness: its catalog depends on the resolved CLI (see {@link antigravityCatalogBin}). */
+const ANTIGRAVITY_AGENT_ID = 'antigravity';
+
+/**
+ * The catalog an Antigravity host lists: `gemini` (Gemini CLI model ids) or `agy` (live `agy models`). An
+ * unresolved bin keeps the historical `agy` catalog.
+ */
+export function antigravityCatalogBin(antigravityBin: QaapAntigravityCliBin | undefined): 'agy' | 'gemini' {
+    return antigravityBin === 'gemini' ? 'gemini' : 'agy';
+}
+
+/**
+ * The Antigravity CLI the host resolved, for the agent it is asked about. Only `antigravity` has a bin-scoped
+ * catalog; every other agent gets `undefined`.
+ */
+export function antigravityBinFor(
+    ctx: { resolveAntigravityBin(): string | undefined },
+    agentId: string | undefined,
+): QaapAntigravityCliBin | undefined {
+    return agentId?.trim().toLowerCase() === ANTIGRAVITY_AGENT_ID ? normalizeAntigravityCliBin(ctx.resolveAntigravityBin()) : undefined;
+}
+
+/** Gemini CLI has no model-list command, so its catalog is the curated list and never needs discovery. */
+function usesCuratedAntigravityCatalog(agentId: string, antigravityBin: QaapAntigravityCliBin | undefined): boolean {
+    return agentId === ANTIGRAVITY_AGENT_ID && antigravityCatalogBin(antigravityBin) === 'gemini';
+}
+
+function nativeModelCacheKey(agentId: string, ownerLogin: string | undefined, antigravityBin?: QaapAntigravityCliBin): string {
+    if (agentId === ANTIGRAVITY_AGENT_ID) {
+        return `${agentId}:${antigravityCatalogBin(antigravityBin)}`;
+    }
     if (!ACCOUNT_SCOPED_DISCOVERY_AGENT_IDS.has(agentId)) {
         return agentId;
     }
     return `${agentId}:${ownerLogin?.trim().toLowerCase() ?? ''}`;
 }
 
-export function listNativeAgentModels(agentId: string | undefined, ownerLogin?: string): QaapQaiqModelOption[] {
+/**
+ * The picker list for a native agent. `antigravityBin` is the Antigravity CLI the host resolved; it picks
+ * the gemini or agy catalog and keeps their caches apart. Other agents ignore it.
+ */
+export function listNativeAgentModels(
+    agentId: string | undefined,
+    ownerLogin?: string,
+    antigravityBin?: QaapAntigravityCliBin,
+): QaapQaiqModelOption[] {
     const normalized = agentId?.trim().toLowerCase();
     if (!normalized || NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS.has(normalized)) {
         return [];
-    }
-    const cached = cachedNativeModels(nativeModelCacheKey(normalized, ownerLogin));
-    if (cached) {
-        return cached;
     }
     // The browser and cloud packages can be rebuilt independently. If their capability
     // sets are temporarily out of sync, keep a known native agent visible instead of
     // returning an empty picker and making the CLI look uninstalled.
     if (!agentUsesNativeModelCatalog(normalized)) {
-        const models = listStaticNativeAgentModels(normalized);
-        cache.set(normalized, models);
-        return models;
+        return listStaticNativeAgentModels(normalized, antigravityBin);
     }
-    // OpenCode's `models` command may emit a multiline filesystem diagnostic when its
-    // user-data directory is read-only. Keep the picker deterministic and user-facing:
-    // the curated catalog contains the provider-qualified IDs and friendly names that
-    // OpenCode supports in the Work Hub, while the command output is still parsed for
-    // other native catalogs below.
-    if (normalized === 'opencode') {
-        const models = listStaticNativeAgentModels(normalized);
-        cache.set(normalized, models);
-        return models;
+    if (usesCuratedAntigravityCatalog(normalized, antigravityBin)) {
+        return listStaticNativeAgentModels(normalized, antigravityBin);
     }
+    const key = nativeModelCacheKey(normalized, ownerLogin, antigravityBin);
+    const entry = cache.get(key);
+    if (entry) {
+        // Serve what we have at once; a stale entry is refreshed in the background.
+        if (isNativeModelEntryStale(entry)) {
+            void prepareNativeAgentModels(normalized, { ownerLogin, antigravityBin });
+        }
+        return entry.models;
+    }
+    // Only the picker endpoint knows how to run an account-scoped CLI in the owner's HOME.
     if (ACCOUNT_SCOPED_DISCOVERY_AGENT_IDS.has(normalized)) {
-        // Only the picker endpoint knows how to run the CLI in the owner's HOME.
-        return listStaticNativeAgentModels(normalized);
+        return listStaticNativeAgentModels(normalized, antigravityBin);
     }
     // Cold cache: answer with the curated catalog now and let the CLI discovery replace it.
-    void prepareNativeAgentModels(normalized);
-    return listStaticNativeAgentModels(normalized);
+    void prepareNativeAgentModels(normalized, { ownerLogin, antigravityBin });
+    return listStaticNativeAgentModels(normalized, antigravityBin);
 }
 
 /**
- * Resolve once the agent's native catalog is cached (CLI discovery, else the curated list). Callers
- * that can wait a little, like the picker endpoint, race this against a budget.
+ * Resolve once the agent's native catalog is current (CLI discovery, else the curated list). A fresh
+ * cache answers at once; a stale one is replaced by discovery, but a failed or empty discovery never
+ * overwrites a live list it could not improve on. Concurrent calls share one CLI run.
  */
 export function prepareNativeAgentModels(
     agentId: string | undefined,
@@ -126,90 +160,291 @@ export function prepareNativeAgentModels(
     if (!normalized) {
         return Promise.resolve([]);
     }
-    const key = nativeModelCacheKey(normalized, options.ownerLogin);
-    const cached = cachedNativeModels(key);
-    if (cached) {
-        return Promise.resolve(cached);
+    const bin = options.antigravityBin;
+    if (!agentUsesNativeModelCatalog(normalized) || NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS.has(normalized)
+        || usesCuratedAntigravityCatalog(normalized, bin)) {
+        return Promise.resolve(listStaticNativeAgentModels(normalized, bin));
     }
-    if (!agentUsesNativeModelCatalog(normalized) || normalized === 'opencode'
-        || NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS.has(normalized)) {
-        return Promise.resolve(listNativeAgentModels(normalized, options.ownerLogin));
+    const key = nativeModelCacheKey(normalized, options.ownerLogin, bin);
+    const entry = cache.get(key);
+    if (entry && !isNativeModelEntryStale(entry)) {
+        return Promise.resolve(entry.models);
     }
     if (ACCOUNT_SCOPED_DISCOVERY_AGENT_IDS.has(normalized) && !options.spawner) {
-        return Promise.resolve(listStaticNativeAgentModels(normalized));
+        return Promise.resolve(entry?.models ?? listStaticNativeAgentModels(normalized, bin));
     }
     const inFlight = discoveries.get(key);
     if (inFlight) {
         return inFlight;
     }
-    const discovery = discoverNativeAgentModels(normalized, options.spawner)
+    const discovery: Promise<QaapQaiqModelOption[]> = discoverNativeAgentModels(normalized, options.spawner)
         .catch((): QaapQaiqModelOption[] => [])
         .then(discovered => {
-            const models = discovered.length > 0 ? discovered : listStaticNativeAgentModels(normalized);
-            if (discoveries.get(key) === discovery) {
-                discoveries.delete(key);
-                cache.set(key, models);
-                if (discovered.length > 0) {
-                    fallbackCachedAt.delete(key);
-                    discoveredCachedAt.set(key, Date.now());
-                } else {
-                    discoveredCachedAt.delete(key);
-                    fallbackCachedAt.set(key, Date.now());
-                }
+            if (discoveries.get(key) !== discovery) {
+                // invalidated or cleared while running: the result is no longer wanted.
+                return discovered.length > 0 ? discovered : (cache.get(key)?.models ?? listStaticNativeAgentModels(normalized, bin));
             }
+            discoveries.delete(key);
+            if (discovered.length > 0) {
+                cache.set(key, { models: discovered, live: true, refreshAt: Date.now() + NATIVE_MODEL_CACHE_TTL_MS });
+                return discovered;
+            }
+            const previous = cache.get(key);
+            if (previous?.live) {
+                // Never replace a good list with an empty or failed result; retry soon.
+                cache.set(key, { ...previous, refreshAt: Date.now() + NATIVE_MODEL_FALLBACK_RETRY_MS });
+                return previous.models;
+            }
+            const models = listStaticNativeAgentModels(normalized, bin);
+            cache.set(key, { models, live: false, refreshAt: Date.now() + NATIVE_MODEL_FALLBACK_RETRY_MS });
             return models;
         });
     discoveries.set(key, discovery);
     return discovery;
 }
 
+/** Forget every cached and in-flight native catalog. Called when the agent catalog is refreshed. */
 export function clearNativeAgentModelCache(): void {
     cache.clear();
     discoveries.clear();
-    fallbackCachedAt.clear();
-    discoveredCachedAt.clear();
 }
 
 /**
  * Forget one agent's catalog, e.g. after it signed in: its CLI can now list the account's models.
  * Without an owner every owner's entry for that agent goes.
  */
-export function invalidateNativeAgentModels(agentId: string, ownerLogin?: string): void {
+export function invalidateNativeAgentModels(agentId: string, ownerLogin?: string, antigravityBin?: QaapAntigravityCliBin): void {
     const normalized = agentId.trim().toLowerCase();
-    const keys = ACCOUNT_SCOPED_DISCOVERY_AGENT_IDS.has(normalized) && ownerLogin === undefined
-        ? [...new Set([...cache.keys(), ...discoveries.keys(), ...fallbackCachedAt.keys(), ...discoveredCachedAt.keys()])]
-            .filter(key => key.startsWith(`${normalized}:`))
-        : [nativeModelCacheKey(normalized, ownerLogin)];
+    // Without an owner (or, for Antigravity, without a resolved bin) every catalog of that agent goes.
+    const wildcard = (ACCOUNT_SCOPED_DISCOVERY_AGENT_IDS.has(normalized) && ownerLogin === undefined)
+        || (normalized === ANTIGRAVITY_AGENT_ID && antigravityBin === undefined);
+    const keys = wildcard
+        ? [...new Set([...cache.keys(), ...discoveries.keys()])].filter(key => key.startsWith(`${normalized}:`))
+        : [nativeModelCacheKey(normalized, ownerLogin, antigravityBin)];
     for (const key of keys) {
         cache.delete(key);
         discoveries.delete(key);
-        fallbackCachedAt.delete(key);
-        discoveredCachedAt.delete(key);
+    }
+}
+
+/**
+ * Environment for the OpenCode listing. OpenCode writes its model cache and state under
+ * `XDG_CACHE_HOME`/`XDG_STATE_HOME`; when the backend's home is read-only that write fails with an
+ * EROFS diagnostic. Those two directories are therefore pointed at a fresh writable temp dir, while
+ * `XDG_DATA_HOME` (where the owner's sign-in lives) is left alone so paid models stay listed.
+ */
+function openCodeListingEnv(): { readonly env: NodeJS.ProcessEnv; readonly cleanup: () => void } {
+    try {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-opencode-models-'));
+        return {
+            env: { XDG_CACHE_HOME: path.join(root, 'cache'), XDG_STATE_HOME: path.join(root, 'state') },
+            cleanup: () => {
+                try {
+                    fs.rmSync(root, { recursive: true, force: true });
+                } catch {
+                    // best effort: a leftover temp dir is harmless
+                }
+            },
+        };
+    } catch {
+        return { env: {}, cleanup: () => undefined };
     }
 }
 
 async function discoverNativeAgentModels(agentId: string, spawner?: NativeModelDiscoverySpawner): Promise<QaapQaiqModelOption[]> {
     switch (agentId) {
-        case 'opencode':
-            return discoverFromCommand('opencode', ['models'], agentId);
+        case 'opencode': {
+            const listing = openCodeListingEnv();
+            try {
+                return await discoverFromCommand('opencode', ['models'], agentId, spawner, listing.env);
+            } finally {
+                listing.cleanup();
+            }
+        }
         case 'pi':
             // `pi --list-models` prints a `provider model context ...` table of every model the
             // CLI can reach with its configured providers.
             return discoverFromCommand('pi', ['--list-models'], agentId, spawner);
-        case 'codex':
-            return discoverCodexAccountModels();
+        case 'codex': {
+            // The CLI's own cache of the account's models (same JSON as `codex debug models`), read as the
+            // agent identity; with a spawner the live listing runs in the owner's HOME when the cache is empty.
+            const cached = await discoverCodexAccountModels();
+            if (cached.length > 0 || !spawner) {
+                return cached;
+            }
+            return discoverFromCommand('codex', ['debug', 'models'], agentId, spawner);
+        }
+        case 'grok':
+            return discoverFromCommand('grok', ['models'], agentId, spawner);
+        case 'antigravity':
+        case 'gemini':
+            // The Antigravity binary is `agy`; the catalog is stored under the agent id.
+            return discoverFromCommand('agy', ['models'], agentId, spawner);
+        case 'claude':
+            // Claude Code answers an `initialize` control request with the model list its own picker shows;
+            // the CLI bundle is only the fallback for a CLI that does not answer.
+            return discoverClaudeCliModels(spawner);
         case 'cursor':
             // Cursor Agent exposes the account-scoped catalog through both the modern
             // `agent models` command and the backwards-compatible `cursor-agent` alias.
             {
-                const models = await discoverFromCommand('cursor-agent', ['models'], agentId);
+                const models = await discoverFromCommand('cursor-agent', ['models'], agentId, spawner);
                 return models.length > 0
                     ? models
-                    : discoverFromCommand('cursor-agent', ['--list-models'], agentId);
+                    : discoverFromCommand('cursor-agent', ['--list-models'], agentId, spawner);
             }
         default:
             return [];
     }
+}
+
+/** The Claude Code binary: its `initialize` answer and its bundle are the two sources of the picker list. */
+const CLAUDE_BIN = 'claude';
+/** Request id of the one `initialize` control request the Claude discovery sends; only its answer is read. */
+const CLAUDE_INITIALIZE_REQUEST_ID = 'qaap-model-list';
+/** Bounded wait for the CLI's answer; past it the curated list answers and the next refresh retries. */
+export const CLAUDE_MODEL_LIST_TIMEOUT_MS = 15_000;
+/** Stream-json mode without a prompt: the CLI reads control requests only, so no model turn starts. */
+const CLAUDE_STREAM_ARGS: readonly string[] = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose'];
+/** Bundle scan pattern; the parser keeps only the newest non-dated id of each family. */
+const CLAUDE_BUNDLE_MODEL_ID_PATTERN = 'claude-(opus|sonnet|haiku|fable)-[0-9]+(-[0-9]+)*';
+/** Largest unfinished stdout line the probe buffers before giving up (a real answer is about 2 KB). */
+const CLAUDE_PROBE_MAX_PENDING_CHARS = 4 * 1024 * 1024;
+
+/**
+ * The Claude picker list: the live `initialize` answer of the CLI, else the model ids in its bundle. Both
+ * are bounded by `timeoutMs`; an empty result leaves the caller's catalog in place.
+ */
+export async function discoverClaudeCliModels(
+    spawner?: NativeModelDiscoverySpawner,
+    timeoutMs: number = CLAUDE_MODEL_LIST_TIMEOUT_MS,
+): Promise<QaapQaiqModelOption[]> {
+    const live = await askClaudeCliForModels(spawner, timeoutMs);
+    return live.length > 0 ? live : listClaudeBundleModels(spawner, timeoutMs);
+}
+
+/** Reads one `initialize` control response; `undefined` for any line that is not this request's answer. */
+function parseClaudeInitializeLine(line: string): QaapQaiqModelOption[] | undefined {
+    let message: { readonly type?: unknown; readonly response?: { readonly request_id?: unknown } } | null;
+    try {
+        message = JSON.parse(line) as typeof message;
+    } catch {
+        return undefined;
+    }
+    if (message?.response?.request_id !== CLAUDE_INITIALIZE_REQUEST_ID) {
+        return undefined;
+    }
+    return parseClaudeControlResponseModels(message);
+}
+
+/**
+ * Sends one `initialize` control request over stream-json and reads the CLI's answer. stdin stays open
+ * until the answer arrives, then the CLI is stopped; no user message is sent, so no model turn starts.
+ */
+function askClaudeCliForModels(spawner: NativeModelDiscoverySpawner | undefined, timeoutMs: number): Promise<QaapQaiqModelOption[]> {
+    const command = spawner ? spawner(CLAUDE_BIN, CLAUDE_STREAM_ARGS) : { file: CLAUDE_BIN, args: CLAUDE_STREAM_ARGS };
+    if (!command) {
+        return Promise.resolve([]);
+    }
+    return new Promise<QaapQaiqModelOption[]>(resolve => {
+        // npm-installed CLIs are `.cmd` shims on Windows; the same resolution as the one-shot listings.
+        const windowsShim = process.platform === 'win32' && command.file === CLAUDE_BIN;
+        let child: ChildProcess;
+        try {
+            child = spawnChild(windowsShim ? `${CLAUDE_BIN}.cmd` : command.file, [...command.args], {
+                cwd: command.cwd,
+                env: childProcessEnv({ ...(command.env ?? process.env) }),
+                stdio: ['pipe', 'pipe', 'ignore'],
+                shell: windowsShim,
+                windowsHide: true,
+            });
+        } catch {
+            resolve([]);
+            return;
+        }
+        let settled = false;
+        let pending = '';
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const finish = (models: QaapQaiqModelOption[]): void => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            clearTimeout(timer);
+            child.kill();
+            resolve(models);
+        };
+        timer = setTimeout(() => finish([]), timeoutMs);
+        child.on('error', () => finish([]));
+        child.on('close', () => finish([]));
+        child.stdin?.on('error', () => finish([]));
+        child.stdout?.setEncoding('utf8');
+        child.stdout?.on('data', (chunk: string) => {
+            pending += chunk;
+            let newline = pending.indexOf('\n');
+            while (newline >= 0 && !settled) {
+                const line = pending.slice(0, newline).trim();
+                pending = pending.slice(newline + 1);
+                newline = pending.indexOf('\n');
+                const models = line.startsWith('{') ? parseClaudeInitializeLine(line) : undefined;
+                if (models) {
+                    finish(models);
+                }
+            }
+            if (!settled && pending.length > CLAUDE_PROBE_MAX_PENDING_CHARS) {
+                finish([]);
+            }
+        });
+        child.stdin?.write(`${JSON.stringify({ type: 'control_request', request_id: CLAUDE_INITIALIZE_REQUEST_ID, request: { subtype: 'initialize' } })}\n`);
+    });
+}
+
+/** The first executable named `bin` on the backend PATH, resolved through symlinks; `undefined` when absent. */
+function findExecutableOnPath(bin: string): string | undefined {
+    for (const dir of (process.env.PATH ?? '').split(path.delimiter)) {
+        if (!dir) {
+            continue;
+        }
+        const candidate = path.join(dir, bin);
+        try {
+            fs.accessSync(candidate, fs.constants.X_OK);
+            return fs.realpathSync(candidate);
+        } catch {
+            // not in this directory; keep searching the PATH
+        }
+    }
+    return undefined;
+}
+
+/**
+ * Fallback when the CLI does not answer `initialize`: scans its bundle with `grep -aoE` (run through the
+ * same spawner, so a tenant reads the binary as the agent) and keeps the newest id of each family.
+ */
+function listClaudeBundleModels(spawner: NativeModelDiscoverySpawner | undefined, timeoutMs: number): Promise<QaapQaiqModelOption[]> {
+    const binary = findExecutableOnPath(CLAUDE_BIN);
+    if (!binary) {
+        return Promise.resolve([]);
+    }
+    const args = ['-aoE', CLAUDE_BUNDLE_MODEL_ID_PATTERN, binary];
+    const command = spawner ? spawner('grep', args) : { file: 'grep', args };
+    if (!command) {
+        return Promise.resolve([]);
+    }
+    return new Promise<QaapQaiqModelOption[]>(resolve => {
+        execFile(command.file, [...command.args], {
+            encoding: 'utf8',
+            timeout: timeoutMs,
+            maxBuffer: 16 * 1024 * 1024,
+            ...(command.cwd ? { cwd: command.cwd } : {}),
+            env: childProcessEnv({ ...(command.env ?? process.env) }),
+        }, (error, stdout) => {
+            if (error) {
+                resolve([]);
+                return;
+            }
+            resolve(parseClaudeBundleModelIds(String(stdout ?? '').split(/\r?\n/)));
+        });
+    });
 }
 
 /** File the Codex CLI keeps in its home: the model slugs the signed-in account may run (server-side list). */
@@ -239,40 +474,11 @@ export function resolveCodexAgentHome(env: NodeJS.ProcessEnv = process.env): str
 }
 
 /**
- * The curated Codex entries whose ids the account's `models_cache.json` lists, in curated order and with
- * curated labels. A missing, unreadable or unparsable cache, or one with no curated overlap, yields `[]`;
- * the caller then keeps the full curated list.
+ * The account's Codex models from the CLI's `models_cache.json` (or `codex debug models` output): every
+ * row the CLI lists, in the CLI's order. A missing, unreadable or unparsable cache yields `[]`.
  */
 export function parseCodexModelsCache(text: string | undefined): QaapQaiqModelOption[] {
-    const slugs = readCodexCacheSlugs(text);
-    if (slugs.size === 0) {
-        return [];
-    }
-    return listStaticNativeAgentModels('codex').filter(model => slugs.has(model.modelId));
-}
-
-function readCodexCacheSlugs(text: string | undefined): Set<string> {
-    const slugs = new Set<string>();
-    if (!text?.trim()) {
-        return slugs;
-    }
-    let parsed: unknown;
-    try {
-        parsed = JSON.parse(text);
-    } catch {
-        return slugs;
-    }
-    const models = typeof parsed === 'object' && parsed !== null ? (parsed as { models?: unknown }).models : undefined;
-    if (!Array.isArray(models)) {
-        return slugs;
-    }
-    for (const entry of models as unknown[]) {
-        const slug = typeof entry === 'object' && entry !== null ? (entry as { slug?: unknown }).slug : undefined;
-        if (typeof slug === 'string' && slug.trim()) {
-            slugs.add(slug.trim());
-        }
-    }
-    return slugs;
+    return parseCodexDebugModels(text);
 }
 
 /** Reads one file; with an identity, as that uid/gid (the backend is root, the cache is owned by the agent). */
@@ -334,6 +540,7 @@ function discoverFromCommand(
     args: string[],
     agentId: string,
     spawner?: NativeModelDiscoverySpawner,
+    extraEnv?: NodeJS.ProcessEnv,
 ): Promise<QaapQaiqModelOption[]> {
     return new Promise<QaapQaiqModelOption[]>(resolve => {
         try {
@@ -355,17 +562,17 @@ function discoverFromCommand(
                 shell: windowsShim,
                 ...(spawn?.cwd ? { cwd: spawn.cwd } : {}),
                 // Never inherit the backend env by omission; a spawner env is stripped too.
-                env: childProcessEnv(spawn?.env),
+                env: childProcessEnv({ ...(spawn?.env ?? process.env), ...extraEnv }),
             }, (error, stdout) => {
-                // stderr is diagnostic output, never a model catalog. OpenCode can emit a
-                // multiline EROFS/permission error there; treating those lines as models made
-                // the picker display paths, syscalls, and Bun details as selectable models.
+                // stderr is diagnostic output, never a model catalog. A failed run or an
+                // unparsable answer is "no answer" (empty), so the caller keeps its catalog.
                 if (error) {
                     resolve([]);
                     return;
                 }
-                const lines = String(stdout ?? '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-                resolve(parseNativeModelLines(agentId, lines));
+                const models = parseNativeModelOutput(agentId, String(stdout ?? ''));
+                // Picker rows belong to the agent that lists them (Pi keeps provider as vendor).
+                resolve(agentId === 'pi' ? models : models.map(model => ({ ...model, vendor: agentId })));
             });
         } catch {
             resolve([]);

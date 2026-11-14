@@ -333,6 +333,19 @@ body.qaap-mod-history-resizing * {
   cursor: default;
 }
 
+/* Starting-preview skeleton: the whole toolbar is disabled. It only dims; a disabled control
+   keeps its transparent resting fill and shows no hover pill. */
+.qaap-mod-preview-toolbar-skeleton button:disabled,
+.qaap-mod-preview-toolbar-skeleton .theia-input:disabled {
+  opacity: var(--theia-mod-disabled-opacity, 0.4);
+  cursor: default;
+}
+
+.qaap-mod-preview-toolbar-skeleton button:disabled:hover {
+  background: transparent;
+  color: var(--theia-icon-foreground);
+}
+
 .qaap-agent-preview-toolbar-back::before,
 .qaap-agent-preview-toolbar-forward::before,
 .qaap-agent-preview-toolbar-overflow::before,
@@ -865,5 +878,51 @@ body.qaap-mod-preview-maximized #theia-main-content-panel.qaap-mod-preview-maxim
   .qaap-preview-maximize-button {
     min-width: 32px;
     min-height: 32px;
+  }
+}
+
+/* Loading bar on the toolbar's bottom edge while the preview frame navigates: the same sliding
+   gradient as the sessions-list loader. It fades in after 250 ms so fast loads never flash. */
+.qaap-agent-preview-embedded-toolbar.qaap-mod-frame-loading::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  overflow: hidden;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--theia-progressBar-background, var(--theia-focusBorder)),
+    transparent
+  ) no-repeat;
+  background-size: 35% 100%;
+  opacity: 0;
+  animation:
+    qaap-preview-frame-loading-in 160ms ease 250ms forwards,
+    qaap-preview-frame-loading-slide 1.4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+@keyframes qaap-preview-frame-loading-in {
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes qaap-preview-frame-loading-slide {
+  from {
+    background-position: -35% 0;
+  }
+  to {
+    background-position: 135% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .qaap-agent-preview-embedded-toolbar.qaap-mod-frame-loading::after {
+    background-size: 100% 100%;
+    animation: qaap-preview-frame-loading-in 160ms ease 250ms forwards;
   }
 }

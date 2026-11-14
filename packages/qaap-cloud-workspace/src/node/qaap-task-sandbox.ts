@@ -157,6 +157,15 @@ export interface QaapTaskSandbox {
      * sandbox reach the tool gate and the helper API here. Absent: they must not be given a URL.
      */
     readonly backendHost?: string;
+    /**
+     * A directory the backend and the sandbox both see at this IDENTICAL path, writable by the task uid,
+     * whose parent the task uid cannot rename or replace. Backend-generated per-task files that a process
+     * in the sandbox must open by the same absolute path go below it (the Codex tool-gate overlay, whose
+     * hook trust is keyed by its canonical path). Direct mode: a backend-owned host dir bound at its own
+     * path. Broker mode: the tenant config root, which the broker binds at the path the backend uses.
+     * Absent: no such directory; callers that need one must fail closed.
+     */
+    readonly sharedRoot?: string;
 }
 
 /** Why a forwarder exists: an expected preview port, the terminal port watcher, or a direct call. */
@@ -857,7 +866,14 @@ export class QaapTaskSandboxService implements BackendApplicationContribution, Q
         const plan = await this.resolveImagePlan(root);
         const devcontainer = plan.kind === 'base' ? undefined : plan.devcontainer;
         let created = false;
-        const state = await this.docker(['inspect', '--format', '{{.State.Running}}', name]).catch(() => undefined);
+        const sharedRoot = this.directSharedRoot();
+        let state = await this.docker(['inspect', '--format', '{{.State.Running}}', name]).catch(() => undefined);
+        if (state?.trim() === 'true' && sharedRoot && !(await this.mountDestinations(name)).includes(sharedRoot)) {
+            // A sandbox from before the shared root existed (a bind cannot be added to a live container).
+            console.info(`[qaap-task-sandbox] recreating ${name}: it lacks the shared directory ${sharedRoot}`);
+            await this.docker(['rm', '-f', name]).catch(() => undefined);
+            state = undefined;
+        }
         if (state?.trim() !== 'true') {
             if (state !== undefined) {
                 await this.docker(['rm', '-f', name]).catch(() => undefined);
@@ -882,6 +898,7 @@ export class QaapTaskSandboxService implements BackendApplicationContribution, Q
             created,
             forwardPorts: devcontainer?.forwardPorts ?? [],
             remoteEnv: devcontainer?.remoteEnv ?? {},
+            sharedRoot,
         };
         console.info(`[qaap-task-sandbox] ${created ? 'started' : 'reused'} ${name} for ${root} `
             + `(image ${plan.image}, ${plan.kind}) in ${startupMs} ms${postCreateMs !== undefined ? `, postCreate ${postCreateMs} ms` : ''}`);
@@ -927,6 +944,7 @@ export class QaapTaskSandboxService implements BackendApplicationContribution, Q
             remoteEnv: devcontainer?.remoteEnv ?? {},
             exec: { host: created.host, port: created.port, token: created.token },
             backendHost: created.backendHost,
+            sharedRoot: this.brokerSharedRoot(),
         };
         const entry = this.newEntry(sandbox, options.ownerLogin);
         this.entries.set(root, entry);
@@ -1001,6 +1019,47 @@ export class QaapTaskSandboxService implements BackendApplicationContribution, Q
             directCandidate: path.join(__dirname, 'qaap-task-sandbox-exec-client-main.js'),
         });
         return { file: process.execPath, args: [client, requestFile] };
+    }
+
+    /**
+     * Direct mode {@link QaapTaskSandbox.sharedRoot}: a host dir owned by this backend (0755, so the task
+     * uid can traverse but not rename what root creates in it), bound read-write at its own canonical path.
+     * Undefined when it cannot be made safely (e.g. pre-planted by another user): only callers that need it
+     * (Codex) then refuse to start, other agents keep running in the sandbox.
+     */
+    protected directSharedRoot(): string | undefined {
+        const dir = path.join(os.tmpdir(), `qaap-task-sandbox-shared-${process.getuid?.() ?? 'u'}`);
+        try {
+            fs.mkdirSync(dir, { recursive: true, mode: 0o755 });
+            const stat = fs.lstatSync(dir);
+            if (!stat.isDirectory() || (process.getuid && stat.uid !== process.getuid())) {
+                throw new Error('not a real directory of this backend');
+            }
+            fs.chmodSync(dir, 0o755);
+            return this.realpath(dir);
+        } catch (error) {
+            console.warn(`[qaap-task-sandbox] not sharing ${dir} with task sandboxes: ${(error as Error).message}`);
+            return undefined;
+        }
+    }
+
+    /**
+     * Broker mode {@link QaapTaskSandbox.sharedRoot}: the tenant config root. The broker binds the tenant's
+     * `tenant-config` root at the path the orchestrator also gives the backend as `QAAP_TENANT_CONFIG_ROOT`
+     * (both `/home/theia/.qaap`); the home links already rely on that identity.
+     */
+    protected brokerSharedRoot(): string | undefined {
+        const configured = process.env.QAAP_TENANT_CONFIG_ROOT?.trim();
+        if (!configured || !path.posix.isAbsolute(configured)) {
+            return undefined;
+        }
+        return path.posix.normalize(configured).replace(/(.)\/+$/, '$1');
+    }
+
+    /** Mount destinations of a container (empty when it cannot be inspected). */
+    protected async mountDestinations(name: string): Promise<string[]> {
+        const text = await this.docker(['inspect', '--format', '{{range .Mounts}}{{println .Destination}}{{end}}', name]).catch(() => '');
+        return text.split('\n').map(line => line.trim()).filter(Boolean);
     }
 
     protected execRequestDir(): string {
@@ -1123,6 +1182,12 @@ export class QaapTaskSandboxService implements BackendApplicationContribution, Q
             const real = this.realpath(toolchain);
             // Also at its own path: agent commands may name the CLI by the absolute host path.
             binds.push(`${real}:${QAAP_TASK_SANDBOX_TOOLCHAIN_MOUNT}:ro`, `${real}:${real}:ro`);
+        }
+        // Read-write: Codex writes its sessions and a refreshed login into its CODEX_HOME below it. What the
+        // task may not touch is protected by ownership there (root-owned sticky base), not by this mount.
+        const sharedRoot = this.directSharedRoot();
+        if (sharedRoot) {
+            binds.push(`${sharedRoot}:${sharedRoot}:rw`);
         }
         const devcontainer = plan.kind === 'base' ? undefined : plan.devcontainer;
         const args = [

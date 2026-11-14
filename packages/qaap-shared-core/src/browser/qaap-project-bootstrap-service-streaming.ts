@@ -204,8 +204,9 @@ export async function startDevServerExtracted(ctx: QaapProjectBootstrapServiceCo
         // THIS project (external Vite, a run that outlived a reload) is the preview. Reserving
         // instead makes the allocator skip the occupied port and park a second copy of the app on
         // the next free one (:5174, or :5176 when earlier runs left :5174/:5175 behind). Ownership
-        // is still verified by the claim + probe inside the attach, so another project's or an
-        // unregistered listener is never adopted. A live managed terminal means this run is a
+        // is verified by the probe inside the attach (a registered identity of this project), so
+        // another project's or an unregistered listener is never adopted — the reservation below
+        // then moves past the occupied port. A live managed terminal means this run is a
         // restart whose old server may still be shutting down: spawn then, do not attach to it.
         const hasLiveManagedTerminal = ctx.devTerminal !== undefined && !ctx.devTerminal.isDisposed;
         if (spawnPlan.targetPort !== undefined && spawnPlan.targetPort !== sectionPort && !hasLiveManagedTerminal
@@ -518,6 +519,29 @@ export async function refreshFromCurrentWorkspaceExtracted(ctx: QaapProjectBoots
         await ctx.refreshFromRoot(first?.resource);
 }
 
+/**
+ * True when a refresh names the root already in the session and that root has a live dev run: a
+ * running preview, or a ready-to-run session whose dev terminal still belongs to this root. Such a
+ * refresh is a no-op; resetting would release the claim and dispose the terminal of a live server.
+ */
+function isSameRootWithLiveDevRunExtracted(ctx: QaapProjectBootstrapServiceContext, nextRootKey: string, currentRootKey: string): boolean {
+        if (nextRootKey.length === 0 || nextRootKey !== currentRootKey || ctx._descriptor === undefined) {
+            return false;
+        }
+        if (ctx._phase === 'running') {
+            return true;
+        }
+        if (ctx._phase !== 'ready-to-run') {
+            return false;
+        }
+        for (const entry of ctx.devTerminalByConversationId.values()) {
+            if (entry.rootKey === nextRootKey) {
+                return true;
+            }
+        }
+        return false;
+}
+
 export async function refreshFromRootExtracted(ctx: QaapProjectBootstrapServiceContext, resource: URI | undefined): Promise<void> {
         const nextRootKey = resource?.toString() ?? '';
         const currentRootKey = ctx._descriptor?.rootUri.toString() ?? '';
@@ -529,6 +553,11 @@ export async function refreshFromRootExtracted(ctx: QaapProjectBootstrapServiceC
         ) {
             // Applying the refresh now would kill the live run; replay it once the run is at rest.
             deferWorkspaceRefreshUntilDevRunRestsExtracted(ctx, resource);
+            return;
+        }
+        if (isSameRootWithLiveDevRunExtracted(ctx, nextRootKey, currentRootKey)) {
+            // Nothing changed for this project: a reset here would drop its claim and dispose its
+            // dev terminal, so the live server is released and restarted on every poll tick.
             return;
         }
         const refreshId = ++ctx.refreshGeneration;

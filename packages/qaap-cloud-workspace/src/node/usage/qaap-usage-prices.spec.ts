@@ -56,4 +56,13 @@ describe('QaapUsagePriceList', () => {
         const cost = QaapUsagePriceList.loadBundled().costOf('claude-sonnet-4-5', { input: 1_000_000, cachedInput: 0, cacheWrite: 0, output: 0, reasoning: 0 });
         expect(cost?.costUsd).to.equal(3);
     });
+
+    it('prices Claude Fable 5.2 at its published first-party rates', () => {
+        const bundled = QaapUsagePriceList.loadBundled();
+        const fable = bundled.lookup('claude-fable-5-2');
+        expect(fable).to.deep.include({ input: 8, output: 40, cacheRead: 0.2, cacheWrite: 10 });
+        expect(bundled.lookup('claude-mythos-5-2')?.input).to.equal(8);
+        const cost = bundled.costOf('claude-fable-5-2', { input: 1_000_000, cachedInput: 0, cacheWrite: 0, output: 1_000_000, reasoning: 0 });
+        expect(cost?.costUsd).to.equal(48);
+    });
 });

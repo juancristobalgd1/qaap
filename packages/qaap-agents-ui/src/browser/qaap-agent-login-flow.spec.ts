@@ -195,6 +195,41 @@ describe('QaapAgentLoginFlow', () => {
         expect(flow.state).to.deep.equal({ phase: 'failed', reason: 'timeout', tail: ['Error: something hangs'] });
     });
 
+    it('attaches the host diagnostics to a silent timeout', () => {
+        const { flow } = createFlow('copilot');
+        flow.restart(0);
+        flow.commandStarted(0);
+        flow.setDiagnostics('Terminal started: yes. Output received: 0 bytes from the live stream, 0 bytes from the terminal screen.');
+        flow.tick(QAAP_AGENT_LOGIN_CHALLENGE_TIMEOUT_MS);
+        expect(flow.state).to.deep.equal({
+            phase: 'failed',
+            reason: 'timeout',
+            tail: [],
+            diagnostics: 'Terminal started: yes. Output received: 0 bytes from the live stream, 0 bytes from the terminal screen.',
+        });
+    });
+
+    it('keeps a timeout without host diagnostics free of the diagnostics key', () => {
+        const { flow } = createFlow('copilot');
+        flow.restart(0);
+        flow.commandStarted(0);
+        flow.setDiagnostics(undefined);
+        flow.tick(QAAP_AGENT_LOGIN_CHALLENGE_TIMEOUT_MS);
+        expect(flow.state).to.deep.equal({ phase: 'failed', reason: 'timeout', tail: [] });
+    });
+
+    it('does not attach diagnostics to a timeout that has output to show', () => {
+        const { flow } = createFlow('copilot');
+        flow.restart(0);
+        flow.commandStarted(0);
+        flow.setDiagnostics('Terminal started: yes.');
+        flow.appendOutput('Error: something hangs\n');
+        flow.tick(QAAP_AGENT_LOGIN_CHALLENGE_TIMEOUT_MS);
+        const state = flow.state;
+        expect(state.phase === 'failed' && state.reason).to.equal('timeout');
+        expect(state.phase === 'failed' && state.diagnostics).to.equal('Terminal started: yes.');
+    });
+
     it('times out a pasted code the CLI never confirms', () => {
         const { flow } = createFlow('claude');
         flow.commandStarted(0);
@@ -403,6 +438,14 @@ describe('createQaapAgentLoginDialog', () => {
         expect(retries).to.equal(1);
         controller.render({ phase: 'failed', reason: 'exited', exitCode: 1, tail: ['denied'] });
         expect(controller.root.querySelector('.theia-mobile-agent-login-dialog-status')?.textContent).to.contain('exit code 1');
+    });
+
+    it('says no output was received, with the terminal diagnostics, when a timeout has no output', () => {
+        const controller = open();
+        controller.render({ phase: 'failed', reason: 'timeout', tail: [], diagnostics: 'Terminal started: no. Output received: 0 bytes.' });
+        const status = controller.root.querySelector('.theia-mobile-agent-login-dialog-status')?.textContent ?? '';
+        expect(status).to.equal('No output was received from the sign-in terminal. Terminal started: no. Output received: 0 bytes.');
+        expect(controller.root.querySelector('.theia-mobile-agent-login-dialog-output')).to.equal(null);
     });
 
     it('says the sign-in did not complete and offers Retry or a Settings API key', () => {

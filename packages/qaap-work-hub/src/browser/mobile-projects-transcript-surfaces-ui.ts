@@ -56,7 +56,7 @@ import { bootstrapAppliesToProjectExtracted, bootstrapPreviewUrlForProjectExtrac
 import { claimTranscriptPreviewExecutionExtracted, clearTranscriptEmptyPreviewChromeExtracted, detachTranscriptReviewWidgetExtracted, disposePreviewForConversationExtracted, disposeTranscriptEmbeddedPreviewExtracted, disposeTranscriptTerminalSlidesForConversationExtracted, getOrCreateOffscreenPreviewHostExtracted, getTranscriptEmbeddedPreviewUrlExtracted, mountTranscriptEmbeddedPreviewExtracted, mountTranscriptReviewWidgetExtracted, resolvePreviewAnnotationScopeExtracted, resolveTranscriptPreviewIdentityExtracted, submitTranscriptReviewFeedbackExtracted, suspendTranscriptPreviewIframeExtracted, wireTranscriptPreviewAnnotationScopeExtracted } from './mobile-projects-transcript-surfaces-ui-streaming';
 import { beginTranscriptDevPreviewRequestExtracted, discoverProjectDevPreviewUrlExtracted, disposeTranscriptTerminalSlidesExtracted, prepareTranscriptTerminalsForPageUnloadExtracted, previewUrlMatchesProjectExtracted, refreshTranscriptPreviewProjectExtracted, resolveTranscriptPreviewUrlExtracted, syncTranscriptPreviewFromConversationExtracted } from './mobile-projects-transcript-surfaces-ui-thought-brief';
 import { adoptReconciledProjectPreviewUrlExtracted, clearMismatchedProjectPreviewUrlExtracted, discoverAndMountTranscriptPreviewIfReadyExtracted, fetchCurrentProjectClaimUrlExtracted, reconcileSupersededProjectPreviewUrlExtracted, renderPreviewTabExtracted, scheduleTranscriptPreviewIdentityWatchExtracted, shouldKeepTranscriptPreviewTabProbeExtracted, stopTranscriptPreviewIdentityWatchExtracted, tryMountProjectScopedPreviewExtracted, tryMountVerifiedTranscriptPreviewExtracted, verifyMountedTranscriptPreviewIdentityExtracted } from './mobile-projects-transcript-surfaces-ui-timeline';
-import { annotateEmptyPreviewWhenNotRunnableExtracted, cancelPreviewAgentTurnExtracted, ensureTranscriptFilesTabExtracted, ensureTranscriptPreviewServingExtracted, mountTranscriptEmptyPreviewExtracted, recoverTranscriptPreviewUrlExtracted, refreshPreviewForBootstrapChangeExtracted, resolveProjectScopedWorkspaceKeyExtracted, resolveRunnableTranscriptProjectRootExtracted, resolveTranscriptProjectCwdExtracted, resolveTranscriptWorkspaceKeyExtracted, revealTranscriptFileExtracted, revealTranscriptReviewFileExtracted, updateTranscriptPreviewLaunchStatusExtracted } from './mobile-projects-transcript-surfaces-ui-tool-pills';
+import { annotateEmptyPreviewWhenNotRunnableExtracted, cancelPreviewAgentTurnExtracted, ensureTranscriptFilesTabExtracted, ensureTranscriptPreviewServingExtracted, mountTranscriptEmptyPreviewExtracted, openUrlInTranscriptBrowserExtracted, recoverTranscriptPreviewUrlExtracted, refreshPreviewForBootstrapChangeExtracted, resolveProjectScopedWorkspaceKeyExtracted, resolveRunnableTranscriptProjectRootExtracted, resolveTranscriptProjectCwdExtracted, resolveTranscriptWorkspaceKeyExtracted, revealTranscriptFileExtracted, revealTranscriptReviewFileExtracted, updateTranscriptPreviewLaunchStatusExtracted } from './mobile-projects-transcript-surfaces-ui-tool-pills';
 
 export type TranscriptTab = ExecutionSurfaceTabId;
 
@@ -647,6 +647,11 @@ export class MobileProjectsTranscriptSurfacesUi {
         ensureTranscriptFilesTabExtracted(this, project, summary, requestedMode);
     }
 
+    /** Opens a URL (e.g. a chat link) in the transcript's Browser tab; false when it cannot. */
+    async openUrlInTranscriptBrowser(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, url: string): Promise<boolean> {
+        return openUrlInTranscriptBrowserExtracted(this, project, summary, url);
+    }
+
     async revealTranscriptFile(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, filePath: string,): Promise<void> {
         return revealTranscriptFileExtracted(this, project, summary, filePath);
     }
@@ -677,7 +682,7 @@ export class MobileProjectsTranscriptSurfacesUi {
         showTranscriptTerminalErrorExtracted(this, host, services, error);
     }
 
-    async launchAgentTuiInTranscriptTerminal(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, agentId: string, options?: { readonly login?: boolean; readonly command?: string },): Promise<void> {
+    async launchAgentTuiInTranscriptTerminal(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, agentId: string, options?: { readonly login?: boolean; readonly command?: string; readonly cliBin?: string },): Promise<void> {
         return launchAgentTuiInTranscriptTerminalExtracted(this, project, summary, agentId, options);
     }
 

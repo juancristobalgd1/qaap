@@ -5,6 +5,10 @@ import type { ExecutionSurfaceTabId as TranscriptTab } from '@theia/qaap-shared-
 import type { MobileProjectsExecutionSurfaceSidebarState } from './mobile-projects-execution-surface-tabs-ui';
 import { nls } from '@theia/core/lib/common/nls';
 import {
+    createQaapPreviewToolbarSkeleton,
+    QAAP_PREVIEW_TOOLBAR_SKELETON_CLASS,
+} from '@theia/qaap-adapters/lib/browser/qaap-agent-preview-toolbar-skeleton';
+import {
     type QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
@@ -292,6 +296,8 @@ function syncExecutionSurfaceSidebarFallbackPreviewHeaderExtracted(sidebar: Mobi
 function restoreExecutionSurfaceSidebarToolbarHostExtracted(sidebar: MobileProjectsExecutionSurfaceSidebarState): void {
     sidebar.toolbarObserver?.disconnect();
     sidebar.toolbarObserver = undefined;
+    syncExecutionSurfacePreviewToolbarSkeletonExtracted(
+        sidebar.element?.querySelector<HTMLElement>('.theia-mobile-execution-surface-sidebar-header'), undefined, false);
     const host = sidebar.toolbarHost as HTMLElement | undefined;
     if (!host) {
         return;
@@ -329,6 +335,12 @@ function promoteExecutionSurfaceSidebarToolbarExtracted(sidebar: MobileProjectsE
     const header = sidebar.element?.querySelector<HTMLElement>('.theia-mobile-execution-surface-sidebar-header');
     const close = header?.querySelector<HTMLElement>('.theia-mobile-execution-surface-sidebar-close');
     const toolbar = activeHost && resolveExecutionSurfaceSidebarToolbarHostExtracted(sidebar.activeTab, activeHost);
+    // Once promoted, the real toolbar lives in the header, not in the surface host: look there too,
+    // or the skeleton was re-added next to it (duplicated, greyed-out controls).
+    const headerHasRealToolbar = !!header?.querySelector(
+        `:scope > .qaap-agent-preview-embedded-toolbar:not(.${QAAP_PREVIEW_TOOLBAR_SKELETON_CLASS})`);
+    syncExecutionSurfacePreviewToolbarSkeletonExtracted(header, close,
+        sidebar.activeTab === 'preview' && !toolbar?.parentNode && !headerHasRealToolbar);
     if (!header || !close || !toolbar?.parentNode) {
         return;
     }
@@ -353,6 +365,31 @@ function promoteExecutionSurfaceSidebarToolbarExtracted(sidebar: MobileProjectsE
     toolbar.classList.add('theia-mobile-execution-surface-sidebar-toolbar');
     header.insertBefore(toolbar, actionsAnchor);
     sidebar.toolbarHost = toolbar;
+    syncExecutionSurfacePreviewToolbarSkeletonExtracted(header, close, false);
+}
+
+/**
+ * While the Preview drawer has no mounted preview yet (the dev server is still starting, or the
+ * embedded chrome has not rendered), the header showed only the close button over a black pane.
+ * A disabled copy of the preview controls holds the header instead, with the loading bar running,
+ * and is dropped as soon as the real toolbar is promoted.
+ */
+function syncExecutionSurfacePreviewToolbarSkeletonExtracted(header: HTMLElement | null | undefined, close: HTMLElement | null | undefined, show: boolean): void {
+    if (!header) {
+        return;
+    }
+    const existing = header.querySelector<HTMLElement>(`:scope > .${QAAP_PREVIEW_TOOLBAR_SKELETON_CLASS}`);
+    if (!show) {
+        existing?.remove();
+        return;
+    }
+    if (existing || !close) {
+        return;
+    }
+    const skeleton = createQaapPreviewToolbarSkeleton({
+        placeholder: nls.localize('qaap/mobileProjects/previewStarting', 'Starting preview…'),
+    });
+    header.insertBefore(skeleton, executionSurfaceSidebarHeaderActionsAnchorExtracted(header, close));
 }
 
 function observeExecutionSurfaceSidebarToolbarExtracted(sidebar: MobileProjectsExecutionSurfaceSidebarState): void {

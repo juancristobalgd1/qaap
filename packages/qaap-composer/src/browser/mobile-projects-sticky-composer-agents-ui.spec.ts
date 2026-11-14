@@ -140,6 +140,33 @@ describe('MobileProjectsStickyComposerAgentsUi', () => {
         });
     });
 
+    it('forwards forceRefresh to the backend even inside the catalog throttle window', async () => {
+        const requests: ({ readonly forceRefresh?: boolean } | undefined)[] = [];
+        const host = createHost();
+        host.stickyComposerRenderUi = {
+            renderStickyComposer: () => undefined,
+        } as unknown as MobileProjectsStickyComposerAgentsHost['stickyComposerRenderUi'];
+        host.loadBackendAgentSnapshot = async options => {
+            requests.push(options);
+            return {
+                agents: [{ id: 'copilot', label: 'Copilot CLI', available: true }],
+                agentConfigured: false,
+                qaiqInstalled: false,
+                qaiqModels: [],
+            };
+        };
+        const ui = new MobileProjectsStickyComposerAgentsUi(host);
+
+        // The first refresh is not throttled and loads the catalog without a forced refresh.
+        await ui.refreshStickyComposerAgents(project);
+        // A forced ensure right after lands inside the 10 s window, yet must still reach the backend.
+        await ui.ensureStickyComposerAgentsLoaded(project, { force: true });
+
+        expect(requests).to.have.length(2);
+        expect(requests[0]?.forceRefresh).to.not.equal(true);
+        expect(requests[1]?.forceRefresh).to.equal(true);
+    });
+
     it('flags only signed-out harnesses as disconnected, not ones still being probed', () => {
         const host = createHost();
         host.stickyComposerBackendAgents = [

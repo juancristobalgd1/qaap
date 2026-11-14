@@ -8,6 +8,7 @@ import { OPENCLAUDE_AGENT_ID, QAIQ_AGENT_ID, migrateQaapProductAgentId } from '.
 import {
     resolveAgentLoginCliCommand,
 } from './qaap-agent-auth-login';
+import { normalizeAntigravityCliBin } from './qaap-antigravity-cli';
 import { isAgentHiddenOnHostedRuntime } from './qaap-hosted-agent-auth-policy';
 import { QAAP_PI_DEFAULT_LOGIN_PROVIDER, resolvePiLoginProvider } from './qaap-pi-login-providers';
 
@@ -15,10 +16,11 @@ import { QAAP_PI_DEFAULT_LOGIN_PROVIDER, resolvePiLoginProvider } from './qaap-p
  * Interactive TUI CLI binary for an agent id — the bare executable to type into a PTY,
  * not the headless `--print` / `exec --json` templates used by background task runs.
  *
- * Antigravity is special: the product agent id is `antigravity`, but the CLI on PATH is
- * usually Google's `agy` (then community `antigravity`, then legacy `gemini`).
+ * Antigravity is special: the product agent id is `antigravity`, and the CLI is the one the host
+ * resolved (`cliBin` from the agent descriptor, see {@link resolveAntigravityCliBin}). Without it the
+ * preferred `gemini` is assumed.
  */
-export function resolveInteractiveAgentCliBin(agentId: string | undefined): string | undefined {
+export function resolveInteractiveAgentCliBin(agentId: string | undefined, cliBin?: string): string | undefined {
     const normalized = migrateQaapProductAgentId(agentId?.trim());
     if (!normalized) {
         return undefined;
@@ -27,7 +29,7 @@ export function resolveInteractiveAgentCliBin(agentId: string | undefined): stri
         return normalized;
     }
     if (normalized === 'antigravity' || normalized === 'gemini') {
-        return 'agy';
+        return normalizeAntigravityCliBin(cliBin) ?? 'gemini';
     }
     const builtin = QAAP_BUILTIN_AGENT_DEFINITIONS.find(definition => definition.id === normalized);
     return builtin?.bin;
@@ -126,7 +128,7 @@ export type QaapAgentConnectionFlow =
  */
 export function resolveAgentConnectionFlow(
     agentId: string | undefined,
-    options?: { readonly provider?: string },
+    options?: { readonly provider?: string; readonly cliBin?: string },
 ): QaapAgentConnectionFlow {
     const normalized = migrateQaapProductAgentId(agentId?.trim());
     if (!normalized) {
@@ -135,11 +137,11 @@ export function resolveAgentConnectionFlow(
     if (isAgentHiddenOnHostedRuntime(normalized)) {
         return { kind: 'hosted-restricted' };
     }
-    const loginCommand = resolveAgentLoginCliCommand(normalized);
+    const loginCommand = resolveAgentLoginCliCommand(normalized, options?.cliBin);
     if (loginCommand) {
         return { kind: 'cli-login', command: loginCommand };
     }
-    const bin = resolveInteractiveAgentCliBin(normalized);
+    const bin = resolveInteractiveAgentCliBin(normalized, options?.cliBin);
     if (!bin) {
         return { kind: 'unsupported' };
     }
@@ -165,10 +167,10 @@ export function resolveAgentConnectionFlow(
 }
 
 /** Device/OAuth command to send to the background transcript terminal, when supported. */
-export function resolveInteractiveAgentLoginCommand(agentId: string | undefined): string | undefined {
+export function resolveInteractiveAgentLoginCommand(agentId: string | undefined, cliBin?: string): string | undefined {
     const normalized = migrateQaapProductAgentId(agentId?.trim());
     if (!normalized || normalized === QAIQ_AGENT_ID || isAgentHiddenOnHostedRuntime(normalized)) {
         return undefined;
     }
-    return resolveAgentLoginCliCommand(normalized);
+    return resolveAgentLoginCliCommand(normalized, cliBin);
 }

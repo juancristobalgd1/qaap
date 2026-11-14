@@ -11,12 +11,13 @@ export const QaapBillingQuota = Symbol.for('QaapBillingQuota');
 
 export interface QaapBillingQuotaSnapshot {
     readonly planId: string;
-    readonly hostedModels: boolean;
-    readonly creditsRemaining: number;
-    readonly canStartAgent: boolean;
     readonly maxConcurrentAgents: number;
     readonly maxActiveRepos: number;
-    readonly runtimeFairUse: boolean;
+    readonly storageGb: number;
+    readonly memoryOptionsGb: readonly number[];
+    readonly defaultMemoryGb: number;
+    readonly cpuLimit: number;
+    readonly idlePauseMinutes: number;
 }
 
 export class QaapPlanRepoLimitError extends Error {
@@ -33,6 +34,28 @@ export class QaapPlanRepoLimitError extends Error {
             + 'Remove a clone or upgrade to open another.'
         ));
         this.name = 'QaapPlanRepoLimitError';
+    }
+}
+
+/**
+ * The owner's workspace storage is over the plan's `storageGb`: new clones and agent turns are refused
+ * with the `storage_limit` plan-limit reason (see qaap-plan-limit.ts).
+ */
+export class QaapPlanStorageLimitError extends Error {
+    readonly code = 'plan_limit' as const;
+    readonly reason = 'storage_limit' as const;
+
+    constructor(
+        readonly planId: string,
+        readonly limit: number,
+        message?: string,
+    ) {
+        const planName = planId.charAt(0).toUpperCase() + planId.slice(1);
+        super(message ?? (
+            `Your ${planName} plan allows ${limit} GB of workspace storage and it is full. `
+            + 'Free some space or upgrade your plan.'
+        ));
+        this.name = 'QaapPlanStorageLimitError';
     }
 }
 

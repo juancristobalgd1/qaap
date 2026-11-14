@@ -10,10 +10,12 @@ import * as path from 'path';
 import { listStaticNativeAgentModels, parseNativeModelLines } from '../common/qaap-agent-native-model-catalog';
 import {
     clearNativeAgentModelCache,
+    discoverClaudeCliModels,
     discoverCodexAccountModels,
     invalidateNativeAgentModels,
     listNativeAgentModels,
     NATIVE_MODEL_CACHE_TTL_MS,
+    type NativeModelDiscoverySpawner,
     parseCodexModelsCache,
     prepareNativeAgentModels,
     resolveCodexAgentHome,
@@ -79,21 +81,22 @@ describe('qaap-agent-native-models', () => {
             etag: 'W/"abc"',
             client_version: '0.144.5',
             models: [
-                { slug: 'gpt-reserve', display_name: 'Reserve', visibility: 'list' },
+                { slug: 'gpt-reserve', display_name: 'Reserve', visibility: 'hide' },
+                { slug: 'gpt-6-luna', display_name: 'GPT-6-Luna', visibility: 'list' },
                 { slug: 'gpt-5.6-terra', display_name: 'GPT-5.6 Terra', visibility: 'list' },
                 { slug: 'gpt-5.6-luna', display_name: 'GPT-5.6 Luna', visibility: 'list' },
                 { slug: 'codex-auto-review', display_name: 'Auto review', visibility: 'hide' },
             ],
         });
 
-        it('keeps only the curated Codex entries the account lists, in curated order', () => {
+        it('keeps every visible Codex entry in the CLI order, including ids the static list does not know', () => {
             const models = parseCodexModelsCache(freeAccountCache);
-            expect(models.map(model => model.modelId)).to.deep.equal(['gpt-5.6-terra', 'gpt-5.6-luna']);
-            expect(models).to.deep.equal(listStaticNativeAgentModels('codex').filter(model => model.modelId !== 'gpt-5.6-sol' && model.modelId !== 'gpt-5.5'));
+            expect(models.map(model => model.modelId)).to.deep.equal(['gpt-6-luna', 'gpt-5.6-terra', 'gpt-5.6-luna']);
+            expect(models[0]).to.deep.equal({ provider: 'openai', vendor: 'codex', modelId: 'gpt-6-luna', label: 'GPT-6-Luna' });
         });
 
-        it('returns no entries when the account lists none of the curated models', () => {
-            expect(parseCodexModelsCache(JSON.stringify({ models: [{ slug: 'gpt-reserve' }] }))).to.deep.equal([]);
+        it('returns no entries when the account lists no visible model', () => {
+            expect(parseCodexModelsCache(JSON.stringify({ models: [{ slug: 'gpt-reserve', visibility: 'hide' }] }))).to.deep.equal([]);
         });
 
         it('returns no entries for a garbage, empty or differently shaped cache', () => {
@@ -115,8 +118,8 @@ describe('qaap-agent-native-models', () => {
                 clearNativeAgentModelCache();
                 fs.writeFileSync(path.join(codexHome, 'models_cache.json'), freeAccountCache);
                 const discovered = await prepareNativeAgentModels('codex');
-                expect(discovered.map(model => model.modelId)).to.deep.equal(['gpt-5.6-terra', 'gpt-5.6-luna']);
-                expect(listNativeAgentModels('codex').map(model => model.modelId)).to.deep.equal(['gpt-5.6-terra', 'gpt-5.6-luna']);
+                expect(discovered.map(model => model.modelId)).to.deep.equal(['gpt-6-luna', 'gpt-5.6-terra', 'gpt-5.6-luna']);
+                expect(listNativeAgentModels('codex').map(model => model.modelId)).to.deep.equal(['gpt-6-luna', 'gpt-5.6-terra', 'gpt-5.6-luna']);
             } finally {
                 if (originalCodexHome === undefined) {
                     delete process.env.CODEX_HOME;
@@ -145,7 +148,7 @@ describe('qaap-agent-native-models', () => {
             };
             const env = { QAAP_TENANT_AGENT_STORAGE_ROOT: '/data/agent-storage', QAAP_AGENT_UID: '1001', QAAP_AGENT_GID: '1001' };
             const models = await discoverCodexAccountModels(env, true, reader);
-            expect(models.map(model => model.modelId)).to.deep.equal(['gpt-5.6-terra', 'gpt-5.6-luna']);
+            expect(models.map(model => model.modelId)).to.deep.equal(['gpt-6-luna', 'gpt-5.6-terra', 'gpt-5.6-luna']);
             expect(seen).to.deep.equal([{
                 file: path.join('/data/agent-storage/home/.codex', 'models_cache.json'),
                 identity: { uid: 1001, gid: 1001 },
@@ -259,7 +262,7 @@ describe('qaap-agent-native-models', () => {
         });
     });
 
-    it('rediscovers an agent once its successful catalog is older than the TTL', async function (): Promise<void> {
+    it('serves a stale live catalog at once and refreshes it once the TTL has passed', async function (): Promise<void> {
         if (process.platform === 'win32') {
             this.skip();
         }
@@ -276,8 +279,34 @@ describe('qaap-agent-native-models', () => {
             now += NATIVE_MODEL_CACHE_TTL_MS - 1;
             expect((await prepareNativeAgentModels('cursor')).map(model => model.modelId)).to.deep.equal(['auto']);
 
+            // Stale: the request is answered from the cache immediately; the refresh runs behind it.
             now += 1;
-            expect((await prepareNativeAgentModels('cursor')).map(model => model.modelId)).to.deep.equal(['fresh-model']);
+            expect(listNativeAgentModels('cursor').map(model => model.modelId)).to.deep.equal(['auto']);
+            await new Promise(resolve => setTimeout(resolve, 300));
+            expect(listNativeAgentModels('cursor').map(model => model.modelId)).to.deep.equal(['fresh-model']);
+        } finally {
+            Date.now = realNow;
+        }
+    });
+
+    it('never replaces a live catalog with a failed or empty refresh', async function (): Promise<void> {
+        if (process.platform === 'win32') {
+            this.skip();
+        }
+        const realNow = Date.now;
+        let now = realNow();
+        Date.now = () => now;
+        try {
+            const bin = path.join(sandbox, 'cursor-agent');
+            fs.writeFileSync(bin, '#!/bin/sh\necho auto\necho cursor-private-model\n', { mode: 0o755 });
+            process.env.PATH = `${sandbox}${path.delimiter}${originalPath ?? ''}`;
+            expect((await prepareNativeAgentModels('cursor')).map(model => model.modelId)).to.deep.equal(['auto', 'cursor-private-model']);
+
+            // The CLI now fails (signed out, crashed): the live list is kept, and retried after the fallback delay.
+            fs.writeFileSync(bin, '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+            now += NATIVE_MODEL_CACHE_TTL_MS;
+            expect((await prepareNativeAgentModels('cursor')).map(model => model.modelId)).to.deep.equal(['auto', 'cursor-private-model']);
+            expect(listNativeAgentModels('cursor').map(model => model.modelId)).to.deep.equal(['auto', 'cursor-private-model']);
         } finally {
             Date.now = realNow;
         }
@@ -299,5 +328,94 @@ describe('qaap-agent-native-models', () => {
         const models = listStaticNativeAgentModels('pi');
         expect(models.length).to.be.greaterThan(0);
         expect(models.every(model => model.modelId.startsWith('openrouter/') && model.vendor === 'openrouter')).to.equal(true);
+    });
+
+    describe('Antigravity catalog per resolved CLI', () => {
+        const agyLabels = [
+            'Gemini 3.8 Flash (High)', 'Gemini 3.8 Flash (Medium)', 'Gemini 3.8 Flash (Low)',
+            'Claude Sonnet 4.6 (Thinking)', 'Claude Opus 4.6 (Thinking)', 'GPT-OSS 120B (Medium)',
+        ];
+        /** A spawner that refuses to run anything: discovery then answers "no list" without touching a CLI. */
+        const noSpawn = (): undefined => undefined;
+
+        it('lists the Gemini CLI model ids, never the agy labels, when gemini is resolved', () => {
+            const ids = listNativeAgentModels('antigravity', undefined, 'gemini').map(model => model.modelId);
+            expect(ids).to.deep.equal(['auto', 'gemini-3.1-pro-preview', 'gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-2.5-pro']);
+            expect(ids.some(id => agyLabels.includes(id))).to.equal(false);
+        });
+
+        it('keeps the live agy list for an agy bin and keeps its cache apart from gemini', async () => {
+            // agy's list is the discovered one; a refused run keeps the curated agy labels.
+            expect((await prepareNativeAgentModels('antigravity', { antigravityBin: 'agy', spawner: noSpawn })).map(model => model.modelId))
+                .to.deep.equal(agyLabels);
+            expect(listNativeAgentModels('antigravity', undefined, 'agy').map(model => model.modelId)).to.deep.equal(agyLabels);
+            // The gemini list is unaffected by the cached agy entry.
+            expect(listNativeAgentModels('antigravity', undefined, 'gemini').map(model => model.modelId)).to.include('gemini-3.5-flash');
+            expect(await prepareNativeAgentModels('antigravity', { antigravityBin: 'gemini', spawner: noSpawn }))
+                .to.deep.equal(listStaticNativeAgentModels('antigravity', 'gemini'));
+        });
+
+        it('invalidates every Antigravity catalog when no bin is given, and only the named one otherwise', async () => {
+            await prepareNativeAgentModels('antigravity', { antigravityBin: 'agy', spawner: noSpawn });
+            await prepareNativeAgentModels('antigravity', { antigravityBin: 'agy', spawner: noSpawn });
+            invalidateNativeAgentModels('antigravity', undefined, 'agy');
+            // The agy entry is gone: a fresh discovery (refused here) answers the curated fallback again.
+            expect((await prepareNativeAgentModels('antigravity', { antigravityBin: 'agy', spawner: noSpawn })).map(model => model.modelId))
+                .to.deep.equal(agyLabels);
+            invalidateNativeAgentModels('antigravity');
+            expect(listNativeAgentModels('antigravity', undefined, 'gemini').map(model => model.modelId)).to.include('auto');
+        });
+    });
+
+    describe('Claude catalog (initialize answer, bundle fallback)', () => {
+        const fixture = path.join(__dirname, '..', '..', 'test-resources', 'agent-models', 'claude-initialize-response.json');
+        const claudeSpawner = (file: string): NativeModelDiscoverySpawner => (bin, args) => ({
+            file: bin === 'claude' ? file : bin,
+            args: [...args],
+        });
+        let claudeBin: string;
+
+        beforeEach(function (): void {
+            if (process.platform === 'win32') {
+                this.skip();
+            }
+            claudeBin = path.join(sandbox, 'claude');
+            process.env.PATH = `${sandbox}${path.delimiter}${originalPath ?? ''}`;
+        });
+
+        it('lists the live models from the initialize answer, sending one control request and no user message', async function (): Promise<void> {
+            const requestFile = path.join(sandbox, 'request.json');
+            fs.writeFileSync(claudeBin, `#!/bin/sh\nread -r request\nprintf '%s' "$request" > '${requestFile}'\ncat '${fixture}'\nexec sleep 30\n`, { mode: 0o755 });
+
+            const discovered = await prepareNativeAgentModels('claude', { spawner: claudeSpawner(claudeBin) });
+
+            expect(discovered).to.have.length(14);
+            expect(discovered[0]).to.deep.equal({ provider: 'anthropic', vendor: 'claude', modelId: 'default', label: 'Default (recommended)' });
+            expect(listNativeAgentModels('claude').map(model => model.modelId)).to.include('fable');
+            const request = JSON.parse(fs.readFileSync(requestFile, 'utf8')) as { type: string; request: { subtype: string } };
+            expect(request.type).to.equal('control_request');
+            expect(request.request.subtype).to.equal('initialize');
+        });
+
+        it('answers with nothing when the CLI stays silent past the timeout', async () => {
+            fs.writeFileSync(claudeBin, '#!/bin/sh\nread -r request\nexec sleep 30\n', { mode: 0o755 });
+            const startedAt = Date.now();
+            expect(await discoverClaudeCliModels(claudeSpawner(claudeBin), 300)).to.deep.equal([]);
+            expect(Date.now() - startedAt).to.be.lessThan(5000);
+        });
+
+        it('falls back to the newest non-dated ids of the CLI bundle when initialize is not answered', async () => {
+            const bundleText = 'claude-fable-5-2 claude-opus-5-5 claude-opus-5-5-20251101 claude-sonnet-5-5 claude-haiku-4-5-20251001';
+            fs.writeFileSync(claudeBin, `#!/bin/sh\n# ${bundleText}\nexit 0\n`, { mode: 0o755 });
+            const models = await prepareNativeAgentModels('claude', { spawner: claudeSpawner(claudeBin) });
+            expect(models.map(model => model.modelId)).to.deep.equal(['claude-fable-5-2', 'claude-opus-5-5', 'claude-sonnet-5-5']);
+            expect(models.map(model => model.label)).to.deep.equal(['Fable 5.2', 'Opus 5.5', 'Sonnet 5.5']);
+        });
+
+        it('keeps the curated Claude catalog when the CLI answers with an error and its bundle lists no model', async () => {
+            const errorAnswer = JSON.stringify({ type: 'control_response', response: { subtype: 'error', request_id: 'qaap-model-list', error: 'unsupported' } });
+            fs.writeFileSync(claudeBin, `#!/bin/sh\nread -r request\necho '${errorAnswer}'\nexit 0\n`, { mode: 0o755 });
+            expect(await prepareNativeAgentModels('claude', { spawner: claudeSpawner(claudeBin) })).to.deep.equal(listStaticNativeAgentModels('claude'));
+        });
     });
 });

@@ -35,6 +35,9 @@ export interface QaapWorkHubAuxPanelHost {
 /** Marks the chat-header buttons that open and close the panel. */
 export const QAAP_WORK_HUB_AUX_PANEL_TOGGLE_CLASS = 'qaap-mod-aux-panel-toggle';
 
+/** Sub-pixel slack when deciding whether the tab strip still hides tabs at an edge. */
+const SCROLL_EDGE_EPSILON = 1;
+
 /** Changes and Files are two views over the same files surface. */
 function isFilesSurfaceView(kind: QaapWorkHubAuxPanelSurfaceKind): boolean {
     return kind === 'changes' || kind === 'files';
@@ -245,6 +248,7 @@ export class QaapWorkHubAuxPanel {
         });
         this.installResize();
         this.installLayoutListener();
+        this.installTabsScrollEdges();
     }
 
     static defaultStorage(): QaapWorkHubAuxPanelStorage | undefined {
@@ -519,6 +523,30 @@ export class QaapWorkHubAuxPanel {
             item.append(select, close);
             return item;
         }));
+        this.syncTabsScrollEdges(this.tabStrip);
+    }
+
+    /**
+     * Flags the edges of the tab strip that hide tabs, so the CSS can fade them.
+     * A resize can reveal or hide tabs without a scroll event, hence the observer too.
+     */
+    protected syncTabsScrollEdges(tabs: HTMLElement): void {
+        const hiddenBefore = tabs.scrollLeft > SCROLL_EDGE_EPSILON;
+        const hiddenAfter = tabs.scrollLeft + tabs.clientWidth < tabs.scrollWidth - SCROLL_EDGE_EPSILON;
+        tabs.classList.toggle('theia-mod-overflow-start', hiddenBefore);
+        tabs.classList.toggle('theia-mod-overflow-end', hiddenAfter);
+    }
+
+    protected installTabsScrollEdges(): void {
+        const onChange = (): void => this.syncTabsScrollEdges(this.tabStrip);
+        this.tabStrip.addEventListener('scroll', onChange, { passive: true });
+        this.toDispose.push(Disposable.create(() => this.tabStrip.removeEventListener('scroll', onChange)));
+        if (typeof ResizeObserver !== 'function') {
+            return;
+        }
+        const observer = new ResizeObserver(onChange);
+        observer.observe(this.tabStrip);
+        this.toDispose.push(Disposable.create(() => observer.disconnect()));
     }
 
     protected renderLauncher(): void {

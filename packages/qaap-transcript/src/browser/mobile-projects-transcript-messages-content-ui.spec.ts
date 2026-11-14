@@ -95,19 +95,50 @@ describe('MobileProjectsTranscriptMessagesContentUi', () => {
         expect(host.classList.contains(TRANSCRIPT_STREAMING_INCREMENTAL_MARKDOWN_CLASS)).to.equal(true);
     });
 
-    it('renderTranscriptMarkdown shows plain text while worker markdown is pending', () => {
+    it('renderTranscriptMarkdown paints settled markdown formatted on first paint, without the worker', () => {
         const host = document.createElement('div');
         const ui = new MobileProjectsTranscriptMessagesContentUi({
             transcriptMarkdownIt: markdownit(),
         } as never);
         const client = QaapTranscriptMarkdownWorkerClient.get();
-        (client as unknown as { requestParse: () => void }).requestParse = () => { /* simulate pending worker */ };
+        let workerCalls = 0;
+        (client as unknown as { requestParse: () => void }).requestParse = () => { workerCalls++; };
 
         ui.renderTranscriptMarkdown(host, '**Agent response**');
 
         expect(host.classList.contains('theia-mod-markdown')).to.equal(true);
-        expect(host.textContent).to.equal('**Agent response**');
-        expect(host.querySelector('strong')).to.equal(null);
+        expect(host.querySelector('strong')?.textContent).to.equal('Agent response');
+        expect(host.textContent).to.not.contain('**');
+        expect(workerCalls).to.equal(0);
+    });
+
+    it('renderTranscriptMarkdown paints a short historical (deferred) row in full, formatted', () => {
+        const host = document.createElement('div');
+        const ui = new MobileProjectsTranscriptMessagesContentUi({
+            transcriptMarkdownIt: markdownit(),
+        } as never);
+
+        ui.renderTranscriptMarkdown(host, '# Title\n\nSome `code` and **bold**.', { defer: true });
+
+        expect(host.querySelector('h1')?.textContent).to.equal('Title');
+        expect(host.querySelector('code')).to.not.equal(null);
+        expect(host.classList.contains('theia-mod-deferred-markdown')).to.equal(false);
+    });
+
+    it('renderTranscriptMarkdown shows a long deferred row as a formatted excerpt with balanced fences', () => {
+        const host = document.createElement('div');
+        const ui = new MobileProjectsTranscriptMessagesContentUi({
+            transcriptMarkdownIt: markdownit(),
+        } as never);
+        const long = `**Intro** line\n${'word '.repeat(50)}\n\n\`\`\`ts\n${'const x = 1;\n'.repeat(400)}\`\`\``;
+
+        ui.renderTranscriptMarkdown(host, long, { defer: true });
+
+        expect(host.classList.contains('theia-mod-deferred-markdown')).to.equal(true);
+        expect(host.querySelector('strong')?.textContent).to.equal('Intro');
+        expect(host.textContent).to.not.contain('**');
+        // The fence opened inside the excerpt is cut, so no half code block swallows the excerpt.
+        expect(host.querySelector('pre')).to.equal(null);
     });
 
     it('transcriptContentNeedsStreamingMarkdown detects fenced code and tables', () => {

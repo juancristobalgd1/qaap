@@ -106,6 +106,7 @@ export function initProjectsPanelFactoryExtracted(ctx: MobileOneColumnShellContr
             promptService: ctx.promptService,
             quickInputService: ctx.quickInputService,
             fileUploadService: ctx.fileUploadService,
+            fileSearchService: ctx.fileSearchService,
             fileService: ctx.fileService,
             workspaceService: ctx.workspaceService,
             editorManager: ctx.editorManager,

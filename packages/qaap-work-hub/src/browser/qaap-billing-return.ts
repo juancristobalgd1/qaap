@@ -22,7 +22,7 @@ function clearBillingReturnQuery(): void {
         }
         url.searchParams.delete('qaapBilling');
         url.searchParams.delete('plan');
-        url.searchParams.delete('session_id');
+        url.searchParams.delete('checkout');
         const next = `${url.pathname}${url.search}${url.hash}`;
         window.history.replaceState({}, '', next);
     } catch {
@@ -48,18 +48,18 @@ async function waitForPlan(
 }
 
 /**
- * Handle `?qaapBilling=success|cancel` after Stripe Checkout.
- * Confirms the session (so the plan updates without waiting on the webhook), clears the
+ * Handle `?qaapBilling=success|cancel` after the hosted checkout returns.
+ * Confirms the checkout (`?checkout=<id>`, so the plan updates without waiting on the webhook), clears the
  * query string, and signals the shell to open the Billing sheet on the current plan.
  */
 export async function handleQaapBillingReturn(): Promise<QaapBillingReturnResult> {
     let flag: string | null = null;
-    let sessionId: string | undefined;
+    let checkoutId: string | undefined;
     let expectedPlan: string | undefined;
     try {
         const url = new URL(window.location.href);
         flag = url.searchParams.get('qaapBilling');
-        sessionId = url.searchParams.get('session_id')?.trim() || undefined;
+        checkoutId = url.searchParams.get('checkout')?.trim() || undefined;
         expectedPlan = url.searchParams.get('plan')?.trim() || undefined;
     } catch {
         return { kind: 'none', openBilling: false };
@@ -74,9 +74,10 @@ export async function handleQaapBillingReturn(): Promise<QaapBillingReturnResult
     if (flag !== 'success') {
         return { kind: 'none', openBilling: false };
     }
-    if (sessionId) {
+    // An unsubstituted `{CHECKOUT_ID}` placeholder fails this check and falls back to polling entitlements.
+    if (checkoutId && /^[A-Za-z0-9_-]{1,120}$/.test(checkoutId)) {
         try {
-            const confirmed = await confirmQaapBillingCheckout(sessionId);
+            const confirmed = await confirmQaapBillingCheckout(checkoutId);
             if (confirmed?.entitlements.planId) {
                 const { rememberQaapAccountBillingPlanId } = await import('./qaap-workbench-account-menu');
                 rememberQaapAccountBillingPlanId(confirmed.entitlements.planId);

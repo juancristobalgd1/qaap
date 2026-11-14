@@ -6,8 +6,6 @@ import { QaapAgentConversation, QaapAgentMessage, QaapAgentTurnVerdict, QaapConv
 
 import { usesAgUiCliTranscriptStream, usesStructuredAgentTranscript } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 
-import { isHostedCodexUsage } from '../common/qaap-billing-plans';
-
 import { QaapPlanLimit } from '@theia/qaap-adapters/lib/common/qaap-plan-limit';
 
 import { isQaiqProviderKeyMissingFailure, localizeAgentFailureMessage, resolveAgentTurnFailureMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
@@ -202,23 +200,6 @@ export async function applyTaskOutcomeExtracted(ctx: QaapAgentConversationStoreC
     const usageFinalized = ctx.finalizeTurnContextUsage(convSnapshot, task.id, turnAgentId);
     ctx.agentStreamByTaskId.delete(task.id);
     ctx.agUiStreamByTaskId.delete(task.id);
-    if (
-        task.ownerLogin
-        && ctx.billingStore
-        && usageFinalized.contextUsage
-        && !usageFinalized.contextUsageEstimated
-    ) {
-        const modelId = task.agentModel?.modelId ?? task.qaiqModel?.modelId;
-        const usesUserCodexSession = ctx.taskRunner?.isAgentConnected?.(turnAgentId, task.ownerLogin) === true;
-        if (isHostedCodexUsage(turnAgentId, modelId) && !usesUserCodexSession) {
-            void ctx.billingStore.debitHostedUsage(
-                task.ownerLogin,
-                modelId!,
-                usageFinalized.contextUsage.inputTokens,
-                usageFinalized.contextUsage.outputTokens,
-            ).catch(() => undefined);
-        }
-    }
     const conv = ctx.conversations.get(conversationId);
     if (!conv) {
         return resolveChatTurnOutcome(task.state);

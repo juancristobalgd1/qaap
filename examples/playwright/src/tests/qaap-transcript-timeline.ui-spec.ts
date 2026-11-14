@@ -25,7 +25,7 @@ async function mountTimelineFixture(page: Page): Promise<void> {
         host.id = 'qaap-transcript-timeline-fixture';
         host.innerHTML = `
 <div class="theia-mobile-agent-transcript-real-chat" style="padding:12px 14px 120px;">
-  <div class="theia-mobile-agent-transcript-user-wrap" data-testid="user-message-wrap">
+  <div class="theia-mobile-agent-transcript-user-wrap" data-testid="user-message-wrap" tabindex="-1">
     <div class="theia-mobile-agent-transcript-msg theia-mod-user">Fix the failing tool step</div>
     <div class="theia-mobile-agent-transcript-user-actions">
       <button type="button" class="theia-mobile-agent-transcript-user-action theia-mod-edit" aria-label="Edit">
@@ -178,6 +178,8 @@ test.describe('@qaap-mobile transcript timeline', () => {
         await expect(errorPanel.locator('.theia-mobile-agent-activity-checkpoint-restore')).toHaveText('Restore to before this step');
 
         const userWrap = app.page.getByTestId('user-message-wrap');
+        // Touch layouts keep the actions folded until the bubble is tapped (focus-within).
+        await userWrap.locator('.theia-mobile-agent-transcript-msg.theia-mod-user').first().click();
         await expect(userWrap.locator('.theia-mobile-agent-transcript-user-action.theia-mod-edit')).toBeVisible();
         await expect(userWrap.locator('.theia-mobile-agent-transcript-user-action.theia-mod-copy')).toBeVisible();
         await userWrap.locator('.theia-mobile-agent-transcript-user-action.theia-mod-copy').click();

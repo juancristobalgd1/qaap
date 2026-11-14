@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { structuredLogResidueText } from './qaap-structured-log-residue';
 import type { QaapAgentMessageSegment } from './qaap-qaiq-stream';
 import { normalizeQaiqToolName } from './qaap-qaiq-stream';
 import type { QaapAgentContextUsage } from './qaap-agent-context-usage';
@@ -274,7 +275,7 @@ export function parseOpencodeLog(log: string): { content: string; segments: Qaap
     jsonAcc.push(log.endsWith('\n') ? log : `${log}\n`);
     if (jsonAcc.consumedJsonEvents()) {
         const segments = [...jsonAcc.getSegments()];
-        return { content: jsonAcc.getDisplayText() || log, segments };
+        return { content: jsonAcc.getDisplayText() || structuredLogResidueText(log), segments };
     }
     const assistantLog = withoutOpencodeLogLines(log);
     if (!assistantLog.trim()) {

@@ -8,6 +8,7 @@ import {
     NATIVE_MODEL_PICKER_AGENT_IDS,
 } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 import type { QaapQaiqModelOption } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import type { QaapAntigravityCliBin } from '@theia/qaap-shared-core/lib/common/qaap-antigravity-cli';
 import { listHermesNativeModels } from '@theia/qaap-shared-core/lib/common/qaap-hermes-model-catalog';
 import { listOpenClaudeNativeModels } from '@theia/qaap-shared-core/lib/common/qaap-openclaude-model-catalog';
 import { OPENCODE_FREE_MODEL_OPTIONS, OPENCODE_PAID_MODEL_OPTIONS } from '@theia/qaap-shared-core/lib/common/qaap-opencode-model-catalog';
@@ -46,27 +47,49 @@ function nativeOption(
 }
 
 /**
- * Models exposed by the Antigravity CLI `/model` menu (Google API labels).
- * Keep in sync with the TUI strings — agy stores and resolves them verbatim in settings.
- * As of mid-July 2026 (agy 1.1.x): Gemini 3.5 Flash is the default frontier Flash;
- * Claude rows remain Sonnet/Opus 4.6 in the official picker (not Sonnet 5 / Opus 4.8 yet).
+ * Models exposed by the Antigravity CLI (`agy models`, 2026-11 capture). Antigravity stores and
+ * resolves the friendly label verbatim, so the label is the model id (see {@link parseAgyModelLines}).
+ * The first row is the default. Refresh from `agy models` when the CLI changes.
  */
 export const ANTIGRAVITY_API_MODELS: readonly {
     readonly label: string;
     readonly provider: QaapQaiqModelOption['provider'];
 }[] = [
-    { label: 'Gemini 3.5 Flash (Medium)', provider: 'gemini' },
-    { label: 'Gemini 3.5 Flash (High)', provider: 'gemini' },
-    { label: 'Gemini 3.5 Flash (Low)', provider: 'gemini' },
-    { label: 'Gemini 3.1 Pro (Low)', provider: 'gemini' },
-    { label: 'Gemini 3.1 Pro (High)', provider: 'gemini' },
+    { label: 'Gemini 3.8 Flash (High)', provider: 'gemini' },
+    { label: 'Gemini 3.8 Flash (Medium)', provider: 'gemini' },
+    { label: 'Gemini 3.8 Flash (Low)', provider: 'gemini' },
     { label: 'Claude Sonnet 4.6 (Thinking)', provider: 'anthropic' },
     { label: 'Claude Opus 4.6 (Thinking)', provider: 'anthropic' },
     { label: 'GPT-OSS 120B (Medium)', provider: 'openai' },
 ];
 
-export function listStaticAntigravityModels(agentId: string): QaapQaiqModelOption[] {
+/**
+ * Models the Gemini CLI accepts with `-m` (`gemini --help`, `@google/gemini-cli` 0.62 `VALID_GEMINI_MODELS`,
+ * captured 2026-11; the local 0.49 bundle lists the same stable ids). Only chat models a user picks: the
+ * newest pro and flash-lite generations, the newest flash, and `auto` (the CLI routes between pro and flash
+ * itself). The first row is the CLI default. Refresh when `VALID_GEMINI_MODELS` changes.
+ */
+export const GEMINI_CLI_MODEL_OPTIONS: readonly {
+    readonly modelId: string;
+    readonly label: string;
+}[] = [
+    { modelId: 'auto', label: 'Auto' },
+    { modelId: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro (Preview)' },
+    { modelId: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash' },
+    { modelId: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash' },
+    { modelId: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash Lite' },
+    { modelId: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+];
+
+/**
+ * The picker list for the Antigravity harness. `gemini` (the resolved CLI, or the `gemini` agent id) lists
+ * Gemini CLI model ids that `-m` accepts; `agy` (and an unresolved bin) lists the agy catalog labels.
+ */
+export function listStaticAntigravityModels(agentId: string, antigravityBin?: QaapAntigravityCliBin): QaapQaiqModelOption[] {
     const id = agentId.trim().toLowerCase();
+    if (antigravityBin === 'gemini' || id === 'gemini') {
+        return GEMINI_CLI_MODEL_OPTIONS.map(entry => nativeOption(id, entry.modelId, entry.label, 'gemini'));
+    }
     return ANTIGRAVITY_API_MODELS.map(entry => nativeOption(id, entry.label, entry.label, entry.provider));
 }
 
@@ -111,8 +134,11 @@ export function parsePiModelLines(lines: readonly string[]): QaapQaiqModelOption
     return [...deduped.values()];
 }
 
-/** Curated fallback when a CLI is missing on the VPS or its list command fails. */
-export function listStaticNativeAgentModels(agentId: string): QaapQaiqModelOption[] {
+/**
+ * Curated fallback when a CLI is missing on the VPS or its list command fails. `antigravityBin` selects the
+ * Antigravity list for the resolved CLI (see {@link listStaticAntigravityModels}); other agents ignore it.
+ */
+export function listStaticNativeAgentModels(agentId: string, antigravityBin?: QaapAntigravityCliBin): QaapQaiqModelOption[] {
     const id = agentId.trim().toLowerCase();
     switch (id) {
         case 'qwen':
@@ -122,22 +148,25 @@ export function listStaticNativeAgentModels(agentId: string): QaapQaiqModelOptio
                 nativeOption(id, 'qwen3.5-plus', 'Qwen3.5 Plus'),
             ];
         case 'codex':
-            // Keep in sync with the Codex CLI /model menu (GPT-5.6 GA, July 2026).
+            // Keep in sync with `codex debug models` (visible rows, CLI order; captured 2026-11, codex 0.167.0).
+            // The first row is the CLI's own top-priority visible model, so it is the default.
             return [
-                nativeOption(id, 'gpt-5.6-sol', 'GPT-5.6 Sol'),
-                nativeOption(id, 'gpt-5.6-terra', 'GPT-5.6 Terra'),
-                nativeOption(id, 'gpt-5.6-luna', 'GPT-5.6 Luna'),
-                nativeOption(id, 'gpt-5.5', 'GPT-5.5 Legacy'),
+                nativeOption(id, 'gpt-6-luna', 'GPT-6-Luna'),
+                nativeOption(id, 'gpt-5.6-terra', 'GPT-5.6-Terra'),
+                nativeOption(id, 'gpt-5.6-luna', 'GPT-5.6-Luna'),
             ];
         case 'claude':
-            // Keep in sync with the Claude Code CLI /model menu (mid-July 2026).
+            // Fallback only: the live list comes from the CLI's `initialize` answer (Claude CLI 2.1.322, 2026-11),
+            // which reports `default` -> claude-opus-5-5 and `fable` -> claude-fable-5-2. First row is the CLI
+            // default; at most two legacy rows follow.
             return [
-                nativeOption(id, 'claude-fable-5', 'Fable 5', 'anthropic'),
-                nativeOption(id, 'claude-opus-4-8', 'Opus 4.8', 'anthropic'),
-                nativeOption(id, 'claude-sonnet-5', 'Sonnet 5', 'anthropic'),
-                nativeOption(id, 'claude-haiku-4-5', 'Haiku 4.5', 'anthropic'),
-                nativeOption(id, 'claude-sonnet-4-6', 'Sonnet 4.6 Legacy', 'anthropic'),
-                nativeOption(id, 'claude-opus-4-7', 'Opus 4.7 Legacy', 'anthropic'),
+                nativeOption(id, 'claude-opus-5-5', 'Opus 5.5', 'anthropic'),
+                nativeOption(id, 'claude-fable-5-2', 'Fable 5.2', 'anthropic'),
+                nativeOption(id, 'claude-fable-5-1', 'Fable 5.1', 'anthropic'),
+                nativeOption(id, 'claude-sonnet-5-5', 'Sonnet 5.5', 'anthropic'),
+                nativeOption(id, 'claude-haiku-5-5', 'Haiku 5.5', 'anthropic'),
+                nativeOption(id, 'claude-fable-5', 'Fable 5 Legacy', 'anthropic'),
+                nativeOption(id, 'claude-sonnet-5', 'Sonnet 5 Legacy', 'anthropic'),
             ];
         case 'openclaude':
             // OpenClaude is a separate harness. It accepts the QAIQ provider flags, but its
@@ -157,7 +186,7 @@ export function listStaticNativeAgentModels(agentId: string): QaapQaiqModelOptio
             ];
         case 'antigravity':
         case 'gemini':
-            return listStaticAntigravityModels(id);
+            return listStaticAntigravityModels(id, antigravityBin);
         case 'opencode':
             // Free models first, then the paid catalog (locked per owner by the runner's access rule).
             return [
@@ -175,8 +204,9 @@ export function listStaticNativeAgentModels(agentId: string): QaapQaiqModelOptio
                 piOption('openrouter', '~deepseek/deepseek-pro-latest'),
             ];
         case 'grok':
+            // `grok models` (2026-11) marks grok-4.7 as the default.
             return [
-                nativeOption(id, 'grok-4.5', 'Grok 4.5'),
+                nativeOption(id, 'grok-4.7', 'Grok 4.7'),
             ];
         case 'cursor':
             // Cursor replaces this fallback with the account-scoped result of `cursor-agent models`

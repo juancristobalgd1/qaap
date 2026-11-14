@@ -453,7 +453,12 @@ export class QaapTaskPullRequestService implements BackendApplicationContributio
             if (state?.lastError === reason) {
                 return;
             }
-            this.record(conversationId, { ...current, lastError: reason, updatedAt: Date.now() }, {
+            // A PR created in this run is already persisted (upsertPullRequest): keep its number when the failure came after it.
+            const created = this.store.get(conversationId)?.taskPullRequest;
+            const keepCreated = created?.number !== undefined && current.number === undefined
+                ? { number: created.number, url: created.url, ...(created.nodeId ? { nodeId: created.nodeId } : {}) }
+                : {};
+            this.record(conversationId, { ...current, ...keepCreated, lastError: reason, updatedAt: Date.now() }, {
                 traceNote: nls.localize('qaap/taskPullRequest/traceFailed', 'Task pull request was not updated: {0}', reason),
             });
         }
@@ -793,6 +798,8 @@ export class QaapTaskPullRequestService implements BackendApplicationContributio
             record = await this.withRetry(() => this.github.createPull(token, {
                 owner: state.owner, repo: state.repo, title, head: state.branch, base: baseBranch, body: section, draft: red,
             }));
+            // Persist the number before labelling: when the label fails, the retry must update this PR, not open another.
+            this.record(conv.id, { ...state, number: record.number, url: record.url, ...(record.nodeId ? { nodeId: record.nodeId } : {}) }, {});
             if (red) {
                 await this.withRetry(() => this.github.addLabel(token, state.owner, state.repo, record.number, QAAP_TASK_PR_ATTENTION_LABEL));
             }

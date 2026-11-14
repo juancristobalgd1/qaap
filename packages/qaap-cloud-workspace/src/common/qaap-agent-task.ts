@@ -180,6 +180,8 @@ export interface QaapAgentTask {
      * a fix turn; cleared before the task settles. Announced with a task event of type `'updated'`.
      */
     readonly verificationPhase?: QaapAgentTaskVerificationPhase;
+    /** Set when Stop could not signal the agent: the task is not stopped and its process may still run. */
+    readonly stopFailure?: string;
 }
 
 /** Progress of the automatic verification loop for a task that is still running. */
@@ -384,6 +386,11 @@ export interface QaapAgentHarnessStatus {
      * Connect flow prepends it to the login command; otherwise a per-user install is "not found".
      */
     readonly cliBinDirectory?: string;
+    /**
+     * The Antigravity CLI the host resolved (`gemini`, `agy` or `antigravity`); only set for the
+     * Antigravity harness. The TUI menu, Connect and the status probe all use this one binary.
+     */
+    readonly cliBin?: string;
     /** The user's last finished turn with this agent, when there is one. */
     readonly lastTurn?: QaapAgentLastTurn;
 }
@@ -402,14 +409,16 @@ export interface QaapAgentDescriptor {
     /** Authentication state is reported separately from CLI installation. */
     readonly connectionState?: QaapAgentConnectionState;
     /**
-     * How the owner can run this agent right now: their own sign-in (`session`), Qaap-hosted access
-     * (`hosted`, Codex on a plan with credits), nothing usable (`none`), or not yet known (`unknown`).
+     * How the owner can run this agent right now: their own sign-in (`session`), nothing usable (`none`),
+     * or not yet known (`unknown`).
      */
     readonly accessState?: QaapAgentAccessState;
+    /** The Antigravity CLI the host resolved; only set for the Antigravity harness (see {@link QaapAgentHarnessStatus.cliBin}). */
+    readonly cliBin?: string;
 }
 
 /** See {@link QaapAgentDescriptor.accessState}. Resolved by `resolveAgentAccess` on the backend. */
-export type QaapAgentAccessState = 'session' | 'hosted' | 'none' | 'unknown';
+export type QaapAgentAccessState = 'session' | 'none' | 'unknown';
 
 /** Selectable QAIQ model option exposed to the frontend picker. */
 export interface QaapQaiqModelOption {

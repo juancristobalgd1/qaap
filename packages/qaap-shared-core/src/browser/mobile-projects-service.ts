@@ -264,6 +264,21 @@ export class MobileProjectsService {
     }
 
     /**
+     * Whether the project's folder still exists on this host (one cheap stat through the file service).
+     * `undefined` when the project has no local folder to check, or the check itself failed.
+     */
+    async projectFolderExists(project: MobileProjectEntry): Promise<boolean | undefined> {
+        if (!project.uri || !this.fileService) {
+            return undefined;
+        }
+        try {
+            return await this.fileService.exists(project.uri);
+        } catch {
+            return undefined;
+        }
+    }
+
+    /**
      * Projects the user confirmed deleting whose backend removal is still in flight. Every project
      * list this service returns omits them, so a background reload (active-task refresh, sidebar
      * prepare) cannot resurrect an optimistically removed row before persistence finishes.

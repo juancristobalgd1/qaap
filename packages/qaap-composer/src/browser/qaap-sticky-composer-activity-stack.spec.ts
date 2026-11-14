@@ -371,6 +371,42 @@ describe('qaap-sticky-composer-activity-stack', () => {
             expect(actions).to.deep.equal(['run']);
         });
 
+        it('shows Run app after a settled turn that asked to run the app, even without file activity', () => {
+            const actions: string[] = [];
+            const host = renderStickyComposerChangesPill({
+                previewRequested: true,
+                onRunApp: () => { actions.push('run'); },
+            });
+            expect(host).to.not.equal(undefined);
+            document.body.append(host!);
+
+            const nextActions = Array.from(host!.querySelectorAll<HTMLButtonElement>('.theia-mobile-sticky-composer-next-action'));
+            expect(nextActions.map(action => action.textContent)).to.deep.equal(['Run app']);
+            nextActions[0].click();
+            expect(actions).to.deep.equal(['run']);
+        });
+
+        it('shows Starting preview… while the autopilot starts a requested app', () => {
+            const host = renderStickyComposerChangesPill({
+                previewRequested: true,
+                previewStarting: true,
+                onRunApp: () => undefined,
+            });
+            document.body.append(host!);
+
+            const nextActions = Array.from(host!.querySelectorAll<HTMLButtonElement>('.theia-mobile-sticky-composer-next-action'));
+            expect(nextActions.map(action => action.textContent)).to.deep.equal(['Starting preview…']);
+        });
+
+        it('still hides the row without file activity when the turn did not ask to run the app', () => {
+            const host = renderStickyComposerChangesPill({
+                previewRequested: false,
+                onReview: () => undefined,
+                onRunApp: () => undefined,
+            });
+            expect(host).to.equal(undefined);
+        });
+
         it('shows Run app as a busy colored pill while preview startup is pending', () => {
             const host = renderStickyComposerChangesPill({
                 diffStats: { added: 10, removed: 1 },

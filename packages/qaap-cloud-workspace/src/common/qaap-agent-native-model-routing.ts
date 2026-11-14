@@ -47,6 +47,13 @@ export type QaapNativeModelRoutingTable = Readonly<Record<string, QaapNativeMode
 export const QAAP_AGENT_TASK_MODELS_ENV = 'QAAP_AGENT_TASK_MODELS';
 
 /**
+ * A pin of the form `family:<name>` (e.g. `family:opus`) resolves at routing time to the NEWEST catalog
+ * entry of that family, so a new model release never leaves the pin stale. An exact model id still
+ * works as an operator override.
+ */
+export const FAMILY_PIN_PREFIX = 'family:';
+
+/**
  * Default pins. Ordered by the same principle as {@link DEFAULT_QAAP_WORKFLOW_ROUTING_TABLE}:
  * getting it right the first time beats saving on the turn, because a turn that has to be re-run
  * costs a whole extra cycle of wall-clock time.
@@ -67,11 +74,46 @@ export const QAAP_AGENT_TASK_MODELS_ENV = 'QAAP_AGENT_TASK_MODELS';
  */
 export const DEFAULT_QAAP_NATIVE_MODEL_ROUTING_TABLE: QaapNativeModelRoutingTable = {
     claude: {
-        exploration: 'claude-haiku-4-5',
-        implementation: 'claude-fable-5',
-        review: 'claude-opus-4-8',
+        exploration: FAMILY_PIN_PREFIX + 'haiku',
+        implementation: FAMILY_PIN_PREFIX + 'fable',
+        review: FAMILY_PIN_PREFIX + 'opus',
     },
 };
+
+/** Numeric version of a catalog id such as `claude-opus-5-5` → `[5, 5]`; date stamps are ignored. */
+function nativeModelVersion(modelId: string, family: string): number[] | undefined {
+    const match = new RegExp(`(?:^|/)claude-${family}-(\\d[\\d-]*)`, 'i').exec(modelId);
+    if (!match) {
+        return undefined;
+    }
+    return match[1].split('-').filter(part => part.length > 0 && part.length < 8).map(Number);
+}
+
+function compareVersions(left: readonly number[], right: readonly number[]): number {
+    for (let index = 0; index < Math.max(left.length, right.length); index++) {
+        const difference = (left[index] ?? 0) - (right[index] ?? 0);
+        if (difference !== 0) {
+            return difference;
+        }
+    }
+    return 0;
+}
+
+/** The newest catalog entry of a family (first one wins on equal versions), or undefined. */
+export function resolveNativeModelFamily(
+    family: string,
+    catalog: readonly QaapQaiqModelOption[],
+): QaapQaiqModelOption | undefined {
+    const normalizedFamily = family.trim().toLowerCase();
+    let best: { option: QaapQaiqModelOption; version: number[] } | undefined;
+    for (const option of catalog) {
+        const version = nativeModelVersion(option.modelId.trim().toLowerCase(), normalizedFamily);
+        if (version && (!best || compareVersions(version, best.version) > 0)) {
+            best = { option, version };
+        }
+    }
+    return best?.option;
+}
 
 /**
  * Resolve the model a native-CLI agent should run for this task kind, or `undefined` to leave the
@@ -95,7 +137,9 @@ export function resolveNativeAgentModelForTaskKind(
     }
     // The catalog is the only authority on what this CLI accepts: a pin the agent does not list is
     // treated as absent rather than passed through, so a stale table can never break a run.
-    const option = catalog.find(candidate => candidate.modelId.trim().toLowerCase() === pinned);
+    const option = pinned.startsWith(FAMILY_PIN_PREFIX)
+        ? resolveNativeModelFamily(pinned.slice(FAMILY_PIN_PREFIX.length), catalog)
+        : catalog.find(candidate => candidate.modelId.trim().toLowerCase() === pinned);
     if (!option) {
         return undefined;
     }

@@ -296,6 +296,19 @@ body.qaap-theme-light .theia-mobile-agent-transcript-empty-action.theia-mod-prev
   animation: qaap-border-beam-hue 12s ease-in-out infinite;
 }
 
+/* Chips en arranque: el interior no se tiñe (fondo de tema como los chips inactivos); el haz (::after) y el spinner siguen */
+.theia-mobile-sticky-composer-next-action.theia-mod-preview-starting::before,
+.theia-mobile-agent-transcript-empty-action.theia-mod-preview-starting::before {
+  background: none;
+  box-shadow: none;
+}
+
+/* Starting chips keep the theme background: no blurred colored bloom inside them either. */
+.theia-mobile-sticky-composer-next-action.theia-mod-preview-starting .qaap-border-beam-bloom,
+.theia-mobile-agent-transcript-empty-action.theia-mod-preview-starting .qaap-border-beam-bloom {
+  display: none;
+}
+
 /* Capa 3 — bloom: el pico del haz desenfocado, recortado al anillo */
 .theia-mobile-projects-sticky-composer-input-panel .qaap-border-beam-bloom,
 .theia-mobile-projects-sticky-composer-card.theia-mod-has-context .qaap-card-beam-bloom,
@@ -1730,16 +1743,8 @@ body.qaap-theme-light .theia-mobile-agent-transcript-empty-action.theia-mod-prev
     max-width: min(82%, 420px);
   }
 
-  .theia-mobile-agent-transcript-user-actions {
-    opacity: 0;
-    min-height: 12px;
-    pointer-events: none;
-  }
-
-  .theia-mobile-agent-transcript-user-wrap:focus-within .theia-mobile-agent-transcript-user-actions,
-  .theia-mobile-agent-transcript-user-wrap:hover .theia-mobile-agent-transcript-user-actions {
-    opacity: 0.82;
-    pointer-events: auto;
+  .theia-mobile-agent-transcript-user-wrap:focus {
+    outline: none;
   }
 
   .theia-mobile-agent-lobe-workflow-summary,
@@ -2417,7 +2422,8 @@ body.qaap-theme-light .theia-mobile-agent-transcript-empty-action.theia-mod-prev
 /* Auto-expands while working, auto-collapses on success, open on error.       */
 
 .theia-mobile-process-accordion {
-  margin: 0 0 20px 0;
+  /* Same rhythm as the header → answer gap (~16–18px), not a 28px pause before the answer. */
+  margin: 0 0 14px 0;
   border-bottom: none;
 }
 
@@ -2607,7 +2613,7 @@ body.qaap-theme-light .theia-mobile-agent-transcript-empty-action.theia-mod-prev
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding-bottom: 24px;
+  padding-bottom: var(--q-space-4);
 }
 
 .theia-mobile-execution-event:last-child {
@@ -2622,6 +2628,38 @@ body.qaap-theme-light .theia-mobile-agent-transcript-empty-action.theia-mod-prev
   font-size: 13px;
   font-weight: 500;
   line-height: 1.6;
+}
+
+/* Agent narrative keeps its line breaks; long text clamps to three lines until "Show more". */
+.theia-mobile-execution-event-narrative.theia-mod-agent {
+  white-space: pre-line;
+}
+
+.theia-mobile-execution-event-narrative.theia-mod-clamped:not(.theia-mod-expanded) {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.theia-mobile-execution-event-narrative-toggle {
+  align-self: flex-start;
+  min-height: 28px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--theia-textLink-foreground);
+  font: inherit;
+  font-size: var(--q-text-meta);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.theia-mobile-execution-event-narrative-toggle:focus-visible {
+  outline: 2px solid var(--theia-focusBorder);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 .theia-mobile-execution-event-narrative.theia-mod-synthetic {
@@ -2867,13 +2905,13 @@ body.qaap-theme-light .theia-mobile-agent-transcript-empty-action.theia-mod-prev
 
 .theia-mobile-tool-group-verb {
   font-weight: 500;
-  font-size: 13px;
+  font-size: var(--q-text-body);
   color: var(--theia-descriptionForeground);
 }
 
 .theia-mobile-tool-group-meta {
   color: var(--theia-descriptionForeground);
-  font-size: 12px;
+  font-size: var(--q-text-meta);
   font-weight: 400;
   opacity: 0.72;
 }
@@ -2997,7 +3035,7 @@ body.qaap-theme-light .theia-mobile-tool-group.running .theia-mobile-tool-group-
 
 .theia-mobile-tool-detail-detail {
   color: var(--theia-descriptionForeground);
-  font-size: 12px;
+  font-size: var(--q-text-body);
   font-family: var(--theia-monospace-font-family);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3095,22 +3133,20 @@ body.qaap-theme-light .theia-mobile-tool-group.running .theia-mobile-tool-group-
   color: var(--theia-descriptionForeground);
   font-size: 12px;
   font-family: var(--theia-monospace-font-family);
-  /* Allow the command text to scroll horizontally without truncation */
-  flex: 1;
+  /* A long command ends in an ellipsis (the full text is in the title tooltip) instead of being
+     cut off or scrolled sideways; the trailing status check keeps its own slot. */
+  flex: 1 1 auto;
   min-width: 0;
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
-  -webkit-overflow-scrolling: touch;
-  touch-action: pan-x;
-  overscroll-behavior-x: contain;
-  /* Hide scrollbar track but keep scroll functional */
-  scrollbar-width: none;
+  touch-action: manipulation;
 }
 
 .theia-mobile-terminal-output-detail::-webkit-scrollbar {
   display: none;
 }
+
 
 .theia-mobile-terminal-output-detail .theia-mobile-agent-token.theia-mod-keyword {
   color: var(--theia-symbolIcon-functionForeground, #dcdcaa);
@@ -3139,7 +3175,8 @@ body.qaap-theme-light .theia-mobile-tool-group.running .theia-mobile-tool-group-
 
 .theia-mobile-terminal-output-state {
   font-size: 14px;
-  margin-left: auto;
+  flex: 0 0 auto;
+  margin-left: 8px;
 }
 
 .theia-mobile-terminal-output.complete .theia-mobile-terminal-output-state {
@@ -3344,7 +3381,7 @@ body.qaap-theme-light .theia-mobile-tool-group.running .theia-mobile-tool-group-
   background: transparent;
   color: color-mix(in srgb, var(--theia-descriptionForeground) 78%, transparent);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--q-text-meta);
   font-weight: 500;
   line-height: 1.3;
   cursor: pointer;
@@ -3431,13 +3468,14 @@ body.qaap-theme-light .theia-mobile-tool-group.running .theia-mobile-tool-group-
 
 .theia-mobile-diff-summary-file-badge {
   flex: none;
-  min-width: 1.4em;
+  min-width: 18px;
+  height: 18px;
   color: color-mix(in srgb, #6b8cae 82%, var(--theia-descriptionForeground));
   font-family: var(--theia-ui-font-family, system-ui, sans-serif);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.02em;
-  line-height: 1;
+  line-height: 18px;
   text-align: center;
 }
 
@@ -3628,7 +3666,9 @@ body.qaap-theme-light .theia-mobile-tool-group.running .theia-mobile-tool-group-
   font-size: 11px;
 }
 
-.theia-mobile-agent-transcript-capture-pending.theia-mod-unavailable .theia-mobile-agent-transcript-capture-pending-preview {
+.theia-mobile-agent-transcript-capture-pending.theia-mod-unavailable .theia-mobile-agent-transcript-capture-pending-preview,
+.theia-mobile-agent-transcript-capture-pending.theia-mod-awaiting .theia-mobile-agent-transcript-capture-pending-preview {
+  /* No image box until the capture can actually start (the reply is still streaming) or once it cannot. */
   display: none;
 }
 
@@ -4011,6 +4051,8 @@ body.theia-dark .theia-mobile-agent-web-search,
   align-items: flex-end;
   gap: 6px;
   border-style: dashed;
+  border-color: var(--theia-descriptionForeground, var(--theia-foreground));
+  background: color-mix(in srgb, var(--theia-foreground) 6%, var(--theia-editor-background, transparent));
 }
 
 /* Dim only the message text: the Send now / Cancel actions live in the row header and must stay at full strength. */
@@ -4072,8 +4114,8 @@ body.theia-dark .theia-mobile-agent-web-search,
 }
 
 .theia-mobile-agent-transcript-queued-paused-hint {
-  font-size: 11px;
-  color: var(--theia-descriptionForeground, var(--theia-foreground));
+  font-size: var(--q-text-meta, 13px);
+  color: var(--theia-foreground);
   white-space: nowrap;
 }
 
@@ -4084,6 +4126,7 @@ body.theia-dark .theia-mobile-agent-web-search,
 }
 
 .theia-mobile-agent-transcript-queued-action {
+  font-family: inherit;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -4247,13 +4290,18 @@ details > summary:focus-visible,
 .theia-mobile-agent-diff-card-head:focus-visible,
 .theia-mobile-process-accordion-header:focus,
 .theia-mobile-process-accordion-header:focus-visible,
-.theia-mobile-tool-group-summary:focus,
-.theia-mobile-tool-group-summary:focus-visible,
 .theia-mobile-terminal-output-summary:focus,
 .theia-mobile-terminal-output-summary:focus-visible {
   outline: none !important;
   box-shadow: none !important;
   background: transparent !important;
+}
+
+/* Disclosure focus: visible theme focus ring (outline is kept, never removed). */
+.theia-mobile-tool-group-summary:focus-visible {
+  outline: 2px solid var(--theia-focusBorder);
+  outline-offset: -2px;
+  border-radius: 6px;
 }
 
 @media (hover: none), (pointer: coarse) {
@@ -4307,4 +4355,329 @@ details > summary:focus-visible,
 .theia-mobile-visual-repair-proposal-actions {
     display: flex;
     gap: 6px;
+}
+
+/* Turn closing report: one quiet line under the answer (icon, short title, informative details).
+   Replaces the raw "Error: Blocked — needs your input …" text block. */
+.theia-mobile-turn-closing-report {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin-top: 10px;
+  color: var(--theia-descriptionForeground);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.theia-mobile-turn-closing-report-icon {
+  flex: 0 0 auto;
+  font-size: 14px;
+}
+
+.theia-mobile-turn-closing-report-title {
+  color: var(--theia-foreground);
+  font-weight: 600;
+}
+
+.theia-mobile-turn-closing-report-details {
+  flex: 1 1 100%;
+  padding-left: 22px;
+  overflow-wrap: anywhere;
+}
+
+.theia-mobile-turn-closing-report.theia-mod-blocked .theia-mobile-turn-closing-report-icon {
+  color: var(--theia-textLink-foreground, var(--theia-focusBorder));
+}
+
+.theia-mobile-turn-closing-report.theia-mod-warning .theia-mobile-turn-closing-report-icon {
+  color: var(--theia-editorWarning-foreground);
+}
+
+.theia-mobile-turn-closing-report.theia-mod-failed .theia-mobile-turn-closing-report-icon {
+  color: var(--theia-errorForeground);
+}
+
+.theia-mobile-turn-closing-report.theia-mod-done .theia-mobile-turn-closing-report-icon {
+  color: var(--theia-charts-green, var(--theia-gitDecoration-addedResourceForeground));
+}
+
+/* Narrow viewports: no inline action row under user messages (it unfolded on hover/tap and
+   pushed the transcript). A long press on the bubble opens the same actions in a small menu
+   (qaap-transcript-user-message-menu.ts); the hidden buttons keep owning the handlers. */
+@media (max-width: 767px) {
+  .theia-mobile-agent-transcript .theia-mobile-agent-transcript-user-wrap .theia-mobile-agent-transcript-user-actions {
+    display: none;
+  }
+
+  .theia-mobile-agent-transcript-user-wrap .theia-mobile-agent-transcript-msg.theia-mod-user {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    transition: transform 120ms ease, filter 120ms ease;
+  }
+
+  .theia-mobile-agent-transcript-user-wrap.theia-mod-menu-open .theia-mobile-agent-transcript-msg.theia-mod-user {
+    transform: scale(0.98);
+    filter: brightness(1.15);
+  }
+}
+
+.theia-mobile-agent-transcript-user-menu {
+  position: fixed;
+  z-index: 13100;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--q-space-2);
+  box-sizing: border-box;
+  max-width: calc(100vw - 2 * var(--q-space-8));
+  padding: var(--q-space-2);
+  border: 1px solid var(--theia-menu-border, var(--theia-widget-border));
+  border-radius: 12px;
+  background: var(--theia-menu-background);
+  color: var(--theia-menu-foreground);
+  box-shadow: 0 8px 24px var(--theia-widget-shadow);
+  font-family: inherit;
+  animation: theia-mobile-agent-transcript-user-menu-in 120ms ease-out;
+}
+
+@keyframes theia-mobile-agent-transcript-user-menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+.theia-mobile-agent-transcript-user-menu-item {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.theia-mobile-agent-transcript-user-menu-item .codicon {
+  font-size: 16px;
+  color: var(--theia-descriptionForeground);
+}
+
+.theia-mobile-agent-transcript-user-menu-item:hover:not(:disabled),
+.theia-mobile-agent-transcript-user-menu-item:focus-visible:not(:disabled) {
+  background: var(--theia-menu-selectionBackground);
+  color: var(--theia-menu-selectionForeground);
+  outline: none;
+}
+
+.theia-mobile-agent-transcript-user-menu-item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/*
+ * Parking spot for terminals that are not on screen but must stay laid out (the Connect dialog's
+ * sign-in terminal, cached transcript terminals). Off screen and transparent rather than
+ * display:none, so xterm measures a real size, opens, and keeps parsing output.
+ */
+.theia-mobile-transcript-terminal-staging {
+  position: fixed;
+  top: 0;
+  left: -10000px;
+  width: 800px;
+  height: 400px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Turn-end result footer: closes the Files Changed card (verdict, preview, one primary next step). */
+.theia-mobile-turn-result {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid color-mix(in srgb, var(--theia-panel-border, rgba(128, 128, 128, 0.35)) 70%, transparent);
+}
+
+.theia-mobile-turn-result-verdict {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--q-text-meta);
+  color: var(--theia-descriptionForeground);
+}
+
+.theia-mobile-turn-result-verdict.theia-mod-warning .theia-mobile-turn-result-verdict-icon {
+  color: var(--theia-editorWarning-foreground);
+}
+
+.theia-mobile-turn-result-verdict.theia-mod-done .theia-mobile-turn-result-verdict-icon {
+  color: var(--theia-charts-green);
+}
+
+.theia-mobile-turn-result-verdict-title {
+  font-weight: 600;
+  color: var(--theia-foreground);
+}
+
+.theia-mobile-turn-result-verdict-details {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.theia-mobile-turn-result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.theia-mobile-turn-result-action {
+  display: inline-flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+  margin: 0;
+  padding: 0 14px;
+  border-radius: 10px;
+  font: inherit;
+  font-size: var(--q-text-meta);
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.theia-mobile-turn-result-action.theia-mod-primary {
+  border: 1px solid var(--theia-foreground);
+  background: var(--theia-foreground);
+  color: var(--theia-editor-background);
+}
+
+.theia-mobile-turn-result-action.theia-mod-secondary {
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 22%, transparent);
+  background: transparent;
+  color: var(--theia-foreground);
+}
+
+.theia-mobile-turn-result-action:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+.theia-mobile-turn-result-action:focus-visible {
+  outline: 2px solid var(--theia-focusBorder);
+  outline-offset: 2px;
+}
+
+.theia-mobile-turn-result-action-icon.codicon-loading {
+  animation: theia-mobile-turn-result-spin 1s linear infinite;
+}
+
+@keyframes theia-mobile-turn-result-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theia-mobile-turn-result-action-icon.codicon-loading {
+    animation: none;
+  }
+}
+
+/* "Change model" on usage-limit and model-unavailable failures. */
+.theia-mobile-agent-turn-failure-change-model {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 22%, transparent);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--theia-foreground);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.theia-mobile-agent-turn-failure-change-model:focus-visible {
+  outline: 2px solid var(--theia-focusBorder);
+  outline-offset: 2px;
+}
+
+/* Link context menu (right-click / long-press on a transcript link): same card language as the
+   composer attach menu. */
+.qaap-transcript-link-menu {
+  position: fixed;
+  z-index: 2147483004;
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+  max-width: min(320px, calc(100vw - 16px));
+  padding: 6px;
+  border: 1px solid color-mix(in srgb, var(--q-line, var(--theia-panel-border)) 75%, transparent);
+  border-radius: 12px;
+  background: var(--theia-menu-background, var(--theia-editor-background));
+  color: var(--theia-menu-foreground, var(--theia-foreground));
+  box-shadow: var(--q-shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.35));
+  box-sizing: border-box;
+}
+
+.qaap-transcript-link-menu-item {
+  display: block;
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.qaap-transcript-link-menu-item:hover,
+.qaap-transcript-link-menu-item:focus-visible {
+  outline: none;
+  background: var(--theia-menu-selectionBackground, color-mix(in srgb, var(--theia-foreground) 10%, transparent));
+  color: var(--theia-menu-selectionForeground, inherit);
+}
+
+/* Long-press opens Qaap's link menu, not the OS link callout. */
+.theia-mobile-agent-transcript a[href] {
+  -webkit-touch-callout: none;
+
+/* File-icon theme icons (resolveQaapFileIconClasses) take the slot of the old codicon: one fixed
+   16px column without the theme's own padding, so rows keep their alignment. */
+.theia-mobile-tool-detail-file-icon.file-icon,
+.theia-mobile-agent-changed-file-icon.file-icon,
+.theia-mobile-agent-activity-file-icon.file-icon,
+.theia-mobile-agent-activity-edit-row-icon.file-icon,
+.theia-mobile-agent-activity-file-chip > .file-icon {
+  box-sizing: border-box;
+  flex: 0 0 16px;
+  width: 16px;
+  padding: 0 !important;
+  margin-inline: 0 !important;
+  text-align: center;
 }

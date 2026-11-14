@@ -64,7 +64,7 @@ describe('mobile-projects-transcript-messages-tool-ui', () => {
 
         it('shows the localized message and an Upgrade button that opens billing, hiding the raw tag', () => {
             let opened = 0;
-            const raw = '[qaap:plan_limit:hosted_model_denied] Hosted Codex models require Pro or Team.';
+            const raw = '[qaap:plan_limit:repo_limit] You have reached the number of active repositories your plan allows.';
             const card = createTranscriptAgentFailureDialogExtracted(ctx, raw, raw, { onOpenBilling: () => { opened++; } });
             const cta = card.querySelector<HTMLButtonElement>('.theia-mobile-agent-turn-failure-plan-cta');
             expect(cta?.textContent).to.equal('Upgrade plan');
@@ -73,10 +73,10 @@ describe('mobile-projects-transcript-messages-tool-ui', () => {
             expect(opened).to.equal(1);
         });
 
-        it('offers Top up for exhausted credits and omits the CTA when billing cannot be opened', () => {
-            const raw = '[qaap:plan_limit:credits_exhausted] Codex hosted credits are exhausted.';
+        it('offers Upgrade for a storage limit and omits the CTA when billing cannot be opened', () => {
+            const raw = '[qaap:plan_limit:storage_limit] Your workspace is over its storage limit.';
             const withBilling = createTranscriptAgentFailureDialogExtracted(ctx, raw, raw, { onOpenBilling: () => undefined });
-            expect(withBilling.querySelector('.theia-mobile-agent-turn-failure-plan-cta')?.textContent).to.equal('Top up');
+            expect(withBilling.querySelector('.theia-mobile-agent-turn-failure-plan-cta')?.textContent).to.equal('Upgrade plan');
             const without = createTranscriptAgentFailureDialogExtracted(ctx, raw, raw);
             expect(without.querySelector('.theia-mobile-agent-turn-failure-plan-cta')).to.equal(null);
         });

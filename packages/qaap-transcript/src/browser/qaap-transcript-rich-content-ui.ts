@@ -21,6 +21,7 @@ import {
     resolveTranscriptCodeLanguage,
 } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-code-view';
 import { enhanceTranscriptCaptureDirectives } from './qaap-transcript-capture-pending-ui';
+import { buildQaapUiFenceElement, isQaapUiFenceLanguage, parseQaapUiSpec, QAAP_UI_ROOT_CLASS } from './qaap-json-render-ui';
 
 export const TRANSCRIPT_CODE_BLOCK_CARD_CLASS = 'theia-mobile-agent-code-block-card';
 export const TRANSCRIPT_LINK_PREVIEW_CARD_CLASS = 'theia-mobile-agent-link-preview-card';
@@ -390,6 +391,10 @@ export function patchTranscriptMarkdownCodeBlockCard(card: HTMLElement, pre: HTM
     if (language !== previous.language || !code.trim()) {
         return false;
     }
+    // A qaap-ui fence that now parses must be swapped for its native UI, not patched as code.
+    if (isQaapUiFenceLanguage(language) && parseQaapUiSpec(code)) {
+        return false;
+    }
     const view = card.querySelector<HTMLElement>(':scope > .theia-mobile-agent-code-block-card-body > .theia-mobile-agent-code-view');
     if (!view || !patchTranscriptCodeView(view, code, resolveTranscriptCodeLanguage(undefined, code, language))) {
         return false;
@@ -398,8 +403,13 @@ export function patchTranscriptMarkdownCodeBlockCard(card: HTMLElement, pre: HTM
     return true;
 }
 
+/** Nodes already produced by this module (code cards, qaap-ui blocks) must not be enhanced again. */
+function isInsideRichMarkdownSurface(node: Element): boolean {
+    return node.closest(`.${TRANSCRIPT_CODE_BLOCK_CARD_CLASS}, .${QAAP_UI_ROOT_CLASS}`) !== null;
+}
+
 function wrapMarkdownCodeBlock(pre: HTMLPreElement): void {
-    if (pre.closest(`.${TRANSCRIPT_CODE_BLOCK_CARD_CLASS}`)) {
+    if (isInsideRichMarkdownSurface(pre)) {
         return;
     }
     const code = pre.querySelector('code');
@@ -408,6 +418,13 @@ function wrapMarkdownCodeBlock(pre: HTMLPreElement): void {
         return;
     }
     const language = inferFenceLanguage(pre);
+    if (isQaapUiFenceLanguage(language)) {
+        const uiElement = buildQaapUiFenceElement(text, pre.ownerDocument);
+        if (uiElement) {
+            pre.replaceWith(uiElement);
+            return;
+        }
+    }
     const card = buildTranscriptCodeBlockCard({
         kind: 'code_block',
         code: text,
@@ -417,7 +434,7 @@ function wrapMarkdownCodeBlock(pre: HTMLPreElement): void {
 }
 
 function wrapMarkdownTable(table: HTMLTableElement): void {
-    if (table.closest(`.${TRANSCRIPT_MARKDOWN_TABLE_SCROLL_CLASS}`)) {
+    if (isInsideRichMarkdownSurface(table) || table.closest(`.${TRANSCRIPT_MARKDOWN_TABLE_SCROLL_CLASS}`)) {
         return;
     }
     const scroll = document.createElement('div');
@@ -426,9 +443,21 @@ function wrapMarkdownTable(table: HTMLTableElement): void {
     scroll.append(table);
 }
 
+/**
+ * A provider API endpoint (`https://api.openai.com/v1/responses`) that a model or a failed request
+ * quoted is a diagnostic, not an article: it never becomes a link preview card.
+ */
+function isProviderApiEndpointHref(href: string): boolean {
+    try {
+        return /^api\./i.test(new URL(href).hostname);
+    } catch {
+        return false;
+    }
+}
+
 function tryLinkPreviewFromAnchor(anchor: HTMLAnchorElement): TranscriptToolUiLinkPreviewPayload | undefined {
     const href = anchor.getAttribute('href')?.trim();
-    if (!href || !/^https?:\/\//i.test(href)) {
+    if (!href || !/^https?:\/\//i.test(href) || isProviderApiEndpointHref(href)) {
         return undefined;
     }
     return {
@@ -479,7 +508,7 @@ export function enhanceTranscriptMarkdownRichContent(host: HTMLElement): void {
         }
     });
     host.querySelectorAll('p').forEach(node => {
-        if (node.childElementCount !== 1) {
+        if (node.childElementCount !== 1 || isInsideRichMarkdownSurface(node)) {
             return;
         }
         const anchor = node.firstElementChild;

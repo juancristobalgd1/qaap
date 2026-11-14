@@ -39,7 +39,6 @@ import { isTranscriptAgentExecutionBusy, resolveTranscriptEffectiveStatus, isCon
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { TRANSCRIPT_COMPOSER_ACTIVITY_DEBOUNCE_MS } from './mobile-projects-transcript-live-ui';
-import { isQaapPreviewDismissedByUser, qaapProjectPreviewDirectory } from '@theia/qaap-shared-core/lib/browser/qaap-preview-user-dismissal';
 
 export function applyTranscriptSseRenderExtracted(ctx: MobileProjectsTranscriptLiveUiContext, incoming: QaapAgentConversationDTO,
     eventMessage: QaapAgentMessageDTO,): void {
@@ -62,7 +61,7 @@ export function applyTranscriptSseRenderExtracted(ctx: MobileProjectsTranscriptL
         ctx.host.transcriptLastFingerprint = mergeConversationTranscriptFingerprint(prevConv, renderConv);
         ctx.cacheTranscriptConversation(renderConv);
         if (agentMessageHasVisualVerificationMarker(eventMessage)) {
-            void ctx.refreshOpenTranscriptConversation({ forcePoll: true });
+            ctx.scheduleSseDeltaResync();
         }
         return;
     }
@@ -224,10 +223,19 @@ export function ensureBootstrapPreviewListenerExtracted(ctx: MobileProjectsTrans
     });
 }
 
+/**
+ * Conversations with a preview kickoff still resolving. The offer poll ticks every ~900 ms, so
+ * without this a slow `ensureTranscriptDevPreview` would be re-entered on every tick.
+ */
+const kickoffInFlightConversationIds = new Set<string>();
+
 export function kickoffTranscriptDevPreviewBootstrapExtracted(ctx: MobileProjectsTranscriptLiveUiContext, conv: QaapAgentConversationDTO | undefined): void {
     const bootstrap = ctx.host.projectBootstrap;
     if (!bootstrap || !conv || !conversationRequestsDevPreview(conv)
         || !conversationShouldKickoffDevPreviewBootstrap(conv)) {
+        return;
+    }
+    if (kickoffInFlightConversationIds.has(conv.id)) {
         return;
     }
     const snapshot = typeof bootstrap.getStateSnapshot === 'function'
@@ -240,6 +248,7 @@ export function kickoffTranscriptDevPreviewBootstrapExtracted(ctx: MobileProject
     }
     ctx.transcriptDevPreviewBootstrapConversationId = conv.id;
     const project = ctx.host.transcriptOpenProject;
+    kickoffInFlightConversationIds.add(conv.id);
     void ensureTranscriptDevPreview(bootstrap, {
         conversation: conv,
         projectId: project?.id,
@@ -250,7 +259,9 @@ export function kickoffTranscriptDevPreviewBootstrapExtracted(ctx: MobileProject
             return;
         }
         void ctx.maybeReportTranscriptPreviewBootstrapFailure(conv, bootstrap);
-    }).catch(() => undefined);
+    }).catch(() => undefined).finally(() => {
+        kickoffInFlightConversationIds.delete(conv.id);
+    });
 }
 
 export async function maybeReportTranscriptPreviewBootstrapFailureExtracted(ctx: MobileProjectsTranscriptLiveUiContext, conv: QaapAgentConversationDTO,
@@ -301,25 +312,15 @@ export async function openReadyTranscriptPreviewUrlExtracted(ctx: MobileProjects
     if (ctx.transcriptPreviewOfferAnnouncedUrl === normalized) {
         return;
     }
+    // Staging only: the ready URL feeds the "View preview" pill and the Preview tab, and the user
+    // opens it. Switching the Work Hub to the Preview tab on its own interrupted whatever the user
+    // was reading, even in a thread that once asked to run the app.
     ctx.host.stageTranscriptPreviewReadyUrl(normalized);
     ctx.transcriptPreviewOfferAnnouncedUrl = normalized;
     const project = ctx.host.transcriptOpenProject;
-    if (
-        ctx.host.transcriptPreviewSuppressedByUser
-        || !conversationMayAutoOpenTranscriptPreview(conv)
-        // The user closed this project's preview: a new URL form, a state change or a poll hit
-        // only refreshes the staged URL; the user reopens it from the Preview tab/pill.
-        || isQaapPreviewDismissedByUser(qaapProjectPreviewDirectory(ctx.host.projectsService, project, undefined, conv?.cwd))
-    ) {
-        return;
+    if (project && ctx.host.transcriptOpenSummary) {
+        ctx.host.transcriptOpenProject = { ...project, previewUrl: normalized };
     }
-    const summary = ctx.host.transcriptOpenSummary;
-    if (!project || !summary) {
-        return;
-    }
-    const previewProject = { ...project, previewUrl: normalized };
-    ctx.host.transcriptOpenProject = previewProject;
-    ctx.host.executionSurfaceTabsUi.selectTranscriptTab('preview', previewProject, summary);
 }
 
 /**
@@ -357,11 +358,34 @@ export function relaunchPendingTranscriptPreviewAfterSettleExtracted(ctx: Mobile
     if (action === 'clear') {
         // The turn ended (failed, cancelled, or no launcher) and nothing will resolve the request:
         // without this the "Starting preview…" chip spins forever (QA: >4 min after the turn).
-        ctx.host.transcriptPreviewRequestPending = false;
-        ctx.host.transcriptPreviewRequestRunning = false;
-        ctx.host.transcriptStickyComposerUi.refreshComposerActivityStack();
-        ctx.host.transcriptHeaderUi.refreshTranscriptExecutionChrome();
+        clearTranscriptPreviewRequestExtracted(ctx);
     }
+}
+
+/**
+ * Drops a chat preview request: the chip falls back to "Run app" and the stall watchdog stops.
+ * Used when the turn failed or was stopped and nothing else will resolve the request.
+ */
+export function clearTranscriptPreviewRequestExtracted(ctx: MobileProjectsTranscriptLiveUiContext): void {
+    ctx.previewStartingWatchdog.disarm();
+    ctx.host.transcriptPreviewRequestPending = false;
+    ctx.host.transcriptPreviewRequestRunning = false;
+    ctx.host.transcriptStickyComposerUi.refreshComposerActivityStack();
+    ctx.host.transcriptHeaderUi.refreshTranscriptExecutionChrome();
+}
+
+/**
+ * The watchdog found a chat request with no URL and no progress for the stall timeout: retire it
+ * the same way a settled turn does. A request a Qaap launch owns (`requestRunning`) is left alone.
+ */
+export function onTranscriptPreviewStartStalledExtracted(ctx: MobileProjectsTranscriptLiveUiContext): void {
+    if (!ctx.host.transcriptPreviewRequestPending || ctx.host.transcriptPreviewRequestRunning) {
+        return;
+    }
+    if (ctx.host.transcriptOpenProject?.previewUrl) {
+        return;
+    }
+    clearTranscriptPreviewRequestExtracted(ctx);
 }
 
 export async function finalizeTranscriptDevPreviewAfterSettleExtracted(ctx: MobileProjectsTranscriptLiveUiContext): Promise<void> {
@@ -384,6 +408,8 @@ export function maybeActivateTranscriptDevPreviewExtracted(ctx: MobileProjectsTr
 
 export function ensureTranscriptDevPreviewWatchExtracted(ctx: MobileProjectsTranscriptLiveUiContext, conv: QaapAgentConversationDTO,
     options?: { readonly restartPreviewPoll?: boolean },): void {
+    // Every conversation refresh is progress for a pending chat preview request.
+    ctx.previewStartingWatchdog.progress();
     if (conversationRequestsDevPreview(conv) || conversationAwaitingDevPreview(conv)) {
         ctx.kickoffTranscriptDevPreviewBootstrap(conv);
     }
@@ -408,6 +434,7 @@ export function onTranscriptUserMessageSubmittedExtracted(ctx: MobileProjectsTra
         // A chat request only waits on the agent turn; no Qaap launch runs it. `Running` would mark
         // it as owned by a launch, so the settle relaunch/clear never fired and the chip stuck.
         ctx.host.transcriptPreviewRequestRunning = false;
+        ctx.previewStartingWatchdog.arm();
     }
     if (!ctx.host.transcriptPreviewSuppressedByUser) {
         ctx.ensureTranscriptDevPreviewWatch(conv, { restartPreviewPoll: true });

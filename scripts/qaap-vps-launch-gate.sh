@@ -256,25 +256,19 @@ else
     fi
 fi
 
-# Paid-beta Stripe: WARN if incomplete; FAIL only when DEV_CHECKOUT is on.
-stripe_secret="$(dexec 'printf %s "${STRIPE_SECRET_KEY:-}"' || true)"
-stripe_pro="$(dexec 'printf %s "${STRIPE_PRICE_PRO_MONTHLY:-}"' || true)"
-stripe_team="$(dexec 'printf %s "${STRIPE_PRICE_TEAM_MONTHLY:-}"' || true)"
-stripe_wh="$(dexec 'printf %s "${STRIPE_WEBHOOK_SECRET:-}"' || true)"
-public_url="$(dexec 'printf %s "${QAAP_PUBLIC_URL:-}"' || true)"
+# Paid-beta Airwallex: WARN if incomplete; FAIL only when DEV_CHECKOUT is on.
+airwallex_ready=0
+for key in AIRWALLEX_CLIENT_ID AIRWALLEX_API_KEY AIRWALLEX_WEBHOOK_SECRET AIRWALLEX_PRICE_STARTER_MONTHLY AIRWALLEX_PRICE_PRO_MONTHLY QAAP_PUBLIC_URL; do
+    value="$(dexec "printf %s \"\${${key}:-}\"" || true)"
+    [[ -n "${value}" ]] && airwallex_ready=$((airwallex_ready + 1))
+done
 dev_checkout="$(dexec 'printf %s "${QAAP_BILLING_DEV_CHECKOUT:-}"' || true)"
-stripe_ready=0
-[[ -n "${stripe_secret}" ]] && stripe_ready=$((stripe_ready + 1))
-[[ -n "${stripe_pro}" ]] && stripe_ready=$((stripe_ready + 1))
-[[ -n "${stripe_team}" ]] && stripe_ready=$((stripe_ready + 1))
-[[ -n "${stripe_wh}" ]] && stripe_ready=$((stripe_ready + 1))
-[[ -n "${public_url}" ]] && stripe_ready=$((stripe_ready + 1))
-if [[ "${stripe_ready}" -eq 0 ]]; then
-    warn "Stripe unset in container — Work Hub Billing checkout disabled"
-elif [[ "${stripe_ready}" -lt 5 ]]; then
-    warn "Stripe partial in container (${stripe_ready}/5) — set STRIPE_* + QAAP_PUBLIC_URL (doc/qaap-vps-deployment.md)"
+if [[ "${airwallex_ready}" -eq 0 ]]; then
+    warn "Airwallex unset in container — Work Hub Billing checkout disabled"
+elif [[ "${airwallex_ready}" -lt 6 ]]; then
+    warn "Airwallex partial in container (${airwallex_ready}/6) — set AIRWALLEX_* + QAAP_PUBLIC_URL (doc/qaap-vps-deployment.md)"
 else
-    ok "Stripe checkout + webhook env present in container"
+    ok "Airwallex checkout + webhook env present in container"
 fi
 if [[ "${dev_checkout}" == "1" || "${dev_checkout}" == "true" ]]; then
     bad "QAAP_BILLING_DEV_CHECKOUT is on — refuse paid beta on a public VPS"

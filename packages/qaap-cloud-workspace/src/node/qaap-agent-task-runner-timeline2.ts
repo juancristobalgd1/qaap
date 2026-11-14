@@ -10,17 +10,19 @@ import {
     startOpencodeArmWatch,
     usesOpencodeGatePlugin,
 } from './qaap-tool-gate-opencode-adapter';
-import { DEFAULT_QAAP_CODEX_GATE_OVERLAY_BUILDER, usesCodexToolGateHook, type QaapCodexGateOverlay } from './qaap-codex-gate-overlay';
+import {
+    assertCodexGateTokenIssued, DEFAULT_QAAP_CODEX_GATE_OVERLAY_BUILDER, resolveCodexGateOverlayRoot, usesCodexToolGateHook, type QaapCodexGateOverlay,
+} from './qaap-codex-gate-overlay';
 import { resolveCodexAgentHome } from './qaap-agent-native-models';
 import { IDLE_TASK_TIMEOUT_MS, QAAP_AGENT_VERIFY_ENABLED, QUEUED_APPROVAL_GRACE_TIMEOUT_MS, USER_REQUEST_MAX_CHARS } from './qaap-agent-task-runner-constants';
 import { QaapQaiqProviderKeyMissingError } from './qaap-qaiq-provider-preflight';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { awaitQaapAgentTaskSpawnGate } from './qaap-agent-task-spawn-gate';
-import { resolveAgentTaskBillingRejection } from './qaap-agent-task-billing-gate';
-import { finishTaskWithPauseCause, logCancelExitExtracted } from './qaap-agent-task-runner-streaming2';
+import { finishTaskWithPauseCause, logCancelExitExtracted, releaseStoppingTaskSlotOnExitExtracted } from './qaap-agent-task-runner-streaming2';
 import { createOpencodeFatalStderrWatcher } from './qaap-opencode-fatal-error';
 import { createPiProviderErrorWatcher } from './qaap-pi-provider-error-watcher';
 import { removeStaleOpencodeSnapshotLocks } from './qaap-opencode-snapshot-lock';
+import { type AgentProcessSignalOutcome, signalAgentProcessTree } from './qaap-agent-process-signal';
 // Extracted from qaap-agent-task-runner.ts
 
 import { ChildProcess, spawnSync } from 'child_process';
@@ -68,6 +70,7 @@ import {
 import { applyPreTurnAgentHooks, createQaiqPreToolUseHookGate } from './qaap-agent-task-runner-hooks';
 import { canProbeProviderKey, runProviderKeyPreflight } from './qaap-provider-key-preflight';
 import { isConversationalTurn, isConversationalTurnTask } from '../common/qaap-agent-conversational-turn';
+import { emitsStreamJsonFinalResult, QAAP_AGENT_EXIT_AFTER_RESULT_GRACE_MS, QaapAgentFinalResultWatcher, type QaapAgentFinalResult } from './qaap-agent-final-result-watcher';
 
 export function enforceAgentTaskChangeScopeLimitExtracted(
     ctx: QaapAgentTaskRunnerContext,
@@ -169,7 +172,7 @@ export function expireIdleAgentTask(
 const LOOP_SAMPLER_INTERVAL_MS = 100;
 
 export function killAgentProcessTreeExtracted(ctx: QaapAgentTaskRunnerContext, child: ChildProcess,
-        options?: { readonly escalateAfterMs?: number; readonly onGracePeriodElapsed?: () => void },): NodeJS.Timeout | undefined {
+        options?: { readonly escalateAfterMs?: number; readonly onGracePeriodElapsed?: () => void; readonly onSignalFailed?: () => void },): NodeJS.Timeout | undefined {
         const pid = child.pid;
         if (!pid) {
             options?.onGracePeriodElapsed?.();
@@ -187,26 +190,18 @@ export function killAgentProcessTreeExtracted(ctx: QaapAgentTaskRunnerContext, c
             lastTick = now;
         }, LOOP_SAMPLER_INTERVAL_MS);
         loopSampler.unref?.();
-        const sendSignal = (signal: NodeJS.Signals): void => {
+        const sendSignal = (signal: NodeJS.Signals): AgentProcessSignalOutcome => {
             if (globalThis.process.platform === 'win32') {
                 spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
-                return;
+                return 'sent';
             }
             console.warn(`[qaap-stop] signal pid=${pid} target=group sig=${signal} epoch=${Date.now()}`);
-            try {
-                globalThis.process.kill(-pid, signal);
-                return;
-            } catch (error) {
-                // ESRCH: no such process group (already exited, or never became a group leader).
-                // Signal the leader directly so the stop still reaches the agent.
-                if ((error as NodeJS.ErrnoException).code === 'ESRCH') {
-                    console.warn(`[qaap-stop] process group ${pid} not found; signalling the leader with ${signal}`);
-                }
+            // Group first, then the leader when the group is gone. EPERM is relayed as the agent uid inside.
+            const outcome = signalAgentProcessTree(child, signal);
+            if (outcome === 'failed') {
+                console.error(`[qaap-stop] could not deliver ${signal} to pid=${pid}; the agent may still be running`);
             }
-            console.warn(`[qaap-stop] signal pid=${pid} target=leader sig=${signal} epoch=${Date.now()}`);
-            try {
-                child.kill(signal);
-            } catch { /* already gone */ }
+            return outcome;
         };
         sendSignal('SIGTERM');
         const escalateAfterMs = options?.escalateAfterMs ?? 5_000;
@@ -214,11 +209,12 @@ export function killAgentProcessTreeExtracted(ctx: QaapAgentTaskRunnerContext, c
             const firedAt = Date.now();
             clearInterval(loopSampler);
             console.warn(`[qaap-stop] escalation-fired pid=${pid} armedAt=${armedAt} deadline=${armedAt + escalateAfterMs} fired=${firedAt} lagMs=${firedAt - armedAt - escalateAfterMs} maxLoopGapMs=${maxLoopGapMs}`);
-            try {
-                sendSignal('SIGKILL');
-            } finally {
-                options?.onGracePeriodElapsed?.();
+            // A failed SIGKILL leaves the agent alive: it is not stopped, so do not run the stopped continuation.
+            if (sendSignal('SIGKILL') === 'failed') {
+                options?.onSignalFailed?.();
+                return;
             }
+            options?.onGracePeriodElapsed?.();
         };
         if (escalateAfterMs <= 0) {
             sendKill();
@@ -397,19 +393,6 @@ export async function spawnProcessWhenReadyExtracted(ctx: QaapAgentTaskRunnerCon
         if (ctx.tasks.get(task.id)?.state !== 'running') {
             return;
         }
-        // Fail-open only for BYOK turns on a billing outage; hosted Codex fails closed (billing gate).
-        const billingRejection = await resolveAgentTaskBillingRejection(ctx, task, request);
-        // The billing read is async: a stop that landed meanwhile already settled the task as
-        // `cancelled`. Neither fail it (that would overwrite `cancelled`) nor spawn it.
-        if (ctx.tasks.get(task.id)?.state !== 'running') {
-            return;
-        }
-        if (billingRejection !== undefined) {
-            fs.mkdirSync(path.dirname(ctx.logPath(task.id)), { recursive: true });
-            fs.writeFileSync(ctx.logPath(task.id), `${billingRejection}\n`, 'utf8');
-            ctx.finishTask(task.id, 'failed', 1);
-            return;
-        }
         const markedTask = ctx.tasks.get(task.id) ?? task;
         const baseline = ctx.captureWorktreeBaseline(task.cwd);
         // Private disk copy of secrets — hashes alone cannot restore a destroyed `.env`.
@@ -576,6 +559,12 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             }
             // Only the harness process gets gate credentials: issuing a token revokes the previous one.
             ctx.applyToolGateEnv(childEnv, task);
+            // Fails closed before any Codex process: no token while the gate is wired means no gate for its tool calls.
+            assertCodexGateTokenIssued({
+                agentId: ctx.resolveTaskAgentId(task),
+                gateWired: ctx.toolGateWired(),
+                gateToken: childEnv.QAAP_GATE_TOKEN,
+            });
             if (childEnv.QAAP_GATE_TOKEN && usesCodexToolGateHook(ctx.resolveTaskAgentId(task))) {
                 // Fails closed: if the overlay cannot be built or Codex does not trust its hook, nothing runs.
                 codexGateOverlay = await DEFAULT_QAAP_CODEX_GATE_OVERLAY_BUILDER.create({
@@ -585,6 +574,8 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                     sourceCodexHome: resolveCodexAgentHome(childEnv),
                     askTtlSec: Number(childEnv.QAAP_GATE_ASK_TTL_SEC) || 0,
                     agentIdentity: ctx.resolveAgentSpawnIdentity(task.cwd),
+                    // In a task sandbox Codex has its own /tmp: the overlay must sit where it sees the same path.
+                    overlayRoot: resolveCodexGateOverlayRoot(ctx.agentSandboxFor?.(task.cwd)),
                     ...(resumeRollout ? { resumeRollout } : {}),
                 }, childEnv);
                 childEnv.CODEX_HOME = codexGateOverlay.codexHome;
@@ -625,6 +616,8 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                 console.warn(`[qaap-stop] spawn-skipped task=${task.id} state=${ctx.tasks.get(task.id)?.state ?? 'missing'}`);
                 return;
             }
+            // The stack is the only backend record of a spawn that never produced an agent process.
+            console.error(`[qaap-start] task=${task.id} failed to start: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
             logStream.end(`Failed to start: ${error instanceof Error ? error.message : String(error)}\n`);
             ctx.finishTask(task.id, 'failed', undefined);
             return;
@@ -821,7 +814,26 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
         };
         // Pi exits 0 after a provider error; its JSON stream is the only place the failure shows.
         const piProviderErrorWatcher = isPiAgent(task.agentId) ? createPiProviderErrorWatcher() : undefined;
+        // Claude Code may take long to exit after its final `result` (telemetry / update checks behind
+        // the egress allowlist) while the answer is already complete: end it after a short grace.
+        const finalResultWatcher = emitsStreamJsonFinalResult(task.agentId) ? new QaapAgentFinalResultWatcher() : undefined;
+        let exitAfterResultTimer: ReturnType<typeof setTimeout> | undefined;
+        let endedAfterResult: QaapAgentFinalResult | undefined;
         child.stdout?.on('data', chunk => {
+            if (finalResultWatcher && !exitAfterResultTimer) {
+                const finalResult = finalResultWatcher.push(Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk));
+                if (finalResult) {
+                    exitAfterResultTimer = setTimeout(() => {
+                        if (ctx.processes.get(task.id) !== child || child.exitCode !== null || child.signalCode !== null) {
+                            return;
+                        }
+                        console.warn(`[qaap-agent-tasks] ${task.id}: ${task.agentId} still running ${QAAP_AGENT_EXIT_AFTER_RESULT_GRACE_MS}ms after its final result; ending it`);
+                        endedAfterResult = finalResult;
+                        ctx.killAgentProcessTree(child);
+                    }, QAAP_AGENT_EXIT_AFTER_RESULT_GRACE_MS);
+                    exitAfterResultTimer.unref?.();
+                }
+            }
             if (isAgentProgressChunk(chunk)) {
                 bumpIdleTimer();
             }
@@ -877,8 +889,13 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             ctx.recordTaskLatencyMark(task.id, 'process_exit');
             logCancelExitExtracted(ctx, task.id);
             reapAgentProcessGroupOnExitExtracted(ctx, task.id, child);
+            // The slot of a stopped task is held until the process is really gone.
+            releaseStoppingTaskSlotOnExitExtracted(ctx, task.id);
         });
-        child.on('close', code => {
+        child.on('close', exitCode => {
+            clearTimeout(exitAfterResultTimer);
+            // Ended by Qaap after a complete result: settle on the result, not on the kill signal.
+            const code = exitCode === null && endedAfterResult ? (endedAfterResult.isError ? 1 : 0) : exitCode;
             clearChangeScopeWatch();
             clearIdleTimer();
             finishAntigravitySettings();

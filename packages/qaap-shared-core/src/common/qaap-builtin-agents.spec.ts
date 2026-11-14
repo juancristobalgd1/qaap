@@ -28,6 +28,19 @@ describe('Qaap built-in agent command templates', () => {
             .to.contain('-c check_for_update_on_startup=false');
     });
 
+    it('defaults Codex to the exec template unless help positively shows the legacy -q flag', () => {
+        const execTemplate = 'codex exec --json -c check_for_update_on_startup=false {model_flags} {prompt}';
+        const legacyTemplate = 'codex -q --json -c check_for_update_on_startup=false {model_flags} {prompt}';
+        // Empty help (e.g. a timed-out `codex --help`) must not select the legacy template.
+        expect(resolveQaapCodexTemplate('')).to.equal(execTemplate);
+        // Real modern help lists exec as a command.
+        expect(resolveQaapCodexTemplate('Commands:\n  exec            Run Codex non-interactively\n  login           Manage login')).to.equal(execTemplate);
+        // Legacy help shows -q and no exec command.
+        expect(resolveQaapCodexTemplate('Options:\n  -q, --quiet    Non-interactive mode\n  -h, --help     Print help')).to.equal(legacyTemplate);
+        // Unrelated output without a positive legacy flag falls back to exec.
+        expect(resolveQaapCodexTemplate('WARNING: proceeding, even though we could not update PATH')).to.equal(execTemplate);
+    });
+
     it('registers the builtin CLIs as harnesses; retired qaiq is hidden', () => {
         expect(QAAP_HARNESS_DEFINITIONS.map(harness => harness.id).sort())
             .to.deep.equal(['antigravity', 'claude', 'codex', 'copilot', 'cursor', 'grok', 'opencode', 'pi']);

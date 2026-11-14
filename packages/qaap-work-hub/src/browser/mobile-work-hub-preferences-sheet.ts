@@ -21,9 +21,12 @@ import {
     readQaapAuthUser,
 } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import {
+    createQaapBillingCheckout,
     fetchQaapBilling,
     type QaapBillingApiResponse,
 } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
+import { QaapUserFacingErrors } from '@theia/qaap-adapters/lib/common/qaap-user-facing-error';
+import { listAllConversationGroups } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { isWorkHubTheiaDialogOpen } from '../common/qaap-work-hub-dialog-utils';
 import {
     hasPreferencesContent,
@@ -35,10 +38,14 @@ import { QaapAppearanceModeService } from '@theia/qaap-shared-core/lib/browser/q
 import { QaapWorkHubNotificationSettings } from '@theia/qaap-shared-core/lib/browser/qaap-work-hub-notification-settings';
 import { QaapCompletionSound } from '@theia/qaap-shared-core/lib/browser/qaap-completion-sound';
 import { Disposable } from '@theia/core/lib/common/disposable';
+import type { MCPFrontendService } from '@theia/ai-mcp/lib/common/mcp-server-manager';
 import type {
     MobileWorkHubSessionsSidebar,
     MobileWorkHubSettingsSidebarOptions,
 } from './mobile-work-hub-sessions-sidebar';
+import { MobileWorkHubMcpServerSummary } from './mobile-work-hub-mcp-server-summary';
+import { MobileWorkHubActivityCalendar } from './mobile-work-hub-activity-calendar';
+import { collectQaapActivityTimestamps } from '../common/qaap-activity-calendar';
 
 /** Work Hub AI Features sheet scopes Settings to this search term. */
 export const WORK_HUB_AI_FEATURES_PREFERENCES_QUERY = 'ai-features';
@@ -94,7 +101,8 @@ const WORK_HUB_SETTINGS_SECTIONS: readonly WorkHubSettingsSection[] = [
         id: 'profile', label: nls.localize('qaap/workHubSettings/profile', 'Profile'), icon: 'account', query: '',
         group: nls.localize('qaap/workHubSettings/groupAccount', 'Account'),
     },
-    { id: 'plan-usage', label: nls.localize('qaap/workHubSettings/planUsage', 'Plan & Usage'), icon: 'credit-card', query: '' },
+    // Usage has its own view (sidebar footer); this section only shows the plan.
+    { id: 'plan-usage', label: nls.localize('qaap/workHubSettings/plan', 'Plan'), icon: 'credit-card', query: '' },
 ];
 
 /** Small heading that opens a group of Settings nav items (the Work Hub sidebar renders the same markup). */
@@ -144,8 +152,10 @@ export class MobileWorkHubPreferencesSheet {
     protected settingsSidebarResizeStartX = 0;
     protected settingsSidebarResizeStartWidth = DEFAULT_WORK_HUB_SETTINGS_SIDEBAR_WIDTH;
     protected planUsageRenderToken = 0;
+    protected profileActivityRenderToken = 0;
     protected embeddedSettingsRenderToken = 0;
     protected embeddedSettingsWidget: Widget | undefined;
+    protected mcpServerSummary: MobileWorkHubMcpServerSummary | undefined;
     protected settingsSidebarController: MobileWorkHubSessionsSidebar | undefined;
 
     protected readonly resolveWorkHubHost: (() => HTMLElement | undefined) | undefined;
@@ -235,6 +245,7 @@ export class MobileWorkHubPreferencesSheet {
         resolveWorkHubHost?: () => HTMLElement | undefined,
         resolveSettingsSidebar?: () => MobileWorkHubSessionsSidebar | undefined,
         protected readonly keybindingsPanel?: WorkHubKeybindingsPanelContract,
+        protected readonly mcpFrontendService?: MCPFrontendService,
     ) {
         this.resolveWorkHubHost = resolveWorkHubHost;
         this.resolveSettingsSidebar = resolveSettingsSidebar;
@@ -493,8 +504,27 @@ export class MobileWorkHubPreferencesSheet {
 
     dispose(): void {
         this.unobserveWidgetHostResize();
+        this.mcpServerSummary?.dispose();
+        this.mcpServerSummary = undefined;
         this.hide();
         this.node.remove();
+    }
+
+    protected getMcpServerSummary(): MobileWorkHubMcpServerSummary | undefined {
+        if (!this.mcpServerSummary && this.preferenceService) {
+            this.mcpServerSummary = new MobileWorkHubMcpServerSummary({
+                preferenceService: this.preferenceService,
+                mcpFrontendService: this.mcpFrontendService,
+                findUpstreamCard: slug => this.findUpstreamMcpServerCard(slug),
+            });
+        }
+        return this.mcpServerSummary;
+    }
+
+    /** The upstream MCP card of one server in the embedded settings widget, matched by its name. */
+    protected findUpstreamMcpServerCard(slug: string): HTMLElement | undefined {
+        return Array.from(this.customContentHost.querySelectorAll<HTMLElement>('.mcp-server-card'))
+            .find(card => card.querySelector('.mcp-server-name')?.firstChild?.textContent?.trim() === slug);
     }
 
     protected attachWidget(widget: PreferencesWidget): void {
@@ -706,6 +736,14 @@ export class MobileWorkHubPreferencesSheet {
         const panel = this.createCustomPanel();
         panel.classList.add('theia-mobile-work-hub-settings-embedded-panel');
         this.customContentHost.replaceChildren(panel);
+        if (sectionId === 'mcp') {
+            // Same server list as the composer "+" MCP view, above the upstream widget (add/edit/delete).
+            const summary = this.getMcpServerSummary();
+            if (summary) {
+                panel.append(summary.node);
+                void summary.refresh();
+            }
+        }
         try {
             const widget = await this.widgetManager.getOrCreateWidget<Widget>(widgetId, {
                 id: `qaap-work-hub-settings-${sectionId}`,
@@ -937,7 +975,35 @@ export class MobileWorkHubPreferencesSheet {
             : nls.localize('qaap/workHubSettings/profile/github', 'GitHub');
         card.append(identity, provider);
         panel.append(card);
+        this.renderProfileActivity(panel);
         this.customContentHost.append(panel);
+    }
+
+    protected renderProfileActivity(panel: HTMLElement): void {
+        const token = ++this.profileActivityRenderToken;
+        const calendar = new MobileWorkHubActivityCalendar();
+        const heading = this.createCustomHeading(nls.localize('qaap/workHubSettings/activity/title', 'Activity'));
+        panel.append(heading, calendar.node);
+        calendar.showLoading();
+        this.loadProfileActivity(calendar, token);
+    }
+
+    protected async loadProfileActivity(calendar: MobileWorkHubActivityCalendar, token: number): Promise<void> {
+        let timestamps: number[] | undefined;
+        try {
+            const groups = await listAllConversationGroups();
+            timestamps = collectQaapActivityTimestamps(groups.flatMap(group => group.conversations));
+        } catch {
+            timestamps = undefined;
+        }
+        if (!this.visible || token !== this.profileActivityRenderToken || this.activeSettingsSectionId !== 'profile') {
+            return;
+        }
+        if (timestamps) {
+            calendar.setActivity(timestamps, new Date());
+        } else {
+            calendar.showError();
+        }
     }
 
     protected renderAppearanceSection(): void {
@@ -1015,7 +1081,7 @@ export class MobileWorkHubPreferencesSheet {
         const panel = this.createCustomPanel();
         const loading = document.createElement('p');
         loading.className = 'theia-mobile-work-hub-settings-status';
-        loading.textContent = nls.localize('qaap/workHubSettings/planUsage/loading', 'Loading plan and usage…');
+        loading.textContent = nls.localize('qaap/workHubSettings/plan/loading', 'Loading plan…');
         panel.append(loading);
         this.customContentHost.append(panel);
 
@@ -1045,56 +1111,193 @@ export class MobileWorkHubPreferencesSheet {
         title.textContent = nls.localize('qaap/workHubSettings/planUsage/starter', 'Starter');
         const description = document.createElement('p');
         description.textContent = nls.localize(
-            'qaap/workHubSettings/planUsage/unavailable',
-            'Usage details will appear here when your Qaap account is connected.',
+            'qaap/workHubSettings/plan/unavailable',
+            'Plan details will appear here when your Qaap account is connected.',
         );
         card.append(title, description);
         panel.append(card);
         this.appendBillingButton(panel);
     }
 
+    /**
+     * Plan section: the Starter and Pro plans side by side (stacked on phones), the current one marked,
+     * one clear action per plan that goes straight to Airwallex checkout, and "Manage subscription"
+     * for cancellation and the full details sheet.
+     */
     protected renderPlanUsageData(panel: HTMLElement, data: QaapBillingApiResponse): void {
-        const currentPlan = data.catalog.plans.find(plan => plan.id === data.entitlements.planId);
-        const currentPlanName = this.planName(data.entitlements.planId);
-        panel.append(this.createCustomHeading(
-            nls.localize('qaap/workHubSettings/planUsage/currentPlan', 'Current plan'),
-        ));
-        const planCard = this.createSettingsCard('theia-mobile-work-hub-settings-plan-card');
-        const planMeta = document.createElement('span');
-        planMeta.className = 'theia-mobile-work-hub-settings-eyebrow';
-        planMeta.textContent = nls.localize('qaap/workHubSettings/planUsage/active', 'Active plan');
-        const planTitle = document.createElement('h3');
-        planTitle.textContent = currentPlanName;
-        const planDescription = document.createElement('p');
-        planDescription.textContent = currentPlan
-            ? this.planSummary(currentPlan)
-            : nls.localize('qaap/workHubSettings/planUsage/qaapPlan', 'Qaap agent workspace plan');
-        planCard.append(planMeta, planTitle, planDescription);
-        panel.append(planCard);
+        const currentPlanId = data.entitlements.planId;
+        const plans = [...data.catalog.plans].sort((left, right) => left.priceUsdMonthly - right.priceUsdMonthly);
+        const currentPrice = plans.find(plan => plan.id === currentPlanId)?.priceUsdMonthly ?? 0;
 
-        panel.append(this.createCustomHeading(
-            nls.localize('qaap/workHubSettings/planUsage/usage', 'Usage'),
-        ));
-        const usageCard = this.createSettingsCard();
-        usageCard.append(
-            this.createUsageMeter(
-                nls.localize('qaap/workHubSettings/planUsage/runtime', 'Agent runtime'),
-                data.entitlements.runtimeHoursRemaining,
-                data.entitlements.includedRuntimeHoursPerMonth,
-                data.entitlements.runtimeFairUse
-                    ? nls.localize('qaap/workHubSettings/planUsage/fairUse', 'Fair use')
-                    : nls.localize('qaap/workHubSettings/planUsage/hoursRemaining', '{0} hours remaining', this.formatNumber(data.entitlements.runtimeHoursRemaining)),
-                data.entitlements.runtimeFairUse ? undefined : data.entitlements.runtimeUsageRatio,
-            ),
-            this.createUsageMeter(
-                nls.localize('qaap/workHubSettings/planUsage/credits', 'Hosted model credits'),
-                data.entitlements.creditsRemaining,
-                data.entitlements.includedCreditsPerMonth,
-                nls.localize('qaap/workHubSettings/planUsage/creditsRemaining', '{0} credits remaining', this.formatNumber(data.entitlements.creditsRemaining)),
-            ),
+        const intro = document.createElement('div');
+        intro.className = 'qaap-plan-picker-intro';
+        const title = document.createElement('h2');
+        title.className = 'qaap-plan-picker-title';
+        title.textContent = nls.localize('qaap/workHubSettings/plans/title', 'Plans');
+        const subtitle = document.createElement('p');
+        subtitle.className = 'qaap-plan-picker-subtitle';
+        subtitle.textContent = nls.localize(
+            'qaap/workHubSettings/plans/subtitle',
+            'You are on {0}. Bring your own model subscriptions; the plan sizes your cloud workspace.',
+            this.planName(currentPlanId),
         );
-        panel.append(usageCard);
-        this.appendBillingButton(panel);
+        intro.append(title, subtitle);
+        panel.append(intro);
+
+        const error = document.createElement('p');
+        error.className = 'qaap-plan-picker-error';
+        error.hidden = true;
+
+        const grid = document.createElement('div');
+        grid.className = 'qaap-plan-picker';
+        grid.setAttribute('role', 'list');
+        for (const plan of plans) {
+            grid.append(this.createPlanPickerCard(plan, currentPlanId, currentPrice, data, error));
+        }
+        panel.append(grid, error);
+
+        const footer = document.createElement('div');
+        footer.className = 'qaap-plan-picker-footer';
+        const secure = document.createElement('span');
+        secure.className = 'qaap-plan-picker-secure';
+        const lock = document.createElement('span');
+        lock.className = 'codicon codicon-lock';
+        lock.setAttribute('aria-hidden', 'true');
+        secure.append(lock, document.createTextNode(nls.localize(
+            'qaap/workHubSettings/plans/secure',
+            'Secure monthly checkout by Airwallex · Cancel anytime',
+        )));
+        footer.append(secure);
+        if (this.openBilling) {
+            const manage = document.createElement('button');
+            manage.type = 'button';
+            manage.className = 'qaap-plan-picker-manage';
+            manage.textContent = nls.localize('qaap/workHubSettings/plans/manage', 'Manage subscription');
+            manage.addEventListener('click', () => {
+                this.hide();
+                void this.openBilling?.();
+            });
+            footer.append(manage);
+        }
+        panel.append(footer);
+    }
+
+    protected createPlanPickerCard(
+        plan: QaapBillingApiResponse['catalog']['plans'][number],
+        currentPlanId: string,
+        currentPrice: number,
+        data: QaapBillingApiResponse,
+        error: HTMLElement,
+    ): HTMLElement {
+        const isCurrent = plan.id === currentPlanId;
+        const card = document.createElement('div');
+        card.className = 'qaap-plan-card';
+        card.setAttribute('role', 'listitem');
+        card.classList.toggle('theia-mod-current', isCurrent);
+        card.classList.toggle('theia-mod-featured', plan.id === 'pro');
+
+        const head = document.createElement('div');
+        head.className = 'qaap-plan-card-head';
+        const name = document.createElement('span');
+        name.className = 'qaap-plan-card-name';
+        name.textContent = this.planName(plan.id);
+        head.append(name);
+        if (isCurrent || plan.id === 'pro') {
+            const badge = document.createElement('span');
+            badge.className = 'qaap-plan-card-badge';
+            badge.textContent = isCurrent
+                ? nls.localize('qaap/workHubSettings/plans/current', 'Current')
+                : nls.localize('qaap/workHubSettings/plans/popular', 'Most popular');
+            head.append(badge);
+        }
+
+        const price = document.createElement('div');
+        price.className = 'qaap-plan-card-price';
+        const amount = document.createElement('span');
+        amount.className = 'qaap-plan-card-amount';
+        // Whole prices read cleaner without cents ($12, not $12.00); $4.99 keeps them.
+        amount.textContent = new Intl.NumberFormat(nls.locale ?? nls.defaultLocale, {
+            style: 'currency',
+            currency: 'USD',
+            minimumFractionDigits: Number.isInteger(plan.priceUsdMonthly) ? 0 : 2,
+        }).format(plan.priceUsdMonthly);
+        const period = document.createElement('span');
+        period.className = 'qaap-plan-card-period';
+        period.textContent = nls.localize('qaap/workHubSettings/plans/perMonth', '/ month');
+        price.append(amount, period);
+
+        const features = document.createElement('ul');
+        features.className = 'qaap-plan-card-features';
+        const memory = plan.memoryOptionsGb.length > 1
+            ? nls.localize('qaap/workHubSettings/plans/memoryChoice', '{0} or {1} GB RAM',
+                this.formatNumber(plan.memoryOptionsGb[0]), this.formatNumber(plan.memoryOptionsGb[plan.memoryOptionsGb.length - 1]))
+            : nls.localize('qaap/workHubSettings/plans/memory', '{0} GB RAM', this.formatNumber(plan.defaultMemoryGb));
+        for (const text of [
+            nls.localize('qaap/workHubSettings/plans/repos', 'Up to {0} active repos', this.formatNumber(plan.maxActiveRepos)),
+            nls.localize('qaap/workHubSettings/plans/agents', '{0} agents in parallel', this.formatNumber(plan.maxConcurrentAgents)),
+            `${memory} · ${nls.localize('qaap/workHubSettings/plans/cpu', '{0} vCPU', this.formatNumber(plan.cpuLimit))}`,
+            nls.localize('qaap/workHubSettings/plans/storage', '{0} GB storage', this.formatNumber(plan.storageGb)),
+        ]) {
+            const item = document.createElement('li');
+            const check = document.createElement('span');
+            check.className = 'codicon codicon-check';
+            check.setAttribute('aria-hidden', 'true');
+            item.append(check, document.createTextNode(text));
+            features.append(item);
+        }
+
+        const action = document.createElement('button');
+        action.type = 'button';
+        action.className = 'qaap-plan-card-action';
+        if (isCurrent) {
+            action.disabled = true;
+            action.textContent = nls.localize('qaap/workHubSettings/plans/currentAction', 'Your current plan');
+        } else {
+            const upgrade = plan.priceUsdMonthly > currentPrice;
+            action.classList.toggle('theia-mod-primary', upgrade);
+            action.textContent = upgrade
+                ? nls.localize('qaap/workHubSettings/plans/upgrade', 'Upgrade to {0}', this.planName(plan.id))
+                : nls.localize('qaap/workHubSettings/plans/switch', 'Switch to {0}', this.planName(plan.id));
+            action.addEventListener('click', () => void this.startPlanCheckout(plan.id, action, data, error));
+        }
+        card.append(head, price, features, action);
+        return card;
+    }
+
+    /** Straight to Airwallex hosted checkout; without checkout configured, the Billing sheet takes over. */
+    protected async startPlanCheckout(planId: string, button: HTMLButtonElement, data: QaapBillingApiResponse, error: HTMLElement): Promise<void> {
+        if (button.disabled) {
+            return;
+        }
+        error.hidden = true;
+        if (!data.checkout?.checkoutEnabled || (planId !== 'starter' && planId !== 'pro')) {
+            this.hide();
+            void this.openBilling?.();
+            return;
+        }
+        const label = button.textContent ?? '';
+        button.disabled = true;
+        button.textContent = nls.localize('qaap/workHubSettings/plans/opening', 'Opening checkout…');
+        try {
+            const { url } = await createQaapBillingCheckout(planId);
+            window.location.assign(url);
+        } catch (err) {
+            button.disabled = false;
+            button.textContent = label;
+            error.textContent = QaapUserFacingErrors.toMessageAndLog(err);
+            error.hidden = false;
+        }
+    }
+
+    protected createUsageLine(label: string, value: string): HTMLElement {
+        const line = document.createElement('div');
+        line.className = 'theia-mobile-work-hub-settings-row';
+        const labelEl = document.createElement('span');
+        labelEl.textContent = label;
+        const valueEl = document.createElement('strong');
+        valueEl.textContent = value;
+        line.append(labelEl, valueEl);
+        return line;
     }
 
     protected appendBillingButton(panel: HTMLElement): void {
@@ -1168,53 +1371,27 @@ export class MobileWorkHubPreferencesSheet {
         return wrapper;
     }
 
-    protected createUsageMeter(
-        title: string,
-        remaining: number,
-        total: number,
-        caption: string,
-        usageRatio?: number,
-    ): HTMLElement {
-        const meter = document.createElement('div');
-        meter.className = 'theia-mobile-work-hub-settings-usage-meter';
-        const header = document.createElement('div');
-        header.className = 'theia-mobile-work-hub-settings-usage-header';
-        const titleEl = document.createElement('strong');
-        titleEl.textContent = title;
-        const value = document.createElement('span');
-        value.textContent = caption;
-        header.append(titleEl, value);
-        const progress = document.createElement('div');
-        progress.className = 'theia-mobile-work-hub-settings-progress';
-        const fill = document.createElement('span');
-        const ratio = usageRatio ?? (total > 0 ? 1 - remaining / total : 0);
-        fill.style.width = `${Math.round(Math.min(1, Math.max(0, ratio)) * 100)}%`;
-        progress.append(fill);
-        meter.append(header, progress);
-        return meter;
-    }
-
     protected planName(planId: string): string {
         switch (planId) {
             case 'pro':
                 return nls.localize('qaap/workHubSettings/planUsage/pro', 'Pro');
-            case 'team':
-                return nls.localize('qaap/workHubSettings/planUsage/team', 'Team');
             default:
                 return nls.localize('qaap/workHubSettings/planUsage/starter', 'Starter');
         }
     }
 
     protected planSummary(plan: QaapBillingApiResponse['catalog']['plans'][number]): string {
-        if (plan.runtimeFairUse) {
-            return nls.localize('qaap/workHubSettings/planUsage/fairUseSummary', 'Fair-use agent runtime with your own model keys.');
-        }
         return nls.localize(
             'qaap/workHubSettings/planUsage/planSummary',
-            '{0} agent hours/month · {1} GB workspace storage',
-            this.formatNumber(plan.includedRuntimeHoursPerMonth),
+            '{0}/month · {1} GB storage · {2} parallel agents',
+            this.formatUsd(plan.priceUsdMonthly),
             this.formatNumber(plan.storageGb),
+            this.formatNumber(plan.maxConcurrentAgents),
         );
+    }
+
+    protected formatUsd(value: number): string {
+        return new Intl.NumberFormat(nls.locale ?? nls.defaultLocale, { style: 'currency', currency: 'USD' }).format(value);
     }
 
     protected formatNumber(value: number): string {

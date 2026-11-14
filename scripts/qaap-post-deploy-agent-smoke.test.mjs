@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { test } from 'node:test';
 import {
-    describeFallbacks, describeTaskFailure, findAccountUsageLimit, followModelFallback, main, mayStillFallBack, parseFallbackGraceMs, findProviderCredentialRejection, isModelUnavailableFailure,
+    describeFallbacks, describeTaskFailure, findAccountUsageLimit, findHarnessSignInExpired, followModelFallback, main, mayStillFallBack, parseFallbackGraceMs, findProviderCredentialRejection, isModelUnavailableFailure,
     judgeTask, redactSecrets, pickProjectCwd, pickSmokeAgent, smokeCookie, taskModel,
 } from './qaap-post-deploy-agent-smoke.mjs';
 
@@ -482,4 +482,16 @@ test('a harness that hit its subscription usage limit makes the smoke inconclusi
     // An ordinary failure stays a failure.
     assert.equal(findAccountUsageLimit({ log: 'TypeError: cannot read x' }), undefined);
     assert.equal(judgeTask({ state: 'failed', exitCode: 1, log: 'TypeError: boom' }, 'TOKEN').inconclusive, undefined);
+});
+
+test('an expired harness sign-in makes the smoke inconclusive, a missing CODEX_HOME still fails it', () => {
+    const expired = judgeTask({ state: 'failed', exitCode: 1, log: 'Failed to authenticate: OAuth session expired and could not be refreshed\n' }, 'TOKEN');
+    assert.equal(expired.ok, false);
+    assert.equal(expired.inconclusive, true);
+    assert.match(expired.reason, /sign-in expired: Failed to authenticate: OAuth session expired/);
+    assert.equal(findHarnessSignInExpired({ log: 'Please run /login to continue' }), 'Please run /login to continue');
+
+    const codexHome = judgeTask({ state: 'failed', exitCode: 1, log: 'Error finding codex home: CODEX_HOME points to "/tmp/qaap-codex-gate-x/codex-home", but that path does not exist\n' }, 'TOKEN');
+    assert.equal(codexHome.ok, false);
+    assert.equal(codexHome.inconclusive, undefined, 'a Qaap-side Codex failure is a real deploy failure');
 });

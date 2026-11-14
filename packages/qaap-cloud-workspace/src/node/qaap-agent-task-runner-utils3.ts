@@ -9,6 +9,7 @@ import { execFile, spawnSync, type ChildProcess, type SpawnSyncReturns } from 'c
 import * as fs from 'fs';
 import * as path from 'path';
 import { nls } from '@theia/core/lib/common/nls';
+import { agentProcessIdentityOf, signalAgentProcess } from './qaap-agent-process-signal';
 import {
     extractRetrievalKeywords,
     formatRelevantFilesHint,
@@ -117,10 +118,9 @@ export function reapAgentProcessGroupAfterExit(child: ChildProcess): void {
         }
         return;
     }
-    try {
-        globalThis.process.kill(-pid, 'SIGKILL');
-    } catch {
-        // ESRCH is the common clean case: the agent left no descendants behind.
+    // ESRCH is the common clean case: the agent left no descendants behind.
+    if (signalAgentProcess(-pid, 'SIGKILL', agentProcessIdentityOf(child)) === 'failed') {
+        console.warn(`[qaap-agent] could not reap the process group ${pid}: its descendants may still be running`);
     }
 }
 
@@ -167,6 +167,9 @@ export function listAgents(detectedAgents: Map<string, AgentCandidate>): QaapAge
 
 // ─── DI: probeAgentBinOnce ───────────────────────────────────────────────────
 
+/** Boot-time `<cli> --version` probes never wait longer than this; a miss is logged once and the boot goes on. */
+const AGENT_BIN_VERSION_PROBE_TIMEOUT_MS = 5_000;
+
 export function probeAgentBinOnce(
     agentId: string,
     resolveBin: () => string | undefined,
@@ -180,7 +183,10 @@ export function probeAgentBinOnce(
         return false;
     }
     try {
-        spawnSync(bin, ['--version'], { encoding: 'utf8', timeout: 8000 });
+        const result = spawnSync(bin, ['--version'], { encoding: 'utf8', timeout: AGENT_BIN_VERSION_PROBE_TIMEOUT_MS });
+        if (result.error || result.status !== 0) {
+            console.warn(`[qaap-agent-tasks] ${agentId} --version probe failed: ${result.error?.message ?? `exit ${String(result.status)}`}`);
+        }
         probedAgentBins.add(agentId);
         return true;
     } catch {

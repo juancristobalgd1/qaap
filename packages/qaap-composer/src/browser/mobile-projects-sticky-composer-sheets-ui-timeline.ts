@@ -1,3 +1,4 @@
+import { attachSheetListEdgeFades } from './mobile-projects-sticky-composer-sheet-edge-fades';
 import type { MobileProjectsStickyComposerSheetsUiContext } from './mobile-projects-sticky-composer-sheets-ui-context';
 // Extracted from mobile-projects-sticky-composer-sheets-ui.ts
 
@@ -102,6 +103,7 @@ export function createComposerAgentPickerChromeExtracted(ctx: MobileProjectsStic
 
     const list = document.createElement('div');
     list.className = 'theia-mobile-sticky-composer-sheet-list';
+    attachSheetListEdgeFades(list);
 
     panel.append(header, intro, search, list);
 
@@ -336,10 +338,8 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
             id: agent.id,
             label: agent.label,
             models: [],
-            // Same access answer as the backend row: a settled Codex sign-out is `none` (even when its
-            // probe reported `unknown`), and a hosted Codex stays usable while `disconnected`.
-            available: agent.available !== false
-                && (agent.accessState === 'hosted' || agent.connectionState !== 'disconnected'),
+            // Same access answer as the backend row: a settled sign-out (`disconnected`) is not usable.
+            available: agent.available !== false && agent.connectionState !== 'disconnected',
         });
     }
     const resolveAgentModels = (): Promise<void> => Promise.all(agentEntries.map(async entry => {

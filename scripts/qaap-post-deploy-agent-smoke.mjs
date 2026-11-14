@@ -135,6 +135,27 @@ export function findAccountUsageLimit(detail) {
     return undefined;
 }
 
+/**
+ * A harness whose own sign-in expired on the smoke account ("Failed to authenticate: OAuth session
+ * expired and could not be refreshed", "Please run /login"): the account must sign in again; the
+ * release is not at fault, so the smoke is inconclusive. Qaap-side failures (spawn, CODEX_HOME,
+ * sandbox, runner) never match and still fail the deploy.
+ */
+const HARNESS_SIGN_IN_EXPIRED = /oauth (?:session|token) (?:has )?expired|session expired and could not be refreshed|refresh token (?:is )?(?:expired|invalid|revoked)|please run \/login|not logged in\b|you are not signed in|re-?authenticate|invalid_grant/i;
+
+export function findHarnessSignInExpired(detail) {
+    const texts = [typeof detail?.log === 'string' ? detail.log : '', describeTaskFailure(detail) ?? ''];
+    for (const text of texts) {
+        const match = HARNESS_SIGN_IN_EXPIRED.exec(text);
+        if (match) {
+            const line = text.slice(text.lastIndexOf('\n', match.index) + 1).split('\n')[0].trim();
+            const trimmed = redactSecrets(line || match[0]);
+            return trimmed.length > 200 ? `${trimmed.slice(0, 199)}…` : trimmed;
+        }
+    }
+    return undefined;
+}
+
 export { redactSecrets };
 
 const FAILURE_REASON_MAX_CHARS = 400;
@@ -294,6 +315,15 @@ export function judgeTask(detail, token) {
                 inconclusive: true,
                 reason: `the smoke account's harness hit its subscription usage limit: ${usageLimit}`,
                 hint: 'Wait for the window to reset, or point vars.QAAP_SMOKE_AGENT at another signed-in harness of the smoke account.',
+            };
+        }
+        const signInExpired = state === 'failed' ? findHarnessSignInExpired(detail) : undefined;
+        if (signInExpired) {
+            return {
+                ok: false,
+                inconclusive: true,
+                reason: `the smoke account's harness sign-in expired: ${signInExpired}`,
+                hint: 'Sign the harness in again for the smoke account, or point vars.QAAP_SMOKE_AGENT at another signed-in harness.',
             };
         }
         const model = taskModel(detail);

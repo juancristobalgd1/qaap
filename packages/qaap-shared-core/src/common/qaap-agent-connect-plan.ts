@@ -48,6 +48,43 @@ export function buildAgentLoginShellCommand(command: string, options: QaapAgentL
     return `stty cols ${LOGIN_TERMINAL_COLUMNS} rows ${LOGIN_TERMINAL_ROWS} 2>/dev/null; ${pathSetup}${envSetup}${command}; echo "${QAAP_AGENT_LOGIN_EXIT_TOKEN}:$?"`;
 }
 
+/**
+ * Largest piece of a login command written to the PTY at once. macOS drops terminal input past
+ * its 1024-byte queue (TTYHOG): a longer line written in one go loses its tail and its Enter, so
+ * the shell never runs it (the Gemini CLI Connect command is ~1300 bytes). Linux allows 4096.
+ */
+export const QAAP_AGENT_LOGIN_INPUT_CHUNK_BYTES = 512;
+/** Commands up to this size are written at once (well under the 1024-byte macOS queue). */
+export const QAAP_AGENT_LOGIN_SINGLE_WRITE_MAX_BYTES = 900;
+
+/**
+ * Splits a login command into PTY writes of at most {@link QAAP_AGENT_LOGIN_INPUT_CHUNK_BYTES}
+ * UTF-8 bytes, never inside a UTF-16 surrogate pair, so the shell can drain each piece.
+ */
+export function splitAgentLoginShellInput(text: string, maxBytes: number = QAAP_AGENT_LOGIN_INPUT_CHUNK_BYTES): string[] {
+    const chunks: string[] = [];
+    const encoder = new TextEncoder();
+    if (maxBytes === QAAP_AGENT_LOGIN_INPUT_CHUNK_BYTES && encoder.encode(text).length <= QAAP_AGENT_LOGIN_SINGLE_WRITE_MAX_BYTES) {
+        return text ? [text] : [];
+    }
+    let current = '';
+    let currentBytes = 0;
+    for (const character of text) {
+        const bytes = encoder.encode(character).length;
+        if (current && currentBytes + bytes > maxBytes) {
+            chunks.push(current);
+            current = '';
+            currentBytes = 0;
+        }
+        current += character;
+        currentBytes += bytes;
+    }
+    if (current) {
+        chunks.push(current);
+    }
+    return chunks;
+}
+
 /** Exit code of the wrapped login command, once it has ended. */
 export function parseAgentLoginExitMarker(output: string): number | undefined {
     const match = EXIT_MARKER_RE.exec(output);

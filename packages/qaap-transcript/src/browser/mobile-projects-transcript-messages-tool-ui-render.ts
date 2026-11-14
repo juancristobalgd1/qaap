@@ -10,6 +10,7 @@ import { QaapPlanLimit } from '@theia/qaap-adapters/lib/common/qaap-plan-limit';
 import {
     detectAgentFailureKind,
     formatStoredAgentFailureMessage,
+    isAgentUsageLimitText,
     isProviderKeyFailureKind,
     isQaiqProviderKeyMissingFailure,
     localizeAgentFailureShortReason,
@@ -19,9 +20,6 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 import { shouldOpenTranscriptToolDetails as shouldOpenTranscriptToolDetailsSegment } from '../common/qaap-agent-transcript-segments';
 import { isTranscriptErrorOutput, isTranscriptTerminalOutputText } from '@theia/qaap-shared-core/lib/common/qaap-transcript-content-display';
-import {
-    registerDeferredTranscriptMarkdown,
-} from './qaap-transcript-row-defer';
 import type { QaapAgentMessageDTO, QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     isTranscriptWebSearchTool,
@@ -45,10 +43,7 @@ export function renderTranscriptRichContentExtracted(ctx: MobileProjectsTranscri
         host.classList.add('theia-mod-markdown');
         if (options?.sync) {
             if (options.defer) {
-                host.classList.add('theia-mod-deferred-markdown');
-                const excerpt = clean.length > 180 ? `${clean.slice(0, 180).trimEnd()}…` : clean;
-                host.textContent = excerpt;
-                registerDeferredTranscriptMarkdown({ host, content: clean, streaming: options.streaming });
+                ctx.contentUi.renderTranscriptDeferredMarkdown(host, clean, options.streaming);
                 return;
             }
             ctx.contentUi.renderTranscriptMarkdownImmediate(host, clean);
@@ -75,6 +70,8 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
             readonly onOpenAiFeaturesSettings?: () => void | Promise<void>;
             /** Opens the billing sheet; backs the Upgrade / Top up button on plan-limit failures. */
             readonly onOpenBilling?: () => void | Promise<void>;
+            /** Opens the composer's model picker; backs "Change model" on usage-limit and model-unavailable failures. */
+            readonly onChangeModel?: () => void;
             readonly agentMessage?: Pick<QaapAgentMessageDTO, 'role' | 'content' | 'error' | 'segments' | 'traceEvents'>;
         },): HTMLElement {
         const persisted = formatStoredAgentFailureMessage(error);
@@ -161,7 +158,8 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
               : planLimit
               ? nls.localize('qaap/mobileProjects/transcriptPlanLimitReached', 'Plan limit reached')
               : isQuotaFailure
-                ? nls.localize('qaap/mobileProjects/transcriptQuotaReached', 'Quota reached')
+                ? (localizeAgentFailureShortReason(authSample, { agentLabel: options?.agentLabel })
+                    ?? nls.localize('qaap/mobileProjects/transcriptQuotaReached', 'Quota reached'))
                 : isCliMissing
                     ? nls.localize('qaap/mobileProjects/transcriptAgentCliMissing', 'Agent CLI missing')
                     : nls.localize('qaap/mobileProjects/transcriptTurnFailed', 'Task failed');
@@ -259,6 +257,22 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
             body.append(hint);
         }
 
+        // A usage limit or a retired/unavailable model is cured by another model, not by retrying this one.
+        const canChangeModel = !authChallenge && (isAgentUsageLimitText(authSample) || failureKind === 'model_unavailable');
+        if (canChangeModel && options?.onChangeModel) {
+            const changeModelBtn = document.createElement('button');
+            changeModelBtn.type = 'button';
+            changeModelBtn.className = 'theia-mobile-agent-turn-failure-change-model codicon codicon-settings-gear';
+            changeModelBtn.textContent = nls.localize('qaap/mobileProjects/transcriptChangeModel', 'Change model');
+            changeModelBtn.setAttribute('aria-label', changeModelBtn.textContent);
+            changeModelBtn.addEventListener('click', event => {
+                event.stopPropagation();
+                event.preventDefault();
+                options.onChangeModel?.();
+            });
+            body.append(changeModelBtn);
+        }
+
         const technical = technicalContent?.trim();
         if (technical && !planLimit && technical !== formatted && technical !== error.trim()) {
             // Hide raw URL/code lines already shown in the sign-in card.
@@ -300,13 +314,11 @@ export function createTranscriptAgentAuthLoginCardExtracted(ctx: MobileProjectsT
                 'qaap/mobileProjects/authLoginUrlHint',
                 'Open the sign-in page, authorize the agent, then retry this task.',
             );
-        } else {
-            hint.textContent = nls.localize(
-                'qaap/mobileProjects/authLoginTerminalHint',
-                'Open the agent terminal to complete sign-in (same as the agent TUI), then retry.',
-            );
         }
-        card.append(hint);
+        // Terminal sign-in is already described by the turn failure message: one description only.
+        if (challenge.url) {
+            card.append(hint);
+        }
 
         if (challenge.userCode) {
             const codeRow = document.createElement('div');
@@ -381,10 +393,13 @@ export function createTranscriptAgentAuthLoginCardExtracted(ctx: MobileProjectsT
             terminalBtn.textContent = options.agentLabel
                 ? nls.localize(
                     'qaap/mobileProjects/authLoginOpenTerminalNamed',
-                    'Sign in with {0} in terminal',
+                    'Sign in with {0} via terminal',
                     options.agentLabel,
                 )
-                : nls.localize('qaap/mobileProjects/authLoginOpenTerminal', 'Sign in in terminal');
+                : nls.localize('qaap/mobileProjects/authLoginOpenTerminal', 'Sign in via terminal');
+            if (!challenge.url) {
+                terminalBtn.classList.add('theia-mod-primary');
+            }
             terminalBtn.addEventListener('click', event => {
                 event.stopPropagation();
                 event.preventDefault();

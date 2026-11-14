@@ -213,8 +213,8 @@ services:
       # Bytes per tenant container (backend + its agents, verification builds, dev servers and /tmp
       # tmpfs). 3 GiB fits 3 agents + 1 verification pass; Node sizes the tenant backend heap to half
       # of it on its own. Changing it recreates idle tenant backends (busy ones once their turns end).
-      QAAP_TENANT_MEMORY_LIMIT: ${QAAP_TENANT_MEMORY_LIMIT:-3221225472}
-      QAAP_TENANT_CPU_LIMIT: ${QAAP_TENANT_CPU_LIMIT:-2}
+      QAAP_TENANT_MEMORY_LIMIT: ${QAAP_TENANT_MEMORY_LIMIT:-}
+      QAAP_TENANT_CPU_LIMIT: ${QAAP_TENANT_CPU_LIMIT:-}
       QAAP_TENANT_PIDS_LIMIT: ${QAAP_TENANT_PIDS_LIMIT:-256}
       # Per-login raises for users who build large projects (e.g. Qaap itself) in a project:
       # "alice=8g,bob=6g" / "alice=4" / "alice=1024". Capped by the *_MAX values; never below the defaults above.
@@ -246,18 +246,22 @@ services:
       # gVisor (deploy/rootless/gvisor/README.md): runc by default. QAAP_TENANT_RUNSC_LOGINS moves single logins to runsc.
       QAAP_TENANT_RUNTIME: ${QAAP_TENANT_RUNTIME:-runc}
       QAAP_TENANT_RUNSC_LOGINS: ${QAAP_TENANT_RUNSC_LOGINS:-}
-      # Billing / Stripe Checkout (Pro €29, Team €79). Without these, Work Hub Billing shows
-      # stripeEnabled=false and POST /qaap/api/billing/checkout returns 503.
-      # Public origin for Checkout success/cancel URLs (prefer the Caddy HTTPS host).
+      # Billing / Airwallex hosted subscriptions (Starter $4.99, Pro $12 per month). Without these, Work Hub
+      # Billing shows checkoutEnabled=false and POST /qaap/api/billing/checkout returns 503.
+      # Public origin for checkout return URLs (prefer the Caddy HTTPS host).
       QAAP_PUBLIC_URL: ${QAAP_PUBLIC_URL:-}
       QAAP_BILLING_DEFAULT_PLAN: ${QAAP_BILLING_DEFAULT_PLAN:-}
       QAAP_BILLING_STORE_PATH: ${QAAP_BILLING_STORE_PATH:-}
-      # Local-only plan preview when Stripe keys are absent. Must stay unset on a public VPS.
+      # Local-only plan preview when Airwallex is not configured. Must stay unset on a public VPS.
       QAAP_BILLING_DEV_CHECKOUT: ${QAAP_BILLING_DEV_CHECKOUT:-}
-      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
-      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
-      STRIPE_PRICE_PRO_MONTHLY: ${STRIPE_PRICE_PRO_MONTHLY:-}
-      STRIPE_PRICE_TEAM_MONTHLY: ${STRIPE_PRICE_TEAM_MONTHLY:-}
+      # demo (default) or prod; AIRWALLEX_API_BASE overrides the REST base when set.
+      AIRWALLEX_ENV: ${AIRWALLEX_ENV:-demo}
+      AIRWALLEX_API_BASE: ${AIRWALLEX_API_BASE:-}
+      AIRWALLEX_CLIENT_ID: ${AIRWALLEX_CLIENT_ID:-}
+      AIRWALLEX_API_KEY: ${AIRWALLEX_API_KEY:-}
+      AIRWALLEX_WEBHOOK_SECRET: ${AIRWALLEX_WEBHOOK_SECRET:-}
+      AIRWALLEX_PRICE_STARTER_MONTHLY: ${AIRWALLEX_PRICE_STARTER_MONTHLY:-}
+      AIRWALLEX_PRICE_PRO_MONTHLY: ${AIRWALLEX_PRICE_PRO_MONTHLY:-}
       # BYOK / free-tier keys for @qaiq background jobs (also set in Settings → AI).
       # Explicit env vars here override empty preferences; see doc/qaap-vps-deployment.md.
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}

@@ -40,8 +40,10 @@ import type { QaapNativeModelRoutingTable } from '../common/qaap-agent-native-mo
 import type { QaapWorkflowRoutingPolicy } from '../common/qaap-workflow-routing';
 import type { QaapWorktreeChange } from '../common/qaap-verification-scope';
 import type { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
+import type { QaapTaskSandbox } from './qaap-task-sandbox';
 import type { QaapWebPushService } from './qaap-web-push-service';
 import type { QaapBillingStore } from './qaap-billing-store';
+import type { QaapTenantStorageQuotaService } from './qaap-tenant-storage-quota-service';
 import type { QaapAgentHealthTracker } from './qaap-agent-health';
 import type { QaapObservability } from './qaap-observability';
 import type { QaapAgentHookService } from './qaap-agent-hook-service';
@@ -86,6 +88,8 @@ export interface QaapAgentTaskRunnerContext {
     // ─── Injected services ──────────────────────────────────────────────────
     readonly webPush: QaapWebPushService;
     readonly billingStore: QaapBillingStore | undefined;
+    /** Optional so bare harnesses keep the old behaviour: no storage gate without it. */
+    readonly tenantStorageQuota?: QaapTenantStorageQuotaService | undefined;
     readonly preferenceService: PreferenceService | undefined;
     readonly workflowRouting: QaapWorkflowRoutingPolicy | undefined;
     readonly agentHealth: QaapAgentHealthTracker | undefined;
@@ -248,7 +252,7 @@ export interface QaapAgentTaskRunnerContext {
     // ─── Process lifecycle / approvals ──────────────────────────────────────
     killAgentProcessTree(
         child: ChildProcess,
-        options?: { readonly escalateAfterMs?: number; readonly onGracePeriodElapsed?: () => void },
+        options?: { readonly escalateAfterMs?: number; readonly onGracePeriodElapsed?: () => void; readonly onSignalFailed?: () => void },
     ): NodeJS.Timeout | undefined;
     reapAgentProcessGroupAfterExit(child: ChildProcess): void;
     findPendingControlRequestEntry(pending: QaapQaiqPendingControlRequest[], idFromApproval?: string): QaapQaiqPendingControlRequest | undefined;
@@ -347,6 +351,8 @@ export interface QaapAgentTaskRunnerContext {
     acquireTaskSandbox?(task: QaapAgentTask): Promise<void>;
     /** Release a sandbox acquired for a task that was stopped before its agent could spawn. */
     releaseTaskSandbox?(taskId: string): void;
+    /** The live task sandbox an agent started at `cwd` runs in, if any (after {@link acquireTaskSandbox}). */
+    agentSandboxFor?(cwd: string): QaapTaskSandbox | undefined;
     buildChildEnv(task: QaapAgentTask): NodeJS.ProcessEnv;
     applyOpenAiVendorCompatEnv(env: NodeJS.ProcessEnv, binding: QaapQaiqModelBinding): void;
     applyQaiqProviderEnv(env: NodeJS.ProcessEnv, command: string, binding?: QaapQaiqModelBinding): void;
@@ -371,5 +377,7 @@ export interface QaapAgentTaskRunnerContext {
     applyOneShotToolGateEnv(env: NodeJS.ProcessEnv, task: Pick<QaapAgentTask, 'ownerLogin' | 'cwd' | 'agentId' | 'command'>): () => void;
     /** Seeds `QAAP_GATE_URL` / `QAAP_GATE_TOKEN` for harnesses that reach the tool gate over HTTP. */
     isToolGateArmed(taskId: string): boolean;
+    /** Whether this backend runs the tool gate at all (token service and helper URL present). */
+    toolGateWired(): boolean;
     applyToolGateEnv(env: NodeJS.ProcessEnv, task: Pick<QaapAgentTask, 'id' | 'ownerLogin' | 'cwd' | 'agentId' | 'command'>): void;
 }

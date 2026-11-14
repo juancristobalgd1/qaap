@@ -37,7 +37,7 @@ import { QaapDevPreviewPortRegistry } from '@theia/qaap-shared-core/lib/node/qaa
 import { type QaapQaiqInteractionFlagOptions } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-interaction-flags';
 import type { QaapPreferenceReader } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
-import { QaapTaskSandboxService } from './qaap-task-sandbox';
+import { QaapTaskSandbox, QaapTaskSandboxService } from './qaap-task-sandbox';
 import {
     canExposeAgentCliBinToChild,
     prependAgentCliBinToPath,
@@ -55,7 +55,7 @@ import { QAAP_TOOL_GATE_API_PATH } from '@theia/qaap-shared-core/lib/common/qaap
 import { resolveQaapHarnessCapabilities } from '@theia/qaap-shared-core/lib/common/qaap-harness-capabilities';
 import { QaapProjectFolderTrustStore, resolveProjectFolderTrustRoot } from './qaap-project-folder-trust-store';
 import { QaapHostedWorktreeRegistry } from '@theia/qaap-shared-core/lib/node/qaap-hosted-worktree-registry';
-import { clearNativeAgentModelCache, invalidateNativeAgentModels, prepareNativeAgentModels, type NativeModelDiscoverySpawner } from './qaap-agent-native-models';
+import { antigravityBinFor, clearNativeAgentModelCache, invalidateNativeAgentModels, prepareNativeAgentModels, type NativeModelDiscoverySpawner } from './qaap-agent-native-models';
 import { fireStopAgentHook } from './qaap-agent-task-runner-hooks';
 import { type QaapAgentReadOnlyEnforcement, } from '../common/qaap-agent-readonly-workspace';
 import { type QaapQaiqPendingControlRequest } from '../common/qaap-qaiq-stdio-approvals';
@@ -65,6 +65,7 @@ import { type QaapNativeModelRoutingTable } from '../common/qaap-agent-native-mo
 import { pickReservedDevPreviewPort } from '../common/qaap-agent-live-preview-port';
 import { QaapWebPushService } from './qaap-web-push-service';
 import { QaapBillingStore } from './qaap-billing-store';
+import { QaapTenantStorageQuotaService } from './qaap-tenant-storage-quota-service';
 import { QaapWorkflowRoutingPolicy } from '../common/qaap-workflow-routing';
 import { QaapAgentHealthTracker } from './qaap-agent-health';
 import { classifyAgentLastTurn, QaapAgentLastTurnStore } from './qaap-agent-last-turn-store';
@@ -182,7 +183,6 @@ import {
     type QaapGenericCommandResult,
 } from './qaap-agent-task-runner-constants';
 import {
-    isHostedCodexEntitled,
     resolveAgentAccess,
     type QaapAgentConnectionSnapshot,
 } from './qaap-agent-access';
@@ -215,6 +215,10 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     @inject(QaapBillingStore) @optional()
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public readonly billingStore: QaapBillingStore | undefined;
+
+    @inject(QaapTenantStorageQuotaService) @optional()
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readonly tenantStorageQuota: QaapTenantStorageQuotaService | undefined;
 
     @inject(PreferenceService) @optional()
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
@@ -627,20 +631,23 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             .filter(agent => this.isAgentEnabled(agent.id, ownerLogin))
             .map(agent => {
                 const { connectionState, probeSettled } = this.agentConnectionSnapshot(agent.id, ownerLogin);
-                const accessState = resolveAgentAccess({
-                    agentId: agent.id,
-                    connectionState,
-                    probeSettled,
-                    hostedEntitled: this.hostedCodexAllowed(ownerLogin),
-                });
-                // Codex follows the same access answer as its model list: a disconnected Codex is still
-                // usable through Qaap-hosted access on Pro/Team, and a settled sign-out is not usable.
+                const accessState = resolveAgentAccess({ agentId: agent.id, connectionState, probeSettled });
+                // Codex follows the same access answer as its model list, so a settled sign-out is not usable.
                 // Other agents keep their connection-only rule.
                 const available = agent.id.toLowerCase() === 'codex'
                     ? agent.available && accessState !== 'none'
                     : agent.available && connectionState !== 'disconnected';
-                return { ...agent, available, connectionState, accessState };
+                const cliBin = this.antigravityCliBinFor(agent.id);
+                return { ...agent, available, connectionState, accessState, ...(cliBin ? { cliBin } : {}) };
             });
+    }
+
+    /**
+     * The Antigravity CLI detection resolved at boot (the task template runs this same binary), for the
+     * frontend's TUI menu and Connect. Other harnesses have no such choice and get `undefined`.
+     */
+    protected antigravityCliBinFor(agentId: string): string | undefined {
+        return agentId === 'antigravity' ? this.detectedAgents.get('antigravity')?.bin : undefined;
     }
 
     /**
@@ -695,6 +702,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         return QAAP_HARNESS_DEFINITIONS.map(definition => {
             const candidate = this.detectedAgents.get(definition.id);
             const lastTurn = this.lastTurns?.get(ownerLogin, definition.id);
+            const cliBin = this.antigravityCliBinFor(definition.id);
             const installed = candidate
                 ? !candidate.bin || this.isOnPath(candidate.bin, pathEnv)
                 : this.isOnPath(definition.bin, pathEnv);
@@ -707,6 +715,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
                     : 'unknown',
                 installSupported: isInstallSupported(definition.id),
                 cliBinDirectory,
+                ...(cliBin ? { cliBin } : {}),
                 ...(lastTurn ? { lastTurn } : {}),
             };
         });
@@ -787,6 +796,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
                         void prepareNativeAgentModels(normalized, {
                             ownerLogin,
                             spawner: this.nativeModelDiscoverySpawner(ownerLogin),
+                            antigravityBin: antigravityBinFor(this, normalized),
                         });
                     }
                 }
@@ -991,8 +1001,8 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     }
 
     /**
-     * Whether `agentId` can run the owner's first task without further setup: signed in / keyed, a
-     * keyless hosted agent, or Codex through Qaap-hosted access that the owner's plan includes.
+     * Whether `agentId` can run the owner's first task without further setup: signed in / keyed or a
+     * keyless hosted agent. Every other agent needs the owner's own sign-in first.
      */
     protected isAgentUsableAsDefault(agentId: string, ownerLogin?: string): boolean {
         const normalized = agentId.trim().toLowerCase();
@@ -1002,15 +1012,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         if (HOSTED_KEYLESS_DEFAULT_AGENTS.includes(normalized)) {
             return this.agentConnectionState(normalized, ownerLogin) !== 'disconnected';
         }
-        return normalized === 'codex' && this.hostedCodexAllowed(ownerLogin);
-    }
-
-    /** Qaap-hosted Codex needs a plan with hosted models and credits left (same gate as turn start). */
-    protected hostedCodexAllowed(ownerLogin?: string): boolean {
-        if (!ownerLogin?.trim()) {
-            return false;
-        }
-        return isHostedCodexEntitled(this.billingStore?.peekEntitlements?.(ownerLogin));
+        return false;
     }
 
     isAgentEnabled(agentId: string, ownerLogin?: string): boolean {
@@ -1306,7 +1308,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public killAgentProcessTree(child: ChildProcess,
-        options?: { readonly escalateAfterMs?: number; readonly onGracePeriodElapsed?: () => void },): NodeJS.Timeout | undefined {
+        options?: { readonly escalateAfterMs?: number; readonly onGracePeriodElapsed?: () => void; readonly onSignalFailed?: () => void },): NodeJS.Timeout | undefined {
         return killAgentProcessTreeExtracted(this, child, options);
     }
 
@@ -1783,6 +1785,11 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public agentSandboxFor(cwd: string): QaapTaskSandbox | undefined {
+        return this.tenantSpawn.agentSandboxFor(cwd);
+    }
+
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public buildChildEnv(task: QaapAgentTask): NodeJS.ProcessEnv {
         return buildChildEnvExtracted(this, task);
     }
@@ -1939,6 +1946,10 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     /** @internal Whether the harness plugin of a task reported in through the gate's `/arm`. */
     isToolGateArmed(taskId: string): boolean {
         return this.toolGateTokens?.isArmed(taskId) ?? false;
+    }
+
+    toolGateWired(): boolean {
+        return !!this.toolGateTokens && !!this.helperApiUrl;
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */

@@ -787,11 +787,20 @@ body:not(.theia-mobile-mod-has-work-hub-visible.theia-mobile-mod-has-work-hub-vi
   flex-direction: column;
   gap: 2px;
   min-width: 188px;
+  min-height: 0;
+  /* A tall list (agent TUI harnesses) scrolls inside the viewport instead of running off-screen. */
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 6px;
   border-radius: 12px;
   border: 1px solid var(--theia-panel-border, rgba(128, 128, 128, 0.22));
   background: var(--theia-dropdown-background, var(--theia-editor-background));
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+}
+
+.theia-mobile-transcript-tab-icon-select-menu > * {
+  flex: 0 0 auto;
 }
 
 .theia-mobile-projects-header-execution-tabs .theia-mobile-transcript-tabs,
@@ -3745,8 +3754,14 @@ body>.theia-mobile-transcript-files-menu {
   box-sizing: border-box;
   /* A soft trailing fade says "more chips this way" instead of a chip cut mid-word; scrolled to the
      end it only fades the empty edge inset. */
-  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
-  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent);
+}
+
+/* Scrolled away from the start: the leading edge fades too, so the chips left behind are hinted. */
+.theia-mobile-agent-transcript-empty-actions.theia-mod-scrolled {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 48px, #000 calc(100% - 48px), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 48px, #000 calc(100% - 48px), transparent);
 }
 
 .theia-mobile-agent-transcript-empty-actions::after {
@@ -3846,7 +3861,7 @@ body>.theia-mobile-transcript-files-menu {
   border-radius: var(--qaap-mobile-radius-card, 12px);
   background: var(--theia-editorWidget-background, rgba(127, 127, 127, 0.08));
   border: 1px solid var(--theia-panel-border, rgba(128, 128, 128, 0.18));
-  font-size: 13px;
+  font-size: var(--q-text-body, 14px);
   line-height: 1.45;
 }
 
@@ -3885,8 +3900,8 @@ body>.theia-mobile-transcript-files-menu {
   padding: 9px 13px;
   border-radius:
     var(--qaap-mobile-radius-card, 12px) var(--qaap-mobile-radius-card, 12px) var(--qaap-mobile-radius-control, 8px) var(--qaap-mobile-radius-card, 12px);
-  background: color-mix(in srgb, var(--q-accent, #E58E40) 16%, var(--theia-editorWidget-background, rgba(127, 127, 127, 0.08)));
-  border: 1px solid color-mix(in srgb, var(--q-accent, #E58E40) 26%, transparent);
+  background: color-mix(in srgb, var(--theia-foreground) 10%, var(--theia-editor-background, transparent));
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 26%, transparent);
   color: var(--theia-foreground);
 }
 
@@ -4170,7 +4185,7 @@ button.theia-mobile-agent-transcript-feedback-tag:hover {
   flex-wrap: wrap;
   gap: 7px;
   color: var(--theia-foreground);
-  font-size: 15px;
+  font-size: var(--q-text-body, 14px);
   line-height: 1.45;
   font-weight: 500;
 }
@@ -4467,7 +4482,8 @@ body.qaap-theme-light .theia-mobile-agent-transcript-git-action-pill.theia-mod-f
   border-radius: 6px;
   background: transparent;
   color: var(--theia-descriptionForeground);
-  font-size: 11px;
+  font-size: var(--q-text-meta);
+  font-family: inherit;
   font-weight: 600;
   line-height: 1;
   cursor: pointer;
@@ -4838,7 +4854,7 @@ body.qaap-theme-light .theia-mobile-agent-stream-label.theia-mod-shimmer {
 .theia-mobile-agent-transcript-content.theia-mod-markdown {
   white-space: normal;
   overflow-x: auto;
-  font-size: 15px;
+  font-size: var(--q-text-body, 14px);
   line-height: 1.58;
 }
 
@@ -5073,7 +5089,7 @@ body.qaap-theme-light .theia-mobile-agent-stream-label.theia-mod-shimmer {
 }
 
 .theia-mobile-agent-thought-brief.theia-mod-cursor-flat .theia-mobile-agent-thought-brief-body {
-  font-size: 13px;
+  font-size: var(--q-text-body);
   line-height: 1.45;
   color: color-mix(in srgb, var(--theia-foreground) 88%, var(--theia-descriptionForeground));
 }
@@ -5144,7 +5160,7 @@ body.qaap-theme-light .theia-mobile-agent-stream-label.theia-mod-shimmer {
 
 .theia-mobile-agent-thought-brief-body {
   margin: 4px 0 0;
-  font-size: 13px;
+  font-size: var(--q-text-body);
   line-height: 1.45;
   letter-spacing: -0.01em;
   color: var(--theia-foreground);
@@ -7269,7 +7285,7 @@ body.qaap-theme-light .theia-mobile-agent-stream-label.theia-mod-shimmer {
 
 .theia-mobile-agent-thought-brief.theia-mod-cursor-flat .theia-mobile-agent-thought-brief-body,
 .theia-mobile-agent-thought-brief-more-body {
-  font-size: 15px;
+  font-size: var(--q-text-body);
   line-height: 1.72;
   letter-spacing: 0;
   color: color-mix(in srgb, var(--theia-descriptionForeground) 92%, var(--theia-foreground));
@@ -8418,7 +8434,7 @@ body.qaap-theme-light .theia-mobile-agent-activity-timeline.theia-mod-cursor-tra
 .theia-mobile-sticky-composer-streaming-detail {
   padding: 0 10px 2px;
   color: var(--theia-descriptionForeground);
-  font-size: 12px;
+  font-size: var(--q-text-meta, 13px);
   line-height: 1.35;
 }
 
@@ -9451,7 +9467,8 @@ body.qaap-theme-light .theia-mobile-agent-activity-timeline.theia-mod-cursor-tra
 
 .theia-mobile-agent-turn-failure-message {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--q-text-body, 14px);
+  font-family: var(--theia-ui-font-family);
   line-height: 1.45;
   color: var(--theia-foreground);
 }
@@ -9487,11 +9504,11 @@ body.qaap-theme-light .theia-mobile-agent-activity-timeline.theia-mod-cursor-tra
 
 /* CLI session sign-in card (Work Hub chat — mirrors agent TUI login URL). */
 .theia-mobile-agent-auth-login-card {
-  margin-top: 12px;
-  padding: 12px 12px 10px;
+  margin-top: 8px;
+  padding: 0;
   border-radius: 12px;
-  border: 1px solid color-mix(in srgb, var(--theia-focusBorder, #3794ff) 35%, var(--theia-widget-border, rgba(128, 128, 128, 0.25)));
-  background: color-mix(in srgb, var(--theia-focusBorder, #3794ff) 8%, var(--theia-editor-background, transparent));
+  border: none;
+  background: none;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -9499,7 +9516,8 @@ body.qaap-theme-light .theia-mobile-agent-activity-timeline.theia-mod-cursor-tra
 
 .theia-mobile-agent-auth-login-hint {
   margin: 0;
-  font-size: 12.5px;
+  font-size: var(--q-text-meta, 13px);
+  font-family: var(--theia-ui-font-family);
   line-height: 1.45;
   color: var(--theia-descriptionForeground);
 }
@@ -9507,6 +9525,7 @@ body.qaap-theme-light .theia-mobile-agent-activity-timeline.theia-mod-cursor-tra
 .theia-mobile-agent-turn-failure-plan-cta {
   align-self: flex-start;
   min-height: 38px;
+  font-family: inherit;
   padding: 0 16px;
   border: 1px solid var(--theia-foreground);
   border-radius: 8px;
@@ -9538,8 +9557,8 @@ body.qaap-theme-light .theia-mobile-agent-activity-timeline.theia-mod-cursor-tra
   letter-spacing: 0.08em;
   padding: 4px 8px;
   border-radius: 8px;
-  background: var(--theia-editor-background);
-  border: 1px solid var(--theia-widget-border, rgba(128, 128, 128, 0.25));
+  background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+  border: none;
   color: var(--theia-foreground);
 }
 
@@ -9580,7 +9599,8 @@ body.qaap-theme-light .theia-mobile-agent-activity-timeline.theia-mod-cursor-tra
   border: 1px solid var(--theia-button-border, transparent);
   border-radius: 999px;
   padding: 7px 12px;
-  font-size: 12.5px;
+  font-size: var(--q-text-meta, 13px);
+  font-family: var(--theia-ui-font-family);
   font-weight: 600;
   cursor: pointer;
   display: inline-flex;
@@ -9597,6 +9617,16 @@ body.qaap-theme-light .theia-mobile-agent-activity-timeline.theia-mod-cursor-tra
   font-size: 12.5px;
   font-weight: 600;
   line-height: 1.2;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Icon + label transcript buttons: keep a gap between the codicon glyph and its label. */
+button.codicon[class*='theia-mobile-agent-']:not(:empty) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .theia-mobile-agent-auth-login-actions .theia-mobile-agent-auth-login-action.codicon::before {
@@ -9725,15 +9755,10 @@ body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-
  */
 .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-shell-active.theia-mod-has-changes-pill,
 .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-inline-active.theia-mod-has-changes-pill {
-  --theia-mobile-transcript-composer-scroll-gap: -34px;
-}
-
-@media (max-width: 767px) {
-  .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-shell-active.theia-mod-has-changes-pill,
-  .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-inline-active.theia-mod-has-changes-pill {
-    /* Match densified 26px pill strip (+ lip) in work-hub narrow CSS. */
-    --theia-mobile-transcript-composer-scroll-gap: -30px;
-  }
+  /* Overlap (and tail clearance) follow the measured strip (View Preview, Changes, Working…):
+     a fixed -30/-34px left the last line under taller rows. --qaap-composer-pill-strip-height is
+     published by the strip itself (qaap-sticky-composer-activity-stack.ts). */
+  --theia-mobile-transcript-composer-scroll-gap: calc(-1 * (var(--qaap-composer-pill-strip-height, 28px) + 6px));
 }
 
 /*
@@ -10084,7 +10109,7 @@ body.qaap-theme-dark .theia-mobile-projects-sticky-composer-card.theia-mod-codex
   background: transparent;
   color: var(--theia-foreground);
   font: inherit;
-  font-size: 15px;
+  font-size: var(--q-text-body, 14px);
   line-height: 1.45;
   letter-spacing: -0.01em;
   field-sizing: content;
@@ -10176,6 +10201,13 @@ button.theia-mobile-projects-sticky-composer-context-usage-btn {
   align-items: center;
   gap: 2px;
   min-width: 0;
+}
+
+/* The left group (attach + model pill) is the one that gives way: a long model name ends in an
+   ellipsis and never pushes the mic and send buttons out of the row. */
+.theia-mobile-projects-sticky-composer-controls-row > .theia-mobile-projects-sticky-composer-controls-left {
+  flex: 1 1 auto;
+  overflow: hidden;
 }
 
 .theia-mobile-projects-sticky-composer-controls-left .theia-mobile-projects-sticky-composer-agent {
@@ -10282,6 +10314,7 @@ button.theia-mobile-projects-sticky-composer-context-usage-btn {
 
 /* Send: a round arrow-up button, as in T3 Code. Theme colours only; the grey tone steps up when text is ready. */
 .theia-mobile-projects-sticky-composer-send {
+  font: inherit;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -11323,10 +11356,16 @@ body.theia-mobile-mod-has-transcript-overlay.theia-mobile-mod-has-transcript-ove
   .theia-mobile-sticky-composer-sheet-panel,
   .qaap-sticky-composer-sheet-popover,
   .qaap-chat-context-usage-popover,
-  .theia-mobile-projects-sticky-composer-attach-menu,
   .theia-mobile-projects-sticky-composer-mention-popover {
     background: var(--qaap-composer-menu-glass-bg);
     border-color: var(--qaap-composer-menu-glass-border);
+    -webkit-backdrop-filter: blur(20px) saturate(150%);
+    backdrop-filter: blur(20px) saturate(150%);
+  }
+
+  /* Attach menu keeps its own hairline border (set in mobile-workbench-work-hub.css) and only takes the glass fill. */
+  .theia-mobile-projects-sticky-composer-attach-menu {
+    background: var(--qaap-composer-menu-glass-bg);
     -webkit-backdrop-filter: blur(20px) saturate(150%);
     backdrop-filter: blur(20px) saturate(150%);
   }
@@ -11897,4 +11936,27 @@ body.theia-mobile-mod-desktop-ide #theia-right-content-panel.theia-mod-has-work-
   .qaap-sticky-composer-sheet-popover .theia-qaap-segmented-bar.theia-mod-composer-workspace-sheet-nav > .theia-qaap-segmented-option::after {
     transition: none;
   }
+}
+
+/* Agents hub inline chat: the transcript runs to the bottom of the screen and the composer floats
+   over it. The transcript keeps a bottom padding of the composer's height (published on the root
+   as --theia-mobile-projects-fab-lift), so the last message scrolls up to sit above the composer
+   instead of behind it. !important matches the composer lip rules above (margin-top !important). */
+body:not(.theia-mobile-mod-desktop-ide) .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-inline-active > .theia-mobile-projects-sticky-composer:not([hidden]) {
+  position: absolute !important;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin-top: 0 !important;
+  /* Content scrolling behind fades out under the pill strip and is hidden behind the card. */
+  background: linear-gradient(to bottom, transparent 0, var(--theia-editor-background) 36px) !important;
+}
+
+body:not(.theia-mobile-mod-desktop-ide) .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-inline-active .theia-mobile-agents-hub-inline-transcript .theia-mobile-agent-transcript {
+  padding-bottom: calc(var(--theia-mobile-projects-fab-lift, 0px) + 16px);
+  scroll-padding-bottom: calc(var(--theia-mobile-projects-fab-lift, 0px) + 16px);
+}
+
+body:not(.theia-mobile-mod-desktop-ide) .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-inline-active .theia-mobile-agents-hub-inline-transcript .theia-mobile-agent-transcript-scroll-to-bottom {
+  bottom: calc(var(--theia-mobile-projects-fab-lift, 0px) + 12px);
 }

@@ -166,6 +166,8 @@ export const QAAP_SPANISH_TRANSLATIONS: Readonly<Record<string, string>> = {
     'qaap/diff/stageFile': 'Preparar archivo',
     'qaap/diff/loading': 'Cargando diff…',
     'qaap/diff/loadFailed': 'No se pudo cargar el diff de este archivo.',
+    'qaap/diff/loadFailedStale': 'Este archivo cambió de nuevo después de terminar la tarea. Actualiza para ver el diff actual.',
+    'qaap/diff/newFileStats': 'Archivo nuevo',
     'qaap/diff/retry': 'Reintentar',
     'qaap/diff/binary': 'Archivo binario: ábrelo en el editor para inspeccionarlo.',
     'qaap/diff/noHunks': 'No hay cambios de texto.',
@@ -228,7 +230,6 @@ export const QAAP_SPANISH_TRANSLATIONS: Readonly<Record<string, string>> = {
     'qaap/auth/githubConnected': 'Conectado a GitHub.',
     'qaap/auth/githubConnectFailed': 'Falló el inicio de sesión con GitHub.',
     'qaap/auth/githubConnectFailedWithReason': 'Falló el inicio de sesión con GitHub: {0}',
-    'qaap/billing/hostedCodexUnavailable': 'La facturación no está disponible temporalmente, así que no se pueden iniciar modelos Codex alojados ahora mismo. Inténtalo de nuevo en un momento o usa otro harness.',
     'qaap/auth/notSignedIn': 'No has iniciado sesión',
 
     'qaap/mobileProjects/previewButton': 'Vista previa',
@@ -291,6 +292,8 @@ export const QAAP_SPANISH_TRANSLATIONS: Readonly<Record<string, string>> = {
     'qaap/mobileProjects/agentLoginDialogVerifyingCode': 'Verificando el código con {0}…',
     'qaap/mobileProjects/agentLoginDialogStepThree': 'Inicia sesión y completa la verificación en el navegador.',
     'qaap/mobileProjects/agentLoginDialogConnected': '{0} conectado',
+    'qaap/quickActions/promptReplaced': 'Prompt reemplazado',
+    'qaap/quickActions/undo': 'Deshacer',
 };
 
 /** Keys that the Spanish overlay must cover for the trust / recovery / review surfaces. */

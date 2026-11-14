@@ -451,6 +451,7 @@ function commandCtx(id: string, template: string, bin = id): {
     applyTemplateWithoutPrompt: typeof applyTemplateWithoutPrompt;
     detectedAgents: Map<string, { id: string; label: string; bin: string; template: string }>;
     buildTemplateVars: () => Record<string, string>;
+    resolveAgentSpawnIdentity: () => { uid?: number; gid?: number };
 } {
     return {
         resolveAgentId: () => id,
@@ -466,6 +467,7 @@ function commandCtx(id: string, template: string, bin = id): {
         applyTemplateWithoutPrompt,
         detectedAgents: new Map([[id, { id, label: id, bin, template }]]),
         buildTemplateVars: () => ({}),
+        resolveAgentSpawnIdentity: () => ({}),
     };
 }
 

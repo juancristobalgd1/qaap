@@ -164,10 +164,28 @@ export class MobileWorkHubSessionsSidebar {
             this.updateScrollFade();
         });
     };
-    /** Bottom fade while more tasks/projects sit below the fold (see `.theia-mod-more-below`). */
+    /**
+     * Edge fades while more tasks/projects sit above or below the fold (`.theia-mod-more-above` /
+     * `.theia-mod-more-below`). The top fade starts under the sticky "Projects" heading while it is
+     * pinned, so the heading itself never fades.
+     */
     protected updateScrollFade(): void {
         const host = this.scrollHost;
         host.classList.toggle('theia-mod-more-below', host.scrollHeight - host.scrollTop - host.clientHeight > 1);
+        const moreAbove = host.scrollTop > 1;
+        host.classList.toggle('theia-mod-more-above', moreAbove);
+        let fadeStart = 0;
+        if (moreAbove) {
+            const heading = this.listHost.querySelector<HTMLElement>('.theia-mod-sessions-sidebar-projects-head');
+            if (heading) {
+                const hostTop = host.getBoundingClientRect().top;
+                const headingRect = heading.getBoundingClientRect();
+                if (headingRect.top - hostTop <= 1) {
+                    fadeStart = Math.max(0, Math.round(headingRect.bottom - hostTop));
+                }
+            }
+        }
+        host.style.setProperty('--qaap-sidebar-fade-top-start', `${fadeStart}px`);
     }
     protected readonly onOutsideClick = (event: MouseEvent): void => {
         if (!this.visible || !this.root.classList.contains('theia-mod-embedded')) {

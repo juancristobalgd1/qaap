@@ -23,11 +23,13 @@ import {
     type QaapGitCommitWorkflowAction,
     type QaapGitPushDestination,
 } from '@theia/qaap-shared-core/lib/common/qaap-git-review';
+import { conversationEverRequestedDevPreview } from '@theia/qaap-shared-core/lib/common/qaap-transcript-preview-offer';
 import { buildStickyComposerChangesPillFingerprint, type StickyComposerActivityStackOptions } from './qaap-sticky-composer-activity-stack';
 import {
     composerConversationInvolvesPreview,
     resolveComposerPreviewCandidate,
     resolveComposerPreviewChipVisibility,
+    isComposerPreviewBootingForProject,
     resolveVerifiedComposerPreviewUrl,
 } from './qaap-composer-preview-action';
 import type { StickyComposerChangedFileView } from '@theia/qaap-transcript/lib/browser/qaap-transcript-host-contracts';
@@ -228,7 +230,8 @@ export function buildTranscriptComposerActivityOptionsExtracted(ctx: MobileProje
     const verifiedPreviewUrl = ctx.verifiedComposerPreview?.projectId === project.id
         ? resolveVerifiedComposerPreviewUrl(previewRuntime, ctx.verifiedComposerPreview.url, undefined, ctx.verifiedComposerPreview.candidate)
         : undefined;
-    const previewStarting = !!ctx.host.transcriptPreviewRequestRunning || !!ctx.host.transcriptPreviewRequestPending;
+    const previewStarting = !!ctx.host.transcriptPreviewRequestRunning || !!ctx.host.transcriptPreviewRequestPending
+        || isComposerPreviewBootingForProject(previewRuntime, !!verifiedPreviewUrl);
     const previewChips = resolveComposerPreviewChipVisibility({
         previewStarting,
         previewVerified: !!verifiedPreviewUrl,
@@ -311,6 +314,7 @@ export function buildTranscriptComposerActivityOptionsExtracted(ctx: MobileProje
         diffStats: activityFiles.stats,
         hasFileActivity,
         previewInConversation: composerConversationInvolvesPreview(conv, window.location.origin),
+        previewRequested: !agentWorking && !!conv && conversationEverRequestedDevPreview(conv),
         hasCommittableChanges,
         hideApproveCommit: interactionModeId === 'plan',
         filesExpanded: ctx.peekTranscriptComposerChangedFilesExpanded(summary.id),

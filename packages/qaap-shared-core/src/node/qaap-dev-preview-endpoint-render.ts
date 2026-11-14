@@ -29,6 +29,7 @@ import { parseQaapPreviewHostLabel, resolveQaapIsolatedParentOrigin, resolveQaap
 import { canSignalProcessGroup, isSelfOrUnsafeSignalTarget, terminateListenersOnPort } from './qaap-dev-preview-port-listener';
 import { PREVIEW_RESERVATION_START_GRACE_MS, canonicalizeQaapPreviewRoot, parseClaimOsProcessId } from './qaap-dev-preview-endpoint';
 import { PREVIEW_PORT_ALLOCATION_ATTEMPTS } from './qaap-dev-preview-endpoint';
+import { releaseStoppedPreviewExtracted } from './qaap-dev-preview-process-liveness';
 import type { QaapDevPreviewAllocation, QaapDevPreviewEndpointContext } from './qaap-dev-preview-endpoint-context';
 import type { QaapDevPreviewRecord } from './qaap-dev-preview-port-registry';
 
@@ -420,7 +421,7 @@ export async function handleProcessClaimExtracted(ctx: QaapDevPreviewEndpointCon
                 root: canonicalRoot,
             });
             ctx.terminatePreviewProcess(existing);
-            ctx.portRegistry.releasePreview(existing.previewId, owner);
+            releaseStoppedPreviewExtracted(ctx, { ...existing, ownerLogin: owner });
         } else {
             if (!ctx.isPreviewProcessDead(existing) && (await ctx.probeLocalDevServerState(existing.port)) !== 'down') {
                 if (osProcessId !== undefined) {
@@ -473,7 +474,7 @@ export async function handleProcessClaimExtracted(ctx: QaapDevPreviewEndpointCon
             // Same identity re-claimed while its dev server is not answering yet: the link the user
             // already holds must keep resolving once the server is up, so keep the access token.
             ctx.terminatePreviewProcess(existing);
-            ctx.portRegistry.releasePreview(existing.previewId, owner, { keepAccessToken: true });
+            releaseStoppedPreviewExtracted(ctx, { ...existing, ownerLogin: owner }, { keepAccessToken: true });
         }
     }
 
@@ -508,7 +509,7 @@ export async function handleProcessClaimExtracted(ctx: QaapDevPreviewEndpointCon
             return;
         }
         ctx.terminatePreviewProcess(record);
-        ctx.portRegistry.releasePreview(record.previewId, owner);
+        releaseStoppedPreviewExtracted(ctx, { ...record, ownerLogin: owner });
     }
 
     // One dev server per project working copy, shared by every conversation of the owner: a live
@@ -588,6 +589,47 @@ function isPidAttachReclaimInStartGrace(
         && Date.now() - existing.claimedAt < PREVIEW_RESERVATION_START_GRACE_MS
         && (existing.osProcessId === undefined || existing.osProcessId === osProcessId)
         && !ctx.isPreviewProcessDead({ osProcessId, port: existing.port, ownerLogin: existing.ownerLogin });
+}
+
+const LISTENER_IN_ROOT_CACHE_MS = 3_000;
+const listenerInRootCache = new WeakMap<QaapDevPreviewEndpointContext, Map<string, { readonly at: number; readonly value: boolean }>>();
+
+/**
+ * Whether every process listening on an unclaimed `port` runs inside `rootParam` (a `file:` URI or
+ * an absolute path the caller names as its project root). Only a yes/no answer for a root the
+ * caller supplies: no path of the listener leaves the backend. `false` when nothing local
+ * describes the listener (tunnelled runtime, unreadable cwd). Cached per port and root for 3 s,
+ * so repeated attach probes cost at most one `lsof`.
+ */
+export function resolveListenerInRootExtracted(ctx: QaapDevPreviewEndpointContext, port: number, ownerLogin: string | undefined, rootParam: string): boolean {
+    let rootPath: string;
+    try {
+        rootPath = rootParam.startsWith('file:') ? FileUri.fsPath(rootParam) : rootParam;
+    } catch {
+        return false;
+    }
+    if (!path.isAbsolute(rootPath)) {
+        return false;
+    }
+    const root = canonicalizeQaapPreviewRoot(rootPath);
+    let cache = listenerInRootCache.get(ctx);
+    if (!cache) {
+        cache = new Map();
+        listenerInRootCache.set(ctx, cache);
+    }
+    const key = `${port}\u0000${root}`;
+    const now = Date.now();
+    const cached = cache.get(key);
+    if (cached && now - cached.at < LISTENER_IN_ROOT_CACHE_MS) {
+        return cached.value;
+    }
+    const cwds = ctx.resolvePortListenerCwds(port, ownerLogin);
+    const value = cwds.length > 0 && cwds.every(cwd => isSameOrInsideQaapPreviewRoot(cwd, root));
+    if (cache.size > 256) {
+        cache.clear();
+    }
+    cache.set(key, { at: now, value });
+    return value;
 }
 
 function isSameOrInsideQaapPreviewRoot(candidate: string, root: string): boolean {
@@ -762,7 +804,7 @@ export function supersedeConversationPreviewsExtracted(ctx: QaapDevPreviewEndpoi
         // on the claimed port. Terminal-spawned previews rarely record osProcessId; leaving
         // those listeners alive after release was the VPS orphan path (claim gone, process live).
         ctx.terminatePreviewProcess(record);
-        ctx.portRegistry.releasePreview(record.previewId, record.ownerLogin);
+        releaseStoppedPreviewExtracted(ctx, record);
         console.info('[qaap-preview] superseded previous preview for conversation', {
             previewId: record.previewId,
             ownerLogin: record.ownerLogin,

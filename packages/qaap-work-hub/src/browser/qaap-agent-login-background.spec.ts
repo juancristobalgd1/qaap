@@ -44,6 +44,8 @@ const GEMINI_LINK = [
 class FakeLoginTerminal extends Widget {
     readonly sent: string[] = [];
     readonly exitStatus = undefined;
+    /** The shell has drawn its prompt: the dialog types the login command right away. */
+    readonly buffer = { length: 1, getLines: (): string[] => ['$ '] };
     protected readonly outputEmitter = new Emitter<string>();
     readonly onOutput = this.outputEmitter.event;
 
@@ -152,7 +154,7 @@ describe('Antigravity Connect dialog in a tenant workspace', () => {
         const terminals: FakeLoginTerminal[] = [];
         connect(async () => {
             // First run: the CLI as it behaved in production. Retry: the CLI honours the trust rule.
-            const terminal = new FakeLoginTerminal((self, text) => self.print(terminals.length === 1 ? GEMINI_TRUST_DIALOG : `${text}\r\n${GEMINI_LINK}`));
+            const terminal = new FakeLoginTerminal((self, text) => text.endsWith('\r') && self.print(terminals.length === 1 ? GEMINI_TRUST_DIALOG : `${self.sent.join('')}\n${GEMINI_LINK}`));
             terminals.push(terminal);
             return terminal;
         });
@@ -160,7 +162,9 @@ describe('Antigravity Connect dialog in a tenant workspace', () => {
         const startedAt = Date.now();
         await clock.tickAsync(500);
         expect(terminals).to.have.length(1);
-        const command = terminals[0].sent[0];
+        // The ~1300-byte Gemini command is typed in pieces (macOS drops longer PTY writes).
+        expect(terminals[0].sent.length).to.be.greaterThan(1);
+        const command = terminals[0].sent.join('');
         expect(command, 'the agent trusts only its workspace, through Gemini CLI\'s own mechanisms').to.contain('"TRUST_FOLDER"');
         expect(command).to.contain('GEMINI_CLI_TRUST_WORKSPACE=true gemini');
         expect(command, 'folder trust is never switched off globally').to.not.contain('folderTrust');
@@ -208,12 +212,12 @@ describe('Antigravity Connect dialog in a tenant workspace', () => {
         await clock.tickAsync(10);
         expect(late.isDisposed, 'the abandoned terminal is closed').to.equal(true);
 
-        const retried = new FakeLoginTerminal((self, text) => self.print(`${text}\r\n${GEMINI_LINK}`));
+        const retried = new FakeLoginTerminal((self, text) => text.endsWith('\r') && self.print(`${self.sent.join('')}\n${GEMINI_LINK}`));
         pending[1].resolve(retried);
         await clock.tickAsync(500);
 
         expect(late.sent, 'the abandoned terminal never runs the login').to.deep.equal([]);
-        expect(retried.sent).to.have.length(1);
+        expect(retried.sent.join('').match(/\r/g), 'the login command was typed once').to.have.length(1);
         expect(dialogStatus()).to.not.contain('Secure sign-in is not available');
         expect(dialogStatus()).to.not.contain('Could not open a terminal');
         expect(document.querySelector('.theia-mobile-agent-login-dialog-url')?.textContent).to.contain('Verification page');
@@ -445,7 +449,9 @@ describe('Pi Connect dialog: `/login` driven in the hidden terminal', () => {
         while (dialogSpinning() && Date.now() - startedAt <= 40_000) {
             await clock.tickAsync(500);
         }
-        expect(dialogStatus()).to.contain('did not show a sign-in link within 30 seconds');
+        // Only the echoed command came back, so the tail is empty: the dialog says so and gives the host's facts.
+        expect(dialogStatus()).to.contain('No output was received from the sign-in terminal.');
+        expect(dialogStatus()).to.contain('Terminal started:');
         expect(terminal.sent.filter(text => text === '\r').length, 'the method picker never showed, so its Enter was never typed')
             .to.be.below(3);
         expect(terminal.isDisposed).to.equal(true);

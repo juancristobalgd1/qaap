@@ -31,11 +31,10 @@ import {
     type QaapAgentTaskState,
     type QaapCreateAgentTaskRequest,
 } from '../common/qaap-agent-task';
-import { billableAgentDurationMs } from '../common/qaap-billing-agent-runtime';
 import { buildAgentClosingReport, type QaapAgentClosingDiffSummary, type QaapAgentClosingReport } from '../common/qaap-agent-closing-report';
 import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model-catalog';
 import { agentModelFitsAgent } from '../common/qaap-agent-task-model-routing';
-import { listNativeAgentModels } from './qaap-agent-native-models';
+import { antigravityBinFor, listNativeAgentModels } from './qaap-agent-native-models';
 import {
     applyAgentApprovalPolicyToCommand,
     resolveOpencodePermissionEnv,
@@ -49,8 +48,14 @@ import {
 import {
     prependPathEntry as prependPathEntryHelper,
 } from './qaap-agent-task-runner-utils';
-import { buildPromptTransportCommand } from './qaap-agent-task-runner-utils';
+import { buildPromptTransportCommand, type AgentPromptOwner } from './qaap-agent-task-runner-utils';
 import { canExposeAgentCliBinToChild, prependAgentCliBinToPath } from './qaap-agent-cli-prefix';
+import { rememberAgentProcessIdentity } from './qaap-agent-process-signal';
+
+/** The agent uid a prompt file must be readable by, or undefined when the backend itself runs the agent. */
+function promptOwnerFor(identity: { uid?: number; gid?: number }): AgentPromptOwner | undefined {
+    return identity.uid === undefined ? undefined : { uid: identity.uid, gid: identity.gid };
+}
 
 export async function runGenericCommandExtracted(ctx: QaapAgentTaskRunnerContext, command: string,
         cwd: string,
@@ -223,7 +228,18 @@ export function spawnAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, comm
         stdio: ('pipe' | 'ignore')[];
         detached?: boolean;
     }): ChildProcess {
-        return ctx.tenantSpawn.spawn(command, options);
+        const child = ctx.tenantSpawn.spawn(command, options);
+        rememberAgentProcessIdentity(child, agentIdentityForStop(ctx, options.cwd));
+        return child;
+}
+
+/** The identity an agent spawned in `cwd` runs as, or undefined when it is not dropped (or cannot be resolved). */
+function agentIdentityForStop(ctx: QaapAgentTaskRunnerContext, cwd: string): { uid?: number; gid?: number } | undefined {
+        try {
+            return ctx.resolveAgentSpawnIdentity(cwd);
+        } catch {
+            return undefined;
+        }
 }
 
 export function buildChildEnvExtracted(ctx: QaapAgentTaskRunnerContext, task: QaapAgentTask): NodeJS.ProcessEnv {
@@ -297,6 +313,13 @@ export function buildChildEnvExtracted(ctx: QaapAgentTaskRunnerContext, task: Qa
             if (env.OPENCLAUDE_MAX_RETRIES === undefined) {
                 env.OPENCLAUDE_MAX_RETRIES = '3';
             }
+        }
+        const harnessId = task.agentId?.trim().toLowerCase();
+        if ((harnessId === 'claude' || harnessId === 'openclaude') && env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC === undefined) {
+            // Telemetry, error reporting and the auto-updater run when the CLI exits. Behind the tenant
+            // egress allowlist they wait out network timeouts, so the turn kept showing "Preparing the
+            // response…" for ~30s after the answer was complete. An operator override wins.
+            env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1';
         }
         // OpenCode allows every tool by default; gate it explicitly unless the run is meant to be
         // ungated (security: "Request approval" must never execute shell commands silently).
@@ -502,10 +525,6 @@ export function finishTaskExtracted(ctx: QaapAgentTaskRunnerContext, id: string,
             exitCode,
             finished.startedAt === undefined ? undefined : finished.finishedAt! - finished.startedAt,
         );
-        const durationMs = billableAgentDurationMs(finished);
-        if (durationMs > 0 && finished.ownerLogin && ctx.billingStore) {
-            void ctx.billingStore.debitRuntime(finished.ownerLogin, durationMs).catch(() => undefined);
-        }
         // 'completed'/'failed'/'interrupted' map to 'completed' for subscribers; 'cancelled' stays distinct.
         ctx.onDidChangeTaskEmitter.fire({
             type: state === 'cancelled' ? 'cancelled' : 'completed',
@@ -683,7 +702,7 @@ export async function improveComposerPromptExtracted(ctx: QaapAgentTaskRunnerCon
         const improveText = buildImproveComposerPromptRequest(trimmed);
         const agentId = ctx.resolveAgentId(improveText, options.agentId, options.ownerLogin);
         // The composer may still hold another agent's pick; the agent's own default beats a foreign model.
-        const agentModel = options.agentModel && agentModelFitsAgent(agentId, options.agentModel, () => listNativeAgentModels(agentId, options.ownerLogin))
+        const agentModel = options.agentModel && agentModelFitsAgent(agentId, options.agentModel, () => listNativeAgentModels(agentId, options.ownerLogin, antigravityBinFor(ctx, agentId)))
             ? options.agentModel
             : undefined;
         ctx.assertQaiqConfigured(agentId, options.ownerLogin, agentModel);
@@ -706,6 +725,7 @@ export async function improveComposerPromptExtracted(ctx: QaapAgentTaskRunnerCon
             agentId,
             detected,
             vars,
+            promptOwnerFor(ctx.resolveAgentSpawnIdentity(cwd)),
         );
         const command = applyAgentApprovalPolicyToCommand(
             transported.command,
@@ -797,7 +817,7 @@ export async function runReadOnlyOneShotPromptExtracted(ctx: QaapAgentTaskRunner
             .replace(/--output-format\s+\S+/g, '')
             .replace(/--include-partial-messages/g, '')
             .replace(/--verbose/g, '');
-        const transported = buildPromptTransportCommand(template, prompt, agentId, detected, vars);
+        const transported = buildPromptTransportCommand(template, prompt, agentId, detected, vars, promptOwnerFor(ctx.resolveAgentSpawnIdentity(options.cwd?.trim() || process.cwd())));
         const command = applyAgentApprovalPolicyToCommand(transported.command, {
             agentId,
             autoApprove: true,

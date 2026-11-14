@@ -41,6 +41,20 @@ describe('qaap-transcript-turn-status', () => {
         expect(resolveAgentMessageTiming(state, state.messages[3], 25000)).to.deep.equal({ isWorking: true, turnStartMs: 20000, elapsedMs: 5000 });
         expect(resolveAgentMessageTiming({ ...state, status: 'idle', updatedAt: 26000 }, state.messages[3], 90000).isWorking).to.equal(false);
     });
+    it('shows no duration for a settled turn whose end time is not trustworthy', () => {
+        const hour = 60 * 60 * 1000;
+        const old = conv({ status: 'idle', updatedAt: 2621 * hour, messages: [
+            { id: 'u1', role: 'user', content: 'fix', createdAt: 0 },
+            { id: 'a1', role: 'agent', content: 'done', createdAt: 1000 },
+        ] });
+        // No runFinishedAt: measured to a much later conversation update.
+        expect(resolveAgentMessageTiming(old, old.messages[1], 2622 * hour).elapsedMs).to.equal(undefined);
+        const recorded = conv({ status: 'idle', updatedAt: 2621 * hour, messages: [
+            { id: 'u1', role: 'user', content: 'fix', createdAt: 0 },
+            { id: 'a1', role: 'agent', content: 'done', createdAt: 1000, runFinishedAt: 90_000 },
+        ] });
+        expect(resolveAgentMessageTiming(recorded, recorded.messages[1], 2622 * hour).elapsedMs).to.equal(90_000);
+    });
     it('isConversationTurnVisuallySettled is false while a tool is still running', () => {
         const streaming = conv({
             messages: [

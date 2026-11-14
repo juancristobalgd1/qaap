@@ -30,7 +30,10 @@ export interface QaapAgentFileSectionProps {
     diff: QaapGitFileDiffResponse | undefined;
     expanded: boolean;
     loading: boolean;
+    /** Raw failure detail (HTTP status and server message); shown as a title, never as the main text. */
     errorDetail: string | undefined;
+    /** The file changed again after the task (409): the fallback asks for a refresh. */
+    errorStale?: boolean;
     iconClass: string;
     fileActionsEnabled: boolean;
     fileActionRunning: boolean;
@@ -85,7 +88,7 @@ export const QaapAgentFileSection = React.memo(function QaapAgentFileSection(pro
                         aria-hidden='true'
                     />
                     <i className={props.iconClass} aria-hidden='true' />
-                    <span className='qaap-agent-changes-path'>{leadingTruncatePath(path)}</span>
+                    <span className='qaap-agent-changes-path' title={path}>{leadingTruncatePath(path)}</span>
                     {isNew && (
                         <span className='qaap-agent-changes-new-badge'>
                             {nls.localize('qaap/diff/newFile', 'New')}
@@ -106,10 +109,16 @@ export const QaapAgentFileSection = React.memo(function QaapAgentFileSection(pro
                             {nls.localize('qaap/diff/suppressesCheck', 'Suppresses a check')}
                         </span>
                     )}
-                    <span className='qaap-agent-changes-filehdr-stats'>
-                        <span className='qaap-diff-add'>+{file.adds}</span>
-                        <span className='qaap-diff-del'>-{file.dels}</span>
-                    </span>
+                    {isNew && file.adds === 0 && file.dels === 0 ? (
+                        <span className='qaap-agent-changes-filehdr-stats'>
+                            {nls.localize('qaap/diff/newFileStats', 'New file')}
+                        </span>
+                    ) : (
+                        <span className='qaap-agent-changes-filehdr-stats'>
+                            <span className='qaap-diff-add'>+{file.adds}</span>
+                            <span className='qaap-diff-del'>-{file.dels}</span>
+                        </span>
+                    )}
                 </button>
                 {props.fileActionsEnabled && (
                     <span className='qaap-agent-changes-filehdr-actions'>
@@ -185,12 +194,18 @@ function AgentFileDiffFallback(props: QaapAgentFileSectionProps): React.ReactEle
             </div>
         );
     }
+    const message = props.errorStale
+        ? nls.localize(
+            'qaap/diff/loadFailedStale',
+            'This file changed again since the task finished. Refresh to see the current diff.',
+        )
+        : nls.localize('qaap/diff/loadFailed', 'Could not load the diff for this file.');
     return (
-        <div className='qaap-diff-review-note qaap-mod-compact'>
-            <span>
-                {nls.localize('qaap/diff/loadFailed', 'Could not load diff for this file.')}
-                {props.errorDetail ? ` (${props.errorDetail})` : ''}
-            </span>
+        <div
+            className='qaap-diff-review-note qaap-mod-compact qaap-mod-load-failed'
+            title={props.errorDetail || undefined}
+        >
+            <span>{message}</span>
             <button type='button' className='qaap-diff-review-inline-btn' onClick={onRetry}>
                 {nls.localize('qaap/diff/retry', 'Retry')}
             </button>

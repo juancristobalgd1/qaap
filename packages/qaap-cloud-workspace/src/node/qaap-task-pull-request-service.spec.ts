@@ -265,9 +265,10 @@ describe('QaapTaskPullRequestService', function (): void {
         expect(recorded.options?.linkedPullRequest).to.include({ owner: 'acme', repo: 'demo', number: 7 });
 
         // Quiet again with nothing new: no GitHub traffic, no write.
+        const writesAfterOpen = fake.records.length;
         await service.sync('c1');
         expect(github.methods()).to.deep.equal(['createPull']);
-        expect(fake.records).to.have.length(1);
+        expect(fake.records).to.have.length(writesAfterOpen);
     });
 
     it('opens a red turn as a labelled draft with the attention prefix', async () => {
@@ -465,6 +466,33 @@ describe('QaapTaskPullRequestService', function (): void {
         expect(input.draft).to.equal(true);
         expect(input.body).to.contain('error TS1005');
         expect(fake.conv.messages.find(message => message.id === 'u1')?.turnVerdict).to.include({ taskState: 'completed_with_warnings', settledAt: 5 });
+    });
+
+    it('keeps the created PR number when labelling fails, so the retry updates that PR instead of opening another', async () => {
+        turn('u1', 't1', () => fs.writeFileSync(path.join(repo, 'feature.ts'), 'broken(\n'));
+        fake.tasks = [task('t1', {
+            state: 'completed_with_warnings',
+            verification: { status: 'failed', command: 'npm run build', attempts: 2, summary: 'error TS1005' },
+        })];
+        const addLabel = github.addLabel.bind(github);
+        let labelFails = true;
+        github.addLabel = async (token, owner, repo, pullNumber, label) => {
+            if (labelFails) {
+                throw new GithubApiError('Validation Failed', 422);
+            }
+            return addLabel(token, owner, repo, pullNumber, label);
+        };
+
+        await service.sync('c1');
+        expect(fake.conv.taskPullRequest).to.include({ number: 7, url: 'https://github.com/acme/demo/pull/7' });
+        expect(fake.conv.taskPullRequest?.lastError).to.be.a('string');
+
+        labelFails = false;
+        await service.sync('c1');
+        expect(github.methods().filter(method => method === 'createPull')).to.have.length(1);
+        expect(github.methods()).to.include('updatePull');
+        expect(github.calls.filter(call => call.method === 'addLabel').at(-1)!.args[4]).to.equal(QAAP_TASK_PR_ATTENTION_LABEL);
+        expect(fake.conv.taskPullRequest?.lastError).to.equal(undefined);
     });
 
     it('records a blocked turn as blocked in the persisted verdict', () => {

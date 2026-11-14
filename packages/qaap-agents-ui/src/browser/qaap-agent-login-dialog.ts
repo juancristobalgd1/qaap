@@ -93,6 +93,14 @@ function localizeFailure(state: Extract<QaapAgentLoginFlowState, { phase: 'faile
     }
     switch (state.reason) {
         case 'timeout':
+            if (!state.tail.length) {
+                // Nothing to show below: say so, and what the host saw from the terminal.
+                const noOutput = nls.localize(
+                    'qaap/agentLogin/noOutputReceived',
+                    'No output was received from the sign-in terminal.',
+                );
+                return state.diagnostics ? `${noOutput} ${state.diagnostics}` : noOutput;
+            }
             return nls.localize(
                 'qaap/mobileProjects/agentLoginDialogTimedOut',
                 '{0} did not show a sign-in link within {1} seconds. Its last output is below.',

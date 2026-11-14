@@ -5,11 +5,12 @@
 
 import { expect } from 'chai';
 import { execFileSync } from 'child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import URI from '@theia/core/lib/common/uri';
 import {
+    classifyDevPreviewHealthProbe,
     getImplicitDevPort,
     DEV_PREVIEW_HEALTH_BASE_INTERVAL_MS,
     devPreviewHealthDelayMs,
@@ -19,10 +20,13 @@ import {
     pickNextDevPort,
     previewHomeDirFor,
     prefixTheiaPreviewHomeEnv,
+    qaapPreviewHostEnvScrubPrefix,
     resolveBootstrapDevPort,
     wrapCommandForDevNodeEnv,
     wrapDevCommandForPort,
 } from './qaap-project-bootstrap-port';
+
+const UNSET_QAAP = "unset $(env | sed -n 's/^\\(QAAP_[A-Za-z0-9_]*\\)=.*/\\1/p') &&";
 
 describe('qaap-project-bootstrap-port', () => {
 
@@ -308,7 +312,8 @@ describe('qaap-project-bootstrap-port', () => {
 
     it('wrapDevCommandForPort uses POSIX env prefixes on a Linux host instead of cmd.exe SET', () => {
         const command = wrapDevCommandForPort('pnpm run dev', 3333, 'node-vite', false);
-        expect(command).to.match(/^QAAP_PREVIEW_PORT=3333 PORT=3333/);
+        expect(command).to.match(/QAAP_PREVIEW_PORT=3333 PORT=3333 NODE_ENV=development /);
+        expect(command.startsWith(qaapPreviewHostEnvScrubPrefix())).to.equal(true);
         expect(command).to.not.include('set "PORT=');
         expect(wrapCommandForDevNodeEnv('pnpm install', false)).to.equal('NODE_ENV=development pnpm install');
         expect(wrapCommandForDevNodeEnv('pnpm install', true)).to.equal('set "NODE_ENV=development"&& pnpm install');
@@ -317,19 +322,19 @@ describe('qaap-project-bootstrap-port', () => {
     it('gives a Theia preview its own HOME and THEIA_CONFIG_DIR under the project', () => {
         const command = prefixTheiaPreviewHomeEnv('npm run dev', previewHomeDirFor('/work/vyyq'), false);
         expect(command).to.equal(
-            "export HOME='/work/vyyq/node_modules/.cache/qaap-preview-home' THEIA_CONFIG_DIR='/work/vyyq/node_modules/.cache/qaap-preview-home/.theia' && npm run dev"
+            `${UNSET_QAAP} export HOME='/work/vyyq/node_modules/.cache/qaap-preview-home' THEIA_CONFIG_DIR='/work/vyyq/node_modules/.cache/qaap-preview-home/.theia' QAAP_NESTED_PREVIEW=1 && npm run dev`
         );
     });
 
     it('quotes a single quote in the preview home path for POSIX shells', () => {
         expect(prefixTheiaPreviewHomeEnv('npm run dev', "/a/it's/preview-home", false))
-            .to.equal("export HOME='/a/it'\\''s/preview-home' THEIA_CONFIG_DIR='/a/it'\\''s/preview-home/.theia' && npm run dev");
+            .to.equal(`${UNSET_QAAP} export HOME='/a/it'\\''s/preview-home' THEIA_CONFIG_DIR='/a/it'\\''s/preview-home/.theia' QAAP_NESTED_PREVIEW=1 && npm run dev`);
     });
 
     it('sets USERPROFILE and HOME on Windows hosts', () => {
         const command = prefixTheiaPreviewHomeEnv('npm run dev', previewHomeDirFor('C:/work/vyyq'), true);
         expect(command).to.equal(
-            'set USERPROFILE=C:/work/vyyq/node_modules/.cache/qaap-preview-home&& set HOME=C:/work/vyyq/node_modules/.cache/qaap-preview-home&& set THEIA_CONFIG_DIR=C:/work/vyyq/node_modules/.cache/qaap-preview-home/.theia&& npm run dev'
+            'set USERPROFILE=C:/work/vyyq/node_modules/.cache/qaap-preview-home&& set HOME=C:/work/vyyq/node_modules/.cache/qaap-preview-home&& set THEIA_CONFIG_DIR=C:/work/vyyq/node_modules/.cache/qaap-preview-home/.theia&& set QAAP_NESTED_PREVIEW=1&& npm run dev'
         );
     });
 
@@ -342,6 +347,27 @@ describe('qaap-project-bootstrap-port', () => {
         const cwd = new URI('file:///tmp/qaap-chain-home-spec');
         const command = isolateTheiaPreviewCommand('true && printf %s "$HOME"', { isTheiaApp: true, cwd });
         expect(execFileSync('/bin/sh', ['-c', command], { encoding: 'utf8' })).to.equal(previewHomeDirFor('/tmp/qaap-chain-home-spec'));
+    });
+
+    (process.platform === 'win32' ? it.skip : it)('drops inherited QAAP_* variables but keeps the ones the command sets', () => {
+        const cwd = new URI('file:///tmp/qaap-nested-env-spec');
+        const command = isolateTheiaPreviewCommand(
+            'QAAP_PREVIEW_PORT=3001 sh -c \'printf "%s|%s|%s|%s" "${QAAP_SQLITE_STORE_PATH-unset}" "${QAAP_CLOUD_MODE-unset}" "$QAAP_NESTED_PREVIEW" "$QAAP_PREVIEW_PORT"\'',
+            { isTheiaApp: true, cwd },
+        );
+        const output = execFileSync('/bin/sh', ['-c', command], {
+            encoding: 'utf8',
+            env: { ...process.env, QAAP_SQLITE_STORE_PATH: '/host/.qaap/store.sqlite', QAAP_CLOUD_MODE: '1', KEEP_ME: 'yes' },
+        });
+        expect(output).to.equal('unset|unset|1|3001');
+    });
+
+    it('fails a health probe only when the server is gone, not while it is busy', () => {
+        expect(classifyDevPreviewHealthProbe({ ready: true }, true)).to.equal('healthy');
+        expect(classifyDevPreviewHealthProbe({ ready: true }, false)).to.equal('down');
+        expect(classifyDevPreviewHealthProbe({ ready: false, listening: true }, true)).to.equal('slow');
+        expect(classifyDevPreviewHealthProbe({ ready: false, probeFailed: true }, true)).to.equal('slow');
+        expect(classifyDevPreviewHealthProbe({ ready: false }, true)).to.equal('down');
     });
 
     it('spaces health probes 2.5 s, 5 s, 10 s, then 15 s while the server stays healthy', () => {
@@ -358,11 +384,41 @@ describe('qaap-project-bootstrap-port', () => {
         if (process.platform === 'win32') {
             // cmd.exe: `set` lines persist across `&&`; the Windows fsPath of file:///work/vyyq is `\work\vyyq`.
             const winHome = '\\work\\vyyq/node_modules/.cache/qaap-preview-home';
-            expect(theia).to.equal(`set USERPROFILE=${winHome}&& set HOME=${winHome}&& set THEIA_CONFIG_DIR=${winHome}/.theia&& npm run dev`);
+            expect(theia).to.equal(`set USERPROFILE=${winHome}&& set HOME=${winHome}&& set THEIA_CONFIG_DIR=${winHome}/.theia&& set QAAP_NESTED_PREVIEW=1&& npm run dev`);
         } else {
-            expect(theia).to.equal("export HOME='/work/vyyq/node_modules/.cache/qaap-preview-home' THEIA_CONFIG_DIR='/work/vyyq/node_modules/.cache/qaap-preview-home/.theia' && npm run dev");
+            expect(theia).to.equal(`${UNSET_QAAP} export HOME='/work/vyyq/node_modules/.cache/qaap-preview-home' THEIA_CONFIG_DIR='/work/vyyq/node_modules/.cache/qaap-preview-home/.theia' QAAP_NESTED_PREVIEW=1 && npm run dev`);
         }
         expect(isolateTheiaPreviewCommand('npm run dev', { isTheiaApp: false, cwd })).to.equal('npm run dev');
         expect(isolateTheiaPreviewCommand('npm run dev', { cwd })).to.equal('npm run dev');
+    });
+});
+
+(process.platform === 'win32' ? describe.skip : describe)('qaapPreviewHostEnvScrubPrefix in a real POSIX shell', () => {
+    const shells = ['/bin/sh', '/bin/bash', '/bin/zsh', '/bin/dash'].filter(shell => existsSync(shell));
+    const hostEnv: NodeJS.ProcessEnv = {
+        ...process.env,
+        QAAP_FOO: '1',
+        QAAP_PREVIEW_BASE_DOMAIN: 'qaap.example.com',
+        QAAP_SQLITE_STORE_PATH: '/host/.qaap/store.sqlite',
+        QAAP_TASK_TOKEN: 'secret',
+        KEEP_ME: 'yes',
+    };
+
+    for (const shell of shells) {
+        it(`leaves only QAAP_PREVIEW_PORT for the dev command under ${shell}`, () => {
+            const command = wrapDevCommandForPort('env', 3001, 'node-cra', false);
+            const output = execFileSync(shell, ['-c', command], { encoding: 'utf8', env: hostEnv });
+            const qaapLines = output.split('\n').filter(line => /^QAAP_/i.test(line));
+            expect(qaapLines).to.deep.equal(['QAAP_PREVIEW_PORT=3001']);
+            expect(output).to.contain('KEEP_ME=yes');
+            expect(output).to.contain('PORT=3001');
+        });
+    }
+
+    it('scrubs inherited variables before a non-Node command too', () => {
+        const shell = shells[0];
+        // A prefix assignment is not visible to expansions in the same simple command, so read the port through `sh -c`.
+        const command = wrapDevCommandForPort('sh -c \'printf "%s|%s" "${QAAP_FOO-unset}" "$QAAP_PREVIEW_PORT"\'', 5174, 'python-generic', false);
+        expect(execFileSync(shell, ['-c', command], { encoding: 'utf8', env: hostEnv })).to.equal('unset|5174');
     });
 });

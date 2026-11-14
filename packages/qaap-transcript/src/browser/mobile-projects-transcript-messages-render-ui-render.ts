@@ -26,6 +26,8 @@ import {
     shouldDeferTranscriptRowHeavyContent,
 } from './qaap-transcript-row-defer';
 import { normalizeAgentConversationFailures, type QaapAgentConversationDTO, type QaapAgentMessageDTO, type QaapAgentMessageSegmentDTO, type QaapPendingUserMessageDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { createMobileTurnClosingReportElement } from './mobile-turn-closing-report';
+import { findQaapClosingReport } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model';
 
 export function resolveTranscriptMessageHostExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, host: HTMLElement): HTMLElement {
     if (!host.classList.contains('theia-mobile-agent-transcript-real-chat')) {
@@ -216,6 +218,11 @@ export function createTranscriptMessageRowAtIndexExtracted(ctx: MobileProjectsTr
             undefined,
             { deferHeavyContent, streaming: streamingTail, conv: normalized, message: msg },
         );
+        // A text-only turn (its trace holds just lifecycle events) still closes with its report.
+        const closingReport = msg.role === 'agent' && !streamingTail ? findQaapClosingReport(msg) : undefined;
+        if (closingReport) {
+            row.append(createMobileTurnClosingReportElement(closingReport));
+        }
     }
     if (index === conv.messages.length - 1 && sameConversation && previousLastMessageId && msg.id && msg.id !== previousLastMessageId) {
         row.classList.add('theia-mod-new-message');

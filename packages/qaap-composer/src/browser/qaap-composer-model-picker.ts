@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
+import { attachQaapScrollEdgeFades } from '@theia/qaap-mobile-shell/lib/browser/qaap-scroll-edge-fades';
 import { appendAgentBrandIcon } from '@theia/qaap-shared-core/lib/common/qaap-agent-branding';
 import {
     QaapAgentEffort,
@@ -46,6 +47,8 @@ interface PickerHostState {
     openMenu: FooterMenuKey | undefined;
     /** Tears down the harness rail listeners of the previous paint. */
     disposeRail?: () => void;
+    /** Edge fades on the model list of the current paint. */
+    disposeRowFades?: () => void;
     /** Rail selection last scrolled into view, so searches and effort changes do not fight the user's scroll. */
     revealedRailSelection?: string;
 }
@@ -63,6 +66,7 @@ export function renderQaapComposerModelPicker(host: HTMLElement, props: QaapComp
     const previous = hostStates.get(host);
     const openMenu = previous?.openMenu;
     previous?.disposeRail?.();
+    previous?.disposeRowFades?.();
     // The search field is the node the user types into: it is kept across repaints, focus included.
     const previousInput = host.querySelector<HTMLInputElement>('.qaap-model-picker-search input') ?? undefined;
     const hadFocus = previousInput !== undefined && document.activeElement === previousInput;
@@ -118,8 +122,10 @@ export function pickerPopoverHeight(pillTop: number, viewportHeight: number): nu
 export function disposeQaapComposerModelPicker(host: HTMLElement): void {
     const state = hostStates.get(host);
     state?.disposeRail?.();
+    state?.disposeRowFades?.();
     if (state) {
         state.disposeRail = undefined;
+        state.disposeRowFades = undefined;
     }
 }
 
@@ -176,8 +182,9 @@ function prefersReducedMotion(): boolean {
 }
 
 /**
- * Keeps the rail's overflow classes in step with its scroll position, translates a vertical wheel
- * into horizontal travel on the horizontal rail, and wires the discrete arrows. Returns the teardown.
+ * Keeps the rail's edge fades on the axis it scrolls (Y on desktop, X in the narrow layout), translates
+ * a vertical wheel into horizontal travel on the horizontal rail, and wires the discrete arrows.
+ * Returns the teardown.
  */
 function attachRailScroll(frame: HTMLElement, nav: HTMLElement): () => void {
     const disposables: Array<() => void> = [];
@@ -191,21 +198,28 @@ function attachRailScroll(frame: HTMLElement, nav: HTMLElement): () => void {
         disposables.push(() => target.removeEventListener(type, handler, options));
     };
     const isHorizontal = (): boolean => getComputedStyle(nav).flexDirection === 'row';
+    // The fades follow the rail's orientation; a layout change re-attaches them on the other axis.
+    let fades: { dispose(): void } | undefined;
+    let fadeAxis: 'x' | 'y' | undefined;
+    const syncFades = (horizontal: boolean): void => {
+        const axis = horizontal ? 'x' : 'y';
+        if (fadeAxis === axis) {
+            return;
+        }
+        fades?.dispose();
+        fades = attachQaapScrollEdgeFades(nav, { axis });
+        fadeAxis = axis;
+    };
     const update = (): void => {
         const horizontal = isHorizontal();
-        const position = horizontal ? nav.scrollLeft : nav.scrollTop;
-        const viewport = horizontal ? nav.clientWidth : nav.clientHeight;
-        const content = horizontal ? nav.scrollWidth : nav.scrollHeight;
         nav.classList.toggle('theia-mod-horizontal', horizontal);
-        nav.classList.toggle('theia-mod-overflow-start', position > 1);
-        nav.classList.toggle('theia-mod-overflow-end', content - viewport - position > 1);
+        syncFades(horizontal);
     };
     const step = (): number => {
         const item = nav.querySelector<HTMLElement>('.qaap-model-picker-rail-item');
         const gap = parseFloat(getComputedStyle(nav).columnGap) || 0;
         return item ? (item.offsetWidth + gap) * RAIL_ARROW_ITEMS : RAIL_ITEM_STEP_FALLBACK * RAIL_ARROW_ITEMS;
     };
-    listen(nav, 'scroll', update, { passive: true });
     listen(nav, 'wheel', event => {
         if (!isHorizontal() || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
             return;
@@ -230,6 +244,11 @@ function attachRailScroll(frame: HTMLElement, nav: HTMLElement): () => void {
         observer.observe(nav);
         disposables.push(() => observer?.disconnect());
     }
+    disposables.push(() => {
+        fades?.dispose();
+        fades = undefined;
+        fadeAxis = undefined;
+    });
     update();
     return () => disposables.forEach(dispose => dispose());
 }
@@ -302,12 +321,12 @@ function renderList(host: HTMLElement, props: QaapComposerModelPickerProps): HTM
     const rows = document.createElement('div');
     rows.className = 'qaap-model-picker-rows';
     rows.setAttribute('role', 'listbox');
-    // Bottom fade while more models sit below the fold, so a long list reads as scrollable.
-    const updateRowsFade = (): void => {
-        rows.classList.toggle('theia-mod-more-below', rows.scrollHeight - rows.scrollTop - rows.clientHeight > 1);
-    };
-    rows.addEventListener('scroll', updateRowsFade, { passive: true });
-    rows.ownerDocument.defaultView?.requestAnimationFrame?.(updateRowsFade);
+    // Fades only on the edge where models sit below or above the fold.
+    const rowFades = attachQaapScrollEdgeFades(rows);
+    const state = hostStates.get(host);
+    if (state) {
+        state.disposeRowFades = () => rowFades.dispose();
+    }
     const models = QaapComposerModelPickerModel.visibleModels(props.state);
     const favorites = new Set(props.state.favorites);
     const compact = !props.isMobile;

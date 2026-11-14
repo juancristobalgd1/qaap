@@ -103,6 +103,45 @@ describe('Qaap composer prompt improvement', () => {
         }
     });
 
+    it('locks the textarea while improving and keeps text typed after the request started', async () => {
+        document.body.classList.add('theia-mobile-mod-workhub-no-bottom-chrome');
+        const { context, input, panel } = createContext('write a test');
+        let resolveImprove: (value: string) => void = () => undefined;
+        let confirmed = false;
+        const handler = createStickyComposerImprovePromptHandler({
+            improver: {
+                improve: () => new Promise<string>(resolve => { resolveImprove = resolve; }),
+            } as unknown as QaapComposerPromptImprover,
+            resolveAgentId: () => 'qaiq',
+            resolveAgentModel: () => undefined,
+            confirmImprovedPrompt: async () => {
+                confirmed = true;
+                return true;
+            },
+        });
+
+        try {
+            handler(context);
+            expect(input.readOnly).to.equal(true);
+            expect(input.getAttribute('aria-busy')).to.equal('true');
+            expect(input.classList.contains('qaap-mod-improving-prompt')).to.equal(true);
+
+            input.value = 'write a test, with more detail';
+            resolveImprove('write a focused test');
+            await new Promise(resolve => window.setTimeout(resolve, 0));
+
+            expect(confirmed).to.equal(false);
+            expect(input.value).to.equal('write a test, with more detail');
+            expect(input.readOnly).to.equal(false);
+            expect(input.hasAttribute('aria-busy')).to.equal(false);
+            expect(input.classList.contains('qaap-mod-improving-prompt')).to.equal(false);
+            expect(panel.querySelector<HTMLElement>('.qaap-composer-improve-feedback')?.textContent).to.contain('changed');
+        } finally {
+            document.body.classList.remove('theia-mobile-mod-workhub-no-bottom-chrome');
+            panel.remove();
+        }
+    });
+
     it('rejects a backend operation that does not respond before the client timeout', async () => {
         class NeverRespondsPromptImprover extends QaapComposerPromptImprover {
             protected override getTimeoutMs(): number {

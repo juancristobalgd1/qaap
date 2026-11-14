@@ -15,15 +15,17 @@ export const QAAP_TENANT_PUSH_OUTBOX_PATH = `${QAAP_TENANT_RUNTIME_API_PATH}/pus
 export const QAAP_PUSH_VAPID_PATH = `${QAAP_CLOUD_API_PATH}/push/vapid`;
 export const QAAP_PUSH_SUBSCRIBE_PATH = `${QAAP_CLOUD_API_PATH}/push/subscribe`;
 export const QAAP_PUSH_NOTIFY_PATH = `${QAAP_CLOUD_API_PATH}/push/notify`;
-/** Signed-in billing entitlements + Codex hosted credit wallet. */
+/** Signed-in billing entitlements for the Starter / Pro plans. */
 export const QAAP_BILLING_API_PATH = '/qaap/api/billing';
-/** Create a Stripe Checkout session for Pro / Team monthly subscription. */
+/** Create an Airwallex hosted subscription checkout for the Starter or Pro monthly plan. */
 export const QAAP_BILLING_CHECKOUT_API_PATH = '/qaap/api/billing/checkout';
-/** Confirm a completed Checkout session after Stripe redirects back (idempotent with webhook). */
+/** Confirm a completed checkout (`checkoutId`, from the return URL) after the hosted page redirects back (idempotent with webhook). */
 export const QAAP_BILLING_CONFIRM_CHECKOUT_API_PATH = '/qaap/api/billing/confirm-checkout';
-/** Stripe webhook (raw body) for subscription lifecycle. */
+/** Cancel the signed-in account's Airwallex subscription. */
+export const QAAP_BILLING_CANCEL_API_PATH = '/qaap/api/billing/cancel';
+/** Airwallex webhook (raw body, verified with x-timestamp / x-signature) for subscription lifecycle. */
 export const QAAP_BILLING_WEBHOOK_API_PATH = '/qaap/api/billing/webhook';
-/** Dev-only plan activate when Stripe keys are not configured. */
+/** Dev-only plan activate when Airwallex billing is not configured. */
 export const QAAP_BILLING_DEV_ACTIVATE_API_PATH = '/qaap/api/billing/dev-activate';
 
 /**

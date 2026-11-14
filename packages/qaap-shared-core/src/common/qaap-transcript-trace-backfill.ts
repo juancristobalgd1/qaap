@@ -9,6 +9,7 @@ import {
     hasActiveQaapTraceWork,
     resolveAgentMessageDisplayContent,
     resolveQaapTranscriptTrace,
+    sanitizeQaapTraceEchoes,
     type QaapTranscriptTraceEventDTO,
 } from './qaap-transcript-trace-model';
 
@@ -54,10 +55,12 @@ export function backfillAgentMessageTraceEvents(
         return { message, changed: false };
     }
     const segments = message.segments ?? [];
-    const existing = message.traceEvents ?? [];
-    if (segments.length === 0 && existing.length === 0) {
+    const persisted = message.traceEvents ?? [];
+    if (segments.length === 0 && persisted.length === 0) {
         return { message, changed: false };
     }
+    // Legacy `Error: …` echo rows are removed before any comparison, so a poisoned trace is re-saved clean.
+    const existing = sanitizeQaapTraceEchoes(persisted);
     let traceEvents = existing;
     // A structured trace is authoritative: every writer that still produces segments writes the
     // trace alongside them, and `materializeAgentMessageForApi` derives segments FROM the trace.
@@ -76,7 +79,7 @@ export function backfillAgentMessageTraceEvents(
     if (!options.streamingTail) {
         next = compactAgentMessageTraceStorage(next);
     }
-    const changed = !traceEventsEqual(traceEvents, existing)
+    const changed = !traceEventsEqual(traceEvents, persisted)
         || (next.segments?.length ?? 0) !== (message.segments?.length ?? 0);
     if (!changed) {
         return { message, changed: false };
@@ -122,7 +125,11 @@ export function materializeAgentMessageForApi(message: QaapAgentMessageDTO): Qaa
     if (content && content !== message.content) {
         next = { ...next, content };
     }
-    if (!(next.segments?.length) && trace.segments.length > 0) {
+    // A structured trace is authoritative: persisted segments may still carry legacy echo rows, so the
+    // trace-derived segments (sanitized by traceEventsToSegments) replace them whenever they exist.
+    const persistedCount = next.segments?.length ?? 0;
+    const useTraceSegments = trace.segments.length > 0 && (persistedCount === 0 || hasStructuredTraceEvents(message.traceEvents ?? []));
+    if (useTraceSegments) {
         next = { ...next, segments: [...trace.segments] };
     }
     return next;

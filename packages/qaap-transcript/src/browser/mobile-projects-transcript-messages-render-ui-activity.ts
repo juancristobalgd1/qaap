@@ -238,6 +238,8 @@ export function createTranscriptAgentFailureRowExtracted(ctx: MobileProjectsTran
             },
         ));
         row.append(body);
+        // A failed turn can no longer deliver a capture: any pending chip in it reads "not available".
+        syncTranscriptCaptureClosedRow(row, true);
         return row;
 }
 
@@ -262,6 +264,7 @@ export function buildTranscriptAgentFailureDialogOptionsExtracted(ctx: MobilePro
                 ? () => ctx.host.openPreferencesSheet?.('ai-features')
                 : undefined,
             onOpenBilling: ctx.host.openBillingSheet ? () => ctx.host.openBillingSheet?.() : undefined,
+            onChangeModel: ctx.host.openTranscriptModelPicker ? () => ctx.host.openTranscriptModelPicker?.() : undefined,
             agentLabel: input.agentId ? resolveAgentDisplayLabel(input.agentId) : undefined,
             agentId: input.agentId,
             agentMessage: input.agentMessage,
@@ -298,6 +301,7 @@ export function createTranscriptMessageRowExtracted(ctx: MobileProjectsTranscrip
                 row,
                 isTranscriptCaptureClosed(options?.conv, options?.message, !!options?.streaming),
                 transcriptCaptureExpiresAt(options?.message),
+                !!options?.streaming,
             );
         }
         // Ownership is conveyed by alignment and the bubble surface, so no redundant "You" label.

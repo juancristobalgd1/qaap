@@ -9,6 +9,7 @@ import type { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/brow
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
+import { taskCause } from './mobile-projects-task-cause';
 
 /** Panel surface for VPS background-task cancel and log viewer. */
 export interface MobileProjectsActiveTaskActionsHost {
@@ -461,20 +462,6 @@ function taskStateLabel(state: string): string {
         case 'cancelled': return nls.localize('qaap/mobileProjects/taskStateCancelled', 'Cancelled');
         default: return state;
     }
-}
-
-function taskCause(detail: QaapAgentTaskDetailDTO): string {
-    if (detail.state === 'interrupted') {
-        return nls.localize('qaap/mobileProjects/taskCauseInterrupted', 'The backend lost the running process. A browser reload does not cancel a task.');
-    }
-    if (detail.state === 'blocked') {
-        return nls.localize('qaap/mobileProjects/taskCauseBlocked', 'The agent needs a decision or more information.');
-    }
-    if (detail.state === 'cancelled') {
-        return nls.localize('qaap/mobileProjects/taskCauseCancelled', 'Cancelled by the user.');
-    }
-    const lines = detail.log.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-    return lines.at(-1) ?? nls.localize('qaap/mobileProjects/taskCauseUnavailable', 'No cause was reported.');
 }
 
 function taskNextAction(state: string): string {

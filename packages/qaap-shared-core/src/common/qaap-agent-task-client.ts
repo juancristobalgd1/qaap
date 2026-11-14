@@ -70,7 +70,9 @@ export interface QaapAgentTaskAgentOption {
     /** Installation and authentication are separate: an installed CLI may still need Connect. */
     readonly connectionState?: QaapAgentConnectionState;
     /** How the owner can run the agent now (see the backend `resolveAgentAccess`); `none` offers a sign-in. */
-    readonly accessState?: 'session' | 'hosted' | 'none' | 'unknown';
+    readonly accessState?: 'session' | 'none' | 'unknown';
+    /** The Antigravity CLI the host resolved (`gemini`, `agy`, `antigravity`); only set for the Antigravity harness. */
+    readonly cliBin?: string;
 }
 
 export interface QaapAgentTaskListSnapshot {
@@ -103,12 +105,13 @@ export const OPENCODE_FALLBACK_MODELS: readonly QaapQaiqModelOption[] = OPENCODE
 /**
  * Keep Codex's native rows visible if a hosted API responds before its runner catalog is warm.
  * The backend returns the same rows, including plan availability, once its catalog is ready.
+ * Mirrors `listStaticNativeAgentModels('codex')` in qaap-cloud-workspace (qaap-agent-native-model-catalog.ts):
+ * this package cannot import that catalog, so keep the two in sync by hand (`codex debug models`, 2026-11).
  */
 export const CODEX_FALLBACK_MODELS: readonly QaapQaiqModelOption[] = [
-    { provider: 'openai', vendor: 'codex', modelId: 'gpt-5.6-sol', label: 'GPT-5.6 Sol' },
-    { provider: 'openai', vendor: 'codex', modelId: 'gpt-5.6-terra', label: 'GPT-5.6 Terra' },
-    { provider: 'openai', vendor: 'codex', modelId: 'gpt-5.6-luna', label: 'GPT-5.6 Luna' },
-    { provider: 'openai', vendor: 'codex', modelId: 'gpt-5.5', label: 'GPT-5.5 Legacy' },
+    { provider: 'openai', vendor: 'codex', modelId: 'gpt-6-luna', label: 'GPT-6-Luna' },
+    { provider: 'openai', vendor: 'codex', modelId: 'gpt-5.6-terra', label: 'GPT-5.6-Terra' },
+    { provider: 'openai', vendor: 'codex', modelId: 'gpt-5.6-luna', label: 'GPT-5.6-Luna' },
 ];
 
 export function normalizeOpenCodeModelOptions(models: readonly QaapQaiqModelOption[]): QaapQaiqModelOption[] {
@@ -179,6 +182,8 @@ export interface QaapAgentTaskDetailDTO {
     readonly modelFallbackTaskId?: string;
     readonly log: string;
     readonly workspaceSnapshot?: 'current' | 'changed' | 'unknown';
+    /** Set when Stop could not signal the agent: the task is not stopped and its process may still run. */
+    readonly stopFailure?: string;
 }
 
 /** True once a task has stopped and will not change state again. */
@@ -332,12 +337,28 @@ export function mergeAgentTaskAgentOptions(
             }
             const key = agent.id.toLowerCase();
             const existing = merged.get(key);
-            if (!existing || agent.available && !existing.available) {
+            if (!existing) {
                 merged.set(key, agent);
+            } else if (agent.available && !existing.available) {
+                // The more available entry wins, but a definite sign-in state from the other list (the
+                // backend snapshot) must survive a live-stream entry that only knows `unknown`.
+                merged.set(key, {
+                    ...agent,
+                    connectionState: isDefiniteAgentConnectionState(agent.connectionState)
+                        ? agent.connectionState
+                        : existing.connectionState ?? agent.connectionState,
+                    accessState: agent.accessState && agent.accessState !== 'unknown'
+                        ? agent.accessState
+                        : existing.accessState ?? agent.accessState,
+                });
             }
         }
     }
     return Array.from(merged.values()).sort((left, right) => left.label.localeCompare(right.label));
+}
+
+function isDefiniteAgentConnectionState(state: QaapAgentConnectionState | undefined): boolean {
+    return state !== undefined && state !== 'unknown';
 }
 
 /** Composer pickers expose VPS-backed agents (QAIQ, Codex, …) but hide shell and UI-hidden runners. */
