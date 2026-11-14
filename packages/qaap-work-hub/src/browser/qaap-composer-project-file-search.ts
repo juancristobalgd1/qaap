@@ -44,7 +44,7 @@ export function createComposerProjectFileSearch(
                 // relative to the project.
                 const folder = fallbackRoot.relative(uri.parent)?.toString() ?? '';
                 return {
-                    path: uri.path.fsPath(),
+                    path: backendPathOf(uri),
                     name: uri.path.base,
                     folder,
                     iconClass: labelProvider?.getIcon(uri) || undefined,
@@ -61,4 +61,14 @@ export function createComposerProjectFileSearch(
             };
         });
     };
+}
+
+/**
+ * The file's path as the backend sees it. `Path.fsPath()` follows the OS this frontend runs on, so a browser on
+ * Windows would turn a Linux backend's `/proj/a.ts` into `\proj\a.ts`; keep the URI's own slashes and only drop
+ * the leading slash before a drive letter (`/C:/x` → `C:/x`) for a Windows backend.
+ */
+function backendPathOf(uri: URI): string {
+    const value = uri.path.toString();
+    return /^\/[A-Za-z]:/.test(value) ? value.slice(1) : value;
 }

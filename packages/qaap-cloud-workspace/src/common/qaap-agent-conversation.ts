@@ -5,6 +5,7 @@
 
 import type { QaapAgentClosingReport } from './qaap-agent-closing-report';
 import type { QaapExternalTaskOrigin } from './qaap-external-task';
+import type { QaapExternalSessionOrigin } from '@theia/qaap-shared-core/lib/common/qaap-external-session-protocol';
 import type { QaapProviderRetryStatus } from '@theia/qaap-shared-core/lib/common/qaap-pi-json-stream';
 import { buildConversationListMetrics } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-list-metrics';
 import { agentActivityField, excerptConversationMessageError, isLastTurnCancelled } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
@@ -336,6 +337,11 @@ export interface QaapAgentConversation {
     readonly taskPlanSubtaskId?: string;
     /** Set when the task was started from outside the app (a GitHub issue): doc/qaap-external-task-inputs.md. */
     readonly externalTask?: QaapExternalTaskOrigin;
+    /**
+     * Set when the thread was imported from another agent CLI's log (doc/qaap-external-session-import.md);
+     * a later turn on that same CLI resumes its native session.
+     */
+    readonly externalSession?: QaapExternalSessionOrigin;
     /** Latest context snapshot when the agent CLI reports stream-json usage. */
     readonly contextUsage?: QaapAgentContextUsage;
     /** Denominator for the context meter (defaults to {@link DEFAULT_QAAP_CONTEXT_WINDOW}). */
@@ -445,6 +451,8 @@ export interface QaapAgentConversationSummary {
     readonly taskPlanSubtaskId?: string;
     /** Set when the task was started from outside the app (a GitHub issue): doc/qaap-external-task-inputs.md. */
     readonly externalTask?: QaapExternalTaskOrigin;
+    /** Where an imported thread came from. */
+    readonly externalSession?: QaapExternalSessionOrigin;
     /** Set when the thread ran `git` or is tied to a PR — used by the Work Hub inbox filter. */
     readonly hasGitOperation?: boolean;
     readonly contextUsage?: QaapAgentContextUsage;
@@ -781,6 +789,7 @@ export function toConversationSummary(conv: QaapAgentConversation): QaapAgentCon
         ...(conv.parentConversationId ? { parentConversationId: conv.parentConversationId } : {}),
         ...(conv.taskPlanSubtaskId ? { taskPlanSubtaskId: conv.taskPlanSubtaskId } : {}),
         ...(conv.externalTask ? { externalTask: conv.externalTask } : {}),
+        ...(conv.externalSession ? { externalSession: conv.externalSession } : {}),
         contextCompaction: conv.contextCompaction,
         pendingUserMessageCount: conv.pendingUserMessages?.length || undefined,
         ...(conv.goalLoop ? {

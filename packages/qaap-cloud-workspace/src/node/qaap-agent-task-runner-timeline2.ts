@@ -1,4 +1,6 @@
 import { formatTaskStartLog } from './qaap-agent-conversation-persist-policy';
+import { applyQaapNativeResumeToCommand } from '../common/qaap-external-session-resume';
+import { QaapExternalNativeResume } from './external-sessions/qaap-external-session-native-resume';
 import { usesToolGateExtension } from './qaap-tool-gate-pi-adapter';
 import { QAAP_OPENCODE_GATE_PROBE } from './qaap-tool-gate-opencode-probe';
 import {
@@ -376,6 +378,9 @@ class QaapAgentSpawnSkippedError extends Error {
     }
 }
 
+/** Codex rollout a task resumes, handed from the command build to the spawn that builds the gate overlay. */
+const RESUMED_CODEX_ROLLOUT_BY_TASK = new Map<string, { readonly file: string; readonly sessionsRoot: string }>();
+
 export async function spawnProcessWhenReadyExtracted(ctx: QaapAgentTaskRunnerContext, task: QaapAgentTask, request: QaapCreateAgentTaskRequest): Promise<void> {
         if (ctx.preferenceService) {
             await ctx.preferenceService.ready;
@@ -400,7 +405,22 @@ export async function spawnProcessWhenReadyExtracted(ctx: QaapAgentTaskRunnerCon
         };
         ctx.tasks.set(task.id, task);
         void ctx.persist();
-        let prompt = (request.prompt ?? '').trim();
+        // A turn of a conversation imported from this CLI resumes its native session when that session is really
+        // reachable from the agent; otherwise it runs on the replayed-history prompt (doc/qaap-external-session-import.md).
+        const nativeResume = request.nativeResumeSessionId
+            ? QaapExternalNativeResume.plan({
+                agentId: request.agent,
+                sessionId: request.nativeResumeSessionId,
+                cwd: task.cwd,
+                agentEnv: ctx.buildChildEnv(task),
+                codexUsesOverlay: usesCodexToolGateHook(request.agent),
+                codexOverlayWritable: !DEFAULT_QAAP_CODEX_GATE_OVERLAY_BUILDER.dropsIdentity(ctx.resolveAgentSpawnIdentity(task.cwd)),
+            })
+            : undefined;
+        if (request.nativeResumeSessionId && !nativeResume) {
+            console.info(`[qaap-external-sessions] task ${task.id}: the imported ${request.agent ?? 'agent'} session cannot be resumed here; using the replayed history`);
+        }
+        let prompt = ((nativeResume ? request.prompt : request.nativeResumeFallbackPrompt ?? request.prompt) ?? '').trim();
         if (prompt) {
             // SessionStart / UserPromptSubmit hooks (doc/qaap-agent-hooks.md): may block or extend the prompt.
             const hookedPrompt = await applyPreTurnAgentHooks(ctx, task, prompt, request.agent);
@@ -419,7 +439,7 @@ export async function spawnProcessWhenReadyExtracted(ctx: QaapAgentTaskRunnerCon
                 const agentModel = ctx.resolveAgentModelForRequest(request, prompt, task.ownerLogin);
                 // Every agent CLI gets its own preview port in the preamble (not the one in .qaap/preview.json).
                 const livePreviewPortHint = buildLivePreviewPortHint(ctx.reservedDevPreviewPort?.(task));
-                const { command, stdinPrompt, stdinPromptMode, agentId, promptTempDir } = ctx.buildAgentCommand(
+                const built = ctx.buildAgentCommand(
                     prompt,
                     request.agent,
                     autoApprove,
@@ -434,6 +454,14 @@ export async function spawnProcessWhenReadyExtracted(ctx: QaapAgentTaskRunnerCon
                     task.ownerLogin,
                     request.effort,
                 );
+                const { stdinPrompt, stdinPromptMode, agentId, promptTempDir } = built;
+                // An imported CLI conversation continued on that same CLI resumes its own session.
+                const command = nativeResume
+                    ? applyQaapNativeResumeToCommand(built.command, agentId, nativeResume.sessionId)
+                    : built.command;
+                if (nativeResume?.kind === 'codex') {
+                    RESUMED_CODEX_ROLLOUT_BY_TASK.set(task.id, { file: nativeResume.rollout, sessionsRoot: nativeResume.codexSessionsRoot });
+                }
                 ctx.recordTaskLatencyMark(task.id, 'build_agent_command_end');
                 if (stdinPrompt) {
                     ctx.stdinPrompts.set(task.id, {
@@ -508,6 +536,8 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
         let child: ChildProcess;
         let childEnv: NodeJS.ProcessEnv | undefined;
         let codexGateOverlay: QaapCodexGateOverlay | undefined;
+        const resumeRollout = RESUMED_CODEX_ROLLOUT_BY_TASK.get(task.id);
+        RESUMED_CODEX_ROLLOUT_BY_TASK.delete(task.id);
         try {
             ctx.enforceAgentIsolationPolicy();
             await ctx.ensureAgentCwdOwnershipAsync(task.cwd);
@@ -546,6 +576,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                     agentIdentity: ctx.resolveAgentSpawnIdentity(task.cwd),
                     // In a task sandbox Codex has its own /tmp: the overlay must sit where it sees the same path.
                     overlayRoot: resolveCodexGateOverlayRoot(ctx.agentSandboxFor?.(task.cwd)),
+                    ...(resumeRollout ? { resumeRollout } : {}),
                 }, childEnv);
                 childEnv.CODEX_HOME = codexGateOverlay.codexHome;
             }

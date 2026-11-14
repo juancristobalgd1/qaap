@@ -2,6 +2,16 @@
 
 Estado para continuar el trabajo desde otra cuenta o sesión. Actualízalo al cerrar cada tarea: qué queda pendiente, cómo se validó y qué limitaciones conviene conocer. La política de modelos está en la sección «Selección de modelos y orquestación» de `CLAUDE.md`.
 
+## 2026-11-09 — Importar conversaciones de otros CLI (rama `claude/practical-bartik-826c01`)
+
+**Hecho:** menú del proyecto → «Import from other CLIs…» lista las sesiones de ese proyecto en Claude Code, Codex, OpenCode y Pi (T3 Code incluido, porque escribe en los logs de esos CLI) y las importa con un clic como tarea del Work Hub, con `traceEvents` nativos. Diseño completo en `doc/qaap-external-session-import.md`. Backend: `packages/qaap-cloud-workspace/src/node/external-sessions/` (parsers, servicio, endpoint `GET /qaap/api/external-sessions`, `POST …/import`), `QaapAgentConversation.externalSession`, deduplicación por `(source, sessionId)` y propietario. Continuar: mismo CLI → reanudación nativa (`claude --resume <id>`, `codex exec … resume <id> -`; el overlay del Tool Gate copia el rollout de Codex y lo devuelve al terminar); otro harness → la reinyección de historial de siempre. Si la sesión nativa no es alcanzable, el runner usa el prompt con historial (`nativeResumeFallbackPrompt`).
+
+**Arreglo de paso:** con el shell de una columna a ≥768 px, el backdrop del quick input móvil tapaba el propio quick input y cada clic en una fila lo cerraba (afectaba a cualquier QuickPick del Work Hub). Selector hermano en `mobile-workbench-base.css`.
+
+**Validación:** suite completa de `qaap-cloud-workspace` (3650 en verde), specs nuevas de parsers, reanudación y overlay; tsc, drift-check, package-graph-check y build:browser OK. En vivo (`:3107` skip-auth): importación desde la UI de una sesión real de Claude Code de `vyyq`, importación por API de sesiones de Claude y Codex, deduplicación (200). Continuación nativa comprobada con el comando real: Claude añadió el turno a la misma sesión; Codex reanudó el mismo thread y el rollout del usuario creció con el turno.
+
+**Limitaciones:** Claude y Codex estaban en su límite de uso, así que no hubo respuesta real del modelo en la continuación. El Codex de Qaap en local no tiene login en el overlay (`resolveCodexAgentHome` apunta a `/home/theia/...` en un Mac), fallo previo y ajeno. Sin reanudación nativa para OpenCode y Pi (usan el historial). Con caída de uid (backend root → uid del agente), Codex usa el historial porque el overlay no puede devolver el rollout. Los rollouts `.jsonl.zst` de Codex no se listan.
+
 ## 2026-11-09 — Pulido de UI del Work Hub (rama `claude/work-hub-ui-polish`)
 
 **Hecho** (13 commits, una sola PR):
