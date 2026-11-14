@@ -106,6 +106,14 @@ export function airwallexPriceIdForPlan(planId: QaapBillingPlanId, env: NodeJS.P
     return raw?.trim() || undefined;
 }
 
+/**
+ * The Airwallex account that collects the payment. Required by Airwallex when the organization has more
+ * than one linked payment account ("Need to specify the linked_payment_account_id"); optional otherwise.
+ */
+export function airwallexLinkedPaymentAccountId(env: NodeJS.ProcessEnv = process.env): string | undefined {
+    return env.AIRWALLEX_LINKED_PAYMENT_ACCOUNT_ID?.trim() || undefined;
+}
+
 export function airwallexPlanForPriceId(priceId: string | undefined, env: NodeJS.ProcessEnv = process.env): QaapBillingPlanId | undefined {
     if (!priceId) {
         return undefined;
@@ -312,14 +320,26 @@ export async function createAirwallexSubscriptionCheckout(options: {
     if (!priceId) {
         throw new AirwallexApiError(`Missing Airwallex price for plan ${options.planId}`, 503, 'checkout_not_configured');
     }
+    const linkedPaymentAccountId = airwallexLinkedPaymentAccountId();
     const body = await airwallexRequest('POST', '/api/v1/billing/billing_checkouts/create', {
         request_id: crypto.randomUUID(),
+        ...(linkedPaymentAccountId ? { linked_payment_account_id: linkedPaymentAccountId } : {}),
         mode: 'SUBSCRIPTION',
         line_items: [{ price_id: priceId, quantity: 1 }],
         success_url: `${options.origin}/?qaapBilling=success&plan=${options.planId}&checkout={CHECKOUT_ID}`,
         back_url: `${options.origin}/?qaapBilling=cancel`,
         metadata: { qaapLogin: options.login, planId: options.planId },
         customer_data: { name: options.login },
+    }).catch(error => {
+        if (!linkedPaymentAccountId && error instanceof AirwallexApiError && /linked_payment_account_id/i.test(error.message)) {
+            // A configuration gap, not a transient failure: say exactly which variable fixes it.
+            throw new AirwallexApiError(
+                'Airwallex needs the collecting account: set AIRWALLEX_LINKED_PAYMENT_ACCOUNT_ID (Airwallex → Settings → Account details → Account ID).',
+                503,
+                'checkout_not_configured',
+            );
+        }
+        throw error;
     });
     const id = stringField(body, 'id');
     const url = stringField(body, 'url');

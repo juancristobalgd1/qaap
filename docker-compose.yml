@@ -262,6 +262,8 @@ services:
       AIRWALLEX_WEBHOOK_SECRET: ${AIRWALLEX_WEBHOOK_SECRET:-}
       AIRWALLEX_PRICE_STARTER_MONTHLY: ${AIRWALLEX_PRICE_STARTER_MONTHLY:-}
       AIRWALLEX_PRICE_PRO_MONTHLY: ${AIRWALLEX_PRICE_PRO_MONTHLY:-}
+      # Collecting account (acct_…); required when the Airwallex org has several linked payment accounts.
+      AIRWALLEX_LINKED_PAYMENT_ACCOUNT_ID: ${AIRWALLEX_LINKED_PAYMENT_ACCOUNT_ID:-}
       # BYOK / free-tier keys for @qaiq background jobs (also set in Settings → AI).
       # Explicit env vars here override empty preferences; see doc/qaap-vps-deployment.md.
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}

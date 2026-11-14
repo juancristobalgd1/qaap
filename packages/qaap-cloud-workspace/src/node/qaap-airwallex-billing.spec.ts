@@ -20,7 +20,7 @@ import {
 
 const ENV_KEYS = [
     'AIRWALLEX_CLIENT_ID', 'AIRWALLEX_API_KEY', 'AIRWALLEX_WEBHOOK_SECRET', 'AIRWALLEX_PRICE_STARTER_MONTHLY',
-    'AIRWALLEX_PRICE_PRO_MONTHLY', 'AIRWALLEX_API_BASE', 'AIRWALLEX_ENV',
+    'AIRWALLEX_PRICE_PRO_MONTHLY', 'AIRWALLEX_API_BASE', 'AIRWALLEX_ENV', 'AIRWALLEX_LINKED_PAYMENT_ACCOUNT_ID',
 ] as const;
 
 type Handler = (url: string, init: RequestInit | undefined) => { status: number; body: unknown };
@@ -133,6 +133,42 @@ describe('qaap-airwallex-billing', () => {
             expect(body.metadata).to.deep.equal({ qaapLogin: 'octocat', planId: 'pro' });
             expect(String(body.success_url)).to.equal('https://qaap.test/?qaapBilling=success&plan=pro&checkout={CHECKOUT_ID}');
             expect(String(body.request_id)).to.match(/^[0-9a-f-]{36}$/);
+        });
+
+        it('sends the collecting account when AIRWALLEX_LINKED_PAYMENT_ACCOUNT_ID is set, and omits it otherwise', async () => {
+            configure();
+            stubFetch((url, init) => url.endsWith('/authentication/login')
+                ? loginOk('tok')(url, init)
+                : { status: 201, body: { id: 'bco_1', url: 'https://checkout.test/bco_1' } });
+            await createAirwallexSubscriptionCheckout({ login: 'octocat', planId: 'starter', origin: 'https://qaap.test' });
+            process.env.AIRWALLEX_LINKED_PAYMENT_ACCOUNT_ID = ' acct_collect ';
+            await createAirwallexSubscriptionCheckout({ login: 'octocat', planId: 'starter', origin: 'https://qaap.test' });
+            const bodies = requests.filter(entry => entry.url.includes('/billing_checkouts/create'))
+                .map(entry => JSON.parse(String(entry.init?.body)) as Record<string, unknown>);
+            expect(bodies[0]).to.not.have.property('linked_payment_account_id');
+            expect(bodies[1].linked_payment_account_id).to.equal('acct_collect');
+        });
+
+        it('turns the multiple-linked-accounts rejection into a checkout_not_configured that names the variable', async () => {
+            configure();
+            stubFetch((url, init) => url.endsWith('/authentication/login')
+                ? loginOk('tok')(url, init)
+                : {
+                    status: 400, body: {
+                        code: 'validation_error',
+                        message: 'Need to specify the linked_payment_account_id in the request, since the seller has multiple linked payment accounts.',
+                    },
+                });
+            let caught: unknown;
+            try {
+                await createAirwallexSubscriptionCheckout({ login: 'octocat', planId: 'pro', origin: 'https://qaap.test' });
+            } catch (error) {
+                caught = error;
+            }
+            expect(caught).to.be.instanceOf(AirwallexApiError);
+            expect((caught as AirwallexApiError).status).to.equal(503);
+            expect((caught as AirwallexApiError).code).to.equal('checkout_not_configured');
+            expect((caught as Error).message).to.contain('AIRWALLEX_LINKED_PAYMENT_ACCOUNT_ID');
         });
 
         it('retries exactly once with a fresh token after a 401', async () => {
