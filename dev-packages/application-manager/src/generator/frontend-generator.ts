@@ -625,7 +625,16 @@ self.addEventListener('fetch', event => {
     let url;
     try { url = new URL(req.url); } catch (_) { return; }
     if (url.origin !== self.location.origin) return;
-    if (BYPASS_PATHS.some(rx => rx.test(url.pathname))) return;
+    if (BYPASS_PATHS.some(rx => rx.test(url.pathname))) {
+        // Navigation preload is on: a navigation the worker leaves unanswered is fetched twice (the
+        // preload and the browser's own request). One-shot URLs break on that, e.g. the OAuth
+        // callback consumes its state on the first hit and fails the second. Answer bypassed
+        // navigations with the preload itself (uncached).
+        if (req.mode === 'navigate' && event.preloadResponse) {
+            event.respondWith(Promise.resolve(event.preloadResponse).then(res => res || fetch(req)));
+        }
+        return;
+    }
 
     if (req.mode === 'navigate' || (req.destination === '' && req.headers.get('accept')?.includes('text/html'))) {
         event.respondWith(handleNavigate(event));

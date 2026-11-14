@@ -145,6 +145,9 @@ const SKIP_AUTH_DEV_USER = {
     name: 'Dev User',
 };
 
+/** How long a consumed OAuth state still answers a duplicate callback with the same sign-in. */
+const QAAP_OAUTH_DUPLICATE_CALLBACK_WINDOW_MS = 60_000;
+
 @injectable()
 export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     @inject(QaapGithubSessionStore)
@@ -552,26 +555,55 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             return;
         }
         if (!this.sessions.consumeOAuthState(state)) {
+            // The browser can deliver the same callback twice (a service-worker navigation preload
+            // plus the real navigation). The first request consumed the state; answer the
+            // duplicate with that sign-in's session instead of a "state lost" error.
+            const duplicate = state ? this.oauthCallbacksInFlight().get(state) : undefined;
+            const duplicateSessionId = duplicate ? await duplicate : undefined;
+            if (duplicateSessionId) {
+                this.setSessionCookie(res, duplicateSessionId);
+                this.redirectAfterOAuth(res, config.publicUrl, true);
+                return;
+            }
             console.error('[qaap-oauth] OAuth state is unknown or expired (backend likely restarted between /start and /callback).');
             this.redirectAfterOAuth(res, config.publicUrl, false, 'state_lost');
             return;
         }
-        try {
-            const accessToken = await exchangeGithubCode(config, code);
-            const user = await fetchGithubUser(accessToken);
-            const previousSessionId = this.auth.resolveSessionId(req);
-            if (previousSessionId) {
-                this.endSession(previousSessionId);
+        const signIn = (async (): Promise<string | undefined> => {
+            try {
+                const accessToken = await exchangeGithubCode(config, code);
+                const user = await fetchGithubUser(accessToken);
+                const previousSessionId = this.auth.resolveSessionId(req);
+                if (previousSessionId) {
+                    this.endSession(previousSessionId);
+                }
+                const sessionId = this.sessions.createSession({ accessToken, user });
+                console.info('[qaap-oauth] GitHub sign-in OK for user', user.login);
+                return sessionId;
+            } catch (err) {
+                const message = err instanceof Error ? err.message : String(err);
+                console.error('[qaap-oauth] Token exchange or user fetch failed:', message);
+                return undefined;
             }
-            const sessionId = this.sessions.createSession({ accessToken, user });
+        })();
+        if (state) {
+            const inFlight = this.oauthCallbacksInFlight();
+            inFlight.set(state, signIn);
+            setTimeout(() => inFlight.delete(state), QAAP_OAUTH_DUPLICATE_CALLBACK_WINDOW_MS).unref?.();
+        }
+        const sessionId = await signIn;
+        if (sessionId) {
             this.setSessionCookie(res, sessionId);
-            console.info('[qaap-oauth] GitHub sign-in OK for user', user.login);
             this.redirectAfterOAuth(res, config.publicUrl, true);
-        } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            console.error('[qaap-oauth] Token exchange or user fetch failed:', message);
+        } else {
             this.redirectAfterOAuth(res, config.publicUrl, false, 'exchange_failed');
         }
+    }
+
+    /** Sign-ins by OAuth state, kept briefly so a duplicate callback reuses the first one's session. */
+    protected oauthCallbacksInFlight(): Map<string, Promise<string | undefined>> {
+        const self = this as unknown as { oauthCallbacks?: Map<string, Promise<string | undefined>> };
+        return self.oauthCallbacks ??= new Map();
     }
 
     protected handleHealth(req: Request, res: Response): void {

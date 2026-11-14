@@ -899,6 +899,39 @@ describe('QaapGithubOauthEndpoint OAuth failure redirects', () => {
         expect(await run({ code: 'c', state: 's' }, false)).to.contain('qaap_oauth_reason=state_lost');
     });
 
+    it('answers a duplicate callback (service-worker preload + navigation) with the first sign-in, not state_lost', async () => {
+        const endpoint = Object.create(QaapGithubOauthEndpoint.prototype) as QaapGithubOauthEndpoint;
+        // The first callback already consumed the state and is still exchanging the code.
+        Object.assign(endpoint, { sessions: { consumeOAuthState: () => false } });
+        const cookies: string[] = [];
+        const locations: string[] = [];
+        const makeRes = (): unknown => ({
+            redirect: (_status: number, url: string) => { locations.push(url); },
+            setHeader: (_name: string, value: string) => { cookies.push(value); },
+        });
+        let release: (id: string | undefined) => void = () => undefined;
+        const firstSignIn = new Promise<string | undefined>(resolve => { release = resolve; });
+        const saved = { ...process.env };
+        Object.assign(process.env, { QAAP_GITHUB_CLIENT_ID: 'id', QAAP_GITHUB_CLIENT_SECRET: 'secret', QAAP_OAUTH_PUBLIC_URL: 'https://qaap.test' });
+        try {
+            (endpoint as unknown as { oauthCallbacksInFlight(): Map<string, Promise<string | undefined>> }).oauthCallbacksInFlight().set('s', firstSignIn);
+            const duplicate = (endpoint as unknown as { handleOAuthCallback: (req: unknown, res: unknown) => Promise<void> })
+                .handleOAuthCallback({ query: { code: 'c', state: 's' }, headers: {} }, makeRes());
+            release('session-1');
+            await duplicate;
+        } finally {
+            for (const key of Object.keys(process.env)) {
+                if (!(key in saved)) {
+                    delete process.env[key];
+                }
+            }
+            Object.assign(process.env, saved);
+        }
+        expect(locations[0]).to.contain('qaap_oauth=github');
+        expect(locations[0]).not.to.contain('state_lost');
+        expect(cookies[0]).to.contain('qaap_sid=session-1');
+    });
+
     it('redirects (no bare 503) with not_configured when OAuth credentials are absent', () => {
         const endpoint = Object.create(QaapGithubOauthEndpoint.prototype) as QaapGithubOauthEndpoint;
         let status = 0;

@@ -28,8 +28,23 @@ export class QaapAuthCommandContribution implements CommandContribution {
             isEnabled: () => readQaapSignedIn(),
             execute: async () => {
                 await signOutQaapAuth();
-                window.dispatchEvent(new CustomEvent(QAAP_REQUIRE_LOGIN_EVENT));
+                // Reload instead of covering the live app: open sockets, cached shells and in-memory
+                // state of the old session must not survive. The gate clears what is left and shows
+                // the sign-in screen.
+                if (!this.reloadAfterSignOut()) {
+                    window.dispatchEvent(new CustomEvent(QAAP_REQUIRE_LOGIN_EVENT));
+                }
             },
         });
+    }
+
+    /** Full reload into the signed-out gate; false when the page cannot navigate (tests). */
+    protected reloadAfterSignOut(): boolean {
+        try {
+            window.location.replace('/?qaapLogout=1');
+            return true;
+        } catch {
+            return false;
+        }
     }
 }
