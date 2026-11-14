@@ -74,7 +74,7 @@ export async function handleQaapBillingReturn(): Promise<QaapBillingReturnResult
     if (flag !== 'success') {
         return { kind: 'none', openBilling: false };
     }
-    // An unsubstituted `{CHECKOUT_ID}` placeholder fails this check and falls back to polling entitlements.
+    // A return without a valid checkout id (the best-effort update failed) falls back to polling entitlements.
     if (checkoutId && /^[A-Za-z0-9_-]{1,120}$/.test(checkoutId)) {
         try {
             const confirmed = await confirmQaapBillingCheckout(checkoutId);

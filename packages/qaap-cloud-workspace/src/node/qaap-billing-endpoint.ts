@@ -27,6 +27,7 @@ import {
     type QaapBillingSubscriptionStatus,
 } from '../common/qaap-billing-plans';
 import {
+    AirwallexApiError,
     airwallexSubscriptionIdFromEvent,
     cancelAirwallexSubscription,
     createAirwallexSubscriptionCheckout,
@@ -147,6 +148,10 @@ export class QaapBillingEndpoint implements BackendApplicationContribution {
             res.json({ url: checkout.url, checkoutId: checkout.id });
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Checkout failed';
+            if (error instanceof AirwallexApiError && error.code === 'checkout_not_configured') {
+                res.status(503).json({ error: 'checkout_not_configured', message });
+                return;
+            }
             res.status(500).json({ error: 'checkout_failed', message });
         }
     }
