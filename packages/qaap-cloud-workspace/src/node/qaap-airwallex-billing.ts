@@ -307,9 +307,10 @@ function assertAirwallexId(id: string): string {
 // ---------------------------------------------------------------------------------------------
 
 /**
- * Creates a hosted subscription checkout for a plan's monthly price. `{CHECKOUT_ID}` in the success URL
- * is the placeholder the return path reads back as `?checkout=`; when it is not substituted the
- * return falls back to polling the entitlements, which the webhook also updates.
+ * Creates a hosted subscription checkout for a plan's monthly price. Airwallex rejects template
+ * placeholders in `success_url` ("must be a valid URL"), so the checkout is created with a plain return
+ * URL and then, best effort, updated to carry its own id as `?checkout=`; without it the return path
+ * polls the entitlements, which the webhook also updates.
  */
 export async function createAirwallexSubscriptionCheckout(options: {
     readonly login: string;
@@ -321,15 +322,18 @@ export async function createAirwallexSubscriptionCheckout(options: {
         throw new AirwallexApiError(`Missing Airwallex price for plan ${options.planId}`, 503, 'checkout_not_configured');
     }
     const linkedPaymentAccountId = airwallexLinkedPaymentAccountId();
+    const successUrl = `${options.origin}/?qaapBilling=success&plan=${options.planId}`;
     const body = await airwallexRequest('POST', '/api/v1/billing/billing_checkouts/create', {
         request_id: crypto.randomUUID(),
         ...(linkedPaymentAccountId ? { linked_payment_account_id: linkedPaymentAccountId } : {}),
         mode: 'SUBSCRIPTION',
         line_items: [{ price_id: priceId, quantity: 1 }],
-        success_url: `${options.origin}/?qaapBilling=success&plan=${options.planId}&checkout={CHECKOUT_ID}`,
+        success_url: successUrl,
         back_url: `${options.origin}/?qaapBilling=cancel`,
         metadata: { qaapLogin: options.login, planId: options.planId },
         customer_data: { name: options.login },
+        // Required for SUBSCRIPTION mode; the billing cycle comes from the recurring price.
+        subscription_data: { metadata: { qaapLogin: options.login, planId: options.planId } },
     }).catch(error => {
         if (!linkedPaymentAccountId && error instanceof AirwallexApiError && /linked_payment_account_id/i.test(error.message)) {
             // A configuration gap, not a transient failure: say exactly which variable fixes it.
@@ -346,6 +350,9 @@ export async function createAirwallexSubscriptionCheckout(options: {
     if (!id || !url) {
         throw new AirwallexApiError('Airwallex checkout response is missing id or url', 502);
     }
+    await airwallexRequest('POST', `/api/v1/billing/billing_checkouts/${encodeURIComponent(id)}/update`, {
+        success_url: `${successUrl}&checkout=${encodeURIComponent(id)}`,
+    }).catch(() => undefined);
     return { id, url };
 }
 

@@ -131,7 +131,12 @@ describe('qaap-airwallex-billing', () => {
             expect(body.mode).to.equal('SUBSCRIPTION');
             expect(body.line_items).to.deep.equal([{ price_id: 'price_pro', quantity: 1 }]);
             expect(body.metadata).to.deep.equal({ qaapLogin: 'octocat', planId: 'pro' });
-            expect(String(body.success_url)).to.equal('https://qaap.test/?qaapBilling=success&plan=pro&checkout={CHECKOUT_ID}');
+            expect(String(body.success_url)).to.equal('https://qaap.test/?qaapBilling=success&plan=pro');
+            expect(body.subscription_data).to.deep.equal({ metadata: { qaapLogin: 'octocat', planId: 'pro' } });
+            const update = requests.find(entry => entry.url.endsWith('/billing_checkouts/bco_9/update'));
+            expect(JSON.parse(String(update?.init?.body))).to.deep.equal({
+                success_url: 'https://qaap.test/?qaapBilling=success&plan=pro&checkout=bco_9',
+            });
             expect(String(body.request_id)).to.match(/^[0-9a-f-]{36}$/);
         });
 
@@ -179,6 +184,9 @@ describe('qaap-airwallex-billing', () => {
                 if (url.endsWith('/authentication/login')) {
                     logins++;
                     return { status: 201, body: { token: `tok_${logins}`, expires_at: '2099-01-01T00:00:00+0000' } };
+                }
+                if (!url.includes('/billing_checkouts/create')) {
+                    return { status: 200, body: {} };
                 }
                 attempts++;
                 return attempts === 1
