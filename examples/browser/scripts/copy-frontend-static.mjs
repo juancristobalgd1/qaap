@@ -163,6 +163,11 @@ copyIfExists(srcServiceWorker, path.join(libFrontend, 'service-worker.js'));
 try {
     const gate = path.join(qaapRoot, 'resources', 'qaap-login-gate.js');
     copyIfExists(gate, path.join(libFrontend, 'qaap-login-gate.js'));
+    // Sign-in screen artwork (the app screenshot shown inside the phone).
+    const loginArt = path.join(qaapRoot, 'resources', 'login');
+    if (fs.existsSync(loginArt)) {
+        fs.cpSync(loginArt, path.join(libFrontend, 'login'), { recursive: true });
+    }
     // Public marketing page shown at / to signed-out visitors (see qaap-login-gate.js).
     const landing = path.join(qaapRoot, 'resources', 'landing');
     if (fs.existsSync(landing)) {
