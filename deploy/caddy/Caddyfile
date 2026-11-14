@@ -1,8 +1,11 @@
 # Public TLS terminator for Qaap. Theia stays on the compose network / localhost.
-# Set QAAP_PUBLIC_HOST to a hostname with public DNS (sslip.io works for bare VPS IPs):
+# Set QAAP_PUBLIC_HOST to ONE hostname with public DNS (sslip.io works for bare VPS IPs):
 #   QAAP_PUBLIC_HOST=161.97.69.219.sslip.io
 #   QAAP_OAUTH_PUBLIC_URL=https://161.97.69.219.sslip.io
-{$QAAP_PUBLIC_HOST:localhost} {
+# Extra hostnames go in QAAP_PUBLIC_ALIAS_HOSTS (comma-separated), never in QAAP_PUBLIC_HOST.
+
+# Shared site body: the canonical host and its optional aliases serve the same app.
+(qaap_app) {
 	encode zstd gzip
 	# Keep baseline browser hardening on local and public deployments.
 	header {
@@ -20,6 +23,16 @@
 	}
 	reverse_proxy theia:{$THEIA_PORT:4873}
 }
+
+# One host only: staging.caddy derives staging.<host> from it.
+{$QAAP_PUBLIC_HOST:localhost} {
+	import qaap_app
+}
+
+# Extra hostnames for the same app (e.g. the old <ip>.sslip.io after moving to a real domain), so
+# bookmarks, webhooks and deploy probes keep working. Imported only when QAAP_PUBLIC_ALIAS_HOSTS is
+# set (see docker-compose.yml); an unmatched import glob is not an error.
+import /etc/caddy/aliases/{$QAAP_PUBLIC_ALIAS_SITE:disabled}.caddy*
 
 # Isolated preview origins (optional). The glob matches nothing unless QAAP_PREVIEW_CADDY_SITE is
 # set (see docker-compose.yml), and an unmatched import glob is not an error.
