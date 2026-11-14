@@ -60,8 +60,9 @@ describe('QaapTenantStorageQuotaService', () => {
     });
 
     /** Repos hold `repoGib`, the tenant config root holds `configGib`. */
+    // Roots are joined with the host separator (`\\srv\\test-repos\\alice` on Windows): compare in POSIX form.
     const sized = (repoGib: number, configGib = 0): SizedStorageQuota => new SizedStorageQuota(root =>
-        root.startsWith('/srv/test-repos') ? repoGib * GIB : configGib * GIB);
+        root.replace(/\\/g, '/').startsWith('/srv/test-repos') ? repoGib * GIB : configGib * GIB);
 
     it('reports over the limit when the owner uses more than the plan storage', async () => {
         const service = sized(9, 2);
