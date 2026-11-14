@@ -26,17 +26,10 @@ body.qaap-login-active .theia-preload {
     --qaap-login-border: #e6e2dc;
     --qaap-login-link: #141414;
     --qaap-login-ok: #2f7d4f;
-    --qaap-login-add: #2f7d4f;
-    --qaap-login-del: #c4422b;
     --qaap-login-hero: #efece6;
     --qaap-login-hero-ink: #141414;
     --qaap-login-hero-muted: #7a756e;
     --qaap-login-device: #141414;
-    --qaap-login-screen: #ffffff;
-    --qaap-login-screen-ink: #141414;
-    --qaap-login-screen-muted: #8a857e;
-    --qaap-login-screen-line: #ece9e4;
-    --qaap-login-screen-soft: #f4f2ee;
     --qaap-login-serif: ui-serif, 'New York', 'Iowan Old Style', 'Charter', 'Source Serif Pro', Georgia, serif;
     position: fixed;
     inset: 0;
@@ -54,17 +47,10 @@ body.qaap-login-active .theia-preload {
         --qaap-login-border: #2a2926;
         --qaap-login-link: #f1efea;
         --qaap-login-ok: #6cc28f;
-        --qaap-login-add: #6cc28f;
-        --qaap-login-del: #f07a63;
         --qaap-login-hero: #1a1918;
         --qaap-login-hero-ink: #f1efea;
         --qaap-login-hero-muted: #8f8a83;
         --qaap-login-device: #000000;
-        --qaap-login-screen: #0d0d0c;
-        --qaap-login-screen-ink: #efede8;
-        --qaap-login-screen-muted: #85807a;
-        --qaap-login-screen-line: #22211f;
-        --qaap-login-screen-soft: #1a1917;
     }
 }
 
@@ -156,33 +142,45 @@ body.qaap-login-active .theia-preload {
 }
 
 .qaap-login-screen {
+    position: relative;
     flex: 1;
     min-height: 470px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    padding: 12px 14px 0;
     border-radius: 37px 37px 0 0;
-    background: var(--qaap-login-screen);
-    color: var(--qaap-login-screen-ink);
-    font-size: 11.5px;
+    background: #000000;
     overflow: hidden;
 }
 
+/* The real app (Work Hub task on a phone), captured from Qaap itself. */
+.qaap-login-shot {
+    display: block;
+    width: 100%;
+    height: auto;
+    margin-top: 34px;
+}
+
 .qaap-login-statusbar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 2px 10px 0;
+    height: 34px;
+    padding: 6px 22px 0;
+    box-sizing: border-box;
+    color: #ffffff;
     font-size: 11px;
     font-weight: 600;
 }
 
 .qaap-login-statusbar i {
-    width: 70px;
+    width: 72px;
     height: 20px;
     border-radius: 12px;
-    background: var(--qaap-login-device);
+    background: #000000;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06);
 }
 
 .qaap-login-statusbar b {
@@ -197,149 +195,7 @@ body.qaap-login-active .theia-preload {
     height: 8px;
     border-radius: 2px;
     border: 1px solid currentColor;
-    opacity: 0.8;
-}
-
-.qaap-login-appbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 6px 2px 8px;
-    border-bottom: 1px solid var(--qaap-login-screen-line);
-}
-
-.qaap-login-appbar strong {
-    font-size: 12.5px;
-    font-weight: 600;
-}
-
-.qaap-login-appbar span {
-    padding: 2px 8px;
-    border: 1px solid var(--qaap-login-screen-line);
-    border-radius: 999px;
-    color: var(--qaap-login-screen-muted);
-    font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-    font-size: 10px;
-}
-
-.qaap-login-bubble {
-    align-self: flex-end;
-    max-width: 78%;
-    padding: 8px 11px;
-    border-radius: 16px 16px 4px 16px;
-    background: var(--qaap-login-screen-soft);
-    line-height: 1.4;
-}
-
-.qaap-login-agent {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    font-weight: 600;
-}
-
-.qaap-login-agent::before {
-    content: '';
-    width: 16px;
-    height: 16px;
-    border-radius: 5px;
-    background: var(--qaap-login-screen-ink);
-}
-
-.qaap-login-steps {
-    display: flex;
-    flex-direction: column;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    border: 1px solid var(--qaap-login-screen-line);
-    border-radius: 12px;
-}
-
-.qaap-login-step {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 7px 10px;
-    color: var(--qaap-login-screen-muted);
-    opacity: 0;
-    animation: qaap-login-fade 0.4s ease forwards;
-}
-
-.qaap-login-step + .qaap-login-step {
-    border-top: 1px solid var(--qaap-login-screen-line);
-}
-
-.qaap-login-step:nth-child(1) { animation-delay: 0.6s; }
-.qaap-login-step:nth-child(2) { animation-delay: 1s; }
-.qaap-login-step:nth-child(3) { animation-delay: 1.4s; }
-
-.qaap-login-step b {
-    color: var(--qaap-login-screen-ink);
-    font-weight: 500;
-}
-
-.qaap-login-step code {
-    font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-    font-size: 10px;
-}
-
-.qaap-login-add { color: var(--qaap-login-add); }
-.qaap-login-del { color: var(--qaap-login-del); }
-
-.qaap-login-reply {
-    margin: 0;
-    line-height: 1.5;
-    opacity: 0;
-    animation: qaap-login-fade 0.4s ease 1.7s forwards;
-}
-
-.qaap-login-prcard {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 10px 11px;
-    border-radius: 12px;
-    background: var(--qaap-login-screen-soft);
-    opacity: 0;
-    animation: qaap-login-fade 0.4s ease 2.1s forwards;
-}
-
-.qaap-login-prcard small {
-    display: block;
-    color: var(--qaap-login-screen-muted);
-    font-size: 10px;
-}
-
-.qaap-login-prcard span {
-    padding: 5px 10px;
-    border-radius: 999px;
-    background: var(--qaap-login-screen-ink);
-    color: var(--qaap-login-screen);
-    font-size: 10.5px;
-    font-weight: 600;
-}
-
-.qaap-login-composer {
-    margin-top: auto;
-    margin-bottom: 14px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 9px 9px 9px 13px;
-    border: 1px solid var(--qaap-login-screen-line);
-    border-radius: 999px;
-    color: var(--qaap-login-screen-muted);
-}
-
-.qaap-login-composer::after {
-    content: '';
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
-    background: var(--qaap-login-screen-ink);
+    opacity: 0.85;
 }
 
 /* ---- Sign-in panel ------------------------------------------------------------------------ */
@@ -570,12 +426,6 @@ body.qaap-login-active .theia-preload {
     }
 }
 
-@keyframes qaap-login-fade {
-    to {
-        opacity: 1;
-    }
-}
-
 /* ---- Phones / narrow windows: showcase on top, sign-in within thumb reach ------------------ */
 
 @media (max-width: 899px) {
@@ -675,10 +525,7 @@ body.qaap-login-active .theia-preload {
         animation: none;
     }
 
-    .qaap-login-phone,
-    .qaap-login-step,
-    .qaap-login-reply,
-    .qaap-login-prcard {
+    .qaap-login-phone {
         animation: none;
         opacity: 1;
         transform: none;
