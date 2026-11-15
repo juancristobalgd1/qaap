@@ -82,7 +82,9 @@ export class QaapLoginContribution implements FrontendApplicationContribution {
         try {
             const config = await fetchQaapAuthConfig();
             if (this.shouldBypassLoginGate(config)) {
-                if (!readQaapSignedIn()) {
+                // A mounted sign-in screen means the user asked for it (e.g. right after
+                // signing out): keep it and let them pick "Continue in local mode".
+                if (!readQaapSignedIn() && !isQaapLoginGateMounted()) {
                     writeQaapAuthSession('gitlab', placeholderQaapAuthUser('gitlab'));
                 }
             } else {
@@ -91,7 +93,9 @@ export class QaapLoginContribution implements FrontendApplicationContribution {
             }
         } catch {
             if (this.shouldBypassLoginGate()) {
-                if (!readQaapSignedIn()) {
+                // A mounted sign-in screen means the user asked for it (e.g. right after
+                // signing out): keep it and let them pick "Continue in local mode".
+                if (!readQaapSignedIn() && !isQaapLoginGateMounted()) {
                     writeQaapAuthSession('gitlab', placeholderQaapAuthUser('gitlab'));
                 }
             } else {

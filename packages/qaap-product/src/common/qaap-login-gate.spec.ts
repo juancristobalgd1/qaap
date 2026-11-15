@@ -551,6 +551,21 @@ describe('Qaap login gate', () => {
             expect(run.document.getElementById('qaap-login-host')).to.not.equal(null);
         });
 
+        it('stays on the sign-in screen after sign-out on a skip-auth dev server', async () => {
+            const run = start(pathname => pathname === CONFIG
+                ? { ok: true, body: { skipAuth: true, githubOAuth: false } }
+                : pathname === SESSION ? { ok: true, body: { signedIn: true, user: { provider: 'gitlab', login: 'dev', name: 'Dev User' } } } : undefined,
+            'http://localhost:3000/?qaapLogout=1', { localStorage: { 'theia:/:qaap.auth.signedIn': 'true' } });
+            const local = (): HTMLButtonElement => run.document.getElementById('qaap-login-local') as HTMLButtonElement;
+            await run.waitFor(() => local()?.hidden === false, 'local mode offered');
+            await new Promise(resolve => setTimeout(resolve, 30));
+            expect(run.document.getElementById('qaap-login-host')).to.not.equal(null);
+            expect(run.window.localStorage.getItem('theia:/:qaap.auth.signedIn')).to.equal(null);
+            local().click();
+            expect(run.document.getElementById('qaap-login-host')).to.equal(null);
+            expect(run.window.localStorage.getItem('theia:/:qaap.auth.signedIn')).to.equal('true');
+        });
+
         it('"Continue in local mode" writes the dev session and hands over to the loading bundle', async () => {
             // First config read (dev skip-auth probe) says no; the gate's availability check then
             // finds a local-development server without GitHub OAuth.

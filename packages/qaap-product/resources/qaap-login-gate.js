@@ -1598,6 +1598,7 @@
                 e.preventDefault();
                 local.disabled = true;
                 local.setAttribute('aria-busy', 'true');
+                explicitSignInRequested = false;
                 writeSignedIn('gitlab', {
                     provider: 'gitlab',
                     login: 'dev',
@@ -1606,6 +1607,8 @@
                 document.body.classList.remove('qaap-login-active');
                 host.remove();
                 loadBundleForVerifiedSession();
+                // The workbench may already be running behind the gate (e.g. after sign-out).
+                try { window.dispatchEvent(new Event('qaap-auth-session-changed')); } catch (err) { /* ignore */ }
             });
         }
 
@@ -1781,6 +1784,10 @@
         } catch (e) { /* ignore */ }
     }
 
+    // `?signin=1` (set after sign-out and by the landing page's "Sign in") is an explicit request
+    // for the sign-in screen: never auto-enter local dev mode over it.
+    var explicitSignInRequested = /[?&]signin(=|&|$)/.test(window.location.search);
+
     function fetchWithTimeout(url, options, timeoutMs) {
         var controller = typeof AbortController === 'function' ? new AbortController() : null;
         var requestOptions = options || {};
@@ -1945,6 +1952,9 @@
                     return undefined;
                 }
                 noteServerMobileEntry(config);
+                if (config && config.skipAuth && explicitSignInRequested) {
+                    return 'manual';
+                }
                 if (config && config.skipAuth) {
                     writeSignedIn('gitlab', {
                         provider: 'gitlab',
@@ -1999,7 +2009,7 @@
                     clearStaleAuthLocalStorage();
                 }
                 trySkipAuthDevMode().then(function (skipped) {
-                    if (!skipped) {
+                    if (skipped !== true) {
                         if (document.body) {
                             showGateAndLoadBundle();
                         } else {
@@ -2105,7 +2115,15 @@
         var skipAuthProbe = trySkipAuthDevMode();
         if (isMobileWorkHubMode()) {
             showGateAndLoadBundle();
-            resumeAfterOAuthOrSession(parallelSessionProbe, skipAuthProbe);
+            if (explicitSignInRequested) {
+                skipAuthProbe.then(function (skipped) {
+                    if (skipped !== 'manual') {
+                        resumeAfterOAuthOrSession(parallelSessionProbe, skipAuthProbe);
+                    }
+                });
+            } else {
+                resumeAfterOAuthOrSession(parallelSessionProbe, skipAuthProbe);
+            }
         } else {
             skipAuthProbe.then(function (skipped) {
                 if (skipped === false) {

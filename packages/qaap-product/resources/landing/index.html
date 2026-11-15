@@ -228,9 +228,9 @@ h1 {
     border-radius: 12px;
     background: #000;
 }
-/* ---- Hero light beams ---------------------------------------------- */
+/* ---- Hero satin ridges ---------------------------------------------- */
 .hero { position: relative; isolation: isolate; }
-.hero-beams {
+.hero-satin {
     position: absolute;
     top: 0;
     left: 0;
@@ -823,7 +823,7 @@ footer { border-top: 1px solid var(--line); }
 <main>
 <div class="frame rails">
     <section class="hero">
-        <canvas class="hero-beams" aria-hidden="true"></canvas>
+        <canvas class="hero-satin" aria-hidden="true"></canvas>
         <h1>The pocket workspace for AI coding agents</h1>
         <p class="lede">Run Claude Code, Codex, Gemini and more on your repos in the cloud. Review the diff, check the preview and merge — from your laptop or your phone.</p>
         <div class="hero-ctas">
@@ -1869,42 +1869,27 @@ footer { border-top: 1px solid var(--line); }
 })();
 </script>
 <script>
-/* Hero background: light beams (vanilla canvas take on Beams: white, 140px beams, 30deg, waves, grain, cursor). */
+/* Hero background: satin ridges — silky folds with a moving sheen (rendered at low res, upscaled smooth). */
 (function () {
-    var canvas = document.querySelector('.hero-beams');
+    var canvas = document.querySelector('.hero-satin');
     if (!canvas || !canvas.getContext) { return; }
     var hero = canvas.parentElement;
     var ctx = canvas.getContext('2d');
-    var BEAM_W = 140;
-    var ROTATION = 30 * Math.PI / 180;
-    var SPEED = 1;
-    var WAVE = 233;
-    var SHARPNESS = 0.6;
-    var FILL = 0.3;
-    var BRIGHTNESS = 1.6;
-    var GRAIN = 0.35;
-    var MOUSE_STRENGTH = 1;
+    var low = document.createElement('canvas');
+    var lctx = low.getContext('2d');
+    var SCALE = 4;
+    var BG = [14, 14, 13];
     var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
     var W = 0;
     var H = 0;
+    var lw = 0;
+    var lh = 0;
+    var img = null;
     var start = performance.now();
     var last = 0;
-    var mouse = { x: -1e4, y: -1e4, sx: -1e4, sy: -1e4, k: 0 };
+    var mouse = { x: -1, y: -1, sx: 0.5, sy: 0.5, k: 0 };
     var visible = true;
     var frameId = 0;
-    var grain = document.createElement('canvas');
-    grain.width = grain.height = 160;
-    (function () {
-        var g = grain.getContext('2d');
-        var img = g.createImageData(160, 160);
-        for (var i = 0; i < img.data.length; i += 4) {
-            var v = Math.random() * 255;
-            img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
-            img.data[i + 3] = 255;
-        }
-        g.putImageData(img, 0, 0);
-    })();
-    var grainPattern = null;
     var resize = function () {
         var dpr = Math.min(2, window.devicePixelRatio || 1);
         var top = hero.getBoundingClientRect().top;
@@ -1914,113 +1899,84 @@ footer { border-top: 1px solid var(--line); }
         H = canvas.clientHeight;
         canvas.width = Math.round(W * dpr);
         canvas.height = Math.round(H * dpr);
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        grainPattern = ctx.createPattern(grain, 'repeat');
+        lw = Math.max(80, Math.round(W / SCALE));
+        lh = Math.max(60, Math.round(H / SCALE));
+        low.width = lw;
+        low.height = lh;
+        img = lctx.createImageData(lw, lh);
     };
     var draw = function (now) {
-        var t = (now - start) / 1000;
-        var tt = t * SPEED;
-        var intro = reduceMotion.matches ? 1 : Math.min(1, t / 1.8);
+        var t = (now - start) / 1000 * 0.55;
+        var intro = reduceMotion.matches ? 1 : Math.min(1, (now - start) / 1600);
         intro = 1 - Math.pow(1 - intro, 3);
-        mouse.sx += (mouse.x - mouse.sx) * 0.08;
-        mouse.sy += (mouse.y - mouse.sy) * 0.08;
-        mouse.k += ((mouse.x > -1e3 ? 1 : 0) - mouse.k) * 0.06;
-        ctx.setTransform(canvas.width / W, 0, 0, canvas.height / H, 0, 0);
-        ctx.globalCompositeOperation = 'source-over';
-        ctx.globalAlpha = 1;
-        ctx.clearRect(0, 0, W, H);
-        var diag = Math.sqrt(W * W + H * H);
-        var count = Math.ceil(diag / BEAM_W) + 2;
-        var cosR = Math.cos(ROTATION);
-        var sinR = Math.sin(ROTATION);
-        var mrx = 0;
-        var mry = 0;
-        if (mouse.k > 0.01) {
-            var dx = mouse.sx - W / 2;
-            var dy = mouse.sy - H / 2;
-            mrx = dx * cosR + dy * sinR;
-            mry = -dx * sinR + dy * cosR;
+        var on = mouse.x >= 0 ? 1 : 0;
+        mouse.k += (on - mouse.k) * 0.05;
+        if (on) {
+            mouse.sx += (mouse.x - mouse.sx) * 0.06;
+            mouse.sy += (mouse.y - mouse.sy) * 0.06;
         }
-        ctx.save();
-        ctx.translate(W / 2, H / 2);
-        ctx.rotate(-ROTATION);
-        ctx.translate(0, (1 - intro) * 120);
-        var half = diag / 2;
-        var STOPS = 14;
-        for (var i = 0; i < count; i++) {
-            var bx = -half + i * BEAM_W;
-            var phase = i * 1.7;
-            var g = ctx.createLinearGradient(0, -half, 0, half);
-            for (var s = 0; s <= STOPS; s++) {
-                var y = -half + (s / STOPS) * diag;
-                var wave = 0.5 + 0.5 * Math.sin(y / WAVE * Math.PI * 2 - tt * 1.6 + phase);
-                var wave2 = 0.5 + 0.5 * Math.sin(y / (WAVE * 2.3) * Math.PI * 2 + tt * 0.7 + phase * 0.6);
-                var b = FILL * 0.1 + Math.pow(wave * 0.7 + wave2 * 0.3, 3) * 0.95;
+        var d = img.data;
+        var aspect = lw / lh;
+        var p = 0;
+        for (var y = 0; y < lh; y++) {
+            var v = y / lh;
+            for (var x = 0; x < lw; x++) {
+                var u = x / lw * aspect;
+                var qx = u + 0.22 * Math.sin(v * 2.6 + t * 0.35) + 0.08 * Math.sin(v * 7.1 - t * 0.6);
+                var qy = v + 0.18 * Math.sin(u * 2.1 - t * 0.3);
                 if (mouse.k > 0.01) {
-                    var ddx = (bx + BEAM_W / 2) - mrx;
-                    var ddy = y - mry;
-                    b += MOUSE_STRENGTH * 0.45 * mouse.k * Math.exp(-(ddx * ddx) / (BEAM_W * BEAM_W * 2.2) - (ddy * ddy) / (260 * 260));
+                    var dx = u - mouse.sx * aspect;
+                    var dy = v - mouse.sy;
+                    var f = Math.exp(-(dx * dx + dy * dy) * 14) * mouse.k;
+                    qx += dx * f * 0.6;
+                    qy += dy * f * 0.6;
                 }
-                var a = Math.min(1, b * BRIGHTNESS * 0.5) * intro;
-                g.addColorStop(s / STOPS, 'rgba(255,255,255,' + a.toFixed(3) + ')');
+                var arg = qx * 11.5 + qy * 5.2 + Math.sin(qy * 3.6 + t * 0.5) * 2.4 + Math.sin(qx * 2.3 - t * 0.35) * 1.2 + t * 0.6;
+                var s = Math.sin(arg);
+                var c = Math.cos(arg);
+                var sheen = Math.max(0, c * 0.85 + 0.15);
+                sheen = sheen * sheen * sheen * sheen * sheen * sheen;
+                var broad = Math.max(0, c * 0.6 + 0.4);
+                var lum = (0.05 + 0.1 * (s * 0.5 + 0.5) + 0.22 * broad * broad + 0.75 * sheen) * intro;
+                var edge = Math.min(1, Math.min(x, lw - 1 - x) / (lw * 0.12) + 0.15);
+                lum *= Math.min(1, edge);
+                if (lum > 1) { lum = 1; }
+                d[p] = BG[0] + (236 - BG[0]) * lum;
+                d[p + 1] = BG[1] + (234 - BG[1]) * lum;
+                d[p + 2] = BG[2] + (229 - BG[2]) * lum;
+                d[p + 3] = 255;
+                p += 4;
             }
-            ctx.fillStyle = g;
-            ctx.fillRect(bx, -half, BEAM_W + 1, diag);
-            ctx.globalCompositeOperation = 'lighter';
-            ctx.globalAlpha = 0.6;
-            ctx.fillRect(bx + BEAM_W * 0.41, -half, BEAM_W * 0.18, diag);
-            ctx.globalAlpha = 1;
-            ctx.globalCompositeOperation = 'source-over';
         }
-        ctx.globalCompositeOperation = 'destination-out';
-        var seam = BEAM_W * (0.7 - SHARPNESS * 0.45);
-        for (var j = 0; j <= count; j++) {
-            var sx = -half + j * BEAM_W;
-            var sg = ctx.createLinearGradient(sx - seam, 0, sx + seam, 0);
-            sg.addColorStop(0, 'rgba(0,0,0,0)');
-            sg.addColorStop(0.5, 'rgba(0,0,0,1)');
-            sg.addColorStop(1, 'rgba(0,0,0,0)');
-            ctx.fillStyle = sg;
-            ctx.fillRect(sx - seam, -half, seam * 2, diag);
-        }
-        ctx.restore();
-        ctx.globalCompositeOperation = 'source-over';
-        var vg = ctx.createRadialGradient(W / 2, H * 0.36, 0, W / 2, H * 0.36, Math.max(W, H) * 0.55);
-        vg.addColorStop(0, 'rgba(14,14,13,0.82)');
-        vg.addColorStop(0.5, 'rgba(14,14,13,0.4)');
+        lctx.putImageData(img, 0, 0);
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(low, 0, 0, canvas.width, canvas.height);
+        var vg = ctx.createRadialGradient(canvas.width / 2, canvas.height * 0.36, 0, canvas.width / 2, canvas.height * 0.36, Math.max(canvas.width, canvas.height) * 0.5);
+        vg.addColorStop(0, 'rgba(14,14,13,0.8)');
+        vg.addColorStop(0.55, 'rgba(14,14,13,0.38)');
         vg.addColorStop(1, 'rgba(14,14,13,0)');
         ctx.fillStyle = vg;
-        ctx.fillRect(0, 0, W, H);
-        if (grainPattern && GRAIN > 0) {
-            ctx.globalCompositeOperation = 'overlay';
-            ctx.globalAlpha = GRAIN * 0.45;
-            ctx.save();
-            ctx.translate((Math.random() * 160) | 0, (Math.random() * 160) | 0);
-            ctx.fillStyle = grainPattern;
-            ctx.fillRect(-160, -160, W + 320, H + 320);
-            ctx.restore();
-            ctx.globalAlpha = 1;
-            ctx.globalCompositeOperation = 'source-over';
-        }
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
     };
     var loop = function (now) {
         frameId = 0;
         if (!visible || document.hidden) { return; }
-        if (now - last >= 32) { last = now; draw(now); }
+        if (now - last >= 33) { last = now; draw(now); }
         frameId = requestAnimationFrame(loop);
     };
     var kick = function () {
-        if (reduceMotion.matches) { draw(performance.now() + 4000); return; }
+        if (reduceMotion.matches) { draw(performance.now() + 3000); return; }
         if (!frameId) { frameId = requestAnimationFrame(loop); }
     };
     hero.addEventListener('pointermove', function (e) {
-        if (e.target.closest && e.target.closest('.stage')) { mouse.x = mouse.y = -1e4; return; }
+        if (e.target.closest && e.target.closest('.stage')) { mouse.x = mouse.y = -1; return; }
         var rect = canvas.getBoundingClientRect();
-        mouse.x = e.clientX - rect.left;
-        mouse.y = e.clientY - rect.top;
-        if (mouse.sx < -1e3) { mouse.sx = mouse.x; mouse.sy = mouse.y; }
+        mouse.x = (e.clientX - rect.left) / rect.width;
+        mouse.y = (e.clientY - rect.top) / rect.height;
     }, { passive: true });
-    hero.addEventListener('pointerleave', function () { mouse.x = mouse.y = -1e4; });
+    hero.addEventListener('pointerleave', function () { mouse.x = mouse.y = -1; });
     window.addEventListener('resize', function () { resize(); kick(); });
     if ('ResizeObserver' in window) { new ResizeObserver(function () { resize(); kick(); }).observe(hero.querySelector('.hero-ctas') || hero); }
     if (document.fonts && document.fonts.ready) { document.fonts.ready.then(function () { resize(); kick(); }); }
