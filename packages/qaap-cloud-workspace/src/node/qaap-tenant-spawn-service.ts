@@ -525,7 +525,6 @@ export class QaapTenantSpawnService {
         }
         const root = path.resolve(target.root);
         if (this.preparedTenantBackendAgentRoots.has(root)) {
-            this.ensureTenantBackendAgentCwdAccess(root, cwd, false);
             return;
         }
         const uid = this.resolveSpawnIdentity(cwd).uid;
@@ -545,68 +544,6 @@ export class QaapTenantSpawnService {
             throw new Error(`Could not prepare tenant workspace files for agent uid ${uid} (${files.reason}); install find and acl.`);
         }
         this.preparedTenantBackendAgentRoots.add(root);
-        this.ensureTenantBackendAgentCwdAccess(root, cwd, true);
-    }
-
-    /**
-     * Repairs the agent's access to the task cwd on every spawn (never cached). A directory created later with a
-     * restrictive mode under a default ACL can carry a `---` mask, which makes the named-user entry ineffective, so
-     * chdir fails with EACCES and the spawn reports only `spawn <file> EACCES`. This re-applies rwx to the real path of
-     * `cwd` and to the components between the root and it. Nothing outside the root, and no parent of the root, is
-     * touched. With `rootJustPrepared` and `cwd` equal to the root, the root grant already covered it and nothing runs.
-     */
-    protected ensureTenantBackendAgentCwdAccess(root: string, cwd: string, rootJustPrepared: boolean): void {
-        const lexicalRoot = path.resolve(root);
-        const lexicalRelative = path.relative(lexicalRoot, path.resolve(cwd));
-        if (this.escapesDirectory(lexicalRelative)) {
-            return;
-        }
-        let realCwd: string;
-        try {
-            realCwd = fs.realpathSync(path.resolve(cwd));
-        } catch {
-            // A missing cwd is not repaired here: the task sandbox exec server reports it by name.
-            return;
-        }
-        const realRoot = fs.realpathSync(lexicalRoot);
-        const relative = path.relative(realRoot, realCwd);
-        if (this.escapesDirectory(relative)) {
-            throw new Error(`Refusing to prepare the agent working directory "${cwd}": it resolves outside its tenant workspace.`);
-        }
-        if (relative === '' && rootJustPrepared) {
-            return;
-        }
-        const uid = this.resolveSpawnIdentity(cwd).uid;
-        if (uid === undefined) {
-            throw new Error('Refusing to prepare tenant working directory access without a non-root agent uid.');
-        }
-        const segments = relative ? relative.split(path.sep) : [];
-        const ancestors: string[] = [];
-        let current = realRoot;
-        for (const segment of segments.slice(0, -1)) {
-            current = path.join(current, segment);
-            ancestors.push(current);
-        }
-        const commands: Array<{ file: string; args: string[] }> = this.usesAgentGroupAccess()
-            ? [
-                { file: 'chgrp', args: ['-h', this.agentAccessGroup(uid), ...ancestors, realCwd] },
-                { file: 'chmod', args: ['g+rwxs', ...ancestors, realCwd] },
-            ]
-            : [
-                ...(ancestors.length > 0 ? [{ file: 'setfacl', args: ['-m', `u:${uid}:rwx,m::rwx`, ...ancestors] }] : []),
-                { file: 'setfacl', args: ['-m', `u:${uid}:rwx,d:u:${uid}:rwx,m::rwx,d:m::rwx`, realCwd] },
-            ];
-        for (const command of commands) {
-            const result = this.runTenantAccessCommand(command.file, command.args);
-            if (!result.ok) {
-                throw new Error(`Could not grant the non-root agent access to its task working directory ${realCwd} (${result.reason}); install the acl package.`);
-            }
-        }
-    }
-
-    /** True for a relative path that leaves its base (`..`, `../x`) or is absolute. */
-    protected escapesDirectory(relative: string): boolean {
-        return relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative);
     }
 
     /** See QAAP_TENANT_AGENT_ACCESS_ENV: under gVisor the agent's access comes from a shared group rather than an ACL. */

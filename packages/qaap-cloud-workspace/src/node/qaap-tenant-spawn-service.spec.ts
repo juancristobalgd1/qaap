@@ -218,10 +218,7 @@ describe('QaapTenantSpawnService tenant backend workspace ACL', () => {
             service.prepareTenantIsolation(cwd);
             service.prepareTenantIsolation(cwd);
 
-            // The root grant runs once (3 commands). The task cwd is repaired on every prepare, never cached:
-            // each call adds the ancestor grant and the cwd grant (2 commands).
-            expect(service.commands).to.have.length(7);
-            expect(service.commands.filter(command => command.file === 'setfacl' && command.args.includes(tenantRoot))).to.have.length(1);
+            expect(service.commands).to.have.length(3);
             expect(service.commands[0]).to.deep.equal({
                 file: 'setfacl',
                 args: ['-m', 'u:1001:rwx,d:u:1001:rwx', tenantRoot],
@@ -395,113 +392,6 @@ describe('QaapTenantSpawnService tenant backend workspace ACL', () => {
             const service = new GroupAccessService();
             service.grant('/x', 1234, false);
             expect(service.commands[0].args).to.deep.equal(['-h', '1234', '/x']);
-        });
-    });
-
-    describe('per-spawn repair of the agent working directory', () => {
-        class CwdAclTestService extends TenantBackendAclTestService {
-            repair(root: string, cwd: string, rootJustPrepared: boolean): void {
-                this.ensureTenantBackendAgentCwdAccess(root, cwd, rootJustPrepared);
-            }
-        }
-
-        let tenantTmp: string;
-        let outsideTmp: string;
-        let root: string;
-        let cwd: string;
-
-        beforeEach(() => {
-            tenantTmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-tenant-cwd-acl-')));
-            outsideTmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-tenant-cwd-outside-')));
-            root = path.join(tenantTmp, 'users', 'alice');
-            cwd = path.join(root, 'octocat', 'hello');
-            fs.mkdirSync(cwd, { recursive: true });
-        });
-
-        afterEach(() => {
-            fs.rmSync(tenantTmp, { recursive: true, force: true });
-            fs.rmSync(outsideTmp, { recursive: true, force: true });
-            delete process.env.QAAP_TENANT_AGENT_ACCESS;
-        });
-
-        it('re-applies rwx to the ancestors between the root and the cwd, then to the cwd with default entries and mask', () => {
-            const service = new CwdAclTestService();
-            service.repair(root, cwd, false);
-            expect(service.commands).to.deep.equal([
-                { file: 'setfacl', args: ['-m', 'u:1001:rwx,m::rwx', path.join(root, 'octocat')] },
-                { file: 'setfacl', args: ['-m', 'u:1001:rwx,d:u:1001:rwx,m::rwx,d:m::rwx', cwd] },
-            ]);
-        });
-
-        it('touches only the cwd when it sits directly under the root', () => {
-            const service = new CwdAclTestService();
-            const direct = path.join(root, 'worktree');
-            fs.mkdirSync(direct);
-            service.repair(root, direct, false);
-            expect(service.commands).to.deep.equal([
-                { file: 'setfacl', args: ['-m', 'u:1001:rwx,d:u:1001:rwx,m::rwx,d:m::rwx', direct] },
-            ]);
-        });
-
-        it('runs nothing when the cwd is the root just prepared in the same call, and repairs the root otherwise', () => {
-            const service = new CwdAclTestService();
-            service.repair(root, root, true);
-            expect(service.commands).to.deep.equal([]);
-            service.repair(root, root, false);
-            expect(service.commands).to.deep.equal([
-                { file: 'setfacl', args: ['-m', 'u:1001:rwx,d:u:1001:rwx,m::rwx,d:m::rwx', root] },
-            ]);
-        });
-
-        it('does nothing for a cwd outside the root, including one that escapes through ..', () => {
-            const service = new CwdAclTestService();
-            service.repair(root, path.join(tenantTmp, 'users', 'bob', 'x'), false);
-            service.repair(root, path.join(root, '..', 'bob'), false);
-            expect(service.commands).to.deep.equal([]);
-        });
-
-        it('does nothing for a cwd that does not exist; the exec server reports it', () => {
-            const service = new CwdAclTestService();
-            service.repair(root, path.join(root, 'missing', 'dir'), false);
-            expect(service.commands).to.deep.equal([]);
-        });
-
-        it('refuses a cwd whose real path, through a link, leaves the root', () => {
-            const service = new CwdAclTestService();
-            const escape = path.join(root, 'escape');
-            fs.symlinkSync(outsideTmp, escape);
-            expect(() => service.repair(root, escape, false)).to.throw('resolves outside its tenant workspace');
-            expect(service.commands).to.deep.equal([]);
-        });
-
-        it('is not cached: every spawn re-runs the repair', () => {
-            const service = new CwdAclTestService();
-            service.repair(root, cwd, false);
-            service.repair(root, cwd, false);
-            expect(service.commands).to.have.length(4);
-        });
-
-        it('uses the shared group instead of ACLs under gVisor, on the same components', () => {
-            process.env.QAAP_TENANT_AGENT_ACCESS = 'group';
-            process.env.QAAP_AGENT_GID = '1001';
-            const service = new CwdAclTestService();
-            service.repair(root, cwd, false);
-            expect(service.commands).to.deep.equal([
-                { file: 'chgrp', args: ['-h', '1001', path.join(root, 'octocat'), cwd] },
-                { file: 'chmod', args: ['g+rwxs', path.join(root, 'octocat'), cwd] },
-            ]);
-        });
-
-        it('throws with the cause when the access command fails', () => {
-            class RefusingCwdService extends CwdAclTestService {
-                protected override runTenantAccessCommand(file: string, args: readonly string[]): { ok: boolean; reason?: string } {
-                    this.commands.push({ file, args });
-                    return { ok: false, reason: 'setfacl: Operation not supported' };
-                }
-            }
-            const service = new RefusingCwdService();
-            expect(() => service.repair(root, cwd, false))
-                .to.throw(`Could not grant the non-root agent access to its task working directory ${cwd} (setfacl: Operation not supported); install the acl package.`);
         });
     });
 
