@@ -120,7 +120,20 @@ const LOGIN_FAILURE_PATTERNS: readonly RegExp[] = [
     /\bfailed\s+to\s+log\s?in\s+to\b/i,
 ];
 
+/**
+ * Qaap's own pre-spawn sign-in guard refusals (qaap-agent-sign-in-preflight.ts): "Sign in to {0} to use
+ * {1}." and "Couldn't confirm your sign-in to {0}; try again.". The guard writes one of them as the whole
+ * log of a `preflightFailure: 'sign_in_required'` task; recognizing them makes the transcript offer the
+ * Sign in chip instead of the generic "could not start" copy. Anchored to a full line so agent prose
+ * that merely mentions signing in does not match.
+ */
+export const QAAP_SIGN_IN_GUARD_REFUSAL_PATTERNS: readonly RegExp[] = [
+    /^\s*sign\s+in\s+to\s+[^\n;]{1,80}?\s+to\s+use\s+[^\n]{1,160}\.\s*$/im,
+    /^\s*couldn['\u2019]t\s+confirm\s+your\s+sign-in\s+to\s+[^\n;]{1,80};\s+try\s+again\.\s*$/im,
+];
+
 const SESSION_AUTH_PATTERNS: readonly RegExp[] = [
+    ...QAAP_SIGN_IN_GUARD_REFUSAL_PATTERNS,
     /\bnot\s+logged\s+in\b/i,
     // "Please run /login", "run the '/login' command" (Copilot CLI quotes it).
     /\brun\s+(?:the\s+)?['"`]?\/login\b/i,

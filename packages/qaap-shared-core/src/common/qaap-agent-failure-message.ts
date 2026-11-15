@@ -7,6 +7,7 @@ import { nls } from '@theia/core/lib/common/nls';
 import {
     extractAgentAuthLoginChallenge,
     localizeAgentAuthFailureMessage,
+    QAAP_SIGN_IN_GUARD_REFUSAL_PATTERNS,
 } from './qaap-agent-auth-login';
 import { localizeHostedMissingCodingAgentMessage, readQaapHostedRuntime } from './qaap-hosted-agent-auth-policy';
 import type { QaapAgentMessageDTO } from './qaap-agent-conversation-client';
@@ -206,6 +207,8 @@ const AUTH_PATTERNS: readonly RegExp[] = [
     /\bauthentication\s+failed\s+or\s+timed\s+out\b/i,
     /\bauthentication\s+interrupted\b/i,
     /\bplease\s+sign\s+in\s+to\s+view\s+available\s+models\b/i,
+    // Qaap's own pre-spawn refusal for a Pro model without a confirmed harness session.
+    ...QAAP_SIGN_IN_GUARD_REFUSAL_PATTERNS,
 ];
 
 /**

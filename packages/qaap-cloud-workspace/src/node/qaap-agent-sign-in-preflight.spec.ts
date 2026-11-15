@@ -7,6 +7,8 @@ import { expect } from 'chai';
 import type { AgentCandidate } from './qaap-agent-task-runner-types';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { assertAgentModelAccessExtracted, QaapAgentSignInRequiredError } from './qaap-agent-sign-in-preflight';
+import { extractAgentAuthLoginChallenge } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
+import { detectAgentFailureKind } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 
 type ConnectionState = 'connected' | 'disconnected' | 'unknown' | 'not-required';
 
@@ -86,6 +88,17 @@ describe('assertAgentModelAccessExtracted (pre-spawn sign-in guard)', () => {
     it('never checks the shell or QAIQ, which have no harness sign-in', () => {
         expect(thrownBy(() => assertAgentModelAccessExtracted(ctxFor('disconnected', true), 'shell', 'alice', proModel as never))).to.equal(undefined);
         expect(thrownBy(() => assertAgentModelAccessExtracted(ctxFor('disconnected', true), 'qaiq', 'alice', proModel as never))).to.equal(undefined);
+    });
+
+    it('writes refusals the transcript reads as a sign-in failure (Sign in chip), not a generic start failure', () => {
+        const refusals = [
+            thrownBy(() => assertAgentModelAccessExtracted(ctxFor('disconnected', true), 'codex', 'alice', proModel as never)),
+            thrownBy(() => assertAgentModelAccessExtracted(ctxFor('unknown', false), 'codex', 'alice', proModel as never)),
+        ].map(error => `${(error as Error).message}\n`);
+        for (const log of refusals) {
+            expect(detectAgentFailureKind(log), log).to.equal('auth');
+            expect(extractAgentAuthLoginChallenge(log, { agentId: 'codex' })?.mode, log).to.equal('session');
+        }
     });
 
     it('does not guard an agent that is not detected on this host', () => {

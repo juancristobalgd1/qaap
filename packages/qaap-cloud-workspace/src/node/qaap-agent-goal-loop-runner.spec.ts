@@ -13,7 +13,9 @@ import type { QaapAgentConversationStore } from './qaap-agent-conversation-store
 import type { QaapAgentTaskRunner, QaapGenericCommandResult } from './qaap-agent-task-runner';
 import type { QaapPushNotifyRequest } from '../common/qaap-cloud-api-types';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
-import { notifyCompletionExtracted } from './qaap-agent-task-runner-tool-pills2';
+import { notifyCompletionExtracted, runReadOnlyOneShotPromptExtracted } from './qaap-agent-task-runner-tool-pills2';
+import { assertAgentModelAccessExtracted, QaapAgentSignInRequiredError } from './qaap-agent-sign-in-preflight';
+import type { AgentCandidate } from './qaap-agent-task-runner-types';
 import {
     QAAP_AGENT_GOAL_LOOP_STALE_EXECUTING_MS,
     QaapAgentGoalLoopError,
@@ -416,6 +418,48 @@ describe('QaapAgentGoalLoopRunner', () => {
         expect(loop().lastVerify?.status).to.equal('skipped');
         expect(loop().phase).to.equal('blocked');
         expect(loop().stopReason).to.contain('Agent exited with code 1.');
+    });
+
+    it('ends blocked with the sign-in refusal when the evaluator one-shot is refused before spawn', async () => {
+        taskRunner.scripts = [];
+        taskRunner.evaluatorReplies.push(new QaapAgentSignInRequiredError('Sign in to Claude Code to use claude-opus-4.', 'sign-in-required'));
+        runner.start(CONVERSATION_ID, { goal: 'Ship it' });
+        await settle();
+        expect(taskRunner.evaluatorCalls).to.have.length(1);
+        expect(loop().phase).to.equal('blocked');
+        expect(loop().stopReason).to.contain('Sign in to Claude Code to use claude-opus-4.');
+    });
+
+    it('refuses the read-only evaluator one-shot for a signed-out Pro model before anything spawns', async () => {
+        const waited: string[] = [];
+        let builtCommand = false;
+        const ctx: Record<string, unknown> = {
+            preferenceService: undefined,
+            detectedAgents: new Map<string, AgentCandidate>([['claude', { id: 'claude', label: 'Claude Code', bin: 'claude', template: 'claude -p {prompt}' }]]),
+            resolveAgentId: (_prompt: string, agentId: string) => agentId,
+            resolveAgentModelForRequest: () => ({ provider: 'anthropic', vendor: 'anthropic', modelId: 'claude-opus-4', label: 'Opus' }),
+            assertQaiqConfigured: () => undefined,
+            awaitAgentSessionSettled: async (agentId: string) => { waited.push(agentId); },
+            isAgentEnabled: () => true,
+            agentConnectionSnapshot: () => ({ connectionState: 'disconnected', probeSettled: true }),
+            buildTemplateVars: () => { builtCommand = true; return {}; },
+        };
+        ctx.assertAgentModelAccess = (agentId: string, ownerLogin?: string, agentModel?: never) =>
+            assertAgentModelAccessExtracted(ctx as unknown as QaapAgentTaskRunnerContext, agentId, ownerLogin, agentModel);
+
+        let refusal: unknown;
+        try {
+            await runReadOnlyOneShotPromptExtracted(ctx as unknown as QaapAgentTaskRunnerContext, {
+                prompt: 'Evaluate the goal.', agentId: 'claude', cwd: '/repo', ownerLogin: 'octocat', taskKind: 'review', timeoutMs: 1_000,
+            });
+        } catch (error) {
+            refusal = error;
+        }
+
+        expect(refusal).to.be.instanceOf(QaapAgentSignInRequiredError);
+        expect((refusal as Error).message).to.equal('Sign in to Claude Code to use claude-opus-4.');
+        expect(waited, 'the pending sign-in probe gets its budget first').to.deep.equal(['claude']);
+        expect(builtCommand, 'nothing is built or spawned').to.equal(false);
     });
 
     it('ignores the settlement of a turn that is no longer the newest', async () => {
