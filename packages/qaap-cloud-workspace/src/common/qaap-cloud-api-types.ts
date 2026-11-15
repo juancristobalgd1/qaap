@@ -11,6 +11,11 @@ export const QAAP_TENANT_RUNTIME_API_PATH = `${QAAP_CLOUD_API_PATH}/runtime`;
  * header. Served under the runtime prefix, so the browser proxy never reaches it.
  */
 export const QAAP_TENANT_PUSH_OUTBOX_PATH = `${QAAP_TENANT_RUNTIME_API_PATH}/push/outbox`;
+/**
+ * "Update now" status and action for the signed-in user's tenant backend. Served by the control plane only
+ * (outside `/qaap/api/cloud/`, so polling it never counts as tenant activity).
+ */
+export const QAAP_TENANT_UPDATE_API_PATH = '/qaap/api/tenant-update';
 /** Web Push routes owned by the control plane (subscriptions and VAPID keys never leave it). */
 export const QAAP_PUSH_VAPID_PATH = `${QAAP_CLOUD_API_PATH}/push/vapid`;
 export const QAAP_PUSH_SUBSCRIBE_PATH = `${QAAP_CLOUD_API_PATH}/push/subscribe`;
