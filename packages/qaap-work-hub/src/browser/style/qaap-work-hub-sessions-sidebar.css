@@ -553,19 +553,48 @@
   border-top: 1px solid color-mix(in srgb, var(--theia-foreground) 6%, transparent);
 }
 
-/* Quiet notice: a newer backend build waits for the user's running turns to finish. */
+/* "Update now" chip: a newer backend build waits; a button, so it is operable by keyboard and touch. */
 .theia-mobile-work-hub-sessions-sidebar-update {
   flex: 0 0 auto;
   align-self: center;
-  padding: 1px 6px;
+  margin: 0;
+  padding: 1px 8px;
   border-radius: 999px;
   border: 1px solid color-mix(in srgb, var(--theia-editorInfo-foreground, var(--theia-foreground)) 45%, transparent);
-  font-size: 10px;
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
   line-height: 16px;
   font-weight: 500;
   white-space: nowrap;
   color: var(--theia-editorInfo-foreground, var(--theia-foreground));
-  cursor: help;
+  cursor: pointer;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-update[hidden] {
+  display: none;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-update:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--theia-editorInfo-foreground, var(--theia-foreground)) 14%, transparent);
+}
+
+.theia-mobile-work-hub-sessions-sidebar-update:disabled {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-update:focus-visible {
+  outline: 2px solid var(--theia-focusBorder);
+  outline-offset: 2px;
+}
+
+@media (pointer: coarse) {
+  .theia-mobile-work-hub-sessions-sidebar-update {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 0 12px;
+  }
 }
 
 .theia-mobile-work-hub-sessions-sidebar-foot .theia-mobile-work-hub-sessions-sidebar-account-btn {

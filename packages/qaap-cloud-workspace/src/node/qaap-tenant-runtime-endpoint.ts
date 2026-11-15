@@ -123,9 +123,7 @@ export class QaapTenantRuntimeEndpoint implements BackendApplicationContribution
         app.post(`${QAAP_TENANT_RUNTIME_API_PATH}/activity`, (req, res) => {
             this.handleActivity(req, res);
         });
-        app.get(`${QAAP_TENANT_RUNTIME_API_PATH}/status`, (req, res) => {
-            this.handleStatus(req, res);
-        });
+        app.get(`${QAAP_TENANT_RUNTIME_API_PATH}/status`, QaapAsyncRoute.wrap('qaap-tenant-runtime', (req, res) => this.handleStatus(req, res)));
         app.get(`${QAAP_TENANT_RUNTIME_API_PATH}/metrics`, (req, res) => {
             this.handleMetrics(req, res);
         });
@@ -244,7 +242,7 @@ export class QaapTenantRuntimeEndpoint implements BackendApplicationContribution
         res.json({ ok: true });
     }
 
-    protected handleStatus(req: Request, res: Response): void {
+    protected async handleStatus(req: Request, res: Response): Promise<void> {
         const context = this.auth.authenticate(req);
         const ownerLogin = this.auth.resolveUserLogin(context);
         if (!ownerLogin) {
@@ -259,8 +257,8 @@ export class QaapTenantRuntimeEndpoint implements BackendApplicationContribution
                 state: this.docker.isEnabled() ? 'destroyed' : 'active',
                 reaperEnabled: this.reaper.isEnabled(),
             };
-        // In-memory only: the control plane already knows the backend build and any deferred recreation.
-        res.json({ runtime, update: this.docker.getTenantBackendUpdateStatus(ownerLogin) });
+        // The one source of "an update is pending" (build comparison, deferred recreation, image check).
+        res.json({ runtime, update: await this.docker.getTenantBackendUpdateStatus(ownerLogin) });
     }
 
     protected handleMetrics(req: Request, res: Response): void {

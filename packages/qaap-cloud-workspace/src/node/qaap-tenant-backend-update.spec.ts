@@ -7,6 +7,17 @@ import { expect } from 'chai';
 import { computeTenantBackendUpdateStatus } from './qaap-tenant-backend-update';
 
 describe('computeTenantBackendUpdateStatus', () => {
+    it('is pending when the running container uses another image, even without a build known in memory', () => {
+        expect(computeTenantBackendUpdateStatus({ backendBuild: undefined, controlPlaneBuild: 'abc1234', deferred: false, imageStale: true })).to.deep.equal({
+            backendBuild: undefined,
+            controlPlaneBuild: 'abc1234',
+            updatePending: true,
+        });
+    });
+
+    it('is not pending when the running container uses the serving image and the builds agree', () => {
+        expect(computeTenantBackendUpdateStatus({ backendBuild: 'abc1234', controlPlaneBuild: 'abc1234', deferred: false, imageStale: false }).updatePending).to.equal(false);
+    });
 
     it('reports no pending update when the backend runs the control-plane build', () => {
         expect(computeTenantBackendUpdateStatus({ backendBuild: 'abc1234', controlPlaneBuild: 'abc1234', deferred: false })).to.deep.equal({

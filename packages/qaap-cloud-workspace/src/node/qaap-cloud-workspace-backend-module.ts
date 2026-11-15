@@ -149,6 +149,7 @@ import { QaapTenantActivityContribution } from './qaap-tenant-activity-contribut
 import { QaapTenantActivityTracker } from './qaap-tenant-activity-tracker';
 import { QaapTenantContainerReaper } from './qaap-tenant-container-reaper';
 import { QaapTenantRuntimeEndpoint } from './qaap-tenant-runtime-endpoint';
+import { QaapTenantUpdateEndpoint } from './qaap-tenant-update-endpoint';
 import { QaapTenantRuntimeMetrics } from './qaap-tenant-runtime-metrics';
 import { QaapTenantRuntimeStore } from './qaap-tenant-runtime-store';
 import { QaapTenantBackendProxyContribution } from './qaap-tenant-backend-proxy';
@@ -194,6 +195,8 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(BackendApplicationContribution).toService(QaapTenantContainerReaper);
     bind(QaapTenantRuntimeEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapTenantRuntimeEndpoint);
+    bind(QaapTenantUpdateEndpoint).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapTenantUpdateEndpoint);
     bind(QaapTenantPreviewRouteTable).toSelf().inSingletonScope();
     bind(QaapFrontendStaticManifest).toSelf().inSingletonScope();
     bind(QaapTenantBackendProxyContribution).toSelf().inSingletonScope();
