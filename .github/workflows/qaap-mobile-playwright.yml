@@ -95,3 +95,14 @@ jobs:
             examples/playwright/playwright-report/
             examples/playwright/mock-qaiq-logs/
           retention-days: 7
+
+      # Update-now chip screenshots (examples/playwright/src/tests/qaap-tenant-update-now.ui-spec.ts) are
+      # kept outside test-results/, so they are uploaded on every run, passing or failing.
+      - name: Upload update-now screenshots
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: ${{ always() }}
+        with:
+          name: qaap-tenant-update-now-screenshots
+          path: examples/playwright/update-now-screenshots/
+          if-no-files-found: ignore
+          retention-days: 7
