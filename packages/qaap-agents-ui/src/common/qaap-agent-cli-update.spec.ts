@@ -6,15 +6,31 @@
 import { expect } from 'chai';
 import {
     compareSemver,
+    isAgentCliUpdateSnoozed,
     isVersionOutdated,
     parseCliVersion,
     pickNextAgentUpdateToShow,
+    QAAP_AGENT_CLI_UPDATE_DISMISS_KEY,
+    QAAP_AGENT_CLI_UPDATE_SNOOZE_MS,
     readAgentCliUpdateDismissMap,
+    readAgentCliUpdateState,
     rememberAgentCliUpdateDismiss,
     requestAgentCliUpdate,
     shouldShowAgentUpdateNotification,
+    snoozeAgentCliUpdates,
     type QaapAgentCliUpdateInfo,
 } from './qaap-agent-cli-update';
+
+function createMemoryStorage(initial?: string): Pick<Storage, 'getItem' | 'setItem'> {
+    const store = new Map<string, string>();
+    if (initial !== undefined) {
+        store.set(QAAP_AGENT_CLI_UPDATE_DISMISS_KEY, initial);
+    }
+    return {
+        getItem: (key: string): string | null => store.get(key) ?? null,
+        setItem: (key: string, value: string): void => { store.set(key, value); },
+    };
+}
 
 describe('qaap-agent-cli-update', () => {
     describe('parseCliVersion', () => {
@@ -99,6 +115,50 @@ describe('qaap-agent-cli-update', () => {
             };
             rememberAgentCliUpdateDismiss('codex', '0.145.0', storage);
             expect(readAgentCliUpdateDismissMap(storage)).to.deep.equal({ codex: '0.145.0' });
+        });
+    });
+
+    describe('snoozeAgentCliUpdates / isAgentCliUpdateSnoozed', () => {
+        const now = 1_800_000_000_000;
+        const day = 24 * 60 * 60 * 1000;
+
+        it('dismisses every pending update and snoozes for seven days', () => {
+            const storage = createMemoryStorage();
+            snoozeAgentCliUpdates([
+                { id: 'codex', latestVersion: '0.145.0', updateAvailable: true },
+                { id: 'claude', latestVersion: '1.0.1', updateAvailable: true },
+                { id: 'qaiq', latestVersion: '2.0.0', updateAvailable: false },
+            ], now, storage);
+
+            expect(readAgentCliUpdateDismissMap(storage)).to.deep.equal({ codex: '0.145.0', claude: '1.0.1' });
+            expect(readAgentCliUpdateState(storage).snoozedUntil).to.equal(now + QAAP_AGENT_CLI_UPDATE_SNOOZE_MS);
+            expect(QAAP_AGENT_CLI_UPDATE_SNOOZE_MS).to.equal(7 * day);
+            expect(isAgentCliUpdateSnoozed(now + 6 * day, storage)).to.equal(true);
+            expect(isAgentCliUpdateSnoozed(now + 7 * day, storage)).to.equal(false);
+        });
+
+        it('keeps the snooze when a single dismiss is recorded afterwards', () => {
+            const storage = createMemoryStorage();
+            snoozeAgentCliUpdates([{ id: 'codex', latestVersion: '0.145.0', updateAvailable: true }], now, storage);
+            rememberAgentCliUpdateDismiss('claude', '1.0.1', storage);
+
+            expect(readAgentCliUpdateState(storage)).to.deep.equal({
+                dismissed: { codex: '0.145.0', claude: '1.0.1' },
+                snoozedUntil: now + QAAP_AGENT_CLI_UPDATE_SNOOZE_MS,
+            });
+        });
+
+        it('reads the legacy flat dismiss map without a snooze', () => {
+            const storage = createMemoryStorage(JSON.stringify({ codex: '0.145.0', bogus: 3 }));
+
+            expect(readAgentCliUpdateState(storage)).to.deep.equal({ dismissed: { codex: '0.145.0' } });
+            expect(isAgentCliUpdateSnoozed(now, storage)).to.equal(false);
+        });
+
+        it('treats corrupt or ignored stored values as no snooze', () => {
+            expect(isAgentCliUpdateSnoozed(now, createMemoryStorage('not json'))).to.equal(false);
+            expect(readAgentCliUpdateState(createMemoryStorage('not json'))).to.deep.equal({ dismissed: {} });
+            expect(isAgentCliUpdateSnoozed(now, createMemoryStorage(JSON.stringify({ dismissed: {}, snoozedUntil: 'soon' })))).to.equal(false);
         });
     });
 

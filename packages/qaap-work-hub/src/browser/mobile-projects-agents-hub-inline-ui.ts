@@ -18,6 +18,7 @@ import {
 import { appendOptimisticPendingUserMessage } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-sse-delta';
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import type { QaapTranscriptUserImagePreview } from '@theia/qaap-shared-core/lib/common/qaap-transcript-user-image-preview';
+import { truncateTitleAtWordBoundary } from '@theia/qaap-shared-core/lib/common/qaap-title-truncate';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import type { MobileProjectsTranscriptUi } from '@theia/qaap-transcript-overlay/lib/browser/mobile-projects-transcript-ui';
@@ -500,7 +501,9 @@ export class MobileProjectsAgentsHubInlineUi {
             id: summary.id,
             cwd: summary.cwd,
             agentId: agentId ?? summary.agentId,
-            title: trimmed.slice(0, 120) || summary.title,
+            // Same whitespace collapse and word-boundary cut family as the server title, so the optimistic
+            // title does not visibly change once the server one arrives.
+            title: truncateTitleAtWordBoundary(trimmed, 120) || summary.title,
             status: 'streaming',
             createdAt: summary.createdAt ?? Date.now(),
             updatedAt: Date.now(),
