@@ -132,6 +132,20 @@ export const QAAP_SIGN_IN_GUARD_REFUSAL_PATTERNS: readonly RegExp[] = [
     /^\s*couldn['\u2019]t\s+confirm\s+your\s+sign-in\s+to\s+[^\n;]{1,80};\s+try\s+again\.\s*$/im,
 ];
 
+/**
+ * The guard refusal line inside a failure text, with whether the refusal can be retried ("Couldn't confirm your
+ * sign-in" is a probe that failed to answer, not a missing sign-in). `undefined` when no line is a guard refusal.
+ */
+export function matchQaapSignInGuardRefusal(output: string | undefined): { readonly message: string; readonly retryable: boolean } | undefined {
+    for (const line of (output ?? '').split('\n')) {
+        const trimmed = line.trim();
+        if (QAAP_SIGN_IN_GUARD_REFUSAL_PATTERNS.some(pattern => pattern.test(trimmed))) {
+            return { message: trimmed, retryable: /^couldn['\u2019]t\s+confirm/i.test(trimmed) };
+        }
+    }
+    return undefined;
+}
+
 const SESSION_AUTH_PATTERNS: readonly RegExp[] = [
     ...QAAP_SIGN_IN_GUARD_REFUSAL_PATTERNS,
     /\bnot\s+logged\s+in\b/i,
