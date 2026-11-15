@@ -14,6 +14,7 @@ import {
 import { resolveCodexAgentHome } from './qaap-agent-native-models';
 import { IDLE_TASK_TIMEOUT_MS, QAAP_AGENT_VERIFY_ENABLED, QUEUED_APPROVAL_GRACE_TIMEOUT_MS, USER_REQUEST_MAX_CHARS } from './qaap-agent-task-runner-constants';
 import { QaapQaiqProviderKeyMissingError } from './qaap-qaiq-provider-preflight';
+import { QaapAgentSignInRequiredError } from './qaap-agent-sign-in-preflight';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { awaitQaapAgentTaskSpawnGate } from './qaap-agent-task-spawn-gate';
 import { finishTaskWithPauseCause, logCancelExitExtracted, releaseStoppingTaskSlotOnExitExtracted } from './qaap-agent-task-runner-streaming2';
@@ -465,6 +466,12 @@ async function spawnProcessWhenReadyStepsExtracted(ctx: QaapAgentTaskRunnerConte
                 task = { ...task, conversationalTurn: true };
                 ctx.tasks.set(task.id, task);
             }
+            // A Pro model needs a confirmed sign-in: give a pending probe its budget before the guard decides.
+            progress.stage = 'sign-in-check';
+            const signInAgentId = ctx.normalizeAgentId(request.agent);
+            if (signInAgentId) {
+                await ctx.awaitAgentSessionSettled(signInAgentId, task.ownerLogin);
+            }
             progress.stage = 'agent-command';
             try {
                 ctx.recordTaskLatencyMark(task.id, 'build_agent_command_start');
@@ -518,6 +525,13 @@ async function spawnProcessWhenReadyStepsExtracted(ctx: QaapAgentTaskRunnerConte
                 const message = error instanceof Error ? error.message : String(error);
                 fs.mkdirSync(path.dirname(ctx.logPath(task.id)), { recursive: true });
                 fs.writeFileSync(ctx.logPath(task.id), `${message}\n`, 'utf8');
+                if (error instanceof QaapAgentSignInRequiredError) {
+                    // Refused before spawn for a sign-in: another model of the same agent cannot fix it either.
+                    const current = ctx.tasks.get(task.id);
+                    if (current) {
+                        ctx.tasks.set(task.id, { ...current, preflightFailure: 'sign_in_required' });
+                    }
+                }
                 if (error instanceof QaapQaiqProviderKeyMissingError) {
                     // Refused before spawn for a missing key: no other model of this agent can fix it.
                     const current = ctx.tasks.get(task.id);

@@ -87,7 +87,7 @@ export interface QaapAgentTask {
      * routes to has no API key for the owner. Nothing a retry on another model of the same agent
      * could fix: model fallback must not re-spawn it.
      */
-    readonly preflightFailure?: 'provider_key_missing';
+    readonly preflightFailure?: 'provider_key_missing' | 'sign_in_required';
     /**
      * Set when an orchestrator (a workflow run) owns the adversarial review for this turn, so the
      * runner must not also run its own. Without it a workflow-driven turn is reviewed twice — once

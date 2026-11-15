@@ -11,6 +11,7 @@ import * as sinon from 'sinon';
 import type { QaapCreateAgentTaskRequest } from '../common/qaap-agent-task';
 import type { QaapAgentTask, QaapAgentTaskState } from '../common/qaap-agent-task';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
+import { QaapAgentSignInRequiredError } from './qaap-agent-sign-in-preflight';
 import { spawnProcessWhenReadyExtracted } from './qaap-agent-task-runner-timeline2';
 
 const TASK_ID = 'task-start-failure-1';
@@ -64,6 +65,8 @@ function createStartHarness(cwd: string, overrides: Partial<Record<string, unkno
         stripLeadingAgentMention: (text: string) => text,
         recordTaskLatencyMark: (_id: string, mark: string) => { marks.push(mark); },
         resolveAgentModelForRequest: () => undefined,
+        normalizeAgentId: (token: string | undefined) => token?.trim().toLowerCase() || undefined,
+        awaitAgentSessionSettled: () => Promise.resolve(),
         buildAgentCommand: () => ({ command: 'qaiq run', agentId: 'qaiq' }),
         spawnProcess,
         ...overrides,
@@ -119,6 +122,21 @@ describe('spawnProcessWhenReadyExtracted (start failures before the first mark)'
 
         expect(harness.tasks.get(TASK_ID)?.state).to.equal('cancelled');
         expect(fs.existsSync(harness.logPath)).to.equal(false);
+    });
+
+    it('refuses a Pro model whose harness is signed out: failed with the sign-in message, no spawn, marked sign_in_required', async () => {
+        const refusal = new QaapAgentSignInRequiredError('Sign in to Codex to use gpt-5.5.', 'sign-in-required');
+        const harness = createStartHarness(cwd, {
+            preferenceService: { ready: Promise.resolve() },
+            taskStartStepTimeoutMs: 1000,
+            buildAgentCommand: () => { throw refusal; },
+        });
+        await spawnProcessWhenReadyExtracted(harness.ctx, harness.task, harness.request);
+
+        expect(harness.spawnProcess.called).to.equal(false);
+        expect(harness.tasks.get(TASK_ID)?.state).to.equal('failed');
+        expect(harness.tasks.get(TASK_ID)?.preflightFailure).to.equal('sign_in_required');
+        expect(fs.readFileSync(harness.logPath, 'utf8')).to.contain('Sign in to Codex to use gpt-5.5.');
     });
 
     it('a normal start passes every pre-spawn step, reaches the agent command and leaves the task running', async () => {

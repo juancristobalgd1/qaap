@@ -108,6 +108,7 @@ import {
     stripSignInOnlyAgentApiKeyEnv,
 } from './qaap-agent-task-runner-utils3';
 import { QaapHarnessModelAvailability } from '@theia/qaap-shared-core/lib/common/qaap-harness-model-availability';
+import { assertAgentModelAccessExtracted } from './qaap-agent-sign-in-preflight';
 import { countRunningTasksExtracted, defaultAgentExtracted, defaultAgentFreshExtracted, detailExtracted, detectAgentsExtracted, detectAntigravityAgentExtracted, detectCodexAgentExtracted, detectCursorAgentExtracted, detectQaiqAgentExtracted, drainQueuedTasksExtracted, ensureHelperCliExtracted, helperTokenForOwnerExtracted, initExtracted, listAllGroupedByCwdExtracted, listForCwdExtracted, listModelsForAgentExtracted, listQaiqModelsExtracted, loadHelperTokensExtracted, logDetectedAgentsExtracted, normalizeAgentIdExtracted, ownerAtConcurrencyCapExtracted, persistHelperTokensExtracted, repoAtConcurrencyCapExtracted, readCustomAgentsExtracted, reorderQueuedTaskExtracted, resolveAntigravityBinExtracted, resolveCursorAgentBinExtracted, resolveHelperTokenOwnerExtracted, resolveQaiqBinExtracted, resolveTaskAgentIdExtracted, restoreFromDiskExtracted, restorePersistedIndexExtracted, runningTaskCountForOwnerExtracted, runningTaskCountForRepoExtracted, warmForCwdExtracted } from './qaap-agent-task-runner-render2';
 import { assertQaiqConfiguredExtracted, checkQaiqProviderCredentialForOwner as checkQaiqProviderCredentialForOwnerExtracted, buildAgentCommandExtracted, buildRepoMapExtracted, buildTemplateVarsExtracted, cancelExtracted, type QaapAgentTaskCancelOptions, type QaapAgentTaskPauseCause, createExtracted, deleteForCwdExtracted, deleteTaskExtracted, extractLastAgentMentionExtracted, extractLastAgentMentionTokenExtracted, nativeModelRoutingTableExtracted, normalizeAgentBindingExtracted, previewProviderEnvExtracted, readAgentInstructionsExtracted, readProjectInfoExtracted, readRepoMapExtracted, resolveAgentBindingForTaskExtracted, resolveAgentIdExtracted, resolveAgentModelForRequestExtracted, resolveQaapQaiqBindingExtracted, resolveQaiqProviderFlagsExtracted, retryExtracted, resumeExtracted, stripLeadingAgentMentionExtracted } from './qaap-agent-task-runner-streaming2';
 import { acquireVerificationPassExtracted, clearQueuedApprovalTimerExtracted, clearQueuedApprovalTimersExtracted, findPendingControlRequestEntryExtracted, getApprovalChannelExtracted, killAgentProcessTreeExtracted, maxConcurrentVerificationPassesExtracted, respondToApprovalPromptExtracted, scheduleQueuedApprovalTimeoutExtracted, spawnProcessExtracted, spawnProcessWhenReadyExtracted } from './qaap-agent-task-runner-timeline2';
@@ -1256,6 +1257,29 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public assertQaiqConfigured(agentId: string, ownerLogin?: string, agentModel?: QaapCreateAgentTaskQaiqModel): void {
         assertQaiqConfiguredExtracted(this, agentId, ownerLogin, agentModel);
+    }
+
+    public assertAgentModelAccess(agentId: string, ownerLogin?: string, agentModel?: QaapCreateAgentTaskQaiqModel): void {
+        assertAgentModelAccessExtracted(this, agentId, ownerLogin, agentModel);
+    }
+
+    /**
+     * Gives the harness's in-flight sign-in probe up to `budgetMs` to answer, so a fresh start does not
+     * refuse a signed-in Pro model as `checking`. Never rejects, and returns at once when nothing is in flight.
+     */
+    public async awaitAgentSessionSettled(agentId: string, ownerLogin?: string, budgetMs = 10_000): Promise<void> {
+        const probe = this.refreshAgentConnectionState(agentId.trim().toLowerCase(), ownerLogin);
+        if (!probe) {
+            return;
+        }
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        await Promise.race([
+            probe.then(() => undefined, () => undefined),
+            new Promise<void>(resolve => {
+                timer = setTimeout(resolve, budgetMs);
+            }),
+        ]);
+        clearTimeout(timer);
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */

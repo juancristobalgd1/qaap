@@ -706,6 +706,7 @@ export async function improveComposerPromptExtracted(ctx: QaapAgentTaskRunnerCon
             ? options.agentModel
             : undefined;
         ctx.assertQaiqConfigured(agentId, options.ownerLogin, agentModel);
+        ctx.assertAgentModelAccess(agentId, options.ownerLogin, agentModel);
         const detected = ctx.detectedAgents.get(agentId);
         if (!detected) {
             throw new Error(`Agent "${agentId}" is not available for prompt improvement.`);
@@ -808,6 +809,7 @@ export async function runReadOnlyOneShotPromptExtracted(ctx: QaapAgentTaskRunner
             ...(options.taskKind ? { taskKind: options.taskKind } : {}),
         }, prompt, options.ownerLogin);
         ctx.assertQaiqConfigured(agentId, options.ownerLogin, agentModel);
+        ctx.assertAgentModelAccess(agentId, options.ownerLogin, agentModel);
         const vars = ctx.buildTemplateVars(agentId, agentModel, {
             autoApprove: true,
             approvalPolicyId: 'approve-for-me',

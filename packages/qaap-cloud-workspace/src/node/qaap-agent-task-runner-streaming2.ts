@@ -429,6 +429,7 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
             ? `[Qaap interaction-mode system instruction]\n${modeInstruction}\n\n---\n\n${promptWithTaskContext}`
             : promptWithTaskContext;
         ctx.assertQaiqConfigured(id, ownerLogin, agentModel);
+        ctx.assertAgentModelAccess(id, ownerLogin, agentModel);
         const detected = ctx.detectedAgents.get(id);
         let command: string;
         const effortFlags = formatEffortFlagsForAgent(id, agentModel?.modelId, effort);
