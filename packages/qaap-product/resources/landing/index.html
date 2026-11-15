@@ -237,6 +237,7 @@ html, body { overflow-x: clip; }
 .rails > .hero + .band { border-top: 0; }
 .hero { position: relative; isolation: isolate; }
 .hero-satin { image-rendering: pixelated; }
+.hero-shader { position: absolute; top: 0; left: 50%; z-index: -4; width: 100vw; margin-left: -50vw; height: 1100px; pointer-events: none; -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 14%, #000 70%, transparent 100%); mask-image: linear-gradient(to bottom, transparent 0, #000 14%, #000 70%, transparent 100%); }
 .hero-satin, .hero-glitch {
     position: absolute;
     top: 0;
@@ -906,6 +907,7 @@ footer { border-top: 1px solid var(--line); }
 <main>
 <div class="frame rails">
     <section class="hero">
+        <canvas class="hero-shader" aria-hidden="true"></canvas>
         <canvas class="hero-satin" aria-hidden="true"></canvas>
         <canvas class="hero-glitch" aria-hidden="true"></canvas>
         <h1>The pocket workspace for AI coding agents</h1>
@@ -1953,6 +1955,84 @@ footer { border-top: 1px solid var(--line); }
 })();
 </script>
 <script>
+/* Hero bottom layer: "Waves" flow shader (21st.dev Shader Builder), plain WebGL1, fullscreen triangle. */
+(function () {
+    var canvas = document.querySelector('.hero-shader');
+    if (!canvas) { return; }
+    var gl = canvas.getContext('webgl', { antialias: false, premultipliedAlpha: false });
+    if (!gl) { canvas.remove(); return; }
+    var hero = canvas.parentElement;
+    var FRAG = "#ifdef GL_FRAGMENT_PRECISION_HIGH\nprecision highp float;\n#else\nprecision mediump float;\n#endif\nuniform vec3 u_colors[8];\nuniform vec4 u_scene;\nuniform vec4 u_shape;\nuniform vec4 u_surface;\nuniform vec4 u_finish;\nuniform vec4 u_transform;\nuniform vec4 u_space;\nuniform vec4 u_cursor;\n#define u_resolution u_scene.xy\n#define u_time u_scene.z\n#define u_colorCount u_scene.w\n#define u_scale u_shape.x\n#define u_intensity u_shape.y\n#define u_paramA u_shape.z\n#define u_warp u_shape.w\n#define u_detail u_surface.x\n#define u_contrast u_surface.y\n#define u_brightness u_surface.z\n#define u_saturation u_surface.w\n#define u_hue u_finish.x\n#define u_vignette u_finish.y\n#define u_blur u_finish.z\n#define u_grain u_finish.w\n#ifdef GL_FRAGMENT_PRECISION_HIGH\n#define u_seed u_transform.x\n#else\n#define u_seed mod(u_transform.x, 31.0)\n#endif\n#define u_rotate u_transform.y\n#define u_drift u_transform.z\n#define u_oklab u_transform.w\n#define u_offset u_space.xy\n#define u_mouse u_space.zw\n#define u_cursorPresence u_cursor.x\n#define u_cursorEffect u_cursor.y\n#define u_cursorStrength u_cursor.z\n#define u_cursorRadius u_cursor.w\nfloat hash21(vec2 p) {\n#ifndef GL_FRAGMENT_PRECISION_HIGH\n  p = mod(p, 31.0);\n#endif\n  p = fract(p * vec2(234.34, 435.345));\n  p += dot(p, p + 34.23);\n  return fract(p.x * p.y);\n}\nfloat grainHash(vec2 p) {\n  vec3 p3 = fract(vec3(p.xyx) * 0.1031);\n  p3 += dot(p3, p3.yzx + 33.33);\n  return fract((p3.x + p3.y) * p3.z);\n}\nfloat noise(vec2 p) {\n  vec2 i = floor(p);\n  vec2 f = fract(p);\n  vec2 u = f * f * (3.0 - 2.0 * f);\n  return mix(mix(hash21(i), hash21(i + vec2(1.0, 0.0)), u.x), mix(hash21(i + vec2(0.0, 1.0)), hash21(i + vec2(1.0, 1.0)), u.x), u.y);\n}\nfloat fbm(vec2 p) {\n  float v = 0.0;\n  float a = 0.5;\n  for (int i = 0; i < 5; i++) {\n    v += a * noise(p);\n    p = p * 2.03 + vec2(17.0, 9.2);\n    a *= 0.5;\n  }\n  return v;\n}\nvec3 palette(float x) {\n  float n = max(u_colorCount - 1.0, 1.0);\n  float f = clamp(x, 0.0, 1.0) * n;\n  vec3 col = u_colors[0];\n  for (int i = 0; i < 7; i++) {\n    if (float(i) < n) col = mix(col, u_colors[i + 1], smoothstep(0.0, 1.0, clamp(f - float(i), 0.0, 1.0)));\n  }\n  return col;\n}\nvec3 shade(vec2 uv, vec2 p, float t) {\n  float y = uv.y + sin(uv.x * (3.0 + u_intensity * 9.0) + t * 0.8) * 0.08 + (fbm(p * 2.0 + t * 0.1) - 0.5) * u_intensity * 0.6;\n  return palette(y);\n}\nvoid main() {\n  vec2 uv = gl_FragCoord.xy / u_resolution.xy;\n  vec2 screenUv = uv;\n  vec2 p = (gl_FragCoord.xy - 0.5 * u_resolution.xy) / min(u_resolution.x, u_resolution.y);\n  uv = p * min(u_resolution.x, u_resolution.y) / u_resolution.xy + 0.5;\n  p *= u_scale;\n  if (abs(u_rotate) > 0.0001) {\n    float cr = cos(u_rotate), sr = sin(u_rotate);\n    p = mat2(cr, -sr, sr, cr) * p;\n  }\n  p += u_offset;\n  if (u_drift > 0.0001) p += u_drift * vec2(sin(u_time * 0.31), cos(u_time * 0.23));\n  if (u_warp > 0.0) p += u_warp * (vec2(fbm(p * u_detail + u_seed), fbm(p * u_detail + vec2(5.2, 1.3))) - 0.5);\n  vec3 col;\n  if (u_blur > 0.0) {\n    float e = u_blur;\n    float pe = e * u_scale;\n    vec2 uvE = vec2(e) * min(u_resolution.x, u_resolution.y) / u_resolution.xy;\n    col = shade(uv, p, u_time) * 0.36;\n    col += shade(uv + vec2(uvE.x, 0.0), p + vec2(pe, 0.0), u_time) * 0.16;\n    col += shade(uv - vec2(uvE.x, 0.0), p - vec2(pe, 0.0), u_time) * 0.16;\n    col += shade(uv + vec2(0.0, uvE.y), p + vec2(0.0, pe), u_time) * 0.16;\n    col += shade(uv - vec2(0.0, uvE.y), p - vec2(0.0, pe), u_time) * 0.16;\n  } else {\n    col = shade(uv, p, u_time);\n  }\n  if (abs(u_contrast - 1.0) > 0.0001) col = (col - 0.5) * u_contrast + 0.5;\n  if (abs(u_saturation - 1.0) > 0.0001) {\n    float luma = dot(col, vec3(0.299, 0.587, 0.114));\n    col = mix(vec3(luma), col, u_saturation);\n  }\n  if (abs(u_brightness) > 0.0001) col += u_brightness;\n  if (u_vignette > 0.0001) {\n    float vd = length(screenUv - 0.5) * 1.41421356;\n    col *= 1.0 - u_vignette * smoothstep(0.35, 1.0, vd);\n  }\n  if (u_grain > 0.0001) col += (grainHash(gl_FragCoord.xy + vec2(u_seed * 17.0, u_seed * 31.0)) - 0.5) * u_grain;\n  gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);\n}\n";
+    var VERT = 'attribute vec2 a_pos; void main() { gl_Position = vec4(a_pos, 0.0, 1.0); }';
+    var compile = function (type, src) {
+        var s = gl.createShader(type);
+        gl.shaderSource(s, src);
+        gl.compileShader(s);
+        if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) { console.warn('[qaap] waves shader', gl.getShaderInfoLog(s)); return undefined; }
+        return s;
+    };
+    var vs = compile(gl.VERTEX_SHADER, VERT);
+    var fs = compile(gl.FRAGMENT_SHADER, FRAG);
+    if (!vs || !fs) { canvas.remove(); return; }
+    var prog = gl.createProgram();
+    gl.attachShader(prog, vs);
+    gl.attachShader(prog, fs);
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) { canvas.remove(); return; }
+    gl.useProgram(prog);
+    var buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+    var loc = gl.getAttribLocation(prog, 'a_pos');
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    var u = function (n) { return gl.getUniformLocation(prog, n); };
+    gl.uniform3fv(u('u_colors'), new Float32Array([0.012, 0.110, 0.149, 0.106, 0.424, 0.659, 0.353, 0.824, 0.957, 0.918, 0.976, 1.000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]));
+    gl.uniform4f(u('u_shape'), 2.00, 0.54, 0.47, 0.04);
+    gl.uniform4f(u('u_surface'), 1.54, 1.16, 0.00, 1.00);
+    gl.uniform4f(u('u_finish'), 0.00, 0.21, 0.002, 0.10);
+    gl.uniform4f(u('u_transform'), 4012.0, 5.65, 0.12, 0.0);
+    gl.uniform4f(u('u_space'), 0.11, -0.19, 0, 0);
+    gl.uniform4f(u('u_cursor'), 0, 2.0, 0.65, 0.46);
+    var uScene = u('u_scene');
+    var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    var start = performance.now();
+    var frameId = 0;
+    var visible = true;
+    var resize = function () {
+        var top = hero.getBoundingClientRect().top;
+        var stage = hero.querySelector('.stage');
+        if (stage) { canvas.style.height = Math.round(stage.getBoundingClientRect().top - top + 60) + 'px'; }
+        var dpr = Math.min(2, window.devicePixelRatio || 1);
+        canvas.width = Math.round(canvas.clientWidth * dpr);
+        canvas.height = Math.round(canvas.clientHeight * dpr);
+        gl.viewport(0, 0, canvas.width, canvas.height);
+    };
+    var draw = function (now) {
+        gl.uniform4f(uScene, canvas.width, canvas.height, (now - start) / 1000 * -0.73, 4.0);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+    };
+    var loop = function (now) {
+        frameId = 0;
+        if (!visible || document.hidden) { return; }
+        draw(now);
+        frameId = requestAnimationFrame(loop);
+    };
+    var kick = function () {
+        if (reduceMotion.matches) { draw(start + 4000); return; }
+        if (!frameId) { frameId = requestAnimationFrame(loop); }
+    };
+    window.addEventListener('resize', function () { resize(); kick(); });
+    if ('ResizeObserver' in window) { new ResizeObserver(function () { resize(); kick(); }).observe(hero.querySelector('.hero-ctas') || hero); }
+    document.addEventListener('visibilitychange', kick);
+    if ('IntersectionObserver' in window) {
+        new IntersectionObserver(function (entries) { visible = entries[0].isIntersecting; kick(); }).observe(canvas);
+    }
+    resize();
+    kick();
+})();
+</script>
+<script>
 /* Hero background: satin ridges — silky folds with a moving sheen (rendered at low res, upscaled smooth). */
 (function () {
     var canvas = document.querySelector('.hero-satin');
@@ -2035,6 +2115,9 @@ footer { border-top: 1px solid var(--line); }
                 var level = Math.floor(lum * 3.6 + BAYER[(y & 7) * 8 + (x & 7)] / 64 - 0.45);
                 if (level <= 0) {
                     d[p] = BG[0]; d[p + 1] = BG[1]; d[p + 2] = BG[2];
+                    d[p + 3] = 0;
+                    p += 4;
+                    continue;
                 } else {
                     var col = COLORS[Math.min(2, level - 1)];
                     d[p] = col[0]; d[p + 1] = col[1]; d[p + 2] = col[2];
