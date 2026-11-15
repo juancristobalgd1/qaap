@@ -744,7 +744,8 @@ export class MobileOpenRepositoryDialog {
                 openExternal: url => this.service.windowService.openNewWindow(url, { external: true }),
                 onSignedIn: () => void this.onGithubSignedIn(),
             });
-            this.node.append(this.signInDialog.node);
+            // An overlay of its own: the repository dialog itself has no size, so a child would be clipped.
+            document.body.append(this.signInDialog.node);
         }
         void this.signInDialog.open();
     }
