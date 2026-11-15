@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { QAAP_TENANT_UPDATE_PATH, QaapTenantUpdateClient } from './qaap-tenant-update-client';
+import { QAAP_TENANT_RUNTIME_STATUS_PATH, QAAP_TENANT_UPDATE_PATH, QaapTenantUpdateClient } from './qaap-tenant-update-client';
 
 interface RecordedFetch {
     readonly url: string;
@@ -27,31 +27,51 @@ function stubFetch(status: number, body: unknown): { calls: RecordedFetch[]; res
 
 describe('QaapTenantUpdateClient', () => {
 
-    describe('parseStatus', () => {
+    describe('parseUpdate', () => {
 
-        it('keeps a valid answer as it is', () => {
-            expect(QaapTenantUpdateClient.parseStatus({ updateAvailable: true, runningTasks: 2 }))
-                .to.deep.equal({ updateAvailable: true, runningTasks: 2 });
+        it('keeps a valid pending update, its builds and its running turns', () => {
+            expect(QaapTenantUpdateClient.parseUpdate({
+                backendBuild: 'old5678',
+                controlPlaneBuild: 'abc1234',
+                updatePending: true,
+                reason: 'agent-turns-running',
+                runningTasks: 2,
+            })).to.deep.equal({
+                backendBuild: 'old5678',
+                controlPlaneBuild: 'abc1234',
+                updatePending: true,
+                reason: 'agent-turns-running',
+                runningTasks: 2,
+            });
         });
 
-        it('treats anything but an explicit true as no update, and bad counts as zero turns', () => {
-            expect(QaapTenantUpdateClient.parseStatus({ updateAvailable: 'yes', runningTasks: -4 }))
-                .to.deep.equal({ updateAvailable: false, runningTasks: 0 });
-            expect(QaapTenantUpdateClient.parseStatus({ runningTasks: Number.NaN }))
-                .to.deep.equal({ updateAvailable: false, runningTasks: 0 });
-            expect(QaapTenantUpdateClient.parseStatus(undefined))
-                .to.deep.equal({ updateAvailable: false, runningTasks: 0 });
+        it('treats anything but an explicit true as nothing pending, and bad counts as zero turns', () => {
+            expect(QaapTenantUpdateClient.parseUpdate({ updatePending: 'yes', runningTasks: -4 }))
+                .to.deep.equal({ updatePending: false, runningTasks: 0 });
+            expect(QaapTenantUpdateClient.parseUpdate({ updatePending: true, runningTasks: Number.NaN }))
+                .to.deep.equal({ updatePending: true, runningTasks: 0 });
+            expect(QaapTenantUpdateClient.parseUpdate(undefined))
+                .to.deep.equal({ updatePending: false, runningTasks: 0 });
         });
     });
 
-    it('reads the status from the control-plane route with the session cookie', async () => {
-        const stub = stubFetch(200, { updateAvailable: true, runningTasks: 1 });
+    it('reads the update field of the runtime status with the session cookie', async () => {
+        const stub = stubFetch(200, { runtime: {}, update: { updatePending: true, runningTasks: 1 } });
         try {
-            const status = await new QaapTenantUpdateClient().fetchStatus();
-            expect(status).to.deep.equal({ updateAvailable: true, runningTasks: 1 });
+            const update = await new QaapTenantUpdateClient().fetchBackendUpdate();
+            expect(update).to.deep.equal({ updatePending: true, runningTasks: 1 });
             expect(stub.calls).to.have.length(1);
-            expect(stub.calls[0].url).to.equal(QAAP_TENANT_UPDATE_PATH);
+            expect(stub.calls[0].url).to.equal(QAAP_TENANT_RUNTIME_STATUS_PATH);
             expect(stub.calls[0].init?.credentials).to.equal('include');
+        } finally {
+            stub.restore();
+        }
+    });
+
+    it('reports no update when the status carries no update field', async () => {
+        const stub = stubFetch(200, { runtime: {} });
+        try {
+            expect(await new QaapTenantUpdateClient().fetchBackendUpdate()).to.equal(undefined);
         } finally {
             stub.restore();
         }
@@ -62,7 +82,7 @@ describe('QaapTenantUpdateClient', () => {
         try {
             let failed = false;
             try {
-                await new QaapTenantUpdateClient().fetchStatus();
+                await new QaapTenantUpdateClient().fetchBackendUpdate();
             } catch {
                 failed = true;
             }
@@ -72,10 +92,11 @@ describe('QaapTenantUpdateClient', () => {
         }
     });
 
-    it('posts the update as JSON and reports whether it was applied', async () => {
+    it('posts the update as JSON to the update route and reports whether it was applied', async () => {
         const stub = stubFetch(200, { applied: true });
         try {
             expect(await new QaapTenantUpdateClient().applyUpdate()).to.equal(true);
+            expect(stub.calls[0].url).to.equal(QAAP_TENANT_UPDATE_PATH);
             expect(stub.calls[0].init?.method).to.equal('POST');
             expect((stub.calls[0].init?.headers as Record<string, string>)['Content-Type']).to.equal('application/json');
         } finally {

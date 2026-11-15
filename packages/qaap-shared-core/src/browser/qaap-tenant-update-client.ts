@@ -3,30 +3,40 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { injectable } from '@theia/core/shared/inversify';
 import { qaapAuthenticatedFetchInit } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 
-/** Control-plane route of the "Update now" status (GET) and action (POST); see `QaapTenantUpdateEndpoint`. */
+/**
+ * Mirrors of `QAAP_TENANT_RUNTIME_API_PATH` and `QAAP_TENANT_UPDATE_API_PATH` (qaap-cloud-workspace). This
+ * layer sits below that package and cannot import the constants.
+ */
+export const QAAP_TENANT_RUNTIME_STATUS_PATH = '/qaap/api/cloud/runtime/status';
 export const QAAP_TENANT_UPDATE_PATH = '/qaap/api/tenant-update';
 
-/** What the control plane knows about the signed-in user's backend update. */
-export interface QaapTenantUpdateStatus {
-    /** A newer serving image waits; applying it recreates the user's backend. */
-    readonly updateAvailable: boolean;
-    /** Agent turns running in the user's backend right now. */
+/**
+ * The `update` field of the runtime status: the one source of "a newer Qaap build waits for the user's
+ * backend". `updatePending` is the only flag the UI acts on; `runningTasks` is set while it is pending.
+ */
+export interface QaapTenantBackendUpdate {
+    readonly backendBuild?: string;
+    readonly controlPlaneBuild?: string;
+    readonly updatePending: boolean;
+    /** Only `agent-turns-running`: the stale backend waits for the running turns to finish. */
+    readonly reason?: 'agent-turns-running';
+    /** Agent turns running in the backend now (0 when the backend cannot be asked). */
     readonly runningTasks: number;
 }
 
-/** Thin HTTP client for {@link QAAP_TENANT_UPDATE_PATH}. Errors reject; callers decide what to show. */
-@injectable()
+/** HTTP client for the runtime status (read) and the "Update now" action (`POST`). Errors reject. */
 export class QaapTenantUpdateClient {
 
-    async fetchStatus(): Promise<QaapTenantUpdateStatus> {
-        const response = await fetch(QAAP_TENANT_UPDATE_PATH, qaapAuthenticatedFetchInit());
+    /** `undefined` when the answer carries no `update` field (an older control plane). */
+    async fetchBackendUpdate(): Promise<QaapTenantBackendUpdate | undefined> {
+        const response = await fetch(QAAP_TENANT_RUNTIME_STATUS_PATH, qaapAuthenticatedFetchInit());
         if (!response.ok) {
-            throw new Error(`Tenant update status failed with HTTP ${response.status}.`);
+            throw new Error(`Runtime status failed with HTTP ${response.status}.`);
         }
-        return QaapTenantUpdateClient.parseStatus(await response.json());
+        const body = await response.json() as { update?: unknown };
+        return body.update ? QaapTenantUpdateClient.parseUpdate(body.update) : undefined;
     }
 
     /** Resolves `true` when the backend was recreated, `false` when there was nothing to apply. */
@@ -43,12 +53,18 @@ export class QaapTenantUpdateClient {
         return body.applied === true;
     }
 
-    /** Tolerates missing or mistyped fields: anything but an explicit `true` / positive count means "no update" / "0 turns". */
-    static parseStatus(body: unknown): QaapTenantUpdateStatus {
-        const record = (body && typeof body === 'object' ? body : {}) as { updateAvailable?: unknown; runningTasks?: unknown };
+    /** Tolerates missing or mistyped fields: only an explicit `true` means a pending update. */
+    static parseUpdate(value: unknown): QaapTenantBackendUpdate {
+        const record = (value && typeof value === 'object' ? value : {}) as Record<string, unknown>;
         const runningTasks = typeof record.runningTasks === 'number' && Number.isFinite(record.runningTasks) && record.runningTasks > 0
             ? Math.floor(record.runningTasks)
             : 0;
-        return { updateAvailable: record.updateAvailable === true, runningTasks };
+        return {
+            ...(typeof record.backendBuild === 'string' ? { backendBuild: record.backendBuild } : {}),
+            ...(typeof record.controlPlaneBuild === 'string' ? { controlPlaneBuild: record.controlPlaneBuild } : {}),
+            updatePending: record.updatePending === true,
+            ...(record.reason === 'agent-turns-running' ? { reason: 'agent-turns-running' as const } : {}),
+            runningTasks,
+        };
     }
 }
