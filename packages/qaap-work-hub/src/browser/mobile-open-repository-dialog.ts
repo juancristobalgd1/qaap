@@ -713,7 +713,7 @@ export class MobileOpenRepositoryDialog {
         if (!this.desktopSignOutButton) {
             const button = document.createElement('button');
             button.type = 'button';
-            button.className = 'theia-mobile-open-repo-signout theia-mod-secondary';
+            button.className = 'theia-mobile-open-repo-progress-action theia-mod-secondary theia-mobile-open-repo-signout';
             button.textContent = nls.localize('qaap/mobileOpenRepo/signOutGithub', 'Sign out of GitHub');
             button.addEventListener('click', () => void this.signOutOfGithub());
             this.desktopSignOutButton = button;
@@ -731,7 +731,7 @@ export class MobileOpenRepositoryDialog {
         text.textContent = nls.localize('qaap/githubDevice/importPrompt', 'Sign in with GitHub to import your repositories.');
         const button = document.createElement('button');
         button.type = 'button';
-        button.className = 'theia-mod-primary theia-mobile-github-device-button';
+        button.className = 'theia-mobile-open-repo-progress-action theia-mod-primary theia-mobile-github-device-button';
         button.textContent = nls.localize('qaap/githubDevice/signInButton', 'Sign in with GitHub');
         button.addEventListener('click', () => this.openGithubSignIn());
         this.emptyState.replaceChildren(text, button);

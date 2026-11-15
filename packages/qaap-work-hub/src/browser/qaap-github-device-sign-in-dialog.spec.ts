@@ -73,6 +73,7 @@ describe('QaapGithubDeviceSignInDialog', () => {
         expect(h.text()).to.include('ABCD-1234');
         expect(h.text()).to.include('Waiting for authorization');
         expect(h.button('Copy code').hidden).to.equal(false);
+        expect(h.dialog.node.querySelector<HTMLElement>('.theia-mobile-github-device-code-row')?.hidden).to.equal(false);
         h.button('Open GitHub').click();
         expect(h.opened).to.deep.equal(['https://github.com/login/device']);
         h.dialog.close();
@@ -120,6 +121,7 @@ describe('QaapGithubDeviceSignInDialog', () => {
         expect(h.text()).to.include('set QAAP_GITHUB_CLIENT_ID');
         expect(h.text()).to.not.include('Waiting for authorization');
         expect(h.button('Copy code').hidden).to.equal(true);
+        expect(h.dialog.node.querySelector<HTMLElement>('.theia-mobile-github-device-code-row')?.hidden).to.equal(true);
         h.dialog.close();
     });
 

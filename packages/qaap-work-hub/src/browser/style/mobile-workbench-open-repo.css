@@ -1122,11 +1122,15 @@ body.theia-mobile-mod-landing.theia-mobile-mod-landing-hub-list .theia-mobile-pr
     user-select: all;
 }
 
-.theia-mobile-github-device-button,
+.theia-mobile-github-device .theia-mobile-open-repo-progress-action,
 .theia-mobile-open-repo-signout {
-    min-height: 32px;
-    padding: 0 12px;
-    cursor: pointer;
+    /* Touch target on a phone width (44px), same button tokens as the repository dialog. */
+    min-height: 44px;
+    padding: 0 16px;
+}
+
+.theia-mobile-github-device .theia-mobile-open-repo-progress-action {
+    margin-top: 4px;
 }
 
 .theia-mobile-github-device-button[hidden],

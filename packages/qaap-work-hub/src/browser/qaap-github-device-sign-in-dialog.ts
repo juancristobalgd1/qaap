@@ -29,6 +29,7 @@ export class QaapGithubDeviceSignInDialog {
 
     readonly node: HTMLElement;
     protected readonly codeElement: HTMLElement;
+    protected readonly codeRow: HTMLElement;
     protected readonly statusElement: HTMLElement;
     protected readonly errorElement: HTMLElement;
     protected readonly copyButton: HTMLButtonElement;
@@ -64,6 +65,9 @@ export class QaapGithubDeviceSignInDialog {
         codeRow.className = 'theia-mobile-github-device-code-row';
         this.copyButton = this.createButton(nls.localize('qaap/githubDevice/copyCode', 'Copy code'), 'theia-mod-secondary', () => void this.copyCode());
         codeRow.append(this.codeElement, this.copyButton);
+        // Shown only once GitHub has issued a user code (never an empty box, also on errors).
+        this.codeRow = codeRow;
+        codeRow.hidden = true;
         this.statusElement = document.createElement('p');
         this.statusElement.className = 'theia-mobile-github-device-status';
         this.statusElement.setAttribute('role', 'status');
@@ -95,6 +99,7 @@ export class QaapGithubDeviceSignInDialog {
         this.retryButton.hidden = true;
         this.openButton.hidden = true;
         this.codeElement.textContent = '';
+        this.codeRow.hidden = true;
         this.copyButton.hidden = true;
         this.statusElement.textContent = nls.localize('qaap/githubDevice/starting', 'Contacting GitHub…');
         try {
@@ -105,6 +110,7 @@ export class QaapGithubDeviceSignInDialog {
             this.flowId = start.flowId;
             this.verificationUri = start.verificationUri;
             this.codeElement.textContent = start.userCode;
+            this.codeRow.hidden = false;
             this.copyButton.hidden = false;
             this.openButton.hidden = false;
             this.statusElement.textContent = nls.localize('qaap/githubDevice/waiting', 'Waiting for authorization…');
@@ -208,7 +214,8 @@ export class QaapGithubDeviceSignInDialog {
     protected createButton(label: string, modifier: string, onClick: () => void): HTMLButtonElement {
         const button = document.createElement('button');
         button.type = 'button';
-        button.className = `theia-mobile-github-device-button ${modifier}`;
+        // The repository dialog's button classes (same tokens, same look), plus a hook for this dialog.
+        button.className = `theia-mobile-open-repo-progress-action ${modifier} theia-mobile-github-device-button`;
         button.textContent = label;
         button.addEventListener('click', onClick);
         return button;
