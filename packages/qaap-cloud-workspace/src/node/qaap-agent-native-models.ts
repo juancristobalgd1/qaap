@@ -337,6 +337,33 @@ function parseClaudeInitializeLine(line: string): QaapQaiqModelOption[] | undefi
     return parseClaudeControlResponseModels(message);
 }
 
+/** How long a probe child may ignore SIGTERM before it is SIGKILLed. */
+const PROBE_CHILD_KILL_ESCALATION_MS = 2_000;
+
+/**
+ * Ends a one-shot probe child: closes its stdin, sends SIGTERM and, if it is still alive after
+ * {@link PROBE_CHILD_KILL_ESCALATION_MS}, SIGKILL. A CLI that ignores SIGTERM must not outlive the probe.
+ */
+function stopProbeChild(child: ChildProcess): void {
+    child.stdin?.end();
+    child.kill('SIGTERM');
+    if (child.exitCode !== null || child.signalCode !== null) {
+        return;
+    }
+    const escalation = setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null) {
+            child.kill('SIGKILL');
+        }
+    }, PROBE_CHILD_KILL_ESCALATION_MS);
+    // The escalation timer must never keep the backend alive on its own.
+    escalation.unref();
+    const clearEscalation = (): void => {
+        clearTimeout(escalation);
+    };
+    child.once('exit', clearEscalation);
+    child.once('close', clearEscalation);
+}
+
 /**
  * Sends one `initialize` control request over stream-json and reads the CLI's answer. stdin stays open
  * until the answer arrives, then the CLI is stopped; no user message is sent, so no model turn starts.
@@ -371,7 +398,7 @@ function askClaudeCliForModels(spawner: NativeModelDiscoverySpawner | undefined,
             }
             settled = true;
             clearTimeout(timer);
-            child.kill();
+            stopProbeChild(child);
             resolve(models);
         };
         timer = setTimeout(() => finish([]), timeoutMs);

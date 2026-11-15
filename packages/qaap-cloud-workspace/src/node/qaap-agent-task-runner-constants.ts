@@ -131,6 +131,12 @@ export function resolveAgentStopGraceTimeoutMs(rawValue = process.env.QAAP_AGENT
 
 export const AGENT_STOP_GRACE_TIMEOUT_MS = resolveAgentStopGraceTimeoutMs();
 /**
+ * Longest a stopped task keeps its concurrency slot after SIGKILL while its `exit` has not arrived.
+ * A child can be left as a zombie whose `exit` never fires; without this bound one lost event holds
+ * the repo's shared working tree and queue forever.
+ */
+export const AGENT_STOP_SLOT_RELEASE_TIMEOUT_MS = 10_000;
+/**
  * Auto-approve runs ("approve for me") queue gated shell/network tools to the approvals UI,
  * but must not hang forever if nobody is watching — deny after this grace period so the
  * agent can finish the turn with the tools it has.
