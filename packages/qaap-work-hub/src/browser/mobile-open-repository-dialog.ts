@@ -11,11 +11,20 @@ import { parseQaapGithubRepositoryInput } from '@theia/qaap-adapters/lib/common/
 import {
     fetchQaapBilling,
     fetchQaapProjectResources,
+    QaapApiRequestError,
     saveQaapProjectResources,
     syncQaapAuthSessionFromServer,
     type QaapBillingApiResponse,
 } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
+import { environment } from '@theia/core/lib/common';
+import { QAAP_GITHUB_SIGN_IN_REQUIRED_CODE } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
+import {
+    pollQaapGithubDeviceFlow,
+    signOutQaapGithubDesktop,
+    startQaapGithubDeviceFlow,
+} from '@theia/qaap-adapters/lib/browser/qaap-github-device-client';
+import { QaapGithubDeviceSignInDialog } from './qaap-github-device-sign-in-dialog';
 import { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import type { Disposable } from '@theia/core/lib/common/disposable';
@@ -113,6 +122,10 @@ export class MobileOpenRepositoryDialog {
     protected busy = false;
     protected repositories: MobileProjectEntry[] = [];
     protected loadError: string | undefined;
+    /** Code of the last list failure (desktop: `github_sign_in_required`), kept beside the message. */
+    protected loadErrorCode: string | undefined;
+    protected signInDialog: QaapGithubDeviceSignInDialog | undefined;
+    protected desktopSignOutButton: HTMLButtonElement | undefined;
     protected query = '';
     protected activeTab: 'repositories' | 'clone' = 'repositories';
     protected readonly onKeyDown = (ev: KeyboardEvent): void => {
@@ -674,7 +687,9 @@ export class MobileOpenRepositoryDialog {
     }
 
     protected renderConnectedStatus(): void {
-        const user = this.service.getConnectedUser();
+        // Desktop runs in local mode with a placeholder user (provider `gitlab`): only a GitHub user counts.
+        const connected = this.service.getConnectedUser();
+        const user = environment.electron.is() ? (connected?.provider === 'github' ? connected : undefined) : connected;
         this.statusRow.classList.toggle('theia-mod-signed-in', !!user);
         this.statusRow.classList.toggle('theia-mod-signed-out', !user);
         if (user) {
@@ -689,11 +704,67 @@ export class MobileOpenRepositoryDialog {
                 'Not signed in to GitHub. Public URLs still work.'
             );
         }
+        if (environment.electron.is()) {
+            this.renderDesktopSignOut(!!user);
+        }
+    }
+
+    protected renderDesktopSignOut(connected: boolean): void {
+        if (!this.desktopSignOutButton) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'theia-mobile-open-repo-signout theia-mod-secondary';
+            button.textContent = nls.localize('qaap/mobileOpenRepo/signOutGithub', 'Sign out of GitHub');
+            button.addEventListener('click', () => void this.signOutOfGithub());
+            this.desktopSignOutButton = button;
+        }
+        this.desktopSignOutButton.hidden = !connected;
+        if (connected && !this.desktopSignOutButton.isConnected) {
+            this.statusRow.append(this.desktopSignOutButton);
+        }
+    }
+
+    /** Desktop: the prompt that replaces "could not load" when GitHub is not signed in. */
+    protected renderDesktopSignInPrompt(): void {
+        const text = document.createElement('p');
+        text.className = 'theia-mobile-open-repo-signin-text';
+        text.textContent = nls.localize('qaap/githubDevice/importPrompt', 'Sign in with GitHub to import your repositories.');
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'theia-mod-primary theia-mobile-github-device-button';
+        button.textContent = nls.localize('qaap/githubDevice/signInButton', 'Sign in with GitHub');
+        button.addEventListener('click', () => this.openGithubSignIn());
+        this.emptyState.replaceChildren(text, button);
+    }
+
+    protected openGithubSignIn(): void {
+        if (!this.signInDialog) {
+            this.signInDialog = new QaapGithubDeviceSignInDialog({
+                api: { start: startQaapGithubDeviceFlow, poll: pollQaapGithubDeviceFlow },
+                openExternal: url => this.service.windowService.openNewWindow(url, { external: true }),
+                onSignedIn: () => void this.onGithubSignedIn(),
+            });
+            this.node.append(this.signInDialog.node);
+        }
+        void this.signInDialog.open();
+    }
+
+    protected async onGithubSignedIn(): Promise<void> {
+        await syncQaapAuthSessionFromServer().catch(() => false);
+        this.loadErrorCode = undefined;
+        this.loadError = undefined;
+        await this.reloadRepositories();
+    }
+
+    protected async signOutOfGithub(): Promise<void> {
+        await signOutQaapGithubDesktop().catch(() => undefined);
+        await this.reloadRepositories();
     }
 
     protected async reloadRepositories(): Promise<void> {
         this.loading = true;
         this.loadError = undefined;
+        this.loadErrorCode = undefined;
         this.list.classList.add('theia-mod-loading');
         this.renderConnectedStatus();
         this.renderList();
@@ -706,6 +777,7 @@ export class MobileOpenRepositoryDialog {
             this.repositories = await this.service.listGithubRepositories();
         } catch (err) {
             this.repositories = [];
+            this.loadErrorCode = err instanceof QaapApiRequestError ? err.code : undefined;
             this.loadError = QaapUserFacingErrors.toMessageAndLog(err);
         }
         this.loading = false;
@@ -729,6 +801,10 @@ export class MobileOpenRepositoryDialog {
         const filtered = this.applyFilter(this.repositories);
         if (filtered.length === 0) {
             this.emptyState.hidden = false;
+            if (this.loadErrorCode === QAAP_GITHUB_SIGN_IN_REQUIRED_CODE && environment.electron.is()) {
+                this.renderDesktopSignInPrompt();
+                return;
+            }
             if (this.loadError) {
                 this.emptyState.textContent = nls.localize(
                     'qaap/mobileOpenRepo/loadFailed',
