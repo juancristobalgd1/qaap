@@ -232,6 +232,9 @@ h1 {
 /* Background layers bleed to the full device width; the content and demo keep the frame width. */
 html, body { overflow-x: clip; }
 .hero-satin, .hero-glitch, .hero::after { left: 50% !important; right: auto !important; width: 100vw !important; margin-left: -50vw; }
+/* The IDE preview floats free: no frame rails beside it, no rule beneath it. */
+.rails > .hero { margin: 0 -1px; background: var(--bg); }
+.rails > .hero + .band { border-top: 0; }
 .hero { position: relative; isolation: isolate; }
 .hero-satin { image-rendering: pixelated; }
 .hero-satin, .hero-glitch {
