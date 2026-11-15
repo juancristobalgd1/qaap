@@ -72,6 +72,7 @@ describe('QaapGithubDeviceSignInDialog', () => {
         expect(h.dialog.isOpen).to.equal(true);
         expect(h.text()).to.include('ABCD-1234');
         expect(h.text()).to.include('Waiting for authorization');
+        expect(h.button('Copy code').hidden).to.equal(false);
         h.button('Open GitHub').click();
         expect(h.opened).to.deep.equal(['https://github.com/login/device']);
         h.dialog.close();
@@ -118,6 +119,7 @@ describe('QaapGithubDeviceSignInDialog', () => {
         await h.dialog.open();
         expect(h.text()).to.include('set QAAP_GITHUB_CLIENT_ID');
         expect(h.text()).to.not.include('Waiting for authorization');
+        expect(h.button('Copy code').hidden).to.equal(true);
         h.dialog.close();
     });
 

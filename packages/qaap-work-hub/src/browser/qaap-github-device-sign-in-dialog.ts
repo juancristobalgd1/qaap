@@ -95,6 +95,7 @@ export class QaapGithubDeviceSignInDialog {
         this.retryButton.hidden = true;
         this.openButton.hidden = true;
         this.codeElement.textContent = '';
+        this.copyButton.hidden = true;
         this.statusElement.textContent = nls.localize('qaap/githubDevice/starting', 'Contacting GitHub…');
         try {
             const start = await this.options.api.start();
@@ -104,6 +105,7 @@ export class QaapGithubDeviceSignInDialog {
             this.flowId = start.flowId;
             this.verificationUri = start.verificationUri;
             this.codeElement.textContent = start.userCode;
+            this.copyButton.hidden = false;
             this.openButton.hidden = false;
             this.statusElement.textContent = nls.localize('qaap/githubDevice/waiting', 'Waiting for authorization…');
             this.schedulePoll(generation, start.interval);
