@@ -29,9 +29,16 @@ const QAAP_PRODUCT_NAME = 'Qaap';
 /**
  * macOS title bar with the traffic lights drawn inside the Qaap top bar instead of a separate native
  * title strip. The frontend reserves the space to the right of the lights (see
- * `qaap-electron-macos-titlebar.css`). `y` centres the 12px lights on the ~52px Qaap bar.
+ * `qaap-electron-macos-titlebar.css`). `y` puts the 12px lights' centre (y + 6) at the middle of the 52px Qaap bar.
  */
-const QAAP_MACOS_TRAFFIC_LIGHT_POSITION = { x: 13, y: 20 };
+const QAAP_MACOS_TRAFFIC_LIGHT_POSITION = { x: 13, y: 21 };
+
+/**
+ * Smallest desktop window. The mobile layout takes over at 767px (`MOBILE_NARROW_VIEWPORT_MEDIA_QUERY`),
+ * so the desktop Work Hub and IDE are kept above it with a margin; a restored smaller window grows to this.
+ */
+const QAAP_MIN_WINDOW_WIDTH = 960;
+const QAAP_MIN_WINDOW_HEIGHT = 600;
 
 @injectable()
 export class QaapElectronMainApplication extends ElectronMainApplication {
@@ -72,7 +79,11 @@ export class QaapElectronMainApplication extends ElectronMainApplication {
      * traffic lights sit inside the Qaap top bar. Other platforms and the custom frame are unchanged.
      */
     protected override getDefaultOptions(): TheiaBrowserWindowOptions {
-        const options = super.getDefaultOptions();
+        const options: TheiaBrowserWindowOptions = {
+            ...super.getDefaultOptions(),
+            minWidth: QAAP_MIN_WINDOW_WIDTH,
+            minHeight: QAAP_MIN_WINDOW_HEIGHT
+        };
         if (isOSX && this.useNativeWindowFrame) {
             return {
                 ...options,
@@ -81,6 +92,23 @@ export class QaapElectronMainApplication extends ElectronMainApplication {
             };
         }
         return options;
+    }
+
+    /** Electron does not grow a restored window to `minWidth`, so a smaller saved size is raised here. */
+    override async getLastWindowOptions(): Promise<TheiaBrowserWindowOptions> {
+        return this.clampToMinimumSize(await super.getLastWindowOptions());
+    }
+
+    protected override getDefaultTheiaWindowOptions(): TheiaBrowserWindowOptions {
+        return this.clampToMinimumSize(super.getDefaultTheiaWindowOptions());
+    }
+
+    protected clampToMinimumSize(options: TheiaBrowserWindowOptions): TheiaBrowserWindowOptions {
+        return {
+            ...options,
+            width: Math.max(options.width ?? 0, QAAP_MIN_WINDOW_WIDTH),
+            height: Math.max(options.height ?? 0, QAAP_MIN_WINDOW_HEIGHT)
+        };
     }
 
     protected override async startContributions(): Promise<void> {

@@ -9,7 +9,14 @@
 | `titleBarStyle: 'hiddenInset'`), so the traffic lights sit at the start of the
 | Qaap top bar. The bar drags the window; its controls opt out again.
 | Keep 78px in sync with `trafficLightPosition` in qaap-electron-main-application.ts.
+| The bar is 52px in both surfaces (the Work Hub header height); the IDE top bar is
+| raised to it and its items centred, so the traffic lights centre on the same line.
 |----------------------------------------------------------------------------*/
+
+body.qaap-electron-macos-inset-titlebar #theia-top-panel {
+  min-height: 52px;
+  align-items: center;
+}
 
 body.qaap-electron-macos-inset-titlebar #theia-top-panel {
   -webkit-app-region: drag;
