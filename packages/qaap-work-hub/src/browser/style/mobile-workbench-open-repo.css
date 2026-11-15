@@ -1133,6 +1133,7 @@ body.theia-mobile-mod-landing.theia-mobile-mod-landing-hub-list .theia-mobile-pr
     margin-top: 4px;
 }
 
+.theia-mobile-github-device-code-row[hidden],
 .theia-mobile-github-device-button[hidden],
 .theia-mobile-open-repo-signout[hidden] {
     display: none;
