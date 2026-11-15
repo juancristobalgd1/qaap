@@ -234,7 +234,7 @@ h1 {
     position: absolute;
     top: 0;
     left: 0;
-    z-index: -1;
+    z-index: -3;
     width: 100%;
     height: 1100px;
     pointer-events: none;
@@ -266,11 +266,13 @@ h1 {
     top: 0;
     left: 0;
     right: 0;
-    z-index: -1;
+    z-index: -2;
     height: var(--hero-fade-end, 260px);
     background: linear-gradient(to bottom, var(--bg) 0%, rgba(14, 14, 13, 0.92) 38%, rgba(14, 14, 13, 0.55) 72%, rgba(14, 14, 13, 0) 100%);
     pointer-events: none;
 }
+
+.hero-dither { position: absolute; top: 0; left: 0; z-index: -1; width: 100%; height: 360px; pointer-events: none; image-rendering: pixelated; -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 55%, transparent 100%); mask-image: linear-gradient(to bottom, #000 0, #000 55%, transparent 100%); }
 
 /* ---- Micro-interactions v2 ---------------------------------------------- */
 .hero h1, .hero .lede { text-shadow: 0 0 34px rgba(14, 14, 13, 0.92), 0 0 12px rgba(14, 14, 13, 0.75); }
@@ -877,6 +879,7 @@ footer { border-top: 1px solid var(--line); }
     <section class="hero">
         <canvas class="hero-satin" aria-hidden="true"></canvas>
         <canvas class="hero-glitch" aria-hidden="true"></canvas>
+        <canvas class="hero-dither" aria-hidden="true"></canvas>
         <h1>The pocket workspace for AI coding agents</h1>
         <p class="lede">Run Claude Code, Codex, Gemini and more on your repos in the cloud. Review the diff, check the preview and merge — from your laptop or your phone.</p>
         <div class="hero-ctas">
@@ -2188,6 +2191,124 @@ footer { border-top: 1px solid var(--line); }
         tears.push({ y: e.clientY - rect.top, t: performance.now(), dir: dir });
         kick();
     });
+    window.addEventListener('resize', function () { resize(); kick(); });
+    if ('ResizeObserver' in window) { new ResizeObserver(function () { resize(); kick(); }).observe(hero.querySelector('.hero-ctas') || hero); }
+    if (document.fonts && document.fonts.ready) { document.fonts.ready.then(function () { resize(); kick(); }); }
+    document.addEventListener('visibilitychange', kick);
+    if ('IntersectionObserver' in window) {
+        new IntersectionObserver(function (entries) { visible = entries[0].isIntersecting; kick(); }).observe(canvas);
+    }
+    resize();
+    kick();
+})();
+
+/* Hero top: ordered-dither "horizon" field over the dark fade (vanilla take on DitherField). */
+(function () {
+    var canvas = document.querySelector('.hero-dither');
+    if (!canvas || !canvas.getContext) { return; }
+    var hero = canvas.parentElement;
+    var ctx = canvas.getContext('2d');
+    var low = document.createElement('canvas');
+    var lctx = low.getContext('2d');
+    var CELL = 2;
+    var COLORS = [[46, 44, 40], [138, 135, 128], [242, 240, 235]];
+    var BAYER = [0, 48, 12, 60, 3, 51, 15, 63, 32, 16, 44, 28, 35, 19, 47, 31, 8, 56, 4, 52, 11, 59, 7, 55, 40, 24, 36, 20, 43, 27, 39, 23, 2, 50, 14, 62, 1, 49, 13, 61, 34, 18, 46, 30, 33, 17, 45, 29, 10, 58, 6, 54, 9, 57, 5, 53, 42, 26, 38, 22, 41, 25, 37, 21];
+    var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    var W = 0;
+    var H = 0;
+    var lw = 0;
+    var lh = 0;
+    var img = null;
+    var start = performance.now();
+    var last = 0;
+    var mouse = { x: -1, y: -1, sx: 0.5, sy: 0.3, k: 0 };
+    var visible = true;
+    var frameId = 0;
+    var textTop = 0;
+    var textBottom = 0;
+    var resize = function () {
+        var top = hero.getBoundingClientRect().top;
+        var h1 = hero.querySelector('h1');
+        var lede = hero.querySelector('.lede');
+        var end = lede ? lede.getBoundingClientRect().bottom - top + 20 : 360;
+        if (h1) { textTop = h1.getBoundingClientRect().top - top; }
+        textBottom = end - 20;
+        canvas.style.height = Math.round(end) + 'px';
+        W = canvas.clientWidth;
+        H = canvas.clientHeight;
+        lw = Math.max(40, Math.ceil(W / CELL));
+        lh = Math.max(20, Math.ceil(H / CELL));
+        canvas.width = lw * CELL;
+        canvas.height = lh * CELL;
+        low.width = lw;
+        low.height = lh;
+        img = lctx.createImageData(lw, lh);
+    };
+    var draw = function (now) {
+        var t = (now - start) / 1000;
+        var intro = reduceMotion.matches ? 1 : Math.min(1, t / 1.4);
+        var on = mouse.x >= 0 ? 1 : 0;
+        mouse.k += (on - mouse.k) * 0.08;
+        if (on) { mouse.sx += (mouse.x - mouse.sx) * 0.12; mouse.sy += (mouse.y - mouse.sy) * 0.12; }
+        var d = img.data;
+        var aspect = lw / lh;
+        var horizon = 0.16 + 0.03 * Math.sin(t * 0.35);
+        var p = 0;
+        for (var y = 0; y < lh; y++) {
+            var v = y / lh;
+            var py = v * H;
+            var textMask = 1;
+            if (py > textTop - 10 && py < textBottom) { textMask = 0.28; }
+            for (var x = 0; x < lw; x++) {
+                var u = x / lw;
+                var dx = (u - 0.5) * aspect;
+                var arc = horizon + dx * dx * 0.09;
+                var dist = v - arc;
+                var band = Math.exp(-Math.pow(dist / 0.035, 2));
+                var glow = dist > 0 ? Math.exp(-dist / 0.28) * 0.55 : Math.exp(dist / 0.06) * 0.4;
+                var shimmer = 0.85 + 0.15 * Math.sin(u * 9 + t * 0.8) * Math.sin(v * 7 - t * 0.6);
+                var I = (band * 0.62 + glow * 0.8) * shimmer;
+                I *= Math.max(0, Math.min(1, (1 - Math.abs(u - 0.5) * 1.25) * 1.25));
+                if (mouse.k > 0.01) {
+                    var mx = (u - mouse.sx) * aspect;
+                    var my = v - mouse.sy;
+                    I += Math.exp(-(mx * mx + my * my) / 0.012) * 0.65 * mouse.k;
+                }
+                I *= textMask * intro * (1 - v * 0.55);
+                var level = Math.floor(I * 3.2 + BAYER[(y & 7) * 8 + (x & 7)] / 64 - 0.5);
+                if (level <= 0) {
+                    d[p + 3] = 0;
+                } else {
+                    var c = COLORS[Math.min(2, level - 1)];
+                    d[p] = c[0]; d[p + 1] = c[1]; d[p + 2] = c[2];
+                    d[p + 3] = 120;
+                }
+                p += 4;
+            }
+        }
+        lctx.putImageData(img, 0, 0);
+        ctx.imageSmoothingEnabled = false;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(low, 0, 0, canvas.width, canvas.height);
+    };
+    var loop = function (now) {
+        frameId = 0;
+        if (!visible || document.hidden) { return; }
+        if (now - last >= 40) { last = now; draw(now); }
+        frameId = requestAnimationFrame(loop);
+    };
+    var kick = function () {
+        if (reduceMotion.matches) { draw(performance.now() + 2000); return; }
+        if (!frameId) { frameId = requestAnimationFrame(loop); }
+    };
+    hero.addEventListener('pointermove', function (e) {
+        var rect = canvas.getBoundingClientRect();
+        var y = (e.clientY - rect.top) / rect.height;
+        if (y < 0 || y > 1 || (e.target.closest && e.target.closest('.stage'))) { mouse.x = mouse.y = -1; return; }
+        mouse.x = (e.clientX - rect.left) / rect.width;
+        mouse.y = y;
+    }, { passive: true });
+    hero.addEventListener('pointerleave', function () { mouse.x = mouse.y = -1; });
     window.addEventListener('resize', function () { resize(); kick(); });
     if ('ResizeObserver' in window) { new ResizeObserver(function () { resize(); kick(); }).observe(hero.querySelector('.hero-ctas') || hero); }
     if (document.fonts && document.fonts.ready) { document.fonts.ready.then(function () { resize(); kick(); }); }
