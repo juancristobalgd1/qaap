@@ -52,7 +52,7 @@ body.qaap-electron-macos-inset-titlebar #theia-top-panel .theia-workbench-menu-t
 }
 
 /* The sessions sidebar header also starts at the window's top-left edge, under the traffic lights. */
-body.qaap-electron-macos-inset-titlebar:not(.qaap-electron-macos-fullscreen) .theia-mobile-work-hub-sessions-sidebar-head {
+body.qaap-electron-macos-inset-titlebar:not(.qaap-electron-macos-fullscreen) .theia-mobile-work-hub-sessions-sidebar-head:not(#theia-right-content-panel *) {
   padding-left: 78px !important;
   -webkit-app-region: drag;
 }
@@ -63,8 +63,9 @@ body.qaap-electron-macos-inset-titlebar .theia-mobile-work-hub-sessions-sidebar-
 }
 
 /* The left panel headers (IDE and Work Hub with the sidebar closed) start under the traffic lights.
+   Headers embedded in the IDE right panel (`#theia-right-content-panel`) have no traffic lights: excluded.
    `!important`: their own padding shorthand has higher specificity than this scope. */
-body.qaap-electron-macos-inset-titlebar:not(.qaap-electron-macos-fullscreen) .theia-mobile-projects-header {
+body.qaap-electron-macos-inset-titlebar:not(.qaap-electron-macos-fullscreen) .theia-mobile-projects-header:not(#theia-right-content-panel *) {
   padding-left: 78px !important;
   -webkit-app-region: drag;
 }
