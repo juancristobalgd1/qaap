@@ -6,6 +6,7 @@
 import { QaapUserFacingError, QaapUserFacingErrors } from '../common/qaap-user-facing-error';
 import {
     QAAP_AUTH_API_PATH,
+    QAAP_GITHUB_SIGN_IN_REQUIRED_CODE,
     QAAP_BILLING_API_PATH,
     QAAP_BILLING_CANCEL_API_PATH,
     QAAP_BILLING_CHECKOUT_API_PATH,
@@ -272,6 +273,16 @@ export async function fetchQaapGithubRepositories(): Promise<QaapGithubRepositor
         ),
     );
     if (response.status === 401) {
+        // Desktop without a GitHub session: the app itself is signed in, only GitHub is missing. Keep
+        // the local session and let the import dialog offer "Sign in with GitHub".
+        const body = await response.clone().json().catch(() => undefined) as { code?: string } | undefined;
+        if (body?.code === QAAP_GITHUB_SIGN_IN_REQUIRED_CODE) {
+            throw new QaapApiRequestError(
+                nls.localize('qaap/githubRepositories/signInRequired', 'Sign in with GitHub to import your repositories.'),
+                401,
+                QAAP_GITHUB_SIGN_IN_REQUIRED_CODE,
+            );
+        }
         // Stored GitHub token expired/revoked — drop the stale session so the login gate returns and
         // the user re-authorizes, instead of staying stuck on a signed-in-but-broken UI. (ONB-5)
         clearQaapAuthSession();
