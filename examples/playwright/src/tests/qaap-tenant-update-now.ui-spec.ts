@@ -147,7 +147,8 @@ async function capture(testInfo: TestInfo, page: Page, prefix: string, name: str
     } else {
         await page.screenshot({ path: file });
     }
-    await testInfo.attach(`${prefix}-${name}`, { path: file, contentType: 'image/png' });
+    // By content, not by path: a path attachment is copied into test-results/ and the allure reporter can race that copy.
+    await testInfo.attach(`${prefix}-${name}`, { body: fs.readFileSync(file), contentType: 'image/png' });
 }
 
 /** Full flow for one viewport: rest state, keyboard, confirmation (when turns run), "Updating…", reload. */
