@@ -2588,7 +2588,7 @@ footer { border-top: 1px solid var(--line); }
     var set = function () {
         var top = hero.getBoundingClientRect().top;
         var r = h1.getBoundingClientRect();
-        hero.style.setProperty('--hero-fade-end', Math.round(r.top - top + r.height * 0.5) + 'px');
+        hero.style.setProperty('--hero-fade-end', Math.round(r.top - top + r.height * 0.85) + 'px');
     };
     set();
     window.addEventListener('resize', set);
