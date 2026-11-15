@@ -5,43 +5,29 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Qaap — the pocket workspace for AI coding agents</title>
 <meta name="description" content="Run Claude Code, Codex, Gemini and more on your repos in the cloud. Review the diff, check the preview and merge from your laptop or your phone.">
-<meta name="theme-color" content="#f5f4f1" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0e0e0d" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#0e0e0d">
+<meta name="color-scheme" content="dark">
 <meta property="og:title" content="Qaap — the pocket workspace for AI coding agents">
 <meta property="og:description" content="Run coding agents on your repos in the cloud. Review and merge from anywhere.">
 <meta property="og:image" content="/landing/qaap-app-desktop.webp">
 <link rel="icon" href="/landing/qaap-logo.svg" type="image/svg+xml">
 <style>
 :root {
-    --bg: #f5f4f1;
-    --surface: #ffffff;
-    --ink: #111110;
-    --ink-2: #3b3a37;
-    --muted: #8a8780;
-    --line: #e4e1db;
-    --line-strong: #d6d2ca;
-    --accent: #b4441f;
-    --ok: #2f7d4f;
-    --del: #c4422b;
-    --shadow: 0 40px 80px -40px rgba(17, 17, 16, 0.28), 0 2px 6px rgba(17, 17, 16, 0.04);
+    color-scheme: dark;
+    --bg: #0e0e0d;
+    --surface: #161615;
+    --ink: #f2f0eb;
+    --ink-2: #c9c6bf;
+    --muted: #8b8780;
+    --line: #252422;
+    --line-strong: #33312e;
+    --accent: #e0774f;
+    --ok: #6cc28f;
+    --del: #f07a63;
+    --shadow: 0 40px 80px -40px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.03);
     --sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
     --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
     --frame: min(1240px, calc(100vw - 48px));
-}
-@media (prefers-color-scheme: dark) {
-    :root {
-        --bg: #0e0e0d;
-        --surface: #161615;
-        --ink: #f2f0eb;
-        --ink-2: #c9c6bf;
-        --muted: #8b8780;
-        --line: #252422;
-        --line-strong: #33312e;
-        --accent: #e0774f;
-        --ok: #6cc28f;
-        --del: #f07a63;
-        --shadow: 0 40px 80px -40px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.03);
-    }
 }
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
@@ -671,11 +657,8 @@ h2 .dim { color: var(--muted); }
 }
 .agent-mark.on-dark { border-color: #111110; background: #111110; }
 .agent-mark svg { width: 26px; height: 26px; }
-.agent-mark .dark-only { display: none; }
-@media (prefers-color-scheme: dark) {
-    .agent-mark .light-only { display: none; }
-    .agent-mark .dark-only { display: block; }
-}
+.agent-mark .light-only { display: none; }
+.agent-mark .dark-only { display: block; }
 .agent b { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
 .agent small { display: block; color: var(--muted); font-size: 12.5px; }
 
@@ -1126,7 +1109,7 @@ footer { border-top: 1px solid var(--line); }
     var BUCKETS = 32;
     var STOPS = [[30, 63, 216], [56, 189, 248], [165, 216, 255], [246, 248, 255]];
     var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
-    var darkScheme = window.matchMedia('(prefers-color-scheme: dark)');
+    
     var palette = [];
     for (var b = 0; b < BUCKETS; b++) {
         var p = b / (BUCKETS - 1) * (STOPS.length - 1);
@@ -1171,7 +1154,7 @@ footer { border-top: 1px solid var(--line); }
         ctx.textBaseline = 'middle';
     };
     var draw = function (t) {
-        var dark = darkScheme.matches;
+        var dark = true;
         ctx.clearRect(0, 0, width, height);
         var radius = Math.max(width * 1.15, 1100);
         var cx = width / 2;
