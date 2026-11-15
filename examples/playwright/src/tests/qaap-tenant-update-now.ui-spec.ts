@@ -10,6 +10,11 @@ import { TheiaAppLoader } from '../theia-app-loader';
 
 /** The sidebar chip of a pending Qaap build: `button` with aria-label "Update Qaap now" and text "Update now". */
 const CHIP_NAME = 'Update Qaap now';
+/**
+ * The chip's name changes while it updates ("Updating Qaap"), so state checks use the class; the accessible
+ * name is only used to find it before the click.
+ */
+const CHIP_SELECTOR = '.theia-mobile-work-hub-sessions-sidebar-update';
 const MOBILE_VIEWPORT = { width: 375, height: 812 };
 const DESKTOP_VIEWPORT = { width: 1200, height: 953 };
 /** The only fixed wait of this spec: the simulated latency of the apply request. */
@@ -158,7 +163,8 @@ async function runUpdateFlow(
         await waitForWorkHubReady(page);
         await openSessionsSidebar(page);
 
-        const chip = page.getByRole('button', { name: CHIP_NAME });
+        await expect(page.getByRole('button', { name: CHIP_NAME })).toBeVisible({ timeout: 30_000 });
+        const chip = page.locator(CHIP_SELECTOR);
         await expect(chip).toBeVisible({ timeout: 30_000 });
         await expect(chip).toHaveText('Update now');
         await expect(chip).toBeEnabled();
@@ -218,7 +224,8 @@ test.describe('@qaap-mobile Work Hub update chip (mobile)', () => {
             await dismissMobileTutorial(page);
             await waitForWorkHubReady(page);
             await openSessionsSidebar(page);
-            const chip = page.getByRole('button', { name: CHIP_NAME });
+            await expect(page.getByRole('button', { name: CHIP_NAME })).toBeVisible({ timeout: 30_000 });
+            const chip = page.locator(CHIP_SELECTOR);
             await expect(chip).toBeVisible({ timeout: 30_000 });
             const reloaded = page.waitForEvent('load', { timeout: 60_000 });
             await chip.click();
