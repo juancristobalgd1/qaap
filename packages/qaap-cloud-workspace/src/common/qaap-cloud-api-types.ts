@@ -11,6 +11,12 @@ export const QAAP_TENANT_RUNTIME_API_PATH = `${QAAP_CLOUD_API_PATH}/runtime`;
  * header. Served under the runtime prefix, so the browser proxy never reaches it.
  */
 export const QAAP_TENANT_PUSH_OUTBOX_PATH = `${QAAP_TENANT_RUNTIME_API_PATH}/push/outbox`;
+/**
+ * "Update now" action for the signed-in user's tenant backend (`POST`). What is pending is reported by
+ * `updatePending` in the runtime status (`QAAP_TENANT_RUNTIME_API_PATH/status`). Served by the control
+ * plane only (outside `/qaap/api/cloud/`, so the action never counts as tenant activity).
+ */
+export const QAAP_TENANT_UPDATE_API_PATH = '/qaap/api/tenant-update';
 /** Web Push routes owned by the control plane (subscriptions and VAPID keys never leave it). */
 export const QAAP_PUSH_VAPID_PATH = `${QAAP_CLOUD_API_PATH}/push/vapid`;
 export const QAAP_PUSH_SUBSCRIBE_PATH = `${QAAP_CLOUD_API_PATH}/push/subscribe`;
@@ -87,6 +93,8 @@ export interface QaapTenantBackendUpdateStatus {
     readonly updatePending: boolean;
     /** Only `agent-turns-running`: the stale backend is kept until its running agent turns finish. */
     readonly reason?: 'agent-turns-running';
+    /** Only while `updatePending`: agent turns running in the backend now (0 when the backend cannot be asked). */
+    readonly runningTasks?: number;
 }
 
 export interface QaapTenantRuntimeMetrics {
