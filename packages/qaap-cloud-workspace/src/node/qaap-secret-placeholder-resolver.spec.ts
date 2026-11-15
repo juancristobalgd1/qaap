@@ -13,7 +13,8 @@ import { writeUserSettingsToDisk } from './qaap-agent-task-runner-utils2';
 const OPENROUTER = 'ai-features.openrouter.openrouterApiKey';
 const PLACEHOLDER = `qaap-sealed-secret:${OPENROUTER}`;
 const KEY = Buffer.alloc(32, 9).toString('base64');
-const ENV_KEYS = ['HOME', 'QAAP_SECRETS_KEYS', 'QAAP_TENANT_BACKEND_MODE', 'QAAP_TENANT_LOGIN'];
+// os.homedir() reads USERPROFILE on Windows and HOME elsewhere; both must point at the temp home.
+const ENV_KEYS = ['HOME', 'USERPROFILE', 'QAAP_SECRETS_KEYS', 'QAAP_TENANT_BACKEND_MODE', 'QAAP_TENANT_LOGIN'];
 
 describe('QaapSecretPlaceholderResolver', () => {
 
@@ -25,6 +26,7 @@ describe('QaapSecretPlaceholderResolver', () => {
         saved = Object.fromEntries(ENV_KEYS.map(key => [key, process.env[key]]));
         home = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-placeholder-resolve-'));
         process.env.HOME = home;
+        process.env.USERPROFILE = home;
         process.env.QAAP_SECRETS_KEYS = `k1:${KEY}`;
     });
     afterEach(() => {
