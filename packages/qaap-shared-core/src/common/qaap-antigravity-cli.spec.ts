@@ -37,11 +37,8 @@ describe('resolveAntigravityCliTemplate', () => {
         expect(resolveAntigravityCliTemplate('gemini')).to.equal('gemini --approval-mode=yolo {model_flags} -p {prompt}');
     });
 
-    it('runs agy headless with its model flag placeholder and the prompt as the argument of -p', () => {
-        expect(resolveAntigravityCliTemplate('agy')).to.equal('agy {model_flags} -p {prompt}');
-    });
-
-    it('runs the community CLI with -p and no model flag', () => {
+    it('runs agy and the community CLI with -p and no model flag (agy reads its model from settings.json)', () => {
+        expect(resolveAntigravityCliTemplate('agy')).to.equal('agy -p {prompt}');
         expect(resolveAntigravityCliTemplate('antigravity')).to.equal('antigravity -p {prompt}');
     });
 });

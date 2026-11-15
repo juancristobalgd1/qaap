@@ -93,9 +93,6 @@ describe('qaap-agent-auto-approve', () => {
             .to.equal("agy --dangerously-skip-permissions -p 'hi'");
         expect(applyAutoApproveToCommand("antigravity -p 'hi'", 'antigravity'))
             .to.equal("antigravity --dangerously-skip-permissions -p 'hi'");
-        // The agy template with its model flag: the approval flag goes right after the executable.
-        expect(applyAutoApproveToCommand("agy --model 'Gemini 3.8 Flash (High)' -p 'hi'", 'antigravity'))
-            .to.equal("agy --dangerously-skip-permissions --model 'Gemini 3.8 Flash (High)' -p 'hi'");
         expect(applyAutoApproveToCommand("copilot -p 'hi'", 'copilot'))
             .to.equal("copilot --autopilot --yolo --max-autopilot-continues 20 -p 'hi'");
         expect(applyAutoApproveToCommand("qwen -p 'hi'", 'qwen'))

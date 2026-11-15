@@ -59,7 +59,7 @@ describe('Antigravity CLI resolution on the task runner', () => {
 
         const agy = fakeContext({ resolveAntigravityBin: () => 'agy' });
         detectAntigravityAgentExtracted(agy.ctx);
-        expect(agy.detected.get('antigravity')).to.deep.include({ bin: 'agy', template: 'agy {model_flags} -p {prompt}' });
+        expect(agy.detected.get('antigravity')).to.deep.include({ bin: 'agy', template: 'agy -p {prompt}' });
     });
 
     it('registers nothing when no Antigravity CLI is installed', () => {
