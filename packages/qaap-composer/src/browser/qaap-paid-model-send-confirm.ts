@@ -107,10 +107,21 @@ export function prewarmSendCatalog(agentId: string | undefined): Promise<void> {
     return fetchSendCatalog(agentId).then(() => undefined);
 }
 
-/** Outcome of resolving the model for a send. `ok: false` means the send must be blocked until the user picks one. */
+/**
+ * Outcome of resolving the model for a send. `ok: false` blocks the send: `sign-in-required` when the chosen model
+ * is locked until the harness is signed in (the send never switches models silently), otherwise the user must pick one.
+ */
 export type QaapSendModelResolution =
     | { readonly ok: true; readonly model: QaapCreateAgentTaskQaiqModel | undefined }
-    | { readonly ok: false };
+    | { readonly ok: false; readonly reason?: 'sign-in-required'; readonly modelLabel?: string };
+
+/** The block for a model the catalog lists but the harness session does not unlock. */
+function signInRequiredResolution(
+    model: QaapCreateAgentTaskQaiqModel,
+    option: QaapQaiqModelOption,
+): QaapSendModelResolution {
+    return { ok: false, reason: 'sign-in-required', modelLabel: option.label?.trim() || model.modelId };
+}
 
 /**
  * The model a send will carry, resolved the way the composer resolves it and validated against the live catalog:
@@ -132,13 +143,25 @@ export async function resolveSendAgentModel(
         return { ok: true, model: undefined };
     }
     if (explicitModel && isStoredAgentModelUsable(explicitModel)) {
+        const locked = cachedSendCatalog(agentId)?.find(option => isSameAgentModel(explicitModel, option));
+        if (locked?.available === false) {
+            return signInRequiredResolution(explicitModel, locked);
+        }
         return { ok: true, model: explicitModel };
     }
     const record = readStoredAgentModelSelection(cwd, agentId);
     if (record) {
         const live = preloadedCatalog?.length ? preloadedCatalog : cachedSendCatalog(agentId);
         // Without a live catalog the stored pick cannot be checked; it is sent as before.
-        if (!live?.length || live.some(model => isSameAgentModel(record.model, model))) {
+        if (!live?.length) {
+            return { ok: true, model: record.model };
+        }
+        const listed = live.find(option => isSameAgentModel(record.model, option));
+        if (listed?.available === false) {
+            // Locked by the session, not gone from the catalog: block with the sign-in reason instead of healing it.
+            return signInRequiredResolution(record.model, listed);
+        }
+        if (listed) {
             return { ok: true, model: record.model };
         }
         if (record.userChosen) {
@@ -197,6 +220,22 @@ export function sendModelBelongsToAgent(
     }
     const live = cachedSendCatalog(agentId);
     return !live?.length || live.some(option => isSameAgentModel(model, option));
+}
+
+/**
+ * Tells the user a send was held because the chosen model needs the harness sign-in; the action opens that sign-in.
+ */
+export function warnSignInRequiredSend(agentLabel: string, modelLabel: string, openSignIn?: () => void): void {
+    MobileSnackbar.show(
+        nls.localize('qaap/composer/signInToUseModel', 'Sign in to {0} to use {1}.', agentLabel, modelLabel),
+        openSignIn
+            ? {
+                kind: 'warning',
+                actionLabel: nls.localize('qaap/agentPicker/signIn', 'Sign in'),
+                onAction: () => openSignIn(),
+            }
+            : { kind: 'warning' },
+    );
 }
 
 /** Tells the user a send was held because no model is chosen; the optional opener moves them to the model picker. */

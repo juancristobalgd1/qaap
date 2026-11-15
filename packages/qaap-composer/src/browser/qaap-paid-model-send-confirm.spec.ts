@@ -93,6 +93,39 @@ describe('paid model send confirmation', () => {
         expect(await resolveSendAgentModel('opencode', staleCwd, undefined, [openCodePaid])).to.deep.equal({ ok: false });
     });
 
+    it('blocks a stored pick the catalog lists as locked until sign-in, and keeps the stored model', async () => {
+        const lockedCwd = '/repo/locked-stored';
+        const lockedPro = { provider: 'openai' as const, vendor: 'codex', modelId: 'gpt-5.5', label: 'GPT-5.5' };
+        writeStoredAgentModel(lockedCwd, 'codex', lockedPro);
+        const catalog = [{ ...lockedPro, available: false, unavailableReason: 'not-connected' as const, tier: 'pro' as const }];
+        expect(await resolveSendAgentModel('codex', lockedCwd, undefined, catalog)).to.deep.equal({
+            ok: false,
+            reason: 'sign-in-required',
+            modelLabel: 'GPT-5.5',
+        });
+        expect(readStoredAgentModelSelection(lockedCwd, 'codex')?.model.modelId).to.equal('gpt-5.5');
+    });
+
+    it('blocks an explicit pick that the cached catalog lists as locked, without switching models', async () => {
+        const lockedCwd = '/repo/locked-explicit';
+        const originalFetch = globalThis.fetch;
+        globalThis.fetch = (async () => ({
+            ok: true,
+            json: async () => ({ models: [{ provider: 'openai', vendor: 'codex', modelId: 'codex/locked-pro', label: 'Codex Pro', available: false, unavailableReason: 'not-connected' }] }),
+        })) as unknown as typeof fetch;
+        try {
+            await prewarmSendCatalog('codex');
+            const explicit = { provider: 'openai' as const, vendor: 'codex', modelId: 'codex/locked-pro' };
+            expect(await resolveSendAgentModel('codex', lockedCwd, explicit)).to.deep.equal({
+                ok: false,
+                reason: 'sign-in-required',
+                modelLabel: 'Codex Pro',
+            });
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+    });
+
     it('a seeded paid default is the effective send model, so the gate sees it and must confirm', async () => {
         const seededCwd = '/repo/seeded-paid';
         // Seeded by an older build, never chosen by the user: the send resolves to it.

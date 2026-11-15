@@ -31,7 +31,8 @@ import { isAgentsHubIdleConversationSummary } from '@theia/qaap-shared-core/lib/
 import { writeProjectComposerDraft } from '../common/qaap-project-composer-draft';
 import { clearComposerDraftRestored, markComposerDraftRestored, resolveComposerRestoredDraftKey } from '../common/qaap-composer-restored-draft';
 import { collectComposerImagePreviews } from './qaap-sticky-composer-context-ui';
-import { confirmPaidModelSend, resolveSendAgentModel, warnChooseSendModel } from './qaap-paid-model-send-confirm';
+import { resolveAgentDisplayLabel } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
+import { confirmPaidModelSend, resolveSendAgentModel, warnChooseSendModel, warnSignInRequiredSend } from './qaap-paid-model-send-confirm';
 import { readStoredAgentModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
 import {
     composerContextRequests,
@@ -135,6 +136,14 @@ export async function submitTranscriptComposerDraftExtracted(ctx: MobileProjects
         // Fail closed: no model chosen for a picker agent, so nothing is sent on the CLI default.
         restoreComposerSubmission();
         ctx.remountTranscriptStickyComposer();
+        if (modelResolution.reason === 'sign-in-required' && selectedAgentId) {
+            warnSignInRequiredSend(
+                resolveAgentDisplayLabel(selectedAgentId),
+                modelResolution.modelLabel ?? selectedAgentId,
+                () => { void ctx.host.openAgentSignInTerminal?.(selectedAgentId); },
+            );
+            return;
+        }
         warnChooseSendModel(selectedAgentId ?? '', openModelPicker);
         return;
     }
