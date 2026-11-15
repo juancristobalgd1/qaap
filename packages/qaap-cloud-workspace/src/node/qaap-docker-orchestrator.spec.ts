@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import * as os from 'os';
 import * as path from 'path';
 import type * as Dockerode from 'dockerode';
+import * as sinon from 'sinon';
 import { QaapDockerOrchestrator } from './qaap-docker-orchestrator';
 import { qaapTenantCgroupParent } from './qaap-tenant-runtime';
 import { QaapTenantBackendWakeTimeline } from './qaap-tenant-backend-wake-timeline';
@@ -1151,6 +1152,88 @@ describe('QaapDockerOrchestrator', () => {
             expect((fakeDocker.created[0].HostConfig as { CgroupParent?: string }).CgroupParent).to.equal(qaapTenantCgroupParent('alice'));
             await orchestrator.createOrValidateTenantContainer('qaap-tenant-spec', orchestrator.tenantMountsForRoot(root), 'none', 'bob').catch(() => undefined);
             expect(fakeDocker.created[1].HostConfig?.Runtime).to.equal(undefined);
+        });
+    });
+
+    describe('stale tenant image migration deadline', () => {
+        const GRACE_MS = 60_000;
+        type Busy = { busy: boolean; runningTasks: number };
+        interface StaleImageAccess {
+            staleTenantBackendAction(inspect: Dockerode.ContainerInspectInfo, ownerLogin: string, busy: Busy | undefined): 'defer' | 'recreate';
+            staleBackendDeferredMs(ownerLogin: string): number;
+            deferredTenantBackendRecreations: Set<string>;
+            probeTenantBackendBusy: (login: string) => Promise<Busy | undefined>;
+            invalidateTenantBackendTarget: (login: string) => void;
+            retryDeferredTenantBackendRecreations(): Promise<void>;
+        }
+        /** A tenant on the default runc runtime: only its serving image is stale, not its runtime. */
+        const staleImageInspect = { HostConfig: { Runtime: 'runc' } } as unknown as Dockerode.ContainerInspectInfo;
+        let clock: sinon.SinonFakeTimers;
+        let consoleWarn: sinon.SinonStub;
+
+        beforeEach(() => {
+            clock = sinon.useFakeTimers({ now: 4_000_000, toFake: ['Date'] });
+            consoleWarn = sinon.stub(console, 'warn');
+            process.env.QAAP_TENANT_RUNTIME_MIGRATION_GRACE_MS = String(GRACE_MS);
+        });
+
+        afterEach(() => {
+            consoleWarn.restore();
+            clock.restore();
+            delete process.env.QAAP_TENANT_RUNTIME_MIGRATION_GRACE_MS;
+        });
+
+        const access = (): StaleImageAccess => new QaapDockerOrchestrator() as unknown as StaleImageAccess;
+
+        it('defers a busy stale image within the grace period and recreates it once the deadline has passed', () => {
+            const orchestrator = access();
+            const busy: Busy = { busy: true, runningTasks: 2 };
+
+            expect(orchestrator.staleTenantBackendAction(staleImageInspect, 'bob', busy)).to.equal('defer');
+            clock.tick(GRACE_MS - 1);
+            expect(orchestrator.staleTenantBackendAction(staleImageInspect, 'bob', busy)).to.equal('defer');
+            expect(orchestrator.staleBackendDeferredMs('bob')).to.equal(GRACE_MS - 1);
+
+            clock.tick(1);
+            expect(orchestrator.staleTenantBackendAction(staleImageInspect, 'bob', busy)).to.equal('recreate');
+            expect(orchestrator.staleBackendDeferredMs('bob')).to.equal(GRACE_MS);
+        });
+
+        it('recreates an idle stale image at once and starts no deadline for it', () => {
+            const orchestrator = access();
+
+            expect(orchestrator.staleTenantBackendAction(staleImageInspect, 'bob', { busy: false, runningTasks: 0 })).to.equal('recreate');
+            expect(orchestrator.staleTenantBackendAction(staleImageInspect, 'bob', undefined)).to.equal('recreate');
+            expect(orchestrator.staleBackendDeferredMs('bob')).to.equal(0);
+        });
+
+        it('keys the deadline by tenant login, regardless of case', () => {
+            const orchestrator = access();
+            const busy: Busy = { busy: true, runningTasks: 1 };
+
+            expect(orchestrator.staleTenantBackendAction(staleImageInspect, 'Bob', busy)).to.equal('defer');
+            clock.tick(GRACE_MS);
+            expect(orchestrator.staleTenantBackendAction(staleImageInspect, 'bob', busy)).to.equal('recreate');
+        });
+
+        it('keeps a busy deferred backend inside the grace period and invalidates its target once the deadline has passed', async () => {
+            const orchestrator = access();
+            const invalidated: string[] = [];
+            orchestrator.invalidateTenantBackendTarget = login => { invalidated.push(login); };
+            orchestrator.probeTenantBackendBusy = async () => ({ busy: true, runningTasks: 1 });
+            orchestrator.deferredTenantBackendRecreations.add('bob');
+            expect(orchestrator.staleTenantBackendAction(staleImageInspect, 'bob', { busy: true, runningTasks: 1 })).to.equal('defer');
+
+            clock.tick(GRACE_MS - 1);
+            await orchestrator.retryDeferredTenantBackendRecreations();
+            expect(invalidated).to.deep.equal([]);
+            expect(orchestrator.deferredTenantBackendRecreations.has('bob')).to.equal(true);
+
+            clock.tick(1);
+            await orchestrator.retryDeferredTenantBackendRecreations();
+            expect(invalidated).to.deep.equal(['bob']);
+            expect(orchestrator.deferredTenantBackendRecreations.has('bob')).to.equal(false);
+            expect(consoleWarn.calledWithMatch('past its migration deadline with 1 agent turn(s)')).to.equal(true);
         });
     });
 
