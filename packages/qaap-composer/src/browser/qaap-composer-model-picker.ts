@@ -31,6 +31,8 @@ export interface QaapComposerModelPickerProps {
     /** Narrow viewport: the number shortcuts are desktop-only. */
     readonly isMobile?: boolean;
     readonly onSelectModel: (agentId: string, modelId: string) => void;
+    /** Opens the harness sign-in from a locked row whose only blocker is the missing session. */
+    readonly onSignIn?: (agentId: string) => void;
     readonly onSelectEffort: (level: QaapAgentEffortLevel) => void;
     readonly onSelectApproval: (policyId: QaapAgentApprovalPolicyId) => void;
     readonly onToggleFavorite: (key: string) => void;
@@ -340,13 +342,18 @@ function renderList(host: HTMLElement, props: QaapComposerModelPickerProps): HTM
         row.setAttribute('aria-selected', String(isCurrent));
         row.dataset.agentId = model.agentId;
         row.dataset.modelId = model.modelId;
-        row.disabled = !model.available;
+        // A sign-in-locked row stays tappable when the host can open the sign-in; it runs that instead.
+        const signInLocked = !model.available && model.signInRequired === true && !!props.onSignIn;
+        row.disabled = !model.available && !signInLocked;
         row.classList.toggle('theia-mod-current', isCurrent);
         // The row shows the name only; the full model id is the tooltip.
         row.title = model.available ? model.modelId : (model.unavailableReason ?? model.modelId);
         row.addEventListener('click', ev => {
             ev.preventDefault();
             if (!model.available) {
+                if (signInLocked) {
+                    props.onSignIn?.(model.agentId);
+                }
                 return;
             }
             props.onSelectModel(model.agentId, model.modelId);
@@ -357,11 +364,25 @@ function renderList(host: HTMLElement, props: QaapComposerModelPickerProps): HTM
         label.className = 'qaap-model-picker-row-label';
         label.textContent = model.label;
         row.append(label);
-        if (model.paid) {
+        if (model.tier) {
+            const tier = document.createElement('span');
+            tier.className = 'qaap-model-picker-row-paid';
+            tier.textContent = model.tier === 'free'
+                ? nls.localize('qaap/composer/picker/free', 'Free')
+                : nls.localize('qaap/composer/picker/pro', 'Pro');
+            row.append(tier);
+        } else if (model.paid) {
             const paid = document.createElement('span');
             paid.className = 'qaap-model-picker-row-paid';
             paid.textContent = nls.localize('qaap/composer/picker/paid', 'Paid');
             row.append(paid);
+        }
+        if (signInLocked) {
+            const signIn = document.createElement('span');
+            signIn.className = 'qaap-model-picker-row-paid';
+            const harnessLabel = props.state.harnesses.find(harness => harness.id === model.agentId)?.label ?? model.agentId;
+            signIn.textContent = nls.localize('qaap/composer/picker/signInTo', 'Sign in to {0}', harnessLabel);
+            row.append(signIn);
         }
         if (isCurrent) {
             const check = document.createElement('span');

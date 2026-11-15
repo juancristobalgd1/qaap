@@ -297,6 +297,8 @@ export function createAgentSheetSplitOptionRow(options: {
     readonly agentLabel: string;
     readonly description?: string;
     readonly selected?: boolean;
+    /** Inline sign-in action for a signed-out harness; its catalog stays listed beside it. */
+    readonly signInAction?: { readonly label: string; readonly onAction: () => void };
     readonly onSelect: () => void;
     readonly onShowModels: () => void;
 }): HTMLDivElement {
@@ -330,6 +332,21 @@ export function createAgentSheetSplitOptionRow(options: {
         event.stopPropagation();
         options.onShowModels();
     });
+
+    if (options.signInAction) {
+        const signIn = document.createElement('button');
+        signIn.type = 'button';
+        signIn.className = 'theia-qaap-agent-sheet-inline-action theia-qaap-agent-sheet-connect';
+        signIn.textContent = options.signInAction.label;
+        signIn.setAttribute('aria-label', `${options.signInAction.label} ${options.agentLabel}`);
+        signIn.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            options.signInAction?.onAction();
+        });
+        row.append(main, signIn, chevronButton);
+        return row;
+    }
 
     row.append(main, chevronButton);
     return row;

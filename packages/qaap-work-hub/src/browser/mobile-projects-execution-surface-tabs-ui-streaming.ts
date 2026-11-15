@@ -198,19 +198,21 @@ export function createTerminalAgentTuiSelectExtracted(ctx: MobileProjectsExecuti
                 item.setAttribute('role', 'menuitem');
                 item.title = agent.label;
                 item.setAttribute('aria-label', agent.label);
-                item.toggleAttribute('disabled', agent.available === false);
+                // The TUI is the way to sign in, so only an agent without any session answer is unusable here.
+                const tuiUnavailable = agent.available === false && agent.session === undefined;
+                item.toggleAttribute('disabled', tuiUnavailable);
                 item.classList.toggle('theia-mod-active', agent.id === activeAgentId);
                 appendAgentBrandIcon(item, agent.id, 'sm');
                 const itemLabel = document.createElement('span');
                 itemLabel.className = 'theia-mobile-transcript-tab-icon-select-option-label';
                 itemLabel.textContent = resolveAgentDisplayLabel(agent.id, agent.label);
                 item.append(itemLabel);
-                if (agent.available === false) {
+                if (tuiUnavailable) {
                     item.classList.add('theia-mod-unavailable');
                 }
                 item.addEventListener('click', event => {
                     event.stopPropagation();
-                    if (agent.available === false) {
+                    if (tuiUnavailable) {
                         return;
                     }
                     // Pin the terminal's own mode; the composer's agent selection stays untouched.

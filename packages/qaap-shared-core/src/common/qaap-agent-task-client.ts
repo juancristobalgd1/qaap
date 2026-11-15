@@ -355,6 +355,9 @@ export function mergeAgentTaskAgentOptions(
                     accessState: agent.accessState && agent.accessState !== 'unknown'
                         ? agent.accessState
                         : existing.accessState ?? agent.accessState,
+                    // The session answer is what tells a signed-out harness (listed, models visible) from one
+                    // that is not detected at all (placeholder without a session).
+                    session: agent.session ?? existing.session,
                 });
             }
         }
