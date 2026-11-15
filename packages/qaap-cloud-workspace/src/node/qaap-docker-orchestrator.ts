@@ -228,8 +228,6 @@ export class QaapDockerOrchestrator {
     protected readonly verifiedRunscNodeAt = new Map<string, number>();
     /** When a tenant was first seen running under the wrong runtime, for the migration deadline. */
     protected readonly runtimeMigrationSeenAt = new Map<string, number>();
-    /** When a stale serving image was first seen while its tenant's turns ran, for the image migration deadline. */
-    protected readonly imageMigrationSeenAt = new Map<string, number>();
     protected dockerNodeConfigs: readonly QaapDockerNodeConfig[] | undefined;
     protected readonly dockerNodeClients = new Map<string, QaapDockerNodeClient>();
     /** Canonical host-side repository roots for containers validated during this backend lifetime. */
@@ -1470,10 +1468,9 @@ export class QaapDockerOrchestrator {
                     )
                     : undefined;
                 const busy = runningTarget ? await this.fetchTenantBusyStatus(runningTarget) : undefined;
-                // A stale backend (runtime or serving image) waits for running turns only until its deadline: `busy` is
-                // what the tenant's own backend reports, so otherwise a tenant could stay on an old image or out of gVisor
-                // for as long as it liked.
-                if (runningTarget && busy?.busy && this.staleTenantBackendAction(inspect, ownerLogin, busy) === 'defer') {
+                // A runtime migration waits for running turns only until its deadline: `busy` is what the tenant's
+                // own backend reports, so otherwise a tenant could stay out of gVisor for as long as it liked.
+                if (runningTarget && busy?.busy && !this.tenantRuntimeMigrationIsOverdue(inspect, ownerLogin)) {
                     console.warn(`[qaap-docker] Deferring recreation of stale tenant backend ${name} for ${ownerLogin}: `
                         + `${busy.runningTasks} agent turn(s) running.`);
                     this.deferredTenantBackendRecreations.add(ownerLogin.trim().toLowerCase());
@@ -1483,11 +1480,6 @@ export class QaapDockerOrchestrator {
                     wake.mark('ready');
                     return runningTarget;
                 }
-                if (busy?.busy) {
-                    console.warn(`[qaap-docker] Recreating stale tenant backend ${name} for ${ownerLogin} past its migration deadline: `
-                        + `interrupting ${busy.runningTasks} agent turn(s) after ${this.staleBackendDeferredMs(ownerLogin)}ms of deferral.`);
-                }
-                this.imageMigrationSeenAt.delete(ownerLogin.trim().toLowerCase());
                 console.warn(`[qaap-docker] Recreating stale tenant backend ${name} for ${ownerLogin}.`);
                 await this.removeTenantBackendIngressRelay(docker, ownerLogin);
                 await container.remove({ force: true });
@@ -1907,18 +1899,12 @@ export class QaapDockerOrchestrator {
     async retryDeferredTenantBackendRecreations(): Promise<void> {
         for (const tenant of [...this.deferredTenantBackendRecreations]) {
             const status = await this.probeTenantBackendBusy(tenant);
-            // Past the migration deadline a backend that still runs turns is recreated by the next request as well.
-            const pastDeadline = this.staleBackendDeferredMs(tenant) >= this.migrationGraceMs();
-            if (status?.busy && !pastDeadline) {
+            if (status?.busy) {
                 continue;
             }
             this.deferredTenantBackendRecreations.delete(tenant);
             this.invalidateTenantBackendTarget(tenant);
-            if (status?.busy) {
-                console.warn(`[qaap-docker] tenant backend for ${tenant} is past its migration deadline with ${status.runningTasks} agent turn(s) running; it will be recreated on its next request.`);
-            } else {
-                console.info(`[qaap-docker] tenant backend for ${tenant} is idle; it will be recreated on its next request.`);
-            }
+            console.info(`[qaap-docker] tenant backend for ${tenant} is idle; it will be recreated on its next request.`);
         }
     }
 
@@ -2008,43 +1994,9 @@ export class QaapDockerOrchestrator {
         const now = Date.now();
         const seenAt = this.runtimeMigrationSeenAt.get(login) ?? now;
         this.runtimeMigrationSeenAt.set(login, seenAt);
-        return now - seenAt >= this.migrationGraceMs();
-    }
-
-    /** Grace a stale tenant backend gets for running turns (`QAAP_TENANT_RUNTIME_MIGRATION_GRACE_MS`). */
-    protected migrationGraceMs(): number {
         const raw = process.env.QAAP_TENANT_RUNTIME_MIGRATION_GRACE_MS?.trim();
-        return raw && Number.isFinite(Number(raw)) && Number(raw) >= 0 ? Number(raw) : RUNTIME_MIGRATION_GRACE_MS;
-    }
-
-    /** Records when a stale serving image was first seen for a busy tenant and tells whether its grace period has passed. */
-    protected tenantStaleImageIsOverdue(ownerLogin: string): boolean {
-        const login = ownerLogin.trim().toLowerCase();
-        const now = Date.now();
-        const seenAt = this.imageMigrationSeenAt.get(login) ?? now;
-        this.imageMigrationSeenAt.set(login, seenAt);
-        return now - seenAt >= this.migrationGraceMs();
-    }
-
-    /**
-     * What a stale tenant backend gets: `defer` keeps it serving while its running turns are within the grace
-     * period; past the deadline (runtime or serving image) it is recreated even while busy. Idle backends are recreated.
-     */
-    protected staleTenantBackendAction(inspect: Dockerode.ContainerInspectInfo, ownerLogin: string, busy: QaapTenantBusyStatus | undefined): 'defer' | 'recreate' {
-        if (!busy?.busy) {
-            return 'recreate';
-        }
-        const runtimeOverdue = this.tenantRuntimeMigrationIsOverdue(inspect, ownerLogin);
-        const imageOverdue = this.tenantStaleImageIsOverdue(ownerLogin);
-        return runtimeOverdue || imageOverdue ? 'recreate' : 'defer';
-    }
-
-    /** How long a stale tenant backend has been kept for running turns, from its oldest recorded sighting; 0 when none. */
-    protected staleBackendDeferredMs(ownerLogin: string): number {
-        const login = ownerLogin.trim().toLowerCase();
-        const seen = [this.imageMigrationSeenAt.get(login), this.runtimeMigrationSeenAt.get(login)]
-            .filter((at): at is number => at !== undefined);
-        return seen.length === 0 ? 0 : Date.now() - Math.min(...seen);
+        const grace = raw && Number.isFinite(Number(raw)) && Number(raw) >= 0 ? Number(raw) : RUNTIME_MIGRATION_GRACE_MS;
+        return now - seenAt >= grace;
     }
 
     protected async inspectRunningTenantBackendTarget(ownerLogin: string): Promise<QaapTenantBackendTarget | undefined> {
