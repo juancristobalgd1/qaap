@@ -205,6 +205,8 @@ const ALLOWED = [
     /^examples\/playwright\/src\/tests\/qaap-recovery-preview-resilience\.ui-spec\.ts$/,
     // Work Hub "Update now" chip browser test (@qaap-mobile job, mocked control-plane routes; test-only).
     /^examples\/playwright\/src\/tests\/qaap-tenant-update-now\.ui-spec\.ts$/,
+    // One harness availability rule in the agent picker (@qaap-mobile job, stubbed agent list and catalog; test-only).
+    /^examples\/playwright\/src\/tests\/qaap-harness-availability\.ui-spec\.ts$/,
     // Opt-in classic-IDE surface (QAAP_PLAYWRIGHT_SURFACE=ide) so the upstream suite in
     // playwright.yml drives the IDE instead of the default Work Hub; unset = upstream behaviour.
     /^examples\/playwright\/src\/theia-app-loader\.ts$/,
