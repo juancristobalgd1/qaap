@@ -272,10 +272,11 @@ h1 {
     pointer-events: none;
 }
 
-.hero-dither { position: absolute; top: 0; left: 0; z-index: -1; width: 100%; height: 360px; pointer-events: none; image-rendering: pixelated; -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 62%, transparent 100%); mask-image: linear-gradient(to bottom, #000 0, #000 62%, transparent 100%); }
+.hero-dither { position: absolute; top: 0; left: 0; z-index: -1; width: 100%; height: 360px; pointer-events: none; image-rendering: pixelated; -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 70%, transparent 100%); mask-image: linear-gradient(to bottom, #000 0, #000 70%, transparent 100%); }
 
 /* ---- Micro-interactions v2 ---------------------------------------------- */
-.hero h1, .hero .lede { text-shadow: 0 0 34px rgba(14, 14, 13, 0.92), 0 0 12px rgba(14, 14, 13, 0.75); }
+.hero h1, .hero .lede { text-shadow: 0 0 34px rgba(14, 14, 13, 0.95), 0 0 12px rgba(14, 14, 13, 0.85), 0 1px 2px rgba(14, 14, 13, 0.9); }
+.hero .lede { color: rgba(236, 234, 229, 0.88); }
 .hero .fineprint { text-shadow: 0 0 16px rgba(14, 14, 13, 0.95), 0 0 4px rgba(14, 14, 13, 0.9); }
 .fx-word { display: inline-block; opacity: 0; filter: blur(10px); transform: translateY(18px); transition: opacity 0.8s cubic-bezier(0.2, 0.7, 0.2, 1), filter 0.8s cubic-bezier(0.2, 0.7, 0.2, 1), transform 0.8s cubic-bezier(0.2, 0.7, 0.2, 1); }
 .fx-ready .fx-word { opacity: 1; filter: none; transform: none; }
@@ -362,7 +363,7 @@ details p { overflow: hidden; }
 
 /* ---- Interactive Work Hub demo (mirrors the real app) -------------------- */
 .stage { z-index: 1; margin-top: 96px; }
-.hero .fineprint { position: relative; text-shadow: 0 0 10px var(--bg), 0 0 3px var(--bg); }
+.hero .fineprint { position: relative; color: rgba(236, 234, 229, 0.62); text-shadow: 0 0 14px var(--bg), 0 0 6px var(--bg), 0 0 2px var(--bg); }
 .demo-hint {
     display: inline-flex;
     align-items: center;
@@ -1950,7 +1951,7 @@ footer { border-top: 1px solid var(--line); }
         var dpr = Math.min(2, window.devicePixelRatio || 1);
         var top = hero.getBoundingClientRect().top;
         var stage = hero.querySelector('.stage');
-        if (stage) { canvas.style.height = Math.round(stage.getBoundingClientRect().top - top + 280) + 'px'; }
+        if (stage) { canvas.style.height = Math.round(stage.getBoundingClientRect().top - top + 60) + 'px'; }
         W = canvas.clientWidth;
         H = canvas.clientHeight;
         canvas.width = Math.round(W * dpr);
@@ -2159,7 +2160,7 @@ footer { border-top: 1px solid var(--line); }
         var cx = W / 2;
         var cyT = textEnd * 0.54;
         var rx = W < 700 ? W * 0.72 : Math.min(W * 0.46, 620);
-        var ry = textEnd * 0.6;
+        var ry = textEnd * 0.66;
         for (var r = 0; r < rows; r++) {
             var y = (r - 1) * CELL_H + flowY;
             if (y > revealY) { break; }
@@ -2188,7 +2189,8 @@ footer { border-top: 1px solid var(--line); }
                 }
                 var ex = (x - cx) / rx;
                 var ey = (y - cyT) / ry;
-                a *= 1 - 0.94 * Math.exp(-(ex * ex + ey * ey) * 1.1);
+                var e4 = ex * ex * ex * ex + ey * ey * ey * ey;
+                a *= 1 - 0.97 * Math.exp(-e4 * e4 * 1.2);
                 if (a < 0.02) { continue; }
                 ctx.globalAlpha = Math.min(1, a);
                 ctx.fillStyle = 'rgb(' + (cell.r | 0) + ',' + (cell.g | 0) + ',' + (cell.b | 0) + ')';
@@ -2241,7 +2243,7 @@ footer { border-top: 1px solid var(--line); }
     var ctx = canvas.getContext('2d');
     var low = document.createElement('canvas');
     var lctx = low.getContext('2d');
-    var CELL = 3;
+    var CELL = 2;
     var COLORS = [[74, 72, 68], [150, 148, 142], [236, 234, 229]];
     var BAYER = [0, 48, 12, 60, 3, 51, 15, 63, 32, 16, 44, 28, 35, 19, 47, 31, 8, 56, 4, 52, 11, 59, 7, 55, 40, 24, 36, 20, 43, 27, 39, 23, 2, 50, 14, 62, 1, 49, 13, 61, 34, 18, 46, 30, 33, 17, 45, 29, 10, 58, 6, 54, 9, 57, 5, 53, 42, 26, 38, 22, 41, 25, 37, 21];
     var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -2258,12 +2260,12 @@ footer { border-top: 1px solid var(--line); }
     var resize = function () {
         var top = hero.getBoundingClientRect().top;
         var stage = hero.querySelector('.stage');
-        canvas.style.height = Math.round(stage ? stage.getBoundingClientRect().top - top + 280 : 1100) + 'px';
+        canvas.style.height = Math.round(stage ? stage.getBoundingClientRect().top - top + 20 : 800) + 'px';
         fadeEnd = parseFloat(getComputedStyle(hero).getPropertyValue('--hero-fade-end')) || 260;
         holes = [];
         ['.hero-ctas', '.fineprint', '.demo-hint'].forEach(function (sel) {
             var el = hero.querySelector(sel);
-            if (el) { var r = el.getBoundingClientRect(); holes.push([r.top - top - 10, r.bottom - top + 10]); }
+            if (el) { var r = el.getBoundingClientRect(); holes.push([r.top - top, r.bottom - top, r.left - hero.getBoundingClientRect().left, r.right - hero.getBoundingClientRect().left]); }
         });
         W = canvas.clientWidth;
         H = canvas.clientHeight;
@@ -2284,26 +2286,33 @@ footer { border-top: 1px solid var(--line); }
         for (var y = 0; y < lh; y++) {
             var py = (y + 0.5) * CELL;
             var ny = py / sH;
-            var ramp = (py - fadeEnd) / 160;
+            var ramp = (py - fadeEnd + 20) / 240;
             if (ramp <= 0) {
                 for (var z = 0; z < lw; z++) { d[p + 3] = 0; p += 4; }
                 continue;
             }
             ramp = Math.min(1, ramp);
             ramp = ramp * ramp * (3 - 2 * ramp);
-            var textMask = 1;
-            for (var hi = 0; hi < holes.length; hi++) { if (py > holes[hi][0] && py < holes[hi][1]) { textMask = 0.35; } }
             for (var x = 0; x < lw; x++) {
                 var nx = (x + 0.5) * CELL / W;
                 var edge = Math.min(1, Math.min(nx, 1 - nx) / 0.12 + 0.15);
-                var I = satin.sample(nx, ny) * ramp * 1.15 * textMask * edge;
+                var px = (x + 0.5) * CELL;
+                var textMask = 1;
+                for (var hi = 0; hi < holes.length; hi++) {
+                    var hb = holes[hi];
+                    var ox = Math.max(hb[2] - px, px - hb[3], 0);
+                    var oy = Math.max(hb[0] - py, py - hb[1], 0);
+                    var od = Math.sqrt(ox * ox + oy * oy);
+                    textMask = Math.min(textMask, 0.08 + 0.92 * Math.min(1, od / 36));
+                }
+                var I = satin.sample(nx, ny) * ramp * 1.1 * textMask * edge;
                 var level = Math.floor(I * 3.4 + BAYER[(y & 7) * 8 + (x & 7)] / 64 - 0.35);
                 if (level <= 0) {
                     d[p + 3] = 0;
                 } else {
                     var c = COLORS[Math.min(2, level - 1)];
                     d[p] = c[0]; d[p + 1] = c[1]; d[p + 2] = c[2];
-                    d[p + 3] = 210;
+                    d[p + 3] = 170;
                 }
                 p += 4;
             }
@@ -2316,7 +2325,7 @@ footer { border-top: 1px solid var(--line); }
     var loop = function (now) {
         frameId = 0;
         if (!visible || document.hidden) { return; }
-        if (now - last >= 40) { last = now; draw(); }
+        if (now - last >= 32) { last = now; draw(); }
         frameId = requestAnimationFrame(loop);
     };
     var kick = function () {
