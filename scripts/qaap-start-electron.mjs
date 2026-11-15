@@ -7,12 +7,45 @@
  * OAuth callback (which would need a fixed port) is involved. Arguments are passed to `theia start`.
  */
 import { spawn } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
 
 const isWindows = process.platform === 'win32';
-const env = {
-    ...process.env,
-    QAAP_SKIP_AUTH: process.env.QAAP_SKIP_AUTH || '1',
-};
+
+/**
+ * Loads `KEY=VALUE` lines from `examples/electron/.env` (the working directory) without any dependency.
+ * Comments and blank lines are skipped, and a variable already set in the environment wins. Values are
+ * never printed.
+ */
+function loadElectronDotEnv(file, env) {
+    if (!existsSync(file)) {
+        return env;
+    }
+    for (const rawLine of readFileSync(file, 'utf8').split(/\r?\n/)) {
+        const line = rawLine.trim();
+        if (!line || line.startsWith('#')) {
+            continue;
+        }
+        const separator = line.indexOf('=');
+        if (separator <= 0) {
+            continue;
+        }
+        const key = line.slice(0, separator).trim();
+        let value = line.slice(separator + 1).trim();
+        if (/^(['"]).*\1$/.test(value)) {
+            value = value.slice(1, -1);
+        }
+        if (env[key] === undefined) {
+            env[key] = value;
+        }
+    }
+    return env;
+}
+
+const env = loadElectronDotEnv(path.resolve(process.cwd(), '.env'), { ...process.env });
+env.QAAP_SKIP_AUTH = env.QAAP_SKIP_AUTH || '1';
+// The desktop runtime serves the GitHub device-flow routes and lets a GitHub session import repositories.
+env.QAAP_DESKTOP = '1';
 
 const child = spawn('theia', ['start', ...process.argv.slice(2)], {
     cwd: process.cwd(),
