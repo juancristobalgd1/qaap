@@ -12,9 +12,17 @@ import { WorkbenchTopBarFactory } from '@theia/core/lib/browser/menu/workbench-t
 import { QaapAuthCommandContribution } from './qaap-auth-command-contribution';
 import { QaapWorkbenchTopBarFactory } from './qaap-workbench-top-bar-factory';
 
-/** Rebinds {@link WorkbenchTopBarFactory} so the menu bar uses Qaap nav controls (same mount path as before). */
-export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
+/**
+ * Swaps {@link WorkbenchTopBarFactory} for the Qaap nav controls (same mount path as before). The browser
+ * menu module binds the upstream factory, but the Electron menu module does not, so there is nothing to
+ * rebind in the desktop app: bind the Qaap factory there instead of failing the frontend start.
+ */
+export default new ContainerModule((bind, _unbind, isBound, rebind) => {
     bind(QaapAuthCommandContribution).toSelf().inSingletonScope();
     bind(CommandContribution).toService(QaapAuthCommandContribution);
-    rebind(WorkbenchTopBarFactory).to(QaapWorkbenchTopBarFactory).inSingletonScope();
+    if (isBound(WorkbenchTopBarFactory)) {
+        rebind(WorkbenchTopBarFactory).to(QaapWorkbenchTopBarFactory).inSingletonScope();
+    } else {
+        bind(WorkbenchTopBarFactory).to(QaapWorkbenchTopBarFactory).inSingletonScope();
+    }
 });
