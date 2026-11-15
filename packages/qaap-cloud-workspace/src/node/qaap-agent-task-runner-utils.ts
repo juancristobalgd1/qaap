@@ -219,13 +219,7 @@ export function resolveAgentPromptTransport(
     if (id === 'grok' || bin === 'grok') {
         return { kind: 'prompt-file', flag: '--prompt-file' };
     }
-    if (bin === 'agy') {
-        // agy takes the prompt as the argument of `-p`, so it goes inline and stdin is not used (the runner
-        // then starts the child with stdin ignored). Closing stdin does NOT stop an unsigned agy from waiting
-        // ~60 s for a pasted code; only the auth failure classifier makes that wait readable.
-        return { kind: 'argv' };
-    }
-    if (id === 'antigravity' || bin === 'gemini' || bin === 'antigravity') {
+    if (id === 'antigravity' || bin === 'gemini' || bin === 'agy' || bin === 'antigravity') {
         return bin === 'gemini'
             ? { kind: 'plain-stdin', placeholder: 'omit-flag' }
             : { kind: 'plain-stdin', placeholder: 'dash' };

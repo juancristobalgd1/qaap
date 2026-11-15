@@ -31,8 +31,8 @@ export function normalizeAntigravityCliBin(value: string | undefined): QaapAntig
 /**
  * Headless task template for a resolved Antigravity CLI. Gemini (`-m`) and `agy` (`--model`) take
  * `{model_flags}`; the template only carries a flag the host can fill, so `auto` or an unset model adds
- * none. The community CLI reads its model from its own settings and takes no model flag. The prompt is
- * always the argument of `-p`, never stdin.
+ * none. The community CLI reads its model from its own settings and takes no model flag. `{prompt}` is
+ * the placeholder the transport fills (stdin `-` for agy and the others, see resolveAgentPromptTransport).
  */
 export function resolveAntigravityCliTemplate(bin: QaapAntigravityCliBin): string {
     if (bin === 'gemini') {

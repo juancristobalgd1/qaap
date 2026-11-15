@@ -23,6 +23,9 @@ function shellQuote(value: string): string {
  */
 const GEMINI_MODEL_ID_PATTERN = /^(auto$|(gemini|models\/gemini)-[a-z0-9.\-]+$)/i;
 
+/** An `agy models` id (`gemini-3.8-flash-medium`): lower-case slug only. Labels with spaces or capitals never match. */
+const AGY_MODEL_SLUG_PATTERN = /^[a-z0-9][a-z0-9.-]*$/;
+
 /**
  * CLI flags inserted into agent templates (`{model_flags}` / `{qaiq_flags}`).
  * Returns an empty string when the agent has no known model switch.
@@ -48,13 +51,10 @@ export function formatModelFlagsForAgent(agentId: string, binding: QaapQaiqModel
             return GEMINI_MODEL_ID_PATTERN.test(binding.modelId.trim()) ? `-m ${shellQuote(binding.modelId.trim())}` : '';
         }
         if (antigravityBin === 'agy') {
-            // Only a concrete model the user picked: `auto` or an empty id means agy's own default, and a
-            // Gemini CLI id is not an agy model. The catalog stores agy's label as the id.
+            // Only a slug that looks like an `agy models` id. A label ("Gemini 3.8 Flash (High)"), an empty id
+            // or `auto` gets no flag, so agy runs its own default model.
             const modelId = binding.modelId.trim();
-            if (!modelId || modelId === 'auto' || GEMINI_MODEL_ID_PATTERN.test(modelId)) {
-                return '';
-            }
-            return `--model ${shellQuote(modelId)}`;
+            return AGY_MODEL_SLUG_PATTERN.test(modelId) && modelId !== 'auto' ? `--model ${modelId}` : '';
         }
         return '';
     }

@@ -83,19 +83,15 @@ describe('formatModelFlagsForAgent', () => {
         expect(formatModelFlagsForAgent('antigravity', binding, 'gemini')).to.equal('');
     });
 
-    it('passes agy --model only for a concrete catalog model the user picked', () => {
-        const picked = bindingFromQaiqModelSelection({
-            provider: 'gemini',
-            vendor: 'antigravity',
-            modelId: 'Gemini 3.8 Flash (High)',
-        });
-        expect(formatModelFlagsForAgent('antigravity', picked, 'agy')).to.equal('--model \'Gemini 3.8 Flash (High)\'');
+    it('passes agy --model for a valid agy slug', () => {
+        const binding = bindingFromQaiqModelSelection({ provider: 'gemini', vendor: 'antigravity', modelId: 'gemini-3.8-flash-medium' });
+        expect(formatModelFlagsForAgent('antigravity', binding, 'agy')).to.equal('--model gemini-3.8-flash-medium');
     });
 
-    it('passes no agy flag for auto, an empty id or a Gemini CLI id', () => {
-        for (const modelId of ['auto', '', 'gemini-2.5-pro']) {
-            const binding = bindingFromQaiqModelSelection({ provider: 'gemini', vendor: 'google', modelId });
-            expect(formatModelFlagsForAgent('antigravity', binding, 'agy'), modelId).to.equal('');
+    it('passes no agy flag for a catalog label, auto or an empty id', () => {
+        for (const modelId of ['Gemini 3.8 Flash (High)', 'auto', '', '  ']) {
+            const binding = bindingFromQaiqModelSelection({ provider: 'gemini', vendor: 'antigravity', modelId });
+            expect(formatModelFlagsForAgent('antigravity', binding, 'agy'), JSON.stringify(modelId)).to.equal('');
         }
     });
 });

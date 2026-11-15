@@ -135,11 +135,6 @@ describe('harness connection state', () => {
         }
     });
 
-    it('sends agy a prompt inline as the argument of -p, never over stdin', () => {
-        expect(resolveAgentPromptTransport('antigravity', { id: 'antigravity', bin: 'agy' })).to.deep.equal({ kind: 'argv' });
-        expect(resolveAgentPromptTransport('antigravity', { id: 'antigravity', bin: 'gemini' })).to.deep.equal({ kind: 'plain-stdin', placeholder: 'omit-flag' });
-    });
-
     it('reads Gemini CLI sign-in from the credential file in HOME', () => {
         const home = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-gemini-probe-'));
         const run = (): string => execFileSync('sh', ['-c', GEMINI_CLI_CONNECTION_PROBE_SCRIPT], { env: { ...process.env, HOME: home } }).toString();
@@ -353,13 +348,9 @@ describe('Windows-safe prompt transport', () => {
         )).to.equal('hermes --yolo chat -Q -q -');
     });
 
-    it('routes every shipped harness off argv, except agy (its prompt is the argument of -p by design)', () => {
+    it('routes every shipped harness off argv', () => {
         for (const definition of QAAP_BUILTIN_AGENT_DEFINITIONS) {
             const transport = resolveAgentPromptTransport(definition.id, definition);
-            if (definition.bin === 'agy') {
-                expect(transport.kind, definition.id).to.equal('argv');
-                continue;
-            }
             expect(transport.kind, definition.id).to.not.equal('argv');
             const command = applyTemplateForPromptTransport(
                 definition.template,
