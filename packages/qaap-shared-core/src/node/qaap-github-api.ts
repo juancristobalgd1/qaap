@@ -6,7 +6,10 @@
 import type {
     QaapAuthSessionUser,
     QaapGithubMergePullRequestResponse,
+    QaapGithubPullRequestCheck,
     QaapGithubPullRequestFile,
+    QaapGithubPullRequestReview,
+    QaapGithubPullRequestTimelineEvent,
     QaapGithubPullRequestLine,
     QaapGithubPullRequestSummary,
     QaapGithubRepositorySummary,
@@ -53,7 +56,10 @@ interface GithubPullResponse {
     body?: string | null;
     html_url: string;
     updated_at: string;
-    user?: { login?: string | null } | null;
+    user?: { login?: string | null; avatar_url?: string | null } | null;
+    labels?: Array<{ name?: string | null; color?: string | null }> | null;
+    requested_reviewers?: Array<{ login?: string | null; avatar_url?: string | null }> | null;
+    commits?: number;
     head: { ref: string; sha: string; repo?: { full_name?: string | null } | null };
     base: { ref: string };
     changed_files: number;
@@ -501,8 +507,131 @@ export async function fetchGithubPullRequestDetail(
         throw new GithubApiError(`GitHub pull request API failed (${response.status})`, response.status, isGithubRateLimitResponse(response));
     }
     const pull = await response.json() as GithubPullResponse;
-    const filesPreview = await fetchGithubPullRequestFiles(accessToken, owner, repo, number);
-    return githubPullToSummary(owner, repo, pull, filesPreview);
+    // Files, checks, reviews and the timeline in parallel; the extras are best-effort and never fail the detail.
+    const [filesPreview, checks, reviews, timeline] = await Promise.all([
+        fetchGithubPullRequestFiles(accessToken, owner, repo, number),
+        fetchGithubPullRequestChecks(accessToken, owner, repo, pull.head.sha).catch(() => undefined),
+        fetchGithubPullRequestReviews(accessToken, owner, repo, number).catch(() => undefined),
+        fetchGithubPullRequestTimeline(accessToken, owner, repo, number).catch(() => undefined),
+    ]);
+    return {
+        ...githubPullToSummary(owner, repo, pull, filesPreview),
+        authorAvatarUrl: pull.user?.avatar_url ?? undefined,
+        labels: (pull.labels ?? []).filter(label => !!label?.name).map(label => ({ name: label.name!, color: label.color ?? undefined })),
+        requestedReviewers: (pull.requested_reviewers ?? []).filter(user => !!user?.login)
+            .map(user => ({ login: user.login!, avatarUrl: user.avatar_url ?? undefined })),
+        commits: typeof pull.commits === 'number' ? pull.commits : undefined,
+        checks,
+        reviews,
+        timeline,
+    };
+}
+
+async function githubGetJson<T>(accessToken: string, url: string): Promise<T> {
+    const response = await fetchGithubRepositoryRequest(url, { headers: githubHeaders(accessToken) });
+    if (!response.ok) {
+        throw new GithubApiError(`GitHub API failed (${response.status})`, response.status, isGithubRateLimitResponse(response));
+    }
+    return await response.json() as T;
+}
+
+/** Check runs (GitHub Actions and apps) plus legacy commit statuses on the head commit, deduplicated by name. */
+export async function fetchGithubPullRequestChecks(accessToken: string, owner: string, repo: string, sha: string): Promise<QaapGithubPullRequestCheck[]> {
+    const base = `${resolveGithubApiBaseUrl()}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${encodeURIComponent(sha)}`;
+    const [runs, statuses] = await Promise.all([
+        githubGetJson<{ check_runs?: Array<{ name?: string; status?: string; conclusion?: string | null; html_url?: string | null; details_url?: string | null }> }>(
+            accessToken, `${base}/check-runs?per_page=100`).catch(() => ({ check_runs: [] })),
+        githubGetJson<{ statuses?: Array<{ context?: string; state?: string; target_url?: string | null }> }>(
+            accessToken, `${base}/status?per_page=100`).catch(() => ({ statuses: [] })),
+    ]);
+    const checks = new Map<string, QaapGithubPullRequestCheck>();
+    for (const run of runs.check_runs ?? []) {
+        if (!run.name || checks.has(run.name)) {
+            continue;
+        }
+        const status = run.status === 'completed' || run.status === 'in_progress' ? run.status : 'queued';
+        checks.set(run.name, {
+            name: run.name,
+            status,
+            conclusion: status === 'completed' ? (run.conclusion ?? 'neutral') as QaapGithubPullRequestCheck['conclusion'] : undefined,
+            url: run.html_url ?? run.details_url ?? undefined,
+        });
+    }
+    for (const entry of statuses.statuses ?? []) {
+        if (!entry.context || checks.has(entry.context)) {
+            continue;
+        }
+        const pending = entry.state === 'pending';
+        checks.set(entry.context, {
+            name: entry.context,
+            status: pending ? 'in_progress' : 'completed',
+            conclusion: pending ? undefined : entry.state === 'success' ? 'success' : 'failure',
+            url: entry.target_url ?? undefined,
+        });
+    }
+    return [...checks.values()];
+}
+
+const GITHUB_REVIEW_STATES: Record<string, QaapGithubPullRequestReview['state']> = {
+    APPROVED: 'approved', CHANGES_REQUESTED: 'changes_requested', COMMENTED: 'commented', DISMISSED: 'dismissed', PENDING: 'pending',
+};
+
+/** Latest meaningful review per reviewer (a later comment-only review does not hide an approval). */
+export async function fetchGithubPullRequestReviews(accessToken: string, owner: string, repo: string, number: number): Promise<QaapGithubPullRequestReview[]> {
+    const reviews = await githubGetJson<Array<{ user?: { login?: string | null; avatar_url?: string | null } | null; state?: string }>>(
+        accessToken, `${resolveGithubApiBaseUrl()}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/reviews?per_page=100`);
+    const latest = new Map<string, QaapGithubPullRequestReview>();
+    for (const review of reviews) {
+        const login = review.user?.login;
+        const state = GITHUB_REVIEW_STATES[review.state ?? ''];
+        if (!login || !state || state === 'pending') {
+            continue;
+        }
+        const previous = latest.get(login);
+        if (state === 'commented' && previous && previous.state !== 'commented') {
+            continue;
+        }
+        latest.set(login, { login, avatarUrl: review.user?.avatar_url ?? undefined, state });
+    }
+    return [...latest.values()];
+}
+
+/** The issue timeline (newest 100 events), mapped to a compact shape; unknown event types become `other`. */
+export async function fetchGithubPullRequestTimeline(accessToken: string, owner: string, repo: string, number: number): Promise<QaapGithubPullRequestTimelineEvent[]> {
+    type RawEvent = {
+        event?: string; created_at?: string; submitted_at?: string; body?: string | null; state?: string; html_url?: string | null;
+        actor?: { login?: string | null; avatar_url?: string | null } | null;
+        user?: { login?: string | null; avatar_url?: string | null } | null;
+        author?: { name?: string | null; date?: string | null } | null;
+        committer?: { date?: string | null } | null;
+        message?: string; label?: { name?: string | null } | null; rename?: { to?: string | null } | null;
+    };
+    const events = await githubGetJson<RawEvent[]>(
+        accessToken, `${resolveGithubApiBaseUrl()}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}/timeline?per_page=100`);
+    const known = new Set(['commented', 'committed', 'reviewed', 'labeled', 'unlabeled', 'merged', 'closed', 'reopened',
+        'review_requested', 'ready_for_review', 'convert_to_draft', 'head_ref_force_pushed', 'renamed']);
+    const result: QaapGithubPullRequestTimelineEvent[] = [];
+    for (const event of events) {
+        const kind = (known.has(event.event ?? '') ? event.event : 'other') as QaapGithubPullRequestTimelineEvent['kind'];
+        if (kind === 'other') {
+            continue;
+        }
+        const person = event.actor ?? event.user ?? undefined;
+        const text = kind === 'committed' ? event.message?.split('\n')[0]
+            : kind === 'labeled' || kind === 'unlabeled' ? event.label?.name ?? undefined
+            : kind === 'renamed' ? event.rename?.to ?? undefined
+            : event.body ?? undefined;
+        result.push({
+            kind,
+            actor: person?.login ?? (kind === 'committed' ? event.author?.name ?? undefined : undefined),
+            actorAvatarUrl: person?.avatar_url ?? undefined,
+            createdAt: event.created_at ?? event.submitted_at ?? event.author?.date ?? event.committer?.date ?? undefined,
+            text: text?.trim() ? text.trim().slice(0, 2000) : undefined,
+            reviewState: kind === 'reviewed' ? GITHUB_REVIEW_STATES[(event.state ?? '').toUpperCase()] : undefined,
+            url: event.html_url ?? undefined,
+        });
+    }
+    return result;
 }
 
 function githubPullToSummary(

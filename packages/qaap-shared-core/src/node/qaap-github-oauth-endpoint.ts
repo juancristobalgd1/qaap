@@ -145,6 +145,9 @@ const SKIP_AUTH_DEV_USER = {
     name: 'Dev User',
 };
 
+/** How long a consumed OAuth state still answers a duplicate callback with the same sign-in. */
+const QAAP_OAUTH_DUPLICATE_CALLBACK_WINDOW_MS = 60_000;
+
 @injectable()
 export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     @inject(QaapGithubSessionStore)
@@ -552,26 +555,55 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             return;
         }
         if (!this.sessions.consumeOAuthState(state)) {
+            // The browser can deliver the same callback twice (a service-worker navigation preload
+            // plus the real navigation). The first request consumed the state; answer the
+            // duplicate with that sign-in's session instead of a "state lost" error.
+            const duplicate = state ? this.oauthCallbacksInFlight().get(state) : undefined;
+            const duplicateSessionId = duplicate ? await duplicate : undefined;
+            if (duplicateSessionId) {
+                this.setSessionCookie(res, duplicateSessionId);
+                this.redirectAfterOAuth(res, config.publicUrl, true);
+                return;
+            }
             console.error('[qaap-oauth] OAuth state is unknown or expired (backend likely restarted between /start and /callback).');
             this.redirectAfterOAuth(res, config.publicUrl, false, 'state_lost');
             return;
         }
-        try {
-            const accessToken = await exchangeGithubCode(config, code);
-            const user = await fetchGithubUser(accessToken);
-            const previousSessionId = this.auth.resolveSessionId(req);
-            if (previousSessionId) {
-                this.endSession(previousSessionId);
+        const signIn = (async (): Promise<string | undefined> => {
+            try {
+                const accessToken = await exchangeGithubCode(config, code);
+                const user = await fetchGithubUser(accessToken);
+                const previousSessionId = this.auth.resolveSessionId(req);
+                if (previousSessionId) {
+                    this.endSession(previousSessionId);
+                }
+                const sessionId = this.sessions.createSession({ accessToken, user });
+                console.info('[qaap-oauth] GitHub sign-in OK for user', user.login);
+                return sessionId;
+            } catch (err) {
+                const message = err instanceof Error ? err.message : String(err);
+                console.error('[qaap-oauth] Token exchange or user fetch failed:', message);
+                return undefined;
             }
-            const sessionId = this.sessions.createSession({ accessToken, user });
+        })();
+        if (state) {
+            const inFlight = this.oauthCallbacksInFlight();
+            inFlight.set(state, signIn);
+            setTimeout(() => inFlight.delete(state), QAAP_OAUTH_DUPLICATE_CALLBACK_WINDOW_MS).unref?.();
+        }
+        const sessionId = await signIn;
+        if (sessionId) {
             this.setSessionCookie(res, sessionId);
-            console.info('[qaap-oauth] GitHub sign-in OK for user', user.login);
             this.redirectAfterOAuth(res, config.publicUrl, true);
-        } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            console.error('[qaap-oauth] Token exchange or user fetch failed:', message);
+        } else {
             this.redirectAfterOAuth(res, config.publicUrl, false, 'exchange_failed');
         }
+    }
+
+    /** Sign-ins by OAuth state, kept briefly so a duplicate callback reuses the first one's session. */
+    protected oauthCallbacksInFlight(): Map<string, Promise<string | undefined>> {
+        const self = this as unknown as { oauthCallbacks?: Map<string, Promise<string | undefined>> };
+        return self.oauthCallbacks ??= new Map();
     }
 
     protected handleHealth(req: Request, res: Response): void {
@@ -579,6 +611,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         const payload = buildQaapLaunchHealthPayload(readiness, {
             skipAuth: this.auth.isSkipAuthEnabled(),
             build: process.env.QAAP_BUILD_SHA,
+            signedIn: this.auth.authenticate(req).kind !== 'unauthorized',
         });
         // The orchestrator wakes tenant backends with the liveness probe: a storage problem must
         // not lock a tenant out of the IDE. Everything else (Docker HEALTHCHECK, smoke, deploy
@@ -601,23 +634,28 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         res.status(healthy ? 200 : 503).json({ ...payload, ok: healthy, checks });
     }
 
-    protected handleAuthConfig(_req: Request, res: Response): void {
+    protected handleAuthConfig(req: Request, res: Response): void {
         const build = process.env.QAAP_BUILD_SHA?.trim();
         const readiness = evaluateQaapProductionAuthReadiness();
         const betaAccess = new QaapBetaAccessPolicy();
+        // Anonymous callers (the public login gate) get the gate's flags only; operator detail
+        // (agent uid, isolation mode, default harness) is for signed-in callers.
+        const signedIn = this.auth.authenticate(req).kind !== 'unauthorized';
         res.json({
             betaAccessRequired: betaAccess.isRequired(),
             betaAccessConfigured: betaAccess.isConfigured(),
             githubOAuth: readiness.oauthConfigured,
             skipAuth: this.auth.isSkipAuthEnabled(),
             productionRuntime: readiness.productionRuntime,
-            // The configured default harness for new composers and routines (QAAP_DEFAULT_AGENT_ID); omitted when unset (first available harness).
-            defaultAgentId: readBackendDefaultAgentId(),
             oauthConfigured: readiness.oauthConfigured,
             agentUidPerUser: readiness.agentUidPerUser,
-            backendIsolationMode: readiness.backendIsolationMode,
             backendIsolationReady: readiness.backendIsolationReady,
-            ...(process.env.QAAP_AGENT_UID?.trim() ? { agentUid: process.env.QAAP_AGENT_UID.trim() } : {}),
+            ...(signedIn ? {
+                // The configured default harness for new composers and routines (QAAP_DEFAULT_AGENT_ID); omitted when unset (first available harness).
+                defaultAgentId: readBackendDefaultAgentId(),
+                backendIsolationMode: readiness.backendIsolationMode,
+                ...(process.env.QAAP_AGENT_UID?.trim() ? { agentUid: process.env.QAAP_AGENT_UID.trim() } : {}),
+            } : {}),
             // Deployed-build identity (short git SHA, baked into the image at build time).
             // Public by design: the repo is public, and this is the one signal that ends
             // "which build am I actually on?" during deploys — the post-deploy gate asserts

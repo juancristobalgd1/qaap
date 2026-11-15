@@ -217,6 +217,54 @@ export interface QaapGithubPullRequestSummary {
      * mergeability and files. Fetch the detail endpoint before relying on those fields.
      */
     partial?: boolean;
+    /** Detail endpoint only: the author's avatar image URL. */
+    authorAvatarUrl?: string;
+    /** Detail endpoint only: labels with their GitHub hex color (no `#`). */
+    labels?: QaapGithubPullRequestLabel[];
+    /** Detail endpoint only: users asked to review that have not reviewed yet. */
+    requestedReviewers?: QaapGithubPullRequestPerson[];
+    /** Detail endpoint only: latest review state per reviewer. */
+    reviews?: QaapGithubPullRequestReview[];
+    /** Detail endpoint only: check runs and commit statuses on the head commit. */
+    checks?: QaapGithubPullRequestCheck[];
+    /** Detail endpoint only: number of commits. */
+    commits?: number;
+    /** Detail endpoint only: issue timeline (opened, commits, reviews, comments, labels, merges…), oldest first. */
+    timeline?: QaapGithubPullRequestTimelineEvent[];
+}
+
+export interface QaapGithubPullRequestLabel {
+    readonly name: string;
+    readonly color?: string;
+}
+
+export interface QaapGithubPullRequestPerson {
+    readonly login: string;
+    readonly avatarUrl?: string;
+}
+
+export interface QaapGithubPullRequestReview extends QaapGithubPullRequestPerson {
+    readonly state: 'approved' | 'changes_requested' | 'commented' | 'dismissed' | 'pending';
+}
+
+export interface QaapGithubPullRequestCheck {
+    readonly name: string;
+    /** `queued` and `in_progress` are still running; `completed` carries a conclusion. */
+    readonly status: 'queued' | 'in_progress' | 'completed';
+    readonly conclusion?: 'success' | 'failure' | 'neutral' | 'cancelled' | 'skipped' | 'timed_out' | 'action_required' | 'stale';
+    readonly url?: string;
+}
+
+export interface QaapGithubPullRequestTimelineEvent {
+    readonly kind: 'commented' | 'committed' | 'reviewed' | 'labeled' | 'unlabeled' | 'merged' | 'closed' | 'reopened'
+        | 'review_requested' | 'ready_for_review' | 'convert_to_draft' | 'head_ref_force_pushed' | 'renamed' | 'other';
+    readonly actor?: string;
+    readonly actorAvatarUrl?: string;
+    readonly createdAt?: string;
+    /** Comment / review body, commit message headline, label name or new title. */
+    readonly text?: string;
+    readonly reviewState?: QaapGithubPullRequestReview['state'];
+    readonly url?: string;
 }
 
 /** State chip of the all-pull-requests navigator; `closed` means closed without merging. */

@@ -324,13 +324,14 @@ describe('QaapQaiqStreamAccumulator', () => {
     it('keeps the latest per-call usage instead of the summed result aggregate', () => {
         const acc = new QaapQaiqStreamAccumulator();
         acc.push('{"type":"assistant","message":{"usage":{"input_tokens":1200,"output_tokens":80}}}\n');
-        expect(acc.getTurnUsage()).to.deep.equal({ inputTokens: 1200, outputTokens: 80 });
+        expect(acc.getTurnUsage()).to.deep.equal({ inputTokens: 1200, outputTokens: 80, outputTokensTotal: 80 });
         acc.push('{"type":"assistant","message":{"usage":{"input_tokens":20,"output_tokens":40,"cache_read_input_tokens":1300}}}\n');
         // `result` sums every call of the turn; the context ring must not double count it.
         acc.push('{"type":"result","usage":{"input_tokens":1220,"output_tokens":120,"cache_read_input_tokens":1300}}\n');
         expect(acc.getTurnUsage()).to.deep.equal({
             inputTokens: 20,
             outputTokens: 40,
+            outputTokensTotal: 120,
             cacheReadInputTokens: 1300,
         });
     });
@@ -341,8 +342,27 @@ describe('QaapQaiqStreamAccumulator', () => {
         expect(acc.getTurnUsage()).to.deep.equal({
             inputTokens: 1500,
             outputTokens: 200,
+            outputTokensTotal: 200,
             cacheReadInputTokens: 100,
         });
+    });
+
+    it('sums output across messages of a turn, counting a re-emitted message id once at its largest count', () => {
+        const acc = new QaapQaiqStreamAccumulator();
+        acc.push('{"type":"assistant","message":{"id":"msg_1","usage":{"input_tokens":100,"output_tokens":10}}}\n');
+        acc.push('{"type":"assistant","message":{"id":"msg_1","usage":{"input_tokens":100,"output_tokens":350}}}\n');
+        acc.push('{"type":"assistant","message":{"id":"msg_1","usage":{"input_tokens":100,"output_tokens":350}}}\n');
+        acc.push('{"type":"assistant","message":{"id":"msg_2","usage":{"input_tokens":150,"output_tokens":60}}}\n');
+        // Context stays the latest snapshot; only the reported output is cumulative.
+        expect(acc.getTurnUsage()).to.deep.equal({ inputTokens: 150, outputTokens: 60, outputTokensTotal: 410 });
+    });
+
+    it('prefers a larger result total for the turn output and leaves the context numbers alone', () => {
+        const acc = new QaapQaiqStreamAccumulator();
+        acc.push('{"type":"assistant","message":{"id":"msg_1","usage":{"input_tokens":100,"output_tokens":300}}}\n');
+        acc.push('{"type":"assistant","message":{"id":"msg_2","usage":{"input_tokens":150,"output_tokens":60}}}\n');
+        acc.push('{"type":"result","usage":{"input_tokens":400,"output_tokens":500}}\n');
+        expect(acc.getTurnUsage()).to.deep.equal({ inputTokens: 150, outputTokens: 60, outputTokensTotal: 500 });
     });
 
     it('appends error result text when result type is result with is_error', () => {

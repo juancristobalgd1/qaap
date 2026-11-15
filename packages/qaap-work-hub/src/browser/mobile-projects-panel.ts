@@ -1059,11 +1059,11 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.pullRequestDetailUi.renderEmpty();
     }
 
-    protected pullRequestDetailActiveTab(): 'summary' | 'code' {
+    protected pullRequestDetailActiveTab(): 'summary' | 'timeline' | 'code' {
         return this.pullRequestDetailUi.getActiveTab();
     }
 
-    protected setPullRequestDetailTab(tab: 'summary' | 'code'): void {
+    protected setPullRequestDetailTab(tab: 'summary' | 'timeline' | 'code'): void {
         this.pullRequestDetailUi.setActiveTab(tab);
         if (this.visible) {
             this.render();

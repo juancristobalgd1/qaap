@@ -9,6 +9,7 @@ import { json } from 'body-parser';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
 import { QAAP_USER_SETTINGS_API_PATH } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import { QaapGithubAuthGuard } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
+import { maskQaapUserSecretsForClient } from '@theia/qaap-shared-core/lib/common/qaap-secret-placeholder';
 import {
     filterAiSettings,
     readUserSettingsFromDisk,
@@ -33,7 +34,7 @@ export class QaapUserAiSettingsEndpoint implements BackendApplicationContributio
         if (!login) {
             return;
         }
-        res.json({ settings: filterAiSettings(readUserSettingsFromDisk(login)) });
+        res.json({ settings: this.toClientSettings(this.loadSettings(login)) });
     }
 
     protected handlePut(req: Request, res: Response): void {
@@ -47,11 +48,24 @@ export class QaapUserAiSettingsEndpoint implements BackendApplicationContributio
             return;
         }
         try {
-            const settings = writeUserSettingsToDisk(login, body.settings as Record<string, unknown>);
-            res.json({ settings });
+            const settings = this.saveSettings(login, body.settings as Record<string, unknown>);
+            res.json({ settings: this.toClientSettings(settings) });
         } catch (error) {
             res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
         }
+    }
+
+    /** Settings as the signed-in owner may see them: tenant secrets are replaced by placeholders (see maskQaapUserSecretsForClient). */
+    protected toClientSettings(settings: Record<string, unknown>): Record<string, unknown> {
+        return maskQaapUserSecretsForClient(filterAiSettings(settings));
+    }
+
+    protected loadSettings(login: string): Record<string, unknown> {
+        return readUserSettingsFromDisk(login);
+    }
+
+    protected saveSettings(login: string, patch: Record<string, unknown>): Record<string, unknown> {
+        return writeUserSettingsToDisk(login, patch);
     }
 
     protected requireLogin(req: Request, res: Response): string | undefined {

@@ -31,7 +31,7 @@ describe('Qaap English interface bootstrap', () => {
         expect(new URL(atAppend.script.src).pathname).to.equal('/bundle.js');
 
         const gate = run.document.getElementById('qaap-login-host');
-        expect(gate?.textContent).to.include('Sign in with GitHub');
+        expect(gate?.textContent).to.include('Continue with GitHub');
         expect(gate?.querySelector('a[href="/legal/terms.html"]')).to.not.equal(null);
         expect(gate?.querySelector('a[href="/legal/privacy.html"]')).to.not.equal(null);
         expect(gate?.textContent).to.not.include('Iniciar con GitHub');

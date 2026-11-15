@@ -209,7 +209,7 @@ describe('Qaap login gate', () => {
             await run.waitFor(() => run.document.getElementById('qaap-login-github') !== null, 'mobile sign-in gate');
 
             expect(Date.now() - startedAt).to.be.lessThan(2000);
-            expect(run.document.getElementById('qaap-login-github')?.textContent).to.contain('Sign in with GitHub');
+            expect(run.document.getElementById('qaap-login-github')?.textContent).to.contain('Continue with GitHub');
             expect(run.document.querySelectorAll('script[src*="bundle.js"]')).to.have.length(0);
             expect(run.document.querySelectorAll('link[href*="bundle.css"]')).to.have.length(0);
             expect((run.window as unknown as { __qaapBundleLoading?: boolean }).__qaapBundleLoading).to.equal(undefined);
@@ -433,6 +433,33 @@ describe('Qaap login gate', () => {
         });
     });
 
+    describe('public landing page', () => {
+
+        const signedOut: LoginGateResponder = pathname => pathname === SESSION ? { ok: true, body: { signedIn: false } } : undefined;
+
+        it('sends signed-out visitors of the public site to the landing page', async () => {
+            const run = start(signedOut, 'https://qaap.example/');
+            // location.replace is a jsdom "not implemented" navigation: that error is the redirect.
+            runs.splice(runs.indexOf(run), 1);
+            await new Promise(resolve => setTimeout(resolve, 20));
+            expect(run.pageErrors.some(error => /navigation/i.test(error))).to.equal(true);
+            expect(run.document.getElementById('qaap-login-host')).to.equal(null);
+        });
+
+        it('shows the sign-in screen for ?signin=1 and drops the parameter from the address bar', async () => {
+            const run = start(signedOut, 'https://qaap.example/?signin=1');
+            await run.waitFor(() => run.document.getElementById('qaap-login-github') !== null, 'GitHub sign-in button');
+            expect(run.window.location.search).to.equal('');
+            expect(run.pageErrors.some(error => /navigation/i.test(error))).to.equal(false);
+        });
+
+        it('keeps the sign-in screen in local development', async () => {
+            const run = start(signedOut, 'http://localhost:3000/');
+            await new Promise(resolve => setTimeout(resolve, 20));
+            expect(run.pageErrors.some(error => /navigation/i.test(error))).to.equal(false);
+        });
+    });
+
     describe('GitHub availability on the sign-in gate', () => {
         function button(run: LoginGateRun): HTMLButtonElement {
             return run.document.getElementById('qaap-login-github') as HTMLButtonElement;
@@ -461,7 +488,7 @@ describe('Qaap login gate', () => {
                     return { ok: true, body: { signedIn: false } };
                 }
                 return pathname === CONFIG ? new Promise<undefined>(() => undefined) : undefined;
-            }, 'https://qaap.example/', {
+            }, 'https://qaap.example/?signin=1', {
                 beforeRun: window => {
                     clock = withGlobal(window).install({ toFake: ['setTimeout', 'clearTimeout'] });
                     window.matchMedia = (query: string): MediaQueryList => ({
@@ -485,11 +512,11 @@ describe('Qaap login gate', () => {
                 await clock!.tickAsync(16000);
 
                 expect(button(run).disabled).to.equal(false);
-                expect(button(run).textContent).to.contain('Sign in with GitHub');
+                expect(button(run).textContent).to.contain('Continue with GitHub');
                 expect(status(run)).to.not.contain('The Qaap server is not responding.');
                 expect(retry.hidden).to.equal(true);
-                // The timed-out probe is retried once, on top of the two probes the boot already makes.
-                expect(run.requests.filter(request => request === CONFIG)).to.have.length(3);
+                // The boot's two reads share one memoized request; only the timed-out one is retried once.
+                expect(run.requests.filter(request => request === CONFIG)).to.have.length(2);
             } finally {
                 clock?.uninstall();
             }
@@ -503,6 +530,38 @@ describe('Qaap login gate', () => {
             expect((run.document.getElementById('qaap-login-retry') as HTMLButtonElement).hidden).to.equal(true);
             expect((run.document.getElementById('qaap-login-local') as HTMLButtonElement).hidden).to.equal(true);
             expect(status(run)).to.contain('Ask the administrator');
+        });
+
+        it('reads the auth config once on an anonymous visit, shared by the skip probe and the GitHub check', async () => {
+            const run = start(pathname => {
+                if (pathname === SESSION) {
+                    return { ok: true, body: { signedIn: false } };
+                }
+                return pathname === CONFIG ? { ok: true, body: { skipAuth: false, githubOAuth: true } } : undefined;
+            }, 'https://qaap.example/?signin=1');
+            await run.waitFor(() => button(run) !== null, 'GitHub sign-in button');
+            await run.waitFor(() => button(run).textContent?.includes('Continue with GitHub') === true, 'GitHub availability reflected');
+            expect(run.requests.filter(request => request === CONFIG)).to.have.length(1);
+        });
+
+        it('does not warn about an anonymous visit (unsigned), but still warns about a real session failure', async () => {
+            const warnings: string[] = [];
+            const spyOnWarn = (window: Window & typeof globalThis): void => {
+                window.console.warn = (...args: unknown[]): void => { warnings.push(args.map(String).join(' ')); };
+            };
+            const anonymous = start(pathname => pathname === SESSION
+                ? { ok: true, body: { signedIn: false } }
+                : pathname === CONFIG ? { ok: true, body: { skipAuth: false, githubOAuth: true } } : undefined,
+            'https://qaap.example/?signin=1', { beforeRun: spyOnWarn });
+            await anonymous.waitFor(() => button(anonymous) !== null, 'GitHub sign-in button');
+            expect(warnings.filter(line => line.includes('session check failed'))).to.deep.equal([]);
+
+            const failing = start(pathname => pathname === SESSION
+                ? { ok: false }
+                : pathname === CONFIG ? { ok: true, body: { skipAuth: false, githubOAuth: true } } : undefined,
+            'https://qaap.example/?signin=1', { beforeRun: spyOnWarn });
+            await failing.waitFor(() => button(failing) !== null, 'GitHub sign-in button after failure');
+            expect(warnings.filter(line => line.includes('session check failed'))).to.have.length(1);
         });
     });
 
@@ -525,10 +584,11 @@ describe('Qaap login gate', () => {
         });
 
         it('"Continue in local mode" writes the dev session and hands over to the loading bundle', async () => {
-            // First config read (dev skip-auth probe) says no; the gate's availability check then
-            // finds a local-development server without GitHub OAuth.
+            // The first two config reads get no answer (the skip probe and its single retry; an unanswered
+            // read is not memoized), so the gate is shown. The gate's availability check reads again and
+            // finds a local-development server (skipAuth on, no GitHub OAuth).
             const run = start((pathname, call) => pathname === CONFIG
-                ? { ok: true, body: call === 0 ? { skipAuth: false } : { skipAuth: true, githubOAuth: false } }
+                ? (call < 2 ? { ok: false } : { ok: true, body: { skipAuth: true, githubOAuth: false } })
                 : undefined);
             const local = (): HTMLButtonElement => run.document.getElementById('qaap-login-local') as HTMLButtonElement;
             await run.waitFor(() => local()?.hidden === false, 'local mode offered');

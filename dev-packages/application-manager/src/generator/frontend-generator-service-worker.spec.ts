@@ -120,6 +120,8 @@ interface SwHarness {
     message(data: unknown): Promise<void>;
     /** Dispatches a GET for `path`; returns the handled response body, or undefined when passed through. */
     request(path: string): Promise<string | undefined>;
+    /** Dispatches a navigation whose preload resolves to `preload`; returns the answered body, or undefined when passed through. */
+    navigate(path: string, preload: string | undefined): Promise<string | undefined>;
 }
 
 function loadServiceWorker(): SwHarness {
@@ -178,11 +180,36 @@ function loadServiceWorker(): SwHarness {
                 respondWith: (p: Promise<{ body: string }>) => { handled = p; }
             });
             return handled ? (await handled).body : undefined;
+        },
+        navigate: async (path: string, preload: string | undefined) => {
+            let handled: Promise<{ body: string }> | undefined;
+            listeners['fetch']({
+                request: {
+                    method: 'GET', url: 'https://app.test' + path, mode: 'navigate', cache: 'default', destination: 'document',
+                    headers: { has: () => false, get: () => 'text/html' }
+                },
+                preloadResponse: Promise.resolve(preload === undefined ? undefined : makeResponse(preload)),
+                respondWith: (p: Promise<{ body: string }>) => { handled = p; }
+            });
+            return handled ? (await handled).body : undefined;
         }
     };
 }
 
 describe('FrontendGenerator service worker caching strategy', () => {
+
+    it('answers bypassed navigations (OAuth callback) with the preload so the server sees one request', async () => {
+        const sw = loadServiceWorker();
+        expect(await sw.navigate('/qaap/oauth/github/callback?code=c&state=s', 'preloaded')).to.equal('preloaded');
+        expect(sw.fetches).to.have.length(0);
+        expect(await sw.navigate('/qaap/oauth/github/start', undefined)).to.equal('net:https://app.test/qaap/oauth/github/start');
+        expect(sw.fetches).to.have.length(1);
+    });
+
+    it('still passes bypassed non-navigation requests (API calls) straight through', async () => {
+        const sw = loadServiceWorker();
+        expect(await sw.request('/qaap/api/auth/session')).to.equal(undefined);
+    });
 
     it('serves content-hashed chunks cache-first (second request does not hit the network)', async () => {
         const sw = loadServiceWorker();

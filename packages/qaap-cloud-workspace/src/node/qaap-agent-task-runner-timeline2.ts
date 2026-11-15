@@ -381,21 +381,71 @@ class QaapAgentSpawnSkippedError extends Error {
 /** Codex rollout a task resumes, handed from the command build to the spawn that builds the gate overlay. */
 const RESUMED_CODEX_ROLLOUT_BY_TASK = new Map<string, { readonly file: string; readonly sessionsRoot: string }>();
 
+/** Longest a pre-spawn step may wait on another subsystem before the task fails with its stage. */
+export const QAAP_TASK_START_STEP_TIMEOUT_MS = 60_000;
+
+/**
+ * Entry point of every start (create, queue drain): a rejection before the agent command is built used to
+ * be an unhandled promise rejection, which left the task `running` with an empty log. The steps are
+ * {@link spawnProcessWhenReadyStepsExtracted}; any error they throw ends the task as `failed` with the stage.
+ */
 export async function spawnProcessWhenReadyExtracted(ctx: QaapAgentTaskRunnerContext, task: QaapAgentTask, request: QaapCreateAgentTaskRequest): Promise<void> {
-        if (ctx.preferenceService) {
-            await ctx.preferenceService.ready;
+        const progress: { stage: string } = { stage: 'preferences' };
+        try {
+            await spawnProcessWhenReadyStepsExtracted(ctx, task, request, progress);
+        } catch (error) {
+            failTaskStartExtracted(ctx, task.id, error, progress.stage);
         }
+}
+
+/**
+ * Records the task as `failed` with `Failed to start (<stage>): <message>`, unless Stop already settled it
+ * (cancelled tasks keep their state) or a child process exists (its own exit handling owns the outcome).
+ */
+export function failTaskStartExtracted(ctx: QaapAgentTaskRunnerContext, taskId: string, error: unknown, stage: string): void {
+        const message = error instanceof Error ? error.message : String(error);
+        if (ctx.tasks.get(taskId)?.state !== 'running' || ctx.processes.has(taskId)) {
+            console.warn(`[qaap-start] task=${taskId} stopped before spawn at ${stage}: ${message}`);
+            return;
+        }
+        console.error(`[qaap-start] task=${taskId} failed to start before spawn: ${message}`);
+        fs.mkdirSync(path.dirname(ctx.logPath(taskId)), { recursive: true });
+        fs.writeFileSync(ctx.logPath(taskId), `Failed to start (${stage}): ${message}\n`, 'utf8');
+        ctx.finishTask(taskId, 'failed', undefined);
+}
+
+/** Races a pre-spawn step against the start timeout; the timer is cleared when the step settles. */
+function withStartStepTimeout<T>(ctx: QaapAgentTaskRunnerContext, step: Promise<T>): Promise<T> {
+        const timeoutMs = ctx.taskStartStepTimeoutMs ?? QAAP_TASK_START_STEP_TIMEOUT_MS;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const expired = new Promise<never>((_resolve, reject) => {
+            timer = setTimeout(() => reject(new Error(`timed out after ${timeoutMs >= 1000 ? `${timeoutMs / 1000}s` : `${timeoutMs}ms`}`)), timeoutMs);
+        });
+        return Promise.race([step, expired]).finally(() => {
+            if (timer) {
+                clearTimeout(timer);
+            }
+        });
+}
+
+async function spawnProcessWhenReadyStepsExtracted(ctx: QaapAgentTaskRunnerContext, task: QaapAgentTask, request: QaapCreateAgentTaskRequest, progress: { stage: string }): Promise<void> {
+        if (ctx.preferenceService) {
+            await withStartStepTimeout(ctx, ctx.preferenceService.ready);
+        }
+        progress.stage = 'spawn-gate';
         // Bounded caller preparation (e.g. the conversation's pre-turn worktree snapshot) must
         // finish before the agent can write.
-        await awaitQaapAgentTaskSpawnGate(request);
+        await withStartStepTimeout(ctx, awaitQaapAgentTaskSpawnGate(request));
         // Stop can arrive while preference initialization is pending, before a child exists.
         // Do not resurrect a task that cancel() has already transitioned out of running.
         if (ctx.tasks.get(task.id)?.state !== 'running') {
             return;
         }
         const markedTask = ctx.tasks.get(task.id) ?? task;
+        progress.stage = 'worktree-baseline';
         const baseline = ctx.captureWorktreeBaseline(task.cwd);
         // Private disk copy of secrets — hashes alone cannot restore a destroyed `.env`.
+        progress.stage = 'sensitive-files-snapshot';
         const sensitiveSnapshotDir = path.join(path.dirname(ctx.logPath(task.id)), task.id, 'sensitive-snapshot');
         const snapshotted = snapshotSensitiveFiles(task.cwd, sensitiveSnapshotDir);
         task = {
@@ -423,16 +473,19 @@ export async function spawnProcessWhenReadyExtracted(ctx: QaapAgentTaskRunnerCon
         let prompt = ((nativeResume ? request.prompt : request.nativeResumeFallbackPrompt ?? request.prompt) ?? '').trim();
         if (prompt) {
             // SessionStart / UserPromptSubmit hooks (doc/qaap-agent-hooks.md): may block or extend the prompt.
+            progress.stage = 'pre-turn-hooks';
             const hookedPrompt = await applyPreTurnAgentHooks(ctx, task, prompt, request.agent);
             if (hookedPrompt === undefined) {
                 return;
             }
             prompt = hookedPrompt;
             // Classified on the hooked, mention-stripped prompt so it matches what buildAgentCommand sees.
+            progress.stage = 'prompt-classification';
             if (isConversationalTurn(ctx.stripLeadingAgentMention(prompt), request.userQuery)) {
                 task = { ...task, conversationalTurn: true };
                 ctx.tasks.set(task.id, task);
             }
+            progress.stage = 'agent-command';
             try {
                 ctx.recordTaskLatencyMark(task.id, 'build_agent_command_start');
                 const autoApprove = task.autoApprove !== false;
@@ -504,6 +557,7 @@ export async function spawnProcessWhenReadyExtracted(ctx: QaapAgentTaskRunnerCon
                 return;
             }
         }
+        progress.stage = 'spawn';
         await ctx.spawnProcess(task);
 }
 

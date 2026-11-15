@@ -250,6 +250,27 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             }
             res.json(task);
         });
+        // Single-task delete. Same authentication and owner check as cancel; another owner's task is
+        // reported as unknown so the id does not reveal that it exists.
+        app.delete(`${QAAP_AGENT_TASK_API_PATH}/:id`, (req, res) => {
+            const ctx = this.requireAuth(req, res);
+            if (!ctx) {
+                return;
+            }
+            const existing = this.runner.listForCwd(undefined).find(task => task.id === req.params.id);
+            if (!existing || !this.auth.ownsWorkspacePath(ctx, existing.cwd)) {
+                res.status(404).json({ error: 'Task not found.' });
+                return;
+            }
+            if (existing.state === 'running' || existing.state === 'queued') {
+                this.runner.cancel(req.params.id);
+            }
+            if (!this.runner.deleteTask(req.params.id)) {
+                res.status(404).json({ error: 'Task not found.' });
+                return;
+            }
+            res.json({ ok: true });
+        });
         app.post(`${QAAP_AGENT_TASK_API_PATH}/:id/reorder`, (req, res) => {
             const ctx = this.requireAuth(req, res);
             if (!ctx) {

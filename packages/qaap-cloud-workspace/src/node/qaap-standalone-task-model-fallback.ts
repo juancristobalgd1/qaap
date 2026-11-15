@@ -28,6 +28,7 @@ import {
     type QaapAgentModelFallbackEvidence,
 } from '../common/qaap-agent-model-fallback';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
+import { sharedQaapAgentModelUnavailableRegistry } from './qaap-agent-model-unavailable-registry';
 
 /** What the endpoint keeps about a standalone task it created: enough to re-run it on another model. */
 interface QaapStandaloneTaskOrigin {
@@ -119,6 +120,7 @@ export class QaapStandaloneTaskModelFallback {
         }
         const detail = await this.runner.detail(task.id);
         const log = detail?.log ?? '';
+        this.rememberUnavailableModel(agentId, task, origin, log);
         if (!this.qualifies(agentId, task, log)) {
             return false;
         }
@@ -159,6 +161,20 @@ export class QaapStandaloneTaskModelFallback {
         console.info(`[qaap-agent-tasks] task ${task.id} failed on ${agentModelKey(currentModel) ?? 'the default model'}; `
             + `retrying as ${retry.id} on ${agentModelKey(nextModel)} (attempt ${attempts + 1}/${MAX_AGENT_MODEL_FALLBACK_ATTEMPTS}).`);
         return true;
+    }
+
+    /**
+     * A failed task whose CLI says its model is not available for the account: remember the model for
+     * the owner so the picker stops offering it for a while. Reads only the CLI's own failure text.
+     */
+    protected rememberUnavailableModel(agentId: string, task: QaapAgentTask, origin: QaapStandaloneTaskOrigin, log: string): void {
+        if (detectAgentFailureKind(this.cliFailureText(log)) !== 'model_unavailable') {
+            return;
+        }
+        const modelId = resolveTaskAgentModel(task)?.modelId?.trim();
+        if (modelId) {
+            sharedQaapAgentModelUnavailableRegistry.record(origin.ownerLogin, agentId, modelId);
+        }
     }
 
     /**

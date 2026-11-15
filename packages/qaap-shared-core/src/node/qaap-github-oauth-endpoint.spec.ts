@@ -899,6 +899,39 @@ describe('QaapGithubOauthEndpoint OAuth failure redirects', () => {
         expect(await run({ code: 'c', state: 's' }, false)).to.contain('qaap_oauth_reason=state_lost');
     });
 
+    it('answers a duplicate callback (service-worker preload + navigation) with the first sign-in, not state_lost', async () => {
+        const endpoint = Object.create(QaapGithubOauthEndpoint.prototype) as QaapGithubOauthEndpoint;
+        // The first callback already consumed the state and is still exchanging the code.
+        Object.assign(endpoint, { sessions: { consumeOAuthState: () => false } });
+        const cookies: string[] = [];
+        const locations: string[] = [];
+        const makeRes = (): unknown => ({
+            redirect: (_status: number, url: string) => { locations.push(url); },
+            setHeader: (_name: string, value: string) => { cookies.push(value); },
+        });
+        let release: (id: string | undefined) => void = () => undefined;
+        const firstSignIn = new Promise<string | undefined>(resolve => { release = resolve; });
+        const saved = { ...process.env };
+        Object.assign(process.env, { QAAP_GITHUB_CLIENT_ID: 'id', QAAP_GITHUB_CLIENT_SECRET: 'secret', QAAP_OAUTH_PUBLIC_URL: 'https://qaap.test' });
+        try {
+            (endpoint as unknown as { oauthCallbacksInFlight(): Map<string, Promise<string | undefined>> }).oauthCallbacksInFlight().set('s', firstSignIn);
+            const duplicate = (endpoint as unknown as { handleOAuthCallback: (req: unknown, res: unknown) => Promise<void> })
+                .handleOAuthCallback({ query: { code: 'c', state: 's' }, headers: {} }, makeRes());
+            release('session-1');
+            await duplicate;
+        } finally {
+            for (const key of Object.keys(process.env)) {
+                if (!(key in saved)) {
+                    delete process.env[key];
+                }
+            }
+            Object.assign(process.env, saved);
+        }
+        expect(locations[0]).to.contain('qaap_oauth=github');
+        expect(locations[0]).not.to.contain('state_lost');
+        expect(cookies[0]).to.contain('qaap_sid=session-1');
+    });
+
     it('redirects (no bare 503) with not_configured when OAuth credentials are absent', () => {
         const endpoint = Object.create(QaapGithubOauthEndpoint.prototype) as QaapGithubOauthEndpoint;
         let status = 0;
@@ -931,3 +964,86 @@ describe('QaapGithubOauthEndpoint OAuth failure redirects', () => {
         expect(location.startsWith('/')).to.equal(false);
     });
 });
+
+describe('QaapGithubOauthEndpoint sign-out', () => {
+
+    it('deletes the server session so the cookie no longer authenticates, and expires the cookie', () => {
+        const sessions = new Map<string, { user: { login: string } }>([['sid-1', { user: { login: 'alice' } }]]);
+        const auth = {
+            resolveSessionId: (req: { headers: { cookie?: string } }): string | undefined => {
+                const sessionId = /(?:^|;\s*)qaap_sid=([^;]+)/.exec(req.headers.cookie ?? '')?.[1];
+                return sessionId && sessions.has(sessionId) ? sessionId : undefined;
+            },
+            logSecurityEvent: () => undefined,
+        };
+        const endpoint = Object.create(QaapGithubOauthEndpoint.prototype) as QaapGithubOauthEndpoint;
+        Object.assign(endpoint, {
+            auth,
+            sessions: {
+                getSession: (sessionId: string | undefined) => (sessionId ? sessions.get(sessionId) : undefined),
+                deleteSession: (sessionId: string | undefined) => { if (sessionId) { sessions.delete(sessionId); } },
+            },
+        });
+        const req = { headers: { cookie: 'qaap_sid=sid-1' } };
+        expect(auth.resolveSessionId(req)).to.equal('sid-1');
+
+        const headers: Record<string, string> = {};
+        let body: unknown;
+        const res = {
+            setHeader: (name: string, value: string) => { headers[name] = value; },
+            json: (payload: unknown) => { body = payload; },
+        };
+        (endpoint as unknown as { handleSignOut(req: unknown, res: unknown): void }).handleSignOut(req, res);
+
+        expect(body).to.deep.equal({ ok: true });
+        expect(sessions.has('sid-1')).to.equal(false);
+        expect(auth.resolveSessionId(req)).to.equal(undefined);
+        expect(headers['Set-Cookie']).to.match(/^qaap_sid=;/);
+        expect(headers['Set-Cookie']).to.contain('Max-Age=0');
+    });
+});
+
+describe('QaapGithubOauthEndpoint GET /qaap/api/auth/config payload', () => {
+
+    const configFor = (signedIn: boolean): Record<string, unknown> => {
+        const endpoint = Object.create(QaapGithubOauthEndpoint.prototype) as QaapGithubOauthEndpoint;
+        Object.assign(endpoint, {
+            auth: {
+                isSkipAuthEnabled: () => false,
+                authenticate: () => (signedIn ? { kind: 'authenticated' } : { kind: 'unauthorized' }),
+            },
+        });
+        let body: Record<string, unknown> = {};
+        const saved = process.env.QAAP_AGENT_UID;
+        process.env.QAAP_AGENT_UID = '4242';
+        try {
+            (endpoint as unknown as { handleAuthConfig(req: object, res: { json(b: Record<string, unknown>): void }): void })
+                .handleAuthConfig({ headers: {} }, { json: payload => { body = payload; } });
+        } finally {
+            if (saved === undefined) {
+                delete process.env.QAAP_AGENT_UID;
+            } else {
+                process.env.QAAP_AGENT_UID = saved;
+            }
+        }
+        return body;
+    };
+
+    it('gives anonymous callers the login-gate flags without operator detail', () => {
+        const body = configFor(false);
+        for (const field of ['agentUid', 'backendIsolationMode', 'defaultAgentId']) {
+            expect(body, field).to.not.have.property(field);
+        }
+        for (const field of ['skipAuth', 'productionRuntime', 'githubOAuth', 'oauthConfigured', 'agentUidPerUser', 'backendIsolationReady', 'betaAccessRequired', 'betaAccessConfigured']) {
+            expect(body, field).to.have.property(field);
+        }
+    });
+
+    it('keeps the full payload for a signed-in caller', () => {
+        const body = configFor(true);
+        expect(body.agentUid).to.equal('4242');
+        expect(body).to.have.property('backendIsolationMode');
+        expect(body.skipAuth).to.equal(false);
+    });
+});
+

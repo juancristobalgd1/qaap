@@ -40,6 +40,7 @@ interface StreamMessageEnvelope {
     readonly timestamp_ms?: number;
     readonly parent_tool_use_id?: string | null;
     readonly message?: {
+        readonly id?: string;
         readonly content?: ContentBlock[] | string;
         readonly usage?: ClaudeStreamUsageLike;
     };
@@ -98,6 +99,13 @@ export class QaapQaiqStreamAccumulator {
      * `result` usage is only a fallback when no per-call usage was reported.
      */
     protected turnUsage: QaapAgentContextUsage | undefined;
+    /**
+     * Largest output count seen per API message id. The same message is re-emitted as it grows, so
+     * taking the max per id and summing across ids gives the turn's output without double counting.
+     */
+    protected readonly outputByMessageId = new Map<string, number>();
+    /** Output from usage snapshots that carried no message id; these cannot be deduplicated. */
+    protected unkeyedOutputTokens = 0;
 
     getTurnUsage(): QaapAgentContextUsage | undefined {
         return this.turnUsage;
@@ -162,7 +170,7 @@ export class QaapQaiqStreamAccumulator {
             return;
         }
         if (type === 'assistant' || type === 'user') {
-            this.captureUsage(envelope.message?.usage);
+            this.captureUsage(envelope.message?.usage, envelope.message?.id);
             this.handleTranscriptMessage(envelope);
             return;
         }
@@ -174,6 +182,7 @@ export class QaapQaiqStreamAccumulator {
             if (!this.turnUsage) {
                 this.captureUsage(envelope.usage);
             }
+            this.preferResultOutputTotal(envelope.usage);
             if (typeof envelope.result === 'string' && envelope.result.trim()) {
                 const resultText = envelope.result.trim();
                 if (envelope.is_error) {
@@ -186,11 +195,39 @@ export class QaapQaiqStreamAccumulator {
         }
     }
 
-    protected captureUsage(usage: ClaudeStreamUsageLike | undefined): void {
+    /**
+     * Keeps the latest snapshot's input/context numbers and records its output in the turn total.
+     * A snapshot with a message id replaces that id's earlier output only when larger.
+     */
+    protected captureUsage(usage: ClaudeStreamUsageLike | undefined, messageId?: string): void {
         const parsed = usageFromClaudeStream(usage);
-        if (parsed) {
-            this.turnUsage = parsed;
+        if (!parsed) {
+            return;
         }
+        const key = messageId?.trim();
+        if (key) {
+            this.outputByMessageId.set(key, Math.max(this.outputByMessageId.get(key) ?? 0, parsed.outputTokens));
+        } else {
+            this.unkeyedOutputTokens += parsed.outputTokens;
+        }
+        this.turnUsage = { ...parsed, outputTokensTotal: this.cumulativeOutputTokens() };
+    }
+
+    /** The `result` event's output count is the turn total; it wins when it exceeds the per-message sum. */
+    protected preferResultOutputTotal(usage: ClaudeStreamUsageLike | undefined): void {
+        const reported = usage?.output_tokens;
+        if (!this.turnUsage || typeof reported !== 'number' || reported <= this.cumulativeOutputTokens()) {
+            return;
+        }
+        this.turnUsage = { ...this.turnUsage, outputTokensTotal: reported };
+    }
+
+    protected cumulativeOutputTokens(): number {
+        let total = this.unkeyedOutputTokens;
+        for (const output of this.outputByMessageId.values()) {
+            total += output;
+        }
+        return total;
     }
 
     protected handleStreamEvent(envelope: StreamMessageEnvelope): void {

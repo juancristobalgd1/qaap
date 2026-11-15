@@ -613,6 +613,7 @@ so they reach the container; they are mapped in `docker-compose.yml`):
 | `AIRWALLEX_PRICE_STARTER_MONTHLY` | Price id (`price_…`) of the $4.99 monthly Starter price |
 | `AIRWALLEX_PRICE_PRO_MONTHLY` | Price id (`price_…`) of the $12 monthly Pro price |
 | `AIRWALLEX_WEBHOOK_SECRET` | Signing secret of the webhook endpoint created below |
+| `AIRWALLEX_LINKED_PAYMENT_ACCOUNT_ID` | Account id (`acct_…`) that collects the payment: Airwallex → Settings → Account details → Account ID. Required when the organization has more than one linked payment account (checkout otherwise fails with "Need to specify the linked_payment_account_id") |
 | `AIRWALLEX_API_BASE` | Optional override of the REST base (`https://api-demo.airwallex.com` for demo, `https://api.airwallex.com` for prod) |
 
 `AIRWALLEX_ENV=demo` uses `https://api-demo.airwallex.com`; `prod` uses `https://api.airwallex.com`. Start with demo

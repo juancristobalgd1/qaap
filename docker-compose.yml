@@ -262,6 +262,8 @@ services:
       AIRWALLEX_WEBHOOK_SECRET: ${AIRWALLEX_WEBHOOK_SECRET:-}
       AIRWALLEX_PRICE_STARTER_MONTHLY: ${AIRWALLEX_PRICE_STARTER_MONTHLY:-}
       AIRWALLEX_PRICE_PRO_MONTHLY: ${AIRWALLEX_PRICE_PRO_MONTHLY:-}
+      # Collecting account (acct_…); required when the Airwallex org has several linked payment accounts.
+      AIRWALLEX_LINKED_PAYMENT_ACCOUNT_ID: ${AIRWALLEX_LINKED_PAYMENT_ACCOUNT_ID:-}
       # BYOK / free-tier keys for @qaiq background jobs (also set in Settings → AI).
       # Explicit env vars here override empty preferences; see doc/qaap-vps-deployment.md.
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
@@ -352,6 +354,10 @@ services:
       - "443:443"
     environment:
       QAAP_PUBLIC_HOST: ${QAAP_PUBLIC_HOST:-localhost}
+      # Extra hostnames for the same app, comma-separated (e.g. the old <ip>.sslip.io after moving to a
+      # real domain). QAAP_PUBLIC_HOST itself must stay a single host: staging derives staging.<host> from it.
+      QAAP_PUBLIC_ALIAS_HOSTS: ${QAAP_PUBLIC_ALIAS_HOSTS:-}
+      QAAP_PUBLIC_ALIAS_SITE: ${QAAP_PUBLIC_ALIAS_HOSTS:+public-alias}
       THEIA_PORT: ${THEIA_PORT:-4873}
       # Largest request body Caddy forwards (Caddy size syntax, e.g. 512MB).
       QAAP_REQUEST_BODY_MAX_SIZE: ${QAAP_REQUEST_BODY_MAX_SIZE:-512MB}
@@ -363,6 +369,7 @@ services:
     volumes:
       - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./deploy/caddy/previews:/etc/caddy/previews:ro
+      - ./deploy/caddy/aliases:/etc/caddy/aliases:ro
       # Staging site (ops/STAGING.md): empty unless the staging workflow enabled it.
       - ./deploy/caddy/staging-enabled:/etc/caddy/staging-enabled:ro
       - caddy_data:/data

@@ -42,7 +42,16 @@ export type QaapSpawnStdio = ('pipe' | 'ignore')[];
 export interface QaapTenantAccessCommandResult {
     readonly ok: boolean;
     readonly reason?: string;
+    /** Non-empty stderr lines of a command that exited with a status (not a spawn error or timeout). */
+    readonly stderr?: readonly string[];
+    /** Paths a sweep could not read but tolerated (see tolerateUnreadableSubtrees). */
+    readonly skipped?: readonly string[];
 }
+
+/** How long a real tenant workspace sweep failure is replayed before the sweep runs again. */
+export const TENANT_BACKEND_ACL_FAILURE_TTL_MS = 60_000;
+/** `find` diagnostics for a directory the backend cannot read: only these are tolerated. */
+const FIND_PERMISSION_DENIED_LINE = /^find: '(.+)': Permission denied$/;
 
 /** Agent HOME inside a tenant backend container: the private `/tmp` tmpfs (read-only rootfs). */
 export const QAAP_TENANT_BACKEND_HOME = '/tmp/qaap-home';
@@ -135,6 +144,8 @@ export class QaapTenantSpawnService {
     }
 
     protected readonly preparedTenantBackendAgentRoots = new Set<string>();
+    /** Roots whose sweep failed for real, with the error to replay until {@link TENANT_BACKEND_ACL_FAILURE_TTL_MS}. */
+    protected readonly failedTenantBackendAgentRoots = new Map<string, { error: Error; at: number }>();
 
     /** Resolve the tenant segment (sanitized login) from a workspace or repo working directory. */
     resolveTenantSegment(cwd: string): string | undefined {
@@ -527,6 +538,24 @@ export class QaapTenantSpawnService {
         if (this.preparedTenantBackendAgentRoots.has(root)) {
             return;
         }
+        // A real failure is remembered for a minute: every spawn and connection probe would otherwise repeat the
+        // synchronous sweep (seconds of event-loop time) and fail the same way.
+        const failure = this.failedTenantBackendAgentRoots.get(root);
+        if (failure && this.now() - failure.at < TENANT_BACKEND_ACL_FAILURE_TTL_MS) {
+            throw failure.error;
+        }
+        try {
+            this.prepareTenantBackendAgentRoot(root, cwd);
+        } catch (error) {
+            const cause = error instanceof Error ? error : new Error(String(error));
+            this.failedTenantBackendAgentRoots.set(root, { error: cause, at: this.now() });
+            throw cause;
+        }
+        this.failedTenantBackendAgentRoots.delete(root);
+    }
+
+    /** Grants the agent uid its root and sweeps what the backend owns under it; marks the root prepared on success. */
+    protected prepareTenantBackendAgentRoot(root: string, cwd: string): void {
         const uid = this.resolveSpawnIdentity(cwd).uid;
         if (uid === undefined) {
             throw new Error('Refusing to prepare tenant workspace access without a non-root agent uid.');
@@ -543,7 +572,19 @@ export class QaapTenantSpawnService {
         if (!files.ok) {
             throw new Error(`Could not prepare tenant workspace files for agent uid ${uid} (${files.reason}); install find and acl.`);
         }
+        const skipped = [...(dirs.skipped ?? []), ...(files.skipped ?? [])];
+        if (skipped.length > 0) {
+            // Private subtrees the agent created (0700, owned by its uid) cannot be read by the backend (no
+            // CAP_DAC_READ_SEARCH). The agent reaches them itself, so they are skipped rather than blocking every agent.
+            console.warn(`[qaap-security] tenant workspace sweep under ${root} skipped ${skipped.length} unreadable agent-owned path(s) `
+                + `(e.g. ${skipped.slice(0, 3).join(', ')}); the readable tree is granted.`);
+        }
         this.preparedTenantBackendAgentRoots.add(root);
+    }
+
+    /** Clock for the failure cache of the tenant workspace sweep; overridable in tests. */
+    protected now(): number {
+        return Date.now();
     }
 
     /** See QAAP_TENANT_AGENT_ACCESS_ENV: under gVisor the agent's access comes from a shared group rather than an ACL. */
@@ -578,12 +619,32 @@ export class QaapTenantSpawnService {
     protected sweepAgentAccess(uid: number, type: 'd' | 'f', dir: string): QaapTenantAccessCommandResult {
         const select = [dir, '-xdev', '-uid', '0', '-type', type];
         if (this.usesAgentGroupAccess()) {
-            return this.runTenantAccessCommand('find', [...select,
+            return this.tolerateUnreadableSubtrees(this.runTenantAccessCommand('find', [...select,
                 '-exec', 'chgrp', '-h', this.agentAccessGroup(uid), '{}', '+',
                 '-exec', 'chmod', type === 'd' ? 'g+rwxs' : 'g+rwX', '{}', '+',
-            ]);
+            ]));
         }
-        return this.runTenantAccessCommand('find', [...select, '-exec', 'setfacl', '-m', type === 'd' ? `u:${uid}:rwx,d:u:${uid}:rwx` : `u:${uid}:rwX`, '{}', '+']);
+        return this.tolerateUnreadableSubtrees(this.runTenantAccessCommand('find', [...select, '-exec', 'setfacl', '-m', type === 'd' ? `u:${uid}:rwx,d:u:${uid}:rwx` : `u:${uid}:rwX`, '{}', '+']));
+    }
+
+    /**
+     * A `find` that failed only because it could not read some directory (`Permission denied`) is not a failure:
+     * those subtrees belong to the agent, which reaches them itself. Any other diagnostic, a spawn error or a timeout
+     * stays fatal. Only the `find:` diagnostics count, so a failed `setfacl` on a readable path still fails the sweep.
+     */
+    protected tolerateUnreadableSubtrees(result: QaapTenantAccessCommandResult): QaapTenantAccessCommandResult {
+        if (result.ok || !result.stderr || result.stderr.length === 0) {
+            return result;
+        }
+        const skipped: string[] = [];
+        for (const line of result.stderr) {
+            const match = FIND_PERMISSION_DENIED_LINE.exec(line);
+            if (!match) {
+                return result;
+            }
+            skipped.push(match[1]);
+        }
+        return { ok: true, skipped };
     }
 
     protected runTenantAccessCommand(file: string, args: readonly string[]): QaapTenantAccessCommandResult {
@@ -594,8 +655,14 @@ export class QaapTenantSpawnService {
         const cause = result.error
             ? (result.error as NodeJS.ErrnoException).code ?? result.error.message
             : `exit status ${result.status ?? result.signal ?? 'unknown'}`;
-        const firstStderrLine = (result.stderr ?? '').split('\n').map(line => line.trim()).find(Boolean);
-        return { ok: false, reason: `${file} ${cause}${firstStderrLine ? `: ${firstStderrLine}` : ''}` };
+        const stderrLines = (result.stderr ?? '').split('\n').map(line => line.trim()).filter(Boolean);
+        const firstStderrLine = stderrLines[0];
+        const exited = !result.error && typeof result.status === 'number';
+        return {
+            ok: false,
+            reason: `${file} ${cause}${firstStderrLine ? `: ${firstStderrLine}` : ''}`,
+            ...(exited ? { stderr: stderrLines } : {}),
+        };
     }
 
     /**

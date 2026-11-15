@@ -103,4 +103,74 @@ describe('QaapAgentCliUpdateContribution update action', () => {
         expect(shown).to.deep.equal([{ message: fullMessage, actions: ['Retry'] }]);
         expect(reruns).to.deep.equal(['codex']);
     });
+
+    describe('Later (dismiss)', () => {
+        const globals = globalThis as unknown as Record<string, unknown>;
+        let savedStorage: PropertyDescriptor | undefined;
+        let savedFetch: PropertyDescriptor | undefined;
+        let stored: Map<string, string>;
+
+        beforeEach(() => {
+            savedStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+            savedFetch = Object.getOwnPropertyDescriptor(globalThis, 'fetch');
+            stored = new Map<string, string>();
+            const storage = {
+                getItem: (key: string): string | null => stored.get(key) ?? null,
+                setItem: (key: string, value: string): void => { stored.set(key, value); },
+            };
+            Object.defineProperty(globalThis, 'localStorage', { value: storage, configurable: true, writable: true });
+        });
+
+        afterEach(() => {
+            restoreGlobal('localStorage', savedStorage);
+            restoreGlobal('fetch', savedFetch);
+        });
+
+        function restoreGlobal(name: string, descriptor: PropertyDescriptor | undefined): void {
+            if (descriptor) {
+                Object.defineProperty(globalThis, name, descriptor);
+            } else {
+                delete globals[name];
+            }
+        }
+
+        const codex: QaapAgentCliUpdateInfo = {
+            id: 'codex', label: 'Codex', bin: 'codex', latestVersion: '0.145.0', updateAvailable: true, updateSupported: true,
+        };
+        const claude: QaapAgentCliUpdateInfo = {
+            id: 'claude', label: 'Claude Code', bin: 'claude', latestVersion: '1.0.1', updateAvailable: true, updateSupported: true,
+        };
+
+        it('records every pending update, snoozes for a week and does not show another toast this session', async () => {
+            const contribution = Object.create(contributionModule.QaapAgentCliUpdateContribution.prototype) as Record<string, unknown>;
+            const disposed: boolean[] = [];
+            const presented: string[] = [];
+            Object.defineProperty(globalThis, 'fetch', {
+                value: async () => ({ ok: true, json: async () => ({ updates: [codex, claude] }) }) as unknown as Response,
+                configurable: true,
+                writable: true,
+            });
+            Object.assign(contribution, {
+                disposed: false,
+                pendingUpdates: [codex, claude],
+                toast: { dispose: () => { disposed.push(true); } },
+                present: (info: QaapAgentCliUpdateInfo) => { presented.push(info.id); },
+            });
+            const before = Date.now();
+
+            (contribution as unknown as { dismiss(info: QaapAgentCliUpdateInfo): void }).dismiss(codex);
+            await (contribution as unknown as { checkAndShow(): Promise<void> }).checkAndShow();
+
+            expect(disposed).to.deep.equal([true]);
+            expect(contribution.toast).to.equal(undefined);
+            const stateRaw = JSON.parse(stored.get('qaap.agentCliUpdate.dismissed') ?? '{}') as {
+                dismissed: Record<string, string>;
+                snoozedUntil: number;
+            };
+            expect(stateRaw.dismissed).to.deep.equal({ codex: '0.145.0', claude: '1.0.1' });
+            expect(stateRaw.snoozedUntil).to.be.within(before + 7 * 24 * 60 * 60 * 1000, Date.now() + 7 * 24 * 60 * 60 * 1000);
+            expect(contribution.laterChosenThisSession).to.equal(true);
+            expect(presented).to.deep.equal([]);
+        });
+    });
 });

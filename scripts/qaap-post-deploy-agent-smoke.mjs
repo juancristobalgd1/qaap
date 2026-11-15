@@ -156,6 +156,27 @@ export function findHarnessSignInExpired(detail) {
     return undefined;
 }
 
+/**
+ * The provider refused the requested model for this account (GitHub Copilot: `400 {"error":{"message":
+ * "The requested model is not supported.","code":"model_not_supported"}}`; Codex on a ChatGPT account).
+ * The same wording the product classifies as `model_unavailable` (qaap-shared-core
+ * qaap-agent-failure-message.ts). Account-level, not a release fault, so the smoke is inconclusive.
+ */
+const MODEL_REJECTED_BY_PROVIDER = /model_not_supported|requested model is not supported|model is not supported when using codex/i;
+
+export function findProviderModelRejection(detail) {
+    const texts = [typeof detail?.log === 'string' ? detail.log : '', describeTaskFailure(detail) ?? ''];
+    for (const text of texts) {
+        const match = MODEL_REJECTED_BY_PROVIDER.exec(text);
+        if (match) {
+            const line = text.slice(text.lastIndexOf('\n', match.index) + 1).split('\n')[0].trim();
+            const trimmed = redactSecrets(line || match[0]);
+            return trimmed.length > 200 ? `${trimmed.slice(0, 199)}…` : trimmed;
+        }
+    }
+    return undefined;
+}
+
 export { redactSecrets };
 
 const FAILURE_REASON_MAX_CHARS = 400;
@@ -324,6 +345,16 @@ export function judgeTask(detail, token) {
                 inconclusive: true,
                 reason: `the smoke account's harness sign-in expired: ${signInExpired}`,
                 hint: 'Sign the harness in again for the smoke account, or point vars.QAAP_SMOKE_AGENT at another signed-in harness.',
+            };
+        }
+        const modelRejection = state === 'failed' ? findProviderModelRejection(detail) : undefined;
+        if (modelRejection) {
+            const rejectedModel = taskModel(detail);
+            return {
+                ok: false,
+                inconclusive: true,
+                reason: `the provider rejected the smoke account's model (${rejectedModel ? `${rejectedModel}: ` : ''}${modelRejection})`,
+                hint: 'Pick another model for the smoke account, or point vars.QAAP_SMOKE_AGENT at another harness of the smoke account.',
             };
         }
         const model = taskModel(detail);

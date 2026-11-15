@@ -1,0 +1,5 @@
+# Alias hostnames of the main app (QAAP_PUBLIC_ALIAS_HOSTS, comma-separated). Imported by the
+# Caddyfile only when that variable is set.
+{$QAAP_PUBLIC_ALIAS_HOSTS} {
+	import qaap_app
+}
