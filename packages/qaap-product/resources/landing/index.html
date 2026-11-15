@@ -856,6 +856,28 @@ footer { border-top: 1px solid var(--line); }
     .byok { padding: 20px 22px; }
     .closing { padding: 88px 18px; }
 }
+/* ---- 21st.dev-inspired polish: scrollspy pill, shine border, number ticker, grid backdrop ---- */
+.nav-links a.is-active { color: var(--ink); }
+.nav-links.has-active .fx-pill { opacity: 1; }
+@property --shine-a { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
+.plan-featured::after {
+    content: ''; position: absolute; inset: 0; z-index: 2; padding: 1px; pointer-events: none;
+    background: conic-gradient(from var(--shine-a), transparent 0deg, transparent 250deg, rgba(220, 130, 97, 0.85) 300deg, rgba(255, 255, 255, 0.95) 318deg, transparent 345deg);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+    animation: qaap-shine 6s linear infinite;
+}
+@keyframes qaap-shine { to { --shine-a: 360deg; } }
+.price { font-variant-numeric: tabular-nums; }
+#features { position: relative; isolation: isolate; }
+#features::before {
+    content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+    background-image: linear-gradient(rgba(236, 234, 229, 0.045) 1px, transparent 1px), linear-gradient(90deg, rgba(236, 234, 229, 0.045) 1px, transparent 1px);
+    background-size: 56px 56px; background-position: center top;
+    -webkit-mask-image: radial-gradient(ellipse 70% 55% at 50% 0%, #000 0%, transparent 78%);
+    mask-image: radial-gradient(ellipse 70% 55% at 50% 0%, #000 0%, transparent 78%);
+}
+@media (prefers-reduced-motion: reduce) { .plan-featured::after { animation: none; --shine-a: 300deg; } }
 </style>
 </head>
 <body>
@@ -1028,7 +1050,7 @@ footer { border-top: 1px solid var(--line); }
                 </ul>
                 <a class="btn btn-outline" href="/?signin=1">Start with Starter</a>
             </div>
-            <div class="plan reveal">
+            <div class="plan plan-featured reveal">
                 <div class="plan-name">Pro <em>Popular</em></div>
                 <div class="price">$12<small> / month</small></div>
                 <p>For daily work across several repos.</p>
@@ -2557,12 +2579,38 @@ footer { border-top: 1px solid var(--line); }
             var pill = document.createElement('span');
             pill.className = 'fx-pill';
             links.insertBefore(pill, links.firstChild);
+            var activeLink = null;
+            var movePill = function (a) {
+                pill.style.width = a.offsetWidth + 'px';
+                pill.style.transform = 'translateX(' + a.offsetLeft + 'px)';
+            };
             links.querySelectorAll('a').forEach(function (a) {
-                a.addEventListener('pointerenter', function () {
-                    pill.style.width = a.offsetWidth + 'px';
-                    pill.style.transform = 'translateX(' + a.offsetLeft + 'px)';
-                });
+                a.addEventListener('pointerenter', function () { movePill(a); });
             });
+            links.addEventListener('pointerleave', function () { if (activeLink) { movePill(activeLink); } });
+            if ('IntersectionObserver' in window) {
+                var spy = new IntersectionObserver(function (entries) {
+                    entries.forEach(function (en) {
+                        var a = links.querySelector('a[href="#' + en.target.id + '"]');
+                        if (!a) { return; }
+                        if (en.isIntersecting) {
+                            if (activeLink) { activeLink.classList.remove('is-active'); }
+                            activeLink = a;
+                            a.classList.add('is-active');
+                            links.classList.add('has-active');
+                            if (!links.matches(':hover')) { movePill(a); }
+                        } else if (activeLink === a) {
+                            a.classList.remove('is-active');
+                            activeLink = null;
+                            links.classList.remove('has-active');
+                        }
+                    });
+                }, { rootMargin: '-45% 0px -50% 0px' });
+                links.querySelectorAll('a[href^="#"]').forEach(function (a) {
+                    var sec = document.getElementById(a.getAttribute('href').slice(1));
+                    if (sec) { spy.observe(sec); }
+                });
+            }
         }
     }
     if (!reduceMotion) {
@@ -2604,6 +2652,37 @@ footer { border-top: 1px solid var(--line); }
     set();
     window.addEventListener('resize', set);
     if (document.fonts && document.fonts.ready) { document.fonts.ready.then(set); }
+})();
+</script>
+<script>
+/* Number ticker: plan prices count up the first time they scroll into view. */
+(function () {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || !('IntersectionObserver' in window)) { return; }
+    document.querySelectorAll('.plan .price').forEach(function (el) {
+        var node = el.firstChild;
+        if (!node || node.nodeType !== 3) { return; }
+        var m = /^(\D*)([\d.]+)/.exec(node.nodeValue);
+        if (!m) { return; }
+        var prefix = m[1];
+        var target = parseFloat(m[2]);
+        var decimals = (m[2].split('.')[1] || '').length;
+        var done = false;
+        var io = new IntersectionObserver(function (entries) {
+            if (!entries[0].isIntersecting || done) { return; }
+            done = true;
+            io.disconnect();
+            var t0 = performance.now();
+            var step = function (now) {
+                var k = Math.min(1, (now - t0) / 1100);
+                k = 1 - Math.pow(1 - k, 4);
+                node.nodeValue = prefix + (target * k).toFixed(decimals);
+                if (k < 1) { requestAnimationFrame(step); }
+            };
+            node.nodeValue = prefix + (0).toFixed(decimals);
+            requestAnimationFrame(step);
+        }, { threshold: 0.6 });
+        io.observe(el);
+    });
 })();
 </script>
 </body>
