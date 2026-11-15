@@ -293,6 +293,15 @@ export function resolveAgentConnectionProbeArgs(agentId: string): readonly strin
 export const GEMINI_CLI_CONNECTION_PROBE_SCRIPT = 'test -s "$HOME/.gemini/oauth_creds.json" && echo "logged in" || echo "not logged in"';
 
 /**
+ * Google's Antigravity CLI (`agy`) has no status command, but `agy models` lists the catalog only with a
+ * session and prints `Please sign in to view available models` without one. `$1` is the agy executable.
+ * Exit 0 with a listing → "logged in"; the sign-in message → "not logged in"; anything else (timeout,
+ * other error) prints nothing and exits non-zero, so the probe reads it as unknown. `timeout` is optional
+ * (absent on macOS): the probe's own 10 s limit then bounds the run.
+ */
+export const AGY_CLI_CONNECTION_PROBE_SCRIPT = 'T=""; command -v timeout >/dev/null 2>&1 && T="timeout 8"; out=$($T "$1" models 2>&1 </dev/null); rc=$?; case "$out" in *"Please sign in"*) echo "not logged in" ;; *) [ "$rc" -eq 0 ] && echo "logged in" ;; esac';
+
+/**
  * Pi has no provider-agnostic status command (`pi auth check` needs `--provider`). `/login` and
  * API-key logins both store an entry with a `"type"` in `~/.pi/agent/auth.json` (`{}` when empty).
  */
@@ -303,8 +312,12 @@ export function resolveAgentConnectionProbe(agentId: string, bin: string): { rea
     const normalized = agentId.trim().toLowerCase();
     if (normalized === 'antigravity' || normalized === 'gemini') {
         // The community `antigravity`/`ag` CLI talks to a running Antigravity desktop app and has
-        // no sign-in of its own; only the Gemini CLI fallback can be signed in on a server.
-        return path.basename(bin) === 'gemini' ? { file: 'sh', args: ['-c', GEMINI_CLI_CONNECTION_PROBE_SCRIPT] } : undefined;
+        // no sign-in of its own. `agy` (the supported client) and the Gemini CLI fallback can be signed in.
+        const base = path.basename(bin);
+        if (base === 'agy') {
+            return { file: 'sh', args: ['-c', AGY_CLI_CONNECTION_PROBE_SCRIPT, 'agy-probe', bin] };
+        }
+        return base === 'gemini' ? { file: 'sh', args: ['-c', GEMINI_CLI_CONNECTION_PROBE_SCRIPT] } : undefined;
     }
     if (normalized === 'pi') {
         return { file: 'sh', args: ['-c', PI_CONNECTION_PROBE_SCRIPT] };
