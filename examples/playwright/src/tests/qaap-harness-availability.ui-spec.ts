@@ -21,6 +21,7 @@ const MODELS_ROUTE = /\/qaap\/api\/agent-tasks\/agent-models(\?.*)?$/;
 const FREE_LABEL = 'Beam Free';
 const PRO_LABEL = 'MiniMax-M3';
 const CHECKING_TITLE = 'Checking sign-in…';
+// The sign-in row title and the locked-row reason of the unified picker (desktop row title).
 const BLOCKED_MESSAGE = `Sign in to ${OPENCODE_LABEL} to use ${PRO_LABEL}.`;
 const SCREENSHOT_DIR = path.resolve(__dirname, '../../harness-availability-screenshots');
 
@@ -130,19 +131,20 @@ async function waitForWorkHubReady(page: Page): Promise<void> {
         .toBeVisible({ timeout: 60_000 });
 }
 
-/** Opens the sticky composer's agent picker from the agent pill. */
+/** Opens the sticky composer's agent picker from the agent pill ("Agent: <harness>"). */
 async function openAgentPicker(page: Page): Promise<void> {
-    await page.locator('.theia-mobile-projects-sticky-composer-agent:visible').first().click();
+    await page.locator('.theia-mobile-projects-sticky-composer-agent:visible').first().click({ timeout: 30_000 });
+    await expect(page.getByRole('dialog')).toBeVisible({ timeout: 30_000 });
 }
 
-/** Drills from the agent list into OpenCode's model list (the chevron of its row). */
-async function openOpenCodeModels(page: Page): Promise<void> {
-    await page.locator(`button.theia-qaap-agent-sheet-split-chevron[aria-label="Choose model for ${OPENCODE_LABEL}"]`).first().click();
+/** Selects OpenCode on the picker's harness rail, so its model rows are listed. */
+async function selectOpenCodeRail(page: Page): Promise<void> {
+    await page.getByRole('dialog').getByRole('button', { name: OPENCODE_LABEL, exact: true }).click({ timeout: 30_000 });
 }
 
-/** The model row with this visible label in the open drill-down (desktop popover and mobile sheet share it). */
+/** The model row with this label in the open picker (the unified model picker on desktop and mobile). */
 function modelRow(page: Page, label: string): Locator {
-    return page.locator('.theia-qaap-picker-sheet-option').filter({ hasText: label }).first();
+    return page.locator('.qaap-model-picker-row').filter({ hasText: label }).first();
 }
 
 function screenshotPath(prefix: string, name: string): string {
@@ -168,17 +170,19 @@ test.describe('@qaap-mobile harness availability in the agent picker', () => {
                 await dismissMobileTutorial(page);
                 await waitForWorkHubReady(page);
                 await openAgentPicker(page);
-                await openOpenCodeModels(page);
+                await selectOpenCodeRail(page);
 
                 const free = modelRow(page, FREE_LABEL);
                 await expect(free).toBeVisible({ timeout: 30_000 });
-                await expect(free).not.toHaveClass(/theia-mod-disabled/);
+                await expect(free).toBeEnabled();
                 await expect(free).toContainText('Free');
 
+                // Locked, not hidden: the row stays tappable only to open the sign-in.
                 const pro = modelRow(page, PRO_LABEL);
-                await expect(pro).toHaveClass(/theia-mod-disabled/);
+                await expect(pro).toBeVisible();
                 await expect(pro).toContainText('Pro');
-                await expect(pro).toHaveAttribute('title', /Sign in to OpenCode/);
+                await expect(pro).toContainText(`Sign in to ${OPENCODE_LABEL}`);
+                await expect(pro).toHaveAttribute('title', /Sign in/);
                 await capture(testInfo, page, viewport.name, 'signed-out-models');
             } finally {
                 await context.close();
@@ -192,11 +196,13 @@ test.describe('@qaap-mobile harness availability in the agent picker', () => {
                 await dismissMobileTutorial(page);
                 await waitForWorkHubReady(page);
                 await openAgentPicker(page);
-                await openOpenCodeModels(page);
+                await selectOpenCodeRail(page);
 
                 await expect(modelRow(page, FREE_LABEL)).toBeVisible({ timeout: 30_000 });
-                await expect(modelRow(page, PRO_LABEL)).not.toHaveClass(/theia-mod-disabled/);
-                await expect(page.locator('.theia-qaap-picker-sheet-option.theia-mod-disabled')).toHaveCount(0);
+                const pro = modelRow(page, PRO_LABEL);
+                await expect(pro).toBeEnabled();
+                await expect(pro).not.toContainText(`Sign in to ${OPENCODE_LABEL}`);
+                await expect(page.locator('.qaap-model-picker-row:disabled')).toHaveCount(0);
                 await capture(testInfo, page, viewport.name, 'signed-in-models');
             } finally {
                 await context.close();
@@ -210,14 +216,12 @@ test.describe('@qaap-mobile harness availability in the agent picker', () => {
                 await dismissMobileTutorial(page);
                 await waitForWorkHubReady(page);
                 await openAgentPicker(page);
-                await expect(page.getByText(CHECKING_TITLE).first()).toBeVisible({ timeout: 30_000 });
-                await capture(testInfo, page, viewport.name, 'checking-agents');
-
-                await openOpenCodeModels(page);
+                await selectOpenCodeRail(page);
                 const pro = modelRow(page, PRO_LABEL);
-                await expect(pro).toHaveClass(/theia-mod-disabled/);
+                await expect(pro).toBeVisible({ timeout: 30_000 });
+                await expect(pro).toBeDisabled();
                 await expect(pro).toHaveAttribute('title', CHECKING_TITLE);
-                await expect(page.locator('.theia-qaap-picker-sheet-option.theia-mod-disabled [title="Sign in to OpenCode to use this model"]')).toHaveCount(0);
+                await expect(pro).not.toContainText(`Sign in to ${OPENCODE_LABEL}`);
                 await capture(testInfo, page, viewport.name, 'checking-models');
             } finally {
                 await context.close();
@@ -232,8 +236,8 @@ test.describe('@qaap-mobile harness availability in the agent picker', () => {
                 await waitForWorkHubReady(page);
                 // Pick the Pro model while signed in, so it becomes the stored choice for this project.
                 await openAgentPicker(page);
-                await openOpenCodeModels(page);
-                await modelRow(page, PRO_LABEL).click();
+                await selectOpenCodeRail(page);
+                await modelRow(page, PRO_LABEL).click({ timeout: 30_000 });
 
                 // The sign-in ends: the stored choice stays, and the catalog now locks it.
                 state.session = 'signed-out';
@@ -243,7 +247,7 @@ test.describe('@qaap-mobile harness availability in the agent picker', () => {
 
                 const composer = page.locator('.theia-mobile-projects:visible .theia-mobile-projects-sticky-composer-input').first();
                 await composer.fill('Hello');
-                await page.locator('.theia-mobile-projects:visible .theia-mobile-projects-sticky-composer-send').first().click();
+                await page.locator('.theia-mobile-projects:visible .theia-mobile-projects-sticky-composer-send').first().click({ timeout: 30_000 });
 
                 const message = page.locator('.theia-mobile-snackbar-message').filter({ hasText: BLOCKED_MESSAGE }).first();
                 await expect(message).toBeVisible({ timeout: 30_000 });
