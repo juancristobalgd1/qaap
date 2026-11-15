@@ -39,6 +39,7 @@ import { antigravityBinFor, listNativeAgentModels } from './qaap-agent-native-mo
 import { resolveAgentAccess } from './qaap-agent-access';
 import { listQaiqModelsFromPreferences } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
 import { resolveTrustedExecutable } from './qaap-trusted-executable';
+import { sharedQaapAgentModelUnavailableRegistry } from './qaap-agent-model-unavailable-registry';
 import { childProcessEnv } from './qaap-child-process-env';
 
 export function initExtracted(ctx: QaapAgentTaskRunnerContext): void {
@@ -704,6 +705,17 @@ function applyOpenCodePaidModelAccess(model: QaapQaiqModelOption, access: QaapAg
     return { ...model, available: false, unavailableReason: 'not-connected' as const };
 }
 
+/**
+ * A model the provider rejected for this owner within the registry's TTL is shown locked, like the
+ * other unavailable rows. A row that is already locked keeps its more specific reason.
+ */
+function markRecentlyUnavailableModel(agentId: string, ownerLogin: string | undefined, model: QaapQaiqModelOption): QaapQaiqModelOption {
+    if (model.available === false || !sharedQaapAgentModelUnavailableRegistry.isUnavailable(ownerLogin, agentId, model.modelId)) {
+        return model;
+    }
+    return { ...model, available: false, unavailableReason: 'unknown' as const };
+}
+
 export function listModelsForAgentExtracted(
         ctx: QaapAgentTaskRunnerContext,
         agentId: string | undefined,
@@ -723,7 +735,7 @@ export function listModelsForAgentExtracted(
         const models = listNativeAgentModels(normalized, ownerLogin, antigravityBin);
         const owner = ownerLogin?.trim();
         if (!owner) {
-            return models;
+            return models.map(model => markRecentlyUnavailableModel(normalized, owner, model));
         }
         // Same access answer as the picker row (resolveAgentAccess), so the row and its models agree.
         // Keep the native catalog visible when the owner cannot use it yet; the picker explains the lock
@@ -751,7 +763,7 @@ export function listModelsForAgentExtracted(
                 return model;
             }
             return { ...model, available: false, unavailableReason: 'not-connected' as const };
-        });
+        }).map(model => markRecentlyUnavailableModel(normalized, owner, model));
 }
 
 const loggedDefaultAgentOverrides = new Set<string>();

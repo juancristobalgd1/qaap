@@ -515,8 +515,8 @@ describe('Qaap login gate', () => {
                 expect(button(run).textContent).to.contain('Continue with GitHub');
                 expect(status(run)).to.not.contain('The Qaap server is not responding.');
                 expect(retry.hidden).to.equal(true);
-                // The timed-out probe is retried once, on top of the two probes the boot already makes.
-                expect(run.requests.filter(request => request === CONFIG)).to.have.length(3);
+                // The boot's two reads share one memoized request; only the timed-out one is retried once.
+                expect(run.requests.filter(request => request === CONFIG)).to.have.length(2);
             } finally {
                 clock?.uninstall();
             }
@@ -530,6 +530,38 @@ describe('Qaap login gate', () => {
             expect((run.document.getElementById('qaap-login-retry') as HTMLButtonElement).hidden).to.equal(true);
             expect((run.document.getElementById('qaap-login-local') as HTMLButtonElement).hidden).to.equal(true);
             expect(status(run)).to.contain('Ask the administrator');
+        });
+
+        it('reads the auth config once on an anonymous visit, shared by the skip probe and the GitHub check', async () => {
+            const run = start(pathname => {
+                if (pathname === SESSION) {
+                    return { ok: true, body: { signedIn: false } };
+                }
+                return pathname === CONFIG ? { ok: true, body: { skipAuth: false, githubOAuth: true } } : undefined;
+            }, 'https://qaap.example/?signin=1');
+            await run.waitFor(() => button(run) !== null, 'GitHub sign-in button');
+            await run.waitFor(() => button(run).textContent?.includes('Continue with GitHub') === true, 'GitHub availability reflected');
+            expect(run.requests.filter(request => request === CONFIG)).to.have.length(1);
+        });
+
+        it('does not warn about an anonymous visit (unsigned), but still warns about a real session failure', async () => {
+            const warnings: string[] = [];
+            const spyOnWarn = (window: Window & typeof globalThis): void => {
+                window.console.warn = (...args: unknown[]): void => { warnings.push(args.map(String).join(' ')); };
+            };
+            const anonymous = start(pathname => pathname === SESSION
+                ? { ok: true, body: { signedIn: false } }
+                : pathname === CONFIG ? { ok: true, body: { skipAuth: false, githubOAuth: true } } : undefined,
+            'https://qaap.example/?signin=1', { beforeRun: spyOnWarn });
+            await anonymous.waitFor(() => button(anonymous) !== null, 'GitHub sign-in button');
+            expect(warnings.filter(line => line.includes('session check failed'))).to.deep.equal([]);
+
+            const failing = start(pathname => pathname === SESSION
+                ? { ok: false }
+                : pathname === CONFIG ? { ok: true, body: { skipAuth: false, githubOAuth: true } } : undefined,
+            'https://qaap.example/?signin=1', { beforeRun: spyOnWarn });
+            await failing.waitFor(() => button(failing) !== null, 'GitHub sign-in button after failure');
+            expect(warnings.filter(line => line.includes('session check failed'))).to.have.length(1);
         });
     });
 
@@ -552,10 +584,11 @@ describe('Qaap login gate', () => {
         });
 
         it('"Continue in local mode" writes the dev session and hands over to the loading bundle', async () => {
-            // First config read (dev skip-auth probe) says no; the gate's availability check then
-            // finds a local-development server without GitHub OAuth.
+            // The first two config reads get no answer (the skip probe and its single retry; an unanswered
+            // read is not memoized), so the gate is shown. The gate's availability check reads again and
+            // finds a local-development server (skipAuth on, no GitHub OAuth).
             const run = start((pathname, call) => pathname === CONFIG
-                ? { ok: true, body: call === 0 ? { skipAuth: false } : { skipAuth: true, githubOAuth: false } }
+                ? (call < 2 ? { ok: false } : { ok: true, body: { skipAuth: true, githubOAuth: false } })
                 : undefined);
             const local = (): HTMLButtonElement => run.document.getElementById('qaap-login-local') as HTMLButtonElement;
             await run.waitFor(() => local()?.hidden === false, 'local mode offered');

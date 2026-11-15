@@ -10,6 +10,7 @@ import {
     QaapChatViewStreamUpdateScheduler,
     type QaapChatViewStreamUpdateClocks,
 } from '../common/qaap-chat-view-stream-update-scheduler';
+import { truncateTitleAtWordBoundary } from '../common/qaap-title-truncate';
 import {
     appendWorkingDetailTaskLogChunk,
     seedWorkingDetailTaskLog,
@@ -549,13 +550,16 @@ export class MobileProjectsActiveTasks {
     }
 }
 
+/** Longest command-derived task title, ellipsis included. */
+const COMMAND_TITLE_MAX_LENGTH = 80;
+
 /** @internal Exported for testing. */
 export function toTaskView(task: TaskEventPayload): MobileProjectTaskView {
     const command = task.command ?? task.title ?? '';
     return {
         id: task.id,
         agentId: task.agentId,
-        title: task.title || command.slice(0, 80) || 'Background task',
+        title: task.title || truncateTitleAtWordBoundary(command, COMMAND_TITLE_MAX_LENGTH) || 'Background task',
         command,
         cwd: normalizeCwd(task.cwd),
         state: task.state,

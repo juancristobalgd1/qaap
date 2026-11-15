@@ -8,7 +8,8 @@ import { usesAgUiCliTranscriptStream, usesStructuredAgentTranscript } from '@the
 
 import { QaapPlanLimit } from '@theia/qaap-adapters/lib/common/qaap-plan-limit';
 
-import { isQaiqProviderKeyMissingFailure, localizeAgentFailureMessage, resolveAgentTurnFailureMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
+import { detectAgentFailureKind, isQaiqProviderKeyMissingFailure, localizeAgentFailureMessage, resolveAgentTurnFailureMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
+import { sharedQaapAgentModelUnavailableRegistry } from './qaap-agent-model-unavailable-registry';
 
 import { resolveAgentLogDisplayText } from '@theia/qaap-shared-core/lib/common/qaap-cli-transcript-stream';
 
@@ -330,6 +331,13 @@ export async function applyTaskOutcomeExtracted(ctx: QaapAgentConversationStoreC
             agentMessage: agentMessageForFailure,
             agentId: turnAgentId,
         });
+        // The provider rejected the turn's model for this owner: remember it so the picker locks it for a while.
+        const rejectedModelId = log && detectAgentFailureKind(log) === 'model_unavailable'
+            ? withUsageBaseline.messages.find(message => message.id === userMessageId)?.turnAgentModel?.modelId?.trim()
+            : undefined;
+        if (rejectedModelId) {
+            sharedQaapAgentModelUnavailableRegistry.record(withUsageBaseline.ownerLogin, turnAgentId, rejectedModelId);
+        }
         const failureBody = log ? resolveAgentLogDisplayText(turnAgentId, log) : '';
         const failed = ctx.markTurnFailed(convForFailure, {
             userMessageId,

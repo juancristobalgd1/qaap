@@ -11,7 +11,13 @@ export const DEFAULT_QAAP_CONTEXT_WINDOW = 128_000;
 /** Latest provider-reported context snapshot for a VPS agent conversation. */
 export interface QaapAgentContextUsage {
     readonly inputTokens: number;
+    /** Output of the latest API call only; `totalTokensFromContextUsage` sums it, so it keeps that meaning. */
     readonly outputTokens: number;
+    /**
+     * Output tokens summed across the whole turn (every message or step), when the stream reported
+     * them. Output displays prefer this over `outputTokens`.
+     */
+    readonly outputTokensTotal?: number;
     readonly cacheCreationInputTokens?: number;
     readonly cacheReadInputTokens?: number;
     readonly reasoningTokens?: number;

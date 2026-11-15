@@ -63,3 +63,6 @@ packages/qaap-cloud-workspace/src/node/qaap-tool-gate-endpoint.ts :: POST `${QAA
 packages/qaap-cloud-workspace/src/node/qaap-tool-gate-endpoint.ts :: GET `${QAAP_TOOL_GATE_API_PATH}/health`
 # Same gate-token authentication as /evaluate (requireGrant answers 401 without a live token). It
 # discloses nothing beyond {ok:true} and is used only by the adapter's preflight with its own token.
+
+packages/qaap-product/src/node/qaap-immutable-chunk-cache-contribution.ts :: GET '/favicon.ico'
+# Static redirect to the packaged logo (302). Browsers request it before sign-in and it carries no user data.

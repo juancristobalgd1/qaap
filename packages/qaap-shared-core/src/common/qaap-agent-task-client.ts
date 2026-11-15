@@ -886,6 +886,17 @@ export async function deleteAgentTasksForCwd(cwd: string): Promise<number> {
     return typeof body.removed === 'number' ? body.removed : 0;
 }
 
+/** Deletes one of the caller's tasks; a running task is cancelled first by the server. */
+export async function deleteAgentTask(id: string): Promise<void> {
+    const response = await fetch(`${QAAP_AGENT_TASK_API_PATH}/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        credentials: 'include',
+    });
+    if (!response.ok) {
+        throw new Error(response.statusText);
+    }
+}
+
 export function hashString(value: string): string {
     let hash = 0;
     for (let i = 0; i < value.length; i++) {

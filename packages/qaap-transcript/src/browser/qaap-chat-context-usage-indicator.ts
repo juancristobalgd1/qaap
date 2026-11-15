@@ -104,7 +104,7 @@ export function buildVpsContextUsageTooltip(
     if (usage) {
         lines.push(
             `${nls.localizeByDefault('Input: {0}', formatTokenCount(usage.inputTokens))}`
-                + ` | ${nls.localizeByDefault('Output: {0}', formatTokenCount(usage.outputTokens))}`,
+                + ` | ${nls.localizeByDefault('Output: {0}', formatTokenCount(usage.outputTokensTotal ?? usage.outputTokens))}`,
         );
         const cacheParts: string[] = [];
         if (usage.cacheReadInputTokens) {

@@ -11,11 +11,13 @@ import { FrontendApplicationContribution } from '@theia/core/lib/browser/fronten
 import { FrontendApplicationStateService } from '@theia/core/lib/browser/frontend-application-state';
 import {
     fetchAgentCliUpdates,
+    isAgentCliUpdateSnoozed,
     pickNextAgentUpdateToShow,
     countAgentUpdatesToShow,
     readAgentCliUpdateDismissMap,
     rememberAgentCliUpdateDismiss,
     requestAgentCliUpdate,
+    snoozeAgentCliUpdates,
     type QaapAgentCliUpdateInfo,
 } from '../common/qaap-agent-cli-update';
 import { OPEN_AI_CONFIGURATION_COMMAND } from '@theia/qaap-mobile-shell/lib/browser/mobile-shell-bottom-bar-widget';
@@ -31,7 +33,8 @@ const BOOT_DELAY_MS = 2_500;
 /**
  * On app start, ask the backend which agent CLIs are outdated and surface a T3-like toast
  * (Cancel / Update / dismiss). Non-blocking: failures are swallowed; dismiss persists per
- * agentId + latestVersion in localStorage, so a newer release still re-prompts.
+ * agentId + latestVersion in localStorage, so a newer release still re-prompts. "Later" dismisses
+ * every pending update, stays quiet for the rest of the page session and snoozes the notice for a week.
  */
 @injectable()
 export class QaapAgentCliUpdateContribution implements FrontendApplicationContribution {
@@ -48,6 +51,10 @@ export class QaapAgentCliUpdateContribution implements FrontendApplicationContri
     protected toast: QaapAgentCliUpdateToastController | undefined;
     protected shownAgentId: string | undefined;
     protected disposed = false;
+    /** Outdated CLIs from the last successful check; "Later" dismisses all of them. */
+    protected pendingUpdates: readonly QaapAgentCliUpdateInfo[] = [];
+    /** Set by "Later": no further update toast until the page is reloaded. */
+    protected laterChosenThisSession = false;
 
     onStart(): void {
         void this.stateService.reachedState('ready').then(() => {
@@ -79,6 +86,10 @@ export class QaapAgentCliUpdateContribution implements FrontendApplicationContri
         if (this.disposed) {
             return;
         }
+        this.pendingUpdates = updates;
+        if (this.laterChosenThisSession || isAgentCliUpdateSnoozed(Date.now())) {
+            return;
+        }
         // At most one notice on screen: a visible toast (or an update in flight) keeps the queue.
         if (this.toast) {
             return;
@@ -101,12 +112,12 @@ export class QaapAgentCliUpdateContribution implements FrontendApplicationContri
         }, { pendingCount });
     }
 
+    /** "Later": dismiss every pending CLI update and stay quiet (session + 7-day snooze). */
     protected dismiss(info: QaapAgentCliUpdateInfo): void {
-        rememberAgentCliUpdateDismiss(info.id, info.latestVersion);
+        snoozeAgentCliUpdates([...this.pendingUpdates, info], Date.now());
+        this.laterChosenThisSession = true;
         this.toast?.dispose();
         this.toast = undefined;
-        // Offer the next outdated agent in the same session (if any).
-        void this.checkAndShow();
     }
 
     protected openSettings(): void {

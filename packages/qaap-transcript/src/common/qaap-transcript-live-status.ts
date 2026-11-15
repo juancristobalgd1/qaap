@@ -51,7 +51,7 @@ export function resolveTranscriptLiveStatusTokenCount(options: {
 }): number {
     const usage = options.contextUsage;
     if (usage) {
-        const produced = usage.outputTokens + (usage.reasoningTokens ?? 0);
+        const produced = (usage.outputTokensTotal ?? usage.outputTokens) + (usage.reasoningTokens ?? 0);
         if (produced > 0) {
             return produced;
         }

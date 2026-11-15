@@ -52,6 +52,13 @@ export function resolveQaapLegalPagesDir(): string {
 export class QaapFrontendStaticServer implements BackendApplicationServer {
 
     configure(app: express.Application): void {
+        // Do not advertise the Express stack to every response.
+        app.disable('x-powered-by');
+        // Browsers request /favicon.ico unconditionally; point them at the packaged logo instead of a 404.
+        app.get('/favicon.ico', (_req: express.Request, res: express.Response) => {
+            res.setHeader('Cache-Control', 'public, max-age=86400');
+            res.redirect(302, '/media/qaap-logo.svg');
+        });
         const legalDir = resolveQaapLegalPagesDir();
         app.use('/legal', express.static(legalDir, {
             index: false,

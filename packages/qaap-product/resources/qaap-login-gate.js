@@ -368,6 +368,8 @@
     // localStorage (XSS could exfiltrate it) — the HttpOnly cookie is the only credential.
     var LEGACY_SESSION_ID_SUFFIX = 'qaap.auth.sessionId';
     var AUTH_CONFIG_TIMEOUT_MS = 8000;
+    /** Shared read of `/qaap/api/auth/config` for this page load; see fetchAuthConfigOnce. */
+    var authConfigMemo = null;
     var AUTH_SESSION_TIMEOUT_MS = 6000;
 
     function storagePrefix() {
@@ -1700,8 +1702,7 @@
                 defaultLabel.textContent = 'Continue with GitHub';
             }
         }
-        fetchWithTimeout('/qaap/api/auth/config', { credentials: 'include' }, AUTH_CONFIG_TIMEOUT_MS)
-            .then(function (res) { return res && res.ok ? res.json() : null; })
+        fetchAuthConfigOnce()
             .then(function (config) {
                 // Keep the user on this page when OAuth configuration is unavailable.
                 if (!config) {
@@ -1908,7 +1909,10 @@
                 throw new Error('unsigned');
             })
             .catch(function (err) {
-                console.warn('[Qaap] session check failed, showing login gate', err && err.message);
+                // An anonymous visitor is the normal case: the gate signals it with 'unsigned', which is not a failure.
+                if (!err || err.message !== 'unsigned') {
+                    console.warn('[Qaap] session check failed, showing login gate', err && err.message);
+                }
                 var showGate = function () {
                     if (document.body) {
                         showGateAndLoadBundle();
@@ -1932,14 +1936,33 @@
      * Resolves true (dev auth skipped), false (auth required) or undefined (no answer: timed out,
      * failed or not ok). The gate decides only on an explicit answer; see trySkipAuthDevMode.
      */
+    /**
+     * Parsed `/qaap/api/auth/config` answer, shared by the skip probe and the GitHub availability
+     * check so an anonymous visit reads it once. Only an answer is memoized: a timed-out, failed or
+     * not-ok read is forgotten, so the single retry of the skip probe still refetches.
+     */
+    function fetchAuthConfigOnce() {
+        if (authConfigMemo) {
+            return authConfigMemo;
+        }
+        var pending = fetchWithTimeout('/qaap/api/auth/config', { credentials: 'include' }, AUTH_CONFIG_TIMEOUT_MS)
+            .then(function (res) { return res && res.ok ? res.json() : null; });
+        authConfigMemo = pending;
+        var forget = function () {
+            if (authConfigMemo === pending) {
+                authConfigMemo = null;
+            }
+        };
+        pending.then(function (config) {
+            if (!config) {
+                forget();
+            }
+        }, forget);
+        return pending;
+    }
+
     function probeAuthConfigSkipState() {
-        return fetchWithTimeout('/qaap/api/auth/config', { credentials: 'include' }, AUTH_CONFIG_TIMEOUT_MS)
-            .then(function (response) {
-                if (!response.ok) {
-                    return undefined;
-                }
-                return response.json();
-            })
+        return fetchAuthConfigOnce()
             .then(function (config) {
                 if (!config) {
                     return undefined;

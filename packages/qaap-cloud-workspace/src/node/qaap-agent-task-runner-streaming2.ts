@@ -920,6 +920,47 @@ export function markTaskStopFailedExtracted(ctx: Pick<QaapAgentTaskRunnerContext
         void ctx.persist();
 }
 
+/**
+ * Remove one task record and its live handles from memory (cancelling it first when it is still
+ * running or queued). Returns `false` for an unknown id. Callers persist once after removing.
+ */
+function removeTaskRecordExtracted(ctx: QaapAgentTaskRunnerContext, id: string): boolean {
+        const task = ctx.tasks.get(id);
+        if (!task) {
+            return false;
+        }
+        const hadProcess = ctx.processes.has(id);
+        if (task.state === 'running' || task.state === 'queued') {
+            ctx.cancel(id);
+        }
+        if (hadProcess) {
+            ctx.deletedTaskIds.add(id);
+        }
+        ctx.tasks.delete(id);
+        ctx.queuedCreateRequests.delete(id);
+        ctx.processes.delete(id);
+        ctx.stdinInteractiveTasks.delete(id);
+        ctx.stdinPrompts.delete(id);
+        ctx.pendingQaiqControlRequests.delete(id);
+        ctx.clearQueuedApprovalTimers(id);
+        ctx.qaiqStdioTasks.delete(id);
+        void fsp.rm(ctx.logPath(id), { force: true }).catch(() => undefined);
+        ctx.onDidChangeTaskEmitter.fire({ type: 'deleted', task });
+        if (!hadProcess) {
+            ctx.deletedTaskIds.delete(id);
+        }
+        return true;
+}
+
+/** Remove one persisted task by id; `false` when no such task exists. Used by `DELETE /:id`. */
+export function deleteTaskExtracted(ctx: QaapAgentTaskRunnerContext, id: string): boolean {
+        const removed = removeTaskRecordExtracted(ctx, id);
+        if (removed) {
+            void ctx.persist();
+        }
+        return removed;
+}
+
 /** Remove every persisted task rooted in a project after the user confirms project deletion. */
 export function deleteForCwdExtracted(ctx: QaapAgentTaskRunnerContext, cwd: string): number {
         // Task cwds are POSIX paths matched on `${root}/`, so strip trailing `/` (and `\`) separators.
@@ -931,30 +972,7 @@ export function deleteForCwdExtracted(ctx: QaapAgentTaskRunnerContext, cwd: stri
             .filter(task => task.cwd === root || task.cwd.startsWith(`${root}/`))
             .map(task => task.id);
         for (const id of ids) {
-            const task = ctx.tasks.get(id);
-            if (!task) {
-                continue;
-            }
-            const hadProcess = ctx.processes.has(id);
-            if (task.state === 'running' || task.state === 'queued') {
-                ctx.cancel(id);
-            }
-            if (hadProcess) {
-                ctx.deletedTaskIds.add(id);
-            }
-            ctx.tasks.delete(id);
-            ctx.queuedCreateRequests.delete(id);
-            ctx.processes.delete(id);
-            ctx.stdinInteractiveTasks.delete(id);
-            ctx.stdinPrompts.delete(id);
-            ctx.pendingQaiqControlRequests.delete(id);
-            ctx.clearQueuedApprovalTimers(id);
-            ctx.qaiqStdioTasks.delete(id);
-            void fsp.rm(ctx.logPath(id), { force: true }).catch(() => undefined);
-            ctx.onDidChangeTaskEmitter.fire({ type: 'deleted', task });
-            if (!hadProcess) {
-                ctx.deletedTaskIds.delete(id);
-            }
+            removeTaskRecordExtracted(ctx, id);
         }
         for (const cache of [ctx.projectNameCache, ctx.projectInfoCache, ctx.agentInstructionsCache, ctx.repoMapCache]) {
             for (const key of cache.keys()) {

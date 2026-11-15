@@ -33,6 +33,40 @@ import { releaseStoppedPreviewExtracted } from './qaap-dev-preview-process-liven
 import type { QaapDevPreviewAllocation, QaapDevPreviewEndpointContext } from './qaap-dev-preview-endpoint-context';
 import type { QaapDevPreviewRecord } from './qaap-dev-preview-port-registry';
 
+/** Default Content-Security-Policy for the IDE shell document on the main origin. */
+export const QAAP_SHELL_CONTENT_SECURITY_POLICY = [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob:",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob: https:",
+    "font-src 'self' data:",
+    "media-src 'self' data: blob:",
+    "connect-src 'self' data: blob: ws: wss: https:",
+    "worker-src 'self' blob:",
+    "frame-src 'self' https: http://localhost:* http://127.0.0.1:* http://*.localhost:*",
+    "manifest-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self' https://github.com",
+    "frame-ancestors 'none'",
+].join('; ');
+
+/**
+ * Resolves the shell CSP. `QAAP_CSP=off` restores the minimal anti-frame policy only; any other
+ * non-empty value replaces the default verbatim, with `frame-ancestors 'none'` appended when absent.
+ */
+export function resolveQaapShellContentSecurityPolicy(env: NodeJS.ProcessEnv = process.env): string {
+    const override = env.QAAP_CSP?.trim() ?? '';
+    if (override === '') {
+        return QAAP_SHELL_CONTENT_SECURITY_POLICY;
+    }
+    if (override.toLowerCase() === 'off') {
+        return "frame-ancestors 'none'";
+    }
+    const hasFrameAncestors = override.split(';').some(directive => /^\s*frame-ancestors(\s|$)/i.test(directive));
+    return hasFrameAncestors ? override : `${override.replace(/;\s*$/, '')}; frame-ancestors 'none'`;
+}
+
 /** True inside a per-tenant backend (`QAAP_TENANT_BACKEND_MODE=1`). */
 export function isQaapTenantBackendRuntime(env: NodeJS.ProcessEnv = process.env): boolean {
     return /^(1|true)$/i.test(env.QAAP_TENANT_BACKEND_MODE?.trim() ?? '');
@@ -150,7 +184,7 @@ export function earlyMiddlewareExtracted(ctx: QaapDevPreviewEndpointContext): Ha
             const shellPath = (req.path || '').toLowerCase();
             if (shellPath === '/' || shellPath === '/index.html') {
                 res.setHeader('X-Frame-Options', 'DENY');
-                res.setHeader('Content-Security-Policy', "frame-ancestors 'none'");
+                res.setHeader('Content-Security-Policy', resolveQaapShellContentSecurityPolicy(process.env));
             }
             next();
         },

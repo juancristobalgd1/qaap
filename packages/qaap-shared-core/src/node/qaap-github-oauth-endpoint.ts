@@ -611,6 +611,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         const payload = buildQaapLaunchHealthPayload(readiness, {
             skipAuth: this.auth.isSkipAuthEnabled(),
             build: process.env.QAAP_BUILD_SHA,
+            signedIn: this.auth.authenticate(req).kind !== 'unauthorized',
         });
         // The orchestrator wakes tenant backends with the liveness probe: a storage problem must
         // not lock a tenant out of the IDE. Everything else (Docker HEALTHCHECK, smoke, deploy
@@ -633,23 +634,28 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         res.status(healthy ? 200 : 503).json({ ...payload, ok: healthy, checks });
     }
 
-    protected handleAuthConfig(_req: Request, res: Response): void {
+    protected handleAuthConfig(req: Request, res: Response): void {
         const build = process.env.QAAP_BUILD_SHA?.trim();
         const readiness = evaluateQaapProductionAuthReadiness();
         const betaAccess = new QaapBetaAccessPolicy();
+        // Anonymous callers (the public login gate) get the gate's flags only; operator detail
+        // (agent uid, isolation mode, default harness) is for signed-in callers.
+        const signedIn = this.auth.authenticate(req).kind !== 'unauthorized';
         res.json({
             betaAccessRequired: betaAccess.isRequired(),
             betaAccessConfigured: betaAccess.isConfigured(),
             githubOAuth: readiness.oauthConfigured,
             skipAuth: this.auth.isSkipAuthEnabled(),
             productionRuntime: readiness.productionRuntime,
-            // The configured default harness for new composers and routines (QAAP_DEFAULT_AGENT_ID); omitted when unset (first available harness).
-            defaultAgentId: readBackendDefaultAgentId(),
             oauthConfigured: readiness.oauthConfigured,
             agentUidPerUser: readiness.agentUidPerUser,
-            backendIsolationMode: readiness.backendIsolationMode,
             backendIsolationReady: readiness.backendIsolationReady,
-            ...(process.env.QAAP_AGENT_UID?.trim() ? { agentUid: process.env.QAAP_AGENT_UID.trim() } : {}),
+            ...(signedIn ? {
+                // The configured default harness for new composers and routines (QAAP_DEFAULT_AGENT_ID); omitted when unset (first available harness).
+                defaultAgentId: readBackendDefaultAgentId(),
+                backendIsolationMode: readiness.backendIsolationMode,
+                ...(process.env.QAAP_AGENT_UID?.trim() ? { agentUid: process.env.QAAP_AGENT_UID.trim() } : {}),
+            } : {}),
             // Deployed-build identity (short git SHA, baked into the image at build time).
             // Public by design: the repo is public, and this is the one signal that ends
             // "which build am I actually on?" during deploys — the post-deploy gate asserts

@@ -15,6 +15,7 @@ import {
     resolveAgentBindingForTaskExtracted,
 } from './qaap-agent-task-runner-streaming2';
 import { listModelsForAgentExtracted } from './qaap-agent-task-runner-render2';
+import { sharedQaapAgentModelUnavailableRegistry } from './qaap-agent-model-unavailable-registry';
 
 describe('QAIQ/OpenClaude model routing', () => {
     it('does not inject QAIQ Settings flags into an unpinned OpenClaude task', () => {
@@ -174,6 +175,36 @@ describe('QAIQ/OpenClaude model routing', () => {
         it('locks a settled-unknown Codex probe as not-connected, never as plan', () => {
             const models = listModelsForAgentExtracted(codexCtx('unknown', true), 'codex', 'starter-user');
             expect(models.every(model => model.unavailableReason === 'not-connected')).to.equal(true);
+        });
+    });
+
+    describe('models the provider rejected recently', () => {
+        const owner = 'registry-catalog-owner';
+        const connectedCodexCtx = {
+            normalizeAgentId: () => undefined,
+            agentConnectionSnapshot: () => ({ connectionState: 'connected', probeSettled: true }),
+        } as unknown as QaapAgentTaskRunnerContext;
+
+        afterEach(() => {
+            // The registry is process-wide; drop this owner's findings so other specs see a clean slate.
+            sharedQaapAgentModelUnavailableRegistry.clear();
+        });
+
+        it('locks a model recorded as model_unavailable for this owner and agent, and leaves the others open', () => {
+            const before = listModelsForAgentExtracted(connectedCodexCtx, 'codex', owner);
+            const rejected = before[0].modelId;
+            sharedQaapAgentModelUnavailableRegistry.record(owner, 'codex', rejected);
+            const after = listModelsForAgentExtracted(connectedCodexCtx, 'codex', owner);
+            const marked = after.find(model => model.modelId === rejected);
+            expect(marked).to.deep.include({ available: false, unavailableReason: 'unknown' });
+            expect(after.filter(model => model.modelId !== rejected).every(model => model.available === true)).to.equal(true);
+        });
+
+        it('does not mark the model for another owner', () => {
+            const rejected = listModelsForAgentExtracted(connectedCodexCtx, 'codex', owner)[0].modelId;
+            sharedQaapAgentModelUnavailableRegistry.record(owner, 'codex', rejected);
+            const other = listModelsForAgentExtracted(connectedCodexCtx, 'codex', 'someone-else');
+            expect(other.find(model => model.modelId === rejected)?.available).to.not.equal(false);
         });
     });
 });

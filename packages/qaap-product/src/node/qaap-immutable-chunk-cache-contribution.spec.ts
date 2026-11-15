@@ -69,6 +69,47 @@ describe('qaap-immutable-chunk-cache-contribution patterns', () => {
         expect(fs.existsSync(path.join(legalDir, 'legal.css'))).to.equal(true);
     });
 
+    describe('configure(app)', () => {
+
+        interface RecordedRoute {
+            path: string;
+            handler: (req: unknown, res: unknown) => void;
+        }
+
+        const configureWithFakeApp = (): { disabled: string[], routes: RecordedRoute[] } => {
+            const disabled: string[] = [];
+            const routes: RecordedRoute[] = [];
+            const fakeApp = {
+                disable: (setting: string) => { disabled.push(setting); },
+                get: (routePath: string, handler: RecordedRoute['handler']) => { routes.push({ path: routePath, handler }); },
+                use: () => undefined,
+            };
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            new QaapFrontendStaticServer().configure(fakeApp as any);
+            return { disabled, routes };
+        };
+
+        it('disables the x-powered-by header', () => {
+            expect(configureWithFakeApp().disabled).to.deep.equal(['x-powered-by']);
+        });
+
+        it('redirects /favicon.ico to the packaged logo with a one-day cache', () => {
+            const { routes } = configureWithFakeApp();
+            const favicon = routes.find(route => route.path === '/favicon.ico');
+            expect(favicon, 'favicon route registered').to.not.equal(undefined);
+            const headers: Record<string, string> = {};
+            let redirected: [number, string] | undefined;
+            const res = {
+                setHeader: (name: string, value: string) => { headers[name] = value; },
+                redirect: (status: number, location: string) => { redirected = [status, location]; },
+            };
+            favicon!.handler({}, res);
+            expect(headers['Cache-Control']).to.equal('public, max-age=86400');
+            expect(redirected).to.deep.equal([302, '/media/qaap-logo.svg']);
+            expect(fs.existsSync(path.resolve(__dirname, '../../../../examples/browser/media/qaap-logo.svg'))).to.equal(true);
+        });
+    });
+
     describe('static headers for compressed companions', () => {
 
         const headersFor = (file: string): Record<string, string> => {

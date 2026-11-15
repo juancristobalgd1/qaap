@@ -21,6 +21,7 @@ export interface QaapOpencodeGateProbeVerdict {
 
 const PROBE_TIMEOUT_MS = 60_000;
 const FAILED_VERDICT_TTL_MS = 60_000;
+const VERSION_CACHE_TTL_MS = 5 * 60_000;
 const MAX_PROBE_FILE_BYTES = 64 * 1024;
 /** Sandbox base with a drop: sticky, traversable and writable by others, not listable by others (see verifyAgentBase). */
 const AGENT_PROBE_BASE_MODE = 0o1733;
@@ -42,7 +43,28 @@ export class QaapOpencodeGateProbe {
 
     protected readonly verdicts = new Map<string, { verdict: QaapOpencodeGateProbeVerdict; at: number }>();
     protected readonly inflight = new Map<string, Promise<QaapOpencodeGateProbeVerdict>>();
+    protected readonly versions = new Map<string, { version: string; at: number }>();
     protected latest: QaapOpencodeGateProbeVerdict | undefined;
+
+    /** Clock for the version cache; overridable in tests. */
+    protected now(): number {
+        return Date.now();
+    }
+
+    /**
+     * The `--version` output per command and identity, reused for {@link VERSION_CACHE_TTL_MS}, so a spawn does not
+     * start a sandbox and two children each time. Failures throw and are never cached.
+     */
+    protected async cachedVersion(command: string, env: NodeJS.ProcessEnv, drop?: { uid: number; gid: number }): Promise<string> {
+        const cacheKey = `${command}|${drop?.uid ?? ''}`;
+        const cached = this.versions.get(cacheKey);
+        if (cached && this.now() - cached.at < VERSION_CACHE_TTL_MS) {
+            return cached.version;
+        }
+        const version = await this.readVersion(command, env, drop);
+        this.versions.set(cacheKey, { version, at: this.now() });
+        return version;
+    }
 
     /** Verdict of the latest {@link ensure}; `undefined` before any probe ran (treated as not proven). */
     verdict(): QaapOpencodeGateProbeVerdict | undefined {
@@ -62,7 +84,7 @@ export class QaapOpencodeGateProbe {
         const drop = this.resolveDrop(identity);
         let key: string;
         try {
-            key = `${command}|${await this.readVersion(command, env, drop)}|${fs.statSync(pluginPath).mtimeMs}`;
+            key = `${command}|${await this.cachedVersion(command, env, drop)}|${fs.statSync(pluginPath).mtimeMs}`;
         } catch (error) {
             console.warn(`[qaap-tool-gate] opencode --version probe failed: ${error instanceof Error ? error.message : String(error)}`);
             return this.latest = { ok: false, key: `${command}|unknown`, reason: `OpenCode could not be started to probe the gate plugin (${error instanceof Error ? error.message : String(error)}).` };
@@ -94,16 +116,30 @@ export class QaapOpencodeGateProbe {
         return { uid: identity.uid, gid: identity.gid ?? identity.uid };
     }
 
-    /** Runs as the agent identity and with a minimal env: the binary found on PATH is the only thing inherited. */
-    protected readVersion(command: string, env: NodeJS.ProcessEnv, drop?: { uid: number; gid: number }): Promise<string> {
-        return new Promise((resolve, reject) => {
-            execFile(command, ['--version'], {
-                env: { PATH: env.PATH ?? '' },
-                cwd: path.parse(os.tmpdir()).root,
-                timeout: 5_000,
-                ...(drop ? { uid: drop.uid, gid: drop.gid } : {}),
-            }, (error, stdout) => error ? reject(error) : resolve(stdout.trim()));
-        });
+    /**
+     * Runs as the agent identity inside a private probe sandbox (same helpers as the probe run). Without a private
+     * HOME, OpenCode resolves HOME from passwd, which is read-only in the tenant container (EROFS). PATH is the only
+     * inherited variable.
+     */
+    protected async readVersion(command: string, env: NodeJS.ProcessEnv, drop?: { uid: number; gid: number }): Promise<string> {
+        const sandbox = this.createSandbox(drop);
+        try {
+            return await new Promise<string>((resolve, reject) => {
+                execFile(command, ['--version'], {
+                    env: this.buildVersionEnv(env, sandbox.agentDir),
+                    cwd: path.parse(os.tmpdir()).root,
+                    timeout: 5_000,
+                    ...(drop ? { uid: drop.uid, gid: drop.gid } : {}),
+                }, (error, stdout) => error ? reject(error) : resolve(stdout.trim()));
+            });
+        } finally {
+            await this.removeSandbox(sandbox, drop);
+        }
+    }
+
+    /** Env of the `--version` call: PATH plus a private HOME and XDG/TMPDIR directories inside the probe sandbox. */
+    protected buildVersionEnv(env: NodeJS.ProcessEnv, agentDir: string): NodeJS.ProcessEnv {
+        return { PATH: env.PATH ?? '', ...this.privateHomeEnv(agentDir) };
     }
 
     protected async runProbe(key: string, pluginPath: string, env: NodeJS.ProcessEnv, command: string, drop?: { uid: number; gid: number }): Promise<QaapOpencodeGateProbeVerdict> {
@@ -206,12 +242,7 @@ export class QaapOpencodeGateProbe {
     protected buildProbeEnv(env: NodeJS.ProcessEnv, agentDir: string, pluginPath: string, probeFile: string, port: number): NodeJS.ProcessEnv {
         return {
             PATH: env.PATH ?? '',
-            HOME: agentDir,
-            TMPDIR: agentDir,
-            XDG_CONFIG_HOME: path.join(agentDir, 'xdg-config'),
-            XDG_DATA_HOME: path.join(agentDir, 'xdg-data'),
-            XDG_STATE_HOME: path.join(agentDir, 'xdg-state'),
-            XDG_CACHE_HOME: path.join(agentDir, 'xdg-cache'),
+            ...this.privateHomeEnv(agentDir),
             OPENCODE_DISABLE_PROJECT_CONFIG: '1',
             OPENCODE_DISABLE_EXTERNAL_SKILLS: '1',
             OPENCODE_DISABLE_CLAUDE_CODE: '1',
@@ -285,6 +316,18 @@ export class QaapOpencodeGateProbe {
         } catch {
             // A leftover empty or agent-owned directory under the OS temp dir is harmless; never recurse as root.
         }
+    }
+
+    /** HOME, TMPDIR and the XDG dirs, all inside `agentDir`: nothing OpenCode writes reaches the passwd home. */
+    protected privateHomeEnv(agentDir: string): NodeJS.ProcessEnv {
+        return {
+            HOME: agentDir,
+            TMPDIR: agentDir,
+            XDG_CONFIG_HOME: path.join(agentDir, 'xdg-config'),
+            XDG_DATA_HOME: path.join(agentDir, 'xdg-data'),
+            XDG_STATE_HOME: path.join(agentDir, 'xdg-state'),
+            XDG_CACHE_HOME: path.join(agentDir, 'xdg-cache'),
+        };
     }
 
     /** Minimal OpenAI-compatible streaming endpoint whose only answer is one `bash` tool call. */
