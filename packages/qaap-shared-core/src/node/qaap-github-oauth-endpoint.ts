@@ -1491,11 +1491,13 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             return;
         }
         if (kind === 'open' && auth.kind === 'skip') {
+            // Desktop: the user's own repositories need a GitHub session; the client offers the sign-in.
+            // A public clone by URL stays anonymous there, as the Work Hub says ("Public URLs still work").
+            if (isQaapDesktopRuntime()) {
+                res.status(401).json({ code: 'github_sign_in_required', error: 'GitHub sign-in required' });
+                return;
+            }
             res.status(503).json({ error: 'GitHub sign-in required' });
-            return;
-        }
-        if (auth.kind === 'skip' && isQaapDesktopRuntime()) {
-            res.status(401).json({ code: 'github_sign_in_required', error: 'GitHub sign-in required' });
             return;
         }
         const identity = {

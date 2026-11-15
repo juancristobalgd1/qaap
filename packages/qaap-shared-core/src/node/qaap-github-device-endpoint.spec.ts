@@ -228,9 +228,18 @@ describe('QaapGithubOauthEndpoint desktop device flow and sign-in', () => {
         const endpoint = createEndpoint() as unknown as { handleStartWorkspaceJob(req: unknown, res: unknown): void; workspaceJobs: unknown };
         Object.assign(endpoint, { workspaceJobs: { list: () => [] } });
         const res = fakeResponse();
-        endpoint.handleStartWorkspaceJob({ body: { kind: 'clone', repository: 'octo/hello' }, headers: {} }, res);
+        endpoint.handleStartWorkspaceJob({ body: { kind: 'open', owner: 'octo', name: 'hello' }, headers: {} }, res);
         expect(res.statusCode).to.equal(401);
         expect(res.body).to.deep.include({ code: 'github_sign_in_required' });
+    });
+
+    it('keeps the 503 for an open without a session outside the desktop runtime', () => {
+        const endpoint = createEndpoint() as unknown as { handleStartWorkspaceJob(req: unknown, res: unknown): void; workspaceJobs: unknown };
+        Object.assign(endpoint, { workspaceJobs: { list: () => [] } });
+        const res = fakeResponse();
+        endpoint.handleStartWorkspaceJob({ body: { kind: 'open', owner: 'octo', name: 'hello' }, headers: {} }, res);
+        expect(res.statusCode).to.equal(503);
+        expect(res.body).to.deep.equal({ error: 'GitHub sign-in required' });
     });
 
     it('writes the session cookie without Secure on http localhost and with Secure only on https', () => {
