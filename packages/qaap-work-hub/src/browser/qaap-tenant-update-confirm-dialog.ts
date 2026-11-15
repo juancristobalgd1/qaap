@@ -3,11 +3,9 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { injectable } from '@theia/core/shared/inversify';
 import { nls } from '@theia/core/lib/common/nls';
 
 /** Asks before "Update now" interrupts agent turns. Uses the product's own confirm dialog, never `window.confirm`. */
-@injectable()
 export class QaapTenantUpdateConfirmDialog {
 
     /** Resolves `true` only when the user explicitly accepts the interruption. */

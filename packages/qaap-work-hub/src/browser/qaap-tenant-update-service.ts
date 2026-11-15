@@ -3,133 +3,85 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { inject, injectable } from '@theia/core/shared/inversify';
 import { Emitter, type Event } from '@theia/core/lib/common/event';
-import { QaapTenantUpdateClient, type QaapTenantUpdateStatus } from '@theia/qaap-shared-core/lib/browser/qaap-tenant-update-client';
+import {
+    QaapTenantUpdateClient,
+    type QaapTenantBackendUpdate,
+} from '@theia/qaap-shared-core/lib/browser/qaap-tenant-update-client';
 import { QaapTenantUpdateConfirmDialog } from './qaap-tenant-update-confirm-dialog';
 
-/** How often the status is re-read while the page stays open. */
-export const QAAP_TENANT_UPDATE_POLL_MS = 5 * 60_000;
-/** How long "Updating…" waits for the recreated backend before it reloads anyway. */
+/** How long "Updating…" waits for the recreated backend to stop reporting a pending update before it reloads anyway. */
 export const QAAP_TENANT_UPDATE_RECOVERY_TIMEOUT_MS = 60_000;
 const RECOVERY_STEP_MS = 1_000;
 
-/** Clock and timers, injectable so the flow can be exercised without real waits. */
+/**
+ * How a "Update now" request ended:
+ * - `applied`: the backend was recreated and the page is reloading;
+ * - `cancelled`: the user declined the interruption of running agent turns;
+ * - `nothing`: the control plane had nothing to apply (the status is stale);
+ * - `failed`: the request failed; the caller restores its control and says so.
+ */
+export type QaapTenantUpdateOutcome = 'applied' | 'cancelled' | 'nothing' | 'failed';
+
+/** Clock and delay, injectable so the recovery wait runs without real time passing. */
 export interface QaapTenantUpdateTimers {
     now(): number;
-    setInterval(callback: () => void, ms: number): unknown;
-    clearInterval(handle: unknown): void;
     delay(ms: number): Promise<void>;
-}
-
-export type QaapTenantUpdatePhase = 'idle' | 'updating' | 'failed';
-
-export interface QaapTenantUpdateState {
-    /** Last status the control plane answered; `undefined` until the first successful read. */
-    readonly status: QaapTenantUpdateStatus | undefined;
-    readonly phase: QaapTenantUpdatePhase;
 }
 
 const defaultTimers: QaapTenantUpdateTimers = {
     now: () => Date.now(),
-    setInterval: (callback, ms) => globalThis.setInterval(callback, ms),
-    clearInterval: handle => globalThis.clearInterval(handle as ReturnType<typeof setInterval>),
     delay: ms => new Promise(resolve => globalThis.setTimeout(resolve, ms)),
 };
 
 /**
- * Keeps the "A new version of Qaap is ready" state: polls the control plane on start, every few
- * minutes and when the tab becomes visible again, and applies the update on request. A deploy
- * never interrupts a turn; the user decides when the new version starts.
+ * Applies the pending Qaap build on request, for the sessions sidebar's "Update now" chip. It owns the
+ * whole action (confirm when turns run, apply, wait for the backend, reload) and nothing else: "is an
+ * update pending" is read from the runtime status by the caller, the one source of that state.
  */
-@injectable()
 export class QaapTenantUpdateService {
 
-    @inject(QaapTenantUpdateClient)
-    protected readonly client: QaapTenantUpdateClient;
+    protected readonly onDidStartApplyingEmitter = new Emitter<void>();
+    /** Fired once the user confirmed (or no confirmation was needed) and the request is sent. */
+    readonly onDidStartApplying: Event<void> = this.onDidStartApplyingEmitter.event;
 
-    @inject(QaapTenantUpdateConfirmDialog)
-    protected readonly confirmDialog: QaapTenantUpdateConfirmDialog;
+    protected inFlight: Promise<QaapTenantUpdateOutcome> | undefined;
 
-    protected readonly onDidChangeStateEmitter = new Emitter<QaapTenantUpdateState>();
-    readonly onDidChangeState: Event<QaapTenantUpdateState> = this.onDidChangeStateEmitter.event;
+    constructor(
+        protected readonly client: QaapTenantUpdateClient = new QaapTenantUpdateClient(),
+        protected readonly confirmDialog: QaapTenantUpdateConfirmDialog = new QaapTenantUpdateConfirmDialog(),
+        protected readonly timers: QaapTenantUpdateTimers = defaultTimers,
+    ) { }
 
-    protected state: QaapTenantUpdateState = { status: undefined, phase: 'idle' };
-    protected pollHandle: unknown;
-    protected visibilityListener: (() => void) | undefined;
-    /** Test seam: the browser uses the real clock; specs replace it. */
-    protected timers: QaapTenantUpdateTimers = defaultTimers;
-
-    getState(): QaapTenantUpdateState {
-        return this.state;
+    readBackendUpdate(): Promise<QaapTenantBackendUpdate | undefined> {
+        return this.client.fetchBackendUpdate();
     }
 
-    /** Idempotent: starts polling, a visibility refresh and an immediate status read. */
-    start(): void {
-        if (this.pollHandle === undefined) {
-            this.pollHandle = this.timers.setInterval(() => void this.refresh(), QAAP_TENANT_UPDATE_POLL_MS);
-        }
-        if (this.visibilityListener === undefined && typeof document !== 'undefined') {
-            const listener = (): void => {
-                if (document.visibilityState === 'visible') {
-                    void this.refresh();
-                }
-            };
-            this.visibilityListener = listener;
-            document.addEventListener('visibilitychange', listener);
-        }
-        void this.refresh();
+    /** Concurrent calls share the run already in progress, so the backend is recreated once. */
+    updateNow(runningTasks: number): Promise<QaapTenantUpdateOutcome> {
+        this.inFlight ??= this.runUpdate(runningTasks).finally(() => {
+            this.inFlight = undefined;
+        });
+        return this.inFlight;
     }
 
-    stop(): void {
-        if (this.pollHandle !== undefined) {
-            this.timers.clearInterval(this.pollHandle);
-            this.pollHandle = undefined;
-        }
-        if (this.visibilityListener !== undefined && typeof document !== 'undefined') {
-            document.removeEventListener('visibilitychange', this.visibilityListener);
-        }
-        this.visibilityListener = undefined;
-    }
-
-    /** Re-reads the status. Silent on failure: the last known state stays on screen. */
-    async refresh(): Promise<void> {
-        try {
-            const status = await this.client.fetchStatus();
-            this.setState({ status });
-        } catch {
-            // Offline or signed out: nothing to tell the user.
-        }
-    }
-
-    /**
-     * "Update now". Asks first when agent turns are running, then recreates the backend and reloads
-     * the page once it answers without a pending update (or after {@link QAAP_TENANT_UPDATE_RECOVERY_TIMEOUT_MS}).
-     */
-    async updateNow(): Promise<void> {
-        if (this.state.phase === 'updating') {
-            return;
-        }
-        const runningTasks = this.state.status?.runningTasks ?? 0;
+    protected async runUpdate(runningTasks: number): Promise<QaapTenantUpdateOutcome> {
         if (runningTasks > 0 && !await this.confirmDialog.confirm(runningTasks)) {
-            return;
+            return 'cancelled';
         }
-        this.setState({ phase: 'updating' });
+        this.onDidStartApplyingEmitter.fire();
         let applied: boolean;
         try {
             applied = await this.client.applyUpdate();
         } catch {
-            this.setState({ phase: 'failed' });
-            return;
+            return 'failed';
         }
         if (!applied) {
-            // Nothing was stale any more (another tab or a previous attempt applied it).
-            this.setState({ phase: 'idle' });
-            await this.refresh();
-            return;
+            return 'nothing';
         }
         await this.waitForRecovery();
         this.reloadPage();
+        return 'applied';
     }
 
     /** Protected so specs can observe the reload instead of performing it. */
@@ -137,24 +89,19 @@ export class QaapTenantUpdateService {
         globalThis.location.reload();
     }
 
+    /** Polls the runtime status until the update is no longer pending, or the timeout passes. */
     protected async waitForRecovery(): Promise<void> {
         const deadline = this.timers.now() + QAAP_TENANT_UPDATE_RECOVERY_TIMEOUT_MS;
         while (this.timers.now() < deadline) {
             await this.timers.delay(RECOVERY_STEP_MS);
             try {
-                const status = await this.client.fetchStatus();
-                this.setState({ status });
-                if (!status.updateAvailable) {
+                const update = await this.client.fetchBackendUpdate();
+                if (!update?.updatePending) {
                     return;
                 }
             } catch {
                 // The backend is still starting: keep polling until the deadline.
             }
         }
-    }
-
-    protected setState(change: Partial<QaapTenantUpdateState>): void {
-        this.state = { ...this.state, ...change };
-        this.onDidChangeStateEmitter.fire(this.state);
     }
 }

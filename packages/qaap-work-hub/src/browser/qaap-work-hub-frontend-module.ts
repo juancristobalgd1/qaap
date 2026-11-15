@@ -38,7 +38,6 @@ import '@theia/qaap-transcript/src/browser/style/qaap-transcript-lobehub.css';
 import '@theia/qaap-agents-ui/src/browser/style/qaap-agent-setup-animations.css';
 import '@theia/ai-claude-code/src/browser/style/claude-code-tool-renderers.css';
 import '../../src/browser/style/qaap-composer-model-picker.css';
-import '../../src/browser/style/qaap-tenant-update-notice.css';
 // Last: menu/sheet entrances and control press feedback layer over every surface stylesheet above.
 import '../../src/browser/style/qaap-work-hub-motion.css';
 
@@ -84,10 +83,6 @@ import { QaapWindowTitleProjectContribution } from './qaap-window-title-project-
 import { QaapWorkHubBootReplicaContribution } from './qaap-work-hub-boot-replica-contribution';
 import { QaapWorkHubKeybindingsPanel } from './qaap-work-hub-keybindings-panel';
 import { QaapAgentCliUpdateContribution } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-cli-update-contribution';
-import { QaapTenantUpdateClient } from '@theia/qaap-shared-core/lib/browser/qaap-tenant-update-client';
-import { QaapTenantUpdateConfirmDialog } from './qaap-tenant-update-confirm-dialog';
-import { QaapTenantUpdateNotice } from './qaap-tenant-update-notice';
-import { QaapTenantUpdateService } from './qaap-tenant-update-service';
 import { MobileOneColumnShellContribution } from './mobile-one-column-shell-contribution';
 import { QaapShellLayoutRestoreContribution } from './qaap-shell-layout-restore-contribution';
 import { QaapShellLayoutRestorer } from './qaap-shell-layout-restorer';
@@ -267,11 +262,6 @@ export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync
     bind(FrontendApplicationContribution).toService(QaapWorkHubBootReplicaContribution);
     bind(QaapAgentCliUpdateContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapAgentCliUpdateContribution);
-    bind(QaapTenantUpdateClient).toSelf().inSingletonScope();
-    bind(QaapTenantUpdateConfirmDialog).toSelf().inSingletonScope();
-    bind(QaapTenantUpdateService).toSelf().inSingletonScope();
-    bind(QaapTenantUpdateNotice).toSelf().inSingletonScope();
-    bind(FrontendApplicationContribution).toService(QaapTenantUpdateNotice);
     bind(CommandContribution).toService(MobileOneColumnShellContribution);
     rebind(ShellLayoutRestorer).to(QaapShellLayoutRestorer).inSingletonScope();
     // Work Hub terminal surface (desktop and mobile): bridge aliases of the upstream terminal services.

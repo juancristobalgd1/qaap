@@ -4,33 +4,34 @@
 // *****************************************************************************
 
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
-// The confirm dialog module touches the DOM while loading.
+// The confirm dialog module touches the DOM while it loads (its own import is lazy, the test double is not).
 const disableImportJSDOM = enableJSDOM();
 import { expect } from 'chai';
-import { QaapTenantUpdateClient, type QaapTenantUpdateStatus } from '@theia/qaap-shared-core/lib/browser/qaap-tenant-update-client';
+import {
+    QaapTenantUpdateClient,
+    type QaapTenantBackendUpdate,
+} from '@theia/qaap-shared-core/lib/browser/qaap-tenant-update-client';
 import { QaapTenantUpdateConfirmDialog } from './qaap-tenant-update-confirm-dialog';
 import {
-    QAAP_TENANT_UPDATE_POLL_MS,
     QAAP_TENANT_UPDATE_RECOVERY_TIMEOUT_MS,
     QaapTenantUpdateService,
-    type QaapTenantUpdateState,
     type QaapTenantUpdateTimers,
 } from './qaap-tenant-update-service';
 disableImportJSDOM();
 
-/** Scripted control-plane answers; each read consumes the next status, the last one repeats. */
+const pending = (runningTasks = 0): QaapTenantBackendUpdate => ({ updatePending: true, runningTasks });
+const idle: QaapTenantBackendUpdate = { updatePending: false, runningTasks: 0 };
+
+/** Scripted control plane: each status read consumes the next answer, the last one repeats. */
 class ScriptedClient extends QaapTenantUpdateClient {
-    readonly statuses: QaapTenantUpdateStatus[] = [];
-    failStatus = false;
+    readonly updates: Array<QaapTenantBackendUpdate | undefined> = [];
     applyResult: boolean | Error = true;
     applyCalls = 0;
+    readCalls = 0;
 
-    override async fetchStatus(): Promise<QaapTenantUpdateStatus> {
-        if (this.failStatus) {
-            throw new Error('offline');
-        }
-        const next = this.statuses.length > 1 ? this.statuses.shift()! : this.statuses[0];
-        return next;
+    override async fetchBackendUpdate(): Promise<QaapTenantBackendUpdate | undefined> {
+        this.readCalls += 1;
+        return this.updates.length > 1 ? this.updates.shift() : this.updates[0];
     }
 
     override async applyUpdate(): Promise<boolean> {
@@ -54,22 +55,9 @@ class ScriptedConfirm extends QaapTenantUpdateConfirmDialog {
 
 class FakeTimers implements QaapTenantUpdateTimers {
     current = 0;
-    readonly intervals: Array<{ readonly ms: number; readonly handle: number }> = [];
-    readonly cleared: number[] = [];
-    private nextHandle = 1;
 
     now(): number {
         return this.current;
-    }
-
-    setInterval(_callback: () => void, ms: number): unknown {
-        const handle = this.nextHandle++;
-        this.intervals.push({ ms, handle });
-        return handle;
-    }
-
-    clearInterval(handle: unknown): void {
-        this.cleared.push(handle as number);
     }
 
     async delay(ms: number): Promise<void> {
@@ -85,131 +73,99 @@ class TestService extends QaapTenantUpdateService {
     }
 }
 
-function setup(): { service: TestService; client: ScriptedClient; confirm: ScriptedConfirm; timers: FakeTimers; states: QaapTenantUpdateState[] } {
-    const service = new TestService();
+function setup(): { service: TestService; client: ScriptedClient; confirm: ScriptedConfirm; timers: FakeTimers; counter: { applying: number } } {
     const client = new ScriptedClient();
     const confirm = new ScriptedConfirm();
     const timers = new FakeTimers();
-    const internals = service as unknown as { client: unknown; confirmDialog: unknown; timers: unknown };
-    internals.client = client;
-    internals.confirmDialog = confirm;
-    internals.timers = timers;
-    const states: QaapTenantUpdateState[] = [];
-    service.onDidChangeState(state => states.push(state));
-    return { service, client, confirm, timers, states };
+    const service = new TestService(client, confirm, timers);
+    const counter = { applying: 0 };
+    service.onDidStartApplying(() => { counter.applying += 1; });
+    return { service, client, confirm, timers, counter };
 }
-
-const idle: QaapTenantUpdateStatus = { updateAvailable: false, runningTasks: 0 };
-const pending = (runningTasks = 0): QaapTenantUpdateStatus => ({ updateAvailable: true, runningTasks });
 
 describe('QaapTenantUpdateService', () => {
 
-    it('reads the status on start and polls every five minutes; stop clears the poll', async () => {
-        const { service, client, timers } = setup();
-        client.statuses.push(pending());
-        service.start();
-        await flush();
-        expect(service.getState().status).to.deep.equal(pending());
-        expect(timers.intervals).to.have.length(1);
-        expect(timers.intervals[0].ms).to.equal(QAAP_TENANT_UPDATE_POLL_MS);
-        service.start();
-        expect(timers.intervals).to.have.length(1);
-        service.stop();
-        expect(timers.cleared).to.deep.equal([timers.intervals[0].handle]);
+    it('reads the pending state from the runtime status, through the client', async () => {
+        const { service, client } = setup();
+        client.updates.push(pending(3));
+        expect(await service.readBackendUpdate()).to.deep.equal(pending(3));
+        expect(client.readCalls).to.equal(1);
     });
 
-    it('keeps the last known state silently when a read fails', async () => {
-        const { service, client, states } = setup();
-        client.statuses.push(pending(1));
-        await service.refresh();
-        client.failStatus = true;
-        await service.refresh();
-        expect(service.getState().status).to.deep.equal(pending(1));
-        expect(states).to.have.length(1);
-    });
-
-    it('applies without asking when no agent turn is running, then reloads once the backend is current', async () => {
+    it('applies without asking when no agent turn is running, waits for the backend, then reloads once', async () => {
         const { service, client, confirm, timers } = setup();
-        client.statuses.push(pending(0), idle);
-        await service.refresh();
-        await service.updateNow();
+        client.updates.push(pending(0), idle);
+        const outcome = await service.updateNow(0);
+        expect(outcome).to.equal('applied');
         expect(confirm.asked).to.deep.equal([]);
         expect(client.applyCalls).to.equal(1);
         expect(timers.current).to.be.greaterThan(0);
         expect(service.reloads).to.equal(1);
     });
 
-    it('asks before interrupting running agent turns, naming how many, and does nothing when declined', async () => {
+    it('asks before interrupting running agent turns, naming how many, and changes nothing when declined', async () => {
         const { service, client, confirm } = setup();
-        client.statuses.push(pending(2));
-        await service.refresh();
         confirm.answers.push(false);
-        await service.updateNow();
+        const outcome = await service.updateNow(2);
+        expect(outcome).to.equal('cancelled');
         expect(confirm.asked).to.deep.equal([2]);
         expect(client.applyCalls).to.equal(0);
         expect(service.reloads).to.equal(0);
-        expect(service.getState().phase).to.equal('idle');
     });
 
-    it('applies after the user accepts the interruption', async () => {
+    it('applies after the user accepts the interruption of running turns', async () => {
         const { service, client, confirm } = setup();
-        client.statuses.push(pending(3), idle);
-        await service.refresh();
+        client.updates.push(idle);
         confirm.answers.push(true);
-        await service.updateNow();
+        expect(await service.updateNow(3)).to.equal('applied');
+        expect(confirm.asked).to.deep.equal([3]);
         expect(client.applyCalls).to.equal(1);
         expect(service.reloads).to.equal(1);
     });
 
-    it('shows failure and lets the user retry; no reload after a failed apply', async () => {
-        const { service, client, states } = setup();
-        client.statuses.push(pending(0), idle);
+    it('reports a failed request without reloading, so the caller can restore its control', async () => {
+        const { service, client } = setup();
         client.applyResult = new Error('HTTP 500');
-        await service.refresh();
-        await service.updateNow();
-        expect(service.getState().phase).to.equal('failed');
+        expect(await service.updateNow(0)).to.equal('failed');
         expect(service.reloads).to.equal(0);
         client.applyResult = true;
-        await service.updateNow();
+        client.updates.push(idle);
+        expect(await service.updateNow(0)).to.equal('applied');
         expect(client.applyCalls).to.equal(2);
-        expect(service.reloads).to.equal(1);
-        expect(states.map(state => state.phase)).to.include('failed');
     });
 
-    it('does not reload when the control plane had nothing to apply', async () => {
+    it('reports nothing to apply without reloading', async () => {
         const { service, client } = setup();
-        client.statuses.push(pending(0), idle);
         client.applyResult = false;
-        await service.refresh();
-        await service.updateNow();
+        expect(await service.updateNow(0)).to.equal('nothing');
         expect(service.reloads).to.equal(0);
-        expect(service.getState().phase).to.equal('idle');
     });
 
-    it('reloads anyway after the recovery window if the status never clears', async () => {
+    it('tells the caller when the request is sent (after confirmation), so it can show "Updating…"', async () => {
+        const { service, client, confirm, counter } = setup();
+        confirm.answers.push(false);
+        await service.updateNow(1);
+        expect(counter.applying).to.equal(0);
+        client.updates.push(idle);
+        confirm.answers.push(true);
+        await service.updateNow(1);
+        expect(counter.applying).to.equal(1);
+    });
+
+    it('reloads anyway after the recovery window if the update never stops being pending', async () => {
         const { service, client, timers } = setup();
-        client.statuses.push(pending(0));
-        await service.refresh();
-        await service.updateNow();
+        client.updates.push(pending(0));
+        expect(await service.updateNow(0)).to.equal('applied');
         expect(service.reloads).to.equal(1);
         expect(timers.current).to.be.at.least(QAAP_TENANT_UPDATE_RECOVERY_TIMEOUT_MS);
     });
 
-    it('ignores a second "Update now" while the first is in progress', async () => {
+    it('shares one run between concurrent calls, so the backend is recreated once', async () => {
         const { service, client } = setup();
-        client.statuses.push(pending(0), idle);
-        await service.refresh();
-        const first = service.updateNow();
-        const second = service.updateNow();
-        await Promise.all([first, second]);
+        client.updates.push(idle);
+        const [first, second] = await Promise.all([service.updateNow(0), service.updateNow(0)]);
+        expect([first, second]).to.deep.equal(['applied', 'applied']);
         expect(client.applyCalls).to.equal(1);
         expect(service.reloads).to.equal(1);
     });
 });
-
-/** Lets pending promise callbacks (the non-awaited first read) run. */
-async function flush(): Promise<void> {
-    for (let i = 0; i < 5; i++) {
-        await Promise.resolve();
-    }
-}
