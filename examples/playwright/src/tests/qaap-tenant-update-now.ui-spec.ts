@@ -171,6 +171,8 @@ async function runUpdateFlow(
 
         const metrics = await measureChip(chip);
         testInfo.annotations.push({ type: 'update-now-chip', description: JSON.stringify({ viewport: options.viewport, ...metrics }) });
+        // Kept in the CI step log (the report is only archived on failure).
+        console.log(`[update-now-chip] ${options.prefix} ${JSON.stringify({ viewport: options.viewport, ...metrics })}`);
         expect(metrics.inViewport, 'chip inside the viewport').toBe(true);
         expect(metrics.hitsChip, `the element at the chip centre is the chip (got <${metrics.hitTag}>)`).toBe(true);
         if (options.touch) {
