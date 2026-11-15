@@ -237,6 +237,8 @@ html, body { overflow-x: clip; }
 .rails > .hero + .band { border-top: 0; }
 .hero { position: relative; isolation: isolate; }
 .hero-satin { image-rendering: pixelated; }
+/* Trial: only the Waves shader + letter glitch. Satin dither kept in code, just hidden. */
+.hero-satin { display: none; }
 .hero-shader { position: absolute; top: 0; left: 50%; z-index: -4; width: 100vw; margin-left: -50vw; height: 1100px; pointer-events: none; -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 14%, #000 70%, transparent 100%); mask-image: linear-gradient(to bottom, transparent 0, #000 14%, #000 70%, transparent 100%); }
 .hero-satin, .hero-glitch {
     position: absolute;
