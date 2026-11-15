@@ -639,6 +639,11 @@ h2 .dim { color: var(--muted); }
 .plan li { display: flex; gap: 10px; }
 .plan li::before { content: '—'; color: var(--muted); }
 .plan .btn { width: 100%; }
+/* ---- Pricing pixel cards (vanilla take on PixelCard) ---- */
+.plan { position: relative; overflow: hidden; isolation: isolate; }
+.plan > *:not(.plan-pixels) { position: relative; z-index: 1; }
+.plan-pixels { position: absolute; inset: 0; z-index: 0; width: 100%; height: 100%; pointer-events: none; }
+
 .byok {
     padding: 22px 48px;
     border-bottom: 1px solid var(--line);
@@ -1857,6 +1862,134 @@ footer { border-top: 1px solid var(--line); }
         }, { threshold: 0.5 });
         seen.observe(root);
     }
+})();
+</script>
+<script>
+/* Pixel reveal on the pricing cards: hover reveals from the center, spotlight follows the cursor, click pulses. */
+(function () {
+    var cards = document.querySelectorAll('.plan');
+    if (!cards.length || !document.createElement('canvas').getContext) { return; }
+    var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var COLORS = ['#f8fafc', '#f1f5f9', '#cbd5e1'];
+    var GLOW = '203,213,225';
+    var GAP = 5;
+    var PIXEL = 2;
+    var SPEED = 35;
+    var REVEAL = 600;
+    var SPOTLIGHT = 0.5;
+    var GLOW_AMOUNT = 0.5;
+    var OPACITY = 0.35;
+    var FADE = 0.7;
+    cards.forEach(function (card) {
+        var canvas = document.createElement('canvas');
+        canvas.className = 'plan-pixels';
+        canvas.setAttribute('aria-hidden', 'true');
+        card.insertBefore(canvas, card.firstChild);
+        var ctx = canvas.getContext('2d');
+        var w = 0;
+        var hgt = 0;
+        var pixels = [];
+        var maxDelay = 1;
+        var mode = 'idle';
+        var modeStart = 0;
+        var mouse = null;
+        var pulses = [];
+        var frame = 0;
+        var build = function () {
+            var dpr = Math.min(2, window.devicePixelRatio || 1);
+            w = card.clientWidth;
+            hgt = card.clientHeight;
+            canvas.width = Math.round(w * dpr);
+            canvas.height = Math.round(hgt * dpr);
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            pixels = [];
+            var step = GAP + PIXEL;
+            var cx = w / 2;
+            var cy = hgt / 2;
+            var maxD = Math.sqrt(cx * cx + cy * cy);
+            for (var x = step / 2; x < w; x += step) {
+                for (var y = step / 2; y < hgt; y += step) {
+                    var d = Math.sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy));
+                    pixels.push({ x: x, y: y, c: COLORS[(Math.random() * COLORS.length) | 0], delay: d / maxD * REVEAL * (0.8 + Math.random() * 0.4), phase: Math.random() * Math.PI * 2 });
+                }
+            }
+            maxDelay = REVEAL * 1.2;
+        };
+        var draw = function (now) {
+            frame = 0;
+            ctx.clearRect(0, 0, w, hgt);
+            var t = now - modeStart;
+            var animating = mode === 'in' || pulses.length > 0;
+            if (mouse && mode === 'in') {
+                var g = ctx.createRadialGradient(mouse.x, mouse.y, 0, mouse.x, mouse.y, 220);
+                g.addColorStop(0, 'rgba(' + GLOW + ',' + (0.12 * GLOW_AMOUNT) + ')');
+                g.addColorStop(1, 'rgba(' + GLOW + ',0)');
+                ctx.fillStyle = g;
+                ctx.fillRect(0, 0, w, hgt);
+            }
+            pulses = pulses.filter(function (p) { return now - p.t < 900; });
+            var anyVisible = false;
+            for (var i = 0; i < pixels.length; i++) {
+                var px = pixels[i];
+                var v;
+                if (mode === 'in') {
+                    v = Math.min(1, Math.max(0, (t - px.delay) / 180));
+                } else if (mode === 'out') {
+                    v = 1 - Math.min(1, Math.max(0, (t - px.delay * 0.4) / (FADE * 500)));
+                } else {
+                    v = 0;
+                }
+                for (var k = 0; k < pulses.length; k++) {
+                    var age = now - pulses[k].t;
+                    var dd = Math.sqrt((px.x - pulses[k].x) * (px.x - pulses[k].x) + (px.y - pulses[k].y) * (px.y - pulses[k].y));
+                    v = Math.max(v, Math.exp(-Math.pow((dd - age * 0.7) / 26, 2)) * (1 - age / 900));
+                }
+                if (v <= 0.01) { continue; }
+                anyVisible = true;
+                var shimmer = 0.55 + 0.45 * Math.sin(now * SPEED * 0.00012 + px.phase);
+                var spot = 1;
+                if (mouse) {
+                    var md = (px.x - mouse.x) * (px.x - mouse.x) + (px.y - mouse.y) * (px.y - mouse.y);
+                    spot = 1 - SPOTLIGHT + SPOTLIGHT * 2.2 * Math.exp(-md / (160 * 160));
+                }
+                var size = PIXEL * (0.6 + 0.4 * shimmer) * Math.min(1, v * 1.4);
+                ctx.globalAlpha = Math.min(1, OPACITY * v * shimmer * spot);
+                ctx.fillStyle = px.c;
+                ctx.fillRect(px.x - size / 2, px.y - size / 2, size, size);
+            }
+            ctx.globalAlpha = 1;
+            if (mode === 'out' && !anyVisible) { mode = 'idle'; }
+            if (animating || mode === 'out' || (mode === 'in' && t < maxDelay + 400) || mode === 'in') { frame = requestAnimationFrame(draw); }
+        };
+        var kick = function () { if (!frame && !reduceMotion) { frame = requestAnimationFrame(draw); } };
+        var setMode = function (m) {
+            mode = m;
+            modeStart = performance.now();
+            kick();
+        };
+        card.addEventListener('pointerenter', function () { setMode('in'); });
+        card.addEventListener('pointerleave', function () { mouse = null; setMode('out'); });
+        card.addEventListener('pointermove', function (e) {
+            var r = card.getBoundingClientRect();
+            mouse = { x: e.clientX - r.left, y: e.clientY - r.top };
+        }, { passive: true });
+        card.addEventListener('pointerdown', function (e) {
+            var r = card.getBoundingClientRect();
+            pulses.push({ x: e.clientX - r.left, y: e.clientY - r.top, t: performance.now() });
+            kick();
+        });
+        if ('ResizeObserver' in window) { new ResizeObserver(build).observe(card); }
+        build();
+        if ('IntersectionObserver' in window && !reduceMotion) {
+            var io = new IntersectionObserver(function (entries) {
+                if (!entries[0].isIntersecting) { return; }
+                io.disconnect();
+                setMode('in');
+                setTimeout(function () { if (!mouse) { setMode('out'); } }, REVEAL + 700);
+            }, { threshold: 0.5 });
+            io.observe(card);
+        }
+    });
 })();
 </script>
 </body>
