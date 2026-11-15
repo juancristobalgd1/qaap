@@ -10,7 +10,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { resolveQaapReposRoot, resolveTenantHome } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { QaapTenantAgentStorageEnv } from './qaap-tenant-agent-storage-env';
-import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
+import { QaapTenantSpawnService, type QaapTenantAccessCommandResult } from './qaap-tenant-spawn-service';
 import { resolveTrustedSystemExecutable } from './qaap-trusted-executable';
 
 interface LaunchCall { file: string; args: string[]; options: { uid?: number; gid?: number; env?: NodeJS.ProcessEnv; shell?: boolean } }
@@ -392,6 +392,89 @@ describe('QaapTenantSpawnService tenant backend workspace ACL', () => {
             const service = new GroupAccessService();
             service.grant('/x', 1234, false);
             expect(service.commands[0].args).to.deep.equal(['-h', '1234', '/x']);
+        });
+    });
+
+    describe('sweep of agent-owned private subtrees the backend cannot read', () => {
+        type SweepType = 'd' | 'f';
+        class SweepFailureService extends TenantBackendAclTestService {
+            clock = 1_000_000;
+            failures: Partial<Record<SweepType, QaapTenantAccessCommandResult>> = {};
+            protected override now(): number {
+                return this.clock;
+            }
+            protected override runTenantAccessCommand(file: string, args: readonly string[]): QaapTenantAccessCommandResult {
+                this.commands.push({ file, args });
+                if (file === 'find') {
+                    const type = args[args.indexOf('-type') + 1] as SweepType;
+                    return this.failures[type] ?? { ok: true };
+                }
+                return { ok: true };
+            }
+            prepare(cwd: string): void {
+                this.ensureTenantBackendAgentWorkspaceAccess(cwd);
+            }
+        }
+
+        const permissionDenied: QaapTenantAccessCommandResult = {
+            ok: false,
+            reason: 'find exit status 1: find: \'/t/alice/octocat/.t3\': Permission denied',
+            stderr: ['find: \'/t/alice/octocat/.t3\': Permission denied'],
+        };
+        let reposRoot: string;
+        let cwd: string;
+        let savedWarn: typeof console.warn;
+
+        beforeEach(() => {
+            reposRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-sweep-denied-')));
+            cwd = path.join(reposRoot, 'users', 'alice', 'octocat', 'hello');
+            fs.mkdirSync(cwd, { recursive: true });
+            process.env.QAAP_REPOS_ROOT = reposRoot;
+            savedWarn = console.warn;
+        });
+
+        afterEach(() => {
+            console.warn = savedWarn;
+            fs.rmSync(reposRoot, { recursive: true, force: true });
+        });
+
+        it('treats permission-denied-only find diagnostics as success, warns once and marks the root prepared', () => {
+            const warnings: string[] = [];
+            console.warn = (...args: unknown[]) => { warnings.push(args.map(String).join(' ')); };
+            const service = new SweepFailureService();
+            service.failures.d = permissionDenied;
+            service.prepare(cwd);
+            expect(warnings).to.have.length(1);
+            expect(warnings[0]).to.include('skipped 1 unreadable agent-owned path(s)').and.to.include('/t/alice/octocat/.t3');
+            const after = service.commands.length;
+            service.prepare(cwd);
+            expect(service.commands.length).to.equal(after);
+        });
+
+        it('keeps any other diagnostic in the sweep fatal, even next to permission-denied lines', () => {
+            const service = new SweepFailureService();
+            service.failures.d = {
+                ok: false,
+                reason: 'find exit status 1: setfacl: /t/alice/x: Operation not permitted',
+                stderr: ['find: \'/t/alice/octocat/.t3\': Permission denied', 'setfacl: /t/alice/x: Operation not permitted'],
+            };
+            expect(() => service.prepare(cwd)).to.throw('Could not prepare tenant workspace directories for agent uid 1001');
+        });
+
+        it('replays a real sweep failure for 60 seconds, then runs the sweep again', () => {
+            const service = new SweepFailureService();
+            service.failures.d = { ok: false, reason: 'find exit status 2: boom', stderr: ['find: boom'] };
+            expect(() => service.prepare(cwd)).to.throw('Could not prepare tenant workspace directories');
+            const afterFirst = service.commands.length;
+
+            service.clock += 59_000;
+            service.failures.d = undefined;
+            expect(() => service.prepare(cwd)).to.throw('Could not prepare tenant workspace directories');
+            expect(service.commands.length).to.equal(afterFirst);
+
+            service.clock += 2_000;
+            service.prepare(cwd);
+            expect(service.commands.length).to.be.greaterThan(afterFirst);
         });
     });
 

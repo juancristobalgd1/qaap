@@ -100,6 +100,9 @@ export interface QaapAgentTaskRunnerContext {
     /** Decides QAIQ stdio tool calls; absent in bare test harnesses (the default instance is used). */
     readonly toolGate?: QaapToolGateService;
 
+    /** Stall guard for pre-spawn steps (see QAAP_TASK_START_STEP_TIMEOUT_MS); tests shorten it. */
+    readonly taskStartStepTimeoutMs?: number;
+
     // ─── State maps / sets / scalars ────────────────────────────────────────
     readonly tasks: Map<string, QaapAgentTask>;
     readonly processes: Map<string, ChildProcess>;
