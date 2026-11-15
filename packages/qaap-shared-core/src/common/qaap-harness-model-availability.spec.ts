@@ -85,6 +85,13 @@ describe('qaap-harness-model-availability', () => {
             }
         });
 
+        it('requires the opencode/ prefix: a free-looking model from another provider under OpenCode is pro', () => {
+            expect(QaapHarnessModelAvailability.tier('opencode', { vendor: 'opencode', modelId: 'opencode/beam-free' })).to.equal('free');
+            expect(QaapHarnessModelAvailability.tier('opencode', { vendor: 'opencode', modelId: 'openrouter/x:free' })).to.equal('pro');
+            expect(QaapHarnessModelAvailability.tier('opencode', { vendor: 'opencode', modelId: 'openrouter/x/free' })).to.equal('pro');
+            expect(QaapHarnessModelAvailability.tier('opencode', { vendor: 'opencode', modelId: 'opencode/minimax-m3' })).to.equal('pro');
+        });
+
         it('fails closed to pro when the model cannot be proven free', () => {
             expect(QaapHarnessModelAvailability.tier('opencode', { modelId: '' })).to.equal('pro');
             expect(QaapHarnessModelAvailability.tier('opencode', { modelId: 'opencode/beam-free' })).to.equal('pro');

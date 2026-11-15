@@ -108,6 +108,12 @@ export namespace QaapHarnessModelAvailability {
         if (normalizedAgentId !== OPENCODE_AGENT_ID) {
             return 'pro';
         }
+        // Fail-closed: an OpenCode-routed model is free only under the `opencode/` prefix. Any other provider
+        // (e.g. `openrouter/x:free`) needs that provider's key, so it stays pro even if its slug looks free.
+        const modelId = model.modelId?.trim().toLowerCase() ?? '';
+        if (!modelId.startsWith(`${OPENCODE_AGENT_ID}/`)) {
+            return 'pro';
+        }
         return isFreeAgentModel({ modelId: model.modelId, label: model.label, vendor: model.vendor }) ? 'free' : 'pro';
     }
 
