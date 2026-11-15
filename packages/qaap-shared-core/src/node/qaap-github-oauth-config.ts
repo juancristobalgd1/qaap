@@ -92,3 +92,17 @@ export function readQaapGithubOAuthConfig(): QaapGithubOAuthConfig | undefined {
         callbackUrl: buildQaapGithubCallbackUrl(publicUrl),
     };
 }
+
+/** Client id for the GitHub device flow (desktop). Unlike the web OAuth App, no secret or public URL is needed. */
+export interface QaapGithubDeviceFlowConfig {
+    clientId: string;
+}
+
+/**
+ * Reads QAAP_GITHUB_CLIENT_ID only. The client id is not a secret. The OAuth App must have
+ * "Enable Device Flow" switched on in GitHub.
+ */
+export function readQaapGithubDeviceFlowConfig(env: NodeJS.ProcessEnv = process.env): QaapGithubDeviceFlowConfig | undefined {
+    const clientId = env.QAAP_GITHUB_CLIENT_ID?.trim();
+    return clientId ? { clientId } : undefined;
+}
