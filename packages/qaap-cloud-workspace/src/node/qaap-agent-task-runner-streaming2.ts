@@ -1,7 +1,7 @@
 import { buildPiGateTemplateVars } from './qaap-tool-gate-pi-adapter';
 import { formatTaskStartLog } from './qaap-agent-conversation-persist-policy';
 import { buildPiDefaultModelFlagShell } from '@theia/qaap-shared-core/lib/common/qaap-pi-default-model';
-import { AGENT_STOP_GRACE_TIMEOUT_MS, SHELL_AGENT_ID, QAIQ_AGENT_ID, REPO_MAP_CACHE_TTL_MS, REPO_MAP_MAX_CHARS, USER_REQUEST_MAX_CHARS } from './qaap-agent-task-runner-constants';
+import { AGENT_STOP_GRACE_TIMEOUT_MS, AGENT_STOP_SLOT_RELEASE_TIMEOUT_MS, SHELL_AGENT_ID, QAIQ_AGENT_ID, REPO_MAP_CACHE_TTL_MS, REPO_MAP_MAX_CHARS, USER_REQUEST_MAX_CHARS } from './qaap-agent-task-runner-constants';
 import type { QaapAgentCommandBuildResult, QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { QaapAgentQueuePolicy } from './qaap-agent-queue-policy';
 import { sharedWorkingTreeBusyExtracted } from './qaap-agent-task-runner-render2';
@@ -885,21 +885,47 @@ export function cancelExtracted(ctx: QaapAgentTaskRunnerContext, id: string, opt
 /** Visible state of a task whose agent could not be signalled: it is not stopped, and it keeps its slot. */
 export const STOP_FAILED_MESSAGE_KEY = 'theia/qaap-cloud-workspace/agentTaskStopFailed';
 
+/** Pending forced slot releases, keyed by task id. An `exit` that arrives in time clears its entry. */
+const stopSlotForceReleaseTimers = new Map<string, NodeJS.Timeout>();
+
 /**
  * Releases the concurrency slot a cancelled task holds, once its process has really exited. A
- * SIGKILL that was sent but whose `exit` has not fired yet keeps the slot; the `exit` handler
- * releases it then (see {@link releaseStoppingTaskSlotOnExitExtracted}).
+ * SIGKILL that was sent but whose `exit` has not fired yet keeps the slot for at most
+ * {@link AGENT_STOP_SLOT_RELEASE_TIMEOUT_MS}; then the slot is freed without the `exit`.
  */
 export function releaseStoppingTaskSlotExtracted(ctx: Pick<QaapAgentTaskRunnerContext, 'stoppingTaskIds' | 'drainQueuedTasks'>, taskId: string, child: ChildProcess): void {
         const exited = typeof child.exitCode === 'number' || typeof child.signalCode === 'string';
-        if (!exited) {
+        if (exited) {
+            releaseStoppingTaskSlotOnExitExtracted(ctx, taskId);
             return;
         }
-        releaseStoppingTaskSlotOnExitExtracted(ctx, taskId);
+        if (!ctx.stoppingTaskIds.has(taskId) || stopSlotForceReleaseTimers.has(taskId)) {
+            return;
+        }
+        const armedAt = Date.now();
+        const timer = setTimeout(() => {
+            stopSlotForceReleaseTimers.delete(taskId);
+            if (!ctx.stoppingTaskIds.has(taskId)) {
+                return;
+            }
+            console.warn(`[qaap-stop] slot-released-without-exit task=${taskId} pid=${child.pid} waitedMs=${Date.now() - armedAt}`);
+            releaseStoppingTaskSlotOnExitExtracted(ctx, taskId);
+        }, AGENT_STOP_SLOT_RELEASE_TIMEOUT_MS);
+        // The timer must never keep the backend alive on its own.
+        timer.unref?.();
+        stopSlotForceReleaseTimers.set(taskId, timer);
 }
 
-/** Called from the child's `exit` handler: frees the slot of a cancelled task whose process is gone. */
+/**
+ * Called from the child's `exit` handler, and by the forced release: frees the slot of a cancelled
+ * task whose process is gone. Idempotent, so an `exit` arriving after a forced release drains nothing.
+ */
 export function releaseStoppingTaskSlotOnExitExtracted(ctx: Pick<QaapAgentTaskRunnerContext, 'stoppingTaskIds' | 'drainQueuedTasks'>, taskId: string): void {
+        const pending = stopSlotForceReleaseTimers.get(taskId);
+        if (pending) {
+            clearTimeout(pending);
+            stopSlotForceReleaseTimers.delete(taskId);
+        }
         if (ctx.stoppingTaskIds.delete(taskId)) {
             ctx.drainQueuedTasks();
         }
