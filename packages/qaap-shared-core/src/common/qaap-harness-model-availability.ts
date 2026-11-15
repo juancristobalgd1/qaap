@@ -142,14 +142,15 @@ export namespace QaapHarnessModelAvailability {
     /**
      * Maps a unified reason onto the legacy `QaapQaiqModelOption.unavailableReason` values.
      * @param reason the unified unavailable reason, if any.
-     * @returns `not-connected`, `unknown`, or `undefined` when there is no reason to report.
+     * `checking` is used instead of `unknown` because `unknown` already means "the provider rejected the model".
+     * @returns `not-connected`, `checking`, or `undefined` when there is no reason to report.
      */
-    export function toLegacyUnavailableReason(reason: QaapModelUnavailableReason | undefined): 'not-connected' | 'unknown' | undefined {
+    export function toLegacyUnavailableReason(reason: QaapModelUnavailableReason | undefined): 'not-connected' | 'checking' | undefined {
         switch (reason) {
             case 'sign-in-required':
                 return 'not-connected';
             case 'checking-sign-in':
-                return 'unknown';
+                return 'checking';
             default:
                 return undefined;
         }

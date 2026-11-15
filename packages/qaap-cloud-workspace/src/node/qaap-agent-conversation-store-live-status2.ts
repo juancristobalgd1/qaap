@@ -55,7 +55,7 @@ export function buildPromptExtracted(ctx: QaapAgentConversationStoreContext, con
         const prompt = compaction
             ? `${ctx.contextPreambleWithCompaction(conv.contextPreamble, compaction.summary!)}\n\nNow respond to the latest user message:\n\nUSER: ${latestUser}`
             : latestUser;
-        return skipDelegation ? prompt : ctx.appendTeamDelegation(prompt, turnAgentId);
+        return skipDelegation ? prompt : ctx.appendTeamDelegation(prompt, turnAgentId, conv.ownerLogin);
     }
     const transcript = buildConversationAgentPrompt({
         history,
@@ -65,7 +65,7 @@ export function buildPromptExtracted(ctx: QaapAgentConversationStoreContext, con
             : conv.contextPreamble,
         contextWindowSize: conv.contextWindowSize,
     });
-    return skipDelegation ? transcript : ctx.appendTeamDelegation(transcript, turnAgentId);
+    return skipDelegation ? transcript : ctx.appendTeamDelegation(transcript, turnAgentId, conv.ownerLogin);
 }
 
 export function resolveRunAgentMessageIdExtracted(ctx: QaapAgentConversationStoreContext, conv: QaapAgentConversation,

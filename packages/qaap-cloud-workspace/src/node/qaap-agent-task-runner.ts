@@ -107,6 +107,7 @@ import {
     recordTaskLatencyMark as recordTaskLatencyMarkHelper,
     stripSignInOnlyAgentApiKeyEnv,
 } from './qaap-agent-task-runner-utils3';
+import { QaapHarnessModelAvailability } from '@theia/qaap-shared-core/lib/common/qaap-harness-model-availability';
 import { countRunningTasksExtracted, defaultAgentExtracted, defaultAgentFreshExtracted, detailExtracted, detectAgentsExtracted, detectAntigravityAgentExtracted, detectCodexAgentExtracted, detectCursorAgentExtracted, detectQaiqAgentExtracted, drainQueuedTasksExtracted, ensureHelperCliExtracted, helperTokenForOwnerExtracted, initExtracted, listAllGroupedByCwdExtracted, listForCwdExtracted, listModelsForAgentExtracted, listQaiqModelsExtracted, loadHelperTokensExtracted, logDetectedAgentsExtracted, normalizeAgentIdExtracted, ownerAtConcurrencyCapExtracted, persistHelperTokensExtracted, repoAtConcurrencyCapExtracted, readCustomAgentsExtracted, reorderQueuedTaskExtracted, resolveAntigravityBinExtracted, resolveCursorAgentBinExtracted, resolveHelperTokenOwnerExtracted, resolveQaiqBinExtracted, resolveTaskAgentIdExtracted, restoreFromDiskExtracted, restorePersistedIndexExtracted, runningTaskCountForOwnerExtracted, runningTaskCountForRepoExtracted, warmForCwdExtracted } from './qaap-agent-task-runner-render2';
 import { assertQaiqConfiguredExtracted, checkQaiqProviderCredentialForOwner as checkQaiqProviderCredentialForOwnerExtracted, buildAgentCommandExtracted, buildRepoMapExtracted, buildTemplateVarsExtracted, cancelExtracted, type QaapAgentTaskCancelOptions, type QaapAgentTaskPauseCause, createExtracted, deleteForCwdExtracted, deleteTaskExtracted, extractLastAgentMentionExtracted, extractLastAgentMentionTokenExtracted, nativeModelRoutingTableExtracted, normalizeAgentBindingExtracted, previewProviderEnvExtracted, readAgentInstructionsExtracted, readProjectInfoExtracted, readRepoMapExtracted, resolveAgentBindingForTaskExtracted, resolveAgentIdExtracted, resolveAgentModelForRequestExtracted, resolveQaapQaiqBindingExtracted, resolveQaiqProviderFlagsExtracted, retryExtracted, resumeExtracted, stripLeadingAgentMentionExtracted } from './qaap-agent-task-runner-streaming2';
 import { acquireVerificationPassExtracted, clearQueuedApprovalTimerExtracted, clearQueuedApprovalTimersExtracted, findPendingControlRequestEntryExtracted, getApprovalChannelExtracted, killAgentProcessTreeExtracted, maxConcurrentVerificationPassesExtracted, respondToApprovalPromptExtracted, scheduleQueuedApprovalTimeoutExtracted, spawnProcessExtracted, spawnProcessWhenReadyExtracted } from './qaap-agent-task-runner-timeline2';
@@ -632,13 +633,12 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             .map(agent => {
                 const { connectionState, probeSettled } = this.agentConnectionSnapshot(agent.id, ownerLogin);
                 const accessState = resolveAgentAccess({ agentId: agent.id, connectionState, probeSettled });
-                // Codex follows the same access answer as its model list, so a settled sign-out is not usable.
-                // Other agents keep their connection-only rule.
-                const available = agent.id.toLowerCase() === 'codex'
-                    ? agent.available && accessState !== 'none'
-                    : agent.available && connectionState !== 'disconnected';
+                const session = QaapHarnessModelAvailability.session({ connectionState, accessState, probeSettled });
+                // `available` means "can run now". A signed-out enabled harness stays listed so the picker can
+                // explain its lock; only OpenCode has a Free tier that runs without a session.
+                const available = agent.available && (session !== 'signed-out' || agent.id.trim().toLowerCase() === 'opencode');
                 const cliBin = this.antigravityCliBinFor(agent.id);
-                return { ...agent, available, connectionState, accessState, ...(cliBin ? { cliBin } : {}) };
+                return { ...agent, available, connectionState, accessState, session, ...(cliBin ? { cliBin } : {}) };
             });
     }
 

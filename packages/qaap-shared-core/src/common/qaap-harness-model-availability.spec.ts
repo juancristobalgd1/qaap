@@ -139,7 +139,7 @@ describe('qaap-harness-model-availability', () => {
 
         it('maps the unified reasons onto the legacy DTO values', () => {
             expect(QaapHarnessModelAvailability.toLegacyUnavailableReason('sign-in-required')).to.equal('not-connected');
-            expect(QaapHarnessModelAvailability.toLegacyUnavailableReason('checking-sign-in')).to.equal('unknown');
+            expect(QaapHarnessModelAvailability.toLegacyUnavailableReason('checking-sign-in')).to.equal('checking');
             expect(QaapHarnessModelAvailability.toLegacyUnavailableReason('harness-disabled')).to.equal(undefined);
             expect(QaapHarnessModelAvailability.toLegacyUnavailableReason(undefined)).to.equal(undefined);
         });

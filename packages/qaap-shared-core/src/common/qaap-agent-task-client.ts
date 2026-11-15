@@ -71,6 +71,8 @@ export interface QaapAgentTaskAgentOption {
     readonly connectionState?: QaapAgentConnectionState;
     /** How the owner can run the agent now (see the backend `resolveAgentAccess`); `none` offers a sign-in. */
     readonly accessState?: 'session' | 'none' | 'unknown';
+    /** Sign-in state for the owner; `available` stays "can run now" (see the backend descriptor). */
+    readonly session?: 'signed-in' | 'signed-out' | 'checking';
     /** The Antigravity CLI the host resolved (`gemini`, `agy`, `antigravity`); only set for the Antigravity harness. */
     readonly cliBin?: string;
 }
@@ -92,7 +94,9 @@ export interface QaapQaiqModelOption {
     /** Present for native catalogs when a model is visible but gated by the account plan. */
     readonly available?: boolean;
     /** Why a visible model cannot currently be selected, when it is unavailable. */
-    readonly unavailableReason?: 'plan' | 'not-connected' | 'unknown';
+    readonly unavailableReason?: 'plan' | 'not-connected' | 'unknown' | 'checking';
+    /** Free works without the harness session; Pro needs it. */
+    readonly tier?: 'free' | 'pro';
 }
 
 /**

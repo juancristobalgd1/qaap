@@ -107,14 +107,17 @@ describe('QaapAgentTaskRunner harness status catalog', () => {
 describe('QaapAgentTaskRunner connection probes', () => {
     type ConnectionState = 'connected' | 'disconnected' | 'unknown' | undefined;
 
-    function createRunner(probe: (agentId: string) => Promise<ConnectionState>): { runner: QaapAgentTaskRunner; probes: string[] } {
+    function createRunner(
+        probe: (agentId: string) => Promise<ConnectionState>,
+        candidates: AgentCandidate[] = [
+            { id: 'codex', label: 'Codex', bin: 'codex', template: 'codex {prompt}' },
+            { id: 'claude', label: 'Claude Code', bin: 'claude', template: 'claude {prompt}' },
+        ],
+    ): { runner: QaapAgentTaskRunner; probes: string[] } {
         const runner = Object.create(QaapAgentTaskRunner.prototype) as QaapAgentTaskRunner;
         const probes: string[] = [];
         Object.assign(runner, {
-            detectedAgents: new Map<string, AgentCandidate>([
-                ['codex', { id: 'codex', label: 'Codex', bin: 'codex', template: 'codex {prompt}' }],
-                ['claude', { id: 'claude', label: 'Claude Code', bin: 'claude', template: 'claude {prompt}' }],
-            ]),
+            detectedAgents: new Map<string, AgentCandidate>(candidates.map(candidate => [candidate.id, candidate])),
             agentConnectionStates: new Map(),
             agentConnectionProbes: new Map(),
             isAgentEnabled: () => true,
@@ -238,3 +241,80 @@ function restoreEnv(key: string, value: string | undefined): void {
         process.env[key] = value;
     }
 }
+
+describe('QaapAgentTaskRunner listAgents session and availability', () => {
+    type ConnectionState = 'connected' | 'disconnected' | 'unknown' | undefined;
+    const opencode: AgentCandidate = { id: 'opencode', label: 'OpenCode', bin: 'opencode', template: 'opencode run {prompt}' };
+    const codex: AgentCandidate = { id: 'codex', label: 'Codex', bin: 'codex', template: 'codex {prompt}' };
+
+    function settledRunner(state: ConnectionState, candidates: AgentCandidate[] = [codex, opencode]): QaapAgentTaskRunner {
+        const { runner } = createRunnerForSession(async () => state, candidates);
+        return runner;
+    }
+
+    // Local copy of the connection-probe helper: the probe answers at once so the snapshot is settled.
+    function createRunnerForSession(probe: (agentId: string) => Promise<ConnectionState>, candidates: AgentCandidate[]): { runner: QaapAgentTaskRunner } {
+        const runner = Object.create(QaapAgentTaskRunner.prototype) as QaapAgentTaskRunner;
+        Object.assign(runner, {
+            detectedAgents: new Map<string, AgentCandidate>(candidates.map(candidate => [candidate.id, candidate])),
+            agentConnectionStates: new Map(),
+            agentConnectionProbes: new Map(),
+            isAgentEnabled: () => true,
+            preferenceReaderForOwner: () => () => undefined,
+            billingStore: undefined,
+            detectAgents: () => undefined,
+            probeAgentConnectionState: probe,
+        });
+        return { runner };
+    }
+
+    it('keeps an enabled but signed-out harness listed, with session signed-out and not runnable', async () => {
+        const runner = settledRunner('disconnected', [codex]);
+        await runner.listAgentsFresh('alice', 50);
+        const agent = runner.listAgents('alice').find(entry => entry.id === 'codex');
+        expect(agent).to.not.equal(undefined);
+        expect(agent?.session).to.equal('signed-out');
+        expect(agent?.available).to.equal(false);
+    });
+
+    it('keeps OpenCode runnable while signed out, because its Free models need no session', async () => {
+        const runner = settledRunner('disconnected', [opencode]);
+        await runner.listAgentsFresh('alice', 50);
+        const agent = runner.listAgents('alice').find(entry => entry.id === 'opencode');
+        expect(agent?.session).to.equal('signed-out');
+        expect(agent?.available).to.equal(true);
+    });
+
+    it('marks a signed-in harness as signed-in and runnable', async () => {
+        const runner = settledRunner('connected', [codex]);
+        await runner.listAgentsFresh('alice', 50);
+        const agent = runner.listAgents('alice').find(entry => entry.id === 'codex');
+        expect(agent?.session).to.equal('signed-in');
+        expect(agent?.available).to.equal(true);
+    });
+
+    it('reports checking while the probe has not answered, and stays runnable until the sign-in is known', () => {
+        const runner = Object.create(QaapAgentTaskRunner.prototype) as QaapAgentTaskRunner;
+        Object.assign(runner, {
+            detectedAgents: new Map<string, AgentCandidate>([[codex.id, codex]]),
+            agentConnectionStates: new Map(),
+            agentConnectionProbes: new Map(),
+            isAgentEnabled: () => true,
+            preferenceReaderForOwner: () => () => undefined,
+            billingStore: undefined,
+            detectAgents: () => undefined,
+            probeAgentConnectionState: () => new Promise<ConnectionState>(() => undefined),
+        });
+        const agent = runner.listAgents('alice').find(entry => entry.id === 'codex');
+        expect(agent?.session).to.equal('checking');
+        // Only a confirmed sign-out makes a harness non-runnable; the pre-spawn guard refreshes a checking one.
+        expect(agent?.available).to.equal(true);
+    });
+
+    it('does not list a harness the owner turned off, even when it is signed in', async () => {
+        const runner = settledRunner('connected', [codex]);
+        Object.assign(runner, { isAgentEnabled: () => false });
+        await runner.listAgentsFresh('alice', 50);
+        expect(runner.listAgents('alice').map(entry => entry.id)).to.not.include('codex');
+    });
+});

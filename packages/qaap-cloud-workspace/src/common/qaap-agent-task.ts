@@ -406,6 +406,11 @@ export interface QaapAgentDescriptor {
      * or not yet known (`unknown`).
      */
     readonly accessState?: QaapAgentAccessState;
+    /**
+     * Sign-in state for the owner (`QaapHarnessModelAvailability.session`). `available` keeps meaning "can run
+     * now": an enabled harness that is signed out stays listed, and only its Free models are usable.
+     */
+    readonly session?: 'signed-in' | 'signed-out' | 'checking';
     /** The Antigravity CLI the host resolved; only set for the Antigravity harness (see {@link QaapAgentHarnessStatus.cliBin}). */
     readonly cliBin?: string;
 }
@@ -422,7 +427,9 @@ export interface QaapQaiqModelOption {
     /** Present for native catalogs when a model is visible but gated by the account plan. */
     readonly available?: boolean;
     /** Why a visible model cannot currently be selected, when it is unavailable. */
-    readonly unavailableReason?: 'plan' | 'not-connected' | 'unknown';
+    readonly unavailableReason?: 'plan' | 'not-connected' | 'unknown' | 'checking';
+    /** Free works without the harness session; Pro needs it (`QaapHarnessModelAvailability.tier`). */
+    readonly tier?: 'free' | 'pro';
 }
 
 /** QAIQ model binding selected by the user in the agent picker submenu. */

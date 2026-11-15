@@ -41,7 +41,10 @@ export function resolveAgentDisplayLabel(agentId: string, fallbackLabel?: string
  * Tooltip and accessible reason for a model shown as Locked. A sign-in gap names the agent to sign
  * in to; only a real plan restriction says the plan is the blocker.
  */
-export function resolveUnavailableModelTitle(agentId: string, reason: 'plan' | 'not-connected' | 'unknown' | undefined): string {
+export function resolveUnavailableModelTitle(agentId: string, reason: 'plan' | 'not-connected' | 'unknown' | 'checking' | undefined): string {
+    if (reason === 'checking') {
+        return nls.localize('qaap/mobileProjects/modelPickerChecking', 'Checking sign-in…');
+    }
     if (reason === 'not-connected') {
         return nls.localize(
             'qaap/mobileProjects/modelPickerNotConnected',

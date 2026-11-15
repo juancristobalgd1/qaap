@@ -33,6 +33,7 @@ import type { QaapAgentCliUpdateResult } from '@theia/qaap-agents-ui/lib/common/
 import { QaapBillingStore } from './qaap-billing-store';
 import { QaapStandaloneTaskModelFallback } from './qaap-standalone-task-model-fallback';
 import { antigravityBinFor, listNativeAgentModels, prepareNativeAgentModels } from './qaap-agent-native-models';
+import { annotateModelsForAgent } from './qaap-agent-task-runner-render2';
 import {
     QaapGithubAuthGuard,
     type QaapGithubAuthContext,
@@ -448,6 +449,12 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         const normalizedAgent = requestedAgent.replace(/^@/, '').trim().toLowerCase();
         const agent = resolveQaapBuiltinAgentMentionId(normalizedAgent) ?? normalizedAgent;
         const login = this.auth.resolveUserLogin(ctx);
+        // A harness the owner turned off in Settings offers no models, not even its Free ones.
+        if (!this.runner.isAgentEnabled(agent, login)) {
+            res.setHeader('Cache-Control', 'no-store');
+            res.json({ agent: requestedAgent, models: [] });
+            return;
+        }
         const startedAt = Date.now();
         let billingStartedAt = startedAt;
         let billingMs = 0;
@@ -482,7 +489,7 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         }
         const runnerModels = this.runner.listModelsForAgent(agent, login);
         const nativeModels = listNativeAgentModels(agent, login, antigravityBin);
-        const models = runnerModels.length > 0 ? runnerModels : nativeModels;
+        const models = runnerModels.length > 0 ? runnerModels : annotateModelsForAgent(this.runner, agent, login, nativeModels);
         res.setHeader('Server-Timing', `billing;dur=${billingMs}, discovery;dur=${discoveryMs}, total;dur=${Date.now() - startedAt}`);
         res.setHeader('Cache-Control', 'no-store');
         res.json({ agent: requestedAgent, models });

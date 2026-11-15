@@ -18,6 +18,9 @@ class TestableTaskEndpoint extends QaapAgentTaskEndpoint {
     detailForTest(req: Request, res: Response): Promise<void> {
         return this.handleDetail(req, res);
     }
+    agentModelsForTest(req: Request, res: Response): Promise<void> {
+        return this.handleListAgentModels(req, res);
+    }
     retryForTest(req: Request, res: Response): Promise<void> {
         return this.handleStorageRetry(req, res);
     }
@@ -688,5 +691,27 @@ describe('QaapAgentTaskEndpoint improve-prompt failures', () => {
             kind: 'unknown',
         });
         expect(describeImprovePromptFailure('not an error object', 'codex').kind).to.equal('unknown');
+    });
+});
+
+describe('QaapAgentTaskEndpoint agent-models availability', () => {
+    it('answers an empty model list for a harness the owner turned off, without listing its catalog', async () => {
+        const endpoint = Object.create(TestableTaskEndpoint.prototype) as TestableTaskEndpoint;
+        const authContext = { kind: 'authenticated', userLogin: 'alice' };
+        let body: unknown;
+        Object.assign(endpoint, {
+            requireAuth: () => authContext,
+            auth: { resolveUserLogin: (context: typeof authContext) => context.userLogin },
+            runner: { isAgentEnabled: () => false },
+        });
+        const res = {
+            setHeader: () => undefined,
+            json: (payload: unknown) => { body = payload; },
+            status: () => res,
+            headersSent: false,
+            writableEnded: false,
+        };
+        await endpoint.agentModelsForTest({ query: { agent: 'opencode' } } as unknown as Request, res as unknown as Response);
+        expect(body).to.deep.equal({ agent: 'opencode', models: [] });
     });
 });
