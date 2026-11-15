@@ -264,6 +264,7 @@ describe('Codex prompt transport', () => {
             readResearchLedger: () => undefined,
             readProjectInfo: () => undefined,
             assertQaiqConfigured: () => undefined,
+            assertAgentModelAccess: () => undefined,
             detectedAgents: new Map([['codex', {
                 id: 'codex',
                 label: 'Codex',
@@ -394,6 +395,7 @@ describe('Cursor Agent prompt transport', () => {
             readResearchLedger: () => undefined,
             readProjectInfo: () => undefined,
             assertQaiqConfigured: () => undefined,
+            assertAgentModelAccess: () => undefined,
             applyTemplateWithoutPrompt,
             detectedAgents: new Map([['cursor', {
                 id: 'cursor',
@@ -438,6 +440,7 @@ describe('Cursor Agent prompt transport', () => {
                 readResearchLedger: () => undefined,
                 readProjectInfo: () => undefined,
                 assertQaiqConfigured: () => undefined,
+            assertAgentModelAccess: () => undefined,
                 applyTemplateWithoutPrompt,
                 detectedAgents: new Map([['cursor', {
                     id: 'cursor',
@@ -476,6 +479,7 @@ function commandCtx(id: string, template: string, bin = id): {
     readResearchLedger: () => undefined;
     readProjectInfo: () => undefined;
     assertQaiqConfigured: () => undefined;
+    assertAgentModelAccess: () => undefined;
     applyTemplateWithoutPrompt: typeof applyTemplateWithoutPrompt;
     detectedAgents: Map<string, { id: string; label: string; bin: string; template: string }>;
     buildTemplateVars: () => Record<string, string>;
@@ -492,6 +496,7 @@ function commandCtx(id: string, template: string, bin = id): {
         readResearchLedger: () => undefined,
         readProjectInfo: () => undefined,
         assertQaiqConfigured: () => undefined,
+        assertAgentModelAccess: () => undefined,
         applyTemplateWithoutPrompt,
         detectedAgents: new Map([[id, { id, label: id, bin, template }]]),
         buildTemplateVars: () => ({}),

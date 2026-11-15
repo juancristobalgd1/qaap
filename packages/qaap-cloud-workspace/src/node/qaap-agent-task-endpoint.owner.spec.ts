@@ -56,6 +56,7 @@ describe('QaapAgentTaskEndpoint passes the caller to owner-scoped runner calls',
                 defaultAgent: record('defaultAgent', 'qaiq'),
                 listQaiqModels: record('listQaiqModels', []),
                 listModelsForAgent: record('listModelsForAgent', [{ modelId: 'm' }]),
+                isAgentEnabled: record('isAgentEnabled', true),
                 // Pi lists its models from the caller's sign-in, so the picker discovers as the caller.
                 nativeModelDiscoverySpawner: record('nativeModelDiscoverySpawner', () => undefined),
                 retry: record('retry', task),
