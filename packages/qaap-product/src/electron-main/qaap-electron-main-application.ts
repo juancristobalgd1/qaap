@@ -6,10 +6,12 @@
 import { existsSync } from 'fs-extra';
 import { app } from 'electron';
 import * as path from 'path';
-import { injectable } from '@theia/core/shared/inversify';
+import { injectable, postConstruct } from '@theia/core/shared/inversify';
 import URI from '@theia/core/lib/common/uri';
 import { WindowSearchParams } from '@theia/core/lib/common/window';
+import { TheiaBrowserWindowOptions } from '@theia/core/lib/electron-main/theia-electron-window';
 import { ElectronMainApplication } from '@theia/core/lib/electron-main/electron-main-application';
+import { isOSX } from '@theia/core/lib/common/os';
 import { findQaapPackageFile } from '@theia/qaap-shared-core/lib/node/qaap-package-file';
 
 /**
@@ -18,8 +20,26 @@ import { findQaapPackageFile } from '@theia/qaap-shared-core/lib/node/qaap-packa
  */
 const QAAP_NATIVE_ICON = path.join('resources', 'media', 'qaap-icon-512.png');
 
+/**
+ * Name of the product in the macOS menu bar and the application menu ("About Qaap", "Quit Qaap").
+ * Set before any window opens: macOS reads the app name when the menu is built.
+ */
+const QAAP_PRODUCT_NAME = 'Qaap';
+
+/**
+ * macOS title bar with the traffic lights drawn inside the Qaap top bar instead of a separate native
+ * title strip. The frontend reserves the space to the right of the lights (see
+ * `qaap-electron-macos-titlebar.css`). `y` centres the 12px lights on the ~52px Qaap bar.
+ */
+const QAAP_MACOS_TRAFFIC_LIGHT_POSITION = { x: 13, y: 20 };
+
 @injectable()
 export class QaapElectronMainApplication extends ElectronMainApplication {
+
+    @postConstruct()
+    protected initProductName(): void {
+        app.setName(QAAP_PRODUCT_NAME);
+    }
 
     /**
      * Loads the window from the backend's own origin, like the browser does. Theia loads the frontend
@@ -45,6 +65,22 @@ export class QaapElectronMainApplication extends ElectronMainApplication {
             }
         }
         return findQaapPackageFile('@theia/qaap-product', QAAP_NATIVE_ICON, { startDirectory: app.getAppPath() });
+    }
+
+    /**
+     * On macOS with the native frame the window keeps its frame but hides the title strip, so the
+     * traffic lights sit inside the Qaap top bar. Other platforms and the custom frame are unchanged.
+     */
+    protected override getDefaultOptions(): TheiaBrowserWindowOptions {
+        const options = super.getDefaultOptions();
+        if (isOSX && this.useNativeWindowFrame) {
+            return {
+                ...options,
+                titleBarStyle: 'hiddenInset',
+                trafficLightPosition: QAAP_MACOS_TRAFFIC_LIGHT_POSITION
+            };
+        }
+        return options;
     }
 
     protected override async startContributions(): Promise<void> {
