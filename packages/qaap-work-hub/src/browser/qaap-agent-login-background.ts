@@ -13,7 +13,13 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
 import { localizeHostedLocalhostOAuthAgentMessage } from '@theia/qaap-shared-core/lib/common/qaap-hosted-agent-auth-policy';
 import { buildAgentLoginShellCommand, splitAgentLoginShellInput } from '@theia/qaap-shared-core/lib/common/qaap-agent-connect-plan';
-import { QAAP_AGENT_TASK_API_PATH } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import {
+    attestAgentSessionSignIn,
+    invalidateAgentModelsCache,
+    invalidateAgentTaskListAllCache,
+    QAAP_AGENT_TASK_API_PATH,
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { isQaapSessionAttestationAgent } from '@theia/qaap-shared-core/lib/common/qaap-agent-session-attestation';
 import {
     resolveAgentConnectionFlow,
     type QaapAgentConnectionFlow,
@@ -288,6 +294,22 @@ export async function openAgentLoginDialogInBackground(
         String(facts.bufferBytes),
     );
 
+    /**
+     * Copilot and Grok have no auth probe, so the backend cannot see this sign-in on its own: attest the
+     * CLI's success line, then drop the cached agent list and models so the refresh below reads the
+     * unlocked catalog. Other harnesses are proven by their probe and skip this.
+     */
+    const attestSignInIfUnprobed = async (): Promise<void> => {
+        if (!isQaapSessionAttestationAgent(agentId)) {
+            return;
+        }
+        if (!await attestAgentSessionSignIn(agentId)) {
+            console.warn('[qaap] Agent sign-in attestation was refused', { agentId });
+        }
+        invalidateAgentTaskListAllCache();
+        invalidateAgentModelsCache(agentId);
+    };
+
     const flow = new QaapAgentLoginFlow({
         agentId,
         ...(connectionFlow.kind === 'tui-login' ? { challengeTimeoutMs: TUI_LOGIN_CHALLENGE_TIMEOUT_MS } : {}),
@@ -298,7 +320,7 @@ export async function openAgentLoginDialogInBackground(
             dialog.render(state);
             if (state.phase === 'connected') {
                 disposeTerminal();
-                void Promise.resolve(onConnected?.()).catch(error => {
+                void attestSignInIfUnprobed().then(() => onConnected?.()).catch(error => {
                     console.warn('[qaap] Agent login UI refresh failed:', error);
                 });
                 successCloseHandle ??= window.setTimeout(close, CONNECTED_CLOSE_DELAY_MS);

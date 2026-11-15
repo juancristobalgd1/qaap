@@ -458,3 +458,87 @@ describe('Pi Connect dialog: `/login` driven in the hidden terminal', () => {
         expect(Date.now() - startedAt).to.be.at.least(29_000);
     });
 });
+
+describe('Copilot Connect dialog: sign-in attestation', () => {
+
+    useSuiteJSDOM();
+    useSuiteAnimationFrameStub();
+
+    let clock: sinon.SinonFakeTimers;
+    let restoreWindowTimers: (() => void) | undefined;
+    let originalFetch: typeof globalThis.fetch | undefined;
+    let originalPlatform: PropertyDescriptor | undefined;
+    let posts: Array<{ url: string; body: unknown }>;
+    let events: string[];
+
+    beforeEach(() => {
+        originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
+        Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+        clock = sinon.useFakeTimers({ now: 1_000_000, toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
+        const timerNames = ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] as const;
+        const previous = timerNames.map(name => [name, window[name]] as const);
+        for (const name of timerNames) {
+            (window as unknown as Record<string, unknown>)[name] = (globalThis as unknown as Record<string, unknown>)[name];
+        }
+        restoreWindowTimers = () => previous.forEach(([name, timer]) => (window as unknown as Record<string, unknown>)[name] = timer);
+        originalFetch = globalThis.fetch;
+        posts = [];
+        events = [];
+        globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+            if (init?.method === 'POST') {
+                posts.push({ url: String(input), body: JSON.parse(String(init.body)) });
+                events.push('attest');
+                return { ok: true, json: async () => ({ ok: true }) } as unknown as Response;
+            }
+            return { ok: true, json: async () => ({ harnesses: [{ id: 'copilot', installed: true, enabled: true }] }) } as unknown as Response;
+        }) as typeof globalThis.fetch;
+    });
+
+    afterEach(() => {
+        if (originalPlatform) {
+            Object.defineProperty(process, 'platform', originalPlatform);
+        }
+        for (const dialog of Array.from(document.querySelectorAll<HTMLButtonElement>('.theia-mobile-agent-login-dialog-close'))) {
+            dialog.click();
+        }
+        globalThis.fetch = originalFetch!;
+        restoreWindowTimers?.();
+        clock.restore();
+    });
+
+    it('attests the sign-in to the backend once the CLI reports success, then refreshes the agents', async () => {
+        let printedSuccess = false;
+        const terminal = new FakeLoginTerminal((self, text) => {
+            if (text.endsWith('\r') && !printedSuccess) {
+                printedSuccess = true;
+                self.print('To authenticate, visit https://github.com/login/device and enter code ABCD-1234.\r\n');
+                setTimeout(() => self.print('Signed in successfully as alice.\r\n'), 1_000);
+            }
+        });
+        const project = { id: 'project-1', name: 'repo' };
+        const ctx = {
+            transcriptController: { state: { transcriptOpenProject: project } },
+            projectsService: { getProjectCwd: () => TENANT_CWD },
+            preparedCwdByProjectId: new Map<string, string>(),
+            createTranscriptTerminalViewServices: () => ({
+                resolveCwd: (cwd: string) => cwd,
+                createTerminal: async () => terminal,
+            }),
+            stickyComposerAgentsUi: {
+                refreshStickyComposerAgents: async () => {
+                    events.push('refresh');
+                    return false;
+                },
+                isAgentConnected: () => false,
+            },
+        } as unknown as MobileProjectsPanelContext;
+        openAgentSignInTerminalExtracted(ctx, 'copilot');
+
+        for (let elapsed = 0; elapsed < 10_000 && posts.length === 0; elapsed += 100) {
+            await clock.tickAsync(100);
+        }
+        expect(posts).to.deep.equal([{ url: '/qaap/api/agent-tasks/agent-session-attest', body: { agentId: 'copilot' } }]);
+        await clock.tickAsync(10);
+        expect(events.slice(events.indexOf('attest') + 1), 'the picker is refreshed after the attestation landed').to.include('refresh');
+    });
+});

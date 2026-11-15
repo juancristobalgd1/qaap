@@ -21,6 +21,7 @@ import { OPENCODE_FREE_MODEL_OPTIONS, OPENCODE_PAID_MODEL_OPTIONS } from './qaap
 import { resolveStoredAgentModelForSubmit } from './qaap-agent-model-selection';
 import { getQaapDefaultAgentId } from './qaap-default-agent-id';
 import { dedupeInFlight } from './qaap-in-flight-dedupe';
+import { isQaapSessionAttestationAgent, QAAP_AGENT_SESSION_ATTEST_ROUTE } from './qaap-agent-session-attestation';
 
 export {
     agentSupportsModelPicker,
@@ -664,6 +665,28 @@ export async function warmAgentRunner(cwd: string): Promise<QaapAgentWarmResult 
         return await response.json() as QaapAgentWarmResult;
     } catch {
         return undefined;
+    }
+}
+
+/**
+ * Tell the backend the sign-in dialog saw the CLI's success line for a harness without an auth probe
+ * (Copilot, Grok), so its Pro models unlock for this session's owner. Resolves false for any other
+ * harness (nothing is sent) or when the backend refused; never throws.
+ */
+export async function attestAgentSessionSignIn(agentId: string): Promise<boolean> {
+    if (!isQaapSessionAttestationAgent(agentId)) {
+        return false;
+    }
+    try {
+        const response = await fetch(`${QAAP_AGENT_TASK_API_PATH}/${QAAP_AGENT_SESSION_ATTEST_ROUTE}`, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ agentId: agentId.trim().toLowerCase() }),
+        });
+        return response.ok;
+    } catch {
+        return false;
     }
 }
 

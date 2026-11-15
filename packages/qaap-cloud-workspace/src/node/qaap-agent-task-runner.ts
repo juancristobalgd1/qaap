@@ -69,6 +69,7 @@ import { QaapTenantStorageQuotaService } from './qaap-tenant-storage-quota-servi
 import { QaapWorkflowRoutingPolicy } from '../common/qaap-workflow-routing';
 import { QaapAgentHealthTracker } from './qaap-agent-health';
 import { classifyAgentLastTurn, QaapAgentLastTurnStore } from './qaap-agent-last-turn-store';
+import { QaapAgentSessionAttestationStore } from './qaap-agent-session-attestation-store';
 import {
     readCodexHelp as readCodexHelpHelper,
     isQaiqRunner as isQaiqRunnerHelper,
@@ -253,6 +254,10 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     /** Each user's last turn per agent, shown in the harness settings (see listHarnessStatuses). */
     @inject(QaapAgentLastTurnStore) @optional()
     protected readonly lastTurns: QaapAgentLastTurnStore | undefined;
+
+    /** Attested sign-ins of harnesses without an auth probe (Copilot, Grok); absent, none is ever attested. */
+    @inject(QaapAgentSessionAttestationStore) @optional()
+    protected readonly sessionAttestations: QaapAgentSessionAttestationStore | undefined;
 
     /**
      * Structured agent-command audit. The extracted modules always called `ctx.observability?.…`,
@@ -722,6 +727,22 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         });
     }
 
+    /**
+     * Records that the owner completed the sign-in of a harness that has no auth probe, so it reads as
+     * `connected` until the attestation expires or a turn fails with an auth error. False (nothing
+     * recorded) for a harness with a real probe or a Settings credential, or without an owner. See
+     * {@link QaapAgentSessionAttestationStore} for the threat model.
+     */
+    attestAgentSession(agentId: string, ownerLogin: string | undefined): boolean {
+        const normalized = agentId.trim().toLowerCase();
+        if (!this.sessionAttestations?.attest(ownerLogin, normalized)) {
+            return false;
+        }
+        // Same as a probe that turns connected: the catalog discovered while signed out is stale.
+        invalidateNativeAgentModels(normalized, ownerLogin);
+        return true;
+    }
+
     /** Authentication state for the current tenant's CLI credentials (last known; never blocks). */
     isAgentConnected(agentId: string, ownerLogin?: string): boolean {
         return this.agentConnectionState(agentId, ownerLogin) === 'connected';
@@ -747,7 +768,8 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             return sources.settingsConnected ? 'connected' : 'disconnected';
         }
         if (!sources.probeBin) {
-            return 'unknown';
+            // No probe can answer (Copilot, Grok): an unexpired sign-in attestation is the only signal.
+            return this.sessionAttestations?.isAttested(ownerLogin, normalized) ? 'connected' : 'unknown';
         }
         void this.refreshAgentConnectionState(normalized, ownerLogin);
         return this.agentConnectionStates.get(this.agentConnectionCacheKey(normalized, ownerLogin))?.state ?? 'unknown';
@@ -1999,17 +2021,23 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
 
     /** Remembers how the owner's turn with this agent ended; never affects the task itself. */
     protected async recordLastTurn(task: QaapAgentTask): Promise<void> {
-        if (!this.lastTurns) {
-            return;
-        }
         const agentId = this.resolveTaskAgentId(task);
         if (agentId === 'shell') {
+            return;
+        }
+        const attested = !!this.sessionAttestations?.isAttested(task.ownerLogin, agentId);
+        if (!this.lastTurns && !attested) {
             return;
         }
         try {
             const turn = classifyAgentLastTurn(task, await this.readLog(task.id), agentId);
             if (turn) {
-                this.lastTurns.record(task.ownerLogin, agentId, turn);
+                this.lastTurns?.record(task.ownerLogin, agentId, turn);
+            }
+            if (attested && turn?.outcome === 'failed' && turn.kind === 'auth') {
+                // The attested sign-in did not hold (the CLI printed success without a usable session):
+                // drop it so the picker locks the harness again instead of failing every turn.
+                this.sessionAttestations?.revoke(task.ownerLogin, agentId);
             }
         } catch (error) {
             console.warn('[qaap-agent-last-turn] could not record task', task.id, error instanceof Error ? error.message : String(error));
