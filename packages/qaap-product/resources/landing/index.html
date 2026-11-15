@@ -242,43 +242,386 @@ h1 {
     border-radius: 12px;
     background: #000;
 }
-.approval {
+/* ---- Hero ASCII horizon ------------------------------------------------- */
+.hero { position: relative; isolation: isolate; }
+.hero-ascii {
     position: absolute;
-    left: -2%;
-    top: 22%;
-    width: min(330px, 34%);
-    padding: 16px 16px 14px;
-    border: 1px solid var(--line);
-    border-radius: 14px;
-    background: var(--surface);
-    box-shadow: var(--shadow);
-    text-align: left;
+    top: 0;
+    left: 0;
+    z-index: -1;
+    width: 100%;
+    height: 1040px;
+    pointer-events: none;
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 24%, #000 74%, transparent 100%);
+    mask-image: linear-gradient(to bottom, transparent 0, #000 24%, #000 74%, transparent 100%);
 }
-.approval small {
-    color: var(--accent);
-    font-family: var(--mono);
-    font-size: 11px;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-}
-.approval p { margin: 8px 0 10px; font-size: 14.5px; line-height: 1.4; }
-.approval code {
-    display: block;
-    padding: 9px 11px;
-    border-radius: 8px;
-    background: color-mix(in srgb, var(--ink) 5%, var(--surface));
-    font-family: var(--mono);
-    font-size: 12.5px;
-}
-.approval div { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
-.approval span {
+
+/* ---- Interactive Work Hub demo ------------------------------------------ */
+.stage { z-index: 1; margin-top: 120px; }
+.hero .fineprint { position: relative; text-shadow: 0 0 10px var(--bg), 0 0 3px var(--bg); }
+.demo-hint {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    margin: 0 0 16px;
     padding: 6px 14px;
     border: 1px solid var(--line-strong);
     border-radius: 999px;
+    background: var(--surface);
+    color: var(--ink-2);
+    font-size: 13.5px;
+}
+.demo-hint i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #6cc28f;
+    animation: d-pulse 2s ease-out infinite;
+}
+.demo { text-align: left; color: #ecebe7; font-size: 14px; line-height: 1.5; }
+.demo button { font: inherit; }
+.d-app { display: flex; flex-direction: column; height: 620px; background: #000; }
+.d-top {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 4px;
+    height: 50px;
+    padding: 0 10px;
+    border-bottom: 1px solid #1c1c1b;
+}
+.d-ic {
+    display: inline-grid;
+    flex: none;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    color: #bdbab3;
+    cursor: pointer;
+}
+.d-ic:hover { background: #1a1a19; color: #fff; }
+.d-ic svg, .d-seg svg, .d-btn svg { width: 17px; height: 17px; }
+.d-folder { cursor: default; }
+.d-folder:hover { background: transparent; color: #bdbab3; }
+.d-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    color: #f2f0eb;
+    font-size: 14px;
+    font-weight: 600;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.d-seg { display: flex; flex: none; gap: 2px; margin-right: 6px; padding: 3px; border: 1px solid #232321; border-radius: 10px; background: #121211; }
+.d-seg button {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 26px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: #8b8780;
+    cursor: pointer;
+}
+.d-seg button:hover { color: #fff; }
+.d-seg button.on { background: #2a2a28; color: #fff; }
+.d-body { position: relative; display: flex; flex: 1; min-height: 0; }
+.d-drawer {
+    flex: none;
+    width: 252px;
+    padding: 12px 8px;
+    overflow-y: auto;
+    border-right: 1px solid #1c1c1b;
+    background: #070707;
+    transition: margin-left 0.25s ease;
+}
+.d-app.no-drawer .d-drawer { margin-left: -252px; }
+.d-drawer-h {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 2px 8px 10px;
+    color: #8b8780;
+    font-size: 11.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+.d-drawer-h button {
+    padding: 3px 11px;
+    border: 1px solid #2a2a28;
+    border-radius: 999px;
+    background: transparent;
+    color: #d6d3cc;
+    font-size: 12px;
+    letter-spacing: 0;
+    text-transform: none;
+    cursor: pointer;
+}
+.d-drawer-h button:hover { background: #1a1a19; }
+.d-tasks { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.d-task {
+    display: grid;
+    grid-template-columns: 8px 1fr;
+    align-items: center;
+    gap: 3px 11px;
+    width: 100%;
+    padding: 9px 10px;
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    color: #d6d3cc;
+    text-align: left;
+    cursor: pointer;
+}
+.d-task:hover { background: #121211; }
+.d-task.on { background: #1c1c1a; color: #fff; }
+.d-task i { width: 8px; height: 8px; border-radius: 50%; background: #4a4945; }
+.d-task[data-status='running'] i { background: #e0b24f; animation: d-blink 0.8s ease-in-out infinite alternate; }
+.d-task[data-status='done'] i { background: #6cc28f; }
+.d-task[data-status='pr'] i { background: #8fb8ff; }
+.d-task b { overflow: hidden; font-size: 13.5px; font-weight: 520; white-space: nowrap; text-overflow: ellipsis; }
+.d-task small { grid-column: 2; overflow: hidden; color: #8b8780; font-family: var(--mono); font-size: 11.5px; white-space: nowrap; text-overflow: ellipsis; }
+.d-main { position: relative; display: flex; flex: 1; flex-direction: column; min-width: 0; }
+.d-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #2a2a28 transparent; }
+.d-thread { max-width: 720px; margin: 0 auto; padding: 24px 24px 12px; }
+.d-user {
+    width: fit-content;
+    max-width: 85%;
+    margin: 0 0 18px auto;
+    padding: 11px 15px;
+    border: 1px solid #262523;
+    border-radius: 13px;
+    background: #121211;
+    animation: d-in 0.25s ease both;
+}
+.d-meta { margin: 0 0 12px; color: #8b8780; font-size: 12.5px; font-weight: 560; }
+.d-meta b { color: #d6d3cc; font-weight: 600; }
+.d-step {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 7px 0;
+    color: #a8a59e;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    animation: d-in 0.25s ease both;
+}
+.d-step::before { content: ''; flex: none; width: 6px; height: 6px; border-radius: 50%; background: #3c3b38; }
+.d-step.run::before { background: #e0b24f; animation: d-blink 0.6s ease-in-out infinite alternate; }
+.d-step.ok::before { background: #6cc28f; }
+.d-step b { color: #ecebe7; font-weight: 600; }
+.d-step span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.d-step em { margin-left: auto; padding-left: 10px; color: #6cc28f; font-style: normal; white-space: nowrap; }
+.d-working {
+    margin: 12px 0;
+    background: linear-gradient(90deg, #6b6964 0%, #e6e4df 45%, #6b6964 90%) 0 0 / 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    font-size: 13px;
+    animation: d-shimmer 1.6s linear infinite;
+}
+.d-text { margin: 14px 0; color: #e6e4df; line-height: 1.62; animation: d-in 0.2s ease both; }
+.d-text p { margin: 0 0 10px; }
+.d-text h4 { margin: 4px 0 10px; color: #fff; font-size: 19px; letter-spacing: -0.015em; }
+.d-text ul { margin: 6px 0 10px; padding-left: 20px; }
+.d-text li { margin: 3px 0; }
+.d-text code { padding: 1px 6px; border-radius: 5px; background: #1a1a19; font-family: var(--mono); font-size: 12.5px; }
+.d-caret { display: inline-block; width: 7px; height: 15px; margin-left: 2px; background: #e6e4df; vertical-align: -2px; animation: d-blink 0.5s steps(2) infinite; }
+.d-diff { margin: 12px 0; overflow: hidden; border: 1px solid #262523; border-radius: 11px; font-family: var(--mono); font-size: 12.5px; animation: d-in 0.25s ease both; }
+.d-diff header { display: flex; justify-content: space-between; gap: 10px; padding: 9px 13px; background: #121211; color: #d6d3cc; }
+.d-diff header span { color: #8b8780; }
+.d-diff header .p { color: #6cc28f; }
+.d-diff header .m { color: #f07a63; }
+.d-diff div { overflow: hidden; padding: 2px 13px; color: #a8a59e; white-space: pre; text-overflow: ellipsis; }
+.d-diff .a { background: rgba(108, 194, 143, 0.1); color: #9fdcb6; }
+.d-diff .r { background: rgba(240, 122, 99, 0.1); color: #f4a594; }
+.d-note {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 14px 0;
+    padding: 11px 13px;
+    border: 1px solid rgba(108, 194, 143, 0.35);
+    border-radius: 11px;
+    background: rgba(108, 194, 143, 0.08);
+    color: #bfe8cf;
+    font-size: 13.5px;
+    animation: d-in 0.3s ease both;
+}
+.d-note svg { flex: none; width: 17px; height: 17px; }
+.d-empty { padding: 64px 8px 12px; text-align: center; }
+.d-empty h5 { margin: 0; color: #fff; font-size: 21px; font-weight: 620; letter-spacing: -0.02em; }
+.d-empty p { margin: 6px 0 0; color: #8b8780; font-size: 13.5px; }
+.d-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 18px; }
+.d-chip {
+    padding: 8px 14px;
+    border: 1px solid #2a2a28;
+    border-radius: 999px;
+    background: #0f0f0e;
+    color: #d6d3cc;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.d-chip:hover { border-color: #44433f; background: #1a1a19; color: #fff; }
+.d-dock { flex: none; width: 100%; max-width: 720px; margin: 0 auto; padding: 0 24px 16px; }
+.d-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.d-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: 32px;
+    padding: 0 13px;
+    border: 1px solid #2e2d2a;
+    border-radius: 999px;
+    background: #0d0d0c;
+    color: #ecebe7;
     font-size: 13px;
     font-weight: 560;
+    cursor: pointer;
 }
-.approval span:last-child { border-color: var(--ink); background: var(--ink); color: var(--bg); }
+.d-btn:hover { background: #1a1a19; }
+.d-btn .p { color: #6cc28f; }
+.d-btn .m { color: #f07a63; }
+.d-btn.primary { border-color: #f2f0eb; background: #f2f0eb; color: #111; }
+.d-btn.primary:hover { opacity: 0.88; }
+.d-btn[disabled] { opacity: 0.55; cursor: default; }
+.d-composer { position: relative; padding: 12px 12px 10px 15px; border: 1px solid #2a2a28; border-radius: 17px; background: #0c0c0b; transition: border-color 0.15s ease; }
+.d-composer:focus-within { border-color: #4a4945; }
+.d-composer textarea {
+    display: block;
+    width: 100%;
+    min-height: 22px;
+    max-height: 88px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: #f2f0eb;
+    font: inherit;
+    font-size: 14.5px;
+    line-height: 1.45;
+    resize: none;
+}
+.d-composer textarea::placeholder { color: #6b6964; }
+.d-composer-row { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
+.d-agent {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 30px;
+    margin-left: -6px;
+    padding: 0 9px 0 7px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: #d6d3cc;
+    font-size: 13px;
+    cursor: pointer;
+}
+.d-agent:hover { background: #1a1a19; color: #fff; }
+.d-mark { display: inline-grid; flex: none; place-items: center; width: 18px; height: 18px; border-radius: 5px; color: #fff; font-size: 10.5px; font-style: normal; font-weight: 700; }
+.d-agent svg { width: 13px; height: 13px; opacity: 0.7; }
+.d-menu {
+    position: absolute;
+    bottom: 50px;
+    left: 8px;
+    z-index: 3;
+    min-width: 220px;
+    padding: 5px;
+    border: 1px solid #2a2a28;
+    border-radius: 12px;
+    background: #121211;
+    box-shadow: 0 24px 48px -12px rgba(0, 0, 0, 0.8);
+    animation: d-in 0.15s ease both;
+}
+.d-menu button {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: #e6e4df;
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+}
+.d-menu button:hover, .d-menu button.on { background: #1f1f1d; }
+.d-menu small { margin-left: auto; color: #8b8780; font-size: 12px; }
+.d-send {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    border: 0;
+    border-radius: 50%;
+    background: #f2f0eb;
+    color: #111;
+    cursor: pointer;
+}
+.d-send svg { width: 17px; height: 17px; }
+.d-send[disabled] { background: #232321; color: #5d5b57; cursor: default; }
+.d-send.nudge { animation: d-nudge 1.6s ease-out infinite; }
+.d-preview { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 14px; min-height: 0; padding: 18px; background: radial-gradient(60% 60% at 50% 40%, #121211 0%, #050505 100%); }
+.d-preview[hidden], .d-scroll[hidden], .d-dock[hidden], .d-actions[hidden], .d-menu[hidden] { display: none; }
+.d-pv-bar { display: flex; align-items: center; gap: 8px; color: #8b8780; font-size: 12.5px; }
+.d-pv-bar .d-seg { margin: 0; }
+.d-pv-bar .d-seg button { width: auto; padding: 0 12px; font-size: 12.5px; }
+.d-pv-bar .d-seg button[disabled] { opacity: 0.4; cursor: default; }
+.d-pv-phone {
+    position: relative;
+    width: 250px;
+    height: 430px;
+    overflow: hidden;
+    border: 7px solid #1c1c1b;
+    border-radius: 34px;
+    background: #fafaf8;
+    color: #141413;
+    font-size: 12.5px;
+}
+.d-pv-phone header { display: flex; justify-content: space-between; padding: 26px 16px 10px; font-weight: 650; }
+.d-pv-phone header span { color: #8a8780; font-weight: 500; }
+.d-pv-sum { margin: 0 12px; overflow: hidden; border: 1px solid #e4e1db; border-radius: 12px; background: #fff; }
+.d-pv-sum button { display: flex; justify-content: space-between; width: 100%; padding: 11px 12px; border: 0; background: transparent; color: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.d-pv-row { display: flex; justify-content: space-between; padding: 7px 12px; border-top: 1px solid #f0eee9; }
+.d-pv-row span:last-child { color: #3b3a37; font-variant-numeric: tabular-nums; }
+.d-pv-pay { position: absolute; right: 12px; bottom: 12px; left: 12px; padding: 12px; border-radius: 12px; background: #141413; color: #fff; font-weight: 650; text-align: center; }
+.d-pv-phone.before .d-pv-sum { width: 330px; }
+.d-pv-phone.before .d-pv-row span:first-child { white-space: nowrap; }
+.d-pv-phone.before .d-pv-pay { position: static; width: 120px; margin: 14px 12px; padding: 7px; font-size: 11px; }
+.d-pv-cap { max-width: 320px; color: #8b8780; font-size: 12.5px; text-align: center; }
+
+@keyframes d-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes d-blink { from { opacity: 1; } to { opacity: 0.25; } }
+@keyframes d-shimmer { to { background-position: -200% 0; } }
+@keyframes d-pulse { 0% { box-shadow: 0 0 0 0 rgba(108, 194, 143, 0.55); } 70%, 100% { box-shadow: 0 0 0 8px rgba(108, 194, 143, 0); } }
+@keyframes d-nudge { 0% { box-shadow: 0 0 0 0 rgba(242, 240, 235, 0.5); } 70%, 100% { box-shadow: 0 0 0 9px rgba(242, 240, 235, 0); } }
+@media (prefers-reduced-motion: reduce) {
+    .demo *, .demo-hint i { animation: none !important; transition: none !important; }
+}
+@media (max-width: 760px) {
+    .d-app { height: 560px; }
+    .d-drawer { position: absolute; top: 0; bottom: 0; left: 0; z-index: 4; box-shadow: 20px 0 40px -10px rgba(0, 0, 0, 0.8); }
+    .d-thread { padding: 18px 14px 10px; }
+    .d-dock { padding: 0 10px 10px; }
+    .d-user { max-width: 92%; }
+    .d-empty { padding-top: 40px; }
+}
+@media (max-width: 640px) {
+    .d-app { height: 540px; }
+    .d-top { padding: 0 6px; }
+    .d-step em { display: none; }
+}
 
 /* ---- Sections ----------------------------------------------------------- */
 section { scroll-margin-top: 72px; }
@@ -498,7 +841,6 @@ footer { border-top: 1px solid var(--line); }
     .bento, .plans { grid-template-columns: 1fr; }
     .card:nth-child(odd) { border-right: none; }
     .plan + .plan { border-left: none; }
-    .approval { display: none; }
     .section-head { padding: 72px 28px 36px; flex-direction: column; align-items: flex-start; }
     summary { padding: 22px 28px; }
     details p { margin: -6px 28px 24px; }
@@ -512,7 +854,7 @@ footer { border-top: 1px solid var(--line); }
     .pill-short { display: inline; }
     h1 { letter-spacing: -0.04em; }
     .hero-ctas .btn { width: 100%; }
-    .stage { margin-top: 44px; padding-bottom: 56px; }
+    .stage { margin-top: 96px; padding-bottom: 56px; }
     .window { border-radius: 12px; }
     .window-bar { height: 28px; }
     .window-bar span { display: none; }
@@ -550,6 +892,7 @@ footer { border-top: 1px solid var(--line); }
 <main>
 <div class="frame rails">
     <section class="hero">
+        <canvas class="hero-ascii" aria-hidden="true"></canvas>
         <a class="pill" href="#features"><b>New</b><span class="pill-long">Approve and merge pull requests from your phone</span><span class="pill-short">Merge PRs from your phone</span> <span aria-hidden="true">→</span></a>
         <h1>The pocket workspace for AI coding agents</h1>
         <p class="lede">Run Claude Code, Codex, Gemini and more on your repos in the cloud. Review the diff, check the preview and merge — from your laptop or your phone.</p>
@@ -559,18 +902,44 @@ footer { border-top: 1px solid var(--line); }
         </div>
         <p class="fineprint">Bring your own AI keys · Plans from $4.99/month · Cancel anytime</p>
 
-        <div class="stage reveal" aria-hidden="true">
-            <div class="window">
+        <div class="stage reveal">
+            <p class="demo-hint"><i aria-hidden="true"></i>Live demo — give the agent a task</p>
+            <div class="window demo" id="demo" role="region" aria-label="Interactive Qaap demo">
                 <div class="window-bar"><i></i><i></i><i></i><span>qaaq.dev</span></div>
-                <img src="/landing/qaap-app-desktop.webp" width="1600" height="1000" alt="" fetchpriority="high">
+                <div class="d-app">
+                    <div class="d-top">
+                        <button class="d-ic" type="button" data-act="drawer" aria-label="Toggle tasks"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></svg></button>
+                        <span class="d-ic d-folder" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></span>
+                        <span class="d-title">Mockup · <span data-bind="title"></span></span>
+                        <div class="d-seg" role="group" aria-label="View">
+                            <button type="button" data-view="preview" aria-label="Preview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m8 8-4 4 4 4M16 8l4 4-4 4M13.5 5l-3 14"/></svg></button>
+                            <button type="button" data-view="chat" class="on" aria-label="Chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M4 12a8 8 0 1 1 3.4 6.55L4 20l1.1-3.6A7.96 7.96 0 0 1 4 12z"/></svg></button>
+                        </div>
+                        <button class="d-ic" type="button" data-act="new" aria-label="New task"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+                    </div>
+                    <div class="d-body">
+                        <aside class="d-drawer" aria-label="Tasks">
+                            <div class="d-drawer-h">Tasks <button type="button" data-act="new">+ New</button></div>
+                            <ul class="d-tasks"></ul>
+                        </aside>
+                        <div class="d-main">
+                            <div class="d-scroll"><div class="d-thread" aria-live="polite"></div></div>
+                            <div class="d-preview" hidden></div>
+                            <div class="d-dock">
+                                <div class="d-actions" hidden></div>
+                                <form class="d-composer" autocomplete="off">
+                                    <textarea rows="1" aria-label="Task for the agent" placeholder="Ask an agent to do something…"></textarea>
+                                    <div class="d-composer-row">
+                                        <button type="button" class="d-agent" data-act="agent" aria-haspopup="true"></button>
+                                        <div class="d-menu" role="menu" hidden></div>
+                                        <button type="submit" class="d-send" aria-label="Send" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"/></svg></button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div class="approval">
-                <small>Approval needed</small>
-                <p>Codex wants to run a command in your workspace.</p>
-                <code>npm test -- --filter checkout</code>
-                <div><span>Deny</span><span>Approve</span></div>
-            </div>
-            <div class="phone"><img src="/landing/qaap-app-mobile.webp" width="600" height="1298" alt="" loading="lazy"></div>
         </div>
     </section>
 
@@ -736,6 +1105,552 @@ footer { border-top: 1px solid var(--line); }
         });
     }, { rootMargin: '0px 0px -8% 0px' });
     items.forEach(function (el) { io.observe(el); });
+})();
+</script>
+<script>
+/* Animated ASCII horizon behind the hero (vanilla canvas, no dependencies). */
+(function () {
+    var canvas = document.querySelector('.hero-ascii');
+    if (!canvas || !canvas.getContext) { return; }
+    var hero = canvas.parentElement;
+    var ctx = canvas.getContext('2d');
+    var CHARS = ' =+xX0S8#@';
+    var CELL = 18;
+    var DENSITY = 0.8;
+    var GLYPH_OPACITY = 0.85;
+    var FLICKER = 0.2;
+    var FLOW = 0.5;
+    var SPEED = 1;
+    var GRADIENT_OPACITY = 0.9;
+    var SCRAMBLE_RADIUS = 0.1;
+    var BUCKETS = 32;
+    var STOPS = [[30, 63, 216], [56, 189, 248], [165, 216, 255], [246, 248, 255]];
+    var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    var darkScheme = window.matchMedia('(prefers-color-scheme: dark)');
+    var palette = [];
+    for (var b = 0; b < BUCKETS; b++) {
+        var p = b / (BUCKETS - 1) * (STOPS.length - 1);
+        var i0 = Math.min(STOPS.length - 2, Math.floor(p));
+        var f = p - i0;
+        var c0 = STOPS[i0];
+        var c1 = STOPS[i0 + 1];
+        palette.push('rgb(' + Math.round(c0[0] + (c1[0] - c0[0]) * f) + ',' + Math.round(c0[1] + (c1[1] - c0[1]) * f) + ',' + Math.round(c0[2] + (c1[2] - c0[2]) * f) + ')');
+    }
+    var width = 0;
+    var height = 0;
+    var start = performance.now();
+    var last = 0;
+    var mouse = { x: -1e4, y: -1e4 };
+    var waves = [];
+    var visible = true;
+    var frameId = 0;
+
+    var hash = function (a, b, c) {
+        var s = Math.sin(a * 127.1 + b * 311.7 + c * 74.7) * 43758.5453;
+        return s - Math.floor(s);
+    };
+    var horizonY = 0;
+    var textBottom = 0;
+    var resize = function () {
+        var dpr = Math.min(2, window.devicePixelRatio || 1);
+        var stage = hero.querySelector('.stage');
+        var fine = hero.querySelector('.fineprint');
+        var top = hero.getBoundingClientRect().top;
+        if (stage && fine) {
+            horizonY = stage.getBoundingClientRect().top - top - 24;
+            textBottom = fine.getBoundingClientRect().bottom - top;
+            canvas.style.height = Math.round(horizonY + 420) + 'px';
+        }
+        width = canvas.clientWidth;
+        height = canvas.clientHeight;
+        canvas.width = Math.round(width * dpr);
+        canvas.height = Math.round(height * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.font = '600 ' + (CELL - 4) + 'px ui-monospace, "SF Mono", Menlo, Consolas, monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+    };
+    var draw = function (t) {
+        var dark = darkScheme.matches;
+        ctx.clearRect(0, 0, width, height);
+        var radius = Math.max(width * 1.15, 1100);
+        var cx = width / 2;
+        var horizon = horizonY || height * 0.62;
+        var textEnd = textBottom || height * 0.5;
+        var clearY = textEnd * 0.52;
+        var clearRx = width < 700 ? width * 0.8 : Math.min(width * 0.42, 560);
+        var clearRy = textEnd * 0.56;
+        var gap = Math.max(60, horizon - textEnd);
+        var bandW = Math.min(height * 0.075, gap * 0.38);
+        var haloW = Math.min(height * 0.3, gap * 0.85);
+        var cy = horizon + radius;
+        var glow = ctx.createRadialGradient(cx, cy, radius - 40, cx, cy, radius + height * 0.6);
+        var go = GRADIENT_OPACITY * (dark ? 1 : 0.5);
+        glow.addColorStop(0, 'rgba(56,189,248,0)');
+        glow.addColorStop(0.05, 'rgba(165,216,255,' + (0.5 * go) + ')');
+        glow.addColorStop(0.22, 'rgba(30,63,216,' + (0.3 * go) + ')');
+        glow.addColorStop(1, 'rgba(30,63,216,0)');
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = glow;
+        ctx.fillRect(0, 0, width, height);
+
+        var intro = reduceMotion.matches ? 1 : Math.min(1, t / 1.8);
+        var revealTop = height * (1 - intro * 1.25);
+        var scrambleR = SCRAMBLE_RADIUS * Math.max(width, height);
+        var tick = Math.floor(t * 8);
+        var scrambleTick = Math.floor(t * 18);
+        var maxColor = dark ? 1 : 0.42;
+        var alphaScale = dark ? 1 : 0.75;
+        waves = waves.filter(function (w) { return t - w.t < 1.8; });
+        var cols = Math.ceil(width / CELL);
+        var rows = Math.ceil(height / CELL);
+        for (var r = 0; r < rows; r++) {
+            var y = r * CELL + CELL / 2;
+            if (y < revealTop) { continue; }
+            var nearFront = y - revealTop < CELL * 3 && intro < 1;
+            for (var c = 0; c < cols; c++) {
+                var x = c * CELL + CELL / 2;
+                var d = Math.sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy)) - radius;
+                var v;
+                if (d < 0) {
+                    v = 0.3 * Math.exp(d / (height * 0.06));
+                } else {
+                    var band = Math.exp(-Math.pow(d / bandW, 2));
+                    var halo = Math.exp(-d / haloW);
+                    v = band * 0.95 + halo * 0.5;
+                }
+                var n = 0.5 + 0.5 * Math.sin(x * 0.011 + t * 0.9 * FLOW + Math.sin(y * 0.021 + t * 0.5 * FLOW) * 1.4) * Math.cos(y * 0.017 - t * 0.6 * FLOW);
+                v *= 0.5 + 0.65 * n;
+                v *= 1 - FLICKER / 2 + FLICKER * hash(c, r, tick);
+                for (var k = 0; k < waves.length; k++) {
+                    var age = t - waves[k].t;
+                    var wd = Math.sqrt((x - waves[k].x) * (x - waves[k].x) + (y - waves[k].y) * (y - waves[k].y));
+                    v += 0.9 * Math.exp(-Math.pow((wd - age * 520) / 34, 2)) * (1 - age / 1.8);
+                }
+                var scrambled = nearFront;
+                var md = Math.sqrt((x - mouse.x) * (x - mouse.x) + (y - mouse.y) * (y - mouse.y));
+                if (md < scrambleR) {
+                    v += 0.35 * (1 - md / scrambleR);
+                    scrambled = true;
+                }
+                var ex = (x - cx) / clearRx;
+                var ey = (y - clearY) / clearRy;
+                v *= 1 - 0.88 * Math.exp(-(ex * ex + ey * ey) * 1.6);
+                v *= DENSITY / 0.8;
+                if (v < 0.07) { continue; }
+                if (v > 1) { v = 1; }
+                var idx = scrambled
+                    ? 1 + Math.floor(hash(c, r, scrambleTick) * (CHARS.length - 1))
+                    : Math.min(CHARS.length - 1, 1 + Math.floor(v * (CHARS.length - 1)));
+                ctx.globalAlpha = GLYPH_OPACITY * Math.min(1, v * 1.4) * alphaScale;
+                ctx.fillStyle = palette[Math.round(Math.min(v, maxColor) * (BUCKETS - 1))];
+                ctx.fillText(CHARS[idx], x, y);
+            }
+        }
+        ctx.globalAlpha = 1;
+    };
+    var loop = function (now) {
+        frameId = 0;
+        if (!visible || document.hidden) { return; }
+        if (now - last >= 30) {
+            last = now;
+            draw((now - start) / 1000 * SPEED);
+        }
+        frameId = window.requestAnimationFrame(loop);
+    };
+    var kick = function () {
+        if (reduceMotion.matches) { draw(10); return; }
+        if (!frameId) { frameId = window.requestAnimationFrame(loop); }
+    };
+    var pointFrom = function (event) {
+        var rect = canvas.getBoundingClientRect();
+        return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    };
+    hero.addEventListener('pointermove', function (event) {
+        if (event.target.closest && event.target.closest('.stage')) { mouse.x = mouse.y = -1e4; return; }
+        var pt = pointFrom(event);
+        mouse.x = pt.x;
+        mouse.y = pt.y;
+    }, { passive: true });
+    hero.addEventListener('pointerleave', function () { mouse.x = mouse.y = -1e4; });
+    hero.addEventListener('click', function (event) {
+        if (event.target.closest && event.target.closest('a, button, textarea, .stage')) { return; }
+        var pt = pointFrom(event);
+        waves.push({ x: pt.x, y: pt.y, t: (performance.now() - start) / 1000 * SPEED });
+        kick();
+    });
+    window.addEventListener('resize', function () { resize(); kick(); });
+    if ('ResizeObserver' in window) {
+        new ResizeObserver(function () { resize(); kick(); }).observe(hero.querySelector('.hero-ctas') || hero);
+    }
+    if (document.fonts && document.fonts.ready) { document.fonts.ready.then(function () { resize(); kick(); }); }
+    document.addEventListener('visibilitychange', kick);
+    if ('IntersectionObserver' in window) {
+        new IntersectionObserver(function (entries) {
+            visible = entries[0].isIntersecting;
+            kick();
+        }).observe(canvas);
+    }
+    resize();
+    kick();
+})();
+
+/* Interactive Work Hub demo: scripted agent runs, no network. */
+(function () {
+    var root = document.getElementById('demo');
+    if (!root) { return; }
+    var q = function (selector) { return root.querySelector(selector); };
+    var app = q('.d-app');
+    var thread = q('.d-thread');
+    var scroller = q('.d-scroll');
+    var taskList = q('.d-tasks');
+    var titleEl = q('[data-bind="title"]');
+    var form = q('.d-composer');
+    var input = form.querySelector('textarea');
+    var send = q('.d-send');
+    var actions = q('.d-actions');
+    var menu = q('.d-menu');
+    var agentBtn = q('.d-agent');
+    var preview = q('.d-preview');
+    var dock = q('.d-dock');
+    var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var ICON_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+    var ICON_DOWN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
+    var ICON_PLAY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M7 5v14l11-7z"/></svg>';
+    var AGENTS = [
+        { name: 'Claude Code', by: 'Anthropic', mark: 'C', color: '#d97757' },
+        { name: 'Codex', by: 'OpenAI', mark: 'O', color: '#10a37f' },
+        { name: 'Gemini', by: 'Google', mark: 'G', color: '#4285f4' },
+        { name: 'Copilot CLI', by: 'GitHub', mark: 'G', color: '#6e40c9' }
+    ];
+    var agent = AGENTS[0];
+    var view = 'chat';
+    var prCounter = 212;
+    var taskCounter = 0;
+    var nudgeTimer = 0;
+
+    var escapeHtml = function (s) {
+        return String(s).replace(/[&<>"']/g, function (ch) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
+        });
+    };
+    var inline = function (s) { return escapeHtml(s).replace(/`([^`]+)`/g, '<code>$1</code>'); };
+    var wait = function (ms) { return new Promise(function (resolve) { setTimeout(resolve, reduceMotion ? 0 : ms); }); };
+    var slug = function (s) {
+        return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 24) || 'task';
+    };
+
+    var SCRIPTS = {
+        checkout: {
+            steps: [['Read', 'src/checkout/Summary.tsx'], ['Read', 'src/checkout/PayButton.tsx'], ['Edit', 'src/checkout/Summary.tsx', '+28 −6'], ['Edit', 'src/checkout/PayButton.tsx', '+14 −2'], ['Run', 'npm test -- checkout', '42 passed']],
+            text: 'Checkout now fits a phone: the order summary collapses into an accordion below 768px and the Pay button sticks to the bottom of the screen. All 42 checkout tests pass — tap `Run app` to see it.',
+            changes: { files: 3, add: 42, del: 8, file: 'src/checkout/Summary.tsx', lines: [['r', '<aside className="summary">'], ['a', '<Collapsible title="Order summary">'], ['', '  <LineItems items={cart.items} />'], ['a', '  <PayButton sticky={isPhone} />'], ['a', '</Collapsible>']] }
+        },
+        tests: {
+            steps: [['Read', 'src/store/cart.ts'], ['Search', '"cartReducer" in src/'], ['Create', 'src/store/cart.test.ts', '+64'], ['Run', 'npm test -- cart', '12 passed']],
+            text: 'Added 12 tests for `cartReducer`: add, remove, quantity changes, the empty cart and coupon edge cases. They all pass and coverage for `src/store/cart.ts` went from 41% to 96%.',
+            changes: { files: 1, add: 64, del: 0, file: 'src/store/cart.test.ts', lines: [['a', "describe('cartReducer', () => {"], ['a', "  it('removes the last item', () => {"], ['a', '    const state = cartReducer(one, remove(id));'], ['a', '    expect(state.items).toHaveLength(0);'], ['a', '  });']] }
+        }
+    };
+    var genericScript = function (prompt, branch) {
+        return {
+            steps: [['Search', 'the repository'], ['Read', 'src/App.tsx'], ['Edit', '2 files', '+31 −9'], ['Run', 'npm test', '128 passed']],
+            text: 'Done — I worked on “' + prompt + '” on branch `' + branch + '`. The test suite is green. Review the diff, open the preview, then commit or ask me for tweaks.',
+            changes: { files: 2, add: 31, del: 9, file: 'src/App.tsx', lines: [['', 'export function App() {'], ['r', '  return <Layout>{children}</Layout>;'], ['a', '  return (<Layout>{children}</Layout>);'], ['a', '  // ' + prompt.slice(0, 48)], ['', '}']] }
+        };
+    };
+
+    var tasks = [
+        { id: 'checkout', title: 'Make checkout work on mobile', branch: 'fix/checkout', status: 'idle', items: [], suggestions: ['Make checkout work on mobile', 'Make the order summary collapsible on phones'] },
+        {
+            id: 'review',
+            title: 'Review PR #6',
+            branch: 'fix/critical-bugs',
+            status: 'done',
+            items: [
+                { t: 'user', text: 'Review the latest pull request: summarize changes, flag risks, and suggest concrete improvements.' },
+                { t: 'meta', html: 'Processed · <b>Claude Code</b>' },
+                { t: 'html', html: '<h4>PR Review: #6 “Fix critical bugs”</h4><p><strong>Status:</strong> tests pass (317/317) and typecheck is clean, but there is an undo/redo bug in the committed code. Fix it before merging.</p><ul><li><code>src/store.tsx</code> — now a thin wrapper over zustand (−544 lines)</li><li><code>src/store/slices/*</code> — new slice modules</li><li><code>src/utils/webgl.ts</code> — new <code>probeWebGLSupport</code></li></ul>' }
+            ],
+            changes: { files: 11, add: 711, del: 126, file: 'src/store/history.ts', lines: [['', 'export function undo(state) {'], ['r', '  return state.past.pop();'], ['a', '  const past = state.past.slice(0, -1);'], ['a', '  return { ...state, past };'], ['', '}']] },
+            suggestions: []
+        },
+        { id: 'tests', title: 'Add tests for the cart reducer', branch: 'test/cart', status: 'idle', items: [], suggestions: ['Add tests for the cart reducer', 'Cover the empty-cart edge case'] }
+    ];
+    var current = tasks[0];
+
+    var renderTasks = function () {
+        taskList.innerHTML = tasks.map(function (task) {
+            var sub = task.pr ? 'PR #' + task.pr + ' · open' : task.status === 'running' ? agent.name + ' is working…' : task.branch;
+            return '<li><button type="button" class="d-task' + (task === current ? ' on' : '') + '" data-task="' + task.id + '" data-status="' + task.status + '"><i></i><b>' + escapeHtml(task.title) + '</b><small>' + escapeHtml(sub) + '</small></button></li>';
+        }).join('');
+    };
+    var renderItem = function (item) {
+        switch (item.t) {
+            case 'user': return '<div class="d-user">' + escapeHtml(item.text) + '</div>';
+            case 'meta': return '<p class="d-meta">' + item.html + '</p>';
+            case 'html': return '<div class="d-text">' + item.html + '</div>';
+            case 'step':
+                return '<div class="d-step ' + item.state + '"><b>' + escapeHtml(item.verb) + '</b><span>' + escapeHtml(item.target) + '</span>' + (item.state === 'ok' && item.result ? '<em>' + escapeHtml(item.result) + '</em>' : '') + '</div>';
+            case 'working': return '<div class="d-working">' + escapeHtml(item.agent) + ' is working…</div>';
+            case 'text': return '<div class="d-text"><p>' + inline(item.text) + (item.streaming ? '<span class="d-caret"></span>' : '') + '</p></div>';
+            case 'diff': {
+                var ch = item.changes;
+                return '<div class="d-diff"><header>' + escapeHtml(ch.file) + '<span><b class="p">+' + ch.add + '</b> <b class="m">−' + ch.del + '</b></span></header>' +
+                    ch.lines.map(function (line) {
+                        var sign = line[0] === 'a' ? '+ ' : line[0] === 'r' ? '- ' : '  ';
+                        return '<div class="' + line[0] + '">' + escapeHtml(sign + line[1]) + '</div>';
+                    }).join('') + '</div>';
+            }
+            case 'note': return '<div class="d-note">' + ICON_CHECK + '<span>' + item.html + '</span></div>';
+            default: return '';
+        }
+    };
+    var renderThread = function () {
+        if (!current.items.length) {
+            thread.innerHTML = '<div class="d-empty"><h5>What should the agent do?</h5><p>Pick a task or type your own. It runs on its own branch.</p><div class="d-chips">' +
+                current.suggestions.map(function (s) { return '<button type="button" class="d-chip" data-prompt="' + escapeHtml(s) + '">' + escapeHtml(s) + '</button>'; }).join('') + '</div></div>';
+            return;
+        }
+        thread.innerHTML = current.items.map(renderItem).join('');
+    };
+    var renderActions = function () {
+        var ch = current.changes;
+        if (!ch || current.status === 'running') {
+            actions.hidden = true;
+            actions.innerHTML = '';
+            return;
+        }
+        actions.hidden = false;
+        var commit = current.pr
+            ? '<button type="button" class="d-btn" disabled>' + ICON_CHECK + ' PR #' + current.pr + ' opened</button>'
+            : current.committing
+                ? '<button type="button" class="d-btn primary" disabled>Committing…</button>'
+                : '<button type="button" class="d-btn primary" data-act="commit">Approve &amp; Commit</button>';
+        actions.innerHTML = '<button type="button" class="d-btn" data-act="diff" aria-expanded="' + !!current.diffOpen + '">Changes ' + ch.files + ' file' + (ch.files === 1 ? '' : 's') + ' <span class="p">+' + ch.add + '</span> <span class="m">−' + ch.del + '</span>' + ICON_DOWN + '</button>' +
+            commit + '<button type="button" class="d-btn" data-act="run-app">' + ICON_PLAY + ' Run app</button>';
+    };
+    var renderAgent = function () {
+        agentBtn.innerHTML = '<i class="d-mark" style="background:' + agent.color + '">' + agent.mark + '</i><span>' + agent.name + '</span>' + ICON_DOWN;
+        menu.innerHTML = AGENTS.map(function (a, i) {
+            return '<button type="button" role="menuitem" data-agent="' + i + '" class="' + (a === agent ? 'on' : '') + '"><i class="d-mark" style="background:' + a.color + '">' + a.mark + '</i>' + a.name + '<small>' + a.by + '</small></button>';
+        }).join('');
+    };
+    var renderPreview = function () {
+        var checkout = tasks[0];
+        var fixed = !!checkout.changes;
+        var mode = fixed && preview.dataset.mode !== 'before' ? 'after' : 'before';
+        var rows = [['Linen overshirt, sand, size M', '$32.00'], ['Organic cotton tee ×2', '$16.00'], ['Shipping', 'Free']];
+        var open = preview.dataset.open !== 'false';
+        preview.innerHTML = '<div class="d-pv-bar"><div class="d-seg"><button type="button" data-pv="before" class="' + (mode === 'before' ? 'on' : '') + '">main</button><button type="button" data-pv="after" class="' + (mode === 'after' ? 'on' : '') + '"' + (fixed ? '' : ' disabled') + '>fix/checkout</button></div></div>' +
+            '<div class="d-pv-phone ' + mode + '"><header>Checkout<span>3 items</span></header><div class="d-pv-sum"><button type="button" data-act="pv-toggle">Order summary<span>' + (mode === 'after' ? (open ? '−' : '+') : '') + '</span></button>' +
+            (mode === 'before' || open ? rows.map(function (row) { return '<div class="d-pv-row"><span>' + row[0] + '</span><span>' + row[1] + '</span></div>'; }).join('') : '') +
+            '</div><div class="d-pv-pay">Pay $48.00</div></div>' +
+            '<p class="d-pv-cap">' + (fixed ? (mode === 'after' ? 'The fix: collapsible summary and a Pay button that stays in reach.' : 'Before: the summary overflows and Pay is tiny. Switch branches to compare.') : 'This is <code>main</code>. Ask the agent to “Make checkout work on mobile”, then come back.') + '</p>';
+    };
+    var setView = function (next) {
+        view = next;
+        root.querySelectorAll('[data-view]').forEach(function (b) { b.classList.toggle('on', b.dataset.view === view); });
+        scroller.hidden = view !== 'chat';
+        dock.hidden = view !== 'chat';
+        preview.hidden = view !== 'preview';
+        if (view === 'preview') { renderPreview(); }
+    };
+    var updateSend = function () {
+        send.disabled = current.status === 'running' || !input.value.trim();
+    };
+    var scrollToEnd = function () { scroller.scrollTop = scroller.scrollHeight; };
+    var render = function (follow) {
+        titleEl.textContent = current.title;
+        renderTasks();
+        renderThread();
+        renderActions();
+        updateSend();
+        if (view === 'preview') { renderPreview(); }
+        if (follow) { scrollToEnd(); }
+    };
+    var renderIfCurrent = function (task) { if (task === current) { render(true); } else { renderTasks(); } };
+
+    var run = function (task, prompt) {
+        if (task.status === 'running') { return; }
+        var script = SCRIPTS[task.id] && prompt === task.suggestions[0] ? SCRIPTS[task.id] : undefined;
+        if (!script) {
+            if (!task.items.length && /^New task/.test(task.title)) {
+                task.title = prompt.length > 40 ? prompt.slice(0, 38) + '…' : prompt;
+                task.branch = 'task/' + slug(prompt);
+            }
+            script = SCRIPTS[task.id] && task.id === 'checkout' && /checkout|mobile|phone|summary/i.test(prompt) ? SCRIPTS.checkout : genericScript(prompt, task.branch);
+        }
+        var runAgent = agent.name;
+        task.status = 'running';
+        task.changes = undefined;
+        task.pr = undefined;
+        task.diffOpen = false;
+        task.items.push({ t: 'user', text: prompt });
+        var working = { t: 'working', agent: runAgent };
+        task.items.push(working);
+        renderIfCurrent(task);
+        var chain = wait(700);
+        script.steps.forEach(function (s) {
+            chain = chain.then(function () {
+                var step = { t: 'step', verb: s[0], target: s[1], result: s[2], state: 'run' };
+                task.items.splice(task.items.indexOf(working), 0, step);
+                renderIfCurrent(task);
+                return wait(s[0] === 'Run' ? 1100 : 520).then(function () {
+                    step.state = 'ok';
+                    renderIfCurrent(task);
+                });
+            });
+        });
+        return chain.then(function () {
+            task.items.splice(task.items.indexOf(working), 1);
+            var text = { t: 'text', text: '', streaming: true };
+            task.items.push(text);
+            var words = script.text.split(' ');
+            var i = 0;
+            var stream = function () {
+                if (i >= words.length) { return Promise.resolve(); }
+                i = Math.min(words.length, i + 2);
+                text.text = words.slice(0, i).join(' ');
+                renderIfCurrent(task);
+                return wait(45).then(stream);
+            };
+            return stream().then(function () {
+                text.streaming = false;
+                task.changes = script.changes;
+                task.status = 'done';
+                renderIfCurrent(task);
+            });
+        });
+    };
+    var submit = function (prompt) {
+        prompt = prompt.trim();
+        if (!prompt || current.status === 'running') { return; }
+        stopNudge();
+        input.value = '';
+        autosize();
+        setView('chat');
+        run(current, prompt);
+    };
+    var commit = function () {
+        var task = current;
+        if (!task.changes || task.pr || task.committing) { return; }
+        task.committing = true;
+        renderActions();
+        wait(900).then(function () {
+            task.committing = false;
+            prCounter += 1;
+            task.pr = prCounter;
+            task.status = 'pr';
+            task.items.push({ t: 'note', html: 'Committed to <code>' + escapeHtml(task.branch) + '</code> · pull request <b>#' + task.pr + '</b> opened on GitHub' });
+            renderIfCurrent(task);
+        });
+    };
+    var selectTask = function (id) {
+        var task = tasks.filter(function (t) { return t.id === id; })[0];
+        if (!task) { return; }
+        current = task;
+        if (root.clientWidth < 760) { app.classList.add('no-drawer'); }
+        setView('chat');
+        render(true);
+    };
+    var newTask = function () {
+        taskCounter += 1;
+        var task = { id: 'new-' + taskCounter, title: 'New task', branch: 'task/new-' + taskCounter, status: 'idle', items: [], suggestions: ['Add a dark mode toggle', 'Fix the flaky login test', 'Upgrade to React 19'] };
+        tasks.unshift(task);
+        selectTask(task.id);
+        input.focus({ preventScroll: true });
+    };
+    var autosize = function () {
+        input.style.height = 'auto';
+        input.style.height = Math.min(88, input.scrollHeight) + 'px';
+    };
+    var stopNudge = function () {
+        clearTimeout(nudgeTimer);
+        nudgeTimer = 0;
+        send.classList.remove('nudge');
+    };
+    var nudge = function () {
+        if (current !== tasks[0] || current.items.length || input.value) { return; }
+        var text = tasks[0].suggestions[0];
+        var i = 0;
+        var type = function () {
+            if (document.activeElement === input && i === 0) { return; }
+            i += 1;
+            input.value = text.slice(0, i);
+            updateSend();
+            if (i < text.length) {
+                nudgeTimer = setTimeout(type, 45);
+            } else {
+                send.classList.add('nudge');
+            }
+        };
+        nudgeTimer = setTimeout(type, 600);
+    };
+
+    root.addEventListener('click', function (event) {
+        var target = event.target.closest('button');
+        if (!target || !root.contains(target)) {
+            if (!event.target.closest('.d-menu, .d-agent')) { menu.hidden = true; }
+            return;
+        }
+        if (!target.closest('.d-menu') && target.dataset.act !== 'agent') { menu.hidden = true; }
+        if (target.dataset.task) { selectTask(target.dataset.task); return; }
+        if (target.dataset.prompt) { submit(target.dataset.prompt); return; }
+        if (target.dataset.view) { setView(target.dataset.view); return; }
+        if (target.dataset.pv) { preview.dataset.mode = target.dataset.pv; renderPreview(); return; }
+        if (target.dataset.agent) {
+            agent = AGENTS[Number(target.dataset.agent)];
+            menu.hidden = true;
+            renderAgent();
+            renderTasks();
+            return;
+        }
+        switch (target.dataset.act) {
+            case 'drawer': app.classList.toggle('no-drawer'); break;
+            case 'new': newTask(); break;
+            case 'agent': menu.hidden = !menu.hidden; break;
+            case 'commit': commit(); break;
+            case 'run-app': preview.dataset.mode = current.id === 'checkout' ? 'after' : preview.dataset.mode || ''; setView('preview'); break;
+            case 'pv-toggle': preview.dataset.open = preview.dataset.open === 'false' ? 'true' : 'false'; renderPreview(); break;
+            case 'diff': {
+                current.diffOpen = !current.diffOpen;
+                var at = current.items.findIndex(function (item) { return item.t === 'diff'; });
+                if (at >= 0) { current.items.splice(at, 1); }
+                if (current.diffOpen) { current.items.push({ t: 'diff', changes: current.changes }); }
+                render(current.diffOpen);
+                break;
+            }
+        }
+    });
+    form.addEventListener('submit', function (event) {
+        event.preventDefault();
+        submit(input.value);
+    });
+    input.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+            event.preventDefault();
+            submit(input.value);
+        }
+    });
+    input.addEventListener('input', function () { stopNudge(); autosize(); updateSend(); });
+    input.addEventListener('focus', function () {
+        if (nudgeTimer) { stopNudge(); }
+    });
+    document.addEventListener('keydown', function (event) { if (event.key === 'Escape') { menu.hidden = true; } });
+
+    if (root.clientWidth < 760) { app.classList.add('no-drawer'); }
+    renderAgent();
+    render(false);
+    if ('IntersectionObserver' in window && !reduceMotion) {
+        var seen = new IntersectionObserver(function (entries) {
+            if (entries[0].isIntersecting) {
+                seen.disconnect();
+                nudge();
+            }
+        }, { threshold: 0.5 });
+        seen.observe(root);
+    }
 })();
 </script>
 </body>
