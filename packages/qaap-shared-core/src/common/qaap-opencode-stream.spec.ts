@@ -56,10 +56,20 @@ describe('QaapOpencodeStreamAccumulator', () => {
         expect(acc.getTurnUsage()).to.deep.equal({
             inputTokens: 900,
             outputTokens: 80,
+            outputTokensTotal: 80,
             reasoningTokens: 20,
             cacheReadInputTokens: 300,
             cacheCreationInputTokens: 40,
         });
+    });
+
+    it('sums output across every step_finish of the turn while context follows the latest step', () => {
+        const acc = new QaapOpencodeStreamAccumulator();
+        acc.push([
+            '{"type":"step_finish","part":{"type":"step-finish","tokens":{"input":900,"output":80}}}',
+            '{"type":"step_finish","part":{"type":"step-finish","tokens":{"input":950,"output":120}}}',
+        ].join('\n') + '\n');
+        expect(acc.getTurnUsage()).to.deep.equal({ inputTokens: 950, outputTokens: 120, outputTokensTotal: 200 });
     });
 
     it('maps state.input from newer OpenCode tool_use envelopes', () => {

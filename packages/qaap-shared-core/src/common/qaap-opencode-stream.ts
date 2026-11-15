@@ -57,6 +57,8 @@ export class QaapOpencodeStreamAccumulator {
     /** True when at least one line was a valid OpenCode JSON event. */
     protected jsonEvents = 0;
     protected turnUsage: QaapAgentContextUsage | undefined;
+    /** Output tokens summed over every `step_finish` of the turn. */
+    protected outputTokensTotal = 0;
 
     getTurnUsage(): QaapAgentContextUsage | undefined {
         return this.turnUsage;
@@ -154,9 +156,11 @@ export class QaapOpencodeStreamAccumulator {
         if (inputTokens + outputTokens + reasoningTokens + cacheReadInputTokens + cacheCreationInputTokens === 0) {
             return;
         }
+        this.outputTokensTotal += outputTokens;
         this.turnUsage = {
             inputTokens,
             outputTokens,
+            outputTokensTotal: this.outputTokensTotal,
             ...(reasoningTokens > 0 ? { reasoningTokens } : {}),
             ...(cacheReadInputTokens > 0 ? { cacheReadInputTokens } : {}),
             ...(cacheCreationInputTokens > 0 ? { cacheCreationInputTokens } : {}),
