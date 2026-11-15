@@ -9,12 +9,13 @@ import type { Application, Request, Response } from '@theia/core/shared/express'
 import { QaapGithubAuthGuard } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
 import { QaapAsyncRoute } from '@theia/qaap-shared-core/lib/node/qaap-async-route';
 import { QAAP_TENANT_UPDATE_API_PATH } from '../common/qaap-cloud-api-types';
-import { QaapDockerOrchestrator, type QaapTenantUpdateStatus } from './qaap-docker-orchestrator';
+import { QaapDockerOrchestrator } from './qaap-docker-orchestrator';
 
 /**
- * "Update now" for the signed-in user's tenant backend. Served by the control plane (see
- * `isControlPlanePath` in the tenant proxy), so the request never reaches the tenant it is about.
- * The owner is always the session's login: a `login` parameter is never read.
+ * "Update now" for the signed-in user's tenant backend (`POST /qaap/api/tenant-update`). The state it
+ * acts on is `updatePending` in `GET /qaap/api/cloud/runtime/status`; this route only applies it. Served
+ * by the control plane (see `isControlPlanePath` in the tenant proxy), so the request never reaches the
+ * tenant it is about. The owner is always the session's login: a `login` parameter is never read.
  */
 @injectable()
 export class QaapTenantUpdateEndpoint implements BackendApplicationContribution {
@@ -26,17 +27,7 @@ export class QaapTenantUpdateEndpoint implements BackendApplicationContribution 
     protected readonly docker: QaapDockerOrchestrator;
 
     configure(app: Application): void {
-        app.get(QAAP_TENANT_UPDATE_API_PATH, QaapAsyncRoute.wrap('qaap-tenant-update', (req, res) => this.handleStatus(req, res)));
         app.post(QAAP_TENANT_UPDATE_API_PATH, QaapAsyncRoute.wrap('qaap-tenant-update', (req, res) => this.handleApply(req, res)));
-    }
-
-    protected async handleStatus(req: Request, res: Response): Promise<void> {
-        const ownerLogin = this.resolveOwnerLogin(req, res);
-        if (!ownerLogin) {
-            return;
-        }
-        const status: QaapTenantUpdateStatus = await this.docker.tenantUpdateStatus(ownerLogin);
-        res.json(status);
     }
 
     protected async handleApply(req: Request, res: Response): Promise<void> {

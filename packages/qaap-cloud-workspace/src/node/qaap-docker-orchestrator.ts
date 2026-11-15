@@ -216,16 +216,8 @@ export interface QaapTenantBackendEnsureOptions {
     readonly interruptRunningTurns?: boolean;
 }
 
-/** What the user is told about a pending update of their tenant backend (`GET /qaap/api/tenant-update`). */
-export interface QaapTenantUpdateStatus {
-    /** The running backend does not run the serving image the control plane would start now. */
-    readonly updateAvailable: boolean;
-    /** Agent turns running in the tenant backend right now (0 when the backend cannot be asked). */
-    readonly runningTasks: number;
-}
-
-/** How long a {@link QaapTenantUpdateStatus} is reused before Docker is inspected again. */
-const TENANT_UPDATE_STATUS_CACHE_MS = 5_000;
+/** How long the "running container uses the serving image" answer is reused before Docker is inspected again. */
+const TENANT_IMAGE_STALE_CACHE_MS = 5_000;
 
 /** One hardened worker container per tenant when `QAAP_CLOUD_MODE=docker`. */
 @injectable()
@@ -271,8 +263,8 @@ export class QaapDockerOrchestrator {
     protected tenantImageBuildCache: { readonly image: string; readonly build: string | undefined; readonly at: number } | undefined;
     /** Phase timings of the backend wake each running {@link createOrValidateTenantBackend} records. */
     protected readonly tenantBackendWakeTimelines = new Map<string, QaapTenantBackendWakeTimeline>();
-    /** Recent {@link tenantUpdateStatus} answers per tenant, so frequent polls do not inspect Docker each time. */
-    protected readonly tenantUpdateStatusCache = new Map<string, { readonly status: QaapTenantUpdateStatus; readonly at: number }>();
+    /** Recent answers of {@link backendImageIsStale} per tenant, so frequent status polls do not inspect Docker each time. */
+    protected readonly tenantImageStaleCache = new Map<string, { readonly stale: boolean; readonly at: number }>();
     /** The one "Update now" run per tenant; concurrent requests share it (see {@link applyTenantUpdateNow}). */
     protected readonly tenantUpdateOperations = new Map<string, Promise<boolean>>();
 
@@ -461,37 +453,25 @@ export class QaapDockerOrchestrator {
     }
 
     /**
-     * Build status of the tenant's running backend, from in-memory state only (no Docker call): the
-     * build its last ready health reported and whether a recreation is deferred for running turns.
+     * What the user is told about the build of their running backend: the single source of "an update is
+     * pending" (`GET /qaap/api/cloud/runtime/status`). Pending when a recreation was deferred for running
+     * turns, the known builds differ, or the running container does not use the serving image. While an
+     * update is pending it also reports the agent turns running now, for the confirmation before "Update now".
      */
-    getTenantBackendUpdateStatus(ownerLogin: string): QaapTenantBackendUpdateStatus {
+    async getTenantBackendUpdateStatus(ownerLogin: string): Promise<QaapTenantBackendUpdateStatus> {
         const tenant = ownerLogin.trim().toLowerCase();
-        return computeTenantBackendUpdateStatus({
+        const deferred = !!tenant && this.deferredTenantBackendRecreations.has(tenant);
+        const imageStale = !!tenant && !deferred && this.isBackendPerTenantEnabled() && await this.backendImageIsStale(ownerLogin);
+        const status = computeTenantBackendUpdateStatus({
             backendBuild: tenant ? this.tenantBackendBuilds.get(tenant) : undefined,
             controlPlaneBuild: process.env.QAAP_BUILD_SHA,
-            deferred: !!tenant && this.deferredTenantBackendRecreations.has(tenant),
+            deferred,
+            imageStale,
         });
-    }
-
-    /**
-     * Whether a newer serving image waits for the tenant, and how many agent turns run now. Answers
-     * from a short cache; neutral outside backend-per-tenant mode (local development has no orchestrator).
-     */
-    async tenantUpdateStatus(ownerLogin: string): Promise<QaapTenantUpdateStatus> {
-        const tenant = ownerLogin.trim().toLowerCase();
-        if (!this.isBackendPerTenantEnabled() || !tenant) {
-            return { updateAvailable: false, runningTasks: 0 };
+        if (!status.updatePending) {
+            return status;
         }
-        const cached = this.tenantUpdateStatusCache.get(tenant);
-        if (cached && Date.now() - cached.at < TENANT_UPDATE_STATUS_CACHE_MS) {
-            return cached.status;
-        }
-        const status: QaapTenantUpdateStatus = {
-            updateAvailable: await this.tenantUpdateAvailable(ownerLogin),
-            runningTasks: await this.tenantRunningTaskCount(ownerLogin),
-        };
-        this.tenantUpdateStatusCache.set(tenant, { status, at: Date.now() });
-        return status;
+        return { ...status, runningTasks: await this.tenantRunningTaskCount(ownerLogin) };
     }
 
     /**
@@ -510,7 +490,8 @@ export class QaapDockerOrchestrator {
         }
         const operation: Promise<boolean> = this.boundTenantEnsure(this.applyTenantUpdate(ownerLogin.trim(), tenant), `update for ${tenant}`)
             .finally(() => {
-                this.tenantUpdateStatusCache.delete(tenant);
+                // The next status read must see the recreated container, not the cached stale answer.
+                this.tenantImageStaleCache.delete(tenant);
                 if (this.tenantUpdateOperations.get(tenant) === operation) {
                     this.tenantUpdateOperations.delete(tenant);
                 }
@@ -530,25 +511,33 @@ export class QaapDockerOrchestrator {
         return true;
     }
 
-    /**
-     * True when a recreation is deferred, or the tenant's running backend does not use the serving image.
-     * Inspects Docker when no deferral is recorded, so it stays right after a control-plane restart.
-     */
+    /** True when a recreation is deferred, or the running container does not use the serving image. */
     protected async tenantUpdateAvailable(ownerLogin: string): Promise<boolean> {
-        if (this.deferredTenantBackendRecreations.has(ownerLogin.trim().toLowerCase())) {
-            return true;
+        return this.deferredTenantBackendRecreations.has(ownerLogin.trim().toLowerCase())
+            || await this.backendImageIsStale(ownerLogin);
+    }
+
+    /**
+     * Whether the tenant's running container was created from another image than the serving one. Inspects
+     * Docker (so it is right after a control-plane restart) and reuses the answer for a few seconds.
+     * No backend container yet, or Docker unreachable: nothing running is stale.
+     */
+    protected async backendImageIsStale(ownerLogin: string): Promise<boolean> {
+        const tenant = ownerLogin.trim().toLowerCase();
+        const cached = this.tenantImageStaleCache.get(tenant);
+        if (cached && Date.now() - cached.at < TENANT_IMAGE_STALE_CACHE_MS) {
+            return cached.stale;
         }
+        let stale = false;
         try {
             const docker = await this.getDocker(ownerLogin);
             const inspect = await docker.getContainer(this.backendContainerNameForTenant(ownerLogin)).inspect();
-            if (!this.isManagedTenantBackendFor(inspect, ownerLogin)) {
-                return false;
-            }
-            return !(await this.runsCurrentTenantImage(docker, inspect));
+            stale = this.isManagedTenantBackendFor(inspect, ownerLogin) && !(await this.runsCurrentTenantImage(docker, inspect));
         } catch {
-            // No backend yet, or Docker unreachable: nothing running is stale; the next wake starts the current image.
-            return false;
+            stale = false;
         }
+        this.tenantImageStaleCache.set(tenant, { stale, at: Date.now() });
+        return stale;
     }
 
     protected async tenantRunningTaskCount(ownerLogin: string): Promise<number> {

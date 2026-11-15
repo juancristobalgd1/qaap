@@ -17,26 +17,21 @@ interface RecordedResponse {
 
 type Handler = (req: Request, res: Response) => void;
 
-/** Express-shaped stand-in that records the handlers registered for the update path. */
-function captureRoutes(endpoint: QaapTenantUpdateEndpoint): { get: Handler; post: Handler } {
-    const routes: { get?: Handler; post?: Handler } = {};
+/** Express-shaped stand-in that records the handler registered for the update path. */
+function captureRoutes(endpoint: QaapTenantUpdateEndpoint): { post: Handler } {
+    let post: Handler | undefined;
     const app = {
-        get: (routePath: string, handler: Handler) => {
-            if (routePath === QAAP_TENANT_UPDATE_API_PATH) {
-                routes.get = handler;
-            }
-        },
         post: (routePath: string, handler: Handler) => {
             if (routePath === QAAP_TENANT_UPDATE_API_PATH) {
-                routes.post = handler;
+                post = handler;
             }
         },
     };
     endpoint.configure(app as unknown as Application);
-    if (!routes.get || !routes.post) {
-        throw new Error('the update endpoint did not register both routes');
+    if (!post) {
+        throw new Error('the update endpoint did not register its POST route');
     }
-    return { get: routes.get, post: routes.post };
+    return { post };
 }
 
 /** Runs a handler and resolves with what it answered (handlers are fire-and-forget async wrappers). */
@@ -87,10 +82,6 @@ describe('QaapTenantUpdateEndpoint', () => {
         const endpoint = new QaapTenantUpdateEndpoint();
         (endpoint as unknown as { auth: unknown }).auth = authFor(login);
         (endpoint as unknown as { docker: unknown }).docker = {
-            tenantUpdateStatus: async (owner: string) => {
-                calls.push(`status:${owner}`);
-                return docker.tenantUpdateStatus?.(owner) ?? { updateAvailable: false, runningTasks: 0 };
-            },
             applyTenantUpdateNow: async (owner: string) => {
                 calls.push(`apply:${owner}`);
                 return docker.applyTenantUpdateNow?.(owner) ?? false;
@@ -98,23 +89,6 @@ describe('QaapTenantUpdateEndpoint', () => {
         };
         return { endpoint, calls };
     }
-
-    it('answers the status of the session owner', async () => {
-        const { endpoint, calls } = endpointWith('alice', {
-            tenantUpdateStatus: async () => ({ updateAvailable: true, runningTasks: 2 }),
-        });
-        const routes = captureRoutes(endpoint);
-        const result = await invoke(routes.get, {});
-        expect(result.body).to.deep.equal({ updateAvailable: true, runningTasks: 2 });
-        expect(calls).to.deep.equal(['status:alice']);
-    });
-
-    it('refuses the status without a session', async () => {
-        const { endpoint, calls } = endpointWith(undefined, {});
-        const result = await invoke(captureRoutes(endpoint).get, {});
-        expect(result.statusCode).to.equal(401);
-        expect(calls).to.have.length(0);
-    });
 
     it('applies the update for the session owner and ignores a login sent by the client', async () => {
         const { endpoint, calls } = endpointWith('alice', { applyTenantUpdateNow: async () => true });
@@ -173,13 +147,12 @@ describe('QaapTenantUpdateEndpoint', () => {
         expect(calls).to.deep.equal(['apply:alice']);
     });
 
-    it('answers neutral values outside backend-per-tenant mode, using the real orchestrator', async () => {
+    it('answers applied:false outside backend-per-tenant mode, using the real orchestrator', async () => {
         delete process.env.QAAP_BACKEND_PER_TENANT;
         const endpoint = new QaapTenantUpdateEndpoint();
         (endpoint as unknown as { auth: unknown }).auth = authFor('alice');
         (endpoint as unknown as { docker: unknown }).docker = new QaapDockerOrchestrator();
         const routes = captureRoutes(endpoint);
-        expect((await invoke(routes.get, {})).body).to.deep.equal({ updateAvailable: false, runningTasks: 0 });
         expect((await invoke(routes.post, {
             method: 'POST',
             headers: { 'sec-fetch-site': 'same-origin' },

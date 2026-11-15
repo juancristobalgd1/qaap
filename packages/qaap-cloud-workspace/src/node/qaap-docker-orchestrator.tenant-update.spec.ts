@@ -18,7 +18,7 @@ const OLD_IMAGE = 'sha256:old';
 
 /**
  * Orchestrator whose Docker and tenant-HTTP touch points are replaced by plain fields. The real
- * `runsCurrentTenantImage`, `tenantUpdateStatus`, `applyTenantUpdateNow` and `ensureTenantBackend`
+ * `runsCurrentTenantImage`, `getTenantBackendUpdateStatus`, `applyTenantUpdateNow` and `ensureTenantBackend`
  * logic runs unchanged. The recreation itself (`createOrValidateTenantBackend`) is stubbed: the
  * stale-but-busy deferral branch inside it needs a real Docker daemon and is not covered here.
  */
@@ -86,57 +86,69 @@ describe('QaapDockerOrchestrator tenant update (Update now)', () => {
         restoreEnv('QAAP_TENANT_DOCKER_IMAGE', saved.image);
     });
 
-    describe('tenantUpdateStatus', () => {
+    describe('getTenantBackendUpdateStatus', () => {
 
-        it('reports no update when the running backend already uses the serving image', async () => {
+        it('reports nothing pending when the running backend already uses the serving image', async () => {
             const orchestrator = new UpdateTestOrchestrator();
             orchestrator.containerImage = NEW_IMAGE;
-            expect(await orchestrator.tenantUpdateStatus(OWNER)).to.deep.equal({ updateAvailable: false, runningTasks: 0 });
+            expect(overTheWire(await orchestrator.getTenantBackendUpdateStatus(OWNER))).to.deep.equal({ updatePending: false });
         });
 
-        it('reports an update for a stale backend that is idle', async () => {
+        it('reports a pending update for a stale backend that is idle, with no running turns', async () => {
             const orchestrator = new UpdateTestOrchestrator();
-            expect(await orchestrator.tenantUpdateStatus(OWNER)).to.deep.equal({ updateAvailable: true, runningTasks: 0 });
+            expect(overTheWire(await orchestrator.getTenantBackendUpdateStatus(OWNER))).to.deep.equal({ updatePending: true, runningTasks: 0 });
         });
 
-        it('reports an update and the running turns for a stale backend that is busy', async () => {
+        it('reports the running turns of a stale backend that is busy', async () => {
             const orchestrator = new UpdateTestOrchestrator();
             orchestrator.busyTasks = 2;
-            expect(await orchestrator.tenantUpdateStatus(OWNER)).to.deep.equal({ updateAvailable: true, runningTasks: 2 });
+            expect(overTheWire(await orchestrator.getTenantBackendUpdateStatus(OWNER))).to.deep.equal({ updatePending: true, runningTasks: 2 });
         });
 
-        it('reports no update when there is no backend container yet', async () => {
+        it('reports nothing pending when there is no backend container yet', async () => {
             const orchestrator = new UpdateTestOrchestrator();
             const missing = {
                 getContainer: (): unknown => ({ inspect: async (): Promise<never> => { throw Object.assign(new Error('no such container'), { statusCode: 404 }); } }),
             } as unknown as Dockerode;
             (orchestrator as unknown as { getDocker: () => Promise<Dockerode> }).getDocker = async (): Promise<Dockerode> => missing;
-            expect(await orchestrator.tenantUpdateStatus(OWNER)).to.deep.equal({ updateAvailable: false, runningTasks: 0 });
+            expect(overTheWire(await orchestrator.getTenantBackendUpdateStatus(OWNER))).to.deep.equal({ updatePending: false });
         });
 
-        it('trusts a deferred recreation without inspecting Docker', async () => {
+        it('reports a deferred recreation as pending for running turns, without inspecting Docker', async () => {
             const orchestrator = new UpdateTestOrchestrator();
             orchestrator.containerImage = NEW_IMAGE;
+            orchestrator.busyTasks = 1;
             (orchestrator as unknown as { deferredTenantBackendRecreations: Set<string> }).deferredTenantBackendRecreations.add('alice');
-            expect(await orchestrator.tenantUpdateStatus(OWNER)).to.deep.equal({ updateAvailable: true, runningTasks: 0 });
+            expect(overTheWire(await orchestrator.getTenantBackendUpdateStatus(OWNER))).to.deep.equal({
+                updatePending: true,
+                reason: 'agent-turns-running',
+                runningTasks: 1,
+            });
             expect(orchestrator.inspectCount).to.equal(0);
         });
 
-        it('answers from a short cache instead of inspecting Docker on every poll', async () => {
+        it('answers the image check from a short cache instead of inspecting Docker on every poll', async () => {
             const orchestrator = new UpdateTestOrchestrator();
-            await orchestrator.tenantUpdateStatus(OWNER);
+            await orchestrator.getTenantBackendUpdateStatus(OWNER);
             orchestrator.containerImage = NEW_IMAGE;
-            expect(await orchestrator.tenantUpdateStatus(OWNER)).to.deep.equal({ updateAvailable: true, runningTasks: 0 });
+            expect(overTheWire(await orchestrator.getTenantBackendUpdateStatus(OWNER))).to.deep.equal({ updatePending: true, runningTasks: 0 });
             expect(orchestrator.inspectCount).to.equal(1);
         });
 
         it('is neutral outside backend-per-tenant mode and never touches Docker', async () => {
             delete process.env.QAAP_BACKEND_PER_TENANT;
             const orchestrator = new UpdateTestOrchestrator();
-            expect(await orchestrator.tenantUpdateStatus(OWNER)).to.deep.equal({ updateAvailable: false, runningTasks: 0 });
+            expect(overTheWire(await orchestrator.getTenantBackendUpdateStatus(OWNER))).to.deep.equal({ updatePending: false });
             expect(orchestrator.inspectCount).to.equal(0);
             expect(await orchestrator.applyTenantUpdateNow(OWNER)).to.equal(false);
             expect(orchestrator.createCalls).to.have.length(0);
+        });
+
+        it('reports nothing pending once "Update now" has recreated the backend', async () => {
+            const orchestrator = new UpdateTestOrchestrator();
+            expect(overTheWire(await orchestrator.getTenantBackendUpdateStatus(OWNER)).updatePending).to.equal(true);
+            expect(await orchestrator.applyTenantUpdateNow(OWNER)).to.equal(true);
+            expect(overTheWire(await orchestrator.getTenantBackendUpdateStatus(OWNER))).to.deep.equal({ updatePending: false });
         });
     });
 
@@ -177,6 +189,11 @@ describe('QaapDockerOrchestrator tenant update (Update now)', () => {
         });
     });
 });
+
+/** The status is served as JSON, where `undefined` fields are dropped; compare what the client receives. */
+function overTheWire<T>(value: T): T {
+    return JSON.parse(JSON.stringify(value)) as T;
+}
 
 function restoreEnv(name: string, value: string | undefined): void {
     if (value === undefined) {
