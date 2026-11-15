@@ -171,9 +171,9 @@ describe('MobileProjectsStickyComposerAgentsUi', () => {
         const host = createHost();
         host.stickyComposerBackendAgents = [
             { id: 'codex', label: 'Codex', available: true, connectionState: 'connected' },
-            { id: 'opencode', label: 'OpenCode', available: false, connectionState: 'disconnected' },
-            { id: 'claude', label: 'Claude Code', available: true, connectionState: 'unknown' },
-            { id: 'codex-hosted', label: 'Codex', available: true, connectionState: 'disconnected' },
+            { id: 'opencode', label: 'OpenCode', available: false, connectionState: 'disconnected', session: 'signed-out' },
+            { id: 'claude', label: 'Claude Code', available: true, connectionState: 'unknown', session: 'checking' },
+            { id: 'codex-hosted', label: 'Codex', available: true, connectionState: 'disconnected', session: 'signed-out' },
         ];
         const ui = new MobileProjectsStickyComposerAgentsUi(host);
 
