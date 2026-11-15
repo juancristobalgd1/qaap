@@ -151,6 +151,30 @@ function findScript(): string | undefined {
     return scriptPath;
 }
 
+/**
+ * Working directory of an exec. A cwd the client sent must exist and be enterable by this uid: libuv reports a failed
+ * chdir as `spawn <file> EACCES`, which hides the real cause, so the check runs first and names it. Only a request
+ * without a cwd falls back to HOME. Kept in this file: the server is shipped alone (broker `EXEC_SERVER_FILE`).
+ */
+function resolveExecCwd(sent: unknown): { cwd: string } | { error: string } {
+    if (typeof sent !== 'string' || sent === '') {
+        return { cwd: process.env.HOME ?? '/' };
+    }
+    try {
+        if (!fs.statSync(sent).isDirectory()) {
+            return { error: `Task sandbox working directory ${sent} is not a directory` };
+        }
+        fs.accessSync(sent, fs.constants.R_OK | fs.constants.X_OK);
+        return { cwd: sent };
+    } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code ?? 'unknown';
+        if (code === 'ENOENT') {
+            return { error: `Task sandbox working directory ${sent} does not exist` };
+        }
+        return { error: `Task sandbox cannot enter the working directory ${sent} as uid ${process.getuid?.() ?? 'unknown'}: ${code}` };
+    }
+}
+
 interface ExecHeader {
     file?: unknown;
     args?: unknown;
@@ -164,7 +188,12 @@ interface ExecHeader {
 function handleExec(socket: net.Socket, header: ExecHeader, rest: Buffer): void {
     const file = typeof header.file === 'string' ? header.file : '';
     const args = Array.isArray(header.args) ? header.args.filter((arg): arg is string => typeof arg === 'string') : [];
-    const cwd = typeof header.cwd === 'string' && fs.existsSync(header.cwd) ? header.cwd : (process.env.HOME ?? '/');
+    const resolved = resolveExecCwd(header.cwd);
+    if ('error' in resolved) {
+        socket.end(frame(FRAME_ERROR, JSON.stringify({ message: resolved.error })));
+        return;
+    }
+    const cwd = resolved.cwd;
     const env: NodeJS.ProcessEnv = { ...process.env };
     if (header.env && typeof header.env === 'object') {
         for (const [key, value] of Object.entries(header.env as Record<string, unknown>)) {

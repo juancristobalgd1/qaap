@@ -21,10 +21,18 @@ class SandboxProbe extends QaapOpencodeGateProbe {
     env(parent: NodeJS.ProcessEnv, agentDir: string): NodeJS.ProcessEnv {
         return this.buildProbeEnv(parent, agentDir, '/plugin/qaap-tool-gate-opencode.mjs', path.join(agentDir, 'probe.log'), 4321);
     }
+    versionEnv(parent: NodeJS.ProcessEnv, agentDir: string): NodeJS.ProcessEnv {
+        return this.buildVersionEnv(parent, agentDir);
+    }
 }
 
 class StubbedProbe extends QaapOpencodeGateProbe {
     runs = 0;
+    /** Clock for the `--version` cache; the test moves it past the TTL to re-read a changed version. */
+    clock = 1_000_000;
+    protected override now(): number {
+        return this.clock;
+    }
     version: string | Error = '1.19.5';
     result: Omit<QaapOpencodeGateProbeVerdict, 'key'> = { ok: true, reason: 'fine' };
     protected override async readVersion(): Promise<string> {
@@ -53,6 +61,10 @@ describe('QaapOpencodeGateProbe', () => {
         expect(probe.runs).to.equal(1);
         expect(probe.verdict()?.ok).to.equal(true);
         probe.version = '1.20.0';
+        // Within the version cache TTL the old --version output is still reused.
+        await probe.ensure(plugin);
+        expect(probe.runs).to.equal(1);
+        probe.clock += 5 * 60_000 + 1;
         await probe.ensure(plugin);
         expect(probe.runs).to.equal(2);
     });
@@ -95,6 +107,48 @@ describe('QaapOpencodeGateProbe', () => {
         }
         expect(env.HOME).to.equal('/sandbox/agent');
         expect(env.TMPDIR).to.equal('/sandbox/agent');
+    });
+
+    it('the --version env has a private HOME, TMPDIR and the four XDG dirs inside the sandbox, never the passwd home', async function (): Promise<void> {
+        if (process.platform === 'win32') {
+            this.skip();
+        }
+        const probe = new SandboxProbe();
+        const sandbox = probe.sandbox();
+        try {
+            const passwdHome = os.userInfo().homedir;
+            const parent: NodeJS.ProcessEnv = { PATH: '/usr/bin:/bin', HOME: passwdHome, SECRET_API_KEY: 'sk-live', GITHUB_TOKEN: 'ghp' };
+            const env = probe.versionEnv(parent, sandbox.agentDir);
+            expect(env.PATH).to.equal('/usr/bin:/bin');
+            expect(env).to.not.have.property('SECRET_API_KEY');
+            expect(env).to.not.have.property('GITHUB_TOKEN');
+            for (const key of ['HOME', 'TMPDIR', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_STATE_HOME', 'XDG_CACHE_HOME']) {
+                const value = env[key];
+                expect(value, key).to.be.a('string');
+                expect(value!.startsWith(sandbox.base + path.sep), `${key} must live in the private probe sandbox`).to.equal(true);
+                expect(value, key).to.not.equal(passwdHome);
+                expect(value!.startsWith(passwdHome + path.sep), key).to.equal(false);
+            }
+        } finally {
+            await probe.remove(sandbox);
+        }
+    });
+
+    it('the --version env points HOME and XDG at the same agent directory the probe run uses', async function (): Promise<void> {
+        if (process.platform === 'win32') {
+            this.skip();
+        }
+        const probe = new SandboxProbe();
+        const sandbox = probe.sandbox();
+        try {
+            const version = probe.versionEnv({ PATH: '/usr/bin' }, sandbox.agentDir);
+            const run = probe.env({ PATH: '/usr/bin' }, sandbox.agentDir);
+            for (const key of ['HOME', 'TMPDIR', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_STATE_HOME', 'XDG_CACHE_HOME']) {
+                expect(version[key], key).to.equal(run[key]);
+            }
+        } finally {
+            await probe.remove(sandbox);
+        }
     });
 
     it('creates a fresh private mkdtemp sandbox per probe and removes it afterwards', async function (): Promise<void> {
@@ -180,6 +234,47 @@ describe('QaapOpencodeGateProbe', () => {
             }
             expect(() => new Failing().withDrop()).to.throw('Could not create the gate probe directory as the agent user');
             expect(chownCalls).to.equal(0);
+        });
+    });
+
+    describe('OpenCode version cache', () => {
+        class VersionCacheProbe extends QaapOpencodeGateProbe {
+            clock = 1_000_000;
+            reads = 0;
+            failNext = false;
+            protected override now(): number {
+                return this.clock;
+            }
+            protected override async readVersion(): Promise<string> {
+                this.reads++;
+                if (this.failNext) {
+                    this.failNext = false;
+                    throw new Error('ENOENT');
+                }
+                return '1.19.5';
+            }
+            protected override async runProbe(key: string): Promise<QaapOpencodeGateProbeVerdict> {
+                return { ok: true, reason: 'fine', key };
+            }
+        }
+
+        it('reads the version once within the cache window and again after it expires', async () => {
+            const probe = new VersionCacheProbe();
+            await probe.ensure(plugin);
+            probe.clock += 4 * 60_000;
+            await probe.ensure(plugin);
+            expect(probe.reads).to.equal(1);
+            probe.clock += 60_000 + 1;
+            await probe.ensure(plugin);
+            expect(probe.reads).to.equal(2);
+        });
+
+        it('does not cache a failed version read, so the next spawn tries again', async () => {
+            const probe = new VersionCacheProbe();
+            probe.failNext = true;
+            expect((await probe.ensure(plugin)).ok).to.equal(false);
+            expect((await probe.ensure(plugin)).ok).to.equal(true);
+            expect(probe.reads).to.equal(2);
         });
     });
 
