@@ -9,10 +9,13 @@ import { QaapHealthCheckContribution } from './qaap-health-check-contribution';
 
 describe('GET /qaap/api/health', () => {
 
-    function health(checks: QaapHealthCheckContribution[], query: Record<string, string> = {}): { status: number; body: Record<string, unknown> } {
+    function health(checks: QaapHealthCheckContribution[], query: Record<string, string> = {}, signedIn = false): { status: number; body: Record<string, unknown> } {
         const endpoint = Object.create(QaapGithubOauthEndpoint.prototype) as QaapGithubOauthEndpoint;
         Object.assign(endpoint, {
-            auth: { isSkipAuthEnabled: () => false },
+            auth: {
+                isSkipAuthEnabled: () => false,
+                authenticate: () => (signedIn ? { kind: 'authenticated' } : { kind: 'unauthorized' }),
+            },
             healthChecks: { getContributions: () => checks },
         });
         const reply = { status: 200, body: {} as Record<string, unknown> };
@@ -68,5 +71,14 @@ describe('GET /qaap/api/health', () => {
         expect(reply.status).to.equal(200);
         expect(reply.body.ok).to.equal(true);
         expect(reply.body.checks).to.equal(undefined);
+    });
+
+    it('omits the isolation mode from the anonymous payload and keeps it for a signed-in caller', () => {
+        const anonymous = health([storage(true)]);
+        expect(anonymous.body).to.not.have.property('backendIsolationMode');
+        expect(anonymous.body.skipAuth).to.equal(false);
+        expect(anonymous.body.backendIsolationReady).to.be.a('boolean');
+        const signed = health([storage(true)], {}, true);
+        expect(signed.body).to.have.property('backendIsolationMode');
     });
 });

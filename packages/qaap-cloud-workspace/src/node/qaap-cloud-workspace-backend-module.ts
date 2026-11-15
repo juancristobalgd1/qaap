@@ -5,6 +5,8 @@
 
 import { ContainerModule } from '@theia/core/shared/inversify';
 import { EnvironmentUtils } from '@theia/core/lib/node/environment-utils';
+import { ConnectionContainerModule } from '@theia/core/lib/node/messaging/connection-container-module';
+import { bindQaapSecretPlaceholderResolver, qaapOpenAiConnectionModule } from './qaap-openai-manager-binding';
 import { QaapBackendEnvironmentUtils } from './qaap-backend-env-utils';
 import { bindRootContributionProvider } from '@theia/core';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
@@ -166,6 +168,9 @@ import {
 import { filterQaapFrontendEnvironment, isQaapSensitiveEnvKey } from './qaap-env-variables';
 
 export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsync, onActivation) => {
+    // Placeholder resolution for the OpenAI-compatible manager (see qaap-openai-manager-binding.ts).
+    bindQaapSecretPlaceholderResolver(bind);
+    bind(ConnectionContainerModule).toConstantValue(qaapOpenAiConnectionModule);
     // Confine HTTP file uploads to the caller's workspace (auth + ownership); the upstream
     // NodeFileUploadService is unauthenticated and lets absolute paths through its traversal check.
     bind(QaapNodeFileUploadService).toSelf().inSingletonScope();

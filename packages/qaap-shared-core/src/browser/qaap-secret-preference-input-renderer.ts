@@ -15,6 +15,7 @@ import {
 import { PreferenceStringInputRenderer } from '@theia/preferences/lib/browser/views/components/preference-string-input';
 
 import { isQaapSecretPreferenceId } from '../common/qaap-secret-preference-id';
+import { isQaapSecretPlaceholder } from '../common/qaap-secret-placeholder';
 
 export { isQaapSecretPreferenceId };
 
@@ -27,6 +28,50 @@ const QAAP_SECRET_RENDERER_PRIORITY = 3;
  */
 @injectable()
 export class QaapSecretPreferenceInputRenderer extends PreferenceStringInputRenderer {
+
+    protected secretToggle: HTMLButtonElement | undefined;
+
+    /**
+     * A saved key arrives from the backend as a placeholder: the field stays empty and says so, the
+     * visibility toggle is hidden, and only a non-empty typed value is written.
+     */
+    protected override doHandleValueChange(): void {
+        super.doHandleValueChange();
+        this.applySavedState();
+    }
+
+    protected override handleUserInteraction(): void {
+        if (this.isSavedWithEmptyInput()) {
+            return;
+        }
+        super.handleUserInteraction();
+    }
+
+    protected override async handleBlur(): Promise<void> {
+        if (this.isSavedWithEmptyInput()) {
+            // Empty input over a saved key means "keep it": drop any pending write of an erased value.
+            this.setPreferenceWithDebounce.cancel();
+            this.handleValueChange();
+            return;
+        }
+        await super.handleBlur();
+    }
+
+    protected isSavedWithEmptyInput(): boolean {
+        return isQaapSecretPlaceholder(this.getValue()) && this.interactable.value.trim() === '';
+    }
+
+    protected applySavedState(): void {
+        const saved = isQaapSecretPlaceholder(this.getValue());
+        if (saved && document.activeElement !== this.interactable) {
+            this.interactable.value = '';
+        }
+        this.interactable.placeholder = saved ? nls.localize('theia/qaap/preferences/secretSaved', 'Saved — enter a new key to replace it') : '';
+        if (this.secretToggle) {
+            this.secretToggle.hidden = saved;
+            this.secretToggle.disabled = saved;
+        }
+    }
 
     protected override createInteractable(parent: HTMLElement): void {
         const wrapper = document.createElement('div');
@@ -55,6 +100,7 @@ export class QaapSecretPreferenceInputRenderer extends PreferenceStringInputRend
         applyVisibility(false);
         toggle.onclick = (): void => applyVisibility(input.type === 'password');
         wrapper.appendChild(toggle);
+        this.secretToggle = toggle;
     }
 }
 
