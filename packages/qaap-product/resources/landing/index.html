@@ -228,9 +228,9 @@ h1 {
     border-radius: 12px;
     background: #000;
 }
-/* ---- Hero silk dot waves ---------------------------------------------- */
+/* ---- Hero ferrofluid ---------------------------------------------- */
 .hero { position: relative; isolation: isolate; }
-.hero-waves {
+.hero-fluid {
     position: absolute;
     top: 0;
     left: 0;
@@ -238,8 +238,24 @@ h1 {
     width: 100%;
     height: 1100px;
     pointer-events: none;
-    -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 62%, transparent 100%);
-    mask-image: linear-gradient(to bottom, #000 0, #000 62%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 84%, transparent 100%);
+    mask-image: linear-gradient(to bottom, #000 0, #000 84%, transparent 100%);
+}
+
+/* ---- Agents logo loop + demo scroll pass-through ------------------------- */
+#agents .agents.is-loop { display: flex; flex-direction: column; gap: 28px; padding: 44px 0 48px; overflow: hidden; -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 12%, #000 88%, transparent 100%); mask-image: linear-gradient(90deg, transparent 0, #000 12%, #000 88%, transparent 100%); }
+.agents-row { display: flex; gap: 56px; width: max-content; animation: logo-loop 40s linear infinite; will-change: transform; }
+.agents-row.rev { animation-direction: reverse; }
+#agents .agents.is-loop:hover .agents-row { animation-play-state: paused; }
+@keyframes logo-loop { from { transform: translateX(0); } to { transform: translateX(calc(-1 * var(--loop-distance, 33.333%))); } }
+#agents .agents.is-loop .agent { flex: none; flex-direction: row; align-items: center; gap: 14px; padding: 0; border: 0 !important; }
+#agents .agents.is-loop .agent-mark { width: 48px; height: 48px; }
+#agents .agents.is-loop .agent b { white-space: nowrap; }
+#agents .agents.is-loop .agent small { white-space: nowrap; }
+#agents .agents.is-loop .agent:hover .agent-mark { transform: scale(1.12); }
+.demo:not(.is-active) .d-scroll, .demo:not(.is-active) .d-panel-b, .demo:not(.is-active) .d-side-scroll, .demo:not(.is-active) .d-pick-list { overflow: hidden; }
+@media (prefers-reduced-motion: reduce) {
+    .agents-row { flex-wrap: wrap; justify-content: center; width: auto; animation: none; }
 }
 
 /* ---- Closing pixel blast + micro-interactions ---------------------------- */
@@ -291,7 +307,7 @@ details p { overflow: hidden; }
 }
 
 /* ---- Interactive Work Hub demo (mirrors the real app) -------------------- */
-.stage { z-index: 1; margin-top: 76px; }
+.stage { z-index: 1; margin-top: 170px; }
 .hero .fineprint { position: relative; text-shadow: 0 0 10px var(--bg), 0 0 3px var(--bg); }
 .demo-hint {
     display: inline-flex;
@@ -769,7 +785,7 @@ footer { border-top: 1px solid var(--line); }
     .pill-short { display: inline; }
     h1 { letter-spacing: -0.04em; }
     .hero-ctas .btn { width: 100%; }
-    .stage { margin-top: 52px; padding-bottom: 56px; }
+    .stage { margin-top: 120px; padding-bottom: 56px; }
     .window { border-radius: 12px; }
     .window-bar { height: 28px; }
     .window-bar span { display: none; }
@@ -807,8 +823,7 @@ footer { border-top: 1px solid var(--line); }
 <main>
 <div class="frame rails">
     <section class="hero">
-        <canvas class="hero-waves" aria-hidden="true"></canvas>
-        <a class="pill" href="#features"><b>New</b><span class="pill-long">Approve and merge pull requests from your phone</span><span class="pill-short">Merge PRs from your phone</span> <span aria-hidden="true">→</span></a>
+        <canvas class="hero-fluid" aria-hidden="true"></canvas>
         <h1>The pocket workspace for AI coding agents</h1>
         <p class="lede">Run Claude Code, Codex, Gemini and more on your repos in the cloud. Review the diff, check the preview and merge — from your laptop or your phone.</p>
         <div class="hero-ctas">
@@ -1854,141 +1869,165 @@ footer { border-top: 1px solid var(--line); }
 })();
 </script>
 <script>
-/* Hero background: silk dot waves (vanilla canvas take on PatternWaves "silk"). */
+/* Hero background: ferrofluid floor (vanilla canvas take on Ferrofluid: white, 2 magnets, cursor magnet, click pulse). */
 (function () {
-    var canvas = document.querySelector('.hero-waves');
+    var canvas = document.querySelector('.hero-fluid');
     if (!canvas || !canvas.getContext) { return; }
     var hero = canvas.parentElement;
     var ctx = canvas.getContext('2d');
-    var SPACING = 9;
-    var MARK = 0.95;
-    var DEPTH = 0.95;
-    var SHINE = 0.8;
-    var CONTRAST = 1.2;
-    var SPEED = 0.35;
-    var DIR = 20 * Math.PI / 180;
-    var FADE_SIZE = 0.5;
-    var CURSOR_R = 50 * 2.6;
-    var CURSOR_STRENGTH = 0.6;
-    var BUCKETS = 16;
+    var SPIKE = 1;
+    var SHARP = 2.5;
+    var MAGNETS = 2;
+    var SCALE = 1.6;
+    var TURB = 1;
+    var FLUID = 0.5;
+    var SPEED = 0.5;
+    var MAGNETISM = 1;
+    var MOUSE_R = 0.22;
+    var MOUSE_STRENGTH = 1;
+    var DEPTH = 3.2;
+    var PF = 1 / (1 + DEPTH);
     var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
-    var cosD = Math.cos(DIR);
-    var sinD = Math.sin(DIR);
-    var width = 0;
-    var height = 0;
-    var xs;
-    var ys;
-    var base;
-    var count = 0;
+    var W = 0;
+    var H = 0;
+    var horizon = 0;
+    var cols = 40;
+    var rows = 15;
     var start = performance.now();
     var last = 0;
-    var mouse = { x: -1e4, y: -1e4, sx: -1e4, sy: -1e4 };
+    var mouse = { x: -1e4, y: -1e4, gx: 0, gz: 0, on: false, s: 0 };
+    var pulses = [];
     var visible = true;
     var frameId = 0;
-    var buckets = [];
-    for (var b = 0; b < BUCKETS; b++) { buckets.push([]); }
 
-    var smooth = function (e0, e1, x) {
-        var t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
-        return t * t * (3 - 2 * t);
+    var hash = function (x, y) { var s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return s - Math.floor(s); };
+    var noise = function (x, y) {
+        var xi = Math.floor(x);
+        var yi = Math.floor(y);
+        var xf = x - xi;
+        var yf = y - yi;
+        var u = xf * xf * (3 - 2 * xf);
+        var v = yf * yf * (3 - 2 * yf);
+        var a = hash(xi, yi);
+        var b = hash(xi + 1, yi);
+        var c = hash(xi, yi + 1);
+        var d = hash(xi + 1, yi + 1);
+        return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
     };
     var resize = function () {
         var dpr = Math.min(2, window.devicePixelRatio || 1);
-        var stage = hero.querySelector('.stage');
         var top = hero.getBoundingClientRect().top;
-        if (stage) {
-            canvas.style.height = Math.round(stage.getBoundingClientRect().top - top + 260) + 'px';
-        }
-        width = canvas.clientWidth;
-        height = canvas.clientHeight;
-        canvas.width = Math.round(width * dpr);
-        canvas.height = Math.round(height * dpr);
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        var stage = hero.querySelector('.stage');
         var fine = hero.querySelector('.fineprint');
-        var textEnd = fine ? fine.getBoundingClientRect().bottom - top : height * 0.6;
-        var cols = Math.ceil(width / SPACING) + 1;
-        var rows = Math.ceil(height / SPACING) + 1;
-        count = cols * rows;
-        xs = new Float32Array(count);
-        ys = new Float32Array(count);
-        base = new Float32Array(count);
-        var rx = width < 700 ? width * 0.7 : Math.min(width * 0.42, 560);
-        var ry = textEnd * 0.58;
-        var cy = textEnd * 0.52;
-        var fx = width * FADE_SIZE * 0.5;
-        var fy = height * FADE_SIZE * 0.5;
-        var i = 0;
-        for (var r = 0; r < rows; r++) {
-            for (var c = 0; c < cols; c++) {
-                var x = c * SPACING + (r % 2 ? SPACING / 2 : 0);
-                var y = r * SPACING;
-                xs[i] = x;
-                ys[i] = y;
-                var edge = smooth(0, 1, Math.min(x, width - x) / fx) * smooth(0, 1, Math.min(y, height - y) / fy);
-                var ex = (x - width / 2) / rx;
-                var ey = (y - cy) / ry;
-                var clear = 1 - 0.9 * Math.exp(-(ex * ex + ey * ey) * 1.25);
-                base[i] = edge * clear;
-                i++;
-            }
+        if (stage) { canvas.style.height = Math.round(stage.getBoundingClientRect().top - top + 300) + 'px'; }
+        W = canvas.clientWidth;
+        H = canvas.clientHeight;
+        canvas.width = Math.round(W * dpr);
+        canvas.height = Math.round(H * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        horizon = (fine ? fine.getBoundingClientRect().bottom - top : H * 0.5) + 70;
+        cols = Math.max(18, Math.round(W / 24));
+        rows = W < 700 ? 12 : 15;
+    };
+    var project = function (x, z) {
+        var p = 1 / (1 + z * DEPTH);
+        var t = (p - PF) / (1 - PF);
+        return { x: W / 2 + x * W * 0.62 * (0.42 + 0.58 * t), y: horizon + (H - horizon) * t, s: 0.25 + 0.75 * t, t: t };
+    };
+    var toGround = function (mx, my) {
+        if (my < horizon - 20) { return null; }
+        var t = Math.max(0, (my - horizon) / (H - horizon));
+        var p = PF + t * (1 - PF);
+        return { x: (mx - W / 2) / (W * 0.62 * (0.42 + 0.58 * t)), z: (1 / p - 1) / DEPTH };
+    };
+    var heightAt = function (x, z, tt, mags, now) {
+        var h = 0.04 + TURB * 0.16 * noise(x * 2.6 * SCALE + 7, z * 3 * SCALE - tt * FLUID * 1.6);
+        for (var i = 0; i < mags.length; i++) {
+            var dx = x - mags[i].x;
+            var dz = (z - mags[i].z) * 1.5;
+            h += MAGNETISM * 0.95 * Math.exp(-(dx * dx + dz * dz) / (0.045 * SCALE));
         }
+        if (mouse.s > 0.01) {
+            var mx = x - mouse.gx;
+            var mz = (z - mouse.gz) * 1.4;
+            h += MOUSE_STRENGTH * 1.1 * mouse.s * Math.exp(-(mx * mx + mz * mz) / (MOUSE_R * MOUSE_R));
+        }
+        for (var k = 0; k < pulses.length; k++) {
+            var age = (now - pulses[k].t) / 1000;
+            var pd = Math.sqrt((x - pulses[k].x) * (x - pulses[k].x) + (z - pulses[k].z) * (z - pulses[k].z) * 2.2);
+            h += Math.exp(-Math.pow((pd - age * 1.1) / 0.09, 2)) * (1 - age / 1.6) * 0.8;
+        }
+        return h;
     };
     var draw = function (now) {
         var t = (now - start) / 1000;
-        var tt = t * SPEED * 2.4;
-        ctx.clearRect(0, 0, width, height);
-        mouse.sx += (mouse.x - mouse.sx) * 0.18;
-        mouse.sy += (mouse.y - mouse.sy) * 0.18;
-        var intro = reduceMotion.matches ? 1e9 : t * 900;
-        var cxm = width / 2;
-        var cym = height * 0.42;
-        var maxR = SPACING * 0.5 * MARK * 0.52;
-        for (var b = 0; b < BUCKETS; b++) { buckets[b].length = 0; }
-        var k = 1 / 190;
-        for (var i = 0; i < count; i++) {
-            var bw = base[i];
-            if (bw < 0.02) { continue; }
-            var x = xs[i];
-            var y = ys[i];
-            var dc = Math.sqrt((x - cxm) * (x - cxm) + (y - cym) * (y - cym));
-            var reveal = smooth(0, 160, intro - dc);
-            if (reveal <= 0) { continue; }
-            var u = (x * cosD + y * sinD) * k;
-            var w = (-x * sinD + y * cosD) * k;
-            var v = Math.sin(u * 3.1 + tt * 1.9 + Math.sin(w * 2.2 + tt * 1.2) * 1.7) * 0.55 +
-                Math.sin(u * 1.2 - w * 1.8 + tt * 1.05) * 0.3 +
-                Math.sin(w * 3.7 - tt * 0.8 + u * 0.6) * 0.15;
-            var s = Math.pow(1 - Math.min(1, Math.abs(v)), 2.1);
-            s = Math.min(1, Math.max(0, (s - 0.5) * CONTRAST + 0.5));
-            var shine = Math.pow(s, 8) * SHINE;
-            var r = maxR * (0.14 + 0.86 * s * DEPTH);
-            var a = (0.035 + 0.42 * s + shine * 0.4) * bw * reveal;
-            var mdx = x - mouse.sx;
-            var mdy = y - mouse.sy;
-            var md = Math.sqrt(mdx * mdx + mdy * mdy);
-            if (md < CURSOR_R) {
-                var f = 1 - md / CURSOR_R;
-                var push = f * f * CURSOR_STRENGTH * 16;
-                x += mdx / (md || 1) * push;
-                y += mdy / (md || 1) * push;
-                a += f * 0.35 * CURSOR_STRENGTH * base[i];
-                r *= 1 + f * 0.6;
-            }
-            if (a < 0.02) { continue; }
-            var bi = Math.min(BUCKETS - 1, Math.round(a * (BUCKETS - 1)));
-            buckets[bi].push(x, y, r);
+        var tt = t * SPEED;
+        ctx.clearRect(0, 0, W, H);
+        pulses = pulses.filter(function (p) { return now - p.t < 1600; });
+        mouse.s += ((mouse.on ? 1 : 0) - mouse.s) * 0.12;
+        var intro = reduceMotion.matches ? 1 : Math.min(1, t / 1.6);
+        intro = intro * intro * (3 - 2 * intro);
+        var mags = [];
+        for (var m = 0; m < MAGNETS; m++) {
+            mags.push({ x: Math.sin(tt * 0.55 + m * 2.4) * 0.62, z: 0.42 + Math.sin(tt * 0.41 + m * 1.7) * 0.26 });
         }
-        for (var bj = 1; bj < BUCKETS; bj++) {
-            var list = buckets[bj];
-            if (!list.length) { continue; }
-            ctx.fillStyle = 'rgba(255,255,255,' + (bj / (BUCKETS - 1)).toFixed(3) + ')';
-            ctx.beginPath();
-            for (var j = 0; j < list.length; j += 3) {
-                ctx.moveTo(list[j] + list[j + 2], list[j + 1]);
-                ctx.arc(list[j], list[j + 1], list[j + 2], 0, 6.2832);
-            }
-            ctx.fill();
+        var floor = ctx.createLinearGradient(0, horizon, 0, H);
+        floor.addColorStop(0, 'rgba(255,255,255,0)');
+        floor.addColorStop(1, 'rgba(255,255,255,0.035)');
+        ctx.fillStyle = floor;
+        ctx.fillRect(0, horizon, W, H - horizon);
+        for (var mi = 0; mi < mags.length; mi++) {
+            var mp = project(mags[mi].x, mags[mi].z);
+            var glow = ctx.createRadialGradient(mp.x, mp.y, 0, mp.x, mp.y, 240 * mp.s);
+            glow.addColorStop(0, 'rgba(255,255,255,' + (0.07 * intro) + ')');
+            glow.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.fillStyle = glow;
+            ctx.fillRect(mp.x - 260, mp.y - 260, 520, 520);
         }
+        var cell = 2 / cols;
+        for (var r = rows - 1; r >= 0; r--) {
+            var z = (r + 0.5) / rows;
+            for (var c = 0; c < cols; c++) {
+                var x = -1 + (c + 0.5 + (r % 2 ? 0.5 : 0)) * cell;
+                if (x > 1) { continue; }
+                var edge = Math.min(1, (1 - Math.abs(x)) / 0.4);
+                if (edge <= 0) { continue; }
+                var pr = project(x, z);
+                var h = heightAt(x, z, tt, mags, now) * intro;
+                var depthA = (0.22 + 0.78 * pr.t) * edge;
+                var hp = h * 220 * pr.s * SPIKE;
+                var half = W / cols * 0.5 * pr.s;
+                if (hp < 3) {
+                    ctx.globalAlpha = depthA * (0.25 + h * 2);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(pr.x - 1, pr.y - 1, 2, 2);
+                    continue;
+                }
+                var waist = 0.5 / SHARP;
+                var g = ctx.createLinearGradient(pr.x - half, 0, pr.x + half, 0);
+                var lit = Math.min(1, 0.35 + h * 0.6);
+                g.addColorStop(0, 'rgba(255,255,255,0.05)');
+                g.addColorStop(0.42, 'rgba(255,255,255,' + (0.22 * lit).toFixed(3) + ')');
+                g.addColorStop(0.62, 'rgba(255,255,255,' + (0.95 * lit).toFixed(3) + ')');
+                g.addColorStop(1, 'rgba(255,255,255,0.12)');
+                ctx.globalAlpha = depthA;
+                ctx.fillStyle = g;
+                ctx.beginPath();
+                ctx.moveTo(pr.x - half, pr.y);
+                ctx.quadraticCurveTo(pr.x - half * waist, pr.y - hp * 0.5, pr.x, pr.y - hp);
+                ctx.quadraticCurveTo(pr.x + half * waist, pr.y - hp * 0.5, pr.x + half, pr.y);
+                ctx.closePath();
+                ctx.fill();
+                if (h > 0.45) {
+                    ctx.globalAlpha = depthA * Math.min(1, (h - 0.45) * 1.6);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.beginPath();
+                    ctx.arc(pr.x + 0.4, pr.y - hp + 1.5 * pr.s, 1.3 * pr.s + 0.4, 0, 6.2832);
+                    ctx.fill();
+                }
+            }
+        }
+        ctx.globalAlpha = 1;
     };
     var loop = function (now) {
         frameId = 0;
@@ -1997,17 +2036,26 @@ footer { border-top: 1px solid var(--line); }
         frameId = requestAnimationFrame(loop);
     };
     var kick = function () {
-        if (reduceMotion.matches) { draw(performance.now() + 1e6); return; }
+        if (reduceMotion.matches) { draw(performance.now()); return; }
         if (!frameId) { frameId = requestAnimationFrame(loop); }
     };
-    hero.addEventListener('pointermove', function (e) {
-        if (e.target.closest && e.target.closest('.stage')) { mouse.x = mouse.y = -1e4; return; }
+    var updateMouse = function (e) {
         var rect = canvas.getBoundingClientRect();
-        mouse.x = e.clientX - rect.left;
-        mouse.y = e.clientY - rect.top;
-        if (mouse.sx < -1e3) { mouse.sx = mouse.x; mouse.sy = mouse.y; }
-    }, { passive: true });
-    hero.addEventListener('pointerleave', function () { mouse.x = mouse.y = -1e4; });
+        var g = toGround(e.clientX - rect.left, e.clientY - rect.top);
+        if (!g || (e.target.closest && e.target.closest('.stage'))) { mouse.on = false; return; }
+        mouse.gx = g.x;
+        mouse.gz = Math.min(1, g.z);
+        mouse.on = true;
+    };
+    hero.addEventListener('pointermove', updateMouse, { passive: true });
+    hero.addEventListener('pointerleave', function () { mouse.on = false; });
+    hero.addEventListener('pointerdown', function (e) {
+        if (e.target.closest && e.target.closest('a, button, textarea, .stage')) { return; }
+        var rect = canvas.getBoundingClientRect();
+        var g = toGround(e.clientX - rect.left, e.clientY - rect.top) || { x: (e.clientX - rect.left - W / 2) / (W * 0.4), z: 0.5 };
+        pulses.push({ x: g.x, z: Math.min(1, g.z), t: performance.now() });
+        kick();
+    });
     window.addEventListener('resize', function () { resize(); kick(); });
     if ('ResizeObserver' in window) { new ResizeObserver(function () { resize(); kick(); }).observe(hero.querySelector('.hero-ctas') || hero); }
     if (document.fonts && document.fonts.ready) { document.fonts.ready.then(function () { resize(); kick(); }); }
@@ -2017,6 +2065,56 @@ footer { border-top: 1px solid var(--line); }
     }
     resize();
     kick();
+})();
+
+/* Agents: infinite logo loop (two rows, opposite directions, pause on hover). */
+(function () {
+    var wrap = document.querySelector('#agents .agents');
+    if (!wrap) { return; }
+    var items = Array.prototype.slice.call(wrap.children);
+    var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var half = Math.ceil(items.length / 2);
+    var groups = [items.slice(0, half), items.slice(half)];
+    wrap.innerHTML = '';
+    wrap.classList.add('is-loop');
+    groups.forEach(function (group, gi) {
+        var row = document.createElement('div');
+        row.className = 'agents-row' + (gi ? ' rev' : '');
+        group.forEach(function (el) { row.appendChild(el); });
+        if (!reduceMotion) {
+            for (var n = 0; n < 2; n++) {
+                group.forEach(function (el) {
+                    var clone = el.cloneNode(true);
+                    clone.setAttribute('aria-hidden', 'true');
+                    clone.querySelectorAll('[id]').forEach(function (node) { node.removeAttribute('id'); });
+                    row.appendChild(clone);
+                });
+            }
+        }
+        wrap.appendChild(row);
+    });
+    var setSpeed = function () {
+        wrap.querySelectorAll('.agents-row').forEach(function (row) {
+            var distance = (row.scrollWidth + 56) / 3;
+            row.style.setProperty('--loop-distance', distance + 'px');
+            row.style.animationDuration = Math.max(20, distance / 60) + 's';
+        });
+    };
+    setSpeed();
+    window.addEventListener('resize', setSpeed);
+})();
+
+/* Demo: let the page scroll through the demo until the visitor clicks into it. */
+(function () {
+    var demo = document.getElementById('demo');
+    if (!demo) { return; }
+    var setActive = function (on) { demo.classList.toggle('is-active', on); };
+    demo.addEventListener('pointerdown', function () { setActive(true); });
+    demo.addEventListener('focusin', function () { setActive(true); });
+    document.addEventListener('pointerdown', function (e) { if (!demo.contains(e.target)) { setActive(false); } });
+    if ('IntersectionObserver' in window) {
+        new IntersectionObserver(function (entries) { if (!entries[0].isIntersecting) { setActive(false); } }).observe(demo);
+    }
 })();
 
 /* Closing CTA: pixel blast field (vanilla take on PixelBlast, square pixels, hover reveal, ripples). */
@@ -2173,7 +2271,7 @@ footer { border-top: 1px solid var(--line); }
 (function () {
     var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     var finePointer = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
-    document.querySelectorAll('.card, .agent, .byok').forEach(function (el) {
+    document.querySelectorAll('.card, .byok').forEach(function (el) {
         el.classList.add('fx-spot');
         el.addEventListener('pointermove', function (e) {
             var r = el.getBoundingClientRect();
@@ -2192,10 +2290,6 @@ footer { border-top: 1px solid var(--line); }
             btn.addEventListener('pointerleave', function () { btn.style.transform = ''; });
         });
     }
-    document.querySelectorAll('.agents .agent').forEach(function (el, i) {
-        el.classList.add('reveal');
-        el.style.transitionDelay = (i % 6) * 45 + 'ms';
-    });
     document.querySelectorAll('.bento .card, .plans .plan').forEach(function (el, i) {
         el.style.transitionDelay = (i % 2) * 90 + 'ms';
     });
@@ -2209,9 +2303,9 @@ footer { border-top: 1px solid var(--line); }
                 }
             });
         }, { rootMargin: '0px 0px -8% 0px' });
-        document.querySelectorAll('.agents .agent, .bento .card, .plans .plan').forEach(function (el) { io.observe(el); });
+        document.querySelectorAll('.bento .card, .plans .plan').forEach(function (el) { io.observe(el); });
     } else {
-        document.querySelectorAll('.agents .agent').forEach(function (el) { el.classList.add('in'); });
+        
     }
     if (!reduceMotion && 'animate' in document.documentElement) {
         document.querySelectorAll('details').forEach(function (d) {
