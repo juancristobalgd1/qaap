@@ -258,6 +258,19 @@ h1 {
     .agents-row { flex-wrap: wrap; justify-content: center; width: auto; animation: none; }
 }
 
+/* Top-down dark fade over the hero background, ending mid-headline. */
+.hero::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: -1;
+    height: var(--hero-fade-end, 260px);
+    background: linear-gradient(to bottom, var(--bg) 0%, rgba(14, 14, 13, 0.92) 38%, rgba(14, 14, 13, 0.55) 72%, rgba(14, 14, 13, 0) 100%);
+    pointer-events: none;
+}
+
 /* ---- Micro-interactions v2 ---------------------------------------------- */
 .hero h1, .hero .lede { text-shadow: 0 0 34px rgba(14, 14, 13, 0.92), 0 0 12px rgba(14, 14, 13, 0.75); }
 .hero .fineprint { text-shadow: 0 0 16px rgba(14, 14, 13, 0.95), 0 0 4px rgba(14, 14, 13, 0.9); }
@@ -2565,6 +2578,21 @@ footer { border-top: 1px solid var(--line); }
             lastY = y;
         }, { passive: true });
     }
+})();
+</script>
+<script>
+(function () {
+    var hero = document.querySelector('.hero');
+    var h1 = hero && hero.querySelector('h1');
+    if (!h1) { return; }
+    var set = function () {
+        var top = hero.getBoundingClientRect().top;
+        var r = h1.getBoundingClientRect();
+        hero.style.setProperty('--hero-fade-end', Math.round(r.top - top + r.height * 0.5) + 'px');
+    };
+    set();
+    window.addEventListener('resize', set);
+    if (document.fonts && document.fonts.ready) { document.fonts.ready.then(set); }
 })();
 </script>
 </body>
