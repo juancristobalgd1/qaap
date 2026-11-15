@@ -114,9 +114,9 @@ describe('QaapGithubDeviceSignInDialog', () => {
     });
 
     it('shows the start error and no code when GitHub is not configured', async () => {
-        const h = harness({ start: async () => { throw new Error("GitHub sign-in isn't configured: set QAAP_GITHUB_CLIENT_ID"); } });
+        const h = harness({ start: async () => { throw new Error('GitHub sign-in isn\'t configured: set QAAP_GITHUB_CLIENT_ID'); } });
         await h.dialog.open();
-        expect(h.text()).to.include("set QAAP_GITHUB_CLIENT_ID");
+        expect(h.text()).to.include('set QAAP_GITHUB_CLIENT_ID');
         expect(h.text()).to.not.include('Waiting for authorization');
         h.dialog.close();
     });

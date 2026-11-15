@@ -38,12 +38,12 @@ describe('MobileOpenRepositoryDialog GitHub sign-in prompt', () => {
     it('outside the desktop app a sign-in code is shown as the plain list error, with no sign-in button', async () => {
         const dialog = await reloadWith(new QaapApiRequestError('Sign in with GitHub to import your repositories.', 401, 'github_sign_in_required'));
         const empty = dialog.node.querySelector<HTMLElement>('.theia-mobile-open-repo-empty') ?? dialog.node;
-        expect(dialog.node.querySelector('.theia-mobile-github-device-button')).to.equal(null);
+        expect(dialog.node.querySelector('.theia-mobile-github-device-button')).to.not.exist;
         expect(empty.textContent).to.include('Sign in with GitHub to import your repositories.');
     });
 
     it('outside the desktop app the connected-status row never shows a sign-out button', async () => {
         const dialog = await reloadWith(undefined);
-        expect(dialog.node.querySelector('.theia-mobile-open-repo-signout')).to.equal(null);
+        expect(dialog.node.querySelector('.theia-mobile-open-repo-signout')).to.not.exist;
     });
 });
