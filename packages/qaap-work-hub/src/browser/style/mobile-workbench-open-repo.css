@@ -1059,3 +1059,82 @@ body.theia-mobile-mod-landing.theia-mobile-mod-landing-hub-list .theia-mobile-pr
     min-height: 44px;
   }
 }
+
+/* Desktop "Sign in with GitHub" (device flow) and its prompt in the repository list. */
+.theia-mobile-github-device {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: color-mix(in srgb, var(--theia-editor-background) 80%, transparent);
+}
+
+.theia-mobile-github-device[hidden] {
+    display: none;
+}
+
+.theia-mobile-github-device-card {
+    box-sizing: border-box;
+    width: min(420px, 100%);
+    padding: 20px;
+    border: 1px solid var(--theia-widget-border);
+    border-radius: 8px;
+    background: var(--theia-editorWidget-background);
+    color: var(--theia-foreground);
+}
+
+.theia-mobile-github-device-title {
+    margin: 0 0 8px;
+    font-size: 1.1em;
+    font-weight: 600;
+}
+
+.theia-mobile-github-device-text,
+.theia-mobile-github-device-status,
+.theia-mobile-github-device-error,
+.theia-mobile-open-repo-signin-text {
+    margin: 0 0 12px;
+}
+
+.theia-mobile-github-device-error {
+    color: var(--theia-errorForeground);
+}
+
+.theia-mobile-github-device-code-row,
+.theia-mobile-github-device-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.theia-mobile-github-device-code {
+    padding: 6px 10px;
+    border: 1px solid var(--theia-input-border);
+    border-radius: 4px;
+    background: var(--theia-input-background);
+    font-size: 1.2em;
+    letter-spacing: 0.1em;
+    user-select: all;
+}
+
+.theia-mobile-github-device .theia-mobile-open-repo-progress-action,
+.theia-mobile-open-repo-signout {
+    /* Touch target on a phone width (44px), same button tokens as the repository dialog. */
+    min-height: 44px;
+    padding: 0 16px;
+}
+
+.theia-mobile-github-device .theia-mobile-open-repo-progress-action {
+    margin-top: 4px;
+}
+
+.theia-mobile-github-device-code-row[hidden],
+.theia-mobile-github-device-button[hidden],
+.theia-mobile-open-repo-signout[hidden] {
+    display: none;
+}

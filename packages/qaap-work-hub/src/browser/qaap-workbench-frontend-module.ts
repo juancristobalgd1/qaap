@@ -11,10 +11,23 @@ import { CommandContribution } from '@theia/core/lib/common/command';
 import { WorkbenchTopBarFactory } from '@theia/core/lib/browser/menu/workbench-top-bar-factory';
 import { QaapAuthCommandContribution } from './qaap-auth-command-contribution';
 import { QaapWorkbenchTopBarFactory } from './qaap-workbench-top-bar-factory';
+import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
+import { QaapElectronTopBarContribution } from './qaap-electron-top-bar-contribution';
 
-/** Rebinds {@link WorkbenchTopBarFactory} so the menu bar uses Qaap nav controls (same mount path as before). */
-export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
+/**
+ * Swaps {@link WorkbenchTopBarFactory} for the Qaap nav controls (same mount path as before). The browser
+ * menu module binds the upstream factory, but the Electron menu module does not, so there is nothing to
+ * rebind in the desktop app: bind the Qaap factory there instead of failing the frontend start.
+ */
+export default new ContainerModule((bind, _unbind, isBound, rebind) => {
     bind(QaapAuthCommandContribution).toSelf().inSingletonScope();
     bind(CommandContribution).toService(QaapAuthCommandContribution);
-    rebind(WorkbenchTopBarFactory).to(QaapWorkbenchTopBarFactory).inSingletonScope();
+    if (isBound(WorkbenchTopBarFactory)) {
+        rebind(WorkbenchTopBarFactory).to(QaapWorkbenchTopBarFactory).inSingletonScope();
+    } else {
+        bind(WorkbenchTopBarFactory).to(QaapWorkbenchTopBarFactory).inSingletonScope();
+    }
+    // Electron native title bar: core hides the top panel, so the Qaap top bar is mounted here.
+    bind(QaapElectronTopBarContribution).toSelf().inSingletonScope();
+    bind(FrontendApplicationContribution).toService(QaapElectronTopBarContribution);
 });

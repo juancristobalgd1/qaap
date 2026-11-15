@@ -28,6 +28,12 @@ packages/qaap-shared-core/src/node/qaap-github-oauth-endpoint.ts :: GET QAAP_GIT
 # Stateless; the state parameter's CSRF protection and the callback validation happen
 # later in the flow (handleOAuthCallback is itself guarded).
 
+# Desktop GitHub device flow (QAAP_DESKTOP=1 only; 404 elsewhere). Public by design: it runs before any
+# session exists, and it returns the user code only. The device code stays in backend memory. Start and
+# poll refuse cross-site requests (Sec-Fetch-Site / Origin), and poll sets the session cookie only after
+# GitHub approved the flow (isDesktopDeviceRequestAllowed in qaap-github-oauth-endpoint.ts).
+packages/qaap-shared-core/src/node/qaap-github-oauth-endpoint.ts :: POST `${QAAP_GITHUB_API_PATH}/device/start`
+
 packages/qaap-cloud-workspace/src/node/qaap-task-sandbox-broker-client.ts :: GET `${QAAP_TENANT_RUNTIME_API_PATH}${QAAP_TASK_SANDBOX_LINK_PATH}`
 packages/qaap-cloud-workspace/src/node/qaap-task-sandbox-broker-client.ts :: POST `${QAAP_TENANT_RUNTIME_API_PATH}${QAAP_TASK_SANDBOX_REPLY_PATH}`
 # Task-sandbox broker link (doc/qaap-task-sandbox.md, broker mode): machine-to-machine, called only
