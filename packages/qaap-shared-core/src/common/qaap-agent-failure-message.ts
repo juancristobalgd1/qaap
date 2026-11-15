@@ -199,6 +199,13 @@ const AUTH_PATTERNS: readonly RegExp[] = [
     /\bauth(?:entication)?\s+is\s+required\b/i,
     /\bcodex\s+auth\b/i,
     /\bCODEX_API_KEY\b/,
+    // Google's Antigravity CLI (`agy`) without a session: it prints one of these, then waits for a
+    // pasted code and gives up after 60 s, or exits 1 for `-p`. Each line is agy's own and narrow.
+    /\bauthentication\s+required\.\s+please\s+visit\s+the\s+url\s+to\s+log\s+in\b/i,
+    /\bauthentication\s+required\.\s+run\s+['"`]?agy['"`]?\s+to\s+log\s+in\b/i,
+    /\bauthentication\s+failed\s+or\s+timed\s+out\b/i,
+    /\bauthentication\s+interrupted\b/i,
+    /\bplease\s+sign\s+in\s+to\s+view\s+available\s+models\b/i,
 ];
 
 /**
@@ -1420,7 +1427,7 @@ export function isGeminiIneligibleTierText(text: string | undefined): boolean {
 export function localizeGeminiIneligibleTierMessage(): string {
     return nls.localize(
         'qaap/agentFailure/geminiIneligibleTier',
-        'Google no longer serves free personal accounts in Gemini CLI ("Gemini Code Assist for individuals") and points them to its Antigravity apps. Pick another agent in the composer, or reconnect Antigravity with a Google account on a paid Gemini plan.',
+        'Google no longer serves Gemini CLI to personal Google accounts ("Gemini Code Assist for individuals"), so signing in again will not fix this. The Antigravity harness runs on Google\'s Antigravity CLI (agy): if this still appears, the host is running the old Gemini CLI, so reconnect Antigravity from Settings → Harness. You can also pick another agent in the composer.',
     );
 }
 

@@ -6,7 +6,7 @@
 import { expect } from 'chai';
 import { findQaiqByokProvider } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
-import { execFileSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -29,6 +29,7 @@ import { QAAP_BUILTIN_AGENT_DEFINITIONS } from '@theia/qaap-shared-core/lib/comm
 import { buildAgentCommandExtracted } from './qaap-agent-task-runner-streaming2';
 import { captureWorktreeFingerprint, captureWorktreeStatus } from './qaap-agent-task-runner-utils2';
 import {
+    AGY_CLI_CONNECTION_PROBE_SCRIPT,
     classifyAgentConnectionProbe,
     GEMINI_CLI_CONNECTION_PROBE_SCRIPT,
     hasAgentSettingsCredentials,
@@ -105,6 +106,38 @@ describe('harness connection state', () => {
         });
         // The community `ag`/`antigravity` CLI has no sign-in of its own.
         expect(resolveAgentConnectionProbe('antigravity', 'antigravity')).to.equal(undefined);
+    });
+
+    it('reads agy sign-in from `agy models`: a listing is connected, the sign-in message is not, anything else is unknown', () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agy-probe-'));
+        // The probe keys on the executable's basename, so each fake `agy` lives in its own folder.
+        const fakeAgy = (name: string, body: string): string => {
+            const file = path.join(dir, name, 'agy');
+            fs.mkdirSync(path.dirname(file), { recursive: true });
+            fs.writeFileSync(file, `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+            return file;
+        };
+        const probe = (bin: string): { status: number | null; output: string } => {
+            const probeCommand = resolveAgentConnectionProbe('antigravity', bin);
+            expect(probeCommand).to.deep.equal({ file: 'sh', args: ['-c', AGY_CLI_CONNECTION_PROBE_SCRIPT, 'agy-probe', bin] });
+            const result = spawnSync(probeCommand!.file, [...probeCommand!.args], { encoding: 'utf8' });
+            return { status: result.status, output: result.stdout };
+        };
+        try {
+            const signedIn = probe(fakeAgy('agy-in', 'echo "gemini-3.8-flash-high\tGemini 3.8 Flash (High)"'));
+            expect(classifyAgentConnectionProbe('antigravity', signedIn.status, signedIn.output, false)).to.equal('connected');
+            const signedOut = probe(fakeAgy('agy-out', 'echo "Error: Please sign in to view available models. Launch the CLI without arguments to sign in." >&2; exit 1'));
+            expect(classifyAgentConnectionProbe('antigravity', signedOut.status, signedOut.output, false)).to.equal('disconnected');
+            const broken = probe(fakeAgy('agy-broken', 'exit 2'));
+            expect(classifyAgentConnectionProbe('antigravity', broken.status, broken.output, false)).to.equal('unknown');
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('sends agy a prompt inline as the argument of -p, never over stdin', () => {
+        expect(resolveAgentPromptTransport('antigravity', { id: 'antigravity', bin: 'agy' })).to.deep.equal({ kind: 'argv' });
+        expect(resolveAgentPromptTransport('antigravity', { id: 'antigravity', bin: 'gemini' })).to.deep.equal({ kind: 'plain-stdin', placeholder: 'omit-flag' });
     });
 
     it('reads Gemini CLI sign-in from the credential file in HOME', () => {
@@ -320,9 +353,13 @@ describe('Windows-safe prompt transport', () => {
         )).to.equal('hermes --yolo chat -Q -q -');
     });
 
-    it('routes every shipped harness off argv', () => {
+    it('routes every shipped harness off argv, except agy (its prompt is the argument of -p by design)', () => {
         for (const definition of QAAP_BUILTIN_AGENT_DEFINITIONS) {
             const transport = resolveAgentPromptTransport(definition.id, definition);
+            if (definition.bin === 'agy') {
+                expect(transport.kind, definition.id).to.equal('argv');
+                continue;
+            }
             expect(transport.kind, definition.id).to.not.equal('argv');
             const command = applyTemplateForPromptTransport(
                 definition.template,

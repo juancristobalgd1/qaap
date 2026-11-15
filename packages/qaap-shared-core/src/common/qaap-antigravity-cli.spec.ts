@@ -11,9 +11,9 @@ import {
 } from './qaap-antigravity-cli';
 
 describe('resolveAntigravityCliBin', () => {
-    it('prefers gemini, then agy, then the community antigravity CLI', () => {
-        expect(resolveAntigravityCliBin(() => true)).to.equal('gemini');
-        expect(resolveAntigravityCliBin(bin => bin !== 'gemini')).to.equal('agy');
+    it('prefers agy, then the gemini fallback, then the community antigravity CLI', () => {
+        expect(resolveAntigravityCliBin(() => true)).to.equal('agy');
+        expect(resolveAntigravityCliBin(bin => bin !== 'agy')).to.equal('gemini');
         expect(resolveAntigravityCliBin(bin => bin === 'antigravity')).to.equal('antigravity');
     });
 
@@ -37,8 +37,11 @@ describe('resolveAntigravityCliTemplate', () => {
         expect(resolveAntigravityCliTemplate('gemini')).to.equal('gemini --approval-mode=yolo {model_flags} -p {prompt}');
     });
 
-    it('runs agy and the community CLI with -p and no model flag', () => {
-        expect(resolveAntigravityCliTemplate('agy')).to.equal('agy -p {prompt}');
+    it('runs agy headless with its model flag placeholder and the prompt as the argument of -p', () => {
+        expect(resolveAntigravityCliTemplate('agy')).to.equal('agy {model_flags} -p {prompt}');
+    });
+
+    it('runs the community CLI with -p and no model flag', () => {
         expect(resolveAntigravityCliTemplate('antigravity')).to.equal('antigravity -p {prompt}');
     });
 });

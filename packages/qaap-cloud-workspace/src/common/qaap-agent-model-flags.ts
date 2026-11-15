@@ -26,8 +26,8 @@ const GEMINI_MODEL_ID_PATTERN = /^(auto$|(gemini|models\/gemini)-[a-z0-9.\-]+$)/
 /**
  * CLI flags inserted into agent templates (`{model_flags}` / `{qaiq_flags}`).
  * Returns an empty string when the agent has no known model switch.
- * `antigravityBin` is the Antigravity CLI the host resolved: Gemini CLI takes `-m`, while `agy` reads its
- * model from settings (qaap-antigravity-settings) and takes no flag.
+ * `antigravityBin` is the Antigravity CLI the host resolved: Gemini CLI takes `-m`, `agy` takes `--model`
+ * with the catalog id it lists, and the community CLI takes no flag.
  */
 export function formatModelFlagsForAgent(agentId: string, binding: QaapQaiqModelBinding, antigravityBin?: QaapAntigravityCliBin): string {
     const normalized = agentId.toLowerCase();
@@ -42,11 +42,19 @@ export function formatModelFlagsForAgent(agentId: string, binding: QaapQaiqModel
         return `--model ${shellQuote(binding.modelId)}`;
     }
     if (normalized === 'antigravity' || normalized === 'gemini') {
-        // agy reads the model from ~/.gemini/antigravity-cli/settings.json (see qaap-antigravity-settings).
         // Gemini only takes real model ids: a catalog label (agy's "Gemini 3.8 Flash (High)") would fail,
         // so an unrecognized id gets no flag and gemini runs its default model (`auto`, the catalog's first row).
         if (antigravityBin === 'gemini') {
             return GEMINI_MODEL_ID_PATTERN.test(binding.modelId.trim()) ? `-m ${shellQuote(binding.modelId.trim())}` : '';
+        }
+        if (antigravityBin === 'agy') {
+            // Only a concrete model the user picked: `auto` or an empty id means agy's own default, and a
+            // Gemini CLI id is not an agy model. The catalog stores agy's label as the id.
+            const modelId = binding.modelId.trim();
+            if (!modelId || modelId === 'auto' || GEMINI_MODEL_ID_PATTERN.test(modelId)) {
+                return '';
+            }
+            return `--model ${shellQuote(modelId)}`;
         }
         return '';
     }

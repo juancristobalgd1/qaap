@@ -138,6 +138,12 @@ const SESSION_AUTH_PATTERNS: readonly RegExp[] = [
     /\bone[- ]time\s+code\b/i,
     /\bverification_uri\b/i,
     /\buser_code\b/i,
+    // Google's Antigravity CLI (`agy`) without a session (same lines as the failure classifier).
+    /\bauthentication\s+required\.\s+please\s+visit\s+the\s+url\s+to\s+log\s+in\b/i,
+    /\bauthentication\s+required\.\s+run\s+['"`]?agy['"`]?\s+to\s+log\s+in\b/i,
+    /\bauthentication\s+failed\s+or\s+timed\s+out\b/i,
+    /\bauthentication\s+interrupted\b/i,
+    /\bplease\s+sign\s+in\s+to\s+view\s+available\s+models\b/i,
 ];
 
 const API_KEY_AUTH_PATTERNS: readonly RegExp[] = [
@@ -352,9 +358,10 @@ export function localizeAgentAuthFailureMessage(
  * Interactive login command for the transcript terminal (device-auth / OAuth),
  * matching what users run in the agent TUI.
  *
- * `cliBin` is the Antigravity CLI the host resolved (`harness-status` / agent descriptor `cliBin`). Only
- * Gemini CLI has an in-app sign-in; `agy` has none, so it gets no command and the Connect flow shows the
- * terminal instructions instead. A missing `cliBin` keeps the Gemini login.
+ * `cliBin` is the Antigravity CLI the host resolved (`harness-status` / agent descriptor `cliBin`). `agy` (the
+ * supported client) has no login subcommand, so it gets no command and the Connect flow shows the terminal
+ * instructions instead: run `agy` in the agent terminal. Gemini CLI's in-app sign-in is kept only for a host
+ * without `agy`; Google retired it for personal accounts on 18 Jun 2026. A missing `cliBin` keeps that login.
  */
 export function resolveAgentLoginCliCommand(agentId: string | undefined, cliBin?: string): string | undefined {
     const normalized = migrateQaapProductAgentId(agentId?.trim());
@@ -406,9 +413,9 @@ export function resolveAgentLoginCliCommand(agentId: string | undefined, cliBin?
             return 'hermes auth add nous --type oauth --no-browser';
         case 'antigravity':
         case 'gemini':
-            // The harness runs on Gemini CLI, which has no login subcommand: its interactive start
-            // signs in. With "Login with Google" preselected and NO_BROWSER it prints an
-            // `accounts.google.com` link and `Enter the authorization code:` instead of a picker.
+            // Gemini CLI (fallback host only) has no login subcommand: its interactive start signs in.
+            // With "Login with Google" preselected and NO_BROWSER it prints an `accounts.google.com` link
+            // and `Enter the authorization code:` instead of a picker. `agy` gets no command (see above).
             return (normalizeAntigravityCliBin(cliBin) ?? 'gemini') === 'gemini' ? resolveGeminiCliLoginCommand() : undefined;
         // QAIQ is the only harness that runs on Settings API keys.
         default:

@@ -36,8 +36,13 @@ function captureWarnings(run: () => void | Promise<void>): Promise<string[]> {
 }
 
 describe('Antigravity CLI resolution on the task runner', () => {
-    it('resolves gemini over agy and antigravity when several are on PATH', () => {
+    it('resolves agy over gemini and antigravity when several are on PATH', () => {
         const { ctx } = fakeContext({ isOnPath: (bin: string) => bin !== 'codex' });
+        expect(resolveAntigravityBinExtracted(ctx)).to.equal('agy');
+    });
+
+    it('falls back to the gemini CLI only where agy is not installed', () => {
+        const { ctx } = fakeContext({ isOnPath: (bin: string) => bin === 'gemini' || bin === 'antigravity' });
         expect(resolveAntigravityBinExtracted(ctx)).to.equal('gemini');
     });
 
@@ -54,7 +59,7 @@ describe('Antigravity CLI resolution on the task runner', () => {
 
         const agy = fakeContext({ resolveAntigravityBin: () => 'agy' });
         detectAntigravityAgentExtracted(agy.ctx);
-        expect(agy.detected.get('antigravity')).to.deep.include({ bin: 'agy', template: 'agy -p {prompt}' });
+        expect(agy.detected.get('antigravity')).to.deep.include({ bin: 'agy', template: 'agy {model_flags} -p {prompt}' });
     });
 
     it('registers nothing when no Antigravity CLI is installed', () => {

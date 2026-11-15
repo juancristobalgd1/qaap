@@ -83,12 +83,19 @@ describe('formatModelFlagsForAgent', () => {
         expect(formatModelFlagsForAgent('antigravity', binding, 'gemini')).to.equal('');
     });
 
-    it('keeps agy on its settings.json model when agy is the resolved CLI', () => {
-        const binding = bindingFromQaiqModelSelection({
+    it('passes agy --model only for a concrete catalog model the user picked', () => {
+        const picked = bindingFromQaiqModelSelection({
             provider: 'gemini',
-            vendor: 'google',
-            modelId: 'gemini-2.5-pro',
+            vendor: 'antigravity',
+            modelId: 'Gemini 3.8 Flash (High)',
         });
-        expect(formatModelFlagsForAgent('antigravity', binding, 'agy')).to.equal('');
+        expect(formatModelFlagsForAgent('antigravity', picked, 'agy')).to.equal('--model \'Gemini 3.8 Flash (High)\'');
+    });
+
+    it('passes no agy flag for auto, an empty id or a Gemini CLI id', () => {
+        for (const modelId of ['auto', '', 'gemini-2.5-pro']) {
+            const binding = bindingFromQaiqModelSelection({ provider: 'gemini', vendor: 'google', modelId });
+            expect(formatModelFlagsForAgent('antigravity', binding, 'agy'), modelId).to.equal('');
+        }
     });
 });
