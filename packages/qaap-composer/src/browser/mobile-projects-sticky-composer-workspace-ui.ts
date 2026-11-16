@@ -381,6 +381,18 @@ export class MobileProjectsStickyComposerWorkspaceUi {
                 void this.onCreateNewProjectFromSheet('local');
             },
         }));
+        // Desktop only: a folder that already exists on this computer, through the same open path.
+        if (this.host.projectsService.isDesktop()) {
+            list.append(this.createComposerProjectSheetAction({
+                iconClass: 'codicon-folder-opened',
+                label: nls.localize('theia/qaap-work-hub/openLocalProject', 'Open local project'),
+                onSelect: () => {
+                    this.host.stickyComposerSheetsUi.closeStickyComposerSheets();
+                    // openLocalProject() reloads into the chosen folder; a cancelled picker changes nothing.
+                    void this.host.projectsService.openLocalProject();
+                },
+            }));
+        }
         list.append(this.createComposerProjectSheetAction({
             iconClass: 'codicon-github',
             label: nls.localize('qaap/newProject/menuGithub', 'New GitHub repository'),
