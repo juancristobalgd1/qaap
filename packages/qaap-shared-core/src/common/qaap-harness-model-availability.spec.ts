@@ -5,7 +5,8 @@
 
 import { expect } from 'chai';
 import { QaapHarnessModelAvailability, type QaapHarnessSession, type QaapModelTier } from './qaap-harness-model-availability';
-import type { QaapAgentConnectionState } from './qaap-agent-task-client';
+import { listQaapComposerPickerAgents, type QaapAgentConnectionState } from './qaap-agent-task-client';
+import { QAAP_BUILTIN_AGENT_DEFINITIONS } from './qaap-builtin-agents';
 
 describe('qaap-harness-model-availability', () => {
 
@@ -142,6 +143,60 @@ describe('qaap-harness-model-availability', () => {
             expect(QaapHarnessModelAvailability.toLegacyUnavailableReason('checking-sign-in')).to.equal('checking');
             expect(QaapHarnessModelAvailability.toLegacyUnavailableReason('harness-disabled')).to.equal(undefined);
             expect(QaapHarnessModelAvailability.toLegacyUnavailableReason(undefined)).to.equal(undefined);
+        });
+    });
+
+    /**
+     * Harness × state matrix for every built-in harness, current and future (the list is read, not copied):
+     * signed out (backend `accessState: 'none'`, also what a harness without a usable probe settles to), signed in,
+     * and disabled in Settings → Harness. Pro is every catalog model except OpenCode's own free ones.
+     */
+    describe('harness × state matrix', () => {
+        const PRO_MODEL: Readonly<Record<string, string>> = {
+            codex: 'gpt-6-luna', claude: 'claude-opus-5-5', opencode: 'opencode/minimax-m3', pi: 'openrouter/qwen/qwen3-coder:free',
+            cursor: 'auto', antigravity: 'gemini-3.8-pro', copilot: 'gpt-6', grok: 'grok-4.7',
+        };
+        const states: ReadonlyArray<{ readonly name: string; readonly enabled: boolean; readonly session: QaapHarnessSession; readonly pro: object; readonly free: object }> = [
+            { name: 'signed out', enabled: true, session: 'signed-out', pro: { visible: true, selectable: false, reason: 'sign-in-required' }, free: { visible: true, selectable: true } },
+            { name: 'signed in', enabled: true, session: 'signed-in', pro: { visible: true, selectable: true }, free: { visible: true, selectable: true } },
+            { name: 'disabled in Settings', enabled: false, session: 'signed-in', pro: { visible: false, selectable: false, reason: 'harness-disabled' }, free: { visible: false, selectable: false, reason: 'harness-disabled' } },
+            { name: 'disabled and signed out', enabled: false, session: 'signed-out', pro: { visible: false, selectable: false, reason: 'harness-disabled' }, free: { visible: false, selectable: false, reason: 'harness-disabled' } },
+        ];
+
+        for (const definition of QAAP_BUILTIN_AGENT_DEFINITIONS) {
+            for (const state of states) {
+                it(`${definition.id}, ${state.name}`, () => {
+                    const proModelId = PRO_MODEL[definition.id] ?? `${definition.id}/some-model`;
+                    const proTier = QaapHarnessModelAvailability.tier(definition.id, { modelId: proModelId });
+                    expect(proTier, proModelId).to.equal('pro');
+                    expect(QaapHarnessModelAvailability.availability({ harnessEnabled: state.enabled, session: state.session, tier: proTier })).to.deep.equal(state.pro);
+                    if (definition.id === 'opencode') {
+                        const freeTier = QaapHarnessModelAvailability.tier(definition.id, { modelId: 'opencode/beam-free', vendor: 'opencode' });
+                        expect(freeTier).to.equal('free');
+                        expect(QaapHarnessModelAvailability.availability({ harnessEnabled: state.enabled, session: state.session, tier: freeTier })).to.deep.equal(state.free);
+                    }
+                });
+            }
+            it(`${definition.id}: a backend that says nothing usable reads as signed out (fail-closed)`, () => {
+                expect(QaapHarnessModelAvailability.session({ connectionState: 'unknown', accessState: 'none', probeSettled: true })).to.equal('signed-out');
+                expect(QaapHarnessModelAvailability.session({ connectionState: 'disconnected' })).to.equal('signed-out');
+            });
+        }
+
+        it('drops a harness disabled in Settings → Harness from the picker, signed in or not', () => {
+            for (const definition of QAAP_BUILTIN_AGENT_DEFINITIONS) {
+                for (const session of ['signed-in', 'signed-out'] as const) {
+                    const agents = [{ id: definition.id, label: definition.label, available: true, session }];
+                    expect(listQaapComposerPickerAgents(agents, []).map(agent => agent.id), `${definition.id} enabled`).to.include(definition.id);
+                    expect(listQaapComposerPickerAgents(agents, [definition.id]).map(agent => agent.id), `${definition.id} disabled`).to.not.include(definition.id);
+                }
+            }
+        });
+
+        it('declares a session check on every built-in harness (no harness without one)', () => {
+            for (const definition of QAAP_BUILTIN_AGENT_DEFINITIONS) {
+                expect(['probe', 'attestation'], definition.id).to.include(definition.sessionCheck);
+            }
         });
     });
 });

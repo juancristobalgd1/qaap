@@ -6,6 +6,16 @@
 import { resolveAntigravityCliTemplate } from './qaap-antigravity-cli';
 import { isAgentHiddenOnHostedRuntime } from './qaap-hosted-agent-auth-policy';
 
+/**
+ * How the backend learns whether the owner has a session for a harness (the Free/Pro rule needs it):
+ * - `probe`: a status command or credential check the backend runs (`resolveAgentConnectionProbe` in
+ *   qaap-cloud-workspace must return one for this id);
+ * - `attestation`: no verifiable probe exists, so the sign-in dialog attests the CLI's own success line
+ *   (`QAAP_SESSION_ATTESTATION_AGENT_IDS`).
+ * There is no "none": a harness that cannot answer stays signed out (Pro locked) until it has a session.
+ */
+export type QaapHarnessSessionCheck = 'probe' | 'attestation';
+
 /** Built-in VPS coding-agent CLI the task runner can auto-detect on PATH. */
 export interface QaapBuiltinAgentDefinition {
     readonly id: string;
@@ -14,7 +24,15 @@ export interface QaapBuiltinAgentDefinition {
     readonly bin: string;
     /** Shell template. `{prompt}` is delivered via stdin or `--prompt-file` (not argv) so Windows cmd.exe is not overflowed. */
     readonly template: string;
+    /**
+     * Required: how this harness's session is checked. Adding a harness without it does not compile, and
+     * `qaap-agent-session-check.spec.ts` (qaap-cloud-workspace) fails when the declaration has no implementation.
+     */
+    readonly sessionCheck: QaapHarnessSessionCheck;
 }
+
+/** A retired CLI keeps its launch shape only; it declares its session check again when it comes back. */
+export type QaapRetiredAgentDefinition = Omit<QaapBuiltinAgentDefinition, 'sessionCheck'>;
 
 /**
  * Auto-detected server-side agent CLIs (AionUi-compatible core set).
@@ -22,14 +40,14 @@ export interface QaapBuiltinAgentDefinition {
  * Niche or ACP-only CLIs (Snow, Kiro, Nanobot, vibe-acp, …) stay in `QAAP_AGENT_COMMANDS`.
  */
 export const QAAP_BUILTIN_AGENT_DEFINITIONS: readonly QaapBuiltinAgentDefinition[] = [
-    { id: 'codex', label: 'Codex', bin: 'codex', template: 'codex exec --json -c check_for_update_on_startup=false {model_flags} {prompt}' },
-    { id: 'claude', label: 'Claude Code', bin: 'claude', template: 'claude --print --output-format stream-json --verbose --include-partial-messages {trust_flags} {model_flags} -p {prompt}' },
-    { id: 'opencode', label: 'OpenCode', bin: 'opencode', template: 'opencode run --format json --print-logs --log-level ERROR --dangerously-skip-permissions {model_flags} {prompt}' },
-    { id: 'pi', label: 'Pi', bin: 'pi', template: 'pi --mode json -p --no-session -ne -e {gate_ext} {trust_flags} {model_flags} {prompt}' },
-    { id: 'cursor', label: 'Cursor Agent', bin: 'cursor-agent', template: 'cursor-agent -p --force --trust --approve-mcps {model_flags} {prompt}' },
-    { id: 'antigravity', label: 'Antigravity CLI', bin: 'agy', template: resolveAntigravityCliTemplate('agy') },
-    { id: 'copilot', label: 'Copilot CLI', bin: 'copilot', template: 'copilot --autopilot --yolo --max-autopilot-continues 20 -p {prompt}' },
-    { id: 'grok', label: 'Grok Build', bin: 'grok', template: 'grok --always-approve {model_flags} -p {prompt}' },
+    { id: 'codex', label: 'Codex', bin: 'codex', sessionCheck: 'probe', template: 'codex exec --json -c check_for_update_on_startup=false {model_flags} {prompt}' },
+    { id: 'claude', label: 'Claude Code', bin: 'claude', sessionCheck: 'probe', template: 'claude --print --output-format stream-json --verbose --include-partial-messages {trust_flags} {model_flags} -p {prompt}' },
+    { id: 'opencode', label: 'OpenCode', bin: 'opencode', sessionCheck: 'probe', template: 'opencode run --format json --print-logs --log-level ERROR --dangerously-skip-permissions {model_flags} {prompt}' },
+    { id: 'pi', label: 'Pi', bin: 'pi', sessionCheck: 'probe', template: 'pi --mode json -p --no-session -ne -e {gate_ext} {trust_flags} {model_flags} {prompt}' },
+    { id: 'cursor', label: 'Cursor Agent', bin: 'cursor-agent', sessionCheck: 'probe', template: 'cursor-agent -p --force --trust --approve-mcps {model_flags} {prompt}' },
+    { id: 'antigravity', label: 'Antigravity CLI', bin: 'agy', sessionCheck: 'probe', template: resolveAntigravityCliTemplate('agy') },
+    { id: 'copilot', label: 'Copilot CLI', bin: 'copilot', sessionCheck: 'attestation', template: 'copilot --autopilot --yolo --max-autopilot-continues 20 -p {prompt}' },
+    { id: 'grok', label: 'Grok Build', bin: 'grok', sessionCheck: 'attestation', template: 'grok --always-approve {model_flags} -p {prompt}' },
 ];
 
 /**
@@ -38,7 +56,7 @@ export const QAAP_BUILTIN_AGENT_DEFINITIONS: readonly QaapBuiltinAgentDefinition
  * its entry back into {@link QAAP_BUILTIN_AGENT_DEFINITIONS}. Removing them from the registry (instead of
  * disabling them by default) keeps the picker and the backend runner in agreement.
  */
-export const QAAP_RETIRED_AGENT_DEFINITIONS: readonly QaapBuiltinAgentDefinition[] = [
+export const QAAP_RETIRED_AGENT_DEFINITIONS: readonly QaapRetiredAgentDefinition[] = [
     { id: 'openclaude', label: 'OpenClaude', bin: 'openclaude', template: 'openclaude --print --output-format stream-json --verbose --include-partial-messages {qaiq_flags} {prompt}' },
     // `--model` is a top-level Hermes flag (`hermes --model <slug> chat`). Putting it after
     // `chat` is accepted by argparse, but a stale ~/.hermes/config.yaml still supplies the
