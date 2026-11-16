@@ -207,6 +207,9 @@ const ALLOWED = [
     /^examples\/playwright\/src\/tests\/qaap-tenant-update-now\.ui-spec\.ts$/,
     // One harness availability rule in the agent picker (@qaap-mobile job, stubbed agent list and catalog; test-only).
     /^examples\/playwright\/src\/tests\/qaap-harness-availability\.ui-spec\.ts$/,
+    // Transcript user-bubble hover actions and scroller-at-column-edge layout (@qaap-mobile job; test-only).
+    /^examples\/playwright\/src\/tests\/qaap-transcript-user-actions-hover\.ui-spec\.ts$/,
+    /^examples\/playwright\/src\/tests\/qaap-transcript-scroll-column-edge\.ui-spec\.ts$/,
     // Opt-in classic-IDE surface (QAAP_PLAYWRIGHT_SURFACE=ide) so the upstream suite in
     // playwright.yml drives the IDE instead of the default Work Hub; unset = upstream behaviour.
     /^examples\/playwright\/src\/theia-app-loader\.ts$/,
