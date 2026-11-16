@@ -111,10 +111,40 @@ body.qaap-electron-macos-inset-titlebar #theia-top-panel .theia-workbench-histor
   max-height: 32px;
 }
 
+/* One rhythm for the whole bar: every 32px target carries 2px on each side, so neighbours sit 4px apart
+   (sidebar, menu, back, forward on the left; terminal, panel, avatar on the right). The upstream
+   nav-controls and history-group margins are reset so no extra gap survives. */
+body.qaap-electron-macos-inset-titlebar #theia-top-panel .theia-workbench-nav-btn,
+body.qaap-electron-macos-inset-titlebar #theia-top-panel .theia-workbench-history-nav-group .theia-workbench-history-nav-btn,
+body.qaap-electron-macos-inset-titlebar #theia-top-panel .theia-workbench-menu-toggle {
+  margin: 0 2px;
+  padding: 0;
+}
+
+body.qaap-electron-macos-inset-titlebar #theia-top-panel>#theia\:workbench-nav,
+body.qaap-electron-macos-inset-titlebar #theia-top-panel>#theia\:workbench-nav .theia-workbench-nav-controls,
+body.qaap-electron-macos-inset-titlebar #theia-top-panel>#theia\:workbench-history-nav,
+body.qaap-electron-macos-inset-titlebar #theia-top-panel .theia-workbench-history-nav-group {
+  margin: 0;
+  gap: 0;
+}
+
+/* The narrow top bar offsets back/forward by 84px (above). Wide desktop keeps them in flow and orders the
+   left cluster as sidebar, menu, back, forward, as the header shows it. */
+@media (min-width: 768px) {
+  body.qaap-electron-macos-inset-titlebar #theia-top-panel>#theia\:workbench-menu-button {
+    order: 2;
+  }
+
+  body.qaap-electron-macos-inset-titlebar:not(.qaap-electron-macos-fullscreen) #theia-top-panel>#theia\:workbench-history-nav {
+    left: 0;
+    order: 3;
+  }
+}
+
 body.qaap-electron-macos-inset-titlebar #theia-top-panel .theia-workbench-menu-toggle {
   width: 32px;
   height: 32px;
-  margin: 0 4px;
 }
 
 body.qaap-electron-macos-inset-titlebar #theia-top-panel .theia-workbench-view-mode-switch .theia-qaap-segmented-option {
