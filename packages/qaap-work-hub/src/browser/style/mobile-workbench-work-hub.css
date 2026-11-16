@@ -837,6 +837,21 @@ body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-agents-hub-no-project-
   overflow: hidden;
 }
 
+/*
+ * The scroll host's horizontal chrome inset (`.theia-mobile-projects-scroll`) would otherwise sit
+ * between the transcript scroller and the column edge, so the scrollbar floated inside the column.
+ * Cancel that inset on the transcript clip only: the scroller spans the full column (scrollbar on
+ * the column edge) and its own inline padding keeps the message gutter. The composer and header keep
+ * their own insets. The width/margin pair mirrors the host's padding expression so both stay in step.
+ */
+.theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-agents-hub-inline-transcript .theia-mobile-agent-transcript-real-chat,
+.theia-mobile-projects.theia-mod-agents-hub-inline-active .theia-mobile-agents-hub-inline-transcript .theia-mobile-agent-transcript-real-chat {
+  box-sizing: border-box;
+  width: calc(100% + max(var(--theia-mobile-execution-chrome-pad-x, 12px), env(safe-area-inset-left, 0px)) + max(var(--theia-mobile-execution-chrome-pad-x, 12px), env(safe-area-inset-right, 0px)));
+  margin-left: calc(-1 * max(var(--theia-mobile-execution-chrome-pad-x, 12px), env(safe-area-inset-left, 0px)));
+  margin-right: calc(-1 * max(var(--theia-mobile-execution-chrome-pad-x, 12px), env(safe-area-inset-right, 0px)));
+}
+
 .theia-mobile-agents-hub-inline-transcript .theia-mobile-agent-transcript-real-chat>.theia-mobile-agent-transcript {
   flex: 1 1 auto;
   min-height: 0;
