@@ -275,3 +275,85 @@ test.describe('@qaap-mobile harness availability in the agent picker', () => {
         });
     }
 });
+
+/** A Pro-only harness the stub reports signed out, with two of its real catalog model ids. */
+interface SignedOutHarness {
+    readonly id: string;
+    readonly label: string;
+    readonly models: readonly { readonly modelId: string; readonly label: string }[];
+}
+
+/**
+ * The two harnesses users hit with a stale session: Cursor ("Authentication required. Please run 'agent login'
+ * first") and Codex ("401 Unauthorized: Missing bearer"). Their catalogs have no Free model.
+ */
+const SIGNED_OUT_HARNESSES: readonly SignedOutHarness[] = [
+    { id: 'cursor', label: 'Cursor Agent', models: [{ modelId: 'auto', label: 'Auto' }, { modelId: 'gpt-mini-latest', label: 'gpt-mini-latest' }] },
+    { id: 'codex', label: 'Codex', models: [{ modelId: 'gpt-6-luna', label: 'GPT-6 Luna' }, { modelId: 'gpt-6-sol', label: 'GPT-6 Sol' }] },
+];
+
+/** Serves `harness` signed out (descriptor and locked Pro catalog, the backend's real shapes); the rest stays real. */
+async function stubSignedOutHarness(page: Page, harness: SignedOutHarness): Promise<void> {
+    await page.route(LIST_ROUTE, async route => {
+        if (route.request().method() !== 'GET') {
+            await route.continue();
+            return;
+        }
+        const real = await route.fetch();
+        const body = await real.json().catch(() => ({})) as Record<string, unknown>;
+        const others = (Array.isArray(body.agents) ? body.agents : [])
+            .filter(agent => (agent as { id?: string }).id !== harness.id);
+        const descriptor = { id: harness.id, label: harness.label, available: false, connectionState: 'disconnected', accessState: 'none', session: 'signed-out' };
+        await route.fulfill({ status: 200, contentType: 'application/json', json: { ...body, agents: [...others, descriptor], defaultAgent: harness.id } });
+    });
+    await page.route(MODELS_ROUTE, async route => {
+        const agent = new URL(route.request().url()).searchParams.get('agent');
+        if (agent?.trim().toLowerCase() !== harness.id) {
+            await route.continue();
+            return;
+        }
+        const models = harness.models.map(model => ({
+            provider: 'openai', vendor: harness.id, modelId: model.modelId, label: model.label, tier: 'pro', available: false, unavailableReason: 'not-connected',
+        }));
+        await route.fulfill({ status: 200, contentType: 'application/json', json: { agent: harness.id, models } });
+    });
+}
+
+test.describe('@qaap-mobile signed-out Pro harnesses in the agent picker', () => {
+
+    for (const viewport of VIEWPORTS) {
+        for (const harness of SIGNED_OUT_HARNESSES) {
+
+            test(`${viewport.name}: ${harness.label} without a session locks every Pro model and offers Sign in next to the search`, async ({ playwright, browser }, testInfo) => {
+                const context = await browser.newContext({
+                    viewport: { width: viewport.width, height: viewport.height },
+                    ...(viewport.touch ? { isMobile: true, hasTouch: true } : {}),
+                });
+                const page = await context.newPage();
+                try {
+                    await stubSignedOutHarness(page, harness);
+                    await TheiaAppLoader.load({ playwright, browser: { newPage: async () => page } as unknown as Browser });
+                    await dismissMobileTutorial(page);
+                    await waitForWorkHubReady(page);
+                    await openAgentPicker(page);
+                    await modelPicker(page).getByRole('button', { name: harness.label, exact: true }).click({ timeout: 30_000 });
+
+                    for (const model of harness.models) {
+                        const row = modelRow(page, model.label);
+                        await expect(row).toBeVisible({ timeout: 30_000 });
+                        await expect(row).toContainText('Pro');
+                        await expect(row).toContainText(`Sign in to ${harness.label}`);
+                        await expect(row).toHaveAttribute('title', /Sign in/);
+                    }
+                    // The header action of the selected harness, at the end of the search row.
+                    const signIn = modelPicker(page).locator('.qaap-model-picker-search .qaap-model-picker-connect-action');
+                    await expect(signIn).toBeVisible();
+                    await expect(signIn).toHaveText(/sign in/i);
+                    await capture(testInfo, page, viewport.name, `${harness.id}-signed-out`);
+                } finally {
+                    await context.close();
+                }
+            });
+        }
+    }
+});
