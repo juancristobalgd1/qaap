@@ -7,6 +7,7 @@ import { nls } from '@theia/core/lib/common/nls';
 import {
     extractAgentAuthLoginChallenge,
     localizeAgentAuthFailureMessage,
+    QAAP_HARNESS_UNAUTHENTICATED_PATTERNS,
     QAAP_SIGN_IN_GUARD_REFUSAL_PATTERNS,
 } from './qaap-agent-auth-login';
 import { localizeHostedMissingCodingAgentMessage, readQaapHostedRuntime } from './qaap-hosted-agent-auth-policy';
@@ -209,6 +210,8 @@ const AUTH_PATTERNS: readonly RegExp[] = [
     /\bplease\s+sign\s+in\s+to\s+view\s+available\s+models\b/i,
     // Qaap's own pre-spawn refusal for a Pro model without a confirmed harness session.
     ...QAAP_SIGN_IN_GUARD_REFUSAL_PATTERNS,
+    // Cursor "run 'agent login' first", Codex "401 Unauthorized: Missing bearer…" (qaap-agent-auth-login.ts).
+    ...QAAP_HARNESS_UNAUTHENTICATED_PATTERNS,
 ];
 
 /**

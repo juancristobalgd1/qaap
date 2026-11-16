@@ -133,6 +133,22 @@ export const QAAP_SIGN_IN_GUARD_REFUSAL_PATTERNS: readonly RegExp[] = [
 ];
 
 /**
+ * Harness CLIs' own "no usable session" refusals, unmistakable wherever they are printed and
+ * therefore safe to fail an exit-0 turn on (see {@link isUnauthenticatedCliDeclaration}):
+ * - Cursor Agent without a session: "Authentication required. Please run 'agent login' first, or set
+ *   CURSOR_API_KEY environment variable." (`cursor-agent login` in older builds);
+ * - Codex against the OpenAI API with no credential at all: "unexpected status 401 Unauthorized: Missing
+ *   bearer or basic authentication in header";
+ * - Codex with an `auth.json` that carries no ChatGPT tokens: "plan type is required for chatgpt authentication".
+ * Each is the CLI's or provider's exact wording, not prose an agent would write about auth code.
+ */
+export const QAAP_HARNESS_UNAUTHENTICATED_PATTERNS: readonly RegExp[] = [
+    /\bauthentication\s+required\.\s+please\s+run\s+['"`]?(?:cursor-)?agent\s+login['"`]?\s+first\b/i,
+    /\b401\s+unauthorized:?\s+missing\s+bearer\s+or\s+basic\s+authentication\b/i,
+    /\bplan\s+type\s+is\s+required\s+for\s+chatgpt\s+authentication\b/i,
+];
+
+/**
  * The guard refusal line inside a failure text, with whether the refusal can be retried ("Couldn't confirm your
  * sign-in" is a probe that failed to answer, not a missing sign-in). `undefined` when no line is a guard refusal.
  */
@@ -148,6 +164,7 @@ export function matchQaapSignInGuardRefusal(output: string | undefined): { reado
 
 const SESSION_AUTH_PATTERNS: readonly RegExp[] = [
     ...QAAP_SIGN_IN_GUARD_REFUSAL_PATTERNS,
+    ...QAAP_HARNESS_UNAUTHENTICATED_PATTERNS,
     /\bnot\s+logged\s+in\b/i,
     // "Please run /login", "run the '/login' command" (Copilot CLI quotes it).
     /\brun\s+(?:the\s+)?['"`]?\/login\b/i,
@@ -302,6 +319,7 @@ const CLI_UNAUTH_DECLARATION_PATTERNS: readonly RegExp[] = [
     /\bno\s+authentication\s+information\s+found\b/i,
     /\brun\s+(?:the\s+)?['"`]?\/login\b/i,
     /\brun\s+['"`]?gh\s+auth\s+login\b/i,
+    ...QAAP_HARNESS_UNAUTHENTICATED_PATTERNS,
 ];
 
 /**
