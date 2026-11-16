@@ -134,12 +134,20 @@ async function waitForWorkHubReady(page: Page): Promise<void> {
 /** Opens the sticky composer's agent picker from the agent pill ("Agent: <harness>"). */
 async function openAgentPicker(page: Page): Promise<void> {
     await page.locator('.theia-mobile-projects-sticky-composer-agent:visible').first().click({ timeout: 30_000 });
-    await expect(page.getByRole('dialog')).toBeVisible({ timeout: 30_000 });
+    await expect(modelPicker(page)).toBeVisible({ timeout: 30_000 });
+}
+
+/**
+ * The unified model picker: the only dialog with the model-picker class (the sessions sidebar is a dialog too,
+ * so a bare role lookup matches two elements).
+ */
+function modelPicker(page: Page): Locator {
+    return page.locator('[role="dialog"].theia-mod-model-picker');
 }
 
 /** Selects OpenCode on the picker's harness rail, so its model rows are listed. */
 async function selectOpenCodeRail(page: Page): Promise<void> {
-    await page.getByRole('dialog').getByRole('button', { name: OPENCODE_LABEL, exact: true }).click({ timeout: 30_000 });
+    await modelPicker(page).getByRole('button', { name: OPENCODE_LABEL, exact: true }).click({ timeout: 30_000 });
 }
 
 /** The model row with this label in the open picker (the unified model picker on desktop and mobile). */
@@ -245,9 +253,12 @@ test.describe('@qaap-mobile harness availability in the agent picker', () => {
                 await dismissMobileTutorial(page);
                 await waitForWorkHubReady(page);
 
+                // Type and submit with the keyboard, the way the user does: the send control is only enabled once the
+                // composer holds text, and the Enter path does not depend on that state.
                 const composer = page.locator('.theia-mobile-projects:visible .theia-mobile-projects-sticky-composer-input').first();
-                await composer.fill('Hello');
-                await page.locator('.theia-mobile-projects:visible .theia-mobile-projects-sticky-composer-send').first().click({ timeout: 30_000 });
+                await composer.click({ timeout: 30_000 });
+                await page.keyboard.type('Hello');
+                await page.keyboard.press('Enter');
 
                 const message = page.locator('.theia-mobile-snackbar-message').filter({ hasText: BLOCKED_MESSAGE }).first();
                 await expect(message).toBeVisible({ timeout: 30_000 });
