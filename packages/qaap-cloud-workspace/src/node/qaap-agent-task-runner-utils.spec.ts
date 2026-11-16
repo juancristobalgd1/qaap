@@ -33,6 +33,7 @@ import { buildAgentCommandExtracted } from './qaap-agent-task-runner-streaming2'
 import { captureWorktreeFingerprint, captureWorktreeStatus } from './qaap-agent-task-runner-utils2';
 import {
     AGY_CLI_CONNECTION_PROBE_SCRIPT,
+    CODEX_CONNECTION_PROBE_SCRIPT,
     classifyAgentConnectionProbe,
     GEMINI_CLI_CONNECTION_PROBE_SCRIPT,
     hasAgentSettingsCredentials,
@@ -78,6 +79,47 @@ describe('harness connection state', () => {
         expect(classifyAgentConnectionProbe('codex', 0, 'Logged in using an API key - sk-proj-***dUA', false)).to.equal('disconnected');
         expect(classifyAgentConnectionProbe('codex', 0, 'Logged in using ChatGPT', false)).to.equal('connected');
         expect(classifyAgentConnectionProbe('codex', 1, 'Not logged in', false)).to.equal('disconnected');
+    });
+
+    it('reads codex-cli 0.16x "API key configured" as an API-key login that needs the ChatGPT sign-in', () => {
+        expect(classifyAgentConnectionProbe('codex', 0, 'API key configured - ***\nAuthentication is checked when you send a request.', false)).to.equal('disconnected');
+    });
+
+    it('does not trust a Codex auth.json without ChatGPT tokens, even when `codex login status` says logged in', function (): void {
+        if (process.platform === 'win32') {
+            this.skip();
+        }
+        const probe = resolveAgentConnectionProbe('codex', '/opt/codex');
+        expect(probe).to.deep.equal({ file: 'sh', args: ['-c', CODEX_CONNECTION_PROBE_SCRIPT, 'codex-probe', '/opt/codex'] });
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-codex-probe-'));
+        // codex-cli 0.169 answers "Logged in using ChatGPT" for `{"OPENAI_API_KEY":null,"tokens":null}`.
+        const fakeCodex = path.join(dir, 'codex');
+        fs.writeFileSync(fakeCodex, '#!/bin/sh\necho "Logged in using ChatGPT"\n', { mode: 0o755 });
+        const codexHome = path.join(dir, 'home');
+        fs.mkdirSync(codexHome);
+        const run = (): string => {
+            const command = resolveAgentConnectionProbe('codex', fakeCodex)!;
+            return execFileSync(command.file, [...command.args], { encoding: 'utf8', env: { ...process.env, CODEX_HOME: codexHome } });
+        };
+        try {
+            // No auth.json (keyring storage): the CLI answers alone.
+            expect(classifyAgentConnectionProbe('codex', 0, run(), false)).to.equal('connected');
+            fs.writeFileSync(path.join(codexHome, 'auth.json'), '{"OPENAI_API_KEY":null,"tokens":null}');
+            expect(classifyAgentConnectionProbe('codex', 0, run(), false)).to.equal('disconnected');
+            fs.writeFileSync(path.join(codexHome, 'auth.json'), '{"tokens":{"id_token":"","access_token":"","refresh_token":""}}');
+            expect(classifyAgentConnectionProbe('codex', 0, run(), false)).to.equal('disconnected');
+            fs.writeFileSync(path.join(codexHome, 'auth.json'), '{\n  "auth_mode": "chatgpt",\n  "tokens": {\n    "access_token": "eyJ.x",\n    "refresh_token": "rt_1"\n  }\n}\n');
+            expect(classifyAgentConnectionProbe('codex', 0, run(), false)).to.equal('connected');
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('does not count Cursor "Logged in (unable to fetch user details)" as a session', () => {
+        // Real `cursor-agent status` output with a stored token the service rejects; every turn then fails.
+        expect(classifyAgentConnectionProbe('cursor', 0, '✓ Login successful!\nLogged in (unable to fetch user details)', false)).to.equal('unknown');
+        expect(classifyAgentConnectionProbe('cursor', 0, 'Not logged in', false)).to.equal('disconnected');
+        expect(classifyAgentConnectionProbe('cursor', 0, '✓ Logged in as dev@example.com', false)).to.equal('connected');
     });
 
     it('treats OpenCode with zero saved credentials as signed out, even though it exits 0', () => {
