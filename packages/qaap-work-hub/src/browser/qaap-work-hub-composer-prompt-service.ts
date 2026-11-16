@@ -16,7 +16,8 @@ import {
     reconcileSelectedAgent,
     type QaapCreateAgentTaskQaiqModel,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
-import { confirmPaidModelSend, resolveSendAgentModel, warnSignInRequiredSend } from '@theia/qaap-composer/lib/browser/qaap-paid-model-send-confirm';
+import { resolveAgentDisplayLabel } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
+import { confirmPaidModelSend, resolveSendAgentModel, warnBlockedSend } from '@theia/qaap-composer/lib/browser/qaap-paid-model-send-confirm';
 import type {
     QaapAttachComposerContextArgs,
     QaapWorkHubPickAgentAndSubmitPromptOptions,
@@ -155,8 +156,8 @@ export class QaapWorkHubComposerPromptService {
         const modelResolution = await resolveSendAgentModel(agent, cwd, options.agentModel);
         if (!modelResolution.ok) {
             // Fail closed: a picker agent with no chosen model never sends on the CLI default.
-            if (modelResolution.reason === 'sign-in-required') {
-                warnSignInRequiredSend(agent, modelResolution.modelLabel ?? agent);
+            if (modelResolution.reason) {
+                warnBlockedSend(modelResolution, resolveAgentDisplayLabel(agent));
                 return;
             }
             this.messages.warn(nls.localize('qaap/composer/chooseModelForAgent', 'Choose a model for {0}', agent));

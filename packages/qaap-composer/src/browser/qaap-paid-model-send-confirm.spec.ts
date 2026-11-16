@@ -19,6 +19,7 @@ import {
     prewarmSendCatalog,
     resolveSendAgentModel,
     sendModelBelongsToAgent,
+    warnBlockedSend,
     warnChooseSendModel,
 } from './qaap-paid-model-send-confirm';
 import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
@@ -126,6 +127,72 @@ describe('paid model send confirmation', () => {
         }
     });
 
+    describe('a chosen model with a cold send catalog (e.g. right after a reload)', () => {
+        let originalFetch: typeof fetch;
+        let requests: string[];
+
+        function serveCatalog(models: unknown[] | 'hang'): void {
+            globalThis.fetch = ((input: RequestInfo | URL) => {
+                requests.push(String(input));
+                return models === 'hang'
+                    ? new Promise(() => undefined)
+                    : Promise.resolve({ ok: true, json: async () => ({ models }) });
+            }) as unknown as typeof fetch;
+        }
+
+        beforeEach(() => {
+            originalFetch = globalThis.fetch;
+            requests = [];
+        });
+
+        afterEach(() => {
+            globalThis.fetch = originalFetch;
+        });
+
+        it('fetches the catalog before deciding and blocks an explicit Pro pick it lists as locked', async () => {
+            serveCatalog([{ provider: 'openai', vendor: 'cursor', modelId: 'cursor/pro', label: 'Cursor Pro', available: false, unavailableReason: 'not-connected' }]);
+            const explicit = { provider: 'openai' as const, vendor: 'cursor', modelId: 'cursor/pro' };
+            expect(await resolveSendAgentModel('cursor', '/repo/cold-explicit', explicit)).to.deep.equal({
+                ok: false,
+                reason: 'sign-in-required',
+                modelLabel: 'Cursor Pro',
+            });
+            expect(requests.some(url => url.includes('agent=cursor'))).to.equal(true);
+        });
+
+        it('fetches the catalog before deciding and blocks a stored Pro pick it lists as locked, keeping the pick', async () => {
+            const storedCwd = '/repo/cold-stored';
+            const storedPro = { provider: 'openai' as const, vendor: 'gemini', modelId: 'gemini/pro', label: 'Gemini Pro' };
+            writeStoredAgentModel(storedCwd, 'gemini', storedPro);
+            serveCatalog([{ ...storedPro, available: false, unavailableReason: 'not-connected', tier: 'pro' }]);
+            expect(await resolveSendAgentModel('gemini', storedCwd)).to.deep.equal({ ok: false, reason: 'sign-in-required', modelLabel: 'Gemini Pro' });
+            expect(readStoredAgentModelSelection(storedCwd, 'gemini')?.model.modelId).to.equal('gemini/pro');
+        });
+
+        it('holds a Pro pick fail-closed when the catalog does not arrive in time, and lets a Free pick go', async function (): Promise<void> {
+            this.timeout(10_000);
+            serveCatalog('hang');
+            const pro = { provider: 'openai' as const, vendor: 'pi', modelId: 'pi/pro-model' };
+            expect(await resolveSendAgentModel('pi', '/repo/cold-hung', pro)).to.deep.equal({
+                ok: false,
+                reason: 'availability-unknown',
+                modelLabel: 'pi/pro-model',
+            });
+            const free = await resolveSendAgentModel('opencode', '/repo/cold-hung-free', beamFree);
+            expect(free).to.deep.equal({ ok: true, model: beamFree });
+        });
+
+        it('says why a send was held, visibly, for each reason', () => {
+            const shown = (): string => Array.from(document.querySelectorAll('.theia-mobile-snackbar-message')).map(node => node.textContent).join('\n');
+            warnBlockedSend({ ok: false, reason: 'sign-in-required', modelLabel: 'MiniMax-M3' }, 'OpenCode');
+            expect(shown()).to.contain('Sign in to OpenCode to use MiniMax-M3.');
+            // Announced to assistive technology, not only drawn.
+            expect(document.querySelector('[role="status"][aria-live="polite"]')).to.not.equal(null);
+            warnBlockedSend({ ok: false, reason: 'availability-unknown', modelLabel: 'MiniMax-M3' }, 'OpenCode');
+            expect(shown()).to.contain("Couldn't check whether OpenCode can use MiniMax-M3. Try again.");
+        });
+    });
+
     it('a seeded paid default is the effective send model, so the gate sees it and must confirm', async () => {
         const seededCwd = '/repo/seeded-paid';
         // Seeded by an older build, never chosen by the user: the send resolves to it.
@@ -133,7 +200,10 @@ describe('paid model send confirmation', () => {
             `qaap.agentTasks.selectedAgentModel.${hashString(seededCwd)}.opencode`,
             JSON.stringify({ provider: 'openai', vendor: 'opencode', modelId: 'opencode/minimax-m3' }),
         );
-        const effective = await resolveSendAgentModel('opencode', seededCwd);
+        // The live catalog lists it unlocked (signed in): only then may a paid pick go out.
+        const effective = await resolveSendAgentModel('opencode', seededCwd, undefined, [
+            { provider: 'openai', vendor: 'opencode', modelId: 'opencode/minimax-m3', label: 'MiniMax-M3', available: true },
+        ]);
         expect(effective.ok && effective.model?.modelId).to.equal('opencode/minimax-m3');
         expect(window.sessionStorage.getItem(`qaap.paidModelSendConfirmed.${hashString(seededCwd)}`)).to.be.null;
     });

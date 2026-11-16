@@ -16,7 +16,9 @@ import { TheiaAppLoader } from '../theia-app-loader';
 
 const OPENCODE_ID = 'opencode';
 const OPENCODE_LABEL = 'OpenCode';
-const LIST_ROUTE = /\/qaap\/api\/agent-tasks(\?.*)?$/;
+// The task list (`GET /agent-tasks`) and the Work Hub catalog the sticky composer loads (`GET /agent-tasks/all`): both
+// carry `agents` + `defaultAgent`, so both must report the stubbed OpenCode or a reload falls back to the real agents.
+const LIST_ROUTE = /\/qaap\/api\/agent-tasks(?:\/all)?(\?.*)?$/;
 const MODELS_ROUTE = /\/qaap\/api\/agent-tasks\/agent-models(\?.*)?$/;
 const FREE_LABEL = 'Beam Free';
 const PRO_LABEL = 'MiniMax-M3';
