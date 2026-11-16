@@ -79,3 +79,72 @@ body.qaap-electron-macos-inset-titlebar .theia-mobile-projects-header input {
 body.qaap-electron-macos-inset-titlebar:not(.qaap-electron-macos-fullscreen) #theia-top-panel>#theia\:workbench-history-nav {
   left: 84px;
 }
+
+/*-----------------------------------------------------------------------------
+| Desktop IDE top bar icons: the Work Hub header draws its controls at 16px glyphs
+| on 28-36px targets, while the IDE top bar (52px) drew 13-14px glyphs on 20-24px
+| targets. Same values here: 16px codicons and the 16px message-circle icon, 28px
+| segmented options, 32px icon buttons and a 32px account ring (avatar 25px).
+| Scoped to the macOS inset title bar, so web and mobile keep their own sizes.
+|----------------------------------------------------------------------------*/
+
+body.qaap-electron-macos-inset-titlebar #theia-top-panel .theia-workbench-nav-btn {
+  width: 32px;
+  min-width: 32px;
+  max-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  max-height: 32px;
+}
+
+body.qaap-electron-macos-inset-titlebar #theia-top-panel .theia-workbench-nav-btn.codicon::before,
+body.qaap-electron-macos-inset-titlebar #theia-top-panel .theia-workbench-history-nav-group .theia-workbench-history-nav-btn.codicon::before {
+  font-size: 16px;
+}
+
+body.qaap-electron-macos-inset-titlebar #theia-top-panel .theia-workbench-history-nav-group .theia-workbench-history-nav-btn {
+  width: 32px;
+  min-width: 32px;
+  max-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  max-height: 32px;
+}
+
+body.qaap-electron-macos-inset-titlebar #theia-top-panel .theia-workbench-menu-toggle {
+  width: 32px;
+  height: 32px;
+  margin: 0 4px;
+}
+
+body.qaap-electron-macos-inset-titlebar #theia-top-panel .theia-workbench-view-mode-switch .theia-qaap-segmented-option {
+  height: 28px;
+  min-height: 28px;
+}
+
+body.qaap-electron-macos-inset-titlebar #theia-top-panel .theia-workbench-view-mode-switch .theia-qaap-segmented-option .codicon {
+  font-size: 16px;
+}
+
+body.qaap-electron-macos-inset-titlebar #theia-top-panel .theia-workbench-view-mode-switch .theia-qaap-segmented-option .qaap-icon-message-circle {
+  width: 16px;
+  height: 16px;
+}
+
+body.qaap-electron-macos-inset-titlebar #theia-top-panel .theia-workbench-right-controls .theia-workbench-nav-btn.theia-workbench-account-btn {
+  width: 32px;
+  min-width: 32px;
+  max-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  max-height: 32px;
+  flex: 0 0 32px;
+}
+
+body.qaap-electron-macos-inset-titlebar #theia-top-panel .theia-workbench-right-controls .theia-workbench-account-avatar,
+body.qaap-electron-macos-inset-titlebar #theia-top-panel .theia-workbench-right-controls .theia-workbench-account-avatar img {
+  width: 25px;
+  height: 25px;
+  max-width: 25px;
+  max-height: 25px;
+}

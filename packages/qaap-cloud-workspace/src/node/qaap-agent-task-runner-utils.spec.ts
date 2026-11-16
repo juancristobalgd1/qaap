@@ -18,7 +18,10 @@ import {
     applyTemplateWithoutPromptFlag,
     applyTemplateWithStdinPrompt,
     buildPromptTransportCommand,
+    AGENT_ARGV_PROMPT_LIMIT_POSIX_BYTES,
+    planArgvPrompt,
     prependPathEntry,
+    removeAgentPromptTempDir,
     resolveAgentPromptTransport,
     resolveExistingExecutablePath,
     resolveQaiqEnvFallbackModel,
@@ -349,10 +352,18 @@ describe('Windows-safe prompt transport', () => {
         )).to.equal('hermes --yolo chat -Q -q -');
     });
 
-    it('routes every shipped harness off argv', () => {
+    it('routes every shipped harness off argv, except agy (documented exception)', () => {
         for (const definition of QAAP_BUILTIN_AGENT_DEFINITIONS) {
             const transport = resolveAgentPromptTransport(definition.id, definition);
+            // agy 1.5.9 ignores stdin in text mode (verified: `printf ... | agy -p -` never sees the prompt) and has
+            // no prompt-file flag, so its prompt travels in argv under the size guard in planArgvPrompt. Every other
+            // harness must stay off argv: a single argv argument is bounded (Linux 128 KiB, Windows cmd.exe ~8 KiB).
+            if (definition.bin === 'agy') {
+                expect(transport, definition.id).to.deep.equal({ kind: 'argv-prompt' });
+                continue;
+            }
             expect(transport.kind, definition.id).to.not.equal('argv');
+            expect(transport.kind, definition.id).to.not.equal('argv-prompt');
             const command = applyTemplateForPromptTransport(
                 definition.template,
                 transport,
@@ -366,6 +377,92 @@ describe('Windows-safe prompt transport', () => {
             bin: 'qaiq',
             template: 'qaiq --print {qaiq_flags} {prompt}',
         }).kind).to.equal('plain-stdin');
+    });
+});
+
+describe('agy argv prompt transport', () => {
+
+    const agyDetected = { id: 'antigravity', bin: 'agy', template: 'agy -p {prompt}' };
+
+    /** Minimal runner context: buildAgentCommand only needs the template, identity and repo-context readers. */
+    function agyContext(): QaapAgentTaskRunnerContext {
+        return {
+            resolveAgentId: () => 'antigravity',
+            stripLeadingAgentMention: (value: string) => value,
+            readAgentInstructions: () => undefined,
+            readRepoMap: () => undefined,
+            readRelevantFiles: () => undefined,
+            readGitStatusSnapshot: () => undefined,
+            readRepoMemory: () => undefined,
+            readResearchLedger: () => undefined,
+            readProjectInfo: () => undefined,
+            assertQaiqConfigured: () => undefined,
+            assertAgentModelAccess: () => undefined,
+            resolveAgentSpawnIdentity: () => ({}),
+            applyTemplate,
+            applyTemplateWithoutPrompt,
+            detectedAgents: new Map([['antigravity', agyDetected]]),
+            buildTemplateVars: () => ({}),
+        } as unknown as QaapAgentTaskRunnerContext;
+    }
+
+    it('classifies agy as the argv-prompt harness, never a stdin one', () => {
+        expect(resolveAgentPromptTransport('antigravity', agyDetected)).to.deep.equal({ kind: 'argv-prompt' });
+        expect(agentUsesPlainStdinPrompt('antigravity', agyDetected)).to.equal(false);
+        expect(resolveAgentPromptTransport('antigravity', { id: 'antigravity', bin: 'gemini', template: 'gemini -p {prompt}' }))
+            .to.deep.equal({ kind: 'plain-stdin', placeholder: 'omit-flag' });
+    });
+
+    it('passes the real prompt in argv instead of a `-` stdin marker', () => {
+        const prompt = 'Preview feedback: quiero que no salga este boton. Selector: button.primary ZETA-42';
+        const result = buildAgentCommandExtracted(agyContext(), prompt, 'antigravity', true, undefined, process.cwd(), undefined, undefined, 'full-access');
+        expect(result.command).to.contain('ZETA-42');
+        expect(result.command).to.contain('quiero que no salga este boton');
+        expect(result.command).to.contain('button.primary');
+        expect(result.command).not.to.match(/-p -(\s|$)/);
+        expect(result.stdinPrompt).to.equal(undefined);
+        expect(result.promptTempDir).to.equal(undefined);
+    });
+
+    it('builds the argv command for a short prompt without a temp file', () => {
+        const built = buildPromptTransportCommand('agy -p {prompt}', 'hello there', 'antigravity', agyDetected);
+        expect(built.command).to.equal(`agy -p ${shellQuote('hello there')}`);
+        expect(built.stdinPrompt).to.equal(undefined);
+        expect(built.promptTempDir).to.equal(undefined);
+    });
+
+    it('moves an oversized prompt to a private file and points argv at it, without truncating', function () {
+        const tail = 'TAIL-MARKER-7731';
+        const prompt = `${'x'.repeat(AGENT_ARGV_PROMPT_LIMIT_POSIX_BYTES + 1024)}\n${tail}`;
+        const built = buildPromptTransportCommand('agy -p {prompt}', prompt, 'antigravity', agyDetected);
+        expect(built.promptTempDir).to.be.a('string');
+        const dir = built.promptTempDir!;
+        try {
+            expect(built.command).to.contain('Read the file at ');
+            expect(built.command).to.contain('follow the instructions it contains exactly');
+            expect(built.command).not.to.contain(tail);
+            const file = path.join(dir, 'prompt.txt');
+            expect(path.isAbsolute(file)).to.equal(true);
+            expect(fs.readFileSync(file, 'utf8')).to.equal(prompt);
+            if (process.platform !== 'win32') {
+                expect(fs.statSync(file).mode & 0o777).to.equal(0o600);
+            }
+        } finally {
+            removeAgentPromptTempDir(dir);
+        }
+        expect(fs.existsSync(dir)).to.equal(false);
+    });
+
+    it('keeps a prompt at the limit inline, and moves one byte over it to the file', () => {
+        const atLimit = 'y'.repeat(AGENT_ARGV_PROMPT_LIMIT_POSIX_BYTES);
+        if (process.platform !== 'win32') {
+            const inline = planArgvPrompt(atLimit);
+            expect(inline.prompt).to.equal(atLimit);
+            expect(inline.promptTempDir).to.equal(undefined);
+            const spilled = planArgvPrompt(`${atLimit}z`);
+            expect(spilled.prompt).to.contain('Read the file at ');
+            removeAgentPromptTempDir(spilled.promptTempDir);
+        }
     });
 });
 
