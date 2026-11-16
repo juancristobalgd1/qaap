@@ -429,6 +429,36 @@ export async function createLocalProjectExtracted(ctx: MobileProjectsServiceCont
         }
 }
 
+/**
+ * "Open local project" (desktop only): the user picks any folder on this machine with the native dialog and
+ * it opens as this window's workspace, through the same registration and open path as an existing project.
+ * Nothing is created on disk and no backend call is made; the folder is only read by the workspace open.
+ */
+export async function openLocalProjectExtracted(ctx: MobileProjectsServiceContext): Promise<MobileProjectEntry[] | undefined> {
+        if (!ctx.isDesktop()) {
+            return undefined;
+        }
+        try {
+            const selected = await ctx.fileDialogService.showOpenDialog({
+                title: nls.localize('theia/qaap-work-hub/openLocalProject', 'Open local project'),
+                canSelectFiles: false,
+                canSelectFolders: true,
+                canSelectMany: false,
+            });
+            const folder = Array.isArray(selected) ? selected[0] : selected;
+            if (!folder) {
+                return undefined;
+            }
+            ctx.registerLocalWorkspaceProject(folder.displayName, folder);
+            await ctx.openWorkspaceUri(folder);
+            return ctx.loadProjects();
+        } catch (err) {
+            MobileSnackbar.dismiss();
+            await ctx.messageService.error(err instanceof Error ? err.message : String(err));
+            return undefined;
+        }
+}
+
 export function registerLocalWorkspaceProjectExtracted(ctx: MobileProjectsServiceContext, name: string, uri: URI): void {
         const custom = ctx.readCustomProjects();
         const id = `custom:${uri.toString()}`;

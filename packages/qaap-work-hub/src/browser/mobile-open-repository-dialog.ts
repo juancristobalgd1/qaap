@@ -260,6 +260,15 @@ export class MobileOpenRepositoryDialog {
             nls.localize('qaap/newProject/menuGithub', 'New GitHub repository');
         this.createButton.addEventListener('click', () => { void this.onCreateNew('github'); });
         this.footer.append(this.createLocalButton, this.createButton);
+        if (this.service.isDesktop()) {
+            const openLocalButton = document.createElement('button');
+            openLocalButton.type = 'button';
+            openLocalButton.className = 'theia-mobile-open-repo-create';
+            openLocalButton.innerHTML = '<span class="codicon codicon-folder-opened" aria-hidden="true"></span> ' +
+                nls.localize('theia/qaap-work-hub/openLocalProject', 'Open local project');
+            openLocalButton.addEventListener('click', () => { void this.onOpenLocal(); });
+            this.footer.append(openLocalButton);
+        }
         this.repositoriesPanel.append(this.footer);
 
         this.clonePanel = this.createClonePanel();
@@ -1143,6 +1152,15 @@ export class MobileOpenRepositoryDialog {
         const next = kind === 'local'
             ? await this.service.createLocalProject()
             : await this.service.createGithubProject();
+        this.finishProjectsAction(next);
+    }
+
+    /** Desktop: opens a folder on this computer that the user picks with the native dialog. */
+    protected async onOpenLocal(): Promise<void> {
+        this.finishProjectsAction(await this.service.openLocalProject());
+    }
+
+    protected finishProjectsAction(next: MobileProjectEntry[] | undefined): void {
         if (next) {
             this.repositories = next;
             this.renderList();

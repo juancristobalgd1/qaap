@@ -1003,6 +1003,11 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         await this.stickyComposerWorkspaceUi.onCreateNewProjectFromSheet('local');
     }
 
+    protected async onOpenLocalProject(): Promise<void> {
+        // openLocalProject() reloads into the chosen folder; nothing to re-render when the picker is cancelled.
+        await this.projectsService.openLocalProject();
+    }
+
     protected async activateAgentsHubProject(project: MobileProjectEntry): Promise<void> {
         return activateAgentsHubProjectExtracted(this, project);
     }

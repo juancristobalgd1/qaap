@@ -9,7 +9,9 @@ import { DEFAULT_WINDOW_HASH } from '@theia/core/lib/common/window';
 import { LabelProvider } from '@theia/core/lib/browser';
 import { WindowService } from '@theia/core/lib/browser/window/window-service';
 import { MessageService } from '@theia/core/lib/common/message-service';
+import { environment } from '@theia/core/lib/common';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
+import { FileDialogService } from '@theia/filesystem/lib/browser/file-dialog/file-dialog-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import type {
     QaapGithubOpenRepositoryResponse,
@@ -36,7 +38,7 @@ import {
     MOBILE_PROJECTS_HIDDEN_IDS_BASE,
     MOBILE_PROJECTS_PINNED_IDS_BASE,
 } from './mobile-projects-user-storage';
-import { cloneGithubProjectByRepositoryExtracted, cloneGithubProjectExtracted, createGithubProjectExtracted, createLocalProjectExtracted, registerLocalWorkspaceProjectExtracted, finishGithubRepositoryImportExtracted, watchGithubRepositoryImportInBackgroundExtracted, formatRepositoryLabelExtracted, importGithubProjectExtracted, isPinnedExtracted, openGithubProjectExtracted, openInCurrentWindowAsyncExtracted, openProjectWithoutReloadExtracted, openWorkspaceUriExtracted, readCustomProjectsExtracted, readDisplayNamesExtracted, readHiddenProjectIdsExtracted, readPinnedProjectIdsExtracted, registerGithubWorkspaceProjectExtracted, storedToEntryExtracted, togglePinExtracted, uniqueCopyNameExtracted, workspacePathFromUriExtracted, writeCustomProjectsExtracted, writeDisplayNamesExtracted, writeHiddenProjectIdsExtracted, writePinnedProjectIdsExtracted } from './mobile-projects-service-render';
+import { cloneGithubProjectByRepositoryExtracted, cloneGithubProjectExtracted, createGithubProjectExtracted, createLocalProjectExtracted, openLocalProjectExtracted, registerLocalWorkspaceProjectExtracted, finishGithubRepositoryImportExtracted, watchGithubRepositoryImportInBackgroundExtracted, formatRepositoryLabelExtracted, importGithubProjectExtracted, isPinnedExtracted, openGithubProjectExtracted, openInCurrentWindowAsyncExtracted, openProjectWithoutReloadExtracted, openWorkspaceUriExtracted, readCustomProjectsExtracted, readDisplayNamesExtracted, readHiddenProjectIdsExtracted, readPinnedProjectIdsExtracted, registerGithubWorkspaceProjectExtracted, storedToEntryExtracted, togglePinExtracted, uniqueCopyNameExtracted, workspacePathFromUriExtracted, writeCustomProjectsExtracted, writeDisplayNamesExtracted, writeHiddenProjectIdsExtracted, writePinnedProjectIdsExtracted } from './mobile-projects-service-render';
 import { cachedGithubSessionToEntryExtracted, cachedSessionToEntryExtracted, cachedWorkspaceSessionToEntryExtracted, collapseCurrentWorkspaceDuplicatesExtracted, duplicateProjectExtracted, getCurrentWorkspaceBranchExtracted, getCurrentWorkspaceDisplayNameExtracted, getProjectCwdExtracted, isBrowsableHubProjectExtracted, loadProjectsExtracted, overlayActiveTasksExtracted, peekCachedProjectsExtracted, removeProjectExtracted, renameProjectExtracted } from './mobile-projects-service-streaming';
 import { applySessionToEntryExtracted, buildEphemeralCurrentWorkspaceEntryExtracted, currentGithubRepositoryFullNameExtracted, currentRepoKeyExtracted, cwdFromFileUriExtracted, getCurrentWorkspaceMatchKeyExtracted, getProjectWorkspaceMatchKeyExtracted, githubRepositoryToProjectExtracted, isProjectContainerWorkspaceExtracted, latestTimestampExtracted, loadGithubProjectsExtracted, loadSessionMapExtracted, prepareProjectCwdExtracted, projectActivityTimeExtracted, projectMatchesCurrentWorkspaceExtracted, projectSessionKeyExtracted, recordProjectPreviewUrlExtracted, recordProjectSessionExtracted, relativeUpdatedAtExtracted, resolveCurrentWorkspaceProjectExtracted, resolveProjectPreviewUrlExtracted, touchProjectActivityExtracted, touchProjectSessionExtracted } from './mobile-projects-service-timeline';
 
@@ -70,6 +72,10 @@ export class MobileProjectsService {
     @inject(MessageService)
     /** @internal Used by the extracted mobile-projects-service-* modules. */
     public readonly messageService: MessageService;
+
+    @inject(FileDialogService)
+    /** @internal Used by the extracted mobile-projects-service-* modules. */
+    public readonly fileDialogService: FileDialogService;
 
     @inject(MobileProjectsActiveTasks)
     /** @internal Used by the extracted mobile-projects-service-* modules. */
@@ -146,6 +152,16 @@ export class MobileProjectsService {
 
     async createLocalProject(): Promise<MobileProjectEntry[] | undefined> {
         return createLocalProjectExtracted(this);
+    }
+
+    /** True only in the Electron desktop app, where a folder on this machine can be opened directly. */
+    isDesktop(): boolean {
+        return environment.electron.is();
+    }
+
+    /** "Open local project" (desktop only): opens a folder the user picks on this machine. */
+    async openLocalProject(): Promise<MobileProjectEntry[] | undefined> {
+        return openLocalProjectExtracted(this);
     }
 
     async cloneGithubProject(): Promise<MobileProjectEntry[] | undefined> {
