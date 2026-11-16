@@ -264,6 +264,10 @@ test.describe('@qaap-mobile harness availability in the agent picker', () => {
 
                 const message = page.locator('.theia-mobile-snackbar-message').filter({ hasText: BLOCKED_MESSAGE }).first();
                 await expect(message).toBeVisible({ timeout: 30_000 });
+                // Read whole, not cut with an ellipsis: the message wraps instead of overflowing, even at 375 px.
+                const clipped = await message.evaluate(node => node.scrollWidth > node.clientWidth + 1 || node.scrollHeight > node.clientHeight + 1);
+                expect(clipped).toBe(false);
+                await expect(page.locator('.theia-mobile-snackbar-action').filter({ hasText: /sign in/i }).first()).toBeVisible();
                 await capture(testInfo, page, viewport.name, 'send-blocked');
             } finally {
                 await context.close();
