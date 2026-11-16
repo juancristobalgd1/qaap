@@ -85,6 +85,7 @@ describe('QaapAgentTaskRunner harness status catalog', () => {
             const runner = Object.create(QaapAgentTaskRunner.prototype) as QaapAgentTaskRunner;
             Object.assign(runner, {
                 agentConnectionStates: new Map(),
+                rejectedAgentSessions: new Set(),
                 agentConnectionProbes: new Map(),
                 resolveAgentCliPrefix: () => prefix,
                 detectAgents: () => undefined,
@@ -119,6 +120,7 @@ describe('QaapAgentTaskRunner connection probes', () => {
         Object.assign(runner, {
             detectedAgents: new Map<string, AgentCandidate>(candidates.map(candidate => [candidate.id, candidate])),
             agentConnectionStates: new Map(),
+            rejectedAgentSessions: new Set(),
             agentConnectionProbes: new Map(),
             isAgentEnabled: () => true,
             preferenceReaderForOwner: () => () => undefined,
@@ -258,6 +260,7 @@ describe('QaapAgentTaskRunner listAgents session and availability', () => {
         Object.assign(runner, {
             detectedAgents: new Map<string, AgentCandidate>(candidates.map(candidate => [candidate.id, candidate])),
             agentConnectionStates: new Map(),
+            rejectedAgentSessions: new Set(),
             agentConnectionProbes: new Map(),
             isAgentEnabled: () => true,
             preferenceReaderForOwner: () => () => undefined,
@@ -298,6 +301,7 @@ describe('QaapAgentTaskRunner listAgents session and availability', () => {
         Object.assign(runner, {
             detectedAgents: new Map<string, AgentCandidate>([[codex.id, codex]]),
             agentConnectionStates: new Map(),
+            rejectedAgentSessions: new Set(),
             agentConnectionProbes: new Map(),
             isAgentEnabled: () => true,
             preferenceReaderForOwner: () => () => undefined,

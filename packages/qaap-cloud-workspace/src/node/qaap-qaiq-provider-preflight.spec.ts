@@ -147,6 +147,7 @@ describe('QAIQ provider preflight', () => {
                     ['opencode', { id: 'opencode', label: 'OpenCode', bin: 'opencode', template: 'opencode run {prompt}' }],
                 ]),
                 agentConnectionStates: new Map(),
+                rejectedAgentSessions: new Set(),
                 agentConnectionProbes: new Map(),
                 readUserSettingsFromDisk: (login?: string) => ({ ...(login ? SETTINGS[login] ?? {} : {}) }),
                 preferenceService: {

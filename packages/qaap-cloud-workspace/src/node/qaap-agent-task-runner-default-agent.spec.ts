@@ -198,6 +198,7 @@ describe('QaapAgentTaskRunner.defaultAgent (real runner, stubbed auth and billin
             isAgentEnabled: () => true,
             agentConnectionState: (id: string) => options.states[id] ?? 'unknown',
             agentConnectionStates: new Map(),
+            rejectedAgentSessions: new Set(),
             agentConnectionProbes: new Map(),
             preferenceReaderForOwner: () => () => undefined,
         });
@@ -375,6 +376,7 @@ describe('QaapAgentTaskRunner.defaultAgentFresh with failing auth probes (real r
                 ['pi', 'claude', 'opencode'].map(id => [id, { id, label: id, bin: id, template: `${id} {prompt}` }]),
             ),
             agentConnectionStates: new Map(),
+            rejectedAgentSessions: new Set(),
             agentConnectionProbes: new Map(),
             isAgentEnabled: () => true,
             preferenceReaderForOwner: () => () => undefined,

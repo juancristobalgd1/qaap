@@ -31,6 +31,7 @@ import {
     type QaapCreateAgentTaskRequest,
     type QaapAgentWarmResult,
     isQaapAgentTaskFinished,
+    resolveTaskAgentModel,
 } from '../common/qaap-agent-task';
 import type { QaapTurnLatencyMark } from '@theia/qaap-shared-core/lib/common/qaap-agent-stream-metrics';
 import { QaapDevPreviewPortRegistry } from '@theia/qaap-shared-core/lib/node/qaap-dev-preview-port-registry';
@@ -370,6 +371,13 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     }>();
     /** In-flight asynchronous auth probes, keyed like {@link agentConnectionStates}. */
     protected readonly agentConnectionProbes = new Map<string, Promise<QaapAgentDescriptor['connectionState']>>();
+    /**
+     * Sessions a turn proved unusable (the harness failed with an auth error), keyed like
+     * {@link agentConnectionStates}. They read as `disconnected` whatever the probe says, because the
+     * probe is what was fooled (a hollow Codex `auth.json`, a rejected Cursor token), until the owner
+     * signs in again: the sign-in confirmation runs {@link refreshAgentCatalog}, which clears them.
+     */
+    protected readonly rejectedAgentSessions = new Set<string>();
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public readonly onDidChangeTaskEmitter = new Emitter<QaapAgentTaskEvent>();
@@ -620,6 +628,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     refreshAgentCatalog(): void {
         this.agentConnectionStates.clear();
         this.agentConnectionProbes.clear();
+        this.rejectedAgentSessions.clear();
         // Harness settings or the CLI may have changed: the next model request runs discovery again.
         clearNativeAgentModelCache();
         this.detectAgents();
@@ -738,6 +747,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         if (!this.sessionAttestations?.attest(ownerLogin, normalized)) {
             return false;
         }
+        this.rejectedAgentSessions.delete(this.agentConnectionCacheKey(normalized, ownerLogin));
         // Same as a probe that turns connected: the catalog discovered while signed out is stale.
         invalidateNativeAgentModels(normalized, ownerLogin);
         return true;
@@ -766,6 +776,9 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         }
         if (typeof sources.settingsConnected === 'boolean') {
             return sources.settingsConnected ? 'connected' : 'disconnected';
+        }
+        if (this.rejectedAgentSessions.has(this.agentConnectionCacheKey(normalized, ownerLogin))) {
+            return 'disconnected';
         }
         if (!sources.probeBin) {
             // No probe can answer (Copilot, Grok): an unexpired sign-in attestation is the only signal.
@@ -2025,23 +2038,46 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         if (agentId === 'shell') {
             return;
         }
-        const attested = !!this.sessionAttestations?.isAttested(task.ownerLogin, agentId);
-        if (!this.lastTurns && !attested) {
-            return;
-        }
         try {
             const turn = classifyAgentLastTurn(task, await this.readLog(task.id), agentId);
             if (turn) {
                 this.lastTurns?.record(task.ownerLogin, agentId, turn);
             }
-            if (attested && turn?.outcome === 'failed' && turn.kind === 'auth') {
-                // The attested sign-in did not hold (the CLI printed success without a usable session):
-                // drop it so the picker locks the harness again instead of failing every turn.
-                this.sessionAttestations?.revoke(task.ownerLogin, agentId);
+            if (turn?.outcome === 'failed' && turn.kind === 'auth') {
+                this.rejectAgentSessionAfterAuthFailure(task, agentId);
             }
         } catch (error) {
             console.warn('[qaap-agent-last-turn] could not record task', task.id, error instanceof Error ? error.message : String(error));
         }
+    }
+
+    /**
+     * A turn of `agentId` failed with an auth error ("401 Unauthorized: Missing bearer…", Cursor's
+     * "run 'agent login' first"): whatever the probe or the attestation claimed, the session did not
+     * hold. Lock the harness's Pro models until the owner signs in again instead of failing every turn.
+     * Not for Qaap's own pre-spawn refusal (it already reflects the lock, and "couldn't confirm" is a
+     * probe that did not answer, not a rejected session), a Free model (it never used the session),
+     * QAIQ (Settings key) or the shell.
+     */
+    protected rejectAgentSessionAfterAuthFailure(task: QaapAgentTask, agentId: string): void {
+        const normalized = agentId.trim().toLowerCase();
+        if (task.preflightFailure || normalized === QAIQ_AGENT_ID || normalized === 'shell') {
+            return;
+        }
+        const model = resolveTaskAgentModel(task);
+        if (model && QaapHarnessModelAvailability.tier(normalized, { modelId: model.modelId, vendor: model.vendor }) === 'free') {
+            return;
+        }
+        this.sessionAttestations?.revoke(task.ownerLogin, normalized);
+        const sources = this.agentAuthSources(normalized, task.ownerLogin);
+        if (!sources || typeof sources.settingsConnected === 'boolean') {
+            return;
+        }
+        const cacheKey = this.agentConnectionCacheKey(normalized, task.ownerLogin);
+        this.rejectedAgentSessions.add(cacheKey);
+        this.agentConnectionStates.set(cacheKey, { state: 'disconnected', at: Date.now() });
+        // The catalog discovered with the rejected session is stale too (same as a fresh sign-in).
+        invalidateNativeAgentModels(normalized, task.ownerLogin);
     }
 
     protected releaseTenantOperation(id: string): void {

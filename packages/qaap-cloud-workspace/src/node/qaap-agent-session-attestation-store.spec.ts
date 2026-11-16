@@ -31,6 +31,7 @@ function runnerWith(store: QaapAgentSessionAttestationStore, log = ''): Testable
             ['copilot', { id: 'copilot', label: 'Copilot', bin: 'copilot', template: 'copilot {prompt}' }],
         ]),
         agentConnectionStates: new Map(),
+        rejectedAgentSessions: new Set(),
         agentConnectionProbes: new Map(),
         isAgentEnabled: () => true,
         agentAuthSources: () => ({ settingsConnected: undefined, probeBin: undefined }),
