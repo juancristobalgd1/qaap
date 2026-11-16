@@ -79,6 +79,9 @@
   display: inline-flex;
   align-items: center;
   gap: 12px;
+  /* `left: 50%` leaves a shrink-to-fit box only half the viewport, so a wrapping message would
+   * break after a few words; size to the unwrapped content and let max-width make it wrap. */
+  width: max-content;
   max-width: min(92vw, 540px);
   padding: 10px 16px;
   /* A fixed radius instead of 999px: a one-line toast still reads as a pill, and a message that
