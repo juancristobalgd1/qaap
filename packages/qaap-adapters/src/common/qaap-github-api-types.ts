@@ -377,3 +377,6 @@ export interface QaapProjectSessionUpsertRequest {
     readonly previewUrl?: string;
     readonly bootstrapPhase?: string;
 }
+
+/** Error code of a 401 from the repository endpoints when the desktop app has no GitHub session yet. */
+export const QAAP_GITHUB_SIGN_IN_REQUIRED_CODE = 'github_sign_in_required';

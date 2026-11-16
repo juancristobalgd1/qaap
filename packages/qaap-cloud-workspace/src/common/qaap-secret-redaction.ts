@@ -13,7 +13,9 @@ const REDACTED = '[REDACTED]';
  */
 const SECRET_PATTERNS: readonly [RegExp, string][] = [
     [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, REDACTED],
-    [/(\bauthorization\b[ \t]*[:=][ \t]*Bearer[ \t]+)[^\s'"`]+/gi, `$1${REDACTED}`],
+    // Any scheme (Bearer, Basic, token, Digest…): the credential is the word after the scheme, which the
+    // generic `key: value` rule below would miss because it only redacts the first word.
+    [/(\bauthorization\b[ \t]*[:=][ \t]*[A-Za-z][\w.-]*[ \t]+)[^\s'"`]+/gi, `$1${REDACTED}`],
     [/(\b(?:authorization|api[-_ ]?key|access[-_ ]?token|refresh[-_ ]?token|client[-_ ]?secret|password|passwd|secret)\b[ \t]*[:=][ \t]*)("[^"\n]*"|'[^'\n]*'|[^\s]+)/gi, `$1${REDACTED}`],
     [/(\bBearer[ \t]+)[^\s'"`]+/gi, `$1${REDACTED}`],
     [/(--(?:token|password|secret|api[-_]key)(?:=|[ \t]+))[^\s]+/gi, `$1${REDACTED}`],

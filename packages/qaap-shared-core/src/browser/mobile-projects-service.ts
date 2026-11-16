@@ -195,7 +195,7 @@ export class MobileProjectsService {
     /** Public access to the list of GitHub repositories visible to the signed-in user. */
     async listGithubRepositories(): Promise<MobileProjectEntry[]> {
         const sessionMap = await this.loadSessionMap();
-        return this.sortProjectsByRecent(await this.loadGithubProjects(sessionMap, true));
+        return this.sortProjectsByRecent(await this.loadGithubProjects(sessionMap, true, true));
     }
 
     /** @internal Used by the extracted mobile-projects-service-* modules. */
@@ -604,8 +604,8 @@ export class MobileProjectsService {
     }
 
     /** @internal Used by the extracted mobile-projects-service-* modules. */
-    public async loadGithubProjects(sessionMap: Map<string, QaapProjectSessionSummary>, includeUnopened: boolean): Promise<MobileProjectEntry[]> {
-        return loadGithubProjectsExtracted(this, sessionMap, includeUnopened);
+    public async loadGithubProjects(sessionMap: Map<string, QaapProjectSessionSummary>, includeUnopened: boolean, surfaceSignInRequired = false): Promise<MobileProjectEntry[]> {
+        return loadGithubProjectsExtracted(this, sessionMap, includeUnopened, surfaceSignInRequired);
     }
 
     /** @internal Used by the extracted mobile-projects-service-* modules. */

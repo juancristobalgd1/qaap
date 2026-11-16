@@ -99,6 +99,9 @@ import {
 import { qaapGitReadEnv } from './qaap-child-process-env';
 import { resolveLocalProjectWorkspacePath } from './qaap-local-project-path';
 import { QaapAsyncRoute } from './qaap-async-route';
+import { QaapGithubDeviceFlowError, QaapGithubDeviceFlows } from './qaap-github-device-flow';
+import { readQaapGithubDeviceFlowConfig } from './qaap-github-oauth-config';
+import { isQaapDesktopRuntime } from '@theia/qaap-adapters/lib/common/qaap-desktop-runtime';
 
 const GITHUB_AUTHORIZE_URL = 'https://github.com/login/oauth/authorize';
 const GITHUB_OAUTH_SCOPE = 'read:user repo';
@@ -219,6 +222,9 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         app.get(QAAP_HEALTH_API_PATH, (req, res) => this.handleHealth(req, res));
         app.get(`${QAAP_AUTH_API_PATH}/config`, (req, res) => this.handleAuthConfig(req, res));
         app.get(`${QAAP_AUTH_API_PATH}/session`, (req, res) => this.handleAuthSession(req, res));
+        // Desktop only (QAAP_DESKTOP=1); every other runtime answers 404 from these handlers.
+        app.post(`${QAAP_GITHUB_API_PATH}/device/start`, QaapAsyncRoute.wrap('qaap-github-device', (req, res) => this.handleDeviceStart(req, res)));
+        app.post(`${QAAP_GITHUB_API_PATH}/device/poll`, QaapAsyncRoute.wrap('qaap-github-device', (req, res) => this.handleDevicePoll(req, res)));
         app.post(`${QAAP_AUTH_API_PATH}/signout`, (req, res) => this.handleSignOut(req, res));
         app.get(`${QAAP_GITHUB_API_PATH}/repositories`, QaapAsyncRoute.wrap('qaap-github-oauth', (req, res) => this.handleGithubRepositories(req, res)));
         app.post(`${QAAP_GITHUB_API_PATH}/repositories`, QaapAsyncRoute.wrap('qaap-github-oauth', (req, res) => this.handleCreateGithubRepository(req, res)));
@@ -572,14 +578,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         const signIn = (async (): Promise<string | undefined> => {
             try {
                 const accessToken = await exchangeGithubCode(config, code);
-                const user = await fetchGithubUser(accessToken);
-                const previousSessionId = this.auth.resolveSessionId(req);
-                if (previousSessionId) {
-                    this.endSession(previousSessionId);
-                }
-                const sessionId = this.sessions.createSession({ accessToken, user });
-                console.info('[qaap-oauth] GitHub sign-in OK for user', user.login);
-                return sessionId;
+                return await this.createGithubSession(req, accessToken);
             } catch (err) {
                 const message = err instanceof Error ? err.message : String(err);
                 console.error('[qaap-oauth] Token exchange or user fetch failed:', message);
@@ -599,6 +598,104 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             this.redirectAfterOAuth(res, config.publicUrl, false, 'exchange_failed');
         }
     }
+
+    /**
+     * Turns a GitHub access token into this browser's session: looks up the user, ends the browser's
+     * previous session and stores the token server-side. Shared by the web OAuth callback and the
+     * desktop device flow, so both store the same record. The caller sets the cookie.
+     */
+    protected async createGithubSession(req: Request, accessToken: string): Promise<string> {
+        const user = await fetchGithubUser(accessToken);
+        const previousSessionId = this.auth.resolveSessionId(req);
+        if (previousSessionId) {
+            this.endSession(previousSessionId);
+        }
+        const sessionId = this.sessions.createSession({ accessToken, user });
+        console.info('[qaap-oauth] GitHub sign-in OK for user', user.login);
+        return sessionId;
+    }
+
+    /** Desktop device flow: asks GitHub for a user code and keeps the device code in this process only. */
+    protected async handleDeviceStart(req: Request, res: Response): Promise<void> {
+        if (!this.isDesktopDeviceRequestAllowed(req, res)) {
+            return;
+        }
+        const config = readQaapGithubDeviceFlowConfig();
+        if (!config) {
+            res.status(503).json({ code: 'github_sign_in_not_configured', error: "GitHub sign-in isn't configured: set QAAP_GITHUB_CLIENT_ID" });
+            return;
+        }
+        try {
+            res.json(await this.deviceFlows.start(config.clientId));
+        } catch (err) {
+            res.status(502).json({ code: 'github_device_failed', error: this.deviceFlowErrorMessage(err) });
+        }
+    }
+
+    /**
+     * Desktop device flow: one poll of the flow the browser holds. The access token is stored as a
+     * server-side session and the browser only receives the same HttpOnly cookie as web sign-in.
+     */
+    protected async handleDevicePoll(req: Request, res: Response): Promise<void> {
+        if (!this.isDesktopDeviceRequestAllowed(req, res)) {
+            return;
+        }
+        const body = (req.body ?? {}) as { flowId?: unknown };
+        const flowId = typeof body.flowId === 'string' ? body.flowId : '';
+        if (!flowId) {
+            res.status(400).json({ code: 'github_device_bad_request', error: 'flowId is required' });
+            return;
+        }
+        let result: Awaited<ReturnType<QaapGithubDeviceFlows['poll']>>;
+        try {
+            result = await this.deviceFlows.poll(flowId);
+        } catch (err) {
+            res.status(502).json({ code: 'github_device_failed', error: this.deviceFlowErrorMessage(err) });
+            return;
+        }
+        if (result.status !== 'complete') {
+            res.json(result.status === 'pending' ? { status: 'pending', interval: result.interval } : { status: result.status });
+            return;
+        }
+        let sessionId: string;
+        try {
+            sessionId = await this.createGithubSession(req, result.accessToken);
+        } catch {
+            res.status(502).json({ code: 'github_device_failed', error: 'GitHub user lookup failed' });
+            return;
+        }
+        this.setSessionCookie(res, sessionId);
+        const user = this.sessions.getSession(sessionId)?.user;
+        res.json({ status: 'complete', user: user ? { login: user.login, name: user.name, avatarUrl: user.avatarUrl } : undefined });
+    }
+
+    /** Device routes exist only in the desktop runtime and refuse cross-site requests (a login CSRF). */
+    protected isDesktopDeviceRequestAllowed(req: Request, res: Response): boolean {
+        if (!isQaapDesktopRuntime()) {
+            res.status(404).json({ error: 'Not found' });
+            return false;
+        }
+        const origin = typeof req.headers.origin === 'string' ? req.headers.origin : undefined;
+        let originHost: string | undefined;
+        try {
+            originHost = origin ? new URL(origin).host : undefined;
+        } catch {
+            originHost = undefined;
+        }
+        const host = typeof req.headers.host === 'string' ? req.headers.host : undefined;
+        if (req.headers['sec-fetch-site'] === 'cross-site' || (origin && originHost !== host)) {
+            res.status(403).json({ error: 'Cross-origin request refused' });
+            return false;
+        }
+        return true;
+    }
+
+    protected deviceFlowErrorMessage(err: unknown): string {
+        return err instanceof QaapGithubDeviceFlowError ? err.message : 'GitHub sign-in could not be completed.';
+    }
+
+    /** Pending device flows of this backend process. Never sent to the browser. */
+    protected readonly deviceFlows = new QaapGithubDeviceFlows();
 
     /** Sign-ins by OAuth state, kept briefly so a duplicate callback reuses the first one's session. */
     protected oauthCallbacksInFlight(): Map<string, Promise<string | undefined>> {
@@ -711,6 +808,10 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             return;
         }
         if (auth.kind === 'skip') {
+            if (isQaapDesktopRuntime()) {
+                res.status(401).json({ code: 'github_sign_in_required', error: 'GitHub sign-in required' });
+                return;
+            }
             res.json({ repositories: [] });
             return;
         }
@@ -1390,6 +1491,12 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             return;
         }
         if (kind === 'open' && auth.kind === 'skip') {
+            // Desktop: the user's own repositories need a GitHub session; the client offers the sign-in.
+            // A public clone by URL stays anonymous there, as the Work Hub says ("Public URLs still work").
+            if (isQaapDesktopRuntime()) {
+                res.status(401).json({ code: 'github_sign_in_required', error: 'GitHub sign-in required' });
+                return;
+            }
             res.status(503).json({ error: 'GitHub sign-in required' });
             return;
         }
