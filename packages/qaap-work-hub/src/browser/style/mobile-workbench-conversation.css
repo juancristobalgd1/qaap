@@ -4459,9 +4459,14 @@ body.qaap-theme-light .theia-mobile-agent-transcript-git-action-pill.theia-mod-f
   content: none;
 }
 
+/* One row, right-aligned. The row is not limited by the bubble width (max-content), so it can extend to the
+   left of the bubble inside the user column instead of wrapping Edit/Copy/Retry/Undo onto several lines. */
 .theia-mobile-agent-transcript-user-actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  width: max-content;
+  max-width: none;
   justify-content: flex-end;
   align-items: center;
   gap: 2px;
