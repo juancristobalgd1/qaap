@@ -52,9 +52,20 @@ const flush = async (): Promise<void> => {
 
 describe('QaapGithubMcpDefaultMigration', () => {
 
-    const create = (userValue: Record<string, unknown> | undefined): { migration: QaapGithubMcpDefaultMigration; prefs: FakePreferenceService } => {
+    class TestMigration extends QaapGithubMcpDefaultMigration {
+        tenant = false;
+        readonly mirrorWrites: Array<Record<string, unknown>> = [];
+        protected override isTenant(): boolean {
+            return this.tenant;
+        }
+        protected override async writeMirror(servers: Record<string, unknown>): Promise<void> {
+            this.mirrorWrites.push(servers);
+        }
+    }
+
+    const create = (userValue: Record<string, unknown> | undefined): { migration: TestMigration; prefs: FakePreferenceService } => {
         const prefs = new FakePreferenceService(userValue);
-        const migration = new QaapGithubMcpDefaultMigration();
+        const migration = new TestMigration();
         Object.assign(migration, { preferenceService: prefs as unknown as PreferenceService });
         return { migration, prefs };
     };
@@ -112,6 +123,23 @@ describe('QaapGithubMcpDefaultMigration', () => {
         expect(prefs.sets).to.have.length(1);
         expect(prefs.sets[0].scope).to.equal(PreferenceScope.User);
         expect(prefs.userValue).to.deep.equal({ slack: SLACK });
+    });
+
+    it('writes the cleaned servers to the per-user mirror for a local user, not for a tenant', async () => {
+        const local = create({ github: { ...LEGACY_GITHUB }, slack: SLACK });
+        await local.migration['schedule']();
+        expect(local.migration.mirrorWrites).to.deep.equal([{ slack: SLACK }]);
+        const tenant = create({ github: { ...LEGACY_GITHUB }, slack: SLACK });
+        tenant.migration.tenant = true;
+        await tenant.migration['schedule']();
+        expect(tenant.migration.mirrorWrites).to.deep.equal([]);
+        expect(tenant.prefs.userValue).to.deep.equal({ slack: SLACK });
+    });
+
+    it('does not write the mirror when nothing was removed', async () => {
+        const { migration } = create({ slack: SLACK });
+        await migration['schedule']();
+        expect(migration.mirrorWrites).to.deep.equal([]);
     });
 
     it('never copies workspace entries into the User scope', async () => {
