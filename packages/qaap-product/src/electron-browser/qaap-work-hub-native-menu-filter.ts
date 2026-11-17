@@ -46,6 +46,16 @@ export const WORK_HUB_NATIVE_VIEW_COMMAND_IDS: ReadonlySet<string> = new Set<str
     'workbench.action.toggleFullScreen'
 ]);
 
+/**
+ * Commands removed from the native menu on the Work Hub wherever they sit, because the Work Hub has no equivalent.
+ * `workbench.action.selectIconTheme` (File Icon Theme) is the only one. Settings, Keyboard Shortcuts, Color Theme and
+ * Check for Updates stay in the menu: their commands are answered by the Work Hub
+ * (`qaap-work-hub-surface-redirects.ts` in `@theia/qaap-work-hub`).
+ */
+export const WORK_HUB_NATIVE_HIDDEN_COMMAND_IDS: ReadonlySet<string> = new Set<string>([
+    'workbench.action.selectIconTheme'
+]);
+
 const EDIT_MENU_ID = '2_edit';
 const VIEW_MENU_ID = '4_view';
 
@@ -60,6 +70,9 @@ const VIEW_MENU_ID = '4_view';
 export function isWorkHubNativeMenuNodeVisible(menuPath: readonly string[], nodeId: string, isCommand: boolean): boolean {
     if (menuPath.length < 2 || menuPath[0] !== MAIN_MENU_BAR[0]) {
         return true;
+    }
+    if (isCommand && WORK_HUB_NATIVE_HIDDEN_COMMAND_IDS.has(nodeId)) {
+        return false;
     }
     const top = menuPath[1];
     if (menuPath.length === 2) {

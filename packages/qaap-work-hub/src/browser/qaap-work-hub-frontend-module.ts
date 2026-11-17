@@ -110,6 +110,7 @@ import {
     QaapTranscriptSearchFocusKeybindingContext,
     QaapWorkHubShortcutPassthroughContribution,
 } from './qaap-work-hub-shortcut-passthrough-contribution';
+import { QaapWorkHubSurfaceRedirectContribution } from './qaap-work-hub-surface-redirect-contribution';
 import { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
 import { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
 import { MobileWorkHubInboxStream } from './mobile-work-hub-inbox-stream';
@@ -299,6 +300,8 @@ export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync
     bind(KeybindingContribution).toService(QaapWatermarkCommandsContribution);
     bind(QaapWorkHubShortcutPassthroughContribution).toSelf().inSingletonScope();
     bind(KeybindingContribution).toService(QaapWorkHubShortcutPassthroughContribution);
+    bind(QaapWorkHubSurfaceRedirectContribution).toSelf().inSingletonScope();
+    bind(FrontendApplicationContribution).toService(QaapWorkHubSurfaceRedirectContribution);
     bind(QaapTranscriptSearchFocusKeybindingContext).toSelf().inSingletonScope();
     bind(KeybindingContext).toService(QaapTranscriptSearchFocusKeybindingContext);
     bind(QaapComposerModelPickerFocusKeybindingContext).toSelf().inSingletonScope();

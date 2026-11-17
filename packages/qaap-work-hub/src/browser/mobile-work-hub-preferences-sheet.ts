@@ -46,6 +46,7 @@ import type {
 import { MobileWorkHubMcpServerSummary } from './mobile-work-hub-mcp-server-summary';
 import { MobileWorkHubActivityCalendar } from './mobile-work-hub-activity-calendar';
 import { collectQaapActivityTimestamps } from '../common/qaap-activity-calendar';
+import { parseWorkHubSettingsSectionQuery } from '../common/qaap-work-hub-surface-redirects';
 
 /** Work Hub AI Features sheet scopes Settings to this search term. */
 export const WORK_HUB_AI_FEATURES_PREFERENCES_QUERY = 'ai-features';
@@ -650,6 +651,10 @@ export class MobileWorkHubPreferencesSheet {
     protected resolveSettingsSection(query?: string): WorkHubSettingsSection {
         if (isWorkHubAiFeaturesPreferencesQuery(query)) {
             return this.getSettingsSection('agents');
+        }
+        const sectionId = parseWorkHubSettingsSectionQuery(query);
+        if (sectionId) {
+            return this.getSettingsSection(sectionId);
         }
         if (typeof query === 'string' && query.trim()) {
             return {

@@ -27,7 +27,7 @@ export const QAAP_WORK_HUB_OPEN_REPOSITORY_COMMAND = 'qaap.workHub.openRepositor
 /**
  * Shared (non-`qaap.*`) command ids that remain useful on the Work Hub surface.
  * Handlers for AI Features / Preferences are remapped to sheets
- * while the user is on Work Hub; Color Theme works as a quick-pick overlay.
+ * while the user is on Work Hub (see `qaap-work-hub-surface-redirects.ts`); Color Theme opens Settings > Appearance.
  */
 export const WORK_HUB_COMMAND_PALETTE_SHARED_IDS: ReadonlySet<string> = new Set([
     QAAP_WORK_HUB_COLOR_THEME_COMMAND,

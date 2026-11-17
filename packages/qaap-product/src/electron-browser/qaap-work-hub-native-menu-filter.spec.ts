@@ -47,6 +47,32 @@ describe('isWorkHubNativeMenuNodeVisible', () => {
         });
     });
 
+    describe('Settings submenu', () => {
+        const themeSubmenu = ['menubar', '1_file', '5_settings', '1_settings_submenu', '2_settings_submenu_theme'];
+        const updateSubmenu = ['menubar', '1_file', '5_settings', '1_settings_submenu', '3_settings_submenu_update'];
+
+        it('keeps Settings, Keyboard Shortcuts, Color Theme and Check for Updates (answered by the Work Hub)', () => {
+            expect(isWorkHubNativeMenuNodeVisible([...themeSubmenu, 'workbench.action.selectTheme'],
+                'workbench.action.selectTheme', true)).to.equal(true);
+            expect(isWorkHubNativeMenuNodeVisible(['menubar', '1_file', '5_settings', '1_settings_submenu', '1_settings_submenu_open', 'keymaps:open'],
+                'keymaps:open', true)).to.equal(true);
+            expect(isWorkHubNativeMenuNodeVisible(['menubar', '1_file', '5_settings', '1_settings_submenu', '1_settings_submenu_open', 'preferences:open'],
+                'preferences:open', true)).to.equal(true);
+            expect(isWorkHubNativeMenuNodeVisible([...updateSubmenu, 'electron-sample:check-for-updates'],
+                'electron-sample:check-for-updates', true)).to.equal(true);
+        });
+
+        it('removes File Icon Theme, which the Work Hub has no equivalent for', () => {
+            expect(isWorkHubNativeMenuNodeVisible([...themeSubmenu, 'workbench.action.selectIconTheme'],
+                'workbench.action.selectIconTheme', true)).to.equal(false);
+        });
+
+        it('keeps the theme submenu group itself', () => {
+            expect(isWorkHubNativeMenuNodeVisible(['menubar', '1_file', '5_settings', '1_settings_submenu', '2_settings_submenu_theme'],
+                '2_settings_submenu_theme', false)).to.equal(true);
+        });
+    });
+
     describe('Edit', () => {
         it('keeps the native undo, redo and clipboard commands', () => {
             for (const id of ['core.undo', 'core.redo', 'core.cut', 'core.copy', 'core.paste', 'core.selectAll']) {
