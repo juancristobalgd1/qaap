@@ -8,7 +8,8 @@ import { expect } from 'chai';
 import * as fs from 'fs';
 import * as path from 'path';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
-import { buildStickyComposerActivityStackFingerprint, buildStickyComposerChangesPillFingerprint, patchStickyComposerActivityStack, patchStickyComposerChangesPillHost, renderStickyComposerActivityStack, renderStickyComposerChangesPill, selectComposerPillChanges } from './qaap-sticky-composer-activity-stack';
+import { buildStickyComposerActivityStackFingerprint, buildStickyComposerChangesPillFingerprint, patchStickyComposerActivityStack, patchStickyComposerChangesPillHost, renderStickyComposerActivityStack, renderStickyComposerChangesPill, selectComposerPillChanges, STICKY_COMPOSER_RUN_APP_IN_PILL_ROW_CLASS, stickyComposerPillRowOwnsRunApp,
+    syncStickyComposerRunAppOwner } from './qaap-sticky-composer-activity-stack';
 import type { StickyComposerChangedFileView } from '@theia/qaap-transcript/lib/browser/qaap-transcript-host-contracts';
 
 describe('qaap-sticky-composer-activity-stack', () => {
@@ -775,6 +776,44 @@ describe('qaap-sticky-composer-activity-stack', () => {
             document.body.append(stack!);
             expect(patchStickyComposerActivityStack(stack!, idle)).to.equal(true);
             expect(stack!.querySelector('.theia-mobile-sticky-composer-queue-action[aria-label="Send now"]')).to.exist;
+        });
+    });
+    describe('single Run app owner (no stacked duplicate above the composer)', () => {
+        const noop = (): void => undefined;
+
+        it('the pill row owns Run app once the agent edited files or the chat asked for a preview', () => {
+            expect(stickyComposerPillRowOwnsRunApp({ hasFileActivity: true, onRunApp: noop })).to.equal(true);
+            expect(stickyComposerPillRowOwnsRunApp({ previewRequested: true, onRunApp: noop })).to.equal(true);
+            expect(stickyComposerPillRowOwnsRunApp({ previewInConversation: true, onOpenPreview: noop })).to.equal(true);
+        });
+
+        it('leaves Run app to the quick-actions strip while the pill row is absent', () => {
+            expect(stickyComposerPillRowOwnsRunApp({ onRunApp: noop })).to.equal(false);
+            expect(stickyComposerPillRowOwnsRunApp({ hasFileActivity: true })).to.equal(false);
+        });
+
+        it('marks the composer host so the strip hides its own Run app chip', () => {
+            const disableJSDOM = enableJSDOM();
+            try {
+                const host = document.createElement('div');
+                syncStickyComposerRunAppOwner(host, { previewRequested: true, onRunApp: noop });
+                expect(host.classList.contains(STICKY_COMPOSER_RUN_APP_IN_PILL_ROW_CLASS)).to.equal(true);
+                syncStickyComposerRunAppOwner(host, { onRunApp: noop });
+                expect(host.classList.contains(STICKY_COMPOSER_RUN_APP_IN_PILL_ROW_CLASS)).to.equal(false);
+            } finally {
+                disableJSDOM();
+            }
+        });
+
+        it('the stylesheet hides the strip Run app chip whenever the pill row owns it', () => {
+            const css = fs.readFileSync(
+                path.join(__dirname, '..', '..', '..', 'qaap-work-hub', 'src', 'browser', 'style', 'mobile-workbench-conversation.css'),
+                'utf8',
+            ).replace(/\r\n/g, '\n');
+            expect(css).to.include(`.${STICKY_COMPOSER_RUN_APP_IN_PILL_ROW_CLASS} .theia-mobile-projects-sticky-composer>`
+                + '.theia-mobile-agent-transcript-empty-actions .theia-mobile-agent-transcript-empty-action[data-quick-action="run-app"]');
+            expect(css).to.include(`.${STICKY_COMPOSER_RUN_APP_IN_PILL_ROW_CLASS}.theia-mod-quick-actions-preview-only `
+                + '.theia-mobile-projects-sticky-composer>.theia-mobile-agent-transcript-empty-actions {');
         });
     });
 });

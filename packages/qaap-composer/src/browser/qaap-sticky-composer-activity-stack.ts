@@ -260,6 +260,24 @@ function stickyComposerHasActivityRow(options: StickyComposerActivityStackOption
         || !!(options.previewRequested && !!options.onRunApp);
 }
 
+/**
+ * Composer host class set while the changes pill row carries the run/preview next action
+ * (Run app, Starting preview… or View Preview). The pill row is then the single owner of that
+ * action and the quick-actions strip drops its own "Run app" chip, so a conversation never shows
+ * two stacked "Run app" pills above the composer.
+ */
+export const STICKY_COMPOSER_RUN_APP_IN_PILL_ROW_CLASS = 'theia-mod-run-app-in-pill-row';
+
+/** True when the changes pill row renders and carries the run/preview next action. */
+export function stickyComposerPillRowOwnsRunApp(options: StickyComposerActivityStackOptions): boolean {
+    return stickyComposerHasActivityRow(options) && (!!options.onRunApp || !!options.onOpenPreview);
+}
+
+/** Marks the composer host with {@link STICKY_COMPOSER_RUN_APP_IN_PILL_ROW_CLASS} from the activity options. */
+export function syncStickyComposerRunAppOwner(host: HTMLElement, options: StickyComposerActivityStackOptions): void {
+    host.classList.toggle(STICKY_COMPOSER_RUN_APP_IN_PILL_ROW_CLASS, stickyComposerPillRowOwnsRunApp(options));
+}
+
 export function buildStickyComposerChangesPillFingerprint(options: StickyComposerActivityStackOptions): string {
     const files = options.changedFiles ?? [];
     const stats = options.diffStats;

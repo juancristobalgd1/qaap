@@ -3718,9 +3718,12 @@ body>.theia-mobile-transcript-files-menu {
   display: none;
 }
 
-/* While the changes pill row shows the starting chip, the quick-actions strip steps aside: one
-   horizontal row (Working · Starting preview…) instead of two stacked rows. */
-.theia-mod-preview-chip-in-pill-row .theia-mobile-projects-sticky-composer>.theia-mobile-agent-transcript-empty-actions {
+/* The changes pill row owns Run app / Starting preview… / View Preview whenever it carries one
+   (theia-mod-run-app-in-pill-row): the quick-actions strip drops its own "Run app" chip so the
+   composer never stacks two "Run app" pills. In preview-only mode that chip was all the strip had,
+   so the whole strip steps aside (one row: Working · Starting preview…). */
+.theia-mod-run-app-in-pill-row .theia-mobile-projects-sticky-composer>.theia-mobile-agent-transcript-empty-actions .theia-mobile-agent-transcript-empty-action[data-quick-action="run-app"],
+.theia-mod-run-app-in-pill-row.theia-mod-quick-actions-preview-only .theia-mobile-projects-sticky-composer>.theia-mobile-agent-transcript-empty-actions {
   display: none;
 }
 

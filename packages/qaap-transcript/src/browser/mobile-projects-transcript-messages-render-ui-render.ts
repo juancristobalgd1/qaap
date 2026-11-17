@@ -27,6 +27,12 @@ import {
 } from './qaap-transcript-row-defer';
 import { normalizeAgentConversationFailures, type QaapAgentConversationDTO, type QaapAgentMessageDTO, type QaapAgentMessageSegmentDTO, type QaapPendingUserMessageDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { createMobileTurnClosingReportElement } from './mobile-turn-closing-report';
+import {
+    resolveTranscriptComposerHarnessSelection,
+    resolveTranscriptHarnessSwitchAt,
+    resolveTranscriptPendingHarnessSwitchRow,
+    wrapTranscriptRowWithHarnessSwitch,
+} from './qaap-transcript-harness-switch-row';
 import { findQaapClosingReport } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model';
 
 export function resolveTranscriptMessageHostExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, host: HTMLElement): HTMLElement {
@@ -233,6 +239,11 @@ export function createTranscriptMessageRowAtIndexExtracted(ctx: MobileProjectsTr
     if (streamingTail) {
         row.classList.add('theia-mod-streaming');
     }
+    // The turn ran on another harness than the previous one: a centred divider sits right above it.
+    const harnessSwitch = msg.role === 'user' ? resolveTranscriptHarnessSwitchAt(normalized, index) : undefined;
+    if (harnessSwitch) {
+        row = wrapTranscriptRowWithHarnessSwitch(row, harnessSwitch);
+    }
     // A completed compaction seam is rendered inline, glued to the top of the first
     // message that survived compaction, so the user can see exactly where the context
     // was folded (everything above the seam was summarized). The running/live shimmer
@@ -295,6 +306,14 @@ export function buildTranscriptVirtualFooterExtracted(ctx: MobileProjectsTranscr
     const repairProposalRow = repairProposal ? createMobileVisualRepairProposalElement(conv, repairProposal) : undefined;
     if (repairProposalRow) {
         footers.push(repairProposalRow);
+    }
+    // The composer has another harness selected for the next turn: "Handoff pending" closes the list.
+    const pendingHarnessSwitch = resolveTranscriptPendingHarnessSwitchRow(
+        conv,
+        resolveTranscriptComposerHarnessSelection(ctx.host, conv.id),
+    );
+    if (pendingHarnessSwitch) {
+        footers.push(pendingHarnessSwitch);
     }
     return footers;
 }

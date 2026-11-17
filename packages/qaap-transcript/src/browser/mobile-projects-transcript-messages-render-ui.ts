@@ -40,6 +40,7 @@ import type { WorkHubTranscriptBridge } from '@theia/qaap-transcript-overlay/lib
 import { buildTranscriptAgentFailureDialogOptionsExtracted, clearTranscriptEmptyQuickActionsExtracted, createTranscriptAgentFailureRowExtracted, createTranscriptMessageRowExtracted, ensureLiveStatusBeforeRemovingActivityRowExtracted, syncTranscriptActivityRowExtracted, tryPatchStreamingAgentTextContentExtracted } from './mobile-projects-transcript-messages-render-ui-activity';
 import { applyTranscriptScrollAfterMutationExtracted, buildTranscriptVirtualFooterExtracted, createTranscriptContextCompactionRowExtracted, createTranscriptMessageRowAtIndexExtracted, findAppendedUserMessageIndexExtracted, findLastUserMessageIndexExtracted, normalizeConversationFailuresCachedExtracted, positionTranscriptVirtualListAtUserTurnExtracted, resolveTranscriptAgentSegmentsExtracted, resolveTranscriptMessageHostExtracted, restoreTranscriptOpeningPositionVirtualExtracted, restoreTranscriptScrollAnchorExtracted, scheduleTranscriptScrollAfterMutationExtracted, scrollTranscriptTurnStartIntoReadingPositionExtracted, scrollTranscriptVirtualListToIndexExtracted, setTranscriptAgentSegmentsCacheEntryExtracted, shouldFollowTranscriptTailExtracted, syncTranscriptAgentSegmentsCacheExtracted, transcriptAgentSegmentsCacheKeyExtracted, transcriptContextCompactionBoundaryIndexExtracted, transcriptRowRenderKeyExtracted, transcriptSegmentsSignatureExtracted, transcriptTextSignatureExtracted, withDerivedTranscriptSegmentsExtracted } from './mobile-projects-transcript-messages-render-ui-render';
 import { createTranscriptEmptyWelcomeExtracted, prepareTranscriptReadingAnchorWindowExtracted, renderTranscriptMessagesExtracted, renderTranscriptMessagesVirtualExtracted, restoreTranscriptOpeningPositionExtracted, scrollTranscriptToLastUserTurnExtracted } from './mobile-projects-transcript-messages-render-ui-streaming';
+import { resolveTranscriptComposerHarnessSelection, syncTranscriptPendingHarnessSwitchRow } from './qaap-transcript-harness-switch-row';
 import { attachTranscriptScrollChromeExtracted, markTranscriptMessageRowExtracted, settleVisuallySettledAgentTranscriptExtracted, tryPatchStreamingTranscriptMessagesExtracted, tryPatchStreamingTranscriptVirtualExtracted } from './mobile-projects-transcript-messages-render-ui-timeline';
 
 /** Options accepted by {@link MobileProjectsTranscriptMessagesToolUi.createTranscriptAgentFailureDialog}. */
@@ -311,6 +312,12 @@ export class MobileProjectsTranscriptMessagesRenderUi {
 
     renderTranscriptMessages(host: HTMLElement, conv: QaapAgentConversationDTO): void {
         renderTranscriptMessagesExtracted(this, host, conv);
+        this.syncTranscriptPendingHarnessSwitch(host, conv);
+    }
+
+    /** Keeps the "Handoff pending" marker at the transcript tail in step with the composer harness selection. */
+    syncTranscriptPendingHarnessSwitch(host: HTMLElement, conv: QaapAgentConversationDTO): void {
+        syncTranscriptPendingHarnessSwitchRow(host, conv, resolveTranscriptComposerHarnessSelection(this.host, conv.id));
     }
 
     /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
@@ -319,7 +326,11 @@ export class MobileProjectsTranscriptMessagesRenderUi {
     }
 
     tryPatchStreamingTranscriptMessages(host: HTMLElement, conv: QaapAgentConversationDTO): boolean {
-        return tryPatchStreamingTranscriptMessagesExtracted(this, host, conv);
+        const patched = tryPatchStreamingTranscriptMessagesExtracted(this, host, conv);
+        if (patched) {
+            this.syncTranscriptPendingHarnessSwitch(host, conv);
+        }
+        return patched;
     }
 
     settleVisuallySettledAgentTranscript(messageHost: HTMLElement, conv: QaapAgentConversationDTO): void {

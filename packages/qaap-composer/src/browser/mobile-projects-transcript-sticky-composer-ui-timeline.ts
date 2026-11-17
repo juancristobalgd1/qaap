@@ -19,7 +19,7 @@ import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mob
 import {
     type QaapGitCommitWorkflowAction,
 } from '@theia/qaap-shared-core/lib/common/qaap-git-review';
-import { renderStickyComposerActivityStack, buildStickyComposerActivityStackFingerprint, buildStickyComposerChangesPillFingerprint, patchStickyComposerActivityStack, patchStickyComposerChangesPillHost, renderStickyComposerChangesPill, type StickyComposerActivityStackOptions } from './qaap-sticky-composer-activity-stack';
+import { renderStickyComposerActivityStack, buildStickyComposerActivityStackFingerprint, buildStickyComposerChangesPillFingerprint, patchStickyComposerActivityStack, patchStickyComposerChangesPillHost, renderStickyComposerChangesPill, syncStickyComposerRunAppOwner, type StickyComposerActivityStackOptions } from './qaap-sticky-composer-activity-stack';
 import {
     ensureQueueControlInPillRow,
     ensureQueueControlPositionObserver,
@@ -200,12 +200,9 @@ export function refreshComposerActivityStackExtracted(ctx: MobileProjectsTranscr
     }
     const pillFingerprint = buildStickyComposerChangesPillFingerprint(activityOptions);
     const changesPill = renderStickyComposerChangesPill(activityOptions);
-    // The "Starting preview…" chip lives in the changes pill row (next to Working). While that row
-    // carries it, the separate empty-chat quick-actions strip is hidden so the chips form ONE row.
-    host.classList.toggle(
-        'theia-mod-preview-chip-in-pill-row',
-        !!changesPill && !!activityOptions.previewStarting && !!activityOptions.onRunApp,
-    );
+    // Run app / Starting preview… / View Preview live in the changes pill row (next to Working).
+    // While that row carries one, the quick-actions strip drops its own "Run app" chip: ONE owner.
+    syncStickyComposerRunAppOwner(host, activityOptions);
     // Activity row vs Working/Step-only strip share the same host class — never tear down
     // `theia-mod-working-only` during streaming ticks or Step/Working flicker every SSE.
     const pillHosts = Array.from(

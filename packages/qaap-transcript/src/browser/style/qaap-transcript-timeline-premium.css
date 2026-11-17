@@ -1470,3 +1470,172 @@ body.qaap-theme-light .theia-mobile-agent-transcript-context-compaction-line {
     background: color-mix(in srgb, var(--theia-foreground) 4%, transparent) !important;
   }
 }
+
+/* ─── Harness switch divider ("⇄ Switched harness · [logo] Claude Code → [logo] Codex") ───
+   Settled: glued above the user turn that ran on the new harness. Pending (theia-mod-pending):
+   the last transcript row while the composer has another harness selected for the next turn. */
+.theia-mobile-agent-transcript-harness-switch-seam {
+  display: block;
+  width: 100%;
+}
+
+.theia-mobile-agent-transcript-harness-switch {
+  box-sizing: border-box;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 16px;
+  color: var(--theia-descriptionForeground);
+  font-family: var(--theia-ui-font-family);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.theia-mobile-agent-transcript-harness-switch-rule {
+  flex: 1 1 auto;
+  min-width: 16px;
+  height: 1px;
+  background: var(--theia-widget-border, var(--theia-panel-border));
+}
+
+.theia-mobile-agent-transcript-harness-switch-chip-wrap {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+  max-width: min(86%, 560px);
+}
+
+.theia-mobile-agent-transcript-harness-switch-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 3px 10px;
+  border: 1px solid var(--theia-widget-border, transparent);
+  border-radius: 999px;
+  background: var(--theia-editorWidget-background);
+  color: inherit;
+  font: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: default;
+}
+
+.theia-mobile-agent-transcript-harness-switch-chip:hover,
+.theia-mobile-agent-transcript-harness-switch.theia-mod-open .theia-mobile-agent-transcript-harness-switch-chip {
+  color: var(--theia-foreground);
+}
+
+.theia-mobile-agent-transcript-harness-switch-chip:focus-visible {
+  outline: 1px solid var(--theia-focusBorder);
+  outline-offset: 2px;
+}
+
+.theia-mobile-agent-transcript-harness-switch-glyph.codicon,
+.theia-mobile-agent-transcript-harness-switch-arrow.codicon {
+  flex: 0 0 auto;
+  font-size: 12px;
+}
+
+.theia-mobile-agent-transcript-harness-switch-title {
+  flex: 0 0 auto;
+  font-weight: 500;
+}
+
+.theia-mobile-agent-transcript-harness-switch.theia-mod-pending .theia-mobile-agent-transcript-harness-switch-title {
+  color: var(--theia-editorWarning-foreground);
+}
+
+.theia-mobile-agent-transcript-harness-switch.theia-mod-pending .theia-mobile-agent-transcript-harness-switch-chip {
+  border-style: dashed;
+}
+
+.theia-mobile-agent-transcript-harness-switch-dot {
+  flex: 0 0 auto;
+  opacity: 0.6;
+}
+
+.theia-mobile-agent-transcript-harness-switch-agent {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.theia-mobile-agent-transcript-harness-switch-agent .theia-qaap-agent-brand-icon.theia-mod-sm,
+.theia-mobile-agent-transcript-harness-switch-agent-fallback-icon.codicon {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  font-size: 14px;
+  line-height: 14px;
+}
+
+.theia-mobile-agent-transcript-harness-switch-agent-label,
+.theia-mobile-agent-transcript-harness-switch-model {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.theia-mobile-agent-transcript-harness-switch-agent.theia-mod-to .theia-mobile-agent-transcript-harness-switch-agent-label {
+  color: var(--theia-foreground);
+}
+
+.theia-mobile-agent-transcript-harness-switch-model {
+  opacity: 0.75;
+}
+
+/* Explanation: hover / keyboard focus, or pinned open by a click (theia-mod-open). */
+.theia-mobile-agent-transcript-harness-switch-tooltip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  z-index: 5;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: min(320px, 80vw);
+  padding: 8px 10px;
+  border: 1px solid var(--theia-editorHoverWidget-border, var(--theia-widget-border));
+  border-radius: 8px;
+  background: var(--theia-editorHoverWidget-background);
+  color: var(--theia-editorHoverWidget-foreground, var(--theia-foreground));
+  box-shadow: 0 4px 14px var(--theia-widget-shadow);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: normal;
+  text-align: start;
+  transform: translateX(-50%);
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.theia-mobile-agent-transcript-harness-switch-chip-wrap:hover .theia-mobile-agent-transcript-harness-switch-tooltip,
+.theia-mobile-agent-transcript-harness-switch-chip:focus-visible + .theia-mobile-agent-transcript-harness-switch-tooltip,
+.theia-mobile-agent-transcript-harness-switch.theia-mod-open .theia-mobile-agent-transcript-harness-switch-tooltip {
+  visibility: visible;
+  opacity: 1;
+}
+
+.theia-hc .theia-mobile-agent-transcript-harness-switch-chip,
+.theia-hcLight .theia-mobile-agent-transcript-harness-switch-chip,
+.theia-hc .theia-mobile-agent-transcript-harness-switch-tooltip,
+.theia-hcLight .theia-mobile-agent-transcript-harness-switch-tooltip {
+  border-color: var(--theia-contrastBorder);
+}
+
+.theia-hc .theia-mobile-agent-transcript-harness-switch-rule,
+.theia-hcLight .theia-mobile-agent-transcript-harness-switch-rule {
+  background: var(--theia-contrastBorder);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theia-mobile-agent-transcript-harness-switch-tooltip {
+    transition: none;
+  }
+}

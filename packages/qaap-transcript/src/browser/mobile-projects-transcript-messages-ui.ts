@@ -53,6 +53,12 @@ export interface MobileProjectsTranscriptMessagesHost {
     transcriptOpenSummaryId: string | undefined;
     transcriptPreviewRequestPending: boolean;
     transcriptPreviewRequestRunning: boolean;
+    /** Harness picked in the composer for the next turn (with {@link transcriptComposerPrefsConvId}): drives "Handoff pending". */
+    readonly transcriptComposerPinnedAgentId?: string;
+    /** Conversation the composer selection above belongs to. */
+    readonly transcriptComposerPrefsConvId?: string;
+    /** Model picked in the composer for the next turn. */
+    readonly transcriptComposerAgentModel?: import('@theia/qaap-shared-core/lib/common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel;
     transcriptMarkdownIt: ReturnType<typeof markdownit>;
     openTranscriptFile?: (filePath: string) => void | Promise<void>;
     openTranscriptReviewFile?: (filePath: string) => void | Promise<void>;
