@@ -178,3 +178,17 @@ body.qaap-electron-macos-inset-titlebar #theia-top-panel .theia-workbench-right-
   max-width: 25px;
   max-height: 25px;
 }
+
+/* Work Hub views panel maximized: it covers the window from its top-left edge, so its tab bar starts
+   under the traffic lights (they overlapped the menu button and the first tab). Same 78px inset and
+   drag region as the other headers; its controls stay clickable. */
+body.qaap-electron-macos-inset-titlebar.qaap-mod-work-hub-aux-panel-maximized:not(.qaap-electron-macos-fullscreen):not(.theia-mobile-mod-sessions-sidebar-open) .qaap-work-hub-aux-panel-tabbar {
+  padding-left: 78px !important;
+  -webkit-app-region: drag;
+}
+
+body.qaap-electron-macos-inset-titlebar.qaap-mod-work-hub-aux-panel-maximized .qaap-work-hub-aux-panel-tabbar button,
+body.qaap-electron-macos-inset-titlebar.qaap-mod-work-hub-aux-panel-maximized .qaap-work-hub-aux-panel-tabbar [role='tab'],
+body.qaap-electron-macos-inset-titlebar.qaap-mod-work-hub-aux-panel-maximized .qaap-work-hub-aux-panel-tabbar input {
+  -webkit-app-region: no-drag;
+}
