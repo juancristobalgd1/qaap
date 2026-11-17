@@ -8,6 +8,7 @@ import { McpFrontendApplicationContribution } from '@theia/ai-mcp/lib/browser/mc
 import type { MCPServerDescription } from '@theia/ai-mcp/lib/common/mcp-server-manager';
 import type { MCPServersPreference } from '@theia/ai-mcp/lib/common/mcp-server-preference-validator';
 import { QaapGithubMcpDefaultMigration } from './qaap-github-mcp-default-migration';
+import { QAAP_GITHUB_MCP_SERVER_NAME } from '@theia/qaap-shared-core/lib/common/qaap-github-mcp-managed';
 
 /**
  * Autostart for MCP servers that fail to launch (for example an npm package that is not in the registry)
@@ -35,6 +36,10 @@ export class QaapMcpFrontendApplicationContribution extends McpFrontendApplicati
     }
 
     protected override async attemptSilentStartOrPromptForOAuth(name: string, serverDesc: MCPServerDescription): Promise<void> {
+        // The managed GitHub server starts on demand with a GitHub turn and has no browser sign-in to offer.
+        if (name === QAAP_GITHUB_MCP_SERVER_NAME) {
+            return;
+        }
         if (this.failedAutostartServers.has(name)) {
             return;
         }

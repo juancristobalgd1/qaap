@@ -3,14 +3,14 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { injectable } from '@theia/core/shared/inversify';
+import { inject, injectable } from '@theia/core/shared/inversify';
+import { ErrorChatResponseContentImpl, MutableChatRequestModel } from '@theia/ai-chat/lib/common/chat-model';
 import type { MCPServerDescription } from '@theia/ai-mcp/lib/common/mcp-server-manager';
+import { nls } from '@theia/core/lib/common/nls';
 import { GitHubChatAgent } from '@theia/ai-ide/lib/browser/github-chat-agent';
 import { githubTemplate } from '@theia/ai-ide/lib/browser/github-prompt-template';
-import {
-    QAAP_GITHUB_MCP_READONLY_URL,
-    QAAP_GITHUB_MCP_SERVER_NAME
-} from '@theia/qaap-shared-core/lib/common/qaap-github-mcp-managed';
+import { QAAP_GITHUB_MCP_SERVER_NAME } from '@theia/qaap-shared-core/lib/common/qaap-github-mcp-managed';
+import { QaapGithubMcpOnDemandStarter, QaapGithubMcpStartOutcome } from './qaap-github-mcp-on-demand-starter';
 
 /** The upstream prompt refers to the tools of a server named `github`; the managed server is `qaap-github`. */
 const UPSTREAM_GITHUB_TOOLS_FRAGMENT = '{{prompt:mcp_github_tools}}';
@@ -20,9 +20,6 @@ const managedGithubTemplate: typeof githubTemplate = {
     ...githubTemplate,
     template: githubTemplate.template.split(UPSTREAM_GITHUB_TOOLS_FRAGMENT).join(MANAGED_GITHUB_TOOLS_FRAGMENT)
 };
-
-/** The managed server is the only GitHub server this agent uses; it is never written to the preferences. */
-const MANAGED_SERVER: MCPServerDescription = { name: QAAP_GITHUB_MCP_SERVER_NAME, serverUrl: QAAP_GITHUB_MCP_READONLY_URL };
 
 /**
  * GitHub chat agent bound to the managed GitHub MCP server.
@@ -34,6 +31,9 @@ const MANAGED_SERVER: MCPServerDescription = { name: QAAP_GITHUB_MCP_SERVER_NAME
 @injectable()
 export class QaapGitHubChatAgent extends GitHubChatAgent {
 
+    @inject(QaapGithubMcpOnDemandStarter)
+    protected readonly starter: QaapGithubMcpOnDemandStarter;
+
     override prompts = [{ id: 'github-system', defaultVariant: managedGithubTemplate, variants: [] }];
 
     protected override async requiresConfiguration(): Promise<boolean> {
@@ -44,8 +44,37 @@ export class QaapGitHubChatAgent extends GitHubChatAgent {
         return !(await this.mcpService.isServerStarted(QAAP_GITHUB_MCP_SERVER_NAME));
     }
 
+    /** A GitHub turn starts the managed server silently; without a credential the turn ends with a clear error. */
+    override async invoke(request: MutableChatRequestModel): Promise<void> {
+        const failure = QaapGitHubChatAgent.failureMessage(await this.starter.ensureStarted());
+        if (failure) {
+            request.response.response.addContent(new ErrorChatResponseContentImpl(new Error(failure)));
+            request.response.complete();
+            return;
+        }
+        await super.invoke(request);
+    }
+
     protected override async startServer(): Promise<void> {
-        await this.ensureServerStarted(MANAGED_SERVER);
+        const outcome = await this.starter.ensureStarted();
+        const failure = QaapGitHubChatAgent.failureMessage(outcome);
+        if (failure) {
+            throw new Error(failure);
+        }
+    }
+
+    /** The text shown in the chat for a start outcome that stops the turn; `undefined` when the turn may continue. */
+    static failureMessage(outcome: QaapGithubMcpStartOutcome): string | undefined {
+        switch (outcome) {
+            case 'started':
+                return undefined;
+            case 'needs-credential':
+                return nls.localize('theia/qaap/githubMcp/noCredential', 'Connect GitHub to use GitHub tools');
+            case 'auth-required':
+                return nls.localize('theia/qaap/githubMcp/authRequired', 'GitHub rejected the token. Connect GitHub again to use GitHub tools.');
+            default:
+                return nls.localize('theia/qaap/githubMcp/startFailed', 'The GitHub MCP server could not be started.');
+        }
     }
 
     override async ensureServerStarted(server: MCPServerDescription): Promise<void> {
