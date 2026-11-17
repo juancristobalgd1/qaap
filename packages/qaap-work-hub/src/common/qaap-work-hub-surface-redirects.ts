@@ -28,6 +28,31 @@ export function parseWorkHubSettingsSectionQuery(query?: string): string | undef
     return sectionId || undefined;
 }
 
+/**
+ * Work Hub Settings sections that the desktop app (Electron) does not offer. Plan shows the web and mobile
+ * billing page; the desktop app has no plan page of its own.
+ */
+export const WORK_HUB_DESKTOP_HIDDEN_SETTINGS_SECTION_IDS: readonly string[] = ['plan-usage'];
+
+/** The General section id: where a hidden section falls back to, so no deep link lands on an empty page. */
+export const WORK_HUB_SETTINGS_DEFAULT_SECTION_ID = 'general';
+
+/**
+ * Whether a Work Hub Settings section is offered in the given runtime. Desktop hides Plan; web and mobile
+ * offer every section.
+ */
+export function isWorkHubSettingsSectionVisible(sectionId: string, desktop: boolean): boolean {
+    return !desktop || !WORK_HUB_DESKTOP_HIDDEN_SETTINGS_SECTION_IDS.includes(sectionId);
+}
+
+/**
+ * The section id to show for a requested one: the id itself when it is visible in this runtime, otherwise
+ * General (a deep link to Plan on desktop redirects instead of opening an empty page).
+ */
+export function resolveWorkHubSettingsSectionId(sectionId: string, desktop: boolean): string {
+    return isWorkHubSettingsSectionVisible(sectionId, desktop) ? sectionId : WORK_HUB_SETTINGS_DEFAULT_SECTION_ID;
+}
+
 export interface WorkHubSettingsCommandRedirect {
     /** Upstream command id, for example `preferences:open` (`CommonCommands.OPEN_PREFERENCES`). */
     readonly commandId: string;

@@ -46,7 +46,12 @@ import type {
 import { MobileWorkHubMcpServerSummary } from './mobile-work-hub-mcp-server-summary';
 import { MobileWorkHubActivityCalendar } from './mobile-work-hub-activity-calendar';
 import { collectQaapActivityTimestamps } from '../common/qaap-activity-calendar';
-import { parseWorkHubSettingsSectionQuery } from '../common/qaap-work-hub-surface-redirects';
+import {
+    isWorkHubSettingsSectionVisible,
+    parseWorkHubSettingsSectionQuery,
+    resolveWorkHubSettingsSectionId,
+} from '../common/qaap-work-hub-surface-redirects';
+import { environment } from '@theia/core/lib/common';
 
 /** Work Hub AI Features sheet scopes Settings to this search term. */
 export const WORK_HUB_AI_FEATURES_PREFERENCES_QUERY = 'ai-features';
@@ -325,7 +330,7 @@ export class MobileWorkHubPreferencesSheet {
         settingsNav.setAttribute('aria-label', nls.localize('qaap/workHubSettings/navigationLabel', 'Work Hub settings sections'));
         this.settingsNav = settingsNav;
         settingsSectionLabel.hidden = true;
-        for (const section of WORK_HUB_SETTINGS_SECTIONS) {
+        for (const section of this.getVisibleSettingsSections()) {
             if (section.group) {
                 settingsNav.append(createWorkHubSettingsGroupLabel(section.group));
             }
@@ -551,8 +556,19 @@ export class MobileWorkHubPreferencesSheet {
         widget.update();
     }
 
+    /** Desktop (Electron) is the only runtime that hides sections, see `isWorkHubSettingsSectionVisible`. */
+    protected isDesktopSettingsRuntime(): boolean {
+        return environment.electron.is();
+    }
+
+    protected getVisibleSettingsSections(): readonly WorkHubSettingsSection[] {
+        const desktop = this.isDesktopSettingsRuntime();
+        return WORK_HUB_SETTINGS_SECTIONS.filter(section => isWorkHubSettingsSectionVisible(section.id, desktop));
+    }
+
     protected getSettingsSection(id: string): WorkHubSettingsSection {
-        return WORK_HUB_SETTINGS_SECTIONS.find(section => section.id === id)
+        const sectionId = resolveWorkHubSettingsSectionId(id, this.isDesktopSettingsRuntime());
+        return WORK_HUB_SETTINGS_SECTIONS.find(section => section.id === sectionId)
             ?? WORK_HUB_SETTINGS_SECTIONS[0];
     }
 
@@ -610,7 +626,7 @@ export class MobileWorkHubPreferencesSheet {
 
     protected createSettingsSidebarOptions(): MobileWorkHubSettingsSidebarOptions {
         return {
-            sections: WORK_HUB_SETTINGS_SECTIONS,
+            sections: this.getVisibleSettingsSections(),
             activeSectionId: () => this.activeSettingsSectionId,
             searchValue: () => this.settingsSearchInput.value,
             searchReadOnly: () => this.settingsSearchInput.readOnly,

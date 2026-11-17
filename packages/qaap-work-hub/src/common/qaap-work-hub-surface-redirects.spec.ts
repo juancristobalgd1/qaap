@@ -5,7 +5,9 @@
 
 import { expect } from 'chai';
 import {
+    isWorkHubSettingsSectionVisible,
     parseWorkHubSettingsSectionQuery,
+    resolveWorkHubSettingsSectionId,
     WORK_HUB_CHECK_FOR_UPDATES_COMMAND_ID,
     WORK_HUB_SETTINGS_COMMAND_REDIRECTS,
     workHubSettingsSectionQuery,
@@ -53,5 +55,24 @@ describe('qaap-work-hub-surface-redirects', () => {
 
     it('names the sample updater command behind the native Check for Updates item', () => {
         expect(WORK_HUB_CHECK_FOR_UPDATES_COMMAND_ID).to.equal('electron-sample:check-for-updates');
+    });
+
+    describe('Plan section visibility', () => {
+        it('hides Plan on desktop only', () => {
+            expect(isWorkHubSettingsSectionVisible('plan-usage', true)).to.equal(false);
+            expect(isWorkHubSettingsSectionVisible('plan-usage', false)).to.equal(true);
+        });
+
+        it('keeps every other section on desktop', () => {
+            for (const sectionId of ['general', 'profile', 'appearance', 'agents', 'mcp', 'skills', 'keybindings']) {
+                expect(isWorkHubSettingsSectionVisible(sectionId, true), sectionId).to.equal(true);
+            }
+        });
+
+        it('redirects a deep link to Plan on desktop to General instead of an empty page', () => {
+            expect(resolveWorkHubSettingsSectionId('plan-usage', true)).to.equal('general');
+            expect(resolveWorkHubSettingsSectionId('plan-usage', false)).to.equal('plan-usage');
+            expect(resolveWorkHubSettingsSectionId('keybindings', true)).to.equal('keybindings');
+        });
     });
 });
