@@ -863,6 +863,45 @@ body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-agents-hub-no-project-
   padding-right: var(--qaap-transcript-column-bleed-end, 0px);
 }
 
+/*
+ * Desktop IDE pins the clip in base sheet with `width: 100% !important` and `margin-inline: auto
+ * !important`, which cancels the bleed above: the clip then sits inside the host's chrome inset and
+ * the scrollbar floats 12px inside the column. Re-apply the bleed at the same priority with a
+ * higher-specificity selector. The scroller's own gutter is restored on top of the bleed, so its
+ * content box (and therefore the centred reading column) is unchanged.
+ */
+body.theia-mobile-mod-desktop-ide .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-agents-hub-inline-transcript .theia-mobile-agent-transcript-real-chat,
+body.theia-mobile-mod-desktop-ide .theia-mobile-projects.theia-mod-agents-hub-inline-active .theia-mobile-agents-hub-inline-transcript .theia-mobile-agent-transcript-real-chat {
+  width: calc(100% + var(--qaap-transcript-column-bleed-start) + var(--qaap-transcript-column-bleed-end)) !important;
+  max-width: none !important;
+  margin-left: calc(-1 * var(--qaap-transcript-column-bleed-start)) !important;
+  margin-right: calc(-1 * var(--qaap-transcript-column-bleed-end)) !important;
+}
+
+body.theia-mobile-mod-desktop-ide .theia-mobile-projects .theia-mobile-agents-hub-inline-transcript .theia-mobile-agent-transcript-real-chat>.theia-mobile-agent-transcript.theia-mobile-agent-transcript {
+  padding-left: calc(var(--qaap-transcript-column-bleed-start, 0px) + var(--theia-mobile-execution-chrome-pad-x, 12px));
+  padding-right: calc(var(--qaap-transcript-column-bleed-end, 0px) + var(--theia-mobile-execution-chrome-pad-x, 12px));
+}
+
+/*
+ * Same pin for the Work Hub primary surface (`workhub-no-bottom-chrome`), which is set at every
+ * viewport. Desktop only: narrow (mobile) layouts keep the base sheet's geometry.
+ */
+@media (min-width: 768px) {
+  body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-agents-hub-inline-transcript .theia-mobile-agent-transcript-real-chat,
+  body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-agents-hub-inline-active .theia-mobile-agents-hub-inline-transcript .theia-mobile-agent-transcript-real-chat {
+    width: calc(100% + var(--qaap-transcript-column-bleed-start) + var(--qaap-transcript-column-bleed-end)) !important;
+    max-width: none !important;
+    margin-left: calc(-1 * var(--qaap-transcript-column-bleed-start)) !important;
+    margin-right: calc(-1 * var(--qaap-transcript-column-bleed-end)) !important;
+  }
+
+  body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects .theia-mobile-agents-hub-inline-transcript .theia-mobile-agent-transcript-real-chat>.theia-mobile-agent-transcript.theia-mobile-agent-transcript {
+    padding-left: calc(var(--qaap-transcript-column-bleed-start, 0px) + var(--theia-mobile-execution-chrome-pad-x, 12px));
+    padding-right: calc(var(--qaap-transcript-column-bleed-end, 0px) + var(--theia-mobile-execution-chrome-pad-x, 12px));
+  }
+}
+
 .theia-mobile-agents-hub-inline-transcript .theia-mobile-agent-transcript-real-chat>.theia-mobile-agent-transcript {
   flex: 1 1 auto;
   min-height: 0;
