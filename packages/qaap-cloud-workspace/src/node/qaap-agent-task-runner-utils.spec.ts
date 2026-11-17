@@ -117,9 +117,16 @@ describe('harness connection state', () => {
         }
     });
 
-    it('does not count Cursor "Logged in (unable to fetch user details)" as a session', () => {
-        // Real `cursor-agent status` output with a stored token the service rejects; every turn then fails.
-        expect(classifyAgentConnectionProbe('cursor', 0, '✓ Login successful!\nLogged in (unable to fetch user details)', false)).to.equal('unknown');
+    it('counts Cursor "Login successful" / "Logged in" as connected even with "unable to fetch user details"', () => {
+        expect(classifyAgentConnectionProbe('cursor', 0, '✓ Login successful!\nLogged in (unable to fetch user details)', false)).to.equal('connected');
+        expect(classifyAgentConnectionProbe('cursor', 0, 'Logged in (unable to fetch user details)', false)).to.equal('connected');
+        // A "not logged in" line stays disconnected even though it contains "logged in".
+        expect(classifyAgentConnectionProbe('cursor', 0, 'Not logged in (unable to fetch user details)', false)).to.equal('disconnected');
+        // No success line: still inconclusive.
+        expect(classifyAgentConnectionProbe('cursor', 0, 'Unable to fetch user details', false)).to.equal('unknown');
+    });
+
+    it('keeps Cursor plain status lines classified: not logged in is disconnected, a logged-in account is connected', () => {
         expect(classifyAgentConnectionProbe('cursor', 0, 'Not logged in', false)).to.equal('disconnected');
         expect(classifyAgentConnectionProbe('cursor', 0, '✓ Logged in as dev@example.com', false)).to.equal('connected');
     });

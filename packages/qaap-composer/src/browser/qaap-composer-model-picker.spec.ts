@@ -117,6 +117,72 @@ describe('qaap-composer-model-picker', () => {
         expect(selected).to.deep.equal([]);
     });
 
+    it('marks a sign-in-locked row aria-disabled, never selects it, and opens the sign-in on click', () => {
+        const selected: string[] = [];
+        const signedIn: string[] = [];
+        const locked = state({
+            models: [
+                { agentId: 'claude', modelId: 'opus-pro', label: 'Opus Pro', available: false, unavailableReason: 'Sign in to use this model', tier: 'pro', signInRequired: true },
+                { agentId: 'claude', modelId: 'beam', label: 'Beam', available: true, tier: 'free' },
+            ],
+        });
+        renderQaapComposerModelPicker(host, props({
+            state: locked,
+            onSelectModel: (_agent, model) => selected.push(model),
+            onSignIn: agentId => signedIn.push(agentId),
+        }));
+        const pro = rows(host)[0];
+        expect(pro.dataset.modelId).to.equal('opus-pro');
+        expect(pro.getAttribute('aria-disabled')).to.equal('true');
+        expect(pro.classList.contains('theia-mod-disabled')).to.equal(true);
+        expect(rows(host)[1].getAttribute('aria-disabled')).to.equal('false');
+        expect(rows(host)[1].classList.contains('theia-mod-disabled')).to.equal(false);
+
+        pro.click();
+        expect(signedIn).to.deep.equal(['claude']);
+        expect(selected).to.deep.equal([]);
+
+        host.dispatchEvent(new KeyboardEvent('keydown', { key: '1', metaKey: true, bubbles: true, cancelable: true }));
+        expect(selected).to.deep.equal([]);
+        expect(signedIn).to.deep.equal(['claude']);
+    });
+
+    it('does not select a sign-in-locked row with Enter in the search field, and picks the first selectable row instead', () => {
+        const selected: string[] = [];
+        const signedIn: string[] = [];
+        const locked = state({
+            models: [
+                { agentId: 'claude', modelId: 'opus-pro', label: 'Opus Pro', available: false, unavailableReason: 'Sign in to use this model', tier: 'pro', signInRequired: true },
+                { agentId: 'claude', modelId: 'beam', label: 'Beam', available: true, tier: 'free' },
+            ],
+        });
+        renderQaapComposerModelPicker(host, props({
+            state: locked,
+            onSelectModel: (_agent, model) => selected.push(model),
+            onSignIn: agentId => signedIn.push(agentId),
+        }));
+        expect(rows(host)[0].dataset.modelId).to.equal('opus-pro');
+        const input = host.querySelector<HTMLInputElement>('.qaap-model-picker-search input')!;
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+        expect(selected).to.deep.equal(['beam']);
+        expect(signedIn).to.deep.equal([]);
+    });
+
+    it('leaves a row locked by its plan inert: natively disabled, aria-disabled, and no sign-in on click', () => {
+        const signedIn: string[] = [];
+        const selected: string[] = [];
+        renderQaapComposerModelPicker(host, props({
+            onSelectModel: (_agent, model) => selected.push(model),
+            onSignIn: agentId => signedIn.push(agentId),
+        }));
+        const haiku = rows(host)[2];
+        expect(haiku.getAttribute('aria-disabled')).to.equal('true');
+        expect(haiku.classList.contains('theia-mod-disabled')).to.equal(true);
+        haiku.click();
+        expect(signedIn).to.deep.equal([]);
+        expect(selected).to.deep.equal([]);
+    });
+
     it('shows the favorites rail with only starred models', () => {
         const favorites = [QaapComposerModelPickerModel.favoriteKey('claude', 'sonnet-4-6')];
         renderQaapComposerModelPicker(host, props({ state: state({ railSelection: 'favorites', favorites }) }));

@@ -37,19 +37,19 @@ describe('agy sign-in wait watcher', () => {
         expect(detectAgentFailureKind(`${AGY_UNSIGNED}\n[qaap] Antigravity is waiting for a sign-in; stopping the run.`)).to.equal('auth');
     });
 
-    // Was: the guard needed a session for every model (signed-out and checking both refused). Fail-open now:
-    // only a positive sign-out refuses agy; a pending or inconclusive probe lets it run, and this watcher stops
-    // it at its sign-in wait so the turn ends as an auth failure with the Sign in action.
-    it('antigravity has no Free model: a positive sign-out refuses every model, an unknown session lets agy run', () => {
+    // Fail-closed: agy has no Free model, so a positive sign-out or a settled unknown session refuses every model.
+    // Only a pending probe (checking) lets agy run; the sign-in wait watcher above is the backstop for a run that
+    // reached the CLI's sign-in wait anyway.
+    it('antigravity has no Free model: a sign-out or an unknown session refuses every model, a pending probe lets agy run', () => {
         expect(QAAP_BUILTIN_AGENT_DEFINITIONS.find(definition => definition.id === 'antigravity')?.sessionCheck).to.equal('probe');
         for (const modelId of ['', 'auto', 'gemini-3.8-flash-medium', 'gemini-3.8-pro-high', 'gemini-free', 'x:free']) {
             const tier = QaapHarnessModelAvailability.tier('antigravity', { modelId });
             expect(tier, modelId).to.equal('pro');
-            expect(QaapHarnessModelAvailability.availability({ harnessEnabled: true, session: 'signed-out', tier }).selectable, `${modelId}/signed-out`)
-                .to.equal(false);
-            for (const session of ['checking', 'unknown'] as const) {
-                expect(QaapHarnessModelAvailability.availability({ harnessEnabled: true, session, tier }).selectable, `${modelId}/${session}`).to.equal(true);
+            for (const session of ['signed-out', 'unknown'] as const) {
+                expect(QaapHarnessModelAvailability.availability({ harnessEnabled: true, session, tier }).selectable, `${modelId}/${session}`)
+                    .to.equal(false);
             }
+            expect(QaapHarnessModelAvailability.availability({ harnessEnabled: true, session: 'checking', tier }).selectable, `${modelId}/checking`).to.equal(true);
         }
     });
 });

@@ -40,16 +40,24 @@ describe('harness session check declarations', () => {
         expect([...QAAP_SESSION_ATTESTATION_AGENT_IDS].sort()).to.deep.equal(declared);
     });
 
-    // Was fail-closed (settled unknown → signed-out → Pro locked for good). The rule now fails open: only a
-    // positive sign-out (or a turn that proved the session rejected) locks; the run surfaces the sign-in.
-    it('fails open: a harness that cannot answer stays unknown once nothing is pending, so its Pro models stay selectable', () => {
+    // Fail-closed: a harness that cannot answer stays unknown once nothing is pending, and its Pro models are locked
+    // with the sign-in reason until a sign-in (or attestation) confirms the session.
+    it('fails closed: a harness that cannot answer stays unknown once nothing is pending, so its Pro models are locked', () => {
         const accessState = resolveAgentAccess({ agentId: 'future-harness', connectionState: 'unknown', probeSettled: true });
         const session = QaapHarnessModelAvailability.session({ connectionState: 'unknown', accessState, probeSettled: true });
         expect(session).to.equal('unknown');
         expect(QaapHarnessModelAvailability.availability({
             harnessEnabled: true,
             session,
-            tier: QaapHarnessModelAvailability.tier('future-harness', { modelId: 'future/model-free' }),
+            tier: QaapHarnessModelAvailability.tier('future-harness', { modelId: 'future/model-pro' }),
+        })).to.deep.equal({ visible: true, selectable: false, reason: 'sign-in-required' });
+    });
+
+    it('keeps a free model of an unknown harness selectable', () => {
+        expect(QaapHarnessModelAvailability.availability({
+            harnessEnabled: true,
+            session: 'unknown',
+            tier: QaapHarnessModelAvailability.tier('opencode', { vendor: 'opencode', modelId: 'opencode/beam-free' }),
         })).to.deep.equal({ visible: true, selectable: true });
     });
 

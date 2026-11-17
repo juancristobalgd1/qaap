@@ -325,7 +325,8 @@ function renderList(host: HTMLElement, props: QaapComposerModelPickerProps): HTM
     input.addEventListener('keydown', ev => {
         if (ev.key === 'Enter') {
             ev.preventDefault();
-            const first = visibleRows(host).find(row => !row.disabled);
+            // Enter picks the first selectable row; a locked row (sign-in or plan) is never picked by Enter.
+            const first = visibleRows(host).find(row => !row.disabled && row.getAttribute('aria-disabled') !== 'true');
             first?.click();
         } else if (ev.key === 'ArrowDown') {
             ev.preventDefault();
@@ -373,9 +374,12 @@ function renderList(host: HTMLElement, props: QaapComposerModelPickerProps): HTM
         row.setAttribute('aria-selected', String(isCurrent));
         row.dataset.agentId = model.agentId;
         row.dataset.modelId = model.modelId;
-        // A sign-in-locked row stays tappable when the host can open the sign-in; it runs that instead.
+        // A sign-in-locked row is not selectable, but stays clickable (not natively disabled) so the click can
+        // open the harness sign-in. Any other locked row is natively disabled and does nothing.
         const signInLocked = !model.available && model.signInRequired === true && !!props.onSignIn;
         row.disabled = !model.available && !signInLocked;
+        row.setAttribute('aria-disabled', String(!model.available));
+        row.classList.toggle('theia-mod-disabled', !model.available);
         row.classList.toggle('theia-mod-current', isCurrent);
         // The row shows the name only; the full model id is the tooltip.
         row.title = model.available ? model.modelId : (model.unavailableReason ?? model.modelId);

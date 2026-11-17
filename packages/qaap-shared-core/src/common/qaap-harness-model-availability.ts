@@ -13,9 +13,9 @@ import { OPENCODE_AGENT_ID, type QaapAgentConnectionState } from './qaap-agent-t
  *   Pro models are visible but locked.
  * - `checking`: the auth probe is still running. Pro models stay selectable: the run's own pre-spawn guard
  *   waits for the probe, and a lock that depends on a probe settling can hang forever.
- * - `unknown`: the probe settled without a clear answer (timeout, unreadable output) or the harness has no
- *   way to report its session. Fail-open: Pro models stay selectable and the run surfaces the harness's own
- *   sign-in prompt (auth failure → rejected session → `signed-out` with the Sign in action).
+ * - `unknown`: the probe settled without a confirmable answer (timeout, unreadable output) or the harness has
+ *   no way to report its session and no attestation. Fail-closed: Pro models are locked exactly like
+ *   `signed-out` (sign-in required, with the Sign in action). The sign-in itself is never locked.
  */
 export type QaapHarnessSession = 'signed-in' | 'signed-out' | 'checking' | 'unknown';
 
@@ -66,8 +66,12 @@ export interface QaapHarnessModelAvailabilityInput {
  * | ------------------------ | ------------------------ | ------------------------------------------- |
  * | signed out               | visible, selectable      | visible, not selectable (sign-in required)  |
  * | signed in                | visible, selectable      | visible, selectable                         |
- * | checking / unknown       | visible, selectable      | visible, selectable (fail-open)             |
+ * | checking                 | visible, selectable      | visible, selectable (probe still running)   |
+ * | unknown                  | visible, selectable      | visible, not selectable (sign-in required)  |
  * | disabled in Settings     | hidden                   | hidden                                      |
+ *
+ * Fail-closed: a Pro model needs a confirmed session. Only `checking` (a probe still running) stays selectable,
+ * because the run's own pre-spawn guard waits for it. Sign-in actions never go through this rule.
  *
  * Pure functions only: no DI, no I/O. Backend and frontend call the same functions so the rule cannot drift.
  */
@@ -76,9 +80,9 @@ export namespace QaapHarnessModelAvailability {
     /**
      * Resolves the sign-in state of a harness.
      * `accessState`, when present, decides `session` / `none`; its `unknown` and an `unknown` connection state
-     * are `checking` while the probe runs and `unknown` once it settled. `connected` and `not-required` are
-     * signed in, `disconnected` is signed out. Only a positive answer is ever `signed-out`. A missing
-     * connection state is `checking`.
+     * are `checking` while the probe runs and `unknown` once it settled (fail-closed for Pro, see
+     * {@link blocksPro}). `connected` and `not-required` are signed in, `disconnected` is signed out. A
+     * missing connection state is `checking`.
      * @param input the harness connection and access signals.
      * @returns the harness session state.
      */
@@ -129,6 +133,17 @@ export namespace QaapHarnessModelAvailability {
     }
 
     /**
+     * Whether a harness session locks its Pro models. The single predicate behind the picker's Sign in action,
+     * the send block and the pre-spawn guard, so they cannot disagree. `signed-in` and `checking` do not lock;
+     * `signed-out` and `unknown` do (fail-closed). `undefined` (no session reported yet) does not lock.
+     * @param session the harness session, when the catalog reported one.
+     * @returns true when Pro models of this harness need a sign-in first.
+     */
+    export function blocksPro(harnessSession: QaapHarnessSession | undefined): boolean {
+        return harnessSession === 'signed-out' || harnessSession === 'unknown';
+    }
+
+    /**
      * Visibility and selectability of one model.
      * @param input the harness enabled flag, the harness session and the model tier.
      * @returns the availability with a reason whenever the model is not selectable.
@@ -140,8 +155,8 @@ export namespace QaapHarnessModelAvailability {
         if (input.tier === 'free') {
             return { visible: true, selectable: true };
         }
-        // Only a positive sign-out locks: `checking` and `unknown` fail open (see QaapHarnessSession).
-        return input.session === 'signed-out'
+        // Fail-closed: only a confirmed session or a probe still running (`checking`) leaves Pro selectable.
+        return blocksPro(input.session)
             ? { visible: true, selectable: false, reason: 'sign-in-required' }
             : { visible: true, selectable: true };
     }

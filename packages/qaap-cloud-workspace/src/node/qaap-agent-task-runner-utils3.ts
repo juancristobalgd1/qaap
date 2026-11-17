@@ -366,15 +366,21 @@ export function classifyAgentConnectionProbe(
     if (agentId.trim().toLowerCase() === 'codex' && /logged in using an api key|api key configured/.test(sample)) {
         return 'disconnected';
     }
-    // `cursor-agent status` with a stored but rejected token: "Logged in (unable to fetch user details)",
-    // exit 0, and every turn then fails with "Authentication required. Please run 'agent login' first".
-    // Not a confirmed session: inconclusive, which the Free/Pro rule reads as signed out once settled.
-    if (agentId.trim().toLowerCase() === 'cursor' && /unable to fetch user details/.test(sample)) {
-        return 'unknown';
-    }
     if (/\"(?:authenticated|isloggedin|loggedin)\"\s*:\s*false/.test(sample)
         || /not logged in|not authenticated|logged out|no active login|no credentials|no providers configured|not connected|no authentication information found|sign in required/.test(sample)) {
         return 'disconnected';
+    }
+    // Cursor (`status` / `agent login`) that reports a successful login counts as connected even when it adds
+    // "unable to fetch user details": the CLI itself says the sign-in succeeded. A turn that later proves the token
+    // rejected ("Authentication required. Please run 'agent login' first") still flips the session to disconnected.
+    // Checked after the disconnected patterns above, so "Not logged in" never reads as connected.
+    if (agentId.trim().toLowerCase() === 'cursor' && status === 0 && /login successful|logged in/.test(sample)) {
+        return 'connected';
+    }
+    // Cursor with no successful-login line and "unable to fetch user details" stays inconclusive: unknown, which the
+    // Free/Pro rule locks like a sign-out (fail-closed).
+    if (agentId.trim().toLowerCase() === 'cursor' && /unable to fetch user details/.test(sample)) {
+        return 'unknown';
     }
     if (status !== 0) {
         return 'unknown';
