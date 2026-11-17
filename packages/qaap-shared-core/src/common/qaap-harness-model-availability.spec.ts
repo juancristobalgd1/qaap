@@ -19,7 +19,9 @@ describe('qaap-harness-model-availability', () => {
                     const label = `${connectionState}/${probeSettled}`;
                     expect(QaapHarnessModelAvailability.session({ connectionState, accessState: 'session', probeSettled }), `session/${label}`).to.equal('signed-in');
                     expect(QaapHarnessModelAvailability.session({ connectionState, accessState: 'none', probeSettled }), `none/${label}`).to.equal('signed-out');
-                    expect(QaapHarnessModelAvailability.session({ connectionState, accessState: 'unknown', probeSettled }), `unknown/${label}`).to.equal('checking');
+                    // Was always 'checking'; a settled unknown is now its own 'unknown' state (fail-open, see below).
+                    expect(QaapHarnessModelAvailability.session({ connectionState, accessState: 'unknown', probeSettled }), `unknown/${label}`)
+                        .to.equal(probeSettled === true ? 'unknown' : 'checking');
                 }
             }
         });
@@ -30,8 +32,10 @@ describe('qaap-harness-model-availability', () => {
             expect(QaapHarnessModelAvailability.session({ connectionState: 'disconnected' })).to.equal('signed-out');
         });
 
-        it('treats unknown connectionState as signed-out only once the probe has settled', () => {
-            expect(QaapHarnessModelAvailability.session({ connectionState: 'unknown', probeSettled: true })).to.equal('signed-out');
+        // Was: a settled unknown read as signed-out (fail-closed), which locked Antigravity's Pro models whenever its
+        // probe timed out. Only a positive answer is a sign-out now.
+        it('never treats an unknown connectionState as signed-out: unknown once settled, checking before', () => {
+            expect(QaapHarnessModelAvailability.session({ connectionState: 'unknown', probeSettled: true })).to.equal('unknown');
             expect(QaapHarnessModelAvailability.session({ connectionState: 'unknown', probeSettled: false })).to.equal('checking');
             expect(QaapHarnessModelAvailability.session({ connectionState: 'unknown' })).to.equal('checking');
         });
@@ -47,11 +51,11 @@ describe('qaap-harness-model-availability', () => {
                 [{ connectionState: 'disconnected', accessState: 'session' }, 'signed-in'],
                 [{ connectionState: 'connected', accessState: 'none' }, 'signed-out'],
                 [{ connectionState: 'connected', accessState: 'unknown' }, 'checking'],
-                [{ connectionState: 'disconnected', accessState: 'unknown', probeSettled: true }, 'checking'],
+                [{ connectionState: 'disconnected', accessState: 'unknown', probeSettled: true }, 'unknown'],
                 [{ connectionState: 'unknown', accessState: 'none', probeSettled: false }, 'signed-out'],
                 [{ connectionState: 'not-required', probeSettled: false }, 'signed-in'],
                 [{ connectionState: 'disconnected', probeSettled: false }, 'signed-out'],
-                [{ connectionState: 'unknown', probeSettled: true }, 'signed-out'],
+                [{ connectionState: 'unknown', probeSettled: true }, 'unknown'],
                 [{ connectionState: 'unknown', probeSettled: false }, 'checking'],
                 [{}, 'checking'],
             ];
@@ -101,7 +105,7 @@ describe('qaap-harness-model-availability', () => {
 
     describe('availability', () => {
 
-        const sessions: QaapHarnessSession[] = ['signed-in', 'signed-out', 'checking'];
+        const sessions: QaapHarnessSession[] = ['signed-in', 'signed-out', 'checking', 'unknown'];
         const tiers: QaapModelTier[] = ['free', 'pro'];
 
         it('hides every model of a disabled harness, whatever the session and tier', () => {
@@ -130,9 +134,18 @@ describe('qaap-harness-model-availability', () => {
                 .to.deep.equal({ visible: true, selectable: false, reason: 'sign-in-required' });
         });
 
-        it('locks pro models with checking-sign-in while the session is unresolved', () => {
-            expect(QaapHarnessModelAvailability.availability({ harnessEnabled: true, session: 'checking', tier: 'pro' }))
-                .to.deep.equal({ visible: true, selectable: false, reason: 'checking-sign-in' });
+        // Was: locked with checking-sign-in while unresolved. A probe that never settles kept Antigravity's models
+        // locked forever, so an unresolved session now fails open; only a positive sign-out locks.
+        it('keeps pro models selectable while the session is checking or unknown (fail-open)', () => {
+            for (const session of ['checking', 'unknown'] as const) {
+                expect(QaapHarnessModelAvailability.availability({ harnessEnabled: true, session, tier: 'pro' }), session)
+                    .to.deep.equal({ visible: true, selectable: true });
+            }
+        });
+
+        it('locks pro models only on a positive sign-out', () => {
+            const locked = sessions.filter(session => !QaapHarnessModelAvailability.availability({ harnessEnabled: true, session, tier: 'pro' }).selectable);
+            expect(locked).to.deep.equal(['signed-out']);
         });
     });
 
@@ -148,8 +161,8 @@ describe('qaap-harness-model-availability', () => {
 
     /**
      * Harness × state matrix for every built-in harness, current and future (the list is read, not copied):
-     * signed out (backend `accessState: 'none'`, also what a harness without a usable probe settles to), signed in,
-     * and disabled in Settings → Harness. Pro is every catalog model except OpenCode's own free ones.
+     * signed out (backend `accessState: 'none'`), signed in, session unknown / checking (a harness without a usable
+     * answer: fail-open), and disabled in Settings → Harness. Pro is every catalog model except OpenCode's own free ones.
      */
     describe('harness × state matrix', () => {
         const PRO_MODEL: Readonly<Record<string, string>> = {
@@ -159,6 +172,8 @@ describe('qaap-harness-model-availability', () => {
         const states: ReadonlyArray<{ readonly name: string; readonly enabled: boolean; readonly session: QaapHarnessSession; readonly pro: object; readonly free: object }> = [
             { name: 'signed out', enabled: true, session: 'signed-out', pro: { visible: true, selectable: false, reason: 'sign-in-required' }, free: { visible: true, selectable: true } },
             { name: 'signed in', enabled: true, session: 'signed-in', pro: { visible: true, selectable: true }, free: { visible: true, selectable: true } },
+            { name: 'session unknown', enabled: true, session: 'unknown', pro: { visible: true, selectable: true }, free: { visible: true, selectable: true } },
+            { name: 'session checking', enabled: true, session: 'checking', pro: { visible: true, selectable: true }, free: { visible: true, selectable: true } },
             { name: 'disabled in Settings', enabled: false, session: 'signed-in', pro: { visible: false, selectable: false, reason: 'harness-disabled' }, free: { visible: false, selectable: false, reason: 'harness-disabled' } },
             { name: 'disabled and signed out', enabled: false, session: 'signed-out', pro: { visible: false, selectable: false, reason: 'harness-disabled' }, free: { visible: false, selectable: false, reason: 'harness-disabled' } },
         ];
@@ -177,9 +192,12 @@ describe('qaap-harness-model-availability', () => {
                     }
                 });
             }
-            it(`${definition.id}: a backend that says nothing usable reads as signed out (fail-closed)`, () => {
+            // Was: "a backend that says nothing usable reads as signed out (fail-closed)". A positive `none` /
+            // `disconnected` still does; an inconclusive answer does not.
+            it(`${definition.id}: only a positive sign-out reads as signed out; an inconclusive answer fails open`, () => {
                 expect(QaapHarnessModelAvailability.session({ connectionState: 'unknown', accessState: 'none', probeSettled: true })).to.equal('signed-out');
                 expect(QaapHarnessModelAvailability.session({ connectionState: 'disconnected' })).to.equal('signed-out');
+                expect(QaapHarnessModelAvailability.session({ connectionState: 'unknown', accessState: 'unknown', probeSettled: true })).to.equal('unknown');
             });
         }
 

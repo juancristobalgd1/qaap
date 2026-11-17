@@ -6,7 +6,9 @@
 import { QAAP_BUILTIN_AGENT_DEFINITIONS } from './qaap-builtin-agents';
 import { OPENCLAUDE_AGENT_ID, QAIQ_AGENT_ID, migrateQaapProductAgentId } from './qaap-agent-task-client';
 import {
+    resolveAgentHiddenLoginCommand,
     resolveAgentLoginCliCommand,
+    resolveAgentLoginEnv,
 } from './qaap-agent-auth-login';
 import { normalizeAntigravityCliBin } from './qaap-antigravity-cli';
 import { isAgentHiddenOnHostedRuntime } from './qaap-hosted-agent-auth-policy';
@@ -96,7 +98,8 @@ export function resolvePiTuiLoginInput(provider: string): readonly QaapAgentLogi
 
 /** A deliberate route for the Work Hub Connect action. */
 export type QaapAgentConnectionFlow =
-    | { readonly kind: 'cli-login'; readonly command: string }
+    /** `env`: exported for the login command only (OpenCode's catalog URL, Copilot's auto-update switch). */
+    | { readonly kind: 'cli-login'; readonly command: string; readonly env?: Readonly<Record<string, string>> }
     /**
      * Interactive CLI without a login subcommand (Pi): `command` starts it in the hidden sign-in
      * terminal and `input` drives it to the sign-in link. `fallbackCommand` + `followUp` are the
@@ -139,7 +142,9 @@ export function resolveAgentConnectionFlow(
     }
     const loginCommand = resolveAgentLoginCliCommand(normalized, options?.cliBin);
     if (loginCommand) {
-        return { kind: 'cli-login', command: loginCommand };
+        const command = resolveAgentHiddenLoginCommand(normalized, loginCommand);
+        const env = resolveAgentLoginEnv(normalized);
+        return env ? { kind: 'cli-login', command, env } : { kind: 'cli-login', command };
     }
     const bin = resolveInteractiveAgentCliBin(normalized, options?.cliBin);
     if (!bin) {
