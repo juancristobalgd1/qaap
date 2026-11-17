@@ -21,6 +21,7 @@ import { OPENCODE_FREE_MODEL_OPTIONS, OPENCODE_PAID_MODEL_OPTIONS } from './qaap
 import { resolveStoredAgentModelForSubmit } from './qaap-agent-model-selection';
 import { getQaapDefaultAgentId } from './qaap-default-agent-id';
 import { dedupeInFlight } from './qaap-in-flight-dedupe';
+import { isQaapSessionAttestationAgent, QAAP_AGENT_SESSION_ATTEST_ROUTE } from './qaap-agent-session-attestation';
 
 export {
     agentSupportsModelPicker,
@@ -71,6 +72,8 @@ export interface QaapAgentTaskAgentOption {
     readonly connectionState?: QaapAgentConnectionState;
     /** How the owner can run the agent now (see the backend `resolveAgentAccess`); `none` offers a sign-in. */
     readonly accessState?: 'session' | 'none' | 'unknown';
+    /** Sign-in state for the owner; `available` stays "can run now" (see the backend descriptor). */
+    readonly session?: 'signed-in' | 'signed-out' | 'checking';
     /** The Antigravity CLI the host resolved (`gemini`, `agy`, `antigravity`); only set for the Antigravity harness. */
     readonly cliBin?: string;
 }
@@ -92,7 +95,9 @@ export interface QaapQaiqModelOption {
     /** Present for native catalogs when a model is visible but gated by the account plan. */
     readonly available?: boolean;
     /** Why a visible model cannot currently be selected, when it is unavailable. */
-    readonly unavailableReason?: 'plan' | 'not-connected' | 'unknown';
+    readonly unavailableReason?: 'plan' | 'not-connected' | 'unknown' | 'checking';
+    /** Free works without the harness session; Pro needs it. */
+    readonly tier?: 'free' | 'pro';
 }
 
 /**
@@ -350,6 +355,9 @@ export function mergeAgentTaskAgentOptions(
                     accessState: agent.accessState && agent.accessState !== 'unknown'
                         ? agent.accessState
                         : existing.accessState ?? agent.accessState,
+                    // The session answer is what tells a signed-out harness (listed, models visible) from one
+                    // that is not detected at all (placeholder without a session).
+                    session: agent.session ?? existing.session,
                 });
             }
         }
@@ -660,6 +668,28 @@ export async function warmAgentRunner(cwd: string): Promise<QaapAgentWarmResult 
         return await response.json() as QaapAgentWarmResult;
     } catch {
         return undefined;
+    }
+}
+
+/**
+ * Tell the backend the sign-in dialog saw the CLI's success line for a harness without an auth probe
+ * (Copilot, Grok), so its Pro models unlock for this session's owner. Resolves false for any other
+ * harness (nothing is sent) or when the backend refused; never throws.
+ */
+export async function attestAgentSessionSignIn(agentId: string): Promise<boolean> {
+    if (!isQaapSessionAttestationAgent(agentId)) {
+        return false;
+    }
+    try {
+        const response = await fetch(`${QAAP_AGENT_TASK_API_PATH}/${QAAP_AGENT_SESSION_ATTEST_ROUTE}`, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ agentId: agentId.trim().toLowerCase() }),
+        });
+        return response.ok;
+    } catch {
+        return false;
     }
 }
 

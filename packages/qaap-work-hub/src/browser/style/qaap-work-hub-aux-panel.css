@@ -449,18 +449,59 @@ body.qaap-mod-work-hub-aux-panel-maximized .qaap-work-hub-aux-panel-resize-handl
   display: none;
 }
 
-.qaap-work-hub-aux-panel-menu-search {
+.qaap-work-hub-aux-panel-menu-search-row {
   flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   height: 40px;
-  margin: 0;
   padding: 0 12px;
-  border: 0;
   border-bottom: 1px solid color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+}
+
+.qaap-work-hub-aux-panel-menu-search-icon {
+  flex: 0 0 auto;
+  font-size: 14px;
+  color: var(--theia-descriptionForeground);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+/* Doubled class: beats the theme's generic `input` and `input:focus` rules (box, focus outline). */
+.qaap-work-hub-aux-panel-menu-search.qaap-work-hub-aux-panel-menu-search {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
   background: transparent;
   color: inherit;
   font: inherit;
   font-size: 13px;
   outline: none;
+  box-shadow: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.qaap-work-hub-aux-panel-menu-search.qaap-work-hub-aux-panel-menu-search:focus,
+.qaap-work-hub-aux-panel-menu-search.qaap-work-hub-aux-panel-menu-search:focus-visible {
+  border: none;
+  outline: none;
+  box-shadow: none;
+  background: transparent;
+}
+
+.qaap-work-hub-aux-panel-menu-search::-webkit-search-decoration,
+.qaap-work-hub-aux-panel-menu-search::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+}
+
+.qaap-work-hub-aux-panel-menu-search::placeholder {
+  color: var(--theia-descriptionForeground, var(--theia-input-placeholderForeground));
 }
 
 .qaap-work-hub-aux-panel-menu-list {
@@ -494,9 +535,9 @@ body.qaap-mod-work-hub-aux-panel-maximized .qaap-work-hub-aux-panel-resize-handl
   cursor: pointer;
 }
 
+/* No persistent "selected" fill on the current tab: only the pointer or keyboard focus lights a row. */
 .qaap-work-hub-aux-panel-menu-item:hover,
-.qaap-work-hub-aux-panel-menu-item:focus-visible,
-.qaap-work-hub-aux-panel-menu-item.theia-mod-active {
+.qaap-work-hub-aux-panel-menu-item:focus-visible {
   background: var(--theia-menu-selectionBackground, color-mix(in srgb, var(--theia-foreground) 9%, transparent));
   color: var(--theia-menu-selectionForeground, inherit);
   outline: none;

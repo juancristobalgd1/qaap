@@ -38,3 +38,25 @@ export function resolveLocalProjectWorkspacePath(reposRoot: string, userLogin: s
     }
     return target;
 }
+
+/** The part of the request auth context that decides whose repos root a new local project uses. */
+export interface LocalProjectAuthContext {
+    readonly kind: 'authenticated' | 'skip' | 'unauthorized';
+    readonly userLogin?: string;
+}
+
+/**
+ * Login whose repos root receives a new local project, or `undefined` when the request may not create one.
+ * A GitHub session always owns its folder. Skip-auth (the local dev default) is honoured only in the desktop
+ * runtime, where the machine's owner is the only user and the folder lands under the desktop's own
+ * `_dev` bucket; hosted and web runs keep refusing it, so the multi-tenant guards are unchanged.
+ */
+export function localProjectOwnerLogin(auth: LocalProjectAuthContext, desktop: boolean): string | undefined {
+    if (auth.kind === 'authenticated') {
+        return auth.userLogin;
+    }
+    if (auth.kind === 'skip' && desktop) {
+        return auth.userLogin;
+    }
+    return undefined;
+}

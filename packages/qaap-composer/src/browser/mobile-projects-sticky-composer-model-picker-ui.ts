@@ -25,15 +25,15 @@ import { disposeQaapComposerModelPicker, renderQaapComposerModelPicker } from '.
 import { placePickerAbove } from './qaap-composer-picker-placement';
 
 /**
- * Sign-in action for a harness known to be signed out; `undefined` otherwise. Only a settled
- * `disconnected` counts: Copilot, Grok and Antigravity have no reliable status command, so their
- * state stays `unknown` (backend access `none`) even after a sign-in, and must not nag for one.
+ * Sign-in action for a harness known to be signed out; `undefined` otherwise. Only a confirmed
+ * `signed-out` session counts: Copilot, Grok and Antigravity have no status command, so their session
+ * stays `checking` or unset and must not nag for a sign-in they may already have.
  */
 function connectionStripFor(
     agent: QaapAgentTaskAgentOption,
     options: StickyComposerModelPickerOptions,
 ): { message: string; actionLabel: string; onAction: () => void } | undefined {
-    if (agent.connectionState === 'disconnected' && options.onProactiveLogin) {
+    if (agent.session === 'signed-out' && options.onProactiveLogin) {
         return {
             message: nls.localize('qaap/composer/picker/connectNeeded', '{0} needs a sign-in before it can run.', agent.label),
             actionLabel: nls.localizeByDefault('Sign in'),
@@ -77,6 +77,8 @@ function toPickerModel(agentId: string, model: QaapQaiqModelOption): QaapPickerM
         label: (model.label?.trim() || model.modelId).replace(/(^|\/)~+/g, '$1'),
         available: !unavailable,
         unavailableReason: unavailable ? unavailableText(model.unavailableReason) : undefined,
+        tier: model.tier,
+        signInRequired: unavailable && model.unavailableReason === 'not-connected',
     };
 }
 
@@ -86,6 +88,8 @@ function unavailableText(reason: QaapQaiqModelOption['unavailableReason']): stri
             return nls.localize('qaap/composer/picker/unavailablePlan', 'Requires a paid plan');
         case 'not-connected':
             return nls.localize('qaap/composer/picker/unavailableNotConnected', 'Sign in to use this model');
+        case 'checking':
+            return nls.localize('qaap/mobileProjects/modelPickerChecking', 'Checking sign-in…');
         default:
             return nls.localize('qaap/composer/picker/unavailableUnknown', 'Not available right now');
     }
@@ -220,6 +224,7 @@ export async function renderStickyComposerModelPicker(
                 repaint();
             },
             onClose: close,
+            onSignIn: agentId => options.onProactiveLogin?.(agentId),
             connect,
         });
         placePickerAbove(chrome.sheet, options.anchor);

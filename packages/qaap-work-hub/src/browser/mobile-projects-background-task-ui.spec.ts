@@ -366,6 +366,31 @@ describe('MobileProjectsBackgroundTaskUi', () => {
         const paidModel = { provider: 'openai' as const, vendor: 'openrouter', modelId: 'openai/gpt-5' };
         const freeModel = { provider: 'openai' as const, vendor: 'openrouter', modelId: 'google/gemma-4-31b-it:free' };
 
+        // The routed agent's live catalog lists both models unlocked (signed in); other agents have no reachable catalog.
+        let originalFetch: typeof fetch;
+        beforeEach(() => {
+            originalFetch = globalThis.fetch;
+            globalThis.fetch = (async (input: RequestInfo | URL) => {
+                if (!String(input).includes('agent=codex')) {
+                    throw new TypeError('Failed to fetch');
+                }
+                return {
+                    ok: true,
+                    // The send catalog is cached per agent for the session, so it also lists the free pick later suites store.
+                    json: async () => ({
+                        models: [
+                            { ...paidModel, label: 'GPT-5', available: true },
+                            { ...freeModel, label: 'Gemma', available: true },
+                            { provider: 'openai', vendor: 'codex', modelId: 'gpt-mini:free', label: 'Mini', available: true },
+                        ],
+                    }),
+                };
+            }) as unknown as typeof fetch;
+        });
+        afterEach(() => {
+            globalThis.fetch = originalFetch;
+        });
+
         function uiWithInner(): { ui: MobileProjectsBackgroundTaskUi; innerCalls: number[] } {
             const ui = new MobileProjectsBackgroundTaskUi({
                 projects: [],
@@ -443,6 +468,21 @@ describe('MobileProjectsBackgroundTaskUi', () => {
             ui['confirmPaidSend'] = async (): Promise<boolean> => false;
             expect(await ui.submitBackgroundAgentTask(project, 'build it', { agentModel: paidModel })).to.be.undefined;
             expect(innerCalls).to.be.empty;
+        });
+
+        it('holds a paid pick when its availability cannot be checked, without asking or sending', async function (): Promise<void> {
+            this.timeout(10_000);
+            const { ui, innerCalls } = uiWithInner();
+            ui['routeSubmitAgent'] = async (): Promise<string> => 'cursor';
+            let gated = 0;
+            ui['confirmPaidSend'] = async (): Promise<boolean> => {
+                gated++;
+                return true;
+            };
+            const cursorPro = { provider: 'openai' as const, vendor: 'cursor', modelId: 'cursor/pro' };
+            expect(await ui.submitBackgroundAgentTask(project, 'build it', { agentModel: cursorPro })).to.be.undefined;
+            expect(innerCalls).to.be.empty;
+            expect(gated).to.equal(0);
         });
 
         it('starts the task once the paid send is confirmed', async () => {

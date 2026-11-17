@@ -4,6 +4,7 @@ import type { MobileProjectsTranscriptMessagesToolUiContext } from './mobile-pro
 import { nls } from '@theia/core/lib/common/nls';
 import {
     extractAgentAuthLoginChallenge,
+    matchQaapSignInGuardRefusal,
     type QaapAgentAuthLoginChallenge,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
 import { QaapPlanLimit } from '@theia/qaap-adapters/lib/common/qaap-plan-limit';
@@ -82,11 +83,16 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
         const generic = localizeGenericAgentFailureMessage('failed');
         const authSample = [error, technicalContent].filter(Boolean).join('\n');
         const planLimit = QaapPlanLimit.parse(authSample);
-        const formatted = planLimit
-            ? QaapPlanLimit.describe(planLimit)
-            : resolved && resolved !== generic
-                ? resolved
-                : (persisted || resolved || generic);
+        // The pre-spawn sign-in guard names the harness and the model ("Sign in to Codex to use gpt-5.5."): show that
+        // concrete line instead of the generic sign-in copy. The Sign in card below stays the action.
+        const guardRefusal = planLimit ? undefined : matchQaapSignInGuardRefusal(authSample);
+        const formatted = guardRefusal
+            ? guardRefusal.message
+            : planLimit
+                ? QaapPlanLimit.describe(planLimit)
+                : resolved && resolved !== generic
+                    ? resolved
+                    : (persisted || resolved || generic);
         const failureKind = detectAgentFailureKind(authSample);
         // Legacy QAIQ turn refused before running (no provider key). Fixed by connecting a harness, not a key.
         const isQaiqKeyMissing = isQaiqProviderKeyMissingFailure(authSample);
@@ -96,7 +102,7 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
             ? undefined
             : extractAgentAuthLoginChallenge(authSample, { agentId: options?.agentId });
         const sessionChallenge = isProviderKeyFailure || isQaiqKeyMissing ? undefined : extractedChallenge
-            ?? (failureKind === 'auth' ? { mode: 'session' as const } : undefined)
+            ?? (guardRefusal || failureKind === 'auth' ? { mode: 'session' as const } : undefined)
             ?? (/needs you to sign in|sign in required|open the sign-in/i.test(formatted)
                 ? { mode: 'session' as const }
                 : undefined);
@@ -236,6 +242,20 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
             }
         } else if (authChallenge) {
             body.append(ctx.createTranscriptAgentAuthLoginCard(authChallenge, options));
+            // "Couldn't confirm your sign-in" is a failed probe, so the task can simply be retried.
+            if (guardRefusal?.retryable && options?.onRetry) {
+                const retryBtn = document.createElement('button');
+                retryBtn.type = 'button';
+                retryBtn.className = 'theia-mobile-agent-turn-failure-retry codicon codicon-refresh';
+                retryBtn.textContent = nls.localize('qaap/mobileProjects/retryTask', 'Retry task');
+                retryBtn.setAttribute('aria-label', retryBtn.textContent);
+                retryBtn.addEventListener('click', event => {
+                    event.stopPropagation();
+                    event.preventDefault();
+                    void Promise.resolve(options.onRetry!());
+                });
+                body.append(retryBtn);
+            }
         } else if (isProviderKeyFailure && options?.onOpenAiFeaturesSettings) {
             const settingsBtn = document.createElement('button');
             settingsBtn.type = 'button';

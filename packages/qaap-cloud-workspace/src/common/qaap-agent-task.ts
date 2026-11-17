@@ -87,7 +87,7 @@ export interface QaapAgentTask {
      * routes to has no API key for the owner. Nothing a retry on another model of the same agent
      * could fix: model fallback must not re-spawn it.
      */
-    readonly preflightFailure?: 'provider_key_missing';
+    readonly preflightFailure?: 'provider_key_missing' | 'sign_in_required';
     /**
      * Set when an orchestrator (a workflow run) owns the adversarial review for this turn, so the
      * runner must not also run its own. Without it a workflow-driven turn is reviewed twice — once
@@ -406,6 +406,11 @@ export interface QaapAgentDescriptor {
      * or not yet known (`unknown`).
      */
     readonly accessState?: QaapAgentAccessState;
+    /**
+     * Sign-in state for the owner (`QaapHarnessModelAvailability.session`). `available` keeps meaning "can run
+     * now": an enabled harness that is signed out stays listed, and only its Free models are usable.
+     */
+    readonly session?: 'signed-in' | 'signed-out' | 'checking';
     /** The Antigravity CLI the host resolved; only set for the Antigravity harness (see {@link QaapAgentHarnessStatus.cliBin}). */
     readonly cliBin?: string;
 }
@@ -422,7 +427,9 @@ export interface QaapQaiqModelOption {
     /** Present for native catalogs when a model is visible but gated by the account plan. */
     readonly available?: boolean;
     /** Why a visible model cannot currently be selected, when it is unavailable. */
-    readonly unavailableReason?: 'plan' | 'not-connected' | 'unknown';
+    readonly unavailableReason?: 'plan' | 'not-connected' | 'unknown' | 'checking';
+    /** Free works without the harness session; Pro needs it (`QaapHarnessModelAvailability.tier`). */
+    readonly tier?: 'free' | 'pro';
 }
 
 /** QAIQ model binding selected by the user in the agent picker submenu. */

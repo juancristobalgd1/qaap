@@ -83,6 +83,7 @@ import {
     applyTemplateForPromptTransport as applyTemplateForPromptTransportHelper,
     resolveAgentPromptTransport as resolveAgentPromptTransportHelper,
     writeAgentPromptFile as writeAgentPromptFileHelper,
+    planArgvPrompt as planArgvPromptHelper,
     quoteShellArg as quoteShellArgHelper,
     resolveQaiqEnvFallbackModel as resolveQaiqEnvFallbackModelHelper,
 } from './qaap-agent-task-runner-utils';
@@ -389,7 +390,17 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
         ownerLogin?: string,
         effort?: QaapAgentEffortLevel,): QaapAgentCommandBuildResult {
         const id = ctx.resolveAgentId(prompt, agentId, ownerLogin);
-        const runnerPrompt = withPiPlanModeInstruction(ctx.stripLeadingAgentMention(prompt), id, interactionModeId);
+        const turnPrompt = ctx.stripLeadingAgentMention(prompt);
+        // Fail the turn rather than send a blank message: workflow and repo context added below
+        // would otherwise wrap it into a non-empty prompt with no user request in it.
+        if (!turnPrompt.trim()) {
+            throw new Error(nls.localize(
+                'theia/qaap/agentTask/emptyTurnPrompt',
+                'The message for this turn is empty, so nothing was sent to {0}. Write the request again and resend it.',
+                id,
+            ));
+        }
+        const runnerPrompt = withPiPlanModeInstruction(turnPrompt, id, interactionModeId);
         if (id === SHELL_AGENT_ID) {
             return { command: runnerPrompt, agentId: id };
         }
@@ -429,6 +440,7 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
             ? `[Qaap interaction-mode system instruction]\n${modeInstruction}\n\n---\n\n${promptWithTaskContext}`
             : promptWithTaskContext;
         ctx.assertQaiqConfigured(id, ownerLogin, agentModel);
+        ctx.assertAgentModelAccess(id, ownerLogin, agentModel);
         const detected = ctx.detectedAgents.get(id);
         let command: string;
         const effortFlags = formatEffortFlagsForAgent(id, agentModel?.modelId, effort);
@@ -465,25 +477,32 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
         const promptTransport = resolveAgentPromptTransportHelper(id, detected ?? (envTemplate
             ? { id, template: envTemplate }
             : undefined));
-        const usesOffArgvPrompt = promptTransport.kind !== 'argv';
+        const usesOffArgvPrompt = promptTransport.kind === 'plain-stdin' || promptTransport.kind === 'prompt-file';
+        // argv-prompt harnesses (agy) carry the prompt in argv: over the size limit it moves to a private file.
+        let argvPromptPlan: ReturnType<typeof planArgvPromptHelper> | undefined;
+        if (promptTransport.kind === 'argv-prompt') {
+            const spawnIdentity = ctx.resolveAgentSpawnIdentity(resolvedCwd ?? process.cwd());
+            argvPromptPlan = planArgvPromptHelper(agentPrompt, spawnIdentity.uid === undefined ? undefined : { uid: spawnIdentity.uid, gid: spawnIdentity.gid });
+        }
+        const argvPrompt = argvPromptPlan?.prompt ?? agentPrompt;
         if (detected) {
             const vars = withEffortFlags(ctx.buildTemplateVars(id, agentModel, interaction, ownerLogin, resolvedCwd), effortFlags);
             command = useStdioApprovals
                 ? ctx.applyTemplateWithoutPrompt(detected.template, vars)
                 : usesOffArgvPrompt
                     ? applyTemplateForPromptTransportHelper(detected.template, promptTransport, vars)
-                    : ctx.applyTemplate(detected.template, agentPrompt, vars);
+                    : ctx.applyTemplate(detected.template, argvPrompt, vars);
         } else if (envTemplate) {
             const vars = withEffortFlags(ctx.buildTemplateVars(id, agentModel, interaction, ownerLogin, resolvedCwd), effortFlags);
             command = useStdioApprovals || usesOffArgvPrompt
                 ? applyTemplateForPromptTransportHelper(envTemplate, useStdioApprovals
                     ? { kind: 'plain-stdin', placeholder: 'omit' }
                     : promptTransport, vars)
-                : ctx.applyTemplate(envTemplate, agentPrompt, vars);
+                : ctx.applyTemplate(envTemplate, argvPrompt, vars);
         } else {
             command = agentPrompt;
         }
-        let promptTempDir: string | undefined;
+        let promptTempDir: string | undefined = argvPromptPlan?.promptTempDir;
         if (promptTransport.kind === 'prompt-file' && !useStdioApprovals) {
             const spawnIdentity = ctx.resolveAgentSpawnIdentity(resolvedCwd ?? process.cwd());
             const written = writeAgentPromptFileHelper(agentPrompt, spawnIdentity.uid === undefined ? undefined : { uid: spawnIdentity.uid, gid: spawnIdentity.gid });

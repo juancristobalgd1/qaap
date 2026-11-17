@@ -106,3 +106,14 @@ jobs:
           path: examples/playwright/update-now-screenshots/
           if-no-files-found: ignore
           retention-days: 7
+
+      # Harness availability screenshots (examples/playwright/src/tests/qaap-harness-availability.ui-spec.ts), kept
+      # outside test-results/ like the update-now ones, so they are uploaded on every run, passing or failing.
+      - name: Upload harness availability screenshots
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: ${{ always() }}
+        with:
+          name: qaap-harness-availability-screenshots
+          path: examples/playwright/harness-availability-screenshots/
+          if-no-files-found: ignore
+          retention-days: 7

@@ -195,8 +195,43 @@ export type QaapAgentPromptPlaceholder = 'omit' | 'omit-flag' | 'dash';
 
 export type QaapAgentPromptTransport =
     | { readonly kind: 'argv' }
+    /**
+     * Argv, with a size guard ({@link planArgvPrompt}). Only agy uses it: agy 1.5.9 ignores stdin in text mode
+     * (`printf ... | agy -p -` never sees the prompt; `agy -p '<text>'` does), and it has no prompt-file flag.
+     */
+    | { readonly kind: 'argv-prompt' }
     | { readonly kind: 'plain-stdin'; readonly placeholder: QaapAgentPromptPlaceholder }
     | { readonly kind: 'prompt-file'; readonly flag: '--prompt-file' };
+
+/** Largest prompt passed as one argv string on POSIX: Linux caps a single argument at MAX_ARG_STRLEN (128 KiB). */
+export const AGENT_ARGV_PROMPT_LIMIT_POSIX_BYTES = 96 * 1024;
+/** Largest prompt passed as one argv string on Windows, where cmd.exe caps the whole line near 8191 characters. */
+export const AGENT_ARGV_PROMPT_LIMIT_WIN32_CHARS = 24_000;
+
+export interface ArgvPromptPlan {
+    /** The text placed in argv: the prompt itself, or a short instruction that points at {@link promptTempDir}. */
+    readonly prompt: string;
+    /** Private temp dir holding the full prompt; the caller removes it when the task settles. */
+    readonly promptTempDir?: string;
+}
+
+/**
+ * Prompt text for an argv-only harness. Within the limit the prompt goes through unchanged. Over it the full
+ * prompt is written to a private file and argv carries a short instruction to read that file. Never truncates.
+ */
+export function planArgvPrompt(prompt: string, owner?: AgentPromptOwner): ArgvPromptPlan {
+    const win32 = process.platform === 'win32';
+    const size = win32 ? prompt.length : Buffer.byteLength(prompt, 'utf8');
+    const limit = win32 ? AGENT_ARGV_PROMPT_LIMIT_WIN32_CHARS : AGENT_ARGV_PROMPT_LIMIT_POSIX_BYTES;
+    if (size <= limit) {
+        return { prompt };
+    }
+    const written = writeAgentPromptFile(prompt, owner);
+    return {
+        prompt: `Read the file at ${written.file} and follow the instructions it contains exactly; it is the user's full message.`,
+        promptTempDir: written.dir,
+    };
+}
 
 const STDIN_OMIT_IDS = new Set(['cursor', 'claude', 'qaiq', 'openclaude', 'opencode', 'qwen', 'pi']);
 const STDIN_OMIT_FLAG_IDS = new Set(['copilot']);
@@ -219,7 +254,11 @@ export function resolveAgentPromptTransport(
     if (id === 'grok' || bin === 'grok') {
         return { kind: 'prompt-file', flag: '--prompt-file' };
     }
-    if (id === 'antigravity' || bin === 'gemini' || bin === 'agy' || bin === 'antigravity') {
+    // agy reads no prompt from stdin in text mode (verified with 1.5.9), so its prompt travels in argv.
+    if (bin === 'agy' || (bin === undefined && id === 'antigravity')) {
+        return { kind: 'argv-prompt' };
+    }
+    if (id === 'antigravity' || bin === 'gemini' || bin === 'antigravity') {
         return bin === 'gemini'
             ? { kind: 'plain-stdin', placeholder: 'omit-flag' }
             : { kind: 'plain-stdin', placeholder: 'dash' };
@@ -248,7 +287,7 @@ export function applyTemplateForPromptTransport(
     transport: QaapAgentPromptTransport,
     vars: Record<string, string> = {},
 ): string {
-    if (transport.kind === 'argv') {
+    if (transport.kind === 'argv' || transport.kind === 'argv-prompt') {
         return applyTemplateVars(template, vars);
     }
     if (transport.kind === 'plain-stdin' && transport.placeholder === 'dash') {
@@ -279,6 +318,13 @@ export function buildPromptTransportCommand(
     const transport = resolveAgentPromptTransport(agentId, detected);
     if (transport.kind === 'argv') {
         return { command: applyTemplate(template, prompt, vars) };
+    }
+    if (transport.kind === 'argv-prompt') {
+        const planned = planArgvPrompt(prompt, owner);
+        return {
+            command: applyTemplate(template, planned.prompt, vars),
+            ...(planned.promptTempDir ? { promptTempDir: planned.promptTempDir } : {}),
+        };
     }
     let command = applyTemplateForPromptTransport(template, transport, vars);
     if (transport.kind === 'prompt-file') {
@@ -371,7 +417,7 @@ export function writeAgentPromptFile(text: string, owner?: AgentPromptOwner): { 
     }
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agent-prompt-'));
     const file = path.join(dir, 'prompt.txt');
-    fs.writeFileSync(file, text, 'utf8');
+    fs.writeFileSync(file, text, { encoding: 'utf8', mode: 0o600 });
     return { file, dir };
 }
 

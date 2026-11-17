@@ -10,6 +10,7 @@ import * as path from 'path';
 import type { QaapQaiqModelOption } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { normalizeAntigravityCliBin, type QaapAntigravityCliBin } from '@theia/qaap-shared-core/lib/common/qaap-antigravity-cli';
 import { NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
+import { isQaapDesktopRuntime } from '@theia/qaap-adapters/lib/common/qaap-desktop-runtime';
 import { resolveAgentSpawnIdentity } from './qaap-agent-spawn-identity';
 import { QaapTenantAgentStorageEnv } from './qaap-tenant-agent-storage-env';
 import { resolveTrustedSystemExecutable } from './qaap-trusted-executable';
@@ -484,14 +485,23 @@ export interface CodexCacheIdentity {
 }
 
 /**
- * Codex home the agent CLI reads. Codex honours `CODEX_HOME`; otherwise it is `.codex` under the tenant
- * agent storage home (`<storage root>/home`, the HOME the agent's sign-in lives in) when that storage is
- * enabled; otherwise under the agent HOME (`QAAP_AGENT_HOME`, default `/home/qaap-agent`).
+ * Codex home the agent CLI reads. Codex honours `CODEX_HOME`; on the desktop app (`QAAP_DESKTOP=1`, no
+ * tenant containers) it is the user's own `~/.codex`, the home `codex login` wrote and the auth probe
+ * read; otherwise it is `.codex` under the tenant agent storage home (`<storage root>/home`, the HOME the
+ * agent's sign-in lives in) when that storage is enabled; otherwise under the agent HOME
+ * (`QAAP_AGENT_HOME`, default `/home/qaap-agent`).
+ *
+ * The desktop branch matters: the tool-gate overlay copies `auth.json` from here into the per-task
+ * `CODEX_HOME`. Pointing at the container path (`/home/theia/.qaap/…`) on a Mac copied nothing, so a
+ * signed-in Codex ran without credentials and every turn failed with "401 Unauthorized: Missing bearer".
  */
 export function resolveCodexAgentHome(env: NodeJS.ProcessEnv = process.env): string {
     const explicit = env.CODEX_HOME?.trim();
     if (explicit) {
         return explicit;
+    }
+    if (isQaapDesktopRuntime(env) || isQaapDesktopRuntime(process.env)) {
+        return path.join(env.HOME?.trim() || os.homedir(), '.codex');
     }
     const storageRoot = QaapTenantAgentStorageEnv.resolveRoot(env, QaapTenantAgentStorageEnv.defaultTenantBackendRoot(env));
     if (storageRoot) {

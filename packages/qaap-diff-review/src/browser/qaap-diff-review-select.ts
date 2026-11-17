@@ -18,10 +18,14 @@ export function selectFileAfterRefresh(
     return stillThere ? selectedPath : files[0]?.path;
 }
 
-/** Preserve explicit accordion choices, prune vanished files, and expand only the first by default. */
+/**
+ * Preserve explicit accordion choices, prune vanished files, and expand only the first by default.
+ * `autoExpandFirst` is false once the user collapsed every file, so a refresh does not reopen one.
+ */
 export function reconcileExpandedReviewFiles(
     expandedPaths: Set<string>,
     files: readonly QaapGitChangedFile[],
+    autoExpandFirst = true,
 ): void {
     const currentPaths = new Set(files.map(file => file.path));
     for (const path of expandedPaths) {
@@ -29,7 +33,7 @@ export function reconcileExpandedReviewFiles(
             expandedPaths.delete(path);
         }
     }
-    if (expandedPaths.size === 0 && files[0]) {
+    if (autoExpandFirst && expandedPaths.size === 0 && files[0]) {
         expandedPaths.add(files[0].path);
     }
 }

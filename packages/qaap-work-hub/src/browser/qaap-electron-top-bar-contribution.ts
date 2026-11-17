@@ -6,6 +6,7 @@
 
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { environment } from '@theia/core/lib/common';
+import { isOSX } from '@theia/core/lib/common/os';
 import { CommandRegistry } from '@theia/core/lib/common/command';
 import { ApplicationShell } from '@theia/core/lib/browser/shell/application-shell';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
@@ -14,11 +15,23 @@ import { WorkbenchTopBarFactory } from '@theia/core/lib/browser/menu/workbench-t
 
 /** Structural view of the Electron preload API; core types it globally, which this package does not compile against. */
 interface ElectronTitleBarWindow {
-    electronTheiaCore: { getTitleBarStyleAtStartup(): Promise<string> };
+    electronTheiaCore: {
+        getTitleBarStyleAtStartup(): Promise<string>;
+        isFullScreen(): boolean;
+    };
 }
 
 /** Class on the leading Qaap top-bar widget mounted in the native Electron title bar. */
 export const QAAP_ELECTRON_TOP_BAR_CLASS = 'qaap-electron-top-bar';
+
+/**
+ * Class on `body` on macOS with the native frame: the title strip is hidden and the traffic lights
+ * sit at the start of the Qaap top bar, so the bar reserves their space and drags the window.
+ */
+export const QAAP_ELECTRON_MACOS_INSET_TITLEBAR_CLASS = 'qaap-electron-macos-inset-titlebar';
+
+/** Class on `body` while the window is fullscreen: macOS hides the traffic lights, so no space is reserved. */
+export const QAAP_ELECTRON_MACOS_FULLSCREEN_CLASS = 'qaap-electron-macos-fullscreen';
 
 /**
  * Electron with the native title bar (the default on macOS): core hides `#theia-top-panel` because
@@ -59,6 +72,9 @@ export class QaapElectronTopBarContribution implements FrontendApplicationContri
             return;
         }
         this.mounted = true;
+        if (isOSX) {
+            this.applyMacOSInsetTitleBar();
+        }
         const leading = this.topBarFactory.createLeadingTopBarWidget(this.commandRegistry, this.shell);
         leading.addClass(QAAP_ELECTRON_TOP_BAR_CLASS);
         this.shell.addWidget(leading, { area: 'top' });
@@ -66,5 +82,20 @@ export class QaapElectronTopBarContribution implements FrontendApplicationContri
             this.shell.addWidget(widget, { area: 'top' });
         }
         this.shell.topPanel.show();
+    }
+
+    /**
+     * Marks `body` for the inset macOS title bar. The fullscreen state follows the window size: macOS
+     * animates fullscreen with resize events, and the sync IPC read is cheap enough for each of them.
+     */
+    protected applyMacOSInsetTitleBar(): void {
+        const body = document.body;
+        body.classList.add(QAAP_ELECTRON_MACOS_INSET_TITLEBAR_CLASS);
+        const syncFullScreen = (): void => {
+            const fullScreen = (window as unknown as ElectronTitleBarWindow).electronTheiaCore.isFullScreen();
+            body.classList.toggle(QAAP_ELECTRON_MACOS_FULLSCREEN_CLASS, fullScreen);
+        };
+        syncFullScreen();
+        window.addEventListener('resize', syncFullScreen);
     }
 }

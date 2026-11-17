@@ -140,6 +140,15 @@ describe('qaap-agent-native-models', () => {
                 .to.equal(path.join('/srv/agent', '.codex'));
         });
 
+        it('resolves the desktop Codex home to the user\'s own ~/.codex, never the tenant container path', () => {
+            expect(resolveCodexAgentHome({ QAAP_DESKTOP: '1', HOME: '/Users/dev' })).to.equal(path.join('/Users/dev', '.codex'));
+            expect(resolveCodexAgentHome({ QAAP_DESKTOP: 'true', HOME: '/Users/dev', QAAP_TENANT_AGENT_STORAGE_ROOT: '/data/agent-storage' }))
+                .to.equal(path.join('/Users/dev', '.codex'));
+            expect(resolveCodexAgentHome({ QAAP_DESKTOP: '1', HOME: '/Users/dev', CODEX_HOME: '/custom/codex' })).to.equal('/custom/codex');
+            // Server runtimes keep the tenant storage home.
+            expect(resolveCodexAgentHome({ QAAP_DESKTOP: '0', HOME: '/Users/dev' })).to.equal('/home/theia/.qaap/.qaap-agent-storage/home/.codex');
+        });
+
         it('reads the cache as the configured agent uid/gid when the backend is root', async () => {
             const seen: { file: string; identity: unknown }[] = [];
             const reader = async (file: string, identity: unknown): Promise<string> => {

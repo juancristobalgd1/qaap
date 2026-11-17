@@ -15,6 +15,10 @@ export interface QaapPickerModel {
     readonly label: string;
     readonly available: boolean;
     readonly unavailableReason?: string;
+    /** Free or Pro from the backend tier; when set it replaces the legacy `paid` badge. */
+    readonly tier?: 'free' | 'pro';
+    /** The model is locked only until the harness is signed in: the row offers the sign-in action. */
+    readonly signInRequired?: boolean;
     readonly paid?: boolean;
 }
 

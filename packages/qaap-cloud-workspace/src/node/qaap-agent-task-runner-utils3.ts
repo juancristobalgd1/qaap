@@ -307,6 +307,15 @@ export const AGY_CLI_CONNECTION_PROBE_SCRIPT = 'T=""; command -v timeout >/dev/n
  */
 export const PI_CONNECTION_PROBE_SCRIPT = 'f="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/auth.json"; grep -q \'"type"\' "$f" 2>/dev/null && echo "logged in" || echo "not logged in"';
 
+/**
+ * Codex sign-in check. `codex login status` alone is fooled by a hollow `auth.json`: with
+ * `{"OPENAI_API_KEY":null,"tokens":null}` it prints "Logged in using ChatGPT" and exits 0, while every
+ * turn then fails ("plan type is required for chatgpt authentication" or "401 Unauthorized: Missing
+ * bearer"). So when the file exists it must carry a non-empty ChatGPT token before the CLI's own answer
+ * counts; without the file (keyring storage) the CLI decides alone. `$1` is the codex executable.
+ */
+export const CODEX_CONNECTION_PROBE_SCRIPT = 'f="${CODEX_HOME:-$HOME/.codex}/auth.json"; if [ -f "$f" ] && ! grep -Eq \'"(access_token|refresh_token)"[[:space:]]*:[[:space:]]*"[^"]\' "$f"; then echo "not logged in"; exit 0; fi; exec "$1" login status';
+
 /** Executable + argv that report one harness's sign-in state, for the executable it runs as. */
 export function resolveAgentConnectionProbe(agentId: string, bin: string): { readonly file: string; readonly args: readonly string[] } | undefined {
     const normalized = agentId.trim().toLowerCase();
@@ -321,6 +330,10 @@ export function resolveAgentConnectionProbe(agentId: string, bin: string): { rea
     }
     if (normalized === 'pi') {
         return { file: 'sh', args: ['-c', PI_CONNECTION_PROBE_SCRIPT] };
+    }
+    if (normalized === 'codex' && process.platform !== 'win32') {
+        // No POSIX shell on Windows: there the CLI's own `login status` answers alone.
+        return { file: 'sh', args: ['-c', CODEX_CONNECTION_PROBE_SCRIPT, 'codex-probe', bin] };
     }
     const args = resolveAgentConnectionProbeArgs(normalized);
     return args ? { file: bin, args } : undefined;
@@ -339,8 +352,15 @@ export function classifyAgentConnectionProbe(
     const sample = output.toLowerCase();
     // `codex login status` → "Logged in using an API key - sk-…": Codex must run on a ChatGPT
     // sign-in (only QAIQ uses API keys), so an API-key login needs the sign-in flow.
-    if (agentId.trim().toLowerCase() === 'codex' && /logged in using an api key/.test(sample)) {
+    // codex-cli ≥ 0.16x words the same state "API key configured - ***".
+    if (agentId.trim().toLowerCase() === 'codex' && /logged in using an api key|api key configured/.test(sample)) {
         return 'disconnected';
+    }
+    // `cursor-agent status` with a stored but rejected token: "Logged in (unable to fetch user details)",
+    // exit 0, and every turn then fails with "Authentication required. Please run 'agent login' first".
+    // Not a confirmed session: inconclusive, which the Free/Pro rule reads as signed out once settled.
+    if (agentId.trim().toLowerCase() === 'cursor' && /unable to fetch user details/.test(sample)) {
+        return 'unknown';
     }
     if (/\"(?:authenticated|isloggedin|loggedin)\"\s*:\s*false/.test(sample)
         || /not logged in|not authenticated|logged out|no active login|no credentials|no providers configured|not connected|no authentication information found|sign in required/.test(sample)) {

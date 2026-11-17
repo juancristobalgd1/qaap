@@ -1,6 +1,7 @@
 import type { MobileProjectsSessionsSidebarUiContext } from './mobile-projects-sessions-sidebar-ui-context';
 // Extracted from mobile-projects-sessions-sidebar-ui.ts
 
+import { environment } from '@theia/core/lib/common';
 import { nls } from '@theia/core/lib/common/nls';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { isFailedRunSummary, type QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
@@ -944,7 +945,26 @@ export function toggleSessionsSidebarAddProjectPopoverExtracted(ctx: MobileProje
             ctx.closeSessionsSidebarHeadPopovers();
             void ctx.host.onNewClick();
         });
-        popover.append(startNew, newLocal, addRepo);
+        if (environment.electron.is()) {
+            const openLocal = document.createElement('button');
+            openLocal.type = 'button';
+            openLocal.className = 'theia-mobile-work-hub-sessions-sidebar-head-popover-item';
+            openLocal.setAttribute('role', 'menuitem');
+            const openLocalIcon = document.createElement('span');
+            openLocalIcon.className = 'codicon codicon-folder-opened theia-mobile-work-hub-sessions-sidebar-head-popover-item-icon';
+            openLocalIcon.setAttribute('aria-hidden', 'true');
+            const openLocalLabel = document.createElement('span');
+            openLocalLabel.className = 'theia-mobile-work-hub-sessions-sidebar-head-popover-item-label';
+            openLocalLabel.textContent = nls.localize('theia/qaap-work-hub/openLocalProject', 'Open local project');
+            openLocal.append(openLocalIcon, openLocalLabel);
+            openLocal.addEventListener('click', () => {
+                ctx.closeSessionsSidebarHeadPopovers();
+                void ctx.host.onOpenLocalProject();
+            });
+            popover.append(startNew, newLocal, openLocal, addRepo);
+        } else {
+            popover.append(startNew, newLocal, addRepo);
+        }
         document.body.append(popover);
         const edgeFades = attachQaapScrollEdgeFades(popover);
         ctx.sessionsSidebarAddProjectPopover = popover;

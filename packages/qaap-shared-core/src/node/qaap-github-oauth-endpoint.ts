@@ -97,7 +97,7 @@ import {
     type QaapGithubWorkspaceJobContext,
 } from './qaap-github-workspace-jobs';
 import { qaapGitReadEnv } from './qaap-child-process-env';
-import { resolveLocalProjectWorkspacePath } from './qaap-local-project-path';
+import { localProjectOwnerLogin, resolveLocalProjectWorkspacePath } from './qaap-local-project-path';
 import { QaapAsyncRoute } from './qaap-async-route';
 import { QaapGithubDeviceFlowError, QaapGithubDeviceFlows } from './qaap-github-device-flow';
 import { readQaapGithubDeviceFlowConfig } from './qaap-github-oauth-config';
@@ -1326,13 +1326,15 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             res.status(401).json({ error: 'Not signed in' });
             return;
         }
-        if (auth.kind === 'skip') {
+        // Skip-auth is honoured only on the desktop runtime (see localProjectOwnerLogin); elsewhere it stays a 503.
+        const login = localProjectOwnerLogin(auth, isQaapDesktopRuntime());
+        if (!login) {
             res.status(503).json({ error: 'Sign-in required' });
             return;
         }
         const body = (req.body ?? {}) as { name?: unknown };
         const name = typeof body.name === 'string' ? body.name.trim() : '';
-        const target = resolveLocalProjectWorkspacePath(this.reposRoot, auth.userLogin, name);
+        const target = resolveLocalProjectWorkspacePath(this.reposRoot, login, name);
         if (!target) {
             res.status(400).json({ error: 'Use letters, numbers, dashes, underscores, or dots for the project name.' });
             return;

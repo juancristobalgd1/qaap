@@ -2,6 +2,26 @@
 
 Estado para continuar el trabajo desde otra cuenta o sesión. Actualízalo al cerrar cada tarea: qué queda pendiente, cómo se validó y qué limitaciones conviene conocer. La política de modelos está en la sección «Selección de modelos y orquestación» de `CLAUDE.md`.
 
+## 2026-11-17 — Sesiones de harness en escritorio (rama `feat/desktop-harness-polish`)
+
+**Hecho (sin commitear al cerrar la sesión):**
+- Codex en escritorio (`QAAP_DESKTOP=1`): `resolveCodexAgentHome` apunta a `~/.codex`; antes usaba la ruta del contenedor, el overlay del tool-gate no copiaba `auth.json` y cada turno fallaba con 401 «Missing bearer».
+- Cuota: `QUOTA_PATTERNS` exige el verbo de agotamiento (un «quota»/«billing» suelto en prosa ya no es cuota). En salida limpia solo las líneas de error del CLI declaran cuota, y se ignoran las peticiones laterales de OpenCode (`small=true`, título de sesión).
+- `refreshAgentCatalog(ownerLogin)` levanta solo las sesiones rechazadas de ese owner.
+- Antigravity (`agy`): el guard pre-spawn exige sesión para todo modelo; si agy pide sign-in a mitad de turno, `qaap-agy-sign-in-wait-watcher.ts` lo mata en la primera línea de espera (antes esperaba 60 s).
+
+**Validación:** `tsc -b packages/qaap-cloud-workspace`; cloud-workspace 3939 en verde, shared-core 2581 en verde; drift-check y package-graph-check OK; eslint sin errores.
+
+**Pendiente:** commits por fix (no incluir `package-lock.json`, que es ruido de `npm install`); probar en la app de escritorio un turno real de Codex y de agy sin sesión.
+
+## 2026-11-17 (tarde) — Escritorio: gate, UI del Work Hub y evidencia visual (rama `feat/desktop-harness-polish`, sin commitear)
+
+**Hecho:** el gate de herramientas responde en Electron (validador de token propio en `qaap-cloud-workspace/src/electron-node`); icon theme por defecto `theia-file-icons`; plugins (gramáticas) arrancan al abrir Files en escritorio; `api-provider-sample` vuelve a upstream (rompía el plugin host); nombre «Qaap» en la barra de menús (dev: renombra el bundle Electron); vista Changes rediseñada (scopes Task changes/Uncommitted, unified/split, wrap, sin botón History, toggles sin borde) y sin parpadeo/recarga del iframe al cambiar de pestaña (`moveBefore`); hover card de tareas con logos de harness; PR del sidebar con «Made by <harness>»; botón de actualización estilo T3 (preview dev: `localStorage qaap.devPreviewBackendUpdate=1`); evidencia visual visible (se re-adjunta a trace/segments en `materializeAgentMessageForApi`); inset de semáforos con el panel derecho maximizado.
+
+**Validación:** tests de shared-core, cloud-workspace, diff-review, product y work-hub en verde; drift y package-graph OK; comprobado en la app Electron por CDP.
+
+**Pendiente:** commits, push, CI (`ci:full` por specs con temp paths) y deploy al VPS. Backend para scopes por turno/commit y «ignore whitespace» en Changes. Sin auto-updater de escritorio.
+
 ## 2026-11-09 — Pulido de UI del Work Hub (rama `claude/work-hub-ui-polish`)
 
 **Hecho** (13 commits, una sola PR):

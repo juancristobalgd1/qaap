@@ -94,6 +94,7 @@ describe('QAIQ/OpenClaude model routing', () => {
         const ctx = {
             normalizeAgentId: () => undefined,
             isAgentConnected: () => false,
+            isAgentEnabled: () => true,
             agentConnectionSnapshot: () => ({ connectionState: 'disconnected', probeSettled: true }),
         };
         const models = listModelsForAgentExtracted(ctx as unknown as QaapAgentTaskRunnerContext, 'codex', 'starter-user');
@@ -105,6 +106,7 @@ describe('QAIQ/OpenClaude model routing', () => {
         const ctx = {
             normalizeAgentId: () => undefined,
             isAgentConnected: () => true,
+            isAgentEnabled: () => true,
             agentConnectionSnapshot: () => ({ connectionState: 'connected', probeSettled: true }),
         };
         const models = listModelsForAgentExtracted(ctx as unknown as QaapAgentTaskRunnerContext, 'codex', 'starter-user');
@@ -118,6 +120,7 @@ describe('QAIQ/OpenClaude model routing', () => {
             probeSettled: boolean,
         ): QaapAgentTaskRunnerContext => ({
             normalizeAgentId: () => undefined,
+            isAgentEnabled: () => true,
             agentConnectionSnapshot: () => ({ connectionState, probeSettled }),
             billingStore: { peekEntitlements: () => undefined },
         } as unknown as QaapAgentTaskRunnerContext);
@@ -128,7 +131,7 @@ describe('QAIQ/OpenClaude model routing', () => {
             const paid = models.filter(model => !free.includes(model));
             expect(free).to.have.length(10);
             expect(paid).to.have.length(73);
-            expect(free.every(model => model.available === undefined && model.unavailableReason === undefined)).to.equal(true);
+            expect(free.every(model => model.available === true && model.tier === 'free' && model.unavailableReason === undefined)).to.equal(true);
             expect(paid.every(model => model.available === false && model.unavailableReason === 'not-connected')).to.equal(true);
         });
 
@@ -139,10 +142,13 @@ describe('QAIQ/OpenClaude model routing', () => {
             expect(paid.every(model => model.available === true && model.unavailableReason === undefined)).to.equal(true);
         });
 
-        it('shows paid OpenCode models without a lock while the auth probe is still pending', () => {
+        it('holds paid OpenCode models as checking-sign-in while the auth probe is still pending, never selectable', () => {
             const models = listModelsForAgentExtracted(opencodeCtx('unknown', false), 'opencode', 'pro-user');
             expect(models.some(model => model.modelId === 'opencode/claude-opus-4-7')).to.equal(true);
-            expect(models.every(model => model.available !== false && model.unavailableReason === undefined)).to.equal(true);
+            const paid = models.filter(model => model.tier === 'pro');
+            expect(paid.length).to.be.greaterThan(0);
+            expect(paid.every(model => model.available === false && model.unavailableReason === 'checking')).to.equal(true);
+            expect(models.filter(model => model.tier === 'free').every(model => model.available === true)).to.equal(true);
         });
     });
 
@@ -152,6 +158,7 @@ describe('QAIQ/OpenClaude model routing', () => {
             probeSettled: boolean,
         ): QaapAgentTaskRunnerContext => ({
             normalizeAgentId: () => undefined,
+            isAgentEnabled: () => true,
             agentConnectionSnapshot: () => ({ connectionState, probeSettled }),
         } as unknown as QaapAgentTaskRunnerContext);
 
@@ -166,10 +173,10 @@ describe('QAIQ/OpenClaude model routing', () => {
             expect(models.every(model => model.available === false && model.unavailableReason === 'not-connected')).to.equal(true);
         });
 
-        it('shows Codex models without a plan lock while the auth probe is still pending', () => {
+        it('holds Codex models as checking-sign-in (never plan) while the auth probe is still pending', () => {
             const models = listModelsForAgentExtracted(codexCtx('unknown', false), 'codex', 'starter-user');
             expect(models).to.have.length(3);
-            expect(models.every(model => model.available !== false && model.unavailableReason === undefined)).to.equal(true);
+            expect(models.every(model => model.available === false && model.unavailableReason === 'checking')).to.equal(true);
         });
 
         it('locks a settled-unknown Codex probe as not-connected, never as plan', () => {
@@ -182,6 +189,7 @@ describe('QAIQ/OpenClaude model routing', () => {
         const owner = 'registry-catalog-owner';
         const connectedCodexCtx = {
             normalizeAgentId: () => undefined,
+            isAgentEnabled: () => true,
             agentConnectionSnapshot: () => ({ connectionState: 'connected', probeSettled: true }),
         } as unknown as QaapAgentTaskRunnerContext;
 
@@ -215,6 +223,7 @@ describe('Antigravity model listing follows the resolved CLI', () => {
 
     const contextFor = (bin: string | undefined): QaapAgentTaskRunnerContext => ({
         resolveAntigravityBin: () => bin,
+        isAgentEnabled: () => true,
         agentConnectionSnapshot: () => ({ connectionState: 'connected', probeSettled: true }),
     }) as unknown as QaapAgentTaskRunnerContext;
 
@@ -243,5 +252,39 @@ describe('Antigravity model listing follows the resolved CLI', () => {
     it('answers the agy catalog when no Antigravity CLI is resolved', async () => {
         await prepareNativeAgentModels('antigravity', { spawner: noSpawn });
         expect(listModelsForAgentExtracted(contextFor(undefined), 'antigravity').map(model => model.modelId)).to.include(agyLabel);
+    });
+});
+
+describe('one availability rule for every harness (model catalog)', () => {
+    const ctxFor = (
+        connectionState: 'connected' | 'disconnected' | 'unknown',
+        probeSettled: boolean,
+        harnessEnabled = true,
+    ): QaapAgentTaskRunnerContext => ({
+        normalizeAgentId: () => undefined,
+        isAgentEnabled: () => harnessEnabled,
+        agentConnectionSnapshot: () => ({ connectionState, probeSettled }),
+    } as unknown as QaapAgentTaskRunnerContext);
+
+    it('returns no models for a harness the owner turned off, even its Free ones', () => {
+        expect(listModelsForAgentExtracted(ctxFor('connected', true, false), 'opencode', 'pro-user')).to.deep.equal([]);
+        expect(listModelsForAgentExtracted(ctxFor('disconnected', true, false), 'codex', 'pro-user')).to.deep.equal([]);
+    });
+
+    it('locks Pro models with the same rule when there is no owner (local or Electron)', () => {
+        const models = listModelsForAgentExtracted(ctxFor('disconnected', true), 'codex', undefined);
+        expect(models).to.have.length(3);
+        expect(models.every(model => model.tier === 'pro' && model.available === false && model.unavailableReason === 'not-connected')).to.equal(true);
+    });
+
+    it('locks Copilot Pro models for a signed-out owner, and keeps every model tiered', () => {
+        const models = listModelsForAgentExtracted(ctxFor('disconnected', true), 'copilot', 'pro-user');
+        expect(models.every(model => model.tier === 'pro')).to.equal(true);
+        expect(models.every(model => model.available === false && model.unavailableReason === 'not-connected')).to.equal(true);
+    });
+
+    it('leaves every Copilot model selectable once the owner is signed in', () => {
+        const models = listModelsForAgentExtracted(ctxFor('connected', true), 'copilot', 'pro-user');
+        expect(models.every(model => model.available === true && model.unavailableReason === undefined)).to.equal(true);
     });
 });

@@ -79,9 +79,14 @@
   display: inline-flex;
   align-items: center;
   gap: 12px;
+  /* `left: 50%` leaves a shrink-to-fit box only half the viewport, so a wrapping message would
+   * break after a few words; size to the unwrapped content and let max-width make it wrap. */
+  width: max-content;
   max-width: min(92vw, 540px);
   padding: 10px 16px;
-  border-radius: 999px;
+  /* A fixed radius instead of 999px: a one-line toast still reads as a pill, and a message that
+   * wraps to two or three lines keeps its text clear of the corners. */
+  border-radius: 20px;
   border: 1px solid color-mix(in srgb, var(--theia-foreground) 14%, transparent);
   background: var(--theia-notifications-background, var(--theia-editorWidget-background, #202020));
   color: var(--theia-notifications-foreground, var(--theia-foreground));
@@ -196,11 +201,20 @@
   opacity: 0.9;
 }
 
+/* The message wraps (up to three lines) instead of being cut with an ellipsis: a narrow phone
+ * must still read a whole instruction such as "Sign in to OpenCode to use MiniMax-M3.". The
+ * action keeps its own column on the right (flex-shrink: 0 below). */
 .theia-mobile-snackbar-message {
   flex: 1;
-  white-space: nowrap;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .theia-mobile-snackbar-action {

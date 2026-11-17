@@ -4507,9 +4507,23 @@ body.qaap-theme-light .theia-mobile-agent-transcript-git-action-pill.theia-mod-f
 
 @media (hover: hover) and (pointer: fine) {
 
+  /* The row keeps its box (opacity only, no display change) so the bubble never shifts when the
+     actions appear. Hidden actions are inert; keyboard focus inside the bubble reveals them. */
+  .theia-mobile-agent-transcript-user-actions {
+    opacity: 0;
+    pointer-events: none;
+  }
+
   .theia-mobile-agent-transcript-user-wrap:hover .theia-mobile-agent-transcript-user-actions,
   .theia-mobile-agent-transcript-user-wrap:focus-within .theia-mobile-agent-transcript-user-actions {
     opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* `.theia-mobile-agent-transcript-user-action:not(:disabled)` re-enables pointer events on each
+     button, so the buttons of a hidden row are switched off explicitly. */
+  .theia-mobile-agent-transcript-user-wrap:not(:hover):not(:focus-within) .theia-mobile-agent-transcript-user-action {
+    pointer-events: none;
   }
 }
 

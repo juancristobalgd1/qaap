@@ -301,7 +301,7 @@ export function openAgentSignInTerminalExtracted(ctx: MobileProjectsPanelContext
     if (connectionKind !== 'cli-login' && connectionKind !== 'tui-login') {
         // Settings, tenant-terminal and policy routes need no workspace: the dialog shows the
         // action or instructions immediately instead of a spinner.
-        void openAgentLoginDialogInBackground(ctx, project, summary, resolvedAgentId);
+        void openAgentLoginDialogInBackground(ctx, project, summary, resolvedAgentId, () => refreshAfterAgentSignIn(ctx, project, resolvedAgentId));
         return;
     }
     // Without a project or prepared cwd the dialog still opens and says what is missing (or
@@ -330,21 +330,32 @@ export function openAgentSignInTerminalExtracted(ctx: MobileProjectsPanelContext
         project,
         summary,
         resolvedAgentId,
-        async () => {
-            if (!project) {
-                return false;
-            }
-            // The sign-in changed the backend's agent state: drop the cached catalogs before reloading them.
-            invalidateAgentTaskListAllCache();
-            invalidateAgentModelsCache();
-            const refreshed = await ctx.stickyComposerAgentsUi?.refreshStickyComposerAgents?.(project, { forceRefresh: true });
-            // An open conversation draws its composer from its own catalog; the forced probe above
-            // already refreshed the backend state, so a plain reload is enough here.
-            await ctx.transcriptComposerUi?.refreshTranscriptComposerAgents?.(project);
-            ctx.stickyComposerRenderUi?.renderStickyComposer?.();
-            return refreshed === true && ctx.stickyComposerAgentsUi?.isAgentConnected?.(resolvedAgentId) === true;
-        },
+        () => refreshAfterAgentSignIn(ctx, project, resolvedAgentId),
     );
+}
+
+/**
+ * Reloads what a finished sign-in changed: the cached agent list and models are dropped, the sticky composer and an
+ * open conversation reload their catalogs. Resolves true when the harness now reads as connected. Every sign-in
+ * flow (CLI terminal, Settings, tenant terminal, policy) ends here, so none of them keeps a stale Pro lock.
+ */
+export async function refreshAfterAgentSignIn(
+    ctx: MobileProjectsPanelContext,
+    project: MobileProjectEntry | undefined,
+    agentId: string,
+): Promise<boolean> {
+    if (!project) {
+        return false;
+    }
+    // The sign-in changed the backend's agent state: drop the cached catalogs before reloading them.
+    invalidateAgentTaskListAllCache();
+    invalidateAgentModelsCache();
+    const refreshed = await ctx.stickyComposerAgentsUi?.refreshStickyComposerAgents?.(project, { forceRefresh: true });
+    // An open conversation draws its composer from its own catalog; the forced probe above
+    // already refreshed the backend state, so a plain reload is enough here.
+    await ctx.transcriptComposerUi?.refreshTranscriptComposerAgents?.(project);
+    ctx.stickyComposerRenderUi?.renderStickyComposer?.();
+    return refreshed === true && ctx.stickyComposerAgentsUi?.isAgentConnected?.(agentId) === true;
 }
 
 export async function onDeleteConversationExtracted(ctx: MobileProjectsPanelContext, project: MobileProjectEntry,

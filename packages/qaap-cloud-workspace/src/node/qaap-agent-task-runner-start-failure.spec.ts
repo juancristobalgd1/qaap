@@ -11,7 +11,10 @@ import * as sinon from 'sinon';
 import type { QaapCreateAgentTaskRequest } from '../common/qaap-agent-task';
 import type { QaapAgentTask, QaapAgentTaskState } from '../common/qaap-agent-task';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
+import { assertAgentModelAccessExtracted, QaapAgentSignInRequiredError } from './qaap-agent-sign-in-preflight';
 import { spawnProcessWhenReadyExtracted } from './qaap-agent-task-runner-timeline2';
+import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
+import type { AgentCandidate } from './qaap-agent-task-runner-types';
 
 const TASK_ID = 'task-start-failure-1';
 
@@ -64,6 +67,8 @@ function createStartHarness(cwd: string, overrides: Partial<Record<string, unkno
         stripLeadingAgentMention: (text: string) => text,
         recordTaskLatencyMark: (_id: string, mark: string) => { marks.push(mark); },
         resolveAgentModelForRequest: () => undefined,
+        normalizeAgentId: (token: string | undefined) => token?.trim().toLowerCase() || undefined,
+        awaitAgentSessionSettled: () => Promise.resolve(),
         buildAgentCommand: () => ({ command: 'qaiq run', agentId: 'qaiq' }),
         spawnProcess,
         ...overrides,
@@ -121,6 +126,21 @@ describe('spawnProcessWhenReadyExtracted (start failures before the first mark)'
         expect(fs.existsSync(harness.logPath)).to.equal(false);
     });
 
+    it('refuses a Pro model whose harness is signed out: failed with the sign-in message, no spawn, marked sign_in_required', async () => {
+        const refusal = new QaapAgentSignInRequiredError('Sign in to Codex to use gpt-5.5.', 'sign-in-required');
+        const harness = createStartHarness(cwd, {
+            preferenceService: { ready: Promise.resolve() },
+            taskStartStepTimeoutMs: 1000,
+            buildAgentCommand: () => { throw refusal; },
+        });
+        await spawnProcessWhenReadyExtracted(harness.ctx, harness.task, harness.request);
+
+        expect(harness.spawnProcess.called).to.equal(false);
+        expect(harness.tasks.get(TASK_ID)?.state).to.equal('failed');
+        expect(harness.tasks.get(TASK_ID)?.preflightFailure).to.equal('sign_in_required');
+        expect(fs.readFileSync(harness.logPath, 'utf8')).to.contain('Sign in to Codex to use gpt-5.5.');
+    });
+
     it('a normal start passes every pre-spawn step, reaches the agent command and leaves the task running', async () => {
         const harness = createStartHarness(cwd, {
             preferenceService: { ready: Promise.resolve() },
@@ -132,5 +152,76 @@ describe('spawnProcessWhenReadyExtracted (start failures before the first mark)'
         expect(harness.spawnProcess.calledOnce).to.equal(true);
         expect(harness.tasks.get(TASK_ID)?.state).to.equal('running');
         expect(fs.existsSync(harness.logPath)).to.equal(false);
+    });
+
+    describe('a sign-in that is still checking when the task starts', () => {
+        const proModel = { provider: 'openai', vendor: 'openai', modelId: 'gpt-5.5', label: 'GPT 5.5' };
+
+        /** A Codex start whose guard reads `snapshot`, which `settle` may change while the start waits. */
+        function codexStart(settle: (snapshot: { connectionState: string; probeSettled: boolean }) => Promise<void>): StartHarness {
+            const snapshot = { connectionState: 'unknown', probeSettled: false };
+            const harness: StartHarness = createStartHarness(cwd, {
+                preferenceService: { ready: Promise.resolve() },
+                taskStartStepTimeoutMs: 1000,
+                detectedAgents: new Map<string, AgentCandidate>([['codex', { id: 'codex', label: 'Codex', bin: 'codex', template: 'codex {prompt}' }]]),
+                isAgentEnabled: () => true,
+                agentConnectionSnapshot: () => ({ ...snapshot }),
+                awaitAgentSessionSettled: () => settle(snapshot),
+                // The real guard runs where buildAgentCommand runs it, after the sign-in wait.
+                buildAgentCommand: () => {
+                    assertAgentModelAccessExtracted(harness.ctx, 'codex', 'alice', proModel as never);
+                    return { command: 'codex exec', agentId: 'codex' };
+                },
+            });
+            return harness;
+        }
+
+        it('starts the Pro model when the probe answers signed-in within the budget', async () => {
+            const harness = codexStart(async snapshot => {
+                await new Promise(resolve => setTimeout(resolve, 5));
+                snapshot.connectionState = 'connected';
+                snapshot.probeSettled = true;
+            });
+            await spawnProcessWhenReadyExtracted(harness.ctx, harness.task, { ...harness.request, agent: 'codex' });
+
+            expect(harness.spawnProcess.calledOnce).to.equal(true);
+            expect(harness.tasks.get(TASK_ID)?.state).to.equal('running');
+            expect(harness.tasks.get(TASK_ID)?.preflightFailure).to.equal(undefined);
+        });
+
+        it('fails with a clear "try again" message when the probe is still checking after the budget', async () => {
+            const harness = codexStart(() => Promise.resolve());
+            await spawnProcessWhenReadyExtracted(harness.ctx, harness.task, { ...harness.request, agent: 'codex' });
+
+            expect(harness.spawnProcess.called).to.equal(false);
+            expect(harness.tasks.get(TASK_ID)?.state).to.equal('failed');
+            expect(harness.tasks.get(TASK_ID)?.preflightFailure).to.equal('sign_in_required');
+            expect(fs.readFileSync(harness.logPath, 'utf8')).to.contain("Couldn't confirm your sign-in to Codex; try again.");
+        });
+    });
+
+    describe('QaapAgentTaskRunner.awaitAgentSessionSettled', () => {
+        function runnerWithProbe(probe: Promise<string> | undefined): QaapAgentTaskRunner {
+            const runner = Object.create(QaapAgentTaskRunner.prototype) as QaapAgentTaskRunner;
+            Object.assign(runner, { refreshAgentConnectionState: () => probe });
+            return runner;
+        }
+
+        it('returns as soon as the in-flight probe answers', async () => {
+            const startedAt = Date.now();
+            await runnerWithProbe(new Promise(resolve => setTimeout(() => resolve('connected'), 5))).awaitAgentSessionSettled('codex', 'alice', 5_000);
+            expect(Date.now() - startedAt).to.be.below(1_000);
+        });
+
+        it('stops waiting at the budget for a probe that never answers, and never rejects', async () => {
+            const startedAt = Date.now();
+            await runnerWithProbe(new Promise<string>(() => undefined)).awaitAgentSessionSettled('codex', 'alice', 20);
+            expect(Date.now() - startedAt).to.be.within(15, 1_000);
+            await runnerWithProbe(Promise.reject(new Error('probe crashed'))).awaitAgentSessionSettled('codex', 'alice', 20);
+        });
+
+        it('returns at once when nothing is in flight', async () => {
+            await runnerWithProbe(undefined).awaitAgentSessionSettled('codex', 'alice', 60_000);
+        });
     });
 });

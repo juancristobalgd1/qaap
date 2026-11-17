@@ -22,6 +22,24 @@ describe('qaap-agent-task-client', () => {
         rememberQaapHostedRuntime(false);
     });
 
+    it('mergeAgentTaskAgentOptions keeps the session answer of the signed-out entry', () => {
+        const merged = mergeAgentTaskAgentOptions(
+            [{ id: 'codex', label: 'Codex', available: false, session: 'signed-out' }],
+            [{ id: 'codex', label: 'Codex', available: false }],
+        );
+        expect(merged).to.have.length(1);
+        expect(merged[0].session).to.equal('signed-out');
+    });
+
+    it('mergeAgentTaskAgentOptions takes the session of a later, more available entry', () => {
+        const merged = mergeAgentTaskAgentOptions(
+            [{ id: 'codex', label: 'Codex', available: false, session: 'checking' }],
+            [{ id: 'codex', label: 'Codex', available: true, session: 'signed-in' }],
+        );
+        expect(merged[0].available).to.equal(true);
+        expect(merged[0].session).to.equal('signed-in');
+    });
+
     it('resolveQaapAgentMentionToken lowercases tokens', () => {
         expect(resolveQaapAgentMentionToken('QAIQ')).to.equal('qaiq');
     });

@@ -813,8 +813,8 @@ export class QaapAgentConversationStore implements QaapAgentConversationStoreCon
 
     /** Inject lightweight team-delegation instructions so the leader can spawn sub-tasks via `qaap-task`. */
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
-    public appendTeamDelegation(prompt: string, turnAgentId: string): string {
-        const agentIds = this.taskRunner.listAgents().map(agent => agent.id);
+    public appendTeamDelegation(prompt: string, turnAgentId: string, ownerLogin?: string): string {
+        const agentIds = this.taskRunner.listAgents(ownerLogin).filter(agent => agent.available).map(agent => agent.id);
         return appendTeamDelegationToPrompt(prompt, turnAgentId, agentIds);
     }
 

@@ -34,6 +34,7 @@ function claudeCtx(trusted: boolean): QaapAgentTaskRunnerContext {
         readResearchLedger: () => undefined,
         readProjectInfo: () => undefined,
         assertQaiqConfigured: () => undefined,
+        assertAgentModelAccess: () => undefined,
         isQaiqRunner: () => false,
         applyTemplateWithoutPrompt,
         isProjectFolderTrusted: () => trusted,

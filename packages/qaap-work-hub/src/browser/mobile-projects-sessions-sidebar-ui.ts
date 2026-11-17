@@ -113,6 +113,8 @@ export interface MobileProjectsSessionsSidebarHost {
     onStartNewProject(): Promise<void>;
     /** "New local project": a git folder on this workspace only, opened as soon as it exists. */
     onStartNewLocalProject(): Promise<void>;
+    /** "Open local project" (desktop only): a folder on this computer, picked with the native dialog. */
+    onOpenLocalProject(): Promise<void>;
 }
 
 export interface SessionsSidebarConversationEntry {

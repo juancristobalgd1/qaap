@@ -560,7 +560,7 @@ export async function maybeRetryTurnWithFallbackExtracted(ctx: QaapAgentConversa
     startSha?: string, ): Promise<boolean> {
     // Refused before spawn for a missing provider key: every fallback model of the same agent would
     // be refused the same way, each one a new task record, transcript churn and failure push.
-    if (task.preflightFailure === 'provider_key_missing') {
+    if (task.preflightFailure === 'provider_key_missing' || task.preflightFailure === 'sign_in_required') {
         return false;
     }
     if (ctx.isTurnGraphEnabled() && ctx.workflowRuns) {

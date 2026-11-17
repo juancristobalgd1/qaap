@@ -477,7 +477,7 @@ export class MobileProjectsStickyComposerAgentsUi {
             candidate => candidate.id.trim().toLowerCase() === normalizedAgentId,
         );
         // `available: true` while signed out means the plan runs it hosted (Codex on Pro/Team): no cue.
-        return agent?.connectionState === 'disconnected' && agent.available !== true;
+        return agent?.session === 'signed-out' && agent.available !== true;
     }
 
     showComposerAgentPickerLoading(chrome: ComposerAgentPickerChrome): void {
@@ -581,5 +581,5 @@ export class MobileProjectsStickyComposerAgentsUi {
 /** Stable identity of what an agent picker row shows, used to skip no-op background repaints. */
 /** What a picker shows of a catalog: a sign-in (or sign-out) changes it, so painted views must refresh. */
 export function composerAgentCatalogSignature(agents: readonly QaapAgentTaskAgentOption[]): string {
-    return JSON.stringify(agents.map(agent => [agent.id, agent.label, agent.available, agent.connectionState, agent.accessState, agent.cliBin]));
+    return JSON.stringify(agents.map(agent => [agent.id, agent.label, agent.available, agent.connectionState, agent.session, agent.accessState, agent.cliBin]));
 }

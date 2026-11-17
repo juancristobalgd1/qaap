@@ -50,6 +50,17 @@ export class QaapProjectSwitcherService {
                     await this.projectsService.createLocalProject();
                 },
             },
+            // Desktop only: a folder that already exists on this computer.
+            ...(this.projectsService.isDesktop() ? [{
+                label: nls.localize('theia/qaap-work-hub/openLocalProject', 'Open local project'),
+                description: nls.localize('qaap/projectSwitcher/openLocalProjectDescription', 'Open a folder on this computer'),
+                iconClasses: ['codicon', 'codicon-folder-opened'],
+                alwaysShow: true,
+                // openLocalProject() already opens (and reloads into) the chosen folder.
+                run: async () => {
+                    await this.projectsService.openLocalProject();
+                },
+            } satisfies QaapProjectSwitcherPick] : []),
             {
                 label: nls.localize('qaap/newProject/menuGithub', 'New GitHub repository'),
                 description: nls.localize('qaap/projectSwitcher/newGithubRepositoryDescription', 'Create a GitHub repository (private by default)'),

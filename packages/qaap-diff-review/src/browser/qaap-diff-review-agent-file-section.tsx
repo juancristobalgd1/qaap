@@ -17,8 +17,18 @@ import {
     type TranscriptCodeLanguage,
 } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-code-view';
 import { countAddedCheckSuppressions, detectCheckSuppression } from '../common/qaap-check-suppression';
-import { leadingTruncatePath } from './qaap-diff-review-path';
-import { buildContextSegments, diffLineKey } from './qaap-diff-review-segments';
+import { QaapChangedFileStatus } from './qaap-diff-review-file-status';
+import { splitRepoRelativePath } from './qaap-diff-review-path';
+import {
+    buildContextSegments,
+    buildSplitDiffRows,
+    diffLineKey,
+    splitDiffRowKey,
+    type QaapSplitDiffRow,
+} from './qaap-diff-review-segments';
+
+/** Unified (one column) or side-by-side (old | new) rendering of the file diffs. */
+export type QaapDiffViewMode = 'unified' | 'split';
 
 /**
  * Props of one Agent Changes accordion section. Every value is either a primitive or an object whose
@@ -34,7 +44,9 @@ export interface QaapAgentFileSectionProps {
     errorDetail: string | undefined;
     /** The file changed again after the task (409): the fallback asks for a refresh. */
     errorStale?: boolean;
-    iconClass: string;
+    viewMode: QaapDiffViewMode;
+    /** Soft-wrap long lines; off keeps each line on one row with horizontal scroll. */
+    wrapLines: boolean;
     fileActionsEnabled: boolean;
     fileActionRunning: boolean;
     /** Expanded context bars of this file, keyed `${hunkIndex}:${segmentIndex}`; replaced on change. */
@@ -51,7 +63,9 @@ export interface QaapAgentFileSectionProps {
 export const QaapAgentFileSection = React.memo(function QaapAgentFileSection(props: QaapAgentFileSectionProps): React.ReactElement {
     const { file, diff, expanded, onToggleFile, onDiscardFile, onStageFile } = props;
     const path = file.path;
-    const isNew = file.status === 'U' || file.status === '?';
+    const isNew = file.status === 'U' || file.status === '?' || file.status === 'A';
+    const status = QaapChangedFileStatus.describe(file.status);
+    const { base, dir } = splitRepoRelativePath(path);
     const hunksId = `qaap-agent-changes-hunks-${encodeURIComponent(path)}`;
     const onToggle = React.useCallback(() => onToggleFile(path), [onToggleFile, path]);
     const onDiscard = React.useCallback((event: React.MouseEvent) => {
@@ -72,13 +86,19 @@ export const QaapAgentFileSection = React.memo(function QaapAgentFileSection(pro
         expanded ? '' : 'qaap-agent-changes-file--collapsed',
         suppressionCount > 0 ? 'qaap-agent-changes-file--suppression' : '',
     ].filter(Boolean).join(' ');
+    const fullTitle = file.oldPath && file.oldPath !== path ? `${file.oldPath} → ${path}` : path;
+    const newFileWithoutLines = isNew && file.adds === 0 && file.dels === 0;
+    const rowLabel = newFileWithoutLines
+        ? nls.localizeByDefault('{0}: {1}', status.label, fullTitle)
+        : nls.localize('qaap/diff/fileRowLabel', '{0}: {1}, {2} added, {3} removed', status.label, fullTitle, String(file.adds), String(file.dels));
     return (
         <section className={fileClass} data-qaap-review-path={path}>
             <div className='qaap-agent-changes-filehdr'>
                 <button
                     type='button'
                     className='qaap-agent-changes-filehdr-toggle'
-                    title={path}
+                    title={fullTitle}
+                    aria-label={rowLabel}
                     aria-expanded={expanded}
                     aria-controls={hunksId}
                     onClick={onToggle}
@@ -87,13 +107,14 @@ export const QaapAgentFileSection = React.memo(function QaapAgentFileSection(pro
                         className={`${codicon('chevron-right')} qaap-agent-changes-filehdr-chevron`}
                         aria-hidden='true'
                     />
-                    <i className={props.iconClass} aria-hidden='true' />
-                    <span className='qaap-agent-changes-path' title={path}>{leadingTruncatePath(path)}</span>
-                    {isNew && (
-                        <span className='qaap-agent-changes-new-badge'>
-                            {nls.localize('qaap/diff/newFile', 'New')}
-                        </span>
-                    )}
+                    <span className={`qaap-agent-changes-status qaap-mod-${status.kind}`} aria-hidden='true'>{status.letter}</span>
+                    {/* Truncates from the left (CSS): the file name stays visible however narrow the panel. */}
+                    <span className='qaap-agent-changes-path'>
+                        <bdi className='qaap-agent-changes-path-text'>
+                            {dir && <span className='qaap-agent-changes-path-dir'>{dir}/</span>}
+                            <span className='qaap-agent-changes-path-base'>{base}</span>
+                        </bdi>
+                    </span>
                     {suppressionCount > 0 && (
                         <span
                             className='qaap-agent-changes-suppression-badge'
@@ -106,17 +127,17 @@ export const QaapAgentFileSection = React.memo(function QaapAgentFileSection(pro
                                 )}
                         >
                             <i className={codicon('warning')} aria-hidden='true' />
-                            {nls.localize('qaap/diff/suppressesCheck', 'Suppresses a check')}
+                            <span className='qaap-agent-changes-suppression-text'>{nls.localize('qaap/diff/suppressesCheck', 'Suppresses a check')}</span>
                         </span>
                     )}
-                    {isNew && file.adds === 0 && file.dels === 0 ? (
+                    {newFileWithoutLines ? (
                         <span className='qaap-agent-changes-filehdr-stats'>
                             {nls.localize('qaap/diff/newFileStats', 'New file')}
                         </span>
                     ) : (
                         <span className='qaap-agent-changes-filehdr-stats'>
                             <span className='qaap-diff-add'>+{file.adds}</span>
-                            <span className='qaap-diff-del'>-{file.dels}</span>
+                            <span className='qaap-diff-del'>−{file.dels}</span>
                         </span>
                     )}
                 </button>
@@ -130,7 +151,7 @@ export const QaapAgentFileSection = React.memo(function QaapAgentFileSection(pro
                             disabled={props.fileActionRunning}
                             onClick={onDiscard}
                         >
-                            <i className={codicon('discard')} />
+                            <i className={codicon('discard')} aria-hidden='true' />
                         </button>
                         <button
                             type='button'
@@ -140,13 +161,17 @@ export const QaapAgentFileSection = React.memo(function QaapAgentFileSection(pro
                             disabled={props.fileActionRunning}
                             onClick={onStage}
                         >
-                            <i className={codicon('diff')} />
+                            <i className={codicon('add')} aria-hidden='true' />
                         </button>
                     </span>
                 )}
             </div>
             {/* Collapsed files keep only the empty container (for aria-controls); their hunks are not rendered. */}
-            <div id={hunksId} className='qaap-agent-changes-hunks' hidden={!expanded}>
+            <div
+                id={hunksId}
+                className={`qaap-agent-changes-hunks qaap-mod-${props.viewMode}${props.wrapLines ? '' : ' qaap-mod-nowrap'}`}
+                hidden={!expanded}
+            >
                 {expanded && (diff ? <AgentFileDiff {...props} diff={diff} /> : <AgentFileDiffFallback {...props} />)}
             </div>
         </section>
@@ -171,6 +196,7 @@ function AgentFileDiff(props: QaapAgentFileSectionProps & { diff: QaapGitFileDif
                     hunkIndex={hunkIndex}
                     lines={hunk.lines}
                     language={language}
+                    viewMode={props.viewMode}
                     expandedContextBlocks={props.expandedContextBlocks}
                     onStageHunk={props.onStageHunk}
                     onToggleContextBlock={props.onToggleContextBlock}
@@ -218,13 +244,14 @@ interface AgentHunkProps {
     hunkIndex: number;
     lines: QaapGitHunkLine[];
     language: TranscriptCodeLanguage;
+    viewMode: QaapDiffViewMode;
     expandedContextBlocks: ReadonlySet<string> | undefined;
     onStageHunk: ((path: string, hunkIndex: number) => void) | undefined;
     onToggleContextBlock: (path: string, blockKey: string) => void;
 }
 
 const AgentHunk = React.memo(function AgentHunk(props: AgentHunkProps): React.ReactElement {
-    const { path, hunkIndex, lines, language, expandedContextBlocks, onStageHunk, onToggleContextBlock } = props;
+    const { path, hunkIndex, lines, language, viewMode, expandedContextBlocks, onStageHunk, onToggleContextBlock } = props;
     const onStageLine = React.useMemo(
         () => onStageHunk ? (): void => onStageHunk(path, hunkIndex) : undefined,
         [onStageHunk, path, hunkIndex],
@@ -233,36 +260,58 @@ const AgentHunk = React.memo(function AgentHunk(props: AgentHunkProps): React.Re
         (blockKey: string) => onToggleContextBlock(path, blockKey),
         [onToggleContextBlock, path],
     );
-    const renderLines = (segmentLines: QaapGitHunkLine[], offset: number): React.ReactNode => segmentLines.map((line, lineIndex) => (
-        <QaapDiffLine
-            key={diffLineKey(line, offset + lineIndex)}
-            line={line}
-            path={path}
-            agentStyle={true}
-            language={language}
-            onStageLine={onStageLine}
-        />
-    ));
+    const renderLines = (segmentLines: QaapGitHunkLine[], offset: number): React.ReactNode => viewMode === 'split'
+        ? buildSplitDiffRows(segmentLines).map((row, rowIndex) => (
+            <QaapSplitDiffLine
+                key={splitDiffRowKey(row, offset + rowIndex)}
+                row={row}
+                path={path}
+                language={language}
+                onStageLine={onStageLine}
+            />
+        ))
+        : segmentLines.map((line, lineIndex) => (
+            <QaapDiffLine
+                key={diffLineKey(line, offset + lineIndex)}
+                line={line}
+                path={path}
+                agentStyle={true}
+                language={language}
+                onStageLine={onStageLine}
+            />
+        ));
+    // Consecutive visible segments render as one run, so the split view can pair a removed line with
+    // the added line that replaces it (each changed line is its own segment).
+    const groups: Array<{ kind: 'lines'; lines: QaapGitHunkLine[]; offset: number; key: string }
+        | { kind: 'collapsed'; lines: QaapGitHunkLine[]; offset: number; blockKey: string }> = [];
     let offset = 0;
+    buildContextSegments(lines).forEach((segment, segmentIndex) => {
+        const last = groups[groups.length - 1];
+        if (segment.kind === 'lines' && last?.kind === 'lines') {
+            last.lines = [...last.lines, ...segment.lines];
+        } else if (segment.kind === 'lines') {
+            groups.push({ kind: 'lines', lines: segment.lines, offset, key: `lines-${segmentIndex}` });
+        } else {
+            groups.push({ kind: 'collapsed', lines: segment.lines, offset, blockKey: `${hunkIndex}:${segmentIndex}` });
+        }
+        offset += segment.lines.length;
+    });
     return (
         <div className='qaap-diff-review-hunk qaap-diff-review-hunk--agent'>
-            {buildContextSegments(lines).map((segment, segmentIndex) => {
-                const segmentOffset = offset;
-                offset += segment.lines.length;
-                if (segment.kind === 'lines') {
-                    return <React.Fragment key={`lines-${segmentIndex}`}>{renderLines(segment.lines, segmentOffset)}</React.Fragment>;
+            {groups.map(group => {
+                if (group.kind === 'lines') {
+                    return <React.Fragment key={group.key}>{renderLines(group.lines, group.offset)}</React.Fragment>;
                 }
-                const blockKey = `${hunkIndex}:${segmentIndex}`;
-                const expanded = !!expandedContextBlocks?.has(blockKey);
+                const expanded = !!expandedContextBlocks?.has(group.blockKey);
                 return (
-                    <React.Fragment key={`ctx-${segmentIndex}`}>
+                    <React.Fragment key={`ctx-${group.blockKey}`}>
                         <CollapsedContextBar
-                            blockKey={blockKey}
-                            count={segment.lines.length}
+                            blockKey={group.blockKey}
+                            count={group.lines.length}
                             expanded={expanded}
                             onToggle={onToggleBlock}
                         />
-                        {expanded && renderLines(segment.lines, segmentOffset)}
+                        {expanded && renderLines(group.lines, group.offset)}
                     </React.Fragment>
                 );
             })}
@@ -373,6 +422,76 @@ export const QaapDiffLine = React.memo(function QaapDiffLine(props: {
                     {nls.localize('qaap/diff/suppressesCheck', 'Suppresses a check')}
                 </span>
             )}
+        </div>
+    );
+});
+
+/** One side-by-side cell: line number and code of one side, or an empty filler cell. */
+function SplitDiffCell(props: {
+    line: QaapGitHunkLine | undefined;
+    side: 'old' | 'new';
+    path: string;
+    language: TranscriptCodeLanguage;
+}): React.ReactElement {
+    const { line, side, path, language } = props;
+    if (!line) {
+        return <div className={`qaap-diff-review-split-cell qaap-mod-${side} qaap-mod-empty`} aria-hidden='true' />;
+    }
+    const suppression = line.type === 'add' ? detectCheckSuppression(line.text, path) : undefined;
+    const number = side === 'old' ? line.oldNumber : line.newNumber;
+    const cellClass = [
+        'qaap-diff-review-split-cell',
+        `qaap-mod-${side}`,
+        `qaap-diff-review-line--${line.type}`,
+        suppression ? 'qaap-diff-review-line--suppression' : '',
+    ].filter(Boolean).join(' ');
+    return (
+        <div className={cellClass} data-qaap-suppression={suppression}>
+            <span className='qaap-diff-review-gutter'>{number ?? ''}</span>
+            <HighlightedDiffCode text={line.text} language={language} />
+            {suppression && (
+                <span
+                    className='qaap-diff-review-suppression-marker'
+                    title={nls.localize(
+                        'qaap/diff/suppressionLineTitle',
+                        'This line silences a check instead of fixing it. Accept it only if you asked for it.',
+                    )}
+                >
+                    <i className={codicon('warning')} aria-hidden='true' />
+                </span>
+            )}
+        </div>
+    );
+}
+
+/** One side-by-side row (old | new); memoized like {@link QaapDiffLine}. */
+export const QaapSplitDiffLine = React.memo(function QaapSplitDiffLine(props: {
+    row: QaapSplitDiffRow;
+    path: string;
+    language: TranscriptCodeLanguage;
+    onStageLine?: () => void;
+}): React.ReactElement {
+    const { row, path, language, onStageLine } = props;
+    const onStageClick = React.useCallback((event: React.MouseEvent) => {
+        event.stopPropagation();
+        onStageLine?.();
+    }, [onStageLine]);
+    const changed = row.left?.type === 'del' || row.right?.type === 'add';
+    return (
+        <div className='qaap-diff-review-line qaap-diff-review-line--agent qaap-diff-review-split-row'>
+            {changed && onStageLine && (
+                <button
+                    type='button'
+                    className='qaap-agent-changes-line-stage'
+                    title={nls.localize('qaap/diff/stageLine', 'Stage this change')}
+                    aria-label={nls.localize('qaap/diff/stageLine', 'Stage this change')}
+                    onClick={onStageClick}
+                >
+                    <span aria-hidden='true'>+</span>
+                </button>
+            )}
+            <SplitDiffCell line={row.left} side='old' path={path} language={language} />
+            <SplitDiffCell line={row.right} side='new' path={path} language={language} />
         </div>
     );
 });

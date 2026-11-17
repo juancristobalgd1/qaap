@@ -53,11 +53,14 @@ import { } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import { MobileOpenRepositoryDialog } from './mobile-open-repository-dialog';
 import {
+    invalidateAgentModelsCache,
+    invalidateAgentTaskListAllCache,
     type QaapAgentTaskAgentOption,
     type QaapCreateAgentTaskQaiqModel,
     type QaapQaiqModelOption,
     type QaapAgentTaskListSnapshot,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { subscribeToDisabledHarnessesPreference } from './qaap-disabled-harness-preference';
 import {
     type QaapAgentApprovalPolicyId,
 } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
@@ -906,13 +909,34 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     dispose(): void {
         this.shellSnapshotWriter.dispose();
+        this.disabledHarnessesSubscription?.dispose();
+        this.disabledHarnessesSubscription = undefined;
         disposeExtracted(this);
     }
 
     async show(options?: { preferredHubView?: MobileProjectsHubView }): Promise<void> {
         await this.panelLifecycleUi.show(options);
+        this.subscribeToDisabledHarnessChanges();
         this.composerEditorContextService?.registerPanelDelegate(this.createComposerEditorContextPanelDelegate());
     }
+
+    /** Settings → Harness changed the disabled harnesses: the caches drop, an open picker closes, the composer repaints. */
+    protected subscribeToDisabledHarnessChanges(): void {
+        if (this.disabledHarnessesSubscription || !this.preferenceService) {
+            return;
+        }
+        this.disabledHarnessesSubscription = subscribeToDisabledHarnessesPreference(this.preferenceService, () => {
+            invalidateAgentTaskListAllCache();
+            invalidateAgentModelsCache();
+            this.stickyComposerSheetsUi.closeStickyComposerSheets();
+            if (this.visible) {
+                // Painting the composer refreshes its agents, which now read the new disabled list.
+                this.stickyComposerRenderUi.renderStickyComposer();
+            }
+        });
+    }
+
+    protected disabledHarnessesSubscription: { dispose(): void } | undefined;
 
     hide(): void {
         hideExtracted(this);
@@ -977,6 +1001,11 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     protected async onStartNewLocalProject(): Promise<void> {
         await this.stickyComposerWorkspaceUi.onCreateNewProjectFromSheet('local');
+    }
+
+    protected async onOpenLocalProject(): Promise<void> {
+        // openLocalProject() reloads into the chosen folder; nothing to re-render when the picker is cancelled.
+        await this.projectsService.openLocalProject();
     }
 
     protected async activateAgentsHubProject(project: MobileProjectEntry): Promise<void> {

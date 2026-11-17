@@ -8,7 +8,7 @@ import * as path from 'path';
 import { expect, test, type Browser, type BrowserContext, type Locator, type Page, type PlaywrightWorkerArgs, type TestInfo } from '@playwright/test';
 import { TheiaAppLoader } from '../theia-app-loader';
 
-/** The sidebar chip of a pending Qaap build: `button` with aria-label "Update Qaap now" and text "Update now". */
+/** The sidebar button of a pending Qaap build: an icon-only `button` with aria-label "Update Qaap now" (no visible text). */
 const CHIP_NAME = 'Update Qaap now';
 /**
  * The chip's name changes while it updates ("Updating Qaap"), so state checks use the class; the accessible
@@ -167,7 +167,8 @@ async function runUpdateFlow(
         await expect(page.getByRole('button', { name: CHIP_NAME })).toBeVisible({ timeout: 30_000 });
         const chip = page.locator(CHIP_SELECTOR);
         await expect(chip).toBeVisible({ timeout: 30_000 });
-        await expect(chip).toHaveText('Update now');
+        await expect(chip).toHaveAttribute('aria-label', CHIP_NAME);
+        await expect(chip.locator('.codicon-sync')).toHaveCount(1);
         await expect(chip).toBeEnabled();
 
         const metrics = await measureChip(chip);
@@ -201,7 +202,7 @@ async function runUpdateFlow(
 
         // The reload is the end of the flow: wait for the next document load, set up before the request.
         const reloaded = page.waitForEvent('load', { timeout: 60_000 });
-        await expect(chip).toHaveText('Updating…');
+        await expect(chip).toHaveAttribute('aria-busy', 'true');
         await expect(chip).toBeDisabled();
         await capture(testInfo, page, options.prefix, 'updating-footer', footer);
         await reloaded;
@@ -232,7 +233,7 @@ test.describe('@qaap-mobile Work Hub update chip (mobile)', () => {
             await expect(chip).toBeVisible({ timeout: 30_000 });
             const reloaded = page.waitForEvent('load', { timeout: 60_000 });
             await chip.click();
-            await expect(chip).toHaveText('Updating…');
+            await expect(chip).toHaveAttribute('aria-busy', 'true');
             await expect(page.getByText(RECONFIRM_TURNS_TEXT)).toHaveCount(0);
             await capture(testInfo, page, 'mobile-0-turns', 'updating-footer', page.locator('.theia-mobile-work-hub-sessions-sidebar-foot'));
             await reloaded;
