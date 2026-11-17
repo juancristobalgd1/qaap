@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import type { QaapAgentConversationDTO, QaapAgentMessageDTO } from './qaap-agent-conversation-client';
+import { QAAP_VISUAL_VERIFICATION_MARKER } from './qaap-visual-verification';
 import {
     mergeSegmentTraceEvents,
     hasActiveQaapTraceWork,
@@ -131,6 +132,44 @@ export function materializeAgentMessageForApi(message: QaapAgentMessageDTO): Qaa
     const useTraceSegments = trace.segments.length > 0 && (persistedCount === 0 || hasStructuredTraceEvents(message.traceEvents ?? []));
     if (useTraceSegments) {
         next = { ...next, segments: [...trace.segments] };
+    }
+    return keepVisualEvidenceSegment(next);
+}
+
+/** Trace id of the evidence block re-attached after the turn (stable, so a second pass is a no-op). */
+const QAAP_VISUAL_EVIDENCE_TRACE_ID = 'qaap-visual-evidence';
+
+/**
+ * The visual evidence (or capture-failure note) is appended to a settled reply after the turn, to
+ * its content and segments but not to its trace. The transcript draws the trace when there is one
+ * (and the API rebuilt segments from it), so the evidence was dropped: "Screenshot not available"
+ * for a capture that had landed. Keep the evidence block as the final text of both.
+ */
+function keepVisualEvidenceSegment(message: QaapAgentMessageDTO): QaapAgentMessageDTO {
+    const content = message.content ?? '';
+    const markerAt = content.indexOf(QAAP_VISUAL_VERIFICATION_MARKER);
+    if (markerAt < 0) {
+        return message;
+    }
+    // The block starts at its `---` divider when the store wrote one right before the marker.
+    const divider = content.lastIndexOf('---', markerAt);
+    const rawBlock = content.slice(divider >= 0 && !content.slice(divider + 3, markerAt).trim() ? divider : markerAt).trimEnd();
+    // The marker is a protocol token (content keeps it for the store): the transcript shows the block
+    // without it. The pending chip detects the evidence by its image, not by the marker text.
+    const block = rawBlock.replace(QAAP_VISUAL_VERIFICATION_MARKER, '').replace(/\n{3,}/g, '\n\n').trimEnd();
+    let next = message;
+    const traceEvents = next.traceEvents;
+    if (traceEvents?.length && !traceEvents.some(event => event.type === 'assistant_text'
+        && (event.id === QAAP_VISUAL_EVIDENCE_TRACE_ID || !!event.content?.includes(QAAP_VISUAL_VERIFICATION_MARKER)))) {
+        next = {
+            ...next,
+            traceEvents: [...traceEvents, { type: 'assistant_text', id: QAAP_VISUAL_EVIDENCE_TRACE_ID, content: block, status: 'completed' }],
+        };
+    }
+    const segments = next.segments;
+    if (segments?.length && !segments.some(segment => segment.type === 'text'
+        && (segment.content === block || !!segment.content?.includes(QAAP_VISUAL_VERIFICATION_MARKER)))) {
+        next = { ...next, segments: [...segments, { type: 'text', content: block }] };
     }
     return next;
 }
