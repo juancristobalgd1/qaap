@@ -74,12 +74,25 @@ export class MobileWorkHubActivityCalendar {
         const calendar = buildQaapActivityCalendar(this.timestamps, year, this.now);
         this.node.removeAttribute('aria-busy');
         this.headingEl.textContent = this.createHeadingText(calendar);
-        this.bodyEl.replaceChildren(this.createGraph(calendar), this.createYearList(calendar));
+        // A year without contributions shows a plain empty state, not a grid of blank cells.
+        const graph = calendar.totalCount === 0 ? this.createEmptyState(calendar) : this.createGraph(calendar);
+        this.bodyEl.replaceChildren(graph, this.createYearList(calendar));
         // Latest weeks first: the newest column is the one the user came to see.
         const scroller = this.bodyEl.querySelector<HTMLElement>('.theia-mobile-work-hub-settings-activity-scroll');
         if (scroller) {
             scroller.scrollLeft = scroller.scrollWidth;
         }
+    }
+
+    protected createEmptyState(calendar: QaapActivityCalendar): HTMLElement {
+        const empty = document.createElement('p');
+        empty.className = 'theia-mobile-work-hub-settings-activity-empty';
+        empty.textContent = nls.localize(
+            'qaap/workHubSettings/activity/emptyState',
+            'Nothing recorded in {0} yet. Conversations you start and keep working in show up here.',
+            calendar.year,
+        );
+        return empty;
     }
 
     protected createHeadingText(calendar: QaapActivityCalendar): string {
@@ -139,9 +152,13 @@ export class MobileWorkHubActivityCalendar {
             }
         }
 
-        inner.append(months, weekdays, grid);
+        // Weekday labels sit outside the scroller so Mon/Wed/Fri stay visible while the weeks scroll.
+        inner.append(months, grid);
         scroller.append(inner);
-        graph.append(scroller, this.createLegend());
+        const frame = document.createElement('div');
+        frame.className = 'theia-mobile-work-hub-settings-activity-frame';
+        frame.append(weekdays, scroller);
+        graph.append(frame, this.createLegend());
         return graph;
     }
 

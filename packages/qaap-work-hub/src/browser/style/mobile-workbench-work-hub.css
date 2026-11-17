@@ -13862,8 +13862,9 @@ body.theia-mod-work-hub-settings-resizing * {
 /* Contribution graph under the profile card. Cell size and gap are custom properties so the
    weekday labels, month labels, grid and legend share one measure. */
 .theia-mobile-work-hub-settings-activity-card {
-  --qaap-activity-cell: var(--q-space-5);
-  --qaap-activity-gap: var(--q-space-1);
+  --qaap-activity-cell: var(--q-space-5, 10px);
+  --qaap-activity-gap: var(--q-space-1, 2px);
+  --qaap-activity-month-height: 14px;
   gap: 0;
   padding: var(--q-space-10) var(--q-space-10) var(--q-space-8);
 }
@@ -13911,21 +13912,25 @@ body.theia-mod-work-hub-settings-resizing * {
   outline-offset: 2px;
 }
 
+/* Weekday labels, scroller and legend row: the labels stay put while the weeks scroll. */
+.theia-mobile-work-hub-settings-activity-frame {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--q-space-2, 6px);
+}
+
 .theia-mobile-work-hub-settings-activity-inner {
-  display: grid;
+  display: flex;
   width: max-content;
-  grid-template-columns: 28px auto;
-  row-gap: var(--qaap-activity-gap);
-  column-gap: var(--q-space-2);
+  flex-direction: column;
+  gap: var(--qaap-activity-gap);
 }
 
 .theia-mobile-work-hub-settings-activity-months {
   display: grid;
-  grid-column: 2;
-  grid-row: 1;
   grid-template-columns: repeat(var(--qaap-activity-weeks, 53), var(--qaap-activity-cell));
   column-gap: var(--qaap-activity-gap);
-  height: 14px;
+  height: var(--qaap-activity-month-height);
 }
 
 .theia-mobile-work-hub-settings-activity-month {
@@ -13936,10 +13941,11 @@ body.theia-mod-work-hub-settings-resizing * {
   white-space: nowrap;
 }
 
+/* Starts below the month row so Mon/Wed/Fri line up with the grid rows. */
 .theia-mobile-work-hub-settings-activity-weekdays {
   display: grid;
-  grid-column: 1;
-  grid-row: 2;
+  flex: 0 0 28px;
+  margin-top: calc(var(--qaap-activity-month-height) + var(--qaap-activity-gap));
   grid-template-rows: repeat(7, var(--qaap-activity-cell));
   row-gap: var(--qaap-activity-gap);
 }
@@ -13952,8 +13958,6 @@ body.theia-mod-work-hub-settings-resizing * {
 
 .theia-mobile-work-hub-settings-activity-grid {
   display: grid;
-  grid-column: 2;
-  grid-row: 2;
   grid-auto-columns: var(--qaap-activity-cell);
   grid-auto-flow: column;
   grid-template-rows: repeat(7, var(--qaap-activity-cell));
@@ -13968,24 +13972,35 @@ body.theia-mod-work-hub-settings-resizing * {
   border-radius: 2px;
 }
 
+/* Colours come from the VS Code theme (never from the --q-* product tokens, which exist only under the
+   qaap-theme body classes and left every cell transparent). Level 0 is a tint of the foreground colour;
+   levels 1-4 are the theme's green at rising strength. */
 .theia-mobile-work-hub-settings-activity-level-0 {
-  background: var(--q-line-soft);
+  background: color-mix(in srgb, var(--theia-foreground) 12%, transparent);
 }
 
 .theia-mobile-work-hub-settings-activity-level-1 {
-  background: color-mix(in srgb, var(--q-success) 30%, var(--q-line-soft));
+  background: color-mix(in srgb, var(--theia-charts-green, #4caf7c) 35%, transparent);
 }
 
 .theia-mobile-work-hub-settings-activity-level-2 {
-  background: color-mix(in srgb, var(--q-success) 52%, var(--q-line-soft));
+  background: color-mix(in srgb, var(--theia-charts-green, #4caf7c) 55%, transparent);
 }
 
 .theia-mobile-work-hub-settings-activity-level-3 {
-  background: color-mix(in srgb, var(--q-success) 75%, var(--q-line-soft));
+  background: color-mix(in srgb, var(--theia-charts-green, #4caf7c) 78%, transparent);
 }
 
 .theia-mobile-work-hub-settings-activity-level-4 {
-  background: var(--q-success);
+  background: var(--theia-charts-green, #4caf7c);
+}
+
+.theia-mobile-work-hub-settings-activity-empty {
+  margin: 0;
+  padding: var(--q-space-6, 8px) 0;
+  color: var(--theia-descriptionForeground);
+  font-size: var(--q-text-meta, 13px);
+  line-height: 1.4;
 }
 
 .theia-mobile-work-hub-settings-activity-cell.theia-mod-future {
@@ -14036,8 +14051,8 @@ body.theia-mod-work-hub-settings-resizing * {
 }
 
 .theia-mobile-work-hub-settings-activity-year.theia-mod-selected {
-  background: var(--q-accent-soft);
-  color: var(--q-text);
+  background: color-mix(in srgb, var(--theia-foreground) 14%, transparent);
+  color: var(--theia-foreground);
   font-weight: 600;
 }
 
