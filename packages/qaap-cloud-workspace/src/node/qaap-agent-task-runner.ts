@@ -624,11 +624,21 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         return this.detectedAgents.has(QAIQ_AGENT_ID) || this.isOnPath(QAIQ_AGENT_ID);
     }
 
-    /** Re-probe CLI harnesses after a local install from the configuration UI. */
-    refreshAgentCatalog(): void {
+    /**
+     * Re-probe CLI harnesses after a local install or a sign-in from the configuration UI. Only the
+     * refreshing owner's rejected sessions are lifted ({@link rejectedAgentSessions}): another user's
+     * refresh must not unlock a session a failed turn of this user proved unusable.
+     */
+    refreshAgentCatalog(ownerLogin?: string): void {
         this.agentConnectionStates.clear();
         this.agentConnectionProbes.clear();
-        this.rejectedAgentSessions.clear();
+        // Keys are `${agentId}:${owner}` (agentConnectionCacheKey); neither part contains a colon.
+        const owner = ownerLogin?.trim().toLowerCase() ?? '';
+        for (const key of [...this.rejectedAgentSessions]) {
+            if (key.slice(key.indexOf(':') + 1) === owner) {
+                this.rejectedAgentSessions.delete(key);
+            }
+        }
         // Harness settings or the CLI may have changed: the next model request runs discovery again.
         clearNativeAgentModelCache();
         this.detectAgents();

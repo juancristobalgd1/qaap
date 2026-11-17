@@ -89,9 +89,20 @@ describe('QaapAgentTaskRunner session rejection after an auth failure', () => {
         states.set('codex:alice', { state: 'connected', at: Date.now() });
         expect(session(runner, 'codex')).to.equal('signed-out');
 
-        // The sign-in dialog confirms with `?refresh=1`, which runs refreshAgentCatalog.
-        runner.refreshAgentCatalog();
+        // The sign-in dialog confirms with `?refresh=1`, which runs refreshAgentCatalog for that owner.
+        runner.refreshAgentCatalog('alice');
         expect(session(runner, 'codex')).to.not.equal('signed-out');
+    });
+
+    it('lifts only the refreshing owner\'s rejections', async () => {
+        const runner = runnerWith(CODEX_401);
+        await runner.recordLastTurnForTest(failedTask('codex'));
+        await runner.recordLastTurnForTest(failedTask('codex', { ownerLogin: 'bob' }));
+
+        runner.refreshAgentCatalog('Bob');
+
+        expect(session(runner, 'codex')).to.equal('signed-out');
+        expect(session(runner, 'codex', 'bob')).to.not.equal('signed-out');
     });
 
     it('ignores Qaap\'s own pre-spawn refusal, a Free model and a non-auth failure', async () => {

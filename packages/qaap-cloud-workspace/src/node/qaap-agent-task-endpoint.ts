@@ -517,13 +517,13 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             return;
         }
         const refresh = req.query.refresh === '1' || req.query.refresh === 'true';
-        if (refresh) {
-            this.runner.refreshAgentCatalog();
-        }
         // `groups` intentionally omitted: the only HTTP consumer reads agents/models and the
         // full task history (with whole prompts in `command`) multiplies into tens of MB per call. Live
         // task groups arrive over the WebSocket snapshot instead.
         const ownerLogin = this.auth.resolveUserLogin(ctx);
+        if (refresh) {
+            this.runner.refreshAgentCatalog(ownerLogin);
+        }
         // An explicit refresh (the Connect dialog confirming a sign-in) needs the probe's real
         // answer; the regular picker load answers within the short default budget.
         const agents = await (refresh
@@ -618,7 +618,7 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             const installTarget = this.runner.resolveAgentCliInstallTarget(ownerLogin);
             const result = await this.cliUpdates.installUpdate(agentId, installTarget, { userKey: ownerLogin?.toLowerCase() });
             if (result.ok) {
-                this.runner.refreshAgentCatalog();
+                this.runner.refreshAgentCatalog(ownerLogin);
             }
             res.status(this.cliInstallStatusCode(result)).json(result);
         } catch (error) {
