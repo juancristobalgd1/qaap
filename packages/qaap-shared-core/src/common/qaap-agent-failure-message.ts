@@ -57,15 +57,23 @@ const USAGE_LIMIT_PATTERNS: readonly RegExp[] = [
 /** The reset time a usage-limit message names ("try again at Nov 19th, 2026 12:56 AM."). Never guessed. */
 const USAGE_LIMIT_RESET_PATTERN = /\btry\s+again\s+at\s+([^.\n]{3,60}?)\s*(?:\.|\n|$)/i;
 
+/**
+ * Provider quota exhaustion. Strict on purpose: a bare "quota" or "billing" is a word in prose and in
+ * tool output (this repo talks about both), so each pattern needs the exhaustion verb or the provider's
+ * own phrase. Real messages stay matched: "quota exceeded", "Individual quota reached", "You exceeded
+ * your current quota", "reached its quota" (our own copy), "insufficient_quota", "RESOURCE_EXHAUSTED".
+ */
 const QUOTA_PATTERNS: readonly RegExp[] = [
     /\binsufficient[_\s-]?quota\b/i,
-    /\bquota\b/i,
-    /\bfree[_\s-]?credits?\b/i,
+    /\bquota\s+(?:exceeded|exhausted|depleted|reached|limit\s+(?:reached|exceeded))\b/i,
+    /\b(?:exceeded|exhausted|reached|hit)\s+(?:its|your|the|our|a|an)\s+(?:[\w-]+\s+)?quota\b/i,
+    /\bfree[_\s-]?credits?\b[^\n]{0,60}?\b(?:exhausted|depleted|used\s+up|ran\s+out)\b/i,
     /\bcredits?\s+(?:exhausted|depleted|used\s+up|ran\s+out)\b/i,
     /\bout\s+of\s+credits?\b/i,
     // Hugging Face router: "You have depleted your monthly included credits."
     /\bdepleted\s+your\b[^.\n]{0,40}\bcredits?\b/i,
-    /\bbilling\b/i,
+    // OpenAI-style "Your billing hard limit has been reached." (a bare "billing" is not a limit).
+    /\bbilling\s+(?:hard\s+)?limit\b[^.\n]{0,40}\b(?:reached|exceeded)\b/i,
     /\bresource[_\s-]?exhausted\b/i,
     /\bfree\s+usage\s+limit\b/i,
     ...USAGE_LIMIT_PATTERNS,

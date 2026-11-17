@@ -123,6 +123,28 @@ describe('qaap-agent-failure-message', () => {
             .to.equal('quota');
     });
 
+    it('does not classify prose that merely mentions a quota or billing as quota', () => {
+        // Successful replies and tool output from this repo: the bare words are not a provider limit.
+        expect(detectAgentFailureKind('Hola. Te explico cómo funciona el quota del plan de facturación (billing) en Airwallex.'))
+            .to.equal(undefined);
+        expect(detectAgentFailureKind('expect(quota).to.equal(3); billing total = 42')).to.equal(undefined);
+        expect(detectAgentFailureKind('Free credits are included in the starter plan.')).to.equal(undefined);
+        expect(detectAgentFailureKind('Added a billing page and a quota badge to the settings.')).to.equal(undefined);
+    });
+
+    it('still classifies real provider quota messages as quota', () => {
+        expect(detectAgentFailureKind('Individual quota reached. Please upgrade your subscription. Resets in 54h16m14s.'))
+            .to.equal('quota');
+        expect(detectAgentFailureKind('Quota exceeded for quota metric generate requests')).to.equal('quota');
+        expect(detectAgentFailureKind('You exceeded your current quota, please check your plan and billing details.'))
+            .to.equal('quota');
+        expect(detectAgentFailureKind('This model has reached its quota. Switch model or effort in the composer.'))
+            .to.equal('quota');
+        expect(detectAgentFailureKind('Error: 429 insufficient_quota')).to.equal('quota');
+        expect(detectAgentFailureKind('Your billing hard limit has been reached.')).to.equal('quota');
+        expect(detectAgentFailureKind('Free credits for Kimi K2.6 are exhausted.')).to.equal('quota');
+    });
+
     it('detectAgentFailureKind recognizes auth, timeout, and network failures', () => {
         expect(detectAgentFailureKind('invalid_api_key'))
             .to.equal('auth');
