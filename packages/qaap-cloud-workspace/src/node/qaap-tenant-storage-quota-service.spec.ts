@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import * as path from 'path';
 import { QaapTenantStorageQuotaService } from './qaap-tenant-storage-quota-service';
 
 const GIB = 1024 ** 3;
@@ -60,9 +61,9 @@ describe('QaapTenantStorageQuotaService', () => {
     });
 
     /** Repos hold `repoGib`, the tenant config root holds `configGib`. */
-    // Roots are joined with the host separator (`\\srv\\test-repos\\alice` on Windows): compare in POSIX form.
+    // The service resolves its roots (`D:\srv\test-repos\…` on Windows), so compare resolved paths.
     const sized = (repoGib: number, configGib = 0): SizedStorageQuota => new SizedStorageQuota(root =>
-        root.replace(/\\/g, '/').startsWith('/srv/test-repos') ? repoGib * GIB : configGib * GIB);
+        path.resolve(root).startsWith(path.resolve('/srv/test-repos')) ? repoGib * GIB : configGib * GIB);
 
     it('reports over the limit when the owner uses more than the plan storage', async () => {
         const service = sized(9, 2);

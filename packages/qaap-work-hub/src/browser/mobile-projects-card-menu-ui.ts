@@ -18,6 +18,7 @@ import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { resolveQaapFailedRunAction } from '../common/qaap-failed-run-action';
 import type { MobileWorkHubSessionsSidebar } from './mobile-work-hub-sessions-sidebar';
+import { MobileProjectsExternalSessionImportUi } from './mobile-projects-external-session-import-ui';
 
 export interface MobileProjectsCardMenuItemOptions {
     label: string;
@@ -34,6 +35,7 @@ export interface MobileProjectsCardMenuHost {
     scroll: HTMLElement;
     sessionsSidebar: MobileWorkHubSessionsSidebar | undefined;
     chatService: ChatService | undefined;
+    quickInputService?: import('@theia/core/lib/common/quick-pick-service').QuickInputService;
     conversations: MobileProjectsConversations | undefined;
     conversationFlags: MobileProjectsConversationFlags | undefined;
     activeTasks?: MobileProjectsActiveTasks;
@@ -91,8 +93,17 @@ export class MobileProjectsCardMenuUi {
     /** Per-repository opt-in for tasks started from GitHub issues (doc/qaap-external-task-inputs.md). */
     protected readonly externalTaskOptIns = new QaapExternalTaskOptInClient();
 
+    /** "Import from other CLIs" picker (doc/qaap-external-session-import.md). */
+    protected readonly externalSessionImport: MobileProjectsExternalSessionImportUi;
+
     constructor(protected readonly host: MobileProjectsCardMenuHost) {
         void this.externalTaskOptIns.load();
+        this.externalSessionImport = new MobileProjectsExternalSessionImportUi({
+            get quickInputService() { return host.quickInputService; },
+            getProjectCwd: project => host.projectsService.getProjectCwd(project),
+            findSummaryById: id => host.conversationIndexUi.findSummaryById(id),
+            openConversationSummary: (project, summary) => host.openConversationSummary(project, summary),
+        });
     }
 
     /**
@@ -156,6 +167,19 @@ export class MobileProjectsCardMenuUi {
                     this.closeCardMenu();
                     this.host.sessionsSidebar?.hide();
                     void this.host.delegate?.onProjectOpenInIde?.(project);
+                },
+            });
+        }
+
+        if (this.host.projectsService.getProjectCwd(project) && this.host.quickInputService) {
+            this.appendCardMenuItem(menu, {
+                label: nls.localize('qaap/mobileProjects/importExternalSession', 'Import from other CLIs…'),
+                iconClass: 'codicon-cloud-download',
+                title: nls.localize('qaap/mobileProjects/importExternalSessionTitle',
+                    'Bring a conversation this project had in Claude Code, Codex, OpenCode or Pi into a task, and keep working on it here.'),
+                onSelect: () => {
+                    this.closeCardMenu();
+                    void this.externalSessionImport.open(project);
                 },
             });
         }

@@ -2347,6 +2347,13 @@ body.theia-mobile-mod-desktop-ide #theia-app-shell.theia-mod-mobile-one-column #
   pointer-events: auto;
 }
 
+/* The backdrop is inserted right before the quick input whenever the one-column shell is active, also
+   above 767px where the media-query z-index below does not apply: keep the quick input above it, or
+   every tap on a row lands on the backdrop and dismisses the picker. */
+.theia-mobile-quick-input-backdrop ~ #quick-input-container {
+  z-index: 2147483000 !important;
+}
+
 @media (max-width: 767px),
 (pointer: coarse) {
   body.theia-mobile-mod-project-switcher-quickpick #quick-input-container {

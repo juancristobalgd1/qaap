@@ -108,6 +108,8 @@ export {
     parseGitNumstat,
 } from './qaap-agent-conversation-store-constants';
 import { cancelExtracted, cancelQueuedMessageExtracted, createExtracted, dispatchQueuedMessageExtracted, drainPendingMessagesExtracted, enqueuePendingMessageExtracted, getActiveTaskIdForConversationExtracted, getActiveTaskIdsForConversationExtracted, getExtracted, hasActiveTaskForUserMessageExtracted, hasOtherActiveTaskForConversationExtracted, initExtracted, interruptConversationRunsExtracted, linkConversationsToPullRequestExtracted, listExtracted, maybeDrainAtToolRoundBoundaryExtracted, mutatingGitExtracted, postUserMessageExtracted, retryExtracted, settleStatusForRunExtracted, type QaapConversationRetryOptions } from './qaap-agent-conversation-store-render2';
+import { findImportedConversation, importExternalConversationExtracted, type QaapExternalConversationSeed } from './qaap-agent-conversation-store-external-import';
+import type { QaapExternalSessionSource } from '@theia/qaap-shared-core/lib/common/qaap-external-session-protocol';
 import { attachVisualVerificationBlockExtracted, cancelRunExtracted, continueVisualRepairLoopExtracted, startVisualRepairProposalExtracted, deleteExtracted, failVisualRepairLoopExtracted, forkExtracted, recordVisualVerificationExtracted, recordVisualVerificationVideoExtracted, resolveVisualEvidenceTargetExtracted, resolveVisualRepairSourceUserMessageExtracted, updateExtracted } from './qaap-agent-conversation-store-streaming2';
 import { applyAgUiTaskOutputExtracted, applyTaskOutputExtracted, deliverSubtaskMailboxExtracted, findConversationIdForLeaderTaskExtracted, finishLeaderTurnAndMaybeSynthesizeExtracted, maybeTriggerTeamSynthesisExtracted, onTaskChangedExtracted, parseStructuredLogExtracted, readVisualVerificationExtracted, recordGitActionExtracted, recordSubmitLatencyMarksExtracted, recordTaskLatencyMarksExtracted, recordVisualVerificationFailureExtracted, recordVisualVerificationFlowExtracted, resolveLeaderTaskIdExtracted } from './qaap-agent-conversation-store-timeline2';
 import { applyAccumulatorStructuredOutputExtracted, applyTaskOutcomeExtracted, backfillAgentMessageFromStructuredLogExtracted, maybeRetryTurnWithFallbackExtracted, resolveStructuredParsedTraceEventsExtracted } from './qaap-agent-conversation-store-activity2';
@@ -370,6 +372,16 @@ export class QaapAgentConversationStore implements QaapAgentConversationStoreCon
 
     fork(id: string): QaapAgentConversation | undefined {
         return forkExtracted(this, id);
+    }
+
+    /** Imports a session of another agent CLI as a conversation (doc/qaap-external-session-import.md). */
+    importExternalConversation(seed: QaapExternalConversationSeed, ownerLogin?: string): { conversation: QaapAgentConversation; created: boolean } {
+        return importExternalConversationExtracted(this, seed, ownerLogin);
+    }
+
+    /** The conversation already imported from this external session for this owner, if any. */
+    findImportedConversation(source: QaapExternalSessionSource, sessionId: string, ownerLogin?: string): QaapAgentConversation | undefined {
+        return findImportedConversation(this, source, sessionId, ownerLogin);
     }
 
     delete(id: string): boolean {
