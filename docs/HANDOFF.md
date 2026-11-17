@@ -2,6 +2,36 @@
 
 Estado para continuar el trabajo desde otra cuenta o sesión. Actualízalo al cerrar cada tarea: qué queda pendiente, cómo se validó y qué limitaciones conviene conocer. La política de modelos está en la sección «Selección de modelos y orquestación» de `CLAUDE.md`.
 
+## 2026-11-17 — Ronda 2b (PR #534)
+
+**Hecho**
+- Harness Pro, fail-closed: los modelos Pro quedan bloqueados mientras la sesión del harness esté `signed-out` o `unknown`; un `checking` o sesión sin valor no muestra acción de sign-in. Las filas bloqueadas por sign-in del selector llevan `aria-disabled="true"` y `theia-mod-disabled`: el clic abre el sign-in de ese harness; Enter y ⌘N no seleccionan. Las bloqueadas por plan no hacen nada. Enter en la búsqueda elige la primera fila seleccionable. (`qaap-composer-model-picker.ts`, specs nuevos.)
+- Transcript: un turno cuyo resultado dice éxito ya no muestra fila «Failed:» ni estado fallido en el resumen (`toConversationSummary`). El error guardado no se borra; solo se oculta en lectura.
+- Work Hub: CSS de cabecera, proyectos y sidebar de sesiones.
+- Electron: `QaapWorkHubElectronMainMenuFactory` filtra el menú nativo según la superficie y el menú de app de macOS toma el nombre del producto («Qaap») en vez de «Theia». Spec nuevo.
+- Investigación de «hola» en esor-vite: no hubo envíos nuevos (ni turnos ni tareas en las últimas 2 h). El `updatedAt` de tres conversaciones (46eb0af5, 9e564278, 29ff13af) se fijó a 19:48:48–53 en el arranque del backend, por la reinicialización de turnos `streaming` (`interruptStreamingTurnForRestartExtracted` / `sweepZombieStreamingTurns`, que escriben `updatedAt = nowMs`). `toConversationSummary` no altera fechas ni orden: no es el culpable. No se ha tocado; ver pendiente.
+
+**Validación**
+- `npx tsc -b` de qaap-shared-core, qaap-transcript, qaap-cloud-workspace, qaap-composer, qaap-work-hub y qaap-product: 0 errores.
+- Tests: shared-core 2626 ok (3 pending); transcript 957; cloud-workspace 3984 (2 pending); composer 519; work-hub 1069 (1 pending); product 171 (incluye el snapshot de bindings).
+- eslint sobre los 30 `.ts` cambiados: 0 errores, 113 avisos (ninguno nuevo de lógica).
+- `scripts/qaap-drift-check.js`, `qaap-package-graph-check.js`, `qaap-endpoint-ownership-check.js`, `qaap-spec-jsdom-check.js`: OK.
+- `npm run build:electron` sin errores. Aviso de CSS preexistente en `mobile-workbench-transcript.css` (llave sin cerrar), fichero no tocado.
+- CDP sobre el Electron de prueba (:9334): en Copilot CLI, las 5 filas Pro están `aria-disabled`; ⌘1 no cambia el pill («Beam Free»); el clic abre «Connect Copilot CLI» (sign-in).
+- Menú: el DTO del renderer (`createElectronMenuBar`) trae «Qaap» como menú de app. No se pudo leer la barra de menús del sistema (osascript sin permiso de accesibilidad; una captura salió con Chrome al frente), así que el texto visible en macOS está sin verificar.
+
+**Limitaciones**
+- Enter sobre una fila bloqueada por sign-in dispara su `click` nativo y abre el sign-in (no selecciona). Es lo que se pidió por clic; se documenta aquí por si no se quiere.
+- Los commits por tema no se han compilado uno a uno: el orden A→B→C→D respeta dependencias, pero no se ha verificado cada commit por separado.
+
+**Pendiente**
+- Validar agy en el VPS con el fail-closed.
+- Usuarios de Copilot y Grok: un re-sign-in una vez (sin él, sus Pro salen bloqueados).
+- El error persistido en turnos antiguos sigue en la BD; solo se oculta en lectura.
+- Decidir si el arranque debe conservar `updatedAt` en las conversaciones reinicializadas (hoy las sube a «ahora» y cambian de orden en la barra lateral).
+- Propuesta MCP de GitHub sin prompt al arrancar.
+- Verificar en el menú real de macOS que aparece «Qaap».
+
 ## 2026-11-17 — Resto de la ronda 2 (rama `feat/work-hub-harness-round2`)
 
 **Hecho:** trabajo por temas en la rama, en commits separados.
