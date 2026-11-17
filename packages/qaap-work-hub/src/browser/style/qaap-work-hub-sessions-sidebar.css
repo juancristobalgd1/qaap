@@ -1084,6 +1084,20 @@
   background: color-mix(in srgb, var(--theia-errorForeground, #f14c4c) 14%, transparent);
 }
 
+/* Side chat marker: quiet text on the row's own surface, so it never competes with the title or the status glyph. */
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-side-badge {
+  flex: 0 0 auto;
+  margin-left: var(--q-space-2, 4px);
+  padding: 0 var(--q-space-2, 4px);
+  border: 1px solid var(--q-line-soft, color-mix(in srgb, var(--theia-foreground) 14%, transparent));
+  border-radius: var(--q-radius-pill, 999px);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 14px;
+  letter-spacing: 0.02em;
+  color: var(--q-muted, var(--theia-descriptionForeground));
+}
+
 /* ── Minimal session rows (Claude-style single line) ── */
 
 .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row {

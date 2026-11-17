@@ -26,6 +26,7 @@ import { MobileProjectsTranscriptMessagesResolversUi } from './mobile-projects-t
 import { MobileProjectsTranscriptMessagesToolUi } from './mobile-projects-transcript-messages-tool-ui';
 import { MobileProjectsTranscriptMessagesUserUi } from './mobile-projects-transcript-messages-user-ui';
 import { resolveAgentMessageSegments } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model';
+import { withoutSideChatPreamble } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-side-chat';
 import { WORKING_DETAIL_TRANSCRIPT_CLASS } from './qaap-sticky-composer-working-detail-transcript';
 import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
 import type { MobileProjectsTranscriptLiveUi } from './mobile-projects-transcript-live-ui';
@@ -294,7 +295,7 @@ export class MobileProjectsTranscriptMessagesUi {
                 const msg = conv.messages[index]!;
                 const isTail = index === conv.messages.length - 1;
                 if (msg.role === 'user') {
-                    root.append(this.userUi.createTranscriptUserMessageRow(msg, conv, { readOnly: true }));
+                    root.append(this.userUi.createTranscriptUserMessageRow(withoutSideChatPreamble(msg), conv, { readOnly: true }));
                     continue;
                 }
                 if (msg.role !== 'agent') {

@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { sideChatVisibleTitle } from './qaap-agent-conversation-side-chat';
 import { QaapUserFacingErrors } from '@theia/qaap-adapters/lib/common/qaap-user-facing-error';
 import type { QaapLinkedPullRequest } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import type { QaapTaskPullRequest } from './qaap-task-pull-request';
@@ -135,6 +136,10 @@ export interface QaapAgentConversationSummaryDTO {
     readonly taskPlan?: QaapTaskPlan;
     /** Subtask child conversation: the conversation whose plan created it. */
     readonly parentConversationId?: string;
+    /** Set on a side chat: a quick conversation opened beside another one (`doc/qaap-side-chat.md`). */
+    readonly origin?: 'side-chat';
+    /** Set on a side chat: the conversation it was opened from. Not the plan-fan-out link (`parentConversationId`). */
+    readonly sideChatParentId?: string;
     readonly taskPlanSubtaskId?: string;
     /** Set when the thread ran `git` or is tied to a PR — used by the Work Hub inbox filter. */
     readonly hasGitOperation?: boolean;
@@ -314,6 +319,10 @@ export interface QaapAgentConversationDTO {
     readonly taskPlan?: QaapTaskPlan;
     /** Subtask child conversation: the conversation whose plan created it. */
     readonly parentConversationId?: string;
+    /** Set on a side chat: a quick conversation opened beside another one (`doc/qaap-side-chat.md`). */
+    readonly origin?: 'side-chat';
+    /** Set on a side chat: the conversation it was opened from. Not the plan-fan-out link (`parentConversationId`). */
+    readonly sideChatParentId?: string;
     readonly taskPlanSubtaskId?: string;
     readonly contextPreamble?: string;
     readonly contextUsage?: QaapAgentContextUsage;
@@ -601,7 +610,9 @@ export function conversationToSummary(conv: QaapAgentConversationDTO): QaapAgent
         id: conv.id,
         cwd: conv.cwd,
         agentId: conv.agentId,
-        title: conv.title,
+        title: conv.origin === 'side-chat'
+            ? sideChatVisibleTitle(conv.title, conv.messages.find(message => message.role === 'user')?.content) || conv.title
+            : conv.title,
         status,
         createdAt: conv.createdAt,
         updatedAt: conv.updatedAt,
@@ -631,6 +642,8 @@ export function conversationToSummary(conv: QaapAgentConversationDTO): QaapAgent
         ...(conv.taskPullRequestEnabled === false ? { taskPullRequestEnabled: false } : {}),
         ...(conv.taskPlan ? { taskPlan: conv.taskPlan } : {}),
         ...(conv.parentConversationId ? { parentConversationId: conv.parentConversationId } : {}),
+        ...(conv.origin ? { origin: conv.origin } : {}),
+        ...(conv.sideChatParentId ? { sideChatParentId: conv.sideChatParentId } : {}),
         ...(conv.taskPlanSubtaskId ? { taskPlanSubtaskId: conv.taskPlanSubtaskId } : {}),
         ...metrics,
         hasGitOperation,
@@ -670,6 +683,10 @@ export type QaapAgentConversationIsolation = 'auto' | 'worktree' | 'none';
 
 export interface QaapCreateConversationBody {
     readonly cwd: string;
+    /** `'side-chat'` marks a quick conversation opened beside another one (`doc/qaap-side-chat.md`). */
+    readonly origin?: 'side-chat';
+    /** Set with `origin: 'side-chat'`: the conversation the side chat was opened from. */
+    readonly sideChatParentId?: string;
     /**
      * Client-generated idempotency key for this submit. The server returns the already-created
      * conversation if a request with the same key already succeeded, so a retry after a slow/timed-out

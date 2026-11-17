@@ -35,6 +35,7 @@ import {
     wrapTranscriptRowWithHarnessSwitch,
 } from './qaap-transcript-harness-switch-row';
 import { findQaapClosingReport } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model';
+import { withoutSideChatPreamble } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-side-chat';
 
 export function resolveTranscriptMessageHostExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, host: HTMLElement): HTMLElement {
     if (!host.classList.contains('theia-mobile-agent-transcript-real-chat')) {
@@ -207,7 +208,7 @@ export function createTranscriptMessageRowAtIndexExtracted(ctx: MobileProjectsTr
         row.className = 'theia-mobile-visual-repair-instruction';
         row.hidden = true;
     } else if (msg.role === 'user') {
-        row = ctx.userUi.createTranscriptUserMessageRow(msg, normalized, { deferHeavyContent });
+        row = ctx.userUi.createTranscriptUserMessageRow(withoutSideChatPreamble(msg), normalized, { deferHeavyContent });
     } else if (agentSegments && agentSegments.length > 0) {
         row = ctx.artifactsUi.createTranscriptAgentSegmentsRow(agentSegments, displayMsg.error, normalized, {
             deferHeavyContent,

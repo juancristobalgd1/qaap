@@ -5,6 +5,9 @@
 
 import { Disposable } from '@theia/core/lib/common/disposable';
 import {
+    conversationToSummary,
+    getConversation,
+    QAAP_AGENT_CONVERSATION_API_PATH,
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
@@ -21,6 +24,11 @@ import { applyExecutionSurfaceIconSelectDisplayExtracted, buildExecutionViewTabS
 import { closeExecutionTabOverflowMenuExtracted, mountTranscriptSurfaceTabExtracted, positionExecutionTabOverflowMenuExtracted } from './mobile-projects-execution-surface-tabs-ui-timeline';
 import { recordUserPreviewSurfaceChoiceExtracted } from './mobile-projects-execution-surface-tabs-ui-streaming';
 import { isQaapWorkHubAuxPanelLayout, QaapWorkHubAuxPanel } from './qaap-work-hub-aux-panel';
+import { openAgentLoginDialogInBackground } from './qaap-agent-login-background';
+import { fetchAgentModelsForAgent } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { QAAP_BUILTIN_AGENT_DEFINITIONS } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
+import type { QaapLiveFeedFrame } from '@theia/qaap-shared-core/lib/common/qaap-live-feed-cursor';
+import type { QaapWorkHubAuxSideChatHost, QaapWorkHubSideChatComposerSelection, QaapWorkHubSideChatModelOption, QaapWorkHubSideChatParent } from './qaap-work-hub-aux-side-chat-view';
 import type { QaapWorkHubAuxPanelSurfaceKind } from './qaap-work-hub-aux-panel-model';
 import { resolveQaapWorkHubPullRequestTarget, type QaapWorkHubPullRequestTarget } from './qaap-work-hub-aux-pull-request-model';
 
@@ -34,6 +42,32 @@ type TranscriptTab = ExecutionSurfaceTabId;
 const workHubAuxPanelUis = new Set<MobileProjectsExecutionSurfaceTabsUi>();
 let workHubAuxPanel: QaapWorkHubAuxPanel | undefined;
 let workHubAuxPanelOwner: MobileProjectsExecutionSurfaceTabsUi | undefined;
+
+/** Live conversation feed for the side chat: one EventSource while its tab is shown; the view filters the frames. */
+function subscribeWorkHubAuxSideChatLive(onFrame: (frame: QaapLiveFeedFrame) => void): Disposable {
+    if (typeof EventSource === 'undefined') {
+        return Disposable.NULL;
+    }
+    const source = new EventSource(`${QAAP_AGENT_CONVERSATION_API_PATH}/stream`);
+    source.addEventListener('message', event => {
+        try {
+            onFrame(JSON.parse(String((event as MessageEvent).data)) as QaapLiveFeedFrame);
+        } catch {
+            // Not a frame this view understands.
+        }
+    });
+    return Disposable.create(() => source.close());
+}
+
+/** The side chat's hooks into the Work Hub, routed to the current owner of the shared right panel. */
+const workHubAuxSideChatHost: QaapWorkHubAuxSideChatHost = {
+    resolveParent: () => resolveWorkHubAuxPanelOwner()?.resolveWorkHubAuxSideChatParent(),
+    resolveComposerSelection: () => resolveWorkHubAuxPanelOwner()?.resolveWorkHubAuxSideChatComposerSelection(),
+    listModels: () => resolveWorkHubAuxPanelOwner()?.listWorkHubAuxSideChatModels() ?? Promise.resolve([]),
+    startSignIn: agentId => resolveWorkHubAuxPanelOwner()?.startWorkHubAuxSideChatSignIn(agentId),
+    openInMainArea: conversationId => resolveWorkHubAuxPanelOwner()?.openWorkHubAuxSideChatInMainArea(conversationId) ?? Promise.resolve(),
+    subscribeLive: subscribeWorkHubAuxSideChatLive,
+};
 
 function resolveWorkHubAuxPanelOwner(): MobileProjectsExecutionSurfaceTabsUi | undefined {
     if (workHubAuxPanelOwner?.isRenderedOnScreen()) {
@@ -64,6 +98,8 @@ export interface MobileProjectsExecutionSurfaceTabsHost {
     transcriptWorkspaceSurfaces: TranscriptWorkspaceSurfacesCache;
     transcriptHeaderSubtitle: HTMLElement | undefined;
     transcriptOpenSummary: QaapAgentConversationSummaryDTO | undefined;
+    /** Opens a conversation in the main area; the side chat's Bring back uses the same call as the sidebar. */
+    readonly conversationOpenUi?: { openConversationSummary(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): Promise<void> };
     transcriptOpenProject: MobileProjectEntry | undefined;
     transcriptLastConv: QaapAgentConversationDTO | undefined;
     headerViewModeSwitchHost?: HTMLElement;
@@ -254,6 +290,67 @@ export class MobileProjectsExecutionSurfaceTabsUi {
         }
     }
 
+    /** @internal The conversation a side chat opens from: the one the main area shows, or `undefined` without a task. */
+    resolveWorkHubAuxSideChatParent(): QaapWorkHubSideChatParent | undefined {
+        const summary = this.host.executionSurfaceSidebar?.summary ?? this.host.transcriptOpenSummary;
+        return summary ? { id: summary.id, title: summary.title, cwd: summary.cwd, agentId: summary.agentId } : undefined;
+    }
+
+    /**
+     * @internal The harness and model the main composer shows now. The side chat selector starts from them;
+     * `undefined` when the composer has no harness pinned, and the parent's harness applies instead.
+     */
+    resolveWorkHubAuxSideChatComposerSelection(): QaapWorkHubSideChatComposerSelection | undefined {
+        const agentId = this.host.stickyComposerPinnedAgentId?.trim();
+        if (!agentId) {
+            return undefined;
+        }
+        const cwd = this.resolveWorkHubAuxSideChatParent()?.cwd;
+        const agentModel = this.host.stickyComposerAgentsUi.resolveStickyComposerAgentModel(agentId, this.resolveExecutionSurfaceProject(), cwd);
+        return { agentId, agentModel };
+    }
+
+    /**
+     * @internal The models of the side chat's harness (the composer's, else the parent's) for the side chat selector.
+     * A model the server does not mark available is treated as not signed in, so Pro stays locked until the session is confirmed.
+     */
+    async listWorkHubAuxSideChatModels(): Promise<readonly QaapWorkHubSideChatModelOption[]> {
+        const parent = this.resolveWorkHubAuxSideChatParent();
+        if (!parent) {
+            return [];
+        }
+        const agentId = this.resolveWorkHubAuxSideChatComposerSelection()?.agentId ?? parent.agentId;
+        const agentLabel = QAAP_BUILTIN_AGENT_DEFINITIONS.find(definition => definition.id === agentId)?.label ?? agentId;
+        const models = await fetchAgentModelsForAgent(agentId);
+        return models.map(model => ({
+            agentId,
+            agentLabel,
+            modelLabel: model.label,
+            agentModel: { provider: model.provider, vendor: model.vendor, modelId: model.modelId },
+            tier: model.tier ?? 'pro',
+            session: model.available === true
+                ? 'signed-in'
+                : model.unavailableReason === 'not-connected' ? 'signed-out'
+                    : model.unavailableReason === 'checking' ? 'checking' : 'unknown',
+        }));
+    }
+
+    /** @internal Opens the harness sign-in dialog the composer opens for the same agent. */
+    startWorkHubAuxSideChatSignIn(agentId: string): void {
+        const summary = this.host.transcriptOpenSummary ?? this.host.executionSurfaceSidebar?.summary;
+        openAgentLoginDialogInBackground(this.host, this.resolveExecutionSurfaceProject(), summary, agentId);
+    }
+
+    /** @internal Opens a conversation in the main area with the same call the sidebar uses. */
+    async openWorkHubAuxSideChatInMainArea(conversationId: string): Promise<void> {
+        const project = this.resolveExecutionSurfaceProject();
+        if (!project) {
+            return;
+        }
+        const summary = conversationToSummary(await getConversation(conversationId));
+        await this.host.conversationOpenUi?.openConversationSummary(project, summary);
+    }
+
     /**
      * The desktop Work Hub right panel, or `undefined` on mobile and in the IDE
      * chat, where the chevron keeps opening the views menu and the full-screen drawer.
@@ -271,6 +368,7 @@ export class MobileProjectsExecutionSurfaceTabsUi {
                 releaseSurface: userClosed => resolveWorkHubAuxPanelOwner()?.releaseWorkHubAuxPanelSurface(userClosed),
                 resolvePullRequestTarget: () => resolveWorkHubAuxPanelOwner()?.resolveWorkHubAuxPanelPullRequestTarget(),
                 openExternal: url => resolveWorkHubAuxPanelOwner()?.openWorkHubAuxPanelExternal(url),
+                sideChat: workHubAuxSideChatHost,
             });
         }
         return workHubAuxPanel;

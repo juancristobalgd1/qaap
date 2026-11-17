@@ -317,3 +317,69 @@ describe('MobileProjectsProjectRowsUi — sessions sidebar unread dot', () => {
         expect(row.classList.contains('theia-mod-unread-reply')).to.equal(true);
     });
 });
+
+describe('MobileProjectsProjectRowsUi — side chat badge', () => {
+
+    useSuiteJSDOM();
+
+    // The row's swipe handler reads matchMedia, which jsdom lacks. Stubbed like the other row specs do.
+    beforeEach(() => {
+        Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: false }) });
+    });
+
+    const project = { id: 'p1', name: 'repo' } as never;
+
+    const summary = {
+        id: 'conv-side',
+        title: 'Why does it fail?',
+        status: 'idle',
+        createdAt: 1,
+        updatedAt: 2,
+        messageCount: 2,
+        lastMessageRole: 'agent',
+        agentId: 'opencode',
+        cwd: '/repo',
+    } as QaapAgentConversationSummaryDTO;
+
+    const task = {
+        id: 'conv-side',
+        title: 'Why does it fail?',
+        state: 'idle',
+        since: 'now',
+        command: 'qaiq',
+        cwd: '/repo',
+        createdAt: 1,
+    } as MobileProjectTaskView;
+
+    function newUi(): MobileProjectsProjectRowsUi {
+        return new MobileProjectsProjectRowsUi({
+            activeTasks: undefined,
+            conversationIndexUi: {
+                isConversationUnread: () => false,
+                resolveConversationLineage: () => 'none',
+                resolveConversationFlags: () => ({ priority: false, paused: false }),
+            },
+            cardMenuUi: {
+                buildConversationMenu: () => document.createElement('div'),
+                toggleCardMenu: () => undefined,
+            },
+        } as never);
+    }
+
+    it('marks a side chat in the sidebar row with a localized "Side" badge', () => {
+        const row = newUi().createTaskItem(project, task, undefined, { ...summary, origin: 'side-chat', sideChatParentId: 'parent-1' }, new Set(), { compact: true });
+        const badge = row.querySelector<HTMLElement>('.theia-mobile-projects-task-side-badge');
+        expect(badge?.textContent).to.equal('Side');
+        expect(badge?.closest('.theia-mobile-projects-task-title-row')).to.exist;
+    });
+
+    it('does not mark a plain conversation', () => {
+        const row = newUi().createTaskItem(project, task, undefined, summary, new Set(), { compact: true });
+        expect(row.querySelector('.theia-mobile-projects-task-side-badge')).to.not.exist;
+    });
+
+    it('does not mark a side chat outside the sidebar (non-compact rows)', () => {
+        const row = newUi().createTaskItem(project, task, undefined, { ...summary, origin: 'side-chat' }, new Set());
+        expect(row.querySelector('.theia-mobile-projects-task-side-badge')).to.not.exist;
+    });
+});

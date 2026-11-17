@@ -339,3 +339,37 @@ describe('cancelConversation always stops over HTTP', () => {
         expect(calls).to.have.length(1);
     });
 });
+
+describe('side chat fields in conversation summaries', () => {
+    it('carries the side chat origin and its parent to the client summary', () => {
+        const summary = conversationToSummary({
+            id: 'side-1',
+            cwd: '/workspace/project',
+            agentId: 'opencode',
+            title: 'why?',
+            status: 'settled',
+            createdAt: 1,
+            updatedAt: 2,
+            origin: 'side-chat',
+            sideChatParentId: 'parent-1',
+            messages: [],
+        } as never);
+        expect(summary.origin).to.equal('side-chat');
+        expect(summary.sideChatParentId).to.equal('parent-1');
+    });
+
+    it('leaves the side chat fields out of a plain conversation', () => {
+        const summary = conversationToSummary({
+            id: 'plain-1',
+            cwd: '/workspace/project',
+            agentId: 'opencode',
+            title: 'plain',
+            status: 'settled',
+            createdAt: 1,
+            updatedAt: 2,
+            messages: [],
+        } as never);
+        expect('origin' in summary).to.equal(false);
+        expect('sideChatParentId' in summary).to.equal(false);
+    });
+});

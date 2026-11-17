@@ -16,6 +16,8 @@ import { QAAP_WORK_HUB_AUX_PANEL_STORAGE_KEY, type QaapWorkHubAuxPanelStorage, t
 import { isQaapWorkHubAuxPanelLayout, QAAP_WORK_HUB_AUX_PANEL_TOGGLE_CLASS, QaapWorkHubAuxPanel, type QaapWorkHubAuxPanelHost } from './qaap-work-hub-aux-panel';
 import type { QaapWorkHubPullRequestTarget } from './qaap-work-hub-aux-pull-request-model';
 import { QaapWorkHubAuxPullRequestView } from './qaap-work-hub-aux-pull-request-view';
+import { QaapWorkHubAuxSideChatView, type QaapWorkHubAuxSideChatHost } from './qaap-work-hub-aux-side-chat-view';
+import { Disposable } from '@theia/core/lib/common/disposable';
 
 disableImportJSDOM();
 
@@ -74,6 +76,9 @@ describe('qaap-work-hub-aux-panel', () => {
         /** The pull request the host reports for the "Pull request" view (no project when unset). */
         pullRequest?: QaapWorkHubPullRequestTarget;
         pullRequestView?: QaapWorkHubAuxPullRequestView;
+        /** The side chat's Work Hub hooks; a parent is open when set. */
+        sideChat?: QaapWorkHubAuxSideChatHost;
+        sideChatView?: QaapWorkHubAuxSideChatView;
     } = {}): {
         panel: QaapWorkHubAuxPanel;
         shown: QaapWorkHubAuxPanelSurfaceKind[];
@@ -101,7 +106,7 @@ describe('qaap-work-hub-aux-panel', () => {
                 }
             },
         };
-        const panel = new QaapWorkHubAuxPanel(host, options.storage ?? memoryStorage(), options.pullRequestView);
+        const panel = new QaapWorkHubAuxPanel({ ...host, sideChat: options.sideChat }, options.storage ?? memoryStorage(), options.pullRequestView, options.sideChatView);
         panels.push(panel);
         return { panel, shown, released };
     }
@@ -136,7 +141,7 @@ describe('qaap-work-hub-aux-panel', () => {
         expect(document.body.classList.contains('qaap-mod-work-hub-aux-panel-open')).to.equal(true);
         expect(tabKinds(panel)).to.deep.equal(['launcher']);
         const names = Array.from(panel.element.querySelectorAll('.qaap-work-hub-aux-panel-launcher-name')).map(name => name.textContent);
-        expect(names).to.deep.equal(['Browser', 'Changes', 'Files', 'Terminal', 'Pull request']);
+        expect(names).to.deep.equal(['Browser', 'Changes', 'Files', 'Terminal', 'Pull request', 'Side chat']);
 
         panel.toggle();
         expect(panel.isOpen).to.equal(false);
@@ -416,5 +421,58 @@ describe('qaap-work-hub-aux-panel', () => {
         expect(edges()).to.deep.equal(['theia-mod-overflow-start']);
         measure(0, 200, 201);
         expect(edges()).to.deep.equal([]);
+    });
+
+    it('Bring back opens the side chat in the main area, closes its tab, and the + button still adds a tab', async () => {
+        const opened: string[] = [];
+        const sideChat: QaapWorkHubAuxSideChatHost = {
+            resolveParent: () => ({ id: 'parent-1', title: 'Fix login', cwd: '/workspace/repos/users/alice/o/r', agentId: 'opencode' }),
+            resolveComposerSelection: () => undefined,
+            listModels: async () => [],
+            startSignIn: () => undefined,
+            openInMainArea: async id => { opened.push(id); },
+            subscribeLive: () => Disposable.NULL,
+        };
+        // The view's close goes to the panel's own close path, wired once the panel exists.
+        let closeFromView: () => void = () => undefined;
+        const view = new QaapWorkHubAuxSideChatView({
+            host: sideChat,
+            api: {
+                create: async () => ({ id: 'side-1', cwd: '/w', agentId: 'opencode', title: 'x', status: 'idle', messages: [] }) as never,
+                post: async () => ({}),
+                get: async () => { throw new Error('not used'); },
+                remove: async () => undefined,
+            },
+            onTitle: () => undefined,
+            onClose: () => closeFromView(),
+            refreshMs: 1_000_000,
+        });
+        const { panel } = createHarness({ sideChat, sideChatView: view });
+        closeFromView = () => (panel as unknown as { closeSideChatTab(): void }).closeSideChatTab();
+        panel.show();
+        launcherOpen(panel, 'side-chat').click();
+        expect(panel.element.dataset.view).to.equal('side-chat');
+        const input = view.element.querySelector('textarea') as HTMLTextAreaElement;
+        input.value = 'responde solo: ok';
+        await view.send();
+        expect(view.conversation).to.equal('side-1');
+
+        await view.bringBack();
+
+        expect(opened).to.deep.equal(['side-1']);
+        expect(tabKinds(panel)).to.not.include('side-chat');
+        expect(view.conversation).to.equal(undefined);
+        expect(view.element.hidden).to.equal(true);
+
+        panel.element.querySelector<HTMLButtonElement>('.qaap-work-hub-aux-panel-add')!.click();
+        expect(panel.element.dataset.view).to.equal('launcher');
+        expect(tabKinds(panel)).to.include('launcher');
+        view.dispose();
+    });
+
+    it('lists the side chat in the launcher only while a task is open', () => {
+        const { panel } = createHarness({ canShow: false });
+        panel.show();
+        expect(launcherOpen(panel, 'side-chat').disabled).to.equal(true);
     });
 });

@@ -24,7 +24,8 @@ import {
 export interface QaapComposerModelPickerProps {
     readonly state: QaapPickerState;
     readonly effort: { readonly support?: QaapAgentEffortSupport; readonly current?: QaapAgentEffortLevel };
-    readonly approval: {
+    /** Access block of the footer. Omitted where no approval policy applies (a side chat): no access menu is drawn. */
+    readonly approval?: {
         readonly current: QaapAgentApprovalPolicyId;
         readonly options?: readonly QaapAgentApprovalPolicyOption[];
     };
@@ -542,8 +543,7 @@ function createFooterMenu(
 function renderFooter(host: HTMLElement, props: QaapComposerModelPickerProps): HTMLElement {
     const footer = document.createElement('footer');
     footer.className = 'qaap-model-picker-footer';
-    const options = props.approval.options ?? QAAP_AGENT_APPROVAL_POLICIES;
-    const current = options.find(option => option.id === props.approval.current) ?? options[0];
+    const approval = props.approval;
 
     const left = document.createElement('div');
     left.className = 'qaap-model-picker-footer-left';
@@ -563,18 +563,24 @@ function renderFooter(host: HTMLElement, props: QaapComposerModelPickerProps): H
 
     const right = document.createElement('div');
     right.className = 'qaap-model-picker-footer-right';
-    right.append(createFooterMenu(host, 'access', {
-        iconClass: current.toolbarIconClass,
-        label: current.label,
-        title: nls.localize('qaap/composer/picker/accessTitle', 'Access: {0}', current.label),
-    }, options.map(option => ({
-        label: option.label,
-        iconClass: option.sheetIconClass,
-        checked: option.id === props.approval.current,
-        onSelect: () => props.onSelectApproval(option.id),
-    }))));
+    if (approval) {
+        const options = approval.options ?? QAAP_AGENT_APPROVAL_POLICIES;
+        const current = options.find(option => option.id === approval.current) ?? options[0];
+        right.append(createFooterMenu(host, 'access', {
+            iconClass: current.toolbarIconClass,
+            label: current.label,
+            title: nls.localize('qaap/composer/picker/accessTitle', 'Access: {0}', current.label),
+        }, options.map(option => ({
+            label: option.label,
+            iconClass: option.sheetIconClass,
+            checked: option.id === approval.current,
+            onSelect: () => props.onSelectApproval(option.id),
+        }))));
+    }
 
     footer.append(left, right);
+    // Nothing to show (no effort, no access): no footer at all.
+    footer.hidden = left.childElementCount === 0 && right.childElementCount === 0;
     return footer;
 }
 

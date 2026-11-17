@@ -127,6 +127,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
             stickyComposerAgentsUi: {
                 ensureStickyComposerAgentsLoaded: async () => [],
                 resolveStickyComposerPinnedAgentId: () => 'qaiq',
+                resolveStickyComposerAgentModel: () => undefined,
             } as unknown as MobileProjectsExecutionSurfaceTabsHost['stickyComposerAgentsUi'],
             stickyComposerPinnedAgentId: 'qaiq',
             resolveAgentsHubShellProject: () => undefined,

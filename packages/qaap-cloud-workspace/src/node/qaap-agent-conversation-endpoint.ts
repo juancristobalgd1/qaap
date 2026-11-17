@@ -41,6 +41,7 @@ import type { QaapAgentApprovalPolicyId } from '@theia/qaap-shared-core/lib/comm
 import type { QaapAgUiEvent } from '@theia/qaap-shared-core/lib/common/qaap-ag-ui-transcript-adapter';
 import type { QaapTurnLatencyMark } from '@theia/qaap-shared-core/lib/common/qaap-agent-stream-metrics';
 import type { QaapAgentToolApprovalRules } from '../common/qaap-agent-conversation';
+import { parseSideChatContextPreamble, parseSideChatCreateFields, type QaapSideChatCreateFields } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-side-chat';
 import { resolveEffectiveToolApprovalRules } from '../common/qaap-agent-approval-flags';
 import { QaapAgentConversationStore, QaapMaxConcurrentRunsError } from './qaap-agent-conversation-store';
 import { parseRewindRestoreOptions } from '@theia/qaap-shared-core/lib/common/qaap-conversation-rewind-preview';
@@ -752,6 +753,10 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
                 this.resolveCreateAgentId(cwd, body, ownerLogin),
                 cwd,
             );
+            // A side chat's background goes on its first message, never on the conversation: the conversation
+            // preamble is prepended to every turn, and the side chat's later turns must not carry it again.
+            const sideChat = this.resolveSideChatFields(ctx, body);
+            const sideChatPreamble = sideChat.origin ? parseSideChatContextPreamble(body.contextPreamble) : undefined;
             const conv = this.store.create({
                 cwd,
                 ...(baseCwd ? { parallelBaseCwd: baseCwd } : {}),
@@ -762,12 +767,15 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
                 agentModel: body.agentModel ?? body.qaiqModel,
                 qaiqModel: body.agentModel ?? body.qaiqModel,
                 autoApprove: body.autoApprove,
-                contextPreamble: body.contextPreamble,
+                contextPreamble: sideChat.origin ? undefined : body.contextPreamble,
+                ...(sideChatPreamble ? { messageContextPreamble: sideChatPreamble } : {}),
                 interactionModeId: body.interactionModeId,
                 effort: QaapAgentEffort.parse(body.effort),
                 approvalPolicyId,
                 ...(toolApprovalRules ? { toolApprovalRules } : {}),
                 latencyMarks: sanitizeLatencyMarks(body.latencyMarks),
+                // A side chat is a quick conversation beside another one; other bodies never carry the marker.
+                ...sideChat,
                 // A multi-step task starts with its read-only planning turn (roadmap H3.1).
                 ...(planTask ? { interactionModeId: 'plan', taskPlan: this.taskPlans!.createDraftPlan() } : {}),
             }, ownerLogin);
@@ -1496,6 +1504,23 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             return undefined;
         }
         return conv;
+    }
+
+    /**
+     * Side chat fields of a create request, with the parent checked like the GET routes check a conversation:
+     * the same store lookup and the same workspace ownership test. A parent that is missing or not the caller's
+     * is dropped, so the side chat is created without a parent (no reply, no leak of the parent's existence).
+     */
+    protected resolveSideChatFields(ctx: QaapGithubAuthContext, body: Partial<QaapCreateAgentConversationRequest>): QaapSideChatCreateFields {
+        const fields = parseSideChatCreateFields(body);
+        if (!fields.sideChatParentId) {
+            return fields;
+        }
+        const parent = this.store.get(fields.sideChatParentId);
+        if (!parent || !this.auth.ownsWorkspacePath(ctx, parent.cwd)) {
+            return { origin: fields.origin };
+        }
+        return fields;
     }
 
     protected handleGoalLoop(

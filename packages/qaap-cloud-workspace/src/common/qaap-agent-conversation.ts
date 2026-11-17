@@ -10,6 +10,7 @@ import { buildConversationListMetrics } from '@theia/qaap-shared-core/lib/common
 import { agentActivityField, excerptConversationMessageError, isLastTurnCancelled } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type { QaapAgentConversationIsolation, QaapAgentModelFallbackReason } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { resolveMessagePreviewText } from '@theia/qaap-shared-core/lib/common/qaap-agent-message-content';
+import { sideChatVisibleTitle } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-side-chat';
 import { isSuccessfulAgentMessageInConversation } from '@theia/qaap-shared-core/lib/common/qaap-agent-turn-outcome';
 import {
     agentMessageHasVisualVerificationMarker,
@@ -28,6 +29,9 @@ import type { QaapAgentTaskReview, QaapAgentTaskState, QaapAgentTaskVerification
 import type { QaapTurnLatencyMark } from '@theia/qaap-shared-core/lib/common/qaap-agent-stream-metrics';
 import type { QaapAgentGoalLoopPhase, QaapAgentGoalLoopState } from './qaap-agent-goal-loop';
 import type { QaapAgentEffortLevel } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
+
+/** Where a conversation came from when it is not a plain thread: only a side chat today. */
+export type QaapAgentConversationOrigin = 'side-chat';
 
 /** HTTP base path for the persistent agent-conversation endpoints. */
 export const QAAP_AGENT_CONVERSATION_API_PATH = '/qaap/api/agent-conversations';
@@ -107,6 +111,11 @@ export interface QaapAgentMessage {
     readonly content: string;
     /** Correlates this persisted user row with the client-only optimistic row it confirms. */
     readonly clientMessageId?: string;
+    /**
+     * On a side chat's first user message: the background the agent reads in front of the text. Kept apart from
+     * {@link content} so no transcript shows it; the agent prompt includes it (`buildPromptExtracted`).
+     */
+    readonly contextPreamble?: string;
     /** Structured execution trace for AG-UI style providers. */
     readonly traceEvents?: import('@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model').QaapTranscriptTraceEventDTO[];
     /** Present for agent turns driven by QAIQ stream-json. */
@@ -333,6 +342,10 @@ export interface QaapAgentConversation {
     readonly taskPlan?: QaapTaskPlan;
     /** Set on a subtask's child conversation: the conversation whose plan created it. */
     readonly parentConversationId?: string;
+    /** Set on a side chat: a quick conversation opened beside another one (`doc/qaap-side-chat.md`). */
+    readonly origin?: QaapAgentConversationOrigin;
+    /** Set on a side chat: the conversation it was opened from. Not the plan-fan-out link (`parentConversationId`). */
+    readonly sideChatParentId?: string;
     /** Set on a subtask's child conversation: its subtask id in the parent's {@link taskPlan}. */
     readonly taskPlanSubtaskId?: string;
     /** Set when the task was started from outside the app (a GitHub issue): doc/qaap-external-task-inputs.md. */
@@ -442,6 +455,10 @@ export interface QaapAgentConversationSummary {
     readonly taskPlan?: QaapTaskPlan;
     /** Set on a subtask's child conversation: the conversation whose plan created it. */
     readonly parentConversationId?: string;
+    /** Set on a side chat: a quick conversation opened beside another one (`doc/qaap-side-chat.md`). */
+    readonly origin?: QaapAgentConversationOrigin;
+    /** Set on a side chat: the conversation it was opened from. Not the plan-fan-out link (`parentConversationId`). */
+    readonly sideChatParentId?: string;
     /** Set on a subtask's child conversation: its subtask id in the parent's {@link taskPlan}. */
     readonly taskPlanSubtaskId?: string;
     /** Set when the task was started from outside the app (a GitHub issue): doc/qaap-external-task-inputs.md. */
@@ -538,7 +555,16 @@ export interface QaapCreateAgentConversationRequest {
     /** Set by the plan fan-out service: create the conversation with its plan being drafted. */
     readonly taskPlan?: QaapTaskPlan;
     readonly parentConversationId?: string;
+    /** Set on a side chat: a quick conversation opened beside another one (`doc/qaap-side-chat.md`). */
+    readonly origin?: QaapAgentConversationOrigin;
+    /** Set on a side chat: the conversation it was opened from. Not the plan-fan-out link (`parentConversationId`). */
+    readonly sideChatParentId?: string;
     readonly taskPlanSubtaskId?: string;
+    /**
+     * Set with `origin: 'side-chat'`: the background for the first message, stored on that message only and kept out
+     * of its text and title. Never on the conversation, so later turns of the side chat do not repeat it.
+     */
+    readonly messageContextPreamble?: string;
     /** `false` creates the conversation with "Create PR when done" off (subtasks of a plan). */
     readonly taskPullRequestEnabled?: boolean;
     /** Server-side only (the HTTP endpoint drops it): the external origin of the task. */
@@ -755,7 +781,9 @@ export function toConversationSummary(conv: QaapAgentConversation): QaapAgentCon
         id: conv.id,
         cwd: conv.cwd,
         agentId: conv.agentId,
-        title: conv.title,
+        title: conv.origin === 'side-chat'
+            ? sideChatVisibleTitle(conv.title, conv.messages.find(message => message.role === 'user')?.content) || conv.title
+            : conv.title,
         status,
         createdAt: conv.createdAt,
         updatedAt: conv.updatedAt,
@@ -785,6 +813,8 @@ export function toConversationSummary(conv: QaapAgentConversation): QaapAgentCon
         ...(conv.taskPullRequestEnabled === false ? { taskPullRequestEnabled: false } : {}),
         ...(conv.taskPlan ? { taskPlan: conv.taskPlan } : {}),
         ...(conv.parentConversationId ? { parentConversationId: conv.parentConversationId } : {}),
+        ...(conv.origin ? { origin: conv.origin } : {}),
+        ...(conv.sideChatParentId ? { sideChatParentId: conv.sideChatParentId } : {}),
         ...(conv.taskPlanSubtaskId ? { taskPlanSubtaskId: conv.taskPlanSubtaskId } : {}),
         ...(conv.externalTask ? { externalTask: conv.externalTask } : {}),
         contextCompaction: conv.contextCompaction,

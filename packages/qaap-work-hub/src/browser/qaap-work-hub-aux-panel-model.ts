@@ -18,7 +18,7 @@ export type QaapWorkHubAuxPanelSurfaceKind = 'preview' | 'changes' | 'files' | '
  * Views the panel renders itself, without an execution surface. Add a new one here, then give it a
  * label, icon and body in `qaap-work-hub-aux-panel.ts` and an entry in {@link QAAP_WORK_HUB_AUX_PANEL_TAB_KINDS}.
  */
-export type QaapWorkHubAuxPanelOwnViewKind = 'pull-request';
+export type QaapWorkHubAuxPanelOwnViewKind = 'pull-request' | 'side-chat';
 
 /** Every kind a tab can hold: a surface or one of the panel's own views. */
 export type QaapWorkHubAuxPanelTabKind = QaapWorkHubAuxPanelSurfaceKind | QaapWorkHubAuxPanelOwnViewKind;
@@ -32,6 +32,7 @@ export const QAAP_WORK_HUB_AUX_PANEL_SURFACE_KINDS: readonly QaapWorkHubAuxPanel
 export const QAAP_WORK_HUB_AUX_PANEL_TAB_KINDS: readonly QaapWorkHubAuxPanelTabKind[] = [
     ...QAAP_WORK_HUB_AUX_PANEL_SURFACE_KINDS,
     'pull-request',
+    'side-chat',
 ];
 
 /** `true` for the views that dock an execution surface (as opposed to the launcher and the panel's own views). */
@@ -88,6 +89,8 @@ export class QaapWorkHubAuxPanelModel {
     protected tabList: QaapWorkHubAuxPanelTab[] = [];
     protected activeTabId: string | undefined;
     protected closed: QaapWorkHubAuxPanelClosedTab[] = [];
+    /** Tab titles set at runtime (a side chat is named after its first message). Not persisted. */
+    protected readonly titles = new Map<string, string>();
     protected nextId = 1;
 
     open = false;
@@ -150,6 +153,20 @@ export class QaapWorkHubAuxPanelModel {
         return tab;
     }
 
+    /** Names a tab at runtime, or clears the name with `undefined` so the kind's label shows again. */
+    setTabTitle(id: string, title: string | undefined): void {
+        if (title) {
+            this.titles.set(id, title);
+        } else {
+            this.titles.delete(id);
+        }
+    }
+
+    /** The runtime name of a tab, or `undefined` when its kind's label applies. */
+    tabTitle(id: string): string | undefined {
+        return this.titles.get(id);
+    }
+
     activate(id: string): QaapWorkHubAuxPanelTab | undefined {
         const tab = this.tabList.find(entry => entry.id === id);
         if (tab) {
@@ -168,6 +185,7 @@ export class QaapWorkHubAuxPanelModel {
             return this.activeTab;
         }
         const [removed] = this.tabList.splice(index, 1);
+        this.titles.delete(removed.id);
         if (removed.kind !== 'launcher') {
             this.closed = [
                 { kind: removed.kind, closedAt: this.now() },

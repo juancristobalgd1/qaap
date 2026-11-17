@@ -1,5 +1,6 @@
 // Extracted from qaap-agent-conversation-store.ts
 import { logTurnCreatedExtracted } from './qaap-agent-turn-create-log';
+import { composeSideChatPrompt } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-side-chat';
 import type { QaapAgentConversationStoreContext } from './qaap-agent-conversation-store-context';
 
 import { randomUUID } from 'crypto';
@@ -50,7 +51,11 @@ export function buildPromptExtracted(ctx: QaapAgentConversationStoreContext, con
         : undefined;
     const historyStart = compaction?.compactedMessageCount ?? 0;
     const history = conv.messages.slice(historyStart, -1);
-    const latestUser = ctx.stripLeadingAgentMention(lastUser.content);
+    // A side chat's first message keeps its background on the message, not in its text: the agent reads both.
+    const latestUserText = ctx.stripLeadingAgentMention(lastUser.content);
+    const latestUser = lastUser.contextPreamble
+        ? composeSideChatPrompt(latestUserText, lastUser.contextPreamble, true)
+        : latestUserText;
     if (history.length === 0) {
         const prompt = compaction
             ? `${ctx.contextPreambleWithCompaction(conv.contextPreamble, compaction.summary!)}\n\nNow respond to the latest user message:\n\nUSER: ${latestUser}`

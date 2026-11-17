@@ -21,6 +21,7 @@ import {
 } from './qaap-work-hub-aux-panel-model';
 import type { QaapWorkHubPullRequestTarget } from './qaap-work-hub-aux-pull-request-model';
 import { QaapWorkHubAuxPullRequestView } from './qaap-work-hub-aux-pull-request-view';
+import { QAAP_WORK_HUB_NO_SIDE_CHAT_HOST, QaapWorkHubAuxSideChatView, type QaapWorkHubAuxSideChatHost } from './qaap-work-hub-aux-side-chat-view';
 
 /** The execution surface (live widget host) a panel view is backed by: one per view. */
 export type QaapWorkHubAuxPanelSurface = QaapWorkHubAuxPanelSurfaceKind;
@@ -37,6 +38,8 @@ export interface QaapWorkHubAuxPanelHost {
     resolvePullRequestTarget(): QaapWorkHubPullRequestTarget | undefined;
     /** Opens a web page: in the system browser on desktop, in a new tab on the web. */
     openExternal(url: string): void;
+    /** The side chat's Work Hub hooks. Without them the "Side chat" view has no parent and stays disabled. */
+    readonly sideChat?: QaapWorkHubAuxSideChatHost;
 }
 
 /** Marks the chat-header buttons that open and close the panel. */
@@ -96,6 +99,12 @@ function viewSpec(kind: QaapWorkHubAuxPanelViewKind): ViewSpec {
                 label: nls.localize('qaap/workHubAuxPanel/pullRequest', 'Pull request'),
                 description: nls.localize('qaap/workHubAuxPanel/pullRequestDescription', 'Review the pull request for this branch.'),
                 icon: 'codicon-git-pull-request',
+            };
+        case 'side-chat':
+            return {
+                label: nls.localize('qaap/workHubAuxPanel/sideChat', 'Side chat'),
+                description: nls.localize('qaap/workHubAuxPanel/sideChatDescription', 'Ask a quick question without leaving this task.'),
+                icon: 'codicon-comment-discussion',
             };
         default:
             return {
@@ -163,6 +172,8 @@ export class QaapWorkHubAuxPanel {
     protected readonly emptyState: HTMLElement;
     /** The panel's own "Pull request" view (no execution surface behind it). */
     protected readonly pullRequestView: QaapWorkHubAuxPullRequestView;
+    /** The panel's own "Side chat" view: a quick conversation beside the task. One at a time. */
+    protected readonly sideChatView: QaapWorkHubAuxSideChatView;
     protected readonly menuButton: HTMLButtonElement;
     protected readonly menu: HTMLElement;
     protected readonly menuSearch: HTMLInputElement;
@@ -184,8 +195,14 @@ export class QaapWorkHubAuxPanel {
         protected readonly host: QaapWorkHubAuxPanelHost,
         protected readonly storage: QaapWorkHubAuxPanelStorage | undefined = QaapWorkHubAuxPanel.defaultStorage(),
         pullRequestView?: QaapWorkHubAuxPullRequestView,
+        sideChatView?: QaapWorkHubAuxSideChatView,
     ) {
         this.pullRequestView = pullRequestView ?? new QaapWorkHubAuxPullRequestView({ openExternal: url => this.host.openExternal(url) });
+        this.sideChatView = sideChatView ?? new QaapWorkHubAuxSideChatView({
+            host: host.sideChat ?? QAAP_WORK_HUB_NO_SIDE_CHAT_HOST,
+            onTitle: title => this.setSideChatTitle(title),
+            onClose: () => this.closeSideChatTab(),
+        });
         this.model = new QaapWorkHubAuxPanelModel();
         this.model.load(storage);
 
@@ -237,8 +254,9 @@ export class QaapWorkHubAuxPanel {
         this.surfaceSlot.className = 'qaap-work-hub-aux-panel-surface';
         this.emptyState = document.createElement('div');
         this.emptyState.className = 'qaap-work-hub-aux-panel-empty';
-        body.append(this.launcher, this.surfaceSlot, this.emptyState, this.pullRequestView.element);
+        body.append(this.launcher, this.surfaceSlot, this.emptyState, this.pullRequestView.element, this.sideChatView.element);
         this.toDispose.push(this.pullRequestView);
+        this.toDispose.push(this.sideChatView);
 
         this.menu = document.createElement('div');
         this.menu.className = 'qaap-work-hub-aux-panel-menu';
@@ -416,6 +434,7 @@ export class QaapWorkHubAuxPanel {
 
     protected collapse(): void {
         this.pullRequestView.stop();
+        this.sideChatView.hide();
         this.element.hidden = true;
         document.body.classList.remove('qaap-mod-work-hub-aux-panel-open', 'qaap-mod-work-hub-aux-panel-maximized');
         this.syncToggleButtons();
@@ -451,7 +470,12 @@ export class QaapWorkHubAuxPanel {
 
     protected closeTab(tab: QaapWorkHubAuxPanelTab): void {
         const wasActive = this.model.activeTab?.id === tab.id;
-        const next = this.model.closeTab(tab.id);
+        // Closing the side chat never empties the panel: the launcher takes its place, so the "+" and the
+        // launcher stay reachable after Bring back. Other tabs keep the panel's last-tab behaviour (hide).
+        const next = this.model.closeTab(tab.id) ?? (tab.kind === 'side-chat' ? this.model.addLauncher() : undefined);
+        if (tab.kind === 'side-chat') {
+            this.sideChatView.reset();
+        }
         if (!wasActive) {
             this.render();
             this.persist();
@@ -493,15 +517,40 @@ export class QaapWorkHubAuxPanel {
         }
     }
 
+    /** Names the side chat tab after its first message; `undefined` restores the view's label. */
+    protected setSideChatTitle(title: string | undefined): void {
+        const tab = this.model.tabs.find(candidate => candidate.kind === 'side-chat');
+        if (!tab) {
+            return;
+        }
+        this.model.setTabTitle(tab.id, title);
+        this.render();
+    }
+
+    /** The side chat's Bring back and close buttons close its tab; the view itself is reset by `closeTab`. */
+    protected closeSideChatTab(): void {
+        const tab = this.model.tabs.find(candidate => candidate.kind === 'side-chat');
+        if (tab) {
+            this.closeTab(tab);
+        }
+    }
+
     protected render(): void {
         this.renderTabs();
         const active = this.model.activeTab;
         const showLauncher = !active || active.kind === 'launcher';
         const showPullRequest = active?.kind === 'pull-request';
+        const showSideChat = active?.kind === 'side-chat';
         this.launcher.hidden = !showLauncher;
         this.pullRequestView.element.hidden = !showPullRequest;
-        this.surfaceSlot.hidden = showLauncher || showPullRequest || !this.dockedElement;
-        this.emptyState.hidden = showLauncher || showPullRequest || !!this.dockedElement;
+        this.sideChatView.element.hidden = !showSideChat;
+        this.surfaceSlot.hidden = showLauncher || showPullRequest || showSideChat || !this.dockedElement;
+        this.emptyState.hidden = showLauncher || showPullRequest || showSideChat || !!this.dockedElement;
+        if (showSideChat && this.isOpen) {
+            this.sideChatView.show();
+        } else {
+            this.sideChatView.hide();
+        }
         this.element.dataset.view = active?.kind ?? 'launcher';
         if (showPullRequest) {
             this.pullRequestView.sync(this.host.resolvePullRequestTarget(), this.isOpen);
@@ -537,13 +586,14 @@ export class QaapWorkHubAuxPanel {
             select.className = 'qaap-work-hub-aux-panel-tab-select';
             select.setAttribute('role', 'tab');
             select.setAttribute('aria-selected', String(tab.id === active?.id));
-            select.title = spec.label;
+            const tabLabel = this.model.tabTitle(tab.id) ?? spec.label;
+            select.title = tabLabel;
             const icon = document.createElement('span');
             icon.className = `codicon ${spec.icon}`;
             icon.setAttribute('aria-hidden', 'true');
             const label = document.createElement('span');
             label.className = 'qaap-work-hub-aux-panel-tab-label';
-            label.textContent = spec.label;
+            label.textContent = tabLabel;
             select.append(icon, label);
             select.addEventListener('click', () => this.activateTab(tab));
             const close = codiconButton('qaap-work-hub-aux-panel-tab-close', 'codicon-close', `${closeLabel}: ${spec.label}`);
@@ -594,10 +644,11 @@ export class QaapWorkHubAuxPanel {
         list.className = 'qaap-work-hub-aux-panel-launcher-list';
         const surfacesEnabled = this.host.canShowSurfaces();
         const projectOpen = this.host.resolvePullRequestTarget() !== undefined;
+        const sideChatOpen = this.host.sideChat?.resolveParent() !== undefined;
         for (const kind of QAAP_WORK_HUB_AUX_PANEL_TAB_KINDS) {
             const spec = viewSpec(kind);
-            // Surfaces need an open task; the panel's own views need only a project.
-            const enabled = kind === 'pull-request' ? projectOpen : surfacesEnabled;
+            // Surfaces need an open task; the panel's own views need only a project, and a side chat a conversation.
+            const enabled = kind === 'pull-request' ? projectOpen : kind === 'side-chat' ? sideChatOpen : surfacesEnabled;
             // The whole row is the button: no separate "Open" pill.
             const row = document.createElement('button');
             row.type = 'button';
