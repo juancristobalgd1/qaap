@@ -35,6 +35,14 @@ class TestResolver extends QaapGithubMcpCredentialResolver {
         this.ghCalls++;
         return Promise.resolve(this.ghOutcome);
     }
+
+    userCheck: 'rejected' | 'accepted' | 'unknown' = 'unknown';
+    userChecks = 0;
+
+    protected override checkUser(): Promise<'rejected' | 'accepted' | 'unknown'> {
+        this.userChecks++;
+        return Promise.resolve(this.userCheck);
+    }
 }
 
 const session = (login: string, token: string): QaapGithubStoredSession => ({
@@ -122,6 +130,28 @@ describe('QaapGithubMcpCredentialResolver', () => {
         expect((await resolver.resolve())?.token).to.equal('gho_first');
         resolver.invalidate();
         expect((await resolver.resolve())?.token).to.equal('gho_second');
+    });
+
+    it('forgets a tenant token only when GitHub /user also rejects it', async () => {
+        const rejecting = new TestResolver([], [['alice', 'gho_owner']]);
+        rejecting.fakeEnv = { QAAP_TENANT_BACKEND_MODE: '1', QAAP_TENANT_LOGIN: 'alice' };
+        rejecting.userCheck = 'rejected';
+        expect(await rejecting.reportRejected('gho_owner')).to.equal('forgotten');
+        expect(await rejecting.resolve()).to.equal(undefined);
+
+        const accepting = new TestResolver([], [['alice', 'gho_owner']]);
+        accepting.fakeEnv = { QAAP_TENANT_BACKEND_MODE: '1', QAAP_TENANT_LOGIN: 'alice' };
+        accepting.userCheck = 'accepted';
+        expect(await accepting.reportRejected('gho_owner')).to.equal('token-valid');
+        expect(await accepting.resolve()).to.deep.equal({ token: 'gho_owner', source: 'owner-token-cache' });
+    });
+
+    it('does not call GitHub /user on the desktop; it only clears the memo', async () => {
+        const resolver = new TestResolver();
+        resolver.fakeEnv = { QAAP_DESKTOP: '1', GH_TOKEN: 'ghp_env' };
+        expect((await resolver.resolve())?.source).to.equal('env');
+        expect(await resolver.reportRejected('ghp_env')).to.equal('not-checked');
+        expect(resolver.userChecks).to.equal(0);
     });
 
     it('describes availability without the token value', async () => {

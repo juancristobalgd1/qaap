@@ -4,31 +4,52 @@
 // *****************************************************************************
 
 import { injectable } from '@theia/core/shared/inversify';
-import { MCP_SERVERS_PREF } from '@theia/ai-mcp/lib/common/mcp-preferences';
 import type { MCPServerDescription } from '@theia/ai-mcp/lib/common/mcp-server-manager';
-import { PreferenceScope } from '@theia/core/lib/common/preferences';
 import { GitHubChatAgent } from '@theia/ai-ide/lib/browser/github-chat-agent';
-import { REQUIRED_GITHUB_MCP_SERVERS } from '@theia/ai-ide/lib/browser/github-prompt-template';
+import { githubTemplate } from '@theia/ai-ide/lib/browser/github-prompt-template';
+import {
+    QAAP_GITHUB_MCP_READONLY_URL,
+    QAAP_GITHUB_MCP_SERVER_NAME
+} from '@theia/qaap-shared-core/lib/common/qaap-github-mcp-managed';
+
+/** The upstream prompt refers to the tools of a server named `github`; the managed server is `qaap-github`. */
+const UPSTREAM_GITHUB_TOOLS_FRAGMENT = '{{prompt:mcp_github_tools}}';
+const MANAGED_GITHUB_TOOLS_FRAGMENT = `{{prompt:mcp_${QAAP_GITHUB_MCP_SERVER_NAME}_tools}}`;
+
+const managedGithubTemplate: typeof githubTemplate = {
+    ...githubTemplate,
+    template: githubTemplate.template.split(UPSTREAM_GITHUB_TOOLS_FRAGMENT).join(MANAGED_GITHUB_TOOLS_FRAGMENT)
+};
+
+/** The managed server is the only GitHub server this agent uses; it is never written to the preferences. */
+const MANAGED_SERVER: MCPServerDescription = { name: QAAP_GITHUB_MCP_SERVER_NAME, serverUrl: QAAP_GITHUB_MCP_READONLY_URL };
 
 /**
- * GitHub chat agent that never writes `serverAuthToken` into the MCP preferences.
+ * GitHub chat agent bound to the managed GitHub MCP server.
  *
- * The upstream agent persists its placeholder token marker to `ai-features.mcp.mcpServers` when it configures
- * the server. Here the persisted entry drops `name` (as upstream does) and `serverAuthToken`; the token is
- * entered by the user in settings. Runtime registration (`addOrUpdateServer`) is unchanged.
- *
- * An existing `github` preference entry is kept as it is, so a token the user already added is never replaced.
+ * The backend registers the managed server itself (read-only, OAuth-less, token from the credential
+ * resolver), so this agent only starts it. Upstream would persist a `github` entry when none is
+ * registered and would ask the user to paste a token; neither happens here.
  */
 @injectable()
 export class QaapGitHubChatAgent extends GitHubChatAgent {
 
+    override prompts = [{ id: 'github-system', defaultVariant: managedGithubTemplate, variants: [] }];
+
+    protected override async requiresConfiguration(): Promise<boolean> {
+        return !(await this.mcpService.hasServer(QAAP_GITHUB_MCP_SERVER_NAME));
+    }
+
+    protected override async requiresStartingServer(): Promise<boolean> {
+        return !(await this.mcpService.isServerStarted(QAAP_GITHUB_MCP_SERVER_NAME));
+    }
+
+    protected override async startServer(): Promise<void> {
+        await this.ensureServerStarted(MANAGED_SERVER);
+    }
+
     override async ensureServerStarted(server: MCPServerDescription): Promise<void> {
         try {
-            if (!(await this.mcpService.hasServer(server.name))) {
-                await this.persistServerWithoutToken(server);
-                await this.mcpService.addOrUpdateServer(server);
-            }
-
             if (!(await this.mcpService.isServerStarted(server.name))) {
                 await this.mcpService.startServer(server.name);
             }
@@ -38,25 +59,8 @@ export class QaapGitHubChatAgent extends GitHubChatAgent {
         }
     }
 
-    protected override async offerConfiguration(): Promise<void> {
-        const githubServer = REQUIRED_GITHUB_MCP_SERVERS[0];
-        await this.persistServerWithoutToken(githubServer);
-        await this.openAndFocusOnGitHubConfig(githubServer.name);
-    }
-
-    /** Writes the server entry to the user preferences without its name and without any token. */
-    protected async persistServerWithoutToken(server: MCPServerDescription): Promise<void> {
-        const current = this.preferenceService.get<Record<string, unknown>>(MCP_SERVERS_PREF, {});
-        if (Object.prototype.hasOwnProperty.call(current, server.name)) {
-            return;
-        }
-        await this.preferenceService.set(MCP_SERVERS_PREF, { ...current, [server.name]: this.toPreferenceEntry(server) }, PreferenceScope.User);
-    }
-
-    protected toPreferenceEntry(server: MCPServerDescription): Record<string, unknown> {
-        const entry: Record<string, unknown> = { ...server };
-        delete entry['name'];
-        delete entry['serverAuthToken'];
-        return entry;
+    protected override offerConfiguration(): Promise<void> {
+        // Nothing to configure in settings: the managed server has no user-editable token.
+        return Promise.resolve();
     }
 }

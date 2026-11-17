@@ -29,6 +29,9 @@ export interface QaapGithubMcpCredential {
 }
 
 /** Status that never carries the token value. */
+/** `forgotten`: GitHub rejects the token too. `token-valid`: GitHub accepts it, so the endpoint refuses it (policy). */
+export type QaapGithubMcpRejectionVerdict = 'forgotten' | 'token-valid' | 'not-checked';
+
 export interface QaapGithubMcpCredentialStatus {
     readonly available: boolean;
     readonly source: QaapGithubMcpCredentialSource | undefined;
@@ -106,6 +109,41 @@ export class QaapGithubMcpCredentialResolver {
     /** Forgets the memoized credential, for example after GitHub rejected it or the user signed in again. */
     invalidate(): void {
         this.memo = undefined;
+    }
+
+    /**
+     * The MCP endpoint answered 401 for `token`. The memo is always cleared. Only a tenant backend forgets
+     * the owner's cached token, and only after `GET /user` confirms GitHub rejects it too: a 401 from the
+     * Copilot endpoint alone can be a policy or OAuth-app restriction on a valid token.
+     */
+    async reportRejected(token: string): Promise<QaapGithubMcpRejectionVerdict> {
+        this.invalidate();
+        const owner = readQaapTenantOwnerLogin(this.env());
+        if (!owner) {
+            return 'not-checked';
+        }
+        const verdict = await this.checkUser(token);
+        if (verdict === 'rejected') {
+            this.ownerTokenCache.forget(owner, token);
+            return 'forgotten';
+        }
+        return verdict === 'accepted' ? 'token-valid' : 'not-checked';
+    }
+
+    /** `GET /user` with the token; the token is sent to GitHub only and never logged. */
+    protected async checkUser(token: string): Promise<'rejected' | 'accepted' | 'unknown'> {
+        try {
+            const response = await fetch('https://api.github.com/user', {
+                headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' },
+                signal: AbortSignal.timeout(GH_TIMEOUT_MS),
+            });
+            if (response.status === 401) {
+                return 'rejected';
+            }
+            return response.ok ? 'accepted' : 'unknown';
+        } catch {
+            return 'unknown';
+        }
     }
 
     protected async lookup(): Promise<QaapGithubMcpCredential | undefined> {

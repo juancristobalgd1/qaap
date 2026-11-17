@@ -8,7 +8,9 @@ import { PreferenceContribution } from '@theia/core/lib/common/preferences/prefe
 import { ShellExecutionServerImpl } from '@theia/ai-terminal/lib/node/shell-execution-server-impl';
 import { MCPFrontendContributionManager } from '@theia/ai-mcp-server/lib/node/mcp-frontend-contribution-manager';
 import { SkillInstallBackendServiceImpl } from '@theia/ai-registry/lib/node/skill-install-backend-service';
+import { ConnectionContainerModule } from '@theia/core/lib/node/messaging/connection-container-module';
 import { QaapAiModelDefaultsContribution } from '../common/qaap-ai-model-defaults-contribution';
+import { qaapGithubMcpConnectionModule } from './qaap-github-mcp-connection-module';
 import { patchAnthropicModelForQaapHistory } from './qaap-anthropic-model-patch';
 import { QaapMCPFrontendContributionManager } from './qaap-mcp-frontend-contribution-manager';
 import { QaapShellExecutionServerImpl } from './qaap-shell-execution-server-impl';
@@ -26,4 +28,5 @@ export default new ContainerModule((bind, unbind, isBound, rebind) => {
     // Same product model defaults as the frontend, so hosted per-user readers fall back to what Settings shows.
     bind(QaapAiModelDefaultsContribution).toSelf().inSingletonScope();
     bind(PreferenceContribution).toService(QaapAiModelDefaultsContribution);
+    bind(ConnectionContainerModule).toConstantValue(qaapGithubMcpConnectionModule);
 });

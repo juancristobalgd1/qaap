@@ -10,15 +10,14 @@ FrontendApplicationConfigProvider.set({});
 
 import { expect } from 'chai';
 import type { MCPServerDescription } from '@theia/ai-mcp/lib/common/mcp-server-manager';
-import { REQUIRED_GITHUB_MCP_SERVERS } from '@theia/ai-ide/lib/browser/github-prompt-template';
+import { QAAP_GITHUB_MCP_READONLY_URL, QAAP_GITHUB_MCP_SERVER_NAME } from '@theia/qaap-shared-core/lib/common/qaap-github-mcp-managed';
 import { QaapGitHubChatAgent } from './qaap-github-chat-agent';
 
 disableJSDOM();
 
 describe('QaapGitHubChatAgent', () => {
 
-    const githubServer: MCPServerDescription = REQUIRED_GITHUB_MCP_SERVERS[0];
-    const GITHUB_MCP_URL = 'https://api.githubcopilot.com/mcp/';
+    const githubServer: MCPServerDescription = { name: QAAP_GITHUB_MCP_SERVER_NAME, serverUrl: QAAP_GITHUB_MCP_READONLY_URL };
 
     interface Calls {
         sets: Array<{ name: string; value: Record<string, unknown> }>;
@@ -27,7 +26,7 @@ describe('QaapGitHubChatAgent', () => {
         opened: string[];
     }
 
-    function createAgent(options: { prefs: Record<string, unknown>; serverRegistered: boolean }): { agent: QaapGitHubChatAgent; calls: Calls } {
+    function createAgent(options: { prefs: Record<string, unknown>; serverRegistered: boolean; started?: boolean }): { agent: QaapGitHubChatAgent; calls: Calls } {
         const calls: Calls = { sets: [], added: [], started: [], opened: [] };
         const preferenceService = {
             get: <T>(name: string, defaultValue?: T): T => (options.prefs[name] ?? defaultValue) as T,
@@ -38,7 +37,7 @@ describe('QaapGitHubChatAgent', () => {
         };
         const mcpService = {
             hasServer: async (): Promise<boolean> => options.serverRegistered,
-            isServerStarted: async (): Promise<boolean> => false,
+            isServerStarted: async (): Promise<boolean> => !!options.started,
             addOrUpdateServer: async (server: MCPServerDescription): Promise<void> => { calls.added.push(server); },
             startServer: async (name: string): Promise<void> => { calls.started.push(name); }
         };
@@ -52,54 +51,46 @@ describe('QaapGitHubChatAgent', () => {
         return { agent, calls };
     }
 
-    it('starts the server without writing the token to the preferences', async () => {
+    it('starts the registered managed server and never writes a GitHub entry to the preferences', async () => {
         const { agent, calls } = createAgent({ prefs: {}, serverRegistered: false });
-        await agent.ensureServerStarted(githubServer);
-
-        expect(calls.sets).to.have.length(1);
-        const persisted = calls.sets[0].value.github as Record<string, unknown>;
-        expect(persisted).to.deep.equal({ serverUrl: GITHUB_MCP_URL });
-        expect(persisted).to.not.have.property('serverAuthToken');
-        expect(persisted).to.not.have.property('name');
-        // Runtime registration still receives the full description, as before.
-        expect(calls.added).to.deep.equal([githubServer]);
-        expect(calls.started).to.deep.equal(['github']);
-    });
-
-    it('does not replace an existing github entry in the preferences', async () => {
-        const existing = { serverUrl: GITHUB_MCP_URL, customSetting: 'kept' };
-        const { agent, calls } = createAgent({ prefs: { 'ai-features.mcp.mcpServers': { github: existing } }, serverRegistered: false });
-        await agent.ensureServerStarted(githubServer);
-
-        expect(calls.sets).to.have.length(0);
-        expect(calls.added).to.deep.equal([githubServer]);
-    });
-
-    it('does not touch the preferences when the server is already registered', async () => {
-        const { agent, calls } = createAgent({ prefs: {}, serverRegistered: true });
         await agent.ensureServerStarted(githubServer);
 
         expect(calls.sets).to.have.length(0);
         expect(calls.added).to.have.length(0);
+        expect(calls.started).to.deep.equal(['qaap-github']);
     });
 
-    it('offers configuration without writing the token and keeps the other servers', async () => {
+    it('keeps an existing github entry untouched when it starts the server', async () => {
+        const existing = { serverUrl: 'https://api.githubcopilot.com/mcp/', customSetting: 'kept' };
+        const { agent, calls } = createAgent({ prefs: { 'ai-features.mcp.mcpServers': { github: existing } }, serverRegistered: true });
+        await agent.ensureServerStarted(githubServer);
+
+        expect(calls.sets).to.have.length(0);
+        expect(calls.started).to.deep.equal(['qaap-github']);
+    });
+
+    it('does not start the server again when it is already started', async () => {
+        const { agent, calls } = createAgent({ prefs: {}, serverRegistered: true, started: true });
+        await agent.ensureServerStarted(githubServer);
+
+        expect(calls.sets).to.have.length(0);
+        expect(calls.started).to.have.length(0);
+    });
+
+    it('points its system prompt at the managed server tools, not at a server named github', () => {
+        const { agent } = createAgent({ prefs: {}, serverRegistered: true });
+        const prompts = (agent as unknown as { prompts: Array<{ defaultVariant: { template: string } }> }).prompts;
+        const template = prompts[0].defaultVariant.template;
+        expect(template).to.contain('{{prompt:mcp_qaap-github_tools}}');
+        expect(template).to.not.contain('{{prompt:mcp_github_tools}}');
+    });
+
+    it('offers configuration without writing a GitHub entry and keeps the other servers', async () => {
         const slack = { command: 'npx', args: ['-y', 'slack'], autostart: true };
         const { agent, calls } = createAgent({ prefs: { 'ai-features.mcp.mcpServers': { slack } }, serverRegistered: false });
         await agent['offerConfiguration']();
 
-        expect(calls.sets).to.have.length(1);
-        expect(calls.sets[0].value).to.deep.equal({ slack, github: { serverUrl: GITHUB_MCP_URL } });
-        expect(JSON.stringify(calls.sets[0].value)).to.not.contain('serverAuthToken');
-        expect(calls.opened).to.deep.equal(['github']);
-    });
-
-    it('offers configuration and keeps an existing github entry untouched', async () => {
-        const existing = { serverUrl: GITHUB_MCP_URL, customSetting: 'kept' };
-        const { agent, calls } = createAgent({ prefs: { 'ai-features.mcp.mcpServers': { github: existing } }, serverRegistered: false });
-        await agent['offerConfiguration']();
-
         expect(calls.sets).to.have.length(0);
-        expect(calls.opened).to.deep.equal(['github']);
+        expect(calls.opened).to.deep.equal([]);
     });
 });
