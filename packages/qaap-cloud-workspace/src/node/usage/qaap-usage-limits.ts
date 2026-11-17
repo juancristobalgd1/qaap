@@ -18,6 +18,8 @@ import type { QaapUsageRateLimitWindowReading } from './qaap-usage-record';
 import { isQaapHostedProductionRuntime } from '@theia/qaap-shared-core/lib/node/qaap-production-auth-readiness';
 import { QaapUsageRoots } from './qaap-usage-roots';
 import { QaapUsageScanner } from './qaap-usage-scanner';
+import type { QaapUsageOwnerScan } from './qaap-usage-scanner-registry';
+import { QaapUsageAgentFileAccess, type QaapUsageAgentIdentity } from './qaap-usage-file-access';
 
 /** Keychain item that Claude Code keeps its OAuth session in on macOS. */
 export const QAAP_USAGE_CLAUDE_KEYCHAIN_SERVICE = 'Claude Code-credentials';
@@ -50,9 +52,13 @@ const WEEKLY_WINDOW_MINUTES = 10_080;
 export class QaapUsageLimitsService {
 
     @inject(QaapUsageScanner)
-    protected readonly scanner: QaapUsageScanner;
+    protected scanner: QaapUsageScanner;
 
-    protected readonly credentialsFile = path.join(QaapUsageRoots.resolve(process.env, os.homedir()).claudeConfigDir, '.credentials.json');
+    protected credentialsFile = path.join(QaapUsageRoots.resolve(process.env, os.homedir()).claudeConfigDir, '.credentials.json');
+    /** Set when the agents run as another uid: their credentials file is then read as that uid. */
+    protected agentIdentity: QaapUsageAgentIdentity | undefined;
+    /** One service per agent home, each with its own Claude cache and backoff. */
+    protected readonly perHome = new Map<string, QaapUsageLimitsService>();
     protected claudeCache: { expiresAt: number; value: QaapUsageProviderLimits } | undefined;
     protected claudeInFlight: Promise<QaapUsageProviderLimits> | undefined;
     protected loggedResponseShape = false;
@@ -92,6 +98,24 @@ export class QaapUsageLimitsService {
         } catch {
             return undefined;
         }
+    }
+
+    /** The limits service for one owner's agent home (see `QaapUsageScannerRegistry`). */
+    forOwner(owner: QaapUsageOwnerScan): QaapUsageLimitsService {
+        let service = this.perHome.get(owner.target.key);
+        if (!service) {
+            service = this.createForHome();
+            service.scanner = owner.scanner;
+            service.credentialsFile = path.join(owner.target.roots.claudeConfigDir, '.credentials.json');
+            service.agentIdentity = owner.target.identity;
+            this.perHome.set(owner.target.key, service);
+        }
+        return service;
+    }
+
+    /** Overridable in tests. */
+    protected createForHome(): QaapUsageLimitsService {
+        return new QaapUsageLimitsService();
     }
 
     async getLimits(): Promise<QaapUsageLimits> {
@@ -234,6 +258,16 @@ export class QaapUsageLimitsService {
     }
 
     protected async readFileOrUndefined(file: string): Promise<string | undefined> {
+        if (this.agentIdentity) {
+            const access = new QaapUsageAgentFileAccess(this.agentIdentity);
+            try {
+                return (await access.readFile(file)).toString('utf8');
+            } catch {
+                return undefined;
+            } finally {
+                access.release();
+            }
+        }
         try {
             return await fs.promises.readFile(file, 'utf8');
         } catch {

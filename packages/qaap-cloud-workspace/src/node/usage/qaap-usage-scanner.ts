@@ -12,11 +12,19 @@ import { DatabaseSync } from 'node:sqlite';
 import { QaapUsageClaudeReader } from './qaap-usage-claude-reader';
 import { QaapUsageCodexReader } from './qaap-usage-codex-reader';
 import { QaapUsageCopilotReader } from './qaap-usage-copilot-reader';
+import {
+    QaapUsageAgentFileAccess,
+    QaapUsageDirectFileAccess,
+    type QaapUsageAgentIdentity,
+    type QaapUsageFileAccess,
+    type QaapUsageFileStat,
+} from './qaap-usage-file-access';
 import { QaapUsageGrokReader } from './qaap-usage-grok-reader';
 import { QaapUsageLedger, type QaapUsageFileState } from './qaap-usage-ledger';
 import { QaapUsageOpenCodeReader } from './qaap-usage-opencode-reader';
 import { QaapUsagePiReader } from './qaap-usage-pi-reader';
 import { QaapUsageRoots } from './qaap-usage-roots';
+import type { QaapUsageScanTarget } from './qaap-usage-scan-target';
 import type { QaapUsageLineContext, QaapUsageParseResult } from './qaap-usage-record';
 import { QaapUsageParsing } from './qaap-usage-parsing';
 
@@ -34,6 +42,8 @@ const DAY_MS = 86_400_000;
 interface QaapUsageDiscovered {
     file: string;
     kind: 'claude' | 'codex' | 'pi' | 'opencode-part' | 'grok' | 'copilot';
+    /** Size and mtime seen while listing, so a scan needs no second stat per file. */
+    stat?: QaapUsageFileStat;
 }
 
 /**
@@ -44,6 +54,10 @@ interface QaapUsageDiscovered {
 export class QaapUsageScanner {
 
     protected roots: QaapUsageRoots = QaapUsageRoots.resolve(process.env, os.homedir());
+    /** Set when the agents run as another uid: the logs are then read through a helper running as that uid. */
+    protected identity: QaapUsageAgentIdentity | undefined;
+    /** File access of the running scan. */
+    protected access: QaapUsageFileAccess = new QaapUsageDirectFileAccess();
     protected readonly ledger = new QaapUsageLedger();
     protected readonly messageMetaCache = new Map<string, QaapUsageOpenCodeReader.MessageMeta>();
     protected scanPromise: Promise<void> | undefined;
@@ -53,6 +67,22 @@ export class QaapUsageScanner {
     /** Current time in epoch milliseconds; overridable in tests. */
     protected now(): number {
         return Date.now();
+    }
+
+    /** Points this scanner at the agent logs of `target`. Call before the first scan. */
+    useTarget(target: QaapUsageScanTarget): this {
+        this.roots = target.roots;
+        this.identity = target.identity;
+        return this;
+    }
+
+    getRoots(): QaapUsageRoots {
+        return this.roots;
+    }
+
+    /** Overridable in tests. */
+    protected createFileAccess(): QaapUsageFileAccess {
+        return this.identity ? new QaapUsageAgentFileAccess(this.identity) : new QaapUsageDirectFileAccess();
     }
 
     /** Whether the first scan has finished. Until then summaries are partial. */
@@ -88,13 +118,23 @@ export class QaapUsageScanner {
     }
 
     protected async runScan(): Promise<void> {
+        const access = this.createFileAccess();
+        this.access = access;
+        try {
+            await this.runScanWith();
+        } finally {
+            access.release();
+        }
+    }
+
+    protected async runScanWith(): Promise<void> {
         const cutoffMs = this.now() - QAAP_USAGE_LOG_RETENTION_DAYS * DAY_MS;
         const discovered = await this.discover();
         const seen = new Set<string>();
         const work: { item: QaapUsageDiscovered; mtimeMs: number; size: number }[] = [];
         for (const item of discovered) {
             seen.add(item.file);
-            const stat = await this.statOrUndefined(item.file);
+            const stat = item.stat ?? await this.statOrUndefined(item.file);
             if (!stat) {
                 this.ledger.retain(file => file !== item.file);
                 continue;
@@ -175,7 +215,7 @@ export class QaapUsageScanner {
             this.ledger.set(item.file, state);
             return;
         }
-        const text = decompress(await fs.promises.readFile(item.file)).toString('utf8');
+        const text = decompress(await this.access.readFile(item.file)).toString('utf8');
         for (const line of text.split('\n')) {
             if (line.trim()) {
                 this.apply(item, state, this.parseLine(item, line, state.context));
@@ -195,7 +235,7 @@ export class QaapUsageScanner {
         if (previous && previous.size === size && previous.mtimeMs === mtimeMs) {
             return;
         }
-        const text = await fs.promises.readFile(file, 'utf8');
+        const text = (await this.access.readFile(file)).toString('utf8');
         const item: QaapUsageDiscovered = { file, kind: 'grok' };
         const state: QaapUsageFileState = { size, mtimeMs, offset: 0, context: this.initialContext(item), entries: new Map(), skipped: 0 };
         for (const result of await parse(text)) {
@@ -215,8 +255,10 @@ export class QaapUsageScanner {
         const item: QaapUsageDiscovered = { file, kind: 'copilot' };
         const state: QaapUsageFileState = { size: combinedSize, mtimeMs: combinedMtime, offset: 0, context: this.initialContext(item), entries: new Map(), skipped: 0 };
         let database: DatabaseSync | undefined;
+        let copy: string | undefined;
         try {
-            database = new DatabaseSync(file, { readOnly: true });
+            copy = await this.privateCopilotCopy(file, wal !== undefined);
+            database = new DatabaseSync(copy ?? file, { readOnly: true });
             const rows = database.prepare(
                 'SELECT id, session_id, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens, created_at FROM assistant_usage_events',
             ).all();
@@ -229,8 +271,28 @@ export class QaapUsageScanner {
             return;
         } finally {
             database?.close();
+            if (copy) {
+                await fs.promises.rm(path.dirname(copy), { recursive: true, force: true }).catch(() => undefined);
+            }
         }
         this.ledger.set(file, state);
+    }
+
+    /**
+     * SQLite needs a path it can open. When the database belongs to the agent uid, its bytes (and its
+     * write-ahead log) are read as the agent and copied to a private temporary directory.
+     */
+    protected async privateCopilotCopy(file: string, hasWal: boolean): Promise<string | undefined> {
+        if (!this.identity) {
+            return undefined;
+        }
+        const directory = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'qaap-usage-copilot-'));
+        const copy = path.join(directory, 'session-store.db');
+        await fs.promises.writeFile(copy, await this.access.readFile(file), { mode: 0o600 });
+        if (hasWal) {
+            await fs.promises.writeFile(`${copy}-wal`, await this.access.readFile(`${file}-wal`), { mode: 0o600 });
+        }
+        return copy;
     }
 
     protected async parseOpenCodePart(text: string, fallbackMs: number): Promise<QaapUsageParseResult> {
@@ -253,7 +315,7 @@ export class QaapUsageScanner {
         }
         const file = path.join(this.roots.opencodeMessages, sessionId, `${messageId}.json`);
         try {
-            const parsed = QaapUsageOpenCodeReader.parseMessage(await fs.promises.readFile(file, 'utf8'));
+            const parsed = QaapUsageOpenCodeReader.parseMessage((await this.access.readFile(file)).toString('utf8'));
             if (parsed) {
                 this.messageMetaCache.set(cacheKey, parsed.meta);
                 return parsed.meta;
@@ -297,80 +359,62 @@ export class QaapUsageScanner {
      * A trailing partial line is left for the next scan.
      */
     protected async consumeLines(file: string, start: number, size: number, onLine: (line: string) => void): Promise<number> {
-        const handle = await fs.promises.open(file, 'r');
-        try {
-            const chunk = Buffer.alloc(READ_CHUNK_BYTES);
-            let position = start;
-            let consumed = start;
-            let carry: Buffer = Buffer.alloc(0);
-            while (position < size) {
-                const { bytesRead } = await handle.read(chunk, 0, Math.min(READ_CHUNK_BYTES, size - position), position);
-                if (bytesRead === 0) {
-                    break;
-                }
-                position += bytesRead;
-                const buffer = Buffer.concat([carry, chunk.subarray(0, bytesRead)]);
-                let lineStart = 0;
-                let newline = buffer.indexOf(0x0a, lineStart);
-                while (newline !== -1) {
-                    onLine(buffer.toString('utf8', lineStart, newline).replace(/\r$/, ''));
-                    consumed += newline - lineStart + 1;
-                    lineStart = newline + 1;
-                    newline = buffer.indexOf(0x0a, lineStart);
-                }
-                carry = Buffer.from(buffer.subarray(lineStart));
-                await new Promise<void>(resolve => setImmediate(resolve));
+        let position = start;
+        let consumed = start;
+        let carry: Buffer = Buffer.alloc(0);
+        while (position < size) {
+            const chunk = await this.access.readRange(file, position, Math.min(position + READ_CHUNK_BYTES, size));
+            if (chunk.length === 0) {
+                break;
             }
-            return consumed;
-        } finally {
-            await handle.close();
+            position += chunk.length;
+            const buffer = Buffer.concat([carry, chunk]);
+            let lineStart = 0;
+            let newline = buffer.indexOf(0x0a, lineStart);
+            while (newline !== -1) {
+                onLine(buffer.toString('utf8', lineStart, newline).replace(/\r$/, ''));
+                consumed += newline - lineStart + 1;
+                lineStart = newline + 1;
+                newline = buffer.indexOf(0x0a, lineStart);
+            }
+            carry = Buffer.from(buffer.subarray(lineStart));
+            await new Promise<void>(resolve => setImmediate(resolve));
         }
+        return consumed;
     }
 
     protected async discover(): Promise<QaapUsageDiscovered[]> {
         const found: QaapUsageDiscovered[] = [];
-        const add = (files: string[], kind: QaapUsageDiscovered['kind']): void => {
-            for (const file of files) {
-                found.push({ file, kind });
+        const add = (files: QaapUsageFileStat[], kind: QaapUsageDiscovered['kind']): void => {
+            for (const stat of files) {
+                found.push({ file: stat.file, kind, stat });
             }
         };
-        add(await this.listFiles(this.roots.claudeProjects, name => name.endsWith('.jsonl')), 'claude');
-        add(await this.listFiles(this.roots.codexSessions, name => /^rollout-.*\.jsonl(\.zst)?$/.test(name)), 'codex');
-        add(await this.listFiles(this.roots.piSessions, name => name.endsWith('.jsonl')), 'pi');
-        add(await this.listFiles(this.roots.opencodeParts, name => name.endsWith('.json')), 'opencode-part');
-        add(await this.listFiles(this.roots.grokSessions, name => name === 'usage.json'), 'grok');
-        if (await this.statOrUndefined(this.roots.copilotDatabase)) {
-            add([this.roots.copilotDatabase], 'copilot');
+        add(await this.listFiles(this.roots.claudeProjects, /\.jsonl$/), 'claude');
+        add(await this.listFiles(this.roots.codexSessions, /^rollout-.*\.jsonl(\.zst)?$/), 'codex');
+        add(await this.listFiles(this.roots.piSessions, /\.jsonl$/), 'pi');
+        add(await this.listFiles(this.roots.opencodeParts, /\.json$/), 'opencode-part');
+        add(await this.listFiles(this.roots.grokSessions, /^usage\.json$/), 'grok');
+        const copilot = await this.statOrUndefined(this.roots.copilotDatabase);
+        if (copilot) {
+            add([copilot], 'copilot');
         }
         return found;
     }
 
     /** Recursively lists files whose names match. Missing directories yield nothing. */
-    protected async listFiles(directory: string, matches: (name: string) => boolean): Promise<string[]> {
-        const result: string[] = [];
-        const visit = async (current: string): Promise<void> => {
-            let entries: fs.Dirent[];
-            try {
-                entries = await fs.promises.readdir(current, { withFileTypes: true });
-            } catch {
-                return;
-            }
-            for (const entry of entries) {
-                const full = path.join(current, entry.name);
-                if (entry.isDirectory()) {
-                    await visit(full);
-                } else if (entry.isFile() && matches(entry.name)) {
-                    result.push(full);
-                }
-            }
-        };
-        await visit(directory);
-        return result;
+    protected async listFiles(directory: string, namePattern: RegExp): Promise<QaapUsageFileStat[]> {
+        try {
+            return await this.access.listFiles(directory, namePattern);
+        } catch (error) {
+            console.error('[qaap-usage] could not list agent logs:', error instanceof Error ? error.message : error);
+            return [];
+        }
     }
 
-    protected async statOrUndefined(file: string): Promise<fs.Stats | undefined> {
+    protected async statOrUndefined(file: string): Promise<QaapUsageFileStat | undefined> {
         try {
-            return await fs.promises.stat(file);
+            return await this.access.stat(file);
         } catch {
             return undefined;
         }
