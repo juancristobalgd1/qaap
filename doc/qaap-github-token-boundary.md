@@ -151,16 +151,30 @@ headers `X-MCP-Readonly: true` and `X-MCP-Lockdown: true`.
 - **Where the token lives:** only in the backend heap, and only in the `Authorization` header sent to
   `api.githubcopilot.com`. It is never in the server description, `env`, `serverAuthToken`,
   preferences, logs, the keystore or an error message. Autostart is off; the server starts on demand.
-- **Per-mode scope:** `desktop` reads `GH_TOKEN`, then `GITHUB_TOKEN`, then `gh auth token` (5 s timeout,
-  no shell, failures reduced to a code), then the stored OAuth session. A per-tenant backend reads only its
-  owner's token from the request-scoped owner cache and never the environment or `gh`. A shared hosted
-  backend without an owner registers nothing. `local` (web development) reads a stored session only when
-  exactly one login exists.
-- **Read-only default:** only tools GitHub marks `readOnlyHint` are listed or called. Anything else is
-  rejected by the backend, so a write tool is unreachable until the write opt-in exists.
+- **Identity is the object, never the content:** the backend manager creates the managed server object
+  itself and hands the managed token provider to that object alone; the upstream OAuth factory is not
+  replaced. The name `qaap-github` (any letter case) and the marker client id `qaap-managed-github` are
+  reserved: an entry that uses either, from user or workspace settings, an agent-written
+  `~/.theia/settings.json`, a VS Code extension or an RPC call, is dropped by the frontend and refused by
+  the backend. The managed server only starts with its exact read-only configuration (URL and both headers).
+- **Per-mode scope (fail closed):** `desktop` (`QAAP_DESKTOP=1`, never on a hosted or tenant backend) reads
+  `GH_TOKEN`, then `GITHUB_TOKEN`, then `gh auth token`, then the stored OAuth session. `gh` runs only by an
+  absolute path (absolute PATH entries, then `/opt/homebrew/bin`, `/usr/local/bin`; never the working
+  directory), with a 5 s timeout, no shell, `GH_*` overrides removed and failures reduced to a code. A
+  per-tenant backend reads only its owner's token from the request-scoped owner cache and never the
+  environment or `gh`. `local` needs the explicit `QAAP_LOCAL_DEV=1` (set by `npm run start:browser`, not
+  for a nested preview) or `QAAP_CLOUD_MODE=local`, and reads a stored session only when exactly one login
+  exists. Everything else (a hosted backend, a tenant backend without an owner, an unstated runtime) is
+  `none`: nothing is registered or read. The desktop launcher (`scripts/qaap-start-electron.mjs`) sets
+  `QAAP_DESKTOP=1` and no `NODE_ENV`; a desktop build that sets `NODE_ENV=production` would land in `none`.
+- **Workspace trust:** the on-demand start is refused in an untrusted workspace, like upstream MCP autostart.
+- **Read-only only:** the managed server uses `/mcp/readonly` and nothing else (no write URL exists in code
+  until the opt-in does). On top, only tools GitHub marks `readOnlyHint` are listed or called; a call is
+  checked against the live tool list, so a direct `callTool` or a tool announced later is also filtered.
 - **401 handling:** the managed provider never waits for a browser. A rejected token is forgotten by a
   tenant backend only after `GET https://api.github.com/user` also returns 401. If `/user` accepts the
   token, the endpoint refusal is reported as a policy or OAuth-app restriction, not as a sign-in prompt.
+  `/user` is checked at most once per token every 5 minutes (keyed by a SHA-256 of the token).
 - **Single owner:** a tenant backend serves one owner; its owner-token cache is the only source.
 - **Never to harness CLIs:** Theia MCP servers are not exported to `.mcp.json` or to any agent CLI.
 - **Egress:** `.githubcopilot.com` is already on the tenant egress allowlist; nothing changed there.
@@ -175,7 +189,12 @@ headers `X-MCP-Readonly: true` and `X-MCP-Lockdown: true`.
   without keystore, a 401 never hangs, read-only tool filter, no start without a credential.
 - `qaap-github-mcp-on-demand-starter.spec` (ai-config): no `startServer` without credential, one start
   for concurrent turns, outcomes for auth and errors.
-- `qaap-github-mcp-managed.spec` (shared-core): which legacy GitHub entries count as tokenless.
+- `qaap-github-mcp-backend.spec` also pins the spoofing scenarios: a `qaap-github` entry with `/mcp/` and the
+  marker, `/readonly` without headers, without OAuth, as a command, in another letter case, the marker under
+  another name and an extension-labelled `qaap-github`; none replaces the managed server or reaches a write tool.
+- `qaap-github-mcp-managed.spec` (shared-core): the reserved name and marker client id.
+- `qaap-mcp-frontend-application-contribution.spec` (ai-config): reserved entries never leave the frontend.
+- `qaap-github-mcp-default-migration.spec` (ai-config): the mirror write is a patch; a server only in the mirror is kept.
 - `qaap-hosted-git-push.spec`: the project config and hooks never run, the token is never in argv,
   the scratch repo is removed, and the egress proxy is passed with TLS verification on.
 - `qaap-hosted-git-fetch.spec`: the bundle carries every remote ref, only missing objects, and never

@@ -686,6 +686,28 @@ export async function fetchQaapUserAiSettings(): Promise<Record<string, unknown>
     return body.settings && typeof body.settings === 'object' ? body.settings : {};
 }
 
+/**
+ * The per-user AI settings mirror as stored right now, for a read-modify-write. Unlike
+ * {@link fetchQaapUserAiSettings} it never consumes the boot prefetch (that belongs to the settings sync)
+ * and it throws instead of returning `{}` when the read fails, so a caller never writes back a partial mirror.
+ */
+export async function fetchQaapUserAiSettingsForUpdate(): Promise<Record<string, unknown>> {
+    const response = await fetchQaapOrTimeoutError(
+        QAAP_USER_SETTINGS_API_PATH,
+        qaapAuthenticatedFetchInit(),
+        QAAP_API_REQUEST_TIMEOUT_MS,
+        userSettingsTimedOut,
+    );
+    if (!response.ok) {
+        throw await QaapUserFacingErrors.fromResponse(response, `Failed to read AI settings (${response.status})`);
+    }
+    const body = await response.json() as { settings?: Record<string, unknown> };
+    if (!body.settings || typeof body.settings !== 'object' || Array.isArray(body.settings)) {
+        throw new Error('The AI settings response has no settings object.');
+    }
+    return body.settings;
+}
+
 /** One plan of the Starter / Pro catalog, as the backend snapshot reports it. */
 export interface QaapBillingPlanSnapshot {
     readonly id: string;

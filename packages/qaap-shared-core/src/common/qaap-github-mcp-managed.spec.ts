@@ -4,29 +4,24 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { isQaapTokenlessGithubMcpEntry } from './qaap-github-mcp-managed';
+import { isQaapReservedGithubMcpEntry } from './qaap-github-mcp-managed';
 
-describe('isQaapTokenlessGithubMcpEntry', () => {
+describe('isQaapReservedGithubMcpEntry', () => {
 
-    it('matches the marketplace default, with or without -y, autostart or an empty env', () => {
-        expect(isQaapTokenlessGithubMcpEntry({ command: 'npx', args: ['-y', '@modelcontextprotocol/server-github'] })).to.equal(true);
-        expect(isQaapTokenlessGithubMcpEntry({ command: 'npx', args: ['@modelcontextprotocol/server-github'], env: {} })).to.equal(true);
+    it('reserves the managed name in any letter case, whatever the entry holds', () => {
+        expect(isQaapReservedGithubMcpEntry('qaap-github', { })).to.equal(true);
+        expect(isQaapReservedGithubMcpEntry('Qaap-GitHub', undefined)).to.equal(true);
+        expect(isQaapReservedGithubMcpEntry(' qaap-github ', { oauth: { clientId: 'other' } })).to.equal(true);
     });
 
-    it('matches a bare GitHub Copilot URL without token, OAuth or headers', () => {
-        expect(isQaapTokenlessGithubMcpEntry({ serverUrl: 'https://api.githubcopilot.com/mcp/' })).to.equal(true);
-        expect(isQaapTokenlessGithubMcpEntry({ serverUrl: 'https://api.githubcopilot.com/mcp/readonly', headers: {} })).to.equal(true);
+    it('reserves the OAuth marker client id under any other name', () => {
+        expect(isQaapReservedGithubMcpEntry('evil', { oauth: { clientId: 'qaap-managed-github' } })).to.equal(true);
+        expect(isQaapReservedGithubMcpEntry('evil', { oauth: { clientId: 'QAAP-MANAGED-GITHUB' } })).to.equal(true);
     });
 
-    it('keeps an entry with a token, OAuth, custom headers or a non-empty env', () => {
-        expect(isQaapTokenlessGithubMcpEntry({ command: 'npx', args: ['-y', '@modelcontextprotocol/server-github'], env: { GITHUB_PERSONAL_ACCESS_TOKEN: 'x' } })).to.equal(false);
-        expect(isQaapTokenlessGithubMcpEntry({ serverUrl: 'https://api.githubcopilot.com/mcp/', serverAuthToken: 'x' })).to.equal(false);
-        expect(isQaapTokenlessGithubMcpEntry({ serverUrl: 'https://api.githubcopilot.com/mcp/', oauth: {} })).to.equal(false);
-        expect(isQaapTokenlessGithubMcpEntry({ serverUrl: 'https://api.githubcopilot.com/mcp/', headers: { 'X-Team': 'a' } })).to.equal(false);
-    });
-
-    it('ignores other servers and other GitHub URLs', () => {
-        expect(isQaapTokenlessGithubMcpEntry({ command: 'npx', args: ['-y', '@modelcontextprotocol/server-slack'] })).to.equal(false);
-        expect(isQaapTokenlessGithubMcpEntry({ serverUrl: 'https://example.com/mcp/' })).to.equal(false);
+    it('leaves the user\'s own github entry and other servers alone', () => {
+        expect(isQaapReservedGithubMcpEntry('github', { oauth: { clientId: 'my-app' } })).to.equal(false);
+        expect(isQaapReservedGithubMcpEntry('github', {})).to.equal(false);
+        expect(isQaapReservedGithubMcpEntry('slack', { oauth: 'not-an-object' })).to.equal(false);
     });
 });

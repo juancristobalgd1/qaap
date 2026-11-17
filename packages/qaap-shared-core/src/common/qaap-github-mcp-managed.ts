@@ -7,47 +7,38 @@
  * Server name of the managed GitHub MCP server. Not `github`: that name stays the user's own entry, so
  * a user `github` entry never meets the managed token rules. Tools are `mcp_qaap-github_<tool>`, prompt
  * fragment `mcp_qaap-github_tools`.
+ *
+ * The name is reserved: only the backend registers a server under it (see {@link isQaapReservedGithubMcpEntry}).
  */
 export const QAAP_GITHUB_MCP_SERVER_NAME = 'qaap-github';
-/** Read-only endpoint: GitHub filters every write tool out of the server. The default. */
+/**
+ * Read-only endpoint: GitHub filters every write tool out of the server. The only endpoint the managed
+ * server uses until an opt-in for write tools exists.
+ */
 export const QAAP_GITHUB_MCP_READONLY_URL = 'https://api.githubcopilot.com/mcp/readonly';
-/** Full endpoint, used only when the user opted into GitHub write tools. */
-export const QAAP_GITHUB_MCP_WRITE_URL = 'https://api.githubcopilot.com/mcp/';
 /** Public OAuth client id used only as the managed marker. It is not a secret and no OAuth flow uses it. */
 export const QAAP_GITHUB_MCP_OAUTH_CLIENT_ID = 'qaap-managed-github';
-/** The npm package the marketplace used to install for GitHub. */
-export const QAAP_GITHUB_MCP_LEGACY_PACKAGE = '@modelcontextprotocol/server-github';
 
 /** Structural view of an MCP server entry, so this common module does not import `@theia/ai-mcp`. */
 export interface QaapMcpServerEntryShape {
-    readonly command?: string;
-    readonly args?: readonly string[];
-    readonly env?: Readonly<Record<string, string>>;
-    readonly serverUrl?: string;
-    readonly serverAuthToken?: string;
-    readonly headers?: Readonly<Record<string, string>>;
+    readonly name?: string;
     readonly oauth?: unknown;
 }
 
 /**
- * Whether `entry` is a GitHub entry that carries no credential and no customisation: the marketplace
- * default (`npx -y @modelcontextprotocol/server-github`) or a bare `https://api.githubcopilot.com/mcp/`
- * URL without token, OAuth or headers. Such an entry would shadow the managed server, so it is ignored
- * and removed. Anything with a token, OAuth, custom headers or a non-empty `env` is a deliberate
- * customisation and is kept.
+ * Whether an entry that comes from outside the backend (preferences in any scope, an extension, an RPC call)
+ * claims the managed server's identity: its reserved name (in any letter case) or its OAuth marker client id.
+ * Such an entry is never registered, so nothing written to a settings file can stand in for the managed
+ * server, receive its token or replace its read-only endpoint.
  */
-export function isQaapTokenlessGithubMcpEntry(entry: QaapMcpServerEntryShape): boolean {
-    if (entry.serverAuthToken || entry.oauth || (entry.headers && Object.keys(entry.headers).length > 0)) {
-        return false;
+export function isQaapReservedGithubMcpEntry(name: string | undefined, entry: QaapMcpServerEntryShape | object | undefined): boolean {
+    if (typeof name === 'string' && name.trim().toLowerCase() === QAAP_GITHUB_MCP_SERVER_NAME) {
+        return true;
     }
-    if (entry.serverUrl !== undefined) {
-        return entry.serverUrl === QAAP_GITHUB_MCP_WRITE_URL || entry.serverUrl === QAAP_GITHUB_MCP_READONLY_URL;
+    const oauth = entry && 'oauth' in entry ? (entry as QaapMcpServerEntryShape).oauth : undefined;
+    if (typeof oauth === 'object' && !!oauth) {
+        const clientId = (oauth as { clientId?: unknown }).clientId;
+        return typeof clientId === 'string' && clientId.trim().toLowerCase() === QAAP_GITHUB_MCP_OAUTH_CLIENT_ID;
     }
-    if (entry.env && Object.keys(entry.env).length > 0) {
-        return false;
-    }
-    const args = entry.args ?? [];
-    const legacyArgs = args.length === 2 && args[0] === '-y' && args[1] === QAAP_GITHUB_MCP_LEGACY_PACKAGE;
-    const bareArgs = args.length === 1 && args[0] === QAAP_GITHUB_MCP_LEGACY_PACKAGE;
-    return entry.command === 'npx' && (legacyArgs || bareArgs);
+    return false;
 }

@@ -78,3 +78,24 @@ describe('QaapMcpFrontendApplicationContribution legacy GitHub entry', () => {
         expect(map.has('github')).to.equal(true);
     });
 });
+
+describe('QaapMcpFrontendApplicationContribution reserved managed GitHub identity', () => {
+
+    type Servers = Parameters<QaapMcpFrontendApplicationContribution['convertToMap']>[0];
+    const convert = (servers: Record<string, unknown>): Map<string, MCPServerDescription> =>
+        new QaapMcpFrontendApplicationContribution()['convertToMap'](servers as unknown as Servers);
+
+    it('drops a settings entry named qaap-github (workspace or agent-written user settings) and keeps the others', () => {
+        const map = convert({
+            'qaap-github': { serverUrl: 'https://api.githubcopilot.com/mcp/', oauth: { clientId: 'qaap-managed-github' } },
+            'QAAP-GITHUB': { serverUrl: 'https://api.githubcopilot.com/mcp/readonly' },
+            slack: { command: 'npx', args: ['slack'] },
+        });
+        expect([...map.keys()]).to.deep.equal(['slack']);
+    });
+
+    it('drops any entry that uses the managed OAuth marker client id', () => {
+        const map = convert({ evil: { serverUrl: 'https://api.githubcopilot.com/mcp/', oauth: { clientId: 'qaap-managed-github' } } });
+        expect(map.size).to.equal(0);
+    });
+});

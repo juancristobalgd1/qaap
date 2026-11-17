@@ -5,8 +5,12 @@
 
 import { injectable, inject } from '@theia/core/shared/inversify';
 import { execFile } from 'child_process';
+import { createHash } from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
 import { isQaapDesktopRuntime } from '@theia/qaap-adapters/lib/common/qaap-desktop-runtime';
 import { isQaapHostedEnvironment } from '@theia/qaap-adapters/lib/common/qaap-hosted-runtime';
+import { isQaapTenantBackendMode } from '@theia/qaap-adapters/lib/common/qaap-tenant-backend-auth';
 import { readQaapTenantOwnerLogin } from '../common/qaap-secret-placeholder';
 import { QaapGithubOwnerTokenCache } from './qaap-github-owner-token-cache';
 import { QaapGithubSessionStore } from './qaap-github-session-store';
@@ -15,9 +19,12 @@ import { QaapGithubSessionStore } from './qaap-github-session-store';
  * Where the managed GitHub MCP server gets its token from.
  *
  * - `tenant`: a per-tenant backend; only the owner's token from the request-scoped owner cache.
- * - `none`: a shared hosted backend without an owner; nothing is registered and nothing is read.
- * - `desktop`: the local desktop app; environment variables, then the `gh` CLI, then a stored OAuth session.
- * - `local`: web development on a single machine; only a stored OAuth session of exactly one login.
+ * - `desktop`: the local desktop app (`QAAP_DESKTOP=1`, never on a hosted backend); environment variables,
+ *   then the `gh` CLI, then a stored OAuth session.
+ * - `local`: explicit local web development (`QAAP_LOCAL_DEV=1`, set by `npm run start:browser`, or
+ *   `QAAP_CLOUD_MODE=local`); only a stored OAuth session of exactly one login.
+ * - `none`: everything else, in particular a hosted backend without an owner or a backend whose runtime is
+ *   not stated explicitly; nothing is registered and nothing is read (fail closed).
  */
 export type QaapGithubMcpCredentialMode = 'tenant' | 'none' | 'desktop' | 'local';
 
@@ -38,9 +45,13 @@ export interface QaapGithubMcpCredentialStatus {
     readonly mode: QaapGithubMcpCredentialMode;
 }
 
-/** `gh` lookup order: PATH first, then the usual Homebrew locations a GUI app may not have on PATH. */
-const GH_CANDIDATES: readonly string[] = ['gh', '/opt/homebrew/bin/gh', '/usr/local/bin/gh'];
+/** The usual install locations a GUI app may not have on PATH, tried after the absolute PATH entries. */
+const GH_FALLBACK_DIRS: readonly string[] = ['/opt/homebrew/bin', '/usr/local/bin'];
 const GH_TIMEOUT_MS = 5000;
+/** At most one `GET /user` check per token in this window; later 401s reuse the verdict. */
+const USER_CHECK_INTERVAL_MS = 5 * 60 * 1000;
+/** Environment variables of the `gh` call that change where gh reads its config or which host it asks. */
+const GH_ENV_KEPT = new Set(['GH_PROMPT_DISABLED']);
 
 /**
  * Resolves the GitHub credential for the managed GitHub MCP server.
@@ -60,19 +71,25 @@ export class QaapGithubMcpCredentialResolver {
 
     protected memo: Promise<QaapGithubMcpCredential | undefined> | undefined;
 
-    /** The mode of this process, from its environment. */
+    /** Last `GET /user` verdict per token hash (never the token itself), see {@link USER_CHECK_INTERVAL_MS}. */
+    protected readonly userCheckVerdicts = new Map<string, { at: number; verdict: 'rejected' | 'accepted' | 'unknown' }>();
+
+    /** The mode of this process, from its environment. Anything not stated explicitly is `none`. */
     mode(): QaapGithubMcpCredentialMode {
         const env = this.env();
         if (readQaapTenantOwnerLogin(env)) {
             return 'tenant';
         }
-        if (isQaapHostedEnvironment(env)) {
+        if (isQaapTenantBackendMode(env) || isQaapHostedEnvironment(env)) {
             return 'none';
         }
         if (isQaapDesktopRuntime(env)) {
             return 'desktop';
         }
-        return 'local';
+        if (/^(1|true)$/i.test(env.QAAP_LOCAL_DEV?.trim() ?? '') || env.QAAP_CLOUD_MODE?.trim().toLowerCase() === 'local') {
+            return 'local';
+        }
+        return 'none';
     }
 
     /**
@@ -122,12 +139,31 @@ export class QaapGithubMcpCredentialResolver {
         if (!owner) {
             return 'not-checked';
         }
-        const verdict = await this.checkUser(token);
+        const verdict = await this.checkUserLimited(token);
         if (verdict === 'rejected') {
             this.ownerTokenCache.forget(owner, token);
             return 'forgotten';
         }
         return verdict === 'accepted' ? 'token-valid' : 'not-checked';
+    }
+
+    /** {@link checkUser}, at most once per token per {@link USER_CHECK_INTERVAL_MS}; an `unknown` verdict is not cached. */
+    protected async checkUserLimited(token: string, now: number = Date.now()): Promise<'rejected' | 'accepted' | 'unknown'> {
+        const key = createHash('sha256').update(token).digest('hex');
+        const cached = this.userCheckVerdicts.get(key);
+        if (cached && now - cached.at < USER_CHECK_INTERVAL_MS) {
+            return cached.verdict;
+        }
+        const verdict = await this.checkUser(token);
+        for (const [entryKey, entry] of this.userCheckVerdicts) {
+            if (now - entry.at >= USER_CHECK_INTERVAL_MS) {
+                this.userCheckVerdicts.delete(entryKey);
+            }
+        }
+        if (verdict !== 'unknown') {
+            this.userCheckVerdicts.set(key, { at: now, verdict });
+        }
+        return verdict;
     }
 
     /** `GET /user` with the token; the token is sent to GitHub only and never logged. */
@@ -148,28 +184,29 @@ export class QaapGithubMcpCredentialResolver {
 
     protected async lookup(): Promise<QaapGithubMcpCredential | undefined> {
         const env = this.env();
-        const owner = readQaapTenantOwnerLogin(env);
-        if (owner) {
-            const token = this.ownerTokenCache.get(owner);
-            return token ? { token, source: 'owner-token-cache' } : undefined;
-        }
-        if (isQaapHostedEnvironment(env)) {
-            return undefined;
-        }
-        if (isQaapDesktopRuntime(env)) {
-            for (const name of ['GH_TOKEN', 'GITHUB_TOKEN']) {
-                const token = env[name]?.trim();
-                if (token) {
-                    return { token, source: 'env' };
+        switch (this.mode()) {
+            case 'tenant': {
+                const token = this.ownerTokenCache.get(readQaapTenantOwnerLogin(env));
+                return token ? { token, source: 'owner-token-cache' } : undefined;
+            }
+            case 'desktop': {
+                for (const name of ['GH_TOKEN', 'GITHUB_TOKEN']) {
+                    const token = env[name]?.trim();
+                    if (token) {
+                        return { token, source: 'env' };
+                    }
                 }
+                const ghToken = await this.readGhToken();
+                if (ghToken) {
+                    return { token: ghToken, source: 'gh-cli' };
+                }
+                return this.sessionToken(true);
             }
-            const ghToken = await this.readGhToken();
-            if (ghToken) {
-                return { token: ghToken, source: 'gh-cli' };
-            }
-            return this.sessionToken(true);
+            case 'local':
+                return this.sessionToken(false);
+            default:
+                return undefined;
         }
-        return this.sessionToken(false);
     }
 
     /** The most recent stored session. Desktop accepts any login; local development needs exactly one. */
@@ -184,7 +221,7 @@ export class QaapGithubMcpCredentialResolver {
 
     /** Runs `gh auth token` for github.com. Any failure is a miss; no output or error text is kept. */
     protected async readGhToken(): Promise<string | undefined> {
-        for (const command of GH_CANDIDATES) {
+        for (const command of this.ghCandidates()) {
             const outcome = await this.runGh(command);
             if (outcome.kind === 'missing') {
                 continue;
@@ -194,6 +231,50 @@ export class QaapGithubMcpCredentialResolver {
         return undefined;
     }
 
+    /**
+     * Absolute paths of existing `gh` executables: the absolute entries of the backend's own PATH, then the
+     * usual Homebrew locations. Relative PATH entries (`.`, empty) are skipped and the bare name `gh` is never
+     * run, so the working directory is never searched (Windows would otherwise look there first).
+     */
+    protected ghCandidates(): string[] {
+        const isWindows = process.platform === 'win32';
+        const names = isWindows ? ['gh.exe'] : ['gh'];
+        const dirs = [...(this.env().PATH ?? this.env().Path ?? '').split(path.delimiter), ...(isWindows ? [] : GH_FALLBACK_DIRS)];
+        const found: string[] = [];
+        for (const dir of dirs) {
+            if (!dir || !path.isAbsolute(dir)) {
+                continue;
+            }
+            for (const name of names) {
+                const candidate = path.join(dir, name);
+                if (!found.includes(candidate) && this.isExecutableFile(candidate)) {
+                    found.push(candidate);
+                }
+            }
+        }
+        return found;
+    }
+
+    protected isExecutableFile(candidate: string): boolean {
+        try {
+            fs.accessSync(candidate, process.platform === 'win32' ? fs.constants.F_OK : fs.constants.X_OK);
+            return fs.statSync(candidate).isFile();
+        } catch {
+            return false;
+        }
+    }
+
+    /** The environment of the `gh` call: the backend's own, without `GH_*` overrides (config dir, host, token). */
+    protected ghEnv(): NodeJS.ProcessEnv {
+        const env: NodeJS.ProcessEnv = {};
+        for (const [key, value] of Object.entries(this.env())) {
+            if (!key.toUpperCase().startsWith('GH_') || GH_ENV_KEPT.has(key)) {
+                env[key] = value;
+            }
+        }
+        return { ...env, GH_PROMPT_DISABLED: '1', NO_COLOR: '1' };
+    }
+
     protected runGh(command: string): Promise<{ kind: 'token'; token: string } | { kind: 'missing' } | { kind: 'failed' }> {
         return new Promise(resolve => {
             try {
@@ -201,7 +282,7 @@ export class QaapGithubMcpCredentialResolver {
                     timeout: GH_TIMEOUT_MS,
                     shell: false,
                     windowsHide: true,
-                    env: { ...this.env(), GH_PROMPT_DISABLED: '1', NO_COLOR: '1' },
+                    env: this.ghEnv(),
                 }, (error, stdout) => {
                     if (error) {
                         resolve({ kind: (error as NodeJS.ErrnoException).code === 'ENOENT' ? 'missing' : 'failed' });

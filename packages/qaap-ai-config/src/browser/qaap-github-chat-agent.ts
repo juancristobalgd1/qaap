@@ -72,8 +72,10 @@ export class QaapGitHubChatAgent extends GitHubChatAgent {
                 return nls.localize('theia/qaap/githubMcp/noCredential', 'Connect GitHub to use GitHub tools');
             case 'auth-required':
                 return nls.localize('theia/qaap/githubMcp/authRequired', 'GitHub rejected the token. Connect GitHub again to use GitHub tools.');
+            case 'untrusted':
+                return nls.localize('theia/qaap/githubMcp/untrusted', 'Trust this workspace to use GitHub tools.');
             default:
-                return nls.localize('theia/qaap/githubMcp/startFailed', 'The GitHub MCP server could not be started.');
+                return nls.localize('theia/qaap/githubMcp/startFailed', 'The GitHub MCP server could not connect to GitHub. Try again later.');
         }
     }
 

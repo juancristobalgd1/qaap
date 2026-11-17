@@ -8,7 +8,7 @@ import { FrontendApplicationContribution } from '@theia/core/lib/browser/fronten
 import { PreferenceScope, PreferenceService } from '@theia/core/lib/common/preferences';
 import type { JSONObject } from '@theia/core/shared/@lumino/coreutils';
 import { readQaapAuthUser } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
-import { putQaapUserAiSettings } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
+import { fetchQaapUserAiSettingsForUpdate, putQaapUserAiSettings } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import { shouldInterceptSharedUserAiPrefWrites } from '@theia/qaap-shared-core/lib/common/qaap-user-ai-settings-overlay';
 
 /** Keep in sync with `@theia/ai-mcp` `MCP_SERVERS_PREF`. */
@@ -36,6 +36,9 @@ const LEGACY_REMOTE_URL = 'https://api.githubcopilot.com/mcp';
  * For a local (non-tenant) user the removal is also written to the mirror explicitly: the sync ignores User-scope
  * changes while it is applying the hydration (`applyingRemote`), so a removal made in that window was never pushed
  * and every start hydrated the entry back. For a tenant the write goes to the overlay, which the sync always pushes.
+ * The mirror write is a patch: it reads the mirror's own `mcpServers`, deletes only a legacy `github` entry found
+ * THERE and writes that back. It never writes the User-scope value into the mirror, so a server (with or without
+ * a token) that exists only in the mirror, for example before the hydration finished, is kept.
  *
  * A customised entry (a token, a non-empty `env` value, other args, headers, OAuth or any extra field) is never
  * touched. Only the User scope is rewritten; entries in workspace settings are left alone (the MCP contribution
@@ -146,7 +149,7 @@ export class QaapGithubMcpDefaultMigration implements FrontendApplicationContrib
         delete next[GITHUB_SERVER_NAME];
         await this.preferenceService.set(MCP_SERVERS_PREF, next, PreferenceScope.User);
         if (!this.isTenant()) {
-            await this.writeMirror(next);
+            await this.removeFromMirror();
         }
     }
 
@@ -154,12 +157,32 @@ export class QaapGithubMcpDefaultMigration implements FrontendApplicationContrib
         return shouldInterceptSharedUserAiPrefWrites(readQaapAuthUser()?.login);
     }
 
-    /** Best effort: the User scope is already clean, and the next run retries the mirror if this fails. */
-    protected async writeMirror(servers: JSONObject): Promise<void> {
+    /**
+     * Best effort: the User scope is already clean, and the next run retries the mirror if this fails.
+     * Read-modify-write of the mirror's own value; nothing is written when the mirror has no legacy entry.
+     */
+    protected async removeFromMirror(): Promise<void> {
         try {
-            await putQaapUserAiSettings({ [MCP_SERVERS_PREF]: servers });
+            const settings = await this.readMirror();
+            const servers = settings[MCP_SERVERS_PREF];
+            if (!servers || typeof servers !== 'object' || Array.isArray(servers)
+                || !Object.prototype.hasOwnProperty.call(servers, GITHUB_SERVER_NAME)
+                || !QaapGithubMcpDefaultMigration.isLegacyGithubEntry((servers as Record<string, unknown>)[GITHUB_SERVER_NAME])) {
+                return;
+            }
+            const next = { ...(servers as Record<string, unknown>) };
+            delete next[GITHUB_SERVER_NAME];
+            await this.writeMirror({ [MCP_SERVERS_PREF]: next });
         } catch (error) {
             console.warn('[qaap] Could not remove the legacy GitHub MCP entry from the per-user AI settings.', error);
         }
+    }
+
+    protected readMirror(): Promise<Record<string, unknown>> {
+        return fetchQaapUserAiSettingsForUpdate();
+    }
+
+    protected async writeMirror(settings: Record<string, unknown>): Promise<void> {
+        await putQaapUserAiSettings(settings);
     }
 }

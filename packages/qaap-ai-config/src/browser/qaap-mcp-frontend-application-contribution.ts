@@ -8,7 +8,7 @@ import { McpFrontendApplicationContribution } from '@theia/ai-mcp/lib/browser/mc
 import type { MCPServerDescription } from '@theia/ai-mcp/lib/common/mcp-server-manager';
 import type { MCPServersPreference } from '@theia/ai-mcp/lib/common/mcp-server-preference-validator';
 import { QaapGithubMcpDefaultMigration } from './qaap-github-mcp-default-migration';
-import { QAAP_GITHUB_MCP_SERVER_NAME } from '@theia/qaap-shared-core/lib/common/qaap-github-mcp-managed';
+import { isQaapReservedGithubMcpEntry, QAAP_GITHUB_MCP_SERVER_NAME } from '@theia/qaap-shared-core/lib/common/qaap-github-mcp-managed';
 
 /**
  * Autostart for MCP servers that fail to launch (for example an npm package that is not in the registry)
@@ -20,6 +20,11 @@ import { QAAP_GITHUB_MCP_SERVER_NAME } from '@theia/qaap-shared-core/lib/common/
  * {@link QaapGithubMcpDefaultMigration.isLegacyGithubEntry}) is dropped before it reaches the backend, so it is
  * never registered or autostarted, whatever the scope it comes from and whether or not the migration that
  * removes it from the settings has run yet.
+ *
+ * An entry that claims the managed GitHub server's identity (the reserved name `qaap-github` or its OAuth
+ * marker client id, see {@link isQaapReservedGithubMcpEntry}) is dropped as well, from any scope: a workspace
+ * `.theia/settings.json` or a user settings file written by an agent can never stand in for the managed server.
+ * The backend refuses such an entry too; dropping it here keeps it out of the change loop and the autostart.
  */
 @injectable()
 export class QaapMcpFrontendApplicationContribution extends McpFrontendApplicationContribution {
@@ -27,12 +32,18 @@ export class QaapMcpFrontendApplicationContribution extends McpFrontendApplicati
     protected readonly failedAutostartServers = new Set<string>();
 
     protected override convertToMap(servers: MCPServersPreference): Map<string, MCPServerDescription> {
-        const legacy = servers?.github;
-        if (legacy !== undefined && QaapGithubMcpDefaultMigration.isLegacyGithubEntry(legacy)) {
-            const { github, ...rest } = servers;
-            return super.convertToMap(rest);
+        const kept: MCPServersPreference = {};
+        for (const [name, entry] of Object.entries(servers ?? {})) {
+            if (name === 'github' && QaapGithubMcpDefaultMigration.isLegacyGithubEntry(entry)) {
+                continue;
+            }
+            if (isQaapReservedGithubMcpEntry(name, entry)) {
+                console.warn(`[qaap] Ignoring MCP server "${name}" from the settings: it claims the managed GitHub server's reserved identity.`);
+                continue;
+            }
+            kept[name] = entry;
         }
-        return super.convertToMap(servers);
+        return super.convertToMap(kept);
     }
 
     protected override async attemptSilentStartOrPromptForOAuth(name: string, serverDesc: MCPServerDescription): Promise<void> {

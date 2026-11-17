@@ -14,6 +14,7 @@ import { AISkillsConfigurationWidget } from '@theia/ai-ide/lib/browser/ai-config
 import { ShellCommandPermissionService } from '@theia/ai-terminal/lib/browser/shell-command-permission-service';
 import { GitHubChatAgent } from '@theia/ai-ide/lib/browser/github-chat-agent';
 import { QaapGitHubChatAgent } from './qaap-github-chat-agent';
+import { QaapGithubMcpOnDemandStarter } from './qaap-github-mcp-on-demand-starter';
 import { QaapLaunchListProvider } from './qaap-launch-list-provider';
 import { QaapLanguageModelOptionContribution } from './qaap-language-model-option-contribution';
 import { QaapAiAgentConfigurationWidget } from './qaap-ai-agent-configuration-widget';
@@ -59,7 +60,8 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     bind(QaapShellCommandPermissionService).toSelf().inSingletonScope();
     rebind(ShellCommandPermissionService).toService(QaapShellCommandPermissionService);
 
-    // The GitHub agent never persists its token marker to the MCP preferences.
+    // The GitHub agent uses the managed GitHub MCP server, started on demand; it never persists an entry.
+    bind(QaapGithubMcpOnDemandStarter).toSelf().inSingletonScope();
     bind(QaapGitHubChatAgent).toSelf().inSingletonScope();
     rebind(GitHubChatAgent).toService(QaapGitHubChatAgent);
 });

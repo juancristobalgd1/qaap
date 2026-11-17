@@ -4,6 +4,9 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { QaapGithubMcpCredentialResolver } from './qaap-github-mcp-credential-resolver';
 import { QaapGithubOwnerTokenCache } from './qaap-github-owner-token-cache';
 import { QaapGithubSessionStore, QaapGithubStoredSession } from './qaap-github-session-store';
@@ -88,12 +91,12 @@ describe('QaapGithubMcpCredentialResolver', () => {
 
     it('accepts an OAuth session in local development only when exactly one login exists', async () => {
         const single = new TestResolver([session('alice', 'gho_one')]);
-        single.fakeEnv = {};
+        single.fakeEnv = { QAAP_LOCAL_DEV: '1' };
         expect(single.mode()).to.equal('local');
         expect(await single.resolve()).to.deep.equal({ token: 'gho_one', source: 'oauth-session' });
 
         const several = new TestResolver([session('alice', 'gho_one'), session('bob', 'gho_two')]);
-        several.fakeEnv = {};
+        several.fakeEnv = { QAAP_CLOUD_MODE: 'local' };
         expect(await several.resolve()).to.equal(undefined);
     });
 
@@ -121,6 +124,27 @@ describe('QaapGithubMcpCredentialResolver', () => {
         expect(resolver.ghCalls).to.equal(0);
     });
 
+    it('is none, and reads nothing, when the runtime is not stated explicitly', async () => {
+        const resolver = new TestResolver([session('alice', 'gho_only_session')]);
+        resolver.fakeEnv = { GH_TOKEN: 'ghp_env' };
+        expect(resolver.mode()).to.equal('none');
+        expect(await resolver.resolve()).to.equal(undefined);
+        expect(resolver.ghCalls).to.equal(0);
+    });
+
+    it('is none on a tenant backend without an owner login, even with desktop or local flags', async () => {
+        const resolver = new TestResolver([session('alice', 'gho_session')]);
+        resolver.fakeEnv = { QAAP_TENANT_BACKEND_MODE: '1', QAAP_DESKTOP: '1', QAAP_LOCAL_DEV: '1', GH_TOKEN: 'ghp_env' };
+        expect(resolver.mode()).to.equal('none');
+        expect(await resolver.resolve()).to.equal(undefined);
+    });
+
+    it('is none on a hosted backend even with QAAP_LOCAL_DEV', () => {
+        const resolver = new TestResolver();
+        resolver.fakeEnv = { QAAP_CLOUD_MODE: 'docker', QAAP_LOCAL_DEV: '1' };
+        expect(resolver.mode()).to.equal('none');
+    });
+
     it('memoizes a successful lookup until invalidate', async () => {
         const resolver = new TestResolver();
         resolver.fakeEnv = { QAAP_DESKTOP: '1' };
@@ -146,6 +170,18 @@ describe('QaapGithubMcpCredentialResolver', () => {
         expect(await accepting.resolve()).to.deep.equal({ token: 'gho_owner', source: 'owner-token-cache' });
     });
 
+    it('checks GitHub /user at most once per token in the rate window', async () => {
+        const resolver = new TestResolver([], [['alice', 'gho_owner']]);
+        resolver.fakeEnv = { QAAP_TENANT_BACKEND_MODE: '1', QAAP_TENANT_LOGIN: 'alice' };
+        resolver.userCheck = 'accepted';
+        for (let i = 0; i < 5; i++) {
+            expect(await resolver.reportRejected('gho_owner')).to.equal('token-valid');
+        }
+        expect(resolver.userChecks).to.equal(1);
+        expect(await resolver.reportRejected('gho_other')).to.equal('token-valid');
+        expect(resolver.userChecks).to.equal(2);
+    });
+
     it('does not call GitHub /user on the desktop; it only clears the memo', async () => {
         const resolver = new TestResolver();
         resolver.fakeEnv = { QAAP_DESKTOP: '1', GH_TOKEN: 'ghp_env' };
@@ -160,5 +196,52 @@ describe('QaapGithubMcpCredentialResolver', () => {
         const status = await resolver.describe();
         expect(status).to.deep.equal({ available: true, source: 'env', mode: 'desktop' });
         expect(JSON.stringify(status)).to.not.contain('ghp_secret_value');
+    });
+});
+
+describe('QaapGithubMcpCredentialResolver gh invocation', () => {
+
+    class GhResolver extends QaapGithubMcpCredentialResolver {
+        fakeEnv: NodeJS.ProcessEnv = {};
+        protected override env(): NodeJS.ProcessEnv {
+            return this.fakeEnv;
+        }
+        candidates(): string[] {
+            return this.ghCandidates();
+        }
+        childEnv(): NodeJS.ProcessEnv {
+            return this.ghEnv();
+        }
+    }
+
+    it('runs gh only by an absolute path and never from a relative PATH entry or the working directory', function (): void {
+        if (process.platform === 'win32') {
+            this.skip();
+        }
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-gh-'));
+        const relative = fs.mkdtempSync(path.join(process.cwd(), '.qaap-gh-rel-'));
+        try {
+            fs.writeFileSync(path.join(dir, 'gh'), '#!/bin/sh\n', { mode: 0o755 });
+            fs.writeFileSync(path.join(relative, 'gh'), '#!/bin/sh\n', { mode: 0o755 });
+            const resolver = new GhResolver();
+            resolver.fakeEnv = { PATH: ['.', '', path.basename(relative), dir].join(path.delimiter) };
+            const candidates = resolver.candidates();
+            expect(candidates[0]).to.equal(path.join(dir, 'gh'));
+            expect(candidates.every(candidate => path.isAbsolute(candidate))).to.equal(true);
+            expect(candidates).to.not.include(path.join(relative, 'gh'));
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
+            fs.rmSync(relative, { recursive: true, force: true });
+        }
+    });
+
+    it('drops GH_* overrides from the gh environment except GH_PROMPT_DISABLED', () => {
+        const resolver = new GhResolver();
+        resolver.fakeEnv = { PATH: '/usr/bin', HOME: '/home/a', GH_CONFIG_DIR: '/tmp/evil', GH_HOST: 'evil.example', GH_ENTERPRISE_TOKEN: 'x' };
+        const env = resolver.childEnv();
+        expect(env).to.include({ PATH: '/usr/bin', HOME: '/home/a', GH_PROMPT_DISABLED: '1', NO_COLOR: '1' });
+        expect(env).to.not.have.property('GH_CONFIG_DIR');
+        expect(env).to.not.have.property('GH_HOST');
+        expect(env).to.not.have.property('GH_ENTERPRISE_TOKEN');
     });
 });

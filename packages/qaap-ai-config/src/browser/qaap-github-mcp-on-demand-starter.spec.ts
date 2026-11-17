@@ -27,6 +27,7 @@ describe('QaapGithubMcpOnDemandStarter', () => {
         status?: MCPServerStatus;
         startError?: Error;
         startDelayMs?: number;
+        trusted?: boolean;
     }): { starter: QaapGithubMcpOnDemandStarter; calls: Calls } {
         const calls: Calls = { started: 0, checks: 0 };
         let running = !!options.running;
@@ -46,7 +47,7 @@ describe('QaapGithubMcpOnDemandStarter', () => {
             getServerDescription: async (): Promise<{ status: MCPServerStatus } | undefined> => ({ status: options.status ?? MCPServerStatus.Connected }),
         };
         const starter = new QaapGithubMcpOnDemandStarter();
-        Object.assign(starter, { mcpService });
+        Object.assign(starter, { mcpService, workspaceTrustService: { getWorkspaceTrust: async (): Promise<boolean> => options.trusted !== false } });
         return { starter, calls };
     }
 
@@ -62,6 +63,18 @@ describe('QaapGithubMcpOnDemandStarter', () => {
         expect(await starter.ensureStarted()).to.equal('needs-credential');
         expect(calls.started).to.equal(0);
         expect(starter.getLastOutcome()).to.equal('needs-credential');
+    });
+
+    it('never starts the server in an untrusted workspace', async () => {
+        const { starter, calls } = createStarter({ trusted: false });
+        expect(await starter.ensureStarted()).to.equal('untrusted');
+        expect(calls.started).to.equal(0);
+        expect(calls.checks).to.equal(0);
+    });
+
+    it('reports error, not started, when the server lands in Errored', async () => {
+        const { starter } = createStarter({ status: MCPServerStatus.Errored });
+        expect(await starter.ensureStarted()).to.equal('error');
     });
 
     it('reports auth-required when GitHub refuses the token', async () => {

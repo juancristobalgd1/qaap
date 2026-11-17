@@ -54,12 +54,21 @@ describe('QaapGithubMcpDefaultMigration', () => {
 
     class TestMigration extends QaapGithubMcpDefaultMigration {
         tenant = false;
+        /** The mirror's own `mcpServers`; `undefined` makes the read fail. */
+        mirror: Record<string, unknown> | undefined = { github: { ...LEGACY_GITHUB }, slack: SLACK };
         readonly mirrorWrites: Array<Record<string, unknown>> = [];
         protected override isTenant(): boolean {
             return this.tenant;
         }
-        protected override async writeMirror(servers: Record<string, unknown>): Promise<void> {
-            this.mirrorWrites.push(servers);
+        protected override async readMirror(): Promise<Record<string, unknown>> {
+            if (!this.mirror) {
+                throw new Error('mirror read failed');
+            }
+            return { [PREF]: this.mirror, 'other.setting': 1 };
+        }
+        protected override async writeMirror(settings: Record<string, unknown>): Promise<void> {
+            this.mirrorWrites.push(settings[PREF] as Record<string, unknown>);
+            this.mirror = settings[PREF] as Record<string, unknown>;
         }
     }
 
@@ -134,6 +143,26 @@ describe('QaapGithubMcpDefaultMigration', () => {
         await tenant.migration['schedule']();
         expect(tenant.migration.mirrorWrites).to.deep.equal([]);
         expect(tenant.prefs.userValue).to.deep.equal({ slack: SLACK });
+    });
+
+    it('patches the mirror: an entry with a token that exists only in the mirror is kept', async () => {
+        const withToken = { serverUrl: 'https://mcp.example.com', serverAuthToken: 'secret-only-in-mirror' };
+        const { migration } = create({ github: { ...LEGACY_GITHUB } });
+        migration.mirror = { github: { ...LEGACY_GITHUB }, mine: withToken };
+        await migration['schedule']();
+        expect(migration.mirrorWrites).to.deep.equal([{ mine: withToken }]);
+    });
+
+    it('does not write the mirror when the mirror has no legacy entry or cannot be read', async () => {
+        const clean = create({ github: { ...LEGACY_GITHUB }, slack: SLACK });
+        clean.migration.mirror = { slack: SLACK, github: { command: 'npx', args: ['x'], env: { TOKEN: 'y' } } };
+        await clean.migration['schedule']();
+        expect(clean.migration.mirrorWrites).to.deep.equal([]);
+        const unreadable = create({ github: { ...LEGACY_GITHUB }, slack: SLACK });
+        unreadable.migration.mirror = undefined;
+        await unreadable.migration['schedule']();
+        expect(unreadable.migration.mirrorWrites).to.deep.equal([]);
+        expect(unreadable.prefs.userValue).to.deep.equal({ slack: SLACK });
     });
 
     it('does not write the mirror when nothing was removed', async () => {

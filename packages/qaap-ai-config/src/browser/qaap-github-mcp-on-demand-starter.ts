@@ -6,15 +6,17 @@
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { Emitter } from '@theia/core/lib/common/event';
 import { MCPFrontendService, MCPServerStatus } from '@theia/ai-mcp/lib/common/mcp-server-manager';
+import { WorkspaceTrustService } from '@theia/workspace/lib/browser/workspace-trust-service';
 import { QAAP_GITHUB_MCP_SERVER_NAME } from '@theia/qaap-shared-core/lib/common/qaap-github-mcp-managed';
 
 /**
  * - `started`: the managed server runs (or was just started).
  * - `needs-credential`: no GitHub credential exists; the server was not started.
  * - `auth-required`: the server started but GitHub refused the token.
- * - `error`: the server could not be started for another reason.
+ * - `untrusted`: the workspace is not trusted; the server was not started (as upstream blocks MCP autostart).
+ * - `error`: the server could not be started or landed in an error state.
  */
-export type QaapGithubMcpStartOutcome = 'started' | 'needs-credential' | 'auth-required' | 'error';
+export type QaapGithubMcpStartOutcome = 'started' | 'needs-credential' | 'auth-required' | 'untrusted' | 'error';
 
 /**
  * Starts the managed GitHub MCP server on demand, when a GitHub turn needs it. Concurrent callers share
@@ -26,6 +28,9 @@ export class QaapGithubMcpOnDemandStarter {
 
     @inject(MCPFrontendService)
     protected readonly mcpService: MCPFrontendService;
+
+    @inject(WorkspaceTrustService)
+    protected readonly workspaceTrustService: WorkspaceTrustService;
 
     protected pending: Promise<QaapGithubMcpStartOutcome> | undefined;
     protected lastOutcome: QaapGithubMcpStartOutcome | undefined;
@@ -66,6 +71,10 @@ export class QaapGithubMcpOnDemandStarter {
 
     protected async attempt(): Promise<QaapGithubMcpStartOutcome> {
         const name = QAAP_GITHUB_MCP_SERVER_NAME;
+        // Repository content (issues, PRs) reaches the agent through these tools: same gate as upstream autostart.
+        if (!(await this.workspaceTrustService.getWorkspaceTrust())) {
+            return 'untrusted';
+        }
         if (await this.mcpService.isServerStarted(name)) {
             return 'started';
         }
@@ -74,6 +83,16 @@ export class QaapGithubMcpOnDemandStarter {
         }
         await this.mcpService.startServer(name);
         const description = await this.mcpService.getServerDescription(name);
-        return description?.status === MCPServerStatus.AuthenticationRequired ? 'auth-required' : 'started';
+        switch (description?.status) {
+            case MCPServerStatus.AuthenticationRequired:
+                return 'auth-required';
+            case MCPServerStatus.Connected:
+            case MCPServerStatus.Running:
+                return 'started';
+            default:
+                // Errored (for example a 403 that fell back to SSE), not registered, or still not connected.
+                console.warn('[qaap] The managed GitHub MCP server did not connect.', description?.status, description?.error);
+                return 'error';
+        }
     }
 }
