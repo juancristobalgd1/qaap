@@ -39,10 +39,31 @@ async function mountUserMessageFixture(page: Page): Promise<void> {
     </button>
   </div>
 </div>`;
-        const chat = Array.from(document.querySelectorAll<HTMLElement>('.theia-mobile-agent-transcript-real-chat'))
-            .find(element => element.getClientRects().length > 0) ?? document.body;
-        chat.append(host);
+        // Production rows are direct children of the visible message scroller. Appending to the
+        // `real-chat` clip instead lands below the scroller, squeezed under the sticky composer, where
+        // a pointer can never reach it.
+        const scroller = Array.from(document.querySelectorAll<HTMLElement>('.theia-mobile-agent-transcript-real-chat>.theia-mobile-agent-transcript'))
+            .find(element => element.getClientRects().length > 0);
+        if (!scroller) {
+            throw new Error('No visible transcript scroller to mount the user message fixture in.');
+        }
+        scroller.prepend(host);
+        host.scrollIntoView({ block: 'center' });
     });
+}
+
+/** The fixture must be on screen and the topmost element under its centre, or hover tests nothing. */
+async function expectFixtureHittable(page: Page): Promise<void> {
+    const hit = await page.evaluate(() => {
+        const bubble = document.querySelector<HTMLElement>('#qaap-user-actions-fixture .theia-mobile-agent-transcript-msg.theia-mod-user');
+        const box = bubble?.getBoundingClientRect();
+        if (!bubble || !box || box.width === 0 || box.height === 0) {
+            return false;
+        }
+        const top = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+        return !!top && bubble.contains(top);
+    });
+    expect(hit, 'user message fixture is visible and not covered').toBe(true);
 }
 
 async function openWorkHub(playwright: Parameters<typeof TheiaAppLoader.load>[0]['playwright'], browser: Parameters<typeof TheiaAppLoader.load>[0]['browser']): Promise<Page> {
@@ -52,6 +73,7 @@ async function openWorkHub(playwright: Parameters<typeof TheiaAppLoader.load>[0]
     await dismissMobileTutorial(app.page);
     await expect(app.page.locator('.theia-mobile-projects:visible .theia-mobile-projects-sticky-composer-input').first()).toBeVisible({ timeout: 60_000 });
     await mountUserMessageFixture(app.page);
+    await expectFixtureHittable(app.page);
     return app.page;
 }
 
