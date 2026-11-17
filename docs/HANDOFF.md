@@ -14,6 +14,14 @@ Estado para continuar el trabajo desde otra cuenta o sesión. Actualízalo al ce
 
 **Pendiente:** commits por fix (no incluir `package-lock.json`, que es ruido de `npm install`); probar en la app de escritorio un turno real de Codex y de agy sin sesión.
 
+## 2026-11-17 (tarde) — Escritorio: gate, UI del Work Hub y evidencia visual (rama `feat/desktop-harness-polish`, sin commitear)
+
+**Hecho:** el gate de herramientas responde en Electron (validador de token propio en `qaap-cloud-workspace/src/electron-node`); icon theme por defecto `theia-file-icons`; plugins (gramáticas) arrancan al abrir Files en escritorio; `api-provider-sample` vuelve a upstream (rompía el plugin host); nombre «Qaap» en la barra de menús (dev: renombra el bundle Electron); vista Changes rediseñada (scopes Task changes/Uncommitted, unified/split, wrap, sin botón History, toggles sin borde) y sin parpadeo/recarga del iframe al cambiar de pestaña (`moveBefore`); hover card de tareas con logos de harness; PR del sidebar con «Made by <harness>»; botón de actualización estilo T3 (preview dev: `localStorage qaap.devPreviewBackendUpdate=1`); evidencia visual visible (se re-adjunta a trace/segments en `materializeAgentMessageForApi`); inset de semáforos con el panel derecho maximizado.
+
+**Validación:** tests de shared-core, cloud-workspace, diff-review, product y work-hub en verde; drift y package-graph OK; comprobado en la app Electron por CDP.
+
+**Pendiente:** commits, push, CI (`ci:full` por specs con temp paths) y deploy al VPS. Backend para scopes por turno/commit y «ignore whitespace» en Changes. Sin auto-updater de escritorio.
+
 ## 2026-11-09 — Pulido de UI del Work Hub (rama `claude/work-hub-ui-polish`)
 
 **Hecho** (13 commits, una sola PR):
