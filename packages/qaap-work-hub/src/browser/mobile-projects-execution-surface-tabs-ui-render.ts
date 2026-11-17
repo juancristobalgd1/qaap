@@ -185,8 +185,10 @@ function restoreExecutionSurfaceSidebarHostExtracted(sidebar: MobileProjectsExec
         return;
     }
     const placeholder = sidebar.placeholder as Comment | undefined;
-    if (placeholder?.isConnected) {
-        placeholder.replaceWith(host);
+    if (placeholder?.isConnected && placeholder.parentNode) {
+        // A state-preserving move: a live preview iframe in this host would otherwise reload.
+        moveExecutionSurfaceHostKeepingState(placeholder.parentNode, host, placeholder);
+        placeholder.remove();
     } else {
         host.remove();
     }
@@ -718,12 +720,9 @@ export function openExecutionSurfaceSidebarExtracted(ctx: MobileProjectsExecutio
     content.className = 'theia-mobile-execution-surface-sidebar-content';
     sidebar.append(header, content);
 
+    // The host stays where it is until the drawer is in the document (moved in below), so a live
+    // preview iframe inside it moves without a reload.
     const placeholder = document.createComment('qaap execution surface sidebar host');
-    if (host.parentNode) {
-        host.replaceWith(placeholder);
-    }
-    host.hidden = false;
-    content.append(host);
 
     const filesMount = activeSurface === 'files'
         ? (() => {
@@ -751,6 +750,11 @@ export function openExecutionSurfaceSidebarExtracted(ctx: MobileProjectsExecutio
         sidebar.setAttribute('aria-modal', 'true');
         document.body.append(backdrop, sidebar);
     }
+    if (host.parentNode) {
+        host.parentNode.insertBefore(placeholder, host);
+    }
+    host.hidden = false;
+    moveExecutionSurfaceHostKeepingState(content, host, null);
     const state = {
         element: sidebar,
         backdrop,
@@ -1208,4 +1212,22 @@ export function navigateExecutionSurfaceBackExtracted(ctx: MobileProjectsExecuti
 export function executionSurfacePreviewDirectory(ctx: MobileProjectsExecutionSurfaceTabsUiContext, project: MobileProjectEntry,
     summary?: QaapAgentConversationSummaryDTO,): string | undefined {
     return qaapProjectPreviewDirectory(ctx.host.projectsService, project, ctx.host.preparedCwdByProjectId, summary?.cwd);
+}
+
+/**
+ * Moves a surface host without resetting it: a plain DOM move detaches a live preview iframe and
+ * reloads the app (Browser -> Changes -> Browser flashed). `moveBefore` keeps the state when both
+ * ends are in the document; otherwise it falls back to `insertBefore`.
+ */
+function moveExecutionSurfaceHostKeepingState(parent: Node, node: Node, before: Node | null): void {
+    const atomicMove = (parent as Node & { moveBefore?: (node: Node, child: Node | null) => void }).moveBefore;
+    if (typeof atomicMove === 'function' && parent.isConnected && node.isConnected) {
+        try {
+            atomicMove.call(parent, node, before);
+            return;
+        } catch {
+            // A move the browser refuses falls back to a plain insert.
+        }
+    }
+    parent.insertBefore(node, before);
 }
