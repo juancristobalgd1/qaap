@@ -2581,6 +2581,27 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
     align-self: center !important;
   }
 
+  /* Chat surface: the transcript scroller runs to the column edge so its scrollbar hugs the panel's
+     right edge. The execution column is not capped (every transcript row is already capped at 760px
+     and centred, and the composer shares that reading column), and the transcript clip bleeds
+     through the host's 40px inset, which the scroller restores as its own padding (see the
+     `--qaap-transcript-column-bleed-*` rules in mobile-workbench-work-hub.css). Tool surfaces keep
+     the centred 980px column above. */
+  body:not(.theia-mobile-mod-desktop-ide).theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects:not(.theia-mod-project-surface-tools) .theia-mobile-agents-hub-inline-execution.theia-mobile-agents-hub-inline-execution {
+    width: 100% !important;
+    max-width: none !important;
+  }
+
+  body:not(.theia-mobile-mod-desktop-ide).theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects .theia-mobile-agents-hub-inline-transcript .theia-mobile-agent-transcript-real-chat.theia-mobile-agent-transcript-real-chat {
+    --qaap-transcript-column-bleed-start: 40px;
+    --qaap-transcript-column-bleed-end: 40px;
+    box-sizing: border-box;
+    width: calc(100% + 80px) !important;
+    max-width: none !important;
+    margin-left: -40px !important;
+    margin-right: -40px !important;
+  }
+
   /* Override the inline `align-items: stretch` set by applyAgentsHubExecutionPanelSizing
      on the scroll host — stretch pushes children left instead of centering them. */
   body:not(.theia-mobile-mod-desktop-ide).theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-projects-scroll,

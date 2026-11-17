@@ -840,16 +840,27 @@ body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-agents-hub-no-project-
 /*
  * The scroll host's horizontal chrome inset (`.theia-mobile-projects-scroll`) would otherwise sit
  * between the transcript scroller and the column edge, so the scrollbar floated inside the column.
- * Cancel that inset on the transcript clip only: the scroller spans the full column (scrollbar on
- * the column edge) and its own inline padding keeps the message gutter. The composer and header keep
- * their own insets. The width/margin pair mirrors the host's padding expression so both stay in step.
+ * The transcript clip bleeds through that inset (`--qaap-transcript-column-bleed-*`, mirroring the
+ * host's padding expression) so the scroller spans the full column with its scrollbar on the column
+ * edge; the scroller restores the same inset as its own inline padding, so the message gutter and
+ * the centred reading column (rows capped at 760px) do not move. The composer and header keep their
+ * own insets. Desktop with the sessions sidebar open pads the host differently and overrides the
+ * bleed in qaap-work-hub-sessions-sidebar.css.
  */
 .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-agents-hub-inline-transcript .theia-mobile-agent-transcript-real-chat,
 .theia-mobile-projects.theia-mod-agents-hub-inline-active .theia-mobile-agents-hub-inline-transcript .theia-mobile-agent-transcript-real-chat {
+  --qaap-transcript-column-bleed-start: max(var(--theia-mobile-execution-chrome-pad-x, 12px), env(safe-area-inset-left, 0px));
+  --qaap-transcript-column-bleed-end: max(var(--theia-mobile-execution-chrome-pad-x, 12px), env(safe-area-inset-right, 0px));
   box-sizing: border-box;
-  width: calc(100% + max(var(--theia-mobile-execution-chrome-pad-x, 12px), env(safe-area-inset-left, 0px)) + max(var(--theia-mobile-execution-chrome-pad-x, 12px), env(safe-area-inset-right, 0px)));
-  margin-left: calc(-1 * max(var(--theia-mobile-execution-chrome-pad-x, 12px), env(safe-area-inset-left, 0px)));
-  margin-right: calc(-1 * max(var(--theia-mobile-execution-chrome-pad-x, 12px), env(safe-area-inset-right, 0px)));
+  width: calc(100% + var(--qaap-transcript-column-bleed-start) + var(--qaap-transcript-column-bleed-end));
+  margin-left: calc(-1 * var(--qaap-transcript-column-bleed-start));
+  margin-right: calc(-1 * var(--qaap-transcript-column-bleed-end));
+}
+
+/* Doubled class: must beat the `padding-inline: 0` rules on the inline execution transcript above. */
+.theia-mobile-projects .theia-mobile-agents-hub-inline-transcript .theia-mobile-agent-transcript-real-chat>.theia-mobile-agent-transcript.theia-mobile-agent-transcript {
+  padding-left: var(--qaap-transcript-column-bleed-start, 0px);
+  padding-right: var(--qaap-transcript-column-bleed-end, 0px);
 }
 
 .theia-mobile-agents-hub-inline-transcript .theia-mobile-agent-transcript-real-chat>.theia-mobile-agent-transcript {
