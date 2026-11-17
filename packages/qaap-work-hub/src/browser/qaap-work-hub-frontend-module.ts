@@ -70,7 +70,7 @@ import {
 import { QaapAgUiFrontendToolService } from '@theia/qaap-shared-core/lib/browser/qaap-ag-ui-frontend-tool-service';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
 import { CommandContribution } from '@theia/core/lib/common/command';
-import { KeybindingContribution, KeybindingRegistry } from '@theia/core/lib/browser/keybinding';
+import { KeybindingContext, KeybindingContribution, KeybindingRegistry } from '@theia/core/lib/browser/keybinding';
 import { QuickCommandService } from '@theia/core/lib/browser/quick-input/quick-command-service';
 import { MenuContribution } from '@theia/core/lib/common/menu';
 import { ShellLayoutRestorer, ShellLayoutTransformer } from '@theia/core/lib/browser/shell/shell-layout-restorer';
@@ -105,6 +105,11 @@ import { QaapAppearanceModeService } from '@theia/qaap-shared-core/lib/browser/q
 import { QaapEmptyWorkbenchBrandingContribution } from './qaap-empty-workbench-branding-contribution';
 import { QaapIdePreferencesResizer } from './qaap-ide-preferences-resizer';
 import { QaapWatermarkCommandsContribution } from './qaap-watermark-commands-contribution';
+import {
+    QaapComposerModelPickerFocusKeybindingContext,
+    QaapTranscriptSearchFocusKeybindingContext,
+    QaapWorkHubShortcutPassthroughContribution,
+} from './qaap-work-hub-shortcut-passthrough-contribution';
 import { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
 import { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
 import { MobileWorkHubInboxStream } from './mobile-work-hub-inbox-stream';
@@ -292,6 +297,12 @@ export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync
     bind(QaapWatermarkCommandsContribution).toSelf().inSingletonScope();
     bind(CommandContribution).toService(QaapWatermarkCommandsContribution);
     bind(KeybindingContribution).toService(QaapWatermarkCommandsContribution);
+    bind(QaapWorkHubShortcutPassthroughContribution).toSelf().inSingletonScope();
+    bind(KeybindingContribution).toService(QaapWorkHubShortcutPassthroughContribution);
+    bind(QaapTranscriptSearchFocusKeybindingContext).toSelf().inSingletonScope();
+    bind(KeybindingContext).toService(QaapTranscriptSearchFocusKeybindingContext);
+    bind(QaapComposerModelPickerFocusKeybindingContext).toSelf().inSingletonScope();
+    bind(KeybindingContext).toService(QaapComposerModelPickerFocusKeybindingContext);
 
     bind(QaapEmptyWorkbenchBrandingContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapEmptyWorkbenchBrandingContribution);

@@ -13,6 +13,7 @@ import { MessageService } from '@theia/core/lib/common/message-service';
 import { KeyCode } from '@theia/core/lib/browser/keyboard/keys';
 import { KeybindingRegistry, KeybindingScope, ScopedKeybinding } from '@theia/core/lib/browser/keybinding';
 import { KeymapsService } from '@theia/keymaps/lib/browser/keymaps-service';
+import { isQaapWorkHubKeybindingCommand } from './qaap-work-hub-keybinding-allowlist';
 
 /** One editable keybinding entry shown in the panel. */
 export interface QaapWorkHubKeybindingRow {
@@ -28,7 +29,7 @@ export interface QaapWorkHubComposerShortcut {
     readonly keys: string[];
 }
 
-export type QaapWorkHubKeybindingGroup = 'qaap' | 'general';
+export type QaapWorkHubKeybindingGroup = 'qaap';
 
 /** Mutable state of one rendered panel; created by each `render` call. */
 interface KeybindingsPanelState {
@@ -42,13 +43,14 @@ interface KeybindingsPanelState {
 
 const DISABLED_COMMAND_PREFIX = '-';
 const PASSTHROUGH_COMMAND = 'passthrough';
-const QAAP_COMMAND_PREFIX = 'qaap';
 
 /**
- * Keybindings section of the mobile Work Hub settings sheet.
+ * Keybindings section of the Work Hub settings sheet.
  * Rendered into the sheet content host by the sheet (`render`), disposed when the section changes.
- * Lists the registry entries (default, user and workspace scopes) with search, Custom badges,
- * conflict hints, keystroke recording and reset. Composer shortcuts are read-only.
+ * Lists only the Work Hub's own shortcuts: the read-only composer keys and the registry entries (default, user
+ * and workspace scopes) of the allowlisted Work Hub commands (`QAAP_WORK_HUB_KEYBINDING_COMMANDS`), with search,
+ * Custom badges, conflict hints against the whole keymap, keystroke recording and reset. The IDE keymap stays
+ * in the IDE's Keyboard Shortcuts editor.
  */
 @injectable()
 export class QaapWorkHubKeybindingsPanel {
@@ -116,8 +118,7 @@ export class QaapWorkHubKeybindingsPanel {
             }
         }
         const groups: [QaapWorkHubKeybindingGroup, string][] = [
-            ['qaap', nls.localize('qaap/settings/keybindings/groupWorkHub', 'Work Hub')],
-            ['general', nls.localize('qaap/settings/keybindings/groupGeneral', 'General')]
+            ['qaap', nls.localize('qaap/settings/keybindings/groupWorkHub', 'Work Hub')]
         ];
         for (const [group, title] of groups) {
             const groupRows = rows.filter(row => row.group === group);
@@ -137,8 +138,13 @@ export class QaapWorkHubKeybindingsPanel {
         }
     }
 
-    /** Registry entries with a command label, sorted by label. Work Hub commands are grouped first. */
+    /** Registry entries of the allowlisted Work Hub commands, sorted by label. */
     protected collectRows(): QaapWorkHubKeybindingRow[] {
+        return this.collectAllRows().filter(row => isQaapWorkHubKeybindingCommand(row.commandId));
+    }
+
+    /** Every registry entry with a command label, sorted by label. Used for conflict hints across the whole keymap. */
+    protected collectAllRows(): QaapWorkHubKeybindingRow[] {
         const commands = new Map<string, { label?: string; category?: string }>();
         for (const command of this.commandRegistry.getAllCommands()) {
             commands.set(command.id, command);
@@ -159,7 +165,7 @@ export class QaapWorkHubKeybindingsPanel {
                     binding,
                     commandId: binding.command,
                     label,
-                    group: binding.command.startsWith(QAAP_COMMAND_PREFIX) ? 'qaap' : 'general'
+                    group: 'qaap'
                 });
             }
         }
@@ -340,7 +346,7 @@ export class QaapWorkHubKeybindingsPanel {
 
     /** Human-readable conflict hint when another command already uses `keybinding` with the same `when`. */
     protected conflictLabel(row: QaapWorkHubKeybindingRow, keybinding: string): string | undefined {
-        const other = this.collectRows().find(candidate =>
+        const other = this.collectAllRows().find(candidate =>
             candidate.commandId !== row.commandId
             && candidate.binding.keybinding === keybinding
             && (candidate.binding.when ?? '') === (row.binding.when ?? ''));

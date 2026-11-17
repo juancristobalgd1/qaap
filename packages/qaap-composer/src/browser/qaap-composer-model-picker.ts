@@ -53,6 +53,11 @@ interface PickerHostState {
     disposeRowFades?: () => void;
     /** Rail selection last scrolled into view, so searches and effort changes do not fight the user's scroll. */
     revealedRailSelection?: string;
+    /**
+     * Document listener that picks a model by Cmd/Ctrl+1..9 while the picker is open, wherever focus is (the picker
+     * opens from a pill click, so focus is often on the page). Installed on open, removed by the dispose.
+     */
+    disposeDocumentKeys?: () => void;
 }
 
 /** Latest props per picker root, so one keydown listener serves every re-render. */
@@ -81,11 +86,13 @@ export function renderQaapComposerModelPicker(host: HTMLElement, props: QaapComp
     const railSelection = props.state.railSelection;
     const reveal = previous?.revealedRailSelection !== railSelection;
     const rail = renderRail(props);
+    const opening = !previous?.disposeDocumentKeys;
     hostStates.set(host, {
         props,
         openMenu,
         disposeRail: attachRailScroll(rail.frame, rail.nav),
         revealedRailSelection: railSelection,
+        disposeDocumentKeys: previous?.disposeDocumentKeys ?? attachDocumentShortcutKeys(host),
     });
 
     const root = document.createElement('div');
@@ -106,6 +113,10 @@ export function renderQaapComposerModelPicker(host: HTMLElement, props: QaapComp
     if (kept && hadFocus) {
         kept.focus({ preventScroll: true });
         kept.setSelectionRange(selection[0], selection[1]);
+    } else if (kept && opening && !props.isMobile) {
+        // Desktop: the picker takes focus when it opens (search field), so typing filters and its keys reach it.
+        // Mobile keeps focus where it is so the on-screen keyboard does not pop up.
+        kept.focus({ preventScroll: true });
     }
     if (reveal) {
         rail.nav.querySelector<HTMLElement>('.qaap-model-picker-rail-item.theia-mod-selected')
@@ -125,10 +136,30 @@ export function disposeQaapComposerModelPicker(host: HTMLElement): void {
     const state = hostStates.get(host);
     state?.disposeRail?.();
     state?.disposeRowFades?.();
+    state?.disposeDocumentKeys?.();
     if (state) {
         state.disposeRail = undefined;
         state.disposeRowFades = undefined;
+        state.disposeDocumentKeys = undefined;
     }
+}
+
+/**
+ * Cmd/Ctrl+1..9 picks the Nth listed model while the picker is open, even when focus is outside it. Keys typed
+ * inside the picker are left to its own keydown handler, so nothing is handled twice.
+ */
+function attachDocumentShortcutKeys(host: HTMLElement): () => void {
+    const doc = host.ownerDocument;
+    const listener = (event: KeyboardEvent): void => {
+        if (!host.isConnected || (event.target instanceof Node && host.contains(event.target))) {
+            return;
+        }
+        if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && /^[1-9]$/.test(event.key)) {
+            handlePickerKeydown(host, event);
+        }
+    };
+    doc.addEventListener('keydown', listener);
+    return () => doc.removeEventListener('keydown', listener);
 }
 
 function renderRail(props: QaapComposerModelPickerProps): { frame: HTMLElement; nav: HTMLElement } {
