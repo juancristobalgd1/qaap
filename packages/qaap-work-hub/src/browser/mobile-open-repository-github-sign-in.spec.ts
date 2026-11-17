@@ -21,6 +21,7 @@ describe('MobileOpenRepositoryDialog GitHub sign-in prompt', () => {
 
     async function reloadWith(error: unknown): Promise<MobileOpenRepositoryDialog> {
         const service = {
+            isDesktop: () => false,
             listGithubRepositories: async () => { throw error; },
             getConnectedUser: () => undefined,
             formatRepositoryLabel: (value: string) => value,

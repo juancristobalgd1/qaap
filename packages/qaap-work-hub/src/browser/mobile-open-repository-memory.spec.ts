@@ -97,6 +97,7 @@ describe('MobileOpenRepositoryDialog workspace memory', () => {
     function createDialog(): { dialog: MobileOpenRepositoryDialog; started: QaapGithubWorkspaceJobRequest[] } {
         const started: QaapGithubWorkspaceJobRequest[] = [];
         const service = {
+            isDesktop: () => false,
             getConnectedUser: () => undefined,
             formatRepositoryLabel: (value: string) => value,
         } as unknown as MobileProjectsService;
