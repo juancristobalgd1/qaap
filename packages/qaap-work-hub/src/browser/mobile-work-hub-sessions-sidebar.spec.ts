@@ -190,7 +190,9 @@ describe('mobile-work-hub-sessions-sidebar', () => {
             });
             expect(chip).to.not.equal(null);
             expect(chip?.tagName).to.equal('BUTTON');
-            expect(chip?.textContent).to.equal('Update now');
+            expect(chip?.textContent).to.equal('');
+            expect(chip?.querySelector('.theia-mobile-work-hub-sessions-sidebar-update-icon.codicon-sync')).to.not.equal(null);
+            expect(chip?.querySelector<HTMLElement>('.theia-mobile-work-hub-sessions-sidebar-update-badge.codicon-check')?.hidden).to.equal(false);
             expect(chip?.getAttribute('aria-label')).to.equal('Update Qaap now');
             expect(chip?.hidden).to.equal(false);
             expect(chip?.title).to.contain('Update ready — applies when your running tasks finish');
@@ -226,12 +228,13 @@ describe('mobile-work-hub-sessions-sidebar', () => {
             await (sidebar as unknown as { loadBackendUpdateStatus(): Promise<void> }).loadBackendUpdateStatus();
             chip?.click();
             await flushAsync();
-            expect(chip?.textContent).to.equal('Updating…');
+            expect(chip?.getAttribute('aria-label')).to.equal('Updating Qaap');
             expect(chip?.disabled).to.equal(true);
             expect(chip?.getAttribute('aria-busy')).to.equal('true');
+            expect(chip?.querySelector('.theia-mobile-work-hub-sessions-sidebar-update-icon.theia-mod-spin')).to.not.equal(null);
             finish('applied');
             await flushAsync();
-            expect(chip?.textContent).to.equal('Updating…');
+            expect(chip?.getAttribute('aria-label')).to.equal('Updating Qaap');
             expect(chip?.disabled).to.equal(true);
         });
 
@@ -242,9 +245,10 @@ describe('mobile-work-hub-sessions-sidebar', () => {
             await (sidebar as unknown as { loadBackendUpdateStatus(): Promise<void> }).loadBackendUpdateStatus();
             chip?.click();
             await flushAsync();
-            expect(chip?.textContent).to.equal('Update now');
+            expect(chip?.getAttribute('aria-label')).to.equal('Update Qaap now');
             expect(chip?.disabled).to.equal(false);
             expect(chip?.getAttribute('aria-busy')).to.equal('false');
+            expect(chip?.querySelector('.theia-mod-spin')).to.equal(null);
             expect(document.body.textContent).to.contain('Could not update Qaap. Check your connection and try again.');
         });
 
@@ -255,7 +259,7 @@ describe('mobile-work-hub-sessions-sidebar', () => {
             await (sidebar as unknown as { loadBackendUpdateStatus(): Promise<void> }).loadBackendUpdateStatus();
             chip?.click();
             await flushAsync();
-            expect(chip?.textContent).to.equal('Update now');
+            expect(chip?.getAttribute('aria-label')).to.equal('Update Qaap now');
             expect(chip?.disabled).to.equal(false);
         });
 
@@ -266,7 +270,31 @@ describe('mobile-work-hub-sessions-sidebar', () => {
             chip?.click();
             await flushAsync();
             expect(stub.readCount()).to.equal(1);
-            expect(chip?.textContent).to.equal('Update now');
+            expect(chip?.getAttribute('aria-label')).to.equal('Update Qaap now');
+        });
+
+        it('dev preview: shows a fake update from localStorage and never applies it', async () => {
+            const globals = global as { localStorage?: unknown };
+            const originalStorage = globals.localStorage;
+            globals.localStorage = { getItem: (key: string) => (key === 'qaap.devPreviewBackendUpdate' ? '1' : undefined) };
+            try {
+                const { sidebar, chip } = await openSidebarWithUpdate({ updatePending: false, runningTasks: 0 });
+                expect(chip?.hidden).to.equal(false);
+                expect(chip?.title).to.contain('abc1234');
+                const stub = stubUpdateService(sidebar, { update: { updatePending: false, runningTasks: 0 } });
+                const originalInfo = console.info;
+                console.info = () => undefined;
+                try {
+                    chip?.click();
+                    await flushAsync();
+                } finally {
+                    console.info = originalInfo;
+                }
+                expect(stub.asked).to.deep.equal([]);
+                expect(chip?.disabled).to.equal(false);
+            } finally {
+                globals.localStorage = originalStorage;
+            }
         });
     });
 

@@ -553,48 +553,151 @@
   border-top: 1px solid color-mix(in srgb, var(--theia-foreground) 6%, transparent);
 }
 
-/* "Update now" chip: a newer backend build waits; a button, so it is operable by keyboard and touch. */
+/*
+ * "Update ready" footer button: a newer backend build waits. Same 44x44 box as the usage and settings
+ * buttons; an accent ring and a check badge draw attention without text. Its hover card is
+ * `.theia-qaap-update-hover-card` (qaap-update-hover-card.ts).
+ */
 .theia-mobile-work-hub-sessions-sidebar-update {
-  flex: 0 0 auto;
-  align-self: center;
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 44px;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
   margin: 0;
-  padding: 1px 8px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--theia-editorInfo-foreground, var(--theia-foreground)) 45%, transparent);
+  padding: 0;
+  border: none;
+  border-radius: 8px;
   background: transparent;
-  font: inherit;
-  font-size: 11px;
-  line-height: 16px;
-  font-weight: 500;
-  white-space: nowrap;
-  color: var(--theia-editorInfo-foreground, var(--theia-foreground));
+  color: var(--theia-button-background, var(--theia-focusBorder));
+  font-size: 16px;
+  line-height: 1;
   cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* The ring: a circle inside the 44px box, like T3 Code's update button. */
+.theia-mobile-work-hub-sessions-sidebar-update::before {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border-radius: 50%;
+  border: 1.5px solid var(--theia-button-background, var(--theia-focusBorder));
+  background: color-mix(in srgb, var(--theia-button-background, var(--theia-focusBorder)) 12%, transparent);
+  pointer-events: none;
 }
 
 .theia-mobile-work-hub-sessions-sidebar-update[hidden] {
   display: none;
 }
 
-.theia-mobile-work-hub-sessions-sidebar-update:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--theia-editorInfo-foreground, var(--theia-foreground)) 14%, transparent);
-}
-
-.theia-mobile-work-hub-sessions-sidebar-update:disabled {
-  opacity: 0.7;
-  cursor: progress;
+.theia-mobile-work-hub-sessions-sidebar-update:hover:not(:disabled)::before {
+  background: color-mix(in srgb, var(--theia-button-background, var(--theia-focusBorder)) 24%, transparent);
 }
 
 .theia-mobile-work-hub-sessions-sidebar-update:focus-visible {
   outline: 2px solid var(--theia-focusBorder);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 
-@media (pointer: coarse) {
-  .theia-mobile-work-hub-sessions-sidebar-update {
-    min-height: 44px;
-    min-width: 44px;
-    padding: 0 12px;
+.theia-mobile-work-hub-sessions-sidebar-update:disabled {
+  cursor: progress;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-update-icon.codicon {
+  position: relative;
+  font-size: 14px;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-update-badge.codicon {
+  position: absolute;
+  right: 7px;
+  bottom: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1.5px solid var(--theia-sideBar-background, var(--theia-editor-background));
+  background: var(--theia-button-background, var(--theia-focusBorder));
+  color: var(--theia-button-foreground);
+  font-size: 9px;
+  pointer-events: none;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-update-badge[hidden] {
+  display: none;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-update-icon.theia-mod-spin {
+  animation: theia-qaap-update-spin 1.2s linear infinite;
+}
+
+@keyframes theia-qaap-update-spin {
+  to {
+    transform: rotate(360deg);
   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theia-mobile-work-hub-sessions-sidebar-update-icon.theia-mod-spin {
+    animation: none;
+  }
+}
+
+.theia-hc .theia-mobile-work-hub-sessions-sidebar-update::before,
+.theia-hcLight .theia-mobile-work-hub-sessions-sidebar-update::before {
+  border-color: var(--theia-contrastActiveBorder, var(--theia-contrastBorder));
+  background: transparent;
+}
+
+/* Hover / keyboard-focus card of the update button: hover widget colours, never interactive. */
+.theia-qaap-update-hover-card {
+  /* `popover` UA styles center the element in the viewport: the card is placed by left/top. */
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  z-index: 10000;
+  box-sizing: border-box;
+  width: max-content;
+  min-width: 220px;
+  max-width: min(320px, calc(100vw - 16px));
+  padding: 10px 12px;
+  border: 1px solid var(--theia-editorHoverWidget-border);
+  border-radius: 8px;
+  background: var(--theia-editorHoverWidget-background);
+  color: var(--theia-editorHoverWidget-foreground);
+  box-shadow: 0 6px 20px var(--theia-widget-shadow);
+  font-size: var(--theia-ui-font-size1);
+  line-height: 1.4;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+
+.theia-qaap-update-hover-card.theia-mod-visible {
+  opacity: 1;
+}
+
+.theia-hc .theia-qaap-update-hover-card,
+.theia-hcLight .theia-qaap-update-hover-card {
+  border-color: var(--theia-contrastBorder);
+  box-shadow: none;
+}
+
+.theia-qaap-update-hover-card-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.theia-qaap-update-hover-card-detail {
+  margin-top: 4px;
+  color: var(--theia-descriptionForeground);
+  overflow-wrap: anywhere;
 }
 
 .theia-mobile-work-hub-sessions-sidebar-foot .theia-mobile-work-hub-sessions-sidebar-account-btn {
