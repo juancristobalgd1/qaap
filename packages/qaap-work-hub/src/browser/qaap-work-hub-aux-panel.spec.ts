@@ -14,6 +14,8 @@ import { clearPreferDesktopIde, markPreferDesktopIde } from '@theia/qaap-shared-
 import { QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY } from './mobile-work-hub-sessions-sidebar';
 import { QAAP_WORK_HUB_AUX_PANEL_STORAGE_KEY, type QaapWorkHubAuxPanelStorage, type QaapWorkHubAuxPanelSurfaceKind } from './qaap-work-hub-aux-panel-model';
 import { isQaapWorkHubAuxPanelLayout, QAAP_WORK_HUB_AUX_PANEL_TOGGLE_CLASS, QaapWorkHubAuxPanel, type QaapWorkHubAuxPanelHost } from './qaap-work-hub-aux-panel';
+import type { QaapWorkHubPullRequestTarget } from './qaap-work-hub-aux-pull-request-model';
+import { QaapWorkHubAuxPullRequestView } from './qaap-work-hub-aux-pull-request-view';
 
 disableImportJSDOM();
 
@@ -69,6 +71,9 @@ describe('qaap-work-hub-aux-panel', () => {
         storage?: QaapWorkHubAuxPanelStorage;
         /** The surface the host reports when it docks a requested view (defaults to the view itself). */
         dockAs?: (kind: QaapWorkHubAuxPanelSurfaceKind) => QaapWorkHubAuxPanelSurfaceKind;
+        /** The pull request the host reports for the "Pull request" view (no project when unset). */
+        pullRequest?: QaapWorkHubPullRequestTarget;
+        pullRequestView?: QaapWorkHubAuxPullRequestView;
     } = {}): {
         panel: QaapWorkHubAuxPanel;
         shown: QaapWorkHubAuxPanelSurfaceKind[];
@@ -79,6 +84,8 @@ describe('qaap-work-hub-aux-panel', () => {
         let docked: HTMLElement | undefined;
         const host: QaapWorkHubAuxPanelHost = {
             canShowSurfaces: () => options.canShow ?? true,
+            resolvePullRequestTarget: () => options.pullRequest,
+            openExternal: () => undefined,
             showSurface: kind => {
                 shown.push(kind);
                 docked = document.createElement('section');
@@ -94,10 +101,12 @@ describe('qaap-work-hub-aux-panel', () => {
                 }
             },
         };
-        const panel = new QaapWorkHubAuxPanel(host, options.storage ?? memoryStorage());
+        const panel = new QaapWorkHubAuxPanel(host, options.storage ?? memoryStorage(), options.pullRequestView);
         panels.push(panel);
         return { panel, shown, released };
     }
+
+    const reviewedTarget: QaapWorkHubPullRequestTarget = { owner: 'acme', repo: 'app', branch: 'qaap/task/7', scope: 'task:7' };
 
     function tabKinds(panel: QaapWorkHubAuxPanel): string[] {
         return Array.from(panel.element.querySelectorAll<HTMLElement>('.qaap-work-hub-aux-panel-tab')).map(tab => tab.dataset.kind!);
@@ -127,7 +136,7 @@ describe('qaap-work-hub-aux-panel', () => {
         expect(document.body.classList.contains('qaap-mod-work-hub-aux-panel-open')).to.equal(true);
         expect(tabKinds(panel)).to.deep.equal(['launcher']);
         const names = Array.from(panel.element.querySelectorAll('.qaap-work-hub-aux-panel-launcher-name')).map(name => name.textContent);
-        expect(names).to.deep.equal(['Browser', 'Changes', 'Files', 'Terminal']);
+        expect(names).to.deep.equal(['Browser', 'Changes', 'Files', 'Terminal', 'Pull request']);
 
         panel.toggle();
         expect(panel.isOpen).to.equal(false);
@@ -327,6 +336,43 @@ describe('qaap-work-hub-aux-panel', () => {
         // Header rebuilds must not re-request the same view in a loop.
         second.panel.syncWithOpenTask();
         expect(second.shown).to.deep.equal(['terminal']);
+    });
+
+    it('offers the pull request view from the launcher and renders it without requesting a surface', async () => {
+        let lookups = 0;
+        const view = new QaapWorkHubAuxPullRequestView({
+            lookup: async () => {
+                lookups++;
+                return {
+                    kind: 'found',
+                    pullRequest: {
+                        owner: 'acme', repo: 'app', number: 7, title: 'Fix the login redirect', branch: 'qaap/task/7', base: 'main',
+                        author: 'jc', files: 2, adds: 10, dels: 3, tests: 'unknown', state: 'open', draft: false,
+                        htmlUrl: 'https://github.com/acme/app/pull/7', filesPreview: [], updatedAt: '2026-11-17T10:00:00Z',
+                    },
+                };
+            },
+            refreshMs: 1_000_000,
+        });
+        const { panel, shown } = createHarness({ pullRequest: reviewedTarget, pullRequestView: view });
+        panel.show();
+        const item = launcherOpen(panel, 'pull-request');
+        expect(item.disabled).to.equal(false);
+        item.click();
+        // Surfaces are not involved: the view renders itself.
+        expect(shown).to.deep.equal([]);
+        expect(panel.element.dataset.view).to.equal('pull-request');
+        expect(view.element.hidden).to.equal(false);
+        await new Promise(resolve => setTimeout(resolve, 0));
+        expect(lookups).to.equal(1);
+        expect(view.element.querySelector('.qaap-work-hub-aux-pr-title')?.textContent).to.equal('Fix the login redirect');
+        view.dispose();
+    });
+
+    it('disables the pull request row when no project is open', () => {
+        const { panel } = createHarness({ canShow: false });
+        panel.show();
+        expect(launcherOpen(panel, 'pull-request').disabled).to.equal(true);
     });
 
     it('shows a hint instead of views while no task is open', () => {

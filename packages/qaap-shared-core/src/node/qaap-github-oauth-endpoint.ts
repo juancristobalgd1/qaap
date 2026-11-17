@@ -56,6 +56,7 @@ import {
     createGithubRepository,
     exchangeGithubCode,
     fetchGithubPullRequestDetail,
+    fetchGithubPullRequestNumberForBranch,
     fetchGithubPullRequests,
     fetchGithubRepositories,
     fetchGithubRepository,
@@ -105,6 +106,8 @@ import { isQaapDesktopRuntime } from '@theia/qaap-adapters/lib/common/qaap-deskt
 
 const GITHUB_AUTHORIZE_URL = 'https://github.com/login/oauth/authorize';
 const GITHUB_OAUTH_SCOPE = 'read:user repo';
+/** Branch names accepted by the pull request lookup: plain refs only, bounded length. */
+const GITHUB_BRANCH_NAME_PATTERN = /^[A-Za-z0-9._/-]{1,255}$/;
 const THEIA_EMPTY_WINDOW_HASH = '!empty';
 const GIT_OPERATION_TIMEOUT_MS = 120_000;
 /**
@@ -242,6 +245,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         app.get(`${QAAP_GITHUB_API_PATH}/pull-requests`, QaapAsyncRoute.wrap('qaap-github-oauth', (req, res) => this.handleGithubPullRequests(req, res)));
         app.get(`${QAAP_GITHUB_API_PATH}/pull-requests/search`, QaapAsyncRoute.wrap('qaap-github-oauth', (req, res) => this.handleSearchGithubPullRequests(req, res)));
         app.get(`${QAAP_GITHUB_API_PATH}/pull-requests/detail`, QaapAsyncRoute.wrap('qaap-github-oauth', (req, res) => this.handleGithubPullRequestDetail(req, res)));
+        app.get(`${QAAP_GITHUB_API_PATH}/pull-requests/by-branch`, QaapAsyncRoute.wrap('qaap-github-oauth', (req, res) => this.handleGithubPullRequestByBranch(req, res)));
         app.post(`${QAAP_GITHUB_API_PATH}/pull-requests/merge`, QaapAsyncRoute.wrap('qaap-github-oauth', (req, res) => this.handleMergeGithubPullRequest(req, res)));
         app.get(`${QAAP_GITHUB_API_PATH}/project-sessions`, (req, res) => this.handleProjectSessions(req, res));
         app.post(`${QAAP_GITHUB_API_PATH}/project-sessions`, (req, res) => this.handleUpsertProjectSession(req, res));
@@ -930,6 +934,45 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             return;
         }
         try {
+            const pullRequest = await fetchGithubPullRequestDetail(auth.session.accessToken, owner, repo, number);
+            res.json({ pullRequest });
+        } catch (err) {
+            const status = (err as { status?: number }).status;
+            res.status(status === 404 ? 404 : 502).json({ error: err instanceof Error ? err.message : 'Failed to load pull request' });
+        }
+    }
+
+    /** The detail of the pull request whose head is `branch` (404 when the branch has none). */
+    protected async handleGithubPullRequestByBranch(req: Request, res: Response): Promise<void> {
+        const auth = this.auth.authenticate(req);
+        if (auth.kind === 'unauthorized') {
+            res.status(401).json({ error: 'Not signed in' });
+            return;
+        }
+        if (auth.kind === 'skip') {
+            res.status(503).json({ error: 'GitHub sign-in required' });
+            return;
+        }
+        const segment = (value: unknown): string | undefined => {
+            try {
+                return this.cleanGithubPathSegment(typeof value === 'string' ? value : undefined);
+            } catch {
+                return undefined;
+            }
+        };
+        const owner = segment(req.query.owner);
+        const repo = segment(req.query.repo);
+        const branch = typeof req.query.branch === 'string' ? req.query.branch : '';
+        if (!owner || !repo || !GITHUB_BRANCH_NAME_PATTERN.test(branch)) {
+            res.status(400).json({ error: 'Invalid branch' });
+            return;
+        }
+        try {
+            const number = await fetchGithubPullRequestNumberForBranch(auth.session.accessToken, owner, repo, branch);
+            if (number === undefined) {
+                res.status(404).json({ error: 'No pull request for this branch' });
+                return;
+            }
             const pullRequest = await fetchGithubPullRequestDetail(auth.session.accessToken, owner, repo, number);
             res.json({ pullRequest });
         } catch (err) {

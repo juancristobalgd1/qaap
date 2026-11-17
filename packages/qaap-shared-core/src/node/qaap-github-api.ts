@@ -527,6 +527,30 @@ export async function fetchGithubPullRequestDetail(
     };
 }
 
+/** Pull requests of `GET /repos/{owner}/{repo}/pulls?head=…` as far as the branch lookup reads them. */
+export interface GithubPullRequestHeadCandidate {
+    readonly number: number;
+    readonly state?: string;
+}
+
+/** The pull request a branch lookup answers with: an open one first, else the most recently updated (GitHub's order). */
+export function pickGithubPullRequestNumberForBranch(pulls: readonly GithubPullRequestHeadCandidate[]): number | undefined {
+    const open = pulls.find(pull => pull.state === 'open');
+    return (open ?? pulls[0])?.number;
+}
+
+/** Number of the pull request whose head is `branch` in `owner/repo` (open, closed or merged), if any. */
+export async function fetchGithubPullRequestNumberForBranch(accessToken: string, owner: string, repo: string, branch: string): Promise<number | undefined> {
+    const url = new URL(`${resolveGithubApiBaseUrl()}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls`);
+    url.searchParams.set('head', `${owner}:${branch}`);
+    url.searchParams.set('state', 'all');
+    url.searchParams.set('sort', 'updated');
+    url.searchParams.set('direction', 'desc');
+    url.searchParams.set('per_page', '10');
+    const pulls = await githubGetJson<GithubPullRequestHeadCandidate[]>(accessToken, url.toString());
+    return pickGithubPullRequestNumberForBranch(Array.isArray(pulls) ? pulls : []);
+}
+
 async function githubGetJson<T>(accessToken: string, url: string): Promise<T> {
     const response = await fetchGithubRepositoryRequest(url, { headers: githubHeaders(accessToken) });
     if (!response.ok) {

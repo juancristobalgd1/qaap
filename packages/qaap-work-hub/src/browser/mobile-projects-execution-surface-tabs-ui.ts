@@ -22,6 +22,7 @@ import { closeExecutionTabOverflowMenuExtracted, mountTranscriptSurfaceTabExtrac
 import { recordUserPreviewSurfaceChoiceExtracted } from './mobile-projects-execution-surface-tabs-ui-streaming';
 import { isQaapWorkHubAuxPanelLayout, QaapWorkHubAuxPanel } from './qaap-work-hub-aux-panel';
 import type { QaapWorkHubAuxPanelSurfaceKind } from './qaap-work-hub-aux-panel-model';
+import { resolveQaapWorkHubPullRequestTarget, type QaapWorkHubPullRequestTarget } from './qaap-work-hub-aux-pull-request-model';
 
 type TranscriptTab = ExecutionSurfaceTabId;
 
@@ -45,7 +46,10 @@ function resolveWorkHubAuxPanelOwner(): MobileProjectsExecutionSurfaceTabsUi | u
 export interface MobileProjectsExecutionSurfaceTabsHost {
     readonly executionSurfaceTabByProjectId: Map<string, TranscriptTab>;
     /** Resolve the project directory that keys "preview closed by the user". */
-    readonly projectsService?: { getProjectCwd(project: MobileProjectEntry): string | undefined };
+    readonly projectsService?: {
+        getProjectCwd(project: MobileProjectEntry): string | undefined;
+        readonly windowService?: { openNewWindow(url: string, options?: { external?: boolean }): unknown };
+    };
     readonly preparedCwdByProjectId?: ReadonlyMap<string, string>;
     transcriptTabStrip: HTMLElement | undefined;
     transcriptSheet: HTMLElement | undefined;
@@ -265,6 +269,8 @@ export class MobileProjectsExecutionSurfaceTabsUi {
                 canShowSurfaces: () => !!resolveWorkHubAuxPanelOwner()?.resolveWorkHubAuxPanelTarget(),
                 showSurface: kind => resolveWorkHubAuxPanelOwner()?.showWorkHubAuxPanelSurface(kind),
                 releaseSurface: userClosed => resolveWorkHubAuxPanelOwner()?.releaseWorkHubAuxPanelSurface(userClosed),
+                resolvePullRequestTarget: () => resolveWorkHubAuxPanelOwner()?.resolveWorkHubAuxPanelPullRequestTarget(),
+                openExternal: url => resolveWorkHubAuxPanelOwner()?.openWorkHubAuxPanelExternal(url),
             });
         }
         return workHubAuxPanel;
@@ -300,6 +306,35 @@ export class MobileProjectsExecutionSurfaceTabsUi {
             ?? this.host.transcriptOpenSummary
             ?? (this.host.agentsHubShellActive ? this.host.resolveAgentsHubShellSummary(project) : undefined);
         return summary ? { project, summary, origin: sidebar?.origin ?? 'transcript' } : undefined;
+    }
+
+    /**
+     * @internal The pull request the panel's "Pull request" view follows: the task's (or the project's when
+     * no task is open). Needs only a project, so the view also works without an open task.
+     */
+    resolveWorkHubAuxPanelPullRequestTarget(): QaapWorkHubPullRequestTarget | undefined {
+        const sidebar = this.host.executionSurfaceSidebar;
+        const project = sidebar?.project ?? this.host.transcriptOpenProject ?? this.resolveExecutionSurfaceProject();
+        if (!project) {
+            return undefined;
+        }
+        const summary = sidebar?.summary
+            ?? this.host.transcriptOpenSummary
+            ?? (this.host.agentsHubShellActive ? this.host.resolveAgentsHubShellSummary(project) : undefined);
+        return resolveQaapWorkHubPullRequestTarget(project, summary);
+    }
+
+    /**
+     * @internal Desktop: the system browser through the Theia window service. Web: the service opens a new tab.
+     * Falls back to a plain new tab when no project service is wired.
+     */
+    openWorkHubAuxPanelExternal(url: string): void {
+        const windowService = this.host.projectsService?.windowService;
+        if (windowService) {
+            windowService.openNewWindow(url, { external: true });
+        } else {
+            window.open(url, '_blank', 'noopener,noreferrer');
+        }
     }
 
     /** @internal */

@@ -34,6 +34,7 @@ import '@theia/qaap-composer/src/browser/style/qaap-composer-goal-loop.css';
 import '../../src/browser/style/qaap-work-hub-sessions-sidebar.css';
 import '../../src/browser/style/qaap-task-hover-card.css';
 import '../../src/browser/style/qaap-work-hub-aux-panel.css';
+import '../../src/browser/style/qaap-work-hub-aux-pull-request.css';
 import '../../src/browser/style/qaap-work-hub-keybindings.css';
 import '@theia/qaap-transcript/src/browser/style/qaap-transcript-lobehub.css';
 import '@theia/qaap-agents-ui/src/browser/style/qaap-agent-setup-animations.css';

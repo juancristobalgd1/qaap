@@ -91,11 +91,15 @@ async function fetchQaapWithTimeout(
     input: RequestInfo | URL,
     init: RequestInit,
     timeoutMs: number,
+    options: QaapFetchOptions = {},
 ): Promise<Response> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
-        const response = await fetchQaapGetWithTransientRetry(input, { ...init, signal: controller.signal });
+        const signal = controller.signal;
+        const response = options.retryTransient === false
+            ? await fetch(input, { ...init, signal })
+            : await fetchQaapGetWithTransientRetry(input, { ...init, signal });
         const body = QAAP_NULL_BODY_STATUSES.has(response.status) ? undefined : await response.arrayBuffer();
         return new Response(body, {
             status: response.status,
@@ -113,14 +117,20 @@ function isQaapAbortError(err: unknown): boolean {
 }
 
 /** {@link fetchQaapWithTimeout}, mapping an abort to a user-facing timeout error. */
+/** Per-call fetch behaviour. `retryTransient: false` sends the request once, for callers whose UI offers its own retry. */
+interface QaapFetchOptions {
+    readonly retryTransient?: boolean;
+}
+
 async function fetchQaapOrTimeoutError(
     input: RequestInfo | URL,
     init: RequestInit,
     timeoutMs: number,
     timeoutMessage: () => string,
+    options: QaapFetchOptions = {},
 ): Promise<Response> {
     try {
-        return await fetchQaapWithTimeout(input, init, timeoutMs);
+        return await fetchQaapWithTimeout(input, init, timeoutMs, options);
     } catch (err) {
         if (isQaapAbortError(err)) {
             throw new Error(timeoutMessage());
@@ -390,6 +400,58 @@ export async function fetchQaapGithubPullRequestDetail(
     }
     const body = await response.json().catch(() => ({})) as QaapGithubPullRequestDetailResponse;
     return body.pullRequest;
+}
+
+/** What a pull request lookup found: the detail, nothing for the branch, no GitHub session, or a failure. */
+export type QaapGithubPullRequestLookup =
+    | { readonly kind: 'found'; readonly pullRequest: QaapGithubPullRequestSummary }
+    | { readonly kind: 'none' }
+    | { readonly kind: 'signed-out' }
+    | { readonly kind: 'error'; readonly message: string };
+
+/**
+ * Full detail of the pull request `number`, or of the pull request whose head is `branch` (an open one
+ * first). Never throws: transport failures come back as `error`.
+ */
+export async function lookupQaapGithubPullRequest(query: {
+    readonly owner: string;
+    readonly repo: string;
+    readonly number?: number;
+    readonly branch?: string;
+}): Promise<QaapGithubPullRequestLookup> {
+    const params = new URLSearchParams({ owner: query.owner, repo: query.repo });
+    const byNumber = query.number !== undefined;
+    if (byNumber) {
+        params.set('number', String(query.number));
+    } else if (query.branch) {
+        params.set('branch', query.branch);
+    } else {
+        return { kind: 'none' };
+    }
+    const path = byNumber ? 'pull-requests/detail' : 'pull-requests/by-branch';
+    try {
+        const response = await fetchQaapOrTimeoutError(
+            `${QAAP_GITHUB_API_PATH}/${path}?${params.toString()}`,
+            qaapAuthenticatedFetchInit(),
+            QAAP_GITHUB_LIST_TIMEOUT_MS,
+            () => nls.localize('qaap/githubPullRequests/detailTimedOut', 'Loading the pull request took too long.'),
+            // The panel answers 503 with "Connect GitHub" and offers Try again, so a gateway answer is not retried here.
+            { retryTransient: false },
+        );
+        if (response.status === 401 || response.status === 503) {
+            return { kind: 'signed-out' };
+        }
+        if (response.status === 404) {
+            return { kind: 'none' };
+        }
+        const body = await response.json().catch(() => ({})) as QaapGithubPullRequestDetailResponse & { error?: string };
+        if (!response.ok || !body.pullRequest) {
+            return { kind: 'error', message: body.error ?? nls.localize('qaap/githubPullRequests/loadFailed', 'Failed to load the pull request ({0}).', response.status) };
+        }
+        return { kind: 'found', pullRequest: body.pullRequest };
+    } catch (err) {
+        return { kind: 'error', message: err instanceof Error ? err.message : String(err) };
+    }
 }
 
 export async function mergeQaapGithubPullRequest(request: QaapGithubMergePullRequestRequest): Promise<QaapGithubMergePullRequestResponse> {

@@ -11,18 +11,21 @@ import { installMobilePanelResizeDrag } from '@theia/qaap-mobile-shell/lib/brows
 import { isDesktopSessionsSidebarLayout, QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY } from './mobile-work-hub-sessions-sidebar';
 import {
     clampQaapWorkHubAuxPanelWidth,
-    QAAP_WORK_HUB_AUX_PANEL_SURFACE_KINDS,
+    isQaapWorkHubAuxPanelSurfaceKind,
+    QAAP_WORK_HUB_AUX_PANEL_TAB_KINDS,
     QaapWorkHubAuxPanelModel,
     type QaapWorkHubAuxPanelStorage,
     type QaapWorkHubAuxPanelSurfaceKind,
     type QaapWorkHubAuxPanelTab,
     type QaapWorkHubAuxPanelViewKind,
 } from './qaap-work-hub-aux-panel-model';
+import type { QaapWorkHubPullRequestTarget } from './qaap-work-hub-aux-pull-request-model';
+import { QaapWorkHubAuxPullRequestView } from './qaap-work-hub-aux-pull-request-view';
 
 /** The execution surface (live widget host) a panel view is backed by: one per view. */
 export type QaapWorkHubAuxPanelSurface = QaapWorkHubAuxPanelSurfaceKind;
 
-/** What the panel needs from the Work Hub execution surfaces. */
+/** What the panel needs from the Work Hub execution surfaces and the open task or project. */
 export interface QaapWorkHubAuxPanelHost {
     /** `true` while a task is open, i.e. while surfaces can be mounted. */
     canShowSurfaces(): boolean;
@@ -30,6 +33,10 @@ export interface QaapWorkHubAuxPanelHost {
     showSurface(kind: QaapWorkHubAuxPanelSurfaceKind): void;
     /** Hand the docked surface back to the transcript. `userClosed` records a closed Preview. */
     releaseSurface(userClosed: boolean): void;
+    /** The pull request the "Pull request" view follows, or `undefined` while no project is open. */
+    resolvePullRequestTarget(): QaapWorkHubPullRequestTarget | undefined;
+    /** Opens a web page: in the system browser on desktop, in a new tab on the web. */
+    openExternal(url: string): void;
 }
 
 /** Marks the chat-header buttons that open and close the panel. */
@@ -83,6 +90,12 @@ function viewSpec(kind: QaapWorkHubAuxPanelViewKind): ViewSpec {
                 label: nls.localizeByDefault('Terminal'),
                 description: nls.localize('qaap/workHubAuxPanel/terminalDescription', 'Run commands and view output.'),
                 icon: 'codicon-terminal',
+            };
+        case 'pull-request':
+            return {
+                label: nls.localize('qaap/workHubAuxPanel/pullRequest', 'Pull request'),
+                description: nls.localize('qaap/workHubAuxPanel/pullRequestDescription', 'Review the pull request for this branch.'),
+                icon: 'codicon-git-pull-request',
             };
         default:
             return {
@@ -148,6 +161,8 @@ export class QaapWorkHubAuxPanel {
     protected readonly launcher: HTMLElement;
     protected readonly surfaceSlot: HTMLElement;
     protected readonly emptyState: HTMLElement;
+    /** The panel's own "Pull request" view (no execution surface behind it). */
+    protected readonly pullRequestView: QaapWorkHubAuxPullRequestView;
     protected readonly menuButton: HTMLButtonElement;
     protected readonly menu: HTMLElement;
     protected readonly menuSearch: HTMLInputElement;
@@ -168,7 +183,9 @@ export class QaapWorkHubAuxPanel {
     constructor(
         protected readonly host: QaapWorkHubAuxPanelHost,
         protected readonly storage: QaapWorkHubAuxPanelStorage | undefined = QaapWorkHubAuxPanel.defaultStorage(),
+        pullRequestView?: QaapWorkHubAuxPullRequestView,
     ) {
+        this.pullRequestView = pullRequestView ?? new QaapWorkHubAuxPullRequestView({ openExternal: url => this.host.openExternal(url) });
         this.model = new QaapWorkHubAuxPanelModel();
         this.model.load(storage);
 
@@ -220,7 +237,8 @@ export class QaapWorkHubAuxPanel {
         this.surfaceSlot.className = 'qaap-work-hub-aux-panel-surface';
         this.emptyState = document.createElement('div');
         this.emptyState.className = 'qaap-work-hub-aux-panel-empty';
-        body.append(this.launcher, this.surfaceSlot, this.emptyState);
+        body.append(this.launcher, this.surfaceSlot, this.emptyState, this.pullRequestView.element);
+        this.toDispose.push(this.pullRequestView);
 
         this.menu = document.createElement('div');
         this.menu.className = 'qaap-work-hub-aux-panel-menu';
@@ -360,7 +378,8 @@ export class QaapWorkHubAuxPanel {
             return;
         }
         const active = this.model.activeTab;
-        if (!active || active.kind === 'launcher' || this.dockedElement || this.restoredTabId === active.id) {
+        // Only execution surfaces are re-requested from the host; the launcher and the panel's own views are not.
+        if (!active || !isQaapWorkHubAuxPanelSurfaceKind(active.kind) || this.dockedElement || this.restoredTabId === active.id) {
             this.render();
             return;
         }
@@ -396,6 +415,7 @@ export class QaapWorkHubAuxPanel {
     }
 
     protected collapse(): void {
+        this.pullRequestView.stop();
         this.element.hidden = true;
         document.body.classList.remove('qaap-mod-work-hub-aux-panel-open', 'qaap-mod-work-hub-aux-panel-maximized');
         this.syncToggleButtons();
@@ -416,11 +436,14 @@ export class QaapWorkHubAuxPanel {
     protected activateTab(tab: QaapWorkHubAuxPanelTab): void {
         this.model.activate(tab.id);
         this.closeMenu();
-        if (tab.kind === 'launcher') {
+        if (isQaapWorkHubAuxPanelSurfaceKind(tab.kind)) {
+            if (this.dockedSurface !== tab.kind) {
+                this.restoredTabId = tab.id;
+                this.requestSurface(tab.kind);
+            }
+        } else {
+            // The launcher and the panel's own views take the place of a docked surface, which goes back to the transcript.
             this.releaseDocked(false);
-        } else if (this.dockedSurface !== tab.kind) {
-            this.restoredTabId = tab.id;
-            this.requestSurface(tab.kind);
         }
         this.render();
         this.persist();
@@ -474,14 +497,21 @@ export class QaapWorkHubAuxPanel {
         this.renderTabs();
         const active = this.model.activeTab;
         const showLauncher = !active || active.kind === 'launcher';
+        const showPullRequest = active?.kind === 'pull-request';
         this.launcher.hidden = !showLauncher;
-        this.surfaceSlot.hidden = showLauncher || !this.dockedElement;
-        this.emptyState.hidden = showLauncher || !!this.dockedElement;
+        this.pullRequestView.element.hidden = !showPullRequest;
+        this.surfaceSlot.hidden = showLauncher || showPullRequest || !this.dockedElement;
+        this.emptyState.hidden = showLauncher || showPullRequest || !!this.dockedElement;
         this.element.dataset.view = active?.kind ?? 'launcher';
+        if (showPullRequest) {
+            this.pullRequestView.sync(this.host.resolvePullRequestTarget(), this.isOpen);
+        } else {
+            this.pullRequestView.stop();
+        }
         if (showLauncher) {
             this.renderLauncher();
-        } else if (!this.dockedElement && active) {
-            this.renderEmptyState(active.kind as QaapWorkHubAuxPanelSurfaceKind);
+        } else if (!this.dockedElement && active && isQaapWorkHubAuxPanelSurfaceKind(active.kind)) {
+            this.renderEmptyState(active.kind);
         }
         this.maximizeButton.title = this.model.maximized
             ? nls.localize('qaap/workHubAuxPanel/restore', 'Restore views panel')
@@ -562,9 +592,12 @@ export class QaapWorkHubAuxPanel {
         title.textContent = viewSpec('launcher').label;
         const list = document.createElement('div');
         list.className = 'qaap-work-hub-aux-panel-launcher-list';
-        const enabled = this.host.canShowSurfaces();
-        for (const kind of QAAP_WORK_HUB_AUX_PANEL_SURFACE_KINDS) {
+        const surfacesEnabled = this.host.canShowSurfaces();
+        const projectOpen = this.host.resolvePullRequestTarget() !== undefined;
+        for (const kind of QAAP_WORK_HUB_AUX_PANEL_TAB_KINDS) {
             const spec = viewSpec(kind);
+            // Surfaces need an open task; the panel's own views need only a project.
+            const enabled = kind === 'pull-request' ? projectOpen : surfacesEnabled;
             // The whole row is the button: no separate "Open" pill.
             const row = document.createElement('button');
             row.type = 'button';
@@ -593,7 +626,7 @@ export class QaapWorkHubAuxPanel {
             list.append(row);
         }
         const children: HTMLElement[] = [title, list];
-        if (!enabled) {
+        if (!surfacesEnabled) {
             children.push(this.createHint());
         }
         this.launcher.replaceChildren(...children);
