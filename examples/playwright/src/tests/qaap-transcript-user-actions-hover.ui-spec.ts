@@ -39,7 +39,8 @@ async function mountUserMessageFixture(page: Page): Promise<void> {
     </button>
   </div>
 </div>`;
-        const chat = document.querySelector('.theia-mobile-agent-transcript-real-chat') ?? document.body;
+        const chat = Array.from(document.querySelectorAll<HTMLElement>('.theia-mobile-agent-transcript-real-chat'))
+            .find(element => element.getClientRects().length > 0) ?? document.body;
         chat.append(host);
     });
 }
@@ -49,7 +50,7 @@ async function openWorkHub(playwright: Parameters<typeof TheiaAppLoader.load>[0]
     const app = await TheiaAppLoader.load({ playwright, browser }, ws);
     await app.waitForShellAndInitialized();
     await dismissMobileTutorial(app.page);
-    await expect(app.page.locator('.theia-mobile-projects-sticky-composer-input').first()).toBeVisible({ timeout: 60_000 });
+    await expect(app.page.locator('.theia-mobile-projects:visible .theia-mobile-projects-sticky-composer-input').first()).toBeVisible({ timeout: 60_000 });
     await mountUserMessageFixture(app.page);
     return app.page;
 }

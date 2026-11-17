@@ -12,7 +12,7 @@ const DESKTOP_WORK_HUB_VIEWPORT = { width: 1200, height: 953 };
 const SAMPLE_FILES = path.join(path.resolve(__dirname, '../../src/tests/resources'), 'sample-files1');
 
 /** The inline transcript scroller: the element that actually scrolls the messages. */
-const INLINE_TRANSCRIPT_SCROLLER = '.theia-mobile-agents-hub-inline-transcript .theia-mobile-agent-transcript-real-chat>.theia-mobile-agent-transcript';
+const INLINE_TRANSCRIPT_SCROLLER = '.theia-mobile-agents-hub-inline-transcript:visible .theia-mobile-agent-transcript-real-chat>.theia-mobile-agent-transcript';
 
 async function dismissMobileTutorial(page: Page): Promise<void> {
     const skip = page.locator('button').filter({ hasText: /^skip$/i }).first();
@@ -31,7 +31,7 @@ test.describe('@qaap-mobile transcript scroller column edge', () => {
         await app.waitForShellAndInitialized();
         const page = app.page;
         await dismissMobileTutorial(page);
-        await expect(page.locator('.theia-mobile-projects-sticky-composer-input').first()).toBeVisible({ timeout: 60_000 });
+        await expect(page.locator('.theia-mobile-projects:visible .theia-mobile-projects-sticky-composer-input').first()).toBeVisible({ timeout: 60_000 });
 
         const scroller = page.locator(INLINE_TRANSCRIPT_SCROLLER).first();
         const scrollerCount = await page.locator(INLINE_TRANSCRIPT_SCROLLER).count();
