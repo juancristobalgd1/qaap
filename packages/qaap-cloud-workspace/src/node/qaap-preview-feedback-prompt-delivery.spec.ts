@@ -194,4 +194,19 @@ describe('preview annotation prompt delivery (annotate Send → harness)', () =>
         }
     }
 
+    it('fails the turn before spawn when the turn prompt is blank, for every harness', () => {
+        for (const definition of QAAP_BUILTIN_AGENT_DEFINITIONS) {
+            expect(() => buildAgentCommandExtracted(
+                runnerContext(definition),
+                ' \n\t ',
+                definition.id,
+                true,
+                undefined,
+                cwd,
+                'Global context that must not mask an empty request.',
+                undefined,
+                'full-access',
+            ), definition.id).to.throw(/empty, so nothing was sent/);
+        }
+    });
 });

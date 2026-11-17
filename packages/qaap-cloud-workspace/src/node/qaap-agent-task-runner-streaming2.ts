@@ -390,7 +390,17 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
         ownerLogin?: string,
         effort?: QaapAgentEffortLevel,): QaapAgentCommandBuildResult {
         const id = ctx.resolveAgentId(prompt, agentId, ownerLogin);
-        const runnerPrompt = withPiPlanModeInstruction(ctx.stripLeadingAgentMention(prompt), id, interactionModeId);
+        const turnPrompt = ctx.stripLeadingAgentMention(prompt);
+        // Fail the turn rather than send a blank message: workflow and repo context added below
+        // would otherwise wrap it into a non-empty prompt with no user request in it.
+        if (!turnPrompt.trim()) {
+            throw new Error(nls.localize(
+                'theia/qaap/agentTask/emptyTurnPrompt',
+                'The message for this turn is empty, so nothing was sent to {0}. Write the request again and resend it.',
+                id,
+            ));
+        }
+        const runnerPrompt = withPiPlanModeInstruction(turnPrompt, id, interactionModeId);
         if (id === SHELL_AGENT_ID) {
             return { command: runnerPrompt, agentId: id };
         }
