@@ -7,9 +7,12 @@
 // These functions operate only on their parameters and do not access instance state.
 
 import URI from '@theia/core/lib/common/uri';
+import { Disposable, Event } from '@theia/core/lib/common';
 import { TerminalWidget } from '@theia/terminal/lib/browser/base/terminal-widget';
 import type { QaapBootstrapPhase, QaapProjectDescriptor } from './qaap-project-bootstrap-types';
 import { normalizePersistedBootstrapPhase } from '../common/qaap-project-bootstrap-phase';
+import { lastDevOutputLines } from './qaap-project-bootstrap-dev-errors';
+import { hasQaapUnrenderedOutput } from './qaap-terminal-unrendered-output';
 
 // ─── Regex constants ─────────────────────────────────────────────────────────
 
@@ -79,16 +82,66 @@ export function normalizeRestoredPhase(phase: QaapBootstrapPhase, descriptor: Qa
  * error. Trailing blank rows are skipped, and an all-blank buffer yields `''` so callers fall back.
  */
 export function readTerminalTail(terminal: TerminalWidget, maxLines: number = 40): string {
+    let rendered = '';
     try {
         let end = terminal.buffer.length;
         while (end > 0 && !terminal.buffer.getLines(end - 1, 1, true)[0]?.trim()) {
             end--;
         }
         const start = Math.max(0, end - maxLines);
-        return terminal.buffer.getLines(start, end - start, true).join('\n');
+        rendered = terminal.buffer.getLines(start, end - start, true).join('\n');
     } catch {
-        return '';
+        rendered = '';
     }
+    if (rendered.trim()) {
+        return rendered;
+    }
+    // A hidden (never opened) preview terminal has an empty xterm buffer: its output is only held
+    // as raw text until the widget opens. Quote that instead of reporting no output at all.
+    return hasQaapUnrenderedOutput(terminal) ? lastDevOutputLines(terminal.qaapUnrenderedOutput, maxLines) : '';
+}
+
+/**
+ * Longest wait, after the backend reported a dev process exit, for the terminal to deliver the rest of
+ * its output. The exit notification and the output travel on different channels, so a process that
+ * dies within a second of starting is often reported before any of its output arrived.
+ */
+export const DEV_EXIT_OUTPUT_SETTLE_MS = 1500;
+
+/**
+ * Resolves once a terminal whose process exited has received all of its output: Theia disposes the
+ * widget (`onTerminalDidClose`) only after the output connection closed and pending writes drained.
+ * Bounded by `timeoutMs`, so an attached or restored terminal that stays open never blocks the report.
+ */
+export function waitForDevExitOutput(
+    terminal: { readonly isDisposed: boolean; readonly onTerminalDidClose: Event<unknown> },
+    timeoutMs: number = DEV_EXIT_OUTPUT_SETTLE_MS,
+): Promise<void> {
+    if (terminal.isDisposed) {
+        return Promise.resolve();
+    }
+    return new Promise<void>(resolve => {
+        let settled = false;
+        let listener: Disposable | undefined;
+        const finish = (): void => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            clearTimeout(timer);
+            listener?.dispose();
+            resolve();
+        };
+        const timer = setTimeout(finish, timeoutMs);
+        try {
+            listener = terminal.onTerminalDidClose(() => finish());
+        } catch {
+            finish();
+        }
+        if (settled) {
+            listener?.dispose();
+        }
+    });
 }
 
 export function disposeBootstrapTerminal(terminal: TerminalWidget | undefined): void {

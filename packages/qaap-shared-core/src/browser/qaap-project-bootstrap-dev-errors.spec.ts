@@ -4,7 +4,9 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import { Emitter } from '@theia/core/lib/common/event';
 import {
+    appendLastDevOutput,
     describeDevProcessExit,
     QAAP_PREVIEW_BUILD_REQUIRED_MESSAGE,
     diagnoseBootstrapFailure,
@@ -21,7 +23,7 @@ import {
     terminalOutputPortInUse,
 } from './qaap-project-bootstrap-dev-errors';
 import type { TerminalWidget } from '@theia/terminal/lib/browser/base/terminal-widget';
-import { extractPortFromInUseMessage, readTerminalTail } from './qaap-project-bootstrap-helpers';
+import { extractPortFromInUseMessage, readTerminalTail, waitForDevExitOutput } from './qaap-project-bootstrap-helpers';
 
 describe('qaap-project-bootstrap-dev-errors', () => {
 
@@ -49,8 +51,49 @@ describe('qaap-project-bootstrap-dev-errors', () => {
     });
 
     it('keeps the output or exit code for a failing exit (still retryable)', () => {
-        expect(describeDevProcessExit(1, 'Error: boom', 3001)).to.deep.equal({ message: 'Error: boom', exitedWithoutListening: false });
+        expect(describeDevProcessExit(1, 'Error: boom', 3001))
+            .to.deep.equal({ message: 'Dev server exited with code 1.\nLast output:\nError: boom', exitedWithoutListening: false });
         expect(describeDevProcessExit(undefined, '', 3001)).to.deep.equal({ message: 'Dev server exited with code ?.', exitedWithoutListening: false });
+    });
+
+    it('quotes the pnpm workspace failure next to the exit code, so install recovery still recognises it', () => {
+        // Real output of `pnpm --filter '@workspace/mockup-studio' dev` in a checkout without node_modules.
+        const output = '\r\n> @workspace/mockup-studio@0.0.0 dev /ws/artifacts/mockup-studio\r\n'
+            + '> vite --config vite.config.ts --port 5173 --strictPort\r\n\r\nsh: vite: command not found\r\n'
+            + '/ws/artifacts/mockup-studio:\r\n \u001b[41m ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL \u001b[49m @workspace/mockup-studio@0.0.0 dev: '
+            + '`vite --config vite.config.ts --port 5173 --strictPort`\r\nspawn ENOENT\r\n';
+        const report = describeDevProcessExit(1, output, 5173);
+        expect(report.message).to.match(/^Dev server exited with code 1\.\nLast output:\n/);
+        expect(report.message).to.contain('sh: vite: command not found');
+        expect(report.message).not.to.contain('\u001b[');
+        expect(terminalOutputNeedsInstall(report.message)).to.equal(true);
+        expect(diagnoseBootstrapFailure(report.message, 'fallback').kind).to.equal('dependencies');
+    });
+
+    it('keeps a Vite strict-port failure recognisable as a port conflict', () => {
+        const output = 'error when starting dev server:\nError: Port 5173 is already in use\n    at Server.onError$1 (config.js:14933:28)\n'
+            + ' ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @workspace/mockup-studio@0.0.0 dev: `vite --port 5173 --strictPort`\nExit status 1';
+        const report = describeDevProcessExit(1, output, 5173);
+        expect(terminalOutputPortInUse(report.message)).to.equal(true);
+        expect(diagnoseBootstrapFailure(report.message, 'fallback').kind).to.equal('port-conflict');
+    });
+
+    describe('appendLastDevOutput', () => {
+        it('appends the last non-empty output lines without ANSI escapes', () => {
+            expect(appendLastDevOutput('Error: boom', '\u001b[31mline 1\u001b[0m\n\nline 2\n')).to.equal('Error: boom\nLast output:\nline 1\nline 2');
+        });
+
+        it('keeps only the last lines', () => {
+            const output = Array.from({ length: 30 }, (_, index) => `line ${index + 1}`).join('\n');
+            const message = appendLastDevOutput('Failed.', output, 3);
+            expect(message).to.equal('Failed.\nLast output:\nline 28\nline 29\nline 30');
+        });
+
+        it('leaves the message alone when there is no output, it already quotes output, or it is the output', () => {
+            expect(appendLastDevOutput('Failed.', '  \n ')).to.equal('Failed.');
+            expect(appendLastDevOutput('Failed.\nLast output:\nx', 'x')).to.equal('Failed.\nLast output:\nx');
+            expect(appendLastDevOutput('Error: boom', 'Error: boom')).to.equal('Error: boom');
+        });
     });
 
     it('reports a process killed by a signal as stopped, not as a clean exit', () => {
@@ -245,6 +288,45 @@ describe('qaap-project-bootstrap-dev-errors', () => {
 
         it('keeps only the last maxLines output lines', () => {
             expect(readTerminalTail(terminalWithRows(['a', 'b', 'c', '', '']), 2)).to.equal('b\nc');
+        });
+
+        it('reads the raw output of a hidden terminal whose xterm buffer was never filled', () => {
+            const hidden = Object.assign(terminalWithRows(new Array<string>(24).fill('')), {
+                qaapUnrenderedOutput: '> vite\r\n\u001b[31msh: vite: command not found\u001b[39m\r\n\r\n',
+            });
+            expect(readTerminalTail(hidden)).to.equal('> vite\nsh: vite: command not found');
+            expect(readTerminalTail(hidden, 1)).to.equal('sh: vite: command not found');
+        });
+
+        it('prefers the rendered buffer once the terminal shows output', () => {
+            const opened = Object.assign(terminalWithRows(['rendered']), { qaapUnrenderedOutput: '' });
+            expect(readTerminalTail(opened)).to.equal('rendered');
+        });
+    });
+
+    describe('waitForDevExitOutput', () => {
+        it('resolves immediately for a terminal that is already disposed', async () => {
+            const closed = new Emitter<unknown>();
+            await waitForDevExitOutput({ isDisposed: true, onTerminalDidClose: closed.event }, 60_000);
+        });
+
+        it('resolves when the terminal closes after its output drained', async () => {
+            const closed = new Emitter<unknown>();
+            let resolved = false;
+            const waiting = waitForDevExitOutput({ isDisposed: false, onTerminalDidClose: closed.event }, 60_000)
+                .then(() => { resolved = true; });
+            await Promise.resolve();
+            expect(resolved).to.equal(false);
+            closed.fire(undefined);
+            await waiting;
+            expect(resolved).to.equal(true);
+        });
+
+        it('gives up after the timeout when the terminal stays open', async () => {
+            const closed = new Emitter<unknown>();
+            const started = Date.now();
+            await waitForDevExitOutput({ isDisposed: false, onTerminalDidClose: closed.event }, 20);
+            expect(Date.now() - started).to.be.lessThan(1000);
         });
     });
 });

@@ -94,6 +94,8 @@ import { TerminalFrontendContribution } from '@theia/terminal/lib/browser/termin
 import { XtermLinkFactory } from '@theia/terminal/lib/browser/terminal-link-provider';
 import { QaapIdeShellTerminalServer, QaapIdeTerminalService, QaapIdeTerminalWatcher } from '@theia/qaap-shared-core/lib/browser/qaap-ide-bridge';
 import { QaapTerminalFrontendContribution } from '@theia/qaap-shared-core/lib/browser/qaap-terminal-frontend-contribution';
+import { QaapTerminalWidget } from '@theia/qaap-shared-core/lib/browser/qaap-terminal-widget';
+import { TerminalWidget } from '@theia/terminal/lib/browser/base/terminal-widget';
 import { QaapWorkHubNotificationSettings } from '@theia/qaap-shared-core/lib/browser/qaap-work-hub-notification-settings';
 import { QaapCompletionSound } from '@theia/qaap-shared-core/lib/browser/qaap-completion-sound';
 import { createQaapXtermLinkFactory } from '@theia/qaap-shared-core/lib/browser/qaap-xterm-link-adapter';
@@ -271,6 +273,9 @@ export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync
     bind(QaapIdeShellTerminalServer).toService(IShellTerminalServer);
     bind(QaapTerminalFrontendContribution).toSelf().inSingletonScope();
     rebind(TerminalFrontendContribution).toService(QaapTerminalFrontendContribution);
+    // Hidden preview terminals (Work Hub spawns dev servers with reveal: false) must still report their
+    // output, or a fast dev-server exit reaches the user without its reason. Seam for packages/terminal.
+    rebind(TerminalWidget).to(QaapTerminalWidget).inTransientScope();
     // Terminal link taps must open reliably on touch devices (Qaap is mobile-first);
     // subclass XtermLinkAdapter via a replacement factory. Seam for packages/terminal.
     rebind(XtermLinkFactory).toFactory(createQaapXtermLinkFactory);

@@ -28,6 +28,7 @@ import {
     pickNextDevPort,
 } from './qaap-project-bootstrap-port';
 import {
+    appendLastDevOutput,
     describeDevProcessExit,
     diagnoseBootstrapFailure,
     diagnoseBuildFirstPreviewFailure,
@@ -41,6 +42,7 @@ import {
     terminalOutputOutOfMemory,
 } from './qaap-project-bootstrap-dev-errors';
 import { peekPreferDesktopIde } from './mobile-projects-open';
+import { waitForDevExitOutput } from './qaap-project-bootstrap-helpers';
 import { clearQaapPreviewDismissedByUser } from './qaap-preview-user-dismissal';
 import { bootstrapPreviewDismissalDirectory } from './qaap-project-bootstrap-service-timeline';
 import { resolveDevPreviewPublicOrigin } from '../common/qaap-dev-preview';
@@ -250,7 +252,12 @@ async function handleDevRunFailure(ctx: QaapProjectBootstrapServiceContext, mess
                             // Name Build and start only where the card actually offers it.
                             ? formatQaapPreviewBuildRequiredMessage(!!buildTarget?.buildAndStartCommand)
                             : extractTerminalFailureLine(failureOutput, ctx.toUserFacingDevError(message));
-        ctx._error = ctx.enrichDevRunError(diagnosedError);
+        // A generic diagnosis (one error line, or none) also quotes the last output lines, so the
+        // user sees why the dev server stopped without having to find its hidden terminal.
+        const quotesOutput = !nextLock && !portConflict && !buildFirst && !exitedWithoutListening
+            && (diagnosis.kind === 'process-exit' || diagnosis.kind === 'unknown');
+        const enrichedError = ctx.enrichDevRunError(diagnosedError);
+        ctx._error = quotesOutput ? appendLastDevOutput(enrichedError, failureOutput) : enrichedError;
         ctx.releaseActivePreview('failDevRun');
         ctx.setPhase('run-failed');
 }
@@ -599,19 +606,27 @@ export function watchAttachedDevTerminalExtracted(ctx: QaapProjectBootstrapServi
         ctx.devTerminalConversationId = ctx.activePreviewConversationId;
         ctx.devTerminalListener.dispose();
         const onOutput = terminal.onOutput(data => ctx.appendDevOutput(data));
+        let processExitReported = false;
         const onProcessExit = ctx.terminalWatcher.onTerminalExit(event => {
             if (event.terminalId === terminal.terminalId && runId === ctx.devRunGeneration) {
-                const exit = describeDevProcessExit(
-                    event.code,
-                    ctx.readTerminalTail(terminal) || ctx.devOutputTail,
-                    ctx.activePreviewClaim?.port ?? plan.expectedPort,
-                    event.signal,
-                );
-                void ctx.failDevRun(exit.message, plan, runId, { exitedWithoutListening: exit.exitedWithoutListening });
+                processExitReported = true;
+                // Same output race as a fresh run (see startDevServer): report once the output arrived.
+                void waitForDevExitOutput(terminal).then(() => {
+                    if (runId !== ctx.devRunGeneration) {
+                        return;
+                    }
+                    const exit = describeDevProcessExit(
+                        event.code,
+                        ctx.readTerminalTail(terminal) || ctx.devOutputTail,
+                        ctx.activePreviewClaim?.port ?? plan.expectedPort,
+                        event.signal,
+                    );
+                    void ctx.failDevRun(exit.message, plan, runId, { exitedWithoutListening: exit.exitedWithoutListening });
+                });
             }
         });
         const onWidgetClose = terminal.onTerminalDidClose(() => {
-            if (runId !== ctx.devRunGeneration || ctx.devRunCancelledByUser) {
+            if (runId !== ctx.devRunGeneration || ctx.devRunCancelledByUser || processExitReported) {
                 return;
             }
             if (ctx._phase === 'starting' || ctx._phase === 'running') {
