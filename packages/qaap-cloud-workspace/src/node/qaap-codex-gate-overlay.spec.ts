@@ -11,6 +11,7 @@ import {
     assertCodexGateTokenIssued, DEFAULT_QAAP_CODEX_GATE_OVERLAY_BUILDER, QAAP_CODEX_GATE_SANDBOX_DIRNAME, QaapCodexGateOverlayBuilder, resolveCodexGateOverlayRoot,
     usesCodexToolGateHook,
 } from './qaap-codex-gate-overlay';
+import { resolveCodexAgentHome } from './qaap-agent-native-models';
 
 describe('QaapCodexGateOverlayBuilder', () => {
 
@@ -78,6 +79,16 @@ describe('QaapCodexGateOverlayBuilder', () => {
         const config = fs.readFileSync(path.join(overlay.codexHome, 'config.toml'), 'utf8');
         expect(config).to.contain(`[hooks.state."${path.join(overlay.codexHome, 'hooks.json')}:pre_tool_use:0:0"]`);
         expect(config).to.contain(`trusted_hash = "${QaapCodexGateOverlayBuilder.hookHash(handler.command, 660)}"`);
+        overlay.dispose();
+    });
+
+    it('on the desktop app copies the login from the user\'s ~/.codex (a missing login made every turn a 401 Missing bearer)', async () => {
+        const home = path.join(tmp, 'mac-home');
+        fs.mkdirSync(path.join(home, '.codex'), { recursive: true });
+        fs.writeFileSync(path.join(home, '.codex', 'auth.json'), '{"tokens":{"access_token":"a1","refresh_token":"r1"}}');
+        const desktopEnv = { QAAP_DESKTOP: '1', HOME: home };
+        const overlay = await trusted.create(options({ sourceCodexHome: resolveCodexAgentHome(desktopEnv) }));
+        expect(fs.readFileSync(path.join(overlay.codexHome, 'auth.json'), 'utf8')).to.contain('"access_token":"a1"');
         overlay.dispose();
     });
 
