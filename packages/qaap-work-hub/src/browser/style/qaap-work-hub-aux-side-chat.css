@@ -175,12 +175,7 @@
 
 /* The model picker opens above the composer, as the main composer's picker does. */
 .qaap-work-hub-aux-side-chat-picker {
-  position: absolute;
-  left: var(--q-space-4);
-  right: var(--q-space-4);
-  bottom: 100%;
-  margin-bottom: var(--q-space-2);
-  z-index: 20;
+  position: fixed;
 }
 
 .qaap-work-hub-aux-side-chat-picker[hidden] {
@@ -196,4 +191,43 @@
 .qaap-work-hub-aux-side-chat-input:focus-visible {
   outline: none;
   box-shadow: none;
+}
+
+/* Attachments picked from the composer's attach menu: chips above the side chat input. */
+.qaap-work-hub-aux-side-chat-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 12px 0;
+}
+
+.qaap-work-hub-aux-side-chat-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    max-width: 100%;
+    padding: 2px 4px 2px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    background: var(--theia-input-background);
+    border: 1px solid var(--theia-input-border, var(--theia-panel-border));
+}
+
+.qaap-work-hub-aux-side-chat-chip.is-pending {
+    opacity: 0.6;
+}
+
+.qaap-work-hub-aux-side-chat-chip-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 220px;
+}
+
+.qaap-work-hub-aux-side-chat-chip-remove {
+    background: none;
+    border: 0;
+    color: inherit;
+    cursor: pointer;
+    padding: 0 2px;
 }

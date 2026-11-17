@@ -9,6 +9,7 @@ import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 const disableImportJSDOM = enableJSDOM();
 
 import { Disposable } from '@theia/core/lib/common/disposable';
+import type { AIVariableResolutionRequest } from '@theia/ai-core';
 import { expect } from 'chai';
 import type { QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type { QaapLiveFeedFrame } from '@theia/qaap-shared-core/lib/common/qaap-live-feed-cursor';
@@ -56,6 +57,8 @@ describe('qaap-work-hub-aux-side-chat-view', () => {
     }
 
     function harness(options: {
+        /** What the attach menu returns; the menu also types the skill `review` into the input. */
+        picks?: AIVariableResolutionRequest[];
         messages?: QaapAgentConversationDTO['messages'];
         composer?: QaapWorkHubSideChatComposerSelection;
         models?: readonly QaapWorkHubSideChatModelOption[];
@@ -99,6 +102,11 @@ describe('qaap-work-hub-aux-side-chat-view', () => {
             resolveParent: () => parent,
             resolveComposerSelection: () => options.composer,
             listModels: async () => options.models ?? models,
+            pickAttachments: async (_anchor, handlers) => {
+                handlers.insertComposerSkill?.('review');
+                return options.picks ?? [];
+            },
+            prepareOutbound: async (draft, variables) => variables.length > 0 ? `${draft} [${variables.length} attached]` : draft,
             startSignIn: agentId => { calls.signIns.push(agentId); },
             openInMainArea: async id => { calls.opened.push(id); },
             subscribeLive: onFrame => {
@@ -264,6 +272,34 @@ describe('qaap-work-hub-aux-side-chat-view', () => {
         expect(h.calls.closed).to.equal(1);
         expect(h.calls.remove).to.deep.equal([]);
         expect(h.calls.opened).to.deep.equal([]);
+    });
+
+    it('attaches from the composer menu into this side chat and sends the attachments with the turn', async () => {
+        const h = harness({ picks: [{ variable: { name: 'file' }, arg: 'src/a.ts' } as unknown as AIVariableResolutionRequest] });
+        h.view.element.querySelector<HTMLButtonElement>('.qaap-work-hub-aux-side-chat-attach')!.click();
+        await waitFor(() => h.view.element.querySelectorAll('.qaap-work-hub-aux-side-chat-chip').length === 1);
+        expect(h.view.element.querySelector('.qaap-work-hub-aux-side-chat-chip-label')!.textContent).to.equal('a.ts');
+        await sendText(h.view, 'Look');
+        expect((h.calls.create[0] as { message: string }).message).to.equal('Look [1 attached]');
+        expect(h.view.element.querySelectorAll('.qaap-work-hub-aux-side-chat-chip')).to.have.length(0);
+    });
+
+    it('types a skill picked in the attach menu into this side chat input only', async () => {
+        const h = harness();
+        h.view.element.querySelector<HTMLButtonElement>('.qaap-work-hub-aux-side-chat-attach')!.click();
+        await waitFor(() => (h.view.element.querySelector('.qaap-work-hub-aux-side-chat-input') as HTMLTextAreaElement).value === '/review ');
+        expect((h.view.element.querySelector('.qaap-work-hub-aux-side-chat-input') as HTMLTextAreaElement).value).to.equal('/review ');
+        expect(h.calls.post).to.have.length(0);
+    });
+
+    it('closes its model picker on Escape even while the focus is outside the picker', async () => {
+        const h = harness();
+        await waitFor(() => (h.view.element.querySelector('.qaap-work-hub-aux-side-chat-model') as HTMLElement).textContent !== '');
+        h.view.element.querySelector<HTMLButtonElement>('.qaap-work-hub-aux-side-chat-model')!.click();
+        const picker = h.view.element.querySelector('.qaap-work-hub-aux-side-chat-picker') as HTMLElement;
+        expect(picker.hidden).to.equal(false);
+        h.view.element.ownerDocument.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+        expect(picker.hidden).to.equal(true);
     });
 
     it('sends on Enter and keeps Shift+Enter for a new line', async () => {

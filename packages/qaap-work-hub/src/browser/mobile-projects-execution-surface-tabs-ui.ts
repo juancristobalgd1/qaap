@@ -15,6 +15,8 @@ import {
     type ExecutionSurfaceTabId,
 } from '@theia/qaap-shared-core/lib/common/qaap-execution-surface-tabs';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import type { AIVariableResolutionRequest } from '@theia/ai-core';
+import type { MobileComposerAttachHandlers } from '@theia/qaap-composer/lib/browser/qaap-mobile-composer-device-attach';
 import type { TranscriptWorkspaceSurfacesCache } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-workspace-surfaces-cache';
 import type { MobileProjectsProjectDetailUi } from './mobile-projects-project-detail-ui';
 import type { MobileProjectsTranscriptHeaderUi } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-header-ui';
@@ -26,7 +28,6 @@ import { recordUserPreviewSurfaceChoiceExtracted } from './mobile-projects-execu
 import { isQaapWorkHubAuxPanelLayout, QaapWorkHubAuxPanel } from './qaap-work-hub-aux-panel';
 import { openAgentLoginDialogInBackground } from './qaap-agent-login-background';
 import { fetchAgentModelsForAgent } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
-import { QAAP_BUILTIN_AGENT_DEFINITIONS } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 import type { QaapLiveFeedFrame } from '@theia/qaap-shared-core/lib/common/qaap-live-feed-cursor';
 import type { QaapWorkHubAuxSideChatHost, QaapWorkHubSideChatComposerSelection, QaapWorkHubSideChatModelOption, QaapWorkHubSideChatParent } from './qaap-work-hub-aux-side-chat-view';
 import type { QaapWorkHubAuxPanelSurfaceKind } from './qaap-work-hub-aux-panel-model';
@@ -64,6 +65,8 @@ const workHubAuxSideChatHost: QaapWorkHubAuxSideChatHost = {
     resolveParent: () => resolveWorkHubAuxPanelOwner()?.resolveWorkHubAuxSideChatParent(),
     resolveComposerSelection: () => resolveWorkHubAuxPanelOwner()?.resolveWorkHubAuxSideChatComposerSelection(),
     listModels: () => resolveWorkHubAuxPanelOwner()?.listWorkHubAuxSideChatModels() ?? Promise.resolve([]),
+    pickAttachments: (anchor, handlers) => resolveWorkHubAuxPanelOwner()?.pickWorkHubAuxSideChatAttachments(anchor, handlers) ?? Promise.resolve([]),
+    prepareOutbound: (draft, variables) => resolveWorkHubAuxPanelOwner()?.prepareWorkHubAuxSideChatOutbound(draft, variables) ?? Promise.resolve(draft),
     startSignIn: agentId => resolveWorkHubAuxPanelOwner()?.startWorkHubAuxSideChatSignIn(agentId),
     openInMainArea: conversationId => resolveWorkHubAuxPanelOwner()?.openWorkHubAuxSideChatInMainArea(conversationId) ?? Promise.resolve(),
     subscribeLive: subscribeWorkHubAuxSideChatLive,
@@ -160,6 +163,11 @@ export interface MobileProjectsExecutionSurfaceTabsHost {
     transcriptSurfacesUi: MobileProjectsTranscriptSurfacesUi;
     projectDetailUi: MobileProjectsProjectDetailUi;
     openTranscriptChanges?: () => void | Promise<void>;
+
+    /** The panel's attach menu and send hooks, used by the side chat's own composer. */
+    pickContextVariable?: (anchor: HTMLElement, handlers: MobileComposerAttachHandlers) => Promise<AIVariableResolutionRequest[]>;
+    expandComposerDraftForSubmit?: (draft: string) => Promise<string>;
+    applyComposerAttachmentsToDraft?: (draft: string, variables?: AIVariableResolutionRequest[]) => Promise<string>;
 
     ensureAgentsHubExecutionShellRendered(): void;
     appendTranscriptHeaderActions(header: HTMLElement, title: HTMLElement): HTMLButtonElement;
@@ -319,20 +327,48 @@ export class MobileProjectsExecutionSurfaceTabsUi {
         if (!parent) {
             return [];
         }
-        const agentId = this.resolveWorkHubAuxSideChatComposerSelection()?.agentId ?? parent.agentId;
-        const agentLabel = QAAP_BUILTIN_AGENT_DEFINITIONS.find(definition => definition.id === agentId)?.label ?? agentId;
-        const models = await fetchAgentModelsForAgent(agentId);
-        return models.map(model => ({
-            agentId,
-            agentLabel,
-            modelLabel: model.label,
-            agentModel: { provider: model.provider, vendor: model.vendor, modelId: model.modelId },
-            tier: model.tier ?? 'pro',
-            session: model.available === true
-                ? 'signed-in'
-                : model.unavailableReason === 'not-connected' ? 'signed-out'
-                    : model.unavailableReason === 'checking' ? 'checking' : 'unknown',
+        // Every harness the main composer's picker offers (Settings → Harness applies), each with its own models.
+        const project = this.resolveExecutionSurfaceProject();
+        const composerAgents = this.host.stickyComposerAgentsUi;
+        let catalog = composerAgents.getLoadedStickyComposerAgents();
+        if (catalog.length === 0 && project) {
+            catalog = await composerAgents.ensureStickyComposerAgentsLoaded(project).catch(() => []);
+        }
+        const agents = composerAgents.getComposerAgentPickerAgents(catalog);
+        const lists = await Promise.all(agents.map(async agent => {
+            const models = await fetchAgentModelsForAgent(agent.id).catch(() => []);
+            return models.map(model => ({
+                agentId: agent.id,
+                agentLabel: agent.label || agent.id,
+                modelLabel: model.label,
+                agentModel: { provider: model.provider, vendor: model.vendor, modelId: model.modelId },
+                tier: model.tier ?? 'pro',
+                session: model.available === true
+                    ? 'signed-in'
+                    : model.unavailableReason === 'not-connected' ? 'signed-out'
+                        : model.unavailableReason === 'checking' ? 'checking' : 'unknown',
+            } satisfies QaapWorkHubSideChatModelOption));
         }));
+        return lists.flat();
+    }
+
+    /** @internal The Work Hub's attach menu for the side chat's «+»: the main composer's menu, anchored to the side chat's button. */
+    async pickWorkHubAuxSideChatAttachments(anchor: HTMLElement, handlers: MobileComposerAttachHandlers): Promise<readonly AIVariableResolutionRequest[]> {
+        const pick = this.host.pickContextVariable;
+        if (!pick) {
+            return [];
+        }
+        const uploadTargetDir = this.resolveExecutionSurfaceProject()?.uri ?? handlers.uploadTargetDir;
+        return pick(anchor, { ...handlers, uploadTargetDir });
+    }
+
+    /** @internal The outbound prompt of a side chat send: skills expanded, then the attachments applied, as the main submit does. */
+    async prepareWorkHubAuxSideChatOutbound(draft: string, variables: readonly AIVariableResolutionRequest[]): Promise<string> {
+        const expanded = (await this.host.expandComposerDraftForSubmit?.(draft)) ?? draft;
+        if (variables.length === 0) {
+            return expanded;
+        }
+        return (await this.host.applyComposerAttachmentsToDraft?.(expanded, [...variables])) ?? expanded;
     }
 
     /** @internal Opens the harness sign-in dialog the composer opens for the same agent. */

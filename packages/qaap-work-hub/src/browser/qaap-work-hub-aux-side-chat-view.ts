@@ -5,8 +5,12 @@
 
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
+import type { AIVariableResolutionRequest } from '@theia/ai-core';
+import type { MobileComposerAttachHandlers } from '@theia/qaap-composer/lib/browser/qaap-mobile-composer-device-attach';
 import { createStickyComposerSendIcon } from '@theia/qaap-composer/lib/browser/mobile-projects-sticky-composer-send-icon';
 import { disposeQaapComposerModelPicker, renderQaapComposerModelPicker, type QaapComposerModelPickerProps } from '@theia/qaap-composer/lib/browser/qaap-composer-model-picker';
+import { pickerPopoverHeight } from '@theia/qaap-composer/lib/browser/qaap-composer-model-picker';
+import { positionStickyComposerPopover } from '@theia/qaap-transcript/lib/browser/qaap-sticky-composer-popover';
 import { QaapComposerModelPickerModel, type QaapPickerModel, type QaapPickerState } from '@theia/qaap-composer/lib/common/qaap-composer-model-picker-model';
 import { populateAgentToolbarButton } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { buildSideChatContextPreamble, sideChatVisibleTitle, stripSideChatPreamble } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-side-chat';
@@ -79,6 +83,14 @@ export interface QaapWorkHubSideChatModelOption {
     readonly session: QaapHarnessSession;
 }
 
+/** One chip of the side chat draft: a context attachment from the attach menu, or one still uploading (no request yet). */
+export interface QaapWorkHubSideChatAttachment {
+    readonly id: string;
+    label: string;
+    pending: boolean;
+    request?: AIVariableResolutionRequest;
+}
+
 /** The harness and model the main composer shows now. The selector starts from them when it can. */
 export interface QaapWorkHubSideChatComposerSelection {
     readonly agentId: string;
@@ -91,8 +103,12 @@ export interface QaapWorkHubAuxSideChatHost {
     resolveParent(): QaapWorkHubSideChatParent | undefined;
     /** The harness and model the main composer shows, or `undefined` when none is pinned (the parent's apply then). */
     resolveComposerSelection(): QaapWorkHubSideChatComposerSelection | undefined;
-    /** Models the selector offers. */
+    /** Models the selector offers, for every harness the composer offers (Settings → Harness applies). */
     listModels(): Promise<readonly QaapWorkHubSideChatModelOption[]>;
+    /** Opens the composer's own attach menu for the side chat's «+»; the picks come back, the main composer is not touched. */
+    pickAttachments(anchor: HTMLElement, handlers: MobileComposerAttachHandlers): Promise<readonly AIVariableResolutionRequest[]>;
+    /** The outbound prompt for a side chat send: skills expanded and attachments applied, as the main composer's submit does. */
+    prepareOutbound(draft: string, variables: readonly AIVariableResolutionRequest[]): Promise<string>;
     /** Opens the harness sign-in of `agentId`. */
     startSignIn(agentId: string): void;
     /** Opens a conversation in the main area with the same call the sidebar uses. */
@@ -106,6 +122,8 @@ export const QAAP_WORK_HUB_NO_SIDE_CHAT_HOST: QaapWorkHubAuxSideChatHost = {
     resolveParent: () => undefined,
     resolveComposerSelection: () => undefined,
     listModels: () => Promise.resolve([]),
+    pickAttachments: () => Promise.resolve([]),
+    prepareOutbound: draft => Promise.resolve(draft),
     startSignIn: () => undefined,
     openInMainArea: () => Promise.resolve(),
     subscribeLive: () => Disposable.NULL,
@@ -175,6 +193,7 @@ export class QaapWorkHubAuxSideChatView implements Disposable {
     protected readonly pickerPanel: HTMLElement;
     protected readonly pickerHost: HTMLElement;
     protected readonly sendButton: HTMLButtonElement;
+    protected readonly chipsRow: HTMLElement;
 
     /** The side chat's conversation, created by the first send. */
     protected conversationId: string | undefined;
@@ -193,6 +212,12 @@ export class QaapWorkHubAuxSideChatView implements Disposable {
     protected refreshTimer: number | undefined;
     protected readonly rows = new Map<string, SideChatRow>();
     protected pendingText: string | undefined;
+    /** The chips above the input: attachments picked from the attach menu, sent with the next turn. */
+    protected attachments: QaapWorkHubSideChatAttachment[] = [];
+    /** The words the user typed, by the outbound prompt the server stores (it carries the attachments and skills). */
+    protected readonly sentWords = new Map<string, string>();
+    /** Closes the picker on Escape while it is open, whatever holds the focus (the shared picker only sees keys inside it). */
+    protected pickerEscape: ((event: KeyboardEvent) => void) | undefined;
 
     constructor(options: QaapWorkHubAuxSideChatViewOptions) {
         this.host = options.host;
@@ -289,10 +314,10 @@ export class QaapWorkHubAuxSideChatView implements Disposable {
         const attach = document.createElement('button');
         attach.type = 'button';
         attach.className = 'theia-mobile-projects-sticky-composer-attach qaap-work-hub-aux-side-chat-attach';
-        // Looks and sizes like the main composer's attach button; it only says why nothing is attached.
-        attach.title = nls.localize('qaap/workHubAuxPanel/sideChatAttach', 'Attachments are not available in a side chat');
+        // Looks and sizes like the main composer's attach button and opens the same menu; the picks stay in this side chat.
+        attach.title = nls.localize('qaap/workHubAuxPanel/sideChatAttach', 'Attach files, skills or context');
         attach.setAttribute('aria-label', attach.title);
-        attach.addEventListener('click', () => this.setStatus(attach.title));
+        attach.addEventListener('click', () => { this.openAttachMenu(attach); });
         const attachGlyph = document.createElement('span');
         attachGlyph.className = 'codicon codicon-add';
         attachGlyph.setAttribute('aria-hidden', 'true');
@@ -320,10 +345,13 @@ export class QaapWorkHubAuxSideChatView implements Disposable {
         controlsRight.append(inputActions);
         controlsRow.append(controlsLeft, controlsRight);
 
+        this.chipsRow = document.createElement('div');
+        this.chipsRow.className = 'qaap-work-hub-aux-side-chat-chips';
+        this.chipsRow.hidden = true;
         const bloom = document.createElement('div');
         bloom.className = 'qaap-border-beam-bloom';
         bloom.setAttribute('aria-hidden', 'true');
-        inputPanel.append(inputBody, controlsRow, bloom);
+        inputPanel.append(this.chipsRow, inputBody, controlsRow, bloom);
         stage.append(inputPanel);
         card.append(stage);
 
@@ -378,6 +406,8 @@ export class QaapWorkHubAuxSideChatView implements Disposable {
         this.pickerRail = undefined;
         this.rows.clear();
         this.list.replaceChildren();
+        this.attachments = [];
+        this.renderAttachments();
         this.input.value = '';
         this.growInput();
         this.updateSendState();
@@ -413,7 +443,12 @@ export class QaapWorkHubAuxSideChatView implements Disposable {
      */
     async send(): Promise<void> {
         const text = this.input.value.trim();
-        if (!text || this.sending) {
+        const ready = this.attachments.flatMap(item => item.request && !item.pending ? [item.request] : []);
+        if ((!text && ready.length === 0) || this.sending) {
+            return;
+        }
+        if (this.attachments.some(item => item.pending)) {
+            this.setStatus(nls.localize('qaap/workHubAuxPanel/sideChatAttachUploading', 'Wait for the attachments to finish uploading.'));
             return;
         }
         const selection = this.currentSelection();
@@ -424,15 +459,29 @@ export class QaapWorkHubAuxSideChatView implements Disposable {
         }
         this.sending = true;
         this.sendButton.disabled = true;
+        // The outbound prompt carries the skills and attachments; the server stores that text, so the pending row matches it.
+        let outbound: string;
+        try {
+            outbound = await this.host.prepareOutbound(text, ready);
+        } catch (error) {
+            this.sending = false;
+            this.updateSendState();
+            this.setStatus(this.errorMessage(error));
+            return;
+        }
+        const shown = text || this.attachments.filter(item => !item.pending).map(item => item.label).join(', ');
         this.input.value = '';
         this.growInput();
-        this.pendingText = text;
+        this.pendingText = outbound;
+        if (outbound !== text) {
+            this.sentWords.set(outbound, text);
+        }
         this.setStatus('');
-        this.appendPendingRow(text);
+        this.appendPendingRow(shown);
         this.followBottom();
         try {
             if (this.conversationId) {
-                await this.api.post(this.conversationId, text, {
+                await this.api.post(this.conversationId, outbound, {
                     ...(selection.agentId ? { agent: selection.agentId } : {}),
                     ...(selection.agentModel ? { agentModel: selection.agentModel } : {}),
                 });
@@ -444,7 +493,7 @@ export class QaapWorkHubAuxSideChatView implements Disposable {
                     clientRequestId: `side-chat-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
                     ...(selection.agentId ? { agent: selection.agentId } : {}),
                     ...(selection.agentModel ? { agentModel: selection.agentModel } : {}),
-                    message: text,
+                    message: outbound,
                     ...(preamble ? { contextPreamble: preamble } : {}),
                     origin: 'side-chat',
                     sideChatParentId: parent.id,
@@ -456,6 +505,8 @@ export class QaapWorkHubAuxSideChatView implements Disposable {
                 this.onTitle(this.title);
                 this.renderContext();
             }
+            this.attachments = [];
+            this.renderAttachments();
             this.scheduleRefresh(0);
         } catch (error) {
             this.dropPendingRow();
@@ -466,6 +517,91 @@ export class QaapWorkHubAuxSideChatView implements Disposable {
             this.sending = false;
             this.updateSendState();
         }
+    }
+
+    /** Opens the composer's attach menu; what is picked becomes a chip above this side chat's input only. */
+    protected async openAttachMenu(anchor: HTMLElement): Promise<void> {
+        const picked = await this.host.pickAttachments(anchor, this.attachHandlers());
+        for (const request of picked) {
+            this.attachments.push({ id: `side-chat-attach-${Date.now()}-${this.attachments.length}`, label: this.attachmentLabel(request), pending: false, request });
+        }
+        this.renderAttachments();
+        this.input.focus();
+    }
+
+    /** The menu's handlers: uploads show as pending chips, a skill is typed into this side chat's input. */
+    protected attachHandlers(): MobileComposerAttachHandlers {
+        return {
+            insertComposerSkill: skillName => this.insertSkill(skillName),
+            appendOptimistic: entry => {
+                this.attachments.push({ id: entry.id, label: entry.displayName ?? nls.localize('qaap/workHubAuxPanel/sideChatAttachUploadingLabel', 'Uploading…'), pending: true });
+                this.renderAttachments();
+            },
+            finalizeOptimistic: (id, request) => {
+                const item = this.attachments.find(candidate => candidate.id === id);
+                if (!item) {
+                    return;
+                }
+                item.request = request;
+                item.pending = false;
+                item.label = this.attachmentLabel(request);
+                this.renderAttachments();
+            },
+            removeOptimistic: (id, error) => {
+                this.attachments = this.attachments.filter(candidate => candidate.id !== id);
+                this.renderAttachments();
+                this.setStatus(error instanceof Error && error.message.trim()
+                    ? error.message.trim()
+                    : nls.localize('qaap/workHubAuxPanel/sideChatAttachFailed', 'Could not attach this file.'));
+            },
+        };
+    }
+
+    protected insertSkill(skillName: string): void {
+        const draft = this.input.value;
+        const separator = draft.length === 0 || /\s$/.test(draft) ? '' : ' ';
+        this.input.value = `${draft}${separator}/${skillName} `;
+        this.growInput();
+        this.updateSendState();
+        this.input.focus();
+    }
+
+    /** The chip's name: the file's base name for a file, else the variable's label. */
+    protected attachmentLabel(request: AIVariableResolutionRequest): string {
+        const arg = request.arg?.trim();
+        if (arg) {
+            return arg.split(/[\\/]/).pop() || arg;
+        }
+        return request.variable.label ?? request.variable.name;
+    }
+
+    protected renderAttachments(): void {
+        this.chipsRow.replaceChildren(...this.attachments.map(item => this.attachmentChip(item)));
+        this.chipsRow.hidden = this.attachments.length === 0;
+        this.updateSendState();
+    }
+
+    protected attachmentChip(item: QaapWorkHubSideChatAttachment): HTMLElement {
+        const chip = document.createElement('span');
+        chip.className = item.pending ? 'qaap-work-hub-aux-side-chat-chip is-pending' : 'qaap-work-hub-aux-side-chat-chip';
+        const name = document.createElement('span');
+        name.className = 'qaap-work-hub-aux-side-chat-chip-label';
+        name.textContent = item.label;
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'qaap-work-hub-aux-side-chat-chip-remove';
+        remove.title = nls.localize('qaap/workHubAuxPanel/sideChatRemoveAttachment', 'Remove attachment');
+        remove.setAttribute('aria-label', remove.title);
+        const glyph = document.createElement('span');
+        glyph.className = 'codicon codicon-close';
+        glyph.setAttribute('aria-hidden', 'true');
+        remove.append(glyph);
+        remove.addEventListener('click', () => {
+            this.attachments = this.attachments.filter(candidate => candidate !== item);
+            this.renderAttachments();
+        });
+        chip.append(name, remove);
+        return chip;
     }
 
     /** Opens the conversation in the main area, then closes the side chat tab. */
@@ -510,7 +646,7 @@ export class QaapWorkHubAuxSideChatView implements Disposable {
                     this.dropPendingRow();
                 }
                 seen.add(message.id);
-                this.patchUserRow(message.id, text);
+                this.patchUserRow(message.id, this.sentWords.get(text) ?? text);
             } else {
                 seen.add(message.id);
                 this.patchAgentRow(message);
@@ -769,13 +905,32 @@ export class QaapWorkHubAuxSideChatView implements Disposable {
         if (this.pickerPanel.hidden) {
             this.pickerPanel.hidden = false;
             this.renderPicker();
+            this.listenPickerEscape();
         } else {
             this.closePicker();
         }
         this.renderModelButton();
     }
 
+    protected listenPickerEscape(): void {
+        if (this.pickerEscape) {
+            return;
+        }
+        this.pickerEscape = event => {
+            if (event.key === 'Escape' && !this.pickerPanel.hidden) {
+                event.preventDefault();
+                this.closePicker();
+            }
+        };
+        // Capture on the window: the keybinding service stops Escape before it reaches the document's bubble phase.
+        this.view().addEventListener('keydown', this.pickerEscape, true);
+    }
+
     protected closePicker(): void {
+        if (this.pickerEscape) {
+            this.view().removeEventListener('keydown', this.pickerEscape, true);
+            this.pickerEscape = undefined;
+        }
         disposeQaapComposerModelPicker(this.pickerHost);
         this.pickerHost.replaceChildren();
         this.pickerPanel.hidden = true;
@@ -787,6 +942,11 @@ export class QaapWorkHubAuxSideChatView implements Disposable {
             return;
         }
         renderQaapComposerModelPicker(this.pickerHost, this.pickerProps());
+        // The shared popover is fixed. The side chat's is 320px wide, so it is placed with that width (the main
+        // composer's helper clamps with its wider minimum and would pull this one left of its pill).
+        this.pickerPanel.dataset.placement = 'above-start';
+        this.pickerPanel.style.height = `${pickerPopoverHeight(this.modelButton.getBoundingClientRect().top, window.innerHeight)}px`;
+        positionStickyComposerPopover(this.pickerPanel, this.modelButton, 'start', 320);
     }
 
     /** The shared picker's props, from this side chat's own models and selection. Picking a model changes this side chat only. */
@@ -863,9 +1023,10 @@ export class QaapWorkHubAuxSideChatView implements Disposable {
 
     /** The send button follows the main composer: disabled while the input is empty or a send is running, ready with text. */
     protected updateSendState(): void {
-        const has = this.input.value.trim().length > 0;
-        this.sendButton.disabled = this.sending || !has;
-        this.sendButton.classList.toggle('theia-mod-ready', has && !this.sending);
+        const has = this.input.value.trim().length > 0 || this.attachments.some(item => !item.pending);
+        const uploading = this.attachments.some(item => item.pending);
+        this.sendButton.disabled = this.sending || !has || uploading;
+        this.sendButton.classList.toggle('theia-mod-ready', has && !this.sending && !uploading);
     }
 
     protected growInput(): void {
