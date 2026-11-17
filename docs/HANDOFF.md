@@ -2,6 +2,36 @@
 
 Estado para continuar el trabajo desde otra cuenta o sesión. Actualízalo al cerrar cada tarea: qué queda pendiente, cómo se validó y qué limitaciones conviene conocer. La política de modelos está en la sección «Selección de modelos y orquestación» de `CLAUDE.md`.
 
+## 2026-11-17 — Resto de la ronda 2 (rama `feat/work-hub-harness-round2`)
+
+**Hecho:** trabajo por temas en la rama, en commits separados.
+- Escáner de uso: registro por home de agente (`qaap-usage-scanner-registry`), scan target y acceso a ficheros (directo, o por un helper con el uid del agente cuando los agentes corren con otro usuario).
+- Login de agente: diálogo y flujo muestran el resumen de un crash nativo, dan más tiempo a los desafíos de las TUI y llevan el `env` del comando de login. Work Hub lo arranca en segundo plano (`qaap-agent-login-background`).
+- Sign-in preflight, atestación y acceso de agente: la guardia previa a la ejecución solo bloquea ante un sign-out positivo; las sesiones de Codex del overlay se copian al home del dueño.
+- Disponibilidad de modelos: `checking` y `unknown` ya no bloquean los modelos Pro; `agent-tui-command` usa el comando y el `env` de login.
+- Transcript: marca los cambios de harness entre turnos (`qaap-transcript-harness-switch`) y tiene el CSS del timeline.
+- Composer: la fila de pastillas de cambios es dueña de Run app / Starting preview… / View Preview, así no se apilan dos «Run app».
+- Bootstrap de proyectos: diagnóstico de errores del dev server y streaming/actividad.
+- Work Hub: atajos de escritorio (passthrough de ⌘F y ⌘1–9 solo con el buscador o el selector de modelos enfocados) y CSS de conversación móvil.
+
+**Validación:** `tsc -b` de 6 paquetes OK; 23 ficheros de spec (525 tests) verdes; drift, package-graph, endpoint-ownership y spec-jsdom OK; eslint 0 errores.
+
+**Pendiente:** probar en la app de escritorio ⌘1–5 con teclado real y Preview de un repo sin compilar.
+
+## 2026-11-17 — Atajos del Work Hub en escritorio (rama `feat/work-hub-harness-round2`)
+
+**Causa:** el registro de keybindings de Theia escucha en captura y se traga ⌘F (`core.find`) y ⌘1–9 (`workbench.action.focus<N>EditorGroup`) antes que los handlers del Work Hub. **Hecho:** `qaap-work-hub-shortcut-passthrough-contribution.ts` registra `passthrough` para esas teclas solo con el foco en el buscador del transcript o con el selector de modelos abierto; el selector toma el foco al abrirse en escritorio y escucha ⌘1–9 en el documento mientras está abierto. La página Settings › Keybindings solo lista los atajos propios del Work Hub (`qaap-work-hub-keybinding-allowlist.ts`). **Validación:** `tsc -b` de composer y work-hub; 12 specs de keybindings y 25 del selector en verde; en la app Electron (CDP :9333) ⌘1 con el foco en el buscador, ⌘2 con el foco en el composer y Esc funcionan. CDP no pasa por el menú nativo de macOS. **Pendiente:** probar ⌘1–5 con teclado real y con grupos de editor abiertos en el IDE (el menú Go tiene esos aceleradores).
+
+## 2026-11-17 — Preview: la salida de los dev servers ocultos se perdía (rama `feat/work-hub-harness-round2`)
+
+**Causa:** en escritorio y web (no en móvil, que usa `QaapHeadlessTerminalService`) el dev server de Preview corre en un `TerminalWidgetImpl` que nunca se abre (`reveal: false`). Upstream guarda lo que llega antes de `open()` en `initialData`: no dispara `onOutput` ni llena el buffer de xterm. Un fallo rápido (`sh: vite: command not found` en una copia sin `node_modules`, `Error: Port 5173 is already in use` con `--strictPort`; los dos salen con código 1) llegaba como «Dev server exited with code 1.» o «Dev server tab closed.», sin el motivo, y tampoco se ejecutaban ni el auto-install ni la recuperación de puerto, que leen esa salida. Además, el aviso de salida (TerminalWatcher) puede llegar antes que la salida, que viaja por otro canal.
+
+**Hecho:** `QaapTerminalWidget` (rebind de `TerminalWidget` en `qaap-work-hub-frontend-module.ts`) dispara `onOutput` para los terminales `qaap-preview` sin abrir y expone `qaapUnrenderedOutput`, que `readTerminalTail` usa como respaldo. El aviso de salida espera a que el widget se cierre (con toda la salida ya recibida) o 1,5 s (`waitForDevExitOutput`), y el cierre del widget ya no compite con él. Una salida con código distinto de 0 cita las últimas líneas («Last output:»), igual que el error final cuando el diagnóstico es genérico. El comando para workspaces pnpm ya era correcto (`pnpm --filter '<pkg>' dev --port N --strictPort` desde la raíz, con `PORT`/`QAAP_PREVIEW_PORT` y `--host 127.0.0.1`); el repo de Qaap sigue usando `npm run start:browser`, aislado y con el puerto que le asigna la preview, y si no está compilado ahora muestra el aviso build-required en lugar del código de salida pelado.
+
+**Validación:** `tsc -b` de shared-core y work-hub; 236 specs de bootstrap/terminal en verde; eslint sin errores; drift y package-graph OK. Comando reproducido a mano en `Mockup`: arranca; sin `node_modules` sale con 1 y `sh: vite: command not found`; con :5173 ocupado sale con 1 y `Port 5173 is already in use`.
+
+**Pendiente:** probarlo en la app (Preview de `Mockup` en una sesión de worktree y del repo de Qaap sin compilar).
+
 ## 2026-11-17 — Sesiones de harness en escritorio (rama `feat/desktop-harness-polish`)
 
 **Hecho (sin commitear al cerrar la sesión):**
