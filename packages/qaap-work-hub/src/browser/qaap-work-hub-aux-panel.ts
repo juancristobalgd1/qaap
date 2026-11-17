@@ -233,9 +233,16 @@ export class QaapWorkHubAuxPanel {
         this.menuSearch.placeholder = nls.localize('qaap/workHubAuxPanel/searchTabs', 'Search tabs…');
         this.menuSearch.setAttribute('aria-label', this.menuSearch.placeholder);
         this.menuSearch.addEventListener('input', () => this.renderMenuList());
+        // Inline search row (leading magnifier, hairline below), like the Files view filter.
+        const menuSearchRow = document.createElement('div');
+        menuSearchRow.className = 'qaap-work-hub-aux-panel-menu-search-row';
+        const menuSearchIcon = document.createElement('span');
+        menuSearchIcon.className = 'qaap-work-hub-aux-panel-menu-search-icon codicon codicon-search';
+        menuSearchIcon.setAttribute('aria-hidden', 'true');
+        menuSearchRow.append(menuSearchIcon, this.menuSearch);
         this.menuList = document.createElement('div');
         this.menuList.className = 'qaap-work-hub-aux-panel-menu-list';
-        this.menu.append(this.menuSearch, this.menuList);
+        this.menu.append(menuSearchRow, this.menuList);
 
         this.element.append(this.resizeHandle, bar, body, this.menu);
         this.element.addEventListener('keydown', event => {

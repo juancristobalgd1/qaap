@@ -713,15 +713,14 @@ export function ensureTranscriptFilesTabExtracted(
                 // is still being assigned. Yield once so the header relocation has a
                 // concrete mount to target.
                 await Promise.resolve();
-                const chrome = createTranscriptReviewChrome(
-                    changesHost,
-                    ctx.host.transcriptHistoryPanelOpen,
-                    ctx.host.transcriptHistoryPanelHeightPx,
-                );
-                const { diffHost, historyToggleHost, historyResizeHandle, historyPanel } = chrome;
+                // The Changes view has no History toggle or panel: its header row stays for the diff
+                // toolbar alone (the scope picker covers what the history panel was used for).
+                const chrome = createTranscriptReviewChrome(changesHost, false);
+                const { diffHost } = chrome;
+                chrome.historyToggleHost.remove();
+                chrome.historyResizeHandle.remove();
+                chrome.historyPanel.remove();
                 ctx.host.transcriptReviewDiffHost = diffHost;
-                ctx.host.transcriptHistoryRoot = cwd;
-                ctx.transcriptHistoryUi.installTranscriptHistoryResize(historyResizeHandle, historyPanel, changesHost);
                 const rootUri = FileUri.create(cwd).toString();
                 if (!ctx.host.diffReviewWidget) {
                     ctx.host.diffReviewWidget = await ctx.host.createDiffReviewWidget!();
@@ -755,11 +754,6 @@ export function ensureTranscriptFilesTabExtracted(
                         invalidateVerifyWorkspaceSnapshots(ctx.host.verifyResults ?? []);
                     },
                 );
-                ctx.transcriptHistoryUi.renderTranscriptHistoryToggle(historyToggleHost, historyPanel, historyResizeHandle, cwd);
-                // Relocate the fully rendered control after the async diff mount has
-                // settled, so restored and freshly-created Files mounts behave alike.
-                mount?.attachChangesHeaderActionHost?.(historyToggleHost);
-                ctx.transcriptHistoryUi.renderTranscriptHistoryPanel(historyPanel, cwd);
             }
             : undefined,
         unmountChangesView: ctx.host.createDiffReviewWidget
