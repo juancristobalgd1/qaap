@@ -142,8 +142,40 @@ They read only object data, and only as the backend uid.
 - Personal API tokens (`qaap_pat_`) can create and cancel agent tasks only (`QaapGithubAuthGuard`
   allowlist). They cannot reach the commit/push endpoint.
 
+## Managed GitHub MCP server (2026-11-18)
+
+The agent's GitHub tools use a managed MCP server named `qaap-github` (not `github`: that name stays
+the user's own preference entry). It talks to `https://api.githubcopilot.com/mcp/readonly` with the
+headers `X-MCP-Readonly: true` and `X-MCP-Lockdown: true`.
+
+- **Where the token lives:** only in the backend heap, and only in the `Authorization` header sent to
+  `api.githubcopilot.com`. It is never in the server description, `env`, `serverAuthToken`,
+  preferences, logs, the keystore or an error message. Autostart is off; the server starts on demand.
+- **Per-mode scope:** `desktop` reads `GH_TOKEN`, then `GITHUB_TOKEN`, then `gh auth token` (5 s timeout,
+  no shell, failures reduced to a code), then the stored OAuth session. A per-tenant backend reads only its
+  owner's token from the request-scoped owner cache and never the environment or `gh`. A shared hosted
+  backend without an owner registers nothing. `local` (web development) reads a stored session only when
+  exactly one login exists.
+- **Read-only default:** only tools GitHub marks `readOnlyHint` are listed or called. Anything else is
+  rejected by the backend, so a write tool is unreachable until the write opt-in exists.
+- **401 handling:** the managed provider never waits for a browser. A rejected token is forgotten by a
+  tenant backend only after `GET https://api.github.com/user` also returns 401. If `/user` accepts the
+  token, the endpoint refusal is reported as a policy or OAuth-app restriction, not as a sign-in prompt.
+- **Single owner:** a tenant backend serves one owner; its owner-token cache is the only source.
+- **Never to harness CLIs:** Theia MCP servers are not exported to `.mcp.json` or to any agent CLI.
+- **Egress:** `.githubcopilot.com` is already on the tenant egress allowlist; nothing changed there.
+- **Not done yet:** the Connect GitHub composer chip and the `qaap.mcp.github.allowWrite` opt-in with
+  confirmation. Both are tracked in `docs/HANDOFF.md`.
+
 ## Checks
 
+- `qaap-github-mcp-credential-resolver.spec` (shared-core): source order, `gh` failures, tenant and
+  shared-backend rules, 401 verdicts, and no token in `describe()`.
+- `qaap-github-mcp-backend.spec` (ai-config): token absent from the managed description, provider
+  without keystore, a 401 never hangs, read-only tool filter, no start without a credential.
+- `qaap-github-mcp-on-demand-starter.spec` (ai-config): no `startServer` without credential, one start
+  for concurrent turns, outcomes for auth and errors.
+- `qaap-github-mcp-managed.spec` (shared-core): which legacy GitHub entries count as tokenless.
 - `qaap-hosted-git-push.spec`: the project config and hooks never run, the token is never in argv,
   the scratch repo is removed, and the egress proxy is passed with TLS verification on.
 - `qaap-hosted-git-fetch.spec`: the bundle carries every remote ref, only missing objects, and never

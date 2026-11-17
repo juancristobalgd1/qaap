@@ -199,3 +199,15 @@ Estado para continuar el trabajo desde otra cuenta o sesión. Actualízalo al ce
 
 **Pendiente**
 - Nada.
+
+**GitHub MCP gestionado (rama feat/work-hub-harness-round2, PR #534)**
+- Hecho: resolvedor de credenciales, servidor `qaap-github` de solo lectura por conexión, arranque bajo demanda con single-flight, chat agent que no persiste entradas de GitHub, documentación en `doc/qaap-github-token-boundary.md`.
+- Pendiente: chip «Connect GitHub» en el composer (contrato estructural en qaap-shared-core, consumidor en qaap-composer). Hoy el error aparece en el chat como texto.
+- Pendiente: opt-in de escritura `qaap.mcp.github.allowWrite` con confirmación obligatoria (`mcp_qaap-github_*`). Hasta entonces el filtro de solo lectura del backend bloquea cualquier herramienta sin `readOnlyHint`.
+- Pendiente: los prompts `code-reviewer` y `explore` de upstream siguen referenciando `{{prompt:mcp_github_tools}}`; ya no resuelven a las herramientas del servidor gestionado.
+- Pendiente de verificar en vivo:
+  1. desktop: `api.githubcopilot.com/mcp/readonly` acepta el token OAuth de Qaap y el de `gh` sin licencia de Copilot (401/403 con `/user` válido => mensaje «no soportado»);
+  2. `tools/list` en `/readonly` devuelve herramientas con `readOnlyHint` y el filtro no vacía la lista;
+  3. VPS: el backend de tenant llega a `api.githubcopilot.com` a través de Squid (`NODE_USE_ENV_PROXY`);
+  4. VPS: la caché del token del dueño se llena antes del primer turno de GitHub; las restricciones de la OAuth App dan 403 legible;
+  5. grep de `gho_`, `ghp_` y `github_pat_` en logs y en `settings.json` del tenant tras una sesión completa.
