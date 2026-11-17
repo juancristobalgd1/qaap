@@ -177,6 +177,31 @@
   color: color-mix(in srgb, var(--theia-descriptionForeground, #8d8983) 82%, transparent);
 }
 
+/* "Made by <harness>" replaces "@author" on rows opened by a Qaap agent task. */
+.theia-mobile-work-hub-pull-request-harness {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  vertical-align: middle;
+}
+
+.theia-mobile-work-hub-pull-request-harness .theia-qaap-agent-brand-icon.theia-mod-sm {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+}
+
+.theia-mobile-work-hub-pull-request-harness-glyph.codicon {
+  font-size: 14px;
+  line-height: 14px;
+}
+
+.theia-mobile-work-hub-pull-request-harness-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* All-PRs navigator: state chips, repo name, state badge and "Load more" footer. */
 .theia-mobile-work-hub-pull-request-status.theia-mod-closed { color: #f07178; }
 
