@@ -238,9 +238,6 @@
     },
     {
       "path": "../api-provider-sample"
-    },
-    {
-      "path": "../api-samples"
     }
   ]
 }

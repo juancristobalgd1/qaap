@@ -238,9 +238,6 @@
     },
     {
       "path": "../../packages/workspace"
-    },
-    {
-      "path": "../api-samples"
     }
   ]
 }
