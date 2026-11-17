@@ -792,7 +792,8 @@ export function forceStopZombieTurn(
         reason,
     });
     const resolvedAgentMessageId = failed.agentMessageId ?? agentMessageId;
-    const next: QaapAgentConversation = { ...failed.conv, updatedAt: Date.now() };
+    // A watchdog pause is maintenance, not activity: keep the last real `updatedAt`.
+    const next: QaapAgentConversation = { ...failed.conv, updatedAt: latest.updatedAt };
     deps.conversations.set(conversationId, next);
     deps.publishFinalizedAgentMessage(conversationId, next, resolvedAgentMessageId);
     deps.fire({ type: 'updated', conversation: toConversationSummary(next) });

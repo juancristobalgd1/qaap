@@ -485,7 +485,8 @@ export async function maybeAutoResumeInterruptedTurnExtracted(ctx: QaapAgentConv
             }
             return next;
         });
-    const resumeConv: QaapAgentConversation = { ...conv, status: 'streaming', updatedAt: nowMs, messages };
+    // Restart recovery keeps `updatedAt`: the sidebar order must reflect real activity only.
+    const resumeConv: QaapAgentConversation = { ...conv, status: 'streaming', updatedAt: conv.updatedAt, messages };
     // Persist the incremented counter BEFORE spawning. persist() is best-effort/async, so if we
     // spawned first and the container were OOM-killed again before the counter reached disk, the
     // next boot would read the stale lower count and resume forever. Awaiting the flush here makes

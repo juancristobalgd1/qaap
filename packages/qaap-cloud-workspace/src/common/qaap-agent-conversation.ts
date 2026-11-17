@@ -289,7 +289,13 @@ export interface QaapAgentConversation {
     readonly title: string;
     readonly status: QaapAgentConversationStatus;
     readonly createdAt: number;
+    /** Last real user or agent activity. Backend restart recovery never moves it (see `interruptedAt`). */
     readonly updatedAt: number;
+    /**
+     * When a backend restart interrupted this turn. Recovery records it here instead of touching
+     * `updatedAt`, so restarts do not reorder the sidebar. Optional: absent when never interrupted.
+     */
+    readonly interruptedAt?: number;
     readonly messages: QaapAgentMessage[];
     /** User-flagged "high priority" — surfaces at the top of project lists. */
     readonly priority?: boolean;
