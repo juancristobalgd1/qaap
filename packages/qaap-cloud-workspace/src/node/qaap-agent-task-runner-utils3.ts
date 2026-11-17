@@ -204,6 +204,8 @@ export interface QaapAgentConnectionProbeOptions {
     readonly args?: readonly string[];
     readonly cwd?: string;
     readonly env?: NodeJS.ProcessEnv;
+    /** Probe timeout; defaults to {@link QAAP_AGENT_CONNECTION_PROBE_TIMEOUT_MS} (specs shorten it). */
+    readonly timeoutMs?: number;
 }
 
 /**
@@ -298,8 +300,16 @@ export const GEMINI_CLI_CONNECTION_PROBE_SCRIPT = 'test -s "$HOME/.gemini/oauth_
  * Exit 0 with a listing → "logged in"; the sign-in message → "not logged in"; anything else (timeout,
  * other error) prints nothing and exits non-zero, so the probe reads it as unknown. `timeout` is optional
  * (absent on macOS): the probe's own 10 s limit then bounds the run.
+ *
+ * agy's output goes to a temp file, never to a `$(…)` pipe: a helper process agy leaves running keeps such
+ * a pipe (and the probe's own stdout) open after `timeout` killed agy, so the shell and the backend's
+ * `execFile` waited for EOF forever and the picker showed "Checking sign-in…" for good. `-k 2` follows the
+ * TERM with a KILL for an agy that ignores it.
  */
-export const AGY_CLI_CONNECTION_PROBE_SCRIPT = 'T=""; command -v timeout >/dev/null 2>&1 && T="timeout 8"; out=$($T "$1" models 2>&1 </dev/null); rc=$?; case "$out" in *"Please sign in"*) echo "not logged in" ;; *) [ "$rc" -eq 0 ] && echo "logged in" ;; esac';
+export const AGY_CLI_CONNECTION_PROBE_SCRIPT = 'T=""; command -v timeout >/dev/null 2>&1 && T="timeout -k 2 8"; '
+    + 'f=$(mktemp 2>/dev/null || echo "${TMPDIR:-/tmp}/qaap-agy-probe.$$"); '
+    + '$T "$1" models >"$f" 2>&1 </dev/null; rc=$?; out=$(cat "$f" 2>/dev/null); rm -f "$f"; '
+    + 'case "$out" in *"Please sign in"*) echo "not logged in" ;; *) [ "$rc" -eq 0 ] && echo "logged in" ;; esac';
 
 /**
  * Pi has no provider-agnostic status command (`pi auth check` needs `--provider`). `/login` and
@@ -390,6 +400,13 @@ export function classifyAgentConnectionProbe(
  * loaded VPS; a timeout only ever yields `unknown`, never a usable answer.
  */
 export const QAAP_AGENT_CONNECTION_PROBE_TIMEOUT_MS = 10_000;
+/**
+ * After the probe timeout, how long the probe may still take to hand back its pipes before it is settled as
+ * `unknown` anyway. `execFile` kills the child at the timeout but only calls back once every holder of its
+ * stdout/stderr has closed them; a grandchild (agy's helper, a tenant wrapper's descendant) can hold them
+ * forever, and an unsettled probe kept the session `checking` for good.
+ */
+export const QAAP_AGENT_CONNECTION_PROBE_SETTLE_GRACE_MS = 1_500;
 
 /**
  * Asynchronous auth probe. Never use a synchronous spawn here: the picker catalog, the settings
@@ -406,13 +423,23 @@ export function probeAgentConnectionState(
     if (!args) {
         return Promise.resolve('unknown');
     }
+    const timeoutMs = options?.timeoutMs ?? QAAP_AGENT_CONNECTION_PROBE_TIMEOUT_MS;
     return new Promise<QaapAgentConnectionState>(resolve => {
+        let settled = false;
+        let settleTimer: ReturnType<typeof setTimeout> | undefined;
+        const settle = (state: QaapAgentConnectionState): void => {
+            if (!settled) {
+                settled = true;
+                clearTimeout(settleTimer);
+                resolve(state);
+            }
+        };
         try {
-            execFile(options?.file ?? bin, [...args], {
+            const child = execFile(options?.file ?? bin, [...args], {
                 cwd: options?.cwd,
                 env: childProcessEnv(options?.env),
                 encoding: 'utf8',
-                timeout: QAAP_AGENT_CONNECTION_PROBE_TIMEOUT_MS,
+                timeout: timeoutMs,
                 windowsHide: true,
             }, (error, stdout, stderr) => {
                 const output = `${stdout ?? ''}\n${stderr ?? ''}`;
@@ -420,10 +447,22 @@ export function probeAgentConnectionState(
                 // spawn failure, a timeout or a signal makes the probe inconclusive.
                 const exitCode = typeof error?.code === 'number' ? error.code : undefined;
                 const failed = !!error && (exitCode === undefined || !!error.killed || !!error.signal);
-                resolve(classifyAgentConnectionProbe(normalized, failed ? null : exitCode ?? 0, output, failed));
+                settle(classifyAgentConnectionProbe(normalized, failed ? null : exitCode ?? 0, output, failed));
             });
+            // Hard bound: a probe whose pipes stay open past the timeout is inconclusive, not pending.
+            settleTimer = setTimeout(() => {
+                try {
+                    child.kill('SIGKILL');
+                    child.stdout?.destroy();
+                    child.stderr?.destroy();
+                } catch {
+                    // Already gone.
+                }
+                settle('unknown');
+            }, timeoutMs + QAAP_AGENT_CONNECTION_PROBE_SETTLE_GRACE_MS);
+            settleTimer.unref?.();
         } catch {
-            resolve('unknown');
+            settle('unknown');
         }
     });
 }

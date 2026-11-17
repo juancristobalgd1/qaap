@@ -21,7 +21,9 @@ export class QaapAgentSignInRequiredError extends Error {
 }
 
 /**
- * Pre-spawn guard for the unified availability rule: a Pro model needs a confirmed harness session.
+ * Pre-spawn guard for the unified availability rule: a Pro model is refused only when the harness is positively
+ * signed out (probe answer or a rejected session). A pending or inconclusive session fails open: the run starts
+ * and surfaces the harness's own sign-in (Antigravity: the sign-in wait watcher stops agy and asks to sign in).
  * Only real harnesses are checked. QAIQ is gated by its provider key (assertQaiqConfigured) and the shell
  * runs locally. A turn without a resolved model counts as Pro (fail-closed).
  * @throws {@link QaapAgentSignInRequiredError} when the model is not selectable for this owner.

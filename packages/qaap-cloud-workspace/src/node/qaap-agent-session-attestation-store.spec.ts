@@ -75,18 +75,21 @@ describe('QaapAgentSessionAttestationStore', () => {
 });
 
 describe('QaapAgentTaskRunner session attestation', () => {
-    it('lists an attested Copilot as signed-in for that owner only, and signed-out once the TTL expires', () => {
+    // Was: unattested read as signed-out (fail-closed). Copilot has no probe, so without an attestation its session
+    // cannot be known: it fails open ('unknown', Pro selectable) and a turn that fails auth locks it (see below).
+    it('lists an attested Copilot as signed-in for that owner only, and unknown (not locked) once the TTL expires', () => {
         const store = new ClockedAttestationStore();
         const runner = runnerWith(store);
-        expect(copilotSession(runner, 'alice')).to.equal('signed-out');
+        expect(copilotSession(runner, 'alice')).to.equal('unknown');
 
         expect(runner.attestAgentSession('copilot', 'alice')).to.equal(true);
         expect(copilotSession(runner, 'alice')).to.equal('signed-in');
         expect(runner.listAgents('alice').find(agent => agent.id === 'copilot')).to.include({ connectionState: 'connected', available: true });
-        expect(copilotSession(runner, 'bob')).to.equal('signed-out');
+        expect(copilotSession(runner, 'bob')).to.equal('unknown');
 
         store.clock += QAAP_AGENT_SESSION_ATTESTATION_TTL_MS;
-        expect(copilotSession(runner, 'alice')).to.equal('signed-out');
+        expect(copilotSession(runner, 'alice')).to.equal('unknown');
+        expect(runner.listAgents('alice').find(agent => agent.id === 'copilot')).to.include({ available: true });
     });
 
     it('never attests a harness that has a real probe', () => {

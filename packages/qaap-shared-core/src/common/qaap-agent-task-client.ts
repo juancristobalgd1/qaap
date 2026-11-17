@@ -73,7 +73,7 @@ export interface QaapAgentTaskAgentOption {
     /** How the owner can run the agent now (see the backend `resolveAgentAccess`); `none` offers a sign-in. */
     readonly accessState?: 'session' | 'none' | 'unknown';
     /** Sign-in state for the owner; `available` stays "can run now" (see the backend descriptor). */
-    readonly session?: 'signed-in' | 'signed-out' | 'checking';
+    readonly session?: 'signed-in' | 'signed-out' | 'checking' | 'unknown';
     /** The Antigravity CLI the host resolved (`gemini`, `agy`, `antigravity`); only set for the Antigravity harness. */
     readonly cliBin?: string;
 }

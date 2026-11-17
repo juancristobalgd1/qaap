@@ -57,15 +57,18 @@ describe('assertAgentModelAccessExtracted (pre-spawn sign-in guard)', () => {
         expect((error as QaapAgentSignInRequiredError).reason).to.equal('sign-in-required');
     });
 
-    it('never spawns agy without a confirmed session, whatever the model (it has no Free tier)', () => {
-        // agy gets its prompt on argv and, unsigned, waits 60 s for a pasted code: the guard must stop it first.
+    // Was: agy never spawned without a confirmed session (unknown settled/unsettled were refused too). On the VPS the
+    // agy probe can stay inconclusive, which refused every Antigravity turn for good. Now only a positive sign-out
+    // refuses; otherwise agy runs and the sign-in wait watcher stops it at its sign-in prompt (auth failure).
+    it('refuses agy only on a positive sign-out; an unknown or pending session lets it run (it has no Free tier)', () => {
         const models = [undefined, { provider: 'google', vendor: 'antigravity', modelId: 'auto' }, { provider: 'google', vendor: 'antigravity', modelId: 'gemini-3.8-flash-medium' }];
         for (const model of models) {
-            for (const [state, settled] of [['disconnected', true], ['unknown', true], ['unknown', false]] as const) {
-                const error = thrownBy(() => assertAgentModelAccessExtracted(ctxFor(state, settled), 'antigravity', 'alice', model as never));
-                expect(error, `${model?.modelId}/${state}/${settled}`).to.be.instanceOf(QaapAgentSignInRequiredError);
+            const error = thrownBy(() => assertAgentModelAccessExtracted(ctxFor('disconnected', true), 'antigravity', 'alice', model as never));
+            expect(error, `${model?.modelId}/disconnected`).to.be.instanceOf(QaapAgentSignInRequiredError);
+            for (const [state, settled] of [['unknown', true], ['unknown', false], ['connected', true]] as const) {
+                expect(thrownBy(() => assertAgentModelAccessExtracted(ctxFor(state, settled), 'antigravity', 'alice', model as never)), `${model?.modelId}/${state}/${settled}`)
+                    .to.equal(undefined);
             }
-            expect(thrownBy(() => assertAgentModelAccessExtracted(ctxFor('connected', true), 'antigravity', 'alice', model as never))).to.equal(undefined);
         }
     });
 
@@ -77,10 +80,12 @@ describe('assertAgentModelAccessExtracted (pre-spawn sign-in guard)', () => {
         expect(thrownBy(() => assertAgentModelAccessExtracted(ctxFor('not-required', true), 'codex', 'alice', proModel as never))).to.equal(undefined);
     });
 
-    it('refuses a Pro model while the sign-in is still checking, with a retry message', () => {
-        const error = thrownBy(() => assertAgentModelAccessExtracted(ctxFor('unknown', false), 'codex', 'alice', proModel as never));
-        expect((error as QaapAgentSignInRequiredError).reason).to.equal('checking-sign-in');
-        expect((error as Error).message).to.equal("Couldn't confirm your sign-in to Codex; try again.");
+    // Was: refused with 'checking-sign-in' ("Couldn't confirm your sign-in"). A pending or inconclusive check fails
+    // open now: the run surfaces the harness's own sign-in if the session is really missing.
+    it('lets a Pro model run while the sign-in is still checking or inconclusive (fail-open)', () => {
+        expect(thrownBy(() => assertAgentModelAccessExtracted(ctxFor('unknown', false), 'codex', 'alice', proModel as never))).to.equal(undefined);
+        expect(thrownBy(() => assertAgentModelAccessExtracted(ctxFor('unknown', true), 'codex', 'alice', proModel as never))).to.equal(undefined);
+        expect(thrownBy(() => assertAgentModelAccessExtracted(ctxFor('unknown', true), 'codex', 'alice', undefined))).to.equal(undefined);
     });
 
     it('lets a Free model run while the sign-in is still checking', () => {
@@ -106,7 +111,6 @@ describe('assertAgentModelAccessExtracted (pre-spawn sign-in guard)', () => {
     it('writes refusals the transcript reads as a sign-in failure (Sign in chip), not a generic start failure', () => {
         const refusals = [
             thrownBy(() => assertAgentModelAccessExtracted(ctxFor('disconnected', true), 'codex', 'alice', proModel as never)),
-            thrownBy(() => assertAgentModelAccessExtracted(ctxFor('unknown', false), 'codex', 'alice', proModel as never)),
         ].map(error => `${(error as Error).message}\n`);
         for (const log of refusals) {
             expect(detectAgentFailureKind(log), log).to.equal('auth');

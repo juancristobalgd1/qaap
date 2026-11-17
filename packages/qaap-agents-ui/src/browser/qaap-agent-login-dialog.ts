@@ -93,6 +93,16 @@ function localizeFailure(state: Extract<QaapAgentLoginFlowState, { phase: 'faile
     }
     switch (state.reason) {
         case 'timeout':
+            if (state.terminalEchoOnly) {
+                // The terminal printed something (the typed command, the prompt) but the CLI itself did not.
+                const silent = nls.localize(
+                    'qaap/agentLogin/cliPrintedNothing',
+                    '{0} printed nothing within {1} seconds. The sign-in terminal output is below.',
+                    agentLabel,
+                    String(Math.round((state.timeoutMs ?? QAAP_AGENT_LOGIN_CHALLENGE_TIMEOUT_MS) / 1000)),
+                );
+                return state.diagnostics ? `${silent} ${state.diagnostics}` : silent;
+            }
             if (!state.tail.length) {
                 // Nothing to show below: say so, and what the host saw from the terminal.
                 const noOutput = nls.localize(
@@ -141,6 +151,15 @@ function localizeFailure(state: Extract<QaapAgentLoginFlowState, { phase: 'faile
                 agentLabel,
             );
         case 'exited':
+            if (state.crash) {
+                return nls.localize(
+                    'qaap/mobileProjects/agentLoginDialogCrashed',
+                    'The {0} CLI crashed before it connected (exit code {1}): {2}',
+                    agentLabel,
+                    String(state.exitCode ?? ''),
+                    state.crash,
+                );
+            }
             return nls.localize(
                 'qaap/mobileProjects/agentLoginDialogExited',
                 'The {0} sign-in process ended before it connected (exit code {1}).',

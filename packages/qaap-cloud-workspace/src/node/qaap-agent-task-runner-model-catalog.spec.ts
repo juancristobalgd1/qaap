@@ -142,13 +142,17 @@ describe('QAIQ/OpenClaude model routing', () => {
             expect(paid.every(model => model.available === true && model.unavailableReason === undefined)).to.equal(true);
         });
 
-        it('holds paid OpenCode models as checking-sign-in while the auth probe is still pending, never selectable', () => {
-            const models = listModelsForAgentExtracted(opencodeCtx('unknown', false), 'opencode', 'pro-user');
-            expect(models.some(model => model.modelId === 'opencode/claude-opus-4-7')).to.equal(true);
-            const paid = models.filter(model => model.tier === 'pro');
-            expect(paid.length).to.be.greaterThan(0);
-            expect(paid.every(model => model.available === false && model.unavailableReason === 'checking')).to.equal(true);
-            expect(models.filter(model => model.tier === 'free').every(model => model.available === true)).to.equal(true);
+        // Was: paid models held as checking-sign-in (not selectable) while the probe ran. A pending probe no longer
+        // locks (fail-open); only a positive sign-out does (first test above).
+        it('keeps paid OpenCode models selectable while the auth probe is still pending or inconclusive', () => {
+            for (const settled of [false, true]) {
+                const models = listModelsForAgentExtracted(opencodeCtx('unknown', settled), 'opencode', 'pro-user');
+                expect(models.some(model => model.modelId === 'opencode/claude-opus-4-7')).to.equal(true);
+                const paid = models.filter(model => model.tier === 'pro');
+                expect(paid.length).to.be.greaterThan(0);
+                expect(paid.every(model => model.available === true && model.unavailableReason === undefined), `settled=${settled}`).to.equal(true);
+                expect(models.filter(model => model.tier === 'free').every(model => model.available === true)).to.equal(true);
+            }
         });
     });
 
@@ -173,15 +177,14 @@ describe('QAIQ/OpenClaude model routing', () => {
             expect(models.every(model => model.available === false && model.unavailableReason === 'not-connected')).to.equal(true);
         });
 
-        it('holds Codex models as checking-sign-in (never plan) while the auth probe is still pending', () => {
-            const models = listModelsForAgentExtracted(codexCtx('unknown', false), 'codex', 'starter-user');
-            expect(models).to.have.length(3);
-            expect(models.every(model => model.available === false && model.unavailableReason === 'checking')).to.equal(true);
-        });
-
-        it('locks a settled-unknown Codex probe as not-connected, never as plan', () => {
-            const models = listModelsForAgentExtracted(codexCtx('unknown', true), 'codex', 'starter-user');
-            expect(models.every(model => model.unavailableReason === 'not-connected')).to.equal(true);
+        // Was: checking-sign-in while pending and not-connected once settled (both locked). Fail-open now: an
+        // unresolved or inconclusive probe keeps the models selectable; never a plan lock either way.
+        it('keeps Codex models selectable (never plan) while the auth probe is pending or settled without an answer', () => {
+            for (const settled of [false, true]) {
+                const models = listModelsForAgentExtracted(codexCtx('unknown', settled), 'codex', 'starter-user');
+                expect(models).to.have.length(3);
+                expect(models.every(model => model.available === true && model.unavailableReason === undefined), `settled=${settled}`).to.equal(true);
+            }
         });
     });
 

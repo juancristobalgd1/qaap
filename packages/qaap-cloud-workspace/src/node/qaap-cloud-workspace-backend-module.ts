@@ -67,6 +67,8 @@ import { QaapBillingEndpoint } from './qaap-billing-endpoint';
 import { QaapUsageEndpoint } from './usage/qaap-usage-endpoint';
 import { QaapUsageLimitsService } from './usage/qaap-usage-limits';
 import { QaapUsageScanner } from './usage/qaap-usage-scanner';
+import { QaapUsageScannerRegistry } from './usage/qaap-usage-scanner-registry';
+import { QaapUsageScanTargetResolver } from './usage/qaap-usage-scan-target';
 import { QaapBillingStore } from './qaap-billing-store';
 import { QaapBillingQuotaService } from './qaap-billing-quota-service';
 import { QaapProjectResourcesEndpoint } from './qaap-project-resources-endpoint';
@@ -375,6 +377,8 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapProjectResourcesEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapProjectResourcesEndpoint);
     bind(QaapUsageScanner).toSelf().inSingletonScope();
+    bind(QaapUsageScanTargetResolver).toSelf().inSingletonScope();
+    bind(QaapUsageScannerRegistry).toSelf().inSingletonScope();
     bind(QaapUsageLimitsService).toSelf().inSingletonScope();
     bind(QaapUsageEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapUsageEndpoint);

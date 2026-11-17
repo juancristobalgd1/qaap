@@ -449,9 +449,11 @@ describe('Pi Connect dialog: `/login` driven in the hidden terminal', () => {
         while (dialogSpinning() && Date.now() - startedAt <= 40_000) {
             await clock.tickAsync(500);
         }
-        // Only the echoed command came back, so the tail is empty: the dialog says so and gives the host's facts.
-        expect(dialogStatus()).to.contain('No output was received from the sign-in terminal.');
+        // Only the echoed command came back. Was: "No output was received" with an empty box; now the dialog says
+        // the CLI printed nothing and shows what the terminal did print (the echo), plus the host's facts.
+        expect(dialogStatus()).to.contain('Pi printed nothing within 30 seconds.');
         expect(dialogStatus()).to.contain('Terminal started:');
+        expect(document.querySelector('.theia-mobile-agent-login-dialog-output')?.textContent ?? '').to.contain('pi --tui-mode regular');
         expect(terminal.sent.filter(text => text === '\r').length, 'the method picker never showed, so its Enter was never typed')
             .to.be.below(3);
         expect(terminal.isDisposed).to.equal(true);
@@ -538,6 +540,10 @@ describe('Copilot Connect dialog: sign-in attestation', () => {
             await clock.tickAsync(100);
         }
         expect(posts).to.deep.equal([{ url: '/qaap/api/agent-tasks/agent-session-attest', body: { agentId: 'copilot' } }]);
+        // The hidden terminal runs the JavaScript entry (binary as fallback) with self-update off.
+        const typed = terminal.sent.join('');
+        expect(typed).to.contain('export COPILOT_AUTO_UPDATE=\'false\'; ');
+        expect(typed).to.contain('node "$qaap_copilot_entry" login --device-code');
         await clock.tickAsync(10);
         expect(events.slice(events.indexOf('attest') + 1), 'the picker is refreshed after the attestation landed').to.include('refresh');
     });

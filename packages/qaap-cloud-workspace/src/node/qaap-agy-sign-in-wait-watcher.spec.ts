@@ -37,13 +37,18 @@ describe('agy sign-in wait watcher', () => {
         expect(detectAgentFailureKind(`${AGY_UNSIGNED}\n[qaap] Antigravity is waiting for a sign-in; stopping the run.`)).to.equal('auth');
     });
 
-    it('antigravity is probed and has no Free model, so the pre-spawn guard needs a session for every model', () => {
+    // Was: the guard needed a session for every model (signed-out and checking both refused). Fail-open now:
+    // only a positive sign-out refuses agy; a pending or inconclusive probe lets it run, and this watcher stops
+    // it at its sign-in wait so the turn ends as an auth failure with the Sign in action.
+    it('antigravity has no Free model: a positive sign-out refuses every model, an unknown session lets agy run', () => {
         expect(QAAP_BUILTIN_AGENT_DEFINITIONS.find(definition => definition.id === 'antigravity')?.sessionCheck).to.equal('probe');
         for (const modelId of ['', 'auto', 'gemini-3.8-flash-medium', 'gemini-3.8-pro-high', 'gemini-free', 'x:free']) {
             const tier = QaapHarnessModelAvailability.tier('antigravity', { modelId });
             expect(tier, modelId).to.equal('pro');
-            for (const session of ['signed-out', 'checking'] as const) {
-                expect(QaapHarnessModelAvailability.availability({ harnessEnabled: true, session, tier }).selectable, `${modelId}/${session}`).to.equal(false);
+            expect(QaapHarnessModelAvailability.availability({ harnessEnabled: true, session: 'signed-out', tier }).selectable, `${modelId}/signed-out`)
+                .to.equal(false);
+            for (const session of ['checking', 'unknown'] as const) {
+                expect(QaapHarnessModelAvailability.availability({ harnessEnabled: true, session, tier }).selectable, `${modelId}/${session}`).to.equal(true);
             }
         }
     });
