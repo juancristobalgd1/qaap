@@ -10,6 +10,7 @@ Estado para continuar el trabajo desde otra cuenta o sesión. Actualízalo al ce
 - Work Hub: CSS de cabecera, proyectos y sidebar de sesiones.
 - Electron: `QaapWorkHubElectronMainMenuFactory` filtra el menú nativo según la superficie y el menú de app de macOS toma el nombre del producto («Qaap») en vez de «Theia». Spec nuevo.
 - Investigación de «hola» en esor-vite: no hubo envíos nuevos (ni turnos ni tareas en las últimas 2 h). El `updatedAt` de tres conversaciones (46eb0af5, 9e564278, 29ff13af) se fijó a 19:48:48–53 en el arranque del backend, por la reinicialización de turnos `streaming` (`interruptStreamingTurnForRestartExtracted` / `sweepZombieStreamingTurns`, que escriben `updatedAt = nowMs`). `toConversationSummary` no altera fechas ni orden: no es el culpable. No se ha tocado; ver pendiente.
+- File › Preferences y ⌘, abren Settings del Work Hub (General, Keybindings, Appearance) y el menú nativo del Work Hub oculta File Icon Theme (el IDE lo conserva). Nueva pestaña «Pull request» en el panel derecho: sin sesión muestra Connect GitHub; sondea solo un PR open o draft cada 60 s con pestaña y documento visibles; deduplica y deja 15 s entre fetches automáticos (1 petición sin sesión, medido). Side chat: decidido estilo T3 Code (opción B: pestaña en el panel derecho con Bring back, borrar, cerrar, Context from y composer compacto), en curso.
 
 **Validación**
 - `npx tsc -b` de qaap-shared-core, qaap-transcript, qaap-cloud-workspace, qaap-composer, qaap-work-hub y qaap-product: 0 errores.
