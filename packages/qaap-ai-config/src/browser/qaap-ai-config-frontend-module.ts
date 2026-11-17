@@ -21,6 +21,7 @@ import { QaapHarnessPreferenceContribution } from './qaap-harness-preferences';
 import { QaapAgentApprovalPreferenceContribution } from './qaap-agent-approval-preferences';
 import { QaapHarnessConfigurationWidget } from './qaap-harness-configuration-widget';
 import { QaapMcpFrontendApplicationContribution } from './qaap-mcp-frontend-application-contribution';
+import { QaapGithubMcpDefaultMigration } from './qaap-github-mcp-default-migration';
 import { McpFrontendApplicationContribution } from '@theia/ai-mcp/lib/browser/mcp-frontend-application-contribution';
 
 import { CodexChatAgent } from '@theia/ai-codex/lib/browser/codex-chat-agent';
@@ -51,6 +52,10 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     // Failed MCP autostarts are remembered per session instead of re-launched on every agent start.
     bind(QaapMcpFrontendApplicationContribution).toSelf().inSingletonScope();
     rebind(McpFrontendApplicationContribution).toService(QaapMcpFrontendApplicationContribution);
+
+    // Removes the GitHub MCP entry the old marketplace catalog installed, only when it is still exactly that default.
+    bind(QaapGithubMcpDefaultMigration).toSelf().inSingletonScope();
+    bind(FrontendApplicationContribution).toService(QaapGithubMcpDefaultMigration);
 
     bind(QaapCodexChatAgent).toSelf().inSingletonScope();
     rebind(CodexChatAgent).toService(QaapCodexChatAgent);

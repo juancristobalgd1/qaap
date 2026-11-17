@@ -8,6 +8,8 @@ import { FrontendApplicationContribution } from '@theia/core/lib/browser/fronten
 import { AboutDialogProps } from '@theia/core/lib/browser/about-dialog';
 import { CommandContribution } from '@theia/core/lib/common/command';
 import { FrontendApplicationConfigProvider } from '@theia/core/lib/browser/frontend-application-config-provider';
+import { FilterContribution } from '@theia/core/lib/common/contribution-filter/contribution-filter';
+import { QaapResolveMcpContributionFilter } from './qaap-resolve-mcp-contribution-filter';
 import { QaapBuiltinThemeBrandingContribution } from './qaap-builtin-theme-branding-contribution';
 import { QaapCopilotDefaultsContribution } from './qaap-copilot-defaults-contribution';
 import { QaapCorePreferenceBrandingContribution } from './qaap-core-preference-branding-contribution';
@@ -37,6 +39,10 @@ export default new ContainerModule((bind, _unbind, isBound, rebind) => {
 
     bind(QaapWorkspaceSafetyDefaultsContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapWorkspaceSafetyDefaultsContribution);
+
+    // api-samples (linked by the example apps) asks for a GitHub MCP token on every start; drop that prompt.
+    bind(QaapResolveMcpContributionFilter).toSelf().inSingletonScope();
+    bind(FilterContribution).toService(QaapResolveMcpContributionFilter);
 
     bind(QaapAiPreferenceBrandingStartup).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapAiPreferenceBrandingStartup);
