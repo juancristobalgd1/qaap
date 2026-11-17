@@ -64,6 +64,7 @@ describe('MobileProjectsStickyComposerWorkspaceUi', () => {
         readonly agentsHubInlineActive?: boolean;
         readonly transcriptOpenProject?: MobileProjectEntry;
         readonly conversationsByProjectId?: Map<string, QaapAgentConversationSummaryDTO[]>;
+        readonly desktop?: boolean;
     }): MobileProjectsStickyComposerWorkspaceHost {
         const conversationsByProjectId = options?.conversationsByProjectId ?? new Map();
         return {
@@ -83,6 +84,8 @@ describe('MobileProjectsStickyComposerWorkspaceUi', () => {
                 getCurrentWorkspaceBranch: () => 'main',
                 prepareProjectCwd: async () => undefined,
                 createGithubProject: async () => projects,
+                isDesktop: () => options?.desktop ?? false,
+                openLocalProject: async () => undefined,
             } as unknown as MobileProjectsStickyComposerWorkspaceHost['projectsService'],
             delegate: {},
             transcriptComposerUi: {
@@ -129,6 +132,21 @@ describe('MobileProjectsStickyComposerWorkspaceUi', () => {
         const startNew = [...document.body.querySelectorAll<HTMLElement>('.theia-mobile-sticky-composer-sheet-option')]
             .find(option => option.textContent?.includes('New GitHub repository'));
         expect(startNew?.querySelector('.codicon-github')).to.not.equal(null);
+    });
+
+    it('offers Open local project next to New local project only in the desktop app', () => {
+        const projects = [project('current', 'Current', true)];
+        const readLabels = (): Array<string | undefined> => [...document.body.querySelectorAll<HTMLElement>('.theia-mobile-sticky-composer-sheet-option-label')]
+            .map(label => label.textContent?.trim());
+
+        const webHost = createHost(projects, { desktop: false });
+        new MobileProjectsStickyComposerWorkspaceUi(webHost).openComposerWorkspaceProjectSheet(projects[0]);
+        expect(readLabels()).to.not.include('Open local project');
+        document.body.querySelectorAll('.theia-mobile-sticky-composer-sheet-option').forEach(option => option.remove());
+
+        const desktopHost = createHost(projects, { desktop: true });
+        new MobileProjectsStickyComposerWorkspaceUi(desktopHost).openComposerWorkspaceProjectSheet(projects[0]);
+        expect(readLabels().slice(0, 3)).to.deep.equal(['New local project', 'Open local project', 'New GitHub repository']);
     });
 
     it('opens the project menu as a top popover when anchored to the Work Hub header control', () => {

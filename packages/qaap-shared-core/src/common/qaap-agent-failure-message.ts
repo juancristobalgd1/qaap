@@ -7,6 +7,8 @@ import { nls } from '@theia/core/lib/common/nls';
 import {
     extractAgentAuthLoginChallenge,
     localizeAgentAuthFailureMessage,
+    QAAP_HARNESS_UNAUTHENTICATED_PATTERNS,
+    QAAP_SIGN_IN_GUARD_REFUSAL_PATTERNS,
 } from './qaap-agent-auth-login';
 import { localizeHostedMissingCodingAgentMessage, readQaapHostedRuntime } from './qaap-hosted-agent-auth-policy';
 import type { QaapAgentMessageDTO } from './qaap-agent-conversation-client';
@@ -55,15 +57,23 @@ const USAGE_LIMIT_PATTERNS: readonly RegExp[] = [
 /** The reset time a usage-limit message names ("try again at Nov 19th, 2026 12:56 AM."). Never guessed. */
 const USAGE_LIMIT_RESET_PATTERN = /\btry\s+again\s+at\s+([^.\n]{3,60}?)\s*(?:\.|\n|$)/i;
 
+/**
+ * Provider quota exhaustion. Strict on purpose: a bare "quota" or "billing" is a word in prose and in
+ * tool output (this repo talks about both), so each pattern needs the exhaustion verb or the provider's
+ * own phrase. Real messages stay matched: "quota exceeded", "Individual quota reached", "You exceeded
+ * your current quota", "reached its quota" (our own copy), "insufficient_quota", "RESOURCE_EXHAUSTED".
+ */
 const QUOTA_PATTERNS: readonly RegExp[] = [
     /\binsufficient[_\s-]?quota\b/i,
-    /\bquota\b/i,
-    /\bfree[_\s-]?credits?\b/i,
+    /\bquota\s+(?:exceeded|exhausted|depleted|reached|limit\s+(?:reached|exceeded))\b/i,
+    /\b(?:exceeded|exhausted|reached|hit)\s+(?:its|your|the|our|a|an)\s+(?:[\w-]+\s+)?quota\b/i,
+    /\bfree[_\s-]?credits?\b[^\n]{0,60}?\b(?:exhausted|depleted|used\s+up|ran\s+out)\b/i,
     /\bcredits?\s+(?:exhausted|depleted|used\s+up|ran\s+out)\b/i,
     /\bout\s+of\s+credits?\b/i,
     // Hugging Face router: "You have depleted your monthly included credits."
     /\bdepleted\s+your\b[^.\n]{0,40}\bcredits?\b/i,
-    /\bbilling\b/i,
+    // OpenAI-style "Your billing hard limit has been reached." (a bare "billing" is not a limit).
+    /\bbilling\s+(?:hard\s+)?limit\b[^.\n]{0,40}\b(?:reached|exceeded)\b/i,
     /\bresource[_\s-]?exhausted\b/i,
     /\bfree\s+usage\s+limit\b/i,
     ...USAGE_LIMIT_PATTERNS,
@@ -199,6 +209,17 @@ const AUTH_PATTERNS: readonly RegExp[] = [
     /\bauth(?:entication)?\s+is\s+required\b/i,
     /\bcodex\s+auth\b/i,
     /\bCODEX_API_KEY\b/,
+    // Google's Antigravity CLI (`agy`) without a session: it prints one of these, then waits for a
+    // pasted code and gives up after 60 s, or exits 1 for `-p`. Each line is agy's own and narrow.
+    /\bauthentication\s+required\.\s+please\s+visit\s+the\s+url\s+to\s+log\s+in\b/i,
+    /\bauthentication\s+required\.\s+run\s+['"`]?agy['"`]?\s+to\s+log\s+in\b/i,
+    /\bauthentication\s+failed\s+or\s+timed\s+out\b/i,
+    /\bauthentication\s+interrupted\b/i,
+    /\bplease\s+sign\s+in\s+to\s+view\s+available\s+models\b/i,
+    // Qaap's own pre-spawn refusal for a Pro model without a confirmed harness session.
+    ...QAAP_SIGN_IN_GUARD_REFUSAL_PATTERNS,
+    // Cursor "run 'agent login' first", Codex "401 Unauthorized: Missing bearer…" (qaap-agent-auth-login.ts).
+    ...QAAP_HARNESS_UNAUTHENTICATED_PATTERNS,
 ];
 
 /**
@@ -1420,7 +1441,7 @@ export function isGeminiIneligibleTierText(text: string | undefined): boolean {
 export function localizeGeminiIneligibleTierMessage(): string {
     return nls.localize(
         'qaap/agentFailure/geminiIneligibleTier',
-        'Google no longer serves free personal accounts in Gemini CLI ("Gemini Code Assist for individuals") and points them to its Antigravity apps. Pick another agent in the composer, or reconnect Antigravity with a Google account on a paid Gemini plan.',
+        'Google no longer serves Gemini CLI to personal Google accounts ("Gemini Code Assist for individuals"), so signing in again will not fix this. The Antigravity harness runs on Google\'s Antigravity CLI (agy): if this still appears, the host is running the old Gemini CLI, so reconnect Antigravity from Settings → Harness. You can also pick another agent in the composer.',
     );
 }
 

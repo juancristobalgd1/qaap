@@ -13,7 +13,12 @@ import { installMobilePanelResizeDrag } from '@theia/qaap-mobile-shell/lib/brows
 import { installMobileVerticalTouchScroll } from '@theia/qaap-mobile-shell/lib/browser/mobile-vertical-touch-scroll';
 import { hashString } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { setQaapClientErrorBuild } from '@theia/qaap-shared-core/lib/common/qaap-client-error-report';
-import { fetchQaapAuthConfig, qaapAuthenticatedFetchInit } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
+import { fetchQaapAuthConfig } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
+import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
+import type { QaapTenantBackendUpdate } from '@theia/qaap-shared-core/lib/browser/qaap-tenant-update-client';
+import { QaapTenantUpdateService, type QaapTenantUpdateOutcome } from './qaap-tenant-update-service';
+import { buildQaapUpdateHoverCardModel } from './qaap-update-hover-card-model';
+import { isQaapUpdateHoverCardSupported, QaapUpdateHoverCard } from './qaap-update-hover-card';
 import { ensurePullRequestsSurfaceCss } from './ensure-pull-requests-surface-css';
 import { TASK_TITLE_OVERFLOW_CLASS } from './mobile-projects-task-title-marquee';
 import { QAAP_NEW_TASK_ICON_CLASS } from './qaap-new-task-icon';
@@ -21,19 +26,21 @@ import { UsageDialog } from './usage-dialog';
 
 export const QAAP_MOBILE_SESSIONS_SIDEBAR_BODY_CLASS = 'theia-mobile-mod-sessions-sidebar-open';
 
-/**
- * `GET /qaap/api/cloud/runtime/status`, mirrored from `QAAP_TENANT_RUNTIME_API_PATH`: this package
- * sits below `@theia/qaap-cloud-workspace` in the layer order and cannot import that constant.
- */
-const QAAP_TENANT_RUNTIME_STATUS_PATH = '/qaap/api/cloud/runtime/status';
+/** How often the open sidebar re-reads whether a newer build waits for the user's backend. */
+const QAAP_BACKEND_UPDATE_POLL_MS = 5 * 60_000;
 
-/** Structural copy of the `update` field the control plane adds to the runtime status. */
-export interface MobileWorkHubBackendUpdateStatus {
-    readonly backendBuild?: string;
-    readonly controlPlaneBuild?: string;
-    readonly updatePending: boolean;
-    readonly reason?: 'agent-turns-running';
-}
+/**
+ * DEV PREVIEW ONLY. `localStorage.setItem('qaap.devPreviewBackendUpdate', '1')` shows the footer update
+ * button with a fake pending update (click only logs), so the button and its card can be checked where no
+ * tenant update exists (desktop app, local preview). Remove the key to go back to the real status.
+ */
+export const QAAP_DEV_PREVIEW_BACKEND_UPDATE_KEY = 'qaap.devPreviewBackendUpdate';
+const QAAP_DEV_PREVIEW_BACKEND_UPDATE: QaapTenantBackendUpdate = {
+    backendBuild: 'abc1234',
+    controlPlaneBuild: 'def5678',
+    updatePending: true,
+    runningTasks: 0,
+};
 
 /** localStorage key — first open shows a one-time dismiss hint. */
 export const QAAP_SESSIONS_SIDEBAR_DISMISS_HINT_KEY = 'qaap.sessionsSidebar.dismissHintSeen';
@@ -148,7 +155,19 @@ export class MobileWorkHubSessionsSidebar {
     /** Short deployed git SHA from `/qaap/api/auth/config` (shown next to the account name). */
     protected deployedBuildSha: string | undefined;
     /** Set while the user's backend waits for a newer build (see {@link loadBackendUpdateStatus}). */
-    protected backendUpdate: MobileWorkHubBackendUpdateStatus | undefined;
+    protected backendUpdate: QaapTenantBackendUpdate | undefined;
+    /** Applies the pending build for the "Update now" chip; the chip mirrors its phases. */
+    protected readonly tenantUpdate = new QaapTenantUpdateService();
+    /** "Update ready" footer icon button: a sibling of the account button, never inside it. */
+    protected readonly updateChip: HTMLButtonElement;
+    protected readonly updateChipIcon: HTMLSpanElement;
+    protected readonly updateChipBadge: HTMLSpanElement;
+    /** Hover / keyboard-focus card of {@link updateChip} (desktop only). */
+    protected readonly updateHoverCard: QaapUpdateHoverCard;
+    /** True from the moment the user's update is sent until the page reloads. */
+    protected backendUpdating = false;
+    /** Set once the periodic re-read of the update state is running (it lives as long as the sidebar). */
+    protected backendUpdatePolling = false;
     protected readonly scrollHost: HTMLElement;
     protected readonly listHost: HTMLElement;
     protected settingsOptions: MobileWorkHubSettingsSidebarOptions | undefined;
@@ -318,6 +337,23 @@ export class MobileWorkHubSessionsSidebar {
 
         const footer = document.createElement('footer');
         footer.className = 'theia-mobile-work-hub-sessions-sidebar-foot';
+        this.updateChip = document.createElement('button');
+        this.updateChip.type = 'button';
+        this.updateChip.className = 'theia-mobile-work-hub-sessions-sidebar-update';
+        this.updateChip.hidden = true;
+        this.updateChipIcon = document.createElement('span');
+        this.updateChipIcon.className = 'theia-mobile-work-hub-sessions-sidebar-update-icon codicon codicon-sync';
+        this.updateChipIcon.setAttribute('aria-hidden', 'true');
+        this.updateChipBadge = document.createElement('span');
+        this.updateChipBadge.className = 'theia-mobile-work-hub-sessions-sidebar-update-badge codicon codicon-check';
+        this.updateChipBadge.setAttribute('aria-hidden', 'true');
+        this.updateChip.append(this.updateChipIcon, this.updateChipBadge);
+        this.updateChip.addEventListener('click', event => {
+            event.stopPropagation();
+            void this.runBackendUpdate();
+        });
+        this.updateHoverCard = new QaapUpdateHoverCard(this.updateChip, () =>
+            this.backendUpdate ? buildQaapUpdateHoverCardModel(this.backendUpdate, this.backendUpdating) : undefined);
         this.accountBtn = document.createElement('button');
         this.accountBtn.type = 'button';
         this.accountBtn.className = 'theia-workbench-nav-btn theia-workbench-account-btn theia-mobile-work-hub-sessions-sidebar-account-btn';
@@ -352,7 +388,7 @@ export class MobileWorkHubSessionsSidebar {
             event.stopPropagation();
             void this.delegate.onSettings?.();
         });
-        footer.append(this.accountBtn, this.usageBtn, this.settingsBtn);
+        footer.append(this.accountBtn, this.updateChip, this.usageBtn, this.settingsBtn);
         this.updateAccountAvatar();
         this.loadDeployedBuildSha();
 
@@ -551,16 +587,64 @@ export class MobileWorkHubSessionsSidebar {
         this.accountLabel.title = build
             ? nls.localize('qaap/sessionsSidebar/deployedBuild', 'Deployed build {0}', build)
             : '';
-        if (this.backendUpdate) {
-            this.accountLabel.append(this.createBackendUpdateChip(this.backendUpdate));
-        }
     }
 
     /**
-     * Non-blocking notice that a newer build waits for the user's backend. The full sentence and the
-     * running / new builds sit in the tooltip so the chip stays small next to the account name.
+     * Shows the footer update button (sync glyph, check badge, accent ring) while a newer build waits for the
+     * user's backend. Desktop pointers get the hover card ({@link updateHoverCard}); touch keeps the native
+     * tooltip with the reason (applied now, or when the running tasks finish / on the next session) and builds.
      */
-    protected createBackendUpdateChip(update: MobileWorkHubBackendUpdateStatus): HTMLElement {
+    protected renderUpdateChip(): void {
+        const update = this.backendUpdate;
+        this.updateChip.hidden = !update;
+        if (!update || this.backendUpdating) {
+            if (!update) {
+                this.updateHoverCard.hide();
+            }
+            return;
+        }
+        this.updateChip.disabled = false;
+        this.updateChip.setAttribute('aria-busy', 'false');
+        this.updateChip.classList.remove('theia-mod-busy');
+        this.updateChipIcon.classList.remove('theia-mod-spin');
+        this.updateChipBadge.hidden = false;
+        this.updateChip.setAttribute('aria-label', nls.localize('qaap/sessionsSidebar/backendUpdateAria', 'Update Qaap now'));
+        this.syncUpdateChipTitle(this.backendUpdateTooltip(update));
+        this.updateHoverCard.refresh();
+    }
+
+    /** Button while the update is sent: disabled, spinning and busy, until the page reloads. */
+    protected renderUpdatingChip(): void {
+        this.updateChip.hidden = false;
+        this.updateChip.disabled = true;
+        this.updateChip.setAttribute('aria-busy', 'true');
+        this.updateChip.classList.add('theia-mod-busy');
+        this.updateChipIcon.classList.add('theia-mod-spin');
+        this.updateChipBadge.hidden = true;
+        this.updateChip.setAttribute('aria-label', nls.localize('qaap/sessionsSidebar/backendUpdatingAria', 'Updating Qaap'));
+        this.syncUpdateChipTitle(nls.localize('qaap/sessionsSidebar/backendUpdating', 'Updating…'));
+        this.updateHoverCard.refresh();
+    }
+
+    /** Native tooltip only where the hover card is not shown (touch, narrow layouts). */
+    protected syncUpdateChipTitle(title: string): void {
+        if (isQaapUpdateHoverCardSupported()) {
+            this.updateChip.removeAttribute('title');
+        } else {
+            this.updateChip.title = title;
+        }
+    }
+
+    /** DEV PREVIEW ONLY: the fake update of {@link QAAP_DEV_PREVIEW_BACKEND_UPDATE_KEY}, when that key is set. */
+    protected devPreviewBackendUpdate(): QaapTenantBackendUpdate | undefined {
+        try {
+            return globalThis.localStorage?.getItem(QAAP_DEV_PREVIEW_BACKEND_UPDATE_KEY) === '1' ? QAAP_DEV_PREVIEW_BACKEND_UPDATE : undefined;
+        } catch {
+            return undefined;
+        }
+    }
+
+    protected backendUpdateTooltip(update: QaapTenantBackendUpdate): string {
         const message = update.reason === 'agent-turns-running'
             ? nls.localize('qaap/sessionsSidebar/backendUpdateWhenTurnsFinish',
                 'Update ready — applies when your running tasks finish')
@@ -569,17 +653,12 @@ export class MobileWorkHubSessionsSidebar {
         const versions = nls.localize('qaap/sessionsSidebar/backendUpdateVersions',
             'Running build {0}; new build {1}',
             update.backendBuild ?? '?', update.controlPlaneBuild ?? '?');
-        const chip = document.createElement('span');
-        chip.className = 'theia-mobile-work-hub-sessions-sidebar-update';
-        chip.setAttribute('role', 'status');
-        chip.textContent = nls.localize('qaap/sessionsSidebar/backendUpdateChip', 'Update ready');
-        chip.title = `${message}. ${versions}.`;
-        return chip;
+        return `${message}. ${versions}.`;
     }
 
     /**
-     * Loads the deployed-build SHA from `/qaap/api/auth/config` for the account tooltip. Absent in
-     * local dev (no `QAAP_BUILD_SHA`); omitted when the fetch fails.
+     * Loads the deployed-build SHA from `/qaap/api/auth/config` for the account tooltip, and starts re-reading
+     * the backend update state (see {@link startBackendUpdateRefresh}). The SHA is omitted when the fetch fails.
      */
     protected loadDeployedBuildSha(): void {
         void fetchQaapAuthConfig().then(config => {
@@ -591,25 +670,78 @@ export class MobileWorkHubSessionsSidebar {
             }
         }).catch(() => undefined);
         void this.loadBackendUpdateStatus();
+        this.startBackendUpdateRefresh();
+    }
+
+    /** Re-reads the update state every few minutes and when the tab becomes visible again. */
+    protected startBackendUpdateRefresh(): void {
+        if (this.backendUpdatePolling) {
+            return;
+        }
+        this.backendUpdatePolling = true;
+        const view = document.defaultView ?? globalThis as unknown as Window;
+        view.setInterval(() => void this.loadBackendUpdateStatus(), QAAP_BACKEND_UPDATE_POLL_MS);
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                void this.loadBackendUpdateStatus();
+            }
+        });
     }
 
     /**
-     * Asks the control plane whether the user's backend still runs an older build than the one
-     * deployed. Shown as a quiet chip next to the account; a failed or old-server response shows nothing.
+     * Reads whether a newer build waits for the user's backend (the runtime status, the one source of that
+     * state). Silent on failure: the sidebar works without the chip.
      */
     protected async loadBackendUpdateStatus(): Promise<void> {
+        const preview = this.devPreviewBackendUpdate();
+        if (preview) {
+            this.backendUpdate = preview;
+            this.renderUpdateChip();
+            return;
+        }
         try {
-            const response = await fetch(QAAP_TENANT_RUNTIME_STATUS_PATH, qaapAuthenticatedFetchInit());
-            if (!response.ok) {
-                return;
-            }
-            const body = await response.json() as { update?: MobileWorkHubBackendUpdateStatus };
-            this.backendUpdate = body.update?.updatePending ? body.update : undefined;
-            if (this.root.isConnected || this.accountLabel.isConnected) {
-                this.syncAccountLabel();
-            }
+            const update = await this.tenantUpdate.readBackendUpdate();
+            this.backendUpdate = update?.updatePending ? update : undefined;
         } catch {
-            // Informational only: the sidebar works without it.
+            // Informational only: keep the last known state.
+            return;
+        }
+        if (!this.backendUpdating) {
+            this.renderUpdateChip();
+        }
+    }
+
+    /**
+     * "Update now": confirms when agent turns run (inside the service), applies the update and reloads the
+     * page. A failure restores the chip and says so; a declined confirmation changes nothing.
+     */
+    protected async runBackendUpdate(): Promise<void> {
+        if (this.backendUpdating || !this.backendUpdate) {
+            return;
+        }
+        if (this.backendUpdate === QAAP_DEV_PREVIEW_BACKEND_UPDATE) {
+            // DEV PREVIEW ONLY: never apply the fake update.
+            console.info('[qaap] dev preview: "Update now" clicked; nothing is applied.');
+            return;
+        }
+        const started = this.tenantUpdate.onDidStartApplying(() => {
+            this.backendUpdating = true;
+            this.renderUpdatingChip();
+        });
+        let outcome: QaapTenantUpdateOutcome;
+        try {
+            outcome = await this.tenantUpdate.updateNow(this.backendUpdate.runningTasks);
+        } finally {
+            started.dispose();
+        }
+        if (outcome === 'failed') {
+            this.backendUpdating = false;
+            this.renderUpdateChip();
+            MobileSnackbar.show(nls.localize('qaap/sessionsSidebar/backendUpdateFailed',
+                'Could not update Qaap. Check your connection and try again.'));
+        } else if (outcome === 'nothing') {
+            this.backendUpdating = false;
+            await this.loadBackendUpdateStatus();
         }
     }
 

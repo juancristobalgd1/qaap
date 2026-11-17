@@ -139,6 +139,7 @@ Edit `.env`:
 | `CODEX_CLI_VERSION` | `0.144.5` | Codex CLI version for a source build |
 | `CLAUDE_CODE_VERSION` | `latest` | Claude Code CLI version for a source build |
 | `ANTIGRAVITY_CLI_VERSION` | `latest` | Antigravity CLI version for a source build |
+| `AGY_CLI_VERSION` | `1.5.9` | Google's Antigravity CLI (`agy`) pinned in the Dockerfile (`ARG`, with its URL and sha512); not a compose build arg, bump it in the Dockerfile |
 | `OPENCODE_CLI_VERSION` | `latest` | OpenCode CLI (`opencode-ai`) version for a source build |
 
 Open the firewall port (example with UFW):

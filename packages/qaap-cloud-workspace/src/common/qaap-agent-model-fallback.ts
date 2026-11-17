@@ -301,7 +301,7 @@ export function agentTurnMayFallBackToAnotherModel(
     if (!agentSupportsModelPicker(turnAgentId)) {
         return false;
     }
-    if (task.preflightFailure === 'provider_key_missing') {
+    if (task.preflightFailure === 'provider_key_missing' || task.preflightFailure === 'sign_in_required') {
         return false;
     }
     return task.providerKeyVerdict !== 'key_rejected' && task.providerKeyVerdict !== 'no_credits';

@@ -23,7 +23,14 @@ import {
 import { nls } from '@theia/core/lib/common/nls';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { QuickInputButtonLocation, type QuickInputButton, type QuickPick, type QuickPickItem } from '@theia/core/lib/common/quick-pick-service';
+import { createAgentBrandIcon, resolveAgentBrand } from '@theia/qaap-shared-core/lib/common/qaap-agent-branding';
 import { HubEmptyStateDom } from './mobile-projects-hub-empty-state-dom';
+import {
+    indexMobileProjectsPullRequestHarnesses,
+    resolveMobileProjectsPullRequestHarness,
+    type MobileProjectsPullRequestHarnessIndex,
+    type MobileProjectsPullRequestHarnessSummary,
+} from './mobile-projects-pull-request-harness';
 
 export type MobileProjectsPullRequestSidebarTab = 'all' | 'reviewing' | 'created';
 export type MobileProjectsPullRequestSidebarState = QaapGithubPullRequestStateFilter;
@@ -103,6 +110,8 @@ export interface MobileProjectsPullRequestsSidebarHost {
     updatePullRequestDetail?(pullRequest: QaapGithubPullRequestSummary): void;
     /** Work Hub project repositories (`owner/name`) to include in the all-PRs search. */
     pullRequestRepoKeys?(): string[];
+    /** Agent conversations; their task / linked pull requests attribute a row to the harness that made it. */
+    readonly conversations?: { listAllSummaries(): readonly MobileProjectsPullRequestHarnessSummary[] };
     /** Test seams; default to the GitHub client. */
     searchPullRequests?(request: QaapGithubPullRequestSearchRequest): Promise<QaapGithubPullRequestSearchResponse>;
     fetchPullRequestDetail?(owner: string, repo: string, number: number): Promise<QaapGithubPullRequestSummary | undefined>;
@@ -133,6 +142,7 @@ export class MobileProjectsPullRequestsSidebarUi {
     protected searchQuickPickAnchor: HTMLElement | undefined;
     protected container: HTMLElement | undefined;
     protected results: HTMLElement | undefined;
+    protected harnessIndex: MobileProjectsPullRequestHarnessIndex = new Map();
 
     constructor(protected readonly host: MobileProjectsPullRequestsSidebarHost) { }
 
@@ -544,13 +554,14 @@ export class MobileProjectsPullRequestsSidebarUi {
     }
 
     protected buildSearchPickItems(): PullRequestSearchPickItem[] {
+        this.refreshHarnessIndex();
         return this.filteredPullRequests(false).map(pullRequest => ({
             label: pullRequest.title,
             description: `${pullRequest.owner}/${pullRequest.repo} · #${pullRequest.number}`,
             detail: [
                 this.stateLabel(pullRequest),
                 pullRequest.branch ? `${pullRequest.branch} → ${pullRequest.base}` : undefined,
-                `@${pullRequest.author}`,
+                this.authorOrHarnessLabel(pullRequest),
                 pullRequest.partial ? undefined : `+${pullRequest.adds} -${pullRequest.dels}`,
             ].filter(Boolean).join(' · '),
             iconClasses: ['codicon', this.statusIconClass(pullRequest)],
@@ -605,6 +616,7 @@ export class MobileProjectsPullRequestsSidebarUi {
         }
         const listElement = document.createElement('div');
         listElement.className = 'theia-mobile-work-hub-pull-requests-list';
+        this.refreshHarnessIndex();
         for (const pullRequest of pullRequests) {
             listElement.append(this.createPullRequestItem(pullRequest));
         }
@@ -724,6 +736,61 @@ export class MobileProjectsPullRequestsSidebarUi {
             : nls.localize('qaap/pullRequests/badgeOpen', 'Open');
     }
 
+    /** Rebuilds the pull request → harness index from the conversations the Work Hub knows about. */
+    protected refreshHarnessIndex(): void {
+        let summaries: readonly MobileProjectsPullRequestHarnessSummary[] = [];
+        try {
+            summaries = this.host.conversations?.listAllSummaries() ?? [];
+        } catch {
+            summaries = [];
+        }
+        this.harnessIndex = indexMobileProjectsPullRequestHarnesses(summaries);
+    }
+
+    /** Harness that made this pull request through a Qaap task: its agent id and display name. */
+    protected pullRequestHarness(pullRequest: QaapGithubPullRequestSummary): { readonly agentId: string; readonly label: string } | undefined {
+        const agentId = resolveMobileProjectsPullRequestHarness(this.harnessIndex, {
+            owner: pullRequest.owner,
+            repo: pullRequest.repo,
+            number: pullRequest.number,
+            url: pullRequest.htmlUrl,
+        });
+        if (!agentId) {
+            return undefined;
+        }
+        return { agentId, label: resolveAgentBrand(agentId)?.label ?? agentId };
+    }
+
+    protected madeByHarnessLabel(harnessLabel: string): string {
+        return nls.localize('qaap/pullRequests/madeByHarness', 'Made by {0}', harnessLabel);
+    }
+
+    protected authorOrHarnessLabel(pullRequest: QaapGithubPullRequestSummary): string {
+        const harness = this.pullRequestHarness(pullRequest);
+        return harness ? this.madeByHarnessLabel(harness.label) : `@${pullRequest.author}`;
+    }
+
+    /** "Made by <harness>" preceded by the harness logo (or a generic agent glyph for unknown harnesses). */
+    protected createHarnessAttribution(harness: { readonly agentId: string; readonly label: string }): HTMLElement {
+        const attribution = document.createElement('span');
+        attribution.className = 'theia-mobile-work-hub-pull-request-harness';
+        attribution.dataset.agentId = harness.agentId;
+        const icon = createAgentBrandIcon(harness.agentId, 'sm');
+        if (icon) {
+            attribution.append(icon);
+        } else {
+            const glyph = document.createElement('span');
+            glyph.className = 'codicon codicon-hubot theia-mobile-work-hub-pull-request-harness-glyph';
+            glyph.setAttribute('aria-hidden', 'true');
+            attribution.append(glyph);
+        }
+        const text = document.createElement('span');
+        text.className = 'theia-mobile-work-hub-pull-request-harness-label';
+        text.textContent = this.madeByHarnessLabel(harness.label);
+        attribution.append(text);
+        return attribution;
+    }
+
     protected createPullRequestItem(pullRequest: QaapGithubPullRequestSummary): HTMLElement {
         const item = document.createElement('button');
         item.type = 'button';
@@ -774,27 +841,51 @@ export class MobileProjectsPullRequestsSidebarUi {
         badge.textContent = this.stateLabel(pullRequest);
         const stats = document.createElement('span');
         stats.className = 'theia-mobile-work-hub-pull-request-stats';
-        stats.textContent = pullRequest.partial
-            ? nls.localize('qaap/pullRequests/statsShort', '#{0} · @{1}', String(pullRequest.number), pullRequest.author)
-            : nls.localize(
-                'qaap/pullRequests/stats',
-                '#{0} · @{1} · +{2} -{3}',
-                String(pullRequest.number),
-                pullRequest.author,
-                String(pullRequest.adds),
-                String(pullRequest.dels),
+        const harness = this.pullRequestHarness(pullRequest);
+        if (harness) {
+            stats.classList.add('theia-mod-harness');
+            stats.append(
+                document.createTextNode(`${nls.localize('qaap/pullRequests/statsNumber', '#{0}', String(pullRequest.number))} · `),
+                this.createHarnessAttribution(harness),
             );
+            if (!pullRequest.partial) {
+                stats.append(document.createTextNode(
+                    ` · ${nls.localize('qaap/pullRequests/statsDiff', '+{0} -{1}', String(pullRequest.adds), String(pullRequest.dels))}`,
+                ));
+            }
+        } else {
+            stats.textContent = pullRequest.partial
+                ? nls.localize('qaap/pullRequests/statsShort', '#{0} · @{1}', String(pullRequest.number), pullRequest.author)
+                : nls.localize(
+                    'qaap/pullRequests/stats',
+                    '#{0} · @{1} · +{2} -{3}',
+                    String(pullRequest.number),
+                    pullRequest.author,
+                    String(pullRequest.adds),
+                    String(pullRequest.dels),
+                );
+        }
         statsRow.append(badge, stats);
         content.append(titleRow, meta, statsRow);
         item.append(status, content);
-        item.setAttribute('aria-label', nls.localize(
-            'qaap/pullRequests/openWithState',
-            'Open pull request {0} ({1}, {2}/{3})',
-            pullRequest.title,
-            this.stateLabel(pullRequest),
-            pullRequest.owner,
-            pullRequest.repo,
-        ));
+        item.setAttribute('aria-label', harness
+            ? nls.localize(
+                'qaap/pullRequests/openWithStateMadeBy',
+                'Open pull request {0} ({1}, {2}/{3}, made by {4})',
+                pullRequest.title,
+                this.stateLabel(pullRequest),
+                pullRequest.owner,
+                pullRequest.repo,
+                harness.label,
+            )
+            : nls.localize(
+                'qaap/pullRequests/openWithState',
+                'Open pull request {0} ({1}, {2}/{3})',
+                pullRequest.title,
+                this.stateLabel(pullRequest),
+                pullRequest.owner,
+                pullRequest.repo,
+            ));
         return item;
     }
 

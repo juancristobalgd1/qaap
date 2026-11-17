@@ -10,6 +10,7 @@ import * as path from 'path';
 import type { QaapQaiqModelOption } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { normalizeAntigravityCliBin, type QaapAntigravityCliBin } from '@theia/qaap-shared-core/lib/common/qaap-antigravity-cli';
 import { NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
+import { isQaapDesktopRuntime } from '@theia/qaap-adapters/lib/common/qaap-desktop-runtime';
 import { resolveAgentSpawnIdentity } from './qaap-agent-spawn-identity';
 import { QaapTenantAgentStorageEnv } from './qaap-tenant-agent-storage-env';
 import { resolveTrustedSystemExecutable } from './qaap-trusted-executable';
@@ -337,6 +338,33 @@ function parseClaudeInitializeLine(line: string): QaapQaiqModelOption[] | undefi
     return parseClaudeControlResponseModels(message);
 }
 
+/** How long a probe child may ignore SIGTERM before it is SIGKILLed. */
+const PROBE_CHILD_KILL_ESCALATION_MS = 2_000;
+
+/**
+ * Ends a one-shot probe child: closes its stdin, sends SIGTERM and, if it is still alive after
+ * {@link PROBE_CHILD_KILL_ESCALATION_MS}, SIGKILL. A CLI that ignores SIGTERM must not outlive the probe.
+ */
+function stopProbeChild(child: ChildProcess): void {
+    child.stdin?.end();
+    child.kill('SIGTERM');
+    if (child.exitCode !== null || child.signalCode !== null) {
+        return;
+    }
+    const escalation = setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null) {
+            child.kill('SIGKILL');
+        }
+    }, PROBE_CHILD_KILL_ESCALATION_MS);
+    // The escalation timer must never keep the backend alive on its own.
+    escalation.unref();
+    const clearEscalation = (): void => {
+        clearTimeout(escalation);
+    };
+    child.once('exit', clearEscalation);
+    child.once('close', clearEscalation);
+}
+
 /**
  * Sends one `initialize` control request over stream-json and reads the CLI's answer. stdin stays open
  * until the answer arrives, then the CLI is stopped; no user message is sent, so no model turn starts.
@@ -371,7 +399,7 @@ function askClaudeCliForModels(spawner: NativeModelDiscoverySpawner | undefined,
             }
             settled = true;
             clearTimeout(timer);
-            child.kill();
+            stopProbeChild(child);
             resolve(models);
         };
         timer = setTimeout(() => finish([]), timeoutMs);
@@ -457,14 +485,23 @@ export interface CodexCacheIdentity {
 }
 
 /**
- * Codex home the agent CLI reads. Codex honours `CODEX_HOME`; otherwise it is `.codex` under the tenant
- * agent storage home (`<storage root>/home`, the HOME the agent's sign-in lives in) when that storage is
- * enabled; otherwise under the agent HOME (`QAAP_AGENT_HOME`, default `/home/qaap-agent`).
+ * Codex home the agent CLI reads. Codex honours `CODEX_HOME`; on the desktop app (`QAAP_DESKTOP=1`, no
+ * tenant containers) it is the user's own `~/.codex`, the home `codex login` wrote and the auth probe
+ * read; otherwise it is `.codex` under the tenant agent storage home (`<storage root>/home`, the HOME the
+ * agent's sign-in lives in) when that storage is enabled; otherwise under the agent HOME
+ * (`QAAP_AGENT_HOME`, default `/home/qaap-agent`).
+ *
+ * The desktop branch matters: the tool-gate overlay copies `auth.json` from here into the per-task
+ * `CODEX_HOME`. Pointing at the container path (`/home/theia/.qaap/…`) on a Mac copied nothing, so a
+ * signed-in Codex ran without credentials and every turn failed with "401 Unauthorized: Missing bearer".
  */
 export function resolveCodexAgentHome(env: NodeJS.ProcessEnv = process.env): string {
     const explicit = env.CODEX_HOME?.trim();
     if (explicit) {
         return explicit;
+    }
+    if (isQaapDesktopRuntime(env) || isQaapDesktopRuntime(process.env)) {
+        return path.join(env.HOME?.trim() || os.homedir(), '.codex');
     }
     const storageRoot = QaapTenantAgentStorageEnv.resolveRoot(env, QaapTenantAgentStorageEnv.defaultTenantBackendRoot(env));
     if (storageRoot) {

@@ -54,4 +54,10 @@ describe('qaap-diff-review-widget — reconcileExpandedReviewFiles', () => {
         reconcileExpandedReviewFiles(expanded, [file('src/a.ts'), file('src/b.ts'), file('src/c.ts')]);
         expect([...expanded]).to.deep.equal(['src/b.ts', 'src/c.ts']);
     });
+
+    it('does not reopen a file after the user collapsed them all', () => {
+        const expanded = new Set<string>();
+        reconcileExpandedReviewFiles(expanded, [file('src/a.ts'), file('src/b.ts')], false);
+        expect([...expanded]).to.deep.equal([]);
+    });
 });

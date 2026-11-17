@@ -20,7 +20,6 @@ import {
     type QaapAgentTaskDetail,
     type QaapCreateAgentTaskRequest,
     type QaapAgentWarmResult,
-    type QaapAgentAccessState,
 } from '../common/qaap-agent-task';
 import { rememberQaapHostedRuntime } from '@theia/qaap-adapters/lib/common/qaap-hosted-runtime';
 import { QaapSecretCipher } from '@theia/qaap-persistence/lib/node/qaap-secret-cipher';
@@ -33,7 +32,7 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 import { OPENCLAUDE_AGENT_ID, resolveQaapAgentMentionToken } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { normalizeAntigravityCliBin, resolveAntigravityCliBin, resolveAntigravityCliTemplate } from '@theia/qaap-shared-core/lib/common/qaap-antigravity-cli';
-import { isOpenCodeFreeModelId } from '@theia/qaap-shared-core/lib/common/qaap-opencode-model-catalog';
+import { QaapHarnessModelAvailability } from '@theia/qaap-shared-core/lib/common/qaap-harness-model-availability';
 import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model-catalog';
 import { antigravityBinFor, listNativeAgentModels } from './qaap-agent-native-models';
 import { resolveAgentAccess } from './qaap-agent-access';
@@ -689,23 +688,6 @@ export function listQaiqModelsExtracted(ctx: QaapAgentTaskRunnerContext, ownerLo
 }
 
 /**
- * OpenCode free models stay usable without a sign-in. Paid models stay visible but locked until the
- * owner is connected; an unknown (still probing) state shows no lock.
- */
-function applyOpenCodePaidModelAccess(model: QaapQaiqModelOption, access: QaapAgentAccessState): QaapQaiqModelOption {
-    if (isOpenCodeFreeModelId(model.modelId)) {
-        return model;
-    }
-    if (access === 'session') {
-        return { ...model, available: true };
-    }
-    if (access === 'unknown') {
-        return model;
-    }
-    return { ...model, available: false, unavailableReason: 'not-connected' as const };
-}
-
-/**
  * A model the provider rejected for this owner within the registry's TTL is shown locked, like the
  * other unavailable rows. A row that is already locked keeps its more specific reason.
  */
@@ -716,54 +698,66 @@ function markRecentlyUnavailableModel(agentId: string, ownerLogin: string | unde
     return { ...model, available: false, unavailableReason: 'unknown' as const };
 }
 
-export function listModelsForAgentExtracted(
-        ctx: QaapAgentTaskRunnerContext,
-        agentId: string | undefined,
-        ownerLogin?: string,
+/**
+ * Applies the one availability rule (`QaapHarnessModelAvailability`) to a harness's model list: every
+ * model gets its tier and whether this owner can select it. The same path serves every harness and
+ * every owner (no owner means the runner's unscoped probe state), so no harness is left unlocked.
+ */
+export function annotateModelsForAgent(
+    ctx: QaapAgentTaskRunnerContext,
+    agentId: string,
+    ownerLogin: string | undefined,
+    models: readonly QaapQaiqModelOption[],
 ): QaapQaiqModelOption[] {
-        // Model catalogs are requested after the agent list has already been rendered. Do not
-        // make this read-only endpoint depend on the runner's detected-agent cache being an
-        // exact match for the browser's canonical id: a cold hosted workspace can expose the
-        // harness while that cache is still warming, which used to make the VPS return [] for
-        // Codex even though its native catalog was available.
-        const normalized = agentId?.trim().toLowerCase();
-        if (!normalized || agentUsesSettingsModelCatalog(normalized)) {
-            return [];
-        }
-        // Antigravity lists the catalog of the CLI this host resolved (gemini ids or agy labels).
-        const antigravityBin = antigravityBinFor(ctx, normalized);
-        const models = listNativeAgentModels(normalized, ownerLogin, antigravityBin);
-        const owner = ownerLogin?.trim();
-        if (!owner) {
-            return models.map(model => markRecentlyUnavailableModel(normalized, owner, model));
-        }
-        // Same access answer as the picker row (resolveAgentAccess), so the row and its models agree.
-        // Keep the native catalog visible when the owner cannot use it yet; the picker explains the lock
-        // instead of opening an empty submenu.
-        const snapshot = ctx.agentConnectionSnapshot(normalized, owner);
-        const access = resolveAgentAccess({
-            agentId: normalized,
-            connectionState: snapshot.connectionState,
-            probeSettled: snapshot.probeSettled,
+    const normalized = agentId.trim().toLowerCase();
+    const owner = ownerLogin?.trim() || undefined;
+    // Same access answer as the picker row (resolveAgentAccess), so the row and its models agree.
+    const snapshot = ctx.agentConnectionSnapshot(normalized, owner);
+    const accessState = resolveAgentAccess({
+        agentId: normalized,
+        connectionState: snapshot.connectionState,
+        probeSettled: snapshot.probeSettled,
+    });
+    const session = QaapHarnessModelAvailability.session({
+        connectionState: snapshot.connectionState,
+        accessState,
+        probeSettled: snapshot.probeSettled,
+    });
+    return models.map(model => {
+        const tier = QaapHarnessModelAvailability.tier(normalized, model);
+        const availability = QaapHarnessModelAvailability.availability({ harnessEnabled: true, session, tier });
+        const unavailableReason = QaapHarnessModelAvailability.toLegacyUnavailableReason(availability.reason);
+        return markRecentlyUnavailableModel(normalized, owner, {
+            ...model,
+            tier,
+            available: availability.selectable,
+            unavailableReason,
         });
-        return models.map(model => {
-            if (normalized === 'opencode') {
-                return applyOpenCodePaidModelAccess(model, access);
-            }
-            if (normalized !== 'codex') {
-                return model;
-            }
-            // Codex runs on the owner's own sign-in. Only a settled sign-out is locked, and it is an
-            // actionable sign-in rather than a plan restriction.
-            if (access === 'session') {
-                return { ...model, available: true };
-            }
-            // While the probe is still pending there is no answer yet: show the model without a lock.
-            if (access === 'unknown') {
-                return model;
-            }
-            return { ...model, available: false, unavailableReason: 'not-connected' as const };
-        }).map(model => markRecentlyUnavailableModel(normalized, owner, model));
+    });
+}
+
+export function listModelsForAgentExtracted(
+    ctx: QaapAgentTaskRunnerContext,
+    agentId: string | undefined,
+    ownerLogin?: string,
+): QaapQaiqModelOption[] {
+    // Model catalogs are requested after the agent list has already been rendered. Do not
+    // make this read-only endpoint depend on the runner's detected-agent cache being an
+    // exact match for the browser's canonical id: a cold hosted workspace can expose the
+    // harness while that cache is still warming, which used to make the VPS return [] for
+    // Codex even though its native catalog was available.
+    const normalized = agentId?.trim().toLowerCase();
+    if (!normalized || agentUsesSettingsModelCatalog(normalized)) {
+        return [];
+    }
+    // A harness the owner turned off offers no models, not even its Free ones.
+    if (!ctx.isAgentEnabled(normalized, ownerLogin)) {
+        return [];
+    }
+    // Antigravity lists the catalog of the CLI this host resolved (gemini ids or agy labels).
+    const antigravityBin = antigravityBinFor(ctx, normalized);
+    const models = listNativeAgentModels(normalized, ownerLogin, antigravityBin);
+    return annotateModelsForAgent(ctx, normalized, ownerLogin, models);
 }
 
 const loggedDefaultAgentOverrides = new Set<string>();
@@ -817,8 +811,9 @@ export function defaultAgentExtracted(
                 return id;
             }
         }
-        // `isAgentEnabled` already drops a known-disconnected harness, so what is left here is one
-        // whose connection state is still `unknown`: keep the pre-keyless default for it. Only when
+        // The `isAgentEnabled` argument checks enablement only. The first loop's `isAgentUsable` already drops a
+        // known-disconnected harness, so what is left here is one whose connection state is still `unknown`:
+        // keep the pre-keyless default for it. Only when
         // that state can still resolve (`hasAuthSignal`: an auth probe or Settings credentials exist);
         // a harness with neither stays `unknown` forever and would win whether or not it is signed in.
         for (const id of DEFAULT_AGENT_PREFERENCE) {

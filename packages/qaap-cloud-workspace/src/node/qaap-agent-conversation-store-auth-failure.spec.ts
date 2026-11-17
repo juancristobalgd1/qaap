@@ -218,6 +218,37 @@ describe('QaapAgentConversationStore completed-turn auth failure', () => {
         expect(reason).to.match(/Resets in/i);
     });
 
+    it('a successful short OpenCode turn is not a quota failure when its session-title request hit the free quota (exit 0)', () => {
+        const store = new TestConversationStore();
+        // The main turn streamed its answer; the `small=true` title request then failed on the free tier
+        // and OpenCode logged it. The delivered turn must stay delivered.
+        const log = [
+            '{"type":"step_start","part":{"type":"step-start"}}',
+            '{"type":"text","part":{"type":"text","text":"Hola. ¿En qué puedo ayudarte?"}}',
+            '{"type":"step_finish","part":{"reason":"stop","cost":0}}',
+            'ERROR 2026-10-24T10:00:02 +1ms service=session.processor level=ERROR run=9e2e9059 message="stream error" providerID=opencode modelID=big-pickle session.id=ses_1 small=true agent=title mode=primary error.error="AI_APICallError: Failed after 3 attempts. Last error: Free usage limit reached."',
+        ].join('\n');
+        expect(store.exposeResolveCompletedTurnAuthFailureReason(log, 'opencode')).to.equal(undefined);
+    });
+
+    it('a successful short turn whose reply mentions a quota or billing is not a quota failure (exit 0)', () => {
+        const store = new TestConversationStore();
+        expect(store.exposeResolveCompletedTurnAuthFailureReason(
+            'Hola. Te explico cómo funciona el quota del plan de facturación (billing) en Airwallex.',
+            'opencode',
+        )).to.equal(undefined);
+    });
+
+    it('a main-turn OpenCode stream quota error on a clean exit still reports quota', () => {
+        const store = new TestConversationStore();
+        const reason = store.exposeResolveCompletedTurnAuthFailureReason(
+            'ERROR 2026-10-24T10:00:00 +5ms service=session.processor level=ERROR run=9e2e9059 message="stream error" providerID=opencode modelID=big-pickle session.id=ses_1 small=false agent=build mode=primary error.error="AI_APICallError: Free usage limit reached. Subscribe to OpenCode Go to keep going: https://opencode.ai/go"',
+            'opencode',
+        );
+        expect(reason).to.be.a('string');
+        expect(reason).to.match(/quota|usage limit/i);
+    });
+
     it('applyTaskOutcome marks completed auth failures as failed with Sign-in copy', async () => {
         const runner = new TestTaskRunner();
         const store = new TestConversationStore();

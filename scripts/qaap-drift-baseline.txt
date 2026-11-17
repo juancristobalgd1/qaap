@@ -10,7 +10,6 @@ dev-packages/cli/src/download-plugins.ts
 dev-packages/cli/src/test-page.ts
 dev-packages/cli/src/theia.ts
 dev-packages/cli/tsconfig.json
-examples/api-provider-sample/src/node/ext-plugin-gotd-api-provider.ts
 examples/api-samples/package.json
 examples/api-samples/src/browser/mcp/resolve-frontend-mcp-contribution.ts
 examples/api-samples/src/browser/menu/sample-menu-contribution.ts

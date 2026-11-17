@@ -31,6 +31,7 @@ import {
     type QaapCreateAgentTaskRequest,
     type QaapAgentWarmResult,
     isQaapAgentTaskFinished,
+    resolveTaskAgentModel,
 } from '../common/qaap-agent-task';
 import type { QaapTurnLatencyMark } from '@theia/qaap-shared-core/lib/common/qaap-agent-stream-metrics';
 import { QaapDevPreviewPortRegistry } from '@theia/qaap-shared-core/lib/node/qaap-dev-preview-port-registry';
@@ -69,6 +70,7 @@ import { QaapTenantStorageQuotaService } from './qaap-tenant-storage-quota-servi
 import { QaapWorkflowRoutingPolicy } from '../common/qaap-workflow-routing';
 import { QaapAgentHealthTracker } from './qaap-agent-health';
 import { classifyAgentLastTurn, QaapAgentLastTurnStore } from './qaap-agent-last-turn-store';
+import { QaapAgentSessionAttestationStore } from './qaap-agent-session-attestation-store';
 import {
     readCodexHelp as readCodexHelpHelper,
     isQaiqRunner as isQaiqRunnerHelper,
@@ -107,6 +109,8 @@ import {
     recordTaskLatencyMark as recordTaskLatencyMarkHelper,
     stripSignInOnlyAgentApiKeyEnv,
 } from './qaap-agent-task-runner-utils3';
+import { QaapHarnessModelAvailability } from '@theia/qaap-shared-core/lib/common/qaap-harness-model-availability';
+import { assertAgentModelAccessExtracted } from './qaap-agent-sign-in-preflight';
 import { countRunningTasksExtracted, defaultAgentExtracted, defaultAgentFreshExtracted, detailExtracted, detectAgentsExtracted, detectAntigravityAgentExtracted, detectCodexAgentExtracted, detectCursorAgentExtracted, detectQaiqAgentExtracted, drainQueuedTasksExtracted, ensureHelperCliExtracted, helperTokenForOwnerExtracted, initExtracted, listAllGroupedByCwdExtracted, listForCwdExtracted, listModelsForAgentExtracted, listQaiqModelsExtracted, loadHelperTokensExtracted, logDetectedAgentsExtracted, normalizeAgentIdExtracted, ownerAtConcurrencyCapExtracted, persistHelperTokensExtracted, repoAtConcurrencyCapExtracted, readCustomAgentsExtracted, reorderQueuedTaskExtracted, resolveAntigravityBinExtracted, resolveCursorAgentBinExtracted, resolveHelperTokenOwnerExtracted, resolveQaiqBinExtracted, resolveTaskAgentIdExtracted, restoreFromDiskExtracted, restorePersistedIndexExtracted, runningTaskCountForOwnerExtracted, runningTaskCountForRepoExtracted, warmForCwdExtracted } from './qaap-agent-task-runner-render2';
 import { assertQaiqConfiguredExtracted, checkQaiqProviderCredentialForOwner as checkQaiqProviderCredentialForOwnerExtracted, buildAgentCommandExtracted, buildRepoMapExtracted, buildTemplateVarsExtracted, cancelExtracted, type QaapAgentTaskCancelOptions, type QaapAgentTaskPauseCause, createExtracted, deleteForCwdExtracted, deleteTaskExtracted, extractLastAgentMentionExtracted, extractLastAgentMentionTokenExtracted, nativeModelRoutingTableExtracted, normalizeAgentBindingExtracted, previewProviderEnvExtracted, readAgentInstructionsExtracted, readProjectInfoExtracted, readRepoMapExtracted, resolveAgentBindingForTaskExtracted, resolveAgentIdExtracted, resolveAgentModelForRequestExtracted, resolveQaapQaiqBindingExtracted, resolveQaiqProviderFlagsExtracted, retryExtracted, resumeExtracted, stripLeadingAgentMentionExtracted } from './qaap-agent-task-runner-streaming2';
 import { acquireVerificationPassExtracted, clearQueuedApprovalTimerExtracted, clearQueuedApprovalTimersExtracted, findPendingControlRequestEntryExtracted, getApprovalChannelExtracted, killAgentProcessTreeExtracted, maxConcurrentVerificationPassesExtracted, respondToApprovalPromptExtracted, scheduleQueuedApprovalTimeoutExtracted, spawnProcessExtracted, spawnProcessWhenReadyExtracted } from './qaap-agent-task-runner-timeline2';
@@ -252,6 +256,10 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     @inject(QaapAgentLastTurnStore) @optional()
     protected readonly lastTurns: QaapAgentLastTurnStore | undefined;
 
+    /** Attested sign-ins of harnesses without an auth probe (Copilot, Grok); absent, none is ever attested. */
+    @inject(QaapAgentSessionAttestationStore) @optional()
+    protected readonly sessionAttestations: QaapAgentSessionAttestationStore | undefined;
+
     /**
      * Structured agent-command audit. The extracted modules always called `ctx.observability?.…`,
      * but the runner never injected it, so every call was a silent no-op.
@@ -363,6 +371,13 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     }>();
     /** In-flight asynchronous auth probes, keyed like {@link agentConnectionStates}. */
     protected readonly agentConnectionProbes = new Map<string, Promise<QaapAgentDescriptor['connectionState']>>();
+    /**
+     * Sessions a turn proved unusable (the harness failed with an auth error), keyed like
+     * {@link agentConnectionStates}. They read as `disconnected` whatever the probe says, because the
+     * probe is what was fooled (a hollow Codex `auth.json`, a rejected Cursor token), until the owner
+     * signs in again: the sign-in confirmation runs {@link refreshAgentCatalog}, which clears them.
+     */
+    protected readonly rejectedAgentSessions = new Set<string>();
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public readonly onDidChangeTaskEmitter = new Emitter<QaapAgentTaskEvent>();
@@ -609,10 +624,21 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         return this.detectedAgents.has(QAIQ_AGENT_ID) || this.isOnPath(QAIQ_AGENT_ID);
     }
 
-    /** Re-probe CLI harnesses after a local install from the configuration UI. */
-    refreshAgentCatalog(): void {
+    /**
+     * Re-probe CLI harnesses after a local install or a sign-in from the configuration UI. Only the
+     * refreshing owner's rejected sessions are lifted ({@link rejectedAgentSessions}): another user's
+     * refresh must not unlock a session a failed turn of this user proved unusable.
+     */
+    refreshAgentCatalog(ownerLogin?: string): void {
         this.agentConnectionStates.clear();
         this.agentConnectionProbes.clear();
+        // Keys are `${agentId}:${owner}` (agentConnectionCacheKey); neither part contains a colon.
+        const owner = ownerLogin?.trim().toLowerCase() ?? '';
+        for (const key of [...this.rejectedAgentSessions]) {
+            if (key.slice(key.indexOf(':') + 1) === owner) {
+                this.rejectedAgentSessions.delete(key);
+            }
+        }
         // Harness settings or the CLI may have changed: the next model request runs discovery again.
         clearNativeAgentModelCache();
         this.detectAgents();
@@ -632,13 +658,12 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             .map(agent => {
                 const { connectionState, probeSettled } = this.agentConnectionSnapshot(agent.id, ownerLogin);
                 const accessState = resolveAgentAccess({ agentId: agent.id, connectionState, probeSettled });
-                // Codex follows the same access answer as its model list, so a settled sign-out is not usable.
-                // Other agents keep their connection-only rule.
-                const available = agent.id.toLowerCase() === 'codex'
-                    ? agent.available && accessState !== 'none'
-                    : agent.available && connectionState !== 'disconnected';
+                const session = QaapHarnessModelAvailability.session({ connectionState, accessState, probeSettled });
+                // `available` means "can run now". A signed-out enabled harness stays listed so the picker can
+                // explain its lock; only OpenCode has a Free tier that runs without a session.
+                const available = agent.available && (session !== 'signed-out' || agent.id.trim().toLowerCase() === 'opencode');
                 const cliBin = this.antigravityCliBinFor(agent.id);
-                return { ...agent, available, connectionState, accessState, ...(cliBin ? { cliBin } : {}) };
+                return { ...agent, available, connectionState, accessState, session, ...(cliBin ? { cliBin } : {}) };
             });
     }
 
@@ -721,6 +746,23 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         });
     }
 
+    /**
+     * Records that the owner completed the sign-in of a harness that has no auth probe, so it reads as
+     * `connected` until the attestation expires or a turn fails with an auth error. False (nothing
+     * recorded) for a harness with a real probe or a Settings credential, or without an owner. See
+     * {@link QaapAgentSessionAttestationStore} for the threat model.
+     */
+    attestAgentSession(agentId: string, ownerLogin: string | undefined): boolean {
+        const normalized = agentId.trim().toLowerCase();
+        if (!this.sessionAttestations?.attest(ownerLogin, normalized)) {
+            return false;
+        }
+        this.rejectedAgentSessions.delete(this.agentConnectionCacheKey(normalized, ownerLogin));
+        // Same as a probe that turns connected: the catalog discovered while signed out is stale.
+        invalidateNativeAgentModels(normalized, ownerLogin);
+        return true;
+    }
+
     /** Authentication state for the current tenant's CLI credentials (last known; never blocks). */
     isAgentConnected(agentId: string, ownerLogin?: string): boolean {
         return this.agentConnectionState(agentId, ownerLogin) === 'connected';
@@ -745,8 +787,12 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         if (typeof sources.settingsConnected === 'boolean') {
             return sources.settingsConnected ? 'connected' : 'disconnected';
         }
+        if (this.rejectedAgentSessions.has(this.agentConnectionCacheKey(normalized, ownerLogin))) {
+            return 'disconnected';
+        }
         if (!sources.probeBin) {
-            return 'unknown';
+            // No probe can answer (Copilot, Grok): an unexpired sign-in attestation is the only signal.
+            return this.sessionAttestations?.isAttested(ownerLogin, normalized) ? 'connected' : 'unknown';
         }
         void this.refreshAgentConnectionState(normalized, ownerLogin);
         return this.agentConnectionStates.get(this.agentConnectionCacheKey(normalized, ownerLogin))?.state ?? 'unknown';
@@ -1256,6 +1302,29 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public assertQaiqConfigured(agentId: string, ownerLogin?: string, agentModel?: QaapCreateAgentTaskQaiqModel): void {
         assertQaiqConfiguredExtracted(this, agentId, ownerLogin, agentModel);
+    }
+
+    public assertAgentModelAccess(agentId: string, ownerLogin?: string, agentModel?: QaapCreateAgentTaskQaiqModel): void {
+        assertAgentModelAccessExtracted(this, agentId, ownerLogin, agentModel);
+    }
+
+    /**
+     * Gives the harness's in-flight sign-in probe up to `budgetMs` to answer, so a fresh start does not
+     * refuse a signed-in Pro model as `checking`. Never rejects, and returns at once when nothing is in flight.
+     */
+    public async awaitAgentSessionSettled(agentId: string, ownerLogin?: string, budgetMs = 10_000): Promise<void> {
+        const probe = this.refreshAgentConnectionState(agentId.trim().toLowerCase(), ownerLogin);
+        if (!probe) {
+            return;
+        }
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        await Promise.race([
+            probe.then(() => undefined, () => undefined),
+            new Promise<void>(resolve => {
+                timer = setTimeout(resolve, budgetMs);
+            }),
+        ]);
+        clearTimeout(timer);
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
@@ -1975,9 +2044,6 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
 
     /** Remembers how the owner's turn with this agent ended; never affects the task itself. */
     protected async recordLastTurn(task: QaapAgentTask): Promise<void> {
-        if (!this.lastTurns) {
-            return;
-        }
         const agentId = this.resolveTaskAgentId(task);
         if (agentId === 'shell') {
             return;
@@ -1985,11 +2051,43 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         try {
             const turn = classifyAgentLastTurn(task, await this.readLog(task.id), agentId);
             if (turn) {
-                this.lastTurns.record(task.ownerLogin, agentId, turn);
+                this.lastTurns?.record(task.ownerLogin, agentId, turn);
+            }
+            if (turn?.outcome === 'failed' && turn.kind === 'auth') {
+                this.rejectAgentSessionAfterAuthFailure(task, agentId);
             }
         } catch (error) {
             console.warn('[qaap-agent-last-turn] could not record task', task.id, error instanceof Error ? error.message : String(error));
         }
+    }
+
+    /**
+     * A turn of `agentId` failed with an auth error ("401 Unauthorized: Missing bearer…", Cursor's
+     * "run 'agent login' first"): whatever the probe or the attestation claimed, the session did not
+     * hold. Lock the harness's Pro models until the owner signs in again instead of failing every turn.
+     * Not for Qaap's own pre-spawn refusal (it already reflects the lock, and "couldn't confirm" is a
+     * probe that did not answer, not a rejected session), a Free model (it never used the session),
+     * QAIQ (Settings key) or the shell.
+     */
+    protected rejectAgentSessionAfterAuthFailure(task: QaapAgentTask, agentId: string): void {
+        const normalized = agentId.trim().toLowerCase();
+        if (task.preflightFailure || normalized === QAIQ_AGENT_ID || normalized === 'shell') {
+            return;
+        }
+        const model = resolveTaskAgentModel(task);
+        if (model && QaapHarnessModelAvailability.tier(normalized, { modelId: model.modelId, vendor: model.vendor }) === 'free') {
+            return;
+        }
+        this.sessionAttestations?.revoke(task.ownerLogin, normalized);
+        const sources = this.agentAuthSources(normalized, task.ownerLogin);
+        if (!sources || typeof sources.settingsConnected === 'boolean') {
+            return;
+        }
+        const cacheKey = this.agentConnectionCacheKey(normalized, task.ownerLogin);
+        this.rejectedAgentSessions.add(cacheKey);
+        this.agentConnectionStates.set(cacheKey, { state: 'disconnected', at: Date.now() });
+        // The catalog discovered with the rejected session is stale too (same as a fresh sign-in).
+        invalidateNativeAgentModels(normalized, task.ownerLogin);
     }
 
     protected releaseTenantOperation(id: string): void {

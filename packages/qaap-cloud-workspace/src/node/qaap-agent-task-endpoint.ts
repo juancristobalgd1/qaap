@@ -33,6 +33,7 @@ import type { QaapAgentCliUpdateResult } from '@theia/qaap-agents-ui/lib/common/
 import { QaapBillingStore } from './qaap-billing-store';
 import { QaapStandaloneTaskModelFallback } from './qaap-standalone-task-model-fallback';
 import { antigravityBinFor, listNativeAgentModels, prepareNativeAgentModels } from './qaap-agent-native-models';
+import { annotateModelsForAgent } from './qaap-agent-task-runner-render2';
 import {
     QaapGithubAuthGuard,
     type QaapGithubAuthContext,
@@ -46,6 +47,10 @@ import type { QaapAgentTask, QaapAgentTaskCwdGroup } from '../common/qaap-agent-
 import { QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import { QaapAsyncRoute } from '@theia/qaap-shared-core/lib/node/qaap-async-route';
 import { QaapAgentEffort } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
+import {
+    isQaapSessionAttestationAgent,
+    QAAP_AGENT_SESSION_ATTEST_ROUTE,
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-session-attestation';
 
 /** Keep SSE connections warm through proxies that idle-kill silent sockets. */
 const SSE_HEARTBEAT_MS = 25_000;
@@ -226,6 +231,7 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
             }
         });
+        app.post(`${QAAP_AGENT_TASK_API_PATH}/${QAAP_AGENT_SESSION_ATTEST_ROUTE}`, QaapAsyncRoute.wrap('qaap-agent-task', (req, res) => this.handleAttestAgentSession(req, res)));
         app.post(`${QAAP_AGENT_TASK_API_PATH}/improve-prompt`, QaapAsyncRoute.wrap('qaap-agent-task', (req, res) => this.handleImprovePrompt(req, res)));
         app.post(QAAP_AGENT_TASK_API_PATH, QaapAsyncRoute.wrap('qaap-agent-task', (req, res) => this.handleCreate(req, res)));
         app.get(`${QAAP_AGENT_TASK_API_PATH}/:id`, QaapAsyncRoute.wrap('qaap-agent-task', (req, res) => this.handleDetail(req, res)));
@@ -448,6 +454,12 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         const normalizedAgent = requestedAgent.replace(/^@/, '').trim().toLowerCase();
         const agent = resolveQaapBuiltinAgentMentionId(normalizedAgent) ?? normalizedAgent;
         const login = this.auth.resolveUserLogin(ctx);
+        // A harness the owner turned off in Settings offers no models, not even its Free ones.
+        if (!this.runner.isAgentEnabled(agent, login)) {
+            res.setHeader('Cache-Control', 'no-store');
+            res.json({ agent: requestedAgent, models: [] });
+            return;
+        }
         const startedAt = Date.now();
         let billingStartedAt = startedAt;
         let billingMs = 0;
@@ -482,7 +494,7 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         }
         const runnerModels = this.runner.listModelsForAgent(agent, login);
         const nativeModels = listNativeAgentModels(agent, login, antigravityBin);
-        const models = runnerModels.length > 0 ? runnerModels : nativeModels;
+        const models = runnerModels.length > 0 ? runnerModels : annotateModelsForAgent(this.runner, agent, login, nativeModels);
         res.setHeader('Server-Timing', `billing;dur=${billingMs}, discovery;dur=${discoveryMs}, total;dur=${Date.now() - startedAt}`);
         res.setHeader('Cache-Control', 'no-store');
         res.json({ agent: requestedAgent, models });
@@ -505,13 +517,13 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             return;
         }
         const refresh = req.query.refresh === '1' || req.query.refresh === 'true';
-        if (refresh) {
-            this.runner.refreshAgentCatalog();
-        }
         // `groups` intentionally omitted: the only HTTP consumer reads agents/models and the
         // full task history (with whole prompts in `command`) multiplies into tens of MB per call. Live
         // task groups arrive over the WebSocket snapshot instead.
         const ownerLogin = this.auth.resolveUserLogin(ctx);
+        if (refresh) {
+            this.runner.refreshAgentCatalog(ownerLogin);
+        }
         // An explicit refresh (the Connect dialog confirming a sign-in) needs the probe's real
         // answer; the regular picker load answers within the short default budget.
         const agents = await (refresh
@@ -606,7 +618,7 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             const installTarget = this.runner.resolveAgentCliInstallTarget(ownerLogin);
             const result = await this.cliUpdates.installUpdate(agentId, installTarget, { userKey: ownerLogin?.toLowerCase() });
             if (result.ok) {
-                this.runner.refreshAgentCatalog();
+                this.runner.refreshAgentCatalog(ownerLogin);
             }
             res.status(this.cliInstallStatusCode(result)).json(result);
         } catch (error) {
@@ -616,6 +628,47 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 message: error instanceof Error ? error.message : String(error),
             });
         }
+    }
+
+    /**
+     * The sign-in dialog saw the CLI's own success line for a harness without an auth probe (Copilot,
+     * Grok): remember it for the session owner so the picker unlocks its Pro models. The owner comes
+     * only from the authenticated session; the body names the agent and nothing else. See
+     * QaapAgentSessionAttestationStore for the threat model and how a false attestation is revoked.
+     */
+    protected async handleAttestAgentSession(req: Request, res: Response): Promise<void> {
+        // Same guard as the other cookie-authenticated mutations (qaap-tenant-update-endpoint.ts): browsers
+        // always send Sec-Fetch-Site; a request without it must be JSON, which a cross-site form cannot send.
+        const fetchSite = req.headers['sec-fetch-site'];
+        if (fetchSite !== undefined && fetchSite !== 'same-origin' && fetchSite !== 'none') {
+            res.status(403).json({ error: 'Cross-site request refused.' });
+            return;
+        }
+        if (fetchSite === undefined && !/^application\/json\s*(?:;|$)/i.test(req.headers['content-type'] ?? '')) {
+            res.status(415).json({ error: 'Send the request as application/json.' });
+            return;
+        }
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return;
+        }
+        const ownerLogin = this.auth.resolveUserLogin(ctx)?.trim();
+        if (!ownerLogin) {
+            res.status(401).json({ error: 'Not signed in' });
+            return;
+        }
+        const body = (req.body ?? {}) as { agentId?: unknown };
+        const agentId = typeof body.agentId === 'string' ? body.agentId.trim().toLowerCase() : '';
+        if (!agentId || !isQaapSessionAttestationAgent(agentId)) {
+            res.status(400).json({ error: 'Only harnesses without a sign-in status check accept an attestation.' });
+            return;
+        }
+        if (!this.runner.attestAgentSession(agentId, ownerLogin)) {
+            res.status(400).json({ error: 'The sign-in could not be recorded.' });
+            return;
+        }
+        res.setHeader('Cache-Control', 'no-store');
+        res.json({ ok: true, agentId });
     }
 
     protected async handleImprovePrompt(req: Request, res: Response): Promise<void> {

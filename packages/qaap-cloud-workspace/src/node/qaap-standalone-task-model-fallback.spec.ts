@@ -195,6 +195,18 @@ describe('QaapStandaloneTaskModelFallback', () => {
         expect(runner.pushes[0].title).to.equal('Task finished');
     });
 
+    it('does not retry a task refused before spawn for a missing sign-in', async () => {
+        const runner = fakeRunner();
+        const service = fallbackService(runner);
+        const first = createStandalone(runner, service);
+        runner.tasks.set(first.id, { ...runner.tasks.get(first.id)!, preflightFailure: 'sign_in_required' });
+
+        runner.finish(first.id, 'failed', 'Sign in to Codex to use gpt-5.5.');
+
+        expect(await settle(service, first.id)).to.equal(false);
+        expect(runner.created).to.have.length(1);
+    });
+
     it('does not retry a task refused before spawn for a missing provider key', async () => {
         const runner = fakeRunner();
         const service = fallbackService(runner);

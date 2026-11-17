@@ -90,3 +90,7 @@ plausible.io
 # Product dependencies found blocked in production (Oct 26): OpenCode model list, Open VSX AI registry
 .opencode.ai
 .open-vsx.org
+# Antigravity CLI (agy, Nov 15): sign-in and Google endpoints are already covered by accounts.google.com and
+# .googleapis.com (oauth2, cloudcode-pa, generativelanguage, play). The agy binary is pinned in the image, so its
+# update manifest host (*.run.app) is deliberately not listed.
+antigravity.google

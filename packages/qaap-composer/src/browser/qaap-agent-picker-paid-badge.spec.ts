@@ -59,6 +59,20 @@ describe('agent picker: model rows mark paid models and list free ones first', (
         expect(paidRow?.querySelector('.theia-qaap-picker-sheet-option-badge')?.textContent).to.equal('Paid');
     });
 
+    it('labels rows with their backend tier and never adds a contradicting Paid badge', () => {
+        const proLocked: QaapQaiqModelOption = { ...paidModel, modelId: 'openai/gpt-5-pro', label: 'GPT-5 Pro', available: false, unavailableReason: 'not-connected', tier: 'pro' };
+        const freeTier: QaapQaiqModelOption = { ...freeModel, modelId: 'opencode/beam', label: 'Beam', tier: 'free' };
+        const list = renderRows([proLocked, freeTier]);
+        const rows = [...list.querySelectorAll<HTMLElement>('.theia-qaap-picker-sheet-option, .theia-mobile-sticky-composer-sheet-option')];
+        const proRow = rows.find(row => row.textContent?.includes('GPT-5 Pro'));
+        const freeRow = rows.find(row => row.textContent?.includes('Beam'));
+        expect(proRow?.querySelector('.theia-qaap-picker-sheet-option-badge')?.textContent).to.equal('Pro');
+        expect(proRow?.querySelector('.theia-qaap-picker-sheet-option-badge')?.textContent).to.not.equal('Locked');
+        expect(proRow?.classList.contains('theia-mod-disabled')).to.equal(true);
+        expect(freeRow?.querySelector('.theia-qaap-picker-sheet-option-badge')?.textContent).to.equal('Free');
+        expect(list.textContent).to.not.contain('Paid');
+    });
+
     it('lists the free model before the paid one regardless of catalog order', () => {
         const list = renderRows([paidModel, freeModel]);
         const rows = [...list.querySelectorAll<HTMLElement>('.theia-qaap-picker-sheet-option, .theia-mobile-sticky-composer-sheet-option')];

@@ -291,6 +291,8 @@ describe('qaap-agent-model-fallback', () => {
 
         it('never qualifies when the key every model shares stopped the turn, or the agent has no chain', () => {
             expect(agentTurnQualifiesForModelFallback('qaiq', { state: 'failed', preflightFailure: 'provider_key_missing' }, undefined)).to.be.false;
+            // A Pro model refused for a sign-in: another model of the same harness needs the same sign-in.
+            expect(agentTurnQualifiesForModelFallback('codex', { state: 'failed', preflightFailure: 'sign_in_required' }, deadModel)).to.be.false;
             expect(agentTurnQualifiesForModelFallback('qaiq', { state: 'failed', providerKeyVerdict: 'key_rejected' }, deadModel)).to.be.false;
             expect(agentTurnQualifiesForModelFallback('qaiq', { state: 'failed', providerKeyVerdict: 'no_credits' }, deadModel)).to.be.false;
             expect(agentTurnQualifiesForModelFallback('shell', { state: 'failed' }, undefined)).to.be.false;

@@ -32,6 +32,9 @@ describe('QaapTenantBackendProxyContribution', () => {
         expect(proxy.isControlPlanePath('/qaap/api/auth/github/start?next=/')).to.equal(true);
         expect(proxy.isControlPlanePath('/qaap/api/cloud/runtime/status')).to.equal(true);
         expect(proxy.isControlPlanePath('/qaap/api/cloud/runtime/wake')).to.equal(true);
+        expect(proxy.isControlPlanePath('/qaap/api/tenant-update')).to.equal(true);
+        expect(proxy.isControlPlanePath('/qaap/api/tenant-update?x=1')).to.equal(true);
+        expect(proxy.isControlPlanePath('/qaap/api/tenant-update-other')).to.equal(false);
         expect(proxy.isControlPlanePath('/services')).to.equal(false);
     });
 

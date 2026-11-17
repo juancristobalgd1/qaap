@@ -47,6 +47,7 @@ import { QaapAgentConversationEndpoint } from './qaap-agent-conversation-endpoin
 import { QaapConversationReadMarkEndpoint } from './qaap-conversation-read-mark-endpoint';
 import { QaapConversationReadMarkStore } from './qaap-conversation-read-mark-store';
 import { QaapAgentLastTurnStore } from './qaap-agent-last-turn-store';
+import { QaapAgentSessionAttestationStore } from './qaap-agent-session-attestation-store';
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 import { QaapAgentGoalLoopRunner } from './qaap-agent-goal-loop-runner';
 import { QaapTaskPullRequestService } from './qaap-task-pull-request-service';
@@ -151,6 +152,7 @@ import { QaapTenantActivityContribution } from './qaap-tenant-activity-contribut
 import { QaapTenantActivityTracker } from './qaap-tenant-activity-tracker';
 import { QaapTenantContainerReaper } from './qaap-tenant-container-reaper';
 import { QaapTenantRuntimeEndpoint } from './qaap-tenant-runtime-endpoint';
+import { QaapTenantUpdateEndpoint } from './qaap-tenant-update-endpoint';
 import { QaapTenantRuntimeMetrics } from './qaap-tenant-runtime-metrics';
 import { QaapTenantRuntimeStore } from './qaap-tenant-runtime-store';
 import { QaapTenantBackendProxyContribution } from './qaap-tenant-backend-proxy';
@@ -196,6 +198,8 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(BackendApplicationContribution).toService(QaapTenantContainerReaper);
     bind(QaapTenantRuntimeEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapTenantRuntimeEndpoint);
+    bind(QaapTenantUpdateEndpoint).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapTenantUpdateEndpoint);
     bind(QaapTenantPreviewRouteTable).toSelf().inSingletonScope();
     bind(QaapFrontendStaticManifest).toSelf().inSingletonScope();
     bind(QaapTenantBackendProxyContribution).toSelf().inSingletonScope();
@@ -416,6 +420,7 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     // Per-user read marks behind the Work Hub unread dot (shared by every device of the user).
     bind(QaapConversationReadMarkStore).toSelf().inSingletonScope();
     bind(QaapAgentLastTurnStore).toSelf().inSingletonScope();
+    bind(QaapAgentSessionAttestationStore).toSelf().inSingletonScope();
     bind(QaapConversationReadMarkEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapConversationReadMarkEndpoint);
     bind(QaapAgentApprovalStore).toSelf().inSingletonScope();

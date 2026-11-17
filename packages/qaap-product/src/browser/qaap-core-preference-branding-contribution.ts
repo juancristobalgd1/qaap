@@ -7,11 +7,13 @@ import { FrontendApplicationContribution } from '@theia/core/lib/browser/fronten
 import { FrontendApplicationConfigProvider } from '@theia/core/lib/browser/frontend-application-config-provider';
 import { IconTheme, IconThemeService } from '@theia/core/lib/browser/icon-theme-service';
 import { nls } from '@theia/core/lib/common/nls';
+import { PreferenceDataProperty } from '@theia/core/lib/common/preferences';
 import { PreferenceSchemaService } from '@theia/core/lib/common/preferences/preference-schema';
 import { inject, injectable } from '@theia/core/shared/inversify';
 
 const SECONDARY_WINDOW_KEY = 'window.secondaryWindow.defaultPositionAndSize';
 const FILE_ICON_THEME_ID = 'theia-file-icons';
+const ICON_THEME_PREFERENCE_KEY = 'workbench.iconTheme';
 
 /** Product-neutral core preference labels without forking core-preferences.ts. */
 @injectable()
@@ -25,6 +27,7 @@ export class QaapCorePreferenceBrandingContribution implements FrontendApplicati
 
     onStart(): void {
         this.brandSecondaryWindowDescriptions();
+        this.defaultToFileIconTheme();
         if (!this.brandFileIconThemeLabel()) {
             const disposable = this.iconThemeService.onDidChange(() => {
                 if (this.brandFileIconThemeLabel()) {
@@ -53,6 +56,22 @@ export class QaapCorePreferenceBrandingContribution implements FrontendApplicati
                 )
             ]
         });
+    }
+
+    /**
+     * Core defaults `workbench.iconTheme` to `none`, so a profile that never picked a theme (a fresh
+     * desktop install) painted no per-type file icons in the Work Hub's Files tree, file picker and
+     * transcript, nor in the explorer. A theme the user chose still wins.
+     */
+    protected defaultToFileIconTheme(): void {
+        const property = this.schemaService.getSchemaProperty(ICON_THEME_PREFERENCE_KEY);
+        if (!property || property.default === FILE_ICON_THEME_ID) {
+            return;
+        }
+        this.schemaService.updateSchemaProperty(ICON_THEME_PREFERENCE_KEY, {
+            ...property,
+            default: FILE_ICON_THEME_ID,
+        } as PreferenceDataProperty);
     }
 
     protected brandFileIconThemeLabel(): boolean {

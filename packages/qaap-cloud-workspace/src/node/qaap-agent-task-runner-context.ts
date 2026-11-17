@@ -246,6 +246,10 @@ export interface QaapAgentTaskRunnerContext {
     reservedDevPreviewPort?(task: QaapAgentTask): number | undefined;
     resolveQaiqProviderFlagsFromEnv(env: NodeJS.ProcessEnv): string;
     assertQaiqConfigured(agentId: string, ownerLogin?: string, agentModel?: QaapCreateAgentTaskQaiqModel): void;
+    /** Refuses a Pro model whose harness the owner is not signed in to, before any process spawns. */
+    assertAgentModelAccess(agentId: string, ownerLogin?: string, agentModel?: QaapCreateAgentTaskQaiqModel): void;
+    /** Gives an in-flight sign-in probe up to `budgetMs` to answer (never rejects). */
+    awaitAgentSessionSettled(agentId: string, ownerLogin?: string, budgetMs?: number): Promise<void>;
     applyTemplate(template: string, prompt: string, vars?: Record<string, string>): string;
     applyTemplateWithoutPrompt(template: string, vars?: Record<string, string>): string;
     shellQuote(value: string): string;

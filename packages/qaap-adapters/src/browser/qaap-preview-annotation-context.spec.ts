@@ -69,4 +69,20 @@ describe('qaap-preview-annotation-context', () => {
         expect(args?.contextBody).to.contain('<textarea>');
         expect(args?.contextBody).to.contain('<div>');
     });
+
+    it('carries each annotation comment, its CSS selector and its element context into the attached body', () => {
+        const confirmed = [
+            annotation({
+                id: 'a1',
+                comment: 'quiero que no salga este boton',
+                anchor: { kind: 'element', selector: 'button.primary', xRatio: 0.5, yRatio: 0.5 },
+                element: { tagName: 'button', selector: 'button.primary', text: 'Probar vista 3D' },
+            }),
+        ];
+        const args = buildAnnotateChatAttachArgs(confirmed, '/home', 'mobile');
+        expect(args?.contextBody).to.contain('- Comment: quiero que no salga este boton');
+        expect(args?.contextBody).to.contain('- Selector: button.primary');
+        expect(args?.contextBody).to.contain('- Route: /home');
+        expect(args?.contextBody).to.contain('Probar vista 3D');
+    });
 });

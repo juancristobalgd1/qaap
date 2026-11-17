@@ -136,6 +136,15 @@ ARG ANTIGRAVITY_CLI_VERSION=0.1.1
 ARG GEMINI_CLI_VERSION=0.62.0
 ARG OPENCODE_CLI_VERSION=1.18.28
 ARG PI_CLI_VERSION=1.4.0
+# Google's Antigravity CLI (`agy`) is the supported Antigravity client: Google retired Gemini CLI's "Login with
+# Google" for personal accounts on 18 Jun 2026. It is a pinned release binary, not an npm package. Version, url and
+# sha512 are copied from Google's update manifests (antigravity-cli-auto-updater .../manifests/linux_amd64.json and
+# linux_arm64.json); bump all five together.
+ARG AGY_CLI_VERSION=1.5.9
+ARG AGY_CLI_URL_AMD64=https://storage.googleapis.com/antigravity-public/antigravity-cli/1.5.9-4515810895593472/linux-x64/cli_linux_x64.tar.gz
+ARG AGY_CLI_SHA512_AMD64=d01eb13ba7750eed18907f1ae8860864371e0ad9064415e8d033d22b4bd7b9b4e4c7f962058520b452d67db1c33163d9a889d55a7dffa159596ec6cd91a87b79
+ARG AGY_CLI_URL_ARM64=https://storage.googleapis.com/antigravity-public/antigravity-cli/1.5.9-4515810895593472/linux-arm/cli_linux_arm64.tar.gz
+ARG AGY_CLI_SHA512_ARM64=16c632a09b81f598f7652bc11180861f9d2ee4408ffa161dadc83b2010de7a9cd055e97b4b46cd01903e35c0e8bf21d8262462ba7c5f168cc6dada9ac3d522c0
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
@@ -195,10 +204,25 @@ RUN test -n "${QAIQ_COMMIT}" \
 
 ENV PATH="/root/.local/bin:${PATH}"
 
+# Antigravity CLI `agy`. The tarball holds one binary named `antigravity`; it is installed under /opt so it does
+# not collide with the community `antigravity` alias above, and exposed on PATH as `agy`. Checksum before extract.
+ARG TARGETARCH
+RUN arch="${TARGETARCH:-$(dpkg --print-architecture)}" \
+    && case "$arch" in amd64) url="${AGY_CLI_URL_AMD64}"; sha="${AGY_CLI_SHA512_AMD64}" ;; arm64) url="${AGY_CLI_URL_ARM64}"; sha="${AGY_CLI_SHA512_ARM64}" ;; *) echo "Unsupported agy arch: $arch" >&2; exit 1 ;; esac \
+    && curl -fsSL -o /tmp/agy.tar.gz "${url}" \
+    && echo "${sha}  /tmp/agy.tar.gz" | sha512sum -c - \
+    && mkdir -p /opt/antigravity-cli \
+    && tar -xzf /tmp/agy.tar.gz -C /opt/antigravity-cli antigravity \
+    && ln -sf /opt/antigravity-cli/antigravity /usr/local/bin/agy \
+    && rm /tmp/agy.tar.gz \
+    && agy --version
+# The backend's CLI update check compares the installed agy with this (qaap-agent-cli-update-service.ts).
+ENV AGY_CLI_VERSION=${AGY_CLI_VERSION}
+
 # These executables are runtime dependencies of Jobs / Background tasks. Keep the image build
 # fail-fast: a worker based on a partially built image must never reach a VPS and silently accept
 # tasks without a coding harness.
-RUN for harness in qaiq openclaude codex claude opencode antigravity; do \
+RUN for harness in qaiq openclaude codex claude opencode antigravity agy; do \
         command -v "$harness" >/dev/null 2>&1 \
             || { echo "Required Qaap harness is missing: $harness" >&2; exit 1; }; \
     done

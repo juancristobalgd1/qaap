@@ -71,7 +71,7 @@ describe('mobile-projects-sticky-composer-model-picker-ui', () => {
         const signedIn: string[] = [];
         await renderStickyComposerModelPicker(ctx, chrome, {
             cwd: undefined,
-            agents: [{ id: 'claude', label: 'Claude Code', available: true, connectionState: 'disconnected' }],
+            agents: [{ id: 'claude', label: 'Claude Code', available: false, connectionState: 'disconnected', session: 'signed-out' }],
             selectedAgentId: 'claude',
             project: undefined,
             isMobile: false,

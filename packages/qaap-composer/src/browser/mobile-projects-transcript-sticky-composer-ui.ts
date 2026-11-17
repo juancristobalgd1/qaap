@@ -82,6 +82,8 @@ export const COMPOSER_PREVIEW_HEALTH_INTERVAL_MS = 5_000;
 /** Preserve both a failed send and anything the user typed while it was in flight. */
 /** Panel surface for transcript sticky composer mount, prefs persistence, and follow-up queue. */
 export interface MobileProjectsTranscriptStickyComposerHost {
+    /** Opens the harness sign-in terminal; used by the send-blocked sign-in warning. */
+    openAgentSignInTerminal?(agentId?: string): void | Promise<void>;
     /** Resolves when the frontend app reached 'ready' (immediately if unwired). */
     whenFrontendReady?(): Promise<void>;
     /** Fresh resolution of the Agents Hub shell's project/summary (see submit-time re-resolution). */

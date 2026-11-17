@@ -8,6 +8,7 @@ import * as fs from 'fs';
 import { injectable } from '@theia/core/shared/inversify';
 import * as express from '@theia/core/shared/express';
 import { BackendApplicationServer, BackendApplicationPath } from '@theia/core/lib/node';
+import { findQaapPackageFile } from '@theia/qaap-shared-core/lib/node/qaap-package-file';
 
 /**
  * esbuild emits content-addressed frontend chunks as `chunk-<hash>.(js|css)`, optionally followed
@@ -35,6 +36,27 @@ export function resolveQaapLegalPagesDir(): string {
         }
     }
     return candidates[candidates.length - 1];
+}
+
+/**
+ * Product artwork served at `/<name>/*`: the sign-in screen (`login`), the signed-out marketing page
+ * (`landing`) and the app icons (`media`). The browser copies these next to its bundle; the Electron
+ * frontend does not, so they fall back to the packaged `resources/<name>` of `@theia/qaap-product`.
+ */
+export const QAAP_PRODUCT_STATIC_DIRS = ['login', 'landing', 'media'] as const;
+
+/** Directory of one {@link QAAP_PRODUCT_STATIC_DIRS} entry, or undefined when neither location has it. */
+export function resolveQaapProductStaticDir(name: string): string | undefined {
+    const copied = path.join(BackendApplicationPath, 'lib', 'frontend', name);
+    if (fs.existsSync(copied)) {
+        return copied;
+    }
+    const packaged = findQaapPackageFile('@theia/qaap-product', path.join('resources', name), { startDirectory: BackendApplicationPath });
+    if (packaged) {
+        return packaged;
+    }
+    const sibling = path.resolve(__dirname, '../../resources', name);
+    return fs.existsSync(sibling) ? sibling : undefined;
 }
 
 /**
@@ -67,6 +89,12 @@ export class QaapFrontendStaticServer implements BackendApplicationServer {
                 res.setHeader('X-Content-Type-Options', 'nosniff');
             },
         }));
+        for (const name of QAAP_PRODUCT_STATIC_DIRS) {
+            const dir = resolveQaapProductStaticDir(name);
+            if (dir) {
+                app.use(`/${name}`, express.static(dir, { index: false }));
+            }
+        }
         const frontendDir = path.join(BackendApplicationPath, 'lib', 'frontend');
         app.use(express.static(frontendDir, {
             setHeaders: (res, filePath) => this.setStaticHeaders(res, filePath, frontendDir),

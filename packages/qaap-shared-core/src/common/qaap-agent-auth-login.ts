@@ -120,7 +120,51 @@ const LOGIN_FAILURE_PATTERNS: readonly RegExp[] = [
     /\bfailed\s+to\s+log\s?in\s+to\b/i,
 ];
 
+/**
+ * Qaap's own pre-spawn sign-in guard refusals (qaap-agent-sign-in-preflight.ts): "Sign in to {0} to use
+ * {1}." and "Couldn't confirm your sign-in to {0}; try again.". The guard writes one of them as the whole
+ * log of a `preflightFailure: 'sign_in_required'` task; recognizing them makes the transcript offer the
+ * Sign in chip instead of the generic "could not start" copy. Anchored to a full line so agent prose
+ * that merely mentions signing in does not match.
+ */
+export const QAAP_SIGN_IN_GUARD_REFUSAL_PATTERNS: readonly RegExp[] = [
+    /^\s*sign\s+in\s+to\s+[^\n;]{1,80}?\s+to\s+use\s+[^\n]{1,160}\.\s*$/im,
+    /^\s*couldn['\u2019]t\s+confirm\s+your\s+sign-in\s+to\s+[^\n;]{1,80};\s+try\s+again\.\s*$/im,
+];
+
+/**
+ * Harness CLIs' own "no usable session" refusals, unmistakable wherever they are printed and
+ * therefore safe to fail an exit-0 turn on (see {@link isUnauthenticatedCliDeclaration}):
+ * - Cursor Agent without a session: "Authentication required. Please run 'agent login' first, or set
+ *   CURSOR_API_KEY environment variable." (`cursor-agent login` in older builds);
+ * - Codex against the OpenAI API with no credential at all: "unexpected status 401 Unauthorized: Missing
+ *   bearer or basic authentication in header";
+ * - Codex with an `auth.json` that carries no ChatGPT tokens: "plan type is required for chatgpt authentication".
+ * Each is the CLI's or provider's exact wording, not prose an agent would write about auth code.
+ */
+export const QAAP_HARNESS_UNAUTHENTICATED_PATTERNS: readonly RegExp[] = [
+    /\bauthentication\s+required\.\s+please\s+run\s+['"`]?(?:cursor-)?agent\s+login['"`]?\s+first\b/i,
+    /\b401\s+unauthorized:?\s+missing\s+bearer\s+or\s+basic\s+authentication\b/i,
+    /\bplan\s+type\s+is\s+required\s+for\s+chatgpt\s+authentication\b/i,
+];
+
+/**
+ * The guard refusal line inside a failure text, with whether the refusal can be retried ("Couldn't confirm your
+ * sign-in" is a probe that failed to answer, not a missing sign-in). `undefined` when no line is a guard refusal.
+ */
+export function matchQaapSignInGuardRefusal(output: string | undefined): { readonly message: string; readonly retryable: boolean } | undefined {
+    for (const line of (output ?? '').split('\n')) {
+        const trimmed = line.trim();
+        if (QAAP_SIGN_IN_GUARD_REFUSAL_PATTERNS.some(pattern => pattern.test(trimmed))) {
+            return { message: trimmed, retryable: /^couldn['\u2019]t\s+confirm/i.test(trimmed) };
+        }
+    }
+    return undefined;
+}
+
 const SESSION_AUTH_PATTERNS: readonly RegExp[] = [
+    ...QAAP_SIGN_IN_GUARD_REFUSAL_PATTERNS,
+    ...QAAP_HARNESS_UNAUTHENTICATED_PATTERNS,
     /\bnot\s+logged\s+in\b/i,
     // "Please run /login", "run the '/login' command" (Copilot CLI quotes it).
     /\brun\s+(?:the\s+)?['"`]?\/login\b/i,
@@ -138,6 +182,12 @@ const SESSION_AUTH_PATTERNS: readonly RegExp[] = [
     /\bone[- ]time\s+code\b/i,
     /\bverification_uri\b/i,
     /\buser_code\b/i,
+    // Google's Antigravity CLI (`agy`) without a session (same lines as the failure classifier).
+    /\bauthentication\s+required\.\s+please\s+visit\s+the\s+url\s+to\s+log\s+in\b/i,
+    /\bauthentication\s+required\.\s+run\s+['"`]?agy['"`]?\s+to\s+log\s+in\b/i,
+    /\bauthentication\s+failed\s+or\s+timed\s+out\b/i,
+    /\bauthentication\s+interrupted\b/i,
+    /\bplease\s+sign\s+in\s+to\s+view\s+available\s+models\b/i,
 ];
 
 const API_KEY_AUTH_PATTERNS: readonly RegExp[] = [
@@ -269,6 +319,7 @@ const CLI_UNAUTH_DECLARATION_PATTERNS: readonly RegExp[] = [
     /\bno\s+authentication\s+information\s+found\b/i,
     /\brun\s+(?:the\s+)?['"`]?\/login\b/i,
     /\brun\s+['"`]?gh\s+auth\s+login\b/i,
+    ...QAAP_HARNESS_UNAUTHENTICATED_PATTERNS,
 ];
 
 /**
@@ -352,9 +403,10 @@ export function localizeAgentAuthFailureMessage(
  * Interactive login command for the transcript terminal (device-auth / OAuth),
  * matching what users run in the agent TUI.
  *
- * `cliBin` is the Antigravity CLI the host resolved (`harness-status` / agent descriptor `cliBin`). Only
- * Gemini CLI has an in-app sign-in; `agy` has none, so it gets no command and the Connect flow shows the
- * terminal instructions instead. A missing `cliBin` keeps the Gemini login.
+ * `cliBin` is the Antigravity CLI the host resolved (`harness-status` / agent descriptor `cliBin`). `agy` (the
+ * supported client) has no login subcommand, so it gets no command and the Connect flow shows the terminal
+ * instructions instead: run `agy` in the agent terminal. Gemini CLI's in-app sign-in is kept only for a host
+ * without `agy`; Google retired it for personal accounts on 18 Jun 2026. A missing `cliBin` keeps that login.
  */
 export function resolveAgentLoginCliCommand(agentId: string | undefined, cliBin?: string): string | undefined {
     const normalized = migrateQaapProductAgentId(agentId?.trim());
@@ -406,9 +458,9 @@ export function resolveAgentLoginCliCommand(agentId: string | undefined, cliBin?
             return 'hermes auth add nous --type oauth --no-browser';
         case 'antigravity':
         case 'gemini':
-            // The harness runs on Gemini CLI, which has no login subcommand: its interactive start
-            // signs in. With "Login with Google" preselected and NO_BROWSER it prints an
-            // `accounts.google.com` link and `Enter the authorization code:` instead of a picker.
+            // Gemini CLI (fallback host only) has no login subcommand: its interactive start signs in.
+            // With "Login with Google" preselected and NO_BROWSER it prints an `accounts.google.com` link
+            // and `Enter the authorization code:` instead of a picker. `agy` gets no command (see above).
             return (normalizeAntigravityCliBin(cliBin) ?? 'gemini') === 'gemini' ? resolveGeminiCliLoginCommand() : undefined;
         // QAIQ is the only harness that runs on Settings API keys.
         default:

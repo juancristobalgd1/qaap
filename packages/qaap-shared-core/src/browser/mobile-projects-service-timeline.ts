@@ -16,6 +16,8 @@ import type {
     QaapProjectSessionUpsertRequest,
 } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
+import { QaapApiRequestError } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
+import { QAAP_GITHUB_SIGN_IN_REQUIRED_CODE } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import type { QaapGithubRepositorySummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import { MobileProjectEntry, mobileProjectColorForName } from './mobile-projects-types';
@@ -290,7 +292,7 @@ export function applySessionToEntryExtracted(ctx: MobileProjectsServiceContext, 
         };
 }
 
-export async function loadGithubProjectsExtracted(ctx: MobileProjectsServiceContext, sessionMap: Map<string, QaapProjectSessionSummary>, includeUnopened: boolean): Promise<MobileProjectEntry[]> {
+export async function loadGithubProjectsExtracted(ctx: MobileProjectsServiceContext, sessionMap: Map<string, QaapProjectSessionSummary>, includeUnopened: boolean, surfaceSignInRequired = false): Promise<MobileProjectEntry[]> {
         if (!readQaapSignedIn()) {
             return [];
         }
@@ -308,6 +310,10 @@ export async function loadGithubProjectsExtracted(ctx: MobileProjectsServiceCont
                     sessionMap.get(`github:${repo.fullName}`) ?? sessionMap.get(`github:${repo.fullName.toLowerCase()}`)
                 ));
         } catch (err) {
+            // The import dialog asks for the sign-in code itself; every other caller keeps the empty list.
+            if (surfaceSignInRequired && err instanceof QaapApiRequestError && err.code === QAAP_GITHUB_SIGN_IN_REQUIRED_CODE) {
+                throw err;
+            }
             console.warn('[qaap] Failed to load GitHub repositories:', err);
             return [];
         }

@@ -12,6 +12,8 @@ export interface QaapTenantBackendUpdateInput {
     readonly controlPlaneBuild: string | undefined;
     /** The orchestrator kept a stale backend alive because agent turns were running. */
     readonly deferred: boolean;
+    /** The running backend container does not use the serving image (checked by the orchestrator, no build string needed). */
+    readonly imageStale?: boolean;
 }
 
 /**
@@ -20,7 +22,10 @@ export interface QaapTenantBackendUpdateInput {
  *    until its turns finish, whatever the build strings say (a deferral can also be caused by a
  *    config change under the same build), or
  *  - both builds are known and differ: the next wake recreates the backend on the new image. No
- *    `reason` then, because nothing blocks it; the wake itself is the user's next request.
+ *    `reason` then, because nothing blocks it; the wake itself is the user's next request, or the
+ *    user's "Update now" (`POST /qaap/api/tenant-update`).
+ *  - the running container does not use the serving image (`imageStale`): this is checked against
+ *    Docker, so it is also right after a control-plane restart, when no build is known in memory.
  * Unknown builds (no ready health seen since the control plane started, or a `dev` build) never
  * report a pending update on their own: that would be a guess.
  */
@@ -29,7 +34,7 @@ export function computeTenantBackendUpdateStatus(input: QaapTenantBackendUpdateI
     const controlPlaneBuild = input.controlPlaneBuild?.trim() || undefined;
     const knownBuilds = controlPlaneBuild !== undefined && controlPlaneBuild !== 'dev' && backendBuild !== undefined;
     const buildsDiffer = knownBuilds && backendBuild !== controlPlaneBuild;
-    const updatePending = input.deferred || buildsDiffer;
+    const updatePending = input.deferred || buildsDiffer || input.imageStale === true;
     return {
         backendBuild,
         controlPlaneBuild,

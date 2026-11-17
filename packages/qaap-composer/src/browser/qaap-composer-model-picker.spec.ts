@@ -93,6 +93,30 @@ describe('qaap-composer-model-picker', () => {
         expect(selected).to.deep.equal([]);
     });
 
+    it('labels rows with the backend tier and opens the sign-in from a locked Pro row', () => {
+        const selected: string[] = [];
+        const signedIn: string[] = [];
+        const tiered = state({
+            models: [
+                { agentId: 'claude', modelId: 'beam', label: 'Beam', available: true, tier: 'free' },
+                { agentId: 'claude', modelId: 'opus-pro', label: 'Opus Pro', available: false, unavailableReason: 'Sign in to use this model', tier: 'pro', signInRequired: true },
+            ],
+        });
+        renderQaapComposerModelPicker(host, props({
+            state: tiered,
+            onSelectModel: (_agent, model) => selected.push(model),
+            onSignIn: agentId => signedIn.push(agentId),
+        }));
+        const [free, pro] = rows(host);
+        expect(free.querySelector('.qaap-model-picker-row-paid')?.textContent).to.equal('Free');
+        expect(pro.querySelector('.qaap-model-picker-row-paid')?.textContent).to.equal('Pro');
+        expect(pro.textContent).to.contain('Sign in to Claude');
+        expect(pro.disabled).to.equal(false);
+        pro.click();
+        expect(signedIn).to.deep.equal(['claude']);
+        expect(selected).to.deep.equal([]);
+    });
+
     it('shows the favorites rail with only starred models', () => {
         const favorites = [QaapComposerModelPickerModel.favoriteKey('claude', 'sonnet-4-6')];
         renderQaapComposerModelPicker(host, props({ state: state({ railSelection: 'favorites', favorites }) }));

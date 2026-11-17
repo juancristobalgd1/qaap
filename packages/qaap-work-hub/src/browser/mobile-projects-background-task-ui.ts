@@ -46,7 +46,8 @@ import { applyBackendInteractionModeToPrompt } from '@theia/qaap-shared-core/lib
 import { QaapDirtyWorkspaceDialog, retryAfterDirtyWorkspace, type QaapDirtyWorkspaceChoice } from './mobile-projects-workspace-dirty-dialog';
 import { reconcileAgentApprovalPolicyId, type QaapAgentApprovalPolicyId } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import { reconcileAgentToolApprovalRules } from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-approval-rules';
-import { confirmPaidModelSend, resolveSendAgentModel, sendModelBelongsToAgent, warnChooseSendModel } from '@theia/qaap-composer/lib/browser/qaap-paid-model-send-confirm';
+import { resolveAgentDisplayLabel } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
+import { confirmPaidModelSend, resolveSendAgentModel, sendModelBelongsToAgent, warnBlockedSend, warnChooseSendModel } from '@theia/qaap-composer/lib/browser/qaap-paid-model-send-confirm';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
@@ -253,6 +254,8 @@ export class MobileProjectsBackgroundTaskUi {
             agentModelAgentId?: string;
             /** Opens the composer's agent/model picker when the send is held for a model choice. */
             openModelPicker?: () => void;
+            /** Opens the harness sign-in when the send is held because the chosen model needs it. */
+            openSignIn?: () => void;
             imagePreviews?: readonly QaapTranscriptUserImagePreview[];
             /** Create without a message, then start an "Until done" goal loop with the draft. */
             untilDone?: boolean;
@@ -306,7 +309,11 @@ export class MobileProjectsBackgroundTaskUi {
             const modelResolution = await resolveSendAgentModel(resolvedAgentId, cwd, options.agentModel);
             if (!modelResolution.ok) {
                 // Fail closed: a picker agent with no chosen model is not sent on the CLI default.
-                warnChooseSendModel(resolvedAgentId, options.openModelPicker);
+                this.host.rollbackTranscriptOptimisticSubmit?.();
+                warnBlockedSend(modelResolution, resolveAgentDisplayLabel(resolvedAgentId), {
+                    openSignIn: options.openSignIn,
+                    openModelPicker: options.openModelPicker,
+                });
                 return undefined;
             }
             if (!await this.confirmPaidSend(cwd, modelResolution.model)) {

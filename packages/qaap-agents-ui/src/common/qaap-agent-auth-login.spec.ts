@@ -102,6 +102,18 @@ describe('qaap-agent-auth-login', () => {
         expect(extractAgentAuthLoginChallenge(githubLogin, { agentId: 'cursor' })?.url).to.equal(undefined);
     });
 
+    it('detects agy sign-in lines as a session, not an API key', () => {
+        for (const line of [
+            'Authentication required. Please visit the URL to log in:',
+            "Error: authentication required. Run 'agy' to log in, then retry.",
+            'error: authentication failed or timed out',
+            'Error: Please sign in to view available models. Launch the CLI without arguments to sign in.',
+        ]) {
+            expect(detectAgentAuthFailureMode(line), line).to.equal('session');
+        }
+        expect(detectAgentAuthFailureMode('IneligibleTierError: This client is no longer supported')).to.equal(undefined);
+    });
+
     it('detects session auth without a URL (Not logged in · Please run /login)', () => {
         expect(detectAgentAuthFailureMode('Not logged in · Please run /login')).to.equal('session');
         expect(detectAgentFailureKind('Not logged in · Please run /login')).to.equal('auth');

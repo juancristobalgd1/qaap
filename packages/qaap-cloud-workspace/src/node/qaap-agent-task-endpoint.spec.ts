@@ -18,6 +18,9 @@ class TestableTaskEndpoint extends QaapAgentTaskEndpoint {
     detailForTest(req: Request, res: Response): Promise<void> {
         return this.handleDetail(req, res);
     }
+    agentModelsForTest(req: Request, res: Response): Promise<void> {
+        return this.handleListAgentModels(req, res);
+    }
     retryForTest(req: Request, res: Response): Promise<void> {
         return this.handleStorageRetry(req, res);
     }
@@ -35,6 +38,9 @@ class TestableTaskEndpoint extends QaapAgentTaskEndpoint {
     }
     installCliUpdateForTest(req: Request, res: Response): Promise<void> {
         return this.handleInstallCliUpdate(req, res);
+    }
+    attestForTest(req: Request, res: Response): Promise<void> {
+        return this.handleAttestAgentSession(req, res);
     }
 }
 
@@ -688,5 +694,104 @@ describe('QaapAgentTaskEndpoint improve-prompt failures', () => {
             kind: 'unknown',
         });
         expect(describeImprovePromptFailure('not an error object', 'codex').kind).to.equal('unknown');
+    });
+});
+
+describe('QaapAgentTaskEndpoint agent-models availability', () => {
+    it('answers an empty model list for a harness the owner turned off, without listing its catalog', async () => {
+        const endpoint = Object.create(TestableTaskEndpoint.prototype) as TestableTaskEndpoint;
+        const authContext = { kind: 'authenticated', userLogin: 'alice' };
+        let body: unknown;
+        Object.assign(endpoint, {
+            requireAuth: () => authContext,
+            auth: { resolveUserLogin: (context: typeof authContext) => context.userLogin },
+            runner: { isAgentEnabled: () => false },
+        });
+        const res = {
+            setHeader: () => undefined,
+            json: (payload: unknown) => { body = payload; },
+            status: () => res,
+            headersSent: false,
+            writableEnded: false,
+        };
+        await endpoint.agentModelsForTest({ query: { agent: 'opencode' } } as unknown as Request, res as unknown as Response);
+        expect(body).to.deep.equal({ agent: 'opencode', models: [] });
+    });
+});
+
+describe('QaapAgentTaskEndpoint agent session attestation', () => {
+    async function attest(options: {
+        readonly authContext: { kind: string; userLogin?: string };
+        readonly body?: unknown;
+        readonly headers?: Record<string, string>;
+    }): Promise<{ status: number; body: unknown; attested: Array<[string, string | undefined]> }> {
+        const endpoint = Object.create(TestableTaskEndpoint.prototype) as TestableTaskEndpoint;
+        const attested: Array<[string, string | undefined]> = [];
+        let status = 200;
+        let body: unknown;
+        Object.assign(endpoint, {
+            auth: {
+                authenticate: () => options.authContext,
+                resolveUserLogin: (context: { kind: string; userLogin?: string }) => context.kind === 'unauthorized' ? undefined : context.userLogin,
+            },
+            runner: {
+                attestAgentSession: (agentId: string, ownerLogin: string | undefined) => {
+                    attested.push([agentId, ownerLogin]);
+                    return true;
+                },
+            },
+        });
+        const res = {
+            status(code: number): Response {
+                status = code;
+                return this as unknown as Response;
+            },
+            setHeader: () => undefined,
+            json(payload: unknown): void {
+                body = payload;
+            },
+        } as unknown as Response;
+        await endpoint.attestForTest({
+            headers: options.headers ?? { 'sec-fetch-site': 'same-origin', 'content-type': 'application/json' },
+            body: options.body ?? { agentId: 'copilot' },
+        } as unknown as Request, res);
+        return { status, body, attested };
+    }
+
+    it('refuses a caller without a session', async () => {
+        const result = await attest({ authContext: { kind: 'unauthorized' } });
+        expect(result.status).to.equal(401);
+        expect(result.attested).to.deep.equal([]);
+    });
+
+    it('refuses cross-site requests and non-JSON requests without Sec-Fetch-Site', async () => {
+        const crossSite = await attest({ authContext: { kind: 'authenticated', userLogin: 'alice' }, headers: { 'sec-fetch-site': 'cross-site' } });
+        expect(crossSite.status).to.equal(403);
+        const form = await attest({ authContext: { kind: 'authenticated', userLogin: 'alice' }, headers: { 'content-type': 'application/x-www-form-urlencoded' } });
+        expect(form.status).to.equal(415);
+        expect([...crossSite.attested, ...form.attested]).to.deep.equal([]);
+    });
+
+    it('refuses harnesses that have a real auth probe', async () => {
+        for (const agentId of ['codex', 'claude', '', undefined]) {
+            const result = await attest({ authContext: { kind: 'authenticated', userLogin: 'alice' }, body: { agentId } });
+            expect(result.status, String(agentId)).to.equal(400);
+            expect(result.attested).to.deep.equal([]);
+        }
+    });
+
+    it('attests for the session owner, never an owner named in the body', async () => {
+        const result = await attest({
+            authContext: { kind: 'authenticated', userLogin: 'alice' },
+            body: { agentId: 'Grok', ownerLogin: 'mallory', userLogin: 'mallory' },
+        });
+        expect(result.status).to.equal(200);
+        expect(result.body).to.deep.equal({ ok: true, agentId: 'grok' });
+        expect(result.attested).to.deep.equal([['grok', 'alice']]);
+    });
+
+    it('uses the skip-auth owner in local mode', async () => {
+        const result = await attest({ authContext: { kind: 'skip', userLogin: 'local-dev' } });
+        expect(result.attested).to.deep.equal([['copilot', 'local-dev']]);
     });
 });

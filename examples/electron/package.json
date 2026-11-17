@@ -1,7 +1,7 @@
 {
   "private": true,
   "name": "@theia/example-electron",
-  "productName": "Theia Electron Example",
+  "productName": "Qaap",
   "version": "1.73.0",
   "main": "lib/backend/electron-main.js",
   "license": "EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0",
@@ -9,11 +9,12 @@
     "target": "electron",
     "frontend": {
       "config": {
-        "applicationName": "Theia Electron Example",
+        "applicationName": "Qaap",
+        "applicationIcon": "./media/qaap-logo.svg",
         "reloadOnReconnect": true,
         "electron": {
           "splashScreenOptions": {
-            "content": "resources/theia-logo.svg",
+            "content": "resources/qaap-logo.svg",
             "height": 90
           }
         }
@@ -112,7 +113,7 @@
     "compile": "tsc -b",
     "lint": "theiaext lint",
     "rebuild": "theia rebuild:electron --cacheRoot ../..",
-    "start": "theia start --plugins=local-dir:../../plugins --ovsx-router-config=../ovsx-router-config.json",
+    "start": "node ../../scripts/qaap-start-electron.mjs --plugins=local-dir:../../plugins --ovsx-router-config=../ovsx-router-config.json",
     "start:debug": "npm run -s start -- --log-level=debug --remote-debugging-port=9222",
     "start:watch": "concurrently --kill-others -n tsc,bundle,run -c red,yellow,green \"tsc -b -w --preserveWatchOutput\" \"npm run -s watch:bundle\" \"npm run -s start\"",
     "test": "electron-mocha --timeout 60000 \"./lib/test/**/*.espec.js\"",

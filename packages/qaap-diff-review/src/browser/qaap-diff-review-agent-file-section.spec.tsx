@@ -63,7 +63,8 @@ describe('QaapAgentFileSection', () => {
             expanded: true,
             loading: false,
             errorDetail: undefined,
-            iconClass: 'file-icon',
+            viewMode: 'unified',
+            wrapLines: true,
             fileActionsEnabled: true,
             fileActionRunning: false,
             expandedContextBlocks: undefined,
@@ -159,5 +160,31 @@ describe('QaapAgentFileSection', () => {
         render({ file: { path: 'src/new.ts', status: 'U', adds: 0, dels: 0, staged: false } as QaapAgentFileSectionProps['file'] });
         expect(host.textContent).to.contain('New file');
         expect(host.textContent).not.to.contain('+0');
+    });
+
+    it('renders a status glyph and keeps the full path in the row title and label', () => {
+        render({ file: { path: 'packages/deep/src/a.ts', status: 'D', adds: 0, dels: 4, staged: false } as QaapAgentFileSectionProps['file'] });
+        const toggle = host.querySelector('.qaap-agent-changes-filehdr-toggle')!;
+        expect(host.querySelector('.qaap-agent-changes-status')!.textContent).to.equal('D');
+        expect(host.querySelector('.qaap-agent-changes-status')!.classList.contains('qaap-mod-deleted')).to.equal(true);
+        expect(host.querySelector('.qaap-agent-changes-path-base')!.textContent).to.equal('a.ts');
+        expect(host.querySelector('.qaap-agent-changes-path-dir')!.textContent).to.equal('packages/deep/src/');
+        expect(toggle.getAttribute('title')).to.equal('packages/deep/src/a.ts');
+        expect(toggle.getAttribute('aria-label')).to.contain('packages/deep/src/a.ts');
+    });
+
+    it('pairs removed and added lines side by side in split mode', () => {
+        render({ viewMode: 'split' });
+        const rows = host.querySelectorAll('.qaap-diff-review-split-row');
+        expect(rows).to.have.length(1);
+        expect(rows[0].querySelector('.qaap-mod-old.qaap-diff-review-line--del')).to.not.equal(null);
+        expect(rows[0].querySelector('.qaap-mod-new.qaap-diff-review-line--add')).to.not.equal(null);
+        click('.qaap-agent-changes-line-stage');
+        expect(calls).to.deep.equal(['hunk:src/a.ts:0']);
+    });
+
+    it('marks the diff body as not wrapping when wrap lines is off', () => {
+        render({ wrapLines: false });
+        expect(host.querySelector('.qaap-agent-changes-hunks')!.classList.contains('qaap-mod-nowrap')).to.equal(true);
     });
 });
