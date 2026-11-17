@@ -1,4 +1,5 @@
 import { formatTaskStartLog } from './qaap-agent-conversation-persist-policy';
+import { createAgySignInWaitWatcher } from './qaap-agy-sign-in-wait-watcher';
 import { usesToolGateExtension } from './qaap-tool-gate-pi-adapter';
 import { QAAP_OPENCODE_GATE_PROBE } from './qaap-tool-gate-opencode-probe';
 import {
@@ -856,6 +857,17 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
         const finalResultWatcher = emitsStreamJsonFinalResult(task.agentId) ? new QaapAgentFinalResultWatcher() : undefined;
         let exitAfterResultTimer: ReturnType<typeof setTimeout> | undefined;
         let endedAfterResult: QaapAgentFinalResult | undefined;
+        // agy without a usable session waits 60 s for a pasted code: stop it on its first sign-in wait line.
+        const agySignInWatcher = ctx.resolveTaskAgentId(task) === 'antigravity' ? createAgySignInWaitWatcher() : undefined;
+        const stopOnAgySignInWait = (chunk: unknown): void => {
+            if (!agySignInWatcher?.push(Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk))
+                || ctx.tasks.get(task.id)?.state !== 'running') {
+                return;
+            }
+            logStream.write('\n[qaap] Antigravity is waiting for a sign-in; stopping the run. Sign in to Antigravity and retry.\n');
+            clearIdleTimer();
+            ctx.killAgentProcessTree(child);
+        };
         child.stdout?.on('data', chunk => {
             if (finalResultWatcher && !exitAfterResultTimer) {
                 const finalResult = finalResultWatcher.push(Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk));
@@ -881,6 +893,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             if (ctx.qaiqStdioTasks.has(task.id)) {
                 scanStdioApprovalChunk(chunk);
             }
+            stopOnAgySignInWait(chunk);
         });
         // OpenCode keeps running after a quota error and prints nothing on stdout: stop the run here
         // so the task settles `failed` with the provider reason in its log, not after the idle timeout.
@@ -892,6 +905,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             ctx.recordTaskLatencyMark(task.id, 'first_stdout_chunk');
             logStream.write(chunk);
             ctx.fireOutput(task.id, chunk);
+            stopOnAgySignInWait(chunk);
             const fatalError = opencodeFatalWatcher?.push(Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk));
             if (fatalError !== undefined && ctx.tasks.get(task.id)?.state === 'running') {
                 logStream.write(`\n[qaap] OpenCode reported: ${fatalError}\n`);

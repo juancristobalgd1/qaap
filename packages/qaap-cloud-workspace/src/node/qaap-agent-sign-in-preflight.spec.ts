@@ -18,6 +18,7 @@ describe('assertAgentModelAccessExtracted (pre-spawn sign-in guard)', () => {
         { id: 'opencode', label: 'OpenCode', bin: 'opencode', template: 'opencode run {prompt}' },
         { id: 'shell', label: 'Shell', bin: 'sh', template: '{prompt}' },
         { id: 'qaiq', label: 'QAIQ', bin: 'qaiq', template: 'qaiq {prompt}' },
+        { id: 'antigravity', label: 'Antigravity CLI', bin: 'agy', template: 'agy -p {prompt}' },
     ];
     const proModel = { provider: 'openai', vendor: 'openai', modelId: 'gpt-5.5', label: 'GPT 5.5' } as const;
     const freeModel = { provider: 'openai', vendor: 'opencode', modelId: 'opencode/beam-free', label: 'Beam Free' } as const;
@@ -54,6 +55,18 @@ describe('assertAgentModelAccessExtracted (pre-spawn sign-in guard)', () => {
         const paid = { provider: 'openai', vendor: 'opencode', modelId: 'opencode/minimax-m3', label: 'MiniMax-M3' } as const;
         const error = thrownBy(() => assertAgentModelAccessExtracted(ctxFor('disconnected', true), 'opencode', 'alice', paid as never));
         expect((error as QaapAgentSignInRequiredError).reason).to.equal('sign-in-required');
+    });
+
+    it('never spawns agy without a confirmed session, whatever the model (it has no Free tier)', () => {
+        // agy gets its prompt on argv and, unsigned, waits 60 s for a pasted code: the guard must stop it first.
+        const models = [undefined, { provider: 'google', vendor: 'antigravity', modelId: 'auto' }, { provider: 'google', vendor: 'antigravity', modelId: 'gemini-3.8-flash-medium' }];
+        for (const model of models) {
+            for (const [state, settled] of [['disconnected', true], ['unknown', true], ['unknown', false]] as const) {
+                const error = thrownBy(() => assertAgentModelAccessExtracted(ctxFor(state, settled), 'antigravity', 'alice', model as never));
+                expect(error, `${model?.modelId}/${state}/${settled}`).to.be.instanceOf(QaapAgentSignInRequiredError);
+            }
+            expect(thrownBy(() => assertAgentModelAccessExtracted(ctxFor('connected', true), 'antigravity', 'alice', model as never))).to.equal(undefined);
+        }
     });
 
     it('lets a signed-in owner run a Pro model', () => {
