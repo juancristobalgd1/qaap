@@ -104,6 +104,7 @@ describe('MobileOpenRepositoryDialog clone flow', () => {
             },
         };
         const service = {
+            isDesktop: () => false,
             startGithubRepositoryImport: (request: QaapGithubWorkspaceJobRequest, label: string) => tracker.start(request, label),
             finishGithubRepositoryImport: async (_result: QaapGithubOpenRepositoryResponse, open: boolean) => {
                 harness.finished.push({ open });
@@ -248,6 +249,7 @@ describe('MobileOpenRepositoryDialog clone flow', () => {
     it('rejects a repository subpath before making a clone request', async () => {
         let cloneCalls = 0;
         const service = {
+            isDesktop: () => false,
             cloneGithubProjectByRepository: async (): Promise<MobileProjectEntry[]> => {
                 cloneCalls += 1;
                 return [];
