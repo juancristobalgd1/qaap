@@ -28,12 +28,33 @@ describe('qaap-work-hub-aux-side-chat-view', () => {
 
     let disableJSDOM: (() => void) | undefined;
     const views: QaapWorkHubAuxSideChatView[] = [];
+    let nodeAbortController: typeof AbortController | undefined;
+    let previousFrames: { request: typeof window.requestAnimationFrame; cancel: typeof window.cancelAnimationFrame } | undefined;
 
     before(() => {
         disableJSDOM = enableJSDOM();
+        // The picker's dismiss wiring passes `{ signal }` to jsdom's addEventListener: Node's AbortSignal is rejected there.
+        nodeAbortController = globalThis.AbortController;
+        globalThis.AbortController = window.AbortController;
+        // jsdom has no layout frames: run the popover's frame callbacks at once, so placement is settled when a click returns.
+        previousFrames = { request: window.requestAnimationFrame, cancel: window.cancelAnimationFrame };
+        window.requestAnimationFrame = (callback: FrameRequestCallback): number => {
+            callback(0);
+            return 0;
+        };
+        window.cancelAnimationFrame = (): void => undefined;
     });
 
     after(() => {
+        if (nodeAbortController) {
+            globalThis.AbortController = nodeAbortController;
+            nodeAbortController = undefined;
+        }
+        if (previousFrames) {
+            window.requestAnimationFrame = previousFrames.request;
+            window.cancelAnimationFrame = previousFrames.cancel;
+            previousFrames = undefined;
+        }
         disableJSDOM?.();
         disableJSDOM = undefined;
     });
@@ -124,6 +145,7 @@ describe('qaap-work-hub-aux-side-chat-view', () => {
         });
         views.push(view);
         document.body.append(view.element);
+        stubPillRect(view.element.querySelector<HTMLElement>('.qaap-work-hub-aux-side-chat-model')!);
         view.show();
         return {
             view,
@@ -137,6 +159,19 @@ describe('qaap-work-hub-aux-side-chat-view', () => {
     }
 
     const q = (view: QaapWorkHubAuxSideChatView, selector: string): HTMLElement => view.element.querySelector(selector) as HTMLElement;
+    /** The side chat picker while it is open: it lives on document.body, outside the side chat element. */
+    const openedPicker = (): HTMLElement => {
+        const picker = document.querySelector<HTMLElement>('.qaap-work-hub-aux-side-chat-picker');
+        if (!picker) {
+            throw new Error('the side chat picker is not on the overlay layer');
+        }
+        return picker;
+    };
+    /** jsdom has no layout: a visible pill rect keeps the popover from reading its anchor as gone. */
+    const stubPillRect = (pill: HTMLElement, left = 200): void => {
+        pill.getBoundingClientRect = (): DOMRect => ({ top: 600, bottom: 620, left, right: left + 100, width: 100, height: 20, x: left, y: 600, toJSON: () => ({}) }) as DOMRect;
+    };
+    const pickerRows = (): HTMLElement[] => Array.from(document.querySelectorAll<HTMLElement>('.qaap-work-hub-aux-side-chat-picker .qaap-model-picker-row'));
     const bubbles = (view: QaapWorkHubAuxSideChatView): string[] => Array.from(view.element.querySelectorAll('.qaap-work-hub-aux-side-chat-message.is-user'))
         .map(element => element.textContent ?? '');
 
@@ -296,10 +331,67 @@ describe('qaap-work-hub-aux-side-chat-view', () => {
         const h = harness();
         await waitFor(() => (h.view.element.querySelector('.qaap-work-hub-aux-side-chat-model') as HTMLElement).textContent !== '');
         h.view.element.querySelector<HTMLButtonElement>('.qaap-work-hub-aux-side-chat-model')!.click();
-        const picker = h.view.element.querySelector('.qaap-work-hub-aux-side-chat-picker') as HTMLElement;
+        const picker = openedPicker();
         expect(picker.hidden).to.equal(false);
         h.view.element.ownerDocument.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
         expect(picker.hidden).to.equal(true);
+        expect(picker.isConnected).to.equal(false);
+    });
+
+    it('mounts its picker on the overlay layer, not inside the side chat panel, with the main composer popover classes', async () => {
+        const h = harness();
+        await waitFor(() => (h.view.element.querySelector('.qaap-work-hub-aux-side-chat-model') as HTMLElement).textContent !== '');
+        h.view.element.querySelector<HTMLButtonElement>('.qaap-work-hub-aux-side-chat-model')!.click();
+        const picker = openedPicker();
+        expect(picker.parentElement).to.equal(h.view.element.ownerDocument.body);
+        expect(h.view.element.contains(picker)).to.equal(false);
+        // The shared stylesheet sizes the popover by these two classes: the same 560px width and height rules as the main composer.
+        expect(picker.classList.contains('qaap-sticky-composer-sheet-popover')).to.equal(true);
+        expect(picker.classList.contains('theia-mod-agent-picker')).to.equal(true);
+        expect(picker.classList.contains('theia-mod-model-picker')).to.equal(true);
+        expect(picker.querySelector('.qaap-model-picker-rows, .qaap-model-picker-body')).to.exist;
+    });
+
+    it('places its picker above the pill and inside the viewport, clamped on the right edge', async () => {
+        const h = harness();
+        await waitFor(() => (h.view.element.querySelector('.qaap-work-hub-aux-side-chat-model') as HTMLElement).textContent !== '');
+        const pill = h.view.element.querySelector<HTMLButtonElement>('.qaap-work-hub-aux-side-chat-model')!;
+        // A pill at the far right of the viewport: its left edge would push the 560px popover past the right edge.
+        pill.getBoundingClientRect = (): DOMRect => ({ top: 600, bottom: 620, left: 1000, right: 1100, width: 100, height: 20, x: 1000, y: 600, toJSON: () => ({}) }) as DOMRect;
+        pill.click();
+        const picker = openedPicker();
+        const left = parseFloat(picker.style.left);
+        const top = parseFloat(picker.style.top);
+        const height = parseFloat(picker.style.height);
+        expect(left).to.be.at.least(0);
+        expect(left + Math.min(560, window.innerWidth - 32)).to.be.at.most(window.innerWidth);
+        // Opens upward: its bottom edge sits 8px above the pill (jsdom has no layout, so the popover reads 0px tall here) and
+        // the top never leaves the viewport. The 440px height is the shared cap for the picker.
+        expect(top).to.be.at.least(0);
+        expect(top).to.be.at.most(600 - 8);
+        expect(height).to.equal(440);
+    });
+
+    it('closes its picker when the side chat tab is hidden', async () => {
+        const h = harness();
+        await waitFor(() => (h.view.element.querySelector('.qaap-work-hub-aux-side-chat-model') as HTMLElement).textContent !== '');
+        h.view.element.querySelector<HTMLButtonElement>('.qaap-work-hub-aux-side-chat-model')!.click();
+        const picker = openedPicker();
+        h.view.hide();
+        expect(picker.isConnected).to.equal(false);
+        expect(document.querySelector('.qaap-work-hub-aux-side-chat-picker')).to.equal(null);
+    });
+
+    it('closes its picker on a click outside it, and keeps it open for a click on its own pill', async () => {
+        const h = harness();
+        await waitFor(() => (h.view.element.querySelector('.qaap-work-hub-aux-side-chat-model') as HTMLElement).textContent !== '');
+        h.view.element.querySelector<HTMLButtonElement>('.qaap-work-hub-aux-side-chat-model')!.click();
+        const picker = openedPicker();
+        const pill = h.view.element.querySelector<HTMLButtonElement>('.qaap-work-hub-aux-side-chat-model')!;
+        pill.dispatchEvent(new window.Event('pointerdown', { bubbles: true }));
+        expect(picker.isConnected).to.equal(true);
+        document.body.dispatchEvent(new window.Event('pointerdown', { bubbles: true }));
+        expect(picker.isConnected).to.equal(false);
     });
 
     it('sends on Enter and keeps Shift+Enter for a new line', async () => {
@@ -317,7 +409,7 @@ describe('qaap-work-hub-aux-side-chat-view', () => {
         const h = harness();
         await waitFor(() => (q(h.view, '.qaap-work-hub-aux-side-chat-model').textContent ?? '').includes('Beam Free'));
         (q(h.view, '.qaap-work-hub-aux-side-chat-model') as HTMLButtonElement).click();
-        const rows = Array.from(h.view.element.querySelectorAll('.qaap-model-picker-row')) as HTMLElement[];
+        const rows = pickerRows();
         const pro = rows.find(row => row.textContent?.includes('Beam Pro'));
         if (!pro) {
             throw new Error('the shared picker lists no Pro row');
@@ -336,7 +428,7 @@ describe('qaap-work-hub-aux-side-chat-view', () => {
         const h = harness({ models: signedIn, composer });
         await waitFor(() => (q(h.view, '.qaap-work-hub-aux-side-chat-model').textContent ?? '').includes('Beam Free'));
         (q(h.view, '.qaap-work-hub-aux-side-chat-model') as HTMLButtonElement).click();
-        const other = (Array.from(h.view.element.querySelectorAll('.qaap-model-picker-row')) as HTMLElement[])
+        const other = pickerRows()
             .find(row => row.textContent?.includes('Other Free'));
         if (!other) {
             throw new Error('the shared picker lists no Other Free row');
@@ -344,7 +436,7 @@ describe('qaap-work-hub-aux-side-chat-view', () => {
         other.click();
         expect(q(h.view, '.qaap-work-hub-aux-side-chat-model').textContent).to.contain('Other Free');
         expect(composer.agentModel.modelId).to.equal('beam-free');
-        expect(h.view.element.querySelector('.qaap-model-picker')).to.equal(null);
+        expect(document.querySelector('.qaap-work-hub-aux-side-chat-picker')).to.equal(null);
     });
 
     it('uses the main composer classes for its card, input, model pill and send button', () => {
@@ -445,7 +537,7 @@ describe('qaap-work-hub-aux-side-chat-view', () => {
         const h = harness({ models: [{ agentId: 'opencode', agentLabel: 'OpenCode', modelLabel: 'Beam Free', tier: 'free', session: 'signed-in', agentModel: { provider: 'openai', vendor: 'openai', modelId: 'beam-free' } }] });
         await waitFor(() => q(h.view, '.qaap-work-hub-aux-side-chat-model').textContent !== 'Model');
         (q(h.view, '.qaap-work-hub-aux-side-chat-model') as HTMLButtonElement).click();
-        expect(h.view.element.querySelector('.qaap-model-picker')).to.exist;
-        expect(h.view.element.querySelector('.qaap-model-picker-access')).to.equal(null);
+        expect(document.querySelector('.qaap-work-hub-aux-side-chat-picker .qaap-model-picker')).to.exist;
+        expect(document.querySelector('.qaap-work-hub-aux-side-chat-picker .qaap-model-picker-access')).to.equal(null);
     });
 });

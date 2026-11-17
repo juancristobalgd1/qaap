@@ -9,8 +9,8 @@ import type { AIVariableResolutionRequest } from '@theia/ai-core';
 import type { MobileComposerAttachHandlers } from '@theia/qaap-composer/lib/browser/qaap-mobile-composer-device-attach';
 import { createStickyComposerSendIcon } from '@theia/qaap-composer/lib/browser/mobile-projects-sticky-composer-send-icon';
 import { disposeQaapComposerModelPicker, renderQaapComposerModelPicker, type QaapComposerModelPickerProps } from '@theia/qaap-composer/lib/browser/qaap-composer-model-picker';
-import { pickerPopoverHeight } from '@theia/qaap-composer/lib/browser/qaap-composer-model-picker';
-import { positionStickyComposerPopover } from '@theia/qaap-transcript/lib/browser/qaap-sticky-composer-popover';
+import { placePickerAbove } from '@theia/qaap-composer/lib/browser/qaap-composer-picker-placement';
+import { markStickyComposerPopoverAnchor, wireStickyComposerPopoverDismiss } from '@theia/qaap-transcript/lib/browser/qaap-sticky-composer-popover';
 import { QaapComposerModelPickerModel, type QaapPickerModel, type QaapPickerState } from '@theia/qaap-composer/lib/common/qaap-composer-model-picker-model';
 import { populateAgentToolbarButton } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { buildSideChatContextPreamble, sideChatVisibleTitle, stripSideChatPreamble } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-side-chat';
@@ -218,6 +218,8 @@ export class QaapWorkHubAuxSideChatView implements Disposable {
     protected readonly sentWords = new Map<string, string>();
     /** Closes the picker on Escape while it is open, whatever holds the focus (the shared picker only sees keys inside it). */
     protected pickerEscape: ((event: KeyboardEvent) => void) | undefined;
+    /** Removes the open picker's dismiss, placement and resize listeners; set while the picker is mounted. */
+    protected pickerDetach: (() => void) | undefined;
 
     constructor(options: QaapWorkHubAuxSideChatViewOptions) {
         this.host = options.host;
@@ -355,14 +357,16 @@ export class QaapWorkHubAuxSideChatView implements Disposable {
         stage.append(inputPanel);
         card.append(stage);
 
-        // The picker opens above the composer, as the main composer's does on desktop.
+        // The picker is the main composer's popover: the same classes (so the same 560px width and height rules), mounted on
+        // document.body while open (see mountPicker), so the side chat's panel never clips it.
         this.pickerPanel = document.createElement('div');
-        this.pickerPanel.className = 'qaap-sticky-composer-sheet-popover qaap-work-hub-aux-side-chat-picker';
+        this.pickerPanel.className = 'qaap-sticky-composer-sheet-popover qaap-work-hub-aux-side-chat-picker theia-mod-agent-picker theia-mod-model-picker';
+        this.pickerPanel.setAttribute('role', 'dialog');
         this.pickerPanel.hidden = true;
         this.pickerHost = document.createElement('div');
         this.pickerHost.className = 'qaap-composer-model-picker-host';
         this.pickerPanel.append(this.pickerHost);
-        composer.append(this.pickerPanel, card);
+        composer.append(card);
 
         this.element.append(header, this.confirmBar, this.contextLine, this.scroll, this.status, composer);
         this.renderModelButton();
@@ -386,9 +390,10 @@ export class QaapWorkHubAuxSideChatView implements Disposable {
         }
     }
 
-    /** The tab is hidden: nothing is subscribed or polled. */
+    /** The tab is hidden: nothing is subscribed or polled, and an open picker closes with the panel. */
     hide(): void {
         this.visible = false;
+        this.closePicker();
         this.live?.dispose();
         this.live = undefined;
         this.clearRefreshTimer();
@@ -904,6 +909,7 @@ export class QaapWorkHubAuxSideChatView implements Disposable {
     protected togglePicker(): void {
         if (this.pickerPanel.hidden) {
             this.pickerPanel.hidden = false;
+            this.mountPicker();
             this.renderPicker();
             this.listenPickerEscape();
         } else {
@@ -931,10 +937,36 @@ export class QaapWorkHubAuxSideChatView implements Disposable {
             this.view().removeEventListener('keydown', this.pickerEscape, true);
             this.pickerEscape = undefined;
         }
+        this.pickerDetach?.();
+        this.pickerDetach = undefined;
         disposeQaapComposerModelPicker(this.pickerHost);
         this.pickerHost.replaceChildren();
         this.pickerPanel.hidden = true;
+        this.pickerPanel.remove();
+        markStickyComposerPopoverAnchor(this.modelButton, false);
         this.renderModelButton();
+    }
+
+    /**
+     * Puts the open picker on the overlay layer, as the main composer does: a body-level fixed popover, dismissed by a
+     * click outside or Escape, placed on the pill and kept in place on scroll, resize and layout changes.
+     */
+    protected mountPicker(): void {
+        const doc = this.element.ownerDocument;
+        doc.body.append(this.pickerPanel);
+        markStickyComposerPopoverAnchor(this.modelButton, true);
+        const dismiss = wireStickyComposerPopoverDismiss(this.pickerPanel, this.modelButton, () => this.closePicker(), 'start');
+        const onResize = (): void => this.placePicker();
+        const win = this.view();
+        win.addEventListener('resize', onResize);
+        // The panel's own size changes when the right panel is dragged; the picker follows its pill.
+        const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(onResize) : undefined;
+        observer?.observe(this.element);
+        this.pickerDetach = (): void => {
+            dismiss();
+            win.removeEventListener('resize', onResize);
+            observer?.disconnect();
+        };
     }
 
     protected renderPicker(): void {
@@ -942,11 +974,15 @@ export class QaapWorkHubAuxSideChatView implements Disposable {
             return;
         }
         renderQaapComposerModelPicker(this.pickerHost, this.pickerProps());
-        // The shared popover is fixed. The side chat's is 320px wide, so it is placed with that width (the main
-        // composer's helper clamps with its wider minimum and would pull this one left of its pill).
-        this.pickerPanel.dataset.placement = 'above-start';
-        this.pickerPanel.style.height = `${pickerPopoverHeight(this.modelButton.getBoundingClientRect().top, window.innerHeight)}px`;
-        positionStickyComposerPopover(this.pickerPanel, this.modelButton, 'start', 320);
+        this.placePicker();
+    }
+
+    /** The main composer's placement: the height first, then the popover above its pill, clamped inside the viewport. */
+    protected placePicker(): void {
+        if (this.pickerPanel.hidden || !this.pickerPanel.isConnected) {
+            return;
+        }
+        placePickerAbove(this.pickerPanel, this.modelButton);
     }
 
     /** The shared picker's props, from this side chat's own models and selection. Picking a model changes this side chat only. */
