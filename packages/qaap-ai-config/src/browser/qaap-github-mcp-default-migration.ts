@@ -6,28 +6,33 @@
 import { injectable, inject } from '@theia/core/shared/inversify';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
 import { PreferenceScope, PreferenceService } from '@theia/core/lib/common/preferences';
+import type { JSONObject } from '@theia/core/shared/@lumino/coreutils';
 
 /** Keep in sync with `@theia/ai-mcp` `MCP_SERVERS_PREF`. */
 const MCP_SERVERS_PREF = 'ai-features.mcp.mcpServers';
 const GITHUB_SERVER_NAME = 'github';
-/** One-time flag; a missing or unreadable storage only means the (idempotent) check runs again. */
-const MIGRATION_FLAG_KEY = 'qaap.migration.githubMcpDefaultRemoved.v1';
+const LEGACY_GITHUB_PACKAGE = /^@modelcontextprotocol\/server-github(@[\w.-]+)?$/;
+const LEGACY_LOCAL_KEYS = new Set(['command', 'args', 'env', 'autostart']);
+const LEGACY_REMOTE_KEYS = new Set(['serverUrl', 'autostart']);
+const LEGACY_REMOTE_URL = 'https://api.githubcopilot.com/mcp';
 
 /**
- * The entry the marketplace catalog used to install for GitHub (`npx -y @modelcontextprotocol/server-github`,
- * autostart, no token). The catalog no longer ships it, so existing installs keep it only by its exact shape.
- */
-export const QAAP_LEGACY_GITHUB_MCP_DEFAULT: Readonly<{ command: string; args: readonly string[]; autostart: boolean }> = {
-    command: 'npx',
-    args: ['-y', '@modelcontextprotocol/server-github'],
-    autostart: true,
-};
-
-/**
- * One-time migration that removes the legacy GitHub marketplace default from `ai-features.mcp.mcpServers`.
+ * Removes the token-less GitHub MCP entries that older builds wrote to `ai-features.mcp.mcpServers.github`:
  *
- * Only an entry that matches the legacy default EXACTLY is removed: same keys (no `env`, no token, no
- * extra fields), same `command`, same `args` and same `autostart`. A customised entry is never touched.
+ * - the marketplace default `npx -y @modelcontextprotocol/server-github` (autostart, no credential), which
+ *   launched a GitHub server without a token on every start;
+ * - the remote `https://api.githubcopilot.com/mcp/` entry without `serverAuthToken` that the GitHub chat agent
+ *   persisted, which cannot authenticate.
+ *
+ * It is not a one-time migration. The per-user AI settings mirror (`~/.qaap/users/<login>/settings.json`) is
+ * hydrated back into the User scope on every start (`QaapUserAiSettingsSync`), so a single removal raced the
+ * hydration and the entry came back while the one-time flag stopped any retry. The check now runs once the
+ * preferences are ready and again on every change of the setting, and it is idempotent: it writes only while a
+ * legacy entry is present in the User scope, and that removal is then pushed to the mirror as usual.
+ *
+ * A customised entry (a token, a non-empty `env` value, other args, headers, OAuth or any extra field) is never
+ * touched. Only the User scope is rewritten; entries in workspace settings are left alone (the MCP contribution
+ * still refuses to start a legacy entry, see `QaapMcpFrontendApplicationContribution`).
  */
 @injectable()
 export class QaapGithubMcpDefaultMigration implements FrontendApplicationContribution {
@@ -35,62 +40,103 @@ export class QaapGithubMcpDefaultMigration implements FrontendApplicationContrib
     @inject(PreferenceService)
     protected readonly preferenceService: PreferenceService;
 
-    /**
-     * Whether `value` is exactly the legacy catalog default: a plain object whose keys are exactly the
-     * legacy keys, with the same `command`, `args` and `autostart`.
-     */
-    static isExactLegacyDefault(value: unknown): boolean {
+    protected running: Promise<void> | undefined;
+    protected rerunRequested = false;
+
+    /** Whether `value` is one of the token-less GitHub entries written by older builds. */
+    static isLegacyGithubEntry(value: unknown): boolean {
         if (typeof value !== 'object' || !value || Array.isArray(value)) {
             return false;
         }
-        const actual = value as Record<string, unknown>;
-        const expectedKeys = Object.keys(QAAP_LEGACY_GITHUB_MCP_DEFAULT).sort();
-        const actualKeys = Object.keys(actual).sort();
-        if (actualKeys.length !== expectedKeys.length || actualKeys.some((key, index) => key !== expectedKeys[index])) {
+        const entry = value as Record<string, unknown>;
+        if (entry.autostart !== undefined && typeof entry.autostart !== 'boolean') {
             return false;
         }
-        const actualArgs = actual.args;
-        return actual.command === QAAP_LEGACY_GITHUB_MCP_DEFAULT.command
-            && actual.autostart === QAAP_LEGACY_GITHUB_MCP_DEFAULT.autostart
-            && Array.isArray(actualArgs)
-            && actualArgs.length === QAAP_LEGACY_GITHUB_MCP_DEFAULT.args.length
-            && actualArgs.every((arg, index) => arg === QAAP_LEGACY_GITHUB_MCP_DEFAULT.args[index]);
+        if ('serverUrl' in entry) {
+            return Object.keys(entry).every(key => LEGACY_REMOTE_KEYS.has(key))
+                && typeof entry.serverUrl === 'string'
+                && entry.serverUrl.trim().replace(/\/+$/, '').toLowerCase() === LEGACY_REMOTE_URL;
+        }
+        if (!Object.keys(entry).every(key => LEGACY_LOCAL_KEYS.has(key))) {
+            return false;
+        }
+        return QaapGithubMcpDefaultMigration.isNpxCommand(entry.command)
+            && QaapGithubMcpDefaultMigration.isLegacyArgs(entry.args)
+            && QaapGithubMcpDefaultMigration.isEmptyEnv(entry.env);
+    }
+
+    protected static isNpxCommand(command: unknown): boolean {
+        if (typeof command !== 'string') {
+            return false;
+        }
+        const base = command.trim().split(/[\\/]/).pop() ?? '';
+        return /^npx(\.cmd|\.exe)?$/i.test(base);
+    }
+
+    /** Exactly one package argument, the GitHub server (optionally pinned), plus at most `-y` / `--yes`. */
+    protected static isLegacyArgs(args: unknown): boolean {
+        if (!Array.isArray(args) || !args.every(arg => typeof arg === 'string')) {
+            return false;
+        }
+        const rest = (args as string[]).map(arg => arg.trim()).filter(arg => arg !== '-y' && arg !== '--yes');
+        return rest.length === 1 && LEGACY_GITHUB_PACKAGE.test(rest[0]);
+    }
+
+    /** No `env`, `{}`, or only empty-string values (no credential, no customisation). */
+    protected static isEmptyEnv(env: unknown): boolean {
+        if (env === undefined) {
+            return true;
+        }
+        if (typeof env !== 'object' || !env || Array.isArray(env)) {
+            return false;
+        }
+        return Object.values(env).every(value => value === '');
     }
 
     onStart(): void {
         // Not awaited: startup must not wait for the preference service.
-        this.migrate().catch(error => console.warn('[qaap] GitHub MCP default migration failed; it will run again on the next start.', error));
+        this.preferenceService.ready.then(() => {
+            this.preferenceService.onPreferenceChanged(event => {
+                if (event.preferenceName === MCP_SERVERS_PREF) {
+                    this.schedule();
+                }
+            });
+            this.schedule();
+        });
     }
 
-    /** Runs the migration once per browser profile; the flag is written only after the check succeeded. */
+    /** Serialises runs; a change during a run triggers exactly one more run afterwards. */
+    protected schedule(): Promise<void> {
+        if (this.running) {
+            this.rerunRequested = true;
+            return this.running;
+        }
+        this.running = (async () => {
+            try {
+                do {
+                    this.rerunRequested = false;
+                    await this.migrate();
+                } while (this.rerunRequested);
+            } catch (error) {
+                console.warn('[qaap] Removing the legacy GitHub MCP entry failed; it is retried on the next change or start.', error);
+            } finally {
+                this.running = undefined;
+            }
+        })();
+        return this.running;
+    }
+
+    /** Removes the legacy entry from the User scope only; never copies other scopes into it. */
     protected async migrate(): Promise<void> {
-        if (this.readMigrationFlag()) {
+        await this.preferenceService.ready;
+        const userServers = this.preferenceService.inspect<JSONObject>(MCP_SERVERS_PREF)?.globalValue;
+        if (!userServers || typeof userServers !== 'object' || Array.isArray(userServers)
+            || !Object.prototype.hasOwnProperty.call(userServers, GITHUB_SERVER_NAME)
+            || !QaapGithubMcpDefaultMigration.isLegacyGithubEntry(userServers[GITHUB_SERVER_NAME])) {
             return;
         }
-        await this.preferenceService.ready;
-        const current = this.preferenceService.get<Record<string, unknown>>(MCP_SERVERS_PREF, {});
-        if (Object.prototype.hasOwnProperty.call(current, GITHUB_SERVER_NAME)
-            && QaapGithubMcpDefaultMigration.isExactLegacyDefault(current[GITHUB_SERVER_NAME])) {
-            const next = { ...current };
-            delete next[GITHUB_SERVER_NAME];
-            await this.preferenceService.set(MCP_SERVERS_PREF, next, PreferenceScope.User);
-        }
-        this.writeMigrationFlag();
-    }
-
-    protected readMigrationFlag(): boolean {
-        try {
-            return globalThis.localStorage?.getItem(MIGRATION_FLAG_KEY) === '1';
-        } catch {
-            return false;
-        }
-    }
-
-    protected writeMigrationFlag(): void {
-        try {
-            globalThis.localStorage?.setItem(MIGRATION_FLAG_KEY, '1');
-        } catch {
-            // Storage is blocked (private window or cleared site data): the check simply runs again.
-        }
+        const next = { ...userServers };
+        delete next[GITHUB_SERVER_NAME];
+        await this.preferenceService.set(MCP_SERVERS_PREF, next, PreferenceScope.User);
     }
 }

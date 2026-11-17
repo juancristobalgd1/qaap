@@ -7,17 +7,22 @@ import { expect } from 'chai';
 import { PreferenceScope, PreferenceService } from '@theia/core/lib/common/preferences';
 import { QaapGithubMcpDefaultMigration } from './qaap-github-mcp-default-migration';
 
+const PREF = 'ai-features.mcp.mcpServers';
 const LEGACY_GITHUB = { command: 'npx', args: ['-y', '@modelcontextprotocol/server-github'], autostart: true };
+const SLACK = { command: 'npx', args: ['-y', 'slack'], autostart: true };
 
+/** User-scope value plus a separate workspace value; `get` would merge them, `inspect` keeps them apart. */
 class FakePreferenceService {
     readonly ready = Promise.resolve();
     readonly sets: Array<{ name: string; value: Record<string, unknown>; scope: PreferenceScope | undefined }> = [];
+    readonly listeners: Array<(event: { preferenceName: string }) => void> = [];
     failSet = false;
+    workspaceValue: Record<string, unknown> | undefined;
 
-    constructor(public values: Record<string, unknown>) { }
+    constructor(public userValue: Record<string, unknown> | undefined) { }
 
-    get<T>(name: string, defaultValue?: T): T {
-        return (this.values[name] ?? defaultValue) as T;
+    inspect<T>(name: string): { globalValue: T | undefined; workspaceValue: T | undefined } | undefined {
+        return name === PREF ? { globalValue: this.userValue as T | undefined, workspaceValue: this.workspaceValue as T | undefined } : undefined;
     }
 
     async set(name: string, value: Record<string, unknown>, scope?: PreferenceScope): Promise<void> {
@@ -25,109 +30,146 @@ class FakePreferenceService {
             throw new Error('preference write failed');
         }
         this.sets.push({ name, value, scope });
-        this.values[name] = value;
+        this.userValue = value;
+    }
+
+    onPreferenceChanged(listener: (event: { preferenceName: string }) => void): void {
+        this.listeners.push(listener);
+    }
+
+    /** Simulates the AI settings sync hydrating the per-user mirror back into the User scope. */
+    hydrate(value: Record<string, unknown>): void {
+        this.userValue = value;
+        this.listeners.forEach(listener => listener({ preferenceName: PREF }));
     }
 }
 
-/** Keeps the one-time flag in memory instead of localStorage, which the node test environment lacks. */
-class TestGithubMcpDefaultMigration extends QaapGithubMcpDefaultMigration {
-    flag = false;
-    protected override readMigrationFlag(): boolean {
-        return this.flag;
+const flush = async (): Promise<void> => {
+    for (let i = 0; i < 10; i++) {
+        await Promise.resolve();
     }
-    protected override writeMigrationFlag(): void {
-        this.flag = true;
-    }
-}
+};
 
 describe('QaapGithubMcpDefaultMigration', () => {
 
-    const createMigration = (prefs: Record<string, unknown>): { migration: TestGithubMcpDefaultMigration; prefs: FakePreferenceService } => {
-        const fake = new FakePreferenceService(prefs);
-        const migration = new TestGithubMcpDefaultMigration();
-        Object.assign(migration, { preferenceService: fake as unknown as PreferenceService });
-        return { migration, prefs: fake };
+    const create = (userValue: Record<string, unknown> | undefined): { migration: QaapGithubMcpDefaultMigration; prefs: FakePreferenceService } => {
+        const prefs = new FakePreferenceService(userValue);
+        const migration = new QaapGithubMcpDefaultMigration();
+        Object.assign(migration, { preferenceService: prefs as unknown as PreferenceService });
+        return { migration, prefs };
     };
+    const isLegacy = (value: unknown): boolean => QaapGithubMcpDefaultMigration.isLegacyGithubEntry(value);
 
-    describe('isExactLegacyDefault', () => {
-        it('accepts the catalog entry regardless of key order', () => {
-            expect(QaapGithubMcpDefaultMigration.isExactLegacyDefault({ autostart: true, args: ['-y', '@modelcontextprotocol/server-github'], command: 'npx' })).to.equal(true);
+    describe('isLegacyGithubEntry', () => {
+        it('accepts the catalog entry in any key order', () => {
+            expect(isLegacy({ autostart: true, args: ['-y', '@modelcontextprotocol/server-github'], command: 'npx' })).to.equal(true);
         });
 
-        it('rejects an entry with extra keys such as env or a token', () => {
-            expect(QaapGithubMcpDefaultMigration.isExactLegacyDefault({ ...LEGACY_GITHUB, env: { A: 'b' } })).to.equal(false);
-            expect(QaapGithubMcpDefaultMigration.isExactLegacyDefault({ ...LEGACY_GITHUB, extraField: 'x' })).to.equal(false);
+        it('tolerates an empty env, a missing -y, --yes, a pinned version, autostart false or absent and an npx path', () => {
+            expect(isLegacy({ ...LEGACY_GITHUB, env: {} })).to.equal(true);
+            expect(isLegacy({ ...LEGACY_GITHUB, env: { GITHUB_PERSONAL_ACCESS_TOKEN: '' } })).to.equal(true);
+            expect(isLegacy({ ...LEGACY_GITHUB, args: ['@modelcontextprotocol/server-github'] })).to.equal(true);
+            expect(isLegacy({ ...LEGACY_GITHUB, args: ['--yes', '@modelcontextprotocol/server-github'] })).to.equal(true);
+            expect(isLegacy({ ...LEGACY_GITHUB, args: ['-y', '@modelcontextprotocol/server-github@2025.4.8'] })).to.equal(true);
+            expect(isLegacy({ ...LEGACY_GITHUB, autostart: false })).to.equal(true);
+            expect(isLegacy({ command: 'npx', args: ['-y', '@modelcontextprotocol/server-github'] })).to.equal(true);
+            expect(isLegacy({ ...LEGACY_GITHUB, command: '/opt/homebrew/bin/npx' })).to.equal(true);
+            expect(isLegacy({ ...LEGACY_GITHUB, command: 'npx.cmd' })).to.equal(true);
         });
 
-        it('rejects a different command, args or autostart', () => {
-            expect(QaapGithubMcpDefaultMigration.isExactLegacyDefault({ ...LEGACY_GITHUB, command: 'node' })).to.equal(false);
-            expect(QaapGithubMcpDefaultMigration.isExactLegacyDefault({ ...LEGACY_GITHUB, args: ['-y', '@other/server'] })).to.equal(false);
-            expect(QaapGithubMcpDefaultMigration.isExactLegacyDefault({ ...LEGACY_GITHUB, autostart: false })).to.equal(false);
+        it('accepts the token-less remote entry the GitHub chat agent persisted', () => {
+            expect(isLegacy({ serverUrl: 'https://api.githubcopilot.com/mcp/' })).to.equal(true);
+            expect(isLegacy({ serverUrl: 'https://api.githubcopilot.com/mcp', autostart: true })).to.equal(true);
+        });
+
+        it('keeps an entry with a credential or a non-empty env value', () => {
+            expect(isLegacy({ ...LEGACY_GITHUB, env: { GITHUB_PERSONAL_ACCESS_TOKEN: 'x' } })).to.equal(false);
+            expect(isLegacy({ ...LEGACY_GITHUB, env: { CUSTOM_FLAG: 'user-value' } })).to.equal(false);
+            expect(isLegacy({ serverUrl: 'https://api.githubcopilot.com/mcp/', serverAuthToken: 'x' })).to.equal(false);
+            expect(isLegacy({ serverUrl: 'https://api.githubcopilot.com/mcp/', headers: { Authorization: 'x' } })).to.equal(false);
+            expect(isLegacy({ serverUrl: 'https://api.githubcopilot.com/mcp/', oauth: {} })).to.equal(false);
+        });
+
+        it('keeps other commands, other servers, extra args and extra fields', () => {
+            expect(isLegacy({ ...LEGACY_GITHUB, command: 'node' })).to.equal(false);
+            expect(isLegacy({ ...LEGACY_GITHUB, args: ['-y', '@other/server'] })).to.equal(false);
+            expect(isLegacy({ ...LEGACY_GITHUB, args: ['-y', '@modelcontextprotocol/server-github', '--toolsets', 'repos'] })).to.equal(false);
+            expect(isLegacy({ ...LEGACY_GITHUB, deferLoading: true })).to.equal(false);
+            expect(isLegacy({ serverUrl: 'https://example.com/mcp/' })).to.equal(false);
+            expect(isLegacy({ serverUrl: 'https://api.githubcopilot.com/mcp/readonly' })).to.equal(false);
         });
 
         it('rejects non-object values', () => {
-            expect(QaapGithubMcpDefaultMigration.isExactLegacyDefault(undefined)).to.equal(false);
-            expect(QaapGithubMcpDefaultMigration.isExactLegacyDefault(['npx'])).to.equal(false);
-            expect(QaapGithubMcpDefaultMigration.isExactLegacyDefault('npx')).to.equal(false);
+            expect(isLegacy(undefined)).to.equal(false);
+            expect(isLegacy(['npx'])).to.equal(false);
+            expect(isLegacy('npx')).to.equal(false);
         });
     });
 
-    it('removes an entry that matches the legacy default exactly and keeps the other servers', async () => {
-        const { migration, prefs } = createMigration({
-            'ai-features.mcp.mcpServers': { github: { ...LEGACY_GITHUB }, slack: { command: 'npx', args: ['-y', 'slack'], autostart: true } }
-        });
-        await migration['migrate']();
+    it('removes the legacy entry from the User scope and keeps the other servers', async () => {
+        const { migration, prefs } = create({ github: { ...LEGACY_GITHUB }, slack: SLACK });
+        await migration['schedule']();
         expect(prefs.sets).to.have.length(1);
         expect(prefs.sets[0].scope).to.equal(PreferenceScope.User);
-        expect(prefs.values['ai-features.mcp.mcpServers']).to.deep.equal({
-            slack: { command: 'npx', args: ['-y', 'slack'], autostart: true }
-        });
-        expect(migration.flag).to.equal(true);
+        expect(prefs.userValue).to.deep.equal({ slack: SLACK });
+    });
+
+    it('never copies workspace entries into the User scope', async () => {
+        const { migration, prefs } = create({ github: { ...LEGACY_GITHUB } });
+        prefs.workspaceValue = { project: SLACK };
+        await migration['schedule']();
+        expect(prefs.userValue).to.deep.equal({});
     });
 
     it('does not touch a customised github entry', async () => {
         const customised = { ...LEGACY_GITHUB, env: { CUSTOM_FLAG: 'user-value' } };
-        const { migration, prefs } = createMigration({ 'ai-features.mcp.mcpServers': { github: customised } });
-        await migration['migrate']();
+        const { migration, prefs } = create({ github: customised });
+        await migration['schedule']();
         expect(prefs.sets).to.have.length(0);
-        expect(prefs.values['ai-features.mcp.mcpServers']).to.deep.equal({ github: customised });
-        expect(migration.flag).to.equal(true);
     });
 
-    it('does not touch a github entry that only changed its args', async () => {
-        const changed = { ...LEGACY_GITHUB, args: ['-y', '@modelcontextprotocol/server-github@1.0.0'] };
-        const { migration, prefs } = createMigration({ 'ai-features.mcp.mcpServers': { github: changed } });
-        await migration['migrate']();
-        expect(prefs.sets).to.have.length(0);
-        expect(prefs.values['ai-features.mcp.mcpServers']).to.deep.equal({ github: changed });
+    it('does nothing without a github entry or without User-scope servers', async () => {
+        const a = create({ slack: SLACK });
+        await a.migration['schedule']();
+        expect(a.prefs.sets).to.have.length(0);
+        const b = create(undefined);
+        await b.migration['schedule']();
+        expect(b.prefs.sets).to.have.length(0);
     });
 
-    it('does nothing when no github entry exists', async () => {
-        const servers = { slack: { command: 'npx', args: ['-y', 'slack'], autostart: true } };
-        const { migration, prefs } = createMigration({ 'ai-features.mcp.mcpServers': servers });
-        await migration['migrate']();
-        expect(prefs.sets).to.have.length(0);
-        expect(migration.flag).to.equal(true);
+    it('removes the entry again when the settings mirror hydrates it back after the first removal', async () => {
+        const { migration, prefs } = create({ github: { ...LEGACY_GITHUB }, slack: SLACK });
+        migration.onStart();
+        await flush();
+        expect(prefs.userValue).to.deep.equal({ slack: SLACK });
+        prefs.hydrate({ github: { ...LEGACY_GITHUB }, slack: SLACK });
+        await flush();
+        expect(prefs.userValue).to.deep.equal({ slack: SLACK });
+        expect(prefs.sets).to.have.length(2);
     });
 
-    it('runs only once: a set flag skips the check entirely', async () => {
-        const { migration, prefs } = createMigration({ 'ai-features.mcp.mcpServers': { github: { ...LEGACY_GITHUB } } });
-        migration.flag = true;
-        await migration['migrate']();
-        expect(prefs.sets).to.have.length(0);
-        expect(prefs.values['ai-features.mcp.mcpServers']).to.deep.equal({ github: LEGACY_GITHUB });
+    it('does not loop: its own write does not trigger another write', async () => {
+        const { migration, prefs } = create({ github: { ...LEGACY_GITHUB } });
+        migration.onStart();
+        await flush();
+        prefs.listeners.forEach(listener => listener({ preferenceName: PREF }));
+        await flush();
+        expect(prefs.sets).to.have.length(1);
     });
 
-    it('leaves the flag unset when the write fails, so the next start retries', async () => {
-        const { migration, prefs } = createMigration({ 'ai-features.mcp.mcpServers': { github: { ...LEGACY_GITHUB } } });
+    it('swallows a failed write and retries on the next change', async () => {
+        const { migration, prefs } = create({ github: { ...LEGACY_GITHUB } });
         prefs.failSet = true;
-        let thrown: unknown;
+        const originalWarn = console.warn;
+        console.warn = (): void => undefined;
         try {
-            await migration['migrate']();
-        } catch (error) {
-            thrown = error;
+            await migration['schedule']();
+        } finally {
+            console.warn = originalWarn;
         }
-        expect(thrown).to.be.instanceOf(Error);
-        expect(migration.flag).to.equal(false);
+        expect(prefs.userValue).to.deep.equal({ github: LEGACY_GITHUB });
+        prefs.failSet = false;
+        await migration['schedule']();
+        expect(prefs.userValue).to.deep.equal({});
     });
 });
