@@ -111,6 +111,7 @@ export function initProjectsPanelFactoryExtracted(ctx: MobileOneColumnShellContr
             workspaceService: ctx.workspaceService,
             editorManager: ctx.editorManager,
             monacoEditorProvider: ctx.monacoEditorProvider,
+            pluginStartGate: ctx.pluginStartGate,
             labelProvider: ctx.labelProvider,
             markdownPreviewHandler: ctx.markdownPreviewHandler,
             decorationsService: ctx.decorationsService,

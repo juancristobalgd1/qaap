@@ -62,6 +62,8 @@ import { QaapComposerEditorContextService } from '@theia/qaap-composer/lib/brows
 import type { QaapWorkHubProjectSkillRoots } from './qaap-work-hub-project-skill-roots';
 import { resolvePreviewFeedbackVariable } from '@theia/qaap-shared-core/lib/common/qaap-preview-feedback-context';
 import { uploadInlineComposerImagesToWorkspace } from '@theia/qaap-composer/lib/browser/qaap-mobile-composer-device-attach';
+import { environment } from '@theia/core/lib/common';
+import type { QaapPluginStartGate } from '@theia/qaap-shared-core/lib/browser/qaap-plugin-start-gate';
 
 export interface MobileProjectsPanelFactoryDelegate {
     onProjectOpen(project: MobileProjectEntry): void;
@@ -126,6 +128,11 @@ export interface MobileProjectsPanelFactoryDeps {
     backgroundContext: QaapBackgroundContextProvider;
     inboxStream: MobileWorkHubInboxStream;
     conversationFlags: MobileProjectsConversationFlags;
+    /**
+     * Released when the desktop app's Files view opens: the language grammars (TextMate) are plugin
+     * contributions, so without plugins its Monaco preview tokenizes nothing and shows plain text.
+     */
+    pluginStartGate?: QaapPluginStartGate;
 }
 
 export interface MobileProjectsPanelFactoryOptions {
@@ -285,17 +292,24 @@ export class MobileProjectsPanelFactory {
                     deps.editorManager,
                     deps.scmService,
                 ),
-                createTranscriptFilesViewServices: () => createTranscriptFilesViewServices(
-                    deps.workspaceService,
-                    deps.fileService,
-                    deps.editorManager,
-                    deps.commands,
-                    deps.monacoEditorProvider,
-                    deps.labelProvider,
-                    deps.markdownPreviewHandler,
-                    deps.decorationsService,
-                    deps.colorRegistry,
-                ),
+                createTranscriptFilesViewServices: () => {
+                    // Desktop: start the plugins here (local, cheap) so the Files view gets the IDE's
+                    // syntax highlighting. Servers keep plugins held until the IDE is shown.
+                    if (environment.electron.is()) {
+                        deps.pluginStartGate?.release();
+                    }
+                    return createTranscriptFilesViewServices(
+                        deps.workspaceService,
+                        deps.fileService,
+                        deps.editorManager,
+                        deps.commands,
+                        deps.monacoEditorProvider,
+                        deps.labelProvider,
+                        deps.markdownPreviewHandler,
+                        deps.decorationsService,
+                        deps.colorRegistry,
+                    );
+                },
                 createTranscriptTerminalViewServices: () => !deps.terminalService
                     ? undefined
                     : createTranscriptTerminalViewServices(
