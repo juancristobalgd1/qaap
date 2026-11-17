@@ -733,8 +733,18 @@ function isProviderRetryRecord(value: unknown): boolean {
     return record.type === 'system' && record.subtype === 'api_retry';
 }
 
+/**
+ * Lines of an auxiliary model that runs beside the turn (OpenCode's title and summary agents log
+ * `small=true agent=title`). A failure there is not the turn's failure: the main reply completed.
+ */
+const AUXILIARY_AGENT_LOG_LINE = /\bsmall=true\b|\bagent=(?:title|summary|compaction)\b|"agent"\s*:\s*"(?:title|summary|compaction)"/;
+
+function withoutAuxiliaryAgentLogLines(text: string): string {
+    return text.split('\n').filter(line => !AUXILIARY_AGENT_LOG_LINE.test(line)).join('\n');
+}
+
 function collectAgentFailureEvidence(log: string | undefined): AgentFailureEvidence {
-    const full = (log ?? '').trim();
+    const full = withoutAuxiliaryAgentLogLines((log ?? '').trim()).trim();
     const errorRecords: string[] = [];
     const plainLines: string[] = [];
     let trailingRetryRecords: string[] = [];

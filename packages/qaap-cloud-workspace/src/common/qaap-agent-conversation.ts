@@ -10,6 +10,7 @@ import { buildConversationListMetrics } from '@theia/qaap-shared-core/lib/common
 import { agentActivityField, excerptConversationMessageError, isLastTurnCancelled } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type { QaapAgentConversationIsolation, QaapAgentModelFallbackReason } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { resolveMessagePreviewText } from '@theia/qaap-shared-core/lib/common/qaap-agent-message-content';
+import { isSuccessfulAgentMessageInConversation } from '@theia/qaap-shared-core/lib/common/qaap-agent-turn-outcome';
 import {
     agentMessageHasVisualVerificationMarker,
     conversationLikelyNeedsVisualVerification,
@@ -743,7 +744,12 @@ export function resolveBaselineCommit(conv: Pick<QaapAgentConversation, 'checkpo
 export function toConversationSummary(conv: QaapAgentConversation): QaapAgentConversationSummary {
     const last = conv.messages[conv.messages.length - 1];
     const lastTurn = [...conv.messages].reverse().find(message => message.role === 'user' && (message.turnAgentId || message.turnAgentModel));
-    const status = resolveEffectiveConversationStatus(conv);
+    const resolvedStatus = resolveEffectiveConversationStatus(conv);
+    // The last turn succeeded (its verdict or exit code, see qaap-agent-turn-outcome): a stored error on its
+    // reply is stale. It is neither a "Failed:" row nor a failed conversation.
+    const lastTurnSucceeded = !!last && last.role === 'agent' && !!last.error?.trim()
+        && isSuccessfulAgentMessageInConversation(conv.messages, last);
+    const status = resolvedStatus === 'failed' && lastTurnSucceeded ? 'idle' : resolvedStatus;
     const baselineCommit = resolveBaselineCommit(conv);
     const base: QaapAgentConversationSummary = {
         id: conv.id,
@@ -757,7 +763,7 @@ export function toConversationSummary(conv: QaapAgentConversation): QaapAgentCon
         lastMessagePreview: last ? excerpt(resolveMessagePreviewText(last)) : undefined,
         lastMessageRole: last?.role,
         ...agentActivityField(conv, status),
-        ...(last?.error?.trim() ? { lastMessageError: excerptConversationMessageError(last.error) } : {}),
+        ...(last?.error?.trim() && !lastTurnSucceeded ? { lastMessageError: excerptConversationMessageError(last.error) } : {}),
         ...(isLastTurnCancelled({ status, messages: conv.messages }) ? { lastTurnCancelled: true } : {}),
         priority: conv.priority || undefined,
         paused: conv.paused || undefined,

@@ -6,6 +6,7 @@ import { nls } from '@theia/core/lib/common/nls';
 import { createMobileVisualRepairProposalElement } from './mobile-visual-repair-proposal';
 import { isVisualRepairInstructionMessage, resolveVisualRepairProposalMessage } from '../common/qaap-visual-repair-proposal';
 import { normalizeAgentMessageContentForDisplay } from '@theia/qaap-shared-core/lib/common/qaap-agent-message-content';
+import { isSuccessfulAgentMessageInConversation } from '@theia/qaap-shared-core/lib/common/qaap-agent-turn-outcome';
 import { parseAgentLogForTranscript } from '@theia/qaap-shared-core/lib/common/qaap-cli-transcript-stream';
 import { dedupeAgentMessageTextSegments } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-stream';
 import { resolveQaapTranscriptTrace, segmentsToTraceEvents, traceEventsToSegments, type QaapTranscriptTrace } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model';
@@ -194,6 +195,10 @@ export function createTranscriptMessageRowAtIndexExtracted(ctx: MobileProjectsTr
         && msg.role === 'agent'
         && isTranscriptAgentTailStreaming(normalized);
     let row: HTMLElement;
+    // A turn that succeeded keeps no failure, whatever error it still stores (a stale classification):
+    // no failure card, no failure reason. A failed turn keeps its error.
+    const turnSucceeded = msg.role === 'agent' && !!msg.error?.trim() && isSuccessfulAgentMessageInConversation(normalized.messages, msg);
+    const displayMsg = turnSucceeded ? { ...msg, error: undefined } : msg;
     const agentSegments = ctx.resolveTranscriptAgentSegments(normalized, msg);
     if (isVisualRepairInstructionMessage(msg)) {
         // The repair instruction the backend wrote for an accepted proposal: kept in the list for
@@ -204,16 +209,16 @@ export function createTranscriptMessageRowAtIndexExtracted(ctx: MobileProjectsTr
     } else if (msg.role === 'user') {
         row = ctx.userUi.createTranscriptUserMessageRow(msg, normalized, { deferHeavyContent });
     } else if (agentSegments && agentSegments.length > 0) {
-        row = ctx.artifactsUi.createTranscriptAgentSegmentsRow(agentSegments, msg.error, normalized, {
+        row = ctx.artifactsUi.createTranscriptAgentSegmentsRow(agentSegments, displayMsg.error, normalized, {
             deferHeavyContent,
             streaming: streamingTail,
-            message: msg,
+            message: displayMsg,
         });
         if (msg.id) {
             row.setAttribute(TRANSCRIPT_MESSAGE_ID_ATTR, msg.id);
         }
-    } else if (msg.role === 'agent' && msg.error?.trim()) {
-        row = ctx.createTranscriptAgentFailureRow(msg, normalized, { deferHeavyContent });
+    } else if (msg.role === 'agent' && displayMsg.error?.trim()) {
+        row = ctx.createTranscriptAgentFailureRow(displayMsg, normalized, { deferHeavyContent });
         if (msg.id) {
             row.setAttribute(TRANSCRIPT_MESSAGE_ID_ATTR, msg.id);
         }

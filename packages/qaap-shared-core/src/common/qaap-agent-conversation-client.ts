@@ -16,6 +16,7 @@ import {
     type QaapAgentContextUsage,
 } from './qaap-agent-context-usage';
 import { resolveMessagePreviewText } from './qaap-agent-message-content';
+import { isSuccessfulAgentMessageInConversation } from './qaap-agent-turn-outcome';
 import type { QaapAgentToolApprovalRules } from './qaap-agent-tool-approval-rules';
 import type { QaapAgentWireCompressionEncoding } from './qaap-agent-wire-encoding';
 import { Disposable } from '@theia/core/lib/common/disposable';
@@ -581,7 +582,11 @@ export function agentActivityField(
 export function conversationToSummary(conv: QaapAgentConversationDTO): QaapAgentConversationSummaryDTO {
     const last = conv.messages[conv.messages.length - 1];
     const lastTurn = [...conv.messages].reverse().find(message => message.role === 'user' && (message.turnAgentId || message.turnAgentModel));
-    const status = resolveEffectiveConversationStatus(conv);
+    // A settled turn that succeeded keeps no failure: its stored error is stale (see qaap-agent-turn-outcome).
+    const lastTurnSucceeded = !!last && last.role === 'agent' && !!last.error?.trim()
+        && isSuccessfulAgentMessageInConversation(conv.messages, last);
+    const resolvedStatus = resolveEffectiveConversationStatus(conv);
+    const status = resolvedStatus === 'failed' && lastTurnSucceeded ? 'idle' : resolvedStatus;
     const clean = last
         ? resolveMessagePreviewText(last).replace(/\s+/g, ' ').trim()
         : undefined;
@@ -604,7 +609,7 @@ export function conversationToSummary(conv: QaapAgentConversationDTO): QaapAgent
         lastMessagePreview: preview,
         lastMessageRole: last?.role,
         ...agentActivityField(conv, status),
-        ...(last?.error?.trim() ? { lastMessageError: excerptConversationMessageError(last.error) } : {}),
+        ...(last?.error?.trim() && !lastTurnSucceeded ? { lastMessageError: excerptConversationMessageError(last.error) } : {}),
         ...(isLastTurnCancelled({ status, messages: conv.messages }) ? { lastTurnCancelled: true } : {}),
         priority: conv.priority,
         paused: conv.paused,
