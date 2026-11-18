@@ -638,7 +638,7 @@ export function openExecutionSurfaceSidebarExtracted(ctx: MobileProjectsExecutio
         restoreExecutionSurfaceSidebarPreviewHeaderExtracted(previous);
         restoreExecutionSurfaceSidebarToolbarHostExtracted(previous);
         if (previous.element.classList.contains('qaap-mod-docked')) {
-            ctx.resolveWorkHubAuxPanel()?.undockSurface(previous.element);
+            ctx.undockWorkHubAuxPanelSurface(previous.element);
         }
         previous.element.remove();
         previous.backdrop.remove();
@@ -816,12 +816,7 @@ export function dismissExecutionSurfaceSidebarExtracted(ctx: MobileProjectsExecu
     ctx.host.executionSurfaceSidebar = undefined;
     if (sidebar.element.classList.contains('qaap-mod-docked')) {
         // No drawer animation for the docked panel; hand its slot back at once.
-        const auxPanel = ctx.resolveWorkHubAuxPanel();
-        if (auxPanel) {
-            auxPanel.undockSurface(sidebar.element);
-        } else {
-            sidebar.element.remove();
-        }
+        ctx.undockWorkHubAuxPanelSurface(sidebar.element);
         sidebar.backdrop.remove();
         return;
     }

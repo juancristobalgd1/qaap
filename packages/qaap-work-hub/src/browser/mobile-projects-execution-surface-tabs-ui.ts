@@ -432,6 +432,20 @@ export class MobileProjectsExecutionSurfaceTabsUi {
         return workHubAuxPanel;
     }
 
+    /**
+     * Hands a docked surface element back to the right panel even outside its layout. Switching to
+     * the IDE leaves the Work Hub layout first, so {@link resolveWorkHubAuxPanel} is `undefined` there;
+     * removing the element without telling the panel left it "docked" to a detached element, and the
+     * Browser stayed black on the way back because the panel never asked for the surface again.
+     */
+    undockWorkHubAuxPanelSurface(element: HTMLElement): void {
+        if (workHubAuxPanel) {
+            workHubAuxPanel.undockSurface(element);
+        } else {
+            element.remove();
+        }
+    }
+
     /** Make this UI the one whose task the shared right panel shows, e.g. after the user acted on it. */
     claimWorkHubAuxPanel(): QaapWorkHubAuxPanel | undefined {
         const panel = this.resolveWorkHubAuxPanel();

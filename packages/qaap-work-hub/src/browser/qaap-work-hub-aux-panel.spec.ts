@@ -356,6 +356,23 @@ describe('qaap-work-hub-aux-panel', () => {
         expect(second.shown).to.deep.equal(['terminal']);
     });
 
+    it('requests the Browser again when its docked element was torn down elsewhere (IDE and back)', () => {
+        const { panel, shown } = createHarness();
+        panel.show();
+        launcherOpen(panel, 'preview').click();
+        expect(shown).to.deep.equal(['preview']);
+        // Switching to the IDE tore the surface down outside the Work Hub layout, without undocking it.
+        panel.element.querySelector('.qaap-work-hub-aux-panel-surface .fake-surface')!.remove();
+
+        panel.syncWithOpenTask();
+
+        expect(shown).to.deep.equal(['preview', 'preview']);
+        expect(panel.element.querySelector('.qaap-work-hub-aux-panel-surface .fake-surface')).to.exist;
+        // Still no loop once it is docked again.
+        panel.syncWithOpenTask();
+        expect(shown).to.deep.equal(['preview', 'preview']);
+    });
+
     it('offers the pull request view from the launcher and renders it without requesting a surface', async () => {
         let lookups = 0;
         const view = new QaapWorkHubAuxPullRequestView({

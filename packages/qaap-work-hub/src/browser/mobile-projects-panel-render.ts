@@ -183,6 +183,7 @@ export function disposeExtracted(ctx: MobileProjectsPanelContext): void {
     ctx.panelLifecycleUi.dispose();
     ctx.executionSurfaceTabsUi.dispose();
     ctx.transcriptMessagesUi.dispose();
+    ctx.transcriptSurfacesUi.disposeEmbeddedPreviews();
 }
 
 export function hideExtracted(ctx: MobileProjectsPanelContext): void {

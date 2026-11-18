@@ -387,6 +387,24 @@ export class MobileProjectsTranscriptSurfacesUi {
     }
 
     /** @internal Used by the extracted mobile-projects-transcript-surfaces-ui-* modules. */
+    /**
+     * Releases every embedded preview this UI owns, parked or visible, and its offscreen host. Each
+     * IDE ↔ Agents switch builds a new Work Hub panel; without this the old one's parked preview
+     * kept running the app in a hidden frame, one more per round trip.
+     */
+    disposeEmbeddedPreviews(): void {
+        this.stopTranscriptPreviewIdentityWatch();
+        for (const chrome of this.embeddedPreviewByConversationScopeId.values()) {
+            chrome.dispose();
+        }
+        this.embeddedPreviewByConversationScopeId.clear();
+        this.host.transcriptEmbeddedPreview?.dispose();
+        this.host.transcriptEmbeddedPreview = undefined;
+        this.transcriptPreviewConversationScopeId = undefined;
+        this.offscreenPreviewHostElement?.remove();
+        this.offscreenPreviewHostElement = undefined;
+    }
+
     public getOrCreateOffscreenPreviewHost(): HTMLElement {
         return getOrCreateOffscreenPreviewHostExtracted(this);
     }

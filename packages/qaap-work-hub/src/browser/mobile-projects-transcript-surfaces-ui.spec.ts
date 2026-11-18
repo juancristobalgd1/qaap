@@ -510,6 +510,24 @@ describe('MobileProjectsTranscriptSurfacesUi — superseded preview fallback', (
         expect(ui.rediscoveries).to.equal(1);
     });
 
+    it('releases its parked and visible previews with the panel, so no hidden frame keeps running the app', () => {
+        const host = buildIdlePreviewHost();
+        const ui = new FallbackTrackingTranscriptSurfacesUi(host, historyUiStub);
+        const disposed: string[] = [];
+        const chrome = (name: string) => ({ root: document.createElement('div'), dispose: () => { disposed.push(name); } }) as never;
+        const offscreen = ui.getOrCreateOffscreenPreviewHost();
+        offscreen.append(document.createElement('iframe'));
+        ui.embeddedPreviewByConversationScopeId.set('conv-1', chrome('parked'));
+        host.transcriptEmbeddedPreview = chrome('visible');
+
+        ui.disposeEmbeddedPreviews();
+
+        expect(disposed.sort()).to.deep.equal(['parked', 'visible']);
+        expect(ui.embeddedPreviewByConversationScopeId.size).to.equal(0);
+        expect(offscreen.isConnected).to.equal(false);
+        expect(ui.getOrCreateOffscreenPreviewHost()).to.not.equal(offscreen);
+    });
+
     it('stops rediscovering a stale candidate in a tight loop and hands over to the backed-off tab probe', () => {
         const host = buildIdlePreviewHost();
         const ui = new FallbackTrackingTranscriptSurfacesUi(host, historyUiStub);

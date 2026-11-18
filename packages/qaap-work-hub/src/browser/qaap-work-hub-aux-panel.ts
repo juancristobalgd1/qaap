@@ -401,6 +401,7 @@ export class QaapWorkHubAuxPanel {
             this.show();
             return;
         }
+        this.dropDetachedDockedElement();
         const active = this.model.activeTab;
         // Only execution surfaces are re-requested from the host; the launcher and the panel's own views are not.
         if (!active || !isQaapWorkHubAuxPanelSurfaceKind(active.kind) || this.dockedElement || this.restoredTabId === active.id) {
@@ -412,6 +413,19 @@ export class QaapWorkHubAuxPanel {
         }
         this.restoredTabId = active.id;
         this.requestSurface(active.kind);
+    }
+
+    /**
+     * A docked element that left the slot without {@link undockSurface} (torn down by its owner
+     * elsewhere) is no longer shown: forget it, so the active view is requested again instead of
+     * the panel staying empty while it believes the surface is docked.
+     */
+    protected dropDetachedDockedElement(): void {
+        if (this.dockedElement && !this.surfaceSlot.contains(this.dockedElement)) {
+            this.dockedElement = undefined;
+            this.dockedSurface = undefined;
+            this.restoredTabId = undefined;
+        }
     }
 
     dispose(): void {
