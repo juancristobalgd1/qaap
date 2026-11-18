@@ -10,6 +10,7 @@
 import { nls } from '@theia/core/lib/common/nls';
 import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { resolveAgentBrand } from '@theia/qaap-shared-core/lib/common/qaap-agent-branding';
+import { QaapLiveTaskDiff } from '@theia/qaap-shared-core/lib/common/qaap-live-task-diff';
 import { formatFriendlyModelLabel } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
 import {
     formatQaapWorktreeLabel,
@@ -232,8 +233,9 @@ export function buildQaapTaskHoverCardModel(input: QaapTaskHoverCardInput): Qaap
     if (activityAt) {
         lines.push({ kind: 'activity', iconClass: 'codicon-history', text: formatQaapTaskHoverCardActivity(activityAt, input.now) });
     }
-    const added = Math.max(0, summary?.linesAdded ?? 0);
-    const removed = Math.max(0, summary?.linesRemoved ?? 0);
+    const totals = QaapLiveTaskDiff.resolve(summary);
+    const added = Math.max(0, totals.added);
+    const removed = Math.max(0, totals.removed);
     if (added > 0 || removed > 0) {
         lines.push({
             kind: 'diff',

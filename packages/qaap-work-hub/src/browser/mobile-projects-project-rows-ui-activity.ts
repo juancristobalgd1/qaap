@@ -6,6 +6,7 @@ import {
     type QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { isQaapAgentTaskUnreadReply, resolveQaapAgentTaskVisualStatus } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-visual-status';
+import { QaapLiveTaskDiff } from '@theia/qaap-shared-core/lib/common/qaap-live-task-diff';
 import { SHELL_AGENT_ID } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { turnElapsedAnchor } from '@theia/qaap-shared-core/lib/common/qaap-turn-elapsed-anchor';
 import { formatConversationExecutionSessionMeta } from '@theia/qaap-composer/lib/common/qaap-conversation-composer-state';
@@ -344,12 +345,12 @@ export function hasConversationDiffStatsExtracted(ctx: MobileProjectsProjectRows
         if (!summary) {
             return false;
         }
-        return (summary.linesAdded ?? 0) > 0 || (summary.linesRemoved ?? 0) > 0;
+        const totals = QaapLiveTaskDiff.resolve(summary);
+        return totals.added > 0 || totals.removed > 0;
 }
 
 export function appendConversationDiffFootExtracted(ctx: MobileProjectsProjectRowsUiContext, footRow: HTMLElement, summary: QaapAgentConversationSummaryDTO): void {
-        const added = summary.linesAdded ?? 0;
-        const removed = summary.linesRemoved ?? 0;
+        const { added, removed } = QaapLiveTaskDiff.resolve(summary);
         ctx.appendTaskFootSeparator(footRow);
         const diff = document.createElement('span');
         diff.className = 'theia-mobile-projects-task-diff';

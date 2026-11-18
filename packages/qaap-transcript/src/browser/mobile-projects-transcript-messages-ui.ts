@@ -7,6 +7,7 @@ import * as markdownit from '@theia/core/shared/markdown-it';
 import { ClipboardService } from '@theia/core/lib/browser/clipboard-service';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import { Disposable } from '@theia/core/lib/common/disposable';
+import { QaapLiveTaskDiff } from '@theia/qaap-shared-core/lib/common/qaap-live-task-diff';
 import {
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
@@ -253,8 +254,10 @@ export class MobileProjectsTranscriptMessagesUi {
         const segments = this.resolveComposerConversationSegments(conv, options);
         const files = this.resolversUi.resolveTranscriptChangedFiles(segments);
         let stats = this.resolversUi.resolveTranscriptDiffStats(segments);
-        if (!stats && summary && ((summary.linesAdded ?? 0) > 0 || (summary.linesRemoved ?? 0) > 0)) {
-            stats = { added: summary.linesAdded ?? 0, removed: summary.linesRemoved ?? 0 };
+        // Without a turn's own stats, the task total: the live Changes total when one was read, else the settled one.
+        const taskTotals = QaapLiveTaskDiff.resolve(summary);
+        if (!stats && summary && (taskTotals.added > 0 || taskTotals.removed > 0)) {
+            stats = { added: taskTotals.added, removed: taskTotals.removed };
         }
         return {
             files: files.map(file => ({
