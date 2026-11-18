@@ -28,6 +28,12 @@ Hecho y verificado en vivo en el Electron de prueba (HEAD `2d2605ec3`):
 - Settings: botón "Toggle views panel" a la derecha de la cabecera; botón de reabrir el sidebar ya no queda bajo los semáforos de macOS.
 - CI: spec del resolutor ya no depende de tener `gh`; tests Playwright upstream que dependían de `@theia/api-samples` ajustados o saltados (output-view, quick-command, toolbar).
 
+Ronda siguiente (HEAD `ce2178ced`, verificado en vivo salvo la landing):
+- Settings → Harness: engranaje por harness (nombre, binario y CODEX_HOME/CLAUDE_CONFIG_DIR solo en escritorio) y «Add harness» (instancias `codex#2`…); pendientes de instancias en la sección del agente de harness más abajo.
+- Escritorio: el diálogo «Open GitHub repository» oculta Workspace memory; panel derecho del IDE 34 % (440–640 px) si no hay tamaño guardado; cabeceras y barra de pestañas centradas en los semáforos (±0,5 px); el Dock dice «Qaap» (dev arranca desde un clon APFS `node_modules/electron/qaap-dev/Qaap.app`, id `dev.qaaq.desktop.dev`).
+- Landing web: enlace «Download the desktop app for …» oculto hasta definir en el VPS `QAAP_DESKTOP_DOWNLOAD_URL_MAC` / `_WIN` / `_LINUX` (https) y reiniciar el backend. No hay instaladores publicados todavía.
+- Conversaciones de prueba de notes-dev borradas.
+
 Pendiente: confirmar CI verde de `2d2605ec3`; rendimiento (store de conversaciones ~71 MB, ~1 s por persistencia; stall de 1,1 s al arrancar; avisos de modelos duplicados) para otro PR; borrar o no las dos conversaciones de prueba de notes-dev (decisión del usuario). No hacer merge de #534 sin confirmación.
 
 ## 2026-11-18 — Servidor MCP de GitHub gestionado (rama `feat/work-hub-harness-round2`)
