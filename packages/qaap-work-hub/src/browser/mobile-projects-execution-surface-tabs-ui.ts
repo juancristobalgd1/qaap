@@ -79,6 +79,15 @@ function resolveWorkHubAuxPanelOwner(): MobileProjectsExecutionSurfaceTabsUi | u
     return [...workHubAuxPanelUis].find(ui => ui.isRenderedOnScreen()) ?? workHubAuxPanelOwner;
 }
 
+/**
+ * The desktop right panel for the Settings header toggle: the same panel and claim the chat chevron uses.
+ * `undefined` outside the desktop layout, where the Settings header has no right panel to toggle.
+ */
+export function resolveWorkHubAuxPanelForSettingsToggle(): QaapWorkHubAuxPanel | undefined {
+    const owner = resolveWorkHubAuxPanelOwner() ?? [...workHubAuxPanelUis][0];
+    return owner?.claimWorkHubAuxPanel();
+}
+
 /** Panel surface for execution-surface tab strips, overflow menu, and tab navigation. */
 export interface MobileProjectsExecutionSurfaceTabsHost {
     readonly executionSurfaceTabByProjectId: Map<string, TranscriptTab>;

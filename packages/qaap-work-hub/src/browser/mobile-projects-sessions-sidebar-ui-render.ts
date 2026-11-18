@@ -6,6 +6,7 @@ import { mergeConversationCwdProjects, worktreeSourceCwdOf } from './mobile-proj
 import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { MobileWorkHubSessionsSidebar, isDesktopSessionsSidebarLayout } from './mobile-work-hub-sessions-sidebar';
+import { resolveWorkHubAuxPanelForSettingsToggle } from './mobile-projects-execution-surface-tabs-ui';
 import { buildWorkHubSessionsSidebarRowFingerprint, buildWorkHubSessionsSidebarVisibleStructureFingerprint, QAAP_SESSIONS_SIDEBAR_ROW_FP_ATTR, QAAP_SESSIONS_SIDEBAR_STRUCTURE_FP_ATTR } from '../common/qaap-work-hub-sessions-sidebar-fingerprint';
 import { expandConversationSlots, partitionAgentConversations } from '@theia/qaap-shared-core/lib/common/qaap-isolated-fork-grouping';
 import { isQaapAgentTaskUnreadReply, resolveQaapAgentTaskVisualStatus } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-visual-status';
@@ -124,6 +125,7 @@ export function ensureWorkHubSessionsSidebarExtracted(ctx: MobileProjectsSession
             storageScope: () => ctx.host.projectsService.getCurrentWorkspaceCwd(),
             onAccountMenu: anchor => { ctx.onSessionsSidebarAccountClick(anchor); },
             onSettings: () => ctx.host.openPreferencesSheet?.(),
+            resolveAuxPanelToggle: () => resolveWorkHubAuxPanelForSettingsToggle(),
             onSearch: () => { void ctx.openSessionsSidebarSearch(); },
             onPullRequestSearch: anchor => { ctx.togglePullRequestSearch(anchor); },
             onPullRequestSearchClose: () => { ctx.closePullRequestSearch?.(); },

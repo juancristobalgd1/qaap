@@ -24,6 +24,7 @@ import { clearQaapPreviewDismissedByUser, markQaapPreviewDismissedByUser } from 
 import { executionSurfacePreviewDirectory } from './mobile-projects-execution-surface-tabs-ui-render';
 import { attachQaapScrollEdgeFades } from '@theia/qaap-mobile-shell/lib/browser/qaap-scroll-edge-fades';
 import { QAAP_WORK_HUB_AUX_PANEL_TOGGLE_CLASS, type QaapWorkHubAuxPanel } from './qaap-work-hub-aux-panel';
+import { QAAP_WORK_HUB_RIGHT_PANEL_GLYPH_PATH } from './qaap-work-hub-right-panel-glyph';
 
 export function applyExecutionSurfaceIconSelectDisplayExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, strip: HTMLElement, activeTab: TranscriptTab): void {
     const selectBtn = queryExecutionSurfaceViewSelect(strip);
@@ -60,7 +61,6 @@ export function applyExecutionSurfaceIconSelectDisplayExtracted(ctx: MobileProje
 
 /** Stroke paths in the trigger's 16px glyph: the views-menu chevrons and the desktop right-panel toggle. */
 const VIEW_MENU_GLYPH_PATH = 'M3 4.5 8 9.5l5-5 M3 8 8 13l5-5';
-const RIGHT_PANEL_GLYPH_PATH = 'M3.5 2.5h9a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 12V4a1.5 1.5 0 0 1 1.5-1.5Z M10 2.5v11';
 
 /** On the desktop Work Hub the view chevron is the right panel's toggle, not a menu button. */
 function applyWorkHubAuxPanelTriggerChrome(ctx: MobileProjectsExecutionSurfaceTabsUiContext, trigger: HTMLElement): QaapWorkHubAuxPanel | undefined {
@@ -377,7 +377,7 @@ export function createExecutionSurfaceIconSelectExtracted(ctx: MobileProjectsExe
     chevronPath.setAttribute('d', VIEW_MENU_GLYPH_PATH);
     const panelPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     panelPath.setAttribute('class', 'qaap-glyph-right-panel');
-    panelPath.setAttribute('d', RIGHT_PANEL_GLYPH_PATH);
+    panelPath.setAttribute('d', QAAP_WORK_HUB_RIGHT_PANEL_GLYPH_PATH);
     chevronIcon.append(chevronPath, panelPath);
     chevron.append(chevronIcon);
     trigger.append(triggerLabel, chevron);

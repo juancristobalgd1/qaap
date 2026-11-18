@@ -522,6 +522,49 @@
   color: var(--theia-foreground);
 }
 
+/* Settings: the right-panel toggle sits before the close control. It is the chat chevron's control:
+   same glyph, stroke and 16px size, and the pressed look while the panel is open. */
+.theia-mobile-work-hub-sessions-sidebar-aux-toggle {
+  display: inline-flex;
+  flex: 0 0 36px;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  margin-left: 0;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--theia-descriptionForeground, var(--qaap-muted, #8a847c));
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-aux-toggle[hidden] {
+  display: none;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-aux-toggle:hover,
+.theia-mobile-work-hub-sessions-sidebar-aux-toggle:focus-visible,
+.theia-mobile-work-hub-sessions-sidebar-aux-toggle[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+  color: var(--theia-foreground);
+  outline: none;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-aux-toggle svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+  overflow: visible;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .theia-mobile-work-hub-sessions-sidebar-brand {
   flex: 0 1 auto;
   min-width: 0;

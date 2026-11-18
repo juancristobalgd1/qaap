@@ -23,6 +23,7 @@ import { ensurePullRequestsSurfaceCss } from './ensure-pull-requests-surface-css
 import { TASK_TITLE_OVERFLOW_CLASS } from './mobile-projects-task-title-marquee';
 import { QAAP_NEW_TASK_ICON_CLASS } from './qaap-new-task-icon';
 import { UsageDialog } from './usage-dialog';
+import { createQaapWorkHubRightPanelGlyph } from './qaap-work-hub-right-panel-glyph';
 
 export const QAAP_MOBILE_SESSIONS_SIDEBAR_BODY_CLASS = 'theia-mobile-mod-sessions-sidebar-open';
 
@@ -74,6 +75,12 @@ const DESKTOP_SIDEBAR_MIN_WIDTH = 240;
 const DESKTOP_SIDEBAR_MAX_WIDTH = 460;
 const DESKTOP_SIDEBAR_DEFAULT_WIDTH = 328;
 
+/** The desktop right panel as the Settings header sees it: whether it is open, and its toggle. */
+export interface MobileWorkHubAuxPanelToggle {
+    readonly isOpen: boolean;
+    toggle(): void;
+}
+
 export interface MobileWorkHubSessionsSidebarDelegate {
     renderSessionList(host: HTMLElement): void;
     renderPullRequestList?(host: HTMLElement): void;
@@ -82,6 +89,8 @@ export interface MobileWorkHubSessionsSidebarDelegate {
     storageScope?(): string | undefined;
     onAccountMenu?(anchor: HTMLButtonElement): void;
     onSettings?(): void | Promise<void>;
+    /** The desktop right panel the Settings header toggles; `undefined` where no right panel is docked. */
+    resolveAuxPanelToggle?(): MobileWorkHubAuxPanelToggle | undefined;
     onSearch?: () => void;
     onPullRequestSearch?: (anchor: HTMLButtonElement) => void;
     onPullRequestSearchClose?: () => void;
@@ -135,6 +144,8 @@ export class MobileWorkHubSessionsSidebar {
     /** Settings mode: reveals the settings search field, which stays hidden until asked for. */
     protected readonly settingsSearchBtn: HTMLButtonElement;
     protected readonly settingsSearchField: HTMLElement;
+    /** Settings mode: toggles the desktop right panel, the same control as the chat header chevron. */
+    protected readonly auxPanelToggleBtn: HTMLButtonElement;
     /** The visible query came from the user (not a section's own query), so closing clears it. */
     protected settingsSearchTyped = false;
     protected readonly pullRequestSearchBtn: HTMLButtonElement;
@@ -333,7 +344,16 @@ export class MobileWorkHubSessionsSidebar {
         this.settingsSearchBtn.setAttribute('aria-expanded', 'false');
         this.settingsSearchBtn.hidden = true;
         this.settingsSearchBtn.addEventListener('click', () => this.toggleSettingsSearch());
-        head.append(this.backBtn, this.brand, this.searchBtn, this.pullRequestSearchBtn, this.settingsSearchBtn, this.closeBtn);
+        this.auxPanelToggleBtn = document.createElement('button');
+        this.auxPanelToggleBtn.type = 'button';
+        this.auxPanelToggleBtn.className = 'theia-mobile-work-hub-sessions-sidebar-aux-toggle';
+        this.auxPanelToggleBtn.hidden = true;
+        this.auxPanelToggleBtn.append(createQaapWorkHubRightPanelGlyph());
+        this.auxPanelToggleBtn.addEventListener('click', () => {
+            this.delegate.resolveAuxPanelToggle?.()?.toggle();
+            this.refreshAuxPanelToggle();
+        });
+        head.append(this.backBtn, this.brand, this.searchBtn, this.pullRequestSearchBtn, this.settingsSearchBtn, this.auxPanelToggleBtn, this.closeBtn);
 
         const footer = document.createElement('footer');
         footer.className = 'theia-mobile-work-hub-sessions-sidebar-foot';
@@ -807,6 +827,7 @@ export class MobileWorkHubSessionsSidebar {
         this.searchBtn.hidden = false;
         this.settingsSearchBtn.hidden = true;
         this.pullRequestSearchBtn.hidden = true;
+        this.auxPanelToggleBtn.hidden = true;
         this.nav.hidden = false;
         this.settingsHost.hidden = true;
         this.scrollHost.hidden = false;
@@ -825,6 +846,7 @@ export class MobileWorkHubSessionsSidebar {
         this.backBtn.hidden = false;
         this.searchBtn.hidden = true;
         this.settingsSearchBtn.hidden = true;
+        this.auxPanelToggleBtn.hidden = true;
         this.pullRequestSearchBtn.hidden = false;
         this.nav.hidden = true;
         this.settingsHost.hidden = true;
@@ -847,6 +869,20 @@ export class MobileWorkHubSessionsSidebar {
         this.delegate.onPullRequestSearchClose?.();
         this.brand.textContent = nls.localizeByDefault('Settings');
         this.renderSettingsSidebar();
+        this.refreshAuxPanelToggle();
+    }
+
+    /** Settings mode shows the right-panel toggle only where a desktop right panel applies, with its open state. */
+    protected refreshAuxPanelToggle(): void {
+        const panel = this.sidebarMode === 'settings' ? this.delegate.resolveAuxPanelToggle?.() : undefined;
+        this.auxPanelToggleBtn.hidden = !panel;
+        if (!panel) {
+            return;
+        }
+        const label = nls.localize('qaap/workHubAuxPanel/toggle', 'Toggle views panel');
+        this.auxPanelToggleBtn.title = label;
+        this.auxPanelToggleBtn.setAttribute('aria-label', label);
+        this.auxPanelToggleBtn.setAttribute('aria-expanded', String(panel.isOpen));
     }
 
     protected toggleSettingsSearch(): void {
