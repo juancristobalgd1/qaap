@@ -21,6 +21,7 @@ import {
     type QaapProjectResourcesUpdateRequest,
     type QaapAuthConfigResponse,
     type QaapAuthSessionResponse,
+    type QaapAuthSessionGithubCredential,
     type QaapGithubCreateRepositoryRequest,
     type QaapGithubMergePullRequestRequest,
     type QaapGithubMergePullRequestResponse,
@@ -920,10 +921,21 @@ export async function signOutQaapAuth(): Promise<void> {
     }
 }
 
+let qaapDesktopGithubCredential: QaapAuthSessionGithubCredential | undefined;
+
+/**
+ * Desktop without a Qaap GitHub session: the source and GitHub user of the user's own credential (gh,
+ * `GH_TOKEN`) that serves the Work Hub's GitHub data, from the last `/auth/session`. Never a token; memory only.
+ */
+export function readQaapDesktopGithubCredential(): QaapAuthSessionGithubCredential | undefined {
+    return qaapDesktopGithubCredential;
+}
+
 /** Apply server session to local storage; returns true when signed in. */
 export async function syncQaapAuthSessionFromServer(config?: QaapAuthConfigResponse): Promise<boolean> {
     const resolvedConfig = config ?? await fetchQaapAuthConfig().catch(() => ({ skipAuth: false, githubOAuth: false }));
     const session = await fetchQaapAuthSession();
+    qaapDesktopGithubCredential = session.signedIn && session.githubCredential?.user?.login ? session.githubCredential : undefined;
     if (!session.signedIn || !session.user) {
         if (!resolvedConfig.skipAuth) {
             clearQaapAuthSession();

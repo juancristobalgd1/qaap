@@ -12,6 +12,7 @@ import {
     fetchQaapBilling,
     fetchQaapProjectResources,
     QaapApiRequestError,
+    readQaapDesktopGithubCredential,
     saveQaapProjectResources,
     syncQaapAuthSessionFromServer,
     type QaapBillingApiResponse,
@@ -699,9 +700,15 @@ export class MobileOpenRepositoryDialog {
         // Desktop runs in local mode with a placeholder user (provider `gitlab`): only a GitHub user counts.
         const connected = this.service.getConnectedUser();
         const user = environment.electron.is() ? (connected?.provider === 'github' ? connected : undefined) : connected;
-        this.statusRow.classList.toggle('theia-mod-signed-in', !!user);
-        this.statusRow.classList.toggle('theia-mod-signed-out', !user);
-        if (user) {
+        // Desktop without a Qaap session: the user's own credential (gh, GH_TOKEN) still lists their repositories.
+        const credential = !user && environment.electron.is() ? readQaapDesktopGithubCredential() : undefined;
+        this.statusRow.classList.toggle('theia-mod-signed-in', !!user || !!credential);
+        this.statusRow.classList.toggle('theia-mod-signed-out', !user && !credential);
+        if (!user && credential) {
+            this.statusText.textContent = credential.source === 'gh-cli'
+                ? nls.localize('qaap/mobileOpenRepo/connectedViaGh', 'Connected as {0} through the GitHub CLI', credential.user.login)
+                : nls.localize('qaap/mobileOpenRepo/connectedViaCredential', 'Connected as {0} with your GitHub credential', credential.user.login);
+        } else if (user) {
             this.statusText.textContent = nls.localize(
                 'qaap/mobileOpenRepo/connectedAs',
                 'Connected as {0}',
@@ -826,7 +833,7 @@ export class MobileOpenRepositoryDialog {
                     'qaap/mobileOpenRepo/noFilterResults',
                     'No repositories match your filter.'
                 );
-            } else if (this.service.getConnectedUser()) {
+            } else if (this.service.getConnectedUser() || (environment.electron.is() && readQaapDesktopGithubCredential())) {
                 this.emptyState.textContent = nls.localize(
                     'qaap/mobileOpenRepo/noRepositories',
                     'No repositories yet. Use Clone repository to open a public GitHub URL.'

@@ -91,6 +91,16 @@ export interface QaapAuthSessionUser {
 export interface QaapAuthSessionResponse {
     signedIn: boolean;
     user?: QaapAuthSessionUser;
+    /**
+     * Desktop app without a Qaap GitHub session: the user's own GitHub credential that serves the Work Hub's
+     * GitHub data, by source (`gh-cli`, `env`, `oauth-session`) and the GitHub user it belongs to. Never the token.
+     */
+    githubCredential?: QaapAuthSessionGithubCredential;
+}
+
+export interface QaapAuthSessionGithubCredential {
+    source: 'owner-token-cache' | 'env' | 'gh-cli' | 'oauth-session';
+    user: QaapAuthSessionUser;
 }
 
 export interface QaapGithubRepositorySummary {
