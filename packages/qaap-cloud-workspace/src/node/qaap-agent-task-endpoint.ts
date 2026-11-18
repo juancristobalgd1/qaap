@@ -42,8 +42,16 @@ import {
     QAAP_REPOSITORY_CLONE_UNAVAILABLE_CODE,
     QaapMissingCloneRecovery,
 } from '@theia/qaap-shared-core/lib/node/qaap-missing-clone-recovery';
-import { resolveQaapBuiltinAgentMentionId } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
-import { resolveQaapHarnessBaseId } from '@theia/qaap-shared-core/lib/common/qaap-harness-launch-settings';
+import { QAAP_BUILTIN_AGENT_IDS, resolveQaapBuiltinAgentMentionId } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
+import {
+    checkQaapHarnessEnvName,
+    isQaapHarnessSettingsId,
+    QAAP_HARNESS_ENV_VALUE_MAX_LENGTH,
+    QAAP_HARNESS_SETTINGS_PREF,
+    readQaapHarnessSettingsFor,
+    resolveQaapHarnessBaseId,
+} from '@theia/qaap-shared-core/lib/common/qaap-harness-launch-settings';
+import { QaapHarnessEnvSecretStore } from './qaap-harness-env-secret-store';
 import { checkQaapHarnessBinaryPath, checkQaapHarnessHomeDir, isQaapHarnessLaunchOverrideRuntime } from './qaap-harness-launch-overrides';
 import type { QaapAgentTask, QaapAgentTaskCwdGroup } from '../common/qaap-agent-task';
 import { QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
@@ -147,6 +155,10 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
     protected readonly cloneRecovery: QaapMissingCloneRecovery | undefined;
 
     /** Re-runs a failed standalone task on the agent's next fallback model; absent, tasks never fall back. */
+    /** Values of the Settings → Harness environment variables (desktop app routes only). */
+    @inject(QaapHarnessEnvSecretStore) @optional()
+    protected readonly harnessEnvSecrets: QaapHarnessEnvSecretStore | undefined;
+
     @inject(QaapStandaloneTaskModelFallback) @optional()
     protected readonly modelFallback: QaapStandaloneTaskModelFallback | undefined;
 
@@ -162,6 +174,9 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         app.post(`${QAAP_AGENT_TASK_API_PATH}/harness-settings/check`, (req, res) => {
             this.handleCheckHarnessLaunchSettings(req, res);
         });
+        app.get(`${QAAP_AGENT_TASK_API_PATH}/harness-settings/env`, QaapAsyncRoute.wrap('qaap-agent-task', (req, res) => this.handleListHarnessEnv(req, res)));
+        app.post(`${QAAP_AGENT_TASK_API_PATH}/harness-settings/env`, QaapAsyncRoute.wrap('qaap-agent-task', (req, res) => this.handleSetHarnessEnv(req, res)));
+        app.post(`${QAAP_AGENT_TASK_API_PATH}/harness-settings/env/delete`, QaapAsyncRoute.wrap('qaap-agent-task', (req, res) => this.handleDeleteHarnessEnv(req, res)));
         // Static `/cli-updates` segments must register before `/:id` below.
         app.get(`${QAAP_AGENT_TASK_API_PATH}/cli-updates`, QaapAsyncRoute.wrap('qaap-agent-task', (req, res) => this.handleListCliUpdates(req, res)));
         app.post(`${QAAP_AGENT_TASK_API_PATH}/cli-updates/:agentId`, QaapAsyncRoute.wrap('qaap-agent-task', (req, res) => this.handleInstallCliUpdate(req, res)));
@@ -571,6 +586,89 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
      * else the fields are ignored by the runner and this route answers 404, so it never probes the server's
      * file system for a web user.
      */
+    /**
+     * Shared gate of the harness-variable routes: authenticated, desktop app only (404 elsewhere, like
+     * `/harness-settings/check`), a store bound and a known harness or instance id.
+     */
+    protected requireHarnessEnvRoute(req: Request, res: Response, rawHarnessId: unknown): { harnessId: string; ownerLogin: string | undefined } | undefined {
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return undefined;
+        }
+        if (!isQaapHarnessLaunchOverrideRuntime() || !this.harnessEnvSecrets) {
+            res.status(404).json({ error: 'Harness variables are only available in the desktop app.' });
+            return undefined;
+        }
+        const harnessId = typeof rawHarnessId === 'string' ? rawHarnessId.trim().toLowerCase() : '';
+        if (!harnessId || !isQaapHarnessSettingsId(harnessId, QAAP_BUILTIN_AGENT_IDS)) {
+            res.status(400).json({ error: 'Unknown harness.' });
+            return undefined;
+        }
+        res.setHeader('Cache-Control', 'no-store');
+        return { harnessId, ownerLogin: this.auth.resolveUserLogin(ctx) };
+    }
+
+    /** Names and whether a value is stored; never a value. */
+    protected async handleListHarnessEnv(req: Request, res: Response): Promise<void> {
+        const route = this.requireHarnessEnvRoute(req, res, req.query.harnessId);
+        if (!route || !this.harnessEnvSecrets) {
+            return;
+        }
+        const readPref = this.runner.preferenceReaderForOwner(route.ownerLogin);
+        const names = readQaapHarnessSettingsFor(readPref(QAAP_HARNESS_SETTINGS_PREF), route.harnessId).envNames ?? [];
+        const variables: { name: string; hasValue: boolean }[] = [];
+        for (const name of names) {
+            variables.push({ name, hasValue: await this.harnessEnvSecrets.has(route.harnessId, name) });
+        }
+        res.json({ variables });
+    }
+
+    protected async handleSetHarnessEnv(req: Request, res: Response): Promise<void> {
+        const body = (req.body ?? {}) as { harnessId?: unknown; name?: unknown; value?: unknown };
+        const route = this.requireHarnessEnvRoute(req, res, body.harnessId);
+        if (!route || !this.harnessEnvSecrets) {
+            return;
+        }
+        const name = typeof body.name === 'string' ? body.name.trim() : '';
+        const issue = checkQaapHarnessEnvName(name);
+        if (issue) {
+            res.status(400).json({ error: issue === 'denied' ? 'This variable is managed by Qaap and cannot be set.' : 'Invalid variable name.', issue });
+            return;
+        }
+        const value = body.value;
+        if (typeof value !== 'string' || value.length === 0 || value.length > QAAP_HARNESS_ENV_VALUE_MAX_LENGTH || value.includes('\0')) {
+            res.status(400).json({ error: 'Invalid variable value.' });
+            return;
+        }
+        try {
+            await this.harnessEnvSecrets.set(route.harnessId, name, value);
+        } catch {
+            res.status(500).json({ error: 'The harness variable could not be saved.' });
+            return;
+        }
+        res.json({ ok: true, name, hasValue: true });
+    }
+
+    /** Deletes one value (`name`) or every value of the harness (no `name`: Restore defaults, Delete harness). */
+    protected async handleDeleteHarnessEnv(req: Request, res: Response): Promise<void> {
+        const body = (req.body ?? {}) as { harnessId?: unknown; name?: unknown };
+        const route = this.requireHarnessEnvRoute(req, res, body.harnessId);
+        if (!route || !this.harnessEnvSecrets) {
+            return;
+        }
+        try {
+            if (typeof body.name === 'string' && body.name.trim()) {
+                await this.harnessEnvSecrets.delete(route.harnessId, body.name.trim());
+            } else {
+                await this.harnessEnvSecrets.deleteAll(route.harnessId);
+            }
+        } catch {
+            res.status(500).json({ error: 'The harness variable could not be deleted.' });
+            return;
+        }
+        res.json({ ok: true });
+    }
+
     protected handleCheckHarnessLaunchSettings(req: Request, res: Response): void {
         const ctx = this.requireAuth(req, res);
         if (!ctx) {

@@ -192,6 +192,7 @@ import {
 } from './qaap-agent-access';
 import { childProcessEnv } from './qaap-child-process-env';
 import { withQaapHarnessInstanceDescriptors } from './qaap-harness-instance-descriptors';
+import { QaapHarnessEnvSecretStore } from './qaap-harness-env-secret-store';
 import { resolveQaapHarnessBaseId } from '@theia/qaap-shared-core/lib/common/qaap-harness-launch-settings';
 import { qaapGitReadEnv } from './qaap-child-process-env';
 
@@ -217,6 +218,10 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     @inject(QaapWebPushService)
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public readonly webPush: QaapWebPushService;
+
+    /** Values of the Settings → Harness environment variables; read at spawn on the desktop app only. */
+    @inject(QaapHarnessEnvSecretStore) @optional()
+    public readonly harnessEnvSecrets: QaapHarnessEnvSecretStore | undefined;
 
     @inject(QaapBillingStore) @optional()
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */

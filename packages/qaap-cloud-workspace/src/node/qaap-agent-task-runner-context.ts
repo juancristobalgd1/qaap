@@ -13,6 +13,7 @@
 // `import type` throughout to avoid a runtime import cycle with the extracted modules (all of which
 // are imported back into `qaap-agent-task-runner.ts`).
 
+import type { QaapHarnessEnvSecretStore } from './qaap-harness-env-secret-store';
 import type { QaapAgentEffortLevel } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
 import type { Emitter } from '@theia/core/lib/common/event';
 import type { PreferenceService } from '@theia/core/lib/common/preferences';
@@ -117,6 +118,8 @@ export interface QaapAgentTaskRunnerContext {
     readonly queuedApprovalTimers: Map<string, Map<string, NodeJS.Timeout>>;
     readonly qaiqStdioTasks: Set<string>;
     readonly detectedAgents: Map<string, AgentCandidate>;
+    /** Values of the Settings → Harness environment variables (desktop app); absent in tests. */
+    readonly harnessEnvSecrets?: QaapHarnessEnvSecretStore;
     readonly helperTokens: Map<string, string>;
     readonly projectNameCache: Map<string, string>;
     readonly projectInfoCache: Map<string, string | undefined>;

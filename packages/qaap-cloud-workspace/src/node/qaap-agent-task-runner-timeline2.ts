@@ -70,7 +70,7 @@ import {
 } from './qaap-agent-task-runner-utils';
 import { applyPreTurnAgentHooks, createQaiqPreToolUseHookGate } from './qaap-agent-task-runner-hooks';
 import { canProbeProviderKey, runProviderKeyPreflight } from './qaap-provider-key-preflight';
-import { applyQaapHarnessBinaryOverride, resolveQaapHarnessLaunchPlan } from './qaap-harness-launch-overrides';
+import { applyQaapHarnessBinaryOverride, applyQaapHarnessUserEnv, resolveQaapHarnessLaunchPlan } from './qaap-harness-launch-overrides';
 import { isConversationalTurn, isConversationalTurnTask } from '../common/qaap-agent-conversational-turn';
 import { emitsStreamJsonFinalResult, QAAP_AGENT_EXIT_AFTER_RESULT_GRACE_MS, QaapAgentFinalResultWatcher, type QaapAgentFinalResult } from './qaap-agent-final-result-watcher';
 
@@ -597,6 +597,11 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                 task.harnessInstanceId ?? ctx.resolveTaskAgentId(task),
                 key => ctx.preferenceReaderForOwner(task.ownerLogin)(key),
             );
+            if (launchPlan.envNames?.length && ctx.harnessEnvSecrets) {
+                // Values stay in the spawn env only: never in the command line, a log or the task record.
+                const harnessKey = task.harnessInstanceId ?? ctx.resolveTaskAgentId(task);
+                applyQaapHarnessUserEnv(childEnv, await ctx.harnessEnvSecrets.resolve(harnessKey, launchPlan.envNames));
+            }
             if (launchPlan.homeEnvVar && launchPlan.homeDir) {
                 childEnv[launchPlan.homeEnvVar] = launchPlan.homeDir;
             }

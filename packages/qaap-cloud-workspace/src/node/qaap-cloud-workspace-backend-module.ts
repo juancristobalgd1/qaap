@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { QaapHarnessEnvSecretStore } from './qaap-harness-env-secret-store';
 import { ContainerModule } from '@theia/core/shared/inversify';
 import { EnvironmentUtils } from '@theia/core/lib/node/environment-utils';
 import { ConnectionContainerModule } from '@theia/core/lib/node/messaging/connection-container-module';
@@ -353,6 +354,7 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapCloudWorkspaceEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapCloudWorkspaceEndpoint);
     bind(BackendApplicationContribution).toService(QaapPreviewShareProxyContribution);
+    bind(QaapHarnessEnvSecretStore).toSelf().inSingletonScope();
     bind(QaapAgentTaskRunner).toSelf().inSingletonScope();
     bind(QaapAgentStorageHealthCheck).toSelf().inSingletonScope();
     bind(QaapHealthCheckContribution).toService(QaapAgentStorageHealthCheck);

@@ -9,6 +9,7 @@ import { isQaapHostedEnvironment } from '@theia/qaap-adapters/lib/common/qaap-ho
 import { isQaapTenantBackendMode } from '@theia/qaap-adapters/lib/common/qaap-tenant-backend-auth';
 import { QAAP_BUILTIN_AGENT_IDS } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 import {
+    checkQaapHarnessEnvName,
     checkQaapHarnessPathShape,
     isQaapHarnessInstanceId,
     QAAP_HARNESS_INSTANCES_PREF,
@@ -108,6 +109,8 @@ export interface QaapHarnessLaunchPlan {
     readonly binaryPath?: string;
     readonly homeEnvVar?: string;
     readonly homeDir?: string;
+    /** Names of the user's environment variables; the values come from `QaapHarnessEnvSecretStore`. */
+    readonly envNames?: readonly string[];
 }
 
 export interface QaapHarnessLaunchPlanOptions {
@@ -153,10 +156,38 @@ export function resolveQaapHarnessLaunchPlan(
         }
         homeDir = settings.homeDir;
     }
+    const envNames = settings.envNames ?? [];
     return {
         ...(binaryPath ? { binaryPath } : {}),
         ...(homeDir && homeEnvVar ? { homeEnvVar, homeDir } : {}),
+        ...(envNames.length > 0 ? { envNames } : {}),
     };
+}
+
+/**
+ * Adds the user's harness variables to the spawn environment (never to the command line). A name that is
+ * not allowed is skipped, and the runner always wins: a variable the runner already set to a value of its
+ * own (one that differs from the backend's environment) is kept. Later runner steps (Tool Gate, Codex
+ * overlay, configuration folder) write after this and win as well. Returns the names applied.
+ */
+export function applyQaapHarnessUserEnv(
+    childEnv: NodeJS.ProcessEnv,
+    variables: Readonly<Record<string, string>>,
+    backendEnv: NodeJS.ProcessEnv = process.env,
+): string[] {
+    const applied: string[] = [];
+    for (const [name, value] of Object.entries(variables)) {
+        if (checkQaapHarnessEnvName(name) || typeof value !== 'string' || value.includes('\0')) {
+            continue;
+        }
+        const current = childEnv[name];
+        if (current !== undefined && current !== backendEnv[name]) {
+            continue;
+        }
+        childEnv[name] = value;
+        applied.push(name);
+    }
+    return applied;
 }
 
 /**

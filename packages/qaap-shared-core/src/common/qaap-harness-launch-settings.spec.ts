@@ -62,6 +62,12 @@ describe('qaap-harness-launch-settings', () => {
         expect(readQaapHarnessSettingsMap('nope')).to.deep.equal({});
     });
 
+    it('keeps only allowed variable names in the preferences, never values', () => {
+        const stored = withQaapHarnessSettings({}, 'codex#2', { envNames: ['OPENAI_API_KEY', 'PATH', 'bad', 'OPENAI_API_KEY', 'QAAP_GATE_TOKEN'] });
+        expect(stored).to.deep.equal({ 'codex#2': { envNames: ['OPENAI_API_KEY'] } });
+        expect(readQaapHarnessSettingsFor({ codex: { envNames: ['A_KEY'], value: 'secret' } }, 'codex')).to.deep.equal({ envNames: ['A_KEY'] });
+    });
+
     it('names instances after their base harness until the user renames them', () => {
         expect(resolveQaapHarnessDisplayLabel({}, 'codex#2', 'Codex')).to.equal('Codex 2');
         expect(resolveQaapHarnessDisplayLabel({ 'codex#2': { label: 'Codex (work)' } }, 'codex#2', 'Codex')).to.equal('Codex (work)');

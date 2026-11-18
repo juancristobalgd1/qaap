@@ -32,6 +32,11 @@ export interface QaapHarnessLaunchSettings {
     readonly binaryPath?: string;
     /** Absolute path of the harness configuration folder, e.g. `CODEX_HOME` (desktop only). */
     readonly homeDir?: string;
+    /**
+     * Names of the environment variables set for this harness (desktop only). Only the names live in the
+     * preferences; every value is a secret kept by the backend (`QaapHarnessEnvSecretStore`).
+     */
+    readonly envNames?: readonly string[];
 }
 
 export interface QaapHarnessInstance {
@@ -85,15 +90,17 @@ export function readQaapHarnessLaunchSettings(value: unknown): QaapHarnessLaunch
     const label = readTrimmedString(record.label, QAAP_HARNESS_LABEL_MAX_LENGTH);
     const binaryPath = readTrimmedString(record.binaryPath, QAAP_HARNESS_PATH_MAX_LENGTH);
     const homeDir = readTrimmedString(record.homeDir, QAAP_HARNESS_PATH_MAX_LENGTH);
+    const envNames = readQaapHarnessEnvNames(record.envNames);
     return {
         ...(label ? { label } : {}),
         ...(binaryPath ? { binaryPath } : {}),
         ...(homeDir ? { homeDir } : {}),
+        ...(envNames.length > 0 ? { envNames } : {}),
     };
 }
 
 function isEmptySettings(settings: QaapHarnessLaunchSettings): boolean {
-    return !settings.label && !settings.binaryPath && !settings.homeDir;
+    return !settings.label && !settings.binaryPath && !settings.homeDir && !settings.envNames?.length;
 }
 
 /** Normalized settings map: lower-case ids, unknown fields and empty entries dropped. */
@@ -211,4 +218,59 @@ export function resolveQaapHarnessDisplayLabel(settingsValue: unknown, harnessId
         return custom;
     }
     return isQaapHarnessInstanceId(harnessId) ? defaultQaapHarnessInstanceLabel(baseLabel, harnessId) : baseLabel;
+}
+
+export const QAAP_HARNESS_ENV_MAX_VARIABLES = 32;
+export const QAAP_HARNESS_ENV_VALUE_MAX_LENGTH = 8192;
+const ENV_NAME_PATTERN = /^[A-Z_][A-Z0-9_]{0,127}$/;
+
+/**
+ * Variables a harness environment may never set: the process basics, loader and interpreter hooks,
+ * credentials Qaap manages itself, and every variable the runner, the Tool Gate, the task sandbox or the
+ * configuration folder assigns. The runner also wins over a user value at spawn time; refusing them up
+ * front gives a clear message instead of a silently ignored row.
+ */
+const DENIED_ENV_NAMES = new Set([
+    'PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'TMPDIR', 'TMP', 'TEMP', 'PWD', 'USERPROFILE',
+    'NODE_OPTIONS', 'NODE_PATH', 'NODE_ENV', 'BASH_ENV', 'ENV', 'PROMPT_COMMAND', 'IFS',
+    'PYTHONPATH', 'PYTHONSTARTUP', 'RUBYOPT', 'PERL5OPT', 'GITHUB_TOKEN', 'PORT',
+    // Assigned by the runner, the Tool Gate, the task sandbox or the configuration folder.
+    'CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'CLAUDE_CODE_SHELL', 'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC',
+    'IS_SANDBOX', 'OPENCLAUDE_MAX_RETRIES', 'OPENCODE_PERMISSION', 'OPENCODE_CONFIG_CONTENT',
+    'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY',
+]);
+const DENIED_ENV_PREFIXES = ['ELECTRON_', 'LD_', 'DYLD_', 'GIT_', 'SSH_', 'GH_', 'QAAP_', 'THEIA_', 'XDG_'];
+
+export type QaapHarnessEnvNameIssue = 'invalid' | 'denied';
+
+/** `undefined` for a name a harness environment may set. */
+export function checkQaapHarnessEnvName(name: string): QaapHarnessEnvNameIssue | undefined {
+    if (!ENV_NAME_PATTERN.test(name)) {
+        return 'invalid';
+    }
+    if (DENIED_ENV_NAMES.has(name) || DENIED_ENV_PREFIXES.some(prefix => name.startsWith(prefix))) {
+        return 'denied';
+    }
+    return undefined;
+}
+
+/** Valid, allowed, unique names, at most {@link QAAP_HARNESS_ENV_MAX_VARIABLES}. */
+export function readQaapHarnessEnvNames(value: unknown): string[] {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+    const names: string[] = [];
+    for (const entry of value) {
+        if (typeof entry === 'string' && !checkQaapHarnessEnvName(entry) && !names.includes(entry)) {
+            names.push(entry);
+        }
+    }
+    return names.slice(0, QAAP_HARNESS_ENV_MAX_VARIABLES);
+}
+
+/** Built-in harness or instance id a settings entry may be keyed by (`codex`, `codex#2`). */
+export function isQaapHarnessSettingsId(harnessId: string, knownBaseIds: Iterable<string>): boolean {
+    const normalized = harnessId.trim().toLowerCase();
+    const known = new Set(Array.from(knownBaseIds, id => id.trim().toLowerCase()));
+    return known.has(normalized) || (isQaapHarnessInstanceId(normalized) && known.has(resolveQaapHarnessBaseId(normalized)));
 }
