@@ -31,6 +31,7 @@ import { dedupeInFlight } from './qaap-in-flight-dedupe';
 import type { ComposerGitActionDisplayMetadata } from './qaap-composer-git-action-display';
 import type { QaapRewindPreviewDTO, QaapRewindRestoreOptions } from './qaap-conversation-rewind-preview';
 import { resolveQaapConversationAgentActivityAt, type QaapConversationActivityMessage } from './qaap-conversation-read-marks';
+import { resolveTaskBaselineCommit } from './qaap-turn-diff-stats';
 
 /**
  * HTTP helpers for the persistent VPS agent-conversation API.
@@ -104,6 +105,8 @@ export interface QaapAgentConversationSummaryDTO {
     readonly qaiqModel?: QaapCreateAgentTaskQaiqModel;
     /** Agent sealed onto the most recently started user turn. Unlike {@link agentId}, this is turn-specific. */
     readonly lastTurnAgentId?: string;
+    /** Every harness that ran a user turn in this conversation, first-run order. Unlike {@link agentId}, it never names a harness that did not run. */
+    readonly turnAgentIds?: readonly string[];
     /** Model sealed onto the most recently started user turn. Unlike {@link agentModel}, this is execution provenance. */
     readonly lastTurnAgentModel?: QaapCreateAgentTaskQaiqModel;
     /** Last composer interaction mode (`agent`, `plan`, `ask`). */
@@ -312,6 +315,9 @@ export interface QaapAgentConversationDTO {
     readonly worktreeBranch?: string;
     readonly worktreeOrdinal?: number;
     readonly checkpoints?: QaapConversationCheckpointDTO[];
+    /** Settled task totals from the backend (the Changes-panel number at the last turn settle). */
+    readonly gitDiffAdded?: number;
+    readonly gitDiffRemoved?: number;
     readonly linkedPullRequest?: QaapLinkedPullRequest;
     readonly taskPullRequest?: QaapTaskPullRequest;
     readonly taskPullRequestEnabled?: boolean;
@@ -588,6 +594,18 @@ export function agentActivityField(
     return lastAgentActivityAt === undefined ? {} : { lastAgentActivityAt };
 }
 
+/** `turnAgentIds` for a summary: each harness that ran a user turn once, in first-run order; omitted when none ran. */
+export function turnAgentIdsField(messages: ReadonlyArray<{ readonly role: string; readonly turnAgentId?: string }>): { turnAgentIds?: string[] } {
+    const ids: string[] = [];
+    for (const message of messages) {
+        const id = message.role === 'user' ? message.turnAgentId?.trim() : undefined;
+        if (id && !ids.includes(id)) {
+            ids.push(id);
+        }
+    }
+    return ids.length > 0 ? { turnAgentIds: ids } : {};
+}
+
 export function conversationToSummary(conv: QaapAgentConversationDTO): QaapAgentConversationSummaryDTO {
     const last = conv.messages[conv.messages.length - 1];
     const lastTurn = [...conv.messages].reverse().find(message => message.role === 'user' && (message.turnAgentId || message.turnAgentModel));
@@ -603,6 +621,7 @@ export function conversationToSummary(conv: QaapAgentConversationDTO): QaapAgent
         ? undefined
         : clean.length > 160 ? `${clean.slice(0, 157)}…` : clean;
     const metrics = buildConversationListMetrics({ status, messages: conv.messages });
+    const baselineCommit = resolveTaskBaselineCommit(conv);
     const hasGitOperation = metrics.hasGitOperation || conv.linkedPullRequest
         ? true
         : undefined;
@@ -630,6 +649,7 @@ export function conversationToSummary(conv: QaapAgentConversationDTO): QaapAgent
             ? { agentModel: conv.agentModel ?? conv.qaiqModel }
             : {}),
         ...(lastTurn?.turnAgentId ? { lastTurnAgentId: lastTurn.turnAgentId } : {}),
+        ...turnAgentIdsField(conv.messages),
         ...(lastTurn?.turnAgentModel ? { lastTurnAgentModel: lastTurn.turnAgentModel } : {}),
         ...(conv.interactionModeId ? { interactionModeId: conv.interactionModeId } : {}),
         ...(conv.approvalPolicyId ? { approvalPolicyId: conv.approvalPolicyId } : {}),
@@ -646,6 +666,10 @@ export function conversationToSummary(conv: QaapAgentConversationDTO): QaapAgent
         ...(conv.sideChatParentId ? { sideChatParentId: conv.sideChatParentId } : {}),
         ...(conv.taskPlanSubtaskId ? { taskPlanSubtaskId: conv.taskPlanSubtaskId } : {}),
         ...metrics,
+        // The backend's settled task totals are authoritative: text-parsed numbers only fill in when there are none.
+        ...(conv.gitDiffAdded !== undefined ? { linesAdded: conv.gitDiffAdded } : {}),
+        ...(conv.gitDiffRemoved !== undefined ? { linesRemoved: conv.gitDiffRemoved } : {}),
+        ...(baselineCommit ? { baselineCommit } : {}),
         hasGitOperation,
         ...(conv.contextUsage ? { contextUsage: conv.contextUsage } : {}),
         ...(conv.contextWindowSize ? { contextWindowSize: conv.contextWindowSize } : {}),
