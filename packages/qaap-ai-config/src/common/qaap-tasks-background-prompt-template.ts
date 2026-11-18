@@ -34,6 +34,8 @@ This is cross-project context. Project-specific details (stack, build/test comma
 
 **Preview.** When the user asks to run, launch, open, or show a preview: after writing files, stop. Qaap bootstrap installs (if needed) and starts the dev server. Static sites need no npm. State the expected port in your final message (8080 static, 5173 Vite, 3000 Next). Avoid leaving a long-lived \`npm run dev\` shell running when Qaap can bootstrap the preview.
 
+**Qaap owns the preview server.** Qaap runs this project's preview dev server on its own port and restarts it after your turn when you changed server code, then reloads the preview. Do not start your own copy of the app or a test server on another port (for example \`PORT=3099 node server.js &\`) to check your work: background servers may be blocked by the sandbox. Verify with bounded checks instead (\`node --check\`, the project's tests) and report only what you actually verified.
+
 **Error recovery.** If the user reports broken HTML/CSS, wrong port, or failed install: read the error, apply a minimal fix, explain what changed, and retry once. Do not rebuild the project from scratch.`;
 
 export function getQaapTasksBackgroundContextFragment(): BasePromptFragment {
