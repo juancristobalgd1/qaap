@@ -17,14 +17,17 @@ import { Widget as LuminoWidget } from '@lumino/widgets';
 import { PreferencesWidget } from '@theia/preferences/lib/browser/views/preference-widget';
 import { PreferencesSearchbarWidget } from '@theia/preferences/lib/browser/views/preference-searchbar-widget';
 import {
+    type QaapAuthUser,
     qaapAuthUserInitials,
     readQaapAuthUser,
 } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import {
     createQaapBillingCheckout,
     fetchQaapBilling,
+    readQaapDesktopGithubCredential,
     type QaapBillingApiResponse,
 } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
+import type { QaapAuthSessionGithubCredential } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import { QaapUserFacingErrors } from '@theia/qaap-adapters/lib/common/qaap-user-facing-error';
 import { listAllConversationGroups } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { isWorkHubTheiaDialogOpen } from '../common/qaap-work-hub-dialog-utils';
@@ -121,6 +124,53 @@ function createWorkHubSettingsGroupLabel(label: string): HTMLElement {
     heading.setAttribute('role', 'presentation');
     heading.textContent = label;
     return heading;
+}
+
+/** What the Profile card shows for the signed-in account, the desktop GitHub credential, or nobody. */
+export interface WorkHubProfileIdentity {
+    readonly name: string;
+    readonly detail: string;
+    readonly avatarUrl?: string;
+    readonly initials: string;
+    readonly provider: 'github' | 'gitlab';
+    /** The contribution graph only makes sense with an identity to attribute it to. */
+    readonly showActivity: boolean;
+}
+
+export function resolveWorkHubProfileIdentity(
+    user: QaapAuthUser | undefined,
+    credential: QaapAuthSessionGithubCredential | undefined,
+): WorkHubProfileIdentity {
+    if (user) {
+        return {
+            name: user.name || user.login,
+            detail: user.login ? `@${user.login}` : '',
+            avatarUrl: user.avatarUrl,
+            initials: qaapAuthUserInitials(user),
+            provider: user.provider === 'gitlab' ? 'gitlab' : 'github',
+            showActivity: true,
+        };
+    }
+    if (credential) {
+        const login = credential.user.login;
+        return {
+            name: credential.user.name || login,
+            detail: credential.source === 'gh-cli'
+                ? nls.localize('qaap/workHubSettings/profile/connectedViaGh', 'Connected through the GitHub CLI as {0}', login)
+                : nls.localize('qaap/workHubSettings/profile/connectedViaCredential', 'Connected with your GitHub credential as {0}', login),
+            avatarUrl: credential.user.avatarUrl,
+            initials: qaapAuthUserInitials({ ...credential.user, provider: 'github' } as QaapAuthUser),
+            provider: 'github',
+            showActivity: true,
+        };
+    }
+    return {
+        name: nls.localize('qaap/workHubSettings/profile/notSignedIn', 'Not signed in'),
+        detail: nls.localize('qaap/workHubSettings/profile/connectAccount', 'Connect a GitHub account to sync your profile.'),
+        initials: '?',
+        provider: 'github',
+        showActivity: false,
+    };
 }
 
 export function isWorkHubAiFeaturesPreferencesQuery(query?: string): boolean {
@@ -1001,48 +1051,50 @@ export class MobileWorkHubPreferencesSheet {
 
     protected renderProfileSection(): void {
         const panel = this.createCustomPanel();
-        const user = readQaapAuthUser();
+        const desktopCredential = environment.electron.is() ? readQaapDesktopGithubCredential() : undefined;
+        const authUser = readQaapAuthUser();
+        // Desktop runs in local mode with a placeholder (non-GitHub) user: the GitHub credential describes the account.
+        const identityInfo = resolveWorkHubProfileIdentity(
+            desktopCredential && authUser?.provider !== 'github' ? undefined : authUser,
+            desktopCredential,
+        );
         const card = this.createSettingsCard('theia-mobile-work-hub-settings-profile-card');
         const identity = document.createElement('div');
         identity.className = 'theia-mobile-work-hub-settings-profile-identity';
 
         const avatar = document.createElement('div');
         avatar.className = 'theia-mobile-work-hub-settings-profile-avatar';
-        if (user?.avatarUrl) {
+        if (identityInfo.avatarUrl) {
             const image = document.createElement('img');
-            image.src = user.avatarUrl;
+            image.src = identityInfo.avatarUrl;
             image.alt = '';
             image.draggable = false;
             image.referrerPolicy = 'no-referrer';
             image.decoding = 'async';
             avatar.append(image);
         } else {
-            avatar.textContent = user ? qaapAuthUserInitials(user) : '?';
+            avatar.textContent = identityInfo.initials;
         }
 
         const details = document.createElement('div');
         details.className = 'theia-mobile-work-hub-settings-profile-details';
         const name = document.createElement('strong');
-        name.textContent = user?.name || user?.login || nls.localize(
-            'qaap/workHubSettings/profile/notSignedIn',
-            'Not signed in',
-        );
+        name.textContent = identityInfo.name;
         const login = document.createElement('span');
-        login.textContent = user?.login ? `@${user.login}` : nls.localize(
-            'qaap/workHubSettings/profile/connectAccount',
-            'Connect a GitHub account to sync your profile.',
-        );
+        login.textContent = identityInfo.detail;
         details.append(name, login);
         identity.append(avatar, details);
 
         const provider = document.createElement('span');
         provider.className = 'theia-mobile-work-hub-settings-profile-provider';
-        provider.textContent = user?.provider === 'gitlab'
+        provider.textContent = identityInfo.provider === 'gitlab'
             ? 'GitLab'
             : nls.localize('qaap/workHubSettings/profile/github', 'GitHub');
         card.append(identity, provider);
         panel.append(card);
-        this.renderProfileActivity(panel);
+        if (identityInfo.showActivity) {
+            this.renderProfileActivity(panel);
+        }
         this.customContentHost.append(panel);
     }
 

@@ -12,6 +12,7 @@ const disableImportJSDOM = enableJSDOM();
 import { expect } from 'chai';
 import {
     isWorkHubAiFeaturesPreferencesQuery,
+    resolveWorkHubProfileIdentity,
     WORK_HUB_AI_FEATURES_PREFERENCES_QUERY,
 } from './mobile-work-hub-preferences-sheet';
 
@@ -27,5 +28,20 @@ describe('isWorkHubAiFeaturesPreferencesQuery', () => {
         expect(isWorkHubAiFeaturesPreferencesQuery(undefined)).to.equal(false);
         expect(isWorkHubAiFeaturesPreferencesQuery('')).to.equal(false);
         expect(isWorkHubAiFeaturesPreferencesQuery('editor')).to.equal(false);
+    });
+});
+
+describe('resolveWorkHubProfileIdentity', () => {
+    it('shows the GitHub CLI credential instead of "Not signed in" and keeps the activity graph', () => {
+        const identity = resolveWorkHubProfileIdentity(undefined, { source: 'gh-cli', user: { provider: 'github', login: 'octo', name: 'Octo Cat' } });
+        expect(identity.name).to.equal('Octo Cat');
+        expect(identity.detail).to.equal('Connected through the GitHub CLI as octo');
+        expect(identity.showActivity).to.equal(true);
+    });
+
+    it('shows "Not signed in" and no activity graph when there is no identity at all', () => {
+        const identity = resolveWorkHubProfileIdentity(undefined, undefined);
+        expect(identity.name).to.equal('Not signed in');
+        expect(identity.showActivity).to.equal(false);
     });
 });
