@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
+import { Emitter } from '@theia/core/lib/common/event';
 import { nls } from '@theia/core/lib/common/nls';
 import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { peekPreferDesktopIde } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
@@ -180,6 +181,10 @@ export class QaapWorkHubAuxPanel {
     protected readonly menuList: HTMLElement;
     protected readonly resizeHandle: HTMLElement;
     protected readonly toDispose = new DisposableCollection();
+    protected readonly openStateEmitter = new Emitter<boolean>();
+    /** Fires with the open state whenever the panel opens or closes, so controls elsewhere (e.g. Settings) stay in step. */
+    readonly onDidChangeOpenState = this.openStateEmitter.event;
+    protected lastNotifiedOpenState = false;
     protected menuDispose: Disposable = Disposable.NULL;
 
     protected dockedElement: HTMLElement | undefined;
@@ -330,6 +335,7 @@ export class QaapWorkHubAuxPanel {
         this.model.open = false;
         this.collapse();
         this.persist();
+        this.notifyOpenState();
     }
 
     /**
@@ -411,6 +417,7 @@ export class QaapWorkHubAuxPanel {
     dispose(): void {
         this.closeMenu();
         this.toDispose.dispose();
+        this.openStateEmitter.dispose();
         this.collapse();
         this.element.remove();
     }
@@ -430,6 +437,16 @@ export class QaapWorkHubAuxPanel {
         this.applyMaximized();
         this.syncToggleButtons();
         this.notifyLayout();
+        this.notifyOpenState();
+    }
+
+    /** Fires `onDidChangeOpenState` once per real change of the open state. */
+    protected notifyOpenState(): void {
+        const open = this.isOpen;
+        if (open !== this.lastNotifiedOpenState) {
+            this.lastNotifiedOpenState = open;
+            this.openStateEmitter.fire(open);
+        }
     }
 
     protected collapse(): void {

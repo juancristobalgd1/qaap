@@ -421,62 +421,6 @@ describe('mobile-work-hub-sessions-sidebar', () => {
         sidebar.hide();
     });
 
-    it('toggles the desktop right panel from the Settings header only where a right panel applies', () => {
-        const currentWindow = (global as { window?: Window }).window;
-        (global as { window?: Window }).window = {
-            ...currentWindow,
-            setTimeout: (callback: (...args: unknown[]) => void, delayMs?: number) =>
-                setTimeout(callback, delayMs ?? 0) as unknown as number,
-            clearTimeout: (id: number) => clearTimeout(id),
-        } as unknown as Window;
-        const options: MobileWorkHubSettingsSidebarOptions = {
-            sections: [],
-            activeSectionId: () => 'general',
-            onBack: () => undefined,
-            onClose: () => undefined,
-            onSectionSelected: () => undefined,
-            onSearch: () => undefined,
-        };
-        let available = false;
-        let open = false;
-        let toggles = 0;
-        const sidebar = new MobileWorkHubSessionsSidebar({
-            renderSessionList: () => undefined,
-            onNewChat: () => undefined,
-            onClose: () => undefined,
-            resolveAuxPanelToggle: () => available
-                ? {
-                    get isOpen(): boolean {
-                        return open;
-                    },
-                    toggle: (): void => {
-                        open = !open;
-                        toggles++;
-                    },
-                }
-                : undefined,
-        });
-        document.body.append(sidebar.node);
-
-        sidebar.showSettings(options);
-        const toggle = sidebar.node.querySelector('.theia-mobile-work-hub-sessions-sidebar-aux-toggle') as HTMLElement;
-        expect(toggle.hidden).to.equal(true);
-
-        available = true;
-        sidebar.showSettings(options);
-        expect(toggle.hidden).to.equal(false);
-        expect(toggle.getAttribute('aria-expanded')).to.equal('false');
-
-        toggle.click();
-        expect(toggles).to.equal(1);
-        expect(toggle.getAttribute('aria-expanded')).to.equal('true');
-
-        sidebar.showSessions();
-        expect(toggle.hidden).to.equal(true);
-        sidebar.hide();
-        (global as { window?: Window }).window = currentWindow;
-    });
-
     it('keeps Pull requests active while the sidebar is collapsed', () => {
         const currentWindow = (global as { window?: Window }).window;
         (global as { window?: Window }).window = {

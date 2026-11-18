@@ -326,6 +326,19 @@ describe('qaap-work-hub-aux-panel', () => {
         expect(toggle.getAttribute('aria-expanded')).to.equal('false');
     });
 
+    it('fires onDidChangeOpenState once per real change of the open state', () => {
+        const { panel } = createHarness();
+        const states: boolean[] = [];
+        panel.onDidChangeOpenState(open => states.push(open));
+
+        panel.toggle();
+        panel.show();
+        panel.toggle();
+        panel.hide();
+        panel.hide();
+        expect(states).to.deep.equal([true, false]);
+    });
+
     it('restores the open panel and its active view after a reload', () => {
         const storage = memoryStorage();
         const first = createHarness({ storage });

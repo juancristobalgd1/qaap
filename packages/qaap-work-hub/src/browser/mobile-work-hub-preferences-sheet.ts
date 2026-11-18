@@ -44,6 +44,9 @@ import type {
     MobileWorkHubSettingsSidebarOptions,
 } from './mobile-work-hub-sessions-sidebar';
 import { MobileWorkHubMcpServerSummary } from './mobile-work-hub-mcp-server-summary';
+import { createQaapWorkHubRightPanelGlyph } from './qaap-work-hub-right-panel-glyph';
+import { resolveWorkHubAuxPanelForSettingsToggle } from './mobile-projects-execution-surface-tabs-ui';
+import type { QaapWorkHubAuxPanel } from './qaap-work-hub-aux-panel';
 import { MobileWorkHubActivityCalendar } from './mobile-work-hub-activity-calendar';
 import { collectQaapActivityTimestamps } from '../common/qaap-activity-calendar';
 import {
@@ -137,6 +140,10 @@ export class MobileWorkHubPreferencesSheet {
     protected readonly customContentHost: HTMLElement;
     protected readonly titleEl: HTMLElement;
     protected readonly restoreDefaultsButton: HTMLButtonElement;
+    /** Right end of the content header: toggles the desktop right panel, as the chat header chevron does. */
+    protected readonly auxPanelToggleButton: HTMLButtonElement;
+    protected auxPanel: QaapWorkHubAuxPanel | undefined;
+    protected auxPanelSubscription: Disposable = Disposable.NULL;
     protected readonly notificationSettings = new QaapWorkHubNotificationSettings();
     protected previewCompletionSound: QaapCompletionSound | undefined;
     protected keybindingsRender: Disposable | undefined;
@@ -396,7 +403,18 @@ export class MobileWorkHubPreferencesSheet {
         openSidebarButton.addEventListener('click', () => this.setSettingsSidebarCollapsed(false));
         this.settingsSidebarOpenButton = openSidebarButton;
 
-        header.append(openSidebarButton, crumb, crumbSeparator, title, this.restoreDefaultsButton);
+        const auxPanelToggleButton = document.createElement('button');
+        auxPanelToggleButton.type = 'button';
+        auxPanelToggleButton.className = 'theia-mobile-work-hub-settings-aux-toggle';
+        auxPanelToggleButton.hidden = true;
+        auxPanelToggleButton.append(createQaapWorkHubRightPanelGlyph());
+        auxPanelToggleButton.addEventListener('click', () => {
+            resolveWorkHubAuxPanelForSettingsToggle()?.toggle();
+            this.refreshAuxPanelToggle();
+        });
+        this.auxPanelToggleButton = auxPanelToggleButton;
+
+        header.append(openSidebarButton, crumb, crumbSeparator, title, this.restoreDefaultsButton, auxPanelToggleButton);
 
         this.widgetHost = document.createElement('div');
         this.widgetHost.className = 'theia-mobile-work-hub-preferences-widget-host';
@@ -449,6 +467,7 @@ export class MobileWorkHubPreferencesSheet {
         this.node.classList.add('theia-mod-visible');
         this.node.setAttribute('aria-hidden', 'false');
         this.visible = true;
+        this.refreshAuxPanelToggle();
         this.settingsSidebarController?.showSettings(this.createSettingsSidebarOptions());
         const renderedSidebarWidth = this.settingsSidebar.getBoundingClientRect().width;
         if (renderedSidebarWidth > 0) {
@@ -510,10 +529,37 @@ export class MobileWorkHubPreferencesSheet {
 
     dispose(): void {
         this.unobserveWidgetHostResize();
+        this.auxPanelSubscription.dispose();
         this.mcpServerSummary?.dispose();
         this.mcpServerSummary = undefined;
         this.hide();
         this.node.remove();
+    }
+
+    /**
+     * Finds the desktop right panel and follows its open state. The toggle is shown only where a right
+     * panel applies (desktop layout); the panel's own change event keeps its `aria-expanded` live.
+     */
+    protected refreshAuxPanelToggle(): void {
+        const panel = resolveWorkHubAuxPanelForSettingsToggle();
+        if (panel !== this.auxPanel) {
+            this.auxPanelSubscription.dispose();
+            this.auxPanel = panel;
+            this.auxPanelSubscription = panel?.onDidChangeOpenState(() => this.updateAuxPanelToggle()) ?? Disposable.NULL;
+        }
+        this.updateAuxPanelToggle();
+    }
+
+    protected updateAuxPanelToggle(): void {
+        const panel = this.auxPanel;
+        this.auxPanelToggleButton.hidden = !panel;
+        if (!panel) {
+            return;
+        }
+        const label = nls.localize('qaap/workHubAuxPanel/toggle', 'Toggle views panel');
+        this.auxPanelToggleButton.title = label;
+        this.auxPanelToggleButton.setAttribute('aria-label', label);
+        this.auxPanelToggleButton.setAttribute('aria-expanded', String(panel.isOpen));
     }
 
     protected getMcpServerSummary(): MobileWorkHubMcpServerSummary | undefined {

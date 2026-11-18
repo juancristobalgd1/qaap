@@ -13142,6 +13142,49 @@ body.theia-mod-work-hub-settings-resizing * {
   line-height: 1.2;
 }
 
+/* Right end of the content header: toggles the desktop right panel. Same 16px glyph, stroke and pressed
+   look as the chat header's view trigger; hidden where no right panel applies (`hidden` attribute). */
+.theia-mobile-work-hub-settings-aux-toggle {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin-left: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  color: var(--theia-descriptionForeground);
+  background: transparent;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.theia-mobile-work-hub-settings-aux-toggle[hidden] {
+  display: none;
+}
+
+.theia-mobile-work-hub-settings-aux-toggle:hover,
+.theia-mobile-work-hub-settings-aux-toggle:focus-visible,
+.theia-mobile-work-hub-settings-aux-toggle[aria-expanded='true'] {
+  color: var(--theia-foreground);
+  background: var(--theia-toolbar-hoverBackground, rgba(255, 255, 255, 0.08));
+  outline: none;
+}
+
+.theia-mobile-work-hub-settings-aux-toggle svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+  overflow: visible;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .theia-mobile-work-hub-settings-sidebar-toggle-open {
   display: none !important;
 }
