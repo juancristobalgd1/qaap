@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { createMobileTurnResultFooterElement, MOBILE_TURN_RESULT_CLASS } from './mobile-turn-result-footer';
+import { createMobileTurnResultFooterElement, MOBILE_TURN_RESULT_CLASS, refreshMobileTurnResultFooterPreviews } from './mobile-turn-result-footer';
 import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 describe('mobile-turn-result-footer', () => {
@@ -80,5 +80,23 @@ describe('mobile-turn-result-footer', () => {
         const { handlers: h } = handlers();
         const footer = createMobileTurnResultFooterElement({ state: { previewState: 'none', canCreatePr: false } }, h);
         expect(footer.querySelector(`.${MOBILE_TURN_RESULT_CLASS}-verdict`)).to.equal(null);
+    });
+
+    it('leaves "Starting preview…" once the preview is live, without repainting the turn', () => {
+        const { calls, handlers: h } = handlers();
+        let previewState: 'starting' | 'live' = 'starting';
+        const footer = createMobileTurnResultFooterElement({ state: { previewState, canCreatePr: true } }, h, () => previewState);
+        const root = document.createElement('div');
+        root.append(footer);
+        expect(buttonLabels(footer)).to.deep.equal(['Starting preview…', 'Create PR']);
+
+        refreshMobileTurnResultFooterPreviews(root);
+        expect(buttonLabels(footer)).to.deep.equal(['Starting preview…', 'Create PR']);
+
+        previewState = 'live';
+        refreshMobileTurnResultFooterPreviews(root);
+        expect(buttonLabels(footer)).to.deep.equal(['Open preview', 'Create PR']);
+        footer.querySelector<HTMLButtonElement>('.theia-mod-secondary')!.click();
+        expect(calls).to.deep.equal(['open']);
     });
 });

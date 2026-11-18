@@ -214,7 +214,7 @@ function appendTurnResultFooter(
         onRunPreview: () => api?.runTurnResultPreview(conv),
         onCreatePr: () => api?.createTurnResultPullRequest(conv),
         onContinue: () => api?.focusTurnResultComposer(),
-    }));
+    }, () => api?.resolveTurnResultState(conv)?.previewState ?? state.previewState));
 }
 
 export function appendMobileDiffSummaryExtracted(ctx: MobileProjectsTranscriptMessagesArtifactsUiContext, segmentsBody: HTMLElement,

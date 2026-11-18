@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { refreshMobileTurnResultFooterPreviews } from '@theia/qaap-transcript/lib/browser/mobile-turn-result-footer';
 import URI from '@theia/core/lib/common/uri';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import type { CommandRegistry } from '@theia/core/lib/common/command';
@@ -530,6 +531,8 @@ export class MobileProjectsTranscriptStickyComposerUi {
 
     refreshComposerActivityStack(): void {
         refreshComposerActivityStackExtracted(this);
+        // The turn-result footers read the same preview state: keep their button in step.
+        refreshMobileTurnResultFooterPreviews(document);
     }
 
     /** Refresh only the empty-composer quick actions when preview startup changes state. */
