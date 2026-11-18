@@ -45,13 +45,13 @@ test.describe('Theia Toolbar', () => {
         expect(await toolbar.isShown()).toBe(true);
     });
 
+    // Qaap: without @theia/api-samples the toolbar shows the upstream defaults, without the sample tool.
     test('should show the default toolbar tools of the sample Theia application', async () => {
-        expect(await toolbar.toolbarItems()).toHaveLength(5);
+        expect(await toolbar.toolbarItems()).toHaveLength(4);
         expect(await toolbar.toolbarItemIds()).toStrictEqual([
             'textEditor.commands.go.back',
             'textEditor.commands.go.forward',
             'workbench.action.splitEditorRight',
-            'theia-sample-toolbar-contribution',
             'workbench.action.showCommands'
         ]);
     });

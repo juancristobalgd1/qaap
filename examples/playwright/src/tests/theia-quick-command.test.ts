@@ -48,7 +48,8 @@ test.describe('Theia Quick Command', () => {
 
     test('should trigger \'About\' command after typing', async () => {
         await quickCommand.type('About');
-        await quickCommand.trigger('About Theia');
+        // Qaap: no @theia/api-samples text replacement, so the command keeps its plain label.
+        await quickCommand.trigger('About');
         expect(await quickCommand.isOpen()).toBe(false);
         const aboutDialog = new TheiaAboutDialog(app);
         expect(await aboutDialog.isVisible()).toBe(true);
@@ -68,7 +69,8 @@ test.describe('Theia Quick Command', () => {
         expect(await explorerView.isDisplayed()).toBe(true);
     });
 
-    test('should trigger \'Quick Input: Test Positive Integer\' command by confirming via Enter', async () => {
+    // Qaap: the example apps no longer bundle @theia/api-samples, which contributed this command.
+    test.skip('should trigger \'Quick Input: Test Positive Integer\' command by confirming via Enter', async () => {
         await quickCommand.type('Test Positive', true);
         expect(await quickCommand.isOpen()).toBe(true);
         await quickCommand.type('6', true);
