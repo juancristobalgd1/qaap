@@ -36,6 +36,7 @@ import { reconcileExpandedReviewFiles, selectFileAfterRefresh } from './qaap-dif
 import { watchReviewRootFileChanges } from './qaap-diff-review-file-watch';
 import { QaapCommitMessageAi } from './qaap-commit-message-ai';
 import { QaapAsyncConcurrencyLimiter } from '@theia/qaap-shared-core/lib/browser/qaap-async-concurrency-limiter';
+import { QaapLiveTaskDiff } from '@theia/qaap-shared-core/lib/common/qaap-live-task-diff';
 import {
     evaluateVerifyCommitReadiness,
     localizeVerifyCommitReadiness,
@@ -437,7 +438,12 @@ export class QaapDiffReviewWidget extends ReactWidget {
     protected override onActivateRequest(message: Message): void {
         super.onActivateRequest(message);
         this.trackRepository();
-        this.node.focus();
+        // The widget root is not focusable by default: without a tabindex, focus() is a no-op and the
+        // shell logs "did not accept focus after 2000ms".
+        if (!this.node.hasAttribute('tabindex')) {
+            this.node.tabIndex = -1;
+        }
+        this.node.focus({ preventScroll: true });
     }
 
     protected async refresh(): Promise<void> {
@@ -484,6 +490,11 @@ export class QaapDiffReviewWidget extends ReactWidget {
                 return;
             }
             this.files = body.files ?? [];
+            // A live task-scope read is the task's current total: the chat and Work Hub show this number too.
+            const taskBaseCommit = QaapDiffReviewScope.baseCommit(this.activeScope(), this.repositoryContext?.baselineCommit, this.baselineFallback);
+            if (taskBaseCommit) {
+                QaapLiveTaskDiff.publish(taskBaseCommit, QaapLiveTaskDiff.sum(this.files));
+            }
             this.branchName = body.branch;
             this.prReadiness = body.prReadiness;
             this.gitIdentity = body.gitIdentity;
