@@ -2,6 +2,24 @@
 
 Estado para continuar el trabajo desde otra cuenta o sesión. Actualízalo al cerrar cada tarea: qué queda pendiente, cómo se validó y qué limitaciones conviene conocer. La política de modelos está en la sección «Selección de modelos y orquestación» de `CLAUDE.md`.
 
+## 2026-11-18 — Servidor MCP de GitHub gestionado (rama `feat/work-hub-harness-round2`)
+
+**Hecho (commits)**
+- `39a38fdeb` credencial de GitHub resuelta por el servidor gestionado; `a3a6fd17a` servidor MCP de GitHub gestionado, de solo lectura; `ff469df2b` arranque bajo demanda; `10e8e1cb3` la entrada GitHub legacy no arranca y queda retirada; `fb41fe62a` la retirada legacy llega también al espejo de settings por usuario; `596ae9be4` la identidad del servidor gestionado no se puede suplantar; `5411fb2ac` chip «Connect GitHub», estado de credencial y rechazo por política; `6db2fd99f` documentación del límite de tokens.
+
+**Verificación en vivo (2026-11-18, Electron de prueba :9334, `npm run build:electron` sin errores)**
+- Al arrancar: 0 quick inputs y 0 procesos `server-github`. Captura `/tmp/round2-shots/v6-a-startup.png`.
+- Agente GitHub: no aparece en el selector de menciones del composer (solo OpenCode, Claude Code, Codex, Copilot CLI, Cursor Agent, Grok Build, Pi y Antigravity). Escribir «@GitHub» como texto no elige ningún agente. Dos turnos de prueba en Mockup (modelo beam-free) con «list my 3 most recent repositories using the GitHub tools» respondieron con 3 repos, pero con «Run 2 commands» (shell `gh repo list`). No se invocó ninguna herramienta `mcp__qaap-github_*` y el log del backend no contiene «qaap-github» ni arranque del servidor GitHub. Capturas `v6-b-turn-60s.png` y `v6-b-retry-turn.png`.
+- Confianza: no apareció «Trust workspace for GitHub». Sí apareció «This workspace has uncommitted changes» en notes-dev (public/index.html, public/style.css); se canceló sin aceptar «Continue here» ni «Start clean». Además, un toast «Could not open qa-sandbox/notes-dev: GitHub sign-in required» (`v6-b-cancelled.png`).
+- Secretos: 0 coincidencias de `gho_|ghp_|github_pat_` en el log del Electron de prueba ni en `~/.qaap/users/_dev/settings.json`.
+- PR #534 (una comprobación): 2 pasados (`CI gate`, `qaap:drift-check`), 0 fallidos, 13 pendientes.
+
+**Pendiente**
+- Diagnosticar por qué el agente GitHub gestionado no aparece en el selector ni invoca `mcp__qaap-github_*`. Hasta entonces, la prueba de extremo a extremo del servidor gestionado no está hecha.
+- Escritura opcional (paso 4 del diseño), no implementada.
+- Verificaciones del VPS 1-5.
+- «Connect GitHub» en escritorio navega la página entera en vez de abrir el sign-in en el panel.
+
 ## 2026-11-17 — Ronda 2b (PR #534)
 
 **Hecho**
