@@ -43,6 +43,8 @@ import {
     QaapMissingCloneRecovery,
 } from '@theia/qaap-shared-core/lib/node/qaap-missing-clone-recovery';
 import { resolveQaapBuiltinAgentMentionId } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
+import { resolveQaapHarnessBaseId } from '@theia/qaap-shared-core/lib/common/qaap-harness-launch-settings';
+import { checkQaapHarnessBinaryPath, checkQaapHarnessHomeDir, isQaapHarnessLaunchOverrideRuntime } from './qaap-harness-launch-overrides';
 import type { QaapAgentTask, QaapAgentTaskCwdGroup } from '../common/qaap-agent-task';
 import { QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import { QaapAsyncRoute } from '@theia/qaap-shared-core/lib/node/qaap-async-route';
@@ -156,6 +158,9 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         app.get(`${QAAP_AGENT_TASK_API_PATH}/agent-models`, QaapAsyncRoute.wrap('qaap-agent-task', (req, res) => this.handleListAgentModels(req, res)));
         app.get(`${QAAP_AGENT_TASK_API_PATH}/harness-status`, (req, res) => {
             this.handleListHarnessStatuses(req, res);
+        });
+        app.post(`${QAAP_AGENT_TASK_API_PATH}/harness-settings/check`, (req, res) => {
+            this.handleCheckHarnessLaunchSettings(req, res);
         });
         // Static `/cli-updates` segments must register before `/:id` below.
         app.get(`${QAAP_AGENT_TASK_API_PATH}/cli-updates`, QaapAsyncRoute.wrap('qaap-agent-task', (req, res) => this.handleListCliUpdates(req, res)));
@@ -452,10 +457,12 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         // The native catalogs are keyed by canonical ids (`codex`, `claude`, ...), while a
         // client may send `@codex` or a builtin alias when it drills into the same picker.
         const normalizedAgent = requestedAgent.replace(/^@/, '').trim().toLowerCase();
-        const agent = resolveQaapBuiltinAgentMentionId(normalizedAgent) ?? normalizedAgent;
+        // A harness instance (`codex#2`) offers its base harness's catalog; its own switch decides.
+        const baseAgent = resolveQaapHarnessBaseId(normalizedAgent);
+        const agent = resolveQaapBuiltinAgentMentionId(baseAgent) ?? baseAgent;
         const login = this.auth.resolveUserLogin(ctx);
         // A harness the owner turned off in Settings offers no models, not even its Free ones.
-        if (!this.runner.isAgentEnabled(agent, login)) {
+        if (!this.runner.isAgentEnabled(normalizedAgent === baseAgent ? agent : normalizedAgent, login)) {
             res.setHeader('Cache-Control', 'no-store');
             res.json({ agent: requestedAgent, models: [] });
             return;
@@ -555,7 +562,32 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 ownerLogin,
                 agentId => this.cliUpdates.isAgentInstallSupported(agentId, installTarget),
             ).map(harness => ({ ...harness, installPackageAvailable: this.cliUpdates.hasInstallablePackage(harness.id) })),
+            launchOverridesSupported: isQaapHarnessLaunchOverrideRuntime(),
         } satisfies QaapAgentHarnessStatusResponse);
+    }
+
+    /**
+     * Checks a binary path / configuration folder typed in Settings → Harness. Desktop app only: anywhere
+     * else the fields are ignored by the runner and this route answers 404, so it never probes the server's
+     * file system for a web user.
+     */
+    protected handleCheckHarnessLaunchSettings(req: Request, res: Response): void {
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return;
+        }
+        if (!isQaapHarnessLaunchOverrideRuntime()) {
+            res.status(404).json({ error: 'Harness binary and configuration folder overrides are only available in the desktop app.' });
+            return;
+        }
+        const body = (req.body ?? {}) as { binaryPath?: unknown; homeDir?: unknown };
+        const binaryPath = typeof body.binaryPath === 'string' ? body.binaryPath.trim() : '';
+        const homeDir = typeof body.homeDir === 'string' ? body.homeDir.trim() : '';
+        res.setHeader('Cache-Control', 'no-store');
+        res.json({
+            ...(binaryPath ? { binaryPathIssue: checkQaapHarnessBinaryPath(binaryPath) ?? undefined } : {}),
+            ...(homeDir ? { homeDirIssue: checkQaapHarnessHomeDir(homeDir) ?? undefined } : {}),
+        });
     }
 
     protected async handleListCliUpdates(req: Request, res: Response): Promise<void> {

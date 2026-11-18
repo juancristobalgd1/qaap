@@ -17,6 +17,7 @@ import {
     resolveQaapBuiltinAgentMentionId,
 } from './qaap-builtin-agents';
 import { isQaapHarnessEnabled, readDisabledHarnessIds } from './qaap-harness-preferences';
+import { isQaapHarnessInstanceId, resolveQaapHarnessBaseId } from './qaap-harness-launch-settings';
 import { OPENCODE_FREE_MODEL_OPTIONS, OPENCODE_PAID_MODEL_OPTIONS } from './qaap-opencode-model-catalog';
 import { resolveStoredAgentModelForSubmit } from './qaap-agent-model-selection';
 import { getQaapDefaultAgentId } from './qaap-default-agent-id';
@@ -440,6 +441,10 @@ export function normalizeBackendAgentId(agentId: string | undefined): string | u
     const builtin = resolveQaapBuiltinAgentMentionId(id);
     if (builtin) {
         return builtin;
+    }
+    // A harness instance from Settings → Harness (`codex#2`) is a runner id of its own.
+    if (isQaapHarnessInstanceId(id) && resolveQaapBuiltinAgentMentionId(resolveQaapHarnessBaseId(id))) {
+        return id;
     }
     return id === SHELL_AGENT_ID ? SHELL_AGENT_ID : undefined;
 }

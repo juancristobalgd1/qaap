@@ -191,6 +191,8 @@ import {
     type QaapAgentConnectionSnapshot,
 } from './qaap-agent-access';
 import { childProcessEnv } from './qaap-child-process-env';
+import { withQaapHarnessInstanceDescriptors } from './qaap-harness-instance-descriptors';
+import { resolveQaapHarnessBaseId } from '@theia/qaap-shared-core/lib/common/qaap-harness-launch-settings';
 import { qaapGitReadEnv } from './qaap-child-process-env';
 
 /** How long a CLI auth probe answer is considered current before it is re-probed in the background. */
@@ -653,16 +655,18 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
 
     /** Agents the UI can offer in its picker, in priority order. */
     listAgents(ownerLogin?: string): QaapAgentDescriptor[] {
-        return listAgentsHelper(this.detectedAgents)
-            .filter(agent => this.isAgentEnabled(agent.id, ownerLogin))
+        const descriptors = listAgentsHelper(this.detectedAgents);
+        return withQaapHarnessInstanceDescriptors(descriptors, this.preferenceReaderForOwner(ownerLogin), this.isAgentEnabled.bind(this), ownerLogin)
             .map(agent => {
-                const { connectionState, probeSettled } = this.agentConnectionSnapshot(agent.id, ownerLogin);
-                const accessState = resolveAgentAccess({ agentId: agent.id, connectionState, probeSettled });
+                // A harness instance (`codex#2`) reports its base harness's session and CLI.
+                const harnessId = resolveQaapHarnessBaseId(agent.id);
+                const { connectionState, probeSettled } = this.agentConnectionSnapshot(harnessId, ownerLogin);
+                const accessState = resolveAgentAccess({ agentId: harnessId, connectionState, probeSettled });
                 const session = QaapHarnessModelAvailability.session({ connectionState, accessState, probeSettled });
                 // `available` means "can run now". A signed-out enabled harness stays listed so the picker can
                 // explain its lock; only OpenCode has a Free tier that runs without a session.
-                const available = agent.available && (session !== 'signed-out' || agent.id.trim().toLowerCase() === 'opencode');
-                const cliBin = this.antigravityCliBinFor(agent.id);
+                const available = agent.available && (session !== 'signed-out' || harnessId === 'opencode');
+                const cliBin = this.antigravityCliBinFor(harnessId);
                 return { ...agent, available, connectionState, accessState, session, ...(cliBin ? { cliBin } : {}) };
             });
     }

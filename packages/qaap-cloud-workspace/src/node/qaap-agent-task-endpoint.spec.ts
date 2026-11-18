@@ -157,6 +157,8 @@ describe('QaapAgentTaskEndpoint harness status', () => {
                 installSupported: true,
                 installPackageAvailable: true,
             }],
+            // Not the desktop app: Settings → Harness hides the binary path and configuration folder.
+            launchOverridesSupported: false,
         });
     });
 });

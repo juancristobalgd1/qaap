@@ -142,8 +142,8 @@ export class QaapStandaloneTaskModelFallback {
             ...origin.request,
             // A reused idempotency key would hand back the failed task instead of a new attempt.
             clientRequestId: undefined,
-            // Pin the agent the failed attempt resolved: the chain is that agent's.
-            agent: agentId,
+            // Pin the agent the failed attempt resolved: the chain is that agent's (and that harness instance's).
+            agent: task.harnessInstanceId ?? agentId,
             agentModel: nextModel,
             qaiqModel: nextModel,
             fallbackFromTaskId: task.id,
