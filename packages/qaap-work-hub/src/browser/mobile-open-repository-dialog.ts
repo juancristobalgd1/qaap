@@ -937,7 +937,8 @@ export class MobileOpenRepositoryDialog {
         }
         const { owner, name, fullName } = project.github;
         // Starter has one memory size: open straight away, the info row already says so.
-        if (this.planMemoryOptions?.length === 1) {
+        // Desktop has no workspace memory at all (local disk): open straight away as well.
+        if (environment.electron.is() || this.planMemoryOptions?.length === 1) {
             this.startImport({ kind: 'open', owner, name }, fullName);
             return;
         }
@@ -981,7 +982,8 @@ export class MobileOpenRepositoryDialog {
             billing = undefined;
         }
         this.planMemoryOptions = billing?.entitlements.memoryOptionsGb;
-        const starterOnly = this.planMemoryOptions?.length === 1;
+        // Desktop keeps projects on this computer's disk: no workspace memory is shown.
+        const starterOnly = !environment.electron.is() && this.planMemoryOptions?.length === 1;
         this.memoryInfoRow.hidden = !starterOnly;
         this.memoryInfoValue.replaceChildren();
         if (!starterOnly || !this.planMemoryOptions) {
@@ -1117,7 +1119,7 @@ export class MobileOpenRepositoryDialog {
         const token = ++this.publicMemoryToken;
         const repo = parseQaapGithubRepositoryInput(this.publicInput.value);
         const fullName = repo ? `${repo.owner}/${repo.name}` : undefined;
-        if (!fullName || this.planMemoryOptions?.length === 1) {
+        if (!fullName || environment.electron.is() || this.planMemoryOptions?.length === 1) {
             this.publicMemoryState = undefined;
             this.publicMemory.replaceChildren();
             this.publicMemory.hidden = true;

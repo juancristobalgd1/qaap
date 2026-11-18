@@ -10,6 +10,7 @@ import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 const disableImportJSDOM = enableJSDOM();
 
 import { expect } from 'chai';
+import { environment } from '@theia/core/lib/common';
 import { MobileOpenRepositoryDialog } from './mobile-open-repository-dialog';
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
@@ -207,5 +208,35 @@ describe('MobileOpenRepositoryDialog workspace memory', () => {
         expect(JSON.parse(requests.find(request => request.method === 'POST')!.body!)).to.deep.equal({ repo: REPO_FULL_NAME, memoryGb: 4 });
         expect(started).to.have.length(1);
         expect(started[0]).to.deep.include({ kind: 'clone', repository: REPO_FULL_NAME });
+    });
+
+    it('Desktop shows no workspace memory: no info row, no prompt and no clone picker', async () => {
+        const originalIs = environment.electron.is;
+        environment.electron.is = () => true;
+        try {
+            script.billingPlanId = 'pro';
+            script.savedMemoryGb = 2;
+            const { dialog: created, started } = createDialog();
+            const internal = created as unknown as {
+                refreshPlanMemoryInfo(): Promise<void>;
+                refreshPublicMemory(): Promise<void>;
+                onSelectRepository(p: MobileProjectEntry): Promise<void>;
+            };
+            await internal.refreshPlanMemoryInfo();
+            expect(created.node.querySelector<HTMLElement>('.theia-mobile-open-repo-memory.theia-mod-info')?.hidden).to.equal(true);
+
+            await internal.onSelectRepository(project());
+            expect(started).to.deep.equal([{ kind: 'open', owner: 'octocat', name: 'Hello-World' }]);
+            expect(requests.some(request => request.url.includes('project-resources'))).to.equal(false);
+            expect(created.node.querySelector<HTMLElement>('.theia-mobile-open-repo-memory-prompt')?.hidden).to.equal(true);
+
+            const input = created.node.querySelector<HTMLInputElement>('.theia-mobile-open-repo-public-input')!;
+            input.value = REPO_FULL_NAME;
+            await internal.refreshPublicMemory();
+            expect(created.node.querySelector<HTMLElement>('.theia-mobile-open-repo-memory-public')?.hidden).to.equal(true);
+            expect(requests.some(request => request.url.includes('project-resources'))).to.equal(false);
+        } finally {
+            environment.electron.is = originalIs;
+        }
     });
 });
