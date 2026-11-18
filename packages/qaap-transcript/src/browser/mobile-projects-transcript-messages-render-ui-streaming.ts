@@ -42,7 +42,7 @@ export function createTranscriptEmptyWelcomeExtracted(ctx: MobileProjectsTranscr
         const phraseIndex = qaapDailyWelcomePhraseIndex();
         title.textContent = nls.localize(`qaap/welcomePhrase/${phraseIndex}`, QAAP_DAILY_WELCOME_PHRASES[phraseIndex]);
 
-        welcome.append(logo, title);
+        welcome.append(logo, title, ctx.workHub.createEmptyWelcomeHints());
         return welcome;
 }
 

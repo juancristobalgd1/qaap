@@ -75,7 +75,9 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-preview-feedback-context';
 import { URI } from '@theia/core/lib/common/uri';
 import { type QaapSegmentedFieldController } from '@theia/qaap-shared-core/lib/browser/qaap-mobile-form-ui';
-import { buildQaapAccountMenuEntries, toggleQaapAccountMenu } from './qaap-workbench-account-menu';
+import { buildQaapAccountMenuEntries, QAAP_AUTH_SIGN_IN_GITHUB_COMMAND, toggleQaapAccountMenu } from './qaap-workbench-account-menu';
+import { createQaapEmptyWelcomeHints } from './qaap-empty-welcome-hints';
+import { QAAP_PROJECT_SWITCHER_COMMAND } from './qaap-project-switcher-contribution';
 import { readQaapAuthUser, readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import { QaapWorkHubShellSnapshotWriter } from '@theia/qaap-adapters/lib/browser/qaap-work-hub-shell-snapshot';
 import type { AnnotationComposerSessionControls } from '@theia/qaap-adapters/lib/browser/qaap-preview-annotation-popover';
@@ -2000,6 +2002,16 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     createAgentsHubQuickActionsBlock(): HTMLElement {
         return this.tasksHubUi.createAgentsHubQuickActionsBlock();
+    }
+
+    createEmptyWelcomeHints(): HTMLElement {
+        return createQaapEmptyWelcomeHints(readQaapSignedIn(), {
+            openProject: () => { void this.commands.executeCommand(QAAP_PROJECT_SWITCHER_COMMAND.id); },
+            startTask: () => {
+                document.querySelector<HTMLTextAreaElement>('.theia-mobile-projects-sticky-composer textarea:not([disabled])')?.focus();
+            },
+            connectGithub: () => { void this.commands.executeCommand(QAAP_AUTH_SIGN_IN_GITHUB_COMMAND); },
+        });
     }
 
     renderIdleSubmitOptimistic(chatHost: HTMLElement, summary: QaapAgentConversationSummaryDTO, draft: string, selectedAgentId: string, imagePreviews?: readonly import('@theia/qaap-shared-core/lib/common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[], contentOverride?: string,): void {

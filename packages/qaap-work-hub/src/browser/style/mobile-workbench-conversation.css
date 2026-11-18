@@ -3662,6 +3662,36 @@ body>.theia-mobile-transcript-files-menu {
   filter: drop-shadow(0 10px 28px color-mix(in srgb, var(--theia-foreground) 12%, transparent));
 }
 
+/* First-step suggestions under the welcome line: quiet text chips, clickable although the welcome itself is not. */
+.theia-mobile-agent-transcript-empty-hints {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 8px;
+  margin-top: 4px;
+  pointer-events: auto;
+}
+
+.theia-mobile-agent-transcript-empty-hint {
+  padding: 4px 10px;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 12%, transparent);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--theia-descriptionForeground);
+  font-size: 12px;
+  line-height: 1.3;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.theia-mobile-agent-transcript-empty-hint:hover,
+.theia-mobile-agent-transcript-empty-hint:focus-visible {
+  color: var(--theia-foreground);
+  border-color: color-mix(in srgb, var(--theia-foreground) 24%, transparent);
+  background: color-mix(in srgb, var(--theia-foreground) 6%, transparent);
+  outline: none;
+}
+
 .theia-mobile-agent-transcript-empty-title {
   margin: 0;
   max-width: 14em;
