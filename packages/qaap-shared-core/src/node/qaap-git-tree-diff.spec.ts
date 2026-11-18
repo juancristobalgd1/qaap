@@ -11,6 +11,7 @@ import * as path from 'path';
 import {
     assertTemporaryIndexFile,
     computeTreeDiff,
+    countTextLines,
     parseNameStatusZ,
     parseNumstatZ,
     resolveTemporaryIndexDir,
@@ -161,5 +162,23 @@ describe('qaap-git-tree-diff against a real repository', () => {
     it('returns undefined when the baseline commit does not exist', async () => {
         const tree = await snapshotWorktreeTree(root, gitWrite, path.join(root, '.git'));
         expect(await computeTreeDiff(root, '0'.repeat(40), tree!, gitRead)).to.equal(undefined);
+    });
+
+    it('countTextLines matches git numstat: a trailing newline does not add a line', () => {
+        expect(countTextLines('')).to.equal(0);
+        expect(countTextLines('a')).to.equal(1);
+        expect(countTextLines('a\n')).to.equal(1);
+        expect(countTextLines('a\nb\n')).to.equal(2);
+        expect(countTextLines('a\nb')).to.equal(2);
+    });
+
+    it('an untracked file counts the same lines as git numstat in the task total', async () => {
+        const base = git(root, ['rev-parse', 'HEAD']).stdout.trim();
+        fs.writeFileSync(path.join(root, 'fresh.txt'), 'one\ntwo\nthree\n');
+        const tree = await snapshotWorktreeTree(root, gitWrite, path.join(root, '.git'));
+        const diff = await computeTreeDiff(root, base, tree!, gitRead);
+        const exact = git(root, ['diff', '--no-index', '--numstat', '/dev/null', 'fresh.txt']).stdout.split('\t')[0];
+        expect(diff!.files.find(file => file.path === 'fresh.txt')?.added).to.equal(Number(exact));
+        expect(countTextLines(fs.readFileSync(path.join(root, 'fresh.txt'), 'utf8'))).to.equal(Number(exact));
     });
 });

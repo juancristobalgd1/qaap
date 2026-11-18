@@ -41,6 +41,7 @@ import { qaapGitReadEnv } from '@theia/qaap-shared-core/lib/node/qaap-child-proc
 import {
     assertTemporaryIndexFile,
     computeTreeDiff,
+    countTextLines,
     QAAP_GIT_TREE_ADD_ALL_TIMEOUT_MS,
     resolveTemporaryIndexDir,
     snapshotWorktreeTree,
@@ -1357,7 +1358,7 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
     protected async countLines(root: string, file: string): Promise<number> {
         try {
             const content = await fs.promises.readFile(path.join(root, file), 'utf8');
-            return content ? content.split('\n').length : 0;
+            return countTextLines(content);
         } catch {
             return 0;
         }
