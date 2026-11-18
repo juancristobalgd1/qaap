@@ -30,6 +30,14 @@ import {
 import { QaapDevPreviewEndpoint, canonicalizeQaapPreviewRoot } from '@theia/qaap-shared-core/lib/node/qaap-dev-preview-endpoint';
 import { deriveVisualFlowSteps } from '@theia/qaap-shared-core/lib/common/qaap-visual-flow-plan';
 import {
+    QAAP_PREVIEW_CHANGE_WALK_MAX_DEPTH,
+    QAAP_PREVIEW_CHANGE_WALK_MAX_ENTRIES,
+    isQaapPreviewIgnoredPath,
+    isQaapPreviewServerSideFile,
+    qaapPreviewCommandRestartsServerItself,
+    resolveQaapPreviewDevScript,
+} from '@theia/qaap-shared-core/lib/common/qaap-preview-turn-refresh';
+import {
     QAAP_PREVIEW_CONFIG_PATH,
     QaapPreviewLaunchPlan,
     materializeQaapPreviewLaunchPlan,
@@ -446,7 +454,85 @@ export function applyQaapHeadlessRuntimeDiagnostics(
 }
 
 /**
- * Resources the browser requests on its own (tab icon, home-screen icon, crawler policy, devtools
+ * Project files (relative, `/`-separated) modified after `sinceMs`, from a bounded walk that skips
+ * dependency, VCS and build-output directories.
+ */
+export async function listQaapPreviewFilesChangedSince(root: string, sinceMs: number): Promise<string[]> {
+    const changed: string[] = [];
+    let visited = 0;
+    const walk = async (dir: string, relative: string, depth: number): Promise<void> => {
+        if (depth > QAAP_PREVIEW_CHANGE_WALK_MAX_DEPTH || visited >= QAAP_PREVIEW_CHANGE_WALK_MAX_ENTRIES) {
+            return;
+        }
+        let entries: fs.Dirent[];
+        try {
+            entries = await fsp.readdir(dir, { withFileTypes: true });
+        } catch {
+            return;
+        }
+        for (const entry of entries) {
+            if (++visited > QAAP_PREVIEW_CHANGE_WALK_MAX_ENTRIES) {
+                return;
+            }
+            const childRelative = relative ? `${relative}/${entry.name}` : entry.name;
+            if (isQaapPreviewIgnoredPath(childRelative)) {
+                continue;
+            }
+            const childPath = path.join(dir, entry.name);
+            if (entry.isDirectory()) {
+                await walk(childPath, childRelative, depth + 1);
+            } else if (entry.isFile()) {
+                try {
+                    if ((await fsp.stat(childPath)).mtimeMs > sinceMs) {
+                        changed.push(childRelative);
+                    }
+                } catch {
+                    /* removed mid-walk */
+                }
+            }
+        }
+    };
+    await walk(root, '', 0);
+    return changed;
+}
+
+/**
+ * Whether the settled turn changed code the live dev server only picks up on restart. Such a
+ * server still runs the old code (a user preview Qaap started before the turn), so the capture
+ * must not reuse it: it would verify stale behaviour and keep failing after a correct fix.
+ */
+export async function qaapLivePreviewRunsStaleServerCode(
+    app: Pick<QaapHeadlessCaptureAppTarget, 'root' | 'launch'>,
+    turnStartedAt: number | undefined,
+): Promise<boolean> {
+    if (turnStartedAt === undefined) {
+        return false;
+    }
+    const devCommand = app.launch
+        ? [app.launch.command, ...app.launch.args].join(' ')
+        : resolveQaapPreviewDevScript(readPackageJson(app.root));
+    if (qaapPreviewCommandRestartsServerItself(devCommand)) {
+        return false;
+    }
+    const changed = await listQaapPreviewFilesChangedSince(app.root, turnStartedAt);
+    return changed.some(isQaapPreviewServerSideFile);
+}
+
+/** When the turn that produced `targetAgentMessageId` started: its user message, else the reply. */
+export function resolveQaapCaptureTurnStartedAt(conv: Pick<QaapAgentConversation, 'messages'>, targetAgentMessageId: string): number | undefined {
+    const index = conv.messages.findIndex(message => message.id === targetAgentMessageId);
+    if (index < 0) {
+        return undefined;
+    }
+    for (let i = index - 1; i >= 0; i--) {
+        if (conv.messages[i]!.role === 'user') {
+            return conv.messages[i]!.createdAt;
+        }
+    }
+    return conv.messages[index]!.createdAt;
+}
+
+/** Resources the browser requests on its own (tab icon, home-screen icon, crawler policy, devtools
  * source maps) rather than because the app asked for them. A 404 on one of these is not an app
  * defect, so it must never turn visual verification red.
  */
@@ -748,7 +834,11 @@ export class QaapHeadlessVisualCaptureService {
                 port = started.port;
                 publicPreview = this.registerPublicPreview(conv, app.root, port);
             } else {
-                publicPreview = await this.reserveScriptPreview(conv, app);
+                const staleLiveServer = await qaapLivePreviewRunsStaleServerCode(
+                    app,
+                    resolveQaapCaptureTurnStartedAt(conv, target.id),
+                );
+                publicPreview = await this.reserveScriptPreview(conv, app, { skipLivePreview: staleLiveServer });
                 const ready = await this.ensureScriptServer(app, publicPreview);
                 if (ready.ok) {
                     supervisedPreviewId = ready.startedPreviewId;
@@ -865,10 +955,15 @@ export class QaapHeadlessVisualCaptureService {
     protected async reserveScriptPreview(
         conv: QaapAgentConversation,
         app: QaapHeadlessCaptureAppTarget,
+        options?: { readonly skipLivePreview?: boolean },
     ): Promise<QaapHeadlessPublicPreview | undefined> {
         const ownerLogin = conv.ownerLogin ?? QAAP_SKIP_AUTH_USER_LOGIN;
         const root = canonicalizeQaapPreviewRoot(app.root);
-        const live = await this.findLiveConversationPreview(conv.id, ownerLogin, root);
+        // A live server that predates the turn's server-code change runs the old code: capture on
+        // a fresh server of our own instead (the user's preview is restarted by the Work Hub).
+        const live = options?.skipLivePreview
+            ? undefined
+            : await this.findLiveConversationPreview(conv.id, ownerLogin, root);
         if (live) {
             return {
                 identity: {
