@@ -8,6 +8,8 @@ import type { QaapAgentMessageDTO } from './qaap-agent-conversation-client';
 import {
     findQaapClosingReport,
     isQaapClosingReportTraceEvent,
+    isQaapNoticeTraceEvent,
+    QAAP_NOTICE_TRACE_ID_PREFIX,
     mergeSegmentTraceEvents,
     sanitizeQaapTraceEchoes,
     traceEventsToSegments,
@@ -119,5 +121,16 @@ describe('qaap-transcript-trace-model closing reports', () => {
             expect(findQaapClosingReport(message([{ type: 'error', id: 'error-1', message: 'boom' }]))).to.equal(undefined);
             expect(findQaapClosingReport(undefined)).to.equal(undefined);
         });
+    });
+
+    it('renders a notice trace event as plain text, not as an error', () => {
+        const notice = { type: 'error' as const, id: `${QAAP_NOTICE_TRACE_ID_PREFIX}task-pr-1`, message: 'PR ready: allow Qaap to open PRs on acme/demo?' };
+        const failure = { type: 'error' as const, id: 'task-pr-2', message: 'Task pull request was not updated: conflict' };
+        expect(isQaapNoticeTraceEvent(notice)).to.equal(true);
+        expect(isQaapNoticeTraceEvent(failure)).to.equal(false);
+        expect(traceEventsToSegments([notice, failure])).to.deep.equal([
+            { type: 'text', content: 'PR ready: allow Qaap to open PRs on acme/demo?' },
+            { type: 'text', content: 'Error: Task pull request was not updated: conflict' },
+        ]);
     });
 });
