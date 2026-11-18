@@ -446,9 +446,46 @@ export function applyQaapHeadlessRuntimeDiagnostics(
 }
 
 /**
+ * Resources the browser requests on its own (tab icon, home-screen icon, crawler policy, devtools
+ * source maps) rather than because the app asked for them. A 404 on one of these is not an app
+ * defect, so it must never turn visual verification red.
+ */
+const QAAP_BROWSER_IMPLICIT_RESOURCE_PATHS: readonly RegExp[] = [
+    /^\/favicon\.ico$/i,
+    /^\/apple-touch-icon(?:-precomposed)?(?:-\d+x\d+)?\.png$/i,
+    /^\/robots\.txt$/i,
+    /\.map$/i,
+];
+
+export function isQaapBrowserImplicitResourceUrl(url: string | undefined): boolean {
+    if (!url) {
+        return false;
+    }
+    let pathname: string;
+    try {
+        pathname = new URL(url, 'http://127.0.0.1').pathname;
+    } catch {
+        return false;
+    }
+    return QAAP_BROWSER_IMPLICIT_RESOURCE_PATHS.some(pattern => pattern.test(pathname));
+}
+
+const FAILED_RESOURCE_CONSOLE_PATTERN = /^Failed to load resource\b/i;
+
+/**
+ * Verification only observes the app: a request that could change the user's data (anything but
+ * GET/HEAD/OPTIONS) is refused before it reaches the dev server, whatever the page's scripts try.
+ */
+export function isQaapHeadlessMutatingRequestMethod(method: string | undefined): boolean {
+    const normalized = (method ?? 'GET').toUpperCase();
+    return normalized !== 'GET' && normalized !== 'HEAD' && normalized !== 'OPTIONS';
+}
+
+/**
  * Navigates one route and combines DOM smoke findings with Playwright's runtime/network truth.
  * A successful HTTP response alone can never produce `passed` when the page throws, rejects,
- * drops a request, or receives a 5xx response.
+ * drops a request, or receives a 5xx response. The capture is read-only: mutating requests are
+ * blocked, and failures of browser-implicit resources (favicon, robots.txt, source maps) are ignored.
  */
 export async function inspectQaapHeadlessPage(
     page: any,
@@ -459,26 +496,79 @@ export async function inspectQaapHeadlessPage(
     const add = (kind: string, message: unknown): void => {
         diagnostics.push(`${kind}: ${boundedDiagnostic(message)}`);
     };
+    const blockedRequests = new Set<unknown>();
+    const blockedUrls = new Set<string>();
+    /** 4xx counts, to attribute console "Failed to load resource" lines that carry no resource URL. */
+    let implicitClientErrors = 0;
+    let appClientErrors = 0;
+    const unattributedLoadFailures: string[] = [];
     const onPageError = (error: unknown): void => add('pageerror', error);
     const onConsole = (message: any): void => {
-        if (message.type?.() === 'error') {
-            add('console.error', message.text?.() ?? message);
+        if (message.type?.() !== 'error') {
+            return;
         }
+        const text = String(message.text?.() ?? message);
+        if (!FAILED_RESOURCE_CONSOLE_PATTERN.test(text)) {
+            add('console.error', text);
+            return;
+        }
+        const resourceUrl: string | undefined = message.location?.()?.url || undefined;
+        if (!resourceUrl) {
+            unattributedLoadFailures.push(text);
+            return;
+        }
+        if (isQaapBrowserImplicitResourceUrl(resourceUrl) || blockedUrls.has(resourceUrl)) {
+            return;
+        }
+        add('console.error', `${text} (${resourceUrl})`);
     };
     const onRequestFailed = (request: any): void => {
+        if (blockedRequests.has(request)) {
+            return;
+        }
+        const requestUrl: string | undefined = request.url?.();
+        if (isQaapBrowserImplicitResourceUrl(requestUrl)) {
+            return;
+        }
         const failure = request.failure?.();
-        add('requestfailed', `${request.url?.() ?? 'unknown URL'} (${failure?.errorText ?? 'unknown failure'})`);
+        add('requestfailed', `${requestUrl ?? 'unknown URL'} (${failure?.errorText ?? 'unknown failure'})`);
     };
     const onResponse = (response: any): void => {
         const status = Number(response.status?.());
-        if (status >= 500) {
-            add('http', `${status} ${response.url?.() ?? 'unknown URL'}`);
+        const responseUrl: string | undefined = response.url?.();
+        const implicit = isQaapBrowserImplicitResourceUrl(responseUrl);
+        if (status >= 400 && status < 500) {
+            if (implicit) {
+                implicitClientErrors++;
+            } else {
+                appClientErrors++;
+            }
+        }
+        if (status >= 500 && !implicit) {
+            add('http', `${status} ${responseUrl ?? 'unknown URL'}`);
+        }
+    };
+    const readOnlyGuard = async (route: any): Promise<void> => {
+        const request = route.request();
+        try {
+            if (isQaapHeadlessMutatingRequestMethod(request.method())) {
+                blockedRequests.add(request);
+                blockedUrls.add(request.url());
+                await route.abort('blockedbyclient');
+            } else {
+                await route.continue();
+            }
+        } catch {
+            /* page closed mid-request */
         }
     };
     page.on('pageerror', onPageError);
     page.on('console', onConsole);
     page.on('requestfailed', onRequestFailed);
     page.on('response', onResponse);
+    if (typeof page.route === 'function') {
+        await page.route('**/*', readOnlyGuard);
+    }
     await page.addInitScript(`(() => {
         const key = '__qaapHeadlessUnhandledRejections';
         globalThis[key] = [];
@@ -498,12 +588,22 @@ export async function inspectQaapHeadlessPage(
         for (const rejection of rejections) {
             add('unhandledrejection', rejection);
         }
+        // A URL-less "Failed to load resource" line is the browser's echo of a 4xx/5xx: when every
+        // client error on this page was a browser-implicit resource, it is that echo — drop it.
+        if (appClientErrors > 0 || implicitClientErrors === 0) {
+            for (const failure of unattributedLoadFailures) {
+                add('console.error', failure);
+            }
+        }
         return applyQaapHeadlessRuntimeDiagnostics(result, diagnostics);
     } finally {
         page.off('pageerror', onPageError);
         page.off('console', onConsole);
         page.off('requestfailed', onRequestFailed);
         page.off('response', onResponse);
+        if (typeof page.unroute === 'function') {
+            await page.unroute('**/*', readOnlyGuard).catch(() => undefined);
+        }
     }
 }
 

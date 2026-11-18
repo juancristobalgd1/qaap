@@ -17,6 +17,8 @@ import {
     applyQaapHeadlessRuntimeDiagnostics,
     type QaapHeadlessCaptureAppTarget,
     inspectQaapHeadlessPage,
+    isQaapBrowserImplicitResourceUrl,
+    isQaapHeadlessMutatingRequestMethod,
     qaapHeadlessPublicPreviewLeaseMs,
     resolveHeadlessCaptureAppTarget,
     resolveHeadlessChromiumExecutable,
@@ -409,4 +411,88 @@ describe('inspectQaapHeadlessPage', () => {
         expect(result.readiness).to.equal('failed');
         expect(result.issues).to.have.length(2);
     });
+});
+
+describe('inspectQaapHeadlessPage browser-implicit resources and read-only capture', () => {
+    it('classifies only browser-requested resources as implicit', () => {
+        for (const url of [
+            'http://127.0.0.1:3000/favicon.ico',
+            'http://127.0.0.1:3000/favicon.ico?v=2',
+            'http://127.0.0.1:3000/apple-touch-icon.png',
+            'http://127.0.0.1:3000/apple-touch-icon-precomposed.png',
+            'http://127.0.0.1:3000/apple-touch-icon-180x180.png',
+            'http://127.0.0.1:3000/robots.txt',
+            'http://127.0.0.1:3000/assets/app.js.map',
+        ]) {
+            expect(isQaapBrowserImplicitResourceUrl(url), url).to.equal(true);
+        }
+        for (const url of [
+            'http://127.0.0.1:3000/app.js',
+            'http://127.0.0.1:3000/api/todos',
+            'http://127.0.0.1:3000/static/favicon.ico.js',
+            'http://127.0.0.1:3000/missing.css',
+            undefined,
+        ]) {
+            expect(isQaapBrowserImplicitResourceUrl(url), String(url)).to.equal(false);
+        }
+        expect(isQaapHeadlessMutatingRequestMethod('GET')).to.equal(false);
+        expect(isQaapHeadlessMutatingRequestMethod('head')).to.equal(false);
+        for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
+            expect(isQaapHeadlessMutatingRequestMethod(method), method).to.equal(true);
+        }
+    });
+
+    it('passes a working app whose favicon 404s, still fails app 404s, and never sends mutating requests', async function (): Promise<void> {
+        const executablePath = resolveHeadlessChromiumExecutable();
+        if (!executablePath) {
+            this.skip();
+            return;
+        }
+        const received: string[] = [];
+        const server = http.createServer((request, response) => {
+            received.push(`${request.method} ${request.url}`);
+            if (request.url === '/' || request.url === '/broken') {
+                response.writeHead(200, { 'Content-Type': 'text/html' });
+                const extra = request.url === '/broken' ? '<link rel="stylesheet" href="/missing.css">' : '';
+                response.end('<!doctype html><html><head><link rel="icon" href="/favicon.ico">'
+                    + '<link rel="apple-touch-icon" href="/apple-touch-icon.png">' + extra + '</head>'
+                    + '<body><h1>Tareas</h1><p>A small working to-do list fixture.</p>'
+                    // Headless Chromium skips tab/home-screen icons, so request them the way a browser would.
+                    + '<script>fetch("/apple-touch-icon.png");fetch("/robots.txt");fetch("/app.js.map");</script>'
+                    + '<script>fetch("/api/todos", { method: "POST", body: JSON.stringify({ text: "probe" }) }).catch(function () {});</script>'
+                    + '</body></html>');
+                return;
+            }
+            response.writeHead(404).end();
+        });
+        await new Promise<void>((resolve, reject) => {
+            server.once('error', reject);
+            server.listen(0, '127.0.0.1', resolve);
+        });
+        const address = server.address();
+        const port = address && typeof address === 'object' ? address.port : 0;
+        const browser = await chromium.launch({
+            executablePath,
+            headless: true,
+            args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+        });
+        try {
+            const page = await browser.newPage();
+            const working = await inspectQaapHeadlessPage(page, `http://127.0.0.1:${port}/`, 200);
+            expect(working.issues.filter(issue => /console\.error|requestfailed|http:/.test(issue))).to.deep.equal([]);
+            expect(working.readiness, working.issues.join(' / ')).to.equal('render_ready');
+            expect(received.filter(line => !line.startsWith('GET '))).to.deep.equal([]);
+
+            // The fixture really served the 404 that used to turn verification red.
+            expect(received).to.include.members(['GET /apple-touch-icon.png', 'GET /robots.txt', 'GET /app.js.map']);
+
+            const broken = await inspectQaapHeadlessPage(page, `http://127.0.0.1:${port}/broken`, 200);
+            expect(broken.status).to.equal('failed');
+            expect(broken.issues.some(issue => issue.includes('missing.css'))).to.equal(true);
+            expect(broken.issues.some(issue => /apple-touch-icon|robots\.txt|\.map\b/.test(issue))).to.equal(false);
+        } finally {
+            await browser.close();
+            await new Promise<void>(resolve => server.close(() => resolve()));
+        }
+    }).timeout(120_000);
 });
