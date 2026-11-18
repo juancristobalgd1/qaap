@@ -14,6 +14,37 @@ import {
     type QaapWorkHubAuxPanelStorage,
 } from './qaap-work-hub-aux-panel-model';
 
+describe('qaap-work-hub-aux-panel-model tab titles', () => {
+    it('never shows a side chat title on a Browser tab', () => {
+        const model = new QaapWorkHubAuxPanelModel();
+        const sideChat = model.openView('side-chat');
+        model.setTabTitle(sideChat.id, 'Dime en una frase');
+        model.closeTab(sideChat.id);
+        const browser = model.openView('preview');
+        // A title that reaches a non-side-chat tab (stale map entry) must never be displayed there.
+        model.setTabTitle(browser.id, 'Dime en una frase');
+        expect(model.tabTitle(browser.id)).to.be.undefined;
+        expect(model.tabTitle(sideChat.id)).to.be.undefined;
+    });
+
+    it('drops titles of tabs that a restore replaced', () => {
+        const model = new QaapWorkHubAuxPanelModel();
+        const sideChat = model.openView('side-chat');
+        model.setTabTitle(sideChat.id, 'Dime en una frase');
+        model.restore({ open: true, tabs: ['preview', 'side-chat'], activeIndex: 0 });
+        expect(model.tabs.map(tab => tab.id)).to.not.include(sideChat.id);
+        expect(model.tabTitle(sideChat.id)).to.be.undefined;
+    });
+
+    it('names a side chat tab with its own title', () => {
+        const model = new QaapWorkHubAuxPanelModel();
+        model.openView('preview');
+        const sideChat = model.openView('side-chat');
+        model.setTabTitle(sideChat.id, 'Why is the build red?');
+        expect(model.tabTitle(sideChat.id)).to.equal('Why is the build red?');
+    });
+});
+
 function memoryStorage(): QaapWorkHubAuxPanelStorage & { entries: Map<string, string> } {
     const entries = new Map<string, string>();
     return {

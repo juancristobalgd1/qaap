@@ -162,9 +162,13 @@ export class QaapWorkHubAuxPanelModel {
         }
     }
 
-    /** The runtime name of a tab, or `undefined` when its kind's label applies. */
+    /**
+     * The runtime name of a tab, or `undefined` when its kind's label applies. Only side chats are named:
+     * a title can never be shown on another kind's tab (Browser, Changes, ...), whatever the map holds.
+     */
     tabTitle(id: string): string | undefined {
-        return this.titles.get(id);
+        const tab = this.tabList.find(entry => entry.id === id);
+        return tab?.kind === 'side-chat' ? this.titles.get(id) : undefined;
     }
 
     activate(id: string): QaapWorkHubAuxPanelTab | undefined {
@@ -242,6 +246,8 @@ export class QaapWorkHubAuxPanelModel {
         const seen = new Set<QaapWorkHubAuxPanelViewKind>();
         const kinds = Array.isArray(snapshot.tabs) ? snapshot.tabs : [];
         this.tabList = [];
+        // Restored tabs get new ids: titles keyed by the old ids must not reach them.
+        this.titles.clear();
         for (const kind of kinds) {
             if (VIEW_KINDS.includes(kind) && !seen.has(kind)) {
                 seen.add(kind);
