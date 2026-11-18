@@ -208,8 +208,10 @@ export class MobileProjectsTranscriptStickyComposerUi {
     /** Conversations whose changes were resolved while the git snapshot was absent or clean. */
     /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
     public readonly composerChangesResolvedByConversationId = new Set<string>();
-    /** Conversations whose working tree is clean (nothing to commit) — the Commit button stays
-     *  hidden across a momentary snapshot gap until fresh changes appear. */
+    /**
+     * Conversations whose working tree is clean (nothing to commit) — the Commit button stays
+     * hidden across a momentary snapshot gap until fresh changes appear.
+     */
     /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
     public readonly composerCleanTreeByConversationId = new Set<string>();
     /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
