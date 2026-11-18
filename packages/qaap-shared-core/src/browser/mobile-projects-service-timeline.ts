@@ -292,12 +292,35 @@ export function applySessionToEntryExtracted(ctx: MobileProjectsServiceContext, 
         };
 }
 
+/**
+ * Without a GitHub session the repository list answers "sign in required" on every project load. Background
+ * callers then skip the request until this backoff elapses, and that answer is logged once per episode.
+ * A successful load or a local sign-out clears the state.
+ */
+const GITHUB_SIGN_IN_REQUIRED_RETRY_MS = 60_000;
+let githubSignInRequiredSince: number | undefined;
+
+/** Clears the sign-in backoff; for specs that exercise {@link loadGithubProjectsExtracted} in isolation. */
+export function resetGithubSignInRequiredBackoffForTests(): void {
+        githubSignInRequiredSince = undefined;
+}
+
+function isGithubSignInRequiredError(err: unknown): boolean {
+        return err instanceof QaapApiRequestError && err.code === QAAP_GITHUB_SIGN_IN_REQUIRED_CODE;
+}
+
 export async function loadGithubProjectsExtracted(ctx: MobileProjectsServiceContext, sessionMap: Map<string, QaapProjectSessionSummary>, includeUnopened: boolean, surfaceSignInRequired = false): Promise<MobileProjectEntry[]> {
         if (!readQaapSignedIn()) {
+            githubSignInRequiredSince = undefined;
+            return [];
+        }
+        if (!surfaceSignInRequired && githubSignInRequiredSince !== undefined
+            && Date.now() - githubSignInRequiredSince < GITHUB_SIGN_IN_REQUIRED_RETRY_MS) {
             return [];
         }
         try {
             const response = await fetchQaapGithubRepositories();
+            githubSignInRequiredSince = undefined;
             const pinnedIds = ctx.readPinnedProjectIds();
             const currentFullName = ctx.currentGithubRepositoryFullName();
             const openedRepoKeys = new Set([...sessionMap.keys()].map(key => key.toLowerCase()));
@@ -311,8 +334,15 @@ export async function loadGithubProjectsExtracted(ctx: MobileProjectsServiceCont
                 ));
         } catch (err) {
             // The import dialog asks for the sign-in code itself; every other caller keeps the empty list.
-            if (surfaceSignInRequired && err instanceof QaapApiRequestError && err.code === QAAP_GITHUB_SIGN_IN_REQUIRED_CODE) {
+            if (surfaceSignInRequired && isGithubSignInRequiredError(err)) {
                 throw err;
+            }
+            if (isGithubSignInRequiredError(err)) {
+                if (githubSignInRequiredSince === undefined) {
+                    console.info('[qaap] GitHub repositories need a GitHub sign-in; not retrying until the session changes or a minute passes.');
+                }
+                githubSignInRequiredSince = Date.now();
+                return [];
             }
             console.warn('[qaap] Failed to load GitHub repositories:', err);
             return [];
