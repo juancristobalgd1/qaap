@@ -12645,6 +12645,9 @@ body.theia-mod-work-hub-settings-resizing * {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+  /* The header's "Settings /" crumb drops out in a narrow column (see the @container rule below). */
+  container-type: inline-size;
+  container-name: qaap-settings-content;
 }
 
 .theia-mobile-work-hub-settings-content-header {
@@ -12657,15 +12660,27 @@ body.theia-mod-work-hub-settings-resizing * {
   border-bottom: 1px solid color-mix(in srgb, var(--theia-foreground) 7%, transparent);
 }
 
-/* A quiet page title on a hairline, like the rest of the chrome, not a 24px heading. */
+/* A quiet page title on a hairline, like the rest of the chrome, not a 24px heading.
+   Clipped, never allowed to run under the restore/aux buttons when the column is very narrow. */
 .theia-mobile-work-hub-settings-content-header .theia-mobile-work-hub-preferences-title {
   flex: 1 1 auto;
   min-width: 0;
   margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--theia-foreground);
   font-size: 15px;
   font-weight: 600;
   line-height: 1.2;
+}
+
+/* Narrow Settings column (right panel open): "Settings /" goes so the page title keeps its room. */
+@container qaap-settings-content (max-width: 399px) {
+  .theia-mobile-work-hub-settings-content-header .theia-mobile-work-hub-settings-crumb,
+  .theia-mobile-work-hub-settings-content-header .theia-mobile-work-hub-settings-crumb-separator {
+    display: none;
+  }
 }
 
 /* Right end of the content header: toggles the desktop right panel. Same 16px glyph, stroke and pressed
@@ -13446,6 +13461,7 @@ body.theia-mod-work-hub-settings-resizing * {
 
 .theia-mobile-work-hub-settings-profile-card {
   flex-direction: row;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--q-space-12);
@@ -13453,8 +13469,11 @@ body.theia-mod-work-hub-settings-resizing * {
   padding: var(--q-space-12);
 }
 
+/* Identity takes a 200px basis so a narrow column wraps the provider chip below it instead of
+   squeezing "Not signed in" and the account line into a sliver. */
 .theia-mobile-work-hub-settings-profile-identity {
   display: flex;
+  flex: 1 1 200px;
   align-items: center;
   gap: var(--q-space-8);
   min-width: 0;
@@ -15238,17 +15257,21 @@ body.theia-mod-work-hub-settings-resizing * {
     row-gap: 3px;
   }
 
+  /* Words are never split mid-word: break-word only moves a token that cannot fit on a line at all
+     (an id or a path). `anywhere` shrank the min-content width and split "Available" and "opencode". */
   .theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-card-name {
     overflow: visible;
     text-overflow: clip;
     white-space: normal;
-    overflow-wrap: anywhere;
+    word-break: normal;
+    overflow-wrap: break-word;
   }
 
   .theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-card-bin {
     flex-basis: 100%;
     max-width: 100%;
-    overflow-wrap: anywhere;
+    word-break: normal;
+    overflow-wrap: break-word;
     white-space: normal;
   }
 
@@ -15257,7 +15280,8 @@ body.theia-mod-work-hub-settings-resizing * {
     overflow: visible;
     text-overflow: clip;
     white-space: normal;
-    overflow-wrap: anywhere;
+    word-break: normal;
+    overflow-wrap: break-word;
   }
 
   .theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-card-actions {
