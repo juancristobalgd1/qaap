@@ -13278,6 +13278,42 @@ body.theia-mod-work-hub-settings-resizing * {
   padding-top: 16px;
 }
 
+/*
+ * Desktop Settings embedded panels (Harness, MCP, Skills): the scroll host keeps its 32px side
+ * padding, so the scroller stopped 32px short of the column edge and its scrollbar floated inside
+ * it (and the 1000px widget cap / 840px skills cap moved the edge further in on wide windows).
+ * The scroller runs to the column edge instead: the widget spans (W + min(W, 1040)) / 2 + 32px,
+ * where W is the scroll host's content width, and the difference from the old visible width is
+ * moved into each scroller's padding-right. Content boxes keep their original X, so the reading
+ * column does not move. Narrow layouts keep the base geometry.
+ */
+@media (min-width: 768px) {
+  .theia-mobile-work-hub-settings-custom-content.theia-mod-embedded-settings {
+    container-type: inline-size;
+    --qaap-settings-embedded-edge: calc((100cqw + min(100cqw, 1040px)) / 2 + 32px);
+    --qaap-settings-embedded-bleed: calc(var(--qaap-settings-embedded-edge) - min(100cqw, 1000px));
+  }
+
+  .theia-mobile-work-hub-settings-custom-content.theia-mod-embedded-settings .theia-mobile-work-hub-settings-embedded-widget {
+    width: var(--qaap-settings-embedded-edge) !important;
+    max-width: none !important;
+  }
+
+  .theia-mobile-work-hub-settings-custom-content.theia-mod-embedded-settings .theia-mobile-work-hub-settings-embedded-widget .qaap-harness-configuration-content {
+    padding-right: calc(20px + var(--qaap-settings-embedded-bleed));
+  }
+
+  .theia-mobile-work-hub-settings-custom-content.theia-mod-embedded-settings .theia-mobile-work-hub-settings-embedded-widget .mcp-configuration-container {
+    padding-right: calc(20px + var(--qaap-settings-embedded-bleed));
+  }
+
+  .theia-mobile-work-hub-settings-custom-content.theia-mod-embedded-settings .theia-mobile-work-hub-settings-embedded-widget .ai-skills-configuration-container {
+    width: auto !important;
+    margin: 0 0 0 calc((min(100cqw, 1000px) - min(100cqw, 840px)) / 2) !important;
+    padding-right: calc(var(--qaap-settings-embedded-edge) - min(100cqw, 840px) - (min(100cqw, 1000px) - min(100cqw, 840px)) / 2);
+  }
+}
+
 /* Settings → MCP lists each server in the summary above; the upstream cards stay in the DOM so the
    per-server dialog can click their Edit and Delete buttons, but they are not shown. The add-server
    area of the upstream widget stays visible. */
