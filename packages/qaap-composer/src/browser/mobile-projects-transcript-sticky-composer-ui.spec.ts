@@ -193,18 +193,20 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
         host.transcriptLastConv = { id: summary.id, pendingUserMessagesPaused: true };
 
         expect(probe.ui.enqueueTranscriptFollowUp(summary.id, { draft: 'paused follow-up' })).to.equal(true);
-        expect(document.body.textContent).to.contain('1 message(s) queued — paused, send or discard');
+        expect(document.body.textContent).to.not.contain('paused, send or discard');
     });
 
-    it('keeps the will-send-later message when the queue is not paused', () => {
+    it('does not show a snackbar above the composer when a follow-up is queued', () => {
         const probe = createProbe({ agentWorking: true });
         const host = (probe.ui as unknown as {
             host: { transcriptLastConv: unknown };
         }).host;
         host.transcriptLastConv = { id: summary.id, pendingUserMessagesPaused: false };
+        document.body.querySelectorAll('.theia-mobile-snackbar-message').forEach(node => node.remove());
 
         expect(probe.ui.enqueueTranscriptFollowUp(summary.id, { draft: 'running follow-up' })).to.equal(true);
-        expect(document.body.textContent).to.contain('will send when the agent finishes');
+        expect(document.body.querySelector('.theia-mobile-snackbar-message')).to.equal(null);
+        expect(document.body.textContent).to.not.contain('will send when the agent finishes');
     });
 
     it('starts a peer run in the same transcript when sending a queued message in parallel', async () => {

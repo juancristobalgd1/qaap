@@ -421,23 +421,7 @@ export function enqueueTranscriptFollowUpExtracted(ctx: MobileProjectsTranscript
             );
             return false;
         }
-        const count = ctx.host.transcriptFollowUpQueue.size(conversationId);
-        const conv = ctx.host.transcriptLastConv?.id === conversationId ? ctx.host.transcriptLastConv : undefined;
-        const paused = conv?.pendingUserMessagesPaused === true;
-        MobileSnackbar.show(
-            paused
-                ? nls.localize(
-                    'qaap/mobileProjects/transcriptFollowUpQueuedPaused',
-                    '{0} message(s) queued — paused, send or discard',
-                    String(count),
-                )
-                : nls.localize(
-                    'qaap/mobileProjects/transcriptFollowUpQueued',
-                    '{0} message(s) queued — will send when the agent finishes',
-                    String(count),
-                ),
-            { kind: 'success', duration: 1600 },
-        );
+        // A queued message is shown in the transcript only: no snackbar above the composer.
         return true;
 }
 
