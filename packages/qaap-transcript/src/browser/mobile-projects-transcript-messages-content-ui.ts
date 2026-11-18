@@ -33,6 +33,8 @@ import {
     type TranscriptDeferredMarkdownHydrate,
 } from './qaap-transcript-row-defer';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
 import { enhanceTranscriptMarkdownRichContent } from './qaap-transcript-rich-content-ui';
 import { patchTranscriptStreamingTailHtml } from './qaap-transcript-streaming-tail-patch';
@@ -227,6 +229,28 @@ export class MobileProjectsTranscriptMessagesContentUi {
         return probe.previewUrl || claimUrl;
     }
 
+    /** Opens a verified preview URL in the project's keyed preview widget, the same call Run app makes. */
+    protected async openProjectPreviewWidget(url: string): Promise<void> {
+        const bootstrap = this.host.projectBootstrap;
+        if (!bootstrap) {
+            return;
+        }
+        try {
+            await bootstrap.openPreview(url, true);
+        } catch (error) {
+            console.warn('[qaap-preview] transcript link could not open the project preview', error);
+        }
+    }
+
+    /** A link to a preview that is down starts it through the Run app launcher instead of dead-ending. */
+    protected async startTranscriptPreviewFromLink(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): Promise<boolean> {
+        if (typeof this.host.requestTranscriptPreview !== 'function') {
+            return false;
+        }
+        await this.host.requestTranscriptPreview(project, summary, { revealPreviewTab: true, allowAgentFallback: false });
+        return true;
+    }
+
     async openTranscriptPreviewUrlFromLink(href: string): Promise<boolean> {
         const summary = this.host.transcriptComposerSummary ?? this.host.transcriptOpenSummary;
         const project = this.host.transcriptOpenProject;
@@ -270,7 +294,7 @@ export class MobileProjectsTranscriptMessagesContentUi {
                 // target — resolve through it before giving up.
                 const claimUrl = await this.resolveClaimPreviewUrlFallback();
                 if (!claimUrl) {
-                    return false;
+                    return this.startTranscriptPreviewFromLink(project, summary);
                 }
                 verifiedUrl = claimUrl;
             }
@@ -281,7 +305,7 @@ export class MobileProjectsTranscriptMessagesContentUi {
             if (!probe.ready || !sameIdentity) {
                 const claimUrl = await this.resolveClaimPreviewUrlFallback();
                 if (!claimUrl) {
-                    return false;
+                    return this.startTranscriptPreviewFromLink(project, summary);
                 }
                 verifiedUrl = claimUrl;
             } else {
@@ -297,6 +321,8 @@ export class MobileProjectsTranscriptMessagesContentUi {
             : candidate);
         await this.host.projectsService.recordProjectPreviewUrl(latestProject, verifiedUrl).catch(() => undefined);
 
+        // The Browser tab must show the project's own preview widget (what Run app opens), not the empty tab.
+        await this.openProjectPreviewWidget(verifiedUrl);
         this.host.executionSurfaceTabsUi.selectTranscriptTab('preview', latestProject, summary);
         MobileSnackbar.show(nls.localize('qaap/mobileProjects/previewLinkOpened', 'Preview opened'), { kind: 'success', duration: 1400 });
         return true;

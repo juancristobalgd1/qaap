@@ -36,6 +36,12 @@ import type { WorkHubTranscriptBridge } from '@theia/qaap-transcript-overlay/lib
 
 /** Panel surface consumed by transcript message rendering (keeps deps narrow vs. the full panel). */
 export interface MobileProjectsTranscriptMessagesHost {
+    /** Work Hub preview request (Run app's launcher): starts the project's preview when a link finds it down. */
+    requestTranscriptPreview?(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+        options?: { readonly revealPreviewTab?: boolean; readonly allowAgentFallback?: boolean; },
+    ): Promise<void>;
     transcriptUi: MobileProjectsTranscriptUi;
     transcriptUserScrollPinDispose: Disposable;
     transcriptLastConv: QaapAgentConversationDTO | undefined;
