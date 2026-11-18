@@ -231,6 +231,19 @@ export class MobileProjectsExecutionSurfaceTabsUi {
         return this.executionSurfaceTabForProject(project) === 'messages' || !!this.resolveWorkHubAuxPanel();
     }
 
+    /**
+     * Annotation Send (external submit) lands on Messages. A surface docked in the desktop right
+     * panel already sits beside Chat, so it stays mounted: switching to Messages would dismiss the
+     * dock, undock the panel's tab and leave its empty state behind.
+     */
+    activateMessagesForExternalSubmit(project: MobileProjectEntry): void {
+        if (this.host.executionSurfaceSidebar?.element.classList.contains('qaap-mod-docked')) {
+            return;
+        }
+        this.setExecutionSurfaceTab(project, 'messages');
+        this.showOnlyExecutionSurfaceTab('messages');
+    }
+
     setExecutionSurfaceTab(project: MobileProjectEntry, tab: TranscriptTab): void {
         this.host.executionSurfaceTabByProjectId.set(project.id, tab);
         this.syncExecutionSurfaceChrome(project);
