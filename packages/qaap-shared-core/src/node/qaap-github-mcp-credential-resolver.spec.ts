@@ -34,6 +34,11 @@ class TestResolver extends QaapGithubMcpCredentialResolver {
         return this.fakeEnv;
     }
 
+    /** One fixed candidate, so the gh fallback is exercised whether or not the test machine has gh installed. */
+    protected override ghCandidates(): string[] {
+        return ['/fake/bin/gh'];
+    }
+
     protected override runGh(): Promise<GhOutcome> {
         this.ghCalls++;
         return Promise.resolve(this.ghOutcome);
