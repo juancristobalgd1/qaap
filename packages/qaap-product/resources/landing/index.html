@@ -309,6 +309,9 @@ html, body { overflow-x: clip; }
 .link-accent:hover { gap: 10px; }
 .foot a, .legal-link { background: linear-gradient(currentColor, currentColor) 0 100% / 0 1px no-repeat; transition: background-size 0.3s ease, color 0.2s ease; }
 .foot a:hover { background-size: 100% 1px; }
+.foot-desktop { color: var(--muted); font-size: 13px; text-decoration: none; }
+.foot-desktop:hover, .foot-desktop:focus-visible { color: var(--ink); }
+.foot-desktop[hidden] { display: none; }
 details { transition: background-color 0.3s ease; }
 details:hover { background: color-mix(in srgb, var(--ink) 2%, transparent); }
 .d-chip, .d-btn-ic, .d-task, .d-split > button, .d-send { transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease, transform 0.15s ease; }
@@ -1104,10 +1107,38 @@ footer { border-top: 1px solid var(--line); }
             <a href="/legal/privacy.html">Privacy</a>
             <a href="/?signin=1">Sign in</a>
         </nav>
+        <a class="foot-desktop" id="qaap-desktop-download" href="#" target="_blank" rel="noopener noreferrer" hidden></a>
         <span>© 2026 Qaap</span>
     </div>
 </footer>
 
+<script src="/landing/qaap-desktop-download.js"></script>
+<script>
+(function () {
+    // Desktop installer invitation: shown only on desktop browsers with a configured installer for their OS.
+    try {
+        var detect = window.QaapDesktopDownload && window.QaapDesktopDownload.detectDesktopDownloadPlatform;
+        var labels = window.QaapDesktopDownload && window.QaapDesktopDownload.LABELS;
+        var platform = detect && detect({
+            userAgent: navigator.userAgent,
+            userAgentDataPlatform: navigator.userAgentData && navigator.userAgentData.platform,
+            maxTouchPoints: navigator.maxTouchPoints
+        });
+        if (platform) {
+            fetch('/qaap/desktop-downloads.json', { cache: 'no-store', credentials: 'omit' })
+                .then(function (res) { return res.ok ? res.json() : {}; })
+                .then(function (links) {
+                    var link = document.getElementById('qaap-desktop-download');
+                    if (!links || typeof links[platform] !== 'string' || !link) { return; }
+                    link.href = links[platform];
+                    link.textContent = 'Download the desktop app for ' + labels[platform];
+                    link.hidden = false;
+                })
+                .catch(function () { /* no invitation without a configured link */ });
+        }
+    } catch (e) { /* detection unavailable: no invitation */ }
+})();
+</script>
 <script>
 (function () {
     // Shown at qaaq.dev for signed-out visitors: keep the address bar on the root.

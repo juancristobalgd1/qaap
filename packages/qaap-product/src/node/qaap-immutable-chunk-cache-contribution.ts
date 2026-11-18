@@ -9,6 +9,7 @@ import { injectable } from '@theia/core/shared/inversify';
 import * as express from '@theia/core/shared/express';
 import { BackendApplicationServer, BackendApplicationPath } from '@theia/core/lib/node';
 import { findQaapPackageFile } from '@theia/qaap-shared-core/lib/node/qaap-package-file';
+import { QAAP_DESKTOP_DOWNLOAD_LINKS_PATH, resolveQaapDesktopDownloadLinks } from './qaap-desktop-download-links';
 
 /**
  * esbuild emits content-addressed frontend chunks as `chunk-<hash>.(js|css)`, optionally followed
@@ -80,6 +81,11 @@ export class QaapFrontendStaticServer implements BackendApplicationServer {
         app.get('/favicon.ico', (_req: express.Request, res: express.Response) => {
             res.setHeader('Cache-Control', 'public, max-age=86400');
             res.redirect(302, '/media/qaap-logo.svg');
+        });
+        // Installer links for the landing page's desktop invitation; env-driven, never cached.
+        app.get(QAAP_DESKTOP_DOWNLOAD_LINKS_PATH, (_req: express.Request, res: express.Response) => {
+            res.setHeader('Cache-Control', 'no-cache');
+            res.json(resolveQaapDesktopDownloadLinks(process.env));
         });
         const legalDir = resolveQaapLegalPagesDir();
         app.use('/legal', express.static(legalDir, {
