@@ -75,6 +75,18 @@ body.qaap-electron-macos-inset-titlebar .theia-mobile-projects-header input {
   -webkit-app-region: no-drag;
 }
 
+/* Settings with its sidebar closed: the reopen toggle leads the content header, which starts at the
+   window's top-left edge, so it moves past the traffic lights like the Work Hub header above.
+   `!important`: the header's own padding shorthand has higher specificity than this scope. */
+body.qaap-electron-macos-inset-titlebar:not(.qaap-electron-macos-fullscreen) .theia-mobile-work-hub-settings-layout.theia-mod-sidebar-collapsed .theia-mobile-work-hub-settings-content-header {
+  padding-left: 78px !important;
+  -webkit-app-region: drag;
+}
+
+body.qaap-electron-macos-inset-titlebar .theia-mobile-work-hub-settings-content-header button {
+  -webkit-app-region: no-drag;
+}
+
 /* Narrow (mobile) top bar: back/forward are absolutely placed at the leading edge, so they move past the lights. */
 body.qaap-electron-macos-inset-titlebar:not(.qaap-electron-macos-fullscreen) #theia-top-panel>#theia\:workbench-history-nav {
   left: 84px;
