@@ -95,4 +95,30 @@ describe('QaapGithubMcpConnectionStateImpl', () => {
         await new Promise(resolve => setTimeout(resolve, 0));
         expect(state.snapshot.kind).to.equal('connected');
     });
+
+    describe('after a GitHub sign-in completed in place (desktop device flow)', () => {
+        let restore: (() => void) | undefined;
+        beforeEach(() => { restore = enableJSDOM(); });
+        afterEach(() => { restore?.(); });
+
+        it('drops a needs-credential or auth-required chip so the next turn starts the server again', () => {
+            for (const outcome of ['needs-credential', 'auth-required'] as const) {
+                const { state, outcomes, resets } = create({ mode: 'desktop' });
+                outcomes.fire(outcome);
+                window.dispatchEvent(new window.Event('qaap-auth-session-changed'));
+                expect(resets, outcome).to.have.length(1);
+                expect(state.snapshot.kind).to.equal('unknown');
+                state.dispose();
+            }
+        });
+
+        it('keeps a policy refusal, which a new session for the same token does not lift', () => {
+            const { state, outcomes, resets } = create({ mode: 'desktop' });
+            outcomes.fire('policy-rejected');
+            window.dispatchEvent(new window.Event('qaap-auth-session-changed'));
+            expect(resets).to.have.length(0);
+            expect(state.snapshot.kind).to.equal('policy-rejected');
+            state.dispose();
+        });
+    });
 });

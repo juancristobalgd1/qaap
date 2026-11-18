@@ -52,6 +52,24 @@ export class QaapGithubMcpConnectionStateImpl implements QaapGithubMcpConnection
         this.toDispose.push(this.starter.onDidChange(outcome => this.applyOutcome(outcome)));
         this.toDispose.push(this.notifications.onDidUpdateMCPServers(() => this.refreshFromServers()));
         this.applyOutcome(this.starter.getLastOutcome());
+        // A GitHub sign-in completed in place (desktop: the device flow in the system browser) brings a
+        // credential: drop the chip so the next GitHub turn starts the server again.
+        if (typeof window === 'undefined') {
+            return;
+        }
+        const onAuthSessionChanged = (): void => this.onAuthSessionChanged();
+        window.addEventListener('qaap-auth-session-changed', onAuthSessionChanged);
+        this.toDispose.push({ dispose: () => window.removeEventListener('qaap-auth-session-changed', onAuthSessionChanged) });
+    }
+
+    dispose(): void {
+        this.toDispose.dispose();
+    }
+
+    protected onAuthSessionChanged(): void {
+        if (this.current.kind === 'needs-credential' || this.current.kind === 'auth-required') {
+            this.starter.reset();
+        }
     }
 
     async connect(): Promise<void> {

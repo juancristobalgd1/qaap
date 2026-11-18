@@ -13,6 +13,7 @@ import { QaapAuthCommandContribution } from './qaap-auth-command-contribution';
 import { QaapWorkbenchTopBarFactory } from './qaap-workbench-top-bar-factory';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
 import { QaapElectronTopBarContribution } from './qaap-electron-top-bar-contribution';
+import { QaapDesktopGithubSignInContribution } from './qaap-desktop-github-sign-in-contribution';
 
 /**
  * Swaps {@link WorkbenchTopBarFactory} for the Qaap nav controls (same mount path as before). The browser
@@ -30,4 +31,6 @@ export default new ContainerModule((bind, _unbind, isBound, rebind) => {
     // Electron native title bar: core hides the top panel, so the Qaap top bar is mounted here.
     bind(QaapElectronTopBarContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapElectronTopBarContribution);
+    bind(QaapDesktopGithubSignInContribution).toSelf().inSingletonScope();
+    bind(FrontendApplicationContribution).toService(QaapDesktopGithubSignInContribution);
 });

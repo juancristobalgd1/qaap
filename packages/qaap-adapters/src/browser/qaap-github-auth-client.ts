@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { environment } from '@theia/core/shared/@theia/application-package/lib/environment';
 import { QaapUserFacingError, QaapUserFacingErrors } from '../common/qaap-user-facing-error';
 import {
     QAAP_AUTH_API_PATH,
@@ -877,9 +878,34 @@ export async function putQaapUserAiSettings(settings: Record<string, unknown>): 
     return body.settings && typeof body.settings === 'object' ? body.settings : settings;
 }
 
+/**
+ * Cancelable window event that asks the desktop app to sign in with GitHub without leaving the page. The
+ * Work Hub handles it (device flow in the system browser) and calls `preventDefault()`.
+ */
+export const QAAP_DESKTOP_GITHUB_SIGN_IN_EVENT = 'qaap-desktop-github-sign-in';
+
+/**
+ * Starts "Sign in with GitHub". Web: navigates to the OAuth start route (the callback brings the page back).
+ * Desktop (Electron): never navigates the app window, which would drop its state and load GitHub inside the
+ * app; it asks the desktop sign-in handler instead, which completes the sign-in in the system browser.
+ */
 export function startGithubOAuth(): void {
-    window.location.assign(QAAP_GITHUB_OAUTH_START_PATH);
+    if (environment.electron.is()) {
+        const request = new window.CustomEvent(QAAP_DESKTOP_GITHUB_SIGN_IN_EVENT, { cancelable: true });
+        if (window.dispatchEvent(request)) {
+            console.warn('[qaap] GitHub sign-in is not available in this desktop window: no sign-in handler is installed.');
+        }
+        return;
+    }
+    QaapGithubOAuthNavigation.assign(QAAP_GITHUB_OAUTH_START_PATH);
 }
+
+/** Page navigation of the web sign-in; a seam so tests can observe it (jsdom's `location` cannot be stubbed). */
+export const QaapGithubOAuthNavigation = {
+    assign(url: string): void {
+        window.location.assign(url);
+    },
+};
 
 export async function signOutQaapAuth(): Promise<void> {
     try {
