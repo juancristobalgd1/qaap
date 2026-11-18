@@ -510,6 +510,23 @@ describe('MobileProjectsTranscriptSurfacesUi — superseded preview fallback', (
         expect(ui.rediscoveries).to.equal(1);
     });
 
+    it('stops rediscovering a stale candidate in a tight loop and hands over to the backed-off tab probe', () => {
+        const host = buildIdlePreviewHost();
+        const ui = new FallbackTrackingTranscriptSurfacesUi(host, historyUiStub);
+        ui.transcriptPreviewProjectId = sampleProject().id;
+        const probes: string[] = [];
+        ui.scheduleTranscriptPreviewTabProbe = project => { probes.push(project.id); };
+        const previewHost = host.transcriptPreviewHost!;
+
+        // The agent's stale :3099 mention is rediscovered, fails the match and falls back again.
+        for (let i = 0; i < 50; i++) {
+            fallBackFromSupersededTranscriptPreviewExtracted(ui, previewHost, host.projects[0], sampleSummary(), 'http://localhost/qaap-dev/3099/');
+        }
+
+        expect(ui.rediscoveries).to.equal(3);
+        expect(probes).to.have.length(47);
+    });
+
     it('offers a Retry action that mounts the project\'s current preview', async () => {
         const host = buildIdlePreviewHost();
         const ui = new FallbackTrackingTranscriptSurfacesUi(host, historyUiStub);
