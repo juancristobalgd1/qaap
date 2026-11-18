@@ -95,6 +95,14 @@ describe('qaap-harness-launch-settings', () => {
         expect(checkQaapHarnessPathShape(`/${'a'.repeat(1100)}`)).to.equal('too-long');
     });
 
+    it('accepts Windows short names and Program Files (x86), keeps parentheses out of POSIX paths', () => {
+        expect(checkQaapHarnessPathShape('C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\codex.exe')).to.equal(undefined);
+        expect(checkQaapHarnessPathShape('C:\\Program Files (x86)\\Codex\\codex.exe')).to.equal(undefined);
+        expect(checkQaapHarnessPathShape('/Users/me/build~1/codex')).to.equal(undefined);
+        expect(checkQaapHarnessPathShape('/opt/(x)/codex')).to.equal('unsafe-characters');
+        expect(checkQaapHarnessPathShape('C:\\Tools\\%PATH%\\codex.exe')).to.equal('unsafe-characters');
+    });
+
     it('treats an instance id as a runner agent id with its base harness brand', () => {
         expect(normalizeBackendAgentId('codex#2')).to.equal('codex#2');
         expect(normalizeBackendAgentId('nope#2')).to.equal(undefined);

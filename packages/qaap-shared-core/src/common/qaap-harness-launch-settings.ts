@@ -196,7 +196,10 @@ export function checkQaapHarnessPathShape(value: string): QaapHarnessPathShapeIs
         return 'not-absolute';
     }
     const body = windowsDrive ? value.slice(2) : value;
-    if (/[\u0000-\u001f\u007f'"`$;|&<>*?!{}()[\]~^%=#]/.test(body) || (!windowsDrive && body.includes('\\'))) {
+    // `~` is literal inside the quoted path (Windows 8.3 names such as `RUNNER~1`); parentheses only in a
+    // drive path, for `Program Files (x86)`, where the quoted cmd argument keeps them literal.
+    const unsafe = windowsDrive ? /[\u0000-\u001f\u007f'"`$;|&<>*?!{}[\]^%=#]/ : /[\u0000-\u001f\u007f'"`$;|&<>*?!{}()[\]^%=#]/;
+    if (unsafe.test(body) || (!windowsDrive && body.includes('\\'))) {
         return 'unsafe-characters';
     }
     if (body.split(/[\\/]/).some(segment => segment === '..')) {
