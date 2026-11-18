@@ -193,6 +193,27 @@ headers `X-MCP-Readonly: true` and `X-MCP-Lockdown: true`.
   tools are registered and the user has no `github` server, that fragment is an alias of the managed tools; a
   user `github` server keeps its own fragment.
 - **Not done yet:** the `qaap.mcp.github.allowWrite` opt-in with confirmation (`docs/HANDOFF.md`).
+- **Decision (2026-11-18): left dormant.** The managed server stays as built, but no harness uses it: harness CLIs
+  (Claude Code, Codex, OpenCode, …) never receive Theia MCP servers, and the Theia GitHub chat agent is not offered
+  in the composer. Nothing starts it at boot; it only starts if a Theia GitHub turn asks for it. Re-evaluate before
+  wiring it to any harness, and keep the rules above when doing so.
+- **Token-less legacy server never starts (backend):** besides the frontend filter and the settings migration, the
+  connection's MCP manager refuses any local description that runs `@modelcontextprotocol/server-github` (any name,
+  pinned version, or the `mcp-server-github` binary) without `GITHUB_PERSONAL_ACCESS_TOKEN` in its `env` or the
+  backend environment, and refuses to start one whose token is gone. This closes the start-up race in which a
+  frontend that did not filter the entry autostarted it before the migration removed it.
+
+## Desktop without a Qaap GitHub session (2026-11-18)
+
+- **Opening a project:** on desktop (`QAAP_DESKTOP=1`, skip-auth guard) `POST …/repositories/:owner/:repo/open`
+  opens an existing checkout at the caller's canonical path (`{reposRoot}/users/{login}/{owner}/{repo}`, still
+  checked with `isPathUnderUserWorkspace`) without any GitHub or git network call. A missing checkout is cloned by
+  the backend's own git, which on desktop runs as the user, so their git credential helpers (`gh auth setup-git`,
+  the keychain) answer exactly as in a terminal; Qaap never sees or passes a token there. Removed projects stay
+  removed (410). Web and VPS are unchanged: without the owner's OAuth session the route answers 503.
+- **Sign-in:** on desktop `startGithubOAuth` never navigates the app window. It raises the cancelable
+  `qaap-desktop-github-sign-in` event; the Work Hub opens the device-flow dialog, GitHub's page opens in the system
+  browser and the backend sets the session cookie, so the app keeps its state. Web keeps the OAuth redirect.
 
 ## Checks
 

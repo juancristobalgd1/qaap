@@ -14,11 +14,12 @@ Estado para continuar el trabajo desde otra cuenta o sesión. Actualízalo al ce
 - Secretos: 0 coincidencias de `gho_|ghp_|github_pat_` en el log del Electron de prueba ni en `~/.qaap/users/_dev/settings.json`.
 - PR #534 (una comprobación): 2 pasados (`CI gate`, `qaap:drift-check`), 0 fallidos, 13 pendientes.
 
-**Pendiente**
-- Diagnosticar por qué el agente GitHub gestionado no aparece en el selector ni invoca `mcp__qaap-github_*`. Hasta entonces, la prueba de extremo a extremo del servidor gestionado no está hecha.
-- Escritura opcional (paso 4 del diseño), no implementada.
-- Verificaciones del VPS 1-5.
-- «Connect GitHub» en escritorio navega la página entera en vez de abrir el sign-in en el panel.
+**Decisión del usuario (18 nov): se deja como está.** El servidor `qaap-github` queda dormido: ningún harness lo usa (los CLI de harness no reciben servidores MCP de Theia y el agente GitHub de Theia no está en el selector del composer). No arranca al iniciar. Por eso el diagnóstico del selector, la escritura opcional y las verificaciones del VPS 1-5 quedan aparcados, no pendientes. Si algún día se conecta a un harness, retomar desde aquí y respetar `doc/qaap-github-token-boundary.md`.
+
+**Correcciones tras las pruebas en vivo (18 nov)**
+- Toast «Could not open qa-sandbox/notes-dev: GitHub sign-in required»: en escritorio sin sesión GitHub de Qaap, `POST …/repositories/:owner/:repo/open` respondía 503 aunque el checkout existía. Ahora abre el checkout local sin red y, si falta, clona con el git del usuario (credential helper / `gh`). Web/VPS sin cambios.
+- Proceso `server-github` fugaz: la entrada legacy hidratada desde el espejo de settings llegaba al gestor MCP y un frontend sin el filtro la autoarrancaba antes de la migración (visto en los logs de las 21:49 y 21:53 UTC del 17 nov y en un `ps` de las 23:18 UTC, todos con bundles anteriores al filtro). El gestor MCP del backend rechaza ya cualquier `server-github` sin `GITHUB_PERSONAL_ACCESS_TOKEN`.
+- «Connect GitHub» y los demás «Sign in with GitHub» en escritorio ya no navegan la ventana: abren el diálogo de device flow (el mismo de importar repositorios) y GitHub en el navegador del sistema.
 
 ## 2026-11-17 — Ronda 2b (PR #534)
 
