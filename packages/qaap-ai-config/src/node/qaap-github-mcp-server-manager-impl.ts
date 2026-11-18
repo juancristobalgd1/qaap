@@ -6,7 +6,7 @@
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
 import { MCPServerManagerImpl } from '@theia/ai-mcp/lib/node/mcp-server-manager-impl';
 import { MCPServer } from '@theia/ai-mcp/lib/node/mcp-server';
-import type { MCPServerDescription } from '@theia/ai-mcp/lib/common/mcp-server-manager';
+import { MCPServerDescription, MCPServerStatus } from '@theia/ai-mcp/lib/common/mcp-server-manager';
 import { nls } from '@theia/core/lib/common/nls';
 import { isQaapReservedGithubMcpEntry, QAAP_GITHUB_MCP_SERVER_NAME } from '@theia/qaap-shared-core/lib/common/qaap-github-mcp-managed';
 import { QaapGithubMcpCredentialResolver } from '@theia/qaap-shared-core/lib/node/qaap-github-mcp-credential-resolver';
@@ -106,10 +106,33 @@ export class QaapGithubMcpServerManagerImpl extends MCPServerManagerImpl {
             if (!status.available) {
                 throw QaapGithubMcpManagedServer.noCredentialError();
             }
+            // GitHub accepts the token but the endpoint refused it: no automatic retry for this token.
+            if (status.rejectedByPolicy) {
+                throw QaapGithubMcpManagedServer.policyRejectedError();
+            }
+            await super.startServer(serverName, options);
+            await this.checkManagedRejection();
+            return;
         } else if (serverName.trim().toLowerCase() === QAAP_GITHUB_MCP_SERVER_NAME) {
             throw new Error(`MCP server "${serverName}" is reserved.`);
         }
         return super.startServer(serverName, options);
+    }
+
+    /**
+     * A 401 normally reaches the managed provider, which reports it. A 403 (or a 401 the SDK does not route
+     * through the provider) ends in `Errored` after the SSE fallback instead; report it the same way, so a
+     * policy refusal is recognised (GitHub `/user` still accepts the token) and is not retried.
+     */
+    protected async checkManagedRejection(): Promise<void> {
+        const description = this.managedServer?.getCachedDescription();
+        if (description?.status !== MCPServerStatus.Errored || !/\b(401|403)\b/.test(description.error ?? '')) {
+            return;
+        }
+        const credential = await this.credentialResolver.resolve();
+        if (credential) {
+            await this.credentialResolver.reportRejected(credential.token);
+        }
     }
 
     override async hasStoredOAuthCredentials(serverName: string): Promise<boolean> {

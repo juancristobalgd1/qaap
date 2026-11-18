@@ -7,6 +7,8 @@ import { ConnectionContainerModule } from '@theia/core/lib/node/messaging/connec
 import { MCPServerManager } from '@theia/ai-mcp/lib/common/mcp-server-manager';
 import { QaapGithubMcpServerManagerImpl } from './qaap-github-mcp-server-manager-impl';
 import { QaapGithubMcpOAuthClientProviderFactory } from './qaap-github-mcp-oauth-client-provider-factory';
+import { QAAP_GITHUB_MCP_STATUS_PATH, QaapGithubMcpStatusService } from '../common/qaap-github-mcp-status';
+import { QaapGithubMcpStatusServiceImpl } from './qaap-github-mcp-status-service-impl';
 
 /**
  * Connection-scoped rebinding of the upstream MCP manager, so the managed GitHub server exists in every
@@ -15,8 +17,13 @@ import { QaapGithubMcpOAuthClientProviderFactory } from './qaap-github-mcp-oauth
  *
  * The managed provider factory is bound to itself only, NOT in place of `MCPOAuthClientProviderFactory`:
  * the manager hands it to the managed server object alone.
+ *
+ * The status service answers the frontend with the credential status (never the token value).
  */
-export const qaapGithubMcpConnectionModule = ConnectionContainerModule.create(({ bind, rebind }) => {
+export const qaapGithubMcpConnectionModule = ConnectionContainerModule.create(({ bind, rebind, bindBackendService }) => {
     rebind(MCPServerManager).to(QaapGithubMcpServerManagerImpl).inSingletonScope();
     bind(QaapGithubMcpOAuthClientProviderFactory).toSelf().inSingletonScope();
+    bind(QaapGithubMcpStatusServiceImpl).toSelf().inSingletonScope();
+    bind(QaapGithubMcpStatusService).toService(QaapGithubMcpStatusServiceImpl);
+    bindBackendService(QAAP_GITHUB_MCP_STATUS_PATH, QaapGithubMcpStatusService);
 });

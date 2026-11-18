@@ -203,9 +203,9 @@ Estado para continuar el trabajo desde otra cuenta o sesión. Actualízalo al ce
 **GitHub MCP gestionado (rama feat/work-hub-harness-round2, PR #534)**
 - Hecho: resolvedor de credenciales, servidor `qaap-github` de solo lectura por conexión, arranque bajo demanda con single-flight, chat agent que no persiste entradas de GitHub, documentación en `doc/qaap-github-token-boundary.md`.
 - Hecho (revisión de seguridad, 18 nov): identidad del gestionado por objeto (nombre y clientId reservados en frontend y backend; solo `/mcp/readonly`); el arranque bajo demanda respeta la confianza del workspace; Errored => error; modo `local` solo con `QAAP_LOCAL_DEV=1`/`QAAP_CLOUD_MODE=local`; gh por ruta absoluta sin `GH_*`; `/user` limitado a una consulta por token cada 5 min; la migración parchea el espejo en vez de reemplazarlo; `QaapGithubMcpOnDemandStarter` faltaba en DI (ahora registrado).
-- Pendiente: chip «Connect GitHub» en el composer (contrato estructural en qaap-shared-core, consumidor en qaap-composer). Hoy el error aparece en el chat como texto.
+- Hecho (lote UX, 18 nov): chip «Connect GitHub» en el input del chat (needs-credential / auth-required / untrusted), estado por RPC sin valor (pista `gh auth login` en escritorio), rechazo por política estable y sin reintentos (1 h por token), alias `mcp_github_tools` para `code-reviewer`/`explore` cuando no hay `github` del usuario.
 - Pendiente: opt-in de escritura `qaap.mcp.github.allowWrite` con confirmación obligatoria (`mcp_qaap-github_*`). Hasta entonces el filtro de solo lectura del backend bloquea cualquier herramienta sin `readOnlyHint`.
-- Pendiente: los prompts `code-reviewer` y `explore` de upstream siguen referenciando `{{prompt:mcp_github_tools}}`; ya no resuelven a las herramientas del servidor gestionado.
+- Limitación: `code-reviewer`/`explore` solo ven las herramientas gestionadas si el servidor ya arrancó (lo arranca un turno de GitHub); ellos no lo arrancan.
 - Pendiente de verificar en vivo:
   1. desktop: `api.githubcopilot.com/mcp/readonly` acepta el token OAuth de Qaap y el de `gh` sin licencia de Copilot (401/403 con `/user` válido => mensaje «no soportado»);
   2. `tools/list` en `/readonly` devuelve herramientas con `readOnlyHint` y el filtro no vacía la lista;

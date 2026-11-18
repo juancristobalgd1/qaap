@@ -178,8 +178,21 @@ headers `X-MCP-Readonly: true` and `X-MCP-Lockdown: true`.
 - **Single owner:** a tenant backend serves one owner; its owner-token cache is the only source.
 - **Never to harness CLIs:** Theia MCP servers are not exported to `.mcp.json` or to any agent CLI.
 - **Egress:** `.githubcopilot.com` is already on the tenant egress allowlist; nothing changed there.
-- **Not done yet:** the Connect GitHub composer chip and the `qaap.mcp.github.allowWrite` opt-in with
-  confirmation. Both are tracked in `docs/HANDOFF.md`.
+- **Status to the frontend:** `QaapGithubMcpStatusService` (RPC `/services/qaap-github-mcp-status`, per
+  connection) answers `available`, `source`, `mode` and `rejectedByPolicy` only; the value is copied field by
+  field, so no token can cross it. The chat error and the chip tooltip use it for the desktop hint
+  "…or run `gh auth login`".
+- **Policy refusal:** a 401 (through the managed provider) or a 401/403 that ended in `Errored` is checked
+  against `GET /user`. If GitHub accepts the token, the refusal is recorded per token hash for an hour: the
+  server is not started again for that token (stable code `qaap-github-mcp/policy-rejected`), the chat shows
+  "GitHub MCP rejected this token (Copilot policy or OAuth app restriction)" and no Connect chip is offered.
+- **Connect GitHub chip:** the chat input shows it only for `needs-credential`, `auth-required` (GitHub sign-in)
+  and `untrusted` (workspace trust dialog). The state lives in qaap-ai-config behind the structural contract
+  `QaapGithubMcpConnectionState` (qaap-shared-core), injected optionally by qaap-composer.
+- **Upstream prompts:** `code-reviewer` and `explore` refer to `{{prompt:mcp_github_tools}}`. While the managed
+  tools are registered and the user has no `github` server, that fragment is an alias of the managed tools; a
+  user `github` server keeps its own fragment.
+- **Not done yet:** the `qaap.mcp.github.allowWrite` opt-in with confirmation (`docs/HANDOFF.md`).
 
 ## Checks
 
@@ -193,6 +206,8 @@ headers `X-MCP-Readonly: true` and `X-MCP-Lockdown: true`.
   marker, `/readonly` without headers, without OAuth, as a command, in another letter case, the marker under
   another name and an extension-labelled `qaap-github`; none replaces the managed server or reaches a write tool.
 - `qaap-github-mcp-managed.spec` (shared-core): the reserved name and marker client id.
+- `qaap-github-mcp-connection-state-impl.spec`, `qaap-mcp-frontend-service.spec` (ai-config) and
+  `qaap-github-mcp-connect-chip.spec` (composer): chip states and actions, the prompt alias.
 - `qaap-mcp-frontend-application-contribution.spec` (ai-config): reserved entries never leave the frontend.
 - `qaap-github-mcp-default-migration.spec` (ai-config): the mirror write is a patch; a server only in the mirror is kept.
 - `qaap-hosted-git-push.spec`: the project config and hooks never run, the token is never in argv,

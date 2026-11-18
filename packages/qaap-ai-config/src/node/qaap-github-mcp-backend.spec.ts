@@ -5,12 +5,13 @@
 
 import { expect } from 'chai';
 import { MCPOAuthAuthorizationRequiredError, MCPOAuthAuthorizationServerError } from '@theia/ai-mcp/lib/node/mcp-oauth-errors';
-import type { MCPServerDescription } from '@theia/ai-mcp/lib/common/mcp-server-manager';
 import { QaapGithubMcpCredentialResolver, QaapGithubMcpRejectionVerdict } from '@theia/qaap-shared-core/lib/node/qaap-github-mcp-credential-resolver';
 import { QaapGithubMcpAuthProvider } from './qaap-github-mcp-auth-provider';
 import { QaapGithubMcpManagedServer, QAAP_GITHUB_MCP_NO_CREDENTIAL_CODE } from './qaap-github-mcp-managed-server';
 import { QaapGithubMcpServerManagerImpl } from './qaap-github-mcp-server-manager-impl';
 import { QaapGithubMcpOAuthClientProviderFactory } from './qaap-github-mcp-oauth-client-provider-factory';
+import { QaapGithubMcpStatusServiceImpl } from './qaap-github-mcp-status-service-impl';
+import { MCPServerDescription, MCPServerStatus } from '@theia/ai-mcp/lib/common/mcp-server-manager';
 
 const SECRET = 'gho_secret_value_for_tests';
 
@@ -21,7 +22,8 @@ interface ResolverStub {
     invalidations: number;
     mode(): 'desktop' | 'none';
     resolve(): Promise<{ token: string; source: 'env' } | undefined>;
-    describe(): Promise<{ available: boolean; source: undefined; mode: 'desktop' | 'none' }>;
+    policy: boolean;
+    describe(): Promise<{ available: boolean; source: undefined; mode: 'desktop' | 'none'; rejectedByPolicy: boolean }>;
     reportRejected(token: string): Promise<QaapGithubMcpRejectionVerdict>;
     invalidate(): void;
 }
@@ -34,7 +36,8 @@ function resolverStub(token: string | undefined, verdict: QaapGithubMcpRejection
         invalidations: 0,
         mode: () => 'desktop',
         resolve: async () => stub.token ? { token: stub.token, source: 'env' } : undefined,
-        describe: async () => ({ available: !!stub.token, source: undefined, mode: stub.mode() }),
+        policy: false,
+        describe: async () => ({ available: !!stub.token, source: undefined, mode: stub.mode(), rejectedByPolicy: stub.policy }),
         reportRejected: async (rejected: string) => { stub.rejectedTokens.push(rejected); return stub.verdict; },
         invalidate: () => { stub.invalidations++; },
     };
@@ -287,6 +290,29 @@ describe('QaapGithubMcpServerManagerImpl', () => {
         expect((error as Error).message).to.contain('changed');
     });
 
+    it('does not start the managed server for a token the endpoint refused by policy, with the stable code', async () => {
+        const stub = resolverStub(SECRET);
+        stub.policy = true;
+        const error = await rejectionOf(managerWith(stub).startServer('qaap-github'));
+        expect((error as Error & { code?: string }).code).to.equal('qaap-github-mcp/policy-rejected');
+        expect((error as Error).message).to.equal('GitHub MCP rejected this token (Copilot policy or OAuth app restriction)');
+        expect((error as Error).message).to.not.contain(SECRET);
+    });
+
+    it('reports a 401/403 that ended in Errored, so a policy refusal is recognised', async () => {
+        for (const [error, reported] of [['Error on MCP startup: SSE error: Non-200 status code (403)', true], ['Error on MCP startup: ECONNRESET', false]] as const) {
+            const stub = resolverStub(SECRET);
+            const manager = managerWith(stub);
+            const server = serversOf(manager).get('qaap-github') as unknown as { start(): Promise<void>; status: MCPServerStatus; error?: string };
+            server.start = async () => {
+                server.status = MCPServerStatus.Errored;
+                server.error = error;
+            };
+            await manager.startServer('qaap-github');
+            expect(stub.rejectedTokens, error).to.deep.equal(reported ? [SECRET] : []);
+        }
+    });
+
     it('reports the managed server as having stored credentials only when a credential exists', async () => {
         expect(await managerWith(resolverStub(SECRET)).hasStoredOAuthCredentials('qaap-github')).to.equal(true);
         expect(await managerWith(resolverStub(undefined)).hasStoredOAuthCredentials('qaap-github')).to.equal(false);
@@ -314,5 +340,17 @@ describe('QaapGithubMcpServerManagerImpl', () => {
         const manager = managerWith(resolverStub(SECRET));
         await manager.addOrUpdateServer({ name: 'github', command: 'npx', args: ['-y', '@modelcontextprotocol/server-github'], autostart: true });
         expect(await manager.getServerDescription('github')).to.have.property('command', 'npx');
+    });
+});
+
+describe('QaapGithubMcpStatusServiceImpl', () => {
+
+    it('answers only availability, source, mode and the policy flag, never the token', async () => {
+        const service = new QaapGithubMcpStatusServiceImpl();
+        const leaky = { available: true, source: 'env', mode: 'desktop', rejectedByPolicy: false, token: SECRET };
+        Object.assign(service, { credentialResolver: { describe: async () => leaky } });
+        const status = await service.getStatus();
+        expect(status).to.deep.equal({ available: true, source: 'env', mode: 'desktop', rejectedByPolicy: false });
+        expect(JSON.stringify(status)).to.not.contain(SECRET);
     });
 });

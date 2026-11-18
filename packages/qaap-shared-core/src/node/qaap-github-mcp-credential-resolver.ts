@@ -35,14 +35,19 @@ export interface QaapGithubMcpCredential {
     readonly source: QaapGithubMcpCredentialSource;
 }
 
-/** Status that never carries the token value. */
 /** `forgotten`: GitHub rejects the token too. `token-valid`: GitHub accepts it, so the endpoint refuses it (policy). */
 export type QaapGithubMcpRejectionVerdict = 'forgotten' | 'token-valid' | 'not-checked';
 
+/** Status that never carries the token value. */
 export interface QaapGithubMcpCredentialStatus {
     readonly available: boolean;
     readonly source: QaapGithubMcpCredentialSource | undefined;
     readonly mode: QaapGithubMcpCredentialMode;
+    /**
+     * The GitHub MCP endpoint refused the current token while `GET /user` accepted it (a Copilot policy or an
+     * OAuth app restriction). Signing in again does not help, so the server is not started again for this token.
+     */
+    readonly rejectedByPolicy: boolean;
 }
 
 /** The usual install locations a GUI app may not have on PATH, tried after the absolute PATH entries. */
@@ -50,6 +55,8 @@ const GH_FALLBACK_DIRS: readonly string[] = ['/opt/homebrew/bin', '/usr/local/bi
 const GH_TIMEOUT_MS = 5000;
 /** At most one `GET /user` check per token in this window; later 401s reuse the verdict. */
 const USER_CHECK_INTERVAL_MS = 5 * 60 * 1000;
+/** How long a policy refusal of a token stops new start attempts (no automatic retry loop). */
+const POLICY_REJECTION_TTL_MS = 60 * 60 * 1000;
 /** Environment variables of the `gh` call that change where gh reads its config or which host it asks. */
 const GH_ENV_KEPT = new Set(['GH_PROMPT_DISABLED']);
 
@@ -73,6 +80,9 @@ export class QaapGithubMcpCredentialResolver {
 
     /** Last `GET /user` verdict per token hash (never the token itself), see {@link USER_CHECK_INTERVAL_MS}. */
     protected readonly userCheckVerdicts = new Map<string, { at: number; verdict: 'rejected' | 'accepted' | 'unknown' }>();
+
+    /** When the endpoint refused a token GitHub still accepts, per token hash (never the token itself). */
+    protected readonly policyRejections = new Map<string, number>();
 
     /** The mode of this process, from its environment. Anything not stated explicitly is `none`. */
     mode(): QaapGithubMcpCredentialMode {
@@ -117,10 +127,28 @@ export class QaapGithubMcpCredentialResolver {
     async describe(): Promise<QaapGithubMcpCredentialStatus> {
         const mode = this.mode();
         if (mode === 'none') {
-            return { available: false, source: undefined, mode };
+            return { available: false, source: undefined, mode, rejectedByPolicy: false };
         }
         const credential = await this.resolve();
-        return { available: !!credential, source: credential?.source, mode };
+        return { available: !!credential, source: credential?.source, mode, rejectedByPolicy: !!credential && this.isRejectedByPolicy(credential.token) };
+    }
+
+    /** Whether the endpoint refused `token` for policy reasons within {@link POLICY_REJECTION_TTL_MS}. */
+    isRejectedByPolicy(token: string, now: number = Date.now()): boolean {
+        const key = QaapGithubMcpCredentialResolver.tokenKey(token);
+        const at = this.policyRejections.get(key);
+        if (at === undefined) {
+            return false;
+        }
+        if (now - at >= POLICY_REJECTION_TTL_MS) {
+            this.policyRejections.delete(key);
+            return false;
+        }
+        return true;
+    }
+
+    protected static tokenKey(token: string): string {
+        return createHash('sha256').update(token).digest('hex');
     }
 
     /** Forgets the memoized credential, for example after GitHub rejected it or the user signed in again. */
@@ -129,27 +157,31 @@ export class QaapGithubMcpCredentialResolver {
     }
 
     /**
-     * The MCP endpoint answered 401 for `token`. The memo is always cleared. Only a tenant backend forgets
-     * the owner's cached token, and only after `GET /user` confirms GitHub rejects it too: a 401 from the
-     * Copilot endpoint alone can be a policy or OAuth-app restriction on a valid token.
+     * The MCP endpoint answered 401 or 403 for `token`. The memo is always cleared and `GET /user` tells the two
+     * cases apart (at most once per token every 5 minutes):
+     * - GitHub accepts the token: the endpoint refuses it by policy (Copilot policy, OAuth app restriction). This
+     *   is recorded, so the server is not started again for this token and the user sees a stable message.
+     * - GitHub rejects it too: only a tenant backend forgets the owner's cached token; elsewhere nothing is
+     *   forgotten (the next lookup simply finds the current credential).
      */
     async reportRejected(token: string): Promise<QaapGithubMcpRejectionVerdict> {
         this.invalidate();
-        const owner = readQaapTenantOwnerLogin(this.env());
-        if (!owner) {
-            return 'not-checked';
-        }
         const verdict = await this.checkUserLimited(token);
-        if (verdict === 'rejected') {
+        if (verdict === 'accepted') {
+            this.policyRejections.set(QaapGithubMcpCredentialResolver.tokenKey(token), Date.now());
+            return 'token-valid';
+        }
+        const owner = readQaapTenantOwnerLogin(this.env());
+        if (verdict === 'rejected' && owner) {
             this.ownerTokenCache.forget(owner, token);
             return 'forgotten';
         }
-        return verdict === 'accepted' ? 'token-valid' : 'not-checked';
+        return 'not-checked';
     }
 
     /** {@link checkUser}, at most once per token per {@link USER_CHECK_INTERVAL_MS}; an `unknown` verdict is not cached. */
     protected async checkUserLimited(token: string, now: number = Date.now()): Promise<'rejected' | 'accepted' | 'unknown'> {
-        const key = createHash('sha256').update(token).digest('hex');
+        const key = QaapGithubMcpCredentialResolver.tokenKey(token);
         const cached = this.userCheckVerdicts.get(key);
         if (cached && now - cached.at < USER_CHECK_INTERVAL_MS) {
             return cached.verdict;

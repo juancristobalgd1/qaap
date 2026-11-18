@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import type { MCPServerDescription } from '@theia/ai-mcp/lib/common/mcp-server-manager';
-import { nls } from '@theia/core/lib/common/nls';
+import { QaapGithubMcpMessages } from '../common/qaap-github-mcp-status';
 import {
     QAAP_GITHUB_MCP_OAUTH_CLIENT_ID,
     QAAP_GITHUB_MCP_READONLY_URL,
@@ -13,6 +13,8 @@ import {
 
 /** Stable error code the frontend uses to show "Connect GitHub" instead of a generic failure. */
 export const QAAP_GITHUB_MCP_NO_CREDENTIAL_CODE = 'qaap-github-mcp/no-credential';
+/** Stable error code of a policy refusal: the endpoint refuses a token GitHub accepts. */
+export const QAAP_GITHUB_MCP_POLICY_REJECTED_CODE = 'qaap-github-mcp/policy-rejected';
 
 /**
  * The managed GitHub MCP server description. It carries only the public read-only endpoint, the read-only
@@ -48,9 +50,18 @@ export namespace QaapGithubMcpManagedServer {
 
     export function noCredentialError(): Error {
         return Object.assign(
-            new Error(nls.localize('theia/qaap/githubMcp/noCredential', 'Connect GitHub to use GitHub tools')),
+            new Error(QaapGithubMcpMessages.noCredential(false)),
             { code: QAAP_GITHUB_MCP_NO_CREDENTIAL_CODE }
         );
+    }
+
+    /** The stable policy-refusal text; signing in again does not help, so the UI offers no Connect action. */
+    export function policyRejectedMessage(): string {
+        return QaapGithubMcpMessages.policyRejected();
+    }
+
+    export function policyRejectedError(): Error {
+        return Object.assign(new Error(policyRejectedMessage()), { code: QAAP_GITHUB_MCP_POLICY_REJECTED_CODE });
     }
 
     function canonical(value: unknown): string {

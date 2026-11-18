@@ -119,7 +119,7 @@ describe('QaapGithubMcpCredentialResolver', () => {
         const resolver = new TestResolver([session('alice', 'gho_session')]);
         resolver.fakeEnv = { NODE_ENV: 'production', GH_TOKEN: 'ghp_env', QAAP_DESKTOP: '1' };
         expect(resolver.mode()).to.equal('none');
-        expect(await resolver.describe()).to.deep.equal({ available: false, source: undefined, mode: 'none' });
+        expect(await resolver.describe()).to.deep.equal({ available: false, source: undefined, mode: 'none', rejectedByPolicy: false });
         expect(await resolver.resolve()).to.equal(undefined);
         expect(resolver.ghCalls).to.equal(0);
     });
@@ -182,19 +182,38 @@ describe('QaapGithubMcpCredentialResolver', () => {
         expect(resolver.userChecks).to.equal(2);
     });
 
-    it('does not call GitHub /user on the desktop; it only clears the memo', async () => {
+    it('on the desktop checks GitHub /user but never forgets anything', async () => {
         const resolver = new TestResolver();
         resolver.fakeEnv = { QAAP_DESKTOP: '1', GH_TOKEN: 'ghp_env' };
         expect((await resolver.resolve())?.source).to.equal('env');
+        resolver.userCheck = 'rejected';
         expect(await resolver.reportRejected('ghp_env')).to.equal('not-checked');
-        expect(resolver.userChecks).to.equal(0);
+        expect(resolver.userChecks).to.equal(1);
+        expect((await resolver.resolve())?.token).to.equal('ghp_env');
+    });
+
+    it('records a policy refusal when /user accepts the token, and reports it in describe() without the value', async () => {
+        const resolver = new TestResolver();
+        resolver.fakeEnv = { QAAP_DESKTOP: '1', GH_TOKEN: 'ghp_policy_secret' };
+        expect((await resolver.describe()).rejectedByPolicy).to.equal(false);
+        resolver.userCheck = 'accepted';
+        expect(await resolver.reportRejected('ghp_policy_secret')).to.equal('token-valid');
+        const status = await resolver.describe();
+        expect(status).to.deep.equal({ available: true, source: 'env', mode: 'desktop', rejectedByPolicy: true });
+        expect(JSON.stringify(status)).to.not.contain('ghp_policy_secret');
+        // A different token (for example after `gh auth login`) is not affected.
+        resolver.fakeEnv = { QAAP_DESKTOP: '1', GH_TOKEN: 'ghp_new' };
+        resolver.invalidate();
+        expect((await resolver.describe()).rejectedByPolicy).to.equal(false);
+        // The refusal expires.
+        expect(resolver.isRejectedByPolicy('ghp_policy_secret', Date.now() + 61 * 60 * 1000)).to.equal(false);
     });
 
     it('describes availability without the token value', async () => {
         const resolver = new TestResolver();
         resolver.fakeEnv = { QAAP_DESKTOP: '1', GH_TOKEN: 'ghp_secret_value' };
         const status = await resolver.describe();
-        expect(status).to.deep.equal({ available: true, source: 'env', mode: 'desktop' });
+        expect(status).to.deep.equal({ available: true, source: 'env', mode: 'desktop', rejectedByPolicy: false });
         expect(JSON.stringify(status)).to.not.contain('ghp_secret_value');
     });
 });

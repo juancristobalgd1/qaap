@@ -28,12 +28,14 @@ describe('QaapGithubMcpOnDemandStarter', () => {
         startError?: Error;
         startDelayMs?: number;
         trusted?: boolean;
+        /** Policy refusal recorded by the backend: before the start, or only after it failed. */
+        policy?: 'before' | 'after-start';
     }): { starter: QaapGithubMcpOnDemandStarter; calls: Calls } {
         const calls: Calls = { started: 0, checks: 0 };
         let running = !!options.running;
         const mcpService = {
             isServerStarted: async (): Promise<boolean> => running,
-            hasStoredOAuthCredentials: async (): Promise<boolean> => { calls.checks++; return options.credential !== false; },
+            hasStoredOAuthCredentials: async (): Promise<boolean> => { throw new Error('the status service is the credential check'); },
             startServer: async (): Promise<void> => {
                 calls.started++;
                 if (options.startDelayMs) {
@@ -47,7 +49,14 @@ describe('QaapGithubMcpOnDemandStarter', () => {
             getServerDescription: async (): Promise<{ status: MCPServerStatus } | undefined> => ({ status: options.status ?? MCPServerStatus.Connected }),
         };
         const starter = new QaapGithubMcpOnDemandStarter();
-        Object.assign(starter, { mcpService, workspaceTrustService: { getWorkspaceTrust: async (): Promise<boolean> => options.trusted !== false } });
+        const statusService = {
+            getStatus: async () => {
+                calls.checks++;
+                const rejectedByPolicy = options.policy === 'before' || (options.policy === 'after-start' && calls.started > 0);
+                return { available: options.credential !== false, source: 'gh-cli' as const, mode: 'desktop' as const, rejectedByPolicy };
+            },
+        };
+        Object.assign(starter, { mcpService, statusService, workspaceTrustService: { getWorkspaceTrust: async (): Promise<boolean> => options.trusted !== false } });
         return { starter, calls };
     }
 
@@ -75,6 +84,26 @@ describe('QaapGithubMcpOnDemandStarter', () => {
     it('reports error, not started, when the server lands in Errored', async () => {
         const { starter } = createStarter({ status: MCPServerStatus.Errored });
         expect(await starter.ensureStarted()).to.equal('error');
+    });
+
+    it('never starts the server for a token the endpoint refused by policy (no automatic retry)', async () => {
+        const { starter, calls } = createStarter({ policy: 'before' });
+        expect(await starter.ensureStarted()).to.equal('policy-rejected');
+        expect(await starter.ensureStarted()).to.equal('policy-rejected');
+        expect(calls.started).to.equal(0);
+    });
+
+    it('reports policy-rejected, not auth-required or error, when the start fails by policy', async () => {
+        for (const status of [MCPServerStatus.AuthenticationRequired, MCPServerStatus.Errored]) {
+            const { starter } = createStarter({ status, policy: 'after-start' });
+            expect(await starter.ensureStarted()).to.equal('policy-rejected');
+        }
+    });
+
+    it('exposes the last credential status, without any token', async () => {
+        const { starter } = createStarter({});
+        await starter.ensureStarted();
+        expect(starter.getLastStatus()).to.deep.equal({ available: true, source: 'gh-cli', mode: 'desktop', rejectedByPolicy: false });
     });
 
     it('reports auth-required when GitHub refuses the token', async () => {
@@ -105,7 +134,7 @@ describe('QaapGithubMcpOnDemandStarter', () => {
 
     it('fires onDidChange with each completed outcome', async () => {
         const { starter } = createStarter({ credential: false });
-        const seen: string[] = [];
+        const seen: Array<string | undefined> = [];
         starter.onDidChange(outcome => seen.push(outcome));
         await starter.ensureStarted();
         expect(seen).to.deep.equal(['needs-credential']);

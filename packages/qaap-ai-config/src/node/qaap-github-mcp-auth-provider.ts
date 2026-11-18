@@ -6,9 +6,9 @@
 import { MCPOAuthClientProvider, MCPOAuthClientProviderOptions } from '@theia/ai-mcp/lib/node/mcp-oauth-client-provider';
 import { MCPOAuthAuthorizationRequiredError, MCPOAuthAuthorizationServerError } from '@theia/ai-mcp/lib/node/mcp-oauth-errors';
 import type { StoredOAuthValue } from '@theia/ai-mcp/lib/node/mcp-oauth-keystore';
-import { nls } from '@theia/core/lib/common/nls';
 import { QAAP_GITHUB_MCP_OAUTH_CLIENT_ID } from '@theia/qaap-shared-core/lib/common/qaap-github-mcp-managed';
 import { QaapGithubMcpCredentialResolver } from '@theia/qaap-shared-core/lib/node/qaap-github-mcp-credential-resolver';
+import { QaapGithubMcpManagedServer } from './qaap-github-mcp-managed-server';
 
 type ManagedTokens = NonNullable<Awaited<ReturnType<MCPOAuthClientProvider['tokens']>>>;
 type ManagedClientInformation = NonNullable<Awaited<ReturnType<MCPOAuthClientProvider['clientInformation']>>>;
@@ -60,10 +60,7 @@ export class QaapGithubMcpAuthProvider extends MCPOAuthClientProvider {
         this.lastToken = undefined;
         const verdict = token ? await this.resolver.reportRejected(token) : 'not-checked';
         if (verdict === 'token-valid') {
-            throw new MCPOAuthAuthorizationServerError(
-                'access_denied',
-                nls.localize('theia/qaap/githubMcp/rejectedByPolicy', 'GitHub MCP rejected this token (Copilot policy / OAuth app restriction)')
-            );
+            throw new MCPOAuthAuthorizationServerError('access_denied', QaapGithubMcpManagedServer.policyRejectedMessage());
         }
         throw new MCPOAuthAuthorizationRequiredError();
     }

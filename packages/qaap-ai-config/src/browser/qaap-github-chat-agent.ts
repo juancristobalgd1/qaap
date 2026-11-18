@@ -6,7 +6,7 @@
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { ErrorChatResponseContentImpl, MutableChatRequestModel } from '@theia/ai-chat/lib/common/chat-model';
 import type { MCPServerDescription } from '@theia/ai-mcp/lib/common/mcp-server-manager';
-import { nls } from '@theia/core/lib/common/nls';
+import { QaapGithubMcpMessages } from '../common/qaap-github-mcp-status';
 import { GitHubChatAgent } from '@theia/ai-ide/lib/browser/github-chat-agent';
 import { githubTemplate } from '@theia/ai-ide/lib/browser/github-prompt-template';
 import { QAAP_GITHUB_MCP_SERVER_NAME } from '@theia/qaap-shared-core/lib/common/qaap-github-mcp-managed';
@@ -46,7 +46,7 @@ export class QaapGitHubChatAgent extends GitHubChatAgent {
 
     /** A GitHub turn starts the managed server silently; without a credential the turn ends with a clear error. */
     override async invoke(request: MutableChatRequestModel): Promise<void> {
-        const failure = QaapGitHubChatAgent.failureMessage(await this.starter.ensureStarted());
+        const failure = this.failureFor(await this.starter.ensureStarted());
         if (failure) {
             request.response.response.addContent(new ErrorChatResponseContentImpl(new Error(failure)));
             request.response.complete();
@@ -56,27 +56,33 @@ export class QaapGitHubChatAgent extends GitHubChatAgent {
     }
 
     protected override async startServer(): Promise<void> {
-        const outcome = await this.starter.ensureStarted();
-        const failure = QaapGitHubChatAgent.failureMessage(outcome);
+        const failure = this.failureFor(await this.starter.ensureStarted());
         if (failure) {
             throw new Error(failure);
         }
     }
 
     /** The text shown in the chat for a start outcome that stops the turn; `undefined` when the turn may continue. */
-    static failureMessage(outcome: QaapGithubMcpStartOutcome): string | undefined {
+    static failureMessage(outcome: QaapGithubMcpStartOutcome, desktop: boolean = false): string | undefined {
         switch (outcome) {
             case 'started':
                 return undefined;
             case 'needs-credential':
-                return nls.localize('theia/qaap/githubMcp/noCredential', 'Connect GitHub to use GitHub tools');
+                return QaapGithubMcpMessages.noCredential(desktop);
             case 'auth-required':
-                return nls.localize('theia/qaap/githubMcp/authRequired', 'GitHub rejected the token. Connect GitHub again to use GitHub tools.');
+                return QaapGithubMcpMessages.authRequired(desktop);
             case 'untrusted':
-                return nls.localize('theia/qaap/githubMcp/untrusted', 'Trust this workspace to use GitHub tools.');
+                return QaapGithubMcpMessages.untrusted();
+            case 'policy-rejected':
+                return QaapGithubMcpMessages.policyRejected();
             default:
-                return nls.localize('theia/qaap/githubMcp/startFailed', 'The GitHub MCP server could not connect to GitHub. Try again later.');
+                return QaapGithubMcpMessages.startFailed();
         }
+    }
+
+    /** The failure text for `outcome`, with the `gh auth login` hint on the desktop. */
+    protected failureFor(outcome: QaapGithubMcpStartOutcome): string | undefined {
+        return QaapGitHubChatAgent.failureMessage(outcome, this.starter.getLastStatus()?.mode === 'desktop');
     }
 
     override async ensureServerStarted(server: MCPServerDescription): Promise<void> {

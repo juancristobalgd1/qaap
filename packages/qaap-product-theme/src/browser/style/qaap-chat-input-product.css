@@ -158,3 +158,28 @@
   opacity: var(--theia-mod-disabled-opacity);
   cursor: default;
 }
+
+/* Managed GitHub MCP server: "Connect GitHub" chip, shown only while a user action is needed. */
+.qaap-github-mcp-connect-chip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--q-space-1);
+  height: 22px;
+  padding: 0 var(--q-space-2);
+  border: var(--theia-border-width) solid var(--q-accent);
+  border-radius: var(--q-radius-pill);
+  background: var(--q-accent-soft);
+  color: var(--q-text);
+  font-family: var(--q-font-sans);
+  cursor: pointer;
+}
+
+.qaap-github-mcp-connect-chip:hover {
+  background: var(--theia-list-hoverBackground);
+}
+
+.qaap-github-mcp-connect-chip:focus-visible {
+  outline: 1px solid var(--theia-focusBorder);
+  outline-offset: 1px;
+}

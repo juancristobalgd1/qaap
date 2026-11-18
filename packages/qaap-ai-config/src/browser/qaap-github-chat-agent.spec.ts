@@ -93,4 +93,14 @@ describe('QaapGitHubChatAgent', () => {
         expect(calls.sets).to.have.length(0);
         expect(calls.opened).to.deep.equal([]);
     });
+
+    it('gives a stable policy message without any Connect action, and the gh hint only on the desktop', () => {
+        expect(QaapGitHubChatAgent.failureMessage('policy-rejected')).to.equal('GitHub MCP rejected this token (Copilot policy or OAuth app restriction)');
+        expect(QaapGitHubChatAgent.failureMessage('policy-rejected', true)).to.not.contain('Connect');
+        expect(QaapGitHubChatAgent.failureMessage('needs-credential', true)).to.contain('gh auth login');
+        expect(QaapGitHubChatAgent.failureMessage('auth-required', true)).to.contain('gh auth login');
+        expect(QaapGitHubChatAgent.failureMessage('needs-credential', false)).to.not.contain('gh auth login');
+        expect(QaapGitHubChatAgent.failureMessage('untrusted')).to.contain('Trust');
+        expect(QaapGitHubChatAgent.failureMessage('started')).to.equal(undefined);
+    });
 });

@@ -23,6 +23,13 @@ import { QaapHarnessConfigurationWidget } from './qaap-harness-configuration-wid
 import { QaapMcpFrontendApplicationContribution } from './qaap-mcp-frontend-application-contribution';
 import { QaapGithubMcpDefaultMigration } from './qaap-github-mcp-default-migration';
 import { McpFrontendApplicationContribution } from '@theia/ai-mcp/lib/browser/mcp-frontend-application-contribution';
+import { MCPFrontendService } from '@theia/ai-mcp/lib/common/mcp-server-manager';
+import { ServiceConnectionProvider } from '@theia/core/lib/browser/messaging/service-connection-provider';
+import { QaapGithubMcpConnectionState } from '@theia/qaap-shared-core/lib/browser/qaap-github-mcp-connection-state';
+import { QAAP_GITHUB_MCP_STATUS_PATH, QaapGithubMcpStatusService } from '../common/qaap-github-mcp-status';
+import { QaapGithubMcpOnDemandStarter } from './qaap-github-mcp-on-demand-starter';
+import { QaapGithubMcpConnectionStateImpl } from './qaap-github-mcp-connection-state-impl';
+import { QaapMcpFrontendService } from './qaap-mcp-frontend-service';
 
 import { CodexChatAgent } from '@theia/ai-codex/lib/browser/codex-chat-agent';
 import { QaapCodexChatAgent } from './qaap-codex-chat-agent';
@@ -56,6 +63,17 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     // Removes the GitHub MCP entry the old marketplace catalog installed, only when it is still exactly that default.
     bind(QaapGithubMcpDefaultMigration).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapGithubMcpDefaultMigration);
+
+    // Managed GitHub MCP server: credential status over RPC (never the token), on-demand start, the state the
+    // composer's Connect GitHub chip follows, and the `mcp_github_tools` alias for the upstream prompts.
+    bind(QaapGithubMcpStatusService).toDynamicValue(ctx =>
+        ServiceConnectionProvider.createProxy<QaapGithubMcpStatusService>(ctx.container, QAAP_GITHUB_MCP_STATUS_PATH)
+    ).inSingletonScope();
+    bind(QaapGithubMcpOnDemandStarter).toSelf().inSingletonScope();
+    bind(QaapGithubMcpConnectionStateImpl).toSelf().inSingletonScope();
+    bind(QaapGithubMcpConnectionState).toService(QaapGithubMcpConnectionStateImpl);
+    bind(QaapMcpFrontendService).toSelf().inSingletonScope();
+    rebind(MCPFrontendService).toService(QaapMcpFrontendService);
 
     bind(QaapCodexChatAgent).toSelf().inSingletonScope();
     rebind(CodexChatAgent).toService(QaapCodexChatAgent);
