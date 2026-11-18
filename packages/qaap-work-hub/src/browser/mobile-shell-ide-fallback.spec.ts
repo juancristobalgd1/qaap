@@ -97,6 +97,7 @@ describe('mobile-shell-ide-fallback', () => {
             hide: () => { calls.push('panel.hide'); },
             dispose: () => { calls.push('panel.dispose'); },
             openInlineConversation: () => undefined,
+            isWorkHubSessionsSidebarVisible: () => false,
             node: panelNode,
         } as unknown as MobileProjectsPanel;
         const controller = new MobileShellIdeFallbackController({
@@ -124,6 +125,13 @@ describe('mobile-shell-ide-fallback', () => {
         controller.openDesktopIde();
         expect(host.panel).to.equal(undefined);
         expect(sessionState.conversationBeforeDesktopIde).to.equal(target);
+    });
+
+    it('openDesktopIde keeps whether the sessions sidebar was open before disposing the panel', () => {
+        const { controller, host, sessionState } = createController();
+        (host.panel as unknown as { isWorkHubSessionsSidebarVisible: () => boolean }).isWorkHubSessionsSidebarVisible = () => true;
+        controller.openDesktopIde();
+        expect(sessionState.sessionsSidebarOpenBeforeDesktopIde).to.equal(true);
     });
 
     it('openDesktopIde from the idle new-task shell keeps no conversation', () => {

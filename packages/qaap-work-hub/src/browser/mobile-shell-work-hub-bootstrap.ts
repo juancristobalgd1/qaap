@@ -309,12 +309,19 @@ export class MobileShellWorkHubBootstrapController {
     }
 
     /**
-     * Back from the desktop IDE: reopen the conversation that was open when the user left, so the Work Hub does
-     * not land on the empty new-task shell. Taken once; the transcript restores its own read position.
+     * Back from the desktop IDE: reopen the sessions sidebar when it was open and the conversation that was open when
+     * the user left, so the Work Hub does not land on the empty new-task shell. Taken once; the transcript restores
+     * its own read position.
      */
     protected reopenConversationBeforeDesktopIde(panel: MobileProjectsPanel): void {
         const target = this.sessionState.conversationBeforeDesktopIde;
         this.sessionState.conversationBeforeDesktopIde = undefined;
+        const sidebarWasOpen = this.sessionState.sessionsSidebarOpenBeforeDesktopIde;
+        this.sessionState.sessionsSidebarOpenBeforeDesktopIde = undefined;
+        // The panel's disposal hid the sidebar and recorded it as collapsed: an open sidebar opens again (which clears that).
+        if (sidebarWasOpen && !matchesMobileOneColumnLayout() && !panel.isWorkHubSessionsSidebarVisible()) {
+            panel.openWorkHubSessionsSidebar();
+        }
         if (!target) {
             return;
         }

@@ -43,6 +43,12 @@ export class MobileShellSessionState {
      */
     conversationBeforeDesktopIde: MobileShellConversationTarget | undefined;
 
+    /**
+     * Whether the desktop sessions sidebar was open when the user switched to the desktop IDE. Disposing the Work Hub
+     * panel hides the sidebar, which records it as collapsed; the switch back reopens it when it was open.
+     */
+    sessionsSidebarOpenBeforeDesktopIde: boolean | undefined;
+
     /** Bumped to cancel in-flight Agents bootstrap when the user opens the desktop IDE. */
     agentsBootstrapEpoch = 0;
 
