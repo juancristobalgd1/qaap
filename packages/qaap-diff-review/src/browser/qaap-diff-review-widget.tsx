@@ -1086,13 +1086,15 @@ export class QaapDiffReviewWidget extends ReactWidget {
                 )}
                 {this.gitIdentity && !this.gitIdentity.configured && (
                     <span
-                        className='qaap-agent-changes-verify-status qaap-mod-missing'
+                        className='qaap-agent-changes-verify-status qaap-mod-info'
                         title={nls.localize(
-                            'qaap/mobileProjects/gitIdentityWillBeConfigured',
-                            'Git author identity will be configured before commit',
+                            'qaap/mobileProjects/gitIdentityFallbackHint',
+                            'No Git author is set for this repository, so Qaap commits as "Qaap <qaap@local>". '
+                            + 'To commit as yourself, run: git config --global user.name "Your Name" and '
+                            + 'git config --global user.email you@example.com',
                         )}
                     >
-                        {nls.localize('qaap/mobileProjects/gitIdentityNeeded', 'Git identity needed')}
+                        {nls.localize('qaap/mobileProjects/gitIdentityFallback', 'Commits as Qaap')}
                     </span>
                 )}
                 <span className='qaap-agent-changes-toolbar-spacer' />
