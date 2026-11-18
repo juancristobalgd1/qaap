@@ -2006,9 +2006,14 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     createEmptyWelcomeHints(): HTMLElement {
         return createQaapEmptyWelcomeHints(readQaapSignedIn(), {
-            openProject: () => { void this.commands.executeCommand(QAAP_PROJECT_SWITCHER_COMMAND.id); },
-            startTask: () => {
-                document.querySelector<HTMLTextAreaElement>('.theia-mobile-projects-sticky-composer textarea:not([disabled])')?.focus();
+            // The Work Hub's own project picker (Project / Branch / Run in), anchored on the header project
+            // button; the quick-pick switcher only when the header has no project to anchor on.
+            openProject: () => {
+                if (this.headerProjectBtn.isConnected && !this.headerProjectBtn.hidden && this.hubHeaderUi.resolveHeaderProject()) {
+                    this.onHeaderProjectClick(this.headerProjectBtn);
+                    return;
+                }
+                void this.commands.executeCommand(QAAP_PROJECT_SWITCHER_COMMAND.id);
             },
             connectGithub: () => { void this.commands.executeCommand(QAAP_AUTH_SIGN_IN_GITHUB_COMMAND); },
         });

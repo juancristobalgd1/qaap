@@ -5,25 +5,23 @@
 
 import { nls } from '@theia/core';
 
-export type QaapEmptyWelcomeHintId = 'openProject' | 'startTask' | 'connectGithub';
+export type QaapEmptyWelcomeHintId = 'openProject' | 'connectGithub';
 
 export interface QaapEmptyWelcomeHintActions {
     readonly openProject: () => void;
-    readonly startTask: () => void;
     readonly connectGithub: () => void;
 }
 
 /** Hints for the empty chat. "Connect GitHub" only appears while no account is signed in. */
 export function resolveEmptyWelcomeHintIds(signedIn: boolean): readonly QaapEmptyWelcomeHintId[] {
-    return signedIn ? ['openProject', 'startTask'] : ['openProject', 'startTask', 'connectGithub'];
+    // No "Start a task": the empty composer below already starts a new task.
+    return signedIn ? ['openProject'] : ['openProject', 'connectGithub'];
 }
 
 function emptyWelcomeHintLabel(id: QaapEmptyWelcomeHintId): string {
     switch (id) {
         case 'openProject':
             return nls.localize('qaap/welcomeHints/openProject', 'Open a project');
-        case 'startTask':
-            return nls.localize('qaap/welcomeHints/startTask', 'Start a task');
         case 'connectGithub':
             return nls.localize('qaap/welcomeHints/connectGithub', 'Connect GitHub');
     }

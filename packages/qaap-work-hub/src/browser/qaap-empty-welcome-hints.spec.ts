@@ -25,31 +25,29 @@ describe('qaap-empty-welcome-hints', () => {
     });
 
     it('offers Connect GitHub only while no account is signed in', () => {
-        expect(resolveEmptyWelcomeHintIds(false)).to.deep.equal(['openProject', 'startTask', 'connectGithub']);
-        expect(resolveEmptyWelcomeHintIds(true)).to.deep.equal(['openProject', 'startTask']);
+        expect(resolveEmptyWelcomeHintIds(false)).to.deep.equal(['openProject', 'connectGithub']);
+        expect(resolveEmptyWelcomeHintIds(true)).to.deep.equal(['openProject']);
     });
 
     it('renders one chip per hint and runs the matching existing action on click', () => {
         const calls: string[] = [];
         const group = createQaapEmptyWelcomeHints(false, {
             openProject: () => calls.push('openProject'),
-            startTask: () => calls.push('startTask'),
             connectGithub: () => calls.push('connectGithub'),
         });
         const chips = [...group.querySelectorAll<HTMLButtonElement>('button.theia-mobile-agent-transcript-empty-hint')];
-        expect(chips.map(chip => chip.getAttribute('data-welcome-hint'))).to.deep.equal(['openProject', 'startTask', 'connectGithub']);
-        expect(chips.map(chip => chip.textContent)).to.deep.equal(['Open a project', 'Start a task', 'Connect GitHub']);
+        expect(chips.map(chip => chip.getAttribute('data-welcome-hint'))).to.deep.equal(['openProject', 'connectGithub']);
+        expect(chips.map(chip => chip.textContent)).to.deep.equal(['Open a project', 'Connect GitHub']);
         chips.forEach(chip => chip.click());
-        expect(calls).to.deep.equal(['openProject', 'startTask', 'connectGithub']);
+        expect(calls).to.deep.equal(['openProject', 'connectGithub']);
     });
 
     it('omits Connect GitHub when signed in', () => {
         const group = createQaapEmptyWelcomeHints(true, {
             openProject: () => undefined,
-            startTask: () => undefined,
             connectGithub: () => undefined,
         });
         expect(group.querySelector('[data-welcome-hint="connectGithub"]')).to.equal(null);
-        expect(group.querySelectorAll('button')).to.have.length(2);
+        expect(group.querySelectorAll('button')).to.have.length(1);
     });
 });
