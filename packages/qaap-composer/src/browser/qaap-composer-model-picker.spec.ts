@@ -307,4 +307,30 @@ describe('qaap-composer-model-picker', () => {
         expect(host.querySelector<HTMLInputElement>('.qaap-model-picker-search input')!.value).to.equal('opu');
         expect(rows(host).map(row => row.dataset.modelId)).to.deep.equal(['opus-4-6']);
     });
+
+    it('shows a loading line, not "No models match.", while the selected harness list is still loading', () => {
+        renderQaapComposerModelPicker(host, props({ state: state({ models: [], loading: true }) }));
+        const empty = host.querySelector<HTMLElement>('.qaap-model-picker-empty');
+        expect(empty?.textContent).to.equal('Loading models…');
+        expect(empty?.getAttribute('role')).to.equal('status');
+        expect(host.querySelector('.qaap-model-picker-rows')?.getAttribute('aria-busy')).to.equal('true');
+        expect(host.textContent).to.not.contain('No models match.');
+    });
+
+    it('shows "No models match." once the list has loaded and the filter leaves nothing', () => {
+        renderQaapComposerModelPicker(host, props({ state: state({ models: [], loading: false }) }));
+        expect(host.querySelector('.qaap-model-picker-empty')?.textContent).to.equal('No models match.');
+        expect(host.querySelector('.qaap-model-picker-rows')?.hasAttribute('aria-busy')).to.be.false;
+    });
+
+    it('keeps "No models match." when a loaded list is filtered down to nothing', () => {
+        renderQaapComposerModelPicker(host, props({ state: state({ query: 'zzz', loading: false }) }));
+        expect(host.querySelector('.qaap-model-picker-empty')?.textContent).to.equal('No models match.');
+    });
+
+    it('shows the rows, not the loading line, when models are already listed', () => {
+        renderQaapComposerModelPicker(host, props({ state: state({ loading: true }) }));
+        expect(host.querySelector('.qaap-model-picker-empty')).to.be.null;
+        expect(rows(host).length).to.be.greaterThan(0);
+    });
 });

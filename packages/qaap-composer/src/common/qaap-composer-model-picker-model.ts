@@ -31,6 +31,11 @@ export interface QaapPickerState {
     readonly query: string;
     readonly currentAgentId: string;
     readonly currentModelId?: string;
+    /**
+     * The model list of the selected rail (every harness for the favorites) has not answered yet. The list shows a
+     * loading line instead of "No models match." until it does.
+     */
+    readonly loading?: boolean;
 }
 
 export namespace QaapComposerModelPickerModel {

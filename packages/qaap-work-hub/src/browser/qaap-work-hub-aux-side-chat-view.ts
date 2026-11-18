@@ -1001,6 +1001,8 @@ export class QaapWorkHubAuxSideChatView implements Disposable {
             query: this.pickerQuery,
             currentAgentId: selection.agentId,
             currentModelId: selection.agentModel?.modelId,
+            // `models` stays undefined until the first listModels() settles (success or failure).
+            loading: this.models === undefined,
         };
         return {
             state,

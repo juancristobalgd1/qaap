@@ -450,7 +450,14 @@ function renderList(host: HTMLElement, props: QaapComposerModelPickerProps): HTM
     if (models.length === 0) {
         const empty = document.createElement('p');
         empty.className = 'qaap-model-picker-empty';
-        empty.textContent = nls.localize('qaap/composer/picker/noModels', 'No models match.');
+        if (props.state.loading) {
+            // Still loading: say so, and keep "No models match." for a list that has actually answered.
+            rows.setAttribute('aria-busy', 'true');
+            empty.setAttribute('role', 'status');
+            empty.textContent = nls.localize('qaap/composer/picker/loadingModels', 'Loading models…');
+        } else {
+            empty.textContent = nls.localize('qaap/composer/picker/noModels', 'No models match.');
+        }
         rows.append(empty);
     }
     section.append(search, rows);
