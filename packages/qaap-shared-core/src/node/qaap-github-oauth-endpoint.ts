@@ -1066,6 +1066,12 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             return;
         }
         if (auth.kind === 'skip') {
+            if (isQaapDesktopRuntime()) {
+                // Desktop without a Qaap GitHub session: the project is the user's own checkout on their
+                // own machine, so it opens like a folder; a clone uses the user's local git credentials.
+                await this.openDesktopRepositoryWithLocalGit(req, res, auth.userLogin, signal);
+                return;
+            }
             res.status(503).json({ error: 'GitHub sign-in required' });
             return;
         }
@@ -1108,6 +1114,78 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             const message = err instanceof Error ? err.message : 'Failed to prepare repository workspace';
             res.status(502).json({ error: message });
         }
+    }
+
+    /**
+     * Desktop-only open of `owner/repo` when there is no Qaap GitHub session (the skip-auth guard).
+     * An existing checkout at the caller's canonical path opens without any network call. A missing one
+     * is cloned with the backend's own git, which runs as the desktop user and so reaches their git
+     * credential helpers (`gh auth setup-git`, the keychain) exactly like git in a terminal; Qaap itself
+     * never sees a token here. Web/VPS never reach this (doc/qaap-github-token-boundary.md).
+     */
+    protected async openDesktopRepositoryWithLocalGit(req: Request, res: Response, userLogin: string, signal: AbortSignal): Promise<void> {
+        const owner = this.cleanGithubPathSegment(req.params.owner);
+        const repoName = this.cleanGithubPathSegment(req.params.repo);
+        if (!owner || !repoName) {
+            res.status(400).json({ error: 'Invalid repository path' });
+            return;
+        }
+        const explicit = (req.body as { explicit?: unknown } | undefined)?.explicit === true;
+        if (!explicit && this.projectSessions.isRepositoryRemoved(userLogin, `github:${owner}/${repoName}`)) {
+            res.status(410).json({ error: 'This project was removed. Import the repository again to restore it.', code: 'repository_removed' });
+            return;
+        }
+        const target = resolveRepositoryWorkspacePath(this.reposRoot, userLogin, owner, repoName);
+        if (!isPathUnderUserWorkspace(target, this.reposRoot, userLogin)) {
+            res.status(403).json({ error: 'Forbidden' });
+            return;
+        }
+        try {
+            let repository: QaapGithubRepositorySummary;
+            let workspacePath: string;
+            if (await this.isGitRepository(target)) {
+                repository = this.localCheckoutRepositorySummary(owner, repoName, await this.localCheckoutBranch(target));
+                workspacePath = target;
+            } else {
+                // Public metadata when GitHub answers anonymously; a private repository still clones
+                // through the user's own credential helper.
+                repository = await this.fetchRepositoryForClone(undefined, owner, repoName)
+                    .catch(() => this.localCheckoutRepositorySummary(owner, repoName, undefined));
+                workspacePath = await this.ensureRepositoryWorkspace(repository, undefined, userLogin, signal);
+            }
+            this.rememberGithubCloneSession(userLogin, repository);
+            res.json({ repository, workspaceUri: FileUri.create(workspacePath).toString() });
+        } catch (err) {
+            if (this.respondBillingQuotaError(err, res)) {
+                return;
+            }
+            const detail = err instanceof Error ? err.message : String(err);
+            res.status(502).json({
+                error: `${detail}. Qaap uses your local git credentials for this clone; run \`gh auth login\` (or sign in with GitHub in Qaap) and try again.`,
+            });
+        }
+    }
+
+    /** The checked-out branch of a local checkout, when it is on one. */
+    protected async localCheckoutBranch(target: string): Promise<string | undefined> {
+        const branch = await this.runGitOutput(['-C', target, 'symbolic-ref', '--quiet', '--short', 'HEAD'], target).catch(() => '');
+        return branch.trim() || undefined;
+    }
+
+    /** Summary of `owner/name` built without GitHub: what the hub needs to show and re-open the project. */
+    protected localCheckoutRepositorySummary(owner: string, name: string, branch: string | undefined): QaapGithubRepositorySummary {
+        return {
+            id: 0,
+            fullName: `${owner}/${name}`,
+            owner,
+            name,
+            cloneUrl: `https://github.com/${owner}/${name}.git`,
+            htmlUrl: `https://github.com/${owner}/${name}`,
+            defaultBranch: branch ?? 'main',
+            // Unknown without GitHub; private is the conservative answer.
+            private: true,
+            updatedAt: new Date().toISOString(),
+        };
     }
 
     /**
