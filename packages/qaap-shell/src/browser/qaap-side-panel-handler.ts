@@ -18,6 +18,7 @@ import { SplitPositionOptions } from '@theia/core/lib/browser/shell/split-panels
 import { MOBILE_ONE_COLUMN_LAYOUT_CLASS } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { QaapSideTabBar } from './qaap-tab-bars';
 import { QaapActivityBarCloseButton } from './qaap-activity-bar-close-button';
+import { QaapRightPanelWidth } from './qaap-right-panel-width';
 
 const COLLAPSED_CLASS = 'theia-mod-collapsed';
 
@@ -324,6 +325,11 @@ export class QaapSidePanelHandler extends SidePanelHandler {
         const parent = this.container.parent;
         if (!parent) {
             return undefined;
+        }
+        if (this.side === 'right') {
+            // The chat needs room to read: a proportional, clamped default instead of the core ratio.
+            const shellWidth = parent.node.clientWidth > 0 ? parent.node.clientWidth : window.innerWidth;
+            return QaapRightPanelWidth.defaultWidth(shellWidth);
         }
         const ratio = this.options.initialSizeRatio;
         const cw = parent.node.clientWidth;

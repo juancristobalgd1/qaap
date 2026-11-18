@@ -187,6 +187,15 @@ describe('QaapSidePanelHandler', () => {
             expect(measure(1000)).to.equal(200);
             expect(measure(400)).to.equal(140);
         });
+
+        it('gives the right panel the chat width instead of the core ratio', () => {
+            const handler = createHandler('right');
+            Object.defineProperty(handler.container, 'parent', {
+                configurable: true,
+                value: { node: { clientWidth: 1600 } },
+            });
+            expect(handler.getDefaultPanelSize()).to.equal(544);
+        });
     });
 
     describe('tab overflow', () => {
