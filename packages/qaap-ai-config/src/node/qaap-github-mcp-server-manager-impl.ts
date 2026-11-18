@@ -6,7 +6,7 @@
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
 import { MCPServerManagerImpl } from '@theia/ai-mcp/lib/node/mcp-server-manager-impl';
 import { MCPServer } from '@theia/ai-mcp/lib/node/mcp-server';
-import { MCPServerDescription, MCPServerStatus } from '@theia/ai-mcp/lib/common/mcp-server-manager';
+import { isLocalMCPServerDescription, MCPServerDescription, MCPServerStatus } from '@theia/ai-mcp/lib/common/mcp-server-manager';
 import { nls } from '@theia/core/lib/common/nls';
 import { isQaapReservedGithubMcpEntry, QAAP_GITHUB_MCP_SERVER_NAME } from '@theia/qaap-shared-core/lib/common/qaap-github-mcp-managed';
 import { QaapGithubMcpCredentialResolver } from '@theia/qaap-shared-core/lib/node/qaap-github-mcp-credential-resolver';
@@ -25,6 +25,12 @@ import { QaapGithubMcpOAuthClientProviderFactory } from './qaap-github-mcp-oauth
  * - it is registered on creation (unless the mode is `none`) and again after removal;
  * - it starts only with a credential and only with its exact read-only configuration;
  * - only tools GitHub marks `readOnlyHint` are listed or called (fail closed).
+ *
+ * Separately, a local server that runs the deprecated `@modelcontextprotocol/server-github` package without
+ * its only credential (`GITHUB_PERSONAL_ACCESS_TOKEN`, from the entry's `env` or the backend environment) is
+ * refused whatever its name and whoever registers it: the frontend filter, a frontend still running an older
+ * bundle, an extension (`lm-main`) or a direct RPC call. Older builds wrote such an entry and every start
+ * spawned `npx server-github` without a token, briefly, before the settings migration removed it again.
  *
  * Other servers are not affected by any of these rules.
  */
@@ -85,7 +91,35 @@ export class QaapGithubMcpServerManagerImpl extends MCPServerManagerImpl {
                 + ' are reserved for the managed GitHub server.');
             return;
         }
+        if (this.isTokenlessLegacyGithubServer(description)) {
+            console.warn(`Ignoring MCP server "${description.name}": @modelcontextprotocol/server-github needs GITHUB_PERSONAL_ACCESS_TOKEN`
+                + ' and is never started without it.');
+            // An earlier description under this name (with the token) must not keep running in its place.
+            if (this.servers.has(description.name)) {
+                await super.removeServer(description.name);
+            }
+            return;
+        }
         return super.addOrUpdateServer(description);
+    }
+
+    /** Whether `description` launches the deprecated GitHub server package without its credential. */
+    protected isTokenlessLegacyGithubServer(description: MCPServerDescription): boolean {
+        if (!isLocalMCPServerDescription(description)) {
+            return false;
+        }
+        const commandBase = description.command.trim().split(/[\\/]/).pop() ?? '';
+        const launchesLegacyPackage = /^mcp-server-github(\.cmd|\.exe)?$/i.test(commandBase)
+            || (description.args ?? []).some(arg => typeof arg === 'string'
+                && /(^|[\\/])@modelcontextprotocol[\\/]server-github(@[\w.-]+)?$/i.test(arg.trim()));
+        if (!launchesLegacyPackage) {
+            return false;
+        }
+        // The spawned server sees the backend environment overlaid with the entry's `env` (MCPServer.start).
+        const key = 'GITHUB_PERSONAL_ACCESS_TOKEN';
+        const env = description.env ?? {};
+        const token = Object.prototype.hasOwnProperty.call(env, key) ? env[key] : process.env[key];
+        return !token?.trim();
     }
 
     override async removeServer(name: string): Promise<void> {
@@ -115,6 +149,10 @@ export class QaapGithubMcpServerManagerImpl extends MCPServerManagerImpl {
             return;
         } else if (serverName.trim().toLowerCase() === QAAP_GITHUB_MCP_SERVER_NAME) {
             throw new Error(`MCP server "${serverName}" is reserved.`);
+        }
+        const description = this.servers.get(serverName)?.getCachedDescription();
+        if (description && this.isTokenlessLegacyGithubServer(description)) {
+            throw new Error(`MCP server "${serverName}" runs @modelcontextprotocol/server-github without GITHUB_PERSONAL_ACCESS_TOKEN; it is not started.`);
         }
         return super.startServer(serverName, options);
     }

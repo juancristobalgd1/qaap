@@ -338,8 +338,80 @@ describe('QaapGithubMcpServerManagerImpl', () => {
 
     it('passes a user entry named github through untouched, since github is the user\'s own name', async () => {
         const manager = managerWith(resolverStub(SECRET));
-        await manager.addOrUpdateServer({ name: 'github', command: 'npx', args: ['-y', '@modelcontextprotocol/server-github'], autostart: true });
+        await manager.addOrUpdateServer({
+            name: 'github', command: 'npx', args: ['-y', '@modelcontextprotocol/server-github'], env: { GITHUB_PERSONAL_ACCESS_TOKEN: 'ghp_user' }, autostart: true,
+        });
         expect(await manager.getServerDescription('github')).to.have.property('command', 'npx');
+    });
+
+    // Live desktop sighting (Nov 2026): a `npx @modelcontextprotocol/server-github` without a token appeared for an
+    // instant at start. The legacy User-scope entry (hydrated back from the per-user mirror) reached the manager and
+    // was autostarted by a frontend that did not filter it yet, before the settings migration removed it.
+    describe('a token-less @modelcontextprotocol/server-github entry (legacy default, any frontend or extension)', () => {
+
+        let previousToken: string | undefined;
+        beforeEach(() => {
+            previousToken = process.env.GITHUB_PERSONAL_ACCESS_TOKEN;
+            delete process.env.GITHUB_PERSONAL_ACCESS_TOKEN;
+        });
+        afterEach(() => {
+            if (previousToken === undefined) {
+                delete process.env.GITHUB_PERSONAL_ACCESS_TOKEN;
+            } else {
+                process.env.GITHUB_PERSONAL_ACCESS_TOKEN = previousToken;
+            }
+        });
+
+        const legacy = (name = 'github', extra: Partial<MCPServerDescription> = {}): MCPServerDescription =>
+            ({ name, command: 'npx', args: ['-y', '@modelcontextprotocol/server-github'], autostart: true, ...extra } as MCPServerDescription);
+
+        it('is never registered, so the hydrate-then-autostart race cannot spawn it', async () => {
+            const manager = managerWith(resolverStub(SECRET));
+            // Same order as the frontend: sync (addOrUpdateServer) then autostart (startServer), before any migration.
+            await manager.addOrUpdateServer(legacy());
+            expect(serversOf(manager).has('github')).to.equal(false);
+            let error: Error | undefined;
+            await manager.startServer('github').catch(err => { error = err; });
+            expect(error?.message).to.match(/not found/);
+        });
+
+        it('is refused under any name, pinned version, empty env value or direct binary', async () => {
+            const manager = managerWith(resolverStub(SECRET));
+            for (const description of [
+                legacy('gh'),
+                legacy('github', { args: ['--yes', '@modelcontextprotocol/server-github@2025.4.8'] } as Partial<MCPServerDescription>),
+                legacy('github', { env: { GITHUB_PERSONAL_ACCESS_TOKEN: '' } } as Partial<MCPServerDescription>),
+                legacy('github', { command: '/usr/local/bin/mcp-server-github', args: [] } as Partial<MCPServerDescription>),
+            ]) {
+                await manager.addOrUpdateServer(description);
+                expect(serversOf(manager).has(description.name), description.name).to.equal(false);
+            }
+        });
+
+        it('replacing a configured server with the token-less entry removes the old one instead of keeping it', async () => {
+            const manager = managerWith(resolverStub(SECRET));
+            await manager.addOrUpdateServer(legacy('github', { env: { GITHUB_PERSONAL_ACCESS_TOKEN: 'ghp_user' } } as Partial<MCPServerDescription>));
+            expect(serversOf(manager).has('github')).to.equal(true);
+            await manager.addOrUpdateServer(legacy());
+            expect(serversOf(manager).has('github')).to.equal(false);
+        });
+
+        it('refuses to start a registered entry whose token is only in an environment that is gone', async () => {
+            const manager = managerWith(resolverStub(SECRET));
+            process.env.GITHUB_PERSONAL_ACCESS_TOKEN = 'ghp_env';
+            await manager.addOrUpdateServer(legacy());
+            expect(serversOf(manager).has('github')).to.equal(true);
+            delete process.env.GITHUB_PERSONAL_ACCESS_TOKEN;
+            let error: Error | undefined;
+            await manager.startServer('github').catch(err => { error = err; });
+            expect(error?.message).to.contain('without GITHUB_PERSONAL_ACCESS_TOKEN');
+        });
+
+        it('leaves other npx servers alone', async () => {
+            const manager = managerWith(resolverStub(SECRET));
+            await manager.addOrUpdateServer({ name: 'slack', command: 'npx', args: ['-y', '@modelcontextprotocol/server-slack'], autostart: true });
+            expect(serversOf(manager).has('slack')).to.equal(true);
+        });
     });
 });
 
