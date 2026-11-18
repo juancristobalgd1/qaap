@@ -2,6 +2,17 @@
 
 Estado para continuar el trabajo desde otra cuenta o sesión. Actualízalo al cerrar cada tarea: qué queda pendiente, cómo se validó y qué limitaciones conviene conocer. La política de modelos está en la sección «Selección de modelos y orquestación» de `CLAUDE.md`.
 
+## 2026-11-18 (tarde) — Correcciones del usuario sobre escritorio (PR #534)
+
+Hecho y verificado en vivo en el Electron de prueba (HEAD `2d2605ec3`):
+- GitHub en escritorio sin sesión de Qaap: repos, PR (lista izquierda, pestaña Pull request y vista central), merge e importación usan la credencial de `gh`/env (`QaapGithubDesktopCredentialSession`, solo modo desktop + skip-auth; token solo en backend). Selector: 59/59 repos.
+- Tema System sigue claro/oscuro del SO, también tras elegir un color; Electron recibe `themeSource=system` (`qaap-appearance-mode-service.ts`). Verificado con emulación CDP, no con cambio real de macOS.
+- Degradados de scroll en todos los `.dialogContent` (`QaapWorkHubDialogScrollFadesContribution`).
+- Settings: botón "Toggle views panel" a la derecha de la cabecera; botón de reabrir el sidebar ya no queda bajo los semáforos de macOS.
+- CI: spec del resolutor ya no depende de tener `gh`; tests Playwright upstream que dependían de `@theia/api-samples` ajustados o saltados (output-view, quick-command, toolbar).
+
+Pendiente: confirmar CI verde de `2d2605ec3`; rendimiento (store de conversaciones ~71 MB, ~1 s por persistencia; stall de 1,1 s al arrancar; avisos de modelos duplicados) para otro PR; borrar o no las dos conversaciones de prueba de notes-dev (decisión del usuario). No hacer merge de #534 sin confirmación.
+
 ## 2026-11-18 — Servidor MCP de GitHub gestionado (rama `feat/work-hub-harness-round2`)
 
 **Hecho (commits)**
