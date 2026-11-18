@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     resolveQaapTaskHoverCardAgentIds,
+    formatQaapTaskHoverCardAgent,
     buildQaapTaskHoverCardModel,
     computeQaapTaskHoverCardPosition,
     formatQaapTaskHoverCardActivity,
@@ -50,6 +51,8 @@ describe('buildQaapTaskHoverCardModel', () => {
             projectBranch: 'main',
             summary: summary({
                 lastTurnAgentModel: { provider: 'openai', vendor: 'opencode', modelId: 'opencode/beam-free' },
+                lastTurnAgentId: 'opencode',
+                turnAgentIds: ['opencode'],
                 linesAdded: 12,
                 linesRemoved: 3,
                 linkedPullRequest: { owner: 'acme', repo: 'qaap', number: 42, title: 'Contact form', state: 'merged' },
@@ -178,9 +181,18 @@ describe('qaap-task-hover-card-model harness logos', () => {
     const summary = (fields: Partial<QaapAgentConversationSummaryDTO>): QaapAgentConversationSummaryDTO =>
         ({ id: 'c1', agentId: 'claude', title: 't', cwd: '/w', status: 'idle', updatedAt: 1, messageCount: 1, ...fields }) as QaapAgentConversationSummaryDTO;
 
-    it('lists every harness that worked on the task once, conversation agent first', () => {
-        expect(resolveQaapTaskHoverCardAgentIds(summary({ agentId: 'claude', lastTurnAgentId: 'opencode' }))).to.deep.equal(['claude', 'opencode']);
-        expect(resolveQaapTaskHoverCardAgentIds(summary({ agentId: 'claude', lastTurnAgentId: 'Claude' }))).to.deep.equal(['claude']);
-        expect(resolveQaapTaskHoverCardAgentIds(summary({ agentId: ' ', lastTurnAgentId: undefined }))).to.deep.equal([]);
+    it('lists only the harnesses that ran a turn, once each, in first-run order', () => {
+        expect(resolveQaapTaskHoverCardAgentIds(summary({ agentId: 'claude', turnAgentIds: ['opencode'], lastTurnAgentId: 'opencode' })))
+            .to.deep.equal(['opencode']);
+        expect(resolveQaapTaskHoverCardAgentIds(summary({ agentId: 'claude', turnAgentIds: ['opencode', 'Claude'], lastTurnAgentId: 'Claude' })))
+            .to.deep.equal(['opencode', 'Claude']);
+        expect(resolveQaapTaskHoverCardAgentIds(summary({ agentId: 'claude', lastTurnAgentId: 'opencode' })))
+            .to.deep.equal(['opencode']);
+    });
+
+    it('never names the configured harness when no turn ran', () => {
+        expect(resolveQaapTaskHoverCardAgentIds(summary({ agentId: 'claude', turnAgentIds: undefined, lastTurnAgentId: undefined }))).to.deep.equal([]);
+        expect(formatQaapTaskHoverCardAgent(summary({ agentId: 'claude', lastTurnAgentModel: { provider: 'p', vendor: 'v', modelId: 'beam-free' } as never })))
+            .to.not.match(/claude/i);
     });
 });

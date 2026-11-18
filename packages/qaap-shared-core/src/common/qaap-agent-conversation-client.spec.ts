@@ -188,6 +188,7 @@ describe('turn provenance in conversation summaries', () => {
         expect(result.agentModel?.modelId).to.equal('gpt-5.6-sol');
         expect(result.lastTurnAgentId).to.equal('codex');
         expect(result.lastTurnAgentModel?.modelId).to.equal('gpt-5.6-luna');
+        expect(result.turnAgentIds).to.deep.equal(['codex']);
     });
 });
 

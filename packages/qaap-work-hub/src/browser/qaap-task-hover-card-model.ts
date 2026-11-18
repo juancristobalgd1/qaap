@@ -127,12 +127,13 @@ function resolveBranch(input: QaapTaskHoverCardInput, inWorktree: boolean): stri
 }
 
 /**
- * Harnesses that worked on the task: the conversation's agent and, when another one ran the latest turn,
- * that one too (the summary records no fuller history). Distinct, conversation agent first.
+ * Harnesses that ran a turn in the task, in first-run order. The thread's configured `agentId` (the
+ * project or composer default) is deliberately ignored: a harness that never ran a turn is not listed.
+ * Summaries from a backend without `turnAgentIds` fall back to the last turn's harness alone.
  */
 export function resolveQaapTaskHoverCardAgentIds(summary: QaapAgentConversationSummaryDTO): string[] {
     const ids: string[] = [];
-    for (const candidate of [summary.agentId, summary.lastTurnAgentId]) {
+    for (const candidate of [...(summary.turnAgentIds ?? []), summary.lastTurnAgentId]) {
         const id = candidate?.trim();
         if (id && !ids.some(existing => existing.toLowerCase() === id.toLowerCase())) {
             ids.push(id);
