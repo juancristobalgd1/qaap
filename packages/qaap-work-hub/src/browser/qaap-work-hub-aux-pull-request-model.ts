@@ -23,6 +23,25 @@ export interface QaapWorkHubPullRequestTarget {
     readonly scope: string;
 }
 
+/** A specific pull request to show regardless of the open branch (e.g. one mentioned in the transcript). */
+export interface QaapWorkHubPullRequestRef {
+    readonly owner: string;
+    readonly repo: string;
+    readonly number: number;
+}
+
+const PINNED_SCOPE_PREFIX = 'pinned:';
+
+/** The target that shows exactly `ref`, by number, instead of the pull request of the branch. */
+export function createQaapWorkHubPinnedPullRequestTarget(ref: QaapWorkHubPullRequestRef): QaapWorkHubPullRequestTarget {
+    return { owner: ref.owner, repo: ref.repo, number: ref.number, scope: `${PINNED_SCOPE_PREFIX}${ref.owner}/${ref.repo}#${ref.number}` };
+}
+
+/** `true` for a target made by {@link createQaapWorkHubPinnedPullRequestTarget}. */
+export function isQaapWorkHubPinnedPullRequestTarget(target: QaapWorkHubPullRequestTarget | undefined): boolean {
+    return !!target && target.scope.startsWith(PINNED_SCOPE_PREFIX);
+}
+
 /** The project fields the target needs (structural, so specs need no full project entry). */
 export interface QaapWorkHubPullRequestProjectSource {
     readonly github?: { readonly owner: string; readonly name: string };

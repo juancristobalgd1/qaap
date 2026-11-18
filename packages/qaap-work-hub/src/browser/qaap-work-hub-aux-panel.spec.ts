@@ -404,6 +404,30 @@ describe('qaap-work-hub-aux-panel', () => {
         view.dispose();
     });
 
+    it('opens the Pull request tab on a specific pull request, then goes back to the branch one', async () => {
+        const looked: Array<QaapWorkHubPullRequestTarget> = [];
+        const view = new QaapWorkHubAuxPullRequestView({
+            lookup: async target => {
+                looked.push(target);
+                return { kind: 'none' };
+            },
+            refreshMs: 1_000_000,
+        });
+        const { panel, shown } = createHarness({ pullRequest: reviewedTarget, pullRequestView: view });
+        expect(panel.openPullRequest({ owner: 'zed', repo: 'lib', number: 117 })).to.equal(true);
+        expect(shown).to.deep.equal([]);
+        expect(panel.element.dataset.view).to.equal('pull-request');
+        await new Promise(resolve => setTimeout(resolve, 0));
+        expect(looked[0]).to.deep.include({ owner: 'zed', repo: 'lib', number: 117 });
+        expect(view.element.querySelector('.qaap-work-hub-aux-pr-pinned-label')?.textContent).to.contain('zed/lib#117');
+
+        view.element.querySelector<HTMLButtonElement>('.qaap-work-hub-aux-pr-back')!.click();
+        await new Promise(resolve => setTimeout(resolve, 0));
+        expect(looked[1]).to.deep.include({ owner: 'acme', repo: 'app', branch: 'qaap/task/7' });
+        expect(view.element.querySelector('.qaap-work-hub-aux-pr-pinned')).to.equal(null);
+        view.dispose();
+    });
+
     it('disables the pull request row when no project is open', () => {
         const { panel } = createHarness({ canShow: false });
         panel.show();

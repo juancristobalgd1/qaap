@@ -10,6 +10,7 @@ import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/comm
 import { HubEmptyStateDom } from './mobile-projects-hub-empty-state-dom';
 import {
     pullRequestDisplayState,
+    isQaapWorkHubPinnedPullRequestTarget,
     qaapWorkHubPullRequestTargetKey,
     recentPullRequestComments,
     summarizePullRequestChecks,
@@ -58,6 +59,8 @@ export class QaapWorkHubAuxPullRequestView implements Disposable {
     protected readonly minAutoGapMs: number;
 
     protected target: QaapWorkHubPullRequestTarget | undefined;
+    /** Leaves a specific pull request for the branch's one. Set only while that is possible. */
+    protected onBackToBranch: (() => void) | undefined;
     protected key: string | undefined;
     protected result: QaapGithubPullRequestLookup | undefined;
     protected loading = false;
@@ -110,7 +113,8 @@ export class QaapWorkHubAuxPullRequestView implements Disposable {
      * Follows `target` while the view is `visible`. A changed target clears the last answer and loads the new
      * one; a visible view starts its refresh timer; a hidden one stops it.
      */
-    sync(target: QaapWorkHubPullRequestTarget | undefined, visible: boolean): void {
+    sync(target: QaapWorkHubPullRequestTarget | undefined, visible: boolean, onBackToBranch?: () => void): void {
+        this.onBackToBranch = onBackToBranch;
         const key = target ? qaapWorkHubPullRequestTargetKey(target) : undefined;
         this.target = target;
         if (key !== this.key) {
@@ -228,7 +232,32 @@ export class QaapWorkHubAuxPullRequestView implements Disposable {
     }
 
     protected render(): void {
-        this.scroll.replaceChildren(this.buildContent());
+        const banner = this.createPinnedBanner();
+        this.scroll.replaceChildren(...(banner ? [banner, this.buildContent()] : [this.buildContent()]));
+    }
+
+    /** The "specific pull request" mode: says which one is shown and offers the way back to the branch's. */
+    protected createPinnedBanner(): HTMLElement | undefined {
+        const target = this.target;
+        if (!target || !isQaapWorkHubPinnedPullRequestTarget(target)) {
+            return undefined;
+        }
+        const banner = document.createElement('div');
+        banner.className = 'qaap-work-hub-aux-pr-pinned';
+        const label = document.createElement('span');
+        label.className = 'qaap-work-hub-aux-pr-pinned-label';
+        label.textContent = nls.localize('qaap/workHubAuxPanel/prPinned', 'Showing {0}/{1}#{2}', target.owner, target.repo, target.number ?? '');
+        banner.append(label);
+        const back = this.onBackToBranch;
+        if (back) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'qaap-work-hub-aux-pr-back';
+            button.textContent = nls.localize('qaap/workHubAuxPanel/prBackToBranch', 'Back to the branch pull request');
+            button.addEventListener('click', () => back());
+            banner.append(button);
+        }
+        return banner;
     }
 
     protected buildContent(): HTMLElement {
@@ -248,6 +277,13 @@ export class QaapWorkHubAuxPullRequestView implements Disposable {
             case 'found':
                 return this.createDetail(result.pullRequest);
             case 'none':
+                if (isQaapWorkHubPinnedPullRequestTarget(target)) {
+                    return HubEmptyStateDom.createEmptyState({
+                        icon: 'codicon-git-pull-request',
+                        title: nls.localize('qaap/workHubAuxPanel/prNotFound', 'Pull request not found'),
+                        hint: nls.localize('qaap/workHubAuxPanel/prNotFoundHint', '{0}/{1}#{2} does not exist or is not visible to you.', target.owner, target.repo, target.number ?? ''),
+                    });
+                }
                 return HubEmptyStateDom.createEmptyState({
                     icon: 'codicon-git-pull-request',
                     title: nls.localize('qaap/workHubAuxPanel/prNone', 'No pull request for this branch'),

@@ -307,4 +307,39 @@ describe('qaap-work-hub-aux-pull-request-view', () => {
         view.element.querySelector<HTMLButtonElement>('.qaap-work-hub-aux-pr-open')!.click();
         expect(opened).to.deep.equal(['https://github.com/acme/app/pull/7']);
     });
+    describe('a specific pull request', () => {
+        const pinned: QaapWorkHubPullRequestTarget = { owner: 'zed', repo: 'lib', number: 117, scope: 'pinned:zed/lib#117' };
+
+        it('looks it up by owner, repo and number and says which one it shows', async () => {
+            const stub = stubLookup([{ kind: 'found', pullRequest: pullRequest({ owner: 'zed', repo: 'lib', number: 117 }) }]);
+            const view = create({ lookup: stub.lookup });
+            view.sync(pinned, true);
+            await settle();
+            expect(stub.calls[0]).to.deep.include({ owner: 'zed', repo: 'lib', number: 117 });
+            expect(view.element.querySelector('.qaap-work-hub-aux-pr-pinned-label')?.textContent).to.contain('zed/lib#117');
+            expect(view.element.querySelector('.qaap-work-hub-aux-pr-title')?.textContent).to.equal('Fix the login redirect');
+        });
+
+        it('offers Back only when a branch pull request can be returned to', async () => {
+            const stub = stubLookup([{ kind: 'found', pullRequest: pullRequest() }]);
+            const view = create({ lookup: stub.lookup });
+            view.sync(pinned, true);
+            await settle();
+            expect(view.element.querySelector('.qaap-work-hub-aux-pr-back')).to.equal(null);
+            let backs = 0;
+            view.sync(pinned, true, () => backs++);
+            view.element.querySelector<HTMLButtonElement>('.qaap-work-hub-aux-pr-back')!.click();
+            expect(backs).to.equal(1);
+        });
+
+        it('has no banner for the branch pull request and says "not found" for a missing one', async () => {
+            const view = create({ lookup: stubLookup([{ kind: 'none' }]).lookup });
+            view.sync(taskTarget, true);
+            await settle();
+            expect(view.element.querySelector('.qaap-work-hub-aux-pr-pinned')).to.equal(null);
+            view.sync(pinned, true);
+            await settle();
+            expect(view.element.textContent).to.contain('Pull request not found');
+        });
+    });
 });

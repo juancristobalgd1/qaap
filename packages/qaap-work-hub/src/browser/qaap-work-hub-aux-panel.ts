@@ -20,7 +20,11 @@ import {
     type QaapWorkHubAuxPanelTab,
     type QaapWorkHubAuxPanelViewKind,
 } from './qaap-work-hub-aux-panel-model';
-import type { QaapWorkHubPullRequestTarget } from './qaap-work-hub-aux-pull-request-model';
+import {
+    createQaapWorkHubPinnedPullRequestTarget,
+    type QaapWorkHubPullRequestRef,
+    type QaapWorkHubPullRequestTarget,
+} from './qaap-work-hub-aux-pull-request-model';
 import { QaapWorkHubAuxPullRequestView } from './qaap-work-hub-aux-pull-request-view';
 import { QAAP_WORK_HUB_NO_SIDE_CHAT_HOST, QaapWorkHubAuxSideChatView, type QaapWorkHubAuxSideChatHost } from './qaap-work-hub-aux-side-chat-view';
 
@@ -195,6 +199,8 @@ export class QaapWorkHubAuxPanel {
     protected restoredTabId: string | undefined;
     /** Set while the panel itself swaps or closes the docked surface. */
     protected releasing = false;
+    /** The specific pull request the "Pull request" view shows instead of the branch's, until Back. */
+    protected pinnedPullRequest: QaapWorkHubPullRequestRef | undefined;
 
     constructor(
         protected readonly host: QaapWorkHubAuxPanelHost,
@@ -327,6 +333,24 @@ export class QaapWorkHubAuxPanel {
         this.reveal();
         this.restoredTabId = undefined;
         this.activateTab(this.model.ensureTab());
+    }
+
+    /** Opens the "Pull request" tab on exactly `ref` (a mention in the transcript), not the open branch's pull request. */
+    openPullRequest(ref: QaapWorkHubPullRequestRef): boolean {
+        if (!isQaapWorkHubAuxPanelLayout()) {
+            return false;
+        }
+        this.pinnedPullRequest = ref;
+        this.reveal();
+        this.restoredTabId = undefined;
+        this.activateTab(this.model.openView('pull-request'));
+        return true;
+    }
+
+    /** Leaves the specific pull request for the branch's one. */
+    protected backToBranchPullRequest(): void {
+        this.pinnedPullRequest = undefined;
+        this.render();
     }
 
     hide(): void {
@@ -507,6 +531,9 @@ export class QaapWorkHubAuxPanel {
         if (tab.kind === 'side-chat') {
             this.sideChatView.reset();
         }
+        if (tab.kind === 'pull-request') {
+            this.pinnedPullRequest = undefined;
+        }
         if (!wasActive) {
             this.render();
             this.persist();
@@ -584,7 +611,12 @@ export class QaapWorkHubAuxPanel {
         }
         this.element.dataset.view = active?.kind ?? 'launcher';
         if (showPullRequest) {
-            this.pullRequestView.sync(this.host.resolvePullRequestTarget(), this.isOpen);
+            const branchTarget = this.host.resolvePullRequestTarget();
+            this.pullRequestView.sync(
+                this.pinnedPullRequest ? createQaapWorkHubPinnedPullRequestTarget(this.pinnedPullRequest) : branchTarget,
+                this.isOpen,
+                this.pinnedPullRequest && branchTarget ? () => this.backToBranchPullRequest() : undefined,
+            );
         } else {
             this.pullRequestView.stop();
         }

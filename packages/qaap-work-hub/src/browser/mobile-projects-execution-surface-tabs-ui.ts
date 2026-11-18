@@ -31,7 +31,7 @@ import { fetchAgentModelsForAgent } from '@theia/qaap-shared-core/lib/common/qaa
 import type { QaapLiveFeedFrame } from '@theia/qaap-shared-core/lib/common/qaap-live-feed-cursor';
 import type { QaapWorkHubAuxSideChatHost, QaapWorkHubSideChatComposerSelection, QaapWorkHubSideChatModelOption, QaapWorkHubSideChatParent } from './qaap-work-hub-aux-side-chat-view';
 import type { QaapWorkHubAuxPanelSurfaceKind } from './qaap-work-hub-aux-panel-model';
-import { resolveQaapWorkHubPullRequestTarget, type QaapWorkHubPullRequestTarget } from './qaap-work-hub-aux-pull-request-model';
+import { resolveQaapWorkHubPullRequestTarget, type QaapWorkHubPullRequestRef, type QaapWorkHubPullRequestTarget } from './qaap-work-hub-aux-pull-request-model';
 
 type TranscriptTab = ExecutionSurfaceTabId;
 
@@ -492,6 +492,14 @@ export class MobileProjectsExecutionSurfaceTabsUi {
             ?? this.host.transcriptOpenSummary
             ?? (this.host.agentsHubShellActive ? this.host.resolveAgentsHubShellSummary(project) : undefined);
         return resolveQaapWorkHubPullRequestTarget(project, summary);
+    }
+
+    /**
+     * Shows exactly `ref` in the desktop right panel's "Pull request" tab (a pull request mentioned in
+     * the transcript). `false` on mobile and in the IDE chat, where there is no such panel.
+     */
+    openPullRequestInWorkHubAuxPanel(ref: QaapWorkHubPullRequestRef): boolean {
+        return this.claimWorkHubAuxPanel()?.openPullRequest(ref) === true;
     }
 
     /**

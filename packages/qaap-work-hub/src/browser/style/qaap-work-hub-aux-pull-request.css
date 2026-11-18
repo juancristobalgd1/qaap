@@ -198,3 +198,31 @@
   outline: 1px solid var(--theia-focusBorder);
   outline-offset: 2px;
 }
+
+/* "Specific pull request" mode: which one is shown, and the way back to the branch's. */
+.qaap-work-hub-aux-pr-pinned {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--q-space-6);
+  margin-bottom: var(--q-space-8);
+  padding: var(--q-space-6) var(--q-space-8);
+  border: 1px solid var(--theia-widget-border, transparent);
+  border-radius: 6px;
+  background: var(--theia-editorWidget-background);
+  color: var(--theia-descriptionForeground);
+  font-size: var(--q-text-body);
+}
+
+.qaap-work-hub-aux-pr-back {
+  border: none;
+  background: transparent;
+  color: var(--theia-textLink-foreground);
+  font: inherit;
+  cursor: pointer;
+}
+
+.qaap-work-hub-aux-pr-back:hover {
+  text-decoration: underline;
+}

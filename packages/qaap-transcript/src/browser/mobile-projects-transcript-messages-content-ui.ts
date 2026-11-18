@@ -36,6 +36,12 @@ import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snac
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
+import type { WorkHubTranscriptBridge, WorkHubTranscriptPullRequestRef } from '@theia/qaap-transcript-overlay/lib/browser/work-hub-transcript-bridge';
+import {
+    decorateTranscriptPullRequestChips,
+    readTranscriptPullRequestChip,
+    type TranscriptPullRequestRepo,
+} from './qaap-transcript-pull-request-chips';
 import { enhanceTranscriptMarkdownRichContent } from './qaap-transcript-rich-content-ui';
 import { patchTranscriptStreamingTailHtml } from './qaap-transcript-streaming-tail-patch';
 import { enhanceTranscriptCaptureDirectives } from './qaap-transcript-capture-pending-ui';
@@ -196,7 +202,24 @@ function transcriptDeferredMarkdownExcerpt(clean: string): string {
 }
 
 export class MobileProjectsTranscriptMessagesContentUi {
-    constructor(protected readonly host: MobileProjectsTranscriptMessagesHost) { }
+    constructor(
+        protected readonly host: MobileProjectsTranscriptMessagesHost,
+        protected readonly workHub?: Pick<WorkHubTranscriptBridge, 'openPullRequestInPanel' | 'resolveShellProject'>,
+    ) { }
+
+    /** The GitHub repository of the conversation shown, for bare `#n` pull request references. */
+    protected resolveTranscriptGithubRepo(): TranscriptPullRequestRepo | undefined {
+        const github = (this.host.transcriptOpenProject ?? this.workHub?.resolveShellProject())?.github;
+        return github ? { owner: github.owner, name: github.name } : undefined;
+    }
+
+    /** Opens a pull request chip: the Work Hub view for that exact PR, else its GitHub page. */
+    protected openTranscriptPullRequestChip(ref: WorkHubTranscriptPullRequestRef): void {
+        if (this.workHub?.openPullRequestInPanel?.(ref) === true) {
+            return;
+        }
+        window.open(ref.url, '_blank', 'noopener');
+    }
 
     protected previewPublicOrigin(): string {
         return window.location.origin;
@@ -384,6 +407,11 @@ export class MobileProjectsTranscriptMessagesContentUi {
         host.dataset.transcriptStreamParsedLen = String(cleanLength);
         host.dataset.transcriptStreamParsedAt = String(Date.now());
         enhanceTranscriptMarkdownRichContent(host);
+        // Settled block only (the streaming patch path never gets here): one cheap string check
+        // gates the DOM walk.
+        if (html.includes('#') || html.includes('github.com/')) {
+            decorateTranscriptPullRequestChips(host, this.resolveTranscriptGithubRepo());
+        }
         this.attachTranscriptMarkdownLinkHandler(host);
     }
 
@@ -668,6 +696,13 @@ export class MobileProjectsTranscriptMessagesContentUi {
             }
             const href = target.getAttribute('href');
             if (!href) {
+                return;
+            }
+            const pullRequest = readTranscriptPullRequestChip(target);
+            if (pullRequest) {
+                event.preventDefault();
+                event.stopPropagation();
+                this.openTranscriptPullRequestChip(pullRequest);
                 return;
             }
             event.preventDefault();

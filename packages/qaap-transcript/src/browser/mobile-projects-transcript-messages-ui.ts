@@ -127,7 +127,7 @@ export class MobileProjectsTranscriptMessagesUi {
         protected readonly host: MobileProjectsTranscriptMessagesHost,
         protected readonly workHub: WorkHubTranscriptBridge,
     ) {
-        this.contentUi = new MobileProjectsTranscriptMessagesContentUi(host);
+        this.contentUi = new MobileProjectsTranscriptMessagesContentUi(host, workHub);
         this.resolversUi = new MobileProjectsTranscriptMessagesResolversUi(host, this.contentUi);
         this.toolUi = new MobileProjectsTranscriptMessagesToolUi(host, this.contentUi, this.resolversUi);
         this.artifactsUi = new MobileProjectsTranscriptMessagesArtifactsUi(
