@@ -207,6 +207,19 @@ export class MobileProjectsAgentsHubInlineUi {
             && !this.host.agentsHubLegacyInbox;
     }
 
+    /**
+     * The real conversation open in the inline transcript, with its latest summary, or `undefined` when the
+     * shell shows the idle "new task" composer. Leaving for the IDE keeps it so the way back reopens it.
+     */
+    openInlineConversation(): { project: MobileProjectEntry; summary: QaapAgentConversationSummaryDTO } | undefined {
+        const project = this.host.transcriptOpenProject;
+        const summary = this.host.transcriptOpenSummary;
+        if (!this.host.agentsHubInlineActive || !project || !summary || isAgentsHubIdleConversationSummary(summary)) {
+            return undefined;
+        }
+        return { project, summary: this.host.conversationIndexUi.findSummaryById(summary.id) ?? summary };
+    }
+
     resolveAgentsHubShellProject(): MobileProjectEntry | undefined {
         const openSummary = this.host.transcriptOpenSummary;
         const hasLiveTranscript = this.host.agentsHubInlineActive

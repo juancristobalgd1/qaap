@@ -2083,6 +2083,11 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return openAgentsHubInlineTranscriptExtracted(this, project, summary);
     }
 
+    /** The real conversation open in the Work Hub transcript, or `undefined` on the idle new-task shell. */
+    openInlineConversation(): { project: MobileProjectEntry; summary: QaapAgentConversationSummaryDTO } | undefined {
+        return this.agentsHubInlineUi.openInlineConversation();
+    }
+
     closeAgentsHubSession(): void {
         this.agentsHubInlineUi.closeAgentsHubSession();
     }
