@@ -277,11 +277,14 @@ export class MobileProjectsTranscriptStickyComposerUi {
         public readonly host: MobileProjectsTranscriptStickyComposerHost,
         /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
         public readonly workHub: WorkHubTranscriptBridge,
-    ) {
-        // The queued transcript rows act through this composer: it owns the local queue they paint.
-        this.host.transcriptMessagesUi?.setQueuedMessageActionHandler?.(
-            (conversationId, pending, action) => handleTranscriptQueuedMessageActionExtracted(this, conversationId, pending, action),
-        );
+    ) { }
+
+    /**
+     * Handles Send now / Edit / Remove on a queued row of the transcript: this composer owns the local
+     * queue those rows paint. The transcript overlay controller wires it once both parts exist.
+     */
+    public handleQueuedMessageAction(...args: Parameters<typeof handleTranscriptQueuedMessageActionExtracted> extends [unknown, ...infer Rest] ? Rest : never): ReturnType<typeof handleTranscriptQueuedMessageActionExtracted> {
+        return handleTranscriptQueuedMessageActionExtracted(this, ...args);
     }
 
     /** Preserve the agent already selected for this project when its New agent action is used. */
