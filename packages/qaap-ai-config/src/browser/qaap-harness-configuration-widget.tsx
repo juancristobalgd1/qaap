@@ -46,6 +46,7 @@ import {
     type QaapHarnessInstance,
     type QaapHarnessLaunchSettings,
 } from '@theia/qaap-shared-core/lib/common/qaap-harness-launch-settings';
+import type { QaapHarnessEnvVariableStatus } from './qaap-harness-env-section';
 import {
     QaapHarnessSettingsPanel,
     type QaapHarnessSettingsPathIssues,
@@ -68,6 +69,7 @@ interface HarnessAgentResponse {
 }
 
 const QAAP_HARNESS_SETTINGS_CHECK_PATH = '/qaap/api/agent-tasks/harness-settings/check';
+const QAAP_HARNESS_ENV_PATH = '/qaap/api/agent-tasks/harness-settings/env';
 const HARNESS_PREFERENCE_NAMES = new Set([QAAP_DISABLED_HARNESSES_PREF, QAAP_HARNESS_SETTINGS_PREF, QAAP_HARNESS_INSTANCES_PREF]);
 
 interface LoadedHarnessStatus {
@@ -351,8 +353,13 @@ export class QaapHarnessConfigurationWidget extends ReactWidget {
                 isInstance={row.isInstance}
                 checkPaths={this.checkHarnessPaths}
                 onSave={next => this.saveHarnessSettings(row.id, next)}
-                onReset={() => this.saveHarnessSettings(row.id, undefined)}
+                onReset={() => this.resetHarnessSettings(row.id)}
                 onDelete={row.isInstance ? () => this.deleteHarnessInstance(row.id) : undefined}
+                env={this.launchOverridesSupported ? {
+                    load: () => this.loadHarnessEnv(row.id),
+                    setVariable: (name, value) => this.setHarnessEnv(row.id, name, value),
+                    deleteVariable: name => this.deleteHarnessEnv(row.id, name),
+                } : undefined}
             />
         );
     }
@@ -446,7 +453,7 @@ export class QaapHarnessConfigurationWidget extends ReactWidget {
     protected async deleteHarnessInstance(instanceId: string): Promise<void> {
         const instances = this.readInstances().filter(instance => instance.id !== instanceId);
         await this.preferenceService.set(QAAP_HARNESS_INSTANCES_PREF, instances, PreferenceScope.User);
-        await this.saveHarnessSettings(instanceId, undefined);
+        await this.resetHarnessSettings(instanceId);
         const disabledIds = readDisabledHarnessIds(this.preferenceService.get(QAAP_DISABLED_HARNESSES_PREF));
         if (!isQaapHarnessEnabled(instanceId, disabledIds)) {
             await this.preferenceService.set(
@@ -461,13 +468,91 @@ export class QaapHarnessConfigurationWidget extends ReactWidget {
         this.update();
     }
 
+    /**
+     * Saves the panel fields. The variable names are owned by the Environment section, so a save keeps
+     * the stored ones; `undefined` removes the whole entry (see {@link resetHarnessSettings}).
+     */
     protected async saveHarnessSettings(harnessId: string, settings: QaapHarnessLaunchSettings | undefined): Promise<void> {
+        const current = this.preferenceService.get(QAAP_HARNESS_SETTINGS_PREF);
+        const envNames = readQaapHarnessSettingsFor(current, harnessId).envNames;
+        const next = settings && envNames?.length ? { ...settings, envNames } : settings;
         await this.preferenceService.set(
             QAAP_HARNESS_SETTINGS_PREF,
-            withQaapHarnessSettings(this.preferenceService.get(QAAP_HARNESS_SETTINGS_PREF), harnessId, settings),
+            withQaapHarnessSettings(current, harnessId, next),
             PreferenceScope.User,
         );
         this.update();
+    }
+
+    /** Restore defaults / Delete harness: the stored variable values go too, then the settings entry. */
+    protected async resetHarnessSettings(harnessId: string): Promise<void> {
+        const envNames = readQaapHarnessSettingsFor(this.preferenceService.get(QAAP_HARNESS_SETTINGS_PREF), harnessId).envNames ?? [];
+        if (this.launchOverridesSupported || envNames.length > 0) {
+            try {
+                await this.postHarnessEnv('/delete', { harnessId });
+            } catch {
+                if (this.launchOverridesSupported) {
+                    this.messageService?.error(nls.localize(
+                        'qaap/aiConfiguration/harnessEnvClearFailed',
+                        'Could not delete the stored variable values of this harness.',
+                    ));
+                    return;
+                }
+                // Outside the desktop app no value can be stored for this harness: only the names remain.
+            }
+        }
+        await this.saveHarnessSettings(harnessId, undefined);
+    }
+
+    protected async postHarnessEnv(suffix: '' | '/delete', body: Record<string, string>): Promise<void> {
+        const response = await fetch(`${QAAP_HARNESS_ENV_PATH}${suffix}`, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        if (!response.ok) {
+            let message: string | undefined;
+            try {
+                message = ((await response.json()) as { error?: unknown }).error as string | undefined;
+            } catch {
+                message = undefined;
+            }
+            throw new Error(typeof message === 'string' ? message : `Harness variable request failed: ${response.status}`);
+        }
+    }
+
+    protected async loadHarnessEnv(harnessId: string): Promise<readonly QaapHarnessEnvVariableStatus[]> {
+        const response = await fetch(`${QAAP_HARNESS_ENV_PATH}?harnessId=${encodeURIComponent(harnessId)}`, { credentials: 'same-origin' });
+        if (!response.ok) {
+            throw new Error(`Harness variables request failed: ${response.status}`);
+        }
+        const payload = await response.json() as { variables?: QaapHarnessEnvVariableStatus[] };
+        return (payload.variables ?? []).filter(variable => typeof variable?.name === 'string')
+            .map(variable => ({ name: variable.name, hasValue: variable.hasValue === true }));
+    }
+
+    /** The value goes to the backend secret store only; the preferences record the name. */
+    protected async setHarnessEnv(harnessId: string, name: string, value: string): Promise<void> {
+        await this.postHarnessEnv('', { harnessId, name, value });
+        await this.writeHarnessEnvNames(harnessId, names => names.includes(name) ? names : [...names, name]);
+    }
+
+    protected async deleteHarnessEnv(harnessId: string, name: string): Promise<void> {
+        await this.postHarnessEnv('/delete', { harnessId, name });
+        await this.writeHarnessEnvNames(harnessId, names => names.filter(existing => existing !== name));
+    }
+
+    protected async writeHarnessEnvNames(harnessId: string, change: (names: readonly string[]) => readonly string[]): Promise<void> {
+        const current = this.preferenceService.get(QAAP_HARNESS_SETTINGS_PREF);
+        const settings = readQaapHarnessSettingsFor(current, harnessId);
+        const envNames = change(settings.envNames ?? []);
+        const { envNames: _previous, ...rest } = settings;
+        await this.preferenceService.set(
+            QAAP_HARNESS_SETTINGS_PREF,
+            withQaapHarnessSettings(current, harnessId, envNames.length > 0 ? { ...rest, envNames } : rest),
+            PreferenceScope.User,
+        );
     }
 
     /** Server-side check of the paths (desktop backend only); a failed request blocks the save. */

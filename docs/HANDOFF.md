@@ -2,6 +2,18 @@
 
 Estado para continuar el trabajo desde otra cuenta o sesión. Actualízalo al cerrar cada tarea: qué queda pendiente, cómo se validó y qué limitaciones conviene conocer. La política de modelos está en la sección «Selección de modelos y orquestación» de `CLAUDE.md`.
 
+## 2026-11-18 — Settings → Harness: variables de entorno por harness/instancia (PR #534)
+
+Hecho (specs, tsc, drift y package-graph en verde; sin verificar en vivo):
+- Sección «Environment / Variables» en el panel del engranaje, solo en escritorio: filas `NOMBRE = ••••••••` con «Replace» y borrar; «Add variable» con valor en `type=password` y botón mostrar mientras se edita.
+- Nombres: `^[A-Z_][A-Z0-9_]{0,127}$` + lista de denegación (`checkQaapHarnessEnvName` en `qaap-harness-launch-settings.ts`, aplicada en frontend, rutas y runner): básicos del proceso, hooks de cargador/intérpretes, `ELECTRON_*`/`LD_*`/`DYLD_*`/`GIT_*`/`SSH_*`/`GH_*`/`QAAP_*`/`THEIA_*`/`XDG_*`, `GITHUB_TOKEN` y las que fija el runner/gate/sandbox (`CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `CLAUDE_CODE_SHELL`, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, `IS_SANDBOX`, `OPENCLAUDE_MAX_RETRIES`, `OPENCODE_PERMISSION`, `OPENCODE_CONFIG_CONTENT`, `HTTP(S)_PROXY`, `ALL_PROXY`, `NO_PROXY`).
+- Almacenamiento: los nombres van en `ai-features.harness.settings[id].envNames`; los valores, en el almacén de credenciales del SO mediante el `KeyStoreService` (keytar) de Theia en node, servicio `qaap-harness-environment`, cuenta `<harnessId>/<NOMBRE>` (`QaapHarnessEnvSecretStore`). Si keytar falla, se usa `~/.qaap/secrets/harness-environment.json` (0600, carpeta 0700, escritura atómica). Rutas `GET|POST /qaap/api/agent-tasks/harness-settings/env` y `POST …/env/delete` (404 fuera de escritorio); el GET solo devuelve `name` + `hasValue`.
+- Lanzamiento: el runner añade las variables al `env` del spawn justo después de `buildChildEnv` (nunca a la línea de comandos). El runner gana: no se pisa ninguna variable que el runner haya puesto con un valor propio, y el gate, el overlay de Codex y la carpeta de configuración se escriben después. Reintentar, reanudar y el fallback de modelo las conservan (mismo `harnessInstanceId`). «Restore defaults» y «Delete harness» borran también los valores.
+
+Qué verificar en vivo: añadir `ANTHROPIC_API_KEY` en una instancia de Claude y ejecutar un turno; si macOS pide acceso al llavero (la app dev se clona y firma en cada arranque), aceptar o comprobar que se usa el archivo de respaldo; confirmar que en web la sección no aparece; buscar el valor en el log del backend y en `settings.json` (no debe salir).
+
+Limitaciones: si keytar falla una vez, el proceso usa el archivo hasta reiniciar; los valores guardados en el archivo no migran solos al llavero. El sondeo de sesión y la carga de modelos de la instancia no reciben estas variables (usan el entorno del harness base).
+
 ## 2026-11-18 — Settings → Harness: engranaje por harness y «Add harness» (PR #534)
 
 Hecho (sin verificación en vivo todavía; specs, compilación, drift y package-graph en verde):

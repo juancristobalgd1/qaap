@@ -11,6 +11,7 @@ import {
     QAAP_HARNESS_PATH_MAX_LENGTH,
     type QaapHarnessLaunchSettings,
 } from '@theia/qaap-shared-core/lib/common/qaap-harness-launch-settings';
+import { QaapHarnessEnvSection, type QaapHarnessEnvSectionProps } from './qaap-harness-env-section';
 
 /** Issue codes of `POST /qaap/api/agent-tasks/harness-settings/check` and the static shape check. */
 export type QaapHarnessSettingsPathIssue =
@@ -37,6 +38,8 @@ export interface QaapHarnessSettingsPanelProps {
     readonly onSave: (settings: QaapHarnessLaunchSettings) => Promise<void>;
     readonly onReset: () => Promise<void>;
     readonly onDelete?: () => Promise<void>;
+    /** Environment variables (desktop app only, with {@link launchOverridesSupported}). */
+    readonly env?: Omit<QaapHarnessEnvSectionProps, 'harnessId'>;
 }
 
 export function describeQaapHarnessSettingsPathIssue(issue: QaapHarnessSettingsPathIssue): string {
@@ -181,10 +184,11 @@ export function QaapHarnessSettingsPanel(props: QaapHarnessSettingsPanelProps): 
                         props.homeEnvVar ?? '',
                     )}</span>}
             </label>}
+            {props.launchOverridesSupported && props.env && <QaapHarnessEnvSection harnessId={props.harnessId} {...props.env} />}
             {!props.launchOverridesSupported && <p className="qaap-harness-settings-hint">
                 {nls.localize(
                     'qaap/aiConfiguration/harnessLaunchOverridesDesktopOnly',
-                    'Binary path and configuration folder can be changed in the desktop app only.',
+                    'Binary path, configuration folder and environment variables can be changed in the desktop app only.',
                 )}
             </p>}
             <div className="qaap-harness-settings-actions">
