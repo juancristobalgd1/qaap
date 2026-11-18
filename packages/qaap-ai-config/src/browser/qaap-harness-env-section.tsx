@@ -163,20 +163,28 @@ export function QaapHarnessEnvSection(props: QaapHarnessEnvSectionProps): React.
         void reload();
     }, [reload]);
 
+    // The backend lists names from its copy of the preferences, which can lag the write just made, so a
+    // confirmed save or delete is applied to the list directly instead of re-reading it at once.
     const submit = async (name: string, value: string): Promise<void> => {
         await props.setVariable(name, value);
         setEditing(undefined);
-        await reload();
+        setVariables(previous => {
+            const list = previous ?? [];
+            return list.some(variable => variable.name === name)
+                ? list.map(variable => variable.name === name ? { name, hasValue: true } : variable)
+                : [...list, { name, hasValue: true }];
+        });
     };
 
     const remove = async (name: string): Promise<void> => {
         try {
             await props.deleteVariable(name);
             setDeleteError(false);
+            setVariables(previous => (previous ?? []).filter(variable => variable.name !== name));
         } catch {
             setDeleteError(true);
+            await reload();
         }
-        await reload();
     };
 
     const names = (variables ?? []).map(variable => variable.name);
