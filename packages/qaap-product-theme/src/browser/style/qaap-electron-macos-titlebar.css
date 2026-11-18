@@ -218,13 +218,14 @@ body.qaap-electron-macos-inset-titlebar:not(.qaap-electron-macos-fullscreen) .th
   top: -2px;
 }
 
-/* Settings content header: 77px tall, controls centred at 38px. Padding split 1.5/22.5 keeps the height. */
+/* Settings content header: was 77px tall with controls centred at 38px. 1.5/6.5 padding centres them
+   on the lights and makes the header as tall as the views-panel tab bar (61px), so both borders line up. */
 body.qaap-electron-macos-inset-titlebar:not(.qaap-electron-macos-fullscreen) .theia-mobile-work-hub-settings-content-header {
   padding-top: 1.5px !important;
-  padding-bottom: 22.5px !important;
+  padding-bottom: 6.5px !important;
 }
 
-/* Views panel tab bar (right panel, Pull requests, Settings): 61px tall, controls centred at 31px.
+/* Views panel tab bar (beside the chat, Pull requests and Settings): 61px tall, controls centred at 31px.
    Padding split 2.5/9.5 keeps the 61px height. */
 body.qaap-electron-macos-inset-titlebar:not(.qaap-electron-macos-fullscreen) .qaap-work-hub-aux-panel-tabbar {
   padding-top: 2.5px !important;
