@@ -35,7 +35,6 @@ import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mob
 import { createStickyComposerImprovePromptHandler } from './qaap-composer-prompt-improve-handler';
 import { showMissingProjectFolderBanner } from './mobile-projects-transcript-missing-folder-banner';
 import {
-    renderStickyComposerActivityStack,
     renderStickyComposerChangesPill,
     syncStickyComposerRunAppOwner,
 } from './qaap-sticky-composer-activity-stack';
@@ -162,7 +161,6 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: MobilePro
         composerCwd: cwd,
         surface: 'task',
         agentLocked: isLegacyTheiaChat,
-        activityStack: renderStickyComposerActivityStack(activityOptions),
         changesPill: renderStickyComposerChangesPill(activityOptions),
         getContext: () => ctx.host.transcriptComposerContext,
         clearContext: () => {

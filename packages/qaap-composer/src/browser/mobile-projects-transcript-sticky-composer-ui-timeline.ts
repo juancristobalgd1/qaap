@@ -16,14 +16,13 @@ import {
     type TranscriptFollowUpEntry,
 } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-follow-up-queue';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import { createComposerContextEntry } from '@theia/qaap-shared-core/lib/common/qaap-composer-context-entry';
+import type { QaapPendingUserMessageDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { QaapQueuedMessageAction } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-messages-render-ui-context';
 import {
     type QaapGitCommitWorkflowAction,
 } from '@theia/qaap-shared-core/lib/common/qaap-git-review';
-import { renderStickyComposerActivityStack, buildStickyComposerActivityStackFingerprint, buildStickyComposerChangesPillFingerprint, patchStickyComposerActivityStack, patchStickyComposerChangesPillHost, renderStickyComposerChangesPill, syncStickyComposerRunAppOwner, type StickyComposerActivityStackOptions } from './qaap-sticky-composer-activity-stack';
-import {
-    ensureQueueControlInPillRow,
-    ensureQueueControlPositionObserver,
-} from './qaap-sticky-composer-queue-position';
+import { buildStickyComposerChangesPillFingerprint, patchStickyComposerChangesPillHost, renderStickyComposerChangesPill, syncStickyComposerRunAppOwner, type StickyComposerActivityStackOptions } from './qaap-sticky-composer-activity-stack';
 import {
     parkWorkingControlFromAncestor,
     transferWorkingControlToHost,
@@ -155,7 +154,6 @@ export function buildComposerActivityFingerprintExtracted(ctx: MobileProjectsTra
     },): string {
     const pathsKey = activityFiles.files.map(file => file.path).sort().join('\n');
     return [
-        ctx.host.transcriptFollowUpQueue.size(summary.id),
         pathsKey,
         activityFiles.stats?.added ?? 0,
         activityFiles.stats?.removed ?? 0,
@@ -175,7 +173,6 @@ export function syncComposerActivityFingerprintExtracted(ctx: MobileProjectsTran
         ?? ctx.buildTranscriptComposerActivityOptions(resolvedProject ?? ctx.host.transcriptComposerProject!, summary);
     ctx.lastComposerActivityFingerprint = ctx.buildComposerActivityFingerprint(summary, options, activityFiles);
     ctx.lastComposerChangesPillFingerprint = buildStickyComposerChangesPillFingerprint(options);
-    ctx.lastComposerActivityStackFingerprint = buildStickyComposerActivityStackFingerprint(options);
 }
 
 export function refreshComposerActivityStackExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext): void {
@@ -192,12 +189,6 @@ export function refreshComposerActivityStackExtracted(ctx: MobileProjectsTranscr
         return;
     }
     const activityOptions = ctx.buildTranscriptComposerActivityOptions(project, summary);
-    // Once the last queued entry has been dispatched or removed, the expanded
-    // state must not leak into the next queue mount. Otherwise a later queue
-    // can reopen as a stale popover even though the previous one was closed.
-    if ((activityOptions.queueEntries?.length ?? 0) === 0) {
-        ctx.host.transcriptComposerQueueExpanded = false;
-    }
     const pillFingerprint = buildStickyComposerChangesPillFingerprint(activityOptions);
     const changesPill = renderStickyComposerChangesPill(activityOptions);
     // Run app / Starting preview… / View Preview live in the changes pill row (next to Working).
@@ -239,63 +230,19 @@ export function refreshComposerActivityStackExtracted(ctx: MobileProjectsTranscr
         transferWorkingControlToHost(pillsOnlyHost, changesPill);
         transferStepPillToHost(pillsOnlyHost, changesPill);
         transferGoalLoopPillToHost(pillsOnlyHost, changesPill);
-        // Insert the pill AFTER the queue stack (if it exists) — queue goes on top, pill below it.
-        const existingStack = wrap.querySelector(':scope > .theia-mobile-sticky-composer-activity-stack');
-        if (existingStack) {
-            wrap.insertBefore(changesPill, existingStack.nextSibling ?? card);
-        } else {
-            wrap.insertBefore(changesPill, card);
-        }
+        wrap.insertBefore(changesPill, card);
         pillsOnlyHost.remove();
         ctx.lastComposerChangesPillFingerprint = pillFingerprint;
     } else {
-        const existingStack = wrap.querySelector(':scope > .theia-mobile-sticky-composer-activity-stack');
-        if (existingStack) {
-            wrap.insertBefore(changesPill, existingStack.nextSibling ?? card);
-        } else {
-            wrap.insertBefore(changesPill, card);
-        }
+        wrap.insertBefore(changesPill, card);
         ctx.lastComposerChangesPillFingerprint = pillFingerprint;
     }
-    const stackFingerprint = buildStickyComposerActivityStackFingerprint(activityOptions);
-    const stack = renderStickyComposerActivityStack(activityOptions);
-    // The queue control always lives inside the changes-pill-row (left of Working pill).
-    // Search the whole wrap since it may be nested inside a pill host.
-    const existing = wrap.querySelector('.theia-mobile-sticky-composer-activity-stack');
     card.classList.remove('theia-mod-has-activity');
-    card.querySelector(':scope > .theia-mobile-sticky-composer-activity-stack')?.remove();
     card.querySelector(':scope > .theia-mobile-sticky-composer-activity-section.theia-mod-streaming')?.remove();
-    if (!stack) {
-        existing?.remove();
-        ctx.lastComposerActivityStackFingerprint = '';
-    } else if (existing instanceof HTMLElement) {
-        if (stackFingerprint === ctx.lastComposerActivityStackFingerprint
-            || patchStickyComposerActivityStack(existing, activityOptions)) {
-            ctx.lastComposerActivityStackFingerprint = stackFingerprint;
-        } else {
-            existing.replaceWith(stack);
-            ctx.lastComposerActivityStackFingerprint = stackFingerprint;
-        }
-    } else {
-        // No existing stack — place inside the first changes-pill-row, or before card as fallback.
-        const pillHost = wrap.querySelector(':scope > .theia-mobile-sticky-composer-changes-pill-host');
-        const row = pillHost?.querySelector<HTMLElement>(':scope .theia-mobile-sticky-composer-changes-pill-row');
-        if (row) {
-            row.insertBefore(stack, row.firstChild);
-        } else {
-            wrap.insertBefore(stack, pillHost ?? card);
-        }
-        ctx.lastComposerActivityStackFingerprint = stackFingerprint;
-    }
-    // Single normalization point: ensure the queue control is inside the best
-    // available changes-pill-row as first child. The MutationObserver installed
-    // below catches pill hosts created asynchronously by other contributions,
-    // so we don't need a rAF pass or duplicate calls here.
-    ensureQueueControlInPillRow(wrap);
+    // Ensure every pill host is above the card.
     const orderedPillHosts = Array.from(
         wrap.querySelectorAll<HTMLElement>('.theia-mobile-sticky-composer-changes-pill-host'),
     );
-    // Ensure every pill host is above the card.
     for (const pillEl of orderedPillHosts) {
         if (card && pillEl.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_PRECEDING) {
             wrap.insertBefore(pillEl, card);
@@ -304,12 +251,6 @@ export function refreshComposerActivityStackExtracted(ctx: MobileProjectsTranscr
     ctx.syncComposerActivityFingerprint(summary, project, activityOptions);
     ctx.syncTranscriptQueuedFollowUpBubbles(summary);
     ctx.host.updateWorkingPillChrome();
-    // updateWorkingPillChrome may have created a working-only pill host with a
-    // row — re-normalize once more so the queue pill lands inside it.
-    ensureQueueControlInPillRow(wrap);
-    // Install the MutationObserver once per wrap to catch async pill-host
-    // creation by other contributions (Working pill, Step pill, …).
-    ensureQueueControlPositionObserver(wrap);
     ctx.host.composerHeaderUi.updateStickyComposerFabLift();
 }
 
@@ -401,7 +342,6 @@ export async function sendQueuedFollowUpNowExtracted(ctx: MobileProjectsTranscri
     if (!entry) {
         return;
     }
-    ctx.host.transcriptComposerQueueExpanded = false;
     ctx.refreshComposerActivityStack();
     // A mirror still in flight leaves no serverPendingId yet, but its row carries the same clientMessageId:
     // dispatch that row instead of re-posting (a re-post with the same id would be a server no-op).
@@ -457,4 +397,81 @@ export async function dispatchQueuedFollowUpInParallelExtracted(ctx: MobileProje
         ctx.host.transcriptFollowUpQueue.unshift(summary.id, entry);
         ctx.refreshComposerActivityStack();
     }
+}
+
+/**
+ * Edit a queued follow-up: its text, attachments and context return to the composer, and the entry
+ * leaves the queue (its server copy is cancelled).
+ */
+export function editQueuedFollowUpExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, summary: QaapAgentConversationSummaryDTO,
+    index: number,): void {
+    const entry = ctx.host.transcriptFollowUpQueue.peek(summary.id)[index];
+    if (!entry) {
+        return;
+    }
+    ctx.host.transcriptComposerDraft = entry.draft;
+    const existingRequests = new Set(ctx.host.transcriptComposerContext.map(item => item.request));
+    const restored = (entry.variables ?? [])
+        .filter(request => !existingRequests.has(request))
+        .map(request => createComposerContextEntry(request));
+    ctx.host.transcriptComposerContext = [...restored, ...ctx.host.transcriptComposerContext];
+    ctx.host.transcriptFollowUpQueue.removeAt(summary.id, index);
+    if (entry.serverPendingId && ctx.host.transcriptMessagesUi?.cancelQueuedMessage) {
+        void ctx.host.transcriptMessagesUi.cancelQueuedMessage(summary.id, entry.serverPendingId);
+    }
+    ctx.syncTranscriptQueuedFollowUpBubbles(summary);
+    ctx.remountTranscriptStickyComposer();
+}
+
+/** Whether a local queue entry is the one a queued transcript row paints. */
+function isQueueEntryForPendingMessage(entry: TranscriptFollowUpEntry, pending: QaapPendingUserMessageDTO): boolean {
+    if (entry.serverPendingId) {
+        return entry.serverPendingId === pending.id;
+    }
+    return entry.draft === pending.content
+        || (!!pending.clientMessageId && entry.clientMessageId === pending.clientMessageId);
+}
+
+/**
+ * Runs Send now / Edit / Remove picked on a queued transcript row. The local queue owns the entry
+ * while it still has one; a server-only row (for example after a reload) is acted on through the
+ * durable queue, as before.
+ */
+export async function handleTranscriptQueuedMessageActionExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext,
+    conversationId: string,
+    pending: QaapPendingUserMessageDTO,
+    action: QaapQueuedMessageAction,): Promise<void> {
+    const messagesUi = ctx.host.transcriptMessagesUi;
+    const summary = ctx.host.transcriptComposerSummary?.id === conversationId ? ctx.host.transcriptComposerSummary : undefined;
+    const project = ctx.host.transcriptComposerProject;
+    const index = ctx.host.transcriptFollowUpQueue.peek(conversationId)
+        .findIndex(entry => isQueueEntryForPendingMessage(entry, pending));
+    if (summary && project && index >= 0) {
+        if (action === 'edit') {
+            editQueuedFollowUpExtracted(ctx, summary, index);
+            return;
+        }
+        if (action === 'send') {
+            await sendQueuedFollowUpNowExtracted(ctx, project, summary, index);
+            return;
+        }
+        const removed = ctx.host.transcriptFollowUpQueue.takeAt(conversationId, index);
+        if (removed?.serverPendingId) {
+            await messagesUi?.cancelQueuedMessage(conversationId, removed.serverPendingId);
+        }
+        ctx.syncTranscriptQueuedFollowUpBubbles(summary);
+        ctx.refreshComposerActivityStack();
+        return;
+    }
+    if (action === 'send') {
+        await messagesUi?.dispatchQueuedMessage(conversationId, pending, 'parallel');
+        return;
+    }
+    if (action === 'remove') {
+        await messagesUi?.cancelQueuedMessage(conversationId, pending.id);
+        return;
+    }
+    ctx.host.transcriptComposerDraft = pending.content;
+    await messagesUi?.cancelQueuedMessage(conversationId, pending.id);
+    ctx.remountTranscriptStickyComposer();
 }

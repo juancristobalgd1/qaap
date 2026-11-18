@@ -185,6 +185,11 @@ export class MobileProjectsTranscriptMessagesUi {
         return this.renderUi.cancelQueuedMessage(conversationId, queuedMessageId);
     }
 
+    /** Routes the actions of queued transcript rows to the composer queue that owns them. */
+    setQueuedMessageActionHandler(handler: NonNullable<MobileProjectsTranscriptMessagesRenderUi['queuedMessageActionHandler']> | undefined): void {
+        this.renderUi.queuedMessageActionHandler = handler;
+    }
+
     /** Dispatch a server-queued follow-up immediately with the given delivery mode. */
     dispatchQueuedMessage(
         conversationId: string,

@@ -10431,27 +10431,6 @@ button.theia-mobile-projects-sticky-composer-context-usage-btn {
   box-shadow: none;
 }
 
-.theia-mobile-projects-sticky-composer-card.theia-mod-codex:not(.theia-mod-has-context):not(.theia-mod-has-activity) .theia-mobile-sticky-composer-activity-stack {
-  background: transparent;
-  border: none;
-  border-radius: 0;
-  box-shadow: none;
-  overflow: visible;
-}
-
-.theia-mobile-projects-sticky-composer-card.theia-mod-codex.theia-mod-has-activity .theia-mobile-sticky-composer-activity-stack,
-.theia-mobile-projects-sticky-composer-card.theia-mod-codex.theia-mod-has-context .theia-mobile-sticky-composer-activity-stack {
-  border-radius: 0;
-  box-shadow: none;
-  overflow: visible;
-}
-
-.theia-mobile-projects-sticky-composer-card.theia-mod-codex.theia-mod-has-activity .theia-mobile-sticky-composer-activity-section.theia-mod-queue+.theia-mobile-sticky-composer-activity-section.theia-mod-files,
-.theia-mobile-projects-sticky-composer-card.theia-mod-codex.theia-mod-has-context .theia-mobile-projects-sticky-composer-context-strip+.theia-mobile-sticky-composer-activity-stack,
-.theia-mobile-projects-sticky-composer-card.theia-mod-codex.theia-mod-has-activity .theia-mobile-projects-sticky-composer-context-strip+.theia-mobile-sticky-composer-activity-stack {
-  border-top: 1px solid color-mix(in srgb, var(--theia-foreground) 4%, transparent);
-}
-
 /* Files/attachments + input — one continuous upper shell (no seam). */
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex.theia-mod-has-activity .theia-mobile-sticky-composer-activity-stack+.theia-mobile-projects-sticky-composer-stage,
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex.theia-mod-has-context:not(.theia-mod-has-activity) .theia-mobile-projects-sticky-composer-context-strip+.theia-mobile-projects-sticky-composer-stage,

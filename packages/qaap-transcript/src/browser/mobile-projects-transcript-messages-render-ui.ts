@@ -32,6 +32,7 @@ import {
 } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-scroll-controller';
 import { type QaapAgentConversationDTO, type QaapAgentMessageDTO, type QaapAgentMessageSegmentDTO, type QaapPendingUserMessageDTO, cancelQueuedConversationMessage, dispatchQueuedConversationMessage, conversationToSummary } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type { MobileProjectsTranscriptMessagesArtifactsUi } from './mobile-projects-transcript-messages-artifacts-ui';
+import type { QaapQueuedMessageAction } from './mobile-projects-transcript-messages-render-ui-context';
 import type { MobileProjectsTranscriptMessagesContentUi } from './mobile-projects-transcript-messages-content-ui';
 import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
 import type { MobileProjectsTranscriptMessagesToolUi } from './mobile-projects-transcript-messages-tool-ui';
@@ -154,6 +155,21 @@ export class MobileProjectsTranscriptMessagesRenderUi {
 
     buildTranscriptVirtualFooter(conv: QaapAgentConversationDTO, options?: { readonly existingActivityRow?: HTMLElement | null },): HTMLElement[] {
         return buildTranscriptVirtualFooterExtracted(this, conv, options);
+    }
+
+    /**
+     * Composer-side owner of the queue, set by the sticky composer. It decides how Send now / Edit /
+     * Remove land on the local queue and the durable server queue.
+     */
+    public queuedMessageActionHandler: ((
+        conversationId: string,
+        pending: QaapPendingUserMessageDTO,
+        action: QaapQueuedMessageAction,
+    ) => void | Promise<void>) | undefined;
+
+    /** Runs the action picked on a queued transcript row. */
+    async queuedMessageAction(conversationId: string, pending: QaapPendingUserMessageDTO, action: QaapQueuedMessageAction): Promise<void> {
+        await this.queuedMessageActionHandler?.(conversationId, pending, action);
     }
 
     /** Cancel a queued message — removes it from the server-side pending queue. */

@@ -4034,95 +4034,72 @@ body.theia-dark .theia-mobile-agent-web-search,
 }
 
 /*
- * Queued follow-ups painted at the transcript tail (see qaap-transcript-queued-bubbles.ts).
- * Same user bubble, held back visually: the message is sent but not yet in the turn.
+ * Queued messages at the transcript tail (mobile-projects-transcript-messages-render-ui-render.ts).
+ * The message is held back from the turn: a dashed user bubble, with the actions under it.
  */
-.theia-mobile-agent-transcript-queued {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 8px;
-  width: 100%;
-}
-
-.theia-mobile-agent-transcript-msg.theia-mod-user.theia-mod-queued {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 6px;
-  border-style: dashed;
-  border-color: var(--theia-descriptionForeground, var(--theia-foreground));
-  background: color-mix(in srgb, var(--theia-foreground) 6%, var(--theia-editor-background, transparent));
-}
-
-/* Dim only the message text: the Send now / Cancel actions live in the row header and must stay at full strength. */
-.theia-mobile-agent-transcript-msg.theia-mod-user.theia-mod-queued .theia-mobile-agent-transcript-content {
-  align-self: stretch;
-  opacity: 0.62;
-}
-
-.theia-mobile-agent-transcript-queued-tag {
-  flex: 0 0 auto;
-  font-size: 10px;
-  line-height: 1;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  padding: 3px 6px;
-  border-radius: var(--qaap-mobile-radius-control, 8px);
-  background: color-mix(in srgb, var(--theia-foreground) 12%, transparent);
-  color: var(--theia-descriptionForeground, var(--theia-foreground));
-  white-space: nowrap;
-}
-
-/* ─── Queued message footer rows (delivery mode 'queue') ──────────────────── */
-
 .theia-mobile-agent-transcript-queued-message {
   display: flex;
   flex-direction: column;
+  align-items: flex-end;
   gap: 6px;
-  max-width: min(82%, 620px);
+  max-width: min(74%, 620px);
   margin-left: auto;
   margin-right: 0;
-  padding: 8px 0;
+  padding: 4px 0 8px;
 }
 
-.theia-mobile-agent-transcript-queued-message-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+.theia-mobile-agent-transcript-queued-message.theia-mod-entering {
+  animation: theia-queued-message-enter 180ms ease-out both;
 }
 
-.theia-mobile-agent-transcript-queued-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  padding: 3px 8px;
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--theia-focusBorder, #007fd4) 18%, transparent);
-  color: var(--theia-descriptionForeground, var(--theia-foreground));
-  white-space: nowrap;
+.theia-mobile-agent-transcript-queued-message.theia-mod-leaving {
+  animation: theia-queued-message-leave 180ms ease-in both;
 }
 
-.theia-mobile-agent-transcript-queued-badge-icon {
-  font-size: 12px;
-  opacity: 0.8;
+@keyframes theia-queued-message-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
-.theia-mobile-agent-transcript-queued-paused-hint {
-  font-size: var(--q-text-meta, 13px);
-  color: var(--theia-foreground);
-  white-space: nowrap;
+@keyframes theia-queued-message-leave {
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.theia-mobile-agent-transcript-msg.theia-mod-user.theia-mod-queued {
+  width: 100%;
+  border-style: dashed;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* The text is held back: dim it, but keep the attachment thumbnails at full strength. */
+.theia-mobile-agent-transcript-msg.theia-mod-user.theia-mod-queued .theia-mobile-agent-transcript-content {
+  opacity: 0.62;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .theia-mobile-agent-transcript-queued-actions {
-  display: inline-flex;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
+  justify-content: flex-end;
+  gap: 2px;
+  font-size: var(--q-text-meta, 12px);
+}
+
+.theia-mobile-agent-transcript-queued-paused-hint {
+  margin-right: auto;
+  color: var(--theia-descriptionForeground, var(--theia-foreground));
 }
 
 .theia-mobile-agent-transcript-queued-action {
@@ -4130,54 +4107,57 @@ body.theia-dark .theia-mobile-agent-web-search,
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 12px;
-  padding: 4px 10px;
-  border: 1px solid color-mix(in srgb, var(--theia-foreground) 15%, transparent);
-  border-radius: 8px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: var(--qaap-mobile-radius-control, 8px);
   background: transparent;
-  color: var(--theia-foreground);
+  color: var(--theia-descriptionForeground, var(--theia-foreground));
+  font-size: var(--q-text-meta, 12px);
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.12s, border-color 0.12s;
+  transition: background 0.12s, color 0.12s;
 }
 
 .theia-mobile-agent-transcript-queued-action:hover {
   background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
-  border-color: color-mix(in srgb, var(--theia-foreground) 25%, transparent);
+  color: var(--theia-foreground);
+}
+
+.theia-mobile-agent-transcript-queued-action:focus-visible {
+  outline: 1px solid var(--theia-focusBorder, #007fd4);
+  outline-offset: 1px;
 }
 
 .theia-mobile-agent-transcript-queued-action.theia-mod-send-now {
   color: var(--theia-focusBorder, #007fd4);
-  border-color: color-mix(in srgb, var(--theia-focusBorder, #007fd4) 30%, transparent);
 }
 
-.theia-mobile-agent-transcript-queued-action.theia-mod-send-now:hover {
-  background: color-mix(in srgb, var(--theia-focusBorder, #007fd4) 12%, transparent);
-}
-
-.theia-mobile-agent-transcript-queued-action.theia-mod-cancel {
-  color: var(--theia-descriptionForeground, var(--theia-foreground));
-  opacity: 0.7;
-}
-
-.theia-mobile-agent-transcript-queued-action.theia-mod-cancel:hover {
-  opacity: 1;
+.theia-mobile-agent-transcript-queued-action.theia-mod-remove:hover {
   color: var(--theia-errorForeground, #f48771);
-  border-color: color-mix(in srgb, var(--theia-errorForeground, #f48771) 30%, transparent);
 }
 
 .theia-mobile-agent-transcript-queued-action-icon {
   font-size: 13px;
 }
 
-/* Narrow viewport adjustments */
+@media (prefers-reduced-motion: reduce) {
+  .theia-mobile-agent-transcript-queued-message.theia-mod-entering,
+  .theia-mobile-agent-transcript-queued-message.theia-mod-leaving {
+    animation: none;
+  }
+}
+
+/* Touch screens have no hover: the actions are always visible and sized for a finger. */
 @media (max-width: 767px) {
   .theia-mobile-agent-transcript-queued-message {
     max-width: min(88%, 420px);
   }
 
   .theia-mobile-agent-transcript-queued-action {
-    padding: 6px 8px;
+    min-width: 36px;
+    min-height: 36px;
   }
 }
 

@@ -142,7 +142,6 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
         seam.host = {
             transcriptFollowUpQueue: queue,
             resolveActiveTranscriptChatHost: () => undefined,
-            transcriptComposerQueueExpanded: false,
             transcriptComposerAgentModel: undefined,
             messageService: { error: () => { } },
             stickyComposerWorkspaceUi: {
@@ -186,17 +185,6 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
         return probe;
     }
 
-    it('opens the queue popover when the first follow-up is queued during an active turn', () => {
-        const probe = createProbe({ agentWorking: true });
-        const host = (probe.ui as unknown as {
-            host: { transcriptComposerQueueExpanded: boolean };
-        }).host;
-
-        expect(host.transcriptComposerQueueExpanded).to.equal(false);
-        expect(probe.ui.enqueueTranscriptFollowUp(summary.id, { draft: 'queued while working' })).to.equal(true);
-        expect(host.transcriptComposerQueueExpanded).to.equal(true);
-    });
-
     it('says the queue is paused when the conversation has paused pending messages', () => {
         const probe = createProbe({ agentWorking: false });
         const host = (probe.ui as unknown as {
@@ -217,51 +205,6 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
 
         expect(probe.ui.enqueueTranscriptFollowUp(summary.id, { draft: 'running follow-up' })).to.equal(true);
         expect(document.body.textContent).to.contain('will send when the agent finishes');
-    });
-
-    it('resets the expanded state after the last queued message is gone', () => {
-        const root = document.createElement('div');
-        const wrap = document.createElement('div');
-        wrap.className = 'theia-mobile-projects-sticky-composer-inner';
-        const card = document.createElement('div');
-        card.className = 'theia-mobile-projects-sticky-composer-card theia-mod-codex';
-        wrap.append(card);
-        root.append(wrap);
-        document.body.append(root);
-
-        const host = {
-            transcriptComposerHost: root,
-            transcriptComposerProject: project,
-            transcriptComposerSummary: summary,
-            transcriptComposerQueueExpanded: true,
-            composerHeaderUi: { updateStickyComposerFabLift: () => undefined },
-            updateWorkingPillChrome: () => undefined,
-        };
-        const ctx = {
-            host,
-            buildTranscriptComposerActivityOptions: () => ({ queueEntries: [], queueExpanded: true }),
-            syncComposerActivityFingerprint: () => undefined,
-            syncTranscriptQueuedFollowUpBubbles: () => undefined,
-            remountTranscriptStickyComposer: () => undefined,
-        };
-
-        timelineModule.refreshComposerActivityStackExtracted(ctx as unknown as MobileProjectsTranscriptStickyComposerUiContext);
-
-        expect(host.transcriptComposerQueueExpanded).to.equal(false);
-        root.remove();
-    });
-
-    it('collapses the queue immediately when sending a queued message', async () => {
-        const probe = createProbe({ agentWorking: true });
-        const host = (probe.ui as unknown as {
-            host: { transcriptComposerQueueExpanded: boolean };
-        }).host;
-        host.transcriptComposerQueueExpanded = true;
-        probe.queue.enqueue(summary.id, { draft: 'send from expanded queue' });
-
-        await probe.ui.sendQueuedFollowUpNow(project, summary, 0);
-
-        expect(host.transcriptComposerQueueExpanded).to.equal(false);
     });
 
     it('starts a peer run in the same transcript when sending a queued message in parallel', async () => {
@@ -985,7 +928,6 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
         const ctx = {
             host: {
                 transcriptFollowUpQueue: queue,
-                transcriptComposerQueueExpanded: false,
                 transcriptLastConv: {
                     id: 'c1',
                     status: 'idle',

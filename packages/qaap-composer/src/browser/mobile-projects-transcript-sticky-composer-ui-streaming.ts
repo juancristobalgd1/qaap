@@ -14,7 +14,6 @@ import {
 import { type ComposerGitActionDisplayMetadata } from '@theia/qaap-shared-core/lib/common/qaap-composer-git-action-display';
 import { resolveThreadPreviewRoot } from '@theia/qaap-shared-core/lib/common/qaap-thread-preview-root';
 import { formatCommitFeedback } from '@theia/qaap-diff-review/lib/common/qaap-commit-feedback';
-import { createComposerContextEntry } from '@theia/qaap-shared-core/lib/common/qaap-composer-context-entry';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import {
@@ -241,75 +240,6 @@ export function buildTranscriptComposerActivityOptionsExtracted(ctx: MobileProje
         verifiedAt: ctx.verifiedComposerPreview?.verifiedAt,
     });
     return {
-        queueEntries: ctx.host.transcriptFollowUpQueue.peek(summary.id),
-        queueExpanded: ctx.host.transcriptComposerQueueExpanded,
-        onQueueExpandedChange: expanded => { ctx.host.transcriptComposerQueueExpanded = expanded; },
-        onQueueEdit: (index, entry) => {
-            ctx.host.transcriptComposerDraft = entry.draft;
-            const existingRequests = new Set(ctx.host.transcriptComposerContext.map(item => item.request));
-            const restored = (entry.variables ?? [])
-                .filter(request => !existingRequests.has(request))
-                .map(request => createComposerContextEntry(request));
-            ctx.host.transcriptComposerContext = [...restored, ...ctx.host.transcriptComposerContext];
-            ctx.host.transcriptFollowUpQueue.removeAt(summary.id, index);
-            if (entry.serverPendingId && ctx.host.transcriptMessagesUi?.cancelQueuedMessage) {
-                void ctx.host.transcriptMessagesUi.cancelQueuedMessage(summary.id, entry.serverPendingId);
-            }
-            ctx.syncTranscriptQueuedFollowUpBubbles(summary);
-            ctx.remountTranscriptStickyComposer();
-        },
-        onQueueSendNow: index => {
-            void ctx.sendQueuedFollowUpNow(project, summary, index);
-        },
-        onQueueInterrupt: index => {
-            void ctx.interruptQueuedFollowUp(project, summary, index);
-        },
-        onQueueRemove: index => {
-            const removed = ctx.host.transcriptFollowUpQueue.takeAt(summary.id, index);
-            if (removed?.serverPendingId && ctx.host.transcriptMessagesUi?.cancelQueuedMessage) {
-                void ctx.host.transcriptMessagesUi.cancelQueuedMessage(summary.id, removed.serverPendingId);
-            }
-            ctx.refreshComposerActivityStack();
-        },
-        onQueueClose: index => {
-            const removed = ctx.host.transcriptFollowUpQueue.takeAt(summary.id, index);
-            if (removed?.serverPendingId && ctx.host.transcriptMessagesUi?.cancelQueuedMessage) {
-                void ctx.host.transcriptMessagesUi.cancelQueuedMessage(summary.id, removed.serverPendingId);
-            }
-            ctx.refreshComposerActivityStack();
-        },
-        onQueueReorder: (fromIndex, toIndex) => {
-            // FLIP animation: record first positions before re-render.
-            const wrap = ctx.host.transcriptComposerHost?.querySelector('.theia-mobile-projects-sticky-composer-inner');
-            const oldItems = wrap ? Array.from(wrap.querySelectorAll<HTMLElement>('.theia-mobile-sticky-composer-queue-item')) : [];
-            const firstRects = oldItems.map(el => el.getBoundingClientRect());
-            ctx.host.transcriptFollowUpQueue.moveTo(summary.id, fromIndex, toIndex);
-            // Force a full re-render (not a patch) by clearing the fingerprint.
-            ctx.lastComposerActivityStackFingerprint = '';
-            ctx.refreshComposerActivityStack();
-            // FLIP: animate from old position to new position.
-            if (wrap) {
-                requestAnimationFrame(() => {
-                    const newItems = Array.from(wrap.querySelectorAll<HTMLElement>('.theia-mobile-sticky-composer-queue-item'));
-                    newItems.forEach((el, i) => {
-                        if (i >= firstRects.length) { return; }
-                        const newRect = el.getBoundingClientRect();
-                        const deltaY = firstRects[i].top - newRect.top;
-                        if (deltaY === 0) { return; }
-                        el.style.transform = `translateY(${deltaY}px)`;
-                        el.style.transition = 'none';
-                        requestAnimationFrame(() => {
-                            el.style.transition = 'transform 0.28s cubic-bezier(0.2, 0.9, 0.3, 1)';
-                            el.style.transform = '';
-                            el.addEventListener('transitionend', () => {
-                                el.style.transition = '';
-                                el.style.transform = '';
-                            }, { once: true });
-                        });
-                    });
-                });
-            }
-        },
         changedFiles: activityFiles.files,
         diffStats: activityFiles.stats,
         hasFileActivity,

@@ -76,7 +76,6 @@ export class MobileProjectsStickyComposerColumnUi {
         formatContextChip: (item: StickyComposerContextEntry) => StickyComposerContextChipView;
         filesExpanded?: boolean;
         onFilesExpandedChange?: (expanded: boolean) => void;
-        activityStack?: HTMLElement;
         changesPill?: HTMLElement;
         getDraft: () => string;
         setDraft: (value: string) => void;
@@ -568,11 +567,6 @@ export class MobileProjectsStickyComposerColumnUi {
         if (options.onDropFiles) {
             this.installComposerDropZone(card, inputPanel, input, options.onDropFiles);
             this.installComposerPasteHandler(inputPanel, input, options.onDropFiles);
-        }
-        // Queue popover mounts above the card — never fused into the codex lip.
-        if (options.activityStack) {
-            options.activityStack.classList.add('theia-mod-queue-popover');
-            wrap.append(options.activityStack);
         }
         wrap.append(card);
         column.append(wrap);

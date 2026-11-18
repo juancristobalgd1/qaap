@@ -409,8 +409,7 @@ export function resolveTranscriptTheiaChatModelExtracted(ctx: MobileProjectsTran
 
 export function enqueueTranscriptFollowUpExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, conversationId: string,
         entry: TranscriptFollowUpEntry,): boolean {
-        const wasEmpty = ctx.host.transcriptFollowUpQueue.size(conversationId) === 0;
-        const ok = ctx.host.transcriptFollowUpQueue.enqueue(conversationId, entry);
+        const ok =ctx.host.transcriptFollowUpQueue.enqueue(conversationId, entry);
         if (!ok) {
             MobileSnackbar.show(
                 nls.localize(
@@ -421,11 +420,6 @@ export function enqueueTranscriptFollowUpExtracted(ctx: MobileProjectsTranscript
                 { kind: 'warning', duration: 2800 },
             );
             return false;
-        }
-        // A persisted collapsed state is useful for an existing queue, but a newly queued
-        // follow-up must be discoverable while the current agent turn is still running.
-        if (wasEmpty && ctx.isTranscriptStickyComposerAgentWorking?.()) {
-            ctx.host.transcriptComposerQueueExpanded = true;
         }
         const count = ctx.host.transcriptFollowUpQueue.size(conversationId);
         const conv = ctx.host.transcriptLastConv?.id === conversationId ? ctx.host.transcriptLastConv : undefined;
