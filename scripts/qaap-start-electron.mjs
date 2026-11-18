@@ -7,7 +7,7 @@
  * OAuth callback (which would need a fixed port) is involved. Arguments are passed to `theia start`.
  */
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 
@@ -79,44 +79,51 @@ brandDevElectronBundle('Qaap');
 
 /**
  * The Dock tooltip and Finder read the bundle's folder name, so a run from `Electron.app` still says
- * "Electron" even with the renamed Info.plist. Keep an APFS clone of the stock bundle named after the
- * product (`node_modules/electron/qaap-dev/Qaap.app`, refreshed when the Electron version changes) and
- * point `electron` at it through `ELECTRON_OVERRIDE_DIST_PATH`, whose `Electron.app` entry is a symlink
- * to the clone. The clone gets its own bundle id so Launch Services does not reuse the stock entry's name.
- * Any failure keeps the stock bundle.
+ * "Electron" even with the renamed Info.plist (a symlink named `Electron.app` is not enough either:
+ * Launch Services keeps the path it was launched from). Keep an APFS clone of the stock bundle named after
+ * the product next to it (`node_modules/electron/dist/Qaap.app`, refreshed when the Electron version
+ * changes) and point the `electron` package's `path.txt` at it, so `electron/cli.js` launches the clone by
+ * its real path. The clone gets its own bundle id so Launch Services does not reuse the stock entry's name.
+ * A reinstall of `electron` rewrites `path.txt` and the next start points it again. Any failure keeps the
+ * stock bundle.
  */
-function useProductNamedDevBundle(productName, targetEnv) {
-    if (process.platform !== 'darwin' || targetEnv.ELECTRON_OVERRIDE_DIST_PATH) {
+function useProductNamedDevBundle(productName) {
+    if (process.platform !== 'darwin') {
         return;
     }
     try {
-        const binary = createRequire(path.resolve(process.cwd(), 'package.json'))('electron');
-        const stockApp = path.resolve(path.dirname(binary), '..', '..');
-        const electronRoot = path.resolve(stockApp, '..', '..');
-        const version = readFileSync(path.join(electronRoot, 'dist', 'version'), 'utf8').trim();
-        const devRoot = path.join(electronRoot, 'qaap-dev');
-        const productApp = path.join(devRoot, `${productName}.app`);
-        const distDir = path.join(devRoot, 'dist');
-        const stamp = path.join(devRoot, 'version');
+        const electronRoot = path.dirname(createRequire(path.resolve(process.cwd(), 'package.json')).resolve('electron/package.json'));
+        const distDir = path.join(electronRoot, 'dist');
+        const stockApp = path.join(distDir, 'Electron.app');
+        const productApp = path.join(distDir, `${productName}.app`);
+        const version = readFileSync(path.join(distDir, 'version'), 'utf8').trim();
+        const stamp = path.join(distDir, '.qaap-product-bundle-version');
         const current = existsSync(stamp) ? readFileSync(stamp, 'utf8').trim() : undefined;
         if (current !== version || !existsSync(productApp)) {
-            rmSync(devRoot, { recursive: true, force: true });
-            mkdirSync(distDir, { recursive: true });
+            rmSync(productApp, { recursive: true, force: true });
             execFileSync('/bin/cp', ['-c', '-R', stockApp, productApp]);
             const plist = path.join(productApp, 'Contents', 'Info.plist');
             execFileSync('/usr/bin/plutil', ['-replace', 'CFBundleIdentifier', '-string', 'dev.qaaq.desktop.dev', plist]);
-            symlinkSync(path.join('..', `${productName}.app`), path.join(distDir, 'Electron.app'));
+            for (const key of ['CFBundleName', 'CFBundleDisplayName']) {
+                execFileSync('/usr/bin/plutil', ['-replace', key, '-string', productName, plist]);
+            }
             writeFileSync(stamp, version);
             execFileSync('/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister',
                 ['-f', productApp], { stdio: 'ignore' });
         }
-        targetEnv.ELECTRON_OVERRIDE_DIST_PATH = distDir;
+        const pathFile = path.join(electronRoot, 'path.txt');
+        const target = `${productName}.app/Contents/MacOS/Electron`;
+        if (readFileSync(pathFile, 'utf8') !== target) {
+            writeFileSync(pathFile, target);
+        }
+        // The earlier symlink layout (node_modules/electron/qaap-dev) is no longer used.
+        rmSync(path.join(electronRoot, 'qaap-dev'), { recursive: true, force: true });
     } catch (error) {
         console.warn(`[qaap] Could not prepare the ${productName}.app dev bundle: ${error instanceof Error ? error.message : error}`);
     }
 }
 
-useProductNamedDevBundle('Qaap', env);
+useProductNamedDevBundle('Qaap');
 
 const child = spawn('theia', ['start', ...process.argv.slice(2)], {
     cwd: process.cwd(),
