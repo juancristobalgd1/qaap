@@ -1,5 +1,6 @@
 import type { MobileProjectsTranscriptMessagesArtifactsUiContext } from './mobile-projects-transcript-messages-artifacts-ui-context';
 import { resolveAgentMessageTiming } from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
+import { resolveTurnCheckpointStats } from '@theia/qaap-shared-core/lib/common/qaap-turn-diff-stats';
 import { resolveTranscriptDiscardChangesHandler } from './mobile-projects-transcript-messages-artifacts-ui-render';
 import { resolveTranscriptTurnRetryAttempt } from '../common/qaap-transcript-turn-recovery';
 // Extracted from mobile-projects-transcript-messages-artifacts-ui.ts
@@ -223,6 +224,8 @@ export function appendMobileDiffSummaryExtracted(ctx: MobileProjectsTranscriptMe
         segmentsBody.querySelector('.theia-mobile-diff-summary')?.remove();
         ctx.removeTranscriptLiveStatusWithOrb(segmentsBody);
         const mutableSegments = [...segments];
+        // The turn's own totals, from the checkpoint the backend wrote when this turn settled.
+        const turnStats = turn?.conv && turn.message ? resolveTurnCheckpointStats(turn.conv, turn.message.id) : undefined;
         const changedFiles = ctx.enrichChangedFilesWithComposerGitStats(
             ctx.resolversUi.resolveTranscriptChangedFiles(mutableSegments),
         );
@@ -247,6 +250,10 @@ export function appendMobileDiffSummaryExtracted(ctx: MobileProjectsTranscriptMe
                 },
             );
             appendTurnResultFooter(ctx, diffSummary, turn);
+            // The per-file list above carries task-measured counts; the turn's own totals are labelled "this turn".
+            if (turnStats && (turnStats.added > 0 || turnStats.removed > 0)) {
+                segmentsBody.append(createMobileLineDiffSummaryElement(turnStats.added, turnStats.removed));
+            }
             // Last child = below process accordion + closing narrative summary.
             segmentsBody.append(diffSummary);
         } else {
@@ -254,7 +261,7 @@ export function appendMobileDiffSummaryExtracted(ctx: MobileProjectsTranscriptMe
             // (parsed from diff hunks embedded in tool output). Use the
             // line-level summary builder so we render "+N / -N" without
             // claiming a misleading file count.
-            const diffStats = ctx.resolversUi.resolveTranscriptDiffStats(mutableSegments);
+            const diffStats = ctx.resolversUi.resolveTranscriptDiffStats(mutableSegments) ?? turnStats;
             if (diffStats && (diffStats.added > 0 || diffStats.removed > 0)) {
                 const diffSummary = createMobileLineDiffSummaryElement(diffStats.added, diffStats.removed);
                 appendTurnResultFooter(ctx, diffSummary, turn);
