@@ -26,6 +26,7 @@ import '../../src/browser/style/qaap-empty-workbench-brand.css';
 import '../../src/browser/style/qaap-ide-preferences.css';
 import '../../src/browser/style/qaap-project-bootstrap.css';
 import '@theia/qaap-agents-ui/src/browser/style/qaap-agent-cli-update-toast.css';
+import '@theia/qaap-agents-ui/src/browser/style/qaap-agent-cli-update-status-chip.css';
 import '@theia/qaap-composer/src/browser/style/qaap-chat-mic.css';
 import '@theia/qaap-composer/src/browser/style/qaap-composer-prompt-improve.css';
 import '@theia/qaap-composer/src/browser/style/qaap-composer-stop-ack.css';
@@ -87,6 +88,8 @@ import { QaapWindowTitleProjectContribution } from './qaap-window-title-project-
 import { QaapWorkHubBootReplicaContribution } from './qaap-work-hub-boot-replica-contribution';
 import { QaapWorkHubKeybindingsPanel } from './qaap-work-hub-keybindings-panel';
 import { QaapAgentCliUpdateContribution } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-cli-update-contribution';
+import { QaapAgentCliUpdateTracker } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-cli-update-tracker';
+import { QaapAgentCliUpdateStatusChip } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-cli-update-status-chip';
 import { MobileOneColumnShellContribution } from './mobile-one-column-shell-contribution';
 import { QaapShellLayoutRestoreContribution } from './qaap-shell-layout-restore-contribution';
 import { QaapShellLayoutRestorer } from './qaap-shell-layout-restorer';
@@ -277,6 +280,9 @@ export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync
     bind(FrontendApplicationContribution).toService(QaapWorkHubBootReplicaContribution);
     bind(QaapAgentCliUpdateContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapAgentCliUpdateContribution);
+    bind(QaapAgentCliUpdateTracker).toSelf().inSingletonScope();
+    bind(QaapAgentCliUpdateStatusChip).toSelf().inSingletonScope();
+    bind(FrontendApplicationContribution).toService(QaapAgentCliUpdateStatusChip);
     bind(CommandContribution).toService(MobileOneColumnShellContribution);
     rebind(ShellLayoutRestorer).to(QaapShellLayoutRestorer).inSingletonScope();
     // Work Hub terminal surface (desktop and mobile): bridge aliases of the upstream terminal services.

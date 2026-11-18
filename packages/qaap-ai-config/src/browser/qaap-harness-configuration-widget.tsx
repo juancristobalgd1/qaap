@@ -16,6 +16,7 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 import { resolveAgentBrand } from '@theia/qaap-shared-core/lib/common/qaap-agent-branding';
 import { requestAgentCliUpdate } from '@theia/qaap-agents-ui/lib/common/qaap-agent-cli-update';
+import { QaapAgentCliUpdateTracker } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-cli-update-tracker';
 import {
     isQaapHarnessEnabled,
     QAAP_DISABLED_HARNESSES_PREF,
@@ -99,6 +100,9 @@ export class QaapHarnessConfigurationWidget extends ReactWidget {
 
     protected harnessStatuses = new Map<string, LoadedHarnessStatus>();
     protected availabilityState: HarnessAvailabilityState = 'loading';
+    /** Harness updates started from the update notice or chip; drives the row's busy state. */
+    @inject(QaapAgentCliUpdateTracker)
+    protected readonly updateTracker: QaapAgentCliUpdateTracker;
     protected readonly installingHarnessIds = new Set<string>();
     /** Desktop app only (reported by the backend): binary path and configuration folder are editable. */
     protected launchOverridesSupported = false;
@@ -120,6 +124,7 @@ export class QaapHarnessConfigurationWidget extends ReactWidget {
                 this.update();
             }
         }));
+        this.toDispose.push(this.updateTracker.onDidChange(() => this.update()));
         this.update();
         void this.loadAvailability();
     }
@@ -208,12 +213,20 @@ export class QaapHarnessConfigurationWidget extends ReactWidget {
                 )
                 : this.renderAvailabilityStatus(cardStatus);
         const installing = this.installingHarnessIds.has(definition.id);
+        const updating = this.updateTracker.isUpdating(definition.id);
+        const busy = installing || updating;
+        const busyStatusText = updating && !installing
+            ? nls.localize('qaap/aiConfiguration/harnessUpdatingStatus', 'Updating in background…')
+            : nls.localize('qaap/aiConfiguration/harnessInstallingStatus', 'Installing in background…');
+        const busyLabel = updating && !installing
+            ? nls.localize('qaap/aiConfiguration/updatingHarness', 'Updating harness…')
+            : nls.localize('qaap/aiConfiguration/installingHarness', 'Installing harness…');
         const cardClasses = [
             'qaap-harness-card',
             enabled && !unavailable ? undefined : 'theia-mod-disabled',
             installed ? undefined : 'qaap-harness-card-unavailable',
             installUnavailable ? 'qaap-harness-card-install-unavailable' : undefined,
-            installing ? 'qaap-harness-card-installing' : undefined,
+            busy ? 'qaap-harness-card-installing' : undefined,
             expanded ? 'qaap-harness-card-expanded' : undefined,
         ].filter((className): className is string => className !== undefined);
         return (
@@ -232,43 +245,30 @@ export class QaapHarnessConfigurationWidget extends ReactWidget {
                         <span className="qaap-harness-card-bin">{row.isInstance ? row.id : definition.bin}</span>
                     </div>
                     <span
-                        className={`qaap-harness-card-status${cardStatus === 'available' ? ' theia-mod-available' : ''}${installing ? ' qaap-harness-status-installing' : ''}`}
-                        aria-live={installing ? 'polite' : undefined}
+                        className={`qaap-harness-card-status${cardStatus === 'available' ? ' theia-mod-available' : ''}${busy ? ' qaap-harness-status-installing' : ''}`}
+                        aria-live={busy ? 'polite' : undefined}
                     >
-                        {installing
-                            ? nls.localize(
-                                'qaap/aiConfiguration/harnessInstallingStatus',
-                                'Installing in background…',
-                            )
-                            : status}
+                        {busy ? busyStatusText : status}
                     </span>
-                    {!installing && installed && harnessStatus?.lastTurn && this.renderLastTurn(harnessStatus.lastTurn)}
-                    {installing && <div
+                    {!busy && installed && harnessStatus?.lastTurn && this.renderLastTurn(harnessStatus.lastTurn)}
+                    {busy && <div
                         className="qaap-harness-install-progress"
                         role="progressbar"
-                        aria-label={nls.localize(
-                            'qaap/aiConfiguration/harnessInstallProgress',
-                            'Installing {0}',
-                            definition.label,
-                        )}
+                        aria-label={updating && !installing
+                            ? nls.localize('qaap/aiConfiguration/harnessUpdateProgress', 'Updating {0}', definition.label)
+                            : nls.localize('qaap/aiConfiguration/harnessInstallProgress', 'Installing {0}', definition.label)}
                     >
                         <span className="qaap-harness-install-progress-bar" />
                     </div>}
                 </div>
                 <div className="qaap-harness-card-actions">
                     {this.renderSettingsButton(row, expanded)}
-                    {installing
+                    {busy
                         ? <button
                             type="button"
                             className="qaap-harness-install theia-mod-installing"
-                            aria-label={nls.localize(
-                                'qaap/aiConfiguration/installingHarness',
-                                'Installing harness…',
-                            )}
-                            title={nls.localize(
-                                'qaap/aiConfiguration/installingHarness',
-                                'Installing harness…',
-                            )}
+                            aria-label={busyLabel}
+                            title={busyLabel}
                             aria-busy={true}
                             disabled={true}
                         >

@@ -347,3 +347,15 @@ function isAgentCliUpdateInfo(value: unknown): value is QaapAgentCliUpdateInfo {
         && typeof row.updateAvailable === 'boolean'
         && typeof row.updateSupported === 'boolean';
 }
+
+/**
+ * The server's one-sentence failure reason, or `undefined` when the text looks like raw tool output
+ * (an older server, a proxy error page, a thrown stack): the status chip then shows its generic text.
+ */
+export function presentableAgentCliUpdateFailure(message: string | undefined): string | undefined {
+    const detail = message?.trim();
+    if (!detail || detail.length > 240 || /[\r\n]|npm (?:error|ERR!|warn)|<\/?[a-z]|\bat \S+ \(/i.test(detail)) {
+        return undefined;
+    }
+    return detail;
+}
