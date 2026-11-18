@@ -40,4 +40,14 @@ describe('settings embedded scroller column edge CSS', () => {
             /\.theia-mobile-work-hub-settings-embedded-widget \.ai-skills-configuration-container \{\s*width: auto !important;\s*margin: 0 0 0 calc\(\(min\(100cqw, 1000px\) - min\(100cqw, 840px\)\) \/ 2\) !important;\s*padding-right: calc\(var\(--qaap-settings-embedded-edge\) - min\(100cqw, 840px\) - \(min\(100cqw, 1000px\) - min\(100cqw, 840px\)\) \/ 2\);/s,
         );
     });
+
+    it('runs the sidebar Settings nav scroller to the panel edge, giving back the host 10px inside it', () => {
+        const sidebarCss = fs.readFileSync(
+            path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'qaap-work-hub-sessions-sidebar.css'),
+            'utf8',
+        );
+        expect(sidebarCss).to.match(
+            /\.theia-mobile-work-hub-sessions-sidebar-settings \.theia-mobile-work-hub-settings-nav \{[^}]*margin-right: -10px;\s*padding-right: 10px;/s,
+        );
+    });
 });

@@ -1243,6 +1243,11 @@
   flex: 1 1 auto;
   overflow: auto;
   padding-bottom: 4px;
+  /* The host's 10px side padding inset the nav scroller (scrollbar 10px inside the panel edge).
+     Run the scroller to the panel edge and give the same 10px back inside it, so the items keep
+     their X and the scrollbar sits at 0px from the panel's right edge. */
+  margin-right: -10px;
+  padding-right: 10px;
 }
 
 .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-title-text {
