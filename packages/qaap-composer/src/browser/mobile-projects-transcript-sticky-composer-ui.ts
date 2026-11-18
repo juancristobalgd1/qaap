@@ -389,6 +389,8 @@ export class MobileProjectsTranscriptStickyComposerUi {
     public resolveComposerActivityFilesForStack(_project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, conv: QaapAgentConversationDTO | undefined,): {
         readonly files: StickyComposerChangedFileView[];
         readonly stats?: { readonly added: number; readonly removed: number };
+        readonly statsScope?: 'turn' | 'task';
+        readonly statsBaselineCommit?: string;
     } {
         return resolveComposerActivityFilesForStackExtracted(this, _project, summary, conv);
     }

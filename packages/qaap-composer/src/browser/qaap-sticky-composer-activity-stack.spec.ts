@@ -8,6 +8,7 @@ import { expect } from 'chai';
 import * as fs from 'fs';
 import * as path from 'path';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+import { QaapLiveTaskDiff } from '@theia/qaap-shared-core/lib/common/qaap-live-task-diff';
 import { buildStickyComposerChangesPillFingerprint, patchStickyComposerChangesPillHost, renderStickyComposerChangesPill, selectComposerPillChanges, STICKY_COMPOSER_RUN_APP_IN_PILL_ROW_CLASS, stickyComposerPillRowOwnsRunApp,
     syncStickyComposerRunAppOwner } from './qaap-sticky-composer-activity-stack';
 import type { StickyComposerChangedFileView } from '@theia/qaap-transcript/lib/browser/qaap-transcript-host-contracts';
@@ -123,6 +124,67 @@ describe('qaap-sticky-composer-activity-stack', () => {
             expect(afterNewEdit.hidden).to.equal(false);
             expect(afterNewEdit.resolved).to.equal(false);
             expect(afterNewEdit.clean).to.equal(false);
+        });
+    });
+
+    describe('diff stats scope in the Changes pill', () => {
+        let disableJSDOM: () => void;
+
+        before(() => {
+            disableJSDOM = enableJSDOM();
+        });
+
+        after(() => {
+            disableJSDOM();
+            QaapLiveTaskDiff.clear();
+        });
+
+        beforeEach(() => QaapLiveTaskDiff.clear());
+
+        const inlineText = (host: HTMLElement): string =>
+            host.querySelector('.theia-mobile-sticky-composer-activity-inline-stats')?.textContent ?? '';
+
+        it('labels stats that are this turn\'s own edits', () => {
+            const host = renderStickyComposerChangesPill({
+                changedFiles: [{ path: 'src/app.ts', kind: 'edited', added: 4, removed: 1 }],
+                diffStats: { added: 4, removed: 1 },
+                diffStatsScope: 'turn',
+                onReview: () => undefined,
+            });
+            document.body.append(host!);
+            expect(inlineText(host!)).to.contain('this turn');
+            host!.remove();
+        });
+
+        it('a task total is not labelled as this turn', () => {
+            const host = renderStickyComposerChangesPill({
+                changedFiles: [{ path: 'src/app.ts', kind: 'edited', added: 4, removed: 1 }],
+                diffStats: { added: 188, removed: 4 },
+                diffStatsScope: 'task',
+                diffStatsBaselineCommit: 'b1',
+                onReview: () => undefined,
+            });
+            document.body.append(host!);
+            expect(inlineText(host!)).to.not.contain('this turn');
+            host!.remove();
+        });
+
+        it('a task total in the pill follows the live total of its baseline without a re-render', () => {
+            const host = renderStickyComposerChangesPill({
+                changedFiles: [{ path: 'src/app.ts', kind: 'edited', added: 4, removed: 1 }],
+                diffStats: { added: 188, removed: 4 },
+                diffStatsScope: 'task',
+                diffStatsBaselineCommit: 'b1',
+                onReview: () => undefined,
+            });
+            document.body.append(host!);
+            expect(inlineText(host!)).to.contain('+188');
+            QaapLiveTaskDiff.publish('other', { added: 1, removed: 0 });
+            expect(inlineText(host!)).to.contain('+188');
+            QaapLiveTaskDiff.publish('b1', { added: 185, removed: 2 });
+            expect(inlineText(host!)).to.contain('+185');
+            expect(inlineText(host!)).to.contain('-2');
+            host!.remove();
         });
     });
 

@@ -10,6 +10,7 @@ import {
     type QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { createComposerContextEntry } from '@theia/qaap-shared-core/lib/common/qaap-composer-context-entry';
+import { QaapLiveTaskDiff } from '@theia/qaap-shared-core/lib/common/qaap-live-task-diff';
 import { resolveTranscriptComposerQuickActionsMode, resolveTranscriptEffectiveStatus } from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
 import { applyTranscriptComposerQuickActionsMode } from '@theia/qaap-transcript/lib/browser/qaap-transcript-composer-quick-actions';
 import {
@@ -430,6 +431,8 @@ export function resolveComposerActivityFilesForStackExtracted(ctx: MobileProject
         conv: QaapAgentConversationDTO | undefined,): {
         readonly files: StickyComposerChangedFileView[];
         readonly stats?: { readonly added: number; readonly removed: number };
+        readonly statsScope?: 'turn' | 'task';
+        readonly statsBaselineCommit?: string;
     } {
         const activityFiles = ctx.host.transcriptMessagesUi.resolveComposerActivityFiles(conv, summary);
         if (!ctx.hasComposerFileActivity(conv)) {
@@ -458,9 +461,15 @@ export function resolveComposerActivityFilesForStackExtracted(ctx: MobileProject
             return { files: [] };
         }
         if (selection.files) {
+            // Stats summed from the files are the task total when the list is measured against the baseline;
+            // otherwise they describe the whole worktree and carry no turn or task label.
+            const fromFiles = selection.files.length > 0;
+            const taskTotal = fromFiles && !!summary.baselineCommit;
             return {
                 files: selection.files,
                 stats: ctx.resolveChangedFilesStats(selection.files, activityFiles.stats),
+                statsScope: fromFiles ? (taskTotal ? 'task' : undefined) : activityFiles.statsScope,
+                statsBaselineCommit: taskTotal ? summary.baselineCommit : activityFiles.statsBaselineCommit,
             };
         }
         return activityFiles;
@@ -524,13 +533,26 @@ export async function fetchWorkspaceChangedFilesExtracted(ctx: MobileProjectsTra
         if (!cwd) {
             return [];
         }
-        const response = await fetch(
-            `${QAAP_GIT_REVIEW_API_PATH}/changes?root=${encodeURIComponent(cwd)}`,
+        // Measured against the task baseline, like the Changes panel, so the pill and the panel agree on the task total.
+        const baseCommit = summary.baselineCommit;
+        const fetchChanges = (base: string | undefined) => fetch(
+            `${QAAP_GIT_REVIEW_API_PATH}/changes?root=${encodeURIComponent(cwd)}${base ? `&baseCommit=${encodeURIComponent(base)}` : ''}`,
             { credentials: 'include' },
         );
+        let taskScoped = !!baseCommit;
+        let response = await fetchChanges(baseCommit);
+        // A baseline the repository no longer has is refused: fall back to the HEAD-relative list rather than failing.
+        if (!response.ok && baseCommit) {
+            taskScoped = false;
+            response = await fetchChanges(undefined);
+        }
         if (!response.ok) {
             throw new Error(`git changes request failed (${response.status})`);
         }
         const body = await response.json() as { files?: QaapGitChangedFile[] };
-        return (body.files ?? []).map(file => ctx.mapGitChangedFileToComposerView(file));
+        const files = body.files ?? [];
+        if (taskScoped && baseCommit) {
+            QaapLiveTaskDiff.publish(baseCommit, QaapLiveTaskDiff.sum(files));
+        }
+        return files.map(file => ctx.mapGitChangedFileToComposerView(file));
 }

@@ -6,6 +6,7 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import type { QaapGitCommitWorkflowAction } from '@theia/qaap-shared-core/lib/common/qaap-git-review';
+import { QaapLiveTaskDiff } from '@theia/qaap-shared-core/lib/common/qaap-live-task-diff';
 import type { StickyComposerChangedFileView } from '@theia/qaap-transcript/lib/browser/qaap-transcript-host-contracts';
 
 /** Outcome of {@link selectComposerPillChanges}. */
@@ -65,6 +66,9 @@ export interface StickyComposerActivityStackOptions {
     /** Display count for the Changes pill when transcript evidence has more files than the git snapshot. */
     changedFileCount?: number;
     diffStats?: { readonly added: number; readonly removed: number };
+    /** `turn`: `diffStats` is this turn's own edits, labelled as such. `task`: the task total, kept live via `diffStatsBaselineCommit`. */
+    diffStatsScope?: 'turn' | 'task';
+    diffStatsBaselineCommit?: string;
     /**
      * True once the agent has edited files in this conversation, even if the
      * changes were since Accepted/Discarded. Keeps the preview/run controls in
@@ -287,7 +291,7 @@ export function patchStickyComposerChangesPillHost(
             pill.append(statsInline);
         }
         statsInline.replaceChildren();
-        appendDiffStatsInline(statsInline, stats);
+        appendDiffStatsInline(statsInline, stats, options.diffStatsScope, options.diffStatsBaselineCommit);
         if (changesMenuBtn) {
             // Accept/Discard act on changes already written to disk, so they must stay reachable once
             // the changes exist. Gating on agentWorking wedged the menu disabled whenever that
@@ -360,12 +364,33 @@ function publishPillStripHeight(host: HTMLElement): void {
 function appendDiffStatsInline(
     host: HTMLElement,
     stats: { readonly added?: number; readonly removed?: number } | undefined,
+    scope?: 'turn' | 'task',
+    baselineCommit?: string,
 ): void {
     if (!stats || ((stats.added ?? 0) <= 0 && (stats.removed ?? 0) <= 0)) {
         return;
     }
     const statsInline = document.createElement('span');
     statsInline.className = 'theia-mobile-sticky-composer-activity-inline-stats';
+    fillDiffStatsInline(statsInline, stats);
+    if (scope === 'turn') {
+        // This turn's own edits: say so, so the number is never read as the task total.
+        const label = document.createElement('span');
+        label.className = 'theia-mobile-sticky-composer-activity-inline-stats-scope';
+        label.textContent = nls.localize('qaap/mobileProjects/stickyComposerThisTurn', 'this turn');
+        statsInline.append(label);
+    } else if (scope === 'task') {
+        // The task total: patch the counts in place when a live Changes read publishes it.
+        QaapLiveTaskDiff.bindTotals(statsInline, baselineCommit, totals => fillDiffStatsInline(statsInline, totals));
+    }
+    host.append(statsInline);
+}
+
+function fillDiffStatsInline(
+    statsInline: HTMLElement,
+    stats: { readonly added?: number; readonly removed?: number },
+): void {
+    statsInline.replaceChildren();
     if ((stats.added ?? 0) > 0) {
         const added = document.createElement('span');
         added.className = 'theia-mobile-agent-diff-stat theia-mod-added';
@@ -378,7 +403,6 @@ function appendDiffStatsInline(
         removed.textContent = `-${stats.removed ?? 0}`;
         statsInline.append(removed);
     }
-    host.append(statsInline);
 }
 
 function buildChangesPillAriaLabel(
@@ -443,7 +467,7 @@ function renderStickyComposerChangedFilesSection(options: StickyComposerActivity
                 : nls.localize('qaap/mobileProjects/stickyComposerChangesManyFilesShort', '{0} files', String(fileCount));
             pill.append(count);
         }
-        appendDiffStatsInline(pill, stats);
+        appendDiffStatsInline(pill, stats, options.diffStatsScope, options.diffStatsBaselineCommit);
         pill.addEventListener('click', ev => {
             ev.preventDefault();
             ev.stopPropagation();

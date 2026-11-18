@@ -141,6 +141,8 @@ export async function refreshComposerActivityGitFilesIfNeededExtracted(ctx: Mobi
     activityFiles: {
         readonly files: readonly StickyComposerChangedFileView[];
         readonly stats?: { readonly added: number; readonly removed: number };
+        readonly statsScope?: 'turn' | 'task';
+        readonly statsBaselineCommit?: string;
     },): Promise<void> {
     if (!ctx.isComposerBackgroundWorkAllowed()) {
         return;
@@ -242,6 +244,8 @@ export function buildTranscriptComposerActivityOptionsExtracted(ctx: MobileProje
     return {
         changedFiles: activityFiles.files,
         diffStats: activityFiles.stats,
+        diffStatsScope: activityFiles.statsScope,
+        diffStatsBaselineCommit: activityFiles.statsBaselineCommit,
         hasFileActivity,
         previewInConversation: composerConversationInvolvesPreview(conv, window.location.origin),
         previewRequested: !agentWorking && !!conv && conversationEverRequestedDevPreview(conv),

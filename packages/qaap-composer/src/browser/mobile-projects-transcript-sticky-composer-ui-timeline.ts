@@ -151,6 +151,8 @@ export function buildComposerActivityFingerprintExtracted(ctx: MobileProjectsTra
     activityFiles: {
         readonly files: readonly StickyComposerChangedFileView[];
         readonly stats?: { readonly added: number; readonly removed: number };
+        readonly statsScope?: 'turn' | 'task';
+        readonly statsBaselineCommit?: string;
     },): string {
     const pathsKey = activityFiles.files.map(file => file.path).sort().join('\n');
     return [

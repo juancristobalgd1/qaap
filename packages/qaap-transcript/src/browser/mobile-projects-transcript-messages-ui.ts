@@ -250,14 +250,19 @@ export class MobileProjectsTranscriptMessagesUi {
     ): {
         readonly files: Array<{ readonly path: string; readonly kind: 'edited' | 'created'; readonly added?: number; readonly removed?: number }>;
         readonly stats?: { readonly added: number; readonly removed: number };
+        /** What `stats` measures: this turn's own edits, or the whole task (`baselineCommit` names its baseline). */
+        readonly statsScope?: 'turn' | 'task';
+        readonly statsBaselineCommit?: string;
     } {
         const segments = this.resolveComposerConversationSegments(conv, options);
         const files = this.resolversUi.resolveTranscriptChangedFiles(segments);
         let stats = this.resolversUi.resolveTranscriptDiffStats(segments);
+        let statsScope: 'turn' | 'task' | undefined = stats ? 'turn' : undefined;
         // Without a turn's own stats, the task total: the live Changes total when one was read, else the settled one.
         const taskTotals = QaapLiveTaskDiff.resolve(summary);
         if (!stats && summary && (taskTotals.added > 0 || taskTotals.removed > 0)) {
             stats = { added: taskTotals.added, removed: taskTotals.removed };
+            statsScope = 'task';
         }
         return {
             files: files.map(file => ({
@@ -265,6 +270,8 @@ export class MobileProjectsTranscriptMessagesUi {
                 ...this.resolversUi.resolveTranscriptFileDiffStats(segments, file.path),
             })),
             stats,
+            statsScope,
+            statsBaselineCommit: statsScope === 'task' ? summary?.baselineCommit : undefined,
         };
     }
 
