@@ -82,6 +82,7 @@ import { bindQaapWorkspacePreferenceProvider } from '@theia/qaap-shared-core/lib
 import { QaapQuickCommandService } from './qaap-quick-command-service';
 import { QaapBuildFreshnessContribution } from '@theia/qaap-shared-core/lib/browser/qaap-build-freshness-contribution';
 import { QaapHasStateClasses } from './qaap-has-state-classes';
+import { QaapWorkHubDialogScrollFadesContribution } from './qaap-work-hub-dialog-scroll-fades-contribution';
 import { QaapWindowTitleProjectContribution } from './qaap-window-title-project-contribution';
 import { QaapWorkHubBootReplicaContribution } from './qaap-work-hub-boot-replica-contribution';
 import { QaapWorkHubKeybindingsPanel } from './qaap-work-hub-keybindings-panel';
@@ -268,6 +269,9 @@ export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync
     // Classes standing in for the `:has()` on the streaming transcript's ancestors (H4.2 / R2).
     bind(QaapHasStateClasses).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapHasStateClasses);
+
+    bind(QaapWorkHubDialogScrollFadesContribution).toSelf().inSingletonScope();
+    bind(FrontendApplicationContribution).toService(QaapWorkHubDialogScrollFadesContribution);
     // The login gate repaints the phone Work Hub exactly from this record on the next load.
     bind(QaapWorkHubBootReplicaContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapWorkHubBootReplicaContribution);
