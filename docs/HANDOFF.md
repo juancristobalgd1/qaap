@@ -2,6 +2,23 @@
 
 Estado para continuar el trabajo desde otra cuenta o sesión. Actualízalo al cerrar cada tarea: qué queda pendiente, cómo se validó y qué limitaciones conviene conocer. La política de modelos está en la sección «Selección de modelos y orquestación» de `CLAUDE.md`.
 
+## 2026-11-18 — Settings → Harness: engranaje por harness y «Add harness» (PR #534)
+
+Hecho (sin verificación en vivo todavía; specs, compilación, drift y package-graph en verde):
+- Engranaje a la izquierda del switch de cada fila: panel inline con nombre visible, ruta del binario y carpeta de configuración (`CODEX_HOME` para Codex, `CLAUDE_CONFIG_DIR` para Claude Code; el resto no ofrece carpeta), «Restore defaults» (built-in) o «Delete harness» (instancia).
+- «Add harness»: elige un harness base y crea `<base>#<n>` (n = 2…9). Aparece en la lista tras su base, con engranaje y switch propios, y en el selector del composer (el backend la añade a `listAgents` con la sesión del base). El runner la lanza como el harness base (`task.agentId` = base, `task.harnessInstanceId` = instancia; retry/resume/fallback de modelo la conservan).
+- Persistencia en preferencias de usuario: `ai-features.harness.settings` (mapa id → `{label, binaryPath, homeDir}`) y `ai-features.harness.instances`; el switch sigue en `ai-features.harness.disabledAgents`.
+- Seguridad: binario y carpeta solo se muestran y se aplican en escritorio (`isQaapHarnessLaunchOverrideRuntime`, mismo criterio que `QaapGithubMcpCredentialResolver.mode()` = `desktop`); en web/VPS/tenant el backend los ignora sin mirar el disco (spec). Ruta absoluta, sin metacaracteres ni `..`, archivo existente y ejecutable (o carpeta existente); se valida al guardar (`POST /qaap/api/agent-tasks/harness-settings/check`, 404 fuera de escritorio) y otra vez al lanzar: si falla, el turno falla en vez de usar otro binario/cuenta. Solo se sustituye el primer token del comando ya construido (entrecomillado); flags de gate/aprobación intactos; el overlay del gate de Codex copia el `auth.json` desde la carpeta elegida.
+
+Qué verificar en vivo (Electron): engranaje y panel en Settings → Harness; guardar un binario inválido muestra el error; una instancia `Codex 2` con otro `CODEX_HOME` ya autenticado ejecuta un turno con esa cuenta y el Tool Gate pide aprobación igual; en web (:3000) el panel solo enseña el nombre.
+
+Pendiente / limitaciones:
+- Estado de sesión, sondeo de conexión, caché de modelos y uso de una instancia salen del harness base (home por defecto); «Connect» de una instancia inicia sesión en el home por defecto.
+- La comprobación de confianza del hook de Codex (`codex app-server`) y los one-shots (mejorar prompt, evaluador) usan el `codex` del PATH, no el binario override.
+- En el composer, funciones atadas al id exacto (`codex`, `claude`: esfuerzo, etc.) pueden no aplicarse a `codex#2`; el catálogo de modelos sí (el endpoint mapea a la base). El selector se refresca con el intervalo del catálogo tras añadir una instancia.
+- Modelos personalizados extra por harness: no incluidos (el catálogo nativo sale del CLI y la validación de acceso al modelo lo exige).
+- Si el sandbox de tareas en macOS restringe lecturas, una carpeta/binario fuera de las raíces permitidas haría fallar el turno (visible, no silencioso): comprobar en vivo.
+
 ## 2026-11-18 (tarde) — Correcciones del usuario sobre escritorio (PR #534)
 
 Hecho y verificado en vivo en el Electron de prueba (HEAD `2d2605ec3`):
