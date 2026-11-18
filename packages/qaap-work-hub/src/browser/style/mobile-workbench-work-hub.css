@@ -15293,3 +15293,23 @@ body.theia-mod-work-hub-settings-resizing * {
     flex-shrink: 0;
   }
 }
+
+/* New project dialog: a labelled read-only row ("Location" / "Owner") with its value below, never run
+   together as "LocationThis workspace only…". */
+.qaap-new-project-dialog-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: var(--q-space-12, 12px);
+}
+
+.qaap-new-project-dialog-row-label {
+  color: var(--theia-descriptionForeground);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.qaap-new-project-dialog-row-value {
+  color: var(--theia-foreground);
+  line-height: 1.4;
+}
