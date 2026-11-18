@@ -141,6 +141,15 @@ export function layoutHeaderProjectClusterContents(
     }
 }
 
+/**
+ * The header task title shares a button with the task chevron, but only the chevron (or keyboard
+ * activation of the button, whose target is the button itself) opens Task options: a click on the
+ * title text must never open the menu that contains "Delete task".
+ */
+export function isHeaderConversationsMenuTrigger(target: EventTarget | null, button: HTMLElement, labelEl: HTMLElement): boolean {
+    return !(target instanceof Node && target !== button && labelEl.contains(target));
+}
+
 export class MobileProjectsPanelChromeUi {
     protected headerIdeAgentsSwitch: QaapSegmentedFieldController<MobileViewToggleId> | undefined;
     protected headerIdeAgentsSwitchMediaDispose: Disposable = Disposable.NULL;
@@ -214,6 +223,14 @@ export class MobileProjectsPanelChromeUi {
             this.host.onHeaderProjectClick(this.host.headerProjectBtn);
         });
         this.host.headerConversationsBtn.addEventListener('click', ev => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            if (!isHeaderConversationsMenuTrigger(ev.target, this.host.headerConversationsBtn, this.host.headerProjectLabelEl)) {
+                return;
+            }
+            this.host.onHeaderConversationsClick(this.host.headerConversationsBtn);
+        });
+        this.host.headerConversationsBtn.addEventListener('contextmenu', ev => {
             ev.preventDefault();
             ev.stopPropagation();
             this.host.onHeaderConversationsClick(this.host.headerConversationsBtn);

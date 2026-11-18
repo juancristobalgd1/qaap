@@ -16,6 +16,7 @@ import {
     MobileProjectsPanelChromeUi,
     mountHeaderProjectButtonContents,
     layoutHeaderProjectClusterContents,
+    isHeaderConversationsMenuTrigger,
     type MobileProjectsPanelChromeHost,
 } from './mobile-projects-panel-chrome-ui';
 import type { MobileViewToggleId } from '@theia/qaap-shared-core/lib/common/qaap-mobile-work-surface-preference';
@@ -206,5 +207,24 @@ describe('mountHeaderProjectButtonContents', () => {
         layoutHeaderProjectClusterContents(switcher, conversations, label, false);
         expect(Array.from(switcher.childNodes)).to.deep.equal([folder, projectChevron]);
         expect(Array.from(conversations.childNodes)).to.deep.equal([label, conversationsChevron]);
+    });
+});
+
+describe('isHeaderConversationsMenuTrigger', () => {
+
+    useSuiteJSDOM();
+
+    it('opens Task options from the chevron or keyboard activation but never from the title text', () => {
+        const switcher = document.createElement('button');
+        const conversations = document.createElement('button');
+        const label = document.createElement('span');
+        const { conversationsChevron } = mountHeaderProjectButtonContents(document.createElement('div'), switcher, conversations, label);
+        const labelText = document.createElement('i');
+        label.append(labelText);
+
+        expect(isHeaderConversationsMenuTrigger(label, conversations, label)).to.equal(false);
+        expect(isHeaderConversationsMenuTrigger(labelText, conversations, label)).to.equal(false);
+        expect(isHeaderConversationsMenuTrigger(conversationsChevron, conversations, label)).to.equal(true);
+        expect(isHeaderConversationsMenuTrigger(conversations, conversations, label)).to.equal(true);
     });
 });
