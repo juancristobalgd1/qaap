@@ -15212,3 +15212,60 @@ body.theia-mod-work-hub-settings-resizing * {
 .qaap-plan-picker-manage:hover {
   text-decoration: underline;
 }
+
+/* Supported runtimes (Settings > Harness): the list adapts to the width of the Settings column.
+ * Container query, not a window media query: a narrow column (right panel open) wraps the name and
+ * the id onto two lines and lets the status wrap; the gear and the switch never shrink. */
+.theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-configuration-content {
+  container-type: inline-size;
+  container-name: qaap-harness-settings;
+}
+
+@container qaap-harness-settings (max-width: 440px) {
+  .theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-heading-row {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+
+  .theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-card {
+    grid-template-columns: 24px minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 10px;
+  }
+
+  .theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-card-title-row {
+    flex-wrap: wrap;
+    row-gap: 3px;
+  }
+
+  .theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-card-name {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-card-bin {
+    flex-basis: 100%;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+
+  .theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-card-status,
+  .theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-card-last-turn {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-card-actions {
+    flex-shrink: 0;
+    align-self: start;
+  }
+
+  .theia-mobile-work-hub-settings-embedded-widget.qaap-ai-harness-configuration .qaap-harness-card-actions > * {
+    flex-shrink: 0;
+  }
+}
