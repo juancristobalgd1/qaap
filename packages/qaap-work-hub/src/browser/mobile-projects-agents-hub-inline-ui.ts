@@ -740,9 +740,11 @@ export class MobileProjectsAgentsHubInlineUi {
             ? this.host.executionSurfaceTabsUi.executionSurfaceTabForProject(project)
             : 'messages';
         if (activeTab === 'messages') {
-            this.host.executionSurfaceTabsUi.setExecutionSurfaceTab(project, 'messages');
+            // Keeps a surface docked in the desktop right panel beside Chat instead of undocking it.
+            this.host.executionSurfaceTabsUi.showMessagesKeepingDock(project);
+        } else {
+            this.host.executionSurfaceTabsUi.showOnlyExecutionSurfaceTab(activeTab);
         }
-        this.host.executionSurfaceTabsUi.showOnlyExecutionSurfaceTab(activeTab);
         this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, activeTab);
         if (activeTab !== 'messages') {
             // Restoring an idle conversation can select a persisted secondary

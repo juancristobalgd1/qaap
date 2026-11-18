@@ -232,11 +232,11 @@ export class MobileProjectsExecutionSurfaceTabsUi {
     }
 
     /**
-     * Annotation Send (external submit) lands on Messages. A surface docked in the desktop right
-     * panel already sits beside Chat, so it stays mounted: switching to Messages would dismiss the
-     * dock, undock the panel's tab and leave its empty state behind.
+     * Shows Messages without undocking a surface from the desktop right panel: Chat already sits
+     * beside the dock, so switching would dismiss the drawer, undock the panel's tab and leave its
+     * empty state behind. Used by annotation Send and by opening a conversation.
      */
-    activateMessagesForExternalSubmit(project: MobileProjectEntry): void {
+    showMessagesKeepingDock(project: MobileProjectEntry): void {
         if (this.host.executionSurfaceSidebar?.element.classList.contains('qaap-mod-docked')) {
             return;
         }

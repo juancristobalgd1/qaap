@@ -1585,7 +1585,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
                 const sidebar = host.executionSurfaceSidebar!.element;
                 expect(sidebar.closest('.qaap-work-hub-aux-panel')).to.not.equal(null);
 
-                ui.activateMessagesForExternalSubmit(project);
+                ui.showMessagesKeepingDock(project);
 
                 // The Browser tab keeps its widget: no undock, no placeholder, the preview host stays visible.
                 expect(host.executionSurfaceSidebar?.element).to.equal(sidebar);
@@ -1599,5 +1599,33 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
                 root.remove();
             }
         });
+    });
+
+    it('shows Messages and closes a drawer surface that is not docked in the panel', () => {
+        const project = { id: 'p-drawer', name: 'Drawer' } as MobileProjectEntry;
+        const summary = { id: 'conv-drawer' } as MobileProjectsExecutionSurfaceTabsHost['transcriptOpenSummary'];
+        const root = document.createElement('div');
+        const previewHost = document.createElement('div');
+        previewHost.className = 'theia-mobile-transcript-preview';
+        root.append(previewHost);
+        document.body.append(root);
+        try {
+            const host = createHost({ root, transcriptPreviewHost: previewHost });
+            const ui = createUi(host);
+            ui.openExecutionSurfaceSidebar('preview', project, summary!, 'transcript');
+            const sidebar = host.executionSurfaceSidebar!.element;
+            expect(sidebar.classList.contains('qaap-mod-docked')).to.equal(false);
+
+            ui.showMessagesKeepingDock(project);
+
+            // Mobile and undocked layouts keep the drawer behaviour: Messages is selected and the drawer closes.
+            expect(host.executionSurfaceTabByProjectId.get(project.id)).to.equal('messages');
+            expect(host.executionSurfaceSidebar).to.equal(undefined);
+            expect(sidebar.classList.contains('theia-mod-closing')).to.equal(true);
+        } finally {
+            root.remove();
+            document.querySelectorAll('.theia-mobile-execution-surface-sidebar, .theia-mobile-execution-surface-sidebar-backdrop')
+                .forEach(element => element.remove());
+        }
     });
 });
