@@ -11,7 +11,7 @@ const disableImportJSDOM = enableJSDOM();
 import { Disposable } from '@theia/core/lib/common/disposable';
 import type { AIVariableResolutionRequest } from '@theia/ai-core';
 import { expect } from 'chai';
-import type { QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { QaapDirtyWorkspaceError, type QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type { QaapLiveFeedFrame } from '@theia/qaap-shared-core/lib/common/qaap-live-feed-cursor';
 import {
     QaapWorkHubAuxSideChatView,
@@ -85,6 +85,8 @@ describe('qaap-work-hub-aux-side-chat-view', () => {
         models?: readonly QaapWorkHubSideChatModelOption[];
         /** Replaces the stored conversations (the parent and any chain above it). */
         conversations?: QaapAgentConversationDTO[];
+        /** The parent's working tree has uncommitted changes (the server answers 409 `dirty_workspace`). */
+        dirtyWorkspace?: boolean;
     } = {}): {
         view: QaapWorkHubAuxSideChatView;
         calls: { create: unknown[]; post: unknown[]; get: string[]; remove: string[]; opened: string[]; signIns: string[]; closed: number; titles: Array<string | undefined>; listeners: Array<(frame: QaapLiveFeedFrame) => void>; live: number };
@@ -99,6 +101,10 @@ describe('qaap-work-hub-aux-side-chat-view', () => {
         const api: QaapWorkHubAuxSideChatApi = {
             create: async body => {
                 calls.create.push(body);
+                // The server's guard: a shared-tree create in a dirty repository is refused unless it accepts the dirt.
+                if (options.dirtyWorkspace && body.acceptDirty !== true) {
+                    throw new QaapDirtyWorkspaceError('The workspace has uncommitted changes.', ['server.js'], 1);
+                }
                 const created = conversation('side-1', options.messages ?? []);
                 conversations.set('side-1', created);
                 return created;
@@ -204,6 +210,15 @@ describe('qaap-work-hub-aux-side-chat-view', () => {
         expect(body.contextPreamble).to.contain('Make login work');
         expect(h.view.conversation).to.equal('side-1');
         expect(h.calls.titles).to.deep.equal(['Why is the build red?']);
+    });
+
+    it('sends into a parent tree with uncommitted changes: the create accepts the dirt instead of failing with 409', async () => {
+        const h = harness({ dirtyWorkspace: true });
+        await sendText(h.view, 'Which port does server.js use?');
+        expect((h.calls.create[0] as { acceptDirty?: boolean }).acceptDirty).to.equal(true);
+        expect(h.view.conversation).to.equal('side-1');
+        expect((q(h.view, 'textarea') as HTMLTextAreaElement).value).to.equal('');
+        expect(bubbles(h.view)).to.deep.equal(['Which port does server.js use?']);
     });
 
     it('sends later messages to the created conversation with the bare text', async () => {

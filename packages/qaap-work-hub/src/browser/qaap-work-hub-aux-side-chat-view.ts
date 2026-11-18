@@ -502,6 +502,9 @@ export class QaapWorkHubAuxSideChatView implements Disposable {
                     ...(preamble ? { contextPreamble: preamble } : {}),
                     origin: 'side-chat',
                     sideChatParentId: parent.id,
+                    // A side chat asks about the parent's work in the parent's tree: that tree's uncommitted changes are
+                    // usually the parent task's own output, so the dirty-workspace question (409) never applies here.
+                    acceptDirty: true,
                 });
                 this.conversationId = created.id;
                 this.parent = parent;
