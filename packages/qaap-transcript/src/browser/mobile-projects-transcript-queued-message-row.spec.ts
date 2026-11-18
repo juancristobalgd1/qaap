@@ -66,6 +66,18 @@ describe('mobile-projects-transcript-queued-message-row', () => {
         buttonFor(row, 'Remove from queue');
     });
 
+    it('drops the queued row once the real user message with the same clientMessageId is in the transcript', () => {
+        const queued = { ...pending, clientMessageId: 'client-1' } as QaapPendingUserMessageDTO;
+        const withReal = {
+            id: 'conv-1',
+            pendingUserMessages: [queued],
+            messages: [{ id: 'msg-9', role: 'user', content: 'hold this message', clientMessageId: 'client-1' }],
+        } as unknown as QaapAgentConversationDTO;
+        expect(createTranscriptQueuedMessageRowsExtracted(createCtx([]), withReal)).to.have.length(0);
+        const unrelated = { ...withReal, messages: [{ id: 'msg-9', role: 'user', content: 'x', clientMessageId: 'other' }] } as unknown as QaapAgentConversationDTO;
+        expect(createTranscriptQueuedMessageRowsExtracted(createCtx([]), unrelated)).to.have.length(1);
+    });
+
     it('routes Send now and Edit to the queued message action at once', () => {
         const actions: [string, QaapPendingUserMessageDTO, QaapQueuedMessageAction][] = [];
         const [row] = createTranscriptQueuedMessageRowsExtracted(createCtx(actions), conv);

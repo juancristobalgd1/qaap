@@ -445,7 +445,19 @@ function createTranscriptQueuedAction(options: {
  * virtual footer and the plain render path so both paint the same rows.
  */
 export function createTranscriptQueuedMessageRowsExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, conv: QaapAgentConversationDTO): HTMLElement[] {
-    const pendingMessages = (conv.pendingUserMessages ?? []) as readonly QaapQueuedPendingUserMessage[];
+    // A queued message that already shows as a real transcript message (matched by clientMessageId)
+    // is being dispatched: drop its dashed row in the same render that paints the real one.
+    const sentIds = new Set<string>();
+    for (const message of conv.messages ?? []) {
+        if (message.role === 'user') {
+            sentIds.add(message.id);
+            if (message.clientMessageId) {
+                sentIds.add(message.clientMessageId);
+            }
+        }
+    }
+    const pendingMessages = ((conv.pendingUserMessages ?? []) as readonly QaapQueuedPendingUserMessage[])
+        .filter(pending => !sentIds.has(pending.clientMessageId ?? pending.id) && !sentIds.has(pending.id));
     // Forget messages that left the queue, so a re-queued message animates in again.
     const currentIds = new Set(pendingMessages.map(pending => pending.id));
     for (const id of paintedQueuedMessageIds) {
