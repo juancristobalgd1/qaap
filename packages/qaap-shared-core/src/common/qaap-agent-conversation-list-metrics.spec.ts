@@ -452,7 +452,7 @@ describe('buildConversationListMetrics', () => {
         expect(metrics.lastTurnDurationMs).to.equal(4000);
     });
 
-    it('accumulates diff stats across all turns in the conversation', () => {
+    it('uses the latest agent message that reports stats, not the sum over all messages', () => {
         const metrics = buildConversationListMetrics({
             status: 'idle',
             messages: [
@@ -470,8 +470,36 @@ describe('buildConversationListMetrics', () => {
                 },
             ],
         });
-        expect(metrics.linesAdded).to.equal(5);
-        expect(metrics.linesRemoved).to.equal(5);
+        expect(metrics.linesAdded).to.equal(3);
+        expect(metrics.linesRemoved).to.equal(4);
+    });
+
+    it('repeated git stat snapshots across messages are not counted again', () => {
+        const stat = '3 files changed, 10 insertions(+), 2 deletions(-)';
+        const metrics = buildConversationListMetrics({
+            status: 'idle',
+            messages: [
+                { role: 'user', content: 'go', createdAt: 1000 },
+                { role: 'agent', content: stat, createdAt: 2000 },
+                { role: 'agent', content: stat, createdAt: 3000 },
+                { role: 'agent', content: stat, createdAt: 4000 },
+            ],
+        });
+        expect(metrics.linesAdded).to.equal(10);
+        expect(metrics.linesRemoved).to.equal(2);
+    });
+
+    it('a later agent message without stats keeps the last stats that were reported', () => {
+        const metrics = buildConversationListMetrics({
+            status: 'idle',
+            messages: [
+                { role: 'user', content: 'go', createdAt: 1000 },
+                { role: 'agent', content: '2 files changed, 7 insertions(+), 1 deletions(-)', createdAt: 2000 },
+                { role: 'agent', content: 'all tests pass', createdAt: 3000 },
+            ],
+        });
+        expect(metrics.linesAdded).to.equal(7);
+        expect(metrics.linesRemoved).to.equal(1);
     });
 
     it('reads diff stats from tool result segments', () => {

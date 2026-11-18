@@ -195,7 +195,8 @@ export function createMobileLineDiffSummaryElement(
 
     const title = document.createElement('span');
     title.className = 'theia-mobile-diff-summary-title';
-    title.textContent = nls.localize('qaap/mobileProjects/transcriptDiffSummary', 'Change summary');
+    // Only ever built from one turn's own stats: the label says so, so it is never read as the task total.
+    title.textContent = nls.localize('qaap/mobileProjects/turnDiffSummary', 'Changes this turn');
 
     header.append(icon, title);
 
