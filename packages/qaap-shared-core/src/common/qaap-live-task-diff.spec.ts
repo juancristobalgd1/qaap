@@ -41,4 +41,48 @@ describe('QaapLiveTaskDiff', () => {
         expect(QaapLiveTaskDiff.sum([{ adds: 8, dels: 0 }, { adds: 84, dels: 2 }, { adds: 93, dels: 0 }]))
             .to.deep.equal({ added: 185, removed: 2 });
     });
+
+    it('onDidChange fires when a published total differs, and not when it repeats', () => {
+        const seen: Array<{ baselineCommit: string; added: number; removed: number }> = [];
+        const subscription = QaapLiveTaskDiff.onDidChange(change => seen.push(change));
+        QaapLiveTaskDiff.publish('b1', { added: 185, removed: 4 });
+        QaapLiveTaskDiff.publish('b1', { added: 185, removed: 4 });
+        QaapLiveTaskDiff.publish('b1', { added: 188, removed: 4 });
+        subscription.dispose();
+        QaapLiveTaskDiff.publish('b1', { added: 190, removed: 4 });
+        expect(seen).to.deep.equal([
+            { baselineCommit: 'b1', added: 185, removed: 4 },
+            { baselineCommit: 'b1', added: 188, removed: 4 },
+        ]);
+    });
+
+    it('bindTotals patches with the live total of its own baseline only', () => {
+        const element = { isConnected: true };
+        const rendered: Array<{ added: number; removed: number }> = [];
+        const binding = QaapLiveTaskDiff.bindTotals(element, 'b1', totals => rendered.push(totals));
+        QaapLiveTaskDiff.publish('b2', { added: 9, removed: 9 });
+        QaapLiveTaskDiff.publish('b1', { added: 185, removed: 4 });
+        expect(rendered).to.deep.equal([{ added: 185, removed: 4 }]);
+        binding.dispose();
+    });
+
+    it('bindTotals releases itself once its element has left the DOM', () => {
+        const element = { isConnected: true };
+        const rendered: number[] = [];
+        QaapLiveTaskDiff.bindTotals(element, 'b1', totals => rendered.push(totals.added));
+        QaapLiveTaskDiff.publish('b1', { added: 1, removed: 0 });
+        element.isConnected = false;
+        QaapLiveTaskDiff.publish('b1', { added: 2, removed: 0 });
+        QaapLiveTaskDiff.publish('b1', { added: 3, removed: 0 });
+        expect(rendered).to.deep.equal([1]);
+    });
+
+    it('dispose releases a binding before its element is removed', () => {
+        const element = { isConnected: true };
+        const rendered: number[] = [];
+        const binding = QaapLiveTaskDiff.bindTotals(element, 'b1', totals => rendered.push(totals.added));
+        binding.dispose();
+        QaapLiveTaskDiff.publish('b1', { added: 5, removed: 0 });
+        expect(rendered).to.deep.equal([]);
+    });
 });

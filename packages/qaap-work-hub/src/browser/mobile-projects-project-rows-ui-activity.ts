@@ -362,6 +362,11 @@ export function appendConversationDiffFootExtracted(ctx: MobileProjectsProjectRo
         removedSpan.textContent = `−${removed}`;
         diff.append(addedSpan, removedSpan);
         footRow.append(diff);
+        // Patch the two numbers in place when a live Changes read publishes this task's total.
+        QaapLiveTaskDiff.bindTotals(diff, summary.baselineCommit, totals => {
+            addedSpan.textContent = `+${totals.added}`;
+            removedSpan.textContent = `−${totals.removed}`;
+        });
 }
 
 export function formatConversationRunDurationExtracted(ctx: MobileProjectsProjectRowsUiContext, summary: QaapAgentConversationSummaryDTO,

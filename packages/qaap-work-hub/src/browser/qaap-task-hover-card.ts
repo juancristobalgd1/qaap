@@ -9,6 +9,8 @@
 // never armed on touch or on devices whose primary pointer cannot hover.
 
 import { createAgentBrandIcon } from '@theia/qaap-shared-core/lib/common/qaap-agent-branding';
+import { QaapLiveTaskDiff } from '@theia/qaap-shared-core/lib/common/qaap-live-task-diff';
+import { nls } from '@theia/core/lib/common/nls';
 import { matchesMobileNarrowViewport } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { computeQaapTaskHoverCardPosition, type QaapTaskHoverCardLine, type QaapTaskHoverCardModel } from './qaap-task-hover-card-model';
 
@@ -221,6 +223,12 @@ export class QaapTaskHoverCard {
             removed.textContent = `−${line.removed ?? 0}`;
             removed.setAttribute('aria-hidden', 'true');
             text.append(added, removed);
+            // Keep the counts current while the card is open; the binding releases once the card is removed.
+            QaapLiveTaskDiff.bindTotals(text, line.baselineCommit, totals => {
+                added.textContent = `+${Math.max(0, totals.added)}`;
+                removed.textContent = `−${Math.max(0, totals.removed)}`;
+                text.setAttribute('aria-label', nls.localize('qaap/taskHoverCard/diffStats', '{0} lines added, {1} removed', String(Math.max(0, totals.added)), String(Math.max(0, totals.removed))));
+            });
         } else {
             text.textContent = line.text;
         }

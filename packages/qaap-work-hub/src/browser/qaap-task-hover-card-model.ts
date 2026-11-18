@@ -42,6 +42,8 @@ export interface QaapTaskHoverCardLine {
     /** `diff` lines only: the counts the renderer colors separately. */
     readonly added?: number;
     readonly removed?: number;
+    /** `diff` lines only: the task baseline whose live total keeps the counts current while the card is shown. */
+    readonly baselineCommit?: string;
 }
 
 export interface QaapTaskHoverCardModel {
@@ -243,6 +245,7 @@ export function buildQaapTaskHoverCardModel(input: QaapTaskHoverCardInput): Qaap
             text: nls.localize('qaap/taskHoverCard/diffStats', '{0} lines added, {1} removed', String(added), String(removed)),
             added,
             removed,
+            baselineCommit: summary?.baselineCommit,
         });
     }
     if (summary) {
