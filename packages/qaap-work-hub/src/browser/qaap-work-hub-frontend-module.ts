@@ -166,6 +166,7 @@ import { QaapPushNotificationContribution } from '@theia/qaap-shared-core/lib/br
 import { QaapAgentCompletionContribution } from '@theia/qaap-shared-core/lib/browser/qaap-agent-completion-contribution';
 import { QaapMobileAgentNotificationService } from '@theia/qaap-shared-core/lib/browser/qaap-mobile-agent-notification-service';
 import { QaapAgentDevPreviewAutopilotContribution } from '@theia/qaap-transcript/lib/browser/qaap-agent-dev-preview-autopilot-contribution';
+import { QaapPreviewTurnRefreshContribution } from '@theia/qaap-transcript/lib/browser/qaap-preview-turn-refresh-contribution';
 import { QaapTranscriptImageLightboxContribution } from '@theia/qaap-transcript/lib/browser/qaap-transcript-image-lightbox';
 import { QaapTurnSettleNotifyContribution } from '@theia/qaap-transcript/lib/browser/qaap-turn-settle-notify-contribution';
 import { QaapAgentFinishedToastContribution } from '@theia/qaap-shared-core/lib/browser/qaap-agent-finished-toast-contribution';
@@ -441,6 +442,9 @@ export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync
     bind(FrontendApplicationContribution).toService(QaapAgentCompletionContribution);
     bind(QaapAgentDevPreviewAutopilotContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapAgentDevPreviewAutopilotContribution);
+    // Agent turns that change the project restart the managed dev server (server code) and reload the open preview.
+    bind(QaapPreviewTurnRefreshContribution).toSelf().inSingletonScope();
+    bind(FrontendApplicationContribution).toService(QaapPreviewTurnRefreshContribution);
     bind(QaapTranscriptImageLightboxContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapTranscriptImageLightboxContribution);
     bind(QaapTurnSettleNotifyContribution).toSelf().inSingletonScope();

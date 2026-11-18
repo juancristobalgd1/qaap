@@ -30,6 +30,7 @@ import {
 } from './qaap-project-bootstrap-types';
 import {
     fetchQaapDevPreviewOomKillCount,
+    probeQaapDevPreviewPort,
     waitForQaapDevPreviewPort,
 } from './qaap-dev-preview-client';
 import {
@@ -105,6 +106,10 @@ export const DEV_PREVIEW_OPEN_PROBE_INTERVAL_MS = 500;
 /** Retry only transient process exits; never loop on install or port conflicts. */
 export const DEV_PREVIEW_AUTO_RETRY_MAX_ATTEMPTS = 2;
 export const DEV_PREVIEW_AUTO_RETRY_DELAY_MS = 1_500;
+
+/** How long a managed restart waits for the previous dev server to release its port. */
+const MANAGED_DEV_SERVER_STOP_TIMEOUT_MS = 5000;
+const MANAGED_DEV_SERVER_STOP_POLL_MS = 250;
 
 /** Delay before auto-attaching or restarting a remembered dev port after workspace load. */
 export const DEV_PREVIEW_WARMUP_DELAY_MS = 800;
@@ -594,6 +599,38 @@ export class QaapProjectBootstrapService {
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
     public async startDevServer(plan: { command: string; cwd: URI; expectedPort?: number; kind: QaapProjectKind }, descriptor: QaapProjectDescriptor,): Promise<void> {
         return startDevServerExtracted(this, plan, descriptor);
+    }
+
+    /**
+     * Restarts the dev server Qaap started for this project (its managed terminal) so code the
+     * server loads at boot takes effect, keeping the preview identity: same previewId, same
+     * project widget. Returns false — and touches nothing — when the preview is not a running
+     * Qaap-managed process (an attached external server, or one an agent launched itself).
+     */
+    async restartManagedDevServer(): Promise<boolean> {
+        const plan = this.resolveDevPlan();
+        const descriptor = this._descriptor;
+        const terminal = this.devTerminal;
+        if (this._phase !== 'running' || !plan || !descriptor || !terminal || terminal.isDisposed) {
+            return false;
+        }
+        const port = this.activePreviewClaim?.port ?? this._lastPort;
+        this.cancelDevPreviewHealthMonitor();
+        this.cleanupDevTerminal();
+        // Wait for the old process to free its port, so the new run reclaims it instead of
+        // attaching to (or racing) a server that is still shutting down.
+        if (port !== undefined) {
+            const deadline = Date.now() + MANAGED_DEV_SERVER_STOP_TIMEOUT_MS;
+            while (Date.now() < deadline) {
+                const probe = await probeQaapDevPreviewPort(port).catch(() => undefined);
+                if (!probe || (!probe.ready && !probe.listening)) {
+                    break;
+                }
+                await this.delay(MANAGED_DEV_SERVER_STOP_POLL_MS);
+            }
+        }
+        await this.startDevServer(plan, descriptor);
+        return true;
     }
 
     cancelActivePreviewLaunch(): void {
