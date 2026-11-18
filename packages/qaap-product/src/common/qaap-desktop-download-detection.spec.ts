@@ -9,7 +9,7 @@ import * as path from 'path';
 
 // The landing page ships this file as-is, so the spec runs the shipped detection code.
 const detectionPath = path.resolve(__dirname, '../../resources/landing/qaap-desktop-download.js');
-const { detectDesktopDownloadPlatform } = require(detectionPath) as {
+const { detectDesktopDownloadPlatform } = require('../../resources/landing/qaap-desktop-download.js') as {
     detectDesktopDownloadPlatform(hints: { userAgent?: string; userAgentDataPlatform?: string; maxTouchPoints?: number }): 'mac' | 'windows' | 'linux' | undefined;
 };
 
