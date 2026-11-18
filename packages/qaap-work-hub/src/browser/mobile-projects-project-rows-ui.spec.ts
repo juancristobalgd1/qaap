@@ -57,6 +57,14 @@ describe('MobileProjectsProjectRowsUi — foot metrics patch', () => {
         return diff?.textContent ?? undefined;
     }
 
+    it('times a running task from its latest activity, not from its creation', () => {
+        const ui = newUi();
+        const now = Date.now();
+        const running = { ...task, state: 'running', createdAt: now - 7 * 3600 * 1000 } as MobileProjectTaskView;
+        expect(ui.formatTaskSince(running, summary({ status: 'streaming', updatedAt: now - 5 * 1000 }))).to.equal('just now');
+        expect(ui.formatTaskSince(running, summary({ status: 'streaming', updatedAt: now - 3 * 60 * 1000 }))).to.equal('3 min');
+    });
+
     it('renders the diff counts into a fresh foot row', () => {
         const ui = newUi();
         const footRow = document.createElement('div');

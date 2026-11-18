@@ -186,8 +186,10 @@ export function registerTaskElapsedTickersExtracted(ctx: MobileProjectsProjectRo
 }
 
 export function formatTaskSinceExtracted(ctx: MobileProjectsProjectRowsUiContext, task: MobileProjectTaskView, summary?: QaapAgentConversationSummaryDTO): string {
+        // A running turn shows the age of its latest activity, not of the task's creation (which
+        // read "7 h" on a task whose turn had just started).
         const anchor = task.state === 'running'
-            ? task.createdAt
+            ? (summary?.updatedAt ?? task.createdAt)
             : (task.finishedAt ?? summary?.updatedAt ?? task.createdAt);
         if (!anchor) {
             return '';
