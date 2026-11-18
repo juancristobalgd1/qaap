@@ -31,6 +31,15 @@ Pendiente / limitaciones:
 - Modelos personalizados extra por harness: no incluidos (el catálogo nativo sale del CLI y la validación de acceso al modelo lo exige).
 - Si el sandbox de tareas en macOS restringe lecturas, una carpeta/binario fuera de las raíces permitidas haría fallar el turno (visible, no silencioso): comprobar en vivo.
 
+## 2026-11-18 (noche) — Prueba de usuario final y arreglos antes de desplegar (PR #534)
+
+Tres rondas de prueba como usuario final en el Electron de prueba (proyecto `qa-e2e-todo`, OpenCode + Beam Free). Arreglado y verificado:
+- Graves: Side chat enviaba 409 `dirty_workspace` (ahora `acceptDirty`); volver del IDE reabre conversación, scroll y sidebar; verificación visual ignora 404 implícitos del navegador y es de solo lectura; anotaciones en cola como tarjeta plegada, sin `_qaap_cache_bust` ni selectores.
+- Preview: tras un turno se recarga sola y reinicia el dev server gestionado si cambió código de servidor (`qaap-preview-turn-refresh*`, `qaap-project-bootstrap-service-restart.ts`); el reinicio ya no se queda sin `reserved`; límite de 3 redescubrimientos/10 s (el bucle llevaba el renderer a 2,4 GB y lo mataba); Browser vuelve tras IDE → Agents; "Starting preview…" ya no se atasca; bucle de `resize` que mantenía el renderer al 25–30 % de CPU en reposo (ahora 1–3 %).
+- Medios/menores: enviar con turno en curso encola y Stop ignora doble toque; aviso de PR como nota neutra (`notice-` trace id); "Commits as Qaap"; contadores unificados (`QaapLiveTaskDiff`, "Changes this turn"); Settings estrecho; diálogo de confianza sin "under development"; "Location"; primeros pasos en el estado vacío; Escape ya no oculta el sidebar en escritorio; Profile muestra la credencial de gh.
+
+Pendiente menor: tras reiniciar el dev server la preview vuelve a la raíz (nuevo hostname); sondeo de puerto ~4/s en `refreshTranscriptPreviewOffer`; posible falso negativo del revisor independiente en cambios de server.js; cambios sin commitear del usuario en `notes-dev` (`public/index.html`, `public/style.css`) mezclados con ediciones de una prueba — decisión del usuario.
+
 ## 2026-11-18 (tarde) — Correcciones del usuario sobre escritorio (PR #534)
 
 Hecho y verificado en vivo en el Electron de prueba (HEAD `2d2605ec3`):
