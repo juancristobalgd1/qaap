@@ -1,4 +1,5 @@
 import type { MobileProjectsTranscriptSurfacesUiContext } from './mobile-projects-transcript-surfaces-ui-context';
+import { stripQaapPreviewCacheBustParam } from '@theia/qaap-shared-core/lib/common/qaap-preview-feedback-transcript';
 import { resolveTranscriptTypedPreviewUrlExtracted } from './mobile-projects-transcript-surfaces-ui-tool-pills';
 // Extracted from mobile-projects-transcript-surfaces-ui.ts
 
@@ -343,7 +344,9 @@ export function resolvePreviewAnnotationScopeExtracted(ctx: MobileProjectsTransc
         try {
             const parsed = new URL(live, window.location.href);
             stablePreviewUrl = parsed.origin;
-            route = `${parsed.pathname || '/'}${parsed.search || ''}${parsed.hash || ''}`;
+            // Hard reload appends `_qaap_cache_bust`: keep it out of the scope key (markers and
+            // clear-after-send must survive a reload) and out of what the user and agent read.
+            route = stripQaapPreviewCacheBustParam(`${parsed.pathname || '/'}${parsed.search || ''}${parsed.hash || ''}`);
         } catch {
             route = '/';
         }

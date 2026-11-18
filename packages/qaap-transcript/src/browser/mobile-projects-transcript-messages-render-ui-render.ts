@@ -6,7 +6,7 @@ import { nls } from '@theia/core/lib/common/nls';
 import type { QaapQueuedPendingUserMessage } from '@theia/qaap-shared-core/lib/common/qaap-pending-user-messages-merge';
 import { createMobileVisualRepairProposalElement } from './mobile-visual-repair-proposal';
 import { isVisualRepairInstructionMessage, resolveVisualRepairProposalMessage } from '../common/qaap-visual-repair-proposal';
-import { normalizeAgentMessageContentForDisplay } from '@theia/qaap-shared-core/lib/common/qaap-agent-message-content';
+import { normalizeAgentMessageContentForDisplay, resolveTranscriptUserMessageView } from '@theia/qaap-shared-core/lib/common/qaap-agent-message-content';
 import { isSuccessfulAgentMessageInConversation } from '@theia/qaap-shared-core/lib/common/qaap-agent-turn-outcome';
 import { parseAgentLogForTranscript } from '@theia/qaap-shared-core/lib/common/qaap-cli-transcript-stream';
 import { dedupeAgentMessageTextSegments } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-stream';
@@ -359,10 +359,16 @@ function createTranscriptQueuedMessageRow(
     if (previews.length) {
         bubble.append(ctx.userUi.createTranscriptUserImagePreviews(previews));
     }
-    if (pending.content.trim()) {
+    // Same view as a sent user row: attachment preambles (preview feedback, files) become a
+    // collapsed chip instead of their raw outbound payload (selectors, URLs, positions).
+    const view = resolveTranscriptUserMessageView({ role: 'user', content: pending.content });
+    if (view.contextChips.length) {
+        bubble.append(ctx.userUi.createTranscriptUserContextChips(view.contextChips, { collapsed: true }));
+    }
+    if (view.displayText.trim()) {
         const contentEl = document.createElement('div');
         contentEl.className = 'theia-mobile-agent-transcript-content';
-        contentEl.textContent = pending.content;
+        contentEl.textContent = view.displayText;
         bubble.append(contentEl);
     }
     wrap.append(bubble);

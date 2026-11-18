@@ -99,4 +99,54 @@ describe('mobile-projects-transcript-queued-message-row', () => {
         expect(first.classList.contains('theia-mod-entering')).to.equal(true);
         expect(repaint.classList.contains('theia-mod-entering')).to.equal(false);
     });
+
+    it('paints a queued auto-sent preview feedback as a collapsed chip, never its raw payload', () => {
+        const feedback = {
+            id: 'queued-feedback',
+            createdAt: 2,
+            content: [
+                'The user attached the following context with this message. Use it to answer; do not claim nothing was provided.',
+                '',
+                '### previewFeedback: Preview feedback · 1 annotations · /?_qaap_cache_bust=1795010821889 · Desktop',
+                '```',
+                'Preview feedback annotations (compact context — not full DOM):',
+                '',
+                'Annotation 1:',
+                '- Comment: make the delete button an icon',
+                '- Route: /?_qaap_cache_bust=1795010821889',
+                '- Selector: html > ul#list > li[0] > button',
+                '- Element: <button>',
+                '```',
+                '',
+                '---',
+                '',
+                'Please address the attached preview feedback.',
+            ].join('\n'),
+        } as QaapPendingUserMessageDTO;
+        const chipCalls: { titles: string[]; collapsed?: boolean }[] = [];
+        const ctx = {
+            ...createCtx([]),
+            userUi: {
+                createTranscriptUserImagePreviews: () => document.createElement('div'),
+                createTranscriptUserContextChips: (chips: readonly { title: string }[], options?: { collapsed?: boolean }) => {
+                    chipCalls.push({ titles: chips.map(chip => chip.title), collapsed: options?.collapsed });
+                    const list = document.createElement('div');
+                    list.className = 'theia-mobile-agent-transcript-user-context-chips';
+                    list.textContent = chips.map(chip => chip.title).join(',');
+                    return list;
+                },
+            },
+        } as unknown as MobileProjectsTranscriptMessagesRenderUiContext;
+        const [row] = createTranscriptQueuedMessageRowsExtracted(ctx, {
+            id: 'conv-feedback',
+            pendingUserMessages: [feedback],
+        } as unknown as QaapAgentConversationDTO);
+
+        expect(chipCalls).to.deep.equal([{ titles: ['Preview feedback · 1 annotations · / · Desktop'], collapsed: true }]);
+        const text = row.textContent ?? '';
+        expect(text).to.contain('Please address the attached preview feedback.');
+        for (const plumbing of ['_qaap_cache_bust', 'Selector', 'html > ul#list', 'The user attached the following context', '```']) {
+            expect(text, plumbing).not.to.contain(plumbing);
+        }
+    });
 });
