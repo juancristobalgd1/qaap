@@ -5,6 +5,7 @@
 
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { Emitter, Event } from '@theia/core/lib/common/event';
+import { QaapElementBoundDisposables } from './qaap-element-bound-disposables';
 
 /** Line totals of a whole task, measured against its baseline commit. */
 export interface QaapTaskDiffTotals {
@@ -37,6 +38,7 @@ export interface QaapTaskDiffBoundElement {
  */
 const liveTotals = new Map<string, QaapTaskDiffTotals>();
 const changeEmitter = new Emitter<QaapTaskDiffChange>();
+const boundElements = new QaapElementBoundDisposables();
 
 export namespace QaapLiveTaskDiff {
     /** Fires when a published total differs from the one it replaces. */
@@ -88,7 +90,13 @@ export namespace QaapLiveTaskDiff {
             }
             render({ added: change.added, removed: change.removed });
         });
-        return subscription;
+        // A total that never changes never fires the check above: also release detached bindings when new ones are made.
+        return boundElements.add(element, subscription);
+    }
+
+    /** Test seam: live subscriptions held for rendered elements. */
+    export function boundElementCount(): number {
+        return boundElements.size;
     }
 
     /** Test seam: forgets every published total. */

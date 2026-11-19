@@ -19,6 +19,7 @@ import { attachStickyComposerSyntaxHighlight } from '../common/qaap-sticky-compo
 import { formatQaiqModelSelectionLabel } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
 import { populateAgentToolbarButton } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { QaapAgentEffort } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
+import { QaapElementBoundDisposables } from '@theia/qaap-shared-core/lib/common/qaap-element-bound-disposables';
 import { resolveComposerEffortLevel } from '../common/qaap-composer-effort';
 import { formatQaiqModelIdShortLabel } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
 import { QAAP_MODEL_LABELS_CHANGED_EVENT } from './mobile-projects-sticky-composer-agents-ui';
@@ -38,6 +39,9 @@ import {
 import {
     createStickyComposerSendIcon,
 } from './mobile-projects-sticky-composer-send-icon';
+
+/** Window listeners of composer agent pills, released once their pill leaves the DOM. */
+const modelLabelListeners = new QaapElementBoundDisposables();
 
 export interface MobileProjectsStickyComposerColumnHost {
     stickyComposerAgentsUi: import('./mobile-projects-sticky-composer-agents-ui').MobileProjectsStickyComposerAgentsUi;
@@ -222,6 +226,8 @@ export class MobileProjectsStickyComposerColumnUi {
             paintAgentPill();
         };
         window.addEventListener(QAAP_MODEL_LABELS_CHANGED_EVENT, repaintOnLabels);
+        // The labels event is rare: without this the listener (and the whole composer it closes over) outlives every re-render.
+        modelLabelListeners.add(agentBtn, Disposable.create(() => window.removeEventListener(QAAP_MODEL_LABELS_CHANGED_EVENT, repaintOnLabels)));
         this.host.stickyComposerAgentsUi.warmModelLabels(agentId);
         if (options.agentLocked) {
             agentBtn.classList.add('theia-mod-locked');
