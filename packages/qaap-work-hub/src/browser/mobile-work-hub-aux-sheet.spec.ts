@@ -182,6 +182,37 @@ describe('mobile-work-hub-aux-sheet entry points', () => {
         expect(sheet.pullRequestView.element.textContent).to.contain('acme/app#7');
     });
 
+    it('Escape and the close button hand focus back to the header trigger that opened the sheet', () => {
+        mockViewport(true);
+        const ui = createUi();
+        const trigger = createMobileAuxSheetTrigger(ui);
+        document.body.append(trigger);
+        trigger.click();
+        const sheet = ui.resolveMobileAuxSheet()!;
+        expect(document.activeElement).to.equal(sheet.node.querySelector('[data-tab="side-chat"]'));
+
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+        expect(sheet.isOpen).to.equal(false);
+        expect(document.activeElement).to.equal(trigger);
+
+        trigger.click();
+        sheet.node.querySelector<HTMLButtonElement>('.theia-mobile-work-hub-aux-sheet-close')!.click();
+        expect(sheet.isOpen).to.equal(false);
+        expect(document.activeElement).to.equal(trigger);
+    });
+
+    it('a pull request chip returns focus to the element that was focused before the sheet opened', () => {
+        mockViewport(true);
+        const ui = createUi();
+        const chip = document.createElement('button');
+        document.body.append(chip);
+        chip.focus();
+        ui.openPullRequestInWorkHubAuxPanel({ owner: 'acme', repo: 'app', number: 9 });
+        const sheet = ui.resolveMobileAuxSheet()!;
+        sheet.close();
+        expect(document.activeElement).to.equal(chip);
+    });
+
     it('the desktop layout has no sheet and keeps the right panel', () => {
         mockViewport(false);
         const ui = createUi();

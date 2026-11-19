@@ -127,6 +127,8 @@ export function createMobileAuxSheetTrigger(ctx: MobileProjectsExecutionSurfaceT
     button.append(glyph);
     button.addEventListener('click', event => {
         event.stopPropagation();
+        // Taps do not focus buttons everywhere (iOS Safari): focus the trigger first so that closing the sheet returns focus here.
+        button.focus({ preventScroll: true });
         ctx.openMobileAuxSheet('side-chat');
     });
     return button;
