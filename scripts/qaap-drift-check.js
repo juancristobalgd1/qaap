@@ -92,6 +92,10 @@ const ALLOWED = [
     /^scripts\/qaap-/,
     // Qaap launch operations (rules, live state, flaky quarantine list); docs only, no product code.
     /^ops\//,
+    // Qaap desktop installers: electron-builder config and icon of the Electron example app. Packaging
+    // only (no product code); the update/runtime logic lives in packages/qaap-product/src/electron-main.
+    /^examples\/electron\/electron-builder\.yml$/,
+    /^examples\/electron\/build-resources\//,
     // Qaap Playwright harness seam: isolate the local app config, preview registry,
     // and port for browser tests so runs do not mutate or terminate a developer's app.
     /^examples\/playwright\/configs\/playwright\.config\.ts$/,
