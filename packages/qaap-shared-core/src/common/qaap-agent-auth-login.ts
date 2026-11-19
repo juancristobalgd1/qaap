@@ -404,8 +404,8 @@ export function localizeAgentAuthFailureMessage(
  * matching what users run in the agent TUI.
  *
  * `cliBin` is the Antigravity CLI the host resolved (`harness-status` / agent descriptor `cliBin`). `agy` (the
- * supported client) has no login subcommand, so it gets no command and the Connect flow shows the terminal
- * instructions instead: run `agy` in the agent terminal. Gemini CLI's in-app sign-in is kept only for a host
+ * supported client) has no login subcommand, so it gets no command here: the Connect flow drives its Google OAuth
+ * picker in the hidden terminal (`resolveAgentConnectionFlow`, kind `tui-login`) and opens the URL it prints. Gemini CLI's in-app sign-in is kept only for a host
  * without `agy`; Google retired it for personal accounts on 18 Jun 2026. A missing `cliBin` keeps that login.
  */
 export function resolveAgentLoginCliCommand(agentId: string | undefined, cliBin?: string): string | undefined {

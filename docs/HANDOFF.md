@@ -7,7 +7,13 @@
 - `Use a Google Cloud project` → `Continue with Google Cloud`: genera igualmente una URL de autorización de Google con `redirect_uri=https://antigravity.google/oauth-callback`. Tampoco ofrece un prompt de paste-back; queda esperando la finalización en el navegador.
 - Las URLs completas, incluidos `state` y `code_challenge`, se redactaron y no se guardaron. La prueba se detuvo antes de introducir credenciales.
 
-**Decisión:** no añadir inicio integrado de Antigravity en web/móvil: estos flujos no dan al usuario un código ni una URL que pueda devolver al PTY del tenant. En web, el inicio de sesión de Antigravity requiere Qaap Desktop, según el flujo actual. Repetir la investigación si `agy` añade un flujo de código/URL pegable o cambia el callback.
+**Implementado (rama `feat/work-hub-round3`):** inicio integrado de Antigravity en web/móvil, reutilizando el mecanismo Connect de los harnesses con TUI (el de Pi): terminal oculta del tenant (mismo HOME/uid/aislamiento que sus turnos) + `QaapAgentLoginInputDriver` + `QaapAgentLoginFlow` + sondeo de conexión existente. No hay endpoint nuevo: la URL viaja solo por el terminal del propio usuario hasta su diálogo.
+- `resolveAgentConnectionFlow('antigravity', { cliBin: 'agy' })` devuelve `tui-login` (`agy` + Enter sobre «Select login method» → `Google OAuth` preseleccionado) en `qaap-agent-tui-command.ts`.
+- La URL se captura de los hipervínculos OSC-8 de `agy` (URL entera aunque la TUI la parta en filas de 80 columnas; verificado con `agy` 1.5.12 en un PTY con `HOME` temporal, sin abrirla). Plazo de captura 20 s; espera de la autorización 5 min; sondeo cada 2,5 s; al conectar se cierra el PTY y se invalidan agentes/modelos (`refreshAfterAgentSignIn`).
+- Si no hay URL (silencio, `agy` termina, pregunta inesperada) el diálogo muestra el texto que remite a Qaap Desktop, sin enlace ni salida del CLI; si caduca la espera: «Sign-in timed out. Try again.» + Retry (`qaap-agy-login-presentation.ts`). La salida del CLI (que contiene la URL con `state`) nunca se pinta ni se loguea.
+- Cancelar/cerrar el diálogo/`beforeunload` eliminan el terminal (PTY cerrado en el backend). Single-flight por harness en el diálogo.
+
+**Pendiente / límites:** confirmar con un login real en el VPS (nadie ha completado un login real desde el móvil; la premisa del callback alojado en Google no está validada end to end). `startWorkHubAuxSideChatSignIn` (side chat de la hoja auxiliar) abre el diálogo sin `onConnected`: allí el sondeo no corre y el diálogo no pasa solo a «Connected». El PTY no se mata explícitamente en `onStop` del backend: depende del cierre de terminales de Theia al caer el socket.
 
 Estado para continuar el trabajo desde otra cuenta o sesión. Actualízalo al cerrar cada tarea: qué queda pendiente, cómo se validó y qué limitaciones conviene conocer. La política de modelos está en la sección «Selección de modelos y orquestación» de `CLAUDE.md`.
 

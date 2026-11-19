@@ -25,6 +25,7 @@ import {
     resolveAgentConnectionFlow,
     type QaapAgentConnectionFlow,
     type QaapAgentLoginInputStep,
+    QAAP_AGY_TUI_LOGIN_COMMAND,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-tui-command';
 import { QAAP_PI_LOGIN_PROVIDERS } from '@theia/qaap-shared-core/lib/common/qaap-pi-login-providers';
 import {
@@ -37,6 +38,7 @@ import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mob
 import { resolveAgentDisplayLabel } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { requestAgentCliUpdate } from '@theia/qaap-agents-ui/lib/common/qaap-agent-cli-update';
 import { QaapAgentLoginFlow, stripAgentLoginTerminalControlSequences } from '@theia/qaap-agents-ui/lib/common/qaap-agent-login-flow';
+import { presentAgyLoginFailure, QAAP_AGY_LOGIN_CHALLENGE_TIMEOUT_MS } from '@theia/qaap-agents-ui/lib/common/qaap-agy-login-presentation';
 import { QaapAgentLoginInputDriver } from '@theia/qaap-agents-ui/lib/common/qaap-agent-login-input-driver';
 import { createTranscriptTerminalStagingHost, createTranscriptTerminalSurface } from '@theia/qaap-transcript/lib/browser/qaap-transcript-terminal-view';
 import { createQaapAgentLoginDialog } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-login-dialog';
@@ -171,6 +173,14 @@ function resolveHiddenLogin(connectionFlow: QaapAgentConnectionFlow): AgentLogin
             : undefined;
 }
 
+/** Antigravity sign-in dialogs that are open: one per harness, so a second tap never starts a second `agy`. */
+const openAntigravityLoginDialogs = new Set<string>();
+
+function isAntigravityLoginAgent(agentId: string): boolean {
+    const normalized = agentId.trim().toLowerCase();
+    return normalized === 'antigravity' || normalized === 'gemini';
+}
+
 export async function openAgentLoginDialogInBackground(
     ctx: any,
     project: MobileProjectEntry | undefined,
@@ -179,6 +189,13 @@ export async function openAgentLoginDialogInBackground(
     onConnected?: () => boolean | void | Promise<boolean | void>,
 ): Promise<void> {
     const agentLabel = resolveAgentDisplayLabel(agentId);
+    const singleFlightKey = isAntigravityLoginAgent(agentId) ? 'antigravity' : undefined;
+    if (singleFlightKey && openAntigravityLoginDialogs.has(singleFlightKey)) {
+        return;
+    }
+    if (singleFlightKey) {
+        openAntigravityLoginDialogs.add(singleFlightKey);
+    }
     // Pi's provider can be switched in the dialog: the flow and its keystrokes follow the choice.
     let connectionFlow = resolveAgentConnectionFlow(agentId);
     let hiddenLogin = resolveHiddenLogin(connectionFlow);
@@ -205,6 +222,8 @@ export async function openAgentLoginDialogInBackground(
     let connectionPollInFlight = false;
     let closed = false;
     let attempt = 0;
+    /** The resolved CLI is `agy`: its Google OAuth picker is driven and its failures get their own copy. */
+    let agyLogin = false;
 
     const stopPolling = (): void => {
         if (connectionPollHandle !== undefined) {
@@ -261,6 +280,9 @@ export async function openAgentLoginDialogInBackground(
             return;
         }
         closed = true;
+        if (singleFlightKey) {
+            openAntigravityLoginDialogs.delete(singleFlightKey);
+        }
         window.removeEventListener('beforeunload', closeBeforeUnload);
         if (watchdogHandle !== undefined) {
             window.clearInterval(watchdogHandle);
@@ -301,6 +323,12 @@ export async function openAgentLoginDialogInBackground(
      * unlocked catalog. Other harnesses are proven by their probe and skip this.
      */
     const attestSignInIfUnprobed = async (): Promise<void> => {
+        if (agyLogin) {
+            // `agy` is proven by its connection probe: only the cached agent list and models are stale.
+            invalidateAgentTaskListAllCache();
+            invalidateAgentModelsCache(agentId);
+            return;
+        }
         if (!isQaapSessionAttestationAgent(agentId)) {
             return;
         }
@@ -313,20 +341,28 @@ export async function openAgentLoginDialogInBackground(
 
     /** Driven TUI logins type their way to the link; some CLIs do slow first-run work before printing it. */
     function resolveLoginChallengeTimeout(): { challengeTimeoutMs?: number } {
-        const challengeTimeoutMs = connectionFlow.kind === 'tui-login'
-            ? TUI_LOGIN_CHALLENGE_TIMEOUT_MS
-            : resolveAgentLoginChallengeTimeoutMs(agentId);
+        const challengeTimeoutMs = agyLogin
+            ? QAAP_AGY_LOGIN_CHALLENGE_TIMEOUT_MS
+            : connectionFlow.kind === 'tui-login'
+                ? TUI_LOGIN_CHALLENGE_TIMEOUT_MS
+                : resolveAgentLoginChallengeTimeoutMs(agentId);
         return challengeTimeoutMs !== undefined ? { challengeTimeoutMs } : {};
     }
 
     const flow = new QaapAgentLoginFlow({
         agentId,
-        ...resolveLoginChallengeTimeout(),
+        // Read at each tick: the resolved CLI (and with it agy's deadline) is only known after the status check.
+        get challengeTimeoutMs(): number | undefined {
+            return resolveLoginChallengeTimeout().challengeTimeoutMs;
+        },
+        get answersPrompts(): boolean {
+            return agyLogin;
+        },
         onDidChange: state => {
             if (closed) {
                 return;
             }
-            dialog.render(state);
+            dialog.render(agyLogin && state.phase === 'failed' ? presentAgyLoginFailure(state, agentLabel) : state);
             if (state.phase === 'connected') {
                 disposeTerminal();
                 void attestSignInIfUnprobed().then(() => onConnected?.()).catch(error => {
@@ -553,9 +589,17 @@ export async function openAgentLoginDialogInBackground(
             flow.requireInstall(canInstall, canInstall ? undefined : localizeInstallBlockedMessage(agentLabel, status));
             return;
         }
-        // The resolved Antigravity CLI decides the sign-in: `agy` has no login command, so no hidden
-        // Gemini login runs and the user gets the terminal instructions instead.
+        // The resolved Antigravity CLI decides the sign-in. `agy` has no login command: its Google OAuth picker
+        // is driven in the hidden terminal and the authorization URL it prints is opened by the user (the
+        // callback is hosted by Google, so any browser works). Other CLIs without a login get instructions.
         const resolvedFlow = resolveAgentConnectionFlow(agentId, { cliBin: status?.cliBin });
+        if (resolvedFlow.kind === 'tui-login' && resolvedFlow.command === QAAP_AGY_TUI_LOGIN_COMMAND && isAntigravityLoginAgent(agentId)) {
+            agyLogin = true;
+            connectionFlow = resolvedFlow;
+            hiddenLogin = resolveHiddenLogin(resolvedFlow);
+            await runLogin(resolvedFlow.command, status, resolvedFlow.input);
+            return;
+        }
         if (resolvedFlow.kind === 'tenant-terminal') {
             flow.showManualInstructions(localizeAgentTenantTerminalLoginMessage(agentLabel, resolvedFlow.command, resolvedFlow.followUp));
             return;
@@ -643,7 +687,7 @@ export async function openAgentLoginDialogInBackground(
         agentId,
         agentLabel,
         onClose: close,
-        ...(connectionFlow.kind === 'tui-login' ? {
+        ...(connectionFlow.kind === 'tui-login' && connectionFlow.provider !== undefined ? {
             loginProviders: {
                 options: QAAP_PI_LOGIN_PROVIDERS.map(provider => ({ id: provider.id, label: provider.name })),
                 selectedId: connectionFlow.provider,
