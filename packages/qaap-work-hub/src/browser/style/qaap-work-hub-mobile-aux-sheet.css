@@ -194,6 +194,19 @@
     padding-right: 12px;
   }
 
+  /*
+   * Inside the sheet the tab already names the view and the sheet's own ✕ closes it, so the view's title and
+   * its close button are hidden here only. Bring back and delete stay right-aligned in one compact row.
+   */
+  .theia-mobile-work-hub-aux-sheet-body .qaap-work-hub-aux-side-chat-header {
+    justify-content: flex-end;
+  }
+
+  .theia-mobile-work-hub-aux-sheet-body .qaap-work-hub-aux-side-chat-header .qaap-work-hub-aux-side-chat-title,
+  .theia-mobile-work-hub-aux-sheet-body .qaap-work-hub-aux-side-chat-actions .qaap-work-hub-aux-side-chat-close {
+    display: none;
+  }
+
   .theia-mobile-work-hub-aux-sheet-body .qaap-work-hub-aux-pr-scroll,
   .theia-mobile-work-hub-aux-sheet-body .qaap-work-hub-aux-side-chat-transcript {
     min-height: 0;

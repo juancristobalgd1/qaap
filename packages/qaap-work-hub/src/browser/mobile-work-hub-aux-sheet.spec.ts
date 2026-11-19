@@ -113,6 +113,25 @@ describe('mobile-work-hub-aux-sheet', () => {
         expect(sheet.activeTab).to.equal('pull-request');
     });
 
+    it('inside the sheet the views show no title or close button of their own; the desktop panel keeps them', () => {
+        const styles = path.join(__dirname, '..', '..', 'src', 'browser', 'style');
+        const mobileCss = fs.readFileSync(path.join(styles, 'qaap-work-hub-mobile-aux-sheet.css'), 'utf8');
+        const desktopCss = fs.readFileSync(path.join(styles, 'qaap-work-hub-aux-side-chat.css'), 'utf8');
+        sheet.open('side-chat');
+        // The DOM still has them: the sheet only hides them with CSS scoped to its own body.
+        expect(sheet.sideChatView.element.querySelector('.qaap-work-hub-aux-side-chat-title')).to.not.equal(null);
+        expect(sheet.sideChatView.element.querySelector('.qaap-work-hub-aux-side-chat-close')).to.not.equal(null);
+        const mobileBlock = mobileCss.slice(mobileCss.indexOf('@media (max-width: 767px)'));
+        expect(mobileBlock).to.match(/\.theia-mobile-work-hub-aux-sheet-body \.qaap-work-hub-aux-side-chat-header \.qaap-work-hub-aux-side-chat-title,\s*\.theia-mobile-work-hub-aux-sheet-body \.qaap-work-hub-aux-side-chat-actions \.qaap-work-hub-aux-side-chat-close \{\s*display: none;/);
+        // Nothing outside the sheet's scope hides them, so the desktop right panel keeps its title and ✕.
+        expect(mobileCss.replace(/\.theia-mobile-work-hub-aux-sheet-body [^{]*\{/g, '')).to.not.match(/side-chat-(title|close)[^{]*\{\s*display: none/);
+        expect(desktopCss).to.not.match(/side-chat-(title|close)[^{]*\{[^}]*display:\s*none/);
+        // The Pull request view has no header or close button of its own in the sheet.
+        sheet.open('pull-request');
+        expect(sheet.pullRequestView.element.querySelector('.theia-mobile-work-hub-aux-sheet-close')).to.equal(null);
+        expect(sheet.pullRequestView.element.querySelector('.qaap-work-hub-aux-pr-title-bar, .qaap-work-hub-aux-pr-close')).to.equal(null);
+    });
+
     it('registers its scrollers with the touch scroll selector', () => {
         const selectors = fs.readFileSync(
             path.join(__dirname, '..', '..', '..', 'qaap-mobile-shell', 'src', 'browser', 'mobile-vertical-touch-scroll.ts'), 'utf8');
