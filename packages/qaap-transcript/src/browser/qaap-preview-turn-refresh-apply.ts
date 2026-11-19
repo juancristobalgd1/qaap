@@ -8,8 +8,7 @@ import type { Event } from '@theia/core/lib/common/event';
 import { FileUri } from '@theia/core/lib/common/file-uri';
 import type URI from '@theia/core/lib/common/uri';
 import type { QaapPreviewSurfaceHandle } from '@theia/qaap-adapters/lib/browser/qaap-preview-surface-registry';
-import { qaapPreviewFrameMatchesUrl } from '@theia/qaap-adapters/lib/browser/qaap-preview-surface-match';
-import { readQaapPreviewFrameUrl, withQaapPreviewCacheBust } from '@theia/qaap-adapters/lib/browser/qaap-preview-surface-refresh';
+import { readQaapPreviewFrameUrl, rebaseQaapPreviewUrl, withQaapPreviewCacheBust } from '@theia/qaap-adapters/lib/browser/qaap-preview-surface-refresh';
 import type { QaapBootstrapStateChange } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service';
 import type { QaapPreviewTurnRefreshAction } from '@theia/qaap-shared-core/lib/common/qaap-preview-turn-refresh';
 
@@ -50,9 +49,22 @@ export async function applyQaapPreviewTurnRefresh(
         if (!surface.isConnected()) {
             continue;
         }
-        // Same preview identity: keep the page the user was on. Otherwise open the new root.
-        const target = url && qaapPreviewFrameMatchesUrl({ src: url }, base, [bootstrap.previewId]) ? url : base;
+        // Keep the page the user was on: as is for the same URL, rebased when the restart moved the
+        // preview to a new hostname / identity prefix.
+        const target = url && sameQaapPreviewBase(url, base) ? url : rebaseQaapPreviewUrl(url, base);
         surface.navigate(withQaapPreviewCacheBust(target));
+    }
+}
+
+/** Same origin and same identity prefix: the frame's URL is still valid on the (re)started preview. */
+function sameQaapPreviewBase(url: string, base: string): boolean {
+    try {
+        const current = new URL(url);
+        const next = new URL(base);
+        const prefix = (pathname: string): string => pathname.match(/^\/qaap-preview\/[^/]+/)?.[0] ?? '';
+        return current.origin === next.origin && prefix(current.pathname) === prefix(next.pathname);
+    } catch {
+        return false;
     }
 }
 

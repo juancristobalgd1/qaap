@@ -46,3 +46,34 @@ export function navigateQaapPreviewFrame(frame: HTMLIFrameElement, url: string):
     }
     frame.src = url;
 }
+
+/** `/qaap-preview/<previewId>` path prefix of a same-origin identity preview URL. */
+const IDENTITY_PATH_PREFIX = /^\/qaap-preview\/[^/]+/;
+
+/**
+ * The page `currentUrl` showed (route, query, hash), on the preview's new base URL. A restarted dev
+ * server comes back under a new isolated hostname (or identity prefix), so reusing the old URL is
+ * impossible and the plain base URL dropped the user on the app root.
+ */
+export function rebaseQaapPreviewUrl(currentUrl: string | undefined, newBaseUrl: string): string {
+    if (!currentUrl) {
+        return newBaseUrl;
+    }
+    let current: URL;
+    let base: URL;
+    try {
+        current = new URL(currentUrl);
+        base = new URL(newBaseUrl);
+    } catch {
+        return newBaseUrl;
+    }
+    const route = current.pathname.replace(IDENTITY_PATH_PREFIX, '') || '/';
+    const basePrefix = base.pathname.match(IDENTITY_PATH_PREFIX)?.[0] ?? '';
+    const rebased = new URL(base.toString());
+    rebased.pathname = `${basePrefix}${route.startsWith('/') ? route : `/${route}`}`;
+    rebased.search = current.search;
+    rebased.searchParams.delete(QAAP_CACHE_BUST_PARAM);
+    rebased.hash = current.hash;
+    return rebased.toString();
+}
+
