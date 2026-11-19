@@ -1,0 +1,195 @@
+# Builds the UNSIGNED desktop installers (macOS arm64 + x64, Windows x64, Linux AppImage + deb) and publishes
+# them as a GitHub pre-release. Triggered by a `desktop-vX.Y.Z` tag or manually (workflow_dispatch with the tag).
+#
+# No signing secrets are used or needed. Signing is a pending task: docs/HANDOFF.md "Desktop installers (unsigned)"
+# and doc/qaap-desktop-release.md list what to add (Developer ID + notarization, Windows certificate) and which
+# switches to flip afterwards (macOS auto-update, remove the pre-release flag).
+#
+# The release is created as a draft, every platform uploads its files, and the last job publishes it as a
+# pre-release, so nobody (and no auto-updater) sees a half-filled release.
+name: Qaap desktop release
+
+on:
+  push:
+    tags:
+      - 'desktop-v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to build and publish, e.g. desktop-v0.1.0 (created at this commit if it does not exist)'
+        required: true
+        type: string
+
+# Least privilege: the jobs only read the repository and write the release (GITHUB_TOKEN, no other secret).
+permissions:
+  contents: write
+
+# One release run per tag; a re-run of the same tag queues instead of racing the uploads.
+concurrency:
+  group: qaap-desktop-release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Prepare release
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - name: Resolve tag and version
+        id: meta
+        shell: bash
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          TAG="${INPUT_TAG:-$REF_NAME}"
+          if [[ ! "${TAG}" =~ ^desktop-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "::error::Tag '${TAG}' must look like desktop-vX.Y.Z"
+            exit 1
+          fi
+          echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
+          echo "version=${BASH_REMATCH[1]}" >> "${GITHUB_OUTPUT}"
+
+      - name: Create the draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            echo "Release ${TAG} already exists; its assets are replaced."
+          else
+            gh release create "${TAG}" \
+              --draft \
+              --prerelease \
+              --target "${GITHUB_SHA}" \
+              --title "Qaap desktop ${VERSION} (unsigned)" \
+              --notes "Unsigned desktop installers for Qaap ${VERSION}. macOS: right-click the app and choose Open the first time (Gatekeeper). Windows: choose More info and Run anyway in SmartScreen."
+          fi
+
+  build:
+    name: Build (${{ matrix.label }})
+    needs: prepare
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macOS arm64
+            os: macos-14
+            builder_args: --mac dmg --arm64
+            expected: Qaap-mac-arm64.dmg
+          # macos-13 was retired by GitHub (Dec 2025); macos-15-intel is the remaining Intel runner.
+          - label: macOS x64
+            os: macos-15-intel
+            builder_args: --mac dmg --x64
+            expected: Qaap-mac-x64.dmg
+          - label: Windows x64
+            os: windows-2022
+            builder_args: --win nsis --x64
+            expected: Qaap-win-x64.exe
+          - label: Linux x64
+            os: ubuntu-22.04
+            builder_args: --linux AppImage deb --x64
+            expected: Qaap-linux-x86_64.AppImage Qaap-linux-x86_64.deb
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      # Node 24 ships npm 11, the version that wrote package-lock.json (npm 10 accepts lockfiles npm 11 rejects).
+      - name: Use Node.js 24.x
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        with:
+          node-version: '24.x'
+          registry-url: 'https://registry.npmjs.org'
+          cache: npm
+
+      - name: Use Python 3.13
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.13'
+
+      - name: Install native-keymap build deps
+        shell: bash
+        run: bash scripts/qaap-ci-install-native-deps.sh
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          bash scripts/qaap-npm-ci-retry.sh
+          node node_modules/electron/install.js
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # https://github.com/microsoft/vscode-ripgrep/issues/9
+
+      - name: Compile
+        shell: bash
+        run: npm run compile
+        env:
+          NODE_OPTIONS: --max_old_space_size=4096
+
+      # The VS Code extensions the app needs to start; electron-builder copies ../../plugins into the installer.
+      - name: Download plugins
+        shell: bash
+        run: npm run download:plugins -- --rate-limit 3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Production bundle
+        shell: bash
+        working-directory: examples/electron
+        run: npm run build:production
+        env:
+          NODE_OPTIONS: --max_old_space_size=4096
+
+      - name: Package installers
+        shell: bash
+        working-directory: examples/electron
+        run: npx electron-builder --config electron-builder.yml --publish never -c.extraMetadata.version="${VERSION}" ${{ matrix.builder_args }}
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          # Unsigned on purpose: stop electron-builder from looking for a signing identity on the runner.
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Check the installers exist
+        shell: bash
+        working-directory: examples/electron/build/installers
+        run: |
+          ls -la
+          for file in ${{ matrix.expected }}; do
+            test -s "${file}" || { echo "::error::Missing installer ${file}"; exit 1; }
+          done
+
+      - name: Upload to the release
+        shell: bash
+        working-directory: examples/electron/build/installers
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          shopt -s nullglob
+          # Installers, differential-update blockmaps and the electron-updater feed files (latest*.yml).
+          files=(*.dmg *.exe *.AppImage *.deb *.blockmap latest*.yml)
+          echo "Uploading: ${files[*]}"
+          gh release upload "${TAG}" "${files[@]}" --clobber
+
+  publish:
+    name: Publish pre-release
+    needs: [prepare, build]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      # Still marked pre-release while the installers are unsigned. Drop --prerelease (and use --latest) after signing.
+      - name: Publish
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: gh release edit "${TAG}" --draft=false --prerelease
