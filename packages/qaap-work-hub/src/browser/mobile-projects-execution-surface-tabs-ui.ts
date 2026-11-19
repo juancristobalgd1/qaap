@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { Disposable } from '@theia/core/lib/common/disposable';
+import { matchesMobileNarrowViewport } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import {
     conversationToSummary,
     getConversation,
@@ -26,6 +27,7 @@ import { applyExecutionSurfaceIconSelectDisplayExtracted, buildExecutionViewTabS
 import { closeExecutionTabOverflowMenuExtracted, mountTranscriptSurfaceTabExtracted, positionExecutionTabOverflowMenuExtracted } from './mobile-projects-execution-surface-tabs-ui-timeline';
 import { recordUserPreviewSurfaceChoiceExtracted } from './mobile-projects-execution-surface-tabs-ui-streaming';
 import { isQaapWorkHubAuxPanelLayout, QaapWorkHubAuxPanel } from './qaap-work-hub-aux-panel';
+import { MobileWorkHubAuxSheet, type MobileWorkHubAuxSheetTab } from './mobile-work-hub-aux-sheet';
 import { openAgentLoginDialogInBackground } from './qaap-agent-login-background';
 import { fetchAgentModelsForAgent } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import type { QaapLiveFeedFrame } from '@theia/qaap-shared-core/lib/common/qaap-live-feed-cursor';
@@ -43,6 +45,8 @@ type TranscriptTab = ExecutionSurfaceTabId;
 const workHubAuxPanelUis = new Set<MobileProjectsExecutionSurfaceTabsUi>();
 let workHubAuxPanel: QaapWorkHubAuxPanel | undefined;
 let workHubAuxPanelOwner: MobileProjectsExecutionSurfaceTabsUi | undefined;
+/** The narrow-viewport twin of the right panel: one bottom sheet per page, shared like the panel. */
+let mobileAuxSheet: MobileWorkHubAuxSheet | undefined;
 
 /** Live conversation feed for the side chat: one EventSource while its tab is shown; the view filters the frames. */
 function subscribeWorkHubAuxSideChatLive(onFrame: (frame: QaapLiveFeedFrame) => void): Disposable {
@@ -317,6 +321,8 @@ export class MobileProjectsExecutionSurfaceTabsUi {
         if (!workHubAuxPanelUis.size) {
             workHubAuxPanel?.dispose();
             workHubAuxPanel = undefined;
+            mobileAuxSheet?.dispose();
+            mobileAuxSheet = undefined;
         }
     }
 
@@ -495,11 +501,47 @@ export class MobileProjectsExecutionSurfaceTabsUi {
     }
 
     /**
+     * The narrow-viewport "Side chat" / "Pull request" bottom sheet, or `undefined` outside the mobile layout (the
+     * desktop right panel owns those views there). Created once; the views inside are the desktop panel's classes.
+     */
+    resolveMobileAuxSheet(): MobileWorkHubAuxSheet | undefined {
+        if (!matchesMobileNarrowViewport() || this.resolveWorkHubAuxPanel()) {
+            return undefined;
+        }
+        workHubAuxPanelUis.add(this);
+        workHubAuxPanelOwner ??= this;
+        if (!mobileAuxSheet) {
+            mobileAuxSheet = new MobileWorkHubAuxSheet({
+                host: {
+                    resolvePullRequestTarget: () => resolveWorkHubAuxPanelOwner()?.resolveWorkHubAuxPanelPullRequestTarget(),
+                    openExternal: url => resolveWorkHubAuxPanelOwner()?.openWorkHubAuxPanelExternal(url),
+                    sideChat: workHubAuxSideChatHost,
+                },
+            });
+        }
+        return mobileAuxSheet;
+    }
+
+    /**
+     * Opens the mobile sheet on `tab` for the conversation this UI shows. `false` outside the mobile layout.
+     * A `pullRequest` ref (a transcript chip) shows exactly that pull request.
+     */
+    openMobileAuxSheet(tab: MobileWorkHubAuxSheetTab, pullRequest?: QaapWorkHubPullRequestRef): boolean {
+        const sheet = this.resolveMobileAuxSheet();
+        if (!sheet) {
+            return false;
+        }
+        workHubAuxPanelOwner = this;
+        sheet.open(tab, pullRequest);
+        return true;
+    }
+
+    /**
      * Shows exactly `ref` in the desktop right panel's "Pull request" tab (a pull request mentioned in
-     * the transcript). `false` on mobile and in the IDE chat, where there is no such panel.
+     * the transcript); on mobile, in the bottom sheet's "Pull request" tab. `false` in the IDE chat.
      */
     openPullRequestInWorkHubAuxPanel(ref: QaapWorkHubPullRequestRef): boolean {
-        return this.claimWorkHubAuxPanel()?.openPullRequest(ref) === true;
+        return this.claimWorkHubAuxPanel()?.openPullRequest(ref) === true || this.openMobileAuxSheet('pull-request', ref);
     }
 
     /**
