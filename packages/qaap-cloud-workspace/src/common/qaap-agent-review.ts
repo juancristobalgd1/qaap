@@ -262,7 +262,7 @@ export function buildAgentReviewPrompt(options: {
         '',
         'Output format: the last line of your final message is the verdict.',
         `- Optionally, append to the verdict line the separator "${QAAP_AGENT_REVIEW_NOTES_SEPARATOR.trim()}" followed by up to three short non-blocking notes.`,
-        `- For "fail", the reason MUST start with the defect as path:line, then one sentence on why it breaks the task or the code.`,
+        '- For "fail", the reason MUST start with the defect as path:line, then one sentence on why it breaks the task or the code.',
         buildAgentReviewVerdictInstruction(),
         '',
         'Unified diff of the uncommitted changes:',
