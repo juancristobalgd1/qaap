@@ -47,6 +47,21 @@ export namespace QaapUsageScanTarget {
         const roots = QaapUsageRoots.resolve(env, backendHome);
         return { key: JSON.stringify({ roots }), roots };
     }
+
+    /**
+     * The logs of one harness instance: the backend's own home with the instance's configuration-folder
+     * variables (`CODEX_HOME` / `CLAUDE_CONFIG_DIR` from its launch plan) in place of the default ones. The key
+     * names the instance, so its scanner and ledger never mix with the base harness's or another instance's.
+     */
+    export function harnessHome(options: {
+        readonly instanceId: string;
+        readonly env: NodeJS.ProcessEnv;
+        readonly backendHome: string;
+        readonly overrides: Readonly<Record<string, string>>;
+    }): QaapUsageScanTarget {
+        const roots = QaapUsageRoots.resolve({ ...options.env, ...options.overrides }, options.backendHome);
+        return { key: JSON.stringify({ instanceId: options.instanceId, roots }), roots };
+    }
 }
 
 /**

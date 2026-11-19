@@ -78,6 +78,30 @@ describe('applyQaapPreviewTurnRefresh', () => {
         expect(target.searchParams.get('_qaap_cache_bust')).to.not.equal('1');
     });
 
+    it('keeps the route when the restarted server comes back on a new preview hostname', async function (): Promise<void> {
+        this.timeout(5000);
+        const restarts: number[] = [];
+        const state = new Emitter<QaapBootstrapStateChange>();
+        const bootstrap = {
+            previewUrl: 'http://84224956.localhost:52136/',
+            previewId: 'u-dev-x-todo',
+            onStateChange: state.event,
+            restartManagedDevServer: async () => {
+                restarts.push(Date.now());
+                bootstrap.previewUrl = 'http://8f56b435.localhost:52136/';
+                setTimeout(() => state.fire({ phase: 'running', previewUrl: bootstrap.previewUrl } as QaapBootstrapStateChange), 5);
+                return true;
+            },
+        };
+        const browser = surface('http://84224956.localhost:52136/items?tab=2&_qaap_cache_bust=1#top');
+        await applyQaapPreviewTurnRefresh(classifyQaapPreviewTurnRefresh(['server.js'], 'node server.js'), [browser], bootstrap);
+        const target = new URL(browser.navigations[0]!);
+        expect(target.host).to.equal('8f56b435.localhost:52136');
+        expect(target.pathname).to.equal('/items');
+        expect(target.searchParams.get('tab')).to.equal('2');
+        expect(target.hash).to.equal('#top');
+    });
+
     it('only reloads for page edits, and never restarts a server Qaap does not manage', async () => {
         const pageEdit = harness({ managed: true });
         const browser = surface(`${previewUrl}`);

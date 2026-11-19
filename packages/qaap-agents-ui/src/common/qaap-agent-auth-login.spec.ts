@@ -12,6 +12,7 @@ import {
     isUnauthenticatedCliDeclaration,
     localizeAgentAuthFailureMessage,
     localizeAgentSettingsApiKeyLoginMessage,
+    localizeAgentTenantTerminalLoginMessage,
     resolveAgentLoginCliCommand,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
 import { detectAgentFailureKind, resolveAgentTurnFailureMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
@@ -21,6 +22,13 @@ import { rememberQaapHostedRuntime } from '@theia/qaap-shared-core/lib/common/qa
 describe('qaap-agent-auth-login', () => {
     afterEach(() => {
         rememberQaapHostedRuntime(false);
+    });
+
+    it('keeps Antigravity Google setup out of the tenant terminal flow', () => {
+        const message = localizeAgentTenantTerminalLoginMessage('Antigravity CLI', 'agy');
+        expect(message).to.match(/Google OAuth or Google Cloud project/i);
+        expect(message).to.match(/Qaap web cannot complete/i);
+        expect(message).not.to.match(/open a terminal/i);
     });
 
     it('extracts Codex device-auth URL and one-time code', () => {

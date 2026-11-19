@@ -10,7 +10,7 @@
  * their own states, and every mapping decision lives here so it can be tested without spawning.
  */
 
-import { parseAgentReviewVerdict } from './qaap-agent-review';
+import { parseAgentReviewVerdict, resolveJudgedReviewStatus } from './qaap-agent-review';
 import { QaapAgentTaskState } from './qaap-agent-task';
 import { QaapJobState } from './qaap-job';
 import { QaapWorkflowAgentTurnNode, QaapWorkflowNodeOutcome } from './qaap-workflow-ir';
@@ -58,7 +58,7 @@ export function resolveAgentTurnOutcome(
         if (!verdict) {
             return 'verdict:inconclusive';
         }
-        return verdict.status === 'passed' ? 'verdict:pass' : 'verdict:fail';
+        return resolveJudgedReviewStatus(node.promptRef, verdict) === 'passed' ? 'verdict:pass' : 'verdict:fail';
     }
     switch (state) {
         case 'completed':

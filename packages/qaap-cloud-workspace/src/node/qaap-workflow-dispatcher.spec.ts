@@ -338,7 +338,7 @@ describe('QaapWorkflowDispatcher', () => {
             await dispatcher.onJobFinished('job-1', 'succeeded', { outcome: 'risk:high' });
             await dispatcher.onJobFinished('job-2', 'succeeded', { outcome: 'success', artifact: '+ total *= 0.9;' });
             await dispatcher.onAgentTaskFinished(
-                'task-2', 'completed', resultLog('blocker | src/cart.ts:12 | applied twice\n@@QAAP:VERDICT@@ fail'),
+                'task-2', 'completed', resultLog('blocker | src/cart.ts:12 | applied twice\n@@QAAP:VERDICT@@ fail src/cart.ts:12 — applied twice'),
             );
 
             const rejected = store.get('ada', runId)!;
@@ -367,7 +367,7 @@ describe('QaapWorkflowDispatcher', () => {
             await dispatcher.onAgentTaskFinished('task-1', 'completed');
             await dispatcher.onJobFinished('job-1', 'succeeded', { outcome: 'risk:high' });
             await dispatcher.onJobFinished('job-2', 'succeeded', { outcome: 'success', artifact: 'diff' });
-            await dispatcher.onAgentTaskFinished('task-2', 'completed', 'nope\n@@QAAP:VERDICT@@ fail');
+            await dispatcher.onAgentTaskFinished('task-2', 'completed', 'nope\n@@QAAP:VERDICT@@ fail src/cart.ts:12 — applied twice');
             await dispatcher.onAgentTaskFinished('task-3', 'failed');
 
             const record = store.get('ada', started.record.run.id)!;
@@ -577,7 +577,7 @@ describe('QaapWorkflowDispatcher run trace', () => {
         await dispatcher.onAgentTaskFinished('task-1', 'completed');
         await dispatcher.onJobFinished('job-1', 'succeeded', { outcome: 'risk:high', files: [{}, {}, {}] });
         await dispatcher.onJobFinished('job-2', 'succeeded', { outcome: 'success', artifact: 'diff' });
-        await dispatcher.onAgentTaskFinished('task-2', 'completed', 'nope\n@@QAAP:VERDICT@@ fail leaks the token');
+        await dispatcher.onAgentTaskFinished('task-2', 'completed', 'nope\n@@QAAP:VERDICT@@ fail src/auth.ts:4 — leaks the token');
 
         const trace = store.get('ada', runId)!.trace;
         expect(trace.map(step => step.nodeId)).to.deep.equal(['implement', 'risk-classify', 'git-diff', 'judge']);

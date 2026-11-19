@@ -148,6 +148,11 @@ export interface QaapAgentLoginFlowOptions {
      * (Pi) needs longer: the CLI starts first, then the dialog types its way to the link.
      */
     readonly challengeTimeoutMs?: number;
+    /**
+     * The host's input driver answers the CLI's first-run picker itself (agy's "Select login method"),
+     * so seeing that question is not a stall: the blocking-prompt check is off and the link deadline decides.
+     */
+    readonly answersPrompts?: boolean;
 }
 
 /**
@@ -324,7 +329,7 @@ export class QaapAgentLoginFlow {
         const challenge = extractAgentAuthLoginChallenge(sample, { preferMode: 'session', agentId: this.options.agentId });
         // A bare mode (e.g. the echoed `--device-auth` flag) is not something the user can act on.
         if (!challenge || (!challenge.url && !challenge.userCode)) {
-            if (this.current.phase === 'waiting') {
+            if (this.current.phase === 'waiting' && !this.options.answersPrompts) {
                 const prompt = findAgentLoginBlockingPrompt(visible);
                 if (prompt && prompt !== this.blockingPrompt?.line) {
                     this.blockingPrompt = { line: prompt, since: now };

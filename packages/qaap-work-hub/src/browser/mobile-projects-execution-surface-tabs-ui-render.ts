@@ -4,6 +4,7 @@ import type { MobileProjectsExecutionSurfaceTabsUiContext } from './mobile-proje
 import type { ExecutionSurfaceTabId as TranscriptTab } from '@theia/qaap-shared-core/lib/common/qaap-execution-surface-tabs';
 import type { MobileProjectsExecutionSurfaceSidebarState } from './mobile-projects-execution-surface-tabs-ui';
 import { nls } from '@theia/core/lib/common/nls';
+import { MOBILE_WORK_HUB_AUX_SHEET_TRIGGER_CLASS } from './mobile-work-hub-aux-sheet';
 import {
     createQaapPreviewToolbarSkeleton,
     QAAP_PREVIEW_TOOLBAR_SKELETON_CLASS,
@@ -102,9 +103,35 @@ export function mountTranscriptExecutionHeaderExtracted(ctx: MobileProjectsExecu
     const titleRow = header.querySelector('.theia-mobile-agent-log-title-row');
     if (titleRow instanceof HTMLElement) {
         ctx.appendExecutionSurfaceTabStripToTitleRow(titleRow, tabStrip);
+        titleRow.insertBefore(createMobileAuxSheetTrigger(ctx), titleRow.querySelector('.theia-mobile-projects-header-execution-tabs'));
     }
     ctx.refreshExecutionSurfaceTabStripState(tabStrip, activeTab);
     return { back, tabStrip };
+}
+
+/**
+ * The conversation header's button for the mobile "Side chat" / "Pull request" sheet. It is built with every
+ * conversation header and CSS shows it on the narrow viewport only (the desktop right panel has its own toggle),
+ * so crossing the breakpoint needs no rebuild.
+ */
+export function createMobileAuxSheetTrigger(ctx: MobileProjectsExecutionSurfaceTabsUiContext): HTMLButtonElement {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = MOBILE_WORK_HUB_AUX_SHEET_TRIGGER_CLASS;
+    button.title = nls.localize('qaap/mobileWorkHubAuxSheet/openViews', 'Open views');
+    button.setAttribute('aria-label', button.title);
+    button.setAttribute('aria-haspopup', 'dialog');
+    const glyph = document.createElement('span');
+    glyph.className = 'codicon codicon-layout-sidebar-right';
+    glyph.setAttribute('aria-hidden', 'true');
+    button.append(glyph);
+    button.addEventListener('click', event => {
+        event.stopPropagation();
+        // Taps do not focus buttons everywhere (iOS Safari): focus the trigger first so that closing the sheet returns focus here.
+        button.focus({ preventScroll: true });
+        ctx.openMobileAuxSheet('side-chat');
+    });
+    return button;
 }
 
 export function restoreActiveExecutionSurfaceExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, project: MobileProjectEntry,

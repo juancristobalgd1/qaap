@@ -49,6 +49,11 @@ export interface QaapCodexGateOverlayOptions {
     readonly folderTrusted: boolean;
     /** The Codex home the owner signed in to (`auth.json`, `config.toml`). Read only. */
     readonly sourceCodexHome: string;
+    /**
+     * The Codex executable the trust check runs (`codex --version`, `codex app-server`). A harness instance passes
+     * its own binary; undefined keeps `codex` from the PATH.
+     */
+    readonly codexBin?: string;
     readonly askTtlSec: number;
     /**
      * The OS identity Codex runs as (`setpriv` drop in tenant mode). When it differs from this process,
@@ -72,7 +77,7 @@ export interface QaapCodexGateOverlay {
 }
 
 /** Checks that Codex really considers the generated hook trusted. Injectable so tests need no Codex binary. */
-export type QaapCodexHookTrustProbe = (codexHome: string, cwd: string, env: NodeJS.ProcessEnv, identity?: { uid: number; gid?: number }) => Promise<'trusted' | 'untrusted' | 'missing'>;
+export type QaapCodexHookTrustProbe = (codexHome: string, cwd: string, env: NodeJS.ProcessEnv, identity?: { uid: number; gid?: number }, codexBin?: string) => Promise<'trusted' | 'untrusted' | 'missing'>;
 
 /**
  * Builds the per-task `CODEX_HOME` that routes every Codex tool call through the Qaap gate.
@@ -177,7 +182,7 @@ export class QaapCodexGateOverlayBuilder {
                     this.writeOwnedFile(file.path, file.text);
                 }
             }
-            await this.verifyOnce(codexHome, options.cwd, env, drop);
+            await this.verifyOnce(codexHome, options.cwd, env, drop, options.codexBin);
         } catch (error) {
             dispose();
             throw error;
@@ -227,12 +232,12 @@ export class QaapCodexGateOverlayBuilder {
         fs.fchownSync(fd, owner.uid, owner.gid ?? owner.uid);
     }
 
-    protected async verifyOnce(codexHome: string, cwd: string, env: NodeJS.ProcessEnv, identity?: { uid: number; gid?: number }): Promise<void> {
-        const version = await QaapCodexGateOverlayBuilder.codexVersion(env);
+    protected async verifyOnce(codexHome: string, cwd: string, env: NodeJS.ProcessEnv, identity?: { uid: number; gid?: number }, codexBin?: string): Promise<void> {
+        const version = await QaapCodexGateOverlayBuilder.codexVersion(env, codexBin);
         if (this.verifiedVersions.has(version)) {
             return;
         }
-        const status = await this.probe(codexHome, cwd, env, identity);
+        const status = await this.probe(codexHome, cwd, env, identity, codexBin);
         if (status !== 'trusted') {
             throw new Error(`Codex does not trust the Qaap safety hook (${status}, codex ${version}); refusing to run Codex without the gate.`);
         }
@@ -725,9 +730,9 @@ export class QaapCodexGateOverlayBuilder {
         }
     }
 
-    protected static codexVersion(env: NodeJS.ProcessEnv): Promise<string> {
+    protected static codexVersion(env: NodeJS.ProcessEnv, codexBin: string = 'codex'): Promise<string> {
         return new Promise(resolve => {
-            execFile('codex', ['--version'], { env, timeout: 5000 }, (error, stdout) => {
+            execFile(codexBin, ['--version'], { env, timeout: 5000 }, (error, stdout) => {
                 if (error) {
                     console.warn(`[qaap-codex-gate] codex --version probe failed: ${error.message}`);
                     resolve('unknown');
@@ -739,9 +744,9 @@ export class QaapCodexGateOverlayBuilder {
     }
 
     /** Asks a real `codex app-server` (`hooks/list`) whether it trusts the hook in this overlay. */
-    static probeWithAppServer(codexHome: string, cwd: string, env: NodeJS.ProcessEnv, identity?: { uid: number; gid?: number }): Promise<'trusted' | 'untrusted' | 'missing'> {
+    static probeWithAppServer(codexHome: string, cwd: string, env: NodeJS.ProcessEnv, identity?: { uid: number; gid?: number }, codexBin: string = 'codex'): Promise<'trusted' | 'untrusted' | 'missing'> {
         return new Promise((resolve, reject) => {
-            const child = spawn('codex', ['app-server'], { cwd, env: { ...env, CODEX_HOME: codexHome }, stdio: ['pipe', 'pipe', 'ignore'],
+            const child = spawn(codexBin, ['app-server'], { cwd, env: { ...env, CODEX_HOME: codexHome }, stdio: ['pipe', 'pipe', 'ignore'],
                 ...(identity ? { uid: identity.uid, gid: identity.gid ?? identity.uid } : {}) });
             let buffer = '';
             let done = false;

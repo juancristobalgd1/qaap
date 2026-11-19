@@ -96,6 +96,21 @@ export function resolvePiTuiLoginInput(provider: string): readonly QaapAgentLogi
     ];
 }
 
+/**
+ * `agy` (Antigravity CLI 1.5.9-1.5.12) without a session opens a "Select login method" picker whose first,
+ * preselected entry is `Google OAuth`; Enter prints the authorization URL as an OSC-8 hyperlink (whole, even
+ * when the 80-column TUI wraps it) and waits. The URL's `redirect_uri` is Google-hosted
+ * (`antigravity.google/oauth-callback`), so the CLI learns the result from Google's servers and the sign-in
+ * can be finished in any browser, including the user's phone: nothing is pasted back.
+ */
+export const QAAP_AGY_TUI_LOGIN_COMMAND = 'agy';
+const AGY_LOGIN_PICKER_PATTERN = 'Select login method';
+
+/** Enter on the preselected `Google OAuth` entry, once the picker is drawn (sent anyway after 8 s). */
+export const QAAP_AGY_TUI_LOGIN_INPUT: readonly QaapAgentLoginInputStep[] = [
+    { text: '\r', waitFor: AGY_LOGIN_PICKER_PATTERN, fallbackMs: 8_000 },
+];
+
 /** A deliberate route for the Work Hub Connect action. */
 export type QaapAgentConnectionFlow =
     /** `env`: exported for the login command only (OpenCode's catalog URL, Copilot's auto-update switch). */
@@ -108,10 +123,12 @@ export type QaapAgentConnectionFlow =
     | {
         readonly kind: 'tui-login';
         readonly command: string;
-        readonly provider: string;
+        /** Pi only: the account provider typed after `/login`. */
+        readonly provider?: string;
         readonly input: readonly QaapAgentLoginInputStep[];
         readonly fallbackCommand: string;
-        readonly followUp: string;
+        /** Pi only: what to type inside the CLI in a visible terminal (`/login`). */
+        readonly followUp?: string;
         /** Environment for the login command only (Pi: `PI_HYPERLINKS=1`). */
         readonly env: Readonly<Record<string, string>>;
     }
@@ -149,6 +166,16 @@ export function resolveAgentConnectionFlow(
     const bin = resolveInteractiveAgentCliBin(normalized, options?.cliBin);
     if (!bin) {
         return { kind: 'unsupported' };
+    }
+    if (normalized === 'antigravity' && bin === 'agy') {
+        // No login subcommand, but the Google OAuth picker is driven like Pi's `/login`.
+        return {
+            kind: 'tui-login',
+            command: QAAP_AGY_TUI_LOGIN_COMMAND,
+            input: QAAP_AGY_TUI_LOGIN_INPUT,
+            fallbackCommand: bin,
+            env: {},
+        };
     }
     const tenantCommand = normalized === 'opencode'
         ? 'opencode auth login'

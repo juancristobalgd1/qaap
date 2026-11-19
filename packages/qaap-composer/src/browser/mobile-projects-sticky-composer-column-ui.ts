@@ -19,6 +19,7 @@ import { attachStickyComposerSyntaxHighlight } from '../common/qaap-sticky-compo
 import { formatQaiqModelSelectionLabel } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
 import { populateAgentToolbarButton } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { QaapAgentEffort } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
+import { QaapElementBoundDisposables } from '@theia/qaap-shared-core/lib/common/qaap-element-bound-disposables';
 import { resolveComposerEffortLevel } from '../common/qaap-composer-effort';
 import { formatQaiqModelIdShortLabel } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
 import { QAAP_MODEL_LABELS_CHANGED_EVENT } from './mobile-projects-sticky-composer-agents-ui';
@@ -38,6 +39,9 @@ import {
 import {
     createStickyComposerSendIcon,
 } from './mobile-projects-sticky-composer-send-icon';
+
+/** Window listeners of composer agent pills, released once their pill leaves the DOM. */
+const modelLabelListeners = new QaapElementBoundDisposables();
 
 export interface MobileProjectsStickyComposerColumnHost {
     stickyComposerAgentsUi: import('./mobile-projects-sticky-composer-agents-ui').MobileProjectsStickyComposerAgentsUi;
@@ -222,6 +226,8 @@ export class MobileProjectsStickyComposerColumnUi {
             paintAgentPill();
         };
         window.addEventListener(QAAP_MODEL_LABELS_CHANGED_EVENT, repaintOnLabels);
+        // The labels event is rare: without this the listener (and the whole composer it closes over) outlives every re-render.
+        modelLabelListeners.add(agentBtn, Disposable.create(() => window.removeEventListener(QAAP_MODEL_LABELS_CHANGED_EVENT, repaintOnLabels)));
         this.host.stickyComposerAgentsUi.warmModelLabels(agentId);
         if (options.agentLocked) {
             agentBtn.classList.add('theia-mod-locked');
@@ -408,7 +414,9 @@ export class MobileProjectsStickyComposerColumnUi {
         const composerEdgeFades = attachStickyComposerInputEdgeFades(input);
 
         if (options.getMentionOptions || options.getVariableOptions || options.getSkillOptions || options.getSlashMenuSections) {
-            attachStickyComposerMentionUi({
+            // Its window / visualViewport listeners were never removed (the handle was dropped), so every
+            // composer render stayed reachable from the window. Release them once the input leaves the DOM.
+            const mentionUi = attachStickyComposerMentionUi({
                 inputWrap: inputPanel,
                 input,
                 getMentionOptions: options.getMentionOptions ?? (() => []),
@@ -430,6 +438,7 @@ export class MobileProjectsStickyComposerColumnUi {
                 attachScrollFades: scroller => attachQaapScrollEdgeFades(scroller),
                 variableButtonTitle: nls.localize('qaap/mobileProjects/stickyComposerVariable', 'Insert variable (#)'),
             });
+            modelLabelListeners.add(input, Disposable.create(() => mentionUi.dispose()));
         }
 
         let submitInFlight = false;

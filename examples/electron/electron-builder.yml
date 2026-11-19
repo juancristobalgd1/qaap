@@ -1,0 +1,117 @@
+# Installers of the Qaap desktop app (UNSIGNED for now; see docs/HANDOFF.md "Desktop installers (unsigned)").
+#
+# Run from examples/electron after a production bundle:
+#   npm run bundle:production && npx electron-builder --config electron-builder.yml --publish never
+# The release workflow (.github/workflows/qaap-desktop-release.yml) does exactly that, once per platform.
+# The version comes from the release tag: `-c.extraMetadata.version=<X.Y.Z>` (package.json carries the Theia version).
+appId: dev.qaaq.desktop
+productName: Qaap
+copyright: Copyright (C) 2026 Qaap
+# The backend forks plugin hosts and ships native helpers (ripgrep, node-pty, keytar); keep the files unpacked.
+asar: false
+# Native modules are rebuilt for Electron by `theia rebuild:electron` (npm run rebuild), not by electron-builder.
+npmRebuild: false
+nodeGypRebuild: false
+buildDependenciesFromSource: false
+electronVersion: 42.8.1
+
+directories:
+  output: build/installers
+  buildResources: build-resources
+
+# The frontend and the backend are bundled into lib/ (esbuild). What the app still reads from node_modules at
+# run time:
+#  - the files the Qaap packages ship beside their compiled output (login page, media, landing assets, system
+#    skills, sandbox helpers), located by `findQaapPackageFile`;
+#  - the platform's @parcel/watcher-<platform>-<arch> prebuild, which the bundled file watcher loads with a
+#    computed `require()` (without it every file watcher fails with "subscribe is not a function").
+# Nothing else from node_modules is needed: the rest is inside the bundle or is build tooling.
+files:
+  - package.json
+  - lib/**/*
+  - resources/**/*
+  - '!**/*.map'
+  - node_modules/@theia/qaap-*/package.json
+  - node_modules/@theia/qaap-*/lib/**/*
+  - node_modules/@theia/qaap-*/resources/**/*
+  - '!node_modules/@theia/qaap-*/lib/**/*.spec.js'
+  - '!node_modules/@theia/qaap-*/lib/**/*.d.ts'
+  - '!node_modules/@theia/qaap-*/lib/**/*.map'
+  - '!node_modules/@theia/qaap-*/node_modules/**/*'
+  - '!node_modules/!(@theia|@parcel)/**/*'
+  - '!node_modules/@theia/!(qaap-*)/**/*'
+  - '!node_modules/@parcel/!(watcher-*)/**/*'
+  - '!node_modules/.bin'
+
+# `extraResources` land in <install>/resources; the app points THEIA_DEFAULT_PLUGINS at resources/plugins
+# (qaap-packaged-runtime-environment.ts). `npm run download:plugins` fills ../../plugins (CI does it before packaging).
+extraResources:
+  - from: ../../plugins
+    to: plugins
+    filter:
+      - '**/*'
+  - from: ../../scripts/qaap-guarded-bash.mjs
+    to: app/scripts/qaap-guarded-bash.mjs
+
+extraMetadata:
+  # Flip to true (and enable macOS auto-update) only once the macOS build is signed and notarized.
+  qaapDesktopSigned: false
+  homepage: https://qaaq.dev
+  author:
+    name: Qaap
+    email: noreply@qaaq.dev
+
+publish:
+  provider: github
+  owner: juancristobalgd1
+  repo: qaap
+  releaseType: prerelease
+
+mac:
+  category: public.app-category.developer-tools
+  icon: icon.png
+  # Unsigned: no identity, no hardened runtime, no notarization (see "PENDIENTE: firmar").
+  identity: null
+  hardenedRuntime: false
+  gatekeeperAssess: false
+  notarize: false
+  target:
+    - dmg
+  artifactName: Qaap-mac-${arch}.${ext}
+
+dmg:
+  sign: false
+
+win:
+  icon: icon.png
+  target:
+    - target: nsis
+      arch: x64
+  # No code-signing certificate yet.
+  signAndEditExecutable: false
+  artifactName: Qaap-win-x64.${ext}
+
+nsis:
+  oneClick: true
+  perMachine: false
+  deleteAppDataOnUninstall: false
+  artifactName: Qaap-win-x64.${ext}
+
+linux:
+  icon: icon.png
+  category: Development
+  maintainer: Qaap <noreply@qaaq.dev>
+  synopsis: Qaap desktop app
+  executableName: qaap
+  target:
+    - target: AppImage
+      arch: x64
+    - target: deb
+      arch: x64
+  artifactName: Qaap-linux-x86_64.${ext}
+
+appImage:
+  artifactName: Qaap-linux-x86_64.${ext}
+
+deb:
+  artifactName: Qaap-linux-x86_64.${ext}

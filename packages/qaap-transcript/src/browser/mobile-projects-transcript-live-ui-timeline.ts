@@ -1,6 +1,7 @@
 import type { MobileProjectsTranscriptLiveUiContext } from './mobile-projects-transcript-live-ui-context';
 // Extracted from mobile-projects-transcript-live-ui.ts
 
+import { nextTranscriptPreviewPollMisses } from '../common/qaap-transcript-preview-poll-backoff';
 import { qaapStopAck } from '@theia/qaap-shared-core/lib/browser/qaap-stop-ack';
 import { Event as TheiaEvent } from '@theia/core/lib/common/event';
 import {
@@ -370,9 +371,15 @@ export async function refreshTranscriptPreviewOfferExtracted(ctx: MobileProjects
         try {
             ctx.kickoffTranscriptDevPreviewBootstrap(conv);
             const readyUrl = await ctx.resolveReadyTranscriptPreviewUrl(conv);
+            ctx.transcriptPreviewPollMisses = nextTranscriptPreviewPollMisses(
+                ctx.transcriptPreviewPollMisses,
+                readyUrl,
+                ctx.transcriptPreviewOfferAnnouncedUrl,
+            );
+            ctx.transcriptPreviewPollIntervalMs = ctx.transcriptPreviewPollMisses === 0
+                ? TRANSCRIPT_PREVIEW_POLL_BASE_MS
+                : ctx.resolveTranscriptPreviewPollIntervalMs();
             if (readyUrl) {
-                ctx.transcriptPreviewPollMisses = 0;
-                ctx.transcriptPreviewPollIntervalMs = TRANSCRIPT_PREVIEW_POLL_BASE_MS;
                 await ctx.openReadyTranscriptPreviewUrl(readyUrl, conv);
                 const project = ctx.host.transcriptOpenProject;
                 if (project && project.previewUrl !== readyUrl) {
@@ -381,8 +388,6 @@ export async function refreshTranscriptPreviewOfferExtracted(ctx: MobileProjects
                     void ctx.host.projectsService.recordProjectPreviewUrl(updated, readyUrl).catch(() => undefined);
                 }
             } else {
-                ctx.transcriptPreviewPollMisses += 1;
-                ctx.transcriptPreviewPollIntervalMs = ctx.resolveTranscriptPreviewPollIntervalMs();
                 const bootstrap = ctx.host.projectBootstrap;
                 if (bootstrap) {
                     void ctx.maybeReportTranscriptPreviewBootstrapFailure(conv, bootstrap);

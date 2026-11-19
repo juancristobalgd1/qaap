@@ -32,6 +32,7 @@ import {
 } from '../common/qaap-verification-scope';
 import {
     buildAgentReviewPrompt,
+    groundAgentReviewVerdict,
     parseAgentReviewVerdict,
     parseGitNumstat,
     resolveAgentReviewMode,
@@ -560,7 +561,7 @@ export async function reviewSuccessfulAgentTask(
     const diffForReview = sensitiveChanges.length > 0
         ? `${diff.stdout}\n# gitignored sensitive files CHANGED by this task (not shown above — inspect them):\n${sensitiveChanges.map(name => `#   ${name}`).join('\n')}\n`
         : diff.stdout;
-    const prompt = buildAgentReviewPrompt({ originalCommand: task.command, diff: diffForReview });
+    const prompt = buildAgentReviewPrompt({ originalCommand: task.command, diff: diffForReview, verification });
     // Composer tasks share the workflow judge's brain: routing picks an INDEPENDENT reviewer
     // (not the agent that wrote the change), health cooldowns skip backends whose CLI is down,
     // and an infra-failed reviewer fails over to the next candidate instead of burning the
@@ -611,7 +612,9 @@ export async function reviewSuccessfulAgentTask(
         const verdict = parseAgentReviewVerdict(`${result.stdout}\n${result.stderr}`);
         if (verdict) {
             deps.agentHealth?.noteSuccess(reviewerId);
-            return { status: verdict.status, reason: verdict.reason, agentId: reviewerId };
+            // A rejection without a concrete path:line defect is recorded as approved with notes.
+            const grounded = groundAgentReviewVerdict(verdict);
+            return { status: grounded.status, reason: grounded.reason, agentId: reviewerId };
         }
         if (result.exitCode !== 0 && !result.timedOut) {
             // The reviewer CLI itself died (quota, auth, broken install): cool it down and try

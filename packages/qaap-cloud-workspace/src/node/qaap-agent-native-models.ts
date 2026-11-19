@@ -10,6 +10,7 @@ import * as path from 'path';
 import type { QaapQaiqModelOption } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { normalizeAntigravityCliBin, type QaapAntigravityCliBin } from '@theia/qaap-shared-core/lib/common/qaap-antigravity-cli';
 import { NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
+import { resolveQaapHarnessBaseId } from '@theia/qaap-shared-core/lib/common/qaap-harness-launch-settings';
 import { isQaapDesktopRuntime } from '@theia/qaap-adapters/lib/common/qaap-desktop-runtime';
 import { resolveAgentSpawnIdentity } from './qaap-agent-spawn-identity';
 import { QaapTenantAgentStorageEnv } from './qaap-tenant-agent-storage-env';
@@ -98,14 +99,20 @@ function usesCuratedAntigravityCatalog(agentId: string, antigravityBin: QaapAnti
     return agentId === ANTIGRAVITY_AGENT_ID && antigravityCatalogBin(antigravityBin) === 'gemini';
 }
 
-function nativeModelCacheKey(agentId: string, ownerLogin: string | undefined, antigravityBin?: QaapAntigravityCliBin): string {
+/**
+ * Cache key of one harness catalog. `harnessKey` is the harness id as the picker names it: the base id
+ * (`codex`) or a harness instance (`codex#2`). An instance has its own key, so its catalog (discovered with
+ * its own binary and folder, see the runner's spawner) never answers for the base, or the other way round.
+ */
+function nativeModelCacheKey(harnessKey: string, ownerLogin: string | undefined, antigravityBin?: QaapAntigravityCliBin): string {
+    const agentId = resolveQaapHarnessBaseId(harnessKey);
     if (agentId === ANTIGRAVITY_AGENT_ID) {
-        return `${agentId}:${antigravityCatalogBin(antigravityBin)}`;
+        return `${harnessKey}:${antigravityCatalogBin(antigravityBin)}`;
     }
     if (!ACCOUNT_SCOPED_DISCOVERY_AGENT_IDS.has(agentId)) {
-        return agentId;
+        return harnessKey;
     }
-    return `${agentId}:${ownerLogin?.trim().toLowerCase() ?? ''}`;
+    return `${harnessKey}:${ownerLogin?.trim().toLowerCase() ?? ''}`;
 }
 
 /**
@@ -117,10 +124,11 @@ export function listNativeAgentModels(
     ownerLogin?: string,
     antigravityBin?: QaapAntigravityCliBin,
 ): QaapQaiqModelOption[] {
-    const normalized = agentId?.trim().toLowerCase();
-    if (!normalized || NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS.has(normalized)) {
+    const harnessKey = agentId?.trim().toLowerCase();
+    if (!harnessKey || NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS.has(resolveQaapHarnessBaseId(harnessKey))) {
         return [];
     }
+    const normalized = resolveQaapHarnessBaseId(harnessKey);
     // The browser and cloud packages can be rebuilt independently. If their capability
     // sets are temporarily out of sync, keep a known native agent visible instead of
     // returning an empty picker and making the CLI look uninstalled.
@@ -130,12 +138,12 @@ export function listNativeAgentModels(
     if (usesCuratedAntigravityCatalog(normalized, antigravityBin)) {
         return listStaticNativeAgentModels(normalized, antigravityBin);
     }
-    const key = nativeModelCacheKey(normalized, ownerLogin, antigravityBin);
+    const key = nativeModelCacheKey(harnessKey, ownerLogin, antigravityBin);
     const entry = cache.get(key);
     if (entry) {
         // Serve what we have at once; a stale entry is refreshed in the background.
         if (isNativeModelEntryStale(entry)) {
-            void prepareNativeAgentModels(normalized, { ownerLogin, antigravityBin });
+            void prepareNativeAgentModels(harnessKey, { ownerLogin, antigravityBin });
         }
         return entry.models;
     }
@@ -144,7 +152,7 @@ export function listNativeAgentModels(
         return listStaticNativeAgentModels(normalized, antigravityBin);
     }
     // Cold cache: answer with the curated catalog now and let the CLI discovery replace it.
-    void prepareNativeAgentModels(normalized, { ownerLogin, antigravityBin });
+    void prepareNativeAgentModels(harnessKey, { ownerLogin, antigravityBin });
     return listStaticNativeAgentModels(normalized, antigravityBin);
 }
 
@@ -157,19 +165,25 @@ export function prepareNativeAgentModels(
     agentId: string | undefined,
     options: NativeModelDiscoveryOptions = {},
 ): Promise<QaapQaiqModelOption[]> {
-    const normalized = agentId?.trim().toLowerCase();
-    if (!normalized) {
+    const harnessKey = agentId?.trim().toLowerCase();
+    if (!harnessKey) {
         return Promise.resolve([]);
     }
+    const normalized = resolveQaapHarnessBaseId(harnessKey);
     const bin = options.antigravityBin;
     if (!agentUsesNativeModelCatalog(normalized) || NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS.has(normalized)
         || usesCuratedAntigravityCatalog(normalized, bin)) {
         return Promise.resolve(listStaticNativeAgentModels(normalized, bin));
     }
-    const key = nativeModelCacheKey(normalized, options.ownerLogin, bin);
+    const key = nativeModelCacheKey(harnessKey, options.ownerLogin, bin);
     const entry = cache.get(key);
     if (entry && !isNativeModelEntryStale(entry)) {
         return Promise.resolve(entry.models);
+    }
+    if (harnessKey !== normalized && !options.spawner) {
+        // An instance's catalog is discovered only through its own binary and folder (the runner's instance
+        // spawner). Without one, the base binary must not answer for it: serve what it has, else the curated list.
+        return Promise.resolve(entry?.models ?? listStaticNativeAgentModels(normalized, bin));
     }
     if (ACCOUNT_SCOPED_DISCOVERY_AGENT_IDS.has(normalized) && !options.spawner) {
         return Promise.resolve(entry?.models ?? listStaticNativeAgentModels(normalized, bin));
@@ -215,13 +229,15 @@ export function clearNativeAgentModelCache(): void {
  * Without an owner every owner's entry for that agent goes.
  */
 export function invalidateNativeAgentModels(agentId: string, ownerLogin?: string, antigravityBin?: QaapAntigravityCliBin): void {
-    const normalized = agentId.trim().toLowerCase();
-    // Without an owner (or, for Antigravity, without a resolved bin) every catalog of that agent goes.
+    // A harness instance (`codex#2`) has its own catalog key: only its entries go, never the base's.
+    const harnessKey = agentId.trim().toLowerCase();
+    const normalized = resolveQaapHarnessBaseId(harnessKey);
+    // Without an owner (or, for Antigravity, without a resolved bin) every catalog of that harness goes.
     const wildcard = (ACCOUNT_SCOPED_DISCOVERY_AGENT_IDS.has(normalized) && ownerLogin === undefined)
         || (normalized === ANTIGRAVITY_AGENT_ID && antigravityBin === undefined);
     const keys = wildcard
-        ? [...new Set([...cache.keys(), ...discoveries.keys()])].filter(key => key.startsWith(`${normalized}:`))
-        : [nativeModelCacheKey(normalized, ownerLogin, antigravityBin)];
+        ? [...new Set([...cache.keys(), ...discoveries.keys()])].filter(key => key.startsWith(`${harnessKey}:`))
+        : [nativeModelCacheKey(harnessKey, ownerLogin, antigravityBin)];
     for (const key of keys) {
         cache.delete(key);
         discoveries.delete(key);

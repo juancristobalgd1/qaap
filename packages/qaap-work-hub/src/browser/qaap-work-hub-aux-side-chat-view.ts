@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { Disposable } from '@theia/core/lib/common/disposable';
+import { QAAP_AGENT_SIGNED_IN_EVENT } from './qaap-agent-signed-in-event';
 import { nls } from '@theia/core/lib/common/nls';
 import type { AIVariableResolutionRequest } from '@theia/ai-core';
 import type { MobileComposerAttachHandlers } from '@theia/qaap-composer/lib/browser/qaap-mobile-composer-device-attach';
@@ -383,6 +384,7 @@ export class QaapWorkHubAuxSideChatView implements Disposable {
         }
         this.visible = true;
         this.live = this.host.subscribeLive(frame => this.onLiveFrame(frame));
+        this.view().addEventListener(QAAP_AGENT_SIGNED_IN_EVENT, this.onAgentSignedIn);
         this.renderContext();
         this.loadModels();
         if (this.conversationId) {
@@ -394,6 +396,7 @@ export class QaapWorkHubAuxSideChatView implements Disposable {
     hide(): void {
         this.visible = false;
         this.closePicker();
+        this.view().removeEventListener(QAAP_AGENT_SIGNED_IN_EVENT, this.onAgentSignedIn);
         this.live?.dispose();
         this.live = undefined;
         this.clearRefreshTimer();
@@ -832,6 +835,18 @@ export class QaapWorkHubAuxSideChatView implements Disposable {
         const option = this.models?.find(candidate => candidate.agentId === agentId);
         return option?.agentLabel ?? agentId;
     }
+
+    /** A harness sign-in finished (the Connect dialog's «Sign in»): reload the models it unlocks and redraw. */
+    protected readonly onAgentSignedIn = (): void => {
+        if (!this.visible) {
+            return;
+        }
+        this.models = undefined;
+        this.loadModels();
+        if (this.conversationId) {
+            this.scheduleRefresh(0);
+        }
+    };
 
     protected loadModels(): void {
         if (this.models || this.modelsLoading) {

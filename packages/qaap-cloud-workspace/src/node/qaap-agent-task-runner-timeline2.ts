@@ -637,6 +637,8 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                     cwd: task.cwd,
                     folderTrusted: ctx.isProjectFolderTrusted(task.ownerLogin, task.cwd),
                     sourceCodexHome: resolveCodexAgentHome(childEnv),
+                    // A harness instance's trust check runs its own Codex binary (undefined keeps the PATH `codex`).
+                    codexBin: launchPlan.binaryPath,
                     askTtlSec: Number(childEnv.QAAP_GATE_ASK_TTL_SEC) || 0,
                     agentIdentity: ctx.resolveAgentSpawnIdentity(task.cwd),
                     // In a task sandbox Codex has its own /tmp: the overlay must sit where it sees the same path.

@@ -16,6 +16,8 @@ import { Widget } from '@theia/core/shared/@lumino/widgets';
 import { QAAP_AGENT_LOGIN_CHALLENGE_TIMEOUT_MS, QAAP_AGENT_LOGIN_PREPARE_TIMEOUT_MS } from '@theia/qaap-agents-ui/lib/common/qaap-agent-login-flow';
 import type { MobileProjectsPanelContext } from './mobile-projects-panel-context';
 import { openAgentSignInTerminalExtracted } from './mobile-projects-panel-timeline';
+import { openAgentLoginDialogInBackground } from './qaap-agent-login-background';
+import { QAAP_AGENT_SIGNED_IN_EVENT } from './qaap-agent-signed-in-event';
 import { useSuiteAnimationFrameStub, useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 disableImportJSDOM();
@@ -546,5 +548,256 @@ describe('Copilot Connect dialog: sign-in attestation', () => {
         expect(typed).to.contain('node "$qaap_copilot_entry" login --device-code');
         await clock.tickAsync(10);
         expect(events.slice(events.indexOf('attest') + 1), 'the picker is refreshed after the attestation landed').to.include('refresh');
+    });
+});
+
+/** Redacted: the real URL carries a client id, a PKCE challenge and an OAuth `state`. */
+const AGY_AUTH_URL = 'https://accounts.google.com/o/oauth2/auth?access_type=offline&client_id=REDACTED.apps.googleusercontent.com'
+    + '&code_challenge=REDACTED_CHALLENGE&code_challenge_method=S256&prompt=consent'
+    + '&redirect_uri=https%3A%2F%2Fantigravity.google%2Foauth-callback&response_type=code'
+    + '&scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcloud-platform+openid&state=REDACTED_STATE';
+
+/** agy 1.5.12 in the hidden (80-column) terminal: the login picker, then the URL as OSC-8 links on wrapped rows. */
+const AGY_SCREENS = {
+    picker: '\x1b[?25l\r\n ▄▀▀▄\r\n Welcome to the Antigravity CLI. You are currently not signed in.\r\n Select login method:\r\n'
+        + ' \x1b[36m> 1. Google OAuth\x1b[39m\r\n   2. Use a Google Cloud project\r\n \x1b[2m↑/↓ Navigate · enter Select\x1b[22m',
+    login: [
+        '\x1b[2K M ⣷  Signing in...',
+        ' Your browser should open automatically. If not:',
+        ...AGY_AUTH_URL.match(/.{1,78}/g)!.map(row => ` ${piLink(AGY_AUTH_URL, row)}`),
+        '',
+    ].join('\r\n'),
+};
+
+function createAgyTerminal(options: { readonly silentAfterEnter?: boolean; readonly noPicker?: boolean } = {}): FakeLoginTerminal {
+    return new FakeLoginTerminal((self, text) => {
+        if (text.includes('agy') && text.endsWith('\r')) {
+            self.print(`${text.replace(/\r$/, '')}\r\n`);
+            if (!options.noPicker) {
+                setTimeout(() => self.print(AGY_SCREENS.picker), 900);
+            }
+        } else if (text === '\r' && !options.silentAfterEnter) {
+            self.print(AGY_SCREENS.login);
+        }
+    });
+}
+
+describe('Antigravity (agy) Connect dialog: Google OAuth link captured from a hidden terminal', () => {
+
+    useSuiteJSDOM();
+    useSuiteAnimationFrameStub();
+
+    let clock: sinon.SinonFakeTimers;
+    let restoreWindowTimers: (() => void) | undefined;
+    let originalFetch: typeof globalThis.fetch | undefined;
+    let originalPlatform: PropertyDescriptor | undefined;
+    let agyConnected: boolean;
+    let probes: number;
+    let composerRefreshes: number;
+    let openedUrls: string[];
+    let restoreWindowOpen: (() => void) | undefined;
+    let consoleCalls: string[];
+    let consoleStubs: sinon.SinonStub[];
+
+    beforeEach(() => {
+        originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
+        Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+        clock = sinon.useFakeTimers({ now: 1_000_000, toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
+        const timerNames = ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] as const;
+        const previous = timerNames.map(name => [name, window[name]] as const);
+        for (const name of timerNames) {
+            (window as unknown as Record<string, unknown>)[name] = (globalThis as unknown as Record<string, unknown>)[name];
+        }
+        restoreWindowTimers = () => previous.forEach(([name, timer]) => (window as unknown as Record<string, unknown>)[name] = timer);
+        originalFetch = globalThis.fetch;
+        globalThis.fetch = (async () => ({
+            ok: true,
+            json: async () => ({ harnesses: [{ id: 'antigravity', installed: true, enabled: true, cliBin: 'agy' }] }),
+        } as unknown as Response)) as typeof globalThis.fetch;
+        agyConnected = false;
+        probes = 0;
+        composerRefreshes = 0;
+        openedUrls = [];
+        const originalOpen = window.open;
+        window.open = ((url?: string | URL) => {
+            openedUrls.push(String(url));
+            return null;
+        }) as typeof window.open;
+        restoreWindowOpen = () => window.open = originalOpen;
+        consoleCalls = [];
+        consoleStubs = (['log', 'info', 'warn', 'error', 'debug'] as const).map(method =>
+            sinon.stub(console, method).callsFake((...args: unknown[]) => {
+                consoleCalls.push(args.map(arg => typeof arg === 'string' ? arg : JSON.stringify(arg)).join(' '));
+            }));
+    });
+
+    afterEach(() => {
+        if (originalPlatform) {
+            Object.defineProperty(process, 'platform', originalPlatform);
+        }
+        for (const dialog of Array.from(document.querySelectorAll<HTMLButtonElement>('.theia-mobile-agent-login-dialog-close'))) {
+            dialog.click();
+        }
+        consoleStubs.forEach(stub => stub.restore());
+        globalThis.fetch = originalFetch!;
+        restoreWindowOpen?.();
+        restoreWindowTimers?.();
+        clock.restore();
+    });
+
+    const connect = (createTerminal: () => Promise<FakeLoginTerminal>): void => {
+        const project = { id: 'project-1', name: 'repo' };
+        const ctx = {
+            transcriptController: { state: { transcriptOpenProject: project } },
+            projectsService: { getProjectCwd: () => TENANT_CWD },
+            preparedCwdByProjectId: new Map<string, string>(),
+            createTranscriptTerminalViewServices: () => ({ resolveCwd: (cwd: string) => cwd, createTerminal }),
+            stickyComposerAgentsUi: {
+                refreshStickyComposerAgents: async () => {
+                    probes++;
+                    return true;
+                },
+                isAgentConnected: (agentId: string) => agentId === 'antigravity' && agyConnected,
+            },
+        } as unknown as MobileProjectsPanelContext;
+        openAgentSignInTerminalExtracted(ctx, 'antigravity');
+    };
+
+    const waitForChallenge = async (): Promise<void> => {
+        for (let elapsed = 0; elapsed < 25_000 && !document.querySelector('.theia-mobile-agent-login-dialog-url'); elapsed += 100) {
+            await clock.tickAsync(100);
+        }
+    };
+
+    const dialogText = (): string => document.querySelector('.theia-mobile-agent-login-dialog')?.textContent ?? '';
+
+    it('runs agy, picks Google OAuth, shows the whole link, waits and connects on the connection probe', async () => {
+        const terminal = createAgyTerminal();
+        connect(async () => terminal);
+        await waitForChallenge();
+
+        expect(terminal.sent[0]).to.contain('agy');
+        expect(terminal.sent.slice(1), 'only Enter on the preselected Google OAuth entry is typed').to.deep.equal(['\r']);
+        expect(document.querySelector('.theia-mobile-agent-login-dialog-code-input'), 'agy asks for no pasted code').to.equal(null);
+        expect(dialogSpinning(), 'waiting for the browser sign-in').to.equal(true);
+        expect(dialogStatus()).to.contain('Waiting for Antigravity');
+
+        dialogButton('Verification page')!.click();
+        expect(openedUrls, 'the URL the TUI wrapped across rows is opened whole').to.deep.equal([AGY_AUTH_URL]);
+
+        // Not connected yet: the dialog keeps waiting (the probe says "not connected" before and during the wait).
+        await clock.tickAsync(6_000);
+        expect(dialogSpinning()).to.equal(true);
+        expect(terminal.isDisposed).to.equal(false);
+
+        agyConnected = true;
+        // The probe runs every 2.5 s; the dialog closes itself 1.8 s after "connected".
+        for (let elapsed = 0; elapsed < 3_000 && !dialogStatus().includes('connected'); elapsed += 100) {
+            await clock.tickAsync(100);
+        }
+        expect(dialogStatus()).to.equal('Antigravity CLI connected');
+        expect(terminal.isDisposed, 'agy is closed once the session exists').to.equal(true);
+        expect(probes).to.be.greaterThan(1);
+        expect(consoleCalls.filter(call => /accounts\.google\.com|REDACTED_STATE|code_challenge/.test(call)), 'the URL never reaches console.*').to.deep.equal([]);
+    });
+
+    it('connects a caller without its own probe (the side chat) through the same refresh, and announces the sign-in', async () => {
+        const terminal = createAgyTerminal();
+        const signedIn: string[] = [];
+        const listener = (event: Event): void => { signedIn.push((event as CustomEvent<{ agentId: string }>).detail.agentId); };
+        window.addEventListener(QAAP_AGENT_SIGNED_IN_EVENT, listener);
+        try {
+            const ctx = {
+                transcriptController: { state: {} },
+                projectsService: { getProjectCwd: () => TENANT_CWD },
+                preparedCwdByProjectId: new Map<string, string>(),
+                createTranscriptTerminalViewServices: () => ({ resolveCwd: (cwd: string) => cwd, createTerminal: async () => terminal }),
+                stickyComposerAgentsUi: {
+                    refreshStickyComposerAgents: async () => { probes++; return true; },
+                    isAgentConnected: (agentId: string) => agentId === 'antigravity' && agyConnected,
+                },
+                transcriptComposerUi: { refreshTranscriptComposerAgents: async () => { composerRefreshes++; } },
+                stickyComposerRenderUi: { renderStickyComposer: () => undefined },
+            };
+            void openAgentLoginDialogInBackground(ctx, { id: 'project-1', name: 'repo' } as never, undefined, 'antigravity');
+            await waitForChallenge();
+            await clock.tickAsync(3_000);
+            expect(dialogSpinning()).to.equal(true);
+            expect(signedIn).to.deep.equal([]);
+            agyConnected = true;
+            for (let elapsed = 0; elapsed < 3_000 && !signedIn.length; elapsed += 100) {
+                await clock.tickAsync(100);
+            }
+            expect(signedIn).to.deep.equal(['antigravity']);
+            expect(probes).to.be.greaterThan(1);
+            expect(composerRefreshes, 'the composer catalog is reloaded too').to.be.greaterThan(0);
+        } finally {
+            window.removeEventListener(QAAP_AGENT_SIGNED_IN_EVENT, listener);
+        }
+    });
+
+    it('never prints the authorization URL in the dialog once the sign-in expired, and offers Retry', async () => {
+        const terminal = createAgyTerminal();
+        connect(async () => terminal);
+        await waitForChallenge();
+        await clock.tickAsync(5 * 60_000 + 2_000);
+        expect(dialogStatus()).to.equal('Sign-in timed out. Try again.');
+        expect(dialogText()).to.not.contain('accounts.google.com');
+        expect(document.querySelector('.theia-mobile-agent-login-dialog-output')).to.equal(null);
+        expect(dialogButton('Retry')).to.not.equal(undefined);
+        expect(terminal.isDisposed).to.equal(true);
+    });
+
+    it('falls back to the Qaap Desktop instructions, with no link and no terminal output, when agy prints no URL', async () => {
+        const terminal = createAgyTerminal({ silentAfterEnter: true });
+        connect(async () => terminal);
+        const startedAt = Date.now();
+        while (dialogSpinning() && Date.now() - startedAt <= 40_000) {
+            await clock.tickAsync(500);
+        }
+        expect(Date.now() - startedAt, 'the link deadline is 20 s').to.be.within(19_000, 25_000);
+        expect(dialogStatus()).to.contain('Qaap desktop app');
+        expect(document.querySelector('.theia-mobile-agent-login-dialog-url')).to.equal(null);
+        expect(document.querySelector('.theia-mobile-agent-login-dialog-output')).to.equal(null);
+        expect(terminal.isDisposed).to.equal(true);
+    });
+
+    it('does not fail while agy shows its "Select login method" question: the driver answers it', async () => {
+        const terminal = createAgyTerminal();
+        connect(async () => terminal);
+        await clock.tickAsync(2_000);
+        expect(dialogStatus(), 'the picker alone is no stall').to.not.contain('stopped to ask a question');
+        await waitForChallenge();
+        expect(document.querySelector('.theia-mobile-agent-login-dialog-url')).to.not.equal(null);
+    });
+
+    it('kills agy when the dialog is cancelled', async () => {
+        const terminal = createAgyTerminal();
+        connect(async () => terminal);
+        await waitForChallenge();
+        expect(terminal.isDisposed).to.equal(false);
+        document.querySelector<HTMLButtonElement>('.theia-mobile-agent-login-dialog-cancel')!.click();
+        expect(terminal.isDisposed).to.equal(true);
+        const sentBefore = terminal.sent.length;
+        await clock.tickAsync(10_000);
+        expect(terminal.sent.length).to.equal(sentBefore);
+    });
+
+    it('starts a single agy per harness: a second Connect while one is open opens nothing', async () => {
+        let created = 0;
+        const factory = async (): Promise<FakeLoginTerminal> => {
+            created++;
+            return createAgyTerminal();
+        };
+        connect(factory);
+        connect(factory);
+        await waitForChallenge();
+        expect(created).to.equal(1);
+        expect(document.querySelectorAll('.theia-mobile-agent-login-dialog')).to.have.length(1);
+        // After the dialog closes, a new Connect works again.
+        document.querySelector<HTMLButtonElement>('.theia-mobile-agent-login-dialog-close')!.click();
+        connect(factory);
+        await clock.tickAsync(500);
+        expect(created).to.equal(2);
     });
 });

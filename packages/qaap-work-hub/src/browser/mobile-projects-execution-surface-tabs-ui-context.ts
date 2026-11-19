@@ -35,6 +35,7 @@ export type MobileProjectsExecutionSurfaceTabsUiContextMember =
     | 'isRenderedOnScreen'
     | 'mountExecutionSurfaceTabContent'
     | 'mountTranscriptSurfaceTab'
+    | 'openMobileAuxSheet'
     | 'openExecutionSurfaceSidebar'
     | 'openExecutionTabOverflowMenu'
     | 'positionExecutionTabOverflowMenu'

@@ -61,6 +61,28 @@ describe('QaapCodexGateOverlayBuilder', () => {
 
     const trusted = new QaapCodexGateOverlayBuilder(async () => 'trusted');
 
+    it('asks the trust probe with a harness instance binary when one is given', async () => {
+        const seen: Array<string | undefined> = [];
+        const builder = new QaapCodexGateOverlayBuilder(async (_home, _cwd, _env, _identity, codexBin) => {
+            seen.push(codexBin);
+            return 'trusted';
+        });
+        const overlay = await builder.create(options({ codexBin: '/opt/codex-work/codex' }));
+        overlay.dispose();
+        expect(seen).to.deep.equal(['/opt/codex-work/codex']);
+    });
+
+    it('keeps the PATH codex for the base harness (no binary given)', async () => {
+        const seen: Array<string | undefined> = [];
+        const builder = new QaapCodexGateOverlayBuilder(async (_home, _cwd, _env, _identity, codexBin) => {
+            seen.push(codexBin);
+            return 'trusted';
+        });
+        const overlay = await builder.create(options());
+        overlay.dispose();
+        expect(seen).to.deep.equal([undefined]);
+    });
+
     it('writes auth.json (0600), hooks.json with the gate hook and a config with the trusted hash', async () => {
         const overlay = await trusted.create(options());
         // Canonical path: Codex keys hook trust by it (macOS tmp is a symlink).

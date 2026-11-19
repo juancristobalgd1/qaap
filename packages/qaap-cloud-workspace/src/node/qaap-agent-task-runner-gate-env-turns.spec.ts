@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import type { QaapAgentTask } from '../common/qaap-agent-task';
+import type { QaapAgentTask, QaapAgentTaskReview, QaapAgentTaskVerification } from '../common/qaap-agent-task';
 import type { QaapGenericCommandResult } from './qaap-agent-task-runner';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { runAgentVerificationFixTurnExtracted } from './qaap-agent-task-runner-activity2';
@@ -86,6 +86,45 @@ describe('gate credentials for harness runs inside verification', () => {
             expect(reviewer.env.QAAP_GATE_TOKEN).to.be.a('string');
             expect((reviewer.live as { oneShot?: unknown }).oneShot).to.deep.equal({ agentId: 'pi' });
             expect(tokens.resolve(reviewer.env.QAAP_GATE_TOKEN)).to.equal(undefined);
+        });
+
+        /** Runs the review with a FIXTURE reviewer output (no real reviewer agent) and captures the prompt. */
+        async function reviewWithFixture(reviewerStdout: string, verification?: QaapAgentTaskVerification): Promise<{ review: QaapAgentTaskReview | undefined; prompt: string }> {
+            let prompt = '';
+            const review = await reviewSuccessfulAgentTask(task, verification, {
+                isTaskStillRunning: () => true,
+                resolveTaskAgentId: () => 'pi',
+                buildChildEnv: () => ({ PATH: '/bin' }),
+                hasEditedFilesForVerification: async () => true,
+                runGenericCommand: async (command: string) => command.startsWith('git')
+                    ? { ...ok, stdout: 'diff --git a/server.js b/server.js' }
+                    : { ...ok, stdout: reviewerStdout },
+                changedSensitiveFiles: () => [],
+                resolveReviewerCandidates: () => ['pi'],
+                buildAgentCommand: (text: string) => {
+                    prompt = text;
+                    return { command: 'pi review', agentId: 'pi' };
+                },
+                appendAndFireOutput: () => undefined,
+            } as unknown as Parameters<typeof reviewSuccessfulAgentTask>[2]);
+            return { review, prompt };
+        }
+
+        it('a fixture rejection with no file:line defect is recorded as approved with notes (not blocking)', async () => {
+            const { review } = await reviewWithFixture('@@QAAP:VERDICT@@ fail server.js rewrites');
+            expect(review?.status).to.equal('passed');
+            expect(review?.reason).to.contain('approved with notes');
+        });
+
+        it('a fixture rejection citing a real syntax error stays a blocking rejection', async () => {
+            const { review } = await reviewWithFixture('@@QAAP:VERDICT@@ fail src/a.js:3 — SyntaxError: Unexpected token )');
+            expect(review?.status).to.equal('failed');
+            expect(review?.reason).to.equal('src/a.js:3 — SyntaxError: Unexpected token )');
+        });
+
+        it('the reviewer prompt carries Qaap check evidence for the turn', async () => {
+            const { prompt } = await reviewWithFixture('@@QAAP:VERDICT@@ pass ok', { status: 'passed', command: 'node --check src/a.js', attempts: 0 });
+            expect(prompt).to.contain('Qaap checks for this turn: PASSED — `node --check src/a.js`');
         });
     });
 });

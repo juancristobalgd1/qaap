@@ -21,6 +21,7 @@ import {
     resolveTranscriptCodeLanguage,
 } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-code-view';
 import { enhanceTranscriptCaptureDirectives } from './qaap-transcript-capture-pending-ui';
+import { parseTranscriptPullRequestUrl } from './qaap-transcript-pull-request-chips';
 import { buildQaapUiFenceElement, isQaapUiFenceLanguage, parseQaapUiSpec, QAAP_UI_ROOT_CLASS } from './qaap-json-render-ui';
 
 export const TRANSCRIPT_CODE_BLOCK_CARD_CLASS = 'theia-mobile-agent-code-block-card';
@@ -460,6 +461,10 @@ function tryLinkPreviewFromAnchor(anchor: HTMLAnchorElement): TranscriptToolUiLi
     if (!href || !/^https?:\/\//i.test(href) || isProviderApiEndpointHref(href)) {
         return undefined;
     }
+    // A pull request URL becomes an inline chip that opens it in the right panel, not a card.
+    if (parseTranscriptPullRequestUrl(href)) {
+        return undefined;
+    }
     return {
         kind: 'link_preview',
         href,
@@ -513,6 +518,10 @@ export function enhanceTranscriptMarkdownRichContent(host: HTMLElement): void {
         }
         const anchor = node.firstElementChild;
         if (!anchor || anchor.tagName !== 'A') {
+            return;
+        }
+        // Only a paragraph that IS the link becomes a card: "see PR #5 and <link>" must keep its text.
+        if ((node.textContent ?? '').trim() !== (anchor.textContent ?? '').trim()) {
             return;
         }
         const payload = tryLinkPreviewFromAnchor(anchor as HTMLAnchorElement);

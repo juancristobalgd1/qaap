@@ -10,6 +10,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { QAAP_HARNESS_DEFINITIONS } from './qaap-builtin-agents';
 import {
+    QAAP_AGY_TUI_LOGIN_INPUT,
     QAAP_PI_TUI_LOGIN_COMMAND,
     resolveAgentConnectionFlow,
     resolveInteractiveAgentCliBin,
@@ -193,11 +194,17 @@ describe('resolveAgentConnectionFlow', () => {
         }
     });
 
-    it('connects a resolved agy through the tenant terminal, with no hidden Gemini login', () => {
+    it('signs a resolved agy in by driving its Google OAuth picker in the hidden terminal, with no Gemini login', () => {
         expect(resolveAgentConnectionFlow('antigravity', { cliBin: 'agy' })).to.deep.equal({
-            kind: 'tenant-terminal',
+            kind: 'tui-login',
             command: 'agy',
+            input: QAAP_AGY_TUI_LOGIN_INPUT,
+            fallbackCommand: 'agy',
+            env: {},
         });
+        expect(QAAP_AGY_TUI_LOGIN_INPUT.map(step => step.text)).to.deep.equal(['\r']);
+        expect(new RegExp(QAAP_AGY_TUI_LOGIN_INPUT[0].waitFor!, 'i').test('Select login method:')).to.equal(true);
+        expect(new RegExp(QAAP_AGY_TUI_LOGIN_INPUT[0].waitFor!, 'i').test('agy')).to.equal(false);
         expect(resolveInteractiveAgentLoginCommand('antigravity', 'agy')).to.equal(undefined);
     });
 

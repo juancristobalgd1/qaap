@@ -1,6 +1,62 @@
 # Handoff
 
+## 2026-11-19 — Antigravity CLI login en web
+
+**Investigación solo hasta el inicio de OAuth** (`agy` local 1.5.12; `HOME` temporal; sin introducir credenciales, HOME eliminado y proceso terminado):
+- `Google OAuth`: indica que se abra el navegador y muestra una URL de `accounts.google.com/o/oauth2/auth`. La URL usa `redirect_uri=https://antigravity.google/oauth-callback`, no localhost. El CLI espera el resultado del navegador y no pide pegar código ni URL de redirección.
+- `Use a Google Cloud project` → `Continue with Google Cloud`: genera igualmente una URL de autorización de Google con `redirect_uri=https://antigravity.google/oauth-callback`. Tampoco ofrece un prompt de paste-back; queda esperando la finalización en el navegador.
+- Las URLs completas, incluidos `state` y `code_challenge`, se redactaron y no se guardaron. La prueba se detuvo antes de introducir credenciales.
+
+**Implementado (rama `feat/work-hub-round3`):** inicio integrado de Antigravity en web/móvil, reutilizando el mecanismo Connect de los harnesses con TUI (el de Pi): terminal oculta del tenant (mismo HOME/uid/aislamiento que sus turnos) + `QaapAgentLoginInputDriver` + `QaapAgentLoginFlow` + sondeo de conexión existente. No hay endpoint nuevo: la URL viaja solo por el terminal del propio usuario hasta su diálogo.
+- `resolveAgentConnectionFlow('antigravity', { cliBin: 'agy' })` devuelve `tui-login` (`agy` + Enter sobre «Select login method» → `Google OAuth` preseleccionado) en `qaap-agent-tui-command.ts`.
+- La URL se captura de los hipervínculos OSC-8 de `agy` (URL entera aunque la TUI la parta en filas de 80 columnas; verificado con `agy` 1.5.12 en un PTY con `HOME` temporal, sin abrirla). Plazo de captura 20 s; espera de la autorización 5 min; sondeo cada 2,5 s; al conectar se cierra el PTY y se invalidan agentes/modelos (`refreshAfterAgentSignIn`).
+- Si no hay URL (silencio, `agy` termina, pregunta inesperada) el diálogo muestra el texto que remite a Qaap Desktop, sin enlace ni salida del CLI; si caduca la espera: «Sign-in timed out. Try again.» + Retry (`qaap-agy-login-presentation.ts`). La salida del CLI (que contiene la URL con `state`) nunca se pinta ni se loguea.
+- Cancelar/cerrar el diálogo/`beforeunload` eliminan el terminal (PTY cerrado en el backend). Single-flight por harness en el diálogo.
+
+**Pendiente / límites:** confirmar con un login real en el VPS (nadie ha completado un login real desde el móvil; la premisa del callback alojado en Google no está validada end to end). `startWorkHubAuxSideChatSignIn` (side chat de la hoja auxiliar) abre el diálogo sin `onConnected`: allí el sondeo no corre y el diálogo no pasa solo a «Connected». El PTY no se mata explícitamente en `onStop` del backend: depende del cierre de terminales de Theia al caer el socket.
+
 Estado para continuar el trabajo desde otra cuenta o sesión. Actualízalo al cerrar cada tarea: qué queda pendiente, cómo se validó y qué limitaciones conviene conocer. La política de modelos está en la sección «Selección de modelos y orquestación» de `CLAUDE.md`.
+
+## 2026-11-19 — Instancias de harness: sesión, catálogo, uso, hook de Codex y esfuerzo por instancia
+
+Decisiones aplicadas: clave de caché `${instanceId}:${owner}` (la base sigue `${base}:${owner}`); cada instancia tiene su propio estado de sesión, calculado con su sondeo (su binario, su carpeta y sus variables), nunca heredado del base; si el override no valida, la instancia queda sin sesión (`disconnected`) sin caer al base; el uso de una instancia lee su carpeta; el hook de Codex comprueba con el binario de la instancia, y el overlay copia la sesión de la carpeta de la instancia.
+
+Hecho, un commit por subsistema (specs por subsistema, suite completa de `qaap-cloud-workspace` en verde: 4069 passing, 0 failing; `tsc -b`, `qaap-package-graph-check`, `qaap-drift-check` y `qaap-endpoint-ownership-check` en verde):
+1. Clave de caché por instancia (`9f555a6d1`): `listAgents` y la caché de modelos nativos usan el id completo; el catálogo de la instancia no comparte entrada con la base (spec `qaap-agent-native-models-instance-cache.spec.ts`).
+2. Sondeo de sesión y catálogo de la instancia (`ac202defd`): helper `resolveQaapHarnessLaunchEnvironment` (`qaap-harness-launch-environment.ts`) con plan + `apply(env)`; el sondeo corre con el binario y la carpeta/variables de la instancia; no hereda la credencial de Settings del base; el catálogo de una instancia solo se descubre con su propio spawner (`instanceNativeModelSpawner`), sin spawner nunca usa el binario base; el endpoint de modelos pasa el id de la instancia al catálogo.
+3. Uso (`74fec7f80`): `QaapUsageScanTarget.harnessHome` y `QaapUsageScannerRegistry.forHarnessInstance` (escáner y ledger por instancia; sin overrides devuelve el del owner).
+4. Hook de Codex (`52c1e0844`): `codexBin` en las opciones del overlay, usado por `codex --version` y `codex app-server`; el runner lo pasa desde el plan.
+5. Esfuerzo (`6239348dc`): `QaapAgentEffort.support` resuelve la instancia a su base.
+
+Pendiente, con diseño:
+- «Connect» de una instancia: el login corre en la terminal oculta del navegador (`qaap-agent-login-background.ts`, `buildAgentLoginShellCommand` con `env`). Hace falta que el servidor entregue un descriptor ya validado (binario y `CODEX_HOME`/`CLAUDE_CONFIG_DIR` de la instancia) en vez de que el cliente vuelva a validar rutas. Sin ese cambio, el login sigue en el home por defecto. No se ha ejecutado ningún login real.
+- Uso: `QaapUsageEndpoint` (GET de uso) necesita un parámetro `harness` y acceso al plan (las preferencias viven en el runner). El registro ya expone `forHarnessInstance`.
+- Mejorar prompt y evaluador (`improveComposerPromptExtracted`, `qaap-agent-task-runner-tool-pills2.ts`): hay que confirmar si la petición lleva el id de instancia antes de cablear el binario y el `apply(env)` del plan en `improveEnv`.
+- Motivo visible: una instancia con override inválido aparece como sin sesión, pero el motivo (ruta no válida) solo queda en la lógica; falta exponerlo en el selector.
+- Invalidación: confirmar que guardar binario o carpeta en Settings limpia las cachés de sondeo de esa instancia (`refreshAgentCatalog`).
+- En vivo (Electron): una instancia `Codex 2` con otra carpeta ya autenticada debe mostrarse conectada sin tocar la de la base; un binario inválido debe mostrarla sin sesión.
+
+## 2026-11-19 — Desktop installers (unsigned)
+
+Hecho: instaladores SIN FIRMAR de macOS (dmg arm64/x64), Windows (NSIS) y Linux (AppImage + deb) con electron-builder 26.18.1, workflow `.github/workflows/qaap-desktop-release.yml` y auto-update. Detalle completo en `doc/qaap-desktop-release.md`.
+
+Cómo publicar: crear y empujar el tag `desktop-vX.Y.Z` (o `workflow_dispatch` con el tag). Crea un borrador, sube los 4 runners y lo publica como **pre-release**. Aún no se ha creado ningún tag.
+
+Artefactos: `Qaap-mac-arm64.dmg`, `Qaap-mac-x64.dmg`, `Qaap-win-x64.exe`, `Qaap-linux-x86_64.AppImage`, `Qaap-linux-x86_64.deb` (+ `.blockmap`, `latest*.yml`).
+
+Variables del VPS (válidas cuando una release sea "latest"; mientras sean pre-release, enlazar por tag `releases/download/desktop-vX.Y.Z/<archivo>`):
+- `QAAP_DESKTOP_DOWNLOAD_URL_MAC=https://github.com/juancristobalgd1/qaap/releases/latest/download/Qaap-mac-arm64.dmg`
+- `QAAP_DESKTOP_DOWNLOAD_URL_WIN=https://github.com/juancristobalgd1/qaap/releases/latest/download/Qaap-win-x64.exe`
+- `QAAP_DESKTOP_DOWNLOAD_URL_LINUX=https://github.com/juancristobalgd1/qaap/releases/latest/download/Qaap-linux-x86_64.AppImage`
+
+Auto-update (`qaap-desktop-updater.ts`): Windows y AppImage descargan y ofrecen "Restart to update"; macOS sin firma y `.deb` solo avisan y abren la página de releases; desactivado sin empaquetar. El repo tiene otras releases (`qaap-master-…`), por eso se elige la release `desktop-v*` más alta por la API en vez del feed "latest" de electron-updater.
+
+**PENDIENTE: firmar**
+- macOS: Developer ID Application + notarización (`notarytool`); secretos `APPLE_ID`, `APPLE_TEAM_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `CSC_LINK`, `CSC_KEY_PASSWORD`; target `zip` y fusión de `latest-mac.yml`.
+- Windows: certificado de firma de código.
+- Entonces: `qaapDesktopSigned: true` (activa auto-update en macOS) y quitar el flag pre-release (workflow + `releaseType`).
+
+Limitaciones / sin verificar: solo se empaquetó y arrancó macOS arm64 en local; los runners Windows, Linux y macOS x64 no se han ejecutado (el workflow no se ha lanzado). `macos-13` está retirado: x64 usa `macos-15-intel`. El `maintainer`/email del deb es `noreply@qaaq.dev` (inventado, revisar). `@electron/rebuild` subió de 4.0.4 a 4.2.1 por electron-builder (lockfile). Plugins: arranque del plugin host verificado, carga de extensiones concretas no.
 
 ## 2026-11-18 — Settings → Harness: variables de entorno por harness/instancia (PR #534)
 
@@ -24,10 +80,10 @@ Hecho (sin verificación en vivo todavía; specs, compilación, drift y package-
 
 Qué verificar en vivo (Electron): engranaje y panel en Settings → Harness; guardar un binario inválido muestra el error; una instancia `Codex 2` con otro `CODEX_HOME` ya autenticado ejecuta un turno con esa cuenta y el Tool Gate pide aprobación igual; en web (:3000) el panel solo enseña el nombre.
 
-Pendiente / limitaciones:
-- Estado de sesión, sondeo de conexión, caché de modelos y uso de una instancia salen del harness base (home por defecto); «Connect» de una instancia inicia sesión en el home por defecto.
-- La comprobación de confianza del hook de Codex (`codex app-server`) y los one-shots (mejorar prompt, evaluador) usan el `codex` del PATH, no el binario override.
-- En el composer, funciones atadas al id exacto (`codex`, `claude`: esfuerzo, etc.) pueden no aplicarse a `codex#2`; el catálogo de modelos sí (el endpoint mapea a la base). El selector se refresca con el intervalo del catálogo tras añadir una instancia.
+Pendiente / limitaciones (estado tras la ronda de instancias, ver la sección siguiente):
+- «Connect» de una instancia todavía inicia sesión en el home por defecto (ver «Instancias: estado» abajo).
+- Los one-shots (mejorar prompt, evaluador) no reciben el id de instancia: usan el `codex`/`claude` base y su entorno.
+- El endpoint de uso no acepta todavía un parámetro de instancia (el registro ya lo soporta).
 - Modelos personalizados extra por harness: no incluidos (el catálogo nativo sale del CLI y la validación de acceso al modelo lo exige).
 - Si el sandbox de tareas en macOS restringe lecturas, una carpeta/binario fuera de las raíces permitidas haría fallar el turno (visible, no silencioso): comprobar en vivo.
 

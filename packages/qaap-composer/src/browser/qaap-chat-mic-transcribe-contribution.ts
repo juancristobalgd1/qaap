@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { QaapElementBoundDisposables } from '@theia/qaap-shared-core/lib/common/qaap-element-bound-disposables';
 import { injectable } from '@theia/core/shared/inversify';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
@@ -39,6 +40,8 @@ export class QaapChatMicTranscribeContribution implements FrontendApplicationCon
     protected static readonly STICKY_FIELD_SELECTOR = '.theia-mobile-projects-sticky-composer-input';
 
     protected readonly toDispose = new DisposableCollection();
+    /** Per-button recognition teardown: kept only while the button is in the DOM (a composer re-render drops its old one). */
+    protected readonly boundToButtons = new QaapElementBoundDisposables();
     protected observer: MutationObserver | undefined;
 
     onStart(): void {
@@ -81,6 +84,7 @@ export class QaapChatMicTranscribeContribution implements FrontendApplicationCon
         });
         this.observer.observe(document.body, { childList: true, subtree: true });
         this.toDispose.push(Disposable.create(() => {
+            this.boundToButtons.dispose();
             this.observer?.disconnect();
             this.observer = undefined;
         }));
@@ -423,7 +427,7 @@ export class QaapChatMicTranscribeContribution implements FrontendApplicationCon
         };
 
         this.wireToggleHandlers(button, toggle);
-        this.toDispose.push(Disposable.create(() => stop()));
+        this.boundToButtons.add(button, Disposable.create(() => stop()));
     }
 
     protected wireInlineRecognition(button: HTMLButtonElement, input: HTMLInputElement | HTMLTextAreaElement): void {
@@ -596,7 +600,7 @@ export class QaapChatMicTranscribeContribution implements FrontendApplicationCon
         };
 
         this.wireToggleHandlers(button, toggle);
-        this.toDispose.push(Disposable.create(() => stop()));
+        this.boundToButtons.add(button, Disposable.create(() => stop()));
     }
 
     /**
