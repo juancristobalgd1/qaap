@@ -47,7 +47,9 @@ const lowRisk: QaapReviewChangedFile[] = [{ path: 'src/util.ts', added: 3, remov
 const highRiskBySize: QaapReviewChangedFile[] = [{ path: 'src/util.ts', added: 30, removed: 20 }];
 const highRiskBySensitivePath: QaapReviewChangedFile[] = [{ path: 'src/auth/login.ts', added: 2, removed: 0 }];
 const passOutput = 'stream…\n@@QAAP:VERDICT@@ pass all good';
-const failOutput = 'stream…\n@@QAAP:VERDICT@@ fail broken';
+// A rejection must cite a concrete path:line defect to block (see groundAgentReviewVerdict).
+const failOutput = 'stream…\n@@QAAP:VERDICT@@ fail src/util.ts:12 — broken';
+const uncitedFailOutput = 'stream…\n@@QAAP:VERDICT@@ fail server.js rewrites';
 const noVerdictOutput = 'the reviewer forgot to emit a sentinel';
 
 describe('workflow review conformance', () => {
@@ -55,6 +57,7 @@ describe('workflow review conformance', () => {
         { name: 'low-risk diff skips review', files: lowRisk, output: passOutput, expected: 'skipped' },
         { name: 'high-risk by size, reviewer passes', files: highRiskBySize, output: passOutput, expected: 'passed' },
         { name: 'high-risk by size, reviewer fails', files: highRiskBySize, output: failOutput, expected: 'failed' },
+        { name: 'high-risk by size, reviewer fails with no file:line defect is approved with notes', files: highRiskBySize, output: uncitedFailOutput, expected: 'passed' },
         { name: 'sensitive path, reviewer passes', files: highRiskBySensitivePath, output: passOutput, expected: 'passed' },
         { name: 'high-risk, silent reviewer is inconclusive', files: highRiskBySize, output: noVerdictOutput, expected: 'inconclusive' },
     ];

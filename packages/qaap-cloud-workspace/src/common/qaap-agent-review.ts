@@ -158,6 +158,21 @@ export function groundAgentReviewVerdict(verdict: QaapAgentReviewVerdict): { sta
     return { status: 'passed', reason: withNotes('', notes) };
 }
 
+/** promptRef of the adversarial-review judge node (registered in the workflow prompt registry). */
+export const QAAP_ADVERSARIAL_REVIEW_PROMPT_REF = 'adversarial-review';
+
+/**
+ * The status a sentinel judge node routes on. Only the adversarial-review judge is grounded, the
+ * same way the runner grounds its reviewer; the plan, audit and synthesis judges keep the verdict
+ * as the reviewer wrote it.
+ */
+export function resolveJudgedReviewStatus(promptRef: string, verdict: QaapAgentReviewVerdict): 'passed' | 'failed' {
+    if (promptRef !== QAAP_ADVERSARIAL_REVIEW_PROMPT_REF) {
+        return verdict.status;
+    }
+    return groundAgentReviewVerdict(verdict).status;
+}
+
 /**
  * The one instruction that makes a verdict parseable. Shared by every prompt whose node declares
  * `requireSentinel`, so the contract with {@link parseAgentReviewVerdict} lives in a single place:

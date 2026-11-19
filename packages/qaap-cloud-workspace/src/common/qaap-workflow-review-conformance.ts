@@ -15,7 +15,7 @@
  * rewrite that silently drifts.
  */
 
-import { parseAgentReviewVerdict, QaapReviewChangedFile, resolveTaskReviewRisk } from './qaap-agent-review';
+import { groundAgentReviewVerdict, parseAgentReviewVerdict, QaapReviewChangedFile, resolveTaskReviewRisk } from './qaap-agent-review';
 import { QaapWorkflowNodeOutcome, QaapWorkflowReviewMode } from './qaap-workflow-ir';
 
 /** The four terminal states the review flow can reach, named as in {@link QaapAgentTaskReview}. */
@@ -49,7 +49,8 @@ export function runnerReviewDecision(
     if (!verdict) {
         return 'inconclusive';
     }
-    return verdict.status;
+    // The runner's reviewer is the adversarial reviewer: grounded exactly as in reviewSuccessfulAgentTask.
+    return groundAgentReviewVerdict(verdict).status;
 }
 
 /** The risk-classify node's outcome for the same inputs. */
@@ -63,5 +64,5 @@ export function judgeOutcome(reviewerOutput: string | undefined): QaapWorkflowNo
     if (!verdict) {
         return 'verdict:inconclusive';
     }
-    return verdict.status === 'passed' ? 'verdict:pass' : 'verdict:fail';
+    return groundAgentReviewVerdict(verdict).status === 'passed' ? 'verdict:pass' : 'verdict:fail';
 }
