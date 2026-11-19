@@ -16,6 +16,8 @@ import { Widget } from '@theia/core/shared/@lumino/widgets';
 import { QAAP_AGENT_LOGIN_CHALLENGE_TIMEOUT_MS, QAAP_AGENT_LOGIN_PREPARE_TIMEOUT_MS } from '@theia/qaap-agents-ui/lib/common/qaap-agent-login-flow';
 import type { MobileProjectsPanelContext } from './mobile-projects-panel-context';
 import { openAgentSignInTerminalExtracted } from './mobile-projects-panel-timeline';
+import { openAgentLoginDialogInBackground } from './qaap-agent-login-background';
+import { QAAP_AGENT_SIGNED_IN_EVENT } from './qaap-agent-signed-in-event';
 import { useSuiteAnimationFrameStub, useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
 
 disableImportJSDOM();
@@ -591,6 +593,7 @@ describe('Antigravity (agy) Connect dialog: Google OAuth link captured from a hi
     let originalPlatform: PropertyDescriptor | undefined;
     let agyConnected: boolean;
     let probes: number;
+    let composerRefreshes: number;
     let openedUrls: string[];
     let restoreWindowOpen: (() => void) | undefined;
     let consoleCalls: string[];
@@ -613,6 +616,7 @@ describe('Antigravity (agy) Connect dialog: Google OAuth link captured from a hi
         } as unknown as Response)) as typeof globalThis.fetch;
         agyConnected = false;
         probes = 0;
+        composerRefreshes = 0;
         openedUrls = [];
         const originalOpen = window.open;
         window.open = ((url?: string | URL) => {
@@ -695,6 +699,41 @@ describe('Antigravity (agy) Connect dialog: Google OAuth link captured from a hi
         expect(terminal.isDisposed, 'agy is closed once the session exists').to.equal(true);
         expect(probes).to.be.greaterThan(1);
         expect(consoleCalls.filter(call => /accounts\.google\.com|REDACTED_STATE|code_challenge/.test(call)), 'the URL never reaches console.*').to.deep.equal([]);
+    });
+
+    it('connects a caller without its own probe (the side chat) through the same refresh, and announces the sign-in', async () => {
+        const terminal = createAgyTerminal();
+        const signedIn: string[] = [];
+        const listener = (event: Event): void => { signedIn.push((event as CustomEvent<{ agentId: string }>).detail.agentId); };
+        window.addEventListener(QAAP_AGENT_SIGNED_IN_EVENT, listener);
+        try {
+            const ctx = {
+                transcriptController: { state: {} },
+                projectsService: { getProjectCwd: () => TENANT_CWD },
+                preparedCwdByProjectId: new Map<string, string>(),
+                createTranscriptTerminalViewServices: () => ({ resolveCwd: (cwd: string) => cwd, createTerminal: async () => terminal }),
+                stickyComposerAgentsUi: {
+                    refreshStickyComposerAgents: async () => { probes++; return true; },
+                    isAgentConnected: (agentId: string) => agentId === 'antigravity' && agyConnected,
+                },
+                transcriptComposerUi: { refreshTranscriptComposerAgents: async () => { composerRefreshes++; } },
+                stickyComposerRenderUi: { renderStickyComposer: () => undefined },
+            };
+            void openAgentLoginDialogInBackground(ctx, { id: 'project-1', name: 'repo' } as never, undefined, 'antigravity');
+            await waitForChallenge();
+            await clock.tickAsync(3_000);
+            expect(dialogSpinning()).to.equal(true);
+            expect(signedIn).to.deep.equal([]);
+            agyConnected = true;
+            for (let elapsed = 0; elapsed < 3_000 && !signedIn.length; elapsed += 100) {
+                await clock.tickAsync(100);
+            }
+            expect(signedIn).to.deep.equal(['antigravity']);
+            expect(probes).to.be.greaterThan(1);
+            expect(composerRefreshes, 'the composer catalog is reloaded too').to.be.greaterThan(0);
+        } finally {
+            window.removeEventListener(QAAP_AGENT_SIGNED_IN_EVENT, listener);
+        }
     });
 
     it('never prints the authorization URL in the dialog once the sign-in expired, and offers Retry', async () => {

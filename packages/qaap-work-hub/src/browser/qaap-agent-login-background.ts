@@ -38,6 +38,7 @@ import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mob
 import { resolveAgentDisplayLabel } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { requestAgentCliUpdate } from '@theia/qaap-agents-ui/lib/common/qaap-agent-cli-update';
 import { QaapAgentLoginFlow, stripAgentLoginTerminalControlSequences } from '@theia/qaap-agents-ui/lib/common/qaap-agent-login-flow';
+import { QAAP_AGENT_SIGNED_IN_EVENT, type QaapAgentSignedInDetail } from './qaap-agent-signed-in-event';
 import { presentAgyLoginFailure, QAAP_AGY_LOGIN_CHALLENGE_TIMEOUT_MS } from '@theia/qaap-agents-ui/lib/common/qaap-agy-login-presentation';
 import { QaapAgentLoginInputDriver } from '@theia/qaap-agents-ui/lib/common/qaap-agent-login-input-driver';
 import { createTranscriptTerminalStagingHost, createTranscriptTerminalSurface } from '@theia/qaap-transcript/lib/browser/qaap-transcript-terminal-view';
@@ -181,13 +182,33 @@ function isAntigravityLoginAgent(agentId: string): boolean {
     return normalized === 'antigravity' || normalized === 'gemini';
 }
 
+/**
+ * The connection probe of a caller that passed none (the side chat's Sign in): the same refresh every Connect
+ * flow ends in (`refreshAfterAgentSignIn`): drop the cached agent list and models, re-read the harness state
+ * from the backend and redraw the composer. True once the harness reads as connected.
+ */
+function createDefaultConnectionProbe(ctx: any, project: MobileProjectEntry | undefined, agentId: string): (() => Promise<boolean>) | undefined {
+    if (!project) {
+        return undefined;
+    }
+    return async () => {
+        invalidateAgentTaskListAllCache();
+        invalidateAgentModelsCache();
+        const refreshed = await ctx.stickyComposerAgentsUi?.refreshStickyComposerAgents?.(project, { forceRefresh: true });
+        await ctx.transcriptComposerUi?.refreshTranscriptComposerAgents?.(project);
+        ctx.stickyComposerRenderUi?.renderStickyComposer?.();
+        return refreshed === true && ctx.stickyComposerAgentsUi?.isAgentConnected?.(agentId) === true;
+    };
+}
+
 export async function openAgentLoginDialogInBackground(
     ctx: any,
     project: MobileProjectEntry | undefined,
     summary: QaapAgentConversationSummaryDTO | undefined,
     agentId: string,
-    onConnected?: () => boolean | void | Promise<boolean | void>,
+    callerOnConnected?: () => boolean | void | Promise<boolean | void>,
 ): Promise<void> {
+    const onConnected = callerOnConnected ?? createDefaultConnectionProbe(ctx, project, agentId);
     const agentLabel = resolveAgentDisplayLabel(agentId);
     const singleFlightKey = isAntigravityLoginAgent(agentId) ? 'antigravity' : undefined;
     if (singleFlightKey && openAntigravityLoginDialogs.has(singleFlightKey)) {
@@ -365,6 +386,7 @@ export async function openAgentLoginDialogInBackground(
             dialog.render(agyLogin && state.phase === 'failed' ? presentAgyLoginFailure(state, agentLabel) : state);
             if (state.phase === 'connected') {
                 disposeTerminal();
+                window.dispatchEvent(new window.CustomEvent<QaapAgentSignedInDetail>(QAAP_AGENT_SIGNED_IN_EVENT, { detail: { agentId } }));
                 void attestSignInIfUnprobed().then(() => onConnected?.()).catch(error => {
                     console.warn('[qaap] Agent login UI refresh failed:', error);
                 });

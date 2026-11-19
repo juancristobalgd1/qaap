@@ -11,6 +11,7 @@ const disableImportJSDOM = enableJSDOM();
 import { Disposable } from '@theia/core/lib/common/disposable';
 import type { AIVariableResolutionRequest } from '@theia/ai-core';
 import { expect } from 'chai';
+import { QAAP_AGENT_SIGNED_IN_EVENT } from './qaap-agent-signed-in-event';
 import { QaapDirtyWorkspaceError, type QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type { QaapLiveFeedFrame } from '@theia/qaap-shared-core/lib/common/qaap-live-feed-cursor';
 import {
@@ -432,6 +433,36 @@ describe('qaap-work-hub-aux-side-chat-view', () => {
         pro.click();
         expect(h.calls.signIns).to.deep.equal(['opencode']);
         expect(q(h.view, '.qaap-work-hub-aux-side-chat-model').textContent).to.contain('Beam Free');
+    });
+
+    it('reloads the models and unlocks the Pro model when a harness sign-in finishes', async () => {
+        const options: { models: readonly QaapWorkHubSideChatModelOption[] } = { models };
+        const h = harness(options);
+        await waitFor(() => (q(h.view, '.qaap-work-hub-aux-side-chat-model').textContent ?? '').includes('Beam Free'));
+        // The Connect dialog confirmed the sign-in: the host now lists the same models as signed in.
+        options.models = models.map(option => ({ ...option, session: 'signed-in' as const }));
+        window.dispatchEvent(new window.CustomEvent(QAAP_AGENT_SIGNED_IN_EVENT, { detail: { agentId: 'opencode' } }));
+        await new Promise(resolve => setTimeout(resolve, 20));
+        (q(h.view, '.qaap-work-hub-aux-side-chat-model') as HTMLButtonElement).click();
+        const pro = pickerRows().find(row => row.textContent?.includes('Beam Pro'));
+        if (!pro) {
+            throw new Error('the shared picker lists no Pro row');
+        }
+        pro.click();
+        expect(h.calls.signIns, 'no second sign-in: the session is now known').to.deep.equal([]);
+        expect(q(h.view, '.qaap-work-hub-aux-side-chat-model').textContent).to.contain('Beam Pro');
+    });
+
+    it('ignores a sign-in event while hidden', async () => {
+        let listed = 0;
+        const options = { models };
+        const h = harness(options);
+        await waitFor(() => (q(h.view, '.qaap-work-hub-aux-side-chat-model').textContent ?? '').includes('Beam Free'));
+        h.view.hide();
+        Object.defineProperty(options, 'models', { get: () => { listed++; return models; } });
+        window.dispatchEvent(new window.CustomEvent(QAAP_AGENT_SIGNED_IN_EVENT, { detail: { agentId: 'opencode' } }));
+        await new Promise(resolve => setTimeout(resolve, 20));
+        expect(listed).to.equal(0);
     });
 
     it('picks a model in its own picker and leaves the main composer selection alone', async () => {
