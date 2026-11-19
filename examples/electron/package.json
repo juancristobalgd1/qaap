@@ -108,6 +108,9 @@
   "scripts": {
     "build": "theiaext build && npm run -s bundle",
     "bundle": "npm run rebuild && theia build --mode development",
+    "bundle:production": "npm run rebuild && theia build --mode production",
+    "build:production": "theiaext build && npm run -s bundle:production",
+    "package": "electron-builder --config electron-builder.yml --publish never",
     "clean": "theiaext clean",
     "compile": "tsc -b",
     "lint": "theiaext lint",
@@ -122,6 +125,7 @@
   },
   "devDependencies": {
     "@theia/cli": "1.73.0",
-    "electron": "42.8.1"
+    "electron": "42.8.1",
+    "electron-builder": "26.18.1"
   }
 }
