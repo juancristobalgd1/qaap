@@ -505,17 +505,23 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         const discoveryStartedAt = Date.now();
         // The Antigravity catalog follows the CLI this host resolved (gemini ids or agy's live list).
         const antigravityBin = antigravityBinFor(this.runner, agent);
-        await this.withinBudget(prepareNativeAgentModels(agent, {
+        // An instance has its own catalog (discovered with its binary and folder); the base answers for itself.
+        const isInstance = normalizedAgent !== baseAgent;
+        const catalogAgent = isInstance ? normalizedAgent : agent;
+        const spawner = isInstance
+            ? await this.runner.instanceNativeModelSpawner(normalizedAgent, login)
+            : this.runner.nativeModelDiscoverySpawner(login);
+        await this.withinBudget(prepareNativeAgentModels(catalogAgent, {
             ownerLogin: login,
-            spawner: this.runner.nativeModelDiscoverySpawner(login),
+            spawner,
             antigravityBin,
         }), QAAP_NATIVE_MODEL_DISCOVERY_BUDGET_MS);
         const discoveryMs = Date.now() - discoveryStartedAt;
         if (res.headersSent || res.writableEnded) {
             return;
         }
-        const runnerModels = this.runner.listModelsForAgent(agent, login);
-        const nativeModels = listNativeAgentModels(agent, login, antigravityBin);
+        const runnerModels = isInstance ? [] : this.runner.listModelsForAgent(agent, login);
+        const nativeModels = listNativeAgentModels(catalogAgent, login, antigravityBin);
         const models = runnerModels.length > 0 ? runnerModels : annotateModelsForAgent(this.runner, agent, login, nativeModels);
         res.setHeader('Server-Timing', `billing;dur=${billingMs}, discovery;dur=${discoveryMs}, total;dur=${Date.now() - startedAt}`);
         res.setHeader('Cache-Control', 'no-store');

@@ -192,6 +192,8 @@ import {
 } from './qaap-agent-access';
 import { childProcessEnv } from './qaap-child-process-env';
 import { withQaapHarnessInstanceDescriptors } from './qaap-harness-instance-descriptors';
+import { type QaapHarnessLaunchEnvironment, resolveQaapHarnessLaunchEnvironment } from './qaap-harness-launch-environment';
+import { QaapHarnessLaunchOverrideError } from './qaap-harness-launch-overrides';
 import { QaapHarnessEnvSecretStore } from './qaap-harness-env-secret-store';
 import { resolveQaapHarnessBaseId } from '@theia/qaap-shared-core/lib/common/qaap-harness-launch-settings';
 import { qaapGitReadEnv } from './qaap-child-process-env';
@@ -849,17 +851,58 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
                         // catalog discovered while signed out is stale. Rediscover right away so the
                         // picker the user comes back to already lists the signed-in providers.
                         invalidateNativeAgentModels(normalized, ownerLogin);
-                        void prepareNativeAgentModels(normalized, {
-                            ownerLogin,
-                            spawner: this.nativeModelDiscoverySpawner(ownerLogin),
-                            antigravityBin: antigravityBinFor(this, normalized),
-                        });
+                        void this.discoverNativeModelsAfterSignIn(normalized, ownerLogin);
                     }
                 }
                 return state;
             });
         this.agentConnectionProbes.set(cacheKey, probe);
         return probe;
+    }
+
+    /**
+     * Discovers the catalog of a harness (or instance) once it signed in. An instance uses its own binary,
+     * folder and variables ({@link instanceNativeModelSpawner}); the base keeps its synchronous path.
+     */
+    protected async discoverNativeModelsAfterSignIn(harnessKey: string, ownerLogin?: string): Promise<void> {
+        const baseId = resolveQaapHarnessBaseId(harnessKey);
+        const spawner = baseId === harnessKey
+            ? this.nativeModelDiscoverySpawner(ownerLogin)
+            : await this.instanceNativeModelSpawner(harnessKey, ownerLogin);
+        await prepareNativeAgentModels(harnessKey, {
+            ownerLogin,
+            spawner,
+            antigravityBin: antigravityBinFor(this, baseId),
+        });
+    }
+
+    /**
+     * Discovery spawner for a harness instance: the base spawner (same owner HOME and tenant wrapper) with the
+     * instance's binary and its configuration folder/variables applied to the child environment. Undefined when
+     * the instance's override does not validate: the catalog then stays the curated list.
+     */
+    async instanceNativeModelSpawner(harnessKey: string, ownerLogin?: string): Promise<NativeModelDiscoverySpawner | undefined> {
+        let launch: QaapHarnessLaunchEnvironment;
+        try {
+            launch = await resolveQaapHarnessLaunchEnvironment(
+                harnessKey,
+                key => this.preferenceReaderForOwner(ownerLogin)(key),
+                this.harnessEnvSecrets,
+            );
+        } catch (error) {
+            if (error instanceof QaapHarnessLaunchOverrideError) {
+                return undefined;
+            }
+            throw error;
+        }
+        const base = this.nativeModelDiscoverySpawner(ownerLogin);
+        return (bin, args) => {
+            const spawn = base(launch.plan.binaryPath ?? bin, args);
+            if (spawn?.env) {
+                launch.apply(spawn.env);
+            }
+            return spawn;
+        };
     }
 
     protected agentConnectionCacheKey(agentId: string, ownerLogin?: string): string {
@@ -878,20 +921,40 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
      */
     protected async probeAgentConnectionState(
         harnessKey: string,
-        bin: string,
+        baseBin: string,
         ownerLogin?: string,
     ): Promise<QaapAgentDescriptor['connectionState']> {
-        // The probe command is the base harness's (a harness instance's own binary and folder are not wired yet).
         const agentId = resolveQaapHarnessBaseId(harnessKey);
+        let bin = baseBin;
+        let launch: QaapHarnessLaunchEnvironment | undefined;
+        if (harnessKey !== agentId) {
+            // A harness instance signs in with its own binary and configuration folder, never the base's.
+            // An invalid override is a signed-out instance: it must not probe the default account instead.
+            try {
+                launch = await resolveQaapHarnessLaunchEnvironment(
+                    harnessKey,
+                    key => this.preferenceReaderForOwner(ownerLogin)(key),
+                    this.harnessEnvSecrets,
+                );
+            } catch (error) {
+                if (error instanceof QaapHarnessLaunchOverrideError) {
+                    return 'disconnected';
+                }
+                throw error;
+            }
+            bin = launch.plan.binaryPath ?? baseBin;
+        }
         const probe = resolveAgentConnectionProbeHelper(agentId, bin);
         if (!probe) {
             return 'unknown';
         }
         const owner = ownerLogin?.trim();
         if (!owner) {
+            const env = stripSignInOnlyAgentApiKeyEnv(childProcessEnv(), agentId);
+            launch?.apply(env);
             return probeAgentConnectionStateHelper(agentId, probe.file, {
                 args: probe.args,
-                env: stripSignInOnlyAgentApiKeyEnv(childProcessEnv(), agentId),
+                env,
             });
         }
 
@@ -907,6 +970,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
                 ...process.env,
                 ...this.tenantSpawn.tenantHomeEnvOverlay(tenantCwd),
             }), agentId);
+            launch?.apply(env);
             const prefix = this.resolveAgentCliPrefix(tenantCwd);
             if (canExposeAgentCliBinToChild(prefix, () => this.isTenantPrivilegeDropActive(tenantCwd))) {
                 prependAgentCliBinToPath(env, prefix);
@@ -1003,8 +1067,11 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         }
         const bin = candidate.bin ?? normalized;
         return {
+            // An instance never inherits the base harness's Settings credential: its state comes from its own probe.
             // Lazy reader: a harness without a credential mapping never reads the owner's preferences.
-            settingsConnected: normalized === QAIQ_AGENT_ID
+            settingsConnected: harnessKey !== normalized
+                ? undefined
+                : normalized === QAIQ_AGENT_ID
                 // QAIQ is ready only when the provider its turns route to has a key for this owner (an
                 // OpenAI key does not run an OpenRouter model): the same check that gates its spawn.
                 ? !checkQaiqProviderCredentialForOwnerExtracted(this, ownerLogin)

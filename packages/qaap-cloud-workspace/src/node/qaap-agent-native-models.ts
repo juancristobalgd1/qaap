@@ -180,6 +180,11 @@ export function prepareNativeAgentModels(
     if (entry && !isNativeModelEntryStale(entry)) {
         return Promise.resolve(entry.models);
     }
+    if (harnessKey !== normalized && !options.spawner) {
+        // An instance's catalog is discovered only through its own binary and folder (the runner's instance
+        // spawner). Without one, the base binary must not answer for it: serve what it has, else the curated list.
+        return Promise.resolve(entry?.models ?? listStaticNativeAgentModels(normalized, bin));
+    }
     if (ACCOUNT_SCOPED_DISCOVERY_AGENT_IDS.has(normalized) && !options.spawner) {
         return Promise.resolve(entry?.models ?? listStaticNativeAgentModels(normalized, bin));
     }
