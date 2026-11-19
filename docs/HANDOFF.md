@@ -21,6 +21,28 @@ Pendiente, con diseño:
 - Invalidación: confirmar que guardar binario o carpeta en Settings limpia las cachés de sondeo de esa instancia (`refreshAgentCatalog`).
 - En vivo (Electron): una instancia `Codex 2` con otra carpeta ya autenticada debe mostrarse conectada sin tocar la de la base; un binario inválido debe mostrarla sin sesión.
 
+## 2026-11-19 — Desktop installers (unsigned)
+
+Hecho: instaladores SIN FIRMAR de macOS (dmg arm64/x64), Windows (NSIS) y Linux (AppImage + deb) con electron-builder 26.18.1, workflow `.github/workflows/qaap-desktop-release.yml` y auto-update. Detalle completo en `doc/qaap-desktop-release.md`.
+
+Cómo publicar: crear y empujar el tag `desktop-vX.Y.Z` (o `workflow_dispatch` con el tag). Crea un borrador, sube los 4 runners y lo publica como **pre-release**. Aún no se ha creado ningún tag.
+
+Artefactos: `Qaap-mac-arm64.dmg`, `Qaap-mac-x64.dmg`, `Qaap-win-x64.exe`, `Qaap-linux-x86_64.AppImage`, `Qaap-linux-x86_64.deb` (+ `.blockmap`, `latest*.yml`).
+
+Variables del VPS (válidas cuando una release sea "latest"; mientras sean pre-release, enlazar por tag `releases/download/desktop-vX.Y.Z/<archivo>`):
+- `QAAP_DESKTOP_DOWNLOAD_URL_MAC=https://github.com/juancristobalgd1/qaap/releases/latest/download/Qaap-mac-arm64.dmg`
+- `QAAP_DESKTOP_DOWNLOAD_URL_WIN=https://github.com/juancristobalgd1/qaap/releases/latest/download/Qaap-win-x64.exe`
+- `QAAP_DESKTOP_DOWNLOAD_URL_LINUX=https://github.com/juancristobalgd1/qaap/releases/latest/download/Qaap-linux-x86_64.AppImage`
+
+Auto-update (`qaap-desktop-updater.ts`): Windows y AppImage descargan y ofrecen "Restart to update"; macOS sin firma y `.deb` solo avisan y abren la página de releases; desactivado sin empaquetar. El repo tiene otras releases (`qaap-master-…`), por eso se elige la release `desktop-v*` más alta por la API en vez del feed "latest" de electron-updater.
+
+**PENDIENTE: firmar**
+- macOS: Developer ID Application + notarización (`notarytool`); secretos `APPLE_ID`, `APPLE_TEAM_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `CSC_LINK`, `CSC_KEY_PASSWORD`; target `zip` y fusión de `latest-mac.yml`.
+- Windows: certificado de firma de código.
+- Entonces: `qaapDesktopSigned: true` (activa auto-update en macOS) y quitar el flag pre-release (workflow + `releaseType`).
+
+Limitaciones / sin verificar: solo se empaquetó y arrancó macOS arm64 en local; los runners Windows, Linux y macOS x64 no se han ejecutado (el workflow no se ha lanzado). `macos-13` está retirado: x64 usa `macos-15-intel`. El `maintainer`/email del deb es `noreply@qaaq.dev` (inventado, revisar). `@electron/rebuild` subió de 4.0.4 a 4.2.1 por electron-builder (lockfile). Plugins: arranque del plugin host verificado, carga de extensiones concretas no.
+
 ## 2026-11-18 — Settings → Harness: variables de entorno por harness/instancia (PR #534)
 
 Hecho (specs, tsc, drift y package-graph en verde; sin verificar en vivo):
