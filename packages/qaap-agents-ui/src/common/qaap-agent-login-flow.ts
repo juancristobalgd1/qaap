@@ -153,6 +153,11 @@ export interface QaapAgentLoginFlowOptions {
      * so seeing that question is not a stall: the blocking-prompt check is off and the link deadline decides.
      */
     readonly answersPrompts?: boolean;
+    /**
+     * The CLI always wants the code the browser shows after approval, but prints no prompt that says
+     * so (agy): every challenge with a link is published with the paste-back field.
+     */
+    readonly alwaysAcceptsCode?: boolean;
 }
 
 /**
@@ -337,13 +342,14 @@ export class QaapAgentLoginFlow {
             }
             return;
         }
-        if (this.current.phase === 'challenge' && sameChallenge(this.current.challenge, challenge)) {
+        const shown = this.options.alwaysAcceptsCode && challenge.url ? { ...challenge, codeEntry: true } : challenge;
+        if (this.current.phase === 'challenge' && sameChallenge(this.current.challenge, shown)) {
             return;
         }
         if (this.challengeSince === undefined) {
             this.challengeSince = now;
         }
-        this.set({ phase: 'challenge', challenge });
+        this.set({ phase: 'challenge', challenge: shown });
     }
 
     /** The login command ended (exit marker). 0 is success; anything else shows the CLI output. */

@@ -678,7 +678,7 @@ describe('Antigravity (agy) Connect dialog: Google OAuth link captured from a hi
 
         expect(terminal.sent[0]).to.contain('agy');
         expect(terminal.sent.slice(1), 'only Enter on the preselected Google OAuth entry is typed').to.deep.equal(['\r']);
-        expect(document.querySelector('.theia-mobile-agent-login-dialog-code-input'), 'agy asks for no pasted code').to.equal(null);
+        expect(document.querySelector('.theia-mobile-agent-login-dialog-code-input'), 'agy shows the paste-back field under its link').to.not.equal(null);
         expect(dialogSpinning(), 'waiting for the browser sign-in').to.equal(true);
         expect(dialogStatus()).to.contain('Waiting for Antigravity');
 
@@ -699,6 +699,26 @@ describe('Antigravity (agy) Connect dialog: Google OAuth link captured from a hi
         expect(terminal.isDisposed, 'agy is closed once the session exists').to.equal(true);
         expect(probes).to.be.greaterThan(1);
         expect(consoleCalls.filter(call => /accounts\.google\.com|REDACTED_STATE|code_challenge/.test(call)), 'the URL never reaches console.*').to.deep.equal([]);
+    });
+
+    it('shows a paste-back field under the agy link, and sends the trimmed code to the terminal on Validate', async () => {
+        const terminal = createAgyTerminal();
+        connect(async () => terminal);
+        await waitForChallenge();
+
+        const input = document.querySelector<HTMLInputElement>('.theia-mobile-agent-login-dialog-code-input');
+        const validate = document.querySelector<HTMLButtonElement>('.theia-mobile-agent-login-dialog-code-submit');
+        expect(input, 'code field').to.not.equal(null);
+        expect(validate?.textContent).to.equal('Validate');
+        expect(validate?.disabled, 'nothing to validate while the field is empty').to.equal(true);
+
+        input!.value = '   4/abc   ';
+        input!.dispatchEvent(new window.Event('input'));
+        expect(validate?.disabled).to.equal(false);
+
+        validate!.click();
+        expect(terminal.sent.at(-1), 'the code is typed into agy with Enter').to.equal('4/abc\r');
+        expect(dialogStatus()).to.contain('Verifying the code');
     });
 
     it('connects a caller without its own probe (the side chat) through the same refresh, and announces the sign-in', async () => {

@@ -96,6 +96,10 @@ const CODE_ENTRY_PROMPT_PATTERNS: readonly RegExp[] = [
     /\bpaste\s+(?:the\s+)?authori[sz]ation\s+code\s*\/\s*redirect\s+url\b/i,
     // Pi OpenAI (ChatGPT): `Complete login in your browser, or paste the final redirect URL here:`.
     /\bpaste\s+(?:the\s+)?(?:final\s+)?redirect\s+url\s+here\b/i,
+    // Antigravity (agy): `Enter the authorization code:` on a line of its own. Device-code prompts
+    // (`Enter code: CYSI-G0C2B`, `enter the code 3AA4-2306 at https://…`) carry the code on the same
+    // line or no colon, so they never match: the label must be authorization/auth and end the line.
+    /\b(?:paste|enter)\s+(?:the\s+|your\s+)?(?:authori[sz]ation|auth)\s+code[ \t]*:[ \t]*$/im,
 ];
 
 /** A paste-back prompt that also takes the browser's final redirect URL. */
