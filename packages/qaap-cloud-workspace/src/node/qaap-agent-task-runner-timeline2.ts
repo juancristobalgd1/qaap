@@ -643,8 +643,12 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                     agentIdentity: ctx.resolveAgentSpawnIdentity(task.cwd),
                     // In a task sandbox Codex has its own /tmp: the overlay must sit where it sees the same path.
                     overlayRoot: resolveCodexGateOverlayRoot(ctx.agentSandboxFor?.(task.cwd)),
+                    ownSandboxOff: ctx.runsInTaskSandbox?.() === true,
                 }, childEnv);
                 childEnv.CODEX_HOME = codexGateOverlay.codexHome;
+                if (ctx.runsInTaskSandbox?.() === true) {
+                    console.info('[qaap-codex] task sandbox container: Codex own sandbox off (container isolates)');
+                }
             }
             if (task.agentId?.trim().toLowerCase() === 'opencode') {
                 // A run killed mid-snapshot leaves index.lock in the tenant's persistent data dir,

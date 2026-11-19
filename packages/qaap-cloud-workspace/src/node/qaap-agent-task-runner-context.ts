@@ -361,6 +361,8 @@ export interface QaapAgentTaskRunnerContext {
     acquireTaskSandbox?(task: QaapAgentTask): Promise<void>;
     /** Release a sandbox acquired for a task that was stopped before its agent could spawn. */
     releaseTaskSandbox?(taskId: string): void;
+    /** Agents of this backend run inside a per-task sandbox container (QAAP_TASK_SANDBOX on, supported, not container-per-tenant). */
+    runsInTaskSandbox?(): boolean;
     /** The live task sandbox an agent started at `cwd` runs in, if any (after {@link acquireTaskSandbox}). */
     agentSandboxFor?(cwd: string): QaapTaskSandbox | undefined;
     buildChildEnv(task: QaapAgentTask): NodeJS.ProcessEnv;

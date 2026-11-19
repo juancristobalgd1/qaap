@@ -128,6 +128,22 @@ describe('QaapCodexGateOverlayBuilder', () => {
         overlay.dispose();
     });
 
+    it('turns Codex own sandbox off inside the per-task container, keeping the hook and approval_policy', async () => {
+        const inside = await trusted.create(options({ ownSandboxOff: true }));
+        const config = fs.readFileSync(path.join(inside.codexHome, 'config.toml'), 'utf8');
+        expect(config).to.match(/^sandbox_mode = "danger-full-access"$/m);
+        expect(config).to.not.contain('workspace-write');
+        expect(config).to.match(/^approval_policy = "never"$/m);
+        expect(config).to.contain('[hooks.state.');
+        const hooks = fs.readFileSync(path.join(inside.codexHome, 'hooks.json'), 'utf8');
+        inside.dispose();
+        const outside = await trusted.create(options());
+        const outsideConfig = fs.readFileSync(path.join(outside.codexHome, 'config.toml'), 'utf8');
+        expect(outsideConfig).to.match(/^sandbox_mode = "workspace-write"$/m);
+        expect(fs.readFileSync(path.join(outside.codexHome, 'hooks.json'), 'utf8')).to.equal(hooks);
+        outside.dispose();
+    });
+
     it('writes no [projects] entry for a trusted folder', async () => {
         const overlay = await trusted.create(options({ folderTrusted: true }));
         const config = fs.readFileSync(path.join(overlay.codexHome, 'config.toml'), 'utf8');
