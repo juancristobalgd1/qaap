@@ -1,5 +1,14 @@
 # Handoff
 
+## 2026-11-19 — Antigravity CLI login en web
+
+**Investigación solo hasta el inicio de OAuth** (`agy` local 1.5.12; `HOME` temporal; sin introducir credenciales, HOME eliminado y proceso terminado):
+- `Google OAuth`: indica que se abra el navegador y muestra una URL de `accounts.google.com/o/oauth2/auth`. La URL usa `redirect_uri=https://antigravity.google/oauth-callback`, no localhost. El CLI espera el resultado del navegador y no pide pegar código ni URL de redirección.
+- `Use a Google Cloud project` → `Continue with Google Cloud`: genera igualmente una URL de autorización de Google con `redirect_uri=https://antigravity.google/oauth-callback`. Tampoco ofrece un prompt de paste-back; queda esperando la finalización en el navegador.
+- Las URLs completas, incluidos `state` y `code_challenge`, se redactaron y no se guardaron. La prueba se detuvo antes de introducir credenciales.
+
+**Decisión:** no añadir inicio integrado de Antigravity en web/móvil: estos flujos no dan al usuario un código ni una URL que pueda devolver al PTY del tenant. En web, el inicio de sesión de Antigravity requiere Qaap Desktop, según el flujo actual. Repetir la investigación si `agy` añade un flujo de código/URL pegable o cambia el callback.
+
 Estado para continuar el trabajo desde otra cuenta o sesión. Actualízalo al cerrar cada tarea: qué queda pendiente, cómo se validó y qué limitaciones conviene conocer. La política de modelos está en la sección «Selección de modelos y orquestación» de `CLAUDE.md`.
 
 ## 2026-11-19 — Instancias de harness: sesión, catálogo, uso, hook de Codex y esfuerzo por instancia
