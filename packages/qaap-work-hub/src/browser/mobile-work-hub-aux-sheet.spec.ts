@@ -16,6 +16,7 @@ import { MOBILE_NARROW_VIEWPORT_MEDIA_QUERY } from '@theia/core/lib/browser/shel
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { MobileProjectsExecutionSurfaceTabsUi, type MobileProjectsExecutionSurfaceTabsHost } from './mobile-projects-execution-surface-tabs-ui';
 import { createMobileAuxSheetTrigger } from './mobile-projects-execution-surface-tabs-ui-render';
+import { MobileProjectsHubHeaderUi, type MobileProjectsHubHeaderHost } from './mobile-projects-hub-header-ui';
 import { MOBILE_WORK_HUB_AUX_SHEET_TRIGGER_CLASS, MobileWorkHubAuxSheet } from './mobile-work-hub-aux-sheet';
 import { QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY } from './mobile-work-hub-sessions-sidebar';
 import type { QaapWorkHubPullRequestTarget } from './qaap-work-hub-aux-pull-request-model';
@@ -211,6 +212,79 @@ describe('mobile-work-hub-aux-sheet entry points', () => {
         const sheet = ui.resolveMobileAuxSheet()!;
         sheet.close();
         expect(document.activeElement).to.equal(chip);
+    });
+
+    describe('Work Hub header trigger', () => {
+        function createHeader(overrides: Record<string, unknown> = {}): { ui: MobileProjectsHubHeaderUi; exec: MobileProjectsExecutionSurfaceTabsUi; titleRow: HTMLElement } {
+            const titleRow = document.createElement('div');
+            titleRow.className = 'theia-mobile-projects-title-row';
+            document.body.append(titleRow);
+            const exec = createUi();
+            const host = {
+                titleRow,
+                executionSurfaceTabsUi: exec,
+                hubView: 'tasks',
+                agentsHubInlineActive: true,
+                transcriptOpenProject: { id: 'p1', name: 'P' },
+                transcriptOpenSummary: { id: 'c1', title: 'T' },
+                // The hub stays in landing mode while a conversation is open inline: the trigger must still show.
+                shouldUseAgentsHubLanding: () => true,
+                ...overrides,
+            } as unknown as MobileProjectsHubHeaderHost;
+            return { ui: new MobileProjectsHubHeaderUi(host), exec, titleRow };
+        }
+        function headerTrigger(titleRow: HTMLElement): HTMLButtonElement | null {
+            return titleRow.querySelector<HTMLButtonElement>(`.${MOBILE_WORK_HUB_AUX_SHEET_TRIGGER_CLASS}`);
+        }
+
+        it('shows with a conversation open in the mobile layout and opens the sheet', () => {
+            mockViewport(true);
+            const { ui, exec, titleRow } = createHeader();
+            ui.syncAuxSheetTrigger();
+            const trigger = headerTrigger(titleRow)!;
+            expect(trigger).to.not.equal(null);
+            expect(trigger.hidden).to.equal(false);
+            expect(trigger.getAttribute('aria-label')).to.equal('Open views');
+            trigger.click();
+            expect(exec.resolveMobileAuxSheet()!.isOpen).to.equal(true);
+        });
+
+        it('stays hidden on the landing (no open conversation) and on desktop', () => {
+            mockViewport(true);
+            const landing = createHeader({ transcriptOpenSummary: undefined, agentsHubInlineActive: false });
+            landing.ui.syncAuxSheetTrigger();
+            expect(headerTrigger(landing.titleRow)!.hidden).to.equal(true);
+
+            const noInlineConversation = createHeader({ agentsHubInlineActive: false });
+            noInlineConversation.ui.syncAuxSheetTrigger();
+            expect(headerTrigger(noInlineConversation.titleRow)!.hidden).to.equal(true);
+
+            mockViewport(false);
+            const desktop = createHeader();
+            desktop.ui.syncAuxSheetTrigger();
+            expect(headerTrigger(desktop.titleRow)!.hidden).to.equal(true);
+        });
+
+        it('never shows two triggers at once: the transcript sheet keeps its own and this one steps aside', () => {
+            mockViewport(true);
+            const { ui, exec, titleRow } = createHeader();
+            ui.syncAuxSheetTrigger();
+            const sheetTrigger = createMobileAuxSheetTrigger(exec);
+            const transcriptRoot = document.createElement('div');
+            transcriptRoot.className = 'theia-mobile-agent-transcript-root';
+            transcriptRoot.append(sheetTrigger);
+            document.body.append(transcriptRoot);
+            ui.syncAuxSheetTrigger();
+            const visible = Array.from(document.querySelectorAll<HTMLButtonElement>(`.${MOBILE_WORK_HUB_AUX_SHEET_TRIGGER_CLASS}`))
+                .filter(button => !button.hidden);
+            expect(visible).to.deep.equal([sheetTrigger]);
+            expect(headerTrigger(titleRow)!.hidden).to.equal(true);
+        });
+
+        it('the trigger CSS respects the hidden attribute', () => {
+            const css = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'qaap-work-hub-mobile-aux-sheet.css'), 'utf8');
+            expect(css).to.contain('.theia-mobile-work-hub-aux-sheet-trigger[hidden]');
+        });
     });
 
     it('the desktop layout has no sheet and keeps the right panel', () => {

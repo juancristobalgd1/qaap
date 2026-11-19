@@ -34,6 +34,11 @@
     appearance: none;
   }
 
+  /* The header copy is hidden outside a conversation; its own display rule must not win over [hidden]. */
+  .theia-mobile-work-hub-aux-sheet-trigger[hidden] {
+    display: none;
+  }
+
   .theia-mobile-work-hub-aux-sheet-trigger:active,
   .theia-mobile-work-hub-aux-sheet-trigger[aria-expanded='true'] {
     background: var(--theia-toolbar-hoverBackground);

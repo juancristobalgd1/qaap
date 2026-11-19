@@ -118,7 +118,7 @@ export function createMobileAuxSheetTrigger(ctx: MobileProjectsExecutionSurfaceT
     const button = document.createElement('button');
     button.type = 'button';
     button.className = MOBILE_WORK_HUB_AUX_SHEET_TRIGGER_CLASS;
-    button.title = nls.localize('qaap/mobileWorkHubAuxSheet/open', 'Side chat and pull request');
+    button.title = nls.localize('qaap/mobileWorkHubAuxSheet/openViews', 'Open views');
     button.setAttribute('aria-label', button.title);
     button.setAttribute('aria-haspopup', 'dialog');
     const glyph = document.createElement('span');
