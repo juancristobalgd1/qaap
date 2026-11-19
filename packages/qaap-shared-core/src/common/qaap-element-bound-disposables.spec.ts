@@ -63,4 +63,12 @@ describe('QaapElementBoundDisposables', () => {
         expect(count).to.equal(1);
         expect(registry.size).to.equal(0);
     });
+
+    it('dispose releases everything', () => {
+        const a = track({ isConnected: true });
+        const b = track({ isConnected: false });
+        registry.dispose();
+        expect(a.disposed() && b.disposed()).to.equal(true);
+        expect(registry.size).to.equal(0);
+    });
 });

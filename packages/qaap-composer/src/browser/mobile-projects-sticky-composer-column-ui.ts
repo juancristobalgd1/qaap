@@ -414,7 +414,9 @@ export class MobileProjectsStickyComposerColumnUi {
         const composerEdgeFades = attachStickyComposerInputEdgeFades(input);
 
         if (options.getMentionOptions || options.getVariableOptions || options.getSkillOptions || options.getSlashMenuSections) {
-            attachStickyComposerMentionUi({
+            // Its window / visualViewport listeners were never removed (the handle was dropped), so every
+            // composer render stayed reachable from the window. Release them once the input leaves the DOM.
+            const mentionUi = attachStickyComposerMentionUi({
                 inputWrap: inputPanel,
                 input,
                 getMentionOptions: options.getMentionOptions ?? (() => []),
@@ -436,6 +438,7 @@ export class MobileProjectsStickyComposerColumnUi {
                 attachScrollFades: scroller => attachQaapScrollEdgeFades(scroller),
                 variableButtonTitle: nls.localize('qaap/mobileProjects/stickyComposerVariable', 'Insert variable (#)'),
             });
+            modelLabelListeners.add(input, Disposable.create(() => mentionUi.dispose()));
         }
 
         let submitInFlight = false;

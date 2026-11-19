@@ -52,6 +52,14 @@ export class QaapElementBoundDisposables {
         });
     }
 
+    /** Releases every subscription. */
+    dispose(): void {
+        for (const entry of [...this.entries]) {
+            this.entries.delete(entry);
+            entry.disposable.dispose();
+        }
+    }
+
     /** Releases the subscriptions of elements that are no longer in the DOM. */
     prune(): void {
         const cutoff = this.now() - this.graceMs;
