@@ -2,6 +2,25 @@
 
 Estado para continuar el trabajo desde otra cuenta o sesión. Actualízalo al cerrar cada tarea: qué queda pendiente, cómo se validó y qué limitaciones conviene conocer. La política de modelos está en la sección «Selección de modelos y orquestación» de `CLAUDE.md`.
 
+## 2026-11-19 — Instancias de harness: sesión, catálogo, uso, hook de Codex y esfuerzo por instancia
+
+Decisiones aplicadas: clave de caché `${instanceId}:${owner}` (la base sigue `${base}:${owner}`); cada instancia tiene su propio estado de sesión, calculado con su sondeo (su binario, su carpeta y sus variables), nunca heredado del base; si el override no valida, la instancia queda sin sesión (`disconnected`) sin caer al base; el uso de una instancia lee su carpeta; el hook de Codex comprueba con el binario de la instancia, y el overlay copia la sesión de la carpeta de la instancia.
+
+Hecho, un commit por subsistema (specs por subsistema, suite completa de `qaap-cloud-workspace` en verde: 4069 passing, 0 failing; `tsc -b`, `qaap-package-graph-check`, `qaap-drift-check` y `qaap-endpoint-ownership-check` en verde):
+1. Clave de caché por instancia (`9f555a6d1`): `listAgents` y la caché de modelos nativos usan el id completo; el catálogo de la instancia no comparte entrada con la base (spec `qaap-agent-native-models-instance-cache.spec.ts`).
+2. Sondeo de sesión y catálogo de la instancia (`ac202defd`): helper `resolveQaapHarnessLaunchEnvironment` (`qaap-harness-launch-environment.ts`) con plan + `apply(env)`; el sondeo corre con el binario y la carpeta/variables de la instancia; no hereda la credencial de Settings del base; el catálogo de una instancia solo se descubre con su propio spawner (`instanceNativeModelSpawner`), sin spawner nunca usa el binario base; el endpoint de modelos pasa el id de la instancia al catálogo.
+3. Uso (`74fec7f80`): `QaapUsageScanTarget.harnessHome` y `QaapUsageScannerRegistry.forHarnessInstance` (escáner y ledger por instancia; sin overrides devuelve el del owner).
+4. Hook de Codex (`52c1e0844`): `codexBin` en las opciones del overlay, usado por `codex --version` y `codex app-server`; el runner lo pasa desde el plan.
+5. Esfuerzo (`6239348dc`): `QaapAgentEffort.support` resuelve la instancia a su base.
+
+Pendiente, con diseño:
+- «Connect» de una instancia: el login corre en la terminal oculta del navegador (`qaap-agent-login-background.ts`, `buildAgentLoginShellCommand` con `env`). Hace falta que el servidor entregue un descriptor ya validado (binario y `CODEX_HOME`/`CLAUDE_CONFIG_DIR` de la instancia) en vez de que el cliente vuelva a validar rutas. Sin ese cambio, el login sigue en el home por defecto. No se ha ejecutado ningún login real.
+- Uso: `QaapUsageEndpoint` (GET de uso) necesita un parámetro `harness` y acceso al plan (las preferencias viven en el runner). El registro ya expone `forHarnessInstance`.
+- Mejorar prompt y evaluador (`improveComposerPromptExtracted`, `qaap-agent-task-runner-tool-pills2.ts`): hay que confirmar si la petición lleva el id de instancia antes de cablear el binario y el `apply(env)` del plan en `improveEnv`.
+- Motivo visible: una instancia con override inválido aparece como sin sesión, pero el motivo (ruta no válida) solo queda en la lógica; falta exponerlo en el selector.
+- Invalidación: confirmar que guardar binario o carpeta en Settings limpia las cachés de sondeo de esa instancia (`refreshAgentCatalog`).
+- En vivo (Electron): una instancia `Codex 2` con otra carpeta ya autenticada debe mostrarse conectada sin tocar la de la base; un binario inválido debe mostrarla sin sesión.
+
 ## 2026-11-18 — Settings → Harness: variables de entorno por harness/instancia (PR #534)
 
 Hecho (specs, tsc, drift y package-graph en verde; sin verificar en vivo):
@@ -24,10 +43,10 @@ Hecho (sin verificación en vivo todavía; specs, compilación, drift y package-
 
 Qué verificar en vivo (Electron): engranaje y panel en Settings → Harness; guardar un binario inválido muestra el error; una instancia `Codex 2` con otro `CODEX_HOME` ya autenticado ejecuta un turno con esa cuenta y el Tool Gate pide aprobación igual; en web (:3000) el panel solo enseña el nombre.
 
-Pendiente / limitaciones:
-- Estado de sesión, sondeo de conexión, caché de modelos y uso de una instancia salen del harness base (home por defecto); «Connect» de una instancia inicia sesión en el home por defecto.
-- La comprobación de confianza del hook de Codex (`codex app-server`) y los one-shots (mejorar prompt, evaluador) usan el `codex` del PATH, no el binario override.
-- En el composer, funciones atadas al id exacto (`codex`, `claude`: esfuerzo, etc.) pueden no aplicarse a `codex#2`; el catálogo de modelos sí (el endpoint mapea a la base). El selector se refresca con el intervalo del catálogo tras añadir una instancia.
+Pendiente / limitaciones (estado tras la ronda de instancias, ver la sección siguiente):
+- «Connect» de una instancia todavía inicia sesión en el home por defecto (ver «Instancias: estado» abajo).
+- Los one-shots (mejorar prompt, evaluador) no reciben el id de instancia: usan el `codex`/`claude` base y su entorno.
+- El endpoint de uso no acepta todavía un parámetro de instancia (el registro ya lo soporta).
 - Modelos personalizados extra por harness: no incluidos (el catálogo nativo sale del CLI y la validación de acceso al modelo lo exige).
 - Si el sandbox de tareas en macOS restringe lecturas, una carpeta/binario fuera de las raíces permitidas haría fallar el turno (visible, no silencioso): comprobar en vivo.
 
