@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Theia contributors and Qaap product fork.
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
+import { isQaapTenantBackendMode } from '@theia/qaap-adapters/lib/common/qaap-tenant-backend-auth';
 import type { QaapAgentEffortLevel } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
 import { Emitter, Event } from '@theia/core/lib/common/event';
 import { PreferenceService } from '@theia/core/lib/common/preferences';
@@ -1865,6 +1866,20 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public releaseTaskSandbox(taskId: string): void {
         this.taskSandbox?.release(taskId);
+    }
+
+    /**
+     * @internal Whether agents run inside a Linux container where Codex's own bubblewrap sandbox cannot start
+     * (no user namespaces): the per-task sandbox container, container-per-tenant isolation, or a tenant backend,
+     * which is itself a rootless container. The container isolates and the Tool Gate still approves every tool.
+     */
+    public runsInTaskSandbox(): boolean {
+        if (process.platform !== 'linux') {
+            return false;
+        }
+        return (!!this.taskSandbox?.isEnabled() && this.taskSandbox.isSupported())
+            || this.tenantSpawn.isContainerIsolationEnabled()
+            || isQaapTenantBackendMode();
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
