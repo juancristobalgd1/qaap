@@ -1,6 +1,7 @@
 import type { MobileProjectsTranscriptLiveUiContext } from './mobile-projects-transcript-live-ui-context';
 // Extracted from mobile-projects-transcript-live-ui.ts
 
+import { TRANSCRIPT_PREVIEW_POLL_BASE_MS } from './mobile-projects-transcript-live-ui';
 import {
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
@@ -395,6 +396,9 @@ export async function finalizeTranscriptDevPreviewAfterSettleExtracted(ctx: Mobi
         return;
     }
     ctx.transcriptPreviewSettlePollUntil = Date.now() + 45_000;
+    // A settled turn is an event: probe right away at the base rate, then back off again.
+    ctx.transcriptPreviewPollMisses = 0;
+    ctx.transcriptPreviewPollIntervalMs = TRANSCRIPT_PREVIEW_POLL_BASE_MS;
     ctx.kickoffTranscriptDevPreviewBootstrap(conv);
     await ctx.refreshTranscriptPreviewOffer(conv);
 }
