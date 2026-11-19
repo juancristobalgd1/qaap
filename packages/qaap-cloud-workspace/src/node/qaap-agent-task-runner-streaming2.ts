@@ -464,6 +464,7 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
             toolApprovalRules,
             readOnlyWorkspace,
             codexSupportsApproveForMe: detected?.codexSupportsApproveForMe,
+            codexOwnSandboxOff: ctx.runsInTaskSandbox?.() === true,
         };
         // A read-only turn is never routed through the interactive stdio approval flow: that flow
         // exists so a human can say yes to a write, and on a read-only turn there is no write to say

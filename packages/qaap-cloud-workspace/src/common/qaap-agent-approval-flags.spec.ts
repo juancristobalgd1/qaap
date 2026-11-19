@@ -156,6 +156,46 @@ describe('qaap-agent-approval-flags', () => {
         expect(command).not.to.include('--dangerously-bypass-approvals-and-sandbox');
     });
 
+    describe('Codex inside the per-task sandbox container', () => {
+        const codex = (extra: Record<string, unknown>): string => applyAgentApprovalPolicyToCommand(
+            "codex exec --json 'hi'",
+            { agentId: 'codex', approvalPolicyId: 'approve-for-me', autoApprove: true, ...extra },
+        );
+
+        it('shell approve-for-me drops workspace-write for danger-full-access', () => {
+            const command = codex({ codexOwnSandboxOff: true });
+            expect(command).to.include('--sandbox danger-full-access');
+            expect(command).to.include('--ask-for-approval untrusted');
+            expect(command).not.to.include('workspace-write');
+            expect(command).not.to.include('--full-auto');
+        });
+
+        it('does not use --approve-for-me (it reviews inside workspace-write)', () => {
+            const command = codex({ codexOwnSandboxOff: true, codexSupportsApproveForMe: true });
+            expect(command).not.to.include('--approve-for-me');
+            expect(command).to.include('--sandbox danger-full-access');
+        });
+
+        it('replaces --full-auto with danger-full-access and the same on-request policy', () => {
+            const command = codex({ codexOwnSandboxOff: true, toolApprovalRules: { shell: false, network: false } });
+            expect(command).to.include('--sandbox danger-full-access --ask-for-approval on-request');
+            expect(command).not.to.include('--full-auto');
+            expect(command).not.to.include('workspace-write');
+        });
+
+        it('outside the container the flags are unchanged', () => {
+            expect(codex({ codexOwnSandboxOff: false })).to.include('--sandbox workspace-write --ask-for-approval untrusted');
+            expect(codex({ toolApprovalRules: { shell: false, network: false } })).to.include('--full-auto');
+            expect(codex({ codexSupportsApproveForMe: true })).to.include('--approve-for-me');
+        });
+
+        it('full-access is the same inside and outside', () => {
+            const outside = codex({ approvalPolicyId: 'full-access' });
+            expect(codex({ approvalPolicyId: 'full-access', codexOwnSandboxOff: true })).to.equal(outside);
+            expect(outside).to.include('--dangerously-bypass-approvals-and-sandbox');
+        });
+    });
+
     it('request-approval keeps Codex interactive', () => {
         const command = applyAgentApprovalPolicyToCommand(
             "codex exec --json 'hi'",

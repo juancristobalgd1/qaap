@@ -37,6 +37,12 @@ export interface QaapAgentApprovalFlagOptions {
     /** Detected modern Codex CLI capability; older versions use the legacy approval flag. */
     readonly codexSupportsApproveForMe?: boolean;
     /**
+     * The agent runs inside the per-task sandbox container (QAAP_TASK_SANDBOX). Codex's own Linux sandbox
+     * (bubblewrap, needs user namespaces) cannot start there, so its flags turn it off: the container isolates
+     * and the Tool Gate hook still approves every tool call. Never widens `full-access` (already unsandboxed).
+     */
+    readonly codexOwnSandboxOff?: boolean;
+    /**
      * The turn must not modify its working directory (a workflow node with `isolation: 'cwd-readonly'`
      * — an explorer, a judge). Overrides every approval preset: an approval policy decides who says
      * yes to a write, read-only decides that no write is on the menu at all.
@@ -165,7 +171,7 @@ export function applyAgentApprovalPolicyToCommand(
             : applyClaudeApprovalFlags(command, policyId, rules);
     }
     if (effectiveId === 'codex') {
-        return applyCodexApprovalFlags(command, policyId, rules, options.codexSupportsApproveForMe);
+        return applyCodexApprovalFlags(command, policyId, rules, options.codexSupportsApproveForMe, options.codexOwnSandboxOff);
     }
     if (effectiveId === 'opencode') {
         return applyOpencodeApprovalFlags(command, policyId, rules);
@@ -326,19 +332,24 @@ function applyCodexApprovalFlags(
     policyId: QaapAgentApprovalPolicyId,
     rules: QaapAgentToolApprovalRules | undefined,
     codexSupportsApproveForMe: boolean | undefined,
+    ownSandboxOff?: boolean,
 ): string {
     const next = stripCodexApprovalFlags(command);
     if (policyId === 'full-access' || rules?.network) {
         return injectAfterExecutable(next, 'codex', '--dangerously-bypass-approvals-and-sandbox');
     }
     if (policyId === 'approve-for-me' && rules?.shell) {
-        const flags = codexSupportsApproveForMe
+        // `--approve-for-me` reviews inside the workspace-write sandbox, so the container case uses the explicit flags.
+        const flags = codexSupportsApproveForMe && !ownSandboxOff
             ? '--approve-for-me'
-            : '--sandbox workspace-write --ask-for-approval untrusted';
+            : `--sandbox ${ownSandboxOff ? 'danger-full-access' : 'workspace-write'} --ask-for-approval untrusted`;
         return injectAfterExecutable(next, 'codex', flags);
     }
     if (policyId === 'approve-for-me') {
-        return injectAfterExecutable(next, 'codex', '--full-auto');
+        // `--full-auto` implies the workspace-write sandbox: same approval policy, no own sandbox.
+        return injectAfterExecutable(next, 'codex', ownSandboxOff
+            ? '--sandbox danger-full-access --ask-for-approval on-request'
+            : '--full-auto');
     }
     return next;
 }
