@@ -39,6 +39,23 @@ describe('enhanceTranscriptMarkdownRichContent', () => {
         root.remove();
     });
 
+    it('keeps the text of a paragraph that merely contains one link', () => {
+        const root = renderHost('<p>see the guide at <a href="https://example.com/guide">https://example.com/guide</a> first</p>');
+        enhanceTranscriptMarkdownRichContent(root);
+        expect(root.querySelector('.theia-mobile-agent-link-preview-card-domain')).to.equal(null);
+        expect(root.textContent).to.contain('see the guide at');
+        expect(root.textContent).to.contain('first');
+        root.remove();
+    });
+
+    it('leaves a bare pull request URL for the chip decorator instead of a card', () => {
+        const root = renderHost('<p><a href="https://github.com/o/r/pull/5">https://github.com/o/r/pull/5</a></p>');
+        enhanceTranscriptMarkdownRichContent(root);
+        expect(root.querySelector('.theia-mobile-agent-link-preview-card-domain')).to.equal(null);
+        expect(root.querySelector('a[href="https://github.com/o/r/pull/5"]')).to.not.equal(null);
+        root.remove();
+    });
+
     it('does not show a link preview card for a provider API endpoint quoted in an error', () => {
         const root = renderHost('<p><a href="https://api.openai.com/v1/responses">https://api.openai.com/v1/responses</a></p>');
         enhanceTranscriptMarkdownRichContent(root);
