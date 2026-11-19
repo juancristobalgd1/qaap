@@ -632,6 +632,12 @@ const SETTINGS_API_KEY_AGENT_IDS = new Set<string>();
 
 /** Clear instructions for CLIs whose authentication needs interactive input in the tenant terminal. */
 export function localizeAgentTenantTerminalLoginMessage(agentLabel: string, command: string, followUp?: string): string {
+    if (command.trim() === 'agy') {
+        return nls.localize(
+            'qaap/agentLogin/antigravityDesktopOnly',
+            'Antigravity CLI offers Google OAuth or Google Cloud project sign-in. Qaap web cannot complete this interactive setup. Connect Antigravity in the Qaap desktop app, then return to Work Hub and refresh the agent list.',
+        );
+    }
     if (followUp) {
         return nls.localize(
             'qaap/agentLogin/tenantTerminalInstructionsFollowUp',
