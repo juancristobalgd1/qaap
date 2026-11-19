@@ -5,6 +5,7 @@
 
 import type { QaapLinkedPullRequest } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import type { QaapTaskPullRequest } from '@theia/qaap-shared-core/lib/common/qaap-task-pull-request';
+import { QAAP_NOTICE_TRACE_ID_PREFIX } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model';
 import { type QaapAgentConversation, toConversationSummary } from '../common/qaap-agent-conversation';
 import type { QaapAgentConversationStoreContext } from './qaap-agent-conversation-store-context';
 
@@ -12,8 +13,10 @@ import type { QaapAgentConversationStoreContext } from './qaap-agent-conversatio
 export interface QaapTaskPullRequestRecordOptions {
     /** Also link the thread to the PR (Work Hub inbox / PR chips), unless it is linked to another PR. */
     readonly linkedPullRequest?: QaapLinkedPullRequest;
-    /** Timeline note on the last agent message (failures only, so they are never swallowed). */
+    /** Timeline note on the last agent message (failures, so they are never swallowed, and questions). */
     readonly traceNote?: string;
+    /** The note is a neutral question or status, not a failure (shown without "Error:"). */
+    readonly traceNotice?: boolean;
 }
 
 /** Stores the conversation's task pull request state, announces it and persists it. */
@@ -47,7 +50,7 @@ export function recordTaskPullRequestExtracted(
                         ...message,
                         traceEvents: [...(message.traceEvents ?? []), {
                             type: 'error' as const,
-                            id: `task-pr-${at}`,
+                            id: options.traceNotice ? `${QAAP_NOTICE_TRACE_ID_PREFIX}task-pr-${at}` : `task-pr-${at}`,
                             message: traceNote,
                             startedAt: at,
                         }],

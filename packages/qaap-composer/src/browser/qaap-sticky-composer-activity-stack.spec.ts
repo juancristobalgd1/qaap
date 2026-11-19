@@ -8,7 +8,9 @@ import { expect } from 'chai';
 import * as fs from 'fs';
 import * as path from 'path';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
-import { buildStickyComposerActivityStackFingerprint, buildStickyComposerChangesPillFingerprint, patchStickyComposerActivityStack, patchStickyComposerChangesPillHost, renderStickyComposerActivityStack, renderStickyComposerChangesPill, selectComposerPillChanges } from './qaap-sticky-composer-activity-stack';
+import { QaapLiveTaskDiff } from '@theia/qaap-shared-core/lib/common/qaap-live-task-diff';
+import { buildStickyComposerChangesPillFingerprint, patchStickyComposerChangesPillHost, renderStickyComposerChangesPill, selectComposerPillChanges, STICKY_COMPOSER_RUN_APP_IN_PILL_ROW_CLASS, stickyComposerPillRowOwnsRunApp,
+    syncStickyComposerRunAppOwner } from './qaap-sticky-composer-activity-stack';
 import type { StickyComposerChangedFileView } from '@theia/qaap-transcript/lib/browser/qaap-transcript-host-contracts';
 
 describe('qaap-sticky-composer-activity-stack', () => {
@@ -122,6 +124,67 @@ describe('qaap-sticky-composer-activity-stack', () => {
             expect(afterNewEdit.hidden).to.equal(false);
             expect(afterNewEdit.resolved).to.equal(false);
             expect(afterNewEdit.clean).to.equal(false);
+        });
+    });
+
+    describe('diff stats scope in the Changes pill', () => {
+        let disableJSDOM: () => void;
+
+        before(() => {
+            disableJSDOM = enableJSDOM();
+        });
+
+        after(() => {
+            disableJSDOM();
+            QaapLiveTaskDiff.clear();
+        });
+
+        beforeEach(() => QaapLiveTaskDiff.clear());
+
+        const inlineText = (host: HTMLElement): string =>
+            host.querySelector('.theia-mobile-sticky-composer-activity-inline-stats')?.textContent ?? '';
+
+        it('labels stats that are this turn\'s own edits', () => {
+            const host = renderStickyComposerChangesPill({
+                changedFiles: [{ path: 'src/app.ts', kind: 'edited', added: 4, removed: 1 }],
+                diffStats: { added: 4, removed: 1 },
+                diffStatsScope: 'turn',
+                onReview: () => undefined,
+            });
+            document.body.append(host!);
+            expect(inlineText(host!)).to.contain('this turn');
+            host!.remove();
+        });
+
+        it('a task total is not labelled as this turn', () => {
+            const host = renderStickyComposerChangesPill({
+                changedFiles: [{ path: 'src/app.ts', kind: 'edited', added: 4, removed: 1 }],
+                diffStats: { added: 188, removed: 4 },
+                diffStatsScope: 'task',
+                diffStatsBaselineCommit: 'b1',
+                onReview: () => undefined,
+            });
+            document.body.append(host!);
+            expect(inlineText(host!)).to.not.contain('this turn');
+            host!.remove();
+        });
+
+        it('a task total in the pill follows the live total of its baseline without a re-render', () => {
+            const host = renderStickyComposerChangesPill({
+                changedFiles: [{ path: 'src/app.ts', kind: 'edited', added: 4, removed: 1 }],
+                diffStats: { added: 188, removed: 4 },
+                diffStatsScope: 'task',
+                diffStatsBaselineCommit: 'b1',
+                onReview: () => undefined,
+            });
+            document.body.append(host!);
+            expect(inlineText(host!)).to.contain('+188');
+            QaapLiveTaskDiff.publish('other', { added: 1, removed: 0 });
+            expect(inlineText(host!)).to.contain('+188');
+            QaapLiveTaskDiff.publish('b1', { added: 185, removed: 2 });
+            expect(inlineText(host!)).to.contain('+185');
+            expect(inlineText(host!)).to.contain('-2');
+            host!.remove();
         });
     });
 
@@ -674,107 +737,42 @@ describe('qaap-sticky-composer-activity-stack', () => {
         });
     });
 
-    describe('renderStickyComposerActivityStack queue', () => {
-        let disableJSDOM: () => void;
+    describe('single Run app owner (no stacked duplicate above the composer)', () => {
+        const noop = (): void => undefined;
 
-        before(() => {
-            disableJSDOM = enableJSDOM();
+        it('the pill row owns Run app once the agent edited files or the chat asked for a preview', () => {
+            expect(stickyComposerPillRowOwnsRunApp({ hasFileActivity: true, onRunApp: noop })).to.equal(true);
+            expect(stickyComposerPillRowOwnsRunApp({ previewRequested: true, onRunApp: noop })).to.equal(true);
+            expect(stickyComposerPillRowOwnsRunApp({ previewInConversation: true, onOpenPreview: noop })).to.equal(true);
         });
 
-        after(() => {
-            disableJSDOM();
+        it('leaves Run app to the quick-actions strip while the pill row is absent', () => {
+            expect(stickyComposerPillRowOwnsRunApp({ onRunApp: noop })).to.equal(false);
+            expect(stickyComposerPillRowOwnsRunApp({ hasFileActivity: true })).to.equal(false);
         });
 
-        it('keeps the queue stack separate from the Changes pill', () => {
-            const stack = renderStickyComposerActivityStack({
-                queueEntries: [{ draft: 'follow up' }],
-                changedFiles: [{ path: 'src/main.ts', kind: 'edited', added: 3, removed: 1 }],
-                diffStats: { added: 3, removed: 1 },
-            });
-            expect(stack).to.exist;
-            expect(stack!.querySelector('.theia-mobile-sticky-composer-activity-section.theia-mod-queue')).to.exist;
-            expect(stack!.querySelector('.theia-mobile-sticky-composer-changes-pill')).to.equal(null);
+        it('marks the composer host so the strip hides its own Run app chip', () => {
+            const disableJSDOM = enableJSDOM();
+            try {
+                const host = document.createElement('div');
+                syncStickyComposerRunAppOwner(host, { previewRequested: true, onRunApp: noop });
+                expect(host.classList.contains(STICKY_COMPOSER_RUN_APP_IN_PILL_ROW_CLASS)).to.equal(true);
+                syncStickyComposerRunAppOwner(host, { onRunApp: noop });
+                expect(host.classList.contains(STICKY_COMPOSER_RUN_APP_IN_PILL_ROW_CLASS)).to.equal(false);
+            } finally {
+                disableJSDOM();
+            }
         });
 
-        it('patchStickyComposerActivityStack returns false when text changes to force a safe re-render', () => {
-            const stack = renderStickyComposerActivityStack({
-                queueEntries: [{ draft: 'first follow up' }],
-                queueExpanded: true,
-            });
-            document.body.append(stack!);
-            const beforeFingerprint = buildStickyComposerActivityStackFingerprint({
-                queueEntries: [{ draft: 'first follow up' }],
-                queueExpanded: true,
-            });
-            const afterFingerprint = buildStickyComposerActivityStackFingerprint({
-                queueEntries: [{ draft: 'second follow up' }],
-                queueExpanded: true,
-            });
-            expect(beforeFingerprint).to.not.equal(afterFingerprint);
-
-            // When any item's text differs from the entry at that position, the
-            // patch returns false so the caller does a full replaceWith — this
-            // prevents DOM elements from staying in the old physical order on
-            // reorder, or breaking per-item event bindings on edit.
-            expect(patchStickyComposerActivityStack(stack!, {
-                queueEntries: [{ draft: 'second follow up' }],
-                queueExpanded: true,
-            })).to.equal(false);
-        });
-
-        it('patchStickyComposerActivityStack returns true when nothing changed (same text, same order)', () => {
-            const stack = renderStickyComposerActivityStack({
-                queueEntries: [{ draft: 'first' }, { draft: 'second' }],
-                queueExpanded: true,
-            });
-            document.body.append(stack!);
-
-            expect(patchStickyComposerActivityStack(stack!, {
-                queueEntries: [{ draft: 'first' }, { draft: 'second' }],
-                queueExpanded: true,
-            })).to.equal(true);
-        });
-
-        it('exposes Send now on every queued message', () => {
-            const sent: number[] = [];
-            const stack = renderStickyComposerActivityStack({
-                queueEntries: [{ draft: 'first' }, { draft: 'second' }, { draft: 'third' }],
-                queueExpanded: true,
-                onQueueSendNow: index => { sent.push(index); },
-            });
-            expect(stack).to.exist;
-            expect(stack!.classList.contains('theia-mod-queue-popover')).to.equal(true);
-            const sendButtons = Array.from(stack!.querySelectorAll<HTMLButtonElement>(
-                '.theia-mobile-sticky-composer-queue-action[aria-label="Send now"]',
-            ));
-            expect(sendButtons).to.have.length(3);
-            expect(stack!.querySelector('.codicon-arrow-up')).to.equal(null);
-            sendButtons[1].click();
-            expect(sent).to.deep.equal([1]);
-        });
-
-        it('labels the send action "Run in parallel" while the agent is working', () => {
-            const stack = renderStickyComposerActivityStack({
-                queueEntries: [{ draft: 'first' }],
-                queueExpanded: true,
-                agentWorking: true,
-                onQueueSendNow: () => { },
-            });
-            expect(stack!.querySelector('.theia-mobile-sticky-composer-queue-action[aria-label="Run in parallel"]')).to.exist;
-            expect(stack!.querySelector('.theia-mobile-sticky-composer-queue-action[aria-label="Send now"]')).to.equal(null);
-        });
-
-        it('repaints the send action label when the agent settles', () => {
-            const working = { queueEntries: [{ draft: 'first' }], queueExpanded: true, agentWorking: true };
-            const idle = { queueEntries: [{ draft: 'first' }], queueExpanded: true, agentWorking: false };
-            // The label is part of the fingerprint, so a working -> idle flip is not skipped as a no-op.
-            expect(buildStickyComposerActivityStackFingerprint(working))
-                .to.not.equal(buildStickyComposerActivityStackFingerprint(idle));
-
-            const stack = renderStickyComposerActivityStack(working);
-            document.body.append(stack!);
-            expect(patchStickyComposerActivityStack(stack!, idle)).to.equal(true);
-            expect(stack!.querySelector('.theia-mobile-sticky-composer-queue-action[aria-label="Send now"]')).to.exist;
+        it('the stylesheet hides the strip Run app chip whenever the pill row owns it', () => {
+            const css = fs.readFileSync(
+                path.join(__dirname, '..', '..', '..', 'qaap-work-hub', 'src', 'browser', 'style', 'mobile-workbench-conversation.css'),
+                'utf8',
+            ).replace(/\r\n/g, '\n');
+            expect(css).to.include(`.${STICKY_COMPOSER_RUN_APP_IN_PILL_ROW_CLASS} .theia-mobile-projects-sticky-composer>`
+                + '.theia-mobile-agent-transcript-empty-actions .theia-mobile-agent-transcript-empty-action[data-quick-action="run-app"]');
+            expect(css).to.include(`.${STICKY_COMPOSER_RUN_APP_IN_PILL_ROW_CLASS}.theia-mod-quick-actions-preview-only `
+                + '.theia-mobile-projects-sticky-composer>.theia-mobile-agent-transcript-empty-actions {');
         });
     });
 });

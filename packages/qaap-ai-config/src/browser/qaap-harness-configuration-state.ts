@@ -122,3 +122,48 @@ export function resolveHarnessLastTurnAge(at: number, now: number): HarnessLastT
     const hours = Math.floor(minutes / 60);
     return hours < 24 ? { unit: 'hours', value: hours } : { unit: 'days', value: Math.floor(hours / 24) };
 }
+
+/** One row of Settings → Harness: a built-in harness or an instance added with "Add harness". */
+export interface HarnessSettingsRow {
+    readonly id: string;
+    readonly baseId: string;
+    readonly baseLabel: string;
+    readonly bin: string;
+    readonly label: string;
+    readonly isInstance: boolean;
+}
+
+/**
+ * Built-in harnesses in catalog order, each followed by its instances. Instances whose base harness is not
+ * in the catalog (retired) are left out; the display name comes from the harness settings.
+ */
+export function resolveHarnessSettingsRows(
+    definitions: readonly { readonly id: string; readonly label: string; readonly bin: string }[],
+    instances: readonly { readonly id: string; readonly baseId: string }[],
+    labelFor: (harnessId: string, baseLabel: string) => string,
+): HarnessSettingsRow[] {
+    const rows: HarnessSettingsRow[] = [];
+    for (const definition of definitions) {
+        rows.push({
+            id: definition.id,
+            baseId: definition.id,
+            baseLabel: definition.label,
+            bin: definition.bin,
+            label: labelFor(definition.id, definition.label),
+            isInstance: false,
+        });
+        for (const instance of instances) {
+            if (instance.baseId === definition.id) {
+                rows.push({
+                    id: instance.id,
+                    baseId: definition.id,
+                    baseLabel: definition.label,
+                    bin: definition.bin,
+                    label: labelFor(instance.id, definition.label),
+                    isInstance: true,
+                });
+            }
+        }
+    }
+    return rows;
+}

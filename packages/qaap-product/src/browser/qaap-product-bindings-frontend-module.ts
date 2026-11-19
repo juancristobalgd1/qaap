@@ -19,6 +19,8 @@ import { UserStorageContribution } from '@theia/userstorage/lib/browser/user-sto
 import { rebindQaapPreferenceTreeGenerator } from '@theia/qaap-shared-core/lib/browser/qaap-preference-tree-generator';
 import { rebindQaapPreferencesContribution } from '@theia/qaap-shared-core/lib/browser/qaap-preferences-contribution';
 import { bindQaapSecretPreferenceInputRenderer } from '@theia/qaap-shared-core/lib/browser/qaap-secret-preference-input-renderer';
+import { WorkspaceTrustDialogFactory } from '@theia/workspace/lib/browser/workspace-trust-dialog-factory';
+import { QaapWorkspaceTrustDialogFactory } from './qaap-workspace-trust-dialog';
 
 /**
  * Mobile-safe product bindings (part of the `bundle-mobile` entry). IDE-only rebinds (Monaco
@@ -44,6 +46,12 @@ export default new ContainerModule((bind, _unbind, isBound, rebind) => {
     // English only for launch (audit L1): no display-language picker while QaapSupportedLocales is ['en'].
     bind(QaapDisplayLanguageCommandContribution).toSelf().inSingletonScope();
     bind(CommandContribution).toService(QaapDisplayLanguageCommandContribution);
+
+    // The trust question without upstream's "feature is currently under development" note.
+    bind(QaapWorkspaceTrustDialogFactory).toSelf().inSingletonScope();
+    if (isBound(WorkspaceTrustDialogFactory)) {
+        rebind(WorkspaceTrustDialogFactory).toService(QaapWorkspaceTrustDialogFactory);
+    }
 
     if (isBound(AboutDialogProps)) {
         rebind(AboutDialogProps).toDynamicValue(() => ({

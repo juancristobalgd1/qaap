@@ -394,6 +394,7 @@ describe('QaapTaskPullRequestService', function (): void {
         expect(fake.records).to.have.length(1);
         expect(fake.records[0].pr.state).to.equal('awaiting-consent');
         expect(fake.records[0].options?.traceNote).to.equal('PR ready: allow Qaap to open PRs on acme/demo?');
+        expect(fake.records[0].options?.traceNotice).to.equal(true);
 
         await service.respondToConsent('c1', true);
         await service.sync('c1');

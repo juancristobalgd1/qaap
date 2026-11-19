@@ -270,6 +270,64 @@ describe('mobile-shell-work-hub-bootstrap', () => {
         expect(host.calls).to.not.include('releaseMobileWorkHubBootGuardWhenReady');
     });
 
+    it('back from the desktop IDE, reopens the conversation that was open, once', async () => {
+        const opened: string[] = [];
+        const sessionState = new MobileShellSessionState();
+        const target = { project: { id: 'p1' }, summary: { id: 'conv-1', status: 'settled' } };
+        sessionState.conversationBeforeDesktopIde = target as unknown as MobileShellSessionState['conversationBeforeDesktopIde'];
+        const panelFor = (homeMode: boolean): MobileProjectsPanel => ({
+            isHomeMode: () => homeMode,
+            isVisible: () => false,
+            show: async () => undefined,
+            hide: () => undefined,
+            dispose: () => undefined,
+            node: document.createElement('div'),
+            getHubView: () => 'tasks',
+            preferComposerSurface: () => undefined,
+            isAgentsHubExecutionSurfaceReady: () => false,
+            ensureAgentsHubExecutionShellRendered: () => { opened.push('idle-shell'); },
+            openAgentsHubInlineTranscript: async (project: { id: string }, summary: { id: string }) => { opened.push(`${project.id}/${summary.id}`); },
+            isWorkHubSessionsSidebarVisible: () => false,
+            openWorkHubSessionsSidebar: () => { opened.push('sidebar'); },
+        }) as unknown as MobileProjectsPanel;
+        const { controller } = createController({ sessionState, host: { createProjectsPanel: panelFor } });
+        await controller.restoreAgentsSurfaceAfterReload(0);
+        // The conversation replaces the idle new-task shell the bootstrap paints first.
+        expect(opened).to.deep.equal(['idle-shell', 'p1/conv-1']);
+        expect(sessionState.conversationBeforeDesktopIde).to.equal(undefined);
+        await controller.restoreAgentsSurfaceAfterReload(0);
+        expect(opened.filter(entry => entry === 'p1/conv-1')).to.have.length(1);
+    });
+
+    it('back from the desktop IDE, reopens the sessions sidebar only when it was open before', async () => {
+        const run = async (wasOpen: boolean | undefined): Promise<string[]> => {
+            const calls: string[] = [];
+            const sessionState = new MobileShellSessionState();
+            sessionState.sessionsSidebarOpenBeforeDesktopIde = wasOpen;
+            const panelFor = (homeMode: boolean): MobileProjectsPanel => ({
+                isHomeMode: () => homeMode,
+                isVisible: () => false,
+                show: async () => undefined,
+                hide: () => undefined,
+                dispose: () => undefined,
+                node: document.createElement('div'),
+                getHubView: () => 'tasks',
+                preferComposerSurface: () => undefined,
+                isAgentsHubExecutionSurfaceReady: () => false,
+                ensureAgentsHubExecutionShellRendered: () => undefined,
+                isWorkHubSessionsSidebarVisible: () => false,
+                openWorkHubSessionsSidebar: () => { calls.push('sidebar'); },
+            }) as unknown as MobileProjectsPanel;
+            const { controller } = createController({ sessionState, host: { createProjectsPanel: panelFor } });
+            await controller.restoreAgentsSurfaceAfterReload(0);
+            expect(sessionState.sessionsSidebarOpenBeforeDesktopIde).to.equal(undefined);
+            return calls;
+        };
+        expect(await run(true)).to.deep.equal(['sidebar']);
+        expect(await run(false)).to.deep.equal([]);
+        expect(await run(undefined)).to.deep.equal([]);
+    });
+
     it('persistAgentsSurfaceForActiveSession marks agents preference when composer header is active', () => {
         const storage = window.sessionStorage;
         storage.removeItem(QAAP_MOBILE_PREFER_AGENTS_SURFACE_KEY);

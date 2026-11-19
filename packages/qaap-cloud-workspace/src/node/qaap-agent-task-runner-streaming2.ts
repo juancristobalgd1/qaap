@@ -79,6 +79,7 @@ import { appendAgentDefaultWorkflowToPrompt } from '../common/qaap-agent-default
 import { isConversationalTurn } from '../common/qaap-agent-conversational-turn';
 import { prependAgentTaskContextToPrompt, type QaapAgentRepoContext } from '../common/qaap-agent-task-context';
 import { buildQaapAgentRepoProfile } from './qaap-agent-repo-profile';
+import { resolveQaapHarnessInstanceRoute } from './qaap-harness-launch-overrides';
 import {
     applyTemplateForPromptTransport as applyTemplateForPromptTransportHelper,
     resolveAgentPromptTransport as resolveAgentPromptTransportHelper,
@@ -226,9 +227,13 @@ export function createExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCr
             void ctx.billingStore.getOrCreateAccount(ownerLogin).catch(() => undefined);
         }
         const createdAt = Date.now();
+        const harnessInstanceId = prompt && resolvedAgentId !== SHELL_AGENT_ID
+            ? resolveQaapHarnessInstanceRoute(request.agent, key => ctx.preferenceReaderForOwner(ownerLogin)(key))?.instanceId
+            : undefined;
         const task: QaapAgentTask = {
             id,
             agentId: resolvedAgentId,
+            ...(harnessInstanceId ? { harnessInstanceId } : {}),
             title: (request.title ?? '').trim() || prompt || rawCommand,
             command: rawCommand || prompt,
             cwd,
@@ -303,7 +308,7 @@ export function retryExtracted(ctx: QaapAgentTaskRunnerContext, id: string, owne
             : {
                 title: task.title,
                 prompt: task.command,
-                agent: agentId,
+                agent: task.harnessInstanceId ?? agentId,
                 cwd: task.cwd,
                 agentModel: resolveTaskAgentModel(task),
                 qaiqModel: resolveTaskAgentModel(task),
@@ -351,7 +356,7 @@ export function resumeExtracted(ctx: QaapAgentTaskRunnerContext, id: string, own
             : {
                 title: task.title,
                 prompt: task.command,
-                agent: agentId,
+                agent: task.harnessInstanceId ?? agentId,
                 cwd: task.cwd,
                 agentModel: resolveTaskAgentModel(task),
                 qaiqModel: resolveTaskAgentModel(task),
@@ -612,6 +617,19 @@ export function resolveAgentIdExtracted(ctx: QaapAgentTaskRunnerContext, prompt:
         const requested = agentId?.trim().toLowerCase();
         if (requested === QAIQ_AGENT_ID) {
             return useDefaultHarness();
+        }
+        // A harness instance from Settings → Harness ("Add harness", e.g. `codex#2`) runs as its base
+        // harness; its own switch decides, the base harness may be switched off.
+        const instanceRoute = resolveQaapHarnessInstanceRoute(agentId, key => ctx.preferenceReaderForOwner(ownerLogin)(key));
+        if (instanceRoute) {
+            assertAgentAllowedOnHostedRuntime(instanceRoute.baseId);
+            if (!instanceRoute.configured || !ctx.detectedAgents.has(instanceRoute.baseId)) {
+                throw new Error(`Agent "${instanceRoute.instanceId}" is not available on this server.`);
+            }
+            if (!instanceRoute.enabled) {
+                throw new Error(`Agent "${instanceRoute.instanceId}" is disabled in Harness configuration.`);
+            }
+            return instanceRoute.baseId;
         }
         const explicit = ctx.normalizeAgentId(agentId);
         if (explicit) {

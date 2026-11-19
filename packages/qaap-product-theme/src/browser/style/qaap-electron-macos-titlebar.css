@@ -75,6 +75,18 @@ body.qaap-electron-macos-inset-titlebar .theia-mobile-projects-header input {
   -webkit-app-region: no-drag;
 }
 
+/* Settings with its sidebar closed: the reopen toggle leads the content header, which starts at the
+   window's top-left edge, so it moves past the traffic lights like the Work Hub header above.
+   `!important`: the header's own padding shorthand has higher specificity than this scope. */
+body.qaap-electron-macos-inset-titlebar:not(.qaap-electron-macos-fullscreen) .theia-mobile-work-hub-settings-layout.theia-mod-sidebar-collapsed .theia-mobile-work-hub-settings-content-header {
+  padding-left: 78px !important;
+  -webkit-app-region: drag;
+}
+
+body.qaap-electron-macos-inset-titlebar .theia-mobile-work-hub-settings-content-header button {
+  -webkit-app-region: no-drag;
+}
+
 /* Narrow (mobile) top bar: back/forward are absolutely placed at the leading edge, so they move past the lights. */
 body.qaap-electron-macos-inset-titlebar:not(.qaap-electron-macos-fullscreen) #theia-top-panel>#theia\:workbench-history-nav {
   left: 84px;
@@ -191,4 +203,38 @@ body.qaap-electron-macos-inset-titlebar.qaap-mod-work-hub-aux-panel-maximized .q
 body.qaap-electron-macos-inset-titlebar.qaap-mod-work-hub-aux-panel-maximized .qaap-work-hub-aux-panel-tabbar [role='tab'],
 body.qaap-electron-macos-inset-titlebar.qaap-mod-work-hub-aux-panel-maximized .qaap-work-hub-aux-panel-tabbar input {
   -webkit-app-region: no-drag;
+}
+
+/*-----------------------------------------------------------------------------
+| Traffic-light row centre. The lights centre at about 28px (trafficLightPosition y 21 + half the
+| 14px button). Work Hub headers, the Settings content header and the views-panel tab bar centre
+| their controls on that line. Each rule keeps its box height: the padding split is asymmetric.
+| Scoped to the macOS inset title bar outside fullscreen, so web and mobile keep their own layout.
+|----------------------------------------------------------------------------*/
+
+/* Work Hub chat header (main view): the row sits at top 10px, 40px tall, centred at 30px. */
+body.qaap-electron-macos-inset-titlebar:not(.qaap-electron-macos-fullscreen) .theia-mobile-projects-header-main {
+  position: relative;
+  top: -2px;
+}
+
+/* Settings content header: was 77px tall with controls centred at 38px. 1.5/6.5 padding centres them
+   on the lights and makes the header as tall as the views-panel tab bar (61px), so both borders line up. */
+body.qaap-electron-macos-inset-titlebar:not(.qaap-electron-macos-fullscreen) .theia-mobile-work-hub-settings-content-header {
+  padding-top: 1.5px !important;
+  padding-bottom: 6.5px !important;
+}
+
+/* Views panel tab bar (beside the chat, Pull requests and Settings): 61px tall, controls centred at 31px.
+   Padding split 2.5/9.5 keeps the 61px height. */
+body.qaap-electron-macos-inset-titlebar:not(.qaap-electron-macos-fullscreen) .qaap-work-hub-aux-panel-tabbar {
+  padding-top: 2.5px !important;
+  padding-bottom: 9.5px !important;
+}
+
+/* Pull requests header: 42px row at top 14px inside the 14px-padded projects header, centred at 35px.
+   A relative 7px lift centres it on the same line; the row keeps its height. */
+body.qaap-electron-macos-inset-titlebar:not(.qaap-electron-macos-fullscreen) .theia-mobile-work-hub-pull-request-header {
+  position: relative;
+  top: -7px;
 }

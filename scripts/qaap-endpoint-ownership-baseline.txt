@@ -72,3 +72,7 @@ packages/qaap-cloud-workspace/src/node/qaap-tool-gate-endpoint.ts :: GET `${QAAP
 
 packages/qaap-product/src/node/qaap-immutable-chunk-cache-contribution.ts :: GET '/favicon.ico'
 # Static redirect to the packaged logo (302). Browsers request it before sign-in and it carries no user data.
+
+packages/qaap-product/src/node/qaap-immutable-chunk-cache-contribution.ts :: GET QAAP_DESKTOP_DOWNLOAD_LINKS_PATH
+# Public landing page: the desktop-installer links are read before sign-in. Read-only JSON of the
+# operator's QAAP_DESKTOP_DOWNLOAD_URL_* values (https only, no credentials); no user or tenant data.

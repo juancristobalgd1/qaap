@@ -25,6 +25,9 @@ const nodeOptions = process.env.NODE_OPTIONS ?? '';
 const env = {
     ...process.env,
     QAAP_SKIP_AUTH: process.env.QAAP_SKIP_AUTH || '1',
+    // Explicit local-development marker: the managed GitHub MCP server reads a stored GitHub session only
+    // under it (or QAAP_DESKTOP). Not set for a nested preview, which runs inside someone's tenant.
+    ...(nested ? {} : { QAAP_LOCAL_DEV: process.env.QAAP_LOCAL_DEV || '1' }),
     // Bound the nested backend's heap so a heavy preview cannot push a memory-limited tenant
     // container (and the outer backend with it) into the OOM killer.
     ...(nested && !/--max-old-space-size\b/.test(nodeOptions)

@@ -66,9 +66,11 @@ const CHANGE_SCOPE_WATCH_INTERVAL_MS = 10_000;
 import {
     findPendingControlRequestEntry as findPendingControlRequestEntryHelper,
     removeAgentPromptTempDir as removeAgentPromptTempDirHelper,
+    quoteShellArg,
 } from './qaap-agent-task-runner-utils';
 import { applyPreTurnAgentHooks, createQaiqPreToolUseHookGate } from './qaap-agent-task-runner-hooks';
 import { canProbeProviderKey, runProviderKeyPreflight } from './qaap-provider-key-preflight';
+import { applyQaapHarnessBinaryOverride, applyQaapHarnessUserEnv, resolveQaapHarnessLaunchPlan } from './qaap-harness-launch-overrides';
 import { isConversationalTurn, isConversationalTurnTask } from '../common/qaap-agent-conversational-turn';
 import { emitsStreamJsonFinalResult, QAAP_AGENT_EXIT_AFTER_RESULT_GRACE_MS, QaapAgentFinalResultWatcher, type QaapAgentFinalResult } from './qaap-agent-final-result-watcher';
 
@@ -577,6 +579,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
         let child: ChildProcess;
         let childEnv: NodeJS.ProcessEnv | undefined;
         let codexGateOverlay: QaapCodexGateOverlay | undefined;
+        let spawnCommand = task.command;
         try {
             ctx.enforceAgentIsolationPolicy();
             await ctx.ensureAgentCwdOwnershipAsync(task.cwd);
@@ -588,6 +591,29 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             ctx.recordTaskLatencyMark(task.id, 'spawn_start');
             ctx.observability?.recordAgentCommandStarted(task, 'agent-cli');
             childEnv = ctx.buildChildEnv(task);
+            // Settings → Harness binary path / configuration folder (desktop app only; empty elsewhere).
+            // Applied before the Codex gate overlay, which copies the sign-in from CODEX_HOME.
+            const launchPlan = resolveQaapHarnessLaunchPlan(
+                task.harnessInstanceId ?? ctx.resolveTaskAgentId(task),
+                key => ctx.preferenceReaderForOwner(task.ownerLogin)(key),
+            );
+            if (launchPlan.envNames?.length && ctx.harnessEnvSecrets) {
+                // Values stay in the spawn env only: never in the command line, a log or the task record.
+                const harnessKey = task.harnessInstanceId ?? ctx.resolveTaskAgentId(task);
+                applyQaapHarnessUserEnv(childEnv, await ctx.harnessEnvSecrets.resolve(harnessKey, launchPlan.envNames));
+            }
+            if (launchPlan.homeEnvVar && launchPlan.homeDir) {
+                childEnv[launchPlan.homeEnvVar] = launchPlan.homeDir;
+            }
+            if (launchPlan.binaryPath) {
+                const harnessId = ctx.resolveTaskAgentId(task);
+                spawnCommand = applyQaapHarnessBinaryOverride(
+                    task.command,
+                    ctx.detectedAgents.get(harnessId)?.bin ?? harnessId,
+                    launchPlan.binaryPath,
+                    quoteShellArg,
+                );
+            }
             if (usesOpencodeGatePlugin(ctx.resolveTaskAgentId(task))) {
                 // Prove once per OpenCode version that the gate plugin loads and sees tool calls. Without the
                 // proof the plugin is not wired and OpenCode's own `ask` rules keep refusing gated tools.
@@ -629,7 +655,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                 throw new QaapAgentSpawnSkippedError();
             }
             // Pipes stay attached (no unref()), so logging and stdio approvals are unaffected.
-            child = ctx.spawnAgentCommand(task.command, {
+            child = ctx.spawnAgentCommand(spawnCommand, {
                 cwd: task.cwd,
                 env: childEnv,
                 stdio: stdinInteractive ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe'],

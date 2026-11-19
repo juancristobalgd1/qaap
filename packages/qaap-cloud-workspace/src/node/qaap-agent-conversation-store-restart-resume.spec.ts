@@ -277,3 +277,64 @@ describe('QaapAgentConversationStore restart auto-resume', () => {
         }
     });
 });
+
+describe('QaapAgentConversationStore restart recovery keeps conversation order', () => {
+    const ENV = ['QAAP_AUTO_RESUME_TURNS', 'QAAP_MAX_RESTART_RESUMES'] as const;
+    const saved: Record<string, string | undefined> = {};
+    beforeEach(() => ENV.forEach(k => { saved[k] = process.env[k]; delete process.env[k]; }));
+    afterEach(() => ENV.forEach(k => { if (saved[k] === undefined) { delete process.env[k]; } else { process.env[k] = saved[k]; } }));
+
+    it('auto-resume leaves updatedAt on the last real activity', async () => {
+        const store = new TestConversationStore();
+        store.configureForTest(new TestTaskRunner());
+        const now = Date.now();
+        const lastActivity = now - 3 * 60 * 1000;
+        store.seed(streamingConversation('r1', lastActivity));
+
+        await store.resume('r1', now);
+
+        expect(store.get('r1')!.updatedAt).to.equal(lastActivity);
+        expect(store.get('r1')!.interruptedAt).to.be.undefined;
+    });
+
+    it('startup sweep that interrupts a turn records interruptedAt and keeps updatedAt', () => {
+        const store = new TestConversationStore();
+        store.configureForTest(new TestTaskRunner());
+        const now = Date.now();
+        const lastActivity = now - 3 * 60 * 1000;
+        store.seed(streamingConversation('r2', lastActivity));
+
+        expect(store.sweepReset(now)).to.be.true;
+
+        const conv = store.get('r2')!;
+        expect(conv.status).to.equal('failed');
+        expect(conv.updatedAt).to.equal(lastActivity);
+        expect(conv.interruptedAt).to.equal(now);
+    });
+
+    it('a turn force-stopped for the absolute cap during the startup sweep keeps updatedAt', () => {
+        const store = new TestConversationStore();
+        store.configureForTest(new TestTaskRunner());
+        const now = Date.now();
+        const lastActivity = now - 4 * 60 * 60 * 1000;
+        store.seed(streamingConversation('r3', lastActivity));
+
+        expect(store.sweepReset(now)).to.be.true;
+
+        expect(store.get('r3')!.updatedAt).to.equal(lastActivity);
+    });
+
+    it('a restart does not reorder the sidebar: the recovered conversation keeps its place', () => {
+        const store = new TestConversationStore();
+        store.configureForTest(new TestTaskRunner());
+        const now = Date.now();
+        store.seed(streamingConversation('old-streaming', now - 10 * 60 * 1000));
+        store.seed(streamingConversation('newer-idle', now - 2 * 60 * 60 * 1000, { status: 'idle' }));
+        const before = store.list(undefined).map(summary => summary.id);
+
+        store.sweepReset(now);
+
+        expect(store.list(undefined).map(summary => summary.id)).to.deep.equal(before);
+        expect(before).to.deep.equal(['old-streaming', 'newer-idle']);
+    });
+});

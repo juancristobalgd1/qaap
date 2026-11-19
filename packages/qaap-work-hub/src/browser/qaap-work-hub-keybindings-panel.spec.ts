@@ -88,9 +88,11 @@ function groupTitles(host: HTMLElement): string[] {
 describe('QaapWorkHubKeybindingsPanel', () => {
 
     const commands: FakeCommand[] = [
-        { id: 'qaap.workHub.newChat', label: 'New Chat', category: 'Work Hub' },
+        { id: 'qaap.chat.maximize', label: 'Maximize Chat', category: 'Chat' },
+        { id: 'qaap.composer.addEditorSelection', label: 'Add selection to agent', category: 'Qaap' },
+        { id: 'qaap.workHub.unlisted', label: 'Unlisted Qaap Command', category: 'Qaap' },
+        { id: 'editor.action.inlineSuggest.commit', label: 'Accept Inline Suggestion' },
         { id: 'editor.action.format', label: 'Format Document' },
-        { id: 'editor.action.commentLine', label: 'Toggle Line Comment' },
         { id: 'internal.hidden' }
     ];
 
@@ -108,72 +110,80 @@ describe('QaapWorkHubKeybindingsPanel', () => {
         document.body.innerHTML = '';
     });
 
-    it('groups composer, Work Hub and general commands and skips commands without a label', () => {
+    it('lists only the composer keys and the allowlisted Work Hub commands', () => {
         const harness = createHarness([
-            binding('qaap.workHub.newChat', 'ctrl+alt+n'),
+            binding('qaap.chat.maximize', 'ctrlcmd+alt+e'),
+            binding('qaap.composer.addEditorSelection', 'ctrlcmd+shift+.', KeybindingScope.DEFAULT, 'editorFocus'),
+            binding('qaap.workHub.unlisted', 'ctrl+alt+u'),
+            binding('editor.action.inlineSuggest.commit', 'tab', KeybindingScope.DEFAULT, 'inlineSuggestionVisible && !editorReadonly'),
             binding('editor.action.format', 'ctrl+shift+f'),
             binding('internal.hidden', 'ctrl+h')
         ], commands);
-        expect(groupTitles(harness.host)).to.deep.equal(['Composer', 'Work Hub', 'General']);
-        expect(rowLabels(harness.host)).to.include('Work Hub: New Chat');
-        expect(rowLabels(harness.host)).to.include('Format Document');
-        expect(harness.host.textContent).to.not.contain('internal.hidden');
+        expect(groupTitles(harness.host)).to.deep.equal(['Composer', 'Work Hub']);
+        expect(registryRowLabels(harness.host)).to.deep.equal(['Chat: Maximize Chat', 'Qaap: Add selection to agent']);
+        expect(rowLabels(harness.host)).to.include.members(['Send message', 'New line', 'Send in parallel', 'Interrupt agent', 'Select model', 'Previous prompt', 'Search transcript', 'Close']);
+        expect(harness.host.textContent).to.not.contain('Accept Inline Suggestion');
+        expect(harness.host.textContent).to.not.contain('Format Document');
+        expect(harness.host.textContent).to.not.contain('Unlisted Qaap Command');
     });
 
     it('excludes disabled markers and the passthrough pseudo command', () => {
         const harness = createHarness([
-            binding('-editor.action.format', 'ctrl+shift+f'),
-            binding('passthrough', 'ctrl+x'),
-            binding('editor.action.commentLine', 'ctrl+/')
+            binding('-qaap.chat.maximize', 'ctrlcmd+alt+e'),
+            binding('passthrough', 'ctrl+f'),
+            binding('qaap.composer.addEditorSelection', 'ctrlcmd+shift+.')
         ], commands);
-        expect(registryRowLabels(harness.host)).to.deep.equal(['Toggle Line Comment']);
-        expect(harness.host.textContent).to.not.contain('Format Document');
+        expect(registryRowLabels(harness.host)).to.deep.equal(['Qaap: Add selection to agent']);
     });
 
-    it('filters rows by the search query', () => {
+    it('filters composer keys and Work Hub rows by the search query', () => {
         const harness = createHarness([
-            binding('qaap.workHub.newChat', 'ctrl+alt+n'),
+            binding('qaap.chat.maximize', 'ctrlcmd+alt+e'),
+            binding('qaap.composer.addEditorSelection', 'ctrlcmd+shift+.'),
             binding('editor.action.format', 'ctrl+shift+f')
         ], commands);
         const search = harness.host.querySelector<HTMLInputElement>('.theia-mobile-work-hub-keybindings-search');
         expect(search).to.be.ok;
-        search!.value = 'format';
+        search!.value = 'maximize';
         search!.dispatchEvent(inputEvent());
-        expect(rowLabels(harness.host)).to.deep.equal(['Format Document']);
-        expect(groupTitles(harness.host)).to.deep.equal(['General']);
+        expect(rowLabels(harness.host)).to.deep.equal(['Chat: Maximize Chat']);
+        expect(groupTitles(harness.host)).to.deep.equal(['Work Hub']);
 
-        search!.value = 'zzz-no-match';
+        search!.value = 'parallel';
+        search!.dispatchEvent(inputEvent());
+        expect(rowLabels(harness.host)).to.deep.equal(['Send in parallel']);
+        expect(groupTitles(harness.host)).to.deep.equal(['Composer']);
+
+        search!.value = 'format';
         search!.dispatchEvent(inputEvent());
         expect(harness.host.querySelector('.theia-mobile-work-hub-keybindings-empty')?.textContent).to.equal('No keybindings match your search.');
     });
 
     it('marks user bindings as Custom and resets them through the keymaps service', () => {
         const harness = createHarness([
-            binding('editor.action.format', 'ctrl+alt+f', KeybindingScope.USER)
+            binding('qaap.chat.maximize', 'ctrl+alt+m', KeybindingScope.USER)
         ], commands);
         const badge = harness.host.querySelector('.theia-mobile-work-hub-keybindings-badge');
         expect(badge?.textContent).to.equal('Custom');
         const reset = harness.host.querySelector<HTMLButtonElement>('.theia-mobile-work-hub-keybindings-reset');
         expect(reset).to.be.ok;
         reset!.click();
-        expect(harness.removed).to.deep.equal(['editor.action.format']);
+        expect(harness.removed).to.deep.equal(['qaap.chat.maximize']);
     });
 
-    it('shows a conflict hint when another command uses the same keystroke and context', () => {
+    it('shows a conflict hint against the whole keymap, not only the listed commands', () => {
         const harness = createHarness([
+            binding('qaap.chat.maximize', 'ctrl+k'),
             binding('editor.action.format', 'ctrl+k'),
-            binding('editor.action.commentLine', 'ctrl+k'),
-            binding('qaap.workHub.newChat', 'ctrl+k', KeybindingScope.DEFAULT, 'editorFocus')
+            binding('qaap.composer.addEditorSelection', 'ctrl+k', KeybindingScope.DEFAULT, 'editorFocus')
         ], commands);
         const conflicts = Array.from(harness.host.querySelectorAll('.theia-mobile-work-hub-keybindings-conflict')).map(node => node.textContent ?? '');
-        expect(conflicts).to.have.length(2);
-        expect(conflicts[0]).to.contain('Conflicts with');
-        expect(conflicts.join(' ')).to.not.contain('Work Hub: New Chat');
+        expect(conflicts).to.deep.equal(['Conflicts with Format Document']);
     });
 
     it('starts recording on chip click, saves the captured keystroke on Enter and cancels on Escape', async () => {
         const harness = createHarness([
-            binding('editor.action.format', 'ctrl+shift+f')
+            binding('qaap.chat.maximize', 'ctrl+alt+e')
         ], commands);
         const chip = harness.host.querySelector<HTMLButtonElement>('.theia-mobile-work-hub-keybindings-chip');
         chip!.click();
@@ -189,18 +199,18 @@ describe('QaapWorkHubKeybindingsPanel', () => {
         second.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
         await Promise.resolve();
         expect(harness.saved).to.have.length(1);
-        expect(harness.saved[0].command).to.equal('editor.action.format');
+        expect(harness.saved[0].command).to.equal('qaap.chat.maximize');
         expect(harness.saved[0].keybinding).to.equal('ctrl+k');
     });
 
     it('re-renders when the registry reports a change and tears down on dispose', () => {
         const harness = createHarness([
-            binding('editor.action.format', 'ctrl+shift+f')
+            binding('qaap.chat.maximize', 'ctrl+alt+e')
         ], commands);
         const host = harness.host;
-        expect(rowLabels(host)).to.include('Format Document');
+        expect(rowLabels(host)).to.include('Chat: Maximize Chat');
         harness.changed.fire(undefined);
-        expect(rowLabels(host)).to.include('Format Document');
+        expect(rowLabels(host)).to.include('Chat: Maximize Chat');
         const disposable = harness.panel.render(document.createElement('div'));
         disposable.dispose();
     });

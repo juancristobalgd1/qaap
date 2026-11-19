@@ -109,6 +109,9 @@ export class QaapCodexGateOverlayBuilder {
         const overlayAuth = path.join(codexHome, 'auth.json');
         const sourceAuth = path.join(options.sourceCodexHome, 'auth.json');
         const sourceConfigPath = path.join(options.sourceCodexHome, 'config.toml');
+        // Codex writes its session rollouts (the usage panel's Codex source) below CODEX_HOME; the overlay is
+        // deleted after the task, so they are moved to the owner's own Codex home first.
+        const sourceSessions = path.join(options.sourceCodexHome, 'sessions');
         const expectedUid = drop ? drop.uid : QaapCodexGateOverlayBuilder.currentUid();
         let initialAuth: SafeRead | undefined;
         let disposed = false;
@@ -119,9 +122,10 @@ export class QaapCodexGateOverlayBuilder {
             disposed = true;
             if (drop) {
                 // The overlay and the owner's home belong to the agent uid: root never walks them by path.
-                this.finishAsAgent(drop, taskDir, overlayAuth, sourceAuth, initialAuth?.text);
+                this.finishAsAgent(drop, taskDir, overlayAuth, sourceAuth, initialAuth?.text, { codexHome, sourceSessions });
             } else {
                 this.writeBackRefreshedAuth(taskDir, codexHome, overlayAuth, sourceAuth, initialAuth, expectedUid);
+                QaapCodexGateOverlayBuilder.harvestSessions(codexHome, sourceSessions);
                 this.removeTaskTree(taskDir);
             }
         };
@@ -494,6 +498,11 @@ export class QaapCodexGateOverlayBuilder {
     protected static readonly AGENT_FINISH_SCRIPT = [
         "const fs=require('fs'),path=require('path');",
         "const i=JSON.parse(fs.readFileSync(0,'utf8'));",
+        'try{if(typeof i.codexHome==="string"&&typeof i.sourceSessions==="string"){const src=path.join(i.codexHome,"sessions");',
+        'const walk=d=>{let es;try{es=fs.readdirSync(d,{withFileTypes:true});}catch(e){return;}for(const e of es){const f=path.join(d,e.name);',
+        'if(e.isDirectory()){walk(f);}else if(e.isFile()&&/^rollout-.*\\.jsonl(\\.zst)?$/.test(e.name)){const t=path.join(i.sourceSessions,path.relative(src,f));',
+        'fs.mkdirSync(path.dirname(t),{recursive:true,mode:0o700});const tmp=t+"."+process.pid+".tmp";fs.copyFileSync(f,tmp);fs.renameSync(tmp,t);}}};walk(src);}}',
+        'catch(e){process.stderr.write("session harvest skipped\\n");}',
         'try{if(typeof i.initial==="string"){const cur=fs.readFileSync(i.overlayAuth,"utf8");if(cur!==i.initial){JSON.parse(cur);',
         'const target=fs.realpathSync(i.sourceAuth);if(fs.readFileSync(target,"utf8")===i.initial){',
         'const tmp=target+"."+process.pid+".tmp";const fd=fs.openSync(tmp,"wx",0o600);fs.writeSync(fd,cur);fs.closeSync(fd);fs.renameSync(tmp,target);}}}}',
@@ -579,7 +588,8 @@ export class QaapCodexGateOverlayBuilder {
         }
     }
 
-    protected finishAsAgent(owner: { uid: number; gid?: number }, taskDir: string, overlayAuth: string, sourceAuth: string, initial: string | undefined): void {
+    protected finishAsAgent(owner: { uid: number; gid?: number }, taskDir: string, overlayAuth: string, sourceAuth: string, initial: string | undefined,
+        sessions?: { codexHome: string; sourceSessions: string }): void {
         try {
             if (this.treeOwner(fs.lstatSync(taskDir)).uid === QaapCodexGateOverlayBuilder.currentUid()) {
                 // Never handed over (the build failed before the agent could touch it): root's own tree.
@@ -589,7 +599,7 @@ export class QaapCodexGateOverlayBuilder {
         } catch {
             return;
         }
-        const ok = this.runAsOwner({ uid: owner.uid, gid: owner.gid ?? owner.uid }, { taskDir, overlayAuth, sourceAuth, initial: initial ?? null });
+        const ok = this.runAsOwner({ uid: owner.uid, gid: owner.gid ?? owner.uid }, { taskDir, overlayAuth, sourceAuth, initial: initial ?? null, ...(sessions ?? {}) });
         if (!ok) {
             console.warn('[qaap-codex-gate] could not finish the Codex overlay as the agent; it is left for the sweep and no login was written by root');
             return;
@@ -600,6 +610,40 @@ export class QaapCodexGateOverlayBuilder {
         } catch {
             // not empty (a background agent process): the sweep retries
         }
+    }
+
+    /**
+     * Copies the session rollouts Codex wrote into the overlay (`<codexHome>/sessions/YYYY/MM/DD/rollout-*.jsonl`)
+     * to the same relative path below the owner's `sessions`, so the usage panel still finds them once the overlay
+     * is gone. Only used without a uid drop (this process is the agent); links are never followed. Best effort.
+     */
+    static harvestSessions(codexHome: string, sourceSessions: string): void {
+        const source = path.join(codexHome, 'sessions');
+        const visit = (directory: string): void => {
+            let entries: fs.Dirent[];
+            try {
+                entries = fs.readdirSync(directory, { withFileTypes: true });
+            } catch {
+                return;
+            }
+            for (const entry of entries) {
+                const file = path.join(directory, entry.name);
+                if (entry.isDirectory()) {
+                    visit(file);
+                } else if (entry.isFile() && /^rollout-.*\.jsonl(\.zst)?$/.test(entry.name)) {
+                    try {
+                        const target = path.join(sourceSessions, path.relative(source, file));
+                        fs.mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 });
+                        const temp = `${target}.${process.pid}.tmp`;
+                        fs.copyFileSync(file, temp);
+                        fs.renameSync(temp, target);
+                    } catch (error) {
+                        console.warn('[qaap-codex-gate] could not keep a Codex session log', error instanceof Error ? error.message : String(error));
+                    }
+                }
+            }
+        };
+        visit(source);
     }
 
     /** Owner of an entry, overridable for tests that cannot chown. */

@@ -33,7 +33,15 @@ import {
     type TranscriptDeferredMarkdownHydrate,
 } from './qaap-transcript-row-defer';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
+import type { WorkHubTranscriptBridge, WorkHubTranscriptPullRequestRef } from '@theia/qaap-transcript-overlay/lib/browser/work-hub-transcript-bridge';
+import {
+    decorateTranscriptPullRequestChips,
+    readTranscriptPullRequestChip,
+    type TranscriptPullRequestRepo,
+} from './qaap-transcript-pull-request-chips';
 import { enhanceTranscriptMarkdownRichContent } from './qaap-transcript-rich-content-ui';
 import { patchTranscriptStreamingTailHtml } from './qaap-transcript-streaming-tail-patch';
 import { enhanceTranscriptCaptureDirectives } from './qaap-transcript-capture-pending-ui';
@@ -194,7 +202,24 @@ function transcriptDeferredMarkdownExcerpt(clean: string): string {
 }
 
 export class MobileProjectsTranscriptMessagesContentUi {
-    constructor(protected readonly host: MobileProjectsTranscriptMessagesHost) { }
+    constructor(
+        protected readonly host: MobileProjectsTranscriptMessagesHost,
+        protected readonly workHub?: Pick<WorkHubTranscriptBridge, 'openPullRequestInPanel' | 'resolveShellProject'>,
+    ) { }
+
+    /** The GitHub repository of the conversation shown, for bare `#n` pull request references. */
+    protected resolveTranscriptGithubRepo(): TranscriptPullRequestRepo | undefined {
+        const github = (this.host.transcriptOpenProject ?? this.workHub?.resolveShellProject())?.github;
+        return github ? { owner: github.owner, name: github.name } : undefined;
+    }
+
+    /** Opens a pull request chip: the Work Hub view for that exact PR, else its GitHub page. */
+    protected openTranscriptPullRequestChip(ref: WorkHubTranscriptPullRequestRef): void {
+        if (this.workHub?.openPullRequestInPanel?.(ref) === true) {
+            return;
+        }
+        window.open(ref.url, '_blank', 'noopener');
+    }
 
     protected previewPublicOrigin(): string {
         return window.location.origin;
@@ -225,6 +250,28 @@ export class MobileProjectsTranscriptMessagesContentUi {
             return undefined;
         }
         return probe.previewUrl || claimUrl;
+    }
+
+    /** Opens a verified preview URL in the project's keyed preview widget, the same call Run app makes. */
+    protected async openProjectPreviewWidget(url: string): Promise<void> {
+        const bootstrap = this.host.projectBootstrap;
+        if (!bootstrap) {
+            return;
+        }
+        try {
+            await bootstrap.openPreview(url, true);
+        } catch (error) {
+            console.warn('[qaap-preview] transcript link could not open the project preview', error);
+        }
+    }
+
+    /** A link to a preview that is down starts it through the Run app launcher instead of dead-ending. */
+    protected async startTranscriptPreviewFromLink(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): Promise<boolean> {
+        if (typeof this.host.requestTranscriptPreview !== 'function') {
+            return false;
+        }
+        await this.host.requestTranscriptPreview(project, summary, { revealPreviewTab: true, allowAgentFallback: false });
+        return true;
     }
 
     async openTranscriptPreviewUrlFromLink(href: string): Promise<boolean> {
@@ -270,7 +317,7 @@ export class MobileProjectsTranscriptMessagesContentUi {
                 // target — resolve through it before giving up.
                 const claimUrl = await this.resolveClaimPreviewUrlFallback();
                 if (!claimUrl) {
-                    return false;
+                    return this.startTranscriptPreviewFromLink(project, summary);
                 }
                 verifiedUrl = claimUrl;
             }
@@ -281,7 +328,7 @@ export class MobileProjectsTranscriptMessagesContentUi {
             if (!probe.ready || !sameIdentity) {
                 const claimUrl = await this.resolveClaimPreviewUrlFallback();
                 if (!claimUrl) {
-                    return false;
+                    return this.startTranscriptPreviewFromLink(project, summary);
                 }
                 verifiedUrl = claimUrl;
             } else {
@@ -297,6 +344,8 @@ export class MobileProjectsTranscriptMessagesContentUi {
             : candidate);
         await this.host.projectsService.recordProjectPreviewUrl(latestProject, verifiedUrl).catch(() => undefined);
 
+        // The Browser tab must show the project's own preview widget (what Run app opens), not the empty tab.
+        await this.openProjectPreviewWidget(verifiedUrl);
         this.host.executionSurfaceTabsUi.selectTranscriptTab('preview', latestProject, summary);
         MobileSnackbar.show(nls.localize('qaap/mobileProjects/previewLinkOpened', 'Preview opened'), { kind: 'success', duration: 1400 });
         return true;
@@ -358,6 +407,11 @@ export class MobileProjectsTranscriptMessagesContentUi {
         host.dataset.transcriptStreamParsedLen = String(cleanLength);
         host.dataset.transcriptStreamParsedAt = String(Date.now());
         enhanceTranscriptMarkdownRichContent(host);
+        // Settled block only (the streaming patch path never gets here): one cheap string check
+        // gates the DOM walk.
+        if (html.includes('#') || html.includes('github.com/')) {
+            decorateTranscriptPullRequestChips(host, this.resolveTranscriptGithubRepo());
+        }
         this.attachTranscriptMarkdownLinkHandler(host);
     }
 
@@ -642,6 +696,13 @@ export class MobileProjectsTranscriptMessagesContentUi {
             }
             const href = target.getAttribute('href');
             if (!href) {
+                return;
+            }
+            const pullRequest = readTranscriptPullRequestChip(target);
+            if (pullRequest) {
+                event.preventDefault();
+                event.stopPropagation();
+                this.openTranscriptPullRequestChip(pullRequest);
                 return;
             }
             event.preventDefault();

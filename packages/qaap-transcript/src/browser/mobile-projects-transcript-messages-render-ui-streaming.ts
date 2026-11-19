@@ -43,6 +43,11 @@ export function createTranscriptEmptyWelcomeExtracted(ctx: MobileProjectsTranscr
         title.textContent = nls.localize(`qaap/welcomePhrase/${phraseIndex}`, QAAP_DAILY_WELCOME_PHRASES[phraseIndex]);
 
         welcome.append(logo, title);
+        // Optional on the bridge: hosts without first-step actions (and test doubles) show the slogan only.
+        const hints = ctx.workHub.createEmptyWelcomeHints?.();
+        if (hints) {
+            welcome.append(hints);
+        }
         return welcome;
 }
 

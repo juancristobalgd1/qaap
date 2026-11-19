@@ -388,6 +388,39 @@ describe('QaapCodexGateOverlayBuilder', () => {
             expect(fs.readFileSync(sourceAuth, 'utf8')).to.equal('{"tokens":{"refresh_token":"r9"}}');
         });
 
+        it('the agent-side script keeps the Codex session rollouts in the owner home before emptying the task dir', () => {
+            class Real extends QaapCodexGateOverlayBuilder {
+                run(input: object): boolean {
+                    return this.runAsOwner({ uid: process.getuid!(), gid: process.getgid!() }, input);
+                }
+            }
+            const taskDir = path.join(tmp, 'agent-task-sessions');
+            const codexHome = path.join(taskDir, 'codex-home');
+            const day = path.join(codexHome, 'sessions', '2026', '11', '17');
+            fs.mkdirSync(day, { recursive: true });
+            fs.writeFileSync(path.join(day, 'rollout-2026-11-17T10-00-00-abc.jsonl'), '{"type":"session_meta"}\n');
+            fs.writeFileSync(path.join(day, 'notes.txt'), 'not a rollout');
+            const sourceSessions = path.join(sourceHome, 'sessions');
+            expect(new Real(async () => 'trusted').run({ taskDir, initial: null, codexHome, sourceSessions })).to.equal(true);
+            expect(fs.readFileSync(path.join(sourceSessions, '2026', '11', '17', 'rollout-2026-11-17T10-00-00-abc.jsonl'), 'utf8')).to.equal('{"type":"session_meta"}\n');
+            expect(fs.existsSync(path.join(sourceSessions, '2026', '11', '17', 'notes.txt'))).to.equal(false);
+            expect(fs.readdirSync(taskDir)).to.deep.equal([]);
+        });
+
+        it('keeps the Codex session rollouts without a drop, never following links', () => {
+            const codexHome = path.join(tmp, 'plain-overlay', 'codex-home');
+            const day = path.join(codexHome, 'sessions', '2026', '11', '17');
+            fs.mkdirSync(day, { recursive: true });
+            fs.writeFileSync(path.join(day, 'rollout-a.jsonl'), 'a\n');
+            const outside = path.join(tmp, 'outside-secret.jsonl');
+            fs.writeFileSync(outside, 'secret');
+            fs.symlinkSync(outside, path.join(day, 'rollout-link.jsonl'));
+            const sourceSessions = path.join(sourceHome, 'sessions');
+            QaapCodexGateOverlayBuilder.harvestSessions(codexHome, sourceSessions);
+            expect(fs.readFileSync(path.join(sourceSessions, '2026', '11', '17', 'rollout-a.jsonl'), 'utf8')).to.equal('a\n');
+            expect(fs.existsSync(path.join(sourceSessions, '2026', '11', '17', 'rollout-link.jsonl'))).to.equal(false);
+        });
+
         it('refuses a base that is a symlink planted by the agent and chowns nothing', async () => {
             const secretDir = path.join(tmp, 'backend-private');
             fs.mkdirSync(secretDir);

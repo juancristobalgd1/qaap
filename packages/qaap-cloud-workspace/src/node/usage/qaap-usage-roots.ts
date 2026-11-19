@@ -5,7 +5,7 @@
 
 import * as path from 'path';
 
-/** Where each agent CLI keeps its local logs. Resolved from the backend's home directory and CLI overrides. */
+/** Where each agent CLI keeps its local logs. Resolved from the agents' home directory and CLI overrides. */
 export interface QaapUsageRoots {
     claudeConfigDir: string;
     claudeProjects: string;
@@ -35,6 +35,20 @@ export namespace QaapUsageRoots {
             grokSessions: path.join(homeDir, '.grok', 'sessions'),
             copilotDatabase: path.join(homeDir, '.copilot', 'session-store.db'),
         };
+    }
+
+    /**
+     * Roots of agents spawned with `overlay` applied over `env` (the HOME/XDG variables the runner adds to each
+     * agent child). The overlay's HOME replaces `backendHome`; without one the agents share the backend home.
+     */
+    export function resolveForSpawnEnv(env: NodeJS.ProcessEnv, overlay: Readonly<Record<string, string | undefined>>, backendHome: string): QaapUsageRoots {
+        const merged: NodeJS.ProcessEnv = { ...env };
+        for (const [key, value] of Object.entries(overlay)) {
+            if (value !== undefined) {
+                merged[key] = value;
+            }
+        }
+        return resolve(merged, nonEmpty(overlay.HOME) ?? backendHome);
     }
 
     function nonEmpty(value: string | undefined): string | undefined {

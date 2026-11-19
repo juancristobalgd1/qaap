@@ -57,15 +57,19 @@ describe('assertAgentModelAccessExtracted (pre-spawn sign-in guard)', () => {
         expect((error as QaapAgentSignInRequiredError).reason).to.equal('sign-in-required');
     });
 
-    it('never spawns agy without a confirmed session, whatever the model (it has no Free tier)', () => {
-        // agy gets its prompt on argv and, unsigned, waits 60 s for a pasted code: the guard must stop it first.
+    // Fail-closed: an inconclusive settled probe refuses agy's Pro models like a sign-out; only a pending probe
+    // (checking) or a confirmed session lets them run. agy has no Free tier, so every model here is Pro.
+    it('refuses agy when its session is positively signed out or settled inconclusive; a pending probe or a session lets it run', () => {
         const models = [undefined, { provider: 'google', vendor: 'antigravity', modelId: 'auto' }, { provider: 'google', vendor: 'antigravity', modelId: 'gemini-3.8-flash-medium' }];
         for (const model of models) {
-            for (const [state, settled] of [['disconnected', true], ['unknown', true], ['unknown', false]] as const) {
-                const error = thrownBy(() => assertAgentModelAccessExtracted(ctxFor(state, settled), 'antigravity', 'alice', model as never));
-                expect(error, `${model?.modelId}/${state}/${settled}`).to.be.instanceOf(QaapAgentSignInRequiredError);
+            const error = thrownBy(() => assertAgentModelAccessExtracted(ctxFor('disconnected', true), 'antigravity', 'alice', model as never));
+            expect(error, `${model?.modelId}/disconnected`).to.be.instanceOf(QaapAgentSignInRequiredError);
+            expect((thrownBy(() => assertAgentModelAccessExtracted(ctxFor('unknown', true), 'antigravity', 'alice', model as never)) as QaapAgentSignInRequiredError).reason,
+                `${model?.modelId}/unknown/settled`).to.equal('sign-in-required');
+            for (const [state, settled] of [['unknown', false], ['connected', true]] as const) {
+                expect(thrownBy(() => assertAgentModelAccessExtracted(ctxFor(state, settled), 'antigravity', 'alice', model as never)), `${model?.modelId}/${state}/${settled}`)
+                    .to.equal(undefined);
             }
-            expect(thrownBy(() => assertAgentModelAccessExtracted(ctxFor('connected', true), 'antigravity', 'alice', model as never))).to.equal(undefined);
         }
     });
 
@@ -77,14 +81,21 @@ describe('assertAgentModelAccessExtracted (pre-spawn sign-in guard)', () => {
         expect(thrownBy(() => assertAgentModelAccessExtracted(ctxFor('not-required', true), 'codex', 'alice', proModel as never))).to.equal(undefined);
     });
 
-    it('refuses a Pro model while the sign-in is still checking, with a retry message', () => {
-        const error = thrownBy(() => assertAgentModelAccessExtracted(ctxFor('unknown', false), 'codex', 'alice', proModel as never));
-        expect((error as QaapAgentSignInRequiredError).reason).to.equal('checking-sign-in');
-        expect((error as Error).message).to.equal("Couldn't confirm your sign-in to Codex; try again.");
+    // A pending probe (checking) waits for its answer and lets the Pro model run; a settled inconclusive one
+    // (unknown) refuses it with the sign-in reason, the same as a sign-out (fail-closed).
+    it('lets a Pro model run while the sign-in is still checking, and refuses it once settled inconclusive (fail-closed)', () => {
+        expect(thrownBy(() => assertAgentModelAccessExtracted(ctxFor('unknown', false), 'codex', 'alice', proModel as never))).to.equal(undefined);
+        const error = thrownBy(() => assertAgentModelAccessExtracted(ctxFor('unknown', true), 'codex', 'alice', proModel as never));
+        expect(error).to.be.instanceOf(QaapAgentSignInRequiredError);
+        expect((error as QaapAgentSignInRequiredError).reason).to.equal('sign-in-required');
+        expect((error as Error).message).to.equal('Sign in to Codex to use gpt-5.5.');
+        expect((thrownBy(() => assertAgentModelAccessExtracted(ctxFor('unknown', true), 'codex', 'alice', undefined)) as QaapAgentSignInRequiredError).reason)
+            .to.equal('sign-in-required');
     });
 
-    it('lets a Free model run while the sign-in is still checking', () => {
+    it('lets a Free model run whatever the session state, even settled unknown', () => {
         expect(thrownBy(() => assertAgentModelAccessExtracted(ctxFor('unknown', false), 'opencode', 'alice', freeModel as never))).to.equal(undefined);
+        expect(thrownBy(() => assertAgentModelAccessExtracted(ctxFor('unknown', true), 'opencode', 'alice', freeModel as never))).to.equal(undefined);
     });
 
     it('treats a turn without a resolved model as Pro (fail-closed)', () => {
@@ -106,7 +117,6 @@ describe('assertAgentModelAccessExtracted (pre-spawn sign-in guard)', () => {
     it('writes refusals the transcript reads as a sign-in failure (Sign in chip), not a generic start failure', () => {
         const refusals = [
             thrownBy(() => assertAgentModelAccessExtracted(ctxFor('disconnected', true), 'codex', 'alice', proModel as never)),
-            thrownBy(() => assertAgentModelAccessExtracted(ctxFor('unknown', false), 'codex', 'alice', proModel as never)),
         ].map(error => `${(error as Error).message}\n`);
         for (const log of refusals) {
             expect(detectAgentFailureKind(log), log).to.equal('auth');

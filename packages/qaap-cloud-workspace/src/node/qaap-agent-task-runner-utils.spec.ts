@@ -37,6 +37,8 @@ import {
     classifyAgentConnectionProbe,
     GEMINI_CLI_CONNECTION_PROBE_SCRIPT,
     hasAgentSettingsCredentials,
+    probeAgentConnectionState,
+    QAAP_AGENT_CONNECTION_PROBE_SETTLE_GRACE_MS,
     resolveAgentConnectionProbe,
     resolveAgentConnectionProbeArgs,
     resolveTaskHarnessId,
@@ -115,9 +117,16 @@ describe('harness connection state', () => {
         }
     });
 
-    it('does not count Cursor "Logged in (unable to fetch user details)" as a session', () => {
-        // Real `cursor-agent status` output with a stored token the service rejects; every turn then fails.
-        expect(classifyAgentConnectionProbe('cursor', 0, '✓ Login successful!\nLogged in (unable to fetch user details)', false)).to.equal('unknown');
+    it('counts Cursor "Login successful" / "Logged in" as connected even with "unable to fetch user details"', () => {
+        expect(classifyAgentConnectionProbe('cursor', 0, '✓ Login successful!\nLogged in (unable to fetch user details)', false)).to.equal('connected');
+        expect(classifyAgentConnectionProbe('cursor', 0, 'Logged in (unable to fetch user details)', false)).to.equal('connected');
+        // A "not logged in" line stays disconnected even though it contains "logged in".
+        expect(classifyAgentConnectionProbe('cursor', 0, 'Not logged in (unable to fetch user details)', false)).to.equal('disconnected');
+        // No success line: still inconclusive.
+        expect(classifyAgentConnectionProbe('cursor', 0, 'Unable to fetch user details', false)).to.equal('unknown');
+    });
+
+    it('keeps Cursor plain status lines classified: not logged in is disconnected, a logged-in account is connected', () => {
         expect(classifyAgentConnectionProbe('cursor', 0, 'Not logged in', false)).to.equal('disconnected');
         expect(classifyAgentConnectionProbe('cursor', 0, '✓ Logged in as dev@example.com', false)).to.equal('connected');
     });
@@ -178,6 +187,41 @@ describe('harness connection state', () => {
         } finally {
             fs.rmSync(dir, { recursive: true, force: true });
         }
+    });
+
+    it('the agy probe returns at once even when agy leaves a helper holding its output open', function (): void {
+        if (process.platform === 'win32') {
+            this.skip();
+        }
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agy-helper-'));
+        const file = path.join(dir, 'agy');
+        // Prints the catalog, then leaves a background helper with agy's stdout/stderr (as agy's language
+        // server does). With a `$(…)` pipe the probe waited for that helper's EOF: "Checking sign-in…" forever.
+        fs.writeFileSync(file, '#!/bin/sh\necho "gemini-3.8-flash-high"\nsleep 8 &\nexit 0\n', { mode: 0o755 });
+        try {
+            const started = Date.now();
+            const result = spawnSync('sh', ['-c', AGY_CLI_CONNECTION_PROBE_SCRIPT, 'agy-probe', file], { encoding: 'utf8', timeout: 20_000 });
+            expect(Date.now() - started).to.be.lessThan(5_000);
+            expect(classifyAgentConnectionProbe('antigravity', result.status, result.stdout, false)).to.equal('connected');
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('settles a probe as unknown when its pipes stay open past the timeout', async function (): Promise<void> {
+        if (process.platform === 'win32') {
+            this.skip();
+        }
+        this.timeout(10_000);
+        const started = Date.now();
+        // `sleep` inherits the probe's stdout and outlives the killed shell: execFile alone never calls back.
+        const state = await probeAgentConnectionState('codex', 'sh', {
+            file: 'sh',
+            args: ['-c', 'sleep 8 & sleep 8'],
+            timeoutMs: 300,
+        });
+        expect(state).to.equal('unknown');
+        expect(Date.now() - started).to.be.lessThan(300 + QAAP_AGENT_CONNECTION_PROBE_SETTLE_GRACE_MS + 2_000);
     });
 
     it('reads Gemini CLI sign-in from the credential file in HOME', () => {

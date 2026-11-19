@@ -1184,11 +1184,21 @@ export class MobileWorkHubSessionsSidebar {
     }
 
     protected onKeyDown(event: KeyboardEvent): void {
-        if (event.key === 'Escape') {
-            event.preventDefault();
-            event.stopPropagation();
-            this.hide();
+        if (event.key !== 'Escape') {
+            return;
         }
+        if (isDesktopSessionsSidebarLayout()) {
+            // The docked desktop sidebar is persistent chrome: Escape only leaves Settings, it never collapses it.
+            if (this.sidebarMode === 'settings' && !event.defaultPrevented) {
+                event.preventDefault();
+                event.stopPropagation();
+                this.settingsOptions?.onBack();
+            }
+            return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        this.hide();
     }
 
     protected installDesktopResize(): void {

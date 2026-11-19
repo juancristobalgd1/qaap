@@ -3662,6 +3662,36 @@ body>.theia-mobile-transcript-files-menu {
   filter: drop-shadow(0 10px 28px color-mix(in srgb, var(--theia-foreground) 12%, transparent));
 }
 
+/* First-step suggestions under the welcome line: quiet text chips, clickable although the welcome itself is not. */
+.theia-mobile-agent-transcript-empty-hints {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 8px;
+  margin-top: 4px;
+  pointer-events: auto;
+}
+
+.theia-mobile-agent-transcript-empty-hint {
+  padding: 4px 10px;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 12%, transparent);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--theia-descriptionForeground);
+  font-size: 12px;
+  line-height: 1.3;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.theia-mobile-agent-transcript-empty-hint:hover,
+.theia-mobile-agent-transcript-empty-hint:focus-visible {
+  color: var(--theia-foreground);
+  border-color: color-mix(in srgb, var(--theia-foreground) 24%, transparent);
+  background: color-mix(in srgb, var(--theia-foreground) 6%, transparent);
+  outline: none;
+}
+
 .theia-mobile-agent-transcript-empty-title {
   margin: 0;
   max-width: 14em;
@@ -3718,9 +3748,12 @@ body>.theia-mobile-transcript-files-menu {
   display: none;
 }
 
-/* While the changes pill row shows the starting chip, the quick-actions strip steps aside: one
-   horizontal row (Working · Starting preview…) instead of two stacked rows. */
-.theia-mod-preview-chip-in-pill-row .theia-mobile-projects-sticky-composer>.theia-mobile-agent-transcript-empty-actions {
+/* The changes pill row owns Run app / Starting preview… / View Preview whenever it carries one
+   (theia-mod-run-app-in-pill-row): the quick-actions strip drops its own "Run app" chip so the
+   composer never stacks two "Run app" pills. In preview-only mode that chip was all the strip had,
+   so the whole strip steps aside (one row: Working · Starting preview…). */
+.theia-mod-run-app-in-pill-row .theia-mobile-projects-sticky-composer>.theia-mobile-agent-transcript-empty-actions .theia-mobile-agent-transcript-empty-action[data-quick-action="run-app"],
+.theia-mod-run-app-in-pill-row.theia-mod-quick-actions-preview-only .theia-mobile-projects-sticky-composer>.theia-mobile-agent-transcript-empty-actions {
   display: none;
 }
 
@@ -4456,9 +4489,14 @@ body.qaap-theme-light .theia-mobile-agent-transcript-git-action-pill.theia-mod-f
   content: none;
 }
 
+/* One row, right-aligned. The row is not limited by the bubble width (max-content), so it can extend to the
+   left of the bubble inside the user column instead of wrapping Edit/Copy/Retry/Undo onto several lines. */
 .theia-mobile-agent-transcript-user-actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  width: max-content;
+  max-width: none;
   justify-content: flex-end;
   align-items: center;
   gap: 2px;
@@ -9767,9 +9805,11 @@ body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-
  * changes/working pill row (kill the dead band left when Work Hub forced margin-top: 0).
  * Pill row ~30px; deepen past the default lip so the floor collides with the pill bottom.
  */
+.theia-mobile-projects.theia-mod-sticky-composer.theia-mod-has-changes-pill,
 .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-shell-active.theia-mod-has-changes-pill,
 .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-inline-active.theia-mod-has-changes-pill {
-  /* Overlap (and tail clearance) follow the measured strip (View Preview, Changes, Working…):
+  /* Every sticky-composer surface (not only the agents hub) reserves the strip's measured height,
+     so the transcript tail is never left under the pills. Overlap (and tail clearance) follow the measured strip (View Preview, Changes, Working…):
      a fixed -30/-34px left the last line under taller rows. --qaap-composer-pill-strip-height is
      published by the strip itself (qaap-sticky-composer-activity-stack.ts). */
   --theia-mobile-transcript-composer-scroll-gap: calc(-1 * (var(--qaap-composer-pill-strip-height, 28px) + 6px));
@@ -10421,27 +10461,6 @@ button.theia-mobile-projects-sticky-composer-context-usage-btn {
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-}
-
-.theia-mobile-projects-sticky-composer-card.theia-mod-codex:not(.theia-mod-has-context):not(.theia-mod-has-activity) .theia-mobile-sticky-composer-activity-stack {
-  background: transparent;
-  border: none;
-  border-radius: 0;
-  box-shadow: none;
-  overflow: visible;
-}
-
-.theia-mobile-projects-sticky-composer-card.theia-mod-codex.theia-mod-has-activity .theia-mobile-sticky-composer-activity-stack,
-.theia-mobile-projects-sticky-composer-card.theia-mod-codex.theia-mod-has-context .theia-mobile-sticky-composer-activity-stack {
-  border-radius: 0;
-  box-shadow: none;
-  overflow: visible;
-}
-
-.theia-mobile-projects-sticky-composer-card.theia-mod-codex.theia-mod-has-activity .theia-mobile-sticky-composer-activity-section.theia-mod-queue+.theia-mobile-sticky-composer-activity-section.theia-mod-files,
-.theia-mobile-projects-sticky-composer-card.theia-mod-codex.theia-mod-has-context .theia-mobile-projects-sticky-composer-context-strip+.theia-mobile-sticky-composer-activity-stack,
-.theia-mobile-projects-sticky-composer-card.theia-mod-codex.theia-mod-has-activity .theia-mobile-projects-sticky-composer-context-strip+.theia-mobile-sticky-composer-activity-stack {
-  border-top: 1px solid color-mix(in srgb, var(--theia-foreground) 4%, transparent);
 }
 
 /* Files/attachments + input — one continuous upper shell (no seam). */

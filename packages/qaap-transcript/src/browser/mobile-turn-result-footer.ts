@@ -32,7 +32,11 @@ export interface MobileTurnResultFooterHandlers {
  * verdict, the preview next step, and ONE primary next step ("Create PR" when git has changes to commit,
  * otherwise "Continue" back to the composer). Every action is a handler the composer already owns.
  */
-export function createMobileTurnResultFooterElement(model: MobileTurnResultFooterModel, handlers: MobileTurnResultFooterHandlers): HTMLElement {
+export function createMobileTurnResultFooterElement(
+    model: MobileTurnResultFooterModel,
+    handlers: MobileTurnResultFooterHandlers,
+    resolvePreviewState?: () => TranscriptTurnResultState['previewState'],
+): HTMLElement {
     const footer = document.createElement('div');
     footer.className = MOBILE_TURN_RESULT_CLASS;
     if (model.verdict) {
@@ -44,11 +48,46 @@ export function createMobileTurnResultFooterElement(model: MobileTurnResultFoote
     if (preview) {
         actions.append(preview);
     }
+    if (resolvePreviewState) {
+        livePreviewFooters.set(footer, { state: model.state.previewState, resolve: resolvePreviewState, handlers });
+    }
     actions.append(model.state.canCreatePr
         ? createActionButton('theia-mod-primary', 'codicon-git-pull-request', nls.localize('qaap/mobileProjects/turnResultCreatePr', 'Create PR'), handlers.onCreatePr)
         : createActionButton('theia-mod-primary', 'codicon-arrow-right', nls.localize('qaap/mobileProjects/turnResultContinue', 'Continue'), handlers.onContinue));
     footer.append(actions);
     return footer;
+}
+
+/** Footers whose preview action follows the composer's preview state after they were painted. */
+const livePreviewFooters = new WeakMap<HTMLElement, {
+    state: TranscriptTurnResultState['previewState'];
+    readonly resolve: () => TranscriptTurnResultState['previewState'];
+    readonly handlers: MobileTurnResultFooterHandlers;
+}>();
+
+/**
+ * A painted turn row is not re-rendered when only the preview changes (its message did not), so
+ * its button stayed on "Starting preview…" after the preview came up. Re-resolve each footer's
+ * preview state and swap just that button when it moved.
+ */
+export function refreshMobileTurnResultFooterPreviews(root: ParentNode): void {
+    for (const footer of Array.from(root.querySelectorAll<HTMLElement>(`.${MOBILE_TURN_RESULT_CLASS}`))) {
+        const live = livePreviewFooters.get(footer);
+        if (!live) {
+            continue;
+        }
+        const next = live.resolve();
+        if (next === live.state) {
+            continue;
+        }
+        live.state = next;
+        const actions = footer.querySelector<HTMLElement>(`.${MOBILE_TURN_RESULT_CLASS}-actions`);
+        actions?.querySelector(`[${PREVIEW_ACTION_ATTR}]`)?.remove();
+        const button = createPreviewButton(next, live.handlers);
+        if (actions && button) {
+            actions.prepend(button);
+        }
+    }
 }
 
 function createVerdictElement(verdict: MobileTurnResultVerdict): HTMLElement {
@@ -70,7 +109,15 @@ function createVerdictElement(verdict: MobileTurnResultVerdict): HTMLElement {
     return row;
 }
 
+const PREVIEW_ACTION_ATTR = 'data-turn-result-preview';
+
 function createPreviewButton(state: TranscriptTurnResultState['previewState'], handlers: MobileTurnResultFooterHandlers): HTMLButtonElement | undefined {
+    const button = createPreviewButtonForState(state, handlers);
+    button?.setAttribute(PREVIEW_ACTION_ATTR, state);
+    return button;
+}
+
+function createPreviewButtonForState(state: TranscriptTurnResultState['previewState'], handlers: MobileTurnResultFooterHandlers): HTMLButtonElement | undefined {
     switch (state) {
         case 'live':
             return createActionButton('theia-mod-secondary', 'codicon-globe', nls.localize('qaap/mobileProjects/turnResultOpenPreview', 'Open preview'), handlers.onOpenPreview);

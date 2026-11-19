@@ -29,9 +29,13 @@ describe('resolveAgentAccess', () => {
             .to.equal('none');
     });
 
-    it('answers none for an unknown state once its probe has settled', () => {
+    // Fail-open (was 'none'): a settled probe without a clear answer (timeout, unreadable output) or a harness
+    // that cannot report its session is not a sign-out, so it must not lock the harness's Pro models.
+    it('stays unknown for an unknown state once its probe has settled (fail-open)', () => {
         expect(resolveAgentAccess({ agentId: 'codex', connectionState: 'unknown', probeSettled: true }))
-            .to.equal('none');
+            .to.equal('unknown');
+        expect(resolveAgentAccess({ agentId: 'antigravity', connectionState: 'unknown', probeSettled: true }))
+            .to.equal('unknown');
     });
 
     it('stays unknown while the probe is still pending', () => {

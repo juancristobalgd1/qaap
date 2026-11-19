@@ -75,17 +75,20 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-preview-feedback-context';
 import { URI } from '@theia/core/lib/common/uri';
 import { type QaapSegmentedFieldController } from '@theia/qaap-shared-core/lib/browser/qaap-mobile-form-ui';
-import { buildQaapAccountMenuEntries, toggleQaapAccountMenu } from './qaap-workbench-account-menu';
+import { buildQaapAccountMenuEntries, QAAP_AUTH_SIGN_IN_GITHUB_COMMAND, toggleQaapAccountMenu } from './qaap-workbench-account-menu';
+import { createQaapEmptyWelcomeHints } from './qaap-empty-welcome-hints';
+import { QAAP_PROJECT_SWITCHER_COMMAND } from './qaap-project-switcher-contribution';
 import { readQaapAuthUser, readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import { QaapWorkHubShellSnapshotWriter } from '@theia/qaap-adapters/lib/browser/qaap-work-hub-shell-snapshot';
 import type { AnnotationComposerSessionControls } from '@theia/qaap-adapters/lib/browser/qaap-preview-annotation-popover';
 import { } from '@theia/qaap-composer/lib/browser/qaap-preview-annotation-composer-session';
 import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
+import { lookupQaapGithubPullRequest } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import { MobileProjectsExecutionSurfaceTabsUi, type MobileProjectsExecutionSurfaceTabsHost } from './mobile-projects-execution-surface-tabs-ui';
 import { type MobileProjectsTranscriptOverlayHost } from './mobile-projects-transcript-overlay-host';
 import { TranscriptOverlayController } from './mobile-projects-transcript-overlay-controller';
 import { bindTranscriptOverlayStateAccessors } from '@theia/qaap-transcript-overlay/lib/browser/mobile-projects-transcript-overlay-state';
-import type { WorkHubTranscriptBridge } from '@theia/qaap-transcript-overlay/lib/browser/work-hub-transcript-bridge';
+import type { WorkHubTranscriptBridge, WorkHubTranscriptPullRequestRef } from '@theia/qaap-transcript-overlay/lib/browser/work-hub-transcript-bridge';
 import type { MobileBottomButtonId } from '@theia/qaap-mobile-shell/lib/browser/mobile-shell-bottom-bar-widget';
 import { MobileProjectsTasksHubUi, type MobileProjectsTasksHubHost } from './mobile-projects-tasks-hub-ui';
 import { MobileProjectsWorkHubInboxUi, type MobileProjectsWorkHubInboxHost } from './mobile-projects-work-hub-inbox-ui';
@@ -1966,6 +1969,25 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return this.tasksHubUi.shouldEmbedAgentsHubRecentsInWorkspaceTranscript();
     }
 
+    /**
+     * A pull request chip in the transcript: the desktop right panel shows exactly that pull request; without
+     * the panel (mobile, IDE chat) the existing Work Hub pull request detail opens once it is fetched, and the
+     * GitHub page opens when it cannot be.
+     */
+    openPullRequestInPanel(ref: WorkHubTranscriptPullRequestRef): boolean {
+        if (this.executionSurfaceTabsUi.openPullRequestInWorkHubAuxPanel(ref)) {
+            return true;
+        }
+        void lookupQaapGithubPullRequest({ owner: ref.owner, repo: ref.repo, number: ref.number }).then(result => {
+            if (result.kind === 'found') {
+                this.openPullRequestDetail(result.pullRequest);
+            } else {
+                this.executionSurfaceTabsUi.openWorkHubAuxPanelExternal(ref.url);
+            }
+        });
+        return true;
+    }
+
     async openInlineTranscript(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): Promise<void> {
         return openInlineTranscriptExtracted(this, project, summary);
     }
@@ -2000,6 +2022,21 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     createAgentsHubQuickActionsBlock(): HTMLElement {
         return this.tasksHubUi.createAgentsHubQuickActionsBlock();
+    }
+
+    createEmptyWelcomeHints(): HTMLElement {
+        return createQaapEmptyWelcomeHints(readQaapSignedIn(), {
+            // The Work Hub's own project picker (Project / Branch / Run in), anchored on the header project
+            // button; the quick-pick switcher only when the header has no project to anchor on.
+            openProject: () => {
+                if (this.headerProjectBtn.isConnected && !this.headerProjectBtn.hidden && this.hubHeaderUi.resolveHeaderProject()) {
+                    this.onHeaderProjectClick(this.headerProjectBtn);
+                    return;
+                }
+                void this.commands.executeCommand(QAAP_PROJECT_SWITCHER_COMMAND.id);
+            },
+            connectGithub: () => { void this.commands.executeCommand(QAAP_AUTH_SIGN_IN_GITHUB_COMMAND); },
+        });
     }
 
     renderIdleSubmitOptimistic(chatHost: HTMLElement, summary: QaapAgentConversationSummaryDTO, draft: string, selectedAgentId: string, imagePreviews?: readonly import('@theia/qaap-shared-core/lib/common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[], contentOverride?: string,): void {
@@ -2081,6 +2118,11 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     /** @internal Used by the extracted mobile-projects-panel-* modules. */
     public async openAgentsHubInlineTranscript(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): Promise<void> {
         return openAgentsHubInlineTranscriptExtracted(this, project, summary);
+    }
+
+    /** The real conversation open in the Work Hub transcript, or `undefined` on the idle new-task shell. */
+    openInlineConversation(): { project: MobileProjectEntry; summary: QaapAgentConversationSummaryDTO } | undefined {
+        return this.agentsHubInlineUi.openInlineConversation();
     }
 
     closeAgentsHubSession(): void {

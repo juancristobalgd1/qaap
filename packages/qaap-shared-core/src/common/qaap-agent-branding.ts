@@ -11,6 +11,7 @@ import {
     THEIA_CODER_AGENT_ID,
 } from './qaap-agent-task-client';
 import { GROK_BRAND_SVG_DARK, GROK_BRAND_SVG_LIGHT } from './qaap-grok-brand-mark';
+import { resolveQaapHarnessBaseId } from './qaap-harness-launch-settings';
 
 export type QaapAgentBrandTone = 'dark' | 'light' | 'brand';
 
@@ -33,7 +34,8 @@ export function normalizeAgentBrandId(agentId: string | undefined): string | und
         return undefined;
     }
     const migrated = migrateLegacyBackendAgentId(raw) ?? raw;
-    const lower = migrated.toLowerCase();
+    // A harness instance (`codex#2`) wears its base harness's brand.
+    const lower = resolveQaapHarnessBaseId(migrated);
     if (lower === THEIA_CODER_AGENT_ID.toLowerCase()) {
         return 'coder';
     }

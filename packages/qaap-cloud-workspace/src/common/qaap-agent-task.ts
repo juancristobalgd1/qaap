@@ -50,6 +50,11 @@ export interface QaapAgentTask {
      * {@code resolveTaskAgentId} in the runner to infer it from {@link command} for those.
      */
     readonly agentId?: string;
+    /**
+     * Harness instance from Settings → Harness ("Add harness", e.g. `codex#2`) this task runs as. The
+     * task runs the base harness {@link agentId} with that instance's binary path and configuration folder.
+     */
+    readonly harnessInstanceId?: string;
     readonly state: QaapAgentTaskState;
     readonly exitCode?: number;
     /** Epoch milliseconds. */
@@ -390,6 +395,11 @@ export interface QaapAgentHarnessStatus {
 
 export interface QaapAgentHarnessStatusResponse {
     readonly harnesses: readonly QaapAgentHarnessStatus[];
+    /**
+     * True only on the desktop app: the binary path and configuration folder of Settings → Harness are
+     * honoured. Elsewhere the settings panel hides those fields and the runner ignores them.
+     */
+    readonly launchOverridesSupported?: boolean;
 }
 
 export interface QaapAgentDescriptor {
@@ -410,7 +420,7 @@ export interface QaapAgentDescriptor {
      * Sign-in state for the owner (`QaapHarnessModelAvailability.session`). `available` keeps meaning "can run
      * now": an enabled harness that is signed out stays listed, and only its Free models are usable.
      */
-    readonly session?: 'signed-in' | 'signed-out' | 'checking';
+    readonly session?: 'signed-in' | 'signed-out' | 'checking' | 'unknown';
     /** The Antigravity CLI the host resolved; only set for the Antigravity harness (see {@link QaapAgentHarnessStatus.cliBin}). */
     readonly cliBin?: string;
 }

@@ -318,7 +318,7 @@
     cursor: pointer;
 }
 
-.qaap-model-picker-row:hover:not(:disabled),
+.qaap-model-picker-row:hover:not(:disabled):not(.theia-mod-disabled),
 .qaap-model-picker-row:focus-visible {
     background: var(--theia-list-hoverBackground);
     outline: none;
@@ -329,7 +329,8 @@
     color: var(--theia-list-activeSelectionForeground);
 }
 
-.qaap-model-picker-row:disabled {
+.qaap-model-picker-row:disabled,
+.qaap-model-picker-row.theia-mod-disabled {
     opacity: 0.5;
     cursor: default;
 }

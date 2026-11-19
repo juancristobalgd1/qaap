@@ -127,6 +127,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
             stickyComposerAgentsUi: {
                 ensureStickyComposerAgentsLoaded: async () => [],
                 resolveStickyComposerPinnedAgentId: () => 'qaiq',
+                resolveStickyComposerAgentModel: () => undefined,
             } as unknown as MobileProjectsExecutionSurfaceTabsHost['stickyComposerAgentsUi'],
             stickyComposerPinnedAgentId: 'qaiq',
             resolveAgentsHubShellProject: () => undefined,
@@ -1567,5 +1568,64 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
                 root.remove();
             }
         });
+
+        it('keeps the Browser widget docked after an annotation Send lands on Messages', () => {
+            const project = { id: 'p-send', name: 'Send' } as MobileProjectEntry;
+            const summary = { id: 'conv-send' } as MobileProjectsExecutionSurfaceTabsHost['transcriptOpenSummary'];
+            const root = document.createElement('div');
+            const previewHost = document.createElement('div');
+            previewHost.className = 'theia-mobile-transcript-preview';
+            root.append(previewHost);
+            document.body.append(root);
+            try {
+                const host = createHost({ root, transcriptPreviewHost: previewHost });
+                const ui = createUi(host);
+                ui.openExecutionSurfaceSidebar('preview', project, summary!, 'transcript');
+                const panel = ui.resolveWorkHubAuxPanel()!;
+                const sidebar = host.executionSurfaceSidebar!.element;
+                expect(sidebar.closest('.qaap-work-hub-aux-panel')).to.not.equal(null);
+
+                ui.showMessagesKeepingDock(project);
+
+                // The Browser tab keeps its widget: no undock, no placeholder, the preview host stays visible.
+                expect(host.executionSurfaceSidebar?.element).to.equal(sidebar);
+                expect(sidebar.isConnected).to.equal(true);
+                expect(sidebar.closest('.qaap-work-hub-aux-panel')).to.not.equal(null);
+                expect(panel.model.activeTab?.kind).to.equal('preview');
+                expect(previewHost.closest('.qaap-work-hub-aux-panel')).to.not.equal(null);
+                expect(previewHost.hidden).to.equal(false);
+                expect(panel.element.querySelector<HTMLElement>('.qaap-work-hub-aux-panel-empty')!.hidden).to.equal(true);
+            } finally {
+                root.remove();
+            }
+        });
+    });
+
+    it('shows Messages and closes a drawer surface that is not docked in the panel', () => {
+        const project = { id: 'p-drawer', name: 'Drawer' } as MobileProjectEntry;
+        const summary = { id: 'conv-drawer' } as MobileProjectsExecutionSurfaceTabsHost['transcriptOpenSummary'];
+        const root = document.createElement('div');
+        const previewHost = document.createElement('div');
+        previewHost.className = 'theia-mobile-transcript-preview';
+        root.append(previewHost);
+        document.body.append(root);
+        try {
+            const host = createHost({ root, transcriptPreviewHost: previewHost });
+            const ui = createUi(host);
+            ui.openExecutionSurfaceSidebar('preview', project, summary!, 'transcript');
+            const sidebar = host.executionSurfaceSidebar!.element;
+            expect(sidebar.classList.contains('qaap-mod-docked')).to.equal(false);
+
+            ui.showMessagesKeepingDock(project);
+
+            // Mobile and undocked layouts keep the drawer behaviour: Messages is selected and the drawer closes.
+            expect(host.executionSurfaceTabByProjectId.get(project.id)).to.equal('messages');
+            expect(host.executionSurfaceSidebar).to.equal(undefined);
+            expect(sidebar.classList.contains('theia-mod-closing')).to.equal(true);
+        } finally {
+            root.remove();
+            document.querySelectorAll('.theia-mobile-execution-surface-sidebar, .theia-mobile-execution-surface-sidebar-backdrop')
+                .forEach(element => element.remove());
+        }
     });
 });

@@ -142,13 +142,20 @@ describe('QAIQ/OpenClaude model routing', () => {
             expect(paid.every(model => model.available === true && model.unavailableReason === undefined)).to.equal(true);
         });
 
-        it('holds paid OpenCode models as checking-sign-in while the auth probe is still pending, never selectable', () => {
-            const models = listModelsForAgentExtracted(opencodeCtx('unknown', false), 'opencode', 'pro-user');
-            expect(models.some(model => model.modelId === 'opencode/claude-opus-4-7')).to.equal(true);
-            const paid = models.filter(model => model.tier === 'pro');
-            expect(paid.length).to.be.greaterThan(0);
-            expect(paid.every(model => model.available === false && model.unavailableReason === 'checking')).to.equal(true);
-            expect(models.filter(model => model.tier === 'free').every(model => model.available === true)).to.equal(true);
+        // A pending probe (checking) keeps paid models selectable; a settled inconclusive one (unknown) locks them
+        // as not-connected, the same as a sign-out (fail-closed). Free models stay selectable either way.
+        it('keeps paid OpenCode models selectable while the auth probe is pending, and locks them once settled inconclusive', () => {
+            const pending = listModelsForAgentExtracted(opencodeCtx('unknown', false), 'opencode', 'pro-user');
+            expect(pending.some(model => model.modelId === 'opencode/claude-opus-4-7')).to.equal(true);
+            const pendingPaid = pending.filter(model => model.tier === 'pro');
+            expect(pendingPaid.length).to.be.greaterThan(0);
+            expect(pendingPaid.every(model => model.available === true && model.unavailableReason === undefined)).to.equal(true);
+
+            const settled = listModelsForAgentExtracted(opencodeCtx('unknown', true), 'opencode', 'pro-user');
+            const settledPaid = settled.filter(model => model.tier === 'pro');
+            expect(settledPaid.length).to.be.greaterThan(0);
+            expect(settledPaid.every(model => model.available === false && model.unavailableReason === 'not-connected')).to.equal(true);
+            expect(settled.filter(model => model.tier === 'free').every(model => model.available === true)).to.equal(true);
         });
     });
 
@@ -173,15 +180,16 @@ describe('QAIQ/OpenClaude model routing', () => {
             expect(models.every(model => model.available === false && model.unavailableReason === 'not-connected')).to.equal(true);
         });
 
-        it('holds Codex models as checking-sign-in (never plan) while the auth probe is still pending', () => {
-            const models = listModelsForAgentExtracted(codexCtx('unknown', false), 'codex', 'starter-user');
-            expect(models).to.have.length(3);
-            expect(models.every(model => model.available === false && model.unavailableReason === 'checking')).to.equal(true);
-        });
+        // Pending keeps Codex models selectable; a settled inconclusive answer locks them as not-connected (fail-closed).
+        // Never a plan lock either way.
+        it('keeps Codex models selectable while the auth probe is pending, and locks them as not-connected once settled without an answer', () => {
+            const pending = listModelsForAgentExtracted(codexCtx('unknown', false), 'codex', 'starter-user');
+            expect(pending).to.have.length(3);
+            expect(pending.every(model => model.available === true && model.unavailableReason === undefined)).to.equal(true);
 
-        it('locks a settled-unknown Codex probe as not-connected, never as plan', () => {
-            const models = listModelsForAgentExtracted(codexCtx('unknown', true), 'codex', 'starter-user');
-            expect(models.every(model => model.unavailableReason === 'not-connected')).to.equal(true);
+            const settled = listModelsForAgentExtracted(codexCtx('unknown', true), 'codex', 'starter-user');
+            expect(settled).to.have.length(3);
+            expect(settled.every(model => model.available === false && model.unavailableReason === 'not-connected')).to.equal(true);
         });
     });
 

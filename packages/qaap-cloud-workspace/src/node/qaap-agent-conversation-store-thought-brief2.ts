@@ -86,7 +86,8 @@ export async function resumeInterruptedTurnViaGraphExtracted(ctx: QaapAgentConve
                 }
                 return next;
             });
-        const resumeConv: QaapAgentConversation = { ...conv, status: 'streaming', updatedAt: nowMs, messages };
+        // Restart recovery keeps `updatedAt`: the sidebar order must reflect real activity only.
+        const resumeConv: QaapAgentConversation = { ...conv, status: 'streaming', updatedAt: conv.updatedAt, messages };
         ctx.conversations.set(conversationId, resumeConv);
         await ctx.persist();
         let spawned: QaapAgentTask;
@@ -351,7 +352,8 @@ export function interruptStreamingTurnForRestartExtracted(ctx: QaapAgentConversa
             agentMessageId,
             reason,
         });
-        ctx.conversations.set(conversationId, { ...failed.conv, updatedAt: nowMs });
+        // The restart moment goes to `interruptedAt`; `updatedAt` stays on the last real activity.
+        ctx.conversations.set(conversationId, { ...failed.conv, updatedAt: conv.updatedAt, interruptedAt: nowMs });
         return true;
 }
 

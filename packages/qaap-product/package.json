@@ -43,6 +43,9 @@
       "electronMain": "lib/electron-main/qaap-product-electron-main-module"
     },
     {
+      "frontendElectron": "lib/electron-browser/qaap-product-electron-browser-module"
+    },
+    {
       "backend": "lib/node/qaap-product-backend-module"
     }
   ],

@@ -210,6 +210,12 @@ const ALLOWED = [
     // Transcript user-bubble hover actions and scroller-at-column-edge layout (@qaap-mobile job; test-only).
     /^examples\/playwright\/src\/tests\/qaap-transcript-user-actions-hover\.ui-spec\.ts$/,
     /^examples\/playwright\/src\/tests\/qaap-transcript-scroll-column-edge\.ui-spec\.ts$/,
+    // Upstream output-view, quick-command and toolbar tests: cases that relied on the sample channel,
+    // command, label replacement and toolbar tool are adjusted or skipped because the example apps
+    // no longer bundle @theia/api-samples (test-only).
+    /^examples\/playwright\/src\/tests\/theia-output-view\.test\.ts$/,
+    /^examples\/playwright\/src\/tests\/theia-quick-command\.test\.ts$/,
+    /^examples\/playwright\/src\/tests\/theia-toolbar\.test\.ts$/,
     // Opt-in classic-IDE surface (QAAP_PLAYWRIGHT_SURFACE=ide) so the upstream suite in
     // playwright.yml drives the IDE instead of the default Work Hub; unset = upstream behaviour.
     /^examples\/playwright\/src\/theia-app-loader\.ts$/,

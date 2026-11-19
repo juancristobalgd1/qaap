@@ -14,6 +14,10 @@ import { clearPreferDesktopIde, markPreferDesktopIde } from '@theia/qaap-shared-
 import { QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY } from './mobile-work-hub-sessions-sidebar';
 import { QAAP_WORK_HUB_AUX_PANEL_STORAGE_KEY, type QaapWorkHubAuxPanelStorage, type QaapWorkHubAuxPanelSurfaceKind } from './qaap-work-hub-aux-panel-model';
 import { isQaapWorkHubAuxPanelLayout, QAAP_WORK_HUB_AUX_PANEL_TOGGLE_CLASS, QaapWorkHubAuxPanel, type QaapWorkHubAuxPanelHost } from './qaap-work-hub-aux-panel';
+import type { QaapWorkHubPullRequestTarget } from './qaap-work-hub-aux-pull-request-model';
+import { QaapWorkHubAuxPullRequestView } from './qaap-work-hub-aux-pull-request-view';
+import { QaapWorkHubAuxSideChatView, type QaapWorkHubAuxSideChatHost } from './qaap-work-hub-aux-side-chat-view';
+import { Disposable } from '@theia/core/lib/common/disposable';
 
 disableImportJSDOM();
 
@@ -69,6 +73,12 @@ describe('qaap-work-hub-aux-panel', () => {
         storage?: QaapWorkHubAuxPanelStorage;
         /** The surface the host reports when it docks a requested view (defaults to the view itself). */
         dockAs?: (kind: QaapWorkHubAuxPanelSurfaceKind) => QaapWorkHubAuxPanelSurfaceKind;
+        /** The pull request the host reports for the "Pull request" view (no project when unset). */
+        pullRequest?: QaapWorkHubPullRequestTarget;
+        pullRequestView?: QaapWorkHubAuxPullRequestView;
+        /** The side chat's Work Hub hooks; a parent is open when set. */
+        sideChat?: QaapWorkHubAuxSideChatHost;
+        sideChatView?: QaapWorkHubAuxSideChatView;
     } = {}): {
         panel: QaapWorkHubAuxPanel;
         shown: QaapWorkHubAuxPanelSurfaceKind[];
@@ -79,6 +89,8 @@ describe('qaap-work-hub-aux-panel', () => {
         let docked: HTMLElement | undefined;
         const host: QaapWorkHubAuxPanelHost = {
             canShowSurfaces: () => options.canShow ?? true,
+            resolvePullRequestTarget: () => options.pullRequest,
+            openExternal: () => undefined,
             showSurface: kind => {
                 shown.push(kind);
                 docked = document.createElement('section');
@@ -94,10 +106,12 @@ describe('qaap-work-hub-aux-panel', () => {
                 }
             },
         };
-        const panel = new QaapWorkHubAuxPanel(host, options.storage ?? memoryStorage());
+        const panel = new QaapWorkHubAuxPanel({ ...host, sideChat: options.sideChat }, options.storage ?? memoryStorage(), options.pullRequestView, options.sideChatView);
         panels.push(panel);
         return { panel, shown, released };
     }
+
+    const reviewedTarget: QaapWorkHubPullRequestTarget = { owner: 'acme', repo: 'app', branch: 'qaap/task/7', scope: 'task:7' };
 
     function tabKinds(panel: QaapWorkHubAuxPanel): string[] {
         return Array.from(panel.element.querySelectorAll<HTMLElement>('.qaap-work-hub-aux-panel-tab')).map(tab => tab.dataset.kind!);
@@ -127,7 +141,7 @@ describe('qaap-work-hub-aux-panel', () => {
         expect(document.body.classList.contains('qaap-mod-work-hub-aux-panel-open')).to.equal(true);
         expect(tabKinds(panel)).to.deep.equal(['launcher']);
         const names = Array.from(panel.element.querySelectorAll('.qaap-work-hub-aux-panel-launcher-name')).map(name => name.textContent);
-        expect(names).to.deep.equal(['Browser', 'Changes', 'Files', 'Terminal']);
+        expect(names).to.deep.equal(['Browser', 'Changes', 'Files', 'Terminal', 'Pull request', 'Side chat']);
 
         panel.toggle();
         expect(panel.isOpen).to.equal(false);
@@ -312,6 +326,19 @@ describe('qaap-work-hub-aux-panel', () => {
         expect(toggle.getAttribute('aria-expanded')).to.equal('false');
     });
 
+    it('fires onDidChangeOpenState once per real change of the open state', () => {
+        const { panel } = createHarness();
+        const states: boolean[] = [];
+        panel.onDidChangeOpenState(open => states.push(open));
+
+        panel.toggle();
+        panel.show();
+        panel.toggle();
+        panel.hide();
+        panel.hide();
+        expect(states).to.deep.equal([true, false]);
+    });
+
     it('restores the open panel and its active view after a reload', () => {
         const storage = memoryStorage();
         const first = createHarness({ storage });
@@ -327,6 +354,84 @@ describe('qaap-work-hub-aux-panel', () => {
         // Header rebuilds must not re-request the same view in a loop.
         second.panel.syncWithOpenTask();
         expect(second.shown).to.deep.equal(['terminal']);
+    });
+
+    it('requests the Browser again when its docked element was torn down elsewhere (IDE and back)', () => {
+        const { panel, shown } = createHarness();
+        panel.show();
+        launcherOpen(panel, 'preview').click();
+        expect(shown).to.deep.equal(['preview']);
+        // Switching to the IDE tore the surface down outside the Work Hub layout, without undocking it.
+        panel.element.querySelector('.qaap-work-hub-aux-panel-surface .fake-surface')!.remove();
+
+        panel.syncWithOpenTask();
+
+        expect(shown).to.deep.equal(['preview', 'preview']);
+        expect(panel.element.querySelector('.qaap-work-hub-aux-panel-surface .fake-surface')).to.exist;
+        // Still no loop once it is docked again.
+        panel.syncWithOpenTask();
+        expect(shown).to.deep.equal(['preview', 'preview']);
+    });
+
+    it('offers the pull request view from the launcher and renders it without requesting a surface', async () => {
+        let lookups = 0;
+        const view = new QaapWorkHubAuxPullRequestView({
+            lookup: async () => {
+                lookups++;
+                return {
+                    kind: 'found',
+                    pullRequest: {
+                        owner: 'acme', repo: 'app', number: 7, title: 'Fix the login redirect', branch: 'qaap/task/7', base: 'main',
+                        author: 'jc', files: 2, adds: 10, dels: 3, tests: 'unknown', state: 'open', draft: false,
+                        htmlUrl: 'https://github.com/acme/app/pull/7', filesPreview: [], updatedAt: '2026-11-17T10:00:00Z',
+                    },
+                };
+            },
+            refreshMs: 1_000_000,
+        });
+        const { panel, shown } = createHarness({ pullRequest: reviewedTarget, pullRequestView: view });
+        panel.show();
+        const item = launcherOpen(panel, 'pull-request');
+        expect(item.disabled).to.equal(false);
+        item.click();
+        // Surfaces are not involved: the view renders itself.
+        expect(shown).to.deep.equal([]);
+        expect(panel.element.dataset.view).to.equal('pull-request');
+        expect(view.element.hidden).to.equal(false);
+        await new Promise(resolve => setTimeout(resolve, 0));
+        expect(lookups).to.equal(1);
+        expect(view.element.querySelector('.qaap-work-hub-aux-pr-title')?.textContent).to.equal('Fix the login redirect');
+        view.dispose();
+    });
+
+    it('opens the Pull request tab on a specific pull request, then goes back to the branch one', async () => {
+        const looked: Array<QaapWorkHubPullRequestTarget> = [];
+        const view = new QaapWorkHubAuxPullRequestView({
+            lookup: async target => {
+                looked.push(target);
+                return { kind: 'none' };
+            },
+            refreshMs: 1_000_000,
+        });
+        const { panel, shown } = createHarness({ pullRequest: reviewedTarget, pullRequestView: view });
+        expect(panel.openPullRequest({ owner: 'zed', repo: 'lib', number: 117 })).to.equal(true);
+        expect(shown).to.deep.equal([]);
+        expect(panel.element.dataset.view).to.equal('pull-request');
+        await new Promise(resolve => setTimeout(resolve, 0));
+        expect(looked[0]).to.deep.include({ owner: 'zed', repo: 'lib', number: 117 });
+        expect(view.element.querySelector('.qaap-work-hub-aux-pr-pinned-label')?.textContent).to.contain('zed/lib#117');
+
+        view.element.querySelector<HTMLButtonElement>('.qaap-work-hub-aux-pr-back')!.click();
+        await new Promise(resolve => setTimeout(resolve, 0));
+        expect(looked[1]).to.deep.include({ owner: 'acme', repo: 'app', branch: 'qaap/task/7' });
+        expect(view.element.querySelector('.qaap-work-hub-aux-pr-pinned')).to.equal(null);
+        view.dispose();
+    });
+
+    it('disables the pull request row when no project is open', () => {
+        const { panel } = createHarness({ canShow: false });
+        panel.show();
+        expect(launcherOpen(panel, 'pull-request').disabled).to.equal(true);
     });
 
     it('shows a hint instead of views while no task is open', () => {
@@ -370,5 +475,60 @@ describe('qaap-work-hub-aux-panel', () => {
         expect(edges()).to.deep.equal(['theia-mod-overflow-start']);
         measure(0, 200, 201);
         expect(edges()).to.deep.equal([]);
+    });
+
+    it('Bring back opens the side chat in the main area, closes its tab, and the + button still adds a tab', async () => {
+        const opened: string[] = [];
+        const sideChat: QaapWorkHubAuxSideChatHost = {
+            resolveParent: () => ({ id: 'parent-1', title: 'Fix login', cwd: '/workspace/repos/users/alice/o/r', agentId: 'opencode' }),
+            resolveComposerSelection: () => undefined,
+            listModels: async () => [],
+            pickAttachments: async () => [],
+            prepareOutbound: async draft => draft,
+            startSignIn: () => undefined,
+            openInMainArea: async id => { opened.push(id); },
+            subscribeLive: () => Disposable.NULL,
+        };
+        // The view's close goes to the panel's own close path, wired once the panel exists.
+        let closeFromView: () => void = () => undefined;
+        const view = new QaapWorkHubAuxSideChatView({
+            host: sideChat,
+            api: {
+                create: async () => ({ id: 'side-1', cwd: '/w', agentId: 'opencode', title: 'x', status: 'idle', messages: [] }) as never,
+                post: async () => ({}),
+                get: async () => { throw new Error('not used'); },
+                remove: async () => undefined,
+            },
+            onTitle: () => undefined,
+            onClose: () => closeFromView(),
+            refreshMs: 1_000_000,
+        });
+        const { panel } = createHarness({ sideChat, sideChatView: view });
+        closeFromView = () => (panel as unknown as { closeSideChatTab(): void }).closeSideChatTab();
+        panel.show();
+        launcherOpen(panel, 'side-chat').click();
+        expect(panel.element.dataset.view).to.equal('side-chat');
+        const input = view.element.querySelector('textarea') as HTMLTextAreaElement;
+        input.value = 'responde solo: ok';
+        await view.send();
+        expect(view.conversation).to.equal('side-1');
+
+        await view.bringBack();
+
+        expect(opened).to.deep.equal(['side-1']);
+        expect(tabKinds(panel)).to.not.include('side-chat');
+        expect(view.conversation).to.equal(undefined);
+        expect(view.element.hidden).to.equal(true);
+
+        panel.element.querySelector<HTMLButtonElement>('.qaap-work-hub-aux-panel-add')!.click();
+        expect(panel.element.dataset.view).to.equal('launcher');
+        expect(tabKinds(panel)).to.include('launcher');
+        view.dispose();
+    });
+
+    it('lists the side chat in the launcher only while a task is open', () => {
+        const { panel } = createHarness({ canShow: false });
+        panel.show();
+        expect(launcherOpen(panel, 'side-chat').disabled).to.equal(true);
     });
 });

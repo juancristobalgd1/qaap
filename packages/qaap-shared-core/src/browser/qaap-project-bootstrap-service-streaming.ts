@@ -31,6 +31,7 @@ import {
 } from './qaap-preview-terminal-lifecycle';
 import {
     shouldIgnoreWorkspaceRefreshForHubPin,
+    waitForDevExitOutput,
 } from './qaap-project-bootstrap-helpers';
 import { DEV_PORT_RECOVERY_MAX_ATTEMPTS } from './qaap-project-bootstrap-service';
 import { takePreviewStartupOutputListener } from './qaap-project-bootstrap-service-activity';
@@ -312,6 +313,10 @@ export async function startDevServerExtracted(ctx: QaapProjectBootstrapServiceCo
             // Process exit is broadcast through TerminalWatcher (not via onTerminalDidClose, which
             // only fires when the *widget* is disposed). We filter by terminalId so a parallel
             // install terminal exiting doesn't accidentally flip the dev phase.
+            // Set once the backend reported the process exit: that report (with the exit code) is
+            // the one that fails the run, after the output caught up; the widget close it causes
+            // must not race it with a code-less "tab closed".
+            let processExitReported = false;
             const onProcessExit = ctx.terminalWatcher.onTerminalExit(event => {
                 if (event.terminalId !== terminal.terminalId
                     || runId !== ctx.devRunGeneration
@@ -319,20 +324,27 @@ export async function startDevServerExtracted(ctx: QaapProjectBootstrapServiceCo
                     return;
                 }
                 if (ctx._phase === 'starting' || ctx._phase === 'running') {
-                    // The process can exit before the output listener receives its final chunk.
-                    // Read the terminal buffer here so a fast startup failure is diagnosable
-                    // instead of collapsing to the generic exit-code message.
-                    const exit = describeDevProcessExit(
-                        event.code,
-                        ctx.readTerminalTail(terminal) || ctx.devOutputTail,
-                        ctx.activePreviewClaim?.port ?? spawnPlan.targetPort,
-                        event.signal,
-                    );
-                    void ctx.failDevRun(exit.message, plan, runId, { exitedWithoutListening: exit.exitedWithoutListening });
+                    processExitReported = true;
+                    // The exit notification can arrive before the process output (another channel):
+                    // wait until the terminal received it, so a fast startup failure is diagnosable
+                    // (and port recovery / auto-install can run) instead of collapsing to the
+                    // generic exit-code message.
+                    void waitForDevExitOutput(terminal).then(() => {
+                        if (runId !== ctx.devRunGeneration || ctx.devRunCancelledByUser) {
+                            return;
+                        }
+                        const exit = describeDevProcessExit(
+                            event.code,
+                            ctx.readTerminalTail(terminal) || ctx.devOutputTail,
+                            ctx.activePreviewClaim?.port ?? spawnPlan.targetPort,
+                            event.signal,
+                        );
+                        void ctx.failDevRun(exit.message, plan, runId, { exitedWithoutListening: exit.exitedWithoutListening });
+                    });
                 }
             });
             const onWidgetClose = terminal.onTerminalDidClose(() => {
-                if (runId !== ctx.devRunGeneration || ctx.devRunCancelledByUser) {
+                if (runId !== ctx.devRunGeneration || ctx.devRunCancelledByUser || processExitReported) {
                     return;
                 }
                 if (ctx._phase === 'starting' || ctx._phase === 'running') {

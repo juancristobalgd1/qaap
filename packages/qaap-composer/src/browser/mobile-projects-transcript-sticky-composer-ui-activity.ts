@@ -105,15 +105,7 @@ export async function startPeerRunOrQueueExtracted(ctx: MobileProjectsTranscript
             // queue) tells it the message is safely held instead and it can clear.
             return ctx.queuePeerRunMessage(summary, entry);
         }
-        if (deliveryMode === 'queue') {
-            MobileSnackbar.show(
-                nls.localize(
-                    'qaap/mobileProjects/messageQueued',
-                    'Message queued — will be sent when the agent finishes',
-                ),
-                { duration: 2600 },
-            );
-        }
+        // A queued message is shown in the transcript only: no snackbar above the composer.
         return true;
     } catch (error) {
         if (error instanceof QaapDirtyWorkspaceCancelledError) {

@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { environment } from '@theia/core/shared/@theia/application-package/lib/environment';
 import { QaapUserFacingError, QaapUserFacingErrors } from '../common/qaap-user-facing-error';
 import {
     QAAP_AUTH_API_PATH,
@@ -20,6 +21,7 @@ import {
     type QaapProjectResourcesUpdateRequest,
     type QaapAuthConfigResponse,
     type QaapAuthSessionResponse,
+    type QaapAuthSessionGithubCredential,
     type QaapGithubCreateRepositoryRequest,
     type QaapGithubMergePullRequestRequest,
     type QaapGithubMergePullRequestResponse,
@@ -91,11 +93,15 @@ async function fetchQaapWithTimeout(
     input: RequestInfo | URL,
     init: RequestInit,
     timeoutMs: number,
+    options: QaapFetchOptions = {},
 ): Promise<Response> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
-        const response = await fetchQaapGetWithTransientRetry(input, { ...init, signal: controller.signal });
+        const signal = controller.signal;
+        const response = options.retryTransient === false
+            ? await fetch(input, { ...init, signal })
+            : await fetchQaapGetWithTransientRetry(input, { ...init, signal });
         const body = QAAP_NULL_BODY_STATUSES.has(response.status) ? undefined : await response.arrayBuffer();
         return new Response(body, {
             status: response.status,
@@ -113,14 +119,20 @@ function isQaapAbortError(err: unknown): boolean {
 }
 
 /** {@link fetchQaapWithTimeout}, mapping an abort to a user-facing timeout error. */
+/** Per-call fetch behaviour. `retryTransient: false` sends the request once, for callers whose UI offers its own retry. */
+interface QaapFetchOptions {
+    readonly retryTransient?: boolean;
+}
+
 async function fetchQaapOrTimeoutError(
     input: RequestInfo | URL,
     init: RequestInit,
     timeoutMs: number,
     timeoutMessage: () => string,
+    options: QaapFetchOptions = {},
 ): Promise<Response> {
     try {
-        return await fetchQaapWithTimeout(input, init, timeoutMs);
+        return await fetchQaapWithTimeout(input, init, timeoutMs, options);
     } catch (err) {
         if (isQaapAbortError(err)) {
             throw new Error(timeoutMessage());
@@ -392,6 +404,58 @@ export async function fetchQaapGithubPullRequestDetail(
     return body.pullRequest;
 }
 
+/** What a pull request lookup found: the detail, nothing for the branch, no GitHub session, or a failure. */
+export type QaapGithubPullRequestLookup =
+    | { readonly kind: 'found'; readonly pullRequest: QaapGithubPullRequestSummary }
+    | { readonly kind: 'none' }
+    | { readonly kind: 'signed-out' }
+    | { readonly kind: 'error'; readonly message: string };
+
+/**
+ * Full detail of the pull request `number`, or of the pull request whose head is `branch` (an open one
+ * first). Never throws: transport failures come back as `error`.
+ */
+export async function lookupQaapGithubPullRequest(query: {
+    readonly owner: string;
+    readonly repo: string;
+    readonly number?: number;
+    readonly branch?: string;
+}): Promise<QaapGithubPullRequestLookup> {
+    const params = new URLSearchParams({ owner: query.owner, repo: query.repo });
+    const byNumber = query.number !== undefined;
+    if (byNumber) {
+        params.set('number', String(query.number));
+    } else if (query.branch) {
+        params.set('branch', query.branch);
+    } else {
+        return { kind: 'none' };
+    }
+    const path = byNumber ? 'pull-requests/detail' : 'pull-requests/by-branch';
+    try {
+        const response = await fetchQaapOrTimeoutError(
+            `${QAAP_GITHUB_API_PATH}/${path}?${params.toString()}`,
+            qaapAuthenticatedFetchInit(),
+            QAAP_GITHUB_LIST_TIMEOUT_MS,
+            () => nls.localize('qaap/githubPullRequests/detailTimedOut', 'Loading the pull request took too long.'),
+            // The panel answers 503 with "Connect GitHub" and offers Try again, so a gateway answer is not retried here.
+            { retryTransient: false },
+        );
+        if (response.status === 401 || response.status === 503) {
+            return { kind: 'signed-out' };
+        }
+        if (response.status === 404) {
+            return { kind: 'none' };
+        }
+        const body = await response.json().catch(() => ({})) as QaapGithubPullRequestDetailResponse & { error?: string };
+        if (!response.ok || !body.pullRequest) {
+            return { kind: 'error', message: body.error ?? nls.localize('qaap/githubPullRequests/loadFailed', 'Failed to load the pull request ({0}).', response.status) };
+        }
+        return { kind: 'found', pullRequest: body.pullRequest };
+    } catch (err) {
+        return { kind: 'error', message: err instanceof Error ? err.message : String(err) };
+    }
+}
+
 export async function mergeQaapGithubPullRequest(request: QaapGithubMergePullRequestRequest): Promise<QaapGithubMergePullRequestResponse> {
     // The server already confirms ambiguous outcomes; a client timeout still leaves it unknown.
     const response = await fetchQaapOrTimeoutError(`${QAAP_GITHUB_API_PATH}/pull-requests/merge`, qaapAuthenticatedFetchInit({
@@ -624,6 +688,28 @@ export async function fetchQaapUserAiSettings(): Promise<Record<string, unknown>
     return body.settings && typeof body.settings === 'object' ? body.settings : {};
 }
 
+/**
+ * The per-user AI settings mirror as stored right now, for a read-modify-write. Unlike
+ * {@link fetchQaapUserAiSettings} it never consumes the boot prefetch (that belongs to the settings sync)
+ * and it throws instead of returning `{}` when the read fails, so a caller never writes back a partial mirror.
+ */
+export async function fetchQaapUserAiSettingsForUpdate(): Promise<Record<string, unknown>> {
+    const response = await fetchQaapOrTimeoutError(
+        QAAP_USER_SETTINGS_API_PATH,
+        qaapAuthenticatedFetchInit(),
+        QAAP_API_REQUEST_TIMEOUT_MS,
+        userSettingsTimedOut,
+    );
+    if (!response.ok) {
+        throw await QaapUserFacingErrors.fromResponse(response, `Failed to read AI settings (${response.status})`);
+    }
+    const body = await response.json() as { settings?: Record<string, unknown> };
+    if (!body.settings || typeof body.settings !== 'object' || Array.isArray(body.settings)) {
+        throw new Error('The AI settings response has no settings object.');
+    }
+    return body.settings;
+}
+
 /** One plan of the Starter / Pro catalog, as the backend snapshot reports it. */
 export interface QaapBillingPlanSnapshot {
     readonly id: string;
@@ -793,9 +879,34 @@ export async function putQaapUserAiSettings(settings: Record<string, unknown>): 
     return body.settings && typeof body.settings === 'object' ? body.settings : settings;
 }
 
+/**
+ * Cancelable window event that asks the desktop app to sign in with GitHub without leaving the page. The
+ * Work Hub handles it (device flow in the system browser) and calls `preventDefault()`.
+ */
+export const QAAP_DESKTOP_GITHUB_SIGN_IN_EVENT = 'qaap-desktop-github-sign-in';
+
+/**
+ * Starts "Sign in with GitHub". Web: navigates to the OAuth start route (the callback brings the page back).
+ * Desktop (Electron): never navigates the app window, which would drop its state and load GitHub inside the
+ * app; it asks the desktop sign-in handler instead, which completes the sign-in in the system browser.
+ */
 export function startGithubOAuth(): void {
-    window.location.assign(QAAP_GITHUB_OAUTH_START_PATH);
+    if (environment.electron.is()) {
+        const request = new window.CustomEvent(QAAP_DESKTOP_GITHUB_SIGN_IN_EVENT, { cancelable: true });
+        if (window.dispatchEvent(request)) {
+            console.warn('[qaap] GitHub sign-in is not available in this desktop window: no sign-in handler is installed.');
+        }
+        return;
+    }
+    QaapGithubOAuthNavigation.assign(QAAP_GITHUB_OAUTH_START_PATH);
 }
+
+/** Page navigation of the web sign-in; a seam so tests can observe it (jsdom's `location` cannot be stubbed). */
+export const QaapGithubOAuthNavigation = {
+    assign(url: string): void {
+        window.location.assign(url);
+    },
+};
 
 export async function signOutQaapAuth(): Promise<void> {
     try {
@@ -810,10 +921,21 @@ export async function signOutQaapAuth(): Promise<void> {
     }
 }
 
+let qaapDesktopGithubCredential: QaapAuthSessionGithubCredential | undefined;
+
+/**
+ * Desktop without a Qaap GitHub session: the source and GitHub user of the user's own credential (gh,
+ * `GH_TOKEN`) that serves the Work Hub's GitHub data, from the last `/auth/session`. Never a token; memory only.
+ */
+export function readQaapDesktopGithubCredential(): QaapAuthSessionGithubCredential | undefined {
+    return qaapDesktopGithubCredential;
+}
+
 /** Apply server session to local storage; returns true when signed in. */
 export async function syncQaapAuthSessionFromServer(config?: QaapAuthConfigResponse): Promise<boolean> {
     const resolvedConfig = config ?? await fetchQaapAuthConfig().catch(() => ({ skipAuth: false, githubOAuth: false }));
     const session = await fetchQaapAuthSession();
+    qaapDesktopGithubCredential = session.signedIn && session.githubCredential?.user?.login ? session.githubCredential : undefined;
     if (!session.signedIn || !session.user) {
         if (!resolvedConfig.skipAuth) {
             clearQaapAuthSession();

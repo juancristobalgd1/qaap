@@ -12,6 +12,7 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { readStoredAgentModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
 import { QaapAgentEffort, type QaapAgentEffortLevel } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
+import { QaapHarnessModelAvailability } from '@theia/qaap-shared-core/lib/common/qaap-harness-model-availability';
 import {
     writeStoredAgentApprovalPolicy,
     type QaapAgentApprovalPolicyId,
@@ -25,15 +26,16 @@ import { disposeQaapComposerModelPicker, renderQaapComposerModelPicker } from '.
 import { placePickerAbove } from './qaap-composer-picker-placement';
 
 /**
- * Sign-in action for a harness known to be signed out; `undefined` otherwise. Only a confirmed
- * `signed-out` session counts: Copilot, Grok and Antigravity have no status command, so their session
- * stays `checking` or unset and must not nag for a sign-in they may already have.
+ * Sign-in action for a harness whose Pro models are locked by its session (`QaapHarnessModelAvailability.blocksPro`:
+ * `signed-out` or `unknown`); `undefined` otherwise. A `checking` session (probe still running) shows nothing, and an
+ * unset session shows nothing either. Copilot, Grok and Antigravity without a status answer are `unknown` until they
+ * are attested, so they get the Sign in action; the sign-in flow itself is never locked.
  */
 function connectionStripFor(
     agent: QaapAgentTaskAgentOption,
     options: StickyComposerModelPickerOptions,
 ): { message: string; actionLabel: string; onAction: () => void } | undefined {
-    if (agent.session === 'signed-out' && options.onProactiveLogin) {
+    if (QaapHarnessModelAvailability.blocksPro(agent.session) && options.onProactiveLogin) {
         return {
             message: nls.localize('qaap/composer/picker/connectNeeded', '{0} needs a sign-in before it can run.', agent.label),
             actionLabel: nls.localizeByDefault('Sign in'),
@@ -132,6 +134,8 @@ export async function renderStickyComposerModelPicker(
             modelsByAgent.set(agent.id, cached);
         }
     }
+    // Harnesses whose model list has not answered yet in this open (cached lists are not pending).
+    const pendingAgentIds = new Set(agents.map(agent => agent.id).filter(agentId => !modelsByAgent.has(agentId)));
     let models: QaapPickerModel[] = [];
     let catalog = new Map<string, QaapQaiqModelOption>();
     const rebuildModels = (): void => {
@@ -176,6 +180,7 @@ export async function renderStickyComposerModelPicker(
             query,
             currentAgentId: pinned,
             currentModelId: currentModel?.modelId,
+            loading: railSelection === 'favorites' ? pendingAgentIds.size > 0 : pendingAgentIds.has(railSelection),
         };
         // The effort column follows the harness highlighted on the rail, not only the pinned one.
         const effortAgentId = railSelection !== 'favorites' ? railSelection : pinned;
@@ -233,6 +238,7 @@ export async function renderStickyComposerModelPicker(
     // Background refresh of every harness: each answer repaints, so the list never waits for the slowest one.
     for (const agent of agents) {
         void ctx.resolveModelsForAgentPickerSafe(agent.id).then(resolved => {
+            pendingAgentIds.delete(agent.id);
             if (!chrome.sheet.isConnected) {
                 return;
             }

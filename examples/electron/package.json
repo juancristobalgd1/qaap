@@ -54,7 +54,6 @@
     "@theia/ai-terminal": "1.73.0",
     "@theia/ai-vercel-ai": "1.73.0",
     "@theia/api-provider-sample": "1.73.0",
-    "@theia/api-samples": "1.73.0",
     "@theia/bulk-edit": "1.73.0",
     "@theia/callhierarchy": "1.73.0",
     "@theia/collaboration": "1.73.0",

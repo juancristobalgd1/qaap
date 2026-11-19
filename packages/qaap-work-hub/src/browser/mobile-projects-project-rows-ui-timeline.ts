@@ -22,6 +22,7 @@ import type { MobileProjectsActiveTasks, MobileProjectTaskView } from '@theia/qa
 import { type MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types'; import { attachSwipeToDelete } from '@theia/qaap-mobile-shell/lib/browser/qaap-mobile-swipe-to-delete';
 import { attachTaskTitleMarquee, createTaskTitleText } from './mobile-projects-task-title-marquee';
 import { resolveQaapFailedRunAction } from '../common/qaap-failed-run-action';
+import { sideChatVisibleTitle, stripSideChatPreamble } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-side-chat';
 import { getQaapTaskHoverCard, isQaapTaskHoverCardSupported } from './qaap-task-hover-card';
 import { buildQaapTaskHoverCardModel, type QaapTaskHoverCardModel } from './qaap-task-hover-card-model';
 
@@ -273,8 +274,10 @@ export function createTaskItemExtracted(ctx: MobileProjectsProjectRowsUiContext,
     taskTitleRow.className = 'theia-mobile-projects-task-title-row';
     const taskTitle = document.createElement('span');
     taskTitle.className = 'theia-mobile-projects-task-title';
-    taskTitle.title = task.title;
-    taskTitle.append(createTaskTitleText(task.title));
+    // A side chat's title is its first message; an older one may still start with the stored background.
+    const shownTitle = summary?.origin === 'side-chat' ? sideChatRowTitle(task.title) : task.title;
+    taskTitle.title = shownTitle;
+    taskTitle.append(createTaskTitleText(shownTitle));
     attachTaskTitleMarquee(row, taskTitle);
     const taskSince = document.createElement('span');
     taskSince.className = 'theia-mobile-projects-task-since';
@@ -307,6 +310,14 @@ export function createTaskItemExtracted(ctx: MobileProjectsProjectRowsUiContext,
         taskTitleRow.append(taskTitle, progressCount);
     } else {
         taskTitleRow.append(taskTitle);
+    }
+    if (compact && summary?.origin === 'side-chat') {
+        // A side chat reads apart from a task in the sidebar; opening it is the same as any other row.
+        const sideBadge = document.createElement('span');
+        sideBadge.className = 'theia-mobile-projects-task-side-badge';
+        sideBadge.textContent = nls.localizeByDefault('Side');
+        sideBadge.title = nls.localize('qaap/mobileProjects/sideChatBadgeTitle', 'Side chat: opened beside another conversation');
+        taskTitleRow.append(sideBadge);
     }
     if (compact) {
         // One line: the time sits at the row's right edge; the reason and model are in the tooltip.
@@ -645,3 +656,8 @@ export function renderConversationTurnProgressExtracted(ctx: MobileProjectsProje
     host.append(svg);
 }
 
+/** The title of a side chat row: its own words, or the side chat label when no words survive a stored background. */
+function sideChatRowTitle(title: string): string {
+    const visible = sideChatVisibleTitle(stripSideChatPreamble(title));
+    return visible || nls.localize('qaap/workHubAuxPanel/sideChat', 'Side chat');
+}

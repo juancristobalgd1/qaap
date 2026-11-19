@@ -5,6 +5,7 @@
 
 import { expect } from 'chai';
 import { normalizeAgentMessageContentForDisplay, resolveMessagePreviewText, resolveTranscriptUserMessageView, stripQaapControlMarkersForDisplay } from './qaap-agent-message-content';
+import { stripQaapPreviewCacheBustParam } from './qaap-preview-feedback-transcript';
 import { applyResolvedAttachmentsToPrompt } from './qaap-composer-attachment-prompt';
 import { createComposerSkillDisplayMarker } from './qaap-composer-skill-display';
 import { createComposerGitActionDisplayMarker } from './qaap-composer-git-action-display';
@@ -265,5 +266,51 @@ describe('resolveTranscriptUserMessageView', () => {
                 deletions: 1,
             },
         });
+    });
+});
+
+describe('preview feedback never shows Qaap plumbing to the user', () => {
+    /** Verbatim shape of the auto-sent annotation message from the desktop E2E (Nov 18). */
+    const AUTO_SENT_FEEDBACK = [
+        'The user attached the following context with this message. Use it to answer; do not claim nothing was provided.',
+        '',
+        '### previewFeedback: Preview feedback · 1 annotations · /?_qaap_cache_bust=1795010821889 · Desktop',
+        '```',
+        'Preview feedback annotations (compact context — not full DOM):',
+        '',
+        'Annotation 1:',
+        '- Comment: un button icono solo aqui',
+        '- Route: /?_qaap_cache_bust=1795010821889',
+        '- Viewport: desktop 479x626',
+        '- Selector: html > ul#list > li[0] > button',
+        '- Position in element: x=0.507, y=0.833',
+        '- Document position: x=0.891, y=0.302',
+        '- Element: <button>',
+        '- Text: Borrar',
+        '```',
+        '',
+        '---',
+        '',
+        'Please address the attached preview feedback.',
+    ].join('\n');
+
+    it('strips the cache-bust marker from routes and chip titles, keeping real query params', () => {
+        expect(stripQaapPreviewCacheBustParam('/?_qaap_cache_bust=1795010821889')).to.equal('/');
+        expect(stripQaapPreviewCacheBustParam('/a?x=1&_qaap_cache_bust=2')).to.equal('/a?x=1');
+        expect(stripQaapPreviewCacheBustParam('/a?_qaap_cache_bust=2&x=1')).to.equal('/a?x=1');
+        expect(stripQaapPreviewCacheBustParam('/a?x=1&_qaap_cache_bust=2&y=3#h')).to.equal('/a?x=1&y=3#h');
+        expect(stripQaapPreviewCacheBustParam('Preview feedback · 1 annotations · /?_qaap_cache_bust=9 · Desktop'))
+            .to.equal('Preview feedback · 1 annotations · / · Desktop');
+    });
+
+    it('renders the auto-sent message as a readable chip and prompt without the raw payload', () => {
+        const view = resolveTranscriptUserMessageView({ role: 'user', content: AUTO_SENT_FEEDBACK });
+        expect(view.displayText).to.equal('Please address the attached preview feedback.');
+        expect(view.contextChips).to.have.length(1);
+        const chip = view.contextChips[0]!;
+        expect(chip.title).to.equal('Preview feedback · 1 annotations · / · Desktop');
+        expect(chip.annotations?.[0]?.comment).to.equal('un button icono solo aqui');
+        expect(chip.annotations?.[0]?.route).to.equal('/');
+        expect(JSON.stringify(view)).not.to.contain('_qaap_cache_bust');
     });
 });

@@ -26,6 +26,7 @@ import '../../src/browser/style/qaap-empty-workbench-brand.css';
 import '../../src/browser/style/qaap-ide-preferences.css';
 import '../../src/browser/style/qaap-project-bootstrap.css';
 import '@theia/qaap-agents-ui/src/browser/style/qaap-agent-cli-update-toast.css';
+import '@theia/qaap-agents-ui/src/browser/style/qaap-agent-cli-update-status-chip.css';
 import '@theia/qaap-composer/src/browser/style/qaap-chat-mic.css';
 import '@theia/qaap-composer/src/browser/style/qaap-composer-prompt-improve.css';
 import '@theia/qaap-composer/src/browser/style/qaap-composer-stop-ack.css';
@@ -34,6 +35,8 @@ import '@theia/qaap-composer/src/browser/style/qaap-composer-goal-loop.css';
 import '../../src/browser/style/qaap-work-hub-sessions-sidebar.css';
 import '../../src/browser/style/qaap-task-hover-card.css';
 import '../../src/browser/style/qaap-work-hub-aux-panel.css';
+import '../../src/browser/style/qaap-work-hub-aux-pull-request.css';
+import '../../src/browser/style/qaap-work-hub-aux-side-chat.css';
 import '../../src/browser/style/qaap-work-hub-keybindings.css';
 import '@theia/qaap-transcript/src/browser/style/qaap-transcript-lobehub.css';
 import '@theia/qaap-agents-ui/src/browser/style/qaap-agent-setup-animations.css';
@@ -70,7 +73,7 @@ import {
 import { QaapAgUiFrontendToolService } from '@theia/qaap-shared-core/lib/browser/qaap-ag-ui-frontend-tool-service';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
 import { CommandContribution } from '@theia/core/lib/common/command';
-import { KeybindingContribution, KeybindingRegistry } from '@theia/core/lib/browser/keybinding';
+import { KeybindingContext, KeybindingContribution, KeybindingRegistry } from '@theia/core/lib/browser/keybinding';
 import { QuickCommandService } from '@theia/core/lib/browser/quick-input/quick-command-service';
 import { MenuContribution } from '@theia/core/lib/common/menu';
 import { ShellLayoutRestorer, ShellLayoutTransformer } from '@theia/core/lib/browser/shell/shell-layout-restorer';
@@ -80,10 +83,13 @@ import { bindQaapWorkspacePreferenceProvider } from '@theia/qaap-shared-core/lib
 import { QaapQuickCommandService } from './qaap-quick-command-service';
 import { QaapBuildFreshnessContribution } from '@theia/qaap-shared-core/lib/browser/qaap-build-freshness-contribution';
 import { QaapHasStateClasses } from './qaap-has-state-classes';
+import { QaapWorkHubDialogScrollFadesContribution } from './qaap-work-hub-dialog-scroll-fades-contribution';
 import { QaapWindowTitleProjectContribution } from './qaap-window-title-project-contribution';
 import { QaapWorkHubBootReplicaContribution } from './qaap-work-hub-boot-replica-contribution';
 import { QaapWorkHubKeybindingsPanel } from './qaap-work-hub-keybindings-panel';
 import { QaapAgentCliUpdateContribution } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-cli-update-contribution';
+import { QaapAgentCliUpdateTracker } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-cli-update-tracker';
+import { QaapAgentCliUpdateStatusChip } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-cli-update-status-chip';
 import { MobileOneColumnShellContribution } from './mobile-one-column-shell-contribution';
 import { QaapShellLayoutRestoreContribution } from './qaap-shell-layout-restore-contribution';
 import { QaapShellLayoutRestorer } from './qaap-shell-layout-restorer';
@@ -94,6 +100,8 @@ import { TerminalFrontendContribution } from '@theia/terminal/lib/browser/termin
 import { XtermLinkFactory } from '@theia/terminal/lib/browser/terminal-link-provider';
 import { QaapIdeShellTerminalServer, QaapIdeTerminalService, QaapIdeTerminalWatcher } from '@theia/qaap-shared-core/lib/browser/qaap-ide-bridge';
 import { QaapTerminalFrontendContribution } from '@theia/qaap-shared-core/lib/browser/qaap-terminal-frontend-contribution';
+import { QaapTerminalWidget } from '@theia/qaap-shared-core/lib/browser/qaap-terminal-widget';
+import { TerminalWidget } from '@theia/terminal/lib/browser/base/terminal-widget';
 import { QaapWorkHubNotificationSettings } from '@theia/qaap-shared-core/lib/browser/qaap-work-hub-notification-settings';
 import { QaapCompletionSound } from '@theia/qaap-shared-core/lib/browser/qaap-completion-sound';
 import { createQaapXtermLinkFactory } from '@theia/qaap-shared-core/lib/browser/qaap-xterm-link-adapter';
@@ -103,6 +111,12 @@ import { QaapAppearanceModeService } from '@theia/qaap-shared-core/lib/browser/q
 import { QaapEmptyWorkbenchBrandingContribution } from './qaap-empty-workbench-branding-contribution';
 import { QaapIdePreferencesResizer } from './qaap-ide-preferences-resizer';
 import { QaapWatermarkCommandsContribution } from './qaap-watermark-commands-contribution';
+import {
+    QaapComposerModelPickerFocusKeybindingContext,
+    QaapTranscriptSearchFocusKeybindingContext,
+    QaapWorkHubShortcutPassthroughContribution,
+} from './qaap-work-hub-shortcut-passthrough-contribution';
+import { QaapWorkHubSurfaceRedirectContribution } from './qaap-work-hub-surface-redirect-contribution';
 import { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
 import { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
 import { MobileWorkHubInboxStream } from './mobile-work-hub-inbox-stream';
@@ -152,6 +166,7 @@ import { QaapPushNotificationContribution } from '@theia/qaap-shared-core/lib/br
 import { QaapAgentCompletionContribution } from '@theia/qaap-shared-core/lib/browser/qaap-agent-completion-contribution';
 import { QaapMobileAgentNotificationService } from '@theia/qaap-shared-core/lib/browser/qaap-mobile-agent-notification-service';
 import { QaapAgentDevPreviewAutopilotContribution } from '@theia/qaap-transcript/lib/browser/qaap-agent-dev-preview-autopilot-contribution';
+import { QaapPreviewTurnRefreshContribution } from '@theia/qaap-transcript/lib/browser/qaap-preview-turn-refresh-contribution';
 import { QaapTranscriptImageLightboxContribution } from '@theia/qaap-transcript/lib/browser/qaap-transcript-image-lightbox';
 import { QaapTurnSettleNotifyContribution } from '@theia/qaap-transcript/lib/browser/qaap-turn-settle-notify-contribution';
 import { QaapAgentFinishedToastContribution } from '@theia/qaap-shared-core/lib/browser/qaap-agent-finished-toast-contribution';
@@ -258,11 +273,17 @@ export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync
     // Classes standing in for the `:has()` on the streaming transcript's ancestors (H4.2 / R2).
     bind(QaapHasStateClasses).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapHasStateClasses);
+
+    bind(QaapWorkHubDialogScrollFadesContribution).toSelf().inSingletonScope();
+    bind(FrontendApplicationContribution).toService(QaapWorkHubDialogScrollFadesContribution);
     // The login gate repaints the phone Work Hub exactly from this record on the next load.
     bind(QaapWorkHubBootReplicaContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapWorkHubBootReplicaContribution);
     bind(QaapAgentCliUpdateContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapAgentCliUpdateContribution);
+    bind(QaapAgentCliUpdateTracker).toSelf().inSingletonScope();
+    bind(QaapAgentCliUpdateStatusChip).toSelf().inSingletonScope();
+    bind(FrontendApplicationContribution).toService(QaapAgentCliUpdateStatusChip);
     bind(CommandContribution).toService(MobileOneColumnShellContribution);
     rebind(ShellLayoutRestorer).to(QaapShellLayoutRestorer).inSingletonScope();
     // Work Hub terminal surface (desktop and mobile): bridge aliases of the upstream terminal services.
@@ -271,6 +292,9 @@ export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync
     bind(QaapIdeShellTerminalServer).toService(IShellTerminalServer);
     bind(QaapTerminalFrontendContribution).toSelf().inSingletonScope();
     rebind(TerminalFrontendContribution).toService(QaapTerminalFrontendContribution);
+    // Hidden preview terminals (Work Hub spawns dev servers with reveal: false) must still report their
+    // output, or a fast dev-server exit reaches the user without its reason. Seam for packages/terminal.
+    rebind(TerminalWidget).to(QaapTerminalWidget).inTransientScope();
     // Terminal link taps must open reliably on touch devices (Qaap is mobile-first);
     // subclass XtermLinkAdapter via a replacement factory. Seam for packages/terminal.
     rebind(XtermLinkFactory).toFactory(createQaapXtermLinkFactory);
@@ -287,6 +311,14 @@ export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync
     bind(QaapWatermarkCommandsContribution).toSelf().inSingletonScope();
     bind(CommandContribution).toService(QaapWatermarkCommandsContribution);
     bind(KeybindingContribution).toService(QaapWatermarkCommandsContribution);
+    bind(QaapWorkHubShortcutPassthroughContribution).toSelf().inSingletonScope();
+    bind(KeybindingContribution).toService(QaapWorkHubShortcutPassthroughContribution);
+    bind(QaapWorkHubSurfaceRedirectContribution).toSelf().inSingletonScope();
+    bind(FrontendApplicationContribution).toService(QaapWorkHubSurfaceRedirectContribution);
+    bind(QaapTranscriptSearchFocusKeybindingContext).toSelf().inSingletonScope();
+    bind(KeybindingContext).toService(QaapTranscriptSearchFocusKeybindingContext);
+    bind(QaapComposerModelPickerFocusKeybindingContext).toSelf().inSingletonScope();
+    bind(KeybindingContext).toService(QaapComposerModelPickerFocusKeybindingContext);
 
     bind(QaapEmptyWorkbenchBrandingContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapEmptyWorkbenchBrandingContribution);
@@ -410,6 +442,9 @@ export default new ContainerModule((bind, _unbind, isBound, rebind, _unbindAsync
     bind(FrontendApplicationContribution).toService(QaapAgentCompletionContribution);
     bind(QaapAgentDevPreviewAutopilotContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapAgentDevPreviewAutopilotContribution);
+    // Agent turns that change the project restart the managed dev server (server code) and reload the open preview.
+    bind(QaapPreviewTurnRefreshContribution).toSelf().inSingletonScope();
+    bind(FrontendApplicationContribution).toService(QaapPreviewTurnRefreshContribution);
     bind(QaapTranscriptImageLightboxContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapTranscriptImageLightboxContribution);
     bind(QaapTurnSettleNotifyContribution).toSelf().inSingletonScope();

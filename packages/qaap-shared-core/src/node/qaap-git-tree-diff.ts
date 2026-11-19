@@ -160,6 +160,18 @@ export async function computeTreeDiff(cwd: string, baseCommit: string, currentTr
 }
 
 /**
+ * Line count of a text file the way `git diff --numstat` counts an added file: a trailing newline
+ * terminates the last line instead of starting an extra one, so `"a\nb\n"` is 2 lines, not 3.
+ */
+export function countTextLines(content: string): number {
+    if (!content) {
+        return 0;
+    }
+    const newlines = content.split('\n').length - 1;
+    return content.endsWith('\n') ? newlines : newlines + 1;
+}
+
+/**
  * Parse `git diff --numstat -z`: `added\tremoved\tpath\0`, or for renames `added\tremoved\t\0old\0new\0`.
  * Returns counts keyed by the new path.
  */

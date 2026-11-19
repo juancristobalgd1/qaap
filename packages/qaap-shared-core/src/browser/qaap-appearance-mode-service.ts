@@ -72,8 +72,30 @@ export class QaapAppearanceModeService implements FrontendApplicationContributio
                 return;
             }
             this.rememberCurrentThemeInPair();
+            if (this.isExplicitSystem()) {
+                // A color pick in System mode is remembered for its side, but the OS decides which side is shown.
+                this.scheduleResolvedTheme();
+                return;
+            }
             this.syncModeFromActiveTheme();
         }));
+    }
+
+    protected isExplicitSystem(): boolean {
+        return this.hasExplicitMode && this.mode === 'system';
+    }
+
+    /**
+     * Re-resolves the theme after the current theme-change event has reached every listener.
+     * The Electron menu contribution also reacts to that event and would otherwise leave the
+     * active side (and the native theme source) on the picked theme.
+     */
+    protected scheduleResolvedTheme(): void {
+        queueMicrotask(() => {
+            if (this.isExplicitSystem()) {
+                this.applyResolvedTheme();
+            }
+        });
     }
 
     onStop(): void {
@@ -168,6 +190,24 @@ export class QaapAppearanceModeService implements FrontendApplicationContributio
             }
         } finally {
             this.applyingTheme = false;
+        }
+        this.syncElectronThemeSource();
+    }
+
+    /**
+     * Electron: a forced `nativeTheme.themeSource` overrides `prefers-color-scheme`, so System must
+     * be sent as `'system'`. Light/Dark are sent explicitly. Runs last so it wins over the menu
+     * contribution, which sets the source from the theme type on every theme change.
+     */
+    protected syncElectronThemeSource(): void {
+        const electronCore = (window as unknown as { electronTheiaCore?: { setTheme(theme: string): void } }).electronTheiaCore;
+        if (!electronCore || !this.hasExplicitMode) {
+            return;
+        }
+        try {
+            electronCore.setTheme(this.mode);
+        } catch {
+            // ignore: the page still follows prefers-color-scheme when the bridge is unavailable
         }
     }
 

@@ -53,3 +53,49 @@ describe('QaapMcpFrontendApplicationContribution failed autostarts', () => {
         }
     });
 });
+
+/** The legacy token-less GitHub entry never reaches the backend: it is neither registered nor autostarted. */
+describe('QaapMcpFrontendApplicationContribution legacy GitHub entry', () => {
+
+    type Servers = Parameters<QaapMcpFrontendApplicationContribution['convertToMap']>[0];
+    const convert = (servers: Record<string, unknown>): Map<string, MCPServerDescription> =>
+        new QaapMcpFrontendApplicationContribution()['convertToMap'](servers as unknown as Servers);
+
+    it('drops the legacy npx entry and keeps the other servers', () => {
+        const map = convert({
+            github: { command: 'npx', args: ['-y', '@modelcontextprotocol/server-github'], autostart: true, env: {} },
+            slack: { command: 'npx', args: ['-y', 'slack'], autostart: true },
+        });
+        expect([...map.keys()]).to.deep.equal(['slack']);
+    });
+
+    it('drops the token-less remote entry', () => {
+        expect(convert({ github: { serverUrl: 'https://api.githubcopilot.com/mcp/' } }).size).to.equal(0);
+    });
+
+    it('keeps a github entry the user customised', () => {
+        const map = convert({ github: { command: 'npx', args: ['-y', '@modelcontextprotocol/server-github'], env: { GITHUB_PERSONAL_ACCESS_TOKEN: 'x' } } });
+        expect(map.has('github')).to.equal(true);
+    });
+});
+
+describe('QaapMcpFrontendApplicationContribution reserved managed GitHub identity', () => {
+
+    type Servers = Parameters<QaapMcpFrontendApplicationContribution['convertToMap']>[0];
+    const convert = (servers: Record<string, unknown>): Map<string, MCPServerDescription> =>
+        new QaapMcpFrontendApplicationContribution()['convertToMap'](servers as unknown as Servers);
+
+    it('drops a settings entry named qaap-github (workspace or agent-written user settings) and keeps the others', () => {
+        const map = convert({
+            'qaap-github': { serverUrl: 'https://api.githubcopilot.com/mcp/', oauth: { clientId: 'qaap-managed-github' } },
+            'QAAP-GITHUB': { serverUrl: 'https://api.githubcopilot.com/mcp/readonly' },
+            slack: { command: 'npx', args: ['slack'] },
+        });
+        expect([...map.keys()]).to.deep.equal(['slack']);
+    });
+
+    it('drops any entry that uses the managed OAuth marker client id', () => {
+        const map = convert({ evil: { serverUrl: 'https://api.githubcopilot.com/mcp/', oauth: { clientId: 'qaap-managed-github' } } });
+        expect(map.size).to.equal(0);
+    });
+});

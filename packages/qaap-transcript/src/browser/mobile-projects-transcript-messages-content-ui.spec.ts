@@ -402,6 +402,83 @@ describe('MobileProjectsTranscriptMessagesContentUi', () => {
         }
     });
 
+    it('opens the project preview widget before selecting the Browser tab', async () => {
+        const previewId = 'project-conversation-run-a1b2c3';
+        const verifiedUrl = 'https://0123456789abcdef0123456789abcdef.previews.qaap.example/';
+        const order: string[] = [];
+        const project = { id: 'project', name: 'Project' };
+        const summary = { id: 'conversation' };
+        const host = {
+            transcriptComposerSummary: summary,
+            transcriptOpenSummary: summary,
+            transcriptOpenProject: project,
+            projects: [project],
+            projectBootstrap: {
+                openPreview: async (url: string): Promise<void> => {
+                    order.push(`open:${url}`);
+                },
+            },
+            projectsService: {
+                recordProjectPreviewUrl: async (): Promise<void> => undefined,
+            },
+            executionSurfaceTabsUi: {
+                selectTranscriptTab: (tab: string): void => {
+                    order.push(`tab:${tab}`);
+                },
+            },
+            transcriptPreviewRequestPending: true,
+            transcriptPreviewRequestRunning: true,
+        };
+        const ui = new MobileProjectsTranscriptMessagesContentUi(host as never);
+        const testUi = ui as unknown as {
+            previewPublicOrigin: () => string;
+            probePreviewIdentity: (id: string) => Promise<{ ready: boolean; previewUrl: string; previewId: string }>;
+        };
+        testUi.previewPublicOrigin = () => 'https://app.qaap.example';
+        testUi.probePreviewIdentity = async id => ({ ready: true, previewUrl: verifiedUrl, previewId: id });
+        const snackbar = MobileSnackbar as typeof MobileSnackbar & { show: typeof MobileSnackbar.show };
+        const originalShow = snackbar.show;
+        snackbar.show = () => { /* no DOM timer in this unit test */ };
+        try {
+            expect(await ui.openTranscriptPreviewUrlFromLink(`/qaap-preview/${previewId}/`)).to.equal(true);
+            expect(order).to.deep.equal([`open:${verifiedUrl}`, 'tab:preview']);
+        } finally {
+            snackbar.show = originalShow;
+        }
+    });
+
+    it('starts the project preview through the Run app launcher when the linked preview is down', async () => {
+        const previewId = 'project-conversation-run-a1b2c3';
+        const started: string[] = [];
+        const project = { id: 'project', name: 'Project' };
+        const summary = { id: 'conversation' };
+        const host = {
+            transcriptComposerSummary: summary,
+            transcriptOpenSummary: summary,
+            transcriptOpenProject: project,
+            projects: [project],
+            requestTranscriptPreview: async (_project: unknown, _summary: unknown, options: unknown): Promise<void> => {
+                started.push(JSON.stringify(options));
+            },
+        };
+        const ui = new MobileProjectsTranscriptMessagesContentUi(host as never);
+        const testUi = ui as unknown as {
+            previewPublicOrigin: () => string;
+            probePreviewIdentity: (id: string) => Promise<{ ready: boolean; previewUrl: string; previewId: string }>;
+        };
+        testUi.previewPublicOrigin = () => 'https://app.qaap.example';
+        testUi.probePreviewIdentity = async id => ({ ready: false, previewUrl: '', previewId: id });
+        const snackbar = MobileSnackbar as typeof MobileSnackbar & { show: typeof MobileSnackbar.show };
+        const originalShow = snackbar.show;
+        snackbar.show = () => { /* no DOM timer in this unit test */ };
+        try {
+            expect(await ui.openTranscriptPreviewUrlFromLink(`/qaap-preview/${previewId}/`)).to.equal(true);
+            expect(started).to.deep.equal([JSON.stringify({ revealPreviewTab: true, allowAgentFallback: false })]);
+        } finally {
+            snackbar.show = originalShow;
+        }
+    });
+
     it('settleTranscriptStreamingContent ends streamed markdown as rendered HTML, not plain text', () => {
         const row = document.createElement('div');
         const host = document.createElement('div');

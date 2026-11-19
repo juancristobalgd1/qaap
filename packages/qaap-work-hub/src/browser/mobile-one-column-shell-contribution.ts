@@ -14,6 +14,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { QaapWindowResizeGate } from './qaap-window-resize-gate';
 import URI from '@theia/core/lib/common/uri';
 import { setQaapFileThemeIconResolver } from '@theia/qaap-shared-core/lib/browser/qaap-file-theme-icon';
 import { inject, injectable, optional, postConstruct } from '@theia/core/shared/inversify';
@@ -666,6 +667,8 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
     public resizeRaf = 0;
     /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly windowResizeGate = new QaapWindowResizeGate();
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
     public readonly onWindowResize = (): void => {
         // Throttle via rAF: resize fires dozens of times/sec on mobile rotation/viewport
         // adjustments; coalescing to one layout pass per frame avoids reflow storms.
@@ -674,6 +677,11 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         }
         this.resizeRaf = window.requestAnimationFrame(() => {
             this.resizeRaf = 0;
+            // Synthetic `resize` events (the sessions sidebar asks split panels to re-measure) keep the
+            // window size: reacting to them re-synced the sidebar, which dispatched another one.
+            if (!this.windowResizeGate.accept(window.innerWidth, window.innerHeight)) {
+                return;
+            }
             this.onMediaChange();
         });
     };

@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { QaapComposerStopClickGuard, resolveQaapComposerSendControl } from '../common/qaap-composer-send-stop';
 import { nls } from '@theia/core/lib/common/nls';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { attachQaapScrollEdgeFades } from '@theia/qaap-mobile-shell/lib/browser/qaap-scroll-edge-fades';
@@ -76,7 +77,6 @@ export class MobileProjectsStickyComposerColumnUi {
         formatContextChip: (item: StickyComposerContextEntry) => StickyComposerContextChipView;
         filesExpanded?: boolean;
         onFilesExpandedChange?: (expanded: boolean) => void;
-        activityStack?: HTMLElement;
         changesPill?: HTMLElement;
         getDraft: () => string;
         setDraft: (value: string) => void;
@@ -309,6 +309,9 @@ export class MobileProjectsStickyComposerColumnUi {
         };
 
         let lastSendIcon: 'send' | 'stop' | undefined;
+        const stopClickGuard = new QaapComposerStopClickGuard();
+        // Text or attachments: while a turn runs the button sends (queues); only an empty composer stops.
+        const hasComposerContent = (): boolean => input.value.trim().length > 0 || options.getContext().length > 0;
         const updateSend = (): void => {
             const has = input.value.trim().length > 0;
             const improving = improveBtn.classList.contains('theia-mod-busy');
@@ -320,7 +323,8 @@ export class MobileProjectsStickyComposerColumnUi {
             const submitBlocked = options.isSubmitBlocked?.() ?? false;
             const stopRetryable = options.isStopRetryable?.() ?? false;
             // Send waits for the Stop; the Stop control itself returns once that Stop has expired unconfirmed.
-            const showStop = working && !has && (!submitBlocked || stopRetryable);
+            const showStop = resolveQaapComposerSendControl({ working, hasContent: hasComposerContent(), submitBlocked, stopRetryable }) === 'stop';
+            stopClickGuard.noteControl(showStop ? 'stop' : 'send');
             const sendLabel = options.sendLabel ?? nls.localize('qaap/mobileProjects/inlineStart', 'Start');
             const stopLabel = options.stopLabel ?? nls.localize('qaap/mobileProjects/cancelTaskRun', 'Cancel run');
             sendBtn.classList.toggle('theia-mod-stop', showStop);
@@ -446,6 +450,7 @@ export class MobileProjectsStickyComposerColumnUi {
             }
             submitInFlight = true;
             lastSubmitAt = now;
+            stopClickGuard.noteSend(now);
             lastSubmitDraft = draft;
             recordStickyComposerPromptSubmission(input, draft);
             if (syntaxHighlight) {
@@ -497,10 +502,12 @@ export class MobileProjectsStickyComposerColumnUi {
         bindStickyComposerControlClick(sendBtn, ev => {
             ev.preventDefault();
             ev.stopPropagation();
-            const has = input.value.trim().length > 0;
             const working = options.isAgentWorking?.() ?? false;
-            if (working && !has) {
-                options.onStop?.();
+            if (working && !hasComposerContent()) {
+                // A quick second tap after Send (or right as the button turns into Stop) must not cancel the turn.
+                if (stopClickGuard.allowsStop()) {
+                    options.onStop?.();
+                }
                 return;
             }
             submit();
@@ -568,11 +575,6 @@ export class MobileProjectsStickyComposerColumnUi {
         if (options.onDropFiles) {
             this.installComposerDropZone(card, inputPanel, input, options.onDropFiles);
             this.installComposerPasteHandler(inputPanel, input, options.onDropFiles);
-        }
-        // Queue popover mounts above the card — never fused into the codex lip.
-        if (options.activityStack) {
-            options.activityStack.classList.add('theia-mod-queue-popover');
-            wrap.append(options.activityStack);
         }
         wrap.append(card);
         column.append(wrap);

@@ -49,15 +49,29 @@ describe('QaapUsageEndpoint', () => {
                 authenticate: () => ({ kind: login ? 'session' : 'unauthorized' }),
                 resolveUserLogin: () => login,
             },
-            scanner: {
-                refreshInBackground: (): void => undefined,
-                hasCompletedScan: (): boolean => true,
-                getLedger: () => ({ allEntries: function* (): IterableIterator<never> { /* no usage */ }, skippedRecords: () => 0 }),
+            scanners: {
+                forOwner: (owner: string) => {
+                    owners.push(owner);
+                    return {
+                        scanner: {
+                            refreshInBackground: (): void => undefined,
+                            hasCompletedScan: (): boolean => true,
+                            getLedger: () => ({ allEntries: function* (): IterableIterator<never> { /* no usage */ }, skippedRecords: () => 0 }),
+                        },
+                        target: { key: owner, roots: {} },
+                    };
+                },
             },
-            limits: { getLimits: async () => ({ providers: [] }) },
+            limits: { forOwner: () => ({ getLimits: async () => ({ providers: [] }) }) },
         });
         return endpoint;
     }
+
+    let owners: string[] = [];
+
+    beforeEach(() => {
+        owners = [];
+    });
 
     function call(endpoint: QaapUsageEndpoint, method: 'handleSummary' | 'handleLimits', query: Record<string, string> = {}): FakeResponse {
         const response = fakeResponse();
@@ -102,6 +116,29 @@ describe('QaapUsageEndpoint', () => {
         expect(endpoint.parseProviderList('')).to.deep.equal([]);
         expect(endpoint.parseProviderList('claude, codex,claude')).to.deep.equal(['claude', 'codex']);
         expect(endpoint.parseProviderList('claude,vscode')).to.equal(undefined);
+    });
+
+    it('scans the agent home of the signed-in owner', async () => {
+        delete process.env.NODE_ENV;
+        delete process.env.QAAP_CLOUD_MODE;
+        const endpoint = endpointSignedInAs('Alice');
+        call(endpoint, 'handleSummary', { tz: 'UTC' });
+        call(endpoint, 'handleLimits');
+        await new Promise(resolve => setImmediate(resolve));
+        expect(owners).to.deep.equal(['Alice', 'Alice']);
+    });
+
+    it('refuses a login other than the tenant of a per-tenant backend', async () => {
+        delete process.env.NODE_ENV;
+        delete process.env.QAAP_CLOUD_MODE;
+        process.env.QAAP_TENANT_BACKEND_MODE = '1';
+        process.env.QAAP_TENANT_LOGIN = 'alice';
+        const other = call(endpointSignedInAs('mallory'), 'handleSummary', { tz: 'UTC' });
+        const tenant = call(endpointSignedInAs('Alice'), 'handleSummary', { tz: 'UTC' });
+        await new Promise(resolve => setImmediate(resolve));
+        expect(other.statusCode).to.equal(403);
+        expect(tenant.statusCode).to.equal(200);
+        expect(owners).to.deep.equal(['Alice']);
     });
 
     it('requires a signed-in user', async () => {

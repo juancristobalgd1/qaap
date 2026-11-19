@@ -177,6 +177,17 @@ export const QAAP_CLOSING_REPORT_TRACE_ID_PREFIX = 'closing-report-';
 /** Id prefix of the retired blocked-signal note (`blocked-<ts>`), the closing report's predecessor in stored turns. */
 const QAAP_LEGACY_BLOCKED_TRACE_ID_PREFIX = 'blocked-';
 
+/**
+ * Id prefix of a neutral note stored as an `error`-typed trace event (the shape has no other text kind):
+ * a question or status for the user, such as "allow Qaap to open PRs on owner/repo?". It renders as
+ * plain text, never as "Error: …", and is not counted as a failure.
+ */
+export const QAAP_NOTICE_TRACE_ID_PREFIX = 'notice-';
+
+export function isQaapNoticeTraceEvent(event: QaapTranscriptTraceEventDTO): boolean {
+    return event.type === 'error' && event.id.startsWith(QAAP_NOTICE_TRACE_ID_PREFIX);
+}
+
 export function isQaapClosingReportTraceEvent(event: QaapTranscriptTraceEventDTO): boolean {
     return event.type === 'error'
         && (event.id.startsWith(QAAP_CLOSING_REPORT_TRACE_ID_PREFIX) || event.id.startsWith(QAAP_LEGACY_BLOCKED_TRACE_ID_PREFIX));
@@ -205,7 +216,9 @@ const QAAP_CLOSING_OUTCOME_ECHO_PATTERN = /^Error: (?:Blocked — needs your inp
  * every save, so they accumulated. Never mutates the input; returns a new array either way.
  */
 export function sanitizeQaapTraceEchoes(events: readonly QaapTranscriptTraceEventDTO[]): QaapTranscriptTraceEventDTO[] {
-    const errorEchoes = new Set<string>(events.flatMap(event => event.type === 'error' ? [`Error: ${event.message.trim()}`] : []));
+    const errorEchoes = new Set<string>(events.flatMap(event => event.type === 'error'
+        ? [isQaapNoticeTraceEvent(event) ? event.message.trim() : `Error: ${event.message.trim()}`]
+        : []));
     const hasClosingReport = events.some(event => isQaapClosingReportTraceEvent(event));
     const isEcho = (event: QaapTranscriptTraceEventDTO): boolean => {
         if (event.type !== 'assistant_text') {
@@ -245,7 +258,12 @@ export function traceEventsToSegments(
             case 'error':
                 // The closing report is the turn's outcome, not an error line; the transcript draws it
                 // as its own closing row (see isQaapClosingReportTraceEvent).
-                return isQaapClosingReportTraceEvent(event) ? [] : [{ type: 'text', content: `Error: ${event.message}` }];
+                if (isQaapClosingReportTraceEvent(event)) {
+                    return [];
+                }
+                return isQaapNoticeTraceEvent(event)
+                    ? [{ type: 'text', content: event.message }]
+                    : [{ type: 'text', content: `Error: ${event.message}` }];
             case 'run_cancelled':
                 return event.message.trim()
                     ? [{ type: 'text', content: event.message }]

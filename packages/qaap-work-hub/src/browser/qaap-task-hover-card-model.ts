@@ -10,6 +10,7 @@
 import { nls } from '@theia/core/lib/common/nls';
 import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { resolveAgentBrand } from '@theia/qaap-shared-core/lib/common/qaap-agent-branding';
+import { QaapLiveTaskDiff } from '@theia/qaap-shared-core/lib/common/qaap-live-task-diff';
 import { formatFriendlyModelLabel } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
 import {
     formatQaapWorktreeLabel,
@@ -41,6 +42,8 @@ export interface QaapTaskHoverCardLine {
     /** `diff` lines only: the counts the renderer colors separately. */
     readonly added?: number;
     readonly removed?: number;
+    /** `diff` lines only: the task baseline whose live total keeps the counts current while the card is shown. */
+    readonly baselineCommit?: string;
 }
 
 export interface QaapTaskHoverCardModel {
@@ -124,12 +127,13 @@ function resolveBranch(input: QaapTaskHoverCardInput, inWorktree: boolean): stri
 }
 
 /**
- * Harnesses that worked on the task: the conversation's agent and, when another one ran the latest turn,
- * that one too (the summary records no fuller history). Distinct, conversation agent first.
+ * Harnesses that ran a turn in the task, in first-run order. The thread's configured `agentId` (the
+ * project or composer default) is deliberately ignored: a harness that never ran a turn is not listed.
+ * Summaries from a backend without `turnAgentIds` fall back to the last turn's harness alone.
  */
 export function resolveQaapTaskHoverCardAgentIds(summary: QaapAgentConversationSummaryDTO): string[] {
     const ids: string[] = [];
-    for (const candidate of [summary.agentId, summary.lastTurnAgentId]) {
+    for (const candidate of [...(summary.turnAgentIds ?? []), summary.lastTurnAgentId]) {
         const id = candidate?.trim();
         if (id && !ids.some(existing => existing.toLowerCase() === id.toLowerCase())) {
             ids.push(id);
@@ -232,8 +236,9 @@ export function buildQaapTaskHoverCardModel(input: QaapTaskHoverCardInput): Qaap
     if (activityAt) {
         lines.push({ kind: 'activity', iconClass: 'codicon-history', text: formatQaapTaskHoverCardActivity(activityAt, input.now) });
     }
-    const added = Math.max(0, summary?.linesAdded ?? 0);
-    const removed = Math.max(0, summary?.linesRemoved ?? 0);
+    const totals = QaapLiveTaskDiff.resolve(summary);
+    const added = Math.max(0, totals.added);
+    const removed = Math.max(0, totals.removed);
     if (added > 0 || removed > 0) {
         lines.push({
             kind: 'diff',
@@ -241,6 +246,7 @@ export function buildQaapTaskHoverCardModel(input: QaapTaskHoverCardInput): Qaap
             text: nls.localize('qaap/taskHoverCard/diffStats', '{0} lines added, {1} removed', String(added), String(removed)),
             added,
             removed,
+            baselineCommit: summary?.baselineCommit,
         });
     }
     if (summary) {

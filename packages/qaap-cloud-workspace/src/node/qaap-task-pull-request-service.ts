@@ -333,7 +333,7 @@ export class QaapTaskPullRequestService implements BackendApplicationContributio
         if (!current.headSha && !this.isConsentGiven(conv, destination)) {
             const repository = `${destination.owner}/${destination.repo}`;
             this.recordBlocked(conversationId, state, { ...current, state: 'awaiting-consent', lastError: undefined },
-                nls.localize('qaap/taskPullRequest/traceConsent', 'PR ready: allow Qaap to open PRs on {0}?', repository));
+                nls.localize('qaap/taskPullRequest/traceConsent', 'PR ready: allow Qaap to open PRs on {0}?', repository), true);
             return;
         }
         const token = this.resolveToken(conv);
@@ -474,11 +474,13 @@ export class QaapTaskPullRequestService implements BackendApplicationContributio
     }
 
     /** Records a state that blocks the push (consent, sign-in) once; the same state again writes nothing. */
-    protected recordBlocked(conversationId: string, previous: QaapTaskPullRequest | undefined, next: Omit<QaapTaskPullRequest, 'updatedAt'>, traceNote: string): void {
+    protected recordBlocked(
+        conversationId: string, previous: QaapTaskPullRequest | undefined, next: Omit<QaapTaskPullRequest, 'updatedAt'>, traceNote: string, traceNotice = false,
+    ): void {
         if (previous?.state === next.state && previous.lastError === next.lastError) {
             return;
         }
-        this.record(conversationId, { ...next, updatedAt: Date.now() }, { traceNote });
+        this.record(conversationId, { ...next, updatedAt: Date.now() }, { traceNote, ...(traceNotice ? { traceNotice } : {}) });
     }
 
     protected isConsentGiven(conv: QaapAgentConversation, destination: QaapTaskPullRequestDestination): boolean {

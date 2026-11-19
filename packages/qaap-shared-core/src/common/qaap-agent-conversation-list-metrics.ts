@@ -478,30 +478,32 @@ function findLastUserMessage(
     return undefined;
 }
 
-/** Sums diff stats reported across every agent message in the conversation. */
+/**
+ * Diff stats the agent reported in its latest message that has any. Earlier messages are not summed: each
+ * one reports a snapshot (often a repeated `git diff --stat`), so adding them counts the same lines again.
+ */
 function aggregateDiffStats(
     messages: QaapAgentConversationListMetricsInput['messages'],
 ): Pick<QaapAgentConversationListMetrics, 'linesAdded' | 'linesRemoved'> {
-    let added = 0;
-    let removed = 0;
-    let found = false;
-    for (const message of messages) {
+    for (let index = messages.length - 1; index >= 0; index--) {
+        const message = messages[index];
         if (message.role !== 'agent') {
             continue;
         }
+        let added = 0;
+        let removed = 0;
         for (const text of collectMessageTexts(message)) {
             const parsed = parseDiffStatsFromText(text);
             if (parsed) {
                 added += parsed.added;
                 removed += parsed.removed;
-                found = true;
             }
         }
+        if (added > 0 || removed > 0) {
+            return { linesAdded: added, linesRemoved: removed };
+        }
     }
-    if (!found || (added === 0 && removed === 0)) {
-        return {};
-    }
-    return { linesAdded: added, linesRemoved: removed };
+    return {};
 }
 
 function collectMessageTexts(

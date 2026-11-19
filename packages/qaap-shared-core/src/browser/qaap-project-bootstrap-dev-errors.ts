@@ -343,6 +343,23 @@ export function lastDevOutputLines(output: string, maxLines: number = DEV_EXIT_O
         .join('\n');
 }
 
+function lastOutputLabel(): string {
+    return nls.localize('qaap/projectBootstrap/devExitLastOutput', 'Last output:');
+}
+
+/**
+ * Appends the last lines of dev output to a failure message, unless the message already quotes them
+ * or there is no output. Used for failures whose diagnosis is only a generic line, so the user sees
+ * why the dev server stopped without opening its terminal.
+ */
+export function appendLastDevOutput(message: string, output: string, maxLines: number = DEV_EXIT_OUTPUT_LINES): string {
+    const lines = lastDevOutputLines(output, maxLines);
+    if (!lines || message.includes(lastOutputLabel()) || message.trim() === lines.trim()) {
+        return message;
+    }
+    return `${message}\n${lastOutputLabel()}\n${lines}`;
+}
+
 export interface QaapDevProcessExitReport {
     readonly message: string;
     /** Exit code 0 before the preview answered: retrying the same command cannot help. */
@@ -398,12 +415,15 @@ export function describeDevProcessExit(code: number | undefined, output: string,
         };
     }
     if (code !== 0) {
+        // Keep the reason next to the code: the diagnosis reads the full output separately, and a
+        // message that quotes nothing ("Dev server exited with code 1.") leaves the user guessing.
+        const exited = nls.localize(
+            'qaap/projectBootstrap/devServerExited',
+            'Dev server exited with code {0}.',
+            String(code ?? '?'),
+        );
         return {
-            message: output || nls.localize(
-                'qaap/projectBootstrap/devServerExited',
-                'Dev server exited with code {0}.',
-                String(code ?? '?'),
-            ),
+            message: appendLastDevOutput(exited, output),
             exitedWithoutListening: false,
         };
     }
@@ -420,7 +440,7 @@ export function describeDevProcessExit(code: number | undefined, output: string,
     const lines = lastDevOutputLines(output);
     return {
         message: lines
-            ? `${summary}\n${nls.localize('qaap/projectBootstrap/devExitLastOutput', 'Last output:')}\n${lines}`
+            ? `${summary}\n${lastOutputLabel()}\n${lines}`
             : `${summary} ${nls.localize(
                 'qaap/projectBootstrap/devExitNoOutput',
                 'It printed no output. Check that the script starts a server and honors PORT or --port.',

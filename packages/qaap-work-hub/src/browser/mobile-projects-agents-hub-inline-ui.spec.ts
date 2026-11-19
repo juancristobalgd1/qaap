@@ -336,6 +336,7 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
     it('openAgentsHubInlineTranscript mounts execution shell instead of rebuilding hub list', async () => {
         let renderListCalls = 0;
         let shownTab: string | undefined;
+        let messagesShown = false;
         let mountedTab: string | undefined;
         const project = {
             id: 'proj-1',
@@ -354,6 +355,7 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
                 setExecutionSurfaceTab: () => undefined,
                 executionSurfaceTabForProject: () => 'terminal',
                 showOnlyExecutionSurfaceTab: (tab: ExecutionSurfaceTabId) => { shownTab = tab; },
+                showMessagesKeepingDock: () => { messagesShown = true; },
                 mountTranscriptSurfaceTab: (
                     _project: MobileProjectEntry,
                     _summary: QaapAgentConversationSummaryDTO,
@@ -418,7 +420,9 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
             expect(host.agentsHubInlineExecutionRoot?.parentElement).to.equal(host.scroll);
             expect(host.agentsHubInlineChatHost?.isConnected).to.equal(true);
             expect(host.agentsHubInlineExecutionRoot?.contains(host.agentsHubInlineChatHost!)).to.equal(true);
-            expect(shownTab).to.equal('messages');
+            // Opening a conversation goes through the dock-preserving Messages switch, not a plain show.
+            expect(messagesShown).to.equal(true);
+            expect(shownTab).to.equal(undefined);
             expect(mountedTab).to.equal('messages');
         } finally {
             host.scroll.remove();
@@ -443,6 +447,7 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
                 setExecutionSurfaceTab: () => undefined,
                 executionSurfaceTabForProject: () => 'messages',
                 showOnlyExecutionSurfaceTab: () => undefined,
+                showMessagesKeepingDock: () => undefined,
                 mountTranscriptSurfaceTab: () => undefined,
                 buildTranscriptTabStrip: () => document.createElement('div'),
                 refreshExecutionSurfaceTabStripState: () => undefined,
@@ -537,6 +542,7 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
                     executionSurfaceTabForProject: () => 'preview',
                     setExecutionSurfaceTab: () => undefined,
                     showOnlyExecutionSurfaceTab: (tab: ExecutionSurfaceTabId) => { shownTab = tab; },
+                    showMessagesKeepingDock: () => { shownTab = 'messages'; },
                     mountTranscriptSurfaceTab: (
                         _project: MobileProjectEntry,
                         _summary: QaapAgentConversationSummaryDTO,
@@ -639,6 +645,7 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
                 setExecutionSurfaceTab: () => undefined,
                 executionSurfaceTabForProject: () => 'messages',
                 showOnlyExecutionSurfaceTab: () => undefined,
+                showMessagesKeepingDock: () => undefined,
                 mountTranscriptSurfaceTab: () => undefined,
                 buildTranscriptTabStrip: () => document.createElement('div'),
                 refreshExecutionSurfaceTabStripState: () => undefined,

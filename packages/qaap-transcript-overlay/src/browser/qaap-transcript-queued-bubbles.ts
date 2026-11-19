@@ -9,14 +9,13 @@ import type { TranscriptFollowUpEntry } from '../common/qaap-transcript-follow-u
 export const TRANSCRIPT_QUEUED_BUBBLES_CLASS = 'theia-mobile-agent-transcript-queued';
 
 /**
- * Queued follow-ups are shown as a draggable list above the composer.
- * They are NOT duplicated as user bubbles inside the transcript anymore — the queue
- * container is the single source of truth for pending messages.
+ * Queued follow-ups are painted by the transcript itself, at its tail, as dashed user bubbles
+ * (see mobile-projects-transcript-messages-render-ui-render.ts). There is no queue tray above the
+ * composer any more.
  *
- * This function is kept as a cleanup hook: it removes any stale queued-bubble
- * container left in the transcript scroller from previous renders and never
- * paints new ones. Callers still invoke it on every composer refresh so legacy
- * DOM is swept away cleanly.
+ * This function is kept as a cleanup hook: it removes any stale queued-bubble container left in
+ * the transcript scroller from previous renders and never paints new ones. Callers still invoke it
+ * on every composer refresh so legacy DOM is swept away cleanly.
  */
 export function buildTranscriptQueuedBubblesFingerprint(
     _entries: readonly TranscriptFollowUpEntry[],

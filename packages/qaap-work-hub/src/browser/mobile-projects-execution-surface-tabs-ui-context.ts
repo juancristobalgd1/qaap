@@ -47,6 +47,7 @@ export type MobileProjectsExecutionSurfaceTabsUiContextMember =
     | 'resolveExecutionTabOverflowMenuPortal'
     | 'resolveTerminalAgentTuiActiveAgentId'
     | 'resolveWorkHubAuxPanel'
+    | 'undockWorkHubAuxPanelSurface'
     | 'scheduleExecutionSurfaceFrame'
     | 'selectTranscriptTab'
     | 'setExecutionSurfaceTab'

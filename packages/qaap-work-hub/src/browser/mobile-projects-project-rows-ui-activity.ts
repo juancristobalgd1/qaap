@@ -6,6 +6,7 @@ import {
     type QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { isQaapAgentTaskUnreadReply, resolveQaapAgentTaskVisualStatus } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-visual-status';
+import { QaapLiveTaskDiff } from '@theia/qaap-shared-core/lib/common/qaap-live-task-diff';
 import { SHELL_AGENT_ID } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { turnElapsedAnchor } from '@theia/qaap-shared-core/lib/common/qaap-turn-elapsed-anchor';
 import { formatConversationExecutionSessionMeta } from '@theia/qaap-composer/lib/common/qaap-conversation-composer-state';
@@ -185,8 +186,10 @@ export function registerTaskElapsedTickersExtracted(ctx: MobileProjectsProjectRo
 }
 
 export function formatTaskSinceExtracted(ctx: MobileProjectsProjectRowsUiContext, task: MobileProjectTaskView, summary?: QaapAgentConversationSummaryDTO): string {
+        // A running turn shows the age of its latest activity, not of the task's creation (which
+        // read "7 h" on a task whose turn had just started).
         const anchor = task.state === 'running'
-            ? task.createdAt
+            ? (summary?.updatedAt ?? task.createdAt)
             : (task.finishedAt ?? summary?.updatedAt ?? task.createdAt);
         if (!anchor) {
             return '';
@@ -344,12 +347,12 @@ export function hasConversationDiffStatsExtracted(ctx: MobileProjectsProjectRows
         if (!summary) {
             return false;
         }
-        return (summary.linesAdded ?? 0) > 0 || (summary.linesRemoved ?? 0) > 0;
+        const totals = QaapLiveTaskDiff.resolve(summary);
+        return totals.added > 0 || totals.removed > 0;
 }
 
 export function appendConversationDiffFootExtracted(ctx: MobileProjectsProjectRowsUiContext, footRow: HTMLElement, summary: QaapAgentConversationSummaryDTO): void {
-        const added = summary.linesAdded ?? 0;
-        const removed = summary.linesRemoved ?? 0;
+        const { added, removed } = QaapLiveTaskDiff.resolve(summary);
         ctx.appendTaskFootSeparator(footRow);
         const diff = document.createElement('span');
         diff.className = 'theia-mobile-projects-task-diff';
@@ -361,6 +364,11 @@ export function appendConversationDiffFootExtracted(ctx: MobileProjectsProjectRo
         removedSpan.textContent = `−${removed}`;
         diff.append(addedSpan, removedSpan);
         footRow.append(diff);
+        // Patch the two numbers in place when a live Changes read publishes this task's total.
+        QaapLiveTaskDiff.bindTotals(diff, summary.baselineCommit, totals => {
+            addedSpan.textContent = `+${totals.added}`;
+            removedSpan.textContent = `−${totals.removed}`;
+        });
 }
 
 export function formatConversationRunDurationExtracted(ctx: MobileProjectsProjectRowsUiContext, summary: QaapAgentConversationSummaryDTO,

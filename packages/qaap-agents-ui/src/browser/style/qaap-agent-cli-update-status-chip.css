@@ -1,0 +1,183 @@
+/* *****************************************************************************
+ * Copyright (C) 2026 Theia contributors and Qaap product fork.
+ * SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
+ * ***************************************************************************** */
+
+/**
+ * Compact harness-update chips. They sit on the top edge (the composer owns the bottom), take only
+ * their own footprint so the transcript stays visible, and use theme tokens only.
+ */
+
+.qaap-agent-cli-update-status-stack {
+    position: fixed;
+    top: calc(env(safe-area-inset-top, 0px) + 60px);
+    right: 12px;
+    z-index: 10500;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+    max-width: calc(100vw - 24px);
+    pointer-events: none;
+    font-family: var(--theia-ui-font-family);
+    font-size: var(--theia-ui-font-size0, 12px);
+}
+
+.qaap-agent-cli-update-status-stack[hidden] {
+    display: none;
+}
+
+@media (min-width: 768px) {
+    .qaap-agent-cli-update-status-stack {
+        top: 56px;
+        right: 24px;
+    }
+}
+
+.qaap-agent-cli-update-status {
+    pointer-events: auto;
+    display: flex;
+    flex-direction: column;
+    max-width: min(320px, calc(100vw - 24px));
+    background: var(--theia-editorWidget-background, var(--theia-sideBar-background));
+    color: var(--theia-foreground);
+    border: 1px solid var(--theia-widget-border, rgba(0, 0, 0, 0.12));
+    border-radius: 12px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+    animation: qaap-agent-cli-update-status-in 0.16s ease-out;
+}
+
+.qaap-agent-cli-update-status.qaap-mod-failed {
+    border-radius: 12px;
+    border-color: var(--theia-inputValidation-errorBorder, var(--theia-errorForeground));
+}
+
+.qaap-agent-cli-update-status-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 30px;
+    padding: 0 4px 0 4px;
+}
+
+.qaap-agent-cli-update-status-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    min-height: 28px;
+    padding: 0 8px;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    text-align: left;
+}
+
+.qaap-agent-cli-update-status-toggle:focus-visible,
+.qaap-agent-cli-update-status-action:focus-visible,
+.qaap-agent-cli-update-status-close:focus-visible {
+    outline: 2px solid var(--theia-focusBorder);
+    outline-offset: 2px;
+}
+
+.qaap-agent-cli-update-status-icon.codicon {
+    font-size: 14px;
+    line-height: 1;
+    flex: 0 0 auto;
+}
+
+.qaap-agent-cli-update-status.qaap-mod-succeeded .qaap-agent-cli-update-status-icon {
+    color: var(--theia-testing-iconPassed, var(--theia-terminal-ansiGreen));
+}
+
+.qaap-agent-cli-update-status.qaap-mod-failed .qaap-agent-cli-update-status-icon {
+    color: var(--theia-errorForeground);
+}
+
+.qaap-agent-cli-update-status-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 600;
+}
+
+.qaap-agent-cli-update-status-action {
+    min-height: 24px;
+    padding: 2px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--theia-input-border, var(--theia-widget-border, rgba(0, 0, 0, 0.14)));
+    background: var(--theia-button-background, #3b82f6);
+    color: var(--theia-button-foreground, #fff);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.qaap-agent-cli-update-status-action:hover {
+    background: var(--theia-button-hoverBackground, #2563eb);
+}
+
+.qaap-agent-cli-update-status-close {
+    width: 24px;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--theia-descriptionForeground);
+    cursor: pointer;
+}
+
+.qaap-agent-cli-update-status-close:hover {
+    background: var(--theia-list-hoverBackground);
+    color: var(--theia-foreground);
+}
+
+.qaap-agent-cli-update-status-close .codicon {
+    font-size: 12px;
+}
+
+/* Details open on hover or focus, or stay open after a click (`qaap-mod-open`). */
+.qaap-agent-cli-update-status-details {
+    display: none;
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px 12px 10px 12px;
+    border-top: 1px solid var(--theia-widget-border, rgba(0, 0, 0, 0.08));
+    color: var(--theia-descriptionForeground);
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+.qaap-agent-cli-update-status:hover .qaap-agent-cli-update-status-details,
+.qaap-agent-cli-update-status:focus-within .qaap-agent-cli-update-status-details,
+.qaap-agent-cli-update-status.qaap-mod-open .qaap-agent-cli-update-status-details {
+    display: flex;
+}
+
+.qaap-agent-cli-update-status-error {
+    color: var(--theia-errorForeground);
+}
+
+@keyframes qaap-agent-cli-update-status-in {
+    from {
+        opacity: 0;
+        transform: translateY(-4px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .qaap-agent-cli-update-status {
+        animation: none;
+    }
+}

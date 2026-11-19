@@ -13,7 +13,7 @@ import {
     hasComposerAttachmentPreamble,
     stripComposerAttachmentPreamble,
 } from './qaap-composer-attachment-prompt';
-import { parsePreviewFeedbackContextBody, type PreviewFeedbackAnnotationDetail } from './qaap-preview-feedback-transcript';
+import { parsePreviewFeedbackContextBody, stripQaapPreviewCacheBustParam, type PreviewFeedbackAnnotationDetail } from './qaap-preview-feedback-transcript';
 import { parseComposerSkillDisplayMarker, type ComposerSkillDisplayMetadata } from './qaap-composer-skill-display';
 import { parseComposerGitActionDisplayMarker, type ComposerGitActionDisplayMetadata } from './qaap-composer-git-action-display';
 import { isQaiqStreamMetadataEnvelope } from './qaap-qaiq-stream';
@@ -154,7 +154,7 @@ export function resolveTranscriptUserMessageView(
     const contextChips: TranscriptUserContextChip[] = feedbackSections.map(section => {
         const annotations = parsePreviewFeedbackContextBody(section.body);
         return {
-            title: section.title,
+            title: stripQaapPreviewCacheBustParam(section.title),
             kind: QAAP_PREVIEW_FEEDBACK_VARIABLE_NAME,
             iconClasses: 'codicon codicon-comment',
             ...(annotations.length ? { annotations } : {}),

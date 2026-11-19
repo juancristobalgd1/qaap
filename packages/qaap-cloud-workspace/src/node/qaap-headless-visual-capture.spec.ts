@@ -17,6 +17,11 @@ import {
     applyQaapHeadlessRuntimeDiagnostics,
     type QaapHeadlessCaptureAppTarget,
     inspectQaapHeadlessPage,
+    isQaapBrowserImplicitResourceUrl,
+    isQaapHeadlessMutatingRequestMethod,
+    listQaapPreviewFilesChangedSince,
+    qaapLivePreviewRunsStaleServerCode,
+    resolveQaapCaptureTurnStartedAt,
     qaapHeadlessPublicPreviewLeaseMs,
     resolveHeadlessCaptureAppTarget,
     resolveHeadlessChromiumExecutable,
@@ -116,7 +121,7 @@ describe('QaapHeadlessVisualCaptureService preview port reservation', () => {
     let started: number[];
 
     interface CaptureHarness {
-        reserveScriptPreview(conv: QaapAgentConversation, app: QaapHeadlessCaptureAppTarget): Promise<{ record: QaapDevPreviewRecord; registeredByCapture: boolean } | undefined>;
+        reserveScriptPreview(conv: QaapAgentConversation, app: QaapHeadlessCaptureAppTarget, options?: { skipLivePreview?: boolean }): Promise<{ record: QaapDevPreviewRecord; registeredByCapture: boolean } | undefined>;
         ensureScriptServer(app: QaapHeadlessCaptureAppTarget, preview: unknown): Promise<{ ok: boolean; port?: number }>;
     }
 
@@ -205,6 +210,23 @@ describe('QaapHeadlessVisualCaptureService preview port reservation', () => {
         expect(preview?.record.previewId).to.equal(own.previewId);
         expect(ready).to.deep.include({ ok: true, port: 5180 });
         expect(started).to.deep.equal([]);
+    });
+
+    it('starts its own server instead of reusing a live preview that runs pre-turn server code', async () => {
+        registerSibling('thread-b', worktreeRoot, 5180);
+        const service = makeService();
+
+        const preview = await service.reserveScriptPreview(
+            conversation('thread-b', worktreeRoot),
+            viteApp(worktreeRoot),
+            { skipLivePreview: true },
+        );
+        const ready = await service.ensureScriptServer(viteApp(worktreeRoot), preview);
+
+        expect(preview?.registeredByCapture).to.equal(true);
+        expect(preview?.record.port).to.not.equal(5180);
+        expect(started).to.have.length(1);
+        expect(ready).to.deep.include({ ok: true });
     });
 
     it('reuses a sibling conversation preview of the same root but never a port of another root', async () => {
@@ -408,5 +430,155 @@ describe('inspectQaapHeadlessPage', () => {
         expect(result.status).to.equal('failed');
         expect(result.readiness).to.equal('failed');
         expect(result.issues).to.have.length(2);
+    });
+});
+
+describe('inspectQaapHeadlessPage browser-implicit resources and read-only capture', () => {
+    it('classifies only browser-requested resources as implicit', () => {
+        for (const url of [
+            'http://127.0.0.1:3000/favicon.ico',
+            'http://127.0.0.1:3000/favicon.ico?v=2',
+            'http://127.0.0.1:3000/apple-touch-icon.png',
+            'http://127.0.0.1:3000/apple-touch-icon-precomposed.png',
+            'http://127.0.0.1:3000/apple-touch-icon-180x180.png',
+            'http://127.0.0.1:3000/robots.txt',
+            'http://127.0.0.1:3000/assets/app.js.map',
+        ]) {
+            expect(isQaapBrowserImplicitResourceUrl(url), url).to.equal(true);
+        }
+        for (const url of [
+            'http://127.0.0.1:3000/app.js',
+            'http://127.0.0.1:3000/api/todos',
+            'http://127.0.0.1:3000/static/favicon.ico.js',
+            'http://127.0.0.1:3000/missing.css',
+            undefined,
+        ]) {
+            expect(isQaapBrowserImplicitResourceUrl(url), String(url)).to.equal(false);
+        }
+        expect(isQaapHeadlessMutatingRequestMethod('GET')).to.equal(false);
+        expect(isQaapHeadlessMutatingRequestMethod('head')).to.equal(false);
+        for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
+            expect(isQaapHeadlessMutatingRequestMethod(method), method).to.equal(true);
+        }
+    });
+
+    it('passes a working app whose favicon 404s, still fails app 404s, and never sends mutating requests', async function (): Promise<void> {
+        const executablePath = resolveHeadlessChromiumExecutable();
+        if (!executablePath) {
+            this.skip();
+            return;
+        }
+        const received: string[] = [];
+        const server = http.createServer((request, response) => {
+            received.push(`${request.method} ${request.url}`);
+            if (request.url === '/' || request.url === '/broken') {
+                response.writeHead(200, { 'Content-Type': 'text/html' });
+                const extra = request.url === '/broken' ? '<link rel="stylesheet" href="/missing.css">' : '';
+                response.end('<!doctype html><html><head><link rel="icon" href="/favicon.ico">'
+                    + '<link rel="apple-touch-icon" href="/apple-touch-icon.png">' + extra + '</head>'
+                    + '<body><h1>Tareas</h1><p>A small working to-do list fixture.</p>'
+                    // Headless Chromium skips tab/home-screen icons, so request them the way a browser would.
+                    + '<script>fetch("/apple-touch-icon.png");fetch("/robots.txt");fetch("/app.js.map");</script>'
+                    + '<script>fetch("/api/todos", { method: "POST", body: JSON.stringify({ text: "probe" }) }).catch(function () {});</script>'
+                    + '</body></html>');
+                return;
+            }
+            response.writeHead(404).end();
+        });
+        await new Promise<void>((resolve, reject) => {
+            server.once('error', reject);
+            server.listen(0, '127.0.0.1', resolve);
+        });
+        const address = server.address();
+        const port = address && typeof address === 'object' ? address.port : 0;
+        const browser = await chromium.launch({
+            executablePath,
+            headless: true,
+            args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+        });
+        try {
+            const page = await browser.newPage();
+            const working = await inspectQaapHeadlessPage(page, `http://127.0.0.1:${port}/`, 200);
+            expect(working.issues.filter(issue => /console\.error|requestfailed|http:/.test(issue))).to.deep.equal([]);
+            expect(working.readiness, working.issues.join(' / ')).to.equal('render_ready');
+            expect(received.filter(line => !line.startsWith('GET '))).to.deep.equal([]);
+
+            // The fixture really served the 404 that used to turn verification red.
+            expect(received).to.include.members(['GET /apple-touch-icon.png', 'GET /robots.txt', 'GET /app.js.map']);
+
+            const broken = await inspectQaapHeadlessPage(page, `http://127.0.0.1:${port}/broken`, 200);
+            expect(broken.status).to.equal('failed');
+            expect(broken.issues.some(issue => issue.includes('missing.css'))).to.equal(true);
+            expect(broken.issues.some(issue => /apple-touch-icon|robots\.txt|\.map\b/.test(issue))).to.equal(false);
+        } finally {
+            await browser.close();
+            await new Promise<void>(resolve => server.close(() => resolve()));
+        }
+    }).timeout(120_000);
+});
+
+describe('stale live preview detection', () => {
+    let root: string;
+    const write = (relative: string, content: string, mtimeMs: number): void => {
+        const file = path.join(root, relative);
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, content);
+        fs.utimesSync(file, mtimeMs / 1000, mtimeMs / 1000);
+    };
+
+    beforeEach(() => {
+        root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-stale-preview-')));
+    });
+
+    afterEach(() => {
+        fs.rmSync(root, { recursive: true, force: true });
+    });
+
+    const old = Date.parse('2026-11-18T14:00:00Z');
+    const turnStart = Date.parse('2026-11-18T14:08:30Z');
+    const edited = Date.parse('2026-11-18T14:08:43Z');
+
+    it('lists files changed since the turn start, skipping dependencies and VCS', async () => {
+        write('package.json', '{"scripts":{"start":"node server.js"}}', old);
+        write('server.js', 'old', edited);
+        write('public/index.html', '<h1>x</h1>', edited);
+        write('node_modules/dep/index.js', '', edited);
+        write('.git/HEAD', '', edited);
+        expect((await listQaapPreviewFilesChangedSince(root, turnStart)).sort()).to.deep.equal(['public/index.html', 'server.js']);
+    });
+
+    it('flags the reused server as stale when the turn edited server code (the favicon 204 fix)', async () => {
+        write('package.json', '{"scripts":{"start":"node server.js"}}', old);
+        write('server.js', 'if (pathname === "/favicon.ico") {}', edited);
+        expect(await qaapLivePreviewRunsStaleServerCode({ root }, turnStart)).to.equal(true);
+    });
+
+    it('keeps reusing the live server for frontend-only edits, watchers and HMR servers', async () => {
+        write('package.json', '{"scripts":{"start":"node server.js"}}', old);
+        write('public/index.html', '<h1>x</h1>', edited);
+        expect(await qaapLivePreviewRunsStaleServerCode({ root }, turnStart)).to.equal(false);
+
+        write('package.json', '{"scripts":{"dev":"vite"}}', old);
+        write('src/main.ts', 'export {}', edited);
+        expect(await qaapLivePreviewRunsStaleServerCode({ root }, turnStart)).to.equal(false);
+
+        write('package.json', '{"scripts":{"start":"nodemon server.js"}}', old);
+        write('server.js', 'changed', edited);
+        expect(await qaapLivePreviewRunsStaleServerCode({ root }, turnStart)).to.equal(false);
+        expect(await qaapLivePreviewRunsStaleServerCode({ root }, undefined)).to.equal(false);
+    });
+
+    it('dates the turn from the user message that started it', () => {
+        const conv = {
+            messages: [
+                { id: 'u1', role: 'user', createdAt: 10 },
+                { id: 'a1', role: 'agent', createdAt: 20 },
+                { id: 'u2', role: 'user', createdAt: 30 },
+                { id: 'a2', role: 'agent', createdAt: 40 },
+            ],
+        } as unknown as QaapAgentConversation;
+        expect(resolveQaapCaptureTurnStartedAt(conv, 'a2')).to.equal(30);
+        expect(resolveQaapCaptureTurnStartedAt(conv, 'a1')).to.equal(10);
+        expect(resolveQaapCaptureTurnStartedAt(conv, 'missing')).to.equal(undefined);
     });
 });

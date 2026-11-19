@@ -231,11 +231,17 @@ describe('QaapAgentTaskRunner.defaultAgent (real runner, stubbed auth and billin
         expect(codex?.accessState).to.equal('none');
     });
 
-    it('listAgents gives a settled-unknown Codex probe a Sign in row, not an available one', () => {
+    // Was: a settled-unknown probe gave a Sign in row (`none`, unavailable). Fail-open now: an inconclusive probe is
+    // not a sign-out, so the row stays usable and a missing session shows up when the turn runs.
+    it('listAgents keeps a settled-unknown Codex probe usable (fail-open), and locks only a positive sign-out', () => {
         const runner = runnerWith({ states: { codex: 'unknown' } });
         const codex = runner.listAgents('alice').find(agent => agent.id === 'codex');
-        expect(codex?.accessState).to.equal('none');
-        expect(codex?.available).to.equal(false);
+        expect(codex?.accessState).to.equal('unknown');
+        expect(codex?.session).to.equal('unknown');
+        expect(codex?.available).to.equal(true);
+        const signedOut = runnerWith({ states: { codex: 'disconnected' } }).listAgents('alice').find(agent => agent.id === 'codex');
+        expect(signedOut?.accessState).to.equal('none');
+        expect(signedOut?.available).to.equal(false);
     });
 
     it('listAgents keeps a Codex row usable (no plan lock) while its auth probe is still pending', () => {

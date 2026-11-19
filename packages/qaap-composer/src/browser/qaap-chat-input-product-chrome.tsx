@@ -15,6 +15,8 @@ import {
     ChatInputProductChromeContext,
     ChatInputProductContextElement,
 } from '@theia/ai-chat-ui/lib/browser/chat-input-product-chrome';
+import type { QaapGithubMcpConnectionState } from '@theia/qaap-shared-core/lib/browser/qaap-github-mcp-connection-state';
+import { QaapGithubMcpConnectChip } from './qaap-github-mcp-connect-chip';
 
 interface QuickCommand {
     name: string;
@@ -163,32 +165,47 @@ const QuickCommandBar: React.FunctionComponent<{
     </div>
 );
 
-export const qaapChatInputProductChrome: ChatInputProductChrome = {
-    renderEditorBoxHeader(context: ChatInputProductChromeContext): React.ReactNode {
-        const contextSummary = buildContextSummary(context.context);
-        const activeGenericCapabilities = countGenericCapabilitySelections(context.genericCapabilities);
-        return (
-            <ChatInputStatusBar
-                isEnabled={context.isEnabled}
-                pending={context.pending}
-                contextSummary={contextSummary}
-                activeCapabilityCount={context.capabilityOverrideCount + activeGenericCapabilities}
-                hasUnsavedCapabilityChanges={context.hasUnsavedCapabilityChanges}
-            />
-        );
-    },
-    renderBeforeOptions(context: ChatInputProductChromeContext): React.ReactNode {
-        const quickCommands = buildQuickCommands(context.quickCommands, context.receivingAgentId);
-        if (quickCommands.length === 0 || context.pending) {
-            return undefined;
-        }
-        return (
-            <QuickCommandBar
-                commands={quickCommands}
-                disabled={!context.isEnabled}
-                onInsert={context.onInsertQuickCommand}
-                hoverService={context.hoverService}
-            />
-        );
-    },
-};
+/** Optional product services the chrome shows; each is absent in an app that does not bind it. */
+export interface QaapChatInputProductChromeOptions {
+    readonly githubMcp?: QaapGithubMcpConnectionState;
+}
+
+export function createQaapChatInputProductChrome(options: QaapChatInputProductChromeOptions = {}): ChatInputProductChrome {
+    return {
+        renderEditorBoxHeader(context: ChatInputProductChromeContext): React.ReactNode {
+            const contextSummary = buildContextSummary(context.context);
+            const activeGenericCapabilities = countGenericCapabilitySelections(context.genericCapabilities);
+            return (
+                <ChatInputStatusBar
+                    isEnabled={context.isEnabled}
+                    pending={context.pending}
+                    contextSummary={contextSummary}
+                    activeCapabilityCount={context.capabilityOverrideCount + activeGenericCapabilities}
+                    hasUnsavedCapabilityChanges={context.hasUnsavedCapabilityChanges}
+                />
+            );
+        },
+        renderBeforeOptions(context: ChatInputProductChromeContext): React.ReactNode {
+            const quickCommands = context.pending ? [] : buildQuickCommands(context.quickCommands, context.receivingAgentId);
+            const chip = options.githubMcp
+                ? <QaapGithubMcpConnectChip key="qaap-github-mcp" state={options.githubMcp} hoverService={context.hoverService} />
+                : undefined;
+            if (quickCommands.length === 0) {
+                return chip;
+            }
+            return (
+                <>
+                    {chip}
+                    <QuickCommandBar
+                        commands={quickCommands}
+                        disabled={!context.isEnabled}
+                        onInsert={context.onInsertQuickCommand}
+                        hoverService={context.hoverService}
+                    />
+                </>
+            );
+        },
+    };
+}
+
+export const qaapChatInputProductChrome: ChatInputProductChrome = createQaapChatInputProductChrome();

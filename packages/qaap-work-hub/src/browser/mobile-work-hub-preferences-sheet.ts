@@ -17,14 +17,17 @@ import { Widget as LuminoWidget } from '@lumino/widgets';
 import { PreferencesWidget } from '@theia/preferences/lib/browser/views/preference-widget';
 import { PreferencesSearchbarWidget } from '@theia/preferences/lib/browser/views/preference-searchbar-widget';
 import {
+    type QaapAuthUser,
     qaapAuthUserInitials,
     readQaapAuthUser,
 } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import {
     createQaapBillingCheckout,
     fetchQaapBilling,
+    readQaapDesktopGithubCredential,
     type QaapBillingApiResponse,
 } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
+import type { QaapAuthSessionGithubCredential } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import { QaapUserFacingErrors } from '@theia/qaap-adapters/lib/common/qaap-user-facing-error';
 import { listAllConversationGroups } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { isWorkHubTheiaDialogOpen } from '../common/qaap-work-hub-dialog-utils';
@@ -44,8 +47,17 @@ import type {
     MobileWorkHubSettingsSidebarOptions,
 } from './mobile-work-hub-sessions-sidebar';
 import { MobileWorkHubMcpServerSummary } from './mobile-work-hub-mcp-server-summary';
+import { createQaapWorkHubRightPanelGlyph } from './qaap-work-hub-right-panel-glyph';
+import { resolveWorkHubAuxPanelForSettingsToggle } from './mobile-projects-execution-surface-tabs-ui';
+import type { QaapWorkHubAuxPanel } from './qaap-work-hub-aux-panel';
 import { MobileWorkHubActivityCalendar } from './mobile-work-hub-activity-calendar';
 import { collectQaapActivityTimestamps } from '../common/qaap-activity-calendar';
+import {
+    isWorkHubSettingsSectionVisible,
+    parseWorkHubSettingsSectionQuery,
+    resolveWorkHubSettingsSectionId,
+} from '../common/qaap-work-hub-surface-redirects';
+import { environment } from '@theia/core/lib/common';
 
 /** Work Hub AI Features sheet scopes Settings to this search term. */
 export const WORK_HUB_AI_FEATURES_PREFERENCES_QUERY = 'ai-features';
@@ -114,6 +126,53 @@ function createWorkHubSettingsGroupLabel(label: string): HTMLElement {
     return heading;
 }
 
+/** What the Profile card shows for the signed-in account, the desktop GitHub credential, or nobody. */
+export interface WorkHubProfileIdentity {
+    readonly name: string;
+    readonly detail: string;
+    readonly avatarUrl?: string;
+    readonly initials: string;
+    readonly provider: 'github' | 'gitlab';
+    /** The contribution graph only makes sense with an identity to attribute it to. */
+    readonly showActivity: boolean;
+}
+
+export function resolveWorkHubProfileIdentity(
+    user: QaapAuthUser | undefined,
+    credential: QaapAuthSessionGithubCredential | undefined,
+): WorkHubProfileIdentity {
+    if (user) {
+        return {
+            name: user.name || user.login,
+            detail: user.login ? `@${user.login}` : '',
+            avatarUrl: user.avatarUrl,
+            initials: qaapAuthUserInitials(user),
+            provider: user.provider === 'gitlab' ? 'gitlab' : 'github',
+            showActivity: true,
+        };
+    }
+    if (credential) {
+        const login = credential.user.login;
+        return {
+            name: credential.user.name || login,
+            detail: credential.source === 'gh-cli'
+                ? nls.localize('qaap/workHubSettings/profile/connectedViaGh', 'Connected through the GitHub CLI as {0}', login)
+                : nls.localize('qaap/workHubSettings/profile/connectedViaCredential', 'Connected with your GitHub credential as {0}', login),
+            avatarUrl: credential.user.avatarUrl,
+            initials: qaapAuthUserInitials({ ...credential.user, provider: 'github' } as QaapAuthUser),
+            provider: 'github',
+            showActivity: true,
+        };
+    }
+    return {
+        name: nls.localize('qaap/workHubSettings/profile/notSignedIn', 'Not signed in'),
+        detail: nls.localize('qaap/workHubSettings/profile/connectAccount', 'Connect a GitHub account to sync your profile.'),
+        initials: '?',
+        provider: 'github',
+        showActivity: false,
+    };
+}
+
 export function isWorkHubAiFeaturesPreferencesQuery(query?: string): boolean {
     return typeof query === 'string' && query.trim().toLowerCase() === WORK_HUB_AI_FEATURES_PREFERENCES_QUERY;
 }
@@ -131,6 +190,10 @@ export class MobileWorkHubPreferencesSheet {
     protected readonly customContentHost: HTMLElement;
     protected readonly titleEl: HTMLElement;
     protected readonly restoreDefaultsButton: HTMLButtonElement;
+    /** Right end of the content header: toggles the desktop right panel, as the chat header chevron does. */
+    protected readonly auxPanelToggleButton: HTMLButtonElement;
+    protected auxPanel: QaapWorkHubAuxPanel | undefined;
+    protected auxPanelSubscription: Disposable = Disposable.NULL;
     protected readonly notificationSettings = new QaapWorkHubNotificationSettings();
     protected previewCompletionSound: QaapCompletionSound | undefined;
     protected keybindingsRender: Disposable | undefined;
@@ -324,7 +387,7 @@ export class MobileWorkHubPreferencesSheet {
         settingsNav.setAttribute('aria-label', nls.localize('qaap/workHubSettings/navigationLabel', 'Work Hub settings sections'));
         this.settingsNav = settingsNav;
         settingsSectionLabel.hidden = true;
-        for (const section of WORK_HUB_SETTINGS_SECTIONS) {
+        for (const section of this.getVisibleSettingsSections()) {
             if (section.group) {
                 settingsNav.append(createWorkHubSettingsGroupLabel(section.group));
             }
@@ -390,7 +453,18 @@ export class MobileWorkHubPreferencesSheet {
         openSidebarButton.addEventListener('click', () => this.setSettingsSidebarCollapsed(false));
         this.settingsSidebarOpenButton = openSidebarButton;
 
-        header.append(openSidebarButton, crumb, crumbSeparator, title, this.restoreDefaultsButton);
+        const auxPanelToggleButton = document.createElement('button');
+        auxPanelToggleButton.type = 'button';
+        auxPanelToggleButton.className = 'theia-mobile-work-hub-settings-aux-toggle';
+        auxPanelToggleButton.hidden = true;
+        auxPanelToggleButton.append(createQaapWorkHubRightPanelGlyph());
+        auxPanelToggleButton.addEventListener('click', () => {
+            resolveWorkHubAuxPanelForSettingsToggle()?.toggle();
+            this.refreshAuxPanelToggle();
+        });
+        this.auxPanelToggleButton = auxPanelToggleButton;
+
+        header.append(openSidebarButton, crumb, crumbSeparator, title, this.restoreDefaultsButton, auxPanelToggleButton);
 
         this.widgetHost = document.createElement('div');
         this.widgetHost.className = 'theia-mobile-work-hub-preferences-widget-host';
@@ -443,6 +517,7 @@ export class MobileWorkHubPreferencesSheet {
         this.node.classList.add('theia-mod-visible');
         this.node.setAttribute('aria-hidden', 'false');
         this.visible = true;
+        this.refreshAuxPanelToggle();
         this.settingsSidebarController?.showSettings(this.createSettingsSidebarOptions());
         const renderedSidebarWidth = this.settingsSidebar.getBoundingClientRect().width;
         if (renderedSidebarWidth > 0) {
@@ -504,10 +579,37 @@ export class MobileWorkHubPreferencesSheet {
 
     dispose(): void {
         this.unobserveWidgetHostResize();
+        this.auxPanelSubscription.dispose();
         this.mcpServerSummary?.dispose();
         this.mcpServerSummary = undefined;
         this.hide();
         this.node.remove();
+    }
+
+    /**
+     * Finds the desktop right panel and follows its open state. The toggle is shown only where a right
+     * panel applies (desktop layout); the panel's own change event keeps its `aria-expanded` live.
+     */
+    protected refreshAuxPanelToggle(): void {
+        const panel = resolveWorkHubAuxPanelForSettingsToggle();
+        if (panel !== this.auxPanel) {
+            this.auxPanelSubscription.dispose();
+            this.auxPanel = panel;
+            this.auxPanelSubscription = panel?.onDidChangeOpenState(() => this.updateAuxPanelToggle()) ?? Disposable.NULL;
+        }
+        this.updateAuxPanelToggle();
+    }
+
+    protected updateAuxPanelToggle(): void {
+        const panel = this.auxPanel;
+        this.auxPanelToggleButton.hidden = !panel;
+        if (!panel) {
+            return;
+        }
+        const label = nls.localize('qaap/workHubAuxPanel/toggle', 'Toggle views panel');
+        this.auxPanelToggleButton.title = label;
+        this.auxPanelToggleButton.setAttribute('aria-label', label);
+        this.auxPanelToggleButton.setAttribute('aria-expanded', String(panel.isOpen));
     }
 
     protected getMcpServerSummary(): MobileWorkHubMcpServerSummary | undefined {
@@ -550,8 +652,19 @@ export class MobileWorkHubPreferencesSheet {
         widget.update();
     }
 
+    /** Desktop (Electron) is the only runtime that hides sections, see `isWorkHubSettingsSectionVisible`. */
+    protected isDesktopSettingsRuntime(): boolean {
+        return environment.electron.is();
+    }
+
+    protected getVisibleSettingsSections(): readonly WorkHubSettingsSection[] {
+        const desktop = this.isDesktopSettingsRuntime();
+        return WORK_HUB_SETTINGS_SECTIONS.filter(section => isWorkHubSettingsSectionVisible(section.id, desktop));
+    }
+
     protected getSettingsSection(id: string): WorkHubSettingsSection {
-        return WORK_HUB_SETTINGS_SECTIONS.find(section => section.id === id)
+        const sectionId = resolveWorkHubSettingsSectionId(id, this.isDesktopSettingsRuntime());
+        return WORK_HUB_SETTINGS_SECTIONS.find(section => section.id === sectionId)
             ?? WORK_HUB_SETTINGS_SECTIONS[0];
     }
 
@@ -609,7 +722,7 @@ export class MobileWorkHubPreferencesSheet {
 
     protected createSettingsSidebarOptions(): MobileWorkHubSettingsSidebarOptions {
         return {
-            sections: WORK_HUB_SETTINGS_SECTIONS,
+            sections: this.getVisibleSettingsSections(),
             activeSectionId: () => this.activeSettingsSectionId,
             searchValue: () => this.settingsSearchInput.value,
             searchReadOnly: () => this.settingsSearchInput.readOnly,
@@ -650,6 +763,10 @@ export class MobileWorkHubPreferencesSheet {
     protected resolveSettingsSection(query?: string): WorkHubSettingsSection {
         if (isWorkHubAiFeaturesPreferencesQuery(query)) {
             return this.getSettingsSection('agents');
+        }
+        const sectionId = parseWorkHubSettingsSectionQuery(query);
+        if (sectionId) {
+            return this.getSettingsSection(sectionId);
         }
         if (typeof query === 'string' && query.trim()) {
             return {
@@ -934,48 +1051,50 @@ export class MobileWorkHubPreferencesSheet {
 
     protected renderProfileSection(): void {
         const panel = this.createCustomPanel();
-        const user = readQaapAuthUser();
+        const desktopCredential = environment.electron.is() ? readQaapDesktopGithubCredential() : undefined;
+        const authUser = readQaapAuthUser();
+        // Desktop runs in local mode with a placeholder (non-GitHub) user: the GitHub credential describes the account.
+        const identityInfo = resolveWorkHubProfileIdentity(
+            desktopCredential && authUser?.provider !== 'github' ? undefined : authUser,
+            desktopCredential,
+        );
         const card = this.createSettingsCard('theia-mobile-work-hub-settings-profile-card');
         const identity = document.createElement('div');
         identity.className = 'theia-mobile-work-hub-settings-profile-identity';
 
         const avatar = document.createElement('div');
         avatar.className = 'theia-mobile-work-hub-settings-profile-avatar';
-        if (user?.avatarUrl) {
+        if (identityInfo.avatarUrl) {
             const image = document.createElement('img');
-            image.src = user.avatarUrl;
+            image.src = identityInfo.avatarUrl;
             image.alt = '';
             image.draggable = false;
             image.referrerPolicy = 'no-referrer';
             image.decoding = 'async';
             avatar.append(image);
         } else {
-            avatar.textContent = user ? qaapAuthUserInitials(user) : '?';
+            avatar.textContent = identityInfo.initials;
         }
 
         const details = document.createElement('div');
         details.className = 'theia-mobile-work-hub-settings-profile-details';
         const name = document.createElement('strong');
-        name.textContent = user?.name || user?.login || nls.localize(
-            'qaap/workHubSettings/profile/notSignedIn',
-            'Not signed in',
-        );
+        name.textContent = identityInfo.name;
         const login = document.createElement('span');
-        login.textContent = user?.login ? `@${user.login}` : nls.localize(
-            'qaap/workHubSettings/profile/connectAccount',
-            'Connect a GitHub account to sync your profile.',
-        );
+        login.textContent = identityInfo.detail;
         details.append(name, login);
         identity.append(avatar, details);
 
         const provider = document.createElement('span');
         provider.className = 'theia-mobile-work-hub-settings-profile-provider';
-        provider.textContent = user?.provider === 'gitlab'
+        provider.textContent = identityInfo.provider === 'gitlab'
             ? 'GitLab'
             : nls.localize('qaap/workHubSettings/profile/github', 'GitHub');
         card.append(identity, provider);
         panel.append(card);
-        this.renderProfileActivity(panel);
+        if (identityInfo.showActivity) {
+            this.renderProfileActivity(panel);
+        }
         this.customContentHost.append(panel);
     }
 

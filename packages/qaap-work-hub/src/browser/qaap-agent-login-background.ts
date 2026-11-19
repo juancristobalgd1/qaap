@@ -10,6 +10,7 @@ import {
     localizeAgentConnectionUnsupportedMessage,
     localizeAgentTenantTerminalLoginMessage,
     QAAP_AI_FEATURES_SETTINGS_QUERY,
+    resolveAgentLoginChallengeTimeoutMs,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
 import { localizeHostedLocalhostOAuthAgentMessage } from '@theia/qaap-shared-core/lib/common/qaap-hosted-agent-auth-policy';
 import { buildAgentLoginShellCommand, splitAgentLoginShellInput } from '@theia/qaap-shared-core/lib/common/qaap-agent-connect-plan';
@@ -164,7 +165,7 @@ interface AgentLoginHiddenCommand {
 
 function resolveHiddenLogin(connectionFlow: QaapAgentConnectionFlow): AgentLoginHiddenCommand | undefined {
     return connectionFlow.kind === 'cli-login'
-        ? { command: connectionFlow.command }
+        ? { command: connectionFlow.command, env: connectionFlow.env }
         : connectionFlow.kind === 'tui-login'
             ? { command: connectionFlow.command, input: connectionFlow.input, env: connectionFlow.env }
             : undefined;
@@ -288,7 +289,7 @@ export async function openAgentLoginDialogInBackground(
 
     const describeTerminalDiagnostics = (facts: ReturnType<typeof terminalDiagnostics>): string => nls.localize(
         'qaap/agentLogin/diagnosticsDetail',
-        'Terminal started: {0}. Output received: {1} bytes from the live stream, {2} bytes from the terminal screen.',
+        'Terminal started: {0}. Output received: {1} bytes from the live stream, {2} more bytes recovered from the terminal screen.',
         facts.opened ? nls.localize('qaap/agentLogin/diagnosticsYes', 'yes') : nls.localize('qaap/agentLogin/diagnosticsNo', 'no'),
         String(facts.onOutputBytes),
         String(facts.bufferBytes),
@@ -310,9 +311,17 @@ export async function openAgentLoginDialogInBackground(
         invalidateAgentModelsCache(agentId);
     };
 
+    /** Driven TUI logins type their way to the link; some CLIs do slow first-run work before printing it. */
+    function resolveLoginChallengeTimeout(): { challengeTimeoutMs?: number } {
+        const challengeTimeoutMs = connectionFlow.kind === 'tui-login'
+            ? TUI_LOGIN_CHALLENGE_TIMEOUT_MS
+            : resolveAgentLoginChallengeTimeoutMs(agentId);
+        return challengeTimeoutMs !== undefined ? { challengeTimeoutMs } : {};
+    }
+
     const flow = new QaapAgentLoginFlow({
         agentId,
-        ...(connectionFlow.kind === 'tui-login' ? { challengeTimeoutMs: TUI_LOGIN_CHALLENGE_TIMEOUT_MS } : {}),
+        ...resolveLoginChallengeTimeout(),
         onDidChange: state => {
             if (closed) {
                 return;

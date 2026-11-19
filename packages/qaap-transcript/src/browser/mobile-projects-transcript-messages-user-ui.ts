@@ -139,12 +139,15 @@ export class MobileProjectsTranscriptMessagesUserUi {
         }
     }
 
-    createTranscriptUserContextChips(chips: readonly TranscriptUserContextChip[]): HTMLElement {
+    createTranscriptUserContextChips(
+        chips: readonly TranscriptUserContextChip[],
+        options?: { readonly collapsed?: boolean },
+    ): HTMLElement {
         const list = document.createElement('div');
         list.className = 'theia-mobile-agent-transcript-user-context-chips';
         for (const chip of chips) {
             if (chip.annotations?.length) {
-                list.append(this.createTranscriptPreviewFeedbackCard(chip));
+                list.append(this.createTranscriptPreviewFeedbackCard(chip, options?.collapsed));
                 continue;
             }
             const item = document.createElement('div');
@@ -166,12 +169,12 @@ export class MobileProjectsTranscriptMessagesUserUi {
      * Rich, collapsible card for preview-feedback attachments: numbered annotations matching the
      * markers painted on the preview, each with its comment, element, and source affordance.
      */
-    protected createTranscriptPreviewFeedbackCard(chip: TranscriptUserContextChip): HTMLElement {
+    protected createTranscriptPreviewFeedbackCard(chip: TranscriptUserContextChip, collapsed?: boolean): HTMLElement {
         const annotations = chip.annotations ?? [];
         const card = document.createElement('div');
         card.className = 'theia-mobile-agent-transcript-feedback-card';
         card.dataset.kind = chip.kind;
-        const expandedByDefault = annotations.length <= 3;
+        const expandedByDefault = !collapsed && annotations.length <= 3;
         if (!expandedByDefault) {
             card.classList.add('theia-mod-collapsed');
         }
@@ -252,13 +255,7 @@ export class MobileProjectsTranscriptMessagesUserUi {
         if (source) {
             meta.append(this.createTranscriptPreviewFeedbackSourceTag(source, !!annotation.source));
         }
-        if (annotation.selector) {
-            const selector = document.createElement('span');
-            selector.className = 'theia-mobile-agent-transcript-feedback-tag theia-mod-selector';
-            selector.textContent = annotation.selector;
-            selector.title = annotation.selector;
-            meta.append(selector);
-        }
+        // CSS selectors stay in the agent's context only: they are plumbing, not something the user wrote.
         if (annotation.unresolved) {
             const warn = document.createElement('span');
             warn.className = 'theia-mobile-agent-transcript-feedback-tag theia-mod-unresolved';

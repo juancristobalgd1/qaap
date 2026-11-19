@@ -427,10 +427,13 @@ export function resolveAgentLoginCliCommand(agentId: string | undefined, cliBin?
             return 'grok login --device-auth';
         case 'copilot':
             // `To authenticate, visit https://github.com/login/device and enter code XXXX-XXXX`.
+            // The hidden Connect terminal runs the JavaScript entry instead (resolveAgentHiddenLoginCommand).
             return 'copilot login --device-code';
         case 'opencode':
             // The bare `opencode auth login` opens a provider picker nobody can drive from a phone.
             // The headless ChatGPT method prints `auth.openai.com/codex/device` + `Enter code:`.
+            // Flags verified against opencode-ai 1.18.28 (image) and 1.19.6 (latest): `-p` and `-m` still
+            // skip both pickers. Its env (resolveAgentLoginEnv) keeps the models.dev refresh from holding the link.
             return 'opencode auth login -p openai -m \'ChatGPT Pro/Plus (headless)\'';
         case 'cursor': {
             // Prints `cursor.com/loginDeepControl?challenge=…&uuid=…` and polls cursor's API for
@@ -463,6 +466,92 @@ export function resolveAgentLoginCliCommand(agentId: string | undefined, cliBin?
             // and `Enter the authorization code:` instead of a picker. `agy` gets no command (see above).
             return (normalizeAntigravityCliBin(cliBin) ?? 'gemini') === 'gemini' ? resolveGeminiCliLoginCommand() : undefined;
         // QAIQ is the only harness that runs on Settings API keys.
+        default:
+            return undefined;
+    }
+}
+
+function isWindowsRuntime(): boolean {
+    // Bundled into the browser too, where Node's `process` is not defined.
+    return (globalThis as typeof globalThis & { process?: { readonly platform?: string } }).process?.platform === 'win32';
+}
+
+/**
+ * Finds the JavaScript entry of the Copilot CLI's Linux platform package next to the `copilot` on PATH (the
+ * npm loader `@github/copilot/npm-loader.js`) and prints it; prints nothing on any other platform, on a Node
+ * older than 22, or for a `copilot` that is not the npm package. Written with double quotes only: the POSIX
+ * command wraps it in single quotes.
+ */
+const COPILOT_JS_ENTRY_SCRIPT = [
+    'const fs=require("fs"),path=require("path");',
+    'if(process.platform==="linux"&&Number(process.versions.node.split(".")[0])>=22){',
+    'for(const dir of (process.env.PATH||"").split(":")){',
+    'let real;try{real=fs.realpathSync(path.join(dir||".","copilot"))}catch{continue}',
+    'let musl=false;try{musl=!process.report.getReport().header.glibcVersionRuntime}catch{}',
+    'const name="copilot-"+(musl?"linuxmusl":"linux")+"-"+process.arch,root=path.dirname(real);',
+    'for(const entry of [path.join(root,"node_modules","@github",name,"index.js"),path.join(root,"..",name,"index.js")]){',
+    'if(fs.existsSync(entry)){process.stdout.write(entry);process.exit(0)}}',
+    'break}}',
+].join('');
+
+/**
+ * Copilot CLI sign-in on a Linux host. `copilot` is a Node single-executable (SEA) that, on its first run of a
+ * version, unpacks a ~170 MB bundle into `~/.cache/copilot/pkg` before printing anything: on a VPS tenant
+ * (gVisor, slow overlay disk, tight memory) that took longer than the link deadline, and the retry after the
+ * killed first attempt crashed natively inside the SEA (`node::Start` frames, exit 1). The same npm package
+ * ships the CLI as plain JavaScript (`index.js` of the platform package); running it on the host's own Node
+ * needs no unpacking and no embedded runtime, and stores the sign-in where the CLI reads it (`~/.copilot`).
+ * Falls back to the `copilot` binary when that entry cannot be found.
+ */
+const COPILOT_JS_LOGIN_COMMAND = `qaap_copilot_entry=$(node -e '${COPILOT_JS_ENTRY_SCRIPT}' 2>/dev/null); `
+    + 'if [ -n "$qaap_copilot_entry" ]; then node "$qaap_copilot_entry" login --device-code; else copilot login --device-code; fi';
+
+/**
+ * Command the hidden Connect terminal runs for a harness's login (`command` is
+ * {@link resolveAgentLoginCliCommand}'s). Only Copilot differs: on POSIX hosts it runs the npm package's
+ * JavaScript entry when one exists (COPILOT_JS_LOGIN_COMMAND). A visible terminal keeps the plain command.
+ */
+export function resolveAgentHiddenLoginCommand(agentId: string | undefined, command: string): string {
+    return migrateQaapProductAgentId(agentId?.trim()) === 'copilot' && command === 'copilot login --device-code' && !isWindowsRuntime()
+        ? COPILOT_JS_LOGIN_COMMAND
+        : command;
+}
+
+/**
+ * Environment the Connect terminal exports for one harness's login command only.
+ * - Copilot: no self-update while signing in (the SEA would fetch and switch versions mid-login).
+ * - OpenCode: `auth login` force-refreshes the models.dev catalog (10 s timeout, two retries) before it asks
+ *   OpenAI for the device code. Behind the tenant egress proxy that refresh can hang for 20-30 s, so the
+ *   dialog saw only `┌  Add credential` and gave up after 15 s. An unreachable local catalog URL fails in
+ *   milliseconds and OpenCode falls back to the catalog bundled in the binary, which lists `openai`
+ *   (verified with opencode-ai 1.19.6: 21.7 s to the code with a black-holed catalog, 1.9 s with this).
+ *   The URL also gets its own cache file, so the real `models.json` cache is never touched.
+ */
+export function resolveAgentLoginEnv(agentId: string | undefined): Readonly<Record<string, string>> | undefined {
+    switch (migrateQaapProductAgentId(agentId?.trim())) {
+        case 'copilot':
+            return { COPILOT_AUTO_UPDATE: 'false' };
+        case 'opencode':
+            return { OPENCODE_MODELS_URL: QAAP_OPENCODE_LOGIN_MODELS_URL };
+        default:
+            return undefined;
+    }
+}
+
+/** Catalog URL for OpenCode's sign-in: refused at once on any host, so its bundled catalog is used. */
+export const QAAP_OPENCODE_LOGIN_MODELS_URL = 'http://127.0.0.1:9';
+
+/**
+ * Link deadline of the Connect dialog for a harness whose first run does slow one-time work before it prints
+ * the link: Copilot's SEA unpacks its bundle when the JavaScript entry is not available; OpenCode creates its
+ * database and loads plugins on first use. Undefined keeps the default deadline.
+ */
+export function resolveAgentLoginChallengeTimeoutMs(agentId: string | undefined): number | undefined {
+    switch (migrateQaapProductAgentId(agentId?.trim())) {
+        case 'copilot':
+            return 60_000;
+        case 'opencode':
+            return 45_000;
         default:
             return undefined;
     }

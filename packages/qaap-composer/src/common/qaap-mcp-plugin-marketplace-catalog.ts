@@ -50,22 +50,6 @@ export const QAAP_MCP_MARKETPLACE_PLUGINS: readonly QaapMcpMarketplacePlugin[] =
         },
     },
     {
-        id: 'github',
-        name: 'GitHub',
-        slug: 'github',
-        description: nls.localize(
-            'qaap/mobileProjects/mcpPlugin/github',
-            'Browse repos, issues, and pull requests with the GitHub MCP server.',
-        ),
-        iconLetter: 'G',
-        iconColor: '#24292F',
-        serverConfig: {
-            command: 'npx',
-            args: ['-y', '@modelcontextprotocol/server-github'],
-            autostart: true,
-        },
-    },
-    {
         id: 'brave-search',
         name: 'Brave Search',
         slug: 'brave-search',

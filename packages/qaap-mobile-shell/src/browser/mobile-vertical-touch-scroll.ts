@@ -193,6 +193,8 @@ export const MOBILE_VERTICAL_SCROLL_SELECTORS = [
     '.theia-mobile-work-hub-sessions-sidebar-head-popover',
     '.theia-mobile-work-hub-sessions-sidebar-status-legend-list',
     '.theia-mobile-work-hub-keybindings-list',
+    '.qaap-work-hub-aux-pr-scroll',
+    '.qaap-work-hub-aux-side-chat-transcript',
     '.theia-mobile-pr-stack',
     '.theia-mobile-pr-picker',
     '.theia-mobile-pr-quick-row',

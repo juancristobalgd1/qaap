@@ -201,7 +201,14 @@ describe('harness login commands', () => {
     };
     for (const [agentId, command] of Object.entries(commands)) {
         it(`runs the verified headless login for ${agentId}`, () => {
-            expect(resolveAgentConnectionFlow(agentId)).to.deep.equal({ kind: 'cli-login', command });
+            const flow = resolveAgentConnectionFlow(agentId);
+            expect(flow.kind).to.equal('cli-login');
+            if (agentId === 'copilot' && process.platform !== 'win32') {
+                // The hidden terminal prefers the npm package's JavaScript entry, then this same command.
+                expect(flow.kind === 'cli-login' && flow.command).to.contain(`else ${command}; fi`);
+            } else {
+                expect(flow.kind === 'cli-login' && flow.command).to.equal(command);
+            }
         });
     }
 });

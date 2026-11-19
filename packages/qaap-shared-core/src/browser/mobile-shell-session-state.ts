@@ -3,6 +3,15 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
+import type { MobileProjectEntry } from './mobile-projects-types';
+
+/** A Work Hub conversation and its project, kept in memory to reopen it. */
+export interface MobileShellConversationTarget {
+    readonly project: MobileProjectEntry;
+    readonly summary: QaapAgentConversationSummaryDTO;
+}
+
 /**
  * Memory-only flags for the current browser runtime.
  * Nothing here may be written to sessionStorage, localStorage, URL state, or restored layout.
@@ -26,6 +35,19 @@ export class MobileShellSessionState {
      * The next Work Hub -> IDE switch then keeps it closed instead of revealing the Explorer.
      */
     desktopIdeSidePanelClosedByUser = false;
+
+    /**
+     * The conversation open in the Work Hub when the user switched to the desktop IDE. Opening the IDE disposes
+     * the Work Hub panel, so the switch back reopens this conversation instead of the empty new-task shell.
+     * The bootstrap that restores the Work Hub takes it once.
+     */
+    conversationBeforeDesktopIde: MobileShellConversationTarget | undefined;
+
+    /**
+     * Whether the desktop sessions sidebar was open when the user switched to the desktop IDE. Disposing the Work Hub
+     * panel hides the sidebar, which records it as collapsed; the switch back reopens it when it was open.
+     */
+    sessionsSidebarOpenBeforeDesktopIde: boolean | undefined;
 
     /** Bumped to cancel in-flight Agents bootstrap when the user opens the desktop IDE. */
     agentsBootstrapEpoch = 0;

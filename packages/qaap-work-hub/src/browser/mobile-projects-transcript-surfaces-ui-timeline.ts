@@ -1,4 +1,5 @@
 import type { MobileProjectsTranscriptSurfacesUiContext } from './mobile-projects-transcript-surfaces-ui-context';
+import { transcriptPreviewRediscoveryGuardFor } from './transcript-preview-rediscovery-guard';
 import { resetTranscriptPreviewToEmptyExtracted } from './mobile-projects-transcript-surfaces-ui-tool-pills';
 import { openThreadWorktreeUriExtracted } from './mobile-projects-transcript-surfaces-ui-thought-brief';
 // Extracted from mobile-projects-transcript-surfaces-ui.ts
@@ -539,6 +540,12 @@ export function fallBackFromSupersededTranscriptPreviewExtracted(ctx: MobileProj
                 },
             });
         }
+        if (!transcriptPreviewRediscoveryGuardFor(ctx.host).allow(cleared.id, Date.now())) {
+            // The same stale candidate keeps coming back: let the backed-off tab probe watch for a
+            // real server instead of rediscovering in a tight loop.
+            ctx.scheduleTranscriptPreviewTabProbe(cleared, summary);
+            return;
+        }
         void ctx.discoverAndMountTranscriptPreviewIfReady(cleared, summary);
 }
 
@@ -769,6 +776,7 @@ export async function tryMountProjectScopedPreviewExtracted(ctx: MobileProjectsT
         const previewTabActive = ctx.host.executionSurfaceTabsUi.activeExecutionTab(project) === 'preview';
         if (identityPath || extractDevPreviewPortFromUrl(candidateUrl) === undefined) {
             if (ctx.matchesActivePreviewSummary(summary) || previewTabActive) {
+                transcriptPreviewRediscoveryGuardFor(ctx.host).reset(project.id);
                 ctx.mountTranscriptEmbeddedPreview(host, candidateUrl, latestProject, summary);
             }
             return;

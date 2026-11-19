@@ -404,8 +404,7 @@ export function attachExternalFeedbackImageEntriesExtracted(ctx: MobileProjectsP
 }
 
 export function activateMessagesSurfaceForExternalSubmitExtracted(ctx: MobileProjectsPanelContext, project: MobileProjectEntry): void {
-    ctx.executionSurfaceTabsUi.setExecutionSurfaceTab(project, 'messages');
-    ctx.executionSurfaceTabsUi.showOnlyExecutionSurfaceTab('messages');
+    ctx.executionSurfaceTabsUi.showMessagesKeepingDock(project);
     if (ctx.agentsHubShellActive) {
         ctx.stickyComposerRenderUi.renderStickyComposer();
     }

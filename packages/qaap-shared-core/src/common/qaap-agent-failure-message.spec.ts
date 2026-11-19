@@ -709,3 +709,31 @@ describe('Antigravity CLI (agy) without a session', () => {
         expect(detectAgentFailureKind('Refactored the authentication module and added tests.')).to.not.equal('auth');
     });
 });
+
+describe('auxiliary-model log lines and persisted limit copies', () => {
+
+    it('keeps a real provider insufficient_quota as quota', () => {
+        expect(detectAgentFailureKind(
+            '{"error":{"type":"insufficient_quota","message":"You exceeded your current quota, please check your plan and billing details."}}',
+        )).to.equal('quota');
+    });
+
+    it('keeps a persisted quota copy reading as quota, so the stored limit keeps its label', () => {
+        expect(detectAgentFailureKind(localizeAgentFailureMessage('quota'))).to.equal('quota');
+    });
+
+    const titleLine = '2026-11-11T13:10:18.406Z ERROR run=7f3f3ab2 message="stream error" providerID=opencode modelID=gpt-5.4-nano small=true agent=title mode=primary error.error="AI_APICallError: You exceeded your current quota, please check your plan and billing details."';
+
+    it('ignores a title-agent quota error in a turn that completed (exit 0)', () => {
+        const log = [
+            '2026-11-11T13:10:17.000Z INFO run=7f3f3ab2 message="prompt" providerID=opencode modelID=beam-free mode=primary',
+            titleLine,
+            '{"type":"step_finish","reason":"stop"}',
+        ].join('\n');
+        expect(detectAgentFailureKind(log)).to.be.undefined;
+    });
+
+    it('still classifies the same quota line when the main agent produced it', () => {
+        expect(detectAgentFailureKind(titleLine.replace('small=true agent=title mode=primary', 'agent=build mode=primary'))).to.equal('quota');
+    });
+});

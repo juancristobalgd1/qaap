@@ -19,14 +19,6 @@
   border-radius: 10px;
 }
 
-/* Same visibility condition as the switch itself (shown from 768px, never in the IDE). */
-@media (min-width: 768px) {
-  body:not(.theia-mobile-mod-desktop-ide) .theia-mobile-projects-header-main:has(.theia-mobile-projects-header-ide-agents-switch:not([hidden])) .theia-mobile-projects-title-block,
-  body:not(.theia-mobile-mod-desktop-ide) .theia-mobile-projects-header-main:has(.theia-mobile-projects-header-ide-agents-switch:not([hidden])) .theia-mobile-projects-header-execution-cluster {
-    max-width: calc(50% - 44px);
-  }
-}
-
 .theia-mobile-work-hub-sessions-sidebar {
   --qaap-sessions-sidebar-motion-duration: 220ms;
   --qaap-sessions-sidebar-motion-easing: cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -1092,6 +1084,20 @@
   background: color-mix(in srgb, var(--theia-errorForeground, #f14c4c) 14%, transparent);
 }
 
+/* Side chat marker: quiet text on the row's own surface, so it never competes with the title or the status glyph. */
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-side-badge {
+  flex: 0 0 auto;
+  margin-left: var(--q-space-2, 4px);
+  padding: 0 var(--q-space-2, 4px);
+  border: 1px solid var(--q-line-soft, color-mix(in srgb, var(--theia-foreground) 14%, transparent));
+  border-radius: var(--q-radius-pill, 999px);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 14px;
+  letter-spacing: 0.02em;
+  color: var(--q-muted, var(--theia-descriptionForeground));
+}
+
 /* ── Minimal session rows (Claude-style single line) ── */
 
 .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row {
@@ -1237,6 +1243,11 @@
   flex: 1 1 auto;
   overflow: auto;
   padding-bottom: 4px;
+  /* The host's 10px side padding inset the nav scroller (scrollbar 10px inside the panel edge).
+     Run the scroller to the panel edge and give the same 10px back inside it, so the items keep
+     their X and the scrollbar sits at 0px from the panel's right edge. */
+  margin-right: -10px;
+  padding-right: 10px;
 }
 
 .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-title-text {
@@ -2627,6 +2638,13 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
     flex: 0 0 auto;
     padding: 14px 28px 10px;
     border-bottom: none;
+  }
+
+  /* The Electron macOS traffic-light inset (qaap-product-theme qaap-electron-macos-titlebar.css) reserves 78px
+   * on every Work Hub header. With the sessions sidebar open, the pane is no longer at the window's left edge
+   * (the sidebar carries the lights), so that inset only pushes the title and switch out of a 260px pane. */
+  body.theia-mobile-mod-sessions-sidebar-open:not(.theia-mobile-mod-desktop-ide) .theia-mobile-projects-header.theia-mobile-projects-header:not(#theia-right-content-panel *) {
+    padding-left: 28px !important;
   }
 
   body:not(.theia-mobile-mod-desktop-ide).theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects-header-main {

@@ -896,6 +896,46 @@ describe('mobile-work-hub-sessions-sidebar', () => {
         expect(patchCalls).to.equal(2);
     });
 
+    it('does not collapse the docked desktop sidebar on Escape but closes the narrow sheet', () => {
+        const setViewport = (desktop: boolean): void => {
+            (global as { window?: Window }).window = {
+                ...(global as { window?: Window }).window,
+                matchMedia: (query: string) => ({
+                    matches: desktop && query === QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY,
+                    media: query,
+                    onchange: null,
+                    addListener: () => undefined,
+                    removeListener: () => undefined,
+                    addEventListener: () => undefined,
+                    removeEventListener: () => undefined,
+                    dispatchEvent: () => false,
+                }),
+                setTimeout: (callback: (...args: unknown[]) => void, delayMs?: number) =>
+                    setTimeout(callback, delayMs ?? 0) as unknown as number,
+                clearTimeout: (id: number) => clearTimeout(id),
+            } as unknown as Window;
+        };
+        const escape = (): void => {
+            document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+        };
+        setViewport(true);
+        const sidebar = new MobileWorkHubSessionsSidebar({
+            renderSessionList: host => { host.append(document.createElement('div')); },
+            onNewChat: () => undefined,
+            onClose: () => undefined,
+        });
+        document.body.append(sidebar.node);
+        sidebar.show();
+        escape();
+        expect(sidebar.isVisible()).to.equal(true);
+        sidebar.hide();
+
+        setViewport(false);
+        sidebar.show();
+        escape();
+        expect(sidebar.isVisible()).to.equal(false);
+    });
+
     it('keeps the sidebar open when navigation happens on desktop layout', () => {
         const matchMedia = (query: string): MediaQueryList => ({
             matches: query === QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY

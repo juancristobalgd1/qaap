@@ -42,6 +42,11 @@ export class TranscriptOverlayController {
         this.stickyComposerUi = new MobileProjectsTranscriptStickyComposerUi(overlayHost, workHub);
         this.headerUi = new MobileProjectsTranscriptHeaderUi(overlayHost);
         this.messagesUi = new MobileProjectsTranscriptMessagesUi(overlayHost, workHub);
+        // Queued rows paint in the transcript but act on the composer's queue. Wired here, once both exist:
+        // the composer is built first and the panel's controller is not assigned yet during construction.
+        this.messagesUi.setQueuedMessageActionHandler(
+            (conversationId, pending, action) => this.stickyComposerUi.handleQueuedMessageAction(conversationId, pending, action),
+        );
         this.liveUi = new MobileProjectsTranscriptLiveUi(overlayHost);
         this.submitUi = new MobileProjectsTranscriptSubmitUi(overlayHost);
         this.verifyUi = new MobileProjectsTranscriptVerifyUi(overlayHost);

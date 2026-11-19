@@ -16,16 +16,17 @@ import {
     countAgentUpdatesToShow,
     readAgentCliUpdateDismissMap,
     rememberAgentCliUpdateDismiss,
-    requestAgentCliUpdate,
     snoozeAgentCliUpdates,
     type QaapAgentCliUpdateInfo,
 } from '../common/qaap-agent-cli-update';
 import { OPEN_AI_CONFIGURATION_COMMAND } from '@theia/qaap-mobile-shell/lib/browser/mobile-shell-bottom-bar-widget';
-import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import {
     showAgentCliUpdateToast,
     type QaapAgentCliUpdateToastController,
 } from './qaap-agent-cli-update-toast';
+import { QaapAgentCliUpdateTracker } from './qaap-agent-cli-update-tracker';
+
+export { presentableAgentCliUpdateFailure } from '../common/qaap-agent-cli-update';
 
 /** Defer slightly so Work Hub / splash finish painting before the toast competes for attention. */
 const BOOT_DELAY_MS = 2_500;
@@ -35,6 +36,9 @@ const BOOT_DELAY_MS = 2_500;
  * (Cancel / Update / dismiss). Non-blocking: failures are swallowed; dismiss persists per
  * agentId + latestVersion in localStorage, so a newer release still re-prompts. "Later" dismisses
  * every pending update, stays quiet for the rest of the page session and snoozes the notice for a week.
+ *
+ * "Update" closes the notice at once: the install runs in {@link QaapAgentCliUpdateTracker} and
+ * its progress, success or failure is shown by the compact status chip instead.
  */
 @injectable()
 export class QaapAgentCliUpdateContribution implements FrontendApplicationContribution {
@@ -47,6 +51,9 @@ export class QaapAgentCliUpdateContribution implements FrontendApplicationContri
 
     @inject(MessageService) @optional()
     protected readonly messages: MessageService | undefined;
+
+    @inject(QaapAgentCliUpdateTracker)
+    protected readonly tracker: QaapAgentCliUpdateTracker;
 
     protected toast: QaapAgentCliUpdateToastController | undefined;
     protected shownAgentId: string | undefined;
@@ -90,7 +97,7 @@ export class QaapAgentCliUpdateContribution implements FrontendApplicationContri
         if (this.laterChosenThisSession || isAgentCliUpdateSnoozed(Date.now())) {
             return;
         }
-        // At most one notice on screen: a visible toast (or an update in flight) keeps the queue.
+        // At most one notice on screen: a visible toast keeps the queue.
         if (this.toast) {
             return;
         }
@@ -108,7 +115,7 @@ export class QaapAgentCliUpdateContribution implements FrontendApplicationContri
         this.toast = showAgentCliUpdateToast(info, {
             onDismiss: () => this.dismiss(info),
             onCancel: () => this.dismiss(info),
-            onUpdate: () => void this.runUpdate(info),
+            onUpdate: () => this.runUpdate(info),
         }, { pendingCount });
     }
 
@@ -134,7 +141,7 @@ export class QaapAgentCliUpdateContribution implements FrontendApplicationContri
         );
     }
 
-    protected async runUpdate(info: QaapAgentCliUpdateInfo): Promise<void> {
+    protected runUpdate(info: QaapAgentCliUpdateInfo): void {
         if (!info.updateSupported) {
             // QAIQ (and similar) ship via Docker layers — no in-place npm update.
             rememberAgentCliUpdateDismiss(info.id, info.latestVersion);
@@ -152,76 +159,13 @@ export class QaapAgentCliUpdateContribution implements FrontendApplicationContri
             return;
         }
 
-        this.toast?.setUpdating(true);
-        const result = await this.requestUpdate(info).catch((error: unknown) => ({
-            ok: false as const,
-            id: info.id,
-            message: error instanceof Error ? error.message : String(error),
-        }));
-        if (this.disposed) {
-            return;
-        }
-        this.toast?.setUpdating(false);
-
-        if (result.ok) {
-            rememberAgentCliUpdateDismiss(info.id, info.latestVersion);
-            this.toast?.dispose();
-            this.toast = undefined;
-            MobileSnackbar.show(
-                result.message
-                ?? nls.localize(
-                    'qaap/agentCliUpdate/updated',
-                    '{0} updated to v{1}.',
-                    info.label,
-                    result.installedVersion ?? info.latestVersion,
-                ),
-                { kind: 'success', duration: 3200, position: 'top' },
-            );
-            void this.checkAndShow();
-            return;
-        }
-
-        const detail = presentableAgentCliUpdateFailure(result.message);
-        const message = detail
-            ? nls.localize('qaap/agentCliUpdate/updateFailedDetail', 'Could not update {0}: {1}', info.label, detail)
-            : nls.localize(
-                'qaap/agentCliUpdate/updateFailedRetry',
-                'Could not update {0}. Try again in a moment.',
-                info.label,
-            );
-        this.showUpdateFailure(info, message);
-    }
-
-    protected requestUpdate(info: QaapAgentCliUpdateInfo): Promise<Awaited<ReturnType<typeof requestAgentCliUpdate>>> {
-        return requestAgentCliUpdate(info.id);
-    }
-
-    /**
-     * The snackbar clips its text to one line (ellipsis), so a failure reason would be cut off. The
-     * platform notification wraps the whole sentence and keeps the Retry action until it is answered.
-     */
-    protected showUpdateFailure(info: QaapAgentCliUpdateInfo, message: string): void {
-        const retryLabel = nls.localize('qaap/agentCliUpdate/retry', 'Retry');
-        if (!this.messages) {
-            MobileSnackbar.show(message, { kind: 'warning', duration: 7000, position: 'top' });
-            return;
-        }
-        void this.messages.error(message, retryLabel).then(choice => {
-            if (choice === retryLabel && !this.disposed) {
-                void this.runUpdate(info);
+        // Close the large notice immediately; progress and outcome move to the status chip.
+        this.toast?.dispose();
+        this.toast = undefined;
+        void this.tracker.start(info).then(job => {
+            if (!this.disposed && job.status === 'succeeded') {
+                void this.checkAndShow();
             }
         });
     }
-}
-
-/**
- * The server's one-sentence failure reason, or `undefined` when the text looks like raw tool output
- * (an older server, a proxy error page, a thrown stack): the toast then shows its generic retry text.
- */
-export function presentableAgentCliUpdateFailure(message: string | undefined): string | undefined {
-    const detail = message?.trim();
-    if (!detail || detail.length > 240 || /[\r\n]|npm (?:error|ERR!|warn)|<\/?[a-z]|\bat \S+ \(/i.test(detail)) {
-        return undefined;
-    }
-    return detail;
 }

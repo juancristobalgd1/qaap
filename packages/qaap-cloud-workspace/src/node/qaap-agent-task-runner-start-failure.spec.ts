@@ -189,14 +189,28 @@ describe('spawnProcessWhenReadyExtracted (start failures before the first mark)'
             expect(harness.tasks.get(TASK_ID)?.preflightFailure).to.equal(undefined);
         });
 
-        it('fails with a clear "try again" message when the probe is still checking after the budget', async () => {
+        // Was: refused with "Couldn't confirm your sign-in … try again" (no spawn). A probe that is still running
+        // after the budget, or settles without an answer, fails open: the turn runs and the harness's own sign-in
+        // prompt (auth failure → Sign in chip) handles a missing session.
+        it('starts the Pro model when the probe is still checking after the budget (fail-open)', async () => {
             const harness = codexStart(() => Promise.resolve());
             await spawnProcessWhenReadyExtracted(harness.ctx, harness.task, { ...harness.request, agent: 'codex' });
 
+            expect(harness.spawnProcess.calledOnce).to.equal(true);
+            expect(harness.tasks.get(TASK_ID)?.state).to.equal('running');
+            expect(harness.tasks.get(TASK_ID)?.preflightFailure).to.equal(undefined);
+        });
+
+        it('still refuses when the probe answers signed-out within the budget', async () => {
+            const harness = codexStart(async snapshot => {
+                snapshot.connectionState = 'disconnected';
+                snapshot.probeSettled = true;
+            });
+            await spawnProcessWhenReadyExtracted(harness.ctx, harness.task, { ...harness.request, agent: 'codex' });
+
             expect(harness.spawnProcess.called).to.equal(false);
-            expect(harness.tasks.get(TASK_ID)?.state).to.equal('failed');
             expect(harness.tasks.get(TASK_ID)?.preflightFailure).to.equal('sign_in_required');
-            expect(fs.readFileSync(harness.logPath, 'utf8')).to.contain("Couldn't confirm your sign-in to Codex; try again.");
+            expect(fs.readFileSync(harness.logPath, 'utf8')).to.contain('Sign in to Codex to use gpt-5.5.');
         });
     });
 

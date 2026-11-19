@@ -76,12 +76,34 @@ describe('MobileWorkHubActivityCalendar', () => {
         expect(cells(calendar).some(cell => cell.classList.contains('theia-mod-future'))).to.equal(true);
     });
 
-    it('renders the empty state wording and an all-empty grid when there is no activity', () => {
+    it('renders a plain empty state instead of a grid when there is no activity', () => {
         const calendar = renderWith([]);
         expect(calendar.node.querySelector('.theia-mobile-work-hub-settings-activity-heading')?.textContent)
             .to.equal('No contributions in 2026');
-        const active = cells(calendar).filter(cell => /activity-level-[1-4]/.test(cell.className));
-        expect(active.length).to.equal(0);
+        expect(calendar.node.querySelector('.theia-mobile-work-hub-settings-activity-grid')).to.not.exist;
+        expect(calendar.node.querySelector('.theia-mobile-work-hub-settings-activity-empty')?.textContent)
+            .to.contain('Nothing recorded in 2026 yet');
+        // The year selector still offers the year, so the empty year can be left.
+        expect(calendar.node.querySelectorAll('.theia-mobile-work-hub-settings-activity-year').length).to.be.greaterThan(0);
+    });
+
+    it('shows Mon, Wed and Fri labels beside the grid, outside the scroller', () => {
+        const calendar = renderWith([at(2026, 0, 5)]);
+        const labels = [...calendar.node.querySelectorAll<HTMLElement>('.theia-mobile-work-hub-settings-activity-weekday')]
+            .map(label => label.textContent)
+            .filter(text => text !== '');
+        expect(labels).to.deep.equal(['Mon', 'Wed', 'Fri']);
+        const weekdays = calendar.node.querySelector('.theia-mobile-work-hub-settings-activity-weekdays');
+        expect(weekdays?.closest('.theia-mobile-work-hub-settings-activity-scroll')).to.equal(null);
+    });
+
+    it('gives each active day a level from one to four, not the empty level', () => {
+        const calendar = renderWith([at(2026, 0, 5), at(2026, 0, 6), at(2026, 0, 6), at(2026, 0, 7)]);
+        const active = cells(calendar).filter(cell => cell.title !== '' && !cell.title.startsWith('No contributions'));
+        expect(active.length).to.equal(3);
+        for (const cell of active) {
+            expect(/activity-level-[1-4]/.test(cell.className), cell.title).to.equal(true);
+        }
     });
 
     it('offers one year button per year with data, with the current year pressed', () => {
@@ -103,8 +125,8 @@ describe('MobileWorkHubActivityCalendar', () => {
         expect(pressed.map(button => button.textContent)).to.deep.equal(['2025']);
     });
 
-    it('renders the Less/More legend with five swatches, one per level', () => {
-        const calendar = renderWith([]);
+    it('renders the Less/More legend with five swatches, one per level, when there is activity', () => {
+        const calendar = renderWith([at(2026, 0, 5)]);
         const swatches = calendar.node.querySelectorAll('.theia-mobile-work-hub-settings-activity-legend-swatches > span');
         expect(swatches.length).to.equal(5);
         for (let level = 0; level < 5; level++) {

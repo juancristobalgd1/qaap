@@ -16,11 +16,11 @@ import { QaapGithubAuthGuard } from '@theia/qaap-shared-core/lib/node/qaap-githu
 import { QaapAsyncRoute } from '@theia/qaap-shared-core/lib/node/qaap-async-route';
 import { isQaapHostedProductionRuntime } from '@theia/qaap-shared-core/lib/node/qaap-production-auth-readiness';
 import { QAAP_BACKEND_ISOLATION_MODE } from '@theia/qaap-adapters/lib/common/qaap-backend-isolation';
-import { isQaapTenantBackendMode } from '@theia/qaap-adapters/lib/common/qaap-tenant-backend-auth';
+import { isQaapTenantBackendMode, QAAP_TENANT_LOGIN_ENV } from '@theia/qaap-adapters/lib/common/qaap-tenant-backend-auth';
 import { QaapUsageAggregator } from './qaap-usage-aggregator';
 import { QaapUsageLimitsService } from './qaap-usage-limits';
 import { QaapUsagePriceList } from './qaap-usage-prices';
-import { QaapUsageScanner } from './qaap-usage-scanner';
+import { QaapUsageScannerRegistry } from './qaap-usage-scanner-registry';
 import { QaapUsageTime } from './qaap-usage-time';
 
 const RANGES: readonly QaapUsageRange[] = ['24h', '7d', '30d', '90d'];
@@ -28,7 +28,8 @@ const PROVIDERS: readonly QaapUsageProviderId[] = ['claude', 'codex', 'opencode'
 const DEFAULT_RANGE: QaapUsageRange = '7d';
 
 /**
- * Usage summary and limits for the signed-in user, read from the logs of the backend's own home directory.
+ * Usage summary and limits for the signed-in user, read from the logs in the home their agents run with (see
+ * `QaapUsageScanTargetResolver`): the user's own home on desktop, the tenant agent home on a per-tenant backend.
  * On hosted runtimes only a per-tenant backend serves it: a shared backend's home directory belongs to the operator.
  */
 @injectable()
@@ -37,8 +38,8 @@ export class QaapUsageEndpoint implements BackendApplicationContribution {
     @inject(QaapGithubAuthGuard)
     protected readonly auth: QaapGithubAuthGuard;
 
-    @inject(QaapUsageScanner)
-    protected readonly scanner: QaapUsageScanner;
+    @inject(QaapUsageScannerRegistry)
+    protected readonly scanners: QaapUsageScannerRegistry;
 
     @inject(QaapUsageLimitsService)
     protected readonly limits: QaapUsageLimitsService;
@@ -51,7 +52,11 @@ export class QaapUsageEndpoint implements BackendApplicationContribution {
     }
 
     protected async handleSummary(req: Request, res: Response): Promise<void> {
-        if (!this.allowedOnThisBackend(res) || !this.requireLogin(req, res)) {
+        if (!this.allowedOnThisBackend(res)) {
+            return;
+        }
+        const login = this.requireLogin(req, res);
+        if (!login) {
             return;
         }
         const range = this.queryValue(req, 'range') ?? DEFAULT_RANGE;
@@ -69,14 +74,15 @@ export class QaapUsageEndpoint implements BackendApplicationContribution {
             res.status(400).json({ error: 'tz must be an IANA timezone name' });
             return;
         }
+        const { scanner } = this.scanners.forOwner(login);
         // Starts the first scan on the first request and refreshes the ledger later; this response reads what is there now.
-        this.scanner.refreshInBackground();
-        res.json(this.aggregator.summarize(this.scanner.getLedger(), {
+        scanner.refreshInBackground();
+        res.json(this.aggregator.summarize(scanner.getLedger(), {
             range: range as QaapUsageRange,
             timezone,
             providers,
             nowMs: Date.now(),
-            scanning: !this.scanner.hasCompletedScan(),
+            scanning: !scanner.hasCompletedScan(),
         }));
     }
 
@@ -94,10 +100,14 @@ export class QaapUsageEndpoint implements BackendApplicationContribution {
     }
 
     protected async handleLimits(req: Request, res: Response): Promise<void> {
-        if (!this.allowedOnThisBackend(res) || !this.requireLogin(req, res)) {
+        if (!this.allowedOnThisBackend(res)) {
             return;
         }
-        res.json(await this.limits.getLimits());
+        const login = this.requireLogin(req, res);
+        if (!login) {
+            return;
+        }
+        res.json(await this.limits.forOwner(this.scanners.forOwner(login)).getLimits());
     }
 
     /**
@@ -118,11 +128,20 @@ export class QaapUsageEndpoint implements BackendApplicationContribution {
         return typeof value === 'string' && value.trim() ? value.trim() : undefined;
     }
 
+    /**
+     * The signed-in login, or `undefined` after answering 401. A per-tenant backend holds one tenant's agent
+     * home only, so a login other than its tenant's is refused (403) rather than shown the tenant's usage.
+     */
     protected requireLogin(req: Request, res: Response): string | undefined {
         const ctx = this.auth.authenticate(req);
         const login = ctx.kind === 'unauthorized' ? undefined : this.auth.resolveUserLogin(ctx);
         if (!login) {
             res.status(401).json({ error: 'Not signed in' });
+            return undefined;
+        }
+        const tenantLogin = isQaapTenantBackendMode() ? process.env[QAAP_TENANT_LOGIN_ENV]?.trim() : undefined;
+        if (tenantLogin && tenantLogin.toLowerCase() !== login.trim().toLowerCase()) {
+            res.status(403).json({ error: 'Usage belongs to another user' });
             return undefined;
         }
         return login;

@@ -16,6 +16,7 @@ import {
     exchangeGithubCode,
     fetchGithubPullRequests,
     mergeGithubPullRequest,
+    pickGithubPullRequestNumberForBranch,
     fetchGithubRepositoryRequest,
     resolveGithubApiBaseUrl,
     resolveGithubApiTimeoutMs,
@@ -421,5 +422,25 @@ describe('pull request detail extras (checks, reviews, timeline)', () => {
             'commented:bo:LGTM:',
             'reviewed:cy::approved',
         ]);
+    });
+});
+
+describe('pickGithubPullRequestNumberForBranch', () => {
+    it('answers with no pull request for a branch that has none', () => {
+        expect(pickGithubPullRequestNumberForBranch([])).to.equal(undefined);
+    });
+
+    it('prefers an open pull request over a more recently updated closed one', () => {
+        expect(pickGithubPullRequestNumberForBranch([
+            { number: 9, state: 'closed' },
+            { number: 4, state: 'open' },
+        ])).to.equal(4);
+    });
+
+    it('falls back to the most recently updated pull request (GitHub order) when none is open', () => {
+        expect(pickGithubPullRequestNumberForBranch([
+            { number: 12, state: 'closed' },
+            { number: 7, state: 'closed' },
+        ])).to.equal(12);
     });
 });

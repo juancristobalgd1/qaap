@@ -13,6 +13,9 @@
 
 import type { MobileProjectsTranscriptMessagesRenderUi } from './mobile-projects-transcript-messages-render-ui';
 
+/** What a queued transcript row asks the composer queue to do with its message. */
+export type QaapQueuedMessageAction = 'send' | 'edit' | 'remove';
+
 /** Members referenced by the extracted `mobile-projects-transcript-messages-render-ui-*` modules. */
 export type MobileProjectsTranscriptMessagesRenderUiContextMember =
     | 'applyTranscriptScrollAfterMutation'
@@ -30,6 +33,7 @@ export type MobileProjectsTranscriptMessagesRenderUiContextMember =
     | 'createTranscriptMessageRow'
     | 'createTranscriptMessageRowAtIndex'
     | 'dispatchQueuedMessage'
+    | 'queuedMessageAction'
     | 'ensureLiveStatusBeforeRemovingActivityRow'
     | 'findAppendedUserMessageIndex'
     | 'findLastUserMessageIndex'
