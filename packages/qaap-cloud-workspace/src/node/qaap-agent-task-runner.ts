@@ -663,9 +663,10 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         const descriptors = listAgentsHelper(this.detectedAgents);
         return withQaapHarnessInstanceDescriptors(descriptors, this.preferenceReaderForOwner(ownerLogin), this.isAgentEnabled.bind(this), ownerLogin)
             .map(agent => {
-                // A harness instance (`codex#2`) reports its base harness's session and CLI.
+                // A harness instance (`codex#2`) has its own session state (its own cache key); access rules
+                // still follow the base harness it runs as.
                 const harnessId = resolveQaapHarnessBaseId(agent.id);
-                const { connectionState, probeSettled } = this.agentConnectionSnapshot(harnessId, ownerLogin);
+                const { connectionState, probeSettled } = this.agentConnectionSnapshot(agent.id, ownerLogin);
                 const accessState = resolveAgentAccess({ agentId: harnessId, connectionState, probeSettled });
                 const session = QaapHarnessModelAvailability.session({ connectionState, accessState, probeSettled });
                 // `available` means "can run now". A signed-out enabled harness stays listed so the picker can
@@ -876,10 +877,12 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
      * QAAP_TENANT_BACKEND_HOME, not under the repos root). The caller records a failed probe.
      */
     protected async probeAgentConnectionState(
-        agentId: string,
+        harnessKey: string,
         bin: string,
         ownerLogin?: string,
     ): Promise<QaapAgentDescriptor['connectionState']> {
+        // The probe command is the base harness's (a harness instance's own binary and folder are not wired yet).
+        const agentId = resolveQaapHarnessBaseId(harnessKey);
         const probe = resolveAgentConnectionProbeHelper(agentId, bin);
         if (!probe) {
             return 'unknown';
@@ -991,7 +994,9 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         agentId: string,
         ownerLogin?: string,
     ): { readonly settingsConnected: boolean | undefined; readonly probeBin: string | undefined } | undefined {
-        const normalized = agentId.trim().toLowerCase();
+        const harnessKey = agentId.trim().toLowerCase();
+        // A harness instance is detected as its base harness (its binary and folder come with the instance plan).
+        const normalized = resolveQaapHarnessBaseId(harnessKey);
         const candidate = this.detectedAgents.get(normalized);
         if (!candidate) {
             return undefined;
