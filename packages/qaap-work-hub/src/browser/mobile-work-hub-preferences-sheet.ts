@@ -30,7 +30,8 @@ import {
 } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import type { QaapAuthSessionGithubCredential } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import { QaapUserFacingErrors } from '@theia/qaap-adapters/lib/common/qaap-user-facing-error';
-import { listAllConversationGroups, type QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { listAllConversationGroups, QAAP_AGENT_CONVERSATION_API_PATH, type QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { fetchQaapAgentToolUsage, type QaapAgentToolUsageRow } from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-usage';
 import { isWorkHubTheiaDialogOpen } from '../common/qaap-work-hub-dialog-utils';
 import {
     hasPreferencesContent,
@@ -1104,6 +1105,20 @@ export class MobileWorkHubPreferencesSheet {
         calendar.showLoading();
         this.loadProfileActivity(calendar, overview, token);
         this.loadProfileTokens(overview, token);
+        this.loadProfileToolUsage(overview, token);
+    }
+
+    /** Most used skills, MCP servers and tools across the owner's tasks; hidden when the backend cannot answer. */
+    protected async loadProfileToolUsage(overview: MobileWorkHubProfileOverview, token: number): Promise<void> {
+        let rows: readonly QaapAgentToolUsageRow[] | undefined;
+        try {
+            rows = await fetchQaapAgentToolUsage(QAAP_AGENT_CONVERSATION_API_PATH);
+        } catch {
+            rows = undefined;
+        }
+        if (this.isCurrentProfileRender(token)) {
+            overview.setToolUsage(rows);
+        }
     }
 
     protected isCurrentProfileRender(token: number): boolean {

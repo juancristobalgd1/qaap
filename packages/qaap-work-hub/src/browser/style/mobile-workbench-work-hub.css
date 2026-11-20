@@ -13685,6 +13685,53 @@ body.theia-mod-work-hub-settings-resizing * {
   background: var(--theia-button-background);
 }
 
+.qaap-profile-overview-wide {
+  grid-column: 1 / -1;
+}
+
+.qaap-profile-overview-tool-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--q-space-5, 10px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.qaap-profile-overview-tool {
+  display: flex;
+  align-items: center;
+  gap: var(--q-space-5, 10px);
+  font-size: 13px;
+}
+
+.qaap-profile-overview-tool-icon {
+  display: inline-grid;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--q-line, var(--theia-widget-border));
+  color: var(--theia-descriptionForeground);
+  font-size: 12px;
+}
+
+.qaap-profile-overview-tool-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--theia-foreground);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qaap-profile-overview-tool-runs {
+  flex: 0 0 auto;
+  color: var(--theia-descriptionForeground);
+  font-variant-numeric: tabular-nums;
+}
+
 .qaap-profile-overview-empty {
   margin: 0;
   color: var(--theia-descriptionForeground);

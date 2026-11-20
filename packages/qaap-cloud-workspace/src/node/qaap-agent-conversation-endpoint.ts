@@ -41,6 +41,12 @@ import type { QaapAgentApprovalPolicyId } from '@theia/qaap-shared-core/lib/comm
 import type { QaapAgUiEvent } from '@theia/qaap-shared-core/lib/common/qaap-ag-ui-transcript-adapter';
 import type { QaapTurnLatencyMark } from '@theia/qaap-shared-core/lib/common/qaap-agent-stream-metrics';
 import type { QaapAgentToolApprovalRules } from '../common/qaap-agent-conversation';
+import {
+    aggregateQaapAgentToolUsage,
+    QAAP_AGENT_TOOL_USAGE_ROUTE,
+    type QaapAgentToolUsageResponse,
+    type QaapAgentToolUsageRow,
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-usage';
 import { parseSideChatContextPreamble, parseSideChatCreateFields, type QaapSideChatCreateFields } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-side-chat';
 import { resolveEffectiveToolApprovalRules } from '../common/qaap-agent-approval-flags';
 import { QaapAgentConversationStore, QaapMaxConcurrentRunsError } from './qaap-agent-conversation-store';
@@ -195,6 +201,15 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
                 // Snapshot cut: flush first so the groups and the cursor describe the same instant.
                 ...cursor,
             } satisfies QaapAgentConversationAllResponse);
+        });
+        // The owner's most used skills, MCP servers and tools (Settings → Profile). Static segment before `:id`.
+        app.get(`${QAAP_AGENT_CONVERSATION_API_PATH}/${QAAP_AGENT_TOOL_USAGE_ROUTE}`, (req, res) => {
+            const ctx = this.requireAuth(req, res);
+            if (!ctx) {
+                return;
+            }
+            res.setHeader('Cache-Control', 'no-store');
+            res.json({ rows: this.toolUsageFor(ctx) } satisfies QaapAgentToolUsageResponse);
         });
         app.get(`${QAAP_AGENT_CONVERSATION_API_PATH}/stream`, (req, res) => {
             this.handleStream(req, res);
@@ -1403,6 +1418,24 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
         } catch {
             // Peek stays on Starter until the store recovers.
         }
+    }
+
+    /** Per-owner tool usage, recomputed at most once a minute: it walks every message of the owner's tasks. */
+    protected readonly toolUsageCache = new Map<string, { readonly at: number; readonly rows: readonly QaapAgentToolUsageRow[] }>();
+
+    protected toolUsageFor(ctx: QaapGithubAuthContext): readonly QaapAgentToolUsageRow[] {
+        const key = this.auth.resolveUserLogin(ctx)?.toLowerCase() ?? '';
+        const cached = this.toolUsageCache.get(key);
+        if (cached && Date.now() - cached.at < 60_000) {
+            return cached.rows;
+        }
+        const owned = this.store.list(undefined)
+            .filter(summary => this.auth.ownsWorkspacePath(ctx, summary.cwd))
+            .map(summary => this.store.get(summary.id))
+            .filter((conversation): conversation is QaapAgentConversation => !!conversation);
+        const rows = aggregateQaapAgentToolUsage(owned);
+        this.toolUsageCache.set(key, { at: Date.now(), rows });
+        return rows;
     }
 
     protected requireAuth(req: Request, res: Response): QaapGithubAuthContext | undefined {
