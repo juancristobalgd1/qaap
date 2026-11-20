@@ -476,6 +476,18 @@ function workspacePathSegments(workspacePath: string): string[] {
     return workspacePath.trim().replace(/\\/g, '/').split('/').filter(Boolean);
 }
 
+/**
+ * True when `segments[index]` is a repositories root: `repos` (production `/workspace/repos`, or any
+ * configured `QAAP_REPOS_ROOT` ending in `repos`) or the local dev root `~/.qaap/workspaces`
+ * ({@link resolveQaapReposRoot}). Without the dev root, a desktop clone such as
+ * `~/.qaap/workspaces/users/_dev/acme/web` had no `github:acme/web` identity and its workspace card
+ * showed up next to the GitHub card of the same repository.
+ */
+function isQaapReposRootSegment(segments: readonly string[], index: number): boolean {
+    const segment = segments[index];
+    return segment === 'repos' || (segment === 'workspaces' && index > 0 && segments[index - 1] === '.qaap');
+}
+
 /** The clone whose root is exactly `segments`, anchored on the `repos` segment at `reposIndex`. */
 function cloneRootAt(segments: readonly string[], reposIndex: number): QaapWorkspaceRepoClone | undefined {
     const tail = segments.slice(reposIndex + 1);
@@ -497,7 +509,7 @@ function isFlatUsersOwner(clone: QaapWorkspaceRepoClone): boolean {
 /** First `repos` segment, first to last, whose tail is exactly a clone root of the wanted layout. */
 function exactCloneRoot(segments: readonly string[], perUser: boolean): QaapWorkspaceRepoClone | undefined {
     for (let index = 0; index < segments.length; index++) {
-        const clone = segments[index] === 'repos' ? cloneRootAt(segments, index) : undefined;
+        const clone = isQaapReposRootSegment(segments, index) ? cloneRootAt(segments, index) : undefined;
         if (clone && !!clone.login === perUser) {
             return clone;
         }
@@ -508,7 +520,7 @@ function exactCloneRoot(segments: readonly string[], perUser: boolean): QaapWork
 /** The per-user clone `repos/users/{login}/{owner}/{repo}` the path is strictly below, shortest leading part first. */
 function perUserCloneAbove(segments: readonly string[]): QaapWorkspaceRepoClone | undefined {
     for (let end = 5; end < segments.length; end++) {
-        const clone = segments[end - 5] === 'repos' ? cloneRootAt(segments.slice(0, end), end - 5) : undefined;
+        const clone = isQaapReposRootSegment(segments, end - 5) ? cloneRootAt(segments.slice(0, end), end - 5) : undefined;
         if (clone?.login) {
             return clone;
         }
@@ -552,7 +564,7 @@ export function parseQaapWorkspaceRepoPath(workspacePath: string): QaapWorkspace
         return flatRoot;
     }
     for (let index = segments.length - 3; index >= 0; index--) {
-        const clone = segments[index] === 'repos' ? cloneRootAt(segments.slice(0, index + 3), index) : undefined;
+        const clone = isQaapReposRootSegment(segments, index) ? cloneRootAt(segments.slice(0, index + 3), index) : undefined;
         if (clone) {
             // `repos/users/{x}` anchors here (the per-user container): ambiguous, never an outer `repos` reading.
             return isFlatUsersOwner(clone) ? undefined : clone;

@@ -244,6 +244,9 @@ export function hasAgentSettingsCredentials(agentId: string, readPreference: (ke
  */
 export const SIGN_IN_ONLY_AGENT_API_KEY_ENV: Readonly<Record<string, readonly string[]>> = {
     codex: ['OPENAI_API_KEY', 'CODEX_API_KEY', 'OPENAI_BASE_URL'],
+    // Claude Code prefers an inherited key or token over its own sign-in, so signing out of Claude in
+    // Settings → Harness left it signed in whenever the app was started from a shell that exports one.
+    claude: ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_BASE_URL'],
 };
 
 /** Harness id of a task: its agent id, or `codex` for a legacy task whose command runs the Codex CLI. */
@@ -319,6 +322,13 @@ export const AGY_CLI_CONNECTION_PROBE_SCRIPT = 'T=""; command -v timeout >/dev/n
 export const PI_CONNECTION_PROBE_SCRIPT = 'f="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/auth.json"; grep -q \'"type"\' "$f" 2>/dev/null && echo "logged in" || echo "not logged in"';
 
 /**
+ * Grok CLI has no status subcommand; `grok login` writes OAuth/session credentials into
+ * `~/.grok/auth.json`. A non-empty file containing an access/session token or user id proves a
+ * signed-in session; its absence reports `"not logged in"`.
+ */
+export const GROK_CONNECTION_PROBE_SCRIPT = 'f="$HOME/.grok/auth.json"; [ -s "$f" ] && grep -Eq \'"(access_token|refresh_token|token|session_token|api_key|user_id)"[[:space:]]*:[[:space:]]*"[^"]\' "$f" 2>/dev/null && echo "logged in" || echo "not logged in"';
+
+/**
  * Codex sign-in check. `codex login status` alone is fooled by a hollow `auth.json`: with
  * `{"OPENAI_API_KEY":null,"tokens":null}` it prints "Logged in using ChatGPT" and exits 0, while every
  * turn then fails ("plan type is required for chatgpt authentication" or "401 Unauthorized: Missing
@@ -341,6 +351,9 @@ export function resolveAgentConnectionProbe(agentId: string, bin: string): { rea
     }
     if (normalized === 'pi') {
         return { file: 'sh', args: ['-c', PI_CONNECTION_PROBE_SCRIPT] };
+    }
+    if (normalized === 'grok' && process.platform !== 'win32') {
+        return { file: 'sh', args: ['-c', GROK_CONNECTION_PROBE_SCRIPT] };
     }
     if (normalized === 'codex' && process.platform !== 'win32') {
         // No POSIX shell on Windows: there the CLI's own `login status` answers alone.

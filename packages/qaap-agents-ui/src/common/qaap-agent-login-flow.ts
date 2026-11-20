@@ -158,6 +158,10 @@ export interface QaapAgentLoginFlowOptions {
      * so (agy): every challenge with a link is published with the paste-back field.
      */
     readonly alwaysAcceptsCode?: boolean;
+    /** Harness-specific regex sources (case-insensitive) confirming sign-in completion. */
+    readonly extraSuccessPatterns?: readonly string[];
+    /** Harness-specific regex sources (case-insensitive) indicating sign-in failure (checked before success). */
+    readonly extraFailurePatterns?: readonly string[];
 }
 
 /**
@@ -318,12 +322,12 @@ export class QaapAgentLoginFlow {
             return;
         }
         const visible = stripAgentLoginShellEcho(this.output);
-        if (isAgentLoginSuccessOutput(visible)) {
-            this.connected();
+        if (this.isFailureOutput(visible)) {
+            this.set({ phase: 'failed', reason: 'rejected', tail: resolveAgentLoginOutputTail(this.output) });
             return;
         }
-        if (isAgentLoginFailureOutput(visible)) {
-            this.set({ phase: 'failed', reason: 'rejected', tail: resolveAgentLoginOutputTail(this.output) });
+        if (this.isSuccessOutput(visible)) {
+            this.connected();
             return;
         }
         if (this.current.phase === 'code-submitted') {
@@ -352,12 +356,17 @@ export class QaapAgentLoginFlow {
         this.set({ phase: 'challenge', challenge: shown });
     }
 
-    /** The login command ended (exit marker). 0 is success; anything else shows the CLI output. */
+    /** The login command ended (exit marker). 0 is success unless the CLI reported rejection; anything else shows the CLI output. */
     exited(code: number): void {
         if (!this.isRunning()) {
             return;
         }
         if (code === 0) {
+            const visible = stripAgentLoginShellEcho(this.output);
+            if (this.isFailureOutput(visible)) {
+                this.set({ phase: 'failed', reason: 'rejected', tail: resolveAgentLoginOutputTail(this.output) });
+                return;
+            }
             this.connected();
             return;
         }
@@ -421,6 +430,14 @@ export class QaapAgentLoginFlow {
         }
     }
 
+    protected isFailureOutput(visible: string): boolean {
+        return isAgentLoginFailureOutput(visible) || matchesAnyPatternSource(visible, this.options.extraFailurePatterns);
+    }
+
+    protected isSuccessOutput(visible: string): boolean {
+        return isAgentLoginSuccessOutput(visible) || matchesAnyPatternSource(visible, this.options.extraSuccessPatterns);
+    }
+
     protected resetOutput(): void {
         this.output = '';
         this.rawTail = '';
@@ -438,6 +455,19 @@ export class QaapAgentLoginFlow {
         this.current = state;
         this.options.onDidChange(state);
     }
+}
+
+function matchesAnyPatternSource(text: string, patterns: readonly string[] | undefined): boolean {
+    if (!patterns?.length || !text) {
+        return false;
+    }
+    return patterns.some(source => {
+        try {
+            return new RegExp(source, 'i').test(text);
+        } catch {
+            return false;
+        }
+    });
 }
 
 function sameChallenge(left: QaapAgentAuthLoginChallenge, right: QaapAgentAuthLoginChallenge): boolean {

@@ -99,7 +99,39 @@ export const QAAP_BUILTIN_AGENT_DEFINITIONS: readonly QaapBuiltinAgentDefinition
         label: 'Antigravity CLI',
         bin: 'agy',
         sessionCheck: 'probe',
-        signOut: { kind: 'none', reason: 'agy has no logout command and keeps its Google session in the OS keyring.' },
+        signOut: {
+            kind: 'by-bin',
+            byBin: {
+                agy: {
+                    kind: 'tui',
+                    steps: [
+                        {
+                            text: '/logout\r',
+                            waitFor: 'Antigravity|Ask anything|Type\\s+/|@\\s+to\\s+mention|Select login method',
+                            fallbackMs: 2_500,
+                        },
+                        {
+                            text: '\r',
+                            waitFor: 'Confirm Sign Out',
+                            fallbackMs: 1_500,
+                        },
+                    ],
+                    successPatterns: [
+                        'Signed out of\\b',
+                        'Signed out from server:',
+                        'Select login method',
+                    ],
+                    timeoutMs: 12_000,
+                },
+                gemini: {
+                    kind: 'files',
+                    paths: [
+                        { root: 'home', relative: '.gemini/oauth_creds.json' },
+                        { root: 'home', relative: '.gemini/google_accounts.json' },
+                    ],
+                },
+            },
+        },
         template: resolveAntigravityCliTemplate('agy'),
     },
     {
@@ -110,7 +142,7 @@ export const QAAP_BUILTIN_AGENT_DEFINITIONS: readonly QaapBuiltinAgentDefinition
         signOut: {
             kind: 'json-keys',
             path: { root: 'home', relative: '.copilot/config.json' },
-            keys: ['loggedInUsers', 'lastLoggedInUser', 'copilot_tokens'],
+            keys: ['loggedInUsers', 'lastLoggedInUser', 'copilot_tokens', 'logged_in_users', 'last_logged_in_user'],
         },
         template: 'copilot --autopilot --yolo --max-autopilot-continues 20 -p {prompt}',
     },
@@ -118,7 +150,7 @@ export const QAAP_BUILTIN_AGENT_DEFINITIONS: readonly QaapBuiltinAgentDefinition
         id: 'grok',
         label: 'Grok Build',
         bin: 'grok',
-        sessionCheck: 'attestation',
+        sessionCheck: 'probe',
         signOut: { kind: 'cli', args: ['logout'] },
         template: 'grok --always-approve {model_flags} -p {prompt}',
     },

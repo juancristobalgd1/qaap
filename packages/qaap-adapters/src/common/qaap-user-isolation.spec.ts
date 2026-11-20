@@ -182,6 +182,13 @@ describe('parseGithubFullNameFromWorkspacePath', () => {
 });
 
 describe('parseQaapWorkspaceRepoRoot', () => {
+    it('reads the local dev repos root ~/.qaap/workspaces like a repos root', () => {
+        expect(parseQaapWorkspaceRepoRoot('/Users/me/.qaap/workspaces/users/_dev/esorjs/esor-vite'))
+            .to.deep.equal({ owner: 'esorjs', repo: 'esor-vite', login: '_dev' });
+        expect(parseQaapWorkspaceRepoRoot('/Users/me/workspaces/users/_dev/esorjs/esor-vite'), 'only under .qaap').to.equal(undefined);
+        expect(parseQaapWorkspaceRepoRoot('/Users/me/.qaap/workspaces/users/_dev/esorjs/esor-vite/src'), 'a folder below a root').to.equal(undefined);
+    });
+
     it('keeps casing and reports the per-user login', () => {
         expect(parseQaapWorkspaceRepoRoot('/workspace/repos/users/me/Acme/Web')).to.deep.equal({ owner: 'Acme', repo: 'Web', login: 'me' });
         expect(parseQaapWorkspaceRepoRoot('C:\\data\\repos\\Acme\\Web')).to.deep.equal({ owner: 'Acme', repo: 'Web' });

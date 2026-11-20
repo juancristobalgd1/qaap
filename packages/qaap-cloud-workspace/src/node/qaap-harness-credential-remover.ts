@@ -5,6 +5,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { parse as parseJsonc, type ParseError } from 'jsonc-parser';
 import {
     isSafeRelativeCredentialPath,
     type QaapHarnessCredentialPath,
@@ -243,14 +244,10 @@ export function stripHarnessJsonCredentialKeys(
         }
         const raw = fs.readFileSync(fd, 'utf8');
 
-        let parsed: unknown;
-        try {
-            parsed = JSON.parse(raw);
-        } catch {
+        const errors: ParseError[] = [];
+        const parsed: unknown = parseJsonc(raw, errors, { allowTrailingComma: true });
+        if (errors.length > 0 || !parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
             throw new QaapHarnessCredentialPathError('invalid-json', 'Credential JSON file could not be parsed.');
-        }
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-            throw new QaapHarnessCredentialPathError('invalid-json', 'Credential JSON root must be an object.');
         }
 
         const record = parsed as Record<string, unknown>;
@@ -274,5 +271,47 @@ export function stripHarnessJsonCredentialKeys(
         return true;
     } finally {
         fs.closeSync(fd);
+    }
+}
+
+function isNonEmptyCredentialValue(value: unknown): boolean {
+    if (typeof value === 'string') {
+        return value.trim().length > 0;
+    }
+    if (Array.isArray(value)) {
+        return value.length > 0;
+    }
+    if (value !== null && typeof value === 'object') {
+        return Object.keys(value as Record<string, unknown>).length > 0;
+    }
+    return false;
+}
+
+/**
+ * Read-only positive credential check for JSON/JSONC config files (e.g. Copilot CLI's
+ * `~/.copilot/config.json`). Returns true only when the allowlisted file exists within the
+ * owner's allowed roots, parses cleanly as a JSON/JSONC object, and holds at least one non-empty
+ * value under {@link keys}. Missing, malformed or empty files return false without throwing.
+ */
+export function hasHarnessJsonCredentialKeys(
+    spec: QaapHarnessCredentialPath,
+    keys: readonly string[],
+    roots: QaapHarnessCredentialRoots,
+): boolean {
+    try {
+        const target = resolveAllowedCredentialFile(spec, roots);
+        if (!target.exists || !target.realPath) {
+            return false;
+        }
+        const raw = fs.readFileSync(target.realPath, 'utf8');
+        const errors: ParseError[] = [];
+        const parsed: unknown = parseJsonc(raw, errors, { allowTrailingComma: true });
+        if (errors.length > 0 || !parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            return false;
+        }
+        const record = parsed as Record<string, unknown>;
+        return keys.some(key => Object.prototype.hasOwnProperty.call(record, key) && isNonEmptyCredentialValue(record[key]));
+    } catch {
+        return false;
     }
 }

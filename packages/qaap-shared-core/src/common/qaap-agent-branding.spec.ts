@@ -25,20 +25,23 @@ describe('qaap-agent-branding', () => {
         expect(resolveAgentBrand('openclaw')?.label).to.equal('OpenClaw');
         expect(resolveAgentBrand('openclaw')?.svg).to.include('<svg');
         expect(resolveAgentBrand('antigravity')?.tone).to.equal('light');
-        expect(resolveAgentBrand('codex')?.tone).to.equal('dark');
+        // Monochrome marks drawn with currentColor: no dark tile, they follow the text color in both themes.
+        for (const id of ['codex', 'cursor', 'pi']) {
+            expect(resolveAgentBrand(id)?.tone, id).to.equal('light');
+            expect(resolveAgentBrand(id)?.svg, id).to.include('fill="currentColor"');
+        }
         expect(resolveAgentBrand('qwen')?.label).to.equal('Qwen Code');
         expect(resolveAgentBrand('pi')?.label).to.equal('Pi');
         expect(resolveAgentBrand('pi')?.svg).to.include('<svg');
         expect(resolveAgentBrand(OPENCLAUDE_AGENT_ID)?.label).to.equal('OpenClaude');
     });
 
-    it('resolveAgentBrand uses light/dark Grok Build mark variants', () => {
+    it('resolveAgentBrand uses the theme-following vector Grok Build mark', () => {
         const brand = resolveAgentBrand('grok');
         expect(brand?.label).to.equal('Grok Build');
         expect(brand?.tone).to.equal('light');
-        expect(brand?.svgLight).to.include('data:image/png;base64,');
-        expect(brand?.svgDark).to.include('data:image/png;base64,');
-        expect(brand?.svgLight).to.not.equal(brand?.svgDark);
+        expect(brand?.svgLight).to.include('fill="currentColor"');
+        expect(brand?.svgDark).to.include('fill="currentColor"');
     });
 
     it('resolveAgentBrand uses the QAIQ terminal mark and uniquifies its gradients', () => {

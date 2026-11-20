@@ -25,6 +25,7 @@ import {
     createQaapBillingCheckout,
     fetchQaapBilling,
     readQaapDesktopGithubCredential,
+    refreshQaapDesktopGithubCredential,
     type QaapBillingApiResponse,
 } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import type { QaapAuthSessionGithubCredential } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
@@ -1096,6 +1097,24 @@ export class MobileWorkHubPreferencesSheet {
             this.renderProfileActivity(panel);
         }
         this.customContentHost.append(panel);
+        if (environment.electron.is()) {
+            this.refreshDesktopProfileCredential(desktopCredential?.user.login);
+        }
+    }
+
+    /**
+     * Desktop: asks the backend for the GitHub account behind `gh` (local mode never syncs it at startup) and paints the
+     * Profile again when it differs from the one shown, so a signed-in `gh` never reads "Not signed in".
+     */
+    protected refreshDesktopProfileCredential(shownLogin: string | undefined): void {
+        void refreshQaapDesktopGithubCredential().then(credential => {
+            if (credential?.user.login === shownLogin) {
+                return;
+            }
+            if (this.visible && this.activeSettingsSectionId === 'profile') {
+                this.renderCustomSettingsSection('profile');
+            }
+        });
     }
 
     protected renderProfileActivity(panel: HTMLElement): void {
