@@ -147,6 +147,17 @@ describe('harness connection state', () => {
         expect(resolveTaskHarnessId('Codex', 'anything')).to.equal('codex');
     });
 
+    it('probes Copilot from the account its login records, and never reads a missing account as a sign-out', function (): void {
+        if (process.platform === 'win32') {
+            this.skip();
+        }
+        const probe = resolveAgentConnectionProbe('copilot', 'copilot');
+        expect(probe?.file).to.equal('sh');
+        expect(probe?.args.join(' ')).to.contain('loggedInUsers');
+        expect(classifyAgentConnectionProbe('copilot', 0, 'logged in', false)).to.equal('connected');
+        expect(classifyAgentConnectionProbe('copilot', 0, 'no copilot account recorded', false)).to.equal('unknown');
+    });
+
     it('withholds inherited Anthropic keys and tokens from Claude, so its own sign-out holds', () => {
         const env = { ANTHROPIC_API_KEY: 'sk-ant', ANTHROPIC_AUTH_TOKEN: 't', CLAUDE_CODE_OAUTH_TOKEN: 'o', ANTHROPIC_BASE_URL: 'https://x', PATH: '/usr/bin' };
         expect(stripSignInOnlyAgentApiKeyEnv({ ...env }, 'claude')).to.deep.equal({ PATH: '/usr/bin' });

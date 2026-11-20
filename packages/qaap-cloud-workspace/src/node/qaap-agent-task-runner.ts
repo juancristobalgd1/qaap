@@ -943,7 +943,10 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             return this.sessionAttestations?.isAttested(ownerLogin, normalized) ? 'connected' : 'unknown';
         }
         void this.refreshAgentConnectionState(normalized, ownerLogin);
-        return this.agentConnectionStates.get(this.agentConnectionCacheKey(normalized, ownerLogin))?.state ?? 'unknown';
+        const probed = this.agentConnectionStates.get(this.agentConnectionCacheKey(normalized, ownerLogin))?.state ?? 'unknown';
+        // A probe that cannot see this session (Copilot on `GH_TOKEN`) answers `unknown`: a fresh sign-in
+        // attestation still counts, as it did before the harness had a probe.
+        return probed === 'unknown' && this.sessionAttestations?.isAttested(ownerLogin, normalized) ? 'connected' : probed;
     }
 
     /**

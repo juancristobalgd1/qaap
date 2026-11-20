@@ -77,4 +77,20 @@ describe('MobileWorkHubProfileOverview', () => {
         expect(stat(overview, 'tasks')).to.equal('—');
         expect(overview.node.querySelector('.qaap-profile-overview-details')!.textContent).to.contain('could not be loaded');
     });
+
+    it('lists the most used skills and tools, and hides the section without data', () => {
+        const overview = new MobileWorkHubProfileOverview(IDENTITY, true);
+        overview.setInsights(INSIGHTS);
+        const tools = overview.node.querySelector<HTMLElement>('.qaap-profile-overview-tools')!;
+        expect(tools.hidden, 'hidden until the usage loads').to.equal(true);
+        overview.setToolUsage([{ name: '$checkout', kind: 'skill', runs: 56 }, { name: 'github', kind: 'mcp', runs: 1 }]);
+        expect(tools.hidden).to.equal(false);
+        const rows = Array.from(tools.querySelectorAll('.qaap-profile-overview-tool'));
+        expect(rows.map(row => row.querySelector('.qaap-profile-overview-tool-name')?.textContent)).to.deep.equal(['$checkout', 'github']);
+        expect(rows[0].querySelector('.qaap-profile-overview-tool-runs')?.textContent).to.equal('56 runs');
+        expect(rows[1].querySelector('.qaap-profile-overview-tool-runs')?.textContent).to.equal('1 run');
+        overview.setToolUsage(undefined);
+        expect(tools.hidden).to.equal(true);
+        expect(overview.node.querySelector('.qaap-profile-overview-models')!.closest('.qaap-profile-overview-wide')).to.not.equal(null);
+    });
 });

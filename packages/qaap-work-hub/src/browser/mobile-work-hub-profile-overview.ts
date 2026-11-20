@@ -8,6 +8,7 @@ import { appendAgentBrandIcon } from '@theia/qaap-shared-core/lib/common/qaap-ag
 import { formatQaiqModelDisplayLabel } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
 import { resolveAgentDisplayLabel } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import type { QaapProfileInsights, QaapProfileUsageShare } from '../common/qaap-profile-insights';
+import type { QaapAgentToolUsageRow } from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-usage';
 
 const EMPTY_VALUE = '—';
 
@@ -32,6 +33,8 @@ export class MobileWorkHubProfileOverview {
     readonly calendarSlot: HTMLElement;
     protected readonly stats = new Map<'tokens' | 'peak' | 'tasks' | 'current' | 'longest', HTMLElement>();
     protected readonly details: HTMLElement;
+    /** Most used skills & tools; filled by {@link setToolUsage}, independently of the history. */
+    protected readonly tools: HTMLElement;
 
     constructor(identity: MobileWorkHubProfileIdentityView, withActivity: boolean) {
         this.node = document.createElement('div');
@@ -41,6 +44,9 @@ export class MobileWorkHubProfileOverview {
         this.calendarSlot.className = 'qaap-profile-overview-calendar';
         this.details = document.createElement('div');
         this.details.className = 'qaap-profile-overview-details';
+        this.tools = createSection(nls.localize('qaap/workHubSettings/profile/toolsTitle', 'Most used skills & tools'));
+        this.tools.classList.add('qaap-profile-overview-tools');
+        this.tools.hidden = true;
         if (withActivity) {
             this.node.append(this.createStatsStrip(), this.calendarSlot, this.details);
         }
@@ -54,12 +60,45 @@ export class MobileWorkHubProfileOverview {
             : EMPTY_VALUE);
         this.setStat('current', formatDays(insights.currentStreakDays));
         this.setStat('longest', formatDays(insights.longestStreakDays));
-        this.details.replaceChildren(this.createInsightsSection(insights), this.createModelUsageSection(insights.models));
+        const models = this.createModelUsageSection(insights.models);
+        models.classList.add('qaap-profile-overview-wide');
+        this.details.replaceChildren(this.createInsightsSection(insights), this.tools, models);
     }
 
     /** Tokens over the usage window; `undefined` when the usage data is unavailable. */
     setTokens(tokens: number | undefined): void {
         this.setStat('tokens', tokens === undefined ? EMPTY_VALUE : formatCompact(tokens));
+    }
+
+    /** Lists the most used skills, MCP servers and tools; `undefined` (unavailable) or none hides the section. */
+    setToolUsage(rows: readonly QaapAgentToolUsageRow[] | undefined): void {
+        const heading = this.tools.firstElementChild;
+        this.tools.replaceChildren(...(heading ? [heading] : []));
+        this.tools.hidden = !rows?.length;
+        if (!rows?.length) {
+            return;
+        }
+        const list = document.createElement('ul');
+        list.className = 'qaap-profile-overview-tool-list';
+        for (const row of rows) {
+            const item = document.createElement('li');
+            item.className = 'qaap-profile-overview-tool';
+            item.dataset.kind = row.kind;
+            const icon = document.createElement('span');
+            icon.className = `qaap-profile-overview-tool-icon codicon ${row.kind === 'skill' ? 'codicon-sparkle' : row.kind === 'mcp' ? 'codicon-plug' : 'codicon-tools'}`;
+            icon.setAttribute('aria-hidden', 'true');
+            const name = document.createElement('span');
+            name.className = 'qaap-profile-overview-tool-name';
+            name.textContent = row.name;
+            const runs = document.createElement('span');
+            runs.className = 'qaap-profile-overview-tool-runs';
+            runs.textContent = row.runs === 1
+                ? nls.localize('qaap/workHubSettings/profile/oneRun', '1 run')
+                : nls.localize('qaap/workHubSettings/profile/runs', '{0} runs', formatCount(row.runs));
+            item.append(icon, name, runs);
+            list.append(item);
+        }
+        this.tools.append(list);
     }
 
     /** The task history could not be read: the numbers stay empty and say so. */

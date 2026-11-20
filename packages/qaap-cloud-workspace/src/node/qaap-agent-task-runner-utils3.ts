@@ -329,6 +329,15 @@ export const PI_CONNECTION_PROBE_SCRIPT = 'f="${PI_CODING_AGENT_DIR:-$HOME/.pi/a
 export const GROK_CONNECTION_PROBE_SCRIPT = 'f="$HOME/.grok/auth.json"; [ -s "$f" ] && grep -Eq \'"(access_token|refresh_token|token|session_token|api_key|user_id)"[[:space:]]*:[[:space:]]*"[^"]\' "$f" 2>/dev/null && echo "logged in" || echo "not logged in"';
 
 /**
+ * Copilot CLI has no status command. `copilot login` records the account in `~/.copilot/config.json`
+ * (`loggedInUsers: [{ host, login, kind }]`; the token itself sits in the OS keychain or, without one, in the same
+ * file) and sign-out removes it. A recorded account is a session; its absence is NOT a sign-out (Copilot also runs
+ * on `GH_TOKEN` / `gh`), so the script never prints a signed-out phrase and the state stays `unknown` then.
+ */
+export const COPILOT_CONNECTION_PROBE_SCRIPT = 'f="${COPILOT_HOME:-$HOME/.copilot}/config.json"; '
+    + '[ -s "$f" ] && tr -d \' \\t\\r\\n\' < "$f" | grep -Eq \'"(loggedInUsers|logged_in_users)":\\[\\{\' && echo "logged in" || echo "no copilot account recorded"';
+
+/**
  * Codex sign-in check. `codex login status` alone is fooled by a hollow `auth.json`: with
  * `{"OPENAI_API_KEY":null,"tokens":null}` it prints "Logged in using ChatGPT" and exits 0, while every
  * turn then fails ("plan type is required for chatgpt authentication" or "401 Unauthorized: Missing
@@ -351,6 +360,9 @@ export function resolveAgentConnectionProbe(agentId: string, bin: string): { rea
     }
     if (normalized === 'pi') {
         return { file: 'sh', args: ['-c', PI_CONNECTION_PROBE_SCRIPT] };
+    }
+    if (normalized === 'copilot' && process.platform !== 'win32') {
+        return { file: 'sh', args: ['-c', COPILOT_CONNECTION_PROBE_SCRIPT] };
     }
     if (normalized === 'grok' && process.platform !== 'win32') {
         return { file: 'sh', args: ['-c', GROK_CONNECTION_PROBE_SCRIPT] };

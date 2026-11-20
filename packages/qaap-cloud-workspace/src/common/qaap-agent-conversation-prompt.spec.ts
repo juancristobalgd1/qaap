@@ -6,6 +6,7 @@
 import { expect } from 'chai';
 import type { QaapAgentMessage } from './qaap-agent-conversation';
 import {
+    isBareContinueRequest,
     buildConversationAgentPrompt,
     partitionConversationHistory,
     shouldCompressConversationPrompt,
@@ -111,5 +112,36 @@ describe('buildConversationAgentPrompt', () => {
         });
         expect(prompt).to.include('Earlier context (compressed):');
         expect(prompt).not.to.include(`${bigBody} user-0`);
+    });
+});
+
+describe('bare continue requests', () => {
+    const history: QaapAgentMessage[] = [
+        { id: 'u1', role: 'user', content: 'levantara la app', createdAt: 1 },
+        { id: 'a1', role: 'agent', content: 'Dependencias instaladas; Qaap arranca la preview.', createdAt: 2 },
+    ];
+
+    it('recognises a bare continue in Spanish and English, and nothing longer', () => {
+        for (const text of ['Continúa', 'continua', 'sigue', 'Sigue por favor', 'dale', '¡Adelante!', 'continue', 'Go on.', 'keep going', 'resume']) {
+            expect(isBareContinueRequest(text), text).to.equal(true);
+        }
+        for (const text of ['', 'continúa con el login y añade tests', 'sigue sin funcionar', 'why did it stop?', 'continuous integration']) {
+            expect(isBareContinueRequest(text), text).to.equal(false);
+        }
+    });
+
+    it('tells the agent to resume the last real request instead of asking what to continue', () => {
+        const prompt = buildConversationAgentPrompt({ history, latestUserContent: 'Continúa', contextPreamble: undefined, contextWindowSize: undefined });
+        expect(prompt).to.contain('USER: Continúa');
+        expect(prompt).to.contain('Their last request was: "levantara la app"');
+        expect(prompt).to.contain('Do not ask what to continue.');
+    });
+
+    it('skips earlier bare continues when naming the last request, and adds nothing to an ordinary message', () => {
+        const withContinue: QaapAgentMessage[] = [...history, { id: 'u2', role: 'user', content: 'sigue', createdAt: 3 }, { id: 'a2', role: 'agent', content: '¿Qué?', createdAt: 4 }];
+        expect(buildConversationAgentPrompt({ history: withContinue, latestUserContent: 'continue', contextPreamble: undefined, contextWindowSize: undefined }))
+            .to.contain('Their last request was: "levantara la app"');
+        expect(buildConversationAgentPrompt({ history, latestUserContent: 'Ahora añade un botón', contextPreamble: undefined, contextWindowSize: undefined }))
+            .to.not.contain('Do not ask what to continue');
     });
 });

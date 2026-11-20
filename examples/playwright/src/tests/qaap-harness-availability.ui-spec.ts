@@ -23,8 +23,6 @@ const MODELS_ROUTE = /\/qaap\/api\/agent-tasks\/agent-models(\?.*)?$/;
 const FREE_LABEL = 'Beam Free';
 const PRO_LABEL = 'MiniMax-M3';
 const CHECKING_TITLE = 'Checking sign-in…';
-// The sign-in row title and the locked-row reason of the unified picker (desktop row title).
-const BLOCKED_MESSAGE = `Sign in to ${OPENCODE_LABEL} to use ${PRO_LABEL}.`;
 const SCREENSHOT_DIR = path.resolve(__dirname, '../../harness-availability-screenshots');
 
 type Session = 'signed-in' | 'signed-out' | 'checking';
@@ -147,6 +145,11 @@ function modelPicker(page: Page): Locator {
     return page.locator('[role="dialog"].theia-mod-model-picker');
 }
 
+/** The harness sign-in dialog, opened by picking (or sending with) a model whose only blocker is the session. */
+function loginDialog(page: Page): Locator {
+    return page.locator('.theia-mobile-agent-login-dialog');
+}
+
 /** Selects OpenCode on the picker's harness rail, so its model rows are listed. */
 async function selectOpenCodeRail(page: Page): Promise<void> {
     await modelPicker(page).getByRole('button', { name: OPENCODE_LABEL, exact: true }).click({ timeout: 30_000 });
@@ -173,7 +176,7 @@ test.describe('@qaap-mobile harness availability in the agent picker', () => {
 
     for (const viewport of VIEWPORTS) {
 
-        test(`${viewport.name}: a signed-out harness keeps its Free model selectable and locks the Pro one with a sign-in reason`, async ({ playwright, browser }, testInfo) => {
+        test(`${viewport.name}: a signed-out harness keeps its Free model selectable and opens the sign-in from its Pro one`, async ({ playwright, browser }, testInfo) => {
             const state: HarnessState = { session: 'signed-out' };
             const { page, context } = await openWorkHub({ playwright, browser }, viewport, state);
             try {
@@ -187,13 +190,16 @@ test.describe('@qaap-mobile harness availability in the agent picker', () => {
                 await expect(free).toBeEnabled();
                 await expect(free).toContainText('Free');
 
-                // Locked, not hidden: the row stays tappable only to open the sign-in.
+                // Looks like any other row (no Sign in text or button); picking it opens the harness sign-in dialog.
                 const pro = modelRow(page, PRO_LABEL);
                 await expect(pro).toBeVisible();
+                await expect(pro).toBeEnabled();
                 await expect(pro).toContainText('Pro');
-                await expect(pro).toContainText(`Sign in to ${OPENCODE_LABEL}`);
-                await expect(pro).toHaveAttribute('title', /Sign in/);
+                await expect(pro).not.toContainText(/sign in/i);
                 await capture(testInfo, page, viewport.name, 'signed-out-models');
+                await pro.click();
+                await expect(loginDialog(page)).toBeVisible({ timeout: 30_000 });
+                await expect(loginDialog(page)).toContainText(OPENCODE_LABEL);
             } finally {
                 await context.close();
             }
@@ -238,7 +244,7 @@ test.describe('@qaap-mobile harness availability in the agent picker', () => {
             }
         });
 
-        test(`${viewport.name}: a send with a Pro model whose sign-in is gone is held with the sign-in message`, async ({ playwright, browser }, testInfo) => {
+        test(`${viewport.name}: a send with a Pro model whose sign-in is gone is held and opens the sign-in`, async ({ playwright, browser }, testInfo) => {
             const state: HarnessState = { session: 'signed-in' };
             const { page, context } = await openWorkHub({ playwright, browser }, viewport, state);
             try {
@@ -262,12 +268,9 @@ test.describe('@qaap-mobile harness availability in the agent picker', () => {
                 await page.keyboard.type('Hello');
                 await page.keyboard.press('Enter');
 
-                const message = page.locator('.theia-mobile-snackbar-message').filter({ hasText: BLOCKED_MESSAGE }).first();
-                await expect(message).toBeVisible({ timeout: 30_000 });
-                // Read whole, not cut with an ellipsis: the message wraps instead of overflowing, even at 375 px.
-                const clipped = await message.evaluate(node => node.scrollWidth > node.clientWidth + 1 || node.scrollHeight > node.clientHeight + 1);
-                expect(clipped).toBe(false);
-                await expect(page.locator('.theia-mobile-snackbar-action').filter({ hasText: /sign in/i }).first()).toBeVisible();
+                // Held, and the sign-in dialog opens straight away (the same for every harness).
+                await expect(loginDialog(page)).toBeVisible({ timeout: 30_000 });
+                await expect(loginDialog(page)).toContainText(OPENCODE_LABEL);
                 await capture(testInfo, page, viewport.name, 'send-blocked');
             } finally {
                 await context.close();
@@ -324,7 +327,7 @@ test.describe('@qaap-mobile signed-out Pro harnesses in the agent picker', () =>
     for (const viewport of VIEWPORTS) {
         for (const harness of SIGNED_OUT_HARNESSES) {
 
-            test(`${viewport.name}: ${harness.label} without a session locks every Pro model and offers Sign in next to the search`, async ({ playwright, browser }, testInfo) => {
+            test(`${viewport.name}: ${harness.label} without a session lists its Pro models and opens the sign-in from them`, async ({ playwright, browser }, testInfo) => {
                 const context = await browser.newContext({
                     viewport: { width: viewport.width, height: viewport.height },
                     ...(viewport.touch ? { isMobile: true, hasTouch: true } : {}),
@@ -341,15 +344,16 @@ test.describe('@qaap-mobile signed-out Pro harnesses in the agent picker', () =>
                     for (const model of harness.models) {
                         const row = modelRow(page, model.label);
                         await expect(row).toBeVisible({ timeout: 30_000 });
+                        await expect(row).toBeEnabled();
                         await expect(row).toContainText('Pro');
-                        await expect(row).toContainText(`Sign in to ${harness.label}`);
-                        await expect(row).toHaveAttribute('title', /Sign in/);
+                        await expect(row).not.toContainText(/sign in/i);
                     }
-                    // The header action of the selected harness, at the end of the search row.
-                    const signIn = modelPicker(page).locator('.qaap-model-picker-search .qaap-model-picker-connect-action');
-                    await expect(signIn).toBeVisible();
-                    await expect(signIn).toHaveText(/sign in/i);
+                    // No separate Sign in button: picking a model is the way in.
+                    await expect(modelPicker(page).locator('.qaap-model-picker-connect-action')).toHaveCount(0);
                     await capture(testInfo, page, viewport.name, `${harness.id}-signed-out`);
+                    await modelRow(page, harness.models[0].label).click();
+                    await expect(loginDialog(page)).toBeVisible({ timeout: 30_000 });
+                    await expect(loginDialog(page)).toContainText(harness.label);
                 } finally {
                     await context.close();
                 }
