@@ -13,6 +13,7 @@ import {
     QAAP_REQUIRE_LOGIN_EVENT,
     fetchQaapAuthConfig,
     peekQaapOAuthErrorReasonFromUrl,
+    refreshQaapDesktopGithubCredential,
     revealQaapWorkbenchAfterAuth,
     syncQaapAuthSessionFromServer,
 } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
@@ -87,6 +88,8 @@ export class QaapLoginContribution implements FrontendApplicationContribution {
                 if (!readQaapSignedIn() && !isQaapLoginGateMounted()) {
                     writeQaapAuthSession('gitlab', placeholderQaapAuthUser('gitlab'));
                 }
+                // Local mode never syncs the session: read the desktop GitHub credential (gh) on its own.
+                void refreshQaapDesktopGithubCredential();
             } else {
                 // Reconcile localStorage with the backend (VPS/container restarts can drop server sessions).
                 await syncQaapAuthSessionFromServer(config);

@@ -342,3 +342,23 @@ Pendiente: confirmar CI verde de `2d2605ec3`; rendimiento (store de conversacion
   3. VPS: el backend de tenant llega a `api.githubcopilot.com` a través de Squid (`NODE_USE_ENV_PROXY`);
   4. VPS: la caché del token del dueño se llena antes del primer turno de GitHub; las restricciones de la OAuth App dan 403 legible;
   5. grep de `gho_`, `ghp_` y `github_pat_` en logs y en `settings.json` del tenant tras una sesión completa.
+
+## 2026-11-20 — Ciclo de auth por harness (rama feat/harness-auth-lifecycle-pattern, sin commit)
+
+**Hecho**
+- `qaap-harness-auth-profile.ts`: perfil de login declarativo por harness (tipo de validación, timeouts, patrones de éxito/fallo, respondedores de prompts). Antigravity resuelve por binario (`agy` TUI / `gemini` paste-code); sin binario conocido usa el perfil de Gemini.
+- `QaapAgentLoginPromptResponderDriver`: responde solo los prompts declarados (p. ej. Copilot guardando el token en texto plano en un VPS sin keychain).
+- Sign-out `by-bin`: Antigravity ya cierra sesión (`/logout` en PTY para `agy`, borrado de ficheros para `gemini`); claves extra de Copilot.
+- Grok pasa de atestación a probe (`~/.grok/auth.json`); solo Copilot usa atestación. Sesión `'undetectable'` añadida a los descriptores.
+- El evento de sign-in se emite tras la atestación, para que los oyentes lean el estado nuevo.
+
+**Validación**
+- `tsc -b` limpio en shared-core, agents-ui, cloud-workspace, work-hub y ai-config; drift y package-graph en verde; eslint sin errores.
+- cloud-workspace: 4096 passing. Specs desfasados actualizados (sign-out, atestación, default-agent de Grok).
+- shared-core (5) y work-hub (61) fallan solo en la suite completa (`document/window is not defined`, timeouts por contaminación jsdom); los specs afectados pasan aislados.
+
+**Pendiente**
+- `npm run build:browser` y probar en vivo: sign-out de Antigravity (agy y gemini), login de Copilot en el VPS (prompt de keychain) y probe de Grok.
+- Commit y PR.
+- 20 nov (tarde): sidebar sin proyecto duplicado en escritorio (`~/.qaap/workspaces` reconocido como raíz de repos en `parseQaapWorkspaceRepoRoot`; fusiones del sidebar por identidad canónica); chip de cambio de harness sin el texto «Switched harness». Pendiente: detección del login de Copilot (la CLI no llega a guardar el token; reproducir aprobando un código) y aclarar el caso de Claude sin aviso de sesión (en el Mac está con sesión iniciada).
+- 20 nov (noche): Claude se trata como harness solo de sesión (sin claves heredadas); el cierre de sesión verifica que la sesión se cerró y nombra la variable heredada si no; selector sin botón «Sign in» (elegir un modelo sin sesión abre el diálogo y lo selecciona al conectar); selector de escritorio con el diseño estrecho de móvil; Side chat y Pull request en el menú de vistas móvil (deshabilitados sin tarea abierta). Pendiente: rediseño de la vista de perfil (avatar, estadísticas, actividad, uso por modelo; también en escritorio con GitHub conectado) y detección del login de Copilot.
