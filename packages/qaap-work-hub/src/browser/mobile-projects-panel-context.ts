@@ -99,6 +99,7 @@ export type MobileProjectsPanelContextMember =
     | 'navigateHubTab'
     | 'notifyWorkspaceHubBottomBarRefresh'
     | 'onAgentSignedOut'
+    | 'previewFailureHandoff'
     | 'onBootstrapPreviewOpened'
     | 'onCancelConversation'
     | 'onNavigateToConversation'
