@@ -100,8 +100,8 @@ describe('QaapHarnessSettingsPanel sign-out', () => {
             expect(canSignOutHarnessRow({ baseId: 'codex', isInstance: false }, 'disconnected')).to.equal(false);
             expect(canSignOutHarnessRow({ baseId: 'codex', isInstance: false }, 'unknown')).to.equal(false);
             expect(canSignOutHarnessRow({ baseId: 'codex', isInstance: false }, undefined)).to.equal(false);
-            // Antigravity declares signOut.kind === 'none' (fail-closed even when connected).
-            expect(canSignOutHarnessRow({ baseId: 'antigravity', isInstance: false }, 'connected')).to.equal(false);
+            // Antigravity signs out by binary (agy /logout, gemini credential files), so a connected row offers it.
+            expect(canSignOutHarnessRow({ baseId: 'antigravity', isInstance: false }, 'connected')).to.equal(true);
             // Extra instances do not sign out base credentials.
             expect(canSignOutHarnessRow({ baseId: 'codex', isInstance: true }, 'connected')).to.equal(false);
             // Unknown harness id fails closed.
