@@ -6,6 +6,7 @@
 import { qaapUserScopedStorageKey } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { readQaapAuthUser } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import type { QaapAgentTaskAgentOption } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { QAAP_AGENT_SIGNED_OUT_EVENT } from '@theia/qaap-shared-core/lib/common/qaap-harness-sign-out';
 
 /**
  * sessionStorage base key for the agent catalog this tab last loaded. sessionStorage (not localStorage)
@@ -41,8 +42,8 @@ export function clearComposerAgentCatalogSession(): void {
 let signOutListenerWindow: Window | undefined;
 
 /**
- * Clears the tab's catalog once the session has no signed-in user. Installed on first use so the
- * module has no side effects at import time.
+ * Clears the tab's catalog once the session has no signed-in user or a harness signs out.
+ * Installed on first use so the module has no side effects at import time.
  */
 function installSignOutCleanup(): void {
     if (typeof window === 'undefined' || signOutListenerWindow === window) {
@@ -53,6 +54,9 @@ function installSignOutCleanup(): void {
         if (!readQaapAuthUser()?.login) {
             clearComposerAgentCatalogSession();
         }
+    });
+    window.addEventListener(QAAP_AGENT_SIGNED_OUT_EVENT, () => {
+        clearComposerAgentCatalogSession();
     });
 }
 

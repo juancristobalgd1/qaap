@@ -379,6 +379,9 @@ export async function openAgentLoginDialogInBackground(
         get answersPrompts(): boolean {
             return agyLogin;
         },
+        get alwaysAcceptsCode(): boolean {
+            return agyLogin;
+        },
         onDidChange: state => {
             if (closed) {
                 return;

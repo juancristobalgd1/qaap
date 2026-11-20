@@ -12,6 +12,7 @@ import { Disposable } from '@theia/core/lib/common/disposable';
 import type { AIVariableResolutionRequest } from '@theia/ai-core';
 import { expect } from 'chai';
 import { QAAP_AGENT_SIGNED_IN_EVENT } from './qaap-agent-signed-in-event';
+import { QAAP_AGENT_SIGNED_OUT_EVENT } from '@theia/qaap-shared-core/lib/common/qaap-harness-sign-out';
 import { QaapDirtyWorkspaceError, type QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type { QaapLiveFeedFrame } from '@theia/qaap-shared-core/lib/common/qaap-live-feed-cursor';
 import {
@@ -451,6 +452,24 @@ describe('qaap-work-hub-aux-side-chat-view', () => {
         pro.click();
         expect(h.calls.signIns, 'no second sign-in: the session is now known').to.deep.equal([]);
         expect(q(h.view, '.qaap-work-hub-aux-side-chat-model').textContent).to.contain('Beam Pro');
+    });
+
+    it('reloads the models and locks Pro models when a harness signs out', async () => {
+        const signedInModels = models.map(option => ({ ...option, session: 'signed-in' as const }));
+        const options: { models: readonly QaapWorkHubSideChatModelOption[] } = { models: signedInModels };
+        const h = harness(options);
+        await waitFor(() => (q(h.view, '.qaap-work-hub-aux-side-chat-model').textContent ?? '').includes('Beam Free'));
+        (q(h.view, '.qaap-work-hub-aux-side-chat-model') as HTMLButtonElement).click();
+        pickerRows().find(row => row.textContent?.includes('Beam Pro'))!.click();
+        expect(q(h.view, '.qaap-work-hub-aux-side-chat-model').textContent).to.contain('Beam Pro');
+
+        // Settings → Harness signed opencode out: the host now reports Pro locked.
+        options.models = models;
+        window.dispatchEvent(new window.CustomEvent(QAAP_AGENT_SIGNED_OUT_EVENT, { detail: { agentId: 'opencode' } }));
+        await waitFor(() => (q(h.view, '.qaap-work-hub-aux-side-chat-model').textContent ?? '').includes('Beam Free'));
+        (q(h.view, '.qaap-work-hub-aux-side-chat-model') as HTMLButtonElement).click();
+        pickerRows().find(row => row.textContent?.includes('Beam Pro'))!.click();
+        expect(h.calls.signIns).to.deep.equal(['opencode']);
     });
 
     it('ignores a sign-in event while hidden', async () => {

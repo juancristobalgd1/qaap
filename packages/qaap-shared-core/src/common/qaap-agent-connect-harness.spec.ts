@@ -236,6 +236,33 @@ describe('harness login challenge parsing (captured output)', () => {
         expect(challenge?.codeEntry).to.equal(true);
     });
 
+    it('asks for the pasted code on the Antigravity `Enter the authorization code:` prompt', () => {
+        const challenge = extractAgentAuthLoginChallenge([
+            'Open this link in your browser:',
+            'https://accounts.google.com/o/oauth2/v2/auth?client_id=x&response_type=code&scope=openid',
+            'Enter the authorization code:',
+        ].join('\n'), { preferMode: 'session', agentId: 'antigravity' });
+        expect(challenge?.url?.startsWith('https://accounts.google.com/o/oauth2/v2/auth')).to.equal(true);
+        expect(challenge?.codeEntry).to.equal(true);
+    });
+
+    it('asks for the pasted code on `Paste the authorization code:` as well', () => {
+        const challenge = extractAgentAuthLoginChallenge([
+            'Visit https://accounts.google.com/o/oauth2/v2/auth?client_id=x&response_type=code',
+            'Paste the authorization code:',
+        ].join('\n'), { preferMode: 'session', agentId: 'antigravity' });
+        expect(challenge?.codeEntry).to.equal(true);
+    });
+
+    it('does not ask for a pasted code on a device-code line (no colon after the code)', () => {
+        const challenge = extractAgentAuthLoginChallenge(
+            'Failed to open browser. Please visit https://github.com/login/device and enter the code 3AA4-2306 manually.',
+            { preferMode: 'session', agentId: 'copilot' },
+        );
+        expect(challenge?.userCode).to.equal('3AA4-2306');
+        expect(!!challenge?.codeEntry).to.equal(false);
+    });
+
     it('never trusts a login host for a different harness', () => {
         expect(extractAgentAuthLoginChallenge(CAPTURED_LOGIN_OUTPUT.grok, { agentId: 'claude' })?.url).to.equal(undefined);
         expect(extractAgentAuthLoginChallenge(CAPTURED_LOGIN_OUTPUT.claude, { agentId: 'codex' })?.url).to.equal(undefined);

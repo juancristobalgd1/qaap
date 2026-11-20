@@ -410,10 +410,12 @@ export function createQaapAgentLoginDialog(
             const submit = document.createElement('button');
             submit.type = 'submit';
             submit.className = 'theia-button main theia-mobile-agent-login-dialog-code-submit';
-            submit.textContent = acceptsRedirectUrl
-                ? nls.localize('qaap/mobileProjects/agentLoginDialogSubmit', 'Submit')
-                : nls.localize('qaap/mobileProjects/agentLoginDialogSubmitCode', 'Submit code');
-            submit.disabled = submitted;
+            submit.textContent = nls.localize('qaap/mobileProjects/agentLoginDialogValidate', 'Validate');
+            // Nothing to validate until something is typed; Enter in the field still submits through the form.
+            submit.disabled = submitted || input.value.trim().length === 0;
+            input.addEventListener('input', () => {
+                submit.disabled = submitted || input.value.trim().length === 0;
+            });
             form.addEventListener('submit', event => {
                 event.preventDefault();
                 const value = input.value.trim();

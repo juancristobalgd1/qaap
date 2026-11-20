@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core';
-import { codicon, ReactWidget } from '@theia/core/lib/browser';
+import { codicon, ConfirmDialog, ReactWidget } from '@theia/core/lib/browser';
 import { PreferenceService } from '@theia/core/lib/common/preferences';
 import { PreferenceScope } from '@theia/core/lib/common/preferences/preference-scope';
 import { MessageService } from '@theia/core/lib/common/message-service';
@@ -12,9 +12,20 @@ import { inject, injectable, optional, postConstruct } from '@theia/core/shared/
 import * as React from '@theia/core/shared/react';
 import {
     QAAP_HARNESS_DEFINITIONS,
+    resolveQaapBuiltinAgentSignOut,
     type QaapHarnessDefinition,
 } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 import { resolveAgentBrand } from '@theia/qaap-shared-core/lib/common/qaap-agent-branding';
+import {
+    invalidateAgentModelsCache,
+    invalidateAgentTaskListAllCache,
+    requestHarnessSignOut,
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import {
+    doesQaapHarnessSignOutRemoveAllProviders,
+    QAAP_AGENT_SIGNED_OUT_EVENT,
+    type QaapAgentSignedOutDetail,
+} from '@theia/qaap-shared-core/lib/common/qaap-harness-sign-out';
 import { requestAgentCliUpdate } from '@theia/qaap-agents-ui/lib/common/qaap-agent-cli-update';
 import { QaapAgentCliUpdateTracker } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-cli-update-tracker';
 import {
@@ -49,7 +60,10 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-harness-launch-settings';
 import type { QaapHarnessEnvVariableStatus } from './qaap-harness-env-section';
 import {
+    buildHarnessSignOutConfirmCopy,
+    canSignOutHarnessRow,
     QaapHarnessSettingsPanel,
+    type HarnessSignOutConfirmCopy,
     type QaapHarnessSettingsPathIssues,
 } from './qaap-harness-settings-panel';
 
@@ -341,6 +355,9 @@ export class QaapHarnessConfigurationWidget extends ReactWidget {
 
     protected renderSettingsPanel(row: HarnessSettingsRow): React.ReactNode {
         const settings = readQaapHarnessSettingsFor(this.preferenceService.get(QAAP_HARNESS_SETTINGS_PREF), row.id);
+        const connectionState = this.harnessStatuses.get(row.baseId)?.connectionState;
+        const canSignOut = canSignOutHarnessRow(row, connectionState);
+        const removesAllProviders = doesQaapHarnessSignOutRemoveAllProviders(resolveQaapBuiltinAgentSignOut(row.baseId));
         return (
             <QaapHarnessSettingsPanel
                 key={`${row.id}:${this.launchOverridesSupported ? 'desktop' : 'web'}`}
@@ -355,6 +372,8 @@ export class QaapHarnessConfigurationWidget extends ReactWidget {
                 onSave={next => this.saveHarnessSettings(row.id, next)}
                 onReset={() => this.resetHarnessSettings(row.id)}
                 onDelete={row.isInstance ? () => this.deleteHarnessInstance(row.id) : undefined}
+                onSignOut={canSignOut ? () => this.signOutHarness(row, removesAllProviders) : undefined}
+                signOutRemovesAllProviders={removesAllProviders}
                 env={this.launchOverridesSupported ? {
                     load: () => this.loadHarnessEnv(row.id),
                     setVariable: (name, value) => this.setHarnessEnv(row.id, name, value),
@@ -362,6 +381,46 @@ export class QaapHarnessConfigurationWidget extends ReactWidget {
                 } : undefined}
             />
         );
+    }
+
+    /** Overridable in tests; production uses Theia's ConfirmDialog. */
+    protected async confirmSignOut(copy: HarnessSignOutConfirmCopy): Promise<boolean> {
+        return Boolean(await new ConfirmDialog(copy).open());
+    }
+
+    protected async signOutHarness(row: HarnessSettingsRow, removesAllProviders: boolean): Promise<void> {
+        const confirmed = await this.confirmSignOut(buildHarnessSignOutConfirmCopy(row.label, removesAllProviders));
+        if (!confirmed) {
+            return;
+        }
+        try {
+            const result = await requestHarnessSignOut(row.id);
+            if (!result.ok) {
+                this.messageService?.error(result.message
+                    ? nls.localize('qaap/aiConfiguration/harnessSignOutFailedReason', 'Could not sign out of {0}: {1}', row.label, result.message)
+                    : nls.localize('qaap/aiConfiguration/harnessSignOutFailed', 'Could not sign out of {0}.', row.label));
+                return;
+            }
+            invalidateAgentTaskListAllCache();
+            invalidateAgentModelsCache(row.baseId);
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(new window.CustomEvent<QaapAgentSignedOutDetail>(QAAP_AGENT_SIGNED_OUT_EVENT, {
+                    detail: { agentId: row.baseId },
+                }));
+            }
+            this.messageService?.info(nls.localize(
+                'qaap/aiConfiguration/harnessSignedOut',
+                'Signed out of {0}.',
+                row.label,
+            ));
+            await this.loadAvailability();
+        } catch {
+            this.messageService?.error(nls.localize(
+                'qaap/aiConfiguration/harnessSignOutFailed',
+                'Could not sign out of {0}.',
+                row.label,
+            ));
+        }
     }
 
     protected renderAddHarness(): React.ReactNode {

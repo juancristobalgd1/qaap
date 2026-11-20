@@ -63,6 +63,7 @@ import { type QaapAgentReadOnlyEnforcement, } from '../common/qaap-agent-readonl
 import { type QaapQaiqPendingControlRequest } from '../common/qaap-qaiq-stdio-approvals';
 import { type QaapEmptyAgentTurnResult } from '../common/qaap-agent-empty-turn';
 import { type QaapQaiqModelBinding } from '../common/qaap-qaiq-model-binding';
+import type { QaapHarnessCredentialRoots } from './qaap-harness-credential-remover';
 import { type QaapNativeModelRoutingTable } from '../common/qaap-agent-native-model-routing';
 import { pickReservedDevPreviewPort } from '../common/qaap-agent-live-preview-port';
 import { QaapWebPushService } from './qaap-web-push-service';
@@ -208,6 +209,14 @@ export const QAAP_AGENT_CONNECTION_PROBE_BUDGET_MS = 1_200;
  * the auth probes. It must outlast a probe: answering `unknown` early made the dialog guess.
  */
 export const QAAP_AGENT_CONNECTION_REFRESH_BUDGET_MS = 12_000;
+
+/** Resolved non-interactive CLI command for one harness in the owner's tenant environment. */
+export interface QaapHarnessCliInvocation {
+    readonly file: string;
+    readonly args: readonly string[];
+    readonly cwd?: string;
+    readonly env: NodeJS.ProcessEnv;
+}
 
 /**
  * Runs background tasks on the VPS as detached-from-tab child processes. A task keeps running
@@ -785,6 +794,132 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     async isAgentConnectedFresh(agentId: string, ownerLogin?: string): Promise<boolean> {
         await this.refreshAgentConnectionState(agentId, ownerLogin);
         return this.isAgentConnected(agentId, ownerLogin);
+    }
+
+    /**
+     * Clears every cached session signal for one harness and owner after a sign-out: probe cache,
+     * any in-flight probe, prior rejection marker, session attestation and native model catalog.
+     */
+    forgetAgentSession(agentId: string, ownerLogin?: string): void {
+        const normalized = agentId.trim().toLowerCase();
+        const cacheKey = this.agentConnectionCacheKey(normalized, ownerLogin);
+        this.agentConnectionStates.delete(cacheKey);
+        this.agentConnectionProbes.delete(cacheKey);
+        this.rejectedAgentSessions.delete(cacheKey);
+        this.sessionAttestations?.revoke(ownerLogin, normalized);
+        invalidateNativeAgentModels(normalized, ownerLogin);
+    }
+
+    /** Re-probes the harness auth state when a probe exists and returns the refreshed connection state. */
+    async agentConnectionStateFresh(
+        agentId: string,
+        ownerLogin?: string,
+    ): Promise<QaapAgentDescriptor['connectionState']> {
+        await this.refreshAgentConnectionState(agentId, ownerLogin);
+        return this.agentConnectionState(agentId, ownerLogin);
+    }
+
+    /** Detected executable name for a built-in harness id (or instance's base id). */
+    detectedAgentBin(agentId: string): string | undefined {
+        const baseId = resolveQaapHarnessBaseId(agentId.trim().toLowerCase());
+        const candidate = this.detectedAgents.get(baseId);
+        return candidate ? (candidate.bin ?? baseId) : undefined;
+    }
+
+    /**
+     * Builds a non-interactive CLI invocation for a harness in the exact same tenant wrapper, HOME,
+     * PATH prefix and desktop launch-override environment used by auth probes and login.
+     */
+    async resolveHarnessCliInvocation(
+        harnessKey: string,
+        args: readonly string[],
+        options?: {
+            readonly ownerLogin?: string;
+            readonly extraEnv?: Readonly<Record<string, string>>;
+            readonly bin?: string;
+        },
+    ): Promise<QaapHarnessCliInvocation | undefined> {
+        const normalizedKey = harnessKey.trim().toLowerCase();
+        const agentId = resolveQaapHarnessBaseId(normalizedKey);
+        const baseBin = options?.bin ?? this.detectedAgentBin(agentId);
+        if (!baseBin) {
+            return undefined;
+        }
+        const owner = options?.ownerLogin?.trim();
+        let launch: QaapHarnessLaunchEnvironment;
+        try {
+            launch = await resolveQaapHarnessLaunchEnvironment(
+                normalizedKey,
+                key => this.preferenceReaderForOwner(owner)(key),
+                this.harnessEnvSecrets,
+            );
+        } catch (error) {
+            if (error instanceof QaapHarnessLaunchOverrideError) {
+                return undefined;
+            }
+            throw error;
+        }
+        const bin = launch.plan.binaryPath ?? baseBin;
+        if (!owner) {
+            const env = stripSignInOnlyAgentApiKeyEnv(childProcessEnv(), agentId);
+            launch.apply(env);
+            if (options?.extraEnv) {
+                Object.assign(env, options.extraEnv);
+            }
+            return { file: bin, args: [...args], env };
+        }
+        const tenantCwd = resolveUserReposRoot(resolveQaapReposRoot(), owner);
+        if (process.env.QAAP_CLOUD_MODE === 'docker' && !fs.existsSync(tenantCwd)) {
+            return undefined;
+        }
+        const wrapped = this.tenantSpawn.wrapArgvForTenant(tenantCwd, bin, [...args]);
+        const env = stripSignInOnlyAgentApiKeyEnv(childProcessEnv({
+            ...process.env,
+            ...this.tenantSpawn.tenantHomeEnvOverlay(tenantCwd),
+        }), agentId);
+        launch.apply(env);
+        if (options?.extraEnv) {
+            Object.assign(env, options.extraEnv);
+        }
+        const prefix = this.resolveAgentCliPrefix(tenantCwd);
+        if (canExposeAgentCliBinToChild(prefix, () => this.isTenantPrivilegeDropActive(tenantCwd))) {
+            prependAgentCliBinToPath(env, prefix);
+        }
+        return {
+            file: wrapped.file,
+            args: wrapped.args,
+            cwd: existingTenantCwd(tenantCwd),
+            env,
+        };
+    }
+
+    /**
+     * Resolves the tenant/user credential roots for file-based harness sign-out.
+     * Returns `undefined` when credentials live inside an isolated worker container or no tenant
+     * workspace exists yet.
+     */
+    resolveHarnessCredentialRoots(ownerLogin?: string): QaapHarnessCredentialRoots | undefined {
+        const owner = ownerLogin?.trim();
+        if (!owner) {
+            return {
+                home: os.homedir(),
+                extraRoots: [],
+                env: childProcessEnv(),
+            };
+        }
+        const tenantCwd = resolveUserReposRoot(resolveQaapReposRoot(), owner);
+        if (process.env.QAAP_CLOUD_MODE === 'docker' && !fs.existsSync(tenantCwd)) {
+            return undefined;
+        }
+        const resolved = this.tenantSpawn.resolveHarnessCredentialRoots(tenantCwd);
+        if (!resolved) {
+            return undefined;
+        }
+        return {
+            home: resolved.home,
+            extraRoots: resolved.extraRoots,
+            env: childProcessEnv(resolved.env ?? process.env),
+        };
     }
 
     /**

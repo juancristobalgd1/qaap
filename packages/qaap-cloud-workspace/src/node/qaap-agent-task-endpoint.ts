@@ -61,6 +61,8 @@ import {
     isQaapSessionAttestationAgent,
     QAAP_AGENT_SESSION_ATTEST_ROUTE,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-session-attestation';
+import { QAAP_HARNESS_SIGN_OUT_ROUTE } from '@theia/qaap-shared-core/lib/common/qaap-harness-sign-out';
+import { QaapHarnessSignOutService } from './qaap-harness-sign-out-service';
 
 /** Keep SSE connections warm through proxies that idle-kill silent sockets. */
 const SSE_HEARTBEAT_MS = 25_000;
@@ -162,6 +164,9 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
     @inject(QaapStandaloneTaskModelFallback) @optional()
     protected readonly modelFallback: QaapStandaloneTaskModelFallback | undefined;
 
+    @inject(QaapHarnessSignOutService) @optional()
+    protected readonly harnessSignOut: QaapHarnessSignOutService | undefined;
+
     configure(app: Application): void {
         app.get(`${QAAP_AGENT_TASK_API_PATH}/storage-health`, (req, res) => {
             this.handleStorageHealth(req, res);
@@ -252,6 +257,7 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             }
         });
         app.post(`${QAAP_AGENT_TASK_API_PATH}/${QAAP_AGENT_SESSION_ATTEST_ROUTE}`, QaapAsyncRoute.wrap('qaap-agent-task', (req, res) => this.handleAttestAgentSession(req, res)));
+        app.post(`${QAAP_AGENT_TASK_API_PATH}/${QAAP_HARNESS_SIGN_OUT_ROUTE}`, QaapAsyncRoute.wrap('qaap-agent-task', (req, res) => this.handleHarnessSignOut(req, res)));
         app.post(`${QAAP_AGENT_TASK_API_PATH}/improve-prompt`, QaapAsyncRoute.wrap('qaap-agent-task', (req, res) => this.handleImprovePrompt(req, res)));
         app.post(QAAP_AGENT_TASK_API_PATH, QaapAsyncRoute.wrap('qaap-agent-task', (req, res) => this.handleCreate(req, res)));
         app.get(`${QAAP_AGENT_TASK_API_PATH}/:id`, QaapAsyncRoute.wrap('qaap-agent-task', (req, res) => this.handleDetail(req, res)));
@@ -805,6 +811,63 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         }
         res.setHeader('Cache-Control', 'no-store');
         res.json({ ok: true, agentId });
+    }
+
+    /**
+     * Signs the authenticated owner out of one built-in harness using only the declared strategy in
+     * `QAAP_BUILTIN_AGENT_DEFINITIONS`. The owner comes strictly from the session cookie/token.
+     */
+    protected async handleHarnessSignOut(req: Request, res: Response): Promise<void> {
+        const fetchSite = req.headers['sec-fetch-site'];
+        if (fetchSite !== undefined && fetchSite !== 'same-origin' && fetchSite !== 'none') {
+            res.status(403).json({ error: 'Cross-site request refused.' });
+            return;
+        }
+        if (fetchSite === undefined && !/^application\/json\s*(?:;|$)/i.test(req.headers['content-type'] ?? '')) {
+            res.status(415).json({ error: 'Send the request as application/json.' });
+            return;
+        }
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return;
+        }
+        const ownerLogin = this.auth.resolveUserLogin(ctx)?.trim();
+        if (!ownerLogin && isQaapProductionRuntime(process.env)) {
+            res.status(401).json({ error: 'Not signed in' });
+            return;
+        }
+        const body = (req.body ?? {}) as { harnessId?: unknown };
+        const harnessId = typeof body.harnessId === 'string' ? body.harnessId.trim().toLowerCase() : '';
+        if (!harnessId || !isQaapHarnessSettingsId(harnessId, QAAP_BUILTIN_AGENT_IDS)) {
+            res.status(400).json({
+                ok: false,
+                harnessId,
+                connectionState: 'unknown',
+                reason: 'unsupported',
+                error: 'Unknown harness.',
+            });
+            return;
+        }
+        if (!this.harnessSignOut) {
+            res.status(503).json({
+                ok: false,
+                harnessId,
+                connectionState: 'unknown',
+                reason: 'unavailable',
+                error: 'Harness sign out is unavailable.',
+            });
+            return;
+        }
+        const result = await this.harnessSignOut.signOut(harnessId, ownerLogin);
+        res.setHeader('Cache-Control', 'no-store');
+        const status = result.ok
+            ? 200
+            : result.reason === 'unsupported'
+                ? 400
+                : result.reason === 'unavailable'
+                    ? 503
+                    : 502;
+        res.status(status).json(result);
     }
 
     protected async handleImprovePrompt(req: Request, res: Response): Promise<void> {

@@ -552,6 +552,40 @@ body.qaap-theme-light .qaap-ai-harness-configuration .qaap-harness-toggle::after
     font-weight: 600;
 }
 
+.qaap-ai-harness-configuration .qaap-harness-session-section {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    padding-top: 10px;
+    border-top: 1px solid color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+}
+
+.qaap-ai-harness-configuration .qaap-harness-session-heading {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1 1 180px;
+    min-width: 0;
+}
+
+.qaap-ai-harness-configuration .qaap-harness-session-title {
+    color: var(--theia-foreground);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.qaap-ai-harness-configuration .qaap-harness-session-actions {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.qaap-ai-harness-configuration .qaap-harness-session-actions .theia-button {
+    margin: 0;
+}
+
 .qaap-ai-harness-configuration .qaap-harness-env-list {
     display: flex;
     flex-direction: column;
