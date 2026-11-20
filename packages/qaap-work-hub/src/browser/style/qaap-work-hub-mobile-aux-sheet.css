@@ -4,47 +4,7 @@
  * Breakpoint: 767px, as MOBILE_NARROW_VIEWPORT_MEDIA_QUERY. Colours come from the Theia theme only.
  */
 
-/* The header trigger exists in every conversation header; only the narrow viewport shows it. */
-.theia-mobile-work-hub-aux-sheet-trigger {
-  display: none;
-}
-
 @media (max-width: 767px) {
-  .theia-mobile-work-hub-aux-sheet-trigger {
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    box-sizing: border-box;
-    min-width: 36px;
-    height: 36px;
-    margin: 0;
-    padding: 0 8px;
-    border: none;
-    border-radius: 999px;
-    background: transparent;
-    color: var(--theia-descriptionForeground);
-    font: inherit;
-    font-size: 18px;
-    line-height: 1;
-    cursor: pointer;
-    touch-action: manipulation;
-    -webkit-tap-highlight-color: transparent;
-    -webkit-appearance: none;
-    appearance: none;
-  }
-
-  /* The header copy is hidden outside a conversation; its own display rule must not win over [hidden]. */
-  .theia-mobile-work-hub-aux-sheet-trigger[hidden] {
-    display: none;
-  }
-
-  .theia-mobile-work-hub-aux-sheet-trigger:active,
-  .theia-mobile-work-hub-aux-sheet-trigger[aria-expanded='true'] {
-    background: var(--theia-toolbar-hoverBackground);
-    color: var(--theia-foreground);
-  }
-
   .theia-mobile-work-hub-aux-sheet {
     position: fixed;
     top: var(--theia-mobile-aux-sheet-vv-top, 0px);

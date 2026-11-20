@@ -12,6 +12,7 @@ import {
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { isAgentsHubIdleConversationSummary } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
 import {
     type ExecutionSurfaceTabId,
 } from '@theia/qaap-shared-core/lib/common/qaap-execution-surface-tabs';
@@ -520,6 +521,17 @@ export class MobileProjectsExecutionSurfaceTabsUi {
             });
         }
         return mobileAuxSheet;
+    }
+
+    /**
+     * `true` when a real conversation (not the idle landing composer) is open, so the mobile views
+     * dropdown enables "Side chat" and "Pull request".
+     */
+    hasOpenConversationForMobileAuxSheet(): boolean {
+        const summary = this.host.transcriptOpenSummary;
+        return !!this.host.transcriptOpenProject
+            && !!summary
+            && !isAgentsHubIdleConversationSummary(summary);
     }
 
     /**
