@@ -60,6 +60,11 @@ import {
     type QaapQaiqModelOption,
     type QaapAgentTaskListSnapshot,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import {
+    QAAP_AGENT_SIGNED_OUT_EVENT,
+    type QaapAgentSignedOutDetail,
+} from '@theia/qaap-shared-core/lib/common/qaap-harness-sign-out';
+import { clearComposerAgentCatalogSession } from '@theia/qaap-composer/lib/browser/composer-agent-catalog-session-cache';
 import { subscribeToDisabledHarnessesPreference } from './qaap-disabled-harness-preference';
 import {
     type QaapAgentApprovalPolicyId,
@@ -765,6 +770,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.installAgentsHubEmptySurfaceGuard();
         window.addEventListener(QAAP_BOOTSTRAP_PREVIEW_OPENED_EVENT, this.onBootstrapPreviewOpened);
         window.addEventListener(QAAP_NAVIGATE_TO_CONVERSATION_EVENT, this.onNavigateToConversation);
+        window.addEventListener(QAAP_AGENT_SIGNED_OUT_EVENT, this.onAgentSignedOut);
         this.bindAgentFinishedToastCallbacks();
     }
 
@@ -781,6 +787,38 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     public readonly onNavigateToConversation = (event: Event): void => {
         onNavigateToConversationHandler(this, event);
     };
+
+    /**
+     * Settings → Harness signed a harness out: drop every frontend catalog cache, close any open
+     * composer picker sheet, and immediately reload both the main composer and any open transcript
+     * composer so Pro models lock and "Sign in" reappears without waiting for a tab reload.
+     */
+    public readonly onAgentSignedOut = (event: Event): void => {
+        const agentId = (event as CustomEvent<QaapAgentSignedOutDetail | undefined>).detail?.agentId;
+        invalidateAgentTaskListAllCache();
+        invalidateAgentModelsCache(agentId);
+        clearComposerAgentCatalogSession();
+        this.stickyComposerSheetsUi.closeStickyComposerSheets();
+        this.closeTranscriptComposerSheets();
+        void this.reloadComposersAfterAgentSignOut();
+    };
+
+    protected async reloadComposersAfterAgentSignOut(): Promise<void> {
+        const filtered = this.hubQueryUi.applySearch(this.hubQueryUi.applyFilter(this.projects, this.filter));
+        const stickyProject = this.composerHeaderUi.resolveStickyComposerProject(filtered);
+        const transcriptProject = this.transcriptController.state.transcriptOpenProject
+            ?? this.transcriptController.state.transcriptComposerProject
+            ?? this.resolveAgentsHubShellProject();
+        if (stickyProject) {
+            await this.stickyComposerAgentsUi.refreshStickyComposerAgents(stickyProject, { forceRefresh: true });
+        }
+        if (transcriptProject) {
+            await this.transcriptComposerUi.refreshTranscriptComposerAgents(transcriptProject);
+        }
+        if (this.visible) {
+            this.stickyComposerRenderUi.renderStickyComposer();
+        }
+    }
 
     /** True when `project`'s clone directory is the workspace the bootstrap service operates on. */
     /** @internal Used by the extracted mobile-projects-panel-* modules. */

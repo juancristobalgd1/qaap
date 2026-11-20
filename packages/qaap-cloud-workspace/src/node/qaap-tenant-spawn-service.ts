@@ -6,7 +6,9 @@
 import { inject, injectable, optional } from '@theia/core/shared/inversify';
 import { ChildProcess, spawn, spawnSync } from 'child_process';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
+import type { QaapHarnessCredentialRoots } from './qaap-harness-credential-remover';
 import {
     normalizeIsolationPath,
     resolveQaapParallelRoot,
@@ -993,6 +995,38 @@ export class QaapTenantSpawnService {
             overlay.LOGNAME = overlay.USER;
         }
         return overlay;
+    }
+
+    /**
+     * Resolves the filesystem roots and environment where this tenant's harness credential files
+     * live. Returns `undefined` when worker container isolation is enabled (credentials live inside
+     * the remote worker container, not on this process's filesystem).
+     */
+    resolveHarnessCredentialRoots(cwd: string): QaapHarnessCredentialRoots | undefined {
+        if (this.isContainerIsolationEnabled()) {
+            return undefined;
+        }
+        const overlay = this.tenantHomeEnvOverlay(cwd);
+        const env: NodeJS.ProcessEnv = { ...process.env, ...overlay };
+        if (this.isTenantBackendMode()) {
+            const storageRoot = QaapTenantAgentStorageEnv.resolveRoot(
+                process.env,
+                QaapTenantAgentStorageEnv.defaultTenantBackendRoot(process.env),
+            );
+            const extraRoots = storageRoot
+                ? [QaapTenantAgentStorageEnv.homeDir(storageRoot), QaapTenantAgentStorageEnv.dataDir(storageRoot)]
+                : [];
+            return {
+                home: overlay.HOME ?? QAAP_TENANT_BACKEND_HOME,
+                extraRoots,
+                env,
+            };
+        }
+        return {
+            home: overlay.HOME ?? os.homedir(),
+            extraRoots: [],
+            env,
+        };
     }
 
     /**

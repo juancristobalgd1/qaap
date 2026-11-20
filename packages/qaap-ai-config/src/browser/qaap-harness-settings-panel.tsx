@@ -11,6 +11,8 @@ import {
     QAAP_HARNESS_PATH_MAX_LENGTH,
     type QaapHarnessLaunchSettings,
 } from '@theia/qaap-shared-core/lib/common/qaap-harness-launch-settings';
+import { resolveQaapBuiltinAgentSignOut } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
+import { isQaapHarnessSignOutSupported } from '@theia/qaap-shared-core/lib/common/qaap-harness-sign-out';
 import { QaapHarnessEnvSection, type QaapHarnessEnvSectionProps } from './qaap-harness-env-section';
 
 /** Issue codes of `POST /qaap/api/agent-tasks/harness-settings/check` and the static shape check. */
@@ -20,6 +22,51 @@ export type QaapHarnessSettingsPathIssue =
 export interface QaapHarnessSettingsPathIssues {
     readonly binaryPathIssue?: QaapHarnessSettingsPathIssue;
     readonly homeDirIssue?: QaapHarnessSettingsPathIssue;
+}
+
+export interface HarnessSignOutConfirmCopy {
+    readonly title: string;
+    readonly msg: string;
+    readonly ok: string;
+    readonly cancel: string;
+}
+
+/**
+ * Fail-closed visibility gate for the Sign out button in Settings → Harness: only base harnesses
+ * that currently have an active session (`connectionState === 'connected'`) and declare a supported
+ * sign-out strategy (`signOut.kind !== 'none'`) show it.
+ */
+export function canSignOutHarnessRow(
+    row: { readonly baseId: string; readonly isInstance: boolean },
+    connectionState: string | undefined,
+): boolean {
+    if (row.isInstance || connectionState !== 'connected') {
+        return false;
+    }
+    return isQaapHarnessSignOutSupported(resolveQaapBuiltinAgentSignOut(row.baseId));
+}
+
+/** Confirmation dialog copy for signing out of one harness from Settings → Harness. */
+export function buildHarnessSignOutConfirmCopy(
+    label: string,
+    removesAllProviders: boolean,
+): HarnessSignOutConfirmCopy {
+    return {
+        title: nls.localize('qaap/aiConfiguration/harnessSignOutConfirmTitle', 'Sign out of {0}', label),
+        msg: removesAllProviders
+            ? nls.localize(
+                'qaap/aiConfiguration/harnessSignOutConfirmMsgAllProviders',
+                'Sign out of {0}? This will remove all providers saved in this CLI. You will need to sign in again to use its Pro models.',
+                label,
+            )
+            : nls.localize(
+                'qaap/aiConfiguration/harnessSignOutConfirmMsg',
+                'Sign out of {0}? You will need to sign in again to use its Pro models.',
+                label,
+            ),
+        ok: nls.localize('qaap/aiConfiguration/harnessSignOut', 'Sign out'),
+        cancel: nls.localizeByDefault('Cancel'),
+    };
 }
 
 export interface QaapHarnessSettingsPanelProps {
@@ -38,6 +85,10 @@ export interface QaapHarnessSettingsPanelProps {
     readonly onSave: (settings: QaapHarnessLaunchSettings) => Promise<void>;
     readonly onReset: () => Promise<void>;
     readonly onDelete?: () => Promise<void>;
+    /** Provided only when the harness is connected and supports sign-out (fail-closed). */
+    readonly onSignOut?: () => Promise<void>;
+    /** True for CLIs whose sign-out removes all saved providers (OpenCode, Pi). */
+    readonly signOutRemovesAllProviders?: boolean;
     /** Environment variables (desktop app only, with {@link launchOverridesSupported}). */
     readonly env?: Omit<QaapHarnessEnvSectionProps, 'harnessId'>;
 }
@@ -127,6 +178,18 @@ export function QaapHarnessSettingsPanel(props: QaapHarnessSettingsPanelProps): 
         }
     };
 
+    const signOut = async (): Promise<void> => {
+        if (!props.onSignOut) {
+            return;
+        }
+        setBusy(true);
+        try {
+            await props.onSignOut();
+        } finally {
+            setBusy(false);
+        }
+    };
+
     return (
         <div className="qaap-harness-settings-panel" role="group" aria-label={nls.localize('qaap/aiConfiguration/harnessSettingsFor', '{0} settings', props.defaultLabel)}>
             <label className="qaap-harness-settings-field" htmlFor={`${idPrefix}-label`}>
@@ -191,6 +254,34 @@ export function QaapHarnessSettingsPanel(props: QaapHarnessSettingsPanelProps): 
                     'Binary path, configuration folder and environment variables can be changed in the desktop app only.',
                 )}
             </p>}
+            {props.onSignOut && <div className="qaap-harness-session-section">
+                <div className="qaap-harness-session-heading">
+                    <span className="qaap-harness-session-title">
+                        {nls.localize('qaap/aiConfiguration/harnessSessionTitle', 'Session')}
+                    </span>
+                    <span className="qaap-harness-settings-hint">
+                        {props.signOutRemovesAllProviders
+                            ? nls.localize(
+                                'qaap/aiConfiguration/harnessSignOutHintAllProviders',
+                                'Removes every provider sign-in saved in this CLI. API keys in Settings are kept.',
+                            )
+                            : nls.localize(
+                                'qaap/aiConfiguration/harnessSignOutHint',
+                                'Signs out of this harness session. You will need to sign in again to use its Pro models.',
+                            )}
+                    </span>
+                </div>
+                <div className="qaap-harness-session-actions">
+                    <button
+                        type="button"
+                        className="theia-button secondary qaap-harness-settings-sign-out"
+                        disabled={busy}
+                        onClick={() => void signOut()}
+                    >
+                        {nls.localize('qaap/aiConfiguration/harnessSignOut', 'Sign out')}
+                    </button>
+                </div>
+            </div>}
             <div className="qaap-harness-settings-actions">
                 {props.isInstance
                     ? <button type="button" className="theia-button secondary qaap-harness-settings-delete" disabled={busy} onClick={() => void remove()}>

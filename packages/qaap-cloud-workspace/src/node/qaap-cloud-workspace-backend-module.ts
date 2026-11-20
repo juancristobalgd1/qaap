@@ -78,6 +78,7 @@ import { QaapTenantResourceSizing } from './qaap-tenant-resource-sizing';
 import { QaapTenantStorageQuotaService } from './qaap-tenant-storage-quota-service';
 import { QaapBillingQuota } from '@theia/qaap-adapters/lib/common/qaap-billing-quota';
 import { QaapAgentCliUpdateService } from './qaap-agent-cli-update-service';
+import { QaapHarnessSignOutService } from './qaap-harness-sign-out-service';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { QaapAgentStorageHealthCheck } from './qaap-agent-storage-health-check';
 import { QaapConversationStorageHealthCheck } from './qaap-conversation-storage-health-check';
@@ -361,6 +362,7 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapConversationStorageHealthCheck).toSelf().inSingletonScope();
     bind(QaapHealthCheckContribution).toService(QaapConversationStorageHealthCheck);
     bind(QaapAgentCliUpdateService).toSelf().inSingletonScope();
+    bind(QaapHarnessSignOutService).toSelf().inSingletonScope();
     bind(QaapWorktreeGcContribution).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapWorktreeGcContribution);
     bind(QaapStandaloneTaskModelFallback).toSelf().inSingletonScope();

@@ -23,6 +23,7 @@ import { resolveStoredAgentModelForSubmit } from './qaap-agent-model-selection';
 import { getQaapDefaultAgentId } from './qaap-default-agent-id';
 import { dedupeInFlight } from './qaap-in-flight-dedupe';
 import { isQaapSessionAttestationAgent, QAAP_AGENT_SESSION_ATTEST_ROUTE } from './qaap-agent-session-attestation';
+import { QAAP_HARNESS_SIGN_OUT_ROUTE, type QaapHarnessSignOutResult } from './qaap-harness-sign-out';
 
 export {
     agentSupportsModelPicker,
@@ -696,6 +697,45 @@ export async function attestAgentSessionSignIn(agentId: string): Promise<boolean
     } catch {
         return false;
     }
+}
+
+/**
+ * Ask the backend to sign the current owner out of one built-in harness (running its CLI logout
+ * or removing its allowlisted credential file/keys). Never deletes Settings API keys.
+ */
+export async function requestHarnessSignOut(harnessId: string): Promise<QaapHarnessSignOutResult> {
+    const normalized = harnessId.trim().toLowerCase();
+    const response = await fetch(`${QAAP_AGENT_TASK_API_PATH}/${QAAP_HARNESS_SIGN_OUT_ROUTE}`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ harnessId: normalized }),
+    });
+    let body: Partial<QaapHarnessSignOutResult> & { error?: unknown } = {};
+    try {
+        body = await response.json() as Partial<QaapHarnessSignOutResult> & { error?: unknown };
+    } catch {
+        body = {};
+    }
+    if (!response.ok || body.ok !== true) {
+        const message = typeof body.message === 'string' && body.message.trim()
+            ? body.message.trim()
+            : typeof body.error === 'string' && body.error.trim()
+                ? body.error.trim()
+                : `Sign out failed (${response.status})`;
+        return {
+            ok: false,
+            harnessId: typeof body.harnessId === 'string' ? body.harnessId : normalized,
+            connectionState: body.connectionState ?? 'unknown',
+            reason: body.reason ?? 'failed',
+            message,
+        };
+    }
+    return {
+        ok: true,
+        harnessId: typeof body.harnessId === 'string' ? body.harnessId : normalized,
+        connectionState: body.connectionState ?? 'disconnected',
+    };
 }
 
 /** Upper bound for one agent model catalog request, so a hung probe rejects instead of leaving the picker loading. */
