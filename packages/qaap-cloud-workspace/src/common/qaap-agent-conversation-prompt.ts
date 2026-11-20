@@ -154,7 +154,25 @@ export function buildConversationAgentPrompt(options: BuildConversationAgentProm
     }
     lines.push('Now respond to the latest user message:', '');
     lines.push(`USER: ${latestUserContent}`);
+    if (isBareContinueRequest(latestUserContent)) {
+        // A bare "continue" points at the work above, not at a new topic: weak models otherwise answer
+        // "I have no context, what should I continue?" although the transcript is right there.
+        const lastRequest = [...history].reverse().find(message => message.role === 'user' && !isBareContinueRequest(message.content));
+        lines.push('', lastRequest
+            ? `The user is asking you to continue the work from this conversation. Their last request was: "${lastRequest.content.trim().slice(0, 600)}". `
+                + 'Pick up where the previous turn stopped and carry that request through to the end. Do not ask what to continue.'
+            : 'The user is asking you to continue the work from this conversation. Pick up where the previous turn stopped. Do not ask what to continue.');
+    }
     return lines.join('\n');
+}
+
+/** "Continúa", "sigue", "continue", "go on", "keep going"… on their own: a request to resume the work above. */
+const BARE_CONTINUE_RE = /^(?:contin(?:[uú]a|uar|ue)|sigue|seguir|sigamos|prosigue|dale|adelante|go\s+on|keep\s+going|carry\s+on|resume|proceed|next)(?:\s+(?:por\s+favor|please|pls))?[\s.!¡¿?…]*$/i;
+
+/** True when the message only asks the agent to continue (see {@link BARE_CONTINUE_RE}). */
+export function isBareContinueRequest(content: string | undefined): boolean {
+    const text = (content ?? '').trim().replace(/^[¡¿\s]+/, '');
+    return text.length > 0 && text.length <= 40 && BARE_CONTINUE_RE.test(text);
 }
 
 export function resolveConversationPromptContextWindow(contextWindowSize: number | undefined): number {
