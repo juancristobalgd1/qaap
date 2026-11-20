@@ -218,7 +218,13 @@ const O_NOFOLLOW = fs.constants.O_NOFOLLOW ?? 0;
 /**
  * Removes only the allowlisted top-level keys from a JSON credential file, preserving all other
  * preferences and writing in-place with `O_NOFOLLOW` so existing owner/gid/mode/ACLs remain intact
- * (required in rootless / no-CAP_CHOWN tenant containers). Returns true when the file was updated.
+ * (required in rootless / no-CAP_CHOWN tenant containers).
+ *
+ * Avoids `O_WRONLY | O_TRUNC` without `O_CREAT`, which fails with `EINVAL` on Windows because
+ * libuv maps `O_TRUNC` alone to `TRUNCATE_EXISTING` while `O_WRONLY` opens with
+ * `FILE_GENERIC_WRITE` rather than `GENERIC_WRITE`.
+ *
+ * Returns true when the file was updated.
  */
 export function stripHarnessJsonCredentialKeys(
     spec: QaapHarnessCredentialPath,
@@ -230,42 +236,43 @@ export function stripHarnessJsonCredentialKeys(
         return false;
     }
 
-    let raw: string;
-    const readFd = fs.openSync(target.realPath, fs.constants.O_RDONLY | O_NOFOLLOW);
+    const fd = fs.openSync(target.realPath, fs.constants.O_RDWR | O_NOFOLLOW);
     try {
-        raw = fs.readFileSync(readFd, 'utf8');
-    } finally {
-        fs.closeSync(readFd);
-    }
-
-    let parsed: unknown;
-    try {
-        parsed = JSON.parse(raw);
-    } catch {
-        throw new QaapHarnessCredentialPathError('invalid-json', 'Credential JSON file could not be parsed.');
-    }
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        throw new QaapHarnessCredentialPathError('invalid-json', 'Credential JSON root must be an object.');
-    }
-
-    const record = parsed as Record<string, unknown>;
-    let changed = false;
-    for (const key of keys) {
-        if (Object.prototype.hasOwnProperty.call(record, key)) {
-            delete record[key];
-            changed = true;
+        if (!fs.fstatSync(fd).isFile()) {
+            throw new QaapHarnessCredentialPathError('not-a-file', 'Credential target is not a regular file.');
         }
-    }
-    if (!changed) {
-        return false;
-    }
+        const raw = fs.readFileSync(fd, 'utf8');
 
-    const serialized = `${JSON.stringify(record, undefined, 2)}\n`;
-    const writeFd = fs.openSync(target.realPath, fs.constants.O_WRONLY | fs.constants.O_TRUNC | O_NOFOLLOW);
-    try {
-        fs.writeFileSync(writeFd, serialized, 'utf8');
+        let parsed: unknown;
+        try {
+            parsed = JSON.parse(raw);
+        } catch {
+            throw new QaapHarnessCredentialPathError('invalid-json', 'Credential JSON file could not be parsed.');
+        }
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            throw new QaapHarnessCredentialPathError('invalid-json', 'Credential JSON root must be an object.');
+        }
+
+        const record = parsed as Record<string, unknown>;
+        let changed = false;
+        for (const key of keys) {
+            if (Object.prototype.hasOwnProperty.call(record, key)) {
+                delete record[key];
+                changed = true;
+            }
+        }
+        if (!changed) {
+            return false;
+        }
+
+        const buf = Buffer.from(`${JSON.stringify(record, undefined, 2)}\n`, 'utf8');
+        fs.ftruncateSync(fd, 0);
+        let offset = 0;
+        while (offset < buf.length) {
+            offset += fs.writeSync(fd, buf, offset, buf.length - offset, offset);
+        }
+        return true;
     } finally {
-        fs.closeSync(writeFd);
+        fs.closeSync(fd);
     }
-    return true;
 }
