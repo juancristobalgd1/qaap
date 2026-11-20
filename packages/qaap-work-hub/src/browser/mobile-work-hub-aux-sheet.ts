@@ -18,9 +18,6 @@ import { QAAP_WORK_HUB_NO_SIDE_CHAT_HOST, QaapWorkHubAuxSideChatView, type QaapW
 /** The views the mobile sheet offers: the same two the desktop right panel has. */
 export type MobileWorkHubAuxSheetTab = 'side-chat' | 'pull-request';
 
-/** Marks the conversation-header button that opens the sheet. */
-export const MOBILE_WORK_HUB_AUX_SHEET_TRIGGER_CLASS = 'theia-mobile-work-hub-aux-sheet-trigger';
-
 /** What the sheet needs from the Work Hub: the same hooks the desktop panel gets. */
 export interface MobileWorkHubAuxSheetHost {
     /** The pull request of the open conversation's branch, or `undefined` while no project is open. */
@@ -38,13 +35,14 @@ export interface MobileWorkHubAuxSheetOptions {
     readonly sideChatView?: QaapWorkHubAuxSideChatView;
 }
 
-interface SheetTabSpec {
+export interface MobileWorkHubAuxSheetTabSpec {
     readonly id: MobileWorkHubAuxSheetTab;
     readonly label: () => string;
     readonly icon: string;
 }
 
-const TAB_SPECS: readonly SheetTabSpec[] = [
+/** Shared tab definitions for both the mobile bottom sheet and the header views dropdown. */
+export const MOBILE_WORK_HUB_AUX_SHEET_TABS: readonly MobileWorkHubAuxSheetTabSpec[] = [
     { id: 'side-chat', label: () => nls.localize('qaap/workHubAuxPanel/sideChat', 'Side chat'), icon: 'codicon-comment-discussion' },
     { id: 'pull-request', label: () => nls.localize('qaap/workHubAuxPanel/pullRequest', 'Pull request'), icon: 'codicon-git-pull-request' },
 ];
@@ -127,7 +125,7 @@ export class MobileWorkHubAuxSheet implements Disposable {
         tabs.className = 'theia-mobile-work-hub-aux-sheet-tabs';
         tabs.setAttribute('role', 'tablist');
         tabs.setAttribute('aria-label', nls.localizeByDefault('Views'));
-        for (const spec of TAB_SPECS) {
+        for (const spec of MOBILE_WORK_HUB_AUX_SHEET_TABS) {
             tabs.append(this.createTabButton(spec));
         }
         tabs.addEventListener('keydown', event => this.onTabsKeyDown(event));
@@ -263,7 +261,7 @@ export class MobileWorkHubAuxSheet implements Disposable {
         );
     }
 
-    protected createTabButton(spec: SheetTabSpec): HTMLButtonElement {
+    protected createTabButton(spec: MobileWorkHubAuxSheetTabSpec): HTMLButtonElement {
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'theia-mobile-work-hub-aux-sheet-tab';
@@ -286,8 +284,10 @@ export class MobileWorkHubAuxSheet implements Disposable {
         if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
             return;
         }
-        const index = TAB_SPECS.findIndex(spec => spec.id === this.active);
-        const next = TAB_SPECS[(index + (event.key === 'ArrowRight' ? 1 : TAB_SPECS.length - 1)) % TAB_SPECS.length];
+        const index = MOBILE_WORK_HUB_AUX_SHEET_TABS.findIndex(spec => spec.id === this.active);
+        const next = MOBILE_WORK_HUB_AUX_SHEET_TABS[
+            (index + (event.key === 'ArrowRight' ? 1 : MOBILE_WORK_HUB_AUX_SHEET_TABS.length - 1)) % MOBILE_WORK_HUB_AUX_SHEET_TABS.length
+        ];
         event.preventDefault();
         this.select(next.id);
         this.tabButtons.get(next.id)?.focus({ preventScroll: true });

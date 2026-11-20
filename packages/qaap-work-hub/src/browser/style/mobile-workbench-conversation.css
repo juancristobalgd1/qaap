@@ -883,6 +883,11 @@ body:not(.theia-mobile-mod-has-work-hub-visible.theia-mobile-mod-has-work-hub-vi
   background: color-mix(in srgb, var(--theia-foreground) 10%, transparent);
 }
 
+.theia-mobile-transcript-tab-icon-select-option:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .theia-mobile-projects.theia-mod-project-detail .theia-mobile-projects-title-block,
 .theia-mobile-projects.theia-mod-agents-hub-inline-active .theia-mobile-projects-title-block {
   flex: 1 1 auto;
