@@ -240,18 +240,45 @@ describe('qaap-harness-credential-remover', () => {
         }, undefined, 2), 'utf8');
         const inodeBefore = fs.statSync(configPath).ino;
 
-        const changed = stripHarnessJsonCredentialKeys(
-            { root: 'home', relative: '.copilot/config.json' },
-            ['loggedInUsers', 'lastLoggedInUser', 'copilot_tokens'],
-            { home: homeDir },
-        );
+        const originalOpenSync = fs.openSync;
+        const observedFlags: number[] = [];
+        const fsMutable = fs as unknown as { openSync: typeof fs.openSync };
+        fsMutable.openSync = ((targetPath: fs.PathLike, flags: fs.OpenMode, mode?: fs.Mode): number => {
+            if (typeof flags === 'number') {
+                observedFlags.push(flags);
+            }
+            return originalOpenSync(targetPath, flags, mode);
+        }) as typeof fs.openSync;
+        let changed: boolean;
+        try {
+            changed = stripHarnessJsonCredentialKeys(
+                { root: 'home', relative: '.copilot/config.json' },
+                ['loggedInUsers', 'lastLoggedInUser', 'copilot_tokens'],
+                { home: homeDir },
+            );
+        } finally {
+            fsMutable.openSync = originalOpenSync;
+        }
         expect(changed).to.equal(true);
-        const parsed = JSON.parse(fs.readFileSync(configPath, 'utf8')) as Record<string, unknown>;
+        expect(observedFlags.length).to.be.greaterThan(0);
+        for (const flags of observedFlags) {
+            const hasTruncWithoutCreat = (flags & fs.constants.O_TRUNC) !== 0 && (flags & fs.constants.O_CREAT) === 0;
+            expect(hasTruncWithoutCreat, 'O_TRUNC without O_CREAT fails with EINVAL on Windows').to.equal(false);
+        }
+        const rewritten = fs.readFileSync(configPath, 'utf8');
+        expect(rewritten.startsWith('{')).to.equal(true);
+        const parsed = JSON.parse(rewritten) as Record<string, unknown>;
         expect(parsed).to.deep.equal({
             banner: 'never',
             trusted_folders: ['/workspace/app'],
         });
         expect(fs.statSync(configPath).ino).to.equal(inodeBefore);
+        // Second call is a no-op when no allowlisted keys remain.
+        expect(stripHarnessJsonCredentialKeys(
+            { root: 'home', relative: '.copilot/config.json' },
+            ['loggedInUsers', 'lastLoggedInUser', 'copilot_tokens'],
+            { home: homeDir },
+        )).to.equal(false);
     });
 });
 
