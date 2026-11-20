@@ -13340,7 +13340,6 @@ body.theia-mod-work-hub-settings-resizing * {
 }
 
 .theia-mobile-work-hub-settings-row-copy strong,
-.theia-mobile-work-hub-settings-profile-details strong,
 .theia-mobile-work-hub-settings-usage-header strong {
   color: var(--theia-foreground);
   font-size: 13px;
@@ -13348,7 +13347,6 @@ body.theia-mod-work-hub-settings-resizing * {
 }
 
 .theia-mobile-work-hub-settings-row-copy span,
-.theia-mobile-work-hub-settings-profile-details span,
 .theia-mobile-work-hub-settings-card p,
 .theia-mobile-work-hub-settings-description {
   margin: 0;
@@ -13459,54 +13457,6 @@ body.theia-mod-work-hub-settings-resizing * {
   outline-offset: 2px;
 }
 
-.theia-mobile-work-hub-settings-profile-card {
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--q-space-12);
-  margin-top: var(--q-space-12);
-  padding: var(--q-space-12);
-}
-
-/* Identity takes a 200px basis so a narrow column wraps the provider chip below it instead of
-   squeezing "Not signed in" and the account line into a sliver. */
-.theia-mobile-work-hub-settings-profile-identity {
-  display: flex;
-  flex: 1 1 200px;
-  align-items: center;
-  gap: var(--q-space-8);
-  min-width: 0;
-}
-
-.theia-mobile-work-hub-settings-profile-avatar {
-  display: grid;
-  flex: 0 0 56px;
-  width: 56px;
-  height: 56px;
-  place-items: center;
-  overflow: hidden;
-  border-radius: 50%;
-  color: var(--theia-foreground);
-  background: var(--theia-button-background, #3d75b9);
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.theia-mobile-work-hub-settings-profile-avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.theia-mobile-work-hub-settings-profile-details {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: var(--q-space-3);
-}
-
-.theia-mobile-work-hub-settings-profile-provider,
 .theia-mobile-work-hub-settings-eyebrow {
   flex: 0 0 auto;
   color: var(--theia-descriptionForeground);
@@ -13516,10 +13466,269 @@ body.theia-mod-work-hub-settings-resizing * {
   text-transform: uppercase;
 }
 
-.theia-mobile-work-hub-settings-profile-provider {
-  padding: var(--q-space-2) var(--q-space-6);
-  border: 1px solid var(--q-line);
+/* Profile overview: centered account header, headline numbers, activity insights and model usage. */
+.qaap-profile-overview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--q-space-16, 32px);
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding-top: var(--q-space-12, 24px);
+}
+
+.qaap-profile-overview-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--q-space-4, 8px);
+  text-align: center;
+}
+
+.qaap-profile-overview-avatar {
+  display: grid;
+  width: 88px;
+  height: 88px;
+  margin-bottom: var(--q-space-2, 4px);
+  place-items: center;
+  overflow: hidden;
+  border-radius: 50%;
+  color: var(--theia-button-foreground);
+  background: var(--theia-button-background);
+  font-size: 30px;
+  font-weight: 600;
+}
+
+.qaap-profile-overview-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.qaap-profile-overview-name {
+  margin: 0;
+  color: var(--theia-foreground);
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.qaap-profile-overview-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--q-space-4, 8px);
+  color: var(--theia-descriptionForeground);
+  font-size: 13px;
+}
+
+.qaap-profile-overview-provider {
+  padding: var(--q-space-1, 2px) var(--q-space-5, 10px);
+  border: 1px solid var(--q-line, var(--theia-widget-border));
   border-radius: 999px;
+  font-size: 12px;
+}
+
+.qaap-profile-overview-stats {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--q-line, var(--theia-widget-border));
+  border-radius: 14px;
+}
+
+.qaap-profile-overview-stat {
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  justify-content: center;
+  gap: var(--q-space-2, 4px);
+  min-width: 0;
+  padding: var(--q-space-8, 16px) var(--q-space-4, 8px);
+  text-align: center;
+}
+
+.qaap-profile-overview-stat + .qaap-profile-overview-stat {
+  border-left: 1px solid var(--q-line, var(--theia-widget-border));
+}
+
+.qaap-profile-overview-stat-value {
+  margin: 0;
+  color: var(--theia-foreground);
+  font-size: 17px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.qaap-profile-overview-stat-label {
+  overflow: hidden;
+  color: var(--theia-descriptionForeground);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qaap-profile-overview-calendar:empty {
+  display: none;
+}
+
+.qaap-profile-overview-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--q-space-16, 32px);
+}
+
+.qaap-profile-overview-details:empty {
+  display: none;
+}
+
+.qaap-profile-overview-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--q-space-6, 12px);
+  min-width: 0;
+}
+
+.qaap-profile-overview-section-title {
+  margin: 0;
+  color: var(--theia-foreground);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.qaap-profile-overview-insights {
+  display: flex;
+  flex-direction: column;
+  gap: var(--q-space-5, 10px);
+  margin: 0;
+}
+
+.qaap-profile-overview-insight {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--q-space-8, 16px);
+  font-size: 13px;
+}
+
+.qaap-profile-overview-insight dt {
+  color: var(--theia-descriptionForeground);
+}
+
+.qaap-profile-overview-insight dd {
+  margin: 0;
+  color: var(--theia-foreground);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.qaap-profile-overview-models {
+  display: flex;
+  flex-direction: column;
+  gap: var(--q-space-6, 12px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.qaap-profile-overview-model {
+  display: flex;
+  flex-direction: column;
+  gap: var(--q-space-3, 6px);
+}
+
+.qaap-profile-overview-model-head {
+  display: flex;
+  align-items: center;
+  gap: var(--q-space-4, 8px);
+  min-width: 0;
+  font-size: 13px;
+}
+
+.qaap-profile-overview-model-head .theia-qaap-agent-brand-icon {
+  width: 16px;
+  height: 16px;
+  background: transparent;
+}
+
+.qaap-profile-overview-model-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--theia-foreground);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qaap-profile-overview-model-share {
+  flex: 0 0 auto;
+  color: var(--theia-descriptionForeground);
+  font-variant-numeric: tabular-nums;
+}
+
+.qaap-profile-overview-model-bar {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--q-line, var(--theia-widget-border));
+}
+
+.qaap-profile-overview-model-fill {
+  display: block;
+  width: var(--qaap-profile-share, 0%);
+  height: 100%;
+  border-radius: inherit;
+  background: var(--theia-button-background);
+}
+
+.qaap-profile-overview-empty {
+  margin: 0;
+  color: var(--theia-descriptionForeground);
+  font-size: 13px;
+}
+
+@media (max-width: 767px) {
+  .qaap-profile-overview {
+    gap: var(--q-space-12, 24px);
+    padding-top: var(--q-space-8, 16px);
+  }
+
+  .qaap-profile-overview-avatar {
+    width: 72px;
+    height: 72px;
+    font-size: 24px;
+  }
+
+  .qaap-profile-overview-name {
+    font-size: 20px;
+  }
+
+  /* Five cells do not fit a phone: three on the first row, two on the second. */
+  .qaap-profile-overview-stats {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .qaap-profile-overview-stat {
+    grid-column: span 2;
+  }
+
+  .qaap-profile-overview-stat:nth-child(n + 4) {
+    grid-column: span 3;
+    border-top: 1px solid var(--q-line, var(--theia-widget-border));
+  }
+
+  .qaap-profile-overview-stat:nth-child(4) {
+    border-left: none;
+  }
+
+  .qaap-profile-overview-details {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--q-space-12, 24px);
+  }
 }
 
 /* Contribution graph under the profile card. Cell size and gap are custom properties so the
@@ -13944,14 +14153,6 @@ body.theia-mod-work-hub-settings-resizing * {
   .theia-mobile-work-hub-settings-crumb,
   .theia-mobile-work-hub-settings-crumb-separator {
     display: none;
-  }
-
-  .theia-mobile-work-hub-settings-profile-card {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: var(--q-space-8);
-    margin-top: var(--q-space-8);
-    padding: var(--q-space-10);
   }
 
   .theia-mobile-work-hub-settings-activity-card {
