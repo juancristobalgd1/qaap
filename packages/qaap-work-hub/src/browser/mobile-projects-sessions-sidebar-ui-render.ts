@@ -1,4 +1,5 @@
 import type { MobileProjectsSessionsSidebarUiContext } from './mobile-projects-sessions-sidebar-ui-context';
+import { FileUri } from '@theia/core/lib/common/file-uri';
 // Extracted from mobile-projects-sessions-sidebar-ui.ts
 
 import type { SessionsSidebarConversationEntry } from './mobile-projects-sessions-sidebar-ui';
@@ -14,6 +15,7 @@ import { collapseSessionsSidebarFailedDuplicates } from './mobile-projects-sessi
 import { sidebarRowFailureKey } from './mobile-projects-project-rows-ui-timeline';
 import { readLocalRemovedProjects } from '@theia/qaap-shared-core/lib/browser/mobile-projects-session-cache';
 import { withoutRemovedMobileProjects } from '@theia/qaap-shared-core/lib/browser/mobile-projects-dedup';
+import { qaapProjectCloneIdentities } from '@theia/qaap-shared-core/lib/common/qaap-project-clone-identity';
 import { qaapProjectRemovalIdentity } from '@theia/qaap-shared-core/lib/common/qaap-project-removal-identity';
 
 export function openWorkHubSessionsSidebarExtracted(ctx: MobileProjectsSessionsSidebarUiContext): void {
@@ -82,8 +84,16 @@ export function mergeSessionsSidebarProjectsExtracted(ctx: MobileProjectsSession
         return [...projects];
     }
     const currentUri = current.uri?.toString();
+    // A task worktree open right now is listed under its source project, never as a second card.
+    const currentWorktreeSource = worktreeSourceCwdOf(current.uri, summaries);
+    if (currentWorktreeSource && projects.some(project => project.uri?.toString().toLowerCase().replace(/\/+$/, '')
+        === FileUri.create(currentWorktreeSource).toString().toLowerCase().replace(/\/+$/, ''))) {
+        return [...projects];
+    }
+    const currentIdentities = qaapProjectCloneIdentities({ ...current, isCurrent: true });
     if (projects.some(project => project.id === current.id
-        || (!!currentUri && project.uri?.toString() === currentUri))) {
+        || (!!currentUri && project.uri?.toString() === currentUri)
+        || qaapProjectCloneIdentities(project).some(identity => currentIdentities.includes(identity)))) {
         return [...projects];
     }
     return [current, ...projects];
