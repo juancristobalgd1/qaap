@@ -47,27 +47,31 @@ describe('mobile-work-hub-aux-sheet', () => {
         document.body.className = '';
     });
 
-    it('mounts the Side chat and Pull request views from the desktop panel classes', () => {
+    it('opens in the same drawer as the other views and mounts the desktop panel views', () => {
         sheet.open('side-chat');
         expect(sheet.node.isConnected).to.equal(true);
-        expect(sheet.node.getAttribute('role')).to.equal('dialog');
-        expect(sheet.node.getAttribute('aria-modal')).to.equal('true');
-        expect(sheet.node.querySelector('.qaap-work-hub-aux-side-chat')).to.equal(sheet.sideChatView.element);
+        const drawer = sheet.node.querySelector<HTMLElement>('.theia-mobile-execution-surface-sidebar')!;
+        expect(drawer.getAttribute('role')).to.equal('dialog');
+        expect(drawer.getAttribute('aria-modal')).to.equal('true');
+        expect(drawer.querySelector('.theia-mobile-execution-surface-sidebar-header .theia-mobile-execution-surface-sidebar-close')).to.not.equal(null);
+        expect(sheet.node.querySelector('.theia-mobile-execution-surface-sidebar-backdrop')).to.not.equal(null);
+        expect(sheet.node.querySelector('.theia-mobile-execution-surface-sidebar-content .qaap-work-hub-aux-side-chat')).to.equal(sheet.sideChatView.element);
         expect(sheet.node.querySelector('.qaap-work-hub-aux-pr')).to.equal(sheet.pullRequestView.element);
-        const tabs = Array.from(sheet.node.querySelectorAll<HTMLElement>('[role="tab"]')).map(tab => tab.dataset.tab);
-        expect(tabs).to.deep.equal(['side-chat', 'pull-request']);
+        // No tabs, grabber or bottom-sheet chrome: one view per drawer, named by its header.
+        expect(sheet.node.querySelector('[role="tab"], .theia-mobile-work-hub-aux-sheet-grabber')).to.equal(null);
+        expect(drawer.querySelector('.theia-mobile-execution-surface-sidebar-title')!.textContent).to.equal('Side chat');
     });
 
-    it('shows one view at a time and switches with the tabs', () => {
+    it('shows one view at a time and names it in the drawer header', () => {
         sheet.open('side-chat');
         expect(sheet.sideChatView.element.hidden).to.equal(false);
         expect(sheet.pullRequestView.element.hidden).to.equal(true);
-        sheet.node.querySelector<HTMLButtonElement>('[data-tab="pull-request"]')!.click();
+        sheet.open('pull-request');
         expect(sheet.activeTab).to.equal('pull-request');
         expect(sheet.sideChatView.element.hidden).to.equal(true);
         expect(sheet.pullRequestView.element.hidden).to.equal(false);
-        expect(sheet.node.querySelector('[data-tab="pull-request"]')!.getAttribute('aria-selected')).to.equal('true');
-        expect(sheet.node.querySelector('[data-tab="side-chat"]')!.getAttribute('aria-selected')).to.equal('false');
+        expect(sheet.node.querySelector('.theia-mobile-execution-surface-sidebar-title')!.textContent).to.equal('Pull request');
+        expect(sheet.node.querySelector('.theia-mobile-execution-surface-sidebar')!.getAttribute('data-surface')).to.equal('pull-request');
     });
 
     it('opens on the Pull request tab pinned to a transcript chip until it is closed', () => {
@@ -84,7 +88,8 @@ describe('mobile-work-hub-aux-sheet', () => {
         sheet.open('side-chat');
         sheet.node.querySelector<HTMLButtonElement>('.theia-mobile-work-hub-aux-sheet-close')!.click();
         expect(sheet.isOpen).to.equal(false);
-        expect(sheet.node.hidden).to.equal(true);
+        // It slides out like the other views' drawer before it is hidden.
+        expect(sheet.node.querySelector('.theia-mobile-execution-surface-sidebar')!.classList.contains('theia-mod-closing')).to.equal(true);
         expect(document.body.classList.contains('theia-mobile-mod-aux-sheet-open')).to.equal(false);
 
         sheet.open('side-chat');
@@ -96,20 +101,14 @@ describe('mobile-work-hub-aux-sheet', () => {
         expect(sheet.isOpen).to.equal(false);
     });
 
-    it('focuses the active tab on open and gives focus back on close', () => {
+    it('focuses the drawer close button on open and gives focus back on close', () => {
         const opener = document.createElement('button');
         document.body.append(opener);
         opener.focus();
         sheet.open('side-chat');
-        expect(document.activeElement).to.equal(sheet.node.querySelector('[data-tab="side-chat"]'));
+        expect(document.activeElement).to.equal(sheet.node.querySelector('.theia-mobile-work-hub-aux-sheet-close'));
         sheet.close();
         expect(document.activeElement).to.equal(opener);
-    });
-
-    it('moves between tabs with the arrow keys', () => {
-        sheet.open('side-chat');
-        sheet.node.querySelector('[role="tablist"]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
-        expect(sheet.activeTab).to.equal('pull-request');
     });
 
     it('inside the sheet the views show no title or close button of their own; the desktop panel keeps them', () => {
@@ -280,7 +279,7 @@ describe('mobile-work-hub-aux-sheet entry points', () => {
         const { trigger, menu } = openViewsMenu(strip);
         menu.querySelector<HTMLButtonElement>('[data-aux-tab="side-chat"]')!.click();
         const sheet = ui.resolveMobileAuxSheet()!;
-        expect(document.activeElement).to.equal(sheet.node.querySelector('[data-tab="side-chat"]'));
+        expect(document.activeElement).to.equal(sheet.node.querySelector('.theia-mobile-work-hub-aux-sheet-close'));
 
         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
         expect(sheet.isOpen).to.equal(false);
