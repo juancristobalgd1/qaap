@@ -27,7 +27,13 @@ describe('harness session check declarations', () => {
                     break;
                 case 'attestation':
                     expect(isQaapSessionAttestationAgent(definition.id), `${definition.id} must be listed in QAAP_SESSION_ATTESTATION_AGENT_IDS`).to.equal(true);
-                    expect(probe, `${definition.id} accepts attestations, so it must not also have a probe`).to.equal(undefined);
+                    // An attestation harness may also have a probe, but only a confirming one: it can report a recorded
+                    // session (`connected`) and never a sign-out, because the session can live where the probe cannot see
+                    // it (Copilot on `GH_TOKEN`). Its unknown answer then falls back to the attestation.
+                    if (probe) {
+                        const probeText = probe.args.join(' ').toLowerCase();
+                        expect(probeText, `${definition.id}'s probe must never print a signed-out phrase`).to.not.match(/not logged in|logged out|not authenticated/);
+                    }
                     break;
                 default:
                     expect.fail(`${definition.id} has no sessionCheck`);
