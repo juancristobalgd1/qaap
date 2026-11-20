@@ -1,6 +1,7 @@
 import type { MobileProjectsTranscriptLiveUiContext } from './mobile-projects-transcript-live-ui-context';
 // Extracted from mobile-projects-transcript-live-ui.ts
 
+import { nextTranscriptPreviewPollMisses } from '../common/qaap-transcript-preview-poll-backoff';
 import { qaapStopAck } from '@theia/qaap-shared-core/lib/browser/qaap-stop-ack';
 import { Event as TheiaEvent } from '@theia/core/lib/common/event';
 import {
@@ -370,9 +371,15 @@ export async function refreshTranscriptPreviewOfferExtracted(ctx: MobileProjects
         try {
             ctx.kickoffTranscriptDevPreviewBootstrap(conv);
             const readyUrl = await ctx.resolveReadyTranscriptPreviewUrl(conv);
+            ctx.transcriptPreviewPollMisses = nextTranscriptPreviewPollMisses(
+                ctx.transcriptPreviewPollMisses,
+                readyUrl,
+                ctx.transcriptPreviewOfferAnnouncedUrl,
+            );
+            ctx.transcriptPreviewPollIntervalMs = ctx.transcriptPreviewPollMisses === 0
+                ? TRANSCRIPT_PREVIEW_POLL_BASE_MS
+                : ctx.resolveTranscriptPreviewPollIntervalMs();
             if (readyUrl) {
-                ctx.transcriptPreviewPollMisses = 0;
-                ctx.transcriptPreviewPollIntervalMs = TRANSCRIPT_PREVIEW_POLL_BASE_MS;
                 await ctx.openReadyTranscriptPreviewUrl(readyUrl, conv);
                 const project = ctx.host.transcriptOpenProject;
                 if (project && project.previewUrl !== readyUrl) {
@@ -381,8 +388,6 @@ export async function refreshTranscriptPreviewOfferExtracted(ctx: MobileProjects
                     void ctx.host.projectsService.recordProjectPreviewUrl(updated, readyUrl).catch(() => undefined);
                 }
             } else {
-                ctx.transcriptPreviewPollMisses += 1;
-                ctx.transcriptPreviewPollIntervalMs = ctx.resolveTranscriptPreviewPollIntervalMs();
                 const bootstrap = ctx.host.projectBootstrap;
                 if (bootstrap) {
                     void ctx.maybeReportTranscriptPreviewBootstrapFailure(conv, bootstrap);
@@ -415,6 +420,8 @@ export function ensureTranscriptConversationRefreshExtracted(ctx: MobileProjects
         const context = ctx.resolveTranscriptRefreshContext();
         if (!context || !ctx.isWatchingOpenTranscript(context.summary.id)) {
             ctx.stopTranscriptVisualVerificationPoll();
+            // Leaving the conversation: a trailing refetch must not fire for a transcript no longer open.
+            ctx.transcriptRefetchThrottle.cancelAll();
             return;
         }
         const wasPolling = ctx.transcriptVisualVerificationPollTimer !== undefined
@@ -438,13 +445,39 @@ export function ensureTranscriptConversationRefreshExtracted(ctx: MobileProjects
             void ctx.refreshOpenTranscriptConversation({ forcePoll: true });
             return;
         }
-        controller.ensureActivePoll();
         const liveStatus = ctx.host.transcriptLastConv?.status ?? context.summary.status;
-        if (liveStatus !== 'streaming') {
+        if (liveStatus === 'streaming') {
+            controller.ensureActivePoll();
+            ctx.host.transcriptScheduleRefresh();
+            return;
+        }
+        // Settled turn: every detail tick used to force a GET and re-arm the submit grace poll. Now a
+        // settled conversation refetches only when its visible state changed, at most once per throttle
+        // window. Pending visual evidence or interactive approvals keep the forced refresh.
+        const conv = ctx.host.transcriptLastConv;
+        const needsLiveRefresh = context.summary.visualVerificationPending === true
+            || (conv !== undefined && conversationUsesInteractiveApprovals(conv));
+        if (needsLiveRefresh) {
+            controller.ensureActivePoll();
             void ctx.refreshOpenTranscriptConversation({ forcePoll: true });
             return;
         }
-        ctx.host.transcriptScheduleRefresh();
+        const conversationId = context.summary.id;
+        const stateKey = `${liveStatus}|${conv?.updatedAt ?? context.summary.updatedAt}`;
+        const throttle = ctx.transcriptRefetchThrottle;
+        if (!throttle.hasStateChanged(conversationId, stateKey)) {
+            return;
+        }
+        const delayMs = throttle.delayMs(conversationId);
+        if (delayMs > 0) {
+            // Window still open: one trailing refetch replaces any pending one, so the change is not lost.
+            throttle.scheduleTrailing(conversationId, delayMs, stateKey, () => {
+                void ctx.refreshOpenTranscriptConversation({ forcePoll: true });
+            });
+            return;
+        }
+        throttle.markIssued(conversationId, stateKey);
+        void ctx.refreshOpenTranscriptConversation({ forcePoll: true });
 }
 
 export function scheduleTranscriptVisualVerificationPollExtracted(ctx: MobileProjectsTranscriptLiveUiContext, conversationId: string): void {

@@ -108,7 +108,7 @@ export function createTranscriptChangedFileRowExtracted(ctx: MobileProjectsTrans
         row.className = `theia-mobile-agent-changed-file theia-mod-${file.kind}${options?.compact ? ' theia-mod-compact' : ''}`;
 
         const icon = document.createElement('span');
-        icon.className = `theia-mobile-agent-changed-file-icon codicon ${ctx.transcriptFileIconClass(file.path)}`;
+        icon.className = `theia-mobile-agent-changed-file-icon ${ctx.transcriptFileIconClass(file.path)}`;
         icon.setAttribute('aria-hidden', 'true');
 
         const info = document.createElement('span');

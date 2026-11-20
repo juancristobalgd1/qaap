@@ -16,6 +16,7 @@ import {
 } from '../common/qaap-agent-message-wire-compress';
 import type { QaapAgentMessageWireDelta } from '../common/qaap-agent-message-wire-delta';
 import { resolveMessagePreviewText } from '../common/qaap-agent-message-content';
+import { isSuccessfulAgentTurn } from '../common/qaap-agent-turn-outcome';
 import { goalLoopSummaryFields } from '../common/qaap-agent-goal-loop-labels';
 import { normalizeCwd } from './mobile-projects-active-tasks';
 import { SSE_RECONNECT_BASE_MS, SSE_RECONNECT_MAX_MS, WS_RECONNECT_MAX_MS } from './mobile-projects-conversations';
@@ -264,7 +265,8 @@ export function refreshSummaryFromLiveMessageExtracted(ctx: MobileProjectsConver
             lastAgentActivityAt: payload.message.role === 'agent'
                 ? Math.max(existing.lastAgentActivityAt ?? 0, payload.message.createdAt, payload.message.runFinishedAt ?? 0)
                 : undefined,
-            lastMessageError: payload.message.error?.trim()
+            // A live reply that completed its turn keeps no stored failure (see qaap-agent-turn-outcome).
+            lastMessageError: payload.message.error?.trim() && !isSuccessfulAgentTurn({}, payload.message)
                 ? excerptConversationMessageError(payload.message.error)
                 : undefined,
         };

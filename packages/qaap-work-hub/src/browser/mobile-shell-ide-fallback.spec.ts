@@ -96,6 +96,8 @@ describe('mobile-shell-ide-fallback', () => {
         panel = {
             hide: () => { calls.push('panel.hide'); },
             dispose: () => { calls.push('panel.dispose'); },
+            openInlineConversation: () => undefined,
+            isWorkHubSessionsSidebarVisible: () => false,
             node: panelNode,
         } as unknown as MobileProjectsPanel;
         const controller = new MobileShellIdeFallbackController({
@@ -114,6 +116,31 @@ describe('mobile-shell-ide-fallback', () => {
         expect(host.calls).to.include('panel.dispose');
         expect(host.panel).to.equal(undefined);
         expect(document.body.classList.contains('theia-mobile-mod-landing')).to.equal(false);
+    });
+
+    it('openDesktopIde keeps the open Work Hub conversation before disposing the panel', () => {
+        const { controller, host, sessionState } = createController();
+        const target = { project: { id: 'p1' }, summary: { id: 'conv-1', status: 'settled' } };
+        (host.panel as unknown as { openInlineConversation: () => unknown }).openInlineConversation = () => target;
+        controller.openDesktopIde();
+        expect(host.panel).to.equal(undefined);
+        expect(sessionState.conversationBeforeDesktopIde).to.equal(target);
+    });
+
+    it('openDesktopIde keeps whether the sessions sidebar was open before disposing the panel', () => {
+        const { controller, host, sessionState } = createController();
+        (host.panel as unknown as { isWorkHubSessionsSidebarVisible: () => boolean }).isWorkHubSessionsSidebarVisible = () => true;
+        controller.openDesktopIde();
+        expect(sessionState.sessionsSidebarOpenBeforeDesktopIde).to.equal(true);
+    });
+
+    it('openDesktopIde from the idle new-task shell keeps no conversation', () => {
+        const sessionState = new MobileShellSessionState();
+        sessionState.conversationBeforeDesktopIde = { project: { id: 'old' }, summary: { id: 'stale' } } as unknown as MobileShellSessionState['conversationBeforeDesktopIde'];
+        const { controller, host } = createController({ sessionState });
+        (host.panel as unknown as { openInlineConversation: () => unknown }).openInlineConversation = () => undefined;
+        controller.openDesktopIde();
+        expect(sessionState.conversationBeforeDesktopIde).to.equal(undefined);
     });
 
     it('does not enter the classic IDE in one-column mobile mode', () => {

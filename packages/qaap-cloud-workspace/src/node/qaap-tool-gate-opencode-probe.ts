@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { execFile, spawn } from 'child_process';
+import { execFile, spawn, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as http from 'http';
 import type { AddressInfo } from 'net';
@@ -21,7 +21,10 @@ export interface QaapOpencodeGateProbeVerdict {
 
 const PROBE_TIMEOUT_MS = 60_000;
 const FAILED_VERDICT_TTL_MS = 60_000;
+const VERSION_CACHE_TTL_MS = 5 * 60_000;
 const MAX_PROBE_FILE_BYTES = 64 * 1024;
+/** Sandbox base with a drop: sticky, traversable and writable by others, not listable by others (see verifyAgentBase). */
+const AGENT_PROBE_BASE_MODE = 0o1733;
 
 /** OS identity OpenCode runs as in the task (`resolveAgentSpawnIdentity`). */
 export interface ProbeIdentity {
@@ -40,7 +43,28 @@ export class QaapOpencodeGateProbe {
 
     protected readonly verdicts = new Map<string, { verdict: QaapOpencodeGateProbeVerdict; at: number }>();
     protected readonly inflight = new Map<string, Promise<QaapOpencodeGateProbeVerdict>>();
+    protected readonly versions = new Map<string, { version: string; at: number }>();
     protected latest: QaapOpencodeGateProbeVerdict | undefined;
+
+    /** Clock for the version cache; overridable in tests. */
+    protected now(): number {
+        return Date.now();
+    }
+
+    /**
+     * The `--version` output per command and identity, reused for {@link VERSION_CACHE_TTL_MS}, so a spawn does not
+     * start a sandbox and two children each time. Failures throw and are never cached.
+     */
+    protected async cachedVersion(command: string, env: NodeJS.ProcessEnv, drop?: { uid: number; gid: number }): Promise<string> {
+        const cacheKey = `${command}|${drop?.uid ?? ''}`;
+        const cached = this.versions.get(cacheKey);
+        if (cached && this.now() - cached.at < VERSION_CACHE_TTL_MS) {
+            return cached.version;
+        }
+        const version = await this.readVersion(command, env, drop);
+        this.versions.set(cacheKey, { version, at: this.now() });
+        return version;
+    }
 
     /** Verdict of the latest {@link ensure}; `undefined` before any probe ran (treated as not proven). */
     verdict(): QaapOpencodeGateProbeVerdict | undefined {
@@ -60,8 +84,9 @@ export class QaapOpencodeGateProbe {
         const drop = this.resolveDrop(identity);
         let key: string;
         try {
-            key = `${command}|${await this.readVersion(command, env, drop)}|${fs.statSync(pluginPath).mtimeMs}`;
+            key = `${command}|${await this.cachedVersion(command, env, drop)}|${fs.statSync(pluginPath).mtimeMs}`;
         } catch (error) {
+            console.warn(`[qaap-tool-gate] opencode --version probe failed: ${error instanceof Error ? error.message : String(error)}`);
             return this.latest = { ok: false, key: `${command}|unknown`, reason: `OpenCode could not be started to probe the gate plugin (${error instanceof Error ? error.message : String(error)}).` };
         }
         const cached = this.verdicts.get(key);
@@ -91,16 +116,30 @@ export class QaapOpencodeGateProbe {
         return { uid: identity.uid, gid: identity.gid ?? identity.uid };
     }
 
-    /** Runs as the agent identity and with a minimal env: the binary found on PATH is the only thing inherited. */
-    protected readVersion(command: string, env: NodeJS.ProcessEnv, drop?: { uid: number; gid: number }): Promise<string> {
-        return new Promise((resolve, reject) => {
-            execFile(command, ['--version'], {
-                env: { PATH: env.PATH ?? '' },
-                cwd: path.parse(os.tmpdir()).root,
-                timeout: 10_000,
-                ...(drop ? { uid: drop.uid, gid: drop.gid } : {}),
-            }, (error, stdout) => error ? reject(error) : resolve(stdout.trim()));
-        });
+    /**
+     * Runs as the agent identity inside a private probe sandbox (same helpers as the probe run). Without a private
+     * HOME, OpenCode resolves HOME from passwd, which is read-only in the tenant container (EROFS). PATH is the only
+     * inherited variable.
+     */
+    protected async readVersion(command: string, env: NodeJS.ProcessEnv, drop?: { uid: number; gid: number }): Promise<string> {
+        const sandbox = this.createSandbox(drop);
+        try {
+            return await new Promise<string>((resolve, reject) => {
+                execFile(command, ['--version'], {
+                    env: this.buildVersionEnv(env, sandbox.agentDir),
+                    cwd: path.parse(os.tmpdir()).root,
+                    timeout: 5_000,
+                    ...(drop ? { uid: drop.uid, gid: drop.gid } : {}),
+                }, (error, stdout) => error ? reject(error) : resolve(stdout.trim()));
+            });
+        } finally {
+            await this.removeSandbox(sandbox, drop);
+        }
+    }
+
+    /** Env of the `--version` call: PATH plus a private HOME and XDG/TMPDIR directories inside the probe sandbox. */
+    protected buildVersionEnv(env: NodeJS.ProcessEnv, agentDir: string): NodeJS.ProcessEnv {
+        return { PATH: env.PATH ?? '', ...this.privateHomeEnv(agentDir) };
     }
 
     protected async runProbe(key: string, pluginPath: string, env: NodeJS.ProcessEnv, command: string, drop?: { uid: number; gid: number }): Promise<QaapOpencodeGateProbeVerdict> {
@@ -125,24 +164,41 @@ export class QaapOpencodeGateProbe {
 
     /**
      * Everything the probe touches lives in a random directory this process creates (mkdtemp), never at a
-     * predictable path the agent could pre-plant. `base` stays owned by this process (0700, or 0711 with a
-     * drop so the agent can reach its own subdirectory); `agentDir` is handed to the agent by file
-     * descriptor. This process never operates by path inside `agentDir` except for the guarded read below.
+     * predictable path the agent could pre-plant. `base` stays owned by this process (0700; with a drop 1733, sticky,
+     * so the agent can create its own subdirectory but not list or remove others). With a drop the agent creates
+     * `agentDir` itself (no chown exists). This process never operates by path inside `agentDir` except for the
+     * guarded read below.
      */
     protected createSandbox(drop: { uid: number; gid: number } | undefined): { base: string; agentDir: string } {
         const base = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-oc-probe-'));
+        const agentDir = path.join(base, 'agent');
         try {
             this.verifyDirectory(base, process.getuid?.(), drop ? 0o022 : 0o077);
-            const agentDir = path.join(base, 'agent');
-            fs.mkdirSync(agentDir, { mode: 0o700 });
-            if (drop) {
-                this.handOverDirectory(agentDir, drop);
-                fs.chmodSync(base, 0o711);
-                this.verifyDirectory(base, process.getuid?.(), 0o022);
+            if (!drop) {
+                fs.mkdirSync(agentDir, { mode: 0o700 });
+                return { base, agentDir };
+            }
+            fs.chmodSync(base, AGENT_PROBE_BASE_MODE);
+            this.verifyAgentBase(base);
+            if (!this.createAgentDirectory(agentDir, drop)) {
+                throw new Error(`Could not create the gate probe directory as the agent user (uid ${drop.uid}).`);
+            }
+            const stat = fs.lstatSync(agentDir);
+            if (!stat.isDirectory() || this.directoryOwnerUid(stat) !== drop.uid) {
+                throw new Error(`Refusing to use ${agentDir} for the gate probe: the agent user did not create it.`);
             }
             return { base, agentDir };
         } catch (error) {
-            fs.rmSync(base, { recursive: true, force: true });
+            // Never recurse as root into an agent-writable base: remove it only when empty; the OS temp dir takes the rest.
+            if (drop) {
+                try {
+                    fs.rmdirSync(base);
+                } catch {
+                    // the agent left entries behind: harmless, nothing secret lives in the probe sandbox
+                }
+            } else {
+                fs.rmSync(base, { recursive: true, force: true });
+            }
             throw error;
         }
     }
@@ -155,30 +211,38 @@ export class QaapOpencodeGateProbe {
         }
     }
 
-    protected handOverDirectory(dir: string, owner: { uid: number; gid: number }): void {
-        const fd = fs.openSync(dir, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | (fs.constants.O_NOFOLLOW ?? 0));
-        try {
-            this.handOver(fd, owner);
-        } finally {
-            fs.closeSync(fd);
+    /**
+     * With a drop the base must be a real directory owned by this process, sticky, traversable and writable by
+     * others, and not readable by others: the agent can create `agentDir` but cannot list the base.
+     */
+    protected verifyAgentBase(base: string): void {
+        const stat = fs.lstatSync(base);
+        const uid = process.getuid?.();
+        const modeOk = (stat.mode & 0o1000) !== 0 && (stat.mode & 0o044) === 0 && (stat.mode & 0o003) === 0o003;
+        if (!stat.isDirectory() || (uid !== undefined && stat.uid !== uid) || !modeOk) {
+            throw new Error(`Refusing to use ${base} for the gate probe: it is not a sticky, agent-traversable directory owned by the backend.`);
         }
     }
 
-    /** The only chown: by file descriptor, so a link can never redirect it. Overridable for tests. */
-    protected handOver(fd: number, owner: { uid: number; gid: number }): void {
-        fs.fchownSync(fd, owner.uid, owner.gid);
+    /** Creates `agentDir` as the agent uid (a child process; root cannot chown it). Overridable for tests. */
+    protected createAgentDirectory(agentDir: string, drop: { uid: number; gid: number }): boolean {
+        const result = spawnSync(process.execPath, ['-e', "require('fs').mkdirSync(process.argv[1],{mode:0o700})", agentDir], {
+            uid: drop.uid, gid: drop.gid, cwd: '/', timeout: 30000,
+            env: { PATH: process.env.PATH ?? '/usr/bin:/bin' }, stdio: 'ignore',
+        });
+        return result.status === 0;
+    }
+
+    /** Owner uid of an entry, overridable for tests that cannot change uid. */
+    protected directoryOwnerUid(stat: fs.Stats): number {
+        return stat.uid;
     }
 
     /** A complete env of our own: HOME, XDG, TMPDIR and the inline config all point into the sandbox. */
     protected buildProbeEnv(env: NodeJS.ProcessEnv, agentDir: string, pluginPath: string, probeFile: string, port: number): NodeJS.ProcessEnv {
         return {
             PATH: env.PATH ?? '',
-            HOME: agentDir,
-            TMPDIR: agentDir,
-            XDG_CONFIG_HOME: path.join(agentDir, 'xdg-config'),
-            XDG_DATA_HOME: path.join(agentDir, 'xdg-data'),
-            XDG_STATE_HOME: path.join(agentDir, 'xdg-state'),
-            XDG_CACHE_HOME: path.join(agentDir, 'xdg-cache'),
+            ...this.privateHomeEnv(agentDir),
             OPENCODE_DISABLE_PROJECT_CONFIG: '1',
             OPENCODE_DISABLE_EXTERNAL_SKILLS: '1',
             OPENCODE_DISABLE_CLAUDE_CODE: '1',
@@ -252,6 +316,18 @@ export class QaapOpencodeGateProbe {
         } catch {
             // A leftover empty or agent-owned directory under the OS temp dir is harmless; never recurse as root.
         }
+    }
+
+    /** HOME, TMPDIR and the XDG dirs, all inside `agentDir`: nothing OpenCode writes reaches the passwd home. */
+    protected privateHomeEnv(agentDir: string): NodeJS.ProcessEnv {
+        return {
+            HOME: agentDir,
+            TMPDIR: agentDir,
+            XDG_CONFIG_HOME: path.join(agentDir, 'xdg-config'),
+            XDG_DATA_HOME: path.join(agentDir, 'xdg-data'),
+            XDG_STATE_HOME: path.join(agentDir, 'xdg-state'),
+            XDG_CACHE_HOME: path.join(agentDir, 'xdg-cache'),
+        };
     }
 
     /** Minimal OpenAI-compatible streaming endpoint whose only answer is one `bash` tool call. */

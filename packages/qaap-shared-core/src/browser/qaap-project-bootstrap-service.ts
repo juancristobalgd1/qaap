@@ -32,6 +32,7 @@ import {
     fetchQaapDevPreviewOomKillCount,
     waitForQaapDevPreviewPort,
 } from './qaap-dev-preview-client';
+import { restartManagedDevServerExtracted } from './qaap-project-bootstrap-service-restart';
 import {
     type QaapBootstrapFailureKind,
     diagnoseBootstrapFailure,
@@ -594,6 +595,17 @@ export class QaapProjectBootstrapService {
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
     public async startDevServer(plan: { command: string; cwd: URI; expectedPort?: number; kind: QaapProjectKind }, descriptor: QaapProjectDescriptor,): Promise<void> {
         return startDevServerExtracted(this, plan, descriptor);
+    }
+
+    /**
+     * Restarts the dev server Qaap started for this project (its managed terminal) so code the
+     * server loads at boot takes effect, keeping the preview identity: same previewId, same
+     * project widget. Returns false — and touches nothing — when the preview is not a running
+     * Qaap-managed process (an attached external server, or one an agent launched itself).
+     */
+    /** Restarts the Qaap-managed dev server keeping the preview identity; false when there is none. */
+    async restartManagedDevServer(): Promise<boolean> {
+        return restartManagedDevServerExtracted(this);
     }
 
     cancelActivePreviewLaunch(): void {

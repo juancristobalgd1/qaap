@@ -1,0 +1,608 @@
+// *****************************************************************************
+// Copyright (C) 2026 Theia contributors and Qaap product fork.
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
+// *****************************************************************************
+
+import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+
+// The view touches the DOM only when constructed; keep jsdom off while the modules load.
+const disableImportJSDOM = enableJSDOM();
+
+import { Disposable } from '@theia/core/lib/common/disposable';
+import type { AIVariableResolutionRequest } from '@theia/ai-core';
+import { expect } from 'chai';
+import { QAAP_AGENT_SIGNED_IN_EVENT } from './qaap-agent-signed-in-event';
+import { QAAP_AGENT_SIGNED_OUT_EVENT } from '@theia/qaap-shared-core/lib/common/qaap-harness-sign-out';
+import { QaapDirtyWorkspaceError, type QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { QaapLiveFeedFrame } from '@theia/qaap-shared-core/lib/common/qaap-live-feed-cursor';
+import {
+    QaapWorkHubAuxSideChatView,
+    type QaapWorkHubAuxSideChatApi,
+    type QaapWorkHubAuxSideChatHost,
+    type QaapWorkHubSideChatComposerSelection,
+    type QaapWorkHubSideChatModelOption,
+    type QaapWorkHubSideChatParent,
+} from './qaap-work-hub-aux-side-chat-view';
+
+disableImportJSDOM();
+
+describe('qaap-work-hub-aux-side-chat-view', () => {
+
+    let disableJSDOM: (() => void) | undefined;
+    const views: QaapWorkHubAuxSideChatView[] = [];
+    let nodeAbortController: typeof AbortController | undefined;
+    let previousFrames: { request: typeof window.requestAnimationFrame; cancel: typeof window.cancelAnimationFrame } | undefined;
+
+    before(() => {
+        disableJSDOM = enableJSDOM();
+        // The picker's dismiss wiring passes `{ signal }` to jsdom's addEventListener: Node's AbortSignal is rejected there.
+        nodeAbortController = globalThis.AbortController;
+        globalThis.AbortController = window.AbortController;
+        // jsdom has no layout frames: run the popover's frame callbacks at once, so placement is settled when a click returns.
+        previousFrames = { request: window.requestAnimationFrame, cancel: window.cancelAnimationFrame };
+        window.requestAnimationFrame = (callback: FrameRequestCallback): number => {
+            callback(0);
+            return 0;
+        };
+        window.cancelAnimationFrame = (): void => undefined;
+    });
+
+    after(() => {
+        if (nodeAbortController) {
+            globalThis.AbortController = nodeAbortController;
+            nodeAbortController = undefined;
+        }
+        if (previousFrames) {
+            window.requestAnimationFrame = previousFrames.request;
+            window.cancelAnimationFrame = previousFrames.cancel;
+            previousFrames = undefined;
+        }
+        disableJSDOM?.();
+        disableJSDOM = undefined;
+    });
+
+    afterEach(() => {
+        views.splice(0).forEach(view => view.dispose());
+        document.body.innerHTML = '';
+    });
+
+    const parent: QaapWorkHubSideChatParent = {
+        id: 'parent-1', title: 'Fix login', cwd: '/workspace/repos/users/alice/o/r', agentId: 'opencode',
+    };
+
+    const models: QaapWorkHubSideChatModelOption[] = [
+        { agentId: 'opencode', agentLabel: 'OpenCode', modelLabel: 'Beam Free', tier: 'free', session: 'signed-out', agentModel: { provider: 'openai', vendor: 'openai', modelId: 'beam-free' } },
+        { agentId: 'opencode', agentLabel: 'OpenCode', modelLabel: 'Beam Pro', tier: 'pro', session: 'signed-out', agentModel: { provider: 'openai', vendor: 'openai', modelId: 'beam-pro' } },
+    ];
+
+    function conversation(id: string, messages: QaapAgentConversationDTO['messages'], status: QaapAgentConversationDTO['status'] = 'settled'): QaapAgentConversationDTO {
+        return { id, cwd: parent.cwd, agentId: 'opencode', title: id, status, messages } as unknown as QaapAgentConversationDTO;
+    }
+
+    function harness(options: {
+        /** What the attach menu returns; the menu also types the skill `review` into the input. */
+        picks?: AIVariableResolutionRequest[];
+        messages?: QaapAgentConversationDTO['messages'];
+        composer?: QaapWorkHubSideChatComposerSelection;
+        models?: readonly QaapWorkHubSideChatModelOption[];
+        /** Replaces the stored conversations (the parent and any chain above it). */
+        conversations?: QaapAgentConversationDTO[];
+        /** The parent's working tree has uncommitted changes (the server answers 409 `dirty_workspace`). */
+        dirtyWorkspace?: boolean;
+    } = {}): {
+        view: QaapWorkHubAuxSideChatView;
+        calls: { create: unknown[]; post: unknown[]; get: string[]; remove: string[]; opened: string[]; signIns: string[]; closed: number; titles: Array<string | undefined>; listeners: Array<(frame: QaapLiveFeedFrame) => void>; live: number };
+        setConversation: (dto: QaapAgentConversationDTO) => void;
+    } {
+        const initial: QaapAgentConversationDTO[] = options.conversations ?? [conversation(parent.id, [
+            { id: 'p1', role: 'user', content: 'Make login work', createdAt: 1 },
+            { id: 'p2', role: 'agent', content: 'Done', createdAt: 2 },
+        ] as unknown as QaapAgentConversationDTO['messages'])];
+        const conversations = new Map<string, QaapAgentConversationDTO>(initial.map(dto => [dto.id, dto] as [string, QaapAgentConversationDTO]));
+        const calls = { create: [] as unknown[], post: [] as unknown[], get: [] as string[], remove: [] as string[], opened: [] as string[], signIns: [] as string[], closed: 0, titles: [] as Array<string | undefined>, listeners: [] as Array<(frame: QaapLiveFeedFrame) => void>, live: 0 };
+        const api: QaapWorkHubAuxSideChatApi = {
+            create: async body => {
+                calls.create.push(body);
+                // The server's guard: a shared-tree create in a dirty repository is refused unless it accepts the dirt.
+                if (options.dirtyWorkspace && body.acceptDirty !== true) {
+                    throw new QaapDirtyWorkspaceError('The workspace has uncommitted changes.', ['server.js'], 1);
+                }
+                const created = conversation('side-1', options.messages ?? []);
+                conversations.set('side-1', created);
+                return created;
+            },
+            post: async (id, content, postOptions) => {
+                calls.post.push({ id, content, postOptions });
+                return {};
+            },
+            get: async id => {
+                calls.get.push(id);
+                const dto = conversations.get(id);
+                if (!dto) {
+                    throw new Error('Conversation not found.');
+                }
+                return dto;
+            },
+            remove: async id => {
+                calls.remove.push(id);
+            },
+        };
+        const host: QaapWorkHubAuxSideChatHost = {
+            resolveParent: () => parent,
+            resolveComposerSelection: () => options.composer,
+            listModels: async () => options.models ?? models,
+            pickAttachments: async (_anchor, handlers) => {
+                handlers.insertComposerSkill?.('review');
+                return options.picks ?? [];
+            },
+            prepareOutbound: async (draft, variables) => variables.length > 0 ? `${draft} [${variables.length} attached]` : draft,
+            startSignIn: agentId => { calls.signIns.push(agentId); },
+            openInMainArea: async id => { calls.opened.push(id); },
+            subscribeLive: onFrame => {
+                calls.live += 1;
+                calls.listeners.push(onFrame);
+                return Disposable.create(() => { calls.live -= 1; });
+            },
+        };
+        const view = new QaapWorkHubAuxSideChatView({
+            host,
+            api,
+            onTitle: title => { calls.titles.push(title); },
+            onClose: () => { calls.closed += 1; },
+            refreshMs: 0,
+        });
+        views.push(view);
+        document.body.append(view.element);
+        stubPillRect(view.element.querySelector<HTMLElement>('.qaap-work-hub-aux-side-chat-model')!);
+        view.show();
+        return {
+            view,
+            calls,
+            // Stands for the live feed: a stored change reaches the view as a frame of its conversation.
+            setConversation: dto => {
+                conversations.set(dto.id, dto);
+                calls.listeners.forEach(listener => listener({ type: 'message', conversationId: dto.id }));
+            },
+        };
+    }
+
+    const q = (view: QaapWorkHubAuxSideChatView, selector: string): HTMLElement => view.element.querySelector(selector) as HTMLElement;
+    /** The side chat picker while it is open: it lives on document.body, outside the side chat element. */
+    const openedPicker = (): HTMLElement => {
+        const picker = document.querySelector<HTMLElement>('.qaap-work-hub-aux-side-chat-picker');
+        if (!picker) {
+            throw new Error('the side chat picker is not on the overlay layer');
+        }
+        return picker;
+    };
+    /** jsdom has no layout: a visible pill rect keeps the popover from reading its anchor as gone. */
+    const stubPillRect = (pill: HTMLElement, left = 200): void => {
+        pill.getBoundingClientRect = (): DOMRect => ({ top: 600, bottom: 620, left, right: left + 100, width: 100, height: 20, x: left, y: 600, toJSON: () => ({}) }) as DOMRect;
+    };
+    const pickerRows = (): HTMLElement[] => Array.from(document.querySelectorAll<HTMLElement>('.qaap-work-hub-aux-side-chat-picker .qaap-model-picker-row'));
+    const bubbles = (view: QaapWorkHubAuxSideChatView): string[] => Array.from(view.element.querySelectorAll('.qaap-work-hub-aux-side-chat-message.is-user'))
+        .map(element => element.textContent ?? '');
+
+    async function waitFor(predicate: () => boolean, timeout = 1000): Promise<void> {
+        const started = Date.now();
+        while (!predicate()) {
+            if (Date.now() - started > timeout) {
+                throw new Error('timed out waiting for the side chat');
+            }
+            await new Promise(resolve => setTimeout(resolve, 5));
+        }
+    }
+
+    async function sendText(view: QaapWorkHubAuxSideChatView, text: string): Promise<void> {
+        (q(view, 'textarea') as HTMLTextAreaElement).value = text;
+        await view.send();
+    }
+
+    it('creates the side chat with its origin, the parent and the parent cwd, and the context in the first prompt only', async () => {
+        const h = harness({ messages: [{ id: 'u1', role: 'user', content: 'x', createdAt: 1 }] as unknown as QaapAgentConversationDTO['messages'] });
+        await sendText(h.view, 'Why is the build red?');
+        expect(h.calls.create).to.have.length(1);
+        const body = h.calls.create[0] as { origin: string; sideChatParentId: string; cwd: string; message: string; contextPreamble?: string };
+        expect(body.origin).to.equal('side-chat');
+        expect(body.sideChatParentId).to.equal('parent-1');
+        expect(body.cwd).to.equal(parent.cwd);
+        // The user's words are the message; the background travels in its own field, never in the text.
+        expect(body.message).to.equal('Why is the build red?');
+        expect(body.contextPreamble).to.contain('Background from the conversation "Fix login"');
+        expect(body.contextPreamble).to.contain('Make login work');
+        expect(h.view.conversation).to.equal('side-1');
+        expect(h.calls.titles).to.deep.equal(['Why is the build red?']);
+    });
+
+    it('sends into a parent tree with uncommitted changes: the create accepts the dirt instead of failing with 409', async () => {
+        const h = harness({ dirtyWorkspace: true });
+        await sendText(h.view, 'Which port does server.js use?');
+        expect((h.calls.create[0] as { acceptDirty?: boolean }).acceptDirty).to.equal(true);
+        expect(h.view.conversation).to.equal('side-1');
+        expect((q(h.view, 'textarea') as HTMLTextAreaElement).value).to.equal('');
+        expect(bubbles(h.view)).to.deep.equal(['Which port does server.js use?']);
+    });
+
+    it('sends later messages to the created conversation with the bare text', async () => {
+        const h = harness();
+        await sendText(h.view, 'First');
+        await sendText(h.view, 'Second');
+        expect(h.calls.create).to.have.length(1);
+        expect(h.calls.post).to.have.length(1);
+        expect((h.calls.post[0] as { id: string; content: string }).id).to.equal('side-1');
+        expect((h.calls.post[0] as { content: string }).content).to.equal('Second');
+    });
+
+    it('shows the user words, never the preamble, in the bubble of the stored first message', async () => {
+        const h = harness();
+        await sendText(h.view, 'Why is the build red?');
+        const stored = (h.calls.create[0] as { message: string }).message;
+        expect(stored).to.equal('Why is the build red?');
+        h.setConversation(conversation('side-1', [
+            { id: 'u1', role: 'user', content: stored, createdAt: 1 },
+            { id: 'a1', role: 'agent', content: 'Because of the lock.', createdAt: 2 },
+        ] as unknown as QaapAgentConversationDTO['messages'], 'settled'));
+        await waitFor(() => h.view.element.querySelector('.qaap-work-hub-aux-side-chat-message.is-agent') !== null);
+        expect(bubbles(h.view).join('\n')).to.not.contain('Background from the conversation');
+        expect(bubbles(h.view)).to.deep.equal(['Why is the build red?']);
+        expect(q(h.view, '.qaap-work-hub-aux-side-chat-message.is-agent').textContent).to.contain('Because of the lock.');
+    });
+
+    it('isolates the side chat: sending never opens or changes the main conversation', async () => {
+        const h = harness();
+        await sendText(h.view, 'Quick question');
+        await waitFor(() => h.calls.get.length > 0);
+        expect(h.calls.opened).to.deep.equal([]);
+        expect(h.calls.remove).to.deep.equal([]);
+    });
+
+    it('shows the parent context line and the working status while the agent runs', async () => {
+        const h = harness();
+        expect(q(h.view, '.qaap-work-hub-aux-side-chat-context').textContent).to.contain('Fix login');
+        await sendText(h.view, 'Run it');
+        h.setConversation(conversation('side-1', [
+            { id: 'u1', role: 'user', content: 'Run it', createdAt: 1 },
+            { id: 'a1', role: 'agent', content: 'Running', createdAt: 2, runActive: true },
+        ] as unknown as QaapAgentConversationDTO['messages'], 'streaming'));
+        await waitFor(() => q(h.view, '.qaap-work-hub-aux-side-chat-status').textContent !== '');
+        expect(q(h.view, '.qaap-work-hub-aux-side-chat-status').textContent).to.contain('Working');
+    });
+
+    it('counts the tool calls of a turn on the "Used N tools" line', async () => {
+        const h = harness();
+        await sendText(h.view, 'Look around');
+        h.setConversation(conversation('side-1', [
+            { id: 'u1', role: 'user', content: 'Look around', createdAt: 1 },
+            {
+                id: 'a1', role: 'agent', content: 'Done', createdAt: 2,
+                traceEvents: [{ type: 'tool_call' }, { type: 'tool_call' }, { type: 'thought' }],
+            },
+        ] as unknown as QaapAgentConversationDTO['messages']));
+        await waitFor(() => h.view.element.querySelector('.is-agent .qaap-work-hub-aux-side-chat-message-meta')?.textContent === 'Used 2 tools');
+    });
+
+    it('reads the conversation only for live frames of its own id', async () => {
+        const h = harness();
+        await sendText(h.view, 'Hello');
+        await waitFor(() => h.calls.get.includes('side-1'));
+        const before = h.calls.get.length;
+        h.calls.listeners.forEach(listener => listener({ type: 'message', conversationId: 'someone-else' }));
+        await new Promise(resolve => setTimeout(resolve, 20));
+        expect(h.calls.get.length).to.equal(before);
+        h.calls.listeners.forEach(listener => listener({ type: 'message', conversationId: 'side-1' }));
+        await waitFor(() => h.calls.get.length > before);
+    });
+
+    it('Bring back opens the conversation in the main area and closes the tab', async () => {
+        const h = harness();
+        await sendText(h.view, 'Keep this');
+        await waitFor(() => !(q(h.view, '.qaap-work-hub-aux-side-chat-bring-back') as HTMLButtonElement).disabled);
+        (q(h.view, '.qaap-work-hub-aux-side-chat-bring-back') as HTMLButtonElement).click();
+        await waitFor(() => h.calls.closed === 1);
+        expect(h.calls.opened).to.deep.equal(['side-1']);
+        expect(h.calls.remove).to.deep.equal([]);
+    });
+
+    it('deletes only after confirmation, then closes the tab', async () => {
+        const h = harness();
+        await sendText(h.view, 'Delete me');
+        (q(h.view, '.qaap-work-hub-aux-side-chat-delete') as HTMLButtonElement).click();
+        expect(q(h.view, '.qaap-work-hub-aux-side-chat-confirm').hidden).to.be.false;
+        expect(h.calls.remove).to.deep.equal([]);
+        (q(h.view, '.qaap-work-hub-aux-side-chat-confirm-cancel') as HTMLButtonElement).click();
+        expect(q(h.view, '.qaap-work-hub-aux-side-chat-confirm').hidden).to.be.true;
+        (q(h.view, '.qaap-work-hub-aux-side-chat-delete') as HTMLButtonElement).click();
+        (q(h.view, '.qaap-work-hub-aux-side-chat-confirm-delete') as HTMLButtonElement).click();
+        await waitFor(() => h.calls.closed === 1);
+        expect(h.calls.remove).to.deep.equal(['side-1']);
+    });
+
+    it('closes with the close button without deleting the conversation', async () => {
+        const h = harness();
+        await sendText(h.view, 'Keep me');
+        (q(h.view, '.qaap-work-hub-aux-side-chat-close') as HTMLButtonElement).click();
+        expect(h.calls.closed).to.equal(1);
+        expect(h.calls.remove).to.deep.equal([]);
+        expect(h.calls.opened).to.deep.equal([]);
+    });
+
+    it('attaches from the composer menu into this side chat and sends the attachments with the turn', async () => {
+        const h = harness({ picks: [{ variable: { name: 'file' }, arg: 'src/a.ts' } as unknown as AIVariableResolutionRequest] });
+        h.view.element.querySelector<HTMLButtonElement>('.qaap-work-hub-aux-side-chat-attach')!.click();
+        await waitFor(() => h.view.element.querySelectorAll('.qaap-work-hub-aux-side-chat-chip').length === 1);
+        expect(h.view.element.querySelector('.qaap-work-hub-aux-side-chat-chip-label')!.textContent).to.equal('a.ts');
+        await sendText(h.view, 'Look');
+        expect((h.calls.create[0] as { message: string }).message).to.equal('Look [1 attached]');
+        expect(h.view.element.querySelectorAll('.qaap-work-hub-aux-side-chat-chip')).to.have.length(0);
+    });
+
+    it('types a skill picked in the attach menu into this side chat input only', async () => {
+        const h = harness();
+        h.view.element.querySelector<HTMLButtonElement>('.qaap-work-hub-aux-side-chat-attach')!.click();
+        await waitFor(() => (h.view.element.querySelector('.qaap-work-hub-aux-side-chat-input') as HTMLTextAreaElement).value === '/review ');
+        expect((h.view.element.querySelector('.qaap-work-hub-aux-side-chat-input') as HTMLTextAreaElement).value).to.equal('/review ');
+        expect(h.calls.post).to.have.length(0);
+    });
+
+    it('closes its model picker on Escape even while the focus is outside the picker', async () => {
+        const h = harness();
+        await waitFor(() => (h.view.element.querySelector('.qaap-work-hub-aux-side-chat-model') as HTMLElement).textContent !== '');
+        h.view.element.querySelector<HTMLButtonElement>('.qaap-work-hub-aux-side-chat-model')!.click();
+        const picker = openedPicker();
+        expect(picker.hidden).to.equal(false);
+        h.view.element.ownerDocument.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+        expect(picker.hidden).to.equal(true);
+        expect(picker.isConnected).to.equal(false);
+    });
+
+    it('mounts its picker on the overlay layer, not inside the side chat panel, with the main composer popover classes', async () => {
+        const h = harness();
+        await waitFor(() => (h.view.element.querySelector('.qaap-work-hub-aux-side-chat-model') as HTMLElement).textContent !== '');
+        h.view.element.querySelector<HTMLButtonElement>('.qaap-work-hub-aux-side-chat-model')!.click();
+        const picker = openedPicker();
+        expect(picker.parentElement).to.equal(h.view.element.ownerDocument.body);
+        expect(h.view.element.contains(picker)).to.equal(false);
+        // The shared stylesheet sizes the popover by these two classes: the same 560px width and height rules as the main composer.
+        expect(picker.classList.contains('qaap-sticky-composer-sheet-popover')).to.equal(true);
+        expect(picker.classList.contains('theia-mod-agent-picker')).to.equal(true);
+        expect(picker.classList.contains('theia-mod-model-picker')).to.equal(true);
+        expect(picker.querySelector('.qaap-model-picker-rows, .qaap-model-picker-body')).to.exist;
+    });
+
+    it('places its picker above the pill and inside the viewport, clamped on the right edge', async () => {
+        const h = harness();
+        await waitFor(() => (h.view.element.querySelector('.qaap-work-hub-aux-side-chat-model') as HTMLElement).textContent !== '');
+        const pill = h.view.element.querySelector<HTMLButtonElement>('.qaap-work-hub-aux-side-chat-model')!;
+        // A pill at the far right of the viewport: its left edge would push the 560px popover past the right edge.
+        pill.getBoundingClientRect = (): DOMRect => ({ top: 600, bottom: 620, left: 1000, right: 1100, width: 100, height: 20, x: 1000, y: 600, toJSON: () => ({}) }) as DOMRect;
+        pill.click();
+        const picker = openedPicker();
+        const left = parseFloat(picker.style.left);
+        const top = parseFloat(picker.style.top);
+        const height = parseFloat(picker.style.height);
+        expect(left).to.be.at.least(0);
+        expect(left + Math.min(560, window.innerWidth - 32)).to.be.at.most(window.innerWidth);
+        // Opens upward: its bottom edge sits 8px above the pill (jsdom has no layout, so the popover reads 0px tall here) and
+        // the top never leaves the viewport. The 440px height is the shared cap for the picker.
+        expect(top).to.be.at.least(0);
+        expect(top).to.be.at.most(600 - 8);
+        expect(height).to.equal(440);
+    });
+
+    it('closes its picker when the side chat tab is hidden', async () => {
+        const h = harness();
+        await waitFor(() => (h.view.element.querySelector('.qaap-work-hub-aux-side-chat-model') as HTMLElement).textContent !== '');
+        h.view.element.querySelector<HTMLButtonElement>('.qaap-work-hub-aux-side-chat-model')!.click();
+        const picker = openedPicker();
+        h.view.hide();
+        expect(picker.isConnected).to.equal(false);
+        expect(document.querySelector('.qaap-work-hub-aux-side-chat-picker')).to.equal(null);
+    });
+
+    it('closes its picker on a click outside it, and keeps it open for a click on its own pill', async () => {
+        const h = harness();
+        await waitFor(() => (h.view.element.querySelector('.qaap-work-hub-aux-side-chat-model') as HTMLElement).textContent !== '');
+        h.view.element.querySelector<HTMLButtonElement>('.qaap-work-hub-aux-side-chat-model')!.click();
+        const picker = openedPicker();
+        const pill = h.view.element.querySelector<HTMLButtonElement>('.qaap-work-hub-aux-side-chat-model')!;
+        pill.dispatchEvent(new window.Event('pointerdown', { bubbles: true }));
+        expect(picker.isConnected).to.equal(true);
+        document.body.dispatchEvent(new window.Event('pointerdown', { bubbles: true }));
+        expect(picker.isConnected).to.equal(false);
+    });
+
+    it('sends on Enter and keeps Shift+Enter for a new line', async () => {
+        const h = harness();
+        const input = q(h.view, 'textarea') as HTMLTextAreaElement;
+        input.value = 'New line';
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true, cancelable: true }));
+        await new Promise(resolve => setTimeout(resolve, 10));
+        expect(h.calls.create).to.have.length(0);
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+        await waitFor(() => h.calls.create.length === 1);
+    });
+
+    it('offers Sign in for a Pro model without a session and never selects it', async () => {
+        const h = harness();
+        await waitFor(() => (q(h.view, '.qaap-work-hub-aux-side-chat-model').textContent ?? '').includes('Beam Free'));
+        (q(h.view, '.qaap-work-hub-aux-side-chat-model') as HTMLButtonElement).click();
+        const rows = pickerRows();
+        const pro = rows.find(row => row.textContent?.includes('Beam Pro'));
+        if (!pro) {
+            throw new Error('the shared picker lists no Pro row');
+        }
+        pro.click();
+        expect(h.calls.signIns).to.deep.equal(['opencode']);
+        expect(q(h.view, '.qaap-work-hub-aux-side-chat-model').textContent).to.contain('Beam Free');
+    });
+
+    it('reloads the models and unlocks the Pro model when a harness sign-in finishes', async () => {
+        const options: { models: readonly QaapWorkHubSideChatModelOption[] } = { models };
+        const h = harness(options);
+        await waitFor(() => (q(h.view, '.qaap-work-hub-aux-side-chat-model').textContent ?? '').includes('Beam Free'));
+        // The Connect dialog confirmed the sign-in: the host now lists the same models as signed in.
+        options.models = models.map(option => ({ ...option, session: 'signed-in' as const }));
+        window.dispatchEvent(new window.CustomEvent(QAAP_AGENT_SIGNED_IN_EVENT, { detail: { agentId: 'opencode' } }));
+        await new Promise(resolve => setTimeout(resolve, 20));
+        (q(h.view, '.qaap-work-hub-aux-side-chat-model') as HTMLButtonElement).click();
+        const pro = pickerRows().find(row => row.textContent?.includes('Beam Pro'));
+        if (!pro) {
+            throw new Error('the shared picker lists no Pro row');
+        }
+        pro.click();
+        expect(h.calls.signIns, 'no second sign-in: the session is now known').to.deep.equal([]);
+        expect(q(h.view, '.qaap-work-hub-aux-side-chat-model').textContent).to.contain('Beam Pro');
+    });
+
+    it('reloads the models and locks Pro models when a harness signs out', async () => {
+        const signedInModels = models.map(option => ({ ...option, session: 'signed-in' as const }));
+        const options: { models: readonly QaapWorkHubSideChatModelOption[] } = { models: signedInModels };
+        const h = harness(options);
+        await waitFor(() => (q(h.view, '.qaap-work-hub-aux-side-chat-model').textContent ?? '').includes('Beam Free'));
+        (q(h.view, '.qaap-work-hub-aux-side-chat-model') as HTMLButtonElement).click();
+        pickerRows().find(row => row.textContent?.includes('Beam Pro'))!.click();
+        expect(q(h.view, '.qaap-work-hub-aux-side-chat-model').textContent).to.contain('Beam Pro');
+
+        // Settings → Harness signed opencode out: the host now reports Pro locked.
+        options.models = models;
+        window.dispatchEvent(new window.CustomEvent(QAAP_AGENT_SIGNED_OUT_EVENT, { detail: { agentId: 'opencode' } }));
+        await waitFor(() => (q(h.view, '.qaap-work-hub-aux-side-chat-model').textContent ?? '').includes('Beam Free'));
+        (q(h.view, '.qaap-work-hub-aux-side-chat-model') as HTMLButtonElement).click();
+        pickerRows().find(row => row.textContent?.includes('Beam Pro'))!.click();
+        expect(h.calls.signIns).to.deep.equal(['opencode']);
+    });
+
+    it('ignores a sign-in event while hidden', async () => {
+        let listed = 0;
+        const options = { models };
+        const h = harness(options);
+        await waitFor(() => (q(h.view, '.qaap-work-hub-aux-side-chat-model').textContent ?? '').includes('Beam Free'));
+        h.view.hide();
+        Object.defineProperty(options, 'models', { get: () => { listed++; return models; } });
+        window.dispatchEvent(new window.CustomEvent(QAAP_AGENT_SIGNED_IN_EVENT, { detail: { agentId: 'opencode' } }));
+        await new Promise(resolve => setTimeout(resolve, 20));
+        expect(listed).to.equal(0);
+    });
+
+    it('picks a model in its own picker and leaves the main composer selection alone', async () => {
+        const signedIn: QaapWorkHubSideChatModelOption[] = [
+            { agentId: 'opencode', agentLabel: 'OpenCode', modelLabel: 'Beam Free', tier: 'free', session: 'signed-in', agentModel: { provider: 'openai', vendor: 'openai', modelId: 'beam-free' } },
+            { agentId: 'opencode', agentLabel: 'OpenCode', modelLabel: 'Other Free', tier: 'free', session: 'signed-in', agentModel: { provider: 'openai', vendor: 'openai', modelId: 'other-free' } },
+        ];
+        const composer = { agentId: 'opencode', agentModel: { provider: 'openai', vendor: 'openai', modelId: 'beam-free' } } as const;
+        const h = harness({ models: signedIn, composer });
+        await waitFor(() => (q(h.view, '.qaap-work-hub-aux-side-chat-model').textContent ?? '').includes('Beam Free'));
+        (q(h.view, '.qaap-work-hub-aux-side-chat-model') as HTMLButtonElement).click();
+        const other = pickerRows()
+            .find(row => row.textContent?.includes('Other Free'));
+        if (!other) {
+            throw new Error('the shared picker lists no Other Free row');
+        }
+        other.click();
+        expect(q(h.view, '.qaap-work-hub-aux-side-chat-model').textContent).to.contain('Other Free');
+        expect(composer.agentModel.modelId).to.equal('beam-free');
+        expect(document.querySelector('.qaap-work-hub-aux-side-chat-picker')).to.equal(null);
+    });
+
+    it('uses the main composer classes for its card, input, model pill and send button', () => {
+        const h = harness();
+        expect(q(h.view, '.theia-mobile-projects-sticky-composer-card')).to.exist;
+        expect(q(h.view, 'textarea.theia-mobile-projects-sticky-composer-input')).to.exist;
+        expect(q(h.view, '.theia-mobile-projects-sticky-composer-agent.qaap-work-hub-aux-side-chat-model')).to.exist;
+        expect(q(h.view, '.theia-mobile-projects-sticky-composer-send.qaap-work-hub-aux-side-chat-send')).to.exist;
+    });
+
+    describe('selector start', () => {
+        const signedIn: QaapWorkHubSideChatModelOption[] = [
+            {
+                agentId: 'opencode', agentLabel: 'OpenCode', modelLabel: 'Beam Free', tier: 'free', session: 'signed-in',
+                agentModel: { provider: 'openai', vendor: 'openai', modelId: 'beam-free' },
+            },
+            {
+                agentId: 'opencode', agentLabel: 'OpenCode', modelLabel: 'Other Free', tier: 'free', session: 'signed-in',
+                agentModel: { provider: 'openai', vendor: 'openai', modelId: 'other-free' },
+            },
+        ];
+
+        it('starts from the main composer harness and model when the list has them', async () => {
+            const composer = { agentId: 'opencode', agentModel: { provider: 'openai', vendor: 'openai', modelId: 'other-free' } } as const;
+            const h = harness({ models: signedIn, composer });
+            await waitFor(() => (q(h.view, '.qaap-work-hub-aux-side-chat-model').textContent ?? '').includes('Other Free'));
+            await sendText(h.view, 'hello');
+            expect((h.calls.create[0] as { agent: string; agentModel: { modelId: string } }).agent).to.equal('opencode');
+            expect((h.calls.create[0] as { agentModel: { modelId: string } }).agentModel.modelId).to.equal('other-free');
+        });
+
+        it('starts from the parent harness when the composer has no model pinned', async () => {
+            const h = harness({ models: signedIn });
+            await waitFor(() => (q(h.view, '.qaap-work-hub-aux-side-chat-model').textContent ?? '').includes('Beam Free'));
+        });
+    });
+
+    it('quotes the root of a chain of side chats, not the side chat it was opened from', async () => {
+        const side = { ...conversation(parent.id, [
+            { id: 's1', role: 'user', content: 'Earlier side question', createdAt: 3 },
+            { id: 's2', role: 'agent', content: 'Earlier side answer', createdAt: 4 },
+        ] as unknown as QaapAgentConversationDTO['messages']), title: 'Earlier side question', origin: 'side-chat', sideChatParentId: 'root-1' } as unknown as QaapAgentConversationDTO;
+        const root = { ...conversation('root-1', [
+            { id: 'p1', role: 'user', content: 'Make login work', createdAt: 1 },
+            { id: 'p2', role: 'agent', content: 'Done', createdAt: 2 },
+        ] as unknown as QaapAgentConversationDTO['messages']), title: 'Fix login' };
+        const h = harness({ conversations: [side, root] });
+        await sendText(h.view, 'Why now?');
+        const body = h.calls.create[0] as { contextPreamble: string };
+        expect(body.contextPreamble).to.contain('"Fix login"');
+        expect(body.contextPreamble).to.contain('Make login work');
+        expect(body.contextPreamble).to.not.contain('Earlier side');
+        expect(h.calls.get).to.deep.equal(['parent-1', 'root-1']);
+    });
+
+    it('quotes a root title that is still a stored background by its first question, never by the background', async () => {
+        const side = { ...conversation(parent.id, [
+            { id: 's1', role: 'user', content: 'Earlier side question', createdAt: 3 },
+        ] as unknown as QaapAgentConversationDTO['messages']), origin: 'side-chat', sideChatParentId: 'root-1' } as unknown as QaapAgentConversationDTO;
+        const root = { ...conversation('root-1', [
+            { id: 'p1', role: 'user', content: 'Make login work', createdAt: 1 },
+            { id: 'p2', role: 'agent', content: 'Done', createdAt: 2 },
+        ] as unknown as QaapAgentConversationDTO['messages']), title: 'Background from the conversation "Fi' };
+        const h = harness({ conversations: [side, root] });
+        await sendText(h.view, 'Why now?');
+        const body = h.calls.create[0] as { contextPreamble: string };
+        expect(body.contextPreamble).to.contain('"Make login work"');
+        expect(body.contextPreamble).to.not.contain('"Background from the conversation');
+    });
+
+    it('disables the send button while the input is empty and enables it with text', () => {
+        const h = harness();
+        const send = q(h.view, '.qaap-work-hub-aux-side-chat-send') as HTMLButtonElement;
+        expect(send.disabled).to.equal(true);
+        const input = q(h.view, 'textarea') as HTMLTextAreaElement;
+        const InputEvent = input.ownerDocument.defaultView!.Event;
+        input.value = 'hi';
+        input.dispatchEvent(new InputEvent('input'));
+        expect(send.disabled).to.equal(false);
+        expect(send.classList.contains('theia-mod-ready')).to.equal(true);
+        input.value = '   ';
+        input.dispatchEvent(new InputEvent('input'));
+        expect(send.disabled).to.equal(true);
+    });
+
+    it('lays the composer out as the main composer does: the same wrapper, card, stage and input panel nesting', () => {
+        const h = harness();
+        const composer = q(h.view, '.qaap-work-hub-aux-side-chat-composer');
+        expect(composer.classList.contains('theia-mobile-projects-sticky-composer-inner')).to.equal(true);
+        expect(composer.querySelector(':scope > .theia-mobile-projects-sticky-composer-card > .theia-mobile-projects-sticky-composer-stage > .theia-mobile-projects-sticky-composer-input-panel')).to.exist;
+        const panel = composer.querySelector('.theia-mobile-projects-sticky-composer-input-panel') as HTMLElement;
+        expect(panel.querySelector(':scope > .theia-mobile-projects-sticky-composer-input-body > .theia-mobile-projects-sticky-composer-input-editor > textarea')).to.exist;
+        expect(panel.querySelector(':scope > .theia-mobile-projects-sticky-composer-controls-row > .theia-mobile-projects-sticky-composer-controls-left > .theia-mobile-projects-sticky-composer-agent')).to.exist;
+        expect(panel.querySelector(':scope > .theia-mobile-projects-sticky-composer-controls-row > .theia-mobile-projects-sticky-composer-controls-right .theia-mobile-projects-sticky-composer-send')).to.exist;
+    });
+
+    it('omits the access block from the picker footer, since a side chat has no approval policy', async () => {
+        const h = harness({ models: [{ agentId: 'opencode', agentLabel: 'OpenCode', modelLabel: 'Beam Free', tier: 'free', session: 'signed-in', agentModel: { provider: 'openai', vendor: 'openai', modelId: 'beam-free' } }] });
+        await waitFor(() => q(h.view, '.qaap-work-hub-aux-side-chat-model').textContent !== 'Model');
+        (q(h.view, '.qaap-work-hub-aux-side-chat-model') as HTMLButtonElement).click();
+        expect(document.querySelector('.qaap-work-hub-aux-side-chat-picker .qaap-model-picker')).to.exist;
+        expect(document.querySelector('.qaap-work-hub-aux-side-chat-picker .qaap-model-picker-access')).to.equal(null);
+    });
+});

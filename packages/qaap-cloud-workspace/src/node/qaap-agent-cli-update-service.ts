@@ -59,7 +59,7 @@ const NPM_CACHE_TTL_MS = 30 * 60_000;
 /** Cap `npm install` so a hung registry cannot wedge the UI action; the process group is killed then. */
 const NPM_INSTALL_TIMEOUT_MS = 120_000;
 /** Cap `<cli> --version` probes. */
-const CLI_VERSION_PROBE_TIMEOUT_MS = 8_000;
+const CLI_VERSION_PROBE_TIMEOUT_MS = 5_000;
 /** Cap the writable-prefix check run as the agent uid. */
 const PREFIX_WRITABLE_PROBE_TIMEOUT_MS = 5_000;
 /** Keep only the tail of child output (npm can be chatty); the UI shows at most 500 characters. */
@@ -143,11 +143,11 @@ export const TRACKED_AGENT_CLIS: readonly TrackedAgentCli[] = [
     {
         id: 'antigravity',
         label: 'Antigravity CLI',
-        // The Antigravity harness runs on Gemini CLI: it signs in with Google from the Connect
-        // dialog. The community `antigravity`/`ag` CLI needs a running Antigravity desktop app.
-        bins: ['gemini', 'agy'],
-        npmPackage: '@google/gemini-cli',
-        expectedVersionEnv: 'GEMINI_CLI_VERSION',
+        // The Antigravity harness runs on Google's Antigravity CLI (`agy`), a pinned release binary in the
+        // image rather than an npm package, so it has no npm update path: the expected version is the image's
+        // AGY_CLI_VERSION. Gemini CLI (the fallback) is no longer tracked; the community CLI needs a desktop app.
+        bins: ['agy'],
+        expectedVersionEnv: 'AGY_CLI_VERSION',
     },
     {
         id: 'qaiq',

@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { QAAP_PREVIEW_PAINTED_MESSAGE } from '../common/qaap-preview-painted-message';
 import { nls } from '@theia/core/lib/common/nls';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { addEventListener, codiconArray } from '@theia/core/lib/browser/widgets/widget';
@@ -475,6 +476,21 @@ export function createQaapPreviewToolbarIconButton(title: string, icon: string, 
     return button;
 }
 
+/** Open-in-browser control at the URL field end (lucide arrow, revealed on URL-field hover). */
+export function createQaapPreviewOpenExternalButton(label: string): HTMLButtonElement {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.title = label;
+    button.setAttribute('aria-label', label);
+    button.classList.add(
+        'theia-mini-browser-url-field-go',
+        'theia-mini-browser-workbench-button',
+        'theia-mini-browser-open',
+    );
+    button.append(createLucideArrowUpRightIcon());
+    return button;
+}
+
 export type { QaapPreviewInspectorDeps } from './qaap-preview-inline-inspector';
 
 export interface EmbeddedAgentPreviewChromeOptions extends QaapAgentPreviewChromeOptions {
@@ -544,16 +560,7 @@ export function mountEmbeddedAgentPreviewChrome(
     urlField.append(urlInput);
 
     const openExternalLabel = nls.localize('theia/mini-browser/openInNewBrowserTab', 'Open in New Browser Tab');
-    const openBtn = document.createElement('button');
-    openBtn.type = 'button';
-    openBtn.title = openExternalLabel;
-    openBtn.setAttribute('aria-label', openExternalLabel);
-    openBtn.classList.add(
-        'theia-mini-browser-url-field-go',
-        'theia-mini-browser-workbench-button',
-        'theia-mini-browser-open',
-    );
-    openBtn.append(createLucideArrowUpRightIcon());
+    const openBtn = createQaapPreviewOpenExternalButton(openExternalLabel);
     urlField.append(openBtn);
 
     const body = document.createElement('div');
@@ -677,6 +684,12 @@ export function mountEmbeddedAgentPreviewChrome(
         forwardBtn.disabled = !frameHistory.canGoForward();
     };
 
+    // While the frame navigates, the toolbar draws the same sliding progress bar as the sessions
+    // list on its bottom edge; the next `load` clears it (fired for cross-origin documents too).
+    const setFrameLoading = (loading: boolean): void => {
+        toolbar.classList.toggle('qaap-mod-frame-loading', loading);
+    };
+
     const adapter: QaapAgentPreviewChromeHost = {
         getRoot: () => root,
         getFrame: () => frame,
@@ -725,6 +738,7 @@ export function mountEmbeddedAgentPreviewChrome(
             }
             // Before `src`: sandbox changes only apply to the next navigation.
             blockedFrameGuard.arm(next);
+            setFrameLoading(true);
             if (navOptions?.hard) {
                 const bust = next.includes('?') ? `${next}&_qaap_cache_bust=${Date.now()}` : `${next}?_qaap_cache_bust=${Date.now()}`;
                 frame.src = bust;
@@ -735,6 +749,7 @@ export function mountEmbeddedAgentPreviewChrome(
             options.onNavigate?.(next);
         },
         reload: () => {
+            setFrameLoading(true);
             try {
                 frame.contentWindow?.location.reload();
             } catch {
@@ -754,6 +769,7 @@ export function mountEmbeddedAgentPreviewChrome(
             const bust = url.includes('?')
                 ? `${url}&_qaap_cache_bust=${Date.now()}`
                 : `${url}?_qaap_cache_bust=${Date.now()}`;
+            setFrameLoading(true);
             try {
                 frame.contentWindow?.location.replace(bust);
             } catch {
@@ -857,7 +873,18 @@ export function mountEmbeddedAgentPreviewChrome(
         const caretPosition = urlInput.selectionEnd ?? urlInput.value.length;
         urlInput.setSelectionRange(caretPosition, caretPosition);
     }));
+    // The proxied page announces when it shows content (QAAP_PREVIEW_PAINTED_MESSAGE): end the
+    // loading bar there. Only this frame's own window counts; the message carries no data.
+    const onPaintedMessage = (event: MessageEvent): void => {
+        if (event.source === frame.contentWindow
+            && (event.data as { type?: unknown } | undefined)?.type === QAAP_PREVIEW_PAINTED_MESSAGE) {
+            setFrameLoading(false);
+        }
+    };
+    window.addEventListener('message', onPaintedMessage);
+    disposables.push({ dispose: () => window.removeEventListener('message', onPaintedMessage) });
     disposables.push(addEventListener(frame, 'load', () => {
+        setFrameLoading(false);
         try {
             const href = frame.contentWindow?.location.href;
             if (href && href !== 'about:blank') {

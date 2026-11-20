@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import type { QaapPreviewPidLiveness } from './qaap-dev-preview-process-liveness';
 import { expect } from 'chai';
 import type { Request } from '@theia/core/shared/express';
 import type { OutgoingHttpHeaders } from 'http';
@@ -1857,11 +1858,21 @@ describe('QaapDevPreviewEndpoint', () => {
         });
 
         describe('pid re-claim of a reservation inside its start grace', () => {
-            /** Never signals anything: the claim paths under test call terminatePreviewProcess. */
+            /** Never signals anything: the claim paths under test call terminatePreviewProcess. A terminated pid is reported dead, as after a real SIGTERM. */
             class PidReclaimEndpoint extends ClaimTestEndpoint {
                 readonly terminated: number[] = [];
-                override terminatePreviewProcess(record: { readonly port?: number }): void {
+                readonly exited = new Set<number>();
+                override terminatePreviewProcess(record: { readonly port?: number; readonly osProcessId?: number }): void {
                     this.terminated.push(record.port ?? -1);
+                    if (record.osProcessId !== undefined) {
+                        this.exited.add(record.osProcessId);
+                    }
+                }
+                override previewPidLiveness(record: { readonly osProcessId?: number; readonly osProcessFingerprint?: string; readonly port?: number; readonly ownerLogin?: string; readonly adopted?: true }): QaapPreviewPidLiveness {
+                    return record.osProcessId !== undefined && this.exited.has(record.osProcessId) ? 'dead' : super.previewPidLiveness(record);
+                }
+                override isPreviewProcessDead(record: { readonly osProcessId?: number; readonly osProcessFingerprint?: string; readonly port?: number; readonly ownerLogin?: string; readonly adopted?: true }): boolean {
+                    return (record.osProcessId !== undefined && this.exited.has(record.osProcessId)) || super.isPreviewProcessDead(record);
                 }
             }
             const root = 'file:///workspace/alice/sandboxed-site';

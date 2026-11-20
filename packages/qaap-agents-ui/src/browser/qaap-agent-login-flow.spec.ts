@@ -17,6 +17,7 @@ import {
     QAAP_AGENT_LOGIN_SIGN_IN_TIMEOUT_MS,
     extractAgentLoginHyperlinkTargets,
     QaapAgentLoginFlow,
+    summarizeAgentLoginCrashOutput,
     stripAgentLoginTerminalControlSequences,
     type QaapAgentLoginFlowState,
 } from '../common/qaap-agent-login-flow';
@@ -193,6 +194,103 @@ describe('QaapAgentLoginFlow', () => {
         expect(flow.state.phase).to.equal('waiting');
         flow.tick(QAAP_AGENT_LOGIN_CHALLENGE_TIMEOUT_MS);
         expect(flow.state).to.deep.equal({ phase: 'failed', reason: 'timeout', tail: ['Error: something hangs'] });
+    });
+
+    it('attaches the host diagnostics to a silent timeout', () => {
+        const { flow } = createFlow('copilot');
+        flow.restart(0);
+        flow.commandStarted(0);
+        flow.setDiagnostics('Terminal started: yes. Output received: 0 bytes from the live stream, 0 bytes from the terminal screen.');
+        flow.tick(QAAP_AGENT_LOGIN_CHALLENGE_TIMEOUT_MS);
+        expect(flow.state).to.deep.equal({
+            phase: 'failed',
+            reason: 'timeout',
+            tail: [],
+            diagnostics: 'Terminal started: yes. Output received: 0 bytes from the live stream, 0 bytes from the terminal screen.',
+        });
+    });
+
+    it('keeps a timeout without host diagnostics free of the diagnostics key', () => {
+        const { flow } = createFlow('copilot');
+        flow.restart(0);
+        flow.commandStarted(0);
+        flow.setDiagnostics(undefined);
+        flow.tick(QAAP_AGENT_LOGIN_CHALLENGE_TIMEOUT_MS);
+        expect(flow.state).to.deep.equal({ phase: 'failed', reason: 'timeout', tail: [] });
+    });
+
+    it('shows the terminal echo when the stream only carried the typed command (236 bytes, empty tail)', () => {
+        const { flow } = createFlow('copilot');
+        flow.restart(0);
+        flow.commandStarted(0);
+        flow.setDiagnostics('Terminal started: yes. Output received: 236 bytes from the live stream, 0 more bytes recovered from the terminal screen.');
+        flow.appendOutput('theia@tenant:~/repo$ stty cols 500 rows 50 2>/dev/null; copilot login --device-code; echo "QAAP_LOGIN_EXIT:$?"\n');
+        flow.tick(QAAP_AGENT_LOGIN_CHALLENGE_TIMEOUT_MS);
+        const state = flow.state;
+        expect(state.phase === 'failed' && state.reason).to.equal('timeout');
+        expect(state.phase === 'failed' && state.terminalEchoOnly).to.equal(true);
+        expect(state.phase === 'failed' && state.tail).to.deep.equal([
+            'theia@tenant:~/repo$ stty cols 500 rows 50 2>/dev/null; copilot login --device-code; echo "QAAP_LOGIN_EXIT:$?"',
+        ]);
+    });
+
+    it('uses a per-harness link deadline when one is given (Copilot first run)', () => {
+        const states: QaapAgentLoginFlowState[] = [];
+        const flow = new QaapAgentLoginFlow({ agentId: 'copilot', challengeTimeoutMs: 60_000, onDidChange: state => states.push(state) });
+        flow.restart(0);
+        flow.commandStarted(0);
+        flow.tick(QAAP_AGENT_LOGIN_CHALLENGE_TIMEOUT_MS);
+        expect(flow.state.phase).to.equal('waiting');
+        flow.tick(60_000);
+        expect(flow.state.phase === 'failed' && flow.state.timeoutMs).to.equal(60_000);
+    });
+
+    it('summarizes a native crash by its first meaningful line and drops the frames', () => {
+        const { flow } = createFlow('copilot');
+        flow.restart(0);
+        flow.commandStarted(0);
+        flow.appendOutput([
+            'FATAL ERROR: Zone Allocation failed - process out of memory',
+            '----- Native stack trace -----',
+            ' 1: 0xb8d0a3 node::OOMErrorHandler(char const*, v8::OOMDetails const&) [/home/theia/.qaap/.qaap-agent-storage/data/qaap-cli/lib/node_modules/@github/copilot/node_modules/@github/copilot-linux-x64/copilot]',
+            ' 2: 0xf06b40 v8::Utils::ReportOOMFailure(v8::internal::Isolate*, char const*, v8::OOMDetails const&) [copilot]',
+            ' 3: 0xb0c2e1 node::Start(int, char**) [copilot]',
+            ' 4: 0x7f1c2a429d90  [/lib/x86_64-linux-gnu/libc.so.6]',
+            ' 5: 0x7f1c2a429e40 __libc_start_main [/lib/x86_64-linux-gnu/libc.so.6]',
+            'GitHub Copilot native binary at /x/copilot was terminated by signal SIGABRT.',
+            'GitHub Copilot CLI: no platform package found. Reinstall with `npm install -g @github/copilot` to fetch the package for your platform.',
+            'QAAP_LOGIN_EXIT:1',
+        ].join('\n'));
+        const state = flow.state;
+        expect(state.phase === 'failed' && state.reason).to.equal('exited');
+        expect(state.phase === 'failed' && state.crash).to.equal('FATAL ERROR: Zone Allocation failed - process out of memory');
+        expect(state.phase === 'failed' && state.tail.some(line => /node::|__libc_start_main|0x[0-9a-f]{6}/.test(line))).to.equal(false);
+    });
+
+    it('keeps a plain exit free of a crash summary', () => {
+        expect(summarizeAgentLoginCrashOutput(['Login failed: Error: request failed']).crash).to.equal(undefined);
+        // Frames only: still a crash, with a generic summary.
+        expect(summarizeAgentLoginCrashOutput([' 1: 0xb8d0a3 node::Abort() [node]', ' 2: 0xb0c2e1 node::Start(int, char**) [node]']).crash)
+            .to.contain('crashed natively');
+        // Copilot's loader line is not used as the summary when the signal line is there.
+        expect(summarizeAgentLoginCrashOutput([
+            ' 1: 0xb0c2e1 node::Start(int, char**) [copilot]',
+            ' 2: 0x7f1c2a429e40 __libc_start_main [libc.so.6]',
+            'GitHub Copilot native binary at /x/copilot was terminated by signal SIGSEGV.',
+            'GitHub Copilot CLI: no platform package found.',
+        ]).crash).to.equal('GitHub Copilot native binary at /x/copilot was terminated by signal SIGSEGV.');
+    });
+
+    it('does not attach diagnostics to a timeout that has output to show', () => {
+        const { flow } = createFlow('copilot');
+        flow.restart(0);
+        flow.commandStarted(0);
+        flow.setDiagnostics('Terminal started: yes.');
+        flow.appendOutput('Error: something hangs\n');
+        flow.tick(QAAP_AGENT_LOGIN_CHALLENGE_TIMEOUT_MS);
+        const state = flow.state;
+        expect(state.phase === 'failed' && state.reason).to.equal('timeout');
+        expect(state.phase === 'failed' && state.diagnostics).to.equal('Terminal started: yes.');
     });
 
     it('times out a pasted code the CLI never confirms', () => {
@@ -403,6 +501,29 @@ describe('createQaapAgentLoginDialog', () => {
         expect(retries).to.equal(1);
         controller.render({ phase: 'failed', reason: 'exited', exitCode: 1, tail: ['denied'] });
         expect(controller.root.querySelector('.theia-mobile-agent-login-dialog-status')?.textContent).to.contain('exit code 1');
+    });
+
+    it('says no output was received, with the terminal diagnostics, when a timeout has no output', () => {
+        const controller = open();
+        controller.render({ phase: 'failed', reason: 'timeout', tail: [], diagnostics: 'Terminal started: no. Output received: 0 bytes.' });
+        const status = controller.root.querySelector('.theia-mobile-agent-login-dialog-status')?.textContent ?? '';
+        expect(status).to.equal('No output was received from the sign-in terminal. Terminal started: no. Output received: 0 bytes.');
+        expect(controller.root.querySelector('.theia-mobile-agent-login-dialog-output')).to.equal(null);
+    });
+
+    it('says the CLI printed nothing and shows the terminal output when only the command echo arrived', () => {
+        const controller = open();
+        controller.render({ phase: 'failed', reason: 'timeout', tail: ['$ copilot login --device-code'], terminalEchoOnly: true, timeoutMs: 60_000, diagnostics: 'Terminal started: yes.' });
+        const status = controller.root.querySelector('.theia-mobile-agent-login-dialog-status')?.textContent ?? '';
+        expect(status).to.equal('Claude Code printed nothing within 60 seconds. The sign-in terminal output is below. Terminal started: yes.');
+        expect(controller.root.querySelector('.theia-mobile-agent-login-dialog-output')?.textContent).to.equal('$ copilot login --device-code');
+    });
+
+    it('names a native crash by its first line instead of a raw stack', () => {
+        const controller = open();
+        controller.render({ phase: 'failed', reason: 'exited', exitCode: 1, tail: [], crash: 'FATAL ERROR: process out of memory' });
+        const status = controller.root.querySelector('.theia-mobile-agent-login-dialog-status')?.textContent ?? '';
+        expect(status).to.equal('The Claude Code CLI crashed before it connected (exit code 1): FATAL ERROR: process out of memory');
     });
 
     it('says the sign-in did not complete and offers Retry or a Settings API key', () => {

@@ -167,6 +167,26 @@ export function formatQaiqModelIdShortLabel(modelId: string): string {
 }
 
 /**
+ * Readable name for well-known first-party model ids, the way the model picker lists them:
+ * `claude-opus-4-8` → "Opus 4.8", `claude-sonnet-5` → "Sonnet 5", `gpt-5.6-sol` → "GPT-5.6 Sol".
+ * Anything else keeps its short slug ({@link formatQaiqModelIdShortLabel}).
+ */
+export function formatFriendlyModelLabel(modelId: string): string {
+    const slug = formatQaiqModelIdShortLabel(modelId);
+    const claude = /^claude-(opus|sonnet|haiku)-(\d+)(?:-(\d+))?(?:-\d{8})?$/i.exec(slug);
+    if (claude) {
+        const family = claude[1].charAt(0).toUpperCase() + claude[1].slice(1).toLowerCase();
+        return `${family} ${claude[2]}${claude[3] ? `.${claude[3]}` : ''}`;
+    }
+    const gpt = /^gpt-(\d+(?:\.\d+)?)(?:-([a-z]+))?$/i.exec(slug);
+    if (gpt) {
+        const variant = gpt[2] ? ` ${gpt[2].charAt(0).toUpperCase()}${gpt[2].slice(1).toLowerCase()}` : '';
+        return `GPT-${gpt[1]}${variant}`;
+    }
+    return slug;
+}
+
+/**
  * Human label for a model chip. Prefers the catalog `label` ("Big Pickle"), then the static catalog
  * entry for the id (so surfaces that only persisted the id, like the sidebar rows, still get the
  * label), and only then the short slug.

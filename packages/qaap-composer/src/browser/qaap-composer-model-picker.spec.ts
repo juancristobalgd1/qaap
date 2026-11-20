@@ -46,6 +46,9 @@ function rows(host: HTMLElement): HTMLButtonElement[] {
 }
 
 describe('qaap-composer-model-picker', () => {
+
+    /** Waits for the next animation frame, which the edge-fade helper uses to sync classes. */
+    const nextFrame = (): Promise<void> => new Promise<void>(resolve => window.setTimeout(resolve, 50));
     let host: HTMLElement;
     let disableJSDOM: () => void;
 
@@ -87,6 +90,96 @@ describe('qaap-composer-model-picker', () => {
         expect(haiku.disabled).to.equal(true);
         expect(haiku.title).to.equal('Requires a paid plan');
         host.dispatchEvent(new KeyboardEvent('keydown', { key: '3', metaKey: true, bubbles: true, cancelable: true }));
+        expect(selected).to.deep.equal([]);
+    });
+
+    it('labels rows with the backend tier and opens the sign-in from a locked Pro row', () => {
+        const selected: string[] = [];
+        const signedIn: string[] = [];
+        const tiered = state({
+            models: [
+                { agentId: 'claude', modelId: 'beam', label: 'Beam', available: true, tier: 'free' },
+                { agentId: 'claude', modelId: 'opus-pro', label: 'Opus Pro', available: false, unavailableReason: 'Sign in to use this model', tier: 'pro', signInRequired: true },
+            ],
+        });
+        renderQaapComposerModelPicker(host, props({
+            state: tiered,
+            onSelectModel: (_agent, model) => selected.push(model),
+            onSignIn: agentId => signedIn.push(agentId),
+        }));
+        const [free, pro] = rows(host);
+        expect(free.querySelector('.qaap-model-picker-row-paid')?.textContent).to.equal('Free');
+        expect(pro.querySelector('.qaap-model-picker-row-paid')?.textContent).to.equal('Pro');
+        expect(pro.textContent).to.contain('Sign in to Claude');
+        expect(pro.disabled).to.equal(false);
+        pro.click();
+        expect(signedIn).to.deep.equal(['claude']);
+        expect(selected).to.deep.equal([]);
+    });
+
+    it('marks a sign-in-locked row aria-disabled, never selects it, and opens the sign-in on click', () => {
+        const selected: string[] = [];
+        const signedIn: string[] = [];
+        const locked = state({
+            models: [
+                { agentId: 'claude', modelId: 'opus-pro', label: 'Opus Pro', available: false, unavailableReason: 'Sign in to use this model', tier: 'pro', signInRequired: true },
+                { agentId: 'claude', modelId: 'beam', label: 'Beam', available: true, tier: 'free' },
+            ],
+        });
+        renderQaapComposerModelPicker(host, props({
+            state: locked,
+            onSelectModel: (_agent, model) => selected.push(model),
+            onSignIn: agentId => signedIn.push(agentId),
+        }));
+        const pro = rows(host)[0];
+        expect(pro.dataset.modelId).to.equal('opus-pro');
+        expect(pro.getAttribute('aria-disabled')).to.equal('true');
+        expect(pro.classList.contains('theia-mod-disabled')).to.equal(true);
+        expect(rows(host)[1].getAttribute('aria-disabled')).to.equal('false');
+        expect(rows(host)[1].classList.contains('theia-mod-disabled')).to.equal(false);
+
+        pro.click();
+        expect(signedIn).to.deep.equal(['claude']);
+        expect(selected).to.deep.equal([]);
+
+        host.dispatchEvent(new KeyboardEvent('keydown', { key: '1', metaKey: true, bubbles: true, cancelable: true }));
+        expect(selected).to.deep.equal([]);
+        expect(signedIn).to.deep.equal(['claude']);
+    });
+
+    it('does not select a sign-in-locked row with Enter in the search field, and picks the first selectable row instead', () => {
+        const selected: string[] = [];
+        const signedIn: string[] = [];
+        const locked = state({
+            models: [
+                { agentId: 'claude', modelId: 'opus-pro', label: 'Opus Pro', available: false, unavailableReason: 'Sign in to use this model', tier: 'pro', signInRequired: true },
+                { agentId: 'claude', modelId: 'beam', label: 'Beam', available: true, tier: 'free' },
+            ],
+        });
+        renderQaapComposerModelPicker(host, props({
+            state: locked,
+            onSelectModel: (_agent, model) => selected.push(model),
+            onSignIn: agentId => signedIn.push(agentId),
+        }));
+        expect(rows(host)[0].dataset.modelId).to.equal('opus-pro');
+        const input = host.querySelector<HTMLInputElement>('.qaap-model-picker-search input')!;
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+        expect(selected).to.deep.equal(['beam']);
+        expect(signedIn).to.deep.equal([]);
+    });
+
+    it('leaves a row locked by its plan inert: natively disabled, aria-disabled, and no sign-in on click', () => {
+        const signedIn: string[] = [];
+        const selected: string[] = [];
+        renderQaapComposerModelPicker(host, props({
+            onSelectModel: (_agent, model) => selected.push(model),
+            onSignIn: agentId => signedIn.push(agentId),
+        }));
+        const haiku = rows(host)[2];
+        expect(haiku.getAttribute('aria-disabled')).to.equal('true');
+        expect(haiku.classList.contains('theia-mod-disabled')).to.equal(true);
+        haiku.click();
+        expect(signedIn).to.deep.equal([]);
         expect(selected).to.deep.equal([]);
     });
 
@@ -138,7 +231,7 @@ describe('qaap-composer-model-picker', () => {
         expect(closed).to.equal(1);
     });
 
-    it('scrolls a long harness rail: the end fade shows first, the start fade after scrolling, and the selection comes into view', () => {
+    it('scrolls a long harness rail: the end fade shows first, the start fade after scrolling, and the selection comes into view', async () => {
         const harnesses = Array.from({ length: 12 }, (_, index) => ({ id: `agent-${index}`, label: `Agent ${index}` }));
         const scrollTopDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTop');
         const scrollHeightDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollHeight');
@@ -167,14 +260,17 @@ describe('qaap-composer-model-picker', () => {
                 state: state({ harnesses, railSelection: 'agent-9', currentAgentId: 'agent-9' }),
             }));
             const rail = host.querySelector<HTMLElement>('.qaap-model-picker-rail')!;
-            expect(rail.classList.contains('theia-mod-overflow-end')).to.equal(true);
-            expect(rail.classList.contains('theia-mod-overflow-start')).to.equal(false);
+            // The shared edge-fade helper syncs on the next frame.
+            await nextFrame();
+            expect(rail.classList.contains('qaap-mod-scroll-fade-bottom')).to.equal(true);
+            expect(rail.classList.contains('qaap-mod-scroll-fade-top')).to.equal(false);
             expect(revealed).to.deep.equal(['Agent 9']);
 
             rail.scrollTop = 200;
             rail.dispatchEvent(new window.Event('scroll'));
-            expect(rail.classList.contains('theia-mod-overflow-start')).to.equal(true);
-            expect(rail.classList.contains('theia-mod-overflow-end')).to.equal(true);
+            await nextFrame();
+            expect(rail.classList.contains('qaap-mod-scroll-fade-top')).to.equal(true);
+            expect(rail.classList.contains('qaap-mod-scroll-fade-bottom')).to.equal(true);
             expect(revealed).to.deep.equal(['Agent 9']);
         } finally {
             restoreDescriptor('scrollTop', scrollTopDescriptor);
@@ -210,5 +306,31 @@ describe('qaap-composer-model-picker', () => {
         expect(document.activeElement).to.equal(host.querySelector('.qaap-model-picker-search input'));
         expect(host.querySelector<HTMLInputElement>('.qaap-model-picker-search input')!.value).to.equal('opu');
         expect(rows(host).map(row => row.dataset.modelId)).to.deep.equal(['opus-4-6']);
+    });
+
+    it('shows a loading line, not "No models match.", while the selected harness list is still loading', () => {
+        renderQaapComposerModelPicker(host, props({ state: state({ models: [], loading: true }) }));
+        const empty = host.querySelector<HTMLElement>('.qaap-model-picker-empty');
+        expect(empty?.textContent).to.equal('Loading models…');
+        expect(empty?.getAttribute('role')).to.equal('status');
+        expect(host.querySelector('.qaap-model-picker-rows')?.getAttribute('aria-busy')).to.equal('true');
+        expect(host.textContent).to.not.contain('No models match.');
+    });
+
+    it('shows "No models match." once the list has loaded and the filter leaves nothing', () => {
+        renderQaapComposerModelPicker(host, props({ state: state({ models: [], loading: false }) }));
+        expect(host.querySelector('.qaap-model-picker-empty')?.textContent).to.equal('No models match.');
+        expect(host.querySelector('.qaap-model-picker-rows')?.hasAttribute('aria-busy')).to.be.false;
+    });
+
+    it('keeps "No models match." when a loaded list is filtered down to nothing', () => {
+        renderQaapComposerModelPicker(host, props({ state: state({ query: 'zzz', loading: false }) }));
+        expect(host.querySelector('.qaap-model-picker-empty')?.textContent).to.equal('No models match.');
+    });
+
+    it('shows the rows, not the loading line, when models are already listed', () => {
+        renderQaapComposerModelPicker(host, props({ state: state({ loading: true }) }));
+        expect(host.querySelector('.qaap-model-picker-empty')).to.be.null;
+        expect(rows(host).length).to.be.greaterThan(0);
     });
 });

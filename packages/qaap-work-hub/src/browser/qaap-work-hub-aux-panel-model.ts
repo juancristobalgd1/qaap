@@ -7,16 +7,38 @@
 // recently closed list, width/maximized/open flags and their per-browser-tab
 // persistence. The DOM component lives in `qaap-work-hub-aux-panel.ts`.
 
-/** A view the right panel can host. `launcher` is the "New tab" page. */
-export type QaapWorkHubAuxPanelViewKind = 'launcher' | 'preview' | 'files' | 'terminal';
+/**
+ * Views backed by an existing execution surface (docked by the execution-surface UI).
+ * Changes and Files are separate views over the same files surface: each opens it in its own mode
+ * (the surface's own Changes/Files switch is hidden in the Work Hub).
+ */
+export type QaapWorkHubAuxPanelSurfaceKind = 'preview' | 'changes' | 'files' | 'terminal';
 
 /**
- * Views backed by an existing execution surface (everything but the launcher).
- * Review (Changes) is not a view of its own: it is the Files view's Changes mode.
+ * Views the panel renders itself, without an execution surface. Add a new one here, then give it a
+ * label, icon and body in `qaap-work-hub-aux-panel.ts` and an entry in {@link QAAP_WORK_HUB_AUX_PANEL_TAB_KINDS}.
  */
-export type QaapWorkHubAuxPanelSurfaceKind = Exclude<QaapWorkHubAuxPanelViewKind, 'launcher'>;
+export type QaapWorkHubAuxPanelOwnViewKind = 'pull-request' | 'side-chat';
 
-export const QAAP_WORK_HUB_AUX_PANEL_SURFACE_KINDS: readonly QaapWorkHubAuxPanelSurfaceKind[] = ['preview', 'files', 'terminal'];
+/** Every kind a tab can hold: a surface or one of the panel's own views. */
+export type QaapWorkHubAuxPanelTabKind = QaapWorkHubAuxPanelSurfaceKind | QaapWorkHubAuxPanelOwnViewKind;
+
+/** A view the right panel can host. `launcher` is the "New tab" page. */
+export type QaapWorkHubAuxPanelViewKind = 'launcher' | QaapWorkHubAuxPanelTabKind;
+
+export const QAAP_WORK_HUB_AUX_PANEL_SURFACE_KINDS: readonly QaapWorkHubAuxPanelSurfaceKind[] = ['preview', 'changes', 'files', 'terminal'];
+
+/** The single registry of tab kinds, in "New tab" launcher order. */
+export const QAAP_WORK_HUB_AUX_PANEL_TAB_KINDS: readonly QaapWorkHubAuxPanelTabKind[] = [
+    ...QAAP_WORK_HUB_AUX_PANEL_SURFACE_KINDS,
+    'pull-request',
+    'side-chat',
+];
+
+/** `true` for the views that dock an execution surface (as opposed to the launcher and the panel's own views). */
+export function isQaapWorkHubAuxPanelSurfaceKind(kind: QaapWorkHubAuxPanelViewKind): kind is QaapWorkHubAuxPanelSurfaceKind {
+    return (QAAP_WORK_HUB_AUX_PANEL_SURFACE_KINDS as readonly string[]).includes(kind);
+}
 
 export interface QaapWorkHubAuxPanelTab {
     readonly id: string;
@@ -24,7 +46,7 @@ export interface QaapWorkHubAuxPanelTab {
 }
 
 export interface QaapWorkHubAuxPanelClosedTab {
-    readonly kind: QaapWorkHubAuxPanelSurfaceKind;
+    readonly kind: QaapWorkHubAuxPanelTabKind;
     readonly closedAt: number;
 }
 
@@ -45,7 +67,7 @@ export const QAAP_WORK_HUB_AUX_PANEL_MIN_WIDTH = 320;
 export const QAAP_WORK_HUB_AUX_PANEL_MIN_CHAT_WIDTH = 360;
 export const QAAP_WORK_HUB_AUX_PANEL_RECENT_LIMIT = 8;
 
-const VIEW_KINDS: readonly QaapWorkHubAuxPanelViewKind[] = ['launcher', ...QAAP_WORK_HUB_AUX_PANEL_SURFACE_KINDS];
+const VIEW_KINDS: readonly QaapWorkHubAuxPanelViewKind[] = ['launcher', ...QAAP_WORK_HUB_AUX_PANEL_TAB_KINDS];
 
 /** Narrow storage contract so specs can pass an in-memory map. */
 export interface QaapWorkHubAuxPanelStorage {
@@ -67,6 +89,8 @@ export class QaapWorkHubAuxPanelModel {
     protected tabList: QaapWorkHubAuxPanelTab[] = [];
     protected activeTabId: string | undefined;
     protected closed: QaapWorkHubAuxPanelClosedTab[] = [];
+    /** Tab titles set at runtime (a side chat is named after its first message). Not persisted. */
+    protected readonly titles = new Map<string, string>();
     protected nextId = 1;
 
     open = false;
@@ -111,7 +135,7 @@ export class QaapWorkHubAuxPanelModel {
      * into the view (like picking from a browser's new-tab page), and otherwise
      * a tab is appended.
      */
-    openView(kind: QaapWorkHubAuxPanelSurfaceKind): QaapWorkHubAuxPanelTab {
+    openView(kind: QaapWorkHubAuxPanelTabKind): QaapWorkHubAuxPanelTab {
         this.closed = this.closed.filter(entry => entry.kind !== kind);
         const existing = this.tabList.find(candidate => candidate.kind === kind);
         if (existing) {
@@ -127,6 +151,24 @@ export class QaapWorkHubAuxPanelModel {
         }
         this.activeTabId = tab.id;
         return tab;
+    }
+
+    /** Names a tab at runtime, or clears the name with `undefined` so the kind's label shows again. */
+    setTabTitle(id: string, title: string | undefined): void {
+        if (title) {
+            this.titles.set(id, title);
+        } else {
+            this.titles.delete(id);
+        }
+    }
+
+    /**
+     * The runtime name of a tab, or `undefined` when its kind's label applies. Only side chats are named:
+     * a title can never be shown on another kind's tab (Browser, Changes, ...), whatever the map holds.
+     */
+    tabTitle(id: string): string | undefined {
+        const tab = this.tabList.find(entry => entry.id === id);
+        return tab?.kind === 'side-chat' ? this.titles.get(id) : undefined;
     }
 
     activate(id: string): QaapWorkHubAuxPanelTab | undefined {
@@ -147,6 +189,7 @@ export class QaapWorkHubAuxPanelModel {
             return this.activeTab;
         }
         const [removed] = this.tabList.splice(index, 1);
+        this.titles.delete(removed.id);
         if (removed.kind !== 'launcher') {
             this.closed = [
                 { kind: removed.kind, closedAt: this.now() },
@@ -161,7 +204,7 @@ export class QaapWorkHubAuxPanelModel {
     }
 
     /** Reopen the most recently closed tab of `kind` (or the latest one). */
-    reopenClosed(kind?: QaapWorkHubAuxPanelSurfaceKind): QaapWorkHubAuxPanelTab | undefined {
+    reopenClosed(kind?: QaapWorkHubAuxPanelTabKind): QaapWorkHubAuxPanelTab | undefined {
         const entry = kind ? this.closed.find(candidate => candidate.kind === kind) : this.closed[0];
         return entry ? this.openView(entry.kind) : undefined;
     }
@@ -203,6 +246,8 @@ export class QaapWorkHubAuxPanelModel {
         const seen = new Set<QaapWorkHubAuxPanelViewKind>();
         const kinds = Array.isArray(snapshot.tabs) ? snapshot.tabs : [];
         this.tabList = [];
+        // Restored tabs get new ids: titles keyed by the old ids must not reach them.
+        this.titles.clear();
         for (const kind of kinds) {
             if (VIEW_KINDS.includes(kind) && !seen.has(kind)) {
                 seen.add(kind);
@@ -213,7 +258,7 @@ export class QaapWorkHubAuxPanelModel {
         this.activeTabId = (this.tabList[activeIndex] ?? this.tabList[0])?.id;
         const closed = Array.isArray(snapshot.recentlyClosed) ? snapshot.recentlyClosed : [];
         this.closed = closed
-            .filter(entry => !!entry && QAAP_WORK_HUB_AUX_PANEL_SURFACE_KINDS.includes(entry.kind) && typeof entry.closedAt === 'number')
+            .filter(entry => !!entry && QAAP_WORK_HUB_AUX_PANEL_TAB_KINDS.includes(entry.kind) && typeof entry.closedAt === 'number')
             .slice(0, QAAP_WORK_HUB_AUX_PANEL_RECENT_LIMIT);
     }
 

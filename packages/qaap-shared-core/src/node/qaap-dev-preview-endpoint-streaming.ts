@@ -21,8 +21,10 @@ import {
 import type { QaapDevPreviewRecord } from './qaap-dev-preview-port-registry';
 import { buildQaapPreviewUpstreamHeaders, sanitizeQaapPreviewResponseHeaders } from './qaap-dev-preview-forward-headers';
 import { PREVIEW_RESERVATION_START_GRACE_MS } from './qaap-dev-preview-endpoint';
+import { classifyQaapPreviewProbeState, probeQaapPreviewPidLiveness, releaseStoppedPreviewExtracted } from './qaap-dev-preview-process-liveness';
 import { PREVIEW_REAPER_INTERVAL_MS } from './qaap-dev-preview-endpoint';
 import type { QaapDevPreviewEndpointContext } from './qaap-dev-preview-endpoint-context';
+import { resolveListenerInRootExtracted } from './qaap-dev-preview-endpoint-render';
 
 /** Longest gap between two `[qaap-preview] current claim` logs for an unchanged claim. */
 export const CURRENT_CLAIM_LOG_MAX_SILENCE_MS = 60_000;
@@ -62,16 +64,12 @@ export function shouldLogCurrentClaim(fields: CurrentClaimLogFields, now: number
     return true;
 }
 
-export function isPreviewProcessDeadExtracted(ctx: QaapDevPreviewEndpointContext, record: { readonly osProcessId?: number }): boolean {
+export function isPreviewProcessDeadExtracted(ctx: QaapDevPreviewEndpointContext, record: { readonly osProcessId?: number; readonly osProcessFingerprint?: string }): boolean {
         if (record.osProcessId === undefined) {
             return false;
         }
-        try {
-            process.kill(record.osProcessId, 0);
-            return false;
-        } catch (err) {
-            return (err as NodeJS.ErrnoException)?.code === 'ESRCH';
-        }
+        // Same identity rule as previewPidLiveness: a reused pid of another process is a dead claim.
+        return probeQaapPreviewPidLiveness(record.osProcessId, undefined, { fingerprint: record.osProcessFingerprint }) === 'dead';
 }
 
 export function nextAllocationCandidateExtracted(ctx: QaapDevPreviewEndpointContext, preferredPort: number, offset: number): number {
@@ -102,7 +100,8 @@ export function handleReleaseExtracted(ctx: QaapDevPreviewEndpointContext, req: 
         // Kill the dev server before releasing the claim (mirrors supersedeConversationPreviews),
         // otherwise it keeps listening on the now-unclaimed port — the VPS orphan-process path.
         ctx.terminatePreviewProcess(record);
-        ctx.portRegistry.releasePreview(previewId, owner);
+        // The port stays claimed until the dev server is confirmed gone; the reaper releases it after that.
+        releaseStoppedPreviewExtracted(ctx, record);
         console.info('[qaap-preview] released', { previewId, ownerLogin: owner, port: record.port });
         res.sendStatus(204);
 }
@@ -156,7 +155,48 @@ export function previewForRequestExtracted(ctx: QaapDevPreviewEndpointContext, r
         return record;
 }
 
+/**
+ * Whether an upgrade belongs exclusively to a preview served by this backend: its host is an
+ * isolated preview origin (or its path a `/qaap-preview/<id>/` identity) with a local record.
+ * Such a socket speaks the previewed app's protocol: when that app is Qaap itself, its
+ * `/qaap/api/agent-*-ws` and `/socket.io` paths also match this backend's own upgrade listeners,
+ * and two writers on one socket corrupt the frames ("Invalid frame header").
+ */
+export function claimsPreviewOriginUpgradeExtracted(ctx: QaapDevPreviewEndpointContext, req: http.IncomingMessage): boolean {
+        const hostLabel = ctx.previewHostLabel(req);
+        if (hostLabel) {
+            return ctx.portRegistry.getByHostLabel(hostLabel) !== undefined;
+        }
+        const rawUrl = req.url ?? '';
+        const queryIndex = rawUrl.indexOf('?');
+        const identity = parseQaapIdentityPreviewRequestPath(queryIndex < 0 ? rawUrl : rawUrl.slice(0, queryIndex));
+        return !!identity && ctx.portRegistry.get(identity.previewId) !== undefined;
+}
+
+/**
+ * Routes preview-origin upgrades to the preview proxy before any `'upgrade'` listener runs, so
+ * the product's own WebSocket handlers (agent streams, Theia's Socket.IO) never see them. It wraps
+ * `emit` instead of reordering listeners because those register in any order during startup.
+ * Upgrades without a local preview record (e.g. a tenant's preview on the control plane) are
+ * left to the listeners as before.
+ */
+export function installPreviewUpgradeGateExtracted(ctx: QaapDevPreviewEndpointContext, server: http.Server): void {
+        const emit = server.emit;
+        server.emit = function (this: http.Server, event: string | symbol, ...args: unknown[]): boolean {
+            if (event === 'upgrade') {
+                const [req, socket, head] = args as [http.IncomingMessage, net.Socket, Buffer];
+                if (claimsPreviewOriginUpgradeExtracted(ctx, req)) {
+                    ctx.handleWebSocketUpgrade(req, socket, head);
+                    return true;
+                }
+            }
+            return emit.call(this, event, ...args);
+        } as typeof server.emit;
+}
+
 export function onStartExtracted(ctx: QaapDevPreviewEndpointContext, server: http.Server): void {
+        installPreviewUpgradeGateExtracted(ctx, server);
+        // `/qaap-dev/<port>/` and unclaimed preview hosts: these paths collide with no other listener.
         server.on('upgrade', (req, socket, head) => {
             ctx.handleWebSocketUpgrade(req, socket as net.Socket, head);
         });
@@ -179,6 +219,11 @@ export async function reapStoppedPreviewsExtracted(ctx: QaapDevPreviewEndpointCo
                 // the port answers — a recycled port would otherwise keep a zombie record alive.
                 // The UI probes while showing loading/error. Use the immutable reservation age,
                 // not touchedAt, so those probes cannot keep a dead listener registered forever.
+                // A live process keeps its registration however quiet its port is: only a dead pid (or an unknown
+                // liveness with a silent port past the grace) may be released.
+                if (ctx.previewPidLiveness(record) === 'alive') {
+                    continue;
+                }
                 if (!ctx.isPreviewProcessDead(record)
                     && (now - record.claimedAt < PREVIEW_RESERVATION_START_GRACE_MS
                         || (await ctx.probeLocalDevServerState(record.port)) !== 'down')) {
@@ -244,10 +289,20 @@ export async function handleProbeExtracted(ctx: QaapDevPreviewEndpointContext, r
             res.json(body);
             return;
         }
+        // No claim names this listener: on request, say whether it runs inside the caller's project
+        // root (its process cwd), the identity evidence an attach needs to adopt it. Only where
+        // every local process is the caller's (local skip-auth, a single-tenant runtime): on a shared
+        // host the yes/no would describe another tenant's process.
+        const rootParam = typeof req.query.root === 'string' ? req.query.root : undefined;
+        const listenerEvidenceAllowed = ctx.auth.authenticate(req).kind === 'skip' || ctx.ownsUnclaimedPorts(login);
+        const listenerInRoot = ready && !record && rootParam && listenerEvidenceAllowed
+            ? resolveListenerInRootExtracted(ctx, port, login, rootParam)
+            : undefined;
         const body: QaapDevPreviewProbeResponse = {
             ready,
             ...(ready ? { readiness: 'transport_ready' as const } : {}),
             ...(listening ? { listening } : {}),
+            ...(listenerInRoot !== undefined ? { listenerInRoot } : {}),
             previewUrl: buildQaapDevPreviewOpenUrl(origin, port),
         };
         res.json(body);
@@ -321,7 +376,7 @@ export async function handleCurrentProjectPreviewExtracted(ctx: QaapDevPreviewEn
         }
         const withinStartGrace = Date.now() - record.claimedAt < PREVIEW_RESERVATION_START_GRACE_MS;
         // A server still compiling (`busy`) is alive: only a silent port releases the claim.
-        if (!withinStartGrace && state === 'down') {
+        if (!withinStartGrace && state === 'down' && ctx.previewPidLiveness(record) !== 'alive') {
             ctx.portRegistry.releasePreview(record.previewId, login);
             res.json({ ready: false, previewUrl: '' } satisfies QaapDevPreviewProbeResponse);
             return;
@@ -355,9 +410,12 @@ export async function handleIdentityProbeExtracted(ctx: QaapDevPreviewEndpointCo
         }
         const ready = await ctx.probeLocalDevServer(record.port);
         // Additive `state` lets the Work Hub tell a claim still booting from a dev server that stopped.
-        const state = ready
-            ? 'ready' as const
-            : Date.now() - record.claimedAt < PREVIEW_RESERVATION_START_GRACE_MS ? 'booting' as const : 'stopped' as const;
+        // A dead pid is stopped at once (also after a backend restart); a live pid is booting, never stopped.
+        const state = classifyQaapPreviewProbeState({
+            ready,
+            withinStartGrace: Date.now() - record.claimedAt < PREVIEW_RESERVATION_START_GRACE_MS,
+            liveness: ctx.previewPidLiveness(record),
+        });
         res.json({
             ready,
             ...(ready ? { readiness: 'transport_ready' as const } : {}),

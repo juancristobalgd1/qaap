@@ -1709,8 +1709,9 @@ describe('QaapDockerOrchestrator', () => {
         it('never forwards control-plane and platform secrets from the denylist', () => {
             const orchestrator = access(new QaapDockerOrchestrator());
             const args = orchestrator.buildTenantEnvironmentArgs({
-                STRIPE_SECRET_KEY: 'sk_live_x',
-                STRIPE_WEBHOOK_SECRET: 'whsec_x',
+                AIRWALLEX_API_KEY: 'awx_key_x',
+                AIRWALLEX_CLIENT_ID: 'awx_client_x',
+                AIRWALLEX_WEBHOOK_SECRET: 'awx_whsec_x',
                 QAAP_JWT_SECRET: 'jwt-secret',
                 QAAP_SESSION_SECRET: 'session-secret',
                 QAAP_COOKIE_SECRET: 'cookie-secret',
@@ -1730,7 +1731,7 @@ describe('QaapDockerOrchestrator', () => {
 
             const joined = args.join(' ');
             for (const secretKey of [
-                'STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'QAAP_JWT_SECRET', 'QAAP_SESSION_SECRET',
+                'AIRWALLEX_API_KEY', 'AIRWALLEX_CLIENT_ID', 'AIRWALLEX_WEBHOOK_SECRET', 'QAAP_JWT_SECRET', 'QAAP_SESSION_SECRET',
                 'QAAP_COOKIE_SECRET', 'QAAP_DATABASE_URL', 'QAAP_REDIS_URL', 'DOCKER_HOST', 'QAAP_DOCKER_SOCKET_SOURCE',
                 'QAAP_TENANT_EGRESS_PROXY_IMAGE', 'HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'NO_PROXY', 'no_proxy',
             ]) {
@@ -1938,6 +1939,7 @@ describe('QaapDockerOrchestrator', () => {
             process.env.QAAP_TENANT_EGRESS_PROXY_IMAGE = 'qaap-tenant-egress:release';
             expect(orchestrator.tenantEgressProxyEnv()).to.deep.equal({
                 NODE_USE_ENV_PROXY: '1',
+                NODE_OPTIONS: '--disable-warning=UNDICI-EHPA',
                 HTTP_PROXY: 'http://qaap-tenant-egress-proxy:3128',
                 HTTPS_PROXY: 'http://qaap-tenant-egress-proxy:3128',
                 http_proxy: 'http://qaap-tenant-egress-proxy:3128',

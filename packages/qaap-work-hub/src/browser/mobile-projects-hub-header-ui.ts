@@ -16,6 +16,8 @@ import type { MobileProjectsExecutionSurfaceTabsUi } from './mobile-projects-exe
 import type { MobileProjectsTranscriptHeaderUi } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-header-ui';
 import type { MobileProjectsTranscriptSheetUi } from './mobile-projects-transcript-sheet-ui';
 import { layoutHeaderProjectClusterContents } from './mobile-projects-panel-chrome-ui';
+import { createMobileAuxSheetTrigger } from './mobile-projects-execution-surface-tabs-ui-render';
+import { matchesMobileNarrowViewport } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import type { MobileProjectsPullRequestDetailTab } from '@theia/qaap-diff-review/lib/browser/mobile-projects-pull-request-detail-ui';
 
 export interface MobileProjectsHubHeaderHost {
@@ -28,6 +30,7 @@ export interface MobileProjectsHubHeaderHost {
     headerOverflowMenuBtn: HTMLButtonElement;
     headerBackBtn: HTMLButtonElement;
     titleBlock: HTMLElement;
+    titleRow: HTMLElement;
     titleEl: HTMLHeadingElement;
     titleAttentionEl: HTMLSpanElement;
     accountBtn: HTMLButtonElement;
@@ -78,9 +81,13 @@ export interface MobileProjectsHubHeaderHost {
 }
 
 export class MobileProjectsHubHeaderUi {
+    /** The mobile "Open views" trigger in the title row; created once, shown only while a conversation is open. */
+    protected auxSheetTrigger: HTMLButtonElement | undefined;
+
     constructor(protected readonly host: MobileProjectsHubHeaderHost) { }
 
     renderHeader(): void {
+        this.syncAuxSheetTrigger();
         if (this.host.pullRequestDetail || this.host.isPullRequestsSidebarVisible?.() === true) {
             this.renderPullRequestHeader();
             return;
@@ -178,6 +185,27 @@ export class MobileProjectsHubHeaderUi {
         this.syncAgentsHubAccountChrome();
     }
 
+    /**
+     * Mobile only, with a conversation open in this view: the header's "Open views" trigger opens the side chat /
+     * pull request sheet. The transcript sheet carries its own trigger, so this one steps aside while it is open.
+     */
+    syncAuxSheetTrigger(): void {
+        if (!this.auxSheetTrigger) {
+            this.auxSheetTrigger = createMobileAuxSheetTrigger(this.host.executionSurfaceTabsUi);
+            this.host.titleRow.append(this.auxSheetTrigger);
+        }
+        this.auxSheetTrigger.hidden = !this.isAuxSheetTriggerShown();
+    }
+
+    protected isAuxSheetTriggerShown(): boolean {
+        return matchesMobileNarrowViewport()
+            && this.host.hubView === 'tasks'
+            && this.host.agentsHubInlineActive
+            && !!this.host.transcriptOpenProject
+            && !!this.host.transcriptOpenSummary
+            && !document.querySelector('.theia-mobile-agent-transcript-root');
+    }
+
     protected renderPullRequestHeader(): void {
         const header = this.host.pullRequestHeaderEl;
         if (!header) {
@@ -215,78 +243,12 @@ export class MobileProjectsHubHeaderUi {
         }
         leading.append(status);
 
-        if (!pullRequest) {
-            const title = document.createElement('strong');
-            title.textContent = nls.localize('qaap/pullRequests/headerTitle', 'Pull requests');
-            leading.append(title);
-            header.append(leading);
-            return;
-        }
-
-        const tabs = document.createElement('div');
-        tabs.className = 'theia-mobile-work-hub-pull-request-header-tabs';
-        const activeTab = this.host.pullRequestDetailActiveTab?.() ?? 'summary';
-        for (const tab of [
-            ['summary', nls.localize('qaap/pullRequests/summary', 'Summary')],
-            ['code', nls.localize('qaap/pullRequests/code', 'Code')],
-        ] as const) {
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.className = 'theia-mobile-work-hub-pull-request-header-tab';
-            button.textContent = tab[1];
-            button.classList.toggle('theia-mod-active', activeTab === tab[0]);
-            button.setAttribute('aria-selected', String(activeTab === tab[0]));
-            button.setAttribute('role', 'tab');
-            button.addEventListener('click', () => this.host.setPullRequestDetailTab?.(tab[0]));
-            tabs.append(button);
-        }
-        leading.append(tabs);
-
-        const actions = document.createElement('div');
-        actions.className = 'theia-mobile-work-hub-pull-request-header-actions';
-        const external = document.createElement('a');
-        external.className = 'theia-mobile-work-hub-pull-request-detail-icon-button';
-        external.href = pullRequest.htmlUrl;
-        external.target = '_blank';
-        external.rel = 'noreferrer';
-        external.title = nls.localize('qaap/pullRequests/openOnGithub', 'Open on GitHub');
-        external.setAttribute('aria-label', external.title);
-        external.innerHTML = '<span class="codicon codicon-link-external" aria-hidden="true"></span>';
-        const chat = this.createPullRequestHeaderButton(
-            nls.localize('qaap/pullRequests/openChat', 'Open chat'),
-            'theia-mobile-work-hub-pull-request-chat-button',
-            () => this.host.openPullRequestChat?.(),
-            'codicon-comment-discussion',
-        );
-        const merge = this.createPullRequestHeaderButton(
-            pullRequest.state === 'merged'
-                ? nls.localize('qaap/pullRequests/merged', 'Merged')
-                : nls.localize('qaap/pullRequests/merge', 'Merge'),
-            'theia-mobile-work-hub-pull-request-merge-button',
-            () => this.host.togglePullRequestMerge?.(),
-            'codicon-git-merge',
-        );
-        merge.disabled = pullRequest.state === 'merged' || pullRequest.mergeable === false;
-        actions.append(external, chat, merge);
-        header.append(leading, actions);
-    }
-
-    protected createPullRequestHeaderButton(label: string, className: string, onClick: () => void, iconClass?: string): HTMLButtonElement {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = `${className}${iconClass ? ' theia-mobile-work-hub-pull-request-icon-button' : ''}`;
-        button.title = label;
-        button.setAttribute('aria-label', label);
-        if (iconClass) {
-            const icon = document.createElement('span');
-            icon.className = `codicon ${iconClass}`;
-            icon.setAttribute('aria-hidden', 'true');
-            button.append(icon);
-        } else {
-            button.textContent = label;
-        }
-        button.addEventListener('click', onClick);
-        return button;
+        // The open pull request carries its own header (repo · #, title, author, branches, Summary / Timeline /
+        // Code and its actions): the hub header only names the surface, as when no pull request is open.
+        const title = document.createElement('strong');
+        title.textContent = nls.localize('qaap/pullRequests/headerTitle', 'Pull requests');
+        leading.append(title);
+        header.append(leading);
     }
 
     syncHeaderProjectControl(showSessionsMenu: boolean): void {
@@ -308,6 +270,7 @@ export class MobileProjectsHubHeaderUi {
         this.host.headerProjectCluster.classList.toggle('theia-mod-conversation-title', showConversationSeparator);
         this.host.headerProjectCluster.classList.toggle('theia-mod-compact-project', showProject && compact);
         this.host.headerProjectLabelEl.textContent = sectionTitle;
+        this.host.headerProjectLabelEl.title = sectionTitle;
         layoutHeaderProjectClusterContents(
             this.host.headerProjectBtn,
             this.host.headerConversationsBtn,

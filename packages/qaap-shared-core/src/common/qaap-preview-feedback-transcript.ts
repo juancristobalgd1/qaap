@@ -26,6 +26,17 @@ export interface PreviewFeedbackAnnotationDetail {
     readonly unresolved?: boolean;
 }
 
+const QAAP_CACHE_BUST_PARAM_PATTERN = /([?&])_qaap_cache_bust=[^&#\s]*(&?)/g;
+
+/**
+ * Drops Qaap's internal `_qaap_cache_bust` reload marker from a route, URL, or any text holding
+ * one: it is plumbing, not part of the user's page, and must neither split annotation scopes
+ * across hard reloads nor reach the user's eyes.
+ */
+export function stripQaapPreviewCacheBustParam(value: string): string {
+    return value.replace(QAAP_CACHE_BUST_PARAM_PATTERN, (_match, separator: string, ampersand: string) => ampersand ? separator : '');
+}
+
 const ANNOTATION_HEADER_PATTERN = /^Annotation (\d+):\s*$/;
 const FIELD_LINE_PATTERN = /^- ([A-Za-z][A-Za-z ]*): ?(.*)$/;
 
@@ -87,7 +98,7 @@ export function parsePreviewFeedbackContextBody(body: string): PreviewFeedbackAn
                 current.lastField = 'comment';
                 break;
             case 'Route':
-                current.route = value || undefined;
+                current.route = stripQaapPreviewCacheBustParam(value) || undefined;
                 break;
             case 'Viewport':
                 current.viewport = value || undefined;

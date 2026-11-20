@@ -19,6 +19,8 @@ import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mob
 import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { clearPreferDesktopIde, markPreferDesktopIde } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 import { clearQaapPreviewDismissedByUser, isQaapPreviewDismissedByUser } from '@theia/qaap-shared-core/lib/browser/qaap-preview-user-dismissal';
+import { QAAP_DISABLED_HARNESSES_PREF } from '@theia/qaap-shared-core/lib/common/qaap-harness-preferences';
+import { MobileProjectsStickyComposerAgentsUi } from '@theia/qaap-composer/lib/browser/mobile-projects-sticky-composer-agents-ui';
 import { QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY } from './mobile-work-hub-sessions-sidebar';
 import {
     clearPendingTranscriptFilesViewMode,
@@ -125,6 +127,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
             stickyComposerAgentsUi: {
                 ensureStickyComposerAgentsLoaded: async () => [],
                 resolveStickyComposerPinnedAgentId: () => 'qaiq',
+                resolveStickyComposerAgentModel: () => undefined,
             } as unknown as MobileProjectsExecutionSurfaceTabsHost['stickyComposerAgentsUi'],
             stickyComposerPinnedAgentId: 'qaiq',
             resolveAgentsHubShellProject: () => undefined,
@@ -928,16 +931,16 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
         }));
 
         expect(ui.executionSurfaceTabSpecs().map(spec => spec.id)).to.deep.equal([
-            'preview', 'files', 'terminal',
+            'preview', 'review', 'files', 'terminal',
         ]);
         expect(ui.executionSurfaceTabSpecs().find(spec => spec.id === 'files')?.icon).to.equal('codicon-files');
         const strip = ui.buildExecutionViewTabStrip('messages', () => undefined);
         expect(Array.from(strip.querySelectorAll<HTMLElement>('.theia-mobile-transcript-tab-icon-select-option[data-tab]')).map(item => item.dataset.tab)).to.deep.equal([
-            'preview', 'files', 'terminal',
+            'preview', 'review', 'files', 'terminal',
         ]);
     });
 
-    it('redirects Changes (review) to the Files tab with changes view mode', () => {
+    it('keeps Changes (review) as its own tab, shown on the files surface', () => {
         const project: MobileProjectEntry = {
             id: 'p1',
             name: 'Demo',
@@ -991,9 +994,9 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
 
         ui.selectTranscriptTab('review', project, summary);
 
-        // 'review' is redirected to 'files' — the tab is stored as 'files'
-        // and the files host is shown (not the review host).
-        expect(host.executionSurfaceTabByProjectId.get(project.id)).to.equal('files');
+        // Changes is its own view (stored as 'review') but it shares the files surface:
+        // the files host is shown, never the legacy review host.
+        expect(host.executionSurfaceTabByProjectId.get(project.id)).to.equal('review');
         expect(filesHost.hidden).to.equal(false);
         expect(reviewHost.hidden).to.equal(true);
     });
@@ -1049,10 +1052,10 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
 
         ui.selectTranscriptTab('review', project, summary);
 
-        // Files tab is stored, but the mount must not force 'files': the pending
-        // Changes mode has to survive until the file view consumes it.
-        expect(host.executionSurfaceTabByProjectId.get(project.id)).to.equal('files');
-        expect(observed.requestedMode).to.equal(undefined);
+        // Changes is stored as its own tab and mounts the files surface asking for Changes mode
+        // (the pending flag stays set too, for a mount that consumes it later).
+        expect(host.executionSurfaceTabByProjectId.get(project.id)).to.equal('review');
+        expect(observed.requestedMode).to.equal('changes');
         expect(observed.pendingMode).to.equal('changes');
         clearPendingTranscriptFilesViewMode();
     });
@@ -1104,9 +1107,8 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
 
         const labels = Array.from(strip.querySelectorAll('.theia-mobile-transcript-tab-icon-select-option-label'))
             .map(label => label.textContent);
-        expect(labels).to.deep.equal(['Browser', 'Files', 'Terminal']);
+        expect(labels).to.deep.equal(['Browser', 'Changes', 'Files', 'Terminal']);
         expect(labels).to.not.include('Editor');
-        expect(labels).to.not.include('Changes');
 
         const chatOption = strip.querySelector<HTMLElement>('.theia-mobile-transcript-tab-icon-select-option[data-tab="messages"]');
         expect(chatOption).to.equal(null);
@@ -1242,6 +1244,96 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
         const labels = Array.from(menu!.querySelectorAll('.theia-mobile-transcript-tab-icon-select-option-label'))
             .map(node => node.textContent);
         expect(labels).to.include.members(['QAIQ', 'Claude Code', 'Codex', 'Pi']);
+        tuiHost.remove();
+        ui.closeExecutionTabOverflowMenu();
+    });
+
+    it('places the overflow menu inside a contained portal even when the portal is displaced', () => {
+        const host = createHost();
+        const ui = createUi(host);
+        const portal = document.createElement('section');
+        portal.className = 'theia-mobile-execution-surface-sidebar theia-mod-open';
+        portal.style.setProperty('contain', 'layout paint');
+        // The portal sits at x=360; a fixed child is placed against it, so the menu reports the shift.
+        const portalLeft = 360;
+        portal.getBoundingClientRect = (): DOMRect => ({
+            left: portalLeft, top: 0, right: 760, bottom: 700, width: 400, height: 700, x: portalLeft, y: 0, toJSON: () => ({}),
+        } as DOMRect);
+        const anchor = document.createElement('button');
+        anchor.getBoundingClientRect = (): DOMRect => ({
+            left: 700, top: 50, right: 760, bottom: 80, width: 60, height: 30, x: 700, y: 50, toJSON: () => ({}),
+        } as DOMRect);
+        const menu = document.createElement('div');
+        menu.getBoundingClientRect = (): DOMRect => {
+            const left = parseFloat(menu.style.left) || 0;
+            const top = parseFloat(menu.style.top) || 0;
+            const rectLeft = left + portalLeft;
+            return { left: rectLeft, top, right: rectLeft + 188, bottom: top + 120, width: 188, height: 120, x: rectLeft, y: top, toJSON: () => ({}) } as DOMRect;
+        };
+        portal.append(anchor, menu);
+        host.root.append(portal);
+
+        ui.positionExecutionTabOverflowMenu(menu, anchor);
+
+        const renderedLeft = parseFloat(menu.style.left) + portalLeft;
+        const renderedRight = renderedLeft + 188;
+        // Right-aligned to the trigger and clamped to the visible portal (360..760), not the viewport.
+        expect(renderedRight).to.equal(752);
+        expect(renderedLeft).to.be.at.least(portalLeft + 8);
+        expect(renderedRight).to.be.at.most(760 - 8);
+        expect(menu.style.position).to.equal('fixed');
+    });
+
+    it('lists only enabled harnesses in the agent TUI menu and re-reads Settings on each open', async () => {
+        const project: MobileProjectEntry = {
+            id: 'p-qaap',
+            name: 'qaap',
+            color: '#8EB5DC',
+            branch: 'main',
+            status: 'idle',
+            task: '',
+            progress: 0,
+            agents: [],
+            lastActive: 'now',
+            tokens: '0',
+            cost: '$0',
+            pinned: false,
+            isCurrent: true,
+        };
+        let disabledHarnesses: string[] = ['codex'];
+        const stickyComposerAgentsUi = new MobileProjectsStickyComposerAgentsUi({
+            stickyComposerBackendAgents: [
+                { id: 'claude', label: 'Claude Code', available: true },
+                { id: 'codex', label: 'Codex', available: true },
+            ],
+            readPreference: (key: string): unknown => key === QAAP_DISABLED_HARNESSES_PREF ? disabledHarnesses : undefined,
+        } as unknown as ConstructorParameters<typeof MobileProjectsStickyComposerAgentsUi>[0]);
+        const host = createHost({
+            agentsHubShellActive: true,
+            transcriptOpenProject: undefined,
+            resolveAgentsHubShellProject: () => project,
+            stickyComposerAgentsUi,
+        });
+        const ui = createUi(host);
+
+        const tuiHost = ui.createTerminalAgentTuiSelect();
+        host.root.append(tuiHost);
+        const trigger = tuiHost.querySelector<HTMLButtonElement>('.theia-mobile-transcript-terminal-agent-tui')!;
+        const readLabels = (): (string | null | undefined)[] => Array.from(
+            host.root.querySelectorAll('.theia-mobile-transcript-terminal-agent-tui-menu .theia-mobile-transcript-tab-icon-select-option-label'),
+        ).map(node => node.textContent);
+
+        trigger.click();
+        await new Promise<void>(resolve => { window.setTimeout(resolve, 0); });
+        expect(readLabels()).to.include('Claude Code');
+        expect(readLabels()).to.not.include('Codex');
+
+        ui.closeExecutionTabOverflowMenu();
+        disabledHarnesses = [];
+        trigger.click();
+        await new Promise<void>(resolve => { window.setTimeout(resolve, 0); });
+        expect(readLabels()).to.include.members(['Claude Code', 'Codex']);
+
         tuiHost.remove();
         ui.closeExecutionTabOverflowMenu();
     });
@@ -1476,5 +1568,64 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
                 root.remove();
             }
         });
+
+        it('keeps the Browser widget docked after an annotation Send lands on Messages', () => {
+            const project = { id: 'p-send', name: 'Send' } as MobileProjectEntry;
+            const summary = { id: 'conv-send' } as MobileProjectsExecutionSurfaceTabsHost['transcriptOpenSummary'];
+            const root = document.createElement('div');
+            const previewHost = document.createElement('div');
+            previewHost.className = 'theia-mobile-transcript-preview';
+            root.append(previewHost);
+            document.body.append(root);
+            try {
+                const host = createHost({ root, transcriptPreviewHost: previewHost });
+                const ui = createUi(host);
+                ui.openExecutionSurfaceSidebar('preview', project, summary!, 'transcript');
+                const panel = ui.resolveWorkHubAuxPanel()!;
+                const sidebar = host.executionSurfaceSidebar!.element;
+                expect(sidebar.closest('.qaap-work-hub-aux-panel')).to.not.equal(null);
+
+                ui.showMessagesKeepingDock(project);
+
+                // The Browser tab keeps its widget: no undock, no placeholder, the preview host stays visible.
+                expect(host.executionSurfaceSidebar?.element).to.equal(sidebar);
+                expect(sidebar.isConnected).to.equal(true);
+                expect(sidebar.closest('.qaap-work-hub-aux-panel')).to.not.equal(null);
+                expect(panel.model.activeTab?.kind).to.equal('preview');
+                expect(previewHost.closest('.qaap-work-hub-aux-panel')).to.not.equal(null);
+                expect(previewHost.hidden).to.equal(false);
+                expect(panel.element.querySelector<HTMLElement>('.qaap-work-hub-aux-panel-empty')!.hidden).to.equal(true);
+            } finally {
+                root.remove();
+            }
+        });
+    });
+
+    it('shows Messages and closes a drawer surface that is not docked in the panel', () => {
+        const project = { id: 'p-drawer', name: 'Drawer' } as MobileProjectEntry;
+        const summary = { id: 'conv-drawer' } as MobileProjectsExecutionSurfaceTabsHost['transcriptOpenSummary'];
+        const root = document.createElement('div');
+        const previewHost = document.createElement('div');
+        previewHost.className = 'theia-mobile-transcript-preview';
+        root.append(previewHost);
+        document.body.append(root);
+        try {
+            const host = createHost({ root, transcriptPreviewHost: previewHost });
+            const ui = createUi(host);
+            ui.openExecutionSurfaceSidebar('preview', project, summary!, 'transcript');
+            const sidebar = host.executionSurfaceSidebar!.element;
+            expect(sidebar.classList.contains('qaap-mod-docked')).to.equal(false);
+
+            ui.showMessagesKeepingDock(project);
+
+            // Mobile and undocked layouts keep the drawer behaviour: Messages is selected and the drawer closes.
+            expect(host.executionSurfaceTabByProjectId.get(project.id)).to.equal('messages');
+            expect(host.executionSurfaceSidebar).to.equal(undefined);
+            expect(sidebar.classList.contains('theia-mod-closing')).to.equal(true);
+        } finally {
+            root.remove();
+            document.querySelectorAll('.theia-mobile-execution-surface-sidebar, .theia-mobile-execution-surface-sidebar-backdrop')
+                .forEach(element => element.remove());
+        }
     });
 });

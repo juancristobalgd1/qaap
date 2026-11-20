@@ -14,6 +14,9 @@ export interface LazyTranscriptToolPillPayload {
 
 export const MOBILE_CLOSING_TEXT_ERROR_PREFIX = /^error:\s*/i;
 
+/** The backend's spawn failure line (`Failed to start: …`): the agent never ran, so it is an error, not a reply. */
+export const MOBILE_START_FAILURE_TEXT_PREFIX = /^failed to start:\s*/i;
+
 export const TRANSCRIPT_TRACE_STATUS_ATTR = 'data-transcript-trace-status';
 export const TRANSCRIPT_CHECKPOINT_RESTORE_ATTR = 'data-transcript-checkpoint-id';
 

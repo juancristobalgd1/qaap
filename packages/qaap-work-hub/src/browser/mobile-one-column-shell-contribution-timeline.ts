@@ -43,8 +43,6 @@ import {
     QAAP_WORK_HUB_OPEN_SETTINGS_COMMAND,
     QAAP_WORK_HUB_SEARCH_COMMAND,
 } from '../common/qaap-work-hub-command-palette';
-import { CommonCommands } from '@theia/core/lib/browser/common-commands';
-import { writeStoredComposerSurface } from '@theia/qaap-composer/lib/common/qaap-composer-surface';
 import {
     EXPLORER_VIEW_CONTAINER_ID,
     isMiniBrowserPreviewWidgetId,
@@ -134,13 +132,8 @@ export function registerCommandsExtracted(ctx: MobileOneColumnShellContributionC
         isEnabled: () => !peekPreferDesktopIde() && !!ctx.projectsPanel,
         isVisible: () => !peekPreferDesktopIde(),
     });
-    // Prefer Work Hub sheets over IDE main-area widgets while the hub is active.
-    // registerHandler unshifts, so these win over upstream handlers when enabled.
-    registry.registerHandler(CommonCommands.OPEN_PREFERENCES.id, {
-        execute: () => ctx.openWorkHubPreferencesSheet(),
-        isEnabled: () => !peekPreferDesktopIde(),
-        isVisible: () => !peekPreferDesktopIde(),
-    });
+    // Settings (`preferences:open`) is answered by QaapWorkHubSurfaceRedirectContribution: it registers
+    // in onStart, after every registerCommands, so an OPEN_PREFERENCES handler here could never be picked.
     registry.registerHandler(QAAP_WORK_HUB_AI_FEATURES_COMMAND, {
         execute: () => ctx.openWorkHubPreferencesSheet('ai-features'),
         isEnabled: () => !peekPreferDesktopIde(),
@@ -368,6 +361,7 @@ export async function openWorkHubPreferencesSheetExtracted(ctx: MobileOneColumnS
                 return panel.sessionsSidebarUi.ensureWorkHubSessionsSidebar();
             },
             ctx.keybindingsPanel,
+            ctx.mcpFrontendService,
         );
         ctx.toDispose.push(Disposable.create(() => {
             ctx.workHubPreferencesSheet?.dispose();
@@ -583,7 +577,6 @@ export async function toggleMobileAgentSheetExtracted(ctx: MobileOneColumnShellC
     const project = await ctx.resolveCurrentProjectForAgent();
     if (project) {
         const cwd = ctx.projectsService.getProjectCwd(project);
-        writeStoredComposerSurface(cwd, 'chat');
         ctx.projectsPanel?.preferComposerSurface('chat', cwd);
     }
     // Mobile "Agent" opens Theia AI Chat in the right sheet.

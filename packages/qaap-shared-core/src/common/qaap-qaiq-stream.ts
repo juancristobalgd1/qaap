@@ -40,6 +40,7 @@ interface StreamMessageEnvelope {
     readonly timestamp_ms?: number;
     readonly parent_tool_use_id?: string | null;
     readonly message?: {
+        readonly id?: string;
         readonly content?: ContentBlock[] | string;
         readonly usage?: ClaudeStreamUsageLike;
     };
@@ -98,6 +99,13 @@ export class QaapQaiqStreamAccumulator {
      * `result` usage is only a fallback when no per-call usage was reported.
      */
     protected turnUsage: QaapAgentContextUsage | undefined;
+    /**
+     * Largest output count seen per API message id. The same message is re-emitted as it grows, so
+     * taking the max per id and summing across ids gives the turn's output without double counting.
+     */
+    protected readonly outputByMessageId = new Map<string, number>();
+    /** Output from usage snapshots that carried no message id; these cannot be deduplicated. */
+    protected unkeyedOutputTokens = 0;
 
     getTurnUsage(): QaapAgentContextUsage | undefined {
         return this.turnUsage;
@@ -162,7 +170,7 @@ export class QaapQaiqStreamAccumulator {
             return;
         }
         if (type === 'assistant' || type === 'user') {
-            this.captureUsage(envelope.message?.usage);
+            this.captureUsage(envelope.message?.usage, envelope.message?.id);
             this.handleTranscriptMessage(envelope);
             return;
         }
@@ -174,6 +182,7 @@ export class QaapQaiqStreamAccumulator {
             if (!this.turnUsage) {
                 this.captureUsage(envelope.usage);
             }
+            this.preferResultOutputTotal(envelope.usage);
             if (typeof envelope.result === 'string' && envelope.result.trim()) {
                 const resultText = envelope.result.trim();
                 if (envelope.is_error) {
@@ -186,11 +195,39 @@ export class QaapQaiqStreamAccumulator {
         }
     }
 
-    protected captureUsage(usage: ClaudeStreamUsageLike | undefined): void {
+    /**
+     * Keeps the latest snapshot's input/context numbers and records its output in the turn total.
+     * A snapshot with a message id replaces that id's earlier output only when larger.
+     */
+    protected captureUsage(usage: ClaudeStreamUsageLike | undefined, messageId?: string): void {
         const parsed = usageFromClaudeStream(usage);
-        if (parsed) {
-            this.turnUsage = parsed;
+        if (!parsed) {
+            return;
         }
+        const key = messageId?.trim();
+        if (key) {
+            this.outputByMessageId.set(key, Math.max(this.outputByMessageId.get(key) ?? 0, parsed.outputTokens));
+        } else {
+            this.unkeyedOutputTokens += parsed.outputTokens;
+        }
+        this.turnUsage = { ...parsed, outputTokensTotal: this.cumulativeOutputTokens() };
+    }
+
+    /** The `result` event's output count is the turn total; it wins when it exceeds the per-message sum. */
+    protected preferResultOutputTotal(usage: ClaudeStreamUsageLike | undefined): void {
+        const reported = usage?.output_tokens;
+        if (!this.turnUsage || typeof reported !== 'number' || reported <= this.cumulativeOutputTokens()) {
+            return;
+        }
+        this.turnUsage = { ...this.turnUsage, outputTokensTotal: reported };
+    }
+
+    protected cumulativeOutputTokens(): number {
+        let total = this.unkeyedOutputTokens;
+        for (const output of this.outputByMessageId.values()) {
+            total += output;
+        }
+        return total;
     }
 
     protected handleStreamEvent(envelope: StreamMessageEnvelope): void {
@@ -474,8 +511,9 @@ export class QaapQaiqStreamAccumulator {
         for (const block of this.transcriptBlocks) {
             switch (block.type) {
                 case 'text':
+                    // Adjacent text blocks are distinct segments (ingest already merged token deltas).
                     pendingText = pendingText
-                        ? mergeIncrementalStreamText(pendingText, block.text ?? '')
+                        ? joinDistinctTextSegments(pendingText, block.text ?? '')
                         : (block.text ?? '');
                     break;
                 case 'thinking':
@@ -616,6 +654,49 @@ export function mergeIncrementalStreamText(existing: string, incoming: string): 
     return existing + incoming;
 }
 
+/**
+ * Join two adjacent text segments of one turn. Cumulative snapshots and exact repeats merge; a
+ * distinct segment starts a new paragraph, so `asked.` + `I will read` never fuses into `asked.I`.
+ * Token deltas that carry their own whitespace still concatenate as-is.
+ */
+export function joinDistinctTextSegments(existing: string, incoming: string): string {
+    if (!incoming) {
+        return existing;
+    }
+    if (!existing) {
+        return incoming;
+    }
+    if (incoming.startsWith(existing)) {
+        return incoming;
+    }
+    if (existing.endsWith(incoming) && incoming.trim().length >= 32) {
+        return existing;
+    }
+    if (/\s$/.test(existing) || /^\s/.test(incoming)) {
+        return existing + incoming;
+    }
+    return `${existing}\n\n${incoming}`;
+}
+
+const REPEATED_FAILURE_PARAGRAPH_RE = /\bstopped:\s*repeated tool failures\b|\bfailed \d+ times with\b/i;
+
+/**
+ * Drop a failure paragraph (`Stopped: repeated tool failures…`, `X failed 3 times with…`) when the
+ * same paragraph already appears earlier in the turn, so one failure is shown once per turn.
+ */
+export function dropRepeatedFailureParagraphs(chunk: string, priorText: string): string {
+    const seen = new Set(priorText.split(/\n\n+/).map(part => part.trim()).filter(Boolean));
+    const kept: string[] = [];
+    for (const paragraph of chunk.split(/\n\n+/).map(part => part.trim()).filter(Boolean)) {
+        if (REPEATED_FAILURE_PARAGRAPH_RE.test(paragraph) && seen.has(paragraph)) {
+            continue;
+        }
+        seen.add(paragraph);
+        kept.push(paragraph);
+    }
+    return kept.join('\n\n');
+}
+
 /** Collapse exact back-to-back repetition inside one text block (e.g. `hola…hola…` with no separator). */
 export function collapseExactRepeatedText(text: string): string {
     let normalized = text.trim();
@@ -714,22 +795,21 @@ export function dedupeAgentMessageTextSegments(
         }
 
         chunk = stripLeadingParagraphsInPriorText(chunk, priorText) ?? '';
+        chunk = dropRepeatedFailureParagraphs(chunk, priorText);
         if (!chunk) {
             continue;
         }
 
         const last = result[result.length - 1];
         if (last?.type === 'text') {
-            const merged = mergeIncrementalStreamText(last.content, chunk);
-            if (merged === last.content) {
+            const joined = joinDistinctTextSegments(last.content, chunk);
+            if (joined === last.content) {
                 priorText = collectAgentMessageText(result);
                 continue;
             }
-            if (merged.startsWith(last.content)) {
-                result[result.length - 1] = { type: 'text', content: merged };
-                priorText = collectAgentMessageText(result);
-                continue;
-            }
+            result[result.length - 1] = { type: 'text', content: joined };
+            priorText = collectAgentMessageText(result);
+            continue;
         }
 
         if (result.some(entry => entry.type === 'text' && entry.content.trim() === chunk)) {

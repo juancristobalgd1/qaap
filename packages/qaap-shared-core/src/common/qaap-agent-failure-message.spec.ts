@@ -14,6 +14,7 @@ import {
     formatProviderPreflightNote,
     extractLastFailedToolFromMessage,
     formatStoredAgentFailureMessage,
+    isGeminiIneligibleTierText,
     localizeAgentFailureMessage,
     localizeAgentFailureShortReason,
     localizeGenericAgentFailureMessage,
@@ -120,6 +121,28 @@ describe('qaap-agent-failure-message', () => {
         )).to.equal('quota');
         expect(detectAgentFailureKind('[qaap] OpenCode reported: AI_APICallError: Free usage limit reached.'))
             .to.equal('quota');
+    });
+
+    it('does not classify prose that merely mentions a quota or billing as quota', () => {
+        // Successful replies and tool output from this repo: the bare words are not a provider limit.
+        expect(detectAgentFailureKind('Hola. Te explico cómo funciona el quota del plan de facturación (billing) en Airwallex.'))
+            .to.equal(undefined);
+        expect(detectAgentFailureKind('expect(quota).to.equal(3); billing total = 42')).to.equal(undefined);
+        expect(detectAgentFailureKind('Free credits are included in the starter plan.')).to.equal(undefined);
+        expect(detectAgentFailureKind('Added a billing page and a quota badge to the settings.')).to.equal(undefined);
+    });
+
+    it('still classifies real provider quota messages as quota', () => {
+        expect(detectAgentFailureKind('Individual quota reached. Please upgrade your subscription. Resets in 54h16m14s.'))
+            .to.equal('quota');
+        expect(detectAgentFailureKind('Quota exceeded for quota metric generate requests')).to.equal('quota');
+        expect(detectAgentFailureKind('You exceeded your current quota, please check your plan and billing details.'))
+            .to.equal('quota');
+        expect(detectAgentFailureKind('This model has reached its quota. Switch model or effort in the composer.'))
+            .to.equal('quota');
+        expect(detectAgentFailureKind('Error: 429 insufficient_quota')).to.equal('quota');
+        expect(detectAgentFailureKind('Your billing hard limit has been reached.')).to.equal('quota');
+        expect(detectAgentFailureKind('Free credits for Kimi K2.6 are exhausted.')).to.equal('quota');
     });
 
     it('detectAgentFailureKind recognizes auth, timeout, and network failures', () => {
@@ -633,5 +656,84 @@ describe('provider rejected requests', () => {
             ].join('\n');
             expect(detectAgentFailureKind(log)).to.equal('model_unavailable');
         });
+    });
+});
+
+describe('Gemini CLI ineligible free tier', () => {
+    const log = [
+        'YOLO mode is enabled. All tool calls will be automatically approved.',
+        'Error authenticating: IneligibleTierError: This client is no longer supported for Gemini Code Assist for individuals. To continue using Gemini, please migrate to the Antigravity suite of products: https://antigravity.google',
+        '    at throwIneligibleOrProjectIdError (file:///usr/local/lib/node_modules/@google/gemini-cli/bundle/chunk-MLY4WQFO.js:311202:11)',
+        "  ineligibleTiers: [ { reasonCode: 'UNSUPPORTED_CLIENT', tierId: 'free-tier', tierName: 'Gemini Code Assist for individuals' } ]",
+    ].join('\n');
+
+    it('explains the retired free tier instead of a stack trace', () => {
+        const message = resolveAgentTurnFailureMessage(log);
+        expect(message).to.contain('personal Google accounts');
+        expect(message).to.contain('pick another agent');
+        expect(message).to.contain('Antigravity CLI (agy)');
+        expect(message).to.not.contain('throwIneligibleOrProjectIdError');
+    });
+
+    it('does not fire on unrelated failures', () => {
+        expect(isGeminiIneligibleTierText('Error: 429 Too Many Requests')).to.equal(false);
+    });
+
+    it('is not an auth failure: a new sign-in cannot fix it', () => {
+        expect(detectAgentFailureKind(log)).to.not.equal('auth');
+    });
+});
+
+describe('Antigravity CLI (agy) without a session', () => {
+    // Literal lines agy prints when it has no session (agy 1.5.9, captured in a Linux container).
+    const signedOutLines: readonly string[] = [
+        'Authentication required. Please visit the URL to log in:',
+        'Error: authentication interrupted.',
+        'error: authentication failed or timed out',
+        "Error: authentication required. Run 'agy' to log in, then retry.",
+        'Error: Please sign in to view available models. Launch the CLI without arguments to sign in.',
+    ];
+
+    it('classifies each sign-in line as an auth failure, so the transcript offers sign-in', () => {
+        for (const line of signedOutLines) {
+            expect(detectAgentFailureKind(line), line).to.equal('auth');
+        }
+    });
+
+    it('classifies the JSON envelope that agy --output-format json prints without a session', () => {
+        const envelope = '{"conversation_id":"","status":"ERROR","response":"","error":"authentication failed or timed out"}';
+        expect(detectAgentFailureKind(envelope)).to.equal('auth');
+    });
+
+    it('does not turn an ordinary "authentication" mention into an auth failure', () => {
+        expect(detectAgentFailureKind('Refactored the authentication module and added tests.')).to.not.equal('auth');
+    });
+});
+
+describe('auxiliary-model log lines and persisted limit copies', () => {
+
+    it('keeps a real provider insufficient_quota as quota', () => {
+        expect(detectAgentFailureKind(
+            '{"error":{"type":"insufficient_quota","message":"You exceeded your current quota, please check your plan and billing details."}}',
+        )).to.equal('quota');
+    });
+
+    it('keeps a persisted quota copy reading as quota, so the stored limit keeps its label', () => {
+        expect(detectAgentFailureKind(localizeAgentFailureMessage('quota'))).to.equal('quota');
+    });
+
+    const titleLine = '2026-11-11T13:10:18.406Z ERROR run=7f3f3ab2 message="stream error" providerID=opencode modelID=gpt-5.4-nano small=true agent=title mode=primary error.error="AI_APICallError: You exceeded your current quota, please check your plan and billing details."';
+
+    it('ignores a title-agent quota error in a turn that completed (exit 0)', () => {
+        const log = [
+            '2026-11-11T13:10:17.000Z INFO run=7f3f3ab2 message="prompt" providerID=opencode modelID=beam-free mode=primary',
+            titleLine,
+            '{"type":"step_finish","reason":"stop"}',
+        ].join('\n');
+        expect(detectAgentFailureKind(log)).to.be.undefined;
+    });
+
+    it('still classifies the same quota line when the main agent produced it', () => {
+        expect(detectAgentFailureKind(titleLine.replace('small=true agent=title mode=primary', 'agent=build mode=primary'))).to.equal('quota');
     });
 });

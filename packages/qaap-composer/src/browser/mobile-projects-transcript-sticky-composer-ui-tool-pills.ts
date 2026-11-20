@@ -33,10 +33,12 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-composer-context-entry';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { createStickyComposerImprovePromptHandler } from './qaap-composer-prompt-improve-handler';
+import { showMissingProjectFolderBanner } from './mobile-projects-transcript-missing-folder-banner';
 import {
-    renderStickyComposerActivityStack,
     renderStickyComposerChangesPill,
+    syncStickyComposerRunAppOwner,
 } from './qaap-sticky-composer-activity-stack';
+import { resolveTranscriptComposerHarnessSelection, syncTranscriptPendingHarnessSwitchRow } from '@theia/qaap-transcript/lib/browser/qaap-transcript-harness-switch-row';
 import {
     isIdleComposerFocusStealable,
 } from './mobile-projects-transcript-sticky-composer-helpers';
@@ -57,7 +59,15 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: MobilePro
     const composerStable = ctx.host.transcriptComposerMountKey === mountKey
         && ctx.host.transcriptComposerHost === host
         && host.childElementCount > 0;
+    // A harness picked for the next turn shows as "Handoff pending" at the transcript tail. Picking a
+    // harness remounts the composer, so every mount re-syncs the marker.
+    const syncPendingHarnessSwitch = (): void => syncTranscriptPendingHarnessSwitchRow(
+        chatHost,
+        ctx.host.transcriptLastConv?.id === summary.id ? ctx.host.transcriptLastConv : undefined,
+        resolveTranscriptComposerHarnessSelection(ctx.host, summary.id),
+    );
     if (composerStable) {
+        syncPendingHarnessSwitch();
         ctx.syncTranscriptComposerQuickActionsVisibility(host, summary);
         ctx.host.transcriptComposerSendRefresh?.();
         ctx.refreshComposerActivityStack();
@@ -73,6 +83,7 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: MobilePro
         || ctx.host.transcriptComposerSummary?.id !== summary.id) {
         return;
     }
+    syncPendingHarnessSwitch();
     // Conversations share the project's working tree — a git snapshot cached while another
     // session was open can be stale (e.g. committed meanwhile). Refetch per (re)mount so the
     // Changes pill + commit button reflect this conversation's current pending changes.
@@ -106,6 +117,7 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: MobilePro
         ctx.host.transcriptComposerToolApprovalRules = undefined;
     }
     const activityOptions = ctx.buildTranscriptComposerActivityOptions(project, summary);
+    syncStickyComposerRunAppOwner(host, activityOptions);
     const submitComposerFollowUp = (draft: string, forceDeliveryMode?: 'parallel' | 'interrupt'): void => {
         if (hasPendingComposerContextEntries(ctx.host.transcriptComposerContext)) {
             ctx.host.stickyComposerContextUi.notifyPendingComposerAttachments();
@@ -149,7 +161,6 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: MobilePro
         composerCwd: cwd,
         surface: 'task',
         agentLocked: isLegacyTheiaChat,
-        activityStack: renderStickyComposerActivityStack(activityOptions),
         changesPill: renderStickyComposerChangesPill(activityOptions),
         getContext: () => ctx.host.transcriptComposerContext,
         clearContext: () => {
@@ -187,6 +198,12 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: MobilePro
         ),
         canSubmit: true,
         isSubmitBlocked: () => qaapStopAck.isSendBlocked(ctx.host.transcriptLastConv?.id ?? summary.id),
+        hasPendingAttachments: () => hasPendingComposerContextEntries(ctx.host.transcriptComposerContext),
+        onSubmitBlocked: () => {
+            if (hasPendingComposerContextEntries(ctx.host.transcriptComposerContext)) {
+                ctx.host.stickyComposerContextUi.notifyPendingComposerAttachments();
+            }
+        },
         isStopRetryable: () => qaapStopAck.isStopRetryable(ctx.host.transcriptLastConv?.id ?? summary.id),
         onImprovePrompt: ctx.host.composerPromptImprover
             ? createStickyComposerImprovePromptHandler({
@@ -303,6 +320,17 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: MobilePro
     }
     shell.append(column);
     host.append(shell);
+    // Missing project folder: a banner above the composer, checked after the mount so it never delays it.
+    void showMissingProjectFolderBanner({
+        project,
+        folderPath: cwd,
+        anchor: column,
+        folderExists: target => ctx.host.projectsService.projectFolderExists(target),
+        stillMounted: () => ctx.host.transcriptComposerHost === host && ctx.host.transcriptComposerMountKey === mountKey,
+        removeProject: ctx.host.removeTranscriptProject
+            ? target => ctx.host.removeTranscriptProject?.(target)
+            : undefined,
+    });
     const isIdleComposer = isAgentsHubIdleConversationSummary(summary);
     ctx.agentsHubIdleComposerMounted = isIdleComposer;
     // Autofocus deterministically AFTER the frontend reaches 'ready' — the

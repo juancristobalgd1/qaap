@@ -36,7 +36,7 @@ import {
     toAgentMessageWireSnapshot,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-message-wire-delta';
 import { TRANSCRIPT_MESSAGE_ID_ATTR } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
-import { formatQaiqModelIdShortLabel, formatQaiqModelSelectionLabel } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
+import { formatFriendlyModelLabel, formatQaiqModelSelectionLabel } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
 import { resolveAgentDisplayLabel } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { MobileProjectsTranscriptMessagesArtifactsUi } from './mobile-projects-transcript-messages-artifacts-ui';
 import { MobileProjectsTranscriptMessagesContentUi } from './mobile-projects-transcript-messages-content-ui';
@@ -225,8 +225,8 @@ describe('turn-provenance badge (end-to-end: seal -> wire -> render)', () => {
         expect(badges, 'exactly one provenance badge in the rendered transcript').to.have.length(1);
         expect(badgeAvatarIcon(badges[0]), 'agent brand avatar is present').to.exist;
         expect(badgeProviderIcon(badges[0]), 'provider sub-icon is present -- a model is known').to.exist;
-        expect(badgeLabelText(badges[0]), 'visible text is ONLY the short model id, never "Agent · Provider · id"')
-            .to.equal(formatQaiqModelIdShortLabel(anthropicSonnet.modelId));
+        expect(badgeLabelText(badges[0]), 'visible text is ONLY the readable model name, never "Agent · Provider · id"')
+            .to.equal(formatFriendlyModelLabel(anthropicSonnet.modelId));
         const expectedTitle = `${resolveAgentDisplayLabel('claude')} · ${formatQaiqModelSelectionLabel(anthropicSonnet)}`;
         expect(badges[0].title, 'title stays the full, unambiguous label').to.equal(expectedTitle);
     });
@@ -301,7 +301,7 @@ describe('turn-provenance badge (end-to-end: seal -> wire -> render)', () => {
             const standaloneBadges = findStandaloneBadges(messageHost);
             expect(standaloneBadges, 'exactly one standalone badge').to.have.length(1);
             expect(badgeProviderIcon(standaloneBadges[0]), 'provider sub-icon present -- a model is known').to.exist;
-            expect(badgeLabelText(standaloneBadges[0])).to.equal(formatQaiqModelIdShortLabel(anthropicSonnet.modelId));
+            expect(badgeLabelText(standaloneBadges[0])).to.equal(formatFriendlyModelLabel(anthropicSonnet.modelId));
             expect(standaloneBadges[0].title).to.equal(`${resolveAgentDisplayLabel('claude')} · ${formatQaiqModelSelectionLabel(anthropicSonnet)}`);
             expect(findAnyBadges(messageHost), 'never two badges for the same turn').to.have.length(1);
         });
@@ -630,7 +630,7 @@ describe('turn-provenance badge (end-to-end: seal -> wire -> render)', () => {
             const standaloneBadges = findStandaloneBadges(messageHost);
             expect(standaloneBadges, 'exactly one standalone badge on the failure row').to.have.length(1);
             expect(badgeProviderIcon(standaloneBadges[0]), 'provider sub-icon present -- a model is known').to.exist;
-            expect(badgeLabelText(standaloneBadges[0])).to.equal(formatQaiqModelIdShortLabel(anthropicSonnet.modelId));
+            expect(badgeLabelText(standaloneBadges[0])).to.equal(formatFriendlyModelLabel(anthropicSonnet.modelId));
             expect(standaloneBadges[0].title).to
                 .equal(`${resolveAgentDisplayLabel('claude')} · ${formatQaiqModelSelectionLabel(anthropicSonnet)}`);
             // Sanity: this really is the failure-dialog row (createTranscriptAgentFailureRow),
@@ -703,7 +703,7 @@ describe('turn-provenance badge (end-to-end: seal -> wire -> render)', () => {
         const firstBadgeEl = badgesAfterFirstRender[0];
         expect(badgeProviderIcon(firstBadgeEl), 'provider sub-icon present -- a model is known').to.exist;
         const firstLabel = badgeLabelText(firstBadgeEl);
-        expect(firstLabel).to.equal(formatQaiqModelIdShortLabel(anthropicSonnet.modelId));
+        expect(firstLabel).to.equal(formatFriendlyModelLabel(anthropicSonnet.modelId));
         expect(firstBadgeEl.title).to.equal(`${resolveAgentDisplayLabel('claude')} · ${formatQaiqModelSelectionLabel(anthropicSonnet)}`);
         const headerEl = row.querySelector('.theia-mobile-process-accordion-header')!;
         expect(headerEl, 'the accordion header exists after the initial render').to.not.equal(null);
@@ -754,7 +754,7 @@ describe('turn-provenance badge (end-to-end: seal -> wire -> render)', () => {
         expect(badgeProviderIcon(badgesAfterRetryTick[0]), 'provider sub-icon still present for the fallback model').to.exist;
         const retryLabel = badgeLabelText(badgesAfterRetryTick[0]);
         expect(retryLabel, 'the badge text updates to the model that actually ran').to
-            .equal(formatQaiqModelIdShortLabel(openRouterFallback.modelId));
+            .equal(formatFriendlyModelLabel(openRouterFallback.modelId));
         expect(badgesAfterRetryTick[0].title, 'the title updates to the fallback model too').to
             .equal(`${resolveAgentDisplayLabel('claude')} · ${formatQaiqModelSelectionLabel(openRouterFallback)}`);
         expect(retryLabel, 'the badge no longer shows the original model').to.not.equal(firstLabel);

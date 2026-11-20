@@ -6,7 +6,7 @@ TEST_ROOT="$(mktemp -d -t qaap-image-test.XXXXXXXX)"
 cleanup() { case "$TEST_ROOT" in */qaap-image-test.*) rm -rf -- "$TEST_ROOT" ;; *) exit 2 ;; esac; }
 trap cleanup EXIT
 mkdir -p "$TEST_ROOT/scripts" "$TEST_ROOT/bin"
-for file in qaap-image-smoke.sh qaap-verify-launch-readiness.sh qaap-verify-auth-api-gate.sh qaap-release-config-check.js qaap-image-runtime-check.js; do
+for file in qaap-image-smoke.sh qaap-verify-launch-readiness.sh qaap-verify-auth-api-gate.sh qaap-release-config-check.js qaap-image-runtime-check.js qaap-image-agent-uid-check.js; do
     sed 's/\r$//' "$SOURCE/$file" > "$TEST_ROOT/scripts/$file"
 done
 cat > "$TEST_ROOT/bin/docker" <<'MOCK'
@@ -14,7 +14,7 @@ cat > "$TEST_ROOT/bin/docker" <<'MOCK'
 case "$1" in
     pull) exit 0 ;;
     image) printf '%s\n' "${TEST_LABEL:-$TEST_SHA}" ;;
-    run) printf '%064d\n' 1 ;;
+    run) printf "%s\n" "$*" >> "$TEST_RUN_LOG"; printf "%064d\n" 1 ;;
     port) printf '127.0.0.1:4873\n' ;;
     inspect)
         if [[ "$*" == *RestartCount* ]]; then printf '0\n'; else printf 'true\n'; fi ;;
@@ -44,6 +44,7 @@ chmod +x "$TEST_ROOT/bin/"*
 export PATH="$TEST_ROOT/bin:$PATH"
 export TEST_SHA="abcdef123456$(printf '%028d' 0)"
 export TEST_REMOVAL="$TEST_ROOT/removed"
+export TEST_RUN_LOG="$TEST_ROOT/run-args"
 export QAAP_IMAGE_SMOKE_ARTIFACT_DIR="$TEST_ROOT/artifacts"
 IMAGE="test.invalid/qaap@sha256:$(printf '%064d' 1)"
 expect_status() {
@@ -58,6 +59,9 @@ expect_status() {
     fi
 }
 expect_status 0 yes
+probe_args="$(grep -- "--entrypoint node" "$TEST_RUN_LOG" || true)"
+[[ "$probe_args" == *"--cap-drop ALL"* && "$probe_args" == *"--cap-add SETUID"* && "$probe_args" == *"--cap-add SETGID"* ]] || { echo "Agent uid probe is not run with the backend capability shape" >&2; exit 1; }
+[[ "$probe_args" != *CHOWN* && "$probe_args" != *DAC_OVERRIDE* && "$probe_args" != *FOWNER* && "$probe_args" != *"--cap-add KILL"* ]] || { echo "Agent uid probe grants a capability prod drops" >&2; exit 1; }
 export TEST_EXEC_EXIT=1
 expect_status 1 yes
 unset TEST_EXEC_EXIT

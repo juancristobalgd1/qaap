@@ -301,10 +301,17 @@ export function scheduleSseDeltaResyncExtracted(ctx: MobileProjectsTranscriptLiv
         if (ctx.sseDeltaResyncTimer !== undefined) {
             return;
         }
+        // Coalesce resync requests: the trailing GET waits out the per-conversation throttle window.
+        const conversationId = ctx.host.transcriptOpenSummaryId;
+        const throttle = ctx.transcriptRefetchThrottle;
+        const delayMs = Math.max(250, conversationId ? throttle.delayMs(conversationId) : 0);
         ctx.sseDeltaResyncTimer = window.setTimeout(() => {
             ctx.sseDeltaResyncTimer = undefined;
+            if (conversationId) {
+                throttle.markIssued(conversationId);
+            }
             void ctx.refreshOpenTranscriptConversation({ forcePoll: true });
-        }, 250);
+        }, delayMs);
 }
 
 export function resolveLiveSseMessageExtracted(ctx: MobileProjectsTranscriptLiveUiContext, event: ConversationLiveMessageEvent): QaapAgentMessageDTO | undefined {

@@ -19,6 +19,8 @@ class FakeDockerSandboxService extends QaapTaskSandboxService {
     readonly calls: string[][] = [];
     readonly envs: Array<NodeJS.ProcessEnv | undefined> = [];
     readonly running = new Set<string>();
+    /** `-v` destinations of each running container, as `docker inspect` would list its mounts. */
+    readonly mounts = new Map<string, string[]>();
     builtImages = new Set<string>();
     psOutput = '';
     /** Per-command gates: a docker call of that command waits until the gate resolves. */
@@ -30,13 +32,18 @@ class FakeDockerSandboxService extends QaapTaskSandboxService {
         const [command] = args;
         await this.gates.get(command);
         if (command === 'run') {
-            this.running.add(args[args.indexOf('--name') + 1]);
+            const name = args[args.indexOf('--name') + 1];
+            this.running.add(name);
+            this.mounts.set(name, args.flatMap((arg, i) => args[i - 1] === '-v' ? [arg.split(':')[1]] : []));
             return 'container-id\n';
         }
         if (command === 'inspect') {
             const name = args[args.length - 1];
             if (!this.running.has(name)) {
                 throw new Error('No such object');
+            }
+            if (args.some(arg => arg.includes('.Mounts'))) {
+                return (this.mounts.get(name) ?? []).map(destination => `${destination}\n`).join('');
             }
             return 'true\n';
         }
@@ -199,6 +206,70 @@ describe('QaapTaskSandboxService', function (): void {
         expect(run.join(' ')).to.contain('--cap-drop ALL').and.to.contain('--security-opt no-new-privileges:true')
             .and.to.contain('--user 20001:20002').and.to.contain('--network bridge');
         expect(run[run.indexOf('--entrypoint') + 2]).to.equal('qaap-base:test');
+    });
+
+    it('binds a backend-owned shared dir read-write at its identical path (Codex gate overlay)', async () => {
+        const service = new FakeDockerSandboxService();
+        const sandbox = await service.acquire({ taskId: 't1', cwd: worktreeA, env: { HOME: home }, uid: 20001, gid: 20002 });
+        const shared = sandbox.sharedRoot!;
+        expect(shared).to.be.a('string');
+        // Canonical: Codex keys hook trust by the realpath of hooks.json, inside and outside alike.
+        expect(shared).to.equal(fs.realpathSync(shared));
+        const run = service.callsOf('run')[0];
+        const binds = run.flatMap((arg, i) => run[i - 1] === '-v' ? [arg] : []);
+        // Same path inside and outside. Read-write: Codex writes sessions and a refreshed login into its
+        // CODEX_HOME; the gate files are protected by ownership (root-owned sticky base), not by the mount.
+        expect(binds).to.include(`${shared}:${shared}:rw`);
+        const stat = fs.lstatSync(shared);
+        expect(stat.isDirectory()).to.equal(true);
+        expect(stat.mode & 0o777).to.equal(0o755);
+        if (process.getuid) {
+            expect(stat.uid).to.equal(process.getuid());
+        }
+    });
+
+    it('recreates a running sandbox that predates the shared dir, and reuses one that has it', async () => {
+        const first = new FakeDockerSandboxService();
+        const created = await first.acquire({ taskId: 't1', cwd: worktreeA, env: { HOME: home } });
+        // A backend restart finds the container still running: reused as is when it has the bind.
+        const restarted = new FakeDockerSandboxService();
+        restarted.running.add(created.name);
+        restarted.mounts.set(created.name, first.mounts.get(created.name)!);
+        const reused = await restarted.acquire({ taskId: 't2', cwd: worktreeA, env: { HOME: home } });
+        expect(reused.created).to.equal(false);
+        expect(restarted.callsOf('run')).to.have.length(0);
+        // One from before this change lacks it: a bind cannot be added to a live container, so it is recreated.
+        const legacy = new FakeDockerSandboxService();
+        legacy.running.add(created.name);
+        legacy.mounts.set(created.name, [worktreeA]);
+        const recreated = await legacy.acquire({ taskId: 't3', cwd: worktreeA, env: { HOME: home } });
+        expect(recreated.created).to.equal(true);
+        expect(legacy.callsOf('rm').map(call => call[call.length - 1])).to.include(created.name);
+        expect(legacy.callsOf('run')).to.have.length(1);
+        expect(recreated.sharedRoot).to.equal(created.sharedRoot);
+    });
+
+    it('shares the tenant config root in broker mode (the broker binds it at the same path)', async () => {
+        class BrokerSandboxService extends FakeDockerSandboxService {
+            override mode(): 'broker' {
+                return 'broker';
+            }
+            protected override requireBroker(): any {
+                return {
+                    create: async (args: { root: string }) => ({
+                        name: 'qaap-sbx-broker', root: args.root, host: 'qaap-sbx-broker', port: 7000, token: 'tok',
+                        image: 'qaap-base:test', imageKind: 'base', startupMs: 1, created: true, backendHost: '172.24.0.50',
+                    }),
+                };
+            }
+            protected override async seedPortBaseline(): Promise<void> { /* no exec server here */ }
+        }
+        setEnv({ QAAP_TENANT_CONFIG_ROOT: '/home/theia/.qaap/' });
+        const sandbox = await new BrokerSandboxService().acquire({ taskId: 't1', cwd: worktreeA, env: { HOME: home } });
+        expect(sandbox.sharedRoot).to.equal('/home/theia/.qaap');
+        setEnv({ QAAP_TENANT_CONFIG_ROOT: undefined });
+        const without = await new BrokerSandboxService().acquire({ taskId: 't2', cwd: worktreeB, env: { HOME: home } });
+        expect(without.sharedRoot).to.equal(undefined);
     });
 
     it('shares one container between tasks of the same worktree and ends it after the last release', async () => {

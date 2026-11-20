@@ -6,6 +6,15 @@
 
 import type { TranscriptFollowUpEntry } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-follow-up-queue';
 import type { QaapAgentConversationDTO, QaapAgentConversationSummaryDTO, QaapPendingUserMessageDTO } from './qaap-agent-conversation-client';
+import type { QaapTranscriptUserImagePreview } from './qaap-transcript-user-image-preview';
+
+/**
+ * A queued message as the transcript paints it. Local composer-queue rows carry their attachment
+ * previews so the queued bubble can show the same thumbnails as a sent user bubble.
+ */
+export interface QaapQueuedPendingUserMessage extends QaapPendingUserMessageDTO {
+    readonly optimisticImagePreviews?: readonly QaapTranscriptUserImagePreview[];
+}
 
 /**
  * Conversation the queued follow-ups are painted into. While the turn is still starting the
@@ -39,8 +48,8 @@ export function resolveQueuedFollowUpBaseConversation(
 export function mergePendingUserMessagesWithLocalQueue(
     serverPending: readonly QaapPendingUserMessageDTO[] | undefined,
     localQueue: readonly TranscriptFollowUpEntry[],
-): QaapPendingUserMessageDTO[] {
-    const merged: QaapPendingUserMessageDTO[] = [...(serverPending ?? [])];
+): QaapQueuedPendingUserMessage[] {
+    const merged: QaapQueuedPendingUserMessage[] = [...(serverPending ?? [])];
     const localDrafts = new Set(localQueue.map(entry => entry.draft));
 
     for (const [index, entry] of localQueue.entries()) {
@@ -56,6 +65,7 @@ export function mergePendingUserMessagesWithLocalQueue(
             createdAt: Date.now(),
             turnAgentId: entry.selectedAgentId,
             clientMessageId: entry.serverPendingId,
+            optimisticImagePreviews: entry.imagePreviews,
         });
     }
 

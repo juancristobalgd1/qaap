@@ -47,9 +47,24 @@ describe('qaap-verification-scope', () => {
         expect(isPerFileVerificationScript('npm run lint')).to.equal(true);
         expect(isPerFileVerificationScript('npm run lint:fix')).to.equal(true);
         expect(isPerFileVerificationScript('npm run eslint')).to.equal(true);
-        expect(isPerFileVerificationScript('npm run typecheck')).to.equal(false);
         expect(isPerFileVerificationScript('npm run build')).to.equal(false);
         expect(isPerFileVerificationScript('npm run test')).to.equal(false);
+    });
+
+    it('recognizes typecheck-style scripts and tsc/vue-tsc commands as per-file', () => {
+        for (const script of ['typecheck', 'type-check', 'tsc', 'check-types', 'types']) {
+            expect(isPerFileVerificationScript(`npm run ${script}`)).to.equal(true);
+        }
+        expect(isPerFileVerificationScript('npx tsc --noEmit')).to.equal(true);
+        expect(isPerFileVerificationScript('npx vue-tsc --noEmit')).to.equal(true);
+        expect(isPerFileVerificationScript('npm run build:tsc-watch-helper')).to.equal(false);
+    });
+
+    it('attributes tsc diagnostics in both tsc output formats to the files they name', () => {
+        expect(classifyVerificationFailureScope('src/a.ts(12,5): error TS2322: Type mismatch', ['src/a.ts'])).to.equal('in-scope');
+        expect(classifyVerificationFailureScope('src/a.ts:12:5 - error TS2322: Type mismatch', ['src/a.ts'])).to.equal('in-scope');
+        expect(classifyVerificationFailureScope('src/b.ts(3,1): error TS2304: Cannot find name', ['src/a.ts'])).to.equal('out-of-scope');
+        expect(classifyVerificationFailureScope('src/b.ts:3:1 - error TS2304: Cannot find name', ['src/a.ts'])).to.equal('out-of-scope');
     });
 
     it('attributes a failure to the task when it names an edited file', () => {

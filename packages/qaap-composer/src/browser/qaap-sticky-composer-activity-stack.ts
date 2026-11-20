@@ -5,10 +5,8 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import type { TranscriptFollowUpEntry } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-follow-up-queue';
 import type { QaapGitCommitWorkflowAction } from '@theia/qaap-shared-core/lib/common/qaap-git-review';
-import { createStickyComposerSendIcon } from './mobile-projects-sticky-composer-send-icon';
-import { ensureQueueControlInPillRow } from './qaap-sticky-composer-queue-position';
+import { QaapLiveTaskDiff } from '@theia/qaap-shared-core/lib/common/qaap-live-task-diff';
 import type { StickyComposerChangedFileView } from '@theia/qaap-transcript/lib/browser/qaap-transcript-host-contracts';
 
 /** Outcome of {@link selectComposerPillChanges}. */
@@ -64,24 +62,13 @@ export function selectComposerPillChanges(
 }
 
 export interface StickyComposerActivityStackOptions {
-    queueEntries?: readonly TranscriptFollowUpEntry[];
-    queueExpanded?: boolean;
-    onQueueExpandedChange?: (expanded: boolean) => void;
-    onQueueEdit?: (index: number, entry: TranscriptFollowUpEntry) => void;
-    /** Send a queued follow-up immediately as a parallel peer run (multitask). */
-    onQueueSendNow?: (index: number) => void;
-    /** Interrupt the running agent and process this queued message immediately. */
-    onQueueInterrupt?: (index: number) => void;
-    /** Remove a queued follow-up from the list. */
-    onQueueRemove?: (index: number) => void;
-    /** Close/dismiss a queued follow-up (same as remove but with a different UI affordance). */
-    onQueueClose?: (index: number) => void;
-    /** Reorder queue entries (drag-to-reorder). */
-    onQueueReorder?: (fromIndex: number, toIndex: number) => void;
     changedFiles?: readonly StickyComposerChangedFileView[];
     /** Display count for the Changes pill when transcript evidence has more files than the git snapshot. */
     changedFileCount?: number;
     diffStats?: { readonly added: number; readonly removed: number };
+    /** `turn`: `diffStats` is this turn's own edits, labelled as such. `task`: the task total, kept live via `diffStatsBaselineCommit`. */
+    diffStatsScope?: 'turn' | 'task';
+    diffStatsBaselineCommit?: string;
     /**
      * True once the agent has edited files in this conversation, even if the
      * changes were since Accepted/Discarded. Keeps the preview/run controls in
@@ -109,6 +96,12 @@ export interface StickyComposerActivityStackOptions {
     changedFilesBulkBusy?: boolean;
     onReview?: () => void;
     onRunApp?: () => void;
+    /**
+     * The conversation asked to run or preview the app and its turn has settled. Run app (or Starting
+     * preview…) then shows even without file activity: an agent that wrote its launch plan through a
+     * shell command has no file-change evidence, and the request must never end in silence.
+     */
+    previewRequested?: boolean;
     /** True while Run app is waiting for the managed dev server to become reachable. */
     previewStarting?: boolean;
     /** While a preview starts, the chip stays clickable and stops it (the chip must never be a dead end). */
@@ -147,80 +140,6 @@ function stickyComposerCommitMenuOptions(): StickyComposerCommitMenuOption[] {
     ];
 }
 
-export function buildStickyComposerActivityStackFingerprint(options: StickyComposerActivityStackOptions): string {
-    const entries = options.queueEntries ?? [];
-    const drafts = entries.map(entry => entry.draft).join('\x00');
-    return [
-        entries.length,
-        options.queueExpanded ? 1 : 0,
-        // Drives the send action label ("Run in parallel" vs "Send now").
-        options.agentWorking ? 1 : 0,
-        drafts,
-        // Reorder support changes the drag handle visibility.
-        options.onQueueReorder ? 1 : 0,
-        options.onQueueInterrupt ? 1 : 0,
-    ].join('|');
-}
-
-/** In-place queue stack refresh — avoids replaceWith flicker during SSE ticks. */
-export function patchStickyComposerActivityStack(
-    stack: HTMLElement,
-    options: StickyComposerActivityStackOptions,
-): boolean {
-    if (!stack.classList.contains('theia-mobile-sticky-composer-activity-stack')) {
-        return false;
-    }
-    const entries = options.queueEntries ?? [];
-    if (!entries.length) {
-        return false;
-    }
-    // The queue control is a unified DOM (pill + clip). Update the label and
-    // the items inside the clip in-place when the count matches.
-    const label = stack.querySelector<HTMLElement>('.theia-mobile-sticky-composer-queue-collapsed-label');
-    if (label) {
-        const newText = entries.length === 1
-            ? nls.localize('qaap/mobileProjects/stickyComposerQueueOne', '1 Queued')
-            : nls.localize('qaap/mobileProjects/stickyComposerQueueMany', '{0} Queued', String(entries.length));
-        if (label.textContent !== newText) {
-            label.textContent = newText;
-        }
-    }
-    const body = stack.querySelector<HTMLElement>('.theia-mobile-sticky-composer-activity-body.theia-mobile-sticky-composer-queue-list');
-    if (!body) {
-        // No clip body — structural mismatch, force full re-render.
-        return false;
-    }
-    const items = Array.from(body.querySelectorAll<HTMLElement>(':scope > .theia-mobile-sticky-composer-queue-item'));
-    if (items.length !== entries.length) {
-        return false;
-    }
-    // If any item's text doesn't match the entry at that position, the order or
-    // content has changed. Return false to force a full re-render (replaceWith)
-    // instead of patching text in-place — which would leave DOM elements in the
-    // old physical order on reorder, or break per-item event bindings on edit.
-    // This makes the patch self-contained: it doesn't rely on callers clearing
-    // the fingerprint after a reorder.
-    for (let index = 0; index < entries.length; index++) {
-        const textEl = items[index]?.querySelector<HTMLElement>('.theia-mobile-sticky-composer-queue-text');
-        if (!textEl || textEl.textContent !== entries[index].draft) {
-            return false;
-        }
-    }
-    const sendLabel = stickyComposerQueueSendNowLabel(options);
-    for (let index = 0; index < entries.length; index++) {
-        // The send button uses the composer's paper-plane SVG icon (not codicon-send),
-        // so look it up by its dedicated class.
-        const sendBtn = items[index]?.querySelector<HTMLButtonElement>(
-            'button.theia-mobile-sticky-composer-queue-action.theia-mobile-sticky-composer-queue-send',
-        );
-        if (sendBtn && sendBtn.title !== sendLabel) {
-            sendBtn.title = sendLabel;
-            sendBtn.setAttribute('aria-label', sendLabel);
-        }
-    }
-    return true;
-}
-
 /** True when there are unresolved (pending-review) changes worth a "Changes" pill. */
 function stickyComposerHasChangesToReview(options: StickyComposerActivityStackOptions): boolean {
     const hasFiles = (options.changedFiles?.length ?? 0) > 0;
@@ -250,7 +169,26 @@ function stickyComposerHasActivityRow(options: StickyComposerActivityStackOption
         // A preview/run action belongs to the post-edit state. A stale preview URL must not
         // push the prompt suggestions out of a fresh, empty composer.
         || !!((options.hasFileActivity || options.previewInConversation) && !!options.onOpenPreview)
-        || !!(options.hasFileActivity && !!options.onRunApp);
+        || !!(options.hasFileActivity && !!options.onRunApp)
+        || !!(options.previewRequested && !!options.onRunApp);
+}
+
+/**
+ * Composer host class set while the changes pill row carries the run/preview next action
+ * (Run app, Starting preview… or View Preview). The pill row is then the single owner of that
+ * action and the quick-actions strip drops its own "Run app" chip, so a conversation never shows
+ * two stacked "Run app" pills above the composer.
+ */
+export const STICKY_COMPOSER_RUN_APP_IN_PILL_ROW_CLASS = 'theia-mod-run-app-in-pill-row';
+
+/** True when the changes pill row renders and carries the run/preview next action. */
+export function stickyComposerPillRowOwnsRunApp(options: StickyComposerActivityStackOptions): boolean {
+    return stickyComposerHasActivityRow(options) && (!!options.onRunApp || !!options.onOpenPreview);
+}
+
+/** Marks the composer host with {@link STICKY_COMPOSER_RUN_APP_IN_PILL_ROW_CLASS} from the activity options. */
+export function syncStickyComposerRunAppOwner(host: HTMLElement, options: StickyComposerActivityStackOptions): void {
+    host.classList.toggle(STICKY_COMPOSER_RUN_APP_IN_PILL_ROW_CLASS, stickyComposerPillRowOwnsRunApp(options));
 }
 
 export function buildStickyComposerChangesPillFingerprint(options: StickyComposerActivityStackOptions): string {
@@ -266,6 +204,7 @@ export function buildStickyComposerChangesPillFingerprint(options: StickyCompose
         stickyComposerHasChangesToReview(options) ? 1 : 0,
         options.hasFileActivity ? 1 : 0,
         options.previewInConversation ? 1 : 0,
+        options.previewRequested ? 1 : 0,
         options.hasCommittableChanges ? 1 : 0,
         options.agentWorking ? 1 : 0,
         options.commitBusy ? 1 : 0,
@@ -352,7 +291,7 @@ export function patchStickyComposerChangesPillHost(
             pill.append(statsInline);
         }
         statsInline.replaceChildren();
-        appendDiffStatsInline(statsInline, stats);
+        appendDiffStatsInline(statsInline, stats, options.diffStatsScope, options.diffStatsBaselineCommit);
         if (changesMenuBtn) {
             // Accept/Discard act on changes already written to disk, so they must stay reachable once
             // the changes exist. Gating on agentWorking wedged the menu disabled whenever that
@@ -391,510 +330,67 @@ export function renderStickyComposerChangesPill(options: StickyComposerActivityS
     const host = document.createElement('div');
     host.className = 'theia-mobile-sticky-composer-changes-pill-host';
     host.append(renderStickyComposerChangedFilesSection(options));
+    publishPillStripHeight(host);
     return host;
 }
 
-export function renderStickyComposerActivityStack(options: StickyComposerActivityStackOptions): HTMLElement | undefined {
-    const entries = options.queueEntries ?? [];
-    if (!entries.length) {
-        return undefined;
-    }
-    // The queue is always rendered as an expandable control that lives inside the
-    // changes-pill-row (left of the Working pill), exactly like the Working pill.
-    // When expanded, a clip grows from 0fr → 1fr showing the full queue list.
-    // When collapsed, only the compact "N Queued" pill button is visible.
-    return renderStickyComposerQueueControl(options);
-}
-
 /**
- * Queue control — a compact pill button that expands in-place with a clip
- * animation (grid-template-rows: 0fr → 1fr), mirroring the Working pill pattern.
- * Lives inside the changes-pill-row. Clicking the pill toggles expand/collapse.
+ * The transcript keeps its tail clear of this strip by overlapping the composer by the strip's
+ * height. A fixed guess (26–30px) hid the last line behind taller rows such as View Preview, so
+ * the real height is published as `--qaap-composer-pill-strip-height` on the Work Hub root.
+ * The observer stops once the strip leaves the document.
  */
-function renderStickyComposerQueueControl(options: StickyComposerActivityStackOptions): HTMLElement {
-    const entries = options.queueEntries ?? [];
-    const expanded = options.queueExpanded ?? false;
-
-    const stack = document.createElement('div');
-    stack.className = 'theia-mobile-sticky-composer-activity-stack theia-mod-queue-popover theia-mod-queue-control';
-    stack.classList.toggle('theia-mod-collapsed', !expanded);
-    stack.classList.toggle('theia-mod-expanded', expanded);
-    const normalizeQueuePosition = (): void => {
-        const wrap = stack.closest<HTMLElement>('.theia-mobile-projects-sticky-composer-inner');
-        if (wrap) {
-            ensureQueueControlInPillRow(wrap);
-        }
-    };
-
-    const section = document.createElement('div');
-    section.className = 'theia-mobile-sticky-composer-activity-section theia-mod-queue theia-mod-queue-control-section';
-
-    // Pill button (always visible — the anchor that toggles the clip)
-    const pill = document.createElement('button');
-    pill.type = 'button';
-    pill.className = 'theia-mobile-sticky-composer-queue-collapsed-pill';
-    pill.setAttribute('aria-expanded', expanded ? 'true' : 'false');
-    const label = document.createElement('span');
-    label.className = 'theia-mobile-sticky-composer-queue-collapsed-label';
-    label.textContent = entries.length === 1
-        ? nls.localize('qaap/mobileProjects/stickyComposerQueueOne', '1 Queued')
-        : nls.localize('qaap/mobileProjects/stickyComposerQueueMany', '{0} Queued', String(entries.length));
-    pill.append(label);
-    pill.title = nls.localize(
-        'qaap/mobileProjects/queueCollapsedHint',
-        '{0} queued message(s) — click to expand',
-        String(entries.length),
-    );
-
-    // Clip — grows from 0fr to 1fr when expanded (same pattern as Working pill)
-    const clip = document.createElement('div');
-    clip.className = 'qaap-queue-expand-clip';
-    clip.setAttribute('role', 'dialog');
-    clip.setAttribute('aria-label', label.textContent ?? 'Queued messages');
-
-    const clipInner = document.createElement('div');
-    clipInner.className = 'qaap-queue-expand-inner';
-
-    // Panel — mirrors the Working expand panel structure (header + body)
-    const panel = document.createElement('div');
-    panel.className = 'qaap-queue-expand-panel';
-
-    // Header with title and close button (same layout as working-agents-popover-header)
-    const header = document.createElement('div');
-    header.className = 'qaap-queue-expand-header';
-    const headerTitle = document.createElement('span');
-    headerTitle.className = 'qaap-queue-expand-title';
-    headerTitle.textContent = entries.length === 1
-        ? nls.localize('qaap/mobileProjects/stickyComposerQueueOne', '1 Queued')
-        : nls.localize('qaap/mobileProjects/stickyComposerQueueMany', '{0} Queued', String(entries.length));
-    const headerActions = document.createElement('div');
-    headerActions.className = 'qaap-queue-expand-actions';
-    const closeBtn = document.createElement('button');
-    closeBtn.type = 'button';
-    closeBtn.className = 'qaap-queue-expand-close';
-    closeBtn.setAttribute('aria-label', nls.localize('qaap/mobileProjects/queueMinimize', 'Minimize queue'));
-    const closeIcon = document.createElement('span');
-    closeIcon.className = 'codicon codicon-chevron-down';
-    closeIcon.setAttribute('aria-hidden', 'true');
-    closeBtn.append(closeIcon);
-    closeBtn.addEventListener('click', ev => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        if (!isOpen) {
-            return;
-        }
-        isOpen = false;
-        pill.setAttribute('aria-expanded', 'false');
-        // Start the clip collapse animation (grid-template-rows: 1fr → 0fr).
-        clip.classList.remove('theia-mod-open');
-        // Keep theia-mod-expanded until the clip finishes collapsing so the
-        // panel width stays full during the animation — removing it early
-        // would snap the width back to auto instantly (no transition).
-        const finishClose = (): void => {
-            stack.classList.remove('theia-mod-expanded');
-            stack.classList.add('theia-mod-collapsed');
-            normalizeQueuePosition();
-        };
-        clip.addEventListener('transitionend', function onEnd(e: TransitionEvent): void {
-            if (e.target !== clip || (e.propertyName !== 'grid-template-rows' && e.propertyName !== 'opacity')) {
-                return;
-            }
-            clip.removeEventListener('transitionend', onEnd);
-            finishClose();
-        });
-        // Fallback in case transitionend doesn't fire.
-        window.setTimeout(finishClose, 360);
-        options.onQueueExpandedChange?.(false);
-    });
-    headerActions.append(closeBtn);
-    header.append(headerTitle, headerActions);
-
-    // Queue list body
-    const body = document.createElement('div');
-    body.className = 'theia-mobile-sticky-composer-activity-body theia-mobile-sticky-composer-queue-list';
-    entries.forEach((entry, index) => {
-        body.append(renderQueueItem(entry, index, entries.length, options));
-    });
-    panel.append(header, body);
-    clipInner.append(panel);
-    clip.append(clipInner);
-
-    // Toggle expand/collapse on pill click
-    let isOpen = expanded;
-    pill.addEventListener('click', ev => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        isOpen = !isOpen;
-        pill.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-        if (isOpen) {
-            stack.classList.remove('theia-mod-collapsed');
-            stack.classList.add('theia-mod-expanded');
-            normalizeQueuePosition();
-            // Double rAF for the expand animation (same as Working pill)
-            window.requestAnimationFrame(() => {
-                window.requestAnimationFrame(() => {
-                    clip.classList.add('theia-mod-open');
-                });
-            });
-        } else {
-            // Start the clip collapse animation. Keep theia-mod-expanded until
-            // the clip finishes collapsing so the panel width stays full during
-            // the animation (same pattern as the close button).
-            clip.classList.remove('theia-mod-open');
-            const finishClose = (): void => {
-                stack.classList.remove('theia-mod-expanded');
-                stack.classList.add('theia-mod-collapsed');
-                normalizeQueuePosition();
-            };
-            clip.addEventListener('transitionend', function onEnd(e: TransitionEvent): void {
-                if (e.target !== clip || (e.propertyName !== 'grid-template-rows' && e.propertyName !== 'opacity')) {
-                    return;
-                }
-                clip.removeEventListener('transitionend', onEnd);
-                finishClose();
-            });
-            window.setTimeout(finishClose, 360);
-        }
-        options.onQueueExpandedChange?.(isOpen);
-    });
-
-    // If restoring an already-expanded state, paint open immediately (no flash)
-    if (expanded) {
-        clip.classList.add('theia-mod-open');
-    }
-
-    section.append(pill, clip);
-    stack.append(section);
-    return stack;
-}
-
-/**
- * While the agent is working, the queue send action starts a second agent run beside the open
- * turn instead of interrupting it — the label says so, so nobody expects a cancel.
- */
-function stickyComposerQueueSendNowLabel(options: StickyComposerActivityStackOptions): string {
-    return options.agentWorking
-        ? nls.localize('qaap/mobileProjects/stickyComposerQueueRunParallel', 'Run in parallel')
-        : nls.localize('qaap/mobileProjects/stickyComposerQueueSendNow', 'Send now');
-}
-
-function renderQueueItem(
-    entry: TranscriptFollowUpEntry,
-    index: number,
-    total: number,
-    options: StickyComposerActivityStackOptions,
-): HTMLElement {
-    const row = document.createElement('div');
-    row.className = 'theia-mobile-sticky-composer-queue-item';
-    row.dataset.queueIndex = String(index);
-
-    // Drag handle (⠿) — only if reorder is enabled. Uses pointer events so it works on
-    // touch devices (HTML5 drag-and-drop API does not fire on touch / pointer:coarse).
-    if (options.onQueueReorder) {
-        const dragHandle = document.createElement('span');
-        dragHandle.className = 'theia-mobile-sticky-composer-queue-drag-handle codicon codicon-gripper';
-        dragHandle.setAttribute('aria-hidden', 'true');
-        dragHandle.title = nls.localize('qaap/mobileProjects/queueDragHandle', 'Drag to reorder');
-        dragHandle.style.touchAction = 'none';
-        bindQueueItemPointerDrag(dragHandle, row, index, options);
-        row.append(dragHandle);
-    }
-
-    // Order label — shows "1-", "2-", "3-" so the user always sees which message
-    // runs first, second, third, etc. Updates on reorder.
-    const marker = document.createElement('span');
-    marker.className = 'theia-mobile-sticky-composer-queue-marker';
-    marker.setAttribute('aria-hidden', 'true');
-    marker.textContent = `${index + 1}-`;
-
-    const text = document.createElement('span');
-    text.className = 'theia-mobile-sticky-composer-queue-text';
-    text.textContent = entry.draft;
-
-    row.append(marker, text);
-
-    const actions = document.createElement('div');
-    actions.className = 'theia-mobile-sticky-composer-queue-actions';
-
-    // Edit button
-    actions.append(createQueueActionButton(
-        'codicon-edit',
-        nls.localize('qaap/mobileProjects/stickyComposerQueueEdit', 'Edit queued message'),
-        () => options.onQueueEdit?.(index, entry),
-    ));
-
-    // Send now (parallel multitask) button — uses the same paper-plane icon
-    // as the composer's send button for visual consistency.
-    const sendNowBtn = document.createElement('button');
-    sendNowBtn.type = 'button';
-    sendNowBtn.className = 'theia-mobile-sticky-composer-queue-action theia-mobile-sticky-composer-queue-send';
-    sendNowBtn.title = stickyComposerQueueSendNowLabel(options);
-    sendNowBtn.setAttribute('aria-label', stickyComposerQueueSendNowLabel(options));
-    sendNowBtn.replaceChildren(createStickyComposerSendIcon());
-    sendNowBtn.addEventListener('click', ev => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        options.onQueueSendNow?.(index);
-    });
-    actions.append(sendNowBtn);
-
-    // Close (X) button — the only dismiss action
-    if (options.onQueueClose) {
-        actions.append(createQueueActionButton(
-            'codicon-close',
-            nls.localize('qaap/mobileProjects/queueClose', 'Close'),
-            () => options.onQueueClose?.(index),
-        ));
-    }
-
-    row.append(actions);
-    row.title = total > 1
-        ? nls.localize('qaap/mobileProjects/stickyComposerQueueItemHint', 'Queued message {0} of {1}', String(index + 1), String(total))
-        : '';
-
-    return row;
-}
-
-// ─── Pointer-based drag-to-reorder (touch + mouse) ───────────────────────────
-//
-// HTML5 drag-and-drop events (dragstart/dragover/drop) do not fire on touch
-// devices or when pointer:coarse is active. The mobile shell must use pointer
-// events to support dragging queue items by the gripper handle.
-
-interface QueueDragSibling {
-    readonly el: HTMLElement;
-    /** Original vertical midpoint (viewport coords) measured when the drag started. */
-    readonly midY: number;
-}
-
-interface QueueDragSession {
-    readonly handle: HTMLElement;
-    readonly item: HTMLElement;
-    readonly fromIndex: number;
-    readonly options: StickyComposerActivityStackOptions;
-    started: boolean;
-    activePointerId: number;
-    /** Y coordinate of the initial pointerdown — used for the drag threshold. */
-    startY: number;
-    /** Offset between the pointer Y and the item's top edge (for visual follow). */
-    itemOffsetY: number;
-    /** Viewport top edge of the dragged item before any transform was applied. */
-    itemTop: number;
-    /** Outer height of the dragged item — the distance siblings shift by. */
-    itemHeight: number;
-    /** Sibling rows (DOM order) with their original midpoints. */
-    siblings: QueueDragSibling[];
-    /** Index the item would occupy in the list if dropped right now. */
-    insertionIndex: number;
-}
-
-let activeQueueDrag: QueueDragSession | undefined;
-
-/** Minimum pixel distance before a drag is recognized (avoids scroll conflicts). */
-const QUEUE_DRAG_THRESHOLD_PX = 8;
-
-/** Pixels from the top/bottom edge of the scrollable list that trigger auto-scroll. */
-const QUEUE_DRAG_AUTOSCROLL_EDGE_PX = 40;
-
-/** Maximum auto-scroll speed (px per frame). */
-const QUEUE_DRAG_AUTOSCROLL_SPEED = 6;
-
-/** Settle animation before the reorder commit re-renders the list. */
-const QUEUE_DRAG_SETTLE_MS = 140;
-
-function clearQueueDragTransforms(list: HTMLElement): void {
-    list.classList.remove('theia-mod-queue-reordering');
-    list.querySelectorAll<HTMLElement>('.theia-mobile-sticky-composer-queue-item')
-        .forEach(el => {
-            el.classList.remove('theia-mod-dragging', 'theia-mod-drag-settling');
-            el.style.transform = '';
-        });
-}
-
-/**
- * Shift siblings out of the dragged item's way so the landing slot opens up live.
- * A sibling moves up one slot to close the dragged item's original position, and
- * moves down one slot when the insertion point sits before it — both cancel out
- * for rows that should stay put.
- */
-function shiftSiblingsForInsertion(session: QueueDragSession, insertion: number): void {
-    session.siblings.forEach((sibling, order) => {
-        const originalIndex = order < session.fromIndex ? order : order + 1;
-        const closeOldSlot = originalIndex > session.fromIndex ? -1 : 0;
-        const openNewSlot = order >= insertion ? 1 : 0;
-        const offset = (closeOldSlot + openNewSlot) * session.itemHeight;
-        sibling.el.style.transform = offset === 0 ? '' : `translateY(${offset}px)`;
-    });
-}
-
-/** Auto-scroll the list when the pointer is near its top/bottom edges during drag. */
-function autoScrollList(list: HTMLElement, pointerY: number): void {
-    const scrollable = list.closest<HTMLElement>('[data-theia-mobile-scroll-y]')
-        ?? (list.scrollHeight > list.clientHeight ? list : undefined);
-    if (!scrollable) {
+function publishPillStripHeight(host: HTMLElement): void {
+    if (typeof ResizeObserver === 'undefined') {
         return;
     }
-    const rect = scrollable.getBoundingClientRect();
-    if (pointerY < rect.top + QUEUE_DRAG_AUTOSCROLL_EDGE_PX) {
-        scrollable.scrollTop -= QUEUE_DRAG_AUTOSCROLL_SPEED;
-    } else if (pointerY > rect.bottom - QUEUE_DRAG_AUTOSCROLL_EDGE_PX) {
-        scrollable.scrollTop += QUEUE_DRAG_AUTOSCROLL_SPEED;
-    }
-}
-
-function bindQueueItemPointerDrag(
-    handle: HTMLElement,
-    item: HTMLElement,
-    index: number,
-    options: StickyComposerActivityStackOptions,
-): void {
-    handle.addEventListener('pointerdown', ev => {
-        if (activeQueueDrag || !options.onQueueReorder) {
+    const observer = new ResizeObserver(() => {
+        if (!host.isConnected) {
+            observer.disconnect();
             return;
         }
-        ev.preventDefault();
-        ev.stopPropagation();
-        const itemRect = item.getBoundingClientRect();
-        activeQueueDrag = {
-            handle,
-            item,
-            fromIndex: index,
-            options,
-            started: false,
-            activePointerId: ev.pointerId,
-            startY: ev.clientY,
-            itemOffsetY: ev.clientY - itemRect.top,
-            itemTop: itemRect.top,
-            itemHeight: itemRect.height,
-            siblings: [],
-            insertionIndex: index,
-        };
-        // Capture on the handle so we keep receiving events even if the finger
-        // slides off the small gripper icon. Some mobile browsers (iOS Safari)
-        // drop pointer events without capture, so we also bind window-level
-        // listeners as a fallback below.
-        try {
-            handle.setPointerCapture(ev.pointerId);
-        } catch {
-            // setPointerCapture can throw on some browsers — window listeners cover it.
+        const root = host.closest<HTMLElement>('.theia-mobile-projects');
+        if (!root || host.hidden) {
+            return;
         }
-        window.addEventListener('pointermove', onMove, { passive: false });
-        window.addEventListener('pointerup', onEnd);
-        window.addEventListener('pointercancel', onEnd);
+        const height = Math.round(host.getBoundingClientRect().height);
+        if (height > 0) {
+            root.style.setProperty('--qaap-composer-pill-strip-height', `${height}px`);
+        }
     });
-
-    // Window-level fallback listeners (bound only during an active drag). These
-    // guarantee we keep tracking the finger even if pointer capture is lost or
-    // the finger leaves the handle's hit area — critical for touch devices.
-    const onMove = (ev: PointerEvent): void => {
-        const session = activeQueueDrag;
-        if (!session || session.activePointerId !== ev.pointerId) {
-            return;
-        }
-        ev.preventDefault();
-        const list = item.parentElement;
-        if (!list) {
-            return;
-        }
-
-        // Drag threshold: only start the drag after moving past QUEUE_DRAG_THRESHOLD_PX
-        // so that a tap-and-scroll on the handle doesn't trigger a reorder.
-        if (!session.started) {
-            if (Math.abs(ev.clientY - session.startY) < QUEUE_DRAG_THRESHOLD_PX) {
-                return;
-            }
-            session.started = true;
-            // Measure once at drag start (before any transform) — the lifted item
-            // follows the finger while siblings slide around the opening slot.
-            const rect = item.getBoundingClientRect();
-            session.itemTop = rect.top;
-            session.itemHeight = rect.height;
-            session.siblings = Array.from(
-                list.querySelectorAll<HTMLElement>(':scope > .theia-mobile-sticky-composer-queue-item'),
-            )
-                .filter(el => el !== item)
-                .map(el => {
-                    const siblingRect = el.getBoundingClientRect();
-                    return { el, midY: siblingRect.top + siblingRect.height / 2 };
-                });
-            session.insertionIndex = session.fromIndex;
-            list.classList.add('theia-mod-queue-reordering');
-            item.classList.add('theia-mod-dragging');
-            handle.classList.add('theia-mod-grabbing');
-        }
-
-        // Auto-scroll when near the edges of the scrollable list.
-        autoScrollList(list, ev.clientY);
-
-        // The lifted item tracks the finger, clamped inside the list viewport.
-        const listRect = list.getBoundingClientRect();
-        const dy = Math.min(
-            Math.max(ev.clientY - session.startY, listRect.top - session.itemTop),
-            listRect.bottom - (session.itemTop + session.itemHeight),
-        );
-        item.style.transform = `translateY(${dy}px)`;
-
-        // Insertion index = how many sibling midpoints sit above the pointer.
-        const insertion = session.siblings.reduce(
-            (count, sibling) => count + (ev.clientY > sibling.midY ? 1 : 0),
-            0,
-        );
-        if (insertion !== session.insertionIndex) {
-            session.insertionIndex = insertion;
-        }
-        shiftSiblingsForInsertion(session, insertion);
-    };
-
-    const onEnd = (ev: PointerEvent): void => {
-        const session = activeQueueDrag;
-        if (!session || session.activePointerId !== ev.pointerId) {
-            return;
-        }
-        activeQueueDrag = undefined;
-        window.removeEventListener('pointermove', onMove);
-        window.removeEventListener('pointerup', onEnd);
-        window.removeEventListener('pointercancel', onEnd);
-        try {
-            handle.releasePointerCapture(ev.pointerId);
-        } catch {
-            // Pointer capture may already be released — ignore.
-        }
-        handle.classList.remove('theia-mod-grabbing');
-        const list = item.parentElement;
-        if (!list) {
-            return;
-        }
-        const toIndex = session.insertionIndex;
-        if (session.started && toIndex !== session.fromIndex) {
-            // Settle: glide the lifted item into its new slot, then commit the
-            // reorder — the re-render replaces the row already in place.
-            item.classList.remove('theia-mod-dragging');
-            item.classList.add('theia-mod-drag-settling');
-            item.style.transform = `translateY(${(toIndex - session.fromIndex) * session.itemHeight}px)`;
-            window.setTimeout(() => {
-                clearQueueDragTransforms(list);
-                session.options.onQueueReorder?.(session.fromIndex, toIndex);
-            }, QUEUE_DRAG_SETTLE_MS);
-            return;
-        }
-        // Cancel / no-op drop: let every row glide back before dropping the
-        // reordering class that keeps the transform transition alive.
-        item.classList.remove('theia-mod-dragging');
-        list.querySelectorAll<HTMLElement>('.theia-mobile-sticky-composer-queue-item')
-            .forEach(el => { el.style.transform = ''; });
-        window.setTimeout(() => clearQueueDragTransforms(list), QUEUE_DRAG_SETTLE_MS + 60);
-    };
+    observer.observe(host);
 }
 
 function appendDiffStatsInline(
     host: HTMLElement,
     stats: { readonly added?: number; readonly removed?: number } | undefined,
+    scope?: 'turn' | 'task',
+    baselineCommit?: string,
 ): void {
     if (!stats || ((stats.added ?? 0) <= 0 && (stats.removed ?? 0) <= 0)) {
         return;
     }
     const statsInline = document.createElement('span');
     statsInline.className = 'theia-mobile-sticky-composer-activity-inline-stats';
+    fillDiffStatsInline(statsInline, stats);
+    if (scope === 'turn') {
+        // This turn's own edits: say so, so the number is never read as the task total.
+        const label = document.createElement('span');
+        label.className = 'theia-mobile-sticky-composer-activity-inline-stats-scope';
+        label.textContent = nls.localize('qaap/mobileProjects/stickyComposerThisTurn', 'this turn');
+        statsInline.append(label);
+    } else if (scope === 'task') {
+        // The task total: patch the counts in place when a live Changes read publishes it.
+        QaapLiveTaskDiff.bindTotals(statsInline, baselineCommit, totals => fillDiffStatsInline(statsInline, totals));
+    }
+    host.append(statsInline);
+}
+
+function fillDiffStatsInline(
+    statsInline: HTMLElement,
+    stats: { readonly added?: number; readonly removed?: number },
+): void {
+    statsInline.replaceChildren();
     if ((stats.added ?? 0) > 0) {
         const added = document.createElement('span');
         added.className = 'theia-mobile-agent-diff-stat theia-mod-added';
@@ -907,7 +403,6 @@ function appendDiffStatsInline(
         removed.textContent = `-${stats.removed ?? 0}`;
         statsInline.append(removed);
     }
-    host.append(statsInline);
 }
 
 function buildChangesPillAriaLabel(
@@ -972,7 +467,7 @@ function renderStickyComposerChangedFilesSection(options: StickyComposerActivity
                 : nls.localize('qaap/mobileProjects/stickyComposerChangesManyFilesShort', '{0} files', String(fileCount));
             pill.append(count);
         }
-        appendDiffStatsInline(pill, stats);
+        appendDiffStatsInline(pill, stats, options.diffStatsScope, options.diffStatsBaselineCommit);
         pill.addEventListener('click', ev => {
             ev.preventDefault();
             ev.stopPropagation();
@@ -1282,19 +777,4 @@ function renderChangesCommitGroup(options: StickyComposerActivityStackOptions): 
     }
     group.append(menuWrap, borderBeamBloom);
     return group;
-}
-
-function createQueueActionButton(iconClass: string, label: string, onClick: () => void): HTMLButtonElement {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'theia-mobile-sticky-composer-queue-action';
-    btn.title = label;
-    btn.setAttribute('aria-label', label);
-    btn.innerHTML = `<span class="codicon ${iconClass}" aria-hidden="true"></span>`;
-    btn.addEventListener('click', ev => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        onClick();
-    });
-    return btn;
 }

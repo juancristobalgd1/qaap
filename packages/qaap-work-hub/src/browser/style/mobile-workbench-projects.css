@@ -111,14 +111,76 @@
   display: none !important;
 }
 
-.theia-mobile-projects-header-main:has(.theia-mobile-projects-header-ide-agents-switch:not([hidden])) .theia-mobile-projects-title-block {
-  max-width: calc(50% - 70px);
+/* Header switch height matches the header controls (project switcher 32px, + and views 36px):
+   the shared desktop rule gives each segment min-height 32px plus the bar padding, so the bar ended
+   at 36px. Scoped to the header switch only; the IDE top bar keeps its own sizing. */
+.theia-mobile-projects-header-ide-agents-switch .theia-workbench-view-mode-switch .theia-qaap-segmented-bar.theia-mod-icon-only {
+  box-sizing: border-box;
+  height: 32px;
+  padding: 2px;
 }
 
-.theia-mobile-projects-header-main:has(.theia-mobile-projects-header-ide-agents-switch:not([hidden])) .theia-mobile-projects-header-execution-cluster {
-  margin-left: auto;
-  max-width: calc(50% - 70px);
-  justify-content: flex-end;
+.theia-mobile-projects-header-ide-agents-switch .theia-workbench-view-mode-switch .theia-qaap-segmented-bar.theia-mod-icon-only > .theia-qaap-segmented-option {
+  min-height: 28px;
+  height: 28px;
+  padding: 0;
+}
+
+.theia-mobile-projects-header-ide-agents-switch .theia-workbench-view-mode-switch .theia-qaap-segmented-option .codicon,
+.theia-mobile-projects-header-ide-agents-switch .theia-workbench-view-mode-switch .theia-qaap-segmented-option .qaap-icon-message-circle {
+  font-size: 16px;
+  width: 16px;
+  height: 16px;
+}
+
+/* Switch really shown (768px+, never in the IDE): a three-column grid keeps the centered switch in its own
+   middle column. The sides are minmax(0, 1fr), so the title group stays left-aligned, the execution cluster
+   right-aligned, and long titles ellipsize inside their column instead of running under the switch.
+   The right side is minmax(max-content, 1fr): the execution cluster is flex-end aligned, so a shrunken track
+   would push its overflow to the left, under the switch. The title group clips (overflow hidden) and its
+   labels ellipsize. The switch's own visibility condition is the same one used by the rules above. Below 768px
+   and in the IDE nothing here applies, so the mobile header layout is unchanged. */
+@media (min-width: 768px) {
+  body:not(.theia-mobile-mod-desktop-ide) .theia-mobile-projects-header-main:has(.theia-mobile-projects-header-ide-agents-switch:not([hidden])) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(max-content, 1fr);
+    column-gap: 4px;
+    align-items: start;
+  }
+
+  body:not(.theia-mobile-mod-desktop-ide) .theia-mobile-projects-header-main:has(.theia-mobile-projects-header-ide-agents-switch:not([hidden])) .theia-mobile-projects-header-ide-agents-switch {
+    grid-column: 2;
+    grid-row: 1;
+    position: static;
+    transform: none;
+    justify-self: center;
+  }
+
+  body:not(.theia-mobile-mod-desktop-ide) .theia-mobile-projects-header-main:has(.theia-mobile-projects-header-ide-agents-switch:not([hidden])) .theia-mobile-projects-title-block {
+    grid-column: 1;
+    grid-row: 1;
+    justify-self: start;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  body:not(.theia-mobile-mod-desktop-ide) .theia-mobile-projects-header-main:has(.theia-mobile-projects-header-ide-agents-switch:not([hidden])) .theia-mobile-projects-title-block .theia-mobile-projects-title-row,
+  body:not(.theia-mobile-mod-desktop-ide) .theia-mobile-projects-header-main:has(.theia-mobile-projects-header-ide-agents-switch:not([hidden])) .theia-mobile-projects-header-conversations {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  body:not(.theia-mobile-mod-desktop-ide) .theia-mobile-projects-header-main:has(.theia-mobile-projects-header-ide-agents-switch:not([hidden])) .theia-mobile-projects-header-execution-cluster {
+    grid-column: 3;
+    grid-row: 1;
+    justify-self: end;
+    margin-left: auto;
+    min-width: 0;
+    max-width: 100%;
+    justify-content: flex-end;
+  }
 }
 
 @media (max-width: 767px) {

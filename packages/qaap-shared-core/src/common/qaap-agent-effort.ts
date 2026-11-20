@@ -5,6 +5,7 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import { isOpenCodeFreeModelId } from './qaap-opencode-model-catalog';
+import { resolveQaapHarnessBaseId } from './qaap-harness-launch-settings';
 
 /** Reasoning effort a coding harness can be asked to spend on a turn. */
 export type QaapAgentEffortLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
@@ -40,7 +41,8 @@ export namespace QaapAgentEffort {
      * effort setting (the UI shows "No effort levels").
      */
     export function support(agentId: string, modelId: string | undefined): QaapAgentEffortSupport | undefined {
-        switch (agentId.trim().toLowerCase()) {
+        // A harness instance (`codex#2`) takes the effort levels of its base harness.
+        switch (resolveQaapHarnessBaseId(agentId)) {
             case 'claude':
                 return CLAUDE_EFFORT_SUPPORT;
             case 'codex':

@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { sideChatVisibleTitle } from './qaap-agent-conversation-side-chat';
 import { QaapUserFacingErrors } from '@theia/qaap-adapters/lib/common/qaap-user-facing-error';
 import type { QaapLinkedPullRequest } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import type { QaapTaskPullRequest } from './qaap-task-pull-request';
@@ -16,6 +17,7 @@ import {
     type QaapAgentContextUsage,
 } from './qaap-agent-context-usage';
 import { resolveMessagePreviewText } from './qaap-agent-message-content';
+import { isSuccessfulAgentMessageInConversation } from './qaap-agent-turn-outcome';
 import type { QaapAgentToolApprovalRules } from './qaap-agent-tool-approval-rules';
 import type { QaapAgentWireCompressionEncoding } from './qaap-agent-wire-encoding';
 import { Disposable } from '@theia/core/lib/common/disposable';
@@ -25,9 +27,11 @@ import type { QaapTranscriptUserImagePreview } from './qaap-transcript-user-imag
 import type { QaapTurnLatencyMark } from './qaap-agent-stream-metrics';
 import type { QaapProviderRetryStatus } from './qaap-pi-json-stream';
 import { normalizeQaapVisualPreviewUrl, type QaapPreviewVisualValidationResult } from './qaap-visual-verification';
+import { dedupeInFlight } from './qaap-in-flight-dedupe';
 import type { ComposerGitActionDisplayMetadata } from './qaap-composer-git-action-display';
 import type { QaapRewindPreviewDTO, QaapRewindRestoreOptions } from './qaap-conversation-rewind-preview';
 import { resolveQaapConversationAgentActivityAt, type QaapConversationActivityMessage } from './qaap-conversation-read-marks';
+import { resolveTaskBaselineCommit } from './qaap-turn-diff-stats';
 
 /**
  * HTTP helpers for the persistent VPS agent-conversation API.
@@ -101,6 +105,8 @@ export interface QaapAgentConversationSummaryDTO {
     readonly qaiqModel?: QaapCreateAgentTaskQaiqModel;
     /** Agent sealed onto the most recently started user turn. Unlike {@link agentId}, this is turn-specific. */
     readonly lastTurnAgentId?: string;
+    /** Every harness that ran a user turn in this conversation, first-run order. Unlike {@link agentId}, it never names a harness that did not run. */
+    readonly turnAgentIds?: readonly string[];
     /** Model sealed onto the most recently started user turn. Unlike {@link agentModel}, this is execution provenance. */
     readonly lastTurnAgentModel?: QaapCreateAgentTaskQaiqModel;
     /** Last composer interaction mode (`agent`, `plan`, `ask`). */
@@ -133,6 +139,10 @@ export interface QaapAgentConversationSummaryDTO {
     readonly taskPlan?: QaapTaskPlan;
     /** Subtask child conversation: the conversation whose plan created it. */
     readonly parentConversationId?: string;
+    /** Set on a side chat: a quick conversation opened beside another one (`doc/qaap-side-chat.md`). */
+    readonly origin?: 'side-chat';
+    /** Set on a side chat: the conversation it was opened from. Not the plan-fan-out link (`parentConversationId`). */
+    readonly sideChatParentId?: string;
     readonly taskPlanSubtaskId?: string;
     /** Set when the thread ran `git` or is tied to a PR — used by the Work Hub inbox filter. */
     readonly hasGitOperation?: boolean;
@@ -305,6 +315,9 @@ export interface QaapAgentConversationDTO {
     readonly worktreeBranch?: string;
     readonly worktreeOrdinal?: number;
     readonly checkpoints?: QaapConversationCheckpointDTO[];
+    /** Settled task totals from the backend (the Changes-panel number at the last turn settle). */
+    readonly gitDiffAdded?: number;
+    readonly gitDiffRemoved?: number;
     readonly linkedPullRequest?: QaapLinkedPullRequest;
     readonly taskPullRequest?: QaapTaskPullRequest;
     readonly taskPullRequestEnabled?: boolean;
@@ -312,6 +325,10 @@ export interface QaapAgentConversationDTO {
     readonly taskPlan?: QaapTaskPlan;
     /** Subtask child conversation: the conversation whose plan created it. */
     readonly parentConversationId?: string;
+    /** Set on a side chat: a quick conversation opened beside another one (`doc/qaap-side-chat.md`). */
+    readonly origin?: 'side-chat';
+    /** Set on a side chat: the conversation it was opened from. Not the plan-fan-out link (`parentConversationId`). */
+    readonly sideChatParentId?: string;
     readonly taskPlanSubtaskId?: string;
     readonly contextPreamble?: string;
     readonly contextUsage?: QaapAgentContextUsage;
@@ -577,10 +594,26 @@ export function agentActivityField(
     return lastAgentActivityAt === undefined ? {} : { lastAgentActivityAt };
 }
 
+/** `turnAgentIds` for a summary: each harness that ran a user turn once, in first-run order; omitted when none ran. */
+export function turnAgentIdsField(messages: ReadonlyArray<{ readonly role: string; readonly turnAgentId?: string }>): { turnAgentIds?: string[] } {
+    const ids: string[] = [];
+    for (const message of messages) {
+        const id = message.role === 'user' ? message.turnAgentId?.trim() : undefined;
+        if (id && !ids.includes(id)) {
+            ids.push(id);
+        }
+    }
+    return ids.length > 0 ? { turnAgentIds: ids } : {};
+}
+
 export function conversationToSummary(conv: QaapAgentConversationDTO): QaapAgentConversationSummaryDTO {
     const last = conv.messages[conv.messages.length - 1];
     const lastTurn = [...conv.messages].reverse().find(message => message.role === 'user' && (message.turnAgentId || message.turnAgentModel));
-    const status = resolveEffectiveConversationStatus(conv);
+    // A settled turn that succeeded keeps no failure: its stored error is stale (see qaap-agent-turn-outcome).
+    const lastTurnSucceeded = !!last && last.role === 'agent' && !!last.error?.trim()
+        && isSuccessfulAgentMessageInConversation(conv.messages, last);
+    const resolvedStatus = resolveEffectiveConversationStatus(conv);
+    const status = resolvedStatus === 'failed' && lastTurnSucceeded ? 'idle' : resolvedStatus;
     const clean = last
         ? resolveMessagePreviewText(last).replace(/\s+/g, ' ').trim()
         : undefined;
@@ -588,6 +621,7 @@ export function conversationToSummary(conv: QaapAgentConversationDTO): QaapAgent
         ? undefined
         : clean.length > 160 ? `${clean.slice(0, 157)}…` : clean;
     const metrics = buildConversationListMetrics({ status, messages: conv.messages });
+    const baselineCommit = resolveTaskBaselineCommit(conv);
     const hasGitOperation = metrics.hasGitOperation || conv.linkedPullRequest
         ? true
         : undefined;
@@ -595,7 +629,9 @@ export function conversationToSummary(conv: QaapAgentConversationDTO): QaapAgent
         id: conv.id,
         cwd: conv.cwd,
         agentId: conv.agentId,
-        title: conv.title,
+        title: conv.origin === 'side-chat'
+            ? sideChatVisibleTitle(conv.title, conv.messages.find(message => message.role === 'user')?.content) || conv.title
+            : conv.title,
         status,
         createdAt: conv.createdAt,
         updatedAt: conv.updatedAt,
@@ -603,7 +639,7 @@ export function conversationToSummary(conv: QaapAgentConversationDTO): QaapAgent
         lastMessagePreview: preview,
         lastMessageRole: last?.role,
         ...agentActivityField(conv, status),
-        ...(last?.error?.trim() ? { lastMessageError: excerptConversationMessageError(last.error) } : {}),
+        ...(last?.error?.trim() && !lastTurnSucceeded ? { lastMessageError: excerptConversationMessageError(last.error) } : {}),
         ...(isLastTurnCancelled({ status, messages: conv.messages }) ? { lastTurnCancelled: true } : {}),
         priority: conv.priority,
         paused: conv.paused,
@@ -613,6 +649,7 @@ export function conversationToSummary(conv: QaapAgentConversationDTO): QaapAgent
             ? { agentModel: conv.agentModel ?? conv.qaiqModel }
             : {}),
         ...(lastTurn?.turnAgentId ? { lastTurnAgentId: lastTurn.turnAgentId } : {}),
+        ...turnAgentIdsField(conv.messages),
         ...(lastTurn?.turnAgentModel ? { lastTurnAgentModel: lastTurn.turnAgentModel } : {}),
         ...(conv.interactionModeId ? { interactionModeId: conv.interactionModeId } : {}),
         ...(conv.approvalPolicyId ? { approvalPolicyId: conv.approvalPolicyId } : {}),
@@ -625,8 +662,14 @@ export function conversationToSummary(conv: QaapAgentConversationDTO): QaapAgent
         ...(conv.taskPullRequestEnabled === false ? { taskPullRequestEnabled: false } : {}),
         ...(conv.taskPlan ? { taskPlan: conv.taskPlan } : {}),
         ...(conv.parentConversationId ? { parentConversationId: conv.parentConversationId } : {}),
+        ...(conv.origin ? { origin: conv.origin } : {}),
+        ...(conv.sideChatParentId ? { sideChatParentId: conv.sideChatParentId } : {}),
         ...(conv.taskPlanSubtaskId ? { taskPlanSubtaskId: conv.taskPlanSubtaskId } : {}),
         ...metrics,
+        // The backend's settled task totals are authoritative: text-parsed numbers only fill in when there are none.
+        ...(conv.gitDiffAdded !== undefined ? { linesAdded: conv.gitDiffAdded } : {}),
+        ...(conv.gitDiffRemoved !== undefined ? { linesRemoved: conv.gitDiffRemoved } : {}),
+        ...(baselineCommit ? { baselineCommit } : {}),
         hasGitOperation,
         ...(conv.contextUsage ? { contextUsage: conv.contextUsage } : {}),
         ...(conv.contextWindowSize ? { contextWindowSize: conv.contextWindowSize } : {}),
@@ -664,6 +707,10 @@ export type QaapAgentConversationIsolation = 'auto' | 'worktree' | 'none';
 
 export interface QaapCreateConversationBody {
     readonly cwd: string;
+    /** `'side-chat'` marks a quick conversation opened beside another one (`doc/qaap-side-chat.md`). */
+    readonly origin?: 'side-chat';
+    /** Set with `origin: 'side-chat'`: the conversation the side chat was opened from. */
+    readonly sideChatParentId?: string;
     /**
      * Client-generated idempotency key for this submit. The server returns the already-created
      * conversation if a request with the same key already succeeded, so a retry after a slow/timed-out
@@ -708,7 +755,14 @@ export async function listAllConversationGroups(options?: { readonly onRetry?: (
     return body.groups ?? [];
 }
 
-export async function getConversation(id: string): Promise<QaapAgentConversationDTO> {
+/** Pending `GET /conversation/:id` requests by id: concurrent callers share one request (no caching). */
+const conversationGetInFlight = new Map<string, Promise<QaapAgentConversationDTO>>();
+
+export function getConversation(id: string): Promise<QaapAgentConversationDTO> {
+    return dedupeInFlight(conversationGetInFlight, id, () => requestConversation(id));
+}
+
+async function requestConversation(id: string): Promise<QaapAgentConversationDTO> {
     const response = await fetch(`${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(id)}`, { credentials: 'include' });
     if (!response.ok) {
         throw await QaapUserFacingErrors.fromResponse(response);

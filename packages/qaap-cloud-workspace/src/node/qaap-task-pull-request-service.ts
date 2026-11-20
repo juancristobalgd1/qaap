@@ -333,7 +333,7 @@ export class QaapTaskPullRequestService implements BackendApplicationContributio
         if (!current.headSha && !this.isConsentGiven(conv, destination)) {
             const repository = `${destination.owner}/${destination.repo}`;
             this.recordBlocked(conversationId, state, { ...current, state: 'awaiting-consent', lastError: undefined },
-                nls.localize('qaap/taskPullRequest/traceConsent', 'PR ready: allow Qaap to open PRs on {0}?', repository));
+                nls.localize('qaap/taskPullRequest/traceConsent', 'PR ready: allow Qaap to open PRs on {0}?', repository), true);
             return;
         }
         const token = this.resolveToken(conv);
@@ -453,7 +453,12 @@ export class QaapTaskPullRequestService implements BackendApplicationContributio
             if (state?.lastError === reason) {
                 return;
             }
-            this.record(conversationId, { ...current, lastError: reason, updatedAt: Date.now() }, {
+            // A PR created in this run is already persisted (upsertPullRequest): keep its number when the failure came after it.
+            const created = this.store.get(conversationId)?.taskPullRequest;
+            const keepCreated = created?.number !== undefined && current.number === undefined
+                ? { number: created.number, url: created.url, ...(created.nodeId ? { nodeId: created.nodeId } : {}) }
+                : {};
+            this.record(conversationId, { ...current, ...keepCreated, lastError: reason, updatedAt: Date.now() }, {
                 traceNote: nls.localize('qaap/taskPullRequest/traceFailed', 'Task pull request was not updated: {0}', reason),
             });
         }
@@ -469,11 +474,13 @@ export class QaapTaskPullRequestService implements BackendApplicationContributio
     }
 
     /** Records a state that blocks the push (consent, sign-in) once; the same state again writes nothing. */
-    protected recordBlocked(conversationId: string, previous: QaapTaskPullRequest | undefined, next: Omit<QaapTaskPullRequest, 'updatedAt'>, traceNote: string): void {
+    protected recordBlocked(
+        conversationId: string, previous: QaapTaskPullRequest | undefined, next: Omit<QaapTaskPullRequest, 'updatedAt'>, traceNote: string, traceNotice = false,
+    ): void {
         if (previous?.state === next.state && previous.lastError === next.lastError) {
             return;
         }
-        this.record(conversationId, { ...next, updatedAt: Date.now() }, { traceNote });
+        this.record(conversationId, { ...next, updatedAt: Date.now() }, { traceNote, ...(traceNotice ? { traceNotice } : {}) });
     }
 
     protected isConsentGiven(conv: QaapAgentConversation, destination: QaapTaskPullRequestDestination): boolean {
@@ -793,6 +800,8 @@ export class QaapTaskPullRequestService implements BackendApplicationContributio
             record = await this.withRetry(() => this.github.createPull(token, {
                 owner: state.owner, repo: state.repo, title, head: state.branch, base: baseBranch, body: section, draft: red,
             }));
+            // Persist the number before labelling: when the label fails, the retry must update this PR, not open another.
+            this.record(conv.id, { ...state, number: record.number, url: record.url, ...(record.nodeId ? { nodeId: record.nodeId } : {}) }, {});
             if (red) {
                 await this.withRetry(() => this.github.addLabel(token, state.owner, state.repo, record.number, QAAP_TASK_PR_ATTENTION_LABEL));
             }

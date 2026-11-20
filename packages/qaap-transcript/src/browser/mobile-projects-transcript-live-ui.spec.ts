@@ -460,7 +460,7 @@ describe('MobileProjectsTranscriptLiveUi', () => {
         composerHost.remove();
     });
 
-    it('openReadyTranscriptPreviewUrl switches to Preview when the user asked to run the app', async () => {
+    it('openReadyTranscriptPreviewUrl stages the pill but never switches to Preview, even when the user asked to run the app', async () => {
         const chatHost = document.createElement('div');
         const composerHost = document.createElement('div');
         document.body.append(chatHost, composerHost);
@@ -506,7 +506,7 @@ describe('MobileProjectsTranscriptLiveUi', () => {
         }).openReadyTranscriptPreviewUrl('http://127.0.0.1:5173/', conv);
 
         expect(stagedUrl).to.contain('5173');
-        expect(selected).to.deep.equal(['preview']);
+        expect(selected).to.deep.equal([]);
         expect(host.transcriptOpenProject?.previewUrl).to.contain('5173');
 
         chatHost.remove();
@@ -561,10 +561,11 @@ describe('MobileProjectsTranscriptLiveUi', () => {
             expect(selected).to.deep.equal([]);
             expect(staged).to.have.length(3);
 
-            // An explicit request lifts the mark; the next ready URL opens again.
+            // Lifting the mark still only stages: the user opens the preview from the pill.
             clearQaapPreviewDismissedByUser('/tmp/vitesse-closed');
-            await liveUi.openReadyTranscriptPreviewUrl('/qaap-preview/abc123/', conv);
-            expect(selected).to.deep.equal(['preview']);
+            await liveUi.openReadyTranscriptPreviewUrl('http://127.0.0.1:5174/', conv);
+            expect(selected).to.deep.equal([]);
+            expect(staged).to.have.length(4);
         } finally {
             clearQaapPreviewDismissedByUser('/tmp/vitesse-closed');
             chatHost.remove();

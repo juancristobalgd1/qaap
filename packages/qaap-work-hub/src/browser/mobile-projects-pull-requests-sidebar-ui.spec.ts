@@ -401,4 +401,44 @@ describe('mobile-projects-pull-requests-sidebar-ui', () => {
         expect(updated[0]).to.deep.include({ owner: 'someone', repo: 'elsewhere', branch: 'feature' });
         expect(container.querySelector('.theia-mobile-work-hub-pull-request-meta')?.textContent).to.contain('feature → main');
     });
+
+    it('shows the harness that made a task pull request in place of the author', async () => {
+        const { host } = createSearchHost(() => ({
+            pullRequests: [
+                pullRequest({ number: 1 }),
+                pullRequest({ number: 2, adds: 4, dels: 2, partial: undefined }),
+                pullRequest({ number: 3 }),
+            ],
+            page: 1,
+            hasMore: false,
+            signedIn: true,
+        }));
+        Object.assign(host, {
+            conversations: {
+                listAllSummaries: () => [
+                    { agentId: 'codex', lastTurnAgentId: 'claude', updatedAt: 1, taskPullRequest: { owner: 'ACME', repo: 'App', number: 2, branch: 'qaap/task/a' } },
+                    { agentId: 'mystery-harness', updatedAt: 1, taskPullRequest: { owner: 'acme', repo: 'app', number: 3, branch: 'qaap/task/b' } },
+                ],
+            },
+        });
+        const ui = new MobileProjectsPullRequestsSidebarUi(host);
+        const container = document.createElement('div');
+        document.body.append(container);
+        ui.render(container);
+        await flush();
+
+        const items = Array.from(container.querySelectorAll<HTMLElement>('.theia-mobile-work-hub-pull-request-item'));
+        const byNumber = (n: number): HTMLElement => items.find(item => item.querySelector('.theia-mobile-work-hub-pull-request-title')?.textContent === `PR ${n}`)!;
+        const stats = (n: number): string | undefined => byNumber(n).querySelector('.theia-mobile-work-hub-pull-request-stats')?.textContent ?? undefined;
+
+        expect(stats(1)).to.equal('#1 · @octo');
+        expect(!!byNumber(1).querySelector('.theia-mobile-work-hub-pull-request-harness')).to.equal(false);
+
+        expect(stats(2)).to.equal('#2 · Made by Claude Code · +4 -2');
+        expect(!!byNumber(2).querySelector('.theia-mobile-work-hub-pull-request-harness .theia-qaap-agent-brand-icon')).to.equal(true);
+        expect(byNumber(2).getAttribute('aria-label')).to.contain('made by Claude Code');
+
+        expect(stats(3)).to.equal('#3 · Made by mystery-harness');
+        expect(!!byNumber(3).querySelector('.theia-mobile-work-hub-pull-request-harness .codicon-hubot')).to.equal(true);
+    });
 });

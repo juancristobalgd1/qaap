@@ -1,5 +1,6 @@
 // Extracted from qaap-agent-conversation-store.ts
 import { logTurnCreatedExtracted } from './qaap-agent-turn-create-log';
+import { composeSideChatPrompt } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-side-chat';
 import type { QaapAgentConversationStoreContext } from './qaap-agent-conversation-store-context';
 
 import { randomUUID } from 'crypto';
@@ -20,7 +21,7 @@ import {
     type QaapExpiredStreamingTurn,
     type QaapTurnWatchdogLimits,
 } from '../common/qaap-agent-turn-watchdog';
-import { deriveConversationTitle, isComposerAttachmentPreambleTitle } from '../common/qaap-conversation-title';
+import { clippedPromptTitle, deriveConversationTitle, isComposerAttachmentPreambleTitle, quickActionConversationTitle, quickActionTitleForStoredTitle } from '../common/qaap-conversation-title';
 
 import { isTeamSynthesisUserMessage } from '../common/qaap-team-mailbox';
 
@@ -50,12 +51,16 @@ export function buildPromptExtracted(ctx: QaapAgentConversationStoreContext, con
         : undefined;
     const historyStart = compaction?.compactedMessageCount ?? 0;
     const history = conv.messages.slice(historyStart, -1);
-    const latestUser = ctx.stripLeadingAgentMention(lastUser.content);
+    // A side chat's first message keeps its background on the message, not in its text: the agent reads both.
+    const latestUserText = ctx.stripLeadingAgentMention(lastUser.content);
+    const latestUser = lastUser.contextPreamble
+        ? composeSideChatPrompt(latestUserText, lastUser.contextPreamble, true)
+        : latestUserText;
     if (history.length === 0) {
         const prompt = compaction
             ? `${ctx.contextPreambleWithCompaction(conv.contextPreamble, compaction.summary!)}\n\nNow respond to the latest user message:\n\nUSER: ${latestUser}`
             : latestUser;
-        return skipDelegation ? prompt : ctx.appendTeamDelegation(prompt, turnAgentId);
+        return skipDelegation ? prompt : ctx.appendTeamDelegation(prompt, turnAgentId, conv.ownerLogin);
     }
     const transcript = buildConversationAgentPrompt({
         history,
@@ -65,7 +70,7 @@ export function buildPromptExtracted(ctx: QaapAgentConversationStoreContext, con
             : conv.contextPreamble,
         contextWindowSize: conv.contextWindowSize,
     });
-    return skipDelegation ? transcript : ctx.appendTeamDelegation(transcript, turnAgentId);
+    return skipDelegation ? transcript : ctx.appendTeamDelegation(transcript, turnAgentId, conv.ownerLogin);
 }
 
 export function resolveRunAgentMessageIdExtracted(ctx: QaapAgentConversationStoreContext, conv: QaapAgentConversation,
@@ -480,7 +485,8 @@ export async function maybeAutoResumeInterruptedTurnExtracted(ctx: QaapAgentConv
             }
             return next;
         });
-    const resumeConv: QaapAgentConversation = { ...conv, status: 'streaming', updatedAt: nowMs, messages };
+    // Restart recovery keeps `updatedAt`: the sidebar order must reflect real activity only.
+    const resumeConv: QaapAgentConversation = { ...conv, status: 'streaming', updatedAt: conv.updatedAt, messages };
     // Persist the incremented counter BEFORE spawning. persist() is best-effort/async, so if we
     // spawned first and the container were OOM-killed again before the counter reached disk, the
     // next boot would read the stale lower count and resume forever. Awaiting the flush here makes
@@ -526,10 +532,20 @@ export async function maybeAutoResumeInterruptedTurnExtracted(ctx: QaapAgentConv
  * when nothing needs repair.
  */
 function repairAttachmentPreambleTitle(conv: QaapAgentConversation): QaapAgentConversation {
+    const firstUser = conv.messages.find(message => message.role === 'user');
+    // A task started from a quick-action chip used to be titled with the clipped canned prompt.
+    const quickActionTitle = firstUser ? quickActionConversationTitle(firstUser.content) : undefined;
+    if (quickActionTitle && conv.title !== quickActionTitle && conv.title === clippedPromptTitle(firstUser!.content)) {
+        return { ...conv, title: quickActionTitle };
+    }
+    // Same repair when the first message is gone: the stored title is exactly a chip's clipped prompt.
+    const storedQuickActionTitle = quickActionTitleForStoredTitle(conv.title);
+    if (storedQuickActionTitle) {
+        return { ...conv, title: storedQuickActionTitle };
+    }
     if (!isComposerAttachmentPreambleTitle(conv.title)) {
         return conv;
     }
-    const firstUser = conv.messages.find(message => message.role === 'user');
     const title = firstUser ? deriveConversationTitle(firstUser.content) : '';
     return title && title !== conv.title ? { ...conv, title } : conv;
 }

@@ -15,6 +15,10 @@ export interface QaapPickerModel {
     readonly label: string;
     readonly available: boolean;
     readonly unavailableReason?: string;
+    /** Free or Pro from the backend tier; when set it replaces the legacy `paid` badge. */
+    readonly tier?: 'free' | 'pro';
+    /** The model is locked only until the harness is signed in: the row offers the sign-in action. */
+    readonly signInRequired?: boolean;
     readonly paid?: boolean;
 }
 
@@ -27,6 +31,11 @@ export interface QaapPickerState {
     readonly query: string;
     readonly currentAgentId: string;
     readonly currentModelId?: string;
+    /**
+     * The model list of the selected rail (every harness for the favorites) has not answered yet. The list shows a
+     * loading line instead of "No models match." until it does.
+     */
+    readonly loading?: boolean;
 }
 
 export namespace QaapComposerModelPickerModel {

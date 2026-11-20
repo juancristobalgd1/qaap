@@ -54,6 +54,9 @@
     },
     {
       "frontendElectron": "lib/electron-browser/qaap-cloud-workspace-electron-module"
+    },
+    {
+      "backendElectron": "lib/electron-node/qaap-cloud-workspace-electron-backend-module"
     }
   ],
   "keywords": [

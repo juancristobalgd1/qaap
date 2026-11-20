@@ -11,7 +11,6 @@ import {
     reclaimParkedWorkingControlIntoRow,
 } from './qaap-sticky-composer-working-agents-popover';
 import { transferGoalLoopPillToHost, transferStepPillToHost } from './qaap-sticky-composer-step-pill';
-import { ensureQueueControlInPillRow } from './qaap-sticky-composer-queue-position';
 import {
     createThinkingOrbIndicator,
     destroyThinkingOrbIndicator,
@@ -89,7 +88,6 @@ export function syncStickyComposerWorkingPill(
         const row = changesHost.querySelector(':scope .theia-mobile-sticky-composer-changes-pill-row');
         if (row instanceof HTMLElement) {
             upsertWorkingPillInRow(row, options);
-            ensureQueueControlInPillRow(wrap);
             if (workingOnlyHost instanceof HTMLElement) {
                 // Move Step plan pill before dropping the pills-only strip.
                 transferStepPillToHost(workingOnlyHost, changesHost);
@@ -113,7 +111,6 @@ export function syncStickyComposerWorkingPill(
     const row = host.querySelector('.theia-mobile-sticky-composer-changes-pill-row');
     if (row instanceof HTMLElement) {
         upsertWorkingPillInRow(row, options);
-        ensureQueueControlInPillRow(wrap);
     }
 }
 

@@ -4,8 +4,13 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import * as childProcess from 'child_process';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { QAAP_HARNESS_DEFINITIONS } from './qaap-builtin-agents';
 import {
+    QAAP_AGY_TUI_LOGIN_INPUT,
     QAAP_PI_TUI_LOGIN_COMMAND,
     resolveAgentConnectionFlow,
     resolveInteractiveAgentCliBin,
@@ -13,6 +18,7 @@ import {
     resolvePiTuiLoginInput,
 } from './qaap-agent-tui-command';
 import { rememberQaapHostedRuntime } from './qaap-hosted-agent-auth-policy';
+import { QAAP_OPENCODE_LOGIN_MODELS_URL, resolveAgentLoginChallengeTimeoutMs } from './qaap-agent-auth-login';
 
 describe('resolveInteractiveAgentCliBin', () => {
     it('maps composer agents to interactive TUI binaries', () => {
@@ -22,8 +28,11 @@ describe('resolveInteractiveAgentCliBin', () => {
         expect(resolveInteractiveAgentCliBin('claude')).to.equal('claude');
         expect(resolveInteractiveAgentCliBin('pi')).to.equal('pi');
         expect(resolveInteractiveAgentCliBin('grok')).to.equal('grok');
-        expect(resolveInteractiveAgentCliBin('antigravity')).to.equal('agy');
-        expect(resolveInteractiveAgentCliBin('gemini')).to.equal('agy');
+        // Without the server's resolved bin the preferred Gemini CLI is assumed.
+        expect(resolveInteractiveAgentCliBin('antigravity')).to.equal('gemini');
+        expect(resolveInteractiveAgentCliBin('gemini')).to.equal('gemini');
+        expect(resolveInteractiveAgentCliBin('antigravity', 'agy')).to.equal('agy');
+        expect(resolveInteractiveAgentCliBin('antigravity', 'antigravity')).to.equal('antigravity');
         expect(resolveInteractiveAgentCliBin('opencode')).to.equal('opencode');
     });
 
@@ -134,18 +143,82 @@ describe('resolveAgentConnectionFlow', () => {
         });
     }
 
-    it('routes OpenCode to its headless device-code method instead of the provider picker', () => {
+    // Now also carries env: `auth login` force-refreshes the models.dev catalog before the device code, which
+    // behind the tenant egress proxy held the link past the 15 s deadline (only "┌  Add credential" showed).
+    it('routes OpenCode to its headless device-code method, with the catalog refresh short-circuited', () => {
         expect(resolveAgentConnectionFlow('opencode')).to.deep.equal({
             kind: 'cli-login',
             command: 'opencode auth login -p openai -m \'ChatGPT Pro/Plus (headless)\'',
+            env: { OPENCODE_MODELS_URL: QAAP_OPENCODE_LOGIN_MODELS_URL },
+        });
+        expect(QAAP_OPENCODE_LOGIN_MODELS_URL).to.match(/^http:\/\/127\.0\.0\.1:\d+$/);
+        expect(resolveAgentLoginChallengeTimeoutMs('opencode')).to.equal(45_000);
+    });
+
+    // Now runs the npm package's JavaScript entry on the host's Node when it exists (the SEA binary unpacks
+    // ~170 MB on first run and crashed natively in the VPS tenant), with self-update off.
+    it('routes Copilot through its device-code login, preferring the JavaScript entry on POSIX hosts', () => {
+        const flow = resolveAgentConnectionFlow('copilot');
+        expect(flow.kind === 'cli-login' && flow.env).to.deep.equal({ COPILOT_AUTO_UPDATE: 'false' });
+        const command = flow.kind === 'cli-login' ? flow.command : '';
+        if (process.platform === 'win32') {
+            expect(command).to.equal('copilot login --device-code');
+        } else {
+            expect(command).to.contain('node -e \'');
+            expect(command).to.contain('node "$qaap_copilot_entry" login --device-code');
+            expect(command).to.contain('else copilot login --device-code; fi');
+        }
+        // The visible sign-in terminal keeps the readable command.
+        expect(resolveInteractiveAgentLoginCommand('copilot')).to.equal('copilot login --device-code');
+        expect(resolveAgentLoginChallengeTimeoutMs('copilot')).to.equal(60_000);
+        expect(resolveAgentLoginChallengeTimeoutMs('codex')).to.equal(undefined);
+    });
+
+    it('the Copilot Connect command falls back to the copilot binary where no Linux JavaScript entry exists', function (): void {
+        if (process.platform === 'win32') {
+            this.skip();
+        }
+        this.timeout(10_000);
+        const flow = resolveAgentConnectionFlow('copilot');
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-copilot-login-'));
+        try {
+            // A `copilot` that is not the npm package: the script finds no entry and runs the binary.
+            fs.writeFileSync(path.join(dir, 'copilot'), '#!/bin/sh\necho "binary $*"\n', { mode: 0o755 });
+            const result = childProcess.spawnSync('sh', ['-c', flow.kind === 'cli-login' ? flow.command : 'false'], {
+                encoding: 'utf8',
+                env: { ...process.env, PATH: `${dir}:${path.dirname(process.execPath)}:/usr/bin:/bin` },
+            });
+            expect(result.stdout.trim()).to.equal('binary login --device-code');
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('signs a resolved agy in by driving its Google OAuth picker in the hidden terminal, with no Gemini login', () => {
+        expect(resolveAgentConnectionFlow('antigravity', { cliBin: 'agy' })).to.deep.equal({
+            kind: 'tui-login',
+            command: 'agy',
+            input: QAAP_AGY_TUI_LOGIN_INPUT,
+            fallbackCommand: 'agy',
+            env: {},
+        });
+        expect(QAAP_AGY_TUI_LOGIN_INPUT.map(step => step.text)).to.deep.equal(['\r']);
+        expect(new RegExp(QAAP_AGY_TUI_LOGIN_INPUT[0].waitFor!, 'i').test('Select login method:')).to.equal(true);
+        expect(new RegExp(QAAP_AGY_TUI_LOGIN_INPUT[0].waitFor!, 'i').test('agy')).to.equal(false);
+        expect(resolveInteractiveAgentLoginCommand('antigravity', 'agy')).to.equal(undefined);
+    });
+
+    it('connects a resolved community antigravity through the tenant terminal too', () => {
+        expect(resolveAgentConnectionFlow('antigravity', { cliBin: 'antigravity' })).to.deep.equal({
+            kind: 'tenant-terminal',
+            command: 'antigravity',
         });
     });
 
-    it('routes Copilot through its remote device-code login command', () => {
-        expect(resolveAgentConnectionFlow('copilot')).to.deep.equal({
-            kind: 'cli-login',
-            command: 'copilot login --device-code',
-        });
+    it('keeps the Gemini sign-in when the resolved CLI is gemini', () => {
+        const flow = resolveAgentConnectionFlow('antigravity', { cliBin: 'gemini' });
+        expect(flow.kind).to.equal('cli-login');
+        expect(flow.kind === 'cli-login' && flow.command).to.contain('gemini');
     });
 
     it('signs the Gemini alias in with Google through Gemini CLI, never with an API key', () => {

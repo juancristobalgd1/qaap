@@ -6,8 +6,11 @@
 import { QAAP_BUILTIN_AGENT_DEFINITIONS } from './qaap-builtin-agents';
 import { OPENCLAUDE_AGENT_ID, QAIQ_AGENT_ID, migrateQaapProductAgentId } from './qaap-agent-task-client';
 import {
+    resolveAgentHiddenLoginCommand,
     resolveAgentLoginCliCommand,
+    resolveAgentLoginEnv,
 } from './qaap-agent-auth-login';
+import { normalizeAntigravityCliBin } from './qaap-antigravity-cli';
 import { isAgentHiddenOnHostedRuntime } from './qaap-hosted-agent-auth-policy';
 import { QAAP_PI_DEFAULT_LOGIN_PROVIDER, resolvePiLoginProvider } from './qaap-pi-login-providers';
 
@@ -15,10 +18,11 @@ import { QAAP_PI_DEFAULT_LOGIN_PROVIDER, resolvePiLoginProvider } from './qaap-p
  * Interactive TUI CLI binary for an agent id — the bare executable to type into a PTY,
  * not the headless `--print` / `exec --json` templates used by background task runs.
  *
- * Antigravity is special: the product agent id is `antigravity`, but the CLI on PATH is
- * usually Google's `agy` (then community `antigravity`, then legacy `gemini`).
+ * Antigravity is special: the product agent id is `antigravity`, and the CLI is the one the host
+ * resolved (`cliBin` from the agent descriptor, see {@link resolveAntigravityCliBin}). Without it the
+ * preferred `gemini` is assumed.
  */
-export function resolveInteractiveAgentCliBin(agentId: string | undefined): string | undefined {
+export function resolveInteractiveAgentCliBin(agentId: string | undefined, cliBin?: string): string | undefined {
     const normalized = migrateQaapProductAgentId(agentId?.trim());
     if (!normalized) {
         return undefined;
@@ -27,7 +31,7 @@ export function resolveInteractiveAgentCliBin(agentId: string | undefined): stri
         return normalized;
     }
     if (normalized === 'antigravity' || normalized === 'gemini') {
-        return 'agy';
+        return normalizeAntigravityCliBin(cliBin) ?? 'gemini';
     }
     const builtin = QAAP_BUILTIN_AGENT_DEFINITIONS.find(definition => definition.id === normalized);
     return builtin?.bin;
@@ -92,9 +96,25 @@ export function resolvePiTuiLoginInput(provider: string): readonly QaapAgentLogi
     ];
 }
 
+/**
+ * `agy` (Antigravity CLI 1.5.9-1.5.12) without a session opens a "Select login method" picker whose first,
+ * preselected entry is `Google OAuth`; Enter prints the authorization URL as an OSC-8 hyperlink (whole, even
+ * when the 80-column TUI wraps it) and waits. The URL's `redirect_uri` is Google-hosted
+ * (`antigravity.google/oauth-callback`), so the CLI learns the result from Google's servers and the sign-in
+ * can be finished in any browser, including the user's phone: nothing is pasted back.
+ */
+export const QAAP_AGY_TUI_LOGIN_COMMAND = 'agy';
+const AGY_LOGIN_PICKER_PATTERN = 'Select login method';
+
+/** Enter on the preselected `Google OAuth` entry, once the picker is drawn (sent anyway after 8 s). */
+export const QAAP_AGY_TUI_LOGIN_INPUT: readonly QaapAgentLoginInputStep[] = [
+    { text: '\r', waitFor: AGY_LOGIN_PICKER_PATTERN, fallbackMs: 8_000 },
+];
+
 /** A deliberate route for the Work Hub Connect action. */
 export type QaapAgentConnectionFlow =
-    | { readonly kind: 'cli-login'; readonly command: string }
+    /** `env`: exported for the login command only (OpenCode's catalog URL, Copilot's auto-update switch). */
+    | { readonly kind: 'cli-login'; readonly command: string; readonly env?: Readonly<Record<string, string>> }
     /**
      * Interactive CLI without a login subcommand (Pi): `command` starts it in the hidden sign-in
      * terminal and `input` drives it to the sign-in link. `fallbackCommand` + `followUp` are the
@@ -103,10 +123,12 @@ export type QaapAgentConnectionFlow =
     | {
         readonly kind: 'tui-login';
         readonly command: string;
-        readonly provider: string;
+        /** Pi only: the account provider typed after `/login`. */
+        readonly provider?: string;
         readonly input: readonly QaapAgentLoginInputStep[];
         readonly fallbackCommand: string;
-        readonly followUp: string;
+        /** Pi only: what to type inside the CLI in a visible terminal (`/login`). */
+        readonly followUp?: string;
         /** Environment for the login command only (Pi: `PI_HYPERLINKS=1`). */
         readonly env: Readonly<Record<string, string>>;
     }
@@ -126,7 +148,7 @@ export type QaapAgentConnectionFlow =
  */
 export function resolveAgentConnectionFlow(
     agentId: string | undefined,
-    options?: { readonly provider?: string },
+    options?: { readonly provider?: string; readonly cliBin?: string },
 ): QaapAgentConnectionFlow {
     const normalized = migrateQaapProductAgentId(agentId?.trim());
     if (!normalized) {
@@ -135,13 +157,25 @@ export function resolveAgentConnectionFlow(
     if (isAgentHiddenOnHostedRuntime(normalized)) {
         return { kind: 'hosted-restricted' };
     }
-    const loginCommand = resolveAgentLoginCliCommand(normalized);
+    const loginCommand = resolveAgentLoginCliCommand(normalized, options?.cliBin);
     if (loginCommand) {
-        return { kind: 'cli-login', command: loginCommand };
+        const command = resolveAgentHiddenLoginCommand(normalized, loginCommand);
+        const env = resolveAgentLoginEnv(normalized);
+        return env ? { kind: 'cli-login', command, env } : { kind: 'cli-login', command };
     }
-    const bin = resolveInteractiveAgentCliBin(normalized);
+    const bin = resolveInteractiveAgentCliBin(normalized, options?.cliBin);
     if (!bin) {
         return { kind: 'unsupported' };
+    }
+    if (normalized === 'antigravity' && bin === 'agy') {
+        // No login subcommand, but the Google OAuth picker is driven like Pi's `/login`.
+        return {
+            kind: 'tui-login',
+            command: QAAP_AGY_TUI_LOGIN_COMMAND,
+            input: QAAP_AGY_TUI_LOGIN_INPUT,
+            fallbackCommand: bin,
+            env: {},
+        };
     }
     const tenantCommand = normalized === 'opencode'
         ? 'opencode auth login'
@@ -165,10 +199,10 @@ export function resolveAgentConnectionFlow(
 }
 
 /** Device/OAuth command to send to the background transcript terminal, when supported. */
-export function resolveInteractiveAgentLoginCommand(agentId: string | undefined): string | undefined {
+export function resolveInteractiveAgentLoginCommand(agentId: string | undefined, cliBin?: string): string | undefined {
     const normalized = migrateQaapProductAgentId(agentId?.trim());
     if (!normalized || normalized === QAIQ_AGENT_ID || isAgentHiddenOnHostedRuntime(normalized)) {
         return undefined;
     }
-    return resolveAgentLoginCliCommand(normalized);
+    return resolveAgentLoginCliCommand(normalized, cliBin);
 }

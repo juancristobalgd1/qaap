@@ -62,12 +62,33 @@ describe('qaap-task-workspace-dirty', () => {
 
         it('caps the listed paths but keeps the full total', async () => {
             git(['init', '-q']);
+            fs.writeFileSync(path.join(root, 'README.md'), 'base\n');
+            git(['add', '-A']);
+            git(['-c', 'user.email=qaap@test', '-c', 'user.name=qaap', 'commit', '-q', '-m', 'init']);
             for (let index = 0; index < QAAP_DIRTY_WORKSPACE_LISTED_FILES + 3; index++) {
                 fs.writeFileSync(path.join(root, `file-${index}.txt`), 'x\n');
             }
             const dirty = await readDirtyWorkspace(root, localGitRead);
             expect(dirty.kind === 'dirty' && dirty.total).to.equal(QAAP_DIRTY_WORKSPACE_LISTED_FILES + 3);
             expect(dirty.kind === 'dirty' && dirty.files).to.have.length(QAAP_DIRTY_WORKSPACE_LISTED_FILES);
+        });
+
+        it('treats a repository with no commits yet as clean, even with untracked and staged files', async () => {
+            git(['init', '-q']);
+            fs.writeFileSync(path.join(root, 'index.html'), '<h1>new</h1>\n');
+            expect(await readDirtyWorkspace(root, localGitRead)).to.deep.equal({ kind: 'clean' });
+            git(['add', '-A']);
+            expect(await readDirtyWorkspace(root, localGitRead)).to.deep.equal({ kind: 'clean' });
+        });
+
+        it('still reports dirty once the repository has a first commit', async () => {
+            git(['init', '-q']);
+            fs.writeFileSync(path.join(root, 'index.html'), '<h1>new</h1>\n');
+            git(['add', '-A']);
+            git(['-c', 'user.email=qaap@test', '-c', 'user.name=qaap', 'commit', '-q', '-m', 'init']);
+            fs.writeFileSync(path.join(root, 'app.js'), 'x\n');
+            const dirty = await readDirtyWorkspace(root, localGitRead);
+            expect(dirty.kind === 'dirty' && dirty.files).to.deep.equal(['app.js']);
         });
 
         it('skips the check for a directory that is not a git repository', async () => {

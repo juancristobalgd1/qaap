@@ -49,7 +49,8 @@ test.describe('Theia Output View', () => {
         expect(await outputView.isDisplayed()).toBe(false);
         expect(await outputView.isActive()).toBe(false);
     });
-    test('should select a test output channel', async () => {
+    // Qaap: the example apps no longer bundle @theia/api-samples, which contributed this channel.
+    test.skip('should select a test output channel', async () => {
         outputView = await app.openView(TheiaOutputView);
         expect(await outputView.isTabVisible()).toBe(true);
         expect(await outputView.isDisplayed()).toBe(true);
@@ -58,7 +59,8 @@ test.describe('Theia Output View', () => {
         const testChannelName = 'API Sample: my test channel';
         expect(await outputView.selectOutputChannel(testChannelName)).toBe(true);
     });
-    test('should check if the output view of the test output channel', async () => {
+    // Qaap: the example apps no longer bundle @theia/api-samples, which contributed this channel.
+    test.skip('should check if the output view of the test output channel', async () => {
         const testChannelName = 'API Sample: my test channel';
         expect(await outputView.isOutputChannelSelected(testChannelName));
         const channel = await outputView.getOutputChannel(testChannelName);
@@ -67,7 +69,8 @@ test.describe('Theia Output View', () => {
         expect(await testChannel!.isDisplayed()).toBe(true);
     });
 
-    test.describe('Output Channel Content', () => {
+    // Qaap: the example apps no longer bundle @theia/api-samples, which contributed this channel.
+    test.describe.skip('Output Channel Content', () => {
         test.beforeAll(async () => {
             outputView = await app.openView(TheiaOutputView);
             const testChannelName = 'API Sample: my test channel';

@@ -153,6 +153,11 @@ export interface PostUserMessageInternalOptions {
     /** Set by Retry: which attempt of the same request this turn is (2 = first retry). */
     readonly retryAttempt?: number;
     /**
+     * Side chat background for this user message (see {@link QaapAgentMessage.contextPreamble}). Set by the create of
+     * a side chat, and copied by Retry so the retried turn reads the same background.
+     */
+    readonly contextPreamble?: string;
+    /**
      * Writes into the worktree after the pre-turn checkpoint is recorded and before the agent spawns,
      * inside the same serialized git section (so the snapshot excludes and the post checkpoint includes
      * what it writes). Unlike the plain checkpoint gate it waits without a budget, and a failure (or a

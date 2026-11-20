@@ -1,7 +1,7 @@
 import type { MobileProjectsTranscriptSurfacesUiContext } from './mobile-projects-transcript-surfaces-ui-context';
 import { FileUri } from '@theia/core/lib/common/file-uri';
 import { normalizePreviewUrlForSameOrigin } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
-import { resolveTranscriptPreviewOpenUrl } from '@theia/qaap-transcript/lib/browser/qaap-transcript-preview-effective-url';
+import { resolveSavedPreviewUrlForMount, resolveTranscriptPreviewOpenUrl } from '@theia/qaap-transcript/lib/browser/qaap-transcript-preview-effective-url';
 import {
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
@@ -366,9 +366,14 @@ export function resolveTranscriptPreviewUrlExtracted(ctx: MobileProjectsTranscri
         if (ctx.host.transcriptPreviewRequestPending && conv?.status === 'streaming') {
             return undefined;
         }
-        if (storedUrl) {
+        // The saved URL is from an earlier run: it is not mounted while a start for this project is pending.
+        const savedUrl = resolveSavedPreviewUrlForMount({
+            savedUrl: storedUrl,
+            startPending: ctx.host.transcriptPreviewRequestPending && ctx.host.transcriptOpenProject?.id === project.id,
+        });
+        if (savedUrl) {
             return resolveTranscriptPreviewOpenUrl({
-                candidateUrl: storedUrl,
+                candidateUrl: savedUrl,
                 project,
                 bootstrap: ctx.host.projectBootstrap,
                 appliesToProject: ctx.bootstrapAppliesToProject(project),

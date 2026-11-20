@@ -5,7 +5,7 @@
 
 import { expect } from 'chai';
 import type { QaapGitHunkLine } from '@theia/qaap-shared-core/lib/common/qaap-git-review';
-import { buildContextSegments, diffLineKey } from './qaap-diff-review-segments';
+import { buildContextSegments, buildSplitDiffRows, diffLineKey } from './qaap-diff-review-segments';
 
 function ctx(n: number): QaapGitHunkLine {
     return { type: 'ctx', oldNumber: n, newNumber: n, text: `line ${n}` };
@@ -42,5 +42,30 @@ describe('qaap-diff-review-segments — diffLineKey', () => {
 
     it('falls back to the index without line numbers', () => {
         expect(diffLineKey({ type: 'ctx', text: '' }, 3)).to.equal('i3');
+    });
+});
+
+describe('qaap-diff-review-segments — buildSplitDiffRows', () => {
+    const del = (n: number): QaapGitHunkLine => ({ type: 'del', oldNumber: n, text: `old ${n}` });
+    const add = (n: number): QaapGitHunkLine => ({ type: 'add', newNumber: n, text: `new ${n}` });
+
+    it('puts context on both sides and pairs a removal run with the following addition run', () => {
+        const rows = buildSplitDiffRows([ctx(1), del(2), del(3), add(2), ctx(4)]);
+        expect(rows.map(row => [row.left?.text, row.right?.text])).to.deep.equal([
+            ['line 1', 'line 1'],
+            ['old 2', 'new 2'],
+            ['old 3', undefined],
+            ['line 4', 'line 4'],
+        ]);
+    });
+
+    it('keeps additions without a preceding removal on the right only', () => {
+        const rows = buildSplitDiffRows([add(1), add(2)]);
+        expect(rows.map(row => [row.left, row.right?.text])).to.deep.equal([[undefined, 'new 1'], [undefined, 'new 2']]);
+    });
+
+    it('does not pair a removal with additions that came before it', () => {
+        const rows = buildSplitDiffRows([add(1), del(1)]);
+        expect(rows.map(row => [row.left?.text, row.right?.text])).to.deep.equal([[undefined, 'new 1'], ['old 1', undefined]]);
     });
 });

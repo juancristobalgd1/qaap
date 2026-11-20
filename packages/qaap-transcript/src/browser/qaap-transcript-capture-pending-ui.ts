@@ -21,7 +21,9 @@ const TRANSCRIPT_CAPTURE_DIRECTIVE_TEXT_CLASS = 'theia-mobile-agent-transcript-c
  */
 export const TRANSCRIPT_CAPTURE_CLOSED_ATTR = 'data-qaap-capture-closed';
 
-type CaptureChipState = 'pending' | 'unavailable';
+type CaptureChipState = 'awaiting' | 'pending' | 'unavailable';
+/** Row attribute: the reply is still streaming, so no capture can start yet. */
+const TRANSCRIPT_CAPTURE_AWAITING_ATTR = 'data-qaap-capture-awaiting';
 
 /**
  * Whether a capture requested in `message` can no longer arrive: the backend only captures a
@@ -70,8 +72,14 @@ export function isTranscriptCaptureClosed(
  * Marks a message row closed (no capture can land any more). With `expiresAt`, the row also remembers
  * its deadline so an open pending chip flips to "not available" when the deadline passes.
  */
-export function syncTranscriptCaptureClosedRow(row: HTMLElement, closed: boolean, expiresAt?: number): void {
+export function syncTranscriptCaptureClosedRow(row: HTMLElement, closed: boolean, expiresAt?: number, streaming?: boolean): void {
     row.toggleAttribute(TRANSCRIPT_CAPTURE_CLOSED_ATTR, closed);
+    // The capture starts only once the turn settles: while the reply streams there is no deadline
+    // yet (a createdAt-based one flipped the chip to "not available" mid-reply, then back).
+    row.toggleAttribute(TRANSCRIPT_CAPTURE_AWAITING_ATTR, !!streaming && !closed);
+    if (streaming) {
+        expiresAt = undefined;
+    }
     if (expiresAt === undefined) {
         delete row.dataset[TRANSCRIPT_CAPTURE_EXPIRES_AT_DATA];
     } else {
@@ -112,6 +120,11 @@ function localizeCaptureChipLabel(mode: 'image' | 'video', state: CaptureChipSta
         return mode === 'video'
             ? nls.localize('qaap/mobileProjects/transcriptCaptureUnavailableVideo', 'Video not available')
             : nls.localize('qaap/mobileProjects/transcriptCaptureUnavailableImage', 'Screenshot not available');
+    }
+    if (state === 'awaiting') {
+        return mode === 'video'
+            ? nls.localize('qaap/mobileProjects/transcriptCaptureAwaitingVideo', 'Video after the reply…')
+            : nls.localize('qaap/mobileProjects/transcriptCaptureAwaitingImage', 'Screenshot after the reply…');
     }
     return mode === 'video'
         ? nls.localize('qaap/mobileProjects/transcriptCaptureProcessingVideo', 'Processing video…')
@@ -196,6 +209,7 @@ export function buildTranscriptCapturePendingChip(
 ): HTMLElement {
     const chip = ownerDocument.createElement('div');
     chip.className = `${TRANSCRIPT_CAPTURE_PENDING_CHIP_CLASS} theia-mod-${mode}${state === 'unavailable' ? ' theia-mod-unavailable' : ''}`;
+    chip.classList.toggle('theia-mod-awaiting', state === 'awaiting');
     chip.setAttribute('role', 'status');
     chip.setAttribute('aria-live', 'polite');
     chip.dataset.qaapCaptureMode = mode;
@@ -237,6 +251,7 @@ function syncExistingCapturePendingChip(
     chip.classList.toggle('theia-mod-image', mode === 'image');
     chip.classList.toggle('theia-mod-video', mode === 'video');
     chip.classList.toggle('theia-mod-unavailable', state === 'unavailable');
+    chip.classList.toggle('theia-mod-awaiting', state === 'awaiting');
     chip.dataset.qaapCaptureMode = mode;
     const label = chip.querySelector<HTMLElement>('.theia-mobile-agent-transcript-capture-pending-label');
     if (label) {
@@ -330,7 +345,8 @@ export function enhanceTranscriptCaptureDirectives(host: HTMLElement): number {
     resolveCaptureDirectiveAnchor(host);
 
     const closed = !!row?.hasAttribute(TRANSCRIPT_CAPTURE_CLOSED_ATTR) || resolveRowCaptureExpiry(host, row);
-    const state: CaptureChipState = closed ? 'unavailable' : 'pending';
+    const awaiting = !closed && !!row?.hasAttribute(TRANSCRIPT_CAPTURE_AWAITING_ATTR);
+    const state: CaptureChipState = closed ? 'unavailable' : awaiting ? 'awaiting' : 'pending';
     const existingChip = host.querySelector<HTMLElement>(`:scope > .${TRANSCRIPT_CAPTURE_PENDING_CHIP_CLASS}`)
         ?? host.querySelector<HTMLElement>(`.${TRANSCRIPT_CAPTURE_PENDING_CHIP_CLASS}`);
     if (existingChip) {

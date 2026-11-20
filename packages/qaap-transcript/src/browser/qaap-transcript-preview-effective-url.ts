@@ -36,3 +36,11 @@ export function resolveTranscriptPreviewOpenUrl(options: {
             : [options.project?.previewUrl],
     });
 }
+
+/**
+ * A URL saved on the project is from an earlier run. While a start for that project is pending it
+ * must not be mounted, or the transcript shows a dead preview until the new run answers.
+ */
+export function resolveSavedPreviewUrlForMount(options: { readonly savedUrl?: string; readonly startPending: boolean }): string | undefined {
+    return options.startPending ? undefined : options.savedUrl;
+}

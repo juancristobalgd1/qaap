@@ -657,7 +657,8 @@ export function ensureTranscriptFilesTabExtracted(
     }
     if (!workspaceKey && project.github && ctx.host.projectsService) {
         void ctx.host.projectsService.prepareProjectCwd(project).then(prepared => {
-            if (!prepared || !ctx.executionFilesHost()?.isConnected || ctx.host.executionSurfaceTabsUi.activeExecutionTab(project) !== 'files') {
+            const activeTab = ctx.host.executionSurfaceTabsUi.activeExecutionTab(project);
+            if (!prepared || !ctx.executionFilesHost()?.isConnected || (activeTab !== 'files' && activeTab !== 'review')) {
                 return;
             }
             ctx.host.preparedCwdByProjectId.set(project.id, prepared);
@@ -712,15 +713,14 @@ export function ensureTranscriptFilesTabExtracted(
                 // is still being assigned. Yield once so the header relocation has a
                 // concrete mount to target.
                 await Promise.resolve();
-                const chrome = createTranscriptReviewChrome(
-                    changesHost,
-                    ctx.host.transcriptHistoryPanelOpen,
-                    ctx.host.transcriptHistoryPanelHeightPx,
-                );
-                const { diffHost, historyToggleHost, historyResizeHandle, historyPanel } = chrome;
+                // The Changes view has no History toggle or panel: its header row stays for the diff
+                // toolbar alone (the scope picker covers what the history panel was used for).
+                const chrome = createTranscriptReviewChrome(changesHost, false);
+                const { diffHost } = chrome;
+                chrome.historyToggleHost.remove();
+                chrome.historyResizeHandle.remove();
+                chrome.historyPanel.remove();
                 ctx.host.transcriptReviewDiffHost = diffHost;
-                ctx.host.transcriptHistoryRoot = cwd;
-                ctx.transcriptHistoryUi.installTranscriptHistoryResize(historyResizeHandle, historyPanel, changesHost);
                 const rootUri = FileUri.create(cwd).toString();
                 if (!ctx.host.diffReviewWidget) {
                     ctx.host.diffReviewWidget = await ctx.host.createDiffReviewWidget!();
@@ -754,11 +754,6 @@ export function ensureTranscriptFilesTabExtracted(
                         invalidateVerifyWorkspaceSnapshots(ctx.host.verifyResults ?? []);
                     },
                 );
-                ctx.transcriptHistoryUi.renderTranscriptHistoryToggle(historyToggleHost, historyPanel, historyResizeHandle, cwd);
-                // Relocate the fully rendered control after the async diff mount has
-                // settled, so restored and freshly-created Files mounts behave alike.
-                mount?.attachChangesHeaderActionHost?.(historyToggleHost);
-                ctx.transcriptHistoryUi.renderTranscriptHistoryPanel(historyPanel, cwd);
             }
             : undefined,
         unmountChangesView: ctx.host.createDiffReviewWidget
@@ -844,4 +839,56 @@ export async function revealTranscriptReviewFileExtracted(ctx: MobileProjectsTra
     if (!ctx.host.diffReviewWidget?.focusTranscriptReviewFile(trimmed)) {
         console.warn('[qaap-mobile-shell] Review file not found in diff list:', trimmed);
     }
+}
+
+/** How long to wait for an async project preview mount before reusing / mounting the chrome. */
+const OPEN_URL_PREVIEW_MOUNT_WAIT_MS = 2500;
+
+/**
+ * Opens any http(s) URL (e.g. a link in the chat) in the transcript's own Browser tab: reveals the
+ * tab, reuses or mounts the embedded preview chrome and navigates it. External pages load directly;
+ * pages that refuse framing get the blocked-frame card with "Open in new tab". The URL never becomes
+ * the project's preview URL. Returns false when there is no preview host to open it in.
+ */
+export async function openUrlInTranscriptBrowserExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext,
+    project: MobileProjectEntry,
+    summary: QaapAgentConversationSummaryDTO,
+    url: string,): Promise<boolean> {
+    ctx.host.transcriptPreviewSuppressedByUser = false;
+    ctx.host.executionSurfaceTabsUi.setExecutionSurfaceTab(project, 'preview');
+    ctx.host.executionSurfaceTabsUi.showOnlyExecutionSurfaceTab?.('preview');
+    ctx.host.executionSurfaceTabsUi.selectTranscriptTab?.('preview', project, summary);
+    // Narrow layouts show Browser in the full-screen execution drawer (what "Change view → Browser"
+    // opens); wide layouts show it inline and ignore this.
+    ctx.host.executionSurfaceTabsUi.openExecutionSurfaceSidebarWhenReady?.('preview', project, summary, 'transcript');
+    // The drawer / Browser surface mounts a moment after the switch, and the project's preview may
+    // mount asynchronously too; navigating a chrome that is about to be replaced would lose the URL,
+    // so wait for a connected, visible chrome first.
+    const deadline = Date.now() + OPEN_URL_PREVIEW_MOUNT_WAIT_MS;
+    const visibleChrome = () => {
+        const current = ctx.host.transcriptEmbeddedPreview;
+        return current?.root.isConnected && current.root.getClientRects().length > 0 ? current : undefined;
+    };
+    let chrome = visibleChrome();
+    while (!chrome && Date.now() < deadline) {
+        await new Promise<void>(resolve => window.setTimeout(resolve, 100));
+        chrome = visibleChrome();
+    }
+    if (!chrome) {
+        const host = ctx.executionPreviewHost();
+        if (!host) {
+            return false;
+        }
+        mountTranscriptEmptyPreviewExtracted(ctx, host, project, summary);
+        chrome = ctx.host.transcriptEmbeddedPreview;
+    }
+    if (!chrome) {
+        return false;
+    }
+    chrome.root.classList.remove('theia-mod-empty-preview');
+    chrome.root.classList.add(USER_NAVIGATED_PREVIEW_CLASS);
+    chrome.root.querySelector('.theia-mobile-transcript-preview-empty-overlay')?.remove();
+    const target = await resolveTranscriptTypedPreviewUrlExtracted(ctx, summary, url) ?? url;
+    await chrome.navigate(target);
+    return true;
 }

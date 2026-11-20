@@ -130,4 +130,26 @@ describe('QaapWorkHubRoutineRunner ownership', () => {
         expect(defaultAgentOwners).to.deep.equal(['alice']);
         expect(createdAgent).to.equal('opencode');
     });
+
+    it('marks the routine failed when it cannot start, so it never stays running', () => {
+        const marked: Array<{ id: string; state: string }> = [];
+        const runner = Object.create(QaapWorkHubRoutineRunner.prototype) as QaapWorkHubRoutineRunner;
+        Object.assign(runner, {
+            taskToRoutine: new Map(),
+            store: {
+                get: () => ROUTINE,
+                markRunStarted: () => ROUTINE,
+                markRunFinished: (id: string, state: string) => marked.push({ id, state }),
+            },
+            taskRunner: {
+                defaultAgent: () => 'qaiq',
+                create: () => {
+                    throw new Error('no harness available');
+                },
+            },
+        });
+
+        expect(() => runner.runNow(ROUTINE.id)).to.throw('no harness available');
+        expect(marked).to.deep.equal([{ id: ROUTINE.id, state: 'failed' }]);
+    });
 });

@@ -80,9 +80,18 @@ export function findChangesExceedingScopeLimit(
 /** Scripts whose findings are reported per file, so a failure can be attributed to the files it names. */
 const PER_FILE_SCRIPT_PATTERN = /(?:^|[:\-_])(?:lint|eslint|stylelint|prettier|format)(?:$|[:\-_])/i;
 
+/** Typecheck script names; `tsc`/`vue-tsc` diagnostics name their file the same way lint output does. */
+const TYPECHECK_SCRIPT_NAMES = new Set(['typecheck', 'type-check', 'tsc', 'check-types', 'types']);
+
+/** A command that invokes `tsc` or `vue-tsc` as a program, not as part of another word. */
+const TSC_COMMAND_PATTERN = /(?:^|[\s/\\])(?:vue-)?tsc(?:\s|$)/i;
+
 export function isPerFileVerificationScript(command: string): boolean {
     const script = command.replace(/^npm run\s+/, '').trim();
-    return PER_FILE_SCRIPT_PATTERN.test(script);
+    const scriptName = script.split(/\s+/)[0].toLowerCase();
+    return PER_FILE_SCRIPT_PATTERN.test(script)
+        || TYPECHECK_SCRIPT_NAMES.has(scriptName)
+        || TSC_COMMAND_PATTERN.test(script);
 }
 
 const SOURCE_PATH_PATTERN = /[\w@.\-/\\]+\.(?:[cm]?[jt]sx?|vue|svelte|astro|css|scss|sass|less|html|json|md|mdx|ya?ml|py|go|rs)\b/g;

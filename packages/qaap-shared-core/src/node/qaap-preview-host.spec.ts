@@ -7,7 +7,7 @@ import { expect } from 'chai';
 import type { Handler, Request, Response } from '@theia/core/shared/express';
 import { buildQaapPreviewHostLabel, parseQaapPreviewHostLabel, resolveQaapIsolatedParentOrigin, resolveQaapPreviewBaseDomain, resolveQaapPreviewBaseDomainForRequest } from './qaap-preview-host';
 import { rewritePreviewCspExtracted } from './qaap-dev-preview-endpoint-timeline';
-import { advertisePreviewRouteOnJson, earlyMiddlewareExtracted, isQaapTenantBackendRuntime } from './qaap-dev-preview-endpoint-render';
+import { advertisePreviewRouteOnJson, earlyMiddlewareExtracted, isQaapTenantBackendRuntime, QAAP_SHELL_CONTENT_SECURITY_POLICY, resolveQaapShellContentSecurityPolicy } from './qaap-dev-preview-endpoint-render';
 import type { QaapDevPreviewEndpointContext } from './qaap-dev-preview-endpoint-context';
 import { QAAP_PREVIEW_ROUTE_HEADER } from '../common/qaap-preview-route';
 
@@ -198,8 +198,38 @@ describe('earlyMiddlewareExtracted', () => {
         const shell = run(handlers, 'qaap.example.test', '/', context);
         expect(shell.nextCalled).to.equal(true);
         expect(shell.headers['X-Frame-Options']).to.equal('DENY');
+        expect(shell.headers['Content-Security-Policy']).to.equal(QAAP_SHELL_CONTENT_SECURITY_POLICY);
         const asset = run(handlers, 'qaap.example.test', '/bundle.js', context);
         expect(asset.nextCalled).to.equal(true);
         expect(asset.headers).to.deep.equal({});
+    });
+
+    it('ships a full shell CSP by default and lets QAAP_CSP override it', () => {
+        const defaults = resolveQaapShellContentSecurityPolicy({});
+        expect(defaults).to.equal(QAAP_SHELL_CONTENT_SECURITY_POLICY);
+        for (const directive of [
+            "default-src 'self'",
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob:",
+            "style-src 'self' 'unsafe-inline'",
+            "img-src 'self' data: blob: https:",
+            "font-src 'self' data:",
+            "media-src 'self' data: blob:",
+            "connect-src 'self' data: blob: ws: wss: https:",
+            "worker-src 'self' blob:",
+            "frame-src 'self' https: http://localhost:* http://127.0.0.1:* http://*.localhost:*",
+            "manifest-src 'self'",
+            "object-src 'none'",
+            "base-uri 'self'",
+            "form-action 'self' https://github.com",
+            "frame-ancestors 'none'",
+        ]) {
+            expect(defaults.split('; ')).to.include(directive);
+        }
+        expect(resolveQaapShellContentSecurityPolicy({ QAAP_CSP: '   ' })).to.equal(defaults);
+        expect(resolveQaapShellContentSecurityPolicy({ QAAP_CSP: 'OFF' })).to.equal("frame-ancestors 'none'");
+        expect(resolveQaapShellContentSecurityPolicy({ QAAP_CSP: "default-src 'none'; frame-ancestors https://qaap.example" }))
+            .to.equal("default-src 'none'; frame-ancestors https://qaap.example");
+        expect(resolveQaapShellContentSecurityPolicy({ QAAP_CSP: "default-src 'self'" }))
+            .to.equal("default-src 'self'; frame-ancestors 'none'");
     });
 });

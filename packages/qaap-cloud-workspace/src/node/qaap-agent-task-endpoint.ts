@@ -22,6 +22,8 @@ import {
     ComposerPromptImproveTimeoutError,
     type QaapImproveComposerPromptRequestBody,
 } from '@theia/qaap-composer/lib/common/qaap-composer-prompt-improve';
+import { describeAgentTurnFailure, type QaapAgentFailureReasonKind } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
+import { resolveAgentBrand } from '@theia/qaap-shared-core/lib/common/qaap-agent-branding';
 import { QAAP_AGENT_CONNECTION_REFRESH_BUDGET_MS, QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { QaapAgentQueueFullError } from './qaap-agent-queue-policy';
 import { QaapAgentStorageUnavailableError } from './qaap-agent-storage-unavailable-error';
@@ -30,7 +32,8 @@ import { isQaapProductionRuntime } from './qaap-agent-spawn-identity';
 import type { QaapAgentCliUpdateResult } from '@theia/qaap-agents-ui/lib/common/qaap-agent-cli-update';
 import { QaapBillingStore } from './qaap-billing-store';
 import { QaapStandaloneTaskModelFallback } from './qaap-standalone-task-model-fallback';
-import { listNativeAgentModels, prepareNativeAgentModels } from './qaap-agent-native-models';
+import { antigravityBinFor, listNativeAgentModels, prepareNativeAgentModels } from './qaap-agent-native-models';
+import { annotateModelsForAgent } from './qaap-agent-task-runner-render2';
 import {
     QaapGithubAuthGuard,
     type QaapGithubAuthContext,
@@ -39,11 +42,27 @@ import {
     QAAP_REPOSITORY_CLONE_UNAVAILABLE_CODE,
     QaapMissingCloneRecovery,
 } from '@theia/qaap-shared-core/lib/node/qaap-missing-clone-recovery';
-import { resolveQaapBuiltinAgentMentionId } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
+import { QAAP_BUILTIN_AGENT_IDS, resolveQaapBuiltinAgentMentionId } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
+import {
+    checkQaapHarnessEnvName,
+    isQaapHarnessSettingsId,
+    QAAP_HARNESS_ENV_VALUE_MAX_LENGTH,
+    QAAP_HARNESS_SETTINGS_PREF,
+    readQaapHarnessSettingsFor,
+    resolveQaapHarnessBaseId,
+} from '@theia/qaap-shared-core/lib/common/qaap-harness-launch-settings';
+import { QaapHarnessEnvSecretStore } from './qaap-harness-env-secret-store';
+import { checkQaapHarnessBinaryPath, checkQaapHarnessHomeDir, isQaapHarnessLaunchOverrideRuntime } from './qaap-harness-launch-overrides';
 import type { QaapAgentTask, QaapAgentTaskCwdGroup } from '../common/qaap-agent-task';
 import { QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import { QaapAsyncRoute } from '@theia/qaap-shared-core/lib/node/qaap-async-route';
 import { QaapAgentEffort } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
+import {
+    isQaapSessionAttestationAgent,
+    QAAP_AGENT_SESSION_ATTEST_ROUTE,
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-session-attestation';
+import { QAAP_HARNESS_SIGN_OUT_ROUTE } from '@theia/qaap-shared-core/lib/common/qaap-harness-sign-out';
+import { QaapHarnessSignOutService } from './qaap-harness-sign-out-service';
 
 /** Keep SSE connections warm through proxies that idle-kill silent sockets. */
 const SSE_HEARTBEAT_MS = 25_000;
@@ -75,6 +94,49 @@ function trimTaskGroupCommandsForWire(group: QaapAgentTaskCwdGroup): QaapAgentTa
 }
 
 /** HTTP surface for the background agent-task runner. */
+/** HTTP status and short reason for a failed improve-prompt CLI run; the raw stderr never leaves the server. */
+export interface QaapImprovePromptFailure {
+    readonly status: number;
+    readonly error: string;
+    readonly kind: QaapAgentFailureReasonKind | 'unknown';
+}
+
+const IMPROVE_PROMPT_FAILURE_STATUS: Partial<Record<QaapAgentFailureReasonKind, number>> = {
+    usage_limit: 429,
+    rate_limit: 429,
+    sign_in: 401,
+    api_key: 401,
+    provider_key: 401,
+    network: 502,
+    model: 502,
+    model_access: 502,
+    provider_policy: 502,
+    provider_rejected: 502,
+};
+
+/**
+ * Classifies the CLI failure behind a prompt improvement with the shared failure classifier. Only the
+ * localized reason label is returned; the raw error text (which may echo prompts, paths or tokens)
+ * stays out of the response.
+ */
+export function describeImprovePromptFailure(error: unknown, agentId: string): QaapImprovePromptFailure {
+    const reason = describeAgentTurnFailure(error instanceof Error ? error.message : undefined, {
+        agentLabel: resolveAgentBrand(agentId)?.label,
+    });
+    if (!reason || reason.kind === 'stopped') {
+        return {
+            status: 500,
+            error: nls.localize('qaap/agentTasks/improvePromptFailed', 'Could not improve the prompt. Try again.'),
+            kind: 'unknown',
+        };
+    }
+    return {
+        status: IMPROVE_PROMPT_FAILURE_STATUS[reason.kind] ?? 500,
+        error: reason.label,
+        kind: reason.kind,
+    };
+}
+
 @injectable()
 export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
 
@@ -95,8 +157,15 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
     protected readonly cloneRecovery: QaapMissingCloneRecovery | undefined;
 
     /** Re-runs a failed standalone task on the agent's next fallback model; absent, tasks never fall back. */
+    /** Values of the Settings → Harness environment variables (desktop app routes only). */
+    @inject(QaapHarnessEnvSecretStore) @optional()
+    protected readonly harnessEnvSecrets: QaapHarnessEnvSecretStore | undefined;
+
     @inject(QaapStandaloneTaskModelFallback) @optional()
     protected readonly modelFallback: QaapStandaloneTaskModelFallback | undefined;
+
+    @inject(QaapHarnessSignOutService) @optional()
+    protected readonly harnessSignOut: QaapHarnessSignOutService | undefined;
 
     configure(app: Application): void {
         app.get(`${QAAP_AGENT_TASK_API_PATH}/storage-health`, (req, res) => {
@@ -107,6 +176,12 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         app.get(`${QAAP_AGENT_TASK_API_PATH}/harness-status`, (req, res) => {
             this.handleListHarnessStatuses(req, res);
         });
+        app.post(`${QAAP_AGENT_TASK_API_PATH}/harness-settings/check`, (req, res) => {
+            this.handleCheckHarnessLaunchSettings(req, res);
+        });
+        app.get(`${QAAP_AGENT_TASK_API_PATH}/harness-settings/env`, QaapAsyncRoute.wrap('qaap-agent-task', (req, res) => this.handleListHarnessEnv(req, res)));
+        app.post(`${QAAP_AGENT_TASK_API_PATH}/harness-settings/env`, QaapAsyncRoute.wrap('qaap-agent-task', (req, res) => this.handleSetHarnessEnv(req, res)));
+        app.post(`${QAAP_AGENT_TASK_API_PATH}/harness-settings/env/delete`, QaapAsyncRoute.wrap('qaap-agent-task', (req, res) => this.handleDeleteHarnessEnv(req, res)));
         // Static `/cli-updates` segments must register before `/:id` below.
         app.get(`${QAAP_AGENT_TASK_API_PATH}/cli-updates`, QaapAsyncRoute.wrap('qaap-agent-task', (req, res) => this.handleListCliUpdates(req, res)));
         app.post(`${QAAP_AGENT_TASK_API_PATH}/cli-updates/:agentId`, QaapAsyncRoute.wrap('qaap-agent-task', (req, res) => this.handleInstallCliUpdate(req, res)));
@@ -181,6 +256,8 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
             }
         });
+        app.post(`${QAAP_AGENT_TASK_API_PATH}/${QAAP_AGENT_SESSION_ATTEST_ROUTE}`, QaapAsyncRoute.wrap('qaap-agent-task', (req, res) => this.handleAttestAgentSession(req, res)));
+        app.post(`${QAAP_AGENT_TASK_API_PATH}/${QAAP_HARNESS_SIGN_OUT_ROUTE}`, QaapAsyncRoute.wrap('qaap-agent-task', (req, res) => this.handleHarnessSignOut(req, res)));
         app.post(`${QAAP_AGENT_TASK_API_PATH}/improve-prompt`, QaapAsyncRoute.wrap('qaap-agent-task', (req, res) => this.handleImprovePrompt(req, res)));
         app.post(QAAP_AGENT_TASK_API_PATH, QaapAsyncRoute.wrap('qaap-agent-task', (req, res) => this.handleCreate(req, res)));
         app.get(`${QAAP_AGENT_TASK_API_PATH}/:id`, QaapAsyncRoute.wrap('qaap-agent-task', (req, res) => this.handleDetail(req, res)));
@@ -204,6 +281,27 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 return;
             }
             res.json(task);
+        });
+        // Single-task delete. Same authentication and owner check as cancel; another owner's task is
+        // reported as unknown so the id does not reveal that it exists.
+        app.delete(`${QAAP_AGENT_TASK_API_PATH}/:id`, (req, res) => {
+            const ctx = this.requireAuth(req, res);
+            if (!ctx) {
+                return;
+            }
+            const existing = this.runner.listForCwd(undefined).find(task => task.id === req.params.id);
+            if (!existing || !this.auth.ownsWorkspacePath(ctx, existing.cwd)) {
+                res.status(404).json({ error: 'Task not found.' });
+                return;
+            }
+            if (existing.state === 'running' || existing.state === 'queued') {
+                this.runner.cancel(req.params.id);
+            }
+            if (!this.runner.deleteTask(req.params.id)) {
+                res.status(404).json({ error: 'Task not found.' });
+                return;
+            }
+            res.json({ ok: true });
         });
         app.post(`${QAAP_AGENT_TASK_API_PATH}/:id/reorder`, (req, res) => {
             const ctx = this.requireAuth(req, res);
@@ -380,8 +478,16 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         // The native catalogs are keyed by canonical ids (`codex`, `claude`, ...), while a
         // client may send `@codex` or a builtin alias when it drills into the same picker.
         const normalizedAgent = requestedAgent.replace(/^@/, '').trim().toLowerCase();
-        const agent = resolveQaapBuiltinAgentMentionId(normalizedAgent) ?? normalizedAgent;
+        // A harness instance (`codex#2`) offers its base harness's catalog; its own switch decides.
+        const baseAgent = resolveQaapHarnessBaseId(normalizedAgent);
+        const agent = resolveQaapBuiltinAgentMentionId(baseAgent) ?? baseAgent;
         const login = this.auth.resolveUserLogin(ctx);
+        // A harness the owner turned off in Settings offers no models, not even its Free ones.
+        if (!this.runner.isAgentEnabled(normalizedAgent === baseAgent ? agent : normalizedAgent, login)) {
+            res.setHeader('Cache-Control', 'no-store');
+            res.json({ agent: requestedAgent, models: [] });
+            return;
+        }
         const startedAt = Date.now();
         let billingStartedAt = startedAt;
         let billingMs = 0;
@@ -403,17 +509,26 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         // Give a cold CLI model discovery (`cursor-agent models`) a moment; past the budget the
         // curated catalog answers and the discovered one is cached for the next request.
         const discoveryStartedAt = Date.now();
-        await this.withinBudget(prepareNativeAgentModels(agent, {
+        // The Antigravity catalog follows the CLI this host resolved (gemini ids or agy's live list).
+        const antigravityBin = antigravityBinFor(this.runner, agent);
+        // An instance has its own catalog (discovered with its binary and folder); the base answers for itself.
+        const isInstance = normalizedAgent !== baseAgent;
+        const catalogAgent = isInstance ? normalizedAgent : agent;
+        const spawner = isInstance
+            ? await this.runner.instanceNativeModelSpawner(normalizedAgent, login)
+            : this.runner.nativeModelDiscoverySpawner(login);
+        await this.withinBudget(prepareNativeAgentModels(catalogAgent, {
             ownerLogin: login,
-            spawner: this.runner.nativeModelDiscoverySpawner(login),
+            spawner,
+            antigravityBin,
         }), QAAP_NATIVE_MODEL_DISCOVERY_BUDGET_MS);
         const discoveryMs = Date.now() - discoveryStartedAt;
         if (res.headersSent || res.writableEnded) {
             return;
         }
-        const runnerModels = this.runner.listModelsForAgent(agent, login);
-        const nativeModels = listNativeAgentModels(agent, login);
-        const models = runnerModels.length > 0 ? runnerModels : nativeModels;
+        const runnerModels = isInstance ? [] : this.runner.listModelsForAgent(agent, login);
+        const nativeModels = listNativeAgentModels(catalogAgent, login, antigravityBin);
+        const models = runnerModels.length > 0 ? runnerModels : annotateModelsForAgent(this.runner, agent, login, nativeModels);
         res.setHeader('Server-Timing', `billing;dur=${billingMs}, discovery;dur=${discoveryMs}, total;dur=${Date.now() - startedAt}`);
         res.setHeader('Cache-Control', 'no-store');
         res.json({ agent: requestedAgent, models });
@@ -436,13 +551,13 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             return;
         }
         const refresh = req.query.refresh === '1' || req.query.refresh === 'true';
-        if (refresh) {
-            this.runner.refreshAgentCatalog();
-        }
         // `groups` intentionally omitted: the only HTTP consumer reads agents/models and the
         // full task history (with whole prompts in `command`) multiplies into tens of MB per call. Live
         // task groups arrive over the WebSocket snapshot instead.
         const ownerLogin = this.auth.resolveUserLogin(ctx);
+        if (refresh) {
+            this.runner.refreshAgentCatalog(ownerLogin);
+        }
         // An explicit refresh (the Connect dialog confirming a sign-in) needs the probe's real
         // answer; the regular picker load answers within the short default budget.
         const agents = await (refresh
@@ -474,7 +589,115 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 ownerLogin,
                 agentId => this.cliUpdates.isAgentInstallSupported(agentId, installTarget),
             ).map(harness => ({ ...harness, installPackageAvailable: this.cliUpdates.hasInstallablePackage(harness.id) })),
+            launchOverridesSupported: isQaapHarnessLaunchOverrideRuntime(),
         } satisfies QaapAgentHarnessStatusResponse);
+    }
+
+    /**
+     * Checks a binary path / configuration folder typed in Settings → Harness. Desktop app only: anywhere
+     * else the fields are ignored by the runner and this route answers 404, so it never probes the server's
+     * file system for a web user.
+     */
+    /**
+     * Shared gate of the harness-variable routes: authenticated, desktop app only (404 elsewhere, like
+     * `/harness-settings/check`), a store bound and a known harness or instance id.
+     */
+    protected requireHarnessEnvRoute(req: Request, res: Response, rawHarnessId: unknown): { harnessId: string; ownerLogin: string | undefined } | undefined {
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return undefined;
+        }
+        if (!isQaapHarnessLaunchOverrideRuntime() || !this.harnessEnvSecrets) {
+            res.status(404).json({ error: 'Harness variables are only available in the desktop app.' });
+            return undefined;
+        }
+        const harnessId = typeof rawHarnessId === 'string' ? rawHarnessId.trim().toLowerCase() : '';
+        if (!harnessId || !isQaapHarnessSettingsId(harnessId, QAAP_BUILTIN_AGENT_IDS)) {
+            res.status(400).json({ error: 'Unknown harness.' });
+            return undefined;
+        }
+        res.setHeader('Cache-Control', 'no-store');
+        return { harnessId, ownerLogin: this.auth.resolveUserLogin(ctx) };
+    }
+
+    /** Names and whether a value is stored; never a value. */
+    protected async handleListHarnessEnv(req: Request, res: Response): Promise<void> {
+        const route = this.requireHarnessEnvRoute(req, res, req.query.harnessId);
+        if (!route || !this.harnessEnvSecrets) {
+            return;
+        }
+        const readPref = this.runner.preferenceReaderForOwner(route.ownerLogin);
+        const names = readQaapHarnessSettingsFor(readPref(QAAP_HARNESS_SETTINGS_PREF), route.harnessId).envNames ?? [];
+        const variables: { name: string; hasValue: boolean }[] = [];
+        for (const name of names) {
+            variables.push({ name, hasValue: await this.harnessEnvSecrets.has(route.harnessId, name) });
+        }
+        res.json({ variables });
+    }
+
+    protected async handleSetHarnessEnv(req: Request, res: Response): Promise<void> {
+        const body = (req.body ?? {}) as { harnessId?: unknown; name?: unknown; value?: unknown };
+        const route = this.requireHarnessEnvRoute(req, res, body.harnessId);
+        if (!route || !this.harnessEnvSecrets) {
+            return;
+        }
+        const name = typeof body.name === 'string' ? body.name.trim() : '';
+        const issue = checkQaapHarnessEnvName(name);
+        if (issue) {
+            res.status(400).json({ error: issue === 'denied' ? 'This variable is managed by Qaap and cannot be set.' : 'Invalid variable name.', issue });
+            return;
+        }
+        const value = body.value;
+        if (typeof value !== 'string' || value.length === 0 || value.length > QAAP_HARNESS_ENV_VALUE_MAX_LENGTH || value.includes('\0')) {
+            res.status(400).json({ error: 'Invalid variable value.' });
+            return;
+        }
+        try {
+            await this.harnessEnvSecrets.set(route.harnessId, name, value);
+        } catch {
+            res.status(500).json({ error: 'The harness variable could not be saved.' });
+            return;
+        }
+        res.json({ ok: true, name, hasValue: true });
+    }
+
+    /** Deletes one value (`name`) or every value of the harness (no `name`: Restore defaults, Delete harness). */
+    protected async handleDeleteHarnessEnv(req: Request, res: Response): Promise<void> {
+        const body = (req.body ?? {}) as { harnessId?: unknown; name?: unknown };
+        const route = this.requireHarnessEnvRoute(req, res, body.harnessId);
+        if (!route || !this.harnessEnvSecrets) {
+            return;
+        }
+        try {
+            if (typeof body.name === 'string' && body.name.trim()) {
+                await this.harnessEnvSecrets.delete(route.harnessId, body.name.trim());
+            } else {
+                await this.harnessEnvSecrets.deleteAll(route.harnessId);
+            }
+        } catch {
+            res.status(500).json({ error: 'The harness variable could not be deleted.' });
+            return;
+        }
+        res.json({ ok: true });
+    }
+
+    protected handleCheckHarnessLaunchSettings(req: Request, res: Response): void {
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return;
+        }
+        if (!isQaapHarnessLaunchOverrideRuntime()) {
+            res.status(404).json({ error: 'Harness binary and configuration folder overrides are only available in the desktop app.' });
+            return;
+        }
+        const body = (req.body ?? {}) as { binaryPath?: unknown; homeDir?: unknown };
+        const binaryPath = typeof body.binaryPath === 'string' ? body.binaryPath.trim() : '';
+        const homeDir = typeof body.homeDir === 'string' ? body.homeDir.trim() : '';
+        res.setHeader('Cache-Control', 'no-store');
+        res.json({
+            ...(binaryPath ? { binaryPathIssue: checkQaapHarnessBinaryPath(binaryPath) ?? undefined } : {}),
+            ...(homeDir ? { homeDirIssue: checkQaapHarnessHomeDir(homeDir) ?? undefined } : {}),
+        });
     }
 
     protected async handleListCliUpdates(req: Request, res: Response): Promise<void> {
@@ -537,7 +760,7 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             const installTarget = this.runner.resolveAgentCliInstallTarget(ownerLogin);
             const result = await this.cliUpdates.installUpdate(agentId, installTarget, { userKey: ownerLogin?.toLowerCase() });
             if (result.ok) {
-                this.runner.refreshAgentCatalog();
+                this.runner.refreshAgentCatalog(ownerLogin);
             }
             res.status(this.cliInstallStatusCode(result)).json(result);
         } catch (error) {
@@ -547,6 +770,104 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 message: error instanceof Error ? error.message : String(error),
             });
         }
+    }
+
+    /**
+     * The sign-in dialog saw the CLI's own success line for a harness without an auth probe (Copilot,
+     * Grok): remember it for the session owner so the picker unlocks its Pro models. The owner comes
+     * only from the authenticated session; the body names the agent and nothing else. See
+     * QaapAgentSessionAttestationStore for the threat model and how a false attestation is revoked.
+     */
+    protected async handleAttestAgentSession(req: Request, res: Response): Promise<void> {
+        // Same guard as the other cookie-authenticated mutations (qaap-tenant-update-endpoint.ts): browsers
+        // always send Sec-Fetch-Site; a request without it must be JSON, which a cross-site form cannot send.
+        const fetchSite = req.headers['sec-fetch-site'];
+        if (fetchSite !== undefined && fetchSite !== 'same-origin' && fetchSite !== 'none') {
+            res.status(403).json({ error: 'Cross-site request refused.' });
+            return;
+        }
+        if (fetchSite === undefined && !/^application\/json\s*(?:;|$)/i.test(req.headers['content-type'] ?? '')) {
+            res.status(415).json({ error: 'Send the request as application/json.' });
+            return;
+        }
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return;
+        }
+        const ownerLogin = this.auth.resolveUserLogin(ctx)?.trim();
+        if (!ownerLogin) {
+            res.status(401).json({ error: 'Not signed in' });
+            return;
+        }
+        const body = (req.body ?? {}) as { agentId?: unknown };
+        const agentId = typeof body.agentId === 'string' ? body.agentId.trim().toLowerCase() : '';
+        if (!agentId || !isQaapSessionAttestationAgent(agentId)) {
+            res.status(400).json({ error: 'Only harnesses without a sign-in status check accept an attestation.' });
+            return;
+        }
+        if (!this.runner.attestAgentSession(agentId, ownerLogin)) {
+            res.status(400).json({ error: 'The sign-in could not be recorded.' });
+            return;
+        }
+        res.setHeader('Cache-Control', 'no-store');
+        res.json({ ok: true, agentId });
+    }
+
+    /**
+     * Signs the authenticated owner out of one built-in harness using only the declared strategy in
+     * `QAAP_BUILTIN_AGENT_DEFINITIONS`. The owner comes strictly from the session cookie/token.
+     */
+    protected async handleHarnessSignOut(req: Request, res: Response): Promise<void> {
+        const fetchSite = req.headers['sec-fetch-site'];
+        if (fetchSite !== undefined && fetchSite !== 'same-origin' && fetchSite !== 'none') {
+            res.status(403).json({ error: 'Cross-site request refused.' });
+            return;
+        }
+        if (fetchSite === undefined && !/^application\/json\s*(?:;|$)/i.test(req.headers['content-type'] ?? '')) {
+            res.status(415).json({ error: 'Send the request as application/json.' });
+            return;
+        }
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return;
+        }
+        const ownerLogin = this.auth.resolveUserLogin(ctx)?.trim();
+        if (!ownerLogin && isQaapProductionRuntime(process.env)) {
+            res.status(401).json({ error: 'Not signed in' });
+            return;
+        }
+        const body = (req.body ?? {}) as { harnessId?: unknown };
+        const harnessId = typeof body.harnessId === 'string' ? body.harnessId.trim().toLowerCase() : '';
+        if (!harnessId || !isQaapHarnessSettingsId(harnessId, QAAP_BUILTIN_AGENT_IDS)) {
+            res.status(400).json({
+                ok: false,
+                harnessId,
+                connectionState: 'unknown',
+                reason: 'unsupported',
+                error: 'Unknown harness.',
+            });
+            return;
+        }
+        if (!this.harnessSignOut) {
+            res.status(503).json({
+                ok: false,
+                harnessId,
+                connectionState: 'unknown',
+                reason: 'unavailable',
+                error: 'Harness sign out is unavailable.',
+            });
+            return;
+        }
+        const result = await this.harnessSignOut.signOut(harnessId, ownerLogin);
+        res.setHeader('Cache-Control', 'no-store');
+        const status = result.ok
+            ? 200
+            : result.reason === 'unsupported'
+                ? 400
+                : result.reason === 'unavailable'
+                    ? 503
+                    : 502;
+        res.status(status).json(result);
     }
 
     protected async handleImprovePrompt(req: Request, res: Response): Promise<void> {
@@ -586,11 +907,15 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 errorType: error instanceof Error ? error.name : typeof error,
                 timedOut,
             });
-            res.status(timedOut ? 504 : 500).json({
-                error: timedOut
-                    ? nls.localize('qaap/agentTasks/improvePromptTimeout', 'Prompt improvement timed out. Try again.')
-                    : nls.localize('qaap/agentTasks/improvePromptFailed', 'Could not improve the prompt. Try again.'),
-            });
+            if (timedOut) {
+                res.status(504).json({
+                    error: nls.localize('qaap/agentTasks/improvePromptTimeout', 'Prompt improvement timed out. Try again.'),
+                    kind: 'timeout',
+                });
+                return;
+            }
+            const failure = describeImprovePromptFailure(error, agentId);
+            res.status(failure.status).json({ error: failure.error, kind: failure.kind });
         }
     }
 

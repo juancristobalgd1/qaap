@@ -7,6 +7,7 @@
 // These functions operate only on their parameters and do not access instance state.
 
 import { spawnSync } from 'child_process';
+import { randomBytes } from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -40,6 +41,13 @@ export interface QaapAgentStdinPrompt {
 
 // ─── Agent detection ─────────────────────────────────────────────────────────
 
+/** Boot-time `codex --help` probes; each call is capped here (two may run in sequence). */
+const CODEX_HELP_PROBE_TIMEOUT_MS = 5_000;
+
+/**
+ * Top-level and `exec` help text of the trusted codex, or `''` when the probe fails. Callers treat `''`
+ * as "unknown" and fall back to the modern codex defaults (see resolveQaapCodexTemplate).
+ */
 export function readCodexHelp(env: NodeJS.ProcessEnv = process.env): string {
     // Only a codex the backend uid trusts may run here (never a tenant-installed one as root).
     const codex = resolveTrustedExecutable('codex', env);
@@ -49,7 +57,7 @@ export function readCodexHelp(env: NodeJS.ProcessEnv = process.env): string {
     try {
         const topLevel = spawnSync(codex, ['--help'], {
             encoding: 'utf8',
-            timeout: 2_000,
+            timeout: CODEX_HELP_PROBE_TIMEOUT_MS,
             killSignal: 'SIGTERM',
             windowsHide: true,
             env: childProcessEnv(env),
@@ -60,7 +68,7 @@ export function readCodexHelp(env: NodeJS.ProcessEnv = process.env): string {
         }
         const execCommand = spawnSync(codex, ['exec', '--help'], {
             encoding: 'utf8',
-            timeout: 2_000,
+            timeout: CODEX_HELP_PROBE_TIMEOUT_MS,
             killSignal: 'SIGTERM',
             windowsHide: true,
             env: childProcessEnv(env),
@@ -187,8 +195,43 @@ export type QaapAgentPromptPlaceholder = 'omit' | 'omit-flag' | 'dash';
 
 export type QaapAgentPromptTransport =
     | { readonly kind: 'argv' }
+    /**
+     * Argv, with a size guard ({@link planArgvPrompt}). Only agy uses it: agy 1.5.9 ignores stdin in text mode
+     * (`printf ... | agy -p -` never sees the prompt; `agy -p '<text>'` does), and it has no prompt-file flag.
+     */
+    | { readonly kind: 'argv-prompt' }
     | { readonly kind: 'plain-stdin'; readonly placeholder: QaapAgentPromptPlaceholder }
     | { readonly kind: 'prompt-file'; readonly flag: '--prompt-file' };
+
+/** Largest prompt passed as one argv string on POSIX: Linux caps a single argument at MAX_ARG_STRLEN (128 KiB). */
+export const AGENT_ARGV_PROMPT_LIMIT_POSIX_BYTES = 96 * 1024;
+/** Largest prompt passed as one argv string on Windows, where cmd.exe caps the whole line near 8191 characters. */
+export const AGENT_ARGV_PROMPT_LIMIT_WIN32_CHARS = 24_000;
+
+export interface ArgvPromptPlan {
+    /** The text placed in argv: the prompt itself, or a short instruction that points at {@link promptTempDir}. */
+    readonly prompt: string;
+    /** Private temp dir holding the full prompt; the caller removes it when the task settles. */
+    readonly promptTempDir?: string;
+}
+
+/**
+ * Prompt text for an argv-only harness. Within the limit the prompt goes through unchanged. Over it the full
+ * prompt is written to a private file and argv carries a short instruction to read that file. Never truncates.
+ */
+export function planArgvPrompt(prompt: string, owner?: AgentPromptOwner): ArgvPromptPlan {
+    const win32 = process.platform === 'win32';
+    const size = win32 ? prompt.length : Buffer.byteLength(prompt, 'utf8');
+    const limit = win32 ? AGENT_ARGV_PROMPT_LIMIT_WIN32_CHARS : AGENT_ARGV_PROMPT_LIMIT_POSIX_BYTES;
+    if (size <= limit) {
+        return { prompt };
+    }
+    const written = writeAgentPromptFile(prompt, owner);
+    return {
+        prompt: `Read the file at ${written.file} and follow the instructions it contains exactly; it is the user's full message.`,
+        promptTempDir: written.dir,
+    };
+}
 
 const STDIN_OMIT_IDS = new Set(['cursor', 'claude', 'qaiq', 'openclaude', 'opencode', 'qwen', 'pi']);
 const STDIN_OMIT_FLAG_IDS = new Set(['copilot']);
@@ -211,7 +254,11 @@ export function resolveAgentPromptTransport(
     if (id === 'grok' || bin === 'grok') {
         return { kind: 'prompt-file', flag: '--prompt-file' };
     }
-    if (id === 'antigravity' || bin === 'gemini' || bin === 'agy' || bin === 'antigravity') {
+    // agy reads no prompt from stdin in text mode (verified with 1.5.9), so its prompt travels in argv.
+    if (bin === 'agy' || (bin === undefined && id === 'antigravity')) {
+        return { kind: 'argv-prompt' };
+    }
+    if (id === 'antigravity' || bin === 'gemini' || bin === 'antigravity') {
         return bin === 'gemini'
             ? { kind: 'plain-stdin', placeholder: 'omit-flag' }
             : { kind: 'plain-stdin', placeholder: 'dash' };
@@ -240,7 +287,7 @@ export function applyTemplateForPromptTransport(
     transport: QaapAgentPromptTransport,
     vars: Record<string, string> = {},
 ): string {
-    if (transport.kind === 'argv') {
+    if (transport.kind === 'argv' || transport.kind === 'argv-prompt') {
         return applyTemplateVars(template, vars);
     }
     if (transport.kind === 'plain-stdin' && transport.placeholder === 'dash') {
@@ -266,14 +313,22 @@ export function buildPromptTransportCommand(
     agentId: string | undefined,
     detected?: { readonly id?: string; readonly bin?: string; readonly template?: string },
     vars: Record<string, string> = {},
+    owner?: AgentPromptOwner,
 ): QaapPromptTransportCommand {
     const transport = resolveAgentPromptTransport(agentId, detected);
     if (transport.kind === 'argv') {
         return { command: applyTemplate(template, prompt, vars) };
     }
+    if (transport.kind === 'argv-prompt') {
+        const planned = planArgvPrompt(prompt, owner);
+        return {
+            command: applyTemplate(template, planned.prompt, vars),
+            ...(planned.promptTempDir ? { promptTempDir: planned.promptTempDir } : {}),
+        };
+    }
     let command = applyTemplateForPromptTransport(template, transport, vars);
     if (transport.kind === 'prompt-file') {
-        const written = writeAgentPromptFile(prompt);
+        const written = writeAgentPromptFile(prompt, owner);
         command = `${command} ${transport.flag} ${quoteShellArg(written.file)}`;
         return { command, promptTempDir: written.dir };
     }
@@ -288,11 +343,81 @@ export function quoteShellArg(value: string): string {
     return shellQuote(value);
 }
 
-/** Persist a prompt so CLIs such as Grok can take `--prompt-file` instead of argv. */
-export function writeAgentPromptFile(text: string): { readonly file: string; readonly dir: string } {
+/** The OS identity the agent CLI runs as when the backend drops privileges (`uid` differs from this process). */
+export interface AgentPromptOwner {
+    readonly uid: number;
+    readonly gid?: number;
+}
+
+/** Dirs created as another uid, keyed by path, so their removal runs as that uid too (root has no DAC override). */
+const promptDirOwners = new Map<string, AgentPromptOwner>();
+
+/**
+ * Runs a small Node script as `owner`, with `input` as JSON on stdin. Returns true on exit 0.
+ * Overridable through {@link agentPromptOwnerRunner} for tests, which cannot switch uid.
+ */
+function runAgentPromptScriptAsOwner(owner: AgentPromptOwner, script: string, input: object): boolean {
+    const result = spawnSync(process.execPath, ['-e', script], {
+        uid: owner.uid, gid: owner.gid ?? owner.uid, cwd: '/',
+        input: JSON.stringify(input), timeout: 30000,
+        env: { PATH: process.env.PATH ?? '/usr/bin:/bin' }, stdio: ['pipe', 'ignore', 'pipe'],
+    });
+    if (result.status !== 0 && result.stderr) {
+        console.warn(`[qaap-agent-prompt] agent-side prompt file step failed: ${String(result.stderr).slice(0, 200)}`);
+    }
+    return result.status === 0;
+}
+
+/** Seam for the agent-side runner; specs replace `run` to simulate the agent uid without root. */
+export const agentPromptOwnerRunner: { run: (owner: AgentPromptOwner, script: string, input: object) => boolean } = {
+    run: runAgentPromptScriptAsOwner,
+};
+
+/**
+ * Runs as the agent uid: creates the 0700 dir and the 0600 prompt file, so the agent (and nobody else) can read
+ * the prompt. Refuses to run over an existing entry (`mkdirSync`/`wx`), so nothing is planted in advance.
+ */
+export const AGENT_PROMPT_WRITE_SCRIPT = [
+    "const fs=require('fs');",
+    "const i=JSON.parse(fs.readFileSync(0,'utf8'));",
+    'try{',
+    'fs.mkdirSync(i.dir,{mode:0o700});',
+    "const fd=fs.openSync(i.file,'wx',0o600);",
+    "try{const b=Buffer.from(i.text,'utf8');let o=0;while(o<b.length){o+=fs.writeSync(fd,b,o,b.length-o);}}finally{fs.closeSync(fd);}",
+    '}catch(e){process.stderr.write(String(e&&e.message));process.exit(1);}',
+].join('');
+
+/** Runs as the agent uid: removes the prompt dir the agent created. Only ever called with a dir it owns. */
+export const AGENT_PROMPT_REMOVE_SCRIPT = [
+    "const fs=require('fs');",
+    "const i=JSON.parse(fs.readFileSync(0,'utf8'));",
+    'try{fs.rmSync(i.dir,{recursive:true,force:true});}catch(e){process.stderr.write(String(e&&e.message));process.exit(1);}',
+].join('');
+
+/**
+ * Persist a prompt so CLIs such as Grok can take `--prompt-file` instead of argv.
+ * Without an `owner` (or when it is this process's uid) the root-owned 0700 dir is enough. With a different
+ * `owner` the dir and file are created AS that uid, so the agent can read them; nothing is world-readable.
+ * Fails closed: if the agent side cannot write the file, this throws and the prompt is not written by root.
+ */
+export function writeAgentPromptFile(text: string, owner?: AgentPromptOwner): { readonly file: string; readonly dir: string } {
+    const currentUid = typeof process.getuid === 'function' ? process.getuid() : undefined;
+    if (owner && owner.uid !== currentUid) {
+        const dir = path.join(os.tmpdir(), `qaap-agent-prompt-${randomBytes(16).toString('hex')}`);
+        const file = path.join(dir, 'prompt.txt');
+        if (!agentPromptOwnerRunner.run(owner, AGENT_PROMPT_WRITE_SCRIPT, { dir, file, text })) {
+            throw new Error(`Could not write the agent prompt file as uid ${owner.uid}.`);
+        }
+        const stat = fs.lstatSync(dir);
+        if (!stat.isDirectory() || stat.uid !== owner.uid) {
+            throw new Error(`Refusing the agent prompt dir ${dir}: the agent user did not create it.`);
+        }
+        promptDirOwners.set(dir, owner);
+        return { file, dir };
+    }
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agent-prompt-'));
     const file = path.join(dir, 'prompt.txt');
-    fs.writeFileSync(file, text, 'utf8');
+    fs.writeFileSync(file, text, { encoding: 'utf8', mode: 0o600 });
     return { file, dir };
 }
 
@@ -302,6 +427,12 @@ export function removeAgentPromptTempDir(dir: string | undefined): void {
         return;
     }
     if (!path.basename(dir).startsWith('qaap-agent-prompt-')) {
+        return;
+    }
+    const owner = promptDirOwners.get(dir);
+    if (owner) {
+        promptDirOwners.delete(dir);
+        agentPromptOwnerRunner.run(owner, AGENT_PROMPT_REMOVE_SCRIPT, { dir });
         return;
     }
     try {

@@ -4,7 +4,13 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import { EventEmitter } from 'events';
+import * as sinon from 'sinon';
 import { buildQaapPreviewProcessEnv, buildQaapPreviewScriptCommand, QaapPreviewSupervisor } from './qaap-preview-supervisor';
+
+function errnoError(code: string): NodeJS.ErrnoException {
+    return Object.assign(new Error(code), { code });
+}
 
 describe('buildQaapPreviewScriptCommand', () => {
     it('runs Windows package-manager shims through cmd.exe', () => {
@@ -36,15 +42,39 @@ describe('buildQaapPreviewProcessEnv', () => {
         expect(source).to.contain('QAAP_PREVIEW_PORT');
         expect(source).to.contain('--strictPort');
     });
+
+    it('strips every inherited QAAP_* variable so only QAAP_PREVIEW_PORT reaches the dev server', () => {
+        const env = buildQaapPreviewProcessEnv({
+            PATH: '/bin',
+            QAAP_PREVIEW_BASE_DOMAIN: 'qaap.example.com',
+            QAAP_SKIP_AUTH: 'false',
+            QAAP_SQLITE_STORE_PATH: '/host/.qaap/store.sqlite',
+            QAAP_TASK_TOKEN: 'secret-task-token',
+            qaap_cloud_mode: '1',
+            QAAP_PREVIEW_PORT: '9999',
+        }, 5174);
+
+        const qaapKeys = Object.keys(env).filter(key => /^QAAP_/i.test(key));
+        expect(qaapKeys).to.deep.equal(['QAAP_PREVIEW_PORT']);
+        expect(env.QAAP_PREVIEW_PORT).to.equal('5174');
+        expect(env.PATH).to.equal('/bin');
+        expect(env.PORT).to.equal('5174');
+        expect(JSON.stringify(env)).to.not.contain('secret-task-token');
+    });
+
+    it('does not mutate the base env it was given', () => {
+        const base = { QAAP_SKIP_AUTH: 'false', KEEP: 'yes' };
+        buildQaapPreviewProcessEnv(base, 5174);
+        expect(base).to.deep.equal({ QAAP_SKIP_AUTH: 'false', KEEP: 'yes' });
+    });
 });
 
 describe('QaapPreviewSupervisor shutdown', () => {
     class TestSupervisor extends QaapPreviewSupervisor {
-        addLiveChild(key: string): string[] {
-            const signals: string[] = [];
-            const child = { exitCode: null, kill: (signal: string) => { signals.push(signal); return true; } };
+        addLiveChild(key: string): void {
+            // Signals go to the process group (-pid) through process.kill, not to child.kill.
+            const child = { pid: 53001, exitCode: null };
             this.records.set(key, { key, child } as never);
-            return signals;
         }
         cleanup(): void {
             this.registerCleanup();
@@ -69,9 +99,118 @@ describe('QaapPreviewSupervisor shutdown', () => {
     });
 
     it('kills live dev servers from onStop', () => {
-        const supervisor = new TestSupervisor();
-        const signals = supervisor.addLiveChild('preview-a');
-        supervisor.onStop();
-        expect(signals).to.deep.equal(['SIGTERM']);
+        const killStub = sinon.stub(process, 'kill').returns(true);
+        try {
+            const supervisor = new TestSupervisor();
+            supervisor.addLiveChild('preview-a');
+            supervisor.onStop();
+            expect(killStub.calledWith(-53001, 'SIGTERM')).to.equal(true);
+        } finally {
+            killStub.restore();
+        }
+    });
+});
+
+describe('QaapPreviewSupervisor lifecycle', () => {
+    class FakeDevServer extends EventEmitter {
+        exitCode: number | null = null;
+        readonly stdout = null;
+        readonly stderr = null;
+        constructor(readonly pid: number) {
+            super();
+        }
+    }
+
+    /** Exposes the seams the lifecycle specs drive: the spawn call and the registry records. */
+    class LifecycleSupervisor extends QaapPreviewSupervisor {
+        spawnArgvPreparedAsync: sinon.SinonStub;
+        constructor(spawn: sinon.SinonStub) {
+            super();
+            this.spawnArgvPreparedAsync = spawn;
+            (this as unknown as { tenantSpawn: unknown }).tenantSpawn = {
+                resolveProcessEnv: (): NodeJS.ProcessEnv => ({}),
+                resolveSpawnIdentity: (): undefined => undefined,
+                spawnArgvPreparedAsync: spawn,
+            };
+            // Keeps the process-exit hook out of the test process.
+            this.cleanupRegistered = true;
+        }
+        recordOf(key: string): unknown {
+            return this.records.get(key);
+        }
+        pendingCount(): number {
+            return this.pendingStarts.size;
+        }
+    }
+
+    const LAUNCH = { command: 'node', args: ['-e', '0'] };
+    const IDENTITY = { previewId: 'p-live', workspaceId: 'w', projectId: 'pr', conversationId: 'c' } as never;
+    let processKill: sinon.SinonStub;
+    let consoleWarn: sinon.SinonStub;
+
+    beforeEach(() => {
+        processKill = sinon.stub(process, 'kill');
+        consoleWarn = sinon.stub(console, 'warn');
+    });
+
+    afterEach(() => {
+        processKill.restore();
+        consoleWarn.restore();
+    });
+
+    async function startedSupervisor(pid: number): Promise<{ supervisor: LifecycleSupervisor; child: FakeDevServer }> {
+        const child = new FakeDevServer(pid);
+        const spawn = sinon.stub().resolves(child);
+        const supervisor = new LifecycleSupervisor(spawn);
+        await supervisor.start('/repo', 5173, IDENTITY, LAUNCH);
+        return { supervisor, child };
+    }
+
+    it('keeps the record and its port when the dev server could not be signalled', async () => {
+        const { supervisor } = await startedSupervisor(52001);
+        processKill.throws(errnoError('EPERM'));
+
+        expect(supervisor.stop('p-live')).to.equal(false);
+
+        expect(supervisor.recordOf('p-live')).to.not.equal(undefined);
+    });
+
+    it('retires the record at once when the dev server is already gone (ESRCH)', async () => {
+        const { supervisor } = await startedSupervisor(52002);
+        processKill.throws(errnoError('ESRCH'));
+
+        expect(supervisor.stop('p-live')).to.equal(false);
+
+        expect(supervisor.recordOf('p-live')).to.equal(undefined);
+    });
+
+    it('holds the record until the child reports its exit, then retires it without restarting', async () => {
+        const { supervisor, child } = await startedSupervisor(52003);
+        processKill.returns(true);
+
+        expect(supervisor.stop('p-live')).to.equal(true);
+        expect(supervisor.recordOf('p-live')).to.not.equal(undefined);
+
+        child.exitCode = 0;
+        child.emit('exit', 0, null);
+
+        expect(supervisor.recordOf('p-live')).to.equal(undefined);
+        expect(supervisor.spawnArgvPreparedAsync.calledOnce).to.equal(true);
+    });
+
+    it('reuses the spawn in flight for a concurrent start of the same preview', async () => {
+        const child = new FakeDevServer(52004);
+        let release!: (value: FakeDevServer) => void;
+        const spawn = sinon.stub().returns(new Promise<FakeDevServer>(resolve => { release = resolve; }));
+        const supervisor = new LifecycleSupervisor(spawn);
+
+        const first = supervisor.start('/repo', 5173, IDENTITY, LAUNCH);
+        const second = supervisor.start('/repo', 5173, IDENTITY, LAUNCH);
+        release(child);
+
+        expect(await first).to.equal('starting');
+        expect(await second).to.equal('starting');
+        expect(spawn.calledOnce).to.equal(true);
+        expect(supervisor.pendingCount()).to.equal(0);
     });
 });

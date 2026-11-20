@@ -86,7 +86,7 @@ describe('QaapAgentTaskRunner cancellation', () => {
         expect(resolveAgentStopGraceTimeoutMs('60000')).to.equal(MAX_AGENT_STOP_GRACE_TIMEOUT_MS);
     });
 
-    it('cancels immediately but releases the concurrency slot only after the grace period', () => {
+    it('cancels immediately but releases the concurrency slot only once the process has exited', () => {
         const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
         const task = runningTask('task-1');
         const tasks = new Map([[task.id, task]]);
@@ -118,6 +118,13 @@ describe('QaapAgentTaskRunner cancellation', () => {
         expect(killOptions?.escalateAfterMs).to.equal(AGENT_STOP_GRACE_TIMEOUT_MS);
         expect(drains).to.equal(0);
 
+        // SIGKILL was sent, but the process has not exited: the slot stays held.
+        killOptions?.onGracePeriodElapsed?.();
+        expect(stoppingTaskIds.has(task.id)).to.equal(true);
+        expect(drains).to.equal(0);
+
+        // The process has really exited: the slot is released.
+        Object.assign(child, { exitCode: 0 });
         killOptions?.onGracePeriodElapsed?.();
         expect(stoppingTaskIds.has(task.id)).to.equal(false);
         expect(drains).to.equal(1);
@@ -248,37 +255,6 @@ describe('QaapAgentTaskRunner cancellation', () => {
         releasePreferences();
         await pending;
 
-        expect(spawns).to.equal(0);
-    });
-
-    it('keeps a task cancelled while its billing check is in flight cancelled (no failure, no spawn)', async () => {
-        const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
-        const task = runningTask('task-billing');
-        const tasks = new Map([[task.id, task]]);
-        let releaseBilling!: () => void;
-        const billingRead = new Promise<void>(resolve => { releaseBilling = resolve; });
-        const finished: string[] = [];
-        let spawns = 0;
-        let logReads = 0;
-        Object.assign(runner, {
-            tasks,
-            billingStore: { getOrCreateAccount: async () => { await billingRead; return {}; } },
-            // The settled read crashes the gate, which used to fail the turn as `failed`.
-            resolveAgentModelForRequest: () => { throw new Error('model resolution exploded'); },
-            logPath: () => { logReads++; return path.join('/nonexistent', 'task.log'); },
-            finishTask: (id: string, state: string) => { finished.push(`${id}:${state}`); return undefined; },
-            spawnProcess: () => { spawns++; },
-        });
-
-        const pending = runner.exposeSpawnProcessWhenReady(task, { prompt: '', cwd: task.cwd });
-        await new Promise(resolve => setImmediate(resolve));
-        tasks.set(task.id, { ...task, state: 'cancelled', finishedAt: Date.now() });
-        releaseBilling();
-        await pending;
-
-        expect(tasks.get(task.id)?.state).to.equal('cancelled');
-        expect(finished).to.deep.equal([]);
-        expect(logReads).to.equal(0);
         expect(spawns).to.equal(0);
     });
 

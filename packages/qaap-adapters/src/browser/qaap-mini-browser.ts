@@ -84,6 +84,12 @@ export class QaapMiniBrowser extends MiniBrowser {
         const widget = (this.layout as PanelLayout).widgets[0];
         if (widget) {
             widget.activate();
+        } else if (!this.isDisposed) {
+            // No preview content yet: focus the wrapper itself so the shell sees focus land.
+            if (!this.node.hasAttribute('tabindex')) {
+                this.node.tabIndex = -1;
+            }
+            this.node.focus({ preventScroll: true });
         }
         this.scheduleChromeRelayout();
     }

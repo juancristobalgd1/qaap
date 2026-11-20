@@ -7,17 +7,36 @@ export const QAAP_AUTH_API_PATH = '/qaap/api/auth';
 export const QAAP_GITHUB_API_PATH = '/qaap/api/github';
 /** Per-user AI/BYOK settings (`~/.qaap/users/{login}/settings.json`). */
 export const QAAP_USER_SETTINGS_API_PATH = '/qaap/api/user-settings';
-/** Signed-in billing entitlements + Codex hosted credit wallet. */
+/** Signed-in billing entitlements for the Starter / Pro plans. */
 export const QAAP_BILLING_API_PATH = '/qaap/api/billing';
-/** Create a Stripe Checkout session for Pro / Team monthly subscription. */
+/** Create a hosted subscription checkout for the Starter or Pro monthly plan. */
 export const QAAP_BILLING_CHECKOUT_API_PATH = '/qaap/api/billing/checkout';
-/** Confirm a completed Checkout session after Stripe redirects back (idempotent with webhook). */
+/** Confirm a completed checkout (`checkoutId` from the return URL) after the hosted page redirects back (idempotent with webhook). */
 export const QAAP_BILLING_CONFIRM_CHECKOUT_API_PATH = '/qaap/api/billing/confirm-checkout';
-/** Dev-only plan activate when Stripe keys are not configured. */
+/** Cancel the signed-in account's subscription at the payment provider (applies the re-read state). */
+export const QAAP_BILLING_CANCEL_API_PATH = '/qaap/api/billing/cancel';
+/** Dev-only plan activate when Airwallex billing is not configured. */
 export const QAAP_BILLING_DEV_ACTIVATE_API_PATH = '/qaap/api/billing/dev-activate';
+/** Per-project resources (container memory per repository) of the signed-in owner; `repo` is `owner/name`. */
+export const QAAP_PROJECT_RESOURCES_API_PATH = '/qaap/api/billing/project-resources';
 /** Unauthenticated liveness/readiness probe for monitors and VPS deploy gates. */
 export const QAAP_HEALTH_API_PATH = '/qaap/api/health';
 export const QAAP_GITHUB_OAUTH_START_PATH = '/qaap/oauth/github/start';
+
+/** Response of `GET` and `POST` on {@link QAAP_PROJECT_RESOURCES_API_PATH}. */
+export interface QaapProjectResourcesResponse {
+    readonly repo: string;
+    readonly memoryGb: number;
+    /** The memory choices the owner's plan allows. */
+    readonly options: ReadonlyArray<number>;
+    readonly plan: 'starter' | 'pro';
+}
+
+/** `POST` body on {@link QAAP_PROJECT_RESOURCES_API_PATH}: sets the container memory of one repository. */
+export interface QaapProjectResourcesUpdateRequest {
+    readonly repo: string;
+    readonly memoryGb: number;
+}
 /** Must match GitHub OAuth App «Authorization callback URL». */
 export const QAAP_GITHUB_OAUTH_CALLBACK_PATH = '/qaap/oauth/github/callback';
 
@@ -72,6 +91,16 @@ export interface QaapAuthSessionUser {
 export interface QaapAuthSessionResponse {
     signedIn: boolean;
     user?: QaapAuthSessionUser;
+    /**
+     * Desktop app without a Qaap GitHub session: the user's own GitHub credential that serves the Work Hub's
+     * GitHub data, by source (`gh-cli`, `env`, `oauth-session`) and the GitHub user it belongs to. Never the token.
+     */
+    githubCredential?: QaapAuthSessionGithubCredential;
+}
+
+export interface QaapAuthSessionGithubCredential {
+    source: 'owner-token-cache' | 'env' | 'gh-cli' | 'oauth-session';
+    user: QaapAuthSessionUser;
 }
 
 export interface QaapGithubRepositorySummary {
@@ -198,6 +227,54 @@ export interface QaapGithubPullRequestSummary {
      * mergeability and files. Fetch the detail endpoint before relying on those fields.
      */
     partial?: boolean;
+    /** Detail endpoint only: the author's avatar image URL. */
+    authorAvatarUrl?: string;
+    /** Detail endpoint only: labels with their GitHub hex color (no `#`). */
+    labels?: QaapGithubPullRequestLabel[];
+    /** Detail endpoint only: users asked to review that have not reviewed yet. */
+    requestedReviewers?: QaapGithubPullRequestPerson[];
+    /** Detail endpoint only: latest review state per reviewer. */
+    reviews?: QaapGithubPullRequestReview[];
+    /** Detail endpoint only: check runs and commit statuses on the head commit. */
+    checks?: QaapGithubPullRequestCheck[];
+    /** Detail endpoint only: number of commits. */
+    commits?: number;
+    /** Detail endpoint only: issue timeline (opened, commits, reviews, comments, labels, merges…), oldest first. */
+    timeline?: QaapGithubPullRequestTimelineEvent[];
+}
+
+export interface QaapGithubPullRequestLabel {
+    readonly name: string;
+    readonly color?: string;
+}
+
+export interface QaapGithubPullRequestPerson {
+    readonly login: string;
+    readonly avatarUrl?: string;
+}
+
+export interface QaapGithubPullRequestReview extends QaapGithubPullRequestPerson {
+    readonly state: 'approved' | 'changes_requested' | 'commented' | 'dismissed' | 'pending';
+}
+
+export interface QaapGithubPullRequestCheck {
+    readonly name: string;
+    /** `queued` and `in_progress` are still running; `completed` carries a conclusion. */
+    readonly status: 'queued' | 'in_progress' | 'completed';
+    readonly conclusion?: 'success' | 'failure' | 'neutral' | 'cancelled' | 'skipped' | 'timed_out' | 'action_required' | 'stale';
+    readonly url?: string;
+}
+
+export interface QaapGithubPullRequestTimelineEvent {
+    readonly kind: 'commented' | 'committed' | 'reviewed' | 'labeled' | 'unlabeled' | 'merged' | 'closed' | 'reopened'
+        | 'review_requested' | 'ready_for_review' | 'convert_to_draft' | 'head_ref_force_pushed' | 'renamed' | 'other';
+    readonly actor?: string;
+    readonly actorAvatarUrl?: string;
+    readonly createdAt?: string;
+    /** Comment / review body, commit message headline, label name or new title. */
+    readonly text?: string;
+    readonly reviewState?: QaapGithubPullRequestReview['state'];
+    readonly url?: string;
 }
 
 /** State chip of the all-pull-requests navigator; `closed` means closed without merging. */
@@ -310,3 +387,6 @@ export interface QaapProjectSessionUpsertRequest {
     readonly previewUrl?: string;
     readonly bootstrapPhase?: string;
 }
+
+/** Error code of a 401 from the repository endpoints when the desktop app has no GitHub session yet. */
+export const QAAP_GITHUB_SIGN_IN_REQUIRED_CODE = 'github_sign_in_required';

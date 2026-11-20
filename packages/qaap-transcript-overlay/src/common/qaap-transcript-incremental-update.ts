@@ -115,7 +115,7 @@ function appendTranscriptMessageFingerprintParts(parts: string[], message: QaapA
             } else if (event.type === 'thought' || event.type === 'assistant_text') {
                 parts.push(`e:${event.type}:${event.id}:${event.status}:${hashTranscriptText(event.content)}`);
             } else if (event.type === 'error' || event.type === 'run_cancelled') {
-                parts.push(`e:${event.type}:${event.id}:${event.message.length}`);
+                parts.push(`e:${event.type}:${event.id}:${hashTranscriptText(event.message)}`);
             } else if (event.type === 'checkpoint') {
                 parts.push(`e:checkpoint:${event.id}:${event.label}:${event.commit}`);
             }

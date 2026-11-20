@@ -30,6 +30,14 @@ import {
 import { QaapDevPreviewEndpoint, canonicalizeQaapPreviewRoot } from '@theia/qaap-shared-core/lib/node/qaap-dev-preview-endpoint';
 import { deriveVisualFlowSteps } from '@theia/qaap-shared-core/lib/common/qaap-visual-flow-plan';
 import {
+    QAAP_PREVIEW_CHANGE_WALK_MAX_DEPTH,
+    QAAP_PREVIEW_CHANGE_WALK_MAX_ENTRIES,
+    isQaapPreviewIgnoredPath,
+    isQaapPreviewServerSideFile,
+    qaapPreviewCommandRestartsServerItself,
+    resolveQaapPreviewDevScript,
+} from '@theia/qaap-shared-core/lib/common/qaap-preview-turn-refresh';
+import {
     QAAP_PREVIEW_CONFIG_PATH,
     QaapPreviewLaunchPlan,
     materializeQaapPreviewLaunchPlan,
@@ -446,9 +454,124 @@ export function applyQaapHeadlessRuntimeDiagnostics(
 }
 
 /**
+ * Project files (relative, `/`-separated) modified after `sinceMs`, from a bounded walk that skips
+ * dependency, VCS and build-output directories.
+ */
+export async function listQaapPreviewFilesChangedSince(root: string, sinceMs: number): Promise<string[]> {
+    const changed: string[] = [];
+    let visited = 0;
+    const walk = async (dir: string, relative: string, depth: number): Promise<void> => {
+        if (depth > QAAP_PREVIEW_CHANGE_WALK_MAX_DEPTH || visited >= QAAP_PREVIEW_CHANGE_WALK_MAX_ENTRIES) {
+            return;
+        }
+        let entries: fs.Dirent[];
+        try {
+            entries = await fsp.readdir(dir, { withFileTypes: true });
+        } catch {
+            return;
+        }
+        for (const entry of entries) {
+            if (++visited > QAAP_PREVIEW_CHANGE_WALK_MAX_ENTRIES) {
+                return;
+            }
+            const childRelative = relative ? `${relative}/${entry.name}` : entry.name;
+            if (isQaapPreviewIgnoredPath(childRelative)) {
+                continue;
+            }
+            const childPath = path.join(dir, entry.name);
+            if (entry.isDirectory()) {
+                await walk(childPath, childRelative, depth + 1);
+            } else if (entry.isFile()) {
+                try {
+                    if ((await fsp.stat(childPath)).mtimeMs > sinceMs) {
+                        changed.push(childRelative);
+                    }
+                } catch {
+                    /* removed mid-walk */
+                }
+            }
+        }
+    };
+    await walk(root, '', 0);
+    return changed;
+}
+
+/**
+ * Whether the settled turn changed code the live dev server only picks up on restart. Such a
+ * server still runs the old code (a user preview Qaap started before the turn), so the capture
+ * must not reuse it: it would verify stale behaviour and keep failing after a correct fix.
+ */
+export async function qaapLivePreviewRunsStaleServerCode(
+    app: Pick<QaapHeadlessCaptureAppTarget, 'root' | 'launch'>,
+    turnStartedAt: number | undefined,
+): Promise<boolean> {
+    if (turnStartedAt === undefined) {
+        return false;
+    }
+    const devCommand = app.launch
+        ? [app.launch.command, ...app.launch.args].join(' ')
+        : resolveQaapPreviewDevScript(readPackageJson(app.root));
+    if (qaapPreviewCommandRestartsServerItself(devCommand)) {
+        return false;
+    }
+    const changed = await listQaapPreviewFilesChangedSince(app.root, turnStartedAt);
+    return changed.some(isQaapPreviewServerSideFile);
+}
+
+/** When the turn that produced `targetAgentMessageId` started: its user message, else the reply. */
+export function resolveQaapCaptureTurnStartedAt(conv: Pick<QaapAgentConversation, 'messages'>, targetAgentMessageId: string): number | undefined {
+    const index = conv.messages.findIndex(message => message.id === targetAgentMessageId);
+    if (index < 0) {
+        return undefined;
+    }
+    for (let i = index - 1; i >= 0; i--) {
+        if (conv.messages[i]!.role === 'user') {
+            return conv.messages[i]!.createdAt;
+        }
+    }
+    return conv.messages[index]!.createdAt;
+}
+
+/** Resources the browser requests on its own (tab icon, home-screen icon, crawler policy, devtools
+ * source maps) rather than because the app asked for them. A 404 on one of these is not an app
+ * defect, so it must never turn visual verification red.
+ */
+const QAAP_BROWSER_IMPLICIT_RESOURCE_PATHS: readonly RegExp[] = [
+    /^\/favicon\.ico$/i,
+    /^\/apple-touch-icon(?:-precomposed)?(?:-\d+x\d+)?\.png$/i,
+    /^\/robots\.txt$/i,
+    /\.map$/i,
+];
+
+export function isQaapBrowserImplicitResourceUrl(url: string | undefined): boolean {
+    if (!url) {
+        return false;
+    }
+    let pathname: string;
+    try {
+        pathname = new URL(url, 'http://127.0.0.1').pathname;
+    } catch {
+        return false;
+    }
+    return QAAP_BROWSER_IMPLICIT_RESOURCE_PATHS.some(pattern => pattern.test(pathname));
+}
+
+const FAILED_RESOURCE_CONSOLE_PATTERN = /^Failed to load resource\b/i;
+
+/**
+ * Verification only observes the app: a request that could change the user's data (anything but
+ * GET/HEAD/OPTIONS) is refused before it reaches the dev server, whatever the page's scripts try.
+ */
+export function isQaapHeadlessMutatingRequestMethod(method: string | undefined): boolean {
+    const normalized = (method ?? 'GET').toUpperCase();
+    return normalized !== 'GET' && normalized !== 'HEAD' && normalized !== 'OPTIONS';
+}
+
+/**
  * Navigates one route and combines DOM smoke findings with Playwright's runtime/network truth.
  * A successful HTTP response alone can never produce `passed` when the page throws, rejects,
- * drops a request, or receives a 5xx response.
+ * drops a request, or receives a 5xx response. The capture is read-only: mutating requests are
+ * blocked, and failures of browser-implicit resources (favicon, robots.txt, source maps) are ignored.
  */
 export async function inspectQaapHeadlessPage(
     page: any,
@@ -459,26 +582,79 @@ export async function inspectQaapHeadlessPage(
     const add = (kind: string, message: unknown): void => {
         diagnostics.push(`${kind}: ${boundedDiagnostic(message)}`);
     };
+    const blockedRequests = new Set<unknown>();
+    const blockedUrls = new Set<string>();
+    /** 4xx counts, to attribute console "Failed to load resource" lines that carry no resource URL. */
+    let implicitClientErrors = 0;
+    let appClientErrors = 0;
+    const unattributedLoadFailures: string[] = [];
     const onPageError = (error: unknown): void => add('pageerror', error);
     const onConsole = (message: any): void => {
-        if (message.type?.() === 'error') {
-            add('console.error', message.text?.() ?? message);
+        if (message.type?.() !== 'error') {
+            return;
         }
+        const text = String(message.text?.() ?? message);
+        if (!FAILED_RESOURCE_CONSOLE_PATTERN.test(text)) {
+            add('console.error', text);
+            return;
+        }
+        const resourceUrl: string | undefined = message.location?.()?.url || undefined;
+        if (!resourceUrl) {
+            unattributedLoadFailures.push(text);
+            return;
+        }
+        if (isQaapBrowserImplicitResourceUrl(resourceUrl) || blockedUrls.has(resourceUrl)) {
+            return;
+        }
+        add('console.error', `${text} (${resourceUrl})`);
     };
     const onRequestFailed = (request: any): void => {
+        if (blockedRequests.has(request)) {
+            return;
+        }
+        const requestUrl: string | undefined = request.url?.();
+        if (isQaapBrowserImplicitResourceUrl(requestUrl)) {
+            return;
+        }
         const failure = request.failure?.();
-        add('requestfailed', `${request.url?.() ?? 'unknown URL'} (${failure?.errorText ?? 'unknown failure'})`);
+        add('requestfailed', `${requestUrl ?? 'unknown URL'} (${failure?.errorText ?? 'unknown failure'})`);
     };
     const onResponse = (response: any): void => {
         const status = Number(response.status?.());
-        if (status >= 500) {
-            add('http', `${status} ${response.url?.() ?? 'unknown URL'}`);
+        const responseUrl: string | undefined = response.url?.();
+        const implicit = isQaapBrowserImplicitResourceUrl(responseUrl);
+        if (status >= 400 && status < 500) {
+            if (implicit) {
+                implicitClientErrors++;
+            } else {
+                appClientErrors++;
+            }
+        }
+        if (status >= 500 && !implicit) {
+            add('http', `${status} ${responseUrl ?? 'unknown URL'}`);
+        }
+    };
+    const readOnlyGuard = async (route: any): Promise<void> => {
+        const request = route.request();
+        try {
+            if (isQaapHeadlessMutatingRequestMethod(request.method())) {
+                blockedRequests.add(request);
+                blockedUrls.add(request.url());
+                await route.abort('blockedbyclient');
+            } else {
+                await route.continue();
+            }
+        } catch {
+            /* page closed mid-request */
         }
     };
     page.on('pageerror', onPageError);
     page.on('console', onConsole);
     page.on('requestfailed', onRequestFailed);
     page.on('response', onResponse);
+    if (typeof page.route === 'function') {
+        await page.route('**/*', readOnlyGuard);
+    }
     await page.addInitScript(`(() => {
         const key = '__qaapHeadlessUnhandledRejections';
         globalThis[key] = [];
@@ -498,12 +674,22 @@ export async function inspectQaapHeadlessPage(
         for (const rejection of rejections) {
             add('unhandledrejection', rejection);
         }
+        // A URL-less "Failed to load resource" line is the browser's echo of a 4xx/5xx: when every
+        // client error on this page was a browser-implicit resource, it is that echo — drop it.
+        if (appClientErrors > 0 || implicitClientErrors === 0) {
+            for (const failure of unattributedLoadFailures) {
+                add('console.error', failure);
+            }
+        }
         return applyQaapHeadlessRuntimeDiagnostics(result, diagnostics);
     } finally {
         page.off('pageerror', onPageError);
         page.off('console', onConsole);
         page.off('requestfailed', onRequestFailed);
         page.off('response', onResponse);
+        if (typeof page.unroute === 'function') {
+            await page.unroute('**/*', readOnlyGuard).catch(() => undefined);
+        }
     }
 }
 
@@ -648,7 +834,11 @@ export class QaapHeadlessVisualCaptureService {
                 port = started.port;
                 publicPreview = this.registerPublicPreview(conv, app.root, port);
             } else {
-                publicPreview = await this.reserveScriptPreview(conv, app);
+                const staleLiveServer = await qaapLivePreviewRunsStaleServerCode(
+                    app,
+                    resolveQaapCaptureTurnStartedAt(conv, target.id),
+                );
+                publicPreview = await this.reserveScriptPreview(conv, app, { skipLivePreview: staleLiveServer });
                 const ready = await this.ensureScriptServer(app, publicPreview);
                 if (ready.ok) {
                     supervisedPreviewId = ready.startedPreviewId;
@@ -765,10 +955,15 @@ export class QaapHeadlessVisualCaptureService {
     protected async reserveScriptPreview(
         conv: QaapAgentConversation,
         app: QaapHeadlessCaptureAppTarget,
+        options?: { readonly skipLivePreview?: boolean },
     ): Promise<QaapHeadlessPublicPreview | undefined> {
         const ownerLogin = conv.ownerLogin ?? QAAP_SKIP_AUTH_USER_LOGIN;
         const root = canonicalizeQaapPreviewRoot(app.root);
-        const live = await this.findLiveConversationPreview(conv.id, ownerLogin, root);
+        // A live server that predates the turn's server-code change runs the old code: capture on
+        // a fresh server of our own instead (the user's preview is restarted by the Work Hub).
+        const live = options?.skipLivePreview
+            ? undefined
+            : await this.findLiveConversationPreview(conv.id, ownerLogin, root);
         if (live) {
             return {
                 identity: {

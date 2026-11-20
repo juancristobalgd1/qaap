@@ -8,6 +8,7 @@
 // Renders the closing "files changed" / "line diff" summary card that caps
 // the execution event timeline. Extracted from qaap-execution-event-timeline.ts.
 
+import { resolveQaapFileIconClasses } from '@theia/qaap-shared-core/lib/browser/qaap-file-theme-icon';
 import { nls } from '@theia/core/lib/common/nls';
 import { getFileIconClass } from '@theia/qaap-shared-core/lib/common/qaap-file-icon-utils';
 
@@ -101,9 +102,14 @@ export function createMobileDiffSummaryElement(
             row.className = 'theia-mobile-diff-summary-file';
             const main = document.createElement('span');
             main.className = 'theia-mobile-diff-summary-file-main';
-            const badgeLabel = resolveMobileDiffFileLanguageBadge(file.name);
+            // The file-icon theme's icon when one is active (same icons as the explorer); otherwise the
+            // language badge or the extension's codicon.
+            const themedIcon = resolveQaapFileIconClasses(file.name);
+            const badgeLabel = themedIcon.startsWith('codicon ') ? resolveMobileDiffFileLanguageBadge(file.name) : undefined;
             const fileIcon = document.createElement('span');
-            if (badgeLabel) {
+            if (!themedIcon.startsWith('codicon ')) {
+                fileIcon.className = `${themedIcon} theia-mobile-diff-summary-file-icon`;
+            } else if (badgeLabel) {
                 fileIcon.className = 'theia-mobile-diff-summary-file-badge';
                 fileIcon.textContent = badgeLabel;
             } else {
@@ -189,7 +195,8 @@ export function createMobileLineDiffSummaryElement(
 
     const title = document.createElement('span');
     title.className = 'theia-mobile-diff-summary-title';
-    title.textContent = nls.localize('qaap/mobileProjects/transcriptDiffSummary', 'Change summary');
+    // Only ever built from one turn's own stats: the label says so, so it is never read as the task total.
+    title.textContent = nls.localize('qaap/mobileProjects/turnDiffSummary', 'Changes this turn');
 
     header.append(icon, title);
 

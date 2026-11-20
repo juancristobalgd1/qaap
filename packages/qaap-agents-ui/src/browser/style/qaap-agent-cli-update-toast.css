@@ -5,7 +5,8 @@
 
 /**
  * Agent CLI "Update Available" toast — T3-inspired card: white/rounded, provider logo with
- * download badge, Cancel (outline) + Update (primary), dismiss X.
+ * download badge, Later (quiet text, dismisses for this version) on the left and Update
+ * (primary) on the right, dismiss X. Colours come from theme tokens only.
  */
 
 .qaap-agent-cli-update-toast {
@@ -183,8 +184,22 @@
 
 .qaap-agent-cli-update-toast-actions {
     display: flex;
-    justify-content: flex-end;
+    justify-content: space-between;
+    align-items: center;
     gap: 8px;
+}
+
+/* Non-destructive dismissal: quiet text button, visually apart from the install action. */
+.qaap-agent-cli-update-toast-action.qaap-mod-later {
+    border-color: transparent;
+    background: transparent;
+    color: var(--theia-descriptionForeground);
+    padding-left: 8px;
+    padding-right: 8px;
+}
+
+.qaap-agent-cli-update-toast-action.qaap-mod-later:hover:not(:disabled) {
+    color: var(--theia-foreground);
 }
 
 .qaap-agent-cli-update-toast-action {

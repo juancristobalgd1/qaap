@@ -19,8 +19,15 @@ export function resolveAgentMessageTiming(conv: QaapAgentConversationDTO | undef
     const isWorking = (conv?.status === 'streaming' || conv?.status === 'settled')
         && cancelledAt === undefined && message?.runFinishedAt === undefined && nextUserAt === undefined;
     const endAt = message?.runFinishedAt ?? cancelledAt ?? nextUserAt ?? conv?.updatedAt;
-    return { isWorking, turnStartMs, elapsedMs: turnStartMs === undefined ? undefined : Math.max(0, (isWorking ? now : endAt ?? turnStartMs) - turnStartMs) };
+    const elapsedMs = turnStartMs === undefined ? undefined : Math.max(0, (isWorking ? now : endAt ?? turnStartMs) - turnStartMs);
+    // A settled turn longer than any turn limit means its end time is unknown (old data without
+    // runFinishedAt measured to a later conversation update: "Processed in 2621h"). Show no duration.
+    const reliableElapsedMs = !isWorking && elapsedMs !== undefined && elapsedMs > QAAP_MAX_PLAUSIBLE_TURN_MS ? undefined : elapsedMs;
+    return { isWorking, turnStartMs, elapsedMs: reliableElapsedMs };
 }
+
+/** Longest settled turn duration shown; above it the end time is not trustworthy (turn limit is 3h by default). */
+const QAAP_MAX_PLAUSIBLE_TURN_MS = 24 * 60 * 60 * 1000;
 
 export interface TranscriptAgentExecutionState {
     readonly phase: TranscriptAgentExecutionPhase;
@@ -229,6 +236,12 @@ export function resolveTranscriptComposerQuickActionsMode(
     return previewStarting ? 'preview-only' : 'hidden';
 }
 
+/**
+ * How long a chat preview request may show "Starting preview…" with neither a preview URL nor a
+ * progress event before the chip is retired and falls back to "Run app".
+ */
+export const PREVIEW_STARTING_STALL_TIMEOUT_MS = 60_000;
+
 /** What a turn Stop does to the preview request that turn may have started. */
 export type QaapTurnStopPreviewRequestAction =
     /** No preview request is pending or running: nothing to clear. */
@@ -304,6 +317,12 @@ export function resolveQaapSettledPreviewRequestAction(input: QaapSettledPreview
         return resolveQaapTurnStopPreviewRequestAction(input) === 'keep' ? 'keep' : 'clear';
     }
     if (input.requestRunning) {
+        return 'keep';
+    }
+    // The turn ended while this project's bootstrap is still installing or compiling (a first Next
+    // compile takes minutes): the request is being served. Relaunching or clearing here dropped the
+    // "Starting preview…" chip while the server was still coming up, leaving no sign of progress.
+    if (input.bootstrapPhase === 'installing' || input.bootstrapPhase === 'starting') {
         return 'keep';
     }
     return input.canRelaunch ? 'relaunch' : 'clear';

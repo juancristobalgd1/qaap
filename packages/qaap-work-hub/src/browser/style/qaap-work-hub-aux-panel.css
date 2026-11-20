@@ -17,13 +17,16 @@
   display: none;
 }
 
-/* Keep in sync with QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY. */
+/* Keep in sync with QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY. The glyph follows
+ * the media query alone, not the toggle class: that class is set when the header
+ * is built, so a header built at phone width kept the chevrons after the window
+ * widened to the desktop layout (where a click already toggles the panel). */
 @media (min-width: 768px) and (pointer: fine) {
-  body:not(.theia-mobile-mod-desktop-ide) .qaap-mod-aux-panel-toggle .qaap-glyph-view-menu {
+  body:not(.theia-mobile-mod-desktop-ide) .theia-mobile-transcript-tab-icon-select-double-chevron .qaap-glyph-view-menu {
     display: none;
   }
 
-  body:not(.theia-mobile-mod-desktop-ide) .qaap-mod-aux-panel-toggle .qaap-glyph-right-panel {
+  body:not(.theia-mobile-mod-desktop-ide) .theia-mobile-transcript-tab-icon-select-double-chevron .qaap-glyph-right-panel {
     display: inline;
   }
 
@@ -137,6 +140,24 @@ body.qaap-mod-work-hub-aux-panel-maximized .qaap-work-hub-aux-panel-resize-handl
 
 .qaap-work-hub-aux-panel-tabs::-webkit-scrollbar {
   display: none;
+}
+
+/* Edge fades on the tab strip: a classed edge is where tabs are hidden (syncTabsScrollEdges).
+   The fade is a mask, not a painted gradient: #000 keeps the tab, transparent hides it, so it
+   works over any background without a colour. The mask is 24px wide on each faded side. */
+.qaap-work-hub-aux-panel-tabs.theia-mod-overflow-end:not(.theia-mod-overflow-start) {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+}
+
+.qaap-work-hub-aux-panel-tabs.theia-mod-overflow-start:not(.theia-mod-overflow-end) {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 24px);
+  mask-image: linear-gradient(to right, transparent, #000 24px);
+}
+
+.qaap-work-hub-aux-panel-tabs.theia-mod-overflow-start.theia-mod-overflow-end {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 24px, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 24px, #000 calc(100% - 24px), transparent);
 }
 
 .qaap-work-hub-aux-panel-spacer {
@@ -290,12 +311,30 @@ body.qaap-mod-work-hub-aux-panel-maximized .qaap-work-hub-aux-panel-resize-handl
   display: flex;
   align-items: center;
   gap: 10px;
+  width: 100%;
+  margin: 0;
   padding: 6px 8px;
+  border: 0;
   border-radius: 9px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
-.qaap-work-hub-aux-panel-launcher-item:hover {
+.qaap-work-hub-aux-panel-launcher-item:hover:not(:disabled) {
   background: color-mix(in srgb, var(--theia-foreground) 5%, transparent);
+}
+
+.qaap-work-hub-aux-panel-launcher-item:focus-visible {
+  outline: 1px solid var(--theia-focusBorder);
+  outline-offset: -1px;
+}
+
+.qaap-work-hub-aux-panel-launcher-item:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .qaap-work-hub-aux-panel-launcher-icon {
@@ -410,18 +449,59 @@ body.qaap-mod-work-hub-aux-panel-maximized .qaap-work-hub-aux-panel-resize-handl
   display: none;
 }
 
-.qaap-work-hub-aux-panel-menu-search {
+.qaap-work-hub-aux-panel-menu-search-row {
   flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   height: 40px;
-  margin: 0;
   padding: 0 12px;
-  border: 0;
   border-bottom: 1px solid color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+}
+
+.qaap-work-hub-aux-panel-menu-search-icon {
+  flex: 0 0 auto;
+  font-size: 14px;
+  color: var(--theia-descriptionForeground);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+/* Doubled class: beats the theme's generic `input` and `input:focus` rules (box, focus outline). */
+.qaap-work-hub-aux-panel-menu-search.qaap-work-hub-aux-panel-menu-search {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
   background: transparent;
   color: inherit;
   font: inherit;
   font-size: 13px;
   outline: none;
+  box-shadow: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.qaap-work-hub-aux-panel-menu-search.qaap-work-hub-aux-panel-menu-search:focus,
+.qaap-work-hub-aux-panel-menu-search.qaap-work-hub-aux-panel-menu-search:focus-visible {
+  border: none;
+  outline: none;
+  box-shadow: none;
+  background: transparent;
+}
+
+.qaap-work-hub-aux-panel-menu-search::-webkit-search-decoration,
+.qaap-work-hub-aux-panel-menu-search::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+}
+
+.qaap-work-hub-aux-panel-menu-search::placeholder {
+  color: var(--theia-descriptionForeground, var(--theia-input-placeholderForeground));
 }
 
 .qaap-work-hub-aux-panel-menu-list {
@@ -455,9 +535,9 @@ body.qaap-mod-work-hub-aux-panel-maximized .qaap-work-hub-aux-panel-resize-handl
   cursor: pointer;
 }
 
+/* No persistent "selected" fill on the current tab: only the pointer or keyboard focus lights a row. */
 .qaap-work-hub-aux-panel-menu-item:hover,
-.qaap-work-hub-aux-panel-menu-item:focus-visible,
-.qaap-work-hub-aux-panel-menu-item.theia-mod-active {
+.qaap-work-hub-aux-panel-menu-item:focus-visible {
   background: var(--theia-menu-selectionBackground, color-mix(in srgb, var(--theia-foreground) 9%, transparent));
   color: var(--theia-menu-selectionForeground, inherit);
   outline: none;
@@ -510,3 +590,57 @@ body.qaap-mod-work-hub-aux-panel-maximized .qaap-work-hub-aux-panel-resize-handl
 .theia-mobile-execution-surface-sidebar.qaap-mod-docked .theia-mobile-execution-surface-sidebar-header-divider {
   display: none;
 }
+
+/* Docked in the right panel the tab already names the view: drop the repeated "Changes" title
+   and keep only its history action in a slim row, so the diff starts higher. */
+.qaap-work-hub-aux-panel .theia-mobile-transcript-files-changes-header {
+  display: none;
+}
+
+.qaap-work-hub-aux-panel .theia-mobile-execution-surface-sidebar-header:has(> .theia-mobile-transcript-files-changes-header) {
+  justify-content: flex-end;
+  min-height: 34px;
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+
+/* Without a history action the row would be empty: drop it. */
+.qaap-work-hub-aux-panel .theia-mobile-execution-surface-sidebar-header:has(> .theia-mobile-transcript-files-changes-header):not(:has(.theia-mobile-transcript-history-toggle-host:not([hidden]))) {
+  display: none;
+}
+
+/* Motion: one short, consistent rhythm. The panel slides in when it opens; tabs, launcher rows
+   and actions ease their hover and selected states. Reduced motion keeps the end states only. */
+@keyframes qaap-aux-panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+body:not(.theia-mobile-mod-desktop-ide) > .qaap-work-hub-aux-panel:not([hidden]) {
+  animation: qaap-aux-panel-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.qaap-work-hub-aux-panel-tab,
+.qaap-work-hub-aux-panel-launcher-item,
+.qaap-work-hub-aux-panel-action {
+  transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body:not(.theia-mobile-mod-desktop-ide) > .qaap-work-hub-aux-panel:not([hidden]) {
+    animation: none;
+  }
+
+  .qaap-work-hub-aux-panel-tab,
+  .qaap-work-hub-aux-panel-launcher-item,
+  .qaap-work-hub-aux-panel-action {
+    transition: none;
+  }
+}
+

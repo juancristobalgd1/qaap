@@ -28,6 +28,7 @@ import {
     QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND,
 } from './qaap-workbench-account-menu';
 import { QAAP_BOOTSTRAP_PREVIEW_OPENED_EVENT } from './qaap-mobile-app-tester-contribution';
+import { QAAP_AGENT_SIGNED_OUT_EVENT } from '@theia/qaap-shared-core/lib/common/qaap-harness-sign-out';
 
 export function bindAgentFinishedToastCallbacksExtracted(ctx: MobileProjectsPanelContext): void {
     ctx.agentFinishedToast?.bindPanelCallbacks({
@@ -168,6 +169,7 @@ export function selectHubLandingViewExtracted(ctx: MobileProjectsPanelContext, v
 export function disposeExtracted(ctx: MobileProjectsPanelContext): void {
     window.removeEventListener(QAAP_BOOTSTRAP_PREVIEW_OPENED_EVENT, ctx.onBootstrapPreviewOpened);
     window.removeEventListener(QAAP_NAVIGATE_TO_CONVERSATION_EVENT, ctx.onNavigateToConversation);
+    window.removeEventListener(QAAP_AGENT_SIGNED_OUT_EVENT, ctx.onAgentSignedOut);
     ctx.closeHeaderOverflowMenu();
     ctx.closeHeaderIdeViewPickerMenu();
     ctx.headerOverflowMenu?.remove();
@@ -183,6 +185,7 @@ export function disposeExtracted(ctx: MobileProjectsPanelContext): void {
     ctx.panelLifecycleUi.dispose();
     ctx.executionSurfaceTabsUi.dispose();
     ctx.transcriptMessagesUi.dispose();
+    ctx.transcriptSurfacesUi.disposeEmbeddedPreviews();
 }
 
 export function hideExtracted(ctx: MobileProjectsPanelContext): void {

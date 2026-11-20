@@ -50,6 +50,7 @@ import {
 } from './qaap-agent-conversation-store-constants';
 import { capturePreTurnCheckpointGate, capturePreTurnCheckpointThenPrepare } from './qaap-agent-conversation-store-pre-turn-checkpoint';
 import { childProcessEnv } from './qaap-child-process-env';
+import { qaapMissingCwdError } from './qaap-missing-cwd-error';
 
 /**
  * MUTATING git under the tenant wrapper, run asynchronously so a turn settle / checkpoint never
@@ -172,7 +173,7 @@ export function createExtracted(ctx: QaapAgentConversationStoreContext, request:
     }
     const cwd = path.resolve(request.cwd ?? '');
     if (!path.isAbsolute(cwd) || !ctx.isDirectory(cwd)) {
-        throw new Error('A valid absolute "cwd" directory is required.');
+        throw qaapMissingCwdError(request.cwd);
     }
     // See QaapAgentTaskRunner.create: a container cwd feeds every repository to the agent.
     if (isQaapWorkspaceContainerPath(cwd)) {
@@ -224,6 +225,9 @@ export function createExtracted(ctx: QaapAgentConversationStoreContext, request:
         ...(request.toolApprovalRules ? { toolApprovalRules: request.toolApprovalRules } : {}),
         ...(request.taskPlan ? { taskPlan: request.taskPlan } : {}),
         ...(request.parentConversationId ? { parentConversationId: request.parentConversationId } : {}),
+        // Only the side chat origin is kept; the parent is a reference, never a plan-fan-out link.
+        ...(request.origin === 'side-chat' ? { origin: 'side-chat' as const } : {}),
+        ...(request.origin === 'side-chat' && request.sideChatParentId ? { sideChatParentId: request.sideChatParentId } : {}),
         ...(request.taskPlanSubtaskId ? { taskPlanSubtaskId: request.taskPlanSubtaskId } : {}),
         ...(request.taskPullRequestEnabled === false ? { taskPullRequestEnabled: false } : {}),
         ...(request.externalTask ? { externalTask: request.externalTask } : {}),
@@ -250,6 +254,7 @@ export function createExtracted(ctx: QaapAgentConversationStoreContext, request:
             request.approvalPolicyId,
             request.toolApprovalRules,
             request.latencyMarks,
+            request.messageContextPreamble ? { contextPreamble: request.messageContextPreamble } : undefined,
         );
         // The planning turn's user message: the plan belongs to it (see buildTaskCreateRequestExtracted).
         const started = ctx.conversations.get(id);
@@ -763,6 +768,7 @@ export function postUserMessageExtracted(ctx: QaapAgentConversationStoreContext,
         content,
         createdAt: Date.now(),
         ...(internal?.clientMessageId ? { clientMessageId: internal.clientMessageId } : {}),
+        ...(internal?.contextPreamble ? { contextPreamble: internal.contextPreamble } : {}),
         turnAgentId,
         ...(sealedTurnModel ? { turnAgentModel: sealedTurnModel } : {}),
         ...(internal?.autoContinueRootMessageId
@@ -985,7 +991,10 @@ export async function retryExtracted(ctx: QaapAgentConversationStoreContext, id:
         undefined,
         undefined,
         undefined,
-        { retryAttempt: nextRetryAttempt(failedMessage) },
+        {
+            retryAttempt: nextRetryAttempt(failedMessage),
+            ...(failedMessage.contextPreamble ? { contextPreamble: failedMessage.contextPreamble } : {}),
+        },
     );
 }
 

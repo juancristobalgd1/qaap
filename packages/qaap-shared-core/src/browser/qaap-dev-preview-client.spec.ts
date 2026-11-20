@@ -137,6 +137,19 @@ describe('qaap-dev-preview-client identity probe state', () => {
         globals.fetch = (() => Promise.reject(new Error('offline'))) as typeof fetch;
         expect((await probeQaapIdentityPreview('abc')).state).to.equal('unknown');
     });
+
+    it('keeps a port probe\'s `listening` answer and flags an unanswered probe as failed', async () => {
+        answer(200, { ready: false, listening: true, previewUrl: 'http://ide.test/qaap-dev/3001/' });
+        expect(await probeQaapDevPreviewPort(3001)).to.include({ ready: false, listening: true });
+
+        answer(200, { ready: false, previewUrl: 'http://ide.test/qaap-dev/3001/' });
+        const down = await probeQaapDevPreviewPort(3001);
+        expect(down.listening).to.equal(undefined);
+        expect(down.probeFailed).to.equal(undefined);
+
+        globals.fetch = (() => Promise.reject(new Error('offline'))) as typeof fetch;
+        expect(await probeQaapDevPreviewPort(3001)).to.include({ ready: false, probeFailed: true });
+    });
 });
 
 describe('qaap-dev-preview-client listening grace', () => {

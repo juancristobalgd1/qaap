@@ -248,6 +248,15 @@ export function appendAgentReply(
 const POST_AGENT_PHASE_LOG_HEADER = /^\[qaap\] (?:Verifying:|Goal loop verifying:|High-risk change|Skipping reviewer |Skipping self-verification)/;
 /** A self-verification fix attempt is the agent speaking again: its output is the reply, not a phase. */
 const AGENT_OUTPUT_RESUMES_LOG_HEADER = /^\[qaap\] (?:Verification failed\. Starting |Starting attempt )/;
+/** An OpenCode stderr line for a side request (session title, summary): never the turn's outcome. */
+const SIDE_REQUEST_LOG_LINE = /\bsmall=true\b/;
+/**
+ * Lines the CLI printed as provider errors on a clean exit. The prefix and the quota phrase ignore case;
+ * the ERROR log level is case-sensitive, so prose such as "error handling" never matches it.
+ */
+const CLEAN_EXIT_ERROR_PREFIX = /^(?:error:|api\s+error\b|unexpected\s+status\b|http\/?[\d.]*\s+\d{3}\b|status(?:\s+code)?:?\s*\d{3}\b)/i;
+const CLEAN_EXIT_ERROR_LOG_LEVEL = /^ERROR\b|\blevel=ERROR\b/;
+const CLEAN_EXIT_QUOTA_PHRASE = /\bIndividual\s+quota\s+reached\b|\binsufficient[_\s-]?quota\b/i;
 
 /**
  * The agent's own output of a settled turn. Post-agent phases (the verification command, the
@@ -322,21 +331,28 @@ export function resolveCompletedTurnAuthFailureReason(log: string | undefined, a
         return localizeAgentAuthFailureMessage({ mode: 'session' });
     }
     // Plain-text quota / rate-limit on a clean exit (e.g. Antigravity "Individual quota
-    // reached…") — a short provider-style line, not a long successful transcript that
-    // merely mentions "quota" in tool output.
-    const kind = detectAgentFailureKind(trimmed);
+    // reached…"). Only lines the CLI printed as errors may declare it: a successful reply that
+    // mentions a quota, or a side request's stderr line (OpenCode's `small=true` session-title call,
+    // which fails on the free tier while the turn itself succeeds), is not the turn's outcome.
+    const providerErrorText = trimmed
+        .split('\n')
+        .filter(line => isCleanExitProviderErrorLine(line))
+        .join('\n');
+    const kind = providerErrorText ? detectAgentFailureKind(providerErrorText) : undefined;
     if (kind === 'quota' || kind === 'rate_limit') {
-        const looksLikeProviderError = !!turnError
-            || trimmed.length < 2_000
-            || /^(?:Error|error):/m.test(trimmed)
-            || /\bIndividual\s+quota\s+reached\b/i.test(trimmed)
-            || /\binsufficient[_\s-]?quota\b/i.test(trimmed)
-            || /\brate[_\s-]?limit(?:ed|ing)?\b/i.test(trimmed);
-        if (looksLikeProviderError) {
-            return resolveAgentTurnFailureMessage(trimmed, { state: 'failed', agentId });
-        }
+        return resolveAgentTurnFailureMessage(providerErrorText, { state: 'failed', agentId });
     }
     return undefined;
+}
+
+function isCleanExitProviderErrorLine(line: string): boolean {
+    const trimmedLine = line.trim();
+    if (SIDE_REQUEST_LOG_LINE.test(trimmedLine)) {
+        return false;
+    }
+    return CLEAN_EXIT_ERROR_PREFIX.test(trimmedLine)
+        || CLEAN_EXIT_ERROR_LOG_LEVEL.test(trimmedLine)
+        || CLEAN_EXIT_QUOTA_PHRASE.test(trimmedLine);
 }
 
 export function parseStructuredLog(
@@ -776,7 +792,8 @@ export function forceStopZombieTurn(
         reason,
     });
     const resolvedAgentMessageId = failed.agentMessageId ?? agentMessageId;
-    const next: QaapAgentConversation = { ...failed.conv, updatedAt: Date.now() };
+    // A watchdog pause is maintenance, not activity: keep the last real `updatedAt`.
+    const next: QaapAgentConversation = { ...failed.conv, updatedAt: latest.updatedAt };
     deps.conversations.set(conversationId, next);
     deps.publishFinalizedAgentMessage(conversationId, next, resolvedAgentMessageId);
     deps.fire({ type: 'updated', conversation: toConversationSummary(next) });

@@ -88,7 +88,7 @@ export interface QaapAccountMenuEntriesOptions {
     readonly workHub?: boolean;
     /** Work Hub: open the Billing sheet. */
     readonly openBilling?: () => void | Promise<void>;
-    /** Active billing plan id (`starter` / `pro` / `team`) for the Billing menu label. */
+    /** Active billing plan id (`starter` / `pro`) for the Billing menu label. */
     readonly currentPlanId?: string;
 }
 
@@ -103,9 +103,6 @@ function billingPlanMenuLabel(planId: string | undefined): string {
     const id = (planId || '').toLowerCase();
     if (id === 'pro') {
         return nls.localize('qaap/accountMenu/billingPro', 'Billing · Pro');
-    }
-    if (id === 'team') {
-        return nls.localize('qaap/accountMenu/billingTeam', 'Billing · Team');
     }
     if (id === 'starter') {
         return nls.localize('qaap/accountMenu/billingStarter', 'Billing · Starter');

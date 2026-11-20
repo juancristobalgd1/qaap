@@ -260,10 +260,16 @@ export class QaapWorkHubRoutineStore {
                 this.seedIfEmpty();
                 return;
             }
+            let interrupted = false;
             for (const routine of parsed.routines ?? []) {
                 if (routine?.id && routine.title && routine.prompt && routine.cwd) {
+                    // Runs are only tracked in memory: a 'running' record from an earlier backend has no process left.
+                    interrupted ||= routine.lastRunState === 'running';
                     this.routines.set(routine.id, this.normalizeLoadedRoutine(routine));
                 }
+            }
+            if (interrupted) {
+                this.persist();
             }
             if (this.routines.size === 0) {
                 this.seedIfEmpty();
@@ -278,6 +284,7 @@ export class QaapWorkHubRoutineStore {
         const trigger = routine.trigger ?? 'manual';
         return {
             ...routine,
+            ...(routine.lastRunState === 'running' ? { lastRunState: 'failed' as const } : {}),
             trigger,
             intervalHours: normalizeRoutineIntervalHours(routine.intervalHours),
             runMode: normalizeRoutineRunMode(routine.runMode),

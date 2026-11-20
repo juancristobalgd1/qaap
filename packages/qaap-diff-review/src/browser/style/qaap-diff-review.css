@@ -788,52 +788,138 @@
     color: var(--theia-foreground);
 }
 
+/* --- Agent Changes header: one dense row of scope, base, totals and view tools, then a slim
+   action row. Flat (no boxes); colours come from the theme so dark, light and high contrast all work. */
+
 .qaap-agent-changes-toolbar {
     flex: 0 0 auto;
     display: flex;
     flex-direction: column;
-    gap: 0;
-    padding: 0;
-    border-bottom: 1px solid color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+    border-bottom: 1px solid var(--theia-contrastBorder, color-mix(in srgb, var(--theia-foreground) 10%, transparent));
     background: var(--theia-editor-background);
 }
 
-.qaap-agent-changes-toolbar-primary,
-.qaap-agent-changes-toolbar-secondary {
+.qaap-agent-changes-header,
+.qaap-agent-changes-actionbar {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     min-width: 0;
 }
 
-.qaap-agent-changes-toolbar-primary {
-    padding: 8px 12px;
-    border-bottom: 1px solid color-mix(in srgb, var(--theia-foreground) 6%, transparent);
+.qaap-agent-changes-header {
+    min-height: 36px;
+    padding: 4px 6px 2px 8px;
 }
 
-.qaap-agent-changes-toolbar-secondary {
+.qaap-agent-changes-actionbar {
+    flex-wrap: wrap;
+    row-gap: 4px;
     min-height: 32px;
-    padding: 4px 8px 4px 12px;
+    padding: 2px 6px 6px 10px;
 }
 
 .qaap-agent-changes-toolbar-spacer {
     flex: 1 1 auto;
-    min-width: 8px;
+    min-width: 4px;
 }
 
-.qaap-agent-changes-scope {
+.qaap-agent-changes-scope-label,
+.qaap-agent-changes-scope-btn {
+    flex: 0 1 auto;
+    min-width: 0;
+    font-family: var(--theia-ui-font-family, sans-serif);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--theia-foreground);
+    white-space: nowrap;
+}
+
+.qaap-agent-changes-scope-label {
+    padding: 0 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.qaap-agent-changes-scope-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    height: 24px;
+    max-width: 100%;
+    padding: 0 4px 0 6px;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    background: transparent;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.qaap-agent-changes-scope-btn-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.qaap-agent-changes-scope-btn>.codicon {
+    flex: none;
+    font-size: 12px;
+    color: var(--theia-descriptionForeground);
+}
+
+.qaap-agent-changes-scope-btn:hover,
+.qaap-agent-changes-scope-btn.qaap-mod-open {
+    background: var(--theia-toolbar-hoverBackground);
+    border-color: transparent;
+}
+
+.qaap-agent-changes-base {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    color: var(--theia-descriptionForeground);
+}
+
+.qaap-agent-changes-totals {
     flex: none;
     display: inline-flex;
     align-items: center;
-    gap: 5px;
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--theia-foreground);
+    gap: 6px;
+    font-family: var(--theia-code-font-family, monospace);
+    font-variant-numeric: tabular-nums;
 }
 
-.qaap-agent-changes-scope>i {
-    font-size: 14px;
-    opacity: 0.85;
+.qaap-agent-changes-totals .qaap-diff-add,
+.qaap-agent-changes-totals .qaap-diff-del {
+    font-size: 12px;
+}
+
+.qaap-agent-changes-tools {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+}
+
+/* Unified / side-by-side: a two-button segmented control. */
+.qaap-agent-changes-segmented {
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+    padding: 1px;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--theia-foreground) 6%, transparent);
+    border: none;
+}
+
+.qaap-agent-changes .qaap-agent-changes-segmented .qaap-diff-review-icon-btn {
+    width: 22px;
+    height: 22px;
+    min-width: 22px;
+    min-height: 22px;
+    border-radius: 5px;
 }
 
 .qaap-agent-changes-branch {
@@ -847,10 +933,32 @@
     overflow: hidden;
 }
 
+.qaap-agent-changes-branch>.codicon {
+    flex: none;
+    font-size: 13px;
+}
+
 .qaap-agent-changes-branch>span {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.qaap-agent-changes-meta {
+    flex: 0 1 auto;
+    min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    overflow: hidden;
+}
+
+.qaap-agent-changes-meta-text {
+    flex: none;
+    font-size: 12px;
+    color: var(--theia-descriptionForeground);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
 }
 
 .qaap-agent-changes-commit-group {
@@ -859,15 +967,13 @@
     align-items: stretch;
     border-radius: 6px;
     overflow: visible;
-    border: none;
-    /* High-contrast CTA that inverts with the theme (light pill on dark, dark on light). */
+    border: 1px solid var(--theia-button-border, transparent);
     background: var(--theia-button-background, var(--theia-foreground));
     color: var(--theia-button-foreground, var(--theia-editor-background));
     position: relative;
 }
 
 .qaap-agent-changes-commit-menu-wrap {
-    position: relative;
     display: inline-flex;
     align-items: stretch;
 }
@@ -881,7 +987,7 @@
     font-size: 12px;
     font-weight: 600;
     line-height: 1.2;
-    padding: 5px 12px;
+    padding: 4px 10px;
     white-space: nowrap;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
@@ -892,9 +998,9 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 26px;
+    width: 24px;
     border: none;
-    border-left: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+    border-left: 1px solid color-mix(in srgb, currentColor 22%, transparent);
     background: transparent;
     color: inherit;
     cursor: pointer;
@@ -907,105 +1013,138 @@
     cursor: default;
 }
 
-.qaap-agent-changes-commit-btn:not(:disabled):active,
-.qaap-agent-changes-commit-menu:not(:disabled):active {
-    background: color-mix(in srgb, currentColor 12%, transparent);
-}
-
+.qaap-agent-changes-commit-btn:not(:disabled):hover,
+.qaap-agent-changes-commit-menu:not(:disabled):hover,
 .qaap-agent-changes-commit-menu.qaap-mod-open {
     background: color-mix(in srgb, currentColor 12%, transparent);
 }
 
-.qaap-agent-changes-commit-dropdown {
+.qaap-agent-changes-commit-btn:focus-visible,
+.qaap-agent-changes-commit-menu:focus-visible {
+    outline: 1px solid var(--theia-focusBorder);
+    outline-offset: 1px;
+}
+
+/* --- popup menus (scope picker, view options, commit options) --- */
+
+.qaap-agent-changes-menu-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
+}
+
+.qaap-agent-changes-menu {
     position: absolute;
     top: calc(100% + 4px);
     right: 0;
     z-index: 20;
-    min-width: 220px;
+    min-width: 200px;
+    max-width: min(320px, calc(100vw - 24px));
     padding: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
     border-radius: 8px;
-    border: 1px solid color-mix(in srgb, var(--theia-foreground) 12%, transparent);
-    background: var(--theia-dropdown-background, var(--theia-editor-background));
-    color: var(--theia-dropdown-foreground, var(--theia-foreground));
-    box-shadow: 0 8px 24px color-mix(in srgb, #000 22%, transparent);
+    border: 1px solid var(--theia-menu-border, var(--theia-contrastBorder, color-mix(in srgb, var(--theia-foreground) 12%, transparent)));
+    background: var(--theia-menu-background, var(--theia-dropdown-background, var(--theia-editor-background)));
+    color: var(--theia-menu-foreground, var(--theia-foreground));
+    box-shadow: 0 8px 24px var(--theia-widget-shadow);
 }
 
-.qaap-agent-changes-commit-dropdown-item {
-    display: block;
+.qaap-agent-changes-menu.qaap-mod-start {
+    left: 0;
+    right: auto;
+}
+
+.qaap-agent-changes-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     width: 100%;
-    border: none;
-    border-radius: 6px;
+    border: 1px solid transparent;
+    border-radius: 5px;
     background: transparent;
-    color: var(--theia-foreground);
+    color: inherit;
     font-family: var(--theia-ui-font-family, sans-serif);
     font-size: 12px;
     font-weight: 500;
     line-height: 1.3;
     text-align: left;
-    padding: 8px 10px;
+    padding: 6px 8px;
     cursor: pointer;
     white-space: nowrap;
     -webkit-tap-highlight-color: transparent;
 }
 
-.qaap-agent-changes-commit-dropdown-item:hover,
-.qaap-agent-changes-commit-dropdown-item:focus-visible {
-    background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+.qaap-agent-changes-menu-item>.codicon {
+    flex: none;
+    font-size: 14px;
+}
+
+.qaap-agent-changes-menu-item.qaap-mod-two-line {
+    align-items: flex-start;
+}
+
+.qaap-agent-changes-menu-item-text {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+}
+
+.qaap-agent-changes-menu-item-description {
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--theia-descriptionForeground);
+    white-space: normal;
+}
+
+.qaap-agent-changes-menu-item:hover,
+.qaap-agent-changes-menu-item:focus-visible {
+    background: var(--theia-menu-selectionBackground, var(--theia-list-hoverBackground));
+    color: var(--theia-menu-selectionForeground, inherit);
+    border-color: var(--theia-menu-selectionBorder, var(--theia-contrastActiveBorder, transparent));
     outline: none;
 }
 
-.qaap-agent-changes-commit-dropdown-item:active {
-    background: color-mix(in srgb, var(--theia-foreground) 12%, transparent);
+.qaap-agent-changes-menu-item:hover .qaap-agent-changes-menu-item-description,
+.qaap-agent-changes-menu-item:focus-visible .qaap-agent-changes-menu-item-description {
+    color: inherit;
+    opacity: 0.8;
 }
 
-.qaap-agent-changes-summary {
-    flex: 1 1 auto;
-    min-width: 0;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 2px 0;
+.qaap-agent-changes-menu-separator {
+    height: 1px;
+    margin: 3px 4px;
+    background: var(--theia-menu-separatorBackground, color-mix(in srgb, var(--theia-foreground) 12%, transparent));
 }
 
-.qaap-agent-changes-summary-label {
-    flex: 0 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 12px;
-    color: var(--theia-foreground);
-    font-weight: 500;
+/* Popup used by the commit split button keeps its historical class for overrides. */
+.qaap-agent-changes-commit-dropdown {
+    min-width: 220px;
 }
 
 .qaap-agent-changes-verify-status {
-    flex: 0 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    flex: none;
     white-space: nowrap;
-    font-size: 12px;
+    padding: 0 7px;
+    border-radius: 999px;
+    border: 1px solid var(--theia-contrastBorder, transparent);
+    background: color-mix(in srgb, currentColor 12%, transparent);
+    font-size: 11px;
+    line-height: 18px;
     color: var(--theia-descriptionForeground);
 }
 
 .qaap-agent-changes-verify-status.qaap-mod-ready {
-    color: var(--theia-charts-green, #3ba272);
+    color: var(--theia-testing-iconPassed, var(--theia-charts-green));
 }
 
 .qaap-agent-changes-verify-status.qaap-mod-stale,
 .qaap-agent-changes-verify-status.qaap-mod-missing,
 .qaap-agent-changes-verify-status.qaap-mod-failing {
     color: var(--theia-editorWarning-foreground, var(--theia-notificationsWarningIcon-foreground));
-}
-
-.qaap-agent-changes-summary-stats {
-    flex: none;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-family: var(--theia-code-font-family, monospace);
-    font-size: 12px;
-    font-variant-numeric: tabular-nums;
 }
 
 .qaap-agent-changes-bulk-actions {
@@ -1020,18 +1159,92 @@
     height: 24px;
     min-width: 24px;
     min-height: 24px;
+    border: 1px solid transparent;
+    border-radius: 5px;
     color: var(--theia-descriptionForeground);
 }
 
+/* Borderless toolbar (also in high contrast): the active toggle reads by its fill and full-strength
+   colour, the inactive ones stay muted. Keyboard focus keeps its outline below. */
 .qaap-agent-changes .qaap-diff-review-icon-btn:not(:disabled):hover {
     color: var(--theia-foreground);
+    background: var(--theia-toolbar-hoverBackground);
+    border-color: transparent;
+}
+
+.qaap-agent-changes .qaap-diff-review-icon-btn.qaap-mod-active,
+.qaap-agent-changes .qaap-diff-review-icon-btn.qaap-mod-active:not(:disabled):hover {
+    color: var(--theia-foreground);
+    background: color-mix(in srgb, var(--theia-foreground) 16%, transparent);
+    border-color: transparent;
+}
+
+.qaap-agent-changes .qaap-diff-review-icon-btn:focus-visible,
+.qaap-agent-changes-scope-btn:focus-visible {
+    outline: 1px solid var(--theia-focusBorder);
+    outline-offset: -1px;
+}
+
+.qaap-agent-changes .codicon.qaap-mod-spinning {
+    animation: qaap-agent-changes-spin 1s linear infinite;
+}
+
+@keyframes qaap-agent-changes-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Narrow panels: layout + wrap toggles fold into the ⋯ menu, then the base label and branch go. */
+.qaap-agent-changes {
+    container: qaap-agent-changes / inline-size;
+}
+
+.qaap-agent-changes-header .qaap-agent-changes-narrow-only {
+    display: none;
+}
+
+@container qaap-agent-changes (max-width: 460px) {
+    .qaap-agent-changes-header .qaap-agent-changes-wide-only {
+        display: none;
+    }
+
+    .qaap-agent-changes-header .qaap-agent-changes-narrow-only {
+        display: inline-flex;
+    }
+}
+
+@container qaap-agent-changes (max-width: 360px) {
+    .qaap-agent-changes-header .qaap-agent-changes-base,
+    .qaap-agent-changes-actionbar .qaap-agent-changes-branch {
+        display: none;
+    }
+}
+
+@media (pointer: coarse) {
+    .qaap-agent-changes .qaap-diff-review-icon-btn {
+        width: 32px;
+        height: 32px;
+        min-width: 32px;
+        min-height: 32px;
+    }
 }
 
 .qaap-agent-changes-loading {
-    padding: 12px;
+    padding: 10px 12px 12px 42px;
     display: flex;
     flex-direction: column;
     gap: 8px;
+}
+
+/* Visually hidden, still announced. */
+.qaap-agent-changes-loading-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
 }
 
 .qaap-agent-changes-loading-bar {
@@ -1086,6 +1299,14 @@
     gap: 0;
 }
 
+/* Off-screen file diffs skip layout and paint (large diffs such as lock files stay smooth to
+   scroll); `auto` remembers each file's last height so the scrollbar does not jump. The file
+   header stays outside this container, so its sticky behaviour is unchanged. */
+.qaap-agent-changes-hunks {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 320px;
+}
+
 /* Flat indented file rows — Cursor Changes, not card stack. */
 .qaap-agent-changes-file {
     flex: none;
@@ -1104,40 +1325,52 @@
     border-top: none;
 }
 
-.qaap-agent-changes-file--collapsed .qaap-agent-changes-filehdr {
-    border-bottom: none;
-}
-
+/* File row: chevron, status glyph, left-truncated path, right-aligned counts; actions on hover. */
 .qaap-agent-changes-filehdr {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 6px 10px 6px 20px;
+    gap: 2px;
+    min-height: 30px;
+    padding: 0 6px 0 4px;
     /* Opaque so sticky headers stay readable over scrolling diff lines. */
     background: var(--theia-editor-background);
     position: sticky;
     top: 0;
     z-index: 2;
-    border-bottom: 1px solid color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+}
+
+.qaap-agent-changes-file:not(.qaap-agent-changes-file--collapsed) .qaap-agent-changes-filehdr {
+    border-bottom: 1px solid var(--theia-contrastBorder, color-mix(in srgb, var(--theia-foreground) 8%, transparent));
+}
+
+/* Layered over the editor background so the sticky header stays opaque while hovered. */
+.qaap-agent-changes-filehdr:hover {
+    background:
+        linear-gradient(var(--theia-list-hoverBackground), var(--theia-list-hoverBackground)),
+        var(--theia-editor-background);
 }
 
 .qaap-agent-changes-filehdr-toggle {
     flex: 1 1 auto;
     min-width: 0;
+    min-height: 26px;
     display: flex;
     align-items: center;
     gap: 6px;
-    border: none;
+    border: 1px solid transparent;
+    border-radius: 4px;
     background: transparent;
-    padding: 0;
+    padding: 0 2px;
     color: inherit;
+    font-family: var(--theia-ui-font-family, sans-serif);
     text-align: left;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
 }
 
-.qaap-agent-changes-filehdr-toggle:active {
-    opacity: 0.82;
+.qaap-agent-changes-filehdr-toggle:focus-visible {
+    outline: 1px solid var(--theia-focusBorder);
+    outline-offset: -1px;
 }
 
 .qaap-agent-changes-filehdr-chevron {
@@ -1146,62 +1379,115 @@
     font-size: 14px;
     line-height: 1;
     color: var(--theia-descriptionForeground);
-    transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .qaap-agent-changes-file:not(.qaap-agent-changes-file--collapsed) .qaap-agent-changes-filehdr-chevron {
     transform: rotate(90deg);
 }
 
-.qaap-agent-changes-filehdr-toggle>i:not(.qaap-agent-changes-filehdr-chevron) {
+/* One-letter git status, coloured like the SCM view's decorations. */
+.qaap-agent-changes-status {
     flex: none;
-    width: 16px;
-    height: 16px;
-    background-size: 14px;
-    opacity: 0.9;
+    width: 12px;
+    font-family: var(--theia-code-font-family, monospace);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+    text-align: center;
 }
 
-.qaap-agent-changes-new-badge {
-    flex: none;
-    padding: 1px 6px;
-    border-radius: 4px;
-    font-family: var(--theia-ui-font-family, sans-serif);
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
-    color: var(--theia-gitDecoration-addedResourceForeground, #3fb950);
-    background: color-mix(in srgb, var(--theia-gitDecoration-addedResourceForeground, #3fb950) 14%, transparent);
+.qaap-agent-changes-status.qaap-mod-added {
+    color: var(--theia-gitDecoration-addedResourceForeground, var(--theia-gitDecoration-untrackedResourceForeground));
+}
+
+.qaap-agent-changes-status.qaap-mod-modified {
+    color: var(--theia-gitDecoration-modifiedResourceForeground, var(--theia-editorWarning-foreground));
+}
+
+.qaap-agent-changes-status.qaap-mod-deleted {
+    color: var(--theia-gitDecoration-deletedResourceForeground, var(--theia-errorForeground));
+}
+
+.qaap-agent-changes-status.qaap-mod-renamed,
+.qaap-agent-changes-status.qaap-mod-copied {
+    color: var(--theia-gitDecoration-renamedResourceForeground, var(--theia-gitDecoration-modifiedResourceForeground, var(--theia-editorInfo-foreground)));
+}
+
+/* Left truncation: the box runs right-to-left so the ellipsis lands at the start, while the
+   isolated inner run keeps the path itself left-to-right. The file name is always visible. */
+.qaap-agent-changes-path {
+    flex: 0 1 auto;
+    min-width: 0;
+    direction: rtl;
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--theia-code-font-family, monospace);
+    font-size: 12px;
+}
+
+.qaap-agent-changes-path-text {
+    direction: ltr;
+    unicode-bidi: isolate;
+}
+
+.qaap-agent-changes-path-dir {
+    color: var(--theia-descriptionForeground);
+}
+
+.qaap-agent-changes-path-base {
+    color: var(--theia-foreground);
+    font-weight: 500;
+}
+
+.qaap-agent-changes-file--collapsed .qaap-agent-changes-path-base {
+    font-weight: 400;
 }
 
 .qaap-agent-changes-filehdr-stats {
     flex: none;
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: 6px;
     margin-left: auto;
+    padding-left: 8px;
     font-family: var(--theia-code-font-family, monospace);
     font-size: 11px;
     font-variant-numeric: tabular-nums;
+    color: var(--theia-descriptionForeground);
 }
 
+.qaap-agent-changes-filehdr-stats .qaap-diff-add,
+.qaap-agent-changes-filehdr-stats .qaap-diff-del {
+    font-size: 11px;
+}
+
+/* Per-file discard / stage appear on hover or keyboard focus (always shown for touch). */
 .qaap-agent-changes-filehdr-actions {
     flex: none;
-    display: inline-flex;
+    display: none;
     align-items: center;
-    gap: 2px;
+    gap: 1px;
 }
 
-.qaap-agent-changes-path {
-    flex: 1 1 auto;
-    min-width: 0;
-    font-family: var(--theia-code-font-family, monospace);
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--theia-foreground);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+.qaap-agent-changes-filehdr:hover .qaap-agent-changes-filehdr-actions,
+.qaap-agent-changes-filehdr:focus-within .qaap-agent-changes-filehdr-actions {
+    display: inline-flex;
+}
+
+@media (pointer: coarse) {
+    .qaap-agent-changes-filehdr-actions {
+        display: inline-flex;
+    }
+}
+
+.qaap-agent-changes .qaap-agent-changes-filehdr-actions .qaap-diff-review-icon-btn {
+    width: 22px;
+    height: 22px;
+    min-width: 22px;
+    min-height: 22px;
 }
 
 .qaap-agent-changes-hunks {
@@ -1227,12 +1513,20 @@
     position: relative;
 }
 
+.qaap-agent-changes-hunks {
+    --qaap-diff-add: var(--theia-gitDecoration-addedResourceForeground, #3fb950);
+    --qaap-diff-del: var(--theia-gitDecoration-deletedResourceForeground, #f85149);
+}
+
+/* Soft tints plus a thin edge bar (GitHub / Cursor), not a heavy block of colour. */
 .qaap-agent-changes-hunks .qaap-diff-review-line--add {
-    background: rgba(35, 134, 54, 0.15);
+    background: color-mix(in srgb, var(--qaap-diff-add) 9%, transparent);
+    box-shadow: inset 2px 0 0 color-mix(in srgb, var(--qaap-diff-add) 70%, transparent);
 }
 
 .qaap-agent-changes-hunks .qaap-diff-review-line--del {
-    background: rgba(248, 81, 73, 0.15);
+    background: color-mix(in srgb, var(--qaap-diff-del) 9%, transparent);
+    box-shadow: inset 2px 0 0 color-mix(in srgb, var(--qaap-diff-del) 70%, transparent);
 }
 
 .qaap-agent-changes-hunks .qaap-diff-review-line--ctx {
@@ -1240,28 +1534,89 @@
 }
 
 .qaap-agent-changes-hunks .qaap-diff-review-line--add .qaap-diff-review-gutter {
-    background: rgba(35, 134, 54, 0.2);
-    color: #3fb950;
-    opacity: 1;
+    color: var(--qaap-diff-add);
+    opacity: 0.85;
 }
 
 .qaap-agent-changes-hunks .qaap-diff-review-line--del .qaap-diff-review-gutter {
-    background: rgba(248, 81, 73, 0.2);
-    color: #f85149;
-    opacity: 1;
+    color: var(--qaap-diff-del);
+    opacity: 0.85;
 }
 
+/* Two narrow number columns: old, then new. */
 .qaap-agent-changes-hunks .qaap-diff-review-gutter {
-    width: 40px;
-    padding: 0 10px 0 20px;
+    width: 34px;
+    padding: 0 6px 0 0;
     font-size: 11px;
-    opacity: 0.72;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.6;
     text-align: right;
+}
+
+.qaap-agent-changes-hunks .qaap-diff-review-gutter.qaap-mod-old {
+    width: 38px;
+    padding-left: 4px;
+}
+
+.qaap-agent-changes-hunks .qaap-diff-review-gutter.qaap-mod-new {
+    margin-right: 10px;
 }
 
 .qaap-agent-changes-hunks .qaap-diff-review-code {
     padding: 0 12px 0 0;
     min-width: 0;
+}
+
+/* Wrap lines off: each line stays on one row and the file body scrolls horizontally. */
+.qaap-agent-changes-hunks.qaap-mod-nowrap {
+    overflow-x: auto;
+    touch-action: pan-x pan-y;
+}
+
+.qaap-agent-changes-hunks.qaap-mod-nowrap .qaap-diff-review-hunk--agent {
+    width: max-content;
+    min-width: 100%;
+}
+
+.qaap-agent-changes-hunks.qaap-mod-nowrap .qaap-diff-review-code {
+    flex: 1 0 auto;
+    white-space: pre;
+    overflow-wrap: normal;
+    word-break: normal;
+}
+
+/* Side by side: old | new halves; each half has its own number gutter. */
+.qaap-agent-changes-hunks .qaap-diff-review-split-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    background: transparent;
+    box-shadow: none;
+}
+
+.qaap-agent-changes-hunks.qaap-mod-nowrap .qaap-diff-review-split-row {
+    grid-template-columns: 1fr 1fr;
+}
+
+.qaap-diff-review-split-cell {
+    display: flex;
+    min-width: 0;
+}
+
+.qaap-diff-review-split-cell.qaap-mod-new {
+    border-left: 1px solid var(--theia-contrastBorder, color-mix(in srgb, var(--theia-foreground) 10%, transparent));
+}
+
+.qaap-diff-review-split-cell.qaap-mod-empty {
+    background: color-mix(in srgb, var(--theia-foreground) 3%, transparent);
+}
+
+.qaap-agent-changes-hunks .qaap-diff-review-split-cell .qaap-diff-review-gutter {
+    width: 40px;
+    padding: 0 8px 0 4px;
+}
+
+.qaap-diff-review-split-cell .qaap-diff-review-suppression-marker {
+    margin: 0 4px;
 }
 
 /* Floating Cursor-style line stage control. */
@@ -1326,7 +1681,7 @@
 }
 
 .qaap-agent-changes-file--new .qaap-agent-changes-hunks {
-    background: rgba(35, 134, 54, 0.04);
+    background: color-mix(in srgb, var(--theia-gitDecoration-addedResourceForeground, transparent) 3%, transparent);
 }
 
 .qaap-diff-review-collapsed-chevron {
@@ -1345,6 +1700,10 @@
     .qaap-agent-changes-filehdr-chevron {
         transition: none;
     }
+
+    .qaap-agent-changes .codicon.qaap-mod-spinning {
+        animation: none;
+    }
 }
 
 /* Inline retry action inside a diff note (per-file load failure). */
@@ -1361,6 +1720,30 @@
 
 .qaap-diff-review-note .qaap-diff-review-inline-btn:hover {
     background: var(--theia-button-secondaryHoverBackground);
+}
+
+/* Per-file load failure: human sentence in the UI font; the HTTP detail lives in the title only. */
+.qaap-diff-review-note.qaap-mod-load-failed {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--theia-ui-font-family);
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.qaap-diff-review-note.qaap-mod-load-failed .qaap-diff-review-inline-btn {
+    margin-left: 0;
+}
+
+@media (max-width: 767px) {
+    .qaap-diff-review-note.qaap-mod-load-failed .qaap-diff-review-inline-btn {
+        min-height: 44px;
+        min-width: 44px;
+        padding: 0 16px;
+        font-size: 14px;
+    }
 }
 
 /* Added lines that silence a lint / type / test check (eslint-disable, @ts-ignore, it.skip, rule

@@ -71,7 +71,7 @@ describe('mobile-projects-sticky-composer-model-picker-ui', () => {
         const signedIn: string[] = [];
         await renderStickyComposerModelPicker(ctx, chrome, {
             cwd: undefined,
-            agents: [{ id: 'claude', label: 'Claude Code', available: true, connectionState: 'disconnected' }],
+            agents: [{ id: 'claude', label: 'Claude Code', available: false, connectionState: 'disconnected', session: 'signed-out' }],
             selectedAgentId: 'claude',
             project: undefined,
             isMobile: false,
@@ -83,8 +83,53 @@ describe('mobile-projects-sticky-composer-model-picker-ui', () => {
         });
         const action = chrome.list.querySelector<HTMLButtonElement>('.qaap-model-picker-connect-action');
         expect(action?.textContent).to.equal('Sign in');
+        // Sits at the end of the search row; no separate warning strip, the explanation is its tooltip.
+        expect(action?.parentElement?.classList.contains('qaap-model-picker-search')).to.equal(true);
+        expect(chrome.list.querySelector('.qaap-model-picker-connect')).to.equal(null);
+        expect(action?.title).to.equal('Claude Code needs a sign-in before it can run.');
         action?.click();
         expect(signedIn).to.deep.equal(['claude']);
+    });
+
+    it('offers the Sign in action for a harness whose session is unknown (fail-closed: its Pro models are locked)', async () => {
+        const ctx = { resolveModelsForAgentPickerSafe: async () => ({ models: [], loadFailed: false }) };
+        const signedIn: string[] = [];
+        await renderStickyComposerModelPicker(ctx, chrome, {
+            cwd: undefined,
+            agents: [{ id: 'copilot', label: 'Copilot CLI', available: true, connectionState: 'unknown', accessState: 'unknown', session: 'unknown' }],
+            selectedAgentId: 'copilot',
+            project: undefined,
+            isMobile: false,
+            onSelectAgent: () => undefined,
+            approval: 'approve-for-me',
+            onSelectApproval: () => undefined,
+            onRefresh: () => undefined,
+            onProactiveLogin: agentId => { signedIn.push(agentId); },
+        });
+        const action = chrome.list.querySelector<HTMLButtonElement>('.qaap-model-picker-connect-action');
+        expect(action?.textContent).to.equal('Sign in');
+        expect(action?.title).to.equal('Copilot CLI needs a sign-in before it can run.');
+        action?.click();
+        expect(signedIn).to.deep.equal(['copilot']);
+    });
+
+    it('offers no Sign in while the session is still checking (probe running) or not reported', async () => {
+        const ctx = { resolveModelsForAgentPickerSafe: async () => ({ models: [], loadFailed: false }) };
+        for (const session of ['checking', undefined] as const) {
+            await renderStickyComposerModelPicker(ctx, chrome, {
+                cwd: undefined,
+                agents: [{ id: 'copilot', label: 'Copilot CLI', available: true, connectionState: 'unknown', accessState: 'unknown', session }],
+                selectedAgentId: 'copilot',
+                project: undefined,
+                isMobile: false,
+                onSelectAgent: () => undefined,
+                approval: 'approve-for-me',
+                onSelectApproval: () => undefined,
+                onRefresh: () => undefined,
+                onProactiveLogin: () => undefined,
+            });
+            expect(chrome.list.querySelector('.qaap-model-picker-connect-action'), String(session)).to.equal(null);
+        }
     });
 
     it('selecting a model of another harness hands that harness and model to the caller', async () => {

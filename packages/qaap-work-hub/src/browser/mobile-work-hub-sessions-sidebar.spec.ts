@@ -10,6 +10,7 @@ import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 const disableImportJSDOM = enableJSDOM();
 
 import { expect } from 'chai';
+import { Emitter } from '@theia/core/lib/common/event';
 import { FrontendApplicationConfigProvider } from '@theia/core/lib/browser/frontend-application-config-provider';
 import {
     MobileWorkHubSessionsSidebar,
@@ -132,11 +133,16 @@ describe('mobile-work-hub-sessions-sidebar', () => {
             (global as { fetch?: unknown }).fetch = originalFetch;
         });
 
-        async function renderWithRuntimeStatus(update: object): Promise<Element | null> {
+        function renderWithRuntimeStatus(update: object): Promise<void> {
             (global as { fetch?: unknown }).fetch = async (input: string) => ({
                 ok: true,
                 json: async () => (String(input).includes('runtime/status') ? { runtime: {}, update } : { build: 'abc1234' }),
             });
+            return Promise.resolve();
+        }
+
+        async function openSidebarWithUpdate(update: object): Promise<{ sidebar: MobileWorkHubSessionsSidebar; chip: HTMLButtonElement | null }> {
+            await renderWithRuntimeStatus(update);
             const sidebar = new MobileWorkHubSessionsSidebar({
                 renderSessionList: () => undefined,
                 onNewChat: () => undefined,
@@ -144,26 +150,151 @@ describe('mobile-work-hub-sessions-sidebar', () => {
             });
             document.body.append(sidebar.node);
             await (sidebar as unknown as { loadBackendUpdateStatus(): Promise<void> }).loadBackendUpdateStatus();
-            return sidebar.node.querySelector('.theia-mobile-work-hub-sessions-sidebar-update');
+            return { sidebar, chip: sidebar.node.querySelector<HTMLButtonElement>('.theia-mobile-work-hub-sessions-sidebar-update') };
         }
 
-        it('shows a non-blocking chip with the reason and the builds while a newer build waits', async () => {
-            const chip = await renderWithRuntimeStatus({
+        /** Replaces the update service with a double that records the turns it was asked about. */
+        function stubUpdateService(sidebar: MobileWorkHubSessionsSidebar, behaviour: {
+            update?: object;
+            outcome?: (runningTasks: number) => Promise<string>;
+            /** The user declined the interruption: the service never reports that the request started. */
+            declined?: boolean;
+        }): { asked: number[]; readCount(): number } {
+            const emitter = new Emitter<void>();
+            const asked: number[] = [];
+            let reads = 0;
+            (sidebar as unknown as { tenantUpdate: unknown }).tenantUpdate = {
+                onDidStartApplying: emitter.event,
+                readBackendUpdate: async () => {
+                    reads += 1;
+                    return behaviour.update;
+                },
+                updateNow: async (runningTasks: number) => {
+                    asked.push(runningTasks);
+                    if (!behaviour.declined) {
+                        emitter.fire();
+                    }
+                    return behaviour.outcome ? behaviour.outcome(runningTasks) : 'applied';
+                },
+            };
+            return { asked, readCount: () => reads };
+        }
+
+        it('shows a button outside the account button, with the reason and the builds in its tooltip', async () => {
+            const { sidebar, chip } = await openSidebarWithUpdate({
                 backendBuild: 'old5678',
                 controlPlaneBuild: 'abc1234',
                 updatePending: true,
                 reason: 'agent-turns-running',
+                runningTasks: 0,
             });
             expect(chip).to.not.equal(null);
-            expect(chip?.textContent).to.equal('Update ready');
-            expect(chip?.getAttribute('role')).to.equal('status');
-            expect(chip?.getAttribute('title')).to.contain('Update ready — applies when your running tasks finish');
-            expect(chip?.getAttribute('title')).to.contain('Running build old5678; new build abc1234');
+            expect(chip?.tagName).to.equal('BUTTON');
+            expect(chip?.textContent).to.equal('');
+            expect(chip?.querySelector('.theia-mobile-work-hub-sessions-sidebar-update-icon.codicon-sync')).to.not.equal(null);
+            expect(chip?.querySelector<HTMLElement>('.theia-mobile-work-hub-sessions-sidebar-update-badge.codicon-check')?.hidden).to.equal(false);
+            expect(chip?.getAttribute('aria-label')).to.equal('Update Qaap now');
+            expect(chip?.hidden).to.equal(false);
+            expect(chip?.title).to.contain('Update ready — applies when your running tasks finish');
+            expect(chip?.title).to.contain('Running build old5678; new build abc1234');
+            expect(sidebar.node.querySelector('.theia-workbench-account-btn')?.contains(chip ?? null)).to.equal(false);
+        });
+
+        it('explains the next-session timing when no turn blocks the update', async () => {
+            const { chip } = await openSidebarWithUpdate({ backendBuild: 'old5678', controlPlaneBuild: 'abc1234', updatePending: true, runningTasks: 0 });
+            expect(chip?.title).to.contain('Update ready — applies on your next session');
         });
 
         it('shows no chip when the backend already runs the deployed build', async () => {
-            const chip = await renderWithRuntimeStatus({ backendBuild: 'abc1234', controlPlaneBuild: 'abc1234', updatePending: false });
-            expect(chip).to.equal(null);
+            const { chip } = await openSidebarWithUpdate({ backendBuild: 'abc1234', controlPlaneBuild: 'abc1234', updatePending: false, runningTasks: 0 });
+            expect(chip?.hidden).to.not.equal(false);
+        });
+
+        it('applies the update on click, passing the running turns the status reported', async () => {
+            const update = { backendBuild: 'old5678', controlPlaneBuild: 'abc1234', updatePending: true, runningTasks: 2 };
+            const { sidebar, chip } = await openSidebarWithUpdate(update);
+            const stub = stubUpdateService(sidebar, { update, outcome: async () => 'applied' });
+            await (sidebar as unknown as { loadBackendUpdateStatus(): Promise<void> }).loadBackendUpdateStatus();
+            chip?.click();
+            await flushAsync();
+            expect(stub.asked).to.deep.equal([2]);
+        });
+
+        it('shows "Updating…" disabled while the update is sent, and keeps it until the page reloads', async () => {
+            const update = { backendBuild: 'old5678', controlPlaneBuild: 'abc1234', updatePending: true, runningTasks: 0 };
+            const { sidebar, chip } = await openSidebarWithUpdate(update);
+            let finish: (outcome: string) => void = () => undefined;
+            stubUpdateService(sidebar, { update, outcome: () => new Promise<string>(resolve => { finish = resolve; }) });
+            await (sidebar as unknown as { loadBackendUpdateStatus(): Promise<void> }).loadBackendUpdateStatus();
+            chip?.click();
+            await flushAsync();
+            expect(chip?.getAttribute('aria-label')).to.equal('Updating Qaap');
+            expect(chip?.disabled).to.equal(true);
+            expect(chip?.getAttribute('aria-busy')).to.equal('true');
+            expect(chip?.querySelector('.theia-mobile-work-hub-sessions-sidebar-update-icon.theia-mod-spin')).to.not.equal(null);
+            finish('applied');
+            await flushAsync();
+            expect(chip?.getAttribute('aria-label')).to.equal('Updating Qaap');
+            expect(chip?.disabled).to.equal(true);
+        });
+
+        it('restores the chip and says so when the update fails', async () => {
+            const update = { backendBuild: 'old5678', controlPlaneBuild: 'abc1234', updatePending: true, runningTasks: 0 };
+            const { sidebar, chip } = await openSidebarWithUpdate(update);
+            stubUpdateService(sidebar, { update, outcome: async () => 'failed' });
+            await (sidebar as unknown as { loadBackendUpdateStatus(): Promise<void> }).loadBackendUpdateStatus();
+            chip?.click();
+            await flushAsync();
+            expect(chip?.getAttribute('aria-label')).to.equal('Update Qaap now');
+            expect(chip?.disabled).to.equal(false);
+            expect(chip?.getAttribute('aria-busy')).to.equal('false');
+            expect(chip?.querySelector('.theia-mod-spin')).to.equal(null);
+            expect(document.body.textContent).to.contain('Could not update Qaap. Check your connection and try again.');
+        });
+
+        it('leaves the chip as it was when the user declines the interruption', async () => {
+            const update = { backendBuild: 'old5678', controlPlaneBuild: 'abc1234', updatePending: true, runningTasks: 1 };
+            const { sidebar, chip } = await openSidebarWithUpdate(update);
+            stubUpdateService(sidebar, { update, outcome: async () => 'cancelled', declined: true });
+            await (sidebar as unknown as { loadBackendUpdateStatus(): Promise<void> }).loadBackendUpdateStatus();
+            chip?.click();
+            await flushAsync();
+            expect(chip?.getAttribute('aria-label')).to.equal('Update Qaap now');
+            expect(chip?.disabled).to.equal(false);
+        });
+
+        it('re-reads the status when the control plane had nothing to apply', async () => {
+            const update = { backendBuild: 'old5678', controlPlaneBuild: 'abc1234', updatePending: true, runningTasks: 0 };
+            const { sidebar, chip } = await openSidebarWithUpdate(update);
+            const stub = stubUpdateService(sidebar, { update, outcome: async () => 'nothing' });
+            chip?.click();
+            await flushAsync();
+            expect(stub.readCount()).to.equal(1);
+            expect(chip?.getAttribute('aria-label')).to.equal('Update Qaap now');
+        });
+
+        it('dev preview: shows a fake update from localStorage and never applies it', async () => {
+            const globals = global as { localStorage?: unknown };
+            const originalStorage = globals.localStorage;
+            globals.localStorage = { getItem: (key: string) => (key === 'qaap.devPreviewBackendUpdate' ? '1' : undefined) };
+            try {
+                const { sidebar, chip } = await openSidebarWithUpdate({ updatePending: false, runningTasks: 0 });
+                expect(chip?.hidden).to.equal(false);
+                expect(chip?.title).to.contain('abc1234');
+                const stub = stubUpdateService(sidebar, { update: { updatePending: false, runningTasks: 0 } });
+                const originalInfo = console.info;
+                console.info = () => undefined;
+                try {
+                    chip?.click();
+                    await flushAsync();
+                } finally {
+                    console.info = originalInfo;
+                }
+                expect(stub.asked).to.deep.equal([]);
+                expect(chip?.disabled).to.equal(false);
+            } finally {
+                globals.localStorage = originalStorage;
+            }
         });
     });
 
@@ -765,6 +896,46 @@ describe('mobile-work-hub-sessions-sidebar', () => {
         expect(patchCalls).to.equal(2);
     });
 
+    it('does not collapse the docked desktop sidebar on Escape but closes the narrow sheet', () => {
+        const setViewport = (desktop: boolean): void => {
+            (global as { window?: Window }).window = {
+                ...(global as { window?: Window }).window,
+                matchMedia: (query: string) => ({
+                    matches: desktop && query === QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY,
+                    media: query,
+                    onchange: null,
+                    addListener: () => undefined,
+                    removeListener: () => undefined,
+                    addEventListener: () => undefined,
+                    removeEventListener: () => undefined,
+                    dispatchEvent: () => false,
+                }),
+                setTimeout: (callback: (...args: unknown[]) => void, delayMs?: number) =>
+                    setTimeout(callback, delayMs ?? 0) as unknown as number,
+                clearTimeout: (id: number) => clearTimeout(id),
+            } as unknown as Window;
+        };
+        const escape = (): void => {
+            document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+        };
+        setViewport(true);
+        const sidebar = new MobileWorkHubSessionsSidebar({
+            renderSessionList: host => { host.append(document.createElement('div')); },
+            onNewChat: () => undefined,
+            onClose: () => undefined,
+        });
+        document.body.append(sidebar.node);
+        sidebar.show();
+        escape();
+        expect(sidebar.isVisible()).to.equal(true);
+        sidebar.hide();
+
+        setViewport(false);
+        sidebar.show();
+        escape();
+        expect(sidebar.isVisible()).to.equal(false);
+    });
+
     it('keeps the sidebar open when navigation happens on desktop layout', () => {
         const matchMedia = (query: string): MediaQueryList => ({
             matches: query === QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY
@@ -959,3 +1130,10 @@ describe('mobile-work-hub-sessions-sidebar', () => {
         expect(head!.querySelector('.theia-mobile-work-hub-sessions-sidebar-close')).to.not.equal(null);
     });
 });
+
+/** Lets the chained promise callbacks of a click settle. */
+async function flushAsync(): Promise<void> {
+    for (let i = 0; i < 10; i++) {
+        await Promise.resolve();
+    }
+}

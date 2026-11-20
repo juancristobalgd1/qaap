@@ -392,7 +392,7 @@ describe('Dynamic Workflows end-to-end (real git)', function (): void {
             fs.mkdirSync(path.join(repo, 'src', 'auth'), { recursive: true });
             fs.writeFileSync(path.join(repo, 'src', 'auth', 'session.ts'), 'export const token = 1;\n');
             git(repo, 'add', '.');
-            const ports = buildPorts('reviewed\n@@QAAP:VERDICT@@ fail leaks the token');
+            const ports = buildPorts('reviewed\n@@QAAP:VERDICT@@ fail src/auth.ts:4 — leaks the token');
             const dispatcher = new QaapWorkflowDispatcher(store, ports);
             const started = await store.start(buildImplementThenReviewWorkflow(), {
                 cwd: repo, ownerLogin: 'ada', inputs: { task: 'add session handling' },

@@ -56,6 +56,7 @@ describe('QaapAgentTaskEndpoint passes the caller to owner-scoped runner calls',
                 defaultAgent: record('defaultAgent', 'qaiq'),
                 listQaiqModels: record('listQaiqModels', []),
                 listModelsForAgent: record('listModelsForAgent', [{ modelId: 'm' }]),
+                isAgentEnabled: record('isAgentEnabled', true),
                 // Pi lists its models from the caller's sign-in, so the picker discovers as the caller.
                 nativeModelDiscoverySpawner: record('nativeModelDiscoverySpawner', () => undefined),
                 retry: record('retry', task),
@@ -134,7 +135,7 @@ describe('QaapAgentTaskEndpoint passes the caller to owner-scoped runner calls',
                 body: { prompt: 'private prompt text', agentId: 'qaiq' },
             });
             expect(result.statusCode).to.equal(504);
-            expect(result.body).to.deep.equal({ error: 'Prompt improvement timed out. Try again.' });
+            expect(result.body).to.deep.equal({ error: 'Prompt improvement timed out. Try again.', kind: 'timeout' });
             expect(logEntries).to.have.length(1);
             expect(JSON.stringify(logEntries)).not.to.contain('private prompt text');
         } finally {

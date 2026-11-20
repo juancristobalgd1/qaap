@@ -33,6 +33,12 @@ describe('resolveQaapSettledPreviewRequestAction', () => {
         expect(resolveQaapSettledPreviewRequestAction(input())).to.equal('relaunch');
     });
 
+    it('keeps the request while this project\'s bootstrap is still installing or compiling', () => {
+        expect(resolveQaapSettledPreviewRequestAction(input({ bootstrapPhase: 'starting' }))).to.equal('keep');
+        expect(resolveQaapSettledPreviewRequestAction(input({ bootstrapPhase: 'installing', canRelaunch: false }))).to.equal('keep');
+        expect(resolveQaapSettledPreviewRequestAction(input({ bootstrapPhase: 'ready-to-run' }))).to.equal('relaunch');
+    });
+
     it('clears a chat request when no launcher can run it', () => {
         expect(resolveQaapSettledPreviewRequestAction(input({ canRelaunch: false }))).to.equal('clear');
     });

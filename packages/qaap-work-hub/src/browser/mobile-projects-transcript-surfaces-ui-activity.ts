@@ -53,11 +53,11 @@ export function scheduleTranscriptPreviewTabProbeExtracted(ctx: MobileProjectsTr
         ctx.transcriptPreviewProbeTimer = undefined;
         if (mode === 'idle') {
             ctx.transcriptPreviewProbeIdleTicks += 1;
-            if (document.hidden) {
-                // Background tab: no network, just keep backing off until the user returns.
-                ctx.scheduleTranscriptPreviewTabProbe(project, summary);
-                return;
-            }
+        }
+        if (document.hidden) {
+            // Background window: no network for either mode; keep (backing off) until the user returns.
+            ctx.scheduleTranscriptPreviewTabProbe(project, summary);
+            return;
         }
         void ctx.refreshTranscriptPreviewTabProbe(project, summary);
     }, mode === 'idle' ? transcriptPreviewTabProbeDelayMs(ctx.transcriptPreviewProbeIdleTicks) : TRANSCRIPT_PREVIEW_TAB_PROBE_MS);
@@ -161,8 +161,11 @@ export function isTranscriptPreviewWaitingExtracted(ctx: MobileProjectsTranscrip
     }
     // A bootstrap install/dev run outlives the agent turn; keep waiting (and probing) until
     // its preview is actually mounted instead of falling back to the idle play button.
+    // Only this project's own run: a dev server running for ANOTHER project kept this one "waiting"
+    // forever, sweeping every candidate port each 900 ms (~22 probes/s at rest).
     if (ctx.isProjectBootstrapPreviewActive()
         && project
+        && ctx.bootstrapAppliesToProject(project)
         && !ctx.mountedPreviewUrl(ctx.previewScopeId())) {
         return true;
     }
@@ -211,7 +214,7 @@ export function syncHeaderFilesMoreButtonExtracted(ctx: MobileProjectsTranscript
         ctx.hideHeaderFilesMoreButton();
         return;
     }
-    const onFilesTab = ctx.host.executionSurfaceTabsUi.executionSurfaceTabForProject(openProject) === 'files';
+    const onFilesTab = isFilesSurfaceTab(ctx.host.executionSurfaceTabsUi.executionSurfaceTabForProject(openProject));
     const workspaceKey = ctx.resolveTranscriptWorkspaceKey(openProject, openSummary);
     const mount = workspaceKey
         ? ctx.host.transcriptWorkspaceSurfaces.peekFiles(workspaceKey)
@@ -249,7 +252,7 @@ export function syncHeaderViewModeSwitchExtracted(ctx: MobileProjectsTranscriptS
         ctx.hideHeaderViewModeSwitch();
         return;
     }
-    const onFilesTab = ctx.host.executionSurfaceTabsUi.executionSurfaceTabForProject(openProject) === 'files';
+    const onFilesTab = isFilesSurfaceTab(ctx.host.executionSurfaceTabsUi.executionSurfaceTabForProject(openProject));
     const useHubHeader = !ctx.host.transcriptSheet
         && (ctx.host.agentsHubShellActive || Boolean(ctx.host.projectDetailSurfaceTargets));
     const workspaceKey = ctx.resolveTranscriptWorkspaceKey(openProject, openSummary);
@@ -475,3 +478,7 @@ export function stopTranscriptPreviewExtracted(ctx: MobileProjectsTranscriptSurf
     );
 }
 
+/** Changes ('review') and Files are both views of the files surface. */
+function isFilesSurfaceTab(tab: string | undefined): boolean {
+    return tab === 'files' || tab === 'review';
+}

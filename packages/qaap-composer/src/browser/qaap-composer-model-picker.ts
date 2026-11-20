@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
+import { attachQaapScrollEdgeFades } from '@theia/qaap-mobile-shell/lib/browser/qaap-scroll-edge-fades';
 import { appendAgentBrandIcon } from '@theia/qaap-shared-core/lib/common/qaap-agent-branding';
 import {
     QaapAgentEffort,
@@ -23,13 +24,16 @@ import {
 export interface QaapComposerModelPickerProps {
     readonly state: QaapPickerState;
     readonly effort: { readonly support?: QaapAgentEffortSupport; readonly current?: QaapAgentEffortLevel };
-    readonly approval: {
+    /** Access block of the footer. Omitted where no approval policy applies (a side chat): no access menu is drawn. */
+    readonly approval?: {
         readonly current: QaapAgentApprovalPolicyId;
         readonly options?: readonly QaapAgentApprovalPolicyOption[];
     };
     /** Narrow viewport: the number shortcuts are desktop-only. */
     readonly isMobile?: boolean;
     readonly onSelectModel: (agentId: string, modelId: string) => void;
+    /** Opens the harness sign-in from a locked row whose only blocker is the missing session. */
+    readonly onSignIn?: (agentId: string) => void;
     readonly onSelectEffort: (level: QaapAgentEffortLevel) => void;
     readonly onSelectApproval: (policyId: QaapAgentApprovalPolicyId) => void;
     readonly onToggleFavorite: (key: string) => void;
@@ -46,8 +50,15 @@ interface PickerHostState {
     openMenu: FooterMenuKey | undefined;
     /** Tears down the harness rail listeners of the previous paint. */
     disposeRail?: () => void;
+    /** Edge fades on the model list of the current paint. */
+    disposeRowFades?: () => void;
     /** Rail selection last scrolled into view, so searches and effort changes do not fight the user's scroll. */
     revealedRailSelection?: string;
+    /**
+     * Document listener that picks a model by Cmd/Ctrl+1..9 while the picker is open, wherever focus is (the picker
+     * opens from a pill click, so focus is often on the page). Installed on open, removed by the dispose.
+     */
+    disposeDocumentKeys?: () => void;
 }
 
 /** Latest props per picker root, so one keydown listener serves every re-render. */
@@ -63,6 +74,7 @@ export function renderQaapComposerModelPicker(host: HTMLElement, props: QaapComp
     const previous = hostStates.get(host);
     const openMenu = previous?.openMenu;
     previous?.disposeRail?.();
+    previous?.disposeRowFades?.();
     // The search field is the node the user types into: it is kept across repaints, focus included.
     const previousInput = host.querySelector<HTMLInputElement>('.qaap-model-picker-search input') ?? undefined;
     const hadFocus = previousInput !== undefined && document.activeElement === previousInput;
@@ -75,11 +87,13 @@ export function renderQaapComposerModelPicker(host: HTMLElement, props: QaapComp
     const railSelection = props.state.railSelection;
     const reveal = previous?.revealedRailSelection !== railSelection;
     const rail = renderRail(props);
+    const opening = !previous?.disposeDocumentKeys;
     hostStates.set(host, {
         props,
         openMenu,
         disposeRail: attachRailScroll(rail.frame, rail.nav),
         revealedRailSelection: railSelection,
+        disposeDocumentKeys: previous?.disposeDocumentKeys ?? attachDocumentShortcutKeys(host),
     });
 
     const root = document.createElement('div');
@@ -100,6 +114,10 @@ export function renderQaapComposerModelPicker(host: HTMLElement, props: QaapComp
     if (kept && hadFocus) {
         kept.focus({ preventScroll: true });
         kept.setSelectionRange(selection[0], selection[1]);
+    } else if (kept && opening && !props.isMobile) {
+        // Desktop: the picker takes focus when it opens (search field), so typing filters and its keys reach it.
+        // Mobile keeps focus where it is so the on-screen keyboard does not pop up.
+        kept.focus({ preventScroll: true });
     }
     if (reveal) {
         rail.nav.querySelector<HTMLElement>('.qaap-model-picker-rail-item.theia-mod-selected')
@@ -118,9 +136,31 @@ export function pickerPopoverHeight(pillTop: number, viewportHeight: number): nu
 export function disposeQaapComposerModelPicker(host: HTMLElement): void {
     const state = hostStates.get(host);
     state?.disposeRail?.();
+    state?.disposeRowFades?.();
+    state?.disposeDocumentKeys?.();
     if (state) {
         state.disposeRail = undefined;
+        state.disposeRowFades = undefined;
+        state.disposeDocumentKeys = undefined;
     }
+}
+
+/**
+ * Cmd/Ctrl+1..9 picks the Nth listed model while the picker is open, even when focus is outside it. Keys typed
+ * inside the picker are left to its own keydown handler, so nothing is handled twice.
+ */
+function attachDocumentShortcutKeys(host: HTMLElement): () => void {
+    const doc = host.ownerDocument;
+    const listener = (event: KeyboardEvent): void => {
+        if (!host.isConnected || (event.target instanceof Node && host.contains(event.target))) {
+            return;
+        }
+        if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && /^[1-9]$/.test(event.key)) {
+            handlePickerKeydown(host, event);
+        }
+    };
+    doc.addEventListener('keydown', listener);
+    return () => doc.removeEventListener('keydown', listener);
 }
 
 function renderRail(props: QaapComposerModelPickerProps): { frame: HTMLElement; nav: HTMLElement } {
@@ -176,8 +216,9 @@ function prefersReducedMotion(): boolean {
 }
 
 /**
- * Keeps the rail's overflow classes in step with its scroll position, translates a vertical wheel
- * into horizontal travel on the horizontal rail, and wires the discrete arrows. Returns the teardown.
+ * Keeps the rail's edge fades on the axis it scrolls (Y on desktop, X in the narrow layout), translates
+ * a vertical wheel into horizontal travel on the horizontal rail, and wires the discrete arrows.
+ * Returns the teardown.
  */
 function attachRailScroll(frame: HTMLElement, nav: HTMLElement): () => void {
     const disposables: Array<() => void> = [];
@@ -191,21 +232,28 @@ function attachRailScroll(frame: HTMLElement, nav: HTMLElement): () => void {
         disposables.push(() => target.removeEventListener(type, handler, options));
     };
     const isHorizontal = (): boolean => getComputedStyle(nav).flexDirection === 'row';
+    // The fades follow the rail's orientation; a layout change re-attaches them on the other axis.
+    let fades: { dispose(): void } | undefined;
+    let fadeAxis: 'x' | 'y' | undefined;
+    const syncFades = (horizontal: boolean): void => {
+        const axis = horizontal ? 'x' : 'y';
+        if (fadeAxis === axis) {
+            return;
+        }
+        fades?.dispose();
+        fades = attachQaapScrollEdgeFades(nav, { axis });
+        fadeAxis = axis;
+    };
     const update = (): void => {
         const horizontal = isHorizontal();
-        const position = horizontal ? nav.scrollLeft : nav.scrollTop;
-        const viewport = horizontal ? nav.clientWidth : nav.clientHeight;
-        const content = horizontal ? nav.scrollWidth : nav.scrollHeight;
         nav.classList.toggle('theia-mod-horizontal', horizontal);
-        nav.classList.toggle('theia-mod-overflow-start', position > 1);
-        nav.classList.toggle('theia-mod-overflow-end', content - viewport - position > 1);
+        syncFades(horizontal);
     };
     const step = (): number => {
         const item = nav.querySelector<HTMLElement>('.qaap-model-picker-rail-item');
         const gap = parseFloat(getComputedStyle(nav).columnGap) || 0;
         return item ? (item.offsetWidth + gap) * RAIL_ARROW_ITEMS : RAIL_ITEM_STEP_FALLBACK * RAIL_ARROW_ITEMS;
     };
-    listen(nav, 'scroll', update, { passive: true });
     listen(nav, 'wheel', event => {
         if (!isHorizontal() || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
             return;
@@ -230,6 +278,11 @@ function attachRailScroll(frame: HTMLElement, nav: HTMLElement): () => void {
         observer.observe(nav);
         disposables.push(() => observer?.disconnect());
     }
+    disposables.push(() => {
+        fades?.dispose();
+        fades = undefined;
+        fadeAxis = undefined;
+    });
     update();
     return () => disposables.forEach(dispose => dispose());
 }
@@ -273,7 +326,8 @@ function renderList(host: HTMLElement, props: QaapComposerModelPickerProps): HTM
     input.addEventListener('keydown', ev => {
         if (ev.key === 'Enter') {
             ev.preventDefault();
-            const first = visibleRows(host).find(row => !row.disabled);
+            // Enter picks the first selectable row; a locked row (sign-in or plan) is never picked by Enter.
+            const first = visibleRows(host).find(row => !row.disabled && row.getAttribute('aria-disabled') !== 'true');
             first?.click();
         } else if (ev.key === 'ArrowDown') {
             ev.preventDefault();
@@ -282,32 +336,32 @@ function renderList(host: HTMLElement, props: QaapComposerModelPickerProps): HTM
     });
     search.append(glass, input);
 
+    // A harness that needs a sign-in gets a compact action at the end of the search row instead of
+    // a warning strip; the explanation stays as its tooltip and accessible name.
     if (props.connect) {
-        const strip = document.createElement('div');
-        strip.className = 'qaap-model-picker-connect';
-        strip.setAttribute('role', 'status');
-        const text = document.createElement('span');
-        text.textContent = props.connect.message;
         const action = document.createElement('button');
         action.type = 'button';
         action.className = 'qaap-model-picker-connect-action';
         action.textContent = props.connect.actionLabel;
+        action.title = props.connect.message;
+        action.setAttribute('aria-label', `${props.connect.actionLabel}: ${props.connect.message}`);
         action.addEventListener('click', ev => {
+            // Inside the search <label>: keep the click from also focusing the input.
             ev.preventDefault();
+            ev.stopPropagation();
             props.connect?.onAction();
         });
-        strip.append(text, action);
-        section.append(strip);
+        search.append(action);
     }
     const rows = document.createElement('div');
     rows.className = 'qaap-model-picker-rows';
     rows.setAttribute('role', 'listbox');
-    // Bottom fade while more models sit below the fold, so a long list reads as scrollable.
-    const updateRowsFade = (): void => {
-        rows.classList.toggle('theia-mod-more-below', rows.scrollHeight - rows.scrollTop - rows.clientHeight > 1);
-    };
-    rows.addEventListener('scroll', updateRowsFade, { passive: true });
-    rows.ownerDocument.defaultView?.requestAnimationFrame?.(updateRowsFade);
+    // Fades only on the edge where models sit below or above the fold.
+    const rowFades = attachQaapScrollEdgeFades(rows);
+    const state = hostStates.get(host);
+    if (state) {
+        state.disposeRowFades = () => rowFades.dispose();
+    }
     const models = QaapComposerModelPickerModel.visibleModels(props.state);
     const favorites = new Set(props.state.favorites);
     const compact = !props.isMobile;
@@ -321,13 +375,21 @@ function renderList(host: HTMLElement, props: QaapComposerModelPickerProps): HTM
         row.setAttribute('aria-selected', String(isCurrent));
         row.dataset.agentId = model.agentId;
         row.dataset.modelId = model.modelId;
-        row.disabled = !model.available;
+        // A sign-in-locked row is not selectable, but stays clickable (not natively disabled) so the click can
+        // open the harness sign-in. Any other locked row is natively disabled and does nothing.
+        const signInLocked = !model.available && model.signInRequired === true && !!props.onSignIn;
+        row.disabled = !model.available && !signInLocked;
+        row.setAttribute('aria-disabled', String(!model.available));
+        row.classList.toggle('theia-mod-disabled', !model.available);
         row.classList.toggle('theia-mod-current', isCurrent);
         // The row shows the name only; the full model id is the tooltip.
         row.title = model.available ? model.modelId : (model.unavailableReason ?? model.modelId);
         row.addEventListener('click', ev => {
             ev.preventDefault();
             if (!model.available) {
+                if (signInLocked) {
+                    props.onSignIn?.(model.agentId);
+                }
                 return;
             }
             props.onSelectModel(model.agentId, model.modelId);
@@ -338,11 +400,25 @@ function renderList(host: HTMLElement, props: QaapComposerModelPickerProps): HTM
         label.className = 'qaap-model-picker-row-label';
         label.textContent = model.label;
         row.append(label);
-        if (model.paid) {
+        if (model.tier) {
+            const tier = document.createElement('span');
+            tier.className = 'qaap-model-picker-row-paid';
+            tier.textContent = model.tier === 'free'
+                ? nls.localize('qaap/composer/picker/free', 'Free')
+                : nls.localize('qaap/composer/picker/pro', 'Pro');
+            row.append(tier);
+        } else if (model.paid) {
             const paid = document.createElement('span');
             paid.className = 'qaap-model-picker-row-paid';
             paid.textContent = nls.localize('qaap/composer/picker/paid', 'Paid');
             row.append(paid);
+        }
+        if (signInLocked) {
+            const signIn = document.createElement('span');
+            signIn.className = 'qaap-model-picker-row-paid';
+            const harnessLabel = props.state.harnesses.find(harness => harness.id === model.agentId)?.label ?? model.agentId;
+            signIn.textContent = nls.localize('qaap/composer/picker/signInTo', 'Sign in to {0}', harnessLabel);
+            row.append(signIn);
         }
         if (isCurrent) {
             const check = document.createElement('span');
@@ -374,7 +450,14 @@ function renderList(host: HTMLElement, props: QaapComposerModelPickerProps): HTM
     if (models.length === 0) {
         const empty = document.createElement('p');
         empty.className = 'qaap-model-picker-empty';
-        empty.textContent = nls.localize('qaap/composer/picker/noModels', 'No models match.');
+        if (props.state.loading) {
+            // Still loading: say so, and keep "No models match." for a list that has actually answered.
+            rows.setAttribute('aria-busy', 'true');
+            empty.setAttribute('role', 'status');
+            empty.textContent = nls.localize('qaap/composer/picker/loadingModels', 'Loading models…');
+        } else {
+            empty.textContent = nls.localize('qaap/composer/picker/noModels', 'No models match.');
+        }
         rows.append(empty);
     }
     section.append(search, rows);
@@ -467,8 +550,7 @@ function createFooterMenu(
 function renderFooter(host: HTMLElement, props: QaapComposerModelPickerProps): HTMLElement {
     const footer = document.createElement('footer');
     footer.className = 'qaap-model-picker-footer';
-    const options = props.approval.options ?? QAAP_AGENT_APPROVAL_POLICIES;
-    const current = options.find(option => option.id === props.approval.current) ?? options[0];
+    const approval = props.approval;
 
     const left = document.createElement('div');
     left.className = 'qaap-model-picker-footer-left';
@@ -488,18 +570,24 @@ function renderFooter(host: HTMLElement, props: QaapComposerModelPickerProps): H
 
     const right = document.createElement('div');
     right.className = 'qaap-model-picker-footer-right';
-    right.append(createFooterMenu(host, 'access', {
-        iconClass: current.toolbarIconClass,
-        label: current.label,
-        title: nls.localize('qaap/composer/picker/accessTitle', 'Access: {0}', current.label),
-    }, options.map(option => ({
-        label: option.label,
-        iconClass: option.sheetIconClass,
-        checked: option.id === props.approval.current,
-        onSelect: () => props.onSelectApproval(option.id),
-    }))));
+    if (approval) {
+        const options = approval.options ?? QAAP_AGENT_APPROVAL_POLICIES;
+        const current = options.find(option => option.id === approval.current) ?? options[0];
+        right.append(createFooterMenu(host, 'access', {
+            iconClass: current.toolbarIconClass,
+            label: current.label,
+            title: nls.localize('qaap/composer/picker/accessTitle', 'Access: {0}', current.label),
+        }, options.map(option => ({
+            label: option.label,
+            iconClass: option.sheetIconClass,
+            checked: option.id === approval.current,
+            onSelect: () => props.onSelectApproval(option.id),
+        }))));
+    }
 
     footer.append(left, right);
+    // Nothing to show (no effort, no access): no footer at all.
+    footer.hidden = left.childElementCount === 0 && right.childElementCount === 0;
     return footer;
 }
 

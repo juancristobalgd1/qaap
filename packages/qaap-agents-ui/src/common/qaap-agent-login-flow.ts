@@ -132,6 +132,12 @@ export type QaapAgentLoginFlowState =
         readonly prompt?: string;
         /** The link deadline that elapsed (`timeout`), when it is not the default one. */
         readonly timeoutMs?: number;
+        /** What the host saw from the sign-in terminal before a `timeout` (set via `setDiagnostics`). */
+        readonly diagnostics?: string;
+        /** `exited` with a native crash: the first meaningful line of the crash report (frames are dropped from `tail`). */
+        readonly crash?: string;
+        /** `timeout` where the CLI printed nothing: `tail` is the terminal's own output (the typed command's echo). */
+        readonly terminalEchoOnly?: boolean;
     };
 
 export interface QaapAgentLoginFlowOptions {
@@ -142,6 +148,52 @@ export interface QaapAgentLoginFlowOptions {
      * (Pi) needs longer: the CLI starts first, then the dialog types its way to the link.
      */
     readonly challengeTimeoutMs?: number;
+    /**
+     * The host's input driver answers the CLI's first-run picker itself (agy's "Select login method"),
+     * so seeing that question is not a stall: the blocking-prompt check is off and the link deadline decides.
+     */
+    readonly answersPrompts?: boolean;
+    /**
+     * The CLI always wants the code the browser shows after approval, but prints no prompt that says
+     * so (agy): every challenge with a link is published with the paste-back field.
+     */
+    readonly alwaysAcceptsCode?: boolean;
+}
+
+/**
+ * A line of a native crash report rather than a message: Node/V8 frames (` 1: 0xb7a2a0 node::Abort() [node]`,
+ * `#  0: …`), libc frames (`__libc_start_main`), the frame-section headers and bare addresses.
+ */
+const NATIVE_FRAME_PATTERNS: readonly RegExp[] = [
+    /^\s*#?\s*\d+\s*:\s+(?:0x[0-9a-f]+|\[)/i,
+    /^\s*(?:at\s+)?0x[0-9a-f]{4,}\b/i,
+    /\b(?:node::|v8::|__libc_start_main|libc\.so|uv_run|Builtins_)/,
+    /^\s*-{3,}\s*(?:native|js|javascript)?\s*stack trace\s*-{3,}\s*$/i,
+];
+/** Lines that name what crashed, preferred as the crash summary. */
+const CRASH_HEADLINE_PATTERN = /FATAL ERROR|Fatal (?:error|process)|Check failed|Assertion failed|Segmentation fault|Illegal instruction|Bus error|Aborted|terminated by signal|out of memory|\bError\b/i;
+/** Copilot's npm loader prints this after its native binary died by a signal; it misleads as a summary. */
+const MISLEADING_AFTER_CRASH_PATTERN = /no platform package found/i;
+
+function isNativeFrameLine(line: string): boolean {
+    return NATIVE_FRAME_PATTERNS.some(pattern => pattern.test(line));
+}
+
+/**
+ * Splits a CLI's output into its readable lines and a crash summary when it ended with a native crash
+ * report (two or more native frames): the user gets the first meaningful line, not a raw stack.
+ */
+export function summarizeAgentLoginCrashOutput(lines: readonly string[]): { readonly crash?: string; readonly lines: readonly string[] } {
+    const frames = lines.filter(isNativeFrameLine).length;
+    if (frames < 2) {
+        return { lines };
+    }
+    const readable = lines.filter(line => !isNativeFrameLine(line) && line.trim().length > 0);
+    const candidates = readable.filter(line => !MISLEADING_AFTER_CRASH_PATTERN.test(line));
+    const headline = candidates.find(line => CRASH_HEADLINE_PATTERN.test(line)) ?? candidates[0] ?? readable[0];
+    const crash = headline?.trim().replace(/^[#\s]+/, '').slice(0, 300)
+        || 'The CLI crashed natively (no message before the stack trace).';
+    return { crash, lines: readable };
 }
 
 /** Last meaningful terminal lines, without the wrapper command echo or the exit marker. */
@@ -166,6 +218,8 @@ export class QaapAgentLoginFlow {
     protected blockingPrompt: { readonly line: string; readonly since: number } | undefined;
     /** When the first sign-in link appeared; the sign-in deadline runs from here. */
     protected challengeSince: number | undefined;
+    /** Host-provided description of the terminal (started, bytes seen); attached to a `timeout` failure. */
+    protected diagnostics: string | undefined;
 
     constructor(protected readonly options: QaapAgentLoginFlowOptions) { }
 
@@ -213,6 +267,11 @@ export class QaapAgentLoginFlow {
         if (this.current.phase === 'waiting') {
             this.set({ phase: 'waiting', startedAt: now });
         }
+    }
+
+    /** Host facts about the sign-in terminal, reported with a `timeout` failure. Call before `tick`. */
+    setDiagnostics(text: string | undefined): void {
+        this.diagnostics = text;
     }
 
     /** The login command was sent to the terminal; the watchdog starts now. */
@@ -275,7 +334,7 @@ export class QaapAgentLoginFlow {
         const challenge = extractAgentAuthLoginChallenge(sample, { preferMode: 'session', agentId: this.options.agentId });
         // A bare mode (e.g. the echoed `--device-auth` flag) is not something the user can act on.
         if (!challenge || (!challenge.url && !challenge.userCode)) {
-            if (this.current.phase === 'waiting') {
+            if (this.current.phase === 'waiting' && !this.options.answersPrompts) {
                 const prompt = findAgentLoginBlockingPrompt(visible);
                 if (prompt && prompt !== this.blockingPrompt?.line) {
                     this.blockingPrompt = { line: prompt, since: now };
@@ -283,13 +342,14 @@ export class QaapAgentLoginFlow {
             }
             return;
         }
-        if (this.current.phase === 'challenge' && sameChallenge(this.current.challenge, challenge)) {
+        const shown = this.options.alwaysAcceptsCode && challenge.url ? { ...challenge, codeEntry: true } : challenge;
+        if (this.current.phase === 'challenge' && sameChallenge(this.current.challenge, shown)) {
             return;
         }
         if (this.challengeSince === undefined) {
             this.challengeSince = now;
         }
-        this.set({ phase: 'challenge', challenge });
+        this.set({ phase: 'challenge', challenge: shown });
     }
 
     /** The login command ended (exit marker). 0 is success; anything else shows the CLI output. */
@@ -301,7 +361,8 @@ export class QaapAgentLoginFlow {
             this.connected();
             return;
         }
-        this.set({ phase: 'failed', reason: 'exited', exitCode: code, tail: resolveAgentLoginOutputTail(this.output) });
+        const { crash, lines } = summarizeAgentLoginCrashOutput(resolveAgentLoginOutputTail(this.output, Number.MAX_SAFE_INTEGER));
+        this.set({ phase: 'failed', reason: 'exited', exitCode: code, tail: lines.slice(-TAIL_LINES), ...(crash ? { crash } : {}) });
     }
 
     /** The user pasted the authorization code back into the CLI. */
@@ -339,11 +400,17 @@ export class QaapAgentLoginFlow {
         const timedOut = (state.phase === 'waiting' && now - state.startedAt >= challengeTimeoutMs)
             || (state.phase === 'code-submitted' && now - state.submittedAt >= QAAP_AGENT_LOGIN_CODE_TIMEOUT_MS);
         if (timedOut) {
+            const tail = resolveAgentLoginOutputTail(this.output);
+            // Nothing from the CLI itself: show what the terminal did print (the typed command's echo, the
+            // prompt) instead of an empty box, so "the command ran and stayed silent" is visible.
+            const terminalTail = tail.length ? [] : this.output.split('\n').map(line => line.trimEnd()).filter(line => line.trim().length > 0).slice(-TAIL_LINES);
             this.set({
                 phase: 'failed',
                 reason: 'timeout',
-                tail: resolveAgentLoginOutputTail(this.output),
+                tail: tail.length ? tail : terminalTail,
+                ...(!tail.length && terminalTail.length ? { terminalEchoOnly: true } : {}),
                 ...(state.phase === 'waiting' && this.options.challengeTimeoutMs !== undefined ? { timeoutMs: challengeTimeoutMs } : {}),
+                ...(this.diagnostics ? { diagnostics: this.diagnostics } : {}),
             });
         }
     }

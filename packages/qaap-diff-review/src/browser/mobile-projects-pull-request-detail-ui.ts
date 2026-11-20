@@ -7,8 +7,10 @@ import {
     mergeQaapGithubPullRequest,
 } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import type {
+    QaapGithubPullRequestCheck,
     QaapGithubPullRequestFile,
     QaapGithubPullRequestSummary,
+    QaapGithubPullRequestTimelineEvent,
 } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import { nls } from '@theia/core/lib/common/nls';
 import * as markdownit from '@theia/core/shared/markdown-it';
@@ -27,7 +29,7 @@ export interface MobileProjectsPullRequestDetailHost {
     onPullRequestMerged?(pullRequest: QaapGithubPullRequestSummary): void;
 }
 
-export type MobileProjectsPullRequestDetailTab = 'summary' | 'code';
+export type MobileProjectsPullRequestDetailTab = 'summary' | 'timeline' | 'code';
 type PullRequestDetailTab = MobileProjectsPullRequestDetailTab;
 
 /** Main-content pull-request detail surface opened from the sidebar navigator. */
@@ -129,63 +131,8 @@ export class MobileProjectsPullRequestDetailUi {
         }
 
         const root = document.createElement('div');
-        root.className = 'theia-mobile-work-hub-pull-request-detail';
-
-        const toolbar = document.createElement('div');
-        toolbar.className = 'theia-mobile-work-hub-pull-request-detail-toolbar';
-        const tabs = document.createElement('div');
-        tabs.className = 'theia-mobile-work-hub-pull-request-detail-tabs';
-        for (const tab of [
-            ['summary', nls.localize('qaap/pullRequests/summary', 'Summary')],
-            ['code', nls.localize('qaap/pullRequests/code', 'Code')],
-        ] as const) {
-            const tabButton = document.createElement('button');
-            tabButton.type = 'button';
-            tabButton.className = 'theia-mobile-work-hub-pull-request-detail-tab';
-            tabButton.textContent = tab[1];
-            tabButton.classList.toggle('theia-mod-active', this.activeTab === tab[0]);
-            tabButton.setAttribute('aria-selected', String(this.activeTab === tab[0]));
-            tabButton.setAttribute('role', 'tab');
-            tabButton.addEventListener('click', () => {
-                this.activeTab = tab[0];
-                this.render();
-            });
-            tabs.append(tabButton);
-        }
-        const toolbarActions = document.createElement('div');
-        toolbarActions.className = 'theia-mobile-work-hub-pull-request-detail-actions';
-        const external = document.createElement('a');
-        external.className = 'theia-mobile-work-hub-pull-request-detail-icon-button';
-        external.href = pullRequest.htmlUrl;
-        external.target = '_blank';
-        external.rel = 'noreferrer';
-        external.title = nls.localize('qaap/pullRequests/openOnGithub', 'Open on GitHub');
-        external.setAttribute('aria-label', external.title);
-        external.innerHTML = '<span class="codicon codicon-link-external" aria-hidden="true"></span>';
-        const chatButton = this.createIconButton(
-            nls.localize('qaap/pullRequests/openChat', 'Open chat'),
-            'theia-mobile-work-hub-pull-request-chat-button',
-            'codicon-comment-discussion',
-        );
-        chatButton.addEventListener('click', () => this.openChat());
-        const mergeButton = this.createIconButton(
-            this.merged
-                ? nls.localize('qaap/pullRequests/merged', 'Merged')
-                : nls.localize('qaap/pullRequests/merge', 'Merge'),
-            'theia-mobile-work-hub-pull-request-merge-button',
-            'codicon-git-merge',
-        );
-        mergeButton.disabled = this.merged || this.merging || !this.canMerge(pullRequest);
-        mergeButton.addEventListener('click', () => {
-            if (!this.merged) {
-                this.mergeConfirming = !this.mergeConfirming;
-                this.render();
-            }
-        });
-        toolbarActions.append(external, chatButton, mergeButton);
-        toolbar.append(tabs, toolbarActions);
-        root.append(toolbar);
-
+        root.className = 'theia-mobile-work-hub-pull-request-detail qaap-pr';
+        root.append(this.createHeader(pullRequest));
         if (this.notice) {
             const notice = document.createElement('div');
             notice.className = 'theia-mobile-work-hub-pull-request-notice';
@@ -195,29 +142,11 @@ export class MobileProjectsPullRequestDetailUi {
         if (this.mergeConfirming) {
             root.append(this.createMergeConfirmation(pullRequest));
         }
-
-        const heading = document.createElement('div');
-        heading.className = 'theia-mobile-work-hub-pull-request-heading';
-        const status = document.createElement('span');
-        status.className = `theia-mobile-work-hub-pull-request-detail-status ${this.merged ? 'theia-mod-merged' : 'theia-mod-open'}`;
-        status.innerHTML = `<span class="codicon ${this.merged ? 'codicon-git-merge' : 'codicon-git-pull-request'}" aria-hidden="true"></span>`;
-        const titleBlock = document.createElement('div');
-        const title = document.createElement('h2');
-        title.textContent = pullRequest.title;
-        const byline = document.createElement('p');
-        byline.textContent = nls.localize(
-            'qaap/pullRequests/byline',
-            'Opened by @{0} · {1}',
-            pullRequest.author,
-            this.formatRelativeTime(pullRequest.updatedAt),
-        );
-        titleBlock.append(title, byline);
-        heading.append(status, titleBlock);
-        root.append(heading);
-
-        root.append(this.createBranchSummary(pullRequest));
+        root.append(this.createTabBar(pullRequest));
         if (this.activeTab === 'code') {
             root.append(this.createCodeView(pullRequest));
+        } else if (this.activeTab === 'timeline') {
+            root.append(this.createTimelineView(pullRequest));
         } else {
             root.append(this.createSummaryView(pullRequest));
         }
@@ -228,10 +157,236 @@ export class MobileProjectsPullRequestDetailUi {
         this.host.scroll.replaceChildren(...detailChildren);
     }
 
+    /**
+     * Header: back · owner/repo #N ↗ · merge / more; the title; author avatar, "updated …" and a copyable
+     * `gh pr checkout N`; then base ← head with the file count and the line stats.
+     */
+    protected createHeader(pullRequest: QaapGithubPullRequestSummary): HTMLElement {
+        const header = document.createElement('header');
+        header.className = 'qaap-pr-header';
+
+        const top = document.createElement('div');
+        top.className = 'qaap-pr-topbar';
+        const back = this.createIconButton(nls.localize('qaap/pullRequests/back', 'Back to pull requests'), 'qaap-pr-icon-button', 'codicon-arrow-left');
+        back.addEventListener('click', () => this.host.closePullRequestDetail());
+        const crumb = document.createElement('a');
+        crumb.className = 'qaap-pr-crumb';
+        crumb.href = pullRequest.htmlUrl;
+        crumb.target = '_blank';
+        crumb.rel = 'noreferrer';
+        crumb.title = nls.localize('qaap/pullRequests/openOnGithub', 'Open on GitHub');
+        const repoName = document.createElement('span');
+        repoName.className = 'qaap-pr-crumb-repo';
+        repoName.textContent = `${pullRequest.owner}/${pullRequest.repo}`;
+        const number = document.createElement('span');
+        number.className = 'qaap-pr-crumb-number';
+        number.textContent = `#${pullRequest.number}`;
+        const externalIcon = document.createElement('span');
+        externalIcon.className = 'codicon codicon-link-external qaap-pr-crumb-external';
+        externalIcon.setAttribute('aria-hidden', 'true');
+        crumb.append(repoName, number, externalIcon);
+        const spacer = document.createElement('span');
+        spacer.className = 'qaap-pr-spacer';
+        const merge = this.createIconButton(
+            this.merged ? nls.localize('qaap/pullRequests/merged', 'Merged') : nls.localize('qaap/pullRequests/merge', 'Merge'),
+            'qaap-pr-icon-button qaap-pr-primary-action',
+            this.merged ? 'codicon-git-merge' : 'codicon-git-pull-request',
+        );
+        merge.classList.toggle('theia-mod-merged', this.merged);
+        merge.disabled = this.merged || this.merging || !this.canMerge(pullRequest);
+        merge.addEventListener('click', () => {
+            if (!this.merged) {
+                this.mergeConfirming = !this.mergeConfirming;
+                this.render();
+            }
+        });
+        const chat = this.createIconButton(nls.localize('qaap/pullRequests/openChat', 'Open chat'), 'qaap-pr-icon-button', 'codicon-comment-discussion');
+        chat.addEventListener('click', () => this.openChat());
+        top.append(back, crumb, spacer, merge, chat);
+
+        const title = document.createElement('h1');
+        title.className = 'qaap-pr-title';
+        title.textContent = pullRequest.title;
+        title.title = pullRequest.title;
+
+        const byline = document.createElement('div');
+        byline.className = 'qaap-pr-byline';
+        const person = document.createElement('span');
+        person.className = 'qaap-pr-person';
+        person.append(this.createAvatar(pullRequest.author, pullRequest.authorAvatarUrl));
+        const author = document.createElement('span');
+        author.className = 'qaap-pr-author';
+        author.textContent = pullRequest.author;
+        const updated = document.createElement('span');
+        updated.className = 'qaap-pr-muted';
+        updated.textContent = `· ${nls.localize('qaap/pullRequests/updated', 'updated {0}', this.formatCompactRelativeTime(pullRequest.updatedAt))}`;
+        updated.title = new Date(pullRequest.updatedAt).toLocaleString();
+        person.append(author, updated);
+        const checkout = document.createElement('button');
+        checkout.type = 'button';
+        checkout.className = 'qaap-pr-checkout';
+        const checkoutCommand = `gh pr checkout ${pullRequest.number}`;
+        checkout.textContent = checkoutCommand;
+        checkout.title = nls.localize('qaap/pullRequests/copyCheckout', 'Copy the checkout command');
+        checkout.addEventListener('click', () => {
+            void navigator.clipboard?.writeText(checkoutCommand).then(() => {
+                this.notice = nls.localize('qaap/pullRequests/checkoutCopied', 'Copied: {0}', checkoutCommand);
+                this.render();
+            }, () => undefined);
+        });
+        byline.append(person, checkout);
+
+        const branches = document.createElement('div');
+        branches.className = 'qaap-pr-branches';
+        const refs = document.createElement('span');
+        refs.className = 'qaap-pr-refs';
+        refs.textContent = `${pullRequest.base}  ←  ${pullRequest.branch}`;
+        refs.title = `${pullRequest.branch} → ${pullRequest.base}`;
+        const stats = document.createElement('span');
+        stats.className = 'qaap-pr-diffstat';
+        const fileIcon = document.createElement('span');
+        fileIcon.className = 'codicon codicon-diff';
+        fileIcon.setAttribute('aria-hidden', 'true');
+        const files = document.createElement('span');
+        files.textContent = nls.localize('qaap/pullRequests/fileCount', '{0} files', String(pullRequest.files));
+        const adds = document.createElement('span');
+        adds.className = 'qaap-pr-adds';
+        adds.textContent = `+${pullRequest.adds}`;
+        const dels = document.createElement('span');
+        dels.className = 'qaap-pr-dels';
+        dels.textContent = `−${pullRequest.dels}`;
+        stats.append(fileIcon, files, adds, dels);
+        branches.append(refs, stats);
+
+        header.append(top, title, byline, branches);
+        return header;
+    }
+
+    /** "just now", "14m ago", "3h ago", "2d ago", then the date: short enough for the header byline. */
+    protected formatCompactRelativeTime(iso: string): string {
+        const then = Date.parse(iso);
+        if (!Number.isFinite(then)) {
+            return '';
+        }
+        const minutes = Math.max(0, Math.round((Date.now() - then) / 60000));
+        if (minutes < 1) {
+            return nls.localize('qaap/pullRequests/justNow', 'just now');
+        }
+        if (minutes < 60) {
+            return nls.localize('qaap/pullRequests/minutesAgo', '{0}m ago', String(minutes));
+        }
+        const hours = Math.round(minutes / 60);
+        if (hours < 24) {
+            return nls.localize('qaap/pullRequests/hoursAgo', '{0}h ago', String(hours));
+        }
+        const days = Math.round(hours / 24);
+        if (days < 30) {
+            return nls.localize('qaap/pullRequests/daysAgo', '{0}d ago', String(days));
+        }
+        return new Date(then).toLocaleDateString();
+    }
+
+    /** Avatar image with an initials fallback (also used when the image fails to load). */
+    protected createAvatar(login: string | undefined, url: string | undefined): HTMLElement {
+        const avatar = document.createElement('span');
+        avatar.className = 'qaap-pr-avatar';
+        avatar.textContent = (login ?? '?').slice(0, 1).toUpperCase();
+        if (url) {
+            const image = document.createElement('img');
+            image.alt = '';
+            image.loading = 'lazy';
+            image.src = url;
+            image.addEventListener('error', () => image.remove(), { once: true });
+            avatar.append(image);
+        }
+        return avatar;
+    }
+
+    /** Segmented Summary / Timeline / Code, with the checks roll-up on the right. */
+    protected createTabBar(pullRequest: QaapGithubPullRequestSummary): HTMLElement {
+        const bar = document.createElement('div');
+        bar.className = 'qaap-pr-tabbar';
+        const tabs = document.createElement('div');
+        tabs.className = 'qaap-pr-tabs';
+        tabs.setAttribute('role', 'tablist');
+        for (const [id, label] of [
+            ['summary', nls.localize('qaap/pullRequests/summary', 'Summary')],
+            ['timeline', nls.localize('qaap/pullRequests/timeline', 'Timeline')],
+            ['code', nls.localize('qaap/pullRequests/code', 'Code')],
+        ] as const) {
+            const tab = document.createElement('button');
+            tab.type = 'button';
+            tab.className = 'qaap-pr-tab';
+            tab.textContent = label;
+            tab.setAttribute('role', 'tab');
+            tab.setAttribute('aria-selected', String(this.activeTab === id));
+            tab.classList.toggle('theia-mod-active', this.activeTab === id);
+            tab.addEventListener('click', () => {
+                this.activeTab = id;
+                this.render();
+            });
+            tabs.append(tab);
+        }
+        bar.append(tabs, this.createChecksRollup(pullRequest));
+        return bar;
+    }
+
+    protected createChecksRollup(pullRequest: QaapGithubPullRequestSummary): HTMLElement {
+        const rollup = document.createElement('span');
+        rollup.className = 'qaap-pr-checks-rollup';
+        const checks = pullRequest.checks ?? [];
+        const icon = document.createElement('span');
+        icon.setAttribute('aria-hidden', 'true');
+        const label = document.createElement('span');
+        if (checks.length === 0) {
+            icon.className = `codicon ${this.checkIconClass(pullRequest.tests)}`;
+            rollup.classList.add(`theia-mod-${pullRequest.tests}`);
+            label.textContent = this.checkLabel(pullRequest);
+        } else {
+            const running = checks.filter(check => check.status !== 'completed').length;
+            const failing = checks.filter(check => check.status === 'completed' && this.checkFailed(check)).length;
+            if (running > 0) {
+                icon.className = 'codicon codicon-circle-large-outline';
+                rollup.classList.add('theia-mod-pending');
+                label.textContent = nls.localize('qaap/pullRequests/checksRunning', '{0} of {1} running', String(running), String(checks.length));
+            } else if (failing > 0) {
+                icon.className = 'codicon codicon-error';
+                rollup.classList.add('theia-mod-failing');
+                label.textContent = nls.localize('qaap/pullRequests/checksFailing', '{0} of {1} failing', String(failing), String(checks.length));
+            } else {
+                icon.className = 'codicon codicon-pass';
+                rollup.classList.add('theia-mod-passing');
+                label.textContent = nls.localize('qaap/pullRequests/checksPassed', 'All {0} checks passed', String(checks.length));
+            }
+        }
+        rollup.append(icon, label);
+        return rollup;
+    }
+
+    protected checkFailed(check: QaapGithubPullRequestCheck): boolean {
+        return check.conclusion === 'failure' || check.conclusion === 'timed_out' || check.conclusion === 'cancelled' || check.conclusion === 'action_required';
+    }
+
+    protected checkIconClass(tests: QaapGithubPullRequestSummary['tests']): string {
+        return tests === 'passing' ? 'codicon-pass' : tests === 'failing' ? 'codicon-error' : 'codicon-circle-large-outline';
+    }
+
     protected createSummaryView(pullRequest: QaapGithubPullRequestSummary): HTMLElement {
         const content = document.createElement('div');
-        content.className = 'theia-mobile-work-hub-pull-request-detail-content';
-        content.append(this.createMetadata(pullRequest));
+        content.className = 'theia-mobile-work-hub-pull-request-detail-content qaap-pr-summary';
+        content.append(this.createPeopleRows(pullRequest));
+        const edit = this.createIconButton(
+            this.descriptionEditing ? nls.localize('qaap/pullRequests/saveDescription', 'Save') : nls.localize('qaap/pullRequests/editDescription', 'Edit'),
+            'qaap-pr-icon-button qaap-pr-section-action',
+            this.descriptionEditing ? 'codicon-check' : 'codicon-edit',
+        );
+        edit.addEventListener('click', event => {
+            event.stopPropagation();
+            this.descriptionEditing = !this.descriptionEditing;
+            this.descriptionExpanded = true;
+            this.notice = this.descriptionEditing ? '' : nls.localize('qaap/pullRequests/descriptionSaved', 'Description updated.');
+            this.render();
+        });
         content.append(this.createCollapsibleSection(
             nls.localize('qaap/pullRequests/description', 'Description'),
             this.descriptionExpanded,
@@ -240,6 +395,7 @@ export class MobileProjectsPullRequestDetailUi {
                 this.render();
             },
             this.createDescriptionContent(),
+            edit,
         ));
         content.append(this.createCollapsibleSection(
             nls.localize('qaap/pullRequests/checks', 'Checks'),
@@ -250,16 +406,172 @@ export class MobileProjectsPullRequestDetailUi {
             },
             this.createChecksContent(pullRequest),
         ));
-        content.append(this.createCollapsibleSection(
-            nls.localize('qaap/pullRequests/activity', 'Activity'),
-            this.activityExpanded,
-            expanded => {
-                this.activityExpanded = expanded;
-                this.render();
-            },
-            this.createActivityContent(pullRequest),
-        ));
         return content;
+    }
+
+    /** Reviewers and Labels rows: people / chips, or "None", with a quiet trailing action icon. */
+    protected createPeopleRows(pullRequest: QaapGithubPullRequestSummary): HTMLElement {
+        const rows = document.createElement('div');
+        rows.className = 'qaap-pr-rows';
+
+        const reviewers = document.createElement('div');
+        reviewers.className = 'qaap-pr-row';
+        reviewers.append(this.createRowLabel('codicon-person', nls.localize('qaap/pullRequests/reviewers', 'Reviewers')));
+        const reviewerValue = document.createElement('div');
+        reviewerValue.className = 'qaap-pr-row-value';
+        const people = new Map<string, { login: string; avatarUrl?: string; state?: string }>();
+        for (const review of pullRequest.reviews ?? []) {
+            people.set(review.login, review);
+        }
+        for (const requested of pullRequest.requestedReviewers ?? []) {
+            if (!people.has(requested.login)) {
+                people.set(requested.login, requested);
+            }
+        }
+        if (people.size === 0) {
+            reviewerValue.append(this.createMuted(this.reviewerRequested
+                ? nls.localize('qaap/pullRequests/reviewerRequested', 'Requested')
+                : nls.localize('qaap/pullRequests/none', 'None')));
+        }
+        for (const person of people.values()) {
+            const chip = document.createElement('span');
+            chip.className = 'qaap-pr-person-chip';
+            if (person.state) {
+                chip.classList.add(`theia-mod-${person.state}`);
+                chip.title = person.state.replace('_', ' ');
+            }
+            chip.append(this.createAvatar(person.login, person.avatarUrl), document.createTextNode(person.login));
+            reviewerValue.append(chip);
+        }
+        const requestReviewer = this.createIconButton(nls.localize('qaap/pullRequests/requestReviewer', 'Request a reviewer'), 'qaap-pr-icon-button qaap-pr-row-action', 'codicon-person-add');
+        requestReviewer.addEventListener('click', () => {
+            window.open(`${pullRequest.htmlUrl}`, '_blank', 'noopener,noreferrer');
+        });
+        reviewerValue.append(requestReviewer);
+        reviewers.append(reviewerValue);
+
+        const labels = document.createElement('div');
+        labels.className = 'qaap-pr-row';
+        labels.append(this.createRowLabel('codicon-tag', nls.localize('qaap/pullRequests/labels', 'Labels')));
+        const labelValue = document.createElement('div');
+        labelValue.className = 'qaap-pr-row-value';
+        const labelList = pullRequest.labels ?? [];
+        if (labelList.length === 0) {
+            labelValue.append(this.createMuted(nls.localize('qaap/pullRequests/none', 'None')));
+        }
+        for (const label of labelList) {
+            const chip = document.createElement('span');
+            chip.className = 'qaap-pr-label';
+            chip.textContent = label.name;
+            if (label.color && /^[0-9a-f]{6}$/i.test(label.color)) {
+                chip.style.setProperty('--qaap-pr-label-color', `#${label.color}`);
+            }
+            labelValue.append(chip);
+        }
+        const addLabel = this.createIconButton(nls.localize('qaap/pullRequests/editLabels', 'Edit labels'), 'qaap-pr-icon-button qaap-pr-row-action', 'codicon-tag');
+        addLabel.addEventListener('click', () => window.open(pullRequest.htmlUrl, '_blank', 'noopener,noreferrer'));
+        labelValue.append(addLabel);
+        labels.append(labelValue);
+
+        rows.append(reviewers, labels);
+        return rows;
+    }
+
+    protected createRowLabel(iconClass: string, text: string): HTMLElement {
+        const label = document.createElement('span');
+        label.className = 'qaap-pr-row-label';
+        const icon = document.createElement('span');
+        icon.className = `codicon ${iconClass}`;
+        icon.setAttribute('aria-hidden', 'true');
+        label.append(icon, document.createTextNode(text));
+        return label;
+    }
+
+    protected createMuted(text: string): HTMLElement {
+        const muted = document.createElement('span');
+        muted.className = 'qaap-pr-muted';
+        muted.textContent = text;
+        return muted;
+    }
+
+    /** Timeline tab: GitHub's issue timeline (commits, comments, reviews, labels, merges), oldest first. */
+    protected createTimelineView(pullRequest: QaapGithubPullRequestSummary): HTMLElement {
+        const list = document.createElement('ol');
+        list.className = 'qaap-pr-timeline';
+        const events: QaapGithubPullRequestTimelineEvent[] = [
+            { kind: 'other', actor: pullRequest.author, actorAvatarUrl: pullRequest.authorAvatarUrl, text: undefined },
+            ...(pullRequest.timeline ?? []),
+            ...this.comments.map(comment => ({ kind: 'commented' as const, actor: nls.localize('qaap/pullRequests/you', 'You'), text: comment })),
+        ];
+        for (const event of events) {
+            const item = document.createElement('li');
+            item.className = `qaap-pr-timeline-item theia-mod-${event.kind}`;
+            const marker = document.createElement('span');
+            marker.className = `qaap-pr-timeline-marker codicon ${this.timelineIcon(event)}`;
+            marker.setAttribute('aria-hidden', 'true');
+            const body = document.createElement('div');
+            body.className = 'qaap-pr-timeline-body';
+            const line = document.createElement('div');
+            line.className = 'qaap-pr-timeline-line';
+            if (event.actor) {
+                const actor = document.createElement('strong');
+                actor.textContent = event.actor;
+                line.append(actor, document.createTextNode(' '));
+            }
+            line.append(document.createTextNode(this.timelineVerb(event)));
+            if (event.createdAt) {
+                const when = document.createElement('span');
+                when.className = 'qaap-pr-muted';
+                when.textContent = ` · ${this.formatRelativeTime(event.createdAt)}`;
+                line.append(when);
+            }
+            body.append(line);
+            if (event.text && (event.kind === 'commented' || event.kind === 'reviewed')) {
+                const bubble = document.createElement('div');
+                bubble.className = 'qaap-pr-timeline-bubble theia-mobile-work-hub-pull-request-description-text';
+                bubble.innerHTML = this.descriptionMarkdown.render(event.text);
+                body.append(bubble);
+            }
+            item.append(marker, body);
+            list.append(item);
+        }
+        return list;
+    }
+
+    protected timelineIcon(event: QaapGithubPullRequestTimelineEvent): string {
+        switch (event.kind) {
+            case 'committed': case 'head_ref_force_pushed': return 'codicon-git-commit';
+            case 'commented': return 'codicon-comment';
+            case 'reviewed': return event.reviewState === 'approved' ? 'codicon-pass' : event.reviewState === 'changes_requested' ? 'codicon-request-changes' : 'codicon-eye';
+            case 'labeled': case 'unlabeled': return 'codicon-tag';
+            case 'merged': return 'codicon-git-merge';
+            case 'closed': return 'codicon-circle-slash';
+            case 'reopened': case 'ready_for_review': return 'codicon-git-pull-request';
+            case 'review_requested': return 'codicon-person-add';
+            case 'renamed': return 'codicon-edit';
+            default: return 'codicon-git-pull-request';
+        }
+    }
+
+    protected timelineVerb(event: QaapGithubPullRequestTimelineEvent): string {
+        switch (event.kind) {
+            case 'committed': return nls.localize('qaap/pullRequests/tlCommitted', 'committed {0}', event.text ?? '');
+            case 'commented': return nls.localize('qaap/pullRequests/tlCommented', 'commented');
+            case 'reviewed': return event.reviewState === 'approved' ? nls.localize('qaap/pullRequests/tlApproved', 'approved these changes')
+                : event.reviewState === 'changes_requested' ? nls.localize('qaap/pullRequests/tlChanges', 'requested changes')
+                    : nls.localize('qaap/pullRequests/tlReviewed', 'reviewed');
+            case 'labeled': return nls.localize('qaap/pullRequests/tlLabeled', 'added the {0} label', event.text ?? '');
+            case 'unlabeled': return nls.localize('qaap/pullRequests/tlUnlabeled', 'removed the {0} label', event.text ?? '');
+            case 'merged': return nls.localize('qaap/pullRequests/tlMerged', 'merged this pull request');
+            case 'closed': return nls.localize('qaap/pullRequests/tlClosed', 'closed this pull request');
+            case 'reopened': return nls.localize('qaap/pullRequests/tlReopened', 'reopened this pull request');
+            case 'review_requested': return nls.localize('qaap/pullRequests/tlReviewRequested', 'requested a review');
+            case 'ready_for_review': return nls.localize('qaap/pullRequests/tlReady', 'marked this ready for review');
+            case 'convert_to_draft': return nls.localize('qaap/pullRequests/tlDraft', 'converted this to a draft');
+            case 'head_ref_force_pushed': return nls.localize('qaap/pullRequests/tlForcePushed', 'force-pushed the branch');
+            case 'renamed': return nls.localize('qaap/pullRequests/tlRenamed', 'changed the title to {0}', event.text ?? '');
+            default: return nls.localize('qaap/pullRequests/tlOpened', 'opened this pull request');
+        }
     }
 
     protected createMetadata(pullRequest: QaapGithubPullRequestSummary): HTMLElement {
@@ -318,22 +630,7 @@ export class MobileProjectsPullRequestDetailUi {
     protected createDescriptionContent(): HTMLElement {
         const body = document.createElement('div');
         body.className = 'theia-mobile-work-hub-pull-request-description';
-        const edit = this.createButton(
-            this.descriptionEditing
-                ? nls.localize('qaap/pullRequests/saveDescription', 'Save')
-                : nls.localize('qaap/pullRequests/editDescription', 'Edit'),
-            'theia-mobile-work-hub-pull-request-edit-button',
-        );
-        edit.addEventListener('click', () => {
-            if (this.descriptionEditing) {
-                this.descriptionEditing = false;
-                this.notice = nls.localize('qaap/pullRequests/descriptionSaved', 'Description updated.');
-            } else {
-                this.descriptionEditing = true;
-                this.notice = '';
-            }
-            this.render();
-        });
+        // Edit / Save lives in the section header (pencil); this only renders the text or the editor.
         if (this.descriptionEditing) {
             const textarea = document.createElement('textarea');
             textarea.className = 'theia-mobile-work-hub-pull-request-description-editor';
@@ -343,26 +640,63 @@ export class MobileProjectsPullRequestDetailUi {
             textarea.addEventListener('input', () => {
                 this.description = textarea.value;
             });
-            body.append(textarea, edit);
+            body.append(textarea);
         } else {
             const text = document.createElement('div');
             text.className = 'theia-mobile-work-hub-pull-request-description-text';
             text.innerHTML = this.descriptionMarkdown.render(this.description);
-            body.append(text, edit);
+            body.append(text);
         }
         return body;
     }
 
+    /** One row per check run / status: state icon, name (links to its details) and Passed / Failed / Running. */
     protected createChecksContent(pullRequest: QaapGithubPullRequestSummary): HTMLElement {
-        const checks = document.createElement('div');
-        checks.className = 'theia-mobile-work-hub-pull-request-checks';
-        const icon = document.createElement('span');
-        icon.className = `codicon ${pullRequest.tests === 'passing' ? 'codicon-pass' : pullRequest.tests === 'failing' ? 'codicon-error' : 'codicon-clock'}`;
-        icon.setAttribute('aria-hidden', 'true');
-        const label = document.createElement('span');
-        label.textContent = this.checkLabel(pullRequest);
-        checks.append(icon, label);
-        return checks;
+        const list = document.createElement('div');
+        list.className = 'theia-mobile-work-hub-pull-request-checks qaap-pr-checks';
+        const checks = pullRequest.checks ?? [];
+        if (checks.length === 0) {
+            const row = document.createElement('div');
+            row.className = 'qaap-pr-check';
+            const icon = document.createElement('span');
+            icon.className = `qaap-pr-check-icon codicon ${this.checkIconClass(pullRequest.tests)} theia-mod-${pullRequest.tests}`;
+            icon.setAttribute('aria-hidden', 'true');
+            const name = document.createElement('span');
+            name.className = 'qaap-pr-check-name';
+            name.textContent = this.checkLabel(pullRequest);
+            row.append(icon, name);
+            list.append(row);
+            return list;
+        }
+        const order = (check: QaapGithubPullRequestCheck): number => check.status !== 'completed' ? 0 : this.checkFailed(check) ? 1 : 2;
+        for (const check of [...checks].sort((left, right) => order(left) - order(right) || left.name.localeCompare(right.name))) {
+            const row = document.createElement(check.url ? 'a' : 'div');
+            row.className = 'qaap-pr-check';
+            if (check.url && row instanceof HTMLAnchorElement) {
+                row.href = check.url;
+                row.target = '_blank';
+                row.rel = 'noreferrer';
+            }
+            const running = check.status !== 'completed';
+            const failed = !running && this.checkFailed(check);
+            const skipped = !running && (check.conclusion === 'skipped' || check.conclusion === 'neutral');
+            const icon = document.createElement('span');
+            icon.className = `qaap-pr-check-icon codicon ${running ? 'codicon-circle-large-outline theia-mod-pending'
+                : failed ? 'codicon-error theia-mod-failing' : skipped ? 'codicon-circle-slash theia-mod-skipped' : 'codicon-pass theia-mod-passing'}`;
+            icon.setAttribute('aria-hidden', 'true');
+            const name = document.createElement('span');
+            name.className = 'qaap-pr-check-name';
+            name.textContent = check.name;
+            const state = document.createElement('span');
+            state.className = 'qaap-pr-check-state';
+            state.textContent = running ? nls.localize('qaap/pullRequests/checkRunning', 'Running')
+                : failed ? nls.localize('qaap/pullRequests/checkFailed', 'Failed')
+                    : skipped ? nls.localize('qaap/pullRequests/checkSkipped', 'Skipped')
+                        : nls.localize('qaap/pullRequests/checkPassed', 'Passed');
+            row.append(icon, name, state);
+            list.append(row);
+        }
+        return list;
     }
 
     protected createActivityContent(pullRequest: QaapGithubPullRequestSummary): HTMLElement {
@@ -508,13 +842,17 @@ export class MobileProjectsPullRequestDetailUi {
         expanded: boolean,
         onToggle: (expanded: boolean) => void,
         content: HTMLElement,
+        action?: HTMLElement,
     ): HTMLElement {
         const section = document.createElement('section');
-        section.className = 'theia-mobile-work-hub-pull-request-section';
+        section.className = 'theia-mobile-work-hub-pull-request-section qaap-pr-section';
+        const head = document.createElement('div');
+        head.className = 'qaap-pr-section-head';
         const header = document.createElement('button');
         header.type = 'button';
-        header.className = 'theia-mobile-work-hub-pull-request-section-header';
-        const title = document.createElement('strong');
+        header.className = 'theia-mobile-work-hub-pull-request-section-header qaap-pr-section-toggle';
+        const title = document.createElement('span');
+        title.className = 'qaap-pr-section-title';
         title.textContent = titleText;
         const chevron = document.createElement('span');
         chevron.className = `codicon ${expanded ? 'codicon-chevron-down' : 'codicon-chevron-right'}`;
@@ -522,7 +860,11 @@ export class MobileProjectsPullRequestDetailUi {
         header.append(title, chevron);
         header.setAttribute('aria-expanded', String(expanded));
         header.addEventListener('click', () => onToggle(!expanded));
-        section.append(header);
+        head.append(header);
+        if (action) {
+            head.append(action);
+        }
+        section.append(head);
         if (expanded) {
             section.append(content);
         }

@@ -54,8 +54,8 @@ describe('agent picker: split model row', () => {
     }
 
     const agents = [
-        { id: 'codex', label: 'Codex', available: true, connectionState: 'connected', accessState: 'hosted' },
-        { id: 'shell', label: 'Shell', available: true, connectionState: 'connected', accessState: 'hosted' },
+        { id: 'codex', label: 'Codex', available: true, connectionState: 'connected', accessState: 'session' },
+        { id: 'shell', label: 'Shell', available: true, connectionState: 'connected', accessState: 'session' },
     ] as unknown as QaapAgentTaskAgentOption[];
 
     function render(modelsByAgent: Map<string, QaapQaiqModelOption[]> = new Map(), cwd = '/repo/split-row'): {

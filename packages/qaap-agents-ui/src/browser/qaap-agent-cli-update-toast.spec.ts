@@ -33,6 +33,32 @@ describe('CLI update notice dismissal', () => {
         }
     });
 
+    it('mounts a single notice even when called again, and groups pending updates in the title', () => {
+        const info = { id: 'codex', label: 'Codex', bin: 'codex', latestVersion: '1.0.0', updateAvailable: true, updateSupported: true };
+        const handlers = { onCancel: () => undefined, onUpdate: () => undefined, onDismiss: () => undefined };
+        const first = showAgentCliUpdateToast(info, handlers);
+        const second = showAgentCliUpdateToast(info, handlers, { pendingCount: 3 });
+        try {
+            expect(document.querySelectorAll('.qaap-agent-cli-update-toast')).to.have.length(1);
+            expect(second.root.querySelector('.qaap-agent-cli-update-toast-title')?.textContent).to.equal('3 CLI updates available');
+        } finally {
+            first.dispose();
+            second.dispose();
+        }
+    });
+
+    it('labels the non-destructive action Later and keeps it separate from Update', () => {
+        const toast = showAgentCliUpdateToast({ id: 'codex', label: 'Codex', bin: 'codex', latestVersion: '1.0.0', updateAvailable: true, updateSupported: true }, {
+            onCancel: () => undefined, onUpdate: () => undefined, onDismiss: () => undefined,
+        });
+        try {
+            const labels = Array.from(toast.root.querySelectorAll<HTMLButtonElement>('.qaap-agent-cli-update-toast-action')).map(button => button.textContent);
+            expect(labels).to.deep.equal(['Later', 'Update']);
+        } finally {
+            toast.dispose();
+        }
+    });
+
     it('dispatches the Update button to the update handler', () => {
         const onUpdate = sinon.spy();
         const toast = showAgentCliUpdateToast({ id: 'codex', label: 'Codex', bin: 'codex', latestVersion: '1.0.0', updateAvailable: true, updateSupported: true }, {

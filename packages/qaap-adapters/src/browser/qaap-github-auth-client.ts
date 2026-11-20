@@ -3,18 +3,25 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { environment } from '@theia/core/shared/@theia/application-package/lib/environment';
 import { QaapUserFacingError, QaapUserFacingErrors } from '../common/qaap-user-facing-error';
 import {
     QAAP_AUTH_API_PATH,
+    QAAP_GITHUB_SIGN_IN_REQUIRED_CODE,
     QAAP_BILLING_API_PATH,
+    QAAP_BILLING_CANCEL_API_PATH,
     QAAP_BILLING_CHECKOUT_API_PATH,
     QAAP_BILLING_CONFIRM_CHECKOUT_API_PATH,
     QAAP_BILLING_DEV_ACTIVATE_API_PATH,
     QAAP_GITHUB_API_PATH,
     QAAP_GITHUB_OAUTH_START_PATH,
+    QAAP_PROJECT_RESOURCES_API_PATH,
     QAAP_USER_SETTINGS_API_PATH,
+    type QaapProjectResourcesResponse,
+    type QaapProjectResourcesUpdateRequest,
     type QaapAuthConfigResponse,
     type QaapAuthSessionResponse,
+    type QaapAuthSessionGithubCredential,
     type QaapGithubCreateRepositoryRequest,
     type QaapGithubMergePullRequestRequest,
     type QaapGithubMergePullRequestResponse,
@@ -66,7 +73,7 @@ const QAAP_GITHUB_MERGE_TIMEOUT_MS = 90_000;
 const QAAP_GITHUB_DELETE_TIMEOUT_MS = 60_000;
 /** Small JSON reads/writes against the Qaap backend (project sessions, settings, billing). */
 const QAAP_API_REQUEST_TIMEOUT_MS = 15_000;
-/** Checkout creation round-trips to Stripe. */
+/** Checkout creation round-trips to the payment provider. */
 const QAAP_BILLING_CHECKOUT_TIMEOUT_MS = 30_000;
 const QAAP_AUTH_REQUEST_TIMEOUT_MS = 6000;
 /**
@@ -86,11 +93,15 @@ async function fetchQaapWithTimeout(
     input: RequestInfo | URL,
     init: RequestInit,
     timeoutMs: number,
+    options: QaapFetchOptions = {},
 ): Promise<Response> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
-        const response = await fetchQaapGetWithTransientRetry(input, { ...init, signal: controller.signal });
+        const signal = controller.signal;
+        const response = options.retryTransient === false
+            ? await fetch(input, { ...init, signal })
+            : await fetchQaapGetWithTransientRetry(input, { ...init, signal });
         const body = QAAP_NULL_BODY_STATUSES.has(response.status) ? undefined : await response.arrayBuffer();
         return new Response(body, {
             status: response.status,
@@ -108,14 +119,20 @@ function isQaapAbortError(err: unknown): boolean {
 }
 
 /** {@link fetchQaapWithTimeout}, mapping an abort to a user-facing timeout error. */
+/** Per-call fetch behaviour. `retryTransient: false` sends the request once, for callers whose UI offers its own retry. */
+interface QaapFetchOptions {
+    readonly retryTransient?: boolean;
+}
+
 async function fetchQaapOrTimeoutError(
     input: RequestInfo | URL,
     init: RequestInit,
     timeoutMs: number,
     timeoutMessage: () => string,
+    options: QaapFetchOptions = {},
 ): Promise<Response> {
     try {
-        return await fetchQaapWithTimeout(input, init, timeoutMs);
+        return await fetchQaapWithTimeout(input, init, timeoutMs, options);
     } catch (err) {
         if (isQaapAbortError(err)) {
             throw new Error(timeoutMessage());
@@ -268,6 +285,16 @@ export async function fetchQaapGithubRepositories(): Promise<QaapGithubRepositor
         ),
     );
     if (response.status === 401) {
+        // Desktop without a GitHub session: the app itself is signed in, only GitHub is missing. Keep
+        // the local session and let the import dialog offer "Sign in with GitHub".
+        const body = await response.clone().json().catch(() => undefined) as { code?: string } | undefined;
+        if (body?.code === QAAP_GITHUB_SIGN_IN_REQUIRED_CODE) {
+            throw new QaapApiRequestError(
+                nls.localize('qaap/githubRepositories/signInRequired', 'Sign in with GitHub to import your repositories.'),
+                401,
+                QAAP_GITHUB_SIGN_IN_REQUIRED_CODE,
+            );
+        }
         // Stored GitHub token expired/revoked — drop the stale session so the login gate returns and
         // the user re-authorizes, instead of staying stuck on a signed-in-but-broken UI. (ONB-5)
         clearQaapAuthSession();
@@ -375,6 +402,58 @@ export async function fetchQaapGithubPullRequestDetail(
     }
     const body = await response.json().catch(() => ({})) as QaapGithubPullRequestDetailResponse;
     return body.pullRequest;
+}
+
+/** What a pull request lookup found: the detail, nothing for the branch, no GitHub session, or a failure. */
+export type QaapGithubPullRequestLookup =
+    | { readonly kind: 'found'; readonly pullRequest: QaapGithubPullRequestSummary }
+    | { readonly kind: 'none' }
+    | { readonly kind: 'signed-out' }
+    | { readonly kind: 'error'; readonly message: string };
+
+/**
+ * Full detail of the pull request `number`, or of the pull request whose head is `branch` (an open one
+ * first). Never throws: transport failures come back as `error`.
+ */
+export async function lookupQaapGithubPullRequest(query: {
+    readonly owner: string;
+    readonly repo: string;
+    readonly number?: number;
+    readonly branch?: string;
+}): Promise<QaapGithubPullRequestLookup> {
+    const params = new URLSearchParams({ owner: query.owner, repo: query.repo });
+    const byNumber = query.number !== undefined;
+    if (byNumber) {
+        params.set('number', String(query.number));
+    } else if (query.branch) {
+        params.set('branch', query.branch);
+    } else {
+        return { kind: 'none' };
+    }
+    const path = byNumber ? 'pull-requests/detail' : 'pull-requests/by-branch';
+    try {
+        const response = await fetchQaapOrTimeoutError(
+            `${QAAP_GITHUB_API_PATH}/${path}?${params.toString()}`,
+            qaapAuthenticatedFetchInit(),
+            QAAP_GITHUB_LIST_TIMEOUT_MS,
+            () => nls.localize('qaap/githubPullRequests/detailTimedOut', 'Loading the pull request took too long.'),
+            // The panel answers 503 with "Connect GitHub" and offers Try again, so a gateway answer is not retried here.
+            { retryTransient: false },
+        );
+        if (response.status === 401 || response.status === 503) {
+            return { kind: 'signed-out' };
+        }
+        if (response.status === 404) {
+            return { kind: 'none' };
+        }
+        const body = await response.json().catch(() => ({})) as QaapGithubPullRequestDetailResponse & { error?: string };
+        if (!response.ok || !body.pullRequest) {
+            return { kind: 'error', message: body.error ?? nls.localize('qaap/githubPullRequests/loadFailed', 'Failed to load the pull request ({0}).', response.status) };
+        }
+        return { kind: 'found', pullRequest: body.pullRequest };
+    } catch (err) {
+        return { kind: 'error', message: err instanceof Error ? err.message : String(err) };
+    }
 }
 
 export async function mergeQaapGithubPullRequest(request: QaapGithubMergePullRequestRequest): Promise<QaapGithubMergePullRequestResponse> {
@@ -609,60 +688,70 @@ export async function fetchQaapUserAiSettings(): Promise<Record<string, unknown>
     return body.settings && typeof body.settings === 'object' ? body.settings : {};
 }
 
-/** Signed-in billing snapshot (plan, runtime/credits, catalog). */
+/**
+ * The per-user AI settings mirror as stored right now, for a read-modify-write. Unlike
+ * {@link fetchQaapUserAiSettings} it never consumes the boot prefetch (that belongs to the settings sync)
+ * and it throws instead of returning `{}` when the read fails, so a caller never writes back a partial mirror.
+ */
+export async function fetchQaapUserAiSettingsForUpdate(): Promise<Record<string, unknown>> {
+    const response = await fetchQaapOrTimeoutError(
+        QAAP_USER_SETTINGS_API_PATH,
+        qaapAuthenticatedFetchInit(),
+        QAAP_API_REQUEST_TIMEOUT_MS,
+        userSettingsTimedOut,
+    );
+    if (!response.ok) {
+        throw await QaapUserFacingErrors.fromResponse(response, `Failed to read AI settings (${response.status})`);
+    }
+    const body = await response.json() as { settings?: Record<string, unknown> };
+    if (!body.settings || typeof body.settings !== 'object' || Array.isArray(body.settings)) {
+        throw new Error('The AI settings response has no settings object.');
+    }
+    return body.settings;
+}
+
+/** One plan of the Starter / Pro catalog, as the backend snapshot reports it. */
+export interface QaapBillingPlanSnapshot {
+    readonly id: string;
+    readonly priceUsdMonthly: number;
+    readonly memoryOptionsGb: ReadonlyArray<number>;
+    readonly defaultMemoryGb: number;
+    readonly cpuLimit: number;
+    readonly storageGb: number;
+    readonly maxActiveRepos: number;
+    readonly maxConcurrentAgents: number;
+    readonly idlePauseMinutes: number;
+}
+
+/** Signed-in billing snapshot (account, plan allowances, catalog, checkout availability). */
 export interface QaapBillingApiResponse {
     readonly account: {
         readonly login: string;
         readonly planId: string;
-        readonly includedRuntimeMinutesRemaining: number;
-        readonly purchasedRuntimeMinutes: number;
-        readonly includedCreditsRemaining: number;
-        readonly purchasedCredits: number;
-        readonly periodStart: string;
         readonly updatedAt: string;
+        readonly provider?: string;
+        readonly customerId?: string;
+        readonly subscriptionId?: string;
+        /** Last applied subscription status (`active`, `past_due`, `canceled`, `pending`). */
+        readonly subscriptionStatus?: string;
+        readonly subscriptionEventAt?: number;
     };
     readonly entitlements: {
         readonly planId: string;
+        readonly priceUsdMonthly: number;
+        readonly memoryOptionsGb: ReadonlyArray<number>;
+        readonly defaultMemoryGb: number;
+        readonly cpuLimit: number;
         readonly storageGb: number;
         readonly maxActiveRepos: number;
         readonly maxConcurrentAgents: number;
-        readonly hostedModels: boolean;
-        readonly runtimeFairUse: boolean;
-        readonly includedRuntimeHoursPerMonth: number;
-        readonly runtimeHoursRemaining: number;
-        readonly runtimeUsageRatio: number;
-        readonly runtimeWarning: boolean;
-        readonly canStartAgent: boolean;
-        readonly includedCreditsPerMonth: number;
-        readonly creditsRemaining: number;
+        readonly idlePauseMinutes: number;
     };
     readonly catalog: {
-        readonly plans: ReadonlyArray<{
-            readonly id: string;
-            readonly monthlyPriceEur: number;
-            readonly storageGb: number;
-            readonly maxActiveRepos: number;
-            readonly maxConcurrentAgents: number;
-            readonly includedRuntimeHoursPerMonth: number;
-            readonly runtimeFairUse: boolean;
-            readonly hostedModels: boolean;
-            readonly includedCreditsPerMonth: number;
-        }>;
-        readonly runtimePacks: ReadonlyArray<{
-            readonly monthlyPriceEur: number;
-            readonly qcu: number;
-            readonly bonusQcu?: number;
-        }>;
-        readonly hostedModels: ReadonlyArray<{
-            readonly modelId: string;
-            readonly label: string;
-            readonly role: string;
-            readonly creditsPerMillionInput: number;
-            readonly creditsPerMillionOutput: number;
-        }>;
+        readonly plans: ReadonlyArray<QaapBillingPlanSnapshot>;
     };
     readonly checkout?: {
-        readonly stripeEnabled: boolean;
+        readonly checkoutEnabled: boolean;
         readonly devActivateEnabled: boolean;
         readonly payablePlanIds: ReadonlyArray<string>;
     };
@@ -681,7 +770,7 @@ export async function fetchQaapBilling(): Promise<QaapBillingApiResponse | undef
     return response.json() as Promise<QaapBillingApiResponse>;
 }
 
-export async function createQaapBillingCheckout(planId: 'pro' | 'team'): Promise<{ url: string }> {
+export async function createQaapBillingCheckout(planId: 'starter' | 'pro'): Promise<{ url: string }> {
     const response = await fetchQaapOrTimeoutError(QAAP_BILLING_CHECKOUT_API_PATH, qaapAuthenticatedFetchInit({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -708,12 +797,12 @@ export async function createQaapBillingCheckout(planId: 'pro' | 'team'): Promise
     return { url: body.url };
 }
 
-/** Apply a paid Stripe Checkout session to the signed-in account (idempotent with the webhook). */
-export async function confirmQaapBillingCheckout(sessionId: string): Promise<QaapBillingApiResponse | undefined> {
+/** Apply a completed hosted checkout (its id from the return URL) to the signed-in account (idempotent with the webhook). */
+export async function confirmQaapBillingCheckout(checkoutId: string): Promise<QaapBillingApiResponse | undefined> {
     const response = await fetchQaapOrTimeoutError(QAAP_BILLING_CONFIRM_CHECKOUT_API_PATH, qaapAuthenticatedFetchInit({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId }),
+        body: JSON.stringify({ checkoutId }),
     }), QAAP_BILLING_CHECKOUT_TIMEOUT_MS, billingTimedOut);
     if (!response.ok) {
         throw await QaapUserFacingErrors.fromResponse(response, `Confirm checkout failed (${response.status})`);
@@ -721,8 +810,50 @@ export async function confirmQaapBillingCheckout(sessionId: string): Promise<Qaa
     return response.json() as Promise<QaapBillingApiResponse>;
 }
 
+/** Cancels the signed-in account's subscription; resolves with the re-read billing snapshot. */
+export async function cancelQaapBillingSubscription(): Promise<QaapBillingApiResponse> {
+    const response = await fetchQaapOrTimeoutError(QAAP_BILLING_CANCEL_API_PATH, qaapAuthenticatedFetchInit({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+    }), QAAP_BILLING_CHECKOUT_TIMEOUT_MS, billingTimedOut);
+    if (!response.ok) {
+        throw await QaapUserFacingErrors.fromResponse(response, `Cancel subscription failed (${response.status})`);
+    }
+    return response.json() as Promise<QaapBillingApiResponse>;
+}
+
+/** Container memory choice of one repository (`repo` is `owner/name`); the plan decides the allowed values. */
+export async function fetchQaapProjectResources(repo: string): Promise<QaapProjectResourcesResponse | undefined> {
+    const response = await fetchQaapOrTimeoutError(
+        `${QAAP_PROJECT_RESOURCES_API_PATH}?repo=${encodeURIComponent(repo)}`,
+        qaapAuthenticatedFetchInit(),
+        QAAP_API_REQUEST_TIMEOUT_MS,
+        billingTimedOut,
+    );
+    if (!response.ok) {
+        return undefined;
+    }
+    return response.json() as Promise<QaapProjectResourcesResponse>;
+}
+
+/** Saves the container memory for one repository; rejects values the owner's plan does not include. */
+export async function saveQaapProjectResources(
+    request: QaapProjectResourcesUpdateRequest,
+): Promise<QaapProjectResourcesResponse> {
+    const response = await fetchQaapOrTimeoutError(QAAP_PROJECT_RESOURCES_API_PATH, qaapAuthenticatedFetchInit({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request),
+    }), QAAP_API_REQUEST_TIMEOUT_MS, billingTimedOut);
+    if (!response.ok) {
+        throw await QaapUserFacingErrors.fromResponse(response, `Save workspace memory failed (${response.status})`);
+    }
+    return response.json() as Promise<QaapProjectResourcesResponse>;
+}
+
 export async function activateQaapBillingPlanDev(
-    planId: 'starter' | 'pro' | 'team',
+    planId: 'starter' | 'pro',
 ): Promise<QaapBillingApiResponse | undefined> {
     const response = await fetchQaapOrTimeoutError(QAAP_BILLING_DEV_ACTIVATE_API_PATH, qaapAuthenticatedFetchInit({
         method: 'POST',
@@ -748,9 +879,34 @@ export async function putQaapUserAiSettings(settings: Record<string, unknown>): 
     return body.settings && typeof body.settings === 'object' ? body.settings : settings;
 }
 
+/**
+ * Cancelable window event that asks the desktop app to sign in with GitHub without leaving the page. The
+ * Work Hub handles it (device flow in the system browser) and calls `preventDefault()`.
+ */
+export const QAAP_DESKTOP_GITHUB_SIGN_IN_EVENT = 'qaap-desktop-github-sign-in';
+
+/**
+ * Starts "Sign in with GitHub". Web: navigates to the OAuth start route (the callback brings the page back).
+ * Desktop (Electron): never navigates the app window, which would drop its state and load GitHub inside the
+ * app; it asks the desktop sign-in handler instead, which completes the sign-in in the system browser.
+ */
 export function startGithubOAuth(): void {
-    window.location.assign(QAAP_GITHUB_OAUTH_START_PATH);
+    if (environment.electron.is()) {
+        const request = new window.CustomEvent(QAAP_DESKTOP_GITHUB_SIGN_IN_EVENT, { cancelable: true });
+        if (window.dispatchEvent(request)) {
+            console.warn('[qaap] GitHub sign-in is not available in this desktop window: no sign-in handler is installed.');
+        }
+        return;
+    }
+    QaapGithubOAuthNavigation.assign(QAAP_GITHUB_OAUTH_START_PATH);
 }
+
+/** Page navigation of the web sign-in; a seam so tests can observe it (jsdom's `location` cannot be stubbed). */
+export const QaapGithubOAuthNavigation = {
+    assign(url: string): void {
+        window.location.assign(url);
+    },
+};
 
 export async function signOutQaapAuth(): Promise<void> {
     try {
@@ -765,10 +921,21 @@ export async function signOutQaapAuth(): Promise<void> {
     }
 }
 
+let qaapDesktopGithubCredential: QaapAuthSessionGithubCredential | undefined;
+
+/**
+ * Desktop without a Qaap GitHub session: the source and GitHub user of the user's own credential (gh,
+ * `GH_TOKEN`) that serves the Work Hub's GitHub data, from the last `/auth/session`. Never a token; memory only.
+ */
+export function readQaapDesktopGithubCredential(): QaapAuthSessionGithubCredential | undefined {
+    return qaapDesktopGithubCredential;
+}
+
 /** Apply server session to local storage; returns true when signed in. */
 export async function syncQaapAuthSessionFromServer(config?: QaapAuthConfigResponse): Promise<boolean> {
     const resolvedConfig = config ?? await fetchQaapAuthConfig().catch(() => ({ skipAuth: false, githubOAuth: false }));
     const session = await fetchQaapAuthSession();
+    qaapDesktopGithubCredential = session.signedIn && session.githubCredential?.user?.login ? session.githubCredential : undefined;
     if (!session.signedIn || !session.user) {
         if (!resolvedConfig.skipAuth) {
             clearQaapAuthSession();

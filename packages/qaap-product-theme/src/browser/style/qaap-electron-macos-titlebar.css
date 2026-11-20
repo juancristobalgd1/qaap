@@ -1,0 +1,240 @@
+/********************************************************************************
+ * Copyright (C) 2026 Theia contributors and Qaap product fork.
+ *
+ * SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
+ ********************************************************************************/
+
+/*-----------------------------------------------------------------------------
+| macOS Electron: one title bar. The native title strip is hidden (main process:
+| `titleBarStyle: 'hiddenInset'`), so the traffic lights sit at the start of the
+| Qaap top bar. The bar drags the window; its controls opt out again.
+| Keep 78px in sync with `trafficLightPosition` in qaap-electron-main-application.ts.
+| The bar is 52px in both surfaces (the Work Hub header height); the IDE top bar is
+| raised to it and its items centred, so the traffic lights centre on the same line.
+|----------------------------------------------------------------------------*/
+
+body.qaap-electron-macos-inset-titlebar #theia-top-panel {
+  min-height: 52px;
+  align-items: center;
+}
+
+body.qaap-electron-macos-inset-titlebar #theia-top-panel {
+  -webkit-app-region: drag;
+  padding-left: 78px;
+  box-sizing: border-box;
+  user-select: none;
+}
+
+body.qaap-electron-macos-inset-titlebar.qaap-electron-macos-fullscreen #theia-top-panel {
+  padding-left: 0;
+}
+
+/* Every control in the bar stays clickable; only the empty bar surface drags the window. */
+body.qaap-electron-macos-inset-titlebar #theia-top-panel button,
+body.qaap-electron-macos-inset-titlebar #theia-top-panel input,
+body.qaap-electron-macos-inset-titlebar #theia-top-panel select,
+body.qaap-electron-macos-inset-titlebar #theia-top-panel textarea,
+body.qaap-electron-macos-inset-titlebar #theia-top-panel a,
+body.qaap-electron-macos-inset-titlebar #theia-top-panel label,
+body.qaap-electron-macos-inset-titlebar #theia-top-panel [role='button'],
+body.qaap-electron-macos-inset-titlebar #theia-top-panel [role='menu'],
+body.qaap-electron-macos-inset-titlebar #theia-top-panel [role='menuitem'],
+body.qaap-electron-macos-inset-titlebar #theia-top-panel [role='tab'],
+body.qaap-electron-macos-inset-titlebar #theia-top-panel [role='tablist'],
+body.qaap-electron-macos-inset-titlebar #theia-top-panel [role='combobox'],
+body.qaap-electron-macos-inset-titlebar #theia-top-panel [role='listbox'],
+body.qaap-electron-macos-inset-titlebar #theia-top-panel .theia-workbench-view-mode-switch,
+body.qaap-electron-macos-inset-titlebar #theia-top-panel .theia-qaap-segmented-field,
+body.qaap-electron-macos-inset-titlebar #theia-top-panel .theia-qaap-segmented-option,
+body.qaap-electron-macos-inset-titlebar #theia-top-panel .theia-workbench-current-project-name,
+body.qaap-electron-macos-inset-titlebar #theia-top-panel .theia-workbench-menu-toggle {
+  -webkit-app-region: no-drag;
+}
+
+/* The sessions sidebar header also starts at the window's top-left edge, under the traffic lights. */
+body.qaap-electron-macos-inset-titlebar:not(.qaap-electron-macos-fullscreen) .theia-mobile-work-hub-sessions-sidebar-head:not(#theia-right-content-panel *) {
+  padding-left: 78px !important;
+  -webkit-app-region: drag;
+}
+
+body.qaap-electron-macos-inset-titlebar .theia-mobile-work-hub-sessions-sidebar-head button,
+body.qaap-electron-macos-inset-titlebar .theia-mobile-work-hub-sessions-sidebar-head input {
+  -webkit-app-region: no-drag;
+}
+
+/* The left panel headers (IDE and Work Hub with the sidebar closed) start under the traffic lights.
+   Headers embedded in the IDE right panel (`#theia-right-content-panel`) have no traffic lights: excluded.
+   `!important`: their own padding shorthand has higher specificity than this scope. */
+body.qaap-electron-macos-inset-titlebar:not(.qaap-electron-macos-fullscreen) .theia-mobile-projects-header:not(#theia-right-content-panel *) {
+  padding-left: 78px !important;
+  -webkit-app-region: drag;
+}
+
+body.qaap-electron-macos-inset-titlebar .theia-mobile-projects-header button,
+body.qaap-electron-macos-inset-titlebar .theia-mobile-projects-header input {
+  -webkit-app-region: no-drag;
+}
+
+/* Settings with its sidebar closed: the reopen toggle leads the content header, which starts at the
+   window's top-left edge, so it moves past the traffic lights like the Work Hub header above.
+   `!important`: the header's own padding shorthand has higher specificity than this scope. */
+body.qaap-electron-macos-inset-titlebar:not(.qaap-electron-macos-fullscreen) .theia-mobile-work-hub-settings-layout.theia-mod-sidebar-collapsed .theia-mobile-work-hub-settings-content-header {
+  padding-left: 78px !important;
+  -webkit-app-region: drag;
+}
+
+body.qaap-electron-macos-inset-titlebar .theia-mobile-work-hub-settings-content-header button {
+  -webkit-app-region: no-drag;
+}
+
+/* Narrow (mobile) top bar: back/forward are absolutely placed at the leading edge, so they move past the lights. */
+body.qaap-electron-macos-inset-titlebar:not(.qaap-electron-macos-fullscreen) #theia-top-panel>#theia\:workbench-history-nav {
+  left: 84px;
+}
+
+/*-----------------------------------------------------------------------------
+| Desktop IDE top bar icons: the Work Hub header draws its controls at 16px glyphs
+| on 28-36px targets, while the IDE top bar (52px) drew 13-14px glyphs on 20-24px
+| targets. Same values here: 16px codicons and the 16px message-circle icon, 28px
+| segmented options, 32px icon buttons and a 32px account ring (avatar 25px).
+| Scoped to the macOS inset title bar, so web and mobile keep their own sizes.
+|----------------------------------------------------------------------------*/
+
+body.qaap-electron-macos-inset-titlebar #theia-top-panel .theia-workbench-nav-btn {
+  width: 32px;
+  min-width: 32px;
+  max-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  max-height: 32px;
+}
+
+body.qaap-electron-macos-inset-titlebar #theia-top-panel .theia-workbench-nav-btn.codicon::before,
+body.qaap-electron-macos-inset-titlebar #theia-top-panel .theia-workbench-history-nav-group .theia-workbench-history-nav-btn.codicon::before {
+  font-size: 16px;
+}
+
+body.qaap-electron-macos-inset-titlebar #theia-top-panel .theia-workbench-history-nav-group .theia-workbench-history-nav-btn {
+  width: 32px;
+  min-width: 32px;
+  max-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  max-height: 32px;
+}
+
+/* One rhythm for the whole bar: every 32px target carries 2px on each side, so neighbours sit 4px apart
+   (sidebar, menu, back, forward on the left; terminal, panel, avatar on the right). The upstream
+   nav-controls and history-group margins are reset so no extra gap survives. */
+body.qaap-electron-macos-inset-titlebar #theia-top-panel .theia-workbench-nav-btn,
+body.qaap-electron-macos-inset-titlebar #theia-top-panel .theia-workbench-history-nav-group .theia-workbench-history-nav-btn,
+body.qaap-electron-macos-inset-titlebar #theia-top-panel .theia-workbench-menu-toggle {
+  margin: 0 2px;
+  padding: 0;
+}
+
+body.qaap-electron-macos-inset-titlebar #theia-top-panel>#theia\:workbench-nav,
+body.qaap-electron-macos-inset-titlebar #theia-top-panel>#theia\:workbench-nav .theia-workbench-nav-controls,
+body.qaap-electron-macos-inset-titlebar #theia-top-panel>#theia\:workbench-history-nav,
+body.qaap-electron-macos-inset-titlebar #theia-top-panel .theia-workbench-history-nav-group {
+  margin: 0;
+  gap: 0;
+}
+
+/* The narrow top bar offsets back/forward by 84px (above). Wide desktop keeps them in flow and orders the
+   left cluster as sidebar, menu, back, forward, as the header shows it. */
+@media (min-width: 768px) {
+  body.qaap-electron-macos-inset-titlebar #theia-top-panel>#theia\:workbench-menu-button {
+    order: 2;
+  }
+
+  body.qaap-electron-macos-inset-titlebar:not(.qaap-electron-macos-fullscreen) #theia-top-panel>#theia\:workbench-history-nav {
+    left: 0;
+    order: 3;
+  }
+}
+
+body.qaap-electron-macos-inset-titlebar #theia-top-panel .theia-workbench-menu-toggle {
+  width: 32px;
+  height: 32px;
+}
+
+body.qaap-electron-macos-inset-titlebar #theia-top-panel .theia-workbench-view-mode-switch .theia-qaap-segmented-option {
+  height: 28px;
+  min-height: 28px;
+}
+
+body.qaap-electron-macos-inset-titlebar #theia-top-panel .theia-workbench-view-mode-switch .theia-qaap-segmented-option .codicon {
+  font-size: 16px;
+}
+
+body.qaap-electron-macos-inset-titlebar #theia-top-panel .theia-workbench-view-mode-switch .theia-qaap-segmented-option .qaap-icon-message-circle {
+  width: 16px;
+  height: 16px;
+}
+
+body.qaap-electron-macos-inset-titlebar #theia-top-panel .theia-workbench-right-controls .theia-workbench-nav-btn.theia-workbench-account-btn {
+  width: 32px;
+  min-width: 32px;
+  max-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  max-height: 32px;
+  flex: 0 0 32px;
+}
+
+body.qaap-electron-macos-inset-titlebar #theia-top-panel .theia-workbench-right-controls .theia-workbench-account-avatar,
+body.qaap-electron-macos-inset-titlebar #theia-top-panel .theia-workbench-right-controls .theia-workbench-account-avatar img {
+  width: 25px;
+  height: 25px;
+  max-width: 25px;
+  max-height: 25px;
+}
+
+/* Work Hub views panel maximized: it covers the window from its top-left edge, so its tab bar starts
+   under the traffic lights (they overlapped the menu button and the first tab). Same 78px inset and
+   drag region as the other headers; its controls stay clickable. */
+body.qaap-electron-macos-inset-titlebar.qaap-mod-work-hub-aux-panel-maximized:not(.qaap-electron-macos-fullscreen):not(.theia-mobile-mod-sessions-sidebar-open) .qaap-work-hub-aux-panel-tabbar {
+  padding-left: 78px !important;
+  -webkit-app-region: drag;
+}
+
+body.qaap-electron-macos-inset-titlebar.qaap-mod-work-hub-aux-panel-maximized .qaap-work-hub-aux-panel-tabbar button,
+body.qaap-electron-macos-inset-titlebar.qaap-mod-work-hub-aux-panel-maximized .qaap-work-hub-aux-panel-tabbar [role='tab'],
+body.qaap-electron-macos-inset-titlebar.qaap-mod-work-hub-aux-panel-maximized .qaap-work-hub-aux-panel-tabbar input {
+  -webkit-app-region: no-drag;
+}
+
+/*-----------------------------------------------------------------------------
+| Traffic-light row centre. The lights centre at about 28px (trafficLightPosition y 21 + half the
+| 14px button). Work Hub headers, the Settings content header and the views-panel tab bar centre
+| their controls on that line. Each rule keeps its box height: the padding split is asymmetric.
+| Scoped to the macOS inset title bar outside fullscreen, so web and mobile keep their own layout.
+|----------------------------------------------------------------------------*/
+
+/* Work Hub chat header (main view): the row sits at top 10px, 40px tall, centred at 30px. */
+body.qaap-electron-macos-inset-titlebar:not(.qaap-electron-macos-fullscreen) .theia-mobile-projects-header-main {
+  position: relative;
+  top: -2px;
+}
+
+/* Settings content header: was 77px tall with controls centred at 38px. 1.5/6.5 padding centres them
+   on the lights and makes the header as tall as the views-panel tab bar (61px), so both borders line up. */
+body.qaap-electron-macos-inset-titlebar:not(.qaap-electron-macos-fullscreen) .theia-mobile-work-hub-settings-content-header {
+  padding-top: 1.5px !important;
+  padding-bottom: 6.5px !important;
+}
+
+/* Views panel tab bar (beside the chat, Pull requests and Settings): 61px tall, controls centred at 31px.
+   Padding split 2.5/9.5 keeps the 61px height. */
+body.qaap-electron-macos-inset-titlebar:not(.qaap-electron-macos-fullscreen) .qaap-work-hub-aux-panel-tabbar {
+  padding-top: 2.5px !important;
+  padding-bottom: 9.5px !important;
+}
+
+/* Pull requests header: 42px row at top 14px inside the 14px-padded projects header, centred at 35px.
+   A relative 7px lift centres it on the same line; the row keeps its height. */
+body.qaap-electron-macos-inset-titlebar:not(.qaap-electron-macos-fullscreen) .theia-mobile-work-hub-pull-request-header {
+  position: relative;
+  top: -7px;
+}

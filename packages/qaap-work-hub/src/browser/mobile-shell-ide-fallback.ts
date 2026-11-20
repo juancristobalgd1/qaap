@@ -84,6 +84,13 @@ export class MobileShellIdeFallbackController {
         setMobileActiveTranscriptChrome(false);
         document.body.classList.remove('theia-mobile-mod-landing');
         clearMobileWorkHubBootGuard();
+        // The panel is disposed below: keep the open conversation and the sidebar state so the way back restores them.
+        // A panel that was already gone (IDE reopened) keeps what an earlier switch saved.
+        const panel = this.host.getProjectsPanel();
+        if (panel) {
+            this.sessionState.conversationBeforeDesktopIde = panel.openInlineConversation();
+            this.sessionState.sessionsSidebarOpenBeforeDesktopIde = panel.isWorkHubSessionsSidebarVisible();
+        }
         this.disposeProjectsPanelForDesktopIde();
         // Classic IDE always uses the normal responsive layout (never the mobile one-column view).
         this.host.leaveMobileLayout();

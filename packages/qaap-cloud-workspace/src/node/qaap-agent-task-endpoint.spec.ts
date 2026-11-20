@@ -3,7 +3,8 @@
 
 import { expect } from 'chai';
 import type { Request, Response } from '@theia/core/shared/express';
-import { QaapAgentTaskEndpoint } from './qaap-agent-task-endpoint';
+import { QaapAgentTaskEndpoint, describeImprovePromptFailure } from './qaap-agent-task-endpoint';
+import { QAAP_AGENT_TASK_API_PATH, type QaapAgentTask } from '../common/qaap-agent-task';
 import { QAAP_AGENT_CONNECTION_REFRESH_BUDGET_MS } from './qaap-agent-task-runner';
 import { QAAP_AGENT_CONNECTION_PROBE_TIMEOUT_MS } from './qaap-agent-task-runner-utils3';
 import { QaapAgentQueueFullError } from './qaap-agent-queue-policy';
@@ -16,6 +17,9 @@ class TestableTaskEndpoint extends QaapAgentTaskEndpoint {
     }
     detailForTest(req: Request, res: Response): Promise<void> {
         return this.handleDetail(req, res);
+    }
+    agentModelsForTest(req: Request, res: Response): Promise<void> {
+        return this.handleListAgentModels(req, res);
     }
     retryForTest(req: Request, res: Response): Promise<void> {
         return this.handleStorageRetry(req, res);
@@ -34,6 +38,9 @@ class TestableTaskEndpoint extends QaapAgentTaskEndpoint {
     }
     installCliUpdateForTest(req: Request, res: Response): Promise<void> {
         return this.handleInstallCliUpdate(req, res);
+    }
+    attestForTest(req: Request, res: Response): Promise<void> {
+        return this.handleAttestAgentSession(req, res);
     }
 }
 
@@ -150,6 +157,8 @@ describe('QaapAgentTaskEndpoint harness status', () => {
                 installSupported: true,
                 installPackageAvailable: true,
             }],
+            // Not the desktop app: Settings → Harness hides the binary path and configuration folder.
+            launchOverridesSupported: false,
         });
     });
 });
@@ -562,5 +571,229 @@ describe('QaapAgentTaskEndpoint project clone missing from disk', () => {
         const { status, created } = await create({ kind: 'denied' });
         expect(status).to.equal(403);
         expect(created).to.deep.equal([]);
+    });
+});
+
+describe('QaapAgentTaskEndpoint single-task delete', () => {
+    const mineCwd = '/workspace/repos/users/alice/octo/app';
+    const theirsCwd = '/workspace/repos/users/bob/octo/app';
+
+    /** Captures the `DELETE /:id` handler that `configure` registers, without starting a server. */
+    function deleteHandler(endpoint: TestableTaskEndpoint): (req: Request, res: Response) => void {
+        let handler: ((req: Request, res: Response) => void) | undefined;
+        const app = {
+            get: () => undefined,
+            post: () => undefined,
+            delete: (routePath: string, fn: (req: Request, res: Response) => void) => {
+                if (routePath === `${QAAP_AGENT_TASK_API_PATH}/:id`) {
+                    handler = fn;
+                }
+            },
+        };
+        endpoint.configure(app as unknown as Parameters<TestableTaskEndpoint['configure']>[0]);
+        if (!handler) {
+            throw new Error('DELETE /:id was not registered');
+        }
+        return handler;
+    }
+
+    async function remove(authenticated: boolean, taskId: string, tasks: QaapAgentTask[]): Promise<{ status: number; payload: unknown; cancelled: string[]; remaining: string[] }> {
+        const endpoint = Object.create(TestableTaskEndpoint.prototype) as TestableTaskEndpoint;
+        const cancelled: string[] = [];
+        const remaining = [...tasks];
+        Object.assign(endpoint, {
+            auth: {
+                authenticate: () => authenticated ? { kind: 'authenticated', userLogin: 'alice' } : { kind: 'unauthorized' },
+                ownsWorkspacePath: (ctx: { userLogin: string }, cwd: string) => cwd.startsWith(`/workspace/repos/users/${ctx.userLogin}/`),
+            },
+            runner: {
+                listForCwd: () => remaining,
+                cancel: (id: string) => { cancelled.push(id); return undefined; },
+                deleteTask: (id: string) => {
+                    const index = remaining.findIndex(task => task.id === id);
+                    if (index < 0) {
+                        return false;
+                    }
+                    remaining.splice(index, 1);
+                    return true;
+                },
+            },
+        });
+        let status = 200;
+        let payload: unknown;
+        const response = {
+            status: (code: number) => { status = code; return response; },
+            json: (body: unknown) => { payload = body; return response; },
+        };
+        deleteHandler(endpoint)({ params: { id: taskId } } as unknown as Request, response as unknown as Response);
+        return { status, payload, cancelled, remaining: remaining.map(task => task.id) };
+    }
+
+    const tasks = [
+        { id: 'mine-running', cwd: mineCwd, state: 'running' },
+        { id: 'mine-done', cwd: mineCwd, state: 'completed' },
+        { id: 'theirs', cwd: theirsCwd, state: 'completed' },
+    ] as unknown as QaapAgentTask[];
+
+    it('answers 401 to an anonymous caller and removes nothing', async () => {
+        const { status, cancelled, remaining } = await remove(false, 'mine-done', tasks);
+        expect(status).to.equal(401);
+        expect(cancelled).to.deep.equal([]);
+        expect(remaining).to.have.length(3);
+    });
+
+    it('answers 404 for an unknown task id', async () => {
+        const { status, payload, remaining } = await remove(true, 'nope', tasks);
+        expect(status).to.equal(404);
+        expect(payload).to.deep.equal({ error: 'Task not found.' });
+        expect(remaining).to.have.length(3);
+    });
+
+    it('answers 404 for another owner\'s task and leaves it in place', async () => {
+        const { status, cancelled, remaining } = await remove(true, 'theirs', tasks);
+        expect(status).to.equal(404);
+        expect(cancelled).to.deep.equal([]);
+        expect(remaining).to.include('theirs');
+    });
+
+    it('cancels a running task first, then removes it, and answers { ok: true }', async () => {
+        const { status, payload, cancelled, remaining } = await remove(true, 'mine-running', tasks);
+        expect(status).to.equal(200);
+        expect(payload).to.deep.equal({ ok: true });
+        expect(cancelled).to.deep.equal(['mine-running']);
+        expect(remaining).to.not.include('mine-running');
+    });
+
+    it('removes a finished task of its own without cancelling it', async () => {
+        const { status, payload, cancelled, remaining } = await remove(true, 'mine-done', tasks);
+        expect(status).to.equal(200);
+        expect(payload).to.deep.equal({ ok: true });
+        expect(cancelled).to.deep.equal([]);
+        expect(remaining).to.not.include('mine-done');
+    });
+});
+
+describe('QaapAgentTaskEndpoint improve-prompt failures', () => {
+    it('returns the classified reason and status for a Codex usage limit, without the raw stderr', () => {
+        const stderr = 'ERROR: You\'ve hit your usage limit. Upgrade to Plus, or try again at Nov 19th, 2026 12:56 AM. (token sk-test-secret)';
+        const failure = describeImprovePromptFailure(new Error(stderr), 'codex');
+        expect(failure.status).to.equal(429);
+        expect(failure.kind).to.equal('usage_limit');
+        expect(failure.error).to.contain('usage limit reached');
+        expect(failure.error).to.contain('Nov 19th, 2026 12:56 AM');
+        expect(failure.error).to.not.contain('sk-test-secret');
+    });
+
+    it('maps a signed-out CLI to 401 and a Squid egress refusal to a network 502', () => {
+        expect(describeImprovePromptFailure(new Error('No authentication information found.'), 'copilot')).to.deep.include({ status: 401, kind: 'sign_in' });
+        expect(describeImprovePromptFailure(new Error('403 Forbidden\nAccess Denied.\nGenerated by squid'), 'opencode')).to.deep.include({ status: 502, kind: 'network' });
+    });
+
+    it('keeps the generic message and 500 for an unclassified CLI failure', () => {
+        expect(describeImprovePromptFailure(new Error('Agent exited with code 1.'), 'codex')).to.deep.equal({
+            status: 500,
+            error: 'Could not improve the prompt. Try again.',
+            kind: 'unknown',
+        });
+        expect(describeImprovePromptFailure('not an error object', 'codex').kind).to.equal('unknown');
+    });
+});
+
+describe('QaapAgentTaskEndpoint agent-models availability', () => {
+    it('answers an empty model list for a harness the owner turned off, without listing its catalog', async () => {
+        const endpoint = Object.create(TestableTaskEndpoint.prototype) as TestableTaskEndpoint;
+        const authContext = { kind: 'authenticated', userLogin: 'alice' };
+        let body: unknown;
+        Object.assign(endpoint, {
+            requireAuth: () => authContext,
+            auth: { resolveUserLogin: (context: typeof authContext) => context.userLogin },
+            runner: { isAgentEnabled: () => false },
+        });
+        const res = {
+            setHeader: () => undefined,
+            json: (payload: unknown) => { body = payload; },
+            status: () => res,
+            headersSent: false,
+            writableEnded: false,
+        };
+        await endpoint.agentModelsForTest({ query: { agent: 'opencode' } } as unknown as Request, res as unknown as Response);
+        expect(body).to.deep.equal({ agent: 'opencode', models: [] });
+    });
+});
+
+describe('QaapAgentTaskEndpoint agent session attestation', () => {
+    async function attest(options: {
+        readonly authContext: { kind: string; userLogin?: string };
+        readonly body?: unknown;
+        readonly headers?: Record<string, string>;
+    }): Promise<{ status: number; body: unknown; attested: Array<[string, string | undefined]> }> {
+        const endpoint = Object.create(TestableTaskEndpoint.prototype) as TestableTaskEndpoint;
+        const attested: Array<[string, string | undefined]> = [];
+        let status = 200;
+        let body: unknown;
+        Object.assign(endpoint, {
+            auth: {
+                authenticate: () => options.authContext,
+                resolveUserLogin: (context: { kind: string; userLogin?: string }) => context.kind === 'unauthorized' ? undefined : context.userLogin,
+            },
+            runner: {
+                attestAgentSession: (agentId: string, ownerLogin: string | undefined) => {
+                    attested.push([agentId, ownerLogin]);
+                    return true;
+                },
+            },
+        });
+        const res = {
+            status(code: number): Response {
+                status = code;
+                return this as unknown as Response;
+            },
+            setHeader: () => undefined,
+            json(payload: unknown): void {
+                body = payload;
+            },
+        } as unknown as Response;
+        await endpoint.attestForTest({
+            headers: options.headers ?? { 'sec-fetch-site': 'same-origin', 'content-type': 'application/json' },
+            body: options.body ?? { agentId: 'copilot' },
+        } as unknown as Request, res);
+        return { status, body, attested };
+    }
+
+    it('refuses a caller without a session', async () => {
+        const result = await attest({ authContext: { kind: 'unauthorized' } });
+        expect(result.status).to.equal(401);
+        expect(result.attested).to.deep.equal([]);
+    });
+
+    it('refuses cross-site requests and non-JSON requests without Sec-Fetch-Site', async () => {
+        const crossSite = await attest({ authContext: { kind: 'authenticated', userLogin: 'alice' }, headers: { 'sec-fetch-site': 'cross-site' } });
+        expect(crossSite.status).to.equal(403);
+        const form = await attest({ authContext: { kind: 'authenticated', userLogin: 'alice' }, headers: { 'content-type': 'application/x-www-form-urlencoded' } });
+        expect(form.status).to.equal(415);
+        expect([...crossSite.attested, ...form.attested]).to.deep.equal([]);
+    });
+
+    it('refuses harnesses that have a real auth probe', async () => {
+        for (const agentId of ['codex', 'claude', '', undefined]) {
+            const result = await attest({ authContext: { kind: 'authenticated', userLogin: 'alice' }, body: { agentId } });
+            expect(result.status, String(agentId)).to.equal(400);
+            expect(result.attested).to.deep.equal([]);
+        }
+    });
+
+    it('attests for the session owner, never an owner named in the body', async () => {
+        const result = await attest({
+            authContext: { kind: 'authenticated', userLogin: 'alice' },
+            body: { agentId: 'Grok', ownerLogin: 'mallory', userLogin: 'mallory' },
+        });
+        expect(result.status).to.equal(200);
+        expect(result.body).to.deep.equal({ ok: true, agentId: 'grok' });
+        expect(result.attested).to.deep.equal([['grok', 'alice']]);
+    });
+
+    it('uses the skip-auth owner in local mode', async () => {
+        const result = await attest({ authContext: { kind: 'skip', userLogin: 'local-dev' } });
+        expect(result.attested).to.deep.equal([['copilot', 'local-dev']]);
     });
 });

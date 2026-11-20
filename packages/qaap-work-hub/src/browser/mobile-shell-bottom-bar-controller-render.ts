@@ -166,10 +166,11 @@ export function pinBottomChromeToBodyExtracted(ctx: MobileShellBottomBarControll
     }
     const host = ctx.ensureBottomChromeHost();
     const layout = ctx.shell.layout as BoxLayout | null;
-    if (layout instanceof BoxLayout && ctx.statusBar.parent === ctx.shell) {
+    if (layout instanceof BoxLayout) {
         const widgets = layout.widgets as ReadonlyArray<LuminoWidget>;
-        ctx.statusBarShellIndex = ArrayExt.findFirstIndex(widgets, w => w === ctx.statusBar);
-        if (ctx.statusBarShellIndex >= 0) {
+        const statusBarIndex = ArrayExt.findFirstIndex(widgets, w => w === ctx.statusBar);
+        if (statusBarIndex >= 0) {
+            ctx.statusBarShellIndex = statusBarIndex;
             layout.removeWidget(ctx.statusBar);
         }
     }
@@ -218,7 +219,9 @@ export function unpinBottomChromeFromBodyExtracted(ctx: MobileShellBottomBarCont
         ctx.bottomChromeHost = undefined;
     }
     const layout = ctx.shell.layout as BoxLayout | null;
-    if (layout instanceof BoxLayout && ctx.statusBar.parent !== ctx.shell) {
+    // Lumino keeps `statusBar.parent === shell` after `removeWidget`, so membership in the layout is the
+    // only reliable signal: checking `parent` left the status bar detached from the IDE after a pin/unpin.
+    if (layout instanceof BoxLayout && ArrayExt.findFirstIndex(layout.widgets as ReadonlyArray<LuminoWidget>, w => w === ctx.statusBar) < 0) {
         if (ctx.statusBarShellIndex >= 0) {
             layout.insertWidget(ctx.statusBarShellIndex, ctx.statusBar);
         } else {

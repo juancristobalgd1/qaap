@@ -34,7 +34,7 @@ describe('agent picker: Enter and Escape keyboard handling', () => {
     };
 
     const agents = [
-        { id: 'codex', label: 'Codex', available: true, connectionState: 'connected', accessState: 'hosted' },
+        { id: 'codex', label: 'Codex', available: true, connectionState: 'connected', accessState: 'session' },
     ] as unknown as QaapAgentTaskAgentOption[];
 
     beforeEach(() => {

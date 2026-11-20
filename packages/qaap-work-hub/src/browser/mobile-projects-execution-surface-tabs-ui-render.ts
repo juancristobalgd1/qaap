@@ -4,6 +4,11 @@ import type { MobileProjectsExecutionSurfaceTabsUiContext } from './mobile-proje
 import type { ExecutionSurfaceTabId as TranscriptTab } from '@theia/qaap-shared-core/lib/common/qaap-execution-surface-tabs';
 import type { MobileProjectsExecutionSurfaceSidebarState } from './mobile-projects-execution-surface-tabs-ui';
 import { nls } from '@theia/core/lib/common/nls';
+import { MOBILE_WORK_HUB_AUX_SHEET_TRIGGER_CLASS } from './mobile-work-hub-aux-sheet';
+import {
+    createQaapPreviewToolbarSkeleton,
+    QAAP_PREVIEW_TOOLBAR_SKELETON_CLASS,
+} from '@theia/qaap-adapters/lib/browser/qaap-agent-preview-toolbar-skeleton';
 import {
     type QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
@@ -16,7 +21,7 @@ import {
     QAAP_SCM_CHANGES_ICON_CLASS,
 } from '@theia/qaap-shared-core/lib/common/qaap-scm-changes-icon';
 import { applyExecutionSurfaceHeaderChrome, queryExecutionSurfaceViewSelect } from '@theia/qaap-shared-core/lib/browser/qaap-execution-surface-header-chrome';
-import { writePendingTranscriptFilesViewMode } from '@theia/qaap-transcript/lib/browser/qaap-transcript-files-view';
+import { readPendingTranscriptFilesViewMode, writePendingTranscriptFilesViewMode } from '@theia/qaap-transcript/lib/browser/qaap-transcript-files-view';
 import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { peekPreferDesktopIde } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
@@ -98,19 +103,41 @@ export function mountTranscriptExecutionHeaderExtracted(ctx: MobileProjectsExecu
     const titleRow = header.querySelector('.theia-mobile-agent-log-title-row');
     if (titleRow instanceof HTMLElement) {
         ctx.appendExecutionSurfaceTabStripToTitleRow(titleRow, tabStrip);
+        titleRow.insertBefore(createMobileAuxSheetTrigger(ctx), titleRow.querySelector('.theia-mobile-projects-header-execution-tabs'));
     }
     ctx.refreshExecutionSurfaceTabStripState(tabStrip, activeTab);
     return { back, tabStrip };
 }
 
+/**
+ * The conversation header's button for the mobile "Side chat" / "Pull request" sheet. It is built with every
+ * conversation header and CSS shows it on the narrow viewport only (the desktop right panel has its own toggle),
+ * so crossing the breakpoint needs no rebuild.
+ */
+export function createMobileAuxSheetTrigger(ctx: MobileProjectsExecutionSurfaceTabsUiContext): HTMLButtonElement {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = MOBILE_WORK_HUB_AUX_SHEET_TRIGGER_CLASS;
+    button.title = nls.localize('qaap/mobileWorkHubAuxSheet/openViews', 'Open views');
+    button.setAttribute('aria-label', button.title);
+    button.setAttribute('aria-haspopup', 'dialog');
+    const glyph = document.createElement('span');
+    glyph.className = 'codicon codicon-layout-sidebar-right';
+    glyph.setAttribute('aria-hidden', 'true');
+    button.append(glyph);
+    button.addEventListener('click', event => {
+        event.stopPropagation();
+        // Taps do not focus buttons everywhere (iOS Safari): focus the trigger first so that closing the sheet returns focus here.
+        button.focus({ preventScroll: true });
+        ctx.openMobileAuxSheet('side-chat');
+    });
+    return button;
+}
+
 export function restoreActiveExecutionSurfaceExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, project: MobileProjectEntry,
     summary?: QaapAgentConversationSummaryDTO,): void {
-    let activeTab = ctx.executionSurfaceTabForProject(project);
-    if (activeTab === 'review') {
-        // Changes is represented by the Files surface; normalize old in-memory state too.
-        activeTab = 'files';
-        ctx.host.executionSurfaceTabByProjectId.set(project.id, activeTab);
-    }
+    // 'review' (Changes) stays its own tab; it mounts the files surface in Changes mode.
+    const activeTab = ctx.executionSurfaceTabForProject(project);
     ctx.showOnlyExecutionSurfaceTab(activeTab);
     const activeSummary = summary
         ?? ctx.host.transcriptOpenSummary
@@ -185,8 +212,10 @@ function restoreExecutionSurfaceSidebarHostExtracted(sidebar: MobileProjectsExec
         return;
     }
     const placeholder = sidebar.placeholder as Comment | undefined;
-    if (placeholder?.isConnected) {
-        placeholder.replaceWith(host);
+    if (placeholder?.isConnected && placeholder.parentNode) {
+        // A state-preserving move: a live preview iframe in this host would otherwise reload.
+        moveExecutionSurfaceHostKeepingState(placeholder.parentNode, host, placeholder);
+        placeholder.remove();
     } else {
         host.remove();
     }
@@ -296,6 +325,8 @@ function syncExecutionSurfaceSidebarFallbackPreviewHeaderExtracted(sidebar: Mobi
 function restoreExecutionSurfaceSidebarToolbarHostExtracted(sidebar: MobileProjectsExecutionSurfaceSidebarState): void {
     sidebar.toolbarObserver?.disconnect();
     sidebar.toolbarObserver = undefined;
+    syncExecutionSurfacePreviewToolbarSkeletonExtracted(
+        sidebar.element?.querySelector<HTMLElement>('.theia-mobile-execution-surface-sidebar-header'), undefined, false);
     const host = sidebar.toolbarHost as HTMLElement | undefined;
     if (!host) {
         return;
@@ -333,6 +364,12 @@ function promoteExecutionSurfaceSidebarToolbarExtracted(sidebar: MobileProjectsE
     const header = sidebar.element?.querySelector<HTMLElement>('.theia-mobile-execution-surface-sidebar-header');
     const close = header?.querySelector<HTMLElement>('.theia-mobile-execution-surface-sidebar-close');
     const toolbar = activeHost && resolveExecutionSurfaceSidebarToolbarHostExtracted(sidebar.activeTab, activeHost);
+    // Once promoted, the real toolbar lives in the header, not in the surface host: look there too,
+    // or the skeleton was re-added next to it (duplicated, greyed-out controls).
+    const headerHasRealToolbar = !!header?.querySelector(
+        `:scope > .qaap-agent-preview-embedded-toolbar:not(.${QAAP_PREVIEW_TOOLBAR_SKELETON_CLASS})`);
+    syncExecutionSurfacePreviewToolbarSkeletonExtracted(header, close,
+        sidebar.activeTab === 'preview' && !toolbar?.parentNode && !headerHasRealToolbar);
     if (!header || !close || !toolbar?.parentNode) {
         return;
     }
@@ -357,6 +394,31 @@ function promoteExecutionSurfaceSidebarToolbarExtracted(sidebar: MobileProjectsE
     toolbar.classList.add('theia-mobile-execution-surface-sidebar-toolbar');
     header.insertBefore(toolbar, actionsAnchor);
     sidebar.toolbarHost = toolbar;
+    syncExecutionSurfacePreviewToolbarSkeletonExtracted(header, close, false);
+}
+
+/**
+ * While the Preview drawer has no mounted preview yet (the dev server is still starting, or the
+ * embedded chrome has not rendered), the header showed only the close button over a black pane.
+ * A disabled copy of the preview controls holds the header instead, with the loading bar running,
+ * and is dropped as soon as the real toolbar is promoted.
+ */
+function syncExecutionSurfacePreviewToolbarSkeletonExtracted(header: HTMLElement | null | undefined, close: HTMLElement | null | undefined, show: boolean): void {
+    if (!header) {
+        return;
+    }
+    const existing = header.querySelector<HTMLElement>(`:scope > .${QAAP_PREVIEW_TOOLBAR_SKELETON_CLASS}`);
+    if (!show) {
+        existing?.remove();
+        return;
+    }
+    if (existing || !close) {
+        return;
+    }
+    const skeleton = createQaapPreviewToolbarSkeleton({
+        placeholder: nls.localize('qaap/mobileProjects/previewStarting', 'Starting preview…'),
+    });
+    header.insertBefore(skeleton, executionSurfaceSidebarHeaderActionsAnchorExtracted(header, close));
 }
 
 function observeExecutionSurfaceSidebarToolbarExtracted(sidebar: MobileProjectsExecutionSurfaceSidebarState): void {
@@ -603,7 +665,7 @@ export function openExecutionSurfaceSidebarExtracted(ctx: MobileProjectsExecutio
         restoreExecutionSurfaceSidebarPreviewHeaderExtracted(previous);
         restoreExecutionSurfaceSidebarToolbarHostExtracted(previous);
         if (previous.element.classList.contains('qaap-mod-docked')) {
-            ctx.resolveWorkHubAuxPanel()?.undockSurface(previous.element);
+            ctx.undockWorkHubAuxPanelSurface(previous.element);
         }
         previous.element.remove();
         previous.backdrop.remove();
@@ -685,12 +747,9 @@ export function openExecutionSurfaceSidebarExtracted(ctx: MobileProjectsExecutio
     content.className = 'theia-mobile-execution-surface-sidebar-content';
     sidebar.append(header, content);
 
+    // The host stays where it is until the drawer is in the document (moved in below), so a live
+    // preview iframe inside it moves without a reload.
     const placeholder = document.createComment('qaap execution surface sidebar host');
-    if (host.parentNode) {
-        host.replaceWith(placeholder);
-    }
-    host.hidden = false;
-    content.append(host);
 
     const filesMount = activeSurface === 'files'
         ? (() => {
@@ -707,12 +766,22 @@ export function openExecutionSurfaceSidebarExtracted(ctx: MobileProjectsExecutio
     sidebar.classList.add('qaap-mod-docked');
     sidebar.removeAttribute('aria-modal');
     sidebar.setAttribute('role', 'region');
-    if (!ctx.claimWorkHubAuxPanel()?.dockSurface(activeSurface, sidebar)) {
+    // The files surface docks under the right panel's Changes or Files view, by its current mode.
+    // The files surface docks under Changes when it was opened as Changes (the 'review' tab), or when
+    // its mode is Changes (a first mount may not have applied a pending Changes request yet).
+    const filesMode = readPendingTranscriptFilesViewMode() ?? filesMount?.viewMode?.();
+    const dockedView = activeSurface === 'files' && (tab === 'review' || filesMode === 'changes') ? 'changes' : activeSurface;
+    if (!ctx.claimWorkHubAuxPanel()?.dockSurface(dockedView, sidebar)) {
         sidebar.classList.remove('qaap-mod-docked');
         sidebar.setAttribute('role', 'dialog');
         sidebar.setAttribute('aria-modal', 'true');
         document.body.append(backdrop, sidebar);
     }
+    if (host.parentNode) {
+        host.parentNode.insertBefore(placeholder, host);
+    }
+    host.hidden = false;
+    moveExecutionSurfaceHostKeepingState(content, host, null);
     const state = {
         element: sidebar,
         backdrop,
@@ -774,12 +843,7 @@ export function dismissExecutionSurfaceSidebarExtracted(ctx: MobileProjectsExecu
     ctx.host.executionSurfaceSidebar = undefined;
     if (sidebar.element.classList.contains('qaap-mod-docked')) {
         // No drawer animation for the docked panel; hand its slot back at once.
-        const auxPanel = ctx.resolveWorkHubAuxPanel();
-        if (auxPanel) {
-            auxPanel.undockSurface(sidebar.element);
-        } else {
-            sidebar.element.remove();
-        }
+        ctx.undockWorkHubAuxPanelSurface(sidebar.element);
         sidebar.backdrop.remove();
         return;
     }
@@ -827,14 +891,12 @@ export function activateExecutionSurfaceTabExtracted(ctx: MobileProjectsExecutio
         void ctx.host.openTranscriptChanges?.();
         return;
     }
-    // 'review' (Changes) is merged into the 'files' tab — redirect with a
-    // pending view-mode flag so the file view activates changes mode on mount.
-    // The content mount keeps the original 'review' id: its review branch sets the
-    // pending Changes mode, whereas mounting 'files' would clear it and show the tree.
+    // 'review' (Changes) is its own view: it shares the files surface, opened in Changes mode.
+    // Keeping it as the tab (not folding it into 'files') means a later re-mount (header rebuild,
+    // restore) stays on Changes instead of forcing the file tree.
     const mountTab = tab;
     if (tab === 'review') {
         writePendingTranscriptFilesViewMode('changes');
-        tab = 'files';
     }
     if (tab === 'messages') {
         ctx.dismissExecutionSurfaceSidebar();
@@ -875,7 +937,7 @@ export function activateExecutionSurfaceTabExtracted(ctx: MobileProjectsExecutio
         } else {
             ctx.host.transcriptSurfacesUi.hideHeaderPreviewRunButton();
         }
-        if (tab === 'files') {
+        if (tab === 'files' || tab === 'review') {
             ctx.host.transcriptSurfacesUi.syncHeaderFilesMoreButton(project, summary);
             ctx.host.transcriptSurfacesUi.syncHeaderViewModeSwitch(project, summary);
         } else {
@@ -1172,4 +1234,22 @@ export function navigateExecutionSurfaceBackExtracted(ctx: MobileProjectsExecuti
 export function executionSurfacePreviewDirectory(ctx: MobileProjectsExecutionSurfaceTabsUiContext, project: MobileProjectEntry,
     summary?: QaapAgentConversationSummaryDTO,): string | undefined {
     return qaapProjectPreviewDirectory(ctx.host.projectsService, project, ctx.host.preparedCwdByProjectId, summary?.cwd);
+}
+
+/**
+ * Moves a surface host without resetting it: a plain DOM move detaches a live preview iframe and
+ * reloads the app (Browser -> Changes -> Browser flashed). `moveBefore` keeps the state when both
+ * ends are in the document; otherwise it falls back to `insertBefore`.
+ */
+function moveExecutionSurfaceHostKeepingState(parent: Node, node: Node, before: Node | null): void {
+    const atomicMove = (parent as Node & { moveBefore?: (node: Node, child: Node | null) => void }).moveBefore;
+    if (typeof atomicMove === 'function' && parent.isConnected && node.isConnected) {
+        try {
+            atomicMove.call(parent, node, before);
+            return;
+        } catch {
+            // A move the browser refuses falls back to a plain insert.
+        }
+    }
+    parent.insertBefore(node, before);
 }

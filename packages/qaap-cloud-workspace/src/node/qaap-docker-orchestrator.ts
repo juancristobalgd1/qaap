@@ -37,6 +37,7 @@ import { isQaapRunscConfigured, QAAP_RUNSC_BACKEND_READY_TIMEOUT_MS, QAAP_RUNSC_
 import { QaapTenantBackendWakeTimeline } from './qaap-tenant-backend-wake-timeline';
 import { QaapTenantRuntimeStore } from './qaap-tenant-runtime-store';
 import { QaapTenantResourceOverrides } from './qaap-tenant-resource-overrides';
+import { QaapTenantResourceSizing } from './qaap-tenant-resource-sizing';
 import { isInQaapDockerNamespace, qaapDockerName, qaapDockerNamespaceLabels } from './qaap-docker-namespace';
 import {
     QAAP_TENANT_AGENT_STORAGE_DIRNAME,
@@ -130,8 +131,9 @@ const TENANT_WORKER_ENV_DENYLIST = new Set([
     'QAAP_VAPID_PRIVATE_KEY',
     'QAAP_VAPID_SUBJECT',
     'QAAP_SECRETS_KEYS',
-    'STRIPE_SECRET_KEY',
-    'STRIPE_WEBHOOK_SECRET',
+    'AIRWALLEX_API_KEY',
+    'AIRWALLEX_CLIENT_ID',
+    'AIRWALLEX_WEBHOOK_SECRET',
     'QAAP_SESSION_SECRET',
     'QAAP_COOKIE_SECRET',
     'QAAP_JWT_SECRET',
@@ -205,6 +207,18 @@ interface QaapDockerNodeClient {
     readonly docker: Dockerode;
 }
 
+/** Options for {@link QaapDockerOrchestrator.ensureTenantBackend}. */
+export interface QaapTenantBackendEnsureOptions {
+    /**
+     * Recreate a stale backend even while agent turns run in it (the user asked for the update). The
+     * default keeps a busy stale backend and defers the recreation, so a deploy never ends a turn.
+     */
+    readonly interruptRunningTurns?: boolean;
+}
+
+/** How long the "running container uses the serving image" answer is reused before Docker is inspected again. */
+const TENANT_IMAGE_STALE_CACHE_MS = 5_000;
+
 /** One hardened worker container per tenant when `QAAP_CLOUD_MODE=docker`. */
 @injectable()
 export class QaapDockerOrchestrator {
@@ -214,6 +228,10 @@ export class QaapDockerOrchestrator {
 
     @inject(QaapTenantRuntimeStore) @optional()
     protected readonly runtimeStore: QaapTenantRuntimeStore | undefined;
+
+    /** Plan-derived memory and CPU per owner; absent in harnesses, where the operator defaults apply. */
+    @inject(QaapTenantResourceSizing) @optional()
+    protected readonly tenantResourceSizing: QaapTenantResourceSizing | undefined;
 
     protected docker: Dockerode | undefined;
     /** Per-node verification is needed when a tenant pool uses more than one remote daemon. */
@@ -245,6 +263,10 @@ export class QaapDockerOrchestrator {
     protected tenantImageBuildCache: { readonly image: string; readonly build: string | undefined; readonly at: number } | undefined;
     /** Phase timings of the backend wake each running {@link createOrValidateTenantBackend} records. */
     protected readonly tenantBackendWakeTimelines = new Map<string, QaapTenantBackendWakeTimeline>();
+    /** Recent answers of {@link backendImageIsStale} per tenant, so frequent status polls do not inspect Docker each time. */
+    protected readonly tenantImageStaleCache = new Map<string, { readonly stale: boolean; readonly at: number }>();
+    /** The one "Update now" run per tenant; concurrent requests share it (see {@link applyTenantUpdateNow}). */
+    protected readonly tenantUpdateOperations = new Map<string, Promise<boolean>>();
 
     isEnabled(): boolean {
         const cloudMode = (process.env.QAAP_CLOUD_MODE?.trim() || 'local').toLowerCase();
@@ -261,7 +283,11 @@ export class QaapDockerOrchestrator {
      * uses the returned loopback port and never exposes the Docker socket or a tenant container
      * port directly to the browser.
      */
-    async ensureTenantBackend(ownerLogin: string, tenantRootHostPath: string): Promise<QaapTenantBackendTarget> {
+    async ensureTenantBackend(
+        ownerLogin: string,
+        tenantRootHostPath: string,
+        options: QaapTenantBackendEnsureOptions = {},
+    ): Promise<QaapTenantBackendTarget> {
         if (!this.isBackendPerTenantEnabled()) {
             throw new Error('Backend-per-tenant mode is not enabled. Set QAAP_BACKEND_PER_TENANT=1 only with the tenant proxy enabled.');
         }
@@ -270,12 +296,13 @@ export class QaapDockerOrchestrator {
             throw new Error('A tenant backend requires an authenticated owner login.');
         }
         const key = tenant.toLowerCase();
+        const interruptRunningTurns = options.interruptRunningTurns === true;
         const existing = this.tenantBackendTargets.get(key);
-        if (existing) {
+        if (existing && !interruptRunningTurns) {
             return existing;
         }
         const inFlight = this.tenantBackendEnsurePromises.get(key);
-        if (inFlight) {
+        if (inFlight && !interruptRunningTurns) {
             return inFlight;
         }
         const coldStartAt = Date.now();
@@ -286,8 +313,11 @@ export class QaapDockerOrchestrator {
             stoppedAt: undefined,
             destroyAfter: undefined,
         });
+        const operation = (): Promise<QaapTenantBackendTarget> => this.createOrValidateTenantBackend(tenant, tenantRootHostPath, { interruptRunningTurns });
         const promise = this.boundTenantEnsure(
-            this.shareTenantEnsureOperation(`backend:${key}`, () => this.createOrValidateTenantBackend(tenant, tenantRootHostPath)),
+            interruptRunningTurns
+                ? this.runTenantBackendEnsureAfterCurrent(key, operation)
+                : this.shareTenantEnsureOperation(`backend:${key}`, operation),
             `backend for ${tenant}`,
         );
         this.tenantBackendEnsurePromises.set(key, promise);
@@ -423,16 +453,112 @@ export class QaapDockerOrchestrator {
     }
 
     /**
-     * Build status of the tenant's running backend, from in-memory state only (no Docker call): the
-     * build its last ready health reported and whether a recreation is deferred for running turns.
+     * What the user is told about the build of their running backend: the single source of "an update is
+     * pending" (`GET /qaap/api/cloud/runtime/status`). Pending when a recreation was deferred for running
+     * turns, the known builds differ, or the running container does not use the serving image. While an
+     * update is pending it also reports the agent turns running now, for the confirmation before "Update now".
      */
-    getTenantBackendUpdateStatus(ownerLogin: string): QaapTenantBackendUpdateStatus {
+    async getTenantBackendUpdateStatus(ownerLogin: string): Promise<QaapTenantBackendUpdateStatus> {
         const tenant = ownerLogin.trim().toLowerCase();
-        return computeTenantBackendUpdateStatus({
+        const deferred = !!tenant && this.deferredTenantBackendRecreations.has(tenant);
+        const imageStale = !!tenant && !deferred && this.isBackendPerTenantEnabled() && await this.backendImageIsStale(ownerLogin);
+        const status = computeTenantBackendUpdateStatus({
             backendBuild: tenant ? this.tenantBackendBuilds.get(tenant) : undefined,
             controlPlaneBuild: process.env.QAAP_BUILD_SHA,
-            deferred: !!tenant && this.deferredTenantBackendRecreations.has(tenant),
+            deferred,
+            imageStale,
         });
+        if (!status.updatePending) {
+            return status;
+        }
+        return { ...status, runningTasks: await this.tenantRunningTaskCount(ownerLogin) };
+    }
+
+    /**
+     * "Update now": recreate the tenant backend on the serving image even while agent turns run in it,
+     * because the user asked for it. Resolves `false` when nothing is stale (no-op). Concurrent calls
+     * for one tenant share a single run, so the backend is recreated once.
+     */
+    async applyTenantUpdateNow(ownerLogin: string): Promise<boolean> {
+        const tenant = ownerLogin.trim().toLowerCase();
+        if (!this.isBackendPerTenantEnabled() || !tenant) {
+            return false;
+        }
+        const running = this.tenantUpdateOperations.get(tenant);
+        if (running) {
+            return running;
+        }
+        const operation: Promise<boolean> = this.boundTenantEnsure(this.applyTenantUpdate(ownerLogin.trim(), tenant), `update for ${tenant}`)
+            .finally(() => {
+                // The next status read must see the recreated container, not the cached stale answer.
+                this.tenantImageStaleCache.delete(tenant);
+                if (this.tenantUpdateOperations.get(tenant) === operation) {
+                    this.tenantUpdateOperations.delete(tenant);
+                }
+            });
+        this.tenantUpdateOperations.set(tenant, operation);
+        return operation;
+    }
+
+    protected async applyTenantUpdate(ownerLogin: string, tenant: string): Promise<boolean> {
+        if (!(await this.tenantUpdateAvailable(ownerLogin))) {
+            return false;
+        }
+        // Forget the deferral and the cached target so the forced ensure is the one that decides.
+        this.deferredTenantBackendRecreations.delete(tenant);
+        this.invalidateTenantBackendTarget(ownerLogin);
+        await this.ensureTenantBackend(ownerLogin, this.tenantRootForLogin(ownerLogin), { interruptRunningTurns: true });
+        return true;
+    }
+
+    /** True when a recreation is deferred, or the running container does not use the serving image. */
+    protected async tenantUpdateAvailable(ownerLogin: string): Promise<boolean> {
+        return this.deferredTenantBackendRecreations.has(ownerLogin.trim().toLowerCase())
+            || await this.backendImageIsStale(ownerLogin);
+    }
+
+    /**
+     * Whether the tenant's running container was created from another image than the serving one. Inspects
+     * Docker (so it is right after a control-plane restart) and reuses the answer for a few seconds.
+     * No backend container yet, or Docker unreachable: nothing running is stale.
+     */
+    protected async backendImageIsStale(ownerLogin: string): Promise<boolean> {
+        const tenant = ownerLogin.trim().toLowerCase();
+        const cached = this.tenantImageStaleCache.get(tenant);
+        if (cached && Date.now() - cached.at < TENANT_IMAGE_STALE_CACHE_MS) {
+            return cached.stale;
+        }
+        let stale = false;
+        try {
+            const docker = await this.getDocker(ownerLogin);
+            const inspect = await docker.getContainer(this.backendContainerNameForTenant(ownerLogin)).inspect();
+            stale = this.isManagedTenantBackendFor(inspect, ownerLogin) && !(await this.runsCurrentTenantImage(docker, inspect));
+        } catch {
+            stale = false;
+        }
+        this.tenantImageStaleCache.set(tenant, { stale, at: Date.now() });
+        return stale;
+    }
+
+    protected async tenantRunningTaskCount(ownerLogin: string): Promise<number> {
+        try {
+            return (await this.probeTenantBackendBusy(ownerLogin))?.runningTasks ?? 0;
+        } catch {
+            return 0;
+        }
+    }
+
+    /**
+     * Runs `start` under the tenant's `backend:<key>` ensure key after the operation already running for
+     * it has settled, so a forced recreation never races a create/validate that is still in progress.
+     */
+    protected runTenantBackendEnsureAfterCurrent<T>(key: string, start: () => Promise<T>): Promise<T> {
+        const current = this.tenantEnsureOperations.get(`backend:${key}`)?.promise;
+        if (!current) {
+            return this.shareTenantEnsureOperation(`backend:${key}`, start);
+        }
+        return current.then(() => undefined, () => undefined)
+            .then(() => this.shareTenantEnsureOperation(`backend:${key}`, start));
     }
 
     /**
@@ -1230,6 +1356,7 @@ export class QaapDockerOrchestrator {
         ownerLogin?: string,
     ): Promise<QaapDockerEnsureResult> {
         const docker = await this.getDocker(ownerLogin);
+        await this.tenantResourceSizing?.refresh(ownerLogin);
         await this.assertRunscAvailable(ownerLogin);
         const dockerMounts = this.tenantMountsForDocker(mounts);
         for (const root of Object.values(mounts)) {
@@ -1249,6 +1376,7 @@ export class QaapDockerOrchestrator {
         try {
             container = docker.getContainer(name);
             inspect = await container.inspect();
+            inspect = await this.syncTenantResourceLimits(docker, name, inspect, ownerLogin);
             if (tenantEgressNetwork) {
                 if (directEgressNetwork
                     && !this.tenantContainerMatches(inspect, mounts, networkMode, directEgressNetwork)
@@ -1325,6 +1453,7 @@ export class QaapDockerOrchestrator {
                         `${dockerMounts.parallelRoot}:${PARALLEL_MOUNT}:rw`,
                     ],
                     Memory: this.getTenantMemoryLimitFor(ownerLogin),
+                    MemorySwap: this.getTenantMemoryLimitFor(ownerLogin),
                     NanoCpus: this.getTenantCpuLimitFor(ownerLogin),
                     PidsLimit: this.getTenantPidsLimitFor(ownerLogin),
                     SecurityOpt: ['no-new-privileges:true'],
@@ -1395,12 +1524,14 @@ export class QaapDockerOrchestrator {
     protected async createOrValidateTenantBackend(
         ownerLogin: string,
         tenantRootHostPath: string,
+        options: QaapTenantBackendEnsureOptions = {},
     ): Promise<QaapTenantBackendTarget> {
         const wake = new QaapTenantBackendWakeTimeline();
         this.tenantBackendWakeTimelines.set(ownerLogin.trim().toLowerCase(), wake);
         const node = this.dockerNodeForTenant(ownerLogin);
         const docker = await this.getDocker(ownerLogin);
         const name = this.backendContainerNameForTenant(ownerLogin);
+        await this.tenantResourceSizing?.refresh(ownerLogin);
         const mounts = this.tenantMountsForRoot(tenantRootHostPath);
         const dockerMounts = this.tenantMountsForDocker(mounts);
         const expectedSegment = tenantSegmentKey(ownerLogin);
@@ -1443,6 +1574,7 @@ export class QaapDockerOrchestrator {
                 await container.unpause();
                 inspect = await container.inspect();
             }
+            inspect = await this.syncTenantResourceLimits(docker, name, inspect, ownerLogin);
             if (tenantEgressNetwork) {
                 if (directEgressNetwork
                     && !this.tenantBackendContainerMatches(inspect, ownerLogin, mounts, tenantDataRoot, theiaHome, networkMode, directEgressNetwork)
@@ -1479,7 +1611,11 @@ export class QaapDockerOrchestrator {
                 const busy = runningTarget ? await this.fetchTenantBusyStatus(runningTarget) : undefined;
                 // A runtime migration waits for running turns only until its deadline: `busy` is what the tenant's
                 // own backend reports, so otherwise a tenant could stay out of gVisor for as long as it liked.
-                if (runningTarget && busy?.busy && !this.tenantRuntimeMigrationIsOverdue(inspect, ownerLogin)) {
+                // A user-requested update ("Update now") skips the wait on purpose: the user accepted the interruption.
+                if (options.interruptRunningTurns) {
+                    console.warn(`[qaap-docker] Recreating stale tenant backend ${name} for ${ownerLogin} on user request `
+                        + `(interrupting ${busy?.runningTasks ?? 0} agent turn(s)).`);
+                } else if (runningTarget && busy?.busy && !this.tenantRuntimeMigrationIsOverdue(inspect, ownerLogin)) {
                     console.warn(`[qaap-docker] Deferring recreation of stale tenant backend ${name} for ${ownerLogin}: `
                         + `${busy.runningTasks} agent turn(s) running.`);
                     this.deferredTenantBackendRecreations.add(ownerLogin.trim().toLowerCase());
@@ -1489,7 +1625,9 @@ export class QaapDockerOrchestrator {
                     wake.mark('ready');
                     return runningTarget;
                 }
-                console.warn(`[qaap-docker] Recreating stale tenant backend ${name} for ${ownerLogin}.`);
+                if (!options.interruptRunningTurns) {
+                    console.warn(`[qaap-docker] Recreating stale tenant backend ${name} for ${ownerLogin}.`);
+                }
                 await this.removeTenantBackendIngressRelay(docker, ownerLogin);
                 await container.remove({ force: true });
                 const recreated = Object.assign(new Error(`Tenant backend ${name} was removed for recreation.`), { statusCode: 404 });
@@ -1588,6 +1726,7 @@ export class QaapDockerOrchestrator {
                         `${dockerTheiaHome}:${TENANT_BACKEND_THEIA_HOME_MOUNT}:rw`,
                     ],
                     Memory: this.getTenantMemoryLimitFor(ownerLogin),
+                    MemorySwap: this.getTenantMemoryLimitFor(ownerLogin),
                     NanoCpus: this.getTenantCpuLimitFor(ownerLogin),
                     PidsLimit: this.getTenantPidsLimitFor(ownerLogin),
                     SecurityOpt: ['no-new-privileges:true'],
@@ -2684,9 +2823,24 @@ export class QaapDockerOrchestrator {
         return Number.isInteger(num) && num > 0 ? num : 3 * 1024 * 1024 * 1024;
     }
 
-    /** The default, raised for `ownerLogin` by `QAAP_TENANT_MEMORY_LIMIT_OVERRIDES` (see QaapTenantResourceOverrides). */
+    /** `QAAP_TENANT_MEMORY_LIMIT` only when the operator set it explicitly; it pins every tenant and ignores the plan. */
+    protected explicitTenantMemoryLimit(): number | undefined {
+        const raw = process.env.QAAP_TENANT_MEMORY_LIMIT?.trim();
+        const num = raw ? Number.parseInt(raw, 10) : Number.NaN;
+        return Number.isInteger(num) && num > 0 ? num : undefined;
+    }
+
+    /** Memory before the overrides: the explicit operator pin, else the owner's plan sizing, else the operator default. */
+    protected getTenantMemoryBaseFor(ownerLogin: string | undefined): number {
+        if (this.explicitTenantMemoryLimit() !== undefined) {
+            return this.getTenantMemoryLimit();
+        }
+        return this.tenantResourceSizing?.peek(ownerLogin)?.memoryBytes ?? this.getTenantMemoryLimit();
+    }
+
+    /** The plan memory (or the default), raised for `ownerLogin` by `QAAP_TENANT_MEMORY_LIMIT_OVERRIDES` (see QaapTenantResourceOverrides). */
     protected getTenantMemoryLimitFor(ownerLogin: string | undefined): number {
-        return QaapTenantResourceOverrides.memoryBytes(ownerLogin, this.getTenantMemoryLimit());
+        return QaapTenantResourceOverrides.memoryBytes(ownerLogin, this.getTenantMemoryBaseFor(ownerLogin));
     }
 
     /**
@@ -2726,8 +2880,85 @@ export class QaapDockerOrchestrator {
         return Number.isFinite(num) && num > 0 ? Math.floor(num * 1e9) : 2 * 1e9;
     }
 
+    /** `QAAP_TENANT_CPU_LIMIT` only when the operator set it explicitly; it pins every tenant and ignores the plan. */
+    protected explicitTenantCpuLimit(): number | undefined {
+        const raw = process.env.QAAP_TENANT_CPU_LIMIT?.trim();
+        const num = raw ? Number.parseFloat(raw) : Number.NaN;
+        return Number.isFinite(num) && num > 0 ? Math.floor(num * 1e9) : undefined;
+    }
+
+    protected getTenantCpuBaseFor(ownerLogin: string | undefined): number {
+        if (this.explicitTenantCpuLimit() !== undefined) {
+            return this.getTenantCpuLimit();
+        }
+        return this.tenantResourceSizing?.peek(ownerLogin)?.nanoCpus ?? this.getTenantCpuLimit();
+    }
+
     protected getTenantCpuLimitFor(ownerLogin: string | undefined): number {
-        return QaapTenantResourceOverrides.nanoCpus(ownerLogin, this.getTenantCpuLimit());
+        return QaapTenantResourceOverrides.nanoCpus(ownerLogin, this.getTenantCpuBaseFor(ownerLogin));
+    }
+
+    /**
+     * Brings a tenant container's Memory and NanoCpus to the owner's current sizing with `docker update`,
+     * so a plan or project memory change never recreates a running container. Returns the inspect to
+     * validate: re-read after an update, unchanged otherwise. A refused update (for example a memory
+     * limit below current usage) keeps the container as it is and is retried by the next ensure.
+     */
+    protected async syncTenantResourceLimits(
+        docker: Dockerode,
+        name: string,
+        inspect: Dockerode.ContainerInspectInfo,
+        ownerLogin: string | undefined,
+    ): Promise<Dockerode.ContainerInspectInfo> {
+        const memory = this.getTenantMemoryLimitFor(ownerLogin);
+        const nanoCpus = this.getTenantCpuLimitFor(ownerLogin);
+        const host = inspect.HostConfig as { Memory?: number; NanoCpus?: number } | undefined;
+        if (host?.Memory === memory && host?.NanoCpus === nanoCpus) {
+            return inspect;
+        }
+        try {
+            const container = docker.getContainer(name);
+            await container.update({ Memory: memory, MemorySwap: memory, NanoCpus: nanoCpus });
+            console.info(`[qaap-docker] Updated resource limits of ${name}: ${memory} bytes memory, ${nanoCpus / 1e9} CPU.`);
+            return await container.inspect();
+        } catch (error) {
+            console.warn(`[qaap-docker] Could not update resource limits of ${name}: ${error instanceof Error ? error.message : String(error)}`);
+            return inspect;
+        }
+    }
+
+    /**
+     * Applies the owner's current plan sizing to their existing tenant containers right away, after a
+     * per-project memory choice changed. Returns how many containers were updated; a no-op outside Docker.
+     */
+    async applyTenantResourceLimits(ownerLogin: string): Promise<number> {
+        const login = ownerLogin.trim().toLowerCase();
+        if (!login || !this.isEnabled()) {
+            return 0;
+        }
+        await this.tenantResourceSizing?.refresh(login);
+        const docker = await this.getDocker(login);
+        let updated = 0;
+        for (const name of [this.containerNameForTenant(login), this.backendContainerNameForTenant(login)]) {
+            let inspect: Dockerode.ContainerInspectInfo;
+            try {
+                inspect = await docker.getContainer(name).inspect();
+            } catch (error) {
+                if (this.isDockerNotFound(error)) {
+                    continue;
+                }
+                throw error;
+            }
+            const labels = inspect.Config?.Labels ?? {};
+            if (labels['com.qaap.managed'] !== 'true' || labels['com.qaap.tenant-login'] !== login) {
+                continue;
+            }
+            const after = await this.syncTenantResourceLimits(docker, name, inspect, login);
+            if (after !== inspect) {
+                updated += 1;
+            }
+        }
+        return updated;
     }
 
     protected getTenantPidsLimit(): number {
@@ -3106,6 +3337,9 @@ export class QaapDockerOrchestrator {
         return {
             // Node 22.23 native fetch ignores HTTP(S)_PROXY unless this is set; the tenant backend calls GitHub with fetch.
             NODE_USE_ENV_PROXY: '1',
+            // With NODE_USE_ENV_PROXY every Node process prints "[UNDICI-EHPA] Warning: EnvHttpProxyAgent is
+            // experimental" on stderr: in each terminal and in every agent CLI log. Silence that one code only.
+            NODE_OPTIONS: '--disable-warning=UNDICI-EHPA',
             HTTP_PROXY: proxy,
             HTTPS_PROXY: proxy,
             http_proxy: proxy,

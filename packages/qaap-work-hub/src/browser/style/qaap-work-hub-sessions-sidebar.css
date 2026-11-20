@@ -19,11 +19,6 @@
   border-radius: 10px;
 }
 
-.theia-mobile-projects-header-main:has(.theia-mobile-projects-header-ide-agents-switch:not([hidden])) .theia-mobile-projects-title-block,
-.theia-mobile-projects-header-main:has(.theia-mobile-projects-header-ide-agents-switch:not([hidden])) .theia-mobile-projects-header-execution-cluster {
-  max-width: calc(50% - 44px);
-}
-
 .theia-mobile-work-hub-sessions-sidebar {
   --qaap-sessions-sidebar-motion-duration: 220ms;
   --qaap-sessions-sidebar-motion-easing: cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -118,10 +113,35 @@
   pointer-events: none;
 }
 
-/* Bottom fade while more tasks / projects remain below the fold. */
+/* Edge fades while more tasks / projects remain above or below the fold. The top fade starts
+   under the pinned "Projects" heading (--qaap-sidebar-fade-top-start, set from TS). */
 .theia-mobile-work-hub-sessions-sidebar-scroll.theia-mod-more-below {
   -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 64px), transparent);
   mask-image: linear-gradient(to bottom, #000 calc(100% - 64px), transparent);
+}
+
+.theia-mobile-work-hub-sessions-sidebar-scroll.theia-mod-more-above {
+  -webkit-mask-image: linear-gradient(to bottom,
+      #000 0, #000 var(--qaap-sidebar-fade-top-start, 0px),
+      transparent var(--qaap-sidebar-fade-top-start, 0px),
+      #000 calc(var(--qaap-sidebar-fade-top-start, 0px) + 40px));
+  mask-image: linear-gradient(to bottom,
+      #000 0, #000 var(--qaap-sidebar-fade-top-start, 0px),
+      transparent var(--qaap-sidebar-fade-top-start, 0px),
+      #000 calc(var(--qaap-sidebar-fade-top-start, 0px) + 40px));
+}
+
+.theia-mobile-work-hub-sessions-sidebar-scroll.theia-mod-more-above.theia-mod-more-below {
+  -webkit-mask-image: linear-gradient(to bottom,
+      #000 0, #000 var(--qaap-sidebar-fade-top-start, 0px),
+      transparent var(--qaap-sidebar-fade-top-start, 0px),
+      #000 calc(var(--qaap-sidebar-fade-top-start, 0px) + 40px),
+      #000 calc(100% - 64px), transparent);
+  mask-image: linear-gradient(to bottom,
+      #000 0, #000 var(--qaap-sidebar-fade-top-start, 0px),
+      transparent var(--qaap-sidebar-fade-top-start, 0px),
+      #000 calc(var(--qaap-sidebar-fade-top-start, 0px) + 40px),
+      #000 calc(100% - 64px), transparent);
 }
 
 .theia-mobile-work-hub-sessions-sidebar-resize-handle {
@@ -183,27 +203,44 @@
   box-shadow: 0 18px 56px rgba(0, 0, 0, 0.34);
 }
 
-.theia-mobile-work-hub-unified-search-header {
+/* Command-palette look: the search field is the header, tabs are plain text, rows are one line. */
+.theia-mobile-work-hub-unified-search-box {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 16px 18px 10px;
+  gap: 10px;
+  min-height: 52px;
+  padding: 0 8px 0 16px;
+  border-bottom: 1px solid var(--theia-widget-border, rgba(128, 128, 128, 0.25));
+  color: var(--theia-descriptionForeground);
 }
 
-.theia-mobile-work-hub-unified-search-header h2 {
-  margin: 0;
-  color: var(--theia-foreground);
+.theia-mobile-work-hub-unified-search-box input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--theia-input-foreground, var(--theia-foreground));
+  font: inherit;
   font-size: 15px;
-  font-weight: 650;
+}
+
+.theia-mobile-work-hub-unified-search-box input::placeholder {
+  color: var(--theia-descriptionForeground);
+}
+
+.theia-mobile-work-hub-unified-search-box input::-webkit-search-cancel-button {
+  display: none;
 }
 
 .theia-mobile-work-hub-unified-search-close {
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   border: 0;
   border-radius: 8px;
   background: transparent;
@@ -215,70 +252,36 @@
 .theia-mobile-work-hub-unified-search-close:focus-visible {
   background: var(--theia-toolbar-hoverBackground);
   color: var(--theia-foreground);
-}
-
-.theia-mobile-work-hub-unified-search-box {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 48px;
-  margin: 0 16px 14px;
-  padding: 0 14px;
-  border: 1px solid var(--theia-input-border, var(--theia-widget-border, rgba(128, 128, 128, 0.35)));
-  border-radius: 10px;
-  background: var(--theia-input-background, transparent);
-  color: var(--theia-descriptionForeground);
-}
-
-.theia-mobile-work-hub-unified-search-box:focus-within {
-  border-color: var(--theia-focusBorder, var(--theia-button-background));
-}
-
-.theia-mobile-work-hub-unified-search-box input {
-  flex: 1 1 auto;
-  min-width: 0;
-  border: 0;
   outline: 0;
-  background: transparent;
-  color: var(--theia-input-foreground, var(--theia-foreground));
-  font: inherit;
-}
-
-.theia-mobile-work-hub-unified-search-box input::placeholder {
-  color: var(--theia-descriptionForeground);
 }
 
 .theia-mobile-work-hub-unified-search-tabs {
   display: flex;
-  gap: 6px;
-  margin: 0 16px 10px;
-  padding: 4px;
-  border: 1px solid var(--theia-widget-border, rgba(128, 128, 128, 0.3));
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--theia-sideBar-background, #1e1e1e) 80%, var(--theia-editor-background, #1e1e1e));
+  flex: 0 0 auto;
+  gap: 4px;
+  padding: 8px 10px 4px;
 }
 
 .theia-mobile-work-hub-unified-search-tab {
-  display: inline-flex;
-  flex: 1 1 50%;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: 38px;
+  min-height: 30px;
+  padding: 0 10px;
   border: 0;
-  border-radius: 7px;
+  border-radius: 8px;
   background: transparent;
   color: var(--theia-descriptionForeground);
   font: inherit;
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 13px;
   cursor: pointer;
 }
 
 .theia-mobile-work-hub-unified-search-tab[aria-selected='true'] {
-  background: color-mix(in srgb, var(--theia-button-background, #0e639c) 18%, var(--theia-sideBar-background, #1e1e1e));
+  background: var(--theia-toolbar-hoverBackground, rgba(127, 127, 127, 0.14));
   color: var(--theia-foreground);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theia-button-background, #0e639c) 40%, transparent);
+}
+
+.theia-mobile-work-hub-unified-search-tab:focus-visible {
+  outline: 1px solid var(--theia-focusBorder);
+  outline-offset: -1px;
 }
 
 .theia-mobile-work-hub-unified-search-results {
@@ -286,8 +289,24 @@
   flex: 1 1 auto;
   flex-direction: column;
   min-height: 0;
-  padding: 2px 10px 12px;
+  padding: 2px 6px 8px;
   overflow-y: auto;
+}
+
+/* An edge fades only while there are results beyond it. */
+.theia-mobile-work-hub-unified-search-results {
+  --qaap-search-fade-top: 0px;
+  --qaap-search-fade-bottom: 0px;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 var(--qaap-search-fade-top), #000 calc(100% - var(--qaap-search-fade-bottom)), transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 var(--qaap-search-fade-top), #000 calc(100% - var(--qaap-search-fade-bottom)), transparent);
+}
+
+.theia-mobile-work-hub-unified-search-results.theia-mod-more-above {
+  --qaap-search-fade-top: 36px;
+}
+
+.theia-mobile-work-hub-unified-search-results.theia-mod-more-below {
+  --qaap-search-fade-bottom: 36px;
 }
 
 .theia-mobile-work-hub-unified-search-results[hidden],
@@ -300,56 +319,45 @@
   flex: 0 0 auto;
   align-items: center;
   gap: 12px;
-  min-height: 58px;
-  padding: 9px 10px;
-  border: 1px solid transparent;
-  border-radius: 10px;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
   background: transparent;
   color: var(--theia-foreground);
+  font: inherit;
+  font-size: 14px;
   text-align: left;
   cursor: pointer;
 }
 
 .theia-mobile-work-hub-unified-search-result:hover,
 .theia-mobile-work-hub-unified-search-result:focus-visible {
-  border-color: color-mix(in srgb, var(--theia-widget-border, #454545) 70%, transparent);
   background: var(--theia-toolbar-hoverBackground, rgba(127, 127, 127, 0.12));
   outline: 0;
 }
 
-.theia-mobile-work-hub-unified-search-result > .codicon {
-  flex: 0 0 20px;
-  color: var(--theia-descriptionForeground);
-  text-align: center;
-}
-
-.theia-mobile-work-hub-unified-search-result-copy {
-  display: flex;
+.theia-mobile-work-hub-unified-search-result-title {
   flex: 1 1 auto;
-  flex-direction: column;
-  gap: 3px;
   min-width: 0;
-}
-
-.theia-mobile-work-hub-unified-search-result-copy strong {
   overflow: hidden;
-  font-size: 13px;
-  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.theia-mobile-work-hub-unified-search-result-copy > span {
+.theia-mobile-work-hub-unified-search-result-detail {
+  flex: 0 1 auto;
+  max-width: 38%;
   overflow: hidden;
   color: var(--theia-descriptionForeground);
-  font-size: 11px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .theia-mobile-work-hub-unified-search-empty {
   margin: 0;
-  padding: 28px 16px 34px;
+  padding: 24px 16px 28px;
   color: var(--theia-descriptionForeground);
   font-size: 13px;
   text-align: center;
@@ -363,6 +371,11 @@
   .theia-mobile-work-hub-unified-search-panel {
     max-height: calc(100dvh - 24px);
     border-radius: 12px;
+  }
+
+  /* Touch rows keep a 44px height. */
+  .theia-mobile-work-hub-unified-search-result {
+    min-height: 44px;
   }
 }
 
@@ -532,19 +545,151 @@
   border-top: 1px solid color-mix(in srgb, var(--theia-foreground) 6%, transparent);
 }
 
-/* Quiet notice: a newer backend build waits for the user's running turns to finish. */
+/*
+ * "Update ready" footer button: a newer backend build waits. Same 44x44 box as the usage and settings
+ * buttons; an accent ring and a check badge draw attention without text. Its hover card is
+ * `.theia-qaap-update-hover-card` (qaap-update-hover-card.ts).
+ */
 .theia-mobile-work-hub-sessions-sidebar-update {
-  flex: 0 0 auto;
-  align-self: center;
-  padding: 1px 6px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--theia-editorInfo-foreground, var(--theia-foreground)) 45%, transparent);
-  font-size: 10px;
-  line-height: 16px;
-  font-weight: 500;
-  white-space: nowrap;
-  color: var(--theia-editorInfo-foreground, var(--theia-foreground));
-  cursor: help;
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 44px;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--theia-button-background, var(--theia-focusBorder));
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* The ring: a circle inside the 44px box, like T3 Code's update button. */
+.theia-mobile-work-hub-sessions-sidebar-update::before {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border-radius: 50%;
+  border: 1.5px solid var(--theia-button-background, var(--theia-focusBorder));
+  background: color-mix(in srgb, var(--theia-button-background, var(--theia-focusBorder)) 12%, transparent);
+  pointer-events: none;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-update[hidden] {
+  display: none;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-update:hover:not(:disabled)::before {
+  background: color-mix(in srgb, var(--theia-button-background, var(--theia-focusBorder)) 24%, transparent);
+}
+
+.theia-mobile-work-hub-sessions-sidebar-update:focus-visible {
+  outline: 2px solid var(--theia-focusBorder);
+  outline-offset: -2px;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-update:disabled {
+  cursor: progress;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-update-icon.codicon {
+  position: relative;
+  font-size: 14px;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-update-badge.codicon {
+  position: absolute;
+  right: 7px;
+  bottom: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1.5px solid var(--theia-sideBar-background, var(--theia-editor-background));
+  background: var(--theia-button-background, var(--theia-focusBorder));
+  color: var(--theia-button-foreground);
+  font-size: 9px;
+  pointer-events: none;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-update-badge[hidden] {
+  display: none;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-update-icon.theia-mod-spin {
+  animation: theia-qaap-update-spin 1.2s linear infinite;
+}
+
+@keyframes theia-qaap-update-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theia-mobile-work-hub-sessions-sidebar-update-icon.theia-mod-spin {
+    animation: none;
+  }
+}
+
+.theia-hc .theia-mobile-work-hub-sessions-sidebar-update::before,
+.theia-hcLight .theia-mobile-work-hub-sessions-sidebar-update::before {
+  border-color: var(--theia-contrastActiveBorder, var(--theia-contrastBorder));
+  background: transparent;
+}
+
+/* Hover / keyboard-focus card of the update button: hover widget colours, never interactive. */
+.theia-qaap-update-hover-card {
+  /* `popover` UA styles center the element in the viewport: the card is placed by left/top. */
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  z-index: 10000;
+  box-sizing: border-box;
+  width: max-content;
+  min-width: 220px;
+  max-width: min(320px, calc(100vw - 16px));
+  padding: 10px 12px;
+  border: 1px solid var(--theia-editorHoverWidget-border);
+  border-radius: 8px;
+  background: var(--theia-editorHoverWidget-background);
+  color: var(--theia-editorHoverWidget-foreground);
+  box-shadow: 0 6px 20px var(--theia-widget-shadow);
+  font-size: var(--theia-ui-font-size1);
+  line-height: 1.4;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+
+.theia-qaap-update-hover-card.theia-mod-visible {
+  opacity: 1;
+}
+
+.theia-hc .theia-qaap-update-hover-card,
+.theia-hcLight .theia-qaap-update-hover-card {
+  border-color: var(--theia-contrastBorder);
+  box-shadow: none;
+}
+
+.theia-qaap-update-hover-card-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.theia-qaap-update-hover-card-detail {
+  margin-top: 4px;
+  color: var(--theia-descriptionForeground);
+  overflow-wrap: anywhere;
 }
 
 .theia-mobile-work-hub-sessions-sidebar-foot .theia-mobile-work-hub-sessions-sidebar-account-btn {
@@ -939,6 +1084,20 @@
   background: color-mix(in srgb, var(--theia-errorForeground, #f14c4c) 14%, transparent);
 }
 
+/* Side chat marker: quiet text on the row's own surface, so it never competes with the title or the status glyph. */
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-side-badge {
+  flex: 0 0 auto;
+  margin-left: var(--q-space-2, 4px);
+  padding: 0 var(--q-space-2, 4px);
+  border: 1px solid var(--q-line-soft, color-mix(in srgb, var(--theia-foreground) 14%, transparent));
+  border-radius: var(--q-radius-pill, 999px);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 14px;
+  letter-spacing: 0.02em;
+  color: var(--q-muted, var(--theia-descriptionForeground));
+}
+
 /* ── Minimal session rows (Claude-style single line) ── */
 
 .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row {
@@ -1084,6 +1243,11 @@
   flex: 1 1 auto;
   overflow: auto;
   padding-bottom: 4px;
+  /* The host's 10px side padding inset the nav scroller (scrollbar 10px inside the panel edge).
+     Run the scroller to the panel edge and give the same 10px back inside it, so the items keep
+     their X and the scrollbar sits at 0px from the panel's right edge. */
+  margin-right: -10px;
+  padding-right: 10px;
 }
 
 .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-title-text {
@@ -1413,6 +1577,8 @@
   z-index: 100000;
   min-width: 200px;
   max-width: 280px;
+  max-height: min(60vh, 320px);
+  overflow-y: auto;
   padding: 4px;
   border-radius: 8px;
   background: var(--theia-menu-background, var(--theia-editorHoverWidget-background, #252526));
@@ -2474,6 +2640,13 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
     border-bottom: none;
   }
 
+  /* The Electron macOS traffic-light inset (qaap-product-theme qaap-electron-macos-titlebar.css) reserves 78px
+   * on every Work Hub header. With the sessions sidebar open, the pane is no longer at the window's left edge
+   * (the sidebar carries the lights), so that inset only pushes the title and switch out of a 260px pane. */
+  body.theia-mobile-mod-sessions-sidebar-open:not(.theia-mobile-mod-desktop-ide) .theia-mobile-projects-header.theia-mobile-projects-header:not(#theia-right-content-panel *) {
+    padding-left: 28px !important;
+  }
+
   body:not(.theia-mobile-mod-desktop-ide).theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects-header-main {
     align-items: center;
     min-width: 0;
@@ -2527,6 +2700,27 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
     margin-left: auto !important;
     margin-right: auto !important;
     align-self: center !important;
+  }
+
+  /* Chat surface: the transcript scroller runs to the column edge so its scrollbar hugs the panel's
+     right edge. The execution column is not capped (every transcript row is already capped at 760px
+     and centred, and the composer shares that reading column), and the transcript clip bleeds
+     through the host's 40px inset, which the scroller restores as its own padding (see the
+     `--qaap-transcript-column-bleed-*` rules in mobile-workbench-work-hub.css). Tool surfaces keep
+     the centred 980px column above. */
+  body:not(.theia-mobile-mod-desktop-ide).theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects:not(.theia-mod-project-surface-tools) .theia-mobile-agents-hub-inline-execution.theia-mobile-agents-hub-inline-execution {
+    width: 100% !important;
+    max-width: none !important;
+  }
+
+  body:not(.theia-mobile-mod-desktop-ide).theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects .theia-mobile-agents-hub-inline-transcript .theia-mobile-agent-transcript-real-chat.theia-mobile-agent-transcript-real-chat {
+    --qaap-transcript-column-bleed-start: 40px;
+    --qaap-transcript-column-bleed-end: 40px;
+    box-sizing: border-box;
+    width: calc(100% + 80px) !important;
+    max-width: none !important;
+    margin-left: -40px !important;
+    margin-right: -40px !important;
   }
 
   /* Override the inline `align-items: stretch` set by applyAgentsHubExecutionPanelSizing
@@ -2722,12 +2916,13 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
   height: 22px;
   margin-left: auto;
   padding: 0 8px;
-  border: 1px solid color-mix(in srgb, var(--theia-errorForeground, var(--theia-editorError-foreground)) 45%, transparent);
+  /* A discreet neutral outline: the error color stays on the icon and label only. */
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 16%, transparent);
   border-radius: 999px;
   /* The tint is layered over an opaque base: on hover the chip sits on top of the task title,
      which must not show through it. */
   background:
-    linear-gradient(color-mix(in srgb, var(--theia-errorForeground, var(--theia-editorError-foreground)) 14%, transparent), color-mix(in srgb, var(--theia-errorForeground, var(--theia-editorError-foreground)) 14%, transparent)),
+    linear-gradient(color-mix(in srgb, var(--theia-foreground) 6%, transparent), color-mix(in srgb, var(--theia-foreground) 6%, transparent)),
     var(--theia-sideBar-background, var(--theia-editor-background));
   color: var(--theia-errorForeground, var(--theia-editorError-foreground));
   font-family: var(--theia-ui-font-family, sans-serif);
@@ -2755,8 +2950,9 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
 
 .theia-mobile-projects-failed-run-chip:hover,
 .theia-mobile-projects-failed-run-chip:focus-visible {
+  border-color: color-mix(in srgb, var(--theia-foreground) 28%, transparent);
   background:
-    linear-gradient(color-mix(in srgb, currentColor 22%, transparent), color-mix(in srgb, currentColor 22%, transparent)),
+    linear-gradient(color-mix(in srgb, var(--theia-foreground) 12%, transparent), color-mix(in srgb, var(--theia-foreground) 12%, transparent)),
     var(--theia-sideBar-background, var(--theia-editor-background));
 }
 

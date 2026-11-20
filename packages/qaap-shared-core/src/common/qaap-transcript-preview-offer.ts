@@ -18,7 +18,7 @@ const PORT_HINT_RE = /\b(?:ports?|puertos?)\s*[:#(]?\s*(\d{2,5})\b/i;
 /** Common dev ports (Vite/Next) plus Qaap static bootstrap (8080). */
 const DEFAULT_VITE_PROBE_PORTS = [5173, 5174, 5175, 5176, 3000, 3001, 4173, 8080];
 
-const DEV_PREVIEW_INTENT_RE = /\b(?:dev\s+server|live\s+preview|in-ide\s+preview|run\s+(?:the\s+)?(?:app|project)|build\s+and\s+run|run\s+locally|start\s+(?:the\s+)?(?:dev|app|server)|launch\s+(?:the\s+)?(?:app|project|server)|preview\s+(?:the\s+)?(?:app|project|page)|show\s+(?:me\s+)?(?:the\s+)?(?:app|preview)|boot(?:s|ed)\s+cleanly|figure\s+out\s+how\s+to\s+build|open\s+(?:the\s+)?preview|lanza(?:r)?(?:\s+autom[aá]ticamente)?\s+(?:el\s+)?servidor|abre(?:r)?\s+(?:la\s+)?(?:preview|vista\s+previa)|mu[eé]str(?:ame|ar)\s+(?:la\s+)?(?:preview|vista\s+previa)|verifica(?:r)?\s+que\s+(?:la\s+)?p[aá]gina|levanta(?:r)?\s+(?:la\s+)?(?:app|aplicaci[oó]n|servidor|proyecto)|inicia(?:r)?\s+(?:la\s+)?(?:app|aplicaci[oó]n|servidor|proyecto)|arranca(?:r)?\s+(?:la\s+)?(?:app|aplicaci[oó]n|servidor|proyecto)|ejecuta(?:r)?\s+(?:la\s+)?(?:app|aplicaci[oó]n|proyecto)|corre(?:r)?\s+(?:la\s+)?(?:app|aplicaci[oó]n|proyecto)|muestra(?:r)?\s+(?:la\s+)?(?:app|aplicaci[oó]n|preview|vista\s+previa)|vista\s+previa|servidor\s+de\s+desarrollo|abre(?:r)?\s+(?:la\s+)?(?:app|aplicaci[oó]n|preview))\b/i;
+const DEV_PREVIEW_INTENT_RE = /\b(?:dev\s+server|live\s+preview|in-ide\s+preview|run\s+(?:the\s+)?(?:app|project)|build\s+and\s+run|run\s+locally|start\s+(?:the\s+)?(?:dev|app|server)|launch\s+(?:the\s+)?(?:app|project|server)|preview\s+(?:the\s+)?(?:app|project|page)|show\s+(?:me\s+)?(?:the\s+)?(?:app|preview)|boot(?:s|ed)\s+cleanly|figure\s+out\s+how\s+to\s+build|open\s+(?:the\s+)?preview|lanza(?:r)?(?:\s+autom[aá]ticamente)?\s+(?:el\s+)?servidor|abre(?:r)?\s+(?:la\s+)?(?:preview|vista\s+previa)|mu[eé]str(?:ame|ar)\s+(?:la\s+)?(?:preview|vista\s+previa)|verifica(?:r)?\s+que\s+(?:la\s+)?p[aá]gina|(?:lev[aá]nta(?:r|me|lo|la)?|inici[aá](?:r|me|lo|la)?|arr[aá]nca(?:r|me|lo|la)?|lanza(?:r|me)?|pon(?:er|me)?\s+en\s+marcha)\s+(?:(?:el|la|mi|los|las|de\s+nuevo)\s+)?(?:app|aplicaci[oó]n|servidor|server|proyecto|web|frontend|dev)|ejecuta(?:r)?\s+(?:la\s+)?(?:app|aplicaci[oó]n|proyecto)|corre(?:r)?\s+(?:la\s+)?(?:app|aplicaci[oó]n|proyecto)|muestra(?:r)?\s+(?:la\s+)?(?:app|aplicaci[oó]n|preview|vista\s+previa)|vista\s+previa|servidor\s+de\s+desarrollo|abre(?:r)?\s+(?:la\s+)?(?:app|aplicaci[oó]n|preview))\b/i;
 
 /** True when an HTML page title plausibly belongs to the named hub project. */
 export function previewPageTitleMatchesProjectName(title: string | undefined, projectName: string): boolean {
@@ -279,11 +279,20 @@ export async function resolveReadyTranscriptPreviewUrlFromProbe(
         return undefined;
     }
     const scope: TranscriptPreviewProbeScope = { conversationId: conv.id, root: resolveThreadPreviewRoot(conv) };
+    const hintedPort = findTranscriptPreviewPortHint(conv);
     for (const port of transcriptPreviewProbePorts(conv)) {
         const probe = await probePort(port);
-        if (probe.ready && transcriptPreviewProbeBelongsToScope(probe, scope)) {
-            return probe.previewUrl;
+        if (!probe.ready || !transcriptPreviewProbeBelongsToScope(probe, scope)) {
+            continue;
         }
+        // A server Qaap holds no claim for has no project identity. On a machine running several
+        // projects a swept default port (3000, 5173…) is as likely another app as this one — it
+        // adopted a sibling project's server as this project's preview and never started its own.
+        // Adopt an unclaimed server only on the port this conversation named.
+        if (!probe.previewId && port !== hintedPort) {
+            continue;
+        }
+        return probe.previewUrl;
     }
     return undefined;
 }

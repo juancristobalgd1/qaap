@@ -243,14 +243,19 @@ export interface QaapLaunchHealthPayload {
     readonly skipAuth: boolean;
     readonly oauthConfigured: boolean;
     readonly agentUidPerUser: boolean;
-    readonly backendIsolationMode: string;
+    /** Operator detail: omitted from anonymous responses. */
+    readonly backendIsolationMode?: string;
     readonly backendIsolationReady: boolean;
     readonly build?: string;
 }
 
+/**
+ * Launch health payload. `signedIn: false` (anonymous callers) omits the isolation mode, which is
+ * operator detail the public endpoint does not need.
+ */
 export function buildQaapLaunchHealthPayload(
     readiness: QaapProductionAuthReadiness,
-    options: { readonly skipAuth?: boolean; readonly build?: string } = {},
+    options: { readonly skipAuth?: boolean; readonly build?: string; readonly signedIn?: boolean } = {},
 ): QaapLaunchHealthPayload {
     const build = options.build?.trim();
     return {
@@ -260,7 +265,7 @@ export function buildQaapLaunchHealthPayload(
         skipAuth: options.skipAuth ?? readiness.skipAuth,
         oauthConfigured: readiness.oauthConfigured,
         agentUidPerUser: readiness.agentUidPerUser,
-        backendIsolationMode: readiness.backendIsolationMode,
+        ...(options.signedIn === false ? {} : { backendIsolationMode: readiness.backendIsolationMode }),
         backendIsolationReady: readiness.backendIsolationReady,
         ...(build ? { build } : {}),
     };

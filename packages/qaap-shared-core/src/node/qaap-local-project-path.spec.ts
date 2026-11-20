@@ -5,7 +5,7 @@
 
 import { expect } from 'chai';
 import * as path from 'path';
-import { isValidLocalProjectName, resolveLocalProjectWorkspacePath } from './qaap-local-project-path';
+import { isValidLocalProjectName, localProjectOwnerLogin, resolveLocalProjectWorkspacePath } from './qaap-local-project-path';
 
 describe('qaap-local-project-path', () => {
     const reposRoot = path.join('/srv', 'repos');
@@ -40,6 +40,26 @@ describe('qaap-local-project-path', () => {
             const b = resolveLocalProjectWorkspacePath(reposRoot, 'bob', 'app');
             expect(a).to.not.equal(b);
             expect(a?.startsWith(path.join(reposRoot, 'users', 'alice') + path.sep)).to.equal(true);
+        });
+    });
+
+    describe('localProjectOwnerLogin', () => {
+        it('gives a GitHub session its own login on the web and on desktop', () => {
+            const auth = { kind: 'authenticated' as const, userLogin: 'octo' };
+            expect(localProjectOwnerLogin(auth, false)).to.equal('octo');
+            expect(localProjectOwnerLogin(auth, true)).to.equal('octo');
+        });
+
+        it('honours skip-auth only on the desktop runtime', () => {
+            const skip = { kind: 'skip' as const, userLogin: '_dev' };
+            expect(localProjectOwnerLogin(skip, true)).to.equal('_dev');
+            expect(localProjectOwnerLogin(skip, false)).to.equal(undefined);
+        });
+
+        it('refuses unauthenticated requests everywhere', () => {
+            const unauthorized = { kind: 'unauthorized' as const };
+            expect(localProjectOwnerLogin(unauthorized, true)).to.equal(undefined);
+            expect(localProjectOwnerLogin(unauthorized, false)).to.equal(undefined);
         });
     });
 });

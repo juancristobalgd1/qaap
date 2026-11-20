@@ -336,7 +336,7 @@ export interface QaapAgentConversationStoreContext {
     stripLeadingAgentMention(content: string): string;
     buildPrompt(conv: QaapAgentConversation, turnAgentId: string): string;
     contextPreambleWithCompaction(contextPreamble: string | undefined, summary: string): string;
-    appendTeamDelegation(prompt: string, turnAgentId: string): string;
+    appendTeamDelegation(prompt: string, turnAgentId: string, ownerLogin?: string): string;
     filterAgentLogChunk(chunk: string): string;
     deriveTitle(seed: string): string;
 

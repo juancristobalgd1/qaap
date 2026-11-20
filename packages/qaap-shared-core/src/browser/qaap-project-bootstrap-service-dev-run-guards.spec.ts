@@ -587,6 +587,7 @@ describe('QaapProjectBootstrapService dev run guards', () => {
                 hubPinnedWorkspaceRoot: undefined,
                 activeProjectId: undefined,
                 activePreviewConversationId: 'conversation-1',
+                devTerminalByConversationId: new Map(),
                 resetBootstrapSessionForWorkspace: () => {
                     resets++;
                     state.devRunGeneration++;

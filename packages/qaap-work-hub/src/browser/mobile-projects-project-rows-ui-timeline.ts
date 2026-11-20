@@ -22,6 +22,9 @@ import type { MobileProjectsActiveTasks, MobileProjectTaskView } from '@theia/qa
 import { type MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types'; import { attachSwipeToDelete } from '@theia/qaap-mobile-shell/lib/browser/qaap-mobile-swipe-to-delete';
 import { attachTaskTitleMarquee, createTaskTitleText } from './mobile-projects-task-title-marquee';
 import { resolveQaapFailedRunAction } from '../common/qaap-failed-run-action';
+import { sideChatVisibleTitle, stripSideChatPreamble } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-side-chat';
+import { getQaapTaskHoverCard, isQaapTaskHoverCardSupported } from './qaap-task-hover-card';
+import { buildQaapTaskHoverCardModel, type QaapTaskHoverCardModel } from './qaap-task-hover-card-model';
 
 const TASK_FAILURE_HINT_MAX_LENGTH = 120;
 
@@ -84,8 +87,45 @@ export function applySidebarCompactRowTooltip(item: HTMLElement, task: MobilePro
     if (modelId) {
         lines.push(nls.localize('qaap/sessionsSidebar/rowModelHint', 'Model: {0}', modelId));
     }
-    item.title = lines.join('\n');
+    // With a hovering pointer the task hover card carries these facts: a native tooltip on top of it
+    // would show the same text twice. Touch and keyboard-only setups keep the tooltip.
+    if (isQaapTaskHoverCardSupported()) {
+        item.removeAttribute('title');
+    } else {
+        item.title = lines.join('\n');
+    }
     item.setAttribute('aria-label', lines.join('. '));
+}
+
+/**
+ * Content of the sessions sidebar hover card for a compact row, built from the latest summary and
+ * project for the row's ids (the row survives refreshes, so render-time objects can be stale).
+ */
+export function buildSidebarTaskHoverCardModel(
+    ctx: MobileProjectsProjectRowsUiContext,
+    project: MobileProjectEntry,
+    task: MobileProjectTaskView,
+    summary: QaapAgentConversationSummaryDTO | undefined,
+): QaapTaskHoverCardModel {
+    const latestProject = ctx.host.projects?.find(candidate => candidate.id === project.id) ?? project;
+    const latestSummary = summary ? (ctx.host.conversations?.findSummaryById(summary.id) ?? summary) : undefined;
+    const latestTask = latestSummary ? ctx.host.conversationIndexUi.summaryToTaskView(latestSummary) : task;
+    const isUnread = latestSummary ? ctx.host.conversationIndexUi.isConversationUnread(latestSummary) : false;
+    const visualStatus = resolveQaapAgentTaskVisualStatus(latestTask, latestSummary, isUnread);
+    return buildQaapTaskHoverCardModel({
+        title: latestTask.title,
+        projectName: latestProject.name,
+        projectBranch: latestProject.branch,
+        summary: latestSummary,
+        status: {
+            id: visualStatus.id,
+            label: nls.localize(visualStatus.labelKey, visualStatus.label),
+            className: visualStatus.className,
+            iconClass: visualStatus.iconClass,
+        },
+        failureReason: latestSummary?.status === 'streaming' ? undefined : resolveTaskFailureHint(latestSummary),
+        now: Date.now(),
+    });
 }
 
 /**
@@ -234,8 +274,10 @@ export function createTaskItemExtracted(ctx: MobileProjectsProjectRowsUiContext,
     taskTitleRow.className = 'theia-mobile-projects-task-title-row';
     const taskTitle = document.createElement('span');
     taskTitle.className = 'theia-mobile-projects-task-title';
-    taskTitle.title = task.title;
-    taskTitle.append(createTaskTitleText(task.title));
+    // A side chat's title is its first message; an older one may still start with the stored background.
+    const shownTitle = summary?.origin === 'side-chat' ? sideChatRowTitle(task.title) : task.title;
+    taskTitle.title = shownTitle;
+    taskTitle.append(createTaskTitleText(shownTitle));
     attachTaskTitleMarquee(row, taskTitle);
     const taskSince = document.createElement('span');
     taskSince.className = 'theia-mobile-projects-task-since';
@@ -269,10 +311,23 @@ export function createTaskItemExtracted(ctx: MobileProjectsProjectRowsUiContext,
     } else {
         taskTitleRow.append(taskTitle);
     }
+    if (compact && summary?.origin === 'side-chat') {
+        // A side chat reads apart from a task in the sidebar; opening it is the same as any other row.
+        const sideBadge = document.createElement('span');
+        sideBadge.className = 'theia-mobile-projects-task-side-badge';
+        sideBadge.textContent = nls.localizeByDefault('Side');
+        sideBadge.title = nls.localize('qaap/mobileProjects/sideChatBadgeTitle', 'Side chat: opened beside another conversation');
+        taskTitleRow.append(sideBadge);
+    }
     if (compact) {
         // One line: the time sits at the row's right edge; the reason and model are in the tooltip.
         taskTitleRow.append(taskSince);
         applySidebarCompactRowTooltip(item, task, summary);
+        if (isQaapTaskHoverCardSupported()) {
+            // The hover card names the full title and the status; native tooltips would double it.
+            taskTitle.removeAttribute('title');
+            taskDot.removeAttribute('title');
+        }
     }
     taskBody.append(taskTitleRow);
 
@@ -339,6 +394,9 @@ export function createTaskItemExtracted(ctx: MobileProjectsProjectRowsUiContext,
         }
     });
     row.append(item);
+    if (compact && !selection) {
+        getQaapTaskHoverCard().attach(row, item, () => buildSidebarTaskHoverCardModel(ctx, project, task, summary));
+    }
 
     if (summary) {
         const flags = ctx.host.conversationIndexUi.resolveConversationFlags(summary);
@@ -598,3 +656,8 @@ export function renderConversationTurnProgressExtracted(ctx: MobileProjectsProje
     host.append(svg);
 }
 
+/** The title of a side chat row: its own words, or the side chat label when no words survive a stored background. */
+function sideChatRowTitle(title: string): string {
+    const visible = sideChatVisibleTitle(stripSideChatPreamble(title));
+    return visible || nls.localize('qaap/workHubAuxPanel/sideChat', 'Side chat');
+}

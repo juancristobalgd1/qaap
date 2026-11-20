@@ -1,4 +1,5 @@
 import { formatTaskStartLog } from './qaap-agent-conversation-persist-policy';
+import { createAgySignInWaitWatcher } from './qaap-agy-sign-in-wait-watcher';
 import { usesToolGateExtension } from './qaap-tool-gate-pi-adapter';
 import { QAAP_OPENCODE_GATE_PROBE } from './qaap-tool-gate-opencode-probe';
 import {
@@ -8,17 +9,20 @@ import {
     startOpencodeArmWatch,
     usesOpencodeGatePlugin,
 } from './qaap-tool-gate-opencode-adapter';
-import { DEFAULT_QAAP_CODEX_GATE_OVERLAY_BUILDER, usesCodexToolGateHook, type QaapCodexGateOverlay } from './qaap-codex-gate-overlay';
+import {
+    assertCodexGateTokenIssued, DEFAULT_QAAP_CODEX_GATE_OVERLAY_BUILDER, resolveCodexGateOverlayRoot, usesCodexToolGateHook, type QaapCodexGateOverlay,
+} from './qaap-codex-gate-overlay';
 import { resolveCodexAgentHome } from './qaap-agent-native-models';
 import { IDLE_TASK_TIMEOUT_MS, QAAP_AGENT_VERIFY_ENABLED, QUEUED_APPROVAL_GRACE_TIMEOUT_MS, USER_REQUEST_MAX_CHARS } from './qaap-agent-task-runner-constants';
 import { QaapQaiqProviderKeyMissingError } from './qaap-qaiq-provider-preflight';
+import { QaapAgentSignInRequiredError } from './qaap-agent-sign-in-preflight';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { awaitQaapAgentTaskSpawnGate } from './qaap-agent-task-spawn-gate';
-import { resolveAgentTaskBillingRejection } from './qaap-agent-task-billing-gate';
-import { finishTaskWithPauseCause, logCancelExitExtracted } from './qaap-agent-task-runner-streaming2';
+import { finishTaskWithPauseCause, logCancelExitExtracted, releaseStoppingTaskSlotOnExitExtracted } from './qaap-agent-task-runner-streaming2';
 import { createOpencodeFatalStderrWatcher } from './qaap-opencode-fatal-error';
 import { createPiProviderErrorWatcher } from './qaap-pi-provider-error-watcher';
 import { removeStaleOpencodeSnapshotLocks } from './qaap-opencode-snapshot-lock';
+import { type AgentProcessSignalOutcome, signalAgentProcessTree } from './qaap-agent-process-signal';
 // Extracted from qaap-agent-task-runner.ts
 
 import { ChildProcess, spawnSync } from 'child_process';
@@ -62,10 +66,13 @@ const CHANGE_SCOPE_WATCH_INTERVAL_MS = 10_000;
 import {
     findPendingControlRequestEntry as findPendingControlRequestEntryHelper,
     removeAgentPromptTempDir as removeAgentPromptTempDirHelper,
+    quoteShellArg,
 } from './qaap-agent-task-runner-utils';
 import { applyPreTurnAgentHooks, createQaiqPreToolUseHookGate } from './qaap-agent-task-runner-hooks';
 import { canProbeProviderKey, runProviderKeyPreflight } from './qaap-provider-key-preflight';
+import { applyQaapHarnessBinaryOverride, applyQaapHarnessUserEnv, resolveQaapHarnessLaunchPlan } from './qaap-harness-launch-overrides';
 import { isConversationalTurn, isConversationalTurnTask } from '../common/qaap-agent-conversational-turn';
+import { emitsStreamJsonFinalResult, QAAP_AGENT_EXIT_AFTER_RESULT_GRACE_MS, QaapAgentFinalResultWatcher, type QaapAgentFinalResult } from './qaap-agent-final-result-watcher';
 
 export function enforceAgentTaskChangeScopeLimitExtracted(
     ctx: QaapAgentTaskRunnerContext,
@@ -167,7 +174,7 @@ export function expireIdleAgentTask(
 const LOOP_SAMPLER_INTERVAL_MS = 100;
 
 export function killAgentProcessTreeExtracted(ctx: QaapAgentTaskRunnerContext, child: ChildProcess,
-        options?: { readonly escalateAfterMs?: number; readonly onGracePeriodElapsed?: () => void },): NodeJS.Timeout | undefined {
+        options?: { readonly escalateAfterMs?: number; readonly onGracePeriodElapsed?: () => void; readonly onSignalFailed?: () => void },): NodeJS.Timeout | undefined {
         const pid = child.pid;
         if (!pid) {
             options?.onGracePeriodElapsed?.();
@@ -185,26 +192,18 @@ export function killAgentProcessTreeExtracted(ctx: QaapAgentTaskRunnerContext, c
             lastTick = now;
         }, LOOP_SAMPLER_INTERVAL_MS);
         loopSampler.unref?.();
-        const sendSignal = (signal: NodeJS.Signals): void => {
+        const sendSignal = (signal: NodeJS.Signals): AgentProcessSignalOutcome => {
             if (globalThis.process.platform === 'win32') {
                 spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
-                return;
+                return 'sent';
             }
             console.warn(`[qaap-stop] signal pid=${pid} target=group sig=${signal} epoch=${Date.now()}`);
-            try {
-                globalThis.process.kill(-pid, signal);
-                return;
-            } catch (error) {
-                // ESRCH: no such process group (already exited, or never became a group leader).
-                // Signal the leader directly so the stop still reaches the agent.
-                if ((error as NodeJS.ErrnoException).code === 'ESRCH') {
-                    console.warn(`[qaap-stop] process group ${pid} not found; signalling the leader with ${signal}`);
-                }
+            // Group first, then the leader when the group is gone. EPERM is relayed as the agent uid inside.
+            const outcome = signalAgentProcessTree(child, signal);
+            if (outcome === 'failed') {
+                console.error(`[qaap-stop] could not deliver ${signal} to pid=${pid}; the agent may still be running`);
             }
-            console.warn(`[qaap-stop] signal pid=${pid} target=leader sig=${signal} epoch=${Date.now()}`);
-            try {
-                child.kill(signal);
-            } catch { /* already gone */ }
+            return outcome;
         };
         sendSignal('SIGTERM');
         const escalateAfterMs = options?.escalateAfterMs ?? 5_000;
@@ -212,11 +211,12 @@ export function killAgentProcessTreeExtracted(ctx: QaapAgentTaskRunnerContext, c
             const firedAt = Date.now();
             clearInterval(loopSampler);
             console.warn(`[qaap-stop] escalation-fired pid=${pid} armedAt=${armedAt} deadline=${armedAt + escalateAfterMs} fired=${firedAt} lagMs=${firedAt - armedAt - escalateAfterMs} maxLoopGapMs=${maxLoopGapMs}`);
-            try {
-                sendSignal('SIGKILL');
-            } finally {
-                options?.onGracePeriodElapsed?.();
+            // A failed SIGKILL leaves the agent alive: it is not stopped, so do not run the stopped continuation.
+            if (sendSignal('SIGKILL') === 'failed') {
+                options?.onSignalFailed?.();
+                return;
             }
+            options?.onGracePeriodElapsed?.();
         };
         if (escalateAfterMs <= 0) {
             sendKill();
@@ -380,34 +380,71 @@ class QaapAgentSpawnSkippedError extends Error {
     }
 }
 
+/** Longest a pre-spawn step may wait on another subsystem before the task fails with its stage. */
+export const QAAP_TASK_START_STEP_TIMEOUT_MS = 60_000;
+
+/**
+ * Entry point of every start (create, queue drain): a rejection before the agent command is built used to
+ * be an unhandled promise rejection, which left the task `running` with an empty log. The steps are
+ * {@link spawnProcessWhenReadyStepsExtracted}; any error they throw ends the task as `failed` with the stage.
+ */
 export async function spawnProcessWhenReadyExtracted(ctx: QaapAgentTaskRunnerContext, task: QaapAgentTask, request: QaapCreateAgentTaskRequest): Promise<void> {
-        if (ctx.preferenceService) {
-            await ctx.preferenceService.ready;
+        const progress: { stage: string } = { stage: 'preferences' };
+        try {
+            await spawnProcessWhenReadyStepsExtracted(ctx, task, request, progress);
+        } catch (error) {
+            failTaskStartExtracted(ctx, task.id, error, progress.stage);
         }
+}
+
+/**
+ * Records the task as `failed` with `Failed to start (<stage>): <message>`, unless Stop already settled it
+ * (cancelled tasks keep their state) or a child process exists (its own exit handling owns the outcome).
+ */
+export function failTaskStartExtracted(ctx: QaapAgentTaskRunnerContext, taskId: string, error: unknown, stage: string): void {
+        const message = error instanceof Error ? error.message : String(error);
+        if (ctx.tasks.get(taskId)?.state !== 'running' || ctx.processes.has(taskId)) {
+            console.warn(`[qaap-start] task=${taskId} stopped before spawn at ${stage}: ${message}`);
+            return;
+        }
+        console.error(`[qaap-start] task=${taskId} failed to start before spawn: ${message}`);
+        fs.mkdirSync(path.dirname(ctx.logPath(taskId)), { recursive: true });
+        fs.writeFileSync(ctx.logPath(taskId), `Failed to start (${stage}): ${message}\n`, 'utf8');
+        ctx.finishTask(taskId, 'failed', undefined);
+}
+
+/** Races a pre-spawn step against the start timeout; the timer is cleared when the step settles. */
+function withStartStepTimeout<T>(ctx: QaapAgentTaskRunnerContext, step: Promise<T>): Promise<T> {
+        const timeoutMs = ctx.taskStartStepTimeoutMs ?? QAAP_TASK_START_STEP_TIMEOUT_MS;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const expired = new Promise<never>((_resolve, reject) => {
+            timer = setTimeout(() => reject(new Error(`timed out after ${timeoutMs >= 1000 ? `${timeoutMs / 1000}s` : `${timeoutMs}ms`}`)), timeoutMs);
+        });
+        return Promise.race([step, expired]).finally(() => {
+            if (timer) {
+                clearTimeout(timer);
+            }
+        });
+}
+
+async function spawnProcessWhenReadyStepsExtracted(ctx: QaapAgentTaskRunnerContext, task: QaapAgentTask, request: QaapCreateAgentTaskRequest, progress: { stage: string }): Promise<void> {
+        if (ctx.preferenceService) {
+            await withStartStepTimeout(ctx, ctx.preferenceService.ready);
+        }
+        progress.stage = 'spawn-gate';
         // Bounded caller preparation (e.g. the conversation's pre-turn worktree snapshot) must
         // finish before the agent can write.
-        await awaitQaapAgentTaskSpawnGate(request);
+        await withStartStepTimeout(ctx, awaitQaapAgentTaskSpawnGate(request));
         // Stop can arrive while preference initialization is pending, before a child exists.
         // Do not resurrect a task that cancel() has already transitioned out of running.
         if (ctx.tasks.get(task.id)?.state !== 'running') {
             return;
         }
-        // Fail-open only for BYOK turns on a billing outage; hosted Codex fails closed (billing gate).
-        const billingRejection = await resolveAgentTaskBillingRejection(ctx, task, request);
-        // The billing read is async: a stop that landed meanwhile already settled the task as
-        // `cancelled`. Neither fail it (that would overwrite `cancelled`) nor spawn it.
-        if (ctx.tasks.get(task.id)?.state !== 'running') {
-            return;
-        }
-        if (billingRejection !== undefined) {
-            fs.mkdirSync(path.dirname(ctx.logPath(task.id)), { recursive: true });
-            fs.writeFileSync(ctx.logPath(task.id), `${billingRejection}\n`, 'utf8');
-            ctx.finishTask(task.id, 'failed', 1);
-            return;
-        }
         const markedTask = ctx.tasks.get(task.id) ?? task;
+        progress.stage = 'worktree-baseline';
         const baseline = ctx.captureWorktreeBaseline(task.cwd);
         // Private disk copy of secrets — hashes alone cannot restore a destroyed `.env`.
+        progress.stage = 'sensitive-files-snapshot';
         const sensitiveSnapshotDir = path.join(path.dirname(ctx.logPath(task.id)), task.id, 'sensitive-snapshot');
         const snapshotted = snapshotSensitiveFiles(task.cwd, sensitiveSnapshotDir);
         task = {
@@ -420,16 +457,25 @@ export async function spawnProcessWhenReadyExtracted(ctx: QaapAgentTaskRunnerCon
         let prompt = (request.prompt ?? '').trim();
         if (prompt) {
             // SessionStart / UserPromptSubmit hooks (doc/qaap-agent-hooks.md): may block or extend the prompt.
+            progress.stage = 'pre-turn-hooks';
             const hookedPrompt = await applyPreTurnAgentHooks(ctx, task, prompt, request.agent);
             if (hookedPrompt === undefined) {
                 return;
             }
             prompt = hookedPrompt;
             // Classified on the hooked, mention-stripped prompt so it matches what buildAgentCommand sees.
+            progress.stage = 'prompt-classification';
             if (isConversationalTurn(ctx.stripLeadingAgentMention(prompt), request.userQuery)) {
                 task = { ...task, conversationalTurn: true };
                 ctx.tasks.set(task.id, task);
             }
+            // A Pro model needs a confirmed sign-in: give a pending probe its budget before the guard decides.
+            progress.stage = 'sign-in-check';
+            const signInAgentId = ctx.normalizeAgentId(request.agent);
+            if (signInAgentId) {
+                await ctx.awaitAgentSessionSettled(signInAgentId, task.ownerLogin);
+            }
+            progress.stage = 'agent-command';
             try {
                 ctx.recordTaskLatencyMark(task.id, 'build_agent_command_start');
                 const autoApprove = task.autoApprove !== false;
@@ -482,6 +528,13 @@ export async function spawnProcessWhenReadyExtracted(ctx: QaapAgentTaskRunnerCon
                 const message = error instanceof Error ? error.message : String(error);
                 fs.mkdirSync(path.dirname(ctx.logPath(task.id)), { recursive: true });
                 fs.writeFileSync(ctx.logPath(task.id), `${message}\n`, 'utf8');
+                if (error instanceof QaapAgentSignInRequiredError) {
+                    // Refused before spawn for a sign-in: another model of the same agent cannot fix it either.
+                    const current = ctx.tasks.get(task.id);
+                    if (current) {
+                        ctx.tasks.set(task.id, { ...current, preflightFailure: 'sign_in_required' });
+                    }
+                }
                 if (error instanceof QaapQaiqProviderKeyMissingError) {
                     // Refused before spawn for a missing key: no other model of this agent can fix it.
                     const current = ctx.tasks.get(task.id);
@@ -493,6 +546,7 @@ export async function spawnProcessWhenReadyExtracted(ctx: QaapAgentTaskRunnerCon
                 return;
             }
         }
+        progress.stage = 'spawn';
         await ctx.spawnProcess(task);
 }
 
@@ -525,6 +579,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
         let child: ChildProcess;
         let childEnv: NodeJS.ProcessEnv | undefined;
         let codexGateOverlay: QaapCodexGateOverlay | undefined;
+        let spawnCommand = task.command;
         try {
             ctx.enforceAgentIsolationPolicy();
             await ctx.ensureAgentCwdOwnershipAsync(task.cwd);
@@ -536,6 +591,29 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             ctx.recordTaskLatencyMark(task.id, 'spawn_start');
             ctx.observability?.recordAgentCommandStarted(task, 'agent-cli');
             childEnv = ctx.buildChildEnv(task);
+            // Settings → Harness binary path / configuration folder (desktop app only; empty elsewhere).
+            // Applied before the Codex gate overlay, which copies the sign-in from CODEX_HOME.
+            const launchPlan = resolveQaapHarnessLaunchPlan(
+                task.harnessInstanceId ?? ctx.resolveTaskAgentId(task),
+                key => ctx.preferenceReaderForOwner(task.ownerLogin)(key),
+            );
+            if (launchPlan.envNames?.length && ctx.harnessEnvSecrets) {
+                // Values stay in the spawn env only: never in the command line, a log or the task record.
+                const harnessKey = task.harnessInstanceId ?? ctx.resolveTaskAgentId(task);
+                applyQaapHarnessUserEnv(childEnv, await ctx.harnessEnvSecrets.resolve(harnessKey, launchPlan.envNames));
+            }
+            if (launchPlan.homeEnvVar && launchPlan.homeDir) {
+                childEnv[launchPlan.homeEnvVar] = launchPlan.homeDir;
+            }
+            if (launchPlan.binaryPath) {
+                const harnessId = ctx.resolveTaskAgentId(task);
+                spawnCommand = applyQaapHarnessBinaryOverride(
+                    task.command,
+                    ctx.detectedAgents.get(harnessId)?.bin ?? harnessId,
+                    launchPlan.binaryPath,
+                    quoteShellArg,
+                );
+            }
             if (usesOpencodeGatePlugin(ctx.resolveTaskAgentId(task))) {
                 // Prove once per OpenCode version that the gate plugin loads and sees tool calls. Without the
                 // proof the plugin is not wired and OpenCode's own `ask` rules keep refusing gated tools.
@@ -546,6 +624,12 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             }
             // Only the harness process gets gate credentials: issuing a token revokes the previous one.
             ctx.applyToolGateEnv(childEnv, task);
+            // Fails closed before any Codex process: no token while the gate is wired means no gate for its tool calls.
+            assertCodexGateTokenIssued({
+                agentId: ctx.resolveTaskAgentId(task),
+                gateWired: ctx.toolGateWired(),
+                gateToken: childEnv.QAAP_GATE_TOKEN,
+            });
             if (childEnv.QAAP_GATE_TOKEN && usesCodexToolGateHook(ctx.resolveTaskAgentId(task))) {
                 // Fails closed: if the overlay cannot be built or Codex does not trust its hook, nothing runs.
                 codexGateOverlay = await DEFAULT_QAAP_CODEX_GATE_OVERLAY_BUILDER.create({
@@ -553,10 +637,18 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                     cwd: task.cwd,
                     folderTrusted: ctx.isProjectFolderTrusted(task.ownerLogin, task.cwd),
                     sourceCodexHome: resolveCodexAgentHome(childEnv),
+                    // A harness instance's trust check runs its own Codex binary (undefined keeps the PATH `codex`).
+                    codexBin: launchPlan.binaryPath,
                     askTtlSec: Number(childEnv.QAAP_GATE_ASK_TTL_SEC) || 0,
                     agentIdentity: ctx.resolveAgentSpawnIdentity(task.cwd),
+                    // In a task sandbox Codex has its own /tmp: the overlay must sit where it sees the same path.
+                    overlayRoot: resolveCodexGateOverlayRoot(ctx.agentSandboxFor?.(task.cwd)),
+                    ownSandboxOff: ctx.runsInTaskSandbox?.() === true,
                 }, childEnv);
                 childEnv.CODEX_HOME = codexGateOverlay.codexHome;
+                if (ctx.runsInTaskSandbox?.() === true) {
+                    console.info('[qaap-codex] task sandbox container: Codex own sandbox off (container isolates)');
+                }
             }
             if (task.agentId?.trim().toLowerCase() === 'opencode') {
                 // A run killed mid-snapshot leaves index.lock in the tenant's persistent data dir,
@@ -569,7 +661,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                 throw new QaapAgentSpawnSkippedError();
             }
             // Pipes stay attached (no unref()), so logging and stdio approvals are unaffected.
-            child = ctx.spawnAgentCommand(task.command, {
+            child = ctx.spawnAgentCommand(spawnCommand, {
                 cwd: task.cwd,
                 env: childEnv,
                 stdio: stdinInteractive ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe'],
@@ -594,6 +686,8 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                 console.warn(`[qaap-stop] spawn-skipped task=${task.id} state=${ctx.tasks.get(task.id)?.state ?? 'missing'}`);
                 return;
             }
+            // The stack is the only backend record of a spawn that never produced an agent process.
+            console.error(`[qaap-start] task=${task.id} failed to start: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
             logStream.end(`Failed to start: ${error instanceof Error ? error.message : String(error)}\n`);
             ctx.finishTask(task.id, 'failed', undefined);
             return;
@@ -790,7 +884,37 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
         };
         // Pi exits 0 after a provider error; its JSON stream is the only place the failure shows.
         const piProviderErrorWatcher = isPiAgent(task.agentId) ? createPiProviderErrorWatcher() : undefined;
+        // Claude Code may take long to exit after its final `result` (telemetry / update checks behind
+        // the egress allowlist) while the answer is already complete: end it after a short grace.
+        const finalResultWatcher = emitsStreamJsonFinalResult(task.agentId) ? new QaapAgentFinalResultWatcher() : undefined;
+        let exitAfterResultTimer: ReturnType<typeof setTimeout> | undefined;
+        let endedAfterResult: QaapAgentFinalResult | undefined;
+        // agy without a usable session waits 60 s for a pasted code: stop it on its first sign-in wait line.
+        const agySignInWatcher = ctx.resolveTaskAgentId(task) === 'antigravity' ? createAgySignInWaitWatcher() : undefined;
+        const stopOnAgySignInWait = (chunk: unknown): void => {
+            if (!agySignInWatcher?.push(Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk))
+                || ctx.tasks.get(task.id)?.state !== 'running') {
+                return;
+            }
+            logStream.write('\n[qaap] Antigravity is waiting for a sign-in; stopping the run. Sign in to Antigravity and retry.\n');
+            clearIdleTimer();
+            ctx.killAgentProcessTree(child);
+        };
         child.stdout?.on('data', chunk => {
+            if (finalResultWatcher && !exitAfterResultTimer) {
+                const finalResult = finalResultWatcher.push(Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk));
+                if (finalResult) {
+                    exitAfterResultTimer = setTimeout(() => {
+                        if (ctx.processes.get(task.id) !== child || child.exitCode !== null || child.signalCode !== null) {
+                            return;
+                        }
+                        console.warn(`[qaap-agent-tasks] ${task.id}: ${task.agentId} still running ${QAAP_AGENT_EXIT_AFTER_RESULT_GRACE_MS}ms after its final result; ending it`);
+                        endedAfterResult = finalResult;
+                        ctx.killAgentProcessTree(child);
+                    }, QAAP_AGENT_EXIT_AFTER_RESULT_GRACE_MS);
+                    exitAfterResultTimer.unref?.();
+                }
+            }
             if (isAgentProgressChunk(chunk)) {
                 bumpIdleTimer();
             }
@@ -801,6 +925,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             if (ctx.qaiqStdioTasks.has(task.id)) {
                 scanStdioApprovalChunk(chunk);
             }
+            stopOnAgySignInWait(chunk);
         });
         // OpenCode keeps running after a quota error and prints nothing on stdout: stop the run here
         // so the task settles `failed` with the provider reason in its log, not after the idle timeout.
@@ -812,6 +937,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             ctx.recordTaskLatencyMark(task.id, 'first_stdout_chunk');
             logStream.write(chunk);
             ctx.fireOutput(task.id, chunk);
+            stopOnAgySignInWait(chunk);
             const fatalError = opencodeFatalWatcher?.push(Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk));
             if (fatalError !== undefined && ctx.tasks.get(task.id)?.state === 'running') {
                 logStream.write(`\n[qaap] OpenCode reported: ${fatalError}\n`);
@@ -846,8 +972,13 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             ctx.recordTaskLatencyMark(task.id, 'process_exit');
             logCancelExitExtracted(ctx, task.id);
             reapAgentProcessGroupOnExitExtracted(ctx, task.id, child);
+            // The slot of a stopped task is held until the process is really gone.
+            releaseStoppingTaskSlotOnExitExtracted(ctx, task.id);
         });
-        child.on('close', code => {
+        child.on('close', exitCode => {
+            clearTimeout(exitAfterResultTimer);
+            // Ended by Qaap after a complete result: settle on the result, not on the kill signal.
+            const code = exitCode === null && endedAfterResult ? (endedAfterResult.isError ? 1 : 0) : exitCode;
             clearChangeScopeWatch();
             clearIdleTimer();
             finishAntigravitySettings();

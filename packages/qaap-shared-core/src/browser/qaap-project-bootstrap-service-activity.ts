@@ -28,6 +28,7 @@ import {
     pickNextDevPort,
 } from './qaap-project-bootstrap-port';
 import {
+    appendLastDevOutput,
     describeDevProcessExit,
     diagnoseBootstrapFailure,
     diagnoseBuildFirstPreviewFailure,
@@ -41,6 +42,7 @@ import {
     terminalOutputOutOfMemory,
 } from './qaap-project-bootstrap-dev-errors';
 import { peekPreferDesktopIde } from './mobile-projects-open';
+import { waitForDevExitOutput } from './qaap-project-bootstrap-helpers';
 import { clearQaapPreviewDismissedByUser } from './qaap-preview-user-dismissal';
 import { bootstrapPreviewDismissalDirectory } from './qaap-project-bootstrap-service-timeline';
 import { resolveDevPreviewPublicOrigin } from '../common/qaap-dev-preview';
@@ -250,7 +252,12 @@ async function handleDevRunFailure(ctx: QaapProjectBootstrapServiceContext, mess
                             // Name Build and start only where the card actually offers it.
                             ? formatQaapPreviewBuildRequiredMessage(!!buildTarget?.buildAndStartCommand)
                             : extractTerminalFailureLine(failureOutput, ctx.toUserFacingDevError(message));
-        ctx._error = ctx.enrichDevRunError(diagnosedError);
+        // A generic diagnosis (one error line, or none) also quotes the last output lines, so the
+        // user sees why the dev server stopped without having to find its hidden terminal.
+        const quotesOutput = !nextLock && !portConflict && !buildFirst && !exitedWithoutListening
+            && (diagnosis.kind === 'process-exit' || diagnosis.kind === 'unknown');
+        const enrichedError = ctx.enrichDevRunError(diagnosedError);
+        ctx._error = quotesOutput ? appendLastDevOutput(enrichedError, failureOutput) : enrichedError;
         ctx.releaseActivePreview('failDevRun');
         ctx.setPhase('run-failed');
 }
@@ -374,9 +381,11 @@ export async function openPreviewExtracted(ctx: QaapProjectBootstrapServiceConte
             // Explicit request ("Open preview", "Focus preview"): lift a previous user close.
             clearQaapPreviewDismissedByUser(bootstrapPreviewDismissalDirectory(ctx));
         }
-        if (options?.auto && !ctx.mayAutoOpenPreviewNow()) {
-            // Stage instead of navigating: record the ready URL and flip to `running` so the
-            // transcript listener offers the "Open preview" pill; the user performs navigation.
+        if (options?.auto) {
+            // An automatic trigger (port detected, attach, agent tool) never opens the preview: it
+            // stages the ready URL and flips to `running` so the transcript offers the "View
+            // preview" pill, and the user opens it. Opening on its own pulled the user out of an
+            // unrelated conversation, often onto a page that was still compiling.
             ctx._previewUrl = targetUrl;
             ctx.persistPhase('running');
             ctx.setPhase('running');
@@ -597,19 +606,27 @@ export function watchAttachedDevTerminalExtracted(ctx: QaapProjectBootstrapServi
         ctx.devTerminalConversationId = ctx.activePreviewConversationId;
         ctx.devTerminalListener.dispose();
         const onOutput = terminal.onOutput(data => ctx.appendDevOutput(data));
+        let processExitReported = false;
         const onProcessExit = ctx.terminalWatcher.onTerminalExit(event => {
             if (event.terminalId === terminal.terminalId && runId === ctx.devRunGeneration) {
-                const exit = describeDevProcessExit(
-                    event.code,
-                    ctx.readTerminalTail(terminal) || ctx.devOutputTail,
-                    ctx.activePreviewClaim?.port ?? plan.expectedPort,
-                    event.signal,
-                );
-                void ctx.failDevRun(exit.message, plan, runId, { exitedWithoutListening: exit.exitedWithoutListening });
+                processExitReported = true;
+                // Same output race as a fresh run (see startDevServer): report once the output arrived.
+                void waitForDevExitOutput(terminal).then(() => {
+                    if (runId !== ctx.devRunGeneration) {
+                        return;
+                    }
+                    const exit = describeDevProcessExit(
+                        event.code,
+                        ctx.readTerminalTail(terminal) || ctx.devOutputTail,
+                        ctx.activePreviewClaim?.port ?? plan.expectedPort,
+                        event.signal,
+                    );
+                    void ctx.failDevRun(exit.message, plan, runId, { exitedWithoutListening: exit.exitedWithoutListening });
+                });
             }
         });
         const onWidgetClose = terminal.onTerminalDidClose(() => {
-            if (runId !== ctx.devRunGeneration || ctx.devRunCancelledByUser) {
+            if (runId !== ctx.devRunGeneration || ctx.devRunCancelledByUser || processExitReported) {
                 return;
             }
             if (ctx._phase === 'starting' || ctx._phase === 'running') {

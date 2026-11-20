@@ -137,6 +137,17 @@ describe('patchTranscriptStreamingTailHtml', () => {
         expect(tail.children[0]).to.equal(paragraph);
         expect(tail.children).to.have.length(2);
     });
+
+    it('swaps a streaming qaap-ui code card for its native UI once the fence closes with valid JSON', () => {
+        const tail = createTail();
+        tick(tail, '```qaap-ui\n{"type":"Badge","props":{"text":"o');
+        expect(tail.querySelector('.theia-mobile-agent-json-ui')).to.equal(null);
+        expect(tail.querySelector(`.${TRANSCRIPT_CODE_BLOCK_CARD_CLASS}`)).to.not.equal(null);
+        tick(tail, '```qaap-ui\n{"type":"Badge","props":{"text":"ok"}}\n```');
+        expect(tail.querySelector('.theia-mobile-agent-json-ui .theia-mobile-agent-json-ui-badge')?.textContent).to.equal('ok');
+        expect(tail.querySelector(`.${TRANSCRIPT_CODE_BLOCK_CARD_CLASS}`)).to.equal(null);
+        tail.remove();
+    });
 });
 
 describe('patchTranscriptMarkdownCodeBlockCard', () => {
@@ -172,5 +183,12 @@ describe('patchTranscriptMarkdownCodeBlockCard', () => {
         // Without a fence hint the language is sniffed from the text: two JSON-ish lines flip it to json.
         const card = enhancedCard('<pre><code>hello</code></pre>');
         expect(patchTranscriptMarkdownCodeBlockCard(card, pre('<pre><code>{\n  "a": 1,\n  "b": 2\n}</code></pre>'))).to.equal(false);
+    });
+
+    it('refuses to patch a streaming qaap-ui code card once its JSON parses', () => {
+        const card = enhancedCard('<pre><code class="language-qaap-ui">{"type":"Text"</code></pre>');
+        const before = card.innerHTML;
+        expect(patchTranscriptMarkdownCodeBlockCard(card, pre('<pre><code class="language-qaap-ui">{"type":"Text","props":{"text":"hi"}}</code></pre>'))).to.equal(false);
+        expect(card.innerHTML).to.equal(before);
     });
 });

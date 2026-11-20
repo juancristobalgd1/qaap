@@ -46,7 +46,7 @@ export function syncTranscriptActivityStepCopyCursorTraceExtracted(ctx: MobilePr
             if (labelEl.textContent !== item.detail) {
                 labelEl.textContent = item.detail ?? '';
             }
-            const iconClass = `theia-mobile-agent-activity-file-icon codicon ${ctx.transcriptFileIconClass(item.detail ?? '')}`;
+            const iconClass = `theia-mobile-agent-activity-file-icon ${ctx.transcriptFileIconClass(item.detail ?? '')}`;
             if (iconEl.className !== iconClass) {
                 iconEl.className = iconClass;
             }

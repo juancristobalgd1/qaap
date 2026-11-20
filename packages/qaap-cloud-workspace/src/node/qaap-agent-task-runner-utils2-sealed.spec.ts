@@ -43,6 +43,16 @@ describe('user AI settings sealed at rest (utils2)', () => {
         expect(readUserSettingsFromDisk('alice', home, ENV)).to.deep.equal({ [GOOGLE_KEY]: 'AIza-secret-value' });
     });
 
+    it('never writes a placeholder echo over the stored key; a new value overwrites and an empty string clears', () => {
+        writeUserSettingsToDisk('alice', { [GOOGLE_KEY]: 'AIza-secret-value' }, home, ENV);
+        writeUserSettingsToDisk('alice', { [GOOGLE_KEY]: `qaap-sealed-secret:${GOOGLE_KEY}` }, home, ENV);
+        expect(readUserSettingsFromDisk('alice', home, ENV)[GOOGLE_KEY]).to.equal('AIza-secret-value');
+        writeUserSettingsToDisk('alice', { [GOOGLE_KEY]: 'AIza-new-value' }, home, ENV);
+        expect(readUserSettingsFromDisk('alice', home, ENV)[GOOGLE_KEY]).to.equal('AIza-new-value');
+        writeUserSettingsToDisk('alice', { [GOOGLE_KEY]: '' }, home, ENV);
+        expect(readUserSettingsFromDisk('alice', home, ENV)[GOOGLE_KEY]).to.equal('');
+    });
+
     it('accepts a legacy plain credential and reseals it on the next write', () => {
         writeUserSettingsToDisk('alice', { [GOOGLE_KEY]: 'legacy-plain' }, home);
         expect(onDisk('alice')[GOOGLE_KEY]).to.equal('legacy-plain');

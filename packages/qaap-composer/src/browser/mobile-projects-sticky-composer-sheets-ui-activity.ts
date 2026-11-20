@@ -91,8 +91,8 @@ export function appendAgentModelPickerListExtracted(ctx: MobileProjectsStickyCom
         const sections: readonly AgentModelPickerSection[] = isOpenCode
             ? splitOpenCodeModelSections(agentCapableModels)
             : [
-                ...providerSections(agentCapableModels.filter(model => isFreeAgentModel(model))),
-                ...providerSections(agentCapableModels.filter(model => !isFreeAgentModel(model))),
+                ...providerSections(agentCapableModels.filter(model => isFreeModelForPicker(model))),
+                ...providerSections(agentCapableModels.filter(model => !isFreeModelForPicker(model))),
             ];
         // Pi's `/login` can add providers at any time, so its first group always offers Sign in.
         const isPi = agentId.trim().toLowerCase() === PI_AGENT_ID;
@@ -119,7 +119,8 @@ export function appendAgentModelPickerListExtracted(ctx: MobileProjectsStickyCom
             // One sign-in action per locked group, in its header; locked rows reuse it below.
             const showPiSignIn: boolean = isPi && !!onSignIn && !piSignInShown;
             piSignInShown = piSignInShown || showPiSignIn;
-            if (onSignIn && (showPiSignIn || (paid && providerModels.some(model => model.available === false)))) {
+            const hasSignInLocked = providerModels.some(model => model.available === false && model.unavailableReason === 'not-connected');
+            if (onSignIn && (showPiSignIn || hasSignInLocked)) {
                 const signIn = document.createElement('button');
                 signIn.type = 'button';
                 signIn.className = 'theia-qaap-agent-sheet-connect';
@@ -134,12 +135,14 @@ export function appendAgentModelPickerListExtracted(ctx: MobileProjectsStickyCom
             section.append(label);
             for (const model of providerModels) {
                 const stats = resolveModelTurnStats(canonicalModelStatsKey(model));
-                // A locked OpenCode paid row opens the same sign-in as the header action.
-                const lockedSignIn = isOpenCode && model.available === false && model.unavailableReason === 'not-connected'
+                // A row locked only by the missing session opens the same sign-in as the header action.
+                const lockedSignIn = model.available === false && model.unavailableReason === 'not-connected'
                     ? onSignIn
                     : undefined;
-                // OpenCode's paid group already carries a "Paid" header, so only other paid rows get the badge.
-                const paidBadge = !isOpenCode && model.available !== false && !isFreeAgentModel(model);
+                // A model carries its backend tier (Free or Pro) when known. Legacy catalogs without a tier keep
+                // the old rule: OpenCode's paid group already has a "Paid" header, so only other paid rows get it.
+                const tierLabel = tierBadgeLabel(model);
+                const paidBadge = tierLabel === undefined && !isOpenCode && model.available !== false && !isFreeAgentModel(model);
                 section.append(createPickerSheetOptionButton({
                     label: formatQaiqModelDisplayLabel({ modelId: model.modelId, label: model.label }),
                     llmVendor: model.vendor,
@@ -153,9 +156,10 @@ export function appendAgentModelPickerListExtracted(ctx: MobileProjectsStickyCom
                     unavailableTitle: model.available === false
                         ? resolveUnavailableModelTitle(agentId, model.unavailableReason)
                         : undefined,
-                    badgeLabel: model.available === false
-                        ? nls.localize('qaap/mobileProjects/modelPickerLocked', 'Locked')
-                        : (paidBadge ? nls.localize('qaap/agentPicker/paidModels', 'Paid') : undefined),
+                    badgeLabel: tierLabel
+                        ?? (model.available === false
+                            ? nls.localize('qaap/mobileProjects/modelPickerLocked', 'Locked')
+                            : (paidBadge ? nls.localize('qaap/agentPicker/paidModels', 'Paid') : undefined)),
                     badgeWarning: model.available === false,
                     onLockedSelect: lockedSignIn,
                     onSelect: () => onSelect(model),
@@ -163,6 +167,22 @@ export function appendAgentModelPickerListExtracted(ctx: MobileProjectsStickyCom
             }
             list.append(section);
         }
+}
+
+/** Free when the backend tier says so; without a tier the model-id rule decides (legacy catalogs). */
+function isFreeModelForPicker(model: QaapQaiqModelOption): boolean {
+    return model.tier !== undefined ? model.tier === 'free' : isFreeAgentModel(model);
+}
+
+/** The Free or Pro badge of a model that carries its backend tier; `undefined` for legacy catalogs. */
+function tierBadgeLabel(model: QaapQaiqModelOption): string | undefined {
+    if (model.tier === 'free') {
+        return nls.localize('qaap/composer/picker/free', 'Free');
+    }
+    if (model.tier === 'pro') {
+        return nls.localize('qaap/composer/picker/pro', 'Pro');
+    }
+    return undefined;
 }
 
 /** One provider-headed group per vendor, in the order the models arrive. */

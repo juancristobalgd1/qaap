@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { resolveTranscriptPreviewOpenUrl } from './qaap-transcript-preview-effective-url';
+import { resolveSavedPreviewUrlForMount, resolveTranscriptPreviewOpenUrl } from './qaap-transcript-preview-effective-url';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
 describe('resolveTranscriptPreviewOpenUrl', () => {
@@ -69,5 +69,21 @@ describe('resolveTranscriptPreviewOpenUrl', () => {
             } as never,
             appliesToProject: false,
         })).to.equal('http://localhost:3000/qaap-preview/json-id/');
+    });
+});
+
+describe('resolveSavedPreviewUrlForMount', () => {
+    it('mounts the saved URL when no start is pending for the project', () => {
+        expect(resolveSavedPreviewUrlForMount({ savedUrl: 'http://localhost:3000/qaap-preview/old/', startPending: false }))
+            .to.equal('http://localhost:3000/qaap-preview/old/');
+    });
+
+    it('does not mount the saved URL while a start is pending for the project', () => {
+        expect(resolveSavedPreviewUrlForMount({ savedUrl: 'http://localhost:3000/qaap-preview/old/', startPending: true }))
+            .to.equal(undefined);
+    });
+
+    it('returns undefined when nothing was saved', () => {
+        expect(resolveSavedPreviewUrlForMount({ startPending: false })).to.equal(undefined);
     });
 });

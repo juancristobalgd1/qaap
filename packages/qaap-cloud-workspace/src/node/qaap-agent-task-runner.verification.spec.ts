@@ -264,6 +264,42 @@ describe('QaapAgentTaskRunner self-verification loop', () => {
         expect(fixTurns()).to.equal(1);
     });
 
+    it('reports tsc errors confined to files the task did not edit as preexisting, without a fix turn', async () => {
+        const { runner, fixTurns } = makeRunner({
+            listWorktreeChanges: () => heroOnly,
+            runVerificationScripts: async (): Promise<ScriptRun> => ({
+                command: 'npm run typecheck',
+                result: {
+                    exitCode: 2,
+                    stdout: 'src/components/Newsletter.tsx(12,5): error TS2322: Type string is not assignable to number.\n'
+                        + 'src/components/ui/badge.tsx:4:1 - error TS2304: Cannot find name foo.\n',
+                    stderr: '',
+                    timedOut: false,
+                },
+            }),
+        });
+        const result = await runner.runVerify(TASK);
+        expect(result?.status).to.equal('preexisting');
+        expect(fixTurns()).to.equal(0);
+    });
+
+    it('keeps a typecheck failure with no file named as a real failure that gets a fix turn', async () => {
+        let scriptCalls = 0;
+        const { runner, fixTurns } = makeRunner({
+            listWorktreeChanges: () => heroOnly,
+            runVerificationScripts: async (): Promise<ScriptRun> => {
+                scriptCalls++;
+                return scriptCalls === 1 ? {
+                    command: 'npm run typecheck',
+                    result: { exitCode: 2, stdout: 'Process exited with code 2', stderr: '', timedOut: false },
+                } : undefined;
+            },
+        });
+        const result = await runner.runVerify(TASK);
+        expect(result).to.deep.include({ status: 'passed', attempts: 1 });
+        expect(fixTurns()).to.equal(1);
+    });
+
     it('reverts files a fix turn edited outside the task scope', async () => {
         let snapshots = 0;
         let restored: readonly string[] = [];

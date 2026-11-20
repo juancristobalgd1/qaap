@@ -770,6 +770,7 @@ export class QaapProjectBootstrapContribution implements FrontendApplicationCont
 
     protected ensureBanner(): HTMLElement {
         if (this.banner && document.body.contains(this.banner)) {
+            this.updateBannerComposerLift(this.banner);
             return this.banner;
         }
         const node = document.createElement('div');
@@ -778,8 +779,22 @@ export class QaapProjectBootstrapContribution implements FrontendApplicationCont
         node.setAttribute('aria-live', 'polite');
         document.body.appendChild(node);
         this.banner = node;
+        this.updateBannerComposerLift(node);
         this.toDispose.push(Disposable.create(() => this.removeBanner()));
         return node;
+    }
+
+    /**
+     * Publishes how far the visible sticky composer reaches up from the viewport bottom, so the
+     * banner floats above the composer instead of over the transcript tail (mirrors the snackbar).
+     */
+    protected updateBannerComposerLift(node: HTMLElement): void {
+        const composer = document.querySelector<HTMLElement>('.theia-mobile-projects-sticky-composer:not([hidden])');
+        const composerTop = composer?.getBoundingClientRect().top;
+        const lift = composerTop === undefined || composer!.getClientRects().length === 0
+            ? 0
+            : Math.max(0, window.innerHeight - composerTop);
+        node.style.setProperty('--qaap-project-bootstrap-composer-lift', `${Math.round(lift)}px`);
     }
 
     protected removeBanner(): void {

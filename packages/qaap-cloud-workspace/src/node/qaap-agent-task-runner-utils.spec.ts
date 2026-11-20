@@ -6,7 +6,7 @@
 import { expect } from 'chai';
 import { findQaiqByokProvider } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
-import { execFileSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -18,7 +18,10 @@ import {
     applyTemplateWithoutPromptFlag,
     applyTemplateWithStdinPrompt,
     buildPromptTransportCommand,
+    AGENT_ARGV_PROMPT_LIMIT_POSIX_BYTES,
+    planArgvPrompt,
     prependPathEntry,
+    removeAgentPromptTempDir,
     resolveAgentPromptTransport,
     resolveExistingExecutablePath,
     resolveQaiqEnvFallbackModel,
@@ -29,9 +32,13 @@ import { QAAP_BUILTIN_AGENT_DEFINITIONS } from '@theia/qaap-shared-core/lib/comm
 import { buildAgentCommandExtracted } from './qaap-agent-task-runner-streaming2';
 import { captureWorktreeFingerprint, captureWorktreeStatus } from './qaap-agent-task-runner-utils2';
 import {
+    AGY_CLI_CONNECTION_PROBE_SCRIPT,
+    CODEX_CONNECTION_PROBE_SCRIPT,
     classifyAgentConnectionProbe,
     GEMINI_CLI_CONNECTION_PROBE_SCRIPT,
     hasAgentSettingsCredentials,
+    probeAgentConnectionState,
+    QAAP_AGENT_CONNECTION_PROBE_SETTLE_GRACE_MS,
     resolveAgentConnectionProbe,
     resolveAgentConnectionProbeArgs,
     resolveTaskHarnessId,
@@ -76,6 +83,54 @@ describe('harness connection state', () => {
         expect(classifyAgentConnectionProbe('codex', 1, 'Not logged in', false)).to.equal('disconnected');
     });
 
+    it('reads codex-cli 0.16x "API key configured" as an API-key login that needs the ChatGPT sign-in', () => {
+        expect(classifyAgentConnectionProbe('codex', 0, 'API key configured - ***\nAuthentication is checked when you send a request.', false)).to.equal('disconnected');
+    });
+
+    it('does not trust a Codex auth.json without ChatGPT tokens, even when `codex login status` says logged in', function (): void {
+        if (process.platform === 'win32') {
+            this.skip();
+        }
+        const probe = resolveAgentConnectionProbe('codex', '/opt/codex');
+        expect(probe).to.deep.equal({ file: 'sh', args: ['-c', CODEX_CONNECTION_PROBE_SCRIPT, 'codex-probe', '/opt/codex'] });
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-codex-probe-'));
+        // codex-cli 0.169 answers "Logged in using ChatGPT" for `{"OPENAI_API_KEY":null,"tokens":null}`.
+        const fakeCodex = path.join(dir, 'codex');
+        fs.writeFileSync(fakeCodex, '#!/bin/sh\necho "Logged in using ChatGPT"\n', { mode: 0o755 });
+        const codexHome = path.join(dir, 'home');
+        fs.mkdirSync(codexHome);
+        const run = (): string => {
+            const command = resolveAgentConnectionProbe('codex', fakeCodex)!;
+            return execFileSync(command.file, [...command.args], { encoding: 'utf8', env: { ...process.env, CODEX_HOME: codexHome } });
+        };
+        try {
+            // No auth.json (keyring storage): the CLI answers alone.
+            expect(classifyAgentConnectionProbe('codex', 0, run(), false)).to.equal('connected');
+            fs.writeFileSync(path.join(codexHome, 'auth.json'), '{"OPENAI_API_KEY":null,"tokens":null}');
+            expect(classifyAgentConnectionProbe('codex', 0, run(), false)).to.equal('disconnected');
+            fs.writeFileSync(path.join(codexHome, 'auth.json'), '{"tokens":{"id_token":"","access_token":"","refresh_token":""}}');
+            expect(classifyAgentConnectionProbe('codex', 0, run(), false)).to.equal('disconnected');
+            fs.writeFileSync(path.join(codexHome, 'auth.json'), '{\n  "auth_mode": "chatgpt",\n  "tokens": {\n    "access_token": "eyJ.x",\n    "refresh_token": "rt_1"\n  }\n}\n');
+            expect(classifyAgentConnectionProbe('codex', 0, run(), false)).to.equal('connected');
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('counts Cursor "Login successful" / "Logged in" as connected even with "unable to fetch user details"', () => {
+        expect(classifyAgentConnectionProbe('cursor', 0, '✓ Login successful!\nLogged in (unable to fetch user details)', false)).to.equal('connected');
+        expect(classifyAgentConnectionProbe('cursor', 0, 'Logged in (unable to fetch user details)', false)).to.equal('connected');
+        // A "not logged in" line stays disconnected even though it contains "logged in".
+        expect(classifyAgentConnectionProbe('cursor', 0, 'Not logged in (unable to fetch user details)', false)).to.equal('disconnected');
+        // No success line: still inconclusive.
+        expect(classifyAgentConnectionProbe('cursor', 0, 'Unable to fetch user details', false)).to.equal('unknown');
+    });
+
+    it('keeps Cursor plain status lines classified: not logged in is disconnected, a logged-in account is connected', () => {
+        expect(classifyAgentConnectionProbe('cursor', 0, 'Not logged in', false)).to.equal('disconnected');
+        expect(classifyAgentConnectionProbe('cursor', 0, '✓ Logged in as dev@example.com', false)).to.equal('connected');
+    });
+
     it('treats OpenCode with zero saved credentials as signed out, even though it exits 0', () => {
         // Real `opencode auth list` output with an empty auth store (exit 0).
         expect(classifyAgentConnectionProbe('opencode', 0, '┌  Credentials ~/.local/share/opencode/auth.json\n│\n└  0 credentials', false)).to.equal('disconnected');
@@ -105,6 +160,68 @@ describe('harness connection state', () => {
         });
         // The community `ag`/`antigravity` CLI has no sign-in of its own.
         expect(resolveAgentConnectionProbe('antigravity', 'antigravity')).to.equal(undefined);
+    });
+
+    it('reads agy sign-in from `agy models`: a listing is connected, the sign-in message is not, anything else is unknown', () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agy-probe-'));
+        // The probe keys on the executable's basename, so each fake `agy` lives in its own folder.
+        const fakeAgy = (name: string, body: string): string => {
+            const file = path.join(dir, name, 'agy');
+            fs.mkdirSync(path.dirname(file), { recursive: true });
+            fs.writeFileSync(file, `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+            return file;
+        };
+        const probe = (bin: string): { status: number | null; output: string } => {
+            const probeCommand = resolveAgentConnectionProbe('antigravity', bin);
+            expect(probeCommand).to.deep.equal({ file: 'sh', args: ['-c', AGY_CLI_CONNECTION_PROBE_SCRIPT, 'agy-probe', bin] });
+            const result = spawnSync(probeCommand!.file, [...probeCommand!.args], { encoding: 'utf8' });
+            return { status: result.status, output: result.stdout };
+        };
+        try {
+            const signedIn = probe(fakeAgy('agy-in', 'echo "gemini-3.8-flash-high\tGemini 3.8 Flash (High)"'));
+            expect(classifyAgentConnectionProbe('antigravity', signedIn.status, signedIn.output, false)).to.equal('connected');
+            const signedOut = probe(fakeAgy('agy-out', 'echo "Error: Please sign in to view available models. Launch the CLI without arguments to sign in." >&2; exit 1'));
+            expect(classifyAgentConnectionProbe('antigravity', signedOut.status, signedOut.output, false)).to.equal('disconnected');
+            const broken = probe(fakeAgy('agy-broken', 'exit 2'));
+            expect(classifyAgentConnectionProbe('antigravity', broken.status, broken.output, false)).to.equal('unknown');
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('the agy probe returns at once even when agy leaves a helper holding its output open', function (): void {
+        if (process.platform === 'win32') {
+            this.skip();
+        }
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agy-helper-'));
+        const file = path.join(dir, 'agy');
+        // Prints the catalog, then leaves a background helper with agy's stdout/stderr (as agy's language
+        // server does). With a `$(…)` pipe the probe waited for that helper's EOF: "Checking sign-in…" forever.
+        fs.writeFileSync(file, '#!/bin/sh\necho "gemini-3.8-flash-high"\nsleep 8 &\nexit 0\n', { mode: 0o755 });
+        try {
+            const started = Date.now();
+            const result = spawnSync('sh', ['-c', AGY_CLI_CONNECTION_PROBE_SCRIPT, 'agy-probe', file], { encoding: 'utf8', timeout: 20_000 });
+            expect(Date.now() - started).to.be.lessThan(5_000);
+            expect(classifyAgentConnectionProbe('antigravity', result.status, result.stdout, false)).to.equal('connected');
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('settles a probe as unknown when its pipes stay open past the timeout', async function (): Promise<void> {
+        if (process.platform === 'win32') {
+            this.skip();
+        }
+        this.timeout(10_000);
+        const started = Date.now();
+        // `sleep` inherits the probe's stdout and outlives the killed shell: execFile alone never calls back.
+        const state = await probeAgentConnectionState('codex', 'sh', {
+            file: 'sh',
+            args: ['-c', 'sleep 8 & sleep 8'],
+            timeoutMs: 300,
+        });
+        expect(state).to.equal('unknown');
+        expect(Date.now() - started).to.be.lessThan(300 + QAAP_AGENT_CONNECTION_PROBE_SETTLE_GRACE_MS + 2_000);
     });
 
     it('reads Gemini CLI sign-in from the credential file in HOME', () => {
@@ -236,6 +353,7 @@ describe('Codex prompt transport', () => {
             readResearchLedger: () => undefined,
             readProjectInfo: () => undefined,
             assertQaiqConfigured: () => undefined,
+            assertAgentModelAccess: () => undefined,
             detectedAgents: new Map([['codex', {
                 id: 'codex',
                 label: 'Codex',
@@ -320,10 +438,18 @@ describe('Windows-safe prompt transport', () => {
         )).to.equal('hermes --yolo chat -Q -q -');
     });
 
-    it('routes every shipped harness off argv', () => {
+    it('routes every shipped harness off argv, except agy (documented exception)', () => {
         for (const definition of QAAP_BUILTIN_AGENT_DEFINITIONS) {
             const transport = resolveAgentPromptTransport(definition.id, definition);
+            // agy 1.5.9 ignores stdin in text mode (verified: `printf ... | agy -p -` never sees the prompt) and has
+            // no prompt-file flag, so its prompt travels in argv under the size guard in planArgvPrompt. Every other
+            // harness must stay off argv: a single argv argument is bounded (Linux 128 KiB, Windows cmd.exe ~8 KiB).
+            if (definition.bin === 'agy') {
+                expect(transport, definition.id).to.deep.equal({ kind: 'argv-prompt' });
+                continue;
+            }
             expect(transport.kind, definition.id).to.not.equal('argv');
+            expect(transport.kind, definition.id).to.not.equal('argv-prompt');
             const command = applyTemplateForPromptTransport(
                 definition.template,
                 transport,
@@ -337,6 +463,92 @@ describe('Windows-safe prompt transport', () => {
             bin: 'qaiq',
             template: 'qaiq --print {qaiq_flags} {prompt}',
         }).kind).to.equal('plain-stdin');
+    });
+});
+
+describe('agy argv prompt transport', () => {
+
+    const agyDetected = { id: 'antigravity', bin: 'agy', template: 'agy -p {prompt}' };
+
+    /** Minimal runner context: buildAgentCommand only needs the template, identity and repo-context readers. */
+    function agyContext(): QaapAgentTaskRunnerContext {
+        return {
+            resolveAgentId: () => 'antigravity',
+            stripLeadingAgentMention: (value: string) => value,
+            readAgentInstructions: () => undefined,
+            readRepoMap: () => undefined,
+            readRelevantFiles: () => undefined,
+            readGitStatusSnapshot: () => undefined,
+            readRepoMemory: () => undefined,
+            readResearchLedger: () => undefined,
+            readProjectInfo: () => undefined,
+            assertQaiqConfigured: () => undefined,
+            assertAgentModelAccess: () => undefined,
+            resolveAgentSpawnIdentity: () => ({}),
+            applyTemplate,
+            applyTemplateWithoutPrompt,
+            detectedAgents: new Map([['antigravity', agyDetected]]),
+            buildTemplateVars: () => ({}),
+        } as unknown as QaapAgentTaskRunnerContext;
+    }
+
+    it('classifies agy as the argv-prompt harness, never a stdin one', () => {
+        expect(resolveAgentPromptTransport('antigravity', agyDetected)).to.deep.equal({ kind: 'argv-prompt' });
+        expect(agentUsesPlainStdinPrompt('antigravity', agyDetected)).to.equal(false);
+        expect(resolveAgentPromptTransport('antigravity', { id: 'antigravity', bin: 'gemini', template: 'gemini -p {prompt}' }))
+            .to.deep.equal({ kind: 'plain-stdin', placeholder: 'omit-flag' });
+    });
+
+    it('passes the real prompt in argv instead of a `-` stdin marker', () => {
+        const prompt = 'Preview feedback: quiero que no salga este boton. Selector: button.primary ZETA-42';
+        const result = buildAgentCommandExtracted(agyContext(), prompt, 'antigravity', true, undefined, process.cwd(), undefined, undefined, 'full-access');
+        expect(result.command).to.contain('ZETA-42');
+        expect(result.command).to.contain('quiero que no salga este boton');
+        expect(result.command).to.contain('button.primary');
+        expect(result.command).not.to.match(/-p -(\s|$)/);
+        expect(result.stdinPrompt).to.equal(undefined);
+        expect(result.promptTempDir).to.equal(undefined);
+    });
+
+    it('builds the argv command for a short prompt without a temp file', () => {
+        const built = buildPromptTransportCommand('agy -p {prompt}', 'hello there', 'antigravity', agyDetected);
+        expect(built.command).to.equal(`agy -p ${shellQuote('hello there')}`);
+        expect(built.stdinPrompt).to.equal(undefined);
+        expect(built.promptTempDir).to.equal(undefined);
+    });
+
+    it('moves an oversized prompt to a private file and points argv at it, without truncating', function () {
+        const tail = 'TAIL-MARKER-7731';
+        const prompt = `${'x'.repeat(AGENT_ARGV_PROMPT_LIMIT_POSIX_BYTES + 1024)}\n${tail}`;
+        const built = buildPromptTransportCommand('agy -p {prompt}', prompt, 'antigravity', agyDetected);
+        expect(built.promptTempDir).to.be.a('string');
+        const dir = built.promptTempDir!;
+        try {
+            expect(built.command).to.contain('Read the file at ');
+            expect(built.command).to.contain('follow the instructions it contains exactly');
+            expect(built.command).not.to.contain(tail);
+            const file = path.join(dir, 'prompt.txt');
+            expect(path.isAbsolute(file)).to.equal(true);
+            expect(fs.readFileSync(file, 'utf8')).to.equal(prompt);
+            if (process.platform !== 'win32') {
+                expect(fs.statSync(file).mode & 0o777).to.equal(0o600);
+            }
+        } finally {
+            removeAgentPromptTempDir(dir);
+        }
+        expect(fs.existsSync(dir)).to.equal(false);
+    });
+
+    it('keeps a prompt at the limit inline, and moves one byte over it to the file', () => {
+        const atLimit = 'y'.repeat(AGENT_ARGV_PROMPT_LIMIT_POSIX_BYTES);
+        if (process.platform !== 'win32') {
+            const inline = planArgvPrompt(atLimit);
+            expect(inline.prompt).to.equal(atLimit);
+            expect(inline.promptTempDir).to.equal(undefined);
+            const spilled = planArgvPrompt(`${atLimit}z`);
+            expect(spilled.prompt).to.contain('Read the file at ');
+            removeAgentPromptTempDir(spilled.promptTempDir);
+        }
     });
 });
 
@@ -366,6 +578,7 @@ describe('Cursor Agent prompt transport', () => {
             readResearchLedger: () => undefined,
             readProjectInfo: () => undefined,
             assertQaiqConfigured: () => undefined,
+            assertAgentModelAccess: () => undefined,
             applyTemplateWithoutPrompt,
             detectedAgents: new Map([['cursor', {
                 id: 'cursor',
@@ -410,6 +623,7 @@ describe('Cursor Agent prompt transport', () => {
                 readResearchLedger: () => undefined,
                 readProjectInfo: () => undefined,
                 assertQaiqConfigured: () => undefined,
+            assertAgentModelAccess: () => undefined,
                 applyTemplateWithoutPrompt,
                 detectedAgents: new Map([['cursor', {
                     id: 'cursor',
@@ -448,9 +662,11 @@ function commandCtx(id: string, template: string, bin = id): {
     readResearchLedger: () => undefined;
     readProjectInfo: () => undefined;
     assertQaiqConfigured: () => undefined;
+    assertAgentModelAccess: () => undefined;
     applyTemplateWithoutPrompt: typeof applyTemplateWithoutPrompt;
     detectedAgents: Map<string, { id: string; label: string; bin: string; template: string }>;
     buildTemplateVars: () => Record<string, string>;
+    resolveAgentSpawnIdentity: () => { uid?: number; gid?: number };
 } {
     return {
         resolveAgentId: () => id,
@@ -463,9 +679,11 @@ function commandCtx(id: string, template: string, bin = id): {
         readResearchLedger: () => undefined,
         readProjectInfo: () => undefined,
         assertQaiqConfigured: () => undefined,
+        assertAgentModelAccess: () => undefined,
         applyTemplateWithoutPrompt,
         detectedAgents: new Map([[id, { id, label: id, bin, template }]]),
         buildTemplateVars: () => ({}),
+        resolveAgentSpawnIdentity: () => ({}),
     };
 }
 

@@ -13,9 +13,15 @@
     position: fixed;
     left: 50%;
     transform: translateX(-50%);
+    /* Sits above the visible sticky composer (measured into --qaap-project-bootstrap-composer-lift
+       by the contribution) so it never covers the transcript tail or the composer input. The
+       safe-area inset keeps it clear of the home indicator when no composer is shown. */
     bottom: calc(
-        var(--theia-mobile-bottom-chrome-reserved, 0px)
-        + var(--theia-mobile-keyboard-inset, 0px)
+        max(
+            var(--theia-mobile-bottom-chrome-reserved, 0px) + var(--theia-mobile-keyboard-inset, 0px),
+            var(--qaap-project-bootstrap-composer-lift, 0px),
+            env(safe-area-inset-bottom, 0px)
+        )
         + 8px
     );
     min-width: 320px;

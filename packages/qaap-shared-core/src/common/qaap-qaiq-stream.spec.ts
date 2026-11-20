@@ -10,6 +10,7 @@ import {
     dedupeAgentMessageTextSegments,
     filterQaiqStreamMetadataLines,
     filterQaiqStreamProcessLogLines,
+    joinDistinctTextSegments,
     mergeIncrementalStreamText,
     QaapQaiqStreamAccumulator,
     stripLeadingParagraphsInPriorText,
@@ -91,6 +92,43 @@ describe('dedupeAgentMessageTextSegments', () => {
         ])).to.deep.equal([
             { type: 'text', content: once },
         ]);
+    });
+
+    it('separates distinct adjacent text segments into paragraphs', () => {
+        expect(dedupeAgentMessageTextSegments([
+            { type: 'text', content: 'I asked.' },
+            { type: 'text', content: 'I will read the file.' },
+        ])).to.deep.equal([
+            { type: 'text', content: 'I asked.\n\nI will read the file.' },
+        ]);
+    });
+
+    it('shows a repeated failure paragraph once per turn', () => {
+        const failure = 'Stopped: repeated tool failures detected.\n\n`Edit` failed 3 times with InputValidationError.';
+        expect(dedupeAgentMessageTextSegments([
+            { type: 'text', content: failure },
+            { type: 'tool', toolUseId: 't1', name: 'Edit', args: '{}', finished: true, result: 'err' },
+            { type: 'text', content: failure },
+        ])).to.deep.equal([
+            { type: 'text', content: failure },
+            { type: 'tool', toolUseId: 't1', name: 'Edit', args: '{}', finished: true, result: 'err' },
+        ]);
+    });
+});
+
+describe('joinDistinctTextSegments', () => {
+
+    it('keeps token deltas that carry their own whitespace', () => {
+        expect(joinDistinctTextSegments('Hello ', 'world')).to.equal('Hello world');
+    });
+
+    it('adopts cumulative snapshots and ignores exact repeats', () => {
+        expect(joinDistinctTextSegments('part1', 'part1 part2')).to.equal('part1 part2');
+        expect(joinDistinctTextSegments('same', 'same')).to.equal('same');
+    });
+
+    it('starts a new paragraph for a distinct segment', () => {
+        expect(joinDistinctTextSegments('asked.', 'I will read')).to.equal('asked.\n\nI will read');
     });
 });
 
@@ -286,13 +324,14 @@ describe('QaapQaiqStreamAccumulator', () => {
     it('keeps the latest per-call usage instead of the summed result aggregate', () => {
         const acc = new QaapQaiqStreamAccumulator();
         acc.push('{"type":"assistant","message":{"usage":{"input_tokens":1200,"output_tokens":80}}}\n');
-        expect(acc.getTurnUsage()).to.deep.equal({ inputTokens: 1200, outputTokens: 80 });
+        expect(acc.getTurnUsage()).to.deep.equal({ inputTokens: 1200, outputTokens: 80, outputTokensTotal: 80 });
         acc.push('{"type":"assistant","message":{"usage":{"input_tokens":20,"output_tokens":40,"cache_read_input_tokens":1300}}}\n');
         // `result` sums every call of the turn; the context ring must not double count it.
         acc.push('{"type":"result","usage":{"input_tokens":1220,"output_tokens":120,"cache_read_input_tokens":1300}}\n');
         expect(acc.getTurnUsage()).to.deep.equal({
             inputTokens: 20,
             outputTokens: 40,
+            outputTokensTotal: 120,
             cacheReadInputTokens: 1300,
         });
     });
@@ -303,8 +342,27 @@ describe('QaapQaiqStreamAccumulator', () => {
         expect(acc.getTurnUsage()).to.deep.equal({
             inputTokens: 1500,
             outputTokens: 200,
+            outputTokensTotal: 200,
             cacheReadInputTokens: 100,
         });
+    });
+
+    it('sums output across messages of a turn, counting a re-emitted message id once at its largest count', () => {
+        const acc = new QaapQaiqStreamAccumulator();
+        acc.push('{"type":"assistant","message":{"id":"msg_1","usage":{"input_tokens":100,"output_tokens":10}}}\n');
+        acc.push('{"type":"assistant","message":{"id":"msg_1","usage":{"input_tokens":100,"output_tokens":350}}}\n');
+        acc.push('{"type":"assistant","message":{"id":"msg_1","usage":{"input_tokens":100,"output_tokens":350}}}\n');
+        acc.push('{"type":"assistant","message":{"id":"msg_2","usage":{"input_tokens":150,"output_tokens":60}}}\n');
+        // Context stays the latest snapshot; only the reported output is cumulative.
+        expect(acc.getTurnUsage()).to.deep.equal({ inputTokens: 150, outputTokens: 60, outputTokensTotal: 410 });
+    });
+
+    it('prefers a larger result total for the turn output and leaves the context numbers alone', () => {
+        const acc = new QaapQaiqStreamAccumulator();
+        acc.push('{"type":"assistant","message":{"id":"msg_1","usage":{"input_tokens":100,"output_tokens":300}}}\n');
+        acc.push('{"type":"assistant","message":{"id":"msg_2","usage":{"input_tokens":150,"output_tokens":60}}}\n');
+        acc.push('{"type":"result","usage":{"input_tokens":400,"output_tokens":500}}\n');
+        expect(acc.getTurnUsage()).to.deep.equal({ inputTokens: 150, outputTokens: 60, outputTokensTotal: 500 });
     });
 
     it('appends error result text when result type is result with is_error', () => {

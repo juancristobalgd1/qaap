@@ -190,6 +190,20 @@ describe('toTaskView', () => {
         expect(view.title.length).to.equal(80);
     });
 
+    it('cuts long commands at a word boundary with an ellipsis', () => {
+        const cmd = 'npm run build -- --filter the quick brown fox jumps over the lazy dog repeatedly until the end';
+        const view = toTaskView({ id: 'x', cwd: '/a', state: 'running', command: cmd, createdAt: 1000 });
+        expect(view.title).to.equal('npm run build -- --filter the quick brown fox jumps over the lazy dog…');
+        expect(view.title.length).to.be.lessThanOrEqual(80);
+    });
+
+    it('never ends a cut title with a separator before the ellipsis', () => {
+        const cmd = `${'word '.repeat(14)}, and more text that runs past the limit of eighty characters`;
+        const view = toTaskView({ id: 'x', cwd: '/a', state: 'running', command: cmd, createdAt: 1000 });
+        expect(view.title.endsWith('and…')).to.equal(true);
+        expect(view.title).to.not.match(/[\s,;:.-]…$/);
+    });
+
     it('preserves parentId when provided', () => {
         const view = toTaskView({ id: 'x', cwd: '/a', state: 'running', parentId: 'leader', createdAt: 1000 });
         expect(view.parentId).to.equal('leader');

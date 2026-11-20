@@ -34,6 +34,8 @@ if [[ "\${1:-}" == "--version" ]]; then echo "2.1.0 (Claude Code) sandbox-e2e"; 
 if [[ "\${1:-}" == "auth" && "\${2:-}" == "status" ]]; then echo '{"loggedIn": true, "authMethod": "mock", "apiProvider": "mock"}'; exit 0; fi
 # Approvals on: one NDJSON user line, stdin stays open. Approvals off: the prompt is piped and stdin closes.
 if [[ " $* " == *" --input-format "* ]]; then IFS= read -r line || true; else line="$(cat)"; fi
+# The backend's model discovery sends one stream-json \`initialize\` control request: not a turn, never a run.
+if [[ "$line" == *'"control_request"'* ]]; then exit 0; fi
 token="$(printf '%s' "$line" | grep -oE 'QAAP_SANDBOX_[0-9A-F]{12}' | head -1)"
 emit() { printf '%s\\n' "$1"; }
 emit '{"type":"system","subtype":"init","cwd":"'"$(pwd)"'","session_id":"sandbox-e2e","tools":[],"model":"mock/sandbox-e2e"}'

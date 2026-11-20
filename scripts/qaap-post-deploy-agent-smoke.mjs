@@ -116,6 +116,67 @@ export function findProviderCredentialRejection(detail) {
     return trimmed.length > 200 ? `${trimmed.slice(0, 199)}…` : trimmed;
 }
 
+/**
+ * A signed-in harness that stopped on its subscription's usage window ("You've hit your session limit
+ * · resets 2:50am (UTC)"): the account's quota, not the release, so the smoke is inconclusive.
+ */
+const ACCOUNT_USAGE_LIMIT = /you['’]ve hit your (?:session|usage|weekly|daily|5-hour) limit|usage limit (?:reached|exceeded)|insufficient_quota|exceeded your current quota/i;
+
+export function findAccountUsageLimit(detail) {
+    const texts = [typeof detail?.log === 'string' ? detail.log : '', describeTaskFailure(detail) ?? ''];
+    for (const text of texts) {
+        const match = ACCOUNT_USAGE_LIMIT.exec(text);
+        if (match) {
+            const line = text.slice(text.lastIndexOf('\n', match.index) + 1).split('\n')[0].trim();
+            const trimmed = redactSecrets(line || match[0]);
+            return trimmed.length > 200 ? `${trimmed.slice(0, 199)}…` : trimmed;
+        }
+    }
+    return undefined;
+}
+
+/**
+ * A harness whose own sign-in expired on the smoke account ("Failed to authenticate: OAuth session
+ * expired and could not be refreshed", "Please run /login"): the account must sign in again; the
+ * release is not at fault, so the smoke is inconclusive. Qaap-side failures (spawn, CODEX_HOME,
+ * sandbox, runner) never match and still fail the deploy.
+ */
+const HARNESS_SIGN_IN_EXPIRED = /oauth (?:session|token) (?:has )?expired|session expired and could not be refreshed|refresh token (?:is )?(?:expired|invalid|revoked)|please run \/login|not logged in\b|you are not signed in|re-?authenticate|invalid_grant/i;
+
+export function findHarnessSignInExpired(detail) {
+    const texts = [typeof detail?.log === 'string' ? detail.log : '', describeTaskFailure(detail) ?? ''];
+    for (const text of texts) {
+        const match = HARNESS_SIGN_IN_EXPIRED.exec(text);
+        if (match) {
+            const line = text.slice(text.lastIndexOf('\n', match.index) + 1).split('\n')[0].trim();
+            const trimmed = redactSecrets(line || match[0]);
+            return trimmed.length > 200 ? `${trimmed.slice(0, 199)}…` : trimmed;
+        }
+    }
+    return undefined;
+}
+
+/**
+ * The provider refused the requested model for this account (GitHub Copilot: `400 {"error":{"message":
+ * "The requested model is not supported.","code":"model_not_supported"}}`; Codex on a ChatGPT account).
+ * The same wording the product classifies as `model_unavailable` (qaap-shared-core
+ * qaap-agent-failure-message.ts). Account-level, not a release fault, so the smoke is inconclusive.
+ */
+const MODEL_REJECTED_BY_PROVIDER = /model_not_supported|requested model is not supported|model is not supported when using codex/i;
+
+export function findProviderModelRejection(detail) {
+    const texts = [typeof detail?.log === 'string' ? detail.log : '', describeTaskFailure(detail) ?? ''];
+    for (const text of texts) {
+        const match = MODEL_REJECTED_BY_PROVIDER.exec(text);
+        if (match) {
+            const line = text.slice(text.lastIndexOf('\n', match.index) + 1).split('\n')[0].trim();
+            const trimmed = redactSecrets(line || match[0]);
+            return trimmed.length > 200 ? `${trimmed.slice(0, 199)}…` : trimmed;
+        }
+    }
+    return undefined;
+}
+
 export { redactSecrets };
 
 const FAILURE_REASON_MAX_CHARS = 400;
@@ -261,7 +322,40 @@ export function judgeTask(detail, token) {
     if (state !== 'completed' && state !== 'completed_with_warnings') {
         const rejection = state === 'failed' ? findProviderCredentialRejection(detail) : undefined;
         if (rejection) {
-            return { ok: false, inconclusive: true, reason: `the model provider rejected the smoke user's credentials: ${rejection}` };
+            return {
+                ok: false,
+                inconclusive: true,
+                reason: `the model provider rejected the smoke user's credentials: ${rejection}`,
+                hint: 'Reconnect the smoke account\'s harness, or use a dedicated smoke account (QAAP_SMOKE_SESSION, QAAP_SMOKE_AGENT).',
+            };
+        }
+        const usageLimit = state === 'failed' ? findAccountUsageLimit(detail) : undefined;
+        if (usageLimit) {
+            return {
+                ok: false,
+                inconclusive: true,
+                reason: `the smoke account's harness hit its subscription usage limit: ${usageLimit}`,
+                hint: 'Wait for the window to reset, or point vars.QAAP_SMOKE_AGENT at another signed-in harness of the smoke account.',
+            };
+        }
+        const signInExpired = state === 'failed' ? findHarnessSignInExpired(detail) : undefined;
+        if (signInExpired) {
+            return {
+                ok: false,
+                inconclusive: true,
+                reason: `the smoke account's harness sign-in expired: ${signInExpired}`,
+                hint: 'Sign the harness in again for the smoke account, or point vars.QAAP_SMOKE_AGENT at another signed-in harness.',
+            };
+        }
+        const modelRejection = state === 'failed' ? findProviderModelRejection(detail) : undefined;
+        if (modelRejection) {
+            const rejectedModel = taskModel(detail);
+            return {
+                ok: false,
+                inconclusive: true,
+                reason: `the provider rejected the smoke account's model (${rejectedModel ? `${rejectedModel}: ` : ''}${modelRejection})`,
+                hint: 'Pick another model for the smoke account, or point vars.QAAP_SMOKE_AGENT at another harness of the smoke account.',
+            };
         }
         const model = taskModel(detail);
         const reason = `task ended in state ${state ?? '<missing>'}${model ? ` on ${model}` : ''} (exit ${detail?.exitCode ?? '-'})`;
@@ -427,8 +521,7 @@ async function main(argv, env) {
     const verdict = judgeTask(detail, expectToken ? token : undefined);
     if (verdict.inconclusive) {
         writeDiagnostics(artifactDir, detail);
-        console.log(`::warning::Post-deploy agent smoke inconclusive: task ${taskId} failed${describeFallbacks(fallbacks)} because ${verdict.reason}. `
-            + 'Update the smoke account\'s provider key in Settings → BYOK, or use a dedicated smoke account (QAAP_SMOKE_SESSION, QAAP_SMOKE_AGENT).');
+        console.log(`::warning::Post-deploy agent smoke inconclusive: task ${taskId} failed${describeFallbacks(fallbacks)} because ${verdict.reason}. ${verdict.hint ?? ''}`.trimEnd());
         return 0;
     }
     if (!verdict.ok) {

@@ -1,0 +1,167 @@
+/********************************************************************************
+ * Copyright (C) 2026 Theia contributors and Qaap product fork.
+ * SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
+ ********************************************************************************/
+
+/*
+ * Sessions sidebar task hover card (`qaap-task-hover-card.ts`): a floating, non-interactive
+ * information panel to the right of a task row. Colors come from the hover widget tokens so dark,
+ * light and high-contrast themes all style it; HC themes get their contrast border.
+ */
+.theia-qaap-task-hover-card {
+  /* `popover` UA styles center the element in the viewport: the card is placed by left/top. */
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  z-index: 10000;
+  box-sizing: border-box;
+  width: max-content;
+  min-width: 220px;
+  max-width: min(360px, calc(100vw - 16px));
+  max-height: calc(100vh - 16px);
+  overflow: hidden;
+  padding: 10px 12px;
+  border: 1px solid var(--theia-editorHoverWidget-border);
+  border-radius: 8px;
+  background: var(--theia-editorHoverWidget-background);
+  color: var(--theia-editorHoverWidget-foreground);
+  box-shadow: 0 6px 20px var(--theia-widget-shadow);
+  font-size: var(--theia-ui-font-size1);
+  line-height: 1.4;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+
+.theia-qaap-task-hover-card.theia-mod-visible {
+  opacity: 1;
+}
+
+.theia-hc .theia-qaap-task-hover-card,
+.theia-hcLight .theia-qaap-task-hover-card {
+  border-color: var(--theia-contrastBorder);
+  box-shadow: none;
+}
+
+.theia-qaap-task-hover-card-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.theia-qaap-task-hover-card-lines {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.theia-qaap-task-hover-card-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+  color: var(--theia-descriptionForeground);
+}
+
+.theia-qaap-task-hover-card-icon.codicon {
+  flex: 0 0 16px;
+  font-size: 14px;
+  line-height: 18px;
+  text-align: center;
+}
+
+.theia-qaap-task-hover-card-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The failure reason may be a sentence: wrap it over at most three lines. */
+.theia-qaap-task-hover-card-line.theia-mod-failure .theia-qaap-task-hover-card-text {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+/* Status glyph colors match the row's status dot. */
+.theia-qaap-task-hover-card-line.theia-mod-status {
+  color: var(--theia-editorHoverWidget-foreground);
+}
+
+.theia-qaap-task-hover-card-line.theia-mod-running .theia-qaap-task-hover-card-icon,
+.theia-qaap-task-hover-card-line.theia-mod-verified .theia-qaap-task-hover-card-icon,
+.theia-qaap-task-hover-card-line.theia-mod-complete .theia-qaap-task-hover-card-icon {
+  color: var(--theia-charts-green);
+}
+
+.theia-qaap-task-hover-card-line.theia-mod-failed .theia-qaap-task-hover-card-icon,
+.theia-qaap-task-hover-card-line.theia-mod-pr-closed .theia-qaap-task-hover-card-icon,
+.theia-qaap-task-hover-card-line.theia-mod-pr-conflicts .theia-qaap-task-hover-card-icon,
+.theia-qaap-task-hover-card-line.theia-mod-checks-failed .theia-qaap-task-hover-card-icon {
+  color: var(--theia-errorForeground);
+}
+
+.theia-qaap-task-hover-card-line.theia-mod-needs-input .theia-qaap-task-hover-card-icon,
+.theia-qaap-task-hover-card-line.theia-mod-checks-pending .theia-qaap-task-hover-card-icon,
+.theia-qaap-task-hover-card-line.theia-mod-changes .theia-qaap-task-hover-card-icon {
+  color: var(--theia-notificationsWarningIcon-foreground);
+}
+
+.theia-qaap-task-hover-card-line.theia-mod-pr-open .theia-qaap-task-hover-card-icon,
+.theia-qaap-task-hover-card-line.theia-mod-pr-ready .theia-qaap-task-hover-card-icon {
+  color: var(--theia-gitDecoration-addedResourceForeground);
+}
+
+.theia-qaap-task-hover-card-line.theia-mod-pr-merged .theia-qaap-task-hover-card-icon {
+  color: var(--theia-charts-purple);
+}
+
+.theia-qaap-task-hover-card-added {
+  color: var(--theia-gitDecoration-addedResourceForeground);
+  margin-right: 6px;
+}
+
+.theia-qaap-task-hover-card-removed {
+  color: var(--theia-gitDecoration-deletedResourceForeground);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theia-qaap-task-hover-card {
+    transition: none;
+  }
+
+  .theia-qaap-task-hover-card-icon.codicon-modifier-spin {
+    animation: none;
+  }
+}
+
+/* Never on touch or hover-less pointers (the script does not arm it there either). */
+@media not all and (hover: hover) and (pointer: fine) {
+  .theia-qaap-task-hover-card {
+    display: none;
+  }
+}
+
+/* Agent line: the harness brand logos (one per harness that worked on the task) instead of a glyph. */
+.theia-qaap-task-hover-card-agent-logos {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  width: auto;
+  min-width: 16px;
+}
+
+.theia-qaap-task-hover-card-agent-logos .theia-qaap-agent-brand-icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}

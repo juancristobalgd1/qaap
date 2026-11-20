@@ -50,6 +50,11 @@ export interface QaapAgentTask {
      * {@code resolveTaskAgentId} in the runner to infer it from {@link command} for those.
      */
     readonly agentId?: string;
+    /**
+     * Harness instance from Settings → Harness ("Add harness", e.g. `codex#2`) this task runs as. The
+     * task runs the base harness {@link agentId} with that instance's binary path and configuration folder.
+     */
+    readonly harnessInstanceId?: string;
     readonly state: QaapAgentTaskState;
     readonly exitCode?: number;
     /** Epoch milliseconds. */
@@ -87,7 +92,7 @@ export interface QaapAgentTask {
      * routes to has no API key for the owner. Nothing a retry on another model of the same agent
      * could fix: model fallback must not re-spawn it.
      */
-    readonly preflightFailure?: 'provider_key_missing';
+    readonly preflightFailure?: 'provider_key_missing' | 'sign_in_required';
     /**
      * Set when an orchestrator (a workflow run) owns the adversarial review for this turn, so the
      * runner must not also run its own. Without it a workflow-driven turn is reviewed twice — once
@@ -180,6 +185,8 @@ export interface QaapAgentTask {
      * a fix turn; cleared before the task settles. Announced with a task event of type `'updated'`.
      */
     readonly verificationPhase?: QaapAgentTaskVerificationPhase;
+    /** Set when Stop could not signal the agent: the task is not stopped and its process may still run. */
+    readonly stopFailure?: string;
 }
 
 /** Progress of the automatic verification loop for a task that is still running. */
@@ -377,12 +384,22 @@ export interface QaapAgentHarnessStatus {
      * Connect flow prepends it to the login command; otherwise a per-user install is "not found".
      */
     readonly cliBinDirectory?: string;
+    /**
+     * The Antigravity CLI the host resolved (`gemini`, `agy` or `antigravity`); only set for the
+     * Antigravity harness. The TUI menu, Connect and the status probe all use this one binary.
+     */
+    readonly cliBin?: string;
     /** The user's last finished turn with this agent, when there is one. */
     readonly lastTurn?: QaapAgentLastTurn;
 }
 
 export interface QaapAgentHarnessStatusResponse {
     readonly harnesses: readonly QaapAgentHarnessStatus[];
+    /**
+     * True only on the desktop app: the binary path and configuration folder of Settings → Harness are
+     * honoured. Elsewhere the settings panel hides those fields and the runner ignores them.
+     */
+    readonly launchOverridesSupported?: boolean;
 }
 
 export interface QaapAgentDescriptor {
@@ -395,14 +412,21 @@ export interface QaapAgentDescriptor {
     /** Authentication state is reported separately from CLI installation. */
     readonly connectionState?: QaapAgentConnectionState;
     /**
-     * How the owner can run this agent right now: their own sign-in (`session`), Qaap-hosted access
-     * (`hosted`, Codex on a plan with credits), nothing usable (`none`), or not yet known (`unknown`).
+     * How the owner can run this agent right now: their own sign-in (`session`), nothing usable (`none`),
+     * or not yet known (`unknown`).
      */
     readonly accessState?: QaapAgentAccessState;
+    /**
+     * Sign-in state for the owner (`QaapHarnessModelAvailability.session`). `available` keeps meaning "can run
+     * now": an enabled harness that is signed out stays listed, and only its Free models are usable.
+     */
+    readonly session?: 'signed-in' | 'signed-out' | 'checking' | 'unknown';
+    /** The Antigravity CLI the host resolved; only set for the Antigravity harness (see {@link QaapAgentHarnessStatus.cliBin}). */
+    readonly cliBin?: string;
 }
 
 /** See {@link QaapAgentDescriptor.accessState}. Resolved by `resolveAgentAccess` on the backend. */
-export type QaapAgentAccessState = 'session' | 'hosted' | 'none' | 'unknown';
+export type QaapAgentAccessState = 'session' | 'none' | 'unknown';
 
 /** Selectable QAIQ model option exposed to the frontend picker. */
 export interface QaapQaiqModelOption {
@@ -413,7 +437,9 @@ export interface QaapQaiqModelOption {
     /** Present for native catalogs when a model is visible but gated by the account plan. */
     readonly available?: boolean;
     /** Why a visible model cannot currently be selected, when it is unavailable. */
-    readonly unavailableReason?: 'plan' | 'not-connected' | 'unknown';
+    readonly unavailableReason?: 'plan' | 'not-connected' | 'unknown' | 'checking';
+    /** Free works without the harness session; Pro needs it (`QaapHarnessModelAvailability.tier`). */
+    readonly tier?: 'free' | 'pro';
 }
 
 /** QAIQ model binding selected by the user in the agent picker submenu. */

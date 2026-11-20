@@ -289,6 +289,7 @@ export class MobileShellWorkHubBootstrapController {
                 this.host.disposeProjectsPanelForDesktopIde();
                 return;
             }
+            this.reopenConversationBeforeDesktopIde(panel);
             await this.prepareWorkHubIdePanelsHidden();
             await this.host.releaseMobileWorkHubBootGuardWhenReady();
             markPreferAgentsSurface();
@@ -305,6 +306,28 @@ export class MobileShellWorkHubBootstrapController {
                 releaseMobileWorkHubBootGuardOnTimeout();
             }
         }
+    }
+
+    /**
+     * Back from the desktop IDE: reopen the sessions sidebar when it was open and the conversation that was open when
+     * the user left, so the Work Hub does not land on the empty new-task shell. Taken once; the transcript restores
+     * its own read position.
+     */
+    protected reopenConversationBeforeDesktopIde(panel: MobileProjectsPanel): void {
+        const target = this.sessionState.conversationBeforeDesktopIde;
+        this.sessionState.conversationBeforeDesktopIde = undefined;
+        const sidebarWasOpen = this.sessionState.sessionsSidebarOpenBeforeDesktopIde;
+        this.sessionState.sessionsSidebarOpenBeforeDesktopIde = undefined;
+        // The panel's disposal hid the sidebar and recorded it as collapsed: an open sidebar opens again (which clears that).
+        if (sidebarWasOpen && !matchesMobileOneColumnLayout() && !panel.isWorkHubSessionsSidebarVisible()) {
+            panel.openWorkHubSessionsSidebar();
+        }
+        if (!target) {
+            return;
+        }
+        panel.openAgentsHubInlineTranscript(target.project, target.summary).catch(error => {
+            console.warn('[qaap-mobile-shell] could not reopen the conversation after the IDE', error);
+        });
     }
 
     /** Collapse restored IDE side sheets before revealing Work Hub (avoids Explorer flash). */

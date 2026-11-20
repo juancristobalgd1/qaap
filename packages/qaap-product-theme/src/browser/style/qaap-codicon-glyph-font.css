@@ -1,0 +1,14 @@
+/* *****************************************************************************
+ * Copyright (C) 2026 Theia contributors and Qaap product fork.
+ * SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
+ * ***************************************************************************** */
+
+/**
+ * Codicon glyphs are drawn by ::before, which inherits font-family from its element. Rules that set
+ * `font-family: inherit` (or `font: inherit`) on a codicon button would otherwise paint the glyph
+ * codepoint in the UI font as a tofu box. Pin the glyph pseudo-element to the codicon font.
+ * Keep this rule in sync with the spec qaap-codicon-glyph-font.spec.ts.
+ */
+.codicon[class*='codicon-']::before {
+    font-family: codicon;
+}

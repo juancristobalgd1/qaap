@@ -64,11 +64,12 @@ function buildUsageCategories(
                 provenance: 'reported',
             });
         }
-        if (usage.outputTokens > 0) {
+        const outputTokens = usage.outputTokensTotal ?? usage.outputTokens;
+        if (outputTokens > 0) {
             categories.push({
                 id: 'output',
                 label: nls.localizeByDefault('Output'),
-                tokens: usage.outputTokens,
+                tokens: outputTokens,
                 toneClass: CATEGORY_TONES.output,
                 provenance: 'reported',
             });

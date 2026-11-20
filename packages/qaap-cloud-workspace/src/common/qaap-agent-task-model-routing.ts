@@ -148,7 +148,9 @@ export function agentModelFitsAgent(
     if (!agentSupportsModelPicker(normalized)) {
         return false;
     }
-    if (vendor === normalized) {
+    // Antigravity's catalog depends on the resolved CLI (gemini ids vs agy labels), so the vendor alone
+    // never proves a pick belongs to this host: a stale agy label must be found in the gemini list to pass.
+    if (vendor === normalized && normalized !== 'antigravity') {
         return true;
     }
     return listCatalog().some(option => option.modelId.trim().toLowerCase() === modelId);

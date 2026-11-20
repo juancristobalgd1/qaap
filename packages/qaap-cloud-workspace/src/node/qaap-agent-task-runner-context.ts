@@ -13,6 +13,7 @@
 // `import type` throughout to avoid a runtime import cycle with the extracted modules (all of which
 // are imported back into `qaap-agent-task-runner.ts`).
 
+import type { QaapHarnessEnvSecretStore } from './qaap-harness-env-secret-store';
 import type { QaapAgentEffortLevel } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
 import type { Emitter } from '@theia/core/lib/common/event';
 import type { PreferenceService } from '@theia/core/lib/common/preferences';
@@ -40,8 +41,10 @@ import type { QaapNativeModelRoutingTable } from '../common/qaap-agent-native-mo
 import type { QaapWorkflowRoutingPolicy } from '../common/qaap-workflow-routing';
 import type { QaapWorktreeChange } from '../common/qaap-verification-scope';
 import type { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
+import type { QaapTaskSandbox } from './qaap-task-sandbox';
 import type { QaapWebPushService } from './qaap-web-push-service';
 import type { QaapBillingStore } from './qaap-billing-store';
+import type { QaapTenantStorageQuotaService } from './qaap-tenant-storage-quota-service';
 import type { QaapAgentHealthTracker } from './qaap-agent-health';
 import type { QaapObservability } from './qaap-observability';
 import type { QaapAgentHookService } from './qaap-agent-hook-service';
@@ -86,6 +89,8 @@ export interface QaapAgentTaskRunnerContext {
     // ─── Injected services ──────────────────────────────────────────────────
     readonly webPush: QaapWebPushService;
     readonly billingStore: QaapBillingStore | undefined;
+    /** Optional so bare harnesses keep the old behaviour: no storage gate without it. */
+    readonly tenantStorageQuota?: QaapTenantStorageQuotaService | undefined;
     readonly preferenceService: PreferenceService | undefined;
     readonly workflowRouting: QaapWorkflowRoutingPolicy | undefined;
     readonly agentHealth: QaapAgentHealthTracker | undefined;
@@ -95,6 +100,9 @@ export interface QaapAgentTaskRunnerContext {
     readonly agentHooks?: QaapAgentHookService;
     /** Decides QAIQ stdio tool calls; absent in bare test harnesses (the default instance is used). */
     readonly toolGate?: QaapToolGateService;
+
+    /** Stall guard for pre-spawn steps (see QAAP_TASK_START_STEP_TIMEOUT_MS); tests shorten it. */
+    readonly taskStartStepTimeoutMs?: number;
 
     // ─── State maps / sets / scalars ────────────────────────────────────────
     readonly tasks: Map<string, QaapAgentTask>;
@@ -110,6 +118,8 @@ export interface QaapAgentTaskRunnerContext {
     readonly queuedApprovalTimers: Map<string, Map<string, NodeJS.Timeout>>;
     readonly qaiqStdioTasks: Set<string>;
     readonly detectedAgents: Map<string, AgentCandidate>;
+    /** Values of the Settings → Harness environment variables (desktop app); absent in tests. */
+    readonly harnessEnvSecrets?: QaapHarnessEnvSecretStore;
     readonly helperTokens: Map<string, string>;
     readonly projectNameCache: Map<string, string>;
     readonly projectInfoCache: Map<string, string | undefined>;
@@ -239,6 +249,10 @@ export interface QaapAgentTaskRunnerContext {
     reservedDevPreviewPort?(task: QaapAgentTask): number | undefined;
     resolveQaiqProviderFlagsFromEnv(env: NodeJS.ProcessEnv): string;
     assertQaiqConfigured(agentId: string, ownerLogin?: string, agentModel?: QaapCreateAgentTaskQaiqModel): void;
+    /** Refuses a Pro model whose harness the owner is not signed in to, before any process spawns. */
+    assertAgentModelAccess(agentId: string, ownerLogin?: string, agentModel?: QaapCreateAgentTaskQaiqModel): void;
+    /** Gives an in-flight sign-in probe up to `budgetMs` to answer (never rejects). */
+    awaitAgentSessionSettled(agentId: string, ownerLogin?: string, budgetMs?: number): Promise<void>;
     applyTemplate(template: string, prompt: string, vars?: Record<string, string>): string;
     applyTemplateWithoutPrompt(template: string, vars?: Record<string, string>): string;
     shellQuote(value: string): string;
@@ -248,7 +262,7 @@ export interface QaapAgentTaskRunnerContext {
     // ─── Process lifecycle / approvals ──────────────────────────────────────
     killAgentProcessTree(
         child: ChildProcess,
-        options?: { readonly escalateAfterMs?: number; readonly onGracePeriodElapsed?: () => void },
+        options?: { readonly escalateAfterMs?: number; readonly onGracePeriodElapsed?: () => void; readonly onSignalFailed?: () => void },
     ): NodeJS.Timeout | undefined;
     reapAgentProcessGroupAfterExit(child: ChildProcess): void;
     findPendingControlRequestEntry(pending: QaapQaiqPendingControlRequest[], idFromApproval?: string): QaapQaiqPendingControlRequest | undefined;
@@ -347,6 +361,10 @@ export interface QaapAgentTaskRunnerContext {
     acquireTaskSandbox?(task: QaapAgentTask): Promise<void>;
     /** Release a sandbox acquired for a task that was stopped before its agent could spawn. */
     releaseTaskSandbox?(taskId: string): void;
+    /** Agents of this backend run inside a per-task sandbox container (QAAP_TASK_SANDBOX on, supported, not container-per-tenant). */
+    runsInTaskSandbox?(): boolean;
+    /** The live task sandbox an agent started at `cwd` runs in, if any (after {@link acquireTaskSandbox}). */
+    agentSandboxFor?(cwd: string): QaapTaskSandbox | undefined;
     buildChildEnv(task: QaapAgentTask): NodeJS.ProcessEnv;
     applyOpenAiVendorCompatEnv(env: NodeJS.ProcessEnv, binding: QaapQaiqModelBinding): void;
     applyQaiqProviderEnv(env: NodeJS.ProcessEnv, command: string, binding?: QaapQaiqModelBinding): void;
@@ -371,5 +389,7 @@ export interface QaapAgentTaskRunnerContext {
     applyOneShotToolGateEnv(env: NodeJS.ProcessEnv, task: Pick<QaapAgentTask, 'ownerLogin' | 'cwd' | 'agentId' | 'command'>): () => void;
     /** Seeds `QAAP_GATE_URL` / `QAAP_GATE_TOKEN` for harnesses that reach the tool gate over HTTP. */
     isToolGateArmed(taskId: string): boolean;
+    /** Whether this backend runs the tool gate at all (token service and helper URL present). */
+    toolGateWired(): boolean;
     applyToolGateEnv(env: NodeJS.ProcessEnv, task: Pick<QaapAgentTask, 'id' | 'ownerLogin' | 'cwd' | 'agentId' | 'command'>): void;
 }

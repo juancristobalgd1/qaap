@@ -3,8 +3,11 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { QaapHarnessEnvSecretStore } from './qaap-harness-env-secret-store';
 import { ContainerModule } from '@theia/core/shared/inversify';
 import { EnvironmentUtils } from '@theia/core/lib/node/environment-utils';
+import { ConnectionContainerModule } from '@theia/core/lib/node/messaging/connection-container-module';
+import { bindQaapSecretPlaceholderResolver, qaapOpenAiConnectionModule } from './qaap-openai-manager-binding';
 import { QaapBackendEnvironmentUtils } from './qaap-backend-env-utils';
 import { bindRootContributionProvider } from '@theia/core';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
@@ -45,6 +48,7 @@ import { QaapAgentConversationEndpoint } from './qaap-agent-conversation-endpoin
 import { QaapConversationReadMarkEndpoint } from './qaap-conversation-read-mark-endpoint';
 import { QaapConversationReadMarkStore } from './qaap-conversation-read-mark-store';
 import { QaapAgentLastTurnStore } from './qaap-agent-last-turn-store';
+import { QaapAgentSessionAttestationStore } from './qaap-agent-session-attestation-store';
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 import { QaapAgentGoalLoopRunner } from './qaap-agent-goal-loop-runner';
 import { QaapTaskPullRequestService } from './qaap-task-pull-request-service';
@@ -64,10 +68,17 @@ import { QaapBillingEndpoint } from './qaap-billing-endpoint';
 import { QaapUsageEndpoint } from './usage/qaap-usage-endpoint';
 import { QaapUsageLimitsService } from './usage/qaap-usage-limits';
 import { QaapUsageScanner } from './usage/qaap-usage-scanner';
+import { QaapUsageScannerRegistry } from './usage/qaap-usage-scanner-registry';
+import { QaapUsageScanTargetResolver } from './usage/qaap-usage-scan-target';
 import { QaapBillingStore } from './qaap-billing-store';
 import { QaapBillingQuotaService } from './qaap-billing-quota-service';
+import { QaapProjectResourcesEndpoint } from './qaap-project-resources-endpoint';
+import { QaapProjectResourcesStore } from './qaap-project-resources-store';
+import { QaapTenantResourceSizing } from './qaap-tenant-resource-sizing';
+import { QaapTenantStorageQuotaService } from './qaap-tenant-storage-quota-service';
 import { QaapBillingQuota } from '@theia/qaap-adapters/lib/common/qaap-billing-quota';
 import { QaapAgentCliUpdateService } from './qaap-agent-cli-update-service';
+import { QaapHarnessSignOutService } from './qaap-harness-sign-out-service';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { QaapAgentStorageHealthCheck } from './qaap-agent-storage-health-check';
 import { QaapConversationStorageHealthCheck } from './qaap-conversation-storage-health-check';
@@ -143,6 +154,7 @@ import { QaapTenantActivityContribution } from './qaap-tenant-activity-contribut
 import { QaapTenantActivityTracker } from './qaap-tenant-activity-tracker';
 import { QaapTenantContainerReaper } from './qaap-tenant-container-reaper';
 import { QaapTenantRuntimeEndpoint } from './qaap-tenant-runtime-endpoint';
+import { QaapTenantUpdateEndpoint } from './qaap-tenant-update-endpoint';
 import { QaapTenantRuntimeMetrics } from './qaap-tenant-runtime-metrics';
 import { QaapTenantRuntimeStore } from './qaap-tenant-runtime-store';
 import { QaapTenantBackendProxyContribution } from './qaap-tenant-backend-proxy';
@@ -162,6 +174,9 @@ import {
 import { filterQaapFrontendEnvironment, isQaapSensitiveEnvKey } from './qaap-env-variables';
 
 export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsync, onActivation) => {
+    // Placeholder resolution for the OpenAI-compatible manager (see qaap-openai-manager-binding.ts).
+    bindQaapSecretPlaceholderResolver(bind);
+    bind(ConnectionContainerModule).toConstantValue(qaapOpenAiConnectionModule);
     // Confine HTTP file uploads to the caller's workspace (auth + ownership); the upstream
     // NodeFileUploadService is unauthenticated and lets absolute paths through its traversal check.
     bind(QaapNodeFileUploadService).toSelf().inSingletonScope();
@@ -185,6 +200,8 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(BackendApplicationContribution).toService(QaapTenantContainerReaper);
     bind(QaapTenantRuntimeEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapTenantRuntimeEndpoint);
+    bind(QaapTenantUpdateEndpoint).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapTenantUpdateEndpoint);
     bind(QaapTenantPreviewRouteTable).toSelf().inSingletonScope();
     bind(QaapFrontendStaticManifest).toSelf().inSingletonScope();
     bind(QaapTenantBackendProxyContribution).toSelf().inSingletonScope();
@@ -338,12 +355,14 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapCloudWorkspaceEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapCloudWorkspaceEndpoint);
     bind(BackendApplicationContribution).toService(QaapPreviewShareProxyContribution);
+    bind(QaapHarnessEnvSecretStore).toSelf().inSingletonScope();
     bind(QaapAgentTaskRunner).toSelf().inSingletonScope();
     bind(QaapAgentStorageHealthCheck).toSelf().inSingletonScope();
     bind(QaapHealthCheckContribution).toService(QaapAgentStorageHealthCheck);
     bind(QaapConversationStorageHealthCheck).toSelf().inSingletonScope();
     bind(QaapHealthCheckContribution).toService(QaapConversationStorageHealthCheck);
     bind(QaapAgentCliUpdateService).toSelf().inSingletonScope();
+    bind(QaapHarnessSignOutService).toSelf().inSingletonScope();
     bind(QaapWorktreeGcContribution).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapWorktreeGcContribution);
     bind(QaapStandaloneTaskModelFallback).toSelf().inSingletonScope();
@@ -356,7 +375,14 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapBillingQuota).toService(QaapBillingQuotaService);
     bind(QaapBillingEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapBillingEndpoint);
+    bind(QaapProjectResourcesStore).toSelf().inSingletonScope();
+    bind(QaapTenantResourceSizing).toSelf().inSingletonScope();
+    bind(QaapTenantStorageQuotaService).toSelf().inSingletonScope();
+    bind(QaapProjectResourcesEndpoint).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapProjectResourcesEndpoint);
     bind(QaapUsageScanner).toSelf().inSingletonScope();
+    bind(QaapUsageScanTargetResolver).toSelf().inSingletonScope();
+    bind(QaapUsageScannerRegistry).toSelf().inSingletonScope();
     bind(QaapUsageLimitsService).toSelf().inSingletonScope();
     bind(QaapUsageEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapUsageEndpoint);
@@ -397,6 +423,7 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     // Per-user read marks behind the Work Hub unread dot (shared by every device of the user).
     bind(QaapConversationReadMarkStore).toSelf().inSingletonScope();
     bind(QaapAgentLastTurnStore).toSelf().inSingletonScope();
+    bind(QaapAgentSessionAttestationStore).toSelf().inSingletonScope();
     bind(QaapConversationReadMarkEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapConversationReadMarkEndpoint);
     bind(QaapAgentApprovalStore).toSelf().inSingletonScope();

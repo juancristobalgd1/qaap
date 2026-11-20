@@ -819,3 +819,18 @@ describe('qaap-transcript-incremental-update', () => {
         );
     });
 });
+
+describe('fingerprintTranscriptMessage closing reports', () => {
+    function withClosingReport(report: string): Parameters<typeof fingerprintTranscriptMessage>[0] {
+        return {
+            id: 'm1',
+            content: '',
+            traceEvents: [{ type: 'error', id: 'closing-report-1', message: report }],
+        } as unknown as Parameters<typeof fingerprintTranscriptMessage>[0];
+    }
+
+    it('changes when a same-length closing report is rewritten', () => {
+        expect(fingerprintTranscriptMessage(withClosingReport('Blocked — needs your input: aaaa')))
+            .to.not.equal(fingerprintTranscriptMessage(withClosingReport('Blocked — needs your input: bbbb')));
+    });
+});

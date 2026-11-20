@@ -26,6 +26,8 @@ import {
     type MobileComposerAttachHandlers,
 } from './qaap-mobile-composer-device-attach';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
+import { attachQaapScrollEdgeFades } from '@theia/qaap-mobile-shell/lib/browser/qaap-scroll-edge-fades';
+import { Disposable } from '@theia/core/lib/common/disposable';
 import {
     type MobileMcpAttachOptions,
     renderMobileMcpAttachView,
@@ -43,17 +45,33 @@ const MOBILE_CONTEXT_ATTACH_EXCLUDED_VARIABLE_NAMES = new Set([
     TASK_CONTEXT_VARIABLE.name,
 ]);
 
+/** One workspace file in the composer's "File" view. */
+export interface ComposerProjectFileMatch {
+    /** Root-prefixed path: the `#file` variable's argument. */
+    readonly path: string;
+    readonly name: string;
+    /** Folder shown under the name ('' at the root). */
+    readonly folder: string;
+    /** File-icon theme class from the label provider; the generic file codicon when absent. */
+    readonly iconClass?: string;
+}
+
 export interface MobileContextAttachServices {
     readonly fileUploadService: FileUploadService;
     readonly fileService: FileService;
     readonly workspaceService: WorkspaceService;
+    /**
+     * Searches the workspace for the in-composer "File" view; without it "File" opens the quick pick.
+     * `fallbackRootUri` is the composer's project folder, searched when no workspace root is open (Work Hub).
+     */
+    readonly searchProjectFiles?: (query: string, fallbackRootUri?: string) => Promise<readonly ComposerProjectFileMatch[]>;
 }
 
 type MobileContextAttachMenuSelection =
     | { kind: 'device-upload' }
     | { kind: 'device-files' }
     | { kind: 'device-images' }
-    | { kind: 'project-file' }
+    | { kind: 'project-file'; path?: string }
     | { kind: 'skill'; skillName: string }
     | { kind: 'variable'; variable: AIContextVariable };
 
@@ -65,11 +83,16 @@ export function dismissMobileContextAttachMenu(): void {
     activeDismiss?.();
 }
 
-function canAttachProjectFile(attachServices?: MobileContextAttachServices): boolean {
+function canAttachProjectFile(attachServices?: MobileContextAttachServices, handlers?: MobileComposerAttachHandlers): boolean {
     if (!attachServices) {
         return false;
     }
-    return attachServices.workspaceService.opened && attachServices.workspaceService.tryGetRoots().length > 0;
+    if (attachServices.workspaceService.opened && attachServices.workspaceService.tryGetRoots().length > 0) {
+        return true;
+    }
+    // The Work Hub composer runs against its project folder without opening it as a workspace:
+    // the in-composer search can still list that folder (the quick pick could not).
+    return !!attachServices.searchProjectFiles && !!handlers?.uploadTargetDir;
 }
 
 function createAttachMenuItem(options: {
@@ -194,6 +217,7 @@ function showContextAttachMenu(
     includeSkillsPicker: boolean,
     mcpOptions?: MobileMcpAttachOptions,
     includeProjectFile = false,
+    searchProjectFiles?: (query: string) => Promise<readonly ComposerProjectFileMatch[]>,
 ): Promise<MobileContextAttachMenuSelection | undefined> {
     const improve = getComposerImprovePromptAction(anchor);
     if (!includeDeviceAttach && !variables.length && !includeSkillsPicker && !mcpOptions && !includeProjectFile && !improve) {
@@ -222,6 +246,13 @@ function showContextAttachMenu(
 
         let showingSkills = false;
         let showingMcp = false;
+        let showingFiles = false;
+        // Edge fades follow whichever element scrolls in the current view (menu, MCP list or skills list).
+        let edgeFades: Disposable | undefined;
+        const attachEdgeFades = (scroller: HTMLElement): void => {
+            edgeFades?.dispose();
+            edgeFades = attachQaapScrollEdgeFades(scroller);
+        };
         let improveItem: HTMLButtonElement | undefined;
         // Live state of the improve item: an empty prompt disables it, typing enables it again.
         const syncImproveItem = (): void => {
@@ -241,7 +272,8 @@ function showContextAttachMenu(
         const renderMainView = (): void => {
             showingSkills = false;
             showingMcp = false;
-            menu.classList.remove('theia-mod-skills-view', 'theia-mod-mcp-view');
+            showingFiles = false;
+            menu.classList.remove('theia-mod-skills-view', 'theia-mod-mcp-view', 'theia-mod-files-view', 'show-file-icons');
             menuBody.replaceChildren();
 
             if (improve) {
@@ -284,7 +316,8 @@ function showContextAttachMenu(
                         'qaap/mobileProjects/stickyComposerAttachProjectFileHint',
                         'Search and attach a file from this workspace',
                     ),
-                    onSelect: () => finish({ kind: 'project-file' }),
+                    submenu: !!searchProjectFiles,
+                    onSelect: () => searchProjectFiles ? renderFilesView(searchProjectFiles) : finish({ kind: 'project-file' }),
                 }));
             }
 
@@ -326,6 +359,7 @@ function showContextAttachMenu(
                     onSelect: () => finish({ kind: 'variable', variable }),
                 }));
             }
+            attachEdgeFades(menuBody);
             menu.focus();
         };
 
@@ -341,7 +375,74 @@ function showContextAttachMenu(
                 onBack: () => renderMainView(),
                 onCloseMenu: () => finish(undefined),
             });
+            attachEdgeFades(menuBody);
             menu.focus();
+        };
+
+        // The workspace file search lives in the composer menu (it used to open the top quick pick).
+        const renderFilesView = (search: (query: string) => Promise<readonly ComposerProjectFileMatch[]>): void => {
+            showingFiles = true;
+            showingSkills = false;
+            showingMcp = false;
+            // `show-file-icons` lets the active file-icon theme paint the per-type icons, as in the quick pick.
+            menu.classList.add('theia-mod-skills-view', 'theia-mod-files-view', 'show-file-icons');
+            menuBody.replaceChildren();
+            menuBody.append(createAttachMenuBackButton(
+                nls.localize('qaap/mobileProjects/stickyComposerAttachBack', 'Back'),
+                () => renderMainView(),
+            ));
+
+            const scroll = document.createElement('div');
+            scroll.className = 'theia-mobile-skills-attach-scroll theia-mobile-files-attach-scroll';
+            menuBody.append(scroll);
+            attachEdgeFades(scroll);
+
+            const showMessage = (text: string): void => {
+                const empty = document.createElement('div');
+                empty.className = 'theia-mobile-projects-sticky-composer-attach-menu-empty';
+                empty.textContent = text;
+                scroll.replaceChildren(empty);
+            };
+            let generation = 0;
+            let debounce: number | undefined;
+            const runSearch = (query: string): void => {
+                const current = ++generation;
+                search(query).then(matches => {
+                    if (current !== generation || !showingFiles) {
+                        return;
+                    }
+                    if (matches.length === 0) {
+                        showMessage(nls.localize('qaap/mobileProjects/stickyComposerAttachFilesNoMatch', 'No files match your search.'));
+                        return;
+                    }
+                    scroll.replaceChildren(...matches.map(match => createAttachMenuItem({
+                        iconClasses: match.iconClass ? `${match.iconClass} file-icon` : 'codicon codicon-file',
+                        label: match.name,
+                        hint: match.folder || undefined,
+                        compact: true,
+                        onSelect: () => finish({ kind: 'project-file', path: match.path }),
+                    })));
+                }, () => {
+                    if (current === generation && showingFiles) {
+                        showMessage(nls.localize('qaap/mobileProjects/stickyComposerAttachFilesError', 'Could not search the workspace files.'));
+                    }
+                });
+            };
+
+            const input = createAttachMenuSearchInput({
+                className: 'theia-mobile-skills-attach-search',
+                placeholder: nls.localize('qaap/mobileProjects/filesAttachSearch', 'Search files…'),
+                onInput: value => {
+                    if (debounce !== undefined) {
+                        window.clearTimeout(debounce);
+                    }
+                    debounce = window.setTimeout(() => runSearch(value), 120);
+                },
+            });
+            menuBody.insertBefore(input, scroll);
+            showMessage(nls.localize('qaap/mobileProjects/stickyComposerAttachFilesLoading', 'Searching…'));
+            runSearch('');
+            requestAnimationFrame(() => input.focus());
         };
 
         const renderSkillsView = (): void => {
@@ -357,6 +458,7 @@ function showContextAttachMenu(
             const scroll = document.createElement('div');
             scroll.className = 'theia-mobile-skills-attach-scroll';
             menuBody.append(scroll);
+            attachEdgeFades(scroll);
 
             let filterQuery = '';
             const renderSkillRows = (): void => {
@@ -424,7 +526,7 @@ function showContextAttachMenu(
                     renderMainView();
                     return;
                 }
-                if (showingSkills) {
+                if (showingSkills || showingFiles) {
                     renderMainView();
                     return;
                 }
@@ -435,6 +537,8 @@ function showContextAttachMenu(
         let stopPositioning = (): void => undefined;
 
         const dismiss = (): void => {
+            edgeFades?.dispose();
+            edgeFades = undefined;
             document.removeEventListener('pointerdown', onPointerDown, true);
             document.removeEventListener('keydown', onKeyDown, true);
             detachImprove();
@@ -575,7 +679,9 @@ export async function pickMobileContextVariable(
         await skillService.ready;
     }
     const skills = skillService?.getSkills() ?? [];
-    const includeProjectFile = canAttachProjectFile(attachServices);
+    const includeProjectFile = canAttachProjectFile(attachServices, handlers);
+    const projectFolder = handlers?.uploadTargetDir?.toString();
+    const searchProjectFiles = attachServices?.searchProjectFiles;
     const selected = await showContextAttachMenu(
         anchor,
         variables,
@@ -584,6 +690,7 @@ export async function pickMobileContextVariable(
         !!skillService,
         mcpOptions,
         includeProjectFile,
+        searchProjectFiles ? query => searchProjectFiles(query, projectFolder) : undefined,
     );
     if (!selected) {
         return [];
@@ -598,6 +705,9 @@ export async function pickMobileContextVariable(
     }
     if (selected.kind === 'device-files' || selected.kind === 'device-images') {
         return resolveDeviceAttachSelection(selected, attachServices!, handlers);
+    }
+    if (selected.kind === 'project-file' && selected.path) {
+        return [{ variable: FILE_VARIABLE, arg: selected.path }];
     }
     if (selected.kind === 'project-file') {
         const resolved = await resolveComposerProjectFileAttachment(variableService, FILE_VARIABLE);

@@ -147,7 +147,7 @@ export function createTranscriptActivityFileChipExtracted(ctx: MobileProjectsTra
             chip.title = fullPath;
         }
         const icon = document.createElement('span');
-        icon.className = `codicon ${ctx.transcriptFileIconClass(detail)}`;
+        icon.className = ctx.transcriptFileIconClass(detail);
         icon.setAttribute('aria-hidden', 'true');
         const label = document.createElement('span');
         label.className = 'theia-mobile-agent-activity-file-chip-label';

@@ -201,7 +201,14 @@ describe('harness login commands', () => {
     };
     for (const [agentId, command] of Object.entries(commands)) {
         it(`runs the verified headless login for ${agentId}`, () => {
-            expect(resolveAgentConnectionFlow(agentId)).to.deep.equal({ kind: 'cli-login', command });
+            const flow = resolveAgentConnectionFlow(agentId);
+            expect(flow.kind).to.equal('cli-login');
+            if (agentId === 'copilot' && process.platform !== 'win32') {
+                // The hidden terminal prefers the npm package's JavaScript entry, then this same command.
+                expect(flow.kind === 'cli-login' && flow.command).to.contain(`else ${command}; fi`);
+            } else {
+                expect(flow.kind === 'cli-login' && flow.command).to.equal(command);
+            }
         });
     }
 });
@@ -227,6 +234,33 @@ describe('harness login challenge parsing (captured output)', () => {
         ].join('\n'), { preferMode: 'session', agentId: 'gemini' });
         expect(challenge?.url?.startsWith('https://accounts.google.com/o/oauth2/v2/auth')).to.equal(true);
         expect(challenge?.codeEntry).to.equal(true);
+    });
+
+    it('asks for the pasted code on the Antigravity `Enter the authorization code:` prompt', () => {
+        const challenge = extractAgentAuthLoginChallenge([
+            'Open this link in your browser:',
+            'https://accounts.google.com/o/oauth2/v2/auth?client_id=x&response_type=code&scope=openid',
+            'Enter the authorization code:',
+        ].join('\n'), { preferMode: 'session', agentId: 'antigravity' });
+        expect(challenge?.url?.startsWith('https://accounts.google.com/o/oauth2/v2/auth')).to.equal(true);
+        expect(challenge?.codeEntry).to.equal(true);
+    });
+
+    it('asks for the pasted code on `Paste the authorization code:` as well', () => {
+        const challenge = extractAgentAuthLoginChallenge([
+            'Visit https://accounts.google.com/o/oauth2/v2/auth?client_id=x&response_type=code',
+            'Paste the authorization code:',
+        ].join('\n'), { preferMode: 'session', agentId: 'antigravity' });
+        expect(challenge?.codeEntry).to.equal(true);
+    });
+
+    it('does not ask for a pasted code on a device-code line (no colon after the code)', () => {
+        const challenge = extractAgentAuthLoginChallenge(
+            'Failed to open browser. Please visit https://github.com/login/device and enter the code 3AA4-2306 manually.',
+            { preferMode: 'session', agentId: 'copilot' },
+        );
+        expect(challenge?.userCode).to.equal('3AA4-2306');
+        expect(!!challenge?.codeEntry).to.equal(false);
     });
 
     it('never trusts a login host for a different harness', () => {

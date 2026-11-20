@@ -74,7 +74,7 @@ export function createTranscriptActivityEditExpandRowExtracted(ctx: MobileProjec
         row.type = 'button';
         row.className = 'theia-mobile-agent-activity-edit-row';
         const icon = document.createElement('span');
-        icon.className = `theia-mobile-agent-activity-edit-row-icon codicon ${ctx.transcriptFileIconClass(entry.path)}`;
+        icon.className = `theia-mobile-agent-activity-edit-row-icon ${ctx.transcriptFileIconClass(entry.path)}`;
         icon.setAttribute('aria-hidden', 'true');
         const info = document.createElement('span');
         info.className = 'theia-mobile-agent-activity-edit-row-info';

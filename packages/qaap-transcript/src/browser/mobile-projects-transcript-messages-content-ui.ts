@@ -33,7 +33,15 @@ import {
     type TranscriptDeferredMarkdownHydrate,
 } from './qaap-transcript-row-defer';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
+import type { WorkHubTranscriptBridge, WorkHubTranscriptPullRequestRef } from '@theia/qaap-transcript-overlay/lib/browser/work-hub-transcript-bridge';
+import {
+    decorateTranscriptPullRequestChips,
+    readTranscriptPullRequestChip,
+    type TranscriptPullRequestRepo,
+} from './qaap-transcript-pull-request-chips';
 import { enhanceTranscriptMarkdownRichContent } from './qaap-transcript-rich-content-ui';
 import { patchTranscriptStreamingTailHtml } from './qaap-transcript-streaming-tail-patch';
 import { enhanceTranscriptCaptureDirectives } from './qaap-transcript-capture-pending-ui';
@@ -172,8 +180,46 @@ interface TranscriptStreamSmoothEntry {
     rafHandle: number | undefined;
 }
 
+/** Settled markdown up to this size renders on the main thread (no raw-text first paint). */
+const TRANSCRIPT_SYNC_MARKDOWN_MAX_CHARS = 20_000;
+/** Historical rows shorter than this are not worth deferring: they render in full at once. */
+const TRANSCRIPT_DEFER_MARKDOWN_MIN_CHARS = 2_500;
+
+/** First ~400 chars of a long message, cut at a line break and with code fences kept balanced. */
+function transcriptDeferredMarkdownExcerpt(clean: string): string {
+    const limit = 400;
+    let excerpt = clean.slice(0, limit);
+    const lastBreak = excerpt.lastIndexOf('\n');
+    if (lastBreak > limit / 2) {
+        excerpt = excerpt.slice(0, lastBreak);
+    }
+    const fences = [...excerpt.matchAll(/^[ \t]*(```|~~~)/gm)];
+    if (fences.length % 2 === 1) {
+        // Cut before the unclosed fence: half a code block would swallow the rest as code.
+        excerpt = excerpt.slice(0, fences[fences.length - 1].index);
+    }
+    return `${excerpt.trimEnd()}…`;
+}
+
 export class MobileProjectsTranscriptMessagesContentUi {
-    constructor(protected readonly host: MobileProjectsTranscriptMessagesHost) { }
+    constructor(
+        protected readonly host: MobileProjectsTranscriptMessagesHost,
+        protected readonly workHub?: Pick<WorkHubTranscriptBridge, 'openPullRequestInPanel' | 'resolveShellProject'>,
+    ) { }
+
+    /** The GitHub repository of the conversation shown, for bare `#n` pull request references. */
+    protected resolveTranscriptGithubRepo(): TranscriptPullRequestRepo | undefined {
+        const github = (this.host.transcriptOpenProject ?? this.workHub?.resolveShellProject())?.github;
+        return github ? { owner: github.owner, name: github.name } : undefined;
+    }
+
+    /** Opens a pull request chip: the Work Hub view for that exact PR, else its GitHub page. */
+    protected openTranscriptPullRequestChip(ref: WorkHubTranscriptPullRequestRef): void {
+        if (this.workHub?.openPullRequestInPanel?.(ref) === true) {
+            return;
+        }
+        window.open(ref.url, '_blank', 'noopener');
+    }
 
     protected previewPublicOrigin(): string {
         return window.location.origin;
@@ -204,6 +250,28 @@ export class MobileProjectsTranscriptMessagesContentUi {
             return undefined;
         }
         return probe.previewUrl || claimUrl;
+    }
+
+    /** Opens a verified preview URL in the project's keyed preview widget, the same call Run app makes. */
+    protected async openProjectPreviewWidget(url: string): Promise<void> {
+        const bootstrap = this.host.projectBootstrap;
+        if (!bootstrap) {
+            return;
+        }
+        try {
+            await bootstrap.openPreview(url, true);
+        } catch (error) {
+            console.warn('[qaap-preview] transcript link could not open the project preview', error);
+        }
+    }
+
+    /** A link to a preview that is down starts it through the Run app launcher instead of dead-ending. */
+    protected async startTranscriptPreviewFromLink(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): Promise<boolean> {
+        if (typeof this.host.requestTranscriptPreview !== 'function') {
+            return false;
+        }
+        await this.host.requestTranscriptPreview(project, summary, { revealPreviewTab: true, allowAgentFallback: false });
+        return true;
     }
 
     async openTranscriptPreviewUrlFromLink(href: string): Promise<boolean> {
@@ -249,7 +317,7 @@ export class MobileProjectsTranscriptMessagesContentUi {
                 // target — resolve through it before giving up.
                 const claimUrl = await this.resolveClaimPreviewUrlFallback();
                 if (!claimUrl) {
-                    return false;
+                    return this.startTranscriptPreviewFromLink(project, summary);
                 }
                 verifiedUrl = claimUrl;
             }
@@ -260,7 +328,7 @@ export class MobileProjectsTranscriptMessagesContentUi {
             if (!probe.ready || !sameIdentity) {
                 const claimUrl = await this.resolveClaimPreviewUrlFallback();
                 if (!claimUrl) {
-                    return false;
+                    return this.startTranscriptPreviewFromLink(project, summary);
                 }
                 verifiedUrl = claimUrl;
             } else {
@@ -276,6 +344,8 @@ export class MobileProjectsTranscriptMessagesContentUi {
             : candidate);
         await this.host.projectsService.recordProjectPreviewUrl(latestProject, verifiedUrl).catch(() => undefined);
 
+        // The Browser tab must show the project's own preview widget (what Run app opens), not the empty tab.
+        await this.openProjectPreviewWidget(verifiedUrl);
         this.host.executionSurfaceTabsUi.selectTranscriptTab('preview', latestProject, summary);
         MobileSnackbar.show(nls.localize('qaap/mobileProjects/previewLinkOpened', 'Preview opened'), { kind: 'success', duration: 1400 });
         return true;
@@ -299,6 +369,13 @@ export class MobileProjectsTranscriptMessagesContentUi {
             TRANSCRIPT_STREAMING_HYBRID_CLASS,
         );
         host.classList.add('theia-mod-markdown');
+        if (clean.length <= TRANSCRIPT_SYNC_MARKDOWN_MAX_CHARS) {
+            // Settled text of ordinary size parses on the main thread in well under a frame. The
+            // worker round trip painted the raw source first (`**`, `#`, backticks) and swapped in
+            // the formatted HTML a beat later — visible on every conversation switch.
+            this.renderTranscriptMarkdownSync(host, linked);
+            return;
+        }
         host.textContent = clean;
         QaapTranscriptMarkdownWorkerClient.get().requestParse(
             host,
@@ -330,6 +407,11 @@ export class MobileProjectsTranscriptMessagesContentUi {
         host.dataset.transcriptStreamParsedLen = String(cleanLength);
         host.dataset.transcriptStreamParsedAt = String(Date.now());
         enhanceTranscriptMarkdownRichContent(host);
+        // Settled block only (the streaming patch path never gets here): one cheap string check
+        // gates the DOM walk.
+        if (html.includes('#') || html.includes('github.com/')) {
+            decorateTranscriptPullRequestChips(host, this.resolveTranscriptGithubRepo());
+        }
         this.attachTranscriptMarkdownLinkHandler(host);
     }
 
@@ -346,12 +428,26 @@ export class MobileProjectsTranscriptMessagesContentUi {
     }
 
     protected renderTranscriptDeferredMarkdownPlaceholder(host: HTMLElement, clean: string): void {
-        host.classList.add('theia-mod-markdown', 'theia-mod-deferred-markdown');
-        const excerpt = clean.length > 180 ? `${clean.slice(0, 180).trimEnd()}…` : clean;
-        host.textContent = excerpt;
+        this.renderTranscriptDeferredMarkdown(host, clean);
+    }
+
+    /**
+     * Historical rows: short ones paint in full right away (deferring them only showed raw
+     * markdown until an idle callback ran); long ones show a formatted excerpt — never raw
+     * source — until they scroll near the viewport and hydrate.
+     */
+    renderTranscriptDeferredMarkdown(host: HTMLElement, clean: string, streaming?: boolean): void {
+        host.classList.add('theia-mod-markdown');
+        if (clean.length <= TRANSCRIPT_DEFER_MARKDOWN_MIN_CHARS) {
+            this.renderTranscriptMarkdownSync(host, this.linkifyTranscriptPreviewUrls(clean));
+            return;
+        }
+        host.classList.add('theia-mod-deferred-markdown');
+        this.renderTranscriptMarkdownSync(host, this.linkifyTranscriptPreviewUrls(transcriptDeferredMarkdownExcerpt(clean)));
         const hydrate: TranscriptDeferredMarkdownHydrate = {
             host,
             content: clean,
+            streaming,
         };
         registerDeferredTranscriptMarkdown(hydrate);
     }
@@ -600,6 +696,13 @@ export class MobileProjectsTranscriptMessagesContentUi {
             }
             const href = target.getAttribute('href');
             if (!href) {
+                return;
+            }
+            const pullRequest = readTranscriptPullRequestChip(target);
+            if (pullRequest) {
+                event.preventDefault();
+                event.stopPropagation();
+                this.openTranscriptPullRequestChip(pullRequest);
                 return;
             }
             event.preventDefault();

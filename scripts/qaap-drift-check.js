@@ -92,6 +92,10 @@ const ALLOWED = [
     /^scripts\/qaap-/,
     // Qaap launch operations (rules, live state, flaky quarantine list); docs only, no product code.
     /^ops\//,
+    // Qaap desktop installers: electron-builder config and icon of the Electron example app. Packaging
+    // only (no product code); the update/runtime logic lives in packages/qaap-product/src/electron-main.
+    /^examples\/electron\/electron-builder\.yml$/,
+    /^examples\/electron\/build-resources\//,
     // Qaap Playwright harness seam: isolate the local app config, preview registry,
     // and port for browser tests so runs do not mutate or terminate a developer's app.
     /^examples\/playwright\/configs\/playwright\.config\.ts$/,
@@ -203,6 +207,19 @@ const ALLOWED = [
     /^examples\/playwright\/src\/tests\/qaap-mobile\.test\.ts$/,
     /^examples\/playwright\/src\/tests\/qaap-transcript-preview-flow\.ui-spec\.ts$/,
     /^examples\/playwright\/src\/tests\/qaap-recovery-preview-resilience\.ui-spec\.ts$/,
+    // Work Hub "Update now" chip browser test (@qaap-mobile job, mocked control-plane routes; test-only).
+    /^examples\/playwright\/src\/tests\/qaap-tenant-update-now\.ui-spec\.ts$/,
+    // One harness availability rule in the agent picker (@qaap-mobile job, stubbed agent list and catalog; test-only).
+    /^examples\/playwright\/src\/tests\/qaap-harness-availability\.ui-spec\.ts$/,
+    // Transcript user-bubble hover actions and scroller-at-column-edge layout (@qaap-mobile job; test-only).
+    /^examples\/playwright\/src\/tests\/qaap-transcript-user-actions-hover\.ui-spec\.ts$/,
+    /^examples\/playwright\/src\/tests\/qaap-transcript-scroll-column-edge\.ui-spec\.ts$/,
+    // Upstream output-view, quick-command and toolbar tests: cases that relied on the sample channel,
+    // command, label replacement and toolbar tool are adjusted or skipped because the example apps
+    // no longer bundle @theia/api-samples (test-only).
+    /^examples\/playwright\/src\/tests\/theia-output-view\.test\.ts$/,
+    /^examples\/playwright\/src\/tests\/theia-quick-command\.test\.ts$/,
+    /^examples\/playwright\/src\/tests\/theia-toolbar\.test\.ts$/,
     // Opt-in classic-IDE surface (QAAP_PLAYWRIGHT_SURFACE=ide) so the upstream suite in
     // playwright.yml drives the IDE instead of the default Work Hub; unset = upstream behaviour.
     /^examples\/playwright\/src\/theia-app-loader\.ts$/,

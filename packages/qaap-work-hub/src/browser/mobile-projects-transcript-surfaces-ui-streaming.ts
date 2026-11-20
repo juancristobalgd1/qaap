@@ -1,4 +1,5 @@
 import type { MobileProjectsTranscriptSurfacesUiContext } from './mobile-projects-transcript-surfaces-ui-context';
+import { stripQaapPreviewCacheBustParam } from '@theia/qaap-shared-core/lib/common/qaap-preview-feedback-transcript';
 import { resolveTranscriptTypedPreviewUrlExtracted } from './mobile-projects-transcript-surfaces-ui-tool-pills';
 // Extracted from mobile-projects-transcript-surfaces-ui.ts
 
@@ -200,7 +201,8 @@ export function suspendTranscriptPreviewIframeExtracted(ctx: MobileProjectsTrans
 
         if (conversationScopeId && !isEmptyPlaceholder) {
             const offscreen = ctx.getOrCreateOffscreenPreviewHost();
-            offscreen.appendChild(chrome.root);
+            pendingPreviewHosts.delete(chrome.root);
+            movePreviewRootKeepingFrame(offscreen, chrome.root);
             if (stagedUrl) {
                 ctx.setProbeReadyPreviewUrl(conversationScopeId, stagedUrl);
             }
@@ -264,7 +266,10 @@ export function mountTranscriptEmbeddedPreviewExtracted(ctx: MobileProjectsTrans
             // navigation (or a URL the user typed) must survive conversation re-renders.
             const current = ctx.mountedPreviewUrl(conversationScopeId) ?? ctx.getTranscriptEmbeddedPreviewUrl();
             if (!host.contains(root)) {
-                host.replaceChildren(root);
+                for (const child of [...host.childNodes]) {
+                    child.remove();
+                }
+                placePreviewRootWhenConnected(host, root);
             }
             if (current !== normalized) {
                 chrome.setUrl(normalized);
@@ -339,7 +344,9 @@ export function resolvePreviewAnnotationScopeExtracted(ctx: MobileProjectsTransc
         try {
             const parsed = new URL(live, window.location.href);
             stablePreviewUrl = parsed.origin;
-            route = `${parsed.pathname || '/'}${parsed.search || ''}${parsed.hash || ''}`;
+            // Hard reload appends `_qaap_cache_bust`: keep it out of the scope key (markers and
+            // clear-after-send must survive a reload) and out of what the user and agent read.
+            route = stripQaapPreviewCacheBustParam(`${parsed.pathname || '/'}${parsed.search || ''}${parsed.hash || ''}`);
         } catch {
             route = '/';
         }
@@ -391,4 +398,53 @@ export async function claimTranscriptPreviewExecutionExtracted(ctx: MobileProjec
         // previous section's global process UUID or section B would never reserve its own preview.
         const claim = await bootstrap.claimPreviewExecution(port, summary.id);
         return claim.kind === 'claimed' ? claim.previewUrl ?? fallbackUrl : undefined;
+}
+
+/**
+ * Moves the preview chrome without reloading its iframe. A plain DOM move (`append`) detaches the
+ * frame and reloads the app, so switching Browser -> Changes -> Browser reloaded the preview each
+ * time (a visible flash). `moveBefore` keeps the frame's state when both ends are in the document;
+ * otherwise this falls back to a normal append.
+ */
+function movePreviewRootKeepingFrame(parent: HTMLElement, root: HTMLElement): void {
+    const atomicMove = (parent as HTMLElement & { moveBefore?: (node: Node, child: Node | null) => void }).moveBefore;
+    if (typeof atomicMove === 'function' && parent.isConnected && root.isConnected) {
+        try {
+            atomicMove.call(parent, root, null);
+            return;
+        } catch {
+            // A move the browser refuses (for example across documents) falls back to append.
+        }
+    }
+    parent.appendChild(root);
+}
+
+/** Frames to wait for a freshly built surface host to be docked before moving the preview into it. */
+const PREVIEW_HOST_CONNECT_MAX_FRAMES = 120;
+
+/** The host each preview chrome was last asked to move into; an older pending placement gives way. */
+const pendingPreviewHosts = new WeakMap<HTMLElement, HTMLElement>();
+
+/**
+ * The Browser surface host is rebuilt and docked right after this mount runs, so it is usually not in
+ * the document yet. The preview chrome waits (still alive in the offscreen host) until it is, then
+ * moves without a reload. A placement superseded by a newer one, or whose host never shows up, leaves
+ * the chrome where it is instead of moving it into a detached host.
+ */
+function placePreviewRootWhenConnected(host: HTMLElement, root: HTMLElement): void {
+    pendingPreviewHosts.set(root, host);
+    const attempt = (frame: number): void => {
+        if (pendingPreviewHosts.get(root) !== host || host.contains(root)) {
+            return;
+        }
+        if (host.isConnected || !root.isConnected) {
+            pendingPreviewHosts.delete(root);
+            movePreviewRootKeepingFrame(host, root);
+            return;
+        }
+        if (frame < PREVIEW_HOST_CONNECT_MAX_FRAMES) {
+            window.requestAnimationFrame(() => attempt(frame + 1));
+        }
+    };
+    attempt(0);
 }

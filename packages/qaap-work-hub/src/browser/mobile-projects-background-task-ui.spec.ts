@@ -255,6 +255,40 @@ describe('MobileProjectsBackgroundTaskUi', () => {
         expect((await createSession('worktree', 'qaap/worktree/a')).snackbar).to.equal(undefined);
     });
 
+    describe('create idempotency key', () => {
+        function uiWithIds(): { ui: { createRequestIdFor(cwd: string, draft: string): string; pendingCreate: unknown }; minted: string[] } {
+            const minted: string[] = [];
+            const ui = Object.create(MobileProjectsBackgroundTaskUi.prototype) as unknown as { createRequestIdFor(cwd: string, draft: string): string; pendingCreate: unknown; newClientRequestId: () => string };
+            ui.newClientRequestId = () => {
+                const id = `req-${minted.length + 1}`;
+                minted.push(id);
+                return id;
+            };
+            return { ui, minted };
+        }
+
+        it('reuses the key of an unfinished create for the same draft and project', () => {
+            const { ui, minted } = uiWithIds();
+            const first = ui.createRequestIdFor('/repo', 'Fix the login bug');
+            expect(ui.createRequestIdFor('/repo', 'Fix the login bug')).to.equal(first);
+            expect(minted).to.have.length(1);
+        });
+
+        it('mints a new key for another draft or another project', () => {
+            const { ui } = uiWithIds();
+            const first = ui.createRequestIdFor('/repo', 'Fix the login bug');
+            expect(ui.createRequestIdFor('/repo', 'Write the release notes')).to.not.equal(first);
+            expect(ui.createRequestIdFor('/other', 'Write the release notes')).to.not.equal(ui.createRequestIdFor('/repo', 'Fix the login bug'));
+        });
+
+        it('mints a new key once the create finished and the pending one is cleared', () => {
+            const { ui } = uiWithIds();
+            const first = ui.createRequestIdFor('/repo', 'Fix the login bug');
+            ui.pendingCreate = undefined;
+            expect(ui.createRequestIdFor('/repo', 'Fix the login bug')).to.not.equal(first);
+        });
+    });
+
     describe('dirty shared workspace on a new task', () => {
         function dirtyResponse(): Response {
             const body = { code: 'dirty_workspace', files: ['README.md', 'hello.txt'], total: 2 };
@@ -331,6 +365,31 @@ describe('MobileProjectsBackgroundTaskUi', () => {
         const project = { id: 'p1', name: 'app' } as unknown as MobileProjectEntry;
         const paidModel = { provider: 'openai' as const, vendor: 'openrouter', modelId: 'openai/gpt-5' };
         const freeModel = { provider: 'openai' as const, vendor: 'openrouter', modelId: 'google/gemma-4-31b-it:free' };
+
+        // The routed agent's live catalog lists both models unlocked (signed in); other agents have no reachable catalog.
+        let originalFetch: typeof fetch;
+        beforeEach(() => {
+            originalFetch = globalThis.fetch;
+            globalThis.fetch = (async (input: RequestInfo | URL) => {
+                if (!String(input).includes('agent=codex')) {
+                    throw new TypeError('Failed to fetch');
+                }
+                return {
+                    ok: true,
+                    // The send catalog is cached per agent for the session, so it also lists the free pick later suites store.
+                    json: async () => ({
+                        models: [
+                            { ...paidModel, label: 'GPT-5', available: true },
+                            { ...freeModel, label: 'Gemma', available: true },
+                            { provider: 'openai', vendor: 'codex', modelId: 'gpt-mini:free', label: 'Mini', available: true },
+                        ],
+                    }),
+                };
+            }) as unknown as typeof fetch;
+        });
+        afterEach(() => {
+            globalThis.fetch = originalFetch;
+        });
 
         function uiWithInner(): { ui: MobileProjectsBackgroundTaskUi; innerCalls: number[] } {
             const ui = new MobileProjectsBackgroundTaskUi({
@@ -409,6 +468,21 @@ describe('MobileProjectsBackgroundTaskUi', () => {
             ui['confirmPaidSend'] = async (): Promise<boolean> => false;
             expect(await ui.submitBackgroundAgentTask(project, 'build it', { agentModel: paidModel })).to.be.undefined;
             expect(innerCalls).to.be.empty;
+        });
+
+        it('holds a paid pick when its availability cannot be checked, without asking or sending', async function (): Promise<void> {
+            this.timeout(10_000);
+            const { ui, innerCalls } = uiWithInner();
+            ui['routeSubmitAgent'] = async (): Promise<string> => 'cursor';
+            let gated = 0;
+            ui['confirmPaidSend'] = async (): Promise<boolean> => {
+                gated++;
+                return true;
+            };
+            const cursorPro = { provider: 'openai' as const, vendor: 'cursor', modelId: 'cursor/pro' };
+            expect(await ui.submitBackgroundAgentTask(project, 'build it', { agentModel: cursorPro })).to.be.undefined;
+            expect(innerCalls).to.be.empty;
+            expect(gated).to.equal(0);
         });
 
         it('starts the task once the paid send is confirmed', async () => {

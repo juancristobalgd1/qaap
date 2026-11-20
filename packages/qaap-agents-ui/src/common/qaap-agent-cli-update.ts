@@ -13,8 +13,11 @@ import { QAAP_AGENT_TASK_API_PATH } from '@theia/qaap-shared-core/lib/common/qaa
 /** GET list / POST update under the agent-tasks API. */
 export const QAAP_AGENT_CLI_UPDATES_PATH = `${QAAP_AGENT_TASK_API_PATH}/cli-updates`;
 
-/** localStorage key for per-agent dismissals of a specific latest version. */
+/** localStorage key for per-agent dismissals of a specific latest version (and the snooze timestamp). */
 export const QAAP_AGENT_CLI_UPDATE_DISMISS_KEY = 'qaap.agentCliUpdate.dismissed';
+
+/** After "Later", no CLI update toast is shown for this long, even when a newer version appears. */
+export const QAAP_AGENT_CLI_UPDATE_SNOOZE_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * Display priority when several CLIs are outdated — show one toast at a time.
@@ -67,6 +70,16 @@ export interface QaapAgentCliUpdateResult {
 
 /** Map of agentId → dismissed latestVersion (persists across reloads; a newer version re-prompts). */
 export type QaapAgentCliUpdateDismissMap = Readonly<Record<string, string>>;
+
+/**
+ * Persisted notice state. Stored as `{ dismissed, snoozedUntil? }`; the legacy shape (a flat
+ * agentId → latestVersion map written before the snooze existed) is still read.
+ */
+export interface QaapAgentCliUpdateStoredState {
+    readonly dismissed: QaapAgentCliUpdateDismissMap;
+    /** Epoch milliseconds until which no CLI update toast is shown. */
+    readonly snoozedUntil?: number;
+}
 
 /**
  * Extract the first semver-like token from CLI `--version` output.
@@ -166,48 +179,120 @@ export function pickNextAgentUpdateToShow(
     })[0];
 }
 
-export function readAgentCliUpdateDismissMap(
-    storage: Pick<Storage, 'getItem'> | undefined = typeof localStorage === 'undefined' ? undefined : localStorage,
-): QaapAgentCliUpdateDismissMap {
+/** How many updates are still waiting to be shown (not dismissed for their latest version). */
+export function countAgentUpdatesToShow(
+    updates: readonly QaapAgentCliUpdateInfo[],
+    dismissed: QaapAgentCliUpdateDismissMap | undefined,
+): number {
+    return updates.filter(info => shouldShowAgentUpdateNotification(info, dismissed)).length;
+}
+
+function defaultAgentCliUpdateStorage(): Storage | undefined {
+    return typeof localStorage === 'undefined' ? undefined : localStorage;
+}
+
+function collectDismissedVersions(source: Record<string, unknown>): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const [key, value] of Object.entries(source)) {
+        if (typeof value === 'string' && value.trim()) {
+            out[key] = value.trim();
+        }
+    }
+    return out;
+}
+
+/** Read the dismiss map and snooze timestamp; tolerates the legacy flat map and corrupt JSON. */
+export function readAgentCliUpdateState(
+    storage: Pick<Storage, 'getItem'> | undefined = defaultAgentCliUpdateStorage(),
+): QaapAgentCliUpdateStoredState {
     if (!storage) {
-        return {};
+        return { dismissed: {} };
     }
     try {
         const raw = storage.getItem(QAAP_AGENT_CLI_UPDATE_DISMISS_KEY);
         if (!raw) {
-            return {};
+            return { dismissed: {} };
         }
         const parsed = JSON.parse(raw) as unknown;
         if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-            return {};
+            return { dismissed: {} };
         }
-        const out: Record<string, string> = {};
-        for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
-            if (typeof value === 'string' && value.trim()) {
-                out[key] = value.trim();
-            }
+        const record = parsed as Record<string, unknown>;
+        const nested = record.dismissed;
+        if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+            const snoozedUntil = typeof record.snoozedUntil === 'number' && Number.isFinite(record.snoozedUntil)
+                ? record.snoozedUntil
+                : undefined;
+            return snoozedUntil === undefined
+                ? { dismissed: collectDismissedVersions(nested as Record<string, unknown>) }
+                : { dismissed: collectDismissedVersions(nested as Record<string, unknown>), snoozedUntil };
         }
-        return out;
+        return { dismissed: collectDismissedVersions(record) };
     } catch {
-        return {};
+        return { dismissed: {} };
     }
+}
+
+function writeAgentCliUpdateState(
+    state: QaapAgentCliUpdateStoredState,
+    storage: Pick<Storage, 'setItem'>,
+): void {
+    try {
+        storage.setItem(QAAP_AGENT_CLI_UPDATE_DISMISS_KEY, JSON.stringify(state));
+    } catch {
+        /* localStorage may be unavailable (private mode / quota) — ignore */
+    }
+}
+
+export function readAgentCliUpdateDismissMap(
+    storage: Pick<Storage, 'getItem'> | undefined = defaultAgentCliUpdateStorage(),
+): QaapAgentCliUpdateDismissMap {
+    return readAgentCliUpdateState(storage).dismissed;
 }
 
 export function rememberAgentCliUpdateDismiss(
     agentId: string,
     latestVersion: string,
-    storage: Pick<Storage, 'getItem' | 'setItem'> | undefined =
-        typeof localStorage === 'undefined' ? undefined : localStorage,
+    storage: Pick<Storage, 'getItem' | 'setItem'> | undefined = defaultAgentCliUpdateStorage(),
 ): void {
     if (!storage || !agentId || !latestVersion) {
         return;
     }
-    const next = { ...readAgentCliUpdateDismissMap(storage), [agentId]: latestVersion };
-    try {
-        storage.setItem(QAAP_AGENT_CLI_UPDATE_DISMISS_KEY, JSON.stringify(next));
-    } catch {
-        /* localStorage may be unavailable (private mode / quota) — ignore */
+    const current = readAgentCliUpdateState(storage);
+    writeAgentCliUpdateState({
+        dismissed: { ...current.dismissed, [agentId]: latestVersion },
+        snoozedUntil: current.snoozedUntil,
+    }, storage);
+}
+
+/**
+ * "Later": dismiss every pending update (its current latest version) and snooze the notice for
+ * {@link QAAP_AGENT_CLI_UPDATE_SNOOZE_MS} from `now`.
+ */
+export function snoozeAgentCliUpdates(
+    pending: readonly Pick<QaapAgentCliUpdateInfo, 'id' | 'latestVersion' | 'updateAvailable'>[],
+    now: number,
+    storage: Pick<Storage, 'getItem' | 'setItem'> | undefined = defaultAgentCliUpdateStorage(),
+): void {
+    if (!storage) {
+        return;
     }
+    const dismissed: Record<string, string> = { ...readAgentCliUpdateState(storage).dismissed };
+    for (const info of pending) {
+        if (info.updateAvailable && info.id && info.latestVersion) {
+            dismissed[info.id] = info.latestVersion;
+        }
+    }
+    writeAgentCliUpdateState({ dismissed, snoozedUntil: now + QAAP_AGENT_CLI_UPDATE_SNOOZE_MS }, storage);
+}
+
+/** True while a "Later" snooze is in effect at `now`. */
+export function isAgentCliUpdateSnoozed(
+    now: number,
+    storage: Pick<Storage, 'getItem'> | undefined = defaultAgentCliUpdateStorage(),
+): boolean {
+    const { snoozedUntil } = readAgentCliUpdateState(storage);
+    return snoozedUntil !== undefined && now < snoozedUntil;
 }
 
 /** Fetch outdated agent CLIs from the backend (auth cookie required). */
@@ -261,4 +346,16 @@ function isAgentCliUpdateInfo(value: unknown): value is QaapAgentCliUpdateInfo {
         && typeof row.latestVersion === 'string'
         && typeof row.updateAvailable === 'boolean'
         && typeof row.updateSupported === 'boolean';
+}
+
+/**
+ * The server's one-sentence failure reason, or `undefined` when the text looks like raw tool output
+ * (an older server, a proxy error page, a thrown stack): the status chip then shows its generic text.
+ */
+export function presentableAgentCliUpdateFailure(message: string | undefined): string | undefined {
+    const detail = message?.trim();
+    if (!detail || detail.length > 240 || /[\r\n]|npm (?:error|ERR!|warn)|<\/?[a-z]|\bat \S+ \(/i.test(detail)) {
+        return undefined;
+    }
+    return detail;
 }

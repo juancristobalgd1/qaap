@@ -12,6 +12,7 @@ const disableImportJSDOM = enableJSDOM();
 import { expect } from 'chai';
 import { clearQaapAuthSession, writeQaapAuthSession } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import type { QaapAgentTaskAgentOption } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { QAAP_AGENT_SIGNED_OUT_EVENT } from '@theia/qaap-shared-core/lib/common/qaap-harness-sign-out';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import {
     COMPOSER_AGENT_CATALOG_SESSION_KEY,
@@ -95,6 +96,17 @@ describe('composer agent catalog session cache', () => {
             expect(window.sessionStorage.getItem(key)).to.be.a('string');
 
             clearQaapAuthSession();
+
+            expect(window.sessionStorage.getItem(key)).to.equal(null);
+        });
+
+        it('clears the stored catalog when a harness signs out', () => {
+            signIn('alice');
+            writeComposerAgentCatalogSession([copilot]);
+            const key = composerAgentCatalogSessionKey('alice')!;
+            expect(window.sessionStorage.getItem(key)).to.be.a('string');
+
+            window.dispatchEvent(new window.CustomEvent(QAAP_AGENT_SIGNED_OUT_EVENT, { detail: { agentId: 'copilot' } }));
 
             expect(window.sessionStorage.getItem(key)).to.equal(null);
         });

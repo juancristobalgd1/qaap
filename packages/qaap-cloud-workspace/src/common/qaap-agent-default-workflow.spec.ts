@@ -396,6 +396,14 @@ describe('buildAgentDevPreviewPromptBlock start ownership', () => {
         expect(block).to.include('Never say the app is already running or that Qaap has started it');
     });
 
+    it('places the plan at the project root and never tells the user to press Run app', () => {
+        const block = buildAgentDevPreviewPromptBlock();
+        expect(block).to.include('at the project root (the task cwd)');
+        expect(block).to.include('"command":"bash","args":["-c","cd <subfolder> && exec <server command> --port {{PORT}}"]');
+        expect(block).to.include('Qaap starts the preview automatically after your turn');
+        expect(block).to.not.include('Then tell the user to press');
+    });
+
     it('the documented example is a launch plan the detector accepts', () => {
         const parsed = parseQaapPreviewLaunchConfigJson('{"version":1,"runtime":"custom","command":"npm","args":["run","start:browser"],"cwd":".","port":3000}');
         expect(parsed.ok).to.equal(true);

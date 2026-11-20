@@ -13,6 +13,18 @@ const BACKOFF_MS = [200, 800];
 const DEFAULT_ASK_TTL_SEC = 600;
 /** Gate answers remembered per call id so the matching `permission.ask` does not ask the user twice. */
 const MAX_REMEMBERED_CALLS = 512;
+/**
+ * Arm state shared by every instance of this module in one process. OpenCode instantiates the plugin more
+ * than once, and the first instance takes the one-time nonce out of the environment, so a later instance
+ * finds no nonce. It reuses the arming of the first one instead of failing closed. Only the first nonce seen
+ * in the process is kept; a different or reused nonce never arms a second time.
+ */
+let processArm;
+
+/** Test-only: forgets the process-wide arm state so specs that create the plugin repeatedly stay independent. */
+export function resetArmStateForTests() {
+    processArm = undefined;
+}
 
 class ConnectionError extends Error { }
 
@@ -100,6 +112,18 @@ export async function armGate(env = process.env, fetchImpl = globalThis.fetch, o
     return false;
 }
 
+/**
+ * True when this process armed the gate with its one nonce. The first caller starts the `/arm` request; every
+ * other instance awaits the same answer. Without a nonce in the process nothing is armed (fail closed).
+ */
+function armProcess(env, fetchImpl, options) {
+    if (!processArm) {
+        return false;
+    }
+    processArm.arming ??= armGate(env, fetchImpl, { ...options, armNonce: processArm.nonce });
+    return processArm.arming;
+}
+
 function gateRequest(rawToolName, input, cwd, callId) {
     return {
         agentId: 'opencode',
@@ -122,6 +146,10 @@ export function createHooks(cwd, env = process.env, fetchImpl = globalThis.fetch
     // One-time arm nonce: taken out of the environment right away so the tools OpenCode spawns never inherit it.
     const armNonce = env.QAAP_GATE_ARM_NONCE;
     delete env.QAAP_GATE_ARM_NONCE;
+    const probeFile = env.QAAP_GATE_PROBE_FILE;
+    if (armNonce && !probeFile && !processArm) {
+        processArm = { nonce: armNonce, arming: undefined };
+    }
     const approved = new Map();
     const remember = callId => {
         if (!callId) {
@@ -132,7 +160,6 @@ export function createHooks(cwd, env = process.env, fetchImpl = globalThis.fetch
         }
         approved.set(String(callId), true);
     };
-    const probeFile = env.QAAP_GATE_PROBE_FILE;
     const probe = line => appendFileSync(probeFile, `${line}\n`);
     return {
         // Fail-closed baseline: Qaap puts its `ask` rules in the inline config, and headless OpenCode
@@ -143,7 +170,7 @@ export function createHooks(cwd, env = process.env, fetchImpl = globalThis.fetch
                 probe('config');
                 return;
             }
-            if (!(await armGate(env, fetchImpl, { ...options, armNonce })) || !config || typeof config.permission !== 'object' || config.permission === null) {
+            if (!(await armProcess(env, fetchImpl, options)) || !config || typeof config.permission !== 'object' || config.permission === null) {
                 return;
             }
             for (const [key, action] of Object.entries(config.permission)) {

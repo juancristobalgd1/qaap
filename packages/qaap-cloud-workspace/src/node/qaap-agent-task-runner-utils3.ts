@@ -9,6 +9,7 @@ import { execFile, spawnSync, type ChildProcess, type SpawnSyncReturns } from 'c
 import * as fs from 'fs';
 import * as path from 'path';
 import { nls } from '@theia/core/lib/common/nls';
+import { agentProcessIdentityOf, signalAgentProcess } from './qaap-agent-process-signal';
 import {
     extractRetrievalKeywords,
     formatRelevantFilesHint,
@@ -31,6 +32,7 @@ import {
 } from '../common/qaap-verification-scope';
 import {
     buildAgentReviewPrompt,
+    groundAgentReviewVerdict,
     parseAgentReviewVerdict,
     parseGitNumstat,
     resolveAgentReviewMode,
@@ -117,10 +119,9 @@ export function reapAgentProcessGroupAfterExit(child: ChildProcess): void {
         }
         return;
     }
-    try {
-        globalThis.process.kill(-pid, 'SIGKILL');
-    } catch {
-        // ESRCH is the common clean case: the agent left no descendants behind.
+    // ESRCH is the common clean case: the agent left no descendants behind.
+    if (signalAgentProcess(-pid, 'SIGKILL', agentProcessIdentityOf(child)) === 'failed') {
+        console.warn(`[qaap-agent] could not reap the process group ${pid}: its descendants may still be running`);
     }
 }
 
@@ -167,6 +168,9 @@ export function listAgents(detectedAgents: Map<string, AgentCandidate>): QaapAge
 
 // ─── DI: probeAgentBinOnce ───────────────────────────────────────────────────
 
+/** Boot-time `<cli> --version` probes never wait longer than this; a miss is logged once and the boot goes on. */
+const AGENT_BIN_VERSION_PROBE_TIMEOUT_MS = 5_000;
+
 export function probeAgentBinOnce(
     agentId: string,
     resolveBin: () => string | undefined,
@@ -180,7 +184,10 @@ export function probeAgentBinOnce(
         return false;
     }
     try {
-        spawnSync(bin, ['--version'], { encoding: 'utf8', timeout: 8000 });
+        const result = spawnSync(bin, ['--version'], { encoding: 'utf8', timeout: AGENT_BIN_VERSION_PROBE_TIMEOUT_MS });
+        if (result.error || result.status !== 0) {
+            console.warn(`[qaap-agent-tasks] ${agentId} --version probe failed: ${result.error?.message ?? `exit ${String(result.status)}`}`);
+        }
         probedAgentBins.add(agentId);
         return true;
     } catch {
@@ -198,6 +205,8 @@ export interface QaapAgentConnectionProbeOptions {
     readonly args?: readonly string[];
     readonly cwd?: string;
     readonly env?: NodeJS.ProcessEnv;
+    /** Probe timeout; defaults to {@link QAAP_AGENT_CONNECTION_PROBE_TIMEOUT_MS} (specs shorten it). */
+    readonly timeoutMs?: number;
 }
 
 /**
@@ -287,21 +296,55 @@ export function resolveAgentConnectionProbeArgs(agentId: string): readonly strin
 export const GEMINI_CLI_CONNECTION_PROBE_SCRIPT = 'test -s "$HOME/.gemini/oauth_creds.json" && echo "logged in" || echo "not logged in"';
 
 /**
+ * Google's Antigravity CLI (`agy`) has no status command, but `agy models` lists the catalog only with a
+ * session and prints `Please sign in to view available models` without one. `$1` is the agy executable.
+ * Exit 0 with a listing → "logged in"; the sign-in message → "not logged in"; anything else (timeout,
+ * other error) prints nothing and exits non-zero, so the probe reads it as unknown. `timeout` is optional
+ * (absent on macOS): the probe's own 10 s limit then bounds the run.
+ *
+ * agy's output goes to a temp file, never to a `$(…)` pipe: a helper process agy leaves running keeps such
+ * a pipe (and the probe's own stdout) open after `timeout` killed agy, so the shell and the backend's
+ * `execFile` waited for EOF forever and the picker showed "Checking sign-in…" for good. `-k 2` follows the
+ * TERM with a KILL for an agy that ignores it.
+ */
+export const AGY_CLI_CONNECTION_PROBE_SCRIPT = 'T=""; command -v timeout >/dev/null 2>&1 && T="timeout -k 2 8"; '
+    + 'f=$(mktemp 2>/dev/null || echo "${TMPDIR:-/tmp}/qaap-agy-probe.$$"); '
+    + '$T "$1" models >"$f" 2>&1 </dev/null; rc=$?; out=$(cat "$f" 2>/dev/null); rm -f "$f"; '
+    + 'case "$out" in *"Please sign in"*) echo "not logged in" ;; *) [ "$rc" -eq 0 ] && echo "logged in" ;; esac';
+
+/**
  * Pi has no provider-agnostic status command (`pi auth check` needs `--provider`). `/login` and
  * API-key logins both store an entry with a `"type"` in `~/.pi/agent/auth.json` (`{}` when empty).
  */
 export const PI_CONNECTION_PROBE_SCRIPT = 'f="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/auth.json"; grep -q \'"type"\' "$f" 2>/dev/null && echo "logged in" || echo "not logged in"';
+
+/**
+ * Codex sign-in check. `codex login status` alone is fooled by a hollow `auth.json`: with
+ * `{"OPENAI_API_KEY":null,"tokens":null}` it prints "Logged in using ChatGPT" and exits 0, while every
+ * turn then fails ("plan type is required for chatgpt authentication" or "401 Unauthorized: Missing
+ * bearer"). So when the file exists it must carry a non-empty ChatGPT token before the CLI's own answer
+ * counts; without the file (keyring storage) the CLI decides alone. `$1` is the codex executable.
+ */
+export const CODEX_CONNECTION_PROBE_SCRIPT = 'f="${CODEX_HOME:-$HOME/.codex}/auth.json"; if [ -f "$f" ] && ! grep -Eq \'"(access_token|refresh_token)"[[:space:]]*:[[:space:]]*"[^"]\' "$f"; then echo "not logged in"; exit 0; fi; exec "$1" login status';
 
 /** Executable + argv that report one harness's sign-in state, for the executable it runs as. */
 export function resolveAgentConnectionProbe(agentId: string, bin: string): { readonly file: string; readonly args: readonly string[] } | undefined {
     const normalized = agentId.trim().toLowerCase();
     if (normalized === 'antigravity' || normalized === 'gemini') {
         // The community `antigravity`/`ag` CLI talks to a running Antigravity desktop app and has
-        // no sign-in of its own; only the Gemini CLI fallback can be signed in on a server.
-        return path.basename(bin) === 'gemini' ? { file: 'sh', args: ['-c', GEMINI_CLI_CONNECTION_PROBE_SCRIPT] } : undefined;
+        // no sign-in of its own. `agy` (the supported client) and the Gemini CLI fallback can be signed in.
+        const base = path.basename(bin);
+        if (base === 'agy') {
+            return { file: 'sh', args: ['-c', AGY_CLI_CONNECTION_PROBE_SCRIPT, 'agy-probe', bin] };
+        }
+        return base === 'gemini' ? { file: 'sh', args: ['-c', GEMINI_CLI_CONNECTION_PROBE_SCRIPT] } : undefined;
     }
     if (normalized === 'pi') {
         return { file: 'sh', args: ['-c', PI_CONNECTION_PROBE_SCRIPT] };
+    }
+    if (normalized === 'codex' && process.platform !== 'win32') {
+        // No POSIX shell on Windows: there the CLI's own `login status` answers alone.
+        return { file: 'sh', args: ['-c', CODEX_CONNECTION_PROBE_SCRIPT, 'codex-probe', bin] };
     }
     const args = resolveAgentConnectionProbeArgs(normalized);
     return args ? { file: bin, args } : undefined;
@@ -320,12 +363,25 @@ export function classifyAgentConnectionProbe(
     const sample = output.toLowerCase();
     // `codex login status` → "Logged in using an API key - sk-…": Codex must run on a ChatGPT
     // sign-in (only QAIQ uses API keys), so an API-key login needs the sign-in flow.
-    if (agentId.trim().toLowerCase() === 'codex' && /logged in using an api key/.test(sample)) {
+    // codex-cli ≥ 0.16x words the same state "API key configured - ***".
+    if (agentId.trim().toLowerCase() === 'codex' && /logged in using an api key|api key configured/.test(sample)) {
         return 'disconnected';
     }
     if (/\"(?:authenticated|isloggedin|loggedin)\"\s*:\s*false/.test(sample)
         || /not logged in|not authenticated|logged out|no active login|no credentials|no providers configured|not connected|no authentication information found|sign in required/.test(sample)) {
         return 'disconnected';
+    }
+    // Cursor (`status` / `agent login`) that reports a successful login counts as connected even when it adds
+    // "unable to fetch user details": the CLI itself says the sign-in succeeded. A turn that later proves the token
+    // rejected ("Authentication required. Please run 'agent login' first") still flips the session to disconnected.
+    // Checked after the disconnected patterns above, so "Not logged in" never reads as connected.
+    if (agentId.trim().toLowerCase() === 'cursor' && status === 0 && /login successful|logged in/.test(sample)) {
+        return 'connected';
+    }
+    // Cursor with no successful-login line and "unable to fetch user details" stays inconclusive: unknown, which the
+    // Free/Pro rule locks like a sign-out (fail-closed).
+    if (agentId.trim().toLowerCase() === 'cursor' && /unable to fetch user details/.test(sample)) {
+        return 'unknown';
     }
     if (status !== 0) {
         return 'unknown';
@@ -351,6 +407,13 @@ export function classifyAgentConnectionProbe(
  * loaded VPS; a timeout only ever yields `unknown`, never a usable answer.
  */
 export const QAAP_AGENT_CONNECTION_PROBE_TIMEOUT_MS = 10_000;
+/**
+ * After the probe timeout, how long the probe may still take to hand back its pipes before it is settled as
+ * `unknown` anyway. `execFile` kills the child at the timeout but only calls back once every holder of its
+ * stdout/stderr has closed them; a grandchild (agy's helper, a tenant wrapper's descendant) can hold them
+ * forever, and an unsettled probe kept the session `checking` for good.
+ */
+export const QAAP_AGENT_CONNECTION_PROBE_SETTLE_GRACE_MS = 1_500;
 
 /**
  * Asynchronous auth probe. Never use a synchronous spawn here: the picker catalog, the settings
@@ -367,13 +430,23 @@ export function probeAgentConnectionState(
     if (!args) {
         return Promise.resolve('unknown');
     }
+    const timeoutMs = options?.timeoutMs ?? QAAP_AGENT_CONNECTION_PROBE_TIMEOUT_MS;
     return new Promise<QaapAgentConnectionState>(resolve => {
+        let settled = false;
+        let settleTimer: ReturnType<typeof setTimeout> | undefined;
+        const settle = (state: QaapAgentConnectionState): void => {
+            if (!settled) {
+                settled = true;
+                clearTimeout(settleTimer);
+                resolve(state);
+            }
+        };
         try {
-            execFile(options?.file ?? bin, [...args], {
+            const child = execFile(options?.file ?? bin, [...args], {
                 cwd: options?.cwd,
                 env: childProcessEnv(options?.env),
                 encoding: 'utf8',
-                timeout: QAAP_AGENT_CONNECTION_PROBE_TIMEOUT_MS,
+                timeout: timeoutMs,
                 windowsHide: true,
             }, (error, stdout, stderr) => {
                 const output = `${stdout ?? ''}\n${stderr ?? ''}`;
@@ -381,10 +454,22 @@ export function probeAgentConnectionState(
                 // spawn failure, a timeout or a signal makes the probe inconclusive.
                 const exitCode = typeof error?.code === 'number' ? error.code : undefined;
                 const failed = !!error && (exitCode === undefined || !!error.killed || !!error.signal);
-                resolve(classifyAgentConnectionProbe(normalized, failed ? null : exitCode ?? 0, output, failed));
+                settle(classifyAgentConnectionProbe(normalized, failed ? null : exitCode ?? 0, output, failed));
             });
+            // Hard bound: a probe whose pipes stay open past the timeout is inconclusive, not pending.
+            settleTimer = setTimeout(() => {
+                try {
+                    child.kill('SIGKILL');
+                    child.stdout?.destroy();
+                    child.stderr?.destroy();
+                } catch {
+                    // Already gone.
+                }
+                settle('unknown');
+            }, timeoutMs + QAAP_AGENT_CONNECTION_PROBE_SETTLE_GRACE_MS);
+            settleTimer.unref?.();
         } catch {
-            resolve('unknown');
+            settle('unknown');
         }
     });
 }
@@ -476,7 +561,7 @@ export async function reviewSuccessfulAgentTask(
     const diffForReview = sensitiveChanges.length > 0
         ? `${diff.stdout}\n# gitignored sensitive files CHANGED by this task (not shown above — inspect them):\n${sensitiveChanges.map(name => `#   ${name}`).join('\n')}\n`
         : diff.stdout;
-    const prompt = buildAgentReviewPrompt({ originalCommand: task.command, diff: diffForReview });
+    const prompt = buildAgentReviewPrompt({ originalCommand: task.command, diff: diffForReview, verification });
     // Composer tasks share the workflow judge's brain: routing picks an INDEPENDENT reviewer
     // (not the agent that wrote the change), health cooldowns skip backends whose CLI is down,
     // and an infra-failed reviewer fails over to the next candidate instead of burning the
@@ -527,7 +612,9 @@ export async function reviewSuccessfulAgentTask(
         const verdict = parseAgentReviewVerdict(`${result.stdout}\n${result.stderr}`);
         if (verdict) {
             deps.agentHealth?.noteSuccess(reviewerId);
-            return { status: verdict.status, reason: verdict.reason, agentId: reviewerId };
+            // A rejection without a concrete path:line defect is recorded as approved with notes.
+            const grounded = groundAgentReviewVerdict(verdict);
+            return { status: grounded.status, reason: grounded.reason, agentId: reviewerId };
         }
         if (result.exitCode !== 0 && !result.timedOut) {
             // The reviewer CLI itself died (quota, auth, broken install): cool it down and try

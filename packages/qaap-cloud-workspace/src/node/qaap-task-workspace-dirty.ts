@@ -45,8 +45,9 @@ export function resolveTaskIsolationMode(env: NodeJS.ProcessEnv = process.env): 
 
 /**
  * Uncommitted changes (tracked and untracked) in `cwd` through the tenant-aware git seam. A directory
- * that is not a git repository is `clean` (nothing to protect); a git failure or timeout is `unknown`.
- * Never throws.
+ * that is not a git repository is `clean` (nothing to protect), and so is a repository with no commits
+ * yet: there is no base to diverge from, and a worktree cannot start clean without a commit. A git
+ * failure or timeout is `unknown`. Never throws.
  */
 export async function readDirtyWorkspace(cwd: string, gitRead: QaapGitRead): Promise<QaapDirtyWorkspaceCheck> {
     if (!cwdIsGitRepository(cwd)) {
@@ -81,5 +82,21 @@ export async function readDirtyWorkspace(cwd: string, gitRead: QaapGitRead): Pro
             index++;
         }
     }
-    return total > 0 ? { kind: 'dirty', files, total } : { kind: 'clean' };
+    if (total === 0 || !(await repositoryHasCommits(cwd, gitRead))) {
+        return { kind: 'clean' };
+    }
+    return { kind: 'dirty', files, total };
+}
+
+/**
+ * `false` only when git says `HEAD` does not resolve (an unborn branch). A timeout or a thrown error
+ * counts as having commits, so an unanswered question keeps the workspace protected as dirty.
+ */
+async function repositoryHasCommits(cwd: string, gitRead: QaapGitRead): Promise<boolean> {
+    try {
+        const head = await gitRead(cwd, ['rev-parse', '--verify', '--quiet', 'HEAD']);
+        return head.timedOut === true || head.status === 0;
+    } catch {
+        return true;
+    }
 }

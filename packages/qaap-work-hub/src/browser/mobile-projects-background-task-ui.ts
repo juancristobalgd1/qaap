@@ -46,7 +46,8 @@ import { applyBackendInteractionModeToPrompt } from '@theia/qaap-shared-core/lib
 import { QaapDirtyWorkspaceDialog, retryAfterDirtyWorkspace, type QaapDirtyWorkspaceChoice } from './mobile-projects-workspace-dirty-dialog';
 import { reconcileAgentApprovalPolicyId, type QaapAgentApprovalPolicyId } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import { reconcileAgentToolApprovalRules } from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-approval-rules';
-import { confirmPaidModelSend, resolveSendAgentModel, sendModelBelongsToAgent, warnChooseSendModel } from '@theia/qaap-composer/lib/browser/qaap-paid-model-send-confirm';
+import { resolveAgentDisplayLabel } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
+import { confirmPaidModelSend, resolveSendAgentModel, sendModelBelongsToAgent, warnBlockedSend, warnChooseSendModel } from '@theia/qaap-composer/lib/browser/qaap-paid-model-send-confirm';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
@@ -90,6 +91,9 @@ export interface MobileProjectsBackgroundTaskHost {
 }
 
 export class MobileProjectsBackgroundTaskUi {
+
+    /** The create that has not finished yet: a retry of the same draft in the same project reuses its key. */
+    protected pendingCreate: { readonly cwd: string; readonly draft: string; readonly clientRequestId: string } | undefined;
     protected readonly backgroundSubmitInFlightByProjectId = new Set<string>();
 
     constructor(protected readonly host: MobileProjectsBackgroundTaskHost) { }
@@ -139,6 +143,20 @@ export class MobileProjectsBackgroundTaskUi {
             return g.crypto.randomUUID();
         }
         return `qaap-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    }
+
+    /**
+     * Idempotency key for a create: a retry of the same draft in the same project (after a timeout or
+     * an error) gets the key of the unfinished create, so the backend answers with that conversation
+     * instead of making a duplicate. A different draft or project gets a new key.
+     */
+    protected createRequestIdFor(cwd: string, draft: string): string {
+        if (this.pendingCreate?.cwd === cwd && this.pendingCreate.draft === draft) {
+            return this.pendingCreate.clientRequestId;
+        }
+        const clientRequestId = this.newClientRequestId();
+        this.pendingCreate = { cwd, draft, clientRequestId };
+        return clientRequestId;
     }
 
     async ensureInlineComposerCwd(project: MobileProjectEntry): Promise<string | undefined> {
@@ -236,6 +254,8 @@ export class MobileProjectsBackgroundTaskUi {
             agentModelAgentId?: string;
             /** Opens the composer's agent/model picker when the send is held for a model choice. */
             openModelPicker?: () => void;
+            /** Opens the harness sign-in when the send is held because the chosen model needs it. */
+            openSignIn?: () => void;
             imagePreviews?: readonly QaapTranscriptUserImagePreview[];
             /** Create without a message, then start an "Until done" goal loop with the draft. */
             untilDone?: boolean;
@@ -289,7 +309,11 @@ export class MobileProjectsBackgroundTaskUi {
             const modelResolution = await resolveSendAgentModel(resolvedAgentId, cwd, options.agentModel);
             if (!modelResolution.ok) {
                 // Fail closed: a picker agent with no chosen model is not sent on the CLI default.
-                warnChooseSendModel(resolvedAgentId, options.openModelPicker);
+                this.host.rollbackTranscriptOptimisticSubmit?.();
+                warnBlockedSend(modelResolution, resolveAgentDisplayLabel(resolvedAgentId), {
+                    openSignIn: options.openSignIn,
+                    openModelPicker: options.openModelPicker,
+                });
                 return undefined;
             }
             if (!await this.confirmPaidSend(cwd, modelResolution.model)) {
@@ -574,7 +598,7 @@ export class MobileProjectsBackgroundTaskUi {
         // Idempotency key for this submit: if the create POST is slow enough that the 60s bound below
         // fires, the backend may still create the conversation. A retry carrying the SAME key returns
         // that conversation instead of spawning a duplicate. Reused for the whole submit intent.
-        const clientRequestId = this.newClientRequestId();
+        const clientRequestId = this.createRequestIdFor(cwd, draft);
         const createController = new AbortController();
         const conversation = await this.boundedSubmitStage(createConversation({
             cwd,
@@ -598,6 +622,9 @@ export class MobileProjectsBackgroundTaskUi {
                     ? { autoApprove: true }
                     : {}),
         }, createController.signal), 60_000, 'creating the conversation', () => createController.abort());
+        if (this.pendingCreate?.clientRequestId === clientRequestId) {
+            this.pendingCreate = undefined;
+        }
         if (conversation.worktreeBranch && options.isolation !== 'worktree') {
             // The server isolated the thread because another one is active on this repository.
             MobileSnackbar.show(

@@ -29,9 +29,15 @@ export interface MobileMcpAttachServerRow {
     readonly running: boolean;
     readonly errored: boolean;
     readonly statusHint?: string;
+    /** Server error message, shown as the tooltip of the errored hint. */
+    readonly statusMessage?: string;
     readonly isMarketplacePlugin: boolean;
 }
 
+/**
+ * Single source of truth for the MCP server list shown by the composer "+" menu and by
+ * Settings → MCP: the installed server preference, enriched with live status from the manager.
+ */
 export async function loadMobileMcpAttachServerRows(
     options: MobileMcpAttachOptions,
 ): Promise<MobileMcpAttachServerRow[]> {
@@ -52,6 +58,7 @@ export async function loadMobileMcpAttachServerRows(
             statusHint: errored
                 ? nls.localize('qaap/mobileProjects/mcpAttachErrored', 'Errored')
                 : undefined,
+            statusMessage: errored ? description?.error : undefined,
             isMarketplacePlugin: !!catalog || QAAP_MCP_MARKETPLACE_PLUGINS.some(plugin => plugin.slug === slug),
         });
     }
@@ -70,6 +77,29 @@ function filterMcpAttachRows(
         row.slug.toLowerCase().includes(needle)
         || row.label.toLowerCase().includes(needle),
     );
+}
+
+/** Splits rows into the "User" and "Plugins" sections shared by the composer and Settings → MCP. */
+export function groupMobileMcpAttachRows(rows: readonly MobileMcpAttachServerRow[]): {
+    userRows: MobileMcpAttachServerRow[];
+    pluginRows: MobileMcpAttachServerRow[];
+} {
+    return {
+        userRows: rows.filter(row => !row.isMarketplacePlugin),
+        pluginRows: rows.filter(row => row.isMarketplacePlugin),
+    };
+}
+
+/** The enable/disable action for a server row; the composer and Settings → MCP both use it. */
+export async function toggleMobileMcpAttachServer(
+    mcpFrontendService: MCPFrontendService,
+    row: MobileMcpAttachServerRow,
+): Promise<void> {
+    if (row.running) {
+        await mcpFrontendService.stopServer(row.slug);
+    } else {
+        await mcpFrontendService.startServer(row.slug);
+    }
 }
 
 function createMcpServerIcon(row: MobileMcpAttachServerRow): HTMLElement {
@@ -110,6 +140,122 @@ function createMcpToggle(
         onToggle();
     });
     return toggle;
+}
+
+export interface MobileMcpAttachRowElementOptions {
+    readonly toggleDisabled: boolean;
+    readonly onToggle: () => void;
+    /** When set, a settings button is shown left of the switch; the composer "+" menu leaves it out. */
+    readonly onOpenSettings?: (row: MobileMcpAttachServerRow) => void;
+}
+
+function createMcpSettingsButton(
+    row: MobileMcpAttachServerRow,
+    onOpenSettings: (row: MobileMcpAttachServerRow) => void,
+): HTMLButtonElement {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'theia-mobile-mcp-attach-settings-button codicon codicon-settings-gear';
+    button.title = nls.localize('qaap/mobileProjects/mcpAttachServerSettings', 'Server settings: {0}', row.label);
+    button.setAttribute('aria-label', button.title);
+    button.addEventListener('click', ev => {
+        ev.stopPropagation();
+        onOpenSettings(row);
+    });
+    return button;
+}
+
+/** One server row: icon with status dot, name, optional error hint, optional settings button and the enable switch. */
+export function createMobileMcpAttachRowElement(
+    row: MobileMcpAttachServerRow,
+    options: MobileMcpAttachRowElementOptions,
+): HTMLElement {
+    const item = document.createElement('div');
+    item.className = 'theia-mobile-mcp-attach-server-row';
+    item.setAttribute('role', 'menuitem');
+
+    const icon = createMcpServerIcon(row);
+    const text = document.createElement('span');
+    text.className = 'theia-mobile-mcp-attach-server-text';
+
+    const name = document.createElement('span');
+    name.className = 'theia-mobile-mcp-attach-server-name';
+    name.textContent = row.label;
+    text.append(name);
+
+    if (row.statusHint) {
+        const hint = document.createElement('span');
+        hint.className = 'theia-mobile-mcp-attach-server-hint theia-mod-errored';
+        hint.textContent = row.statusHint;
+        if (row.statusMessage) {
+            hint.title = row.statusMessage;
+        }
+        text.append(hint);
+    }
+
+    const toggle = createMcpToggle(row.running, options.toggleDisabled, options.onToggle);
+    if (options.onOpenSettings) {
+        item.append(icon, text, createMcpSettingsButton(row, options.onOpenSettings), toggle);
+    } else {
+        item.append(icon, text, toggle);
+    }
+    return item;
+}
+
+export interface MobileMcpAttachSectionsOptions {
+    readonly mcpOptions: MobileMcpAttachOptions;
+    /** Slugs whose toggle is in flight; their switch is disabled until the action settles. */
+    readonly toggling: Set<string>;
+    /** Re-renders the sections, e.g. when a toggle starts. */
+    readonly rerender: () => void;
+    /** Reloads the rows once a toggle settled. */
+    readonly reload: () => Promise<void>;
+    /** Opens the per-server settings; omitted in the composer, where no settings button is shown. */
+    readonly onOpenSettings?: (row: MobileMcpAttachServerRow) => void;
+}
+
+/** Appends the "User" and "Plugins" sections with live enable switches into `container`. */
+export function renderMobileMcpAttachSections(
+    container: HTMLElement,
+    rows: readonly MobileMcpAttachServerRow[],
+    options: MobileMcpAttachSectionsOptions,
+): void {
+    const { userRows, pluginRows } = groupMobileMcpAttachRows(rows);
+
+    const appendSection = (title: string, sectionRows: readonly MobileMcpAttachServerRow[]): void => {
+        if (sectionRows.length === 0) {
+            return;
+        }
+        const heading = document.createElement('div');
+        heading.className = 'theia-mobile-mcp-attach-section-title';
+        heading.textContent = title;
+        container.append(heading);
+
+        for (const row of sectionRows) {
+            const service = options.mcpOptions.mcpFrontendService;
+            const item = createMobileMcpAttachRowElement(row, {
+                toggleDisabled: !service || options.toggling.has(row.slug),
+                onToggle: () => {
+                    if (!service || options.toggling.has(row.slug)) {
+                        return;
+                    }
+                    options.toggling.add(row.slug);
+                    options.rerender();
+                    void toggleMobileMcpAttachServer(service, row)
+                        .catch(() => undefined)
+                        .finally(async () => {
+                            options.toggling.delete(row.slug);
+                            await options.reload();
+                        });
+                },
+                onOpenSettings: options.onOpenSettings,
+            });
+            container.append(item);
+        }
+    };
+
+    appendSection(nls.localize('qaap/mobileProjects/mcpAttachUserSection', 'User'), userRows);
+    appendSection(nls.localize('qaap/mobileProjects/mcpAttachPluginsSection', 'Plugins'), pluginRows);
 }
 
 export interface RenderMobileMcpAttachViewOptions {
@@ -168,68 +314,14 @@ export function renderMobileMcpAttachView(options: RenderMobileMcpAttachViewOpti
     let filterQuery = '';
     const toggling = new Set<string>();
 
+    const reload = async (): Promise<void> => {
+        rows = await loadMobileMcpAttachServerRows(mcpOptions);
+        renderRows();
+    };
+
     const renderRows = (): void => {
         scroll.replaceChildren();
         const filtered = filterMcpAttachRows(rows, filterQuery);
-        const userRows = filtered.filter(row => !row.isMarketplacePlugin);
-        const pluginRows = filtered.filter(row => row.isMarketplacePlugin);
-
-        const appendSection = (title: string, sectionRows: readonly MobileMcpAttachServerRow[]): void => {
-            if (sectionRows.length === 0) {
-                return;
-            }
-            const heading = document.createElement('div');
-            heading.className = 'theia-mobile-mcp-attach-section-title';
-            heading.textContent = title;
-            scroll.append(heading);
-
-            for (const row of sectionRows) {
-                const item = document.createElement('div');
-                item.className = 'theia-mobile-mcp-attach-server-row';
-                item.setAttribute('role', 'menuitem');
-
-                const icon = createMcpServerIcon(row);
-                const text = document.createElement('span');
-                text.className = 'theia-mobile-mcp-attach-server-text';
-
-                const name = document.createElement('span');
-                name.className = 'theia-mobile-mcp-attach-server-name';
-                name.textContent = row.label;
-                text.append(name);
-
-                if (row.statusHint) {
-                    const hint = document.createElement('span');
-                    hint.className = 'theia-mobile-mcp-attach-server-hint theia-mod-errored';
-                    hint.textContent = row.statusHint;
-                    text.append(hint);
-                }
-
-                const toggle = createMcpToggle(
-                    row.running,
-                    !mcpOptions.mcpFrontendService || toggling.has(row.slug),
-                    () => {
-                        if (!mcpOptions.mcpFrontendService || toggling.has(row.slug)) {
-                            return;
-                        }
-                        toggling.add(row.slug);
-                        renderRows();
-                        const action = row.running
-                            ? mcpOptions.mcpFrontendService.stopServer(row.slug)
-                            : mcpOptions.mcpFrontendService.startServer(row.slug);
-                        void action
-                            .catch(() => undefined)
-                            .finally(async () => {
-                                toggling.delete(row.slug);
-                                rows = await loadMobileMcpAttachServerRows(mcpOptions);
-                                renderRows();
-                            });
-                    },
-                );
-
-                item.append(icon, text, toggle);
-                scroll.append(item);
-            }
-        };
 
         if (filtered.length === 0) {
             const empty = document.createElement('div');
@@ -241,14 +333,12 @@ export function renderMobileMcpAttachView(options: RenderMobileMcpAttachViewOpti
             return;
         }
 
-        appendSection(
-            nls.localize('qaap/mobileProjects/mcpAttachUserSection', 'User'),
-            userRows,
-        );
-        appendSection(
-            nls.localize('qaap/mobileProjects/mcpAttachPluginsSection', 'Plugins'),
-            pluginRows,
-        );
+        renderMobileMcpAttachSections(scroll, filtered, {
+            mcpOptions,
+            toggling,
+            rerender: renderRows,
+            reload,
+        });
     };
 
     search.addEventListener('input', () => {

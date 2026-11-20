@@ -11,6 +11,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { resolveQaapWorktreesRoot, safeUserIdSegment } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
+import { qaapMissingCwdError } from './qaap-missing-cwd-error';
 import { QaapHostedWorktreeRegistry } from '@theia/qaap-shared-core/lib/node/qaap-hosted-worktree-registry';
 import type { QaapApplyConversationWorktreeResponse } from '../common/qaap-agent-conversation';
 
@@ -59,7 +60,7 @@ export class QaapConversationWorktreeService {
     async create(baseCwd: string, ownerLogin?: string): Promise<QaapConversationWorktree> {
         const cwd = path.resolve(baseCwd ?? '');
         if (!path.isAbsolute(cwd) || !this.isDirectory(cwd)) {
-            throw new Error('A valid absolute "cwd" directory is required.');
+            throw qaapMissingCwdError(baseCwd);
         }
         await this.assertGitRepo(cwd);
         const slug = randomUUID().slice(0, 8);

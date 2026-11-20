@@ -228,6 +228,13 @@ describe('buildQaapLaunchHealthPayload', () => {
         expect(JSON.stringify(payload)).to.not.match(/secret|client/i);
     });
 
+    it('omits the operator isolation mode for anonymous callers only', () => {
+        const readiness = evaluateQaapProductionAuthReadiness({ NODE_ENV: 'development' });
+        expect(buildQaapLaunchHealthPayload(readiness, { signedIn: false })).to.not.have.property('backendIsolationMode');
+        expect(buildQaapLaunchHealthPayload(readiness, { signedIn: true })).to.have.property('backendIsolationMode');
+        expect(buildQaapLaunchHealthPayload(readiness)).to.have.property('backendIsolationMode');
+    });
+
     it('omits build when the image did not bake a SHA', () => {
         const readiness = evaluateQaapProductionAuthReadiness({ NODE_ENV: 'development' });
         const payload = buildQaapLaunchHealthPayload(readiness, { skipAuth: true, build: '  ' });

@@ -6,6 +6,7 @@
 import * as markdownit from '@theia/core/shared/markdown-it';
 import * as markdownitemoji from '@theia/core/shared/markdown-it-emoji';
 import { parseHTML } from 'linkedom';
+import { normalizeChatMarkdownListBreaks } from '../common/qaap-chat-markdown-list-normalize';
 import { computeTranscriptStreamingMarkdownPatch, type TranscriptStreamingFrozenCache } from './qaap-transcript-markdown-worker-stream';
 import type {
     TranscriptMarkdownWorkerRequest,
@@ -40,7 +41,7 @@ function rememberStreamFrozenCache(streamId: number, cache: TranscriptStreamingF
 }
 
 function renderSanitizedMarkdown(markdown: string): string {
-    const html = markdownIt.render(markdown);
+    const html = markdownIt.render(normalizeChatMarkdownListBreaks(markdown));
     return DOMPurify.sanitize(html, {
         ALLOW_UNKNOWN_PROTOCOLS: true,
     }) as string;

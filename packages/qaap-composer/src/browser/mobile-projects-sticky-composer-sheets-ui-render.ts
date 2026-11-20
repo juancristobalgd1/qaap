@@ -1,5 +1,6 @@
 import { DEFAULT_AGENT_APPROVAL_POLICY_ID } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import type { QaapQaiqModelOption } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { pruneDetachedSheetListEdgeFades } from './mobile-projects-sticky-composer-sheet-edge-fades';
 import { renderStickyComposerModelPicker } from './mobile-projects-sticky-composer-model-picker-ui';
 import { matchesMobileNarrowViewport } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import type { MobileProjectsStickyComposerSheetsUiContext } from './mobile-projects-sticky-composer-sheets-ui-context';
@@ -45,6 +46,8 @@ export function closeStickyComposerSheetsExtracted(ctx: MobileProjectsStickyComp
             ctx.host.stickyComposerApprovalSheet = undefined;
         }
         ctx.host.stickyComposerWorkspaceUi.closeComposerWorkspaceSheet();
+        // Sheets are removed above; their list fades stop with them.
+        pruneDetachedSheetListEdgeFades();
         ctx.notifyComposerSheetsClosed();
 }
 

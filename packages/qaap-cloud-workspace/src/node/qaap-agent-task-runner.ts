@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Theia contributors and Qaap product fork.
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
+import { isQaapTenantBackendMode } from '@theia/qaap-adapters/lib/common/qaap-tenant-backend-auth';
 import type { QaapAgentEffortLevel } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
 import { Emitter, Event } from '@theia/core/lib/common/event';
 import { PreferenceService } from '@theia/core/lib/common/preferences';
@@ -31,13 +32,14 @@ import {
     type QaapCreateAgentTaskRequest,
     type QaapAgentWarmResult,
     isQaapAgentTaskFinished,
+    resolveTaskAgentModel,
 } from '../common/qaap-agent-task';
 import type { QaapTurnLatencyMark } from '@theia/qaap-shared-core/lib/common/qaap-agent-stream-metrics';
 import { QaapDevPreviewPortRegistry } from '@theia/qaap-shared-core/lib/node/qaap-dev-preview-port-registry';
 import { type QaapQaiqInteractionFlagOptions } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-interaction-flags';
 import type { QaapPreferenceReader } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
-import { QaapTaskSandboxService } from './qaap-task-sandbox';
+import { QaapTaskSandbox, QaapTaskSandboxService } from './qaap-task-sandbox';
 import {
     canExposeAgentCliBinToChild,
     prependAgentCliBinToPath,
@@ -55,19 +57,22 @@ import { QAAP_TOOL_GATE_API_PATH } from '@theia/qaap-shared-core/lib/common/qaap
 import { resolveQaapHarnessCapabilities } from '@theia/qaap-shared-core/lib/common/qaap-harness-capabilities';
 import { QaapProjectFolderTrustStore, resolveProjectFolderTrustRoot } from './qaap-project-folder-trust-store';
 import { QaapHostedWorktreeRegistry } from '@theia/qaap-shared-core/lib/node/qaap-hosted-worktree-registry';
-import { clearNativeAgentModelCache, invalidateNativeAgentModels, prepareNativeAgentModels, type NativeModelDiscoverySpawner } from './qaap-agent-native-models';
+import { antigravityBinFor, clearNativeAgentModelCache, invalidateNativeAgentModels, prepareNativeAgentModels, type NativeModelDiscoverySpawner } from './qaap-agent-native-models';
 import { fireStopAgentHook } from './qaap-agent-task-runner-hooks';
 import { type QaapAgentReadOnlyEnforcement, } from '../common/qaap-agent-readonly-workspace';
 import { type QaapQaiqPendingControlRequest } from '../common/qaap-qaiq-stdio-approvals';
 import { type QaapEmptyAgentTurnResult } from '../common/qaap-agent-empty-turn';
 import { type QaapQaiqModelBinding } from '../common/qaap-qaiq-model-binding';
+import type { QaapHarnessCredentialRoots } from './qaap-harness-credential-remover';
 import { type QaapNativeModelRoutingTable } from '../common/qaap-agent-native-model-routing';
 import { pickReservedDevPreviewPort } from '../common/qaap-agent-live-preview-port';
 import { QaapWebPushService } from './qaap-web-push-service';
 import { QaapBillingStore } from './qaap-billing-store';
+import { QaapTenantStorageQuotaService } from './qaap-tenant-storage-quota-service';
 import { QaapWorkflowRoutingPolicy } from '../common/qaap-workflow-routing';
 import { QaapAgentHealthTracker } from './qaap-agent-health';
 import { classifyAgentLastTurn, QaapAgentLastTurnStore } from './qaap-agent-last-turn-store';
+import { QaapAgentSessionAttestationStore } from './qaap-agent-session-attestation-store';
 import {
     readCodexHelp as readCodexHelpHelper,
     isQaiqRunner as isQaiqRunnerHelper,
@@ -106,8 +111,10 @@ import {
     recordTaskLatencyMark as recordTaskLatencyMarkHelper,
     stripSignInOnlyAgentApiKeyEnv,
 } from './qaap-agent-task-runner-utils3';
+import { QaapHarnessModelAvailability } from '@theia/qaap-shared-core/lib/common/qaap-harness-model-availability';
+import { assertAgentModelAccessExtracted } from './qaap-agent-sign-in-preflight';
 import { countRunningTasksExtracted, defaultAgentExtracted, defaultAgentFreshExtracted, detailExtracted, detectAgentsExtracted, detectAntigravityAgentExtracted, detectCodexAgentExtracted, detectCursorAgentExtracted, detectQaiqAgentExtracted, drainQueuedTasksExtracted, ensureHelperCliExtracted, helperTokenForOwnerExtracted, initExtracted, listAllGroupedByCwdExtracted, listForCwdExtracted, listModelsForAgentExtracted, listQaiqModelsExtracted, loadHelperTokensExtracted, logDetectedAgentsExtracted, normalizeAgentIdExtracted, ownerAtConcurrencyCapExtracted, persistHelperTokensExtracted, repoAtConcurrencyCapExtracted, readCustomAgentsExtracted, reorderQueuedTaskExtracted, resolveAntigravityBinExtracted, resolveCursorAgentBinExtracted, resolveHelperTokenOwnerExtracted, resolveQaiqBinExtracted, resolveTaskAgentIdExtracted, restoreFromDiskExtracted, restorePersistedIndexExtracted, runningTaskCountForOwnerExtracted, runningTaskCountForRepoExtracted, warmForCwdExtracted } from './qaap-agent-task-runner-render2';
-import { assertQaiqConfiguredExtracted, checkQaiqProviderCredentialForOwner as checkQaiqProviderCredentialForOwnerExtracted, buildAgentCommandExtracted, buildRepoMapExtracted, buildTemplateVarsExtracted, cancelExtracted, type QaapAgentTaskCancelOptions, type QaapAgentTaskPauseCause, createExtracted, deleteForCwdExtracted, extractLastAgentMentionExtracted, extractLastAgentMentionTokenExtracted, nativeModelRoutingTableExtracted, normalizeAgentBindingExtracted, previewProviderEnvExtracted, readAgentInstructionsExtracted, readProjectInfoExtracted, readRepoMapExtracted, resolveAgentBindingForTaskExtracted, resolveAgentIdExtracted, resolveAgentModelForRequestExtracted, resolveQaapQaiqBindingExtracted, resolveQaiqProviderFlagsExtracted, retryExtracted, resumeExtracted, stripLeadingAgentMentionExtracted } from './qaap-agent-task-runner-streaming2';
+import { assertQaiqConfiguredExtracted, checkQaiqProviderCredentialForOwner as checkQaiqProviderCredentialForOwnerExtracted, buildAgentCommandExtracted, buildRepoMapExtracted, buildTemplateVarsExtracted, cancelExtracted, type QaapAgentTaskCancelOptions, type QaapAgentTaskPauseCause, createExtracted, deleteForCwdExtracted, deleteTaskExtracted, extractLastAgentMentionExtracted, extractLastAgentMentionTokenExtracted, nativeModelRoutingTableExtracted, normalizeAgentBindingExtracted, previewProviderEnvExtracted, readAgentInstructionsExtracted, readProjectInfoExtracted, readRepoMapExtracted, resolveAgentBindingForTaskExtracted, resolveAgentIdExtracted, resolveAgentModelForRequestExtracted, resolveQaapQaiqBindingExtracted, resolveQaiqProviderFlagsExtracted, retryExtracted, resumeExtracted, stripLeadingAgentMentionExtracted } from './qaap-agent-task-runner-streaming2';
 import { acquireVerificationPassExtracted, clearQueuedApprovalTimerExtracted, clearQueuedApprovalTimersExtracted, findPendingControlRequestEntryExtracted, getApprovalChannelExtracted, killAgentProcessTreeExtracted, maxConcurrentVerificationPassesExtracted, respondToApprovalPromptExtracted, scheduleQueuedApprovalTimeoutExtracted, spawnProcessExtracted, spawnProcessWhenReadyExtracted } from './qaap-agent-task-runner-timeline2';
 import { registerQaapAgentTaskSpawnGate, waitForQaapAgentTaskProcessesExit, type QaapAgentTaskCreateOptions } from './qaap-agent-task-spawn-gate';
 import { injectStdioUserMessageExtracted, type QaapStdioInjectHost } from './qaap-agent-stdio-inject';
@@ -182,11 +189,15 @@ import {
     type QaapGenericCommandResult,
 } from './qaap-agent-task-runner-constants';
 import {
-    isHostedCodexEntitled,
     resolveAgentAccess,
     type QaapAgentConnectionSnapshot,
 } from './qaap-agent-access';
 import { childProcessEnv } from './qaap-child-process-env';
+import { withQaapHarnessInstanceDescriptors } from './qaap-harness-instance-descriptors';
+import { type QaapHarnessLaunchEnvironment, resolveQaapHarnessLaunchEnvironment } from './qaap-harness-launch-environment';
+import { QaapHarnessLaunchOverrideError } from './qaap-harness-launch-overrides';
+import { QaapHarnessEnvSecretStore } from './qaap-harness-env-secret-store';
+import { resolveQaapHarnessBaseId } from '@theia/qaap-shared-core/lib/common/qaap-harness-launch-settings';
 import { qaapGitReadEnv } from './qaap-child-process-env';
 
 /** How long a CLI auth probe answer is considered current before it is re-probed in the background. */
@@ -198,6 +209,14 @@ export const QAAP_AGENT_CONNECTION_PROBE_BUDGET_MS = 1_200;
  * the auth probes. It must outlast a probe: answering `unknown` early made the dialog guess.
  */
 export const QAAP_AGENT_CONNECTION_REFRESH_BUDGET_MS = 12_000;
+
+/** Resolved non-interactive CLI command for one harness in the owner's tenant environment. */
+export interface QaapHarnessCliInvocation {
+    readonly file: string;
+    readonly args: readonly string[];
+    readonly cwd?: string;
+    readonly env: NodeJS.ProcessEnv;
+}
 
 /**
  * Runs background tasks on the VPS as detached-from-tab child processes. A task keeps running
@@ -212,9 +231,17 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public readonly webPush: QaapWebPushService;
 
+    /** Values of the Settings → Harness environment variables; read at spawn on the desktop app only. */
+    @inject(QaapHarnessEnvSecretStore) @optional()
+    public readonly harnessEnvSecrets: QaapHarnessEnvSecretStore | undefined;
+
     @inject(QaapBillingStore) @optional()
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public readonly billingStore: QaapBillingStore | undefined;
+
+    @inject(QaapTenantStorageQuotaService) @optional()
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readonly tenantStorageQuota: QaapTenantStorageQuotaService | undefined;
 
     @inject(PreferenceService) @optional()
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
@@ -247,6 +274,10 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     /** Each user's last turn per agent, shown in the harness settings (see listHarnessStatuses). */
     @inject(QaapAgentLastTurnStore) @optional()
     protected readonly lastTurns: QaapAgentLastTurnStore | undefined;
+
+    /** Attested sign-ins of harnesses without an auth probe (Copilot, Grok); absent, none is ever attested. */
+    @inject(QaapAgentSessionAttestationStore) @optional()
+    protected readonly sessionAttestations: QaapAgentSessionAttestationStore | undefined;
 
     /**
      * Structured agent-command audit. The extracted modules always called `ctx.observability?.…`,
@@ -359,6 +390,13 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     }>();
     /** In-flight asynchronous auth probes, keyed like {@link agentConnectionStates}. */
     protected readonly agentConnectionProbes = new Map<string, Promise<QaapAgentDescriptor['connectionState']>>();
+    /**
+     * Sessions a turn proved unusable (the harness failed with an auth error), keyed like
+     * {@link agentConnectionStates}. They read as `disconnected` whatever the probe says, because the
+     * probe is what was fooled (a hollow Codex `auth.json`, a rejected Cursor token), until the owner
+     * signs in again: the sign-in confirmation runs {@link refreshAgentCatalog}, which clears them.
+     */
+    protected readonly rejectedAgentSessions = new Set<string>();
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public readonly onDidChangeTaskEmitter = new Emitter<QaapAgentTaskEvent>();
@@ -605,10 +643,21 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         return this.detectedAgents.has(QAIQ_AGENT_ID) || this.isOnPath(QAIQ_AGENT_ID);
     }
 
-    /** Re-probe CLI harnesses after a local install from the configuration UI. */
-    refreshAgentCatalog(): void {
+    /**
+     * Re-probe CLI harnesses after a local install or a sign-in from the configuration UI. Only the
+     * refreshing owner's rejected sessions are lifted ({@link rejectedAgentSessions}): another user's
+     * refresh must not unlock a session a failed turn of this user proved unusable.
+     */
+    refreshAgentCatalog(ownerLogin?: string): void {
         this.agentConnectionStates.clear();
         this.agentConnectionProbes.clear();
+        // Keys are `${agentId}:${owner}` (agentConnectionCacheKey); neither part contains a colon.
+        const owner = ownerLogin?.trim().toLowerCase() ?? '';
+        for (const key of [...this.rejectedAgentSessions]) {
+            if (key.slice(key.indexOf(':') + 1) === owner) {
+                this.rejectedAgentSessions.delete(key);
+            }
+        }
         // Harness settings or the CLI may have changed: the next model request runs discovery again.
         clearNativeAgentModelCache();
         this.detectAgents();
@@ -623,24 +672,29 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
 
     /** Agents the UI can offer in its picker, in priority order. */
     listAgents(ownerLogin?: string): QaapAgentDescriptor[] {
-        return listAgentsHelper(this.detectedAgents)
-            .filter(agent => this.isAgentEnabled(agent.id, ownerLogin))
+        const descriptors = listAgentsHelper(this.detectedAgents);
+        return withQaapHarnessInstanceDescriptors(descriptors, this.preferenceReaderForOwner(ownerLogin), this.isAgentEnabled.bind(this), ownerLogin)
             .map(agent => {
+                // A harness instance (`codex#2`) has its own session state (its own cache key); access rules
+                // still follow the base harness it runs as.
+                const harnessId = resolveQaapHarnessBaseId(agent.id);
                 const { connectionState, probeSettled } = this.agentConnectionSnapshot(agent.id, ownerLogin);
-                const accessState = resolveAgentAccess({
-                    agentId: agent.id,
-                    connectionState,
-                    probeSettled,
-                    hostedEntitled: this.hostedCodexAllowed(ownerLogin),
-                });
-                // Codex follows the same access answer as its model list: a disconnected Codex is still
-                // usable through Qaap-hosted access on Pro/Team, and a settled sign-out is not usable.
-                // Other agents keep their connection-only rule.
-                const available = agent.id.toLowerCase() === 'codex'
-                    ? agent.available && accessState !== 'none'
-                    : agent.available && connectionState !== 'disconnected';
-                return { ...agent, available, connectionState, accessState };
+                const accessState = resolveAgentAccess({ agentId: harnessId, connectionState, probeSettled });
+                const session = QaapHarnessModelAvailability.session({ connectionState, accessState, probeSettled });
+                // `available` means "can run now". A signed-out enabled harness stays listed so the picker can
+                // explain its lock; only OpenCode has a Free tier that runs without a session.
+                const available = agent.available && (session !== 'signed-out' || harnessId === 'opencode');
+                const cliBin = this.antigravityCliBinFor(harnessId);
+                return { ...agent, available, connectionState, accessState, session, ...(cliBin ? { cliBin } : {}) };
             });
+    }
+
+    /**
+     * The Antigravity CLI detection resolved at boot (the task template runs this same binary), for the
+     * frontend's TUI menu and Connect. Other harnesses have no such choice and get `undefined`.
+     */
+    protected antigravityCliBinFor(agentId: string): string | undefined {
+        return agentId === 'antigravity' ? this.detectedAgents.get('antigravity')?.bin : undefined;
     }
 
     /**
@@ -695,6 +749,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         return QAAP_HARNESS_DEFINITIONS.map(definition => {
             const candidate = this.detectedAgents.get(definition.id);
             const lastTurn = this.lastTurns?.get(ownerLogin, definition.id);
+            const cliBin = this.antigravityCliBinFor(definition.id);
             const installed = candidate
                 ? !candidate.bin || this.isOnPath(candidate.bin, pathEnv)
                 : this.isOnPath(definition.bin, pathEnv);
@@ -707,9 +762,27 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
                     : 'unknown',
                 installSupported: isInstallSupported(definition.id),
                 cliBinDirectory,
+                ...(cliBin ? { cliBin } : {}),
                 ...(lastTurn ? { lastTurn } : {}),
             };
         });
+    }
+
+    /**
+     * Records that the owner completed the sign-in of a harness that has no auth probe, so it reads as
+     * `connected` until the attestation expires or a turn fails with an auth error. False (nothing
+     * recorded) for a harness with a real probe or a Settings credential, or without an owner. See
+     * {@link QaapAgentSessionAttestationStore} for the threat model.
+     */
+    attestAgentSession(agentId: string, ownerLogin: string | undefined): boolean {
+        const normalized = agentId.trim().toLowerCase();
+        if (!this.sessionAttestations?.attest(ownerLogin, normalized)) {
+            return false;
+        }
+        this.rejectedAgentSessions.delete(this.agentConnectionCacheKey(normalized, ownerLogin));
+        // Same as a probe that turns connected: the catalog discovered while signed out is stale.
+        invalidateNativeAgentModels(normalized, ownerLogin);
+        return true;
     }
 
     /** Authentication state for the current tenant's CLI credentials (last known; never blocks). */
@@ -721,6 +794,132 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     async isAgentConnectedFresh(agentId: string, ownerLogin?: string): Promise<boolean> {
         await this.refreshAgentConnectionState(agentId, ownerLogin);
         return this.isAgentConnected(agentId, ownerLogin);
+    }
+
+    /**
+     * Clears every cached session signal for one harness and owner after a sign-out: probe cache,
+     * any in-flight probe, prior rejection marker, session attestation and native model catalog.
+     */
+    forgetAgentSession(agentId: string, ownerLogin?: string): void {
+        const normalized = agentId.trim().toLowerCase();
+        const cacheKey = this.agentConnectionCacheKey(normalized, ownerLogin);
+        this.agentConnectionStates.delete(cacheKey);
+        this.agentConnectionProbes.delete(cacheKey);
+        this.rejectedAgentSessions.delete(cacheKey);
+        this.sessionAttestations?.revoke(ownerLogin, normalized);
+        invalidateNativeAgentModels(normalized, ownerLogin);
+    }
+
+    /** Re-probes the harness auth state when a probe exists and returns the refreshed connection state. */
+    async agentConnectionStateFresh(
+        agentId: string,
+        ownerLogin?: string,
+    ): Promise<QaapAgentDescriptor['connectionState']> {
+        await this.refreshAgentConnectionState(agentId, ownerLogin);
+        return this.agentConnectionState(agentId, ownerLogin);
+    }
+
+    /** Detected executable name for a built-in harness id (or instance's base id). */
+    detectedAgentBin(agentId: string): string | undefined {
+        const baseId = resolveQaapHarnessBaseId(agentId.trim().toLowerCase());
+        const candidate = this.detectedAgents.get(baseId);
+        return candidate ? (candidate.bin ?? baseId) : undefined;
+    }
+
+    /**
+     * Builds a non-interactive CLI invocation for a harness in the exact same tenant wrapper, HOME,
+     * PATH prefix and desktop launch-override environment used by auth probes and login.
+     */
+    async resolveHarnessCliInvocation(
+        harnessKey: string,
+        args: readonly string[],
+        options?: {
+            readonly ownerLogin?: string;
+            readonly extraEnv?: Readonly<Record<string, string>>;
+            readonly bin?: string;
+        },
+    ): Promise<QaapHarnessCliInvocation | undefined> {
+        const normalizedKey = harnessKey.trim().toLowerCase();
+        const agentId = resolveQaapHarnessBaseId(normalizedKey);
+        const baseBin = options?.bin ?? this.detectedAgentBin(agentId);
+        if (!baseBin) {
+            return undefined;
+        }
+        const owner = options?.ownerLogin?.trim();
+        let launch: QaapHarnessLaunchEnvironment;
+        try {
+            launch = await resolveQaapHarnessLaunchEnvironment(
+                normalizedKey,
+                key => this.preferenceReaderForOwner(owner)(key),
+                this.harnessEnvSecrets,
+            );
+        } catch (error) {
+            if (error instanceof QaapHarnessLaunchOverrideError) {
+                return undefined;
+            }
+            throw error;
+        }
+        const bin = launch.plan.binaryPath ?? baseBin;
+        if (!owner) {
+            const env = stripSignInOnlyAgentApiKeyEnv(childProcessEnv(), agentId);
+            launch.apply(env);
+            if (options?.extraEnv) {
+                Object.assign(env, options.extraEnv);
+            }
+            return { file: bin, args: [...args], env };
+        }
+        const tenantCwd = resolveUserReposRoot(resolveQaapReposRoot(), owner);
+        if (process.env.QAAP_CLOUD_MODE === 'docker' && !fs.existsSync(tenantCwd)) {
+            return undefined;
+        }
+        const wrapped = this.tenantSpawn.wrapArgvForTenant(tenantCwd, bin, [...args]);
+        const env = stripSignInOnlyAgentApiKeyEnv(childProcessEnv({
+            ...process.env,
+            ...this.tenantSpawn.tenantHomeEnvOverlay(tenantCwd),
+        }), agentId);
+        launch.apply(env);
+        if (options?.extraEnv) {
+            Object.assign(env, options.extraEnv);
+        }
+        const prefix = this.resolveAgentCliPrefix(tenantCwd);
+        if (canExposeAgentCliBinToChild(prefix, () => this.isTenantPrivilegeDropActive(tenantCwd))) {
+            prependAgentCliBinToPath(env, prefix);
+        }
+        return {
+            file: wrapped.file,
+            args: wrapped.args,
+            cwd: existingTenantCwd(tenantCwd),
+            env,
+        };
+    }
+
+    /**
+     * Resolves the tenant/user credential roots for file-based harness sign-out.
+     * Returns `undefined` when credentials live inside an isolated worker container or no tenant
+     * workspace exists yet.
+     */
+    resolveHarnessCredentialRoots(ownerLogin?: string): QaapHarnessCredentialRoots | undefined {
+        const owner = ownerLogin?.trim();
+        if (!owner) {
+            return {
+                home: os.homedir(),
+                extraRoots: [],
+                env: childProcessEnv(),
+            };
+        }
+        const tenantCwd = resolveUserReposRoot(resolveQaapReposRoot(), owner);
+        if (process.env.QAAP_CLOUD_MODE === 'docker' && !fs.existsSync(tenantCwd)) {
+            return undefined;
+        }
+        const resolved = this.tenantSpawn.resolveHarnessCredentialRoots(tenantCwd);
+        if (!resolved) {
+            return undefined;
+        }
+        return {
+            home: resolved.home,
+            extraRoots: resolved.extraRoots,
+            env: childProcessEnv(resolved.env ?? process.env),
+        };
     }
 
     /**
@@ -736,8 +935,12 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         if (typeof sources.settingsConnected === 'boolean') {
             return sources.settingsConnected ? 'connected' : 'disconnected';
         }
+        if (this.rejectedAgentSessions.has(this.agentConnectionCacheKey(normalized, ownerLogin))) {
+            return 'disconnected';
+        }
         if (!sources.probeBin) {
-            return 'unknown';
+            // No probe can answer (Copilot, Grok): an unexpired sign-in attestation is the only signal.
+            return this.sessionAttestations?.isAttested(ownerLogin, normalized) ? 'connected' : 'unknown';
         }
         void this.refreshAgentConnectionState(normalized, ownerLogin);
         return this.agentConnectionStates.get(this.agentConnectionCacheKey(normalized, ownerLogin))?.state ?? 'unknown';
@@ -784,16 +987,58 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
                         // catalog discovered while signed out is stale. Rediscover right away so the
                         // picker the user comes back to already lists the signed-in providers.
                         invalidateNativeAgentModels(normalized, ownerLogin);
-                        void prepareNativeAgentModels(normalized, {
-                            ownerLogin,
-                            spawner: this.nativeModelDiscoverySpawner(ownerLogin),
-                        });
+                        void this.discoverNativeModelsAfterSignIn(normalized, ownerLogin);
                     }
                 }
                 return state;
             });
         this.agentConnectionProbes.set(cacheKey, probe);
         return probe;
+    }
+
+    /**
+     * Discovers the catalog of a harness (or instance) once it signed in. An instance uses its own binary,
+     * folder and variables ({@link instanceNativeModelSpawner}); the base keeps its synchronous path.
+     */
+    protected async discoverNativeModelsAfterSignIn(harnessKey: string, ownerLogin?: string): Promise<void> {
+        const baseId = resolveQaapHarnessBaseId(harnessKey);
+        const spawner = baseId === harnessKey
+            ? this.nativeModelDiscoverySpawner(ownerLogin)
+            : await this.instanceNativeModelSpawner(harnessKey, ownerLogin);
+        await prepareNativeAgentModels(harnessKey, {
+            ownerLogin,
+            spawner,
+            antigravityBin: antigravityBinFor(this, baseId),
+        });
+    }
+
+    /**
+     * Discovery spawner for a harness instance: the base spawner (same owner HOME and tenant wrapper) with the
+     * instance's binary and its configuration folder/variables applied to the child environment. Undefined when
+     * the instance's override does not validate: the catalog then stays the curated list.
+     */
+    async instanceNativeModelSpawner(harnessKey: string, ownerLogin?: string): Promise<NativeModelDiscoverySpawner | undefined> {
+        let launch: QaapHarnessLaunchEnvironment;
+        try {
+            launch = await resolveQaapHarnessLaunchEnvironment(
+                harnessKey,
+                key => this.preferenceReaderForOwner(ownerLogin)(key),
+                this.harnessEnvSecrets,
+            );
+        } catch (error) {
+            if (error instanceof QaapHarnessLaunchOverrideError) {
+                return undefined;
+            }
+            throw error;
+        }
+        const base = this.nativeModelDiscoverySpawner(ownerLogin);
+        return (bin, args) => {
+            const spawn = base(launch.plan.binaryPath ?? bin, args);
+            if (spawn?.env) {
+                launch.apply(spawn.env);
+            }
+            return spawn;
+        };
     }
 
     protected agentConnectionCacheKey(agentId: string, ownerLogin?: string): string {
@@ -811,19 +1056,41 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
      * QAAP_TENANT_BACKEND_HOME, not under the repos root). The caller records a failed probe.
      */
     protected async probeAgentConnectionState(
-        agentId: string,
-        bin: string,
+        harnessKey: string,
+        baseBin: string,
         ownerLogin?: string,
     ): Promise<QaapAgentDescriptor['connectionState']> {
+        const agentId = resolveQaapHarnessBaseId(harnessKey);
+        let bin = baseBin;
+        let launch: QaapHarnessLaunchEnvironment | undefined;
+        if (harnessKey !== agentId) {
+            // A harness instance signs in with its own binary and configuration folder, never the base's.
+            // An invalid override is a signed-out instance: it must not probe the default account instead.
+            try {
+                launch = await resolveQaapHarnessLaunchEnvironment(
+                    harnessKey,
+                    key => this.preferenceReaderForOwner(ownerLogin)(key),
+                    this.harnessEnvSecrets,
+                );
+            } catch (error) {
+                if (error instanceof QaapHarnessLaunchOverrideError) {
+                    return 'disconnected';
+                }
+                throw error;
+            }
+            bin = launch.plan.binaryPath ?? baseBin;
+        }
         const probe = resolveAgentConnectionProbeHelper(agentId, bin);
         if (!probe) {
             return 'unknown';
         }
         const owner = ownerLogin?.trim();
         if (!owner) {
+            const env = stripSignInOnlyAgentApiKeyEnv(childProcessEnv(), agentId);
+            launch?.apply(env);
             return probeAgentConnectionStateHelper(agentId, probe.file, {
                 args: probe.args,
-                env: stripSignInOnlyAgentApiKeyEnv(childProcessEnv(), agentId),
+                env,
             });
         }
 
@@ -839,6 +1106,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
                 ...process.env,
                 ...this.tenantSpawn.tenantHomeEnvOverlay(tenantCwd),
             }), agentId);
+            launch?.apply(env);
             const prefix = this.resolveAgentCliPrefix(tenantCwd);
             if (canExposeAgentCliBinToChild(prefix, () => this.isTenantPrivilegeDropActive(tenantCwd))) {
                 prependAgentCliBinToPath(env, prefix);
@@ -926,15 +1194,20 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         agentId: string,
         ownerLogin?: string,
     ): { readonly settingsConnected: boolean | undefined; readonly probeBin: string | undefined } | undefined {
-        const normalized = agentId.trim().toLowerCase();
+        const harnessKey = agentId.trim().toLowerCase();
+        // A harness instance is detected as its base harness (its binary and folder come with the instance plan).
+        const normalized = resolveQaapHarnessBaseId(harnessKey);
         const candidate = this.detectedAgents.get(normalized);
         if (!candidate) {
             return undefined;
         }
         const bin = candidate.bin ?? normalized;
         return {
+            // An instance never inherits the base harness's Settings credential: its state comes from its own probe.
             // Lazy reader: a harness without a credential mapping never reads the owner's preferences.
-            settingsConnected: normalized === QAIQ_AGENT_ID
+            settingsConnected: harnessKey !== normalized
+                ? undefined
+                : normalized === QAIQ_AGENT_ID
                 // QAIQ is ready only when the provider its turns route to has a key for this owner (an
                 // OpenAI key does not run an OpenRouter model): the same check that gates its spawn.
                 ? !checkQaiqProviderCredentialForOwnerExtracted(this, ownerLogin)
@@ -991,8 +1264,8 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     }
 
     /**
-     * Whether `agentId` can run the owner's first task without further setup: signed in / keyed, a
-     * keyless hosted agent, or Codex through Qaap-hosted access that the owner's plan includes.
+     * Whether `agentId` can run the owner's first task without further setup: signed in / keyed or a
+     * keyless hosted agent. Every other agent needs the owner's own sign-in first.
      */
     protected isAgentUsableAsDefault(agentId: string, ownerLogin?: string): boolean {
         const normalized = agentId.trim().toLowerCase();
@@ -1002,15 +1275,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         if (HOSTED_KEYLESS_DEFAULT_AGENTS.includes(normalized)) {
             return this.agentConnectionState(normalized, ownerLogin) !== 'disconnected';
         }
-        return normalized === 'codex' && this.hostedCodexAllowed(ownerLogin);
-    }
-
-    /** Qaap-hosted Codex needs a plan with hosted models and credits left (same gate as turn start). */
-    protected hostedCodexAllowed(ownerLogin?: string): boolean {
-        if (!ownerLogin?.trim()) {
-            return false;
-        }
-        return isHostedCodexEntitled(this.billingStore?.peekEntitlements?.(ownerLogin));
+        return false;
     }
 
     isAgentEnabled(agentId: string, ownerLogin?: string): boolean {
@@ -1256,6 +1521,29 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         assertQaiqConfiguredExtracted(this, agentId, ownerLogin, agentModel);
     }
 
+    public assertAgentModelAccess(agentId: string, ownerLogin?: string, agentModel?: QaapCreateAgentTaskQaiqModel): void {
+        assertAgentModelAccessExtracted(this, agentId, ownerLogin, agentModel);
+    }
+
+    /**
+     * Gives the harness's in-flight sign-in probe up to `budgetMs` to answer, so a fresh start does not
+     * refuse a signed-in Pro model as `checking`. Never rejects, and returns at once when nothing is in flight.
+     */
+    public async awaitAgentSessionSettled(agentId: string, ownerLogin?: string, budgetMs = 10_000): Promise<void> {
+        const probe = this.refreshAgentConnectionState(agentId.trim().toLowerCase(), ownerLogin);
+        if (!probe) {
+            return;
+        }
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        await Promise.race([
+            probe.then(() => undefined, () => undefined),
+            new Promise<void>(resolve => {
+                timer = setTimeout(resolve, budgetMs);
+            }),
+        ]);
+        clearTimeout(timer);
+    }
+
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public applyTemplate(template: string, prompt: string, vars: Record<string, string> = {}): string {
         return applyTemplateHelper(template, prompt, vars);
@@ -1304,9 +1592,14 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         return deleteForCwdExtracted(this, cwd);
     }
 
+    /** Removes one task from memory and the persisted store; `false` when the id is unknown. */
+    deleteTask(id: string): boolean {
+        return deleteTaskExtracted(this, id);
+    }
+
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public killAgentProcessTree(child: ChildProcess,
-        options?: { readonly escalateAfterMs?: number; readonly onGracePeriodElapsed?: () => void },): NodeJS.Timeout | undefined {
+        options?: { readonly escalateAfterMs?: number; readonly onGracePeriodElapsed?: () => void; readonly onSignalFailed?: () => void },): NodeJS.Timeout | undefined {
         return killAgentProcessTreeExtracted(this, child, options);
     }
 
@@ -1782,6 +2075,25 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         this.taskSandbox?.release(taskId);
     }
 
+    /**
+     * @internal Whether agents run inside a Linux container where Codex's own bubblewrap sandbox cannot start
+     * (no user namespaces): the per-task sandbox container, container-per-tenant isolation, or a tenant backend,
+     * which is itself a rootless container. The container isolates and the Tool Gate still approves every tool.
+     */
+    public runsInTaskSandbox(): boolean {
+        if (process.platform !== 'linux') {
+            return false;
+        }
+        return (!!this.taskSandbox?.isEnabled() && this.taskSandbox.isSupported())
+            || this.tenantSpawn.isContainerIsolationEnabled()
+            || isQaapTenantBackendMode();
+    }
+
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public agentSandboxFor(cwd: string): QaapTaskSandbox | undefined {
+        return this.tenantSpawn.agentSandboxFor(cwd);
+    }
+
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public buildChildEnv(task: QaapAgentTask): NodeJS.ProcessEnv {
         return buildChildEnvExtracted(this, task);
@@ -1941,6 +2253,10 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         return this.toolGateTokens?.isArmed(taskId) ?? false;
     }
 
+    toolGateWired(): boolean {
+        return !!this.toolGateTokens && !!this.helperApiUrl;
+    }
+
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     public finishTask(id: string, state: QaapAgentTaskState, exitCode: number | undefined): QaapAgentTask | undefined {
         const previousState = this.tasks.get(id)?.state;
@@ -1959,9 +2275,6 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
 
     /** Remembers how the owner's turn with this agent ended; never affects the task itself. */
     protected async recordLastTurn(task: QaapAgentTask): Promise<void> {
-        if (!this.lastTurns) {
-            return;
-        }
         const agentId = this.resolveTaskAgentId(task);
         if (agentId === 'shell') {
             return;
@@ -1969,11 +2282,43 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         try {
             const turn = classifyAgentLastTurn(task, await this.readLog(task.id), agentId);
             if (turn) {
-                this.lastTurns.record(task.ownerLogin, agentId, turn);
+                this.lastTurns?.record(task.ownerLogin, agentId, turn);
+            }
+            if (turn?.outcome === 'failed' && turn.kind === 'auth') {
+                this.rejectAgentSessionAfterAuthFailure(task, agentId);
             }
         } catch (error) {
             console.warn('[qaap-agent-last-turn] could not record task', task.id, error instanceof Error ? error.message : String(error));
         }
+    }
+
+    /**
+     * A turn of `agentId` failed with an auth error ("401 Unauthorized: Missing bearer…", Cursor's
+     * "run 'agent login' first"): whatever the probe or the attestation claimed, the session did not
+     * hold. Lock the harness's Pro models until the owner signs in again instead of failing every turn.
+     * Not for Qaap's own pre-spawn refusal (it already reflects the lock, and "couldn't confirm" is a
+     * probe that did not answer, not a rejected session), a Free model (it never used the session),
+     * QAIQ (Settings key) or the shell.
+     */
+    protected rejectAgentSessionAfterAuthFailure(task: QaapAgentTask, agentId: string): void {
+        const normalized = agentId.trim().toLowerCase();
+        if (task.preflightFailure || normalized === QAIQ_AGENT_ID || normalized === 'shell') {
+            return;
+        }
+        const model = resolveTaskAgentModel(task);
+        if (model && QaapHarnessModelAvailability.tier(normalized, { modelId: model.modelId, vendor: model.vendor }) === 'free') {
+            return;
+        }
+        this.sessionAttestations?.revoke(task.ownerLogin, normalized);
+        const sources = this.agentAuthSources(normalized, task.ownerLogin);
+        if (!sources || typeof sources.settingsConnected === 'boolean') {
+            return;
+        }
+        const cacheKey = this.agentConnectionCacheKey(normalized, task.ownerLogin);
+        this.rejectedAgentSessions.add(cacheKey);
+        this.agentConnectionStates.set(cacheKey, { state: 'disconnected', at: Date.now() });
+        // The catalog discovered with the rejected session is stale too (same as a fresh sign-in).
+        invalidateNativeAgentModels(normalized, task.ownerLogin);
     }
 
     protected releaseTenantOperation(id: string): void {

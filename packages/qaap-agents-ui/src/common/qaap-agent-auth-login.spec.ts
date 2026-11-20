@@ -12,6 +12,7 @@ import {
     isUnauthenticatedCliDeclaration,
     localizeAgentAuthFailureMessage,
     localizeAgentSettingsApiKeyLoginMessage,
+    localizeAgentTenantTerminalLoginMessage,
     resolveAgentLoginCliCommand,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
 import { detectAgentFailureKind, resolveAgentTurnFailureMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
@@ -21,6 +22,13 @@ import { rememberQaapHostedRuntime } from '@theia/qaap-shared-core/lib/common/qa
 describe('qaap-agent-auth-login', () => {
     afterEach(() => {
         rememberQaapHostedRuntime(false);
+    });
+
+    it('keeps Antigravity Google setup out of the tenant terminal flow', () => {
+        const message = localizeAgentTenantTerminalLoginMessage('Antigravity CLI', 'agy');
+        expect(message).to.match(/Google OAuth or Google Cloud project/i);
+        expect(message).to.match(/Qaap web cannot complete/i);
+        expect(message).not.to.match(/open a terminal/i);
     });
 
     it('extracts Codex device-auth URL and one-time code', () => {
@@ -100,6 +108,18 @@ describe('qaap-agent-auth-login', () => {
         expect(extractAgentAuthLoginChallenge(githubLogin, { agentId: 'copilot' })?.url)
             .to.equal('https://github.com/login/device');
         expect(extractAgentAuthLoginChallenge(githubLogin, { agentId: 'cursor' })?.url).to.equal(undefined);
+    });
+
+    it('detects agy sign-in lines as a session, not an API key', () => {
+        for (const line of [
+            'Authentication required. Please visit the URL to log in:',
+            "Error: authentication required. Run 'agy' to log in, then retry.",
+            'error: authentication failed or timed out',
+            'Error: Please sign in to view available models. Launch the CLI without arguments to sign in.',
+        ]) {
+            expect(detectAgentAuthFailureMode(line), line).to.equal('session');
+        }
+        expect(detectAgentAuthFailureMode('IneligibleTierError: This client is no longer supported')).to.equal(undefined);
     });
 
     it('detects session auth without a URL (Not logged in · Please run /login)', () => {

@@ -66,29 +66,31 @@ export function presentQaapLoginGate(): void {
 
     host.innerHTML = `
 <div class="qaap-login-overlay">
-  <header class="qaap-login-brand">
-    <img class="qaap-login-logo" src="${escapeAttr(logoUrl)}" width="64" height="64" alt="" />
-    <h1 id="qaap-login-title" class="qaap-login-title">${escapeHtml(appName)}</h1>
-    <p id="qaap-login-description" class="qaap-login-tagline">A pocket workspace for coding agents.<br/>Sign in to connect your repos.</p>
-  </header>
-  <div class="qaap-login-spacer"></div>
-  <div class="qaap-login-actions">
-    <button type="button" id="qaap-login-github" class="qaap-login-btn qaap-login-btn--primary" data-provider="github" aria-label="Sign in with GitHub">
-      <span class="qaap-login-btn-icon-slot" data-icon="github">${QAAP_LOGIN_GITHUB_SVG}</span>
-      <span class="qaap-login-btn-label">Sign in with GitHub</span>
-    </button>
-    <button type="button" id="qaap-login-local" class="qaap-login-btn qaap-login-btn--secondary" hidden>
-      ${nls.localize('qaap/auth/continueLocal', 'Continue in local mode')}
-    </button>
-    <button type="button" id="qaap-login-retry" class="qaap-login-btn qaap-login-btn--secondary" hidden>
-      ${nls.localize('qaap/auth/retryConnection', 'Retry connection')}
-    </button>
-  </div>
-  <p id="qaap-login-status" class="qaap-login-status" role="status" aria-live="polite" aria-atomic="true"></p>
-  <footer class="qaap-login-footer">
-    By continuing you agree to the <a href="/legal/terms.html">terms</a> &amp; <a href="/legal/privacy.html">privacy</a>.
-    <br/>${escapeHtml(appName)} never reads your repos without permission.
-  </footer>
+  <section class="qaap-login-hero" aria-hidden="true"><span class="qaap-login-kicker">The pocket workspace for coding agents</span><p class="qaap-login-headline">Ship code<br/>from <em>anywhere.</em></p><p class="qaap-login-sub">Claude Code, Codex, Gemini and Copilot working on your repos — you review and merge from your phone.</p><div class="qaap-login-device"><div class="qaap-login-phone"><div class="qaap-login-screen"><div class="qaap-login-statusbar"><span>9:41</span><i></i><b></b></div><img class="qaap-login-shot" src="./login/qaap-app-mobile.webp" width="600" height="1298" alt="" decoding="async"/></div></div></div></section>
+  <main class="qaap-login-panel"><div class="qaap-login-panel-inner">
+    <header class="qaap-login-brand">
+      <div class="qaap-login-mark"><img class="qaap-login-logo" src="${escapeAttr(logoUrl)}" width="36" height="36" alt="" /><span class="qaap-login-wordmark">${escapeHtml(appName)}</span></div>
+      <h1 id="qaap-login-title" class="qaap-login-title">Sign in to ${escapeHtml(appName)}</h1>
+      <p id="qaap-login-description" class="qaap-login-tagline">A pocket workspace for coding agents. Connect your GitHub repos to get started.</p>
+    </header>
+    <div class="qaap-login-actions">
+      <button type="button" id="qaap-login-github" class="qaap-login-btn qaap-login-btn--primary" data-provider="github" aria-label="Continue with GitHub">
+        <span class="qaap-login-btn-icon-slot" data-icon="github">${QAAP_LOGIN_GITHUB_SVG}</span>
+        <span class="qaap-login-btn-label">Continue with GitHub</span>
+      </button>
+      <button type="button" id="qaap-login-local" class="qaap-login-btn qaap-login-btn--secondary" hidden>
+        ${nls.localize('qaap/auth/continueLocal', 'Continue in local mode')}
+      </button>
+      <button type="button" id="qaap-login-retry" class="qaap-login-btn qaap-login-btn--secondary" hidden>
+        ${nls.localize('qaap/auth/retryConnection', 'Retry connection')}
+      </button>
+    </div>
+    <p id="qaap-login-status" class="qaap-login-status" role="status" aria-live="polite" aria-atomic="true"></p>
+    <ul class="qaap-login-points"><li>Run Claude Code, Codex and more in a cloud workspace</li><li>Review diffs and open pull requests from your phone</li><li>Only the repos you choose — revoke access anytime</li></ul>
+    <footer class="qaap-login-footer">
+      By continuing you agree to the <a href="/legal/terms.html">Terms</a> and <a href="/legal/privacy.html">Privacy Policy</a>.
+    </footer>
+  </div></main>
 </div>`;
 
     document.body.appendChild(host);
@@ -204,7 +206,7 @@ async function reflectGithubAvailability(host: HTMLElement): Promise<void> {
         button.classList.remove('qaap-login-btn--unavailable');
         const label = button.querySelector('.qaap-login-btn-label');
         if (label) {
-            label.textContent = nls.localize('qaap/auth/signInWithGithub', 'Sign in with GitHub');
+            label.textContent = nls.localize('qaap/auth/continueWithGithub', 'Continue with GitHub');
         }
     }
     try {

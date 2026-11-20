@@ -17,10 +17,13 @@ import {
     resolveQaapBuiltinAgentMentionId,
 } from './qaap-builtin-agents';
 import { isQaapHarnessEnabled, readDisabledHarnessIds } from './qaap-harness-preferences';
+import { isQaapHarnessInstanceId, resolveQaapHarnessBaseId } from './qaap-harness-launch-settings';
 import { OPENCODE_FREE_MODEL_OPTIONS, OPENCODE_PAID_MODEL_OPTIONS } from './qaap-opencode-model-catalog';
 import { resolveStoredAgentModelForSubmit } from './qaap-agent-model-selection';
 import { getQaapDefaultAgentId } from './qaap-default-agent-id';
 import { dedupeInFlight } from './qaap-in-flight-dedupe';
+import { isQaapSessionAttestationAgent, QAAP_AGENT_SESSION_ATTEST_ROUTE } from './qaap-agent-session-attestation';
+import { QAAP_HARNESS_SIGN_OUT_ROUTE, type QaapHarnessSignOutResult } from './qaap-harness-sign-out';
 
 export {
     agentSupportsModelPicker,
@@ -70,7 +73,11 @@ export interface QaapAgentTaskAgentOption {
     /** Installation and authentication are separate: an installed CLI may still need Connect. */
     readonly connectionState?: QaapAgentConnectionState;
     /** How the owner can run the agent now (see the backend `resolveAgentAccess`); `none` offers a sign-in. */
-    readonly accessState?: 'session' | 'hosted' | 'none' | 'unknown';
+    readonly accessState?: 'session' | 'none' | 'unknown';
+    /** Sign-in state for the owner; `available` stays "can run now" (see the backend descriptor). */
+    readonly session?: 'signed-in' | 'signed-out' | 'checking' | 'unknown';
+    /** The Antigravity CLI the host resolved (`gemini`, `agy`, `antigravity`); only set for the Antigravity harness. */
+    readonly cliBin?: string;
 }
 
 export interface QaapAgentTaskListSnapshot {
@@ -90,7 +97,9 @@ export interface QaapQaiqModelOption {
     /** Present for native catalogs when a model is visible but gated by the account plan. */
     readonly available?: boolean;
     /** Why a visible model cannot currently be selected, when it is unavailable. */
-    readonly unavailableReason?: 'plan' | 'not-connected' | 'unknown';
+    readonly unavailableReason?: 'plan' | 'not-connected' | 'unknown' | 'checking';
+    /** Free works without the harness session; Pro needs it. */
+    readonly tier?: 'free' | 'pro';
 }
 
 /**
@@ -103,12 +112,13 @@ export const OPENCODE_FALLBACK_MODELS: readonly QaapQaiqModelOption[] = OPENCODE
 /**
  * Keep Codex's native rows visible if a hosted API responds before its runner catalog is warm.
  * The backend returns the same rows, including plan availability, once its catalog is ready.
+ * Mirrors `listStaticNativeAgentModels('codex')` in qaap-cloud-workspace (qaap-agent-native-model-catalog.ts):
+ * this package cannot import that catalog, so keep the two in sync by hand (`codex debug models`, 2026-11).
  */
 export const CODEX_FALLBACK_MODELS: readonly QaapQaiqModelOption[] = [
-    { provider: 'openai', vendor: 'codex', modelId: 'gpt-5.6-sol', label: 'GPT-5.6 Sol' },
-    { provider: 'openai', vendor: 'codex', modelId: 'gpt-5.6-terra', label: 'GPT-5.6 Terra' },
-    { provider: 'openai', vendor: 'codex', modelId: 'gpt-5.6-luna', label: 'GPT-5.6 Luna' },
-    { provider: 'openai', vendor: 'codex', modelId: 'gpt-5.5', label: 'GPT-5.5 Legado' },
+    { provider: 'openai', vendor: 'codex', modelId: 'gpt-6-luna', label: 'GPT-6-Luna' },
+    { provider: 'openai', vendor: 'codex', modelId: 'gpt-5.6-terra', label: 'GPT-5.6-Terra' },
+    { provider: 'openai', vendor: 'codex', modelId: 'gpt-5.6-luna', label: 'GPT-5.6-Luna' },
 ];
 
 export function normalizeOpenCodeModelOptions(models: readonly QaapQaiqModelOption[]): QaapQaiqModelOption[] {
@@ -179,6 +189,8 @@ export interface QaapAgentTaskDetailDTO {
     readonly modelFallbackTaskId?: string;
     readonly log: string;
     readonly workspaceSnapshot?: 'current' | 'changed' | 'unknown';
+    /** Set when Stop could not signal the agent: the task is not stopped and its process may still run. */
+    readonly stopFailure?: string;
 }
 
 /** True once a task has stopped and will not change state again. */
@@ -332,12 +344,31 @@ export function mergeAgentTaskAgentOptions(
             }
             const key = agent.id.toLowerCase();
             const existing = merged.get(key);
-            if (!existing || agent.available && !existing.available) {
+            if (!existing) {
                 merged.set(key, agent);
+            } else if (agent.available && !existing.available) {
+                // The more available entry wins, but a definite sign-in state from the other list (the
+                // backend snapshot) must survive a live-stream entry that only knows `unknown`.
+                merged.set(key, {
+                    ...agent,
+                    connectionState: isDefiniteAgentConnectionState(agent.connectionState)
+                        ? agent.connectionState
+                        : existing.connectionState ?? agent.connectionState,
+                    accessState: agent.accessState && agent.accessState !== 'unknown'
+                        ? agent.accessState
+                        : existing.accessState ?? agent.accessState,
+                    // The session answer is what tells a signed-out harness (listed, models visible) from one
+                    // that is not detected at all (placeholder without a session).
+                    session: agent.session ?? existing.session,
+                });
             }
         }
     }
     return Array.from(merged.values()).sort((left, right) => left.label.localeCompare(right.label));
+}
+
+function isDefiniteAgentConnectionState(state: QaapAgentConnectionState | undefined): boolean {
+    return state !== undefined && state !== 'unknown';
 }
 
 /** Composer pickers expose VPS-backed agents (QAIQ, Codex, …) but hide shell and UI-hidden runners. */
@@ -411,6 +442,10 @@ export function normalizeBackendAgentId(agentId: string | undefined): string | u
     const builtin = resolveQaapBuiltinAgentMentionId(id);
     if (builtin) {
         return builtin;
+    }
+    // A harness instance from Settings → Harness (`codex#2`) is a runner id of its own.
+    if (isQaapHarnessInstanceId(id) && resolveQaapBuiltinAgentMentionId(resolveQaapHarnessBaseId(id))) {
+        return id;
     }
     return id === SHELL_AGENT_ID ? SHELL_AGENT_ID : undefined;
 }
@@ -642,6 +677,67 @@ export async function warmAgentRunner(cwd: string): Promise<QaapAgentWarmResult 
     }
 }
 
+/**
+ * Tell the backend the sign-in dialog saw the CLI's success line for a harness without an auth probe
+ * (Copilot, Grok), so its Pro models unlock for this session's owner. Resolves false for any other
+ * harness (nothing is sent) or when the backend refused; never throws.
+ */
+export async function attestAgentSessionSignIn(agentId: string): Promise<boolean> {
+    if (!isQaapSessionAttestationAgent(agentId)) {
+        return false;
+    }
+    try {
+        const response = await fetch(`${QAAP_AGENT_TASK_API_PATH}/${QAAP_AGENT_SESSION_ATTEST_ROUTE}`, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ agentId: agentId.trim().toLowerCase() }),
+        });
+        return response.ok;
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * Ask the backend to sign the current owner out of one built-in harness (running its CLI logout
+ * or removing its allowlisted credential file/keys). Never deletes Settings API keys.
+ */
+export async function requestHarnessSignOut(harnessId: string): Promise<QaapHarnessSignOutResult> {
+    const normalized = harnessId.trim().toLowerCase();
+    const response = await fetch(`${QAAP_AGENT_TASK_API_PATH}/${QAAP_HARNESS_SIGN_OUT_ROUTE}`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ harnessId: normalized }),
+    });
+    let body: Partial<QaapHarnessSignOutResult> & { error?: unknown } = {};
+    try {
+        body = await response.json() as Partial<QaapHarnessSignOutResult> & { error?: unknown };
+    } catch {
+        body = {};
+    }
+    if (!response.ok || body.ok !== true) {
+        const message = typeof body.message === 'string' && body.message.trim()
+            ? body.message.trim()
+            : typeof body.error === 'string' && body.error.trim()
+                ? body.error.trim()
+                : `Sign out failed (${response.status})`;
+        return {
+            ok: false,
+            harnessId: typeof body.harnessId === 'string' ? body.harnessId : normalized,
+            connectionState: body.connectionState ?? 'unknown',
+            reason: body.reason ?? 'failed',
+            message,
+        };
+    }
+    return {
+        ok: true,
+        harnessId: typeof body.harnessId === 'string' ? body.harnessId : normalized,
+        connectionState: body.connectionState ?? 'disconnected',
+    };
+}
+
 /** Upper bound for one agent model catalog request, so a hung probe rejects instead of leaving the picker loading. */
 export const AGENT_MODELS_REQUEST_TIMEOUT_MS = 15000;
 
@@ -863,6 +959,17 @@ export async function deleteAgentTasksForCwd(cwd: string): Promise<number> {
     }
     const body = await response.json() as { removed?: number };
     return typeof body.removed === 'number' ? body.removed : 0;
+}
+
+/** Deletes one of the caller's tasks; a running task is cancelled first by the server. */
+export async function deleteAgentTask(id: string): Promise<void> {
+    const response = await fetch(`${QAAP_AGENT_TASK_API_PATH}/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        credentials: 'include',
+    });
+    if (!response.ok) {
+        throw new Error(response.statusText);
+    }
 }
 
 export function hashString(value: string): string {

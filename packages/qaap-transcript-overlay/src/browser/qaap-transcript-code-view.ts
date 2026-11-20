@@ -344,7 +344,10 @@ function appendJsonLine(host: HTMLElement, line: string): void {
         appendJsonValue(host, keyMatch[3] ?? '');
         return;
     }
-    appendJsonValue(host, trimmed);
+    // Array items and brackets keep their indentation (`        "arm64"` must not jump to column 0).
+    const indent = line.slice(0, line.length - line.trimStart().length);
+    appendSpan(host, indent, 'plain');
+    appendJsonValue(host, line.trimStart());
 }
 
 function appendJsonValue(host: HTMLElement, value: string): void {
@@ -368,7 +371,8 @@ function appendJsonValue(host: HTMLElement, value: string): void {
         appendSpan(host, value, 'sep');
         return;
     }
-    host.textContent = value;
+    // Append (not replace): a leading indentation span may already be in the host.
+    appendSpan(host, value, 'plain');
 }
 
 function appendScriptLine(host: HTMLElement, line: string): void {

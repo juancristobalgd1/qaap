@@ -1,11 +1,13 @@
 import { buildPiGateTemplateVars } from './qaap-tool-gate-pi-adapter';
 import { formatTaskStartLog } from './qaap-agent-conversation-persist-policy';
 import { buildPiDefaultModelFlagShell } from '@theia/qaap-shared-core/lib/common/qaap-pi-default-model';
-import { AGENT_STOP_GRACE_TIMEOUT_MS, SHELL_AGENT_ID, QAIQ_AGENT_ID, REPO_MAP_CACHE_TTL_MS, REPO_MAP_MAX_CHARS, USER_REQUEST_MAX_CHARS } from './qaap-agent-task-runner-constants';
+import { AGENT_STOP_GRACE_TIMEOUT_MS, AGENT_STOP_SLOT_RELEASE_TIMEOUT_MS, SHELL_AGENT_ID, QAIQ_AGENT_ID, REPO_MAP_CACHE_TTL_MS, REPO_MAP_MAX_CHARS, USER_REQUEST_MAX_CHARS } from './qaap-agent-task-runner-constants';
 import type { QaapAgentCommandBuildResult, QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { QaapAgentQueuePolicy } from './qaap-agent-queue-policy';
 import { sharedWorkingTreeBusyExtracted } from './qaap-agent-task-runner-render2';
 import { QaapAgentStorageUnavailableError } from './qaap-agent-storage-unavailable-error';
+import { QaapPlanLimit } from '@theia/qaap-adapters/lib/common/qaap-plan-limit';
+import { qaapMissingCwdError } from './qaap-missing-cwd-error';
 // Extracted from qaap-agent-task-runner.ts
 
 import { randomUUID } from 'crypto';
@@ -13,6 +15,7 @@ import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { nls } from '@theia/core/lib/common/nls';
+import type { ChildProcess } from 'child_process';
 import {
     isQaapAgentTaskFinished,
     type QaapCreateAgentTaskQaiqModel,
@@ -42,7 +45,7 @@ import {
 import type { QaapAgentApprovalPolicyId } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model-catalog';
 import { canEnforceReadOnlyWorkspace, withPiPlanModeInstruction } from '../common/qaap-agent-readonly-workspace';
-import { listNativeAgentModels } from './qaap-agent-native-models';
+import { antigravityBinFor, listNativeAgentModels } from './qaap-agent-native-models';
 import {
     applyAgentApprovalPolicyToCommand,
     shouldUseQaiqStdioApprovals,
@@ -76,10 +79,12 @@ import { appendAgentDefaultWorkflowToPrompt } from '../common/qaap-agent-default
 import { isConversationalTurn } from '../common/qaap-agent-conversational-turn';
 import { prependAgentTaskContextToPrompt, type QaapAgentRepoContext } from '../common/qaap-agent-task-context';
 import { buildQaapAgentRepoProfile } from './qaap-agent-repo-profile';
+import { resolveQaapHarnessInstanceRoute } from './qaap-harness-launch-overrides';
 import {
     applyTemplateForPromptTransport as applyTemplateForPromptTransportHelper,
     resolveAgentPromptTransport as resolveAgentPromptTransportHelper,
     writeAgentPromptFile as writeAgentPromptFileHelper,
+    planArgvPrompt as planArgvPromptHelper,
     quoteShellArg as quoteShellArgHelper,
     resolveQaiqEnvFallbackModel as resolveQaiqEnvFallbackModelHelper,
 } from './qaap-agent-task-runner-utils';
@@ -99,7 +104,7 @@ export function resolveAgentModelForRequestExtracted(ctx: QaapAgentTaskRunnerCon
             readPref,
             agentId,
             {
-                listNativeModels: id => listNativeAgentModels(id, ownerLogin),
+                listNativeModels: id => listNativeAgentModels(id, ownerLogin, antigravityBinFor(ctx, id)),
                 nativeTable: ctx.nativeModelRoutingTable(),
             },
         );
@@ -142,7 +147,7 @@ export function createExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCr
         }
         const cwd = path.resolve(request.cwd ?? '');
         if (!path.isAbsolute(cwd) || !ctx.isDirectory(cwd)) {
-            throw new Error('A valid absolute "cwd" directory is required.');
+            throw qaapMissingCwdError(request.cwd);
         }
         // Last line of defence, shared by every caller (endpoints, routine runner, retries): a
         // container cwd would spawn the agent over EVERY repository the user owns at once — wrong
@@ -198,6 +203,10 @@ export function createExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCr
         );
         // A task without its own worktree edits the repository's shared working tree: while the same owner has
         // another such task running in this cwd it queues (visible as `queued`) instead of racing on the same files.
+        // A full workspace (over the plan's storage) runs no new turn until the owner frees space or upgrades.
+        if (ctx.tenantStorageQuota?.peekOverStorageLimit(ownerLogin)) {
+            throw new Error(QaapPlanLimit.tagged('storage_limit', QaapPlanLimit.describe('storage_limit')));
+        }
         const sharedWorkingTree = request.ownWorkingTree !== true;
         const sharedWorkingTreeQueued = sharedWorkingTree && sharedWorkingTreeBusyExtracted(ctx, ownerLogin, cwd);
         const atCapacity = ctx.isDrainingForDeploy?.() === true
@@ -218,9 +227,13 @@ export function createExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCr
             void ctx.billingStore.getOrCreateAccount(ownerLogin).catch(() => undefined);
         }
         const createdAt = Date.now();
+        const harnessInstanceId = prompt && resolvedAgentId !== SHELL_AGENT_ID
+            ? resolveQaapHarnessInstanceRoute(request.agent, key => ctx.preferenceReaderForOwner(ownerLogin)(key))?.instanceId
+            : undefined;
         const task: QaapAgentTask = {
             id,
             agentId: resolvedAgentId,
+            ...(harnessInstanceId ? { harnessInstanceId } : {}),
             title: (request.title ?? '').trim() || prompt || rawCommand,
             command: rawCommand || prompt,
             cwd,
@@ -295,7 +308,7 @@ export function retryExtracted(ctx: QaapAgentTaskRunnerContext, id: string, owne
             : {
                 title: task.title,
                 prompt: task.command,
-                agent: agentId,
+                agent: task.harnessInstanceId ?? agentId,
                 cwd: task.cwd,
                 agentModel: resolveTaskAgentModel(task),
                 qaiqModel: resolveTaskAgentModel(task),
@@ -343,7 +356,7 @@ export function resumeExtracted(ctx: QaapAgentTaskRunnerContext, id: string, own
             : {
                 title: task.title,
                 prompt: task.command,
-                agent: agentId,
+                agent: task.harnessInstanceId ?? agentId,
                 cwd: task.cwd,
                 agentModel: resolveTaskAgentModel(task),
                 qaiqModel: resolveTaskAgentModel(task),
@@ -382,7 +395,17 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
         ownerLogin?: string,
         effort?: QaapAgentEffortLevel,): QaapAgentCommandBuildResult {
         const id = ctx.resolveAgentId(prompt, agentId, ownerLogin);
-        const runnerPrompt = withPiPlanModeInstruction(ctx.stripLeadingAgentMention(prompt), id, interactionModeId);
+        const turnPrompt = ctx.stripLeadingAgentMention(prompt);
+        // Fail the turn rather than send a blank message: workflow and repo context added below
+        // would otherwise wrap it into a non-empty prompt with no user request in it.
+        if (!turnPrompt.trim()) {
+            throw new Error(nls.localize(
+                'theia/qaap/agentTask/emptyTurnPrompt',
+                'The message for this turn is empty, so nothing was sent to {0}. Write the request again and resend it.',
+                id,
+            ));
+        }
+        const runnerPrompt = withPiPlanModeInstruction(turnPrompt, id, interactionModeId);
         if (id === SHELL_AGENT_ID) {
             return { command: runnerPrompt, agentId: id };
         }
@@ -422,6 +445,7 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
             ? `[Qaap interaction-mode system instruction]\n${modeInstruction}\n\n---\n\n${promptWithTaskContext}`
             : promptWithTaskContext;
         ctx.assertQaiqConfigured(id, ownerLogin, agentModel);
+        ctx.assertAgentModelAccess(id, ownerLogin, agentModel);
         const detected = ctx.detectedAgents.get(id);
         let command: string;
         const effortFlags = formatEffortFlagsForAgent(id, agentModel?.modelId, effort);
@@ -440,6 +464,7 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
             toolApprovalRules,
             readOnlyWorkspace,
             codexSupportsApproveForMe: detected?.codexSupportsApproveForMe,
+            codexOwnSandboxOff: ctx.runsInTaskSandbox?.() === true,
         };
         // A read-only turn is never routed through the interactive stdio approval flow: that flow
         // exists so a human can say yes to a write, and on a read-only turn there is no write to say
@@ -458,27 +483,35 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
         const promptTransport = resolveAgentPromptTransportHelper(id, detected ?? (envTemplate
             ? { id, template: envTemplate }
             : undefined));
-        const usesOffArgvPrompt = promptTransport.kind !== 'argv';
+        const usesOffArgvPrompt = promptTransport.kind === 'plain-stdin' || promptTransport.kind === 'prompt-file';
+        // argv-prompt harnesses (agy) carry the prompt in argv: over the size limit it moves to a private file.
+        let argvPromptPlan: ReturnType<typeof planArgvPromptHelper> | undefined;
+        if (promptTransport.kind === 'argv-prompt') {
+            const spawnIdentity = ctx.resolveAgentSpawnIdentity(resolvedCwd ?? process.cwd());
+            argvPromptPlan = planArgvPromptHelper(agentPrompt, spawnIdentity.uid === undefined ? undefined : { uid: spawnIdentity.uid, gid: spawnIdentity.gid });
+        }
+        const argvPrompt = argvPromptPlan?.prompt ?? agentPrompt;
         if (detected) {
             const vars = withEffortFlags(ctx.buildTemplateVars(id, agentModel, interaction, ownerLogin, resolvedCwd), effortFlags);
             command = useStdioApprovals
                 ? ctx.applyTemplateWithoutPrompt(detected.template, vars)
                 : usesOffArgvPrompt
                     ? applyTemplateForPromptTransportHelper(detected.template, promptTransport, vars)
-                    : ctx.applyTemplate(detected.template, agentPrompt, vars);
+                    : ctx.applyTemplate(detected.template, argvPrompt, vars);
         } else if (envTemplate) {
             const vars = withEffortFlags(ctx.buildTemplateVars(id, agentModel, interaction, ownerLogin, resolvedCwd), effortFlags);
             command = useStdioApprovals || usesOffArgvPrompt
                 ? applyTemplateForPromptTransportHelper(envTemplate, useStdioApprovals
                     ? { kind: 'plain-stdin', placeholder: 'omit' }
                     : promptTransport, vars)
-                : ctx.applyTemplate(envTemplate, agentPrompt, vars);
+                : ctx.applyTemplate(envTemplate, argvPrompt, vars);
         } else {
             command = agentPrompt;
         }
-        let promptTempDir: string | undefined;
+        let promptTempDir: string | undefined = argvPromptPlan?.promptTempDir;
         if (promptTransport.kind === 'prompt-file' && !useStdioApprovals) {
-            const written = writeAgentPromptFileHelper(agentPrompt);
+            const spawnIdentity = ctx.resolveAgentSpawnIdentity(resolvedCwd ?? process.cwd());
+            const written = writeAgentPromptFileHelper(agentPrompt, spawnIdentity.uid === undefined ? undefined : { uid: spawnIdentity.uid, gid: spawnIdentity.gid });
             promptTempDir = written.dir;
             command = `${command} ${promptTransport.flag} ${quoteShellArgHelper(written.file)}`;
         }
@@ -586,6 +619,19 @@ export function resolveAgentIdExtracted(ctx: QaapAgentTaskRunnerContext, prompt:
         if (requested === QAIQ_AGENT_ID) {
             return useDefaultHarness();
         }
+        // A harness instance from Settings → Harness ("Add harness", e.g. `codex#2`) runs as its base
+        // harness; its own switch decides, the base harness may be switched off.
+        const instanceRoute = resolveQaapHarnessInstanceRoute(agentId, key => ctx.preferenceReaderForOwner(ownerLogin)(key));
+        if (instanceRoute) {
+            assertAgentAllowedOnHostedRuntime(instanceRoute.baseId);
+            if (!instanceRoute.configured || !ctx.detectedAgents.has(instanceRoute.baseId)) {
+                throw new Error(`Agent "${instanceRoute.instanceId}" is not available on this server.`);
+            }
+            if (!instanceRoute.enabled) {
+                throw new Error(`Agent "${instanceRoute.instanceId}" is disabled in Harness configuration.`);
+            }
+            return instanceRoute.baseId;
+        }
         const explicit = ctx.normalizeAgentId(agentId);
         if (explicit) {
             return ensureEnabled(explicit);
@@ -689,9 +735,9 @@ function buildBaseTemplateVars(ctx: QaapAgentTaskRunnerContext, agentId: string,
         // Last gate before argv: callers that hand a model straight in (prompt improve, reviewer)
         // skip the request resolution, and a foreign model here is `--model <id>` → model_not_found.
         if (agentModel?.provider && agentModel.modelId?.trim()
-            && agentModelFitsAgent(agentId, agentModel, () => listNativeAgentModels(agentId, ownerLogin))) {
+            && agentModelFitsAgent(agentId, agentModel, () => listNativeAgentModels(agentId, ownerLogin, antigravityBinFor(ctx, agentId)))) {
             const binding = ctx.normalizeAgentBinding(bindingFromQaiqModelSelection(agentModel), ownerLogin);
-            const flags = formatModelFlagsForAgent(agentId, binding);
+            const flags = formatModelFlagsForAgent(agentId, binding, antigravityBinFor(ctx, agentId));
             if (isQaiqAgent(agentId)) {
                 return { qaiq_flags: joinQaiqFlags(qaiqInteractionFlags, flags), model_flags: '', [QAAP_PROJECT_TRUST_FLAGS_TEMPLATE_VAR]: trustFlags };
             }
@@ -856,10 +902,8 @@ export function cancelExtracted(ctx: QaapAgentTaskRunnerContext, id: string, opt
                 // process group has had time to finish an in-flight workspace write safely.
                 ctx.killAgentProcessTree(child, {
                     escalateAfterMs: AGENT_STOP_GRACE_TIMEOUT_MS,
-                    onGracePeriodElapsed: () => {
-                        ctx.stoppingTaskIds.delete(id);
-                        ctx.drainQueuedTasks();
-                    },
+                    onGracePeriodElapsed: () => releaseStoppingTaskSlotExtracted(ctx, id, child),
+                    onSignalFailed: () => markTaskStopFailedExtracted(ctx, id),
                 });
             } else {
                 ctx.drainQueuedTasks();
@@ -867,9 +911,118 @@ export function cancelExtracted(ctx: QaapAgentTaskRunnerContext, id: string, opt
             return finished;
         }
         if (child) {
-            ctx.killAgentProcessTree(child, { escalateAfterMs: AGENT_STOP_GRACE_TIMEOUT_MS });
+            ctx.killAgentProcessTree(child, {
+                escalateAfterMs: AGENT_STOP_GRACE_TIMEOUT_MS,
+                onGracePeriodElapsed: () => releaseStoppingTaskSlotExtracted(ctx, id, child),
+                onSignalFailed: () => markTaskStopFailedExtracted(ctx, id),
+            });
         }
         return task;
+}
+
+/** Visible state of a task whose agent could not be signalled: it is not stopped, and it keeps its slot. */
+export const STOP_FAILED_MESSAGE_KEY = 'theia/qaap-cloud-workspace/agentTaskStopFailed';
+
+/** Pending forced slot releases, keyed by task id. An `exit` that arrives in time clears its entry. */
+const stopSlotForceReleaseTimers = new Map<string, NodeJS.Timeout>();
+
+/**
+ * Releases the concurrency slot a cancelled task holds, once its process has really exited. A
+ * SIGKILL that was sent but whose `exit` has not fired yet keeps the slot for at most
+ * {@link AGENT_STOP_SLOT_RELEASE_TIMEOUT_MS}; then the slot is freed without the `exit`.
+ */
+export function releaseStoppingTaskSlotExtracted(ctx: Pick<QaapAgentTaskRunnerContext, 'stoppingTaskIds' | 'drainQueuedTasks'>, taskId: string, child: ChildProcess): void {
+        const exited = typeof child.exitCode === 'number' || typeof child.signalCode === 'string';
+        if (exited) {
+            releaseStoppingTaskSlotOnExitExtracted(ctx, taskId);
+            return;
+        }
+        if (!ctx.stoppingTaskIds.has(taskId) || stopSlotForceReleaseTimers.has(taskId)) {
+            return;
+        }
+        const armedAt = Date.now();
+        const timer = setTimeout(() => {
+            stopSlotForceReleaseTimers.delete(taskId);
+            if (!ctx.stoppingTaskIds.has(taskId)) {
+                return;
+            }
+            console.warn(`[qaap-stop] slot-released-without-exit task=${taskId} pid=${child.pid} waitedMs=${Date.now() - armedAt}`);
+            releaseStoppingTaskSlotOnExitExtracted(ctx, taskId);
+        }, AGENT_STOP_SLOT_RELEASE_TIMEOUT_MS);
+        // The timer must never keep the backend alive on its own.
+        timer.unref?.();
+        stopSlotForceReleaseTimers.set(taskId, timer);
+}
+
+/**
+ * Called from the child's `exit` handler, and by the forced release: frees the slot of a cancelled
+ * task whose process is gone. Idempotent, so an `exit` arriving after a forced release drains nothing.
+ */
+export function releaseStoppingTaskSlotOnExitExtracted(ctx: Pick<QaapAgentTaskRunnerContext, 'stoppingTaskIds' | 'drainQueuedTasks'>, taskId: string): void {
+        const pending = stopSlotForceReleaseTimers.get(taskId);
+        if (pending) {
+            clearTimeout(pending);
+            stopSlotForceReleaseTimers.delete(taskId);
+        }
+        if (ctx.stoppingTaskIds.delete(taskId)) {
+            ctx.drainQueuedTasks();
+        }
+}
+
+/**
+ * Stop could not signal the agent: the task leaves the `cancelled` state (it did not stop) and
+ * shows an error. The stopping entry stays, so the slot is held until the process exits.
+ */
+export function markTaskStopFailedExtracted(ctx: Pick<QaapAgentTaskRunnerContext, 'tasks' | 'persist'>, taskId: string): void {
+        const task = ctx.tasks.get(taskId);
+        if (!task) {
+            return;
+        }
+        const message = nls.localize(STOP_FAILED_MESSAGE_KEY, 'Could not stop the agent; it may still be running.');
+        console.error(`[qaap-stop] stop-failed task=${taskId} the agent may still be running`);
+        ctx.tasks.set(taskId, { ...task, state: 'failed', exitCode: undefined, stopFailure: message });
+        void ctx.persist();
+}
+
+/**
+ * Remove one task record and its live handles from memory (cancelling it first when it is still
+ * running or queued). Returns `false` for an unknown id. Callers persist once after removing.
+ */
+function removeTaskRecordExtracted(ctx: QaapAgentTaskRunnerContext, id: string): boolean {
+        const task = ctx.tasks.get(id);
+        if (!task) {
+            return false;
+        }
+        const hadProcess = ctx.processes.has(id);
+        if (task.state === 'running' || task.state === 'queued') {
+            ctx.cancel(id);
+        }
+        if (hadProcess) {
+            ctx.deletedTaskIds.add(id);
+        }
+        ctx.tasks.delete(id);
+        ctx.queuedCreateRequests.delete(id);
+        ctx.processes.delete(id);
+        ctx.stdinInteractiveTasks.delete(id);
+        ctx.stdinPrompts.delete(id);
+        ctx.pendingQaiqControlRequests.delete(id);
+        ctx.clearQueuedApprovalTimers(id);
+        ctx.qaiqStdioTasks.delete(id);
+        void fsp.rm(ctx.logPath(id), { force: true }).catch(() => undefined);
+        ctx.onDidChangeTaskEmitter.fire({ type: 'deleted', task });
+        if (!hadProcess) {
+            ctx.deletedTaskIds.delete(id);
+        }
+        return true;
+}
+
+/** Remove one persisted task by id; `false` when no such task exists. Used by `DELETE /:id`. */
+export function deleteTaskExtracted(ctx: QaapAgentTaskRunnerContext, id: string): boolean {
+        const removed = removeTaskRecordExtracted(ctx, id);
+        if (removed) {
+            void ctx.persist();
+        }
+        return removed;
 }
 
 /** Remove every persisted task rooted in a project after the user confirms project deletion. */
@@ -883,30 +1036,7 @@ export function deleteForCwdExtracted(ctx: QaapAgentTaskRunnerContext, cwd: stri
             .filter(task => task.cwd === root || task.cwd.startsWith(`${root}/`))
             .map(task => task.id);
         for (const id of ids) {
-            const task = ctx.tasks.get(id);
-            if (!task) {
-                continue;
-            }
-            const hadProcess = ctx.processes.has(id);
-            if (task.state === 'running' || task.state === 'queued') {
-                ctx.cancel(id);
-            }
-            if (hadProcess) {
-                ctx.deletedTaskIds.add(id);
-            }
-            ctx.tasks.delete(id);
-            ctx.queuedCreateRequests.delete(id);
-            ctx.processes.delete(id);
-            ctx.stdinInteractiveTasks.delete(id);
-            ctx.stdinPrompts.delete(id);
-            ctx.pendingQaiqControlRequests.delete(id);
-            ctx.clearQueuedApprovalTimers(id);
-            ctx.qaiqStdioTasks.delete(id);
-            void fsp.rm(ctx.logPath(id), { force: true }).catch(() => undefined);
-            ctx.onDidChangeTaskEmitter.fire({ type: 'deleted', task });
-            if (!hadProcess) {
-                ctx.deletedTaskIds.delete(id);
-            }
+            removeTaskRecordExtracted(ctx, id);
         }
         for (const cache of [ctx.projectNameCache, ctx.projectInfoCache, ctx.agentInstructionsCache, ctx.repoMapCache]) {
             for (const key of cache.keys()) {

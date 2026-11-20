@@ -26,14 +26,17 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-git-review';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import { formatCommitFeedback } from '../common/qaap-commit-feedback';
+import { QaapDiffRequestError } from './qaap-diff-request-error';
 import { splitRepoRelativePath } from './qaap-diff-review-path';
-import { QaapAgentFileSection, QaapDiffLine } from './qaap-diff-review-agent-file-section';
+import { QaapAgentFileSection, QaapDiffLine, type QaapDiffViewMode } from './qaap-diff-review-agent-file-section';
+import { QaapDiffReviewScope } from './qaap-diff-review-scope';
 import { diffLineKey } from './qaap-diff-review-segments';
 import { isCurrentAgentDiffRequest } from './qaap-diff-review-request-state';
 import { reconcileExpandedReviewFiles, selectFileAfterRefresh } from './qaap-diff-review-select';
 import { watchReviewRootFileChanges } from './qaap-diff-review-file-watch';
 import { QaapCommitMessageAi } from './qaap-commit-message-ai';
 import { QaapAsyncConcurrencyLimiter } from '@theia/qaap-shared-core/lib/browser/qaap-async-concurrency-limiter';
+import { QaapLiveTaskDiff } from '@theia/qaap-shared-core/lib/common/qaap-live-task-diff';
 import {
     evaluateVerifyCommitReadiness,
     localizeVerifyCommitReadiness,
@@ -74,6 +77,9 @@ const GIT_COMMIT_MENU_OPTIONS: QaapGitCommitMenuOption[] = [
     },
 ];
 
+/** Popup menus of the Agent Changes toolbar. */
+type QaapAgentChangesMenu = 'commit' | 'scope' | 'view';
+
 /** Keep browser/network pressure bounded when several review sections are expanded. */
 const AGENT_DIFF_CONCURRENCY = 3;
 
@@ -87,6 +93,16 @@ export interface QaapDiffReviewRepositoryContext {
      * measured against it (pre-existing dirt and other tasks' edits are excluded). Omitted for global views.
      */
     baselineCommit?: string;
+}
+
+export namespace QaapDiffReviewRepositoryContext {
+    /** Same repository, workspace state and task baseline. */
+    export function equals(a: QaapDiffReviewRepositoryContext, b: QaapDiffReviewRepositoryContext): boolean {
+        return a.rootUri === b.rootUri
+            && a.rootFsPath === b.rootFsPath
+            && a.isActiveWorkspace === b.isActiveWorkspace
+            && a.baselineCommit === b.baselineCommit;
+    }
 }
 
 /**
@@ -154,10 +170,18 @@ export class QaapDiffReviewWidget extends ReactWidget {
     protected branchName: string | undefined;
     protected prReadiness: QaapGitPrReadiness | undefined;
     protected gitIdentity: QaapGitIdentity | undefined;
-    protected commitMenuOpen = false;
+    /** Open toolbar popup (scope picker, narrow-width view options, commit options). */
+    protected openMenu: QaapAgentChangesMenu | undefined;
+    /** Scope picked in the Agent Changes header; `undefined` uses the default (task when available). */
+    protected requestedScope: QaapDiffReviewScope | undefined;
+    /** Agent Changes view preferences (kept for the widget's lifetime). */
+    protected diffViewMode: QaapDiffViewMode = 'unified';
+    protected wrapLines = true;
+    /** Set by "Collapse all" so a background refresh does not reopen the first file. */
+    protected agentFilesCollapsedByUser = false;
     protected readonly agentFileDiffs = new Map<string, QaapGitFileDiffResponse>();
-    /** Per-file /diff failure detail (server error body or transport error), keyed by path. */
-    protected readonly agentFileDiffErrors = new Map<string, string>();
+    /** Per-file /diff failure: raw detail for the title/log, and whether the file changed since the task. */
+    protected readonly agentFileDiffErrors = new Map<string, { readonly detail: string; readonly stale: boolean }>();
     protected readonly loadingAgentDiffPaths = new Set<string>();
     protected readonly agentDiffLoadLimiter = new QaapAsyncConcurrencyLimiter(AGENT_DIFF_CONCURRENCY);
     protected agentDiffGeneration = 0;
@@ -194,6 +218,12 @@ export class QaapDiffReviewWidget extends ReactWidget {
 
     /** Execution-view Changes tab: Cursor-style unified diff scroll. */
     enableTranscriptEmbed(options?: { externalChrome?: boolean }): void {
+        const externalChrome = options?.externalChrome ?? false;
+        // The Changes tab calls this on every re-mount (each switch back to it). Already in this mode:
+        // keep the loaded diffs and open files, or every switch flashes the loading skeleton.
+        if (this.transcriptEmbed && !this.workHubEmbed && this.transcriptExternalChrome === externalChrome) {
+            return;
+        }
         this.workHubEmbed = false;
         this.transcriptEmbed = true;
         this.transcriptExternalChrome = options?.externalChrome ?? false;
@@ -250,7 +280,7 @@ export class QaapDiffReviewWidget extends ReactWidget {
 
         this.toDispose.push(this.scmService.onDidChangeSelectedRepository(() => this.trackRepository()));
         this.toDispose.push(this.toDisposeOnRepository);
-        this.toDispose.push(Disposable.create(() => this.detachCommitMenuListener()));
+        this.toDispose.push(Disposable.create(() => this.detachMenuListener()));
         this.toDispose.push(Disposable.create(() => this.cancelScheduledRefresh()));
         this.toDispose.push(Disposable.create(() => this.cancelCoalescedUpdate()));
         this.trackRepository();
@@ -258,8 +288,19 @@ export class QaapDiffReviewWidget extends ReactWidget {
 
     /** Work Hub: point the widget at a specific project repository. */
     setRepositoryContext(context: QaapDiffReviewRepositoryContext | undefined): void {
+        // The Work Hub re-attaches this widget each time its Changes tab is shown again. The same
+        // repository keeps what is on screen and refreshes in the background; resetting here blanked
+        // the list and every open diff to the loading state on each tab switch (visible flicker).
+        if (context && this.repositoryContext && QaapDiffReviewRepositoryContext.equals(context, this.repositoryContext)
+            && this.rootFsPath === context.rootFsPath) {
+            this.repositoryContext = context;
+            this.scheduleRefresh();
+            return;
+        }
         this.repositoryContext = context;
         this.baselineFallback = false;
+        this.requestedScope = undefined;
+        this.agentFilesCollapsedByUser = false;
         this.trackRepository();
     }
 
@@ -271,7 +312,31 @@ export class QaapDiffReviewWidget extends ReactWidget {
      * or the server rejected the baseline).
      */
     protected activeBaseCommit(): string | undefined {
-        return this.baselineFallback ? undefined : this.repositoryContext?.baselineCommit;
+        return QaapDiffReviewScope.baseCommit(this.activeScope(), this.repositoryContext?.baselineCommit, this.baselineFallback);
+    }
+
+    /** Scope the view currently shows (the requested one when the context supports it). */
+    protected activeScope(): QaapDiffReviewScope {
+        return QaapDiffReviewScope.resolve(this.requestedScope, this.repositoryContext?.baselineCommit, this.baselineFallback);
+    }
+
+    protected availableScopes(): QaapDiffReviewScope[] {
+        return QaapDiffReviewScope.available(this.repositoryContext?.baselineCommit, this.baselineFallback);
+    }
+
+    /** Switch the measured scope: the old scope's diffs never show under the new one. */
+    protected setScope(scope: QaapDiffReviewScope): void {
+        this.closeMenu();
+        if (scope === this.activeScope()) {
+            return;
+        }
+        this.requestedScope = scope;
+        this.refreshRequestSerial++;
+        // The list stays until the new scope's files land (no empty flash); its diffs are dropped.
+        this.invalidateAgentDiffs();
+        this.loadingChanges = true;
+        this.update();
+        void this.refresh();
     }
 
     setCommitReadinessProvider(
@@ -373,7 +438,12 @@ export class QaapDiffReviewWidget extends ReactWidget {
     protected override onActivateRequest(message: Message): void {
         super.onActivateRequest(message);
         this.trackRepository();
-        this.node.focus();
+        // The widget root is not focusable by default: without a tabindex, focus() is a no-op and the
+        // shell logs "did not accept focus after 2000ms".
+        if (!this.node.hasAttribute('tabindex')) {
+            this.node.tabIndex = -1;
+        }
+        this.node.focus({ preventScroll: true });
     }
 
     protected async refresh(): Promise<void> {
@@ -399,8 +469,7 @@ export class QaapDiffReviewWidget extends ReactWidget {
         this.update();
         try {
             const baseCommit = this.activeBaseCommit();
-            const changesUrl = (base: string | undefined): string => `${QAAP_GIT_REVIEW_API_PATH}/changes?root=${encodeURIComponent(requestRoot)}`
-                + (base ? `&baseCommit=${encodeURIComponent(base)}` : '');
+            const changesUrl = (base: string | undefined): string => QaapDiffReviewScope.changesUrl(requestRoot, base);
             let response = await fetch(changesUrl(baseCommit), { credentials: 'include' });
             if (!response.ok && response.status === 400 && baseCommit) {
                 // The baseline was rejected (for example garbage-collected): show the repository's changes instead.
@@ -421,6 +490,11 @@ export class QaapDiffReviewWidget extends ReactWidget {
                 return;
             }
             this.files = body.files ?? [];
+            // A live task-scope read is the task's current total: the chat and Work Hub show this number too.
+            const taskBaseCommit = QaapDiffReviewScope.baseCommit(this.activeScope(), this.repositoryContext?.baselineCommit, this.baselineFallback);
+            if (taskBaseCommit) {
+                QaapLiveTaskDiff.publish(taskBaseCommit, QaapLiveTaskDiff.sum(this.files));
+            }
             this.branchName = body.branch;
             this.prReadiness = body.prReadiness;
             this.gitIdentity = body.gitIdentity;
@@ -428,7 +502,9 @@ export class QaapDiffReviewWidget extends ReactWidget {
             this.loadingChanges = false;
             this.notifyReviewStats();
             if (this.transcriptEmbed && this.transcriptExternalChrome) {
-                this.invalidateAgentDiffs();
+                // Keep the diffs on screen until their reloads land (a file row with a diff never
+                // falls back to the loading skeleton), so a background refresh does not flash.
+                this.supersedeAgentDiffs();
                 this.seedAgentFileAccordionDefaults();
                 this.update();
                 await this.loadAgentFileDiffs([...this.expandedAgentFiles]);
@@ -455,11 +531,7 @@ export class QaapDiffReviewWidget extends ReactWidget {
             return undefined;
         }
         const baseCommit = this.activeBaseCommit();
-        const baseQuery = baseCommit ? `&baseCommit=${encodeURIComponent(baseCommit)}` : '';
-        const response = await fetch(
-            `${QAAP_GIT_REVIEW_API_PATH}/diff?root=${encodeURIComponent(this.rootFsPath)}&file=${encodeURIComponent(path)}${baseQuery}`,
-            { credentials: 'include' },
-        );
+        const response = await fetch(QaapDiffReviewScope.diffUrl(this.rootFsPath, path, baseCommit), { credentials: 'include' });
         if (!response.ok) {
             // Surface the server's error body — a blind status code hides the actual git failure.
             let detail = '';
@@ -469,11 +541,28 @@ export class QaapDiffReviewWidget extends ReactWidget {
             } catch {
                 /* non-JSON body (proxy error page) — keep the status-only message */
             }
-            throw new Error(detail
+            throw new QaapDiffRequestError(response.status, detail
                 ? `diff request failed (${response.status}): ${detail}`
                 : `diff request failed (${response.status})`);
         }
         return await response.json() as QaapGitFileDiffResponse;
+    }
+
+    /**
+     * Starts a new diff generation without dropping the diffs already shown: in-flight requests
+     * become stale, failures are retried, and only files that left the list lose their diff.
+     */
+    protected supersedeAgentDiffs(): void {
+        this.agentDiffGeneration++;
+        const current = new Set(this.files.map(file => file.path));
+        for (const path of [...this.agentFileDiffs.keys()]) {
+            if (!current.has(path)) {
+                this.agentFileDiffs.delete(path);
+            }
+        }
+        this.agentFileDiffErrors.clear();
+        this.loadingAgentDiffPaths.clear();
+        this.latestAgentDiffRequest.clear();
     }
 
     protected invalidateAgentDiffs(): void {
@@ -509,7 +598,11 @@ export class QaapDiffReviewWidget extends ReactWidget {
             });
         } catch (error) {
             if (this.isCurrentAgentDiffRequest(path, root, generation, serial)) {
-                this.agentFileDiffErrors.set(path, error instanceof Error ? error.message : String(error));
+                this.agentFileDiffErrors.set(path, {
+                    detail: error instanceof Error ? error.message : String(error),
+                    // 409 from /diff: git reports the file as changed but has no diff data (it moved on since the task).
+                    stale: error instanceof QaapDiffRequestError && error.status === 409,
+                });
             }
         } finally {
             if (this.isCurrentAgentDiffRequest(path, root, generation, serial)) {
@@ -550,7 +643,7 @@ export class QaapDiffReviewWidget extends ReactWidget {
     }
 
     protected seedAgentFileAccordionDefaults(): void {
-        reconcileExpandedReviewFiles(this.expandedAgentFiles, this.files);
+        reconcileExpandedReviewFiles(this.expandedAgentFiles, this.files, !this.agentFilesCollapsedByUser);
     }
 
     protected isAgentFileExpanded(path: string): boolean {
@@ -572,6 +665,7 @@ export class QaapDiffReviewWidget extends ReactWidget {
             return false;
         }
         this.expandedAgentFiles.add(match.path);
+        this.agentFilesCollapsedByUser = false;
         this.update();
         if (!this.agentFileDiffs.has(match.path) && !this.loadingAgentDiffPaths.has(match.path)) {
             void this.loadAgentFileDiff(match.path);
@@ -649,9 +743,9 @@ export class QaapDiffReviewWidget extends ReactWidget {
                         )}
                     </div>
                 )}
-                {this.files.length === 0 ? this.renderEmpty() : this.transcriptEmbed && this.transcriptExternalChrome
+                {this.transcriptEmbed && this.transcriptExternalChrome && this.showAgentChanges()
                     ? this.renderAgentChangesContent(totals)
-                    : this.renderContent(totals)}
+                    : this.files.length === 0 ? this.renderEmpty() : this.renderContent(totals)}
             </div>
         );
     }
@@ -707,19 +801,23 @@ export class QaapDiffReviewWidget extends ReactWidget {
         );
     }
 
+    /**
+     * Agent Changes keeps its header while a scope has no changes, so the user can switch back to a
+     * scope that has some; a single-scope view shows the plain empty state instead.
+     */
+    protected showAgentChanges(): boolean {
+        return this.files.length > 0 || (!!this.rootFsPath && this.availableScopes().length > 1);
+    }
+
     protected renderAgentChangesContent(totals: { adds: number; dels: number }): React.ReactNode {
         const count = this.files.length;
+        // Hunk staging indexes against HEAD and the index, so it only applies to the uncommitted scope.
+        const onStageHunk = this.bulkActionsEnabled && !this.activeBaseCommit() ? this.onStageAgentHunk : undefined;
         return (
             <div className='qaap-agent-changes'>
                 {this.renderAgentToolbar(totals, count)}
                 <div className='qaap-agent-changes-scroll'>
-                    {this.loadingAgentDiffPaths.size > 0 && this.agentFileDiffs.size === 0 && (
-                        <div className='qaap-agent-changes-loading' aria-busy='true'>
-                            <div className='qaap-agent-changes-loading-bar' />
-                            <div className='qaap-agent-changes-loading-bar qaap-mod-short' />
-                            <div className='qaap-agent-changes-loading-bar qaap-mod-shorter' />
-                        </div>
-                    )}
+                    {count === 0 && this.renderEmpty()}
                     {this.files.map(file => (
                         <QaapAgentFileSection
                             key={file.path}
@@ -727,8 +825,10 @@ export class QaapDiffReviewWidget extends ReactWidget {
                             diff={this.agentFileDiffs.get(file.path)}
                             expanded={this.isAgentFileExpanded(file.path)}
                             loading={this.loadingAgentDiffPaths.has(file.path)}
-                            errorDetail={this.agentFileDiffErrors.get(file.path)}
-                            iconClass={this.iconFor(file.path)}
+                            errorDetail={this.agentFileDiffErrors.get(file.path)?.detail}
+                            errorStale={this.agentFileDiffErrors.get(file.path)?.stale ?? false}
+                            viewMode={this.diffViewMode}
+                            wrapLines={this.wrapLines}
                             fileActionsEnabled={this.bulkActionsEnabled}
                             fileActionRunning={this.runningFileAction}
                             expandedContextBlocks={this.expandedContextBlocks.get(file.path)}
@@ -736,7 +836,7 @@ export class QaapDiffReviewWidget extends ReactWidget {
                             onDiscardFile={this.onRejectFile}
                             onStageFile={this.onAcceptFile}
                             onRetryDiff={this.onRetryAgentFileDiff}
-                            onStageHunk={this.bulkActionsEnabled ? this.onStageAgentHunk : undefined}
+                            onStageHunk={onStageHunk}
                             onToggleContextBlock={this.onToggleContextBlock}
                         />
                     ))}
@@ -745,67 +845,278 @@ export class QaapDiffReviewWidget extends ReactWidget {
         );
     }
 
+    /**
+     * Agent Changes header: one dense row (scope picker, base, totals, view tools), then a slim action
+     * row (branch and staging state, readiness chips, bulk actions and the commit button).
+     */
     protected renderAgentToolbar(totals: { adds: number; dels: number }, count: number): React.ReactNode {
-        const branch = this.branchName ?? '…';
-        const summaryLabel = count === 1
-            ? nls.localize('qaap/mobileProjects/uncommittedChangeOne', '1 Uncommitted Change')
-            : nls.localize('qaap/mobileProjects/uncommittedChangeMany', '{0} Uncommitted Changes', String(count));
-        const readiness = this.readCommitReadiness();
-        const checksBlockCommit = readiness?.blocksCommit === true;
-        const bulkDisabled = !this.bulkActionsEnabled || this.runningBulkAction || count === 0 || checksBlockCommit;
         return (
             <header className='qaap-agent-changes-toolbar'>
-                <div className='qaap-agent-changes-toolbar-primary'>
-                    <span className='qaap-agent-changes-scope'>
-                        <i className={codicon('device-desktop')} aria-hidden='true' />
-                        {nls.localize('qaap/mobileProjects/changesScopeLocal', 'Local')}
-                    </span>
-                    <span className='qaap-agent-changes-branch' title={branch}>
-                        <i className={codicon('git-branch')} aria-hidden='true' />
-                        <span>{branch}</span>
-                    </span>
-                    <span className='qaap-agent-changes-toolbar-spacer' />
-                    {this.bulkActionsEnabled && this.renderAgentCommitControls(bulkDisabled)}
-                </div>
-                <div className='qaap-agent-changes-toolbar-secondary'>
-                    <div className='qaap-agent-changes-summary'>
-                        <span className='qaap-agent-changes-summary-label'>{summaryLabel}</span>
-                        <span className='qaap-agent-changes-summary-label'>
-                            {nls.localize('qaap/diff/stagingSummary', '{0} staged · {1} unstaged',
-                                String(this.files.filter(file => file.staged).length),
-                                String(this.files.filter(file => !file.staged).length))}
-                        </span>
-                        {readiness && readiness.level !== 'not_configured' && (
-                            <span
-                                className={`qaap-agent-changes-verify-status qaap-mod-${readiness.level}`}
-                                title={localizeVerifyCommitReadiness(readiness.level)}
-                            >
-                                {localizeVerifyCommitReadiness(readiness.level)}
-                            </span>
-                        )}
-                        {this.gitIdentity && !this.gitIdentity.configured && (
-                            <span
-                                className='qaap-agent-changes-verify-status qaap-mod-missing'
-                                title={nls.localize(
-                                    'qaap/mobileProjects/gitIdentityWillBeConfigured',
-                                    'Git author identity will be configured before commit',
-                                )}
-                            >
-                                {nls.localize('qaap/mobileProjects/gitIdentityNeeded', 'Git identity needed')}
-                            </span>
-                        )}
-                        <span className='qaap-agent-changes-summary-stats'>
-                            <span className='qaap-diff-add'>+{totals.adds}</span>
-                            <span className='qaap-diff-del'>-{totals.dels}</span>
-                        </span>
-                    </div>
-                    {this.renderAgentBulkActions(bulkDisabled)}
-                </div>
+                {this.renderAgentHeaderRow(totals)}
+                {count > 0 && this.renderAgentActionRow(count)}
             </header>
         );
     }
 
+    protected scopeLabel(scope: QaapDiffReviewScope): string {
+        return scope === 'task'
+            ? nls.localize('qaap/diff/scopeTask', 'Task changes')
+            : nls.localize('qaap/diff/scopeUncommitted', 'Uncommitted');
+    }
+
+    protected scopeDescription(scope: QaapDiffReviewScope): string {
+        return scope === 'task'
+            ? nls.localize('qaap/diff/scopeTaskDescription', 'Everything this task changed')
+            : nls.localize('qaap/diff/scopeUncommittedDescription', 'All uncommitted changes in the repository');
+    }
+
+    protected renderAgentHeaderRow(totals: { adds: number; dels: number }): React.ReactNode {
+        const scope = this.activeScope();
+        const base = this.activeBaseCommit();
+        const baseLabel = base
+            ? nls.localize('qaap/diff/vsCommit', 'vs {0}', QaapDiffReviewScope.shortCommit(base))
+            : nls.localize('qaap/diff/vsHead', 'vs HEAD');
+        const baseTitle = base
+            ? nls.localize('qaap/diff/vsTaskStartTitle', 'Compared with the snapshot taken when this task started ({0})', QaapDiffReviewScope.shortCommit(base))
+            : nls.localize('qaap/diff/vsHeadTitle', 'Compared with the last commit (HEAD)');
+        const allExpanded = this.files.length > 0 && this.files.every(file => this.expandedAgentFiles.has(file.path));
+        const expandLabel = allExpanded
+            ? nls.localize('qaap/diff/collapseAll', 'Collapse all files')
+            : nls.localize('qaap/diff/expandAll', 'Expand all files');
+        const totalsLabel = nls.localizeByDefault('{0} lines added, {1} lines removed', String(totals.adds), String(totals.dels));
+        return (
+            <div
+                className='qaap-agent-changes-header'
+                role='toolbar'
+                aria-label={nls.localize('qaap/diff/changesToolbar', 'Changes view')}
+            >
+                {this.renderScopePicker(scope)}
+                <span className='qaap-agent-changes-base' title={baseTitle}>{baseLabel}</span>
+                <span className='qaap-agent-changes-totals' role='img' aria-label={totalsLabel} title={totalsLabel}>
+                    <span className='qaap-diff-add'>+{totals.adds}</span>
+                    <span className='qaap-diff-del'>−{totals.dels}</span>
+                </span>
+                <span className='qaap-agent-changes-toolbar-spacer' />
+                <span className='qaap-agent-changes-tools'>
+                    <button
+                        type='button'
+                        className='qaap-diff-review-icon-btn'
+                        title={nls.localize('qaap/diff/refresh', 'Refresh')}
+                        aria-label={nls.localize('qaap/diff/refresh', 'Refresh')}
+                        aria-busy={this.loadingChanges}
+                        onClick={this.onRefresh}
+                    >
+                        <i className={`${codicon('refresh')}${this.loadingChanges ? ' qaap-mod-spinning' : ''}`} aria-hidden='true' />
+                    </button>
+                    <button
+                        type='button'
+                        className='qaap-diff-review-icon-btn'
+                        title={expandLabel}
+                        aria-label={expandLabel}
+                        onClick={allExpanded ? this.onCollapseAllFiles : this.onExpandAllFiles}
+                    >
+                        <i className={codicon(allExpanded ? 'collapse-all' : 'expand-all')} aria-hidden='true' />
+                    </button>
+                    <span
+                        className='qaap-agent-changes-segmented qaap-agent-changes-wide-only'
+                        role='group'
+                        aria-label={nls.localize('qaap/diff/diffLayout', 'Diff layout')}
+                    >
+                        <button
+                            type='button'
+                            className={`qaap-diff-review-icon-btn${this.diffViewMode === 'unified' ? ' qaap-mod-active' : ''}`}
+                            title={nls.localize('qaap/diff/unifiedView', 'Unified')}
+                            aria-label={nls.localize('qaap/diff/unifiedView', 'Unified')}
+                            aria-pressed={this.diffViewMode === 'unified'}
+                            onClick={this.onUnifiedView}
+                        >
+                            <i className={codicon('diff-single')} aria-hidden='true' />
+                        </button>
+                        <button
+                            type='button'
+                            className={`qaap-diff-review-icon-btn${this.diffViewMode === 'split' ? ' qaap-mod-active' : ''}`}
+                            title={nls.localize('qaap/diff/splitView', 'Side by side')}
+                            aria-label={nls.localize('qaap/diff/splitView', 'Side by side')}
+                            aria-pressed={this.diffViewMode === 'split'}
+                            onClick={this.onSplitView}
+                        >
+                            <i className={codicon('diff-sidebyside')} aria-hidden='true' />
+                        </button>
+                    </span>
+                    <button
+                        type='button'
+                        className={`qaap-diff-review-icon-btn qaap-agent-changes-wide-only${this.wrapLines ? ' qaap-mod-active' : ''}`}
+                        title={nls.localize('qaap/diff/wrapLines', 'Wrap lines')}
+                        aria-label={nls.localize('qaap/diff/wrapLines', 'Wrap lines')}
+                        aria-pressed={this.wrapLines}
+                        onClick={this.onToggleWrapLines}
+                    >
+                        <i className={codicon('word-wrap')} aria-hidden='true' />
+                    </button>
+                    {this.renderViewOverflow()}
+                </span>
+            </div>
+        );
+    }
+
+    /** Scope picker; a plain label when only one scope applies (no task baseline). */
+    protected renderScopePicker(scope: QaapDiffReviewScope): React.ReactNode {
+        const scopes = this.availableScopes();
+        if (scopes.length < 2) {
+            return <span className='qaap-agent-changes-scope-label' title={this.scopeDescription(scope)}>{this.scopeLabel(scope)}</span>;
+        }
+        const open = this.openMenu === 'scope';
+        return (
+            <div className='qaap-agent-changes-menu-wrap'>
+                <button
+                    type='button'
+                    className={`qaap-agent-changes-scope-btn${open ? ' qaap-mod-open' : ''}`}
+                    title={nls.localize('qaap/diff/chooseScope', 'Choose which changes to show')}
+                    aria-haspopup='menu'
+                    aria-expanded={open}
+                    data-qaap-menu-trigger='scope'
+                    onClick={this.onToggleScopeMenu}
+                >
+                    <span className='qaap-agent-changes-scope-btn-label'>{this.scopeLabel(scope)}</span>
+                    <i className={codicon('chevron-down')} aria-hidden='true' />
+                </button>
+                {open && (
+                    <div
+                        className='qaap-agent-changes-menu qaap-mod-start'
+                        role='menu'
+                        aria-label={nls.localize('qaap/diff/scopeMenu', 'Changes to show')}
+                        onKeyDown={this.onMenuKeyDown}
+                    >
+                        {scopes.map(candidate => (
+                            <ScopeMenuItem
+                                key={candidate}
+                                scope={candidate}
+                                label={this.scopeLabel(candidate)}
+                                description={this.scopeDescription(candidate)}
+                                checked={candidate === scope}
+                                onSelect={this.onSelectScope}
+                            />
+                        ))}
+                    </div>
+                )}
+            </div>
+        );
+    }
+
+    /** Narrow panels: layout and wrap options move into one overflow menu. */
+    protected renderViewOverflow(): React.ReactNode {
+        const open = this.openMenu === 'view';
+        return (
+            <div className='qaap-agent-changes-menu-wrap qaap-agent-changes-narrow-only'>
+                <button
+                    type='button'
+                    className={`qaap-diff-review-icon-btn${open ? ' qaap-mod-active' : ''}`}
+                    title={nls.localize('qaap/diff/viewOptions', 'View options')}
+                    aria-label={nls.localize('qaap/diff/viewOptions', 'View options')}
+                    aria-haspopup='menu'
+                    aria-expanded={open}
+                    data-qaap-menu-trigger='view'
+                    onClick={this.onToggleViewMenu}
+                >
+                    <i className={codicon('ellipsis')} aria-hidden='true' />
+                </button>
+                {open && (
+                    <div
+                        className='qaap-agent-changes-menu'
+                        role='menu'
+                        aria-label={nls.localize('qaap/diff/viewOptions', 'View options')}
+                        onKeyDown={this.onMenuKeyDown}
+                    >
+                        <button
+                            type='button'
+                            role='menuitemradio'
+                            aria-checked={this.diffViewMode === 'unified'}
+                            className='qaap-agent-changes-menu-item'
+                            onClick={this.onUnifiedView}
+                        >
+                            <i className={codicon(this.diffViewMode === 'unified' ? 'check' : 'blank')} aria-hidden='true' />
+                            <span>{nls.localize('qaap/diff/unifiedView', 'Unified')}</span>
+                        </button>
+                        <button
+                            type='button'
+                            role='menuitemradio'
+                            aria-checked={this.diffViewMode === 'split'}
+                            className='qaap-agent-changes-menu-item'
+                            onClick={this.onSplitView}
+                        >
+                            <i className={codicon(this.diffViewMode === 'split' ? 'check' : 'blank')} aria-hidden='true' />
+                            <span>{nls.localize('qaap/diff/splitView', 'Side by side')}</span>
+                        </button>
+                        <div className='qaap-agent-changes-menu-separator' role='separator' />
+                        <button
+                            type='button'
+                            role='menuitemcheckbox'
+                            aria-checked={this.wrapLines}
+                            className='qaap-agent-changes-menu-item'
+                            onClick={this.onToggleWrapLines}
+                        >
+                            <i className={codicon(this.wrapLines ? 'check' : 'blank')} aria-hidden='true' />
+                            <span>{nls.localize('qaap/diff/wrapLines', 'Wrap lines')}</span>
+                        </button>
+                    </div>
+                )}
+            </div>
+        );
+    }
+
+    protected renderAgentActionRow(count: number): React.ReactNode {
+        const readiness = this.readCommitReadiness();
+        const checksBlockCommit = readiness?.blocksCommit === true;
+        const bulkDisabled = !this.bulkActionsEnabled || this.runningBulkAction || count === 0 || checksBlockCommit;
+        const staged = this.files.filter(file => file.staged).length;
+        const filesLabel = count === 1
+            ? nls.localize('qaap/diff/oneFile', '1 file')
+            : nls.localize('qaap/diff/nFiles', '{0} files', count);
+        return (
+            <div className='qaap-agent-changes-actionbar'>
+                <span className='qaap-agent-changes-meta'>
+                    {this.branchName && (
+                        <span className='qaap-agent-changes-branch' title={this.branchName}>
+                            <i className={codicon('git-branch')} aria-hidden='true' />
+                            <span>{this.branchName}</span>
+                        </span>
+                    )}
+                    <span className='qaap-agent-changes-meta-text'>
+                        {staged > 0
+                            ? nls.localize('qaap/diff/filesStaged', '{0} · {1} staged', filesLabel, String(staged))
+                            : filesLabel}
+                    </span>
+                </span>
+                {readiness && readiness.level !== 'not_configured' && (
+                    <span
+                        className={`qaap-agent-changes-verify-status qaap-mod-${readiness.level}`}
+                        title={localizeVerifyCommitReadiness(readiness.level)}
+                    >
+                        {localizeVerifyCommitReadiness(readiness.level)}
+                    </span>
+                )}
+                {this.gitIdentity && !this.gitIdentity.configured && (
+                    <span
+                        className='qaap-agent-changes-verify-status qaap-mod-info'
+                        title={nls.localize(
+                            'qaap/mobileProjects/gitIdentityFallbackHint',
+                            'No Git author is set for this repository, so Qaap commits as "Qaap <qaap@local>". '
+                            + 'To commit as yourself, run: git config --global user.name "Your Name" and '
+                            + 'git config --global user.email you@example.com',
+                        )}
+                    >
+                        {nls.localize('qaap/mobileProjects/gitIdentityFallback', 'Commits as Qaap')}
+                    </span>
+                )}
+                <span className='qaap-agent-changes-toolbar-spacer' />
+                {this.renderAgentBulkActions(bulkDisabled)}
+                {this.bulkActionsEnabled && this.renderAgentCommitControls(bulkDisabled)}
+            </div>
+        );
+    }
+
     protected renderAgentCommitControls(disabled: boolean): React.ReactNode {
+        const open = this.openMenu === 'commit';
         return (
             <div className='qaap-agent-changes-commit-group'>
                 <button
@@ -816,27 +1127,33 @@ export class QaapDiffReviewWidget extends ReactWidget {
                 >
                     {nls.localize('qaap/mobileProjects/approveAndCommit', 'Approve & Commit')}
                 </button>
-                <div className='qaap-agent-changes-commit-menu-wrap'>
+                <div className='qaap-agent-changes-menu-wrap qaap-agent-changes-commit-menu-wrap'>
                     <button
                         type='button'
-                        className={`qaap-agent-changes-commit-menu${this.commitMenuOpen ? ' qaap-mod-open' : ''}`}
+                        className={`qaap-agent-changes-commit-menu${open ? ' qaap-mod-open' : ''}`}
                         disabled={disabled}
                         title={nls.localize('qaap/mobileProjects/commitOptions', 'Commit options')}
                         aria-label={nls.localize('qaap/mobileProjects/commitOptions', 'Commit options')}
-                        aria-expanded={this.commitMenuOpen}
+                        aria-expanded={open}
                         aria-haspopup='menu'
+                        data-qaap-menu-trigger='commit'
                         onClick={this.onToggleCommitMenu}
                     >
                         <i className={codicon('chevron-down')} aria-hidden='true' />
                     </button>
-                    {this.commitMenuOpen && (
-                        <div className='qaap-agent-changes-commit-dropdown' role='menu'>
+                    {open && (
+                        <div
+                            className='qaap-agent-changes-menu qaap-agent-changes-commit-dropdown'
+                            role='menu'
+                            aria-label={nls.localize('qaap/mobileProjects/commitOptions', 'Commit options')}
+                            onKeyDown={this.onMenuKeyDown}
+                        >
                             {GIT_COMMIT_MENU_OPTIONS.map(option => (
                                 <button
                                     key={option.action}
                                     type='button'
                                     role='menuitem'
-                                    className='qaap-agent-changes-commit-dropdown-item'
+                                    className='qaap-agent-changes-menu-item'
                                     onClick={() => { void this.runCommitAction(option.action); }}
                                 >
                                     {option.label}
@@ -851,58 +1168,163 @@ export class QaapDiffReviewWidget extends ReactWidget {
 
     protected readonly onToggleCommitMenu = (event: React.MouseEvent): void => {
         event.stopPropagation();
-        if (this.commitMenuOpen) {
-            this.closeCommitMenu();
-        } else {
-            this.openCommitMenu();
-        }
+        this.toggleMenu('commit');
     };
 
-    protected openCommitMenu(): void {
-        this.commitMenuOpen = true;
-        this.attachCommitMenuListener();
+    protected readonly onToggleScopeMenu = (event: React.MouseEvent): void => {
+        event.stopPropagation();
+        this.toggleMenu('scope');
+    };
+
+    protected readonly onToggleViewMenu = (event: React.MouseEvent): void => {
+        event.stopPropagation();
+        this.toggleMenu('view');
+    };
+
+    protected readonly onSelectScope = (scope: QaapDiffReviewScope): void => {
+        this.setScope(scope);
+    };
+
+    protected readonly onUnifiedView = (): void => {
+        this.setDiffViewMode('unified');
+    };
+
+    protected readonly onSplitView = (): void => {
+        this.setDiffViewMode('split');
+    };
+
+    protected setDiffViewMode(mode: QaapDiffViewMode): void {
+        this.openMenu = this.openMenu === 'view' ? undefined : this.openMenu;
+        this.detachMenuListenerIfClosed();
+        this.diffViewMode = mode;
         this.update();
     }
 
-    protected closeCommitMenu(): void {
-        if (!this.commitMenuOpen) {
+    protected readonly onToggleWrapLines = (): void => {
+        this.openMenu = this.openMenu === 'view' ? undefined : this.openMenu;
+        this.detachMenuListenerIfClosed();
+        this.wrapLines = !this.wrapLines;
+        this.update();
+    };
+
+    protected readonly onExpandAllFiles = (): void => {
+        this.agentFilesCollapsedByUser = false;
+        for (const file of this.files) {
+            this.expandedAgentFiles.add(file.path);
+        }
+        this.update();
+        void this.loadAgentFileDiffs(this.files
+            .map(file => file.path)
+            .filter(path => !this.agentFileDiffs.has(path) && !this.loadingAgentDiffPaths.has(path)));
+    };
+
+    protected readonly onCollapseAllFiles = (): void => {
+        this.agentFilesCollapsedByUser = true;
+        this.expandedAgentFiles.clear();
+        this.update();
+    };
+
+    protected toggleMenu(menu: QaapAgentChangesMenu): void {
+        if (this.openMenu === menu) {
+            this.closeMenu();
             return;
         }
-        this.commitMenuOpen = false;
-        this.detachCommitMenuListener();
+        this.openMenu = menu;
+        this.attachMenuListener();
         this.update();
+        // Menu pattern: focus moves to the checked (or first) item so arrow keys work at once.
+        window.requestAnimationFrame(() => {
+            const items = this.menuItems();
+            (items.find(item => item.getAttribute('aria-checked') === 'true') ?? items[0])?.focus();
+        });
     }
 
-    protected commitMenuListener: ((event: MouseEvent) => void) | undefined;
+    protected closeMenu(options?: { restoreFocus?: boolean }): void {
+        const menu = this.openMenu;
+        if (!menu) {
+            return;
+        }
+        this.openMenu = undefined;
+        this.detachMenuListener();
+        this.update();
+        if (options?.restoreFocus) {
+            this.node.querySelector<HTMLElement>(`[data-qaap-menu-trigger="${menu}"]`)?.focus();
+        }
+    }
 
-    protected attachCommitMenuListener(): void {
-        this.detachCommitMenuListener();
-        this.commitMenuListener = (event: MouseEvent) => {
+    protected menuItems(): HTMLElement[] {
+        return Array.from(this.node.querySelectorAll<HTMLElement>(
+            '.qaap-agent-changes-menu [role^="menuitem"]:not(:disabled)',
+        ));
+    }
+
+    /** Arrow keys, Home/End move between items; Escape and Tab close the menu. */
+    protected readonly onMenuKeyDown = (event: React.KeyboardEvent): void => {
+        const items = this.menuItems();
+        const index = items.indexOf(document.activeElement as HTMLElement);
+        let next: number | undefined;
+        switch (event.key) {
+            case 'ArrowDown':
+                next = (index + 1) % items.length;
+                break;
+            case 'ArrowUp':
+                next = (index - 1 + items.length) % items.length;
+                break;
+            case 'Home':
+                next = 0;
+                break;
+            case 'End':
+                next = items.length - 1;
+                break;
+            case 'Escape':
+                event.preventDefault();
+                event.stopPropagation();
+                this.closeMenu({ restoreFocus: true });
+                return;
+            case 'Tab':
+                this.closeMenu();
+                return;
+            default:
+                return;
+        }
+        event.preventDefault();
+        items[next]?.focus();
+    };
+
+    protected menuListener: ((event: MouseEvent) => void) | undefined;
+
+    /** Close the open menu on a press outside of its trigger and popup. */
+    protected attachMenuListener(): void {
+        this.detachMenuListener();
+        this.menuListener = (event: MouseEvent) => {
             const target = event.target;
-            if (!(target instanceof Node)) {
+            if (target instanceof Element && target.closest('.qaap-agent-changes-menu-wrap') && this.node.contains(target)) {
                 return;
             }
-            if (this.node.contains(target)) {
-                return;
-            }
-            this.closeCommitMenu();
+            this.closeMenu();
         };
         window.setTimeout(() => {
-            if (this.commitMenuListener) {
-                document.addEventListener('mousedown', this.commitMenuListener);
+            if (this.menuListener) {
+                document.addEventListener('mousedown', this.menuListener);
             }
         }, 0);
     }
 
-    protected detachCommitMenuListener(): void {
-        if (this.commitMenuListener) {
-            document.removeEventListener('mousedown', this.commitMenuListener);
-            this.commitMenuListener = undefined;
+    protected detachMenuListener(): void {
+        if (this.menuListener) {
+            document.removeEventListener('mousedown', this.menuListener);
+            this.menuListener = undefined;
+        }
+    }
+
+    protected detachMenuListenerIfClosed(): void {
+        if (!this.openMenu) {
+            this.detachMenuListener();
         }
     }
 
     protected async runCommitAction(action: QaapGitCommitWorkflowAction): Promise<void> {
-        this.closeCommitMenu();
+        this.closeMenu();
         if (this.runningBulkAction || !this.bulkActionsEnabled || this.files.length === 0 || !this.rootFsPath) {
             return;
         }
@@ -1021,7 +1443,7 @@ export class QaapDiffReviewWidget extends ReactWidget {
                     disabled={disabled}
                     onClick={this.onDiscardAll}
                 >
-                    <i className={codicon('discard')} />
+                    <i className={codicon('discard')} aria-hidden='true' />
                 </button>
                 <button
                     type='button'
@@ -1031,7 +1453,7 @@ export class QaapDiffReviewWidget extends ReactWidget {
                     disabled={disabled}
                     onClick={this.onAcceptAll}
                 >
-                    <i className={codicon('diff')} />
+                    <i className={codicon('add')} aria-hidden='true' />
                 </button>
             </span>
         );
@@ -1423,6 +1845,7 @@ export class QaapDiffReviewWidget extends ReactWidget {
             this.expandedAgentFiles.delete(path);
         } else {
             this.expandedAgentFiles.add(path);
+            this.agentFilesCollapsedByUser = false;
             if (!this.agentFileDiffs.has(path) && !this.loadingAgentDiffPaths.has(path)) {
                 void this.loadAgentFileDiff(path);
             }
@@ -1600,5 +2023,32 @@ function FileRow(props: {
                 </button>
             )}
         </div>
+    );
+}
+
+/** One scope option of the Changes header picker. */
+function ScopeMenuItem(props: {
+    scope: QaapDiffReviewScope;
+    label: string;
+    description: string;
+    checked: boolean;
+    onSelect: (scope: QaapDiffReviewScope) => void;
+}): React.ReactElement {
+    const { scope, onSelect } = props;
+    const onClick = React.useCallback(() => onSelect(scope), [onSelect, scope]);
+    return (
+        <button
+            type='button'
+            role='menuitemradio'
+            aria-checked={props.checked}
+            className='qaap-agent-changes-menu-item qaap-mod-two-line'
+            onClick={onClick}
+        >
+            <i className={codicon(props.checked ? 'check' : 'blank')} aria-hidden='true' />
+            <span className='qaap-agent-changes-menu-item-text'>
+                <span>{props.label}</span>
+                <span className='qaap-agent-changes-menu-item-description'>{props.description}</span>
+            </span>
+        </button>
     );
 }

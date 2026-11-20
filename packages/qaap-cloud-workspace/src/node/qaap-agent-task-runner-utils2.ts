@@ -21,6 +21,7 @@ import { QAAP_TENANT_BACKEND_MODE_ENV, QAAP_TENANT_LOGIN_ENV } from '@theia/qaap
 import { parse, parseTree, type ParseError } from 'jsonc-parser';
 import { QaapSecretCipher } from '@theia/qaap-persistence/lib/node/qaap-secret-cipher';
 import { isQaapSecretPreferenceId } from '@theia/qaap-shared-core/lib/common/qaap-secret-preference-id';
+import { isQaapSecretPlaceholder } from '@theia/qaap-shared-core/lib/common/qaap-secret-placeholder';
 import { isQaapAiSettingsPrefKey } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 import type { QaapPreferenceReader } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 import { PreferenceScope } from '@theia/core/lib/common/preferences/preference-scope';
@@ -524,10 +525,12 @@ export function writeUserSettingsToDisk(
     const cipher = QaapSecretCipher.fromEnvironment(env);
     const filePath = resolveUserSettingsFilePath(ownerLogin, homeDir);
     const current = fs.existsSync(filePath) ? parseSettingsJsonFile(filePath) : {};
-    const filteredPatch = filterAiSettings(patch);
+    // A placeholder is the browser echoing a masked key back: keep the stored secret, never write the placeholder.
+    const incoming = Object.fromEntries(Object.entries(patch).filter(([, value]) => !isQaapSecretPlaceholder(value)));
+    const filteredPatch = filterAiSettings(incoming);
     const next = { ...current, ...filteredPatch };
     // `null` (JSON's only way to say `undefined`) removes an AI key, so the reader falls back to the schema default.
-    for (const [key, value] of Object.entries(patch)) {
+    for (const [key, value] of Object.entries(incoming)) {
         // eslint-disable-next-line no-null/no-null
         if ((value === undefined || value === null) && isQaapAiSettingsPrefKey(key) && key in next) {
             delete next[key];

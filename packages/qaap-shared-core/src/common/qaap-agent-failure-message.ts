@@ -7,6 +7,8 @@ import { nls } from '@theia/core/lib/common/nls';
 import {
     extractAgentAuthLoginChallenge,
     localizeAgentAuthFailureMessage,
+    QAAP_HARNESS_UNAUTHENTICATED_PATTERNS,
+    QAAP_SIGN_IN_GUARD_REFUSAL_PATTERNS,
 } from './qaap-agent-auth-login';
 import { localizeHostedMissingCodingAgentMessage, readQaapHostedRuntime } from './qaap-hosted-agent-auth-policy';
 import type { QaapAgentMessageDTO } from './qaap-agent-conversation-client';
@@ -40,23 +42,53 @@ const COLLAPSED_FAILURE_REASON_MAX_LENGTH = 96;
 const ANSI_REGEX = /\u001b\[[0-9;?]*[ -/]*[@-~]/g;
 const WINDOWS_CMD_ERROR_LINE = /^(FIND|DIR|COPY|XCOPY|DEL|ERASE|MOVE|REN|RENAME|TYPE|CMD|WHERE|FC|MORE):\s+\S/i;
 
-const QUOTA_PATTERNS: readonly RegExp[] = [
-    /\binsufficient[_\s-]?quota\b/i,
-    /\bquota\b/i,
-    /\bfree[_\s-]?credits?\b/i,
-    /\bcredits?\s+(?:exhausted|depleted|used\s+up|ran\s+out)\b/i,
-    /\bout\s+of\s+credits?\b/i,
-    // Hugging Face router: "You have depleted your monthly included credits."
-    /\bdepleted\s+your\b[^.\n]{0,40}\bcredits?\b/i,
-    /\bbilling\b/i,
-    /\bresource[_\s-]?exhausted\b/i,
+/**
+ * A usage limit the CLI reports on its own plan (Codex on a ChatGPT plan, OpenCode's free tier). Some
+ * name the reset time, see {@link USAGE_LIMIT_RESET_PATTERN}.
+ */
+const USAGE_LIMIT_PATTERNS: readonly RegExp[] = [
     // OpenCode free tier: "AI_APICallError: Free usage limit reached. Subscribe to ... to keep going".
     /\busage\s+limit\s+reached\b/i,
-    /\bfree\s+usage\s+limit\b/i,
     // Codex CLI on a ChatGPT plan: "You've hit your usage limit. Upgrade to Plus to continue ..., or try again at Nov 19th, 2026 12:56 AM."
     /\bhit\s+your\s+usage\s+limit\b/i,
     /\busage\s+limit\b[^\n]{0,160}\btry\s+again\s+at\b/i,
 ];
+
+/** The reset time a usage-limit message names ("try again at Nov 19th, 2026 12:56 AM."). Never guessed. */
+const USAGE_LIMIT_RESET_PATTERN = /\btry\s+again\s+at\s+([^.\n]{3,60}?)\s*(?:\.|\n|$)/i;
+
+/**
+ * Provider quota exhaustion. Strict on purpose: a bare "quota" or "billing" is a word in prose and in
+ * tool output (this repo talks about both), so each pattern needs the exhaustion verb or the provider's
+ * own phrase. Real messages stay matched: "quota exceeded", "Individual quota reached", "You exceeded
+ * your current quota", "reached its quota" (our own copy), "insufficient_quota", "RESOURCE_EXHAUSTED".
+ */
+const QUOTA_PATTERNS: readonly RegExp[] = [
+    /\binsufficient[_\s-]?quota\b/i,
+    /\bquota\s+(?:exceeded|exhausted|depleted|reached|limit\s+(?:reached|exceeded))\b/i,
+    /\b(?:exceeded|exhausted|reached|hit)\s+(?:its|your|the|our|a|an)\s+(?:[\w-]+\s+)?quota\b/i,
+    /\bfree[_\s-]?credits?\b[^\n]{0,60}?\b(?:exhausted|depleted|used\s+up|ran\s+out)\b/i,
+    /\bcredits?\s+(?:exhausted|depleted|used\s+up|ran\s+out)\b/i,
+    /\bout\s+of\s+credits?\b/i,
+    // Hugging Face router: "You have depleted your monthly included credits."
+    /\bdepleted\s+your\b[^.\n]{0,40}\bcredits?\b/i,
+    // OpenAI-style "Your billing hard limit has been reached." (a bare "billing" is not a limit).
+    /\bbilling\s+(?:hard\s+)?limit\b[^.\n]{0,40}\b(?:reached|exceeded)\b/i,
+    /\bresource[_\s-]?exhausted\b/i,
+    /\bfree\s+usage\s+limit\b/i,
+    ...USAGE_LIMIT_PATTERNS,
+];
+
+/** True when the text reports a plan / subscription usage limit (Codex, OpenCode free tier). */
+export function isAgentUsageLimitText(text: string | undefined): boolean {
+    return !!text && matchesAny(text, USAGE_LIMIT_PATTERNS);
+}
+
+/** The reset time a usage-limit message names, e.g. "Nov 19th, 2026 12:56 AM"; `undefined` when it names none. */
+export function extractAgentUsageLimitResetText(text: string | undefined): string | undefined {
+    const candidate = text ? USAGE_LIMIT_RESET_PATTERN.exec(text)?.[1]?.trim() : undefined;
+    return candidate && isAgentUsageLimitText(text) ? candidate : undefined;
+}
 
 const RATE_LIMIT_PATTERNS: readonly RegExp[] = [
     /\brate[_\s-]?limit(?:ed|ing)?\b/i,
@@ -80,6 +112,9 @@ const MODEL_UNAVAILABLE_PATTERNS: readonly RegExp[] = [
     /\bno\s+such\s+model\b/i,
     /\bunknown\s+model\b/i,
     /\bmodel\s+not\s+supported\b/i,
+    // GitHub Copilot: `400 {"error":{"message":"The requested model is not supported.","code":"model_not_supported"}}`.
+    /\brequested\s+model\s+is\s+not\s+supported\b/i,
+    /\bmodel_not_supported\b/i,
     // Codex CLI on a ChatGPT account: "The 'gpt-5.6-sol' model is not supported when using Codex with a ChatGPT account."
     /'[^']+'\s+model\s+is\s+not\s+supported\b/i,
     /\bmodel\s+is\s+not\s+supported\s+when\s+using\s+codex\b/i,
@@ -174,6 +209,17 @@ const AUTH_PATTERNS: readonly RegExp[] = [
     /\bauth(?:entication)?\s+is\s+required\b/i,
     /\bcodex\s+auth\b/i,
     /\bCODEX_API_KEY\b/,
+    // Google's Antigravity CLI (`agy`) without a session: it prints one of these, then waits for a
+    // pasted code and gives up after 60 s, or exits 1 for `-p`. Each line is agy's own and narrow.
+    /\bauthentication\s+required\.\s+please\s+visit\s+the\s+url\s+to\s+log\s+in\b/i,
+    /\bauthentication\s+required\.\s+run\s+['"`]?agy['"`]?\s+to\s+log\s+in\b/i,
+    /\bauthentication\s+failed\s+or\s+timed\s+out\b/i,
+    /\bauthentication\s+interrupted\b/i,
+    /\bplease\s+sign\s+in\s+to\s+view\s+available\s+models\b/i,
+    // Qaap's own pre-spawn refusal for a Pro model without a confirmed harness session.
+    ...QAAP_SIGN_IN_GUARD_REFUSAL_PATTERNS,
+    // Cursor "run 'agent login' first", Codex "401 Unauthorized: Missing bearer…" (qaap-agent-auth-login.ts).
+    ...QAAP_HARNESS_UNAUTHENTICATED_PATTERNS,
 ];
 
 /**
@@ -238,6 +284,14 @@ const NETWORK_PATTERNS: readonly RegExp[] = [
     /\bnetwork\s+error\b/i,
     /\bfetch\s+failed\b/i,
     /\bconnection\s+(?:refused|reset)\b/i,
+];
+
+/** Squid egress proxy refusing a host (tenant allowlist): its error page and header names. */
+const EGRESS_PROXY_PATTERNS: readonly RegExp[] = [
+    /\bERR_ACCESS_DENIED\b/,
+    /\bX-Squid-Error\b/i,
+    /\bgenerated\s+by\s+squid\b/i,
+    /\bsquid\b[^\n]{0,40}\b(?:403|denied)\b/i,
 ];
 
 /** QAIQ / Claude-Code-compatible CLIs on a provider 404: names the model the provider refused. */
@@ -638,7 +692,37 @@ function piAssistantErrorText(value: unknown): string | undefined {
     if (message.role !== 'assistant' || message.stopReason !== 'error') {
         return undefined;
     }
-    return typeof message.errorMessage === 'string' && message.errorMessage.trim() ? message.errorMessage.trim() : undefined;
+    if (typeof message.errorMessage !== 'string' || !message.errorMessage.trim()) {
+        return undefined;
+    }
+    // The error body rarely names the provider (OpenRouter's 401 is just "User not found."); Pi does, on the message.
+    const provider = typeof message.provider === 'string' && message.provider.trim() ? message.provider.trim() : undefined;
+    return provider ? `${message.errorMessage.trim()} (provider: ${provider})` : message.errorMessage.trim();
+}
+
+const PI_ASSISTANT_MESSAGE_END_LINE = /^\{"type":"message_end","message":\{"role":"assistant"/;
+
+/**
+ * Pi closes its stream with an `agent_end` record that repeats every message of the session, system
+ * prompt included, so that one line can be longer than the scanned tail and push the failed
+ * `message_end` out of it. The latest assistant `message_end` of the whole log decides, as in the
+ * task runner: a later successful answer clears an earlier error.
+ */
+function findPiAssistantErrorBeforeTail(log: string): string | undefined {
+    let end = log.length;
+    while (end > 0) {
+        const start = log.lastIndexOf('\n', end - 1) + 1;
+        // Only the head of the line is tested, so a multi-megabyte `agent_end` line is never copied.
+        if (PI_ASSISTANT_MESSAGE_END_LINE.test(log.slice(start, Math.min(end, start + 80)))) {
+            try {
+                return piAssistantErrorText(JSON.parse(log.slice(start, end)));
+            } catch {
+                return undefined;
+            }
+        }
+        end = start - 1;
+    }
+    return undefined;
 }
 
 function isProviderRetryRecord(value: unknown): boolean {
@@ -649,8 +733,18 @@ function isProviderRetryRecord(value: unknown): boolean {
     return record.type === 'system' && record.subtype === 'api_retry';
 }
 
+/**
+ * Lines of an auxiliary model that runs beside the turn (OpenCode's title and summary agents log
+ * `small=true agent=title`). A failure there is not the turn's failure: the main reply completed.
+ */
+const AUXILIARY_AGENT_LOG_LINE = /\bsmall=true\b|\bagent=(?:title|summary|compaction)\b|"agent"\s*:\s*"(?:title|summary|compaction)"/;
+
+function withoutAuxiliaryAgentLogLines(text: string): string {
+    return text.split('\n').filter(line => !AUXILIARY_AGENT_LOG_LINE.test(line)).join('\n');
+}
+
 function collectAgentFailureEvidence(log: string | undefined): AgentFailureEvidence {
-    const full = (log ?? '').trim();
+    const full = withoutAuxiliaryAgentLogLines((log ?? '').trim()).trim();
     const errorRecords: string[] = [];
     const plainLines: string[] = [];
     let trailingRetryRecords: string[] = [];
@@ -681,6 +775,13 @@ function collectAgentFailureEvidence(log: string | undefined): AgentFailureEvide
             }
         }
         plainLines.push(line);
+    }
+    if (errorRecords.length === 0 && full.length > AGENT_FAILURE_SCAN_LIMIT) {
+        const piAssistantError = findPiAssistantErrorBeforeTail(full);
+        if (piAssistantError) {
+            structured = true;
+            errorRecords.unshift(piAssistantError);
+        }
     }
     return { envelope: findFinalErrorEnvelope(full), errorRecords, plainLines, structured, trailingRetryRecords };
 }
@@ -763,6 +864,23 @@ function extractPlainFailureHint(lines: readonly string[]): string | undefined {
 }
 
 /**
+ * The JSON body of an error record. A record is either a JSON line or a provider error text around
+ * one (Pi: `400 {"error":{…}} (provider: github-copilot)`); undefined when it carries no JSON object.
+ */
+function parseErrorRecordJson(record: string): unknown {
+    const start = record.indexOf('{');
+    const end = record.lastIndexOf('}');
+    if (start < 0 || end <= start) {
+        return undefined;
+    }
+    try {
+        return JSON.parse(record.slice(start, end + 1));
+    } catch {
+        return undefined;
+    }
+}
+
+/**
  * Pull a short, readable hint from agent stderr/stdout when no known kind matches. Reads the end
  * of the log and prefers the CLI's final error envelope over anything streamed before it.
  */
@@ -772,7 +890,7 @@ export function extractAgentLogFailureHint(log: string | undefined): string | un
         return truncateAgentFailureHint(evidence.envelope.replace(/\s+/g, ' '));
     }
     for (const record of evidence.errorRecords) {
-        const hint = readJsonFailureHint(JSON.parse(record));
+        const hint = readJsonFailureHint(parseErrorRecordJson(record));
         if (hint) {
             return hint;
         }
@@ -884,6 +1002,11 @@ function classifyAgentFailureEvidence(evidence: AgentFailureEvidence): QaapAgent
     // fallback), and never for a key or sign-in problem (see isProviderRejectedText).
     if (isProviderRejectedText(sample)) {
         return 'provider_rejected';
+    }
+    // The tenant egress proxy (Squid) answers a blocked host with 403 "Access Denied": a network
+    // refusal, not an expired sign-in. Checked before the envelope's bare 403 reads as auth.
+    if (matchesAny(sample, EGRESS_PROXY_PATTERNS)) {
+        return 'network';
     }
     if (matchesAny(sample, AUTH_PATTERNS) || matchesAny(agentFailureEnvelopeText(evidence), AUTH_ENVELOPE_ONLY_PATTERNS)) {
         return 'auth';
@@ -1314,6 +1437,24 @@ export function resolveAgentTurnFailureTechnicalContent(
 /**
  * User-facing turn failure — prefers product copy derived from agent logs over exit codes.
  */
+/**
+ * Gemini CLI signed in with a personal Google account on the free "Gemini Code Assist for
+ * individuals" tier, which Google no longer serves to this client (`IneligibleTierError`,
+ * `UNSUPPORTED_CLIENT`). The sign-in worked; a new sign-in or Retry cannot fix it.
+ */
+const GEMINI_INELIGIBLE_TIER_PATTERN = /\bIneligibleTierError\b|\bUNSUPPORTED_CLIENT\b[\s\S]{0,200}\bGemini Code Assist\b|\bno longer supported for Gemini Code Assist for individuals\b/i;
+
+export function isGeminiIneligibleTierText(text: string | undefined): boolean {
+    return !!text && GEMINI_INELIGIBLE_TIER_PATTERN.test(text);
+}
+
+export function localizeGeminiIneligibleTierMessage(): string {
+    return nls.localize(
+        'qaap/agentFailure/geminiIneligibleTier',
+        'Google no longer serves Gemini CLI to personal Google accounts ("Gemini Code Assist for individuals"), so signing in again will not fix this. The Antigravity harness runs on Google\'s Antigravity CLI (agy): if this still appears, the host is running the old Gemini CLI, so reconnect Antigravity from Settings → Harness. You can also pick another agent in the composer.',
+    );
+}
+
 export function resolveAgentTurnFailureMessage(
     log: string | undefined,
     options?: QaapAgentTurnFailureOptions | string,
@@ -1326,6 +1467,9 @@ export function resolveAgentTurnFailureMessage(
     const keyMissing = evidence.plainLines.find(line => STORED_PROVIDER_KEY_MISSING.test(line));
     if (keyMissing) {
         return keyMissing;
+    }
+    if (isGeminiIneligibleTierText(agentFailureEvidenceText(evidence) || log)) {
+        return localizeGeminiIneligibleTierMessage();
     }
     let kind: QaapAgentFailureKind | undefined;
     const idleTimeout = RUNNER_IDLE_TIMEOUT_LINE.exec(evidence.plainLines.join('\n'));
@@ -1449,6 +1593,7 @@ export type QaapAgentFailureReasonKind =
     | 'sign_in'
     | 'command_failed'
     | 'usage_limit'
+    | 'rate_limit'
     | 'model'
     | 'agent_setup'
     | 'network'
@@ -1513,10 +1658,11 @@ function classifyStoredAgentFailure(error: string): QaapAgentFailureReasonKind {
         case 'auth':
             return 'sign_in';
         case 'quota':
-        case 'rate_limit':
         case 'provider_credits':
         case 'provider_free_limit':
             return 'usage_limit';
+        case 'rate_limit':
+            return 'rate_limit';
         case 'provider_key_rejected':
             return 'provider_key';
         case 'provider_data_policy':
@@ -1537,7 +1683,28 @@ function classifyStoredAgentFailure(error: string): QaapAgentFailureReasonKind {
     }
 }
 
-function localizeAgentFailureReasonLabel(kind: QaapAgentFailureReasonKind, options?: QaapAgentFailureReasonOptions): string {
+function localizeUsageLimitReasonLabel(sample: string, agentLabel: string | undefined): string {
+    if (!isAgentUsageLimitText(sample)) {
+        return nls.localize('qaap/mobileProjects/transcriptQuotaReached', 'Quota reached');
+    }
+    const reset = extractAgentUsageLimitResetText(sample);
+    if (agentLabel && reset) {
+        return nls.localize('qaap/agentFailure/reasonUsageLimitAgentReset', '{0} usage limit reached — resets {1}', agentLabel, reset);
+    }
+    if (agentLabel) {
+        return nls.localize('qaap/agentFailure/reasonUsageLimitAgent', '{0} usage limit reached', agentLabel);
+    }
+    if (reset) {
+        return nls.localize('qaap/agentFailure/reasonUsageLimitReset', 'Usage limit reached — resets {0}', reset);
+    }
+    return nls.localize('qaap/agentFailure/reasonUsageLimit', 'Usage limit reached');
+}
+
+function localizeAgentFailureReasonLabel(
+    kind: QaapAgentFailureReasonKind,
+    sample: string,
+    options?: QaapAgentFailureReasonOptions,
+): string {
     switch (kind) {
         case 'timeout':
             return nls.localize('qaap/agentFailure/reasonTimeout', 'Timed out');
@@ -1550,7 +1717,9 @@ function localizeAgentFailureReasonLabel(kind: QaapAgentFailureReasonKind, optio
         case 'command_failed':
             return nls.localize('qaap/agentFailure/reasonCommandFailed', 'A command failed');
         case 'usage_limit':
-            return nls.localize('qaap/mobileProjects/transcriptQuotaReached', 'Quota reached');
+            return localizeUsageLimitReasonLabel(sample, options?.agentLabel?.trim() || undefined);
+        case 'rate_limit':
+            return nls.localize('qaap/agentFailure/reasonRateLimited', 'Rate limited — try again in a moment');
         case 'model':
             return nls.localize('qaap/agentFailure/reasonModelUnavailable', 'Model unavailable');
         case 'agent_setup':
@@ -1586,7 +1755,7 @@ export function describeAgentTurnFailure(
         return undefined;
     }
     const kind = classifyStoredAgentFailure(sample);
-    const label = localizeAgentFailureReasonLabel(kind, options);
+    const label = localizeAgentFailureReasonLabel(kind, sample, options);
     const formatted = formatStoredAgentFailureMessage(sample);
     return {
         kind,

@@ -56,7 +56,7 @@ import { bootstrapAppliesToProjectExtracted, bootstrapPreviewUrlForProjectExtrac
 import { claimTranscriptPreviewExecutionExtracted, clearTranscriptEmptyPreviewChromeExtracted, detachTranscriptReviewWidgetExtracted, disposePreviewForConversationExtracted, disposeTranscriptEmbeddedPreviewExtracted, disposeTranscriptTerminalSlidesForConversationExtracted, getOrCreateOffscreenPreviewHostExtracted, getTranscriptEmbeddedPreviewUrlExtracted, mountTranscriptEmbeddedPreviewExtracted, mountTranscriptReviewWidgetExtracted, resolvePreviewAnnotationScopeExtracted, resolveTranscriptPreviewIdentityExtracted, submitTranscriptReviewFeedbackExtracted, suspendTranscriptPreviewIframeExtracted, wireTranscriptPreviewAnnotationScopeExtracted } from './mobile-projects-transcript-surfaces-ui-streaming';
 import { beginTranscriptDevPreviewRequestExtracted, discoverProjectDevPreviewUrlExtracted, disposeTranscriptTerminalSlidesExtracted, prepareTranscriptTerminalsForPageUnloadExtracted, previewUrlMatchesProjectExtracted, refreshTranscriptPreviewProjectExtracted, resolveTranscriptPreviewUrlExtracted, syncTranscriptPreviewFromConversationExtracted } from './mobile-projects-transcript-surfaces-ui-thought-brief';
 import { adoptReconciledProjectPreviewUrlExtracted, clearMismatchedProjectPreviewUrlExtracted, discoverAndMountTranscriptPreviewIfReadyExtracted, fetchCurrentProjectClaimUrlExtracted, reconcileSupersededProjectPreviewUrlExtracted, renderPreviewTabExtracted, scheduleTranscriptPreviewIdentityWatchExtracted, shouldKeepTranscriptPreviewTabProbeExtracted, stopTranscriptPreviewIdentityWatchExtracted, tryMountProjectScopedPreviewExtracted, tryMountVerifiedTranscriptPreviewExtracted, verifyMountedTranscriptPreviewIdentityExtracted } from './mobile-projects-transcript-surfaces-ui-timeline';
-import { annotateEmptyPreviewWhenNotRunnableExtracted, cancelPreviewAgentTurnExtracted, ensureTranscriptFilesTabExtracted, ensureTranscriptPreviewServingExtracted, mountTranscriptEmptyPreviewExtracted, recoverTranscriptPreviewUrlExtracted, refreshPreviewForBootstrapChangeExtracted, resolveProjectScopedWorkspaceKeyExtracted, resolveRunnableTranscriptProjectRootExtracted, resolveTranscriptProjectCwdExtracted, resolveTranscriptWorkspaceKeyExtracted, revealTranscriptFileExtracted, revealTranscriptReviewFileExtracted, updateTranscriptPreviewLaunchStatusExtracted } from './mobile-projects-transcript-surfaces-ui-tool-pills';
+import { annotateEmptyPreviewWhenNotRunnableExtracted, cancelPreviewAgentTurnExtracted, ensureTranscriptFilesTabExtracted, ensureTranscriptPreviewServingExtracted, mountTranscriptEmptyPreviewExtracted, openUrlInTranscriptBrowserExtracted, recoverTranscriptPreviewUrlExtracted, refreshPreviewForBootstrapChangeExtracted, resolveProjectScopedWorkspaceKeyExtracted, resolveRunnableTranscriptProjectRootExtracted, resolveTranscriptProjectCwdExtracted, resolveTranscriptWorkspaceKeyExtracted, revealTranscriptFileExtracted, revealTranscriptReviewFileExtracted, updateTranscriptPreviewLaunchStatusExtracted } from './mobile-projects-transcript-surfaces-ui-tool-pills';
 
 export type TranscriptTab = ExecutionSurfaceTabId;
 
@@ -387,6 +387,24 @@ export class MobileProjectsTranscriptSurfacesUi {
     }
 
     /** @internal Used by the extracted mobile-projects-transcript-surfaces-ui-* modules. */
+    /**
+     * Releases every embedded preview this UI owns, parked or visible, and its offscreen host. Each
+     * IDE ↔ Agents switch builds a new Work Hub panel; without this the old one's parked preview
+     * kept running the app in a hidden frame, one more per round trip.
+     */
+    disposeEmbeddedPreviews(): void {
+        this.stopTranscriptPreviewIdentityWatch();
+        for (const chrome of this.embeddedPreviewByConversationScopeId.values()) {
+            chrome.dispose();
+        }
+        this.embeddedPreviewByConversationScopeId.clear();
+        this.host.transcriptEmbeddedPreview?.dispose();
+        this.host.transcriptEmbeddedPreview = undefined;
+        this.transcriptPreviewConversationScopeId = undefined;
+        this.offscreenPreviewHostElement?.remove();
+        this.offscreenPreviewHostElement = undefined;
+    }
+
     public getOrCreateOffscreenPreviewHost(): HTMLElement {
         return getOrCreateOffscreenPreviewHostExtracted(this);
     }
@@ -647,6 +665,11 @@ export class MobileProjectsTranscriptSurfacesUi {
         ensureTranscriptFilesTabExtracted(this, project, summary, requestedMode);
     }
 
+    /** Opens a URL (e.g. a chat link) in the transcript's Browser tab; false when it cannot. */
+    async openUrlInTranscriptBrowser(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, url: string): Promise<boolean> {
+        return openUrlInTranscriptBrowserExtracted(this, project, summary, url);
+    }
+
     async revealTranscriptFile(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, filePath: string,): Promise<void> {
         return revealTranscriptFileExtracted(this, project, summary, filePath);
     }
@@ -677,7 +700,7 @@ export class MobileProjectsTranscriptSurfacesUi {
         showTranscriptTerminalErrorExtracted(this, host, services, error);
     }
 
-    async launchAgentTuiInTranscriptTerminal(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, agentId: string, options?: { readonly login?: boolean; readonly command?: string },): Promise<void> {
+    async launchAgentTuiInTranscriptTerminal(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, agentId: string, options?: { readonly login?: boolean; readonly command?: string; readonly cliBin?: string },): Promise<void> {
         return launchAgentTuiInTranscriptTerminalExtracted(this, project, summary, agentId, options);
     }
 

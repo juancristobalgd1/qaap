@@ -34,6 +34,7 @@ import { parseQaapGithubRepositoryInput } from '@theia/qaap-adapters/lib/common/
 import {
     QaapBillingQuota,
     QaapPlanRepoLimitError,
+    QaapPlanStorageLimitError,
 } from '@theia/qaap-adapters/lib/common/qaap-billing-quota';
 import { QAAP_PLAN_LIMIT_CODE, QAAP_PLAN_REPO_LIMIT_CODE } from '@theia/qaap-adapters/lib/common/qaap-plan-limit';
 import {
@@ -55,6 +56,7 @@ import {
     createGithubRepository,
     exchangeGithubCode,
     fetchGithubPullRequestDetail,
+    fetchGithubPullRequestNumberForBranch,
     fetchGithubPullRequests,
     fetchGithubRepositories,
     fetchGithubRepository,
@@ -72,6 +74,7 @@ import {
 import { readQaapGithubOAuthConfig } from './qaap-github-oauth-config';
 import { readBackendDefaultAgentId } from './qaap-default-agent-id';
 import { QaapGithubAuthGuard, type QaapGithubAuthContext } from './qaap-github-auth-guard';
+import { QaapGithubDesktopCredentialSession } from './qaap-github-desktop-credential-session';
 import { QaapApiTokenStore } from './qaap-api-token-store';
 import { QaapGithubSessionStore } from './qaap-github-session-store';
 import { QaapProjectSessionStore } from './qaap-project-session-store';
@@ -96,11 +99,16 @@ import {
     type QaapGithubWorkspaceJobContext,
 } from './qaap-github-workspace-jobs';
 import { qaapGitReadEnv } from './qaap-child-process-env';
-import { resolveLocalProjectWorkspacePath } from './qaap-local-project-path';
+import { localProjectOwnerLogin, resolveLocalProjectWorkspacePath } from './qaap-local-project-path';
 import { QaapAsyncRoute } from './qaap-async-route';
+import { QaapGithubDeviceFlowError, QaapGithubDeviceFlows } from './qaap-github-device-flow';
+import { readQaapGithubDeviceFlowConfig } from './qaap-github-oauth-config';
+import { isQaapDesktopRuntime } from '@theia/qaap-adapters/lib/common/qaap-desktop-runtime';
 
 const GITHUB_AUTHORIZE_URL = 'https://github.com/login/oauth/authorize';
 const GITHUB_OAUTH_SCOPE = 'read:user repo';
+/** Branch names accepted by the pull request lookup: plain refs only, bounded length. */
+const GITHUB_BRANCH_NAME_PATTERN = /^[A-Za-z0-9._/-]{1,255}$/;
 const THEIA_EMPTY_WINDOW_HASH = '!empty';
 const GIT_OPERATION_TIMEOUT_MS = 120_000;
 /**
@@ -138,11 +146,17 @@ interface QaapWorkspacePrepareOptions {
 const GIT_MAX_OUTPUT = 16 * 1024 * 1024;
 
 /** Placeholder user returned by `/auth/session` when `QAAP_SKIP_AUTH` is enabled. */
+/** Session id of a context built from the desktop credential; never stored, never sent to the client. */
+const QAAP_DESKTOP_CREDENTIAL_SESSION_ID = 'desktop-credential';
+
 const SKIP_AUTH_DEV_USER = {
     provider: 'gitlab' as const,
     login: 'dev',
     name: 'Dev User',
 };
+
+/** How long a consumed OAuth state still answers a duplicate callback with the same sign-in. */
+const QAAP_OAUTH_DUPLICATE_CALLBACK_WINDOW_MS = 60_000;
 
 @injectable()
 export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
@@ -192,6 +206,10 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     @inject(QaapGithubWorkspaceJobRegistry) @optional()
     protected readonly workspaceJobs: QaapGithubWorkspaceJobRegistry | undefined;
 
+    /** Desktop only: the user's own GitHub credential (gh, GH_TOKEN) when Qaap has no GitHub session. */
+    @inject(QaapGithubDesktopCredentialSession) @optional()
+    protected readonly desktopCredential: QaapGithubDesktopCredentialSession | undefined;
+
     /** Higher layers forget their state of a removed clone (terminals, conversations, recent workspaces). */
     @inject(ContributionProvider) @named(QaapRepositoryRemovalContribution) @optional()
     protected readonly removalContributions: ContributionProvider<QaapRepositoryRemovalContribution> | undefined;
@@ -215,6 +233,9 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         app.get(QAAP_HEALTH_API_PATH, (req, res) => this.handleHealth(req, res));
         app.get(`${QAAP_AUTH_API_PATH}/config`, (req, res) => this.handleAuthConfig(req, res));
         app.get(`${QAAP_AUTH_API_PATH}/session`, (req, res) => this.handleAuthSession(req, res));
+        // Desktop only (QAAP_DESKTOP=1); every other runtime answers 404 from these handlers.
+        app.post(`${QAAP_GITHUB_API_PATH}/device/start`, QaapAsyncRoute.wrap('qaap-github-device', (req, res) => this.handleDeviceStart(req, res)));
+        app.post(`${QAAP_GITHUB_API_PATH}/device/poll`, QaapAsyncRoute.wrap('qaap-github-device', (req, res) => this.handleDevicePoll(req, res)));
         app.post(`${QAAP_AUTH_API_PATH}/signout`, (req, res) => this.handleSignOut(req, res));
         app.get(`${QAAP_GITHUB_API_PATH}/repositories`, QaapAsyncRoute.wrap('qaap-github-oauth', (req, res) => this.handleGithubRepositories(req, res)));
         app.post(`${QAAP_GITHUB_API_PATH}/repositories`, QaapAsyncRoute.wrap('qaap-github-oauth', (req, res) => this.handleCreateGithubRepository(req, res)));
@@ -232,6 +253,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         app.get(`${QAAP_GITHUB_API_PATH}/pull-requests`, QaapAsyncRoute.wrap('qaap-github-oauth', (req, res) => this.handleGithubPullRequests(req, res)));
         app.get(`${QAAP_GITHUB_API_PATH}/pull-requests/search`, QaapAsyncRoute.wrap('qaap-github-oauth', (req, res) => this.handleSearchGithubPullRequests(req, res)));
         app.get(`${QAAP_GITHUB_API_PATH}/pull-requests/detail`, QaapAsyncRoute.wrap('qaap-github-oauth', (req, res) => this.handleGithubPullRequestDetail(req, res)));
+        app.get(`${QAAP_GITHUB_API_PATH}/pull-requests/by-branch`, QaapAsyncRoute.wrap('qaap-github-oauth', (req, res) => this.handleGithubPullRequestByBranch(req, res)));
         app.post(`${QAAP_GITHUB_API_PATH}/pull-requests/merge`, QaapAsyncRoute.wrap('qaap-github-oauth', (req, res) => this.handleMergeGithubPullRequest(req, res)));
         app.get(`${QAAP_GITHUB_API_PATH}/project-sessions`, (req, res) => this.handleProjectSessions(req, res));
         app.post(`${QAAP_GITHUB_API_PATH}/project-sessions`, (req, res) => this.handleUpsertProjectSession(req, res));
@@ -551,26 +573,146 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             return;
         }
         if (!this.sessions.consumeOAuthState(state)) {
+            // The browser can deliver the same callback twice (a service-worker navigation preload
+            // plus the real navigation). The first request consumed the state; answer the
+            // duplicate with that sign-in's session instead of a "state lost" error.
+            const duplicate = state ? this.oauthCallbacksInFlight().get(state) : undefined;
+            const duplicateSessionId = duplicate ? await duplicate : undefined;
+            if (duplicateSessionId) {
+                this.setSessionCookie(res, duplicateSessionId);
+                this.redirectAfterOAuth(res, config.publicUrl, true);
+                return;
+            }
             console.error('[qaap-oauth] OAuth state is unknown or expired (backend likely restarted between /start and /callback).');
             this.redirectAfterOAuth(res, config.publicUrl, false, 'state_lost');
             return;
         }
-        try {
-            const accessToken = await exchangeGithubCode(config, code);
-            const user = await fetchGithubUser(accessToken);
-            const previousSessionId = this.auth.resolveSessionId(req);
-            if (previousSessionId) {
-                this.endSession(previousSessionId);
+        const signIn = (async (): Promise<string | undefined> => {
+            try {
+                const accessToken = await exchangeGithubCode(config, code);
+                return await this.createGithubSession(req, accessToken);
+            } catch (err) {
+                const message = err instanceof Error ? err.message : String(err);
+                console.error('[qaap-oauth] Token exchange or user fetch failed:', message);
+                return undefined;
             }
-            const sessionId = this.sessions.createSession({ accessToken, user });
+        })();
+        if (state) {
+            const inFlight = this.oauthCallbacksInFlight();
+            inFlight.set(state, signIn);
+            setTimeout(() => inFlight.delete(state), QAAP_OAUTH_DUPLICATE_CALLBACK_WINDOW_MS).unref?.();
+        }
+        const sessionId = await signIn;
+        if (sessionId) {
             this.setSessionCookie(res, sessionId);
-            console.info('[qaap-oauth] GitHub sign-in OK for user', user.login);
             this.redirectAfterOAuth(res, config.publicUrl, true);
-        } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            console.error('[qaap-oauth] Token exchange or user fetch failed:', message);
+        } else {
             this.redirectAfterOAuth(res, config.publicUrl, false, 'exchange_failed');
         }
+    }
+
+    /**
+     * Turns a GitHub access token into this browser's session: looks up the user, ends the browser's
+     * previous session and stores the token server-side. Shared by the web OAuth callback and the
+     * desktop device flow, so both store the same record. The caller sets the cookie.
+     */
+    protected async createGithubSession(req: Request, accessToken: string): Promise<string> {
+        const user = await fetchGithubUser(accessToken);
+        const previousSessionId = this.auth.resolveSessionId(req);
+        if (previousSessionId) {
+            this.endSession(previousSessionId);
+        }
+        const sessionId = this.sessions.createSession({ accessToken, user });
+        console.info('[qaap-oauth] GitHub sign-in OK for user', user.login);
+        return sessionId;
+    }
+
+    /** Desktop device flow: asks GitHub for a user code and keeps the device code in this process only. */
+    protected async handleDeviceStart(req: Request, res: Response): Promise<void> {
+        if (!this.isDesktopDeviceRequestAllowed(req, res)) {
+            return;
+        }
+        const config = readQaapGithubDeviceFlowConfig();
+        if (!config) {
+            res.status(503).json({ code: 'github_sign_in_not_configured', error: "GitHub sign-in isn't configured: set QAAP_GITHUB_CLIENT_ID" });
+            return;
+        }
+        try {
+            res.json(await this.deviceFlows.start(config.clientId));
+        } catch (err) {
+            res.status(502).json({ code: 'github_device_failed', error: this.deviceFlowErrorMessage(err) });
+        }
+    }
+
+    /**
+     * Desktop device flow: one poll of the flow the browser holds. The access token is stored as a
+     * server-side session and the browser only receives the same HttpOnly cookie as web sign-in.
+     */
+    protected async handleDevicePoll(req: Request, res: Response): Promise<void> {
+        if (!this.isDesktopDeviceRequestAllowed(req, res)) {
+            return;
+        }
+        const body = (req.body ?? {}) as { flowId?: unknown };
+        const flowId = typeof body.flowId === 'string' ? body.flowId : '';
+        if (!flowId) {
+            res.status(400).json({ code: 'github_device_bad_request', error: 'flowId is required' });
+            return;
+        }
+        let result: Awaited<ReturnType<QaapGithubDeviceFlows['poll']>>;
+        try {
+            result = await this.deviceFlows.poll(flowId);
+        } catch (err) {
+            res.status(502).json({ code: 'github_device_failed', error: this.deviceFlowErrorMessage(err) });
+            return;
+        }
+        if (result.status !== 'complete') {
+            res.json(result.status === 'pending' ? { status: 'pending', interval: result.interval } : { status: result.status });
+            return;
+        }
+        let sessionId: string;
+        try {
+            sessionId = await this.createGithubSession(req, result.accessToken);
+        } catch {
+            res.status(502).json({ code: 'github_device_failed', error: 'GitHub user lookup failed' });
+            return;
+        }
+        this.setSessionCookie(res, sessionId);
+        const user = this.sessions.getSession(sessionId)?.user;
+        res.json({ status: 'complete', user: user ? { login: user.login, name: user.name, avatarUrl: user.avatarUrl } : undefined });
+    }
+
+    /** Device routes exist only in the desktop runtime and refuse cross-site requests (a login CSRF). */
+    protected isDesktopDeviceRequestAllowed(req: Request, res: Response): boolean {
+        if (!isQaapDesktopRuntime()) {
+            res.status(404).json({ error: 'Not found' });
+            return false;
+        }
+        const origin = typeof req.headers.origin === 'string' ? req.headers.origin : undefined;
+        let originHost: string | undefined;
+        try {
+            originHost = origin ? new URL(origin).host : undefined;
+        } catch {
+            originHost = undefined;
+        }
+        const host = typeof req.headers.host === 'string' ? req.headers.host : undefined;
+        if (req.headers['sec-fetch-site'] === 'cross-site' || (origin && originHost !== host)) {
+            res.status(403).json({ error: 'Cross-origin request refused' });
+            return false;
+        }
+        return true;
+    }
+
+    protected deviceFlowErrorMessage(err: unknown): string {
+        return err instanceof QaapGithubDeviceFlowError ? err.message : 'GitHub sign-in could not be completed.';
+    }
+
+    /** Pending device flows of this backend process. Never sent to the browser. */
+    protected readonly deviceFlows = new QaapGithubDeviceFlows();
+
+    /** Sign-ins by OAuth state, kept briefly so a duplicate callback reuses the first one's session. */
+    protected oauthCallbacksInFlight(): Map<string, Promise<string | undefined>> {
+        const self = this as unknown as { oauthCallbacks?: Map<string, Promise<string | undefined>> };
+        return self.oauthCallbacks ??= new Map();
     }
 
     protected handleHealth(req: Request, res: Response): void {
@@ -578,6 +720,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         const payload = buildQaapLaunchHealthPayload(readiness, {
             skipAuth: this.auth.isSkipAuthEnabled(),
             build: process.env.QAAP_BUILD_SHA,
+            signedIn: this.auth.authenticate(req).kind !== 'unauthorized',
         });
         // The orchestrator wakes tenant backends with the liveness probe: a storage problem must
         // not lock a tenant out of the IDE. Everything else (Docker HEALTHCHECK, smoke, deploy
@@ -600,23 +743,28 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         res.status(healthy ? 200 : 503).json({ ...payload, ok: healthy, checks });
     }
 
-    protected handleAuthConfig(_req: Request, res: Response): void {
+    protected handleAuthConfig(req: Request, res: Response): void {
         const build = process.env.QAAP_BUILD_SHA?.trim();
         const readiness = evaluateQaapProductionAuthReadiness();
         const betaAccess = new QaapBetaAccessPolicy();
+        // Anonymous callers (the public login gate) get the gate's flags only; operator detail
+        // (agent uid, isolation mode, default harness) is for signed-in callers.
+        const signedIn = this.auth.authenticate(req).kind !== 'unauthorized';
         res.json({
             betaAccessRequired: betaAccess.isRequired(),
             betaAccessConfigured: betaAccess.isConfigured(),
             githubOAuth: readiness.oauthConfigured,
             skipAuth: this.auth.isSkipAuthEnabled(),
             productionRuntime: readiness.productionRuntime,
-            // The configured default harness for new composers and routines (QAAP_DEFAULT_AGENT_ID); omitted when unset (first available harness).
-            defaultAgentId: readBackendDefaultAgentId(),
             oauthConfigured: readiness.oauthConfigured,
             agentUidPerUser: readiness.agentUidPerUser,
-            backendIsolationMode: readiness.backendIsolationMode,
             backendIsolationReady: readiness.backendIsolationReady,
-            ...(process.env.QAAP_AGENT_UID?.trim() ? { agentUid: process.env.QAAP_AGENT_UID.trim() } : {}),
+            ...(signedIn ? {
+                // The configured default harness for new composers and routines (QAAP_DEFAULT_AGENT_ID); omitted when unset (first available harness).
+                defaultAgentId: readBackendDefaultAgentId(),
+                backendIsolationMode: readiness.backendIsolationMode,
+                ...(process.env.QAAP_AGENT_UID?.trim() ? { agentUid: process.env.QAAP_AGENT_UID.trim() } : {}),
+            } : {}),
             // Deployed-build identity (short git SHA, baked into the image at build time).
             // Public by design: the repo is public, and this is the one signal that ends
             // "which build am I actually on?" during deploys — the post-deploy gate asserts
@@ -625,6 +773,41 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             // QAAP_MOBILE_ENTRY: the login gate may boot bundle-mobile.js (absent while off).
             ...qaapMobileEntryProbeFields(),
         });
+    }
+
+    /**
+     * `auth`, or, for a skip-auth request on the desktop app, an authenticated context over the user's own
+     * GitHub credential (see {@link QaapGithubDesktopCredentialSession}). The login stays the skip-auth one,
+     * so workspace paths do not move; only the GitHub token and user change. Any other backend gets `auth`.
+     */
+    protected async withDesktopGithubCredential(auth: QaapGithubAuthContext): Promise<QaapGithubAuthContext> {
+        if (auth.kind !== 'skip' || !this.desktopCredential) {
+            return auth;
+        }
+        const session = await this.desktopCredential.resolve(auth);
+        if (!session) {
+            return auth;
+        }
+        return {
+            kind: 'authenticated',
+            session: { accessToken: session.accessToken, user: session.user },
+            sessionId: QAAP_DESKTOP_CREDENTIAL_SESSION_ID,
+            userLogin: auth.userLogin,
+        };
+    }
+
+    /** {@link QaapGithubAuthGuard.authenticate} plus {@link withDesktopGithubCredential}. */
+    protected async authenticateGithub(req: Request): Promise<QaapGithubAuthContext> {
+        return this.withDesktopGithubCredential(this.auth.authenticate(req));
+    }
+
+    /** GitHub answered 401 for a desktop credential: forget it so the next request reads the current one. */
+    protected reportDesktopCredentialRejected(auth: QaapGithubAuthContext): boolean {
+        if (auth.kind !== 'authenticated' || auth.sessionId !== QAAP_DESKTOP_CREDENTIAL_SESSION_ID) {
+            return false;
+        }
+        this.desktopCredential?.reportRejected(auth.session.accessToken);
+        return true;
     }
 
     protected handleAuthSession(req: Request, res: Response): void {
@@ -643,6 +826,18 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             return;
         }
         if (auth.kind === 'skip') {
+            if (this.desktopCredential?.isEnabled()) {
+                // The user stays the skip-auth one (client state is keyed by it); the credential says GitHub is connected.
+                this.desktopCredential.describe(auth)
+                    .catch(() => undefined)
+                    .then(githubCredential => res.json({
+                        signedIn: true,
+                        user: SKIP_AUTH_DEV_USER,
+                        ...(githubCredential ? { githubCredential } : {}),
+                        ...qaapMobileEntryProbeFields(),
+                    }));
+                return;
+            }
             res.json({ signedIn: true, user: SKIP_AUTH_DEV_USER, ...qaapMobileEntryProbeFields() });
             return;
         }
@@ -666,12 +861,16 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     }
 
     protected async handleGithubRepositories(req: Request, res: Response): Promise<void> {
-        const auth = this.auth.authenticate(req);
+        const auth = await this.authenticateGithub(req);
         if (auth.kind === 'unauthorized') {
             res.status(401).json({ error: 'Not signed in' });
             return;
         }
         if (auth.kind === 'skip') {
+            if (isQaapDesktopRuntime()) {
+                res.status(401).json({ code: 'github_sign_in_required', error: 'GitHub sign-in required' });
+                return;
+            }
             res.json({ repositories: [] });
             return;
         }
@@ -684,6 +883,11 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             // so the client clears its stale session and re-authenticates, instead of getting stuck
             // on "could not load repositories" with a still-signed-in UI. (ONB-5)
             if ((err as { status?: number }).status === 401) {
+                if (this.reportDesktopCredentialRejected(auth)) {
+                    // The user's own credential expired (gh auth logout, revoked token): offer the sign-in.
+                    res.status(401).json({ code: 'github_sign_in_required', error: 'GitHub sign-in required' });
+                    return;
+                }
                 res.status(401).json({ error: 'GitHub session expired', signedIn: false });
                 return;
             }
@@ -693,7 +897,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     }
 
     protected async handleGithubPullRequests(req: Request, res: Response): Promise<void> {
-        const auth = this.auth.authenticate(req);
+        const auth = await this.authenticateGithub(req);
         if (auth.kind === 'unauthorized') {
             res.status(401).json({ error: 'Not signed in', signedIn: false, pullRequests: [] });
             return;
@@ -731,7 +935,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
      * repositories to the all view, and `force=1` skips the fresh cache.
      */
     protected async handleSearchGithubPullRequests(req: Request, res: Response): Promise<void> {
-        const auth = this.auth.authenticate(req);
+        const auth = await this.authenticateGithub(req);
         if (auth.kind === 'unauthorized') {
             res.status(401).json({ error: 'Not signed in', signedIn: false, pullRequests: [], page: 1, hasMore: false });
             return;
@@ -766,7 +970,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
 
     /** Full detail (branches, stats, files) for a pull request surfaced by the search listing. */
     protected async handleGithubPullRequestDetail(req: Request, res: Response): Promise<void> {
-        const auth = this.auth.authenticate(req);
+        const auth = await this.authenticateGithub(req);
         if (auth.kind === 'unauthorized') {
             res.status(401).json({ error: 'Not signed in' });
             return;
@@ -790,6 +994,45 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             return;
         }
         try {
+            const pullRequest = await fetchGithubPullRequestDetail(auth.session.accessToken, owner, repo, number);
+            res.json({ pullRequest });
+        } catch (err) {
+            const status = (err as { status?: number }).status;
+            res.status(status === 404 ? 404 : 502).json({ error: err instanceof Error ? err.message : 'Failed to load pull request' });
+        }
+    }
+
+    /** The detail of the pull request whose head is `branch` (404 when the branch has none). */
+    protected async handleGithubPullRequestByBranch(req: Request, res: Response): Promise<void> {
+        const auth = await this.authenticateGithub(req);
+        if (auth.kind === 'unauthorized') {
+            res.status(401).json({ error: 'Not signed in' });
+            return;
+        }
+        if (auth.kind === 'skip') {
+            res.status(503).json({ error: 'GitHub sign-in required' });
+            return;
+        }
+        const segment = (value: unknown): string | undefined => {
+            try {
+                return this.cleanGithubPathSegment(typeof value === 'string' ? value : undefined);
+            } catch {
+                return undefined;
+            }
+        };
+        const owner = segment(req.query.owner);
+        const repo = segment(req.query.repo);
+        const branch = typeof req.query.branch === 'string' ? req.query.branch : '';
+        if (!owner || !repo || !GITHUB_BRANCH_NAME_PATTERN.test(branch)) {
+            res.status(400).json({ error: 'Invalid branch' });
+            return;
+        }
+        try {
+            const number = await fetchGithubPullRequestNumberForBranch(auth.session.accessToken, owner, repo, branch);
+            if (number === undefined) {
+                res.status(404).json({ error: 'No pull request for this branch' });
+                return;
+            }
             const pullRequest = await fetchGithubPullRequestDetail(auth.session.accessToken, owner, repo, number);
             res.json({ pullRequest });
         } catch (err) {
@@ -833,7 +1076,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     }
 
     protected async handleMergeGithubPullRequest(req: Request, res: Response): Promise<void> {
-        const auth = this.auth.authenticate(req);
+        const auth = await this.authenticateGithub(req);
         if (auth.kind === 'unauthorized') {
             res.status(401).json({ error: 'Not signed in' });
             return;
@@ -883,6 +1126,12 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             return;
         }
         if (auth.kind === 'skip') {
+            if (isQaapDesktopRuntime()) {
+                // Desktop without a Qaap GitHub session: the project is the user's own checkout on their
+                // own machine, so it opens like a folder; a clone uses the user's local git credentials.
+                await this.openDesktopRepositoryWithLocalGit(req, res, auth.userLogin, signal);
+                return;
+            }
             res.status(503).json({ error: 'GitHub sign-in required' });
             return;
         }
@@ -928,6 +1177,78 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     }
 
     /**
+     * Desktop-only open of `owner/repo` when there is no Qaap GitHub session (the skip-auth guard).
+     * An existing checkout at the caller's canonical path opens without any network call. A missing one
+     * is cloned with the backend's own git, which runs as the desktop user and so reaches their git
+     * credential helpers (`gh auth setup-git`, the keychain) exactly like git in a terminal; Qaap itself
+     * never sees a token here. Web/VPS never reach this (doc/qaap-github-token-boundary.md).
+     */
+    protected async openDesktopRepositoryWithLocalGit(req: Request, res: Response, userLogin: string, signal: AbortSignal): Promise<void> {
+        const owner = this.cleanGithubPathSegment(req.params.owner);
+        const repoName = this.cleanGithubPathSegment(req.params.repo);
+        if (!owner || !repoName) {
+            res.status(400).json({ error: 'Invalid repository path' });
+            return;
+        }
+        const explicit = (req.body as { explicit?: unknown } | undefined)?.explicit === true;
+        if (!explicit && this.projectSessions.isRepositoryRemoved(userLogin, `github:${owner}/${repoName}`)) {
+            res.status(410).json({ error: 'This project was removed. Import the repository again to restore it.', code: 'repository_removed' });
+            return;
+        }
+        const target = resolveRepositoryWorkspacePath(this.reposRoot, userLogin, owner, repoName);
+        if (!isPathUnderUserWorkspace(target, this.reposRoot, userLogin)) {
+            res.status(403).json({ error: 'Forbidden' });
+            return;
+        }
+        try {
+            let repository: QaapGithubRepositorySummary;
+            let workspacePath: string;
+            if (await this.isGitRepository(target)) {
+                repository = this.localCheckoutRepositorySummary(owner, repoName, await this.localCheckoutBranch(target));
+                workspacePath = target;
+            } else {
+                // Public metadata when GitHub answers anonymously; a private repository still clones
+                // through the user's own credential helper.
+                repository = await this.fetchRepositoryForClone(undefined, owner, repoName)
+                    .catch(() => this.localCheckoutRepositorySummary(owner, repoName, undefined));
+                workspacePath = await this.ensureRepositoryWorkspace(repository, undefined, userLogin, signal);
+            }
+            this.rememberGithubCloneSession(userLogin, repository);
+            res.json({ repository, workspaceUri: FileUri.create(workspacePath).toString() });
+        } catch (err) {
+            if (this.respondBillingQuotaError(err, res)) {
+                return;
+            }
+            const detail = err instanceof Error ? err.message : String(err);
+            res.status(502).json({
+                error: `${detail}. Qaap uses your local git credentials for this clone; run \`gh auth login\` (or sign in with GitHub in Qaap) and try again.`,
+            });
+        }
+    }
+
+    /** The checked-out branch of a local checkout, when it is on one. */
+    protected async localCheckoutBranch(target: string): Promise<string | undefined> {
+        const branch = await this.runGitOutput(['-C', target, 'symbolic-ref', '--quiet', '--short', 'HEAD'], target).catch(() => '');
+        return branch.trim() || undefined;
+    }
+
+    /** Summary of `owner/name` built without GitHub: what the hub needs to show and re-open the project. */
+    protected localCheckoutRepositorySummary(owner: string, name: string, branch: string | undefined): QaapGithubRepositorySummary {
+        return {
+            id: 0,
+            fullName: `${owner}/${name}`,
+            owner,
+            name,
+            cloneUrl: `https://github.com/${owner}/${name}.git`,
+            htmlUrl: `https://github.com/${owner}/${name}`,
+            defaultBranch: branch ?? 'main',
+            // Unknown without GitHub; private is the conservative answer.
+            private: true,
+            updatedAt: new Date().toISOString(),
+        };
+    }
+
+    /**
      * Clone `owner/repo` again into the caller's canonical path when the project is still in their list but
      * its clone is gone from disk (deleted, or data restored without clones), so an agent task can start.
      * Same path as opening the project: the caller's own token, the repository looked up among those they
@@ -952,7 +1273,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             }
             workspacePath = await this.ensureRepositoryWorkspace(repository, auth.session.accessToken, auth.userLogin);
         } catch (err) {
-            if (err instanceof QaapPlanRepoLimitError) {
+            if (err instanceof QaapPlanRepoLimitError || err instanceof QaapPlanStorageLimitError) {
                 throw err;
             }
             throw new Error(describeRepositoryImportFailure(err instanceof Error ? err.message : String(err)));
@@ -1186,13 +1507,15 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             res.status(401).json({ error: 'Not signed in' });
             return;
         }
-        if (auth.kind === 'skip') {
+        // Skip-auth is honoured only on the desktop runtime (see localProjectOwnerLogin); elsewhere it stays a 503.
+        const login = localProjectOwnerLogin(auth, isQaapDesktopRuntime());
+        if (!login) {
             res.status(503).json({ error: 'Sign-in required' });
             return;
         }
         const body = (req.body ?? {}) as { name?: unknown };
         const name = typeof body.name === 'string' ? body.name.trim() : '';
-        const target = resolveLocalProjectWorkspacePath(this.reposRoot, auth.userLogin, name);
+        const target = resolveLocalProjectWorkspacePath(this.reposRoot, login, name);
         if (!target) {
             res.status(400).json({ error: 'Use letters, numbers, dashes, underscores, or dots for the project name.' });
             return;
@@ -1332,6 +1655,21 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             return;
         }
         const auth = this.auth.authenticate(req);
+        if (auth.kind === 'skip' && this.desktopCredential?.isEnabled()) {
+            // Desktop without a Qaap GitHub session: the user's own credential (gh, GH_TOKEN) lists and opens their repositories.
+            this.withDesktopGithubCredential(auth)
+                .then(resolved => this.startWorkspaceJob(req, res, registry, resolved))
+                .catch(err => {
+                    if (!res.headersSent) {
+                        res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to start the repository import' });
+                    }
+                });
+            return;
+        }
+        this.startWorkspaceJob(req, res, registry, auth);
+    }
+
+    protected startWorkspaceJob(req: Request, res: Response, registry: QaapGithubWorkspaceJobRegistry, auth: QaapGithubAuthContext): void {
         const body = (req.body ?? {}) as Partial<Record<'kind' | 'repository' | 'owner' | 'name', unknown>>;
         const kind = body.kind === 'open' || body.kind === 'clone' ? body.kind : undefined;
         let target: { owner: string; name: string } | undefined;
@@ -1351,6 +1689,12 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             return;
         }
         if (kind === 'open' && auth.kind === 'skip') {
+            // Desktop: the user's own repositories need a GitHub session; the client offers the sign-in.
+            // A public clone by URL stays anonymous there, as the Work Hub says ("Public URLs still work").
+            if (isQaapDesktopRuntime()) {
+                res.status(401).json({ code: 'github_sign_in_required', error: 'GitHub sign-in required' });
+                return;
+            }
             res.status(503).json({ error: 'GitHub sign-in required' });
             return;
         }
@@ -1445,7 +1789,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
                 timeoutMs: this.workspaceJobTimeoutMs,
             });
         } catch (err) {
-            if (err instanceof QaapPlanRepoLimitError) {
+            if (err instanceof QaapPlanRepoLimitError || err instanceof QaapPlanStorageLimitError) {
                 throw new QaapGithubWorkspaceJobError(err.message, QAAP_PLAN_LIMIT_CODE);
             }
             throw err;
@@ -1901,6 +2245,18 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     }
 
     protected respondBillingQuotaError(err: unknown, res: Response): boolean {
+        if (err instanceof QaapPlanStorageLimitError) {
+            // Same 403 shape as the repo cap, with the storage reason; `plan_limit` is the code newer clients read.
+            res.status(403).json({
+                error: QAAP_PLAN_LIMIT_CODE,
+                code: QAAP_PLAN_LIMIT_CODE,
+                reason: err.reason,
+                planId: err.planId,
+                limit: err.limit,
+                message: err.message,
+            });
+            return true;
+        }
         if (!(err instanceof QaapPlanRepoLimitError)) {
             return false;
         }

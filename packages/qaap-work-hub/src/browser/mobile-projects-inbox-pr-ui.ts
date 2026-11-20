@@ -98,7 +98,11 @@ export class MobileProjectsInboxPrUi {
         const repoKeys = githubRepoKeysForProjects(projects);
         try {
             const config = await fetchQaapAuthConfig().catch(() => ({ skipAuth: false, githubOAuth: false }));
-            if (config.skipAuth) {
+            // Skip-auth has no GitHub session, except on the desktop app with the user's own credential (gh,
+            // GH_TOKEN): the backend then serves the same pull requests as the sidebar's search.
+            const skipAuthSession = config.skipAuth ? await fetchQaapAuthSession().catch(() => undefined) : undefined;
+            const desktopGithubLogin = skipAuthSession?.signedIn ? skipAuthSession.githubCredential?.user?.login : undefined;
+            if (config.skipAuth && !desktopGithubLogin) {
                 this.host.inboxPullRequests = [];
                 this.host.inboxGithubSignedIn = undefined;
                 this.host.inboxGithubLogin = undefined;
@@ -110,7 +114,7 @@ export class MobileProjectsInboxPrUi {
                 this.host.inboxGithubLogin = undefined;
                 return;
             }
-            const auth = await fetchQaapAuthSession();
+            const auth = skipAuthSession ?? await fetchQaapAuthSession();
             if (generation !== this.host.inboxLoadGeneration || abort.signal.aborted) {
                 return;
             }
@@ -124,7 +128,7 @@ export class MobileProjectsInboxPrUi {
                 return;
             }
             this.host.inboxGithubSignedIn = true;
-            this.host.inboxGithubLogin = auth.user?.login;
+            this.host.inboxGithubLogin = desktopGithubLogin ?? auth.user?.login;
             const response = await fetchQaapGithubPullRequests(repoKeys);
             if (generation !== this.host.inboxLoadGeneration || abort.signal.aborted) {
                 return;

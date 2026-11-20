@@ -1,6 +1,7 @@
 import type { MobileProjectsSessionsSidebarUiContext } from './mobile-projects-sessions-sidebar-ui-context';
 // Extracted from mobile-projects-sessions-sidebar-ui.ts
 
+import { environment } from '@theia/core/lib/common';
 import { nls } from '@theia/core/lib/common/nls';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { isFailedRunSummary, type QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
@@ -8,6 +9,7 @@ import { collapseOlderFailedDuplicateTitles } from '@theia/qaap-transcript/lib/c
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import { startGithubOAuth } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import { createLucideSortIcon } from '@theia/qaap-adapters/lib/browser/qaap-lucide-icons';
+import { attachQaapScrollEdgeFades } from '@theia/qaap-mobile-shell/lib/browser/qaap-scroll-edge-fades';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import {
     resolveSessionsSidebarInitialConversationLimit,
@@ -863,6 +865,7 @@ export function toggleSessionsSidebarProjectSortPopoverExtracted(ctx: MobileProj
             popover.append(item);
         }
         document.body.append(popover);
+        const edgeFades = attachQaapScrollEdgeFades(popover);
         ctx.sessionsSidebarSortPopover = popover;
         anchor.setAttribute('aria-expanded', 'true');
         window.requestAnimationFrame(() => positionSessionsSidebarHeadPopover(popover, anchor));
@@ -879,6 +882,7 @@ export function toggleSessionsSidebarProjectSortPopoverExtracted(ctx: MobileProj
         ctx.closeSessionsSidebarHeadPopovers = (): void => {
             dismissCleanup();
             keyboardCleanup();
+            edgeFades.dispose();
             popover.remove();
             ctx.sessionsSidebarSortPopover = undefined;
             anchor.setAttribute('aria-expanded', 'false');
@@ -911,6 +915,21 @@ export function toggleSessionsSidebarAddProjectPopoverExtracted(ctx: MobileProje
             ctx.closeSessionsSidebarHeadPopovers();
             void ctx.host.onStartNewProject();
         });
+        const newLocal = document.createElement('button');
+        newLocal.type = 'button';
+        newLocal.className = 'theia-mobile-work-hub-sessions-sidebar-head-popover-item';
+        newLocal.setAttribute('role', 'menuitem');
+        const newLocalIcon = document.createElement('span');
+        newLocalIcon.className = 'codicon codicon-new-folder theia-mobile-work-hub-sessions-sidebar-head-popover-item-icon';
+        newLocalIcon.setAttribute('aria-hidden', 'true');
+        const newLocalLabel = document.createElement('span');
+        newLocalLabel.className = 'theia-mobile-work-hub-sessions-sidebar-head-popover-item-label';
+        newLocalLabel.textContent = nls.localize('qaap/newProject/menuLocal', 'New local project');
+        newLocal.append(newLocalIcon, newLocalLabel);
+        newLocal.addEventListener('click', () => {
+            ctx.closeSessionsSidebarHeadPopovers();
+            void ctx.host.onStartNewLocalProject();
+        });
         const addRepo = document.createElement('button');
         addRepo.type = 'button';
         addRepo.className = 'theia-mobile-work-hub-sessions-sidebar-head-popover-item';
@@ -926,8 +945,28 @@ export function toggleSessionsSidebarAddProjectPopoverExtracted(ctx: MobileProje
             ctx.closeSessionsSidebarHeadPopovers();
             void ctx.host.onNewClick();
         });
-        popover.append(startNew, addRepo);
+        if (environment.electron.is()) {
+            const openLocal = document.createElement('button');
+            openLocal.type = 'button';
+            openLocal.className = 'theia-mobile-work-hub-sessions-sidebar-head-popover-item';
+            openLocal.setAttribute('role', 'menuitem');
+            const openLocalIcon = document.createElement('span');
+            openLocalIcon.className = 'codicon codicon-folder-opened theia-mobile-work-hub-sessions-sidebar-head-popover-item-icon';
+            openLocalIcon.setAttribute('aria-hidden', 'true');
+            const openLocalLabel = document.createElement('span');
+            openLocalLabel.className = 'theia-mobile-work-hub-sessions-sidebar-head-popover-item-label';
+            openLocalLabel.textContent = nls.localize('theia/qaap-work-hub/openLocalProject', 'Open local project');
+            openLocal.append(openLocalIcon, openLocalLabel);
+            openLocal.addEventListener('click', () => {
+                ctx.closeSessionsSidebarHeadPopovers();
+                void ctx.host.onOpenLocalProject();
+            });
+            popover.append(startNew, newLocal, openLocal, addRepo);
+        } else {
+            popover.append(startNew, newLocal, addRepo);
+        }
         document.body.append(popover);
+        const edgeFades = attachQaapScrollEdgeFades(popover);
         ctx.sessionsSidebarAddProjectPopover = popover;
         anchor.setAttribute('aria-expanded', 'true');
         window.requestAnimationFrame(() => positionSessionsSidebarHeadPopover(popover, anchor));
@@ -944,6 +983,7 @@ export function toggleSessionsSidebarAddProjectPopoverExtracted(ctx: MobileProje
         ctx.closeSessionsSidebarHeadPopovers = (): void => {
             dismissCleanup();
             keyboardCleanup();
+            edgeFades.dispose();
             popover.remove();
             ctx.sessionsSidebarAddProjectPopover = undefined;
             anchor.setAttribute('aria-expanded', 'false');

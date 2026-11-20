@@ -6,9 +6,9 @@
 # Regenerate only with review: node scripts/qaap-endpoint-ownership-check.js --write
 
 packages/qaap-cloud-workspace/src/node/qaap-billing-endpoint.ts :: POST QAAP_BILLING_WEBHOOK_API_PATH
-# Stripe webhook: authenticated by Stripe's HMAC signature over the raw body
-# (verifyStripeWebhookEvent, qaap-stripe-billing.ts), not by session. A session guard
-# here would break Stripe's own calls. Auth in handler: none by design.
+# Airwallex webhook: authenticated by Airwallex's HMAC signature over x-timestamp + raw body
+# (verifyAirwallexWebhook, qaap-airwallex-billing.ts), not by session. A session guard
+# here would break Airwallex's own calls. Auth in handler: none by design.
 
 packages/qaap-cloud-workspace/src/node/qaap-push-outbox-endpoint.ts :: GET QAAP_TENANT_PUSH_OUTBOX_PATH
 # Tenant push outbox, drained by the control plane (QaapPushDrainer). Authenticated by the
@@ -27,6 +27,12 @@ packages/qaap-shared-core/src/node/qaap-github-oauth-endpoint.ts :: GET QAAP_GIT
 # OAuth dance entry point: by definition pre-login (it initiates the GitHub OAuth flow).
 # Stateless; the state parameter's CSRF protection and the callback validation happen
 # later in the flow (handleOAuthCallback is itself guarded).
+
+# Desktop GitHub device flow (QAAP_DESKTOP=1 only; 404 elsewhere). Public by design: it runs before any
+# session exists, and it returns the user code only. The device code stays in backend memory. Start and
+# poll refuse cross-site requests (Sec-Fetch-Site / Origin), and poll sets the session cookie only after
+# GitHub approved the flow (isDesktopDeviceRequestAllowed in qaap-github-oauth-endpoint.ts).
+packages/qaap-shared-core/src/node/qaap-github-oauth-endpoint.ts :: POST `${QAAP_GITHUB_API_PATH}/device/start`
 
 packages/qaap-cloud-workspace/src/node/qaap-task-sandbox-broker-client.ts :: GET `${QAAP_TENANT_RUNTIME_API_PATH}${QAAP_TASK_SANDBOX_LINK_PATH}`
 packages/qaap-cloud-workspace/src/node/qaap-task-sandbox-broker-client.ts :: POST `${QAAP_TENANT_RUNTIME_API_PATH}${QAAP_TASK_SANDBOX_REPLY_PATH}`
@@ -63,3 +69,10 @@ packages/qaap-cloud-workspace/src/node/qaap-tool-gate-endpoint.ts :: POST `${QAA
 packages/qaap-cloud-workspace/src/node/qaap-tool-gate-endpoint.ts :: GET `${QAAP_TOOL_GATE_API_PATH}/health`
 # Same gate-token authentication as /evaluate (requireGrant answers 401 without a live token). It
 # discloses nothing beyond {ok:true} and is used only by the adapter's preflight with its own token.
+
+packages/qaap-product/src/node/qaap-immutable-chunk-cache-contribution.ts :: GET '/favicon.ico'
+# Static redirect to the packaged logo (302). Browsers request it before sign-in and it carries no user data.
+
+packages/qaap-product/src/node/qaap-immutable-chunk-cache-contribution.ts :: GET QAAP_DESKTOP_DOWNLOAD_LINKS_PATH
+# Public landing page: the desktop-installer links are read before sign-in. Read-only JSON of the
+# operator's QAAP_DESKTOP_DOWNLOAD_URL_* values (https only, no credentials); no user or tenant data.

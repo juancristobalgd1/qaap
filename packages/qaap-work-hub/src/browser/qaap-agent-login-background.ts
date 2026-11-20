@@ -10,14 +10,22 @@ import {
     localizeAgentConnectionUnsupportedMessage,
     localizeAgentTenantTerminalLoginMessage,
     QAAP_AI_FEATURES_SETTINGS_QUERY,
+    resolveAgentLoginChallengeTimeoutMs,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
 import { localizeHostedLocalhostOAuthAgentMessage } from '@theia/qaap-shared-core/lib/common/qaap-hosted-agent-auth-policy';
-import { buildAgentLoginShellCommand } from '@theia/qaap-shared-core/lib/common/qaap-agent-connect-plan';
-import { QAAP_AGENT_TASK_API_PATH } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { buildAgentLoginShellCommand, splitAgentLoginShellInput } from '@theia/qaap-shared-core/lib/common/qaap-agent-connect-plan';
+import {
+    attestAgentSessionSignIn,
+    invalidateAgentModelsCache,
+    invalidateAgentTaskListAllCache,
+    QAAP_AGENT_TASK_API_PATH,
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { isQaapSessionAttestationAgent } from '@theia/qaap-shared-core/lib/common/qaap-agent-session-attestation';
 import {
     resolveAgentConnectionFlow,
     type QaapAgentConnectionFlow,
     type QaapAgentLoginInputStep,
+    QAAP_AGY_TUI_LOGIN_COMMAND,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-tui-command';
 import { QAAP_PI_LOGIN_PROVIDERS } from '@theia/qaap-shared-core/lib/common/qaap-pi-login-providers';
 import {
@@ -30,16 +38,21 @@ import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mob
 import { resolveAgentDisplayLabel } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { requestAgentCliUpdate } from '@theia/qaap-agents-ui/lib/common/qaap-agent-cli-update';
 import { QaapAgentLoginFlow, stripAgentLoginTerminalControlSequences } from '@theia/qaap-agents-ui/lib/common/qaap-agent-login-flow';
+import { QAAP_AGENT_SIGNED_IN_EVENT, type QaapAgentSignedInDetail } from './qaap-agent-signed-in-event';
+import { presentAgyLoginFailure, QAAP_AGY_LOGIN_CHALLENGE_TIMEOUT_MS } from '@theia/qaap-agents-ui/lib/common/qaap-agy-login-presentation';
 import { QaapAgentLoginInputDriver } from '@theia/qaap-agents-ui/lib/common/qaap-agent-login-input-driver';
 import { createTranscriptTerminalStagingHost, createTranscriptTerminalSurface } from '@theia/qaap-transcript/lib/browser/qaap-transcript-terminal-view';
 import { createQaapAgentLoginDialog } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-login-dialog';
 import { resolveAgentLoginCwd } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-login-cwd';
+import { agentLoginUtf8ByteLength, QaapAgentLoginBufferTap } from './qaap-agent-login-buffer-tap';
 
 const HARNESS_STATUS_TIMEOUT_MS = 5000;
 const CONNECTED_CLOSE_DELAY_MS = 1800;
 /** A driven TUI login starts the CLI first, then types its way to the link. */
 const TUI_LOGIN_CHALLENGE_TIMEOUT_MS = 30_000;
 const INPUT_DRIVER_TICK_MS = 150;
+/** Output the live stream missed is read back from the terminal screen this often. */
+const BUFFER_TAP_POLL_MS = 400;
 
 /** The subset of `/harness-status` the Connect flow needs. */
 interface AgentLoginHarnessStatus {
@@ -48,10 +61,54 @@ interface AgentLoginHarnessStatus {
     readonly installSupported?: boolean;
     readonly installPackageAvailable?: boolean;
     readonly cliBinDirectory?: string;
+    /** The Antigravity CLI the server resolved (`gemini`, `agy`, `antigravity`); decides whether Connect runs a hidden login. */
+    readonly cliBin?: string;
 }
 
 function wait(milliseconds: number): Promise<void> {
     return new Promise(resolve => window.setTimeout(resolve, milliseconds));
+}
+
+/** Longest wait for the shell's first prompt before the login command is typed anyway. */
+const SHELL_PROMPT_WAIT_MS = 3_000;
+/** Pause between command pieces, so the shell drains the PTY input queue between writes. */
+const SHELL_INPUT_CHUNK_GAP_MS = 25;
+
+/**
+ * Types a long command into the hidden terminal. Text written before the shell reads its line
+ * editor input sits in the kernel's canonical queue, and macOS drops input past 1024 bytes there
+ * and in one raw write: the command's tail and its Enter were lost, so it never ran. Waiting for
+ * the first prompt and writing small pieces keeps every byte.
+ */
+async function typeAgentLoginCommand(
+    terminal: { sendText(text: string): void; readonly isDisposed: boolean },
+    line: string,
+    hasPrompt: () => boolean,
+    stillCurrent: () => boolean,
+): Promise<void> {
+    const promptDeadline = Date.now() + SHELL_PROMPT_WAIT_MS;
+    while (!hasPrompt() && Date.now() < promptDeadline && stillCurrent() && !terminal.isDisposed) {
+        await wait(50);
+    }
+    const chunks = splitAgentLoginShellInput(line);
+    for (let index = 0; index < chunks.length; index++) {
+        if (!stillCurrent() || terminal.isDisposed) {
+            return;
+        }
+        if (index > 0) {
+            await wait(SHELL_INPUT_CHUNK_GAP_MS);
+        }
+        terminal.sendText(chunks[index]);
+    }
+}
+
+/** True once the terminal shows any text (the shell's first prompt). */
+function hasBufferText(terminal: { readonly buffer?: { readonly length: number; getLines(start: number, length: number, trimRight?: boolean): string[] } }): boolean {
+    const buffer = terminal.buffer;
+    if (!buffer || buffer.length === 0) {
+        return false;
+    }
+    return buffer.getLines(0, buffer.length, true).some(line => line.trim().length > 0);
 }
 
 /** Browser bundles have no Node `process`; Electron frontends do and may run a Windows backend. */
@@ -111,10 +168,37 @@ interface AgentLoginHiddenCommand {
 
 function resolveHiddenLogin(connectionFlow: QaapAgentConnectionFlow): AgentLoginHiddenCommand | undefined {
     return connectionFlow.kind === 'cli-login'
-        ? { command: connectionFlow.command }
+        ? { command: connectionFlow.command, env: connectionFlow.env }
         : connectionFlow.kind === 'tui-login'
             ? { command: connectionFlow.command, input: connectionFlow.input, env: connectionFlow.env }
             : undefined;
+}
+
+/** Antigravity sign-in dialogs that are open: one per harness, so a second tap never starts a second `agy`. */
+const openAntigravityLoginDialogs = new Set<string>();
+
+function isAntigravityLoginAgent(agentId: string): boolean {
+    const normalized = agentId.trim().toLowerCase();
+    return normalized === 'antigravity' || normalized === 'gemini';
+}
+
+/**
+ * The connection probe of a caller that passed none (the side chat's Sign in): the same refresh every Connect
+ * flow ends in (`refreshAfterAgentSignIn`): drop the cached agent list and models, re-read the harness state
+ * from the backend and redraw the composer. True once the harness reads as connected.
+ */
+function createDefaultConnectionProbe(ctx: any, project: MobileProjectEntry | undefined, agentId: string): (() => Promise<boolean>) | undefined {
+    if (!project) {
+        return undefined;
+    }
+    return async () => {
+        invalidateAgentTaskListAllCache();
+        invalidateAgentModelsCache();
+        const refreshed = await ctx.stickyComposerAgentsUi?.refreshStickyComposerAgents?.(project, { forceRefresh: true });
+        await ctx.transcriptComposerUi?.refreshTranscriptComposerAgents?.(project);
+        ctx.stickyComposerRenderUi?.renderStickyComposer?.();
+        return refreshed === true && ctx.stickyComposerAgentsUi?.isAgentConnected?.(agentId) === true;
+    };
 }
 
 export async function openAgentLoginDialogInBackground(
@@ -122,9 +206,17 @@ export async function openAgentLoginDialogInBackground(
     project: MobileProjectEntry | undefined,
     summary: QaapAgentConversationSummaryDTO | undefined,
     agentId: string,
-    onConnected?: () => boolean | void | Promise<boolean | void>,
+    callerOnConnected?: () => boolean | void | Promise<boolean | void>,
 ): Promise<void> {
+    const onConnected = callerOnConnected ?? createDefaultConnectionProbe(ctx, project, agentId);
     const agentLabel = resolveAgentDisplayLabel(agentId);
+    const singleFlightKey = isAntigravityLoginAgent(agentId) ? 'antigravity' : undefined;
+    if (singleFlightKey && openAntigravityLoginDialogs.has(singleFlightKey)) {
+        return;
+    }
+    if (singleFlightKey) {
+        openAntigravityLoginDialogs.add(singleFlightKey);
+    }
     // Pi's provider can be switched in the dialog: the flow and its keystrokes follow the choice.
     let connectionFlow = resolveAgentConnectionFlow(agentId);
     let hiddenLogin = resolveHiddenLogin(connectionFlow);
@@ -135,6 +227,10 @@ export async function openAgentLoginDialogInBackground(
     let watchdogHandle: number | undefined;
     let inputDriver: QaapAgentLoginInputDriver | undefined;
     let inputDriverHandle: number | undefined;
+    let bufferTap: QaapAgentLoginBufferTap | undefined;
+    let bufferTapHandle: number | undefined;
+    /** UTF-8 bytes the live `onOutput` stream delivered in the current attempt (diagnostics only). */
+    let onOutputBytes = 0;
     /**
      * Whether a "connected" answer of the status probe proves this sign-in. A TUI login can run
      * while the harness is already connected (Pi: adding another provider), so there the probe
@@ -147,6 +243,8 @@ export async function openAgentLoginDialogInBackground(
     let connectionPollInFlight = false;
     let closed = false;
     let attempt = 0;
+    /** The resolved CLI is `agy`: its Google OAuth picker is driven and its failures get their own copy. */
+    let agyLogin = false;
 
     const stopPolling = (): void => {
         if (connectionPollHandle !== undefined) {
@@ -171,9 +269,19 @@ export async function openAgentLoginDialogInBackground(
      * (`closeOnDispose`), which ends the shell and the CLI with it: an interactive CLI such as
      * Pi's TUI (and its 127.0.0.1 callback listener) never outlives the dialog attempt.
      */
+    const stopBufferTap = (): void => {
+        if (bufferTapHandle !== undefined) {
+            window.clearInterval(bufferTapHandle);
+            bufferTapHandle = undefined;
+        }
+        bufferTap?.dispose();
+        bufferTap = undefined;
+    };
+
     const disposeTerminal = (): void => {
         stopPolling();
         stopInputDriver();
+        stopBufferTap();
         outputListener?.dispose();
         outputListener = undefined;
         if (surface) {
@@ -193,6 +301,9 @@ export async function openAgentLoginDialogInBackground(
             return;
         }
         closed = true;
+        if (singleFlightKey) {
+            openAntigravityLoginDialogs.delete(singleFlightKey);
+        }
         window.removeEventListener('beforeunload', closeBeforeUnload);
         if (watchdogHandle !== undefined) {
             window.clearInterval(watchdogHandle);
@@ -211,21 +322,82 @@ export async function openAgentLoginDialogInBackground(
     const closeBeforeUnload = (): void => close();
     window.addEventListener('beforeunload', closeBeforeUnload);
 
+    /** What the host saw from the sign-in terminal: whether xterm opened, and the bytes per channel. */
+    const terminalDiagnostics = (): { readonly agentId: string; readonly opened: boolean; readonly onOutputBytes: number; readonly bufferBytes: number } => ({
+        agentId,
+        opened: (surface?.terminal as { termOpened?: boolean } | undefined)?.termOpened === true,
+        onOutputBytes,
+        bufferBytes: bufferTap?.fedBytes ?? 0,
+    });
+
+    const describeTerminalDiagnostics = (facts: ReturnType<typeof terminalDiagnostics>): string => nls.localize(
+        'qaap/agentLogin/diagnosticsDetail',
+        'Terminal started: {0}. Output received: {1} bytes from the live stream, {2} more bytes recovered from the terminal screen.',
+        facts.opened ? nls.localize('qaap/agentLogin/diagnosticsYes', 'yes') : nls.localize('qaap/agentLogin/diagnosticsNo', 'no'),
+        String(facts.onOutputBytes),
+        String(facts.bufferBytes),
+    );
+
+    /**
+     * Copilot and Grok have no auth probe, so the backend cannot see this sign-in on its own: attest the
+     * CLI's success line, then drop the cached agent list and models so the refresh below reads the
+     * unlocked catalog. Other harnesses are proven by their probe and skip this.
+     */
+    const attestSignInIfUnprobed = async (): Promise<void> => {
+        if (agyLogin) {
+            // `agy` is proven by its connection probe: only the cached agent list and models are stale.
+            invalidateAgentTaskListAllCache();
+            invalidateAgentModelsCache(agentId);
+            return;
+        }
+        if (!isQaapSessionAttestationAgent(agentId)) {
+            return;
+        }
+        if (!await attestAgentSessionSignIn(agentId)) {
+            console.warn('[qaap] Agent sign-in attestation was refused', { agentId });
+        }
+        invalidateAgentTaskListAllCache();
+        invalidateAgentModelsCache(agentId);
+    };
+
+    /** Driven TUI logins type their way to the link; some CLIs do slow first-run work before printing it. */
+    function resolveLoginChallengeTimeout(): { challengeTimeoutMs?: number } {
+        const challengeTimeoutMs = agyLogin
+            ? QAAP_AGY_LOGIN_CHALLENGE_TIMEOUT_MS
+            : connectionFlow.kind === 'tui-login'
+                ? TUI_LOGIN_CHALLENGE_TIMEOUT_MS
+                : resolveAgentLoginChallengeTimeoutMs(agentId);
+        return challengeTimeoutMs !== undefined ? { challengeTimeoutMs } : {};
+    }
+
     const flow = new QaapAgentLoginFlow({
         agentId,
-        ...(connectionFlow.kind === 'tui-login' ? { challengeTimeoutMs: TUI_LOGIN_CHALLENGE_TIMEOUT_MS } : {}),
+        // Read at each tick: the resolved CLI (and with it agy's deadline) is only known after the status check.
+        get challengeTimeoutMs(): number | undefined {
+            return resolveLoginChallengeTimeout().challengeTimeoutMs;
+        },
+        get answersPrompts(): boolean {
+            return agyLogin;
+        },
+        get alwaysAcceptsCode(): boolean {
+            return agyLogin;
+        },
         onDidChange: state => {
             if (closed) {
                 return;
             }
-            dialog.render(state);
+            dialog.render(agyLogin && state.phase === 'failed' ? presentAgyLoginFailure(state, agentLabel) : state);
             if (state.phase === 'connected') {
                 disposeTerminal();
-                void Promise.resolve(onConnected?.()).catch(error => {
+                window.dispatchEvent(new window.CustomEvent<QaapAgentSignedInDetail>(QAAP_AGENT_SIGNED_IN_EVENT, { detail: { agentId } }));
+                void attestSignInIfUnprobed().then(() => onConnected?.()).catch(error => {
                     console.warn('[qaap] Agent login UI refresh failed:', error);
                 });
                 successCloseHandle ??= window.setTimeout(close, CONNECTED_CLOSE_DELAY_MS);
             } else if (state.phase === 'failed') {
+                if (state.reason === 'timeout' && state.tail.length === 0) {
+                    console.warn('[qaap] agent login produced no output', terminalDiagnostics());
+                }
                 disposeTerminal();
             }
         },
@@ -276,6 +448,16 @@ export async function openAgentLoginDialogInBackground(
         }, error => console.warn('[qaap] Agent login baseline status failed:', error));
     };
 
+    /** Reads the screen for output the live stream missed; stops once the attempt is no longer waiting. */
+    const pollBufferTap = (): void => {
+        const phase = flow.state.phase;
+        if (closed || !bufferTap || (phase !== 'waiting' && phase !== 'challenge' && phase !== 'code-submitted')) {
+            stopBufferTap();
+            return;
+        }
+        bufferTap.poll();
+    };
+
     const startInputDriver = (steps: readonly QaapAgentLoginInputStep[], currentAttempt: number): void => {
         const driverSurface = surface;
         const driver = new QaapAgentLoginInputDriver({
@@ -308,6 +490,7 @@ export async function openAgentLoginDialogInBackground(
     ): Promise<void> => {
         const currentAttempt = ++attempt;
         disposeTerminal();
+        onOutputBytes = 0;
         probeProvesLogin = true;
         if (input?.length) {
             takeProbeBaseline(currentAttempt);
@@ -364,23 +547,46 @@ export async function openAgentLoginDialogInBackground(
             }
             staging = attemptStaging;
             surface = attemptSurface;
-            outputListener = surface.terminal.onOutput((chunk: string) => {
+            const liveTerminal = surface.terminal;
+            outputListener = liveTerminal.onOutput((chunk: string) => {
+                onOutputBytes += agentLoginUtf8ByteLength(chunk);
+                bufferTap?.noteOutput();
                 inputDriver?.feed(stripAgentLoginTerminalControlSequences(chunk), Date.now());
                 flow.appendRawOutput(chunk);
             });
             await wait(120);
-            if (closed || currentAttempt !== attempt || surface.terminal.isDisposed || flow.state.phase !== 'preparing') {
+            if (closed || currentAttempt !== attempt || liveTerminal.isDisposed || flow.state.phase !== 'preparing') {
                 return;
             }
+            // Baseline the screen read before the command: what is on it now is shell prompt, not login output.
+            const tap = new QaapAgentLoginBufferTap({
+                buffer: () => (liveTerminal.isDisposed ? undefined : liveTerminal.buffer),
+                feed: text => {
+                    inputDriver?.feed(text, Date.now());
+                    flow.appendRawOutput(text);
+                },
+                columns: () => (liveTerminal as unknown as { term?: { cols?: number } }).term?.cols,
+            });
+            tap.noteOutput();
+            bufferTap = tap;
             flow.commandStarted(Date.now());
-            surface.terminal.sendText(`${buildAgentLoginShellCommand(command, {
-                cliBinDirectory: status?.cliBinDirectory,
-                platform: runtimePlatform(),
-                env: hiddenLogin?.env,
-            })}\r`);
+            await typeAgentLoginCommand(
+                liveTerminal,
+                `${buildAgentLoginShellCommand(command, {
+                    cliBinDirectory: status?.cliBinDirectory,
+                    platform: runtimePlatform(),
+                    env: hiddenLogin?.env,
+                })}\r`,
+                () => onOutputBytes > 0 || hasBufferText(liveTerminal),
+                () => !closed && currentAttempt === attempt,
+            );
+            if (closed || currentAttempt !== attempt || liveTerminal.isDisposed) {
+                return;
+            }
             if (input?.length) {
                 startInputDriver(input, currentAttempt);
             }
+            bufferTapHandle = window.setInterval(pollBufferTap, BUFFER_TAP_POLL_MS);
             if (onConnected) {
                 // The browser can return from authorization before the CLI prints its final line.
                 void refreshConnectionState();
@@ -406,6 +612,21 @@ export async function openAgentLoginDialogInBackground(
         if (status && status.installed === false) {
             const canInstall = status.installSupported === true && status.installPackageAvailable !== false;
             flow.requireInstall(canInstall, canInstall ? undefined : localizeInstallBlockedMessage(agentLabel, status));
+            return;
+        }
+        // The resolved Antigravity CLI decides the sign-in. `agy` has no login command: its Google OAuth picker
+        // is driven in the hidden terminal and the authorization URL it prints is opened by the user (the
+        // callback is hosted by Google, so any browser works). Other CLIs without a login get instructions.
+        const resolvedFlow = resolveAgentConnectionFlow(agentId, { cliBin: status?.cliBin });
+        if (resolvedFlow.kind === 'tui-login' && resolvedFlow.command === QAAP_AGY_TUI_LOGIN_COMMAND && isAntigravityLoginAgent(agentId)) {
+            agyLogin = true;
+            connectionFlow = resolvedFlow;
+            hiddenLogin = resolveHiddenLogin(resolvedFlow);
+            await runLogin(resolvedFlow.command, status, resolvedFlow.input);
+            return;
+        }
+        if (resolvedFlow.kind === 'tenant-terminal') {
+            flow.showManualInstructions(localizeAgentTenantTerminalLoginMessage(agentLabel, resolvedFlow.command, resolvedFlow.followUp));
             return;
         }
         await runLogin(command, status, input);
@@ -491,7 +712,7 @@ export async function openAgentLoginDialogInBackground(
         agentId,
         agentLabel,
         onClose: close,
-        ...(connectionFlow.kind === 'tui-login' ? {
+        ...(connectionFlow.kind === 'tui-login' && connectionFlow.provider !== undefined ? {
             loginProviders: {
                 options: QAAP_PI_LOGIN_PROVIDERS.map(provider => ({ id: provider.id, label: provider.name })),
                 selectedId: connectionFlow.provider,
@@ -531,6 +752,7 @@ export async function openAgentLoginDialogInBackground(
         if (typeof shellExit === 'number') {
             flow.exited(shellExit === 0 ? 1 : shellExit);
         }
+        flow.setDiagnostics(describeTerminalDiagnostics(terminalDiagnostics()));
         flow.tick(Date.now());
     }, 1000);
 

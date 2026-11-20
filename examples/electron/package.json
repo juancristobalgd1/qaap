@@ -1,7 +1,7 @@
 {
   "private": true,
   "name": "@theia/example-electron",
-  "productName": "Theia Electron Example",
+  "productName": "Qaap",
   "version": "1.73.0",
   "main": "lib/backend/electron-main.js",
   "license": "EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0",
@@ -9,11 +9,12 @@
     "target": "electron",
     "frontend": {
       "config": {
-        "applicationName": "Theia Electron Example",
+        "applicationName": "Qaap",
+        "applicationIcon": "./media/qaap-logo.svg",
         "reloadOnReconnect": true,
         "electron": {
           "splashScreenOptions": {
-            "content": "resources/theia-logo.svg",
+            "content": "resources/qaap-logo.svg",
             "height": 90
           }
         }
@@ -53,7 +54,6 @@
     "@theia/ai-terminal": "1.73.0",
     "@theia/ai-vercel-ai": "1.73.0",
     "@theia/api-provider-sample": "1.73.0",
-    "@theia/api-samples": "1.73.0",
     "@theia/bulk-edit": "1.73.0",
     "@theia/callhierarchy": "1.73.0",
     "@theia/collaboration": "1.73.0",
@@ -108,11 +108,14 @@
   "scripts": {
     "build": "theiaext build && npm run -s bundle",
     "bundle": "npm run rebuild && theia build --mode development",
+    "bundle:production": "npm run rebuild && theia build --mode production",
+    "build:production": "theiaext build && npm run -s bundle:production",
+    "package": "electron-builder --config electron-builder.yml --publish never",
     "clean": "theiaext clean",
     "compile": "tsc -b",
     "lint": "theiaext lint",
     "rebuild": "theia rebuild:electron --cacheRoot ../..",
-    "start": "theia start --plugins=local-dir:../../plugins --ovsx-router-config=../ovsx-router-config.json",
+    "start": "node ../../scripts/qaap-start-electron.mjs --plugins=local-dir:../../plugins --ovsx-router-config=../ovsx-router-config.json",
     "start:debug": "npm run -s start -- --log-level=debug --remote-debugging-port=9222",
     "start:watch": "concurrently --kill-others -n tsc,bundle,run -c red,yellow,green \"tsc -b -w --preserveWatchOutput\" \"npm run -s watch:bundle\" \"npm run -s start\"",
     "test": "electron-mocha --timeout 60000 \"./lib/test/**/*.espec.js\"",
@@ -122,6 +125,7 @@
   },
   "devDependencies": {
     "@theia/cli": "1.73.0",
-    "electron": "42.8.1"
+    "electron": "42.8.1",
+    "electron-builder": "26.18.1"
   }
 }

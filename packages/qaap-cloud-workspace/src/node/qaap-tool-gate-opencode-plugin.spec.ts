@@ -23,6 +23,7 @@ interface OpencodePlugin {
     armGate(env?: Env, fetchImpl?: typeof fetch, options?: Options): Promise<boolean>;
     createHooks(cwd: string | undefined, env?: Env, fetchImpl?: typeof fetch, options?: Options): Hooks;
     default: { id: string; server(ctx: { directory: string }): Promise<Hooks> };
+    resetArmStateForTests(): void;
 }
 
 // The plugin is plain ESM; TypeScript would turn a literal import() into require().
@@ -42,6 +43,7 @@ describe('qaap-tool-gate-opencode.mjs', () => {
     });
 
     beforeEach(async () => {
+        plugin.resetArmStateForTests();
         seen = [];
         reply = (_body, res) => {
             res.end(JSON.stringify({ decision: { kind: 'allow', source: 'policy' } }));
@@ -193,20 +195,54 @@ describe('qaap-tool-gate-opencode.mjs', () => {
                 () => hooks(armed({ QAAP_GATE_URL: 'http://127.0.0.1:1/gate' }), { retries: 0 }),
                 () => hooks(armed({ QAAP_GATE_TOKEN: undefined })),
             ]) {
+                plugin.resetArmStateForTests();
                 const config = { permission: { edit: 'ask', bash: 'ask' } as Record<string, unknown> };
                 await makeHooks().config(config);
                 expect(config.permission).to.deep.equal({ edit: 'ask', bash: 'ask' });
             }
             server.removeAllListeners('request');
             server.on('request', (_req, res) => { res.statusCode = 401; res.end('{}'); });
+            plugin.resetArmStateForTests();
             const config = { permission: { edit: 'ask' } as Record<string, unknown> };
             await hooks(armed()).config(config);
             expect(config.permission).to.deep.equal({ edit: 'ask' });
             // Without the nonce the plugin never even asks the gate to arm.
+            plugin.resetArmStateForTests();
             seen = [];
             const unnonced = { permission: { edit: 'ask' } as Record<string, unknown> };
             await hooks(env()).config(unnonced);
             expect(unnonced.permission).to.deep.equal({ edit: 'ask' });
+            expect(seen).to.have.length(0);
+        });
+
+        it('lets a second plugin instance in the same process reuse the arming of the first', async () => {
+            server.removeAllListeners('request');
+            server.on('request', armPath());
+            // OpenCode loads the plugin twice; the first instance takes the nonce out of its environment.
+            const first = armed();
+            const config = { permission: { edit: 'ask', lsp: 'deny' } as Record<string, unknown> };
+            await hooks(first).config(config);
+            expect(config.permission).to.deep.equal({ lsp: 'deny' });
+            const second = { QAAP_GATE_URL: url, QAAP_GATE_TOKEN: 'tok' };
+            const again = { permission: { bash: 'ask', read: 'allow' } as Record<string, unknown> };
+            await hooks(second).config(again);
+            expect(again.permission).to.deep.equal({ read: 'allow' });
+            expect(seen).to.have.length(1);
+        });
+
+        it('never arms a second instance that has no nonce, nor a different nonce seen later', async () => {
+            server.removeAllListeners('request');
+            server.on('request', armPath());
+            const withoutNonce = { permission: { bash: 'ask' } as Record<string, unknown> };
+            await hooks(env()).config(withoutNonce);
+            await hooks(env()).config(withoutNonce);
+            expect(withoutNonce.permission).to.deep.equal({ bash: 'ask' });
+            expect(seen).to.have.length(0);
+            // The process takes its first nonce even when arming fails; a nonce that arrives later is ignored.
+            await hooks(armed({ QAAP_GATE_URL: 'http://127.0.0.1:1/gate' }), { retries: 0 }).config({ permission: {} });
+            const reused = { permission: { bash: 'ask' } as Record<string, unknown> };
+            await hooks(armed({ QAAP_GATE_ARM_NONCE: 'nonce-2' })).config(reused);
+            expect(reused.permission).to.deep.equal({ bash: 'ask' });
             expect(seen).to.have.length(0);
         });
 

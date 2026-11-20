@@ -56,7 +56,7 @@ export const TRANSCRIPT_OVERLAY_STATE_KEYS = [
     'transcriptComposerSummary',
     'transcriptComposerContext',
     'transcriptComposerFilesExpanded',
-    'transcriptComposerQueueExpanded',
+
     'transcriptComposerChangedFilesExpandedById',
     'transcriptComposerPinnedAgentId',
     'transcriptComposerAgentModel',
@@ -165,7 +165,6 @@ export class TranscriptOverlayState {
     transcriptComposerSummary: QaapAgentConversationSummaryDTO | undefined;
     transcriptComposerContext: StickyComposerContextEntry[] = [];
     transcriptComposerFilesExpanded = true;
-    transcriptComposerQueueExpanded = true;
     readonly transcriptComposerChangedFilesExpandedById = new Map<string, boolean>();
     transcriptComposerPinnedAgentId: string | undefined;
     transcriptComposerAgentModel: QaapCreateAgentTaskQaiqModel | undefined;

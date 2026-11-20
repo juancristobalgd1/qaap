@@ -15,6 +15,7 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-git-review';
 import { isAgentsHubIdleConversationSummary } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
 import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { attachSheetListEdgeFades } from './mobile-projects-sticky-composer-sheet-edge-fades';
 import { createComposerWorkspaceSheetNavGroup, type ComposerWorkspaceSheetNavKind } from './qaap-sticky-composer-workspace-bar';
 import {
     isWorkHubHeaderProjectPopoverAnchor,
@@ -366,6 +367,7 @@ export class MobileProjectsStickyComposerWorkspaceUi {
 
         const list = document.createElement('div');
         list.className = 'theia-mobile-sticky-composer-sheet-list';
+        attachSheetListEdgeFades(list);
 
         const actionsLabel = document.createElement('div');
         actionsLabel.className = 'theia-mobile-sticky-composer-sheet-section-label';
@@ -379,6 +381,18 @@ export class MobileProjectsStickyComposerWorkspaceUi {
                 void this.onCreateNewProjectFromSheet('local');
             },
         }));
+        // Desktop only: a folder that already exists on this computer, through the same open path.
+        if (this.host.projectsService.isDesktop()) {
+            list.append(this.createComposerProjectSheetAction({
+                iconClass: 'codicon-folder-opened',
+                label: nls.localize('theia/qaap-work-hub/openLocalProject', 'Open local project'),
+                onSelect: () => {
+                    this.host.stickyComposerSheetsUi.closeStickyComposerSheets();
+                    // openLocalProject() reloads into the chosen folder; a cancelled picker changes nothing.
+                    void this.host.projectsService.openLocalProject();
+                },
+            }));
+        }
         list.append(this.createComposerProjectSheetAction({
             iconClass: 'codicon-github',
             label: nls.localize('qaap/newProject/menuGithub', 'New GitHub repository'),
@@ -462,6 +476,7 @@ export class MobileProjectsStickyComposerWorkspaceUi {
 
         const list = document.createElement('div');
         list.className = 'theia-mobile-sticky-composer-sheet-list';
+        attachSheetListEdgeFades(list);
         const current = this.resolveComposerWorkspaceDestination(project);
         const destinations: ReadonlyArray<{
             readonly id: QaapComposerWorkspaceDestination;
@@ -598,6 +613,7 @@ export class MobileProjectsStickyComposerWorkspaceUi {
 
         const list = document.createElement('div');
         list.className = 'theia-mobile-sticky-composer-sheet-list';
+        attachSheetListEdgeFades(list);
         const loading = document.createElement('p');
         loading.className = 'theia-mobile-sticky-composer-sheet-loading';
         loading.textContent = nls.localize('qaap/composerWorkspace/branchLoading', 'Loading branches…');

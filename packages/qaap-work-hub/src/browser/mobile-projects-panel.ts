@@ -53,11 +53,19 @@ import { } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import { MobileOpenRepositoryDialog } from './mobile-open-repository-dialog';
 import {
+    invalidateAgentModelsCache,
+    invalidateAgentTaskListAllCache,
     type QaapAgentTaskAgentOption,
     type QaapCreateAgentTaskQaiqModel,
     type QaapQaiqModelOption,
     type QaapAgentTaskListSnapshot,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import {
+    QAAP_AGENT_SIGNED_OUT_EVENT,
+    type QaapAgentSignedOutDetail,
+} from '@theia/qaap-shared-core/lib/common/qaap-harness-sign-out';
+import { clearComposerAgentCatalogSession } from '@theia/qaap-composer/lib/browser/composer-agent-catalog-session-cache';
+import { subscribeToDisabledHarnessesPreference } from './qaap-disabled-harness-preference';
 import {
     type QaapAgentApprovalPolicyId,
 } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
@@ -72,17 +80,20 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-preview-feedback-context';
 import { URI } from '@theia/core/lib/common/uri';
 import { type QaapSegmentedFieldController } from '@theia/qaap-shared-core/lib/browser/qaap-mobile-form-ui';
-import { buildQaapAccountMenuEntries, toggleQaapAccountMenu } from './qaap-workbench-account-menu';
+import { buildQaapAccountMenuEntries, QAAP_AUTH_SIGN_IN_GITHUB_COMMAND, toggleQaapAccountMenu } from './qaap-workbench-account-menu';
+import { createQaapEmptyWelcomeHints } from './qaap-empty-welcome-hints';
+import { QAAP_PROJECT_SWITCHER_COMMAND } from './qaap-project-switcher-contribution';
 import { readQaapAuthUser, readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import { QaapWorkHubShellSnapshotWriter } from '@theia/qaap-adapters/lib/browser/qaap-work-hub-shell-snapshot';
 import type { AnnotationComposerSessionControls } from '@theia/qaap-adapters/lib/browser/qaap-preview-annotation-popover';
 import { } from '@theia/qaap-composer/lib/browser/qaap-preview-annotation-composer-session';
 import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
+import { lookupQaapGithubPullRequest } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import { MobileProjectsExecutionSurfaceTabsUi, type MobileProjectsExecutionSurfaceTabsHost } from './mobile-projects-execution-surface-tabs-ui';
 import { type MobileProjectsTranscriptOverlayHost } from './mobile-projects-transcript-overlay-host';
 import { TranscriptOverlayController } from './mobile-projects-transcript-overlay-controller';
 import { bindTranscriptOverlayStateAccessors } from '@theia/qaap-transcript-overlay/lib/browser/mobile-projects-transcript-overlay-state';
-import type { WorkHubTranscriptBridge } from '@theia/qaap-transcript-overlay/lib/browser/work-hub-transcript-bridge';
+import type { WorkHubTranscriptBridge, WorkHubTranscriptPullRequestRef } from '@theia/qaap-transcript-overlay/lib/browser/work-hub-transcript-bridge';
 import type { MobileBottomButtonId } from '@theia/qaap-mobile-shell/lib/browser/mobile-shell-bottom-bar-widget';
 import { MobileProjectsTasksHubUi, type MobileProjectsTasksHubHost } from './mobile-projects-tasks-hub-ui';
 import { MobileProjectsWorkHubInboxUi, type MobileProjectsWorkHubInboxHost } from './mobile-projects-work-hub-inbox-ui';
@@ -460,6 +471,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     public get transcriptLiveUi() { return this.transcriptController.liveUi; }
     /** @internal Used by the extracted mobile-projects-panel-* modules. */
     public get transcriptVerifyUi() { return this.transcriptController.verifyUi; }
+    /** Turn-end result card actions, implemented by the sticky composer. */
+    public get turnResultApi() { return this.transcriptController.stickyComposerUi; }
     /** @internal Used by the extracted mobile-projects-panel-* modules. */
     public readonly backgroundTaskUi = new MobileProjectsBackgroundTaskUi(this as unknown as MobileProjectsBackgroundTaskHost);
     protected readonly chatServiceSummariesUi = new MobileProjectsChatServiceSummariesUi(this as unknown as MobileProjectsChatServiceSummariesHost);
@@ -757,6 +770,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.installAgentsHubEmptySurfaceGuard();
         window.addEventListener(QAAP_BOOTSTRAP_PREVIEW_OPENED_EVENT, this.onBootstrapPreviewOpened);
         window.addEventListener(QAAP_NAVIGATE_TO_CONVERSATION_EVENT, this.onNavigateToConversation);
+        window.addEventListener(QAAP_AGENT_SIGNED_OUT_EVENT, this.onAgentSignedOut);
         this.bindAgentFinishedToastCallbacks();
     }
 
@@ -773,6 +787,38 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     public readonly onNavigateToConversation = (event: Event): void => {
         onNavigateToConversationHandler(this, event);
     };
+
+    /**
+     * Settings → Harness signed a harness out: drop every frontend catalog cache, close any open
+     * composer picker sheet, and immediately reload both the main composer and any open transcript
+     * composer so Pro models lock and "Sign in" reappears without waiting for a tab reload.
+     */
+    public readonly onAgentSignedOut = (event: Event): void => {
+        const agentId = (event as CustomEvent<QaapAgentSignedOutDetail | undefined>).detail?.agentId;
+        invalidateAgentTaskListAllCache();
+        invalidateAgentModelsCache(agentId);
+        clearComposerAgentCatalogSession();
+        this.stickyComposerSheetsUi.closeStickyComposerSheets();
+        this.closeTranscriptComposerSheets();
+        void this.reloadComposersAfterAgentSignOut();
+    };
+
+    protected async reloadComposersAfterAgentSignOut(): Promise<void> {
+        const filtered = this.hubQueryUi.applySearch(this.hubQueryUi.applyFilter(this.projects, this.filter));
+        const stickyProject = this.composerHeaderUi.resolveStickyComposerProject(filtered);
+        const transcriptProject = this.transcriptController.state.transcriptOpenProject
+            ?? this.transcriptController.state.transcriptComposerProject
+            ?? this.resolveAgentsHubShellProject();
+        if (stickyProject) {
+            await this.stickyComposerAgentsUi.refreshStickyComposerAgents(stickyProject, { forceRefresh: true });
+        }
+        if (transcriptProject) {
+            await this.transcriptComposerUi.refreshTranscriptComposerAgents(transcriptProject);
+        }
+        if (this.visible) {
+            this.stickyComposerRenderUi.renderStickyComposer();
+        }
+    }
 
     /** True when `project`'s clone directory is the workspace the bootstrap service operates on. */
     /** @internal Used by the extracted mobile-projects-panel-* modules. */
@@ -904,13 +950,34 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     dispose(): void {
         this.shellSnapshotWriter.dispose();
+        this.disabledHarnessesSubscription?.dispose();
+        this.disabledHarnessesSubscription = undefined;
         disposeExtracted(this);
     }
 
     async show(options?: { preferredHubView?: MobileProjectsHubView }): Promise<void> {
         await this.panelLifecycleUi.show(options);
+        this.subscribeToDisabledHarnessChanges();
         this.composerEditorContextService?.registerPanelDelegate(this.createComposerEditorContextPanelDelegate());
     }
+
+    /** Settings → Harness changed the disabled harnesses: the caches drop, an open picker closes, the composer repaints. */
+    protected subscribeToDisabledHarnessChanges(): void {
+        if (this.disabledHarnessesSubscription || !this.preferenceService) {
+            return;
+        }
+        this.disabledHarnessesSubscription = subscribeToDisabledHarnessesPreference(this.preferenceService, () => {
+            invalidateAgentTaskListAllCache();
+            invalidateAgentModelsCache();
+            this.stickyComposerSheetsUi.closeStickyComposerSheets();
+            if (this.visible) {
+                // Painting the composer refreshes its agents, which now read the new disabled list.
+                this.stickyComposerRenderUi.renderStickyComposer();
+            }
+        });
+    }
+
+    protected disabledHarnessesSubscription: { dispose(): void } | undefined;
 
     hide(): void {
         hideExtracted(this);
@@ -971,6 +1038,15 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     protected async onStartNewProject(): Promise<void> {
         await this.stickyComposerWorkspaceUi.onCreateNewProjectFromSheet();
+    }
+
+    protected async onStartNewLocalProject(): Promise<void> {
+        await this.stickyComposerWorkspaceUi.onCreateNewProjectFromSheet('local');
+    }
+
+    protected async onOpenLocalProject(): Promise<void> {
+        // openLocalProject() reloads into the chosen folder; nothing to re-render when the picker is cancelled.
+        await this.projectsService.openLocalProject();
     }
 
     protected async activateAgentsHubProject(project: MobileProjectEntry): Promise<void> {
@@ -1053,11 +1129,11 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.pullRequestDetailUi.renderEmpty();
     }
 
-    protected pullRequestDetailActiveTab(): 'summary' | 'code' {
+    protected pullRequestDetailActiveTab(): 'summary' | 'timeline' | 'code' {
         return this.pullRequestDetailUi.getActiveTab();
     }
 
-    protected setPullRequestDetailTab(tab: 'summary' | 'code'): void {
+    protected setPullRequestDetailTab(tab: 'summary' | 'timeline' | 'code'): void {
         this.pullRequestDetailUi.setActiveTab(tab);
         if (this.visible) {
             this.render();
@@ -1793,6 +1869,19 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         openAgentSignInTerminalExtracted(this, agentId, project);
     }
 
+    /** Opens the composer's agent and model picker for the conversation on screen ("Change model" on a failed turn). */
+    public openTranscriptModelPicker(): void {
+        const project = this.transcriptController.state.transcriptComposerProject ?? this.transcriptController.state.transcriptOpenProject;
+        if (project) {
+            this.stickyComposerSheetsUi.openStickyComposerAgentSheet(project);
+        }
+    }
+
+    /** Removes a project through the existing confirmed remove flow (the transcript's missing-folder banner). */
+    public removeTranscriptProject(project: MobileProjectEntry): Promise<void> {
+        return this.onRemoveProject(project);
+    }
+
     protected async onDeleteConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): Promise<void> {
         return onDeleteConversationExtracted(this, project, summary);
     }
@@ -1918,6 +2007,25 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return this.tasksHubUi.shouldEmbedAgentsHubRecentsInWorkspaceTranscript();
     }
 
+    /**
+     * A pull request chip in the transcript: the desktop right panel shows exactly that pull request; without
+     * the panel (mobile, IDE chat) the existing Work Hub pull request detail opens once it is fetched, and the
+     * GitHub page opens when it cannot be.
+     */
+    openPullRequestInPanel(ref: WorkHubTranscriptPullRequestRef): boolean {
+        if (this.executionSurfaceTabsUi.openPullRequestInWorkHubAuxPanel(ref)) {
+            return true;
+        }
+        void lookupQaapGithubPullRequest({ owner: ref.owner, repo: ref.repo, number: ref.number }).then(result => {
+            if (result.kind === 'found') {
+                this.openPullRequestDetail(result.pullRequest);
+            } else {
+                this.executionSurfaceTabsUi.openWorkHubAuxPanelExternal(ref.url);
+            }
+        });
+        return true;
+    }
+
     async openInlineTranscript(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): Promise<void> {
         return openInlineTranscriptExtracted(this, project, summary);
     }
@@ -1952,6 +2060,21 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     createAgentsHubQuickActionsBlock(): HTMLElement {
         return this.tasksHubUi.createAgentsHubQuickActionsBlock();
+    }
+
+    createEmptyWelcomeHints(): HTMLElement {
+        return createQaapEmptyWelcomeHints(readQaapSignedIn(), {
+            // The Work Hub's own project picker (Project / Branch / Run in), anchored on the header project
+            // button; the quick-pick switcher only when the header has no project to anchor on.
+            openProject: () => {
+                if (this.headerProjectBtn.isConnected && !this.headerProjectBtn.hidden && this.hubHeaderUi.resolveHeaderProject()) {
+                    this.onHeaderProjectClick(this.headerProjectBtn);
+                    return;
+                }
+                void this.commands.executeCommand(QAAP_PROJECT_SWITCHER_COMMAND.id);
+            },
+            connectGithub: () => { void this.commands.executeCommand(QAAP_AUTH_SIGN_IN_GITHUB_COMMAND); },
+        });
     }
 
     renderIdleSubmitOptimistic(chatHost: HTMLElement, summary: QaapAgentConversationSummaryDTO, draft: string, selectedAgentId: string, imagePreviews?: readonly import('@theia/qaap-shared-core/lib/common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[], contentOverride?: string,): void {
@@ -2033,6 +2156,11 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     /** @internal Used by the extracted mobile-projects-panel-* modules. */
     public async openAgentsHubInlineTranscript(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): Promise<void> {
         return openAgentsHubInlineTranscriptExtracted(this, project, summary);
+    }
+
+    /** The real conversation open in the Work Hub transcript, or `undefined` on the idle new-task shell. */
+    openInlineConversation(): { project: MobileProjectEntry; summary: QaapAgentConversationSummaryDTO } | undefined {
+        return this.agentsHubInlineUi.openInlineConversation();
     }
 
     closeAgentsHubSession(): void {

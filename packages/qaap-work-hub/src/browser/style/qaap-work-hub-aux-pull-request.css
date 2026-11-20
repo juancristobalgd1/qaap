@@ -1,0 +1,228 @@
+/*
+ * "Pull request" view of the desktop Work Hub right panel. Spacing and type use the design-system
+ * tokens from qaap-conservador-dna.css; colours come from the Theia theme only.
+ */
+
+.qaap-work-hub-aux-pr[hidden] {
+  display: none;
+}
+
+.qaap-work-hub-aux-pr {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The scroller is the touch-scroll target: keep it shrinkable inside the flex column. */
+.qaap-work-hub-aux-pr-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--q-space-8);
+  box-sizing: border-box;
+}
+
+.qaap-work-hub-aux-pr-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--q-space-6);
+}
+
+.qaap-work-hub-aux-pr-skeleton-line {
+  height: 12px;
+}
+
+.qaap-work-hub-aux-pr-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--q-space-10);
+  font-size: var(--q-text-body);
+  color: var(--theia-foreground);
+}
+
+.qaap-work-hub-aux-pr-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--q-space-4);
+}
+
+.qaap-work-hub-aux-pr-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--q-space-5);
+  font-size: var(--q-text-meta);
+}
+
+.qaap-work-hub-aux-pr-state {
+  padding: var(--q-space-1) var(--q-space-5);
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: var(--q-text-overline);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.qaap-work-hub-aux-pr-state-open {
+  color: var(--theia-testing-iconPassed);
+}
+
+.qaap-work-hub-aux-pr-state-draft {
+  color: var(--theia-descriptionForeground);
+}
+
+.qaap-work-hub-aux-pr-state-merged {
+  color: var(--theia-charts-purple);
+}
+
+.qaap-work-hub-aux-pr-state-closed {
+  color: var(--theia-testing-iconFailed);
+}
+
+.qaap-work-hub-aux-pr-number {
+  color: var(--theia-descriptionForeground);
+}
+
+.qaap-work-hub-aux-pr-title {
+  margin: 0;
+  font-size: var(--q-text-strong);
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.qaap-work-hub-aux-pr-branches,
+.qaap-work-hub-aux-pr-stats {
+  margin: 0;
+  font-size: var(--q-text-meta);
+  color: var(--theia-descriptionForeground);
+  overflow-wrap: anywhere;
+}
+
+.qaap-work-hub-aux-pr-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--q-space-4);
+}
+
+.qaap-work-hub-aux-pr-section-title {
+  margin: 0;
+  font-size: var(--q-text-overline);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--theia-descriptionForeground);
+}
+
+.qaap-work-hub-aux-pr-section p {
+  margin: 0;
+}
+
+.qaap-work-hub-aux-pr-checks-summary,
+.qaap-work-hub-aux-pr-review {
+  font-weight: 500;
+}
+
+.qaap-work-hub-aux-pr-review-approved {
+  color: var(--theia-testing-iconPassed);
+}
+
+.qaap-work-hub-aux-pr-review-changes-requested {
+  color: var(--theia-testing-iconFailed);
+}
+
+.qaap-work-hub-aux-pr-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--q-space-4);
+}
+
+.qaap-work-hub-aux-pr-check-failed {
+  color: var(--theia-testing-iconFailed);
+}
+
+.qaap-work-hub-aux-pr-check-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.qaap-work-hub-aux-pr-comments li {
+  display: flex;
+  flex-direction: column;
+  gap: var(--q-space-1);
+  font-size: var(--q-text-meta);
+}
+
+.qaap-work-hub-aux-pr-comments time {
+  color: var(--theia-descriptionForeground);
+  font-size: var(--q-text-micro);
+}
+
+.qaap-work-hub-aux-pr-comments p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.qaap-work-hub-aux-pr-footer {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.qaap-work-hub-aux-pr-open {
+  padding: var(--q-space-3) var(--q-space-8);
+  border: 1px solid var(--theia-button-border, var(--theia-contrastBorder));
+  border-radius: 4px;
+  background: var(--theia-button-secondaryBackground);
+  color: var(--theia-button-secondaryForeground);
+  font: inherit;
+  font-size: var(--q-text-meta);
+  cursor: pointer;
+}
+
+.qaap-work-hub-aux-pr-open:hover {
+  background: var(--theia-button-secondaryHoverBackground);
+}
+
+.qaap-work-hub-aux-pr-open:focus-visible {
+  outline: 1px solid var(--theia-focusBorder);
+  outline-offset: 2px;
+}
+
+/* "Specific pull request" mode: which one is shown, and the way back to the branch's. */
+.qaap-work-hub-aux-pr-pinned {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--q-space-6);
+  margin-bottom: var(--q-space-8);
+  padding: var(--q-space-6) var(--q-space-8);
+  border: 1px solid var(--theia-widget-border, transparent);
+  border-radius: 6px;
+  background: var(--theia-editorWidget-background);
+  color: var(--theia-descriptionForeground);
+  font-size: var(--q-text-body);
+}
+
+.qaap-work-hub-aux-pr-back {
+  border: none;
+  background: transparent;
+  color: var(--theia-textLink-foreground);
+  font: inherit;
+  cursor: pointer;
+}
+
+.qaap-work-hub-aux-pr-back:hover {
+  text-decoration: underline;
+}

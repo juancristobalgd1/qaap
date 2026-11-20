@@ -23,7 +23,7 @@ import {
     normalizeQaapPreviewConversationId,
     QAAP_DEFAULT_PREVIEW_CONVERSATION_ID,
 } from '../common/qaap-preview-identity';
-import { devPreviewHealthDelayMs } from './qaap-project-bootstrap-port';
+import { classifyDevPreviewHealthProbe, DEV_PREVIEW_HEALTH_SLOW_LIMIT_MS, devPreviewHealthDelayMs } from './qaap-project-bootstrap-port';
 import { DEV_PREVIEW_HEALTH_FAILURE_LIMIT, DEV_PREVIEW_HEALTH_INTERVAL_MS, DEV_PREVIEW_WARMUP_DELAY_MS, PORT_IN_USE_REGEX, STORAGE_KEY } from './qaap-project-bootstrap-service';
 
 export function waitForExitExtracted(ctx: QaapProjectBootstrapServiceContext, terminal: TerminalWidget): Promise<number | undefined> {
@@ -221,6 +221,8 @@ export function startDevPreviewHealthMonitorExtracted(ctx: QaapProjectBootstrapS
         const runId = ctx.devRunGeneration;
         // Consecutive healthy probes; drives the back-off (see devPreviewHealthDelayMs).
         let healthyChecks = 0;
+        // Start of the current run of `slow` probes (listening but silent, or the probe unanswered).
+        let slowSince: number | undefined;
         const check = async (): Promise<void> => {
             ctx.devPreviewHealthTimer = undefined;
             if (ctx._phase !== 'running' || runId !== ctx.devRunGeneration) {
@@ -235,13 +237,28 @@ export function startDevPreviewHealthMonitorExtracted(ctx: QaapProjectBootstrapS
             if (ctx._phase !== 'running' || runId !== ctx.devRunGeneration) {
                 return;
             }
-            if (probe.ready && ctx.probeBelongsToActiveProject(probe.projectId)) {
+            const verdict = classifyDevPreviewHealthProbe(probe, !probe.ready || ctx.probeBelongsToActiveProject(probe.projectId));
+            if (verdict === 'healthy') {
                 ctx.devPreviewHealthFailures = 0;
+                slowSince = undefined;
                 healthyChecks++;
             } else {
                 healthyChecks = 0;
-                ctx.devPreviewHealthFailures++;
-                if (ctx.devPreviewHealthFailures >= DEV_PREVIEW_HEALTH_FAILURE_LIMIT) {
+                // A busy server is alive: only a closed port (or a foreign answer) counts as a failure,
+                // and a server that stays silent fails only after DEV_PREVIEW_HEALTH_SLOW_LIMIT_MS.
+                const now = Date.now();
+                if (verdict === 'slow') {
+                    slowSince ??= now;
+                    if (probe.listening) {
+                        // An accepted connection proves the listener is still there.
+                        ctx.devPreviewHealthFailures = 0;
+                    }
+                } else {
+                    slowSince = undefined;
+                    ctx.devPreviewHealthFailures++;
+                }
+                const slowTooLong = slowSince !== undefined && now - slowSince >= DEV_PREVIEW_HEALTH_SLOW_LIMIT_MS;
+                if (slowTooLong || ctx.devPreviewHealthFailures >= DEV_PREVIEW_HEALTH_FAILURE_LIMIT) {
                     await ctx.failDevRun(
                         nls.localize(
                             'qaap/projectBootstrap/devServerUnavailable',

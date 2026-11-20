@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import {
     createTranscriptCodeView,
+    highlightTranscriptCodeInto,
     normalizeTranscriptCodeText,
     patchTranscriptCodeView,
     resolveTranscriptCodeLanguage,
@@ -22,6 +23,17 @@ describe('qaap-transcript-code-view', () => {
     after(() => {
         disableJSDOM?.();
         disableJSDOM = undefined;
+    });
+
+    it('keeps the indentation of JSON array items and brackets', () => {
+        for (const line of ['        "arm64"', '        "arm64",', '      ],', '    42', '    true']) {
+            const host = document.createElement('span');
+            highlightTranscriptCodeInto(host, line, 'json');
+            expect(host.textContent, line).to.equal(line);
+        }
+        const keyed = document.createElement('span');
+        highlightTranscriptCodeInto(keyed, '      "dev": true,', 'json');
+        expect(keyed.textContent).to.equal('      "dev": true,');
     });
 
     it('resolves json from file extension', () => {

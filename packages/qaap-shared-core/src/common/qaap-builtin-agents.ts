@@ -3,7 +3,19 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { resolveAntigravityCliTemplate } from './qaap-antigravity-cli';
 import { isAgentHiddenOnHostedRuntime } from './qaap-hosted-agent-auth-policy';
+import type { QaapHarnessSignOut } from './qaap-harness-sign-out';
+
+/**
+ * How the backend learns whether the owner has a session for a harness (the Free/Pro rule needs it):
+ * - `probe`: a status command or credential check the backend runs (`resolveAgentConnectionProbe` in
+ *   qaap-cloud-workspace must return one for this id);
+ * - `attestation`: no verifiable probe exists, so the sign-in dialog attests the CLI's own success line
+ *   (`QAAP_SESSION_ATTESTATION_AGENT_IDS`).
+ * There is no "none": a harness that cannot answer stays signed out (Pro locked) until it has a session.
+ */
+export type QaapHarnessSessionCheck = 'probe' | 'attestation';
 
 /** Built-in VPS coding-agent CLI the task runner can auto-detect on PATH. */
 export interface QaapBuiltinAgentDefinition {
@@ -13,7 +25,20 @@ export interface QaapBuiltinAgentDefinition {
     readonly bin: string;
     /** Shell template. `{prompt}` is delivered via stdin or `--prompt-file` (not argv) so Windows cmd.exe is not overflowed. */
     readonly template: string;
+    /**
+     * Required: how this harness's session is checked. Adding a harness without it does not compile, and
+     * `qaap-agent-session-check.spec.ts` (qaap-cloud-workspace) fails when the declaration has no implementation.
+     */
+    readonly sessionCheck: QaapHarnessSessionCheck;
+    /**
+     * Required: how Settings → Harness signs the owner out of this harness. Adding a harness without it
+     * does not compile, and `qaap-harness-sign-out.spec.ts` verifies every entry.
+     */
+    readonly signOut: QaapHarnessSignOut;
 }
+
+/** A retired CLI keeps its launch shape only; it declares its session check and sign-out again when it comes back. */
+export type QaapRetiredAgentDefinition = Omit<QaapBuiltinAgentDefinition, 'sessionCheck' | 'signOut'>;
 
 /**
  * Auto-detected server-side agent CLIs (AionUi-compatible core set).
@@ -21,14 +46,82 @@ export interface QaapBuiltinAgentDefinition {
  * Niche or ACP-only CLIs (Snow, Kiro, Nanobot, vibe-acp, …) stay in `QAAP_AGENT_COMMANDS`.
  */
 export const QAAP_BUILTIN_AGENT_DEFINITIONS: readonly QaapBuiltinAgentDefinition[] = [
-    { id: 'codex', label: 'Codex', bin: 'codex', template: 'codex exec --json -c check_for_update_on_startup=false {model_flags} {prompt}' },
-    { id: 'claude', label: 'Claude Code', bin: 'claude', template: 'claude --print --output-format stream-json --verbose --include-partial-messages {trust_flags} {model_flags} -p {prompt}' },
-    { id: 'opencode', label: 'OpenCode', bin: 'opencode', template: 'opencode run --format json --print-logs --log-level ERROR --dangerously-skip-permissions {model_flags} {prompt}' },
-    { id: 'pi', label: 'Pi', bin: 'pi', template: 'pi --mode json -p --no-session -ne -e {gate_ext} {trust_flags} {model_flags} {prompt}' },
-    { id: 'cursor', label: 'Cursor Agent', bin: 'cursor-agent', template: 'cursor-agent -p --force --trust --approve-mcps {model_flags} {prompt}' },
-    { id: 'antigravity', label: 'Antigravity CLI', bin: 'agy', template: 'agy -p {prompt}' },
-    { id: 'copilot', label: 'Copilot CLI', bin: 'copilot', template: 'copilot --autopilot --yolo --max-autopilot-continues 20 -p {prompt}' },
-    { id: 'grok', label: 'Grok Build', bin: 'grok', template: 'grok --always-approve {model_flags} -p {prompt}' },
+    {
+        id: 'codex',
+        label: 'Codex',
+        bin: 'codex',
+        sessionCheck: 'probe',
+        signOut: { kind: 'cli', args: ['logout'] },
+        template: 'codex exec --json -c check_for_update_on_startup=false {model_flags} {prompt}',
+    },
+    {
+        id: 'claude',
+        label: 'Claude Code',
+        bin: 'claude',
+        sessionCheck: 'probe',
+        signOut: { kind: 'cli', args: ['auth', 'logout'] },
+        template: 'claude --print --output-format stream-json --verbose --include-partial-messages {trust_flags} {model_flags} -p {prompt}',
+    },
+    {
+        id: 'opencode',
+        label: 'OpenCode',
+        bin: 'opencode',
+        sessionCheck: 'probe',
+        signOut: {
+            kind: 'files',
+            removesAllProviders: true,
+            paths: [{ root: { env: 'XDG_DATA_HOME', fallback: '.local/share' }, relative: 'opencode/auth.json' }],
+        },
+        template: 'opencode run --format json --print-logs --log-level ERROR --dangerously-skip-permissions {model_flags} {prompt}',
+    },
+    {
+        id: 'pi',
+        label: 'Pi',
+        bin: 'pi',
+        sessionCheck: 'probe',
+        signOut: {
+            kind: 'files',
+            removesAllProviders: true,
+            paths: [{ root: { env: 'PI_CODING_AGENT_DIR', fallback: '.pi/agent' }, relative: 'auth.json' }],
+        },
+        template: 'pi --mode json -p --no-session -ne -e {gate_ext} {trust_flags} {model_flags} {prompt}',
+    },
+    {
+        id: 'cursor',
+        label: 'Cursor Agent',
+        bin: 'cursor-agent',
+        sessionCheck: 'probe',
+        signOut: { kind: 'cli', args: ['logout'], env: { NO_OPEN_BROWSER: '1' } },
+        template: 'cursor-agent -p --force --trust --approve-mcps {model_flags} {prompt}',
+    },
+    {
+        id: 'antigravity',
+        label: 'Antigravity CLI',
+        bin: 'agy',
+        sessionCheck: 'probe',
+        signOut: { kind: 'none', reason: 'agy has no logout command and keeps its Google session in the OS keyring.' },
+        template: resolveAntigravityCliTemplate('agy'),
+    },
+    {
+        id: 'copilot',
+        label: 'Copilot CLI',
+        bin: 'copilot',
+        sessionCheck: 'attestation',
+        signOut: {
+            kind: 'json-keys',
+            path: { root: 'home', relative: '.copilot/config.json' },
+            keys: ['loggedInUsers', 'lastLoggedInUser', 'copilot_tokens'],
+        },
+        template: 'copilot --autopilot --yolo --max-autopilot-continues 20 -p {prompt}',
+    },
+    {
+        id: 'grok',
+        label: 'Grok Build',
+        bin: 'grok',
+        sessionCheck: 'attestation',
+        signOut: { kind: 'cli', args: ['logout'] },
+        template: 'grok --always-approve {model_flags} -p {prompt}',
+    },
 ];
 
 /**
@@ -37,7 +130,7 @@ export const QAAP_BUILTIN_AGENT_DEFINITIONS: readonly QaapBuiltinAgentDefinition
  * its entry back into {@link QAAP_BUILTIN_AGENT_DEFINITIONS}. Removing them from the registry (instead of
  * disabling them by default) keeps the picker and the backend runner in agreement.
  */
-export const QAAP_RETIRED_AGENT_DEFINITIONS: readonly QaapBuiltinAgentDefinition[] = [
+export const QAAP_RETIRED_AGENT_DEFINITIONS: readonly QaapRetiredAgentDefinition[] = [
     { id: 'openclaude', label: 'OpenClaude', bin: 'openclaude', template: 'openclaude --print --output-format stream-json --verbose --include-partial-messages {qaiq_flags} {prompt}' },
     // `--model` is a top-level Hermes flag (`hermes --model <slug> chat`). Putting it after
     // `chat` is accepted by argparse, but a stale ~/.hermes/config.yaml still supplies the
@@ -118,11 +211,18 @@ export function isUiHiddenVpsAgent(agentId: string | undefined): boolean {
  *
  * Background tasks cannot use the interactive TUI because the server process has no raw TTY,
  * so detect the installed CLI shape and always pick a non-interactive template.
+ *
+ * The `codex exec` template is the default. The legacy `codex -q` template is returned only when
+ * the help text is non-empty, does not list `exec` as a command, and positively shows the `-q`/`--quiet`
+ * flag. Empty or unrecognized help (e.g. a timed-out `codex --help`) must not select the legacy
+ * template, because modern CLIs reject `-q` with "unexpected argument".
  */
 export function resolveQaapCodexTemplate(helpText: string): string {
-    return /\bcodex\s+exec\b/.test(helpText) || /^\s+exec\b/m.test(helpText)
-        ? 'codex exec --json -c check_for_update_on_startup=false {model_flags} {prompt}'
-        : 'codex -q --json -c check_for_update_on_startup=false {model_flags} {prompt}';
+    const hasExecCommand = /\bcodex\s+exec\b/.test(helpText) || /^\s+exec\b/m.test(helpText);
+    const isLegacyCli = helpText.trim() !== '' && !hasExecCommand && /(^|\s)-q\b|--quiet\b/m.test(helpText);
+    return isLegacyCli
+        ? 'codex -q --json -c check_for_update_on_startup=false {model_flags} {prompt}'
+        : 'codex exec --json -c check_for_update_on_startup=false {model_flags} {prompt}';
 }
 
 const QAAP_BUILTIN_AGENT_ALIASES: Readonly<Record<string, string>> = {
@@ -143,4 +243,15 @@ export function resolveQaapBuiltinAgentMentionId(token: string): string | undefi
     }
     const id = QAAP_BUILTIN_AGENT_ALIASES[normalized] ?? normalized;
     return QAAP_BUILTIN_AGENT_IDS.has(id) ? id : undefined;
+}
+
+const QAAP_BUILTIN_AGENT_BY_ID = new Map(QAAP_BUILTIN_AGENT_DEFINITIONS.map(definition => [definition.id, definition]));
+
+/** Sign-out strategy declared for a built-in harness id, or `undefined` when the id is unknown. */
+export function resolveQaapBuiltinAgentSignOut(agentId: string | undefined): QaapHarnessSignOut | undefined {
+    const normalized = agentId?.trim().toLowerCase();
+    if (!normalized) {
+        return undefined;
+    }
+    return QAAP_BUILTIN_AGENT_BY_ID.get(normalized)?.signOut;
 }

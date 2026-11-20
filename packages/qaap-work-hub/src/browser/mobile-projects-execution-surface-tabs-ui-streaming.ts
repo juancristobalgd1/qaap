@@ -22,7 +22,9 @@ import { peekPreferDesktopIde } from '@theia/qaap-shared-core/lib/browser/mobile
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { clearQaapPreviewDismissedByUser, markQaapPreviewDismissedByUser } from '@theia/qaap-shared-core/lib/browser/qaap-preview-user-dismissal';
 import { executionSurfacePreviewDirectory } from './mobile-projects-execution-surface-tabs-ui-render';
+import { attachQaapScrollEdgeFades } from '@theia/qaap-mobile-shell/lib/browser/qaap-scroll-edge-fades';
 import { QAAP_WORK_HUB_AUX_PANEL_TOGGLE_CLASS, type QaapWorkHubAuxPanel } from './qaap-work-hub-aux-panel';
+import { QAAP_WORK_HUB_RIGHT_PANEL_GLYPH_PATH } from './qaap-work-hub-right-panel-glyph';
 
 export function applyExecutionSurfaceIconSelectDisplayExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, strip: HTMLElement, activeTab: TranscriptTab): void {
     const selectBtn = queryExecutionSurfaceViewSelect(strip);
@@ -59,7 +61,6 @@ export function applyExecutionSurfaceIconSelectDisplayExtracted(ctx: MobileProje
 
 /** Stroke paths in the trigger's 16px glyph: the views-menu chevrons and the desktop right-panel toggle. */
 const VIEW_MENU_GLYPH_PATH = 'M3 4.5 8 9.5l5-5 M3 8 8 13l5-5';
-const RIGHT_PANEL_GLYPH_PATH = 'M3.5 2.5h9a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 12V4a1.5 1.5 0 0 1 1.5-1.5Z M10 2.5v11';
 
 /** On the desktop Work Hub the view chevron is the right panel's toggle, not a menu button. */
 function applyWorkHubAuxPanelTriggerChrome(ctx: MobileProjectsExecutionSurfaceTabsUiContext, trigger: HTMLElement): QaapWorkHubAuxPanel | undefined {
@@ -176,7 +177,7 @@ export function createTerminalAgentTuiSelectExtracted(ctx: MobileProjectsExecuti
         try {
             const agents = await ctx.host.stickyComposerAgentsUi.ensureStickyComposerAgentsLoaded(project);
             menu.replaceChildren();
-            const launchable = agents.filter(agent => resolveInteractiveAgentCliBin(agent.id));
+            const launchable = agents.filter(agent => resolveInteractiveAgentCliBin(agent.id, agent.cliBin));
             const activeAgentId = ctx.resolveTerminalAgentTuiActiveAgentId(project);
 
             if (launchable.length === 0) {
@@ -197,19 +198,21 @@ export function createTerminalAgentTuiSelectExtracted(ctx: MobileProjectsExecuti
                 item.setAttribute('role', 'menuitem');
                 item.title = agent.label;
                 item.setAttribute('aria-label', agent.label);
-                item.toggleAttribute('disabled', agent.available === false);
+                // The TUI is the way to sign in, so only an agent without any session answer is unusable here.
+                const tuiUnavailable = agent.available === false && agent.session === undefined;
+                item.toggleAttribute('disabled', tuiUnavailable);
                 item.classList.toggle('theia-mod-active', agent.id === activeAgentId);
                 appendAgentBrandIcon(item, agent.id, 'sm');
                 const itemLabel = document.createElement('span');
                 itemLabel.className = 'theia-mobile-transcript-tab-icon-select-option-label';
                 itemLabel.textContent = resolveAgentDisplayLabel(agent.id, agent.label);
                 item.append(itemLabel);
-                if (agent.available === false) {
+                if (tuiUnavailable) {
                     item.classList.add('theia-mod-unavailable');
                 }
                 item.addEventListener('click', event => {
                     event.stopPropagation();
-                    if (agent.available === false) {
+                    if (tuiUnavailable) {
                         return;
                     }
                     // Pin the terminal's own mode; the composer's agent selection stays untouched.
@@ -220,6 +223,7 @@ export function createTerminalAgentTuiSelectExtracted(ctx: MobileProjectsExecuti
                         project,
                         ctx.host.transcriptOpenSummary ?? ctx.host.resolveAgentsHubShellSummary(project),
                         agent.id,
+                        { cliBin: agent.cliBin },
                     );
                 });
                 menu.append(item);
@@ -313,6 +317,8 @@ export function executionSurfaceTabSpecsExtracted(ctx: MobileProjectsExecutionSu
     }
     return [
         { id: 'preview', label: nls.localize('qaap/mobileProjects/tabPreview', 'Browser'), icon: 'codicon-globe' },
+        // Changes opens the files surface in Changes mode (the surface's own switch is hidden here).
+        { id: 'review', label: nls.localizeByDefault('Changes'), icon: 'codicon-git-compare' },
         { id: 'files', label: nls.localize('qaap/mobileProjects/tabFiles', 'Files'), icon: 'codicon-files' },
         { id: 'terminal', label: nls.localize('qaap/mobileProjects/tabTerminal', 'Terminal'), icon: 'codicon-terminal' },
     ];
@@ -371,7 +377,7 @@ export function createExecutionSurfaceIconSelectExtracted(ctx: MobileProjectsExe
     chevronPath.setAttribute('d', VIEW_MENU_GLYPH_PATH);
     const panelPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     panelPath.setAttribute('class', 'qaap-glyph-right-panel');
-    panelPath.setAttribute('d', RIGHT_PANEL_GLYPH_PATH);
+    panelPath.setAttribute('d', QAAP_WORK_HUB_RIGHT_PANEL_GLYPH_PATH);
     chevronIcon.append(chevronPath, panelPath);
     chevron.append(chevronIcon);
     trigger.append(triggerLabel, chevron);
@@ -457,6 +463,8 @@ export function openExecutionTabOverflowMenuExtracted(ctx: MobileProjectsExecuti
     menu.hidden = false;
     menu.classList.add('theia-mod-open', 'theia-mod-floating');
     ctx.resolveExecutionTabOverflowMenuPortal(anchor).append(menu);
+    // Every tab/agent select menu shares this path: a tall list scrolls and fades on the hidden edges.
+    const edgeFades = attachQaapScrollEdgeFades(menu);
     ctx.scheduleExecutionSurfaceFrame(() => {
         if (ctx.host.executionTabOverflowMenu === menu && ctx.host.executionTabOverflowAnchor === anchor) {
             ctx.positionExecutionTabOverflowMenu(menu, anchor);
@@ -483,6 +491,7 @@ export function openExecutionTabOverflowMenuExtracted(ctx: MobileProjectsExecuti
         window.removeEventListener('pointerdown', onDismiss, true);
         window.removeEventListener('resize', onReposition);
         ctx.host.scroll.removeEventListener('scroll', onReposition);
+        edgeFades.dispose();
     });
 }
 

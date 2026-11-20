@@ -66,6 +66,7 @@ describe('MobileProjectsHubHeaderUi', () => {
             headerOverflowMenuBtn: document.createElement('button'),
             headerBackBtn: document.createElement('button'),
             titleBlock: document.createElement('div'),
+            titleRow: document.createElement('div'),
             titleEl: document.createElement('h1'),
             titleAttentionEl: document.createElement('span'),
             accountBtn: document.createElement('button'),

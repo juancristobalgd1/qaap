@@ -95,19 +95,50 @@ describe('MobileProjectsTranscriptMessagesContentUi', () => {
         expect(host.classList.contains(TRANSCRIPT_STREAMING_INCREMENTAL_MARKDOWN_CLASS)).to.equal(true);
     });
 
-    it('renderTranscriptMarkdown shows plain text while worker markdown is pending', () => {
+    it('renderTranscriptMarkdown paints settled markdown formatted on first paint, without the worker', () => {
         const host = document.createElement('div');
         const ui = new MobileProjectsTranscriptMessagesContentUi({
             transcriptMarkdownIt: markdownit(),
         } as never);
         const client = QaapTranscriptMarkdownWorkerClient.get();
-        (client as unknown as { requestParse: () => void }).requestParse = () => { /* simulate pending worker */ };
+        let workerCalls = 0;
+        (client as unknown as { requestParse: () => void }).requestParse = () => { workerCalls++; };
 
         ui.renderTranscriptMarkdown(host, '**Agent response**');
 
         expect(host.classList.contains('theia-mod-markdown')).to.equal(true);
-        expect(host.textContent).to.equal('**Agent response**');
-        expect(host.querySelector('strong')).to.equal(null);
+        expect(host.querySelector('strong')?.textContent).to.equal('Agent response');
+        expect(host.textContent).to.not.contain('**');
+        expect(workerCalls).to.equal(0);
+    });
+
+    it('renderTranscriptMarkdown paints a short historical (deferred) row in full, formatted', () => {
+        const host = document.createElement('div');
+        const ui = new MobileProjectsTranscriptMessagesContentUi({
+            transcriptMarkdownIt: markdownit(),
+        } as never);
+
+        ui.renderTranscriptMarkdown(host, '# Title\n\nSome `code` and **bold**.', { defer: true });
+
+        expect(host.querySelector('h1')?.textContent).to.equal('Title');
+        expect(host.querySelector('code')).to.not.equal(null);
+        expect(host.classList.contains('theia-mod-deferred-markdown')).to.equal(false);
+    });
+
+    it('renderTranscriptMarkdown shows a long deferred row as a formatted excerpt with balanced fences', () => {
+        const host = document.createElement('div');
+        const ui = new MobileProjectsTranscriptMessagesContentUi({
+            transcriptMarkdownIt: markdownit(),
+        } as never);
+        const long = `**Intro** line\n${'word '.repeat(50)}\n\n\`\`\`ts\n${'const x = 1;\n'.repeat(400)}\`\`\``;
+
+        ui.renderTranscriptMarkdown(host, long, { defer: true });
+
+        expect(host.classList.contains('theia-mod-deferred-markdown')).to.equal(true);
+        expect(host.querySelector('strong')?.textContent).to.equal('Intro');
+        expect(host.textContent).to.not.contain('**');
+        // The fence opened inside the excerpt is cut, so no half code block swallows the excerpt.
+        expect(host.querySelector('pre')).to.equal(null);
     });
 
     it('transcriptContentNeedsStreamingMarkdown detects fenced code and tables', () => {
@@ -366,6 +397,83 @@ describe('MobileProjectsTranscriptMessagesContentUi', () => {
             expect(host.transcriptOpenProject).to.deep.include({ previewUrl: verifiedUrl });
             expect(host.transcriptPreviewRequestPending).to.equal(false);
             expect(host.transcriptPreviewRequestRunning).to.equal(false);
+        } finally {
+            snackbar.show = originalShow;
+        }
+    });
+
+    it('opens the project preview widget before selecting the Browser tab', async () => {
+        const previewId = 'project-conversation-run-a1b2c3';
+        const verifiedUrl = 'https://0123456789abcdef0123456789abcdef.previews.qaap.example/';
+        const order: string[] = [];
+        const project = { id: 'project', name: 'Project' };
+        const summary = { id: 'conversation' };
+        const host = {
+            transcriptComposerSummary: summary,
+            transcriptOpenSummary: summary,
+            transcriptOpenProject: project,
+            projects: [project],
+            projectBootstrap: {
+                openPreview: async (url: string): Promise<void> => {
+                    order.push(`open:${url}`);
+                },
+            },
+            projectsService: {
+                recordProjectPreviewUrl: async (): Promise<void> => undefined,
+            },
+            executionSurfaceTabsUi: {
+                selectTranscriptTab: (tab: string): void => {
+                    order.push(`tab:${tab}`);
+                },
+            },
+            transcriptPreviewRequestPending: true,
+            transcriptPreviewRequestRunning: true,
+        };
+        const ui = new MobileProjectsTranscriptMessagesContentUi(host as never);
+        const testUi = ui as unknown as {
+            previewPublicOrigin: () => string;
+            probePreviewIdentity: (id: string) => Promise<{ ready: boolean; previewUrl: string; previewId: string }>;
+        };
+        testUi.previewPublicOrigin = () => 'https://app.qaap.example';
+        testUi.probePreviewIdentity = async id => ({ ready: true, previewUrl: verifiedUrl, previewId: id });
+        const snackbar = MobileSnackbar as typeof MobileSnackbar & { show: typeof MobileSnackbar.show };
+        const originalShow = snackbar.show;
+        snackbar.show = () => { /* no DOM timer in this unit test */ };
+        try {
+            expect(await ui.openTranscriptPreviewUrlFromLink(`/qaap-preview/${previewId}/`)).to.equal(true);
+            expect(order).to.deep.equal([`open:${verifiedUrl}`, 'tab:preview']);
+        } finally {
+            snackbar.show = originalShow;
+        }
+    });
+
+    it('starts the project preview through the Run app launcher when the linked preview is down', async () => {
+        const previewId = 'project-conversation-run-a1b2c3';
+        const started: string[] = [];
+        const project = { id: 'project', name: 'Project' };
+        const summary = { id: 'conversation' };
+        const host = {
+            transcriptComposerSummary: summary,
+            transcriptOpenSummary: summary,
+            transcriptOpenProject: project,
+            projects: [project],
+            requestTranscriptPreview: async (_project: unknown, _summary: unknown, options: unknown): Promise<void> => {
+                started.push(JSON.stringify(options));
+            },
+        };
+        const ui = new MobileProjectsTranscriptMessagesContentUi(host as never);
+        const testUi = ui as unknown as {
+            previewPublicOrigin: () => string;
+            probePreviewIdentity: (id: string) => Promise<{ ready: boolean; previewUrl: string; previewId: string }>;
+        };
+        testUi.previewPublicOrigin = () => 'https://app.qaap.example';
+        testUi.probePreviewIdentity = async id => ({ ready: false, previewUrl: '', previewId: id });
+        const snackbar = MobileSnackbar as typeof MobileSnackbar & { show: typeof MobileSnackbar.show };
+        const originalShow = snackbar.show;
+        snackbar.show = () => { /* no DOM timer in this unit test */ };
+        try {
+            expect(await ui.openTranscriptPreviewUrlFromLink(`/qaap-preview/${previewId}/`)).to.equal(true);
+            expect(started).to.deep.equal([JSON.stringify({ revealPreviewTab: true, allowAgentFallback: false })]);
         } finally {
             snackbar.show = originalShow;
         }

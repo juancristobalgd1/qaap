@@ -6,11 +6,10 @@ import { QaapAgentConversation, QaapAgentMessage, QaapAgentTurnVerdict, QaapConv
 
 import { usesAgUiCliTranscriptStream, usesStructuredAgentTranscript } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 
-import { isHostedCodexUsage } from '../common/qaap-billing-plans';
-
 import { QaapPlanLimit } from '@theia/qaap-adapters/lib/common/qaap-plan-limit';
 
-import { isQaiqProviderKeyMissingFailure, localizeAgentFailureMessage, resolveAgentTurnFailureMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
+import { detectAgentFailureKind, isQaiqProviderKeyMissingFailure, localizeAgentFailureMessage, resolveAgentTurnFailureMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
+import { sharedQaapAgentModelUnavailableRegistry } from './qaap-agent-model-unavailable-registry';
 
 import { resolveAgentLogDisplayText } from '@theia/qaap-shared-core/lib/common/qaap-cli-transcript-stream';
 
@@ -202,23 +201,6 @@ export async function applyTaskOutcomeExtracted(ctx: QaapAgentConversationStoreC
     const usageFinalized = ctx.finalizeTurnContextUsage(convSnapshot, task.id, turnAgentId);
     ctx.agentStreamByTaskId.delete(task.id);
     ctx.agUiStreamByTaskId.delete(task.id);
-    if (
-        task.ownerLogin
-        && ctx.billingStore
-        && usageFinalized.contextUsage
-        && !usageFinalized.contextUsageEstimated
-    ) {
-        const modelId = task.agentModel?.modelId ?? task.qaiqModel?.modelId;
-        const usesUserCodexSession = ctx.taskRunner?.isAgentConnected?.(turnAgentId, task.ownerLogin) === true;
-        if (isHostedCodexUsage(turnAgentId, modelId) && !usesUserCodexSession) {
-            void ctx.billingStore.debitHostedUsage(
-                task.ownerLogin,
-                modelId!,
-                usageFinalized.contextUsage.inputTokens,
-                usageFinalized.contextUsage.outputTokens,
-            ).catch(() => undefined);
-        }
-    }
     const conv = ctx.conversations.get(conversationId);
     if (!conv) {
         return resolveChatTurnOutcome(task.state);
@@ -349,6 +331,13 @@ export async function applyTaskOutcomeExtracted(ctx: QaapAgentConversationStoreC
             agentMessage: agentMessageForFailure,
             agentId: turnAgentId,
         });
+        // The provider rejected the turn's model for this owner: remember it so the picker locks it for a while.
+        const rejectedModelId = log && detectAgentFailureKind(log) === 'model_unavailable'
+            ? withUsageBaseline.messages.find(message => message.id === userMessageId)?.turnAgentModel?.modelId?.trim()
+            : undefined;
+        if (rejectedModelId) {
+            sharedQaapAgentModelUnavailableRegistry.record(withUsageBaseline.ownerLogin, turnAgentId, rejectedModelId);
+        }
         const failureBody = log ? resolveAgentLogDisplayText(turnAgentId, log) : '';
         const failed = ctx.markTurnFailed(convForFailure, {
             userMessageId,
@@ -571,7 +560,7 @@ export async function maybeRetryTurnWithFallbackExtracted(ctx: QaapAgentConversa
     startSha?: string, ): Promise<boolean> {
     // Refused before spawn for a missing provider key: every fallback model of the same agent would
     // be refused the same way, each one a new task record, transcript churn and failure push.
-    if (task.preflightFailure === 'provider_key_missing') {
+    if (task.preflightFailure === 'provider_key_missing' || task.preflightFailure === 'sign_in_required') {
         return false;
     }
     if (ctx.isTurnGraphEnabled() && ctx.workflowRuns) {

@@ -80,6 +80,9 @@ const MAX_SCAFFOLD_DISCOVERY_DEPTH = 2;
 /** Directories skipped when scanning for orphan scaffold projects under the workspace root. */
 const SCAFFOLD_SUBFOLDER_SKIP = new Set(['node_modules', '.git', '.qaap', 'dist', 'build', 'out']);
 
+/** Direct-child folders probed for a `.qaap/preview.json` when the workspace root has no launch plan. */
+const MAX_SUBFOLDER_PREVIEW_PLAN_SCAN = 50;
+
 /** Extra `index.html` folders nested under {@link STATIC_ROOT_CANDIDATE_DIRS} (e.g. `docs/demo`). */
 const NESTED_STATIC_INDEX_SEGMENTS = ['demo', 'public', 'dist'] as const;
 
@@ -160,6 +163,10 @@ export class QaapProjectBootstrapDetector {
             if (staticSite) {
                 return staticSite;
             }
+            const subfolderPlan = await this.detectSubfolderConfiguredPreview(rootUri);
+            if (subfolderPlan) {
+                return subfolderPlan;
+            }
             const scaffolded = await this.detectScaffoldedSubfolder(rootUri);
             return scaffolded ?? this.detectNativeProject(rootUri);
         }
@@ -186,7 +193,7 @@ export class QaapProjectBootstrapDetector {
         const scripts = pkg.scripts && typeof pkg.scripts === 'object' ? pkg.scripts : {};
         const devScriptKey = this.pickRootDevScript(scripts);
         const { kind, expectedPort } = this.guessFramework(pkg);
-        const isTheiaApp = this.isTheiaPackage(pkg);
+        let isTheiaApp = this.isTheiaPackage(pkg);
 
         let devCommand: string | undefined;
         let devCommandLabel: string | undefined;
@@ -202,6 +209,9 @@ export class QaapProjectBootstrapDetector {
         // Building before preview is opt-in only (`"build": "auto"` in `.qaap/preview.json`).
         const buildPolicy = await this.readPreviewBuildPolicy(rootUri, enclosingWorkspaceRoot);
         const { flavor, apps } = await this.detectMonorepo(rootUri, pkg, packageManager, buildPolicy);
+        // A root script that launches a member through an indirection (`node scripts/start.mjs`,
+        // `lerna run start`) runs whatever Theia app the workspace holds: isolate it like one.
+        isTheiaApp = isTheiaApp || (!!devCommand && apps.some(app => app.isTheiaApp));
         const workspaceRootUri = flavor && PACKAGE_MANAGER_WORKSPACE_FLAVORS.has(flavor) ? rootUri : enclosingWorkspaceRoot;
         // A member opened on its own: its script's bin and build state, like a monorepo app's.
         const rootScript = devScriptKey ? String(scripts[devScriptKey]) : undefined;
@@ -234,6 +244,10 @@ export class QaapProjectBootstrapDetector {
                     nodeModulesPresent,
                     scripts,
                 });
+            }
+            const subfolderPlan = await this.detectSubfolderConfiguredPreview(rootUri);
+            if (subfolderPlan) {
+                return subfolderPlan;
             }
             const native = await this.detectNativeProject(rootUri);
             if (native) {
@@ -401,6 +415,56 @@ export class QaapProjectBootstrapDetector {
         } catch {
             return undefined;
         }
+    }
+
+    /**
+     * A `.qaap/preview.json` written inside a direct child folder (an agent that scaffolded the app in
+     * `<folder>/` and wrote its plan there). Only consulted when the root itself has no runnable plan.
+     * Several valid plans: the most recently written one wins. The plan's cwd is rebased onto that
+     * folder, so its command runs inside the app and `{{PORT}}` is substituted as usual.
+     */
+    protected async detectSubfolderConfiguredPreview(rootUri: URI): Promise<QaapProjectDescriptor | undefined> {
+        const candidates = await this.listSubfolderPreviewPlans(rootUri);
+        if (candidates.length === 0) {
+            return undefined;
+        }
+        candidates.sort((a, b) => b.mtime - a.mtime || a.relativePath.localeCompare(b.relativePath));
+        const chosen = candidates[0];
+        const plan: QaapPreviewLaunchPlan = {
+            ...chosen.plan,
+            cwd: chosen.plan.cwd === '.' ? chosen.relativePath : `${chosen.relativePath}/${chosen.plan.cwd}`,
+        };
+        return this.descriptorForNativePlan(rootUri, plan, this.kindForConfiguredRuntime(plan));
+    }
+
+    protected async listSubfolderPreviewPlans(rootUri: URI): Promise<{ relativePath: string; plan: QaapPreviewLaunchPlan; mtime: number }[]> {
+        const found: { relativePath: string; plan: QaapPreviewLaunchPlan; mtime: number }[] = [];
+        let folders: FileStat[] = [];
+        try {
+            const resolved = await this.fileService.resolve(rootUri);
+            folders = (resolved.children ?? [])
+                .filter(child => child.isDirectory && !child.name.startsWith('.') && !SCAFFOLD_SUBFOLDER_SKIP.has(child.name))
+                .slice(0, MAX_SUBFOLDER_PREVIEW_PLAN_SCAN);
+        } catch {
+            return found;
+        }
+        for (const folder of folders) {
+            const configUri = folder.resource.resolve(QAAP_PREVIEW_CONFIG_PATH);
+            try {
+                if (!(await this.fileService.exists(configUri))) {
+                    continue;
+                }
+                const parsed = parseQaapPreviewLaunchConfigJson((await this.fileService.read(configUri)).value || '');
+                if (!parsed.ok) {
+                    continue;
+                }
+                const stat = await this.fileService.resolve(configUri);
+                found.push({ relativePath: folder.name, plan: parsed.plan, mtime: stat.mtime ?? 0 });
+            } catch {
+                // An unreadable plan in one folder must not hide the others.
+            }
+        }
+        return found;
     }
 
     /** Conservative marker-based discovery. Ambiguous Python entry points require preview.json. */

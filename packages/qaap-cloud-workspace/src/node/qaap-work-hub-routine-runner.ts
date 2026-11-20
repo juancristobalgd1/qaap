@@ -47,10 +47,16 @@ export class QaapWorkHubRoutineRunner {
                 return routine;
             }
         }
-        if (normalizeRoutineRunMode(routine.runMode) === 'continue') {
-            return this.runViaConversation(routine);
+        try {
+            if (normalizeRoutineRunMode(routine.runMode) === 'continue') {
+                return this.runViaConversation(routine);
+            }
+            return this.runViaTask(routine);
+        } catch (error) {
+            // A routine that did not start has no process behind it: it must not stay 'running'.
+            this.store.markRunFinished(id, 'failed');
+            throw error;
         }
-        return this.runViaTask(routine);
     }
 
     /** The routine's harness; a stored retired or hidden pick (e.g. an old `qaiq` seed) runs on the owner's default. */

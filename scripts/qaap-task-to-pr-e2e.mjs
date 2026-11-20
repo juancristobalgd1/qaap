@@ -34,6 +34,8 @@ if [[ "\${1:-}" == "--version" ]]; then echo "2.1.0 (Claude Code) task-pr-e2e"; 
 if [[ "\${1:-}" == "auth" && "\${2:-}" == "status" ]]; then echo '{"loggedIn": true, "authMethod": "mock", "apiProvider": "mock"}'; exit 0; fi
 # Approvals on: one NDJSON user line, stdin stays open. Approvals off: the prompt is piped and stdin closes.
 if [[ " $* " == *" --input-format "* ]]; then IFS= read -r line || true; else line="$(cat)"; fi
+# The backend's model discovery sends one stream-json \`initialize\` control request: not a turn, never a run.
+if [[ "$line" == *'"control_request"'* ]]; then exit 0; fi
 STATE="\${QAAP_E2E_STATE:?}"
 echo run >> "$STATE/runs"
 runs="$(wc -l < "$STATE/runs" | tr -d ' ')"

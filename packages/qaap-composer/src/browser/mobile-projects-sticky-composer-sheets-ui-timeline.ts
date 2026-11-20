@@ -1,3 +1,4 @@
+import { attachSheetListEdgeFades } from './mobile-projects-sticky-composer-sheet-edge-fades';
 import type { MobileProjectsStickyComposerSheetsUiContext } from './mobile-projects-sticky-composer-sheets-ui-context';
 // Extracted from mobile-projects-sticky-composer-sheets-ui.ts
 
@@ -102,6 +103,7 @@ export function createComposerAgentPickerChromeExtracted(ctx: MobileProjectsStic
 
     const list = document.createElement('div');
     list.className = 'theia-mobile-sticky-composer-sheet-list';
+    attachSheetListEdgeFades(list);
 
     panel.append(header, intro, search, list);
 
@@ -331,21 +333,26 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
             agentEntries.push({ id: THEIA_CODER_AGENT_ID, label: coder.name, models: [], available: true });
         }
     }
+    // A harness with a session answer is detected even when signed out or still checking: its catalog is listed
+    // (Free models stay usable). Without a session it is only a placeholder for an undetected harness.
+    const sessionKnownIds = new Set<string>();
     for (const agent of options.agents) {
+        if (agent.session !== undefined) {
+            sessionKnownIds.add(agent.id);
+        }
         agentEntries.push({
             id: agent.id,
             label: agent.label,
             models: [],
-            // Same access answer as the backend row: a settled Codex sign-out is `none` (even when its
-            // probe reported `unknown`), and a hosted Codex stays usable while `disconnected`.
-            available: agent.available !== false
-                && (agent.accessState === 'hosted' || agent.connectionState !== 'disconnected'),
+            available: agent.available !== false,
         });
     }
+    const needsModelList = (entry: { readonly id: string; readonly available?: boolean }): boolean =>
+        (entry.available !== false || sessionKnownIds.has(entry.id)) && agentSupportsModelPicker(entry.id);
     const resolveAgentModels = (): Promise<void> => Promise.all(agentEntries.map(async entry => {
         let models = chrome.modelsByAgent.get(entry.id);
         if (models === undefined) {
-            if (entry.available !== false && agentSupportsModelPicker(entry.id)) {
+            if (needsModelList(entry)) {
                 const resolved = await ctx.resolveModelsForAgentPickerSafe(entry.id);
                 models = resolved.models;
                 if (chrome.sheet.dataset.agentPickerRenderGeneration === String(renderGeneration)) {
@@ -366,8 +373,7 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
         }
         (entry as { models: readonly QaapQaiqModelOption[] }).models = models;
     })).then(() => undefined);
-    const modelListsPending = agentEntries.some(entry => entry.available !== false
-        && agentSupportsModelPicker(entry.id) && !chrome.modelsByAgent.has(entry.id));
+    const modelListsPending = agentEntries.some(entry => needsModelList(entry) && !chrome.modelsByAgent.has(entry.id));
     if (modelListsPending) {
         // The rows are usable without the model lists (those only label the stored model and open the
         // drill-down), so the list paints now and repaints once they arrive. Holding the whole picker on
@@ -392,7 +398,17 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
     const appendAgent = (entry: QaapAgentPickerSearchEntry): void => {
         const { id: agentId, label } = entry;
         const agentDescription = resolveAgentPickerDescription(agentId, label);
-        if (entry.available === false) {
+        const session = options.agents.find(agent => agent.id === agentId)?.session;
+        const hasModels = agentSupportsModelPicker(agentId);
+        // Signed out (or still checking) harness: listed with its catalog, the Sign in action in its header.
+        const signedOutLabel = nls.localize('qaap/composer/picker/signInTo', 'Sign in to {0}', label);
+        const checkingLabel = nls.localize('qaap/mobileProjects/modelPickerChecking', 'Checking sign-in…');
+        const sessionDescription = session === 'signed-out' ? signedOutLabel : checkingLabel;
+        const signInAction = {
+            label: nls.localize('qaap/agentPicker/signIn', 'Sign in'),
+            onAction: () => options.onProactiveLogin?.(agentId, options.project),
+        };
+        if (entry.available === false && !sessionKnownIds.has(agentId)) {
             // Codex with no sign-in and no hosted entitlement (access `none`) is opened via the same sign-in flow.
             const needsSignIn = agentId.trim().toLowerCase() === 'codex'
                 && options.agents.some(agent => agent.id === agentId && agent.accessState === 'none');
@@ -409,7 +425,16 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
             }));
             return;
         }
-        const hasModels = agentSupportsModelPicker(agentId);
+        if (entry.available === false && !hasModels) {
+            content.append(createUnavailableAgentSheetOption({
+                agentId,
+                label,
+                description: sessionDescription,
+                actionLabel: signInAction.label,
+                onAction: signInAction.onAction,
+            }));
+            return;
+        }
         const agentSelected = isStickyComposerAgentSelected(agentId, options.selectedAgentId, options.cwd);
         const storedModel = options.cwd
             ? seedDisplayedAgentModel(options.cwd, agentId, entry.models)
@@ -423,7 +448,8 @@ export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStic
                 agentId,
                 label: displayLabel,
                 agentLabel: label,
-                description: agentDescription,
+                description: entry.available === false ? sessionDescription : agentDescription,
+                signInAction: entry.available === false && session === 'signed-out' ? signInAction : undefined,
                 selected: agentSelected,
                 // The main area selects the agent with its stored or fallback model (no submenu).
                 onSelect: () => activateAgentPickerDirectSelection({

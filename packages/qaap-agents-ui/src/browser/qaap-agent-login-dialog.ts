@@ -93,6 +93,24 @@ function localizeFailure(state: Extract<QaapAgentLoginFlowState, { phase: 'faile
     }
     switch (state.reason) {
         case 'timeout':
+            if (state.terminalEchoOnly) {
+                // The terminal printed something (the typed command, the prompt) but the CLI itself did not.
+                const silent = nls.localize(
+                    'qaap/agentLogin/cliPrintedNothing',
+                    '{0} printed nothing within {1} seconds. The sign-in terminal output is below.',
+                    agentLabel,
+                    String(Math.round((state.timeoutMs ?? QAAP_AGENT_LOGIN_CHALLENGE_TIMEOUT_MS) / 1000)),
+                );
+                return state.diagnostics ? `${silent} ${state.diagnostics}` : silent;
+            }
+            if (!state.tail.length) {
+                // Nothing to show below: say so, and what the host saw from the terminal.
+                const noOutput = nls.localize(
+                    'qaap/agentLogin/noOutputReceived',
+                    'No output was received from the sign-in terminal.',
+                );
+                return state.diagnostics ? `${noOutput} ${state.diagnostics}` : noOutput;
+            }
             return nls.localize(
                 'qaap/mobileProjects/agentLoginDialogTimedOut',
                 '{0} did not show a sign-in link within {1} seconds. Its last output is below.',
@@ -133,6 +151,15 @@ function localizeFailure(state: Extract<QaapAgentLoginFlowState, { phase: 'faile
                 agentLabel,
             );
         case 'exited':
+            if (state.crash) {
+                return nls.localize(
+                    'qaap/mobileProjects/agentLoginDialogCrashed',
+                    'The {0} CLI crashed before it connected (exit code {1}): {2}',
+                    agentLabel,
+                    String(state.exitCode ?? ''),
+                    state.crash,
+                );
+            }
             return nls.localize(
                 'qaap/mobileProjects/agentLoginDialogExited',
                 'The {0} sign-in process ended before it connected (exit code {1}).',
@@ -383,10 +410,12 @@ export function createQaapAgentLoginDialog(
             const submit = document.createElement('button');
             submit.type = 'submit';
             submit.className = 'theia-button main theia-mobile-agent-login-dialog-code-submit';
-            submit.textContent = acceptsRedirectUrl
-                ? nls.localize('qaap/mobileProjects/agentLoginDialogSubmit', 'Submit')
-                : nls.localize('qaap/mobileProjects/agentLoginDialogSubmitCode', 'Submit code');
-            submit.disabled = submitted;
+            submit.textContent = nls.localize('qaap/mobileProjects/agentLoginDialogValidate', 'Validate');
+            // Nothing to validate until something is typed; Enter in the field still submits through the form.
+            submit.disabled = submitted || input.value.trim().length === 0;
+            input.addEventListener('input', () => {
+                submit.disabled = submitted || input.value.trim().length === 0;
+            });
             form.addEventListener('submit', event => {
                 event.preventDefault();
                 const value = input.value.trim();

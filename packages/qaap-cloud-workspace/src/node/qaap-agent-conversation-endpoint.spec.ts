@@ -835,3 +835,105 @@ describe('QaapAgentConversationEndpoint project clone missing from disk', () => 
         expect(posted).to.deep.equal(['and now this']);
     });
 });
+
+describe('QaapAgentConversationEndpoint side chat parent authorization', () => {
+
+    const aliceRepo = '/workspace/repos/users/alice/o/r';
+    const bobRepo = '/workspace/repos/users/bob/o/r';
+
+    function build(): { endpoint: QaapAgentConversationEndpoint; created: Array<Record<string, unknown>> } {
+        const conversations = new Map<string, { id: string; cwd: string }>([
+            ['parent-alice', { id: 'parent-alice', cwd: aliceRepo }],
+            ['parent-bob', { id: 'parent-bob', cwd: bobRepo }],
+        ]);
+        const created: Array<Record<string, unknown>> = [];
+        const endpoint = Object.create(QaapAgentConversationEndpoint.prototype) as QaapAgentConversationEndpoint;
+        Object.assign(endpoint, {
+            now: () => 1_000_000,
+            clientRequestDedup: new Map<string, { conversationId: string; at: number }>(),
+            recentTextCreates: new Map(),
+            clientRequestInFlight: new Set<string>(),
+            repoClaims: new Map<string, number>(),
+            store: {
+                taskRunner: { defaultAgentFresh: async () => 'opencode', defaultAgent: () => 'opencode' },
+                create: (req: Record<string, unknown>) => {
+                    created.push(req);
+                    return { id: `side-${created.length}`, cwd: req.cwd };
+                },
+                get: (id: string) => conversations.get(id),
+                conversations: new Map(),
+                getActiveTaskIdsForConversation: () => [],
+            },
+            worktrees: { create: async (cwd: string) => ({ worktreePath: `${cwd}/.wt`, branch: 'qaap/wt' }) },
+            // Ownership by workspace path, as the real guard does: alice owns only her repositories.
+            auth: { ...fakeAuth(), ownsWorkspacePath: (_ctx: unknown, cwd: string) => cwd.startsWith('/workspace/repos/users/alice/') },
+            requireAuth: () => ({ kind: 'authenticated', userLogin: 'alice' }),
+        });
+        return { endpoint, created };
+    }
+
+    const call = (endpoint: QaapAgentConversationEndpoint, body: unknown, res: unknown): Promise<void> =>
+        (endpoint as unknown as { handleCreate(req: unknown, res: unknown): Promise<void> })
+            .handleCreate({ body }, res);
+
+    const sideBody = (sideChatParentId: string | undefined): Record<string, unknown> => ({
+        cwd: aliceRepo,
+        message: 'quick question',
+        origin: 'side-chat',
+        ...(sideChatParentId ? { sideChatParentId } : {}),
+    });
+
+    it('keeps the parent of a side chat the caller owns', async () => {
+        const h = build();
+        await call(h.endpoint, sideBody('parent-alice'), fakeRes());
+        expect(h.created[0]).to.include({ origin: 'side-chat', sideChatParentId: 'parent-alice' });
+    });
+
+    it('drops a parent that belongs to another user and still creates the side chat', async () => {
+        const h = build();
+        const res = fakeRes();
+        await call(h.endpoint, sideBody('parent-bob'), res);
+        expect(res.statusCode).to.equal(201);
+        expect(h.created[0].origin).to.equal('side-chat');
+        expect(h.created[0]).to.not.have.property('sideChatParentId');
+    });
+
+    it('drops a parent id that does not exist', async () => {
+        const h = build();
+        await call(h.endpoint, sideBody('parent-missing'), fakeRes());
+        expect(h.created[0].origin).to.equal('side-chat');
+        expect(h.created[0]).to.not.have.property('sideChatParentId');
+    });
+
+    it('never attaches a parent to a plain conversation', async () => {
+        const h = build();
+        await call(h.endpoint, { cwd: aliceRepo, message: 'hi', sideChatParentId: 'parent-alice' }, fakeRes());
+        expect(h.created[0]).to.not.have.property('origin');
+        expect(h.created[0]).to.not.have.property('sideChatParentId');
+    });
+
+    it('stores the background on the first message only, never as the conversation preamble', async () => {
+        const h = build();
+        const res = fakeRes();
+        await call(h.endpoint, { ...sideBody('parent-alice'), message: 'quick question', contextPreamble: 'Background from the conversation "Fix"' }, res);
+        expect(res.statusCode).to.equal(201);
+        expect(h.created[0].message).to.equal('quick question');
+        expect(h.created[0].messageContextPreamble).to.equal('Background from the conversation "Fix"');
+        expect(h.created[0].contextPreamble).to.equal(undefined);
+    });
+
+    it('rejects a background over the server limit before the conversation is created', async () => {
+        const h = build();
+        const res = fakeRes();
+        await call(h.endpoint, { ...sideBody('parent-alice'), contextPreamble: 'x'.repeat(8001) }, res);
+        expect(res.statusCode).to.equal(400);
+        expect(h.created).to.have.length(0);
+    });
+
+    it('keeps the conversation preamble of a plain conversation as it was', async () => {
+        const h = build();
+        await call(h.endpoint, { cwd: aliceRepo, message: 'hi', contextPreamble: 'Cross-project context' }, fakeRes());
+        expect(h.created[0].contextPreamble).to.equal('Cross-project context');
+        expect(h.created[0]).to.not.have.property('messageContextPreamble');
+    });
+});

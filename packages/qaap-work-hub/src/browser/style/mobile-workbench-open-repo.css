@@ -922,3 +922,219 @@ body.theia-mobile-mod-landing.theia-mobile-mod-landing-hub-list .theia-mobile-pr
     min-height: 44px;
   }
 }
+
+/* Workspace memory (RAM) choice: Pro picks per repository, Starter shows the single size as muted info. */
+.theia-mobile-open-repo-memory {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin: 8px 0;
+  font-size: 12.5px;
+  color: var(--theia-foreground);
+}
+
+.theia-mobile-open-repo-memory.theia-mod-info {
+  /* Sits directly in the sheet: align with the description's 16px gutters. */
+  flex-shrink: 0;
+  margin: 0 16px 12px;
+}
+
+.theia-mobile-open-repo-memory[hidden] {
+  display: none;
+}
+
+.theia-mobile-open-repo-memory-label {
+  font-weight: 600;
+}
+
+.theia-mobile-open-repo-memory-value {
+  color: var(--theia-descriptionForeground);
+}
+
+.theia-mobile-open-repo-memory-upgrade {
+  appearance: none;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--theia-textLink-foreground);
+  font-size: 12.5px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.theia-mobile-open-repo-memory-choices {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 18%, transparent);
+  border-radius: 6px;
+}
+
+.theia-mobile-open-repo-memory-choice {
+  appearance: none;
+  min-height: 32px;
+  min-width: 56px;
+  padding: 0 12px;
+  border: none;
+  background: transparent;
+  color: var(--theia-foreground);
+  font-size: 12.5px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.theia-mobile-open-repo-memory-choice + .theia-mobile-open-repo-memory-choice {
+  border-left: 1px solid color-mix(in srgb, var(--theia-foreground) 18%, transparent);
+}
+
+.theia-mobile-open-repo-memory-choice.theia-mod-selected {
+  background: var(--theia-foreground);
+  color: var(--theia-editor-background);
+  font-weight: 600;
+}
+
+.theia-mobile-open-repo-memory-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 8px 0 12px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 14%, transparent);
+}
+
+.theia-mobile-open-repo-memory-prompt[hidden],
+.theia-mobile-open-repo-memory-public[hidden] {
+  display: none;
+}
+
+.theia-mobile-open-repo-memory-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--theia-foreground);
+}
+
+.theia-mobile-open-repo-memory-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.theia-mobile-open-repo-memory-actions button {
+  appearance: none;
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.theia-mobile-open-repo-memory-cancel {
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 18%, transparent);
+  background: transparent;
+  color: var(--theia-foreground);
+}
+
+.theia-mobile-open-repo-memory-open {
+  border: 1px solid var(--theia-foreground);
+  background: var(--theia-foreground);
+  color: var(--theia-editor-background);
+  font-weight: 500;
+}
+
+.theia-mobile-open-repo-memory-open:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.theia-mobile-open-repo-memory-public {
+  margin: 8px 0;
+}
+
+@media (pointer: coarse) {
+  .theia-mobile-open-repo-memory-choice,
+  .theia-mobile-open-repo-memory-actions button,
+  .theia-mobile-open-repo-memory-upgrade {
+    min-height: 44px;
+  }
+}
+
+/* Desktop "Sign in with GitHub" (device flow) and its prompt in the repository list. */
+.theia-mobile-github-device {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: color-mix(in srgb, var(--theia-editor-background) 80%, transparent);
+}
+
+.theia-mobile-github-device[hidden] {
+    display: none;
+}
+
+.theia-mobile-github-device-card {
+    box-sizing: border-box;
+    width: min(420px, 100%);
+    padding: 20px;
+    border: 1px solid var(--theia-widget-border);
+    border-radius: 8px;
+    background: var(--theia-editorWidget-background);
+    color: var(--theia-foreground);
+}
+
+.theia-mobile-github-device-title {
+    margin: 0 0 8px;
+    font-size: 1.1em;
+    font-weight: 600;
+}
+
+.theia-mobile-github-device-text,
+.theia-mobile-github-device-status,
+.theia-mobile-github-device-error,
+.theia-mobile-open-repo-signin-text {
+    margin: 0 0 12px;
+}
+
+.theia-mobile-github-device-error {
+    color: var(--theia-errorForeground);
+}
+
+.theia-mobile-github-device-code-row,
+.theia-mobile-github-device-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.theia-mobile-github-device-code {
+    padding: 6px 10px;
+    border: 1px solid var(--theia-input-border);
+    border-radius: 4px;
+    background: var(--theia-input-background);
+    font-size: 1.2em;
+    letter-spacing: 0.1em;
+    user-select: all;
+}
+
+.theia-mobile-github-device .theia-mobile-open-repo-progress-action,
+.theia-mobile-open-repo-signout {
+    /* Touch target on a phone width (44px), same button tokens as the repository dialog. */
+    min-height: 44px;
+    padding: 0 16px;
+}
+
+.theia-mobile-github-device .theia-mobile-open-repo-progress-action {
+    margin-top: 4px;
+}
+
+.theia-mobile-github-device-code-row[hidden],
+.theia-mobile-github-device-button[hidden],
+.theia-mobile-open-repo-signout[hidden] {
+    display: none;
+}

@@ -26,6 +26,12 @@ describe('redactQaapSecrets', () => {
         }
     });
 
+    it('redacts the credential of any Authorization scheme, not just Bearer', () => {
+        const redacted = redactQaapSecrets('Authorization: Basic dXNlcjpzM2NyZXQ=\nauthorization: token abcdef0123456789');
+        expect(redacted).not.to.contain('dXNlcjpzM2NyZXQ=');
+        expect(redacted).not.to.contain('abcdef0123456789');
+    });
+
     it('keeps ordinary text and line breaks', () => {
         expect(redactQaapSecrets('### Summary\n\nAdded the token field to the form.')).to.equal('### Summary\n\nAdded the token field to the form.');
     });

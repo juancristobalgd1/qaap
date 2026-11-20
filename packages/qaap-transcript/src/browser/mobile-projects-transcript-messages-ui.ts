@@ -7,6 +7,7 @@ import * as markdownit from '@theia/core/shared/markdown-it';
 import { ClipboardService } from '@theia/core/lib/browser/clipboard-service';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import { Disposable } from '@theia/core/lib/common/disposable';
+import { QaapLiveTaskDiff } from '@theia/qaap-shared-core/lib/common/qaap-live-task-diff';
 import {
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
@@ -26,14 +27,21 @@ import { MobileProjectsTranscriptMessagesResolversUi } from './mobile-projects-t
 import { MobileProjectsTranscriptMessagesToolUi } from './mobile-projects-transcript-messages-tool-ui';
 import { MobileProjectsTranscriptMessagesUserUi } from './mobile-projects-transcript-messages-user-ui';
 import { resolveAgentMessageSegments } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model';
+import { withoutSideChatPreamble } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-side-chat';
 import { WORKING_DETAIL_TRANSCRIPT_CLASS } from './qaap-sticky-composer-working-detail-transcript';
 import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
 import type { MobileProjectsTranscriptLiveUi } from './mobile-projects-transcript-live-ui';
-import type { TranscriptExecutionSurfaceTabsApi, TranscriptProjectLabelsApi, TranscriptStickyComposerApi } from './qaap-transcript-host-contracts';
+import type { TranscriptExecutionSurfaceTabsApi, TranscriptProjectLabelsApi, TranscriptStickyComposerApi, TranscriptTurnResultApi } from './qaap-transcript-host-contracts';
 import type { WorkHubTranscriptBridge } from '@theia/qaap-transcript-overlay/lib/browser/work-hub-transcript-bridge';
 
 /** Panel surface consumed by transcript message rendering (keeps deps narrow vs. the full panel). */
 export interface MobileProjectsTranscriptMessagesHost {
+    /** Work Hub preview request (Run app's launcher): starts the project's preview when a link finds it down. */
+    requestTranscriptPreview?(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+        options?: { readonly revealPreviewTab?: boolean; readonly allowAgentFallback?: boolean; },
+    ): Promise<void>;
     transcriptUi: MobileProjectsTranscriptUi;
     transcriptUserScrollPinDispose: Disposable;
     transcriptLastConv: QaapAgentConversationDTO | undefined;
@@ -53,6 +61,12 @@ export interface MobileProjectsTranscriptMessagesHost {
     transcriptOpenSummaryId: string | undefined;
     transcriptPreviewRequestPending: boolean;
     transcriptPreviewRequestRunning: boolean;
+    /** Harness picked in the composer for the next turn (with {@link transcriptComposerPrefsConvId}): drives "Handoff pending". */
+    readonly transcriptComposerPinnedAgentId?: string;
+    /** Conversation the composer selection above belongs to. */
+    readonly transcriptComposerPrefsConvId?: string;
+    /** Model picked in the composer for the next turn. */
+    readonly transcriptComposerAgentModel?: import('@theia/qaap-shared-core/lib/common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel;
     transcriptMarkdownIt: ReturnType<typeof markdownit>;
     openTranscriptFile?: (filePath: string) => void | Promise<void>;
     openTranscriptReviewFile?: (filePath: string) => void | Promise<void>;
@@ -92,6 +106,12 @@ export interface MobileProjectsTranscriptMessagesHost {
     openPreferencesSheet?(query?: string): Promise<void>;
     /** Opens the billing sheet (Upgrade / Top up call to action on plan-limit failures). */
     openBillingSheet?(): Promise<void>;
+    /** Composer actions behind the turn-end result card (preview, Create PR, Continue). */
+    turnResultApi?: TranscriptTurnResultApi;
+    /** Opens the composer's agent and model picker ("Change model" on usage-limit and model-unavailable failures). */
+    openTranscriptModelPicker?(): void;
+    /** Removes a project from the Work Hub list through the existing confirmed remove flow (missing-folder banner). */
+    removeTranscriptProject?(project: MobileProjectEntry): void | Promise<void>;
 }
 
 /** Transcript message list rendering: rows, streaming patches, and rich segment UI. */
@@ -107,7 +127,7 @@ export class MobileProjectsTranscriptMessagesUi {
         protected readonly host: MobileProjectsTranscriptMessagesHost,
         protected readonly workHub: WorkHubTranscriptBridge,
     ) {
-        this.contentUi = new MobileProjectsTranscriptMessagesContentUi(host);
+        this.contentUi = new MobileProjectsTranscriptMessagesContentUi(host, workHub);
         this.resolversUi = new MobileProjectsTranscriptMessagesResolversUi(host, this.contentUi);
         this.toolUi = new MobileProjectsTranscriptMessagesToolUi(host, this.contentUi, this.resolversUi);
         this.artifactsUi = new MobileProjectsTranscriptMessagesArtifactsUi(
@@ -172,6 +192,11 @@ export class MobileProjectsTranscriptMessagesUi {
         return this.renderUi.cancelQueuedMessage(conversationId, queuedMessageId);
     }
 
+    /** Routes the actions of queued transcript rows to the composer queue that owns them. */
+    setQueuedMessageActionHandler(handler: NonNullable<MobileProjectsTranscriptMessagesRenderUi['queuedMessageActionHandler']> | undefined): void {
+        this.renderUi.queuedMessageActionHandler = handler;
+    }
+
     /** Dispatch a server-queued follow-up immediately with the given delivery mode. */
     dispatchQueuedMessage(
         conversationId: string,
@@ -231,12 +256,19 @@ export class MobileProjectsTranscriptMessagesUi {
     ): {
         readonly files: Array<{ readonly path: string; readonly kind: 'edited' | 'created'; readonly added?: number; readonly removed?: number }>;
         readonly stats?: { readonly added: number; readonly removed: number };
+        /** What `stats` measures: this turn's own edits, or the whole task (`baselineCommit` names its baseline). */
+        readonly statsScope?: 'turn' | 'task';
+        readonly statsBaselineCommit?: string;
     } {
         const segments = this.resolveComposerConversationSegments(conv, options);
         const files = this.resolversUi.resolveTranscriptChangedFiles(segments);
         let stats = this.resolversUi.resolveTranscriptDiffStats(segments);
-        if (!stats && summary && ((summary.linesAdded ?? 0) > 0 || (summary.linesRemoved ?? 0) > 0)) {
-            stats = { added: summary.linesAdded ?? 0, removed: summary.linesRemoved ?? 0 };
+        let statsScope: 'turn' | 'task' | undefined = stats ? 'turn' : undefined;
+        // Without a turn's own stats, the task total: the live Changes total when one was read, else the settled one.
+        const taskTotals = QaapLiveTaskDiff.resolve(summary);
+        if (!stats && summary && (taskTotals.added > 0 || taskTotals.removed > 0)) {
+            stats = { added: taskTotals.added, removed: taskTotals.removed };
+            statsScope = 'task';
         }
         return {
             files: files.map(file => ({
@@ -244,6 +276,8 @@ export class MobileProjectsTranscriptMessagesUi {
                 ...this.resolversUi.resolveTranscriptFileDiffStats(segments, file.path),
             })),
             stats,
+            statsScope,
+            statsBaselineCommit: statsScope === 'task' ? summary?.baselineCommit : undefined,
         };
     }
 
@@ -282,7 +316,7 @@ export class MobileProjectsTranscriptMessagesUi {
                 const msg = conv.messages[index]!;
                 const isTail = index === conv.messages.length - 1;
                 if (msg.role === 'user') {
-                    root.append(this.userUi.createTranscriptUserMessageRow(msg, conv, { readOnly: true }));
+                    root.append(this.userUi.createTranscriptUserMessageRow(withoutSideChatPreamble(msg), conv, { readOnly: true }));
                     continue;
                 }
                 if (msg.role !== 'agent') {

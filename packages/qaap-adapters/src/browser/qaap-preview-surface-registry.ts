@@ -10,6 +10,7 @@ import { MiniBrowser } from '@theia/mini-browser/lib/browser/mini-browser';
 import { QaapMiniBrowserContent } from './qaap-mini-browser-content';
 import { QaapPreviewFramePicker, QaapPreviewFramePickerFactory } from './qaap-preview-frame-picker';
 import { qaapPreviewFrameMatchesUrl } from './qaap-preview-surface-match';
+import { navigateQaapPreviewFrame } from './qaap-preview-surface-refresh';
 
 export interface QaapPreviewSurfaceHandle {
     readonly frame: HTMLIFrameElement;
@@ -19,6 +20,8 @@ export interface QaapPreviewSurfaceHandle {
     readonly lastActivatedAt: number;
     isConnected(): boolean;
     activate(): void;
+    /** Loads `url` in this surface without creating a widget (mini-browser keeps its URL bar in sync). */
+    navigate(url: string): void;
 }
 
 @injectable()
@@ -32,13 +35,14 @@ export class QaapPreviewSurfaceRegistry {
 
     registerEmbedded(frame: HTMLIFrameElement, toDispose: DisposableCollection, focusRoot: HTMLElement = frame): QaapPreviewSurfaceHandle {
         const picker = this.pickerFactory.create(frame, toDispose);
-        return this.registerSurface(frame, picker, 'embedded', focusRoot, toDispose);
+        return this.registerSurface(frame, picker, 'embedded', focusRoot, toDispose, () => frame.isConnected, url => navigateQaapPreviewFrame(frame, url));
     }
 
     registerMiniBrowserContent(content: QaapMiniBrowserContent, toDispose: DisposableCollection): QaapPreviewSurfaceHandle {
         const frame = content.previewFrame;
         const picker = content.getPreviewFramePicker();
-        return this.registerSurface(frame, picker, 'mini-browser', content.node, toDispose, () => content.node.isConnected);
+        return this.registerSurface(frame, picker, 'mini-browser', content.node, toDispose, () => content.node.isConnected,
+            url => { void content.forceNavigate(url); });
     }
 
     protected registerSurface(
@@ -48,6 +52,7 @@ export class QaapPreviewSurfaceRegistry {
         focusRoot: HTMLElement,
         toDispose: DisposableCollection,
         isConnected: () => boolean = () => frame.isConnected,
+        navigate: (url: string) => void = url => navigateQaapPreviewFrame(frame, url),
     ): QaapPreviewSurfaceHandle {
         let lastActivatedAt = ++this.activationSequence;
         const handle: QaapPreviewSurfaceHandle = {
@@ -58,6 +63,7 @@ export class QaapPreviewSurfaceRegistry {
             get lastActivatedAt(): number { return lastActivatedAt; },
             isConnected,
             activate: () => { lastActivatedAt = ++this.activationSequence; },
+            navigate,
         };
         const activate = (): void => handle.activate();
         focusRoot.addEventListener('pointerdown', activate, true);
@@ -103,6 +109,12 @@ export class QaapPreviewSurfaceRegistry {
         const matches = [...this.getConnectedSurfaces()].reverse()
             .filter(surface => qaapPreviewFrameMatchesUrl(surface.frame, expectedUrl, equivalentPreviewIds));
         return matches.find(surface => surface.kind === 'mini-browser') ?? matches[0];
+    }
+
+    /** Every connected surface showing the project preview at `expectedUrl` (Browser tab, embedded panes). */
+    getSurfacesForPreviewUrl(expectedUrl: string, equivalentPreviewIds?: readonly (string | undefined)[]): readonly QaapPreviewSurfaceHandle[] {
+        return this.getConnectedSurfaces()
+            .filter(surface => qaapPreviewFrameMatchesUrl(surface.frame, expectedUrl, equivalentPreviewIds));
     }
 
     getSurfaceForFrame(frame: HTMLIFrameElement | undefined): QaapPreviewSurfaceHandle | undefined {

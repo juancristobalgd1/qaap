@@ -35,6 +35,7 @@ import { ensureTranscriptScrollController } from '@theia/qaap-transcript-overlay
 import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
 import type { WorkHubTranscriptBridge } from '@theia/qaap-transcript-overlay/lib/browser/work-hub-transcript-bridge';
 import { useSuiteAnimationFrameStub, useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
+import { QAAP_DAILY_WELCOME_PHRASES, qaapDailyWelcomePhraseIndex } from '../common/qaap-daily-welcome-phrase';
 
 disableImportJSDOM();
 
@@ -179,7 +180,9 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
 
         expect(messageHost.querySelector('.theia-mobile-agent-transcript-empty')).to.equal(null);
         expect(messageHost.querySelector('.theia-mobile-agent-transcript-empty-welcome')).to.not.equal(null);
-        expect(messageHost.querySelector('.theia-mobile-agent-transcript-empty-title')?.textContent).to.equal('Ready when you are.');
+        // The welcome line is the phrase of the day.
+        expect(messageHost.querySelector('.theia-mobile-agent-transcript-empty-title')?.textContent)
+            .to.equal(QAAP_DAILY_WELCOME_PHRASES[qaapDailyWelcomePhraseIndex()]);
         expect(messageHost.querySelector('.theia-mobile-agent-transcript-empty-subtitle')).to.equal(null);
         expect(messageHost.textContent).to.not.contain('Describe the outcome.');
         expect(composerHost.classList.contains('theia-mod-show-quick-actions')).to.equal(true);
@@ -1013,22 +1016,35 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
         }
     });
 
-    it('adds direct message anchors and link copy actions to user turns', () => {
-        const { renderUi } = createRenderUi();
+    it('adds direct message anchors and a retry action to the latest user turn only', () => {
+        const { renderUi, host } = createRenderUi();
+        let retryCalls = 0;
+        host.retryOpenTranscriptConversation = () => {
+            retryCalls++;
+        };
         const chatHost = document.createElement('div');
         chatHost.className = 'theia-mobile-agent-transcript-real-chat';
         document.body.append(chatHost);
 
-        renderUi.renderTranscriptMessages(chatHost, conversationWithMessages([
-            { id: 'user-link', role: 'user', content: 'Link this turn', createdAt: 1 },
-        ]));
+        renderUi.renderTranscriptMessages(chatHost, {
+            ...conversationWithMessages([
+                { id: 'user-earlier', role: 'user', content: 'Earlier turn', createdAt: 1 },
+                { id: 'agent-reply', role: 'agent', content: 'Reply', createdAt: 2 },
+                { id: 'user-link', role: 'user', content: 'Link this turn', createdAt: 3 },
+            ]),
+            status: 'idle',
+        });
 
         const messageHost = renderUi.resolveTranscriptMessageHost(chatHost);
-        const row = messageHost.querySelector<HTMLElement>('.theia-mobile-agent-transcript-user-wrap');
-        expect(row?.id).to.equal('qaap-transcript-message-user-link');
+        const row = messageHost.querySelector<HTMLElement>('#qaap-transcript-message-user-link');
         expect(row?.getAttribute('data-transcript-message-id')).to.equal('user-link');
-        expect(row?.querySelector<HTMLButtonElement>('.theia-mobile-agent-transcript-user-action.theia-mod-link')?.title)
-            .to.equal('Copy link');
+        const retryButton = row?.querySelector<HTMLButtonElement>('.theia-mobile-agent-transcript-user-action.theia-mod-retry');
+        expect(retryButton?.title).to.equal('Retry');
+        retryButton?.click();
+        expect(retryCalls).to.equal(1);
+        const earlierRow = messageHost.querySelector<HTMLElement>('#qaap-transcript-message-user-earlier');
+        expect(earlierRow?.querySelector('.theia-mod-retry')).to.equal(null);
+        expect(messageHost.querySelector('.theia-mod-link')).to.equal(null);
     });
 
     function pausedQueueConv(messageCount: number, queued: boolean): QaapAgentConversationDTO {
@@ -1109,5 +1125,56 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
         const messageHost = renderUi.resolveTranscriptMessageHost(chatHost);
 
         expect(messageHost.querySelectorAll('.theia-mobile-agent-transcript-queued-message')).to.have.length(1);
+    });
+
+    it('closes a settled text-only turn with its blocked report instead of a raw error line', () => {
+        const { renderUi } = createRenderUi();
+        const chatHost = document.createElement('div');
+        chatHost.className = 'theia-mobile-agent-transcript-real-chat';
+        document.body.append(chatHost);
+
+        const conv: QaapAgentConversationDTO = {
+            id: 'conv-closing-blocked', cwd: '/workspace', agentId: 'codex', title: '', status: 'idle',
+            createdAt: 0, updatedAt: 1,
+            messages: [
+                { id: 'user-1', role: 'user', content: 'q', createdAt: 0 },
+                {
+                    id: 'agent-1', role: 'agent', content: 'I compared both drivers.', createdAt: 1,
+                    traceEvents: [{ type: 'error', id: 'blocked-1', message: 'Blocked — needs your input: Which database?', startedAt: 1 }],
+                },
+            ],
+        };
+        renderUi.renderTranscriptMessages(chatHost, conv);
+        const row = renderUi.resolveTranscriptMessageHost(chatHost).querySelector<HTMLElement>('[data-transcript-message-id="agent-1"]');
+
+        expect(row, 'the agent row is mounted').to.not.equal(null);
+        const report = row!.querySelector<HTMLElement>('.theia-mobile-turn-closing-report');
+        expect(report, 'the closing report is rendered').to.not.equal(null);
+        expect(report!.textContent).to.contain('Needs your input');
+        expect(report!.textContent).to.not.contain('Which database?');
+        expect(row!.textContent).to.not.contain('Error:');
+        chatHost.remove();
+    });
+
+    it('renders no closing report for a settled text-only turn without a closing trace', () => {
+        const { renderUi } = createRenderUi();
+        const chatHost = document.createElement('div');
+        chatHost.className = 'theia-mobile-agent-transcript-real-chat';
+        document.body.append(chatHost);
+
+        const conv: QaapAgentConversationDTO = {
+            id: 'conv-closing-none', cwd: '/workspace', agentId: 'codex', title: '', status: 'idle',
+            createdAt: 0, updatedAt: 1,
+            messages: [
+                { id: 'user-1', role: 'user', content: 'q', createdAt: 0 },
+                { id: 'agent-1', role: 'agent', content: 'I compared both drivers.', createdAt: 1 },
+            ],
+        };
+        renderUi.renderTranscriptMessages(chatHost, conv);
+        const row = renderUi.resolveTranscriptMessageHost(chatHost).querySelector<HTMLElement>('[data-transcript-message-id="agent-1"]');
+
+        expect(row, 'the agent row is mounted').to.not.equal(null);
+        expect(row!.querySelector('.theia-mobile-turn-closing-report')).to.equal(null);
+        chatHost.remove();
     });
 });

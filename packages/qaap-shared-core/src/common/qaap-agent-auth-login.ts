@@ -5,6 +5,7 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import { migrateQaapProductAgentId } from './qaap-agent-task-client';
+import { normalizeAntigravityCliBin } from './qaap-antigravity-cli';
 import { isAgentHiddenOnHostedRuntime } from './qaap-hosted-agent-auth-policy';
 
 /**
@@ -95,6 +96,10 @@ const CODE_ENTRY_PROMPT_PATTERNS: readonly RegExp[] = [
     /\bpaste\s+(?:the\s+)?authori[sz]ation\s+code\s*\/\s*redirect\s+url\b/i,
     // Pi OpenAI (ChatGPT): `Complete login in your browser, or paste the final redirect URL here:`.
     /\bpaste\s+(?:the\s+)?(?:final\s+)?redirect\s+url\s+here\b/i,
+    // Antigravity (agy): `Enter the authorization code:` on a line of its own. Device-code prompts
+    // (`Enter code: CYSI-G0C2B`, `enter the code 3AA4-2306 at https://…`) carry the code on the same
+    // line or no colon, so they never match: the label must be authorization/auth and end the line.
+    /\b(?:paste|enter)\s+(?:the\s+|your\s+)?(?:authori[sz]ation|auth)\s+code[ \t]*:[ \t]*$/im,
 ];
 
 /** A paste-back prompt that also takes the browser's final redirect URL. */
@@ -119,7 +124,51 @@ const LOGIN_FAILURE_PATTERNS: readonly RegExp[] = [
     /\bfailed\s+to\s+log\s?in\s+to\b/i,
 ];
 
+/**
+ * Qaap's own pre-spawn sign-in guard refusals (qaap-agent-sign-in-preflight.ts): "Sign in to {0} to use
+ * {1}." and "Couldn't confirm your sign-in to {0}; try again.". The guard writes one of them as the whole
+ * log of a `preflightFailure: 'sign_in_required'` task; recognizing them makes the transcript offer the
+ * Sign in chip instead of the generic "could not start" copy. Anchored to a full line so agent prose
+ * that merely mentions signing in does not match.
+ */
+export const QAAP_SIGN_IN_GUARD_REFUSAL_PATTERNS: readonly RegExp[] = [
+    /^\s*sign\s+in\s+to\s+[^\n;]{1,80}?\s+to\s+use\s+[^\n]{1,160}\.\s*$/im,
+    /^\s*couldn['\u2019]t\s+confirm\s+your\s+sign-in\s+to\s+[^\n;]{1,80};\s+try\s+again\.\s*$/im,
+];
+
+/**
+ * Harness CLIs' own "no usable session" refusals, unmistakable wherever they are printed and
+ * therefore safe to fail an exit-0 turn on (see {@link isUnauthenticatedCliDeclaration}):
+ * - Cursor Agent without a session: "Authentication required. Please run 'agent login' first, or set
+ *   CURSOR_API_KEY environment variable." (`cursor-agent login` in older builds);
+ * - Codex against the OpenAI API with no credential at all: "unexpected status 401 Unauthorized: Missing
+ *   bearer or basic authentication in header";
+ * - Codex with an `auth.json` that carries no ChatGPT tokens: "plan type is required for chatgpt authentication".
+ * Each is the CLI's or provider's exact wording, not prose an agent would write about auth code.
+ */
+export const QAAP_HARNESS_UNAUTHENTICATED_PATTERNS: readonly RegExp[] = [
+    /\bauthentication\s+required\.\s+please\s+run\s+['"`]?(?:cursor-)?agent\s+login['"`]?\s+first\b/i,
+    /\b401\s+unauthorized:?\s+missing\s+bearer\s+or\s+basic\s+authentication\b/i,
+    /\bplan\s+type\s+is\s+required\s+for\s+chatgpt\s+authentication\b/i,
+];
+
+/**
+ * The guard refusal line inside a failure text, with whether the refusal can be retried ("Couldn't confirm your
+ * sign-in" is a probe that failed to answer, not a missing sign-in). `undefined` when no line is a guard refusal.
+ */
+export function matchQaapSignInGuardRefusal(output: string | undefined): { readonly message: string; readonly retryable: boolean } | undefined {
+    for (const line of (output ?? '').split('\n')) {
+        const trimmed = line.trim();
+        if (QAAP_SIGN_IN_GUARD_REFUSAL_PATTERNS.some(pattern => pattern.test(trimmed))) {
+            return { message: trimmed, retryable: /^couldn['\u2019]t\s+confirm/i.test(trimmed) };
+        }
+    }
+    return undefined;
+}
+
 const SESSION_AUTH_PATTERNS: readonly RegExp[] = [
+    ...QAAP_SIGN_IN_GUARD_REFUSAL_PATTERNS,
+    ...QAAP_HARNESS_UNAUTHENTICATED_PATTERNS,
     /\bnot\s+logged\s+in\b/i,
     // "Please run /login", "run the '/login' command" (Copilot CLI quotes it).
     /\brun\s+(?:the\s+)?['"`]?\/login\b/i,
@@ -137,6 +186,12 @@ const SESSION_AUTH_PATTERNS: readonly RegExp[] = [
     /\bone[- ]time\s+code\b/i,
     /\bverification_uri\b/i,
     /\buser_code\b/i,
+    // Google's Antigravity CLI (`agy`) without a session (same lines as the failure classifier).
+    /\bauthentication\s+required\.\s+please\s+visit\s+the\s+url\s+to\s+log\s+in\b/i,
+    /\bauthentication\s+required\.\s+run\s+['"`]?agy['"`]?\s+to\s+log\s+in\b/i,
+    /\bauthentication\s+failed\s+or\s+timed\s+out\b/i,
+    /\bauthentication\s+interrupted\b/i,
+    /\bplease\s+sign\s+in\s+to\s+view\s+available\s+models\b/i,
 ];
 
 const API_KEY_AUTH_PATTERNS: readonly RegExp[] = [
@@ -268,6 +323,7 @@ const CLI_UNAUTH_DECLARATION_PATTERNS: readonly RegExp[] = [
     /\bno\s+authentication\s+information\s+found\b/i,
     /\brun\s+(?:the\s+)?['"`]?\/login\b/i,
     /\brun\s+['"`]?gh\s+auth\s+login\b/i,
+    ...QAAP_HARNESS_UNAUTHENTICATED_PATTERNS,
 ];
 
 /**
@@ -350,8 +406,13 @@ export function localizeAgentAuthFailureMessage(
 /**
  * Interactive login command for the transcript terminal (device-auth / OAuth),
  * matching what users run in the agent TUI.
+ *
+ * `cliBin` is the Antigravity CLI the host resolved (`harness-status` / agent descriptor `cliBin`). `agy` (the
+ * supported client) has no login subcommand, so it gets no command here: the Connect flow drives its Google OAuth
+ * picker in the hidden terminal (`resolveAgentConnectionFlow`, kind `tui-login`) and opens the URL it prints. Gemini CLI's in-app sign-in is kept only for a host
+ * without `agy`; Google retired it for personal accounts on 18 Jun 2026. A missing `cliBin` keeps that login.
  */
-export function resolveAgentLoginCliCommand(agentId: string | undefined): string | undefined {
+export function resolveAgentLoginCliCommand(agentId: string | undefined, cliBin?: string): string | undefined {
     const normalized = migrateQaapProductAgentId(agentId?.trim());
     if (!normalized) {
         return undefined;
@@ -370,10 +431,13 @@ export function resolveAgentLoginCliCommand(agentId: string | undefined): string
             return 'grok login --device-auth';
         case 'copilot':
             // `To authenticate, visit https://github.com/login/device and enter code XXXX-XXXX`.
+            // The hidden Connect terminal runs the JavaScript entry instead (resolveAgentHiddenLoginCommand).
             return 'copilot login --device-code';
         case 'opencode':
             // The bare `opencode auth login` opens a provider picker nobody can drive from a phone.
             // The headless ChatGPT method prints `auth.openai.com/codex/device` + `Enter code:`.
+            // Flags verified against opencode-ai 1.18.28 (image) and 1.19.6 (latest): `-p` and `-m` still
+            // skip both pickers. Its env (resolveAgentLoginEnv) keeps the models.dev refresh from holding the link.
             return 'opencode auth login -p openai -m \'ChatGPT Pro/Plus (headless)\'';
         case 'cursor': {
             // Prints `cursor.com/loginDeepControl?challenge=…&uuid=…` and polls cursor's API for
@@ -401,11 +465,97 @@ export function resolveAgentLoginCliCommand(agentId: string | undefined): string
             return 'hermes auth add nous --type oauth --no-browser';
         case 'antigravity':
         case 'gemini':
-            // The harness runs on Gemini CLI, which has no login subcommand: its interactive start
-            // signs in. With "Login with Google" preselected and NO_BROWSER it prints an
-            // `accounts.google.com` link and `Enter the authorization code:` instead of a picker.
-            return resolveGeminiCliLoginCommand();
+            // Gemini CLI (fallback host only) has no login subcommand: its interactive start signs in.
+            // With "Login with Google" preselected and NO_BROWSER it prints an `accounts.google.com` link
+            // and `Enter the authorization code:` instead of a picker. `agy` gets no command (see above).
+            return (normalizeAntigravityCliBin(cliBin) ?? 'gemini') === 'gemini' ? resolveGeminiCliLoginCommand() : undefined;
         // QAIQ is the only harness that runs on Settings API keys.
+        default:
+            return undefined;
+    }
+}
+
+function isWindowsRuntime(): boolean {
+    // Bundled into the browser too, where Node's `process` is not defined.
+    return (globalThis as typeof globalThis & { process?: { readonly platform?: string } }).process?.platform === 'win32';
+}
+
+/**
+ * Finds the JavaScript entry of the Copilot CLI's Linux platform package next to the `copilot` on PATH (the
+ * npm loader `@github/copilot/npm-loader.js`) and prints it; prints nothing on any other platform, on a Node
+ * older than 22, or for a `copilot` that is not the npm package. Written with double quotes only: the POSIX
+ * command wraps it in single quotes.
+ */
+const COPILOT_JS_ENTRY_SCRIPT = [
+    'const fs=require("fs"),path=require("path");',
+    'if(process.platform==="linux"&&Number(process.versions.node.split(".")[0])>=22){',
+    'for(const dir of (process.env.PATH||"").split(":")){',
+    'let real;try{real=fs.realpathSync(path.join(dir||".","copilot"))}catch{continue}',
+    'let musl=false;try{musl=!process.report.getReport().header.glibcVersionRuntime}catch{}',
+    'const name="copilot-"+(musl?"linuxmusl":"linux")+"-"+process.arch,root=path.dirname(real);',
+    'for(const entry of [path.join(root,"node_modules","@github",name,"index.js"),path.join(root,"..",name,"index.js")]){',
+    'if(fs.existsSync(entry)){process.stdout.write(entry);process.exit(0)}}',
+    'break}}',
+].join('');
+
+/**
+ * Copilot CLI sign-in on a Linux host. `copilot` is a Node single-executable (SEA) that, on its first run of a
+ * version, unpacks a ~170 MB bundle into `~/.cache/copilot/pkg` before printing anything: on a VPS tenant
+ * (gVisor, slow overlay disk, tight memory) that took longer than the link deadline, and the retry after the
+ * killed first attempt crashed natively inside the SEA (`node::Start` frames, exit 1). The same npm package
+ * ships the CLI as plain JavaScript (`index.js` of the platform package); running it on the host's own Node
+ * needs no unpacking and no embedded runtime, and stores the sign-in where the CLI reads it (`~/.copilot`).
+ * Falls back to the `copilot` binary when that entry cannot be found.
+ */
+const COPILOT_JS_LOGIN_COMMAND = `qaap_copilot_entry=$(node -e '${COPILOT_JS_ENTRY_SCRIPT}' 2>/dev/null); `
+    + 'if [ -n "$qaap_copilot_entry" ]; then node "$qaap_copilot_entry" login --device-code; else copilot login --device-code; fi';
+
+/**
+ * Command the hidden Connect terminal runs for a harness's login (`command` is
+ * {@link resolveAgentLoginCliCommand}'s). Only Copilot differs: on POSIX hosts it runs the npm package's
+ * JavaScript entry when one exists (COPILOT_JS_LOGIN_COMMAND). A visible terminal keeps the plain command.
+ */
+export function resolveAgentHiddenLoginCommand(agentId: string | undefined, command: string): string {
+    return migrateQaapProductAgentId(agentId?.trim()) === 'copilot' && command === 'copilot login --device-code' && !isWindowsRuntime()
+        ? COPILOT_JS_LOGIN_COMMAND
+        : command;
+}
+
+/**
+ * Environment the Connect terminal exports for one harness's login command only.
+ * - Copilot: no self-update while signing in (the SEA would fetch and switch versions mid-login).
+ * - OpenCode: `auth login` force-refreshes the models.dev catalog (10 s timeout, two retries) before it asks
+ *   OpenAI for the device code. Behind the tenant egress proxy that refresh can hang for 20-30 s, so the
+ *   dialog saw only `┌  Add credential` and gave up after 15 s. An unreachable local catalog URL fails in
+ *   milliseconds and OpenCode falls back to the catalog bundled in the binary, which lists `openai`
+ *   (verified with opencode-ai 1.19.6: 21.7 s to the code with a black-holed catalog, 1.9 s with this).
+ *   The URL also gets its own cache file, so the real `models.json` cache is never touched.
+ */
+export function resolveAgentLoginEnv(agentId: string | undefined): Readonly<Record<string, string>> | undefined {
+    switch (migrateQaapProductAgentId(agentId?.trim())) {
+        case 'copilot':
+            return { COPILOT_AUTO_UPDATE: 'false' };
+        case 'opencode':
+            return { OPENCODE_MODELS_URL: QAAP_OPENCODE_LOGIN_MODELS_URL };
+        default:
+            return undefined;
+    }
+}
+
+/** Catalog URL for OpenCode's sign-in: refused at once on any host, so its bundled catalog is used. */
+export const QAAP_OPENCODE_LOGIN_MODELS_URL = 'http://127.0.0.1:9';
+
+/**
+ * Link deadline of the Connect dialog for a harness whose first run does slow one-time work before it prints
+ * the link: Copilot's SEA unpacks its bundle when the JavaScript entry is not available; OpenCode creates its
+ * database and loads plugins on first use. Undefined keeps the default deadline.
+ */
+export function resolveAgentLoginChallengeTimeoutMs(agentId: string | undefined): number | undefined {
+    switch (migrateQaapProductAgentId(agentId?.trim())) {
+        case 'copilot':
+            return 60_000;
+        case 'opencode':
+            return 45_000;
         default:
             return undefined;
     }
@@ -458,8 +608,8 @@ function resolveGeminiCliLoginCommand(): string {
  * Mirrors {@link resolveAgentLoginCliCommand}: an agent has a terminal sign-in
  * exactly when a dedicated login command exists for it.
  */
-export function agentHasCliOAuthLogin(agentId: string | undefined): boolean {
-    return resolveAgentLoginCliCommand(agentId) !== undefined;
+export function agentHasCliOAuthLogin(agentId: string | undefined, cliBin?: string): boolean {
+    return resolveAgentLoginCliCommand(agentId, cliBin) !== undefined;
 }
 
 /** Preferences sheet query that contains BYOK API-key fields (not AI Configuration / MCP). */
@@ -486,6 +636,12 @@ const SETTINGS_API_KEY_AGENT_IDS = new Set<string>();
 
 /** Clear instructions for CLIs whose authentication needs interactive input in the tenant terminal. */
 export function localizeAgentTenantTerminalLoginMessage(agentLabel: string, command: string, followUp?: string): string {
+    if (command.trim() === 'agy') {
+        return nls.localize(
+            'qaap/agentLogin/antigravityDesktopOnly',
+            'Antigravity CLI offers Google OAuth or Google Cloud project sign-in. Qaap web cannot complete this interactive setup. Connect Antigravity in the Qaap desktop app, then return to Work Hub and refresh the agent list.',
+        );
+    }
     if (followUp) {
         return nls.localize(
             'qaap/agentLogin/tenantTerminalInstructionsFollowUp',
