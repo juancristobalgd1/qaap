@@ -212,10 +212,10 @@ describe('QaapAgentTaskRunner.defaultAgent (real runner, stubbed auth and billin
         expect(runner.defaultAgent('alice')).to.equal('shell');
     });
 
-    // Grok is a builtin harness again: with no auth signal (no probe, never connected) it is not a
-    // default, so a signed-out owner falls to the shell like any other builtin.
-    it('an installed grok (no auth probe, never connected) is not picked by default once QAIQ is gone', () => {
-        const runner = runnerWith({ states: signedOut, extraDetected: ['grok'] });
+    // Grok now has an auth probe (`~/.grok/auth.json`): a positively signed-out Grok is not a default,
+    // so a signed-out owner falls to the shell like any other probed builtin.
+    it('an installed grok whose probe says signed out is not picked by default once QAIQ is gone', () => {
+        const runner = runnerWith({ states: { ...signedOut, grok: 'disconnected' }, extraDetected: ['grok'] });
         expect(runner.defaultAgent('alice')).to.equal('shell');
     });
 

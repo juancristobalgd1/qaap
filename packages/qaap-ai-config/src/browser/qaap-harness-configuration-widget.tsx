@@ -399,6 +399,8 @@ export class QaapHarnessConfigurationWidget extends ReactWidget {
                 this.messageService?.error(result.message
                     ? nls.localize('qaap/aiConfiguration/harnessSignOutFailedReason', 'Could not sign out of {0}: {1}', row.label, result.message)
                     : nls.localize('qaap/aiConfiguration/harnessSignOutFailed', 'Could not sign out of {0}.', row.label));
+                // The row shows what the backend found, never the state the user expected.
+                await this.loadAvailability();
                 return;
             }
             invalidateAgentTaskListAllCache();

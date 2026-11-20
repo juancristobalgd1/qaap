@@ -785,11 +785,11 @@ describe('QaapAgentTaskEndpoint agent session attestation', () => {
     it('attests for the session owner, never an owner named in the body', async () => {
         const result = await attest({
             authContext: { kind: 'authenticated', userLogin: 'alice' },
-            body: { agentId: 'Grok', ownerLogin: 'mallory', userLogin: 'mallory' },
+            body: { agentId: 'Copilot', ownerLogin: 'mallory', userLogin: 'mallory' },
         });
         expect(result.status).to.equal(200);
-        expect(result.body).to.deep.equal({ ok: true, agentId: 'grok' });
-        expect(result.attested).to.deep.equal([['grok', 'alice']]);
+        expect(result.body).to.deep.equal({ ok: true, agentId: 'copilot' });
+        expect(result.attested).to.deep.equal([['copilot', 'alice']]);
     });
 
     it('uses the skip-auth owner in local mode', async () => {

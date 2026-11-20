@@ -147,6 +147,12 @@ describe('harness connection state', () => {
         expect(resolveTaskHarnessId('Codex', 'anything')).to.equal('codex');
     });
 
+    it('withholds inherited Anthropic keys and tokens from Claude, so its own sign-out holds', () => {
+        const env = { ANTHROPIC_API_KEY: 'sk-ant', ANTHROPIC_AUTH_TOKEN: 't', CLAUDE_CODE_OAUTH_TOKEN: 'o', ANTHROPIC_BASE_URL: 'https://x', PATH: '/usr/bin' };
+        expect(stripSignInOnlyAgentApiKeyEnv({ ...env }, 'claude')).to.deep.equal({ PATH: '/usr/bin' });
+        expect(stripSignInOnlyAgentApiKeyEnv({ ...env }, 'qaiq')).to.deep.equal(env);
+    });
+
     it('probes OpenClaude, Hermes and Gemini CLI with their own sign-in state', () => {
         expect(resolveAgentConnectionProbe('openclaude', 'openclaude')).to.deep.equal({ file: 'openclaude', args: ['auth', 'status'] });
         // Real `openclaude auth status` output of a signed-out 0.31.0.
