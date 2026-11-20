@@ -64,53 +64,37 @@ describe('mobile-projects-sticky-composer-model-picker-ui', () => {
         expect(chrome.sheet.classList.contains('theia-mod-model-picker')).to.equal(true);
     });
 
-    it('offers the sign-in action of the old agent sheet when the harness is disconnected', async () => {
-        const ctx = {
-            resolveModelsForAgentPickerSafe: async () => ({ models: [], loadFailed: false }),
-        };
+    it('has no Sign in button: picking a signed-out model opens the sign-in, then selects that model', async () => {
+        const opus = { provider: 'anthropic' as const, vendor: 'claude', modelId: 'opus', label: 'Opus', available: false, unavailableReason: 'not-connected' as const, tier: 'pro' as const };
+        const ctx = { resolveModelsForAgentPickerSafe: async () => ({ models: [opus], loadFailed: false }) };
         const signedIn: string[] = [];
+        const selected: string[] = [];
         await renderStickyComposerModelPicker(ctx, chrome, {
             cwd: undefined,
             agents: [{ id: 'claude', label: 'Claude Code', available: false, connectionState: 'disconnected', session: 'signed-out' }],
             selectedAgentId: 'claude',
             project: undefined,
             isMobile: false,
-            onSelectAgent: () => undefined,
+            onSelectAgent: (agentId, model) => { selected.push(`${agentId}:${model?.modelId}`); },
             approval: 'approve-for-me',
             onSelectApproval: () => undefined,
             onRefresh: () => undefined,
             onProactiveLogin: agentId => { signedIn.push(agentId); },
         });
-        const action = chrome.list.querySelector<HTMLButtonElement>('.qaap-model-picker-connect-action');
-        expect(action?.textContent).to.equal('Sign in');
-        // Sits at the end of the search row; no separate warning strip, the explanation is its tooltip.
-        expect(action?.parentElement?.classList.contains('qaap-model-picker-search')).to.equal(true);
-        expect(chrome.list.querySelector('.qaap-model-picker-connect')).to.equal(null);
-        expect(action?.title).to.equal('Claude Code needs a sign-in before it can run.');
-        action?.click();
+        await new Promise(resolve => setTimeout(resolve, 0));
+        expect(chrome.list.querySelector('.qaap-model-picker-connect-action'), 'no Sign in button').to.equal(null);
+        const row = chrome.list.querySelector<HTMLButtonElement>('.qaap-model-picker-row');
+        expect(row?.getAttribute('aria-disabled'), 'looks like any other row').to.equal('false');
+        expect(row?.classList.contains('theia-mod-disabled')).to.equal(false);
+        row?.click();
         expect(signedIn).to.deep.equal(['claude']);
-    });
-
-    it('offers the Sign in action for a harness whose session is unknown (fail-closed: its Pro models are locked)', async () => {
-        const ctx = { resolveModelsForAgentPickerSafe: async () => ({ models: [], loadFailed: false }) };
-        const signedIn: string[] = [];
-        await renderStickyComposerModelPicker(ctx, chrome, {
-            cwd: undefined,
-            agents: [{ id: 'copilot', label: 'Copilot CLI', available: true, connectionState: 'unknown', accessState: 'unknown', session: 'unknown' }],
-            selectedAgentId: 'copilot',
-            project: undefined,
-            isMobile: false,
-            onSelectAgent: () => undefined,
-            approval: 'approve-for-me',
-            onSelectApproval: () => undefined,
-            onRefresh: () => undefined,
-            onProactiveLogin: agentId => { signedIn.push(agentId); },
-        });
-        const action = chrome.list.querySelector<HTMLButtonElement>('.qaap-model-picker-connect-action');
-        expect(action?.textContent).to.equal('Sign in');
-        expect(action?.title).to.equal('Copilot CLI needs a sign-in before it can run.');
-        action?.click();
-        expect(signedIn).to.deep.equal(['copilot']);
+        expect(selected, 'not selected before the sign-in is confirmed').to.deep.equal([]);
+        window.dispatchEvent(new window.CustomEvent('qaap-agent-signed-in', { detail: { agentId: 'codex' } }));
+        expect(selected, 'another harness signing in does not select it').to.deep.equal([]);
+        window.dispatchEvent(new window.CustomEvent('qaap-agent-signed-in', { detail: { agentId: 'claude' } }));
+        expect(selected).to.deep.equal(['claude:opus']);
+        window.dispatchEvent(new window.CustomEvent('qaap-agent-signed-in', { detail: { agentId: 'claude' } }));
+        expect(selected, 'selected once').to.deep.equal(['claude:opus']);
     });
 
     it('offers no Sign in while the session is still checking (probe running) or not reported', async () => {

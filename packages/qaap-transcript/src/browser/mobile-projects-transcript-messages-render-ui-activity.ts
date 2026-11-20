@@ -235,6 +235,7 @@ export function createTranscriptAgentFailureRowExtracted(ctx: MobileProjectsTran
                     technicalContent: resolveAgentTurnFailureTechnicalContent(msg),
                 }),
                 agentMessage: msg,
+                autoSignInTurn: { key: msg.id, at: msg.createdAt },
             },
         ));
         row.append(body);

@@ -160,19 +160,23 @@ export function createTranscriptHarnessSwitchElement(harnessSwitch: TranscriptHa
     const swap = document.createElement('span');
     swap.className = `codicon codicon-arrow-swap ${TRANSCRIPT_HARNESS_SWITCH_CLASS}-glyph`;
     swap.setAttribute('aria-hidden', 'true');
-    const title = document.createElement('span');
-    title.className = `${TRANSCRIPT_HARNESS_SWITCH_CLASS}-title`;
-    title.textContent = pending
-        ? nls.localize('theia/qaap/transcript/harnessSwitchPending', 'Handoff pending')
-        : nls.localize('theia/qaap/transcript/harnessSwitchSettled', 'Switched harness');
-    const dot = document.createElement('span');
-    dot.className = `${TRANSCRIPT_HARNESS_SWITCH_CLASS}-dot`;
-    dot.setAttribute('aria-hidden', 'true');
-    dot.textContent = '·';
     const arrow = document.createElement('span');
     arrow.className = `codicon codicon-arrow-right ${TRANSCRIPT_HARNESS_SWITCH_CLASS}-arrow`;
     arrow.setAttribute('aria-hidden', 'true');
-    chip.append(swap, title, dot, createHarnessEnd(harnessSwitch.from, 'from'), arrow, createHarnessEnd(harnessSwitch.to, 'to'));
+    const ends = [createHarnessEnd(harnessSwitch.from, 'from'), arrow, createHarnessEnd(harnessSwitch.to, 'to')];
+    if (pending) {
+        // A settled switch reads from the logos alone; only the pending state needs words.
+        const title = document.createElement('span');
+        title.className = `${TRANSCRIPT_HARNESS_SWITCH_CLASS}-title`;
+        title.textContent = nls.localize('theia/qaap/transcript/harnessSwitchPending', 'Handoff pending');
+        const dot = document.createElement('span');
+        dot.className = `${TRANSCRIPT_HARNESS_SWITCH_CLASS}-dot`;
+        dot.setAttribute('aria-hidden', 'true');
+        dot.textContent = '·';
+        chip.append(swap, title, dot, ...ends);
+    } else {
+        chip.append(swap, ...ends);
+    }
 
     const setOpen = (open: boolean): void => {
         row.classList.toggle(OPEN_CLASS, open);

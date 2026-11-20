@@ -57,6 +57,21 @@ export function renderTranscriptRichContentExtracted(ctx: MobileProjectsTranscri
         ctx.contentUi.renderTranscriptMarkdown(host, clean, { defer: options?.defer });
 }
 
+/** A failed turn this recent opens the sign-in by itself; older failures (a reopened conversation) only show the card. */
+const AUTO_SIGN_IN_FRESH_TURN_MS = 2 * 60_000;
+
+/** Turns whose sign-in already opened by itself: re-renders of the same card never open it again. */
+const autoSignInOpenedTurns = new Set<string>();
+
+function autoOpenSignInForFreshTurn(turn: { readonly key: string; readonly at: number }, open: () => void | Promise<void>): void {
+    if (autoSignInOpenedTurns.has(turn.key) || Date.now() - turn.at > AUTO_SIGN_IN_FRESH_TURN_MS) {
+        return;
+    }
+    autoSignInOpenedTurns.add(turn.key);
+    // After the card is painted: the dialog opens over the transcript, not in the middle of its render.
+    setTimeout(() => { void open(); }, 0);
+}
+
 export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsTranscriptMessagesToolUiContext, error: string,
         technicalContent?: string,
         options?: {
@@ -74,6 +89,11 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
             /** Opens the composer's model picker; backs "Change model" on usage-limit and model-unavailable failures. */
             readonly onChangeModel?: () => void;
             readonly agentMessage?: Pick<QaapAgentMessageDTO, 'role' | 'content' | 'error' | 'segments' | 'traceEvents'>;
+            /**
+             * The failed turn this card stands for. A turn that just failed for a missing sign-in opens the harness
+             * sign-in dialog by itself, once per turn (the same dialog the composer opens); an older one only shows the card.
+             */
+            readonly autoSignInTurn?: { readonly key: string; readonly at: number };
         },): HTMLElement {
         const persisted = formatStoredAgentFailureMessage(error);
         const resolved = resolveAgentTurnFailureMessage(technicalContent, {
@@ -107,6 +127,9 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsT
                 ? { mode: 'session' as const }
                 : undefined);
         const authChallenge = isQaiqKeyMissing ? { mode: 'api_key' as const } : sessionChallenge;
+        if (sessionChallenge && !isQaiqKeyMissing && options?.onOpenAgentSignIn && options.autoSignInTurn) {
+            autoOpenSignInForFreshTurn(options.autoSignInTurn, options.onOpenAgentSignIn);
+        }
         const isQuotaFailure = !authChallenge && !planLimit && !isProviderKeyFailure && (failureKind === 'quota' || failureKind === 'rate_limit');
         const isCliMissing = !authChallenge && failureKind === 'cli_missing';
         // The provider refused this request (its own error): not the key, not sign-in, not the model's name.

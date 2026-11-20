@@ -33,7 +33,7 @@ describe('qaap-transcript-harness-switch-row', () => {
         const separator = row.querySelector('[role="separator"]');
         expect(separator?.getAttribute('aria-label')).to.contain('Switched harness').and.contain('Codex');
         expect(row.classList.contains('theia-mod-pending')).to.equal(false);
-        expect(row.querySelector(`.${TRANSCRIPT_HARNESS_SWITCH_CLASS}-title`)?.textContent).to.equal('Switched harness');
+        expect(row.querySelector(`.${TRANSCRIPT_HARNESS_SWITCH_CLASS}-title`), 'a settled switch reads from the logos alone').to.equal(null);
         expect(row.querySelectorAll('.theia-qaap-agent-brand-icon')).to.have.length(2);
         expect(row.querySelector(`.${TRANSCRIPT_HARNESS_SWITCH_CLASS}-model`)?.textContent).to.equal('Opus 5.5');
         const tooltip = row.querySelector('[role="tooltip"]');
