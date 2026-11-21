@@ -899,6 +899,7 @@ export interface QaapGithubPullRequestRecord {
     readonly draft: boolean;
     readonly state: 'open' | 'closed';
     readonly merged: boolean;
+    readonly headSha?: string;
 }
 
 interface GithubPullRequestRecordResponse {
@@ -910,10 +911,12 @@ interface GithubPullRequestRecordResponse {
     state?: string;
     merged?: boolean;
     merged_at?: string | null;
+    head?: { sha?: string | null } | null;
     message?: string;
 }
 
 function githubPullRequestRecord(data: GithubPullRequestRecordResponse): QaapGithubPullRequestRecord {
+    const headSha = data.head?.sha?.trim() || undefined;
     return {
         number: data.number,
         url: data.html_url,
@@ -922,6 +925,7 @@ function githubPullRequestRecord(data: GithubPullRequestRecordResponse): QaapGit
         draft: data.draft === true,
         state: data.state === 'closed' ? 'closed' : 'open',
         merged: data.merged === true || !!data.merged_at,
+        ...(headSha ? { headSha } : {}),
     };
 }
 
@@ -1096,6 +1100,99 @@ export async function fetchGithubIssueLabelEvents(accessToken: string, owner: st
     return (Array.isArray(data) ? data : [])
         .filter(event => event?.event === 'labeled')
         .map(event => ({ actorLogin: String(event.actor?.login ?? ''), label: String(event.label?.name ?? ''), createdAt: String(event.created_at ?? '') }));
+}
+
+/** One submitted GitHub pull request review with its numeric id and body (for PR watching). */
+export interface QaapGithubPullRequestReviewRecord {
+    readonly id: number;
+    readonly author: string;
+    readonly state: string;
+    readonly body: string;
+}
+
+/** `GET /repos/{owner}/{repo}/pulls/{number}/reviews?per_page=100` keeping review id, state and body. */
+export async function fetchGithubPullRequestReviewRecords(
+    accessToken: string,
+    owner: string,
+    repo: string,
+    pullNumber: number,
+): Promise<QaapGithubPullRequestReviewRecord[]> {
+    const data = await githubJsonRequest<Array<{
+        id?: number;
+        user?: { login?: string | null } | null;
+        state?: string | null;
+        body?: string | null;
+    }>>(
+        accessToken,
+        'GET',
+        `${githubRepoPath(owner, repo)}/pulls/${pullNumber}/reviews?per_page=100`,
+        undefined,
+        'read pull request reviews',
+    );
+    return (Array.isArray(data) ? data : [])
+        .filter(item => typeof item?.id === 'number' && item.id > 0)
+        .map(item => ({
+            id: item.id!,
+            author: item.user?.login?.trim() ?? '',
+            state: item.state?.trim() ?? '',
+            body: item.body ?? '',
+        }));
+}
+
+/** One issue comment or inline review comment on a pull request (for PR watching). */
+export interface QaapGithubPullRequestCommentRecord {
+    readonly id: number;
+    readonly author: string;
+    readonly body: string;
+    readonly path?: string;
+    readonly line?: number;
+}
+
+/**
+ * Fetches both issue comments (`/issues/{number}/comments`) and inline review comments
+ * (`/pulls/{number}/comments`) for a pull request, returning the newest 100 of each.
+ */
+export async function fetchGithubPullRequestComments(
+    accessToken: string,
+    owner: string,
+    repo: string,
+    pullNumber: number,
+): Promise<QaapGithubPullRequestCommentRecord[]> {
+    interface RawIssueComment { id?: number; user?: { login?: string | null } | null; body?: string | null; }
+    interface RawReviewComment extends RawIssueComment { path?: string | null; line?: number | null; original_line?: number | null; }
+    const base = githubRepoPath(owner, repo);
+    const [issueComments, reviewComments] = await Promise.all([
+        githubJsonRequest<RawIssueComment[]>(
+            accessToken, 'GET', `${base}/issues/${pullNumber}/comments?per_page=100`, undefined, 'read pull request issue comments',
+        ),
+        githubJsonRequest<RawReviewComment[]>(
+            accessToken, 'GET', `${base}/pulls/${pullNumber}/comments?per_page=100`, undefined, 'read pull request review comments',
+        ),
+    ]);
+    const results: QaapGithubPullRequestCommentRecord[] = [];
+    for (const item of Array.isArray(issueComments) ? issueComments : []) {
+        if (typeof item?.id === 'number' && item.id > 0) {
+            results.push({
+                id: item.id,
+                author: item.user?.login?.trim() ?? '',
+                body: item.body ?? '',
+            });
+        }
+    }
+    for (const item of Array.isArray(reviewComments) ? reviewComments : []) {
+        if (typeof item?.id === 'number' && item.id > 0) {
+            const line = typeof item.line === 'number' ? item.line
+                : typeof item.original_line === 'number' ? item.original_line : undefined;
+            results.push({
+                id: item.id,
+                author: item.user?.login?.trim() ?? '',
+                body: item.body ?? '',
+                ...(item.path ? { path: item.path } : {}),
+                ...(line !== undefined ? { line } : {}),
+            });
+        }
+    }
+    return results;
 }
 
 /**

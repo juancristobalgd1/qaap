@@ -118,6 +118,8 @@ import { previewRewindExtracted, restoreCheckpointExtracted, rewindToMessageExtr
 import type { QaapRewindPreviewDTO, QaapRewindRestoreOptions } from '@theia/qaap-shared-core/lib/common/qaap-conversation-rewind-preview';
 import type { QaapAgentConversationStoreContext } from './qaap-agent-conversation-store-context';
 import { recordTaskPullRequestExtracted, type QaapTaskPullRequestRecordOptions } from './qaap-agent-conversation-store-task-pr';
+import { recordPullRequestWatchExtracted, type QaapPullRequestWatchRecordOptions } from './qaap-agent-conversation-store-pr-watch';
+import type { QaapPullRequestWatch } from '@theia/qaap-shared-core/lib/common/qaap-pull-request-watch';
 import type { QaapTaskPullRequest } from '@theia/qaap-shared-core/lib/common/qaap-task-pull-request';
 import { qaapGitReadEnv } from './qaap-child-process-env';
 
@@ -342,6 +344,11 @@ export class QaapAgentConversationStore implements QaapAgentConversationStoreCon
     /** Records the task pull request the backend opened or updated for `id` (see `QaapTaskPullRequestService`). */
     recordTaskPullRequest(id: string, taskPullRequest: QaapTaskPullRequest, options?: QaapTaskPullRequestRecordOptions): QaapAgentConversation | undefined {
         return recordTaskPullRequestExtracted(this, id, taskPullRequest, options);
+    }
+
+    /** Records the pull request watch state for `id` (see `QaapPullRequestWatchService`). */
+    recordPullRequestWatch(id: string, pullRequestWatch: QaapPullRequestWatch, options?: QaapPullRequestWatchRecordOptions): QaapAgentConversation | undefined {
+        return recordPullRequestWatchExtracted(this, id, pullRequestWatch, options);
     }
 
     linkConversationsToPullRequest(input: QaapLinkConversationsByBranchRequest): number {

@@ -11,7 +11,8 @@ import {
     type QaapWorkHubPullRequestRef,
     type QaapWorkHubPullRequestTarget,
 } from './qaap-work-hub-aux-pull-request-model';
-import { QaapWorkHubAuxPullRequestView } from './qaap-work-hub-aux-pull-request-view';
+import { QaapWorkHubAuxPullRequestView, type QaapWorkHubAuxPullRequestWatchAction } from './qaap-work-hub-aux-pull-request-view';
+import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import { QAAP_WORK_HUB_NO_SIDE_CHAT_HOST, QaapWorkHubAuxSideChatView, type QaapWorkHubAuxSideChatHost } from './qaap-work-hub-aux-side-chat-view';
 
 /** The views the mobile sheet offers: the same two the desktop right panel has. */
@@ -25,6 +26,8 @@ export interface MobileWorkHubAuxSheetHost {
     resolvePullRequestProjectName?(): string | undefined;
     /** Opens a web page in a new tab. */
     openExternal(url: string): void;
+    /** Optional Watch / Stop watching action for the open task's pull request. */
+    resolvePullRequestWatchAction?(pr: QaapGithubPullRequestSummary): QaapWorkHubAuxPullRequestWatchAction | undefined;
     /** The side chat's Work Hub hooks. */
     readonly sideChat?: QaapWorkHubAuxSideChatHost;
 }
@@ -94,7 +97,10 @@ export class MobileWorkHubAuxSheet implements Disposable {
 
     constructor(protected readonly options: MobileWorkHubAuxSheetOptions) {
         const host = options.host;
-        this.pullRequestView = options.pullRequestView ?? new QaapWorkHubAuxPullRequestView({ openExternal: url => host.openExternal(url) });
+        this.pullRequestView = options.pullRequestView ?? new QaapWorkHubAuxPullRequestView({
+            openExternal: url => host.openExternal(url),
+            resolveWatchAction: pr => host.resolvePullRequestWatchAction?.(pr),
+        });
         this.sideChatView = options.sideChatView ?? new QaapWorkHubAuxSideChatView({
             host: host.sideChat ?? QAAP_WORK_HUB_NO_SIDE_CHAT_HOST,
             onTitle: () => undefined,

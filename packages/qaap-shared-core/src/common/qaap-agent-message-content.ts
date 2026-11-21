@@ -65,10 +65,11 @@ export function normalizeAgentMessageContentForDisplay(raw: string | undefined |
 
 /**
  * Machine sentinels agents emit for the conversation store (`@@QAAP:BLOCKED@@`,
- * `@@QAAP:VERDICT@@`, …). Never show them raw in the transcript or sidebar preview.
- * Keep any human need/reason that follows the marker on the same line.
+ * `@@QAAP:WATCH_PR@@`, `@@QAAP:VERDICT@@`, …). Never show them raw in the transcript or sidebar
+ * preview. Keep any human need/reason that follows `@@QAAP:BLOCKED@@` on the same line; drop
+ * machine arguments of other sentinels (like PR numbers/URLs after `@@QAAP:WATCH_PR@@`).
  */
-const QAAP_CONTROL_MARKER_LINE = /^@@QAAP:[A-Z0-9_]+@@(?:\s+(.*))?$/;
+const QAAP_CONTROL_MARKER_LINE = /^@@QAAP:([A-Z0-9_]+)@@(?:\s+(.*))?$/;
 const QAAP_CONTROL_MARKER_INLINE = /@@QAAP:[A-Z0-9_]+@@/g;
 
 export function stripQaapControlMarkersForDisplay(text: string): string {
@@ -81,8 +82,9 @@ export function stripQaapControlMarkersForDisplay(text: string): string {
         const trimmed = line.trim();
         const match = QAAP_CONTROL_MARKER_LINE.exec(trimmed);
         if (match) {
-            const need = (match[1] ?? '').trim();
-            if (need && isMeaningfulBlockedNeed(need)) {
+            const marker = match[1];
+            const need = (match[2] ?? '').trim();
+            if (marker === 'BLOCKED' && need && isMeaningfulBlockedNeed(need)) {
                 kept.push(need);
             }
             continue;

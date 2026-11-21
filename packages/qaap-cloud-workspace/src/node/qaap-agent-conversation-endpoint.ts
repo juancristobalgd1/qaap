@@ -4,6 +4,8 @@
 // *****************************************************************************
 
 import { QaapTaskPullRequestService } from './qaap-task-pull-request-service';
+import { QaapPullRequestWatchError, QaapPullRequestWatchService } from './qaap-pull-request-watch-service';
+import type { QaapStartPullRequestWatchBody } from '@theia/qaap-shared-core/lib/common/qaap-pull-request-watch';
 import { QaapTaskPlanError, QaapTaskPlanFanOutService } from './qaap-task-plan-fanout-service';
 import type { QaapTaskPlanEditRequest } from '@theia/qaap-shared-core/lib/common/qaap-task-plan';
 import type { QaapTaskPullRequestConsentRequest } from '@theia/qaap-shared-core/lib/common/qaap-task-pull-request';
@@ -115,6 +117,9 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
 
     @inject(QaapTaskPullRequestService) @optional()
     protected readonly taskPullRequests: QaapTaskPullRequestService | undefined;
+
+    @inject(QaapPullRequestWatchService) @optional()
+    protected readonly pullRequestWatches: QaapPullRequestWatchService | undefined;
 
     @inject(QaapTaskPlanFanOutService) @optional()
     protected readonly taskPlans: QaapTaskPlanFanOutService | undefined;
@@ -332,6 +337,18 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             }
             await this.handleTaskPullRequestConsent(req, res);
         }));
+        app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/pull-request-watch`, QaapAsyncRoute.wrap('qaap-agent-conversation', async (req, res) => {
+            if (!this.getConversationIfOwned(req, res, req.params.id)) {
+                return;
+            }
+            await this.handleStartPullRequestWatch(req, res);
+        }));
+        app.delete(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/pull-request-watch`, (req, res) => {
+            if (!this.getConversationIfOwned(req, res, req.params.id)) {
+                return;
+            }
+            this.handleStopPullRequestWatch(req, res);
+        });
         app.patch(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/task-plan`, (req, res) => {
             this.handleTaskPlan(req, res, plans => plans.edit(req.params.id, (req.body ?? {}) as QaapTaskPlanEditRequest));
         });
@@ -1356,6 +1373,42 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
         } catch (error) {
             res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
         }
+    }
+
+    /** Starts watching a GitHub pull request on the conversation. */
+    protected async handleStartPullRequestWatch(req: Request, res: Response): Promise<void> {
+        if (!this.pullRequestWatches) {
+            res.status(503).json({ error: 'Pull request watching is not available on this server.' });
+            return;
+        }
+        const raw = (req.body ?? {}) as Record<string, unknown>;
+        const body: QaapStartPullRequestWatchBody = {
+            ...(typeof raw.number === 'number' ? { number: raw.number } : {}),
+            ...(typeof raw.owner === 'string' ? { owner: raw.owner } : {}),
+            ...(typeof raw.repo === 'string' ? { repo: raw.repo } : {}),
+            ...(typeof raw.url === 'string' ? { url: raw.url } : {}),
+        };
+        try {
+            const conv = await this.pullRequestWatches.startWatch(req.params.id, { ...body, startedBy: 'user' });
+            res.json(conv);
+        } catch (error) {
+            const status = error instanceof QaapPullRequestWatchError ? error.status : 400;
+            res.status(status).json({ error: error instanceof Error ? error.message : String(error) });
+        }
+    }
+
+    /** Stops watching the pull request on the conversation. */
+    protected handleStopPullRequestWatch(req: Request, res: Response): void {
+        if (!this.pullRequestWatches) {
+            res.status(503).json({ error: 'Pull request watching is not available on this server.' });
+            return;
+        }
+        const conv = this.pullRequestWatches.stopWatch(req.params.id, 'user');
+        if (!conv) {
+            res.status(404).json({ error: 'Conversation not found.' });
+            return;
+        }
+        res.json(conv);
     }
 
     /** SSE feed of conversation events used by every connected client for live updates. */

@@ -176,7 +176,9 @@
 
 .qaap-work-hub-aux-pr-footer {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-start;
+  gap: var(--q-space-4);
 }
 
 .qaap-work-hub-aux-pr-open {

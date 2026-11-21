@@ -25,7 +25,8 @@ import {
     type QaapWorkHubPullRequestRef,
     type QaapWorkHubPullRequestTarget,
 } from './qaap-work-hub-aux-pull-request-model';
-import { QaapWorkHubAuxPullRequestView } from './qaap-work-hub-aux-pull-request-view';
+import { QaapWorkHubAuxPullRequestView, type QaapWorkHubAuxPullRequestWatchAction } from './qaap-work-hub-aux-pull-request-view';
+import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import { QAAP_WORK_HUB_NO_SIDE_CHAT_HOST, QaapWorkHubAuxSideChatView, type QaapWorkHubAuxSideChatHost } from './qaap-work-hub-aux-side-chat-view';
 
 /** The execution surface (live widget host) a panel view is backed by: one per view. */
@@ -45,6 +46,8 @@ export interface QaapWorkHubAuxPanelHost {
     resolvePullRequestProjectName?(): string | undefined;
     /** Opens a web page: in the system browser on desktop, in a new tab on the web. */
     openExternal(url: string): void;
+    /** Optional Watch / Stop watching action for the open task's pull request. */
+    resolvePullRequestWatchAction?(pr: QaapGithubPullRequestSummary): QaapWorkHubAuxPullRequestWatchAction | undefined;
     /** The side chat's Work Hub hooks. Without them the "Side chat" view has no parent and stays disabled. */
     readonly sideChat?: QaapWorkHubAuxSideChatHost;
 }
@@ -210,7 +213,10 @@ export class QaapWorkHubAuxPanel {
         pullRequestView?: QaapWorkHubAuxPullRequestView,
         sideChatView?: QaapWorkHubAuxSideChatView,
     ) {
-        this.pullRequestView = pullRequestView ?? new QaapWorkHubAuxPullRequestView({ openExternal: url => this.host.openExternal(url) });
+        this.pullRequestView = pullRequestView ?? new QaapWorkHubAuxPullRequestView({
+            openExternal: url => this.host.openExternal(url),
+            resolveWatchAction: pr => this.host.resolvePullRequestWatchAction?.(pr),
+        });
         this.sideChatView = sideChatView ?? new QaapWorkHubAuxSideChatView({
             host: host.sideChat ?? QAAP_WORK_HUB_NO_SIDE_CHAT_HOST,
             onTitle: title => this.setSideChatTitle(title),

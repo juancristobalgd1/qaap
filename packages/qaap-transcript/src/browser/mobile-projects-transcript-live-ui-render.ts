@@ -33,6 +33,7 @@ import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mob
 import { TRANSCRIPT_SSE_COALESCE_RAF } from './mobile-projects-transcript-live-ui';
 import { markTranscriptConversationRetryOptimistic } from '../common/qaap-transcript-turn-recovery';
 import { syncOpenTranscriptTaskPlanCard } from './qaap-transcript-task-plan-card';
+import { syncOpenTranscriptPullRequestWatchRow } from './qaap-transcript-pull-request-watch-row';
 
 export function touchTranscriptSemanticProgressFromConversationExtracted(ctx: MobileProjectsTranscriptLiveUiContext, conv: QaapAgentConversationDTO): void {
         const segments = resolveTranscriptStreamingAgentSegments(conv);
@@ -434,12 +435,14 @@ export function bindOpenTranscriptThreadStoreExtracted(ctx: MobileProjectsTransc
                         // capture lands, so a plain spread would leave a stale `true` pinned
                         // forever — take the flag verbatim from the authoritative summary.
                         visualVerificationPending: summary.visualVerificationPending,
+                        pullRequestWatch: summary.pullRequestWatch,
                     };
                     if (ctx.host.transcriptComposerSummary?.id === conversationId) {
                         ctx.host.transcriptComposerSummary = {
                             ...ctx.host.transcriptComposerSummary,
                             ...summary,
                             visualVerificationPending: summary.visualVerificationPending,
+                            pullRequestWatch: summary.pullRequestWatch,
                         };
                     }
                     // A settled turn that emitted `[QAAP capture]`/`[QAAP record]` flips this
@@ -465,7 +468,9 @@ export function bindOpenTranscriptThreadStoreExtracted(ctx: MobileProjectsTransc
                         ctx.ensureTranscriptConversationRefresh();
                     }
                 }
-                syncOpenTranscriptTaskPlanCard(ctx.host, ctx.resolveActiveTranscriptChatHost());
+                const activeChatHost = ctx.resolveActiveTranscriptChatHost();
+                syncOpenTranscriptTaskPlanCard(ctx.host, activeChatHost);
+                syncOpenTranscriptPullRequestWatchRow(ctx.host, activeChatHost);
             },
             snapshot => snapshot.summariesById.get(conversationId),
             conversationId,

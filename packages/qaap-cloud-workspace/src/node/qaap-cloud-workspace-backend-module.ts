@@ -52,6 +52,7 @@ import { QaapAgentSessionAttestationStore } from './qaap-agent-session-attestati
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 import { QaapAgentGoalLoopRunner } from './qaap-agent-goal-loop-runner';
 import { QaapTaskPullRequestService } from './qaap-task-pull-request-service';
+import { QaapPullRequestWatchService } from './qaap-pull-request-watch-service';
 import { QaapTaskPlanFanOutService } from './qaap-task-plan-fanout-service';
 import { QaapTaskPullRequestConsentStore } from './qaap-task-pull-request-consent-store';
 import { QaapExternalTaskEndpoint } from './qaap-external-task-endpoint';
@@ -406,6 +407,8 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapTaskPullRequestConsentStore).toSelf().inSingletonScope();
     bind(QaapTaskPullRequestService).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapTaskPullRequestService);
+    bind(QaapPullRequestWatchService).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapPullRequestWatchService);
     bind(QaapTaskPlanFanOutService).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapTaskPlanFanOutService);
     // Tasks started from GitHub issues (doc/qaap-external-task-inputs.md), behind QAAP_EXTERNAL_TASKS_GITHUB.

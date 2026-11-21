@@ -307,6 +307,29 @@ describe('qaap-work-hub-aux-pull-request-view', () => {
         view.element.querySelector<HTMLButtonElement>('.qaap-work-hub-aux-pr-open')!.click();
         expect(opened).to.deep.equal(['https://github.com/acme/app/pull/7']);
     });
+
+    it('offers Watch and toggles to Stop watching for open pull requests', async () => {
+        let watching = false;
+        let toggles = 0;
+        const view = create({
+            lookup: stubLookup([{ kind: 'found', pullRequest: pullRequest() }]).lookup,
+            resolveWatchAction: () => ({
+                watching,
+                onToggle: async () => {
+                    toggles++;
+                    watching = !watching;
+                },
+            }),
+        });
+        view.sync(taskTarget, true);
+        await settle();
+        const btn = view.element.querySelector<HTMLButtonElement>('.qaap-work-hub-aux-pr-watch')!;
+        expect(btn.textContent).to.equal('Watch');
+        btn.click();
+        await settle();
+        expect(toggles).to.equal(1);
+        expect(view.element.querySelector<HTMLButtonElement>('.qaap-work-hub-aux-pr-watch')?.textContent).to.equal('Stop watching');
+    });
     describe('a specific pull request', () => {
         const pinned: QaapWorkHubPullRequestTarget = { owner: 'zed', repo: 'lib', number: 117, scope: 'pinned:zed/lib#117' };
 
