@@ -34,7 +34,8 @@ describe('Qaap harness configuration card action', () => {
         const enabled = false;
         expect(enabled).to.equal(false);
         expect(resolveHarnessCardAction(installed, 'ready', true)).to.equal('toggle');
-        expect(resolveHarnessCardStatus(installed, 'ready', 'connected')).to.equal('available');
+        expect(resolveHarnessCardStatus(installed, 'ready', 'connected')).to.equal('signed-in');
+        expect(resolveHarnessCardStatus(installed, 'ready', 'not-required')).to.equal('ready');
     });
 });
 

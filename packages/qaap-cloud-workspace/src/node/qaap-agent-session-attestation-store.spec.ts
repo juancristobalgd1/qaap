@@ -54,12 +54,14 @@ describe('QaapAgentSessionAttestationStore', () => {
     it('accepts only harnesses without an auth probe, and only with an owner', () => {
         const store = new ClockedAttestationStore();
         expect(store.attest('alice', 'copilot')).to.equal(true);
-        expect(store.attest('alice', 'Grok')).to.equal(true);
+        expect(store.attest('alice', 'Copilot')).to.equal(true);
+        expect(store.attest('alice', 'grok')).to.equal(false);
         expect(store.attest('alice', 'codex')).to.equal(false);
         expect(store.attest(undefined, 'copilot')).to.equal(false);
         expect(store.attest('  ', 'copilot')).to.equal(false);
         expect(store.isAttested('alice', 'codex')).to.equal(false);
-        expect(store.isAttested('ALICE', 'grok')).to.equal(true);
+        expect(store.isAttested('ALICE', 'copilot')).to.equal(true);
+        expect(store.isAttested('alice', 'grok')).to.equal(false);
         expect(store.isAttested('bob', 'copilot')).to.equal(false);
     });
 

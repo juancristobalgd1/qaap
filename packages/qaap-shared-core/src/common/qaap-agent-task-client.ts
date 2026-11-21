@@ -75,7 +75,7 @@ export interface QaapAgentTaskAgentOption {
     /** How the owner can run the agent now (see the backend `resolveAgentAccess`); `none` offers a sign-in. */
     readonly accessState?: 'session' | 'none' | 'unknown';
     /** Sign-in state for the owner; `available` stays "can run now" (see the backend descriptor). */
-    readonly session?: 'signed-in' | 'signed-out' | 'checking' | 'unknown';
+    readonly session?: 'signed-in' | 'signed-out' | 'checking' | 'undetectable' | 'unknown';
     /** The Antigravity CLI the host resolved (`gemini`, `agy`, `antigravity`); only set for the Antigravity harness. */
     readonly cliBin?: string;
 }
@@ -769,6 +769,10 @@ export function invalidateAgentModelsCache(agentId?: string): void {
  * concurrent calls for the same agent share one request, and errors are never cached.
  */
 export async function fetchAgentModelsForAgent(agentId: string): Promise<QaapQaiqModelOption[]> {
+    // No harness chosen yet (an empty or blank id): there is no catalog to ask for, and the endpoint answers 400.
+    if (!agentId?.trim()) {
+        return [];
+    }
     const cached = agentModelsCache.get(agentId);
     if (cached && Date.now() - cached.at < AGENT_MODELS_CACHE_TTL_MS) {
         return cached.models;

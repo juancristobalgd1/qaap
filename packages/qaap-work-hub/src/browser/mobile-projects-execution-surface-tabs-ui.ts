@@ -9,9 +9,14 @@ import {
     conversationToSummary,
     getConversation,
     QAAP_AGENT_CONVERSATION_API_PATH,
+    startPullRequestWatch,
+    stopPullRequestWatch,
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
+import type { QaapWorkHubAuxPullRequestWatchAction } from './qaap-work-hub-aux-pull-request-view';
+import { isAgentsHubIdleConversationSummary } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
 import {
     type ExecutionSurfaceTabId,
 } from '@theia/qaap-shared-core/lib/common/qaap-execution-surface-tabs';
@@ -136,6 +141,7 @@ export interface MobileProjectsExecutionSurfaceTabsHost {
     stickyComposerHost: HTMLElement;
     transcriptComposerMountKey?: string | undefined;
     transcriptComposerSummary: QaapAgentConversationSummaryDTO | undefined;
+    readonly conversations?: { readonly threadStore: { getSummary(id: string): QaapAgentConversationSummaryDTO | undefined } };
     transcriptStickyComposerUi: import('@theia/qaap-composer/lib/browser/mobile-projects-transcript-sticky-composer-ui').MobileProjectsTranscriptStickyComposerUi;
     stickyComposerSheetsUi?: import('@theia/qaap-composer/lib/browser/mobile-projects-sticky-composer-sheets-ui').MobileProjectsStickyComposerSheetsUi;
     root: HTMLElement;
@@ -431,7 +437,9 @@ export class MobileProjectsExecutionSurfaceTabsUi {
                 showSurface: kind => resolveWorkHubAuxPanelOwner()?.showWorkHubAuxPanelSurface(kind),
                 releaseSurface: userClosed => resolveWorkHubAuxPanelOwner()?.releaseWorkHubAuxPanelSurface(userClosed),
                 resolvePullRequestTarget: () => resolveWorkHubAuxPanelOwner()?.resolveWorkHubAuxPanelPullRequestTarget(),
+                resolvePullRequestProjectName: () => resolveWorkHubAuxPanelOwner()?.resolveWorkHubAuxPanelPullRequestProject()?.name,
                 openExternal: url => resolveWorkHubAuxPanelOwner()?.openWorkHubAuxPanelExternal(url),
+                resolvePullRequestWatchAction: pr => resolveWorkHubAuxPanelOwner()?.resolveWorkHubAuxPanelPullRequestWatchAction(pr),
                 sideChat: workHubAuxSideChatHost,
             });
         }
@@ -484,13 +492,18 @@ export class MobileProjectsExecutionSurfaceTabsUi {
         return summary ? { project, summary, origin: sidebar?.origin ?? 'transcript' } : undefined;
     }
 
+    /** @internal The project the panel's "Pull request" view is about: the side panel's, the open task's, or the shell's. */
+    resolveWorkHubAuxPanelPullRequestProject(): MobileProjectEntry | undefined {
+        return this.host.executionSurfaceSidebar?.project ?? this.host.transcriptOpenProject ?? this.resolveExecutionSurfaceProject();
+    }
+
     /**
      * @internal The pull request the panel's "Pull request" view follows: the task's (or the project's when
      * no task is open). Needs only a project, so the view also works without an open task.
      */
     resolveWorkHubAuxPanelPullRequestTarget(): QaapWorkHubPullRequestTarget | undefined {
         const sidebar = this.host.executionSurfaceSidebar;
-        const project = sidebar?.project ?? this.host.transcriptOpenProject ?? this.resolveExecutionSurfaceProject();
+        const project = this.resolveWorkHubAuxPanelPullRequestProject();
         if (!project) {
             return undefined;
         }
@@ -498,6 +511,36 @@ export class MobileProjectsExecutionSurfaceTabsUi {
             ?? this.host.transcriptOpenSummary
             ?? (this.host.agentsHubShellActive ? this.host.resolveAgentsHubShellSummary(project) : undefined);
         return resolveQaapWorkHubPullRequestTarget(project, summary);
+    }
+
+    /** @internal Watch / Stop watching action for the PR aux panel when a real conversation is open. */
+    resolveWorkHubAuxPanelPullRequestWatchAction(pr: QaapGithubPullRequestSummary): QaapWorkHubAuxPullRequestWatchAction | undefined {
+        const target = this.resolveWorkHubAuxPanelTarget();
+        const openSummary = target?.summary;
+        if (!openSummary || isAgentsHubIdleConversationSummary(openSummary)) {
+            return undefined;
+        }
+        const live = this.host.conversations?.threadStore.getSummary(openSummary.id) ?? openSummary;
+        const watch = live.pullRequestWatch;
+        const watching = watch?.state === 'watching'
+            && watch.owner.toLowerCase() === pr.owner.toLowerCase()
+            && watch.repo.toLowerCase() === pr.repo.toLowerCase()
+            && watch.number === pr.number;
+        return {
+            watching,
+            onToggle: async () => {
+                if (watching) {
+                    await stopPullRequestWatch(openSummary.id);
+                } else {
+                    await startPullRequestWatch(openSummary.id, {
+                        owner: pr.owner,
+                        repo: pr.repo,
+                        number: pr.number,
+                        url: pr.htmlUrl,
+                    });
+                }
+            },
+        };
     }
 
     /**
@@ -514,12 +557,24 @@ export class MobileProjectsExecutionSurfaceTabsUi {
             mobileAuxSheet = new MobileWorkHubAuxSheet({
                 host: {
                     resolvePullRequestTarget: () => resolveWorkHubAuxPanelOwner()?.resolveWorkHubAuxPanelPullRequestTarget(),
+                    resolvePullRequestProjectName: () => resolveWorkHubAuxPanelOwner()?.resolveWorkHubAuxPanelPullRequestProject()?.name,
                     openExternal: url => resolveWorkHubAuxPanelOwner()?.openWorkHubAuxPanelExternal(url),
                     sideChat: workHubAuxSideChatHost,
                 },
             });
         }
         return mobileAuxSheet;
+    }
+
+    /**
+     * `true` when a real conversation (not the idle landing composer) is open, so the mobile views
+     * dropdown enables "Side chat" and "Pull request".
+     */
+    hasOpenConversationForMobileAuxSheet(): boolean {
+        const summary = this.host.transcriptOpenSummary;
+        return !!this.host.transcriptOpenProject
+            && !!summary
+            && !isAgentsHubIdleConversationSummary(summary);
     }
 
     /**

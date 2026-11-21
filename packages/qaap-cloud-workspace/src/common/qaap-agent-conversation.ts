@@ -23,6 +23,11 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-context-usage';
 import type { QaapLinkedPullRequest } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import type { QaapTaskPullRequest } from '@theia/qaap-shared-core/lib/common/qaap-task-pull-request';
+import {
+    summarizePullRequestWatch,
+    type QaapPullRequestWatch,
+    type QaapPullRequestWatchSummary,
+} from '@theia/qaap-shared-core/lib/common/qaap-pull-request-watch';
 import type { QaapTaskPlan } from '@theia/qaap-shared-core/lib/common/qaap-task-plan';
 import type { QaapAgentMessageWireDelta } from '@theia/qaap-shared-core/lib/common/qaap-agent-message-wire-delta';
 import type { QaapAgentTaskReview, QaapAgentTaskState, QaapAgentTaskVerification, QaapCreateAgentTaskQaiqModel } from './qaap-agent-task';
@@ -344,6 +349,8 @@ export interface QaapAgentConversation {
     readonly taskPullRequest?: QaapTaskPullRequest;
     /** `false`: the user turned "Create PR when done" off for this thread. Omitted means on. */
     readonly taskPullRequestEnabled?: boolean;
+    /** Pull request watched by `QaapPullRequestWatchService` so checks/reviews wake the agent. */
+    readonly pullRequestWatch?: QaapPullRequestWatch;
     /** Editable plan of this task and its fan-out to subtasks (`doc/qaap-task-plan-fanout.md`). */
     readonly taskPlan?: QaapTaskPlan;
     /** Set on a subtask's child conversation: the conversation whose plan created it. */
@@ -459,6 +466,7 @@ export interface QaapAgentConversationSummary {
     readonly linkedPullRequest?: QaapLinkedPullRequest;
     readonly taskPullRequest?: QaapTaskPullRequest;
     readonly taskPullRequestEnabled?: boolean;
+    readonly pullRequestWatch?: QaapPullRequestWatchSummary;
     /** Editable plan of this task and its fan-out to subtasks (`doc/qaap-task-plan-fanout.md`). */
     readonly taskPlan?: QaapTaskPlan;
     /** Set on a subtask's child conversation: the conversation whose plan created it. */
@@ -832,6 +840,7 @@ export function toConversationSummary(conv: QaapAgentConversation): QaapAgentCon
         linkedPullRequest: conv.linkedPullRequest,
         ...(conv.taskPullRequest ? { taskPullRequest: conv.taskPullRequest } : {}),
         ...(conv.taskPullRequestEnabled === false ? { taskPullRequestEnabled: false } : {}),
+        ...(conv.pullRequestWatch ? { pullRequestWatch: summarizePullRequestWatch(conv.pullRequestWatch) } : {}),
         ...(conv.taskPlan ? { taskPlan: conv.taskPlan } : {}),
         ...(conv.parentConversationId ? { parentConversationId: conv.parentConversationId } : {}),
         ...(conv.origin ? { origin: conv.origin } : {}),

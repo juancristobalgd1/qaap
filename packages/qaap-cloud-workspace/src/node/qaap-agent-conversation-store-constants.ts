@@ -192,6 +192,11 @@ export interface QaapConversationTaskRef {
     readonly turnAgentId: string;
     agentMessageId?: string;
     readonly startSha?: string;
+    /**
+     * Set while the task log streams a post-agent phase (verification command, independent reviewer): its output is
+     * not the turn's reply, so the live transcript skips it the way {@link agentVisibleLog} does at settle.
+     */
+    inPostAgentPhase?: boolean;
 }
 
 // ─── Git helpers ─────────────────────────────────────────────────────────────

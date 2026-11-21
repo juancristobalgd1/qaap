@@ -1,186 +1,36 @@
 /*
- * Mobile "Side chat" / "Pull request" bottom sheet: the narrow-viewport twin of the desktop Work Hub right panel.
- * The views inside reuse the desktop stylesheets (qaap-work-hub-aux-side-chat.css, qaap-work-hub-aux-pull-request.css).
+ * Mobile "Side chat" / "Pull request": the narrow-viewport twin of the desktop Work Hub right panel. It opens in the
+ * SAME drawer as Browser, Changes, Files and Terminal (`.theia-mobile-execution-surface-sidebar*`, styled in
+ * mobile-workbench-work-hub.css), so this file only fits the two views inside it and keeps the composer above the
+ * keyboard. The views reuse the desktop stylesheets (qaap-work-hub-aux-side-chat.css, qaap-work-hub-aux-pull-request.css).
  * Breakpoint: 767px, as MOBILE_NARROW_VIEWPORT_MEDIA_QUERY. Colours come from the Theia theme only.
  */
 
-/* The header trigger exists in every conversation header; only the narrow viewport shows it. */
-.theia-mobile-work-hub-aux-sheet-trigger {
-  display: none;
-}
-
 @media (max-width: 767px) {
-  .theia-mobile-work-hub-aux-sheet-trigger {
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    box-sizing: border-box;
-    min-width: 36px;
-    height: 36px;
-    margin: 0;
-    padding: 0 8px;
-    border: none;
-    border-radius: 999px;
-    background: transparent;
-    color: var(--theia-descriptionForeground);
-    font: inherit;
-    font-size: 18px;
-    line-height: 1;
-    cursor: pointer;
-    touch-action: manipulation;
-    -webkit-tap-highlight-color: transparent;
-    -webkit-appearance: none;
-    appearance: none;
-  }
-
-  /* The header copy is hidden outside a conversation; its own display rule must not win over [hidden]. */
-  .theia-mobile-work-hub-aux-sheet-trigger[hidden] {
-    display: none;
-  }
-
-  .theia-mobile-work-hub-aux-sheet-trigger:active,
-  .theia-mobile-work-hub-aux-sheet-trigger[aria-expanded='true'] {
-    background: var(--theia-toolbar-hoverBackground);
-    color: var(--theia-foreground);
-  }
-
+  /* The wrapper adds no box: the backdrop and the drawer position themselves like the other views'. */
   .theia-mobile-work-hub-aux-sheet {
-    position: fixed;
-    top: var(--theia-mobile-aux-sheet-vv-top, 0px);
-    left: 0;
-    right: 0;
-    height: var(--theia-mobile-aux-sheet-vv-height, 100dvh);
-    z-index: 13200;
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-end;
-    box-sizing: border-box;
-    pointer-events: none;
+    display: contents;
   }
 
   .theia-mobile-work-hub-aux-sheet[hidden] {
     display: none;
   }
 
-  .theia-mobile-work-hub-aux-sheet.theia-mod-visible {
-    pointer-events: auto;
-  }
-
-  .theia-mobile-work-hub-aux-sheet-backdrop {
-    position: absolute;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.42);
-  }
-
-  /* Almost full height: a sliver of the conversation stays visible above the sheet. */
-  .theia-mobile-work-hub-aux-sheet-panel {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    box-sizing: border-box;
-    min-height: 0;
-    height: calc(100% - max(env(safe-area-inset-top, 0px), 28px));
-    max-height: 100%;
-    overflow: hidden;
-    border-radius: 16px 16px 0 0;
-    background: var(--theia-editor-background);
-    color: var(--theia-foreground);
-    box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.28);
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-  }
-
-  /* With the keyboard up its own inset replaces the home-indicator one. */
+  /* With the on-screen keyboard up the drawer follows the visible band, so the side chat composer stays above it. */
   .theia-mobile-work-hub-aux-sheet.theia-mod-keyboard-open .theia-mobile-work-hub-aux-sheet-panel {
-    padding-bottom: 0;
-  }
-
-  .theia-mobile-work-hub-aux-sheet-grabber {
-    flex: 0 0 auto;
-    align-self: center;
-    width: 36px;
-    height: 4px;
-    margin: 8px 0 2px;
-    border-radius: 2px;
-    background: var(--theia-descriptionForeground);
-    opacity: 0.4;
-    touch-action: none;
-  }
-
-  .theia-mobile-work-hub-aux-sheet-header {
-    flex: 0 0 auto;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 2px 8px 6px 12px;
-    border-bottom: 1px solid var(--theia-panel-border, var(--theia-widget-border));
-    touch-action: none;
-  }
-
-  .theia-mobile-work-hub-aux-sheet-tabs {
-    flex: 1 1 auto;
-    min-width: 0;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-
-  .theia-mobile-work-hub-aux-sheet-tab {
-    flex: 0 1 auto;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    min-height: 40px;
-    min-width: 0;
-    padding: 0 12px;
-    border: none;
-    border-radius: 999px;
-    background: transparent;
-    color: var(--theia-descriptionForeground);
-    font: inherit;
-    font-size: 14px;
-    cursor: pointer;
-    touch-action: manipulation;
-    -webkit-tap-highlight-color: transparent;
-  }
-
-  .theia-mobile-work-hub-aux-sheet-tab-label {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .theia-mobile-work-hub-aux-sheet-tab.theia-mod-active {
-    background: var(--theia-toolbar-hoverBackground);
-    color: var(--theia-foreground);
-    font-weight: 600;
-  }
-
-  .theia-mobile-work-hub-aux-sheet-close {
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    padding: 0;
-    border: none;
-    border-radius: 999px;
-    background: transparent;
-    color: var(--theia-descriptionForeground);
-    font-size: 18px;
-    cursor: pointer;
-    touch-action: manipulation;
-    -webkit-tap-highlight-color: transparent;
+    top: var(--theia-mobile-aux-sheet-vv-top, 0px);
+    bottom: auto;
+    height: var(--theia-mobile-aux-sheet-vv-height, 100dvh);
   }
 
   /* The views fill the body and scroll natively inside it (min-height: 0 down the flex chain). */
   .theia-mobile-work-hub-aux-sheet-body {
-    flex: 1 1 auto;
-    min-height: 0;
-    display: flex;
     flex-direction: column;
-    overflow: hidden;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .theia-mobile-work-hub-aux-sheet.theia-mod-keyboard-open .theia-mobile-work-hub-aux-sheet-body {
+    padding-bottom: 0;
   }
 
   .theia-mobile-work-hub-aux-sheet-body > .qaap-work-hub-aux-side-chat,
@@ -195,8 +45,8 @@
   }
 
   /*
-   * Inside the sheet the tab already names the view and the sheet's own ✕ closes it, so the view's title and
-   * its close button are hidden here only. Bring back and delete stay right-aligned in one compact row.
+   * Inside the drawer its header already names the view and its own ✕ closes it, so the view's title and its close
+   * button are hidden here only. Bring back and delete stay right-aligned in one compact row.
    */
   .theia-mobile-work-hub-aux-sheet-body .qaap-work-hub-aux-side-chat-header {
     justify-content: flex-end;

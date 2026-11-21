@@ -27,7 +27,7 @@ import { agentMessageHasVisualVerificationMarker, buildQaapVisualFlowMarkdown, b
 
 import { type ComposerGitActionDisplayMetadata } from '@theia/qaap-shared-core/lib/common/qaap-composer-git-action-display';
 
-import { parseStructuredLog as parseStructuredLogHelper } from './qaap-agent-conversation-store-helpers';
+import { filterPostAgentPhaseChunk, parseStructuredLog as parseStructuredLogHelper } from './qaap-agent-conversation-store-helpers';
 
 import { recordGitAction as recordGitActionHelper } from './qaap-agent-conversation-store-helpers2';
 
@@ -353,7 +353,10 @@ export function applyTaskOutputExtracted(ctx: QaapAgentConversationStoreContext,
         ref: QaapConversationTaskRef,
         chunk: string, ): void {
         const conv = ctx.conversations.get(ref.conversationId);
-        const filtered = ctx.filterAgentLogChunk(chunk);
+        // The reviewer and the verification command stream into the same task log: keep them out of the reply.
+        const phase = filterPostAgentPhaseChunk(chunk, ref.inPostAgentPhase === true);
+        ref.inPostAgentPhase = phase.inPostAgentPhase;
+        const filtered = phase.text ? ctx.filterAgentLogChunk(phase.text) : '';
         if (!conv || !filtered) {
             return;
         }

@@ -113,15 +113,24 @@ const LOGIN_SUCCESS_PATTERNS: readonly RegExp[] = [
     /\blog(?:ged)?\s*in\s+successful(?:ly)?\b/i,
     /\bsuccessfully\s+(?:logged|signed)\s+in\b/i,
     /\b(?:logged|signed)\s+in\s+(?:successfully|as\s+\S+)/i,
-    /\bauthentication\s+(?:successful|complete)\b/i,
+    // Grok 1.0.x: `Signed in (user_id: ...)` and `devbox login succeeded`.
+    /\bsigned\s+in\s*\(\s*user_id\s*:/i,
+    /\bdevbox\s+login\s+succeeded\b/i,
+    /\bauthentication\s+(?:successful|succeeded|complete)\b/i,
     /\bauthenticated\s+as\s+\S+/i,
+    /\byou\s+are\s+now\s+(?:logged|signed)\s+in\b/i,
     // Pi: `Logged in to OpenRouter` (never the `Log in to …` status shown while it waits).
     /(?<!\bnot\s)\blogged\s+in\s+to\s+\w/i,
 ];
 
-/** A CLI that reported the sign-in itself failed (Pi: `Failed to login to OpenRouter: …`). */
+/**
+ * A CLI that reported the sign-in itself failed (Pi: `Failed to login to OpenRouter: …`;
+ * Copilot: `Login succeeded, but the token was not saved.`). Checked BEFORE success patterns so
+ * partial-success error messages never count as connected.
+ */
 const LOGIN_FAILURE_PATTERNS: readonly RegExp[] = [
     /\bfailed\s+to\s+log\s?in\s+to\b/i,
+    /\btoken\s+was\s+not\s+saved\b/i,
 ];
 
 /**
@@ -150,6 +159,7 @@ export const QAAP_HARNESS_UNAUTHENTICATED_PATTERNS: readonly RegExp[] = [
     /\bauthentication\s+required\.\s+please\s+run\s+['"`]?(?:cursor-)?agent\s+login['"`]?\s+first\b/i,
     /\b401\s+unauthorized:?\s+missing\s+bearer\s+or\s+basic\s+authentication\b/i,
     /\bplan\s+type\s+is\s+required\s+for\s+chatgpt\s+authentication\b/i,
+    /\bnot\s+logged\s+in\.\s+run\s+['"`]?grok\s+login['"`]?/i,
 ];
 
 /**
@@ -172,6 +182,8 @@ const SESSION_AUTH_PATTERNS: readonly RegExp[] = [
     /\bnot\s+logged\s+in\b/i,
     // "Please run /login", "run the '/login' command" (Copilot CLI quotes it).
     /\brun\s+(?:the\s+)?['"`]?\/login\b/i,
+    // Grok CLI unauthenticated prompt ("Run `grok login`").
+    /\brun\s+['"`]?grok\s+login\b/i,
     // Copilot CLI's unauthenticated headline ("No authentication information found").
     /\bno\s+authentication\s+information\s+found\b/i,
     /\bauthentication_failed\b/i,
@@ -323,6 +335,7 @@ const CLI_UNAUTH_DECLARATION_PATTERNS: readonly RegExp[] = [
     /\bno\s+authentication\s+information\s+found\b/i,
     /\brun\s+(?:the\s+)?['"`]?\/login\b/i,
     /\brun\s+['"`]?gh\s+auth\s+login\b/i,
+    /\brun\s+['"`]?grok\s+login\b/i,
     ...QAAP_HARNESS_UNAUTHENTICATED_PATTERNS,
 ];
 

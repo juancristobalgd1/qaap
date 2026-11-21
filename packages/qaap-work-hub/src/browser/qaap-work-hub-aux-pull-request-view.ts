@@ -5,6 +5,7 @@
 
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
+import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import { lookupQaapGithubPullRequest, startGithubOAuth, type QaapGithubPullRequestLookup } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import { HubEmptyStateDom } from './mobile-projects-hub-empty-state-dom';
@@ -28,11 +29,18 @@ export const QAAP_WORK_HUB_AUX_PULL_REQUEST_MIN_AUTO_GAP_MS = 15_000;
 
 const COMMENT_TEXT_LIMIT = 240;
 
+export interface QaapWorkHubAuxPullRequestWatchAction {
+    readonly watching: boolean;
+    readonly onToggle: () => Promise<void>;
+}
+
 export interface QaapWorkHubAuxPullRequestViewOptions {
     readonly lookup?: (target: QaapWorkHubPullRequestTarget) => Promise<QaapGithubPullRequestLookup>;
     /** Opens a GitHub page. Defaults to a new browser tab, which is the external browser on desktop. */
     readonly openExternal?: (url: string) => void;
     readonly startSignIn?: () => void;
+    /** Optional Watch / Stop watching action for the open task's pull request. */
+    readonly resolveWatchAction?: (pr: QaapGithubPullRequestSummary) => QaapWorkHubAuxPullRequestWatchAction | undefined;
     readonly refreshMs?: number;
     readonly minAutoGapMs?: number;
 }
@@ -55,10 +63,13 @@ export class QaapWorkHubAuxPullRequestView implements Disposable {
     protected readonly lookup: (target: QaapWorkHubPullRequestTarget) => Promise<QaapGithubPullRequestLookup>;
     protected readonly openExternal: (url: string) => void;
     protected readonly startSignIn: () => void;
+    protected readonly resolveWatchAction: ((pr: QaapGithubPullRequestSummary) => QaapWorkHubAuxPullRequestWatchAction | undefined) | undefined;
     protected readonly refreshMs: number;
     protected readonly minAutoGapMs: number;
 
     protected target: QaapWorkHubPullRequestTarget | undefined;
+    /** The open project's name, for the empty state of a project that has no pull request target. */
+    protected projectName: string | undefined;
     /** Leaves a specific pull request for the branch's one. Set only while that is possible. */
     protected onBackToBranch: (() => void) | undefined;
     protected key: string | undefined;
@@ -96,6 +107,7 @@ export class QaapWorkHubAuxPullRequestView implements Disposable {
             window.open(url, '_blank', 'noopener,noreferrer');
         });
         this.startSignIn = options.startSignIn ?? startGithubOAuth;
+        this.resolveWatchAction = options.resolveWatchAction;
         this.refreshMs = options.refreshMs ?? QAAP_WORK_HUB_AUX_PULL_REQUEST_REFRESH_MS;
         this.minAutoGapMs = options.minAutoGapMs ?? QAAP_WORK_HUB_AUX_PULL_REQUEST_MIN_AUTO_GAP_MS;
 
@@ -113,6 +125,11 @@ export class QaapWorkHubAuxPullRequestView implements Disposable {
      * Follows `target` while the view is `visible`. A changed target clears the last answer and loads the new
      * one; a visible view starts its refresh timer; a hidden one stops it.
      */
+    /** The open project's name; with no target it says the project has no pull request instead of "No project open". */
+    setProjectName(name: string | undefined): void {
+        this.projectName = name?.trim() || undefined;
+    }
+
     sync(target: QaapWorkHubPullRequestTarget | undefined, visible: boolean, onBackToBranch?: () => void): void {
         this.onBackToBranch = onBackToBranch;
         const key = target ? qaapWorkHubPullRequestTargetKey(target) : undefined;
@@ -262,6 +279,13 @@ export class QaapWorkHubAuxPullRequestView implements Disposable {
 
     protected buildContent(): HTMLElement {
         const target = this.target;
+        if (!target && this.projectName) {
+            return HubEmptyStateDom.createEmptyState({
+                icon: 'codicon-git-pull-request',
+                title: nls.localize('qaap/workHubAuxPanel/prNoRepo', 'No pull request for {0}', this.projectName),
+                hint: nls.localize('qaap/workHubAuxPanel/prNoRepoHint', 'This project is not linked to a GitHub repository, so it has no pull request yet.'),
+            });
+        }
         if (!target) {
             return HubEmptyStateDom.createEmptyState({
                 icon: 'codicon-git-pull-request',
@@ -441,6 +465,30 @@ export class QaapWorkHubAuxPullRequestView implements Disposable {
         open.textContent = nls.localizeByDefault('Open on GitHub');
         open.addEventListener('click', () => this.openExternal(pr.htmlUrl));
         footer.append(open);
+        const state = pullRequestDisplayState(pr);
+        const watchAction = (state === 'open' || state === 'draft') ? this.resolveWatchAction?.(pr) : undefined;
+        if (watchAction) {
+            const watchBtn = document.createElement('button');
+            watchBtn.type = 'button';
+            watchBtn.className = 'qaap-work-hub-aux-pr-open qaap-work-hub-aux-pr-watch';
+            watchBtn.textContent = watchAction.watching
+                ? nls.localize('qaap/prWatch/stopWatching', 'Stop watching')
+                : nls.localizeByDefault('Watch');
+            watchBtn.addEventListener('click', () => {
+                if (watchBtn.disabled) {
+                    return;
+                }
+                watchBtn.disabled = true;
+                void watchAction.onToggle().then(() => {
+                    this.render();
+                }, (error: unknown) => {
+                    watchBtn.disabled = false;
+                    const message = error instanceof Error && error.message ? error.message : String(error);
+                    MobileSnackbar.show(message, { kind: 'warning' });
+                });
+            });
+            footer.append(watchBtn);
+        }
         return footer;
     }
 

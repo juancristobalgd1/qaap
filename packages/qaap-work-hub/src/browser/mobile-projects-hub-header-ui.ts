@@ -16,8 +16,6 @@ import type { MobileProjectsExecutionSurfaceTabsUi } from './mobile-projects-exe
 import type { MobileProjectsTranscriptHeaderUi } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-header-ui';
 import type { MobileProjectsTranscriptSheetUi } from './mobile-projects-transcript-sheet-ui';
 import { layoutHeaderProjectClusterContents } from './mobile-projects-panel-chrome-ui';
-import { createMobileAuxSheetTrigger } from './mobile-projects-execution-surface-tabs-ui-render';
-import { matchesMobileNarrowViewport } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import type { MobileProjectsPullRequestDetailTab } from '@theia/qaap-diff-review/lib/browser/mobile-projects-pull-request-detail-ui';
 
 export interface MobileProjectsHubHeaderHost {
@@ -81,13 +79,9 @@ export interface MobileProjectsHubHeaderHost {
 }
 
 export class MobileProjectsHubHeaderUi {
-    /** The mobile "Open views" trigger in the title row; created once, shown only while a conversation is open. */
-    protected auxSheetTrigger: HTMLButtonElement | undefined;
-
     constructor(protected readonly host: MobileProjectsHubHeaderHost) { }
 
     renderHeader(): void {
-        this.syncAuxSheetTrigger();
         if (this.host.pullRequestDetail || this.host.isPullRequestsSidebarVisible?.() === true) {
             this.renderPullRequestHeader();
             return;
@@ -183,27 +177,6 @@ export class MobileProjectsHubHeaderUi {
         }
         this.host.titleEl.textContent = nls.localize('qaap/mobileProjects/title', 'Work Hub');
         this.syncAgentsHubAccountChrome();
-    }
-
-    /**
-     * Mobile only, with a conversation open in this view: the header's "Open views" trigger opens the side chat /
-     * pull request sheet. The transcript sheet carries its own trigger, so this one steps aside while it is open.
-     */
-    syncAuxSheetTrigger(): void {
-        if (!this.auxSheetTrigger) {
-            this.auxSheetTrigger = createMobileAuxSheetTrigger(this.host.executionSurfaceTabsUi);
-            this.host.titleRow.append(this.auxSheetTrigger);
-        }
-        this.auxSheetTrigger.hidden = !this.isAuxSheetTriggerShown();
-    }
-
-    protected isAuxSheetTriggerShown(): boolean {
-        return matchesMobileNarrowViewport()
-            && this.host.hubView === 'tasks'
-            && this.host.agentsHubInlineActive
-            && !!this.host.transcriptOpenProject
-            && !!this.host.transcriptOpenSummary
-            && !document.querySelector('.theia-mobile-agent-transcript-root');
     }
 
     protected renderPullRequestHeader(): void {
@@ -376,9 +349,14 @@ export class MobileProjectsHubHeaderUi {
     }
 
     resolveHeaderProject(): MobileProjectEntry | undefined {
-        // Any open task (inline or sheet, any status including idle) owns the header project,
-        // ahead of the shell / sticky composer / pinned fallbacks.
-        if (this.host.transcriptOpenProject) {
+        // Any open live task owns the header project. While in the idle shell (no live transcript),
+        // the active shell project owns the header project ahead of any leftover transcriptOpenProject.
+        const openSummary = this.host.transcriptOpenSummary;
+        const hasLiveTranscript = this.host.agentsHubInlineActive
+            && this.host.transcriptOpenProject
+            && openSummary
+            && !isAgentsHubIdleConversationSummary(openSummary);
+        if (hasLiveTranscript) {
             return this.host.transcriptOpenProject;
         }
         if (this.host.agentsHubShellActive) {
@@ -386,6 +364,9 @@ export class MobileProjectsHubHeaderUi {
             if (shellProject) {
                 return shellProject;
             }
+        }
+        if (this.host.transcriptOpenProject) {
+            return this.host.transcriptOpenProject;
         }
         return this.host.composerHeaderUi.resolveStickyComposerProject(this.host.projects)
             ?? this.host.resolveHomePinnedProject();

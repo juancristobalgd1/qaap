@@ -1634,6 +1634,30 @@ body.qaap-theme-light .theia-mobile-agent-transcript-context-compaction-line {
   background: var(--theia-contrastBorder);
 }
 
+@media (max-width: 767px) {
+  .theia-mobile-agent-transcript-harness-switch {
+    gap: 6px;
+    padding: 8px 12px;
+  }
+
+  .theia-mobile-agent-transcript-harness-switch-rule {
+    min-width: 4px;
+  }
+
+  .theia-mobile-agent-transcript-harness-switch-chip-wrap {
+    max-width: 100%;
+  }
+
+  .theia-mobile-agent-transcript-harness-switch-chip {
+    flex-wrap: wrap;
+    justify-content: center;
+    row-gap: 2px;
+    padding: 4px 10px;
+    border-radius: 12px;
+    white-space: normal;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .theia-mobile-agent-transcript-harness-switch-tooltip {
     transition: none;

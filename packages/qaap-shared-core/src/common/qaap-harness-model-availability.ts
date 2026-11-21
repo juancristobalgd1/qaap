@@ -6,6 +6,9 @@
 import { isFreeAgentModel } from './qaap-agent-model-selection';
 import { OPENCODE_AGENT_ID, type QaapAgentConnectionState } from './qaap-agent-task-client';
 
+/** Whether the backend can reliably detect if a harness is signed out. */
+export type QaapHarnessSessionDetection = 'detectable' | 'undetectable';
+
 /**
  * Sign-in state of one harness as the product rule sees it.
  * - `signed-in`: the harness session is confirmed; Pro models are selectable.
@@ -13,11 +16,13 @@ import { OPENCODE_AGENT_ID, type QaapAgentConnectionState } from './qaap-agent-t
  *   Pro models are visible but locked.
  * - `checking`: the auth probe is still running. Pro models stay selectable: the run's own pre-spawn guard
  *   waits for the probe, and a lock that depends on a probe settling can hang forever.
- * - `unknown`: the probe settled without a confirmable answer (timeout, unreadable output) or the harness has
- *   no way to report its session and no attestation. Fail-closed: Pro models are locked exactly like
- *   `signed-out` (sign-in required, with the Sign in action). The sign-in itself is never locked.
+ * - `undetectable`: the harness cannot reliably detect whether the user is signed in (`sessionDetection: 'undetectable'`,
+ *   e.g. Copilot CLI). All models stay visible and selectable; if running one actually needs sign-in, the CLI refusal
+ *   flips the session to `signed-out` and surfaces the Sign in action.
+ * - `unknown`: a detectable harness's probe settled without a confirmable answer (timeout, unreadable output).
+ *   Fail-closed: Pro models are locked like `signed-out` (sign-in required, with the Sign in action).
  */
-export type QaapHarnessSession = 'signed-in' | 'signed-out' | 'checking' | 'unknown';
+export type QaapHarnessSession = 'signed-in' | 'signed-out' | 'checking' | 'undetectable' | 'unknown';
 
 /** `free` models work without the harness session; `pro` models need it. Unproven Free means `pro`. */
 export type QaapModelTier = 'free' | 'pro';
@@ -43,6 +48,11 @@ export interface QaapHarnessSessionInput {
     readonly accessState?: 'session' | 'none' | 'unknown';
     /** True once the backend probe for this harness has finished. Splits an unknown answer into `checking` and `unknown`. */
     readonly probeSettled?: boolean;
+    /**
+     * Whether this harness can reliably detect a signed-out state. When `'undetectable'`, an unresolved
+     * session maps to `'undetectable'` (all models stay selectable; auth failure on run triggers Sign in).
+     */
+    readonly sessionDetection?: QaapHarnessSessionDetection;
 }
 
 /** Input of {@link QaapHarnessModelAvailability.tier}: the catalog fields that can mark a model free. */
@@ -67,11 +77,12 @@ export interface QaapHarnessModelAvailabilityInput {
  * | signed out               | visible, selectable      | visible, not selectable (sign-in required)  |
  * | signed in                | visible, selectable      | visible, selectable                         |
  * | checking                 | visible, selectable      | visible, selectable (probe still running)   |
+ * | undetectable             | visible, selectable      | visible, selectable (auth error prompts login) |
  * | unknown                  | visible, selectable      | visible, not selectable (sign-in required)  |
  * | disabled in Settings     | hidden                   | hidden                                      |
  *
- * Fail-closed: a Pro model needs a confirmed session. Only `checking` (a probe still running) stays selectable,
- * because the run's own pre-spawn guard waits for it. Sign-in actions never go through this rule.
+ * Detectable harnesses stay fail-closed (`unknown` locks Pro). Undetectable harnesses show all models
+ * as selectable so users can run them and sign in on demand if the CLI rejects the turn.
  *
  * Pure functions only: no DI, no I/O. Backend and frontend call the same functions so the rule cannot drift.
  */
@@ -79,11 +90,11 @@ export namespace QaapHarnessModelAvailability {
 
     /**
      * Resolves the sign-in state of a harness.
-     * `accessState`, when present, decides `session` / `none`; its `unknown` and an `unknown` connection state
-     * are `checking` while the probe runs and `unknown` once it settled (fail-closed for Pro, see
-     * {@link blocksPro}). `connected` and `not-required` are signed in, `disconnected` is signed out. A
-     * missing connection state is `checking`.
-     * @param input the harness connection and access signals.
+     * `accessState`, when present, decides `session` / `none`; otherwise `connectionState` decides.
+     * An unknown/unsettled answer resolves to `'undetectable'` when `sessionDetection === 'undetectable'`,
+     * `'unknown'` once a detectable probe has settled (fail-closed for Pro, see {@link blocksPro}), or
+     * `'checking'` while a probe is still running.
+     * @param input the harness connection, access, and session-detection signals.
      * @returns the harness session state.
      */
     export function session(input: QaapHarnessSessionInput): QaapHarnessSession {
@@ -94,6 +105,9 @@ export namespace QaapHarnessModelAvailability {
                 case 'none':
                     return 'signed-out';
                 default:
+                    if (input.sessionDetection === 'undetectable') {
+                        return 'undetectable';
+                    }
                     return input.probeSettled === true ? 'unknown' : 'checking';
             }
         }
@@ -104,9 +118,12 @@ export namespace QaapHarnessModelAvailability {
             case 'disconnected':
                 return 'signed-out';
             case 'unknown':
+                if (input.sessionDetection === 'undetectable') {
+                    return 'undetectable';
+                }
                 return input.probeSettled === true ? 'unknown' : 'checking';
             default:
-                return 'checking';
+                return input.sessionDetection === 'undetectable' ? 'undetectable' : 'checking';
         }
     }
 
@@ -134,9 +151,9 @@ export namespace QaapHarnessModelAvailability {
 
     /**
      * Whether a harness session locks its Pro models. The single predicate behind the picker's Sign in action,
-     * the send block and the pre-spawn guard, so they cannot disagree. `signed-in` and `checking` do not lock;
-     * `signed-out` and `unknown` do (fail-closed). `undefined` (no session reported yet) does not lock.
-     * @param session the harness session, when the catalog reported one.
+     * the send block and the pre-spawn guard, so they cannot disagree. `signed-in`, `checking`, and `undetectable`
+     * do not lock; `signed-out` and detectable `unknown` do (fail-closed). `undefined` does not lock.
+     * @param harnessSession the harness session, when the catalog reported one.
      * @returns true when Pro models of this harness need a sign-in first.
      */
     export function blocksPro(harnessSession: QaapHarnessSession | undefined): boolean {
@@ -155,7 +172,6 @@ export namespace QaapHarnessModelAvailability {
         if (input.tier === 'free') {
             return { visible: true, selectable: true };
         }
-        // Fail-closed: only a confirmed session or a probe still running (`checking`) leaves Pro selectable.
         return blocksPro(input.session)
             ? { visible: true, selectable: false, reason: 'sign-in-required' }
             : { visible: true, selectable: true };

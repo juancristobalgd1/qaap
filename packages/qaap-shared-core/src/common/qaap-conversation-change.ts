@@ -20,6 +20,7 @@ export type QaapConversationSummaryField =
     | 'contextCompaction'
     | 'linesChanged'
     | 'linkedPullRequest'
+    | 'pullRequestWatch'
     | 'activityLabel'
     | 'autoApprove'
     | 'agentModel'
@@ -62,6 +63,7 @@ const SUMMARY_FIELD_KEYS: readonly (keyof QaapAgentConversationSummaryDTO)[] = [
     'linesAdded',
     'linesRemoved',
     'linkedPullRequest',
+    'pullRequestWatch',
     'activityLabel',
     'autoApprove',
     'agentModel',

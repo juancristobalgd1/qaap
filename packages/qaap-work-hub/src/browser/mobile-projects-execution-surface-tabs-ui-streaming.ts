@@ -1,7 +1,7 @@
 import type { MobileProjectsExecutionSurfaceTabsUiContext } from './mobile-projects-execution-surface-tabs-ui-context';
 // Extracted from mobile-projects-execution-surface-tabs-ui.ts
 
-import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
+import { matchesMobileNarrowViewport, matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import type { ExecutionSurfaceTabId as TranscriptTab } from '@theia/qaap-shared-core/lib/common/qaap-execution-surface-tabs';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
@@ -25,6 +25,7 @@ import { executionSurfacePreviewDirectory } from './mobile-projects-execution-su
 import { attachQaapScrollEdgeFades } from '@theia/qaap-mobile-shell/lib/browser/qaap-scroll-edge-fades';
 import { QAAP_WORK_HUB_AUX_PANEL_TOGGLE_CLASS, type QaapWorkHubAuxPanel } from './qaap-work-hub-aux-panel';
 import { QAAP_WORK_HUB_RIGHT_PANEL_GLYPH_PATH } from './qaap-work-hub-right-panel-glyph';
+import { MOBILE_WORK_HUB_AUX_SHEET_TABS } from './mobile-work-hub-aux-sheet';
 
 export function applyExecutionSurfaceIconSelectDisplayExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, strip: HTMLElement, activeTab: TranscriptTab): void {
     const selectBtn = queryExecutionSurfaceViewSelect(strip);
@@ -395,6 +396,7 @@ export function createExecutionSurfaceIconSelectExtracted(ctx: MobileProjectsExe
             ctx.closeExecutionTabOverflowMenu();
             return;
         }
+        syncMobileAuxSheetMenuOptions(ctx, menu, trigger);
         ctx.openExecutionTabOverflowMenu(trigger, menu);
     });
 
@@ -422,6 +424,7 @@ export function createExecutionSurfaceIconSelectExtracted(ctx: MobileProjectsExe
         });
         menu.append(item);
     }
+    syncMobileAuxSheetMenuOptions(ctx, menu, trigger);
 
     wrap.append(trigger, menu);
     const auxPanel = applyWorkHubAuxPanelTriggerChrome(ctx, trigger);
@@ -436,6 +439,55 @@ export function createExecutionSurfaceIconSelectExtracted(ctx: MobileProjectsExe
         });
     }
     return wrap;
+}
+
+/**
+ * Keeps the mobile "Side chat" and "Pull request" entries in sync inside the header views dropdown.
+ * Shown on the narrow viewport only (desktop uses the docked right panel); disabled while no real
+ * conversation is open.
+ */
+function syncMobileAuxSheetMenuOptions(
+    ctx: MobileProjectsExecutionSurfaceTabsUiContext,
+    menu: HTMLElement,
+    trigger: HTMLButtonElement,
+): void {
+    for (const existing of Array.from(menu.querySelectorAll<HTMLElement>('.theia-mobile-transcript-tab-icon-select-option[data-aux-tab]'))) {
+        existing.remove();
+    }
+    if (!matchesMobileNarrowViewport() || peekPreferDesktopIde() || ctx.resolveWorkHubAuxPanel()) {
+        return;
+    }
+    const conversationOpen = ctx.hasOpenConversationForMobileAuxSheet();
+    for (const spec of MOBILE_WORK_HUB_AUX_SHEET_TABS) {
+        const item = document.createElement('button');
+        const label = spec.label();
+        item.type = 'button';
+        item.className = 'theia-mobile-transcript-tab-icon-select-option';
+        item.dataset.auxTab = spec.id;
+        item.setAttribute('role', 'menuitem');
+        item.title = label;
+        item.setAttribute('aria-label', label);
+        item.disabled = !conversationOpen;
+        if (!conversationOpen) {
+            item.setAttribute('aria-disabled', 'true');
+        }
+        appendExecutionSurfaceTabIcon(item, spec.icon, '');
+        const itemLabel = document.createElement('span');
+        itemLabel.className = 'theia-mobile-transcript-tab-icon-select-option-label';
+        itemLabel.textContent = label;
+        item.append(itemLabel);
+        item.addEventListener('click', event => {
+            event.stopPropagation();
+            if (item.disabled || !ctx.hasOpenConversationForMobileAuxSheet()) {
+                return;
+            }
+            ctx.closeExecutionTabOverflowMenu();
+            // Taps do not focus buttons everywhere (iOS Safari): focus the views trigger first so closing the sheet returns focus here.
+            trigger.focus({ preventScroll: true });
+            ctx.openMobileAuxSheet(spec.id);
+        });
+        menu.append(item);
+    }
 }
 
 export function resolveExecutionTabOverflowMenuPortalExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, anchor: HTMLElement): HTMLElement {

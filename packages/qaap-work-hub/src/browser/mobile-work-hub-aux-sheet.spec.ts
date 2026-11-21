@@ -14,10 +14,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { MOBILE_NARROW_VIEWPORT_MEDIA_QUERY } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { Disposable } from '@theia/core/lib/common/disposable';
+import { QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
 import { MobileProjectsExecutionSurfaceTabsUi, type MobileProjectsExecutionSurfaceTabsHost } from './mobile-projects-execution-surface-tabs-ui';
-import { createMobileAuxSheetTrigger } from './mobile-projects-execution-surface-tabs-ui-render';
-import { MobileProjectsHubHeaderUi, type MobileProjectsHubHeaderHost } from './mobile-projects-hub-header-ui';
-import { MOBILE_WORK_HUB_AUX_SHEET_TRIGGER_CLASS, MobileWorkHubAuxSheet } from './mobile-work-hub-aux-sheet';
+import { MobileWorkHubAuxSheet } from './mobile-work-hub-aux-sheet';
 import { QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY } from './mobile-work-hub-sessions-sidebar';
 import type { QaapWorkHubPullRequestTarget } from './qaap-work-hub-aux-pull-request-model';
 import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
@@ -48,27 +47,31 @@ describe('mobile-work-hub-aux-sheet', () => {
         document.body.className = '';
     });
 
-    it('mounts the Side chat and Pull request views from the desktop panel classes', () => {
+    it('opens in the same drawer as the other views and mounts the desktop panel views', () => {
         sheet.open('side-chat');
         expect(sheet.node.isConnected).to.equal(true);
-        expect(sheet.node.getAttribute('role')).to.equal('dialog');
-        expect(sheet.node.getAttribute('aria-modal')).to.equal('true');
-        expect(sheet.node.querySelector('.qaap-work-hub-aux-side-chat')).to.equal(sheet.sideChatView.element);
+        const drawer = sheet.node.querySelector<HTMLElement>('.theia-mobile-execution-surface-sidebar')!;
+        expect(drawer.getAttribute('role')).to.equal('dialog');
+        expect(drawer.getAttribute('aria-modal')).to.equal('true');
+        expect(drawer.querySelector('.theia-mobile-execution-surface-sidebar-header .theia-mobile-execution-surface-sidebar-close')).to.not.equal(null);
+        expect(sheet.node.querySelector('.theia-mobile-execution-surface-sidebar-backdrop')).to.not.equal(null);
+        expect(sheet.node.querySelector('.theia-mobile-execution-surface-sidebar-content .qaap-work-hub-aux-side-chat')).to.equal(sheet.sideChatView.element);
         expect(sheet.node.querySelector('.qaap-work-hub-aux-pr')).to.equal(sheet.pullRequestView.element);
-        const tabs = Array.from(sheet.node.querySelectorAll<HTMLElement>('[role="tab"]')).map(tab => tab.dataset.tab);
-        expect(tabs).to.deep.equal(['side-chat', 'pull-request']);
+        // No tabs, grabber or bottom-sheet chrome: one view per drawer, named by its header.
+        expect(sheet.node.querySelector('[role="tab"], .theia-mobile-work-hub-aux-sheet-grabber')).to.equal(null);
+        expect(drawer.querySelector('.theia-mobile-execution-surface-sidebar-title')!.textContent).to.equal('Side chat');
     });
 
-    it('shows one view at a time and switches with the tabs', () => {
+    it('shows one view at a time and names it in the drawer header', () => {
         sheet.open('side-chat');
         expect(sheet.sideChatView.element.hidden).to.equal(false);
         expect(sheet.pullRequestView.element.hidden).to.equal(true);
-        sheet.node.querySelector<HTMLButtonElement>('[data-tab="pull-request"]')!.click();
+        sheet.open('pull-request');
         expect(sheet.activeTab).to.equal('pull-request');
         expect(sheet.sideChatView.element.hidden).to.equal(true);
         expect(sheet.pullRequestView.element.hidden).to.equal(false);
-        expect(sheet.node.querySelector('[data-tab="pull-request"]')!.getAttribute('aria-selected')).to.equal('true');
-        expect(sheet.node.querySelector('[data-tab="side-chat"]')!.getAttribute('aria-selected')).to.equal('false');
+        expect(sheet.node.querySelector('.theia-mobile-execution-surface-sidebar-title')!.textContent).to.equal('Pull request');
+        expect(sheet.node.querySelector('.theia-mobile-execution-surface-sidebar')!.getAttribute('data-surface')).to.equal('pull-request');
     });
 
     it('opens on the Pull request tab pinned to a transcript chip until it is closed', () => {
@@ -85,7 +88,8 @@ describe('mobile-work-hub-aux-sheet', () => {
         sheet.open('side-chat');
         sheet.node.querySelector<HTMLButtonElement>('.theia-mobile-work-hub-aux-sheet-close')!.click();
         expect(sheet.isOpen).to.equal(false);
-        expect(sheet.node.hidden).to.equal(true);
+        // It slides out like the other views' drawer before it is hidden.
+        expect(sheet.node.querySelector('.theia-mobile-execution-surface-sidebar')!.classList.contains('theia-mod-closing')).to.equal(true);
         expect(document.body.classList.contains('theia-mobile-mod-aux-sheet-open')).to.equal(false);
 
         sheet.open('side-chat');
@@ -97,20 +101,14 @@ describe('mobile-work-hub-aux-sheet', () => {
         expect(sheet.isOpen).to.equal(false);
     });
 
-    it('focuses the active tab on open and gives focus back on close', () => {
+    it('focuses the drawer close button on open and gives focus back on close', () => {
         const opener = document.createElement('button');
         document.body.append(opener);
         opener.focus();
         sheet.open('side-chat');
-        expect(document.activeElement).to.equal(sheet.node.querySelector('[data-tab="side-chat"]'));
+        expect(document.activeElement).to.equal(sheet.node.querySelector('.theia-mobile-work-hub-aux-sheet-close'));
         sheet.close();
         expect(document.activeElement).to.equal(opener);
-    });
-
-    it('moves between tabs with the arrow keys', () => {
-        sheet.open('side-chat');
-        sheet.node.querySelector('[role="tablist"]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
-        expect(sheet.activeTab).to.equal('pull-request');
     });
 
     it('inside the sheet the views show no title or close button of their own; the desktop panel keeps them', () => {
@@ -155,18 +153,30 @@ describe('mobile-work-hub-aux-sheet entry points', () => {
         })) as unknown as typeof window.matchMedia;
     }
 
-    function createUi(): MobileProjectsExecutionSurfaceTabsUi {
+    function createUi(overrides: Partial<MobileProjectsExecutionSurfaceTabsHost> = {}): MobileProjectsExecutionSurfaceTabsUi {
+        const root = document.createElement('div');
+        document.body.append(root);
         const host = {
             executionSurfaceTabByProjectId: new Map(),
-            root: document.createElement('div'),
+            root,
+            scroll: document.createElement('div'),
             executionTabOverflowDispose: Disposable.NULL,
+            cardMenuUi: { closeCardMenu: () => undefined },
             projects: [],
             transcriptOpenProject: { id: 'p1', name: 'P' },
             transcriptOpenSummary: { id: 'c1', title: 'T' },
+            ...overrides,
         } as unknown as MobileProjectsExecutionSurfaceTabsHost;
         const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
         created.push(ui);
         return ui;
+    }
+
+    function openViewsMenu(strip: HTMLElement): { trigger: HTMLButtonElement; menu: HTMLElement } {
+        const trigger = strip.querySelector<HTMLButtonElement>('.theia-mobile-transcript-tab-icon-select')!;
+        trigger.click();
+        const menu = document.querySelector<HTMLElement>('.theia-mobile-transcript-tab-icon-select-menu.theia-mod-open')!;
+        return { trigger, menu };
     }
 
     beforeEach(() => {
@@ -175,20 +185,78 @@ describe('mobile-work-hub-aux-sheet entry points', () => {
 
     afterEach(() => {
         window.matchMedia = originalMatchMedia;
-        created.splice(0).forEach(ui => ui.dispose());
+        created.splice(0).forEach(ui => {
+            ui.closeExecutionTabOverflowMenu();
+            ui.dispose();
+        });
         document.body.replaceChildren();
     });
 
-    it('the conversation header trigger opens the sheet on the Side chat tab in the mobile layout', () => {
+    it('adds Side chat and Pull request to the mobile views dropdown and opens the sheet on the picked tab', () => {
         mockViewport(true);
         const ui = createUi();
-        const trigger = createMobileAuxSheetTrigger(ui);
-        expect(trigger.classList.contains(MOBILE_WORK_HUB_AUX_SHEET_TRIGGER_CLASS)).to.equal(true);
-        document.body.append(trigger);
-        trigger.click();
+        const strip = ui.buildExecutionViewTabStrip('messages', () => undefined);
+        document.body.append(strip);
+
+        const { menu } = openViewsMenu(strip);
+        const labels = Array.from(menu.querySelectorAll('.theia-mobile-transcript-tab-icon-select-option-label'))
+            .map(label => label.textContent);
+        expect(labels).to.deep.equal(['Browser', 'Changes', 'Files', 'Terminal', 'Side chat', 'Pull request']);
+
+        const sideChatBtn = menu.querySelector<HTMLButtonElement>('[data-aux-tab="side-chat"]')!;
+        const pullRequestBtn = menu.querySelector<HTMLButtonElement>('[data-aux-tab="pull-request"]')!;
+        expect(sideChatBtn.disabled).to.equal(false);
+        expect(pullRequestBtn.disabled).to.equal(false);
+
+        sideChatBtn.click();
         const sheet = ui.resolveMobileAuxSheet()!;
         expect(sheet.isOpen).to.equal(true);
         expect(sheet.activeTab).to.equal('side-chat');
+        expect(menu.hidden).to.equal(true);
+
+        sheet.close();
+        const reopened = openViewsMenu(strip);
+        reopened.menu.querySelector<HTMLButtonElement>('[data-aux-tab="pull-request"]')!.click();
+        expect(sheet.isOpen).to.equal(true);
+        expect(sheet.activeTab).to.equal('pull-request');
+    });
+
+    it('disables Side chat and Pull request in the views dropdown when no conversation is open', () => {
+        mockViewport(true);
+        const noConversation = createUi({ transcriptOpenSummary: undefined });
+        const strip = noConversation.buildExecutionViewTabStrip('messages', () => undefined);
+        document.body.append(strip);
+
+        const { menu } = openViewsMenu(strip);
+        const sideChatBtn = menu.querySelector<HTMLButtonElement>('[data-aux-tab="side-chat"]')!;
+        const pullRequestBtn = menu.querySelector<HTMLButtonElement>('[data-aux-tab="pull-request"]')!;
+        expect(sideChatBtn.disabled).to.equal(true);
+        expect(sideChatBtn.getAttribute('aria-disabled')).to.equal('true');
+        expect(pullRequestBtn.disabled).to.equal(true);
+        expect(pullRequestBtn.getAttribute('aria-disabled')).to.equal('true');
+        sideChatBtn.click();
+        pullRequestBtn.click();
+        expect(noConversation.resolveMobileAuxSheet()?.isOpen).to.equal(false);
+
+        // The synthetic idle landing summary also counts as having no open conversation.
+        noConversation.closeExecutionTabOverflowMenu();
+        noConversation.host.transcriptOpenSummary = {
+            id: QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID,
+            title: 'New task',
+        } as unknown as MobileProjectsExecutionSurfaceTabsHost['transcriptOpenSummary'];
+        const idleOpen = openViewsMenu(strip);
+        expect(idleOpen.menu.querySelector<HTMLButtonElement>('[data-aux-tab="side-chat"]')!.disabled).to.equal(true);
+        expect(idleOpen.menu.querySelector<HTMLButtonElement>('[data-aux-tab="pull-request"]')!.disabled).to.equal(true);
+
+        // Opening a real conversation enables both options the next time the menu opens.
+        noConversation.closeExecutionTabOverflowMenu();
+        noConversation.host.transcriptOpenSummary = {
+            id: 'conv-live',
+            title: 'Fix bug',
+        } as unknown as MobileProjectsExecutionSurfaceTabsHost['transcriptOpenSummary'];
+        const liveOpen = openViewsMenu(strip);
+        expect(liveOpen.menu.querySelector<HTMLButtonElement>('[data-aux-tab="side-chat"]')!.disabled).to.equal(false);
+        expect(liveOpen.menu.querySelector<HTMLButtonElement>('[data-aux-tab="pull-request"]')!.disabled).to.equal(false);
     });
 
     it('a pull request chip opens the sheet on the Pull request tab with that pull request', () => {
@@ -202,20 +270,22 @@ describe('mobile-work-hub-aux-sheet entry points', () => {
         expect(sheet.pullRequestView.element.textContent).to.contain('acme/app#7');
     });
 
-    it('Escape and the close button hand focus back to the header trigger that opened the sheet', () => {
+    it('Escape and the close button hand focus back to the views dropdown trigger', () => {
         mockViewport(true);
         const ui = createUi();
-        const trigger = createMobileAuxSheetTrigger(ui);
-        document.body.append(trigger);
-        trigger.click();
+        const strip = ui.buildExecutionViewTabStrip('messages', () => undefined);
+        document.body.append(strip);
+
+        const { trigger, menu } = openViewsMenu(strip);
+        menu.querySelector<HTMLButtonElement>('[data-aux-tab="side-chat"]')!.click();
         const sheet = ui.resolveMobileAuxSheet()!;
-        expect(document.activeElement).to.equal(sheet.node.querySelector('[data-tab="side-chat"]'));
+        expect(document.activeElement).to.equal(sheet.node.querySelector('.theia-mobile-work-hub-aux-sheet-close'));
 
         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
         expect(sheet.isOpen).to.equal(false);
         expect(document.activeElement).to.equal(trigger);
 
-        trigger.click();
+        openViewsMenu(strip).menu.querySelector<HTMLButtonElement>('[data-aux-tab="side-chat"]')!.click();
         sheet.node.querySelector<HTMLButtonElement>('.theia-mobile-work-hub-aux-sheet-close')!.click();
         expect(sheet.isOpen).to.equal(false);
         expect(document.activeElement).to.equal(trigger);
@@ -233,95 +303,23 @@ describe('mobile-work-hub-aux-sheet entry points', () => {
         expect(document.activeElement).to.equal(chip);
     });
 
-    describe('Work Hub header trigger', () => {
-        function createHeader(overrides: Record<string, unknown> = {}): { ui: MobileProjectsHubHeaderUi; exec: MobileProjectsExecutionSurfaceTabsUi; titleRow: HTMLElement } {
-            const titleRow = document.createElement('div');
-            titleRow.className = 'theia-mobile-projects-title-row';
-            document.body.append(titleRow);
-            const exec = createUi();
-            const host = {
-                titleRow,
-                executionSurfaceTabsUi: exec,
-                hubView: 'tasks',
-                agentsHubInlineActive: true,
-                transcriptOpenProject: { id: 'p1', name: 'P' },
-                transcriptOpenSummary: { id: 'c1', title: 'T' },
-                // The hub stays in landing mode while a conversation is open inline: the trigger must still show.
-                shouldUseAgentsHubLanding: () => true,
-                ...overrides,
-            } as unknown as MobileProjectsHubHeaderHost;
-            return { ui: new MobileProjectsHubHeaderUi(host), exec, titleRow };
-        }
-        function headerTrigger(titleRow: HTMLElement): HTMLButtonElement | null {
-            return titleRow.querySelector<HTMLButtonElement>(`.${MOBILE_WORK_HUB_AUX_SHEET_TRIGGER_CLASS}`);
-        }
-
-        it('shows with a conversation open in the mobile layout and opens the sheet', () => {
-            mockViewport(true);
-            const { ui, exec, titleRow } = createHeader();
-            ui.syncAuxSheetTrigger();
-            const trigger = headerTrigger(titleRow)!;
-            expect(trigger).to.not.equal(null);
-            expect(trigger.hidden).to.equal(false);
-            expect(trigger.getAttribute('aria-label')).to.equal('Open views');
-            trigger.click();
-            expect(exec.resolveMobileAuxSheet()!.isOpen).to.equal(true);
-        });
-
-        it('stays hidden on the landing (no open conversation) and on desktop', () => {
-            mockViewport(true);
-            const landing = createHeader({ transcriptOpenSummary: undefined, agentsHubInlineActive: false });
-            landing.ui.syncAuxSheetTrigger();
-            expect(headerTrigger(landing.titleRow)!.hidden).to.equal(true);
-
-            const noInlineConversation = createHeader({ agentsHubInlineActive: false });
-            noInlineConversation.ui.syncAuxSheetTrigger();
-            expect(headerTrigger(noInlineConversation.titleRow)!.hidden).to.equal(true);
-
-            mockViewport(false);
-            const desktop = createHeader();
-            desktop.ui.syncAuxSheetTrigger();
-            expect(headerTrigger(desktop.titleRow)!.hidden).to.equal(true);
-        });
-
-        it('never shows two triggers at once: the transcript sheet keeps its own and this one steps aside', () => {
-            mockViewport(true);
-            const { ui, exec, titleRow } = createHeader();
-            ui.syncAuxSheetTrigger();
-            const sheetTrigger = createMobileAuxSheetTrigger(exec);
-            const transcriptRoot = document.createElement('div');
-            transcriptRoot.className = 'theia-mobile-agent-transcript-root';
-            transcriptRoot.append(sheetTrigger);
-            document.body.append(transcriptRoot);
-            ui.syncAuxSheetTrigger();
-            const visible = Array.from(document.querySelectorAll<HTMLButtonElement>(`.${MOBILE_WORK_HUB_AUX_SHEET_TRIGGER_CLASS}`))
-                .filter(button => !button.hidden);
-            expect(visible).to.deep.equal([sheetTrigger]);
-            expect(headerTrigger(titleRow)!.hidden).to.equal(true);
-        });
-
-        it('the trigger CSS respects the hidden attribute', () => {
-            const css = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'qaap-work-hub-mobile-aux-sheet.css'), 'utf8');
-            expect(css).to.contain('.theia-mobile-work-hub-aux-sheet-trigger[hidden]');
-        });
+    it('does not render a standalone aux-sheet trigger button in headers', () => {
+        mockViewport(true);
+        const css = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'qaap-work-hub-mobile-aux-sheet.css'), 'utf8');
+        expect(css).to.not.contain('theia-mobile-work-hub-aux-sheet-trigger');
+        expect(css).to.contain('@media (max-width: 767px)');
+        const mobileBlock = css.slice(css.indexOf('@media (max-width: 767px)'));
+        expect(mobileBlock).to.contain('min-height: 0');
+        expect(mobileBlock).to.contain('safe-area-inset-bottom');
     });
 
-    it('the desktop layout has no sheet and keeps the right panel', () => {
+    it('the desktop layout has no sheet, adds no mobile aux options to the dropdown, and keeps the right panel', () => {
         mockViewport(false);
         const ui = createUi();
         expect(ui.resolveMobileAuxSheet()).to.equal(undefined);
         expect(ui.openMobileAuxSheet('side-chat')).to.equal(false);
         expect(ui.resolveWorkHubAuxPanel()).to.not.equal(undefined);
-    });
-
-    it('shows the trigger only below the 767px breakpoint', () => {
-        const css = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'qaap-work-hub-mobile-aux-sheet.css'), 'utf8');
-        expect(css).to.match(/^\.theia-mobile-work-hub-aux-sheet-trigger \{\s*display: none;/m);
-        expect(css).to.contain('@media (max-width: 767px)');
-        const mobileBlock = css.slice(css.indexOf('@media (max-width: 767px)'));
-        expect(mobileBlock).to.contain('.theia-mobile-work-hub-aux-sheet-trigger {');
-        expect(mobileBlock).to.contain('display: inline-flex');
-        expect(mobileBlock).to.contain('min-height: 0');
-        expect(mobileBlock).to.contain('safe-area-inset-bottom');
+        const strip = ui.buildExecutionViewTabStrip('messages', () => undefined);
+        expect(strip.querySelector('[data-aux-tab]')).to.equal(null);
     });
 });

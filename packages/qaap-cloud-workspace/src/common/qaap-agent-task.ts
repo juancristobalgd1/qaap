@@ -420,7 +420,7 @@ export interface QaapAgentDescriptor {
      * Sign-in state for the owner (`QaapHarnessModelAvailability.session`). `available` keeps meaning "can run
      * now": an enabled harness that is signed out stays listed, and only its Free models are usable.
      */
-    readonly session?: 'signed-in' | 'signed-out' | 'checking' | 'unknown';
+    readonly session?: 'signed-in' | 'signed-out' | 'checking' | 'undetectable' | 'unknown';
     /** The Antigravity CLI the host resolved; only set for the Antigravity harness (see {@link QaapAgentHarnessStatus.cliBin}). */
     readonly cliBin?: string;
 }

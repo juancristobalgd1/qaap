@@ -27,6 +27,10 @@ import {
     type QaapAgentLoginInputStep,
     QAAP_AGY_TUI_LOGIN_COMMAND,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-tui-command';
+import {
+    resolveQaapHarnessAuthProfile,
+    type QaapHarnessLoginPhase,
+} from '@theia/qaap-shared-core/lib/common/qaap-harness-auth-profile';
 import { QAAP_PI_LOGIN_PROVIDERS } from '@theia/qaap-shared-core/lib/common/qaap-pi-login-providers';
 import {
     QAAP_DISABLED_HARNESSES_PREF,
@@ -41,6 +45,7 @@ import { QaapAgentLoginFlow, stripAgentLoginTerminalControlSequences } from '@th
 import { QAAP_AGENT_SIGNED_IN_EVENT, type QaapAgentSignedInDetail } from './qaap-agent-signed-in-event';
 import { presentAgyLoginFailure, QAAP_AGY_LOGIN_CHALLENGE_TIMEOUT_MS } from '@theia/qaap-agents-ui/lib/common/qaap-agy-login-presentation';
 import { QaapAgentLoginInputDriver } from '@theia/qaap-agents-ui/lib/common/qaap-agent-login-input-driver';
+import { QaapAgentLoginPromptResponderDriver } from '@theia/qaap-agents-ui/lib/common/qaap-agent-login-prompt-responder';
 import { createTranscriptTerminalStagingHost, createTranscriptTerminalSurface } from '@theia/qaap-transcript/lib/browser/qaap-transcript-terminal-view';
 import { createQaapAgentLoginDialog } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-login-dialog';
 import { resolveAgentLoginCwd } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-login-cwd';
@@ -220,6 +225,7 @@ export async function openAgentLoginDialogInBackground(
     // Pi's provider can be switched in the dialog: the flow and its keystrokes follow the choice.
     let connectionFlow = resolveAgentConnectionFlow(agentId);
     let hiddenLogin = resolveHiddenLogin(connectionFlow);
+    let authProfile = resolveQaapHarnessAuthProfile(agentId);
 
     let staging: HTMLElement | undefined;
     let surface: any;
@@ -227,6 +233,7 @@ export async function openAgentLoginDialogInBackground(
     let watchdogHandle: number | undefined;
     let inputDriver: QaapAgentLoginInputDriver | undefined;
     let inputDriverHandle: number | undefined;
+    let promptResponderDriver: QaapAgentLoginPromptResponderDriver | undefined;
     let bufferTap: QaapAgentLoginBufferTap | undefined;
     let bufferTapHandle: number | undefined;
     /** UTF-8 bytes the live `onOutput` stream delivered in the current attempt (diagnostics only). */
@@ -264,6 +271,11 @@ export async function openAgentLoginDialogInBackground(
         }
     };
 
+    const stopPromptResponderDriver = (): void => {
+        promptResponderDriver?.stop();
+        promptResponderDriver = undefined;
+    };
+
     /**
      * Closes the hidden sign-in terminal. Disposing the surface closes its PTY on the backend
      * (`closeOnDispose`), which ends the shell and the CLI with it: an interactive CLI such as
@@ -281,6 +293,7 @@ export async function openAgentLoginDialogInBackground(
     const disposeTerminal = (): void => {
         stopPolling();
         stopInputDriver();
+        stopPromptResponderDriver();
         stopBufferTap();
         outputListener?.dispose();
         outputListener = undefined;
@@ -339,22 +352,15 @@ export async function openAgentLoginDialogInBackground(
     );
 
     /**
-     * Copilot and Grok have no auth probe, so the backend cannot see this sign-in on its own: attest the
-     * CLI's success line, then drop the cached agent list and models so the refresh below reads the
-     * unlocked catalog. Other harnesses are proven by their probe and skip this.
+     * Undetectable-session harnesses (Copilot) have no probe that distinguishes signed-out from
+     * unconfigured: attest the CLI's success line on the server first, then drop the cached agent
+     * list and models so every listener (composer, side chat, Settings → Harness) reads the fresh state.
      */
     const attestSignInIfUnprobed = async (): Promise<void> => {
-        if (agyLogin) {
-            // `agy` is proven by its connection probe: only the cached agent list and models are stale.
-            invalidateAgentTaskListAllCache();
-            invalidateAgentModelsCache(agentId);
-            return;
-        }
-        if (!isQaapSessionAttestationAgent(agentId)) {
-            return;
-        }
-        if (!await attestAgentSessionSignIn(agentId)) {
-            console.warn('[qaap] Agent sign-in attestation was refused', { agentId });
+        if (!agyLogin && isQaapSessionAttestationAgent(agentId)) {
+            if (!await attestAgentSessionSignIn(agentId)) {
+                console.warn('[qaap] Agent sign-in attestation was refused', { agentId });
+            }
         }
         invalidateAgentTaskListAllCache();
         invalidateAgentModelsCache(agentId);
@@ -364,9 +370,10 @@ export async function openAgentLoginDialogInBackground(
     function resolveLoginChallengeTimeout(): { challengeTimeoutMs?: number } {
         const challengeTimeoutMs = agyLogin
             ? QAAP_AGY_LOGIN_CHALLENGE_TIMEOUT_MS
-            : connectionFlow.kind === 'tui-login'
-                ? TUI_LOGIN_CHALLENGE_TIMEOUT_MS
-                : resolveAgentLoginChallengeTimeoutMs(agentId);
+            : authProfile?.login.challengeTimeoutMs
+                ?? (connectionFlow.kind === 'tui-login'
+                    ? TUI_LOGIN_CHALLENGE_TIMEOUT_MS
+                    : resolveAgentLoginChallengeTimeoutMs(agentId));
         return challengeTimeoutMs !== undefined ? { challengeTimeoutMs } : {};
     }
 
@@ -377,10 +384,16 @@ export async function openAgentLoginDialogInBackground(
             return resolveLoginChallengeTimeout().challengeTimeoutMs;
         },
         get answersPrompts(): boolean {
-            return agyLogin;
+            return agyLogin || authProfile?.login.answersPrompts === true;
         },
         get alwaysAcceptsCode(): boolean {
-            return agyLogin;
+            return agyLogin || authProfile?.login.alwaysAcceptsCode === true;
+        },
+        get extraSuccessPatterns(): readonly string[] | undefined {
+            return authProfile?.login.extraSuccessPatterns;
+        },
+        get extraFailurePatterns(): readonly string[] | undefined {
+            return authProfile?.login.extraFailurePatterns;
         },
         onDidChange: state => {
             if (closed) {
@@ -389,8 +402,10 @@ export async function openAgentLoginDialogInBackground(
             dialog.render(agyLogin && state.phase === 'failed' ? presentAgyLoginFailure(state, agentLabel) : state);
             if (state.phase === 'connected') {
                 disposeTerminal();
-                window.dispatchEvent(new window.CustomEvent<QaapAgentSignedInDetail>(QAAP_AGENT_SIGNED_IN_EVENT, { detail: { agentId } }));
-                void attestSignInIfUnprobed().then(() => onConnected?.()).catch(error => {
+                void attestSignInIfUnprobed().then(() => {
+                    window.dispatchEvent(new window.CustomEvent<QaapAgentSignedInDetail>(QAAP_AGENT_SIGNED_IN_EVENT, { detail: { agentId } }));
+                    return onConnected?.();
+                }).catch(error => {
                     console.warn('[qaap] Agent login UI refresh failed:', error);
                 });
                 successCloseHandle ??= window.setTimeout(close, CONNECTED_CLOSE_DELAY_MS);
@@ -548,11 +563,31 @@ export async function openAgentLoginDialogInBackground(
             staging = attemptStaging;
             surface = attemptSurface;
             const liveTerminal = surface.terminal;
+            const activeLoginPhase = (): QaapHarnessLoginPhase | undefined => {
+                const phase = flow.state.phase;
+                return phase === 'waiting' || phase === 'challenge' || phase === 'code-submitted' ? phase : undefined;
+            };
+            const responders = authProfile?.login.postChallengeResponders;
+            if (responders?.length) {
+                promptResponderDriver = new QaapAgentLoginPromptResponderDriver({
+                    responders,
+                    send: text => {
+                        if (!closed && currentAttempt === attempt && !liveTerminal.isDisposed) {
+                            liveTerminal.sendText(text);
+                        }
+                    },
+                });
+            }
             outputListener = liveTerminal.onOutput((chunk: string) => {
                 onOutputBytes += agentLoginUtf8ByteLength(chunk);
                 bufferTap?.noteOutput();
-                inputDriver?.feed(stripAgentLoginTerminalControlSequences(chunk), Date.now());
+                const stripped = stripAgentLoginTerminalControlSequences(chunk);
+                inputDriver?.feed(stripped, Date.now());
                 flow.appendRawOutput(chunk);
+                const phase = activeLoginPhase();
+                if (phase) {
+                    promptResponderDriver?.feed(stripped, phase);
+                }
             });
             await wait(120);
             if (closed || currentAttempt !== attempt || liveTerminal.isDisposed || flow.state.phase !== 'preparing') {
@@ -564,6 +599,10 @@ export async function openAgentLoginDialogInBackground(
                 feed: text => {
                     inputDriver?.feed(text, Date.now());
                     flow.appendRawOutput(text);
+                    const phase = activeLoginPhase();
+                    if (phase) {
+                        promptResponderDriver?.feed(text, phase);
+                    }
                 },
                 columns: () => (liveTerminal as unknown as { term?: { cols?: number } }).term?.cols,
             });
@@ -614,6 +653,7 @@ export async function openAgentLoginDialogInBackground(
             flow.requireInstall(canInstall, canInstall ? undefined : localizeInstallBlockedMessage(agentLabel, status));
             return;
         }
+        authProfile = resolveQaapHarnessAuthProfile(agentId, { cliBin: status?.cliBin }) ?? authProfile;
         // The resolved Antigravity CLI decides the sign-in. `agy` has no login command: its Google OAuth picker
         // is driven in the hidden terminal and the authorization URL it prints is opened by the user (the
         // callback is hosted by Google, so any browser works). Other CLIs without a login get instructions.

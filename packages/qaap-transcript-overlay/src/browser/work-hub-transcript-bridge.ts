@@ -38,7 +38,7 @@ export interface WorkHubTranscriptBridge {
     createAgentsHubRecentsBlock(project: MobileProjectEntry): HTMLElement;
     createAgentsHubQuickActionsBlock(): HTMLElement;
     /** Discreet first-step suggestions shown under the empty-chat welcome line. */
-    createEmptyWelcomeHints?(): HTMLElement;
+    createEmptyWelcomeHints?(): HTMLElement | undefined;
     /**
      * Shows exactly this pull request (not the branch's one): the desktop right panel's "Pull request"
      * tab, or the Work Hub pull request detail on mobile. Returns `false` when nothing could show it, so

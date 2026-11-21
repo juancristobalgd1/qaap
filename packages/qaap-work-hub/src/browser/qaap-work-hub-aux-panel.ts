@@ -25,7 +25,8 @@ import {
     type QaapWorkHubPullRequestRef,
     type QaapWorkHubPullRequestTarget,
 } from './qaap-work-hub-aux-pull-request-model';
-import { QaapWorkHubAuxPullRequestView } from './qaap-work-hub-aux-pull-request-view';
+import { QaapWorkHubAuxPullRequestView, type QaapWorkHubAuxPullRequestWatchAction } from './qaap-work-hub-aux-pull-request-view';
+import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import { QAAP_WORK_HUB_NO_SIDE_CHAT_HOST, QaapWorkHubAuxSideChatView, type QaapWorkHubAuxSideChatHost } from './qaap-work-hub-aux-side-chat-view';
 
 /** The execution surface (live widget host) a panel view is backed by: one per view. */
@@ -41,8 +42,12 @@ export interface QaapWorkHubAuxPanelHost {
     releaseSurface(userClosed: boolean): void;
     /** The pull request the "Pull request" view follows, or `undefined` while no project is open. */
     resolvePullRequestTarget(): QaapWorkHubPullRequestTarget | undefined;
+    /** The project the view is about even when it has no pull request target (e.g. a project not on GitHub). */
+    resolvePullRequestProjectName?(): string | undefined;
     /** Opens a web page: in the system browser on desktop, in a new tab on the web. */
     openExternal(url: string): void;
+    /** Optional Watch / Stop watching action for the open task's pull request. */
+    resolvePullRequestWatchAction?(pr: QaapGithubPullRequestSummary): QaapWorkHubAuxPullRequestWatchAction | undefined;
     /** The side chat's Work Hub hooks. Without them the "Side chat" view has no parent and stays disabled. */
     readonly sideChat?: QaapWorkHubAuxSideChatHost;
 }
@@ -208,7 +213,10 @@ export class QaapWorkHubAuxPanel {
         pullRequestView?: QaapWorkHubAuxPullRequestView,
         sideChatView?: QaapWorkHubAuxSideChatView,
     ) {
-        this.pullRequestView = pullRequestView ?? new QaapWorkHubAuxPullRequestView({ openExternal: url => this.host.openExternal(url) });
+        this.pullRequestView = pullRequestView ?? new QaapWorkHubAuxPullRequestView({
+            openExternal: url => this.host.openExternal(url),
+            resolveWatchAction: pr => this.host.resolvePullRequestWatchAction?.(pr),
+        });
         this.sideChatView = sideChatView ?? new QaapWorkHubAuxSideChatView({
             host: host.sideChat ?? QAAP_WORK_HUB_NO_SIDE_CHAT_HOST,
             onTitle: title => this.setSideChatTitle(title),
@@ -612,6 +620,7 @@ export class QaapWorkHubAuxPanel {
         this.element.dataset.view = active?.kind ?? 'launcher';
         if (showPullRequest) {
             const branchTarget = this.host.resolvePullRequestTarget();
+            this.pullRequestView.setProjectName(this.host.resolvePullRequestProjectName?.());
             this.pullRequestView.sync(
                 this.pinnedPullRequest ? createQaapWorkHubPinnedPullRequestTarget(this.pinnedPullRequest) : branchTarget,
                 this.isOpen,
@@ -719,6 +728,15 @@ export class QaapWorkHubAuxPanel {
             row.dataset.kind = kind;
             row.setAttribute('aria-label', `${nls.localizeByDefault('Open')} ${spec.label}`);
             row.disabled = !enabled;
+            if (!enabled) {
+                const disabledReason = kind === 'side-chat'
+                    ? nls.localize('qaap/workHubAuxPanel/sideChatDisabledReason', 'Requires an active task conversation.')
+                    : kind === 'pull-request'
+                        ? nls.localize('qaap/workHubAuxPanel/pullRequestDisabledReason', 'Requires an open project with a Git repository.')
+                        : nls.localize('qaap/workHubAuxPanel/openTaskHint', 'Open a task to use these views.');
+                row.title = disabledReason;
+                row.setAttribute('aria-description', disabledReason);
+            }
             row.addEventListener('click', () => this.activateTab(this.model.openView(kind)));
             // The tile centers the glyph; the codicon itself keeps its own inline box.
             const icon = document.createElement('span');

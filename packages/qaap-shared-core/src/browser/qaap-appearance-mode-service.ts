@@ -3,7 +3,8 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { inject, injectable } from '@theia/core/shared/inversify';
+import { inject, injectable, optional } from '@theia/core/shared/inversify';
+import { PreferenceService } from '@theia/core/lib/common/preferences';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { Emitter } from '@theia/core/lib/common/event';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
@@ -31,10 +32,25 @@ import {
  * unless those are still the remembered preferences. System follows the OS
  * between the same pair.
  */
+/** The shared color theme setting (Theia's `ThemeService` key). */
+const QAAP_COLOR_THEME_PREFERENCE = 'workbench.colorTheme';
+/** A theme change this soon after an outside change of the setting was caused by it. */
+const QAAP_EXTERNAL_THEME_CHANGE_WINDOW_MS = 250;
+
 @injectable()
 export class QaapAppearanceModeService implements FrontendApplicationContribution {
     @inject(ThemeService)
     protected readonly themeService: ThemeService;
+
+    @inject(PreferenceService) @optional()
+    protected readonly preferences: PreferenceService | undefined;
+
+    /**
+     * When the shared `workbench.colorTheme` setting last changed from outside this window (another device or
+     * window of the same user, or the setting's first load at boot). The mode is per device, the setting is
+     * shared: a theme change it causes must not flip this device's mode, and System must not write it back.
+     */
+    protected lastExternalThemeSettingChange = Number.NEGATIVE_INFINITY;
 
     protected mode: QaapAppearanceMode = 'system';
     protected hasExplicitMode = false;
@@ -64,21 +80,44 @@ export class QaapAppearanceModeService implements FrontendApplicationContributio
                 this.onDidChangeModeEmitter.fire(this.mode);
                 return;
             }
-            this.applyResolvedTheme();
+            // Restores this device's mode at boot without writing the shared setting.
+            this.applyResolvedTheme(false);
             this.syncMediaListener();
         });
+        if (this.preferences) {
+            this.toDispose.push(this.preferences.onPreferenceChanged(change => {
+                if (change.preferenceName === QAAP_COLOR_THEME_PREFERENCE && !this.applyingTheme) {
+                    this.lastExternalThemeSettingChange = Date.now();
+                }
+            }));
+            // The theme service applies the configured theme once preferences load; that is not a pick either.
+            void this.preferences.ready.then(() => {
+                this.lastExternalThemeSettingChange = Date.now();
+            });
+        }
         this.toDispose.push(this.themeService.onDidColorThemeChange(() => {
             if (this.applyingTheme) {
                 return;
             }
-            this.rememberCurrentThemeInPair();
-            if (this.isExplicitSystem()) {
-                // A color pick in System mode is remembered for its side, but the OS decides which side is shown.
-                this.scheduleResolvedTheme();
-                return;
-            }
-            this.syncModeFromActiveTheme();
+            // Decided after every listener of this change ran, so the setting listener above is always seen first.
+            queueMicrotask(() => this.onExternalOrPickedThemeChange());
         }));
+    }
+
+    protected onExternalOrPickedThemeChange(): void {
+        if (this.hasExplicitMode && Date.now() - this.lastExternalThemeSettingChange < QAAP_EXTERNAL_THEME_CHANGE_WINDOW_MS) {
+            // The shared setting moved under this device: keep this device's mode and show its side again,
+            // without writing the setting back (two devices would otherwise overwrite each other forever).
+            this.applyResolvedTheme(false);
+            return;
+        }
+        this.rememberCurrentThemeInPair();
+        if (this.isExplicitSystem()) {
+            // A color pick in System mode is remembered for its side, but the OS decides which side is shown.
+            this.scheduleResolvedTheme();
+            return;
+        }
+        this.syncModeFromActiveTheme();
     }
 
     protected isExplicitSystem(): boolean {
@@ -177,12 +216,16 @@ export class QaapAppearanceModeService implements FrontendApplicationContributio
         this.onDidChangeModeEmitter.fire(this.getMode());
     }
 
-    protected applyResolvedTheme(): void {
+    /**
+     * Shows the theme of the current mode. Only an explicit Light or Dark pick is written to the shared
+     * `workbench.colorTheme` setting: System resolves per device from the OS and must never overwrite it.
+     */
+    protected applyResolvedTheme(persist: boolean = this.mode !== 'system'): void {
         const requestedId = resolveQaapAppearanceThemeId(this.mode, this.pair);
         const themeId = this.resolveExistingThemeId(requestedId);
         this.applyingTheme = true;
         try {
-            this.themeService.setCurrentTheme(themeId, true);
+            this.themeService.setCurrentTheme(themeId, persist);
             try {
                 window.localStorage.setItem(ThemeService.STORAGE_KEY, themeId);
             } catch {

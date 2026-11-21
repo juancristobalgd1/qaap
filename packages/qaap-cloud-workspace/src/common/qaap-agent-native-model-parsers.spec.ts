@@ -158,6 +158,38 @@ describe('qaap-agent-native-model-parsers', () => {
         });
     });
 
+    describe('opencode', () => {
+        it('labels listed ids with the curated name, else the id without the opencode/ prefix', () => {
+            expect(parseNativeModelOutput('opencode', 'opencode/beam-free\nopencode/claude-opus-5-5\nopencode/zz-unlisted-model').map(model => model.label))
+                .to.deep.equal(['Beam Free', 'Claude Opus 5.5', 'zz-unlisted-model']);
+        });
+    });
+
+    describe('cursor', () => {
+        // `cursor-agent models` (2026-11 capture): a heading, `<id> - <label>` rows and a closing tip.
+        const CURSOR_OUTPUT = [
+            'Available models',
+            '',
+            'auto - Auto (default)',
+            'gpt-5.3-codex-high - Codex 5.3 High',
+            'claude-opus-4-8 - Opus 4.8 (current)',
+            '',
+            "Tip: use --model <id> (or /model <id> in interactive mode) to switch. Parameterized models also accept quoted overrides, e.g. --model 'x'.",
+        ].join('\n');
+
+        it('keeps only the model ids with their labels, never the heading or the tip', () => {
+            expect(parseNativeModelOutput('cursor', CURSOR_OUTPUT).map(model => [model.modelId, model.label])).to.deep.equal([
+                ['auto', 'Auto'],
+                ['gpt-5.3-codex-high', 'Codex 5.3 High'],
+                ['claude-opus-4-8', 'Opus 4.8'],
+            ]);
+        });
+
+        it('does not take a one-word status line for a model once labelled rows exist', () => {
+            expect(parseNativeModelOutput('cursor', 'Loading...\nauto - Auto').map(model => model.modelId)).to.deep.equal(['auto']);
+        });
+    });
+
     describe('dispatcher', () => {
         it('routes each agent to its parser and returns nothing for agents without a listing', () => {
             expect(parseNativeModelOutput('codex', fixture('codex-debug-models.json'))).to.have.length(3);

@@ -795,7 +795,7 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             return;
         }
         const ownerLogin = this.auth.resolveUserLogin(ctx)?.trim();
-        if (!ownerLogin) {
+        if (!ownerLogin && isQaapProductionRuntime(process.env)) {
             res.status(401).json({ error: 'Not signed in' });
             return;
         }

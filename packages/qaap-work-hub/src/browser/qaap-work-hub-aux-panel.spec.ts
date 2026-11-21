@@ -431,13 +431,18 @@ describe('qaap-work-hub-aux-panel', () => {
     it('disables the pull request row when no project is open', () => {
         const { panel } = createHarness({ canShow: false });
         panel.show();
-        expect(launcherOpen(panel, 'pull-request').disabled).to.equal(true);
+        const prItem = launcherOpen(panel, 'pull-request');
+        expect(prItem.disabled).to.equal(true);
+        expect(prItem.title).to.equal('Requires an open project with a Git repository.');
+        expect(prItem.getAttribute('aria-description')).to.equal('Requires an open project with a Git repository.');
     });
 
     it('shows a hint instead of views while no task is open', () => {
         const { panel, shown } = createHarness({ canShow: false });
         panel.show();
-        expect(launcherOpen(panel, 'preview').disabled).to.equal(true);
+        const previewItem = launcherOpen(panel, 'preview');
+        expect(previewItem.disabled).to.equal(true);
+        expect(previewItem.title).to.equal('Open a task to use these views.');
         expect(panel.element.querySelector('.qaap-work-hub-aux-panel-hint')).to.not.equal(null);
         expect(shown).to.deep.equal([]);
     });
@@ -529,6 +534,9 @@ describe('qaap-work-hub-aux-panel', () => {
     it('lists the side chat in the launcher only while a task is open', () => {
         const { panel } = createHarness({ canShow: false });
         panel.show();
-        expect(launcherOpen(panel, 'side-chat').disabled).to.equal(true);
+        const sideChatItem = launcherOpen(panel, 'side-chat');
+        expect(sideChatItem.disabled).to.equal(true);
+        expect(sideChatItem.title).to.equal('Requires an active task conversation.');
+        expect(sideChatItem.getAttribute('aria-description')).to.equal('Requires an active task conversation.');
     });
 });

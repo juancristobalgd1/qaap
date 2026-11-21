@@ -931,6 +931,27 @@ export function readQaapDesktopGithubCredential(): QaapAuthSessionGithubCredenti
     return qaapDesktopGithubCredential;
 }
 
+/**
+ * Reads the desktop GitHub credential from `/auth/session` without touching the stored Qaap session. The desktop app
+ * runs in local (skip-auth) mode, where the startup never syncs the session, so without this the Profile and every
+ * other surface that follows the credential showed "Not signed in" although `gh` was signed in. Fires
+ * `qaap-auth-session-changed` when the GitHub account changed; resolves with the current credential.
+ */
+export async function refreshQaapDesktopGithubCredential(): Promise<QaapAuthSessionGithubCredential | undefined> {
+    const session = await fetchQaapAuthSession().catch(() => undefined);
+    if (!session) {
+        return qaapDesktopGithubCredential;
+    }
+    const next = session.signedIn && session.githubCredential?.user?.login ? session.githubCredential : undefined;
+    const changed = next?.user.login !== qaapDesktopGithubCredential?.user.login
+        || next?.user.avatarUrl !== qaapDesktopGithubCredential?.user.avatarUrl;
+    qaapDesktopGithubCredential = next;
+    if (changed && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('qaap-auth-session-changed'));
+    }
+    return next;
+}
+
 /** Apply server session to local storage; returns true when signed in. */
 export async function syncQaapAuthSessionFromServer(config?: QaapAuthConfigResponse): Promise<boolean> {
     const resolvedConfig = config ?? await fetchQaapAuthConfig().catch(() => ({ skipAuth: false, githubOAuth: false }));

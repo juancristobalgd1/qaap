@@ -31,6 +31,7 @@ export type MobileProjectsExecutionSurfaceTabsUiContextMember =
     | 'executionSurfaceTabForProject'
     | 'executionSurfaceTabSpecs'
     | 'executionTabOverflowMenuMinTop'
+    | 'hasOpenConversationForMobileAuxSheet'
     | 'host'
     | 'isRenderedOnScreen'
     | 'mountExecutionSurfaceTabContent'

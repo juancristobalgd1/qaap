@@ -32,8 +32,11 @@ export interface QaapComposerModelPickerProps {
     /** Narrow viewport: the number shortcuts are desktop-only. */
     readonly isMobile?: boolean;
     readonly onSelectModel: (agentId: string, modelId: string) => void;
-    /** Opens the harness sign-in from a locked row whose only blocker is the missing session. */
-    readonly onSignIn?: (agentId: string) => void;
+    /**
+     * Picking a model whose only blocker is the missing harness session: opens the sign-in dialog, which selects the
+     * model once the sign-in is confirmed. Such a row looks like any other; there is no separate Sign in button.
+     */
+    readonly onSignIn?: (agentId: string, modelId: string) => void;
     readonly onSelectEffort: (level: QaapAgentEffortLevel) => void;
     readonly onSelectApproval: (policyId: QaapAgentApprovalPolicyId) => void;
     readonly onToggleFavorite: (key: string) => void;
@@ -111,10 +114,11 @@ export function renderQaapComposerModelPicker(host: HTMLElement, props: QaapComp
     if (kept && props.state.query && !hadFocus) {
         kept.value = props.state.query;
     }
+    const focusInPicker = document.activeElement instanceof Node && host.contains(document.activeElement);
     if (kept && hadFocus) {
         kept.focus({ preventScroll: true });
         kept.setSelectionRange(selection[0], selection[1]);
-    } else if (kept && opening && !props.isMobile) {
+    } else if (kept && !props.isMobile && (!focusInPicker || opening)) {
         // Desktop: the picker takes focus when it opens (search field), so typing filters and its keys reach it.
         // Mobile keeps focus where it is so the on-screen keyboard does not pop up.
         kept.focus({ preventScroll: true });
@@ -152,11 +156,18 @@ export function disposeQaapComposerModelPicker(host: HTMLElement): void {
 function attachDocumentShortcutKeys(host: HTMLElement): () => void {
     const doc = host.ownerDocument;
     const listener = (event: KeyboardEvent): void => {
-        if (!host.isConnected || (event.target instanceof Node && host.contains(event.target))) {
+        if (event.defaultPrevented || !host.isConnected || (event.target instanceof Node && host.contains(event.target))) {
             return;
         }
         if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && /^[1-9]$/.test(event.key)) {
             handlePickerKeydown(host, event);
+            return;
+        }
+        // Focus fell outside the picker (button that opened it, page, etc.): typing still filters on desktop.
+        const isExternalInput = event.target instanceof HTMLElement
+            && (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA' || event.target.isContentEditable);
+        if (!isExternalInput && !hostStates.get(host)?.props.isMobile) {
+            typeIntoSearch(host, event);
         }
     };
     doc.addEventListener('keydown', listener);
@@ -326,7 +337,7 @@ function renderList(host: HTMLElement, props: QaapComposerModelPickerProps): HTM
     input.addEventListener('keydown', ev => {
         if (ev.key === 'Enter') {
             ev.preventDefault();
-            // Enter picks the first selectable row; a locked row (sign-in or plan) is never picked by Enter.
+            // Enter picks the first row that is not locked; a sign-in row counts (it opens the sign-in).
             const first = visibleRows(host).find(row => !row.disabled && row.getAttribute('aria-disabled') !== 'true');
             first?.click();
         } else if (ev.key === 'ArrowDown') {
@@ -377,19 +388,23 @@ function renderList(host: HTMLElement, props: QaapComposerModelPickerProps): HTM
         row.dataset.modelId = model.modelId;
         // A sign-in-locked row is not selectable, but stays clickable (not natively disabled) so the click can
         // open the harness sign-in. Any other locked row is natively disabled and does nothing.
+        // A row locked only by the missing session is shown and picked like any other: picking it opens the
+        // sign-in, the same for every harness whether or not it can report its session. Any other lock disables it.
         const signInLocked = !model.available && model.signInRequired === true && !!props.onSignIn;
-        row.disabled = !model.available && !signInLocked;
-        row.setAttribute('aria-disabled', String(!model.available));
-        row.classList.toggle('theia-mod-disabled', !model.available);
+        const locked = !model.available && !signInLocked;
+        row.disabled = locked;
+        row.setAttribute('aria-disabled', String(locked));
+        row.classList.toggle('theia-mod-disabled', locked);
         row.classList.toggle('theia-mod-current', isCurrent);
         // The row shows the name only; the full model id is the tooltip.
-        row.title = model.available ? model.modelId : (model.unavailableReason ?? model.modelId);
+        row.title = locked ? (model.unavailableReason ?? model.modelId) : model.modelId;
         row.addEventListener('click', ev => {
             ev.preventDefault();
+            if (signInLocked) {
+                props.onSignIn?.(model.agentId, model.modelId);
+                return;
+            }
             if (!model.available) {
-                if (signInLocked) {
-                    props.onSignIn?.(model.agentId);
-                }
                 return;
             }
             props.onSelectModel(model.agentId, model.modelId);
@@ -412,13 +427,6 @@ function renderList(host: HTMLElement, props: QaapComposerModelPickerProps): HTM
             paid.className = 'qaap-model-picker-row-paid';
             paid.textContent = nls.localize('qaap/composer/picker/paid', 'Paid');
             row.append(paid);
-        }
-        if (signInLocked) {
-            const signIn = document.createElement('span');
-            signIn.className = 'qaap-model-picker-row-paid';
-            const harnessLabel = props.state.harnesses.find(harness => harness.id === model.agentId)?.label ?? model.agentId;
-            signIn.textContent = nls.localize('qaap/composer/picker/signInTo', 'Sign in to {0}', harnessLabel);
-            row.append(signIn);
         }
         if (isCurrent) {
             const check = document.createElement('span');
@@ -613,7 +621,32 @@ function visibleRows(host: HTMLElement): HTMLButtonElement[] {
     return Array.from(host.querySelectorAll<HTMLButtonElement>('.qaap-model-picker-row'));
 }
 
+/**
+ * Typing while focus is on a row, a rail button or nowhere keeps filtering: the keystroke goes to the search field,
+ * as in a combobox. Returns whether the key was taken.
+ */
+function typeIntoSearch(host: HTMLElement, event: KeyboardEvent): boolean {
+    const typed = event.key.length === 1 && event.key !== ' ' && !event.ctrlKey && !event.metaKey && !event.altKey;
+    if (!typed && event.key !== 'Backspace') {
+        return false;
+    }
+    const input = host.querySelector<HTMLInputElement>('.qaap-model-picker-search input');
+    if (!input || event.target === input) {
+        return false;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    input.focus();
+    input.value = typed ? input.value + event.key : input.value.slice(0, -1);
+    const view = input.ownerDocument.defaultView ?? window;
+    input.dispatchEvent(new view.Event('input', { bubbles: true }));
+    return true;
+}
+
 function moveRowFocus(host: HTMLElement, event: KeyboardEvent): void {
+    if (typeIntoSearch(host, event)) {
+        return;
+    }
     if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') {
         return;
     }
@@ -632,6 +665,9 @@ function moveRowFocus(host: HTMLElement, event: KeyboardEvent): void {
 function handlePickerKeydown(host: HTMLElement, event: KeyboardEvent): void {
     const state = hostStates.get(host);
     if (!state) {
+        return;
+    }
+    if (event.target instanceof Element && event.target.closest('.qaap-model-picker-rail') && typeIntoSearch(host, event)) {
         return;
     }
     if (event.key === 'Escape') {
@@ -654,6 +690,8 @@ function handlePickerKeydown(host: HTMLElement, event: KeyboardEvent): void {
         event.preventDefault();
         if (model.available) {
             state.props.onSelectModel(model.agentId, model.modelId);
+        } else if (model.signInRequired === true && state.props.onSignIn) {
+            state.props.onSignIn(model.agentId, model.modelId);
         }
     }
 }

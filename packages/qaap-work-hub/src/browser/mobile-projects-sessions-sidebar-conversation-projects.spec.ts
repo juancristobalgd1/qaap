@@ -36,23 +36,38 @@ const baseProject = (name: string): MobileProjectEntry => ({
 });
 
 describe('mergeConversationCwdProjects', () => {
-    it('names worktree projects <projectName>_<n> instead of the hash directory', () => {
+    it('lists a desktop clone open right now once: its GitHub card becomes the current one', () => {
+        const desktopClone = '/Users/me/.qaap/workspaces/users/_dev/esorjs/esor-vite';
+        const githubCard: MobileProjectEntry = { ...baseProject('esor-vite'), id: 'github:esorjs/esor-vite', uri: undefined, github: { owner: 'esorjs', name: 'esor-vite' } } as MobileProjectEntry;
+        const currentCard: MobileProjectEntry = { ...baseProject('esor-vite'), id: conversationCwdProjectId(desktopClone), uri: FileUri.create(desktopClone), isCurrent: true };
+        const merged = mergeConversationCwdProjects([currentCard, githubCard], [summary('hi', desktopClone, 1)]);
+        expect(merged.map(project => project.id)).to.deep.equal(['github:esorjs/esor-vite']);
+        expect(merged[0].isCurrent).to.equal(true);
+    });
+
+    // CRITICAL: a project is never listed twice. Task worktrees of a project that has a card are not projects.
+    it('never lists a task worktree as a second project next to its source project', () => {
         const merged = mergeConversationCwdProjects([baseProject('claude-of-duty')], [
             summary('base-chat', BASE, 1),
             summary('wt1', WT1, 2, { parallelBaseCwd: BASE, worktreeOrdinal: 1 }),
             summary('wt2', WT2, 3, { parallelBaseCwd: BASE, worktreeOrdinal: 2 }),
         ]);
-        expect(merged.map(project => project.name)).to.deep.equal(['claude-of-duty', 'claude-of-duty_1', 'claude-of-duty_2']);
-        // The hash stays the internal key (project id / uri).
-        expect(merged[1].id).to.equal(conversationCwdProjectId(WT1));
-        expect(merged[1].uri?.path.base).to.equal('e895ac21');
+        expect(merged.map(project => project.name)).to.deep.equal(['claude-of-duty']);
     });
 
-    it('uses the source project display name and relabels existing hash-named entries', () => {
+    it('drops a worktree card cached before its source was known, once the source project has a card', () => {
         const stale = mergeConversationCwdProjects([baseProject('Claude of Duty')], [summary('wt1', WT1, 2)]);
-        expect(stale[1].name).to.equal('e895ac21');
-        const relabelled = mergeConversationCwdProjects(stale, [summary('wt1', WT1, 2, { parallelBaseCwd: BASE, worktreeOrdinal: 1 })]);
-        expect(relabelled.map(project => project.name)).to.deep.equal(['Claude of Duty', 'Claude of Duty_1']);
+        expect(stale.map(project => project.name), 'no source known yet: the hash card keeps the chat reachable').to.deep.equal(['Claude of Duty', 'e895ac21']);
+        const merged = mergeConversationCwdProjects(stale, [summary('wt1', WT1, 2, { parallelBaseCwd: BASE, worktreeOrdinal: 1 })]);
+        expect(merged.map(project => project.name)).to.deep.equal(['Claude of Duty']);
+    });
+
+    it('never lists a worktree twice when its source card is synthesized from the history in the same pass', () => {
+        const merged = mergeConversationCwdProjects([], [
+            summary('base-chat', BASE, 1),
+            summary('wt1', WT1, 2, { parallelBaseCwd: BASE, worktreeOrdinal: 1 }),
+        ]);
+        expect(merged.map(project => project.uri?.path.base)).to.deep.equal(['claude-of-duty']);
     });
 
     it('derives labels for legacy worktrees without a persisted ordinal (creation order)', () => {

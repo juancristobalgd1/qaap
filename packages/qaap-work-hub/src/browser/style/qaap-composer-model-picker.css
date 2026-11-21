@@ -1,6 +1,7 @@
 /* The picker inside the agent popover or sheet: the popover is sized for the picker, not the old list. */
 .qaap-sticky-composer-sheet-popover.theia-mod-agent-picker.theia-mod-model-picker {
-    width: min(560px, calc(100vw - 32px));
+    /* Desktop uses the narrow mobile layout too: harness rail on top, one column of models. */
+    width: min(400px, calc(100vw - 32px));
     max-width: calc(100vw - 32px);
     /* One height for every harness: the model list scrolls inside, the footer stays at the bottom. */
     height: min(440px, 70vh);
@@ -84,7 +85,7 @@
 .qaap-model-picker {
     display: flex;
     flex-direction: column;
-    width: min(560px, 100%);
+    width: 100%;
     flex: 1 1 auto;
     height: 100%;
     max-height: none;
@@ -110,7 +111,8 @@
 
 .qaap-model-picker-body {
     display: grid;
-    grid-template-columns: 56px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
     min-height: 0;
     flex: 1 1 auto;
 }
@@ -121,24 +123,26 @@
     flex-direction: column;
     min-width: 0;
     min-height: 0;
-    border-right: 1px solid var(--theia-widget-border, var(--theia-panel-border));
+    border-bottom: 1px solid var(--theia-widget-border, var(--theia-panel-border));
 }
 
-/* The rail scrolls on its own axis (Y on desktop, X in the narrow layout) with no visible scrollbar. */
+/* The rail is a horizontal strip on every viewport, scrolling on X with no visible scrollbar. */
 .qaap-model-picker-rail {
     flex: 1 1 auto;
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    justify-content: flex-start;
     align-items: center;
     gap: 6px;
     min-width: 0;
     min-height: 0;
-    padding: 10px 0;
-    overflow-x: hidden;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    touch-action: pan-y;
-    scroll-snap-type: y mandatory;
+    padding: 8px 10px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    touch-action: pan-x;
+    scroll-snap-type: x mandatory;
+    scroll-padding: 0 10px;
     scrollbar-width: none;
 }
 
@@ -151,15 +155,9 @@
     scroll-snap-align: start;
 }
 
-/* The favorites star stays pinned at the top of the vertical rail; it is kept out of the scroll. */
+/* The favorites star is the first item of the strip and scrolls with it. */
 .qaap-model-picker-rail > .qaap-model-picker-rail-item:first-child {
-    position: sticky;
-    top: 0;
-    z-index: 1;
-}
-
-.qaap-model-picker-rail > .qaap-model-picker-rail-item:first-child:not(.theia-mod-selected) {
-    background: var(--theia-editorWidget-background, var(--theia-editor-background));
+    position: static;
 }
 
 /* Edge fades on the hidden side come from attachQaapScrollEdgeFades() (qaap-scroll-edge-fades.css), on the rail's own axis. */
@@ -197,7 +195,7 @@
     background: var(--theia-list-activeSelectionBackground);
 }
 
-@media (pointer: fine) {
+@media (pointer: fine) and (min-width: 768px) {
     .qaap-model-picker-rail.theia-mod-horizontal.qaap-mod-scroll-fade-start ~ .qaap-model-picker-rail-arrow.is-start,
     .qaap-model-picker-rail.theia-mod-horizontal.qaap-mod-scroll-fade-end ~ .qaap-model-picker-rail-arrow.is-end {
         display: inline-flex;
@@ -227,6 +225,14 @@
 .qaap-model-picker-rail-item.theia-mod-selected {
     background: var(--theia-list-activeSelectionBackground);
     color: var(--theia-list-activeSelectionForeground);
+}
+
+/* Touch: 44px targets (Apple HIG / WCAG 2.5.5) on phones; the desktop rail stays compact. */
+@media (max-width: 767px) and (pointer: coarse) {
+    .qaap-model-picker-rail-item {
+        width: 44px;
+        height: 44px;
+    }
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -462,34 +468,7 @@
     }
 
     .qaap-model-picker {
-        width: 100%;
         max-height: none;
-    }
-
-    .qaap-model-picker-body {
-        grid-template-columns: minmax(0, 1fr);
-        grid-template-rows: auto minmax(0, 1fr);
-    }
-
-    .qaap-model-picker-rail-frame {
-        border-right: none;
-        border-bottom: 1px solid var(--theia-widget-border, var(--theia-panel-border));
-    }
-
-    .qaap-model-picker-rail {
-        flex-direction: row;
-        justify-content: flex-start;
-        padding: 8px 10px;
-        overflow-x: auto;
-        overflow-y: hidden;
-        overscroll-behavior-x: contain;
-        touch-action: pan-x;
-        scroll-snap-type: x mandatory;
-        scroll-padding: 0 10px;
-    }
-
-    .qaap-model-picker-rail > .qaap-model-picker-rail-item:first-child {
-        position: static;
     }
 
     .qaap-model-picker-star {

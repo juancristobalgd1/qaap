@@ -170,6 +170,8 @@ export function disposeExtracted(ctx: MobileProjectsPanelContext): void {
     window.removeEventListener(QAAP_BOOTSTRAP_PREVIEW_OPENED_EVENT, ctx.onBootstrapPreviewOpened);
     window.removeEventListener(QAAP_NAVIGATE_TO_CONVERSATION_EVENT, ctx.onNavigateToConversation);
     window.removeEventListener(QAAP_AGENT_SIGNED_OUT_EVENT, ctx.onAgentSignedOut);
+    ctx.previewFailureHandoff?.dispose();
+    ctx.previewFailureHandoff = undefined;
     ctx.closeHeaderOverflowMenu();
     ctx.closeHeaderIdeViewPickerMenu();
     ctx.headerOverflowMenu?.remove();

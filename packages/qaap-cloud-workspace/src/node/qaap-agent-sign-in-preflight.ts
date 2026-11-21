@@ -5,6 +5,7 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import { type QaapCreateAgentTaskQaiqModel, QAIQ_AGENT_ID, SHELL_AGENT_ID } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { resolveQaapHarnessSessionDetection } from '@theia/qaap-shared-core/lib/common/qaap-harness-auth-profile';
 import { QaapHarnessModelAvailability, type QaapModelUnavailableReason } from '@theia/qaap-shared-core/lib/common/qaap-harness-model-availability';
 import { resolveAgentAccess } from './qaap-agent-access';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
@@ -23,8 +24,9 @@ export class QaapAgentSignInRequiredError extends Error {
 /**
  * Pre-spawn guard for the unified availability rule (`QaapHarnessModelAvailability.availability`, the same function
  * the picker and the send block use): a Pro model is refused when its harness session is signed out (probe answer
- * or a rejected session) or settled `unknown` (no confirmable answer). Only a session still `checking` (probe
- * running, awaited by the caller) lets it through. Sign-in itself is a terminal flow, never a model turn, so it is
+ * or a rejected session) or settled `unknown` (no confirmable answer for a detectable harness). Undetectable-session
+ * harnesses (`sessionDetection: 'undetectable'`) and unsettled probes (`checking`) let the run through so the CLI
+ * itself can succeed or report an auth refusal. Sign-in itself is a terminal flow, never a model turn, so it is
  * not guarded. Only real harnesses are checked. QAIQ is gated by its provider key (assertQaiqConfigured) and the
  * shell runs locally. A turn without a resolved model counts as Pro (fail-closed).
  * @throws {@link QaapAgentSignInRequiredError} when the model is not selectable for this owner.
@@ -50,6 +52,7 @@ export function assertAgentModelAccessExtracted(
         connectionState: snapshot.connectionState,
         accessState,
         probeSettled: snapshot.probeSettled,
+        sessionDetection: resolveQaapHarnessSessionDetection(normalized),
     });
     const tier = QaapHarnessModelAvailability.tier(normalized, {
         modelId: agentModel?.modelId ?? '',

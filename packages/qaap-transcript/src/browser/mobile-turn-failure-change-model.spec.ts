@@ -10,6 +10,8 @@ import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 const disableImportJSDOM = enableJSDOM();
 
 import { expect } from 'chai';
+import * as fs from 'fs';
+import * as path from 'path';
 import type { MobileProjectsTranscriptMessagesToolUiContext } from './mobile-projects-transcript-messages-tool-ui-context';
 import { createTranscriptAgentFailureDialogExtracted } from './mobile-projects-transcript-messages-tool-ui-render';
 import { useSuiteJSDOM } from '@theia/qaap-mobile-shell/lib/browser/test/qaap-jsdom-suite';
@@ -53,5 +55,16 @@ describe('failure card "Change model" action', () => {
         const raw = 'Something unexpected went wrong while writing the file.';
         const card = createTranscriptAgentFailureDialogExtracted(ctx, raw, raw, { onChangeModel: () => undefined });
         expect(changeModelButton(card)).to.equal(null);
+    });
+
+    it('overrides the codicon font on Change model and Retry task buttons so labels never fall back to serif', () => {
+        const css = fs.readFileSync(
+            path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'mobile-workbench-transcript.css'),
+            'utf8',
+        );
+        expect(css).to.match(/\.theia-mobile-agent-turn-failure-change-model\.codicon[\s\S]*?font-family:\s*var\(--theia-ui-font-family/);
+        expect(css).to.match(/\.theia-mobile-agent-turn-failure-change-model\.codicon::before[\s\S]*?font-family:\s*codicon;/);
+        expect(css).to.match(/\.theia-mobile-agent-turn-failure-summary-retry\.codicon[\s\S]*?font-family:\s*var\(--theia-ui-font-family/);
+        expect(css).to.match(/@media \(max-width: 767px\)\s*\{[\s\S]*?\.theia-mobile-agent-shell-window\.theia-mod-turn-failure \.theia-mobile-agent-shell-head[\s\S]*?flex-wrap:\s*wrap;/);
     });
 });

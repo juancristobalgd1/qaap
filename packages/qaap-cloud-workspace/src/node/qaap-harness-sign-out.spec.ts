@@ -16,6 +16,8 @@ import {
     doesQaapHarnessSignOutRemoveAllProviders,
     isQaapHarnessSignOutSupported,
     isSafeRelativeCredentialPath,
+    resolveQaapHarnessSignOutForBin,
+    type QaapHarnessConcreteSignOut,
 } from '@theia/qaap-shared-core/lib/common/qaap-harness-sign-out';
 import {
     QaapHarnessCredentialPathError,
@@ -56,33 +58,56 @@ describe('harness sign-out declarations', () => {
     for (const definition of QAAP_BUILTIN_AGENT_DEFINITIONS) {
         it(`${definition.id} declares a valid signOut strategy`, () => {
             expect(definition.signOut, `${definition.id} must declare signOut`).to.not.equal(undefined);
-            switch (definition.signOut.kind) {
-                case 'cli':
-                    expect(definition.signOut.args.length).to.be.greaterThan(0);
-                    break;
-                case 'files':
-                    expect(definition.signOut.paths.length).to.be.greaterThan(0);
-                    for (const spec of definition.signOut.paths) {
-                        expect(isSafeRelativeCredentialPath(spec.relative)).to.equal(true);
-                        if (typeof spec.root === 'object') {
-                            expect(isSafeRelativeCredentialPath(spec.root.fallback)).to.equal(true);
-                        }
-                    }
-                    break;
-                case 'json-keys':
-                    expect(isSafeRelativeCredentialPath(definition.signOut.path.relative)).to.equal(true);
-                    if (typeof definition.signOut.path.root === 'object') {
-                        expect(isSafeRelativeCredentialPath(definition.signOut.path.root.fallback)).to.equal(true);
-                    }
-                    expect(definition.signOut.keys.length).to.be.greaterThan(0);
-                    break;
-                case 'none':
-                    expect(definition.signOut.reason.trim().length).to.be.greaterThan(0);
-                    break;
-                default:
-                    expect.fail(`${definition.id} has an unrecognized signOut strategy`);
+            const strategies: QaapHarnessConcreteSignOut[] = definition.signOut.kind === 'by-bin'
+                ? [...Object.values(definition.signOut.byBin), ...(definition.signOut.fallback ? [definition.signOut.fallback] : [])]
+                : [definition.signOut];
+            expect(strategies.length, `${definition.id} by-bin must map at least one executable`).to.be.greaterThan(0);
+            for (const strategy of strategies) {
+                expectValidConcreteSignOut(definition.id, strategy);
             }
         });
+    }
+
+    function expectValidConcreteSignOut(id: string, signOut: QaapHarnessConcreteSignOut): void {
+        switch (signOut.kind) {
+            case 'cli':
+                expect(signOut.args.length).to.be.greaterThan(0);
+                break;
+            case 'tui':
+                expect(signOut.steps.length).to.be.greaterThan(0);
+                expect(signOut.successPatterns.length).to.be.greaterThan(0);
+                for (const step of signOut.steps) {
+                    expect(step.text.length).to.be.greaterThan(0);
+                    if (step.waitFor) {
+                        expect(() => new RegExp(step.waitFor!, 'i')).to.not.throw();
+                    }
+                }
+                for (const source of signOut.successPatterns) {
+                    expect(() => new RegExp(source, 'i')).to.not.throw();
+                }
+                break;
+            case 'files':
+                expect(signOut.paths.length).to.be.greaterThan(0);
+                for (const spec of signOut.paths) {
+                    expect(isSafeRelativeCredentialPath(spec.relative)).to.equal(true);
+                    if (typeof spec.root === 'object') {
+                        expect(isSafeRelativeCredentialPath(spec.root.fallback)).to.equal(true);
+                    }
+                }
+                break;
+            case 'json-keys':
+                expect(isSafeRelativeCredentialPath(signOut.path.relative)).to.equal(true);
+                if (typeof signOut.path.root === 'object') {
+                    expect(isSafeRelativeCredentialPath(signOut.path.root.fallback)).to.equal(true);
+                }
+                expect(signOut.keys.length).to.be.greaterThan(0);
+                break;
+            case 'none':
+                expect(signOut.reason.trim().length).to.be.greaterThan(0);
+                break;
+            default:
+                expect.fail(`${id} has an unrecognized signOut strategy`);
+        }
     }
 
     it('declares the expected strategy for every built-in harness', () => {
@@ -103,15 +128,20 @@ describe('harness sign-out declarations', () => {
             args: ['logout'],
             env: { NO_OPEN_BROWSER: '1' },
         });
-        expect(resolveQaapBuiltinAgentSignOut('antigravity')?.kind).to.equal('none');
+        const antigravity = resolveQaapBuiltinAgentSignOut('antigravity');
+        expect(antigravity?.kind).to.equal('by-bin');
+        expect(resolveQaapHarnessSignOutForBin(antigravity, '/usr/local/bin/agy')?.kind).to.equal('tui');
+        expect(resolveQaapHarnessSignOutForBin(antigravity, 'gemini')?.kind).to.equal('files');
+        expect(resolveQaapHarnessSignOutForBin(antigravity, 'unknown-bin')).to.equal(undefined);
         expect(resolveQaapBuiltinAgentSignOut('copilot')).to.deep.equal({
             kind: 'json-keys',
             path: { root: 'home', relative: '.copilot/config.json' },
-            keys: ['loggedInUsers', 'lastLoggedInUser', 'copilot_tokens'],
+            keys: ['loggedInUsers', 'lastLoggedInUser', 'copilot_tokens', 'logged_in_users', 'last_logged_in_user'],
         });
         expect(resolveQaapBuiltinAgentSignOut('grok')).to.deep.equal({ kind: 'cli', args: ['logout'] });
 
-        expect(isQaapHarnessSignOutSupported(resolveQaapBuiltinAgentSignOut('antigravity'))).to.equal(false);
+        expect(isQaapHarnessSignOutSupported(antigravity)).to.equal(true);
+        expect(isQaapHarnessSignOutSupported(antigravity, 'unknown-bin')).to.equal(false);
         expect(isQaapHarnessSignOutSupported(resolveQaapBuiltinAgentSignOut('unknown'))).to.equal(false);
         expect(isQaapHarnessSignOutSupported(resolveQaapBuiltinAgentSignOut('codex'))).to.equal(true);
         expect(doesQaapHarnessSignOutRemoveAllProviders(resolveQaapBuiltinAgentSignOut('opencode'))).to.equal(true);
@@ -303,6 +333,7 @@ describe('QaapHarnessSignOutService', () => {
         const refreshed: Array<{ agentId: string; ownerLogin?: string }> = [];
         const invocations: Array<{ harnessKey: string; args: readonly string[]; ownerLogin?: string; extraEnv?: Readonly<Record<string, string>> }> = [];
         const runner = {
+            detectedAgentBin: () => undefined,
             resolveHarnessCliInvocation: async (harnessKey: string, args: readonly string[], options?: { ownerLogin?: string; extraEnv?: Readonly<Record<string, string>> }) => {
                 invocations.push({ harnessKey, args, ownerLogin: options?.ownerLogin, extraEnv: options?.extraEnv });
                 return { file: harnessKey, args, env: { ...(options?.extraEnv ?? {}) } };
@@ -320,7 +351,7 @@ describe('QaapHarnessSignOutService', () => {
         return { runner, forgotten, refreshed, invocations };
     }
 
-    it('fails closed on antigravity (none) and unknown harnesses', async () => {
+    it('fails closed on antigravity without a recognised executable and on unknown harnesses', async () => {
         const { runner, forgotten } = createStubRunner();
         const service = new TestHarnessSignOutService(runner);
 
@@ -353,6 +384,25 @@ describe('QaapHarnessSignOutService', () => {
         }]);
         expect(forgotten).to.deep.equal([{ agentId: 'cursor', ownerLogin: 'alice' }]);
         expect(refreshed).to.deep.equal([{ agentId: 'cursor', ownerLogin: 'alice' }]);
+    });
+
+    it('never reports a sign-out while the harness still has a session, and names the inherited variable', async () => {
+        const { runner } = createStubRunner({
+            resolveHarnessCliInvocation: async (harnessKey: string, args: readonly string[]) => ({
+                file: harnessKey,
+                args,
+                env: { ANTHROPIC_AUTH_TOKEN: 'secret-value', PATH: '/bin' },
+            }),
+            agentConnectionStateFresh: async () => 'connected' as const,
+        } as unknown as Partial<QaapAgentTaskRunner>);
+        const service = new TestHarnessSignOutService(runner);
+
+        const result = await service.signOut('claude', 'alice');
+        expect(result.ok).to.equal(false);
+        expect(result.connectionState).to.equal('connected');
+        expect(result.reason).to.equal('failed');
+        expect(result.message).to.contain('ANTHROPIC_AUTH_TOKEN');
+        expect(result.message, 'never the value').to.not.contain('secret-value');
     });
 
     it('executes real non-interactive subprocess with closed stdin and timeout handling', async () => {

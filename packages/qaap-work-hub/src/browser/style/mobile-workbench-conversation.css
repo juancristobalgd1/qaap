@@ -883,6 +883,11 @@ body:not(.theia-mobile-mod-has-work-hub-visible.theia-mobile-mod-has-work-hub-vi
   background: color-mix(in srgb, var(--theia-foreground) 10%, transparent);
 }
 
+.theia-mobile-transcript-tab-icon-select-option:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .theia-mobile-projects.theia-mod-project-detail .theia-mobile-projects-title-block,
 .theia-mobile-projects.theia-mod-agents-hub-inline-active .theia-mobile-projects-title-block {
   flex: 1 1 auto;
@@ -1605,19 +1610,19 @@ button.theia-mobile-transcript-team-row:focus-visible {
 }
 
 .theia-mobile-transcript-preview:has(.theia-mod-empty-preview) {
-  background: #fff;
+  background: var(--theia-editor-background);
 }
 
 .theia-mobile-transcript-preview .qaap-agent-preview-embedded.theia-mod-empty-preview .qaap-preview-content-area {
-  background: #fff;
+  background: var(--theia-editor-background);
 }
 
 .theia-mobile-transcript-preview .qaap-agent-preview-embedded.theia-mod-empty-preview .qaap-preview-frame-slot {
-  background: #fff;
+  background: var(--theia-editor-background);
 }
 
 .theia-mobile-transcript-preview .qaap-agent-preview-embedded.theia-mod-empty-preview .qaap-preview-frame-slot iframe {
-  background: #fff;
+  background: var(--theia-editor-background);
 }
 
 /* Scoped to the preview frame slot — must not cover `.qaap-preview-inspector-slot`. */

@@ -25,11 +25,13 @@ import {
     createQaapBillingCheckout,
     fetchQaapBilling,
     readQaapDesktopGithubCredential,
+    refreshQaapDesktopGithubCredential,
     type QaapBillingApiResponse,
 } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import type { QaapAuthSessionGithubCredential } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import { QaapUserFacingErrors } from '@theia/qaap-adapters/lib/common/qaap-user-facing-error';
-import { listAllConversationGroups } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { listAllConversationGroups, QAAP_AGENT_CONVERSATION_API_PATH, type QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { fetchQaapAgentToolUsage, type QaapAgentToolUsageRow } from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-usage';
 import { isWorkHubTheiaDialogOpen } from '../common/qaap-work-hub-dialog-utils';
 import {
     hasPreferencesContent,
@@ -51,6 +53,9 @@ import { createQaapWorkHubRightPanelGlyph } from './qaap-work-hub-right-panel-gl
 import { resolveWorkHubAuxPanelForSettingsToggle } from './mobile-projects-execution-surface-tabs-ui';
 import type { QaapWorkHubAuxPanel } from './qaap-work-hub-aux-panel';
 import { MobileWorkHubActivityCalendar } from './mobile-work-hub-activity-calendar';
+import { MobileWorkHubProfileOverview } from './mobile-work-hub-profile-overview';
+import { UsageClient } from './usage-client';
+import { computeQaapProfileInsights } from '../common/qaap-profile-insights';
 import { collectQaapActivityTimestamps } from '../common/qaap-activity-calendar';
 import {
     isWorkHubSettingsSectionVisible,
@@ -58,6 +63,10 @@ import {
     resolveWorkHubSettingsSectionId,
 } from '../common/qaap-work-hub-surface-redirects';
 import { environment } from '@theia/core/lib/common';
+
+/** How often, and how many times, the Profile asks again while the usage scan is still running. */
+const PROFILE_TOKENS_RETRY_MS = 2000;
+const PROFILE_TOKENS_MAX_ATTEMPTS = 30;
 
 /** Work Hub AI Features sheet scopes Settings to this search term. */
 export const WORK_HUB_AI_FEATURES_PREFERENCES_QUERY = 'ai-features';
@@ -951,11 +960,13 @@ export class MobileWorkHubPreferencesSheet {
         const notificationsCard = this.createSettingsCard();
         const blockedNote = document.createElement('p');
         blockedNote.className = 'theia-mobile-work-hub-settings-note';
+        // The switch is Qaap's own choice; the browser permission can still block delivery. Say what to do about it,
+        // rather than a bare "blocked" next to a switch that reads On.
         blockedNote.textContent = nls.localize(
-            'qaap/workHubSettings/general/notificationsBlocked',
-            'Notifications are blocked by the browser for this site.',
+            'qaap/workHubSettings/general/notificationsBlockedAction',
+            "This browser blocks notifications for this site, so none will appear. Allow them in the site's settings.",
         );
-        blockedNote.hidden = !this.isNotificationPermissionDenied();
+        blockedNote.hidden = !(this.notificationSettings.systemNotifications && this.isNotificationPermissionDenied());
         const systemNotificationsRow = this.createSettingsRow(
             nls.localize('qaap/workHubSettings/general/systemNotifications', 'System Notifications'),
             nls.localize(
@@ -967,7 +978,7 @@ export class MobileWorkHubPreferencesSheet {
                 'System notifications',
             ), checked => {
                 void this.setSystemNotificationsEnabled(checked).then(() => {
-                    blockedNote.hidden = !this.isNotificationPermissionDenied();
+                    blockedNote.hidden = !(checked && this.isNotificationPermissionDenied());
                 });
             }),
         );
@@ -1058,65 +1069,107 @@ export class MobileWorkHubPreferencesSheet {
             desktopCredential && authUser?.provider !== 'github' ? undefined : authUser,
             desktopCredential,
         );
-        const card = this.createSettingsCard('theia-mobile-work-hub-settings-profile-card');
-        const identity = document.createElement('div');
-        identity.className = 'theia-mobile-work-hub-settings-profile-identity';
-
-        const avatar = document.createElement('div');
-        avatar.className = 'theia-mobile-work-hub-settings-profile-avatar';
-        if (identityInfo.avatarUrl) {
-            const image = document.createElement('img');
-            image.src = identityInfo.avatarUrl;
-            image.alt = '';
-            image.draggable = false;
-            image.referrerPolicy = 'no-referrer';
-            image.decoding = 'async';
-            avatar.append(image);
-        } else {
-            avatar.textContent = identityInfo.initials;
-        }
-
-        const details = document.createElement('div');
-        details.className = 'theia-mobile-work-hub-settings-profile-details';
-        const name = document.createElement('strong');
-        name.textContent = identityInfo.name;
-        const login = document.createElement('span');
-        login.textContent = identityInfo.detail;
-        details.append(name, login);
-        identity.append(avatar, details);
-
-        const provider = document.createElement('span');
-        provider.className = 'theia-mobile-work-hub-settings-profile-provider';
-        provider.textContent = identityInfo.provider === 'gitlab'
-            ? 'GitLab'
-            : nls.localize('qaap/workHubSettings/profile/github', 'GitHub');
-        card.append(identity, provider);
-        panel.append(card);
+        const overview = new MobileWorkHubProfileOverview({
+            name: identityInfo.name,
+            detail: identityInfo.detail,
+            avatarUrl: identityInfo.avatarUrl,
+            initials: identityInfo.initials,
+            providerLabel: identityInfo.provider === 'gitlab'
+                ? 'GitLab'
+                : nls.localize('qaap/workHubSettings/profile/github', 'GitHub'),
+        }, identityInfo.showActivity);
+        panel.append(overview.node);
         if (identityInfo.showActivity) {
-            this.renderProfileActivity(panel);
+            this.renderProfileActivity(overview);
         }
         this.customContentHost.append(panel);
+        if (environment.electron.is()) {
+            this.refreshDesktopProfileCredential(desktopCredential?.user.login);
+        }
     }
 
-    protected renderProfileActivity(panel: HTMLElement): void {
+    /**
+     * Desktop: asks the backend for the GitHub account behind `gh` (local mode never syncs it at startup) and paints the
+     * Profile again when it differs from the one shown, so a signed-in `gh` never reads "Not signed in".
+     */
+    protected refreshDesktopProfileCredential(shownLogin: string | undefined): void {
+        void refreshQaapDesktopGithubCredential().then(credential => {
+            if (credential?.user.login === shownLogin) {
+                return;
+            }
+            if (this.visible && this.activeSettingsSectionId === 'profile') {
+                this.renderCustomSettingsSection('profile');
+            }
+        });
+    }
+
+    protected renderProfileActivity(overview: MobileWorkHubProfileOverview): void {
         const token = ++this.profileActivityRenderToken;
         const calendar = new MobileWorkHubActivityCalendar();
         const heading = this.createCustomHeading(nls.localize('qaap/workHubSettings/activity/title', 'Activity'));
-        panel.append(heading, calendar.node);
+        overview.calendarSlot.append(heading, calendar.node);
         calendar.showLoading();
-        this.loadProfileActivity(calendar, token);
+        this.loadProfileActivity(calendar, overview, token);
+        this.loadProfileTokens(overview, token);
+        this.loadProfileToolUsage(overview, token);
     }
 
-    protected async loadProfileActivity(calendar: MobileWorkHubActivityCalendar, token: number): Promise<void> {
+    /** Most used skills, MCP servers and tools across the owner's tasks; hidden when the backend cannot answer. */
+    protected async loadProfileToolUsage(overview: MobileWorkHubProfileOverview, token: number): Promise<void> {
+        let rows: readonly QaapAgentToolUsageRow[] | undefined;
+        try {
+            rows = await fetchQaapAgentToolUsage(QAAP_AGENT_CONVERSATION_API_PATH);
+        } catch {
+            rows = undefined;
+        }
+        if (this.isCurrentProfileRender(token)) {
+            overview.setToolUsage(rows);
+        }
+    }
+
+    protected isCurrentProfileRender(token: number): boolean {
+        return this.visible && token === this.profileActivityRenderToken && this.activeSettingsSectionId === 'profile';
+    }
+
+    /** Tokens over the last 90 days from the local usage scan; left empty when usage data is unavailable. */
+    protected async loadProfileTokens(overview: MobileWorkHubProfileOverview, token: number): Promise<void> {
+        const client = new UsageClient();
+        // The first scan answers partial totals (`scanning`, often 0): keep "—" and ask again until it finishes.
+        for (let attempt = 0; attempt < PROFILE_TOKENS_MAX_ATTEMPTS && this.isCurrentProfileRender(token); attempt++) {
+            let summary: Awaited<ReturnType<UsageClient['fetchSummary']>> | undefined;
+            try {
+                summary = await client.fetchSummary('90d', [], client.browserTimezone());
+            } catch {
+                summary = undefined;
+            }
+            if (!this.isCurrentProfileRender(token)) {
+                return;
+            }
+            if (!summary || !summary.scanning) {
+                overview.setTokens(summary?.totals.tokens);
+                return;
+            }
+            await new Promise(resolve => setTimeout(resolve, PROFILE_TOKENS_RETRY_MS));
+        }
+    }
+
+    protected async loadProfileActivity(calendar: MobileWorkHubActivityCalendar, overview: MobileWorkHubProfileOverview, token: number): Promise<void> {
         let timestamps: number[] | undefined;
+        let conversations: QaapAgentConversationSummaryDTO[] | undefined;
         try {
             const groups = await listAllConversationGroups();
-            timestamps = collectQaapActivityTimestamps(groups.flatMap(group => group.conversations));
+            conversations = groups.flatMap(group => group.conversations);
+            timestamps = collectQaapActivityTimestamps(conversations);
         } catch {
             timestamps = undefined;
         }
-        if (!this.visible || token !== this.profileActivityRenderToken || this.activeSettingsSectionId !== 'profile') {
+        if (!this.isCurrentProfileRender(token)) {
             return;
+        }
+        if (conversations) {
+            overview.setInsights(computeQaapProfileInsights(conversations, new Date()));
+        } else {
+            overview.showHistoryError();
         }
         if (timestamps) {
             calendar.setActivity(timestamps, new Date());

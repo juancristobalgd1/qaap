@@ -64,6 +64,7 @@ import {
     QAAP_AGENT_SIGNED_OUT_EVENT,
     type QaapAgentSignedOutDetail,
 } from '@theia/qaap-shared-core/lib/common/qaap-harness-sign-out';
+import { attachQaapPreviewFailureAgentHandoff } from './qaap-preview-failure-agent-handoff';
 import { clearComposerAgentCatalogSession } from '@theia/qaap-composer/lib/browser/composer-agent-catalog-session-cache';
 import { subscribeToDisabledHarnessesPreference } from './qaap-disabled-harness-preference';
 import {
@@ -772,7 +773,14 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         window.addEventListener(QAAP_NAVIGATE_TO_CONVERSATION_EVENT, this.onNavigateToConversation);
         window.addEventListener(QAAP_AGENT_SIGNED_OUT_EVENT, this.onAgentSignedOut);
         this.bindAgentFinishedToastCallbacks();
+        // A preview that fails because of the app goes back to the open task's agent, so the task continues.
+        this.previewFailureHandoff = this.projectBootstrap
+            ? attachQaapPreviewFailureAgentHandoff(this.projectBootstrap, () => this.transcriptController.state.transcriptOpenSummary)
+            : undefined;
     }
+
+    /** @internal Disposed with the panel (see disposeExtracted). */
+    public previewFailureHandoff: Disposable | undefined;
 
     protected bindAgentFinishedToastCallbacks(): void {
         bindAgentFinishedToastCallbacksExtracted(this);
@@ -2062,7 +2070,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return this.tasksHubUi.createAgentsHubQuickActionsBlock();
     }
 
-    createEmptyWelcomeHints(): HTMLElement {
+    createEmptyWelcomeHints(): HTMLElement | undefined {
+        const hasOpenProject = Boolean(this.hubHeaderUi.resolveHeaderProject());
         return createQaapEmptyWelcomeHints(readQaapSignedIn(), {
             // The Work Hub's own project picker (Project / Branch / Run in), anchored on the header project
             // button; the quick-pick switcher only when the header has no project to anchor on.
@@ -2074,7 +2083,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
                 void this.commands.executeCommand(QAAP_PROJECT_SWITCHER_COMMAND.id);
             },
             connectGithub: () => { void this.commands.executeCommand(QAAP_AUTH_SIGN_IN_GITHUB_COMMAND); },
-        });
+        }, hasOpenProject);
     }
 
     renderIdleSubmitOptimistic(chatHost: HTMLElement, summary: QaapAgentConversationSummaryDTO, draft: string, selectedAgentId: string, imagePreviews?: readonly import('@theia/qaap-shared-core/lib/common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[], contentOverride?: string,): void {

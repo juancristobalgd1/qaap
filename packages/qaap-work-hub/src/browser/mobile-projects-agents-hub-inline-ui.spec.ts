@@ -896,5 +896,7 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
         expect(host.transcriptOpenSummaryId).to.equal(undefined);
         expect(host.transcriptComposerSummary).to.equal(undefined);
         expect(host.transcriptComposerMountKey).to.equal(undefined);
+        expect(host.transcriptOpenProject?.id).to.equal(project.id);
+        expect(host.transcriptComposerProject?.id).to.equal(project.id);
     });
 });

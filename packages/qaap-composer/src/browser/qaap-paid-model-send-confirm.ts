@@ -262,18 +262,17 @@ export function sendModelBelongsToAgent(
 }
 
 /**
- * Tells the user a send was held because the chosen model needs the harness sign-in; the action opens that sign-in.
+ * A send was held because the chosen model needs the harness sign-in: opens that sign-in, or says so when it cannot.
  */
 export function warnSignInRequiredSend(agentLabel: string, modelLabel: string, openSignIn?: () => void): void {
+    // The sign-in dialog opens straight away (no separate Sign in button), the same for every harness.
+    if (openSignIn) {
+        openSignIn();
+        return;
+    }
     MobileSnackbar.show(
         nls.localize('qaap/composer/signInToUseModel', 'Sign in to {0} to use {1}.', agentLabel, modelLabel),
-        openSignIn
-            ? {
-                kind: 'warning',
-                actionLabel: nls.localize('qaap/agentPicker/signIn', 'Sign in'),
-                onAction: () => openSignIn(),
-            }
-            : { kind: 'warning' },
+        { kind: 'warning' },
     );
 }
 

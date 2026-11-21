@@ -12,6 +12,7 @@ import {
     buildAgentDirectExecutionPromptBlock,
     SUBAGENT_POLICY_MARKER,
 } from './qaap-agent-subagent-policy';
+import { QAAP_AGENT_WATCH_PR_MARKER } from '@theia/qaap-shared-core/lib/common/qaap-pull-request-watch';
 
 const SHELL_AGENT_ID = 'shell';
 const DEFAULT_WORKFLOW_MARKER = '[QAAP default agent workflow]';
@@ -97,6 +98,7 @@ export function buildAgentBlockedSignalPromptBlock(): string {
         'If you cannot finish because you need a decision or information only the user can provide, end your final message with this exact line as the very last non-empty line:',
         `${QAAP_AGENT_BLOCKED_SIGNAL_MARKER} <one short line: the decision or information you need>`,
         'Use it only when genuinely blocked — never to hand back work you could verify or decide yourself, and never anywhere else in the message.',
+        `To have Qaap watch a pull request and wake you when its checks finish or a review arrives, end your final message with the line \`${QAAP_AGENT_WATCH_PR_MARKER} <number>\`.`,
     ].join('\n');
 }
 

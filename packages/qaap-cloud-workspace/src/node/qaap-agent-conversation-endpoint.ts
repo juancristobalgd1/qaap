@@ -4,6 +4,8 @@
 // *****************************************************************************
 
 import { QaapTaskPullRequestService } from './qaap-task-pull-request-service';
+import { QaapPullRequestWatchError, QaapPullRequestWatchService } from './qaap-pull-request-watch-service';
+import type { QaapStartPullRequestWatchBody } from '@theia/qaap-shared-core/lib/common/qaap-pull-request-watch';
 import { QaapTaskPlanError, QaapTaskPlanFanOutService } from './qaap-task-plan-fanout-service';
 import type { QaapTaskPlanEditRequest } from '@theia/qaap-shared-core/lib/common/qaap-task-plan';
 import type { QaapTaskPullRequestConsentRequest } from '@theia/qaap-shared-core/lib/common/qaap-task-pull-request';
@@ -41,6 +43,12 @@ import type { QaapAgentApprovalPolicyId } from '@theia/qaap-shared-core/lib/comm
 import type { QaapAgUiEvent } from '@theia/qaap-shared-core/lib/common/qaap-ag-ui-transcript-adapter';
 import type { QaapTurnLatencyMark } from '@theia/qaap-shared-core/lib/common/qaap-agent-stream-metrics';
 import type { QaapAgentToolApprovalRules } from '../common/qaap-agent-conversation';
+import {
+    aggregateQaapAgentToolUsage,
+    QAAP_AGENT_TOOL_USAGE_ROUTE,
+    type QaapAgentToolUsageResponse,
+    type QaapAgentToolUsageRow,
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-usage';
 import { parseSideChatContextPreamble, parseSideChatCreateFields, type QaapSideChatCreateFields } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-side-chat';
 import { resolveEffectiveToolApprovalRules } from '../common/qaap-agent-approval-flags';
 import { QaapAgentConversationStore, QaapMaxConcurrentRunsError } from './qaap-agent-conversation-store';
@@ -109,6 +117,9 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
 
     @inject(QaapTaskPullRequestService) @optional()
     protected readonly taskPullRequests: QaapTaskPullRequestService | undefined;
+
+    @inject(QaapPullRequestWatchService) @optional()
+    protected readonly pullRequestWatches: QaapPullRequestWatchService | undefined;
 
     @inject(QaapTaskPlanFanOutService) @optional()
     protected readonly taskPlans: QaapTaskPlanFanOutService | undefined;
@@ -195,6 +206,15 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
                 // Snapshot cut: flush first so the groups and the cursor describe the same instant.
                 ...cursor,
             } satisfies QaapAgentConversationAllResponse);
+        });
+        // The owner's most used skills, MCP servers and tools (Settings → Profile). Static segment before `:id`.
+        app.get(`${QAAP_AGENT_CONVERSATION_API_PATH}/${QAAP_AGENT_TOOL_USAGE_ROUTE}`, (req, res) => {
+            const ctx = this.requireAuth(req, res);
+            if (!ctx) {
+                return;
+            }
+            res.setHeader('Cache-Control', 'no-store');
+            res.json({ rows: this.toolUsageFor(ctx) } satisfies QaapAgentToolUsageResponse);
         });
         app.get(`${QAAP_AGENT_CONVERSATION_API_PATH}/stream`, (req, res) => {
             this.handleStream(req, res);
@@ -317,6 +337,18 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             }
             await this.handleTaskPullRequestConsent(req, res);
         }));
+        app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/pull-request-watch`, QaapAsyncRoute.wrap('qaap-agent-conversation', async (req, res) => {
+            if (!this.getConversationIfOwned(req, res, req.params.id)) {
+                return;
+            }
+            await this.handleStartPullRequestWatch(req, res);
+        }));
+        app.delete(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/pull-request-watch`, (req, res) => {
+            if (!this.getConversationIfOwned(req, res, req.params.id)) {
+                return;
+            }
+            this.handleStopPullRequestWatch(req, res);
+        });
         app.patch(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/task-plan`, (req, res) => {
             this.handleTaskPlan(req, res, plans => plans.edit(req.params.id, (req.body ?? {}) as QaapTaskPlanEditRequest));
         });
@@ -1343,6 +1375,42 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
         }
     }
 
+    /** Starts watching a GitHub pull request on the conversation. */
+    protected async handleStartPullRequestWatch(req: Request, res: Response): Promise<void> {
+        if (!this.pullRequestWatches) {
+            res.status(503).json({ error: 'Pull request watching is not available on this server.' });
+            return;
+        }
+        const raw = (req.body ?? {}) as Record<string, unknown>;
+        const body: QaapStartPullRequestWatchBody = {
+            ...(typeof raw.number === 'number' ? { number: raw.number } : {}),
+            ...(typeof raw.owner === 'string' ? { owner: raw.owner } : {}),
+            ...(typeof raw.repo === 'string' ? { repo: raw.repo } : {}),
+            ...(typeof raw.url === 'string' ? { url: raw.url } : {}),
+        };
+        try {
+            const conv = await this.pullRequestWatches.startWatch(req.params.id, { ...body, startedBy: 'user' });
+            res.json(conv);
+        } catch (error) {
+            const status = error instanceof QaapPullRequestWatchError ? error.status : 400;
+            res.status(status).json({ error: error instanceof Error ? error.message : String(error) });
+        }
+    }
+
+    /** Stops watching the pull request on the conversation. */
+    protected handleStopPullRequestWatch(req: Request, res: Response): void {
+        if (!this.pullRequestWatches) {
+            res.status(503).json({ error: 'Pull request watching is not available on this server.' });
+            return;
+        }
+        const conv = this.pullRequestWatches.stopWatch(req.params.id, 'user');
+        if (!conv) {
+            res.status(404).json({ error: 'Conversation not found.' });
+            return;
+        }
+        res.json(conv);
+    }
+
     /** SSE feed of conversation events used by every connected client for live updates. */
     protected handleStream(req: Request, res: Response): void {
         const ctx = this.requireAuth(req, res);
@@ -1403,6 +1471,24 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
         } catch {
             // Peek stays on Starter until the store recovers.
         }
+    }
+
+    /** Per-owner tool usage, recomputed at most once a minute: it walks every message of the owner's tasks. */
+    protected readonly toolUsageCache = new Map<string, { readonly at: number; readonly rows: readonly QaapAgentToolUsageRow[] }>();
+
+    protected toolUsageFor(ctx: QaapGithubAuthContext): readonly QaapAgentToolUsageRow[] {
+        const key = this.auth.resolveUserLogin(ctx)?.toLowerCase() ?? '';
+        const cached = this.toolUsageCache.get(key);
+        if (cached && Date.now() - cached.at < 60_000) {
+            return cached.rows;
+        }
+        const owned = this.store.list(undefined)
+            .filter(summary => this.auth.ownsWorkspacePath(ctx, summary.cwd))
+            .map(summary => this.store.get(summary.id))
+            .filter((conversation): conversation is QaapAgentConversation => !!conversation);
+        const rows = aggregateQaapAgentToolUsage(owned);
+        this.toolUsageCache.set(key, { at: Date.now(), rows });
+        return rows;
     }
 
     protected requireAuth(req: Request, res: Response): QaapGithubAuthContext | undefined {

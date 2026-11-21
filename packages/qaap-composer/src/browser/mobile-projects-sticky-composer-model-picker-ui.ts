@@ -12,7 +12,7 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { readStoredAgentModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
 import { QaapAgentEffort, type QaapAgentEffortLevel } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
-import { QaapHarnessModelAvailability } from '@theia/qaap-shared-core/lib/common/qaap-harness-model-availability';
+import { QAAP_AGENT_SIGNED_IN_EVENT, type QaapAgentSignedInDetail } from '@theia/qaap-shared-core/lib/common/qaap-harness-sign-out';
 import {
     writeStoredAgentApprovalPolicy,
     type QaapAgentApprovalPolicyId,
@@ -25,24 +25,37 @@ import type { ComposerAgentPickerChrome } from './mobile-projects-sticky-compose
 import { disposeQaapComposerModelPicker, renderQaapComposerModelPicker } from './qaap-composer-model-picker';
 import { placePickerAbove } from './qaap-composer-picker-placement';
 
+/** How long a model picked before its harness sign-in waits for that sign-in to be confirmed. */
+const SELECT_AFTER_SIGN_IN_WINDOW_MS = 15 * 60_000;
+
+/** The one pending «select this model once signed in»; a newer pick replaces it. */
+let pendingSelectAfterSignIn: (() => void) | undefined;
+
 /**
- * Sign-in action for a harness whose Pro models are locked by its session (`QaapHarnessModelAvailability.blocksPro`:
- * `signed-out` or `unknown`); `undefined` otherwise. A `checking` session (probe still running) shows nothing, and an
- * unset session shows nothing either. Copilot, Grok and Antigravity without a status answer are `unknown` until they
- * are attested, so they get the Sign in action; the sign-in flow itself is never locked.
+ * Runs `select` once the Connect dialog confirms the sign-in of `agentId` ({@link QAAP_AGENT_SIGNED_IN_EVENT}), so the
+ * model the user picked is the one the composer ends up with. Dropped after a while or when another model is picked.
  */
-function connectionStripFor(
-    agent: QaapAgentTaskAgentOption,
-    options: StickyComposerModelPickerOptions,
-): { message: string; actionLabel: string; onAction: () => void } | undefined {
-    if (QaapHarnessModelAvailability.blocksPro(agent.session) && options.onProactiveLogin) {
-        return {
-            message: nls.localize('qaap/composer/picker/connectNeeded', '{0} needs a sign-in before it can run.', agent.label),
-            actionLabel: nls.localizeByDefault('Sign in'),
-            onAction: () => options.onProactiveLogin?.(agent.id),
-        };
-    }
-    return undefined;
+function selectModelAfterSignIn(agentId: string, select: () => void): void {
+    pendingSelectAfterSignIn?.();
+    const expected = agentId.trim().toLowerCase();
+    const dispose = (): void => {
+        window.removeEventListener(QAAP_AGENT_SIGNED_IN_EVENT, onSignedIn);
+        window.clearTimeout(timer);
+        if (pendingSelectAfterSignIn === dispose) {
+            pendingSelectAfterSignIn = undefined;
+        }
+    };
+    const onSignedIn = (event: Event): void => {
+        const signedIn = (event as CustomEvent<QaapAgentSignedInDetail | undefined>).detail?.agentId?.trim().toLowerCase();
+        if (signedIn !== expected) {
+            return;
+        }
+        dispose();
+        select();
+    };
+    const timer = window.setTimeout(dispose, SELECT_AFTER_SIGN_IN_WINDOW_MS);
+    window.addEventListener(QAAP_AGENT_SIGNED_IN_EVENT, onSignedIn);
+    pendingSelectAfterSignIn = dispose;
 }
 
 export interface StickyComposerModelPickerOptions {
@@ -187,8 +200,6 @@ export async function renderStickyComposerModelPicker(
         const effortModelId = effortAgentId === pinned
             ? currentModel?.modelId
             : readStoredAgentModel(options.cwd, effortAgentId)?.modelId;
-        const railAgent = agents.find(agent => agent.id === railSelection);
-        const connect = railAgent ? connectionStripFor(railAgent, options) : undefined;
         renderQaapComposerModelPicker(host, {
             state,
             effort: {
@@ -229,8 +240,17 @@ export async function renderStickyComposerModelPicker(
                 repaint();
             },
             onClose: close,
-            onSignIn: agentId => options.onProactiveLogin?.(agentId),
-            connect,
+            onSignIn: (agentId, modelId) => {
+                const model = catalog.get(QaapComposerModelPickerModel.favoriteKey(agentId, modelId));
+                close();
+                if (model) {
+                    selectModelAfterSignIn(agentId, () => {
+                        adoptPendingComposerEffort(options.cwd, agentId, modelId);
+                        options.onSelectAgent(agentId, model);
+                    });
+                }
+                options.onProactiveLogin?.(agentId);
+            },
         });
         placePickerAbove(chrome.sheet, options.anchor);
     };

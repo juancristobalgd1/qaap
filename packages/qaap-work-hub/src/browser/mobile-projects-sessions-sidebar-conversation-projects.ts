@@ -73,6 +73,9 @@ export const mergeConversationCwdProjects = (
         const identity = qaapCloneRootIdentity(cwd);
         return !!identity && catalogIdentities.has(identity);
     };
+    // The card of the workspace open right now also claims, so it is matched against the other cards only.
+    const nonSyntheticIdentities = new Set(projects.filter(project => !project.id.startsWith('ws:')).flatMap(qaapProjectCloneIdentities));
+    const absorbedCurrentIdentities = new Set<string>();
     const byUri = new Map<string, MobileProjectEntry>();
     for (const project of projects) {
         const key = uriKey(project.uri);
@@ -97,17 +100,38 @@ export const mergeConversationCwdProjects = (
         }
     }
 
+    // NEVER list a project twice. A task worktree (cwd under the worktrees root, `parallelBaseCwd` = its source clone)
+    // is not a project: its conversations are listed under the source project's card (conversationsForProject →
+    // getVariantsForBaseCwd). Only a worktree whose source has no card at all keeps a `<project>_<n>` card, so its
+    // conversations stay reachable.
+    const sourceCardKeys = new Set(projects
+        .filter(project => !worktreeSources.has(uriKey(project.uri) ?? ''))
+        .map(project => uriKey(project.uri))
+        .filter((key): key is string => !!key));
+    const sourceHasCard = (baseCwd: string | undefined): boolean => !!baseCwd
+        && (sourceCardKeys.has(uriKey(FileUri.create(baseCwd))!) || coveredByCatalog(baseCwd));
+
     const merged = projects.flatMap(project => {
         if (!project.id.startsWith('ws:')) {
             return [project];
         }
         const key = uriKey(project.uri);
         const worktreeSourceCwd = key ? worktreeSources.get(key) : undefined;
+        if (sourceHasCard(worktreeSourceCwd)) {
+            return [];
+        }
         // Before the current-card shortcut: a worktree open right now must not keep a removed source's card.
         if (inRemovedProject(worktreeSourceCwd) || inRemovedProject(project.uri?.path.toString())) {
             return [];
         }
         if (project.isCurrent) {
+            // The open workspace is a clone of a repository that already has a card: that card becomes the
+            // current one instead of listing the same repository twice.
+            const identities = qaapProjectCloneIdentities(project);
+            if (identities.some(identity => nonSyntheticIdentities.has(identity))) {
+                identities.forEach(identity => absorbedCurrentIdentities.add(identity));
+                return [];
+            }
             return [project];
         }
         if (coveredByCatalog(project.uri?.path.toString())) {
@@ -117,6 +141,14 @@ export const mergeConversationCwdProjects = (
         const relabelled = label && label !== project.name ? { ...project, name: label } : project;
         return [worktreeSourceCwd && worktreeSourceCwd !== relabelled.worktreeSourceCwd ? { ...relabelled, worktreeSourceCwd } : relabelled];
     });
+    if (absorbedCurrentIdentities.size > 0) {
+        for (let index = 0; index < merged.length; index++) {
+            const project = merged[index];
+            if (!project.isCurrent && qaapProjectCloneIdentities(project).some(identity => absorbedCurrentIdentities.has(identity))) {
+                merged[index] = { ...project, isCurrent: true };
+            }
+        }
+    }
     const seen = new Set(merged.map(project => uriKey(project.uri)).filter((key): key is string => !!key));
     for (const summary of summaries) {
         if (!summary.cwd || summary.archived || inRemovedProject(summary.cwd) || inRemovedProject(summary.parallelBaseCwd)) {
@@ -124,7 +156,7 @@ export const mergeConversationCwdProjects = (
         }
         const uri = FileUri.create(summary.cwd);
         const key = uriKey(uri)!;
-        if (seen.has(key) || coveredByCatalog(summary.cwd)) {
+        if (seen.has(key) || coveredByCatalog(summary.cwd) || sourceHasCard(summary.parallelBaseCwd)) {
             continue;
         }
         const id = conversationCwdProjectId(summary.cwd);
@@ -138,5 +170,17 @@ export const mergeConversationCwdProjects = (
             task: '', progress: 0, agents: [], lastActive: '', tokens: '—', cost: '—', pinned: false, isCurrent: false
         });
     }
-    return merged;
+    // Final pass over the whole list (a source card may have been synthesized above): drop every worktree card whose
+    // source project has a card. A project is never listed twice.
+    const isWorktreeCard = (project: MobileProjectEntry): boolean => !!project.worktreeSourceCwd || worktreeSources.has(uriKey(project.uri) ?? '');
+    const finalSourceKeys = new Set(merged.filter(project => !isWorktreeCard(project))
+        .map(project => uriKey(project.uri))
+        .filter((key): key is string => !!key));
+    return merged.filter(project => {
+        if (!project.id.startsWith('ws:') || !isWorktreeCard(project)) {
+            return true;
+        }
+        const source = project.worktreeSourceCwd ?? worktreeSources.get(uriKey(project.uri) ?? '');
+        return !source || !(finalSourceKeys.has(uriKey(FileUri.create(source))!) || coveredByCatalog(source));
+    });
 };

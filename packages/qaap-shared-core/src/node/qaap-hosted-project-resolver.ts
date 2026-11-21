@@ -14,6 +14,7 @@ import {
     resolveUserReposRoot,
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { QaapHostedWorktreeRegistry } from './qaap-hosted-worktree-registry';
+import { QAAP_LOCAL_PROJECTS_SEGMENT } from './qaap-local-project-path';
 
 /** The GitHub project a hosted push goes to, and the verified real objects directory of its clone. */
 export interface QaapHostedProject {
@@ -77,7 +78,9 @@ export class QaapHostedProjectResolver {
         const segments = relative.split(path.sep);
         const isClone = !path.isAbsolute(relative) && segments.length === 2;
         const project = isClone ? { owner: segments[0], repo: segments[1] } : layout.lookupWorktree(login, resolvedCheckout);
-        if (!project || !QAAP_GITHUB_OWNER_SEGMENT.test(project.owner) || !QAAP_GITHUB_REPO_SEGMENT.test(project.repo)
+        // `{userRoot}/local/<name>` holds the local projects: no GitHub repository behind them, so no pull request.
+        if (!project || project.owner === QAAP_LOCAL_PROJECTS_SEGMENT
+            || !QAAP_GITHUB_OWNER_SEGMENT.test(project.owner) || !QAAP_GITHUB_REPO_SEGMENT.test(project.repo)
             || project.repo === '.' || project.repo === '..') {
             return undefined;
         }

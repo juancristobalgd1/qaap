@@ -67,6 +67,13 @@ describe('model chip label', () => {
         });
         expect(qaiq.querySelector('.theia-qaap-agent-connect-chip')?.textContent).to.equal('Connect');
     });
+
+    it('composer chip renders the agent label and chevron without logo-only class when model is unresolved', () => {
+        const button = document.createElement('button');
+        populateAgentToolbarButton(button, { agentId: 'agent', label: 'Agent' });
+        expect(button.textContent).to.contain('Agent');
+        expect(button.classList.contains('theia-mod-logo-only')).to.equal(false);
+    });
 });
 
 describe('picker sheet option lock', () => {

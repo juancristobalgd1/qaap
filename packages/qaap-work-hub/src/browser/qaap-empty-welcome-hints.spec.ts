@@ -29,12 +29,21 @@ describe('qaap-empty-welcome-hints', () => {
         expect(resolveEmptyWelcomeHintIds(true)).to.deep.equal(['openProject']);
     });
 
+    it('omits Open a project when a project is already open', () => {
+        expect(resolveEmptyWelcomeHintIds(false, true)).to.deep.equal(['connectGithub']);
+        expect(resolveEmptyWelcomeHintIds(true, true)).to.deep.equal([]);
+        expect(createQaapEmptyWelcomeHints(true, {
+            openProject: () => undefined,
+            connectGithub: () => undefined,
+        }, true)).to.equal(undefined);
+    });
+
     it('renders one chip per hint and runs the matching existing action on click', () => {
         const calls: string[] = [];
         const group = createQaapEmptyWelcomeHints(false, {
             openProject: () => calls.push('openProject'),
             connectGithub: () => calls.push('connectGithub'),
-        });
+        })!;
         const chips = [...group.querySelectorAll<HTMLButtonElement>('button.theia-mobile-agent-transcript-empty-hint')];
         expect(chips.map(chip => chip.getAttribute('data-welcome-hint'))).to.deep.equal(['openProject', 'connectGithub']);
         expect(chips.map(chip => chip.textContent)).to.deep.equal(['Open a project', 'Connect GitHub']);
@@ -46,7 +55,7 @@ describe('qaap-empty-welcome-hints', () => {
         const group = createQaapEmptyWelcomeHints(true, {
             openProject: () => undefined,
             connectGithub: () => undefined,
-        });
+        })!;
         expect(group.querySelector('[data-welcome-hint="connectGithub"]')).to.equal(null);
         expect(group.querySelectorAll('button')).to.have.length(1);
     });
