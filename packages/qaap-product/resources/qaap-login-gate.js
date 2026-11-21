@@ -597,7 +597,33 @@
                 armStartupWatchdog();
                 return;
             }
-            showStartupTimeout();
+            if (state !== undefined) {
+                showStartupTimeout();
+                return;
+            }
+            // No control plane answered. Outside the hosted product (local dev, a self-hosted backend, or this app
+            // running as a project's preview) there is none, and a first start that deploys every plugin takes
+            // longer than 30 s: keep waiting up to the cap there instead of failing a start that is still going.
+            return isHostedProductionRuntime().then(function (hosted) {
+                if (startupReady || !isSplashVisible()) {
+                    return;
+                }
+                if (hosted) {
+                    showStartupTimeout();
+                    return;
+                }
+                showStartupWait();
+                armStartupWatchdog();
+            });
+        });
+    }
+
+    /** True only when the auth config says this is the hosted production runtime (it has a control plane). */
+    function isHostedProductionRuntime() {
+        return fetchAuthConfigOnce().then(function (config) {
+            return !!(config && config.productionRuntime === true);
+        }, function () {
+            return true;
         });
     }
 

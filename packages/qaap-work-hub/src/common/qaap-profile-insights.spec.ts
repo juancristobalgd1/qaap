@@ -37,6 +37,16 @@ describe('computeQaapProfileInsights', () => {
         expect(insights).to.include({ tasks: 4, messages: 11, projects: 2 });
     });
 
+    it('counts a project once across its clones and its task worktrees, like the sessions sidebar', () => {
+        const insights = computeQaapProfileInsights([
+            task(at(0), { cwd: '/opt/qaap-runtime/workspace/repos/users/me/acme/web' }),
+            task(at(0), { cwd: '/Users/me/.qaap/workspaces/users/me/acme/web' }),
+            task(at(1), { cwd: '/Users/me/.qaap/worktrees/web_2', parallelBaseCwd: '/Users/me/.qaap/workspaces/users/me/acme/web' }),
+            task(at(1), { cwd: '/opt/qaap-runtime/workspace/repos/users/me/acme/api' }),
+        ], NOW);
+        expect(insights.projects).to.equal(2);
+    });
+
     it('measures the current streak up to today, and keeps it alive until today has activity', () => {
         expect(computeQaapProfileInsights([task(at(0)), task(at(1)), task(at(2)), task(at(4))], NOW).currentStreakDays).to.equal(3);
         expect(computeQaapProfileInsights([task(at(1)), task(at(2))], NOW).currentStreakDays, 'nothing yet today').to.equal(2);

@@ -699,8 +699,11 @@ describe('Qaap login gate', () => {
             Object.defineProperty(run.document.querySelector('.theia-preload'), 'offsetParent', { get: () => run.document.body });
         }
 
+        /** The hosted product: it has a control plane, so an unanswered runtime probe is a real failure. */
+        const HOSTED = { skipAuth: true, productionRuntime: true };
+
         it('shows the "took too long to start" screen when the splash is still up after 30 s', async () => {
-            const run = startWithFakeTimers();
+            const run = startWithFakeTimers(HOSTED);
             await loadedBundle(run);
             clock!.tick(29_999);
             expect(run.document.getElementById('qaap-startup-error')).to.equal(null);
@@ -712,7 +715,7 @@ describe('Qaap login gate', () => {
         });
 
         it('keeps waiting with "Starting your workspace" while the tenant runtime is starting', async () => {
-            const run = startWithFakeTimers(undefined, undefined, ['starting', 'stopped']);
+            const run = startWithFakeTimers(HOSTED, undefined, ['starting', 'stopped']);
             await loadedBundle(run);
             clock!.tick(30_000);
             await run.waitFor(() => startupWait(run) !== undefined, 'startup wait message');
@@ -726,6 +729,22 @@ describe('Qaap login gate', () => {
             clock!.tick(30_000);
             await run.waitFor(() => startupError(run) !== undefined, 'startup error after the runtime stopped starting');
             expect(startupWait(run)).to.equal(undefined);
+        });
+
+        it('keeps waiting up to the cap without a control plane (local dev, self-hosted, or a project preview)', async () => {
+            const run = startWithFakeTimers({ skipAuth: true });
+            await loadedBundle(run);
+            clock!.tick(30_000);
+            await run.waitFor(() => startupWait(run) !== undefined, 'startup wait message');
+            expect(startupError(run)).to.equal(undefined);
+            for (let round = 2; round <= 3; round++) {
+                clock!.tick(30_000);
+                await run.waitFor(() => run.requests.filter(request => request === RUNTIME_STATUS).length === round, `runtime probe ${round}`);
+                await new Promise(resolve => setTimeout(resolve, 10));
+                expect(startupError(run)).to.equal(undefined);
+            }
+            clock!.tick(30_000);
+            expect(startupError(run)).to.contain('The application took too long to start.');
         });
 
         it('gives up after the 120 s cap even while the runtime still reports starting', async () => {
@@ -801,7 +820,7 @@ describe('Qaap login gate', () => {
         });
 
         it('qaap-startup-ready removes a shown retry screen', async () => {
-            const run = startWithFakeTimers();
+            const run = startWithFakeTimers(HOSTED);
             await loadedBundle(run);
             clock!.tick(30_000);
             await run.waitFor(() => startupError(run) !== undefined, 'startup error');

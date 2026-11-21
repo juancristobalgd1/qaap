@@ -9,7 +9,7 @@ import * as path from 'node:path';
 import type { QaapAgentConversation, QaapAgentMessage } from '../common/qaap-agent-conversation';
 import { QaapAgentConversationSseBatcher } from '../common/qaap-agent-conversation-sse-batcher';
 import type { QaapAgentTask } from '../common/qaap-agent-task';
-import { agentVisibleLog } from './qaap-agent-conversation-store-helpers';
+import { agentVisibleLog, filterPostAgentPhaseChunk } from './qaap-agent-conversation-store-helpers';
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 
@@ -166,6 +166,26 @@ describe('QaapAgentConversationStore completed-turn auth failure', () => {
             '[qaap] Verification failed. Starting codex fix attempt 1/2.',
             'Corregí el tipo.',
         ].join('\n'));
+    });
+
+    it('filterPostAgentPhaseChunk keeps the live reply free of the reviewer, chunk by chunk', () => {
+        let state = false;
+        const live: string[] = [];
+        for (const chunk of [
+            '{"type":"text","text":"Created README.md"}\n',
+            '\n[qaap] High-risk change — starting independent opencode review.\n',
+            '{"type":"text","text":"pass — code review finds no defect"}\n',
+            '@@QAAP:VERDICT@@ pass no concrete defect found in review.\n',
+        ]) {
+            const result = filterPostAgentPhaseChunk(chunk, state);
+            state = result.inPostAgentPhase;
+            live.push(result.text);
+        }
+        expect(state).to.equal(true);
+        expect(live.join('')).to.contain('Created README.md');
+        expect(live.join('')).to.not.contain('pass');
+        expect(filterPostAgentPhaseChunk('[qaap] Verification failed. Starting codex fix attempt 1/2.\nFixed it.', true))
+            .to.deep.equal({ text: '[qaap] Verification failed. Starting codex fix attempt 1/2.\nFixed it.', inPostAgentPhase: false });
     });
 
     it('resolveCompletedTurnAuthFailureReason ignores a successful turn that merely describes auth code (no structured error)', () => {

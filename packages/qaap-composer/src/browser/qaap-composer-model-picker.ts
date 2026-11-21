@@ -160,6 +160,11 @@ function attachDocumentShortcutKeys(host: HTMLElement): () => void {
         }
         if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && /^[1-9]$/.test(event.key)) {
             handlePickerKeydown(host, event);
+            return;
+        }
+        // Focus fell to the page (a rail click re-renders the picker): typing still filters on desktop.
+        if (event.target === doc.body && !hostStates.get(host)?.props.isMobile) {
+            typeIntoSearch(host, event);
         }
     };
     doc.addEventListener('keydown', listener);
@@ -613,7 +618,31 @@ function visibleRows(host: HTMLElement): HTMLButtonElement[] {
     return Array.from(host.querySelectorAll<HTMLButtonElement>('.qaap-model-picker-row'));
 }
 
+/**
+ * Typing while focus is on a row, a rail button or nowhere keeps filtering: the keystroke goes to the search field,
+ * as in a combobox. Returns whether the key was taken.
+ */
+function typeIntoSearch(host: HTMLElement, event: KeyboardEvent): boolean {
+    const typed = event.key.length === 1 && event.key !== ' ' && !event.ctrlKey && !event.metaKey && !event.altKey;
+    if (!typed && event.key !== 'Backspace') {
+        return false;
+    }
+    const input = host.querySelector<HTMLInputElement>('.qaap-model-picker-search input');
+    if (!input || event.target === input) {
+        return false;
+    }
+    event.preventDefault();
+    input.focus();
+    input.value = typed ? input.value + event.key : input.value.slice(0, -1);
+    const view = input.ownerDocument.defaultView ?? window;
+    input.dispatchEvent(new view.Event('input', { bubbles: true }));
+    return true;
+}
+
 function moveRowFocus(host: HTMLElement, event: KeyboardEvent): void {
+    if (typeIntoSearch(host, event)) {
+        return;
+    }
     if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') {
         return;
     }
@@ -632,6 +661,9 @@ function moveRowFocus(host: HTMLElement, event: KeyboardEvent): void {
 function handlePickerKeydown(host: HTMLElement, event: KeyboardEvent): void {
     const state = hostStates.get(host);
     if (!state) {
+        return;
+    }
+    if (event.target instanceof Element && event.target.closest('.qaap-model-picker-rail') && typeIntoSearch(host, event)) {
         return;
     }
     if (event.key === 'Escape') {

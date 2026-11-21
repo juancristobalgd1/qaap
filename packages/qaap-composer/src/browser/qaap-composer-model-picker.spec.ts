@@ -306,6 +306,22 @@ describe('qaap-composer-model-picker', () => {
         expect(rows(host).map(row => row.dataset.modelId)).to.deep.equal(['opus-4-6']);
     });
 
+    it('sends a character typed on a focused row to the search field', () => {
+        let query = '';
+        const paint = (): void => {
+            renderQaapComposerModelPicker(host, props({
+                state: state({ query }),
+                onQuery: value => { query = value; paint(); },
+            }));
+        };
+        paint();
+        const first = rows(host)[0];
+        first.focus();
+        first.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'o', bubbles: true, cancelable: true }));
+        expect(query).to.equal('o');
+        expect(document.activeElement).to.equal(host.querySelector('.qaap-model-picker-search input'));
+    });
+
     it('shows a loading line, not "No models match.", while the selected harness list is still loading', () => {
         renderQaapComposerModelPicker(host, props({ state: state({ models: [], loading: true }) }));
         const empty = host.querySelector<HTMLElement>('.qaap-model-picker-empty');

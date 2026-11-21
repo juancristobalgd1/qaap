@@ -21,6 +21,36 @@ export interface MobileWorkHubProfileIdentityView {
     readonly providerLabel: string;
 }
 
+/** A recognisable icon per tool: what it does (run, read, edit, search, fetch), else its kind. */
+function qaapProfileToolIcon(row: QaapAgentToolUsageRow): string {
+    if (row.kind === 'skill') {
+        return 'codicon-sparkle';
+    }
+    if (row.kind === 'mcp') {
+        return 'codicon-plug';
+    }
+    const name = row.name.toLowerCase();
+    if (/^(bash|shell|exec|run|terminal)/.test(name)) {
+        return 'codicon-terminal';
+    }
+    if (/^(read|view|cat|open)/.test(name)) {
+        return 'codicon-eye';
+    }
+    if (/^(edit|write|multiedit|apply|patch|notebookedit)/.test(name)) {
+        return 'codicon-edit';
+    }
+    if (/^(grep|glob|search|find|ls|list)/.test(name)) {
+        return 'codicon-search';
+    }
+    if (/^(web|fetch|browse)/.test(name)) {
+        return 'codicon-globe';
+    }
+    if (/^(todo|task|agent)/.test(name)) {
+        return 'codicon-checklist';
+    }
+    return 'codicon-tools';
+}
+
 /**
  * The Profile page's overview: a centered account header, a strip of headline numbers (tokens, peak day, tasks,
  * streaks), and once the history loads, activity insights and model usage. The activity calendar is mounted between
@@ -85,7 +115,7 @@ export class MobileWorkHubProfileOverview {
             item.className = 'qaap-profile-overview-tool';
             item.dataset.kind = row.kind;
             const icon = document.createElement('span');
-            icon.className = `qaap-profile-overview-tool-icon codicon ${row.kind === 'skill' ? 'codicon-sparkle' : row.kind === 'mcp' ? 'codicon-plug' : 'codicon-tools'}`;
+            icon.className = `qaap-profile-overview-tool-icon codicon ${qaapProfileToolIcon(row)}`;
             icon.setAttribute('aria-hidden', 'true');
             const name = document.createElement('span');
             name.className = 'qaap-profile-overview-tool-name';

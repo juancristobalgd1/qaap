@@ -432,6 +432,7 @@ export class MobileProjectsExecutionSurfaceTabsUi {
                 showSurface: kind => resolveWorkHubAuxPanelOwner()?.showWorkHubAuxPanelSurface(kind),
                 releaseSurface: userClosed => resolveWorkHubAuxPanelOwner()?.releaseWorkHubAuxPanelSurface(userClosed),
                 resolvePullRequestTarget: () => resolveWorkHubAuxPanelOwner()?.resolveWorkHubAuxPanelPullRequestTarget(),
+                resolvePullRequestProjectName: () => resolveWorkHubAuxPanelOwner()?.resolveWorkHubAuxPanelPullRequestProject()?.name,
                 openExternal: url => resolveWorkHubAuxPanelOwner()?.openWorkHubAuxPanelExternal(url),
                 sideChat: workHubAuxSideChatHost,
             });
@@ -485,13 +486,18 @@ export class MobileProjectsExecutionSurfaceTabsUi {
         return summary ? { project, summary, origin: sidebar?.origin ?? 'transcript' } : undefined;
     }
 
+    /** @internal The project the panel's "Pull request" view is about: the side panel's, the open task's, or the shell's. */
+    resolveWorkHubAuxPanelPullRequestProject(): MobileProjectEntry | undefined {
+        return this.host.executionSurfaceSidebar?.project ?? this.host.transcriptOpenProject ?? this.resolveExecutionSurfaceProject();
+    }
+
     /**
      * @internal The pull request the panel's "Pull request" view follows: the task's (or the project's when
      * no task is open). Needs only a project, so the view also works without an open task.
      */
     resolveWorkHubAuxPanelPullRequestTarget(): QaapWorkHubPullRequestTarget | undefined {
         const sidebar = this.host.executionSurfaceSidebar;
-        const project = sidebar?.project ?? this.host.transcriptOpenProject ?? this.resolveExecutionSurfaceProject();
+        const project = this.resolveWorkHubAuxPanelPullRequestProject();
         if (!project) {
             return undefined;
         }
@@ -515,6 +521,7 @@ export class MobileProjectsExecutionSurfaceTabsUi {
             mobileAuxSheet = new MobileWorkHubAuxSheet({
                 host: {
                     resolvePullRequestTarget: () => resolveWorkHubAuxPanelOwner()?.resolveWorkHubAuxPanelPullRequestTarget(),
+                    resolvePullRequestProjectName: () => resolveWorkHubAuxPanelOwner()?.resolveWorkHubAuxPanelPullRequestProject()?.name,
                     openExternal: url => resolveWorkHubAuxPanelOwner()?.openWorkHubAuxPanelExternal(url),
                     sideChat: workHubAuxSideChatHost,
                 },

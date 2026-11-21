@@ -283,6 +283,32 @@ export function agentVisibleLog(log: string): string {
 }
 
 /**
+ * The live counterpart of {@link agentVisibleLog} for one streamed chunk: drops the lines of a post-agent phase
+ * (the reviewer's tool calls and verdict text, the verification command) so they never land in the turn's
+ * segments or trace. `inPostAgentPhase` carries the state across chunks; phase headers start their own line.
+ */
+export function filterPostAgentPhaseChunk(chunk: string, inPostAgentPhase: boolean): { text: string; inPostAgentPhase: boolean } {
+    if (!inPostAgentPhase && !chunk.includes('[qaap] ')) {
+        return { text: chunk, inPostAgentPhase };
+    }
+    const kept: string[] = [];
+    let state = inPostAgentPhase;
+    for (const line of chunk.split('\n')) {
+        if (POST_AGENT_PHASE_LOG_HEADER.test(line)) {
+            state = true;
+            continue;
+        }
+        if (AGENT_OUTPUT_RESUMES_LOG_HEADER.test(line)) {
+            state = false;
+        }
+        if (!state) {
+            kept.push(line);
+        }
+    }
+    return { text: kept.join('\n'), inPostAgentPhase: state };
+}
+
+/**
  * Detect CLI blocking failures that exit 0 but must still open an interactive
  * failure dialog in Work Hub chat (Sign-in for auth; Task failed for quota /
  * rate limits). Covers stream-json `is_error:true` and plain-text Antigravity

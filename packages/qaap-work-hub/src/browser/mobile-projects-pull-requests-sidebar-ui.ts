@@ -594,7 +594,10 @@ export class MobileProjectsPullRequestsSidebarUi {
                 results.append(this.createErrorState(list.error));
                 return;
             }
-            const filtered = this.searchQuery !== '' || this.activeTab !== 'all' || this.stateFilter !== 'all';
+            // "No matching" + Clear filters only when a filter really hid something; with no pull request at all every
+            // tab says the same "No pull requests yet" as the detail pane.
+            const filtered = (this.searchQuery !== '' || this.activeTab !== 'all' || this.stateFilter !== 'all')
+                && this.host.inboxPullRequests.length > 0;
             results.append(HubEmptyStateDom.createEmptyState({
                 icon: 'codicon-git-pull-request',
                 title: filtered

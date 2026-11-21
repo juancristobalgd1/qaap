@@ -12,6 +12,7 @@ import { QAAP_WORK_HUB_GETTING_STARTED } from '@theia/qaap-shared-core/lib/commo
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import { buildQaapAccountMenuEntries, QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE, QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND, toggleQaapAccountMenu } from './qaap-workbench-account-menu';
 import { MobileWorkHubUnifiedSearchDialog } from './mobile-work-hub-unified-search-dialog';
+import { QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileViewToggleId } from '@theia/qaap-shared-core/lib/common/qaap-mobile-work-surface-preference';
 
@@ -103,6 +104,16 @@ export function createSessionsSidebarProjectRowHeadExtracted(ctx: MobileProjects
         syncToggleAria(ctx.host.sessionsSidebarExpandedProjectIds.has(project.id));
     };
     chevronBtn.addEventListener('click', toggleFromControl);
+    // The name row also makes the project the new task's destination while the idle "new task" composer shows,
+    // so the header and the next send follow the project the user just picked (the chevron only toggles).
+    const toggleAndScopeFromName = (ev: MouseEvent): void => {
+        toggleFromControl(ev);
+        if (isSessionsSidebarIdleNewTaskScreen(ctx) && ctx.host.agentsHubSelectedProjectId !== project.id) {
+            ctx.host.sessionsSidebarExpandedProjectIds.add(project.id);
+            syncToggleAria(true);
+            void scopeIdleComposerToProject(ctx, project);
+        }
+    };
     const folder = document.createElement('span');
     folder.className = 'theia-mobile-work-hub-sessions-sidebar-project-folder codicon '
         + (expanded ? 'codicon-folder-opened' : 'codicon-folder');
@@ -113,7 +124,7 @@ export function createSessionsSidebarProjectRowHeadExtracted(ctx: MobileProjects
     name.title = project.name;
     head.append(folder, name);
     // Native button activation maps Enter and Space to this click, so keyboard users get the same toggle.
-    head.addEventListener('click', toggleFromControl);
+    head.addEventListener('click', toggleAndScopeFromName);
     const actions = document.createElement('div');
     actions.className = 'theia-mobile-work-hub-sessions-sidebar-project-actions';
     actions.append(ctx.createSessionsSidebarNewAgentControl(project));
@@ -186,32 +197,52 @@ export async function onWorkHubSessionsSidebarNewChatExtracted(ctx: MobileProjec
     await ctx.openEmptyMobileChatSheet(project);
 }
 
-export async function openEmptyMobileChatSheetExtracted(ctx: MobileProjectsSessionsSidebarUiContext, project: MobileProjectEntry): Promise<void> {
-    ctx.host.sessionsSidebar?.hide();
+/** True while the Agents shell shows the idle "new task" composer (no real conversation open). */
+function isSessionsSidebarIdleNewTaskScreen(ctx: MobileProjectsSessionsSidebarUiContext): boolean {
+    if (!ctx.host.shouldUseAgentsHubLanding() || ctx.host.isProjectDetailView()) {
+        return false;
+    }
+    const openId = ctx.host.transcriptOpenSummaryId;
+    return !openId || openId === QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID;
+}
+
+function resolveNewTaskAgent(ctx: MobileProjectsSessionsSidebarUiContext, project: MobileProjectEntry): string {
     const cwd = ctx.host.projectsService.getProjectCwd(project);
     const selectedProjectAgent = ctx.host.transcriptStickyComposerUi.resolvePinnedAgentIdForProject(project);
     if (cwd && selectedProjectAgent) {
         writeStoredAgent(cwd, selectedProjectAgent);
     }
-    const defaultAgent = selectedProjectAgent
+    return selectedProjectAgent
         ?? (cwd ? readStoredAgent(cwd) : undefined)
         ?? ctx.host.activeTasks?.getDefaultAgent()
         ?? SHELL_AGENT_ID;
+}
+
+/** Scopes the idle Agents shell (header, composer, next send) to `project`, keeping the sidebar as it is. */
+async function scopeIdleComposerToProject(ctx: MobileProjectsSessionsSidebarUiContext, project: MobileProjectEntry): Promise<void> {
+    const defaultAgent = resolveNewTaskAgent(ctx, project);
+    // Without activateAgentsHubProject, closeAgentsHubSession falls back to the workspace /
+    // pinned project and the new section appears under the wrong repo.
+    await ctx.host.activateAgentsHubProject(project);
+    ctx.host.resetAgentsHubIdleTranscriptShell(project);
+    ctx.host.transcriptStickyComposerUi.resetToProjectComposerDefaults(project, defaultAgent);
+    ctx.host.executionSurfaceTabsUi.setExecutionSurfaceTab(project, 'messages');
+    if (ctx.host.visible) {
+        ctx.host.renderHeader();
+        ctx.host.renderSubtitle();
+    }
+    ctx.host.stickyComposerRenderUi.renderStickyComposer();
+}
+
+export async function openEmptyMobileChatSheetExtracted(ctx: MobileProjectsSessionsSidebarUiContext, project: MobileProjectEntry): Promise<void> {
+    ctx.host.sessionsSidebar?.hide();
     if (ctx.host.shouldUseAgentsHubLanding() && !ctx.host.isProjectDetailView()) {
         // Card-menu / sidebar "New agent" must scope the idle Agents shell to THIS project.
-        // Without activateAgentsHubProject, closeAgentsHubSession falls back to the workspace /
-        // pinned project and the new section appears under the wrong repo.
-        await ctx.host.activateAgentsHubProject(project);
-        ctx.host.resetAgentsHubIdleTranscriptShell(project);
-        ctx.host.transcriptStickyComposerUi.resetToProjectComposerDefaults(project, defaultAgent);
-        ctx.host.executionSurfaceTabsUi.setExecutionSurfaceTab(project, 'messages');
-        if (ctx.host.visible) {
-            ctx.host.renderHeader();
-            ctx.host.renderSubtitle();
-        }
-        ctx.host.stickyComposerRenderUi.renderStickyComposer();
+        await scopeIdleComposerToProject(ctx, project);
         return;
     }
+    const cwd = ctx.host.projectsService.getProjectCwd(project);
+    const defaultAgent = resolveNewTaskAgent(ctx, project);
     // Non–Agents-hub path: open a pending empty transcript scoped to the card project.
     ctx.host.agentsHubSelectedProjectId = project.id;
     const summary: QaapAgentConversationSummaryDTO = {

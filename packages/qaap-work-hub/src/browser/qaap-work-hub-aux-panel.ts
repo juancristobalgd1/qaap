@@ -41,6 +41,8 @@ export interface QaapWorkHubAuxPanelHost {
     releaseSurface(userClosed: boolean): void;
     /** The pull request the "Pull request" view follows, or `undefined` while no project is open. */
     resolvePullRequestTarget(): QaapWorkHubPullRequestTarget | undefined;
+    /** The project the view is about even when it has no pull request target (e.g. a project not on GitHub). */
+    resolvePullRequestProjectName?(): string | undefined;
     /** Opens a web page: in the system browser on desktop, in a new tab on the web. */
     openExternal(url: string): void;
     /** The side chat's Work Hub hooks. Without them the "Side chat" view has no parent and stays disabled. */
@@ -612,6 +614,7 @@ export class QaapWorkHubAuxPanel {
         this.element.dataset.view = active?.kind ?? 'launcher';
         if (showPullRequest) {
             const branchTarget = this.host.resolvePullRequestTarget();
+            this.pullRequestView.setProjectName(this.host.resolvePullRequestProjectName?.());
             this.pullRequestView.sync(
                 this.pinnedPullRequest ? createQaapWorkHubPinnedPullRequestTarget(this.pinnedPullRequest) : branchTarget,
                 this.isOpen,

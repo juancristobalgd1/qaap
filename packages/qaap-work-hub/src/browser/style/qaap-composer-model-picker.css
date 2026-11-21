@@ -227,6 +227,14 @@
     color: var(--theia-list-activeSelectionForeground);
 }
 
+/* Touch: 44px targets (Apple HIG / WCAG 2.5.5) on phones; the desktop rail stays compact. */
+@media (max-width: 767px) and (pointer: coarse) {
+    .qaap-model-picker-rail-item {
+        width: 44px;
+        height: 44px;
+    }
+}
+
 @media (prefers-reduced-motion: no-preference) {
     .qaap-model-picker-rail {
         scroll-behavior: smooth;
