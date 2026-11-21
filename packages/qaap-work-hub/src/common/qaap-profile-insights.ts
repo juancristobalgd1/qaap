@@ -74,6 +74,38 @@ function shares(counts: Map<string, { agentId: string; modelId?: string; tasks: 
  * A task is active on the day it was created and on the day it was last updated. Pure: no DOM, no clock but `now`.
  */
 /**
+ * Workspace container / owner parent directories (`~/.qaap/workspaces`, `~/.qaap/workspaces/<owner>`,
+ * `~/.qaap/workspaces/users/<login>`, `~/.qaap/workspaces/users/<login>/<owner>`, and the same layouts
+ * under `/workspace/repos`) are NOT projects themselves — historical tasks whose `cwd` sat on a parent
+ * folder must not inflate the Profile's distinct project count beyond the sessions sidebar.
+ */
+function isQaapWorkspaceContainerPath(normalizedLowerPath: string): boolean {
+    const segments = normalizedLowerPath.replace(/\\/g, '/').split('/').filter(Boolean);
+    for (let i = 0; i < segments.length; i++) {
+        const isDotQaapWorkspaces = segments[i] === '.qaap' && segments[i + 1] === 'workspaces';
+        const isWorkspaceRepos = segments[i] === 'repos' && (i === 0 || segments[i - 1] === 'workspace');
+        if (!isDotQaapWorkspaces && !isWorkspaceRepos) {
+            continue;
+        }
+        const rootEnd = isDotQaapWorkspaces ? i + 2 : i + 1;
+        const tail = segments.slice(rootEnd);
+        if (tail.length === 0) {
+            return true;
+        }
+        if (tail[0] === 'users') {
+            // `.../users`, `.../users/{login}`, or `.../users/{login}/{owner}` (repo needs 4 segments).
+            if (tail.length <= 3) {
+                return true;
+            }
+        } else if (tail.length === 1) {
+            // `.../{owner}` (repo needs 2 segments: `{owner}/{repo}`).
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
  * One key per repository, the way the sessions sidebar groups cards: a task worktree counts as its source project,
  * and every clone of `owner/repo` (desktop clone, per-user or legacy server clone) is the same project.
  */
@@ -84,7 +116,10 @@ function qaapProfileProjectKey(conversation: QaapProfileInsightsConversation): s
         return undefined;
     }
     const clone = parseQaapWorkspaceRepoPath(path);
-    return clone ? `repo:${clone.owner}/${clone.repo}` : `path:${path}`;
+    if (clone) {
+        return `repo:${clone.owner}/${clone.repo}`;
+    }
+    return isQaapWorkspaceContainerPath(path) ? undefined : `path:${path}`;
 }
 
 export function computeQaapProfileInsights(conversations: ReadonlyArray<QaapProfileInsightsConversation>, now: Date): QaapProfileInsights {

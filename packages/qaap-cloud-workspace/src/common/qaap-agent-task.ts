@@ -389,6 +389,12 @@ export interface QaapAgentHarnessStatus {
      * Antigravity harness. The TUI menu, Connect and the status probe all use this one binary.
      */
     readonly cliBin?: string;
+    /** Server-validated binary path override for Connect on desktop (never trusted from the browser). */
+    readonly loginBinaryPath?: string;
+    /** Server-validated configuration folder env (`CODEX_HOME` / `CLAUDE_CONFIG_DIR`) for Connect on desktop. */
+    readonly loginEnv?: Readonly<Record<string, string>>;
+    /** Validation failure message when the harness's desktop binary or folder override cannot be used. */
+    readonly loginOverrideError?: string;
     /** The user's last finished turn with this agent, when there is one. */
     readonly lastTurn?: QaapAgentLastTurn;
 }

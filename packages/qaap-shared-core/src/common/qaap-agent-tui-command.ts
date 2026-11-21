@@ -5,6 +5,7 @@
 
 import { QAAP_BUILTIN_AGENT_DEFINITIONS } from './qaap-builtin-agents';
 import { OPENCLAUDE_AGENT_ID, QAIQ_AGENT_ID, migrateQaapProductAgentId } from './qaap-agent-task-client';
+import { resolveQaapHarnessBaseId } from './qaap-harness-launch-settings';
 import {
     resolveAgentHiddenLoginCommand,
     resolveAgentLoginCliCommand,
@@ -23,7 +24,8 @@ import { QAAP_PI_DEFAULT_LOGIN_PROVIDER, resolvePiLoginProvider } from './qaap-p
  * preferred `gemini` is assumed.
  */
 export function resolveInteractiveAgentCliBin(agentId: string | undefined, cliBin?: string): string | undefined {
-    const normalized = migrateQaapProductAgentId(agentId?.trim());
+    const baseId = agentId?.trim() ? resolveQaapHarnessBaseId(agentId.trim()) : undefined;
+    const normalized = migrateQaapProductAgentId(baseId);
     if (!normalized) {
         return undefined;
     }
@@ -150,7 +152,8 @@ export function resolveAgentConnectionFlow(
     agentId: string | undefined,
     options?: { readonly provider?: string; readonly cliBin?: string },
 ): QaapAgentConnectionFlow {
-    const normalized = migrateQaapProductAgentId(agentId?.trim());
+    const baseId = agentId?.trim() ? resolveQaapHarnessBaseId(agentId.trim()) : undefined;
+    const normalized = migrateQaapProductAgentId(baseId);
     if (!normalized) {
         return { kind: 'unsupported' };
     }
@@ -200,7 +203,8 @@ export function resolveAgentConnectionFlow(
 
 /** Device/OAuth command to send to the background transcript terminal, when supported. */
 export function resolveInteractiveAgentLoginCommand(agentId: string | undefined, cliBin?: string): string | undefined {
-    const normalized = migrateQaapProductAgentId(agentId?.trim());
+    const baseId = agentId?.trim() ? resolveQaapHarnessBaseId(agentId.trim()) : undefined;
+    const normalized = migrateQaapProductAgentId(baseId);
     if (!normalized || normalized === QAIQ_AGENT_ID || isAgentHiddenOnHostedRuntime(normalized)) {
         return undefined;
     }

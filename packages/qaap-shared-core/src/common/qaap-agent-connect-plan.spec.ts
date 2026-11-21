@@ -5,6 +5,7 @@
 
 import { expect } from 'chai';
 import { resolveAgentLoginCliCommand } from './qaap-agent-auth-login';
+import { resolveAgentConnectionFlow } from './qaap-agent-tui-command';
 import {
     buildAgentLoginShellCommand,
     QAAP_AGENT_LOGIN_INPUT_CHUNK_BYTES,
@@ -49,5 +50,31 @@ describe('splitAgentLoginShellInput', () => {
 
     it('returns no writes for an empty command', () => {
         expect(splitAgentLoginShellInput('')).to.deep.equal([]);
+    });
+
+    it('replaces the leading binary and exports server-validated env overrides on POSIX and Windows', () => {
+        const posix = buildAgentLoginShellCommand('codex login --device-auth', {
+            binaryPath: '/opt/codex-work/bin/codex',
+            env: { CODEX_HOME: '/Users/alice/.codex-work' },
+            platform: 'darwin',
+        });
+        expect(posix).to.include("export CODEX_HOME='/Users/alice/.codex-work'; ");
+        expect(posix).to.include("'/opt/codex-work/bin/codex' login --device-auth; echo");
+
+        const win = buildAgentLoginShellCommand('codex login --device-auth', {
+            binaryPath: 'C:\\tools\\codex.exe',
+            env: { CODEX_HOME: 'C:\\Users\\alice\\.codex-work' },
+            platform: 'win32',
+        });
+        expect(win).to.include("$env:CODEX_HOME = 'C:\\Users\\alice\\.codex-work'; ");
+        expect(win).to.include("& 'C:\\tools\\codex.exe' login --device-auth; echo");
+    });
+
+    it('resolves the base connection flow for harness instance ids such as codex#2', () => {
+        const flow = resolveAgentConnectionFlow('codex#2');
+        expect(flow.kind).to.equal('cli-login');
+        if (flow.kind === 'cli-login') {
+            expect(flow.command).to.include('codex');
+        }
     });
 });

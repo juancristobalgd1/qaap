@@ -8,6 +8,10 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { QAAP_HARNESS_DEFINITIONS } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
+import {
+    QAAP_HARNESS_INSTANCES_PREF,
+    QAAP_HARNESS_SETTINGS_PREF,
+} from '@theia/qaap-shared-core/lib/common/qaap-harness-launch-settings';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import type { AgentCandidate } from './qaap-agent-task-runner-types';
 import { resolveAgentCliPrefixBinDirectory } from './qaap-agent-cli-prefix';
@@ -320,5 +324,63 @@ describe('QaapAgentTaskRunner listAgents session and availability', () => {
         Object.assign(runner, { isAgentEnabled: () => false });
         await runner.listAgentsFresh('alice', 50);
         expect(runner.listAgents('alice').map(entry => entry.id)).to.not.include('codex');
+    });
+
+    it('includes configured harness instances with server-validated Connect overrides and usage home overrides on desktop', () => {
+        const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-instance-status-'));
+        const originalDesktop = process.env.QAAP_DESKTOP;
+        try {
+            process.env.QAAP_DESKTOP = '1';
+            const customBin = path.join(sandbox, process.platform === 'win32' ? 'codex-work.cmd' : 'codex-work');
+            fs.writeFileSync(customBin, process.platform === 'win32' ? '@exit /b 0\r\n' : '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+            const workHome = path.join(sandbox, 'codex-work-home');
+            fs.mkdirSync(workHome, { recursive: true });
+            const missingHome = path.join(sandbox, 'missing-home');
+
+            const prefs: Record<string, unknown> = {
+                [QAAP_HARNESS_INSTANCES_PREF]: [
+                    { id: 'codex#2', baseId: 'codex' },
+                    { id: 'codex#3', baseId: 'codex' },
+                ],
+                [QAAP_HARNESS_SETTINGS_PREF]: {
+                    'codex#2': { binaryPath: customBin, homeDir: workHome },
+                    'codex#3': { homeDir: missingHome },
+                },
+            };
+
+            const runner = Object.create(QaapAgentTaskRunner.prototype) as QaapAgentTaskRunner;
+            Object.assign(runner, {
+                detectedAgents: new Map<string, AgentCandidate>(),
+                resolveAgentCliPrefix: () => path.join(sandbox, '.qaap', 'cli'),
+                isOnPath: () => true,
+                isAgentEnabled: () => true,
+                agentConnectionState: (id: string) => id === 'codex#2' ? 'connected' : 'disconnected',
+                preferenceReaderForOwner: () => (key: string) => prefs[key],
+            });
+
+            const statuses = runner.listHarnessStatuses('alice', () => true);
+            const work = statuses.find(status => status.id === 'codex#2');
+            const broken = statuses.find(status => status.id === 'codex#3');
+            expect(work?.loginBinaryPath).to.equal(customBin);
+            expect(work?.loginEnv).to.deep.equal({ CODEX_HOME: workHome });
+            expect(work?.loginOverrideError).to.equal(undefined);
+            expect(work?.connectionState).to.equal('connected');
+            expect(broken?.loginOverrideError).to.be.a('string').and.not.equal('');
+            expect(broken?.connectionState).to.equal('unknown');
+
+            expect(runner.resolveHarnessUsageHomeOverrides('codex#2', 'alice')).to.deep.equal({
+                ok: true,
+                overrides: { CODEX_HOME: workHome },
+            });
+            const brokenUsage = runner.resolveHarnessUsageHomeOverrides('codex#3', 'alice');
+            expect(brokenUsage.ok).to.equal(false);
+        } finally {
+            if (originalDesktop === undefined) {
+                delete process.env.QAAP_DESKTOP;
+            } else {
+                process.env.QAAP_DESKTOP = originalDesktop;
+            }
+            fs.rmSync(sandbox, { recursive: true, force: true });
+        }
     });
 });

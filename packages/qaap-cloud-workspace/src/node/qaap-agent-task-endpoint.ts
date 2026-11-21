@@ -588,7 +588,7 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             harnesses: this.runner.listHarnessStatuses(
                 ownerLogin,
                 agentId => this.cliUpdates.isAgentInstallSupported(agentId, installTarget),
-            ).map(harness => ({ ...harness, installPackageAvailable: this.cliUpdates.hasInstallablePackage(harness.id) })),
+            ).map(harness => ({ ...harness, installPackageAvailable: this.cliUpdates.hasInstallablePackage(resolveQaapHarnessBaseId(harness.id)) })),
             launchOverridesSupported: isQaapHarnessLaunchOverrideRuntime(),
         } satisfies QaapAgentHarnessStatusResponse);
     }

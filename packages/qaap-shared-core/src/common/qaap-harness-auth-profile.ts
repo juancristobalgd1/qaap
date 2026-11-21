@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { migrateQaapProductAgentId } from './qaap-agent-task-client';
+import { resolveQaapHarnessBaseId } from './qaap-harness-launch-settings';
 import { normalizeAntigravityCliBin } from './qaap-antigravity-cli';
 import { QAAP_BUILTIN_AGENT_DEFINITIONS, resolveQaapBuiltinAgentSignOut } from './qaap-builtin-agents';
 import type { QaapHarnessSessionDetection } from './qaap-harness-model-availability';
@@ -194,7 +195,8 @@ const BUILTIN_SESSION_CHECK_BY_ID = new Map(
  * - built-in harnesses with `sessionCheck: 'probe'` are `'detectable'`.
  */
 export function resolveQaapHarnessSessionDetection(agentId: string | undefined): QaapHarnessSessionDetection {
-    const normalized = migrateQaapProductAgentId(agentId?.trim());
+    const baseId = agentId?.trim() ? resolveQaapHarnessBaseId(agentId.trim()) : undefined;
+    const normalized = migrateQaapProductAgentId(baseId);
     if (!normalized) {
         return 'detectable';
     }
@@ -213,7 +215,8 @@ export function resolveQaapHarnessAuthProfile(
     agentId: string | undefined,
     options?: { readonly cliBin?: string },
 ): QaapHarnessAuthProfile | undefined {
-    const normalized = migrateQaapProductAgentId(agentId?.trim());
+    const baseId = agentId?.trim() ? resolveQaapHarnessBaseId(agentId.trim()) : undefined;
+    const normalized = migrateQaapProductAgentId(baseId);
     if (!normalized) {
         return undefined;
     }
