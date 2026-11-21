@@ -109,4 +109,16 @@ describe('computeQaapProfileInsights', () => {
         expect(insights.currentStreakDays).to.equal(1);
         expect(insights.peakDay?.day).to.equal(new Date(2026, 10, 20).getTime());
     });
+
+    it('ignores workspace parent/owner container directories when counting distinct projects', () => {
+        const insights = computeQaapProfileInsights([
+            task(at(0), { cwd: '/Users/jc/.qaap/workspaces/juancristobalgd1/qaap' }),
+            task(at(1), { cwd: '/Users/jc/.qaap/workspaces/juancristobalgd1' }),
+            task(at(1), { cwd: '/Users/jc/.qaap/workspaces/users/jc/juancristobalgd1' }),
+            task(at(1), { cwd: '/workspace/repos/users/jc' }),
+            task(at(2), { cwd: '/Users/jc/.qaap/workspaces' }),
+        ], NOW);
+        expect(insights.tasks).to.equal(5);
+        expect(insights.projects).to.equal(1);
+    });
 });

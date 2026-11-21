@@ -3,9 +3,14 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { inject, injectable } from '@theia/core/shared/inversify';
+import { inject, injectable, optional } from '@theia/core/shared/inversify';
 import { Application, Request, Response } from '@theia/core/shared/express';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
+import { QAAP_BUILTIN_AGENT_IDS } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
+import {
+    isQaapHarnessSettingsId,
+    resolveQaapHarnessBaseId,
+} from '@theia/qaap-shared-core/lib/common/qaap-harness-launch-settings';
 import {
     QAAP_USAGE_LIMITS_PATH,
     QAAP_USAGE_SUMMARY_PATH,
@@ -17,10 +22,11 @@ import { QaapAsyncRoute } from '@theia/qaap-shared-core/lib/node/qaap-async-rout
 import { isQaapHostedProductionRuntime } from '@theia/qaap-shared-core/lib/node/qaap-production-auth-readiness';
 import { QAAP_BACKEND_ISOLATION_MODE } from '@theia/qaap-adapters/lib/common/qaap-backend-isolation';
 import { isQaapTenantBackendMode, QAAP_TENANT_LOGIN_ENV } from '@theia/qaap-adapters/lib/common/qaap-tenant-backend-auth';
+import { QaapAgentTaskRunner } from '../qaap-agent-task-runner';
 import { QaapUsageAggregator } from './qaap-usage-aggregator';
 import { QaapUsageLimitsService } from './qaap-usage-limits';
 import { QaapUsagePriceList } from './qaap-usage-prices';
-import { QaapUsageScannerRegistry } from './qaap-usage-scanner-registry';
+import { type QaapUsageOwnerScan, QaapUsageScannerRegistry } from './qaap-usage-scanner-registry';
 import { QaapUsageTime } from './qaap-usage-time';
 
 const RANGES: readonly QaapUsageRange[] = ['24h', '7d', '30d', '90d'];
@@ -44,6 +50,10 @@ export class QaapUsageEndpoint implements BackendApplicationContribution {
     @inject(QaapUsageLimitsService)
     protected readonly limits: QaapUsageLimitsService;
 
+    @inject(QaapAgentTaskRunner)
+    @optional()
+    protected readonly runner?: QaapAgentTaskRunner;
+
     protected readonly aggregator = new QaapUsageAggregator(QaapUsagePriceList.loadBundled());
 
     configure(app: Application): void {
@@ -64,8 +74,8 @@ export class QaapUsageEndpoint implements BackendApplicationContribution {
             res.status(400).json({ error: 'range must be one of 24h, 7d, 30d, 90d' });
             return;
         }
-        const providers = this.parseProviderList(this.queryValue(req, 'provider'));
-        if (providers === undefined) {
+        const parsedProviders = this.parseProviderList(this.queryValue(req, 'provider'));
+        if (parsedProviders === undefined) {
             res.status(400).json({ error: `provider must be a comma-separated list of ${PROVIDERS.join(', ')}` });
             return;
         }
@@ -74,7 +84,18 @@ export class QaapUsageEndpoint implements BackendApplicationContribution {
             res.status(400).json({ error: 'tz must be an IANA timezone name' });
             return;
         }
-        const { scanner } = this.scanners.forOwner(login);
+        const resolved = this.resolveOwnerScan(req, res, login);
+        if (!resolved) {
+            return;
+        }
+        let providers = parsedProviders;
+        if (providers.length === 0 && resolved.harnessId) {
+            const baseId = resolveQaapHarnessBaseId(resolved.harnessId);
+            if (PROVIDERS.includes(baseId as QaapUsageProviderId)) {
+                providers = [baseId as QaapUsageProviderId];
+            }
+        }
+        const { scanner } = resolved.scan;
         // Starts the first scan on the first request and refreshes the ledger later; this response reads what is there now.
         scanner.refreshInBackground();
         res.json(this.aggregator.summarize(scanner.getLedger(), {
@@ -107,7 +128,41 @@ export class QaapUsageEndpoint implements BackendApplicationContribution {
         if (!login) {
             return;
         }
-        res.json(await this.limits.forOwner(this.scanners.forOwner(login)).getLimits());
+        const resolved = this.resolveOwnerScan(req, res, login);
+        if (!resolved) {
+            return;
+        }
+        res.json(await this.limits.forOwner(resolved.scan).getLimits());
+    }
+
+    /**
+     * Resolves the usage scanner for `login`, optionally scoped to one harness or harness instance
+     * (`?harness=codex#2`) using its server-validated `CODEX_HOME`/`CLAUDE_CONFIG_DIR` override.
+     */
+    protected resolveOwnerScan(
+        req: Request,
+        res: Response,
+        login: string,
+    ): { readonly scan: QaapUsageOwnerScan; readonly harnessId?: string } | undefined {
+        const rawHarness = this.queryValue(req, 'harness');
+        if (!rawHarness) {
+            return { scan: this.scanners.forOwner(login) };
+        }
+        const harnessId = rawHarness.toLowerCase();
+        if (!isQaapHarnessSettingsId(harnessId, QAAP_BUILTIN_AGENT_IDS)) {
+            res.status(400).json({ error: 'Unknown harness.' });
+            return undefined;
+        }
+        const overrideResult = this.runner?.resolveHarnessUsageHomeOverrides(harnessId, login);
+        if (overrideResult && !overrideResult.ok) {
+            res.status(400).json({ error: overrideResult.error });
+            return undefined;
+        }
+        const overrides = overrideResult?.ok ? overrideResult.overrides : {};
+        return {
+            scan: this.scanners.forHarnessInstance(login, harnessId, overrides),
+            harnessId,
+        };
     }
 
     /**

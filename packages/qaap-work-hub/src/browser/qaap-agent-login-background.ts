@@ -68,6 +68,12 @@ interface AgentLoginHarnessStatus {
     readonly cliBinDirectory?: string;
     /** The Antigravity CLI the server resolved (`gemini`, `agy`, `antigravity`); decides whether Connect runs a hidden login. */
     readonly cliBin?: string;
+    /** Server-validated binary override for Connect on desktop (e.g. an instance's custom binary). */
+    readonly loginBinaryPath?: string;
+    /** Server-validated configuration folder env (`CODEX_HOME` / `CLAUDE_CONFIG_DIR`) for Connect on desktop. */
+    readonly loginEnv?: Readonly<Record<string, string>>;
+    /** Validation failure message when the harness's configured binary/folder override is invalid. */
+    readonly loginOverrideError?: string;
 }
 
 function wait(milliseconds: number): Promise<void> {
@@ -609,12 +615,16 @@ export async function openAgentLoginDialogInBackground(
             tap.noteOutput();
             bufferTap = tap;
             flow.commandStarted(Date.now());
+            const loginEnv: Record<string, string> | undefined = hiddenLogin?.env || status?.loginEnv
+                ? { ...(hiddenLogin?.env ?? {}), ...(status?.loginEnv ?? {}) }
+                : undefined;
             await typeAgentLoginCommand(
                 liveTerminal,
                 `${buildAgentLoginShellCommand(command, {
                     cliBinDirectory: status?.cliBinDirectory,
+                    binaryPath: status?.loginBinaryPath,
                     platform: runtimePlatform(),
-                    env: hiddenLogin?.env,
+                    env: loginEnv,
                 })}\r`,
                 () => onOutputBytes > 0 || hasBufferText(liveTerminal),
                 () => !closed && currentAttempt === attempt,
@@ -646,6 +656,10 @@ export async function openAgentLoginDialogInBackground(
         flow.restart(Date.now());
         const status = await fetchAgentLoginHarnessStatus(agentId);
         if (closed || flow.state.phase !== 'preparing') {
+            return;
+        }
+        if (status?.loginOverrideError) {
+            flow.showManualInstructions(status.loginOverrideError);
             return;
         }
         if (status && status.installed === false) {

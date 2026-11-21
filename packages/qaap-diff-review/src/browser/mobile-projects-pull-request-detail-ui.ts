@@ -102,8 +102,11 @@ export class MobileProjectsPullRequestDetailUi {
             title.textContent = nls.localize('qaap/pullRequests/selectDetail', 'Select a pull request');
             body.textContent = nls.localize('qaap/pullRequests/selectDetailBody', 'Choose a pull request from the sidebar to view its details.');
         } else {
-            title.textContent = nls.localize('qaap/pullRequests/noDetail', 'No pull requests yet');
-            body.textContent = nls.localize('qaap/pullRequests/noDetailBody', 'Pull requests from your linked repositories will appear here.');
+            title.textContent = nls.localize('qaap/pullRequests/noDetailTitle', 'Ready when you open a pull request');
+            body.textContent = nls.localize(
+                'qaap/pullRequests/noDetailDescription',
+                'Ask an agent to open a pull request or create one on GitHub — checks, diffs, and review threads will show up here.',
+            );
         }
 
         root.append(icon, title, body);

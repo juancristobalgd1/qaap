@@ -17,6 +17,8 @@ const LOGIN_TERMINAL_ROWS = 50;
 export interface QaapAgentLoginShellOptions {
     /** Per-user harness install directory (`harness-status.cliBinDirectory`), prepended to PATH. */
     readonly cliBinDirectory?: string;
+    /** Server-validated binary override for Connect on desktop (replaces the leading command token). */
+    readonly binaryPath?: string;
     readonly platform?: string;
     /** Environment variables exported for this login command only (names are fixed by the caller). */
     readonly env?: Readonly<Record<string, string>>;
@@ -30,6 +32,21 @@ function quotePowerShell(value: string): string {
     return `'${value.replace(/'/g, '\'\'')}'`;
 }
 
+function replaceLeadingLoginBinary(command: string, binaryPath: string | undefined, platform: string | undefined): string {
+    const bin = binaryPath?.trim();
+    if (!bin) {
+        return command;
+    }
+    const trimmed = command.trimStart();
+    if (!trimmed) {
+        return command;
+    }
+    const separatorIndex = trimmed.search(/\s/);
+    const rest = separatorIndex >= 0 ? trimmed.slice(separatorIndex) : '';
+    const quoted = platform === 'win32' ? `& ${quotePowerShell(bin)}` : quotePosix(bin);
+    return `${quoted}${rest}`;
+}
+
 /**
  * Wrap a login command for the hidden Connect terminal: widen the PTY, put the per-user harness
  * installs on PATH, and print an exit marker so the dialog learns when the CLI has ended (the
@@ -37,15 +54,16 @@ function quotePowerShell(value: string): string {
  */
 export function buildAgentLoginShellCommand(command: string, options: QaapAgentLoginShellOptions = {}): string {
     const binDirectory = options.cliBinDirectory?.trim();
+    const effectiveCommand = replaceLeadingLoginBinary(command, options.binaryPath, options.platform);
     const envEntries = Object.entries(options.env ?? {});
     if (options.platform === 'win32') {
         const powerShellPathSetup = binDirectory ? `$env:PATH = ${quotePowerShell(binDirectory)} + ';' + $env:PATH; ` : '';
         const powerShellEnvSetup = envEntries.map(([name, value]) => `$env:${name} = ${quotePowerShell(value)}; `).join('');
-        return `${powerShellPathSetup}${powerShellEnvSetup}${command}; echo "${QAAP_AGENT_LOGIN_EXIT_TOKEN}:$LASTEXITCODE"`;
+        return `${powerShellPathSetup}${powerShellEnvSetup}${effectiveCommand}; echo "${QAAP_AGENT_LOGIN_EXIT_TOKEN}:$LASTEXITCODE"`;
     }
     const pathSetup = binDirectory ? `PATH=${quotePosix(binDirectory)}:"$PATH"; export PATH; ` : '';
     const envSetup = envEntries.map(([name, value]) => `export ${name}=${quotePosix(value)}; `).join('');
-    return `stty cols ${LOGIN_TERMINAL_COLUMNS} rows ${LOGIN_TERMINAL_ROWS} 2>/dev/null; ${pathSetup}${envSetup}${command}; echo "${QAAP_AGENT_LOGIN_EXIT_TOKEN}:$?"`;
+    return `stty cols ${LOGIN_TERMINAL_COLUMNS} rows ${LOGIN_TERMINAL_ROWS} 2>/dev/null; ${pathSetup}${envSetup}${effectiveCommand}; echo "${QAAP_AGENT_LOGIN_EXIT_TOKEN}:$?"`;
 }
 
 /**

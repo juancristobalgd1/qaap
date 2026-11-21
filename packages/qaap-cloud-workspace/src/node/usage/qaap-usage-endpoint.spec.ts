@@ -42,8 +42,23 @@ describe('QaapUsageEndpoint', () => {
         Object.assign(process.env, savedEnv);
     });
 
-    function endpointSignedInAs(login: string | undefined): QaapUsageEndpoint {
+    function endpointSignedInAs(
+        login: string | undefined,
+        options: {
+            readonly resolveOverrides?: (harnessId: string, owner: string | undefined) =>
+                { readonly ok: true; readonly overrides: Readonly<Record<string, string>> }
+                | { readonly ok: false; readonly error: string };
+        } = {},
+    ): QaapUsageEndpoint {
         const endpoint = new QaapUsageEndpoint();
+        const makeScan = (key: string) => ({
+            scanner: {
+                refreshInBackground: (): void => undefined,
+                hasCompletedScan: (): boolean => true,
+                getLedger: () => ({ allEntries: function* (): IterableIterator<never> { /* no usage */ }, skippedRecords: () => 0 }),
+            },
+            target: { key, roots: {} },
+        });
         Object.assign(endpoint, {
             auth: {
                 authenticate: () => ({ kind: login ? 'session' : 'unauthorized' }),
@@ -52,25 +67,33 @@ describe('QaapUsageEndpoint', () => {
             scanners: {
                 forOwner: (owner: string) => {
                     owners.push(owner);
-                    return {
-                        scanner: {
-                            refreshInBackground: (): void => undefined,
-                            hasCompletedScan: (): boolean => true,
-                            getLedger: () => ({ allEntries: function* (): IterableIterator<never> { /* no usage */ }, skippedRecords: () => 0 }),
-                        },
-                        target: { key: owner, roots: {} },
-                    };
+                    return makeScan(owner);
+                },
+                forHarnessInstance: (owner: string, instanceId: string, overrides: Readonly<Record<string, string>>) => {
+                    instanceLookups.push({ owner, instanceId, overrides });
+                    return makeScan(`${owner}:${instanceId}`);
                 },
             },
-            limits: { forOwner: () => ({ getLimits: async () => ({ providers: [] }) }) },
+            limits: {
+                forOwner: (scan: { target: { key: string } }) => ({
+                    getLimits: async () => ({ providers: [], scanKey: scan.target.key }),
+                }),
+            },
+            ...(options.resolveOverrides ? {
+                runner: {
+                    resolveHarnessUsageHomeOverrides: options.resolveOverrides,
+                },
+            } : {}),
         });
         return endpoint;
     }
 
     let owners: string[] = [];
+    let instanceLookups: Array<{ owner: string; instanceId: string; overrides: Readonly<Record<string, string>> }> = [];
 
     beforeEach(() => {
         owners = [];
+        instanceLookups = [];
     });
 
     function call(endpoint: QaapUsageEndpoint, method: 'handleSummary' | 'handleLimits', query: Record<string, string> = {}): FakeResponse {
@@ -146,5 +169,42 @@ describe('QaapUsageEndpoint', () => {
         const response = call(endpointSignedInAs(undefined), 'handleLimits');
         await new Promise(resolve => setImmediate(resolve));
         expect(response.statusCode).to.equal(401);
+    });
+
+    it('scopes summary and limits to a harness instance when ?harness= is provided', async () => {
+        delete process.env.NODE_ENV;
+        delete process.env.QAAP_CLOUD_MODE;
+        const endpoint = endpointSignedInAs('Alice', {
+            resolveOverrides: (harnessId, owner) => {
+                expect(owner).to.equal('Alice');
+                const overrides: Record<string, string> = harnessId === 'codex#2'
+                    ? { CODEX_HOME: '/Users/alice/.codex-work' }
+                    : {};
+                return { ok: true, overrides };
+            },
+        });
+        const summary = call(endpoint, 'handleSummary', { tz: 'UTC', harness: 'codex#2' });
+        const limits = call(endpoint, 'handleLimits', { harness: 'codex#2' });
+        await new Promise(resolve => setImmediate(resolve));
+        expect(summary.statusCode).to.equal(200);
+        expect(limits.statusCode).to.equal(200);
+        expect(instanceLookups).to.deep.equal([
+            { owner: 'Alice', instanceId: 'codex#2', overrides: { CODEX_HOME: '/Users/alice/.codex-work' } },
+            { owner: 'Alice', instanceId: 'codex#2', overrides: { CODEX_HOME: '/Users/alice/.codex-work' } },
+        ]);
+    });
+
+    it('rejects unknown harness ids and invalid harness override folders with 400', async () => {
+        delete process.env.NODE_ENV;
+        delete process.env.QAAP_CLOUD_MODE;
+        const endpoint = endpointSignedInAs('Alice', {
+            resolveOverrides: () => ({ ok: false, error: 'The configuration folder does not exist.' }),
+        });
+        const unknown = call(endpoint, 'handleSummary', { tz: 'UTC', harness: 'not-a-harness' });
+        const badFolder = call(endpoint, 'handleLimits', { harness: 'codex#2' });
+        await new Promise(resolve => setImmediate(resolve));
+        expect(unknown.statusCode).to.equal(400);
+        expect(badFolder.statusCode).to.equal(400);
+        expect(badFolder.body).to.deep.equal({ error: 'The configuration folder does not exist.' });
     });
 });

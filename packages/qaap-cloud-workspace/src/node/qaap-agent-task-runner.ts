@@ -195,9 +195,14 @@ import {
 import { childProcessEnv } from './qaap-child-process-env';
 import { withQaapHarnessInstanceDescriptors } from './qaap-harness-instance-descriptors';
 import { type QaapHarnessLaunchEnvironment, resolveQaapHarnessLaunchEnvironment } from './qaap-harness-launch-environment';
-import { QaapHarnessLaunchOverrideError } from './qaap-harness-launch-overrides';
+import { QaapHarnessLaunchOverrideError, resolveQaapHarnessLaunchPlan } from './qaap-harness-launch-overrides';
 import { QaapHarnessEnvSecretStore } from './qaap-harness-env-secret-store';
-import { resolveQaapHarnessBaseId } from '@theia/qaap-shared-core/lib/common/qaap-harness-launch-settings';
+import {
+    QAAP_HARNESS_INSTANCES_PREF,
+    readQaapHarnessInstances,
+    resolveQaapHarnessBaseId,
+} from '@theia/qaap-shared-core/lib/common/qaap-harness-launch-settings';
+import { QAAP_BUILTIN_AGENT_IDS } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 import { qaapGitReadEnv } from './qaap-child-process-env';
 
 /** How long a CLI auth probe answer is considered current before it is re-probed in the background. */
@@ -746,7 +751,26 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         const prefix = this.resolveAgentCliPrefix(this.resolveOwnerCwd(ownerLogin));
         prependAgentCliBinToPath(pathEnv, prefix);
         const cliBinDirectory = resolveAgentCliPrefixBinDirectory(prefix);
-        return QAAP_HARNESS_DEFINITIONS.map(definition => {
+        const readPref = this.safePreferenceReaderForOwner(ownerLogin);
+        const resolveLoginOverrides = (harnessId: string): Pick<QaapAgentHarnessStatus, 'loginBinaryPath' | 'loginEnv' | 'loginOverrideError'> => {
+            if (!readPref) {
+                return {};
+            }
+            try {
+                const plan = resolveQaapHarnessLaunchPlan(harnessId, readPref);
+                const loginEnv = plan.homeEnvVar && plan.homeDir ? { [plan.homeEnvVar]: plan.homeDir } : undefined;
+                return {
+                    ...(plan.binaryPath ? { loginBinaryPath: plan.binaryPath } : {}),
+                    ...(loginEnv ? { loginEnv } : {}),
+                };
+            } catch (error) {
+                if (error instanceof QaapHarnessLaunchOverrideError) {
+                    return { loginOverrideError: error.message };
+                }
+                throw error;
+            }
+        };
+        const baseStatuses: QaapAgentHarnessStatus[] = QAAP_HARNESS_DEFINITIONS.map(definition => {
             const candidate = this.detectedAgents.get(definition.id);
             const lastTurn = this.lastTurns?.get(ownerLogin, definition.id);
             const cliBin = this.antigravityCliBinFor(definition.id);
@@ -763,9 +787,78 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
                 installSupported: isInstallSupported(definition.id),
                 cliBinDirectory,
                 ...(cliBin ? { cliBin } : {}),
+                ...resolveLoginOverrides(definition.id),
                 ...(lastTurn ? { lastTurn } : {}),
             };
         });
+        if (!readPref) {
+            return baseStatuses;
+        }
+        const instances = readQaapHarnessInstances(readPref(QAAP_HARNESS_INSTANCES_PREF), QAAP_BUILTIN_AGENT_IDS);
+        if (instances.length === 0) {
+            return baseStatuses;
+        }
+        const byBase = new Map(baseStatuses.map(status => [status.id, status]));
+        const instanceStatuses: QaapAgentHarnessStatus[] = [];
+        for (const instance of instances) {
+            const base = byBase.get(instance.baseId);
+            if (!base) {
+                continue;
+            }
+            const overrides = resolveLoginOverrides(instance.id);
+            const installed = Boolean(overrides.loginBinaryPath) || base.installed;
+            const lastTurn = this.lastTurns?.get(ownerLogin, instance.id);
+            instanceStatuses.push({
+                id: instance.id,
+                installed,
+                enabled: this.isAgentEnabled(instance.id, ownerLogin),
+                connectionState: installed && !overrides.loginOverrideError
+                    ? this.agentConnectionState(instance.id, ownerLogin) ?? 'unknown'
+                    : 'unknown',
+                installSupported: base.installSupported,
+                cliBinDirectory,
+                ...(base.cliBin ? { cliBin: base.cliBin } : {}),
+                ...overrides,
+                ...(lastTurn ? { lastTurn } : {}),
+            });
+        }
+        return [...baseStatuses, ...instanceStatuses];
+    }
+
+    /**
+     * Resolves the server-validated configuration folder overrides (`CODEX_HOME` / `CLAUDE_CONFIG_DIR`)
+     * for one harness or instance (`codex#2`), used by `QaapUsageEndpoint` when `?harness=` is set.
+     * Outside desktop override mode this always returns `{ ok: true, overrides: {} }`.
+     */
+    resolveHarnessUsageHomeOverrides(
+        harnessId: string,
+        ownerLogin: string | undefined,
+    ): { readonly ok: true; readonly overrides: Readonly<Record<string, string>> } | { readonly ok: false; readonly error: string } {
+        const readPref = this.safePreferenceReaderForOwner(ownerLogin);
+        if (!readPref) {
+            return { ok: true, overrides: {} };
+        }
+        try {
+            const plan = resolveQaapHarnessLaunchPlan(harnessId, readPref);
+            const overrides: Record<string, string> = {};
+            if (plan.homeEnvVar && plan.homeDir) {
+                overrides[plan.homeEnvVar] = plan.homeDir;
+            }
+            return { ok: true, overrides };
+        } catch (error) {
+            if (error instanceof QaapHarnessLaunchOverrideError) {
+                return { ok: false, error: error.message };
+            }
+            throw error;
+        }
+    }
+
+    protected safePreferenceReaderForOwner(ownerLogin: string | undefined): ((key: string) => unknown) | undefined {
+        try {
+            return this.preferenceReaderForOwner(ownerLogin);
+        } catch {
+            return undefined;
+        }
     }
 
     /**

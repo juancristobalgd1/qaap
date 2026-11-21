@@ -364,7 +364,7 @@ export class MobileOpenRepositoryDialog {
         icon.setAttribute('aria-hidden', 'true');
         const title = document.createElement('h2');
         title.className = 'theia-mobile-open-repo-title';
-        title.textContent = nls.localize('qaap/mobileOpenRepo/title', 'Open GitHub repository');
+        title.textContent = nls.localize('qaap/mobileOpenRepo/title', 'Open or Add Project');
         titleWrap.append(icon, title);
 
         const closeBtn = document.createElement('button');
