@@ -109,6 +109,18 @@
         top: 56px;
         bottom: auto;
     }
+
+    /* Shift toast to the left of the right auxiliary panel when opened so it does not occlude panel tabs or launcher. */
+    body.qaap-mod-work-hub-aux-panel-open:not(.qaap-mod-work-hub-aux-panel-maximized) .qaap-agent-cli-update-toast {
+        right: calc(var(--qaap-work-hub-aux-panel-width, 480px) + 24px);
+    }
+
+    /* In maximized auxiliary panel mode, place toast at the bottom right so it doesn't occlude top tab controls. */
+    body.qaap-mod-work-hub-aux-panel-maximized .qaap-agent-cli-update-toast {
+        top: auto;
+        bottom: 24px;
+        right: 24px;
+    }
 }
 
 @keyframes qaap-agent-cli-update-toast-in {

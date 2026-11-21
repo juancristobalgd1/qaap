@@ -20,6 +20,9 @@ const { enableJSDOM } = require('@theia/core/lib/browser/test/jsdom');
 // `document` at import time, so the environment must exist as soon as this required helper loads.
 // The beforeEach hook below still repairs globals torn down or replaced by an earlier suite.
 enableJSDOM();
+if (typeof global.DragEvent === 'undefined') {
+    global.DragEvent = class DragEvent extends (global.MouseEvent || class {}) {};
+}
 
 exports.mochaHooks = {
     beforeEach() {

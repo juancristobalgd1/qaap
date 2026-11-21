@@ -322,6 +322,25 @@ describe('qaap-composer-model-picker', () => {
         expect(document.activeElement).to.equal(host.querySelector('.qaap-model-picker-search input'));
     });
 
+    it('sends a character typed outside the picker to the search field on desktop', () => {
+        let query = '';
+        const paint = (): void => {
+            renderQaapComposerModelPicker(host, props({
+                state: state({ query }),
+                onQuery: value => { query = value; paint(); },
+            }));
+        };
+        paint();
+        // Simulate outside button having focus when user types
+        const outsideButton = document.createElement('button');
+        document.body.append(outsideButton);
+        outsideButton.focus();
+        document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'c', bubbles: true, cancelable: true }));
+        expect(query).to.equal('c');
+        expect(document.activeElement).to.equal(host.querySelector('.qaap-model-picker-search input'));
+        outsideButton.remove();
+    });
+
     it('shows a loading line, not "No models match.", while the selected harness list is still loading', () => {
         renderQaapComposerModelPicker(host, props({ state: state({ models: [], loading: true }) }));
         const empty = host.querySelector<HTMLElement>('.qaap-model-picker-empty');

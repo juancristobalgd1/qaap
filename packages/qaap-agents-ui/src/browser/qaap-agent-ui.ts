@@ -759,11 +759,14 @@ export function populateAgentToolbarButton(
     chevron.className = 'codicon codicon-chevron-down';
     chevron.setAttribute('aria-hidden', 'true');
     const modelId = options.agentModel?.modelId?.trim();
-    if (modelId) {
+    const displayLabel = modelId
+        ? formatQaiqModelDisplayLabel({ modelId, label: options.agentModel?.label })
+        : options.label?.trim();
+    if (displayLabel) {
         const identity = createAgentIdentityElement({
             agentId: options.agentId,
             agentModel: options.agentModel,
-            label: formatQaiqModelDisplayLabel({ modelId, label: options.agentModel?.label }),
+            label: displayLabel,
             extraClasses: {
                 root: 'theia-mobile-projects-sticky-composer-agent-identity',
                 avatar: 'theia-mobile-projects-sticky-composer-agent-avatar',

@@ -795,6 +795,8 @@ export class MobileProjectsAgentsHubInlineUi {
         this.host.transcriptLastSseDeltaAt = undefined;
         this.host.transcriptOpenSummaryId = undefined;
         this.host.transcriptOpenSummary = undefined;
+        this.host.transcriptOpenProject = project;
+        this.host.transcriptComposerProject = project;
         // The composer must not keep targeting the previous task: a remount or submit before the
         // idle shell re-mounts would otherwise post the new prompt into that old conversation.
         this.host.transcriptComposerSummary = undefined;

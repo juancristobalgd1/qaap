@@ -107,12 +107,22 @@ export function createSessionsSidebarProjectRowHeadExtracted(ctx: MobileProjects
     // The name row also makes the project the new task's destination while the idle "new task" composer shows,
     // so the header and the next send follow the project the user just picked (the chevron only toggles).
     const toggleAndScopeFromName = (ev: MouseEvent): void => {
-        toggleFromControl(ev);
         if (isSessionsSidebarIdleNewTaskScreen(ctx) && ctx.host.agentsHubSelectedProjectId !== project.id) {
-            ctx.host.sessionsSidebarExpandedProjectIds.add(project.id);
-            syncToggleAria(true);
+            ev.stopPropagation();
+            if (!ctx.host.sessionsSidebarExpandedProjectIds.has(project.id)) {
+                onToggleExpand();
+            }
+            syncToggleAria(ctx.host.sessionsSidebarExpandedProjectIds.has(project.id));
+            const sidebarEl = ctx.host.sessionsSidebar?.node;
+            if (sidebarEl) {
+                const currentRows = sidebarEl.querySelectorAll('.theia-mobile-work-hub-sessions-sidebar-project-row[aria-current]');
+                currentRows.forEach(el => el.removeAttribute('aria-current'));
+            }
+            head.setAttribute('aria-current', 'true');
             void scopeIdleComposerToProject(ctx, project);
+            return;
         }
+        toggleFromControl(ev);
     };
     const folder = document.createElement('span');
     folder.className = 'theia-mobile-work-hub-sessions-sidebar-project-folder codicon '
@@ -199,7 +209,7 @@ export async function onWorkHubSessionsSidebarNewChatExtracted(ctx: MobileProjec
 
 /** True while the Agents shell shows the idle "new task" composer (no real conversation open). */
 function isSessionsSidebarIdleNewTaskScreen(ctx: MobileProjectsSessionsSidebarUiContext): boolean {
-    if (!ctx.host.shouldUseAgentsHubLanding() || ctx.host.isProjectDetailView()) {
+    if (!ctx.host.shouldUseAgentsHubLanding?.() || ctx.host.isProjectDetailView?.()) {
         return false;
     }
     const openId = ctx.host.transcriptOpenSummaryId;
