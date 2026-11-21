@@ -33,7 +33,7 @@ import { QaapDockerOrchestrator } from './qaap-docker-orchestrator';
 import { QaapTaskSandbox, QaapTaskSandboxService } from './qaap-task-sandbox';
 import { QaapTenantAgentStorageEnv } from './qaap-tenant-agent-storage-env';
 import { QAAP_TENANT_AGENT_ACCESS_ENV, QAAP_TENANT_AGENT_ACCESS_GROUP } from './qaap-tenant-runtime';
-import { QaapTenantPersistentHome, type QaapTenantPersistentHomeAccessGrant, type QaapTenantPersistentHomeOwner } from './qaap-tenant-persistent-home';
+import { QAAP_TENANT_BACKEND_HOME, QaapTenantPersistentHome, type QaapTenantPersistentHomeAccessGrant, type QaapTenantPersistentHomeOwner } from './qaap-tenant-persistent-home';
 import { findExecutableOnPath, readEnvPath, resolveTrustedExecutable, resolveTrustedSystemExecutable } from './qaap-trusted-executable';
 import { childProcessEnv } from './qaap-child-process-env';
 
@@ -55,8 +55,7 @@ export const TENANT_BACKEND_ACL_FAILURE_TTL_MS = 60_000;
 /** `find` diagnostics for a directory the backend cannot read: only these are tolerated. */
 const FIND_PERMISSION_DENIED_LINE = /^find: '(.+)': Permission denied$/;
 
-/** Agent HOME inside a tenant backend container: the private `/tmp` tmpfs (read-only rootfs). */
-export const QAAP_TENANT_BACKEND_HOME = '/tmp/qaap-home';
+export { QAAP_TENANT_BACKEND_HOME };
 
 /** HOME/USER/LOGNAME for a tenant child plus, inside tenant containers, cache/data relocation vars. */
 export type QaapTenantHomeEnvOverlay = { HOME?: string; USER?: string; LOGNAME?: string } & Record<string, string>;
