@@ -134,6 +134,35 @@ export function parsePiModelLines(lines: readonly string[]): QaapQaiqModelOption
     return [...deduped.values()];
 }
 
+/** A Cursor model id as `cursor-agent --model` takes it (`auto`, `gpt-5.3-codex-high`, `claude-opus-4-8`). */
+const CURSOR_MODEL_ID_PATTERN = /^[a-z0-9][a-z0-9._:-]{0,99}$/i;
+
+/**
+ * Parses `cursor-agent models`: `<id> - <label>` rows, where the label may end in `(default)` or `(current)`.
+ * The `Available models` heading, the closing `Tip: …` line and any other prose are skipped, so only real ids
+ * reach the picker. A bare id per line (older CLIs) is accepted only when no row has the `<id> - <label>` shape, so
+ * a stray one-word status line (`Loading…`) is never taken for a model.
+ */
+export function parseCursorModelLines(lines: readonly string[]): QaapQaiqModelOption[] {
+    // eslint-disable-next-line no-control-regex
+    const cleaned = lines.map(raw => raw.replace(/\u001b\[[0-9;]*m/g, '').trim());
+    const labelled = cleaned.some(line => /^\S+\s+-\s+\S/.test(line));
+    const deduped = new Map<string, QaapQaiqModelOption>();
+    for (const line of cleaned) {
+        const match = labelled ? /^(\S+)\s+-\s+(.+)$/.exec(line) : /^(\S+)$/.exec(line);
+        if (!match || !CURSOR_MODEL_ID_PATTERN.test(match[1])) {
+            continue;
+        }
+        const modelId = match[1];
+        const label = match[2]?.replace(/\s*\((?:default|current)\)\s*$/i, '').trim() || modelId;
+        const key = modelId.toLowerCase();
+        if (!deduped.has(key)) {
+            deduped.set(key, nativeOption('cursor', modelId, label));
+        }
+    }
+    return [...deduped.values()];
+}
+
 /**
  * Curated fallback when a CLI is missing on the VPS or its list command fails. `antigravityBin` selects the
  * Antigravity list for the resolved CLI (see {@link listStaticAntigravityModels}); other agents ignore it.
@@ -229,6 +258,9 @@ export function parseNativeModelLines(agentId: string, lines: readonly string[])
     if (normalizedAgentId === 'pi') {
         return parsePiModelLines(lines);
     }
+    if (normalizedAgentId === 'cursor') {
+        return parseCursorModelLines(lines);
+    }
     const deduped = new Map<string, QaapQaiqModelOption>();
     for (const raw of lines) {
         const line = raw.trim();
@@ -243,8 +275,17 @@ export function parseNativeModelLines(agentId: string, lines: readonly string[])
         }
         const key = modelId.toLowerCase();
         if (!deduped.has(key)) {
-            deduped.set(key, nativeOption(agentId, modelId));
+            deduped.set(key, nativeOption(agentId, modelId, normalizedAgentId === 'opencode' ? opencodeModelLabel(modelId) : undefined));
         }
     }
     return [...deduped.values()];
+}
+
+const OPENCODE_CURATED_LABELS = new Map<string, string>(
+    [...OPENCODE_FREE_MODEL_OPTIONS, ...OPENCODE_PAID_MODEL_OPTIONS].map(model => [model.modelId.toLowerCase(), model.label]),
+);
+
+/** A readable picker label for an id `opencode models` lists: the curated name, else the id without `opencode/`. */
+function opencodeModelLabel(modelId: string): string {
+    return OPENCODE_CURATED_LABELS.get(modelId.toLowerCase()) ?? modelId.replace(/^opencode\//i, '');
 }

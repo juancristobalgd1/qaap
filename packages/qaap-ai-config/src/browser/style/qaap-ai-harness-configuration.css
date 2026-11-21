@@ -115,6 +115,12 @@
     height: 100%;
 }
 
+/* Theme-following marks (Grok, Pi, Codex, Cursor draw with currentColor) take the text color, not the tinted
+   accent of the icon tile, so they keep full contrast in dark and light themes. */
+.qaap-ai-harness-configuration .qaap-harness-brand-icon.theia-mod-tone-light {
+    color: var(--theia-foreground);
+}
+
 .qaap-ai-harness-configuration .qaap-harness-card-body {
     display: flex;
     flex-direction: column;

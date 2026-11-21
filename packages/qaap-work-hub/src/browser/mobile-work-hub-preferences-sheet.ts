@@ -64,6 +64,10 @@ import {
 } from '../common/qaap-work-hub-surface-redirects';
 import { environment } from '@theia/core/lib/common';
 
+/** How often, and how many times, the Profile asks again while the usage scan is still running. */
+const PROFILE_TOKENS_RETRY_MS = 2000;
+const PROFILE_TOKENS_MAX_ATTEMPTS = 30;
+
 /** Work Hub AI Features sheet scopes Settings to this search term. */
 export const WORK_HUB_AI_FEATURES_PREFERENCES_QUERY = 'ai-features';
 
@@ -956,11 +960,13 @@ export class MobileWorkHubPreferencesSheet {
         const notificationsCard = this.createSettingsCard();
         const blockedNote = document.createElement('p');
         blockedNote.className = 'theia-mobile-work-hub-settings-note';
+        // The switch is Qaap's own choice; the browser permission can still block delivery. Say what to do about it,
+        // rather than a bare "blocked" next to a switch that reads On.
         blockedNote.textContent = nls.localize(
-            'qaap/workHubSettings/general/notificationsBlocked',
-            'Notifications are blocked by the browser for this site.',
+            'qaap/workHubSettings/general/notificationsBlockedAction',
+            "This browser blocks notifications for this site, so none will appear. Allow them in the site's settings.",
         );
-        blockedNote.hidden = !this.isNotificationPermissionDenied();
+        blockedNote.hidden = !(this.notificationSettings.systemNotifications && this.isNotificationPermissionDenied());
         const systemNotificationsRow = this.createSettingsRow(
             nls.localize('qaap/workHubSettings/general/systemNotifications', 'System Notifications'),
             nls.localize(
@@ -972,7 +978,7 @@ export class MobileWorkHubPreferencesSheet {
                 'System notifications',
             ), checked => {
                 void this.setSystemNotificationsEnabled(checked).then(() => {
-                    blockedNote.hidden = !this.isNotificationPermissionDenied();
+                    blockedNote.hidden = !(checked && this.isNotificationPermissionDenied());
                 });
             }),
         );
@@ -1128,14 +1134,22 @@ export class MobileWorkHubPreferencesSheet {
     /** Tokens over the last 90 days from the local usage scan; left empty when usage data is unavailable. */
     protected async loadProfileTokens(overview: MobileWorkHubProfileOverview, token: number): Promise<void> {
         const client = new UsageClient();
-        let tokens: number | undefined;
-        try {
-            tokens = (await client.fetchSummary('90d', [], client.browserTimezone())).totals.tokens;
-        } catch {
-            tokens = undefined;
-        }
-        if (this.isCurrentProfileRender(token)) {
-            overview.setTokens(tokens);
+        // The first scan answers partial totals (`scanning`, often 0): keep "—" and ask again until it finishes.
+        for (let attempt = 0; attempt < PROFILE_TOKENS_MAX_ATTEMPTS && this.isCurrentProfileRender(token); attempt++) {
+            let summary: Awaited<ReturnType<UsageClient['fetchSummary']>> | undefined;
+            try {
+                summary = await client.fetchSummary('90d', [], client.browserTimezone());
+            } catch {
+                summary = undefined;
+            }
+            if (!this.isCurrentProfileRender(token)) {
+                return;
+            }
+            if (!summary || !summary.scanning) {
+                overview.setTokens(summary?.totals.tokens);
+                return;
+            }
+            await new Promise(resolve => setTimeout(resolve, PROFILE_TOKENS_RETRY_MS));
         }
     }
 

@@ -769,6 +769,10 @@ export function invalidateAgentModelsCache(agentId?: string): void {
  * concurrent calls for the same agent share one request, and errors are never cached.
  */
 export async function fetchAgentModelsForAgent(agentId: string): Promise<QaapQaiqModelOption[]> {
+    // No harness chosen yet (an empty or blank id): there is no catalog to ask for, and the endpoint answers 400.
+    if (!agentId?.trim()) {
+        return [];
+    }
     const cached = agentModelsCache.get(agentId);
     if (cached && Date.now() - cached.at < AGENT_MODELS_CACHE_TTL_MS) {
         return cached.models;

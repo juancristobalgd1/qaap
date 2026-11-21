@@ -59,6 +59,8 @@ export class QaapWorkHubAuxPullRequestView implements Disposable {
     protected readonly minAutoGapMs: number;
 
     protected target: QaapWorkHubPullRequestTarget | undefined;
+    /** The open project's name, for the empty state of a project that has no pull request target. */
+    protected projectName: string | undefined;
     /** Leaves a specific pull request for the branch's one. Set only while that is possible. */
     protected onBackToBranch: (() => void) | undefined;
     protected key: string | undefined;
@@ -113,6 +115,11 @@ export class QaapWorkHubAuxPullRequestView implements Disposable {
      * Follows `target` while the view is `visible`. A changed target clears the last answer and loads the new
      * one; a visible view starts its refresh timer; a hidden one stops it.
      */
+    /** The open project's name; with no target it says the project has no pull request instead of "No project open". */
+    setProjectName(name: string | undefined): void {
+        this.projectName = name?.trim() || undefined;
+    }
+
     sync(target: QaapWorkHubPullRequestTarget | undefined, visible: boolean, onBackToBranch?: () => void): void {
         this.onBackToBranch = onBackToBranch;
         const key = target ? qaapWorkHubPullRequestTargetKey(target) : undefined;
@@ -262,6 +269,13 @@ export class QaapWorkHubAuxPullRequestView implements Disposable {
 
     protected buildContent(): HTMLElement {
         const target = this.target;
+        if (!target && this.projectName) {
+            return HubEmptyStateDom.createEmptyState({
+                icon: 'codicon-git-pull-request',
+                title: nls.localize('qaap/workHubAuxPanel/prNoRepo', 'No pull request for {0}', this.projectName),
+                hint: nls.localize('qaap/workHubAuxPanel/prNoRepoHint', 'This project is not linked to a GitHub repository, so it has no pull request yet.'),
+            });
+        }
         if (!target) {
             return HubEmptyStateDom.createEmptyState({
                 icon: 'codicon-git-pull-request',

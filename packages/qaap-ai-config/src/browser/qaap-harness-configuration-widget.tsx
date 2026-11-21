@@ -259,7 +259,7 @@ export class QaapHarnessConfigurationWidget extends ReactWidget {
                         <span className="qaap-harness-card-bin">{row.isInstance ? row.id : definition.bin}</span>
                     </div>
                     <span
-                        className={`qaap-harness-card-status${cardStatus === 'available' ? ' theia-mod-available' : ''}${busy ? ' qaap-harness-status-installing' : ''}`}
+                        className={`qaap-harness-card-status${cardStatus === 'signed-in' || cardStatus === 'ready' ? ' theia-mod-available' : ''}${busy ? ' qaap-harness-status-installing' : ''}`}
                         aria-live={busy ? 'polite' : undefined}
                     >
                         {busy ? busyStatusText : status}
@@ -672,8 +672,10 @@ export class QaapHarnessConfigurationWidget extends ReactWidget {
                 return nls.localize('qaap/aiConfiguration/harnessChecking', 'Checking availability…');
             case 'availability-unknown':
                 return nls.localize('qaap/aiConfiguration/harnessAvailabilityUnknown', 'Availability unavailable');
-            case 'available':
-                return nls.localize('qaap/aiConfiguration/harnessAvailable', 'Available');
+            case 'signed-in':
+                return nls.localize('qaap/aiConfiguration/harnessSignedIn', 'Installed · signed in');
+            case 'ready':
+                return nls.localize('qaap/aiConfiguration/harnessReady', 'Installed · no sign-in needed');
             case 'installed-disconnected':
                 return nls.localize(
                     'qaap/aiConfiguration/harnessInstalledNeedsSignIn',
@@ -682,7 +684,7 @@ export class QaapHarnessConfigurationWidget extends ReactWidget {
             case 'installed-connection-unknown':
                 return nls.localize(
                     'qaap/aiConfiguration/harnessInstalledSignInUnknown',
-                    'Installed · sign-in status unknown',
+                    "Installed · can't confirm the sign-in",
                 );
             case 'not-installed':
                 return nls.localize('qaap/aiConfiguration/harnessNotInstalled', 'Not installed');

@@ -406,6 +406,12 @@ describe('qaap-agent-task-client request caches', () => {
         expect(requestUrls).to.have.length(2);
     });
 
+    it('never asks for the catalog of an empty agent id', async () => {
+        expect(await fetchAgentModelsForAgent('')).to.deep.equal([]);
+        expect(await fetchAgentModelsForAgent('  ')).to.deep.equal([]);
+        expect(requestUrls).to.have.length(0);
+    });
+
     it('reuses an agent model catalog within the TTL and refetches it after the TTL', async () => {
         await fetchAgentModelsForAgent('cursor');
         now += AGENT_MODELS_CACHE_TTL_MS - 1;

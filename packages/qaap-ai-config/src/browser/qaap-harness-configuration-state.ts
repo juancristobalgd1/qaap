@@ -10,7 +10,10 @@ export type HarnessConnectionState = 'connected' | 'disconnected' | 'unknown' | 
 export type HarnessCardStatus =
     | 'loading'
     | 'availability-unknown'
-    | 'available'
+    /** Installed and its sign-in is confirmed. */
+    | 'signed-in'
+    /** Installed and it needs no sign-in (or runs on a key Qaap holds). */
+    | 'ready'
     | 'installed-disconnected'
     | 'installed-connection-unknown'
     | 'not-installed';
@@ -59,8 +62,11 @@ export function resolveHarnessCardStatus(
     if (!installed) {
         return 'not-installed';
     }
-    if (connectionState === 'connected' || connectionState === 'not-required') {
-        return 'available';
+    if (connectionState === 'connected') {
+        return 'signed-in';
+    }
+    if (connectionState === 'not-required') {
+        return 'ready';
     }
     return connectionState === 'disconnected' ? 'installed-disconnected' : 'installed-connection-unknown';
 }

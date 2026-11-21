@@ -21,6 +21,8 @@ export type MobileWorkHubAuxSheetTab = 'side-chat' | 'pull-request';
 export interface MobileWorkHubAuxSheetHost {
     /** The pull request of the open conversation's branch, or `undefined` while no project is open. */
     resolvePullRequestTarget(): QaapWorkHubPullRequestTarget | undefined;
+    /** The project the view is about even when it has no pull request target (e.g. a project not on GitHub). */
+    resolvePullRequestProjectName?(): string | undefined;
     /** Opens a web page in a new tab. */
     openExternal(url: string): void;
     /** The side chat's Work Hub hooks. */
@@ -270,6 +272,7 @@ export class MobileWorkHubAuxSheet implements Disposable {
     protected syncPullRequest(): void {
         const branchTarget = this.options.host.resolvePullRequestTarget();
         const pinned = this.pinnedPullRequest;
+        this.pullRequestView.setProjectName(this.options.host.resolvePullRequestProjectName?.());
         this.pullRequestView.sync(
             pinned ? createQaapWorkHubPinnedPullRequestTarget(pinned) : branchTarget,
             this.visible,

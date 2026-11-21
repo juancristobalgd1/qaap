@@ -3,12 +3,16 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { parseQaapWorkspaceRepoPath } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
+
 /** The conversation fields the Profile insights read; a subset of `QaapAgentConversationSummaryDTO`. */
 export interface QaapProfileInsightsConversation {
     readonly createdAt: number;
     readonly updatedAt: number;
     readonly agentId: string;
     readonly cwd: string;
+    /** The source project of a task that ran in its own worktree. */
+    readonly parallelBaseCwd?: string;
     readonly messageCount: number;
     readonly archived?: boolean;
     readonly agentModel?: { readonly modelId: string };
@@ -69,6 +73,20 @@ function shares(counts: Map<string, { agentId: string; modelId?: string; tasks: 
  * Computes the Profile insights from the user's tasks. Archived tasks count (they are still the user's history).
  * A task is active on the day it was created and on the day it was last updated. Pure: no DOM, no clock but `now`.
  */
+/**
+ * One key per repository, the way the sessions sidebar groups cards: a task worktree counts as its source project,
+ * and every clone of `owner/repo` (desktop clone, per-user or legacy server clone) is the same project.
+ */
+function qaapProfileProjectKey(conversation: QaapProfileInsightsConversation): string | undefined {
+    // Casing never makes two projects (the sidebar compares identities case-insensitively too).
+    const path = (conversation.parallelBaseCwd?.trim() || conversation.cwd?.trim())?.replace(/\/+$/, '').toLowerCase();
+    if (!path) {
+        return undefined;
+    }
+    const clone = parseQaapWorkspaceRepoPath(path);
+    return clone ? `repo:${clone.owner}/${clone.repo}` : `path:${path}`;
+}
+
 export function computeQaapProfileInsights(conversations: ReadonlyArray<QaapProfileInsightsConversation>, now: Date): QaapProfileInsights {
     const valid = conversations.filter(conversation => Number.isFinite(conversation.createdAt));
     const projects = new Set<string>();
@@ -81,9 +99,9 @@ export function computeQaapProfileInsights(conversations: ReadonlyArray<QaapProf
 
     for (const conversation of valid) {
         messages += Math.max(0, conversation.messageCount || 0);
-        const cwd = conversation.cwd?.trim().replace(/\/+$/, '').toLowerCase();
-        if (cwd) {
-            projects.add(cwd);
+        const project = qaapProfileProjectKey(conversation);
+        if (project) {
+            projects.add(project);
         }
         const days = new Set<number>([localMidnight(conversation.createdAt)]);
         if (Number.isFinite(conversation.updatedAt)) {
