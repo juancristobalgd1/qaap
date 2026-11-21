@@ -9,9 +9,13 @@ import {
     conversationToSummary,
     getConversation,
     QAAP_AGENT_CONVERSATION_API_PATH,
+    startPullRequestWatch,
+    stopPullRequestWatch,
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
+import type { QaapWorkHubAuxPullRequestWatchAction } from './qaap-work-hub-aux-pull-request-view';
 import { isAgentsHubIdleConversationSummary } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
 import {
     type ExecutionSurfaceTabId,
@@ -137,6 +141,7 @@ export interface MobileProjectsExecutionSurfaceTabsHost {
     stickyComposerHost: HTMLElement;
     transcriptComposerMountKey?: string | undefined;
     transcriptComposerSummary: QaapAgentConversationSummaryDTO | undefined;
+    readonly conversations?: { readonly threadStore: { getSummary(id: string): QaapAgentConversationSummaryDTO | undefined } };
     transcriptStickyComposerUi: import('@theia/qaap-composer/lib/browser/mobile-projects-transcript-sticky-composer-ui').MobileProjectsTranscriptStickyComposerUi;
     stickyComposerSheetsUi?: import('@theia/qaap-composer/lib/browser/mobile-projects-sticky-composer-sheets-ui').MobileProjectsStickyComposerSheetsUi;
     root: HTMLElement;
@@ -434,6 +439,7 @@ export class MobileProjectsExecutionSurfaceTabsUi {
                 resolvePullRequestTarget: () => resolveWorkHubAuxPanelOwner()?.resolveWorkHubAuxPanelPullRequestTarget(),
                 resolvePullRequestProjectName: () => resolveWorkHubAuxPanelOwner()?.resolveWorkHubAuxPanelPullRequestProject()?.name,
                 openExternal: url => resolveWorkHubAuxPanelOwner()?.openWorkHubAuxPanelExternal(url),
+                resolvePullRequestWatchAction: pr => resolveWorkHubAuxPanelOwner()?.resolveWorkHubAuxPanelPullRequestWatchAction(pr),
                 sideChat: workHubAuxSideChatHost,
             });
         }
@@ -505,6 +511,36 @@ export class MobileProjectsExecutionSurfaceTabsUi {
             ?? this.host.transcriptOpenSummary
             ?? (this.host.agentsHubShellActive ? this.host.resolveAgentsHubShellSummary(project) : undefined);
         return resolveQaapWorkHubPullRequestTarget(project, summary);
+    }
+
+    /** @internal Watch / Stop watching action for the PR aux panel when a real conversation is open. */
+    resolveWorkHubAuxPanelPullRequestWatchAction(pr: QaapGithubPullRequestSummary): QaapWorkHubAuxPullRequestWatchAction | undefined {
+        const target = this.resolveWorkHubAuxPanelTarget();
+        const openSummary = target?.summary;
+        if (!openSummary || isAgentsHubIdleConversationSummary(openSummary)) {
+            return undefined;
+        }
+        const live = this.host.conversations?.threadStore.getSummary(openSummary.id) ?? openSummary;
+        const watch = live.pullRequestWatch;
+        const watching = watch?.state === 'watching'
+            && watch.owner.toLowerCase() === pr.owner.toLowerCase()
+            && watch.repo.toLowerCase() === pr.repo.toLowerCase()
+            && watch.number === pr.number;
+        return {
+            watching,
+            onToggle: async () => {
+                if (watching) {
+                    await stopPullRequestWatch(openSummary.id);
+                } else {
+                    await startPullRequestWatch(openSummary.id, {
+                        owner: pr.owner,
+                        repo: pr.repo,
+                        number: pr.number,
+                        url: pr.htmlUrl,
+                    });
+                }
+            },
+        };
     }
 
     /**

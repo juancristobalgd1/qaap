@@ -94,6 +94,13 @@ describe('normalizeAgentMessageContentForDisplay', () => {
         expect(normalizeAgentMessageContentForDisplay('Stuck.\n@@QAAP:BLOCKED@@')).to.equal('Stuck.');
         expect(stripQaapControlMarkersForDisplay('Verdict @@QAAP:VERDICT@@ pass ok')).to.equal('Verdict pass ok');
     });
+
+    it('strips @@QAAP:WATCH_PR@@ lines including PR number and URL arguments', () => {
+        expect(normalizeAgentMessageContentForDisplay('Opened the PR.\n@@QAAP:WATCH_PR@@ 42')).to.equal('Opened the PR.');
+        expect(normalizeAgentMessageContentForDisplay(
+            'Opened the PR.\n@@QAAP:WATCH_PR@@ https://github.com/acme/demo/pull/42',
+        )).to.equal('Opened the PR.');
+    });
 });
 
 describe('resolveMessagePreviewText', () => {

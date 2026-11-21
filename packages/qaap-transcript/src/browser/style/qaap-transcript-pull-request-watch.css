@@ -1,0 +1,85 @@
+/********************************************************************************
+ * Copyright (C) 2026 Theia contributors and Qaap product fork.
+ * SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
+ ********************************************************************************/
+
+/*
+ * Compact status row shown at the end of a conversation's transcript while Qaap is watching
+ * a GitHub pull request (qaap-transcript-pull-request-watch-row.ts). Uses theme tokens only.
+ */
+.theia-mobile-transcript-pr-watch {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--q-space-3, 6px);
+  min-width: 0;
+  margin: var(--q-space-2, 4px) var(--q-space-6, 12px);
+  padding: var(--q-space-3, 6px) var(--q-space-5, 10px);
+  border: 1px solid var(--theia-widget-border, var(--theia-panel-border));
+  border-radius: var(--q-radius-md, 10px);
+  background: var(--theia-editorWidget-background);
+  color: var(--theia-descriptionForeground);
+  font-size: var(--q-text-meta, 13px);
+  line-height: var(--q-leading-snug, 1.35);
+}
+
+.theia-mobile-transcript-pr-watch[hidden] {
+  display: none;
+}
+
+.theia-mobile-transcript-pr-watch-icon {
+  flex: 0 0 auto;
+  color: var(--theia-descriptionForeground);
+}
+
+.theia-mobile-transcript-pr-watch-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theia-mobile-transcript-pr-watch-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--q-space-2, 4px);
+}
+
+.theia-mobile-transcript-pr-watch-action {
+  appearance: none;
+  border: 0;
+  border-radius: var(--q-radius-sm, 6px);
+  background: transparent;
+  color: var(--theia-textLink-foreground);
+  font: inherit;
+  font-weight: 500;
+  padding: var(--q-space-1, 2px) var(--q-space-3, 6px);
+  cursor: pointer;
+}
+
+.theia-mobile-transcript-pr-watch-action.theia-mod-stop {
+  color: var(--theia-descriptionForeground);
+}
+
+.theia-mobile-transcript-pr-watch-action:hover {
+  background: var(--theia-list-hoverBackground);
+  color: var(--theia-foreground);
+}
+
+.theia-mobile-transcript-pr-watch-action:focus-visible {
+  outline: 2px solid var(--theia-focusBorder);
+  outline-offset: 1px;
+}
+
+@media (pointer: coarse) {
+  .theia-mobile-transcript-pr-watch-action {
+    min-height: 44px;
+    min-width: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 var(--q-space-4, 8px);
+  }
+}

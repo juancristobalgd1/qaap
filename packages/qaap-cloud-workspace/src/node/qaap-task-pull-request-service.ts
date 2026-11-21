@@ -1014,6 +1014,12 @@ export class QaapTaskPullRequestService implements BackendApplicationContributio
             .test(message);
     }
 
+    /** Resolves `{ owner, repo }` for `conv`'s GitHub repository, reusing the same hosted/local resolver. */
+    async resolveRepository(conv: QaapAgentConversation): Promise<{ readonly owner: string; readonly repo: string } | undefined> {
+        const destination = await this.resolveDestination(conv);
+        return destination ? { owner: destination.owner, repo: destination.repo } : undefined;
+    }
+
     /**
      * The GitHub project of the checkout, from backend-held state only ({@link QaapHostedProjectResolver}).
      * In {@link isTestMode} a local bare `origin` (`…/<owner>/<repo>.git`) is accepted as well.

@@ -7,6 +7,12 @@ import { sideChatVisibleTitle } from './qaap-agent-conversation-side-chat';
 import { QaapUserFacingErrors } from '@theia/qaap-adapters/lib/common/qaap-user-facing-error';
 import type { QaapLinkedPullRequest } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import type { QaapTaskPullRequest } from './qaap-task-pull-request';
+import {
+    summarizePullRequestWatch,
+    type QaapPullRequestWatch,
+    type QaapPullRequestWatchSummary,
+    type QaapStartPullRequestWatchBody,
+} from './qaap-pull-request-watch';
 import type { QaapAgentEffortLevel } from './qaap-agent-effort';
 import type { QaapTaskPlan, QaapTaskPlanEditRequest } from './qaap-task-plan';
 import { fetchQaapGetWithTransientRetry } from '@theia/qaap-adapters/lib/common/qaap-transient-get';
@@ -135,6 +141,8 @@ export interface QaapAgentConversationSummaryDTO {
     readonly taskPullRequest?: QaapTaskPullRequest;
     /** `false` when the user turned "Create PR when done" off for this thread (default on). */
     readonly taskPullRequestEnabled?: boolean;
+    /** Active or recently stopped pull request watch on this conversation. */
+    readonly pullRequestWatch?: QaapPullRequestWatchSummary;
     /** Editable plan and its fan-out to subtasks (`doc/qaap-task-plan-fanout.md`). */
     readonly taskPlan?: QaapTaskPlan;
     /** Subtask child conversation: the conversation whose plan created it. */
@@ -321,6 +329,7 @@ export interface QaapAgentConversationDTO {
     readonly linkedPullRequest?: QaapLinkedPullRequest;
     readonly taskPullRequest?: QaapTaskPullRequest;
     readonly taskPullRequestEnabled?: boolean;
+    readonly pullRequestWatch?: QaapPullRequestWatch;
     /** Editable plan and its fan-out to subtasks (`doc/qaap-task-plan-fanout.md`). */
     readonly taskPlan?: QaapTaskPlan;
     /** Subtask child conversation: the conversation whose plan created it. */
@@ -660,6 +669,7 @@ export function conversationToSummary(conv: QaapAgentConversationDTO): QaapAgent
         linkedPullRequest: conv.linkedPullRequest,
         ...(conv.taskPullRequest ? { taskPullRequest: conv.taskPullRequest } : {}),
         ...(conv.taskPullRequestEnabled === false ? { taskPullRequestEnabled: false } : {}),
+        ...(conv.pullRequestWatch ? { pullRequestWatch: summarizePullRequestWatch(conv.pullRequestWatch) } : {}),
         ...(conv.taskPlan ? { taskPlan: conv.taskPlan } : {}),
         ...(conv.parentConversationId ? { parentConversationId: conv.parentConversationId } : {}),
         ...(conv.origin ? { origin: conv.origin } : {}),
@@ -1079,6 +1089,35 @@ export async function respondTaskPullRequestConsent(id: string, allow: boolean):
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ allow }),
+    });
+    if (!response.ok) {
+        throw await QaapUserFacingErrors.fromResponse(response);
+    }
+    return response.json() as Promise<QaapAgentConversationDTO>;
+}
+
+/** Starts watching a GitHub pull request on conversation `id` (defaults to the conversation's linked/task PR). */
+export async function startPullRequestWatch(
+    id: string,
+    body: QaapStartPullRequestWatchBody = {},
+): Promise<QaapAgentConversationDTO> {
+    const response = await fetch(`${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(id)}/pull-request-watch`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+        throw await QaapUserFacingErrors.fromResponse(response);
+    }
+    return response.json() as Promise<QaapAgentConversationDTO>;
+}
+
+/** Stops watching the pull request on conversation `id`. */
+export async function stopPullRequestWatch(id: string): Promise<QaapAgentConversationDTO> {
+    const response = await fetch(`${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(id)}/pull-request-watch`, {
+        method: 'DELETE',
+        credentials: 'include',
     });
     if (!response.ok) {
         throw await QaapUserFacingErrors.fromResponse(response);
