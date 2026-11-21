@@ -32,74 +32,6 @@
     animation: qaap-agent-cli-update-toast-in 0.2s ease-out;
 }
 
-/* Mobile: the Work Hub composer owns the bottom edge, so the toast drops from the top instead. It is one compact
-   row (logo, title, Later / Update), so it never hides the header, the views menu or the start of the transcript. */
-@media (max-width: 767px) {
-    .qaap-agent-cli-update-toast {
-        bottom: auto;
-        top: calc(env(safe-area-inset-top, 0px) + 56px);
-        flex-direction: row;
-        align-items: center;
-        gap: 8px;
-        padding: 8px 8px 8px 10px;
-        border-radius: 12px;
-    }
-
-    .qaap-agent-cli-update-toast-body {
-        flex: 1 1 auto;
-        min-width: 0;
-        align-items: center;
-        gap: 10px;
-        padding-right: 0;
-    }
-
-    .qaap-agent-cli-update-toast-media,
-    .qaap-agent-cli-update-toast-logo {
-        width: 28px;
-        height: 28px;
-    }
-
-    .qaap-agent-cli-update-toast-logo .theia-qaap-agent-brand-icon,
-    .qaap-agent-cli-update-toast-logo .theia-qaap-agent-brand-icon svg {
-        width: 20px;
-        height: 20px;
-    }
-
-    .qaap-agent-cli-update-toast-badge {
-        width: 14px;
-        height: 14px;
-        right: -3px;
-        bottom: -3px;
-    }
-
-    .qaap-agent-cli-update-toast-badge .codicon {
-        font-size: 8px;
-    }
-
-    .qaap-agent-cli-update-toast-title {
-        font-size: var(--theia-ui-font-size0, 12px);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-    /* Later dismisses for this version, so the explanation and the separate close button are not needed here. */
-    .qaap-agent-cli-update-toast-subtitle,
-    .qaap-agent-cli-update-toast-close {
-        display: none;
-    }
-
-    .qaap-agent-cli-update-toast-actions {
-        flex: 0 0 auto;
-        gap: 4px;
-    }
-
-    .qaap-agent-cli-update-toast-action {
-        min-height: 32px;
-        padding: 6px 10px;
-    }
-}
-
 @media (min-width: 768px) {
     .qaap-agent-cli-update-toast {
         left: auto;
@@ -115,8 +47,10 @@
         right: calc(var(--qaap-work-hub-aux-panel-width, 480px) + 24px);
     }
 
-    /* In maximized auxiliary panel mode, place toast at the bottom right so it doesn't occlude top tab controls. */
-    body.qaap-mod-work-hub-aux-panel-maximized .qaap-agent-cli-update-toast {
+    /* In maximized auxiliary panel mode or Work Hub Settings, place toast at the bottom right so it never occludes
+       top tab controls, the runtime counter, or the first harness toggle. */
+    body.qaap-mod-work-hub-aux-panel-maximized .qaap-agent-cli-update-toast,
+    body.theia-mobile-mod-has-work-hub-preferences .qaap-agent-cli-update-toast {
         top: auto;
         bottom: 24px;
         right: 24px;
@@ -309,6 +243,74 @@
 .qaap-agent-cli-update-toast-action:focus-visible {
     outline: 2px solid var(--theia-focusBorder);
     outline-offset: 2px;
+}
+
+/* Mobile: the Work Hub composer owns the bottom edge, so the toast drops from the top instead. Declared after the
+   base component rules so the compact single-row overrides (hiding the close X and subtitle) win the cascade. */
+@media (max-width: 767px) {
+    .qaap-agent-cli-update-toast {
+        bottom: auto;
+        top: calc(env(safe-area-inset-top, 0px) + 56px);
+        flex-direction: row;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 8px 8px 10px;
+        border-radius: 12px;
+    }
+
+    .qaap-agent-cli-update-toast-body {
+        flex: 1 1 auto;
+        min-width: 0;
+        align-items: center;
+        gap: 10px;
+        padding-right: 0;
+    }
+
+    .qaap-agent-cli-update-toast-media,
+    .qaap-agent-cli-update-toast-logo {
+        width: 28px;
+        height: 28px;
+    }
+
+    .qaap-agent-cli-update-toast-logo .theia-qaap-agent-brand-icon,
+    .qaap-agent-cli-update-toast-logo .theia-qaap-agent-brand-icon svg {
+        width: 20px;
+        height: 20px;
+    }
+
+    .qaap-agent-cli-update-toast-badge {
+        width: 14px;
+        height: 14px;
+        right: -3px;
+        bottom: -3px;
+    }
+
+    .qaap-agent-cli-update-toast-badge .codicon {
+        font-size: 8px;
+    }
+
+    .qaap-agent-cli-update-toast-title {
+        font-size: var(--theia-ui-font-size0, 12px);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    /* Later dismisses for this version, so the explanation and the separate close button are not needed here. */
+    .qaap-agent-cli-update-toast-subtitle,
+    .qaap-agent-cli-update-toast-close {
+        display: none;
+    }
+
+    .qaap-agent-cli-update-toast-actions {
+        flex: 0 0 auto;
+        gap: 4px;
+    }
+
+    .qaap-agent-cli-update-toast-action {
+        min-height: 32px;
+        padding: 6px 10px;
+    }
 }
 
 @media (prefers-reduced-motion: reduce) {

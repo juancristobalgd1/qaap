@@ -1610,19 +1610,19 @@ button.theia-mobile-transcript-team-row:focus-visible {
 }
 
 .theia-mobile-transcript-preview:has(.theia-mod-empty-preview) {
-  background: #fff;
+  background: var(--theia-editor-background);
 }
 
 .theia-mobile-transcript-preview .qaap-agent-preview-embedded.theia-mod-empty-preview .qaap-preview-content-area {
-  background: #fff;
+  background: var(--theia-editor-background);
 }
 
 .theia-mobile-transcript-preview .qaap-agent-preview-embedded.theia-mod-empty-preview .qaap-preview-frame-slot {
-  background: #fff;
+  background: var(--theia-editor-background);
 }
 
 .theia-mobile-transcript-preview .qaap-agent-preview-embedded.theia-mod-empty-preview .qaap-preview-frame-slot iframe {
-  background: #fff;
+  background: var(--theia-editor-background);
 }
 
 /* Scoped to the preview frame slot — must not cover `.qaap-preview-inspector-slot`. */

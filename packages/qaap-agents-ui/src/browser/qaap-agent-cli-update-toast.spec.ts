@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 
 import { expect } from 'chai';
+import * as fs from 'fs';
+import * as path from 'path';
 import * as sinon from 'sinon';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import { showAgentCliUpdateToast } from './qaap-agent-cli-update-toast';
@@ -70,5 +72,20 @@ describe('CLI update notice dismissal', () => {
         } finally {
             toast.dispose();
         }
+    });
+
+    it('declares mobile compact overrides after base close/subtitle rules and moves desktop Settings toast to bottom-right', () => {
+        const css = fs.readFileSync(
+            path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'qaap-agent-cli-update-toast.css'),
+            'utf8',
+        );
+        const baseCloseIdx = css.indexOf('.qaap-agent-cli-update-toast-close {');
+        const baseSubtitleIdx = css.indexOf('.qaap-agent-cli-update-toast-subtitle {');
+        const mobileMediaIdx = css.indexOf('@media (max-width: 767px)');
+        expect(baseCloseIdx).to.be.greaterThan(-1);
+        expect(baseSubtitleIdx).to.be.greaterThan(-1);
+        expect(mobileMediaIdx).to.be.greaterThan(baseCloseIdx);
+        expect(mobileMediaIdx).to.be.greaterThan(baseSubtitleIdx);
+        expect(css).to.include('body.theia-mobile-mod-has-work-hub-preferences .qaap-agent-cli-update-toast');
     });
 });

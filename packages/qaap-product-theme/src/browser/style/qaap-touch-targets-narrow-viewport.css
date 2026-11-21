@@ -66,12 +66,25 @@
     body .theia-mobile-agent-transcript-user-action,
     body .theia-mobile-projects-sticky-composer-send,
     body .theia-mobile-projects-sticky-composer-attach,
+    body .qaap-chat-mic-btn-sticky,
     body .theia-mobile-projects-sticky-composer-agent,
     body .theia-mobile-transcript-tab-icon-select,
     body .theia-mobile-projects-header-project-switcher,
-    body .theia-mobile-projects-header-conversations {
+    body .theia-mobile-projects-header-conversations,
+    body .theia-mobile-work-hub-settings-sidebar-toggle {
         min-width: 44px;
         min-height: 44px;
+    }
+
+    /* Welcome hint chips stay visually compact while reaching a 44px hit height through ::after. */
+    .theia-mobile-agent-transcript-empty-hint {
+        position: relative;
+    }
+
+    .theia-mobile-agent-transcript-empty-hint::after {
+        content: '';
+        position: absolute;
+        inset: -8px 0;
     }
 
     /* Send is the one control here that paints a filled circle, so the 44px floor also grew the circle
