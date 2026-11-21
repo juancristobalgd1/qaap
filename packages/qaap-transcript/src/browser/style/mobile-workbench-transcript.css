@@ -2228,10 +2228,37 @@ body.qaap-theme-light .theia-mobile-agent-transcript-empty-action.theia-mod-prev
   border-radius: 6px;
   background: transparent;
   color: var(--theia-errorForeground, #f14c4c);
-  font: inherit;
+  font-family: var(--theia-ui-font-family, sans-serif);
   font-size: 11px;
   line-height: 1.2;
+  white-space: nowrap;
   cursor: pointer;
+}
+
+.theia-mobile-agent-shell-window.theia-mod-turn-failure .theia-mobile-agent-turn-failure-summary-retry.codicon {
+  font-family: var(--theia-ui-font-family, sans-serif);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.theia-mobile-agent-shell-window.theia-mod-turn-failure .theia-mobile-agent-turn-failure-summary-retry.codicon::before {
+  font-family: codicon;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+@media (max-width: 767px) {
+  .theia-mobile-agent-shell-window.theia-mod-turn-failure .theia-mobile-agent-shell-head,
+  .theia-mobile-agent-shell-window.theia-mod-turn-failure[open] .theia-mobile-agent-shell-head {
+    flex-wrap: wrap;
+    row-gap: 6px;
+    box-sizing: border-box;
+  }
+
+  .theia-mobile-agent-shell-window.theia-mod-turn-failure .theia-mobile-agent-shell-tail {
+    flex-wrap: wrap;
+    max-width: 100%;
+  }
 }
 
 .theia-mobile-agent-shell-window.theia-mod-turn-failure .theia-mobile-agent-turn-failure-summary-retry:hover {
@@ -4592,10 +4619,30 @@ details > summary:focus-visible,
   border-radius: 10px;
   background: transparent;
   color: var(--theia-foreground);
-  font: inherit;
+  font-family: var(--theia-ui-font-family, sans-serif);
+  font-size: var(--q-text-meta, 13px);
   font-weight: 600;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
+}
+
+/* Override `.codicon[class*='codicon-']` (0,2,0) so icon+label failure buttons keep the UI sans-serif
+   font instead of falling back from codicon to the browser's default serif font. */
+.theia-mobile-agent-turn-failure-change-model.codicon,
+.theia-mobile-agent-turn-failure-retry.codicon,
+.theia-mobile-agent-shell-body .theia-mobile-agent-auth-login-action.codicon {
+  font-family: var(--theia-ui-font-family, sans-serif);
+  font-size: var(--q-text-meta, 13px);
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.theia-mobile-agent-turn-failure-change-model.codicon::before,
+.theia-mobile-agent-turn-failure-retry.codicon::before,
+.theia-mobile-agent-shell-body .theia-mobile-agent-auth-login-action.codicon::before {
+  font-family: codicon;
+  font-size: 14px;
+  font-weight: 400;
 }
 
 .theia-mobile-agent-turn-failure-change-model:focus-visible {

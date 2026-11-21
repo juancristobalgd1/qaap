@@ -195,7 +195,7 @@
     background: var(--theia-list-activeSelectionBackground);
 }
 
-@media (pointer: fine) {
+@media (pointer: fine) and (min-width: 768px) {
     .qaap-model-picker-rail.theia-mod-horizontal.qaap-mod-scroll-fade-start ~ .qaap-model-picker-rail-arrow.is-start,
     .qaap-model-picker-rail.theia-mod-horizontal.qaap-mod-scroll-fade-end ~ .qaap-model-picker-rail-arrow.is-end {
         display: inline-flex;

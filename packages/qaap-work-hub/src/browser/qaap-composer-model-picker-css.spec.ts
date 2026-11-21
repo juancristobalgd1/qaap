@@ -49,4 +49,8 @@ describe('qaap composer model picker CSS', () => {
         expect(declarations(/\.qaap-model-picker-rail-item/)).to.match(/flex:\s*0 0 auto;/);
         expect(declarations(/\.qaap-model-picker-footer-left,\s*\.qaap-model-picker-footer-right/)).to.match(/flex:\s*0 0 auto;/);
     });
+
+    it('restricts fine-pointer rail arrows to desktop widths so narrow viewports never overlap icons', () => {
+        expect(css).to.match(/@media \(pointer: fine\) and \(min-width: 768px\)/);
+    });
 });
