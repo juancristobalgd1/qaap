@@ -114,10 +114,11 @@ export function renderQaapComposerModelPicker(host: HTMLElement, props: QaapComp
     if (kept && props.state.query && !hadFocus) {
         kept.value = props.state.query;
     }
+    const focusInPicker = document.activeElement instanceof Node && host.contains(document.activeElement);
     if (kept && hadFocus) {
         kept.focus({ preventScroll: true });
         kept.setSelectionRange(selection[0], selection[1]);
-    } else if (kept && opening && !props.isMobile) {
+    } else if (kept && !props.isMobile && (!focusInPicker || opening)) {
         // Desktop: the picker takes focus when it opens (search field), so typing filters and its keys reach it.
         // Mobile keeps focus where it is so the on-screen keyboard does not pop up.
         kept.focus({ preventScroll: true });
@@ -155,15 +156,17 @@ export function disposeQaapComposerModelPicker(host: HTMLElement): void {
 function attachDocumentShortcutKeys(host: HTMLElement): () => void {
     const doc = host.ownerDocument;
     const listener = (event: KeyboardEvent): void => {
-        if (!host.isConnected || (event.target instanceof Node && host.contains(event.target))) {
+        if (event.defaultPrevented || !host.isConnected || (event.target instanceof Node && host.contains(event.target))) {
             return;
         }
         if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && /^[1-9]$/.test(event.key)) {
             handlePickerKeydown(host, event);
             return;
         }
-        // Focus fell to the page (a rail click re-renders the picker): typing still filters on desktop.
-        if (event.target === doc.body && !hostStates.get(host)?.props.isMobile) {
+        // Focus fell outside the picker (button that opened it, page, etc.): typing still filters on desktop.
+        const isExternalInput = event.target instanceof HTMLElement
+            && (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA' || event.target.isContentEditable);
+        if (!isExternalInput && !hostStates.get(host)?.props.isMobile) {
             typeIntoSearch(host, event);
         }
     };
@@ -632,6 +635,7 @@ function typeIntoSearch(host: HTMLElement, event: KeyboardEvent): boolean {
         return false;
     }
     event.preventDefault();
+    event.stopPropagation();
     input.focus();
     input.value = typed ? input.value + event.key : input.value.slice(0, -1);
     const view = input.ownerDocument.defaultView ?? window;

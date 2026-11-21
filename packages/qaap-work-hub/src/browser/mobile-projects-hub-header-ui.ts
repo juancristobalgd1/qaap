@@ -349,9 +349,14 @@ export class MobileProjectsHubHeaderUi {
     }
 
     resolveHeaderProject(): MobileProjectEntry | undefined {
-        // Any open task (inline or sheet, any status including idle) owns the header project,
-        // ahead of the shell / sticky composer / pinned fallbacks.
-        if (this.host.transcriptOpenProject) {
+        // Any open live task owns the header project. While in the idle shell (no live transcript),
+        // the active shell project owns the header project ahead of any leftover transcriptOpenProject.
+        const openSummary = this.host.transcriptOpenSummary;
+        const hasLiveTranscript = this.host.agentsHubInlineActive
+            && this.host.transcriptOpenProject
+            && openSummary
+            && !isAgentsHubIdleConversationSummary(openSummary);
+        if (hasLiveTranscript) {
             return this.host.transcriptOpenProject;
         }
         if (this.host.agentsHubShellActive) {
@@ -359,6 +364,9 @@ export class MobileProjectsHubHeaderUi {
             if (shellProject) {
                 return shellProject;
             }
+        }
+        if (this.host.transcriptOpenProject) {
+            return this.host.transcriptOpenProject;
         }
         return this.host.composerHeaderUi.resolveStickyComposerProject(this.host.projects)
             ?? this.host.resolveHomePinnedProject();

@@ -2463,6 +2463,8 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
     grid-column: 1;
     grid-row: 1 / -1;
     width: clamp(240px, var(--qaap-work-hub-desktop-sidebar-width), 460px);
+    min-width: 0;
+    overflow: hidden !important;
     box-shadow: none;
     border-right: 1px solid color-mix(in srgb, var(--theia-foreground) 8%, transparent);
     transition:
@@ -2474,8 +2476,13 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
 
   body:not(.theia-mobile-mod-desktop-ide) .theia-mobile-work-hub-sessions-sidebar:not(.theia-mod-visible) {
     width: 0 !important;
+    min-width: 0 !important;
+    max-width: 0 !important;
     overflow: hidden !important;
     border-right: none !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
   }
 
   body:not(.theia-mobile-mod-desktop-ide) .theia-mobile-work-hub-sessions-sidebar[hidden] {
@@ -2573,6 +2580,8 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
 
   .theia-mobile-work-hub-sessions-sidebar-panel {
     width: 100%;
+    min-width: 0;
+    overflow: hidden !important;
     height: 100dvh;
     background: var(--qaap-sessions-sidebar-background);
   }

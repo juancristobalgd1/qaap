@@ -49,22 +49,42 @@ export namespace QaapComposerModelPickerModel {
     /**
      * Models the list shows: the favorites when the star rail is selected, otherwise the models of
      * the selected harness; then narrowed by the query (case-insensitive, label or model id).
+     * When a search query is present, search matches globally across all harnesses with matches
+     * from the currently selected harness/rail sorted first.
      */
     export function visibleModels(state: QaapPickerState): QaapPickerModel[] {
         const favorites = new Set(state.favorites);
         const query = state.query.trim().toLowerCase();
-        return state.models.filter(model => {
-            if (state.railSelection === 'favorites') {
-                if (!favorites.has(favoriteKey(model.agentId, model.modelId))) {
-                    return false;
+        if (!query) {
+            return state.models.filter(model => {
+                if (state.railSelection === 'favorites') {
+                    return favorites.has(favoriteKey(model.agentId, model.modelId));
                 }
-            } else if (model.agentId !== state.railSelection) {
-                return false;
+                return model.agentId === state.railSelection;
+            });
+        }
+        const harnessLabels = new Map<string, string>();
+        for (const harness of state.harnesses) {
+            harnessLabels.set(harness.id, harness.label.toLowerCase());
+        }
+        const matches = state.models.filter(model => model.label.toLowerCase().includes(query)
+            || model.modelId.toLowerCase().includes(query)
+            || model.agentId.toLowerCase().includes(query)
+            || Boolean(harnessLabels.get(model.agentId)?.includes(query)));
+        return matches.sort((a, b) => {
+            const aIsCurrent = state.railSelection === 'favorites'
+                ? favorites.has(favoriteKey(a.agentId, a.modelId))
+                : a.agentId === state.railSelection;
+            const bIsCurrent = state.railSelection === 'favorites'
+                ? favorites.has(favoriteKey(b.agentId, b.modelId))
+                : b.agentId === state.railSelection;
+            if (aIsCurrent && !bIsCurrent) {
+                return -1;
             }
-            if (!query) {
-                return true;
+            if (!aIsCurrent && bIsCurrent) {
+                return 1;
             }
-            return model.label.toLowerCase().includes(query) || model.modelId.toLowerCase().includes(query);
+            return 0;
         });
     }
 

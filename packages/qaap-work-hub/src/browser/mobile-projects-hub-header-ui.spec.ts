@@ -122,6 +122,18 @@ describe('MobileProjectsHubHeaderUi', () => {
         expect(ui.resolveHeaderNewChatVisible()).to.equal(true);
     });
 
+    it('prefers shellProject over transcriptOpenProject when in idle shell without a live transcript', () => {
+        const previous = project('prev', 'Previous');
+        const shell = project('new-shell', 'New Shell');
+        const ui = new MobileProjectsHubHeaderUi(createHost({
+            agentsHubShellActive: true,
+            agentsHubInlineActive: false,
+            transcriptOpenProject: previous,
+            shellProject: shell,
+        }));
+        expect(ui.resolveHeaderProject()?.id).to.equal('new-shell');
+    });
+
     it('hides New agent when a non-chat execution surface is active', () => {
         const current = project('mockup', 'Mockup');
         const ui = new MobileProjectsHubHeaderUi(createHost({

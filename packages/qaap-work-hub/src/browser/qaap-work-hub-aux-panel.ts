@@ -722,6 +722,15 @@ export class QaapWorkHubAuxPanel {
             row.dataset.kind = kind;
             row.setAttribute('aria-label', `${nls.localizeByDefault('Open')} ${spec.label}`);
             row.disabled = !enabled;
+            if (!enabled) {
+                const disabledReason = kind === 'side-chat'
+                    ? nls.localize('qaap/workHubAuxPanel/sideChatDisabledReason', 'Requires an active task conversation.')
+                    : kind === 'pull-request'
+                        ? nls.localize('qaap/workHubAuxPanel/pullRequestDisabledReason', 'Requires an open project with a Git repository.')
+                        : nls.localize('qaap/workHubAuxPanel/openTaskHint', 'Open a task to use these views.');
+                row.title = disabledReason;
+                row.setAttribute('aria-description', disabledReason);
+            }
             row.addEventListener('click', () => this.activateTab(this.model.openView(kind)));
             // The tile centers the glyph; the codicon itself keeps its own inline box.
             const icon = document.createElement('span');

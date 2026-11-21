@@ -2070,7 +2070,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return this.tasksHubUi.createAgentsHubQuickActionsBlock();
     }
 
-    createEmptyWelcomeHints(): HTMLElement {
+    createEmptyWelcomeHints(): HTMLElement | undefined {
+        const hasOpenProject = Boolean(this.hubHeaderUi.resolveHeaderProject());
         return createQaapEmptyWelcomeHints(readQaapSignedIn(), {
             // The Work Hub's own project picker (Project / Branch / Run in), anchored on the header project
             // button; the quick-pick switcher only when the header has no project to anchor on.
@@ -2082,7 +2083,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
                 void this.commands.executeCommand(QAAP_PROJECT_SWITCHER_COMMAND.id);
             },
             connectGithub: () => { void this.commands.executeCommand(QAAP_AUTH_SIGN_IN_GITHUB_COMMAND); },
-        });
+        }, hasOpenProject);
     }
 
     renderIdleSubmitOptimistic(chatHost: HTMLElement, summary: QaapAgentConversationSummaryDTO, draft: string, selectedAgentId: string, imagePreviews?: readonly import('@theia/qaap-shared-core/lib/common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[], contentOverride?: string,): void {

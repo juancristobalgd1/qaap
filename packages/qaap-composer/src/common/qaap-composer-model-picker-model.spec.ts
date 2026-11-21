@@ -47,6 +47,28 @@ describe('qaap-composer-model-picker-model', () => {
             .to.deep.equal(['opus-4-6']);
     });
 
+    it('searches globally across harnesses with active harness matches sorted first', () => {
+        // 'claude' rail is selected; searching 'gpt' finds codex's gpt-5
+        expect(QaapComposerModelPickerModel.visibleModels(state({ railSelection: 'claude', query: 'gpt' }))
+            .map(model => model.modelId)).to.deep.equal(['gpt-5']);
+
+        // Searching by harness label or id matches its models
+        expect(QaapComposerModelPickerModel.visibleModels(state({ railSelection: 'claude', query: 'Codex' }))
+            .map(model => model.modelId)).to.deep.equal(['gpt-5']);
+
+        // When models across harnesses match, active harness models come first
+        const extraModels: QaapPickerModel[] = [
+            ...models,
+            { agentId: 'codex', modelId: 'codex-4', label: 'Codex 4', available: true },
+        ];
+        const res = QaapComposerModelPickerModel.visibleModels(state({
+            models: extraModels,
+            railSelection: 'claude',
+            query: '4',
+        }));
+        expect(res.map(model => model.modelId)).to.deep.equal(['opus-4-6', 'sonnet-4-6', 'codex-4']);
+    });
+
     it('toggles a favorite on and off', () => {
         const added = QaapComposerModelPickerModel.toggleFavorite([], 'claude::opus-4-6');
         expect(added).to.deep.equal(['claude::opus-4-6']);
