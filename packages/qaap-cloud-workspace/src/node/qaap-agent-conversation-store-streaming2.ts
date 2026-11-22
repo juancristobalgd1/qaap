@@ -154,6 +154,11 @@ export function forkExtracted(ctx: QaapAgentConversationStoreContext, id: string
             goalLoop: undefined,
             // So does its task pull request: a fork opens its own on its own branch.
             taskPullRequest: undefined,
+            // A fork of a delegated child is an ordinary conversation, not another child of the same parent; a fork
+            // of a parent does not inherit its delegation bookkeeping.
+            delegation: undefined,
+            delegationParent: undefined,
+            ...(conv.delegation ? { parentConversationId: undefined, parallelBaseCwd: conv.parallelBaseCwd } : {}),
             messages: conv.messages.map(message => ({
                 ...message,
                 id: randomUUID(),

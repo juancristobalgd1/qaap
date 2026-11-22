@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { isQaapDelegationToolAutoAllowed } from '../common/qaap-agent-delegation-protocol';
 import * as fs from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
@@ -75,6 +76,12 @@ export interface QaapToolGateEvaluationEnv {
     /** Task `autoApprove`: `false` is request-approval, anything else auto-approves what the guards allow. */
     readonly autoApprove: boolean | undefined;
     readonly readOnlyWorkspace: boolean;
+    /**
+     * Per-task name of the delegation MCP server issued with this task's delegation token (`qaaq_<nonce>`). Exactly
+     * its tools pass without a card, after the PreToolUse hooks (a hook deny or ask still wins) and never for a
+     * read-only or one-shot task: they only start, wait for or stop child turns, gated under the same policy.
+     */
+    readonly delegationServer?: string;
     /** One-shot grants: only read tools and read-only shell commands pass; every other tool kind is denied. */
     readonly strictReadOnly?: boolean;
     /** PreToolUse hooks for this task's workspace; absent for one-shot grants. */
@@ -252,6 +259,9 @@ export class QaapToolGateService {
                 return { kind: 'allow', source: 'hook', ...(updatedInput ? { updatedInput } : {}) };
             }
             forceAsk = outcome.decision === 'ask';
+        }
+        if (!forceAsk && !env.strictReadOnly && !env.readOnlyWorkspace && isQaapDelegationToolAutoAllowed(req.rawToolName, env.delegationServer, env.autoApprove)) {
+            return { kind: 'allow', source: 'policy', ...(updatedInput ? { updatedInput } : {}) };
         }
         const request = requestFor(input);
         // Read-only shell commands (same proof as the read-only workspace: classifier plus git-config and

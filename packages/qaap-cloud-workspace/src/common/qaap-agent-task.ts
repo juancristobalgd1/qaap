@@ -8,6 +8,7 @@ import type { QaapAgentEffortLevel } from '@theia/qaap-shared-core/lib/common/qa
 import type { QaapAgentReadOnlyEnforcement } from './qaap-agent-readonly-workspace';
 import type { QaapAgentFailureKind } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 import type { QaapAgentClosingReport } from './qaap-agent-closing-report';
+import type { QaapTurnUsage } from './qaap-turn-usage';
 
 /** HTTP base path for the background agent-task endpoints. */
 export const QAAP_AGENT_TASK_API_PATH = '/qaap/api/agent-tasks';
@@ -119,6 +120,8 @@ export interface QaapAgentTask {
      * tasks of the same owner in the same cwd would edit the same files, so the later one queues until the first ends.
      */
     readonly sharedWorkingTree?: boolean;
+    /** Server-only, see {@link QaapCreateAgentTaskRequest.delegationRole}. */
+    readonly delegationRole?: QaapAgentTaskDelegationRole;
     /** Id of the interrupted task this execution is continuing, when applicable. */
     readonly resumedFromTaskId?: string;
     /**
@@ -131,6 +134,8 @@ export interface QaapAgentTask {
      * retry. Clients follow it to the task whose outcome counts; the chain ends at a task without it.
      */
     readonly modelFallbackTaskId?: string;
+    /** What the finished run consumed, when the harness reported it; copied to the turn verdict at settle. */
+    readonly usage?: QaapTurnUsage;
     /** Opt-in latency marks for submit → first output diagnostics. */
     readonly latencyMarks?: Partial<Record<QaapTurnLatencyMark, number>>;
     /**
@@ -264,11 +269,20 @@ export namespace QaapAgentTaskKind {
     }
 }
 
+/** See {@link QaapCreateAgentTaskRequest.delegationRole}. */
+export type QaapAgentTaskDelegationRole = 'parent' | 'child';
+
 export interface QaapCreateAgentTaskRequest {
     /** Reused by a client retry so a slow POST cannot start the same task twice. */
     readonly clientRequestId?: string;
     /** True when the task runs in its own git worktree. Omitted or false means the shared working tree of `cwd`. */
     readonly ownWorkingTree?: boolean;
+    /**
+     * Server-only (the HTTP endpoint drops it): the task's place in agent delegation
+     * (`qaap-agent-delegation-protocol.ts`). `parent`: a top-level conversation turn, which may receive the
+     * delegation tools. `child`: a turn of a delegated child, which never does. Absent: neither.
+     */
+    readonly delegationRole?: QaapAgentTaskDelegationRole;
     /** Internal durable marker used to make Continue idempotent across backend restarts. */
     readonly resumedFromTaskId?: string;
     /**

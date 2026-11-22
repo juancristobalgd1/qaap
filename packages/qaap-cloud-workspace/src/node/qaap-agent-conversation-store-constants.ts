@@ -130,6 +130,11 @@ export const MAX_VISUAL_REPAIR_ATTEMPTS = 2;
 // ─── Internal types ──────────────────────────────────────────────────────────
 
 export interface PostUserMessageInternalOptions {
+    /**
+     * The text was written by a model (a delegated child's prompt, a follow-up carrying child reports): its
+     * `@agent` mentions are neutralized and never pick the turn's agent.
+     */
+    readonly noMentionRouting?: boolean;
     /** Keeps every backend-generated continuation charged to the original human turn. */
     readonly autoContinueRootMessageId?: string;
     /** Correlates a browser optimistic row with the persisted user message. */

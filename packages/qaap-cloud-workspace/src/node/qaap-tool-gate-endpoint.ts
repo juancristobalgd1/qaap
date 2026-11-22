@@ -149,6 +149,10 @@ export class QaapToolGateEndpoint implements BackendApplicationContribution {
             autoApprove: task.autoApprove,
             readOnlyWorkspace: !!task.readOnlyWorkspace,
             strictReadOnly: !!grant.oneShot,
+            // The token was issued with the delegate scope only when the runner wired the delegation server.
+            ...(!grant.oneShot && this.tokens.delegationServerName(grant.taskId)
+                ? { delegationServer: this.tokens.delegationServerName(grant.taskId) }
+                : {}),
             hooks: grant.oneShot || !this.runner.agentHooks ? undefined : async (toolName, toolInput, toolUseId) => {
                 const hooks = this.runner.agentHooks!;
                 const hookContext = agentHookContextForTask(this.runner, task as unknown as QaapAgentTask);

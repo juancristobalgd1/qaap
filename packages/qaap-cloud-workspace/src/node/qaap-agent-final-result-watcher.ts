@@ -3,9 +3,13 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { parseQaapClaudeResultUsage, type QaapTurnUsage } from '../common/qaap-turn-usage';
+
 /** The final `{"type":"result"}` event of a stream-json turn. */
 export interface QaapAgentFinalResult {
     readonly isError: boolean;
+    /** The turn's usage as the CLI reported it in the same event; absent when the event carries none. */
+    readonly usage?: QaapTurnUsage;
 }
 
 /**
@@ -57,7 +61,11 @@ function parseFinalResultLine(line: string): QaapAgentFinalResult | undefined {
         if (record.type !== 'result') {
             return undefined;
         }
-        return { isError: record.is_error === true || (typeof record.subtype === 'string' && record.subtype.startsWith('error')) };
+        const usage = parseQaapClaudeResultUsage(line);
+        return {
+            isError: record.is_error === true || (typeof record.subtype === 'string' && record.subtype.startsWith('error')),
+            ...(usage ? { usage } : {}),
+        };
     } catch {
         return undefined;
     }

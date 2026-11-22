@@ -16,6 +16,12 @@ import {
 import { syncTranscriptToolExecutionTime, TRANSCRIPT_TOOL_RESULT_STREAM_CLASS } from './mobile-projects-transcript-messages-tool-ui';
 import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { peekPreferDesktopIde } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
+import {
+    countTranscriptDelegationWaitChildIds,
+    resolveTranscriptDelegationToolKind,
+    resolveTranscriptDelegationToolLabel,
+} from '../common/qaap-transcript-delegation-core';
+import { localizeTranscriptDelegationLabel } from './qaap-transcript-delegation-ui';
 
 /** IDE-flavoured labels apply on desktop only; mobile mode always uses the hub Files / Review labels. */
 function useIdeLabels(): boolean {
@@ -222,6 +228,20 @@ export function resolveLobeToolTitleOptionsExtracted(ctx: MobileProjectsTranscri
         readonly target?: string;
         readonly toolName: string;
     }): Parameters<typeof createLobeToolTitle>[0] {
+        // Delegation tools read as "Helpers › Waiting for 2 helpers" instead of the raw MCP tool name.
+        const delegationLabel = resolveTranscriptDelegationToolLabel(
+            resolveTranscriptDelegationToolKind(options.toolName),
+            countTranscriptDelegationWaitChildIds(options.args),
+        );
+        if (delegationLabel) {
+            return {
+                apiName: localizeTranscriptDelegationLabel(delegationLabel),
+                loading: !options.finished,
+                params: [],
+                pluginTitle: nls.localize('theia/qaap/delegation/pluginTitle', 'Helpers'),
+                remainingParamsCount: 0,
+            };
+        }
         const pluginTitle = ctx.transcriptToolVerb(options.kind, options.toolName);
         let apiName = options.target || options.toolName;
         const parsedParams = parseLobeToolTitleParamSummary(options.args);

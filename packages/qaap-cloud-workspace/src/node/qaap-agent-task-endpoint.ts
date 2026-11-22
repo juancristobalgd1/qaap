@@ -1069,6 +1069,9 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 // Server-only: decided from the conversation's worktree (buildTaskCreateRequest). A client
                 // must never claim its own worktree to skip the shared-working-tree queue, so it is never read here.
                 ownWorkingTree: undefined,
+                // Server-only: decided from the conversation (buildTaskCreateRequest). A client claiming `parent`
+                // would ask for the delegation tools; one claiming `child` would skip the shared-tree queue.
+                delegationRole: undefined,
             };
             // A failed write blocks every new task until something persists again. Retry once here
             // so a transient failure (for example a temp-file collision) clears on the next user

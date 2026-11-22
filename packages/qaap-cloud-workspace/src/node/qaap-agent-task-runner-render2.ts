@@ -496,6 +496,43 @@ export function repoAtConcurrencyCapExtracted(ctx: QaapAgentTaskRunnerContext, c
         return ctx.runningTaskCountForRepo(cwd) >= cap;
 }
 
+/**
+ * Whether a task must wait for the per-user / per-repo caps. A delegated child's turn (`delegationRole: 'child'`,
+ * set only on the turn the delegation service starts) gets a bounded headroom of one parent's worth of children
+ * (`QAAP_DELEGATE_MAX_CONCURRENT`, default 3) above those caps: a parent holds a per-user slot while it waits for
+ * its children, so counting them strictly would deadlock a user whose parents fill the cap. The overshoot is
+ * bounded by that headroom for the whole user (the plan's limit plus at most one parent's children), never per
+ * parent, and the global cap still applies.
+ */
+export function overOwnerOrRepoCapExtracted(ctx: QaapAgentTaskRunnerContext, task: { readonly ownerLogin?: string; readonly cwd: string; readonly delegationRole?: 'parent' | 'child' }): boolean {
+        const ownerFull = ctx.ownerAtConcurrencyCap(task.ownerLogin);
+        const repoFull = ctx.repoAtConcurrencyCap(task.cwd);
+        if (!ownerFull && !repoFull) {
+            return false;
+        }
+        if (task.delegationRole !== 'child') {
+            return true;
+        }
+        const headroom = delegatedChildHeadroom();
+        const owner = task.ownerLogin?.trim();
+        if (ownerFull && owner) {
+            const cap = ctx.billingStore?.maxConcurrentAgentsForOwner?.(owner) ?? ctx.maxConcurrentAgentsPerUser();
+            if (ctx.runningTaskCountForOwner(owner) >= cap + headroom) {
+                return true;
+            }
+        }
+        if (repoFull && ctx.runningTaskCountForRepo(task.cwd) >= ctx.maxConcurrentAgentsPerRepo() + headroom) {
+            return true;
+        }
+        return false;
+}
+
+/** One parent's worth of delegated children: the same `QAAP_DELEGATE_MAX_CONCURRENT` the delegation service uses. */
+function delegatedChildHeadroom(): number {
+        const configured = Number.parseInt(process.env.QAAP_DELEGATE_MAX_CONCURRENT?.trim() ?? '', 10);
+        return Number.isInteger(configured) && configured >= 1 ? configured : 3;
+}
+
 function queueOwnerKey(ownerLogin: string | undefined): string {
         return ownerLogin?.trim().toLowerCase() ?? '';
 }
@@ -605,8 +642,8 @@ export function drainQueuedTasksExtracted(ctx: QaapAgentTaskRunnerContext): void
             // A shared-working-tree task also waits while its owner has another one running in that cwd.
             const next = [...ctx.tasks.values()]
                 .filter(task => task.state === 'queued'
-                    && !ctx.ownerAtConcurrencyCap(task.ownerLogin)
-                    && !ctx.repoAtConcurrencyCap(task.cwd)
+                    // Delegated children get a bounded headroom above the per-user / per-repo caps.
+                    && !overOwnerOrRepoCapExtracted(ctx, task)
                     && !(task.sharedWorkingTree === true && sharedWorkingTreeBusyExtracted(ctx, task.ownerLogin, task.cwd, task.id)))
                 .sort(compareQueuedTasks)[0];
             if (!next) {

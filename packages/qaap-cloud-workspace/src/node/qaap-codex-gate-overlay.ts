@@ -10,6 +10,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { resolveQaapHarnessCapabilities } from '@theia/qaap-shared-core/lib/common/qaap-harness-capabilities';
 import { quoteShellArg } from './qaap-agent-task-runner-utils';
+import { QAAP_AGENT_DELEGATION_ENV_PREFIX, QAAP_AGENT_DELEGATION_TOKEN_ENV, QAAP_AGENT_DELEGATION_URL_ENV } from '../common/qaap-agent-delegation-protocol';
 import { resolveQaapCloudWorkspaceResource } from './qaap-cloud-workspace-resource';
 import { nls } from '@theia/core/lib/common/nls';
 
@@ -67,13 +68,36 @@ export interface QaapCodexGateOverlayOptions {
     readonly hookPath?: string;
     /** The task runs in the per-task sandbox container: Codex's own bubblewrap sandbox cannot start there and is off. */
     readonly ownSandboxOff?: boolean;
+    /** Agent delegation: the `qaaq` MCP server and the parent's guidance (see {@link QaapCodexDelegationMcp}). */
+    readonly delegationMcp?: QaapCodexDelegationMcp;
 }
+
+/**
+ * The delegation MCP server for a Codex parent turn. Rendered as `[mcp_servers.qaaq]` with `env_vars`, so Codex
+ * forwards `QAAP_DELEGATION_URL` / `QAAP_DELEGATION_TOKEN` from its own environment to the shim: the token is
+ * never written to the overlay. `instructions` becomes `developer_instructions`.
+ */
+export interface QaapCodexDelegationMcp {
+    /** Per-task server name (`qaaq_<nonce>`), which the gate auto-allow compares tool names against. */
+    readonly serverName: string;
+    readonly nodeBin: string;
+    readonly shimPath: string;
+    readonly electronRunAsNode: boolean;
+    readonly instructions: string;
+}
+
+/** Owner `[mcp_servers.qaaq*]` tables are dropped when delegation is injected: none may pose as Qaap's server. */
+const QAAP_CODEX_DELEGATION_SERVER_PREFIX = 'qaaq';
+/** Codex's MCP tool-call timeout for the shim: the longest `qaaq_task_wait` (540 s) plus slack. */
+export const QAAP_CODEX_DELEGATION_TOOL_TIMEOUT_SEC = 600;
 
 export interface QaapCodexGateOverlay {
     /** Value of `CODEX_HOME` for the Codex process. */
     readonly codexHome: string;
     /** Writes a refreshed `auth.json` back to the owner's home, then deletes the overlay. Idempotent. */
     dispose(): void;
+    /** Delegation was requested but left out: the owner's shell policy cannot be merged safely. The caller must withdraw the token. */
+    readonly delegationSkipped?: boolean;
 }
 
 /** Checks that Codex really considers the generated hook trusted. Injectable so tests need no Codex binary. */
@@ -121,6 +145,7 @@ export class QaapCodexGateOverlayBuilder {
         const sourceSessions = path.join(options.sourceCodexHome, 'sessions');
         const expectedUid = drop ? drop.uid : QaapCodexGateOverlayBuilder.currentUid();
         let initialAuth: SafeRead | undefined;
+        let delegationSkipped = false;
         let disposed = false;
         const dispose = (): void => {
             if (disposed) {
@@ -148,6 +173,11 @@ export class QaapCodexGateOverlayBuilder {
                 initialAuth = QaapCodexGateOverlayBuilder.readRegularFile(sourceAuth, true, undefined);
                 sourceConfig = QaapCodexGateOverlayBuilder.readRegularFile(sourceConfigPath, true, undefined)?.text;
             }
+            const blockedReason = options.delegationMcp ? QaapCodexGateOverlayBuilder.delegationBlockedReason(sourceConfig) : undefined;
+            delegationSkipped = blockedReason !== undefined;
+            if (blockedReason) {
+                console.info(`[qaap-codex-gate] delegation not injected for this turn: the owner's Codex config has ${blockedReason}`);
+            }
             const hooksPath = path.join(codexHome, 'hooks.json');
             const hookCommand = this.hookCommand(options);
             const timeoutSec = Math.max(1, Math.round(options.askTtlSec)) + HOOK_TIMEOUT_MARGIN_SEC;
@@ -166,6 +196,7 @@ export class QaapCodexGateOverlayBuilder {
                     trustedHash,
                     sourceConfig,
                     ownSandboxOff: options.ownSandboxOff,
+                    ...(options.delegationMcp && !delegationSkipped ? { delegationMcp: options.delegationMcp } : {}),
                 }),
             });
             if (drop) {
@@ -187,7 +218,7 @@ export class QaapCodexGateOverlayBuilder {
             dispose();
             throw error;
         }
-        return { codexHome, dispose };
+        return { codexHome, dispose, ...(delegationSkipped ? { delegationSkipped: true } : {}) };
     }
 
     protected hookCommand(options: QaapCodexGateOverlayOptions): string {
@@ -312,31 +343,254 @@ export class QaapCodexGateOverlayBuilder {
         trustedHash: string;
         sourceConfig: string | undefined;
         ownSandboxOff?: boolean;
+        delegationMcp?: QaapCodexDelegationMcp;
     }): string {
+        // An owner policy that cannot be merged safely gets no delegation at all (see delegationBlockedReason).
+        const delegationMcp = input.delegationMcp && !QaapCodexGateOverlayBuilder.delegationBlockedReason(input.sourceConfig) ? input.delegationMcp : undefined;
         const lines = [
             '# Generated by Qaap for one task. Never edit: deleted when the task ends.',
             // The hook is the approval authority; Codex must not also prompt (no tty in `exec`).
             'approval_policy = "never"',
             // In the per-task container the container isolates (bubblewrap needs user namespaces it cannot get).
             `sandbox_mode = "${input.ownSandboxOff ? 'danger-full-access' : 'workspace-write'}"`,
-            '',
         ];
-        if (input.sourceConfig) {
-            lines.push(QaapCodexGateOverlayBuilder.filterSourceConfig(input.sourceConfig), '');
+        let source = input.sourceConfig ? QaapCodexGateOverlayBuilder.filterSourceConfig(input.sourceConfig, !!delegationMcp) : '';
+        if (delegationMcp) {
+            // The delegation token sits in Codex's env (for `env_vars`): its shell tool must never inherit it.
+            const excluded = QaapCodexGateOverlayBuilder.excludeDelegationFromShellEnvironment(source);
+            source = 'source' in excluded ? excluded.source : source;
+            // One top-level `developer_instructions` only (a second one is a TOML error): the owner's single-line
+            // value is kept in front of the delegation guidance; a multi-line one keeps the guidance out.
+            const owned = QaapCodexGateOverlayBuilder.takeDeveloperInstructions(source);
+            source = owned.rest;
+            if (owned.value !== false) {
+                const merged = owned.value ? `${owned.value}\n\n${delegationMcp.instructions}` : delegationMcp.instructions;
+                lines.push(`developer_instructions = ${JSON.stringify(merged)}`);
+            }
+        }
+        lines.push('');
+        if (source) {
+            lines.push(source, '');
         }
         if (!input.folderTrusted) {
             // Without an entry `codex exec` trusts its cwd itself and would load project hooks and config.
             lines.push(`[projects.${JSON.stringify(input.cwd)}]`, 'trust_level = "untrusted"', '');
         }
         lines.push(`[hooks.state.${JSON.stringify(input.hookStateKey)}]`, `trusted_hash = ${JSON.stringify(input.trustedHash)}`, '');
+        if (delegationMcp) {
+            const mcp = delegationMcp;
+            lines.push(
+                `[mcp_servers.${mcp.serverName}]`,
+                `command = ${JSON.stringify(mcp.nodeBin)}`,
+                `args = [${JSON.stringify(mcp.shimPath)}]`,
+                // Forwarded from Codex's own env by name: the secret never lands in this file.
+                `env_vars = [${JSON.stringify(QAAP_AGENT_DELEGATION_URL_ENV)}, ${JSON.stringify(QAAP_AGENT_DELEGATION_TOKEN_ENV)}]`,
+                ...(mcp.electronRunAsNode ? ['env = { ELECTRON_RUN_AS_NODE = "1" }'] : []),
+                'startup_timeout_sec = 20',
+                `tool_timeout_sec = ${QAAP_CODEX_DELEGATION_TOOL_TIMEOUT_SEC}`,
+                '',
+            );
+        }
         return lines.join('\n');
+    }
+
+    /**
+     * Adds `QAAP_DELEGATION_*` to the `exclude` list of Codex's `shell_environment_policy`, so the shell tool never
+     * inherits the delegation token that sits in Codex's own env (for `env_vars`). The owner's policy is MERGED,
+     * never replaced: `ignore_default_excludes` and every other key stay as the owner wrote them, and the owner's
+     * `exclude` patterns (single- or multi-line array of strings) are kept in front of ours. As far as Codex's
+     * documented policy order goes (inherit, default excludes unless ignored, then the custom `exclude`, then
+     * `set`, then `include_only`), `exclude` applies even with `ignore_default_excludes = true`; the repo holds no
+     * Codex source or test to confirm it, so this is documentation-based. The MCP server is unaffected: `env_vars`
+     * reads Codex's own environment.
+     *
+     * Owner forms that cannot be merged safely (inline table or dotted keys for the policy, a policy inside a
+     * `[profiles.*]` table, an `exclude` this parser does not fully understand) yield `unmergeable` with a static
+     * reason and NO source: the caller must not inject delegation into that turn, rather than drop the owner's policy.
+     */
+    static excludeDelegationFromShellEnvironment(source: string): { readonly source: string } | { readonly unmergeable: string } {
+        const pattern = `${QAAP_AGENT_DELEGATION_ENV_PREFIX}*`;
+        const lines = source.split('\n');
+        const out: string[] = [];
+        let inPolicy = false;
+        let ownerPatterns: string[] = [];
+        let policyHeaderIndex = -1;
+        const policyKeyLine = /^\s*["']?shell_environment_policy["']?\s*[.=]/;
+        const skipValue = (start: number): number => {
+            // Index of the last line of the (possibly multi-line array) value that starts on `start`.
+            let depth = 0;
+            let quote: string | undefined;
+            for (let i = start; i < lines.length; i++) {
+                const text = i === start ? lines[i].slice(lines[i].indexOf('=') + 1) : lines[i];
+                for (const ch of text) {
+                    if (quote) {
+                        if (ch === quote) {
+                            quote = undefined;
+                        }
+                    } else if (ch === '"' || ch === '\'') {
+                        quote = ch;
+                    } else if (ch === '[' || ch === '{') {
+                        depth++;
+                    } else if (ch === ']' || ch === '}') {
+                        depth--;
+                    } else if (ch === '#') {
+                        break;
+                    }
+                }
+                quote = undefined;
+                if (depth <= 0) {
+                    return i;
+                }
+            }
+            return lines.length - 1;
+        };
+        let seenExclude = false;
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            const header = /^\s*\[\[?\s*([^\]]+?)\s*\]\]?\s*(#.*)?$/.exec(line);
+            if (header) {
+                const name = header[1].replace(/["']/g, '').trim();
+                if (/(^|\.)shell_environment_policy(\.|$)/.test(name) && name !== 'shell_environment_policy' && !name.startsWith('shell_environment_policy.')) {
+                    return { unmergeable: 'a shell_environment_policy table under another table (e.g. a profile)' };
+                }
+                inPolicy = name === 'shell_environment_policy';
+                if (inPolicy) {
+                    policyHeaderIndex = out.length;
+                }
+                out.push(line);
+                continue;
+            }
+            if (policyKeyLine.test(line)) {
+                // Top-level inline table / dotted keys, or the same inside another table (e.g. `[profiles.x]`).
+                return { unmergeable: 'an inline-table or dotted-key shell_environment_policy' };
+            }
+            if (inPolicy && /^\s*exclude\s*=/.test(line)) {
+                const last = skipValue(i);
+                const valueText = [lines[i].slice(lines[i].indexOf('=') + 1), ...lines.slice(i + 1, last + 1)].join('\n');
+                const parsed = seenExclude ? undefined : QaapCodexGateOverlayBuilder.parseTomlStringArray(valueText);
+                if (!parsed) {
+                    return { unmergeable: 'a shell_environment_policy.exclude this parser cannot read safely' };
+                }
+                seenExclude = true;
+                ownerPatterns = parsed;
+                i = last;
+                continue;
+            }
+            out.push(line);
+        }
+        const exclude = `exclude = ${JSON.stringify([...new Set([...ownerPatterns, pattern])])}`;
+        if (policyHeaderIndex >= 0) {
+            out.splice(policyHeaderIndex + 1, 0, exclude);
+        } else {
+            out.push('', '[shell_environment_policy]', exclude);
+        }
+        return { source: out.join('\n').trim() };
+    }
+
+    /** Parses a TOML array of plain strings (one or many lines, comments allowed). Anything else returns undefined. */
+    protected static parseTomlStringArray(text: string): string[] | undefined {
+        const value = text.trim();
+        if (!value.startsWith('[')) {
+            return undefined;
+        }
+        const items: string[] = [];
+        let i = 1;
+        while (i < value.length) {
+            const ch = value[i];
+            if (ch === ']') {
+                const rest = value.slice(i + 1).trim();
+                return rest === '' || rest.startsWith('#') ? items : undefined;
+            }
+            if (/[\s,]/.test(ch)) {
+                i++;
+                continue;
+            }
+            if (ch === '#') {
+                const newline = value.indexOf('\n', i);
+                if (newline < 0) {
+                    return undefined;
+                }
+                i = newline + 1;
+                continue;
+            }
+            if (value.startsWith('"""', i) || value.startsWith('\'\'\'', i)) {
+                return undefined;
+            }
+            if (ch === '"') {
+                let end = i + 1;
+                while (end < value.length && value[end] !== '"') {
+                    end += value[end] === '\\' ? 2 : 1;
+                }
+                if (end >= value.length) {
+                    return undefined;
+                }
+                try {
+                    const item = JSON.parse(value.slice(i, end + 1)) as unknown;
+                    if (typeof item !== 'string') {
+                        return undefined;
+                    }
+                    items.push(item);
+                } catch {
+                    return undefined;
+                }
+                i = end + 1;
+                continue;
+            }
+            if (ch === '\'') {
+                const end = value.indexOf('\'', i + 1);
+                if (end < 0 || value.slice(i, end).includes('\n')) {
+                    return undefined;
+                }
+                items.push(value.slice(i + 1, end));
+                i = end + 1;
+                continue;
+            }
+            return undefined;
+        }
+        return undefined;
+    }
+
+    /**
+     * Why delegation cannot be injected for this owner config (a static, secret-free reason), or undefined when the
+     * policy merges safely. The caller then leaves delegation out of the turn instead of replacing the owner's policy.
+     */
+    static delegationBlockedReason(sourceConfig: string | undefined): string | undefined {
+        if (!sourceConfig) {
+            return undefined;
+        }
+        const filtered = QaapCodexGateOverlayBuilder.filterSourceConfig(sourceConfig, true);
+        const merged = QaapCodexGateOverlayBuilder.excludeDelegationFromShellEnvironment(filtered);
+        return 'unmergeable' in merged ? merged.unmergeable : undefined;
+    }
+
+    /**
+     * Splits a top-level single-line `developer_instructions = "..."` out of a filtered config. `value` is the
+     * owner's string ('' when there is none) or `false` when it is multi-line (left in place, untouched).
+     */
+    static takeDeveloperInstructions(source: string): { readonly value: string | false; readonly rest: string } {
+        const lines = source.split('\n');
+        const index = lines.findIndex((line, i) => /^\s*developer_instructions\s*=/.test(line)
+            && !lines.slice(0, i).some(previous => /^\s*\[/.test(previous)));
+        if (index < 0) {
+            return { value: '', rest: source };
+        }
+        const match = /^\s*developer_instructions\s*=\s*("(?:[^"\\]|\\.)*")\s*(#.*)?$/.exec(lines[index]);
+        if (!match) {
+            return { value: false, rest: source };
+        }
+        try {
+            const value = JSON.parse(match[1]) as string;
+            return { value, rest: [...lines.slice(0, index), ...lines.slice(index + 1)].join('\n').trim() };
+        } catch {
+            return { value: false, rest: source };
+        }
     }
 
     /**
      * Keeps the owner's provider, model and MCP settings but drops what the overlay owns: the approval
      * and sandbox keys, every `[projects]` and `[hooks]` table (their trust/hook state is regenerated).
      */
-    static filterSourceConfig(source: string): string {
+    static filterSourceConfig(source: string, dropDelegationServers: boolean = false): string {
         const kept: string[] = [];
         let skipping = false;
         let inTable = false;
@@ -345,7 +599,8 @@ export class QaapCodexGateOverlayBuilder {
             if (header) {
                 inTable = true;
                 const name = header[1].replace(/["']/g, '');
-                skipping = /^(projects|hooks)(\.|$)/.test(name);
+                skipping = /^(projects|hooks)(\.|$)/.test(name)
+                    || (dropDelegationServers && name.toLowerCase().startsWith(`mcp_servers.${QAAP_CODEX_DELEGATION_SERVER_PREFIX}`));
             }
             if (skipping) {
                 continue;

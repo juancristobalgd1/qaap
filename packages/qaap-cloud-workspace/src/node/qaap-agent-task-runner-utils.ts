@@ -400,11 +400,18 @@ export const AGENT_PROMPT_REMOVE_SCRIPT = [
  * `owner` the dir and file are created AS that uid, so the agent can read them; nothing is world-readable.
  * Fails closed: if the agent side cannot write the file, this throws and the prompt is not written by root.
  */
-export function writeAgentPromptFile(text: string, owner?: AgentPromptOwner): { readonly file: string; readonly dir: string } {
+export function writeAgentPromptFile(
+    text: string,
+    owner?: AgentPromptOwner,
+    options: { readonly fileName?: string; readonly dirPrefix?: string } = {},
+): { readonly file: string; readonly dir: string } {
+    const fileName = options.fileName ?? 'prompt.txt';
+    // The prefix always starts with `qaap-agent-prompt-`: removeAgentPromptTempDir only removes such dirs.
+    const dirPrefix = `qaap-agent-prompt-${options.dirPrefix ?? ''}`;
     const currentUid = typeof process.getuid === 'function' ? process.getuid() : undefined;
     if (owner && owner.uid !== currentUid) {
-        const dir = path.join(os.tmpdir(), `qaap-agent-prompt-${randomBytes(16).toString('hex')}`);
-        const file = path.join(dir, 'prompt.txt');
+        const dir = path.join(os.tmpdir(), `${dirPrefix}${randomBytes(16).toString('hex')}`);
+        const file = path.join(dir, fileName);
         if (!agentPromptOwnerRunner.run(owner, AGENT_PROMPT_WRITE_SCRIPT, { dir, file, text })) {
             throw new Error(`Could not write the agent prompt file as uid ${owner.uid}.`);
         }
@@ -415,9 +422,9 @@ export function writeAgentPromptFile(text: string, owner?: AgentPromptOwner): { 
         promptDirOwners.set(dir, owner);
         return { file, dir };
     }
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agent-prompt-'));
-    const file = path.join(dir, 'prompt.txt');
-    fs.writeFileSync(file, text, { encoding: 'utf8', mode: 0o600 });
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), dirPrefix));
+    const file = path.join(dir, fileName);
+    fs.writeFileSync(file, text, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
     return { file, dir };
 }
 

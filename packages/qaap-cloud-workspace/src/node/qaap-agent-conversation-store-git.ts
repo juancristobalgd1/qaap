@@ -39,6 +39,16 @@ export interface QaapRunGitAsyncOptions {
     readonly env?: NodeJS.ProcessEnv;
     readonly timeoutMs: number;
     readonly maxBuffer?: number;
+    /** Written to the process stdin, then closed (e.g. a patch for `git apply -`). A Buffer is written byte for byte. */
+    readonly input?: string | Buffer;
+}
+
+/** Result of a git run whose stdout is kept as raw bytes, for patches that may hold non-UTF-8 text (see {@link runGitBufferAsync}). */
+export interface QaapGitBufferRunResult {
+    readonly status: number | null;
+    readonly stdout: Buffer;
+    readonly stderr: string;
+    readonly timedOut?: boolean;
 }
 
 /** Default timeout for the turn-settle / checkpoint git commands. */
@@ -46,25 +56,34 @@ export const QAAP_GIT_DEFAULT_TIMEOUT_MS = 15_000;
 /** `git add -A` hashes the whole worktree; large repos legitimately need longer. */
 export const QAAP_GIT_ADD_ALL_TIMEOUT_MS = 60_000;
 
+interface QaapGitProcessResult {
+    readonly status: number | null;
+    readonly stdout: string | Buffer;
+    readonly stderr: string;
+    readonly timedOut?: boolean;
+}
+
 /**
- * Run a git (or tenant-wrapped git) process without blocking the event loop. Mirrors the
- * `spawnSync` result shape callers relied on: non-zero exit sets `status`; spawn failure,
- * timeout or buffer overflow yield `status: null`. Never rejects.
+ * The shared core of {@link runGitAsync} and {@link runGitBufferAsync}: spawns git, decodes stdout with
+ * `encoding` (or keeps it as a Buffer) and never rejects. Non-zero exit sets `status`; spawn failure,
+ * timeout or buffer overflow yield `status: null`.
  */
-export function runGitAsync(file: string, args: readonly string[], options: QaapRunGitAsyncOptions): Promise<QaapGitRunResult> {
-    return new Promise<QaapGitRunResult>(resolve => {
+function spawnGit(file: string, args: readonly string[], options: QaapRunGitAsyncOptions, encoding: 'utf8' | 'buffer'): Promise<QaapGitProcessResult> {
+    return new Promise<QaapGitProcessResult>(resolve => {
         try {
-            execFile(file, [...args], {
+            const child = execFile(file, [...args], {
                 cwd: options.cwd,
                 // Never inherit the backend env by omission; an explicit env is stripped too.
                 env: options.env ? childProcessEnv(options.env) : qaapGitReadEnv(),
-                encoding: 'utf8',
+                encoding,
                 timeout: options.timeoutMs,
                 killSignal: 'SIGKILL',
                 maxBuffer: options.maxBuffer ?? 64 * 1024 * 1024,
                 windowsHide: true,
             }, (error, stdout, stderr) => {
-                const out = typeof stdout === 'string' ? stdout : '';
+                const out: string | Buffer = encoding === 'buffer'
+                    ? (Buffer.isBuffer(stdout) ? stdout : Buffer.alloc(0))
+                    : (typeof stdout === 'string' ? stdout : '');
                 const err = typeof stderr === 'string' ? stderr : '';
                 if (!error) {
                     resolve({ status: 0, stdout: out, stderr: err });
@@ -75,10 +94,42 @@ export function runGitAsync(file: string, args: readonly string[], options: Qaap
                 const status = typeof failure.code === 'number' && !timedOut ? failure.code : null;
                 resolve({ status, stdout: out, stderr: err || failure.message, timedOut: timedOut || undefined });
             });
+            if (options.input !== undefined) {
+                // A child that exits before reading its stdin raises EPIPE; the exit status already reports it.
+                child.stdin?.on('error', () => undefined);
+                child.stdin?.end(options.input);
+            }
         } catch (error) {
-            resolve({ status: null, stdout: '', stderr: error instanceof Error ? error.message : String(error) });
+            resolve({ status: null, stdout: encoding === 'buffer' ? Buffer.alloc(0) : '', stderr: error instanceof Error ? error.message : String(error) });
         }
     });
+}
+
+/**
+ * Run a git (or tenant-wrapped git) process without blocking the event loop. Mirrors the
+ * `spawnSync` result shape callers relied on: non-zero exit sets `status`; spawn failure,
+ * timeout or buffer overflow yield `status: null`. Never rejects. stdout is decoded as UTF-8.
+ */
+export function runGitAsync(file: string, args: readonly string[], options: QaapRunGitAsyncOptions): Promise<QaapGitRunResult> {
+    return spawnGit(file, args, options, 'utf8').then(result => ({
+        status: result.status,
+        stdout: typeof result.stdout === 'string' ? result.stdout : result.stdout.toString('utf8'),
+        stderr: result.stderr,
+        ...(result.timedOut ? { timedOut: true } : {}),
+    }));
+}
+
+/**
+ * Like {@link runGitAsync}, but stdout is returned as the exact bytes git wrote (no decoding). Use it for
+ * `git diff --binary` output that is fed back to `git apply`, so non-UTF-8 text survives the round trip.
+ */
+export function runGitBufferAsync(file: string, args: readonly string[], options: QaapRunGitAsyncOptions): Promise<QaapGitBufferRunResult> {
+    return spawnGit(file, args, options, 'buffer').then(result => ({
+        status: result.status,
+        stdout: Buffer.isBuffer(result.stdout) ? result.stdout : Buffer.alloc(0),
+        stderr: result.stderr,
+        ...(result.timedOut ? { timedOut: true } : {}),
+    }));
 }
 
 export const localGitRead: QaapGitRead = (cwd, args) => runGitAsync('git', [...SAFE_GIT_CONFIG, ...args], { cwd, timeoutMs: 4000 });

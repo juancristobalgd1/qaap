@@ -35,6 +35,8 @@ import { QaapToolGateService } from './qaap-tool-gate-service';
 import { QaapToolGateTokenService } from './qaap-tool-gate-token-service';
 import { QaapToolGateAskBroker } from './qaap-tool-gate-ask-broker';
 import { QaapToolGateEndpoint } from './qaap-tool-gate-endpoint';
+import { QaapAgentDelegationEndpoint } from './qaap-agent-delegation-endpoint';
+import { QaapAgentDelegationService } from './qaap-agent-delegation-service';
 import { QaapAgentHookConfigLoader } from './qaap-agent-hook-config-loader';
 import { QaapAgentHookEndpoint } from './qaap-agent-hook-endpoint';
 import { QaapAgentLoginCallbackEndpoint } from './qaap-agent-login-callback-endpoint';
@@ -435,6 +437,10 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapToolGateAskBroker).toSelf().inSingletonScope();
     bind(QaapToolGateEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapToolGateEndpoint);
+    // Agent delegation (qaaq_* MCP tools): routes answer 404 unless QAAP_AGENT_DELEGATION is on.
+    bind(QaapAgentDelegationService).toSelf().inSingletonScope();
+    bind(QaapAgentDelegationEndpoint).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapAgentDelegationEndpoint);
     bind(QaapAgentApprovalEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapAgentApprovalEndpoint);
     // Qaap-level agent lifecycle hooks + workspace trust review (doc/qaap-agent-hooks.md).

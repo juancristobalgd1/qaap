@@ -339,7 +339,8 @@ export function publishFinalizedAgentMessageExtracted(ctx: QaapAgentConversation
 }
 
 export function resolveTurnAgentExtracted(ctx: QaapAgentConversationStoreContext, conv: QaapAgentConversation, userContent: string, explicit?: string): string {
-        const fromMention = ctx.extractAgentMentionFromUserMessage(userContent);
+        // A delegated child always runs the harness it was started on: no mention re-routes it (not even `@shell`).
+        const fromMention = conv.delegation ? undefined : ctx.extractAgentMentionFromUserMessage(userContent);
         if (fromMention) {
             assertAgentAllowedOnHostedRuntime(fromMention);
             return fromMention;

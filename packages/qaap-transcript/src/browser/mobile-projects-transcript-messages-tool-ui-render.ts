@@ -27,6 +27,12 @@ import {
     resolveTranscriptWebSearchPayload,
 } from '../common/qaap-transcript-web-search-core';
 import { createTranscriptWebSearchCard } from './qaap-transcript-web-search-ui';
+import {
+    createTranscriptDelegationToolCard,
+    listTranscriptDelegationCalls,
+    openTranscriptDelegationChild,
+} from './qaap-transcript-delegation-ui';
+import { resolveTranscriptDelegationToolKind } from '../common/qaap-transcript-delegation-core';
 
 export function renderTranscriptRichContentExtracted(ctx: MobileProjectsTranscriptMessagesToolUiContext, host: HTMLElement,
         content: string,
@@ -550,6 +556,18 @@ export function createTranscriptSegmentDetailsExtracted(ctx: MobileProjectsTrans
                 return createTranscriptWebSearchCard(payload, {
                     open: !segment.finished || payload.sites.length > 0,
                 });
+            }
+            if (resolveTranscriptDelegationToolKind(segment.name) === 'delegate') {
+                const conversation = ctx.host.transcriptLastConv;
+                const threadStore = ctx.host.conversations?.threadStore;
+                const delegationCard = createTranscriptDelegationToolCard(document, segment, {
+                    calls: listTranscriptDelegationCalls(conversation?.messages),
+                    liveStatus: childId => threadStore?.getSummary(childId)?.status,
+                    openChild: childId => { void openTranscriptDelegationChild(ctx.host, childId).catch(() => undefined); },
+                });
+                if (delegationCard) {
+                    return delegationCard;
+                }
             }
             return ctx.createTranscriptToolWindow(segment, options);
         }

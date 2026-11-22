@@ -4,7 +4,7 @@ import { buildPiDefaultModelFlagShell } from '@theia/qaap-shared-core/lib/common
 import { AGENT_STOP_GRACE_TIMEOUT_MS, AGENT_STOP_SLOT_RELEASE_TIMEOUT_MS, SHELL_AGENT_ID, QAIQ_AGENT_ID, REPO_MAP_CACHE_TTL_MS, REPO_MAP_MAX_CHARS, USER_REQUEST_MAX_CHARS } from './qaap-agent-task-runner-constants';
 import type { QaapAgentCommandBuildResult, QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { QaapAgentQueuePolicy } from './qaap-agent-queue-policy';
-import { sharedWorkingTreeBusyExtracted } from './qaap-agent-task-runner-render2';
+import { overOwnerOrRepoCapExtracted, sharedWorkingTreeBusyExtracted } from './qaap-agent-task-runner-render2';
 import { QaapAgentStorageUnavailableError } from './qaap-agent-storage-unavailable-error';
 import { QaapPlanLimit } from '@theia/qaap-adapters/lib/common/qaap-plan-limit';
 import { qaapMissingCwdError } from './qaap-missing-cwd-error';
@@ -207,12 +207,16 @@ export function createExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCr
         if (ctx.tenantStorageQuota?.peekOverStorageLimit(ownerLogin)) {
             throw new Error(QaapPlanLimit.tagged('storage_limit', QaapPlanLimit.describe('storage_limit')));
         }
-        const sharedWorkingTree = request.ownWorkingTree !== true;
+        // A read-only delegated child shares its parent's tree on purpose and never writes it. Queuing it behind
+        // the parent (which holds the shared tree while it waits for the child) would deadlock the pair.
+        const readOnlyDelegatedChild = request.delegationRole === 'child' && (request.readOnlyWorkspace === true || planMode);
+        const sharedWorkingTree = request.ownWorkingTree !== true && !readOnlyDelegatedChild;
         const sharedWorkingTreeQueued = sharedWorkingTree && sharedWorkingTreeBusyExtracted(ctx, ownerLogin, cwd);
         const atCapacity = ctx.isDrainingForDeploy?.() === true
             || ctx.countRunningTasks() >= ctx.maxConcurrentAgents()
-            || ctx.ownerAtConcurrencyCap(ownerLogin)
-            || ctx.repoAtConcurrencyCap(cwd)
+            // A delegated child gets a bounded headroom above the per-user / per-repo caps (its parent holds a slot
+            // while it waits for it); see overOwnerOrRepoCapExtracted. The global cap still applies.
+            || overOwnerOrRepoCapExtracted(ctx, { ownerLogin, cwd, ...(request.delegationRole ? { delegationRole: request.delegationRole } : {}) })
             || sharedWorkingTreeQueued;
         if (atCapacity) {
             new QaapAgentQueuePolicy().assertCapacity(ctx.tasks.values(), ownerLogin);
@@ -252,6 +256,7 @@ export function createExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCr
                 : {}),
             ...(clientRequestId ? { clientRequestId } : {}),
             sharedWorkingTree,
+            ...(request.delegationRole ? { delegationRole: request.delegationRole } : {}),
             ...(request.resumedFromTaskId ? { resumedFromTaskId: request.resumedFromTaskId } : {}),
             ...(request.fallbackFromTaskId ? { fallbackFromTaskId: request.fallbackFromTaskId } : {}),
             ...(request.latencyMarks ? { latencyMarks: request.latencyMarks } : {}),

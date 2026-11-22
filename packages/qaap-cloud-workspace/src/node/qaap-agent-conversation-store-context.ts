@@ -16,7 +16,7 @@
 import type { QaapAgentEffortLevel } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
 import type { QaapAgentClosingReport } from '../common/qaap-agent-closing-report';
 import type { Emitter } from '@theia/core/lib/common/event';
-import type { QaapGitRunResult } from './qaap-agent-conversation-store-git';
+import type { QaapGitBufferRunResult, QaapGitRunResult } from './qaap-agent-conversation-store-git';
 import type { QaapConversationEventLog, QaapConversationLogEntry } from './qaap-conversation-event-log';
 import type { QaapSqliteStore } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 import type { QaapTrackedConversationMap } from './qaap-tracked-conversation-map';
@@ -226,6 +226,8 @@ export interface QaapAgentConversationStoreContext {
         parsed: { segments?: QaapAgentMessage['segments']; traceEvents?: QaapAgentMessage['traceEvents'] },
     ): QaapAgentMessage['traceEvents'];
     applyTaskOutcome(ref: QaapConversationTaskRef, task: QaapAgentTask): Promise<QaapWorkflowNodeOutcome>;
+    /** Tells listeners a Stop reached the conversation (even an idle one), so delegation can cancel its children. */
+    notifyCancelRequested(conversationId: string): void;
     /** Reports a settled turn to an active goal loop; returns whether the loop is active (it then owns the follow-up). */
     notifyGoalLoopTurnSettled(settlement: QaapGoalLoopTurnSettlement): boolean;
     /** Ends an active goal loop as `cancelled` on the given snapshot (composer Stop). */
@@ -362,7 +364,8 @@ export interface QaapAgentConversationStoreContext {
     cwdMatchesGithubRepo(cwd: string, owner: string, repo: string): boolean;
     parseGithubRepoFromCwd(cwd: string): { owner: string; name: string } | undefined;
     readGitBranch(cwd: string): string | undefined;
-    mutatingGit(cwd: string, args: string[], env?: NodeJS.ProcessEnv, timeoutMs?: number): Promise<QaapGitRunResult>;
+    mutatingGit(cwd: string, args: string[], env?: NodeJS.ProcessEnv, timeoutMs?: number, input?: string | Buffer): Promise<QaapGitRunResult>;
+    mutatingGitBuffer(cwd: string, args: string[], timeoutMs?: number): Promise<QaapGitBufferRunResult>;
     /** Serialize an async git job with every other checkpoint/restore job on the same repository. */
     runSerializedGit<T>(cwd: string, job: () => Promise<T>): Promise<T>;
     captureGitSha(cwd: string): string | undefined;

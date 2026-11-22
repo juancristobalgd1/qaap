@@ -1,11 +1,12 @@
 // Extracted from qaap-agent-conversation-store.ts
+import { neutralizeQaapAgentMentions } from '../common/qaap-agent-delegation-protocol';
 import type { QaapAgentEffortLevel } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
 import { logTurnCreatedExtracted } from './qaap-agent-turn-create-log';
 import type { QaapAgentConversationStoreContext } from './qaap-agent-conversation-store-context';
 
 import { randomUUID } from 'crypto';
 
-import { QAAP_GIT_DEFAULT_TIMEOUT_MS, QaapGitRunResult, runGitAsync } from './qaap-agent-conversation-store-git';
+import { QAAP_GIT_DEFAULT_TIMEOUT_MS, QaapGitBufferRunResult, QaapGitRunResult, runGitAsync, runGitBufferAsync } from './qaap-agent-conversation-store-git';
 
 import * as path from 'path';
 import type { QaapLinkedPullRequest } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
@@ -58,18 +59,39 @@ import { qaapMissingCwdError } from './qaap-missing-cwd-error';
  * timeout) resolve with a non-zero / `null` status; this never rejects.
  */
 export function mutatingGitExtracted(ctx: QaapAgentConversationStoreContext, cwd: string, args: string[], env?: NodeJS.ProcessEnv,
-    timeoutMs: number = QAAP_GIT_DEFAULT_TIMEOUT_MS): Promise<QaapGitRunResult> {
+    timeoutMs: number = QAAP_GIT_DEFAULT_TIMEOUT_MS, input?: string | Buffer): Promise<QaapGitRunResult> {
     try {
-        const wrapped = ctx.tenantSpawn.wrapShellForTenant(
-            cwd,
-            'git',
-            ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', ...args],
-        );
-        const runEnv = childProcessEnv({ ...(env ?? process.env), ...ctx.tenantSpawn.tenantHomeEnvOverlay(cwd) });
-        return runGitAsync(wrapped.file, wrapped.args, { cwd, env: runEnv, timeoutMs, maxBuffer: 64 * 1024 * 1024 });
+        const wrapped = wrapMutatingGit(ctx, cwd, args, env);
+        return runGitAsync(wrapped.file, wrapped.args, { cwd, env: wrapped.env, timeoutMs, maxBuffer: 64 * 1024 * 1024, ...(input !== undefined ? { input } : {}) });
     } catch (error) {
         return Promise.resolve({ status: null, stdout: '', stderr: error instanceof Error ? error.message : String(error) });
     }
+}
+
+/** {@link mutatingGitExtracted} with stdout kept as the exact bytes git wrote (for patches). */
+export function mutatingGitBufferExtracted(ctx: QaapAgentConversationStoreContext, cwd: string, args: string[],
+    timeoutMs: number = QAAP_GIT_DEFAULT_TIMEOUT_MS): Promise<QaapGitBufferRunResult> {
+    try {
+        const wrapped = wrapMutatingGit(ctx, cwd, args);
+        return runGitBufferAsync(wrapped.file, wrapped.args, { cwd, env: wrapped.env, timeoutMs, maxBuffer: 64 * 1024 * 1024 });
+    } catch (error) {
+        return Promise.resolve({ status: null, stdout: Buffer.alloc(0), stderr: error instanceof Error ? error.message : String(error) });
+    }
+}
+
+/** The tenant-wrapped invocation and environment shared by the mutating git runners. */
+function wrapMutatingGit(ctx: QaapAgentConversationStoreContext, cwd: string, args: string[], env?: NodeJS.ProcessEnv): {
+    readonly file: string;
+    readonly args: string[];
+    readonly env: NodeJS.ProcessEnv;
+} {
+    const wrapped = ctx.tenantSpawn.wrapShellForTenant(
+        cwd,
+        'git',
+        ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', ...args],
+    );
+    const runEnv = childProcessEnv({ ...(env ?? process.env), ...ctx.tenantSpawn.tenantHomeEnvOverlay(cwd) });
+    return { file: wrapped.file, args: wrapped.args, env: runEnv };
 }
 
 export function initExtracted(ctx: QaapAgentConversationStoreContext): void {
@@ -181,9 +203,13 @@ export function createExtracted(ctx: QaapAgentConversationStoreContext, request:
     }
     const requestedAgent = (request.agent ?? '').trim();
     const seedAgent = requestedAgent || ctx.taskRunner.defaultAgent(ownerLogin);
-    const firstMessage = (request.message ?? '').trim();
+    // A delegated child's first message is model-written: its `@mentions` never route the turn (see below).
+    const firstMessage = request.delegation ? neutralizeQaapAgentMentions((request.message ?? '').trim()) : (request.message ?? '').trim();
     const agentId = firstMessage
-        ? ctx.resolveTurnAgent({ id: '', cwd, agentId: seedAgent, title: '', status: 'idle', createdAt: 0, updatedAt: 0, messages: [] }, firstMessage, request.agent)
+        ? ctx.resolveTurnAgent({
+            id: '', cwd, agentId: seedAgent, title: '', status: 'idle', createdAt: 0, updatedAt: 0, messages: [],
+            ...(request.delegation ? { delegation: request.delegation } : {}),
+        }, firstMessage, request.agent)
         : seedAgent;
     if (agentId === QAIQ_AGENT_ID) {
         // The HTTP endpoint performs the same preflight for a clean client error. Keep this
@@ -230,6 +256,7 @@ export function createExtracted(ctx: QaapAgentConversationStoreContext, request:
         ...(request.origin === 'side-chat' && request.sideChatParentId ? { sideChatParentId: request.sideChatParentId } : {}),
         ...(request.taskPlanSubtaskId ? { taskPlanSubtaskId: request.taskPlanSubtaskId } : {}),
         ...(request.taskPullRequestEnabled === false ? { taskPullRequestEnabled: false } : {}),
+        ...(request.delegation ? { delegation: request.delegation } : {}),
         ...(request.externalTask ? { externalTask: request.externalTask } : {}),
         ...(() => {
             const agentModel = request.agentModel ?? request.qaiqModel;
@@ -254,7 +281,12 @@ export function createExtracted(ctx: QaapAgentConversationStoreContext, request:
             request.approvalPolicyId,
             request.toolApprovalRules,
             request.latencyMarks,
-            request.messageContextPreamble ? { contextPreamble: request.messageContextPreamble } : undefined,
+            request.messageContextPreamble || request.delegation
+                ? {
+                    ...(request.messageContextPreamble ? { contextPreamble: request.messageContextPreamble } : {}),
+                    ...(request.delegation ? { noMentionRouting: true } : {}),
+                }
+                : undefined,
         );
         // The planning turn's user message: the plan belongs to it (see buildTaskCreateRequestExtracted).
         const started = ctx.conversations.get(id);
@@ -608,6 +640,11 @@ export function postUserMessageExtracted(ctx: QaapAgentConversationStoreContext,
     internal?: PostUserMessageInternalOptions,
     deliveryMode: QaapMessageDeliveryMode = QAAP_DEFAULT_DELIVERY_MODE,
     effort?: QaapAgentEffortLevel, ): QaapAgentConversation {
+    if (internal?.noMentionRouting) {
+        // Model-written text (a delegated child's prompt, a follow-up with reports): an `@agent` in it must not
+        // route the turn. Stored neutralized, so a later drain or retry of the same message cannot route it either.
+        content = neutralizeQaapAgentMentions(content);
+    }
     let conv = ctx.conversations.get(id);
     if (!conv) {
         throw new Error('Conversation not found.');
@@ -1009,6 +1046,8 @@ export function cancelExtracted(ctx: QaapAgentConversationStoreContext, id: stri
     if (!conv) {
         return undefined;
     }
+    // Before the idle no-op below: an idle parent can still have delegated children running, and Stop ends them.
+    ctx.notifyCancelRequested?.(id);
     // Stop is session-wide: with in-session multitasking there can be several runs streaming
     // at once, and cancelling only the newest would leave the others working behind a UI that
     // says the session is idle. Every live run is cancelled and every open agent message

@@ -6,6 +6,7 @@
 // Phase 12 extractions from QaapAgentConversationStore.
 // Each function receives its dependencies explicitly — no instance state access.
 
+import { isQaapAgentDelegationEnabled } from '../common/qaap-agent-delegation-protocol';
 import { randomUUID } from 'crypto';
 import {
     toConversationSummary,
@@ -128,6 +129,7 @@ export function buildTaskCreateRequest(
             ? { autoApprove: false }
             : {}),
         ...(requestConv.contextPreamble ? { contextPreamble: requestConv.contextPreamble } : {}),
+        ...qaapDelegationRoleFor(requestConv, lastUser?.id),
         ...(requestConv.interactionModeId ? { interactionModeId: requestConv.interactionModeId } : {}),
         ...(requestConv.effort ? { effort: requestConv.effort } : {}),
         ...(requestConv.approvalPolicyId ? { approvalPolicyId: requestConv.approvalPolicyId } : {}),
@@ -217,4 +219,21 @@ export function recordGitAction(
     deps.fire({ type: 'updated', conversation: toConversationSummary(next) });
     void deps.persist();
     return next;
+}
+
+/**
+ * The turn's place in agent delegation, only while the feature is on (off: no field at all). `child` only for the
+ * turn the delegation service started (a delegated child's first user message, retried or resumed): a person
+ * writing to a child later, or a fork, runs an ordinary turn. `parent`: a top-level conversation's turn. Fan-out
+ * subtasks and other conversations with a parent get neither.
+ */
+export function qaapDelegationRoleFor(conv: QaapAgentConversation, turnUserMessageId: string | undefined): { delegationRole?: 'parent' | 'child' } {
+    if (!isQaapAgentDelegationEnabled(process.env)) {
+        return {};
+    }
+    if (conv.delegation) {
+        const firstUser = conv.messages.find(message => message.role === 'user');
+        return firstUser && firstUser.id === turnUserMessageId ? { delegationRole: 'child' } : {};
+    }
+    return conv.parentConversationId ? {} : { delegationRole: 'parent' };
 }

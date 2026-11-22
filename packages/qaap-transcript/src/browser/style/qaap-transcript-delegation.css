@@ -1,0 +1,313 @@
+/********************************************************************************
+ * Copyright (C) 2026 Theia contributors and Qaap product fork.
+ * SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
+ ********************************************************************************/
+
+/*
+ * Agent delegation card shown inline under `qaaq_delegate` tool calls
+ * (qaap-transcript-delegation-ui.ts). Uses theme and Conservador DNA tokens only,
+ * with no hard-coded colors and no `:has()` selectors.
+ */
+
+@keyframes qaap-delegation-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.88);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.theia-mobile-agent-delegation {
+  display: flex;
+  flex-direction: column;
+  gap: var(--q-space-3, 6px);
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
+  max-width: 100%;
+  margin: var(--q-space-3, 6px) 0;
+  padding: var(--q-space-4, 8px) var(--q-space-5, 10px);
+  border: 1px solid var(--q-line, var(--theia-widget-border, var(--theia-panel-border)));
+  border-radius: var(--q-radius-card, 14px);
+  background: var(--q-surface, var(--theia-editorWidget-background));
+  color: var(--q-text, var(--theia-foreground));
+  font-family: var(--q-font-sans, var(--theia-ui-font-family, sans-serif));
+  font-size: var(--q-text-body, 14px);
+  line-height: var(--q-leading-snug, 1.25);
+}
+
+.theia-mobile-agent-delegation-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--q-space-3, 6px);
+  min-width: 0;
+  padding: 0 var(--q-space-1, 2px);
+  color: var(--q-muted, var(--theia-descriptionForeground));
+  font-size: var(--q-text-overline, 11px);
+  font-weight: 600;
+  letter-spacing: 0.35px;
+  line-height: var(--q-leading-snug, 1.25);
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+}
+
+.theia-mobile-agent-delegation-chips {
+  display: flex;
+  flex-direction: column;
+  gap: var(--q-space-2, 4px);
+  min-width: 0;
+  min-height: 0;
+}
+
+.theia-mobile-agent-delegation-chip {
+  appearance: none;
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--q-space-2, 4px) var(--q-space-4, 8px);
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  margin: 0;
+  padding: var(--q-space-3, 6px) var(--q-space-5, 10px);
+  border: 1px solid var(--q-line, var(--theia-widget-border, var(--theia-panel-border)));
+  border-radius: var(--q-radius-row, 12px);
+  background: var(--q-surface-alt, var(--theia-sideBar-background, var(--theia-editorWidget-background)));
+  color: var(--q-text, var(--theia-foreground));
+  font-family: inherit;
+  font-size: var(--q-text-body, 14px);
+  line-height: var(--q-leading-snug, 1.25);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+
+.theia-mobile-agent-delegation-chip:hover:not(:disabled) {
+  background: var(--q-line-soft, var(--theia-list-hoverBackground));
+  border-color: color-mix(in srgb, var(--q-text, var(--theia-foreground)) 22%, var(--q-line, var(--theia-widget-border, var(--theia-panel-border))));
+}
+
+.theia-mobile-agent-delegation-chip:active:not(:disabled) {
+  background: var(--theia-list-activeSelectionBackground, var(--q-line-soft, var(--theia-list-hoverBackground)));
+}
+
+.theia-mobile-agent-delegation-chip:focus-visible {
+  outline: 2px solid var(--theia-focusBorder);
+  outline-offset: 1px;
+}
+
+.theia-mobile-agent-delegation-chip:disabled {
+  cursor: default;
+}
+
+.theia-mobile-agent-delegation-chip-running {
+  border-color: color-mix(in srgb, var(--theia-textLink-foreground, var(--theia-focusBorder)) 32%, var(--q-line, var(--theia-widget-border, var(--theia-panel-border))));
+}
+
+.theia-mobile-agent-delegation-chip-blocked {
+  border-color: color-mix(in srgb, var(--q-warning, var(--theia-editorWarning-foreground)) 38%, var(--q-line, var(--theia-widget-border, var(--theia-panel-border))));
+}
+
+.theia-mobile-agent-delegation-chip-failed {
+  border-color: color-mix(in srgb, var(--q-danger, var(--theia-errorForeground, var(--theia-testing-iconFailed))) 36%, var(--q-line, var(--theia-widget-border, var(--theia-panel-border))));
+}
+
+.theia-mobile-agent-delegation-chip-cancelled .theia-mobile-agent-delegation-chip-title {
+  color: var(--q-muted, var(--theia-descriptionForeground));
+}
+
+.theia-mobile-agent-delegation-chip-title {
+  order: 1;
+  flex: 1 1 160px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--q-text, var(--theia-foreground));
+  font-size: var(--q-text-body, 14px);
+  font-weight: 500;
+}
+
+.theia-mobile-agent-delegation-chip-meta {
+  order: 2;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--q-muted, var(--theia-descriptionForeground));
+  font-family: var(--q-font-mono, var(--theia-code-font-family, monospace));
+  font-size: var(--q-text-overline, 11px);
+  line-height: var(--q-leading-snug, 1.25);
+}
+
+.theia-mobile-agent-delegation-chip-state {
+  order: 3;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--q-space-2, 4px);
+  padding: var(--q-space-1, 2px) var(--q-space-4, 8px);
+  border: 1px solid color-mix(in srgb, var(--q-muted, var(--theia-descriptionForeground)) 32%, transparent);
+  border-radius: var(--q-radius-pill, 99px);
+  background: color-mix(in srgb, var(--q-muted, var(--theia-descriptionForeground)) 8%, transparent);
+  color: var(--q-muted, var(--theia-descriptionForeground));
+  font-size: var(--q-text-overline, 11px);
+  font-weight: 600;
+  line-height: var(--q-leading-snug, 1.25);
+  white-space: nowrap;
+}
+
+.theia-mobile-agent-delegation-chip-state::before {
+  content: '';
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--q-radius-pill, 99px);
+  background: currentColor;
+}
+
+.theia-mobile-agent-delegation-chip-state-queued {
+  color: var(--q-muted, var(--theia-descriptionForeground));
+  border-color: color-mix(in srgb, var(--q-muted, var(--theia-descriptionForeground)) 32%, transparent);
+  background: color-mix(in srgb, var(--q-muted, var(--theia-descriptionForeground)) 8%, transparent);
+}
+
+.theia-mobile-agent-delegation-chip-state-queued::before {
+  background: transparent;
+  border: 1.5px solid currentColor;
+}
+
+.theia-mobile-agent-delegation-chip-state-running {
+  color: var(--theia-textLink-foreground, var(--theia-focusBorder));
+  border-color: color-mix(in srgb, var(--theia-textLink-foreground, var(--theia-focusBorder)) 38%, transparent);
+  background: color-mix(in srgb, var(--theia-textLink-foreground, var(--theia-focusBorder)) 12%, transparent);
+}
+
+.theia-mobile-agent-delegation-chip-state-running::before {
+  animation: qaap-delegation-pulse 1.8s ease-in-out infinite;
+}
+
+.theia-mobile-agent-delegation-chip-state-completed {
+  color: var(--q-success, var(--theia-testing-iconPassed));
+  border-color: color-mix(in srgb, var(--q-success, var(--theia-testing-iconPassed)) 35%, transparent);
+  background: color-mix(in srgb, var(--q-success, var(--theia-testing-iconPassed)) 11%, transparent);
+}
+
+.theia-mobile-agent-delegation-chip-state-blocked {
+  color: var(--q-warning, var(--theia-editorWarning-foreground));
+  border-color: color-mix(in srgb, var(--q-warning, var(--theia-editorWarning-foreground)) 42%, transparent);
+  background: color-mix(in srgb, var(--q-warning, var(--theia-editorWarning-foreground)) 13%, transparent);
+}
+
+.theia-mobile-agent-delegation-chip-state-failed {
+  color: var(--q-danger, var(--theia-errorForeground, var(--theia-testing-iconFailed)));
+  border-color: color-mix(in srgb, var(--q-danger, var(--theia-errorForeground, var(--theia-testing-iconFailed))) 42%, transparent);
+  background: color-mix(in srgb, var(--q-danger, var(--theia-errorForeground, var(--theia-testing-iconFailed))) 12%, transparent);
+}
+
+.theia-mobile-agent-delegation-chip-state-cancelled {
+  color: var(--q-muted, var(--theia-descriptionForeground));
+  border-color: color-mix(in srgb, var(--q-muted, var(--theia-descriptionForeground)) 28%, transparent);
+  background: transparent;
+}
+
+.theia-mobile-agent-delegation-chip-state-cancelled::before {
+  border-radius: 1px;
+  opacity: 0.7;
+}
+
+.theia-mobile-agent-delegation-chip-usage {
+  order: 4;
+  flex: 0 0 auto;
+  color: var(--q-muted, var(--theia-descriptionForeground));
+  font-family: var(--q-font-mono, var(--theia-code-font-family, monospace));
+  font-size: var(--q-text-overline, 11px);
+  line-height: var(--q-leading-snug, 1.25);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.theia-mobile-agent-delegation-chip-meta:empty,
+.theia-mobile-agent-delegation-chip-usage:empty {
+  display: none;
+}
+
+.theia-mobile-agent-delegation-chip-chevron {
+  order: 5;
+  flex: 0 0 auto;
+  color: var(--q-muted, var(--theia-descriptionForeground));
+  font-size: var(--q-text-meta, 13px);
+  opacity: 0.7;
+  transition: opacity 140ms ease;
+}
+
+.theia-mobile-agent-delegation-chip:hover:not(:disabled) .theia-mobile-agent-delegation-chip-chevron {
+  opacity: 1;
+  color: var(--q-text, var(--theia-foreground));
+}
+
+/* Narrow viewport (767px, matches MOBILE_NARROW_VIEWPORT_MEDIA_QUERY). */
+@media (max-width: 767px) {
+  .theia-mobile-agent-delegation {
+    padding: var(--q-space-4, 8px);
+  }
+
+  .theia-mobile-agent-delegation-chip {
+    min-height: 44px;
+    padding: var(--q-space-4, 8px) var(--q-space-5, 10px);
+    gap: var(--q-space-2, 4px) var(--q-space-3, 6px);
+  }
+
+  /* Two-row compact card on phones: title + chevron on row 1, state + meta + usage on row 2. */
+  .theia-mobile-agent-delegation-chip-title {
+    order: 1;
+    flex: 1 1 calc(100% - 28px);
+  }
+
+  .theia-mobile-agent-delegation-chip-chevron {
+    order: 2;
+  }
+
+  .theia-mobile-agent-delegation-chip-state {
+    order: 3;
+  }
+
+  .theia-mobile-agent-delegation-chip-meta {
+    order: 4;
+    flex: 1 1 auto;
+    max-width: none;
+  }
+
+  .theia-mobile-agent-delegation-chip-usage {
+    order: 5;
+    margin-left: auto;
+  }
+}
+
+@media (pointer: coarse) {
+  .theia-mobile-agent-delegation-chip {
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theia-mobile-agent-delegation-chip,
+  .theia-mobile-agent-delegation-chip-chevron {
+    transition: none;
+  }
+
+  .theia-mobile-agent-delegation-chip-state-running::before {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}

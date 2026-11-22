@@ -247,7 +247,7 @@ export function buildChildEnvExtracted(ctx: QaapAgentTaskRunnerContext, task: Qa
         // Gate credentials are seeded only in the harness spawn (see spawnProcessExtracted); a child that
         // runs repo code (verification scripts, git) must never inherit one, even from the backend env.
         for (const key of Object.keys(env)) {
-            if (key.startsWith('QAAP_GATE_')) {
+            if (key.startsWith('QAAP_GATE_') || key.startsWith('QAAP_DELEGATION_')) {
                 delete env[key];
             }
         }

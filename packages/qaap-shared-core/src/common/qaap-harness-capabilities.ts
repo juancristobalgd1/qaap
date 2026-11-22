@@ -14,6 +14,15 @@ export type QaapGateTransport = 'native-stdio' | 'hook' | 'plugin' | 'extension'
  */
 export type QaapWhenAskUnsupported = 'runs-unchecked' | 'refuses';
 
+/**
+ * How the harness receives Qaap's delegation MCP server (`qaaq`, see `qaap-agent-delegation-protocol.ts`).
+ * `claude-mcp-config`: `--mcp-config <file>` on the command line, a 0600 file in a private per-task directory
+ * that holds the token (Claude Code). `codex-config`: an `[mcp_servers.qaaq]` table in the per-task `CODEX_HOME`
+ * overlay. `opencode-config`: an `mcp` entry in the inline `OPENCODE_CONFIG_CONTENT`, which names only a 0600
+ * token file (never the token itself). `none`: the harness gets no delegation tools.
+ */
+export type QaapDelegateMcpTransport = 'claude-mcp-config' | 'codex-config' | 'opencode-config' | 'none';
+
 /** Where the cost of a turn comes from. `none` when Qaap cannot show a cost for the harness. */
 export type QaapCostSource = 'reported' | 'price-table' | 'estimate' | 'none';
 
@@ -37,6 +46,8 @@ export interface QaapHarnessCapabilities {
     trustedFolderArgs: string[];
     /** Env vars that make the harness ignore repo config (plugins, agents, MCP, instructions) when the folder is untrusted. */
     untrustedFolderEnv?: Readonly<Record<string, string>>;
+    /** How the delegation MCP server reaches this harness; absent = `none`. */
+    delegateMcp?: QaapDelegateMcpTransport;
     /** Which usage parser reads this harness's output; `none` when no parser is wired. */
     usage: 'qaiq' | 'claude' | 'codex' | 'opencode' | 'pi-json' | 'none';
     costSource: QaapCostSource;
@@ -134,6 +145,8 @@ const QAAP_HARNESS_CAPABILITY_ENTRIES: readonly QaapHarnessCapabilities[] = [
         untrustedFolderArgs: ['--setting-sources', 'user', '--strict-mcp-config'],
         usage: 'claude',
         costSource: 'reported',
+        // `--mcp-config` servers still load under `--strict-mcp-config` (it drops only the other sources).
+        delegateMcp: 'claude-mcp-config',
     },
     // Codex: a per-task CODEX_HOME overlay installs a PreToolUse hook that calls the HTTP gate. Spike on
     // codex-cli 0.165: a hook may block for at least 150 s (the `timeout` is accepted up to 900 s) and the
@@ -148,6 +161,7 @@ const QAAP_HARNESS_CAPABILITY_ENTRIES: readonly QaapHarnessCapabilities[] = [
         whenAskUnsupported: 'refuses',
         shellGuard: 'gate',
         usage: 'codex',
+        delegateMcp: 'codex-config',
         costSource: 'price-table',
     },
     // OpenCode: Qaap's plugin (`OPENCODE_CONFIG_CONTENT`) awaits the HTTP gate in `tool.execute.before`, so the
@@ -167,6 +181,7 @@ const QAAP_HARNESS_CAPABILITY_ENTRIES: readonly QaapHarnessCapabilities[] = [
             OPENCODE_DISABLE_CLAUDE_CODE: '1',
         },
         usage: 'opencode',
+        delegateMcp: 'opencode-config',
         costSource: 'price-table',
     },
     // Pi has no permission system of its own; Qaap's `-e` extension routes every tool_call through the
