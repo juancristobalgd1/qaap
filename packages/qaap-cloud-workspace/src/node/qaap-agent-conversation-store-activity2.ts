@@ -503,7 +503,8 @@ export async function applyTaskOutcomeExtracted(ctx: QaapAgentConversationStoreC
     if (closingReport && shouldSurfaceAgentClosingReport(closingReport)) {
         withReply = ctx.appendClosingReportTrace(withReply, agentMessageId, closingReport);
     }
-    withReply = recordTurnVerdict(withReply, userMessageId, task, blockedNeed, Date.now(), closingReport);
+    // The runner keeps the turn's usage on the task; a fresh detail wins over the task snapshot taken at spawn.
+    withReply = recordTurnVerdict(withReply, userMessageId, { ...task, usage: detail?.usage ?? task.usage }, blockedNeed, Date.now(), closingReport);
     const finalizedAgentMessageId = settledAgentMessage?.id ?? agentMessageId;
     withReply = ctx.clearRunActive(withReply, finalizedAgentMessageId);
     ctx.conversations.set(conversationId, withReply);
@@ -581,7 +582,7 @@ export async function maybeRetryTurnWithFallbackExtracted(ctx: QaapAgentConversa
 export function recordTurnVerdict(
     conv: QaapAgentConversation,
     userMessageId: string,
-    task: Pick<QaapAgentTask, 'state' | 'verification' | 'review' | 'readOnlyWorkspace'>,
+    task: Pick<QaapAgentTask, 'state' | 'verification' | 'review' | 'readOnlyWorkspace' | 'usage'>,
     blockedNeed: string | undefined,
     now: number = Date.now(),
     closingReport?: QaapAgentClosingReport,
@@ -593,6 +594,7 @@ export function recordTurnVerdict(
         ...(blockedNeed !== undefined ? { blockedNeed } : {}),
         ...(task.readOnlyWorkspace ? { readOnly: true } : {}),
         ...(closingReport ? { closingReport } : {}),
+        ...(task.usage ? { usage: task.usage } : {}),
         settledAt: now,
     };
     return {

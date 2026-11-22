@@ -5,6 +5,8 @@
 
 import type { QaapAgentClosingReport } from './qaap-agent-closing-report';
 import type { QaapExternalTaskOrigin } from './qaap-external-task';
+import type { QaapDelegationIsolation } from './qaap-agent-delegation-protocol';
+import type { QaapTurnUsage } from './qaap-turn-usage';
 import type { QaapProviderRetryStatus } from '@theia/qaap-shared-core/lib/common/qaap-pi-json-stream';
 import { buildConversationListMetrics } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-list-metrics';
 import { agentActivityField, excerptConversationMessageError, isLastTurnCancelled } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
@@ -276,7 +278,59 @@ export interface QaapAgentTurnVerdict {
     readonly readOnly?: boolean;
     /** The task's deterministic closing report, kept here so it outlives the pruned task. */
     readonly closingReport?: QaapAgentClosingReport;
+    /** What the turn consumed, when the harness reported it (see `qaap-turn-usage.ts`). Absent on older turns. */
+    readonly usage?: QaapTurnUsage;
     readonly settledAt: number;
+}
+
+/**
+ * Set on a child created by `qaaq_delegate` (see `qaap-agent-delegation-protocol.ts`). Absent on every
+ * other conversation, so existing records stay valid.
+ */
+export interface QaapConversationDelegation {
+    /** The parent turn (its user message id) that created the child; scopes the per-turn child cap. */
+    readonly parentTurnId?: string;
+    readonly isolation: QaapDelegationIsolation;
+    /** Depth of the delegation tree; children are always depth 1. */
+    readonly depth: number;
+    /** Commit of the parent's HEAD when the child was created; the base of its diff stat. */
+    readonly baseSha?: string;
+    /**
+     * The human turn the creating turn belongs to (itself, or the root of a backend follow-up). The per-turn
+     * child cap and the follow-up cap count per root, so follow-up turns cannot multiply them.
+     */
+    readonly rootTurnId?: string;
+    /** First message of a child waiting for a concurrency slot. Durable: the queue survives a restart. */
+    readonly pendingPrompt?: string;
+    /** Why the child could never start (its first message failed, or it was lost before starting). */
+    readonly startFailure?: string;
+    /** The parent (or a cancel of the parent's turn) stopped this child. */
+    readonly cancelRequested?: boolean;
+    /** When the parent received this child's report (wait or follow-up turn). Durable: delivered exactly once. */
+    readonly deliveredAt?: number;
+    /** When `qaaq_child_apply` brought this child's change into the parent. */
+    readonly appliedAt?: number;
+    /**
+     * When an `apply` left this child's change half-applied with conflict markers in the parent: applying again
+     * would duplicate the hunks that did apply, so further applies are refused (`already-applied`).
+     */
+    readonly applyConflictAt?: number;
+    /** When the child's worktree was cleaned up (removed, or committed to its branch and removed). */
+    readonly worktreeCollectedAt?: number;
+}
+
+/**
+ * The part of {@link QaapConversationDelegation} that list views and the live feed carry: everything but the
+ * queued first message (a prompt of up to tens of KB per child), which `queued` stands in for.
+ */
+export type QaapConversationDelegationSummary = Omit<QaapConversationDelegation, 'pendingPrompt'> & { readonly queued?: true };
+
+/** Durable delegation bookkeeping of a PARENT conversation (absent until it delegates). */
+export interface QaapConversationDelegationParent {
+    /** Backend follow-up turns posted per root human turn, bounded by `QAAP_AGENT_DELEGATION_MAX_FOLLOW_UPS`. */
+    readonly followUps: Readonly<Record<string, number>>;
+    /** Root turn the user cancelled: its children's reports never wake the parent. */
+    readonly suppressedRootTurnId?: string;
 }
 
 /** A persistent multi-turn thread with an agent, tied to a working directory. */
@@ -363,6 +417,10 @@ export interface QaapAgentConversation {
     readonly taskPlanSubtaskId?: string;
     /** Set when the task was started from outside the app (a GitHub issue): doc/qaap-external-task-inputs.md. */
     readonly externalTask?: QaapExternalTaskOrigin;
+    /** Set on a child started by `qaaq_delegate`: its parent turn, isolation and base commit. */
+    readonly delegation?: QaapConversationDelegation;
+    /** Set on a parent once it delegated: follow-up accounting (see `qaap-agent-delegation-service.ts`). */
+    readonly delegationParent?: QaapConversationDelegationParent;
     /** Latest context snapshot when the agent CLI reports stream-json usage. */
     readonly contextUsage?: QaapAgentContextUsage;
     /** Denominator for the context meter (defaults to {@link DEFAULT_QAAP_CONTEXT_WINDOW}). */
@@ -471,6 +529,8 @@ export interface QaapAgentConversationSummary {
     readonly taskPlan?: QaapTaskPlan;
     /** Set on a subtask's child conversation: the conversation whose plan created it. */
     readonly parentConversationId?: string;
+    /** Set on a child created by `qaaq_delegate`: how it was made and where its report and change stand. Never holds a credential. */
+    readonly delegation?: QaapConversationDelegationSummary;
     /** Set on a side chat: a quick conversation opened beside another one (`doc/qaap-side-chat.md`). */
     readonly origin?: QaapAgentConversationOrigin;
     /** Set on a side chat: the conversation it was opened from. Not the plan-fan-out link (`parentConversationId`). */
@@ -585,6 +645,8 @@ export interface QaapCreateAgentConversationRequest {
     readonly taskPullRequestEnabled?: boolean;
     /** Server-side only (the HTTP endpoint drops it): the external origin of the task. */
     readonly externalTask?: QaapExternalTaskOrigin;
+    /** Server-side only (the HTTP endpoint drops it): set by the delegation service on its children. */
+    readonly delegation?: QaapConversationDelegation;
 }
 
 export interface QaapPostAgentMessageRequest {
@@ -795,6 +857,11 @@ function turnAgentIdsField(messages: ReadonlyArray<{ readonly role: string; read
     return ids.length > 0 ? { turnAgentIds: ids } : {};
 }
 
+function summarizeDelegation(delegation: QaapConversationDelegation): QaapConversationDelegationSummary {
+    const { pendingPrompt, ...rest } = delegation;
+    return pendingPrompt !== undefined ? { ...rest, queued: true } : rest;
+}
+
 export function toConversationSummary(conv: QaapAgentConversation): QaapAgentConversationSummary {
     const last = conv.messages[conv.messages.length - 1];
     const lastTurn = [...conv.messages].reverse().find(message => message.role === 'user' && (message.turnAgentId || message.turnAgentModel));
@@ -843,6 +910,7 @@ export function toConversationSummary(conv: QaapAgentConversation): QaapAgentCon
         ...(conv.pullRequestWatch ? { pullRequestWatch: summarizePullRequestWatch(conv.pullRequestWatch) } : {}),
         ...(conv.taskPlan ? { taskPlan: conv.taskPlan } : {}),
         ...(conv.parentConversationId ? { parentConversationId: conv.parentConversationId } : {}),
+        ...(conv.delegation ? { delegation: summarizeDelegation(conv.delegation) } : {}),
         ...(conv.origin ? { origin: conv.origin } : {}),
         ...(conv.sideChatParentId ? { sideChatParentId: conv.sideChatParentId } : {}),
         ...(conv.taskPlanSubtaskId ? { taskPlanSubtaskId: conv.taskPlanSubtaskId } : {}),

@@ -18,6 +18,17 @@ import { QaapQaiqProviderKeyMissingError } from './qaap-qaiq-provider-preflight'
 import { QaapAgentSignInRequiredError } from './qaap-agent-sign-in-preflight';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { awaitQaapAgentTaskSpawnGate } from './qaap-agent-task-spawn-gate';
+import {
+    appendQaapDelegationLaunchArgs,
+    applyQaapOpencodeDelegation,
+    buildQaapDelegationMcpConfig,
+    currentQaapDelegationMcpConfigOptions,
+    QAAP_AGENT_DELEGATION_GUIDANCE,
+    releaseQaapDelegationMcpConfigFile,
+    writeQaapDelegationMcpConfigFile,
+    type QaapDelegationWiring,
+} from './qaap-agent-delegation-launch';
+import { isQaapAgentDelegationEnabled, QAAP_AGENT_DELEGATION_TOKEN_ENV, QAAP_AGENT_DELEGATION_URL_ENV } from '../common/qaap-agent-delegation-protocol';
 import { finishTaskWithPauseCause, logCancelExitExtracted, releaseStoppingTaskSlotOnExitExtracted } from './qaap-agent-task-runner-streaming2';
 import { createOpencodeFatalStderrWatcher } from './qaap-opencode-fatal-error';
 import { createPiProviderErrorWatcher } from './qaap-pi-provider-error-watcher';
@@ -580,6 +591,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
         let childEnv: NodeJS.ProcessEnv | undefined;
         let codexGateOverlay: QaapCodexGateOverlay | undefined;
         let spawnCommand = task.command;
+        let delegation: QaapDelegationWiring | undefined;
         try {
             ctx.enforceAgentIsolationPolicy();
             await ctx.ensureAgentCwdOwnershipAsync(task.cwd);
@@ -624,6 +636,27 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             }
             // Only the harness process gets gate credentials: issuing a token revokes the previous one.
             ctx.applyToolGateEnv(childEnv, task);
+            // Delegation (flag-gated, writable parent turns only): a separate token and a per-task server name.
+            delegation = ctx.applyAgentDelegationEnv?.(childEnv, task);
+            if (delegation?.transport === 'claude-mcp-config') {
+                // The config (with the token) goes to a private 0600 file; only its path is on the command line.
+                const identity = ctx.resolveAgentSpawnIdentity(task.cwd);
+                const owner = typeof identity?.uid === 'number' ? { uid: identity.uid, ...(identity.gid !== undefined ? { gid: identity.gid } : {}) } : undefined;
+                const file = writeQaapDelegationMcpConfigFile(task.id, buildQaapDelegationMcpConfig(currentQaapDelegationMcpConfigOptions(), delegation), owner);
+                spawnCommand = appendQaapDelegationLaunchArgs(spawnCommand, file, quoteShellArg);
+            } else if (delegation?.transport === 'opencode-config') {
+                if (opencodeGatePluginSeeded(childEnv)) {
+                    // Only next to the armed gate plugin: without it OpenCode's own rules refuse the tools anyway.
+                    // The token goes to a private 0600 file; the inline config (inherited by OpenCode's bash and MCP servers) holds only its path.
+                    const identity = ctx.resolveAgentSpawnIdentity(task.cwd);
+                    const owner = typeof identity?.uid === 'number' ? { uid: identity.uid, ...(identity.gid !== undefined ? { gid: identity.gid } : {}) } : undefined;
+                    if (!applyQaapOpencodeDelegation(childEnv, task.id, delegation, owner)) {
+                        delegation = undefined;
+                    }
+                } else {
+                    delegation = undefined;
+                }
+            }
             // Fails closed before any Codex process: no token while the gate is wired means no gate for its tool calls.
             assertCodexGateTokenIssued({
                 agentId: ctx.resolveTaskAgentId(task),
@@ -644,8 +677,18 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                     // In a task sandbox Codex has its own /tmp: the overlay must sit where it sees the same path.
                     overlayRoot: resolveCodexGateOverlayRoot(ctx.agentSandboxFor?.(task.cwd)),
                     ownSandboxOff: ctx.runsInTaskSandbox?.() === true,
+                    ...(delegation?.transport === 'codex-config'
+                        ? { delegationMcp: { ...currentQaapDelegationMcpConfigOptions(), serverName: delegation.mcpServerName, instructions: QAAP_AGENT_DELEGATION_GUIDANCE } }
+                        : {}),
                 }, childEnv);
                 childEnv.CODEX_HOME = codexGateOverlay.codexHome;
+                if (codexGateOverlay.delegationSkipped) {
+                    // The owner's shell policy could not be merged safely: no delegation this turn, and the token
+                    // must not sit in Codex's environment (its shell tool would inherit it).
+                    delegation = undefined;
+                    delete childEnv[QAAP_AGENT_DELEGATION_URL_ENV];
+                    delete childEnv[QAAP_AGENT_DELEGATION_TOKEN_ENV];
+                }
                 if (ctx.runsInTaskSandbox?.() === true) {
                     console.info('[qaap-codex] task sandbox container: Codex own sandbox off (container isolates)');
                 }
@@ -676,6 +719,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             codexGateOverlay?.dispose();
             ctx.stdinPrompts.delete(task.id);
             removeAgentPromptTempDirHelper(ctx.promptTempDirs.get(task.id));
+            releaseQaapDelegationMcpConfigFile(task.id);
             ctx.promptTempDirs.delete(task.id);
             // A step that failed after Stop settled the task (e.g. the sandbox start aborted) is a
             // skipped spawn too: finishing it as `failed` would overwrite `cancelled`.
@@ -796,6 +840,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                         options: {
                             autoApproveReadOnlyShell: readAutoApproveReadOnlyShell(),
                             allowSubagentTools: ctx.resolveTaskAgentId(task) === 'claude',
+                            ...(delegation ? { delegationServer: delegation.mcpServerName } : {}),
                             cwd: task.cwd,
                             checkGitExecConfig: () => ctx.checkGitExecConfig(task.cwd),
                             checkPathsInsideCwd: paths => ctx.checkShellPathsInsideCwd(task.cwd, paths),
@@ -977,6 +1022,14 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
         });
         child.on('close', exitCode => {
             clearTimeout(exitAfterResultTimer);
+            // The turn's usage from its final result line, kept on the task: the conversation settle copies it to the turn verdict.
+            // Only with delegation on (its cost totals read it): with the flag off the persisted task is unchanged.
+            const turnUsage = isQaapAgentDelegationEnabled(process.env) ? finalResultWatcher?.result?.usage : undefined;
+            const usageTask = ctx.tasks.get(task.id);
+            if (turnUsage && usageTask?.state === 'running') {
+                ctx.tasks.set(task.id, { ...usageTask, usage: turnUsage });
+                void ctx.persist();
+            }
             // Ended by Qaap after a complete result: settle on the result, not on the kill signal.
             const code = exitCode === null && endedAfterResult ? (endedAfterResult.isError ? 1 : 0) : exitCode;
             clearChangeScopeWatch();

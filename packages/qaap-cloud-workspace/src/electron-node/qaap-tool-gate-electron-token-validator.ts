@@ -7,15 +7,19 @@ import * as http from 'http';
 import { injectable } from '@theia/core/shared/inversify';
 import { ElectronTokenValidator } from '@theia/core/lib/electron-node/token/electron-token-validator';
 import { QAAP_TOOL_GATE_API_PATH } from '@theia/qaap-shared-core/lib/common/qaap-tool-gate-protocol';
+import { QAAP_AGENT_DELEGATION_API_PATH, QAAP_AGENT_DELEGATION_ROUTES } from '../common/qaap-agent-delegation-protocol';
 
 /**
  * The tool-gate routes, matched on the raw path (no normalization, so `..` or encoded segments never
  * match). They are called by the agent's own harness plugin (Pi, OpenCode, Codex hook), a separate
  * process without the window's cookie, and authenticate with the per-task gate token instead.
  */
-const QAAP_TOOL_GATE_ELECTRON_ROUTES: ReadonlySet<string> = new Set(
-    ['health', 'arm', 'evaluate'].map(route => `${QAAP_TOOL_GATE_API_PATH}/${route}`),
-);
+const QAAP_TOOL_GATE_ELECTRON_ROUTES: ReadonlySet<string> = new Set([
+    ...['health', 'arm', 'evaluate'].map(route => `${QAAP_TOOL_GATE_API_PATH}/${route}`),
+    // Agent delegation: called by the MCP shim of a parent turn's harness, authenticated by its delegation token
+    // (the endpoint answers 404 while the flag is off and 401 without a live token).
+    ...Object.values(QAAP_AGENT_DELEGATION_ROUTES).map(route => `${QAAP_AGENT_DELEGATION_API_PATH}${route}`),
+]);
 
 /**
  * On the desktop app the Electron backend refuses every HTTP request without the window's security

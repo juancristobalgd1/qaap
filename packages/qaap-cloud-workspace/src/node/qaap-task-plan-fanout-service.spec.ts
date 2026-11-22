@@ -177,6 +177,26 @@ describe('QaapTaskPlanFanOutService', function (): void {
         expect(service.shouldPlan({ message: 'Fix the bug', fanOut: false }, 'qaiq')).to.equal(false);
     });
 
+    it('does not plan a task whose parent orchestrates delegated children', () => {
+        const service = makeService(new FakeStore());
+        delete process.env.QAAP_TASK_FANOUT;
+        process.env.QAAP_AGENT_DELEGATION = '1';
+        // claude is wired for delegateMcp: with delegation on, the delegation parent plans nothing.
+        expect(service.shouldPlan({ message: 'Fix the bug', fanOut: true }, 'claude')).to.equal(false);
+        // Same predicate as the runner (any delegateMcp transport): Codex and OpenCode orchestrate too.
+        expect(service.shouldPlan({ message: 'Fix the bug', fanOut: true }, 'codex')).to.equal(false);
+        expect(service.shouldPlan({ message: 'Fix the bug', fanOut: true }, 'opencode')).to.equal(false);
+        // A harness without delegateMcp keeps the fan-out (openclaude is not wired for delegation).
+        expect(service.shouldPlan({ message: 'Fix the bug', fanOut: true }, 'openclaude')).to.equal(
+            makeService(new FakeStore()).shouldPlan({ message: 'Fix the bug', fanOut: true }, 'openclaude', undefined),
+        );
+        delete process.env.QAAP_AGENT_DELEGATION;
+        // With delegation off the claude parent plans exactly as before.
+        expect(service.shouldPlan({ message: 'Fix the bug', fanOut: true }, 'claude')).to.equal(true);
+        expect(service.shouldPlan({ message: 'Fix the bug', fanOut: true }, 'codex')).to.equal(true);
+        expect(service.shouldPlan({ message: 'Fix the bug', fanOut: true }, 'qaiq')).to.equal(true);
+    });
+
     it('composes subtasks onto the pre-turn snapshot and writes the tree without touching the index or dirty files', async () => {
         const store = new FakeStore();
         const service = makeService(store);

@@ -208,3 +208,26 @@ describe('visualVerificationPending summary flag', () => {
         expect(conversationNeedsVisualVerificationEvidence(conv)).to.equal(false);
     });
 });
+
+describe('toConversationSummary delegation', () => {
+    it('carries parentConversationId and the delegation bookkeeping of a child, without its queued prompt', () => {
+        const queued = toConversationSummary(conversation({
+            status: 'idle',
+            parentConversationId: 'parent-1',
+            delegation: { isolation: 'worktree', depth: 1, parentTurnId: 't1', baseSha: 'abc', pendingPrompt: 'a long model-written prompt' },
+        }));
+        expect(queued.parentConversationId).to.equal('parent-1');
+        expect(queued.delegation).to.deep.equal({ isolation: 'worktree', depth: 1, parentTurnId: 't1', baseSha: 'abc', queued: true });
+        expect(JSON.stringify(queued)).to.not.contain('a long model-written prompt');
+        const applied = toConversationSummary(conversation({
+            status: 'idle',
+            parentConversationId: 'parent-1',
+            delegation: { isolation: 'readonly', depth: 1, appliedAt: 5, deliveredAt: 6 },
+        }));
+        expect(applied.delegation).to.deep.equal({ isolation: 'readonly', depth: 1, appliedAt: 5, deliveredAt: 6 });
+    });
+
+    it('leaves the field out of an ordinary conversation', () => {
+        expect(toConversationSummary(conversation({ status: 'idle' }))).to.not.have.property('delegation');
+    });
+});

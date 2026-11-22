@@ -172,4 +172,24 @@ describe('QaapAgentTaskRunner per-repository concurrency cap', () => {
         runner.exposeDrainQueuedTasks();
         expect(tasks.get(a2.id)?.state).to.equal('running');
     });
+    it('runs a delegated child on its parent\'s slot: per-repo and per-user caps do not queue it, the global cap still does', () => {
+        process.env[MAX_CONCURRENT_AGENTS_PER_REPO_ENV] = '1';
+        const savedUser = process.env.QAAP_MAX_CONCURRENT_AGENTS_PER_USER;
+        process.env.QAAP_MAX_CONCURRENT_AGENTS_PER_USER = '1';
+        try {
+            const { runner } = createFixture(3);
+            const parent = runner.create({ prompt: 'parent', cwd: '/repo-a', delegationRole: 'parent' }, 'alice');
+            const plain = runner.create({ prompt: 'plain', cwd: '/repo-a' }, 'alice');
+            const child = runner.create({ prompt: 'child', cwd: '/repo-a', ownWorkingTree: true, delegationRole: 'child' }, 'alice');
+            const child2 = runner.create({ prompt: 'child2', cwd: '/repo-a', ownWorkingTree: true, delegationRole: 'child' }, 'alice');
+            const overGlobal = runner.create({ prompt: 'child3', cwd: '/repo-a', ownWorkingTree: true, delegationRole: 'child' }, 'alice');
+            expect([parent.state, plain.state, child.state, child2.state, overGlobal.state]).to.deep.equal(['running', 'queued', 'running', 'running', 'queued']);
+        } finally {
+            if (savedUser === undefined) {
+                delete process.env.QAAP_MAX_CONCURRENT_AGENTS_PER_USER;
+            } else {
+                process.env.QAAP_MAX_CONCURRENT_AGENTS_PER_USER = savedUser;
+            }
+        }
+    });
 });

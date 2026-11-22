@@ -22,6 +22,8 @@ import type {
     QaapCreateAgentConversationRequest,
 } from '../common/qaap-agent-conversation';
 import { canEnforceReadOnlyWorkspace } from '../common/qaap-agent-readonly-workspace';
+import { isQaapAgentDelegationEnabled } from '../common/qaap-agent-delegation-protocol';
+import { resolveQaapHarnessCapabilities } from '@theia/qaap-shared-core/lib/common/qaap-harness-capabilities';
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 import type { QaapGoalLoopTurnOutcome, QaapGoalLoopTurnSettlement } from './qaap-agent-conversation-store-constants';
 import type { QaapGitRunResult } from './qaap-agent-conversation-store-git';
@@ -93,6 +95,15 @@ export class QaapTaskPlanFanOutService implements BackendApplicationContribution
         return 'auto';
     }
 
+    /**
+     * True when delegation is on and the harness of `agentId` receives the delegation MCP tools: the same
+     * predicate as the runner's `wantsAgentDelegation` (any `delegateMcp` transport but `none`).
+     */
+    protected delegatesItself(agentId: string): boolean {
+        return isQaapAgentDelegationEnabled(process.env)
+            && (resolveQaapHarnessCapabilities(agentId).delegateMcp ?? 'none') !== 'none';
+    }
+
     protected autoRunMs(): number {
         return this.readIntEnv('QAAP_TASK_FANOUT_AUTORUN_MS', QAAP_TASK_FANOUT_DEFAULT_AUTORUN_MS, 0);
     }
@@ -125,6 +136,11 @@ export class QaapTaskPlanFanOutService implements BackendApplicationContribution
         }
         const interaction = request.interactionModeId?.trim().toLowerCase();
         if (interaction && interaction !== 'agent') {
+            return false;
+        }
+        // A parent that can delegate (flag on, harness wired for delegateMcp) orchestrates its own children:
+        // a second planner would fan the same task out again. Same predicate the runner uses to wire the tools.
+        if (agentId && this.delegatesItself(agentId)) {
             return false;
         }
         if (!agentId || !canEnforceReadOnlyWorkspace(agentId)) {

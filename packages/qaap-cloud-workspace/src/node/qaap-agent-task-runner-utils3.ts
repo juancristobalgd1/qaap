@@ -329,6 +329,26 @@ export const PI_CONNECTION_PROBE_SCRIPT = 'f="${PI_CODING_AGENT_DIR:-$HOME/.pi/a
 export const GROK_CONNECTION_PROBE_SCRIPT = 'f="$HOME/.grok/auth.json"; [ -s "$f" ] && grep -Eq \'"(access_token|refresh_token|token|session_token|api_key|user_id)"[[:space:]]*:[[:space:]]*"[^"]\' "$f" 2>/dev/null && echo "logged in" || echo "not logged in"';
 
 /**
+ * Windows counterpart of {@link GROK_CONNECTION_PROBE_SCRIPT}. Windows has no POSIX `sh` to run that script, so
+ * the probe runs as PowerShell, which every Windows install ships. Same test and same output phrases: the file is
+ * `~/.grok/auth.json` (`USERPROFILE`, or `HOME` when that is missing), and any error reads as `not logged in`.
+ * The script is passed as one argv element (no shell) and has no double quotes of its own: the JSON key quotes
+ * are written as `\x22`, which the regex reads as `"`.
+ */
+export const GROK_CONNECTION_PROBE_POWERSHELL = '$ErrorActionPreference = \'Stop\'; $h = $env:USERPROFILE; if (-not $h) { $h = $env:HOME }; '
+    + 'try { $f = Join-Path $h \'.grok\\auth.json\'; '
+    + 'if ((Test-Path -LiteralPath $f -PathType Leaf) -and ((Get-Item -LiteralPath $f).Length -gt 0) '
+    + '-and ((Get-Content -LiteralPath $f -Raw) -cmatch \'\\x22(access_token|refresh_token|token|session_token|api_key|user_id)\\x22\\s*:\\s*\\x22[^\\x22]\')) '
+    + '{ Write-Output \'logged in\' } else { Write-Output \'not logged in\' } } '
+    + 'catch { Write-Output \'not logged in\' }';
+
+/** Absolute path of the Windows PowerShell that ships with every Windows install (`%SystemRoot%`, else `C:\\Windows`). */
+export function resolveWindowsPowerShellPath(env: NodeJS.ProcessEnv = process.env): string {
+    const systemRoot = env.SystemRoot?.trim() || env.SYSTEMROOT?.trim() || env.windir?.trim() || 'C:\\Windows';
+    return path.win32.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+}
+
+/**
  * Copilot CLI has no status command. `copilot login` records the account in `~/.copilot/config.json`
  * (`loggedInUsers: [{ host, login, kind }]`; the token itself sits in the OS keychain or, without one, in the same
  * file) and sign-out removes it. A recorded account is a session; its absence is NOT a sign-out (Copilot also runs
@@ -366,6 +386,11 @@ export function resolveAgentConnectionProbe(agentId: string, bin: string): { rea
     }
     if (normalized === 'grok' && process.platform !== 'win32') {
         return { file: 'sh', args: ['-c', GROK_CONNECTION_PROBE_SCRIPT] };
+    }
+    if (normalized === 'grok' && process.platform === 'win32') {
+        // No POSIX shell on Windows: the same check runs in PowerShell, which every Windows install ships. Absolute
+        // path: a bare `powershell.exe` is looked up in the cwd first on Windows, where a repo could plant one.
+        return { file: resolveWindowsPowerShellPath(), args: ['-NoProfile', '-NonInteractive', '-Command', GROK_CONNECTION_PROBE_POWERSHELL] };
     }
     if (normalized === 'codex' && process.platform !== 'win32') {
         // No POSIX shell on Windows: there the CLI's own `login status` answers alone.

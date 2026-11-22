@@ -13,6 +13,7 @@
 // `import type` throughout to avoid a runtime import cycle with the extracted modules (all of which
 // are imported back into `qaap-agent-task-runner.ts`).
 
+import type { QaapDelegationWiring } from './qaap-agent-delegation-launch';
 import type { QaapHarnessEnvSecretStore } from './qaap-harness-env-secret-store';
 import type { QaapAgentEffortLevel } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
 import type { Emitter } from '@theia/core/lib/common/event';
@@ -392,4 +393,9 @@ export interface QaapAgentTaskRunnerContext {
     /** Whether this backend runs the tool gate at all (token service and helper URL present). */
     toolGateWired(): boolean;
     applyToolGateEnv(env: NodeJS.ProcessEnv, task: Pick<QaapAgentTask, 'id' | 'ownerLogin' | 'cwd' | 'agentId' | 'command'>): void;
+    /** Issues a parent turn's delegation credentials; what the spawn needs to wire the delegation MCP server, or undefined. */
+    applyAgentDelegationEnv?(
+        env: NodeJS.ProcessEnv,
+        task: Pick<QaapAgentTask, 'id' | 'ownerLogin' | 'cwd' | 'agentId' | 'command' | 'delegationRole' | 'readOnlyWorkspace'>,
+    ): QaapDelegationWiring | undefined;
 }

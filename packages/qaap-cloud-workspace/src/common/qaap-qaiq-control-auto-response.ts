@@ -9,6 +9,7 @@ import { findQaiqDevServerGuardDenial } from './qaap-agent-dev-server-guard';
 import { buildSubagentDeniedMessage, extractRequestedSubagentType, isBlockedHeadlessTool } from './qaap-agent-subagent-policy';
 import { commandUsesDefaultToolSet, parseQaiqCoreTools } from './qaap-qaiq-tool-policy';
 import type { QaapQaiqPendingControlRequest } from './qaap-qaiq-stdio-approvals';
+import { isQaapDelegationToolAutoAllowed } from './qaap-agent-delegation-protocol';
 
 const VERIFICATION_SUBAGENT_TYPE = 'verification';
 
@@ -57,6 +58,13 @@ export interface QaapQaiqControlAutoOptions {
      * sets it from the harness id; the tools those subagents run still reach this gate on their own.
      */
     readonly allowSubagentTools?: boolean;
+    /**
+     * The per-task name of the delegation MCP server the runner wired into this turn (`qaaq_<nonce>`). Exactly its
+     * tools run without a card in every approval mode: they only start, wait for or stop child turns, and every tool
+     * call of a child goes through the gate under the parent's own approval policy. Unset unless the runner injected it.
+     * PreToolUse hooks were already screened before this evaluation (`preToolUseHookGate`), so a hook deny wins.
+     */
+    readonly delegationServer?: string;
 }
 
 const NETWORK_TOOL_NAMES = new Set(['WebSearch', 'WebFetch', 'Fetch']);
@@ -114,6 +122,9 @@ export function resolveQaiqControlRequestAutoDecision(
     // so this guard denies BEFORE the manual-approval queue — it can never be approved.
     if (findQaiqDevServerGuardDenial(request)) {
         return { action: 'deny' };
+    }
+    if (isQaapDelegationToolAutoAllowed(request.toolName, options.delegationServer, autoApprove)) {
+        return { action: 'allow' };
     }
     const readOnly = classifyReadOnlyShellRequest(command, request, options);
     if (readOnly?.allowed) {

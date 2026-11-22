@@ -25,6 +25,12 @@ describe('QaapAgentFinalResultWatcher', () => {
         expect(watcher.push('not json "result"\n')).to.equal(undefined);
     });
 
+    it('carries the usage the CLI reported in its final result', () => {
+        const watcher = new QaapAgentFinalResultWatcher();
+        const line = '{"type":"result","subtype":"success","is_error":false,"total_cost_usd":0.02,"usage":{"input_tokens":5,"output_tokens":7}}\n';
+        expect(watcher.push(line)).to.deep.equal({ isError: false, usage: { inputTokens: 5, outputTokens: 7, costUsd: 0.02, source: 'reported' } });
+    });
+
     it('applies to the Claude-style stream-json harnesses only', () => {
         expect(emitsStreamJsonFinalResult('claude')).to.equal(true);
         expect(emitsStreamJsonFinalResult('openclaude')).to.equal(true);

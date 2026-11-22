@@ -54,6 +54,11 @@ import { QaapToolGateTokenService } from './qaap-tool-gate-token-service';
 import { QaapToolGateAskBroker } from './qaap-tool-gate-ask-broker';
 import { applyOpencodeGateEnv, opencodeGatePluginSeeded, usesOpencodeGatePlugin } from './qaap-tool-gate-opencode-adapter';
 import { QAAP_TOOL_GATE_API_PATH } from '@theia/qaap-shared-core/lib/common/qaap-tool-gate-protocol';
+import { isQaapAgentDelegationEnabled, QAAP_AGENT_DELEGATION_TOKEN_ENV, QAAP_AGENT_DELEGATION_URL_ENV } from '../common/qaap-agent-delegation-protocol';
+import { QAAP_DELEGATION_MCP_TOOL_TIMEOUT_MS, releaseQaapDelegationMcpConfigFile, type QaapDelegationWiring } from './qaap-agent-delegation-launch';
+
+/** Task fields the delegation wiring reads. */
+type QaapAgentDelegationTaskFields = Pick<QaapAgentTask, 'id' | 'ownerLogin' | 'cwd' | 'agentId' | 'command' | 'delegationRole' | 'readOnlyWorkspace'>;
 import { resolveQaapHarnessCapabilities } from '@theia/qaap-shared-core/lib/common/qaap-harness-capabilities';
 import { QaapProjectFolderTrustStore, resolveProjectFolderTrustRoot } from './qaap-project-folder-trust-store';
 import { QaapHostedWorktreeRegistry } from '@theia/qaap-shared-core/lib/node/qaap-hosted-worktree-registry';
@@ -2317,6 +2322,58 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         return grant.release;
     }
 
+    /**
+     * Whether this turn should get the delegation tools: the flag is on, the task is a top-level conversation
+     * turn (`delegationRole: 'parent'`, never a child), it may write (a read-only / plan turn must not gain writes
+     * through a child), its harness takes the server (`delegateMcp`), the gate token service runs, and it is not
+     * inside a task sandbox (the shim is not visible there yet).
+     */
+    protected wantsAgentDelegation(task: QaapAgentDelegationTaskFields): boolean {
+        if (!isQaapAgentDelegationEnabled(process.env) || task.delegationRole !== 'parent' || task.readOnlyWorkspace
+            || !this.toolGateTokens || !this.helperApiUrl) {
+            return false;
+        }
+        const transport = resolveQaapHarnessCapabilities(this.resolveTaskAgentId(task as QaapAgentTask)).delegateMcp ?? 'none';
+        return transport !== 'none' && !this.agentSandboxFor(task.cwd);
+    }
+
+    /**
+     * Issues the turn's delegation credentials when {@link wantsAgentDelegation}: a SEPARATE token (scope `delegate`
+     * only; the gate token stays plain) and a random MCP server name. Returns what the spawn needs to wire the
+     * server, or undefined. Only Codex gets the token in its environment (its `env_vars` forwarding needs it); for
+     * Claude and OpenCode it travels in the server config only (see `qaap-agent-delegation-launch.ts`). HTTP-gated
+     * harnesses get delegation only next to their gate token. The token dies with the task.
+     * @internal Used by the extracted qaap-agent-task-runner-* modules.
+     */
+    applyAgentDelegationEnv(env: NodeJS.ProcessEnv, task: QaapAgentDelegationTaskFields): QaapDelegationWiring | undefined {
+        if (!this.wantsAgentDelegation(task) || !this.toolGateTokens) {
+            return undefined;
+        }
+        const transport = resolveQaapHarnessCapabilities(this.resolveTaskAgentId(task as QaapAgentTask)).delegateMcp;
+        if (transport !== 'claude-mcp-config' && transport !== 'codex-config' && transport !== 'opencode-config') {
+            return undefined;
+        }
+        if (transport !== 'claude-mcp-config' && !env.QAAP_GATE_TOKEN) {
+            // An HTTP-gated harness without its gate token runs ungated: it gets no delegation either.
+            return undefined;
+        }
+        const origin = this.resolveAgentReachableOrigin(task.cwd);
+        const issued = origin ? this.toolGateTokens.issueDelegation(task.id, task.ownerLogin, task.cwd, 0) : undefined;
+        if (!origin || !issued) {
+            return undefined;
+        }
+        addAgentReachableNoProxy(env, origin);
+        if (transport === 'codex-config') {
+            env[QAAP_AGENT_DELEGATION_URL_ENV] = origin;
+            env[QAAP_AGENT_DELEGATION_TOKEN_ENV] = issued.token;
+        }
+        if (transport === 'claude-mcp-config' && !env.MCP_TOOL_TIMEOUT?.trim()) {
+            // A wait may block for minutes; keep Claude Code's MCP tool-call timeout above it.
+            env.MCP_TOOL_TIMEOUT = String(QAAP_DELEGATION_MCP_TOOL_TIMEOUT_MS);
+        }
+        return { transport, mcpServerName: issued.mcpServerName, url: origin, token: issued.token };
+    }
+
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
     applyToolGateEnv(env: NodeJS.ProcessEnv, task: Pick<QaapAgentTask, 'id' | 'ownerLogin' | 'cwd' | 'agentId' | 'command'>): void {
         if (!this.toolGateTokens || !this.helperApiUrl) {
@@ -2359,6 +2416,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         const task = finishTaskExtracted(this, id, state, exitCode);
         // The gate token dies with the task, and anything still waiting on a human is denied.
         this.toolGateTokens?.revoke(id);
+        releaseQaapDelegationMcpConfigFile(id);
         this.toolGateAsks?.cancelTask(id);
         this.releaseTenantOperation(id);
         this.taskSandbox?.release(id);

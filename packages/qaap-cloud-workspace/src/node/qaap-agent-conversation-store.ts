@@ -72,7 +72,7 @@ import {
     resolveVisualVerificationFile as resolveVisualVerificationFileHelper,
     sweepUnreferencedVisualEvidence as sweepUnreferencedVisualEvidenceHelper,
 } from './qaap-agent-conversation-store-visual';
-import { parseGithubRepoFromCwd as parseGithubRepoFromCwdHelper, readGitBranch as readGitBranchHelper, captureGitSha as captureGitShaHelper, computeGitDiffStats as computeGitDiffStatsHelper, QaapGitCwdSerializer, QaapGitRunResult, runGitAsync,checkpointLabel as checkpointLabelHelper, isDirectory as isDirectoryHelper, } from './qaap-agent-conversation-store-git';
+import { parseGithubRepoFromCwd as parseGithubRepoFromCwdHelper, readGitBranch as readGitBranchHelper, captureGitSha as captureGitShaHelper, computeGitDiffStats as computeGitDiffStatsHelper, QaapGitCwdSerializer, QaapGitBufferRunResult, QaapGitRunResult, runGitAsync,checkpointLabel as checkpointLabelHelper, isDirectory as isDirectoryHelper, } from './qaap-agent-conversation-store-git';
 import {
     resolveLoopBudgetKey as resolveLoopBudgetKeyHelper,
     countAutoContinueAttempts as countAutoContinueAttemptsHelper,
@@ -107,7 +107,7 @@ export {
     QaapMaxConcurrentRunsError,
     parseGitNumstat,
 } from './qaap-agent-conversation-store-constants';
-import { cancelExtracted, cancelQueuedMessageExtracted, createExtracted, dispatchQueuedMessageExtracted, drainPendingMessagesExtracted, enqueuePendingMessageExtracted, getActiveTaskIdForConversationExtracted, getActiveTaskIdsForConversationExtracted, getExtracted, hasActiveTaskForUserMessageExtracted, hasOtherActiveTaskForConversationExtracted, initExtracted, interruptConversationRunsExtracted, linkConversationsToPullRequestExtracted, listExtracted, maybeDrainAtToolRoundBoundaryExtracted, mutatingGitExtracted, postUserMessageExtracted, retryExtracted, settleStatusForRunExtracted, type QaapConversationRetryOptions } from './qaap-agent-conversation-store-render2';
+import { cancelExtracted, cancelQueuedMessageExtracted, createExtracted, dispatchQueuedMessageExtracted, drainPendingMessagesExtracted, enqueuePendingMessageExtracted, getActiveTaskIdForConversationExtracted, getActiveTaskIdsForConversationExtracted, getExtracted, hasActiveTaskForUserMessageExtracted, hasOtherActiveTaskForConversationExtracted, initExtracted, interruptConversationRunsExtracted, linkConversationsToPullRequestExtracted, listExtracted, maybeDrainAtToolRoundBoundaryExtracted, mutatingGitBufferExtracted, mutatingGitExtracted, postUserMessageExtracted, retryExtracted, settleStatusForRunExtracted, type QaapConversationRetryOptions } from './qaap-agent-conversation-store-render2';
 import { attachVisualVerificationBlockExtracted, cancelRunExtracted, continueVisualRepairLoopExtracted, startVisualRepairProposalExtracted, deleteExtracted, failVisualRepairLoopExtracted, forkExtracted, recordVisualVerificationExtracted, recordVisualVerificationVideoExtracted, resolveVisualEvidenceTargetExtracted, resolveVisualRepairSourceUserMessageExtracted, updateExtracted } from './qaap-agent-conversation-store-streaming2';
 import { applyAgUiTaskOutputExtracted, applyTaskOutputExtracted, deliverSubtaskMailboxExtracted, findConversationIdForLeaderTaskExtracted, finishLeaderTurnAndMaybeSynthesizeExtracted, maybeTriggerTeamSynthesisExtracted, onTaskChangedExtracted, parseStructuredLogExtracted, readVisualVerificationExtracted, recordGitActionExtracted, recordSubmitLatencyMarksExtracted, recordTaskLatencyMarksExtracted, recordVisualVerificationFailureExtracted, recordVisualVerificationFlowExtracted, resolveLeaderTaskIdExtracted } from './qaap-agent-conversation-store-timeline2';
 import { applyAccumulatorStructuredOutputExtracted, applyTaskOutcomeExtracted, backfillAgentMessageFromStructuredLogExtracted, maybeRetryTurnWithFallbackExtracted, resolveStructuredParsedTraceEventsExtracted } from './qaap-agent-conversation-store-activity2';
@@ -147,8 +147,13 @@ export class QaapAgentConversationStore implements QaapAgentConversationStoreCon
     public readonly tenantSpawn!: QaapTenantSpawnService;
 
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
-    public mutatingGit(cwd: string, args: string[], env?: NodeJS.ProcessEnv, timeoutMs?: number): Promise<QaapGitRunResult> {
-        return mutatingGitExtracted(this, cwd, args, env, timeoutMs);
+    public mutatingGit(cwd: string, args: string[], env?: NodeJS.ProcessEnv, timeoutMs?: number, input?: string | Buffer): Promise<QaapGitRunResult> {
+        return mutatingGitExtracted(this, cwd, args, env, timeoutMs, input);
+    }
+
+    /** @internal Like {@link mutatingGit} but stdout is the exact bytes git wrote (patches). */
+    public mutatingGitBuffer(cwd: string, args: string[], timeoutMs?: number): Promise<QaapGitBufferRunResult> {
+        return mutatingGitBufferExtracted(this, cwd, args, timeoutMs);
     }
 
     /** Per-repository chain for checkpoint/restore git sequences (see {@link QaapGitCwdSerializer}). */
@@ -254,6 +259,9 @@ export class QaapAgentConversationStore implements QaapAgentConversationStoreCon
     public readonly onDidChangeStampedEmitter = new Emitter<QaapConversationLogEntry>();
     /** Same events as {@link onDidChange}, stamped with their sequence number (fires right after it). */
     readonly onDidChangeStamped: Event<QaapConversationLogEntry> = this.onDidChangeStampedEmitter.event;
+    protected readonly onDidRequestCancelEmitter = new Emitter<string>();
+    /** A Stop reached `cancel(id)` (whether or not the conversation had a live run). Lets delegation cascade it to children. */
+    readonly onDidRequestCancel: Event<string> = this.onDidRequestCancelEmitter.event;
     protected readonly onDidSettleTurnEmitter = new Emitter<QaapGoalLoopTurnSettlement>();
     /** Every terminally settled turn (success, blocked, failed, cancelled), goal loop or not. */
     readonly onDidSettleTurn: Event<QaapGoalLoopTurnSettlement> = this.onDidSettleTurnEmitter.event;
@@ -615,6 +623,25 @@ export class QaapAgentConversationStore implements QaapAgentConversationStoreCon
         return next;
     }
 
+    /**
+     * Replaces the delegation bookkeeping of a conversation (`delegation` on a child, `delegationParent` on a
+     * parent) and persists it at once: the delegation queue and its delivered reports must survive a restart.
+     */
+    setDelegationState(
+        conversationId: string,
+        patch: Pick<Partial<QaapAgentConversation>, 'delegation' | 'delegationParent'>,
+    ): QaapAgentConversation | undefined {
+        const conv = this.conversations.get(conversationId);
+        if (!conv) {
+            return undefined;
+        }
+        const next: QaapAgentConversation = { ...conv, ...patch, updatedAt: Date.now() };
+        this.conversations.set(conversationId, next);
+        this.fire({ type: 'updated', conversation: toConversationSummary(next) });
+        this.flushPersist();
+        return next;
+    }
+
     /** Replaces the conversation's task plan (roadmap H3.1) and publishes it. */
     setTaskPlan(conversationId: string, taskPlan: QaapTaskPlan | undefined, patch: Pick<Partial<QaapAgentConversation>, 'interactionModeId'> = {}): QaapAgentConversation | undefined {
         const conv = this.conversations.get(conversationId);
@@ -626,6 +653,12 @@ export class QaapAgentConversationStore implements QaapAgentConversationStoreCon
         this.fire({ type: 'updated', conversation: toConversationSummary(next) });
         this.flushPersist();
         return next;
+    }
+
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public notifyCancelRequested(conversationId: string): void {
+        // Optional: specs build the store from its prototype, without field initializers.
+        this.onDidRequestCancelEmitter?.fire(conversationId);
     }
 
     /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */

@@ -322,6 +322,7 @@ describe('QAAP_HAS_STATE_CLASS_RULES stylesheets', () => {
         'qaap-mobile-shell/src/browser/style/qaap-mobile-touch-scroll.css',
         'qaap-product-theme/src/browser/style/qaap-chat-scroll-edges.css',
         'qaap-product-theme/src/browser/style/qaap-chat-scroll-to-bottom.css',
+        'qaap-transcript/src/browser/style/qaap-transcript-delegation.css',
         'qaap-transcript/src/browser/style/qaap-transcript-live-status.css',
         'qaap-work-hub/src/browser/style/mobile-workbench-base.css',
         'qaap-work-hub/src/browser/style/mobile-workbench-conversation.css',
