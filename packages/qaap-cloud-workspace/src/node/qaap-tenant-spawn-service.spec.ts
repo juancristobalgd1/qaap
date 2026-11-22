@@ -478,6 +478,46 @@ describe('QaapTenantSpawnService tenant backend workspace ACL', () => {
         });
     });
 
+    it('sweeps the whole tenant worktrees root for a delegated child worktree and tolerates a 0700 agent dir inside it', () => {
+        class WorktreeSweepService extends TenantBackendAclTestService {
+            sweptRoots: string[] = [];
+            protected override runTenantAccessCommand(file: string, args: readonly string[]): QaapTenantAccessCommandResult {
+                this.commands.push({ file, args });
+                if (file === 'find') {
+                    this.sweptRoots.push(String(args[0]));
+                    return {
+                        ok: false,
+                        reason: 'find exit status 1',
+                        stderr: [`find: '${String(args[0])}/child-wt/.agent-private': Permission denied`],
+                    };
+                }
+                return { ok: true };
+            }
+            prepare(cwd: string): void {
+                this.ensureTenantBackendAgentWorkspaceAccess(cwd);
+            }
+        }
+        const segment = `alice-sweep-${process.pid}`;
+        const tenantWorktrees = path.join(os.tmpdir(), 'qaap-worktrees', segment);
+        const child = path.join(tenantWorktrees, 'child-wt');
+        const savedWarn = console.warn;
+        const warnings: string[] = [];
+        fs.mkdirSync(child, { recursive: true });
+        console.warn = (...args: unknown[]) => { warnings.push(args.map(String).join(' ')); };
+        try {
+            const service = new WorktreeSweepService();
+            expect(() => service.prepare(child)).not.to.throw();
+            expect(service.sweptRoots.every(root => root === tenantWorktrees)).to.equal(true);
+            expect(warnings.join('\n')).to.include('.agent-private');
+            const after = service.commands.length;
+            service.prepare(child);
+            expect(service.commands.length).to.equal(after);
+        } finally {
+            console.warn = savedWarn;
+            fs.rmSync(tenantWorktrees, { recursive: true, force: true });
+        }
+    });
+
     it('fails the HOME grant with the setfacl reason so the link reports it', () => {
         class RefusingAclService extends TenantBackendAclTestService {
             protected override runTenantAccessCommand(file: string, args: readonly string[]): { ok: boolean; reason?: string } {
