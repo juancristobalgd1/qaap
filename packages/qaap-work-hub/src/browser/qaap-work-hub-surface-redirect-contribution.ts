@@ -8,11 +8,10 @@ import { CommandHandler, CommandRegistry } from '@theia/core/lib/common/command'
 import { DisposableCollection } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
 import { MessageService } from '@theia/core/lib/common/message-service';
-import { quickCommand } from '@theia/core/lib/browser/quick-input/quick-command-service';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
 import { peekPreferDesktopIde } from '@theia/qaap-shared-core/lib/common/qaap-mobile-work-surface-preference';
 import type { QaapTenantBackendUpdate } from '@theia/qaap-shared-core/lib/browser/qaap-tenant-update-client';
-import { QAAP_WORK_HUB_OPEN_COMMAND_SEARCH_COMMAND, QAAP_WORK_HUB_OPEN_SETTINGS_COMMAND } from '../common/qaap-work-hub-command-palette';
+import { QAAP_WORK_HUB_OPEN_SETTINGS_COMMAND } from '../common/qaap-work-hub-command-palette';
 import {
     WORK_HUB_CHECK_FOR_UPDATES_COMMAND_ID,
     WORK_HUB_SETTINGS_COMMAND_REDIRECTS,
@@ -53,14 +52,6 @@ export class QaapWorkHubSurfaceRedirectContribution implements FrontendApplicati
                 ),
             )));
         }
-        // F1 / Cmd+Shift+P / the Command Palette command: the Work Hub search dialog (Commands tab) replaces
-        // the IDE quick-command list while the hub is active. Enabled only when that dialog can open, so the
-        // IDE palette stays the fallback otherwise.
-        this.toDispose.push(this.commands.registerHandler(quickCommand.id, {
-            execute: () => this.commands.executeCommand(QAAP_WORK_HUB_OPEN_COMMAND_SEARCH_COMMAND),
-            isEnabled: () => !peekPreferDesktopIde() && this.commands.isEnabled(QAAP_WORK_HUB_OPEN_COMMAND_SEARCH_COMMAND),
-            isVisible: () => !peekPreferDesktopIde(),
-        }));
         this.toDispose.push(this.commands.registerHandler(
             WORK_HUB_CHECK_FOR_UPDATES_COMMAND_ID,
             this.workHubHandler(() => this.checkForUpdates()),
