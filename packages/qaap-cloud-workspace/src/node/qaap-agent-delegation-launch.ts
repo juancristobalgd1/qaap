@@ -215,6 +215,33 @@ export function resolveQaapDelegationPlacement(
 }
 
 /**
+ * Copies scripts a launcher runs inside a task sandbox (the ACP bridge and its gate client) below the sandbox's
+ * `sharedRoot`, each in a fresh private directory, for one turn. A fresh copy per turn means a copy the agent could
+ * write to (same uid) is never reused by a later turn. The directories are released with the task's delegation
+ * directories ({@link releaseQaapDelegationMcpConfigFile}), so stage them AFTER the delegation placement of the turn.
+ * Returns the staged paths in the order of `files`. Throws when the sandbox shares no directory with the backend.
+ */
+export function stageQaapSandboxScripts(
+    taskId: string,
+    sandbox: Pick<QaapTaskSandbox, 'name' | 'sharedRoot'>,
+    files: readonly { readonly fileName: string; readonly source: string }[],
+    owner?: AgentPromptOwner,
+): string[] {
+    if (!sandbox.sharedRoot) {
+        throw new Error(`The task sandbox ${sandbox.name} shares no directory with the backend, so its launcher scripts cannot reach it.`);
+    }
+    const baseDir = ensureQaapDelegationSandboxBase(sandbox.sharedRoot, owner);
+    sweepSandboxBaseThrottled(baseDir, owner);
+    return files.map(entry => {
+        const staged = writeAgentPromptFile(fs.readFileSync(entry.source, 'utf8'), owner, {
+            fileName: entry.fileName, dirPrefix: `${QAAP_DELEGATION_CONFIG_DIR_PREFIX}script-`, baseDir,
+        });
+        rememberConfigDir(taskId, staged.dir);
+        return staged.file;
+    });
+}
+
+/**
  * Creates (or verifies) `<sharedRoot>/.qaap-delegation`: a real directory of this process, never a planted one.
  * Once it is 1733 (an agent with another uid needs it) it stays 1733: a concurrent direct-mode task must not
  * lock that agent out by lowering it to 0700.

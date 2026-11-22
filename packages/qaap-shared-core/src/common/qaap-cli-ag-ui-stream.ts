@@ -15,6 +15,7 @@ import { QaapAntigravityAgUiStreamEmitter } from './qaap-antigravity-ag-ui-strea
 import { QaapCodexAgUiStreamEmitter } from './qaap-codex-ag-ui-stream';
 import { QaapOpencodeAgUiStreamEmitter } from './qaap-opencode-ag-ui-stream';
 import { QaapQaiqAgUiStreamEmitter } from './qaap-qaiq-ag-ui-stream';
+import { QaapAcpSniffingAgUiEmitter } from './qaap-acp-bridge-stream';
 
 export interface QaapCliAgUiStreamEmitter {
     push(chunk: string): QaapAgUiEvent[];
@@ -29,7 +30,8 @@ export function createAgUiCliStreamEmitter(agentId: string | undefined): QaapCli
         return new QaapCodexAgUiStreamEmitter();
     }
     if (isOpencodeAgent(agentId)) {
-        return new QaapOpencodeAgUiStreamEmitter();
+        // Native `opencode run --format json` or the ACP bridge's Claude stream-json: the first line decides.
+        return new QaapAcpSniffingAgUiEmitter(() => new QaapOpencodeAgUiStreamEmitter());
     }
     if (isAntigravityAgent(agentId)) {
         return new QaapAntigravityAgUiStreamEmitter();

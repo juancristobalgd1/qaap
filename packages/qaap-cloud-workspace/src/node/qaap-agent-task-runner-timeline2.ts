@@ -1,6 +1,7 @@
 import { formatTaskStartLog } from './qaap-agent-conversation-persist-policy';
 import { createAgySignInWaitWatcher } from './qaap-agy-sign-in-wait-watcher';
 import { QAAP_HARNESS_ADAPTER_REGISTRY } from './harness/qaap-harness-adapter-registry';
+import { resolveQaapAcpFlavor, resolveQaapAcpSpawnCommand } from './harness/acp/qaap-acp-bridge-launch';
 import { QAAP_OPENCODE_GATE_PROBE } from './qaap-tool-gate-opencode-probe';
 import {
     opencodeGatePluginSeeded,
@@ -597,6 +598,8 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
         let codexGateOverlay: QaapCodexGateOverlay | undefined;
         let spawnCommand = task.command;
         let delegation: QaapDelegationWiring | undefined;
+        // ACP mode of this harness (per-harness flag): the turn runs through the ACP bridge, which prints Claude stream-json.
+        const acpFlavor = resolveQaapAcpFlavor(ctx.resolveTaskAgentId(task));
         try {
             ctx.enforceAgentIsolationPolicy();
             await ctx.ensureAgentCwdOwnershipAsync(task.cwd);
@@ -721,6 +724,23 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                 if (ctx.runsInTaskSandbox?.() === true) {
                     console.info('[qaap-codex] task sandbox container: Codex own sandbox off (container isolates)');
                 }
+            }
+            if (acpFlavor) {
+                // After the gate and delegation env: the bridge passes them to the agent as its flavor needs.
+                // Staged after the delegation placement, which releases the task's sandbox directories first.
+                const identity = ctx.resolveAgentSpawnIdentity(task.cwd);
+                spawnCommand = resolveQaapAcpSpawnCommand({
+                    flavor: acpFlavor,
+                    taskId: task.id,
+                    command: task.command,
+                    autoApprove: task.autoApprove,
+                    readOnlyWorkspace: task.readOnlyWorkspace,
+                    sandbox: ctx.agentSandboxFor?.(task.cwd),
+                    ...(typeof identity?.uid === 'number' ? { owner: { uid: identity.uid, ...(identity.gid !== undefined ? { gid: identity.gid } : {}) } } : {}),
+                    ...(launchPlan.binaryPath ? { agentBin: launchPlan.binaryPath } : {}),
+                    env: childEnv,
+                    quoteShellArg,
+                });
             }
             if (requestedAdapter.spawnQuirks.removesStaleSnapshotLocks) {
                 // A run killed mid-snapshot leaves index.lock in the tenant's persistent data dir,
@@ -960,7 +980,8 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
         const piProviderErrorWatcher = requestedAdapter.spawnQuirks.watchesProviderErrors ? createPiProviderErrorWatcher() : undefined;
         // Claude Code may take long to exit after its final `result` (telemetry / update checks behind
         // the egress allowlist) while the answer is already complete: end it after a short grace.
-        const finalResultWatcher = requestedAdapter.spawnQuirks.emitsStreamJsonFinalResult ? new QaapAgentFinalResultWatcher() : undefined;
+        // The ACP bridge ends its stream with a Claude `result` line too (and exits right after it).
+        const finalResultWatcher = requestedAdapter.spawnQuirks.emitsStreamJsonFinalResult || acpFlavor ? new QaapAgentFinalResultWatcher() : undefined;
         let exitAfterResultTimer: ReturnType<typeof setTimeout> | undefined;
         let endedAfterResult: QaapAgentFinalResult | undefined;
         // agy without a usable session waits 60 s for a pasted code: stop it on its first sign-in wait line.

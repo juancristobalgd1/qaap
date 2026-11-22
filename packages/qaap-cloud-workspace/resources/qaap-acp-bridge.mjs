@@ -115,6 +115,8 @@ export function parseBridgeArgs(argv) {
 /** The agent's env: the bridge's own, without gate credentials unless the flavor's plugin needs them. */
 export function buildAgentEnv(env, flavor) {
     const out = { ...env };
+    // Set by the launcher only so the bridge itself can run on an Electron binary.
+    delete out.ELECTRON_RUN_AS_NODE;
     if (!flavor.keepGateEnv) {
         for (const name of GATE_ENV) {
             delete out[name];
@@ -648,13 +650,14 @@ export async function runBridgeTurn(options, prompt, io) {
         }
         const result = await request('session/prompt', { sessionId, prompt: [{ type: 'text', text: prompt }] });
         const stopReason = isPlainObject(result) && typeof result.stopReason === 'string' ? result.stopReason : 'error';
-        out(translator.result(stopReason, isPlainObject(result) ? result.usage : undefined));
         const code = exitForStopReason(stopReason);
+        // Before the result line: the runner may end the process shortly after it.
         if (code === EXIT.REFUSAL) {
             note(`${flavor.agentId} refused to continue.`);
         } else if (code === EXIT.LIMIT) {
             note(`${flavor.agentId} stopped at a limit (${stopReason}).`);
         }
+        out(translator.result(stopReason, isPlainObject(result) ? result.usage : undefined));
         return settle(code);
     })();
     turn.catch(error => {

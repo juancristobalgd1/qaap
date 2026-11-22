@@ -3,7 +3,10 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { QAAP_DELEGATION_SANDBOX_NODE, stageQaapSandboxScripts } from '../../qaap-agent-delegation-launch';
+import type { AgentPromptOwner } from '../../qaap-agent-task-runner-utils';
 import { resolveQaapCloudWorkspaceResource } from '../../qaap-cloud-workspace-resource';
+import type { QaapTaskSandbox } from '../../qaap-task-sandbox';
 import { QAAP_TOOL_GATE_PI_EXTENSION_FILE } from '../../qaap-tool-gate-pi-adapter';
 
 /**
@@ -87,4 +90,44 @@ export function extractQaapAcpModelFromCommand(command: string): string | undefi
     const match = /(?:^|\s)(?:--model(?:=|\s+)|-m\s+)(?:'([^']*)'|"([^"]*)"|(\S+))/.exec(command);
     const model = match ? (match[1] ?? match[2] ?? match[3]) : undefined;
     return model?.trim() ? model.trim() : undefined;
+}
+
+/** What {@link resolveQaapAcpSpawnCommand} needs from the turn. */
+export interface QaapAcpSpawnRequest {
+    readonly flavor: QaapAcpFlavorId;
+    readonly taskId: string;
+    /** The native command line the template produced (the model is read from it). */
+    readonly command: string;
+    readonly autoApprove?: boolean;
+    readonly readOnlyWorkspace?: boolean;
+    /** The task sandbox the agent runs in, if any. */
+    readonly sandbox?: Pick<QaapTaskSandbox, 'name' | 'sharedRoot'>;
+    readonly owner?: AgentPromptOwner;
+    readonly agentBin?: string;
+    /** The child env; gets `ELECTRON_RUN_AS_NODE` when the backend's node is Electron (the bridge strips it for the agent). */
+    readonly env: NodeJS.ProcessEnv;
+    readonly quoteShellArg: (value: string) => string;
+}
+
+/** The turn's command line in ACP mode. In a task sandbox the bridge and its gate client are copied fresh for the turn. */
+export function resolveQaapAcpSpawnCommand(request: QaapAcpSpawnRequest): string {
+    const mode = request.readOnlyWorkspace ? 'readonly' : request.autoApprove === false ? 'ask' : 'auto';
+    let nodeBin = process.execPath;
+    let bridgePath = resolveQaapAcpBridgePath();
+    let gateClientPath = resolveQaapAcpGateClientPath();
+    if (request.sandbox) {
+        [bridgePath, gateClientPath] = stageQaapSandboxScripts(request.taskId, request.sandbox, [
+            { fileName: QAAP_ACP_BRIDGE_FILE, source: bridgePath },
+            { fileName: QAAP_TOOL_GATE_PI_EXTENSION_FILE, source: gateClientPath },
+        ], request.owner);
+        nodeBin = QAAP_DELEGATION_SANDBOX_NODE;
+    } else if (typeof process.versions.electron === 'string') {
+        request.env.ELECTRON_RUN_AS_NODE = '1';
+    }
+    const model = extractQaapAcpModelFromCommand(request.command);
+    return buildQaapAcpBridgeCommand({
+        flavor: request.flavor, nodeBin, bridgePath, gateClientPath, mode,
+        ...(model ? { model } : {}),
+        ...(request.agentBin ? { agentBin: request.agentBin } : {}),
+    }, request.quoteShellArg);
 }

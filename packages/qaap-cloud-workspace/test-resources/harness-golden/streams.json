@@ -166,8 +166,8 @@
     "agui:piStream": []
   },
   "opencode": {
-    "accumulator": "QaapOpencodeStreamAccumulator",
-    "agUiEmitter": "QaapOpencodeAgUiStreamEmitter",
+    "accumulator": "QaapAcpSniffingStreamAccumulator",
+    "agUiEmitter": "QaapAcpSniffingAgUiEmitter",
     "parse:plain": {
       "content": "hello world\nsecond line",
       "segments": [
