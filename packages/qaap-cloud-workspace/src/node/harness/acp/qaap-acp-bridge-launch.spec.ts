@@ -17,7 +17,7 @@ import {
     resolveQaapAcpSpawnCommand,
 } from './qaap-acp-bridge-launch';
 
-const quote = (value: string): string => `'${value.replace(/'/g, `'\\''`)}'`;
+const quote = (value: string): string => `'${value.replace(/'/g, '\'\\\'\'')}'`;
 
 describe('qaap-acp-bridge-launch', () => {
 
@@ -56,12 +56,12 @@ describe('qaap-acp-bridge-launch', () => {
         });
         expect(command).to.contain(quote(resolveQaapAcpBridgePath()));
         expect(command).to.contain(quote(resolveQaapAcpGateClientPath()));
-        expect(command).to.contain(`'--mode' 'ask'`);
-        expect(command).to.contain(`'--model' 'a/b'`);
+        expect(command).to.contain('\'--mode\' \'ask\'');
+        expect(command).to.contain('\'--model\' \'a/b\'');
         expect(command).to.not.contain('secret');
-        expect(resolveQaapAcpSpawnCommand({ flavor: 'opencode', taskId: 't1', command: 'x', autoApprove: true, env, quoteShellArg: quote })).to.contain(`'--mode' 'auto'`);
+        expect(resolveQaapAcpSpawnCommand({ flavor: 'opencode', taskId: 't1', command: 'x', autoApprove: true, env, quoteShellArg: quote })).to.contain('\'--mode\' \'auto\'');
         expect(resolveQaapAcpSpawnCommand({ flavor: 'opencode', taskId: 't1', command: 'x', readOnlyWorkspace: true, autoApprove: true, env, quoteShellArg: quote }))
-            .to.contain(`'--mode' 'readonly'`);
+            .to.contain('\'--mode\' \'readonly\'');
     });
 
     it('stages fresh private copies below the sandbox shared root and releases them with the task', () => {
@@ -79,7 +79,7 @@ describe('qaap-acp-bridge-launch', () => {
             }
             expect(fs.readFileSync(staged[0], 'utf8')).to.equal(fs.readFileSync(resolveQaapAcpBridgePath(), 'utf8'));
             expect(fs.readFileSync(staged[1], 'utf8')).to.equal(fs.readFileSync(resolveQaapAcpGateClientPath(), 'utf8'));
-            expect(command.startsWith(`'node' `)).to.equal(true);
+            expect(command.startsWith('\'node\' ')).to.equal(true);
             releaseQaapDelegationMcpConfigFile('sandboxed');
             for (const file of staged) {
                 expect(fs.existsSync(file)).to.equal(false);

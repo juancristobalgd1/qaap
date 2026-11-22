@@ -5,8 +5,7 @@
 
 import type { QaapAgUiEvent } from './qaap-ag-ui-transcript-adapter';
 import type { QaapAgentContextUsage } from './qaap-agent-context-usage';
-import type { QaapAgentMessageSegment } from './qaap-qaiq-stream';
-import { QaapQaiqStreamAccumulator } from './qaap-qaiq-stream';
+import { QaapQaiqStreamAccumulator, type QaapAgentMessageSegment } from './qaap-qaiq-stream';
 import { QaapQaiqAgUiStreamEmitter } from './qaap-qaiq-ag-ui-stream';
 import type { QaapTranscriptTraceEventDTO } from './qaap-transcript-trace-model';
 
