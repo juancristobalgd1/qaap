@@ -35,7 +35,10 @@ const MAX_MEASURE_TIMEOUT_MS = 10 * 60 * 1000;
 export const RESEARCH_COMMAND_CAPTURE_MAX_CHARS = 256 * 1024;
 /** Bounds input copied into the metric parser and its isolated regex worker. */
 const RESEARCH_METRIC_PARSE_MAX_CHARS = RESEARCH_COMMAND_CAPTURE_MAX_CHARS;
+/** Budget for the regex itself, counted once the worker is online (worker boot alone can take ~250 ms under load). */
 const METRIC_REGEX_TIMEOUT_MS = 250;
+/** Separate cap on worker boot, so a stuck spawn still fails closed without eating the regex budget. */
+const METRIC_REGEX_WORKER_START_TIMEOUT_MS = 10_000;
 export const GIT_COMMAND_TIMEOUT_MS = 15_000;
 /** Keep failed command diagnostics useful without turning the JSONL ledger into a copy of a
  *  multi-hour training log. The full 12k tail remains in the task log; this smaller excerpt is
@@ -168,7 +171,16 @@ function parseMetricRegexWithTimeout(stdout: string, pattern: string): Promise<n
         });
         worker.once('error', () => settle(undefined));
         worker.once('exit', () => settle(undefined));
-        timer = setTimeout(() => settle(undefined), METRIC_REGEX_TIMEOUT_MS);
+        timer = setTimeout(() => settle(undefined), METRIC_REGEX_WORKER_START_TIMEOUT_MS);
+        worker.once('online', () => {
+            if (settled) {
+                return;
+            }
+            if (timer) {
+                clearTimeout(timer);
+            }
+            timer = setTimeout(() => settle(undefined), METRIC_REGEX_TIMEOUT_MS);
+        });
     });
 }
 
