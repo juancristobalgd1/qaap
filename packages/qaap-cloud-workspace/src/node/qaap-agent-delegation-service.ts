@@ -615,13 +615,7 @@ export class QaapAgentDelegationService {
      * the recorded cwd and HEAD is the recorded child branch. Throws a sanitized error otherwise.
      */
     protected async assertChildWorktreeIdentity(child: QaapAgentConversation, commonDir: string): Promise<void> {
-        const real = (value: string): string => {
-            try {
-                return fs.realpathSync(value);
-            } catch {
-                return path.resolve(value);
-            }
-        };
+        const real = (value: string): string => this.canonicalFsPath(value);
         const refuse = (): never => {
             throw new Error('the child workspace is not the isolated worktree that was created for it');
         };
@@ -629,7 +623,7 @@ export class QaapAgentDelegationService {
             const absGitDir = real((await this.gitOrThrow(child.cwd, ['rev-parse', '--absolute-git-dir'])).trim());
             const topLevel = real((await this.gitOrThrow(child.cwd, ['rev-parse', '--show-toplevel'])).trim());
             const head = (await this.gitOrThrow(child.cwd, ['symbolic-ref', 'HEAD'])).trim();
-            if (path.dirname(absGitDir) !== path.join(commonDir, 'worktrees')
+            if (path.dirname(absGitDir) !== this.canonicalFsPath(path.join(commonDir, 'worktrees'))
                 || topLevel !== real(child.cwd)
                 || !child.worktreeBranch
                 || head !== `refs/heads/${child.worktreeBranch}`) {
@@ -647,15 +641,25 @@ export class QaapAgentDelegationService {
             if (!out) {
                 return undefined;
             }
-            const resolved = path.resolve(cwd, out);
-            try {
-                return fs.realpathSync(resolved);
-            } catch {
-                return resolved;
-            }
+            return this.canonicalFsPath(path.resolve(cwd, out));
         } catch {
             return undefined;
         }
+    }
+
+    /**
+     * Comparable form of a filesystem path. The native realpath expands Windows 8.3 short names (`RUNNER~1`),
+     * which the JS realpath keeps, while git prints long, forward-slash paths; Windows paths are also
+     * case-insensitive. Falls back to `path.resolve` when the path does not exist.
+     */
+    protected canonicalFsPath(value: string): string {
+        let resolved: string;
+        try {
+            resolved = fs.realpathSync.native(value);
+        } catch {
+            resolved = path.resolve(value);
+        }
+        return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
     }
 
     /** stdout of a mutating git run in `cwd`; throws with git's own message when it fails. */

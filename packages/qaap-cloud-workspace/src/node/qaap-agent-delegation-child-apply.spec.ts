@@ -337,6 +337,9 @@ describe('QaapAgentDelegationService.childApply (real git)', function (): void {
 
         it('refuses a child whose .git file was rewritten to the parent\'s own git dir, and writes nothing', async () => {
             finishChild(() => write(path.join(childDir, 'new.txt'), 'new file\n'));
+            // Git for Windows marks the worktree's .git file hidden, and opening a hidden file for truncation fails
+            // with EPERM: replace it instead of overwriting it.
+            fs.rmSync(path.join(childDir, '.git'), { force: true });
             fs.writeFileSync(path.join(childDir, '.git'), `gitdir: ${path.join(parentDir, '.git')}\n`);
             const parentHead = git(parentDir, ['rev-parse', 'HEAD']);
 
