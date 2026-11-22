@@ -1205,7 +1205,7 @@ export class QaapTenantSpawnService {
      * `git -C cwd …` when no drop applies (local dev); throws (fail-closed) if setpriv is missing.
      * `-c core.hooksPath=/dev/null` stays as belt-and-suspenders.
      */
-    wrapGitForTenant(cwd: string, gitArgs: readonly string[]): { file: string; args: string[] } {
+    wrapGitForTenant(cwd: string, gitArgs: readonly string[], environment?: NodeJS.ProcessEnv): { file: string; args: string[] } {
         cwd = this.canonicalizeCwd(cwd);
         if (this.isContainerIsolationEnabled()) {
             const segment = this.resolveTenantSegment(cwd);
@@ -1224,9 +1224,10 @@ export class QaapTenantSpawnService {
                 'git',
                 ['-c', 'core.hooksPath=/dev/null', '-C', containerCwd, ...gitArgs],
                 tenantRoot,
+                environment,
             );
         }
-        return this.wrapShellForTenant(cwd, 'git', this.withDroppedGitTrust(cwd, 'git', ['-c', 'core.hooksPath=/dev/null', '-C', cwd, ...gitArgs]));
+        return this.wrapShellForTenant(cwd, 'git', this.withDroppedGitTrust(cwd, 'git', ['-c', 'core.hooksPath=/dev/null', '-C', cwd, ...gitArgs]), environment);
     }
 
     /**

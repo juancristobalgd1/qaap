@@ -52,6 +52,7 @@ import {
 import { capturePreTurnCheckpointGate, capturePreTurnCheckpointThenPrepare } from './qaap-agent-conversation-store-pre-turn-checkpoint';
 import { childProcessEnv } from './qaap-child-process-env';
 import { qaapMissingCwdError } from './qaap-missing-cwd-error';
+import { QaapNeutralGit } from './qaap-neutral-git';
 
 /**
  * MUTATING git under the tenant wrapper, run asynchronously so a turn settle / checkpoint never
@@ -70,9 +71,9 @@ export function mutatingGitExtracted(ctx: QaapAgentConversationStoreContext, cwd
 
 /** {@link mutatingGitExtracted} with stdout kept as the exact bytes git wrote (for patches). */
 export function mutatingGitBufferExtracted(ctx: QaapAgentConversationStoreContext, cwd: string, args: string[],
-    timeoutMs: number = QAAP_GIT_DEFAULT_TIMEOUT_MS): Promise<QaapGitBufferRunResult> {
+    timeoutMs: number = QAAP_GIT_DEFAULT_TIMEOUT_MS, env?: NodeJS.ProcessEnv): Promise<QaapGitBufferRunResult> {
     try {
-        const wrapped = wrapMutatingGit(ctx, cwd, args);
+        const wrapped = wrapMutatingGit(ctx, cwd, args, env);
         return runGitBufferAsync(wrapped.file, wrapped.args, { cwd, env: wrapped.env, timeoutMs, maxBuffer: 64 * 1024 * 1024 });
     } catch (error) {
         return Promise.resolve({ status: null, stdout: Buffer.alloc(0), stderr: error instanceof Error ? error.message : String(error) });
@@ -89,6 +90,9 @@ function wrapMutatingGit(ctx: QaapAgentConversationStoreContext, cwd: string, ar
         cwd,
         'git',
         ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', ...args],
+        // A run that asked for the user-level git config to be ignored must keep that in every tenant transport
+        // (docker exec / task sandbox only forward the variables they are handed).
+        QaapNeutralGit.forwardedEnv(env),
     );
     const runEnv = childProcessEnv({ ...(env ?? process.env), ...ctx.tenantSpawn.tenantHomeEnvOverlay(cwd) });
     return { file: wrapped.file, args: wrapped.args, env: runEnv };

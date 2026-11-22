@@ -102,7 +102,7 @@ import {
     changedSensitiveFiles as changedSensitiveFilesHelper,
 } from './qaap-agent-task-runner-utils';
 import { parseCustomAgent as parseCustomAgentHelper, maxConcurrentAgents as maxConcurrentAgentsHelper, maxConcurrentAgentsPerUser as maxConcurrentAgentsPerUserHelper, maxConcurrentAgentsPerRepo as maxConcurrentAgentsPerRepoHelper, buildRepoTree as buildRepoTreeHelper, buildRecentlyChangedFiles as buildRecentlyChangedFilesHelper, readGitStatusSnapshot as readGitStatusSnapshotHelper, captureWorktreeStatus as captureWorktreeStatusHelper, captureWorktreeFingerprint as captureWorktreeFingerprintHelper, resolveVerificationScriptsForCwd as resolveVerificationScriptsForCwdHelper, appendBoundedCommandOutput as appendBoundedCommandOutputHelper, readUserSettingsFromDisk as readUserSettingsFromDiskHelper, preferenceReaderForOwner as preferenceReaderForOwnerHelper, stripSharedProviderEnv as stripSharedProviderEnvHelper, } from './qaap-agent-task-runner-utils2';
-import { QaapGitExecConfigChecker } from './qaap-git-exec-config-checker';
+import { QaapGitExecConfigChecker, type QaapGitExecCheckOptions } from './qaap-git-exec-config-checker';
 import { QaapShellPathContainmentChecker } from './qaap-shell-path-containment-checker';
 import {
     readRelevantFiles as readRelevantFilesHelper,
@@ -1875,9 +1875,9 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     protected gitExecConfigChecker: QaapGitExecConfigChecker | undefined;
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules (read-only shell auto-approval). */
-    public checkGitExecConfig(cwd: string): string | undefined {
+    public checkGitExecConfig(cwd: string, options?: QaapGitExecCheckOptions): string | undefined {
         this.gitExecConfigChecker ??= new QaapGitExecConfigChecker(this.readGitSync.bind(this));
-        return this.gitExecConfigChecker.check(cwd);
+        return this.gitExecConfigChecker.check(cwd, options);
     }
 
     protected readonly shellPathContainmentChecker = new QaapShellPathContainmentChecker();

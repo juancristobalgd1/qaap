@@ -55,6 +55,7 @@ import { sumQaapTurnUsage, type QaapTurnUsage } from '../common/qaap-turn-usage'
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 import type { QaapGoalLoopTurnOutcome, QaapGoalLoopTurnSettlement } from './qaap-agent-conversation-store-constants';
 import { QaapConversationWorktreeService } from './qaap-conversation-worktree';
+import { QaapNeutralGit } from './qaap-neutral-git';
 import { resolveQaapHarnessCapabilities } from '@theia/qaap-shared-core/lib/common/qaap-harness-capabilities';
 import { sweepStaleQaapDelegationMcpConfigs } from './qaap-agent-delegation-launch';
 
@@ -492,17 +493,24 @@ export class QaapAgentDelegationService {
         }
         const sensitive = qaapDelegationSensitiveFiles(files).map(name => sanitizeQaapDelegationLabel(name));
         const sensitiveField = sensitive.length ? { sensitiveFiles: sensitive } : {};
-        const patch = await this.store.mutatingGitBuffer(child.cwd, ['diff', '--binary', '--no-ext-diff', '--no-color', change.baseSha, headSha]);
+        const patch = await this.store.mutatingGitBuffer(child.cwd,
+            [...QaapNeutralGit.ARGS, 'diff', '--binary', '--no-ext-diff', '--no-textconv', '--no-color', change.baseSha, headSha],
+            DELEGATION_GIT_TIMEOUT_MS, QaapNeutralGit.env());
         if (patch.status !== 0) {
             throw new Error(this.describe(patch.stderr));
         }
+        await this.assertGitConfigVetted(child, parent);
         const indexFile = await this.scratchIndexPath(parent.cwd);
-        const env: NodeJS.ProcessEnv = { ...process.env, GIT_INDEX_FILE: indexFile };
+        // The parent's git config is shared with the child (same common dir), so these steps ignore user-level config too.
+        const env = QaapNeutralGit.env(process.env, { GIT_INDEX_FILE: indexFile });
         try {
             await this.gitOrThrowEnv(parent.cwd, ['read-tree', 'HEAD'], env);
+            // `add -A` enters a registered gitlink and runs the filters of the repository inside it: refuse the parent's
+            // gitlinks (as loaded in the throwaway index) before it runs, the way the child's are refused.
+            await this.assertNoGitlinks(parent.cwd, env);
             // The working tree as it is now, into the throwaway index only.
             await this.gitOrThrowEnv(parent.cwd, ['add', '-A'], env);
-            const applied = await this.store.mutatingGit(parent.cwd, ['apply', '--3way'], env, DELEGATION_GIT_TIMEOUT_MS, patch.stdout);
+            const applied = await this.store.mutatingGit(parent.cwd, [...QaapNeutralGit.ARGS, 'apply', '--3way'], env, DELEGATION_GIT_TIMEOUT_MS, patch.stdout);
             if (applied.status === 0) {
                 return { ok: true, mode: 'apply', files: files.map(name => sanitizeQaapDelegationLabel(name)), conflicts: [], ...sensitiveField };
             }
@@ -550,12 +558,103 @@ export class QaapAgentDelegationService {
     }
 
     /** {@link gitOrThrow} with an explicit environment (the throwaway index). */
-    protected async gitOrThrowEnv(cwd: string, args: string[], env: NodeJS.ProcessEnv): Promise<string> {
-        const result = await this.store.mutatingGit(cwd, args, env, DELEGATION_GIT_TIMEOUT_MS);
+    protected async gitOrThrowEnv(cwd: string, args: string[], env: NodeJS.ProcessEnv, input?: string): Promise<string> {
+        const result = await this.store.mutatingGit(cwd, QaapNeutralGit.isNeutral(env) ? [...QaapNeutralGit.ARGS, ...args] : args, env, DELEGATION_GIT_TIMEOUT_MS, input);
         if (result.status !== 0) {
             throw new Error(this.describe(result.stderr || `git exited with ${String(result.status)}`));
         }
         return result.stdout;
+    }
+
+    /**
+     * Refuses a repository that uses Git LFS (a `filter=lfs` attribute in a tracked or untracked `.gitattributes`, or
+     * in `info/attributes`). Neutralized git cannot run the `lfs` filter, so `add -A` would commit the smudged binary
+     * content instead of the pointer file (bloating history and breaking the LFS storage); running the filter would
+     * mean executing a program defined in user-level config, which is exactly what is switched off. Not supported yet.
+     */
+    protected async assertNoLfs(cwd: string): Promise<void> {
+        // Tracked and untracked-but-not-ignored attributes files, then the loose ignored ones (`--directory` collapses an
+        // ignored directory such as node_modules into one `dir/` entry that is not walked, and not read: `add -A`
+        // never enters it either).
+        const glob = ':(glob)**/.gitattributes';
+        const visible = await this.gitOrThrow(cwd, ['ls-files', '-z', '--cached', '--others', '--exclude-standard', '--', glob]);
+        const ignored = await this.gitOrThrow(cwd, ['ls-files', '-z', '--others', '--ignored', '--exclude-standard', '--directory', '--', glob]);
+        const files = [...visible.split('\0'), ...ignored.split('\0')]
+            .filter(name => name && !name.endsWith('/'))
+            .map(name => path.join(cwd, name));
+        const infoAttributes = (await this.gitOrThrow(cwd, ['rev-parse', '--git-path', 'info/attributes'])).trim();
+        if (infoAttributes) {
+            files.push(path.resolve(cwd, infoAttributes));
+        }
+        if (files.some(file => this.declaresLfs(file))) {
+            throw new Error('repos with Git LFS tracked files are not supported for child_apply yet');
+        }
+    }
+
+    /**
+     * True when the attributes file `file` may declare Git LFS: it has a `filter=lfs` line, or it is too large to
+     * be read (a padded file must not hide the line, so an oversized file counts as LFS).
+     */
+    protected declaresLfs(file: string): boolean {
+        try {
+            const stat = fs.lstatSync(file);
+            if (!stat.isFile()) {
+                return false;
+            }
+            return stat.size > MAX_ATTRIBUTES_BYTES || LFS_ATTRIBUTE_PATTERN.test(fs.readFileSync(file, 'utf8'));
+        } catch {
+            // A missing or unreadable attributes file tracks nothing.
+            return false;
+        }
+    }
+
+    /**
+     * Throws when the git config a model can write (the repository's local and worktree scopes, in the child and in the
+     * parent that shares its common dir) could run a program, or `extensions.worktreeConfig` is on. Never cached: it is
+     * repeated right before the parent is touched, so a config written in between is still seen.
+     */
+    protected async assertGitConfigVetted(child: QaapAgentConversation, parent: QaapAgentConversation): Promise<void> {
+        await this.assertParentWorkTree(parent);
+        const targets: Array<[string, string]> = [['child', child.cwd]];
+        if (parent.cwd !== child.cwd) {
+            targets.push(['parent', parent.cwd]);
+        }
+        for (const [who, cwd] of targets) {
+            const gitRisk = this.store.taskRunner.checkGitExecConfig(cwd, { userScopesNeutralized: true });
+            if (gitRisk) {
+                throw new Error(`the ${who}'s git configuration could run a program (${gitRisk})`);
+            }
+        }
+    }
+
+    /**
+     * `core.worktree` in the shared config (the child can write it) moves the PARENT's working tree somewhere else,
+     * and `merge --ff-only` / `apply` would write there. Git must see the parent's top level as a directory that
+     * contains the recorded cwd; a redirected tree does not.
+     */
+    protected async assertParentWorkTree(parent: QaapAgentConversation): Promise<void> {
+        let topLevel: string;
+        try {
+            topLevel = this.canonicalFsPath((await this.gitOrThrow(parent.cwd, ['rev-parse', '--show-toplevel'])).trim());
+        } catch {
+            throw new Error('the parent\'s working tree could not be verified');
+        }
+        const cwd = this.canonicalFsPath(parent.cwd);
+        if (cwd !== topLevel && !cwd.startsWith(topLevel.endsWith(path.sep) ? topLevel : topLevel + path.sep)) {
+            throw new Error('the parent\'s working tree is not the directory it was opened in (core.worktree is redirecting it)');
+        }
+    }
+
+    /**
+     * Refuses a nested git repository: a gitlink (mode 160000) in the index, or one about to be created by `add -A`
+     * for an untracked repository. A nested repo carries its own config, which a recursing git would execute.
+     */
+    protected async assertNoGitlinks(cwd: string, env?: NodeJS.ProcessEnv): Promise<void> {
+        const args = ['ls-files', '-s', '-z'];
+        const entries = (env ? await this.gitOrThrowEnv(cwd, args, env) : await this.gitOrThrow(cwd, args)).split('\0');
+        if (entries.some(entry => entry.startsWith('160000 '))) {
+            throw new Error(GITLINK_REFUSAL);
+        }
     }
 
     /** `merge`: a `--no-ff` merge of the child's branch, refused unless the parent's tree is clean. */
@@ -563,7 +662,9 @@ export class QaapAgentDelegationService {
         if (!this.worktrees) {
             return applyRefusal('failed', 'Git worktrees are not available on this server, so a merge cannot run.');
         }
-        if ((await this.gitOrThrow(parent.cwd, ['status', '--porcelain'])).trim()) {
+        // `status` runs clean filters to compare content: vet the config first.
+        await this.assertGitConfigVetted(child, parent);
+        if ((await this.gitOrThrow(parent.cwd, ['status', '--porcelain', '--ignore-submodules=all'])).trim()) {
             return applyRefusal('dirty-parent', 'The parent has uncommitted changes. Commit or stash them, then merge the child.');
         }
         const { files } = await this.commitChildChange(parent, child, change);
@@ -572,7 +673,8 @@ export class QaapAgentDelegationService {
         }
         const sensitive = qaapDelegationSensitiveFiles(files).map(name => sanitizeQaapDelegationLabel(name));
         const sensitiveField = sensitive.length ? { sensitiveFiles: sensitive } : {};
-        const merged = await this.worktrees.mergeBranchSafely(parent.cwd, change.branch, parent.ownerLogin);
+        await this.assertGitConfigVetted(child, parent);
+        const merged = await this.worktrees.mergeBranchSafely(parent.cwd, change.branch, parent.ownerLogin, { neutralGit: true });
         if (merged.ok) {
             return { ok: true, mode: 'merge', files: files.map(name => sanitizeQaapDelegationLabel(name)), conflicts: [], ...sensitiveField };
         }
@@ -592,19 +694,31 @@ export class QaapAgentDelegationService {
             throw new Error('the child workspace is not a worktree of the parent\'s repository');
         }
         await this.assertChildWorktreeIdentity(child, childCommon);
-        const gitRisk = this.store.taskRunner.checkGitExecConfig(child.cwd);
-        if (gitRisk) {
-            throw new Error(`the child's git configuration could run a program (${gitRisk})`);
+        // Every git below runs with the user's global/system config switched off (QaapNeutralGit), so a filter in a
+        // standard ~/.gitconfig (git-lfs) is harmless and is not what gets vetted: what the model can write is, i.e.
+        // the repository's local and worktree config (the common config is shared with the parent's repository).
+        await this.assertGitConfigVetted(child, parent);
+        await this.assertNoLfs(child.cwd);
+        if (parent.cwd !== child.cwd) {
+            await this.assertNoLfs(parent.cwd);
         }
-        if ((await this.gitOrThrow(child.cwd, ['status', '--porcelain'])).trim()) {
+        await this.assertNoGitlinks(child.cwd);
+        if ((await this.gitOrThrow(child.cwd, ['status', '--porcelain', '--ignore-submodules=all'])).trim()) {
             await this.gitOrThrow(child.cwd, ['add', '-A']);
-            await this.gitOrThrow(child.cwd, [...GIT_IDENTITY, '-c', 'commit.gpgSign=false', 'commit', '--no-verify', '-q', '-m', `qaap: delegated child ${child.id}`]);
+            // `add -A` turns an untracked nested repository into a gitlink: refuse before it is committed.
+            await this.assertNoGitlinks(child.cwd);
+            await this.gitOrThrow(child.cwd, [...GIT_IDENTITY, 'commit', '--no-verify', '-q', '-m', `qaap: delegated child ${child.id}`]);
         }
         const headSha = (await this.gitOrThrow(child.cwd, ['rev-parse', 'HEAD'])).trim();
         if (!GIT_SHA_PATTERN.test(headSha)) {
             throw new Error('the child worktree has no readable HEAD');
         }
-        const names = await this.gitOrThrow(child.cwd, ['diff', '--name-only', '-z', change.baseSha, headSha]);
+        // Commits the child made itself count too: a gitlink anywhere between the base and the head is refused.
+        const raw = await this.gitOrThrow(child.cwd, ['diff', '--raw', '-z', '--no-renames', '--ignore-submodules=none', '--no-ext-diff', '--no-textconv', change.baseSha, headSha]);
+        if (raw.split('\0').some(field => /^:(?:160000 \d{6}|\d{6} 160000) /.test(field))) {
+            throw new Error(GITLINK_REFUSAL);
+        }
+        const names = await this.gitOrThrow(child.cwd, ['diff', '--name-only', '--no-ext-diff', '--no-textconv', '-z', change.baseSha, headSha]);
         return { headSha, files: names.split('\0').filter(Boolean) };
     }
 
@@ -662,13 +776,12 @@ export class QaapAgentDelegationService {
         return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
     }
 
-    /** stdout of a mutating git run in `cwd`; throws with git's own message when it fails. */
-    protected async gitOrThrow(cwd: string, args: string[], input?: string): Promise<string> {
-        const result = await this.store.mutatingGit(cwd, args, undefined, DELEGATION_GIT_TIMEOUT_MS, input);
-        if (result.status !== 0) {
-            throw new Error(this.describe(result.stderr || `git exited with ${String(result.status)}`));
-        }
-        return result.stdout;
+    /**
+     * stdout of a mutating git run in `cwd`; throws with git's own message when it fails. Every git this service runs
+     * ignores the user's global/system config (see `QaapNeutralGit`): the repositories involved are written by a model.
+     */
+    protected gitOrThrow(cwd: string, args: string[], input?: string): Promise<string> {
+        return this.gitOrThrowEnv(cwd, args, QaapNeutralGit.env(), input);
     }
 
     // ─── Creation and queue ───────────────────────────────────────────────────────────────────
@@ -1577,6 +1690,11 @@ const GIT_IDENTITY = ['-c', 'user.email=qaap@local', '-c', 'user.name=Qaap'];
 const DELEGATION_GIT_TIMEOUT_MS = 60_000;
 /** Shas come from the store, but are re-checked before they reach a git argument list. */
 const GIT_SHA_PATTERN = /^[0-9a-f]{7,40}$/;
+/** An attributes file above this size is not read and is treated as if it declared LFS. */
+const MAX_ATTRIBUTES_BYTES = 4 * 1024 * 1024;
+/** A `filter=lfs` attribute (any pattern line), the marker of a path tracked by Git LFS. */
+const GITLINK_REFUSAL = 'the child workspace contains a nested git repository (submodule), which child_apply does not support';
+const LFS_ATTRIBUTE_PATTERN = /(?:^|\s)filter=lfs(?:\s|$)/m;
 
 function applyRefusal(reason: QaapChildApplyFailure, error: string): QaapChildApplyResponse {
     return { ok: false, reason, error };

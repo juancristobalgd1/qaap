@@ -11,6 +11,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { resolveQaapWorktreesRoot, safeUserIdSegment } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
+import { QaapNeutralGit } from './qaap-neutral-git';
 import { qaapMissingCwdError } from './qaap-missing-cwd-error';
 import { QaapHostedWorktreeRegistry } from '@theia/qaap-shared-core/lib/node/qaap-hosted-worktree-registry';
 import type { QaapApplyConversationWorktreeResponse } from '../common/qaap-agent-conversation';
@@ -140,42 +141,43 @@ export class QaapConversationWorktreeService {
      * (no file touched) when the target moved past T or local changes would be overwritten. Any refusal
      * leaves the base tree, the target branch and `branch` untouched; the integration worktree is always removed.
      */
-    async mergeBranchSafely(baseCwd: string, branch: string, ownerLogin?: string): Promise<QaapApplyConversationWorktreeResponse> {
+    async mergeBranchSafely(baseCwd: string, branch: string, ownerLogin?: string, options: { readonly neutralGit?: boolean } = {}): Promise<QaapApplyConversationWorktreeResponse> {
+        const neutral = options.neutralGit === true;
         await this.ensureTenantContainerReady(baseCwd);
-        const target = await this.currentBranch(baseCwd);
+        const target = await this.currentBranch(baseCwd, neutral);
         if (!target) {
             return { ok: false, reason: 'detached', error: 'The repository is not on a branch (detached HEAD). Check out a branch, then merge again.' };
         }
-        const tip = await this.headCommit(baseCwd);
+        const tip = await this.headCommit(baseCwd, neutral);
         const integrationPath = this.tenantWorktreePath(ownerLogin, `integration-${randomUUID().slice(0, 8)}`);
         this.tenantSpawn.provisionTenantDir(baseCwd, path.dirname(integrationPath));
         try {
-            await this.mutatingGit(baseCwd, ['worktree', 'add', '--detach', integrationPath, tip]);
+            await this.mutatingGit(baseCwd, ['worktree', 'add', '--detach', integrationPath, tip], neutral);
             try {
                 // --no-ff always creates a merge commit; identity must be set explicitly
                 // (Windows CI runners often have no user.name / user.email configured).
                 await this.mutatingGit(integrationPath, [
                     '-c', 'user.email=qaap@local', '-c', 'user.name=qaap',
                     'merge', '--no-ff', '--no-edit', branch,
-                ]);
+                ], neutral);
             } catch (error) {
-                const conflicts = (await this.git(integrationPath, ['diff', '--name-only', '--diff-filter=U']).catch(() => ''))
+                const conflicts = (await this.git(integrationPath, ['diff', '--name-only', '--diff-filter=U'], neutral).catch(() => ''))
                     .split('\n').map(line => line.trim()).filter(Boolean);
-                await this.mutatingGit(integrationPath, ['merge', '--abort']).catch(() => undefined);
+                await this.mutatingGit(integrationPath, ['merge', '--abort'], neutral).catch(() => undefined);
                 return conflicts.length
                     ? { ok: false, reason: 'conflict', conflicts, error: `Merge conflicts in ${conflicts.join(', ')}. Nothing was changed.` }
                     : { ok: false, error: `Merge failed (nothing was changed): ${this.errorMessage(error)}` };
             }
-            const merge = await this.headCommit(integrationPath);
+            const merge = await this.headCommit(integrationPath, neutral);
             const moved = { ok: false, reason: 'target-moved', error: `"${target}" changed while merging. Nothing was changed; merge again.` } as const;
-            if (await this.currentBranch(baseCwd) !== target || await this.headCommit(baseCwd) !== tip) {
+            if (await this.currentBranch(baseCwd, neutral) !== target || await this.headCommit(baseCwd, neutral) !== tip) {
                 return moved;
             }
             try {
-                await this.mutatingGit(baseCwd, ['merge', '--ff-only', merge]);
+                await this.mutatingGit(baseCwd, ['merge', '--ff-only', merge], neutral);
             } catch {
                 // HEAD still at T: --ff-only refused because local changes would be overwritten (locale-independent check).
-                return await this.headCommit(baseCwd) !== tip ? moved : {
+                return await this.headCommit(baseCwd, neutral) !== tip ? moved : {
                     ok: false,
                     reason: 'local-changes',
                     error: 'Your uncommitted changes would be overwritten by the merge. Commit or stash them, then merge again.',
@@ -183,18 +185,18 @@ export class QaapConversationWorktreeService {
             }
             return { ok: true, branch };
         } finally {
-            await this.removeWorktree(baseCwd, integrationPath).catch(() => undefined);
-            await this.mutatingGit(baseCwd, ['worktree', 'prune']).catch(() => undefined);
+            await this.removeWorktree(baseCwd, integrationPath, neutral).catch(() => undefined);
+            await this.mutatingGit(baseCwd, ['worktree', 'prune'], neutral).catch(() => undefined);
         }
     }
 
     /** Branch checked out in `cwd`, or undefined when HEAD is detached. */
-    protected async currentBranch(cwd: string): Promise<string | undefined> {
-        return (await this.git(cwd, ['symbolic-ref', '--short', '-q', 'HEAD']).catch(() => '')).trim() || undefined;
+    protected async currentBranch(cwd: string, neutral = false): Promise<string | undefined> {
+        return (await this.git(cwd, ['symbolic-ref', '--short', '-q', 'HEAD'], neutral).catch(() => '')).trim() || undefined;
     }
 
-    protected async headCommit(cwd: string): Promise<string> {
-        return (await this.git(cwd, ['rev-parse', 'HEAD'])).trim();
+    protected async headCommit(cwd: string, neutral = false): Promise<string> {
+        return (await this.git(cwd, ['rev-parse', 'HEAD'], neutral)).trim();
     }
 
     /**
@@ -255,9 +257,9 @@ export class QaapConversationWorktreeService {
         ]);
     }
 
-    protected async removeWorktree(cwd: string, worktreePath: string): Promise<void> {
+    protected async removeWorktree(cwd: string, worktreePath: string, neutral = false): Promise<void> {
         this.worktreeRegistry?.unregister(worktreePath);
-        await this.mutatingGit(cwd, ['worktree', 'remove', '--force', worktreePath]);
+        await this.mutatingGit(cwd, ['worktree', 'remove', '--force', worktreePath], neutral);
     }
 
     protected async deleteBranch(cwd: string, branch: string): Promise<void> {
@@ -269,10 +271,25 @@ export class QaapConversationWorktreeService {
     }
 
     /** Run a MUTATING git over the tenant repo under the tenant uid (setpriv). See QaapTenantSpawnService. */
-    protected async mutatingGit(cwd: string, args: string[]): Promise<string> {
-        const wrapped = this.tenantSpawn.wrapGitForTenant(cwd, args);
-        const { stdout } = await execFileAsync(wrapped.file, wrapped.args, { maxBuffer: GIT_MAX_BUFFER });
+    protected async mutatingGit(cwd: string, args: string[], neutral = false): Promise<string> {
+        const { file, args: argv, env } = this.neutralInvocation(cwd, args, neutral);
+        const { stdout } = await execFileAsync(file, argv, { maxBuffer: GIT_MAX_BUFFER, ...(env ? { env } : {}) });
         return stdout;
+    }
+
+    /**
+     * The tenant-wrapped git invocation. `neutral` runs it without the user's global/system config (see
+     * `QaapNeutralGit`), for callers that vetted only the repository's own config; the environment goes to the
+     * tenant transport explicitly too, since `docker exec` does not inherit it.
+     */
+    protected neutralInvocation(cwd: string, args: string[], neutral: boolean): { file: string; args: string[]; env?: NodeJS.ProcessEnv } {
+        if (!neutral) {
+            const wrapped = this.tenantSpawn.wrapGitForTenant(cwd, args);
+            return { file: wrapped.file, args: wrapped.args };
+        }
+        const env = QaapNeutralGit.env();
+        const wrapped = this.tenantSpawn.wrapGitForTenant(cwd, [...QaapNeutralGit.ARGS, ...args], QaapNeutralGit.forwardedEnv(env));
+        return { file: wrapped.file, args: wrapped.args, env };
     }
 
     protected async ensureTenantContainerReady(cwd: string): Promise<void> {
@@ -294,12 +311,12 @@ export class QaapConversationWorktreeService {
         }
     }
 
-    protected async git(cwd: string, args: string[]): Promise<string> {
+    protected async git(cwd: string, args: string[], neutral = false): Promise<string> {
         // Read-only Git must use the same tenant boundary as worktree mutations. Git may still load
         // repository config, extensions, and filter metadata for a status/rev-parse query.
         await this.ensureTenantContainerReady(cwd);
-        const wrapped = this.tenantSpawn.wrapGitForTenant(cwd, args);
-        const { stdout } = await execFileAsync(wrapped.file, wrapped.args, { maxBuffer: GIT_MAX_BUFFER });
+        const { file, args: argv, env } = this.neutralInvocation(cwd, args, neutral);
+        const { stdout } = await execFileAsync(file, argv, { maxBuffer: GIT_MAX_BUFFER, ...(env ? { env } : {}) });
         return stdout;
     }
 

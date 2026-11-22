@@ -152,8 +152,8 @@ export class QaapAgentConversationStore implements QaapAgentConversationStoreCon
     }
 
     /** @internal Like {@link mutatingGit} but stdout is the exact bytes git wrote (patches). */
-    public mutatingGitBuffer(cwd: string, args: string[], timeoutMs?: number): Promise<QaapGitBufferRunResult> {
-        return mutatingGitBufferExtracted(this, cwd, args, timeoutMs);
+    public mutatingGitBuffer(cwd: string, args: string[], timeoutMs?: number, env?: NodeJS.ProcessEnv): Promise<QaapGitBufferRunResult> {
+        return mutatingGitBufferExtracted(this, cwd, args, timeoutMs, env);
     }
 
     /** Per-repository chain for checkpoint/restore git sequences (see {@link QaapGitCwdSerializer}). */

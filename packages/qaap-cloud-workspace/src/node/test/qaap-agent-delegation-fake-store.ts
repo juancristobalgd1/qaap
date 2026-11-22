@@ -73,8 +73,8 @@ export class FakeStore {
         return runGitAsync('git', args, { cwd, timeoutMs: timeoutMs ?? 60_000, ...(env ? { env } : {}), ...(input !== undefined ? { input } : {}) });
     }
     /** Like {@link mutatingGit} with stdout as the exact bytes. */
-    mutatingGitBuffer(cwd: string, args: string[], timeoutMs?: number): Promise<QaapGitBufferRunResult> {
-        return runGitBufferAsync('git', args, { cwd, timeoutMs: timeoutMs ?? 60_000 });
+    mutatingGitBuffer(cwd: string, args: string[], timeoutMs?: number, env?: NodeJS.ProcessEnv): Promise<QaapGitBufferRunResult> {
+        return runGitBufferAsync('git', args, { cwd, timeoutMs: timeoutMs ?? 60_000, ...(env ? { env } : {}) });
     }
     captureGitSha(_cwd: string): string {
         return 'base-sha';

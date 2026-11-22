@@ -365,7 +365,7 @@ export interface QaapAgentConversationStoreContext {
     parseGithubRepoFromCwd(cwd: string): { owner: string; name: string } | undefined;
     readGitBranch(cwd: string): string | undefined;
     mutatingGit(cwd: string, args: string[], env?: NodeJS.ProcessEnv, timeoutMs?: number, input?: string | Buffer): Promise<QaapGitRunResult>;
-    mutatingGitBuffer(cwd: string, args: string[], timeoutMs?: number): Promise<QaapGitBufferRunResult>;
+    mutatingGitBuffer(cwd: string, args: string[], timeoutMs?: number, env?: NodeJS.ProcessEnv): Promise<QaapGitBufferRunResult>;
     /** Serialize an async git job with every other checkpoint/restore job on the same repository. */
     runSerializedGit<T>(cwd: string, job: () => Promise<T>): Promise<T>;
     captureGitSha(cwd: string): string | undefined;
