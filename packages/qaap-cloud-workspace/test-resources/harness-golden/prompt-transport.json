@@ -1,0 +1,141 @@
+{
+  "detected:codex": {
+    "kind": "plain-stdin",
+    "placeholder": "dash"
+  },
+  "id-only:codex": {
+    "kind": "plain-stdin",
+    "placeholder": "dash"
+  },
+  "detected:claude": {
+    "kind": "plain-stdin",
+    "placeholder": "omit"
+  },
+  "id-only:claude": {
+    "kind": "plain-stdin",
+    "placeholder": "omit"
+  },
+  "detected:opencode": {
+    "kind": "plain-stdin",
+    "placeholder": "omit"
+  },
+  "id-only:opencode": {
+    "kind": "plain-stdin",
+    "placeholder": "omit"
+  },
+  "detected:pi": {
+    "kind": "plain-stdin",
+    "placeholder": "omit"
+  },
+  "id-only:pi": {
+    "kind": "plain-stdin",
+    "placeholder": "omit"
+  },
+  "detected:cursor": {
+    "kind": "plain-stdin",
+    "placeholder": "omit"
+  },
+  "id-only:cursor": {
+    "kind": "plain-stdin",
+    "placeholder": "omit"
+  },
+  "detected:antigravity": {
+    "kind": "argv-prompt"
+  },
+  "id-only:antigravity": {
+    "kind": "argv-prompt"
+  },
+  "detected:copilot": {
+    "kind": "plain-stdin",
+    "placeholder": "omit-flag"
+  },
+  "id-only:copilot": {
+    "kind": "plain-stdin",
+    "placeholder": "omit-flag"
+  },
+  "detected:grok": {
+    "kind": "prompt-file",
+    "flag": "--prompt-file"
+  },
+  "id-only:grok": {
+    "kind": "prompt-file",
+    "flag": "--prompt-file"
+  },
+  "detected:openclaude": {
+    "kind": "plain-stdin",
+    "placeholder": "omit"
+  },
+  "id-only:openclaude": {
+    "kind": "plain-stdin",
+    "placeholder": "omit"
+  },
+  "detected:hermes": {
+    "kind": "plain-stdin",
+    "placeholder": "dash"
+  },
+  "id-only:hermes": {
+    "kind": "plain-stdin",
+    "placeholder": "dash"
+  },
+  "detected:openclaw": {
+    "kind": "plain-stdin",
+    "placeholder": "dash"
+  },
+  "id-only:openclaw": {
+    "kind": "plain-stdin",
+    "placeholder": "dash"
+  },
+  "detected:qwen": {
+    "kind": "plain-stdin",
+    "placeholder": "omit"
+  },
+  "id-only:qwen": {
+    "kind": "plain-stdin",
+    "placeholder": "omit"
+  },
+  "detected:kimi": {
+    "kind": "plain-stdin",
+    "placeholder": "dash"
+  },
+  "id-only:kimi": {
+    "kind": "plain-stdin",
+    "placeholder": "dash"
+  },
+  "bin:gemini": {
+    "kind": "plain-stdin",
+    "placeholder": "omit-flag"
+  },
+  "bin:agy": {
+    "kind": "argv-prompt"
+  },
+  "bin:cursor-agent": {
+    "kind": "plain-stdin",
+    "placeholder": "omit"
+  },
+  "bin:grok-custom-id": {
+    "kind": "prompt-file",
+    "flag": "--prompt-file"
+  },
+  "bin:copilot-custom-id": {
+    "kind": "plain-stdin",
+    "placeholder": "omit-flag"
+  },
+  "unknown:no-template": {
+    "kind": "argv"
+  },
+  "unknown:undefined": {
+    "kind": "argv"
+  },
+  "unknown:template-flag": {
+    "kind": "plain-stdin",
+    "placeholder": "dash"
+  },
+  "unknown:template-bare": {
+    "kind": "plain-stdin",
+    "placeholder": "omit"
+  },
+  "unknown:template-uppercase-id": {
+    "kind": "plain-stdin",
+    "placeholder": "dash"
+  }
+}

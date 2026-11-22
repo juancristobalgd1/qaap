@@ -6,7 +6,20 @@
 import type { QaapToolKind } from './qaap-tool-gate-protocol';
 
 /** How a harness reports tool calls to the Qaap tool gate. `none` means no gate runs for it. */
-export type QaapGateTransport = 'native-stdio' | 'hook' | 'plugin' | 'extension' | 'none';
+export type QaapGateTransport = 'native-stdio' | 'hook' | 'plugin' | 'extension' | 'acp' | 'none';
+
+/** How Qaap talks to the harness process: its own CLI protocol (`native`) or the Agent Client Protocol (`acp`). */
+export type QaapHarnessTransportKind = 'native' | 'acp';
+
+/**
+ * What Qaap really enforces for a harness. `gate-preexec`: a tool call is held until the gate answers (stdio control
+ * protocol, hook, plugin, extension). `client-boundary`: the agent asks permission by courtesy (ACP) and Qaap can only
+ * detect, not prevent, an unrequested write. `none`: no gate runs for it.
+ */
+export type QaapHarnessEnforcement = 'gate-preexec' | 'client-boundary' | 'none';
+
+/** How a conversation can be continued without re-sending the transcript. No harness resumes natively yet (F3). */
+export type QaapHarnessResumeSupport = 'none' | 'native' | 'acp-load' | 'acp-resume';
 
 /**
  * What the backend really does under "Ask before changes" for a harness that cannot ask:
@@ -23,7 +36,8 @@ export type QaapWhenAskUnsupported = 'runs-unchecked' | 'refuses';
  * `mcp.json` files, so a Qaap extension (`-e`) registers the server for the session with `pi.registerMcpServer`
  * from a 0600 per-task config file. `none`: the harness gets no delegation tools.
  */
-export type QaapDelegateMcpTransport = 'claude-mcp-config' | 'codex-config' | 'opencode-config' | 'pi-extension' | 'none';
+export type QaapDelegateMcpTransport = 'claude-mcp-config' | 'codex-config' | 'opencode-config' | 'pi-extension'
+    | 'acp-stdio' | 'acp-http' | 'acp-mcp-over-acp' | 'none';
 
 /** Where the cost of a turn comes from. `none` when Qaap cannot show a cost for the harness. */
 export type QaapCostSource = 'reported' | 'price-table' | 'estimate' | 'none';
@@ -51,8 +65,14 @@ export interface QaapHarnessCapabilities {
     /** How the delegation MCP server reaches this harness; absent = `none`. */
     delegateMcp?: QaapDelegateMcpTransport;
     /** Which usage parser reads this harness's output; `none` when no parser is wired. */
-    usage: 'qaiq' | 'claude' | 'codex' | 'opencode' | 'pi-json' | 'none';
+    usage: 'qaiq' | 'claude' | 'codex' | 'opencode' | 'pi-json' | 'acp' | 'none';
     costSource: QaapCostSource;
+    /** Own CLI protocol or ACP. Every harness is `native` until the ACP adapter lands (F1). */
+    transport: QaapHarnessTransportKind;
+    /** What the backend really enforces; derived from {@link gate} for the entries that exist today. */
+    enforcement: QaapHarnessEnforcement;
+    /** Conversation continuation without re-sending the transcript; `none` until sessions persist (F3). */
+    resume: QaapHarnessResumeSupport;
     mapToolKind(rawToolName: string, input: Record<string, unknown>): QaapToolKind;
 }
 
@@ -105,6 +125,9 @@ function createDefaultHarnessCapabilities(agentId: string): QaapHarnessCapabilit
         trustedFolderArgs: [],
         usage: 'none',
         costSource: 'none',
+        transport: 'native',
+        enforcement: 'none',
+        resume: 'none',
         mapToolKind: rawToolName => mapQaapToolKind(rawToolName),
     };
 }
@@ -117,6 +140,7 @@ const QAAP_HARNESS_CAPABILITY_ENTRIES: readonly QaapHarnessCapabilities[] = [
     {
         ...createDefaultHarnessCapabilities('qaiq'),
         gate: 'native-stdio',
+        enforcement: 'gate-preexec',
         canAsk: true,
         askTtlSec: STDIO_ASK_TTL_SEC,
         whenAskUnsupported: 'refuses',
@@ -126,6 +150,7 @@ const QAAP_HARNESS_CAPABILITY_ENTRIES: readonly QaapHarnessCapabilities[] = [
     {
         ...createDefaultHarnessCapabilities('openclaude'),
         gate: 'native-stdio',
+        enforcement: 'gate-preexec',
         canAsk: true,
         askTtlSec: STDIO_ASK_TTL_SEC,
         whenAskUnsupported: 'refuses',
@@ -140,6 +165,7 @@ const QAAP_HARNESS_CAPABILITY_ENTRIES: readonly QaapHarnessCapabilities[] = [
     {
         ...createDefaultHarnessCapabilities('claude'),
         gate: 'native-stdio',
+        enforcement: 'gate-preexec',
         canAsk: true,
         askTtlSec: STDIO_ASK_TTL_SEC,
         whenAskUnsupported: 'refuses',
@@ -158,6 +184,7 @@ const QAAP_HARNESS_CAPABILITY_ENTRIES: readonly QaapHarnessCapabilities[] = [
     {
         ...createDefaultHarnessCapabilities('codex'),
         gate: 'hook',
+        enforcement: 'gate-preexec',
         canAsk: true,
         askTtlSec: STDIO_ASK_TTL_SEC,
         whenAskUnsupported: 'refuses',
@@ -173,6 +200,7 @@ const QAAP_HARNESS_CAPABILITY_ENTRIES: readonly QaapHarnessCapabilities[] = [
     {
         ...createDefaultHarnessCapabilities('opencode'),
         gate: 'plugin',
+        enforcement: 'gate-preexec',
         canAsk: true,
         askTtlSec: STDIO_ASK_TTL_SEC,
         whenAskUnsupported: 'refuses',
@@ -192,6 +220,7 @@ const QAAP_HARNESS_CAPABILITY_ENTRIES: readonly QaapHarnessCapabilities[] = [
     {
         ...createDefaultHarnessCapabilities('pi'),
         gate: 'extension',
+        enforcement: 'gate-preexec',
         canAsk: true,
         askTtlSec: STDIO_ASK_TTL_SEC,
         whenAskUnsupported: 'refuses',

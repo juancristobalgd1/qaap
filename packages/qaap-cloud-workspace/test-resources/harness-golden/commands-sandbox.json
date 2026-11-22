@@ -1,0 +1,86 @@
+{
+  "codex|sandbox|request-approval": {
+    "command": "codex exec --json -c check_for_update_on_startup=false -",
+    "argvPrompt": null,
+    "stdinPromptMode": "plain",
+    "stdinPrompt": {
+      "containsUserPrompt": true,
+      "containsPiPlanInstruction": false,
+      "containsInteractionModeInstruction": false,
+      "endsWithUserPrompt": true
+    },
+    "hasPromptTempDir": false,
+    "promptFileHoldsUserPrompt": null,
+    "agentId": "codex"
+  },
+  "codex|sandbox|approve-for-me": {
+    "command": "codex --sandbox danger-full-access --ask-for-approval untrusted exec --json -c check_for_update_on_startup=false -",
+    "argvPrompt": null,
+    "stdinPromptMode": "plain",
+    "stdinPrompt": {
+      "containsUserPrompt": true,
+      "containsPiPlanInstruction": false,
+      "containsInteractionModeInstruction": false,
+      "endsWithUserPrompt": true
+    },
+    "hasPromptTempDir": false,
+    "promptFileHoldsUserPrompt": null,
+    "agentId": "codex"
+  },
+  "codex|sandbox|full-access": {
+    "command": "codex --dangerously-bypass-approvals-and-sandbox exec --json -c check_for_update_on_startup=false -",
+    "argvPrompt": null,
+    "stdinPromptMode": "plain",
+    "stdinPrompt": {
+      "containsUserPrompt": true,
+      "containsPiPlanInstruction": false,
+      "containsInteractionModeInstruction": false,
+      "endsWithUserPrompt": true
+    },
+    "hasPromptTempDir": false,
+    "promptFileHoldsUserPrompt": null,
+    "agentId": "codex"
+  },
+  "claude|sandbox|request-approval": {
+    "command": "claude --permission-mode default --print --output-format stream-json --verbose --include-partial-messages --setting-sources user --strict-mcp-config -p --input-format stream-json --permission-prompt-tool stdio",
+    "argvPrompt": null,
+    "stdinPromptMode": "qaiq-stdio",
+    "stdinPrompt": {
+      "containsUserPrompt": true,
+      "containsPiPlanInstruction": false,
+      "containsInteractionModeInstruction": false,
+      "endsWithUserPrompt": true
+    },
+    "hasPromptTempDir": false,
+    "promptFileHoldsUserPrompt": null,
+    "agentId": "claude"
+  },
+  "claude|sandbox|approve-for-me": {
+    "command": "claude --tools default --permission-mode default --allowed-tools Read,Write,Edit,Grep,Glob,NotebookEdit,TodoWrite,WebFetch,WebSearch --print --output-format stream-json --verbose --include-partial-messages --setting-sources user --strict-mcp-config -p --input-format stream-json --permission-prompt-tool stdio",
+    "argvPrompt": null,
+    "stdinPromptMode": "qaiq-stdio",
+    "stdinPrompt": {
+      "containsUserPrompt": true,
+      "containsPiPlanInstruction": false,
+      "containsInteractionModeInstruction": false,
+      "endsWithUserPrompt": true
+    },
+    "hasPromptTempDir": false,
+    "promptFileHoldsUserPrompt": null,
+    "agentId": "claude"
+  },
+  "claude|sandbox|full-access": {
+    "command": "claude --dangerously-skip-permissions --print --output-format stream-json --verbose --include-partial-messages --setting-sources user --strict-mcp-config -p",
+    "argvPrompt": null,
+    "stdinPromptMode": "plain",
+    "stdinPrompt": {
+      "containsUserPrompt": true,
+      "containsPiPlanInstruction": false,
+      "containsInteractionModeInstruction": false,
+      "endsWithUserPrompt": true
+    },
+    "hasPromptTempDir": false,
+    "promptFileHoldsUserPrompt": null,
+    "agentId": "claude"
+  }
+}

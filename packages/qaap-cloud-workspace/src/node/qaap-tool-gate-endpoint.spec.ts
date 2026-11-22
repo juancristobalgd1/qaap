@@ -50,7 +50,8 @@ class TestableGateEndpoint extends QaapToolGateEndpoint {
         return {
             agentId: 'test', gate: 'hook', canAsk: this.askTtlSec > 0, askTtlSec: this.askTtlSec,
             whenAskUnsupported: 'refuses', shellGuard: 'gate', untrustedFolderArgs: [], trustedFolderArgs: [],
-            usage: 'none', costSource: 'none', mapToolKind: name => mapQaapToolKind(name),
+            usage: 'none', costSource: 'none', transport: 'native', enforcement: 'gate-preexec', resume: 'none',
+            mapToolKind: name => mapQaapToolKind(name),
         };
     }
 }

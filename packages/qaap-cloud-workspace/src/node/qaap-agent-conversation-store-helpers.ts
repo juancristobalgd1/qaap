@@ -36,15 +36,9 @@ import {
     resolveAgentTurnFailureMessage,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 import { extractAgentTurnError } from '@theia/qaap-shared-core/lib/common/qaap-research-agent-log';
-import {
-    parseAgentLogForTranscript,
-    createAgentStreamAccumulator,
-    type QaapAgentStreamAccumulator,
-} from '@theia/qaap-shared-core/lib/common/qaap-cli-transcript-stream';
-import {
-    createAgUiCliStreamEmitter,
-    type QaapCliAgUiStreamEmitter,
-} from '@theia/qaap-shared-core/lib/common/qaap-cli-ag-ui-stream';
+import type { QaapAgentStreamAccumulator } from '@theia/qaap-shared-core/lib/common/qaap-cli-transcript-stream';
+import type { QaapCliAgUiStreamEmitter } from '@theia/qaap-shared-core/lib/common/qaap-cli-ag-ui-stream';
+import { QAAP_HARNESS_ADAPTER_REGISTRY } from './harness/qaap-harness-adapter-registry';
 import {
     DEFAULT_QAAP_CONTEXT_WINDOW,
     estimateConversationTokensFromMessages,
@@ -389,7 +383,7 @@ export function parseStructuredLog(
     segments: QaapAgentMessage['segments'];
     traceEvents: QaapAgentMessage['traceEvents'];
 } | undefined {
-    const parsed = parseAgentLogForTranscript(agentId, log);
+    const parsed = QAAP_HARNESS_ADAPTER_REGISTRY.get(agentId).parseLogForTranscript(agentId, log);
     if (!parsed.segments?.length && !parsed.traceEvents?.length && !parsed.content?.trim()) {
         return undefined;
     }
@@ -490,7 +484,7 @@ export function ensureAgentStream(
 ): QaapAgentStreamAccumulator | undefined {
     let stream = agentStreamByTaskId.get(taskId);
     if (!stream) {
-        stream = createAgentStreamAccumulator(agentId);
+        stream = QAAP_HARNESS_ADAPTER_REGISTRY.get(agentId).createStreamAccumulator(agentId);
         if (stream) {
             agentStreamByTaskId.set(taskId, stream);
         }
@@ -505,7 +499,7 @@ export function ensureAgUiStream(
 ): QaapCliAgUiStreamEmitter {
     let emitter = agUiStreamByTaskId.get(taskId);
     if (!emitter) {
-        const created = createAgUiCliStreamEmitter(agentId);
+        const created = QAAP_HARNESS_ADAPTER_REGISTRY.get(agentId).createAgUiEmitter(agentId);
         if (!created) {
             throw new Error(`No AG-UI CLI stream emitter for agent: ${agentId}`);
         }

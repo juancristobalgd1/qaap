@@ -24,6 +24,7 @@ import type { QaapAgentTask } from '../common/qaap-agent-task';
 import { diffSensitiveFiles, hashSensitiveFiles } from './qaap-sensitive-files';
 import { findExecutableOnPath, readEnvPath, resolveTrustedExecutable } from './qaap-trusted-executable';
 import { childProcessEnv } from './qaap-child-process-env';
+import { QAAP_HARNESS_ADAPTER_REGISTRY } from './harness/qaap-harness-adapter-registry';
 
 // ─── Constants (re-exported for the helpers) ─────────────────────────────────
 
@@ -233,53 +234,19 @@ export function planArgvPrompt(prompt: string, owner?: AgentPromptOwner): ArgvPr
     };
 }
 
-const STDIN_OMIT_IDS = new Set(['cursor', 'claude', 'qaiq', 'openclaude', 'opencode', 'qwen', 'pi']);
-const STDIN_OMIT_FLAG_IDS = new Set(['copilot']);
-const STDIN_DASH_IDS = new Set(['codex', 'kimi', 'goose', 'hermes', 'openclaw']);
-
 /**
  * Windows `cmd.exe` dies at ~8191 characters ("La línea de comandos es demasiado larga")
  * when the full Qaap context is inlined as `{prompt}`. Prefer stdin, or `--prompt-file`
  * for CLIs that refuse piped input (Grok).
+ *
+ * The per-harness rules live in the harness adapters (`harness/legacy/*`); this keeps the entry point
+ * stable for callers that only have an id and a detected CLI.
  */
 export function resolveAgentPromptTransport(
     agentId: string | undefined,
     detected?: { readonly id?: string; readonly bin?: string; readonly template?: string },
 ): QaapAgentPromptTransport {
-    const id = (agentId ?? detected?.id ?? '').trim().toLowerCase();
-    const bin = detected?.bin?.trim().toLowerCase();
-    if (id === 'cursor' || bin === 'cursor-agent' || bin === 'agent') {
-        return { kind: 'plain-stdin', placeholder: 'omit' };
-    }
-    if (id === 'grok' || bin === 'grok') {
-        return { kind: 'prompt-file', flag: '--prompt-file' };
-    }
-    // agy reads no prompt from stdin in text mode (verified with 1.5.9), so its prompt travels in argv.
-    if (bin === 'agy' || (bin === undefined && id === 'antigravity')) {
-        return { kind: 'argv-prompt' };
-    }
-    if (id === 'antigravity' || bin === 'gemini' || bin === 'antigravity') {
-        return bin === 'gemini'
-            ? { kind: 'plain-stdin', placeholder: 'omit-flag' }
-            : { kind: 'plain-stdin', placeholder: 'dash' };
-    }
-    if (STDIN_OMIT_IDS.has(id)) {
-        return { kind: 'plain-stdin', placeholder: 'omit' };
-    }
-    if (STDIN_OMIT_FLAG_IDS.has(id) || bin === 'copilot') {
-        return { kind: 'plain-stdin', placeholder: 'omit-flag' };
-    }
-    if (STDIN_DASH_IDS.has(id)) {
-        return { kind: 'plain-stdin', placeholder: 'dash' };
-    }
-    const template = detected?.template ?? '';
-    if (template.includes('{prompt}')) {
-        if (/(?:-p|--prompt|--single|-t|-q|--message|--text)\s+\{prompt\}/.test(template)) {
-            return { kind: 'plain-stdin', placeholder: 'dash' };
-        }
-        return { kind: 'plain-stdin', placeholder: 'omit' };
-    }
-    return { kind: 'argv' };
+    return QAAP_HARNESS_ADAPTER_REGISTRY.resolvePromptTransport(agentId, detected);
 }
 
 export function applyTemplateForPromptTransport(

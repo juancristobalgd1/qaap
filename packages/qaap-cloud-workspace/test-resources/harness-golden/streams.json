@@ -1,0 +1,996 @@
+{
+  "claude": {
+    "accumulator": "QaapQaiqStreamAccumulator",
+    "agUiEmitter": "QaapQaiqAgUiStreamEmitter",
+    "parse:plain": {
+      "content": "",
+      "segments": [],
+      "traceEvents": []
+    },
+    "accumulate:plain": {
+      "display": "",
+      "segments": []
+    },
+    "agui:plain": [],
+    "parse:claudeStream": {
+      "content": "Hi there",
+      "segments": [
+        {
+          "type": "text",
+          "content": "Hi there"
+        }
+      ],
+      "traceEvents": [
+        {
+          "type": "assistant_text",
+          "id": "text-0",
+          "content": "Hi there",
+          "status": "streaming"
+        }
+      ]
+    },
+    "accumulate:claudeStream": {
+      "display": "Hi there",
+      "segments": [
+        {
+          "type": "text",
+          "content": "Hi there"
+        }
+      ]
+    },
+    "agui:claudeStream": [
+      {
+        "type": "TEXT_MESSAGE_START",
+        "messageId": "text-1"
+      },
+      {
+        "type": "TEXT_MESSAGE_CONTENT",
+        "messageId": "text-1",
+        "delta": "Hi there"
+      },
+      {
+        "type": "TEXT_MESSAGE_END",
+        "messageId": "text-1"
+      }
+    ],
+    "parse:codexStream": {
+      "content": "",
+      "segments": [],
+      "traceEvents": []
+    },
+    "accumulate:codexStream": {
+      "display": "",
+      "segments": []
+    },
+    "agui:codexStream": [],
+    "parse:opencodeStream": {
+      "content": "",
+      "segments": [],
+      "traceEvents": []
+    },
+    "accumulate:opencodeStream": {
+      "display": "",
+      "segments": []
+    },
+    "agui:opencodeStream": [],
+    "parse:piStream": {
+      "content": "",
+      "segments": [],
+      "traceEvents": []
+    },
+    "accumulate:piStream": {
+      "display": "",
+      "segments": []
+    },
+    "agui:piStream": []
+  },
+  "codex": {
+    "accumulator": "QaapCodexStreamAccumulator",
+    "agUiEmitter": "QaapCodexAgUiStreamEmitter",
+    "parse:plain": {
+      "content": "hello world\nsecond line",
+      "segments": [],
+      "traceEvents": []
+    },
+    "accumulate:plain": {
+      "display": "",
+      "segments": []
+    },
+    "agui:plain": [],
+    "parse:claudeStream": {
+      "content": "",
+      "segments": [],
+      "traceEvents": []
+    },
+    "accumulate:claudeStream": {
+      "display": "",
+      "segments": []
+    },
+    "agui:claudeStream": [],
+    "parse:codexStream": {
+      "content": "Done",
+      "segments": [
+        {
+          "type": "text",
+          "content": "Done"
+        }
+      ],
+      "traceEvents": [
+        {
+          "type": "assistant_text",
+          "id": "text-0",
+          "content": "Done",
+          "status": "streaming"
+        }
+      ]
+    },
+    "accumulate:codexStream": {
+      "display": "Done",
+      "segments": [
+        {
+          "type": "text",
+          "content": "Done"
+        }
+      ]
+    },
+    "agui:codexStream": [
+      {
+        "type": "TEXT_MESSAGE_START",
+        "messageId": "text-1"
+      },
+      {
+        "type": "TEXT_MESSAGE_CONTENT",
+        "messageId": "text-1",
+        "delta": "Done"
+      }
+    ],
+    "parse:opencodeStream": {
+      "content": "",
+      "segments": [],
+      "traceEvents": []
+    },
+    "accumulate:opencodeStream": {
+      "display": "",
+      "segments": []
+    },
+    "agui:opencodeStream": [],
+    "parse:piStream": {
+      "content": "",
+      "segments": [],
+      "traceEvents": []
+    },
+    "accumulate:piStream": {
+      "display": "",
+      "segments": []
+    },
+    "agui:piStream": []
+  },
+  "opencode": {
+    "accumulator": "QaapOpencodeStreamAccumulator",
+    "agUiEmitter": "QaapOpencodeAgUiStreamEmitter",
+    "parse:plain": {
+      "content": "hello world\nsecond line",
+      "segments": [
+        {
+          "type": "text",
+          "content": "hello world\nsecond line"
+        }
+      ],
+      "traceEvents": [
+        {
+          "type": "assistant_text",
+          "id": "text-0",
+          "content": "hello world\nsecond line",
+          "status": "completed"
+        }
+      ]
+    },
+    "accumulate:plain": {
+      "display": "",
+      "segments": []
+    },
+    "agui:plain": [],
+    "parse:claudeStream": {
+      "content": "",
+      "segments": [],
+      "traceEvents": []
+    },
+    "accumulate:claudeStream": {
+      "display": "",
+      "segments": []
+    },
+    "agui:claudeStream": [],
+    "parse:codexStream": {
+      "content": "",
+      "segments": [],
+      "traceEvents": []
+    },
+    "accumulate:codexStream": {
+      "display": "",
+      "segments": []
+    },
+    "agui:codexStream": [],
+    "parse:opencodeStream": {
+      "content": "Done",
+      "segments": [
+        {
+          "type": "text",
+          "content": "Done"
+        }
+      ],
+      "traceEvents": [
+        {
+          "type": "assistant_text",
+          "id": "text-0",
+          "content": "Done",
+          "status": "streaming"
+        }
+      ]
+    },
+    "accumulate:opencodeStream": {
+      "display": "Done",
+      "segments": [
+        {
+          "type": "text",
+          "content": "Done"
+        }
+      ]
+    },
+    "agui:opencodeStream": [
+      {
+        "type": "TEXT_MESSAGE_START",
+        "messageId": "text-1"
+      },
+      {
+        "type": "TEXT_MESSAGE_CONTENT",
+        "messageId": "text-1",
+        "delta": "Done"
+      }
+    ],
+    "parse:piStream": {
+      "content": "",
+      "segments": [],
+      "traceEvents": []
+    },
+    "accumulate:piStream": {
+      "display": "",
+      "segments": []
+    },
+    "agui:piStream": []
+  },
+  "pi": {
+    "accumulator": "QaapPiStreamAccumulator",
+    "agUiEmitter": null,
+    "parse:plain": {
+      "content": "hello world\nsecond line",
+      "segments": [],
+      "traceEvents": []
+    },
+    "accumulate:plain": {
+      "display": "",
+      "segments": []
+    },
+    "parse:claudeStream": {
+      "content": "",
+      "segments": [],
+      "traceEvents": []
+    },
+    "accumulate:claudeStream": {
+      "display": "",
+      "segments": []
+    },
+    "parse:codexStream": {
+      "content": "",
+      "segments": [],
+      "traceEvents": []
+    },
+    "accumulate:codexStream": {
+      "display": "",
+      "segments": []
+    },
+    "parse:opencodeStream": {
+      "content": "",
+      "segments": [],
+      "traceEvents": []
+    },
+    "accumulate:opencodeStream": {
+      "display": "",
+      "segments": []
+    },
+    "parse:piStream": {
+      "content": "Done",
+      "segments": [
+        {
+          "type": "text",
+          "content": "Done"
+        }
+      ],
+      "traceEvents": [
+        {
+          "type": "assistant_text",
+          "id": "text-0",
+          "content": "Done",
+          "status": "streaming"
+        }
+      ]
+    },
+    "accumulate:piStream": {
+      "display": "Done",
+      "segments": [
+        {
+          "type": "text",
+          "content": "Done"
+        }
+      ]
+    }
+  },
+  "cursor": {
+    "accumulator": null,
+    "agUiEmitter": null,
+    "parse:plain": {
+      "content": "hello world\nsecond line",
+      "segments": [],
+      "traceEvents": []
+    },
+    "parse:claudeStream": {
+      "content": "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Hi there\"}]}}\n{\"type\":\"result\",\"subtype\":\"success\",\"result\":\"Hi there\",\"is_error\":false}",
+      "segments": [],
+      "traceEvents": []
+    },
+    "parse:codexStream": {
+      "content": "{\"type\":\"item.completed\",\"item\":{\"id\":\"i1\",\"type\":\"agent_message\",\"text\":\"Done\"}}",
+      "segments": [],
+      "traceEvents": []
+    },
+    "parse:opencodeStream": {
+      "content": "{\"type\":\"text\",\"part\":{\"type\":\"text\",\"text\":\"Done\"}}",
+      "segments": [],
+      "traceEvents": []
+    },
+    "parse:piStream": {
+      "content": "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Done\"}]}}",
+      "segments": [],
+      "traceEvents": []
+    }
+  },
+  "antigravity": {
+    "accumulator": "QaapQaiqStreamAccumulator",
+    "agUiEmitter": "QaapAntigravityAgUiStreamEmitter",
+    "parse:plain": {
+      "content": "hello world\nsecond line",
+      "segments": [
+        {
+          "type": "text",
+          "content": "hello world\nsecond line"
+        }
+      ],
+      "traceEvents": [
+        {
+          "type": "assistant_text",
+          "id": "text-0",
+          "content": "hello world\nsecond line",
+          "status": "completed"
+        }
+      ]
+    },
+    "accumulate:plain": {
+      "display": "",
+      "segments": []
+    },
+    "agui:plain": [
+      {
+        "type": "TEXT_MESSAGE_START",
+        "messageId": "fmt-text-1"
+      },
+      {
+        "type": "TEXT_MESSAGE_CONTENT",
+        "messageId": "fmt-text-1",
+        "delta": "hello world\n"
+      },
+      {
+        "type": "TEXT_MESSAGE_CONTENT",
+        "messageId": "fmt-text-1",
+        "delta": "second line\n"
+      }
+    ],
+    "parse:claudeStream": {
+      "content": "Hi there",
+      "segments": [
+        {
+          "type": "text",
+          "content": "Hi there"
+        }
+      ],
+      "traceEvents": [
+        {
+          "type": "assistant_text",
+          "id": "text-0",
+          "content": "Hi there",
+          "status": "streaming"
+        }
+      ]
+    },
+    "accumulate:claudeStream": {
+      "display": "Hi there",
+      "segments": [
+        {
+          "type": "text",
+          "content": "Hi there"
+        }
+      ]
+    },
+    "agui:claudeStream": [
+      {
+        "type": "TEXT_MESSAGE_START",
+        "messageId": "text-1"
+      },
+      {
+        "type": "TEXT_MESSAGE_CONTENT",
+        "messageId": "text-1",
+        "delta": "Hi there"
+      },
+      {
+        "type": "TEXT_MESSAGE_END",
+        "messageId": "text-1"
+      }
+    ],
+    "parse:codexStream": {
+      "content": "{\"type\":\"item.completed\",\"item\":{\"id\":\"i1\",\"type\":\"agent_message\",\"text\":\"Done\"}}",
+      "segments": [
+        {
+          "type": "text",
+          "content": "{\"type\":\"item.completed\",\"item\":{\"id\":\"i1\",\"type\":\"agent_message\",\"text\":\"Done\"}}"
+        }
+      ],
+      "traceEvents": [
+        {
+          "type": "assistant_text",
+          "id": "text-0",
+          "content": "{\"type\":\"item.completed\",\"item\":{\"id\":\"i1\",\"type\":\"agent_message\",\"text\":\"Done\"}}",
+          "status": "completed"
+        }
+      ]
+    },
+    "accumulate:codexStream": {
+      "display": "",
+      "segments": []
+    },
+    "agui:codexStream": [],
+    "parse:opencodeStream": {
+      "content": "{\"type\":\"text\",\"part\":{\"type\":\"text\",\"text\":\"Done\"}}",
+      "segments": [
+        {
+          "type": "text",
+          "content": "{\"type\":\"text\",\"part\":{\"type\":\"text\",\"text\":\"Done\"}}"
+        }
+      ],
+      "traceEvents": [
+        {
+          "type": "assistant_text",
+          "id": "text-0",
+          "content": "{\"type\":\"text\",\"part\":{\"type\":\"text\",\"text\":\"Done\"}}",
+          "status": "completed"
+        }
+      ]
+    },
+    "accumulate:opencodeStream": {
+      "display": "",
+      "segments": []
+    },
+    "agui:opencodeStream": [],
+    "parse:piStream": {
+      "content": "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Done\"}]}}",
+      "segments": [
+        {
+          "type": "text",
+          "content": "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Done\"}]}}"
+        }
+      ],
+      "traceEvents": [
+        {
+          "type": "assistant_text",
+          "id": "text-0",
+          "content": "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Done\"}]}}",
+          "status": "completed"
+        }
+      ]
+    },
+    "accumulate:piStream": {
+      "display": "",
+      "segments": []
+    },
+    "agui:piStream": []
+  },
+  "copilot": {
+    "accumulator": null,
+    "agUiEmitter": null,
+    "parse:plain": {
+      "content": "hello world\nsecond line",
+      "segments": [],
+      "traceEvents": []
+    },
+    "parse:claudeStream": {
+      "content": "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Hi there\"}]}}\n{\"type\":\"result\",\"subtype\":\"success\",\"result\":\"Hi there\",\"is_error\":false}",
+      "segments": [],
+      "traceEvents": []
+    },
+    "parse:codexStream": {
+      "content": "{\"type\":\"item.completed\",\"item\":{\"id\":\"i1\",\"type\":\"agent_message\",\"text\":\"Done\"}}",
+      "segments": [],
+      "traceEvents": []
+    },
+    "parse:opencodeStream": {
+      "content": "{\"type\":\"text\",\"part\":{\"type\":\"text\",\"text\":\"Done\"}}",
+      "segments": [],
+      "traceEvents": []
+    },
+    "parse:piStream": {
+      "content": "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Done\"}]}}",
+      "segments": [],
+      "traceEvents": []
+    }
+  },
+  "grok": {
+    "accumulator": null,
+    "agUiEmitter": null,
+    "parse:plain": {
+      "content": "hello world\nsecond line",
+      "segments": [],
+      "traceEvents": []
+    },
+    "parse:claudeStream": {
+      "content": "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Hi there\"}]}}\n{\"type\":\"result\",\"subtype\":\"success\",\"result\":\"Hi there\",\"is_error\":false}",
+      "segments": [],
+      "traceEvents": []
+    },
+    "parse:codexStream": {
+      "content": "{\"type\":\"item.completed\",\"item\":{\"id\":\"i1\",\"type\":\"agent_message\",\"text\":\"Done\"}}",
+      "segments": [],
+      "traceEvents": []
+    },
+    "parse:opencodeStream": {
+      "content": "{\"type\":\"text\",\"part\":{\"type\":\"text\",\"text\":\"Done\"}}",
+      "segments": [],
+      "traceEvents": []
+    },
+    "parse:piStream": {
+      "content": "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Done\"}]}}",
+      "segments": [],
+      "traceEvents": []
+    }
+  },
+  "shell": {
+    "accumulator": null,
+    "agUiEmitter": null,
+    "parse:plain": {
+      "content": "hello world\nsecond line",
+      "segments": [],
+      "traceEvents": []
+    },
+    "parse:claudeStream": {
+      "content": "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Hi there\"}]}}\n{\"type\":\"result\",\"subtype\":\"success\",\"result\":\"Hi there\",\"is_error\":false}",
+      "segments": [],
+      "traceEvents": []
+    },
+    "parse:codexStream": {
+      "content": "{\"type\":\"item.completed\",\"item\":{\"id\":\"i1\",\"type\":\"agent_message\",\"text\":\"Done\"}}",
+      "segments": [],
+      "traceEvents": []
+    },
+    "parse:opencodeStream": {
+      "content": "{\"type\":\"text\",\"part\":{\"type\":\"text\",\"text\":\"Done\"}}",
+      "segments": [],
+      "traceEvents": []
+    },
+    "parse:piStream": {
+      "content": "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Done\"}]}}",
+      "segments": [],
+      "traceEvents": []
+    }
+  },
+  "openclaude": {
+    "accumulator": "QaapQaiqStreamAccumulator",
+    "agUiEmitter": "QaapQaiqAgUiStreamEmitter",
+    "parse:plain": {
+      "content": "",
+      "segments": [],
+      "traceEvents": []
+    },
+    "accumulate:plain": {
+      "display": "",
+      "segments": []
+    },
+    "agui:plain": [],
+    "parse:claudeStream": {
+      "content": "Hi there",
+      "segments": [
+        {
+          "type": "text",
+          "content": "Hi there"
+        }
+      ],
+      "traceEvents": [
+        {
+          "type": "assistant_text",
+          "id": "text-0",
+          "content": "Hi there",
+          "status": "streaming"
+        }
+      ]
+    },
+    "accumulate:claudeStream": {
+      "display": "Hi there",
+      "segments": [
+        {
+          "type": "text",
+          "content": "Hi there"
+        }
+      ]
+    },
+    "agui:claudeStream": [
+      {
+        "type": "TEXT_MESSAGE_START",
+        "messageId": "text-1"
+      },
+      {
+        "type": "TEXT_MESSAGE_CONTENT",
+        "messageId": "text-1",
+        "delta": "Hi there"
+      },
+      {
+        "type": "TEXT_MESSAGE_END",
+        "messageId": "text-1"
+      }
+    ],
+    "parse:codexStream": {
+      "content": "",
+      "segments": [],
+      "traceEvents": []
+    },
+    "accumulate:codexStream": {
+      "display": "",
+      "segments": []
+    },
+    "agui:codexStream": [],
+    "parse:opencodeStream": {
+      "content": "",
+      "segments": [],
+      "traceEvents": []
+    },
+    "accumulate:opencodeStream": {
+      "display": "",
+      "segments": []
+    },
+    "agui:opencodeStream": [],
+    "parse:piStream": {
+      "content": "",
+      "segments": [],
+      "traceEvents": []
+    },
+    "accumulate:piStream": {
+      "display": "",
+      "segments": []
+    },
+    "agui:piStream": []
+  },
+  "qaiq": {
+    "accumulator": "QaapQaiqStreamAccumulator",
+    "agUiEmitter": "QaapQaiqAgUiStreamEmitter",
+    "parse:plain": {
+      "content": "",
+      "segments": [],
+      "traceEvents": []
+    },
+    "accumulate:plain": {
+      "display": "",
+      "segments": []
+    },
+    "agui:plain": [],
+    "parse:claudeStream": {
+      "content": "Hi there",
+      "segments": [
+        {
+          "type": "text",
+          "content": "Hi there"
+        }
+      ],
+      "traceEvents": [
+        {
+          "type": "assistant_text",
+          "id": "text-0",
+          "content": "Hi there",
+          "status": "streaming"
+        }
+      ]
+    },
+    "accumulate:claudeStream": {
+      "display": "Hi there",
+      "segments": [
+        {
+          "type": "text",
+          "content": "Hi there"
+        }
+      ]
+    },
+    "agui:claudeStream": [
+      {
+        "type": "TEXT_MESSAGE_START",
+        "messageId": "text-1"
+      },
+      {
+        "type": "TEXT_MESSAGE_CONTENT",
+        "messageId": "text-1",
+        "delta": "Hi there"
+      },
+      {
+        "type": "TEXT_MESSAGE_END",
+        "messageId": "text-1"
+      }
+    ],
+    "parse:codexStream": {
+      "content": "",
+      "segments": [],
+      "traceEvents": []
+    },
+    "accumulate:codexStream": {
+      "display": "",
+      "segments": []
+    },
+    "agui:codexStream": [],
+    "parse:opencodeStream": {
+      "content": "",
+      "segments": [],
+      "traceEvents": []
+    },
+    "accumulate:opencodeStream": {
+      "display": "",
+      "segments": []
+    },
+    "agui:opencodeStream": [],
+    "parse:piStream": {
+      "content": "",
+      "segments": [],
+      "traceEvents": []
+    },
+    "accumulate:piStream": {
+      "display": "",
+      "segments": []
+    },
+    "agui:piStream": []
+  },
+  "gemini": {
+    "accumulator": "QaapQaiqStreamAccumulator",
+    "agUiEmitter": "QaapAntigravityAgUiStreamEmitter",
+    "parse:plain": {
+      "content": "hello world\nsecond line",
+      "segments": [
+        {
+          "type": "text",
+          "content": "hello world\nsecond line"
+        }
+      ],
+      "traceEvents": [
+        {
+          "type": "assistant_text",
+          "id": "text-0",
+          "content": "hello world\nsecond line",
+          "status": "completed"
+        }
+      ]
+    },
+    "accumulate:plain": {
+      "display": "",
+      "segments": []
+    },
+    "agui:plain": [
+      {
+        "type": "TEXT_MESSAGE_START",
+        "messageId": "fmt-text-1"
+      },
+      {
+        "type": "TEXT_MESSAGE_CONTENT",
+        "messageId": "fmt-text-1",
+        "delta": "hello world\n"
+      },
+      {
+        "type": "TEXT_MESSAGE_CONTENT",
+        "messageId": "fmt-text-1",
+        "delta": "second line\n"
+      }
+    ],
+    "parse:claudeStream": {
+      "content": "Hi there",
+      "segments": [
+        {
+          "type": "text",
+          "content": "Hi there"
+        }
+      ],
+      "traceEvents": [
+        {
+          "type": "assistant_text",
+          "id": "text-0",
+          "content": "Hi there",
+          "status": "streaming"
+        }
+      ]
+    },
+    "accumulate:claudeStream": {
+      "display": "Hi there",
+      "segments": [
+        {
+          "type": "text",
+          "content": "Hi there"
+        }
+      ]
+    },
+    "agui:claudeStream": [
+      {
+        "type": "TEXT_MESSAGE_START",
+        "messageId": "text-1"
+      },
+      {
+        "type": "TEXT_MESSAGE_CONTENT",
+        "messageId": "text-1",
+        "delta": "Hi there"
+      },
+      {
+        "type": "TEXT_MESSAGE_END",
+        "messageId": "text-1"
+      }
+    ],
+    "parse:codexStream": {
+      "content": "{\"type\":\"item.completed\",\"item\":{\"id\":\"i1\",\"type\":\"agent_message\",\"text\":\"Done\"}}",
+      "segments": [
+        {
+          "type": "text",
+          "content": "{\"type\":\"item.completed\",\"item\":{\"id\":\"i1\",\"type\":\"agent_message\",\"text\":\"Done\"}}"
+        }
+      ],
+      "traceEvents": [
+        {
+          "type": "assistant_text",
+          "id": "text-0",
+          "content": "{\"type\":\"item.completed\",\"item\":{\"id\":\"i1\",\"type\":\"agent_message\",\"text\":\"Done\"}}",
+          "status": "completed"
+        }
+      ]
+    },
+    "accumulate:codexStream": {
+      "display": "",
+      "segments": []
+    },
+    "agui:codexStream": [],
+    "parse:opencodeStream": {
+      "content": "{\"type\":\"text\",\"part\":{\"type\":\"text\",\"text\":\"Done\"}}",
+      "segments": [
+        {
+          "type": "text",
+          "content": "{\"type\":\"text\",\"part\":{\"type\":\"text\",\"text\":\"Done\"}}"
+        }
+      ],
+      "traceEvents": [
+        {
+          "type": "assistant_text",
+          "id": "text-0",
+          "content": "{\"type\":\"text\",\"part\":{\"type\":\"text\",\"text\":\"Done\"}}",
+          "status": "completed"
+        }
+      ]
+    },
+    "accumulate:opencodeStream": {
+      "display": "",
+      "segments": []
+    },
+    "agui:opencodeStream": [],
+    "parse:piStream": {
+      "content": "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Done\"}]}}",
+      "segments": [
+        {
+          "type": "text",
+          "content": "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Done\"}]}}"
+        }
+      ],
+      "traceEvents": [
+        {
+          "type": "assistant_text",
+          "id": "text-0",
+          "content": "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Done\"}]}}",
+          "status": "completed"
+        }
+      ]
+    },
+    "accumulate:piStream": {
+      "display": "",
+      "segments": []
+    },
+    "agui:piStream": []
+  },
+  "kimi": {
+    "accumulator": null,
+    "agUiEmitter": null,
+    "parse:plain": {
+      "content": "hello world\nsecond line",
+      "segments": [],
+      "traceEvents": []
+    },
+    "parse:claudeStream": {
+      "content": "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Hi there\"}]}}\n{\"type\":\"result\",\"subtype\":\"success\",\"result\":\"Hi there\",\"is_error\":false}",
+      "segments": [],
+      "traceEvents": []
+    },
+    "parse:codexStream": {
+      "content": "{\"type\":\"item.completed\",\"item\":{\"id\":\"i1\",\"type\":\"agent_message\",\"text\":\"Done\"}}",
+      "segments": [],
+      "traceEvents": []
+    },
+    "parse:opencodeStream": {
+      "content": "{\"type\":\"text\",\"part\":{\"type\":\"text\",\"text\":\"Done\"}}",
+      "segments": [],
+      "traceEvents": []
+    },
+    "parse:piStream": {
+      "content": "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Done\"}]}}",
+      "segments": [],
+      "traceEvents": []
+    }
+  },
+  "unknown": {
+    "accumulator": null,
+    "agUiEmitter": null,
+    "parse:plain": {
+      "content": "hello world\nsecond line",
+      "segments": [],
+      "traceEvents": []
+    },
+    "parse:claudeStream": {
+      "content": "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Hi there\"}]}}\n{\"type\":\"result\",\"subtype\":\"success\",\"result\":\"Hi there\",\"is_error\":false}",
+      "segments": [],
+      "traceEvents": []
+    },
+    "parse:codexStream": {
+      "content": "{\"type\":\"item.completed\",\"item\":{\"id\":\"i1\",\"type\":\"agent_message\",\"text\":\"Done\"}}",
+      "segments": [],
+      "traceEvents": []
+    },
+    "parse:opencodeStream": {
+      "content": "{\"type\":\"text\",\"part\":{\"type\":\"text\",\"text\":\"Done\"}}",
+      "segments": [],
+      "traceEvents": []
+    },
+    "parse:piStream": {
+      "content": "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Done\"}]}}",
+      "segments": [],
+      "traceEvents": []
+    }
+  },
+  "undefined": {
+    "accumulator": null,
+    "agUiEmitter": null,
+    "parse:plain": {
+      "content": "hello world\nsecond line",
+      "segments": [],
+      "traceEvents": []
+    },
+    "parse:claudeStream": {
+      "content": "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Hi there\"}]}}\n{\"type\":\"result\",\"subtype\":\"success\",\"result\":\"Hi there\",\"is_error\":false}",
+      "segments": [],
+      "traceEvents": []
+    },
+    "parse:codexStream": {
+      "content": "{\"type\":\"item.completed\",\"item\":{\"id\":\"i1\",\"type\":\"agent_message\",\"text\":\"Done\"}}",
+      "segments": [],
+      "traceEvents": []
+    },
+    "parse:opencodeStream": {
+      "content": "{\"type\":\"text\",\"part\":{\"type\":\"text\",\"text\":\"Done\"}}",
+      "segments": [],
+      "traceEvents": []
+    },
+    "parse:piStream": {
+      "content": "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Done\"}]}}",
+      "segments": [],
+      "traceEvents": []
+    }
+  }
+}

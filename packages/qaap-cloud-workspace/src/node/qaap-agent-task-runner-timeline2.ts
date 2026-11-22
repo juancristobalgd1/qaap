@@ -1,16 +1,15 @@
 import { formatTaskStartLog } from './qaap-agent-conversation-persist-policy';
 import { createAgySignInWaitWatcher } from './qaap-agy-sign-in-wait-watcher';
-import { usesToolGateExtension } from './qaap-tool-gate-pi-adapter';
+import { QAAP_HARNESS_ADAPTER_REGISTRY } from './harness/qaap-harness-adapter-registry';
 import { QAAP_OPENCODE_GATE_PROBE } from './qaap-tool-gate-opencode-probe';
 import {
     opencodeGatePluginSeeded,
     resolveOpencodeArmTimeoutMs,
     resolveQaapToolGateOpencodePluginPath,
     startOpencodeArmWatch,
-    usesOpencodeGatePlugin,
 } from './qaap-tool-gate-opencode-adapter';
 import {
-    assertCodexGateTokenIssued, DEFAULT_QAAP_CODEX_GATE_OVERLAY_BUILDER, resolveCodexGateOverlayRoot, usesCodexToolGateHook, type QaapCodexGateOverlay,
+    assertCodexGateTokenIssued, DEFAULT_QAAP_CODEX_GATE_OVERLAY_BUILDER, resolveCodexGateOverlayRoot, type QaapCodexGateOverlay,
 } from './qaap-codex-gate-overlay';
 import { resolveCodexAgentHome } from './qaap-agent-native-models';
 import { IDLE_TASK_TIMEOUT_MS, QAAP_AGENT_VERIFY_ENABLED, QUEUED_APPROVAL_GRACE_TIMEOUT_MS, USER_REQUEST_MAX_CHARS } from './qaap-agent-task-runner-constants';
@@ -49,7 +48,6 @@ import {
     type QaapCreateAgentTaskRequest,
 } from '../common/qaap-agent-task';
 import { isQaapHostedEnvironment } from '@theia/qaap-adapters/lib/common/qaap-hosted-runtime';
-import { isPiAgent } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import {
     buildQaiqControlResponseLine,
     buildQaiqStdioPromptLine,
@@ -87,7 +85,7 @@ import { applyPreTurnAgentHooks, createQaiqPreToolUseHookGate } from './qaap-age
 import { canProbeProviderKey, runProviderKeyPreflight } from './qaap-provider-key-preflight';
 import { applyQaapHarnessBinaryOverride, applyQaapHarnessUserEnv, resolveQaapHarnessLaunchPlan } from './qaap-harness-launch-overrides';
 import { isConversationalTurn, isConversationalTurnTask } from '../common/qaap-agent-conversational-turn';
-import { emitsStreamJsonFinalResult, QAAP_AGENT_EXIT_AFTER_RESULT_GRACE_MS, QaapAgentFinalResultWatcher, type QaapAgentFinalResult } from './qaap-agent-final-result-watcher';
+import { QAAP_AGENT_EXIT_AFTER_RESULT_GRACE_MS, QaapAgentFinalResultWatcher, type QaapAgentFinalResult } from './qaap-agent-final-result-watcher';
 
 export function enforceAgentTaskChangeScopeLimitExtracted(
     ctx: QaapAgentTaskRunnerContext,
@@ -575,9 +573,12 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             : stdinPromptEntry;
         // Harnesses gated through an HTTP extension (Pi) ask over the gate, not over stdin: a piped stdin
         // makes Pi block waiting for input, so they keep a closed stdin even under request-approval.
-        const stdinInteractive = (task.autoApprove === false && !usesToolGateExtension(ctx.resolveTaskAgentId(task))
+        // What the harness is and how it reaches the gate is decided by its adapter, not by comparing ids here.
+        const harnessAdapter = QAAP_HARNESS_ADAPTER_REGISTRY.get(ctx.resolveTaskAgentId(task));
+        const requestedAdapter = QAAP_HARNESS_ADAPTER_REGISTRY.get(task.agentId);
+        const stdinInteractive = (task.autoApprove === false && harnessAdapter.gateWiring !== 'pi-extension'
             // Codex asks over its PreToolUse hook too; a piped stdin would make `codex exec` wait for EOF.
-            && !usesCodexToolGateHook(ctx.resolveTaskAgentId(task)))
+            && harnessAdapter.gateWiring !== 'codex-hook')
             || stdinPrompt !== undefined;
         const agentModel = resolveTaskAgentModel(task);
         // A shared Theia backend must never rewrite one global CLI settings file while another
@@ -630,7 +631,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                     quoteShellArg,
                 );
             }
-            if (usesOpencodeGatePlugin(ctx.resolveTaskAgentId(task))) {
+            if (harnessAdapter.gateWiring === 'opencode-plugin') {
                 // Prove once per OpenCode version that the gate plugin loads and sees tool calls. Without the
                 // proof the plugin is not wired and OpenCode's own `ask` rules keep refusing gated tools.
                 const probe = await QAAP_OPENCODE_GATE_PROBE.ensure(resolveQaapToolGateOpencodePluginPath(), childEnv, 'opencode', ctx.resolveAgentSpawnIdentity(task.cwd));
@@ -675,7 +676,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                 } else if (delegation?.transport === 'pi-extension' && delegationPlacement) {
                     // Only with Pi's gate extension in the command: a Pi turn without it runs ungated and gets no delegation.
                     // In a task sandbox the config and the extension go below its shared root, like the shim.
-                    const piCommand = usesToolGateExtension(ctx.resolveTaskAgentId(task)) && spawnCommand.includes(' -e ') && childEnv.QAAP_GATE_TOKEN
+                    const piCommand = harnessAdapter.gateWiring === 'pi-extension' && spawnCommand.includes(' -e ') && childEnv.QAAP_GATE_TOKEN
                         ? applyQaapPiDelegation(childEnv, spawnCommand, task.id, delegation, owner, quoteShellArg, writeQaapDelegationMcpConfigFile, delegationPlacement)
                         : undefined;
                     if (piCommand) {
@@ -691,7 +692,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                 gateWired: ctx.toolGateWired(),
                 gateToken: childEnv.QAAP_GATE_TOKEN,
             });
-            if (childEnv.QAAP_GATE_TOKEN && usesCodexToolGateHook(ctx.resolveTaskAgentId(task))) {
+            if (childEnv.QAAP_GATE_TOKEN && harnessAdapter.gateWiring === 'codex-hook') {
                 // Fails closed: if the overlay cannot be built or Codex does not trust its hook, nothing runs.
                 codexGateOverlay = await DEFAULT_QAAP_CODEX_GATE_OVERLAY_BUILDER.create({
                     taskId: task.id,
@@ -721,7 +722,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                     console.info('[qaap-codex] task sandbox container: Codex own sandbox off (container isolates)');
                 }
             }
-            if (task.agentId?.trim().toLowerCase() === 'opencode') {
+            if (requestedAdapter.spawnQuirks.removesStaleSnapshotLocks) {
                 // A run killed mid-snapshot leaves index.lock in the tenant's persistent data dir,
                 // and every later OpenCode run then fails to create its snapshot lock.
                 await removeStaleOpencodeSnapshotLocks(childEnv.XDG_DATA_HOME);
@@ -867,7 +868,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                         cwd: task.cwd,
                         options: {
                             autoApproveReadOnlyShell: readAutoApproveReadOnlyShell(),
-                            allowSubagentTools: ctx.resolveTaskAgentId(task) === 'claude',
+                            allowSubagentTools: harnessAdapter.spawnQuirks.allowsSubagentTools,
                             ...(delegation ? { delegationServer: delegation.mcpServerName } : {}),
                             cwd: task.cwd,
                             checkGitExecConfig: () => ctx.checkGitExecConfig(task.cwd),
@@ -956,14 +957,14 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             }
         };
         // Pi exits 0 after a provider error; its JSON stream is the only place the failure shows.
-        const piProviderErrorWatcher = isPiAgent(task.agentId) ? createPiProviderErrorWatcher() : undefined;
+        const piProviderErrorWatcher = requestedAdapter.spawnQuirks.watchesProviderErrors ? createPiProviderErrorWatcher() : undefined;
         // Claude Code may take long to exit after its final `result` (telemetry / update checks behind
         // the egress allowlist) while the answer is already complete: end it after a short grace.
-        const finalResultWatcher = emitsStreamJsonFinalResult(task.agentId) ? new QaapAgentFinalResultWatcher() : undefined;
+        const finalResultWatcher = requestedAdapter.spawnQuirks.emitsStreamJsonFinalResult ? new QaapAgentFinalResultWatcher() : undefined;
         let exitAfterResultTimer: ReturnType<typeof setTimeout> | undefined;
         let endedAfterResult: QaapAgentFinalResult | undefined;
         // agy without a usable session waits 60 s for a pasted code: stop it on its first sign-in wait line.
-        const agySignInWatcher = ctx.resolveTaskAgentId(task) === 'antigravity' ? createAgySignInWaitWatcher() : undefined;
+        const agySignInWatcher = harnessAdapter.spawnQuirks.watchesSignInWait ? createAgySignInWaitWatcher() : undefined;
         const stopOnAgySignInWait = (chunk: unknown): void => {
             if (!agySignInWatcher?.push(Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk))
                 || ctx.tasks.get(task.id)?.state !== 'running') {
@@ -1002,7 +1003,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
         });
         // OpenCode keeps running after a quota error and prints nothing on stdout: stop the run here
         // so the task settles `failed` with the provider reason in its log, not after the idle timeout.
-        const opencodeFatalWatcher = task.agentId?.trim().toLowerCase() === 'opencode'
+        const opencodeFatalWatcher = requestedAdapter.spawnQuirks.watchesFatalStderr
             ? createOpencodeFatalStderrWatcher()
             : undefined;
         child.stderr?.on('data', chunk => {

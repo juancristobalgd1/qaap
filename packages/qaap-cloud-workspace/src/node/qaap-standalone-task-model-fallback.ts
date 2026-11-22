@@ -7,7 +7,7 @@ import { discoveredFallbackModels } from './qaap-agent-model-fallback-candidates
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
 import { QaapPlanLimit } from '@theia/qaap-adapters/lib/common/qaap-plan-limit';
 import { detectAgentFailureKind } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
-import { parseAgentLogForTranscript } from '@theia/qaap-shared-core/lib/common/qaap-cli-transcript-stream';
+import { QAAP_HARNESS_ADAPTER_REGISTRY } from './harness/qaap-harness-adapter-registry';
 import {
     isQaapAgentTaskFinished,
     resolveTaskAgentModel,
@@ -246,7 +246,7 @@ export class QaapStandaloneTaskModelFallback {
     protected parseEvidence(agentId: string, log: string): QaapAgentModelFallbackEvidence | undefined {
         // The stream parsers are line-buffered: a log whose last record has no newline would read
         // as "no output" and turn a real answer into a retry.
-        const parsed = parseAgentLogForTranscript(agentId, log.endsWith('\n') ? log : `${log}\n`);
+        const parsed = QAAP_HARNESS_ADAPTER_REGISTRY.get(agentId).parseLogForTranscript(agentId, log.endsWith('\n') ? log : `${log}\n`);
         if (!parsed.content.trim() && parsed.segments.length === 0) {
             return undefined;
         }

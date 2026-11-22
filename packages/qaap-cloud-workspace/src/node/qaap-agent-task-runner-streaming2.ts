@@ -1,6 +1,5 @@
-import { buildPiGateTemplateVars } from './qaap-tool-gate-pi-adapter';
+import { QAAP_HARNESS_ADAPTER_REGISTRY } from './harness/qaap-harness-adapter-registry';
 import { formatTaskStartLog } from './qaap-agent-conversation-persist-policy';
-import { buildPiDefaultModelFlagShell } from '@theia/qaap-shared-core/lib/common/qaap-pi-default-model';
 import { AGENT_STOP_GRACE_TIMEOUT_MS, AGENT_STOP_SLOT_RELEASE_TIMEOUT_MS, SHELL_AGENT_ID, QAIQ_AGENT_ID, REPO_MAP_CACHE_TTL_MS, REPO_MAP_MAX_CHARS, USER_REQUEST_MAX_CHARS } from './qaap-agent-task-runner-constants';
 import type { QaapAgentCommandBuildResult, QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { QaapAgentQueuePolicy } from './qaap-agent-queue-policy';
@@ -44,10 +43,9 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-interaction-flags';
 import type { QaapAgentApprovalPolicyId } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model-catalog';
-import { canEnforceReadOnlyWorkspace, withPiPlanModeInstruction } from '../common/qaap-agent-readonly-workspace';
+import { canEnforceReadOnlyWorkspace } from '../common/qaap-agent-readonly-workspace';
 import { antigravityBinFor, listNativeAgentModels } from './qaap-agent-native-models';
 import {
-    applyAgentApprovalPolicyToCommand,
     shouldUseQaiqStdioApprovals,
 } from '../common/qaap-agent-approval-flags';
 import {
@@ -56,10 +54,7 @@ import {
 import {
     resolveTaskAutoApproveFromPolicy,
 } from '../common/qaap-agent-auto-approve';
-import { formatModelFlagsForAgent } from '../common/qaap-agent-model-flags';
-import { formatEffortFlagsForAgent } from '../common/qaap-agent-effort-flags';
 import type { QaapAgentEffortLevel } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
-import { resolveQaapHarnessCapabilities } from '@theia/qaap-shared-core/lib/common/qaap-harness-capabilities';
 import { QAAP_PROJECT_TRUST_FLAGS_TEMPLATE_VAR, resolveAgentProjectTrustFlags } from '@theia/qaap-shared-core/lib/common/qaap-project-folder-trust';
 import {
     bindingFromQaiqModelSelection,
@@ -410,7 +405,8 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
                 id,
             ));
         }
-        const runnerPrompt = withPiPlanModeInstruction(turnPrompt, id, interactionModeId);
+        const adapter = QAAP_HARNESS_ADAPTER_REGISTRY.get(id);
+        const runnerPrompt = adapter.preparePrompt(id, turnPrompt, interactionModeId);
         if (id === SHELL_AGENT_ID) {
             return { command: runnerPrompt, agentId: id };
         }
@@ -453,7 +449,7 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
         ctx.assertAgentModelAccess(id, ownerLogin, agentModel);
         const detected = ctx.detectedAgents.get(id);
         let command: string;
-        const effortFlags = formatEffortFlagsForAgent(id, agentModel?.modelId, effort);
+        const effortFlags = adapter.formatEffortFlags(id, agentModel?.modelId, effort);
         const interaction: QaapQaiqInteractionFlagOptions = {
             interactionModeId,
             approvalPolicyId: approvalPolicyId === 'approve-for-me'
@@ -479,9 +475,9 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
         const usesQaiqProtocol = !!detected
             ? id === QAIQ_AGENT_ID || detected.bin === 'qaiq' || detected.bin === 'openclaude'
             : !!envTemplate && ctx.isQaiqRunner(id, envTemplate);
-        // Claude Code speaks the same control protocol (QAIQ is a fork of it); the capability registry says which
+        // Claude Code speaks the same control protocol (QAIQ is a fork of it); the adapter says which
         // harnesses take the stdio gate, so the flag set and the answer loop are shared with QAIQ.
-        const usesNativeStdioGate = !!detected && resolveQaapHarnessCapabilities(id).gate === 'native-stdio';
+        const usesNativeStdioGate = !!detected && adapter.gateWiring === 'stdio-control';
         const useStdioApprovals = (usesQaiqProtocol || usesNativeStdioGate)
             && !readOnlyWorkspace
             && shouldUseQaiqStdioApprovals(approvalOptions);
@@ -520,7 +516,7 @@ export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prom
             promptTempDir = written.dir;
             command = `${command} ${promptTransport.flag} ${quoteShellArgHelper(written.file)}`;
         }
-        command = applyAgentApprovalPolicyToCommand(command, useStdioApprovals ? { ...approvalOptions, stdioGated: true } : approvalOptions);
+        command = adapter.applyApprovalPolicy(command, useStdioApprovals ? { ...approvalOptions, stdioGated: true } : approvalOptions);
         if (useStdioApprovals) {
             return {
                 command: `${command} ${QAIQ_STDIO_APPROVAL_FLAGS}`,
@@ -711,13 +707,7 @@ export function buildTemplateVarsExtracted(ctx: QaapAgentTaskRunnerContext, agen
         ownerLogin?: string,
         cwd?: string,): Record<string, string> {
         const vars = buildBaseTemplateVars(ctx, agentId, agentModel, interaction, ownerLogin, cwd);
-        if (agentId.trim().toLowerCase() !== 'pi') {
-            return vars;
-        }
-        // No model chosen: Pi would pick its own (often a down free model). The product default is resolved by
-        // the shell inside the Pi child, so it sees that child's HOME and pins (see buildPiDefaultModelFlagShell).
-        const modelFlags = vars.model_flags || buildPiDefaultModelFlagShell();
-        return { ...vars, model_flags: modelFlags, ...buildPiGateTemplateVars() };
+        return QAAP_HARNESS_ADAPTER_REGISTRY.get(agentId).extendTemplateVars(agentId, vars);
 }
 
 function buildBaseTemplateVars(ctx: QaapAgentTaskRunnerContext, agentId: string,
@@ -742,7 +732,7 @@ function buildBaseTemplateVars(ctx: QaapAgentTaskRunnerContext, agentId: string,
         if (agentModel?.provider && agentModel.modelId?.trim()
             && agentModelFitsAgent(agentId, agentModel, () => listNativeAgentModels(agentId, ownerLogin, antigravityBinFor(ctx, agentId)))) {
             const binding = ctx.normalizeAgentBinding(bindingFromQaiqModelSelection(agentModel), ownerLogin);
-            const flags = formatModelFlagsForAgent(agentId, binding, antigravityBinFor(ctx, agentId));
+            const flags = QAAP_HARNESS_ADAPTER_REGISTRY.get(agentId).formatModelFlags(agentId, binding, antigravityBinFor(ctx, agentId));
             if (isQaiqAgent(agentId)) {
                 return { qaiq_flags: joinQaiqFlags(qaiqInteractionFlags, flags), model_flags: '', [QAAP_PROJECT_TRUST_FLAGS_TEMPLATE_VAR]: trustFlags };
             }

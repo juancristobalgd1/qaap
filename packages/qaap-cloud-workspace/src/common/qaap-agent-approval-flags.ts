@@ -117,7 +117,7 @@ function inferAgentIdFromCommand(command: string): string | undefined {
     return undefined;
 }
 
-function resolveApprovalAgentId(command: string, agentId: string | undefined): string | undefined {
+export function resolveApprovalAgentId(command: string, agentId: string | undefined): string | undefined {
     const requested = agentId?.trim().toLowerCase();
     if (requested === 'openclaude') {
         return 'qaiq';
