@@ -11,7 +11,7 @@ import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/li
 import { QAAP_WORK_HUB_GETTING_STARTED } from '@theia/qaap-shared-core/lib/common/mobile-work-hub-catalog';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import { buildQaapAccountMenuEntries, QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE, QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND, toggleQaapAccountMenu } from './qaap-workbench-account-menu';
-import { MobileWorkHubUnifiedSearchDialog } from './mobile-work-hub-unified-search-dialog';
+import { MobileWorkHubUnifiedSearchDialog, type MobileWorkHubUnifiedSearchTab } from './mobile-work-hub-unified-search-dialog';
 import { QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileViewToggleId } from '@theia/qaap-shared-core/lib/common/qaap-mobile-work-surface-preference';
@@ -276,6 +276,7 @@ export function onSessionsSidebarAccountClickExtracted(ctx: MobileProjectsSessio
         buildQaapAccountMenuEntries(readQaapSignedIn(), {
             workHub: true,
             openBilling: () => ctx.host.openBillingSheet?.(),
+            openCommandSearch: () => openSessionsSidebarSearchExtracted(ctx, 'commands'),
         }),
         {
             section: QAAP_WORK_HUB_GETTING_STARTED,
@@ -289,7 +290,10 @@ export function onSessionsSidebarAccountClickExtracted(ctx: MobileProjectsSessio
     );
 }
 
-export async function openSessionsSidebarSearchExtracted(ctx: MobileProjectsSessionsSidebarUiContext): Promise<void> {
+export async function openSessionsSidebarSearchExtracted(
+    ctx: MobileProjectsSessionsSidebarUiContext,
+    initialTab?: MobileWorkHubUnifiedSearchTab,
+): Promise<void> {
     const chats = ctx.host.projects.flatMap(project =>
         ctx.host.conversationIndexUi.conversationsForProject(project)
             .map(summary => ({ project, summary })));
@@ -307,6 +311,7 @@ export async function openSessionsSidebarSearchExtracted(ctx: MobileProjectsSess
             });
         },
         ctx.host.sessionsSidebar?.node ?? document.activeElement as HTMLElement,
+        initialTab,
     );
     dialog.show();
 }

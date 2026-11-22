@@ -8,7 +8,7 @@ const disableImportJSDOM = enableJSDOM();
 import { expect } from 'chai';
 import type { CommandHandler } from '@theia/core/lib/common/command';
 import { clearPreferDesktopIde, markPreferDesktopIde } from '@theia/qaap-shared-core/lib/common/qaap-mobile-work-surface-preference';
-import { QAAP_WORK_HUB_OPEN_SETTINGS_COMMAND } from '../common/qaap-work-hub-command-palette';
+import { QAAP_WORK_HUB_OPEN_COMMAND_SEARCH_COMMAND, QAAP_WORK_HUB_OPEN_SETTINGS_COMMAND } from '../common/qaap-work-hub-command-palette';
 import { QaapWorkHubSurfaceRedirectContribution } from './qaap-work-hub-surface-redirect-contribution';
 disableImportJSDOM();
 
@@ -145,6 +145,28 @@ describe('QaapWorkHubSurfaceRedirectContribution', () => {
             markPreferDesktopIde();
             expect(handler.isEnabled?.()).to.equal(false);
             expect(handler.isVisible?.()).to.equal(false);
+        });
+
+        it('routes the command palette (F1 / Cmd+Shift+P) to the Work Hub command search', async () => {
+            const registry = new FakeCommandRegistry();
+            (registry as unknown as { isEnabled: (id: string) => boolean }).isEnabled = id => id === QAAP_WORK_HUB_OPEN_COMMAND_SEARCH_COMMAND;
+            createContribution(registry, new FakeTenantUpdate({ updatePending: false, runningTasks: 0 }));
+            const handler = handlerOf(registry, 'workbench.action.showCommands');
+
+            expect(handler.isEnabled?.()).to.equal(true);
+            await handler.execute?.();
+            expect(registry.executed).to.deep.equal([{ commandId: QAAP_WORK_HUB_OPEN_COMMAND_SEARCH_COMMAND, args: [] }]);
+
+            markPreferDesktopIde();
+            expect(handler.isEnabled?.()).to.equal(false);
+        });
+
+        it('leaves the IDE palette when the Work Hub dialog cannot open', () => {
+            const registry = new FakeCommandRegistry();
+            (registry as unknown as { isEnabled: (id: string) => boolean }).isEnabled = () => false;
+            createContribution(registry, new FakeTenantUpdate({ updatePending: false, runningTasks: 0 }));
+
+            expect(handlerOf(registry, 'workbench.action.showCommands').isEnabled?.()).to.equal(false);
         });
 
         it('does not claim File Icon Theme', () => {

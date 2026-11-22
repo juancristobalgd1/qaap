@@ -741,6 +741,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
             buildQaapAccountMenuEntries(readQaapSignedIn(), {
                 workHub: true,
                 openBilling: () => this.openBillingSheet?.(),
+                openCommandSearch: () => this.openWorkHubCommandSearch(),
             }),
             {
                 section: QAAP_WORK_HUB_GETTING_STARTED,
@@ -1732,6 +1733,11 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     /** Command palette / toolbar: start a new agent on the Work Hub surface. */
     async startNewWorkHubAgent(): Promise<void> {
         await this.sessionsSidebarUi.onWorkHubSessionsSidebarNewChat();
+    }
+
+    /** Work Hub command palette: the unified search dialog with the Commands tab active. */
+    async openWorkHubCommandSearch(): Promise<void> {
+        await this.sessionsSidebarUi.openSessionsSidebarSearch('commands');
     }
 
     /** Command palette / chrome: open the Work Hub search quick-pick. */

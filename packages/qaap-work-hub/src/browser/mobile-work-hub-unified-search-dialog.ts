@@ -13,7 +13,7 @@ export interface MobileWorkHubUnifiedSearchChat {
     readonly summary: QaapAgentConversationSummaryDTO;
 }
 
-type MobileWorkHubUnifiedSearchTab = 'chats' | 'commands';
+export type MobileWorkHubUnifiedSearchTab = 'chats' | 'commands';
 
 /** Search chats and executable commands in one Work Hub dialog. */
 export class MobileWorkHubUnifiedSearchDialog {
@@ -40,7 +40,10 @@ export class MobileWorkHubUnifiedSearchDialog {
         protected readonly onOpenChat: (chat: MobileWorkHubUnifiedSearchChat) => void,
         protected readonly onRunCommand: (command: Command) => void,
         protected readonly returnFocus: HTMLElement,
+        /** Tab shown when the dialog opens (default: chats). */
+        initialTab: MobileWorkHubUnifiedSearchTab = 'chats',
     ) {
+        this.activeTab = initialTab;
         this.node = document.createElement('div');
         this.node.className = 'theia-mobile-work-hub-unified-search';
         this.node.setAttribute('role', 'dialog');
@@ -103,6 +106,7 @@ export class MobileWorkHubUnifiedSearchDialog {
             'Commands',
         ));
         tabs.append(this.chatsTab, this.commandsTab);
+        this.syncActiveTabChrome();
 
         this.results = document.createElement('div');
         this.results.className = 'theia-mobile-work-hub-unified-search-results';
@@ -159,6 +163,16 @@ export class MobileWorkHubUnifiedSearchDialog {
         }
     }
 
+    /** Keeps tab selection state and the input placeholder in step with {@link activeTab}. */
+    protected syncActiveTabChrome(): void {
+        this.chatsTab.setAttribute('aria-selected', String(this.activeTab === 'chats'));
+        this.commandsTab.setAttribute('aria-selected', String(this.activeTab === 'commands'));
+        this.searchInput.placeholder = this.activeTab === 'chats'
+            ? nls.localize('qaap/sessionsSidebar/searchChats', 'Search chats')
+            : nls.localize('qaap/sessionsSidebar/searchCommands', 'Search commands');
+        this.searchInput.setAttribute('aria-label', this.searchInput.placeholder);
+    }
+
     protected createTab(tab: MobileWorkHubUnifiedSearchTab, label: string): HTMLButtonElement {
         const button = document.createElement('button');
         button.type = 'button';
@@ -168,12 +182,7 @@ export class MobileWorkHubUnifiedSearchDialog {
         button.textContent = label;
         button.addEventListener('click', () => {
             this.activeTab = tab;
-            this.chatsTab.setAttribute('aria-selected', String(tab === 'chats'));
-            this.commandsTab.setAttribute('aria-selected', String(tab === 'commands'));
-            this.searchInput.placeholder = tab === 'chats'
-                ? nls.localize('qaap/sessionsSidebar/searchChats', 'Search chats')
-                : nls.localize('qaap/sessionsSidebar/searchCommands', 'Search commands');
-            this.searchInput.setAttribute('aria-label', this.searchInput.placeholder);
+            this.syncActiveTabChrome();
             this.renderResults();
             this.searchInput.focus({ preventScroll: true });
         });
