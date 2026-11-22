@@ -25,6 +25,7 @@ interface BridgeModule {
     choosePermissionOption(options: unknown, allow: boolean): { outcome: string; optionId?: string };
     canonicalToolInput(kind: string, rawInput: unknown, locations: unknown, cwd: string): Record<string, string>;
     exitForStopReason(stopReason: string): number;
+    gateToolName(flavor: any, kind: string, nativeName: string): string;
     AcpStreamTranslator: new (flavor: any) => any;
     LimitedLineReader: new (onMessage: (message: unknown) => void, onViolation: (reason: string) => void, now?: () => number) => { push(chunk: string): void };
 }
@@ -51,7 +52,7 @@ function runBridge(args: string[], env: NodeJS.ProcessEnv, prompt = 'hello', onS
         child.stderr.on('data', chunk => stderr += chunk);
         child.on('close', code => resolve({
             code, stdout, stderr,
-            lines: stdout.split('\n').filter(line => line.trim()).map(line => JSON.parse(line)),
+            lines: stdout.split('\n').filter(line => line.trim().startsWith('{')).map(line => JSON.parse(line)),
         }));
         child.stdin.end(prompt);
         if (child.pid !== undefined) {
@@ -137,6 +138,13 @@ describe('qaap-acp-bridge.mjs', function (): void {
             expect(bridge.canonicalToolInput('edit', {}, [{ path: '/w/b.txt' }], '/w')).to.deep.equal({ file_path: '/w/b.txt' });
             expect(bridge.canonicalToolInput('edit', { filePath: 7, content: { a: 1 } }, 'x', '/w')).to.deep.equal({});
         });
+    });
+
+    it('gives the gate the agent\'s own tool name or the Claude name of the kind, per flavor', () => {
+        expect(bridge.gateToolName(bridge.FLAVORS.opencode, 'edit', 'write')).to.equal('write');
+        expect(bridge.gateToolName(bridge.FLAVORS.copilot, 'edit', 'Create a.txt')).to.equal('Edit');
+        expect(bridge.gateToolName(bridge.FLAVORS.copilot, 'execute', 'Run ls')).to.equal('Bash');
+        expect(bridge.gateToolName(bridge.FLAVORS.copilot, 'other', 'Mystery')).to.equal('Mystery');
     });
 
     it('maps every stop reason to its exit code', () => {
@@ -279,9 +287,9 @@ describe('qaap-acp-bridge.mjs', function (): void {
         const agent = (scenario: string, flavor = 'copilot'): string[] => ['--flavor', flavor, '--', process.execPath, FAKE_AGENT, scenario];
 
         it('streams the reply and ends with a success result and exit 0', async () => {
-            const run = await runBridge(agent('echo'), env(), 'hi there');
+            const run = await runBridge(agent('echo', 'opencode'), env(), 'hi there');
             expect(run.code).to.equal(0);
-            expect(run.lines[0]).to.deep.include({ type: 'system', subtype: 'init', qaap_transport: 'acp', flavor: 'copilot' });
+            expect(run.lines[0]).to.deep.include({ type: 'system', subtype: 'init', qaap_transport: 'acp', flavor: 'opencode' });
             expect(run.stdout).to.contain('You said: ');
             expect(run.stdout).to.contain('hi there');
             expect(run.lines[run.lines.length - 1]).to.deep.include({ type: 'result', is_error: false, total_cost_usd: 0.25 });
@@ -292,7 +300,8 @@ describe('qaap-acp-bridge.mjs', function (): void {
             expect(run.code).to.equal(0);
             expect(seen).to.have.length(1);
             expect(seen[0].token).to.equal('gate-secret');
-            expect(seen[0].body).to.deep.include({ agentId: 'copilot', rawToolName: 'write', harnessCallId: 'call-edit', acpKind: 'edit' });
+            // Copilot titles describe the call: the gate classifies it by the Claude name of the ACP kind.
+            expect(seen[0].body).to.deep.include({ agentId: 'copilot', rawToolName: 'Edit', harnessCallId: 'call-edit', acpKind: 'edit' });
             expect(seen[0].body.input.file_path).to.match(/a\.txt$/);
             expect(run.stdout).to.contain('done');
             expect(run.stderr).to.not.contain('without asking');
@@ -359,7 +368,14 @@ describe('qaap-acp-bridge.mjs', function (): void {
 
         it('reports a mutation that completed without asking', async () => {
             const run = await runBridge(agent('unpermitted'), env());
-            expect(run.lines.some(line => line.type === 'system' && line.subtype === 'qaap_warning' && line.code === 'unpermitted-mutation')).to.equal(true);
+            expect(run.stderr).to.contain('[qaap] copilot completed a edit call (write) without asking for permission.');
+        });
+
+        it('prints plain text for a flavor whose transcript is plain text: the reply and one line per tool call', async () => {
+            const run = await runBridge(agent('echo'), env(), 'hi there');
+            expect(run.stdout).to.equal('You said: hi there\n');
+            const edit = await runBridge(agent('edit'), env());
+            expect(edit.stdout).to.match(/^\n▸ Edit: .*a\.txt\ndone\n$/);
         });
 
         it('cancels on SIGTERM within 4 s, even when the agent ignores session/cancel, and leaves no agent behind', async () => {

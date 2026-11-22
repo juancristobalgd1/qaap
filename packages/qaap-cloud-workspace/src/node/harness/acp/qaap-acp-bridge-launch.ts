@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { resolveQaapHarnessCapabilities, type QaapHarnessCapabilities } from '@theia/qaap-shared-core/lib/common/qaap-harness-capabilities';
 import { QAAP_DELEGATION_SANDBOX_NODE, stageQaapSandboxScripts } from '../../qaap-agent-delegation-launch';
 import type { AgentPromptOwner } from '../../qaap-agent-task-runner-utils';
 import { resolveQaapCloudWorkspaceResource } from '../../qaap-cloud-workspace-resource';
@@ -130,4 +131,34 @@ export function resolveQaapAcpSpawnCommand(request: QaapAcpSpawnRequest): string
         ...(model ? { model } : {}),
         ...(request.agentBin ? { agentBin: request.agentBin } : {}),
     }, request.quoteShellArg);
+}
+
+/** Ask TTL of a harness gated through the bridge: the gate holds the permission request, nothing in ACP times it out. */
+export const QAAP_ACP_ASK_TTL_SEC = 600;
+
+/**
+ * The capabilities the backend must enforce for this harness right now: the static entry, changed by an active ACP
+ * flavor whose only checkpoint is the bridge (Copilot: from `runs-unchecked` to a gate that can ask; enforcement
+ * `client-boundary`, since a hostile agent can still mutate without asking and only the sandbox bounds it).
+ * OpenCode keeps its pre-execution plugin, so its entry is unchanged.
+ */
+export function resolveQaapRuntimeHarnessCapabilities(agentId: string | undefined, env: NodeJS.ProcessEnv = process.env): QaapHarnessCapabilities {
+    const capabilities = resolveQaapHarnessCapabilities(agentId);
+    if (resolveQaapAcpFlavor(agentId, env) !== 'copilot') {
+        return capabilities;
+    }
+    return {
+        ...capabilities,
+        transport: 'acp',
+        gate: 'acp',
+        canAsk: true,
+        askTtlSec: QAAP_ACP_ASK_TTL_SEC,
+        whenAskUnsupported: 'refuses',
+        enforcement: 'client-boundary',
+    };
+}
+
+/** Whether the bridge prints Claude stream-json (ending in a `result` line) for this flavor, rather than plain text. */
+export function qaapAcpFlavorPrintsStreamJson(flavor: QaapAcpFlavorId | undefined): boolean {
+    return flavor === 'opencode';
 }

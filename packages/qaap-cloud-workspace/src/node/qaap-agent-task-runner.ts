@@ -53,6 +53,7 @@ import { QaapToolGateService } from './qaap-tool-gate-service';
 import { QaapToolGateTokenService } from './qaap-tool-gate-token-service';
 import { QaapToolGateAskBroker } from './qaap-tool-gate-ask-broker';
 import { applyOpencodeGateEnv, opencodeGatePluginSeeded, usesOpencodeGatePlugin } from './qaap-tool-gate-opencode-adapter';
+import { resolveQaapRuntimeHarnessCapabilities } from './harness/acp/qaap-acp-bridge-launch';
 import { QAAP_TOOL_GATE_API_PATH } from '@theia/qaap-shared-core/lib/common/qaap-tool-gate-protocol';
 import { isQaapAgentDelegationEnabled, QAAP_AGENT_DELEGATION_TOKEN_ENV, QAAP_AGENT_DELEGATION_URL_ENV } from '../common/qaap-agent-delegation-protocol';
 import { QAAP_DELEGATION_MCP_TOOL_TIMEOUT_MS, releaseQaapDelegationMcpConfigFile, type QaapDelegationWiring } from './qaap-agent-delegation-launch';
@@ -2302,8 +2303,8 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             return () => undefined;
         }
         const agentId = this.resolveTaskAgentId(task as QaapAgentTask);
-        const transport = resolveQaapHarnessCapabilities(agentId).gate;
-        if (transport !== 'hook' && transport !== 'plugin' && transport !== 'extension') {
+        const transport = resolveQaapRuntimeHarnessCapabilities(agentId).gate;
+        if (transport !== 'hook' && transport !== 'plugin' && transport !== 'extension' && transport !== 'acp') {
             return () => undefined;
         }
         const origin = this.resolveAgentReachableOrigin(task.cwd);
@@ -2384,8 +2385,9 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         if (!this.toolGateTokens || !this.helperApiUrl) {
             return;
         }
-        const transport = resolveQaapHarnessCapabilities(this.resolveTaskAgentId(task as QaapAgentTask)).gate;
-        if (transport !== 'hook' && transport !== 'plugin' && transport !== 'extension') {
+        // An ACP flavor gated by the bridge (`gate: 'acp'`) needs the token too: the bridge answers permission requests with it.
+        const transport = resolveQaapRuntimeHarnessCapabilities(this.resolveTaskAgentId(task as QaapAgentTask)).gate;
+        if (transport !== 'hook' && transport !== 'plugin' && transport !== 'extension' && transport !== 'acp') {
             return;
         }
         const origin = this.resolveAgentReachableOrigin(task.cwd);
@@ -2396,7 +2398,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
         env.QAAP_GATE_URL = `${origin}${QAAP_TOOL_GATE_API_PATH}`;
         addAgentReachableNoProxy(env, origin);
         env.QAAP_GATE_TOKEN = this.toolGateTokens.issue(task.id, task.ownerLogin, task.cwd);
-        env.QAAP_GATE_ASK_TTL_SEC = String(resolveQaapHarnessCapabilities(this.resolveTaskAgentId(task as QaapAgentTask)).askTtlSec);
+        env.QAAP_GATE_ASK_TTL_SEC = String(resolveQaapRuntimeHarnessCapabilities(this.resolveTaskAgentId(task as QaapAgentTask)).askTtlSec);
         if (usesOpencodeGatePlugin(this.resolveTaskAgentId(task as QaapAgentTask))) {
             applyOpencodeGateEnv(env, this.isProjectFolderTrusted(task.ownerLogin, task.cwd));
             const nonce = opencodeGatePluginSeeded(env) ? this.toolGateTokens.issueArmNonce(task.id) : undefined;

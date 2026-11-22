@@ -1,7 +1,7 @@
 import { formatTaskStartLog } from './qaap-agent-conversation-persist-policy';
 import { createAgySignInWaitWatcher } from './qaap-agy-sign-in-wait-watcher';
 import { QAAP_HARNESS_ADAPTER_REGISTRY } from './harness/qaap-harness-adapter-registry';
-import { resolveQaapAcpFlavor, resolveQaapAcpSpawnCommand } from './harness/acp/qaap-acp-bridge-launch';
+import { qaapAcpFlavorPrintsStreamJson, resolveQaapAcpFlavor, resolveQaapAcpSpawnCommand } from './harness/acp/qaap-acp-bridge-launch';
 import { QAAP_OPENCODE_GATE_PROBE } from './qaap-tool-gate-opencode-probe';
 import {
     opencodeGatePluginSeeded,
@@ -981,7 +981,9 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
         // Claude Code may take long to exit after its final `result` (telemetry / update checks behind
         // the egress allowlist) while the answer is already complete: end it after a short grace.
         // The ACP bridge ends its stream with a Claude `result` line too (and exits right after it).
-        const finalResultWatcher = requestedAdapter.spawnQuirks.emitsStreamJsonFinalResult || acpFlavor ? new QaapAgentFinalResultWatcher() : undefined;
+        const finalResultWatcher = requestedAdapter.spawnQuirks.emitsStreamJsonFinalResult || qaapAcpFlavorPrintsStreamJson(acpFlavor)
+            ? new QaapAgentFinalResultWatcher()
+            : undefined;
         let exitAfterResultTimer: ReturnType<typeof setTimeout> | undefined;
         let endedAfterResult: QaapAgentFinalResult | undefined;
         // agy without a usable session waits 60 s for a pasted code: stop it on its first sign-in wait line.

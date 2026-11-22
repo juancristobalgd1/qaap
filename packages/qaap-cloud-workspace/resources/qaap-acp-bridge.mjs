@@ -44,7 +44,9 @@ export const EXIT = Object.freeze({
 const GATE_ENV = ['QAAP_GATE_URL', 'QAAP_GATE_TOKEN', 'QAAP_GATE_ASK_TTL_SEC', 'QAAP_GATE_ARM_NONCE'];
 
 /**
- * Per-agent differences, declarative. `permissionSource` says who guards tool calls before they run:
+ * Per-agent differences, declarative. `output` is what the bridge prints: Claude stream-json, or plain text for a
+ * harness whose transcript is plain text. `gateToolNames` is the tool name the gate gets: the agent's own (a name
+ * its capability mapper knows) or the Claude name of the ACP kind. `permissionSource` says who guards tool calls before they run:
  *   * 'plugin': the harness loads Qaap's own pre-execution gate (OpenCode: `tool.execute.before` sees every tool,
  *     verified against `opencode acp` 1.19). The bridge still routes any permission request through the gate.
  *   * 'bridge': the permission request is the only checkpoint, so a mutation that completes without one is
@@ -55,6 +57,8 @@ export const FLAVORS = Object.freeze({
         agentId: 'opencode',
         permissionSource: 'plugin',
         keepGateEnv: true,
+        output: 'stream-json',
+        gateToolNames: 'native',
         modelConfigId: 'model',
         signIn: 'Run `opencode auth login` in a terminal.',
     }),
@@ -62,6 +66,10 @@ export const FLAVORS = Object.freeze({
         agentId: 'copilot',
         permissionSource: 'bridge',
         keepGateEnv: false,
+        // Copilot's transcript is plain text today; a structured one is F4 work (the readers would change for the native CLI too).
+        output: 'text',
+        // Copilot titles describe the call ("Create note.txt and list…"): the gate gets the Claude name of the ACP kind.
+        gateToolNames: 'claude',
         modelConfigId: 'model',
         signIn: 'Run `copilot` in a terminal and sign in with /login.',
     }),
@@ -340,6 +348,14 @@ export class AcpStreamTranslator {
     }
 }
 
+/** The tool name the gate classifies the call by (see `gateToolNames`). */
+export function gateToolName(flavor, kind, nativeName) {
+    if (flavor.gateToolNames === 'claude') {
+        return TOOL_NAME_BY_KIND[kind] ?? nativeName;
+    }
+    return nativeName;
+}
+
 function toolResultText(update) {
     const parts = [];
     for (const entry of Array.isArray(update.content) ? update.content : []) {
@@ -350,6 +366,29 @@ function toolResultText(update) {
         }
     }
     return parts.join('\n');
+}
+
+/**
+ * Plain-text rendering of translated lines, for a flavor whose transcript is plain text: the reply as it streams,
+ * one line per tool call, nothing else (warnings and denials already go to stderr).
+ */
+export function renderLinesAsText(lines) {
+    let text = '';
+    for (const line of lines) {
+        if (line.type === 'stream_event' && line.event?.delta?.type === 'text_delta') {
+            text += line.event.delta.text;
+        } else if (line.type === 'assistant') {
+            for (const block of line.message?.content ?? []) {
+                if (block.type === 'tool_use') {
+                    const detail = block.input?.command ?? block.input?.file_path ?? block.input?.url ?? block.input?.pattern ?? '';
+                    text += `\n▸ ${block.name}${detail ? `: ${String(detail).split('\n')[0].slice(0, 200)}` : ''}\n`;
+                }
+            }
+        } else if (line.type === 'result') {
+            text += '\n';
+        }
+    }
+    return text;
 }
 
 /** Exit code and one-line reason for an ACP stop reason. */
@@ -453,6 +492,13 @@ export async function runBridgeTurn(options, prompt, io) {
     const flavor = FLAVORS[options.flavor];
     const translator = new AcpStreamTranslator(flavor);
     const out = lines => {
+        if (flavor.output === 'text') {
+            const text = renderLinesAsText(lines);
+            if (text) {
+                io.writeOut(text);
+            }
+            return;
+        }
         for (const line of lines) {
             io.writeOut(`${JSON.stringify(line)}\n`);
         }
@@ -525,7 +571,7 @@ export async function runBridgeTurn(options, prompt, io) {
                 agentId: flavor.agentId,
                 // The server recomputes the kind from the tool name; this is informational only.
                 toolKind: 'other',
-                rawToolName: known?.name ?? (typeof toolCall.title === 'string' ? toolCall.title : kind),
+                rawToolName: gateToolName(flavor, kind, known?.name ?? (typeof toolCall.title === 'string' ? toolCall.title : kind)),
                 input: canonicalToolInput(kind, rawInput, locations, io.cwd),
                 cwd: io.cwd,
                 acpKind: kind,
