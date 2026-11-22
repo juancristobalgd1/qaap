@@ -37,6 +37,8 @@ export interface QaapHarnessSpawnQuirks {
     readonly watchesSignInWait: boolean;
     /** OpenCode keeps running after a quota error and prints nothing on stdout: a fatal stderr line stops the run. */
     readonly watchesFatalStderr: boolean;
+    /** Pi reports a provider error (quota, auth) on stderr and keeps waiting: the provider-error watcher ends the run (Pi). */
+    readonly watchesProviderErrors: boolean;
     /** The harness may use the Agent tool (Claude Code only; the gate still restricts which subagent types). */
     readonly allowsSubagentTools: boolean;
     /** Stdout is stream-json ending in a `result` event: the process is ended after a short grace once it arrives. */

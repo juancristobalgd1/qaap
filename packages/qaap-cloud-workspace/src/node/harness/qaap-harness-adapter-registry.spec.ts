@@ -65,6 +65,7 @@ describe('QaapHarnessAdapterRegistry', () => {
             const normalized = id?.trim().toLowerCase();
             expect(quirks.removesStaleSnapshotLocks, `${id} snapshot locks`).to.equal(normalized === 'opencode');
             expect(quirks.watchesFatalStderr, `${id} fatal stderr`).to.equal(normalized === 'opencode');
+            expect(quirks.watchesProviderErrors, `${id} provider errors`).to.equal(normalized === 'pi');
             expect(quirks.watchesSignInWait, `${id} sign-in wait`).to.equal(normalized === 'antigravity');
             expect(quirks.allowsSubagentTools, `${id} subagent tools`).to.equal(normalized === 'claude');
             expect(quirks.emitsStreamJsonFinalResult, `${id} final result`).to.equal(emitsStreamJsonFinalResult(id));

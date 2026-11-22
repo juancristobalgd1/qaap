@@ -7,13 +7,18 @@ import { buildPiDefaultModelFlagShell } from '@theia/qaap-shared-core/lib/common
 import { withPiPlanModeInstruction } from '../../../common/qaap-agent-readonly-workspace';
 import type { QaapAgentPromptTransport } from '../../qaap-agent-task-runner-utils';
 import { buildPiGateTemplateVars } from '../../qaap-tool-gate-pi-adapter';
-import type { QaapHarnessGateWiring, QaapHarnessPromptTransportProbe } from '../qaap-harness-adapter';
-import { QaapNativeHarnessAdapter } from './qaap-native-harness-adapter';
+import type { QaapHarnessGateWiring, QaapHarnessPromptTransportProbe, QaapHarnessSpawnQuirks } from '../qaap-harness-adapter';
+import { QAAP_NO_HARNESS_SPAWN_QUIRKS, QaapNativeHarnessAdapter } from './qaap-native-harness-adapter';
 
 /** Pi: no permission system of its own; Qaap's `-e` extension routes every tool call through the HTTP gate. */
 export class QaapPiHarnessAdapter extends QaapNativeHarnessAdapter {
 
     override readonly gateWiring: QaapHarnessGateWiring = 'pi-extension';
+
+    override readonly spawnQuirks: QaapHarnessSpawnQuirks = {
+        ...QAAP_NO_HARNESS_SPAWN_QUIRKS,
+        watchesProviderErrors: true,
+    };
 
     constructor() {
         super('pi');

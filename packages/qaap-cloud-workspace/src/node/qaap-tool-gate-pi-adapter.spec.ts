@@ -159,7 +159,7 @@ describe('Pi tool gate adapter', () => {
         expect(usesToolGateExtension(undefined)).to.equal(false);
         const source = fs.readFileSync(path.resolve(__dirname, '..', '..', 'src', 'node', 'qaap-agent-task-runner-timeline2.ts'), 'utf8');
         expect(source).to.match(/stdio: stdinInteractive \? \['pipe', 'pipe', 'pipe'\] : \['ignore', 'pipe', 'pipe'\]/);
-        expect(source).to.contain('task.autoApprove === false && !usesToolGateExtension(');
+        expect(source).to.contain("task.autoApprove === false && harnessAdapter.gateWiring !== 'pi-extension'");
     });
 
     it('keeps plain-text Pi logs readable', () => {

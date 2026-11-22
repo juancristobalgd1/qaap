@@ -35,10 +35,7 @@ import { buildAgentClosingReport, type QaapAgentClosingDiffSummary, type QaapAge
 import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model-catalog';
 import { agentModelFitsAgent } from '../common/qaap-agent-task-model-routing';
 import { antigravityBinFor, listNativeAgentModels } from './qaap-agent-native-models';
-import {
-    applyAgentApprovalPolicyToCommand,
-    resolveOpencodePermissionEnv,
-} from '../common/qaap-agent-approval-flags';
+import { QAAP_HARNESS_ADAPTER_REGISTRY } from './harness/qaap-harness-adapter-registry';
 import { filterAgentProcessLogChunk } from '../common/qaap-agent-log-filter';
 import {
     applyQaapQaiqCredentialEnv,
@@ -314,24 +311,11 @@ export function buildChildEnvExtracted(ctx: QaapAgentTaskRunnerContext, task: Qa
                 env.OPENCLAUDE_MAX_RETRIES = '3';
             }
         }
-        const harnessId = task.agentId?.trim().toLowerCase();
-        if ((harnessId === 'claude' || harnessId === 'openclaude') && env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC === undefined) {
-            // Telemetry, error reporting and the auto-updater run when the CLI exits. Behind the tenant
-            // egress allowlist they wait out network timeouts, so the turn kept showing "Preparing the
-            // response…" for ~30s after the answer was complete. An operator override wins.
-            env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1';
-        }
-        // OpenCode allows every tool by default; gate it explicitly unless the run is meant to be
-        // ungated (security: "Request approval" must never execute shell commands silently).
-        const opencodePermission = resolveOpencodePermissionEnv({
-            command: task.command,
-            agentId: task.agentId,
-            autoApprove: task.autoApprove,
-            readOnlyWorkspace: task.readOnlyWorkspace,
-        });
-        if (opencodePermission) {
-            env.OPENCODE_PERMISSION = opencodePermission;
-        }
+        // Harness-specific env (Claude Code's telemetry opt-out) and the permission env of a harness whose own default
+        // allows every tool (OpenCode): both live in the harness adapters. The permission env follows the approval
+        // protocol the command speaks, so a custom id running the OpenCode CLI is gated like OpenCode.
+        QAAP_HARNESS_ADAPTER_REGISTRY.get(task.agentId).applyChildEnv(env, task);
+        QAAP_HARNESS_ADAPTER_REGISTRY.forApprovalProtocol(task.command, task.agentId).applyPermissionEnv(env, task);
         ctx.applyHelperEnv(env, task.ownerLogin, task.id, task.autoApprove, task.cwd);
         // Last: no inherited (operator / tenant) key may bypass a harness's own sign-in.
         stripSignInOnlyAgentApiKeyEnv(env, resolveTaskHarnessId(task.agentId, task.command));
@@ -730,7 +714,7 @@ export async function improveComposerPromptExtracted(ctx: QaapAgentTaskRunnerCon
             vars,
             promptOwnerFor(ctx.resolveAgentSpawnIdentity(cwd)),
         );
-        const command = applyAgentApprovalPolicyToCommand(
+        const command = QAAP_HARNESS_ADAPTER_REGISTRY.get(agentId).applyApprovalPolicy(
             transported.command,
             {
                 agentId,
@@ -823,7 +807,7 @@ export async function runReadOnlyOneShotPromptExtracted(ctx: QaapAgentTaskRunner
             .replace(/--include-partial-messages/g, '')
             .replace(/--verbose/g, '');
         const transported = buildPromptTransportCommand(template, prompt, agentId, detected, vars, promptOwnerFor(ctx.resolveAgentSpawnIdentity(options.cwd?.trim() || process.cwd())));
-        const command = applyAgentApprovalPolicyToCommand(transported.command, {
+        const command = QAAP_HARNESS_ADAPTER_REGISTRY.get(agentId).applyApprovalPolicy(transported.command, {
             agentId,
             autoApprove: true,
             approvalPolicyId: 'approve-for-me',

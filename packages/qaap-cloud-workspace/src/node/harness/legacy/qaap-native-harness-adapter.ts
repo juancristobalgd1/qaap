@@ -31,6 +31,7 @@ export const QAAP_NO_HARNESS_SPAWN_QUIRKS: QaapHarnessSpawnQuirks = {
     removesStaleSnapshotLocks: false,
     watchesSignInWait: false,
     watchesFatalStderr: false,
+    watchesProviderErrors: false,
     allowsSubagentTools: false,
     emitsStreamJsonFinalResult: false,
 };
