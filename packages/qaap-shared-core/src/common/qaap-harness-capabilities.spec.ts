@@ -112,6 +112,22 @@ describe('qaap-harness-capabilities', () => {
         expect(registry.get('Codex').agentId).to.equal('codex');
     });
 
+    it('declares transport, enforcement and resume for every harness without touching the gate values', () => {
+        for (const id of [...builtinIds, 'unknown-custom-id']) {
+            const capabilities = registry.get(id);
+            expect(capabilities.transport, id).to.equal('native');
+            expect(capabilities.resume, id).to.equal('none');
+            // Only a gate that holds the tool call before it runs counts as pre-execution enforcement.
+            expect(capabilities.enforcement, id).to.equal(capabilities.gate === 'none' ? 'none' : 'gate-preexec');
+        }
+        for (const id of ['qaiq', 'openclaude', 'claude', 'codex', 'opencode', 'pi']) {
+            expect(registry.get(id).enforcement, id).to.equal('gate-preexec');
+        }
+        for (const id of ['cursor', 'antigravity', 'copilot', 'grok']) {
+            expect(registry.get(id).enforcement, id).to.equal('none');
+        }
+    });
+
     it('maps common harness tool names to normalized kinds', () => {
         expect(mapQaapToolKind('Bash')).to.equal('shell');
         expect(mapQaapToolKind('apply_patch')).to.equal('edit');
