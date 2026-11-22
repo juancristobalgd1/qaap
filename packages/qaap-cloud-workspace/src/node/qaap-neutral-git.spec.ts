@@ -11,7 +11,7 @@ describe('QaapNeutralGit', () => {
 
     it('switches the user-level config off', () => {
         const env = QaapNeutralGit.env({ PATH: '/bin', HOME: '/home/agent' });
-        expect(env).to.include({ GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_ATTR_NOSYSTEM: '1', PATH: '/bin' });
+        expect(env).to.include({ GIT_CONFIG_GLOBAL: QaapNeutralGit.nullFile(), GIT_CONFIG_NOSYSTEM: '1', GIT_ATTR_NOSYSTEM: '1', PATH: '/bin' });
         expect(QaapNeutralGit.isNeutral(env)).to.equal(true);
         expect(QaapNeutralGit.isNeutral({ PATH: '/bin' })).to.equal(false);
     });
@@ -38,7 +38,7 @@ describe('QaapNeutralGit', () => {
 
     it('pins no-recursion, no-ignore-file and safe.directory on the command line', () => {
         const args = QaapNeutralGit.ARGS.join(' ');
-        for (const pin of ['diff.ignoreSubmodules=all', 'submodule.recurse=false', 'status.submoduleSummary=false', 'core.excludesFile=/dev/null', 'safe.directory=*']) {
+        for (const pin of ['diff.ignoreSubmodules=all', 'submodule.recurse=false', 'status.submoduleSummary=false', `core.excludesFile=${QaapNeutralGit.nullFile()}`, 'safe.directory=*']) {
             expect(args).to.contain(pin);
         }
     });

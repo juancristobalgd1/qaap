@@ -31,6 +31,14 @@ function git(cwd: string, args: string[]): string {
     ], { cwd, encoding: 'utf8', windowsHide: true }).trim();
 }
 
+/**
+ * A path as a git config value or a shell word: forward slashes. A backslash is an escape in git config ("bad config
+ * line" on Windows paths) and in sh, and Windows accepts `C:/Users/x/y` everywhere these fixtures use it.
+ */
+function gitPath(value: string): string {
+    return value.replace(/\\/g, '/');
+}
+
 function write(file: string, content: string | Buffer): void {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, content);
@@ -413,7 +421,7 @@ describe('QaapAgentDelegationService.childApply (real git)', function (): void {
                 globalConfig = path.join(tmp, 'global-gitconfig');
                 sentinel = path.join(tmp, 'filter-ran');
                 // `;` starts a comment in a git config value, so the programs the specs configure are a script file.
-                write(path.join(tmp, 'run.sh'), `#!/bin/sh\ntouch "${sentinel}"\ncat\n`);
+                write(path.join(tmp, 'run.sh'), `#!/bin/sh\ntouch "${gitPath(sentinel)}"\ncat\n`);
                 fs.chmodSync(path.join(tmp, 'run.sh'), 0o755);
                 previousGlobal = process.env.GIT_CONFIG_GLOBAL;
                 process.env.GIT_CONFIG_GLOBAL = globalConfig;
@@ -428,7 +436,8 @@ describe('QaapAgentDelegationService.childApply (real git)', function (): void {
             });
 
             const STANDARD_LFS_CONFIG = '[filter "lfs"]\n\tclean = git-lfs clean -- %f\n\tsmudge = git-lfs smudge -- %f\n\tprocess = git-lfs filter-process\n\trequired = true\n';
-            const program = (): string => path.join(tmp, 'run.sh');
+            // `sh <script>`: runs the same under Git for Windows' sh as on POSIX, with no reliance on the shebang or exec bit.
+            const program = (): string => `sh ${gitPath(path.join(tmp, 'run.sh'))}`;
             const sentinelFilter = (name: string): string => `[filter "${name}"]\n\tclean = ${program()}\n\tsmudge = cat\n`;
 
             it('applies a child when the global config has the standard filter.lfs entries', async () => {
@@ -582,7 +591,7 @@ describe('QaapAgentDelegationService.childApply (real git)', function (): void {
             it('refuses an includeIf that only matches the integration worktree a merge creates, and runs nothing', async () => {
                 const included = path.join(tmp, 'included.gitconfig');
                 write(included, `[filter "y"]\n\tsmudge = ${program()}\n\tclean = cat\n`);
-                git(parentDir, ['config', 'includeIf.gitdir:**/worktrees/integration-*.path', included]);
+                git(parentDir, ['config', 'includeIf.gitdir:**/worktrees/integration-*.path', gitPath(included)]);
                 finishChild(() => {
                     write(path.join(childDir, '.gitattributes'), '* filter=y\n');
                     write(path.join(childDir, 'new.txt'), 'merged in\n');
@@ -672,7 +681,7 @@ describe('QaapAgentDelegationService.childApply (real git)', function (): void {
             it('does not let the global ignore file hide files from the commit', async () => {
                 const ignore = path.join(tmp, 'global-ignore');
                 write(ignore, '*.log\n');
-                write(globalConfig, `[core]\n\texcludesFile = ${ignore}\n`);
+                write(globalConfig, `[core]\n\texcludesFile = ${gitPath(ignore)}\n`);
                 finishChild(() => write(path.join(childDir, 'debug.log'), 'kept\n'));
 
                 const response = await service.childApply(CTX, { childId });
@@ -711,6 +720,13 @@ describe('QaapAgentDelegationService.childApply (real git)', function (): void {
                 expect(git(childDir, ['status', '--porcelain'])).to.contain('assets/');
                 expect(fs.existsSync(path.join(parentDir, 'assets', 'a.psd'))).to.equal(false);
             });
+        });
+
+        it('writes fixture config values that git parses back unchanged, even for Windows-style paths', () => {
+            const file = path.join(tmp, 'fixture.gitconfig');
+            const windowsPath = 'C:\\Users\\runner\\AppData\\Local\\Temp\\x\\run.sh';
+            write(file, `[filter "x"]\n\tclean = sh ${gitPath(windowsPath)}\n`);
+            expect(git(tmp, ['config', '--file', file, 'filter.x.clean'])).to.equal('sh C:/Users/runner/AppData/Local/Temp/x/run.sh');
         });
 
         it('commits the child\'s work without signing, whatever the shared git config asks for', async () => {
