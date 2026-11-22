@@ -25,7 +25,10 @@ import {
     currentQaapDelegationMcpConfigOptions,
     QAAP_AGENT_DELEGATION_GUIDANCE,
     releaseQaapDelegationMcpConfigFile,
+    resolveQaapDelegationPlacement,
     writeQaapDelegationMcpConfigFile,
+    writeQaapDelegationTokenFile,
+    type QaapDelegationPlacement,
     type QaapDelegationWiring,
 } from './qaap-agent-delegation-launch';
 import { isQaapAgentDelegationEnabled, QAAP_AGENT_DELEGATION_TOKEN_ENV, QAAP_AGENT_DELEGATION_URL_ENV } from '../common/qaap-agent-delegation-protocol';
@@ -638,23 +641,36 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
             ctx.applyToolGateEnv(childEnv, task);
             // Delegation (flag-gated, writable parent turns only): a separate token and a per-task server name.
             delegation = ctx.applyAgentDelegationEnv?.(childEnv, task);
-            if (delegation?.transport === 'claude-mcp-config') {
-                // The config (with the token) goes to a private 0600 file; only its path is on the command line.
+            let delegationPlacement: QaapDelegationPlacement | undefined;
+            if (delegation) {
+                // A re-spawn of the same task (retry, resume) starts from clean delegation directories.
+                releaseQaapDelegationMcpConfigFile(task.id);
                 const identity = ctx.resolveAgentSpawnIdentity(task.cwd);
                 const owner = typeof identity?.uid === 'number' ? { uid: identity.uid, ...(identity.gid !== undefined ? { gid: identity.gid } : {}) } : undefined;
-                const file = writeQaapDelegationMcpConfigFile(task.id, buildQaapDelegationMcpConfig(currentQaapDelegationMcpConfigOptions(), delegation), owner);
-                spawnCommand = appendQaapDelegationLaunchArgs(spawnCommand, file, quoteShellArg);
-            } else if (delegation?.transport === 'opencode-config') {
-                if (opencodeGatePluginSeeded(childEnv)) {
-                    // Only next to the armed gate plugin: without it OpenCode's own rules refuse the tools anyway.
-                    // The token goes to a private 0600 file; the inline config (inherited by OpenCode's bash and MCP servers) holds only its path.
-                    const identity = ctx.resolveAgentSpawnIdentity(task.cwd);
-                    const owner = typeof identity?.uid === 'number' ? { uid: identity.uid, ...(identity.gid !== undefined ? { gid: identity.gid } : {}) } : undefined;
-                    if (!applyQaapOpencodeDelegation(childEnv, task.id, delegation, owner)) {
+                try {
+                    // In a task sandbox the shim and the credential file go below its shared root (same path inside).
+                    delegationPlacement = resolveQaapDelegationPlacement(task.id, ctx.agentSandboxFor?.(task.cwd), owner);
+                } catch (error) {
+                    console.warn(`[qaap-delegation] the turn runs without delegation: ${error instanceof Error ? error.message : String(error)}`);
+                    delegation = undefined;
+                    delete childEnv[QAAP_AGENT_DELEGATION_URL_ENV];
+                    delete childEnv[QAAP_AGENT_DELEGATION_TOKEN_ENV];
+                    releaseQaapDelegationMcpConfigFile(task.id);
+                }
+                if (delegation?.transport === 'claude-mcp-config' && delegationPlacement) {
+                    // The config (with the token) goes to a private 0600 file; only its path is on the command line.
+                    const file = writeQaapDelegationMcpConfigFile(task.id, buildQaapDelegationMcpConfig(delegationPlacement.options, delegation), owner, 'mcp.json', delegationPlacement.baseDir);
+                    spawnCommand = appendQaapDelegationLaunchArgs(spawnCommand, file, quoteShellArg);
+                } else if (delegation?.transport === 'opencode-config' && delegationPlacement) {
+                    if (opencodeGatePluginSeeded(childEnv)) {
+                        // Only next to the armed gate plugin: without it OpenCode's own rules refuse the tools anyway.
+                        // The token goes to a private 0600 file; the inline config (inherited by OpenCode's bash and MCP servers) holds only its path.
+                        if (!applyQaapOpencodeDelegation(childEnv, task.id, delegation, owner, writeQaapDelegationTokenFile, delegationPlacement)) {
+                            delegation = undefined;
+                        }
+                    } else {
                         delegation = undefined;
                     }
-                } else {
-                    delegation = undefined;
                 }
             }
             // Fails closed before any Codex process: no token while the gate is wired means no gate for its tool calls.
@@ -678,7 +694,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                     overlayRoot: resolveCodexGateOverlayRoot(ctx.agentSandboxFor?.(task.cwd)),
                     ownSandboxOff: ctx.runsInTaskSandbox?.() === true,
                     ...(delegation?.transport === 'codex-config'
-                        ? { delegationMcp: { ...currentQaapDelegationMcpConfigOptions(), serverName: delegation.mcpServerName, instructions: QAAP_AGENT_DELEGATION_GUIDANCE } }
+                        ? { delegationMcp: { ...(delegationPlacement?.options ?? currentQaapDelegationMcpConfigOptions()), serverName: delegation.mcpServerName, instructions: QAAP_AGENT_DELEGATION_GUIDANCE } }
                         : {}),
                 }, childEnv);
                 childEnv.CODEX_HOME = codexGateOverlay.codexHome;

@@ -403,14 +403,15 @@ export const AGENT_PROMPT_REMOVE_SCRIPT = [
 export function writeAgentPromptFile(
     text: string,
     owner?: AgentPromptOwner,
-    options: { readonly fileName?: string; readonly dirPrefix?: string } = {},
+    options: { readonly fileName?: string; readonly dirPrefix?: string; readonly baseDir?: string } = {},
 ): { readonly file: string; readonly dir: string } {
     const fileName = options.fileName ?? 'prompt.txt';
+    const baseDir = options.baseDir ?? os.tmpdir();
     // The prefix always starts with `qaap-agent-prompt-`: removeAgentPromptTempDir only removes such dirs.
     const dirPrefix = `qaap-agent-prompt-${options.dirPrefix ?? ''}`;
     const currentUid = typeof process.getuid === 'function' ? process.getuid() : undefined;
     if (owner && owner.uid !== currentUid) {
-        const dir = path.join(os.tmpdir(), `${dirPrefix}${randomBytes(16).toString('hex')}`);
+        const dir = path.join(baseDir, `${dirPrefix}${randomBytes(16).toString('hex')}`);
         const file = path.join(dir, fileName);
         if (!agentPromptOwnerRunner.run(owner, AGENT_PROMPT_WRITE_SCRIPT, { dir, file, text })) {
             throw new Error(`Could not write the agent prompt file as uid ${owner.uid}.`);
@@ -422,7 +423,7 @@ export function writeAgentPromptFile(
         promptDirOwners.set(dir, owner);
         return { file, dir };
     }
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), dirPrefix));
+    const dir = fs.mkdtempSync(path.join(baseDir, dirPrefix));
     const file = path.join(dir, fileName);
     fs.writeFileSync(file, text, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
     return { file, dir };

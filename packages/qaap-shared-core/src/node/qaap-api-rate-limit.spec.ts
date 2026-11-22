@@ -72,6 +72,17 @@ describe('QaapApiRateLimitContribution', () => {
         expect(call(anonymous, 'POST', '/qaap/api/billing/webhook')).to.equal(200);
     });
 
+    it('never limits agent delegation and tool-gate calls: they carry a task token, not a session or tenant assertion', () => {
+        // The guard reports 'unauthorized' for them (task-token auth happens in the route), so a long
+        // qaaq_task_wait / qaaq_task_status polling loop cannot exhaust the per-login bucket.
+        const agent = new TestRateLimit(undefined, 1, 1);
+        for (let i = 0; i < 50; i++) {
+            expect(call(agent, 'POST', '/qaap/api/agent-delegation/wait')).to.equal(200);
+            expect(call(agent, 'POST', '/qaap/api/agent-delegation/status')).to.equal(200);
+            expect(call(agent, 'POST', '/qaap/api/tool-gate/decide')).to.equal(200);
+        }
+    });
+
     it('cuts expensive agent-turn and clone routes after their own burst, while normal routes still pass', () => {
         const limit = new TestRateLimit('alice', 100, 2);
         expect(call(limit, 'POST', '/qaap/api/agent-conversations')).to.equal(200);

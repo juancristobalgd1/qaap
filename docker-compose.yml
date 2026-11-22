@@ -89,6 +89,12 @@ services:
       # plane runs the sandbox broker and passes the flag on to tenant backends; turning it off
       # recreates them. The broker's limits are read here, never in a tenant backend.
       QAAP_TASK_SANDBOX: ${QAAP_TASK_SANDBOX:-0}
+      # Agent delegation (qaaq MCP server per task). With QAAP_BACKEND_PER_TENANT=1 the tenant backend
+      # evaluates the flag, so the control plane passes it (and the two optional limits) on to tenant
+      # backends; changing any of them recreates the tenants.
+      QAAP_AGENT_DELEGATION: ${QAAP_AGENT_DELEGATION:-0}
+      QAAP_DELEGATE_MAX_CONCURRENT: ${QAAP_DELEGATE_MAX_CONCURRENT:-}
+      QAAP_DELEGATION_WAIT_CAP_SEC: ${QAAP_DELEGATION_WAIT_CAP_SEC:-}
       QAAP_TASK_SANDBOX_MEMORY: ${QAAP_TASK_SANDBOX_MEMORY:-}
       QAAP_TASK_SANDBOX_CPUS: ${QAAP_TASK_SANDBOX_CPUS:-}
       QAAP_TASK_SANDBOX_PIDS: ${QAAP_TASK_SANDBOX_PIDS:-}

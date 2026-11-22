@@ -150,6 +150,23 @@ server bound (Vite's `localhost` included) and for any port.
   sandbox's exec server instead. Replacing the direct-mode exec with one long-lived relay per
   sandbox is a known follow-up.
 
+**Agent delegation inside a sandbox (`QAAP_AGENT_DELEGATION`).** The parent's `qaaq` MCP shim, its Claude
+`--mcp-config` / OpenCode token file and (Codex) its overlay must be visible to the harness inside the container.
+`resolveQaapDelegationPlacement` (`qaap-agent-delegation-launch.ts`) copies the shim into a private per-task
+directory below the sandbox's `sharedRoot` (`<sharedRoot>/.qaap-delegation/`, bound at the identical path in both
+modes, so no path translation) and writes the credential file next to it (0600 in a 0700 directory owned by the task
+uid, removed when the task ends). The base `.qaap-delegation` is owned by the backend and is 1733 (sticky, writable, not
+listable) when the agent runs as another uid, so the agent cannot enumerate other tasks' directories; once 1733 it is
+never lowered to 0700 (a concurrent direct-mode task would lock the agent out). Each per-task directory has a random
+name (`qaap-agent-prompt-delegation-<32 hex>`) and is created 0700 by the agent uid itself. Stale directories are swept
+at the next placement (at most once per 60 s per base, at most 200 entries per pass): the sweep `lstat`s every entry and
+never follows symlinks, ignores anything that is not a real directory, removes directories of the backend's uid as the
+backend, removes the agent's own directories by running the removal script AS the agent uid (the backend never
+`rm -r`s a tree the agent can rearrange), and leaves any other uid's alone. The harness runs the shim with the sandbox's own `node`. The URL is
+the backend address on the sandbox network (`resolveAgentReachableOrigin`, same as the Tool Gate). A sandbox without a
+`sharedRoot` or a backend address gets no delegation (no token issued). No new mount and no image change is needed;
+children are ordinary conversations with their own worktree and sandbox, and `child_apply` runs in the backend.
+
 ## Devcontainer handling
 
 `QaapDevcontainerResolver` reads `.devcontainer/devcontainer.json` or `.devcontainer.json`

@@ -411,6 +411,55 @@ describe('QaapDockerOrchestrator', () => {
         });
     });
 
+    describe('tenantBackendDelegationEnv', () => {
+
+        interface DelegationAccess {
+            tenantBackendDelegationEnv(env: NodeJS.ProcessEnv): string[];
+            tenantBackendDelegationEnvIsCurrent(containerEnv: ReadonlySet<string>, expected: string[]): boolean;
+        }
+        const delegation = (): DelegationAccess => new QaapDockerOrchestrator() as unknown as DelegationAccess;
+        const delegationEnv = (env: NodeJS.ProcessEnv): string[] => delegation().tenantBackendDelegationEnv(env);
+
+        it('passes nothing while delegation is off, even if the limits are set', () => {
+            expect(delegationEnv({})).to.deep.equal([]);
+            expect(delegationEnv({ QAAP_AGENT_DELEGATION: '0', QAAP_DELEGATE_MAX_CONCURRENT: '3' })).to.deep.equal([]);
+            expect(delegationEnv({ QAAP_AGENT_DELEGATION: '' })).to.deep.equal([]);
+        });
+
+        it('passes the normalized flag when on', () => {
+            expect(delegationEnv({ QAAP_AGENT_DELEGATION: ' True ' })).to.deep.equal(['QAAP_AGENT_DELEGATION=1']);
+        });
+
+        it('passes valid limits and drops invalid or smuggling values', () => {
+            expect(delegationEnv({ QAAP_AGENT_DELEGATION: '1', QAAP_DELEGATE_MAX_CONCURRENT: ' 3 ', QAAP_DELEGATION_WAIT_CAP_SEC: '600' }))
+                .to.deep.equal(['QAAP_AGENT_DELEGATION=1', 'QAAP_DELEGATE_MAX_CONCURRENT=3', 'QAAP_DELEGATION_WAIT_CAP_SEC=600']);
+            expect(delegationEnv({ QAAP_AGENT_DELEGATION: '1', QAAP_DELEGATE_MAX_CONCURRENT: '3\nNODE_OPTIONS=--inspect', QAAP_DELEGATION_WAIT_CAP_SEC: '0' }))
+                .to.deep.equal(['QAAP_AGENT_DELEGATION=1']);
+        });
+
+        it('keeps an unrelated container env current while delegation is off', () => {
+            expect(delegation().tenantBackendDelegationEnvIsCurrent(new Set(['PORT=3000']), [])).to.equal(true);
+        });
+
+        it('recreates a backend that still has delegation after the flag went off (on -> off)', () => {
+            const container = new Set(['PORT=3000', 'QAAP_AGENT_DELEGATION=1']);
+            expect(delegation().tenantBackendDelegationEnvIsCurrent(container, delegationEnv({ QAAP_AGENT_DELEGATION: '0' }))).to.equal(false);
+        });
+
+        it('recreates a backend that lacks delegation once the flag is on (off -> on)', () => {
+            const expected = delegationEnv({ QAAP_AGENT_DELEGATION: '1' });
+            expect(delegation().tenantBackendDelegationEnvIsCurrent(new Set(['PORT=3000']), expected)).to.equal(false);
+            expect(delegation().tenantBackendDelegationEnvIsCurrent(new Set(['PORT=3000', ...expected]), expected)).to.equal(true);
+        });
+
+        it('recreates a backend whose delegation limit was removed or changed', () => {
+            const container = new Set(['QAAP_AGENT_DELEGATION=1', 'QAAP_DELEGATE_MAX_CONCURRENT=3']);
+            expect(delegation().tenantBackendDelegationEnvIsCurrent(container, delegationEnv({ QAAP_AGENT_DELEGATION: '1' }))).to.equal(false);
+            expect(delegation().tenantBackendDelegationEnvIsCurrent(
+                container, delegationEnv({ QAAP_AGENT_DELEGATION: '1', QAAP_DELEGATE_MAX_CONCURRENT: '5' }))).to.equal(false);
+        });
+    });
+
     describe('tenantBackendLimitsEnv', () => {
 
         const limitsEnv = (env: NodeJS.ProcessEnv): string[] =>

@@ -29,6 +29,12 @@ import {
     resolveQaapHostedTenantContainerUser,
     type QaapDockerNodeConfig,
 } from './qaap-docker-control-plane';
+import {
+    isQaapAgentDelegationEnabled,
+    QAAP_AGENT_DELEGATION_ENV,
+    QAAP_AGENT_DELEGATION_MAX_CONCURRENT_ENV,
+    QAAP_AGENT_DELEGATION_WAIT_CAP_ENV,
+} from '../common/qaap-agent-delegation-protocol';
 import { QAAP_TENANT_PUSH_OUTBOX_PATH, QAAP_TENANT_RUNTIME_API_PATH, type QaapTenantBackendUpdateStatus } from '../common/qaap-cloud-api-types';
 import { QAAP_TENANT_BUSY_PROBE_HEADER, QaapTenantBusyProbe, type QaapTenantBusyStatus } from './qaap-tenant-busy-probe';
 import { computeTenantBackendUpdateStatus } from './qaap-tenant-backend-update';
@@ -1225,6 +1231,32 @@ export class QaapDockerOrchestrator {
     }
 
     /**
+     * Agent delegation (per-task qaaq MCP server): the tenant backend launches the agents and evaluates
+     * `isQaapAgentDelegationEnabled(process.env)`, so the control plane's flag and the two optional
+     * limits must reach it. Only positive integers pass for the limits (no smuggled variables).
+     */
+    protected tenantBackendDelegationEnv(env: NodeJS.ProcessEnv = process.env): string[] {
+        if (!isQaapAgentDelegationEnabled(env)) {
+            return [];
+        }
+        return [`${QAAP_AGENT_DELEGATION_ENV}=1`, ...[QAAP_AGENT_DELEGATION_MAX_CONCURRENT_ENV, QAAP_AGENT_DELEGATION_WAIT_CAP_ENV]
+            .map(key => [key, env[key]?.trim()] as const)
+            .filter((entry): entry is readonly [string, string] => !!entry[1] && /^[1-9]\d*$/.test(entry[1]))
+            .map(([key, value]) => `${key}=${value}`)];
+    }
+
+    /**
+     * Whether a backend container's env carries exactly the delegation settings the control plane
+     * expects: missing ones (flag turned on or a limit added) and stale ones (flag turned off, a
+     * limit removed or changed) both make the backend stale so it is recreated.
+     */
+    protected tenantBackendDelegationEnvIsCurrent(containerEnv: ReadonlySet<string>, expected: string[] = this.tenantBackendDelegationEnv()): boolean {
+        const managedKeys = [QAAP_AGENT_DELEGATION_ENV, QAAP_AGENT_DELEGATION_MAX_CONCURRENT_ENV, QAAP_AGENT_DELEGATION_WAIT_CAP_ENV];
+        return expected.every(entry => containerEnv.has(entry))
+            && [...containerEnv].every(entry => !managedKeys.some(key => entry.startsWith(`${key}=`)) || expected.includes(entry));
+    }
+
+    /**
      * Tasks started from GitHub issues (doc/qaap-external-task-inputs.md): the tenant backend owns the opt-in,
      * the intake route and the notifier, so it needs the flag; the webhook secret stays on the control plane.
      */
@@ -1680,6 +1712,7 @@ export class QaapDockerOrchestrator {
                 'QAAP_SYSTEM_SKILLS_DIR=/opt/qaap/system-skills',
                 ...this.tenantBackendPublicUrlEnv(),
                 ...this.tenantBackendTaskSandboxEnv(),
+                ...this.tenantBackendDelegationEnv(),
                 ...this.tenantBackendExternalTaskEnv(),
                 ...this.tenantBackendLimitsEnv(),
                 ...this.tenantBackendSecretsEnv(),
@@ -2392,6 +2425,7 @@ export class QaapDockerOrchestrator {
             'QAAP_SYSTEM_SKILLS_DIR=/opt/qaap/system-skills',
             ...this.tenantBackendPublicUrlEnv(),
             ...this.tenantBackendTaskSandboxEnv(),
+            ...this.tenantBackendDelegationEnv(),
             ...this.tenantBackendExternalTaskEnv(),
             ...this.tenantBackendLimitsEnv(),
         ];
@@ -2411,6 +2445,8 @@ export class QaapDockerOrchestrator {
             && expectedEnv.every(entry => env.has(entry))
             // Turning the broker off must also recreate backends that still ask for sandboxes.
             && (this.tenantBackendTaskSandboxEnv().length > 0 || ![...env].some(entry => entry.startsWith('QAAP_TASK_SANDBOX=')))
+            // Delegation: turning the flag off (or dropping a limit) must recreate backends still carrying it.
+            && this.tenantBackendDelegationEnvIsCurrent(env)
             // Same for GitHub issue tasks: a backend still running the opt-in and intake after the flag went off.
             && (this.tenantBackendExternalTaskEnv().length > 0 || ![...env].some(entry => entry.startsWith('QAAP_EXTERNAL_TASKS_')))
             && this.tenantContainerHasExpectedNetworks(inspect, networkMode, directEgressNetwork)

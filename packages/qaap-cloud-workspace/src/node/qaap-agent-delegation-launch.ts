@@ -17,6 +17,11 @@
  * - OpenCode: a token FILE (0600 in a private 0700 directory, removed when the task ends); the inline
  *   `OPENCODE_CONFIG_CONTENT` (inherited by OpenCode's bash and local MCP servers) holds only the file path, and
  *   the shim reads the file once at start-up (`QAAP_DELEGATION_TOKEN_FILE`).
+ *
+ * Inside a per-task sandbox (`QAAP_TASK_SANDBOX`, doc/qaap-task-sandbox.md) the harness runs in a container
+ * with its own `/tmp`, and a devcontainer image does not ship this package: the shim, the Claude config and the
+ * OpenCode token file are therefore written below the sandbox's `sharedRoot` (the one directory the backend and
+ * the sandbox see at the IDENTICAL path, so no path translation), see {@link resolveQaapDelegationPlacement}.
  */
 
 import {
@@ -29,8 +34,11 @@ import {
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import type { QaapTaskSandbox } from './qaap-task-sandbox';
 import { resolveQaapCloudWorkspaceResource } from './qaap-cloud-workspace-resource';
-import { removeAgentPromptTempDir, writeAgentPromptFile, type AgentPromptOwner } from './qaap-agent-task-runner-utils';
+import {
+    AGENT_PROMPT_REMOVE_SCRIPT, agentPromptOwnerRunner, removeAgentPromptTempDir, writeAgentPromptFile, type AgentPromptOwner,
+} from './qaap-agent-task-runner-utils';
 
 /** File name of the stdio MCP shim under `resources/`. */
 export const QAAP_DELEGATE_MCP_FILE = 'qaap-delegate-mcp.mjs';
@@ -109,36 +117,147 @@ export function currentQaapDelegationMcpConfigOptions(): QaapDelegationMcpConfig
 /** Prefix of the private per-task directories holding a Claude `--mcp-config` file. */
 export const QAAP_DELEGATION_CONFIG_DIR_PREFIX = 'delegation-';
 const QAAP_DELEGATION_CONFIG_DIR_BASENAME_PREFIX = `qaap-agent-prompt-${QAAP_DELEGATION_CONFIG_DIR_PREFIX}`;
-const configDirsByTask = new Map<string, string>();
+/** Directory below a sandbox's `sharedRoot` that holds the per-task delegation directories. */
+export const QAAP_DELEGATION_SANDBOX_DIRNAME = '.qaap-delegation';
+/** Node binary inside a sandbox: the toolchain's (first on PATH in broker mode) or the image's own. */
+export const QAAP_DELEGATION_SANDBOX_NODE = 'node';
+/** Base mode of the sandbox base when the agent runs as another uid: sticky and writable, not readable (as the Codex overlay base). */
+const QAAP_DELEGATION_SANDBOX_BASE_MODE = 0o1733;
+/** Directories created for a task: its config/token file's and, in a sandbox, its staged shim's. */
+const configDirsByTask = new Map<string, string[]>();
+
+/** Where the shim and the credential file of one turn live, and how the harness launches the shim. */
+export interface QaapDelegationPlacement {
+    readonly options: QaapDelegationMcpConfigOptions;
+    /** Base directory for the per-task credential directory (undefined: the OS temp dir). */
+    readonly baseDir?: string;
+}
+
+function rememberConfigDir(taskId: string, dir: string): void {
+    configDirsByTask.set(taskId, [...(configDirsByTask.get(taskId) ?? []), dir]);
+}
 
 /**
  * Writes Claude's `--mcp-config` to `mcp.json` (0600) in a fresh private directory (0700) created as the agent
  * identity (so a dropped agent can read it and nobody else can), and returns the file path. The directory is
  * removed by {@link releaseQaapDelegationMcpConfigFile} when the task ends, and stale ones at the next start.
+ * `baseDir` places it below a sandbox's shared root instead of the OS temp dir.
  */
-export function writeQaapDelegationMcpConfigFile(taskId: string, json: string, owner?: AgentPromptOwner, fileName: string = 'mcp.json'): string {
-    releaseQaapDelegationMcpConfigFile(taskId);
-    const written = writeAgentPromptFile(json, owner, { fileName, dirPrefix: QAAP_DELEGATION_CONFIG_DIR_PREFIX });
-    configDirsByTask.set(taskId, written.dir);
+export function writeQaapDelegationMcpConfigFile(taskId: string, json: string, owner?: AgentPromptOwner, fileName: string = 'mcp.json', baseDir?: string): string {
+    const written = writeAgentPromptFile(json, owner, { fileName, dirPrefix: QAAP_DELEGATION_CONFIG_DIR_PREFIX, ...(baseDir ? { baseDir } : {}) });
+    rememberConfigDir(taskId, written.dir);
     return written.file;
 }
 
-/** Removes the task's `--mcp-config` directory. Idempotent. */
+/** Removes every directory the task's delegation wiring created (config/token file, staged shim). Idempotent. */
 export function releaseQaapDelegationMcpConfigFile(taskId: string): void {
-    const dir = configDirsByTask.get(taskId);
-    if (dir) {
+    const dirs = configDirsByTask.get(taskId);
+    if (dirs) {
         configDirsByTask.delete(taskId);
-        removeAgentPromptTempDir(dir);
+        for (const dir of dirs) {
+            removeAgentPromptTempDir(dir);
+        }
     }
+}
+
+/**
+ * Where a turn's delegation files go. On the host: the shipped shim, this process's node and the OS temp dir.
+ * In a task sandbox: the shim is COPIED into a private directory below the sandbox's `sharedRoot` (visible there
+ * at the same absolute path, also for a devcontainer image without this package), run by the sandbox's own
+ * `node`, and the credential file goes next to it. Throws when the sandbox shares no directory with the backend
+ * or the base cannot be made safely: the caller then runs the turn without delegation.
+ */
+export function resolveQaapDelegationPlacement(
+    taskId: string,
+    sandbox: Pick<QaapTaskSandbox, 'name' | 'sharedRoot'> | undefined,
+    owner?: AgentPromptOwner,
+): QaapDelegationPlacement {
+    if (!sandbox) {
+        return { options: currentQaapDelegationMcpConfigOptions() };
+    }
+    if (!sandbox.sharedRoot) {
+        throw new Error(`The task sandbox ${sandbox.name} shares no directory with the backend, so the delegation shim cannot reach it.`);
+    }
+    const baseDir = ensureQaapDelegationSandboxBase(sandbox.sharedRoot, owner);
+    sweepSandboxBaseThrottled(baseDir, owner);
+    releaseQaapDelegationMcpConfigFile(taskId);
+    const shim = writeAgentPromptFile(fs.readFileSync(resolveQaapDelegateMcpPath(), 'utf8'), owner, {
+        fileName: QAAP_DELEGATE_MCP_FILE, dirPrefix: `${QAAP_DELEGATION_CONFIG_DIR_PREFIX}shim-`, baseDir,
+    });
+    rememberConfigDir(taskId, shim.dir);
+    return { options: { nodeBin: QAAP_DELEGATION_SANDBOX_NODE, shimPath: shim.file, electronRunAsNode: false }, baseDir };
+}
+
+/**
+ * Creates (or verifies) `<sharedRoot>/.qaap-delegation`: a real directory of this process, never a planted one.
+ * Once it is 1733 (an agent with another uid needs it) it stays 1733: a concurrent direct-mode task must not
+ * lock that agent out by lowering it to 0700.
+ */
+function ensureQaapDelegationSandboxBase(sharedRoot: string, owner?: AgentPromptOwner): string {
+    const currentUid = typeof process.getuid === 'function' ? process.getuid() : undefined;
+    const drop = owner !== undefined && owner.uid !== currentUid;
+    const base = path.join(sharedRoot, QAAP_DELEGATION_SANDBOX_DIRNAME);
+    fs.mkdirSync(base, { recursive: true, mode: drop ? QAAP_DELEGATION_SANDBOX_BASE_MODE : 0o700 });
+    const stat = fs.lstatSync(base);
+    if (!stat.isDirectory() || (currentUid !== undefined && stat.uid !== currentUid)) {
+        throw new Error(`Refusing the delegation directory ${base}: not a real directory of this backend.`);
+    }
+    const alreadyShared = (stat.mode & 0o7777) === QAAP_DELEGATION_SANDBOX_BASE_MODE;
+    const mode = drop || alreadyShared ? QAAP_DELEGATION_SANDBOX_BASE_MODE : 0o700;
+    if ((stat.mode & 0o7777) !== mode) {
+        fs.chmodSync(base, mode);
+    }
+    return base;
+}
+
+/** Entries one sweep pass looks at, so a base flooded with prefixed entries cannot block the event loop. */
+export const QAAP_DELEGATION_SWEEP_MAX_ENTRIES = 200;
+/** Minimum time between two sweeps of the same sandbox base. */
+export const QAAP_DELEGATION_SWEEP_INTERVAL_MS = 60 * 1000;
+const lastSweepByBase = new Map<string, number>();
+
+function sweepSandboxBaseThrottled(baseDir: string, owner?: AgentPromptOwner, now: number = Date.now()): void {
+    const last = lastSweepByBase.get(baseDir);
+    if (last !== undefined && now - last < QAAP_DELEGATION_SWEEP_INTERVAL_MS) {
+        return;
+    }
+    lastSweepByBase.set(baseDir, now);
+    sweepStaleQaapDelegationMcpConfigs(baseDir, undefined, { owner });
+}
+
+/** Test seam: forgets when each base was last swept. */
+export function resetQaapDelegationSweepThrottle(): void {
+    lastSweepByBase.clear();
+}
+
+/** Who may be removed by a sweep, and how much work one pass may do. */
+export interface QaapDelegationSweepOptions {
+    /** The agent identity of the sandbox: its own entries are removed running as that uid, never as the backend. */
+    readonly owner?: AgentPromptOwner;
+    /** The uid whose entries the backend removes itself (default: this process's). Overridable for tests, which cannot switch uid. */
+    readonly backendUid?: number;
+    readonly maxEntries?: number;
 }
 
 /**
  * Removes `--mcp-config` directories a previous backend process left behind (crash, kill): they hold tokens that
  * died with that process, but must not linger. Only directories older than `minAgeMs` go, so a second backend on
  * the same host (sharing the temp dir) never loses the file of a task it is spawning right now. Never throws.
+ *
+ * The base may be writable by the agent, so every entry is `lstat`ed and never followed: only REAL directories
+ * are touched (a symlink or file is ignored); a directory of this backend's uid is removed by the backend, one of
+ * the agent's uid is removed by running the removal script as that uid (the backend, root without DAC override,
+ * must never `rm -r` into a tree the agent can rearrange), anything else is left alone.
  */
-export function sweepStaleQaapDelegationMcpConfigs(tmpDir: string = os.tmpdir(), minAgeMs: number = 60 * 60 * 1000): number {
+export function sweepStaleQaapDelegationMcpConfigs(
+    tmpDir: string = os.tmpdir(),
+    minAgeMs: number = 60 * 60 * 1000,
+    options: QaapDelegationSweepOptions = {},
+): number {
+    const backendUid = options.backendUid ?? (typeof process.getuid === 'function' ? process.getuid() : undefined);
+    const maxEntries = options.maxEntries ?? QAAP_DELEGATION_SWEEP_MAX_ENTRIES;
     let removed = 0;
+    let seen = 0;
     let entries: string[] = [];
     try {
         entries = fs.readdirSync(tmpDir);
@@ -149,18 +268,28 @@ export function sweepStaleQaapDelegationMcpConfigs(tmpDir: string = os.tmpdir(),
         if (!entry.startsWith(QAAP_DELEGATION_CONFIG_DIR_BASENAME_PREFIX)) {
             continue;
         }
+        if (++seen > maxEntries) {
+            break;
+        }
         const dir = path.join(tmpDir, entry);
-        if ([...configDirsByTask.values()].includes(dir)) {
+        if ([...configDirsByTask.values()].some(dirs => dirs.includes(dir))) {
             continue;
         }
         try {
-            if (minAgeMs > 0 && Date.now() - fs.statSync(dir).mtimeMs < minAgeMs) {
+            const stat = fs.lstatSync(dir);
+            if (!stat.isDirectory() || (minAgeMs > 0 && Date.now() - stat.mtimeMs < minAgeMs)) {
                 continue;
             }
-            fs.rmSync(dir, { recursive: true, force: true });
-            removed++;
+            if (backendUid === undefined || stat.uid === backendUid) {
+                fs.rmSync(dir, { recursive: true, force: true });
+                removed++;
+            } else if (options.owner && stat.uid === options.owner.uid) {
+                if (agentPromptOwnerRunner.run(options.owner, AGENT_PROMPT_REMOVE_SCRIPT, { dir })) {
+                    removed++;
+                }
+            }
         } catch {
-            // A dir owned by another uid that this process cannot remove: the OS temp cleanup takes it.
+            // Gone meanwhile, or not removable by this process: the OS temp cleanup takes it.
         }
     }
     return removed;
@@ -170,8 +299,8 @@ export function sweepStaleQaapDelegationMcpConfigs(tmpDir: string = os.tmpdir(),
  * Writes the OpenCode delegation token alone to `token` (0600) in a fresh private directory (0700) and returns
  * the file path. Same lifecycle as {@link writeQaapDelegationMcpConfigFile} (a task uses only one of them).
  */
-export function writeQaapDelegationTokenFile(taskId: string, token: string, owner?: AgentPromptOwner): string {
-    return writeQaapDelegationMcpConfigFile(taskId, token, owner, 'token');
+export function writeQaapDelegationTokenFile(taskId: string, token: string, owner?: AgentPromptOwner, baseDir?: string): string {
+    return writeQaapDelegationMcpConfigFile(taskId, token, owner, 'token', baseDir);
 }
 
 /**
@@ -223,10 +352,11 @@ export function applyQaapOpencodeDelegation(
     wiring: Pick<QaapDelegationWiring, 'mcpServerName' | 'url' | 'token'>,
     owner: AgentPromptOwner | undefined,
     writeTokenFile: typeof writeQaapDelegationTokenFile = writeQaapDelegationTokenFile,
+    placement: QaapDelegationPlacement = { options: currentQaapDelegationMcpConfigOptions() },
 ): boolean {
     try {
-        const tokenFile = writeTokenFile(taskId, wiring.token, owner);
-        env.OPENCODE_CONFIG_CONTENT = withQaapDelegationOpencodeMcp(env.OPENCODE_CONFIG_CONTENT, currentQaapDelegationMcpConfigOptions(), wiring, tokenFile);
+        const tokenFile = writeTokenFile(taskId, wiring.token, owner, placement.baseDir);
+        env.OPENCODE_CONFIG_CONTENT = withQaapDelegationOpencodeMcp(env.OPENCODE_CONFIG_CONTENT, placement.options, wiring, tokenFile);
         return true;
     } catch (error) {
         console.warn(`[qaap-delegation] could not write the OpenCode delegation token file; the turn runs without delegation (${(error as NodeJS.ErrnoException)?.code ?? 'error'})`);
