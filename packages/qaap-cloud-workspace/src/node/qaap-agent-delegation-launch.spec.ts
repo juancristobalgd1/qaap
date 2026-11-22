@@ -20,7 +20,9 @@ import {
     QAAP_DELEGATION_CONFIG_DIR_PREFIX,
     QAAP_DELEGATION_MCP_TOOL_TIMEOUT_MS,
     releaseQaapDelegationMcpConfigFile,
+    QAAP_DELEGATION_SANDBOX_DIRNAME,
     resolveQaapDelegateMcpPath,
+    resolveQaapDelegationPlacement,
     withQaapDelegationOpencodeMcp,
     sweepStaleQaapDelegationMcpConfigs,
     writeQaapDelegationMcpConfigFile,
@@ -193,14 +195,15 @@ describe('agent delegation launch', () => {
             expect(kept.MCP_TOOL_TIMEOUT).to.equal('5000');
         });
 
-        it('does nothing with the flag off, for a child, role-less, read-only (plan) task, a harness without the transport, or in a sandbox', () => {
+        it('does nothing with the flag off, for a child, role-less, read-only (plan) task, a harness without the transport, or in a sandbox that shares no directory', () => {
             const cases: [() => unknown, string][] = [
                 [() => { delete process.env.QAAP_AGENT_DELEGATION; return runner().applyAgentDelegationEnv({}, task()); }, 'flag off'],
                 [() => runner().applyAgentDelegationEnv({}, task({ delegationRole: 'child' })), 'child'],
                 [() => runner().applyAgentDelegationEnv({}, task({ delegationRole: undefined })), 'no role'],
                 [() => runner().applyAgentDelegationEnv({}, task({ readOnlyWorkspace: true })), 'read-only / plan turn'],
                 [() => runner().applyAgentDelegationEnv({}, task({ agentId: 'grok', command: 'grok' })), 'grok'],
-                [() => runner({ name: 's', root: '/w' } as QaapTaskSandbox).applyAgentDelegationEnv({}, task()), 'sandbox'],
+                [() => runner({ name: 's', root: '/w', backendHost: '172.24.0.50' } as QaapTaskSandbox).applyAgentDelegationEnv({}, task()), 'sandbox without a shared dir'],
+                [() => runner({ name: 's', root: '/w', sharedRoot: '/shared' } as QaapTaskSandbox).applyAgentDelegationEnv({}, task()), 'sandbox without a backend address'],
                 [() => runner().applyAgentDelegationEnv({}, task({ agentId: 'codex', command: 'codex exec' })), 'codex without its gate token'],
             ];
             for (const [run, label] of cases) {
@@ -308,4 +311,112 @@ describe('agent delegation launch', () => {
             }
         });
     });
+    describe('inside a per-task sandbox', () => {
+        const helperApiUrl = 'http://127.0.0.1:4873/qaap/api/agent-tasks';
+        const saved = process.env.QAAP_AGENT_DELEGATION;
+        let shared: string;
+        let tokens: QaapToolGateTokenService;
+        const sandbox = (extra: Partial<QaapTaskSandbox> = {}): QaapTaskSandbox =>
+            ({ name: 's', root: '/w', backendHost: '172.24.0.50', sharedRoot: shared, ...extra }) as QaapTaskSandbox;
+        const task = (extra: Partial<QaapAgentTask> = {}): QaapAgentTask =>
+            ({ id: 'task-sb', cwd: '/w', ownerLogin: 'alice', command: 'claude --print', agentId: 'claude', delegationRole: 'parent', ...extra }) as QaapAgentTask;
+
+        function runner(found: QaapTaskSandbox | undefined): QaapAgentTaskRunner {
+            const instance = Object.create(QaapAgentTaskRunner.prototype) as QaapAgentTaskRunner;
+            Object.assign(instance, { helperApiUrl, toolGateTokens: tokens, tenantSpawn: { agentSandboxFor: () => found } });
+            return instance;
+        }
+
+        beforeEach(() => {
+            process.env.QAAP_AGENT_DELEGATION = '1';
+            tokens = new QaapToolGateTokenService();
+            shared = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-delegation-shared-'));
+        });
+        afterEach(() => {
+            releaseQaapDelegationMcpConfigFile('task-sb');
+            fs.rmSync(shared, { recursive: true, force: true });
+            if (saved === undefined) {
+                delete process.env.QAAP_AGENT_DELEGATION;
+            } else {
+                process.env.QAAP_AGENT_DELEGATION = saved;
+            }
+        });
+
+        it('wires a Claude parent with the backend address on the sandbox network, which bypasses the proxy', () => {
+            const env: NodeJS.ProcessEnv = {};
+            const wiring = runner(sandbox()).applyAgentDelegationEnv(env, task());
+            expect(wiring?.transport).to.equal('claude-mcp-config');
+            expect(wiring?.url).to.equal('http://172.24.0.50:4873');
+            expect(env.NO_PROXY).to.contain('172.24.0.50');
+        });
+
+        it('wires Codex with the sandbox address in its environment (env_vars forwarding)', () => {
+            const env: NodeJS.ProcessEnv = { QAAP_GATE_TOKEN: 'gate' };
+            const wiring = runner(sandbox()).applyAgentDelegationEnv(env, task({ agentId: 'codex', command: 'codex exec' }));
+            expect(wiring?.transport).to.equal('codex-config');
+            expect(env.QAAP_DELEGATION_URL).to.equal('http://172.24.0.50:4873');
+            expect(env.QAAP_DELEGATION_TOKEN).to.equal(wiring?.token);
+        });
+
+        it('issues no token when the sandbox shares no directory or has no backend address', () => {
+            expect(runner(sandbox({ sharedRoot: undefined })).applyAgentDelegationEnv({}, task())).to.equal(undefined);
+            expect(runner(sandbox({ backendHost: undefined })).applyAgentDelegationEnv({}, task())).to.equal(undefined);
+            expect(tokens.delegationServerName('task-sb')).to.equal(undefined);
+        });
+
+        it('stays off with the flag off, also in a sandbox', () => {
+            delete process.env.QAAP_AGENT_DELEGATION;
+            expect(runner(sandbox()).applyAgentDelegationEnv({}, task())).to.equal(undefined);
+        });
+
+        it('places the shim, the Claude config and the OpenCode token below the shared root, which the sandbox sees at the same path', function (): void {
+            if (process.platform === 'win32') {
+                this.skip();
+            }
+            const placement = resolveQaapDelegationPlacement('task-sb', sandbox());
+            const base = fs.realpathSync(path.join(shared, QAAP_DELEGATION_SANDBOX_DIRNAME));
+            const inside = (file: string): boolean => fs.realpathSync(file).startsWith(`${base}${path.sep}`);
+            expect(placement.baseDir).to.equal(path.join(shared, QAAP_DELEGATION_SANDBOX_DIRNAME));
+            // The staged copy is the shipped shim, run by the node of the sandbox (not the backend's execPath).
+            expect(placement.options.nodeBin).to.equal('node');
+            expect(placement.options.electronRunAsNode).to.equal(false);
+            expect(inside(placement.options.shimPath)).to.equal(true);
+            expect(fs.readFileSync(placement.options.shimPath, 'utf8')).to.equal(fs.readFileSync(resolveQaapDelegateMcpPath(), 'utf8'));
+            expect(fs.statSync(path.dirname(placement.options.shimPath)).mode & 0o777).to.equal(0o700);
+
+            const wiring = { mcpServerName: 'qaaq_0123456789abcdef', url: 'http://172.24.0.50:4873', token: 'secret-token' };
+            const mcp = writeQaapDelegationMcpConfigFile('task-sb', buildQaapDelegationMcpConfig(placement.options, wiring), undefined, 'mcp.json', placement.baseDir);
+            expect(inside(mcp)).to.equal(true);
+            expect(fs.statSync(mcp).mode & 0o777).to.equal(0o600);
+            expect(JSON.parse(fs.readFileSync(mcp, 'utf8')).mcpServers[wiring.mcpServerName].args).to.deep.equal([placement.options.shimPath]);
+
+            const env: NodeJS.ProcessEnv = {};
+            expect(applyQaapOpencodeDelegation(env, 'task-sb', wiring, undefined, writeQaapDelegationTokenFile, placement)).to.equal(true);
+            const server = JSON.parse(env.OPENCODE_CONFIG_CONTENT!).mcp[wiring.mcpServerName];
+            expect(server.command).to.deep.equal(['node', placement.options.shimPath]);
+            const tokenFile = server.environment.QAAP_DELEGATION_TOKEN_FILE as string;
+            expect(inside(tokenFile)).to.equal(true);
+            expect(fs.statSync(tokenFile).mode & 0o777).to.equal(0o600);
+            expect(env.OPENCODE_CONFIG_CONTENT).to.not.contain(wiring.token);
+
+            releaseQaapDelegationMcpConfigFile('task-sb');
+            expect(fs.readdirSync(base)).to.deep.equal([]);
+        });
+
+        it('keeps the host path unchanged without a sandbox, and refuses a sandbox that shares nothing', () => {
+            const host = resolveQaapDelegationPlacement('task-sb', undefined);
+            expect(host.baseDir).to.equal(undefined);
+            expect(host.options.shimPath).to.equal(resolveQaapDelegateMcpPath());
+            expect(() => resolveQaapDelegationPlacement('task-sb', sandbox({ sharedRoot: undefined }))).to.throw(/shares no directory/);
+        });
+
+        it('refuses a base planted as a symlink or file instead of a real directory', function (): void {
+            if (process.platform === 'win32') {
+                this.skip();
+            }
+            fs.writeFileSync(path.join(shared, QAAP_DELEGATION_SANDBOX_DIRNAME), 'x');
+            expect(() => resolveQaapDelegationPlacement('task-sb', sandbox())).to.throw();
+        });
+    });
+
 });

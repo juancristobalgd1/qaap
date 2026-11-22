@@ -2325,8 +2325,9 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     /**
      * Whether this turn should get the delegation tools: the flag is on, the task is a top-level conversation
      * turn (`delegationRole: 'parent'`, never a child), it may write (a read-only / plan turn must not gain writes
-     * through a child), its harness takes the server (`delegateMcp`), the gate token service runs, and it is not
-     * inside a task sandbox (the shim is not visible there yet).
+     * through a child), its harness takes the server (`delegateMcp`) and the gate token service runs. Inside a task
+     * sandbox it also needs the sandbox's shared directory (where the shim and the credential file are placed, see
+     * `resolveQaapDelegationPlacement`); the backend's address there is checked when the URL is resolved.
      */
     protected wantsAgentDelegation(task: QaapAgentDelegationTaskFields): boolean {
         if (!isQaapAgentDelegationEnabled(process.env) || task.delegationRole !== 'parent' || task.readOnlyWorkspace
@@ -2334,7 +2335,11 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             return false;
         }
         const transport = resolveQaapHarnessCapabilities(this.resolveTaskAgentId(task as QaapAgentTask)).delegateMcp ?? 'none';
-        return transport !== 'none' && !this.agentSandboxFor(task.cwd);
+        if (transport === 'none') {
+            return false;
+        }
+        const sandbox = this.agentSandboxFor(task.cwd);
+        return !sandbox || !!sandbox.sharedRoot;
     }
 
     /**

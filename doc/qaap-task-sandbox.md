@@ -150,6 +150,16 @@ server bound (Vite's `localhost` included) and for any port.
   sandbox's exec server instead. Replacing the direct-mode exec with one long-lived relay per
   sandbox is a known follow-up.
 
+**Agent delegation inside a sandbox (`QAAP_AGENT_DELEGATION`).** The parent's `qaaq` MCP shim, its Claude
+`--mcp-config` / OpenCode token file and (Codex) its overlay must be visible to the harness inside the container.
+`resolveQaapDelegationPlacement` (`qaap-agent-delegation-launch.ts`) copies the shim into a private per-task
+directory below the sandbox's `sharedRoot` (`<sharedRoot>/.qaap-delegation/`, bound at the identical path in both
+modes, so no path translation) and writes the credential file next to it (0600 in a 0700 directory owned by the task
+uid, removed when the task ends, stale ones swept). The harness runs the shim with the sandbox's own `node`. The URL is
+the backend address on the sandbox network (`resolveAgentReachableOrigin`, same as the Tool Gate). A sandbox without a
+`sharedRoot` or a backend address gets no delegation (no token issued). No new mount and no image change is needed;
+children are ordinary conversations with their own worktree and sandbox, and `child_apply` runs in the backend.
+
 ## Devcontainer handling
 
 `QaapDevcontainerResolver` reads `.devcontainer/devcontainer.json` or `.devcontainer.json`
