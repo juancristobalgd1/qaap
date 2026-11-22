@@ -58,8 +58,13 @@ describe('QaapNeutralGit', () => {
             expect(args).to.include(`core.excludesFile=${empty}`);
             expect(args.filter(arg => arg.startsWith('core.attributesFile=') || arg.startsWith('core.excludesFile='))
                 .some(arg => arg.includes('/dev/null'))).to.equal(false);
-            // the one that already worked on Windows before this module
-            expect(args).to.include('core.hooksPath=/dev/null');
+            // `/dev/null` would resolve to C:\\dev\\null there: hooks point at the empty file (ENOTDIR) as well
+            expect(args).to.include(`core.hooksPath=${empty}`);
+            expect(args).to.not.include('core.hooksPath=/dev/null');
+        });
+
+        it('keeps core.hooksPath=/dev/null on POSIX', () => {
+            expect(QaapNeutralGit.args('linux')).to.include('core.hooksPath=/dev/null');
         });
 
         it('keeps /dev/null on POSIX, where every tenant transport (including a docker worker) understands it', () => {

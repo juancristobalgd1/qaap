@@ -74,6 +74,12 @@ describe('QaapGitExecConfigChecker', () => {
             expect(checkerWith(scoped(...lfs, ['worktree', 'file:.git/config.worktree', 'merge.x.driver', 'evil'])).check(repo, neutral)).to.contain('merge.x.driver');
         });
 
+        it('rejects an include of a local or worktree scope (it may match only in another worktree) but not a global one', () => {
+            expect(checkerWith(scoped(['local', 'file:.git/config', 'includeif.gitdir:**/worktrees/integration-*.path', '/tmp/x'])).check(repo, neutral)).to.contain('includeif');
+            expect(checkerWith(scoped(['worktree', 'file:.git/config.worktree', 'include.path', '/tmp/x'])).check(repo, neutral)).to.contain('include.path');
+            expect(checkerWith(scoped(['global', 'file:/home/u/.gitconfig', 'include.path', '/tmp/x'])).check(repo, neutral)).to.equal(undefined);
+        });
+
         it('rejects an enabled extensions.worktreeConfig (its config.worktree is another model-writable scope)', () => {
             expect(checkerWith(scoped(['local', 'file:.git/config', 'extensions.worktreeconfig', 'true'])).check(repo, neutral)).to.contain('worktreeConfig');
             expect(checkerWith(scoped(['local', 'file:.git/config', 'extensions.worktreeconfig', 'false'])).check(repo, neutral)).to.equal(undefined);

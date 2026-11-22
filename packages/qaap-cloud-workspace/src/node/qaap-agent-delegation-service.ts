@@ -505,6 +505,9 @@ export class QaapAgentDelegationService {
         const env = QaapNeutralGit.env(process.env, { GIT_INDEX_FILE: indexFile });
         try {
             await this.gitOrThrowEnv(parent.cwd, ['read-tree', 'HEAD'], env);
+            // `add -A` enters a registered gitlink and runs the filters of the repository inside it: refuse the parent's
+            // gitlinks (as loaded in the throwaway index) before it runs, the way the child's are refused.
+            await this.assertNoGitlinks(parent.cwd, env);
             // The working tree as it is now, into the throwaway index only.
             await this.gitOrThrowEnv(parent.cwd, ['add', '-A'], env);
             const applied = await this.store.mutatingGit(parent.cwd, [...QaapNeutralGit.ARGS, 'apply', '--3way'], env, DELEGATION_GIT_TIMEOUT_MS, patch.stdout);
@@ -570,8 +573,15 @@ export class QaapAgentDelegationService {
      * mean executing a program defined in user-level config, which is exactly what is switched off. Not supported yet.
      */
     protected async assertNoLfs(cwd: string): Promise<void> {
-        const listed = await this.gitOrThrow(cwd, ['ls-files', '-z', '--cached', '--others', '--', ':(glob)**/.gitattributes']);
-        const files = listed.split('\0').filter(Boolean).map(name => path.join(cwd, name));
+        // Tracked and untracked-but-not-ignored attributes files, then the loose ignored ones (`--directory` collapses an
+        // ignored directory such as node_modules into one `dir/` entry that is not walked, and not read: `add -A`
+        // never enters it either).
+        const glob = ':(glob)**/.gitattributes';
+        const visible = await this.gitOrThrow(cwd, ['ls-files', '-z', '--cached', '--others', '--exclude-standard', '--', glob]);
+        const ignored = await this.gitOrThrow(cwd, ['ls-files', '-z', '--others', '--ignored', '--exclude-standard', '--directory', '--', glob]);
+        const files = [...visible.split('\0'), ...ignored.split('\0')]
+            .filter(name => name && !name.endsWith('/'))
+            .map(name => path.join(cwd, name));
         const infoAttributes = (await this.gitOrThrow(cwd, ['rev-parse', '--git-path', 'info/attributes'])).trim();
         if (infoAttributes) {
             files.push(path.resolve(cwd, infoAttributes));
@@ -620,8 +630,9 @@ export class QaapAgentDelegationService {
      * Refuses a nested git repository: a gitlink (mode 160000) in the index, or one about to be created by `add -A`
      * for an untracked repository. A nested repo carries its own config, which a recursing git would execute.
      */
-    protected async assertNoGitlinks(cwd: string): Promise<void> {
-        const entries = (await this.gitOrThrow(cwd, ['ls-files', '-s', '-z'])).split('\0');
+    protected async assertNoGitlinks(cwd: string, env?: NodeJS.ProcessEnv): Promise<void> {
+        const args = ['ls-files', '-s', '-z'];
+        const entries = (env ? await this.gitOrThrowEnv(cwd, args, env) : await this.gitOrThrow(cwd, args)).split('\0');
         if (entries.some(entry => entry.startsWith('160000 '))) {
             throw new Error(GITLINK_REFUSAL);
         }

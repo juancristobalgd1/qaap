@@ -47,8 +47,8 @@ export namespace QaapNeutralGit {
     export function args(platform: NodeJS.Platform = process.platform): readonly string[] {
         const none = nullFile(platform);
         return [
-            // Kept as `/dev/null`: it already worked everywhere before this module existed.
-            '-c', 'core.hooksPath=/dev/null',
+            // A file on win32 (`/dev/null` would resolve to C:\\dev\\null, a directory a user can create); POSIX `/dev/null`.
+            '-c', `core.hooksPath=${none}`,
             '-c', 'core.fsmonitor=false',
             '-c', `core.attributesFile=${none}`,
             // The global ignore file (XDG default included) would hide files from `add -A` and from LFS detection.

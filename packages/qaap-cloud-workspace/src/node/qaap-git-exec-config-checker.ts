@@ -144,6 +144,12 @@ export class QaapGitExecConfigChecker {
                 if (origin.startsWith('file:')) {
                     extraFiles.push(path.resolve(cwd, origin.slice('file:'.length)));
                 }
+                if (neutral && GIT_INCLUDE_KEY_RE.test(key)) {
+                    // An `includeIf "gitdir:..."` can match only in another worktree of the repository (the integration
+                    // worktree a merge creates), where this check never runs: an include of a model-writable scope is
+                    // not verifiable, so it is a refusal instead of something to follow.
+                    return `git config ${key} is not verified (an include may apply only in another worktree)`;
+                }
                 if (GIT_INCLUDE_KEY_RE.test(key)) {
                     const originDir = origin.startsWith('file:') ? path.dirname(path.resolve(cwd, origin.slice('file:'.length))) : cwd;
                     extraFiles.push(path.resolve(originDir, value.replace(/^~(?=\/|$)/, this.homeDir)));

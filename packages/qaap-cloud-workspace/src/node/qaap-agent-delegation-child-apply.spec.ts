@@ -566,6 +566,56 @@ describe('QaapAgentDelegationService.childApply (real git)', function (): void {
                 expect(read(path.join(parentDir, 'new.txt'))).to.equal('merged in\n');
             });
 
+            it('refuses an includeIf that only matches the integration worktree a merge creates, and runs nothing', async () => {
+                const included = path.join(tmp, 'included.gitconfig');
+                write(included, `[filter "y"]\n\tsmudge = ${program()}\n\tclean = cat\n`);
+                git(parentDir, ['config', 'includeIf.gitdir:**/worktrees/integration-*.path', included]);
+                finishChild(() => {
+                    write(path.join(childDir, '.gitattributes'), '* filter=y\n');
+                    write(path.join(childDir, 'new.txt'), 'merged in\n');
+                });
+                Object.assign(service, { worktrees: realWorktrees() });
+
+                const response = await service.childApply(CTX, { childId, mode: 'merge' });
+
+                expect(response.ok).to.equal(false);
+                expect(!response.ok && response.error).to.contain('includeif');
+                expect(fs.existsSync(sentinel)).to.equal(false);
+                expect(git(parentDir, ['rev-parse', 'HEAD'])).to.equal(baseSha);
+            });
+
+            it('refuses a gitlink registered in the PARENT, whose filter add -A would otherwise run', async () => {
+                const inner = path.join(parentDir, 'psub');
+                fs.mkdirSync(inner);
+                git(inner, ['init', '-q']);
+                write(path.join(inner, 'f'), 'one\n');
+                git(inner, ['add', '-A']);
+                git(inner, ['commit', '-q', '-m', 'inner']);
+                git(parentDir, ['add', 'psub']);
+                git(parentDir, ['commit', '-q', '-m', 'register gitlink']);
+                fs.appendFileSync(path.join(inner, '.git', 'config'), `[filter "x"]\n\tclean = ${program()}\n`);
+                write(path.join(inner, '.gitattributes'), '* filter=x\n');
+                write(path.join(inner, 'f'), 'two\n');
+                finishChild(() => write(path.join(childDir, 'new.txt'), 'new file\n'));
+
+                const response = await service.childApply(CTX, { childId });
+
+                expect(fs.existsSync(sentinel), 'the filter inside the parent gitlink must not run').to.equal(false);
+                expect(response.ok).to.equal(false);
+                expect(!response.ok && response.error).to.contain('nested git repository');
+                expect(fs.existsSync(path.join(parentDir, 'new.txt'))).to.equal(false);
+            });
+
+            it('does not walk ignored directories for LFS (node_modules attributes are not a false positive), but still sees a loose ignored one', async () => {
+                finishChild(() => {
+                    write(path.join(childDir, '.gitignore'), 'node_modules/\n');
+                    write(path.join(childDir, 'node_modules', 'dep', '.gitattributes'), '*.bin filter=lfs\n');
+                    write(path.join(childDir, 'new.txt'), 'new file\n');
+                });
+                const response = await service.childApply(CTX, { childId });
+                expect(response, JSON.stringify(response)).to.deep.include({ ok: true, mode: 'apply' });
+            });
+
             it('merge mode still refuses config the model wrote into the shared local config', async () => {
                 finishChild(() => write(path.join(childDir, 'new.txt'), 'merged in\n'));
                 git(childDir, ['config', 'filter.evil.smudge', program()]);
