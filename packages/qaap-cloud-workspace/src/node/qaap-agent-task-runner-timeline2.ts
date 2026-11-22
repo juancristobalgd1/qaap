@@ -21,6 +21,7 @@ import { awaitQaapAgentTaskSpawnGate } from './qaap-agent-task-spawn-gate';
 import {
     appendQaapDelegationLaunchArgs,
     applyQaapOpencodeDelegation,
+    applyQaapPiDelegation,
     buildQaapDelegationMcpConfig,
     currentQaapDelegationMcpConfigOptions,
     QAAP_AGENT_DELEGATION_GUIDANCE,
@@ -668,6 +669,17 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                         if (!applyQaapOpencodeDelegation(childEnv, task.id, delegation, owner, writeQaapDelegationTokenFile, delegationPlacement)) {
                             delegation = undefined;
                         }
+                    } else {
+                        delegation = undefined;
+                    }
+                } else if (delegation?.transport === 'pi-extension' && delegationPlacement) {
+                    // Only with Pi's gate extension in the command: a Pi turn without it runs ungated and gets no delegation.
+                    // In a task sandbox the config and the extension go below its shared root, like the shim.
+                    const piCommand = usesToolGateExtension(ctx.resolveTaskAgentId(task)) && spawnCommand.includes(' -e ') && childEnv.QAAP_GATE_TOKEN
+                        ? applyQaapPiDelegation(childEnv, spawnCommand, task.id, delegation, owner, quoteShellArg, writeQaapDelegationMcpConfigFile, delegationPlacement)
+                        : undefined;
+                    if (piCommand) {
+                        spawnCommand = piCommand;
                     } else {
                         delegation = undefined;
                     }

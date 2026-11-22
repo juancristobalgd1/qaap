@@ -19,9 +19,11 @@ export type QaapWhenAskUnsupported = 'runs-unchecked' | 'refuses';
  * `claude-mcp-config`: `--mcp-config <file>` on the command line, a 0600 file in a private per-task directory
  * that holds the token (Claude Code). `codex-config`: an `[mcp_servers.qaaq]` table in the per-task `CODEX_HOME`
  * overlay. `opencode-config`: an `mcp` entry in the inline `OPENCODE_CONFIG_CONTENT`, which names only a 0600
- * token file (never the token itself). `none`: the harness gets no delegation tools.
+ * token file (never the token itself). `pi-extension`: Pi has built-in MCP support but reads servers only from
+ * `mcp.json` files, so a Qaap extension (`-e`) registers the server for the session with `pi.registerMcpServer`
+ * from a 0600 per-task config file. `none`: the harness gets no delegation tools.
  */
-export type QaapDelegateMcpTransport = 'claude-mcp-config' | 'codex-config' | 'opencode-config' | 'none';
+export type QaapDelegateMcpTransport = 'claude-mcp-config' | 'codex-config' | 'opencode-config' | 'pi-extension' | 'none';
 
 /** Where the cost of a turn comes from. `none` when Qaap cannot show a cost for the harness. */
 export type QaapCostSource = 'reported' | 'price-table' | 'estimate' | 'none';
@@ -198,6 +200,8 @@ const QAAP_HARNESS_CAPABILITY_ENTRIES: readonly QaapHarnessCapabilities[] = [
         trustedFolderArgs: ['--approve'],
         usage: 'pi-json',
         costSource: 'reported',
+        // Pi's built-in MCP client (`-e builtin:mcp`) runs Qaap's shim, registered by a Qaap extension.
+        delegateMcp: 'pi-extension',
     },
     // Cursor, Antigravity, Copilot and Grok run unchecked: no permission gate and no ask window. Explicit
     // entries keep them covered by the registry spec, so a future gate is a deliberate change here.

@@ -60,6 +60,12 @@ export const QAAP_AGENT_DELEGATION_TOKEN_ENV = 'QAAP_DELEGATION_TOKEN';
 export const QAAP_AGENT_DELEGATION_ENV_PREFIX = 'QAAP_DELEGATION_';
 /** Env var naming a 0600 file that holds the token (OpenCode: the inline config must not carry it). */
 export const QAAP_AGENT_DELEGATION_TOKEN_FILE_ENV = 'QAAP_DELEGATION_TOKEN_FILE';
+/**
+ * Env var naming the 0600 JSON file the Pi delegation extension reads (`{ serverName, config }`, the config being
+ * an MCP server entry whose env holds the credentials). Only the path is in Pi's environment, and the extension
+ * removes the variable once read, so Pi's shell tool never inherits it.
+ */
+export const QAAP_AGENT_DELEGATION_PI_CONFIG_ENV = 'QAAP_DELEGATION_PI_CONFIG';
 /** Longest a single `qaaq_task_wait` may block for this harness (see {@link resolveQaapDelegationWaitSec}). */
 export const QAAP_AGENT_DELEGATION_WAIT_CAP_ENV = 'QAAP_DELEGATION_WAIT_CAP_SEC';
 
