@@ -253,7 +253,8 @@ describe('agent delegation on Codex and OpenCode', () => {
             expect(resolveQaapHarnessCapabilities('claude').delegateMcp).to.equal('claude-mcp-config');
             expect(resolveQaapHarnessCapabilities('codex').delegateMcp).to.equal('codex-config');
             expect(resolveQaapHarnessCapabilities('opencode').delegateMcp).to.equal('opencode-config');
-            for (const agentId of ['qaiq', 'pi', 'gemini', 'copilot', 'grok']) {
+            expect(resolveQaapHarnessCapabilities('pi').delegateMcp).to.equal('pi-extension');
+            for (const agentId of ['qaiq', 'gemini', 'copilot', 'grok']) {
                 expect(resolveQaapHarnessCapabilities(agentId).delegateMcp ?? 'none', agentId).to.equal('none');
             }
         });
@@ -311,6 +312,78 @@ describe('agent delegation on Codex and OpenCode', () => {
             }
             process.env.QAAP_AGENT_DELEGATION = '1';
             expect(instance.applyAgentDelegationEnv({}, codexTask('parent')), 'no gate token, no delegation').to.equal(undefined);
+        });
+    });
+
+    describe('Pi delegation wiring', () => {
+        const saved = process.env.QAAP_AGENT_DELEGATION;
+        afterEach(() => {
+            if (saved === undefined) {
+                delete process.env.QAAP_AGENT_DELEGATION;
+            } else {
+                process.env.QAAP_AGENT_DELEGATION = saved;
+            }
+        });
+        const runner = (tokens: QaapToolGateTokenService): QaapAgentTaskRunner => {
+            const instance = Object.create(QaapAgentTaskRunner.prototype) as QaapAgentTaskRunner;
+            Object.assign(instance, { helperApiUrl: 'http://127.0.0.1:4873/qaap/api/agent-tasks', toolGateTokens: tokens, tenantSpawn: { agentSandboxFor: () => undefined } });
+            return instance;
+        };
+        const piTask = (extra: Partial<QaapAgentTask> = {}): QaapAgentTask =>
+            ({ id: 'task-p', cwd: '/w', ownerLogin: 'alice', command: 'pi --mode json -p', agentId: 'pi', delegationRole: 'parent', ...extra }) as QaapAgentTask;
+
+        it('issues a separate delegate-only token for a Pi parent and puts none of it in Pi\'s environment', () => {
+            process.env.QAAP_AGENT_DELEGATION = '1';
+            const tokens = new QaapToolGateTokenService();
+            const instance = runner(tokens);
+            const env: NodeJS.ProcessEnv = {};
+            instance.applyToolGateEnv(env, piTask());
+            const before = Object.keys(env);
+            const wiring = instance.applyAgentDelegationEnv(env, piTask());
+            expect(wiring?.transport).to.equal('pi-extension');
+            expect(wiring?.mcpServerName).to.match(/^qaaq_[0-9a-f]{16}$/);
+            expect(wiring?.token).to.not.equal(env.QAAP_GATE_TOKEN);
+            expect(tokens.authorize(wiring?.token, 'delegate').ok).to.equal(true);
+            expect(tokens.resolve(wiring?.token)).to.equal(undefined);
+            expect(env.QAAP_DELEGATION_TOKEN).to.equal(undefined);
+            expect(env.QAAP_DELEGATION_URL).to.equal(undefined);
+            expect(Object.values(env)).to.not.include(wiring?.token);
+            expect(Object.keys(env).filter(key => !before.includes(key) && !key.toLowerCase().includes('proxy'))).to.deep.equal([]);
+        });
+
+        it('wires nothing with the flag off (env untouched), for a child, a read-only turn or without a gate token', () => {
+            const tokens = new QaapToolGateTokenService();
+            const instance = runner(tokens);
+            const gated = (): NodeJS.ProcessEnv => {
+                const env: NodeJS.ProcessEnv = {};
+                instance.applyToolGateEnv(env, piTask());
+                return env;
+            };
+            delete process.env.QAAP_AGENT_DELEGATION;
+            const off = gated();
+            const snapshot = JSON.stringify(off);
+            expect(instance.applyAgentDelegationEnv(off, piTask())).to.equal(undefined);
+            expect(JSON.stringify(off)).to.equal(snapshot);
+            expect(tokens.delegationServerName('task-p')).to.equal(undefined);
+            process.env.QAAP_AGENT_DELEGATION = '1';
+            expect(instance.applyAgentDelegationEnv(gated(), piTask({ delegationRole: 'child' }))).to.equal(undefined);
+            expect(instance.applyAgentDelegationEnv(gated(), piTask({ readOnlyWorkspace: true }))).to.equal(undefined);
+            expect(instance.applyAgentDelegationEnv({}, piTask()), 'no gate token, no delegation').to.equal(undefined);
+        });
+
+        it('lets the Pi extension gate allow only the task\'s own delegation tools, with child_apply asking without autoApprove', async () => {
+            const gate = new QaapToolGateService();
+            const base = { taskId: 't', owner: 'alice', workspace: '/w', autoApprove: false, readOnlyWorkspace: false, askTtlSec: 0, delegationServer: SERVER, ask: async () => 'reject' };
+            const evaluate = (rawToolName: string, extra: Record<string, unknown> = {}): ReturnType<QaapToolGateService['evaluate']> =>
+                gate.evaluate({ agentId: 'pi', toolKind: 'other', rawToolName, input: { prompt: 'x' }, cwd: '/w' } as Parameters<QaapToolGateService['evaluate']>[0],
+                    { ...base, ...extra } as unknown as QaapToolGateEvaluationEnv);
+            expect((await evaluate(`mcp__${SERVER}__qaaq_delegate`)).kind).to.equal('allow');
+            expect((await evaluate('mcp__qaaq_ffffffffffffffff__qaaq_delegate')).kind).to.equal('deny');
+            expect((await evaluate(`mcp__${SERVER}__qaaq_child_apply`)).kind).to.equal('deny');
+            expect((await evaluate(`mcp__${SERVER}__qaaq_child_apply`, { autoApprove: true })).kind).to.equal('allow');
+            expect((await evaluate(`mcp__${SERVER}__qaaq_delegate`, { readOnlyWorkspace: true })).kind).to.not.equal('allow');
+            const hooked = await evaluate(`mcp__${SERVER}__qaaq_delegate`, { hooks: async () => ({ decision: 'deny', reason: 'no' }) });
+            expect((hooked as { source?: string }).source).to.equal('hook');
         });
     });
 

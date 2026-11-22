@@ -17,15 +17,20 @@
  * - OpenCode: a token FILE (0600 in a private 0700 directory, removed when the task ends); the inline
  *   `OPENCODE_CONFIG_CONTENT` (inherited by OpenCode's bash and local MCP servers) holds only the file path, and
  *   the shim reads the file once at start-up (`QAAP_DELEGATION_TOKEN_FILE`).
+ * - Pi: Pi's built-in MCP client reads servers only from `mcp.json` files, so a Qaap extension registers the
+ *   server for the session. Its config (server name, shim command, credentials) is a 0600 file in a private 0700
+ *   directory; Pi's environment holds only the file's path, and the extension removes that variable once read.
  *
  * Inside a per-task sandbox (`QAAP_TASK_SANDBOX`, doc/qaap-task-sandbox.md) the harness runs in a container
- * with its own `/tmp`, and a devcontainer image does not ship this package: the shim, the Claude config and the
- * OpenCode token file are therefore written below the sandbox's `sharedRoot` (the one directory the backend and
- * the sandbox see at the IDENTICAL path, so no path translation), see {@link resolveQaapDelegationPlacement}.
+ * with its own `/tmp`, and a devcontainer image does not ship this package: the shim, the Claude config, the
+ * OpenCode token file, the Pi config and the Pi extension are therefore written below the sandbox's `sharedRoot`
+ * (the one directory the backend and the sandbox see at the IDENTICAL path, so no path translation), see
+ * {@link resolveQaapDelegationPlacement}.
  */
 
 import {
     QAAP_AGENT_DELEGATION_MCP_SERVER_NAME,
+    QAAP_AGENT_DELEGATION_PI_CONFIG_ENV,
     QAAP_AGENT_DELEGATION_TOKEN_ENV,
     QAAP_AGENT_DELEGATION_TOKEN_FILE_ENV,
     QAAP_AGENT_DELEGATION_URL_ENV,
@@ -39,6 +44,9 @@ import { resolveQaapCloudWorkspaceResource } from './qaap-cloud-workspace-resour
 import {
     AGENT_PROMPT_REMOVE_SCRIPT, agentPromptOwnerRunner, removeAgentPromptTempDir, writeAgentPromptFile, type AgentPromptOwner,
 } from './qaap-agent-task-runner-utils';
+
+/** File name of the Pi extension that registers the delegation server (`resources/`). */
+export const QAAP_DELEGATION_PI_EXTENSION_FILE = 'qaap-delegation-pi.mjs';
 
 /** File name of the stdio MCP shim under `resources/`. */
 export const QAAP_DELEGATE_MCP_FILE = 'qaap-delegate-mcp.mjs';
@@ -81,7 +89,7 @@ export interface QaapDelegationMcpConfigOptions {
 
 /** What one parent turn's delegation wiring needs: the per-task server name and its credentials. */
 export interface QaapDelegationWiring {
-    readonly transport: 'claude-mcp-config' | 'codex-config' | 'opencode-config';
+    readonly transport: 'claude-mcp-config' | 'codex-config' | 'opencode-config' | 'pi-extension';
     readonly mcpServerName: string;
     readonly url: string;
     readonly token: string;
@@ -101,6 +109,24 @@ export function buildQaapDelegationMcpConfig(options: QaapDelegationMcpConfigOpt
     return JSON.stringify({
         mcpServers: {
             [wiring.mcpServerName]: { type: 'stdio', command: options.nodeBin, args: [options.shimPath], env: shimEnvironment(options, wiring) },
+        },
+    });
+}
+
+/**
+ * Content of the file the Pi extension reads: the per-task server name and its `pi.registerMcpServer` config.
+ * `exposure: 'direct'` declares the tools to the model like built-ins; `timeout` (seconds) outlasts the longest
+ * wait. Holds the token: write it only with {@link writeQaapDelegationMcpConfigFile}.
+ */
+export function buildQaapDelegationPiConfig(options: QaapDelegationMcpConfigOptions, wiring: Pick<QaapDelegationWiring, 'mcpServerName' | 'url' | 'token'>): string {
+    return JSON.stringify({
+        serverName: wiring.mcpServerName,
+        config: {
+            command: options.nodeBin,
+            args: [options.shimPath],
+            env: shimEnvironment(options, wiring),
+            exposure: 'direct',
+            timeout: QAAP_AGENT_DELEGATION_WAIT_MAX_SEC + 60,
         },
     });
 }
@@ -376,4 +402,57 @@ export function appendQaapDelegationLaunchArgs(
     guidance: string = QAAP_AGENT_DELEGATION_GUIDANCE,
 ): string {
     return `${command.trimEnd()} --append-system-prompt ${quote(guidance)} --mcp-config ${quote(mcpConfigFile)}`;
+}
+
+/** Absolute path of the Pi delegation extension on this server. */
+export function resolveQaapDelegationPiExtensionPath(): string {
+    return resolveQaapCloudWorkspaceResource(QAAP_DELEGATION_PI_EXTENSION_FILE);
+}
+
+/**
+ * Where Pi loads the extension from. On the host: the shipped file. In a task sandbox (`placement.baseDir`) the
+ * extension is COPIED into a private per-task directory below the sandbox's shared root, like the shim, because
+ * the sandbox may not ship this package; the directory is released with the task.
+ */
+function stagePiExtension(taskId: string, owner: AgentPromptOwner | undefined, placement: QaapDelegationPlacement): string {
+    const source = resolveQaapDelegationPiExtensionPath();
+    if (!placement.baseDir) {
+        return source;
+    }
+    const staged = writeAgentPromptFile(fs.readFileSync(source, 'utf8'), owner, {
+        fileName: QAAP_DELEGATION_PI_EXTENSION_FILE, dirPrefix: `${QAAP_DELEGATION_CONFIG_DIR_PREFIX}ext-`, baseDir: placement.baseDir,
+    });
+    rememberConfigDir(taskId, staged.dir);
+    return staged.file;
+}
+
+/**
+ * Wires the delegation server into a Pi command: the 0600 config file (token inside) is written first and only
+ * its path reaches Pi's environment (`QAAP_DELEGATION_PI_CONFIG`). Returns the command with `-e builtin:mcp`
+ * (Pi's own MCP client, off under `-ne`), the Qaap extension and the guidance appended, or undefined when the
+ * file cannot be written (the turn then runs without delegation and `env` is untouched). Flags go after the
+ * prompt, which Pi's parser accepts. In a task sandbox (`placement.baseDir`) the config, the extension and the
+ * shim it references all sit below the sandbox's shared root and the shim runs with the sandbox's `node`.
+ * Only the error's code reaches the log, never a token or a path.
+ */
+export function applyQaapPiDelegation(
+    env: NodeJS.ProcessEnv,
+    command: string,
+    taskId: string,
+    wiring: Pick<QaapDelegationWiring, 'mcpServerName' | 'url' | 'token'>,
+    owner: AgentPromptOwner | undefined,
+    quote: (value: string) => string,
+    writeConfigFile: typeof writeQaapDelegationMcpConfigFile = writeQaapDelegationMcpConfigFile,
+    placement: QaapDelegationPlacement = { options: currentQaapDelegationMcpConfigOptions() },
+): string | undefined {
+    try {
+        const extension = stagePiExtension(taskId, owner, placement);
+        const file = writeConfigFile(taskId, buildQaapDelegationPiConfig(placement.options, wiring), owner, 'pi-delegation.json', placement.baseDir);
+        env[QAAP_AGENT_DELEGATION_PI_CONFIG_ENV] = file;
+        return `${command.trimEnd()} -e builtin:mcp -e ${quote(extension)} --append-system-prompt ${quote(QAAP_AGENT_DELEGATION_GUIDANCE)}`;
+    } catch (error) {
+        releaseQaapDelegationMcpConfigFile(taskId);
+        console.warn(`[qaap-delegation] could not write the Pi delegation config file; the turn runs without delegation (${(error as NodeJS.ErrnoException)?.code ?? 'error'})`);
+        return undefined;
+    }
 }

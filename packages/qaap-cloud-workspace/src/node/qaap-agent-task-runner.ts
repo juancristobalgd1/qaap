@@ -2355,7 +2355,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             return undefined;
         }
         const transport = resolveQaapHarnessCapabilities(this.resolveTaskAgentId(task as QaapAgentTask)).delegateMcp;
-        if (transport !== 'claude-mcp-config' && transport !== 'codex-config' && transport !== 'opencode-config') {
+        if (transport !== 'claude-mcp-config' && transport !== 'codex-config' && transport !== 'opencode-config' && transport !== 'pi-extension') {
             return undefined;
         }
         if (transport !== 'claude-mcp-config' && !env.QAAP_GATE_TOKEN) {

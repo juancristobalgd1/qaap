@@ -15,7 +15,11 @@ import { buildTaskCreateRequest } from './qaap-agent-conversation-store-helpers2
 import {
     appendQaapDelegationLaunchArgs,
     applyQaapOpencodeDelegation,
+    applyQaapPiDelegation,
     buildQaapDelegationMcpConfig,
+    buildQaapDelegationPiConfig,
+    QAAP_DELEGATION_PI_EXTENSION_FILE,
+    resolveQaapDelegationPiExtensionPath,
     QAAP_AGENT_DELEGATION_GUIDANCE,
     QAAP_DELEGATION_CONFIG_DIR_PREFIX,
     QAAP_DELEGATION_MCP_TOOL_TIMEOUT_MS,
@@ -151,6 +155,70 @@ describe('agent delegation launch', () => {
             expect(args[5]).to.equal('--mcp-config');
             expect(args[6]).to.equal("/tmp/it's dir/mcp.json");
             expect(args).to.have.length(7);
+        });
+    });
+
+    describe('Pi wiring', () => {
+        const wiring = { mcpServerName: 'qaaq_0123456789abcdef', url: 'http://127.0.0.1:4873', token: 'secret-token' };
+        const MCP = { nodeBin: '/usr/bin/node', shimPath: '/opt/q/shim.mjs', electronRunAsNode: false };
+        const base = "pi --mode json -p --no-session -ne -e '/g/gate.mjs' --approve 'do it'";
+
+        it('builds a direct-exposure server config with the credentials inside the (file) config only', () => {
+            const parsed = JSON.parse(buildQaapDelegationPiConfig(MCP, wiring));
+            expect(parsed.serverName).to.equal(wiring.mcpServerName);
+            expect(parsed.config).to.deep.equal({
+                command: '/usr/bin/node',
+                args: ['/opt/q/shim.mjs'],
+                env: { QAAP_DELEGATION_URL: wiring.url, QAAP_DELEGATION_TOKEN: wiring.token },
+                exposure: 'direct',
+                timeout: 600,
+            });
+        });
+
+        it('ships the extension next to the other resources', () => {
+            expect(fs.existsSync(resolveQaapDelegationPiExtensionPath())).to.equal(true);
+            expect(path.basename(resolveQaapDelegationPiExtensionPath())).to.equal(QAAP_DELEGATION_PI_EXTENSION_FILE);
+        });
+
+        it('writes the config to a 0600 file in a 0700 dir, puts only its path in env, keeps the token off argv, and releases the file with the task', function (): void {
+            if (process.platform === 'win32') {
+                this.skip();
+            }
+            const env: NodeJS.ProcessEnv = {};
+            const command = applyQaapPiDelegation(env, base, 'task-pi', wiring, undefined, quoteShellArg);
+            const file = env.QAAP_DELEGATION_PI_CONFIG!;
+            try {
+                expect(command).to.be.a('string');
+                expect(fs.statSync(file).mode & 0o777).to.equal(0o600);
+                expect(fs.statSync(path.dirname(file)).mode & 0o777).to.equal(0o700);
+                expect(JSON.parse(fs.readFileSync(file, 'utf8')).config.env.QAAP_DELEGATION_TOKEN).to.equal(wiring.token);
+                expect(Object.values(env).join('\n')).to.not.contain(wiring.token);
+                expect(command).to.not.contain(wiring.token);
+                expect(command!.startsWith(base)).to.equal(true);
+                const printed = spawnSync('sh', ['-c', command!.replace(/^pi/, "printf '%s\\n'")], { encoding: 'utf8' });
+                const args = printed.stdout.split('\n').filter(Boolean);
+                expect(args.slice(-6)).to.deep.equal(['-e', 'builtin:mcp', '-e', resolveQaapDelegationPiExtensionPath(), '--append-system-prompt', QAAP_AGENT_DELEGATION_GUIDANCE]);
+            } finally {
+                releaseQaapDelegationMcpConfigFile('task-pi');
+            }
+            expect(fs.existsSync(path.dirname(file))).to.equal(false);
+        });
+
+        it('a write failure leaves env and command alone (the turn runs without delegation) and logs no secret', () => {
+            const env: NodeJS.ProcessEnv = { KEEP: '1' };
+            const logged: string[] = [];
+            const warn = console.warn;
+            console.warn = (...args: unknown[]): void => { logged.push(args.map(String).join(' ')); };
+            try {
+                const result = applyQaapPiDelegation(env, base, 'task-pi', wiring, undefined, quoteShellArg, () => {
+                    throw Object.assign(new Error(`EACCES /secret/path ${wiring.token}`), { code: 'EACCES' });
+                });
+                expect(result).to.equal(undefined);
+            } finally {
+                console.warn = warn;
+            }
+            expect(env).to.deep.equal({ KEEP: '1' });
+            expect(logged.join('\n')).to.contain('EACCES').and.to.not.contain(wiring.token).and.to.not.contain('/secret/path');
         });
     });
 
@@ -403,6 +471,40 @@ describe('agent delegation launch', () => {
             expect(inside(tokenFile)).to.equal(true);
             expect(fs.statSync(tokenFile).mode & 0o777).to.equal(0o600);
             expect(env.OPENCODE_CONFIG_CONTENT).to.not.contain(wiring.token);
+
+            releaseQaapDelegationMcpConfigFile('task-sb');
+            expect(fs.readdirSync(base)).to.deep.equal([]);
+        });
+
+        it('places Pi\'s config and extension (and the shim it references) below the shared root, run by the sandbox node', function (): void {
+            if (process.platform === 'win32') {
+                this.skip();
+            }
+            const placement = resolveQaapDelegationPlacement('task-sb', sandbox());
+            const base = fs.realpathSync(path.join(shared, QAAP_DELEGATION_SANDBOX_DIRNAME));
+            const inside = (file: string): boolean => fs.realpathSync(file).startsWith(`${base}${path.sep}`);
+            const wiring = { mcpServerName: 'qaaq_0123456789abcdef', url: 'http://172.24.0.50:4873', token: 'secret-token' };
+            const env: NodeJS.ProcessEnv = {};
+            const command = applyQaapPiDelegation(env, 'pi', 'task-sb', wiring, undefined, quoteShellArg, writeQaapDelegationMcpConfigFile, placement);
+            expect(command).to.be.a('string');
+            const file = env.QAAP_DELEGATION_PI_CONFIG!;
+            expect(inside(file)).to.equal(true);
+            expect(fs.statSync(file).mode & 0o777).to.equal(0o600);
+            expect(fs.statSync(path.dirname(file)).mode & 0o777).to.equal(0o700);
+            const config = JSON.parse(fs.readFileSync(file, 'utf8')).config;
+            expect(config.command).to.equal('node');
+            expect(config.args).to.deep.equal([placement.options.shimPath]);
+            expect(inside(config.args[0])).to.equal(true);
+            // The extension is staged next to them, not loaded from the backend's resources directory.
+            const match = / -e '?([^' ]+qaap-delegation-pi\.mjs)'?/.exec(command!);
+            expect(match).to.not.equal(null);
+            const extension = match![1];
+            expect(extension).to.not.equal(resolveQaapDelegationPiExtensionPath());
+            expect(inside(extension)).to.equal(true);
+            expect(fs.readFileSync(extension, 'utf8')).to.equal(fs.readFileSync(resolveQaapDelegationPiExtensionPath(), 'utf8'));
+            expect(fs.statSync(path.dirname(extension)).mode & 0o777).to.equal(0o700);
+            expect(Object.values(env).join('\n')).to.not.contain(wiring.token);
+            expect(command).to.not.contain(wiring.token);
 
             releaseQaapDelegationMcpConfigFile('task-sb');
             expect(fs.readdirSync(base)).to.deep.equal([]);
