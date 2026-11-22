@@ -103,6 +103,59 @@ body.qaap-electron-macos-inset-titlebar .theia-mobile-work-hub-settings-content-
   -webkit-app-region: no-drag;
 }
 
+/*-----------------------------------------------------------------------------
+| Click-through guards. Electron computes drag regions over the whole DOM and ignores z-index, so
+| a drag header keeps swallowing clicks (a) on any control inside it that is not an explicit
+| no-drag and (b) on any overlay stacked above it. Both are closed here. `no-drag` outside a drag
+| region has no effect, so these rules are safe to apply globally. Do not use `:has()`.
+|----------------------------------------------------------------------------*/
+
+/* (a) Any interactive element in a drag header: native controls, ARIA widgets, focusable and
+   editable nodes, and the clickable product parts (avatar, project name, chips, toggles, actions). */
+body.qaap-electron-macos-inset-titlebar :is(
+  button, input, select, textarea, a, label, summary, video, iframe,
+  [tabindex]:not([tabindex='-1']), [contenteditable]:not([contenteditable='false']),
+  [role='button'], [role='tab'], [role='tablist'], [role='switch'], [role='checkbox'], [role='radio'],
+  [role='option'], [role='link'], [role='menuitem'], [role='combobox'], [role='listbox'], [role='slider'],
+  .codicon[role], .codicon[tabindex], .codicon-action, a.action-label, .action-item, .theia-button,
+  .theia-qaap-segmented-field, .theia-qaap-segmented-option, .theia-workbench-view-mode-switch,
+  .theia-workbench-current-project-name, .theia-workbench-menu-toggle, .theia-workbench-nav-btn,
+  .theia-workbench-account-btn, .theia-workbench-account-avatar, .theia-workbench-history-nav-group
+) {
+  -webkit-app-region: no-drag;
+}
+
+/* (b) Overlay roots that can cover the top strip: Theia dialogs, quick input, menus, hovers,
+   notifications and the Work Hub sheets, dialogs, popovers and menus. The generic ARIA selectors
+   catch overlays that are not listed. A drag header inside an overlay (its own selector above)
+   still drags, because the more specific descendant declaration wins. */
+body.qaap-electron-macos-inset-titlebar :is(
+  [role='dialog'], [role='alertdialog'], [role='menu'], [role='listbox'], [role='tooltip'], [aria-modal='true'],
+  .dialogOverlay, .p-Widget.dialogOverlay, .lm-Widget.dialogOverlay, .theia-dialog-shell,
+  .quick-input-widget, .monaco-quick-input-widget,
+  .p-Menu, .lm-Menu, .monaco-menu-container, .monaco-menu, .context-view, .monaco-select-box-dropdown-container,
+  .theia-hover, .monaco-hover, .monaco-editor-hover, .theia-select-component-container,
+  .theia-notifications-container, .theia-notification-list, .theia-notification-toasts,
+  .qaap-agent-cli-update-status-stack, .qaap-agent-cli-update-toast, .qaap-chat-context-usage-popover,
+  .qaap-ide-preferences-resizer, .qaap-mobile-env-panel, .qaap-preview-annotation-popover,
+  .qaap-project-bootstrap-banner, .qaap-project-bootstrap-picker, .qaap-sticky-composer-sheet-popover,
+  .qaap-transcript-image-lightbox, .qaap-transcript-link-menu, .qaap-work-hub-aux-side-chat-picker,
+  .qaap-work-hub-toolbar-menu,
+  .theia-mobile-agent-login-dialog-overlay, .theia-mobile-agent-transcript-user-menu,
+  .theia-mobile-bottom-actionsheet, .theia-mobile-execution-surface-sidebar,
+  .theia-mobile-execution-surface-sidebar-backdrop, .theia-mobile-github-device,
+  .theia-mobile-onboarding-overlay, .theia-mobile-projects-sticky-composer-attach-menu,
+  .theia-mobile-quick-input-backdrop, .theia-mobile-sheet-backdrop, .theia-mobile-snackbar,
+  .theia-mobile-sticky-composer-sheet, .theia-mobile-sticky-composer-step-menu,
+  .theia-mobile-transcript-app-picker, .theia-mobile-transcript-files-menu,
+  .theia-mobile-work-hub-preferences, .theia-mobile-work-hub-sessions-sidebar,
+  .theia-mobile-work-hub-sessions-sidebar-head-popover, .theia-mobile-work-hub-unified-search,
+  .theia-qaap-account-menu, .theia-qaap-task-hover-card, .theia-qaap-update-hover-card,
+  .theia-qaap-usage-backdrop
+) {
+  -webkit-app-region: no-drag;
+}
+
 /* Narrow (mobile) top bar: back/forward are absolutely placed at the leading edge, so they move past the lights. */
 body.qaap-electron-macos-inset-titlebar:not(.qaap-electron-macos-fullscreen) #theia-top-panel>#theia\:workbench-history-nav {
   left: 84px;
