@@ -2303,8 +2303,9 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             return () => undefined;
         }
         const agentId = this.resolveTaskAgentId(task as QaapAgentTask);
-        const transport = resolveQaapRuntimeHarnessCapabilities(agentId).gate;
-        if (transport !== 'hook' && transport !== 'plugin' && transport !== 'extension' && transport !== 'acp') {
+        // Static capabilities: a one-shot never runs through the ACP bridge, so a bridge-gated harness gets no token here.
+        const transport = resolveQaapHarnessCapabilities(agentId).gate;
+        if (transport !== 'hook' && transport !== 'plugin' && transport !== 'extension') {
             return () => undefined;
         }
         const origin = this.resolveAgentReachableOrigin(task.cwd);
@@ -2381,13 +2382,14 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
     }
 
     /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
-    applyToolGateEnv(env: NodeJS.ProcessEnv, task: Pick<QaapAgentTask, 'id' | 'ownerLogin' | 'cwd' | 'agentId' | 'command'>): void {
+    applyToolGateEnv(env: NodeJS.ProcessEnv, task: Pick<QaapAgentTask, 'id' | 'ownerLogin' | 'cwd' | 'agentId' | 'command'>, options?: { readonly acpBridge?: boolean }): void {
         if (!this.toolGateTokens || !this.helperApiUrl) {
             return;
         }
-        // An ACP flavor gated by the bridge (`gate: 'acp'`) needs the token too: the bridge answers permission requests with it.
+        // An ACP flavor gated by the bridge (`gate: 'acp'`) gets the token only for a turn that really runs through the
+        // bridge (which answers permission requests with it); never for a native spawn of the same harness.
         const transport = resolveQaapRuntimeHarnessCapabilities(this.resolveTaskAgentId(task as QaapAgentTask)).gate;
-        if (transport !== 'hook' && transport !== 'plugin' && transport !== 'extension' && transport !== 'acp') {
+        if (transport !== 'hook' && transport !== 'plugin' && transport !== 'extension' && !(transport === 'acp' && options?.acpBridge)) {
             return;
         }
         const origin = this.resolveAgentReachableOrigin(task.cwd);

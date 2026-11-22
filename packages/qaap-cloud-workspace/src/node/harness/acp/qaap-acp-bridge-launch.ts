@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { createHash } from 'crypto';
+import * as fs from 'fs';
 import { resolveQaapHarnessCapabilities, type QaapHarnessCapabilities } from '@theia/qaap-shared-core/lib/common/qaap-harness-capabilities';
 import { QAAP_DELEGATION_SANDBOX_NODE, stageQaapSandboxScripts } from '../../qaap-agent-delegation-launch';
 import type { AgentPromptOwner } from '../../qaap-agent-task-runner-utils';
@@ -55,6 +57,8 @@ export interface QaapAcpBridgeLaunch {
     readonly nodeBin: string;
     readonly bridgePath: string;
     readonly gateClientPath: string;
+    /** sha256 of the gate client's bytes; the bridge refuses a client that differs. */
+    readonly gateClientSha256?: string;
     readonly mode: 'ask' | 'auto' | 'readonly';
     /** Provider/model id; never a credential. */
     readonly model?: string;
@@ -71,6 +75,7 @@ export function buildQaapAcpBridgeArgv(launch: QaapAcpBridgeLaunch): string[] {
         '--flavor', launch.flavor,
         '--mode', launch.mode,
         '--gate-client', launch.gateClientPath,
+        ...(launch.gateClientSha256 ? ['--gate-client-sha256', launch.gateClientSha256] : []),
         ...(launch.model ? ['--model', launch.model] : []),
         '--',
         launch.agentBin ?? defaultBin,
@@ -108,6 +113,8 @@ export interface QaapAcpSpawnRequest {
     /** The child env; gets `ELECTRON_RUN_AS_NODE` when the backend's node is Electron (the bridge strips it for the agent). */
     readonly env: NodeJS.ProcessEnv;
     readonly quoteShellArg: (value: string) => string;
+    /** Refuse to run without a task sandbox (hosted deployments). */
+    readonly requireSandbox?: boolean;
 }
 
 /** The turn's command line in ACP mode. In a task sandbox the bridge and its gate client are copied fresh for the turn. */
@@ -116,6 +123,11 @@ export function resolveQaapAcpSpawnCommand(request: QaapAcpSpawnRequest): string
     let nodeBin = process.execPath;
     let bridgePath = resolveQaapAcpBridgePath();
     let gateClientPath = resolveQaapAcpGateClientPath();
+    // The bridge loads only these bytes, whatever is at the path by then (a staged copy is writable by the agent's uid).
+    const gateClientSha256 = createHash('sha256').update(fs.readFileSync(gateClientPath)).digest('hex');
+    if (request.requireSandbox && !request.sandbox) {
+        throw new Error(`The ${request.flavor} ACP harness runs only inside a task sandbox here (set QAAP_TASK_SANDBOX=1 or turn its ACP flag off).`);
+    }
     if (request.sandbox) {
         [bridgePath, gateClientPath] = stageQaapSandboxScripts(request.taskId, request.sandbox, [
             { fileName: QAAP_ACP_BRIDGE_FILE, source: bridgePath },
@@ -127,7 +139,7 @@ export function resolveQaapAcpSpawnCommand(request: QaapAcpSpawnRequest): string
     }
     const model = extractQaapAcpModelFromCommand(request.command);
     return buildQaapAcpBridgeCommand({
-        flavor: request.flavor, nodeBin, bridgePath, gateClientPath, mode,
+        flavor: request.flavor, nodeBin, bridgePath, gateClientPath, gateClientSha256, mode,
         ...(model ? { model } : {}),
         ...(request.agentBin ? { agentBin: request.agentBin } : {}),
     }, request.quoteShellArg);

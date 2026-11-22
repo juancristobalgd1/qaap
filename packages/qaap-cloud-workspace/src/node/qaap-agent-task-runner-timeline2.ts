@@ -643,7 +643,7 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                 }
             }
             // Only the harness process gets gate credentials: issuing a token revokes the previous one.
-            ctx.applyToolGateEnv(childEnv, task);
+            ctx.applyToolGateEnv(childEnv, task, { acpBridge: acpFlavor !== undefined });
             // Delegation (flag-gated, writable parent turns only): a separate token and a per-task server name.
             delegation = ctx.applyAgentDelegationEnv?.(childEnv, task);
             let delegationPlacement: QaapDelegationPlacement | undefined;
@@ -740,6 +740,8 @@ export async function spawnProcessExtracted(ctx: QaapAgentTaskRunnerContext, tas
                     ...(launchPlan.binaryPath ? { agentBin: launchPlan.binaryPath } : {}),
                     env: childEnv,
                     quoteShellArg,
+                    // Design 3.8: no ACP agent outside a task sandbox in a hosted deployment.
+                    requireSandbox: isQaapHostedEnvironment(),
                 });
             }
             if (requestedAdapter.spawnQuirks.removesStaleSnapshotLocks) {

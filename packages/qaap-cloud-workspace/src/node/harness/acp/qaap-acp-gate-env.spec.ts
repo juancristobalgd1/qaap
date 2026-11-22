@@ -59,14 +59,22 @@ describe('ACP flavors in the gate wiring', () => {
         }
     });
 
-    it('issues the gate token and the ask TTL to a Copilot turn only when its ACP flag is on', () => {
+    it('issues the gate token and the ask TTL only to a Copilot turn that runs through the bridge with its flag on', () => {
         const off: NodeJS.ProcessEnv = {};
         QaapAgentTaskRunner.prototype.applyToolGateEnv.call(fakeRunner(), off, task('copilot'));
         expect(off.QAAP_GATE_TOKEN).to.equal(undefined);
 
         process.env.QAAP_HARNESS_ACP_COPILOT = '1';
+        // A native spawn of Copilot (verification fix turn, one-shots) never gets it, even with the flag on.
+        const native: NodeJS.ProcessEnv = {};
+        QaapAgentTaskRunner.prototype.applyToolGateEnv.call(fakeRunner(), native, task('copilot'));
+        expect(native.QAAP_GATE_TOKEN).to.equal(undefined);
+        const oneShot: NodeJS.ProcessEnv = {};
+        QaapAgentTaskRunner.prototype.applyOneShotToolGateEnv.call(fakeRunner(), oneShot, task('copilot'));
+        expect(oneShot.QAAP_GATE_TOKEN).to.equal(undefined);
+
         const on: NodeJS.ProcessEnv = {};
-        QaapAgentTaskRunner.prototype.applyToolGateEnv.call(fakeRunner(), on, task('copilot'));
+        QaapAgentTaskRunner.prototype.applyToolGateEnv.call(fakeRunner(), on, task('copilot'), { acpBridge: true });
         expect(on.QAAP_GATE_TOKEN).to.be.a('string');
         expect(on.QAAP_GATE_URL).to.equal('http://127.0.0.1:3000/qaap/api/tool-gate');
         expect(on.QAAP_GATE_ASK_TTL_SEC).to.equal(String(QAAP_ACP_ASK_TTL_SEC));

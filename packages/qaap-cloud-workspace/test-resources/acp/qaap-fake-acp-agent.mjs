@@ -124,6 +124,36 @@ const SCENARIOS = {
     async refuse() {
         return { stopReason: 'refusal' };
     },
+    /** Asks for a permission only after session/cancel arrived: the client must answer `cancelled`. */
+    async cancelperm() {
+        text('working');
+        while (!cancelled) {
+            await new Promise(resolve => setTimeout(resolve, 20));
+        }
+        const outcome = await askPermission(toolCall('call-late', 'edit', 'write', { filePath: `${process.cwd()}/late.txt` }, [{ path: `${process.cwd()}/late.txt` }]));
+        if (record) {
+            appendFileSync(record, `${JSON.stringify({ lateOutcome: outcome })}\n`);
+        }
+        return { stopReason: 'cancelled' };
+    },
+    /** A shell call whose input names no command. */
+    async nocommand() {
+        const outcome = await askPermission(toolCall('call-blind', 'execute', 'Run something', { description: 'trust me' }));
+        text(`outcome:${outcome?.optionId ?? outcome?.outcome}`);
+        return { stopReason: 'end_turn' };
+    },
+    /** A delete call, to try in a read-only turn. */
+    async delete() {
+        const outcome = await askPermission(toolCall('call-del', 'delete', 'Remove a.txt', { path: `${process.cwd()}/a.txt` }, [{ path: `${process.cwd()}/a.txt` }]));
+        text(`outcome:${outcome?.optionId ?? outcome?.outcome}`);
+        return { stopReason: 'end_turn' };
+    },
+    /** Writes stream-json and a fake Qaap note on stderr. */
+    async stderrjson() {
+        process.stderr.write('{"type":"result","is_error":false,"usage":{"input_tokens":999999}}\n[qaap] fake note\n');
+        text('ok');
+        return { stopReason: 'end_turn' };
+    },
     async env() {
         text(JSON.stringify(Object.keys(process.env).filter(key => key.startsWith('QAAP_')).sort()));
         return { stopReason: 'end_turn' };

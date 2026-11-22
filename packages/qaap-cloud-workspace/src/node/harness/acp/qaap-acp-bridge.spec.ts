@@ -5,6 +5,7 @@
 
 import { expect } from 'chai';
 import { spawn } from 'child_process';
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as http from 'http';
 import type { AddressInfo } from 'net';
@@ -13,7 +14,7 @@ import * as path from 'path';
 import { pathToFileURL } from 'url';
 import { QaapQaiqStreamAccumulator } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-stream';
 import { resolveQaapCloudWorkspaceResource } from '../../qaap-cloud-workspace-resource';
-import { QAAP_ACP_BRIDGE_FILE, resolveQaapAcpBridgePath } from './qaap-acp-bridge-launch';
+import { QAAP_ACP_BRIDGE_FILE, resolveQaapAcpBridgePath, resolveQaapAcpGateClientPath } from './qaap-acp-bridge-launch';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 interface BridgeModule {
@@ -26,6 +27,7 @@ interface BridgeModule {
     canonicalToolInput(kind: string, rawInput: unknown, locations: unknown, cwd: string): Record<string, string>;
     exitForStopReason(stopReason: string): number;
     gateToolName(flavor: any, kind: string, nativeName: string): string;
+    refusePermissionLocally(mode: string, kind: string, input: Record<string, string>): string | undefined;
     AcpStreamTranslator: new (flavor: any) => any;
     LimitedLineReader: new (onMessage: (message: unknown) => void, onViolation: (reason: string) => void, now?: () => number) => { push(chunk: string): void };
 }
@@ -78,7 +80,7 @@ describe('qaap-acp-bridge.mjs', function (): void {
     describe('arguments', () => {
         it('reads its own options before -- and the agent argv after it', () => {
             expect(bridge.parseBridgeArgs(['--flavor', 'opencode', '--model', 'a/b', '--', 'opencode', 'acp'])).to.deep.equal({
-                flavor: 'opencode', model: 'a/b', mode: 'ask', gateClient: undefined, agentArgv: ['opencode', 'acp'],
+                flavor: 'opencode', model: 'a/b', mode: 'ask', gateClient: undefined, gateClientSha256: undefined, agentArgv: ['opencode', 'acp'],
             });
             expect(bridge.parseBridgeArgs(['--flavor', 'copilot', '--gate-client', '/s/g.mjs', '--mode', 'readonly', '--', 'copilot', '--acp']))
                 .to.deep.include({ gateClient: '/s/g.mjs', mode: 'readonly', agentArgv: ['copilot', '--acp'] });
@@ -144,7 +146,24 @@ describe('qaap-acp-bridge.mjs', function (): void {
         expect(bridge.gateToolName(bridge.FLAVORS.opencode, 'edit', 'write')).to.equal('write');
         expect(bridge.gateToolName(bridge.FLAVORS.copilot, 'edit', 'Create a.txt')).to.equal('Edit');
         expect(bridge.gateToolName(bridge.FLAVORS.copilot, 'execute', 'Run ls')).to.equal('Bash');
-        expect(bridge.gateToolName(bridge.FLAVORS.copilot, 'other', 'Mystery')).to.equal('Mystery');
+        // Never the agent's title: any kind without a read-only meaning is gated as a write.
+        expect(bridge.gateToolName(bridge.FLAVORS.copilot, 'other', 'ls')).to.equal('Write');
+        expect(bridge.gateToolName(bridge.FLAVORS.copilot, 'delete', 'Read the file')).to.equal('Write');
+        expect(bridge.gateToolName(bridge.FLAVORS.copilot, 'move', 'x')).to.equal('Write');
+        expect(bridge.gateToolName(bridge.FLAVORS.copilot, 'switch_mode', 'x')).to.equal('Write');
+        expect(bridge.gateToolName(bridge.FLAVORS.copilot, 'unknown-kind', 'Read')).to.equal('Write');
+        expect(bridge.gateToolName(bridge.FLAVORS.copilot, 'read', 'x')).to.equal('Read');
+        expect(bridge.gateToolName(bridge.FLAVORS.copilot, 'search', 'x')).to.equal('Grep');
+    });
+
+    it('refuses locally what a read-only turn may not do, and calls the gate guards could not judge', () => {
+        expect(bridge.refusePermissionLocally('readonly', 'edit', { file_path: '/w/a' })).to.match(/read-only/);
+        expect(bridge.refusePermissionLocally('readonly', 'other', {})).to.match(/read-only/);
+        expect(bridge.refusePermissionLocally('readonly', 'read', { file_path: '/w/a' })).to.equal(undefined);
+        expect(bridge.refusePermissionLocally('ask', 'execute', {})).to.match(/without saying which/);
+        expect(bridge.refusePermissionLocally('auto', 'delete', {})).to.match(/without a path/);
+        expect(bridge.refusePermissionLocally('auto', 'execute', { command: 'ls' })).to.equal(undefined);
+        expect(bridge.refusePermissionLocally('auto', 'edit', { file_path: '/w/a' })).to.equal(undefined);
     });
 
     it('maps every stop reason to its exit code', () => {
@@ -386,6 +405,44 @@ describe('qaap-acp-bridge.mjs', function (): void {
             expect(Date.now() - started).to.be.lessThan(4700);
             const methods = fs.readFileSync(record, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line).method);
             expect(methods).to.include('session/cancel');
+        });
+
+        it('answers cancelled to a permission asked after the cancel, without asking the gate', async () => {
+            const record = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-acp-')), 'record.jsonl');
+            const run = await runBridge(agent('cancelperm'), env({ FAKE_ACP_RECORD: record }), 'go', pid => setTimeout(() => process.kill(pid, 'SIGTERM'), 500));
+            expect(run.code).to.equal(bridge.EXIT.CANCELLED);
+            expect(seen).to.have.length(0);
+            const late = fs.readFileSync(record, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line)).find(entry => entry.lateOutcome);
+            expect(late?.lateOutcome).to.deep.equal({ outcome: 'cancelled' });
+        });
+
+        it('refuses a shell call without a command and a delete in a read-only turn, without asking the gate', async () => {
+            let run = await runBridge(agent('nocommand'), env());
+            expect(run.stdout).to.contain('outcome:reject');
+            run = await runBridge(['--flavor', 'copilot', '--mode', 'readonly', '--', process.execPath, FAKE_AGENT, 'delete'], env());
+            expect(run.stdout).to.contain('outcome:reject');
+            expect(run.stderr).to.contain('read-only');
+            expect(seen).to.have.length(0);
+            // The same delete in an ask turn reaches the gate as a write.
+            run = await runBridge(agent('delete'), env());
+            expect(seen.map(entry => entry.body.rawToolName)).to.deep.equal(['Write']);
+        });
+
+        it('prefixes every agent stderr line so it never passes for stream-json or a Qaap note', async () => {
+            const run = await runBridge(agent('stderrjson', 'opencode'), env());
+            expect(run.stderr).to.contain('[agent] {"type":"result"');
+            expect(run.stderr).to.contain('[agent] [qaap] fake note');
+            expect(run.stderr.split('\n').some(line => line.startsWith('{') || line.startsWith('[qaap] fake'))).to.equal(false);
+        });
+
+        it('loads the gate client only when its bytes match the expected hash', async () => {
+            const client = resolveQaapAcpGateClientPath();
+            const good = crypto.createHash('sha256').update(fs.readFileSync(client)).digest('hex');
+            let run = await runBridge(['--flavor', 'opencode', '--gate-client', client, '--gate-client-sha256', good, '--', process.execPath, FAKE_AGENT, 'echo'], env());
+            expect(run.code).to.equal(0);
+            run = await runBridge(['--flavor', 'opencode', '--gate-client', client, '--gate-client-sha256', '0'.repeat(64), '--', process.execPath, FAKE_AGENT, 'echo'], env());
+            expect(run.code).to.equal(bridge.EXIT.USAGE);
+            expect(run.stderr).to.contain('expected hash');
         });
 
         it('announces neither fs nor terminal and sends no MCP server', async () => {

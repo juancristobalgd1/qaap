@@ -4,7 +4,8 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { isQaapAcpBridgeLog, isQaapAcpBridgeLogLine, QaapAcpSniffingStreamAccumulator } from './qaap-acp-bridge-stream';
+import { classifyQaapAcpBridgeLine, isQaapAcpBridgeLog, QaapAcpSniffingStreamAccumulator } from './qaap-acp-bridge-stream';
+import { filterQaiqStreamProcessLogLines } from './qaap-qaiq-stream';
 import { createAgUiCliStreamEmitter } from './qaap-cli-ag-ui-stream';
 import { createAgentStreamAccumulator, parseAgentLogForTranscript } from './qaap-cli-transcript-stream';
 import { QaapOpencodeStreamAccumulator } from './qaap-opencode-stream';
@@ -24,16 +25,41 @@ const NATIVE_OPENCODE_LOG = [
 
 describe('qaap-acp-bridge-stream', () => {
 
-    it('recognizes only the bridge init line', () => {
-        expect(isQaapAcpBridgeLogLine(JSON.stringify({ type: 'system', subtype: 'init', qaap_transport: 'acp' }))).to.equal(true);
-        expect(isQaapAcpBridgeLogLine(JSON.stringify({ type: 'system', qaap_transport: 'native' }))).to.equal(false);
-        expect(isQaapAcpBridgeLogLine(JSON.stringify({ type: 'text', qaap_transport: 'acp' }))).to.equal(false);
-        expect(isQaapAcpBridgeLogLine('qaap_transport acp')).to.equal(false);
-        expect(isQaapAcpBridgeLogLine('{"qaap_transport":"acp"')).to.equal(false);
+    it('classifies a line by its JSON type, and says nothing about untyped or plain lines', () => {
+        expect(classifyQaapAcpBridgeLine(JSON.stringify({ type: 'system', subtype: 'init', qaap_transport: 'acp' }))).to.equal('acp');
+        for (const type of ['stream_event', 'assistant', 'user', 'result']) {
+            expect(classifyQaapAcpBridgeLine(JSON.stringify({ type })), type).to.equal('acp');
+        }
+        for (const type of ['text', 'reasoning', 'tool_use', 'step_start', 'step_finish', 'error']) {
+            expect(classifyQaapAcpBridgeLine(JSON.stringify({ type })), type).to.equal('native');
+        }
+        expect(classifyQaapAcpBridgeLine(JSON.stringify({ type: 'system', qaap_transport: 'native' }))).to.equal('native');
+        expect(classifyQaapAcpBridgeLine('[qaap] note')).to.equal(undefined);
+        expect(classifyQaapAcpBridgeLine('{"type":')).to.equal(undefined);
+        expect(classifyQaapAcpBridgeLine('{"no":"type"}')).to.equal(undefined);
+        expect(classifyQaapAcpBridgeLine('…(truncated)')).to.equal(undefined);
+    });
+
+    it('recognizes a bridge log whose init line was filtered out or whose head was truncated', () => {
         expect(isQaapAcpBridgeLog(`\n\n${BRIDGE_LOG}`)).to.equal(true);
+        // The task log readers drop system/init lines.
+        const filtered = filterQaiqStreamProcessLogLines(BRIDGE_LOG);
+        expect(filtered).to.not.contain('qaap_transport');
+        expect(isQaapAcpBridgeLog(filtered)).to.equal(true);
+        // A large log is read from its tail.
+        expect(isQaapAcpBridgeLog(`…(truncated)\n[qaap] note\n${BRIDGE_LOG.split('\n').slice(3).join('\n')}`)).to.equal(true);
         expect(isQaapAcpBridgeLog(NATIVE_OPENCODE_LOG)).to.equal(false);
-        // Only the first line counts: a bridge line later in a native log is agent content.
+        expect(isQaapAcpBridgeLog('plain text only')).to.equal(false);
+        // Only the first typed line counts: a bridge-looking line later in a native log is agent content.
         expect(isQaapAcpBridgeLog(NATIVE_OPENCODE_LOG + BRIDGE_LOG)).to.equal(false);
+    });
+
+    it('parses a filtered bridge log of an OpenCode turn, live and on replay', () => {
+        const filtered = filterQaiqStreamProcessLogLines(BRIDGE_LOG);
+        const live = createAgentStreamAccumulator('opencode')!;
+        live.push(filtered);
+        expect(live.getSegments().map(segment => segment.type)).to.deep.equal(['text', 'tool']);
+        expect(parseAgentLogForTranscript('opencode', filtered).content).to.contain('Hello from ACP');
     });
 
     it('parses a bridge log of an OpenCode turn with the Claude parser, live and on replay', () => {
@@ -61,10 +87,15 @@ describe('qaap-acp-bridge-stream', () => {
         expect(parseAgentLogForTranscript('opencode', NATIVE_OPENCODE_LOG).content).to.equal(native.getDisplayText());
     });
 
-    it('decides on a first chunk of plain text without waiting for a newline', () => {
+    it('waits past plain-text lines, answering as the native reader meanwhile', () => {
         const sniffing = createAgentStreamAccumulator('opencode') as QaapAcpSniffingStreamAccumulator<QaapOpencodeStreamAccumulator>;
-        sniffing.push('Error: no provider');
-        expect(sniffing.isAcpBridge).to.equal(false);
+        expect(sniffing.push('[qaap] a note\nError: no provider')).to.deep.equal([]);
+        const native = new QaapOpencodeStreamAccumulator();
+        native.push('[qaap] a note\nError: no provider');
+        expect(sniffing.getDisplayText()).to.equal(native.getDisplayText());
+        sniffing.push('\n' + BRIDGE_LOG);
+        expect(sniffing.isAcpBridge).to.equal(true);
+        expect(sniffing.getDisplayText()).to.contain('Hello from ACP');
     });
 
     it('emits AG-UI events for a bridge log of an OpenCode turn', () => {

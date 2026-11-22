@@ -89,6 +89,13 @@ describe('qaap-acp-bridge-launch', () => {
         }
     });
 
+    it('pins the gate client bytes on the command line and refuses to run outside a sandbox when one is required', () => {
+        const command = resolveQaapAcpSpawnCommand({ flavor: 'copilot', taskId: 't', command: 'x', env: {}, quoteShellArg: quote });
+        expect(command).to.match(/'--gate-client-sha256' '[0-9a-f]{64}'/);
+        expect(() => resolveQaapAcpSpawnCommand({ flavor: 'copilot', taskId: 't', command: 'x', env: {}, quoteShellArg: quote, requireSandbox: true }))
+            .to.throw(/only inside a task sandbox/);
+    });
+
     it('refuses a sandbox that shares no directory with the backend', () => {
         expect(() => resolveQaapAcpSpawnCommand({
             flavor: 'opencode', taskId: 't', command: 'x', sandbox: { name: 'sb' }, env: {}, quoteShellArg: quote,

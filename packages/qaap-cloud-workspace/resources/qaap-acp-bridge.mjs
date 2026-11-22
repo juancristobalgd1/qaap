@@ -17,7 +17,8 @@
 //   * Lines are capped (4 MiB) and rate-limited (2000 messages/s); a breach kills the agent and exits PROTOCOL.
 //   * On SIGTERM: `session/cancel`, pending permissions answered `cancelled`, exit within 4 s.
 import { spawn } from 'node:child_process';
-import { realpathSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const ACP_PROTOCOL_VERSION = 1;
@@ -78,6 +79,12 @@ export const FLAVORS = Object.freeze({
 /** ACP tool kinds that change the workspace or run code. */
 const MUTATING_KINDS = new Set(['edit', 'delete', 'move', 'execute']);
 
+/** ACP kinds that neither change the workspace nor run code: the only ones a read-only turn may use. */
+const READ_ONLY_KINDS = new Set(['read', 'search', 'think', 'fetch']);
+
+/** Gate names of the mutating kinds; every other non-read kind (other, switch_mode, unknown) is gated as a write. */
+const GATE_NAME_BY_MUTATING_KIND = Object.freeze({ edit: 'Edit', execute: 'Bash', delete: 'Write', move: 'Write' });
+
 /** Claude Code tool names for ACP kinds, so the transcript shows the usual tool rows and icons. */
 const TOOL_NAME_BY_KIND = Object.freeze({
     read: 'Read',
@@ -96,16 +103,17 @@ export function parseBridgeArgs(argv) {
     if (separator < 0 || separator === argv.length - 1) {
         throw new Error('usage: qaap-acp-bridge --flavor <id> [--model <id>] [--mode ask|auto|readonly] -- <agent argv...>');
     }
-    const options = { flavor: undefined, model: undefined, mode: 'ask', gateClient: undefined };
+    const options = { flavor: undefined, model: undefined, mode: 'ask', gateClient: undefined, gateClientSha256: undefined };
     const own = argv.slice(0, separator);
     for (let index = 0; index < own.length; index++) {
         const flag = own[index];
         const value = own[index + 1];
-        if (flag === '--flavor' || flag === '--model' || flag === '--mode' || flag === '--gate-client') {
+        if (flag === '--flavor' || flag === '--model' || flag === '--mode' || flag === '--gate-client' || flag === '--gate-client-sha256') {
             if (value === undefined || value.startsWith('--')) {
                 throw new Error(`${flag} needs a value`);
             }
-            options[flag === '--gate-client' ? 'gateClient' : flag.slice(2)] = value;
+            const key = flag === '--gate-client' ? 'gateClient' : flag === '--gate-client-sha256' ? 'gateClientSha256' : flag.slice(2);
+            options[key] = value;
             index++;
         } else {
             throw new Error(`unknown option ${flag}`);
@@ -182,8 +190,9 @@ export function canonicalToolInput(kind, rawInput, locations, cwd) {
     if (filePath) {
         input.file_path = filePath;
     }
-    for (const [from, to] of [['oldString', 'old_string'], ['old_string', 'old_string'], ['newString', 'new_string'], ['new_string', 'new_string'],
-        ['content', 'content'], ['pattern', 'pattern'], ['url', 'url'], ['destination', 'destination']]) {
+    for (const [from, to] of [['oldString', 'old_string'], ['old_string', 'old_string'], ['old_str', 'old_string'],
+        ['newString', 'new_string'], ['new_string', 'new_string'], ['new_str', 'new_string'],
+        ['content', 'content'], ['file_text', 'content'], ['pattern', 'pattern'], ['url', 'url'], ['destination', 'destination']]) {
         if (typeof raw[from] === 'string' && input[to] === undefined) {
             input[to] = raw[from];
         }
@@ -351,7 +360,9 @@ export class AcpStreamTranslator {
 /** The tool name the gate classifies the call by (see `gateToolNames`). */
 export function gateToolName(flavor, kind, nativeName) {
     if (flavor.gateToolNames === 'claude') {
-        return TOOL_NAME_BY_KIND[kind] ?? nativeName;
+        // Never the agent's title (it describes the call and could read like a harmless tool): a kind without a
+        // read-only meaning reaches the gate as a write, so read-only turns block it and ask turns ask.
+        return READ_ONLY_KINDS.has(kind) ? TOOL_NAME_BY_KIND[kind] : (GATE_NAME_BY_MUTATING_KIND[kind] ?? 'Write');
     }
     return nativeName;
 }
@@ -391,6 +402,24 @@ export function renderLinesAsText(lines) {
     return text;
 }
 
+/**
+ * A refusal the bridge gives without asking the gate, or undefined. A read-only turn may only read; a call whose
+ * input lacks what the gate guards inspect (the command of a shell call, the path of a file change) is refused
+ * rather than judged blind.
+ */
+export function refusePermissionLocally(mode, kind, input) {
+    if (mode === 'readonly' && !READ_ONLY_KINDS.has(kind)) {
+        return `this turn is read-only; the agent asked for a ${kind} call.`;
+    }
+    if (kind === 'execute' && !input.command) {
+        return 'the agent asked to run a command without saying which.';
+    }
+    if ((kind === 'edit' || kind === 'delete' || kind === 'move') && !input.file_path) {
+        return `the agent asked for a ${kind} call without a path.`;
+    }
+    return undefined;
+}
+
 /** Exit code and one-line reason for an ACP stop reason. */
 export function exitForStopReason(stopReason) {
     switch (stopReason) {
@@ -409,6 +438,34 @@ export function isAuthError(error) {
         return false;
     }
     return error.code === -32000 || /auth|sign.?in|log.?in|credential/i.test(String(error.message ?? ''));
+}
+
+/** Splits a text stream into lines; a line longer than 64 KiB is cut so a hostile agent cannot grow the buffer. */
+export class LineSplitter {
+    constructor(onLine) {
+        this.onLine = onLine;
+        this.buffer = '';
+    }
+
+    push(chunk) {
+        this.buffer += chunk;
+        let newline;
+        while ((newline = this.buffer.indexOf('\n')) >= 0) {
+            this.onLine(this.buffer.slice(0, newline).replace(/\r$/, ''));
+            this.buffer = this.buffer.slice(newline + 1);
+        }
+        while (this.buffer.length > 65536) {
+            this.onLine(this.buffer.slice(0, 65536));
+            this.buffer = this.buffer.slice(65536);
+        }
+    }
+
+    flush() {
+        if (this.buffer) {
+            this.onLine(this.buffer);
+            this.buffer = '';
+        }
+    }
 }
 
 /**
@@ -523,6 +580,8 @@ export async function runBridgeTurn(options, prompt, io) {
     const pendingPermissions = new Set();
     let sessionId;
     let finished = false;
+    // Set on SIGTERM: from then on no permission reaches the gate and every pending one is answered `cancelled`.
+    let cancelling = false;
     let settle;
     const done = new Promise(resolve => {
         settle = code => {
@@ -552,7 +611,7 @@ export async function runBridgeTurn(options, prompt, io) {
     const answerPermission = async message => {
         const params = isPlainObject(message.params) ? message.params : {};
         const respond = outcome => send({ id: message.id, result: { outcome } });
-        if (params.sessionId !== sessionId) {
+        if (sessionId === undefined || params.sessionId !== sessionId || cancelling || finished) {
             respond({ outcome: 'cancelled' });
             return;
         }
@@ -560,8 +619,16 @@ export async function runBridgeTurn(options, prompt, io) {
         const callId = typeof toolCall.toolCallId === 'string' ? toolCall.toolCallId : undefined;
         const known = callId ? translator.tools.get(callId) : undefined;
         const kind = typeof toolCall.kind === 'string' ? toolCall.kind : known?.kind ?? 'other';
-        const rawInput = known?.rawInput ?? toolCall.rawInput;
+        // The permission's own input wins: it describes what runs if granted.
+        const rawInput = { ...(isPlainObject(known?.rawInput) ? known.rawInput : {}), ...(isPlainObject(toolCall.rawInput) ? toolCall.rawInput : {}) };
         const locations = Array.isArray(toolCall.locations) && toolCall.locations.length > 0 ? toolCall.locations : known?.locations ?? [];
+        const input = canonicalToolInput(kind, rawInput, locations, io.cwd);
+        const refusal = refusePermissionLocally(options.mode, kind, input);
+        if (refusal) {
+            note(`Blocked: ${refusal}`);
+            respond(choosePermissionOption(params.options, false));
+            return;
+        }
         const token = { cancelled: false };
         pendingPermissions.add(token);
         const heartbeat = setInterval(() => out([{ type: 'system', subtype: 'qaap_heartbeat' }]), HEARTBEAT_MS);
@@ -572,7 +639,7 @@ export async function runBridgeTurn(options, prompt, io) {
                 // The server recomputes the kind from the tool name; this is informational only.
                 toolKind: 'other',
                 rawToolName: gateToolName(flavor, kind, known?.name ?? (typeof toolCall.title === 'string' ? toolCall.title : kind)),
-                input: canonicalToolInput(kind, rawInput, locations, io.cwd),
+                input,
                 cwd: io.cwd,
                 acpKind: kind,
                 ...(callId ? { harnessCallId: callId } : {}),
@@ -583,7 +650,7 @@ export async function runBridgeTurn(options, prompt, io) {
             clearInterval(heartbeat);
             pendingPermissions.delete(token);
         }
-        if (token.cancelled || finished) {
+        if (token.cancelled || cancelling || finished) {
             respond({ outcome: 'cancelled' });
             return;
         }
@@ -638,7 +705,12 @@ export async function runBridgeTurn(options, prompt, io) {
     });
     child.stdout.setEncoding('utf8');
     child.stdout.on('data', chunk => reader.push(chunk));
-    child.stderr.on('data', chunk => io.writeErr(String(chunk)));
+    // Prefixed line by line: the runner logs stderr next to stdout, and agent text must never pass for a
+    // stream-json line or a Qaap note.
+    const stderrLines = new LineSplitter(line => io.writeErr(`[agent] ${line}\n`));
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', chunk => stderrLines.push(chunk));
+    child.stderr.on('end', () => stderrLines.flush());
     child.on('error', error => fail(EXIT.SPAWN, `Could not start ${flavor.agentId}: ${error.message}`));
     child.on('close', (code, signal) => {
         for (const entry of pending.values()) {
@@ -649,6 +721,7 @@ export async function runBridgeTurn(options, prompt, io) {
     });
 
     const cancel = () => {
+        cancelling = true;
         for (const token of pendingPermissions) {
             token.cancelled = true;
         }
@@ -741,7 +814,16 @@ async function main() {
     try {
         // Loaded before the agent exists, so a copy the agent could write to is never read after it starts.
         const client = options.gateClient ?? fileURLToPath(new URL('./qaap-tool-gate-pi.mjs', import.meta.url));
-        ({ askGate } = await import(pathToFileURL(client).toString()));
+        if (options.gateClientSha256) {
+            // A staged copy could have been rewritten by a process of the agent's uid: load only the expected bytes.
+            const source = readFileSync(client);
+            if (createHash('sha256').update(source).digest('hex') !== options.gateClientSha256) {
+                throw new Error('the gate client does not match its expected hash');
+            }
+            ({ askGate } = await import(`data:text/javascript;base64,${source.toString('base64')}`));
+        } else {
+            ({ askGate } = await import(pathToFileURL(client).toString()));
+        }
         if (typeof askGate !== 'function') {
             throw new Error('the gate client exports no askGate');
         }
