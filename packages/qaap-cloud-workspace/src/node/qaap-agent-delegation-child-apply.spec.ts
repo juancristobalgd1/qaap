@@ -388,6 +388,19 @@ describe('QaapAgentDelegationService.childApply (real git)', function (): void {
             expect(fs.existsSync(path.join(parentDir, 'new.txt'))).to.equal(false);
         });
 
+        it('catches a redirected parent working tree by its top level alone, even when the config check says safe', async () => {
+            const redirected = path.join(tmp, 'redirected');
+            fs.mkdirSync(redirected);
+            finishChild(() => write(path.join(childDir, 'new.txt'), 'new file\n'));
+            git(childDir, ['config', 'core.worktree', redirected]);
+
+            const response = await service.childApply(CTX, { childId });
+
+            expect(response.ok).to.equal(false);
+            expect(!response.ok && response.error).to.contain('core.worktree is redirecting it');
+            expect(fs.readdirSync(redirected)).to.deep.equal([]);
+        });
+
         describe('user-level git config (git-lfs installed on the machine)', () => {
             let globalConfig: string;
             let previousGlobal: string | undefined;
@@ -615,6 +628,23 @@ describe('QaapAgentDelegationService.childApply (real git)', function (): void {
                 const response = await service.childApply(CTX, { childId });
                 expect(response, JSON.stringify(response)).to.deep.include({ ok: true, mode: 'apply' });
             });
+
+            for (const mode of ['apply', 'merge'] as const) {
+                it(`refuses a core.worktree in the shared config that redirects the parent's working tree (${mode}), writing nothing there`, async () => {
+                    const redirected = path.join(tmp, 'redirected');
+                    fs.mkdirSync(redirected);
+                    finishChild(() => write(path.join(childDir, 'new.txt'), 'new file\n'));
+                    git(childDir, ['config', 'core.worktree', redirected]);
+                    Object.assign(service, { worktrees: realWorktrees() });
+
+                    const response = await service.childApply(CTX, { childId, mode });
+
+                    expect(response.ok).to.equal(false);
+                    expect(!response.ok && response.error).to.match(/core\.worktree|working tree/);
+                    expect(fs.readdirSync(redirected)).to.deep.equal([]);
+                    expect(fs.existsSync(path.join(parentDir, 'new.txt'))).to.equal(false);
+                });
+            }
 
             it('merge mode still refuses config the model wrote into the shared local config', async () => {
                 finishChild(() => write(path.join(childDir, 'new.txt'), 'merged in\n'));

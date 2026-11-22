@@ -17,7 +17,7 @@ const GIT_EXEC_CONFIG_REGEXP = '^(core\\.fsmonitor|core\\.pager|pager\\.|diff\\.
     + '|include\\.path$|includeif\\..*\\.path$)';
 
 /** Extra key of the neutralized mode: a per-worktree config file is another place a model-written filter can live. */
-const GIT_WORKTREE_CONFIG_REGEXP = '|^extensions\\.worktreeconfig$';
+const GIT_WORKTREE_CONFIG_REGEXP = '|^extensions\\.worktreeconfig$|^core\\.(worktree|bare)$';
 
 /** Included config files are only listed so the cache watches them; the include itself runs nothing. */
 const GIT_INCLUDE_KEY_RE = /^include(?:if\..*)?\.path$/;
@@ -28,6 +28,9 @@ const GIT_DRIVER_ATTRIBUTE_RE = /(?:^|\s)(?:diff|filter)=/m;
 /** Values of the matched keys that do NOT run anything. */
 function isHarmlessGitExecValue(key: string, value: string): boolean {
     const normalized = value.trim().toLowerCase();
+    if (key === 'core.bare') {
+        return normalized === 'false' || normalized === 'no' || normalized === 'off' || normalized === '0';
+    }
     if (key === 'extensions.worktreeconfig') {
         return normalized === 'false' || normalized === 'no' || normalized === 'off' || normalized === '0';
     }
@@ -156,6 +159,9 @@ export class QaapGitExecConfigChecker {
                     continue;
                 }
                 if (!isHarmlessGitExecValue(key, value)) {
+                    if (key === 'core.worktree' || key === 'core.bare') {
+                        return `git config ${key} redirects the working tree of the repository`;
+                    }
                     return key === 'extensions.worktreeconfig'
                         ? 'git config extensions.worktreeConfig is enabled (a per-worktree config is not verified)'
                         : `git config ${key} can run a program`;

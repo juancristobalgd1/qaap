@@ -80,6 +80,12 @@ describe('QaapGitExecConfigChecker', () => {
             expect(checkerWith(scoped(['global', 'file:/home/u/.gitconfig', 'include.path', '/tmp/x'])).check(repo, neutral)).to.equal(undefined);
         });
 
+        it('rejects core.worktree and a true core.bare (they move the working tree), but not core.bare=false', () => {
+            expect(checkerWith(scoped(['local', 'file:.git/config', 'core.worktree', '/elsewhere'])).check(repo, neutral)).to.contain('core.worktree');
+            expect(checkerWith(scoped(['local', 'file:.git/config', 'core.bare', 'true'])).check(repo, neutral)).to.contain('core.bare');
+            expect(checkerWith(scoped(['local', 'file:.git/config', 'core.bare', 'false'])).check(repo, neutral)).to.equal(undefined);
+        });
+
         it('rejects an enabled extensions.worktreeConfig (its config.worktree is another model-writable scope)', () => {
             expect(checkerWith(scoped(['local', 'file:.git/config', 'extensions.worktreeconfig', 'true'])).check(repo, neutral)).to.contain('worktreeConfig');
             expect(checkerWith(scoped(['local', 'file:.git/config', 'extensions.worktreeconfig', 'false'])).check(repo, neutral)).to.equal(undefined);

@@ -499,7 +499,7 @@ export class QaapAgentDelegationService {
         if (patch.status !== 0) {
             throw new Error(this.describe(patch.stderr));
         }
-        this.assertGitConfigVetted(child, parent);
+        await this.assertGitConfigVetted(child, parent);
         const indexFile = await this.scratchIndexPath(parent.cwd);
         // The parent's git config is shared with the child (same common dir), so these steps ignore user-level config too.
         const env = QaapNeutralGit.env(process.env, { GIT_INDEX_FILE: indexFile });
@@ -613,7 +613,8 @@ export class QaapAgentDelegationService {
      * parent that shares its common dir) could run a program, or `extensions.worktreeConfig` is on. Never cached: it is
      * repeated right before the parent is touched, so a config written in between is still seen.
      */
-    protected assertGitConfigVetted(child: QaapAgentConversation, parent: QaapAgentConversation): void {
+    protected async assertGitConfigVetted(child: QaapAgentConversation, parent: QaapAgentConversation): Promise<void> {
+        await this.assertParentWorkTree(parent);
         const targets: Array<[string, string]> = [['child', child.cwd]];
         if (parent.cwd !== child.cwd) {
             targets.push(['parent', parent.cwd]);
@@ -623,6 +624,24 @@ export class QaapAgentDelegationService {
             if (gitRisk) {
                 throw new Error(`the ${who}'s git configuration could run a program (${gitRisk})`);
             }
+        }
+    }
+
+    /**
+     * `core.worktree` in the shared config (the child can write it) moves the PARENT's working tree somewhere else,
+     * and `merge --ff-only` / `apply` would write there. Git must see the parent's top level as a directory that
+     * contains the recorded cwd; a redirected tree does not.
+     */
+    protected async assertParentWorkTree(parent: QaapAgentConversation): Promise<void> {
+        let topLevel: string;
+        try {
+            topLevel = this.canonicalFsPath((await this.gitOrThrow(parent.cwd, ['rev-parse', '--show-toplevel'])).trim());
+        } catch {
+            throw new Error('the parent\'s working tree could not be verified');
+        }
+        const cwd = this.canonicalFsPath(parent.cwd);
+        if (cwd !== topLevel && !cwd.startsWith(topLevel.endsWith(path.sep) ? topLevel : topLevel + path.sep)) {
+            throw new Error('the parent\'s working tree is not the directory it was opened in (core.worktree is redirecting it)');
         }
     }
 
@@ -644,7 +663,7 @@ export class QaapAgentDelegationService {
             return applyRefusal('failed', 'Git worktrees are not available on this server, so a merge cannot run.');
         }
         // `status` runs clean filters to compare content: vet the config first.
-        this.assertGitConfigVetted(child, parent);
+        await this.assertGitConfigVetted(child, parent);
         if ((await this.gitOrThrow(parent.cwd, ['status', '--porcelain', '--ignore-submodules=all'])).trim()) {
             return applyRefusal('dirty-parent', 'The parent has uncommitted changes. Commit or stash them, then merge the child.');
         }
@@ -654,7 +673,7 @@ export class QaapAgentDelegationService {
         }
         const sensitive = qaapDelegationSensitiveFiles(files).map(name => sanitizeQaapDelegationLabel(name));
         const sensitiveField = sensitive.length ? { sensitiveFiles: sensitive } : {};
-        this.assertGitConfigVetted(child, parent);
+        await this.assertGitConfigVetted(child, parent);
         const merged = await this.worktrees.mergeBranchSafely(parent.cwd, change.branch, parent.ownerLogin, { neutralGit: true });
         if (merged.ok) {
             return { ok: true, mode: 'merge', files: files.map(name => sanitizeQaapDelegationLabel(name)), conflicts: [], ...sensitiveField };
@@ -678,7 +697,7 @@ export class QaapAgentDelegationService {
         // Every git below runs with the user's global/system config switched off (QaapNeutralGit), so a filter in a
         // standard ~/.gitconfig (git-lfs) is harmless and is not what gets vetted: what the model can write is, i.e.
         // the repository's local and worktree config (the common config is shared with the parent's repository).
-        this.assertGitConfigVetted(child, parent);
+        await this.assertGitConfigVetted(child, parent);
         await this.assertNoLfs(child.cwd);
         if (parent.cwd !== child.cwd) {
             await this.assertNoLfs(parent.cwd);
