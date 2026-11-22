@@ -14,6 +14,14 @@ import { GOLDEN_FIXTURE_DIR, GOLDEN_SUITES } from './qaap-harness-golden-support
  */
 describe('harness contract golden equivalence (F0)', function (): void {
     this.timeout(180_000);
+    // The fixtures hold POSIX paths, shell quoting and a `:` PATH delimiter. On win32 the same code renders
+    // `\` paths, double quotes and `;`, so the comparison would only measure the platform. The adapters are
+    // platform-independent; the POSIX legs (Linux, macOS) carry the equivalence check.
+    if (process.platform === 'win32') {
+        before(function (): void {
+            this.skip();
+        });
+    }
 
     for (const suite of GOLDEN_SUITES) {
         it(`${suite.name} matches the pre-adapter fixtures`, () => {
