@@ -13,6 +13,7 @@ import { QAAP_SESSIONS_SIDEBAR_CONVERSATIONS_PAGE_SIZE } from '../common/qaap-se
 import { beginSessionsSidebarConversationActivationExtracted, bindSessionsSidebarInteractionGuardExtracted, buildSessionsSidebarStructureFingerprintExtracted, buildSidebarRowFingerprintExtracted, collectParentIdsExtracted, collectSessionsSidebarConversationEntriesExtracted, ensureWorkHubSessionsSidebarExtracted, mergeSessionsSidebarProjectsExtracted, openWorkHubSessionsSidebarExtracted, prepareSessionsSidebarDataExtracted, refreshWorkHubSessionsSidebarListExtracted, rememberSessionsSidebarListFingerprintExtracted, resolveWorkHubSessionsSidebarProjectExtracted, seedSessionsSidebarProjectsForPaintExtracted, shouldDeferSessionsSidebarListRefreshExtracted, shouldSkipSessionsSidebarListRenderExtracted, stampSessionsSidebarRowFingerprintsExtracted, toggleWorkHubSessionsSidebarExtracted, tryPatchSessionsSidebarListExtracted } from './mobile-projects-sessions-sidebar-ui-render';
 import { appendSessionsSidebarConversationItemsExtracted, bindSessionsSidebarThreadStoreSubscriptionsExtracted, collectSessionsSidebarPinnedGroupsExtracted, compareSessionsSidebarProjectOrderExtracted, createSessionsSidebarClearFailedModeFooterExtracted, createSessionsSidebarPinnedProjectGroupExtracted, createSessionsSidebarPinnedSectionExtracted, createSessionsSidebarShowLessControlExtracted, createSessionsSidebarShowMoreControlExtracted, ensureSessionsSidebarActiveProjectExpandedExtracted, getSessionsSidebarConversationDisplayLimitExtracted, prefetchVisibleSidebarDocumentsExtracted, renderWorkHubSessionsSidebarListExtracted, resolveSessionsSidebarCollapsedLimitExtracted, resolveSessionsSidebarVisibleConversationsExtracted, seedSessionsSidebarAccordionDefaultsExtracted, syncSessionsSidebarAnimatedListHeightsExtracted, toggleSessionsSidebarAddProjectPopoverExtracted, toggleSessionsSidebarProjectSortPopoverExtracted } from './mobile-projects-sessions-sidebar-ui-streaming';
 import { createSessionsSidebarNewAgentControlExtracted, createSessionsSidebarProjectGroupExtracted, createSessionsSidebarProjectRowHeadExtracted, onSessionsSidebarAccountClickExtracted, onSessionsSidebarViewModeChangeExtracted, onWorkHubSessionsSidebarNewChatExtracted, openEmptyMobileChatSheetExtracted, openSessionsSidebarSearchExtracted } from './mobile-projects-sessions-sidebar-ui-timeline';
+import type { MobileWorkHubUnifiedSearchTab } from './mobile-work-hub-unified-search-dialog';
 import type { MobileViewToggleId } from '@theia/qaap-shared-core/lib/common/qaap-mobile-work-surface-preference';
 
 export const MOBILE_PROJECTS_SESSIONS_SIDEBAR_CONVERSATIONS_PAGE_SIZE = QAAP_SESSIONS_SIDEBAR_CONVERSATIONS_PAGE_SIZE;
@@ -494,7 +495,7 @@ export class MobileProjectsSessionsSidebarUi {
     onSessionsSidebarViewModeChange(id: MobileViewToggleId): void {
         onSessionsSidebarViewModeChangeExtracted(this, id);
     }
-    async openSessionsSidebarSearch(): Promise<void> {
-        return openSessionsSidebarSearchExtracted(this);
+    async openSessionsSidebarSearch(initialTab?: MobileWorkHubUnifiedSearchTab): Promise<void> {
+        return openSessionsSidebarSearchExtracted(this, initialTab);
     }
 }

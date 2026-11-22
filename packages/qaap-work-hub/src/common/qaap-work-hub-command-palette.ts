@@ -21,6 +21,9 @@ export const QAAP_WORK_HUB_NEW_AGENT_COMMAND = 'qaap.workHub.newAgent';
 /** Opens the Work Hub search quick-pick. */
 export const QAAP_WORK_HUB_SEARCH_COMMAND = 'qaap.workHub.search';
 
+/** Opens the Work Hub search dialog with the Commands tab active (the Work Hub command palette). */
+export const QAAP_WORK_HUB_OPEN_COMMAND_SEARCH_COMMAND = 'qaap.workHub.openCommandSearch';
+
 /** Opens the Work Hub add/open repository dialog. */
 export const QAAP_WORK_HUB_OPEN_REPOSITORY_COMMAND = 'qaap.workHub.openRepository';
 

@@ -41,6 +41,7 @@ import {
     QAAP_WORK_HUB_OPEN_BILLING_COMMAND,
     QAAP_WORK_HUB_OPEN_REPOSITORY_COMMAND,
     QAAP_WORK_HUB_OPEN_SETTINGS_COMMAND,
+    QAAP_WORK_HUB_OPEN_COMMAND_SEARCH_COMMAND,
     QAAP_WORK_HUB_SEARCH_COMMAND,
 } from '../common/qaap-work-hub-command-palette';
 import {
@@ -122,6 +123,15 @@ export function registerCommandsExtracted(ctx: MobileOneColumnShellContributionC
         execute: () => ctx.projectsPanel?.openWorkHubSearch(),
         isEnabled: () => !peekPreferDesktopIde() && !!ctx.projectsPanel,
         isVisible: () => !peekPreferDesktopIde(),
+    });
+    registry.registerCommand({
+        id: QAAP_WORK_HUB_OPEN_COMMAND_SEARCH_COMMAND,
+        label: nls.localize('qaap/workHub/commandSearch', 'Work Hub: Command Palette…'),
+    }, {
+        execute: () => ctx.projectsPanel?.openWorkHubCommandSearch(),
+        isEnabled: () => !peekPreferDesktopIde() && !!ctx.projectsPanel,
+        // Entry point only (avatar menu, F1 / Cmd+Shift+P); listing it inside the palette itself is noise.
+        isVisible: () => false,
     });
     registry.registerCommand({
         id: QAAP_WORK_HUB_OPEN_REPOSITORY_COMMAND,

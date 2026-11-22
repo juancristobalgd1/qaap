@@ -60,6 +60,18 @@ describe('buildQaapAccountMenuEntries', () => {
             expect(found).to.equal(true);
         });
 
+        it('runs the Work Hub command search instead of the IDE palette when provided', async () => {
+            let opened = 0;
+            const hub = buildQaapAccountMenuEntries(true, {
+                workHub: true,
+                openCommandSearch: () => { opened++; },
+            });
+            const palette = hub.find(e => e.kind === 'action' && e.iconClass === 'codicon-terminal-cmd');
+            expect(palette?.commandId).to.equal(undefined);
+            await palette?.run?.();
+            expect(opened).to.equal(1);
+        });
+
         it('omits Settings on the Work Hub menu', () => {
             const hub = buildQaapAccountMenuEntries(true, {
                 workHub: true,

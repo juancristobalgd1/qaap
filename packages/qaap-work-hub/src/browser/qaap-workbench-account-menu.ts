@@ -88,6 +88,11 @@ export interface QaapAccountMenuEntriesOptions {
     readonly workHub?: boolean;
     /** Work Hub: open the Billing sheet. */
     readonly openBilling?: () => void | Promise<void>;
+    /**
+     * Work Hub: open the Work Hub search dialog on its Commands tab. When set, the Command Palette entry
+     * runs this instead of the IDE quick-command palette (which is not the product palette on the hub).
+     */
+    readonly openCommandSearch?: () => void | Promise<void>;
     /** Active billing plan id (`starter` / `pro`) for the Billing menu label. */
     readonly currentPlanId?: string;
 }
@@ -171,7 +176,9 @@ export function buildQaapAccountMenuEntries(
             kind: 'action',
             label: nls.localize('qaap/accountMenu/commandPalette', 'Command Palette…'),
             iconClass: 'codicon-terminal-cmd',
-            commandId: WORKBENCH_SHOW_COMMANDS,
+            ...(options?.openCommandSearch
+                ? { run: () => options.openCommandSearch?.() }
+                : { commandId: WORKBENCH_SHOW_COMMANDS }),
         },
         { kind: 'separator' },
         ...settings,
