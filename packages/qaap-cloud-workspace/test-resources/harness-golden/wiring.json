@@ -1,0 +1,438 @@
+{
+  "claude": {
+    "usesToolGateExtension": false,
+    "usesCodexToolGateHook": false,
+    "usesOpencodeGatePlugin": false,
+    "normalized": "claude",
+    "capabilities": {
+      "gate": "native-stdio",
+      "canAsk": true,
+      "whenAskUnsupported": "refuses",
+      "askTtlSec": 600,
+      "shellGuard": "gate",
+      "untrustedFolderArgs": [
+        "--setting-sources",
+        "user",
+        "--strict-mcp-config"
+      ],
+      "trustedFolderArgs": [],
+      "untrustedFolderEnv": null,
+      "delegateMcp": "claude-mcp-config",
+      "usage": "claude",
+      "costSource": "reported",
+      "toolKinds": [
+        "shell",
+        "edit",
+        "write",
+        "read",
+        "web",
+        "mcp",
+        "other"
+      ]
+    }
+  },
+  "codex": {
+    "usesToolGateExtension": false,
+    "usesCodexToolGateHook": true,
+    "usesOpencodeGatePlugin": false,
+    "normalized": "codex",
+    "capabilities": {
+      "gate": "hook",
+      "canAsk": true,
+      "whenAskUnsupported": "refuses",
+      "askTtlSec": 600,
+      "shellGuard": "gate",
+      "untrustedFolderArgs": [],
+      "trustedFolderArgs": [],
+      "untrustedFolderEnv": null,
+      "delegateMcp": "codex-config",
+      "usage": "codex",
+      "costSource": "price-table",
+      "toolKinds": [
+        "shell",
+        "edit",
+        "write",
+        "read",
+        "web",
+        "mcp",
+        "other"
+      ]
+    }
+  },
+  "opencode": {
+    "usesToolGateExtension": false,
+    "usesCodexToolGateHook": false,
+    "usesOpencodeGatePlugin": true,
+    "normalized": "opencode",
+    "capabilities": {
+      "gate": "plugin",
+      "canAsk": true,
+      "whenAskUnsupported": "refuses",
+      "askTtlSec": 600,
+      "shellGuard": "gate",
+      "untrustedFolderArgs": [],
+      "trustedFolderArgs": [],
+      "untrustedFolderEnv": {
+        "OPENCODE_DISABLE_PROJECT_CONFIG": "1",
+        "OPENCODE_DISABLE_EXTERNAL_SKILLS": "1",
+        "OPENCODE_DISABLE_CLAUDE_CODE": "1"
+      },
+      "delegateMcp": "opencode-config",
+      "usage": "opencode",
+      "costSource": "price-table",
+      "toolKinds": [
+        "shell",
+        "edit",
+        "write",
+        "read",
+        "web",
+        "mcp",
+        "other"
+      ]
+    }
+  },
+  "pi": {
+    "usesToolGateExtension": true,
+    "usesCodexToolGateHook": false,
+    "usesOpencodeGatePlugin": false,
+    "normalized": "pi",
+    "capabilities": {
+      "gate": "extension",
+      "canAsk": true,
+      "whenAskUnsupported": "refuses",
+      "askTtlSec": 600,
+      "shellGuard": "gate",
+      "untrustedFolderArgs": [
+        "--no-approve"
+      ],
+      "trustedFolderArgs": [
+        "--approve"
+      ],
+      "untrustedFolderEnv": null,
+      "delegateMcp": "pi-extension",
+      "usage": "pi-json",
+      "costSource": "reported",
+      "toolKinds": [
+        "shell",
+        "edit",
+        "write",
+        "read",
+        "web",
+        "mcp",
+        "other"
+      ]
+    }
+  },
+  "cursor": {
+    "usesToolGateExtension": false,
+    "usesCodexToolGateHook": false,
+    "usesOpencodeGatePlugin": false,
+    "normalized": "cursor",
+    "capabilities": {
+      "gate": "none",
+      "canAsk": false,
+      "whenAskUnsupported": "runs-unchecked",
+      "askTtlSec": 0,
+      "shellGuard": "none",
+      "untrustedFolderArgs": [],
+      "trustedFolderArgs": [],
+      "untrustedFolderEnv": null,
+      "delegateMcp": null,
+      "usage": "none",
+      "costSource": "none",
+      "toolKinds": [
+        "shell",
+        "edit",
+        "write",
+        "read",
+        "web",
+        "mcp",
+        "other"
+      ]
+    }
+  },
+  "antigravity": {
+    "usesToolGateExtension": false,
+    "usesCodexToolGateHook": false,
+    "usesOpencodeGatePlugin": false,
+    "normalized": "antigravity",
+    "capabilities": {
+      "gate": "none",
+      "canAsk": false,
+      "whenAskUnsupported": "runs-unchecked",
+      "askTtlSec": 0,
+      "shellGuard": "none",
+      "untrustedFolderArgs": [],
+      "trustedFolderArgs": [],
+      "untrustedFolderEnv": null,
+      "delegateMcp": null,
+      "usage": "none",
+      "costSource": "none",
+      "toolKinds": [
+        "shell",
+        "edit",
+        "write",
+        "read",
+        "web",
+        "mcp",
+        "other"
+      ]
+    }
+  },
+  "copilot": {
+    "usesToolGateExtension": false,
+    "usesCodexToolGateHook": false,
+    "usesOpencodeGatePlugin": false,
+    "normalized": "copilot",
+    "capabilities": {
+      "gate": "none",
+      "canAsk": false,
+      "whenAskUnsupported": "runs-unchecked",
+      "askTtlSec": 0,
+      "shellGuard": "none",
+      "untrustedFolderArgs": [],
+      "trustedFolderArgs": [],
+      "untrustedFolderEnv": null,
+      "delegateMcp": null,
+      "usage": "none",
+      "costSource": "none",
+      "toolKinds": [
+        "shell",
+        "edit",
+        "write",
+        "read",
+        "web",
+        "mcp",
+        "other"
+      ]
+    }
+  },
+  "grok": {
+    "usesToolGateExtension": false,
+    "usesCodexToolGateHook": false,
+    "usesOpencodeGatePlugin": false,
+    "normalized": "grok",
+    "capabilities": {
+      "gate": "none",
+      "canAsk": false,
+      "whenAskUnsupported": "runs-unchecked",
+      "askTtlSec": 0,
+      "shellGuard": "none",
+      "untrustedFolderArgs": [],
+      "trustedFolderArgs": [],
+      "untrustedFolderEnv": null,
+      "delegateMcp": null,
+      "usage": "none",
+      "costSource": "none",
+      "toolKinds": [
+        "shell",
+        "edit",
+        "write",
+        "read",
+        "web",
+        "mcp",
+        "other"
+      ]
+    }
+  },
+  "shell": {
+    "usesToolGateExtension": false,
+    "usesCodexToolGateHook": false,
+    "usesOpencodeGatePlugin": false,
+    "normalized": "shell",
+    "capabilities": {
+      "gate": "none",
+      "canAsk": false,
+      "whenAskUnsupported": "runs-unchecked",
+      "askTtlSec": 0,
+      "shellGuard": "none",
+      "untrustedFolderArgs": [],
+      "trustedFolderArgs": [],
+      "untrustedFolderEnv": null,
+      "delegateMcp": null,
+      "usage": "none",
+      "costSource": "none",
+      "toolKinds": [
+        "shell",
+        "edit",
+        "write",
+        "read",
+        "web",
+        "mcp",
+        "other"
+      ]
+    }
+  },
+  "openclaude": {
+    "usesToolGateExtension": false,
+    "usesCodexToolGateHook": false,
+    "usesOpencodeGatePlugin": false,
+    "normalized": "openclaude",
+    "capabilities": {
+      "gate": "native-stdio",
+      "canAsk": true,
+      "whenAskUnsupported": "refuses",
+      "askTtlSec": 600,
+      "shellGuard": "gate",
+      "untrustedFolderArgs": [],
+      "trustedFolderArgs": [],
+      "untrustedFolderEnv": null,
+      "delegateMcp": null,
+      "usage": "claude",
+      "costSource": "none",
+      "toolKinds": [
+        "shell",
+        "edit",
+        "write",
+        "read",
+        "web",
+        "mcp",
+        "other"
+      ]
+    }
+  },
+  "qaiq": {
+    "usesToolGateExtension": false,
+    "usesCodexToolGateHook": false,
+    "usesOpencodeGatePlugin": false,
+    "normalized": "qaiq",
+    "capabilities": {
+      "gate": "native-stdio",
+      "canAsk": true,
+      "whenAskUnsupported": "refuses",
+      "askTtlSec": 600,
+      "shellGuard": "gate",
+      "untrustedFolderArgs": [],
+      "trustedFolderArgs": [],
+      "untrustedFolderEnv": null,
+      "delegateMcp": null,
+      "usage": "qaiq",
+      "costSource": "none",
+      "toolKinds": [
+        "shell",
+        "edit",
+        "write",
+        "read",
+        "web",
+        "mcp",
+        "other"
+      ]
+    }
+  },
+  "gemini": {
+    "usesToolGateExtension": false,
+    "usesCodexToolGateHook": false,
+    "usesOpencodeGatePlugin": false,
+    "normalized": "gemini",
+    "capabilities": {
+      "gate": "none",
+      "canAsk": false,
+      "whenAskUnsupported": "runs-unchecked",
+      "askTtlSec": 0,
+      "shellGuard": "none",
+      "untrustedFolderArgs": [],
+      "trustedFolderArgs": [],
+      "untrustedFolderEnv": null,
+      "delegateMcp": null,
+      "usage": "none",
+      "costSource": "none",
+      "toolKinds": [
+        "shell",
+        "edit",
+        "write",
+        "read",
+        "web",
+        "mcp",
+        "other"
+      ]
+    }
+  },
+  "unknown": {
+    "usesToolGateExtension": false,
+    "usesCodexToolGateHook": false,
+    "usesOpencodeGatePlugin": false,
+    "normalized": "unknown",
+    "capabilities": {
+      "gate": "none",
+      "canAsk": false,
+      "whenAskUnsupported": "runs-unchecked",
+      "askTtlSec": 0,
+      "shellGuard": "none",
+      "untrustedFolderArgs": [],
+      "trustedFolderArgs": [],
+      "untrustedFolderEnv": null,
+      "delegateMcp": null,
+      "usage": "none",
+      "costSource": "none",
+      "toolKinds": [
+        "shell",
+        "edit",
+        "write",
+        "read",
+        "web",
+        "mcp",
+        "other"
+      ]
+    }
+  },
+  " Pi ": {
+    "usesToolGateExtension": true,
+    "usesCodexToolGateHook": false,
+    "usesOpencodeGatePlugin": false,
+    "normalized": "pi",
+    "capabilities": {
+      "gate": "extension",
+      "canAsk": true,
+      "whenAskUnsupported": "refuses",
+      "askTtlSec": 600,
+      "shellGuard": "gate",
+      "untrustedFolderArgs": [
+        "--no-approve"
+      ],
+      "trustedFolderArgs": [
+        "--approve"
+      ],
+      "untrustedFolderEnv": null,
+      "delegateMcp": "pi-extension",
+      "usage": "pi-json",
+      "costSource": "reported",
+      "toolKinds": [
+        "shell",
+        "edit",
+        "write",
+        "read",
+        "web",
+        "mcp",
+        "other"
+      ]
+    }
+  },
+  "undefined": {
+    "usesToolGateExtension": false,
+    "usesCodexToolGateHook": false,
+    "usesOpencodeGatePlugin": false,
+    "normalized": null,
+    "capabilities": {
+      "gate": "none",
+      "canAsk": false,
+      "whenAskUnsupported": "runs-unchecked",
+      "askTtlSec": 0,
+      "shellGuard": "none",
+      "untrustedFolderArgs": [],
+      "trustedFolderArgs": [],
+      "untrustedFolderEnv": null,
+      "delegateMcp": null,
+      "usage": "none",
+      "costSource": "none",
+      "toolKinds": [
+        "shell",
+        "edit",
+        "write",
+        "read",
+        "web",
+        "mcp",
+        "other"
+      ]
+    }
+  }
+}
