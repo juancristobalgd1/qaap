@@ -51,6 +51,22 @@ body.qaap-electron-macos-inset-titlebar #theia-top-panel .theia-workbench-menu-t
   -webkit-app-region: no-drag;
 }
 
+/* Full-screen sheet headers (Billing, and any other sheet on `.theia-mobile-work-hub-preferences-header`) start at the
+   window's top-left edge, under the traffic lights. The MCP server dialog reuses this header but is a centred panel
+   on desktop (min window width 960px), so it is excluded: it stays where it is.
+   `!important`: the header's own padding shorthand has higher specificity than this scope. */
+body.qaap-electron-macos-inset-titlebar:not(.qaap-electron-macos-fullscreen) .theia-mobile-work-hub-preferences-header:not(#theia-right-content-panel *):not(.theia-mobile-work-hub-mcp-server-dialog *) {
+  padding-left: 78px !important;
+  -webkit-app-region: drag;
+}
+
+body.qaap-electron-macos-inset-titlebar .theia-mobile-work-hub-preferences-header button,
+body.qaap-electron-macos-inset-titlebar .theia-mobile-work-hub-preferences-header input,
+body.qaap-electron-macos-inset-titlebar .theia-mobile-work-hub-preferences-header a,
+body.qaap-electron-macos-inset-titlebar .theia-mobile-work-hub-preferences-header [role='button'] {
+  -webkit-app-region: no-drag;
+}
+
 /* The sessions sidebar header also starts at the window's top-left edge, under the traffic lights. */
 body.qaap-electron-macos-inset-titlebar:not(.qaap-electron-macos-fullscreen) .theia-mobile-work-hub-sessions-sidebar-head:not(#theia-right-content-panel *) {
   padding-left: 78px !important;
