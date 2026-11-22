@@ -440,16 +440,18 @@ describe('QaapAgentDelegationService.childApply (real git)', function (): void {
                 expect(git(childDir, ['status', '--porcelain'])).to.contain('new.txt');
             });
 
-            it('still refuses a filter written into the child\'s worktree config', async () => {
+            it('refuses extensions.worktreeConfig, the way a model makes the parent read a config.worktree it wrote', async () => {
                 finishChild(() => write(path.join(childDir, 'new.txt'), 'new file\n'));
                 git(parentDir, ['config', 'extensions.worktreeConfig', 'true']);
                 git(childDir, ['config', '--worktree', 'filter.evil.clean', program()]);
+                write(path.join(parentDir, '.git', 'info', 'attributes'), '* filter=evil\n');
 
                 const response = await service.childApply(CTX, { childId });
 
                 expect(response.ok).to.equal(false);
-                expect(!response.ok && response.error).to.contain('could run a program');
+                expect(!response.ok && response.error).to.contain('worktreeConfig');
                 expect(fs.existsSync(sentinel)).to.equal(false);
+                expect(fs.existsSync(path.join(parentDir, 'new.txt'))).to.equal(false);
             });
 
             it('refuses a merge driver in the shared local config', async () => {
@@ -502,6 +504,117 @@ describe('QaapAgentDelegationService.childApply (real git)', function (): void {
 
                 expect(fs.existsSync(sentinel)).to.equal(false);
                 expect(response, JSON.stringify(response)).to.deep.include({ ok: true, mode: 'apply' });
+            });
+
+            /** A nested repository whose own config defines a filter, with a file the filter would run on. */
+            function plantNestedRepo(): void {
+                const sub = path.join(childDir, 'sub');
+                fs.mkdirSync(sub, { recursive: true });
+                git(sub, ['init', '-q']);
+                write(path.join(sub, 'f'), 'one\n');
+                git(sub, ['add', '-A']);
+                git(sub, ['commit', '-q', '-m', 'inner']);
+                fs.appendFileSync(path.join(sub, '.git', 'config'), `[filter "x"]\n\tclean = ${program()}\n`);
+                write(path.join(sub, '.gitattributes'), '* filter=x\n');
+                write(path.join(sub, 'f'), 'two\n');
+            }
+
+            it('never recurses into a nested repository the child committed as a gitlink (no .gitmodules), and refuses it', async () => {
+                finishChild(() => {
+                    plantNestedRepo();
+                    // The gitlink is staged and committed WITHOUT running the filter (it is not a child-side git run).
+                    git(childDir, ['add', 'sub']);
+                    git(childDir, ['commit', '-q', '-m', 'add gitlink']);
+                    write(path.join(childDir, 'sub', 'f'), 'three\n');
+                });
+
+                const response = await service.childApply(CTX, { childId });
+
+                expect(fs.existsSync(sentinel), 'the nested repo filter must not run').to.equal(false);
+                expect(response.ok).to.equal(false);
+                expect(!response.ok && response.error).to.contain('nested git repository');
+                expect(fs.existsSync(path.join(parentDir, 'sub'))).to.equal(false);
+            });
+
+            it('refuses an untracked nested repository before add -A turns it into a gitlink', async () => {
+                finishChild(() => {
+                    plantNestedRepo();
+                    write(path.join(childDir, 'new.txt'), 'new file\n');
+                });
+
+                const response = await service.childApply(CTX, { childId });
+
+                expect(fs.existsSync(sentinel)).to.equal(false);
+                expect(response.ok).to.equal(false);
+                expect(!response.ok && response.error).to.contain('nested git repository');
+                expect(git(parentDir, ['log', '--format=%s'])).to.not.contain('delegated child');
+                expect(git(childDir, ['log', '--format=%s'])).to.not.contain('delegated child');
+            });
+
+            it('merge mode ignores the user-level config too: a global smudge filter and merge driver never run', async () => {
+                write(path.join(parentDir, '.gitattributes'), '*.txt filter=evil merge=evil\n');
+                git(parentDir, ['add', '.gitattributes']);
+                git(parentDir, ['commit', '-q', '-m', 'attributes']);
+                write(globalConfig, `[filter "evil"]\n\tsmudge = ${program()}\n\tclean = cat\n[merge "evil"]\n\tdriver = ${program()}\n`);
+                finishChild(() => write(path.join(childDir, 'new.txt'), 'merged in\n'));
+                Object.assign(service, { worktrees: realWorktrees() });
+
+                const response = await service.childApply(CTX, { childId, mode: 'merge' });
+
+                expect(fs.existsSync(sentinel), 'neither global program may run in worktree add / merge').to.equal(false);
+                expect(response, JSON.stringify(response)).to.deep.include({ ok: true, mode: 'merge' });
+                expect(read(path.join(parentDir, 'new.txt'))).to.equal('merged in\n');
+            });
+
+            it('merge mode still refuses config the model wrote into the shared local config', async () => {
+                finishChild(() => write(path.join(childDir, 'new.txt'), 'merged in\n'));
+                git(childDir, ['config', 'filter.evil.smudge', program()]);
+                Object.assign(service, { worktrees: realWorktrees() });
+
+                const response = await service.childApply(CTX, { childId, mode: 'merge' });
+
+                expect(response.ok).to.equal(false);
+                expect(!response.ok && response.error).to.contain('could run a program');
+                expect(fs.existsSync(sentinel)).to.equal(false);
+            });
+
+            it('treats a filter named in info/attributes as inert when only the global config defines it', async () => {
+                write(globalConfig, sentinelFilter('evil'));
+                write(path.join(parentDir, '.git', 'info', 'attributes'), '* filter=evil\n');
+                finishChild(() => write(path.join(childDir, 'new.txt'), 'new file\n'));
+
+                const response = await service.childApply(CTX, { childId });
+
+                expect(fs.existsSync(sentinel)).to.equal(false);
+                expect(response, JSON.stringify(response)).to.deep.include({ ok: true, mode: 'apply' });
+            });
+
+            it('does not let the global ignore file hide files from the commit', async () => {
+                const ignore = path.join(tmp, 'global-ignore');
+                write(ignore, '*.log\n');
+                write(globalConfig, `[core]\n\texcludesFile = ${ignore}\n`);
+                finishChild(() => write(path.join(childDir, 'debug.log'), 'kept\n'));
+
+                const response = await service.childApply(CTX, { childId });
+
+                expect(response, JSON.stringify(response)).to.deep.include({ ok: true, mode: 'apply' });
+                expect(read(path.join(parentDir, 'debug.log'))).to.equal('kept\n');
+            });
+
+            it('detects Git LFS in a .gitattributes that .gitignore hides, and in one padded beyond the read limit', async () => {
+                finishChild(() => {
+                    write(path.join(childDir, '.gitignore'), '.gitattributes\n');
+                    write(path.join(childDir, '.gitattributes'), '*.psd filter=lfs diff=lfs merge=lfs -text\n');
+                });
+                const hidden = await service.childApply(CTX, { childId });
+                expect(hidden.ok).to.equal(false);
+                expect(!hidden.ok && hidden.error).to.contain('Git LFS');
+
+                fs.rmSync(path.join(childDir, '.gitignore'));
+                write(path.join(childDir, '.gitattributes'), `${' '.repeat(5 * 1024 * 1024)}\n*.psd filter=lfs\n`);
+                const padded = await service.childApply(CTX, { childId });
+                expect(padded.ok).to.equal(false);
+                expect(!padded.ok && padded.error).to.contain('Git LFS');
             });
 
             it('refuses a repository that tracks files with Git LFS, and commits nothing', async () => {

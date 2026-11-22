@@ -15,6 +15,14 @@ function gitResult(status: number | null, stdout = ''): SpawnSyncReturns<string>
     return { pid: 1, output: [], stdout, stderr: '', status, signal: null } as SpawnSyncReturns<string>;
 }
 
+/** `git config -z --show-origin [--show-scope]` records: `[scope NUL] origin NUL key NL value NUL`. */
+function records(entries: ReadonlyArray<readonly [string, string, string] | readonly [string, string, string, string]>, withScope = false): string {
+    return entries.map(entry => {
+        const [first, second, third, fourth] = entry as readonly string[];
+        return withScope ? `${first}\0${second}\0${third}\n${fourth ?? ''}\0` : `${first}\0${second}\n${third ?? ''}\0`;
+    }).join('');
+}
+
 describe('QaapGitExecConfigChecker', () => {
     let root: string;
     let repo: string;
@@ -40,31 +48,55 @@ describe('QaapGitExecConfigChecker', () => {
     });
 
     it('flags diff.external, textconv drivers and filters', () => {
-        expect(checkerWith(() => gitResult(0, 'diff.external /tmp/x.sh\n')).check(repo)).to.contain('diff.external');
-        expect(checkerWith(() => gitResult(0, 'diff.bin.textconv hexdump\n')).check(repo)).to.contain('textconv');
-        expect(checkerWith(() => gitResult(0, 'filter.lfs.process git-lfs filter-process\n')).check(repo)).to.contain('filter.lfs.process');
+        expect(checkerWith(() => gitResult(0, records([['file:.git/config', 'diff.external', '/tmp/x.sh']]))).check(repo)).to.contain('diff.external');
+        expect(checkerWith(() => gitResult(0, records([['file:.git/config', 'diff.bin.textconv', 'hexdump']]))).check(repo)).to.contain('textconv');
+        expect(checkerWith(() => gitResult(0, records([['file:.git/config', 'filter.lfs.process', 'git-lfs filter-process']]))).check(repo)).to.contain('filter.lfs.process');
     });
 
     describe('userScopesNeutralized', () => {
         const neutral = { userScopesNeutralized: true };
-        const scoped = (...lines: string[]): QaapGitReadSync => (_cwd, args) => {
+        const scoped = (...lines: Array<readonly [string, string, string, string]>): QaapGitReadSync => (_cwd, args) => {
             expect(args).to.include('--show-scope');
-            return gitResult(0, lines.join('\n') + '\n');
+            expect(args).to.include('-z');
+            expect(args.slice(0, 2)).to.deep.equal(['-c', 'safe.directory=*']);
+            return gitResult(0, records(lines, true));
         };
 
         it('ignores global and system entries (the standard git-lfs filter) but not local or worktree ones', () => {
             const lfs = [
-                'global\tfile:/home/u/.gitconfig\tfilter.lfs.clean git-lfs clean -- %f',
-                'global\tfile:/home/u/.gitconfig\tfilter.lfs.process git-lfs filter-process',
-                'system\tfile:/etc/gitconfig\tfilter.lfs.smudge git-lfs smudge -- %f',
-            ];
+                ['global', 'file:/home/u/.gitconfig', 'filter.lfs.clean', 'git-lfs clean -- %f'],
+                ['global', 'file:/home/u/.gitconfig', 'filter.lfs.process', 'git-lfs filter-process'],
+                ['system', 'file:/etc/gitconfig', 'filter.lfs.smudge', 'git-lfs smudge -- %f'],
+            ] as const;
             expect(checkerWith(scoped(...lfs)).check(repo, neutral)).to.equal(undefined);
-            expect(checkerWith(scoped(...lfs, 'local\tfile:.git/config\tfilter.x.clean sh -c evil')).check(repo, neutral)).to.contain('filter.x.clean');
-            expect(checkerWith(scoped(...lfs, 'worktree\tfile:.git/config.worktree\tmerge.x.driver evil')).check(repo, neutral)).to.contain('merge.x.driver');
+            expect(checkerWith(scoped(...lfs, ['local', 'file:.git/config', 'filter.x.clean', 'sh -c evil'])).check(repo, neutral)).to.contain('filter.x.clean');
+            expect(checkerWith(scoped(...lfs, ['worktree', 'file:.git/config.worktree', 'filter.x.clean', 'evil'])).check(repo, neutral)).to.contain('filter.x.clean');
+            expect(checkerWith(scoped(...lfs, ['worktree', 'file:.git/config.worktree', 'merge.x.driver', 'evil'])).check(repo, neutral)).to.contain('merge.x.driver');
+        });
+
+        it('rejects an enabled extensions.worktreeConfig (its config.worktree is another model-writable scope)', () => {
+            expect(checkerWith(scoped(['local', 'file:.git/config', 'extensions.worktreeconfig', 'true'])).check(repo, neutral)).to.contain('worktreeConfig');
+            expect(checkerWith(scoped(['local', 'file:.git/config', 'extensions.worktreeconfig', 'false'])).check(repo, neutral)).to.equal(undefined);
+        });
+
+        it('cannot be fooled by a newline inside a value: -z records keep one entry per key', () => {
+            const read = scoped(['local', 'file:.git/config', 'core.pager', 'cat\nfilter.x.clean evil']);
+            expect(checkerWith(read).check(repo, neutral)).to.contain('core.pager');
+        });
+
+        it('never serves a cached answer, so a forged mtime cannot reuse an earlier verdict', () => {
+            let calls = 0;
+            const checker = checkerWith(() => {
+                calls++;
+                return gitResult(1);
+            });
+            checker.check(repo, neutral);
+            checker.check(repo, neutral);
+            expect(calls).to.equal(2);
         });
 
         it('still flags the same global entries when the caller does not neutralize user config', () => {
-            const read: QaapGitReadSync = () => gitResult(0, 'file:/home/u/.gitconfig\tfilter.lfs.clean git-lfs clean -- %f\n');
+            const read: QaapGitReadSync = () => gitResult(0, records([['file:/home/u/.gitconfig', 'filter.lfs.clean', 'git-lfs clean -- %f']]));
             expect(checkerWith(read).check(repo)).to.contain('filter.lfs.clean');
         });
 
@@ -84,9 +116,9 @@ describe('QaapGitExecConfigChecker', () => {
     });
 
     it('tolerates harmless values of fsmonitor and pager keys', () => {
-        expect(checkerWith(() => gitResult(0, 'core.fsmonitor false\ncore.pager cat\n')).check(repo)).to.equal(undefined);
-        expect(checkerWith(() => gitResult(0, 'core.fsmonitor /tmp/hook.sh\n')).check(repo)).to.contain('core.fsmonitor');
-        expect(checkerWith(() => gitResult(0, 'core.pager less -R\n')).check(repo)).to.contain('core.pager');
+        expect(checkerWith(() => gitResult(0, records([['file:.git/config', 'core.fsmonitor', 'false'], ['file:.git/config', 'core.pager', 'cat']]))).check(repo)).to.equal(undefined);
+        expect(checkerWith(() => gitResult(0, records([['file:.git/config', 'core.fsmonitor', '/tmp/hook.sh']]))).check(repo)).to.contain('core.fsmonitor');
+        expect(checkerWith(() => gitResult(0, records([['file:.git/config', 'core.pager', 'less -R']]))).check(repo)).to.contain('core.pager');
     });
 
     it('fails closed when git errors or cannot be spawned', () => {
@@ -138,7 +170,7 @@ describe('QaapGitExecConfigChecker', () => {
         let calls = 0;
         const checker = checkerWith(() => {
             calls++;
-            return gitResult(0, `file:${path.join(repo, '.git', 'config')}\tinclude.path ${included}\n`);
+            return gitResult(0, records([[`file:${path.join(repo, '.git', 'config')}`, 'include.path', included]]));
         });
         expect(checker.check(repo)).to.equal(undefined);
         checker.check(repo);

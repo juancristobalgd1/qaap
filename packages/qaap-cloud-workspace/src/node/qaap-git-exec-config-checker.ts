@@ -16,6 +16,9 @@ const GIT_EXEC_CONFIG_REGEXP = '^(core\\.fsmonitor|core\\.pager|pager\\.|diff\\.
     + '|filter\\..*\\.(clean|smudge|process)$|merge\\..*\\.driver$|interactive\\.difftool|gpg\\.|log\\.showsignature'
     + '|include\\.path$|includeif\\..*\\.path$)';
 
+/** Extra key of the neutralized mode: a per-worktree config file is another place a model-written filter can live. */
+const GIT_WORKTREE_CONFIG_REGEXP = '|^extensions\\.worktreeconfig$';
+
 /** Included config files are only listed so the cache watches them; the include itself runs nothing. */
 const GIT_INCLUDE_KEY_RE = /^include(?:if\..*)?\.path$/;
 
@@ -25,6 +28,9 @@ const GIT_DRIVER_ATTRIBUTE_RE = /(?:^|\s)(?:diff|filter)=/m;
 /** Values of the matched keys that do NOT run anything. */
 function isHarmlessGitExecValue(key: string, value: string): boolean {
     const normalized = value.trim().toLowerCase();
+    if (key === 'extensions.worktreeconfig') {
+        return normalized === 'false' || normalized === 'no' || normalized === 'off' || normalized === '0';
+    }
     if (key === 'core.fsmonitor') {
         return normalized === '' || normalized === 'false' || normalized === 'no' || normalized === 'off' || normalized === '0';
     }
@@ -82,14 +88,17 @@ export class QaapGitExecConfigChecker {
             ]),
         ];
         const cacheId = neutral ? `neutral:${cwd}` : cwd;
-        const cached = this.cache.get(cacheId);
+        // Neutralized runs vet what a model can write: never reuse an answer (an mtime is forgeable with `touch -r`).
+        const cached = neutral ? undefined : this.cache.get(cacheId);
         const cacheKeyFor = (extra: readonly string[]): string => [...watched, ...extra].map(file => `${file}@${this.mtime(file)}`).join('|');
         if (cached && cached.key === cacheKeyFor(cached.extraFiles)) {
             return cached.risk;
         }
         const extraFiles: string[] = [];
         const risk = this.evaluate(cwd, gitDirs, extraFiles, neutral);
-        this.cache.set(cacheId, { key: cacheKeyFor(extraFiles), risk, extraFiles });
+        if (!neutral) {
+            this.cache.set(cacheId, { key: cacheKeyFor(extraFiles), risk, extraFiles });
+        }
         return risk;
     }
 
@@ -100,7 +109,13 @@ export class QaapGitExecConfigChecker {
         }
         let result: ReturnType<QaapGitReadSync>;
         try {
-            result = this.gitRead(cwd, ['config', '--show-origin', ...(neutral ? ['--show-scope'] : []), '--get-regexp', GIT_EXEC_CONFIG_REGEXP], 1024 * 1024);
+            // `-z`: NUL-terminated records, so a newline or tab inside a value cannot forge another entry. The neutral
+            // run uses the same `safe.directory=*` as the git it vets, or an ownership refusal would hide the config.
+            result = this.gitRead(cwd, [
+                ...(neutral ? ['-c', 'safe.directory=*'] : []),
+                'config', '-z', '--show-origin', ...(neutral ? ['--show-scope'] : []),
+                '--get-regexp', GIT_EXEC_CONFIG_REGEXP + (neutral ? GIT_WORKTREE_CONFIG_REGEXP : '')
+            ], 1024 * 1024);
         } catch (error) {
             return `git config check failed: ${error instanceof Error ? error.message : String(error)}`;
         }
@@ -109,37 +124,35 @@ export class QaapGitExecConfigChecker {
             return 'git config check failed';
         }
         if (result.status === 0) {
-            for (const rawLine of (result.stdout ?? '').split('\n')) {
-                let line = rawLine;
-                if (neutral) {
-                    // `--show-scope` prefixes `<scope>\t`; an include keeps the scope of the file that includes it.
-                    const scopeTab = line.indexOf('\t');
-                    const scope = scopeTab < 0 ? '' : line.slice(0, scopeTab);
-                    if (scope === 'global' || scope === 'system') {
-                        continue;
-                    }
-                    line = scopeTab < 0 ? line : line.slice(scopeTab + 1);
+            // Records are `[scope NUL] origin NUL key NL value NUL` (scope only with --show-scope); a include keeps
+            // the scope of the file that includes it.
+            const fields = (result.stdout ?? '').split('\0');
+            const width = neutral ? 3 : 2;
+            for (let i = 0; i + width <= fields.length; i += width) {
+                const scope = neutral ? fields[i] : '';
+                const origin = fields[i + width - 2];
+                const entry = fields[i + width - 1];
+                if (scope === 'global' || scope === 'system') {
+                    continue;
                 }
-                // `--show-origin` prefixes each entry with `file:<path>\t` (or `command line:` etc.).
-                const tab = line.indexOf('\t');
-                const origin = tab < 0 ? '' : line.slice(0, tab);
-                const trimmed = (tab < 0 ? line : line.slice(tab + 1)).trim();
-                if (!trimmed) {
+                const newline = entry.indexOf('\n');
+                const key = (newline < 0 ? entry : entry.slice(0, newline)).trim().toLowerCase();
+                const value = newline < 0 ? '' : entry.slice(newline + 1);
+                if (!key) {
                     continue;
                 }
                 if (origin.startsWith('file:')) {
                     extraFiles.push(path.resolve(cwd, origin.slice('file:'.length)));
                 }
-                const space = trimmed.indexOf(' ');
-                const key = (space < 0 ? trimmed : trimmed.slice(0, space)).toLowerCase();
-                const value = space < 0 ? '' : trimmed.slice(space + 1);
                 if (GIT_INCLUDE_KEY_RE.test(key)) {
                     const originDir = origin.startsWith('file:') ? path.dirname(path.resolve(cwd, origin.slice('file:'.length))) : cwd;
                     extraFiles.push(path.resolve(originDir, value.replace(/^~(?=\/|$)/, this.homeDir)));
                     continue;
                 }
                 if (!isHarmlessGitExecValue(key, value)) {
-                    return `git config ${key} can run a program`;
+                    return key === 'extensions.worktreeconfig'
+                        ? 'git config extensions.worktreeConfig is enabled (a per-worktree config is not verified)'
+                        : `git config ${key} can run a program`;
                 }
             }
         }
