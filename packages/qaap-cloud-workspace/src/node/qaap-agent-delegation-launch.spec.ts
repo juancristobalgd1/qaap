@@ -24,6 +24,8 @@ import {
     resolveQaapDelegateMcpPath,
     resolveQaapDelegationPlacement,
     withQaapDelegationOpencodeMcp,
+    QAAP_DELEGATION_SWEEP_INTERVAL_MS,
+    resetQaapDelegationSweepThrottle,
     sweepStaleQaapDelegationMcpConfigs,
     writeQaapDelegationMcpConfigFile,
     writeQaapDelegationTokenFile,
@@ -31,7 +33,7 @@ import {
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { buildChildEnvExtracted } from './qaap-agent-task-runner-tool-pills2';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
-import { quoteShellArg } from './qaap-agent-task-runner-utils';
+import { AGENT_PROMPT_REMOVE_SCRIPT, agentPromptOwnerRunner, quoteShellArg } from './qaap-agent-task-runner-utils';
 import type { QaapTaskSandbox } from './qaap-task-sandbox';
 import { QaapToolGateTokenService } from './qaap-tool-gate-token-service';
 
@@ -327,12 +329,15 @@ describe('agent delegation launch', () => {
             return instance;
         }
 
+        const originalRunner = agentPromptOwnerRunner.run;
         beforeEach(() => {
+            resetQaapDelegationSweepThrottle();
             process.env.QAAP_AGENT_DELEGATION = '1';
             tokens = new QaapToolGateTokenService();
             shared = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-delegation-shared-'));
         });
         afterEach(() => {
+            agentPromptOwnerRunner.run = originalRunner;
             releaseQaapDelegationMcpConfigFile('task-sb');
             fs.rmSync(shared, { recursive: true, force: true });
             if (saved === undefined) {
@@ -408,6 +413,110 @@ describe('agent delegation launch', () => {
             expect(host.baseDir).to.equal(undefined);
             expect(host.options.shimPath).to.equal(resolveQaapDelegateMcpPath());
             expect(() => resolveQaapDelegationPlacement('task-sb', sandbox({ sharedRoot: undefined }))).to.throw(/shares no directory/);
+        });
+
+        describe('sweep of the agent-writable base', () => {
+            const prefix = `qaap-agent-prompt-${QAAP_DELEGATION_CONFIG_DIR_PREFIX}`;
+            const posixOnly = (ctx: Mocha.Context): void => {
+                if (process.platform === 'win32') {
+                    ctx.skip();
+                }
+            };
+            const age = (dir: string): void => {
+                const old = new Date(Date.now() - 2 * 60 * 60 * 1000);
+                fs.utimesSync(dir, old, old);
+            };
+
+            it('never follows a planted symlink: the victim survives and the link is ignored', function (): void {
+                posixOnly(this);
+                const base = fs.mkdtempSync(path.join(shared, 'b-'));
+                const victimDir = fs.mkdtempSync(path.join(shared, 'victim-'));
+                fs.writeFileSync(path.join(victimDir, 'victim.txt'), 'keep');
+                fs.symlinkSync(victimDir, path.join(base, `${prefix}evil`));
+                fs.writeFileSync(path.join(base, `${prefix}file`), 'x');
+                expect(sweepStaleQaapDelegationMcpConfigs(base, 0)).to.equal(0);
+                expect(fs.readFileSync(path.join(victimDir, 'victim.txt'), 'utf8')).to.equal('keep');
+                expect(fs.lstatSync(path.join(base, `${prefix}evil`)).isSymbolicLink()).to.equal(true);
+                expect(fs.existsSync(path.join(base, `${prefix}file`))).to.equal(true);
+            });
+
+            it('does not remove, as the backend, a directory of another uid', function (): void {
+                posixOnly(this);
+                const base = fs.mkdtempSync(path.join(shared, 'b-'));
+                const foreign = path.join(base, `${prefix}foreign`);
+                fs.mkdirSync(foreign);
+                const ran: string[] = [];
+                agentPromptOwnerRunner.run = (_owner, _script, input) => { ran.push((input as { dir: string }).dir); return true; };
+                // The process is simulated to be a backend with another uid, and no agent owner is known.
+                expect(sweepStaleQaapDelegationMcpConfigs(base, 0, { backendUid: process.getuid!() + 1 })).to.equal(0);
+                expect(fs.existsSync(foreign)).to.equal(true);
+                expect(ran).to.deep.equal([]);
+            });
+
+            it('removes the agent\'s own directories by running the removal script as the agent uid', function (): void {
+                posixOnly(this);
+                const base = fs.mkdtempSync(path.join(shared, 'b-'));
+                const theirs = path.join(base, `${prefix}agent`);
+                fs.mkdirSync(theirs);
+                const calls: Array<{ uid: number; script: string; dir: string }> = [];
+                agentPromptOwnerRunner.run = (owner, script, input) => {
+                    calls.push({ uid: owner.uid, script, dir: (input as { dir: string }).dir });
+                    return true;
+                };
+                const agentUid = process.getuid!();
+                expect(sweepStaleQaapDelegationMcpConfigs(base, 0, { backendUid: agentUid + 1, owner: { uid: agentUid } })).to.equal(1);
+                expect(calls).to.deep.equal([{ uid: agentUid, script: AGENT_PROMPT_REMOVE_SCRIPT, dir: theirs }]);
+            });
+
+            it('removes an old directory of the backend and keeps a recent one', function (): void {
+                posixOnly(this);
+                const base = fs.mkdtempSync(path.join(shared, 'b-'));
+                const old = path.join(base, `${prefix}old`);
+                const fresh = path.join(base, `${prefix}fresh`);
+                fs.mkdirSync(old);
+                fs.mkdirSync(fresh);
+                age(old);
+                expect(sweepStaleQaapDelegationMcpConfigs(base)).to.equal(1);
+                expect(fs.existsSync(old)).to.equal(false);
+                expect(fs.existsSync(fresh)).to.equal(true);
+            });
+
+            it('looks at no more than the entry limit per pass', () => {
+                const base = fs.mkdtempSync(path.join(shared, 'b-'));
+                for (let i = 0; i < 5; i++) {
+                    fs.mkdirSync(path.join(base, `${prefix}${i}`));
+                }
+                expect(sweepStaleQaapDelegationMcpConfigs(base, 0, { maxEntries: 2 })).to.equal(2);
+                expect(fs.readdirSync(base)).to.have.length(3);
+            });
+
+            it('does not sweep the same base again within the throttle interval', function (): void {
+                posixOnly(this);
+                resolveQaapDelegationPlacement('task-sb', sandbox());
+                const base = path.join(shared, QAAP_DELEGATION_SANDBOX_DIRNAME);
+                const stale = path.join(base, `${prefix}stale`);
+                fs.mkdirSync(stale);
+                age(stale);
+                resolveQaapDelegationPlacement('task-sb', sandbox());
+                expect(fs.existsSync(stale)).to.equal(true);
+                expect(QAAP_DELEGATION_SWEEP_INTERVAL_MS).to.equal(60000);
+                resetQaapDelegationSweepThrottle();
+                resolveQaapDelegationPlacement('task-sb', sandbox());
+                expect(fs.existsSync(stale)).to.equal(false);
+            });
+        });
+
+        it('keeps the base 1733 once it is shared, and creates it 1733 for an agent with another uid', function (): void {
+            if (process.platform === 'win32') {
+                this.skip();
+            }
+            const base = path.join(shared, QAAP_DELEGATION_SANDBOX_DIRNAME);
+            // The agent-side write runs locally in this spec, so the ownership check refuses; the base is made before that.
+            agentPromptOwnerRunner.run = () => true;
+            expect(() => resolveQaapDelegationPlacement('task-sb', sandbox(), { uid: process.getuid!() + 1 })).to.throw();
+            expect(fs.lstatSync(base).mode & 0o7777).to.equal(0o1733);
+            resolveQaapDelegationPlacement('task-sb', sandbox());
+            expect(fs.lstatSync(base).mode & 0o7777).to.equal(0o1733);
         });
 
         it('refuses a base planted as a symlink or file instead of a real directory', function (): void {
