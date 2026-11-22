@@ -45,6 +45,44 @@ describe('QaapGitExecConfigChecker', () => {
         expect(checkerWith(() => gitResult(0, 'filter.lfs.process git-lfs filter-process\n')).check(repo)).to.contain('filter.lfs.process');
     });
 
+    describe('userScopesNeutralized', () => {
+        const neutral = { userScopesNeutralized: true };
+        const scoped = (...lines: string[]): QaapGitReadSync => (_cwd, args) => {
+            expect(args).to.include('--show-scope');
+            return gitResult(0, lines.join('\n') + '\n');
+        };
+
+        it('ignores global and system entries (the standard git-lfs filter) but not local or worktree ones', () => {
+            const lfs = [
+                'global\tfile:/home/u/.gitconfig\tfilter.lfs.clean git-lfs clean -- %f',
+                'global\tfile:/home/u/.gitconfig\tfilter.lfs.process git-lfs filter-process',
+                'system\tfile:/etc/gitconfig\tfilter.lfs.smudge git-lfs smudge -- %f',
+            ];
+            expect(checkerWith(scoped(...lfs)).check(repo, neutral)).to.equal(undefined);
+            expect(checkerWith(scoped(...lfs, 'local\tfile:.git/config\tfilter.x.clean sh -c evil')).check(repo, neutral)).to.contain('filter.x.clean');
+            expect(checkerWith(scoped(...lfs, 'worktree\tfile:.git/config.worktree\tmerge.x.driver evil')).check(repo, neutral)).to.contain('merge.x.driver');
+        });
+
+        it('still flags the same global entries when the caller does not neutralize user config', () => {
+            const read: QaapGitReadSync = () => gitResult(0, 'file:/home/u/.gitconfig\tfilter.lfs.clean git-lfs clean -- %f\n');
+            expect(checkerWith(read).check(repo)).to.contain('filter.lfs.clean');
+        });
+
+        it('does not flag diff=/filter= attributes, which are inert without a definition', () => {
+            fs.writeFileSync(path.join(repo, '.gitattributes'), '*.bin filter=lfs diff=hex\n');
+            expect(checkerWith(() => gitResult(1)).check(repo, neutral)).to.equal(undefined);
+            expect(checkerWith(() => gitResult(1)).check(repo)).to.contain('.gitattributes');
+        });
+
+        it('keeps the two modes in separate cache entries', () => {
+            const checker = checkerWith(() => gitResult(1));
+            fs.writeFileSync(path.join(repo, '.gitattributes'), '*.bin filter=x\n');
+            expect(checker.check(repo, neutral)).to.equal(undefined);
+            expect(checker.check(repo)).to.contain('.gitattributes');
+            expect(checker.check(repo, neutral)).to.equal(undefined);
+        });
+    });
+
     it('tolerates harmless values of fsmonitor and pager keys', () => {
         expect(checkerWith(() => gitResult(0, 'core.fsmonitor false\ncore.pager cat\n')).check(repo)).to.equal(undefined);
         expect(checkerWith(() => gitResult(0, 'core.fsmonitor /tmp/hook.sh\n')).check(repo)).to.contain('core.fsmonitor');
