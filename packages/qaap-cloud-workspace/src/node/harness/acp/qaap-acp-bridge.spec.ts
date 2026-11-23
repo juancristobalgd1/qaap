@@ -48,6 +48,26 @@ interface BridgeRun {
     lines: any[];
 }
 
+/** Sends SIGTERM to the bridge once the fake agent recorded the prompt (a fixed delay is flaky on slow CI runners). */
+function killOncePrompted(record: string, pid: number, onKill?: () => void): void {
+    const poll = setInterval(() => {
+        let recorded = '';
+        try {
+            recorded = fs.readFileSync(record, 'utf8');
+        } catch {
+            return;
+        }
+        if (recorded.includes('"session/prompt"')) {
+            clearInterval(poll);
+            setTimeout(() => {
+                onKill?.();
+                process.kill(pid, 'SIGTERM');
+            }, 100);
+        }
+    }, 20);
+    setTimeout(() => clearInterval(poll), 15000).unref();
+}
+
 function runBridge(args: string[], env: NodeJS.ProcessEnv, prompt = 'hello', onSpawn?: (pid: number) => void): Promise<BridgeRun> {
     return new Promise(resolve => {
         const child = spawn(process.execPath, [resolveQaapAcpBridgePath(), ...args], { env, cwd: os.tmpdir() });
@@ -519,17 +539,19 @@ process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: m.id, result }) + '\\n
 
         posixIt('cancels on SIGTERM within 4 s, even when the agent ignores session/cancel, and leaves no agent behind', async () => {
             const record = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-acp-')), 'record.jsonl');
-            const started = Date.now();
-            const run = await runBridge(agent('hang'), env({ FAKE_ACP_RECORD: record }), 'go', pid => setTimeout(() => process.kill(pid, 'SIGTERM'), 700));
+            let killedAt = 0;
+            const run = await runBridge(agent('hang'), env({ FAKE_ACP_RECORD: record }), 'go', pid => killOncePrompted(record, pid, () => killedAt = Date.now()));
             expect(run.code).to.equal(bridge.EXIT.CANCELLED);
-            expect(Date.now() - started).to.be.lessThan(4700);
+            expect(killedAt).to.be.greaterThan(0);
+            // Measured from the SIGTERM, not from start-up (slow CI runners).
+            expect(Date.now() - killedAt).to.be.lessThan(4000);
             const methods = fs.readFileSync(record, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line).method);
             expect(methods).to.include('session/cancel');
         });
 
         posixIt('answers cancelled to a permission asked after the cancel, without asking the gate', async () => {
             const record = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-acp-')), 'record.jsonl');
-            const run = await runBridge(agent('cancelperm'), env({ FAKE_ACP_RECORD: record }), 'go', pid => setTimeout(() => process.kill(pid, 'SIGTERM'), 500));
+            const run = await runBridge(agent('cancelperm'), env({ FAKE_ACP_RECORD: record }), 'go', pid => killOncePrompted(record, pid));
             expect(run.code).to.equal(bridge.EXIT.CANCELLED);
             expect(seen).to.have.length(0);
             const late = fs.readFileSync(record, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line)).find(entry => entry.lateOutcome);
