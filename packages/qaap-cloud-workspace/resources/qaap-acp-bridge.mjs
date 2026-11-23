@@ -562,6 +562,23 @@ export function refusePermissionLocally(mode, kind, input) {
     return undefined;
 }
 
+/**
+ * Whether a permission request is a call to this turn's own delegation server (`qaaq_<16 hex>`, from --mcp-servers),
+ * which Qaap authorizes itself, as Claude's auto-allow and T3 Code do: the server is scoped by its own delegate-only
+ * token, so asking the user for every `qaaq_task_wait` adds nothing. Matched on the exact random server name followed by
+ * a `qaaq_` tool (each agent spells the prefix differently: `x-qaaq_…`, `x__qaaq_…`, `x_qaaq_…`, `mcp_x_qaaq_…`), and
+ * never for a mutating kind.
+ */
+export function isOwnDelegationToolCall(kind, names, serverNames) {
+    if (MUTATING_KINDS.has(kind) || !Array.isArray(serverNames) || serverNames.length === 0) {
+        return false;
+    }
+    const patterns = serverNames
+        .filter(name => typeof name === 'string' && /^qaaq_[0-9a-f]{8,}$/.test(name))
+        .map(name => new RegExp(`(?:^|[^A-Za-z0-9])${name}[-_]{1,2}qaaq_[a-z_]+(?:$|[^A-Za-z0-9_])`));
+    return names.some(value => typeof value === 'string' && patterns.some(pattern => pattern.test(value)));
+}
+
 /** Exit code and one-line reason for an ACP stop reason. */
 export function exitForStopReason(stopReason) {
     switch (stopReason) {
@@ -960,6 +977,15 @@ export async function runBridgeTurn(options, prompt, io) {
         if (refusal) {
             note(`Blocked: ${refusal}`);
             respond(choosePermissionOption(params.options, false));
+            return;
+        }
+        const serverNames = (io.mcpServers ?? []).map(server => server.name);
+        if (isOwnDelegationToolCall(kind, [known?.name, toolCall.title], serverNames)) {
+            const choice = choosePermissionOption(params.options, true);
+            if (choice.outcome === 'selected' && callId) {
+                translator.markPermitted(callId);
+            }
+            respond(choice);
             return;
         }
         const token = { cancelled: false };
