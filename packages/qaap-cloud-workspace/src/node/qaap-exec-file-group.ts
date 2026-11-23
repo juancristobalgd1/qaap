@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { spawn, type ChildProcess } from 'child_process';
+import * as fs from 'fs';
 
 /** Options of {@link execFileKillingGroup}. */
 export interface QaapExecFileGroupOptions {
@@ -113,4 +114,24 @@ export function killProcessGroup(child: ChildProcess, posix = process.platform !
     } catch {
         // Already gone.
     }
+}
+
+/** GNU coreutils `timeout`, when this host has it (every Qaap image does; a dev Mac may not). */
+const COREUTILS_TIMEOUT_PATHS = ['/usr/bin/timeout', '/bin/timeout'];
+
+/**
+ * Prefixes a command with `timeout -k 2 <seconds>` so the deadline is enforced by a process running as
+ * the command's own user. In a tenant backend the CLI runs as the agent uid (setpriv) while the backend
+ * is root without CAP_KILL, so `kill` from the backend fails with EPERM and a stuck `opencode auth list`
+ * lived for minutes. `timeout` leads its own process group and signals all of it, then SIGKILLs it 2 s
+ * later. Wrap before the uid drop (`wrapArgvForTenant`), so `timeout` itself runs as the agent.
+ * Unchanged on Windows or without `timeout`.
+ */
+export function withSelfEnforcedDeadline(file: string, args: readonly string[], timeoutMs: number): { file: string; args: string[] } {
+    const timeoutBin = process.platform === 'win32' ? undefined : COREUTILS_TIMEOUT_PATHS.find(candidate => fs.existsSync(candidate));
+    if (!timeoutBin) {
+        return { file, args: [...args] };
+    }
+    const seconds = Math.max(1, Math.ceil(timeoutMs / 1000));
+    return { file: timeoutBin, args: ['-k', '2', String(seconds), file, ...args] };
 }

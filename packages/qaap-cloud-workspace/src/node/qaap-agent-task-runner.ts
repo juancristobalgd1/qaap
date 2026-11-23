@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Theia contributors and Qaap product fork.
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
+import { withSelfEnforcedDeadline } from './qaap-exec-file-group';
 import { isQaapTenantBackendMode } from '@theia/qaap-adapters/lib/common/qaap-tenant-backend-auth';
 import type { QaapAgentEffortLevel } from '@theia/qaap-shared-core/lib/common/qaap-agent-effort';
 import { Emitter, Event } from '@theia/core/lib/common/event';
@@ -211,6 +212,12 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-harness-launch-settings';
 import { QAAP_BUILTIN_AGENT_IDS } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 import { qaapGitReadEnv } from './qaap-child-process-env';
+
+/**
+ * Upper bound for a CLI model listing run as the agent uid (`opencode models`, `agy models`, the Claude
+ * catalog probe): a little above their own 15 s budget, enforced by `timeout` as that uid.
+ */
+const NATIVE_MODEL_DISCOVERY_DEADLINE_MS = 20_000;
 
 /** How long a CLI auth probe answer is considered current before it is re-probed in the background. */
 export const QAAP_AGENT_CONNECTION_STATE_TTL_MS = 15_000;
@@ -1216,7 +1223,9 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             throw new Error(`No tenant workspace for ${safeUserIdSegment(owner)} yet; the auth probe cannot run without its tenant cwd.`);
         }
         try {
-            const wrapped = this.tenantSpawn.wrapArgvForTenant(tenantCwd, probe.file, [...probe.args]);
+            // The deadline is enforced as the agent uid: the backend cannot signal that uid (no CAP_KILL).
+            const deadline = withSelfEnforcedDeadline(probe.file, probe.args, resolveAgentConnectionProbeTimeoutMs(agentId));
+            const wrapped = this.tenantSpawn.wrapArgvForTenant(tenantCwd, deadline.file, deadline.args);
             // An inherited OPENAI_API_KEY makes `codex login status` report the key, not the sign-in.
             const env = stripSignInOnlyAgentApiKeyEnv(childProcessEnv({
                 ...process.env,
@@ -1261,7 +1270,9 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             if (canExposeAgentCliBinToChild(prefix, () => this.isTenantPrivilegeDropActive(tenantCwd))) {
                 prependAgentCliBinToPath(env, prefix);
             }
-            const wrapped = this.tenantSpawn.wrapArgvForTenant(tenantCwd, bin, [...args]);
+            // Listings run as the agent uid, which the backend cannot signal: `timeout` enforces their deadline.
+            const deadline = withSelfEnforcedDeadline(bin, args, NATIVE_MODEL_DISCOVERY_DEADLINE_MS);
+            const wrapped = this.tenantSpawn.wrapArgvForTenant(tenantCwd, deadline.file, deadline.args);
             return { file: wrapped.file, args: wrapped.args, cwd: existingTenantCwd(tenantCwd), env };
         };
     }

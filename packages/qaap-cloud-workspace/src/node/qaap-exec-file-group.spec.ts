@@ -4,7 +4,8 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { execFileKillingGroup } from './qaap-exec-file-group';
+import * as fs from 'fs';
+import { execFileKillingGroup, withSelfEnforcedDeadline } from './qaap-exec-file-group';
 
 function isAlive(pid: number): boolean {
     try {
@@ -38,5 +39,20 @@ function isAlive(pid: number): boolean {
         });
         expect(result.error).to.equal(null);
         expect(result.stdout.trim()).to.equal('ready');
+    });
+});
+
+describe('withSelfEnforcedDeadline', () => {
+    const hasTimeout = process.platform !== 'win32' && ['/usr/bin/timeout', '/bin/timeout'].some(path => fs.existsSync(path));
+
+    it('prefixes `timeout -k 2 <seconds>` when the host has coreutils timeout, else leaves the command alone', () => {
+        const wrapped = withSelfEnforcedDeadline('opencode', ['auth', 'list'], 10_000);
+        if (hasTimeout) {
+            expect(wrapped.args).to.deep.equal(['-k', '2', '10', 'opencode', 'auth', 'list']);
+            expect(wrapped.file).to.match(/\/timeout$/);
+        } else {
+            expect(wrapped).to.deep.equal({ file: 'opencode', args: ['auth', 'list'] });
+        }
+        expect(withSelfEnforcedDeadline('x', [], 200).args.slice(0, 3)).to.deep.equal(hasTimeout ? ['-k', '2', '1'] : []);
     });
 });
