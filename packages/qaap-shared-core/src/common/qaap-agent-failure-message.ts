@@ -1356,6 +1356,23 @@ export function formatStoredAgentFailureMessage(error: string | undefined): stri
 }
 
 /**
+ * Whether Pi's final provider error (`errorMessage` of its last `message_end`, e.g.
+ * `401: {"message":"User not found.","code":401}`) is the provider refusing Pi's sign-in or key.
+ * Read from that one field, so a 401 a workspace command printed earlier never counts.
+ */
+export function isPiProviderSignInRefusal(errorMessage: string | undefined): boolean {
+    const text = errorMessage?.trim();
+    if (!text) {
+        return false;
+    }
+    if (/^(?:401|403)\b/.test(text)) {
+        return true;
+    }
+    const kind = detectAgentFailureKind(text);
+    return kind === 'auth' || kind === 'provider_key_rejected';
+}
+
+/**
  * Pi signs in to its providers itself (`/login`, kept in `~/.pi/agent/auth.json`), and that sign-in wins
  * over a key from Settings. A Pi turn the provider refuses for its key or auth (OpenRouter's 401
  * "User not found." for a revoked token) therefore means Pi's own sign-in no longer holds: the fix is

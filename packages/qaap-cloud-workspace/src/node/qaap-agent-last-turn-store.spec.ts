@@ -22,6 +22,18 @@ const COPILOT_SIGNED_OUT = [
     + " • Run 'gh auth login' to authenticate with the GitHub CLI",
 ].join('\n');
 
+/**
+ * Pi 1.4's json stream for a revoked OpenRouter sign-in: its last records repeat the whole prompt, which
+ * here says "shell tools time out", so a raw 12 KB tail cut through that line read as a timeout.
+ */
+const PI_REVOKED_LONG_PROMPT = [
+    '{"type":"agent_start"}',
+    '{"type":"message_end","message":{"role":"assistant","content":[],"provider":"openrouter","stopReason":"error",'
+        + '"errorMessage":"401: {\\"message\\":\\"User not found.\\",\\"code\\":401}"}}',
+    `{"type":"agent_end","messages":[{"role":"user","content":[{"type":"text","text":"${'Never start dev servers in shell — shell tools time out after ~30s. '.repeat(400)}"}]}]}`,
+    '{"type":"agent_settled","aborted":false}',
+].join('\n');
+
 describe('classifyAgentLastTurn', () => {
 
     it('a clean finish is ok, also with red repository checks or a blocked turn', () => {
@@ -114,5 +126,16 @@ describe('QaapAgentLastTurnStore', () => {
         expect(store.get('alice', 'codex')).to.equal(undefined);
         // A new process reads what the previous one persisted.
         expect(new QaapAgentLastTurnStore().get('alice', 'claude')?.taskId).to.equal('b');
+    });
+});
+
+describe('classifyAgentLastTurn for a Pi sign-in the provider refused', () => {
+    it('uses the runner verdict from Pi\'s final error', () => {
+        expect(classifyAgentLastTurn({ ...task('failed', 1), providerKeyVerdict: 'key_rejected' }, PI_REVOKED_LONG_PROMPT, 'pi'))
+            .to.include({ outcome: 'failed', kind: 'provider_key_rejected' });
+    });
+
+    it('never reads prompt text cut out of a long last line as the failure', () => {
+        expect(classifyAgentLastTurn(task('failed', 1), PI_REVOKED_LONG_PROMPT, 'pi')?.kind).not.to.equal('timeout');
     });
 });
