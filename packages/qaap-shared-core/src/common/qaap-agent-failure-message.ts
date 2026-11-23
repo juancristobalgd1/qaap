@@ -1355,6 +1355,32 @@ export function formatStoredAgentFailureMessage(error: string | undefined): stri
     return trimmed;
 }
 
+/**
+ * Pi signs in to its providers itself (`/login`, kept in `~/.pi/agent/auth.json`), and that sign-in wins
+ * over a key from Settings. A Pi turn the provider refuses for its key or auth (OpenRouter's 401
+ * "User not found." for a revoked token) therefore means Pi's own sign-in no longer holds: the fix is
+ * signing in again from the composer, not a key in Settings.
+ */
+export function isPiSignInRejectedFailure(agentId: string | undefined, kind: string | undefined): boolean {
+    return agentId?.trim().toLowerCase() === 'pi' && (kind === 'auth' || kind === 'provider_key_rejected');
+}
+
+/** Copy for {@link isPiSignInRejectedFailure}. "needs you to sign in" gives the turn its Sign-in action. */
+export function localizePiSignInRejectedMessage(providerLabel?: string): string {
+    const label = providerLabel?.trim();
+    if (label) {
+        return nls.localize(
+            'qaap/agentFailure/piSignInRejected',
+            'Pi needs you to sign in again: {0} refused its sign-in. Sign in from the agent chip, then retry.',
+            label,
+        );
+    }
+    return nls.localize(
+        'qaap/agentFailure/piSignInRejectedAnyProvider',
+        'Pi needs you to sign in again: the provider refused its sign-in. Sign in from the agent chip, then retry.',
+    );
+}
+
 export interface QaapAgentFailedToolContext {
     readonly name: string;
     readonly args?: string;
@@ -1494,6 +1520,9 @@ export function resolveAgentTurnFailureMessage(
         }
     } else {
         kind = classifyAgentFailureEvidence(evidence);
+    }
+    if (isPiSignInRejectedFailure(resolvedOptions.agentId, kind)) {
+        return localizePiSignInRejectedMessage(detectAgentFailureProviderLabel(agentFailureEvidenceText(evidence)));
     }
     const challengeOptions = resolvedOptions.agentId ? { agentId: resolvedOptions.agentId } : undefined;
     if (kind === 'auth') {

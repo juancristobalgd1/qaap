@@ -9,7 +9,7 @@ import { assertProviderKeyReadableExtracted } from './qaap-agent-task-runner-str
 import { QaapQaiqProviderKeyMissingError } from './qaap-qaiq-provider-preflight';
 
 const OPENROUTER_PREF = 'ai-features.openrouter.openrouterApiKey';
-const PI_MODEL = { provider: 'openai', vendor: 'openrouter', modelId: 'openrouter/cohere/north-mini-code:free' } as const;
+const MODEL = { provider: 'openai', vendor: 'openrouter', modelId: 'openrouter/cohere/north-mini-code:free' } as const;
 
 function contextWith(unreadable: readonly string[], env: NodeJS.ProcessEnv = {}): QaapAgentTaskRunnerContext {
     return {
@@ -31,18 +31,22 @@ describe('assertProviderKeyReadableExtracted', () => {
         console.warn = warn;
     });
 
-    it('refuses a Pi turn whose saved OpenRouter key this server cannot open, naming the provider', () => {
-        expect(() => assertProviderKeyReadableExtracted(contextWith([OPENROUTER_PREF]), 'pi', 'alice', PI_MODEL))
+    it('refuses a QAIQ turn whose saved OpenRouter key this server cannot open, naming the provider', () => {
+        expect(() => assertProviderKeyReadableExtracted(contextWith([OPENROUTER_PREF]), 'qaiq', 'alice', MODEL))
             .to.throw(QaapQaiqProviderKeyMissingError, /^Your saved OpenRouter key cannot be read on this server\./);
     });
 
+    it('never refuses a sign-in harness such as Pi: its own sign-in wins over any Settings key', () => {
+        expect(() => assertProviderKeyReadableExtracted(contextWith([OPENROUTER_PREF]), 'pi', 'alice', MODEL)).not.to.throw();
+    });
+
     it('lets the turn run when the key opens, or when another provider key is the unreadable one', () => {
-        expect(() => assertProviderKeyReadableExtracted(contextWith([]), 'pi', 'alice', PI_MODEL)).not.to.throw();
-        expect(() => assertProviderKeyReadableExtracted(contextWith(['ai-features.google.apiKey']), 'pi', 'alice', PI_MODEL)).not.to.throw();
+        expect(() => assertProviderKeyReadableExtracted(contextWith([]), 'qaiq', 'alice', MODEL)).not.to.throw();
+        expect(() => assertProviderKeyReadableExtracted(contextWith(['ai-features.google.apiKey']), 'qaiq', 'alice', MODEL)).not.to.throw();
     });
 
     it('lets the turn run when the provider env still carries a key (local operator runs)', () => {
-        expect(() => assertProviderKeyReadableExtracted(contextWith([OPENROUTER_PREF], { OPENROUTER_API_KEY: 'sk-or-operator' }), 'pi', 'alice', PI_MODEL))
+        expect(() => assertProviderKeyReadableExtracted(contextWith([OPENROUTER_PREF], { OPENROUTER_API_KEY: 'sk-or-operator' }), 'qaiq', 'alice', MODEL))
             .not.to.throw();
     });
 

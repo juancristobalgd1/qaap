@@ -16,6 +16,7 @@ import {
     formatStoredAgentFailureMessage,
     isQaiqProviderKeyMissingFailure as isStoredProviderKeyMissingFailure,
     localizeProviderKeyUnreadableMessage,
+    isPiSignInRejectedFailure,
     isGeminiIneligibleTierText,
     localizeAgentFailureMessage,
     localizeAgentFailureShortReason,
@@ -747,5 +748,27 @@ describe('unreadable saved provider key copy', () => {
         expect(resolveAgentTurnFailureMessage(`${copy}\n`)).to.equal(copy);
         expect(formatStoredAgentFailureMessage(copy)).to.equal(copy);
         expect(isStoredProviderKeyMissingFailure(copy)).to.equal(true);
+    });
+});
+
+describe('Pi sign-in refused by its provider', () => {
+    const PI_LOG = [
+        '{"type":"agent_start"}',
+        '{"type":"message_end","message":{"role":"assistant","content":[],"provider":"openrouter","stopReason":"error",'
+            + '"errorMessage":"401: {\\"message\\":\\"User not found.\\",\\"code\\":401}"}}',
+    ].join('\n');
+
+    it('asks Pi users to sign in again from the composer instead of connecting a harness in Settings', () => {
+        const message = resolveAgentTurnFailureMessage(PI_LOG, { state: 'failed', agentId: 'pi' });
+        expect(message).to.match(/^Pi needs you to sign in again: /);
+        expect(message).not.to.contain('Settings');
+    });
+
+    it('applies to Pi only', () => {
+        expect(isPiSignInRejectedFailure('pi', 'provider_key_rejected')).to.equal(true);
+        expect(isPiSignInRejectedFailure('Pi', 'auth')).to.equal(true);
+        expect(isPiSignInRejectedFailure('qaiq', 'provider_key_rejected')).to.equal(false);
+        expect(isPiSignInRejectedFailure('pi', 'quota')).to.equal(false);
+        expect(resolveAgentTurnFailureMessage(PI_LOG, { state: 'failed', agentId: 'qaiq' })).not.to.match(/^Pi needs/);
     });
 });

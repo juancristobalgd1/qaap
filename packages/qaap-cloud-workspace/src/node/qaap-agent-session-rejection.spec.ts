@@ -19,6 +19,7 @@ const PROBED: readonly AgentCandidate[] = [
     { id: 'codex', label: 'Codex', bin: 'codex', template: 'codex exec {prompt}' },
     { id: 'cursor', label: 'Cursor Agent', bin: 'cursor-agent', template: 'cursor-agent -p {prompt}' },
     { id: 'opencode', label: 'OpenCode', bin: 'opencode', template: 'opencode run {prompt}' },
+    { id: 'pi', label: 'Pi', bin: 'pi', template: 'pi --mode json {prompt}' },
 ];
 
 /**
@@ -60,6 +61,13 @@ const CODEX_401 = [
     '{"type":"turn.started"}',
     '{"type":"error","message":"unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.openai.com/v1/responses"}',
     '{"type":"turn.failed","error":{"message":"unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.openai.com/v1/responses"}}',
+].join('\n');
+/** Pi's own OpenRouter sign-in (auth.json) revoked: Pi 1.4's json stream, as seen on staging on 23 Nov 2026. */
+const PI_OPENROUTER_REVOKED = [
+    '{"type":"agent_start"}',
+    '{"type":"message_end","message":{"role":"assistant","content":[],"provider":"openrouter","model":"cohere/north-mini-code:free","stopReason":"error",'
+        + '"errorMessage":"401: {\\"message\\":\\"User not found.\\",\\"code\\":401}"}}',
+    '{"type":"agent_settled","aborted":false}',
 ].join('\n');
 const CURSOR_SIGNED_OUT = "Error: Authentication required. Please run 'agent login' first, or set CURSOR_API_KEY environment variable.\n";
 
@@ -117,5 +125,19 @@ describe('QaapAgentTaskRunner session rejection after an auth failure', () => {
         const network = runnerWith('Error: connect ECONNREFUSED 127.0.0.1:443\n');
         await network.recordLastTurnForTest(failedTask('codex'));
         expect(session(network, 'codex')).to.equal('signed-in');
+    });
+
+    it("locks Pi when the provider refuses Pi's own sign-in, even on a free OpenRouter model", async () => {
+        const runner = runnerWith(PI_OPENROUTER_REVOKED);
+        expect(session(runner, 'pi')).to.equal('signed-in');
+
+        await runner.recordLastTurnForTest(failedTask('pi', {
+            agentModel: { provider: 'openai', vendor: 'openrouter', modelId: 'openrouter/cohere/north-mini-code:free' },
+        } as Partial<QaapAgentTask>));
+
+        // The composer opens Pi's sign-in for a signed-out harness that cannot run otherwise.
+        expect(session(runner, 'pi')).to.equal('signed-out');
+        expect(runner.listAgents('alice').find(agent => agent.id === 'pi')).to.include({ connectionState: 'disconnected', available: false });
+        expect(session(runner, 'pi', 'bob')).to.equal('signed-in');
     });
 });
