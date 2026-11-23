@@ -28,6 +28,14 @@ import { placePickerAbove } from './qaap-composer-picker-placement';
 /** How long a model picked before its harness sign-in waits for that sign-in to be confirmed. */
 const SELECT_AFTER_SIGN_IN_WINDOW_MS = 15 * 60_000;
 
+/** Same model ids in the same order: an answer that brings nothing new must not rebuild the open list. */
+function sameModelIds(left: readonly QaapQaiqModelOption[] | undefined, right: readonly QaapQaiqModelOption[]): boolean {
+    if (!left || left.length !== right.length) {
+        return false;
+    }
+    return left.every((model, index) => model.modelId === right[index].modelId && model.label === right[index].label);
+}
+
 /** The one pending «select this model once signed in»; a newer pick replaces it. */
 let pendingSelectAfterSignIn: (() => void) | undefined;
 
@@ -185,6 +193,16 @@ export async function renderStickyComposerModelPicker(
     window.addEventListener('resize', onResize);
 
     const repaint = (): void => {
+        // A repaint rebuilds the list: keep where the user had scrolled to.
+        const scrolled = host.querySelector<HTMLElement>('[role="listbox"]');
+        const scrollTop = scrolled?.scrollTop ?? 0;
+        paint();
+        const list = host.querySelector<HTMLElement>('[role="listbox"]');
+        if (list && scrollTop > 0) {
+            list.scrollTop = scrollTop;
+        }
+    };
+    const paint = (): void => {
         const state: QaapPickerState = {
             harnesses,
             models,
@@ -255,17 +273,25 @@ export async function renderStickyComposerModelPicker(
         placePickerAbove(chrome.sheet, options.anchor);
     };
     repaint();
-    // Background refresh of every harness: each answer repaints, so the list never waits for the slowest one.
+    // Background refresh of every harness, so the list never waits for the slowest one. An answer repaints only
+    // when it changes what is on screen: eight harnesses answering one by one each rebuilt the whole list
+    // (scroll and hover reset), even when the list was the cached one or belonged to another rail entry.
     for (const agent of agents) {
         void ctx.resolveModelsForAgentPickerSafe(agent.id).then(resolved => {
-            pendingAgentIds.delete(agent.id);
+            const endedLoading = pendingAgentIds.delete(agent.id);
             if (!chrome.sheet.isConnected) {
                 return;
             }
             chrome.modelsByAgent.set(agent.id, resolved.models);
-            modelsByAgent.set(agent.id, resolved.models);
-            rebuildModels();
-            repaint();
+            const changed = !sameModelIds(modelsByAgent.get(agent.id), resolved.models);
+            if (changed) {
+                modelsByAgent.set(agent.id, resolved.models);
+                rebuildModels();
+            }
+            const visible = railSelection === agent.id || railSelection === 'favorites' || query.trim().length > 0;
+            if (visible && (changed || endedLoading)) {
+                repaint();
+            }
         });
     }
 }

@@ -15,6 +15,7 @@ import {
 import { localizeHostedLocalhostOAuthAgentMessage } from '@theia/qaap-shared-core/lib/common/qaap-hosted-agent-auth-policy';
 import { buildAgentLoginShellCommand, splitAgentLoginShellInput } from '@theia/qaap-shared-core/lib/common/qaap-agent-connect-plan';
 import {
+    fetchAgentModelsForAgent,
     attestAgentSessionSignIn,
     invalidateAgentModelsCache,
     invalidateAgentTaskListAllCache,
@@ -205,7 +206,9 @@ function createDefaultConnectionProbe(ctx: any, project: MobileProjectEntry | un
     }
     return async () => {
         invalidateAgentTaskListAllCache();
-        invalidateAgentModelsCache();
+        // No model cache is dropped here: this runs every 2.5 s while the dialog waits, and dropping every
+        // harness's catalog made each open picker refetch and repaint. The connected path loads this harness's
+        // fresh catalog (fetchAgentModelsForAgent with `fresh`) before the composer refreshes.
         // Only this harness is re-probed: this runs every 2.5 s while the dialog waits for the sign-in.
         const refreshed = await ctx.stickyComposerAgentsUi?.refreshStickyComposerAgents?.(project, { forceRefresh: true, refreshAgent: agentId });
         await ctx.transcriptComposerUi?.refreshTranscriptComposerAgents?.(project);
@@ -415,7 +418,10 @@ export async function openAgentLoginDialogInBackground(
             dialog.render(agyLogin && state.phase === 'failed' ? presentAgyLoginFailure(state, agentLabel) : state);
             if (state.phase === 'connected') {
                 disposeTerminal();
-                void attestSignInIfUnprobed().then(() => {
+                void attestSignInIfUnprobed().then(async () => {
+                    // The new sign-in or provider brings new models (Pi + NVIDIA): load the CLI's own listing now, so
+                    // the composer and the picker show them without a reload.
+                    await fetchAgentModelsForAgent(agentId, { fresh: true }).catch(() => undefined);
                     window.dispatchEvent(new window.CustomEvent<QaapAgentSignedInDetail>(QAAP_AGENT_SIGNED_IN_EVENT, { detail: { agentId } }));
                     return onConnected?.();
                 }).catch(error => {

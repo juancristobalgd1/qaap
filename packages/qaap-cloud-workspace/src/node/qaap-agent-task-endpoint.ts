@@ -71,6 +71,13 @@ const WS_PING_MS = 25_000;
 const WS_PATH = `${QAAP_AGENT_TASK_API_PATH}/ws`;
 /** How long the picker's model request waits for a cold native CLI model discovery. */
 const QAAP_NATIVE_MODEL_DISCOVERY_BUDGET_MS = 1_200;
+/**
+ * `fresh=1` (right after a sign-in or a provider was connected): wait for the CLI's own listing instead of
+ * answering with the previous catalog. `pi --list-models` takes 1-2 s on an idle tenant, so the regular
+ * budget answered with the old list, the browser cached it and the new provider's models only showed
+ * after a reload.
+ */
+const QAAP_NATIVE_MODEL_FRESH_DISCOVERY_BUDGET_MS = 12_000;
 /** How long the picker's model request waits for the billing account before answering without it. */
 const QAAP_AGENT_MODELS_BILLING_BUDGET_MS = 800;
 
@@ -517,11 +524,12 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         const spawner = isInstance
             ? await this.runner.instanceNativeModelSpawner(normalizedAgent, login)
             : this.runner.nativeModelDiscoverySpawner(login);
+        const fresh = req.query.fresh === '1' || req.query.fresh === 'true';
         await this.withinBudget(prepareNativeAgentModels(catalogAgent, {
             ownerLogin: login,
             spawner,
             antigravityBin,
-        }), QAAP_NATIVE_MODEL_DISCOVERY_BUDGET_MS);
+        }), fresh ? QAAP_NATIVE_MODEL_FRESH_DISCOVERY_BUDGET_MS : QAAP_NATIVE_MODEL_DISCOVERY_BUDGET_MS);
         const discoveryMs = Date.now() - discoveryStartedAt;
         if (res.headersSent || res.writableEnded) {
             return;

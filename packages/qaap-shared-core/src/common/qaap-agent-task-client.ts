@@ -752,6 +752,9 @@ export async function requestHarnessSignOut(harnessId: string): Promise<QaapHarn
 /** Upper bound for one agent model catalog request, so a hung probe rejects instead of leaving the picker loading. */
 export const AGENT_MODELS_REQUEST_TIMEOUT_MS = 15000;
 
+/** A `fresh` catalog request waits on the CLI listing server-side (up to 12 s): allow for it. */
+export const AGENT_MODELS_FRESH_REQUEST_TIMEOUT_MS = 20000;
+
 /** How long a successful model catalog per agent is reused before the next call refetches it. */
 export const AGENT_MODELS_CACHE_TTL_MS = 60_000;
 
@@ -779,18 +782,28 @@ export function invalidateAgentModelsCache(agentId?: string): void {
  * Load the model catalog of one agent. Successful results are reused for {@link AGENT_MODELS_CACHE_TTL_MS},
  * concurrent calls for the same agent share one request, and errors are never cached.
  */
-export async function fetchAgentModelsForAgent(agentId: string): Promise<QaapQaiqModelOption[]> {
+export async function fetchAgentModelsForAgent(
+    agentId: string,
+    options?: {
+        /**
+         * Skip the cache and let the backend wait for the CLI's own listing (right after a sign-in or a newly
+         * connected provider), so the new models are what gets cached.
+         */
+        readonly fresh?: boolean;
+    },
+): Promise<QaapQaiqModelOption[]> {
     // No harness chosen yet (an empty or blank id): there is no catalog to ask for, and the endpoint answers 400.
     if (!agentId?.trim()) {
         return [];
     }
+    const fresh = options?.fresh === true;
     const cached = agentModelsCache.get(agentId);
-    if (cached && Date.now() - cached.at < AGENT_MODELS_CACHE_TTL_MS) {
+    if (!fresh && cached && Date.now() - cached.at < AGENT_MODELS_CACHE_TTL_MS) {
         return cached.models;
     }
-    return dedupeInFlight(agentModelsInFlight, agentId, async () => {
+    return dedupeInFlight(agentModelsInFlight, fresh ? `${agentId}#fresh` : agentId, async () => {
         const generation = agentModelsGeneration;
-        const models = await requestAgentModelsForAgent(agentId);
+        const models = await requestAgentModelsForAgent(agentId, fresh);
         // Empty catalogs are not cached: a CLI that is still signing in must be asked again on the next call.
         if (generation === agentModelsGeneration && models.length > 0) {
             agentModelsCache.set(agentId, { at: Date.now(), models });
@@ -799,13 +812,13 @@ export async function fetchAgentModelsForAgent(agentId: string): Promise<QaapQai
     });
 }
 
-async function requestAgentModelsForAgent(agentId: string): Promise<QaapQaiqModelOption[]> {
+async function requestAgentModelsForAgent(agentId: string, fresh = false): Promise<QaapQaiqModelOption[]> {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), AGENT_MODELS_REQUEST_TIMEOUT_MS);
+    const timer = setTimeout(() => controller.abort(), fresh ? AGENT_MODELS_FRESH_REQUEST_TIMEOUT_MS : AGENT_MODELS_REQUEST_TIMEOUT_MS);
     let body: { models?: QaapQaiqModelOption[] };
     try {
         const response = await fetch(
-            `${QAAP_AGENT_TASK_API_PATH}/agent-models?agent=${encodeURIComponent(agentId)}`,
+            `${QAAP_AGENT_TASK_API_PATH}/agent-models?agent=${encodeURIComponent(agentId)}${fresh ? '&fresh=1' : ''}`,
             { credentials: 'include', cache: 'no-store', signal: controller.signal },
         );
         if (!response.ok) {
