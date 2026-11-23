@@ -15055,6 +15055,12 @@ body.theia-mod-work-hub-settings-resizing * {
   height: 100%;
 }
 
+/* Monochrome PNG marks drawn for light backgrounds (Anthropic, Kimi): light on the dark theme. */
+body[data-theia-theme-mode="dark"] .theia-mobile-agent-login-dialog-provider-logo .theia-mod-tone-light img,
+body.qaap-theme-dark .theia-mobile-agent-login-dialog-provider-logo .theia-mod-tone-light img {
+  filter: invert(1);
+}
+
 .theia-mobile-agent-login-dialog-provider-name {
   max-width: 100%;
   overflow: hidden;
@@ -15072,9 +15078,6 @@ body.theia-mod-work-hub-settings-resizing * {
   color: var(--theia-descriptionForeground);
 }
 
-.theia-mobile-agent-login-dialog-secret-form .theia-mobile-agent-login-dialog-code-input {
-  font-family: var(--theia-code-font-family, monospace);
-}
 
 .theia-mobile-agent-login-dialog-challenge {
   display: flex;

@@ -60,6 +60,8 @@ export interface QaapAgentLoginDialogOptions {
 export interface QaapAgentLoginProviderOption {
     readonly id: string;
     readonly label: string;
+    /** Name on the chip when `label` is too long for it; `label` stays the tooltip and the subtitle's name. */
+    readonly shortLabel?: string;
     /** `api_key`: Pi asks for a key instead of a browser sign-in (shown as a caption under the name). */
     readonly method?: 'account' | 'api_key';
     /** Brand id for the logo; the provider id when unset (a monogram when there is no curated logo). */
@@ -229,7 +231,7 @@ function createProviderStrip(
         }
         const name = document.createElement('span');
         name.className = 'theia-mobile-agent-login-dialog-provider-name';
-        name.textContent = option.label;
+        name.textContent = option.shortLabel ?? option.label;
         chip.append(logo, name);
         if (option.method === 'api_key') {
             const caption = document.createElement('span');

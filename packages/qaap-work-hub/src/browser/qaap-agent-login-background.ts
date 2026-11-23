@@ -776,6 +776,7 @@ export async function openAgentLoginDialogInBackground(
                 options: QAAP_PI_LOGIN_PROVIDERS.map(provider => ({
                     id: provider.id,
                     label: provider.name,
+                    ...(provider.shortName ? { shortLabel: provider.shortName } : {}),
                     method: provider.method,
                     ...(provider.brand ? { brand: provider.brand } : {}),
                 })),

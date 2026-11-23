@@ -15,6 +15,8 @@ export interface QaapPiLoginProvider {
     readonly id: string;
     /** Name shown in the Connect dialog and the subtitle. */
     readonly name: string;
+    /** Shorter name for the logo chip, when `name` does not fit two short lines. */
+    readonly shortName?: string;
     /** `account`: browser sign-in (its authorize host is on the allowlist). `api_key`: the dialog asks for the key. */
     readonly method: QaapPiLoginMethod;
     /**
@@ -57,23 +59,23 @@ export const QAAP_PI_API_KEY_SAVED_PATTERN = '\\bSaved API key for\\b';
  */
 export const QAAP_PI_LOGIN_PROVIDERS: readonly QaapPiLoginProvider[] = [
     { id: 'openrouter', name: 'OpenRouter', method: 'account', brand: 'openrouter' },
-    { id: 'anthropic', name: 'Anthropic (Claude Pro/Max)', method: 'account', brand: 'anthropic', loginScreenPattern: 'Select Anthropic login method' },
-    { id: 'openai', name: 'OpenAI (ChatGPT subscription)', method: 'account', brand: 'openai' },
-    { id: 'github-copilot', name: 'GitHub Copilot', method: 'account', brand: 'copilot', loginScreenPattern: 'GitHub Enterprise URL' },
-    { id: 'google', name: 'Google Gemini', method: 'api_key', brand: 'gemini' },
+    { id: 'anthropic', name: 'Anthropic (Claude Pro/Max)', shortName: 'Claude', method: 'account', brand: 'anthropic', loginScreenPattern: 'Select Anthropic login method' },
+    { id: 'openai', name: 'OpenAI (ChatGPT subscription)', shortName: 'ChatGPT', method: 'account', brand: 'openai' },
+    { id: 'github-copilot', name: 'GitHub Copilot', shortName: 'Copilot', method: 'account', brand: 'copilot', loginScreenPattern: 'GitHub Enterprise URL' },
+    { id: 'google', name: 'Google Gemini', shortName: 'Gemini', method: 'api_key', brand: 'gemini' },
     { id: 'xai', name: 'xAI', method: 'api_key', brand: 'grok', hasAccountMethod: true },
     { id: 'deepseek', name: 'DeepSeek', method: 'api_key', brand: 'deepseek' },
     { id: 'mistral', name: 'Mistral', method: 'api_key', brand: 'mistral' },
     { id: 'groq', name: 'Groq', method: 'api_key' },
-    { id: 'kimi-coding', name: 'Kimi For Coding', method: 'api_key', brand: 'kimi', hasAccountMethod: true },
+    { id: 'kimi-coding', name: 'Kimi For Coding', shortName: 'Kimi Coding', method: 'api_key', brand: 'kimi', hasAccountMethod: true },
     { id: 'moonshotai', name: 'Moonshot AI', method: 'api_key', brand: 'kimi' },
     { id: 'moonshotai-cn', name: 'Moonshot AI CN', method: 'api_key', brand: 'kimi' },
     { id: 'zai', name: 'Z.AI', method: 'api_key', brand: 'z-ai' },
     { id: 'zai-coding-cn', name: 'Z.AI Coding CN', method: 'api_key', brand: 'z-ai' },
-    { id: 'qwen-token-plan', name: 'Qwen Token Plan Team', method: 'api_key', brand: 'qwen' },
-    { id: 'qwen-token-plan-individual', name: 'Qwen Token Plan Individual', method: 'api_key', brand: 'qwen' },
-    { id: 'qwen-token-plan-cn', name: 'Qwen Token Plan Team CN', method: 'api_key', brand: 'qwen' },
-    { id: 'qwen-token-plan-individual-cn', name: 'Qwen Token Plan Individual CN', method: 'api_key', brand: 'qwen' },
+    { id: 'qwen-token-plan', name: 'Qwen Token Plan Team', shortName: 'Qwen Team', method: 'api_key', brand: 'qwen' },
+    { id: 'qwen-token-plan-individual', name: 'Qwen Token Plan Individual', shortName: 'Qwen', method: 'api_key', brand: 'qwen' },
+    { id: 'qwen-token-plan-cn', name: 'Qwen Token Plan Team CN', shortName: 'Qwen Team CN', method: 'api_key', brand: 'qwen' },
+    { id: 'qwen-token-plan-individual-cn', name: 'Qwen Token Plan Individual CN', shortName: 'Qwen CN', method: 'api_key', brand: 'qwen' },
     { id: 'minimax', name: 'MiniMax', method: 'api_key', brand: 'minimax' },
     { id: 'minimax-cn', name: 'MiniMax CN', method: 'api_key', brand: 'minimax' },
     { id: 'meta', name: 'Meta', method: 'api_key', brand: 'meta', hasAccountMethod: true },
@@ -85,13 +87,13 @@ export const QAAP_PI_LOGIN_PROVIDERS: readonly QaapPiLoginProvider[] = [
     { id: 'fireworks', name: 'Fireworks', method: 'api_key' },
     { id: 'cerebras', name: 'Cerebras', method: 'api_key' },
     { id: 'baseten', name: 'Baseten', method: 'api_key' },
-    { id: 'vercel-ai-gateway', name: 'Vercel AI Gateway', method: 'api_key' },
+    { id: 'vercel-ai-gateway', name: 'Vercel AI Gateway', shortName: 'Vercel AI', method: 'api_key' },
     { id: 'typesafe', name: 'TypeSafe', method: 'api_key' },
     { id: 'ant-ling', name: 'Ant Ling', method: 'api_key' },
     { id: 'xiaomi', name: 'Xiaomi', method: 'api_key' },
-    { id: 'xiaomi-token-plan-ams', name: 'Xiaomi Token Plan AMS', method: 'api_key' },
-    { id: 'xiaomi-token-plan-cn', name: 'Xiaomi Token Plan CN', method: 'api_key' },
-    { id: 'xiaomi-token-plan-sgp', name: 'Xiaomi Token Plan SGP', method: 'api_key' },
+    { id: 'xiaomi-token-plan-ams', name: 'Xiaomi Token Plan AMS', shortName: 'Xiaomi AMS', method: 'api_key' },
+    { id: 'xiaomi-token-plan-cn', name: 'Xiaomi Token Plan CN', shortName: 'Xiaomi CN', method: 'api_key' },
+    { id: 'xiaomi-token-plan-sgp', name: 'Xiaomi Token Plan SGP', shortName: 'Xiaomi SGP', method: 'api_key' },
 ];
 
 /** Provider Pi signs in to when the Connect action does not name one. */
