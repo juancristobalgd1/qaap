@@ -16,7 +16,8 @@ import {
     type QaapToolGateDecision,
     type QaapToolGateRequest,
 } from '@theia/qaap-shared-core/lib/common/qaap-tool-gate-protocol';
-import { resolveQaapHarnessCapabilities, type QaapHarnessCapabilities } from '@theia/qaap-shared-core/lib/common/qaap-harness-capabilities';
+import type { QaapHarnessCapabilities } from '@theia/qaap-shared-core/lib/common/qaap-harness-capabilities';
+import { resolveQaapRuntimeHarnessCapabilities } from './harness/acp/qaap-acp-bridge-launch';
 import type { QaapAgentTask } from '../common/qaap-agent-task';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { agentHookContextForTask } from './qaap-agent-task-runner-hooks';
@@ -246,7 +247,8 @@ export class QaapToolGateEndpoint implements BackendApplicationContribution {
     }
 
     protected resolveCapabilities(agentId: string): QaapHarnessCapabilities {
-        return resolveQaapHarnessCapabilities(agentId);
+        // Runtime entry: an ACP flavor gated by the bridge can ask (Copilot with QAAP_HARNESS_ACP_COPILOT=1).
+        return resolveQaapRuntimeHarnessCapabilities(agentId);
     }
 
     /** 401 unless the gate token header resolves to a live grant. Reads no other credential. */

@@ -23,6 +23,7 @@ import { detectAgentFailureKind, localizeAgentFailureMessage } from './qaap-agen
 import type { QaapAgentMessageSegment } from './qaap-qaiq-stream';
 import type { QaapAgentContextUsage } from './qaap-agent-context-usage';
 import { QaapQaiqStreamAccumulator } from './qaap-qaiq-stream';
+import { isQaapAcpBridgeLog, QaapAcpSniffingStreamAccumulator } from './qaap-acp-bridge-stream';
 import {
     mergeStreamTraceEvents,
     segmentsToTraceEvents,
@@ -59,7 +60,8 @@ export function createAgentStreamAccumulator(agentId: string | undefined): QaapA
         return new QaapQaiqStreamAccumulator();
     }
     if (isOpencodeAgent(agentId)) {
-        return new QaapOpencodeStreamAccumulator();
+        // OpenCode may run natively or through the ACP bridge (QAAP_HARNESS_ACP_OPENCODE): the first line decides.
+        return new QaapAcpSniffingStreamAccumulator(() => new QaapOpencodeStreamAccumulator());
     }
     if (isCodexAgent(agentId)) {
         return new QaapCodexStreamAccumulator();
@@ -78,7 +80,8 @@ export function parseAgentLogForTranscript(
     if (!log.trim()) {
         return { content: '', segments: [], traceEvents: [] };
     }
-    if (isQaiqAgent(agentId) || isClaudeCodeAgent(agentId)) {
+    // A turn that ran through the ACP bridge logged Claude stream-json, whatever its agent id.
+    if (isQaiqAgent(agentId) || isClaudeCodeAgent(agentId) || (isOpencodeAgent(agentId) && isQaapAcpBridgeLog(log))) {
         const acc = new QaapQaiqStreamAccumulator();
         acc.push(log);
         const segments = [...acc.getSegments()];

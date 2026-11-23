@@ -166,8 +166,8 @@
     "agui:piStream": []
   },
   "opencode": {
-    "accumulator": "QaapOpencodeStreamAccumulator",
-    "agUiEmitter": "QaapOpencodeAgUiStreamEmitter",
+    "accumulator": "QaapAcpSniffingStreamAccumulator",
+    "agUiEmitter": "QaapAcpSniffingAgUiEmitter",
     "parse:plain": {
       "content": "hello world\nsecond line",
       "segments": [
@@ -191,15 +191,46 @@
     },
     "agui:plain": [],
     "parse:claudeStream": {
-      "content": "",
-      "segments": [],
-      "traceEvents": []
+      "content": "Hi there",
+      "segments": [
+        {
+          "type": "text",
+          "content": "Hi there"
+        }
+      ],
+      "traceEvents": [
+        {
+          "type": "assistant_text",
+          "id": "text-0",
+          "content": "Hi there",
+          "status": "streaming"
+        }
+      ]
     },
     "accumulate:claudeStream": {
-      "display": "",
-      "segments": []
+      "display": "Hi there",
+      "segments": [
+        {
+          "type": "text",
+          "content": "Hi there"
+        }
+      ]
     },
-    "agui:claudeStream": [],
+    "agui:claudeStream": [
+      {
+        "type": "TEXT_MESSAGE_START",
+        "messageId": "text-1"
+      },
+      {
+        "type": "TEXT_MESSAGE_CONTENT",
+        "messageId": "text-1",
+        "delta": "Hi there"
+      },
+      {
+        "type": "TEXT_MESSAGE_END",
+        "messageId": "text-1"
+      }
+    ],
     "parse:codexStream": {
       "content": "",
       "segments": [],

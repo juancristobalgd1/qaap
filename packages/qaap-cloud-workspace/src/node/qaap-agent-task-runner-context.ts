@@ -392,7 +392,7 @@ export interface QaapAgentTaskRunnerContext {
     isToolGateArmed(taskId: string): boolean;
     /** Whether this backend runs the tool gate at all (token service and helper URL present). */
     toolGateWired(): boolean;
-    applyToolGateEnv(env: NodeJS.ProcessEnv, task: Pick<QaapAgentTask, 'id' | 'ownerLogin' | 'cwd' | 'agentId' | 'command'>): void;
+    applyToolGateEnv(env: NodeJS.ProcessEnv, task: Pick<QaapAgentTask, 'id' | 'ownerLogin' | 'cwd' | 'agentId' | 'command'>, options?: { readonly acpBridge?: boolean }): void;
     /** Issues a parent turn's delegation credentials; what the spawn needs to wire the delegation MCP server, or undefined. */
     applyAgentDelegationEnv?(
         env: NodeJS.ProcessEnv,
