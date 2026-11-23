@@ -220,7 +220,8 @@ describe('qaap-acp-bridge.mjs', function (): void {
             const home = tmpHome();
             expect(bridge.FLAVORS.antigravity).to.deep.include({ agentId: 'antigravity', permissionSource: 'bridge', output: 'stream-json', gateToolNames: 'claude', mcpStdio: true });
             expect(bridge.buildAgentArgv(bridge.FLAVORS.antigravity, ['agy', 'acp'], { HOME: `${home}/` }))
-                .to.deep.equal(['agy', 'acp', '--gemini-dir', path.join(home, '.cache', 'qaaq', 'antigravity-acp'), '--app-data-dir', 'antigravity-cli']);
+                // The bridge joins with `/` (valid on Windows too), whatever the platform separator.
+                .to.deep.equal(['agy', 'acp', '--gemini-dir', `${home}/.cache/qaaq/antigravity-acp`, '--app-data-dir', 'antigravity-cli']);
             expect(bridge.buildAgentArgv(bridge.FLAVORS.grok, ['grok', 'agent', 'stdio'], { HOME: home })).to.deep.equal(['grok', 'agent', 'stdio']);
         });
 
