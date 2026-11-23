@@ -75,7 +75,10 @@ describe('qaap-acp-bridge-launch', () => {
             expect(staged).to.have.length(2);
             for (const file of staged) {
                 expect(file.startsWith(path.join(sharedRoot, '.qaap-delegation'))).to.equal(true);
-                expect(fs.statSync(file).mode & 0o777).to.equal(0o600);
+                if (process.platform !== 'win32') {
+                    // Windows has no POSIX modes; the private directory's ACL protects the copy there.
+                    expect(fs.statSync(file).mode & 0o777).to.equal(0o600);
+                }
             }
             expect(fs.readFileSync(staged[0], 'utf8')).to.equal(fs.readFileSync(resolveQaapAcpBridgePath(), 'utf8'));
             expect(fs.readFileSync(staged[1], 'utf8')).to.equal(fs.readFileSync(resolveQaapAcpGateClientPath(), 'utf8'));

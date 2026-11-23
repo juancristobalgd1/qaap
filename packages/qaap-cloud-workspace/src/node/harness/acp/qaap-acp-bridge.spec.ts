@@ -397,7 +397,10 @@ describe('qaap-acp-bridge.mjs', function (): void {
             expect(edit.stdout).to.match(/^\n▸ Edit: .*a\.txt\ndone\n$/);
         });
 
-        it('cancels on SIGTERM within 4 s, even when the agent ignores session/cancel, and leaves no agent behind', async () => {
+        // POSIX only: Windows delivers no SIGTERM (process.kill terminates at once); there the runner kills with taskkill.
+        const posixIt = process.platform === 'win32' ? it.skip : it;
+
+        posixIt('cancels on SIGTERM within 4 s, even when the agent ignores session/cancel, and leaves no agent behind', async () => {
             const record = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-acp-')), 'record.jsonl');
             const started = Date.now();
             const run = await runBridge(agent('hang'), env({ FAKE_ACP_RECORD: record }), 'go', pid => setTimeout(() => process.kill(pid, 'SIGTERM'), 700));
@@ -407,7 +410,7 @@ describe('qaap-acp-bridge.mjs', function (): void {
             expect(methods).to.include('session/cancel');
         });
 
-        it('answers cancelled to a permission asked after the cancel, without asking the gate', async () => {
+        posixIt('answers cancelled to a permission asked after the cancel, without asking the gate', async () => {
             const record = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-acp-')), 'record.jsonl');
             const run = await runBridge(agent('cancelperm'), env({ FAKE_ACP_RECORD: record }), 'go', pid => setTimeout(() => process.kill(pid, 'SIGTERM'), 500));
             expect(run.code).to.equal(bridge.EXIT.CANCELLED);
