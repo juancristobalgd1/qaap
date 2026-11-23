@@ -33,6 +33,9 @@ import { buildAgentCommandExtracted } from './qaap-agent-task-runner-streaming2'
 import { captureWorktreeFingerprint, captureWorktreeStatus } from './qaap-agent-task-runner-utils2';
 import {
     AGY_CLI_CONNECTION_PROBE_SCRIPT,
+    QAAP_AGY_CONNECTION_PROBE_TIMEOUT_MS,
+    QAAP_AGENT_CONNECTION_PROBE_TIMEOUT_MS,
+    resolveAgentConnectionProbeTimeoutMs,
     CODEX_CONNECTION_PROBE_SCRIPT,
     classifyAgentConnectionProbe,
     GEMINI_CLI_CONNECTION_PROBE_SCRIPT,
@@ -219,6 +222,30 @@ describe('harness connection state', () => {
             const started = Date.now();
             const result = spawnSync('sh', ['-c', AGY_CLI_CONNECTION_PROBE_SCRIPT, 'agy-probe', file], { encoding: 'utf8', timeout: 20_000 });
             expect(Date.now() - started).to.be.lessThan(5_000);
+            expect(classifyAgentConnectionProbe('antigravity', result.status, result.stdout, false)).to.equal('connected');
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('gives agy a longer probe budget than the other harnesses (a slow language-server start is not a sign-out)', () => {
+        expect(resolveAgentConnectionProbeTimeoutMs('antigravity')).to.equal(QAAP_AGY_CONNECTION_PROBE_TIMEOUT_MS);
+        expect(resolveAgentConnectionProbeTimeoutMs(' Gemini ')).to.equal(QAAP_AGY_CONNECTION_PROBE_TIMEOUT_MS);
+        expect(resolveAgentConnectionProbeTimeoutMs('codex')).to.equal(QAAP_AGENT_CONNECTION_PROBE_TIMEOUT_MS);
+        expect(QAAP_AGY_CONNECTION_PROBE_TIMEOUT_MS).to.be.greaterThan(20_000);
+        expect(AGY_CLI_CONNECTION_PROBE_SCRIPT).to.contain('timeout -k 2 20');
+    });
+
+    it('the agy probe still answers signed-in when agy takes longer than the old 8 s limit', function (): void {
+        if (process.platform === 'win32') {
+            this.skip();
+        }
+        this.timeout(25_000);
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agy-slow-'));
+        const file = path.join(dir, 'agy');
+        fs.writeFileSync(file, '#!/bin/sh\nsleep 9\necho "gemini-3.8-flash-high"\nexit 0\n', { mode: 0o755 });
+        try {
+            const result = spawnSync('sh', ['-c', AGY_CLI_CONNECTION_PROBE_SCRIPT, 'agy-probe', file], { encoding: 'utf8', timeout: 22_000 });
             expect(classifyAgentConnectionProbe('antigravity', result.status, result.stdout, false)).to.equal('connected');
         } finally {
             fs.rmSync(dir, { recursive: true, force: true });

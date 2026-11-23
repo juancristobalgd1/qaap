@@ -114,6 +114,7 @@ import {
     probeAgentConnectionState as probeAgentConnectionStateHelper,
     hasAgentSettingsCredentials as hasAgentSettingsCredentialsHelper,
     resolveAgentConnectionProbe as resolveAgentConnectionProbeHelper,
+    resolveAgentConnectionProbeTimeoutMs,
     recordTaskLatencyMark as recordTaskLatencyMarkHelper,
     stripSignInOnlyAgentApiKeyEnv,
 } from './qaap-agent-task-runner-utils3';
@@ -1193,6 +1194,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
             return probeAgentConnectionStateHelper(agentId, probe.file, {
                 args: probe.args,
                 env,
+                timeoutMs: resolveAgentConnectionProbeTimeoutMs(agentId),
             });
         }
 
@@ -1218,6 +1220,7 @@ export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
                 args: wrapped.args,
                 cwd: existingTenantCwd(tenantCwd),
                 env,
+                timeoutMs: resolveAgentConnectionProbeTimeoutMs(agentId),
             });
         } catch (error) {
             console.warn(`[qaap] Unable to probe ${agentId} for tenant ${safeUserIdSegment(owner)}:`, error);

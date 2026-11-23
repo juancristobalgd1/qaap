@@ -310,7 +310,7 @@ export const GEMINI_CLI_CONNECTION_PROBE_SCRIPT = 'test -s "$HOME/.gemini/oauth_
  * `execFile` waited for EOF forever and the picker showed "Checking sign-in…" for good. `-k 2` follows the
  * TERM with a KILL for an agy that ignores it.
  */
-export const AGY_CLI_CONNECTION_PROBE_SCRIPT = 'T=""; command -v timeout >/dev/null 2>&1 && T="timeout -k 2 8"; '
+export const AGY_CLI_CONNECTION_PROBE_SCRIPT = 'T=""; command -v timeout >/dev/null 2>&1 && T="timeout -k 2 20"; '
     + 'f=$(mktemp 2>/dev/null || echo "${TMPDIR:-/tmp}/qaap-agy-probe.$$"); '
     + '$T "$1" models >"$f" 2>&1 </dev/null; rc=$?; out=$(cat "$f" 2>/dev/null); rm -f "$f"; '
     + 'case "$out" in *"Please sign in"*) echo "not logged in" ;; *) [ "$rc" -eq 0 ] && echo "logged in" ;; esac';
@@ -457,6 +457,20 @@ export function classifyAgentConnectionProbe(
  * loaded VPS; a timeout only ever yields `unknown`, never a usable answer.
  */
 export const QAAP_AGENT_CONNECTION_PROBE_TIMEOUT_MS = 10_000;
+
+/**
+ * agy starts a language server for `agy models`: about 2 s alone, but well over 8 s when every harness is probed at
+ * once in a CPU-limited tenant (1 CPU on staging, 2 in production), which settled the probe `unknown` and made the
+ * pre-spawn guard refuse a signed-in owner with "Sign in to Antigravity CLI" while the composer showed no sign-in
+ * prompt (staging, 23 Nov 2026). Its script allows 20 s (`timeout -k 2 20`); the probe itself gets this budget.
+ */
+export const QAAP_AGY_CONNECTION_PROBE_TIMEOUT_MS = 25_000;
+
+/** The auth probe budget of one harness: agy's is longer (see {@link QAAP_AGY_CONNECTION_PROBE_TIMEOUT_MS}). */
+export function resolveAgentConnectionProbeTimeoutMs(agentId: string): number {
+    const normalized = agentId.trim().toLowerCase();
+    return normalized === 'antigravity' || normalized === 'gemini' ? QAAP_AGY_CONNECTION_PROBE_TIMEOUT_MS : QAAP_AGENT_CONNECTION_PROBE_TIMEOUT_MS;
+}
 /**
  * After the probe timeout, how long the probe may still take to hand back its pipes before it is settled as
  * `unknown` anyway. `execFile` kills the child at the timeout but only calls back once every holder of its
