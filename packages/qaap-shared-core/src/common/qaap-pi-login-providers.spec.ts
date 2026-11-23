@@ -47,6 +47,8 @@ describe('QAAP_PI_LOGIN_PROVIDERS', () => {
     it('reads what Pi asks for from its API-key prompt, and its saved line', () => {
         const prompt = new RegExp(QAAP_PI_SECRET_PROMPT_PATTERN, 'i');
         expect(prompt.exec('Enter Groq API key')?.[1]).to.equal('Groq API key');
+        // As a PTY draws it (`\r\r\n` line ends, trailing spaces), verified in the staging container.
+        expect(prompt.exec(' Enter Groq API key \r\r\n> ')?.[1]).to.equal('Groq API key');
         expect(prompt.exec(' Enter Hugging Face token ')?.[1]).to.equal('Hugging Face token');
         expect(prompt.exec('Enter Qwen Token Plan API key')?.[1]).to.equal('Qwen Token Plan API key');
         expect(prompt.test('Press Enter to continue')).to.equal(false);

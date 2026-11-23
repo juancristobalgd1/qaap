@@ -42,7 +42,7 @@ export const QAAP_PI_METHOD_PICKER_PATTERN = 'Select authentication method';
  * Pi's API-key prompt, `Enter <provider> API key` / `Enter Hugging Face token` (`envApiKeyAuth` in
  * pi-ai). Group 1 is what Pi asks for. The prompt ends its line, so "Qwen Token Plan API key" is not cut at "Token".
  */
-export const QAAP_PI_SECRET_PROMPT_PATTERN = '\\bEnter ([A-Za-z0-9][A-Za-z0-9 .()-]{0,60}? (?:API key|token))(?=[ \\t]*(?:\\r?\\n|$))';
+export const QAAP_PI_SECRET_PROMPT_PATTERN = '\\bEnter ([A-Za-z0-9][A-Za-z0-9 .()-]{0,60}? (?:API key|token))(?=[ \\t\\r]*(?:\\n|$))';
 
 /** Pi's line once an API key is stored: `Saved API key for Groq`. */
 export const QAAP_PI_API_KEY_SAVED_PATTERN = '\\bSaved API key for\\b';
